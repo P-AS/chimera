@@ -1218,6 +1218,10 @@ int main(int argc, char **argv)
 	if (!metaPath.empty())
 	{
 		std::string meta = "status=OK\ndetail=\nframes=" + std::to_string(frames) + "\nstartframe=0\n";
+		// the display aspect the core reports for the last picture, when it does
+		int32_t ax = 0, ay = 0;
+		if (ce_session_display_aspect(session, &ax, &ay))
+			meta += "aspect=" + std::to_string(ax) + ":" + std::to_string(ay) + "\n";
 		writeWholeFile(metaPath, reinterpret_cast<const uint8_t *>(meta.data()), meta.size());
 	}
 	std::printf("frames=%lld\n", static_cast<long long>(frames));

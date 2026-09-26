@@ -515,6 +515,9 @@ namespace Chimera.Emulation.Common.Engine
 		public abstract int ce_session_virtual_width(IntPtr session);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_display_aspect(IntPtr session, out int x, out int y);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_session_virtual_height(IntPtr session);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -1963,6 +1966,13 @@ namespace Chimera.Emulation.Common.Engine
 		public int Width => E.ce_session_width(_session);
 		public int Height => E.ce_session_height(_session);
 		public int VirtualWidth => E.ce_session_virtual_width(_session);
+
+		/// <summary>
+		/// The display aspect the core reports for what it shows now (x:y), or
+		/// null when it does not say and the declared virtual size stands.
+		/// </summary>
+		public (int X, int Y)? DisplayAspect
+			=> E.ce_session_display_aspect(_session, out var x, out var y) != 0 ? (x, y) : null;
 		public int VirtualHeight => E.ce_session_virtual_height(_session);
 		public int VsyncNumerator => E.ce_session_vsync_numerator(_session);
 		public int VsyncDenominator => E.ce_session_vsync_denominator(_session);

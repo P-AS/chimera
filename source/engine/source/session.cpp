@@ -390,6 +390,12 @@ struct ce_session
 	/* what the last state kept in a file weighed, as the machine and as the file */
 	uint64_t stateFileRawBytes = 0, stateFileStoredBytes = 0;
 
+	/* Optional, both or neither: the display aspect of what the machine shows
+	 * NOW, as x:y (4:3; 3:4 for an arcade game whose monitor stood on its
+	 * side). Wins over the declared virtual size. */
+	int32_t (*aspectX)() = nullptr;
+	int32_t (*aspectY)() = nullptr;
+
 	int32_t (*isButtonActive)(int32_t) = nullptr;
 	int32_t (*isAxisActive)(int32_t) = nullptr;
 	/* Optional: told after every load of the machine - a savestate, a branch
@@ -657,6 +663,16 @@ void ce_session::probeOptionalGroups()
 	{
 		const char *text = cstr(gs());
 		gameSettings = text != nullptr ? text : "";
+	}
+
+	{
+		auto ax = reinterpret_cast<int32_t (*)()>(opt("GetDisplayAspectX", 0));
+		auto ay = reinterpret_cast<int32_t (*)()>(opt("GetDisplayAspectY", 0));
+		if (ax != nullptr && ay != nullptr)
+		{
+			aspectX = ax;
+			aspectY = ay;
+		}
 	}
 
 	isButtonActive = reinterpret_cast<int32_t (*)(int32_t)>(opt("IsButtonActive", 1));
@@ -1475,6 +1491,16 @@ int32_t ce_session_width(const ce_session *s) { return s->cfg.width; }
 int32_t ce_session_height(const ce_session *s) { return s->cfg.height; }
 int32_t ce_session_virtual_width(const ce_session *s) { return s->cfg.virtualWidth; }
 int32_t ce_session_virtual_height(const ce_session *s) { return s->cfg.virtualHeight; }
+
+int32_t ce_session_display_aspect(const ce_session *s, int32_t *x_out, int32_t *y_out)
+{
+	if (s->aspectX == nullptr || s->aspectY == nullptr) return 0;
+	const int32_t x = s->aspectX(), y = s->aspectY();
+	if (x <= 0 || y <= 0) return 0;
+	if (x_out != nullptr) *x_out = x;
+	if (y_out != nullptr) *y_out = y;
+	return 1;
+}
 int32_t ce_session_vsync_numerator(const ce_session *s) { return s->vsyncNum; }
 int32_t ce_session_vsync_denominator(const ce_session *s) { return s->vsyncDen; }
 int32_t ce_session_samples_per_frame(const ce_session *s) { return s->cfg.samplesPerFrame; }

@@ -470,11 +470,19 @@ namespace Chimera.Emulation.Common.Waterbox
 		// honest answer for a machine whose picture changes size (a Flash movie
 		// declares its own stage). Declaring it, as a machine with non-square
 		// pixels must, still wins.
-		public int VirtualWidth => _machine?.VirtualWidth
-			?? (_video.VirtualWidth > 0 ? _video.VirtualWidth : BufferWidth);
+		//
+		// A core that reports the aspect of what it shows NOW wins over both
+		// (an arcade game whose monitor stood on its side is 3:4 on a machine
+		// declared 4:3): the height stays the picture's, the width follows.
+		public int VirtualWidth => LiveAspect is var (x, y)
+			? Math.Max(1, (int)Math.Round((double)BufferHeight * x / y))
+			: _machine?.VirtualWidth ?? (_video.VirtualWidth > 0 ? _video.VirtualWidth : BufferWidth);
 
-		public int VirtualHeight => _machine?.VirtualHeight
-			?? (_video.VirtualHeight > 0 ? _video.VirtualHeight : BufferHeight);
+		public int VirtualHeight => LiveAspect is not null
+			? BufferHeight
+			: _machine?.VirtualHeight ?? (_video.VirtualHeight > 0 ? _video.VirtualHeight : BufferHeight);
+
+		private (int X, int Y)? LiveAspect => _session.Disposed ? null : _session.DisplayAspect;
 		public int BackgroundColor => unchecked((int)0xFF000000);
 		public int VsyncNumerator => _session.VsyncNumerator;
 		public int VsyncDenominator => _session.VsyncDenominator;

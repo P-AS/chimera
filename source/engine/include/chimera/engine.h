@@ -819,6 +819,12 @@ CE_API int32_t ce_session_width(const ce_session *s);
 CE_API int32_t ce_session_height(const ce_session *s);
 CE_API int32_t ce_session_virtual_width(const ce_session *s);
 CE_API int32_t ce_session_virtual_height(const ce_session *s);
+/* The display aspect the machine reports for what it shows NOW, x:y, from the
+ * core's optional GetDisplayAspectX/GetDisplayAspectY exports (both or
+ * neither). 1 with the aspect written; 0 when the core does not say, and the
+ * declared virtual size stands. An arcade core answers 3:4 for a game whose
+ * monitor stood on its side, which no per-machine declaration can know. */
+CE_API int32_t ce_session_display_aspect(const ce_session *s, int32_t *x_out, int32_t *y_out);
 /* post-Init: the guest's own answer when it gives one, else the config's */
 CE_API int32_t ce_session_vsync_numerator(const ce_session *s);
 CE_API int32_t ce_session_vsync_denominator(const ce_session *s);
