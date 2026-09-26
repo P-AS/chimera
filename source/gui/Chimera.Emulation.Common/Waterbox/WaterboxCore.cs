@@ -187,6 +187,11 @@ namespace Chimera.Emulation.Common.Waterbox
 			// An inactive control is not in the controller, not a TAStudio column
 			// and not a character in a movie entry - but the arrays here stay the
 			// DECLARATION's, because an index on the wire must never move.
+			// The settings THIS GAME has beyond the package's (an arcade game's dip
+			// switches), which only the loaded core can name. Shown in the settings
+			// grid beside the package's; their values travel like any other.
+			_gameDecls = WaterboxConfig.ParseGameSettings(_session.GameSettingsJson, Decls.Select(static d => d.Key));
+
 			_buttonActive = new bool[_buttons.Length];
 			for (int i = 0; i < _buttons.Length; i++) _buttonActive[i] = _session.ButtonActive(i);
 			_axisActive = new bool[_axes.Length];
@@ -272,6 +277,13 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// <summary>The settings as the machine this session is has them.</summary>
 		private IReadOnlyList<WaterboxConfig.SettingDecl> Decls
 			=> _cfg.SettingsFor(_machine);
+
+		/// <summary>
+		/// The loaded game's own settings (GetGameSettings). Not in the default
+		/// merge: before the machine runs they are not known, and one left alone
+		/// is the core's own default anyway.
+		/// </summary>
+		private List<WaterboxConfig.SettingDecl> _gameDecls = [ ];
 
 
 		// Delivered as a flat JSON object, e.g. {"initFillByte":171}. The guest
@@ -663,7 +675,7 @@ namespace Chimera.Emulation.Common.Waterbox
 		public WaterboxCoreSettings GetSettings()
 		{
 			var s = _settings.Clone();
-			s.Declarations = Decls;
+			s.Declarations = Decls.Concat(_gameDecls).ToList();
 			return s;
 		}
 

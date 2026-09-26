@@ -113,6 +113,12 @@ namespace Chimera.Client.GUI
 		private List<string> _suggestedKeys = [ ];
 
 		/// <summary>
+		/// The chosen game's own settings, as the core declared them in its
+		/// suggestion (an arcade game's dip switches). Shown after the package's.
+		/// </summary>
+		private List<WaterboxConfig.SettingDecl> _gameSettings = [ ];
+
+		/// <summary>
 		/// The core and game a seeded project arrived with: its settings are the
 		/// project's own, so the suggestion is shown for them but not applied.
 		/// </summary>
@@ -1609,6 +1615,10 @@ namespace Chimera.Client.GUI
 		/// <summary>presses Apply - for tests</summary>
 		internal void ApplyPreset() => ApplySelectedPreset();
 
+		/// <summary>the default an exposed setting's row shows - for tests</summary>
+		public object? SettingDefault(string name)
+			=> (_settings?.Declarations ?? [ ]).FirstOrDefault(d => d.Name == name)?.DefaultValue;
+
 		/// <summary>the exposed settings, in order, for tests</summary>
 		public string[] ExposedSettingNames
 			=> (_settings?.Declarations ?? [ ]).Select(static d => d.Name ?? "").ToArray();
@@ -2061,6 +2071,9 @@ namespace Chimera.Client.GUI
 				// ...except the renderer and the machine, which are asked beside
 				// the core on page one and would only be asked twice here
 				.Where(decl => decl.Name != RendererSetting && decl.Name != _cfg.MachineSetting)
+				// ...and the chosen game's own settings, last (an arcade game's dip
+				// switches: the core named them when it was asked about the game)
+				.Concat(_gameSettings)
 				.ToList();
 			var current = _settings.Declarations;
 			if (current is not null && current.Count == declarations.Count
@@ -2232,9 +2245,13 @@ namespace Chimera.Client.GUI
 			}
 			if (key == _suggestedFor) return;
 
-			// what the last game's suggestion set goes back to the default
+			// what the last game's suggestion set goes back to the default, and the
+			// last game's own settings go with it - another game has other ones
 			foreach (var name in _suggestedKeys) _settings.Values.Remove(name);
 			_suggestedKeys = [ ];
+			if (key != _seededFor)
+				foreach (var decl in _gameSettings) _settings.Values.Remove(decl.Key);
+			_gameSettings = [ ];
 			_suggestedFor = key;
 
 			_status.Text = "Looking this game up...";
@@ -2255,6 +2272,9 @@ namespace Chimera.Client.GUI
 			{
 				var root = Newtonsoft.Json.Linq.JObject.Parse(json);
 				note = root.Value<string>("note");
+				if (root["settings"] is Newtonsoft.Json.Linq.JArray gameSettings)
+					_gameSettings = WaterboxConfig.ParseGameSettings(gameSettings.ToString(),
+						_cfg.Settings?.Select(static d => d.Key) ?? [ ]);
 				if (key != _seededFor && root["values"] is Newtonsoft.Json.Linq.JObject values)
 				{
 					var effective = WaterboxCore.EffectiveSettingsFor(_cfg, _settings);

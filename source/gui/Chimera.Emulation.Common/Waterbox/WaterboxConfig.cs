@@ -675,6 +675,36 @@ namespace Chimera.Emulation.Common.Waterbox
 		[JsonIgnore]
 		public string RawSettingsJson { get; private set; } = "[]";
 
+		/// <summary>
+		/// The settings a core declares for ONE GAME (ce_session_game_settings, or
+		/// a SuggestSettings answer's "settings"): a JSON array in this file's own
+		/// setting format. An arcade game's dip switches differ game to game, so
+		/// they cannot be declared once per package. Entries with no name, or with
+		/// a name the package already declares, are dropped - a game cannot
+		/// redefine the package's settings, only add its own.
+		/// </summary>
+		public static List<SettingDecl> ParseGameSettings(string? json, IEnumerable<string> packageNames)
+		{
+			if (string.IsNullOrWhiteSpace(json)) return [ ];
+			List<SettingDecl>? decls;
+			try
+			{
+				decls = JsonConvert.DeserializeObject<List<SettingDecl>>(json);
+			}
+			catch (JsonException)
+			{
+				return [ ];
+			}
+			var taken = new HashSet<string>(packageNames, StringComparer.Ordinal);
+			var result = new List<SettingDecl>();
+			foreach (var d in decls ?? [ ])
+			{
+				if (d is null || string.IsNullOrEmpty(d.Name) || !taken.Add(d.Name)) continue;
+				result.Add(d);
+			}
+			return result;
+		}
+
 		public static WaterboxConfig? FromJson(string json)
 		{
 			var cfg = JsonConvert.DeserializeObject<WaterboxConfig>(json);

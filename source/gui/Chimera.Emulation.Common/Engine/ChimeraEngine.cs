@@ -607,6 +607,9 @@ namespace Chimera.Emulation.Common.Engine
 		public abstract IntPtr ce_session_axis_name(IntPtr session, long index);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_session_game_settings(IntPtr session);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_session_drive_count(IntPtr session);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -1993,6 +1996,13 @@ namespace Chimera.Emulation.Common.Engine
 		/// has no removable media, which is most of them.
 		/// </summary>
 		public int DriveCount => E.ce_session_drive_count(_session);
+
+		/// <summary>
+		/// The settings this game has beyond the package's (an arcade game's dip
+		/// switches), as a JSON array of declarations; "" when the core has none.
+		/// </summary>
+		public string GameSettingsJson
+			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_game_settings(_session)) ?? "";
 
 		public string DriveName(int index)
 			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_drive_name(_session, index)) ?? "Drive";

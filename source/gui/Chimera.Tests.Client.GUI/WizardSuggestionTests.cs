@@ -16,7 +16,8 @@ namespace Chimera.Tests.Client.GUI
 	/// found (values applied, source shown), a game not found (nothing moves, the
 	/// note says so, every setting still there), coming back to the page (edits
 	/// survive), a different game (the previous game's values are taken back),
-	/// and a lookup that failed.
+	/// a lookup that failed, and a game with settings of its own (an arcade
+	/// game's dip switches): they join the grid, and leave it with the game.
 	/// </summary>
 	[TestClass]
 	public class WizardSuggestionTests
@@ -58,6 +59,19 @@ namespace Chimera.Tests.Client.GUI
 
 		private const string NotFound = """
 			{"title_id":"NPUB99999","values":{},"note":"RPCS3 compatibility: NPUB99999 is not in the RPCS3 compatibility list or wiki (https://wiki.rpcs3.net/, snapshot 2026-09-22)."}
+			""";
+
+		/// <summary>
+		/// A game with settings of its own (an arcade game's dip switches), one of
+		/// which tries to redefine a package setting and must not.
+		/// </summary>
+		private const string WithDips = """
+			{"values":{},"note":"This game's dip switches are below.",
+			 "settings":[
+			  {"name":"dip.Lives","display":"Lives","type":"enum","options":["3","5"],"default":"3"},
+			  {"name":"dip.Difficulty","display":"Difficulty","type":"enum","options":["Easy","Hard"],"default":"Easy"},
+			  {"name":"frameLimit","display":"Hijack","type":"enum","options":["x"],"default":"x"}
+			 ]}
 			""";
 
 		private static NewProjectWizard FormWith(WaterboxConfig cfg, Func<string, (string?, string)> source, List<string>? asked = null)
@@ -141,6 +155,43 @@ namespace Chimera.Tests.Client.GUI
 			Assert.AreEqual(Default, Value(form, "frameLimit"));
 			Assert.AreEqual("Mega", Value(form, "spuBlockSize"));
 			StringAssert.Contains(form.SuggestionNoteText, "Other game");
+		}
+
+		[TestMethod]
+		public void AGamesOwnSettingsJoinTheGrid()
+		{
+			using var form = FormWith(Package(suggests: true), _ => (WithDips, ""));
+			form.ArriveAtSettingsForTest("game.iso");
+			var names = form.ExposedSettingNames;
+			CollectionAssert.Contains(names, "dip.Lives");
+			CollectionAssert.Contains(names, "dip.Difficulty");
+			Assert.AreEqual(1, Array.FindAll(names, static n => n == "frameLimit").Length,
+				"a game's setting cannot redefine the package's");
+			Assert.AreEqual("3", Convert.ToString(form.SettingDefault("dip.Lives")), "the core's default is the row's default");
+			form.SetSettingValue("dip.Lives", "5");
+			Assert.AreEqual("5", Value(form, "dip.Lives"));
+			Assert.AreEqual(Default, Value(form, "frameLimit"));
+		}
+
+		[TestMethod]
+		public void AnotherGameTakesTheLastGamesSettingsAway()
+		{
+			using var form = FormWith(Package(suggests: true), game => (game == "a.iso" ? WithDips : Other, ""));
+			form.ArriveAtSettingsForTest("a.iso");
+			form.SetSettingValue("dip.Lives", "5");
+			form.ArriveAtSettingsForTest("b.iso");
+			CollectionAssert.DoesNotContain(form.ExposedSettingNames, "dip.Lives", "game A's switches are not game B's");
+			Assert.AreEqual(Default, Value(form, "dip.Lives"), "and what was set on them goes too");
+		}
+
+		[TestMethod]
+		public void UnreadableGameSettingsAreIgnored()
+		{
+			CollectionAssert.AreEqual(new List<WaterboxConfig.SettingDecl>(),
+				WaterboxConfig.ParseGameSettings("not json", [ ]));
+			Assert.AreEqual(1, WaterboxConfig.ParseGameSettings(
+				"""[{"name":"dip.A","options":["x"]},{"display":"no name"},{"name":"dip.A"}]""", [ ]).Count,
+				"nameless and repeated entries are dropped");
 		}
 
 		[TestMethod]

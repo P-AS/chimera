@@ -261,6 +261,17 @@ Probed once after `Init`; absent exports simply mean the tool is not offered.
   recommendations it carries; its note names the page, the compatibility
   status and the licence. Read the files, answer, return: nothing that boots,
   and nothing a later `Init` would find changed.
+- **`GetGameSettings()`** - the settings THIS GAME has beyond the package's
+  declaration, for a core whose games carry their own (an arcade game's dip
+  switches differ game to game, so they cannot be declared once per package).
+  A JSON array of declarations in `waterbox.config`'s own setting format,
+  read once after `Init`; the settings grid of a loaded project shows them
+  after the package's. The same array returned from `SuggestSettings` under
+  `"settings"` puts them in the new-project wizard before any machine runs,
+  and a different game takes them away again. Their values are ordinary
+  settings: mounted for `Init`, recorded in the project, cited by a movie. A
+  declaration may not reuse a package setting's name - it is dropped. The
+  FBNeo core names its switches `dip.<group>`.
 - Registers, trace, core-rendered surfaces, save-data export, turbo
   (`SetRenderingEnabled`). **Turbo means "skip what is pure OUTPUT", not "skip
   the renderer".** If the export can only be implemented by skipping drawing -

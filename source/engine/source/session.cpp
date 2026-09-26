@@ -338,6 +338,8 @@ struct ce_session
 	bool precompile = false;
 	/* what the core suggested, in a suggestion session (ce_suggest_settings) */
 	std::string suggestion;
+	/* the loaded game's own settings, declared by the core (GetGameSettings) */
+	std::string gameSettings;
 	uintptr_t fnCacheStored = 0, fnCacheFetched = 0;
 	uintptr_t fnPrecompileDone = 0, fnPrecompileDoneCount = 0, fnPrecompileTotal = 0;
 
@@ -647,6 +649,14 @@ void ce_session::probeOptionalGroups()
 				}
 			}
 		}
+	}
+
+	/* the settings this GAME has beyond the package's (an arcade game's dip
+	 * switches): declared by the running core, read once, after Init */
+	if (auto gs = reinterpret_cast<uintptr_t (*)()>(opt("GetGameSettings", 0)))
+	{
+		const char *text = cstr(gs());
+		gameSettings = text != nullptr ? text : "";
 	}
 
 	isButtonActive = reinterpret_cast<int32_t (*)(int32_t)>(opt("IsButtonActive", 1));
@@ -1496,6 +1506,11 @@ const char *ce_session_button_name(const ce_session *s, int64_t index)
  * never moves, so nothing else has to care. */
 /* The drive lights. Names are settled at load - a machine does not grow a
  * drive - and the light itself is asked every frame. */
+const char *ce_session_game_settings(const ce_session *s)
+{
+	return s->gameSettings.c_str();
+}
+
 int32_t ce_session_drive_count(const ce_session *s)
 {
 	return static_cast<int32_t>(s->driveNames.size());

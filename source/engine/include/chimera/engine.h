@@ -935,7 +935,9 @@ CE_API int32_t ce_session_precompile_progress(const ce_session *s, uint32_t *don
  * and the machine is thrown away unstarted.
  *
  * Returns the core's answer, a JSON object - {"values": {setting: value, ...},
- * "note": "where they come from, or that nothing was found", ...} - valid
+ * "note": "where they come from, or that nothing was found", "settings":
+ * [the game's own setting declarations, as ce_session_game_settings has
+ * them], ...} - valid
  * until the next call on this thread; "" (length 0) when the core has no
  * such export; NULL with *error_out when the package or files cannot be
  * opened at all. The values are suggestions for the settings page, never
@@ -976,6 +978,16 @@ CE_API int32_t ce_session_axis_neutral(const ce_session *s, int64_t index);
  * and the count is zero - which is what a machine with no removable media
  * should show, rather than an icon that never lights. Names are settled at
  * load; the light is asked every frame. */
+/* The settings THIS GAME has beyond the package's declaration - an arcade
+ * game's dip switches, which differ game to game and so cannot be declared
+ * once per package. A JSON array of setting declarations in waterbox.config's
+ * own format ({"name", "display", "type", "options", "default",
+ * "description"}), from the core's optional GetGameSettings export, read once
+ * after Init. "" when the core declares none. A core that has them also
+ * returns them from SuggestSettings, under "settings", so a new project's
+ * wizard can show them before any machine runs. */
+CE_API const char *ce_session_game_settings(const ce_session *s);
+
 CE_API int32_t ce_session_drive_count(const ce_session *s);
 CE_API const char *ce_session_drive_name(const ce_session *s, int32_t index);
 CE_API int32_t ce_session_drive_light(const ce_session *s, int32_t index);
