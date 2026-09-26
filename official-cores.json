@@ -127,6 +127,13 @@
       "systems": [ "PC" ],
       "repo": "ToolAssisted-run/chimera-core-pcem",
       "tested": ""
+    },
+    {
+      "id": "fbneo",
+      "name": "FBNeo",
+      "systems": [ "CPS1", "CPS2", "CPS3", "NEOGEO", "SYS16" ],
+      "repo": "ToolAssisted-run/chimera-core-fbneo",
+      "tested": ""
     }
   ]
 }

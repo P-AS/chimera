@@ -60,6 +60,9 @@ The officially maintained cores are:
 | Dreamcast | [Flycast](https://github.com/ToolAssisted-run/chimera-core-flycast) |
 | Sega NAOMI / NAOMI 2 (arcade) | [Flycast](https://github.com/ToolAssisted-run/chimera-core-flycast) |
 | Sammy Atomiswave (arcade) | [Flycast](https://github.com/ToolAssisted-run/chimera-core-flycast) |
+| Capcom CPS-1 / CPS-2 / CPS-3 (arcade) | [FBNeo](https://github.com/ToolAssisted-run/chimera-core-fbneo) |
+| Neo Geo MVS (arcade) | [FBNeo](https://github.com/ToolAssisted-run/chimera-core-fbneo) |
+| Sega System 16 (arcade) | [FBNeo](https://github.com/ToolAssisted-run/chimera-core-fbneo) |
 | PlayStation | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
 | PlayStation 2 | [PCSX2](https://github.com/ToolAssisted-run/chimera-core-pcsx2) |
 | PlayStation Portable | [PPSSPP](https://github.com/ToolAssisted-run/chimera-core-ppsspp) |
