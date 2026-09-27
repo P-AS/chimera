@@ -1769,15 +1769,29 @@ namespace Chimera.Client.GUI
 		/// several machines declares which rom extensions each machine claims,
 		/// and a slot offering any of them is narrowed to the claimed ones: a
 		/// Famicom Disk System project takes .fds and nothing else, a Genesis
-		/// project does not offer .sms. A slot the machine claims none of (save
-		/// data, patches) is not the machine's to narrow and keeps its own list.
+		/// project does not offer .sms.
+		///
+		/// What is taken away is only what ANOTHER machine of the package claims
+		/// and this one does not. A format no machine claims - a save file, a
+		/// patch, a dongle - is nobody's to narrow and stays, even in a slot
+		/// that also takes roms: a PS2's save data (.ps2, .nvm, .bin) used to be
+		/// cut to the .bin its discs share, and a memory card could not be
+		/// picked at all (chimera#156).
 		/// </summary>
 		private ProjectSlotDeclaration.Slot ForMachine(ProjectSlotDeclaration.Slot slot)
 		{
 			var machine = _cfg?.MachineFor(EffectiveSettings());
 			if (machine?.Extensions is not { Count: > 0 } || slot.Formats.Count is 0) return slot;
+			// a slot this machine claims none of (a Super Famicom's sub-cartridge,
+			// which takes the Game Boy carts the Super Game Boy plays) is not its
+			// to narrow at all
+			if (!slot.Formats.Any(f => machine.Extensions.ContainsKey("." + f.ToLowerInvariant()))) return slot;
+			var claimedByAny = (_cfg!.Machines ?? [ ])
+				.SelectMany(static m => m.Extensions?.Keys ?? (IEnumerable<string>) [ ])
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
 			var claimed = slot.Formats
-				.Where(f => machine.Extensions.ContainsKey("." + f.ToLowerInvariant()))
+				.Where(f => machine.Extensions.ContainsKey("." + f.ToLowerInvariant())
+					|| !claimedByAny.Contains("." + f))
 				.ToList();
 			if (claimed.Count is 0 || claimed.Count == slot.Formats.Count) return slot;
 			return new()
