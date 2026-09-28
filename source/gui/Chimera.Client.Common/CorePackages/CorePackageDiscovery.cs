@@ -38,6 +38,12 @@ namespace Chimera.Client.Common
 		public IReadOnlyList<string> Systems { get; init; } = [ ];
 
 		/// <summary>
+		/// True for a game core (docs/game-cores.md): one game played from its own files,
+		/// listed apart from the emulators wherever cores are listed.
+		/// </summary>
+		public bool IsGameCore { get; init; }
+
+		/// <summary>
 		/// What the package says its version is: for one published by the automated
 		/// build, the commit it was made from. A package built by hand says so ("+local"),
 		/// and one that says nothing is empty.
@@ -320,6 +326,7 @@ namespace Chimera.Client.Common
 				Version = cfg.Version ?? "",
 				VersionDate = CoreVersionDates.Parse(cfg.VersionDate),
 				Systems = systems,
+				IsGameCore = cfg.IsGameCore,
 				Extensions = NormaliseExtensions(cfg.AllExtensions),
 				Abi = cfg.Abi,
 				IsAbiIncompatible = refusal is not null,

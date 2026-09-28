@@ -43,6 +43,28 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
+		public void GameCoresSitBelowADividerThatIsNotAChoice()
+		{
+			// docs/game-cores.md: every list of cores shows the emulators and the game cores apart
+			List<DiscoveredCorePackage> cores =
+			[
+				new() { Name = "SDLPoP", Version = "1a2b3c4d5e6f", Path = "/cores/sdlpop.chimeraCore", Sha1 = "1".PadRight(40, '0'), Systems = [ "PoP" ], IsGameCore = true },
+				Build("quickernes", "0eebbf6d4e5f", "2026-08-20T12:00:00Z"),
+			];
+			using NewProjectWizard form = new(cores, static _ => [ ]);
+			var lines = form.CoreChoiceLines;
+
+			Assert.AreEqual(3, lines.Count);
+			StringAssert.Contains(lines[0], "quickernes");
+			Assert.AreEqual(NewProjectWizard.GameCoresLine, lines[1]);
+			StringAssert.Contains(lines[2], "SDLPoP");
+			Assert.AreEqual(0, form.CoreChoiceIndex, "the picker opens on a core, not on the divider");
+
+			form.ChooseCoreLine(1);
+			Assert.AreEqual(2, form.CoreChoiceIndex, "the divider hands the choice on to the first game core");
+		}
+
+		[TestMethod]
 		public void AVersionNobodyCanDateStillReadsAsItsCommit()
 		{
 			CoreVersionDates.Refresh();

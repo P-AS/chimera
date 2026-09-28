@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
+using Chimera.Emulation.Common.Waterbox;
+
 namespace Chimera.Client.Common
 {
 	/// <summary>What kind of work a cached thing saves, which is what decides the cost of losing it.</summary>
@@ -52,6 +54,12 @@ namespace Chimera.Client.Common
 
 		/// <summary>The core it is pinned to, by name; "" when not known.</summary>
 		public string Core { get; init; } = "";
+
+		/// <summary>
+		/// True when it belongs to a game core (docs/game-cores.md): the package of one, or
+		/// a project made with one. The manager lists these under a divider of their own.
+		/// </summary>
+		public bool IsGameCore { get; init; }
 
 		/// <summary>The game's own files, as the project names them. Empty when not known.</summary>
 		public IReadOnlyList<string> Games { get; init; } = Array.Empty<string>();
@@ -266,13 +274,17 @@ namespace Chimera.Client.Common
 		/// <param name="corePackageCacheRoot">where packages are unzipped (beside the executable)</param>
 		/// <param name="openProjectId">the project open right now, or null</param>
 		/// <param name="loadedPackageSha1s">packages a loaded core is using right now</param>
+		/// <param name="gameCores">the names of the installed game cores, which say which projects were made with one</param>
 		public static IReadOnlyList<CacheItem> Take(
 			string? corePackageCacheRoot,
 			string? openProjectId = null,
-			IReadOnlyCollection<string>? loadedPackageSha1s = null)
+			IReadOnlyCollection<string>? loadedPackageSha1s = null,
+			IReadOnlyCollection<string>? gameCores = null)
 		{
 			List<CacheItem> items = new();
 			var locks = CacheLocks.Read();
+			HashSet<string> games = new(gameCores ?? [ ], StringComparer.OrdinalIgnoreCase);
+			HashSet<string> gameProjects = new(StringComparer.OrdinalIgnoreCase);
 
 			foreach (var project in ProjectCache.All())
 			{
@@ -287,6 +299,7 @@ namespace Chimera.Client.Common
 					ProjectPath = project.ProjectPath,
 					System = project.System,
 					Core = project.Core,
+					IsGameCore = games.Contains(project.Core),
 					Games = project.Games,
 					// a project that is open is obviously not missing, whatever the
 					// note says - it was opened from somewhere
@@ -296,6 +309,7 @@ namespace Chimera.Client.Common
 					InUse = inUse,
 					Locked = CacheLocks.IsLocked(locks, CacheKind.Project, project.Path),
 				});
+				if (games.Contains(project.Core)) gameProjects.Add(System.IO.Path.GetFileName(project.Path));
 			}
 
 			// Unsaved work: the open project's journal, and whatever a crashed session left. Its own
@@ -311,6 +325,8 @@ namespace Chimera.Client.Common
 					Kind = CacheKind.Recovery,
 					Label = label,
 					Detail = id,
+					// a journal names no core; the project it belongs to does
+					IsGameCore = gameProjects.Contains(id),
 					Path = dir,
 					ProjectPath = projectPath,
 					Bytes = SizeOf(dir),
@@ -333,6 +349,7 @@ namespace Chimera.Client.Common
 					Kind = CacheKind.CorePackage,
 					Label = label,
 					Core = label,
+					IsGameCore = UnpackedIsGameCore(dir),
 					Detail = sha1.Length >= 8 ? sha1.Substring(0, 8) : sha1,
 					Path = dir,
 					Bytes = SizeOf(dir),
@@ -578,6 +595,24 @@ namespace Chimera.Client.Common
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 			{
 				return Array.Empty<string>();
+			}
+		}
+
+		/// <summary>
+		/// Whether an unzipped package is a game core, by its own declaration. One that
+		/// cannot say is listed with the emulators, which is what every package was
+		/// before game cores.
+		/// </summary>
+		private static bool UnpackedIsGameCore(string dir)
+		{
+			try
+			{
+				var config = System.IO.Path.Combine(dir, WaterboxCoreFactory.ConfigFileName);
+				return File.Exists(config) && WaterboxConfig.FromJson(File.ReadAllText(config)) is { IsGameCore: true };
+			}
+			catch (Exception)
+			{
+				return false;
 			}
 		}
 

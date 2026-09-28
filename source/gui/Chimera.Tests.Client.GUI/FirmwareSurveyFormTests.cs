@@ -75,6 +75,19 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
+		public void TheGameCoresFilesSitBelowADivider()
+		{
+			using Harness h = new(
+				new FirmwareSurveyGroup { CoreName = "xemu", Rows = [ Row("xemu", "mcpx", null, CoreFirmwareState.Good, path: "/fw/mcpx_1.0.bin") ] },
+				new FirmwareSurveyGroup { CoreName = "SDLPoP", IsGameCore = true, Rows = [ Row("SDLPoP", "PRINCE.DAT", null, CoreFirmwareState.Missing) ] });
+			var list = ListOf(h.Form);
+			Assert.AreEqual(CoreManagerModel.GameHeading, list.Items[1].SubItems[1].Text, "the divider sits between the emulator's rows and the game's");
+			Assert.AreEqual(3, list.Items.Count);
+			Assert.AreEqual(2, h.Form.DisplayedRows.Count, "the divider is not a firmware row");
+			Assert.AreEqual(CoreManagerModel.GameHeading, list.Groups[1].Header);
+		}
+
+		[TestMethod]
 		public void ALongListOfReleasesFoldsToTheOnesOnHand()
 		{
 			using Harness h = new(Ps2(releases: 73, onHand: 2));

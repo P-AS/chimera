@@ -27,6 +27,18 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// </summary>
 		public string? SystemId { get; set; }
 
+		/// <summary>
+		/// What sort of core this is: <c>"game"</c> for one game rebuilt as a core, played from
+		/// the game's own files (docs/game-cores.md), and <c>"emulator"</c> - which is what
+		/// absence means, and every core before the first game core - for a machine that plays
+		/// games. Every list of cores shows the two apart.
+		/// </summary>
+		public string? Kind { get; set; }
+
+		/// <summary>Whether <see cref="Kind"/> says this is a game core.</summary>
+		[JsonIgnore]
+		public bool IsGameCore => CoreKind.IsGame(Kind);
+
 		/// <summary>Who wrote the core. Shown wherever the frontend introduces it.</summary>
 		public string? Author { get; set; }
 

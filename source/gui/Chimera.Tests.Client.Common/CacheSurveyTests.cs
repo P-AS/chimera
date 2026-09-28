@@ -113,6 +113,39 @@ namespace Chimera.Tests.Client.Common
 		}
 
 		[TestMethod]
+		[DoNotParallelize]
+		public void WhatBelongsToAGameCoreSaysSo()
+		{
+			// docs/game-cores.md: the cache manager lists a game core's things under a divider;
+			// a project by the core it was made with, a package by its own declaration, and a
+			// journal by its project
+			const string game = "00000000000000d1", emulator = "00000000000000d2";
+			ProjectCache.Ensure(game);
+			ProjectCache.Remember(game, new ProjectCache.ProjectFacts { Title = "Level 1", Core = "SDLPoP", System = "PoP" });
+			ProjectCache.Ensure(emulator);
+			ProjectCache.Remember(emulator, new ProjectCache.ProjectFacts { Title = "Level 1-1", Core = "quickerNES", System = "NES" });
+			var journal = ProjectRecovery.DirectoryFor(game);
+			Fill(journal, "work.journal", 64);
+			ProjectRecovery.WriteSession(journal, new ProjectRecovery.SessionRecord { ProcessId = int.MaxValue, ProcessStartedUtcTicks = 1, Title = "Level 1" });
+
+			var packages = Path.Combine(_dir, "CoreCache-kinds");
+			var pop = Path.Combine(packages, "sdlpop-" + new string('1', 40));
+			Fill(pop, "core.wbx", 64);
+			File.WriteAllText(Path.Combine(pop, "waterbox.config"), @"{ ""coreName"": ""SDLPoP"", ""systemId"": ""PoP"", ""kind"": ""game"" }");
+			var nes = Path.Combine(packages, "quickernes-" + new string('2', 40));
+			Fill(nes, "core.wbx", 64);
+			File.WriteAllText(Path.Combine(nes, "waterbox.config"), @"{ ""coreName"": ""quickerNES"", ""systemId"": ""NES"" }");
+
+			var items = CacheSurvey.Take(packages, gameCores: new[] { "sdlpop" });
+			Assert.IsTrue(items.Single(i => i.Kind is CacheKind.Project && i.Detail is game).IsGameCore, "a core's name is not case");
+			Assert.IsFalse(items.Single(i => i.Kind is CacheKind.Project && i.Detail is emulator).IsGameCore);
+			Assert.IsTrue(items.Single(i => i.Kind is CacheKind.Recovery && i.Detail is game).IsGameCore, "the journal goes with its project");
+			Assert.IsTrue(items.Single(i => i.Kind is CacheKind.CorePackage && i.Label is "sdlpop").IsGameCore);
+			Assert.IsFalse(items.Single(i => i.Kind is CacheKind.CorePackage && i.Label is "quickernes").IsGameCore);
+			Directory.Delete(journal, recursive: true);
+		}
+
+		[TestMethod]
 		public void WhatIsOpenIsNotOffered()
 		{
 			ProjectCache.Ensure("00000000000000bb");

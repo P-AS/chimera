@@ -97,6 +97,20 @@ namespace Chimera.Tests.Client.Common.CorePackages
 		}
 
 		[TestMethod]
+		public void AGameCoreSaysSoAndEveryOtherPackageIsAnEmulator()
+		{
+			// docs/game-cores.md: "kind": "game" in waterbox.config; absent is an emulator
+			_ = MakeDir("pop", ("core.wbx", "stub"), ("waterbox.config", @"{ ""coreName"": ""SDLPoP"", ""systemId"": ""PoP"", ""kind"": ""game"" }"));
+			_ = MakeDir("nes", ("core.wbx", "stub"), ("waterbox.config", WaterboxConfigJson("quickerNES", "NES", ".nes")));
+			_ = MakeDir("odd", ("core.wbx", "stub"), ("waterbox.config", @"{ ""coreName"": ""Oddity"", ""systemId"": ""ODD"", ""kind"": ""toaster"" }"));
+			var found = CorePackageDiscovery.Scan([ _root ]).ToDictionary(static p => p.Name);
+			Assert.IsTrue(found["SDLPoP"].IsGameCore);
+			Assert.IsFalse(found["quickerNES"].IsGameCore, "no kind is an emulator");
+			Assert.IsFalse(found["Oddity"].IsGameCore, "a kind this build does not know is listed with the machines");
+			Assert.IsNull(found["Oddity"].Error, "and is not refused");
+		}
+
+		[TestMethod]
 		public void FindsManifestPackageAndDerivesItsSystems()
 		{
 			_ = MakeZip(

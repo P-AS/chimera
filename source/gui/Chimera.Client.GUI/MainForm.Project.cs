@@ -229,9 +229,8 @@ namespace Chimera.Client.GUI
 			// they would put another machine's files and settings behind this one.
 			if (startFrom is not null)
 			{
-				var guess = wizard.GuessCoreIndexFor(startFrom);
-				var sameCore = guess >= 0 && answers is not null
-					&& string.Equals(_discoveredCorePackages[guess].Name, answers.CoreName, StringComparison.OrdinalIgnoreCase);
+				var sameCore = wizard.GuessCoreFor(startFrom) is { } guess && answers is not null
+					&& string.Equals(guess.Name, answers.CoreName, StringComparison.OrdinalIgnoreCase);
 				if (sameCore) wizard.SeedFrom(answers);
 				wizard.StartFrom(startFrom);
 			}

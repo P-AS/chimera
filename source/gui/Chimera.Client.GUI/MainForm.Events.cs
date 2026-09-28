@@ -734,7 +734,8 @@ namespace Chimera.Client.GUI
 				loadedPackageSha1s: CoreRegistry.Instance.LoadedPackages
 					.Select(static p => p.Sha1)
 					.Where(static s => !string.IsNullOrEmpty(s))
-					.ToList()!);
+					.ToList()!,
+				gameCores: _discoveredCorePackages.Where(static p => p.IsGameCore).Select(static p => p.Name).ToList());
 
 		private CacheCleanPolicy CacheCleanPolicyFromConfig()
 			=> new()

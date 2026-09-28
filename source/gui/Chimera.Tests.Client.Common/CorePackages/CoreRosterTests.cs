@@ -41,6 +41,17 @@ namespace Chimera.Tests.Client.Common.CorePackages
 		}
 
 		[TestMethod]
+		public void TheRosterSaysWhichCoresAreGames()
+		{
+			var cores = CoreRoster.Parse(@"{ ""formatVersion"": 1, ""cores"": [
+				{ ""id"": ""sdlpop"", ""name"": ""SDLPoP"", ""kind"": ""game"", ""repo"": ""owner/sdlpop"" },
+				{ ""id"": ""gpgx"", ""name"": ""Genesis Plus GX"", ""repo"": ""owner/gpgx"" }
+			] }");
+			Assert.IsTrue(cores.Single(static c => c.Id is "sdlpop").IsGameCore);
+			Assert.IsFalse(cores.Single(static c => c.Id is "gpgx").IsGameCore, "no kind is an emulator");
+		}
+
+		[TestMethod]
 		public void EntriesWithNoRepositoryAreDropped()
 		{
 			var cores = CoreRoster.Parse(@"{ ""formatVersion"": 1, ""cores"": [

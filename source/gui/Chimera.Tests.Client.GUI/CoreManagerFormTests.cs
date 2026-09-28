@@ -214,6 +214,31 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
+		public void GameCoresComeAfterTheEmulatorsUnderTheirOwnDivider()
+		{
+			// docs/game-cores.md: every list of cores shows the two sorts apart, and a
+			// game core added by hand is still a game core
+			List<RosterCore> roster =
+			[
+				new() { Id = "sdlpop", Name = "SDLPoP", Repo = "ToolAssisted-run/chimera-core-sdlpop", Systems = [ "PoP" ], Kind = "game" },
+				Roster[0],
+				new() { Id = "zork", Name = "Zork", Repo = "someone/zork", Systems = [ "ZRK" ], Kind = "game", IsExternal = true },
+				new() { Id = "aardvark", Name = "Aardvark", Repo = "someone/aardvark", Systems = [ "ARC" ], IsExternal = true },
+			];
+			using var form = Open(Feed, [ ], roster: roster);
+			form.Show();
+			var list = ListOf(form);
+			CollectionAssert.AreEqual(
+				new[] { "Genesis Plus GX", "External cores", "Aardvark", "Game cores", "SDLPoP", "External game cores", "Zork" },
+				list.Items.Cast<ListViewItem>().Select(static i => i.Text).ToList());
+			Assert.IsNull(list.Items[3].Tag, "a divider is not a row");
+			Assert.IsNull(list.Items[5].Tag, "a divider is not a row");
+
+			SelectAllOf(form).Checked = true;
+			Assert.AreEqual(4, list.Items.Cast<ListViewItem>().Count(static i => i.Checked), "no divider ever ticks");
+		}
+
+		[TestMethod]
 		public void WithNoExternalCoresThereIsNoSeparator()
 		{
 			using var form = Open(Feed, [ ]);

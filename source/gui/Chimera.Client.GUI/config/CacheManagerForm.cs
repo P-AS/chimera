@@ -285,8 +285,9 @@ namespace Chimera.Client.GUI
 			_list.ItemCheck += (_, e) =>
 			{
 				if (_suppressCheckEvents) return;
+				// nor may a divider, which is not a thing on disk
 				if (e.Index >= 0 && e.Index < _list.Items.Count
-					&& _list.Items[e.Index].Tag is CacheItem { InUse: true })
+					&& _list.Items[e.Index].Tag is null or CacheItem { InUse: true })
 				{
 					e.NewValue = CheckState.Unchecked;
 				}
@@ -409,7 +410,10 @@ namespace Chimera.Client.GUI
 		private void Reload()
 		{
 			var wasSelected = Selected()?.Path;
-			_items = Sorted(_survey()).ToList();
+			// the game cores' things below the emulators', each half in the order
+			// asked for: a sort must not carry a row across the divider
+			var survey = _survey();
+			_items = Sorted(survey.Where(static i => !i.IsGameCore)).Concat(Sorted(survey.Where(static i => i.IsGameCore))).ToList();
 			_free = _freeSpace();
 			// a tick whose row has gone leaves with it, or Remove would act on
 			// something no longer listed
@@ -418,8 +422,19 @@ namespace Chimera.Client.GUI
 			_suppressCheckEvents = true;
 			_list.BeginUpdate();
 			_list.Items.Clear();
+			var dividerDone = false;
 			foreach (var item in _items)
 			{
+				// Mono's ListView ignores groups in Details view, so the divide is a
+				// row, as in the core manager (docs/game-cores.md)
+				if (item.IsGameCore && !dividerDone)
+				{
+					dividerDone = true;
+					ListViewItem divide = new("") { Tag = null, ForeColor = ThemeEngine.Color(ThemeColorRole.DisabledText) };
+					divide.SubItems.Add(CoreManagerModel.GameHeading);
+					for (var i = 2; i < _list.Columns.Count; i++) divide.SubItems.Add("");
+					_list.Items.Add(divide);
+				}
 				ListViewItem row = new("")
 				{
 					ImageIndex = item.Locked ? LockedMark : UnlockedMark,
@@ -456,7 +471,7 @@ namespace Chimera.Client.GUI
 					if (row.Tag is CacheItem item && item.Path == wasSelected) { row.Selected = true; break; }
 				}
 			}
-			if (_list.SelectedItems.Count is 0 && _list.Items.Count > 0) _list.Items[0].Selected = true;
+			if (_list.SelectedItems.Count is 0 && _list.Items.Cast<ListViewItem>().FirstOrDefault(static r => r.Tag is not null) is { } first) first.Selected = true;
 			ShowSelected();
 			UpdateButtons();
 		}
@@ -849,12 +864,15 @@ namespace Chimera.Client.GUI
 			return false;
 		}
 
+		/// <summary>Ticks or clears "Select all", as a person would. For tests.</summary>
+		public void SelectAllForTest(bool ticked) => _selectAll.Checked = ticked;
+
 		/// <summary>Ticks every orphaned row, as the button does. For tests and screenshots.</summary>
 		public void TickOrphans() => SelectOrphans();
 
-		/// <summary>What the window is showing, by name.</summary>
+		/// <summary>What the window is showing, by name; a divider by its heading.</summary>
 		public IReadOnlyList<string> Rows
-			=> _list.Items.Cast<ListViewItem>().Select(static r => r.SubItems[2].Text).ToList();
+			=> _list.Items.Cast<ListViewItem>().Select(static r => r.SubItems[r.Tag is null ? 1 : 2].Text).ToList();
 
 		/// <summary>The cache locations currently ticked.</summary>
 		public IReadOnlyList<string> TickedPaths => Ticked().Select(static i => i.Path).ToList();
@@ -901,7 +919,7 @@ namespace Chimera.Client.GUI
 		/// <summary>The cache locations shown with a shut padlock.</summary>
 		public IReadOnlyList<string> LockedPaths
 			=> _list.Items.Cast<ListViewItem>()
-				.Where(static r => r.ImageIndex == LockedMark)
+				.Where(static r => r.Tag is not null && r.ImageIndex == LockedMark)
 				.Select(static r => ((CacheItem) r.Tag).Path)
 				.ToList();
 	}

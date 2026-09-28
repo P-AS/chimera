@@ -336,17 +336,17 @@ namespace Chimera.Client.GUI
 			_suppressCheckEvents = true;
 			_cores.BeginUpdate();
 			_cores.Items.Clear();
-			var separatorDone = false;
+			string? heading = null;
 			foreach (var row in _rows)
 			{
 				// ListViewGroups would be the obvious way to do this and Mono's
-				// ListView ignores them in Details view, so the divide is a row.
-				if (!row.IsOfficial && !separatorDone)
+				// ListView ignores them in Details view, so each divide is a row.
+				if (CoreManagerModel.Heading(row) is { } under && under != heading)
 				{
-					separatorDone = true;
-					ListViewItem divide = new("External cores") { Tag = null, ForeColor = ThemeEngine.Color(ThemeColorRole.DisabledText) };
+					heading = under;
+					ListViewItem divide = new(under) { Tag = null, ForeColor = ThemeEngine.Color(ThemeColorRole.DisabledText) };
 					divide.SubItems.Add("");
-					divide.SubItems.Add("added by hand");
+					divide.SubItems.Add(row.IsOfficial ? "" : "added by hand");
 					divide.SubItems.Add("");
 					divide.SubItems.Add("");
 					divide.SubItems.Add("");
@@ -366,7 +366,7 @@ namespace Chimera.Client.GUI
 			_suppressCheckEvents = false;
 
 			var installed = _rows.Count(static r => r.IsInstalled);
-			_header.Text = $"Download or update emulation cores to use with Chimera. Currently installed cores: {installed}";
+			_header.Text = $"Download or update the cores to use with Chimera. Currently installed cores: {installed}";
 
 			if (wasSelected is not null && ItemFor(wasSelected) is { } keep) keep.Selected = true;
 			else if (_cores.Items.Count > 0 && _cores.Items[0].Tag is not null) _cores.Items[0].Selected = true;

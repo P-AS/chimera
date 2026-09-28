@@ -50,6 +50,13 @@ namespace Chimera.Client.Common
 		public bool IsOfficial => Core is { IsExternal: false };
 
 		/// <summary>
+		/// True for a game core (docs/game-cores.md), which sits below every emulator. The
+		/// roster says so for a core that is not here yet; a package says so for itself,
+		/// which covers one added by hand or dropped in with no roster entry at all.
+		/// </summary>
+		public bool IsGameCore => Core is { IsGameCore: true } || Installed.Any(static p => p.IsGameCore);
+
+		/// <summary>
 		/// Whether removing this core should take its row away with it. An official
 		/// core always has a row - it can be installed again from the roster - but an
 		/// external one exists only because somebody added it or its package is here,
@@ -190,13 +197,35 @@ namespace Chimera.Client.Common
 				rows.Add(new CoreManagerRow { Installed = Newest(group.ToList()) });
 			}
 
-			// official first, then everything else: the window draws a separator
-			// between the two halves and this is what decides which side a row is on
+			// emulators, then game cores, and within each official first, then
+			// everything else: the window draws a divider wherever the heading
+			// changes, and this is what decides which side of it a row is on
 			return rows
-				.OrderBy(static r => r.IsOfficial ? 0 : 1)
+				.OrderBy(static r => r.IsGameCore ? 1 : 0)
+				.ThenBy(static r => r.IsOfficial ? 0 : 1)
 				.ThenBy(static r => r.Name, StringComparer.OrdinalIgnoreCase)
 				.ToList();
 		}
+
+		public const string ExternalHeading = "External cores";
+
+		public const string GameHeading = "Game cores";
+
+		public const string ExternalGameHeading = "External game cores";
+
+		/// <summary>
+		/// The divider a row sits under, or null for the official emulators, which open
+		/// the list and need none. <see cref="Build"/> orders the rows so each heading's
+		/// rows are together.
+		/// </summary>
+		public static string? Heading(CoreManagerRow row)
+			=> (row.IsGameCore, row.IsOfficial) switch
+			{
+				(false, true) => null,
+				(false, false) => ExternalHeading,
+				(true, true) => GameHeading,
+				(true, false) => ExternalGameHeading,
+			};
 
 		/// <summary>
 		/// Whether a package is a build of this roster core. The package's own

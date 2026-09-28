@@ -223,8 +223,22 @@ namespace Chimera.Client.GUI
 			_list.Items.Clear();
 			_list.Groups.Clear();
 			_rowOf.Clear();
+			var dividerDone = false;
 			foreach (var group in _groups)
 			{
+				// the game cores' files below a divider (docs/game-cores.md): a group of
+				// its own holding one grey line, which reads as a divide both where
+				// groups are drawn and on Mono, which ignores them in Details view
+				if (group.IsGameCore && !dividerDone)
+				{
+					dividerDone = true;
+					ListViewGroup games = new(CoreManagerModel.GameHeading);
+					_list.Groups.Add(games);
+					ListViewItem divide = new("") { Group = games, ForeColor = ThemeEngine.Color(ThemeColorRole.DisabledText) };
+					divide.SubItems.Add(CoreManagerModel.GameHeading);
+					_list.Items.Add(divide);
+					_rowOf.Add(null);
+				}
 				ListViewGroup lvg = new($"{group.CoreName}  ·  {group.Summary}");
 				_list.Groups.Add(lvg);
 				if (group.Rows.Count is 0)

@@ -36,6 +36,26 @@ namespace Chimera.Tests.Client.GUI
 				form.Rows.ToArray());
 		}
 
+		[TestMethod]
+		public void AGameCoresThingsSitBelowADividerThatNeverTicks()
+		{
+			// docs/game-cores.md: every list of cores shows the two sorts apart
+			List<CacheItem> items =
+			[
+				new() { Kind = CacheKind.Project, Label = "a level of a game core", Path = "/cache/pop", Bytes = 8192, IsGameCore = true },
+				.. Three(),
+			];
+			using CacheManagerForm form = new(() => items);
+			form.Show();
+			var rows = form.Rows;
+			Assert.AreEqual(5, rows.Count);
+			Assert.AreEqual(CoreManagerModel.GameHeading, rows[3], "the divider comes after every emulator's row");
+			Assert.AreEqual("a level of a game core", rows[4]);
+
+			form.SelectAllForTest(true);
+			CollectionAssert.AreEquivalent(new[] { Idle, Gone, "/cache/pop" }, form.TickedPaths.ToArray(), "the divider is not a thing on disk");
+		}
+
 		/// <summary>
 		/// Removing acts on what is TICKED, so with nothing ticked there is nothing
 		/// for it to do and it says so by being unavailable rather than by

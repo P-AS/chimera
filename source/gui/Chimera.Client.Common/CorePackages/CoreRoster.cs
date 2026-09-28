@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 
 using Chimera.Common.PathExtensions;
+using Chimera.Emulation.Common.Waterbox;
 
 using Newtonsoft.Json;
 
@@ -27,6 +28,17 @@ namespace Chimera.Client.Common
 
 		[JsonProperty("systems")]
 		public List<string> Systems { get; set; } = new();
+
+		/// <summary>
+		/// <c>"game"</c> for a game core (docs/game-cores.md); absent for an emulator, which
+		/// is what every entry was before game cores. The roster says it so a core nobody
+		/// has downloaded yet is already listed on the right side of the divide.
+		/// </summary>
+		[JsonProperty("kind", NullValueHandling = NullValueHandling.Ignore)]
+		public string? Kind { get; set; }
+
+		[JsonIgnore]
+		public bool IsGameCore => CoreKind.IsGame(Kind);
 
 		/// <summary><c>owner/repo</c> on GitHub: the only place versions of this core come from.</summary>
 		[JsonProperty("repo")]
