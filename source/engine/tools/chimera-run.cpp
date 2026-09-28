@@ -71,6 +71,10 @@
  * skips only the readback (ce_session_draw_every_frame) - which is what a core
  * whose picture persists on the GPU needs, and what --render-every-frame
  * over-pays for.
+ * --rates <path> writes each frame's rate as the machine reports it after that
+ * frame, "frame numerator denominator" a line, and draws every frame to get it:
+ * the engine asks a core its rate again after every shown frame, since a game
+ * core's step is as long as the game makes it (docs/game-cores.md).
  * --screenshot <frame>=<path> writes one frame's picture as a TGA. Repeatable.
  * The run is otherwise undrawn (turbo), so only the frames asked for cost
  * anything to draw - which is what makes "show me frame 1910 of this movie" a
@@ -208,6 +212,7 @@ int main(int argc, char **argv)
 	const char *packagePath = nullptr, *romPath = nullptr, *moviePath = nullptr;
 	const char *settings = nullptr;
 	std::string metaPath;
+	std::string ratesPath;
 	std::vector<std::pair<std::string, std::string>> dumps; // domain -> path
 	std::map<int64_t, std::string> shots; // frame -> TGA path
 	std::vector<std::pair<std::string, std::string>> firmwareArgs; // id -> path
@@ -329,6 +334,7 @@ int main(int argc, char **argv)
 		else if (arg == "--allow-core-mismatch") allowCoreMismatch = true;
 		else if (arg == "--gpu") wantGpu = true;
 		else if (arg == "--render-every-frame") renderEveryFrame = true;
+		else if (arg == "--rates" && i + 1 < argc) { ratesPath = argv[++i]; renderEveryFrame = true; }
 		else if (arg == "--draw-every-frame") drawEveryFrame = true;
 		else if (arg == "--greenzone-check") greenzoneCheck = true;
 		else if (arg == "--greenzone-check-vs-restore") { greenzoneCheck = true; gzTruthFromRestore = true; }
@@ -778,6 +784,8 @@ int main(int argc, char **argv)
 	}
 
 	const int64_t firstPass = playFrames >= 0 && playFrames < frames ? playFrames : frames;
+	FILE *rates = ratesPath.empty() ? nullptr : std::fopen(ratesPath.c_str(), "w");
+	if (!ratesPath.empty() && rates == nullptr) return fail(metaPath, "could not write " + ratesPath);
 	for (int64_t i = 0; i < firstPass; i++)
 	{
 		if (greenzonePeriod >= 0 && i == greenzonePeriodAt) ce_session_greenzone_capture_period(session, greenzonePeriod);
@@ -801,6 +809,10 @@ int main(int argc, char **argv)
 			(renderEveryFrame || shot != shots.end()) ? 1 : 0) < 0)
 		{
 			return fail(metaPath, ce_session_last_error(session));
+		}
+		if (rates != nullptr)
+		{
+			std::fprintf(rates, "%lld %d %d\n", (long long)i, ce_session_vsync_numerator(session), ce_session_vsync_denominator(session));
 		}
 		if (shot != shots.end()
 			&& !writeTga(shot->second, ce_session_video(session),
@@ -876,6 +888,7 @@ int main(int argc, char **argv)
 			}
 		}
 	}
+	if (rates != nullptr) std::fclose(rates);
 
 	/* Compare the machine at a restore landing to that ground truth. First
 	 * differing byte, and how many differ, is enough to point at the dropped

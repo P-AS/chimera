@@ -54,6 +54,8 @@ namespace Chimera.Client.Common
 			["PCE"] = "PC Engine / TurboGrafx-16",
 			["PCECD"] = "PC Engine CD",
 			["PCFX"] = "PC-FX",
+			// a game core's system is its game (docs/game-cores.md)
+			["PrinceOfPersia"] = "Prince of Persia",
 			["PS2"] = "PlayStation 2",
 			["PS3"] = "PlayStation 3",
 			["PSP"] = "PlayStation Portable",
@@ -71,6 +73,7 @@ namespace Chimera.Client.Common
 			["VB"] = "Virtual Boy",
 			["VEC"] = "Vectrex",
 			["WSWAN"] = "WonderSwan",
+			["X68000"] = "Sharp X68000",
 			["XBOX"] = "Xbox",
 			["ZXSpectrum"] = "ZX Spectrum",
 		};

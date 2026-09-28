@@ -41,6 +41,7 @@ public:
 		Type type = U8;
 		uint32_t size = 1;   // bytes in one element
 		uint32_t count = 1;  // elements; 1 is not an array
+		uint32_t first = 0;  // the number the first element is called by (Rooms[1] when the game counts from 1)
 		uint32_t stride = 1; // bytes from one element to the next
 		Encoding encoding = Ascii;
 		bool bigEndian = false;
@@ -73,9 +74,11 @@ public:
 	 * was left out: {"properties": [...], "problems": [...]}. */
 	const std::string &describe() const { return m_describe; }
 
-	/* "Name" or "Name[3]", any case: the property, and the element (0 for a
-	 * name without an index). -1 for a name there is not, an index past the
-	 * end, or an index on a property that is not an array. */
+	/* "Name" or "Name[3]", any case: the property, and the element, counted
+	 * from 0 whatever the array's `first` (0 for a name without an index). The
+	 * number in the name is the game's - `first` for the first element. -1 for
+	 * a name there is not, a number outside the array, or an index on a
+	 * property that is not an array. */
 	int32_t find(const std::string &name, uint32_t *element) const;
 
 	/* The first property, in the table's order, one of whose elements covers

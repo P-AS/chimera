@@ -57,6 +57,9 @@ namespace Chimera.Emulation.Common
 		/// <summary>How many elements; 1 for a property that is not an array.</summary>
 		public int Count { get; init; } = 1;
 
+		/// <summary>The number an array's first element is called by: 0, or 1 when the game counts rooms from 1.</summary>
+		public int First { get; init; }
+
 		/// <summary>Bytes from one element to the next.</summary>
 		public int Stride { get; init; } = 1;
 
@@ -119,12 +122,13 @@ namespace Chimera.Emulation.Common
 
 	/// <summary>
 	/// One element of a property - the property itself when it is not an array - which
-	/// is what a watch, a freeze or a script works on. An array's elements are named
-	/// by index from 0: <c>Guards.X[2]</c>.
+	/// is what a watch, a freeze or a script works on. <see cref="Index"/> counts from 0;
+	/// the name uses the number the game calls the element by, from the array's
+	/// <see cref="GameProperty.First"/>: <c>Guards.X[2]</c>, <c>Rooms.Left[24]</c>.
 	/// </summary>
 	public sealed record GamePropertyElement(GameProperty Property, int Index)
 	{
-		public string Name => Property.IsArray ? $"{Property.Name}[{Index}]" : Property.Name;
+		public string Name => Property.IsArray ? $"{Property.Name}[{Property.First + Index}]" : Property.Name;
 
 		/// <summary>Where the element starts in its domain.</summary>
 		public long Offset => Property.Offset + ((long)Index * Property.Stride);

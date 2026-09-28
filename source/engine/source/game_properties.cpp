@@ -282,6 +282,13 @@ void CeGameProperties::load(const char *json, const std::vector<Domain> &domains
 				continue;
 			}
 			p.count = uint32_t(count);
+			int64_t first = 0;
+			if (!integerMember(entry, "first", first, has) || first < 0 || first > 0x7FFFFFFF)
+			{
+				problem("has a first index that is not a whole number of at least 0");
+				continue;
+			}
+			p.first = uint32_t(first);
 			if (!integerMember(entry, "stride", stride, hasStride) || (hasStride && (stride < p.size || stride > 0x10000000)))
 			{
 				problem("has a stride shorter than one element");
@@ -384,6 +391,7 @@ void CeGameProperties::describeAll()
 		cJSON_AddStringToObject(o, "type", typeName(p.type));
 		cJSON_AddNumberToObject(o, "size", p.size);
 		cJSON_AddNumberToObject(o, "count", p.count);
+		cJSON_AddNumberToObject(o, "first", p.first);
 		cJSON_AddNumberToObject(o, "stride", p.stride);
 		cJSON_AddStringToObject(o, "endian", p.bigEndian ? "big" : "little");
 		if (p.type == String) cJSON_AddStringToObject(o, "encoding", kEncodings[p.encoding]);
@@ -422,8 +430,8 @@ int32_t CeGameProperties::find(const std::string &name, uint32_t *element) const
 		index = index * 10 + uint64_t(c - '0');
 	}
 	const Property &p = m_props[size_t(base->second)];
-	if (p.count == 1 || index >= p.count) return -1;
-	if (element != nullptr) *element = uint32_t(index);
+	if (p.count == 1 || index < p.first || index - p.first >= p.count) return -1;
+	if (element != nullptr) *element = uint32_t(index - p.first);
 	return base->second;
 }
 

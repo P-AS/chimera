@@ -57,7 +57,8 @@ const char *const kTable = R"({ "properties": [
 	{ "name": "Tile Kind", "domain": "Level", "offset": 5, "type": "u8", "bit": 4, "bits": 4 },
 	{ "name": "Tilt", "domain": "Level", "offset": 6, "type": "s8", "bit": 0, "bits": 3 },
 	{ "name": "Tiles", "domain": "Level", "offset": 8, "type": "u8", "count": 16 },
-	{ "name": "Version", "domain": "ROM", "offset": 0, "type": "u8" }
+	{ "name": "Version", "domain": "ROM", "offset": 0, "type": "u8" },
+	{ "name": "Rooms.Left", "domain": "Level", "offset": 24, "type": "u8", "count": 4, "first": 1 }
 ] })";
 
 GP loaded()
@@ -114,7 +115,7 @@ bool refused(const GP &gp, const char *name, const std::string &text, const char
 void takesTheTableInItsOrder()
 {
 	GP gp = loaded();
-	assert(gp.all().size() == 23);
+	assert(gp.all().size() == 24);
 	assert(gp.all()[0].name == "Kid.X" && gp.all()[22].name == "Version");
 	assert(gp.find("kid.direction", nullptr) == 1); // any case
 	const auto &guards = gp.all()[size_t(idx(gp, "Guards.X"))];
@@ -148,11 +149,12 @@ void leavesOutWhatItCannotUseAndSaysWhy()
 		{ "name": "Float bits", "domain": "Game State", "offset": 0, "type": "f32", "bits": 3 },
 		{ "name": "Klingon", "domain": "Game State", "offset": 0, "type": "string", "length": 4, "encoding": "klingon" },
 		{ "name": "Sideways", "domain": "Game State", "offset": 0, "type": "u16", "endian": "middle" },
+		{ "name": "Backwards", "domain": "Game State", "offset": 0, "type": "u8", "count": 2, "first": -1 },
 		{ "domain": "Game State", "offset": 0, "type": "u8" },
 		7
 	] })", domains());
 	assert(gp.all().size() == 1 && gp.all()[0].name == "Fine");
-	assert(gp.problems().size() == 15);
+	assert(gp.problems().size() == 16);
 	auto said = [&](size_t k, const char *what) {
 		if (gp.problems()[k].find(what) == std::string::npos)
 		{
@@ -173,8 +175,9 @@ void leavesOutWhatItCannotUseAndSaysWhy()
 	said(10, "not an integer");
 	said(11, "klingon");
 	said(12, "neither little nor big");
-	said(13, "no name");
-	said(14, "not an object");
+	said(13, "first index");
+	said(14, "no name");
+	said(15, "not an object");
 
 	GP none;
 	none.load(nullptr, domains());
@@ -320,6 +323,15 @@ void arraysAreAddressedByElement()
 	assert(gp.at("Game State", 50, &element, &starts) == idx(gp, "Level Name") && !starts);
 	assert(gp.at("Level", 23, &element, &starts) == idx(gp, "Tiles") && element == 15);
 	assert(gp.at("Level", 40, &element, &starts) == -1);
+
+	// an array the game counts from 1 is named as the game counts it
+	assert(gp.find("Rooms.Left[0]", &element) == -1);
+	assert(gp.find("Rooms.Left[1]", &element) == idx(gp, "Rooms.Left") && element == 0);
+	assert(gp.find("Rooms.Left[4]", &element) == idx(gp, "Rooms.Left") && element == 3);
+	assert(gp.find("Rooms.Left[5]", &element) == -1);
+	setText(gp, "Rooms.Left[4]", "9");
+	assert(g_level[27] == 9);
+	assert(gp.describe().find("\"first\":1") != std::string::npos);
 }
 
 void bitFieldsTouchOnlyTheirBits()

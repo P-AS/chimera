@@ -825,7 +825,10 @@ CE_API int32_t ce_session_virtual_height(const ce_session *s);
  * declared virtual size stands. An arcade core answers 3:4 for a game whose
  * monitor stood on its side, which no per-machine declaration can know. */
 CE_API int32_t ce_session_display_aspect(const ce_session *s, int32_t *x_out, int32_t *y_out);
-/* post-Init: the guest's own answer when it gives one, else the config's */
+/* The rate of frames NOW: the guest's own answer when it gives one (asked
+ * after Init and again after every frame advanced with render on, since a
+ * machine changes its refresh with its video mode and a game core's step is as
+ * long as the game makes it), else the config's. */
 CE_API int32_t ce_session_vsync_numerator(const ce_session *s);
 CE_API int32_t ce_session_vsync_denominator(const ce_session *s);
 CE_API int32_t ce_session_samples_per_frame(const ce_session *s);
@@ -1140,8 +1143,10 @@ CE_API int64_t ce_session_domain_read(const ce_session *s, int32_t index, int64_
  * what it left out and why - {"properties": [...], "problems": [...]}; a
  * property's index is its place in that list. Borrowed for the session's
  * lifetime. A core without the export has an empty table.
- * _find: "Name" or "Name[3]" (an array's element, from 0), any case; the
- * index, or -1. *element_out gets the element (0 without an index).
+ * _find: "Name" or "Name[3]" (an array's element, by the number the game
+ * calls it - from the table's `first`, 0 unless it says), any case; the
+ * index, or -1. *element_out gets the element counted from 0, which is what
+ * every other call here takes (0 without an index).
  * _at: the first property, in the table's order, one of whose elements covers
  * `address` in the named domain; -1 when none does. *starts_out: 1 when the
  * address is the element's first byte.

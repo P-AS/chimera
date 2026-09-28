@@ -95,6 +95,9 @@ What a property is:
     than `length` is cut, and a shorter one NUL-padded;
   - `bytes`: `length` raw bytes, shown in hex.
 - `count` (optional, default 1): an array of this many elements.
+- `first` (optional, default 0): the number the first element is called by,
+  for a game that counts from 1 - `"first": 1` makes the rooms of an array of
+  24 `Room Links.Left[1]` to `[24]`, as the game numbers them.
 - `stride` (optional, default the element's own size): bytes from one element
   to the next - larger for a field of an array of structures.
 - `endian` (optional): `little` (the default) or `big`.
@@ -174,15 +177,31 @@ a script has yielded a frame takes the process down under Mono, even inside a
 ## What a movie row is
 
 One step of the game's logic: one pass of the game's main loop in which it
-reads its controls and moves the world on. For Prince of Persia that is a game
-tick (12 per second in play, faster in some cutscenes), not a 60 Hz redraw.
-`GetVsyncNumerator`/`GetVsyncDenominator` report the rate of steps now.
+reads its controls and moves the world on - not a 60 Hz redraw. A step is as
+long as the game makes it. In Prince of Persia a step of play is 1/12 s
+walking and 1/10 s with the sword drawn; the title, the cutscenes and a pause
+read the controls every 1/60 s, so their steps are 1/60 s; a room change adds
+a dark 1/10 s step.
+
+- `GetVsyncNumerator`/`GetVsyncDenominator` report the rate of the step just
+  run. The engine asks after every shown frame (ce_session_vsync_*), so the
+  frontend paces each step at its own length; a seek's unshown frames do not
+  ask.
+- `samplesPerFrame` is a hard cap on the audio of one step, not a typical
+  count: a core whose steps vary declares its longest (SDLPoP declares 44100,
+  a second).
 
 ## Settings and data
 
-- The game's original data files are firmware, each with its hash, and a core
-  checks it was given the version it plays (Prince of Persia 1.0, 1.3 and 1.4
-  differ).
+- The game's original data files are firmware, each with its hash, and the
+  core itself checks it was given the version it plays (Prince of Persia 1.0,
+  1.3 and 1.4 differ) and refuses any other by name: a file given with a
+  mismatched hash is only a warning in the frontend, and chimera-run's
+  `--firmware` is not hash-checked at all.
+- A game core declares its project slots like any core. When the project needs
+  no file of its own - the game is all firmware - it still declares the slots
+  it can take, at `min` 0: the new-project wizard wants at least one slot
+  declared. SDLPoP's is a custom level set.
 - Options that change play - a port's fixes and enhancements, difficulty - are
   settings, part of the machine. Options that change only the picture or the
   sound are not.

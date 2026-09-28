@@ -4546,6 +4546,17 @@ name, never its offset, so a core may reorder its block between versions. A
 watch on the address a property starts at takes its name wherever it was made,
 unless somebody wrote a note of their own, and a freeze takes its watch's.
 
+**A step is as long as the game makes it, and the engine asks.** A game core's
+movie row is one step of the game's logic, and Prince of Persia's last 1/12 s
+walking, 1/10 s fighting and 1/60 s on the title. The engine read a core's rate
+once, after Init, which played every step at the first one's length (the title
+five times too slowly); it now asks again after every shown frame, which the
+frontend's throttle and sound already read every loop. Seeks do not ask - no
+one paces an unshown frame. A machine that changes its refresh with its video
+mode (the X68000's rate export) is live the same way. `chimera-run --rates`
+logs it: the SDLPoP route reads 12/s with 10 then 15 at each room change, and
+274 steps of 12 with the re-read taken out.
+
 **`game.*` says and carries on; it does not throw.** An exception thrown back
 through Lua after a script has yielded a frame took the whole process down
 under Mono, even inside a `pcall` - the first version of the witness leg

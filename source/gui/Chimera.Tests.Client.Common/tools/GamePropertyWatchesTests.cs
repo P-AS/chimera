@@ -50,6 +50,20 @@ namespace Chimera.Tests.Client.Common
 		}
 
 		[TestMethod]
+		public void AnArrayTheGameCountsFromOneIsNamedAsItCounts()
+		{
+			FakeGameProperties properties = new(@"{ ""properties"": [
+				{ ""name"": ""Rooms.Left"", ""domain"": ""Game State"", ""offset"": 0, ""type"": ""u8"", ""size"": 1, ""count"": 24, ""first"": 1, ""stride"": 1 }
+			], ""problems"": [] }");
+			var rooms = properties.Properties[0];
+			Assert.AreEqual("Rooms.Left[1]", rooms.Element(0).Name);
+			Assert.AreEqual("Rooms.Left[24]", rooms.Element(23).Name);
+			Assert.AreEqual(23L, rooms.Element(23).Offset, "the element counted from 0 is where it lives");
+			var watch = GamePropertyWatches.WatchOf(properties, rooms.Element(4), Block());
+			Assert.AreEqual("Rooms.Left[5]", watch.Notes);
+		}
+
+		[TestMethod]
 		public void APropertyWatchShowsAndPokesWhatTheEngineSays()
 		{
 			FakeGameProperties properties = new(Table);

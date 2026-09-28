@@ -417,6 +417,21 @@ struct ce_session
 	CeGameProperties::Value propertyValue; // what the last ce_session_property_get lent out
 
 	int32_t vsyncNum = 0, vsyncDen = 0;
+	/* the core's own rate exports, asked again after every shown frame: a game
+	 * core's step is as long as the game's logic makes it (docs/game-cores.md),
+	 * and a machine changes its refresh with its video mode */
+	int32_t (*getVsyncNum)() = nullptr;
+	int32_t (*getVsyncDen)() = nullptr;
+	void readRate()
+	{
+		if (getVsyncNum == nullptr || getVsyncDen == nullptr) return;
+		const int32_t n = getVsyncNum(), d = getVsyncDen();
+		if (n > 0 && d > 0)
+		{
+			vsyncNum = n;
+			vsyncDen = d;
+		}
+	}
 	// dynamic video size: a DOS machine changes modes; the guest reports the
 	// live frame size (clamped to the config's buffer) through optional
 	// exports, and the config's width/height stay the buffer's capacity
@@ -964,7 +979,11 @@ int32_t ce_session::advanceCore(const uint8_t *buttons, int32_t render)
 		ce_gl_release();   /* the frame's borrowed context, which the frame never gave back */
 		return -1;
 	}
-	if (render != 0) copyVideo();
+	if (render != 0)
+	{
+		copyVideo();
+		readRate(); // for whoever paces the frames that are shown; a seek's are not
+	}
 	int32_t nsamp = getAudioSampleCount != nullptr ? getAudioSampleCount() : cfg.samplesPerFrame;
 	if (nsamp < 0) nsamp = 0;
 	if (nsamp > cfg.samplesPerFrame) nsamp = cfg.samplesPerFrame;
@@ -1410,15 +1429,11 @@ ce_session *ce_session_open(
 	s->getVideoHeight = reinterpret_cast<int32_t (*)()>(s->proc("GetVideoHeight", 0, false, err));
 	s->vidW = s->cfg.width;
 	s->vidH = s->cfg.height;
-	auto vsyncN = reinterpret_cast<int32_t (*)()>(s->proc("GetVsyncNumerator", 0, false, err));
-	auto vsyncD = reinterpret_cast<int32_t (*)()>(s->proc("GetVsyncDenominator", 0, false, err));
-	s->vsyncNum = vsyncN != nullptr ? vsyncN() : 0;
-	s->vsyncDen = vsyncD != nullptr ? vsyncD() : 0;
-	if (s->vsyncNum <= 0 || s->vsyncDen <= 0)
-	{
-		s->vsyncNum = s->cfg.vsyncNum;
-		s->vsyncDen = s->cfg.vsyncDen;
-	}
+	s->getVsyncNum = reinterpret_cast<int32_t (*)()>(s->proc("GetVsyncNumerator", 0, false, err));
+	s->getVsyncDen = reinterpret_cast<int32_t (*)()>(s->proc("GetVsyncDenominator", 0, false, err));
+	s->vsyncNum = s->cfg.vsyncNum;
+	s->vsyncDen = s->cfg.vsyncDen;
+	s->readRate();
 	if (!s->cfg.inputWasRead.empty())
 	{
 		s->inputWasRead = reinterpret_cast<int32_t (*)()>(s->proc(s->cfg.inputWasRead.c_str(), 0, true, err));
@@ -1664,7 +1679,11 @@ int32_t ce_session_frame_advance(ce_session *s, uint64_t buttons, int32_t render
 		ce_gl_release();
 		return -1;
 	}
-	if (render != 0) s->copyVideo();
+	if (render != 0)
+	{
+		s->copyVideo();
+		s->readRate(); // for whoever paces the frames that are shown; a seek's are not
+	}
 	/* a core that reports its own count may produce a different number every
 	 * frame (blip resamplers do); the declared samplesPerFrame is the buffer
 	 * we must not overrun */

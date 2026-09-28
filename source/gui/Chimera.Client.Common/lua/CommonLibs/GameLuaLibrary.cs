@@ -9,7 +9,7 @@ using NLua;
 // ReSharper disable UnusedAutoPropertyAccessor.Local
 namespace Chimera.Client.Common
 {
-	[Description("A game core's properties by name (docs/game-cores.md): the Kid's position, a level's name, an array of guards - what the core's property table names, read and written by the engine's rules. An array's element is named by index from 0 (\"Guards.X[2]\"); the array by its own name is a table, from 1 as Lua counts. An emulator core has none, and list() is empty.")]
+	[Description("A game core's properties by name (docs/game-cores.md): the Kid's position, a level's name, an array of guards - what the core's property table names, read and written by the engine's rules. An array's element is named by the number the game calls it, from 0 unless the core says otherwise (\"Guards.X[2]\"); the array by its own name is a table, from 1 as Lua counts. An emulator core has none, and list() is empty.")]
 	public sealed class GameLuaLibrary : LuaLibraryBase
 	{
 		[OptionalService]
@@ -60,7 +60,7 @@ namespace Chimera.Client.Common
 		}
 
 		[LuaMethodExample("local info = game.describe(\"Guards.X\"); console.log(info.type .. \"[\" .. info.count .. \"] at \" .. info.domain .. \":\" .. info.offset);")]
-		[LuaMethod("describe", "Returns a table describing a game property: name, domain, offset (of the element named, or the first), type, size (bytes in one element), count, stride, endian, encoding, bit, bits, group, writable, description, and label (the value as the core names it, when it has names for its values); nil for a name the core does not have")]
+		[LuaMethod("describe", "Returns a table describing a game property: name, domain, offset (of the element named, or the first), type, size (bytes in one element), count, first (the number the first element is called by), stride, endian, encoding, bit, bits, group, writable, description, and label (the value as the core names it, when it has names for its values); nil for a name the core does not have")]
 		public LuaTable Describe(string name)
 		{
 			if (Find("describe", name) is not { } element) return null;
@@ -72,6 +72,7 @@ namespace Chimera.Client.Common
 			table["type"] = p.TypeName;
 			table["size"] = (long)p.Size;
 			table["count"] = (long)p.Count;
+			table["first"] = (long)p.First;
 			table["stride"] = (long)p.Stride;
 			table["endian"] = p.BigEndian ? "big" : "little";
 			table["encoding"] = p.Encoding;

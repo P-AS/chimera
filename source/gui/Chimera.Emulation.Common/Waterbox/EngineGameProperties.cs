@@ -53,6 +53,7 @@ namespace Chimera.Emulation.Common.Waterbox
 					Type = TypeOf((string?)p["type"]),
 					Size = (int?)p["size"] ?? 1,
 					Count = (int?)p["count"] ?? 1,
+					First = (int?)p["first"] ?? 0,
 					Stride = (int?)p["stride"] ?? 1,
 					BigEndian = (string?)p["endian"] is "big",
 					Encoding = (string?)p["encoding"] ?? "",
