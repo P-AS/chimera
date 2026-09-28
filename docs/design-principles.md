@@ -4461,3 +4461,34 @@ buffer, and a call made on a worker thread is destroyed once, when the worker
 ends. The detector is a long answer (the RPCS3 core's sentence) asked for on
 the thread that ends the process - with the old string back it writes a fault
 report; with the fix it passes.
+
+## A project remembers its Greenzone choice (user-decided, 2026-09-28)
+
+Issue #158: TAStudio's Greenzone box - every frame, one in N, off - reopened
+every project on "every frame", whatever it had been left on. That was
+deliberate (74d511d): somebody who turned the greenzone down for a cutscene
+would not be left wondering next session why nothing turns green. The user
+decided the other way, and decided where: **in the `.chimeraProject`**.
+
+**It lives in TAStudio's part of the file**, the `tastudio` object that already
+carries the piano roll's columns and lag display (issue #83), as
+`MovieClientSettings.GreenzonePeriod`: 1 every frame, N one in N, 0 off. The
+engine keeps that object without reading it, so the project format itself did
+not change and no older build refuses the file. A project saved before this
+has no such field and opens on 1, which is what it always opened on.
+
+This is not where a greenzone's memory budget lives, and the difference is
+deliberate: a budget is a fact about the machine the work is done on, and is
+kept beside the greenzone in the cache so a project handed to somebody with
+half the memory does not arrive carrying it (ProjectCache.ProjectBudgets). The
+choice of how often to store a frame is part of how the run is being worked on,
+and travels with it.
+
+**The box follows the movie on every refresh**, all three levels and N: a
+project reopened on one in seven shows "Every [7] frames", without that 7
+becoming the default N in TAStudio's settings.
+
+The witness leg `T:box:greenzoneChoice` opens a project in the real frontend,
+sets the file to one in seven between two runs, and checks that the second save
+writes the 7 back. With the line that applies the choice on opening taken out,
+it saves back 1 and fails.

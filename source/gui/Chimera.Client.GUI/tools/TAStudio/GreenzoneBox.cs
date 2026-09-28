@@ -8,8 +8,9 @@ namespace Chimera.Client.GUI
 	/// <summary>
 	/// How often the greenzone stores a frame: every frame, one in N, or not at all
 	/// (user request, 2026-09-23/24). Only the frequency changes; the engine keeps the
-	/// greenzone the same way whichever is chosen. N is kept in TAStudio's settings;
-	/// the choice itself is not saved, so a project always opens storing every frame.
+	/// greenzone the same way whichever is chosen. N is kept in TAStudio's settings
+	/// as the default, and the choice itself - level and N - is saved with the project
+	/// (issue #158), so a project reopens on the level it was left on.
 	/// </summary>
 	public partial class GreenzoneBox : UserControl
 	{
@@ -58,13 +59,22 @@ namespace Chimera.Client.GUI
 		}
 
 		/// <summary>
-		/// A movie that stores every frame while another level is chosen is one just
-		/// opened - a project always opens storing every frame - so the box follows it.
+		/// The box follows the movie: a project just opened carries the level (and N)
+		/// it was saved with, and so does one reached by any other way.
 		/// </summary>
 		public void ShowMovie()
 		{
 			if (Tastudio?.CurrentTasMovie is not { } movie) return;
-			if (movie.GreenzonePeriod == 1) _level = Level.EveryFrame;
+			var period = movie.GreenzonePeriod;
+			_level = period switch { 0 => Level.Off, 1 => Level.EveryFrame, _ => Level.EveryN };
+			if (_level == Level.EveryN && period != (int)PeriodNum.Value)
+			{
+				// the project's N shows in the box without becoming everybody's default
+				var wasLoading = _loading;
+				_loading = true;
+				PeriodNum.Value = Math.Min(Math.Max(period, (int)PeriodNum.Minimum), (int)PeriodNum.Maximum);
+				_loading = wasLoading;
+			}
 			ShowLevel();
 		}
 

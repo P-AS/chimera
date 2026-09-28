@@ -653,6 +653,61 @@ TASPY
 		fi
 	fi
 
+	# --- TAStudio's Greenzone choice, saved with the project (issue #158) ---
+	# The choice - every frame, one in N, off - is kept in TAStudio's part of the
+	# .chimeraProject (user-decided, 2026-09-28). Two runs of one project: the
+	# first opens it in TAStudio and saves it, which writes TAStudio's part with
+	# the choice every movie starts on (1, every frame). The file is then set to
+	# one in seven, as if it had been left there, and the second run opens and
+	# saves it again. A project whose choice is read on opening writes the 7
+	# back; one that ignored it writes the 1 TAStudio started on - which is what
+	# every build before #158 did.
+	if [ "$record" -eq 0 ]; then
+		gdir="$work/greenzone-leg"
+		rm -rf "$gdir" && mkdir -p "$gdir"
+		cp "$tdir/gridWalker.testrom" "$gdir/gridWalker.testrom"
+		cp "$tdir/$tname.chimeraProject" "$gdir/g.chimeraProject"
+		gfailed=0
+		for gpass in first second; do
+			gjob="$work/job.greenzone-$gpass.txt"
+			echo "meta=$gdir/$gpass.meta.txt" > "$gjob"
+			cp "$config" "$work/config.greenzone-$gpass.ini"
+			( cd "$repo_root" && CHIMERA_JOB="$gjob" timeout 300 mono "$emu_exe" --headless \
+				"--config=$work/config.greenzone-$gpass.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+				"--project=$gdir/g.chimeraProject" "--lua=$here/synth-greenzone-choice.lua" ) > "$gdir/$gpass.log" 2>&1
+			if ! grep -q "^status=OK" "$gdir/$gpass.meta.txt" 2>/dev/null; then
+				report "T:box:greenzoneChoice" FAIL "the $gpass run: $(sed -n 's/^detail=//p' "$gdir/$gpass.meta.txt" 2>/dev/null || echo "run failed") (see $gdir/$gpass.log)"
+				gfailed=1
+				break
+			fi
+			if [ "$gpass" = first ]; then
+				if ! python3 - "$gdir/g.chimeraProject" <<'GZPY'
+import json, sys
+p = json.load(open(sys.argv[1]))
+# TAStudio's part is its settings object as ConfigService writes it: {"o": {...}}
+t = (p.get("tastudio") or {}).get("o")
+if not isinstance(t, dict) or t.get("GreenzonePeriod") != 1:
+    sys.exit("TAStudio's part holds no GreenzonePeriod of 1: " + json.dumps(t)[:200])
+t["GreenzonePeriod"] = 7
+json.dump(p, open(sys.argv[1], "w"))
+GZPY
+				then
+					report "T:box:greenzoneChoice" FAIL "the first save wrote no Greenzone choice into the project"
+					gfailed=1
+					break
+				fi
+			fi
+		done
+		if [ "$gfailed" -eq 0 ]; then
+			gperiod="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("tastudio", {}).get("o", {}).get("GreenzonePeriod"))' "$gdir/g.chimeraProject")"
+			if [ "$gperiod" = 7 ]; then
+				report "T:box:greenzoneChoice" PASS "a project left on one in seven reopens on it and saves it back"
+			else
+				report "T:box:greenzoneChoice" FAIL "a project left on one in seven saved back $gperiod - the choice in the file was not read on opening"
+			fi
+		fi
+	fi
+
 	# --- a core that stops, in the real frontend ---
 	# The synth core dies on cue (SPEC.md): all eight buttons abort, all but Up
 	# follow a wild pointer - the second arrives as a SIGSEGV inside a process

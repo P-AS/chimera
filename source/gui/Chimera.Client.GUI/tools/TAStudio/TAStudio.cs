@@ -224,6 +224,14 @@ namespace Chimera.Client.GUI
 
 			public AutoPatternBool[] BoolPatterns { get; set; }
 			public AutoPatternAxis[] AxisPatterns { get; set; }
+
+			/// <summary>
+			/// The Greenzone box's choice for this project: 1 every frame, N one in N,
+			/// 0 off. Saved in the project so reopening it finds the choice it was left
+			/// with (issue #158, user-decided 2026-09-28: in the .chimeraProject). A
+			/// project saved before this reads as 1, which is what it always opened on.
+			/// </summary>
+			public int GreenzonePeriod { get; set; } = 1;
 		}
 
 		public class AllSettings
@@ -905,6 +913,7 @@ namespace Chimera.Client.GUI
 			movie.ClientSettingsForSave = () =>
 			{
 				_movieSettings.Columns = _inputRolls.Select(static r => r.AllColumns).ToArray();
+				_movieSettings.GreenzonePeriod = movie.GreenzonePeriod;
 				return ConfigService.SaveWithType(_movieSettings);
 			};
 			movie.BindMarkersToInput = Settings.BindMarkersToInput;
@@ -959,6 +968,7 @@ namespace Chimera.Client.GUI
 					else if (settings is MovieClientSettings clientSettings)
 					{
 						_movieSettings = clientSettings;
+						CurrentTasMovie.GreenzonePeriod = Math.Max(0, _movieSettings.GreenzonePeriod);
 						if (_movieSettings.Columns.Length == 0)
 						{
 							// This will happen if the movie was a build between 2.11 and 2.11.1

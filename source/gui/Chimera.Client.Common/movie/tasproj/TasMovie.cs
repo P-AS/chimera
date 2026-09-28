@@ -130,10 +130,11 @@ namespace Chimera.Client.Common
 		private int _greenzonePeriod = 1;
 
 		/// <remarks>
-		/// Not saved with the project: a project always opens storing every frame,
-		/// so somebody who turned it down for a cutscene is not left wondering next
-		/// time why nothing turns green. The engine does the work of it, including
-		/// the whole state stored on turning it on (IStateHistory.SetCapturePeriod).
+		/// Saved with the project, in TAStudio's part of it (issue #158, user-decided
+		/// 2026-09-28): a project reopens storing what it was left storing. It used to
+		/// open on every frame whatever it was saved with. The engine does the work of
+		/// it, including the whole state stored on turning it on
+		/// (IStateHistory.SetCapturePeriod).
 		/// </remarks>
 		public int GreenzonePeriod
 		{
