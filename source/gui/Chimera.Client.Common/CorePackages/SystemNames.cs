@@ -56,6 +56,7 @@ namespace Chimera.Client.Common
 			["PCFX"] = "PC-FX",
 			// a game core's system is its game (docs/game-cores.md)
 			["PrinceOfPersia"] = "Prince of Persia",
+			["PrinceOfPersia2"] = "Prince of Persia 2",
 			["PS2"] = "PlayStation 2",
 			["PS3"] = "PlayStation 3",
 			["PSP"] = "PlayStation Portable",

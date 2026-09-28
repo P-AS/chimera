@@ -239,6 +239,29 @@ namespace Chimera.Emulation.Common
 				["Mouse Middle"] = 'c', // the base table knows Left and Right
 			},
 
+			// Game cores (docs/game-cores.md) are keyboards. Prince of Persia's
+			// Restart Level is Ctrl+A, and its last word would give it Left's L.
+			["PrinceOfPersia"] = new()
+			{
+				["Shift"] = '^',
+				["Enter"] = 'e',
+				["Restart Level"] = 'a',
+			},
+			// Prince of Persia 2: the prince's P1 keys, then the keys the program
+			// reads outside play - the letters keep their capitals, so the other
+			// keys take lowercase characters no letter has.
+			["PrinceOfPersia2"] = new()
+			{
+				["Shift"] = '^',
+				["Ctrl"] = 'c',
+				["Return"] = 'e',
+				["Space"] = 's',
+				["Escape"] = 'x',
+				["Tab"] = 't',
+				["Backspace"] = 'b',
+				["Alt"] = 'a',
+			},
+
 			/* The Duke: A B X Y read from the base table; these are the names
 			 * whose first letters collide with them or with each other. */
 			["GC"] = new()
