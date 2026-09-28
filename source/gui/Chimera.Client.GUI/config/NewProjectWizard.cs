@@ -460,8 +460,16 @@ namespace Chimera.Client.GUI
 			// check box is shorter than a button, by an amount that depends on
 			// the font and the display's scaling, so any fixed y sits wrong
 			// somewhere. Asked of the controls themselves, it is right everywhere.
+			// The buttons are laid out the same way, each after the one before it
+			// (issue #160): at fixed x the Clear button - never narrower than a
+			// button's default width - covered the left edge of Scan Folder.
+			// An AutoSize button grows but does not shrink below its default
+			// size, so its right edge is the wider of the two.
+			static int RightOf(Control c) => c.Left + Math.Max(c.Width, c.PreferredSize.Width);
+			_firmwareClearButton.Left = RightOf(_firmwareSetButton) + UIHelper.ScaleX(6);
+			firmwareScanButton.Left = RightOf(_firmwareClearButton) + UIHelper.ScaleX(6);
 			_firmwareScanSubfolders.Location = new Point(
-				firmwareScanButton.Left + firmwareScanButton.PreferredSize.Width + UIHelper.ScaleX(8),
+				RightOf(firmwareScanButton) + UIHelper.ScaleX(8),
 				firmwareScanButton.Top
 					+ ((firmwareScanButton.PreferredSize.Height - _firmwareScanSubfolders.PreferredSize.Height) / 2));
 			p4.Controls.AddRange([ _firmwareList, _firmwareSetButton, _firmwareClearButton, firmwareScanButton, _firmwareScanSubfolders ]);
