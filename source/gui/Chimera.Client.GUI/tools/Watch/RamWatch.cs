@@ -36,6 +36,12 @@ namespace Chimera.Client.GUI
 		[OptionalService]
 		private IDebuggable Debuggable { get; set; }
 
+		/// <summary>A game core's properties (docs/game-cores.md), which name the watches on them.</summary>
+		[OptionalService]
+		private IGameProperties GameProperties { get; set; }
+
+		private readonly ToolStripMenuItemEx _addGamePropertiesMenuItem = new() { Text = "Add Game &Properties..." };
+
 		protected override string WindowTitleStatic => "RAM Watch";
 
 		public RamWatch()
@@ -126,6 +132,9 @@ namespace Chimera.Client.GUI
 			};
 			_ = WatchesSubMenu.DropDownItems.InsertBefore(toolStripSeparator3, insert: deduperMenuItem);
 
+			_addGamePropertiesMenuItem.Click += (_, _) => AddGameProperties();
+			_ = WatchesSubMenu.DropDownItems.InsertBefore(EditWatchMenuItem, insert: _addGamePropertiesMenuItem);
+
 			Settings = new RamWatchSettings();
 
 			WatchListView.QueryItemText += WatchListView_QueryItemText;
@@ -197,7 +206,8 @@ namespace Chimera.Client.GUI
 
 		public void AddWatch(Watch watch)
 		{
-			_watches.Add(watch);
+			// one on a game property is called by the property's name, wherever it came from
+			_watches.Add(GamePropertyWatches.Named(watch, GameProperties));
 			WatchListView.RowCount = _watches.Count;
 			GeneralUpdate();
 			UpdateWatchCount();
@@ -785,6 +795,31 @@ namespace Chimera.Client.GUI
 			PokeAddressMenuItem.Enabled =
 				FreezeAddressMenuItem.Enabled =
 					MayPokeAllSelected;
+
+			// only a game core has properties to offer
+			_addGamePropertiesMenuItem.Visible = GameProperties is not null;
+		}
+
+		/// <summary>
+		/// Offers the core's properties by name and watches the ones ticked, each named
+		/// after its property and read at its own width and sign.
+		/// </summary>
+		private void AddGameProperties()
+		{
+			if (GameProperties is null) return;
+			using GamePropertyPicker picker = new(
+				GameProperties,
+				p => MemoryDomains[p.Domain] is { } d ? GamePropertyTable.Format(p, GamePropertyTable.Read(p, d)) : "",
+				p => _watches.Any(w => !w.IsSeparator && w.Domain?.Name == p.Domain && w.Address == p.Offset && (int)w.Size == p.Size));
+			if (!this.ShowDialogWithTempMute(picker).IsOk()) return;
+			foreach (var property in picker.Chosen)
+			{
+				if (MemoryDomains[property.Domain] is { } domain) _watches.Add(GamePropertyWatches.WatchOf(property, domain));
+			}
+			Changes();
+			UpdateWatchCount();
+			WatchListView.RowCount = _watches.Count;
+			GeneralUpdate();
 		}
 
 		private MemoryDomain _currentDomain;
@@ -807,7 +842,7 @@ namespace Chimera.Client.GUI
 			};
 			we.SetWatch(CurrentDomain);
 			if (!this.ShowDialogWithTempMute(we).IsOk()) return;
-			_watches.Add(we.Watches[0]);
+			_watches.Add(GamePropertyWatches.Named(we.Watches[0], GameProperties));
 			Changes();
 			UpdateWatchCount();
 			WatchListView.RowCount = _watches.Count;

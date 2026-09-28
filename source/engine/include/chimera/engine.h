@@ -1129,6 +1129,13 @@ CE_API int32_t ce_session_domain_writable(const ce_session *s, int32_t index);
 /* Copies out [offset, offset+len); returns bytes copied (clamped at end). */
 CE_API int64_t ce_session_domain_read(const ce_session *s, int32_t index, int64_t offset, uint8_t *buf, int64_t len);
 
+/* A game core's properties (docs/game-cores.md): the JSON table its optional
+ * GetGameProperties export gives, read once after Init and handed over as it
+ * is - named places in the memory domains above, which the frontend watches,
+ * pokes and freezes as it does any address. "" for a core without the export,
+ * which is every emulator. Borrowed for the session's lifetime. */
+CE_API const char *ce_session_game_properties(const ce_session *s);
+
 /* "" when no error. Invalidated by the next call on the same session. */
 CE_API const char *ce_session_last_error(ce_session *s);
 

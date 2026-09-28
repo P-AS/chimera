@@ -64,6 +64,10 @@ namespace Chimera.Client.GUI
 		[RequiredService]
 		private IEmulator Emulator { get; set; }
 
+		/// <summary>A game core's properties (docs/game-cores.md), which name the bytes they occupy.</summary>
+		[OptionalService]
+		private IGameProperties GameProperties { get; set; }
+
 		private readonly int _fontWidth;
 		private readonly int _fontHeight;
 
@@ -798,6 +802,11 @@ namespace Chimera.Client.GUI
 			{
 				var newTitle = "Hex Editor";
 				newTitle += " - Editing Address 0x" + string.Format(_numDigitsStr, _highlightedAddress);
+				// a byte of a game core's property says whose (docs/game-cores.md)
+				if (GameProperties?.Containing(_domain.Name, _highlightedAddress.Value) is { } property)
+				{
+					newTitle += $" ({property.Name}{(property.Size is 1 ? "" : $", byte {_highlightedAddress.Value - property.Offset + 1} of {property.Size}")})";
+				}
 				if (_secondaryHighlightedAddresses.Count is not 0)
 				{
 					newTitle += $" (Selected 0x{_secondaryHighlightedAddresses.Count + (_secondaryHighlightedAddresses.Contains(_highlightedAddress.Value) ? 0 : 1):X})";
@@ -865,12 +874,12 @@ namespace Chimera.Client.GUI
 			if (!AreAnyHighlighted) return;
 			MainForm.CheatList.AddRange(AllHighlightedAddresses.Select(address =>
 			{
-				var watch = Watch.GenerateWatch(
+				var watch = GamePropertyWatches.Named(Watch.GenerateWatch(
 					_domain,
 					address,
 					WatchSize,
 					Common.WatchDisplayType.Hex,
-					BigEndian);
+					BigEndian), GameProperties);
 				return new Cheat(watch, watch.Value);
 			}));
 			MemoryViewerBox.Refresh();

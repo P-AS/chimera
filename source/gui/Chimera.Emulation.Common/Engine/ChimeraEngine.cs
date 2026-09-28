@@ -613,6 +613,9 @@ namespace Chimera.Emulation.Common.Engine
 		public abstract IntPtr ce_session_game_settings(IntPtr session);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_session_game_properties(IntPtr session);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_session_drive_count(IntPtr session);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -2013,6 +2016,13 @@ namespace Chimera.Emulation.Common.Engine
 		/// </summary>
 		public string GameSettingsJson
 			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_game_settings(_session)) ?? "";
+
+		/// <summary>
+		/// A game core's property table (docs/game-cores.md), as the core gave it; "" for a
+		/// core without one, which is every emulator.
+		/// </summary>
+		public string GamePropertiesJson
+			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_game_properties(_session)) ?? "";
 
 		public string DriveName(int index)
 			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_drive_name(_session, index)) ?? "Drive";

@@ -4492,3 +4492,54 @@ The witness leg `T:box:greenzoneChoice` opens a project in the real frontend,
 sets the file to one in seven between two runs, and checks that the second save
 writes the 7 back. With the line that applies the choice on opening taken out,
 it saves back 1 and fails.
+
+## Game cores are cores, listed apart, with properties by name (user-decided, 2026-09-28)
+
+An open or reconstructed game can be a core of its own: the same engine,
+sandbox, projects, movies and TAStudio, with the user's copy of the game's
+files as its firmware. SDLPoP (Prince of Persia) is the first, and it is built
+from the original DOS data files: a port that redistributes resources of its
+own does not use them. The spec is docs/game-cores.md; what the user decided
+is what follows.
+
+**A game core says so, and every list of cores shows it apart.**
+`waterbox.config` and the roster carry `"kind": "game"`; absence is an
+emulator, which is every core before this one, and a kind this build does not
+know is listed with the emulators rather than refused. The Core Manager, the
+Cache Manager, the new-project wizard's picker and the firmware window list
+the emulators first, then a grey divider row, then the game cores - a row
+rather than a ListView group, because Mono ignores groups in Details view. The
+Core Manager keeps its "External cores" divide inside each half. The platform
+chooser for an unknown file offers no game core at all: a game core plays its
+own game and nothing else.
+
+**Properties are a labelled domain, not a new kind of thing to watch.** The
+alternative - a property API the tools would each learn - was declined for the
+one that costs the tools nothing: the core keeps the properties in a block of
+its own memory, exposes it as a `Game State` domain, and describes it with a
+property table. RAM Watch, RAM Search, the Hex Editor, freezes and `memory.*`
+all work on properties as they are; the table only gives them names. Raw
+memory is exposed beside it where the game has it in one piece.
+
+**The table is checked, not trusted, and a bad entry costs only itself.** The
+frontend leaves out a property on a domain the core does not have, past the
+end of one, of a type it does not read, or with a name already taken, and says
+so; the rest of the table still works. Nothing wider than 32 bits: the watch
+tools read no more.
+
+**A name is the identity.** Watches, freezes and scripts keep a property's
+name, never its offset, so a core may reorder its block between versions. A
+watch on the address a property starts at takes its name wherever it was made,
+unless somebody wrote a note of their own, and a freeze takes its watch's.
+
+**`game.*` says and carries on; it does not throw.** An exception thrown back
+through Lua after a script has yielded a frame took the whole process down
+under Mono, even inside a `pcall` - the first version of the witness leg
+crashed that way twice. An unknown name reads as nil and sets nothing, with
+the reason in the console, as `memory.*` treats a domain it does not know.
+
+The witness leg `T:box:gameProperties` drives the whole path through the synth
+core, whose table names gridWalker's RAM: the names in the core's order, a
+property read against the same bytes through `memory.*`, a u32's byte order,
+and the cursor moved by `game.set` drawn where it was put. With the table
+emptied it fails at the first check.

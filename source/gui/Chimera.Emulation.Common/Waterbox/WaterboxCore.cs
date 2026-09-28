@@ -219,6 +219,17 @@ namespace Chimera.Emulation.Common.Waterbox
 			// domains to the list, so it runs before the domains are published.
 			InitTooling((BasicServiceProvider)ServiceProvider, domains);
 			((BasicServiceProvider)ServiceProvider).Register<IMemoryDomains>(new MemoryDomainList(domains));
+
+			// A game core's properties (docs/game-cores.md): named places in the domains
+			// above, which the tools watch, poke and freeze by name. Offered only when the
+			// table names one; what it could not use is said once, here.
+			var properties = GamePropertyTable.Parse(_session.GamePropertiesJson,
+				name => domains.FirstOrDefault(d => d.Name == name)?.Size);
+			foreach (var problem in properties.Problems) System.Console.Error.WriteLine($"[{_cfg.CoreName}] game properties: {problem}");
+			if (properties.Properties.Count is not 0)
+			{
+				((BasicServiceProvider)ServiceProvider).Register<IGameProperties>(properties);
+			}
 		}
 
 		// ---- settings ----

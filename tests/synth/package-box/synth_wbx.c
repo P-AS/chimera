@@ -141,4 +141,27 @@ ECL_EXPORT int64_t GetMemoryDomainSize(int i) {
 
 ECL_EXPORT int GetMemoryDomainWritable(int i) { return i == 0 ? 1 : 0; }
 
+/* --- a game core's property table (docs/game-cores.md) ---
+ * Names for places in RAM, which the frontend's tools watch, poke and freeze by
+ * name and Lua reaches through game.*. The synth is an emulator, not a game
+ * core; it carries a table anyway so the witness can drive the whole path - the
+ * engine reading the export, the frontend checking it against the domains, and
+ * the tools and scripts using it - without a game core in the tree. Status is
+ * every test rom's convention (SPEC.md, "Test goals"); the rest is gridWalker's
+ * layout (roms/gridWalker.sasm). */
+ECL_EXPORT const char *GetGameProperties(void)
+{
+	return "{ \"properties\": ["
+		"{ \"name\": \"Status\", \"domain\": \"RAM\", \"offset\": 0, \"type\": \"u8\", \"group\": \"Game\","
+		" \"values\": { \"0\": \"Playing\", \"1\": \"Won\", \"2\": \"Lost\" },"
+		" \"description\": \"Every test rom's result byte\" },"
+		"{ \"name\": \"Cursor.X\", \"domain\": \"RAM\", \"offset\": 1, \"type\": \"u8\", \"group\": \"Cursor\","
+		" \"description\": \"Column of the cell the cursor is in\" },"
+		"{ \"name\": \"Cursor.Y\", \"domain\": \"RAM\", \"offset\": 2, \"type\": \"u8\", \"group\": \"Cursor\" },"
+		"{ \"name\": \"Steps\", \"domain\": \"RAM\", \"offset\": 4, \"type\": \"u32\", \"group\": \"Game\","
+		" \"description\": \"Moves made; past 1000 the game is lost\" },"
+		"{ \"name\": \"Started\", \"domain\": \"RAM\", \"offset\": 8, \"type\": \"bool\", \"group\": \"Game\" }"
+		"] }";
+}
+
 int main(void) { return 0; }

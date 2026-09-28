@@ -708,6 +708,29 @@ GZPY
 		fi
 	fi
 
+	# --- a core's game properties, by name (docs/game-cores.md) ---
+	# The synth exports a property table naming places in its RAM. A script reads
+	# the names back in the core's order, reads a property against the same bytes
+	# through memory.*, writes one by name and watches the game draw the cursor
+	# where it was put.
+	if [ "$record" -eq 0 ]; then
+		pdir="$work/properties-leg"
+		rm -rf "$pdir" && mkdir -p "$pdir"
+		cp "$tdir/gridWalker.testrom" "$pdir/gridWalker.testrom"
+		cp "$tdir/$tname.chimeraProject" "$pdir/p.chimeraProject"
+		pjob="$work/job.properties.txt"
+		echo "meta=$pdir/meta.txt" > "$pjob"
+		cp "$config" "$work/config.properties.ini"
+		( cd "$repo_root" && CHIMERA_JOB="$pjob" timeout 300 mono "$emu_exe" --headless \
+			"--config=$work/config.properties.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+			"--project=$pdir/p.chimeraProject" "--lua=$here/synth-game-properties.lua" ) > "$pdir/run.log" 2>&1
+		if grep -q "^status=OK" "$pdir/meta.txt" 2>/dev/null; then
+			report "T:box:gameProperties" PASS "the core's properties list, read, and set by name, and the game plays on what was set"
+		else
+			report "T:box:gameProperties" FAIL "$(sed -n 's/^detail=//p' "$pdir/meta.txt" 2>/dev/null || echo "run failed") (see $pdir/run.log)"
+		fi
+	fi
+
 	# --- a core that stops, in the real frontend ---
 	# The synth core dies on cue (SPEC.md): all eight buttons abort, all but Up
 	# follow a wild pointer - the second arrives as a SIGSEGV inside a process

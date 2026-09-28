@@ -109,6 +109,10 @@ namespace Chimera.Client.GUI
 		[OptionalService]
 		public IInputPollable InputPollableCore { get; set; }
 
+		/// <summary>A game core's properties (docs/game-cores.md): an address that starts one is shown by its name.</summary>
+		[OptionalService]
+		public IGameProperties GameProperties { get; set; }
+
 		[ConfigPersist]
 		public RamSearchSettings Settings { get; set; }
 
@@ -238,7 +242,7 @@ namespace Chimera.Client.GUI
 			var columnName = column.Name;
 			text = columnName switch
 			{
-				WatchList.Address => _searches[index].AddressString,
+				WatchList.Address => AddressText(_searches[index]),
 				WatchList.Value => _searches[index].ValueString,
 				WatchList.Prev => _searches[index].PreviousStr,
 				WatchList.ChangesCol => _searches[index].ChangeCount.ToString(),
@@ -246,6 +250,12 @@ namespace Chimera.Client.GUI
 				_ => text,
 			};
 		}
+
+		/// <summary>An address as listed: followed by the name of the game property it starts, if it starts one.</summary>
+		private string AddressText(Watch watch)
+			=> GameProperties?.At(watch.Domain.Name, watch.Address) is { } property
+				? $"{watch.AddressString} {property.Name}"
+				: watch.AddressString;
 
 		private void LoadConfigSettings()
 		{
@@ -597,7 +607,9 @@ namespace Chimera.Client.GUI
 
 		private IEnumerable<int> SelectedIndices => WatchListView.SelectedRows;
 
-		private IEnumerable<Watch> SelectedItems => SelectedIndices.Select(index => _searches[index]);
+		// named after the game property each starts, so a watch or a freeze made from
+		// one carries the name
+		private IEnumerable<Watch> SelectedItems => SelectedIndices.Select(index => GamePropertyWatches.Named(_searches[index], GameProperties));
 
 		private IEnumerable<Watch> SelectedWatches => SelectedItems.Where(x => !x.IsSeparator);
 

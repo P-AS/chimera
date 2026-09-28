@@ -412,6 +412,7 @@ struct ce_session
 	uintptr_t (*mdPtr)(int32_t) = nullptr;
 	int64_t (*mdSize)(int32_t) = nullptr;
 	int32_t (*mdWritable)(int32_t) = nullptr;
+	std::string gameProperties; // a game core's property table, "" for an emulator
 
 	int32_t vsyncNum = 0, vsyncDen = 0;
 	// dynamic video size: a DOS machine changes modes; the guest reports the
@@ -1451,6 +1452,13 @@ ce_session *ce_session_open(
 	s->mdWritable = reinterpret_cast<int32_t (*)(int32_t)>(s->proc("GetMemoryDomainWritable", 1, true, err));
 	if (s->mdWritable == nullptr) return abort(std::move(err));
 
+	/* a game core's properties: a fixed table, so it is copied out once */
+	if (auto properties = reinterpret_cast<uintptr_t (*)()>(s->proc("GetGameProperties", 0, false, err)))
+	{
+		if (const char *text = reinterpret_cast<const char *>(properties())) s->gameProperties = text;
+	}
+	err.clear(); // allowed to be absent
+
 	s->videoBuf.assign(static_cast<size_t>(s->cfg.width) * s->cfg.height, 0);
 	s->audioBuf.assign(static_cast<size_t>(s->cfg.samplesPerFrame) * 2, 0);
 	s->btnState.assign(s->cfg.buttons.size(), 0);
@@ -2049,6 +2057,8 @@ const char *ce_host_build_info(void)
 	const chimera::HostApi *host = chimera::hostApi(&error);
 	return host != nullptr ? host->wbx_build_info() : nullptr;
 }
+
+const char *ce_session_game_properties(const ce_session *s) { return s->gameProperties.c_str(); }
 
 uint64_t ce_session_domain_ptr(const ce_session *s, int32_t index)
 {
