@@ -725,7 +725,7 @@ GZPY
 			"--config=$work/config.properties.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 			"--project=$pdir/p.chimeraProject" "--lua=$here/synth-game-properties.lua" ) > "$pdir/run.log" 2>&1
 		if grep -q "^status=OK" "$pdir/meta.txt" 2>/dev/null; then
-			report "T:box:gameProperties" PASS "the core's properties list, read, and set by name, and the game plays on what was set"
+			report "T:box:gameProperties" PASS "every kind of property reads and sets its own bytes by name, and the game plays on what was set"
 		else
 			report "T:box:gameProperties" FAIL "$(sed -n 's/^detail=//p' "$pdir/meta.txt" 2>/dev/null || echo "run failed") (see $pdir/run.log)"
 		fi

@@ -68,55 +68,103 @@ ECL_EXPORT const char *GetGameProperties(void);
       "group": "Kid", "description": "Horizontal position in the room, in game units" },
     { "name": "Kid.Direction", "domain": "Game State", "offset": 3, "type": "s8",
       "values": { "-1": "Left", "0": "Right" } },
-    { "name": "Level", "domain": "Game State", "offset": 40, "type": "u16" },
-    { "name": "Random Seed", "domain": "Game State", "offset": 44, "type": "u32" },
-    { "name": "Kid.Alive", "domain": "Game State", "offset": 5, "type": "s8", "writable": false }
+    { "name": "Kid.Alive", "domain": "Game State", "offset": 5, "type": "bool", "writable": false },
+    { "name": "Frame Count", "domain": "Game State", "offset": 8, "type": "u64" },
+    { "name": "Level Name", "domain": "Game State", "offset": 16, "type": "string",
+      "length": 12, "encoding": "ascii" },
+    { "name": "Guards.X", "domain": "Game State", "offset": 32, "type": "s16",
+      "count": 5, "stride": 20, "group": "Guards" },
+    { "name": "Door Open", "domain": "Level", "offset": 700, "type": "u8", "bit": 3, "bits": 1 }
   ]
 }
 ```
 
+What a property is:
+
 - `name`: unique, and what watches, freezes and scripts store - never the
-  offset, so a core may reorder its block between versions.
+  offset, so a core may reorder its block between versions. An array's
+  elements are named by index from 0: `Guards.X[2]`.
 - `domain`: a memory domain the core exposes.
-- `offset`: in bytes, within that domain.
-- `type`: `u8` `s8` `u16` `s16` `u32` `s32` `f32` `bool` (one byte, 0 or 1);
-  little-endian. Nothing wider: the watch tools read at most 32 bits, and a
-  wider value is two properties (`Score.Low`, `Score.High`).
+- `offset`: in bytes, within that domain (of the first element, for an array).
+- `type`:
+  - `u8` `s8` `u16` `s16` `u32` `s32` `u64` `s64`: integers;
+  - `f32` `f64`: IEEE floats;
+  - `bool`: one byte, 0 false and anything else true;
+  - `string`: text in `length` bytes, ended early by a NUL, in `encoding`
+    (`ascii`, the default; `latin1`; `utf8`; `utf16le`). A string set longer
+    than `length` is cut, and a shorter one NUL-padded;
+  - `bytes`: `length` raw bytes, shown in hex.
+- `count` (optional, default 1): an array of this many elements.
+- `stride` (optional, default the element's own size): bytes from one element
+  to the next - larger for a field of an array of structures.
+- `endian` (optional): `little` (the default) or `big`.
+- `bit` and `bits` (optional, integer types only): a bit field - `bits` bits
+  starting `bit` bits from the least significant end of the value. Setting
+  one writes those bits and no others. Sign-extended for a signed type.
 - `group` (optional): for listing (`Kid`, `Guard`, `Level`).
-- `values` (optional): names for an enumeration's values, shown instead of the
-  number.
+- `values` (optional, integer types): names for an enumeration's values,
+  shown instead of the number and accepted in its place.
 - `writable` (optional, default true): false for what the game derives each
   step and would overwrite (a poke would do nothing).
 - `description` (optional): one line for a tooltip.
 
-The engine reads the export once, after `Init`, and hands the text to the
-frontend as `ce_session_game_properties`. It interprets nothing in it. The
-frontend checks each property against the domains the core really has and
-leaves out what it cannot use - a domain that is not there, an offset past its
-end, a type it does not read, a name already taken - saying so on stderr; the
-rest of the table still works. Any core may export a table (the synth test
-core does, naming gridWalker's RAM, so the witness can drive the whole path);
-a game core is simply the kind that always should.
+The type system is the engine's (libchimera, `ce_session_property_*`): it
+reads the export once after `Init`, checks every property against the
+domains the core really has, and leaves out what it cannot use - a domain that
+is not there, a span past its end, a type it does not read, a name already
+taken, a bit field that does not fit - saying why; the rest of the table
+still works. The engine reads, writes, shows and parses every value, so a
+watch, a poke, a freeze and a script all agree on what the bytes mean, and
+anything linking the engine (a solver) gets the same properties. The frontend
+lists, shows and forwards. Any core may export a table (the synth test core
+does, naming gridWalker's RAM, so the witness can drive the whole path); a
+game core is simply the kind that always should.
 
 ### In the tools
 
 - RAM Watch: Watches > Add Game Properties lists the properties under their
-  groups; each ticked one becomes a watch of its own width and sign, named
-  after it. A watch added any other way - New Watch, from RAM Search, from the
-  Hex Editor - on the address a property starts at takes the property's name
-  unless it has a note already.
+  groups, an array element by element; each ticked element becomes a watch
+  named after it. One that fits a 1-, 2- or 4-byte watch as it is (an
+  integer, an f32 or a bool, not a bit field, without named values) is one of
+  RAM Watch's own, with its display types and the numeric poke box. Anything
+  else - 64 bits, an f64, text, bytes, a bit field, named values - is a
+  property watch the engine reads: its Type column says `u64`, `string(12)`,
+  `u8:1`; Poke takes a line of text the engine parses (a number, hex after
+  0x, a value's name, true/false, text, hex bytes); it is known by its name,
+  so it is not edited, and a watch file or a paste finds it again by name. A
+  watch added any other way - New Watch, from RAM Search, from the Hex Editor
+  - on the address an element starts at takes the element's name unless it
+  has a note already.
 - Freezes: a freeze is named after its watch, so a property frozen from RAM
-  Watch, RAM Search or the Hex Editor is listed in the cheats by name.
-- RAM Search: an address that starts a property is listed with its name.
-- Hex Editor: the title names the property the highlighted byte belongs to,
+  Watch, RAM Search or the Hex Editor is listed in the cheats by name. A
+  property watch's freeze holds the value as the engine's text and sets it
+  again before every step - whole, whatever its width - and one on a bit
+  field touches no other bit. After the core is reloaded a frozen property is
+  found again by name, and dropped when the core no longer has it.
+- RAM Search: an address that starts an element is listed with its name.
+- Hex Editor: the title names the element the highlighted byte belongs to,
   and which of its bytes it is.
 
 ### Lua
 
 `memory.*` works on `Game State` as on any domain. On top of it, a small
-library by name: `game.list()` (the names, in the core's order),
-`game.get(name)` (a whole number, a float for `f32`, a boolean for `bool`),
-`game.set(name, value)` (returns whether it was set) and `game.describe(name)`.
+library by name:
+
+- `game.list()`: the property names, in the core's order (an array once).
+- `game.get(name)`: an integer, a float for `f32`/`f64`, a boolean for `bool`,
+  a string, or a table of byte values for `bytes`. A `u64` comes back as the
+  Lua integer with the same 64 bits (Lua's integers are signed). An array by
+  its own name is a table of its elements, from 1 as Lua counts;
+  `game.get("Guards.X[2]")` is one element, from 0 as the game counts.
+- `game.set(name, value)`: the same kinds in, an array by its own name from a
+  table; returns whether it was set. A number is taken when it fits the
+  width as a signed or an unsigned value (-1 sets every bit of a `u64`) and
+  refused otherwise, rather than wrapped; `bytes` takes a table of exactly
+  its length.
+- `game.describe(name)`: name, domain, offset, type, size, count, stride,
+  endian, encoding, bit, bits, group, writable, description, and label (the
+  value as the core names it).
+
 A name the core does not have is not an error: `get` and `describe` return
 nil, `set` returns false, and the console says why - the way `memory.*`
 treats a domain it does not know. (An exception thrown back through Lua after

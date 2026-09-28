@@ -34,6 +34,12 @@ namespace Chimera.Client.Common
 		private IMemoryDomains _memoryDomains;
 
 		/// <summary>
+		/// The core's game properties (docs/game-cores.md), which a property watch in a file is
+		/// found in by name; null for a core without any, where such a line is skipped.
+		/// </summary>
+		public IGameProperties GameProperties { get; set; }
+
+		/// <summary>
 		/// Static constructor for the <see cref="WatchList"/> class.
 		/// </summary>
 		static WatchList()
@@ -248,6 +254,9 @@ namespace Chimera.Client.Common
 		public void RefreshDomains(IMemoryDomains core, PreviousType previousType)
 		{
 			_memoryDomains = core;
+			// a property is found again by name in the core now running, and a watch on
+			// one it no longer has goes
+			_watchList.RemoveAll(w => w is PropertyWatch property && !property.Rebind(GameProperties));
 			foreach(var watch in _watchList)
 			{
 				if (watch.IsSeparator)
@@ -468,6 +477,13 @@ namespace Chimera.Client.Common
 
 				startIndex = line.IndexOf('\t') + 1;
 				var notes = line.Substring(startIndex: startIndex);
+
+				if (size is WatchSize.Property)
+				{
+					// known by its name, never its offset: a core may move it between versions
+					if (PropertyWatch.Find(GameProperties, _memoryDomains, notes) is { } found) _watchList.Add(found);
+					continue;
+				}
 
 				_watchList.Add(
 					Watch.GenerateWatch(

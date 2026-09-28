@@ -14,7 +14,8 @@ namespace Chimera.Client.GUI
 	/// <summary>
 	/// RAM Watch &gt; Watches &gt; Add Game Properties: a game core's properties by name,
 	/// grouped as the core groups them, to tick and add as watches (docs/game-cores.md).
-	/// A property already watched is shown ticked-off in grey rather than offered twice.
+	/// An array is listed element by element (<c>Guards.X[2]</c>), each a watch of its
+	/// own. One already watched is shown in grey rather than offered twice.
 	/// </summary>
 	public sealed class GamePropertyPicker : FormBase
 	{
@@ -24,9 +25,9 @@ namespace Chimera.Client.GUI
 		protected override string WindowTitleStatic => "Add Game Properties";
 
 		/// <param name="properties">the core's properties</param>
-		/// <param name="valueOf">a property's current value as a person reads it, or "" when it cannot be read</param>
-		/// <param name="watched">whether a property is already in the watch list</param>
-		public GamePropertyPicker(IGameProperties properties, Func<GameProperty, string> valueOf, Func<GameProperty, bool> watched)
+		/// <param name="valueOf">an element's current value as a person reads it</param>
+		/// <param name="watched">whether an element is already in the watch list</param>
+		public GamePropertyPicker(IGameProperties properties, Func<GamePropertyElement, string> valueOf, Func<GamePropertyElement, bool> watched)
 		{
 			SuspendLayout();
 			ClientSize = new(UIHelper.ScaleX(620), UIHelper.ScaleY(420));
@@ -68,17 +69,20 @@ namespace Chimera.Client.GUI
 					for (var i = 1; i < _list.Columns.Count; i++) heading.SubItems.Add("");
 					_list.Items.Add(heading);
 				}
-				foreach (var property in group)
+				foreach (var element in group.SelectMany(static p => p.Elements))
 				{
-					var already = watched(property);
-					ListViewItem row = new(property.Name)
+					var property = element.Property;
+					var already = watched(element);
+					ListViewItem row = new(element.Name)
 					{
-						Tag = already ? null : property,
+						Tag = already ? null : element,
 						ToolTipText = property.Description,
 						ForeColor = ThemeEngine.Color(already || !property.Writable ? ThemeColorRole.DisabledText : ThemeColorRole.InputText),
 					};
-					row.SubItems.Add(property.TypeName);
-					row.SubItems.Add(valueOf(property));
+					row.SubItems.Add(property.TypeName
+						+ (property.Type is GamePropertyType.String or GamePropertyType.Bytes ? $"({property.Size})" : "")
+						+ (property.IsBitField ? $":{property.Bits}" : ""));
+					row.SubItems.Add(valueOf(element));
 					row.SubItems.Add(already ? "(already watched)" : property.Writable ? property.Description : $"{property.Description} (read-only)".TrimStart());
 					_list.Items.Add(row);
 				}
@@ -115,8 +119,8 @@ namespace Chimera.Client.GUI
 		}
 
 		/// <summary>What is ticked, in list order.</summary>
-		public IReadOnlyList<GameProperty> Chosen
-			=> _list.Items.Cast<ListViewItem>().Where(static i => i.Checked && i.Tag is GameProperty).Select(static i => (GameProperty)i.Tag).ToList();
+		public IReadOnlyList<GamePropertyElement> Chosen
+			=> _list.Items.Cast<ListViewItem>().Where(static i => i.Checked && i.Tag is GamePropertyElement).Select(static i => (GamePropertyElement)i.Tag).ToList();
 
 		/// <summary>The rows as listed, a group's heading by its name: for tests.</summary>
 		public IReadOnlyList<string> Rows => _list.Items.Cast<ListViewItem>().Select(static i => i.Text).ToList();

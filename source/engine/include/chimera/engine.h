@@ -1129,12 +1129,65 @@ CE_API int32_t ce_session_domain_writable(const ce_session *s, int32_t index);
 /* Copies out [offset, offset+len); returns bytes copied (clamped at end). */
 CE_API int64_t ce_session_domain_read(const ce_session *s, int32_t index, int64_t offset, uint8_t *buf, int64_t len);
 
-/* A game core's properties (docs/game-cores.md): the JSON table its optional
- * GetGameProperties export gives, read once after Init and handed over as it
- * is - named places in the memory domains above, which the frontend watches,
- * pokes and freezes as it does any address. "" for a core without the export,
- * which is every emulator. Borrowed for the session's lifetime. */
-CE_API const char *ce_session_game_properties(const ce_session *s);
+/* A game core's properties (docs/game-cores.md): named places in the memory
+ * domains above - integers, floats, bools, text, bytes, arrays of them, bit
+ * fields - from the JSON table of the core's optional GetGameProperties
+ * export, read once after Init and checked against the domains. The engine
+ * owns what the bytes mean: every read, write, text and parse below goes by
+ * the one set of rules, so a watch, a poke, a freeze and a script agree.
+ *
+ * _table: the table as the engine understood it, every field filled in, and
+ * what it left out and why - {"properties": [...], "problems": [...]}; a
+ * property's index is its place in that list. Borrowed for the session's
+ * lifetime. A core without the export has an empty table.
+ * _find: "Name" or "Name[3]" (an array's element, from 0), any case; the
+ * index, or -1. *element_out gets the element (0 without an index).
+ * _at: the first property, in the table's order, one of whose elements covers
+ * `address` in the named domain; -1 when none does. *starts_out: 1 when the
+ * address is the element's first byte.
+ * _get/_set: a value by kind (CE_PROPERTY_*). An integer comes back as INT
+ * when its type is signed and UINT when not; _set takes any numeric kind for
+ * a number - a float truncated - that fits the width as a signed or an
+ * unsigned value (so -1 sets every bit of a u64) and refuses one that does
+ * not; for a bool, anything but 0 is true; TEXT (as
+ * UTF-8) for a string - cut at a whole character, NUL-padded - and BYTES of
+ * exactly the property's length for bytes. _get's data is borrowed until the
+ * next call on the session.
+ * _text: the value as a person reads it - an enumeration's name when `named`
+ * and it has one, a float at the fewest digits that read back the same, text
+ * as UTF-8, bytes as hex pairs. Returns the length (without the NUL, which is
+ * always written when cap > 0); -1 for no such property.
+ * _set_text: the inverse - a whole number (decimal, or hex after 0x), an
+ * enumeration's name, true/false, a number, text, or hex bytes.
+ * The setters: 0 done; 1 not, and _last_error says why (no such property, a
+ * value of the wrong kind or out of range, a property the game works out
+ * afresh every step). */
+enum
+{
+	CE_PROPERTY_INT = 0,
+	CE_PROPERTY_UINT = 1,
+	CE_PROPERTY_FLOAT = 2,
+	CE_PROPERTY_BOOL = 3,
+	CE_PROPERTY_TEXT = 4,
+	CE_PROPERTY_BYTES = 5,
+};
+typedef struct ce_property_value
+{
+	int32_t kind;
+	int32_t reserved;
+	int64_t i;         /* INT; BOOL as 0 or 1 */
+	uint64_t u;        /* UINT */
+	double f;          /* FLOAT */
+	const char *data;  /* TEXT (UTF-8) or BYTES */
+	int64_t len;
+} ce_property_value;
+CE_API const char *ce_session_property_table(const ce_session *s);
+CE_API int32_t ce_session_property_find(const ce_session *s, const char *name, uint32_t *element_out);
+CE_API int32_t ce_session_property_at(const ce_session *s, const char *domain, int64_t address, uint32_t *element_out, int32_t *starts_out);
+CE_API int32_t ce_session_property_get(ce_session *s, int32_t index, uint32_t element, ce_property_value *out);
+CE_API int32_t ce_session_property_set(ce_session *s, int32_t index, uint32_t element, const ce_property_value *in);
+CE_API int32_t ce_session_property_text(ce_session *s, int32_t index, uint32_t element, int32_t named, char *buf, int32_t cap);
+CE_API int32_t ce_session_property_set_text(ce_session *s, int32_t index, uint32_t element, const char *text);
 
 /* "" when no error. Invalidated by the next call on the same session. */
 CE_API const char *ce_session_last_error(ce_session *s);

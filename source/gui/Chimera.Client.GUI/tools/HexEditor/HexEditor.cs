@@ -803,9 +803,10 @@ namespace Chimera.Client.GUI
 				var newTitle = "Hex Editor";
 				newTitle += " - Editing Address 0x" + string.Format(_numDigitsStr, _highlightedAddress);
 				// a byte of a game core's property says whose (docs/game-cores.md)
-				if (GameProperties?.Containing(_domain.Name, _highlightedAddress.Value) is { } property)
+				if (GameProperties?.At(_domain.Name, _highlightedAddress.Value, out _) is { } element)
 				{
-					newTitle += $" ({property.Name}{(property.Size is 1 ? "" : $", byte {_highlightedAddress.Value - property.Offset + 1} of {property.Size}")})";
+					var size = element.Property.Size;
+					newTitle += $" ({element.Name}{(size is 1 ? "" : $", byte {_highlightedAddress.Value - element.Offset + 1} of {size}")})";
 				}
 				if (_secondaryHighlightedAddresses.Count is not 0)
 				{

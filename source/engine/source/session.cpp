@@ -18,6 +18,7 @@
 #include "thread_string.hpp"
 #include "state_history.hpp"
 #include "state_format.hpp"
+#include "game_properties.hpp"
 
 #include "../../extern/cjson/cJSON.h"
 
@@ -412,7 +413,8 @@ struct ce_session
 	uintptr_t (*mdPtr)(int32_t) = nullptr;
 	int64_t (*mdSize)(int32_t) = nullptr;
 	int32_t (*mdWritable)(int32_t) = nullptr;
-	std::string gameProperties; // a game core's property table, "" for an emulator
+	CeGameProperties properties;    // a game core's (docs/game-cores.md); empty for an emulator
+	CeGameProperties::Value propertyValue; // what the last ce_session_property_get lent out
 
 	int32_t vsyncNum = 0, vsyncDen = 0;
 	// dynamic video size: a DOS machine changes modes; the guest reports the
@@ -1452,12 +1454,31 @@ ce_session *ce_session_open(
 	s->mdWritable = reinterpret_cast<int32_t (*)(int32_t)>(s->proc("GetMemoryDomainWritable", 1, true, err));
 	if (s->mdWritable == nullptr) return abort(std::move(err));
 
-	/* a game core's properties: a fixed table, so it is copied out once */
-	if (auto properties = reinterpret_cast<uintptr_t (*)()>(s->proc("GetGameProperties", 0, false, err)))
+	/* a game core's properties: a fixed table, read once and checked against
+	 * the domains, whose pointers hold for the session's lifetime */
 	{
-		if (const char *text = reinterpret_cast<const char *>(properties())) s->gameProperties = text;
+		const char *table = nullptr;
+		if (auto exported = reinterpret_cast<uintptr_t (*)()>(s->proc("GetGameProperties", 0, false, err)))
+		{
+			table = reinterpret_cast<const char *>(exported());
+		}
+		err.clear(); // allowed to be absent
+		std::vector<CeGameProperties::Domain> domains;
+		for (int32_t i = 0; table != nullptr && i < s->mdCount(); i++)
+		{
+			CeGameProperties::Domain d;
+			if (const char *name = reinterpret_cast<const char *>(s->mdName(i))) d.name = name;
+			d.base = reinterpret_cast<uint8_t *>(s->mdPtr(i));
+			d.size = s->mdSize(i);
+			d.writable = s->mdWritable(i) != 0;
+			domains.push_back(std::move(d));
+		}
+		s->properties.load(table, domains);
+		for (const std::string &problem : s->properties.problems())
+		{
+			fprintf(stderr, "[%s] game properties: %s\n", s->cfg.coreName.c_str(), problem.c_str());
+		}
 	}
-	err.clear(); // allowed to be absent
 
 	s->videoBuf.assign(static_cast<size_t>(s->cfg.width) * s->cfg.height, 0);
 	s->audioBuf.assign(static_cast<size_t>(s->cfg.samplesPerFrame) * 2, 0);
@@ -2058,7 +2079,75 @@ const char *ce_host_build_info(void)
 	return host != nullptr ? host->wbx_build_info() : nullptr;
 }
 
-const char *ce_session_game_properties(const ce_session *s) { return s->gameProperties.c_str(); }
+const char *ce_session_property_table(const ce_session *s) { return s->properties.describe().c_str(); }
+
+int32_t ce_session_property_find(const ce_session *s, const char *name, uint32_t *element_out)
+{
+	return name != nullptr ? s->properties.find(name, element_out) : -1;
+}
+
+int32_t ce_session_property_at(const ce_session *s, const char *domain, int64_t address, uint32_t *element_out, int32_t *starts_out)
+{
+	bool starts = false;
+	const int32_t index = domain != nullptr ? s->properties.at(domain, address, element_out, &starts) : -1;
+	if (starts_out != nullptr) *starts_out = starts ? 1 : 0;
+	return index;
+}
+
+int32_t ce_session_property_get(ce_session *s, int32_t index, uint32_t element, ce_property_value *out)
+{
+	s->error.clear();
+	CeGameProperties::Value &v = s->propertyValue;
+	if (out == nullptr || !s->properties.read(index, element, v))
+	{
+		s->error = "no such property";
+		return 1;
+	}
+	*out = ce_property_value{};
+	out->kind = int32_t(v.kind);
+	out->i = v.i;
+	out->u = v.u;
+	out->f = v.f;
+	out->data = v.data.data();
+	out->len = int64_t(v.data.size());
+	return 0;
+}
+
+int32_t ce_session_property_set(ce_session *s, int32_t index, uint32_t element, const ce_property_value *in)
+{
+	s->error.clear();
+	if (in == nullptr || in->kind < CE_PROPERTY_INT || in->kind > CE_PROPERTY_BYTES)
+	{
+		s->error = "a value of no kind";
+		return 1;
+	}
+	CeGameProperties::Value v;
+	v.kind = CeGameProperties::Value::Kind(in->kind);
+	v.i = in->i;
+	v.u = in->u;
+	v.f = in->f;
+	if (in->data != nullptr && in->len > 0) v.data.assign(in->data, size_t(in->len));
+	return s->properties.write(index, element, v, s->error) ? 0 : 1;
+}
+
+int32_t ce_session_property_text(ce_session *s, int32_t index, uint32_t element, int32_t named, char *buf, int32_t cap)
+{
+	if (index < 0 || size_t(index) >= s->properties.all().size() || element >= s->properties.all()[size_t(index)].count) return -1;
+	const std::string text = s->properties.text(index, element, named != 0);
+	if (buf != nullptr && cap > 0)
+	{
+		const size_t n = std::min(text.size(), size_t(cap - 1));
+		std::memcpy(buf, text.data(), n);
+		buf[n] = '\0';
+	}
+	return int32_t(text.size());
+}
+
+int32_t ce_session_property_set_text(ce_session *s, int32_t index, uint32_t element, const char *text)
+{
+	s->error.clear();
+	return s->properties.writeText(index, element, text != nullptr ? text : "", s->error) ? 0 : 1;
+}
 
 uint64_t ce_session_domain_ptr(const ce_session *s, int32_t index)
 {

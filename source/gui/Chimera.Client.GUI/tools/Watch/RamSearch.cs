@@ -253,8 +253,8 @@ namespace Chimera.Client.GUI
 
 		/// <summary>An address as listed: followed by the name of the game property it starts, if it starts one.</summary>
 		private string AddressText(Watch watch)
-			=> GameProperties?.At(watch.Domain.Name, watch.Address) is { } property
-				? $"{watch.AddressString} {property.Name}"
+			=> GamePropertyWatches.StartingAt(GameProperties, watch.Domain, watch.Address) is { } element
+				? $"{watch.AddressString} {element.Name}"
 				: watch.AddressString;
 
 		private void LoadConfigSettings()

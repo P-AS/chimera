@@ -3409,7 +3409,7 @@ namespace Chimera.Client.GUI
 					// machine has different addresses
 					if (previousRom == CurrentlyOpenRom && Emulator.HasMemoryDomains())
 					{
-						CheatList.UpdateDomains(Emulator.AsMemoryDomains());
+						CheatList.UpdateDomains(Emulator.AsMemoryDomains(), Emulator.ServiceProvider.GetService<IGameProperties>());
 					}
 					else
 					{

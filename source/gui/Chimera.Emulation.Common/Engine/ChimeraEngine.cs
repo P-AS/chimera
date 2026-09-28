@@ -612,8 +612,39 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_session_game_settings(IntPtr session);
 
+		/// <summary>engine.h ce_property_value: a game property's value, by kind (CE_PROPERTY_*).</summary>
+		[StructLayout(LayoutKind.Sequential)]
+		public struct CePropertyValue
+		{
+			public int Kind;
+			public int Reserved;
+			public long I;
+			public ulong U;
+			public double F;
+			public IntPtr Data;
+			public long Len;
+		}
+
 		[ChimeraImport(CallingConvention.Cdecl)]
-		public abstract IntPtr ce_session_game_properties(IntPtr session);
+		public abstract IntPtr ce_session_property_table(IntPtr session);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_property_find(IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, out uint element);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_property_at(IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string domain, long address, out uint element, out int starts);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_property_get(IntPtr session, int index, uint element, ref CePropertyValue value);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_property_set(IntPtr session, int index, uint element, ref CePropertyValue value);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_property_text(IntPtr session, int index, uint element, int named, byte[] buf, int cap);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_property_set_text(IntPtr session, int index, uint element, [MarshalAs(UnmanagedType.LPUTF8Str)] string text);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_session_drive_count(IntPtr session);
@@ -2017,12 +2048,88 @@ namespace Chimera.Emulation.Common.Engine
 		public string GameSettingsJson
 			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_game_settings(_session)) ?? "";
 
+		// ---- a game core's properties (docs/game-cores.md; engine.h ce_session_property_*) ----
+		// The engine owns what the bytes mean; these only carry values across.
+
+		/// <summary>The property table as the engine understood it: {"properties": [...], "problems": [...]}.</summary>
+		public string PropertyTableJson
+			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_property_table(_session)) ?? "";
+
+		/// <summary>"Name" or "Name[3]": the property's index and the element, or -1.</summary>
+		public int PropertyFind(string name, out uint element)
+			=> E.ce_session_property_find(_session, name, out element);
+
+		/// <summary>The property one of whose elements covers the address, or -1.</summary>
+		public int PropertyAt(string domain, long address, out uint element, out bool starts)
+		{
+			var index = E.ce_session_property_at(_session, domain, address, out element, out var startsFlag);
+			starts = startsFlag is not 0;
+			return index;
+		}
+
 		/// <summary>
-		/// A game core's property table (docs/game-cores.md), as the core gave it; "" for a
-		/// core without one, which is every emulator.
+		/// A property's value: a long for a signed integer, a ulong for an unsigned one, a
+		/// double, a bool, a string or a byte[]; null for no such property.
 		/// </summary>
-		public string GamePropertiesJson
-			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_game_properties(_session)) ?? "";
+		public object? PropertyGet(int index, uint element)
+		{
+			LibChimera.CePropertyValue v = default;
+			if (E.ce_session_property_get(_session, index, element, ref v) is not 0) return null;
+			var bytes = new byte[v.Len];
+			if (v.Len > 0) Marshal.Copy(v.Data, bytes, 0, bytes.Length);
+			return v.Kind switch
+			{
+				0 => v.I,
+				1 => v.U,
+				2 => v.F,
+				3 => v.I is not 0,
+				4 => Encoding.UTF8.GetString(bytes),
+				_ => bytes,
+			};
+		}
+
+		/// <summary>Sets a property's value (see <see cref="PropertyGet"/> for the kinds); null when set, else why not.</summary>
+		public unsafe string? PropertySet(int index, uint element, object value)
+		{
+			LibChimera.CePropertyValue v = default;
+			byte[]? data = null;
+			switch (value)
+			{
+				case bool b: v.Kind = 3; v.I = b ? 1 : 0; break;
+				case long l: v.Kind = 0; v.I = l; break;
+				case int i: v.Kind = 0; v.I = i; break;
+				case ulong u: v.Kind = 1; v.U = u; break;
+				case double d: v.Kind = 2; v.F = d; break;
+				case float f: v.Kind = 2; v.F = f; break;
+				case string text: v.Kind = 4; data = Encoding.UTF8.GetBytes(text); break;
+				case byte[] raw: v.Kind = 5; data = raw; break;
+				default: return $"a property takes a number, a boolean, text or bytes, not {value?.GetType().Name ?? "nothing"}";
+			}
+			fixed (byte* p = data)
+			{
+				v.Data = (IntPtr)p;
+				v.Len = data?.LongLength ?? 0;
+				return E.ce_session_property_set(_session, index, element, ref v) is 0 ? null : LastError;
+			}
+		}
+
+		/// <summary>A value as a person reads it: an enumeration's name when <paramref name="named"/>; "" for no such property.</summary>
+		public string PropertyText(int index, uint element, bool named)
+		{
+			var buf = new byte[256];
+			var n = E.ce_session_property_text(_session, index, element, named ? 1 : 0, buf, buf.Length);
+			if (n < 0) return "";
+			if (n >= buf.Length)
+			{
+				buf = new byte[n + 1];
+				n = E.ce_session_property_text(_session, index, element, named ? 1 : 0, buf, buf.Length);
+			}
+			return Encoding.UTF8.GetString(buf, 0, n);
+		}
+
+		/// <summary>Sets a value from text, the inverse of <see cref="PropertyText"/>; null when set, else why not.</summary>
+		public string? PropertySetText(int index, uint element, string text)
+			=> E.ce_session_property_set_text(_session, index, element, text) is 0 ? null : LastError;
 
 		public string DriveName(int index)
 			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_drive_name(_session, index)) ?? "Drive";

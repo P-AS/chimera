@@ -4521,11 +4521,25 @@ property table. RAM Watch, RAM Search, the Hex Editor, freezes and `memory.*`
 all work on properties as they are; the table only gives them names. Raw
 memory is exposed beside it where the game has it in one piece.
 
-**The table is checked, not trusted, and a bad entry costs only itself.** The
-frontend leaves out a property on a domain the core does not have, past the
-end of one, of a type it does not read, or with a name already taken, and says
-so; the rest of the table still works. Nothing wider than 32 bits: the watch
-tools read no more.
+**Every type a game holds, not the ones the first game used** (user-decided,
+the same day, reversing a narrowing that followed RAM Watch's 32 bits): 8- to
+64-bit integers, f32 and f64, bools, strings in four encodings, raw bytes,
+arrays with a stride (a field of an array of structures), big-endian values
+and bit fields. Where a tool cannot hold one, the tool grows - a property
+watch the engine reads, freezes kept as the engine's text - rather than the
+table shrinking.
+
+**The type system is the engine's.** Reading, writing, showing and parsing a
+property decide what bytes a poke or a freeze writes, so they live in
+libchimera (`ce_session_property_*`, source/engine/source/game_properties.cpp)
+under the thin-C# rule, tested by the engine's own test; the frontend lists,
+shows and forwards, and a solver linking the engine gets the same
+properties. The engine checks the table, not trusts it: a property on a domain
+the core does not have (or one with no memory of its own), past the end of
+one, of a type it does not read, with a name already taken, or a bit field
+that does not fit is left out and said; the rest of the table still works. A
+number that does not fit a property's width is refused, not wrapped - except
+that -1 sets every bit of a u64, the only way a signed 64-bit caller can.
 
 **A name is the identity.** Watches, freezes and scripts keep a property's
 name, never its offset, so a core may reorder its block between versions. A
@@ -4539,7 +4553,10 @@ crashed that way twice. An unknown name reads as nil and sets nothing, with
 the reason in the console, as `memory.*` treats a domain it does not know.
 
 The witness leg `T:box:gameProperties` drives the whole path through the synth
-core, whose table names gridWalker's RAM: the names in the core's order, a
-property read against the same bytes through `memory.*`, a u32's byte order,
-and the cursor moved by `game.set` drawn where it was put. With the table
-emptied it fails at the first check.
+core, whose table names gridWalker's RAM and one of every other kind over RAM
+the rom leaves alone: the names in the core's order, a property read against
+the same bytes through `memory.*`, every type's bytes (a u64 of all ones, the
+least s64, an f64, cut and padded text, utf16le, bytes, big-endian, two
+interleaved arrays, two bit fields in one byte), and the cursor moved by
+`game.set` drawn where it was put. With the table emptied it fails at the
+first check.

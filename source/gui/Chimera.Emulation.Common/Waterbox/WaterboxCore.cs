@@ -221,11 +221,9 @@ namespace Chimera.Emulation.Common.Waterbox
 			((BasicServiceProvider)ServiceProvider).Register<IMemoryDomains>(new MemoryDomainList(domains));
 
 			// A game core's properties (docs/game-cores.md): named places in the domains
-			// above, which the tools watch, poke and freeze by name. Offered only when the
-			// table names one; what it could not use is said once, here.
-			var properties = GamePropertyTable.Parse(_session.GamePropertiesJson,
-				name => domains.FirstOrDefault(d => d.Name == name)?.Size);
-			foreach (var problem in properties.Problems) System.Console.Error.WriteLine($"[{_cfg.CoreName}] game properties: {problem}");
+			// above, which the tools watch, poke and freeze by name. The engine checked the
+			// table (and said what it left out); offered only when it names one.
+			EngineGameProperties properties = new(_session);
 			if (properties.Properties.Count is not 0)
 			{
 				((BasicServiceProvider)ServiceProvider).Register<IGameProperties>(properties);

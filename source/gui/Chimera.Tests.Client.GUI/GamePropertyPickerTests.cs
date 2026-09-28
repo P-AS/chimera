@@ -1,36 +1,40 @@
 using System.Linq;
 
 using Chimera.Client.GUI;
-using Chimera.Emulation.Common;
+using Chimera.Tests.Client.Common;
 
 namespace Chimera.Tests.Client.GUI
 {
 	/// <summary>
 	/// RAM Watch's Add Game Properties (docs/game-cores.md): the core's properties by
-	/// name under their groups, and only the ones not yet watched can be ticked.
+	/// name under their groups, an array element by element, and only the ones not yet
+	/// watched can be ticked.
 	/// </summary>
 	[TestClass]
 	public class GamePropertyPickerTests
 	{
-		private static readonly GamePropertyTable Table = GamePropertyTable.Parse(@"{ ""properties"": [
-			{ ""name"": ""Kid.X"", ""domain"": ""Game State"", ""offset"": 0, ""type"": ""u8"", ""group"": ""Kid"" },
-			{ ""name"": ""Kid.Y"", ""domain"": ""Game State"", ""offset"": 1, ""type"": ""u8"", ""group"": ""Kid"" },
-			{ ""name"": ""Guard.HP"", ""domain"": ""Game State"", ""offset"": 2, ""type"": ""s8"", ""group"": ""Guard"" },
-			{ ""name"": ""Seed"", ""domain"": ""Game State"", ""offset"": 4, ""type"": ""u32"" }
-		] }", static name => name is "Game State" ? 8 : null);
+		private const string Table = @"{ ""properties"": [
+			{ ""name"": ""Kid.X"", ""domain"": ""Game State"", ""offset"": 0, ""type"": ""u8"", ""size"": 1, ""count"": 1, ""stride"": 1, ""group"": ""Kid"" },
+			{ ""name"": ""Kid.Y"", ""domain"": ""Game State"", ""offset"": 1, ""type"": ""u8"", ""size"": 1, ""count"": 1, ""stride"": 1, ""group"": ""Kid"" },
+			{ ""name"": ""Guards.HP"", ""domain"": ""Game State"", ""offset"": 2, ""type"": ""s8"", ""size"": 1, ""count"": 2, ""stride"": 4, ""group"": ""Guards"" },
+			{ ""name"": ""Level Name"", ""domain"": ""Game State"", ""offset"": 16, ""type"": ""string"", ""size"": 8, ""count"": 1, ""stride"": 8 }
+		], ""problems"": [] }";
 
 		[TestMethod]
-		public void PropertiesSitUnderTheirGroupsAndOnlyNewOnesTick()
+		public void PropertiesSitUnderTheirGroupsElementByElementAndOnlyNewOnesTick()
 		{
-			using GamePropertyPicker picker = new(Table, static p => p.Name is "Guard.HP" ? "-1" : "0", static p => p.Name is "Kid.Y");
+			FakeGameProperties properties = new(Table);
+			using GamePropertyPicker picker = new(properties, static e => e.Name, static e => e.Name is "Kid.Y");
 			picker.Show();
-			CollectionAssert.AreEqual(new[] { "Kid", "Kid.X", "Kid.Y", "Guard", "Guard.HP", "Seed" }, picker.Rows.ToArray());
+			CollectionAssert.AreEqual(
+				new[] { "Kid", "Kid.X", "Kid.Y", "Guards", "Guards.HP[0]", "Guards.HP[1]", "Level Name" },
+				picker.Rows.ToArray());
 
 			picker.Tick("Kid");     // a heading
 			picker.Tick("Kid.Y");   // already watched
-			picker.Tick("Guard.HP");
-			picker.Tick("Seed");
-			CollectionAssert.AreEqual(new[] { "Guard.HP", "Seed" }, picker.Chosen.Select(static p => p.Name).ToArray());
+			picker.Tick("Guards.HP[1]");
+			picker.Tick("Level Name");
+			CollectionAssert.AreEqual(new[] { "Guards.HP[1]", "Level Name" }, picker.Chosen.Select(static e => e.Name).ToArray());
 		}
 	}
 }

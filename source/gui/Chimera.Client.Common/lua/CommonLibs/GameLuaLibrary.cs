@@ -9,14 +9,11 @@ using NLua;
 // ReSharper disable UnusedAutoPropertyAccessor.Local
 namespace Chimera.Client.Common
 {
-	[Description("A game core's properties by name (docs/game-cores.md): the Kid's position, the level, the random seed - what the core's property table names. The same bytes memory.* reads in the core's domains, found by name instead of address. An emulator core has none, and list() is empty.")]
+	[Description("A game core's properties by name (docs/game-cores.md): the Kid's position, a level's name, an array of guards - what the core's property table names, read and written by the engine's rules. An array's element is named by index from 0 (\"Guards.X[2]\"); the array by its own name is a table, from 1 as Lua counts. An emulator core has none, and list() is empty.")]
 	public sealed class GameLuaLibrary : LuaLibraryBase
 	{
 		[OptionalService]
 		private IGameProperties Properties { get; set; }
-
-		[OptionalService]
-		private IMemoryDomains Domains { get; set; }
 
 		public GameLuaLibrary(ILuaLibraries luaLibsImpl, ApiContainer apiContainer, Action<string> logOutputCallback)
 			: base(luaLibsImpl, apiContainer, logOutputCallback) {}
@@ -24,90 +21,115 @@ namespace Chimera.Client.Common
 		public override string Name => "game";
 
 		[LuaMethodExample("for _, name in ipairs(game.list()) do console.log(name .. \" = \" .. tostring(game.get(name))); end;")]
-		[LuaMethod("list", "Returns the names of the loaded core's game properties, in the order the core lists them; empty for a core without any")]
+		[LuaMethod("list", "Returns the names of the loaded core's game properties, in the order the core lists them (an array once, by its own name); empty for a core without any")]
 		public LuaTable List()
 			=> _th.ListToTable((Properties?.Properties ?? [ ]).Select(static p => p.Name).ToList());
 
-		[LuaMethodExample("local x = game.get(\"Kid.X\");")]
-		[LuaMethod("get", "Returns a game property's value: a whole number, a float for an f32, or a boolean for a bool. A name the core does not have returns nil and says so in the console")]
+		[LuaMethodExample("local x = game.get(\"Kid.X\"); local second = game.get(\"Guards.X[1]\"); local all = game.get(\"Guards.X\");")]
+		[LuaMethod("get", "Returns a game property's value: an integer (a u64 as the integer with the same 64 bits), a float for f32/f64, a boolean for bool, a string, or a table of byte values for bytes. An array by its own name is a table of its elements. A name the core does not have returns nil and says so in the console")]
 		public object Get(string name)
 		{
-			if (Find("get", name) is not var (property, domain)) return null;
-			var value = GamePropertyTable.Read(property, domain);
-			return property.Type switch
+			if (Find("get", name) is not { } element) return null;
+			if (element.Property.IsArray && !name.TrimEnd().EndsWith("]"))
 			{
-				GamePropertyType.Bool => value is not 0,
-				GamePropertyType.F32 => value,
-				_ => (object)(long)value,
-			};
+				return _th.ListToTable(element.Property.Elements.Select(ToLua).ToList());
+			}
+			return ToLua(element);
 		}
 
-		[LuaMethodExample("game.set(\"Kid.HP\", 3);")]
-		[LuaMethod("set", "Sets a game property; the game's next step sees it. Takes a number, or a boolean for a bool. Returns whether it was set: not for a name the core does not have, nor for a property the game works out afresh every step, and the console says why")]
+		[LuaMethodExample("game.set(\"Kid.HP\", 3); game.set(\"Level Name\", \"Dungeon\"); game.set(\"Guards.X[1]\", -40);")]
+		[LuaMethod("set", "Sets a game property; the game's next step sees it. Takes a number, a boolean, a string, or a table of byte values for bytes; an array by its own name takes a table of its elements. Returns whether it was set: not for a name the core does not have, a value it cannot hold, or a property the game works out afresh every step - and the console says why")]
 		public bool Set(string name, object value)
 		{
-			if (Find("set", name) is not var (property, domain)) return false;
-			if (!property.Writable)
+			if (Find("set", name) is not { } element) return false;
+			if (element.Property.IsArray && !name.TrimEnd().EndsWith("]"))
 			{
-				Log($"game.set: \"{property.Name}\" is worked out by the game every step, so setting it would change nothing");
-				return false;
+				if (value is not LuaTable table)
+				{
+					Log($"game.set: \"{element.Property.Name}\" is an array of {element.Property.Count}, so it takes a table of them");
+					return false;
+				}
+				var all = true;
+				foreach (var e in element.Property.Elements)
+				{
+					if (table[(long)e.Index + 1] is { } item) all &= SetOne(e, item);
+				}
+				return all;
 			}
-			double? number = value switch
-			{
-				bool b => b ? 1 : 0,
-				long l => l,
-				double d => d,
-				int i => i,
-				_ => null,
-			};
-			if (number is null)
-			{
-				Log($"game.set: \"{property.Name}\" takes a number, not {value?.GetType().Name ?? "nil"}");
-				return false;
-			}
-			GamePropertyTable.Write(property, domain, number.Value);
-			return true;
+			return SetOne(element, value);
 		}
 
-		[LuaMethodExample("local info = game.describe(\"Kid.Direction\"); console.log(info.type .. \" at \" .. info.domain .. \":\" .. info.offset);")]
-		[LuaMethod("describe", "Returns a table describing a game property: name, domain, offset, type, size, group, writable, description, and label (its current value as the core names it, when it has names for its values); nil for a name the core does not have")]
+		[LuaMethodExample("local info = game.describe(\"Guards.X\"); console.log(info.type .. \"[\" .. info.count .. \"] at \" .. info.domain .. \":\" .. info.offset);")]
+		[LuaMethod("describe", "Returns a table describing a game property: name, domain, offset (of the element named, or the first), type, size (bytes in one element), count, stride, endian, encoding, bit, bits, group, writable, description, and label (the value as the core names it, when it has names for its values); nil for a name the core does not have")]
 		public LuaTable Describe(string name)
 		{
-			if (Find("describe", name) is not var (property, domain)) return null;
+			if (Find("describe", name) is not { } element) return null;
+			var p = element.Property;
 			var table = _th.CreateTable();
-			table["name"] = property.Name;
-			table["domain"] = property.Domain;
-			table["offset"] = property.Offset;
-			table["type"] = property.TypeName;
-			table["size"] = (long)property.Size;
-			table["group"] = property.Group;
-			table["writable"] = property.Writable;
-			table["description"] = property.Description;
-			table["label"] = GamePropertyTable.Format(property, GamePropertyTable.Read(property, domain));
+			table["name"] = element.Name;
+			table["domain"] = p.Domain;
+			table["offset"] = element.Offset;
+			table["type"] = p.TypeName;
+			table["size"] = (long)p.Size;
+			table["count"] = (long)p.Count;
+			table["stride"] = (long)p.Stride;
+			table["endian"] = p.BigEndian ? "big" : "little";
+			table["encoding"] = p.Encoding;
+			table["bit"] = (long)p.Bit;
+			table["bits"] = (long)p.Bits;
+			table["group"] = p.Group;
+			table["writable"] = p.Writable;
+			table["description"] = p.Description;
+			table["label"] = Properties.Text(element);
 			return table;
 		}
 
-		/// <summary>
-		/// The property and its domain, or null with the reason in the console. Not an
-		/// exception: one thrown back through Lua after the script has yielded a frame
-		/// takes the whole process down under Mono, even inside a pcall - the memory
-		/// library's way (say it, and carry on) is the one that is safe.
-		/// </summary>
-		private (GameProperty Property, MemoryDomain Domain)? Find(string function, string name)
+		private object ToLua(GamePropertyElement element)
+			=> Properties.Get(element) switch
+			{
+				ulong u => unchecked((long)u), // Lua's integers are 64 bits wide and signed
+				byte[] bytes => _th.ListToTable(bytes.Select(static b => (long)b).ToList()),
+				var other => other,
+			};
+
+		private bool SetOne(GamePropertyElement element, object value)
 		{
-			if (Properties?[name] is not { } property)
+			object given = value;
+			if (value is LuaTable table)
 			{
-				Log(Properties is null
-					? $"game.{function}: the loaded core has no game properties (no \"{name}\")"
-					: $"game.{function}: the loaded core has no game property \"{name}\"; game.list() says which it has");
-				return null;
+				// a table of byte values, for a bytes property: all of them, as the engine takes
+				var count = element.Property.Size;
+				var entries = table.Keys.Cast<object>().Count();
+				if (entries != count || table[(long)count] is null)
+				{
+					Log($"game.set: {element.Name} is {count} bytes, so it takes a table of {count}, not {entries}");
+					return false;
+				}
+				var bytes = new byte[count];
+				for (var k = 0; k < count; k++) bytes[k] = table[(long)k + 1] is long b ? unchecked((byte)b) : table[(long)k + 1] is double d ? unchecked((byte)d) : (byte)0;
+				given = bytes;
 			}
-			if (Domains?[property.Domain] is not { } domain)
+			if (Properties.Set(element, given) is { } refused)
 			{
-				Log($"game.{function}: \"{property.Name}\" is in \"{property.Domain}\", which the core does not have");
-				return null;
+				Log($"game.set: {element.Name}: {refused}");
+				return false;
 			}
-			return (property, domain);
+			return true;
+		}
+
+		/// <summary>
+		/// The element, or null with the reason in the console. Not an exception: one thrown
+		/// back through Lua after the script has yielded a frame takes the whole process down
+		/// under Mono, even inside a pcall - the memory library's way (say it, and carry on)
+		/// is the one that is safe.
+		/// </summary>
+		private GamePropertyElement Find(string function, string name)
+		{
+			if (Properties?.Find(name ?? "") is { } element) return element;
+			Log(Properties is null
+				? $"game.{function}: the loaded core has no game properties (no \"{name}\")"
+				: $"game.{function}: the loaded core has no game property \"{name}\"; game.list() says which it has");
+			return null;
 		}
 	}
 }

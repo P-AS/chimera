@@ -160,7 +160,21 @@ ECL_EXPORT const char *GetGameProperties(void)
 		"{ \"name\": \"Cursor.Y\", \"domain\": \"RAM\", \"offset\": 2, \"type\": \"u8\", \"group\": \"Cursor\" },"
 		"{ \"name\": \"Steps\", \"domain\": \"RAM\", \"offset\": 4, \"type\": \"u32\", \"group\": \"Game\","
 		" \"description\": \"Moves made; past 1000 the game is lost\" },"
-		"{ \"name\": \"Started\", \"domain\": \"RAM\", \"offset\": 8, \"type\": \"bool\", \"group\": \"Game\" }"
+		"{ \"name\": \"Started\", \"domain\": \"RAM\", \"offset\": 8, \"type\": \"bool\", \"group\": \"Game\" },"
+		/* every other kind of property, over RAM gridWalker leaves alone (0x100 on),
+		 * so the witness can put each through the engine and read the bytes back */
+		"{ \"name\": \"Test.Frames\", \"domain\": \"RAM\", \"offset\": 256, \"type\": \"u64\", \"group\": \"Test\" },"
+		"{ \"name\": \"Test.Balance\", \"domain\": \"RAM\", \"offset\": 264, \"type\": \"s64\", \"group\": \"Test\" },"
+		"{ \"name\": \"Test.Gravity\", \"domain\": \"RAM\", \"offset\": 272, \"type\": \"f64\", \"group\": \"Test\" },"
+		"{ \"name\": \"Test.Name\", \"domain\": \"RAM\", \"offset\": 280, \"type\": \"string\", \"length\": 8, \"group\": \"Test\" },"
+		"{ \"name\": \"Test.Wide\", \"domain\": \"RAM\", \"offset\": 288, \"type\": \"string\", \"length\": 8,"
+		" \"encoding\": \"utf16le\", \"group\": \"Test\" },"
+		"{ \"name\": \"Test.Key\", \"domain\": \"RAM\", \"offset\": 296, \"type\": \"bytes\", \"length\": 4, \"group\": \"Test\" },"
+		"{ \"name\": \"Test.Score\", \"domain\": \"RAM\", \"offset\": 300, \"type\": \"u32\", \"endian\": \"big\", \"group\": \"Test\" },"
+		"{ \"name\": \"Test.Row\", \"domain\": \"RAM\", \"offset\": 304, \"type\": \"s16\", \"count\": 4, \"stride\": 4, \"group\": \"Test\" },"
+		"{ \"name\": \"Test.Col\", \"domain\": \"RAM\", \"offset\": 306, \"type\": \"u8\", \"count\": 4, \"stride\": 4, \"group\": \"Test\" },"
+		"{ \"name\": \"Test.Flag\", \"domain\": \"RAM\", \"offset\": 320, \"type\": \"u8\", \"bit\": 2, \"bits\": 1, \"group\": \"Test\" },"
+		"{ \"name\": \"Test.Nibble\", \"domain\": \"RAM\", \"offset\": 320, \"type\": \"u8\", \"bit\": 4, \"bits\": 4, \"group\": \"Test\" }"
 		"] }";
 }
 

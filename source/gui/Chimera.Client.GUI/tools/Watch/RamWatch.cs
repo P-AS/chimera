@@ -114,7 +114,8 @@ namespace Chimera.Client.GUI
 				while (i < _watches.Count)
 				{
 					w = _watches[i];
-					if (w.IsSeparator)
+					// a property's watch is known by its name, and never a duplicate of an address's
+					if (w.IsSeparator || w is PropertyWatch)
 					{
 						i++;
 						continue;
@@ -298,6 +299,7 @@ namespace Chimera.Client.GUI
 				&& _watches.All(w => w.Domain == null || MemoryDomains.Select(m => m.Name).Contains(w.Domain.Name))
 				&& (Config.RecentWatches.AutoLoad || (IsHandleCreated || !IsDisposed)))
 			{
+				_watches.GameProperties = GameProperties;
 				_watches.RefreshDomains(MemoryDomains, Config.RamWatchDefinePrevious);
 				_watches.Reload();
 				GeneralUpdate();
@@ -305,7 +307,7 @@ namespace Chimera.Client.GUI
 			}
 			else
 			{
-				_watches = new WatchList(MemoryDomains, Emu.SystemId);
+				_watches = new WatchList(MemoryDomains, Emu.SystemId) { GameProperties = GameProperties };
 				NewWatchList(true);
 			}
 		}
@@ -412,7 +414,7 @@ namespace Chimera.Client.GUI
 			var clipboardRows = clipboardText.Split([ "\n" ], StringSplitOptions.RemoveEmptyEntries);
 			foreach (var row in clipboardRows)
 			{
-				var watch = Watch.FromString(row, MemoryDomains);
+				var watch = Watch.FromString(row, MemoryDomains, GameProperties);
 				if (watch is not null)
 				{
 					_watches.Add(watch);
@@ -448,6 +450,17 @@ namespace Chimera.Client.GUI
 		private void EditWatch(bool duplicate = false)
 		{
 			var indexes = SelectedIndices.ToList();
+
+			// a game property's watch is the property, known by its name: there is no
+			// address, size or type of it to edit
+			if (SelectedWatches.Any(static w => w is PropertyWatch))
+			{
+				this.ModalMessageBox(
+					caption: "Game property",
+					text: "A game property's watch reads the property itself, by its name, so there is nothing of it to edit. "
+						+ "Poke sets its value; Add Game Properties adds another.");
+				return;
+			}
 
 			if (SelectedWatches.Any())
 			{
@@ -508,6 +521,8 @@ namespace Chimera.Client.GUI
 
 		private string ComputeDisplayType(Watch w)
 		{
+			if (w is PropertyWatch property) return property.Element.Property.TypeText;
+
 			string s = w.Size == WatchSize.Byte ? "1" : (w.Size == WatchSize.Word ? "2" : "4");
 			switch (w.Type)
 			{
@@ -809,12 +824,12 @@ namespace Chimera.Client.GUI
 			if (GameProperties is null) return;
 			using GamePropertyPicker picker = new(
 				GameProperties,
-				p => MemoryDomains[p.Domain] is { } d ? GamePropertyTable.Format(p, GamePropertyTable.Read(p, d)) : "",
-				p => _watches.Any(w => !w.IsSeparator && w.Domain?.Name == p.Domain && w.Address == p.Offset && (int)w.Size == p.Size));
+				e => GameProperties.Text(e),
+				e => _watches.Any(w => !w.IsSeparator && w.Notes == e.Name && w.Domain?.Name == e.Property.Domain && w.Address == e.Offset));
 			if (!this.ShowDialogWithTempMute(picker).IsOk()) return;
-			foreach (var property in picker.Chosen)
+			foreach (var element in picker.Chosen)
 			{
-				if (MemoryDomains[property.Domain] is { } domain) _watches.Add(GamePropertyWatches.WatchOf(property, domain));
+				if (MemoryDomains[element.Property.Domain] is { } domain) _watches.Add(GamePropertyWatches.WatchOf(GameProperties, element, domain));
 			}
 			Changes();
 			UpdateWatchCount();
@@ -907,6 +922,14 @@ namespace Chimera.Client.GUI
 
 		private void PokeAddress()
 		{
+			// a game property takes what the engine parses - a name, text, a 64-bit number -
+			// which the numeric poke box cannot enter
+			if (SelectedWatches.Any(static w => w is PropertyWatch))
+			{
+				PokeProperties();
+				return;
+			}
+
 			if (SelectedWatches.Any())
 			{
 				var poke = new RamPoke(DialogController, SelectedWatches, MainForm.CheatList)
@@ -919,6 +942,30 @@ namespace Chimera.Client.GUI
 					GeneralUpdate();
 				}
 			}
+		}
+
+		/// <summary>
+		/// Sets the selected game properties from one line of text, as the engine reads it: a
+		/// number (hex after 0x), a value's name, true/false, text, or hex bytes.
+		/// </summary>
+		private void PokeProperties()
+		{
+			var properties = SelectedWatches.OfType<PropertyWatch>().ToList();
+			using InputPrompt prompt = new()
+			{
+				Text = "Poke " + (properties.Count is 1 ? properties[0].Element.Name : $"{properties.Count} properties"),
+				StartLocation = this.ChildPointToScreen(WatchListView),
+				Message = $"Value ({properties[0].Element.Property.TypeText}):",
+				TextInputType = InputPrompt.InputType.Text,
+				InitialValue = properties[0].RawText,
+			};
+			if (!this.ShowDialogWithTempMute(prompt).IsOk()) return;
+			var refused = properties.Where(p => !p.Poke(prompt.PromptText)).ToList();
+			if (refused.Count is not 0)
+			{
+				this.ModalMessageBox(caption: "Not set", text: string.Join("\n", refused.Select(static p => $"{p.Element.Name}: {p.LastPokeError}")));
+			}
+			GeneralUpdate();
 		}
 
 		private void FreezeAddressMenuItem_Click(object sender, EventArgs e)
@@ -1135,7 +1182,7 @@ namespace Chimera.Client.GUI
 
 		private void RamWatch_Load(object sender, EventArgs e)
 		{
-			_watches = new WatchList(MemoryDomains, Emu.SystemId);
+			_watches = new WatchList(MemoryDomains, Emu.SystemId) { GameProperties = GameProperties };
 			LoadConfigSettings();
 			RamWatchMenu.Items.Add(WatchListView.ToColumnsMenu(ColumnToggleCallback));
 			UpdateStatusBar();
