@@ -50,6 +50,7 @@ The officially maintained cores are:
 | Wii | [Dolphin](https://github.com/ToolAssisted-run/chimera-core-dolphin) |
 | Game Boy / Game Boy Color | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
 | Game Boy Advance | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
+| Nintendo 3DS / New Nintendo 3DS | [Azahar](https://github.com/ToolAssisted-run/chimera-core-azahar) |
 | Mega Drive / Genesis | [Genesis Plus GX](https://github.com/ToolAssisted-run/chimera-core-gpgx), [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
 | Mega Drive 32X | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
 | Sega CD / Mega CD | [Genesis Plus GX](https://github.com/ToolAssisted-run/chimera-core-gpgx), [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |

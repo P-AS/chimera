@@ -134,6 +134,13 @@
       "systems": [ "CPS1", "CPS2", "CPS3", "NEOGEO", "SYS16" ],
       "repo": "ToolAssisted-run/chimera-core-fbneo",
       "tested": ""
+    },
+    {
+      "id": "azahar",
+      "name": "Azahar",
+      "systems": [ "3DS" ],
+      "repo": "ToolAssisted-run/chimera-core-azahar",
+      "tested": ""
     }
   ]
 }

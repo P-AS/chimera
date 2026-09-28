@@ -696,8 +696,10 @@ namespace Chimera.Emulation.Common
 			{
 				["Debug"] = 'd',
 				["GPIO14"] = 'g',
-				["ZL"] = 'z',
-				["ZR"] = 'z',
+				// the New 3DS's second shoulders, the way the PS3's L2 and R2 read: both
+				// used to be 'z', one character for two controls (an ambiguous log)
+				["ZL"] = '[',
+				["ZR"] = ']',
 				["Touch"] = 'T',
 				["Tilt"] = 't',
 			},
