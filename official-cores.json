@@ -141,6 +141,30 @@
       "systems": [ "3DS" ],
       "repo": "ToolAssisted-run/chimera-core-azahar",
       "tested": ""
+    },
+    {
+      "id": "sdlpop",
+      "name": "SDLPoP",
+      "systems": [ "PrinceOfPersia" ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-sdlpop",
+      "tested": ""
+    },
+    {
+      "id": "sdlpop2",
+      "name": "SDLPoP2",
+      "systems": [ "PrinceOfPersia2" ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-sdlpop2",
+      "tested": ""
+    },
+    {
+      "id": "opensamurai",
+      "name": "OpenSamurai",
+      "systems": [ "SwordOfTheSamurai" ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-opensamurai",
+      "tested": ""
     }
   ]
 }

@@ -87,6 +87,17 @@ The officially maintained cores are:
 | Flash | [Ruffle](https://github.com/ToolAssisted-run/chimera-core-ruffle) |
 | Symbian / Nokia N-Gage | [EKA2L1](https://github.com/ToolAssisted-run/chimera-core-eka2l1) |
 
+The officially maintained **game cores** - one game rather than one machine:
+an open-source game, or one reconstructed from its original program, built as
+a core and run from the game's own files (see
+[docs/game-cores.md](docs/game-cores.md)):
+
+| Game | Core |
+| --- | --- |
+| Prince of Persia (DOS) | [SDLPoP](https://github.com/ToolAssisted-run/chimera-core-sdlpop) |
+| Prince of Persia 2: The Shadow and the Flame (DOS) | [SDLPoP2](https://github.com/ToolAssisted-run/chimera-core-sdlpop2) |
+| Sword of the Samurai (DOS) | [OpenSamurai](https://github.com/ToolAssisted-run/chimera-core-opensamurai) |
+
 ## Getting a build
 
 The frontend is built for Linux and Windows and published here:
