@@ -94,6 +94,7 @@ One game each, run from the game's own files ([docs/game-cores.md](docs/game-cor
 | Prince of Persia (DOS) | [SDLPoP](https://github.com/ToolAssisted-run/chimera-core-sdlpop) |
 | Prince of Persia 2: The Shadow and the Flame (DOS) | [SDLPoP2](https://github.com/ToolAssisted-run/chimera-core-sdlpop2) |
 | Sword of the Samurai (DOS) | [OpenSamurai](https://github.com/ToolAssisted-run/chimera-core-opensamurai) |
+| Syndicate (DOS) | [SyndicatFX](https://github.com/ToolAssisted-run/chimera-core-syndicatfx) |
 
 ## Getting a build
 
