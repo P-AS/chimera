@@ -80,6 +80,7 @@ The officially maintained cores are:
 | Neo Geo Pocket / Color | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
 | WonderSwan / WonderSwan Color | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
 | Apple II / II Plus / IIe (and the Pravets, TK3000 and Base64A clones) | [AppleWin](https://github.com/ToolAssisted-run/chimera-core-applewin) |
+| Sharp X68000 | [MAME X68000](https://github.com/ToolAssisted-run/chimera-core-x68k) |
 | MS-DOS | [DOSBox-X](https://github.com/ToolAssisted-run/chimera-core-dosbox-x), [PCem](https://github.com/ToolAssisted-run/chimera-core-pcem) |
 | Windows 3.1 / 95 / 98 | [DOSBox-X](https://github.com/ToolAssisted-run/chimera-core-dosbox-x), [PCem](https://github.com/ToolAssisted-run/chimera-core-pcem) |
 | Windows XP | [PCem](https://github.com/ToolAssisted-run/chimera-core-pcem) |

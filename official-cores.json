@@ -143,6 +143,13 @@
       "tested": ""
     },
     {
+      "id": "x68k",
+      "name": "MAME X68000",
+      "systems": [ "X68000" ],
+      "repo": "ToolAssisted-run/chimera-core-x68k",
+      "tested": ""
+    },
+    {
       "id": "sdlpop",
       "name": "SDLPoP",
       "systems": [ "PrinceOfPersia" ],
