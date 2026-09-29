@@ -58,6 +58,7 @@ namespace Chimera.Client.Common
 			["PrinceOfPersia"] = "Prince of Persia",
 			["PrinceOfPersia2"] = "Prince of Persia 2",
 			["SwordOfTheSamurai"] = "Sword of the Samurai",
+			["Syndicate"] = "Syndicate",
 			["PS2"] = "PlayStation 2",
 			["PS3"] = "PlayStation 3",
 			["PSP"] = "PlayStation Portable",
