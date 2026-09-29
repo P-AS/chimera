@@ -25,7 +25,7 @@ Chimera is a minimal frontend for creating tool-assisted speedruns (TAS).
 
 - **Performance.** All functional machinery (the sandbox host, movies, savestates, file formats, the running machine itself) lives in `libchimera`, a native C++ engine the GUI calls into.
 
-- **Stronger reproducibility guarantees.** Every core runs inside [miniBox](https://github.com/ToolAssisted-run/chimera-common-minibox), a sandbox that gives it the same machine on every computer. The core sees only the files and settings the project gives it, and its clock and scheduling come from the sandbox, never from the host. So the same project (`.chimeraProject`) with the same input files plays the same movie on any machine, Linux or Windows, whatever Chimera build runs it. The project pins everything that needs: the core package by version and hash, and every firmware and game file by hash.
+- **Stronger reproducibility guarantees.** Every core runs inside [miniBox](https://github.com/ToolAssisted-run/chimera-common-minibox), a sandbox that gives it the same machine on every computer. The core sees only the files and settings the project gives it, and its clock and scheduling come from the sandbox, never from the host. So the same project (`.chimeraProject`) with the same input files plays the same movie on any machine, Linux or Windows, whatever Chimera build runs it. The project pins everything this depends on: the core package by version and hash, and every firmware and game file by hash.
 
 Chimera is not designed for casual play. For that, use the original emulators directly, or a multi-emulation frontend such as RetroArch.
 
