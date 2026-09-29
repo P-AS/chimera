@@ -4642,3 +4642,26 @@ core showing it greyed. The frontend asks the core whether it has a timer and
 never which game it is, so a third game core with a timer gets the item
 without a change here. The hotkey and the message position stay where the
 other displays' are.
+
+## The lists of cores filter by kind; they draw no dividers (user-decided, 2026-09-29)
+
+Game cores were set apart in every list by a divider row - a grey line reading
+"Game cores", with "External cores" and "External game cores" beside it in the
+Core Manager - because Mono's ListView ignores groups in Details view, so a row
+was the only divide that drew everywhere. The user found it did not look
+right: a divider row reads as a disabled entry, and has to be kept from being
+ticked, selected, sorted across and counted.
+
+Tabs, one per kind, were weighed and not taken. The windows act on everything
+at once - the Core Manager's Check for updates and Download latest, the Cache
+Manager's one budget and Clean Now - so a tab would split what is one list
+with one set of actions, and the wizard's core box, a drop-down, cannot hold
+tabs at all. Each list is now one list with a Type column and Show: All /
+Emulators / Games above it (Kind: Emulator / Game in the wizard, above the
+core). The column says on every row what the divider said once; the filter
+narrows the view without splitting the actions. A ticked row the filter hides
+is unticked, so no button acts on something out of view. The Core Manager's
+external cores went the same way: their Source says "(added by hand)".
+
+The Cache Manager has no distinction at all (user: not useful there): what a
+cached thing costs to lose does not depend on the kind of core that made it.

@@ -42,26 +42,43 @@ namespace Chimera.Tests.Client.GUI
 			Assert.AreEqual(0, form.CoreChoiceIndex, "the picker opens on the latest");
 		}
 
+		private static DiscoveredCorePackage Game(string name)
+			=> new() { Name = name, Version = "1a2b3c4d5e6f", Path = $"/cores/{name}.chimeraCore", Sha1 = "1".PadRight(40, '0'), Systems = [ "PoP" ], IsGameCore = true };
+
 		[TestMethod]
-		public void GameCoresSitBelowADividerThatIsNotAChoice()
+		public void TheKindComesFirstAndThePickerListsOnlyThatKind()
 		{
-			// docs/game-cores.md: every list of cores shows the emulators and the game cores apart
-			List<DiscoveredCorePackage> cores =
-			[
-				new() { Name = "SDLPoP", Version = "1a2b3c4d5e6f", Path = "/cores/sdlpop.chimeraCore", Sha1 = "1".PadRight(40, '0'), Systems = [ "PoP" ], IsGameCore = true },
-				Build("quickernes", "0eebbf6d4e5f", "2026-08-20T12:00:00Z"),
-			];
+			// docs/game-cores.md: Kind: Emulator / Game above the core, where the picker used to
+			// list both with a divider line (user-decided, 2026-09-29)
+			List<DiscoveredCorePackage> cores = [ Game("SDLPoP"), Build("quickernes", "0eebbf6d4e5f", "2026-08-20T12:00:00Z") ];
 			using NewProjectWizard form = new(cores, static _ => [ ]);
-			var lines = form.CoreChoiceLines;
+			Assert.AreEqual(CoreKindFilter.Emulators, form.Kind, "an emulator unless asked otherwise");
+			Assert.AreEqual(1, form.CoreChoiceLines.Count);
+			StringAssert.Contains(form.CoreChoiceLines[0], "quickernes");
+			Assert.AreEqual(0, form.CoreChoiceIndex);
 
-			Assert.AreEqual(3, lines.Count);
-			StringAssert.Contains(lines[0], "quickernes");
-			Assert.AreEqual(NewProjectWizard.GameCoresLine, lines[1]);
-			StringAssert.Contains(lines[2], "SDLPoP");
-			Assert.AreEqual(0, form.CoreChoiceIndex, "the picker opens on a core, not on the divider");
+			form.ChooseKindForTest(CoreKindFilter.Games);
+			Assert.AreEqual(1, form.CoreChoiceLines.Count);
+			StringAssert.Contains(form.CoreChoiceLines[0], "SDLPoP");
+			Assert.AreEqual(0, form.CoreChoiceIndex, "the other kind's first core is chosen");
+			Assert.AreEqual("SDLPoP", form.ChosenCoreName);
+		}
 
-			form.ChooseCoreLine(1);
-			Assert.AreEqual(2, form.CoreChoiceIndex, "the divider hands the choice on to the first game core");
+		[TestMethod]
+		public void TheWizardOpensOnTheKindAskedForWhenThereIsOne()
+		{
+			List<DiscoveredCorePackage> both = [ Game("SDLPoP"), Build("quickernes", "0eebbf6d4e5f", "2026-08-20T12:00:00Z") ];
+			using (NewProjectWizard form = new(both, static _ => [ ], kind: CoreKindFilter.Games))
+			{
+				Assert.AreEqual(CoreKindFilter.Games, form.Kind);
+				Assert.AreEqual("SDLPoP", form.ChosenCoreName);
+			}
+			// no game core installed: the emulators, whatever was asked
+			using (NewProjectWizard form = new([ Build("quickernes", "0eebbf6d4e5f", "2026-08-20T12:00:00Z") ], static _ => [ ], kind: CoreKindFilter.Games))
+			{
+				Assert.AreEqual(CoreKindFilter.Emulators, form.Kind);
+				Assert.AreEqual("quickernes", form.ChosenCoreName);
+			}
 		}
 
 		[TestMethod]

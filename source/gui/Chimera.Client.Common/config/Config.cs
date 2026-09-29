@@ -346,6 +346,12 @@ namespace Chimera.Client.Common
 		/// </summary>
 		public bool DisplayWatchesOnScreen { get; set; } = true;
 
+		// Which cores each list of them shows, and the kind the new-project wizard opens on
+		// (docs/game-cores.md): remembered per window, as a person left it
+		public CoreKindFilter CoreManagerShows { get; set; } = CoreKindFilter.All;
+		public CoreKindFilter FirmwareShows { get; set; } = CoreKindFilter.All;
+		public CoreKindFilter NewProjectKind { get; set; } = CoreKindFilter.Emulators;
+
 		// Video dumping settings
 		public string VideoWriter { get; set; } = "";
 		public int JmdCompression { get; set; } = 3;

@@ -24,13 +24,25 @@ did not read the controls.
 
 `waterbox.config` carries `"kind": "game"`. Absent means `"emulator"`, which is
 every core before this one. `official-cores.json` carries the same field for
-the roster, so the Core Manager can divide cores it has not downloaded yet.
+the roster, so the Core Manager knows the kind of cores it has not downloaded
+yet.
 
-Every list of cores - the Core Manager, the Cache Manager, the new-project
-wizard, the precompiled-modules window - shows emulator cores, then a divider
-row, then game cores. (A row rather than a ListView group: Mono's ListView
-ignores groups in Details view, which is why the Core Manager's "External
-cores" divide is a row too.)
+A list of cores is one list, the emulators first, with a choice above it
+(user-decided, 2026-09-29):
+
+- File > Core Manager: a Type column (Emulator or Game) and Show: All /
+  Emulators / Games. A core the roster does not ship says "(added by hand)" in
+  its Source. Select all and the bulk buttons act on the rows shown: a row the
+  filter hides is unticked.
+- Config > Firmware: Show: All / Emulators / Games, over the cores' groups.
+- The new-project wizard: Kind: Emulator / Game above the core, which lists
+  that kind only. A kind no installed core is cannot be chosen; the wizard
+  opens on the last project's core when it has one, else on the kind of the
+  last project made.
+- The Cache Manager makes no distinction.
+
+Each window remembers its choice (Config: `CoreManagerShows`,
+`FirmwareShows`, `NewProjectKind`).
 
 While a game core runs, the menu bar's Emulator menu is called **Game**
 (user-decided, 2026-09-29): there is no emulator, and the menu holds the

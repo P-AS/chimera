@@ -37,23 +37,12 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
-		public void AGameCoresThingsSitBelowADividerThatNeverTicks()
+		public void SelectAllTicksEveryRowThatCanGo()
 		{
-			// docs/game-cores.md: every list of cores shows the two sorts apart
-			List<CacheItem> items =
-			[
-				new() { Kind = CacheKind.Project, Label = "a level of a game core", Path = "/cache/pop", Bytes = 8192, IsGameCore = true },
-				.. Three(),
-			];
-			using CacheManagerForm form = new(() => items);
+			using CacheManagerForm form = new(() => Three());
 			form.Show();
-			var rows = form.Rows;
-			Assert.AreEqual(5, rows.Count);
-			Assert.AreEqual(CoreManagerModel.GameHeading, rows[3], "the divider comes after every emulator's row");
-			Assert.AreEqual("a level of a game core", rows[4]);
-
 			form.SelectAllForTest(true);
-			CollectionAssert.AreEquivalent(new[] { Idle, Gone, "/cache/pop" }, form.TickedPaths.ToArray(), "the divider is not a thing on disk");
+			CollectionAssert.AreEquivalent(new[] { Idle, Gone }, form.TickedPaths.ToArray(), "what is open is never ticked");
 		}
 
 		/// <summary>

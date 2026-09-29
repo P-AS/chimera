@@ -41,6 +41,7 @@ namespace Chimera.Client.GUI
 		private readonly Label _detail;
 		private readonly Label _header;
 		private readonly CheckBox _showAll;
+		private readonly CoreKindFilterBox _shows;
 		private readonly Button _setButton;
 		private readonly Button _clearButton;
 		private readonly Func<IReadOnlyList<FirmwareSurveyGroup>> _survey;
@@ -72,7 +73,9 @@ namespace Chimera.Client.GUI
 			Action<FirmwareSurveyRow, string?> remember,
 			Func<string, string?> pickFile,
 			PickScanFolder? pickFolder = null,
-			Action<string, bool>? scanFolder = null)
+			Action<string, bool>? scanFolder = null,
+			CoreKindFilter shows = CoreKindFilter.All,
+			Action<CoreKindFilter>? rememberShows = null)
 		{
 			_survey = survey;
 			_remember = remember;
@@ -100,10 +103,10 @@ namespace Chimera.Client.GUI
 				Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
 				FullRowSelect = true,
 				HideSelection = false,
-				Location = new(UIHelper.ScaleX(8), UIHelper.ScaleY(44)),
+				Location = new(UIHelper.ScaleX(8), UIHelper.ScaleY(72)),
 				MultiSelect = false,
 				ShowGroups = true,
-				Size = new(UIHelper.ScaleX(844), UIHelper.ScaleY(300)),
+				Size = new(UIHelper.ScaleX(844), UIHelper.ScaleY(272)),
 				SmallImageList = _marks,
 				View = View.Details,
 			};
@@ -115,6 +118,19 @@ namespace Chimera.Client.GUI
 			_list.Columns.Add("Where", UIHelper.ScaleX(110));
 			_list.Columns.Add("Status", UIHelper.ScaleX(105));
 			_list.SelectedIndexChanged += (_, _) => UpdateDetail();
+
+			// which kinds of core's files are listed, right-aligned above the list
+			_shows = new CoreKindFilterBox("Show:", offerAll: true)
+			{
+				Anchor = AnchorStyles.Top | AnchorStyles.Right,
+				Value = shows,
+			};
+			_shows.Location = new(_list.Right - _shows.PreferredSize.Width, UIHelper.ScaleY(44));
+			_shows.Changed += () =>
+			{
+				rememberShows?.Invoke(_shows.Value);
+				Render();
+			};
 			_list.DoubleClick += (_, _) => Browse();
 
 			_detail = new Label
@@ -142,7 +158,7 @@ namespace Chimera.Client.GUI
 			closeButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
 			CancelButton = closeButton;
 
-			Controls.AddRange([ _header, _list, _detail, _setButton, _clearButton, scanButton, rescanButton, _showAll, closeButton ]);
+			Controls.AddRange([ _header, _shows, _list, _detail, _setButton, _clearButton, scanButton, rescanButton, _showAll, closeButton ]);
 			ResumeLayout();
 			Populate();
 		}
@@ -223,22 +239,10 @@ namespace Chimera.Client.GUI
 			_list.Items.Clear();
 			_list.Groups.Clear();
 			_rowOf.Clear();
-			var dividerDone = false;
-			foreach (var group in _groups)
+			// the emulators' files, then the game cores' (docs/game-cores.md), as the survey orders
+			// them, through the Show filter
+			foreach (var group in _groups.Where(g => _shows.Value.Shows(g.IsGameCore)))
 			{
-				// the game cores' files below a divider (docs/game-cores.md): a group of
-				// its own holding one grey line, which reads as a divide both where
-				// groups are drawn and on Mono, which ignores them in Details view
-				if (group.IsGameCore && !dividerDone)
-				{
-					dividerDone = true;
-					ListViewGroup games = new(CoreManagerModel.GameHeading);
-					_list.Groups.Add(games);
-					ListViewItem divide = new("") { Group = games, ForeColor = ThemeEngine.Color(ThemeColorRole.DisabledText) };
-					divide.SubItems.Add(CoreManagerModel.GameHeading);
-					_list.Items.Add(divide);
-					_rowOf.Add(null);
-				}
 				ListViewGroup lvg = new($"{group.CoreName}  ·  {group.Summary}");
 				_list.Groups.Add(lvg);
 				if (group.Rows.Count is 0)

@@ -43,14 +43,14 @@ namespace Chimera.Client.Common
 		public bool IsUnclaimed => Core is null;
 
 		/// <summary>
-		/// Which half of the list this belongs in. Official cores are the ones this
-		/// build ships a roster entry for; everything else - cores added by hand, and
-		/// packages nothing claims - is external, and sits below them.
+		/// Official cores are the ones this build ships a roster entry for; everything
+		/// else - cores added by hand, and packages nothing claims - is external, and is
+		/// listed after them, its source saying so.
 		/// </summary>
 		public bool IsOfficial => Core is { IsExternal: false };
 
 		/// <summary>
-		/// True for a game core (docs/game-cores.md), which sits below every emulator. The
+		/// True for a game core (docs/game-cores.md), listed after every emulator. The
 		/// roster says so for a core that is not here yet; a package says so for itself,
 		/// which covers one added by hand or dropped in with no roster entry at all.
 		/// </summary>
@@ -198,34 +198,14 @@ namespace Chimera.Client.Common
 			}
 
 			// emulators, then game cores, and within each official first, then
-			// everything else: the window draws a divider wherever the heading
-			// changes, and this is what decides which side of it a row is on
+			// everything else - one list, whose Type and Source columns say which
+			// is which (the window filters by kind; it draws no dividers)
 			return rows
 				.OrderBy(static r => r.IsGameCore ? 1 : 0)
 				.ThenBy(static r => r.IsOfficial ? 0 : 1)
 				.ThenBy(static r => r.Name, StringComparer.OrdinalIgnoreCase)
 				.ToList();
 		}
-
-		public const string ExternalHeading = "External cores";
-
-		public const string GameHeading = "Game cores";
-
-		public const string ExternalGameHeading = "External game cores";
-
-		/// <summary>
-		/// The divider a row sits under, or null for the official emulators, which open
-		/// the list and need none. <see cref="Build"/> orders the rows so each heading's
-		/// rows are together.
-		/// </summary>
-		public static string? Heading(CoreManagerRow row)
-			=> (row.IsGameCore, row.IsOfficial) switch
-			{
-				(false, true) => null,
-				(false, false) => ExternalHeading,
-				(true, true) => GameHeading,
-				(true, false) => ExternalGameHeading,
-			};
 
 		/// <summary>
 		/// Whether a package is a build of this roster core. The package's own

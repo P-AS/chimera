@@ -661,7 +661,9 @@ namespace Chimera.Client.GUI
 							}
 						}
 					}
-				});
+				},
+				shows: Config.FirmwareShows,
+				rememberShows: shows => Config.FirmwareShows = shows);
 			this.ShowDialogWithTempMute(form);
 		}
 
@@ -745,8 +747,7 @@ namespace Chimera.Client.GUI
 				loadedPackageSha1s: CoreRegistry.Instance.LoadedPackages
 					.Select(static p => p.Sha1)
 					.Where(static s => !string.IsNullOrEmpty(s))
-					.ToList()!,
-				gameCores: _discoveredCorePackages.Where(static p => p.IsGameCore).Select(static p => p.Name).ToList());
+					.ToList()!);
 
 		private CacheCleanPolicy CacheCleanPolicyFromConfig()
 			=> new()
@@ -838,7 +839,9 @@ namespace Chimera.Client.GUI
 				installed: package =>
 				{
 					if (package.Sha1 is not null) CoreChoices.MakeDefaultBuild(Config, package.Name, package.Sha1);
-				});
+				},
+				shows: Config.CoreManagerShows,
+				rememberShows: shows => Config.CoreManagerShows = shows);
 			this.ShowDialogWithTempMute(form);
 			ScanForCorePackages();
 		}

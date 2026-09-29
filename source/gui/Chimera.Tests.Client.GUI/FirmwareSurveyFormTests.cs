@@ -75,16 +75,23 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
-		public void TheGameCoresFilesSitBelowADivider()
+		public void EveryCoresFilesInOneListThatTheShowChoiceNarrows()
 		{
+			// docs/game-cores.md: no divider; Show: All / Emulators / Games (user-decided, 2026-09-29)
 			using Harness h = new(
 				new FirmwareSurveyGroup { CoreName = "xemu", Rows = [ Row("xemu", "mcpx", null, CoreFirmwareState.Good, path: "/fw/mcpx_1.0.bin") ] },
 				new FirmwareSurveyGroup { CoreName = "SDLPoP", IsGameCore = true, Rows = [ Row("SDLPoP", "PRINCE.DAT", null, CoreFirmwareState.Missing) ] });
 			var list = ListOf(h.Form);
-			Assert.AreEqual(CoreManagerModel.GameHeading, list.Items[1].SubItems[1].Text, "the divider sits between the emulator's rows and the game's");
-			Assert.AreEqual(3, list.Items.Count);
-			Assert.AreEqual(2, h.Form.DisplayedRows.Count, "the divider is not a firmware row");
-			Assert.AreEqual(CoreManagerModel.GameHeading, list.Groups[1].Header);
+			Assert.AreEqual(2, list.Items.Count, "a row for each file, and no divider");
+			CollectionAssert.AreEqual(new[] { "xemu", "SDLPoP" }, list.Groups.Cast<ListViewGroup>().Select(static g => g.Header.Split(' ')[0]).ToArray());
+
+			var shows = h.Form.Controls.OfType<CoreKindFilterBox>().Single();
+			shows.ChooseForTest(CoreKindFilter.Games);
+			Assert.AreEqual("PRINCE.DAT", h.Form.DisplayedRows.Single().Decl.Id);
+			shows.ChooseForTest(CoreKindFilter.Emulators);
+			Assert.AreEqual("mcpx", h.Form.DisplayedRows.Single().Decl.Id);
+			shows.ChooseForTest(CoreKindFilter.All);
+			Assert.AreEqual(2, h.Form.DisplayedRows.Count);
 		}
 
 		[TestMethod]

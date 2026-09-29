@@ -33,14 +33,17 @@ namespace Chimera.Client.GUI
 	{
 		private readonly IReadOnlyList<DiscoveredCorePackage> _cores;
 
-		/// <summary>
-		/// The package on each line of the core picker; null for the line that divides the
-		/// emulators from the game cores (docs/game-cores.md), which is not a choice.
-		/// </summary>
-		private readonly List<DiscoveredCorePackage?> _coreAt = new();
+		/// <summary>The package on each line of the core picker: the installed cores of the chosen kind.</summary>
+		private readonly List<DiscoveredCorePackage> _coreAt = new();
 
-		/// <summary>What the divider between the emulators and the game cores reads in the core picker.</summary>
-		public const string GameCoresLine = "-- " + CoreManagerModel.GameHeading + " --";
+		/// <summary>
+		/// An emulator or a game (docs/game-cores.md), chosen above the core; the core picker lists
+		/// that kind only, where it used to list both with a divider line between them.
+		/// </summary>
+		private readonly CoreKindFilterBox _kind;
+
+		/// <summary>Two builds of one core installed side by side, whose lines name their packages.</summary>
+		private readonly List<string> _sharedNames;
 		private readonly Func<ProjectSlotDeclaration.Slot, string[]> _pickFiles;
 
 		private readonly Panel[] _pages = new Panel[5];
@@ -226,7 +229,8 @@ namespace Chimera.Client.GUI
 			Func<string, string, string?>? rememberedFirmwarePath = null,
 			Action<string, IReadOnlyDictionary<string, string>>? rememberFirmwareNow = null,
 			string? configPath = null,
-			Func<string, IReadOnlyList<string>>? rememberedFirmwarePaths = null)
+			Func<string, IReadOnlyList<string>>? rememberedFirmwarePaths = null,
+			CoreKindFilter kind = CoreKindFilter.Emulators)
 		{
 			_rememberedFirmwarePaths = rememberedFirmwarePaths ?? (static _ => [ ]);
 			_configPath = configPath;
@@ -237,10 +241,7 @@ namespace Chimera.Client.GUI
 			_rememberFirmwareNow = rememberFirmwareNow ?? (static (_, _) => { });
 			// the versions of one core newest first (issue #67): the picker opens on the latest, and so
 			// does everything below that takes "the first package that ..."
-			// and the game cores after every emulator, as in every list of cores (the sort is stable)
-			_cores = CoreVersionDates.NewestFirst(cores.Where(static c => c.Error is null))
-				.OrderBy(static c => c.IsGameCore ? 1 : 0)
-				.ToList();
+			_cores = CoreVersionDates.NewestFirst(cores.Where(static c => c.Error is null)).ToList();
 			_pickFiles = pickFiles;
 
 			SuspendLayout();
@@ -264,43 +265,39 @@ namespace Chimera.Client.GUI
 			// ---- page 1: the machine ---------------------------------------------
 			var p1 = _pages[0];
 			p1.Controls.Add(MakeHeading("Please select the core: an emulator, or a game."));
-			p1.Controls.Add(MakeLabel("Core:", 8, 52));
+			// the kind first: it decides what the core picker lists. A kind no installed core
+			// is cannot be chosen, and the wizard opens on the one asked for (the last project's)
+			// when there is one of it to choose
+			p1.Controls.Add(MakeLabel("Kind:", 8, 52));
+			_kind = new CoreKindFilterBox(null, offerAll: false) { Location = Pt(110, 50) };
+			var anyEmulator = _cores.Any(static c => !c.IsGameCore);
+			var anyGame = _cores.Any(static c => c.IsGameCore);
+			_kind.Offer(anyEmulator, anyGame);
+			_kind.Value = kind is CoreKindFilter.Games && anyGame || !anyEmulator ? CoreKindFilter.Games : CoreKindFilter.Emulators;
+			p1.Controls.Add(_kind);
+
+			p1.Controls.Add(MakeLabel("Core:", 8, 84));
 			_core = new ComboBox
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
 				DropDownStyle = ComboBoxStyle.DropDownList,
-				Location = Pt(110, 48),
+				Location = Pt(110, 80),
 				Width = UIHelper.ScaleX(442),
 			};
 			// two builds of one core can be installed side by side (issue #63), and the version
 			// alone does not tell them apart when both are local builds of one commit
-			var sharedNames = _cores.GroupBy(static c => c.Name).Where(static g => g.Count() > 1).Select(static g => g.Key).ToList();
-			foreach (var core in _cores)
-			{
-				if (core.IsGameCore && !_coreAt.Contains(null))
-				{
-					_core.Items.Add(GameCoresLine);
-					_coreAt.Add(null);
-				}
-				// the version at commit length, not the build script's full bookkeeping:
-				// this is a picker, and "12d65377b7d3-dirty+local" says nothing here
-				// that "12d65377 local" does not
-				var build = sharedNames.Contains(core.Name) && core.Sha1 is { Length: >= 8 } ? $"  [package {core.Sha1.Substring(0, 8)}]" : "";
-				// dated (issue #67): a commit says which version this is, and only a date says which is newer
-				var version = core.DatedVersion;
-				_core.Items.Add($"{core.Name}  ({SystemNames.Of(core.Systems)}{(version.Length is 0 ? "" : $", {version}")}){build}");
-				_coreAt.Add(core);
-			}
+			_sharedNames = _cores.GroupBy(static c => c.Name).Where(static g => g.Count() > 1).Select(static g => g.Key).ToList();
+			FillCores();
 			p1.Controls.Add(_core);
 
 			// The core decides the systems, the system decides the renderers: the
 			// combos read top to bottom in the order they inform each other.
-			_machineLabel = MakeLabel("System:", 8, 84);
+			_machineLabel = MakeLabel("System:", 8, 116);
 			_machine = new ComboBox
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
 				DropDownStyle = ComboBoxStyle.DropDownList,
-				Location = Pt(110, 80),
+				Location = Pt(110, 112),
 				Width = UIHelper.ScaleX(442),
 			};
 			_machine.SelectedIndexChanged += (_, _) =>
@@ -311,12 +308,12 @@ namespace Chimera.Client.GUI
 			};
 			p1.Controls.AddRange([ _machineLabel, _machine ]);
 
-			p1.Controls.Add(MakeLabel("Renderer:", 8, 116));
+			p1.Controls.Add(MakeLabel("Renderer:", 8, 148));
 			_renderer = new ComboBox
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
 				DropDownStyle = ComboBoxStyle.DropDownList,
-				Location = Pt(110, 112),
+				Location = Pt(110, 144),
 				Width = UIHelper.ScaleX(442),
 			};
 			_renderer.SelectedIndexChanged += (_, _) =>
@@ -334,23 +331,20 @@ namespace Chimera.Client.GUI
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
 				AutoSize = false,
-				Location = Pt(110, 138),
+				Location = Pt(110, 170),
 				Size = new(UIHelper.ScaleX(442), UIHelper.ScaleY(46)),
 			};
 			_rendererCaveat.SetForeRole(ThemeColorRole.DisabledText);
 			p1.Controls.Add(_rendererCaveat);
 			p1.Controls.Add(MakeIssuesNotice());
-			_core.SelectedIndexChanged += (_, _) =>
+			_core.SelectedIndexChanged += (_, _) => LoadChosenPackage();
+			// another kind lists its cores, and the first - the newest of the first core - is chosen
+			_kind.Changed += () =>
 			{
-				// the divider is not a core: landing on it moves on to the first game core
-				if (_core.SelectedIndex is >= 0 and var at && _coreAt[at] is null)
-				{
-					_core.SelectedIndex = at + 1 < _coreAt.Count ? at + 1 : at - 1;
-					return;
-				}
-				LoadChosenPackage();
+				FillCores();
+				if (_coreAt.Count is not 0) _core.SelectedIndex = 0;
 			};
-			if (_coreAt.FindIndex(static c => c is not null) is >= 0 and var firstCore) _core.SelectedIndex = firstCore;
+			if (_coreAt.Count is not 0) _core.SelectedIndex = 0;
 			LoadChosenPackage();
 
 			// ---- page 2: the core-informed file form -----------------------------
@@ -659,11 +653,54 @@ namespace Chimera.Client.GUI
 		/// <summary>Picks a line of the core picker as a person would, for tests.</summary>
 		public void ChooseCoreLine(int line) => _core.SelectedIndex = line;
 
+		/// <summary>The kind the core picker lists: the owner remembers it for the next project.</summary>
+		public CoreKindFilter Kind => _kind.Value;
+
+		/// <summary>Chooses a kind as a person would, for tests.</summary>
+		public void ChooseKindForTest(CoreKindFilter kind) => _kind.ChooseForTest(kind);
+
 		private DiscoveredCorePackage? ChosenCore
 			=> _core.SelectedIndex is >= 0 and var i && i < _coreAt.Count ? _coreAt[i] : null;
 
-		/// <summary>The picker's line for a package, or -1.</summary>
+		/// <summary>The picker's line for a package among the kind it lists, or -1.</summary>
 		private int LineOf(DiscoveredCorePackage? core) => core is null ? -1 : _coreAt.IndexOf(core);
+
+		/// <summary>Lists the installed cores of the chosen kind in the core picker.</summary>
+		private void FillCores()
+		{
+			_core.BeginUpdate();
+			_core.Items.Clear();
+			_coreAt.Clear();
+			foreach (var core in _cores.Where(c => _kind.Value.Shows(c.IsGameCore)))
+			{
+				// the version at commit length, not the build script's full bookkeeping:
+				// this is a picker, and "12d65377b7d3-dirty+local" says nothing here
+				// that "12d65377 local" does not
+				var build = _sharedNames.Contains(core.Name) && core.Sha1 is { Length: >= 8 } ? $"  [package {core.Sha1.Substring(0, 8)}]" : "";
+				// dated (issue #67): a commit says which version this is, and only a date says which is newer
+				var version = core.DatedVersion;
+				_core.Items.Add($"{core.Name}  ({SystemNames.Of(core.Systems)}{(version.Length is 0 ? "" : $", {version}")}){build}");
+				_coreAt.Add(core);
+			}
+			_core.EndUpdate();
+		}
+
+		/// <summary>
+		/// Chooses a package, showing its kind first when the picker lists the other: a file
+		/// dropped on the wizard, or a project's answers, can name a core of either.
+		/// </summary>
+		private bool Choose(DiscoveredCorePackage? core)
+		{
+			if (core is null) return false;
+			var kind = core.IsGameCore ? CoreKindFilter.Games : CoreKindFilter.Emulators;
+			if (_kind.Value != kind)
+			{
+				_kind.Value = kind;
+				FillCores();
+			}
+			_core.SelectedIndex = LineOf(core);
+			return true;
+		}
 
 		/// <summary>
 		/// Reads the chosen package's declaration and offers its machines. Done as
@@ -732,10 +769,7 @@ namespace Chimera.Client.GUI
 		/// <returns>false when no installed core claims the extension</returns>
 		public bool StartFrom(string path)
 		{
-			var index = GuessCoreIndexFor(path);
-			if (index < 0) return false;
-
-			_core.SelectedIndex = index;
+			if (!Choose(GuessCoreFor(path))) return false;
 			LoadChosenPackage();
 			if (!BuildSlotForm()) return false;
 
@@ -773,10 +807,8 @@ namespace Chimera.Client.GUI
 
 		public void SeedFrom(ProjectAnswers answers)
 		{
-			var index = LineOf(_cores.FirstOrDefault(c =>
-				string.Equals(c.Name, answers.CoreName, StringComparison.OrdinalIgnoreCase)));
-			if (index < 0) return;   // that core is not installed; leave the wizard blank
-			_core.SelectedIndex = index;
+			// that core not installed: the wizard is left blank
+			if (!Choose(_cores.FirstOrDefault(c => string.Equals(c.Name, answers.CoreName, StringComparison.OrdinalIgnoreCase)))) return;
 			LoadChosenPackage();
 
 			SeedSettings(answers.SettingsJson);

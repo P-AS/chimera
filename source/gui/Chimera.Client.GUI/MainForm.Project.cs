@@ -216,7 +216,8 @@ namespace Chimera.Client.GUI
 				},
 				// a precompile session is this frontend again: it must read the
 				// same config, or it would look for its cache somewhere else
-				configPath: _getConfigPath());
+				configPath: _getConfigPath(),
+				kind: Config.NewProjectKind);
 			// The wizard opens on the last project's answers - the open one, or the
 			// last one there was. This is how a project is reconfigured: changing a
 			// sync setting changes the machine, so there is no editing one in place,
@@ -240,6 +241,8 @@ namespace Chimera.Client.GUI
 			}
 
 			if (wizard.ShowDialog(this) is not DialogResult.OK) return null;
+			// the next wizard opens on this kind of core, when it has no project's answers to open on
+			Config.NewProjectKind = wizard.Kind;
 
 			// remember where the firmware lives, keyed the way the resolver reads
 			// it back at load (Config.CoreFirmware) - and WRITE IT DOWN. Held in
