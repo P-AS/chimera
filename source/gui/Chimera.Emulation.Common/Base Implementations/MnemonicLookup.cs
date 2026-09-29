@@ -323,7 +323,8 @@ namespace Chimera.Emulation.Common
 			// Shift ^, and the commands V (Alt+V) and P (Alt+Z, the picture).
 			// Syndicate (SyndicatFX): the mouse and the PC keyboard, 81 buttons. The mouse
 			// buttons are L and R, the letters their own lower case, the digits themselves;
-			// F1-F12 the symbols above the digit row and then the braces; the arrows U D < >;
+			// F1-F12 @ # $ % ^ & * ( ) { } | (never '!', which heads an unknown control);
+			// the arrows U D < >;
 			// the modifiers their capital on the left hand, a free capital on the right.
 			["Syndicate"] = new()
 			{
@@ -365,18 +366,18 @@ namespace Chimera.Emulation.Common
 				["X"] = 'x',
 				["Y"] = 'y',
 				["Z"] = 'z',
-				["F1"] = '!',
-				["F2"] = '@',
-				["F3"] = '#',
-				["F4"] = '$',
-				["F5"] = '%',
-				["F6"] = '^',
-				["F7"] = '&',
-				["F8"] = '*',
-				["F9"] = '(',
-				["F10"] = ')',
-				["F11"] = '{',
-				["F12"] = '}',
+				["F1"] = '@',
+				["F2"] = '#',
+				["F3"] = '$',
+				["F4"] = '%',
+				["F5"] = '^',
+				["F6"] = '&',
+				["F7"] = '*',
+				["F8"] = '(',
+				["F9"] = ')',
+				["F10"] = '{',
+				["F11"] = '}',
+				["F12"] = '|',
 				["Escape"] = 'X',
 				["Enter"] = 'N',
 				["Space"] = '_',
