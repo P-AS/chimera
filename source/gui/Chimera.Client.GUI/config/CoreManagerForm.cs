@@ -169,8 +169,8 @@ namespace Chimera.Client.GUI
 			// an emulator or a game (docs/game-cores.md): what the divider rows used to say
 			_cores.Columns.Add("Type", UIHelper.ScaleX(70));
 			_cores.Columns.Add("Systems", UIHelper.ScaleX(160));
-			_cores.Columns.Add("Installed", UIHelper.ScaleX(140));
-			_cores.Columns.Add("Released", UIHelper.ScaleX(85));
+			_cores.Columns.Add("Installed", UIHelper.ScaleX(190));
+			_cores.Columns.Add("Released", UIHelper.ScaleX(115));
 			// right-aligned, because a column of sizes is read by comparing them
 			_cores.Columns.Add("Size", UIHelper.ScaleX(60), HorizontalAlignment.Right);
 			// owner/name rather than the whole address: it is the identifying part,
@@ -445,7 +445,7 @@ namespace Chimera.Client.GUI
 		/// in the moment somebody presses Fetch versions or Check for updates.
 		/// </summary>
 		private static string ReleasedText(CoreManagerRow row)
-			=> row.PublishedAt is { } when ? when.ToLocalTime().ToString("yyyy-MM-dd") : "";
+			=> row.PublishedAt is { } when ? CoreVersionDates.Format(when) : "";
 
 		/// <summary>
 		/// How big the core is, to one decimal place. Cores run from half a megabyte
@@ -933,7 +933,7 @@ namespace Chimera.Client.GUI
 				Release = release;
 				InstalledPath = installedPath;
 				Installed = installedPath is not null;
-				Detail = $"Published {release.PublishedAt.ToLocalTime():yyyy-MM-dd}{Environment.NewLine}Commit {release.DisplayVersion}";
+				Detail = $"Published {CoreVersionDates.Format(release.PublishedAt)}{Environment.NewLine}Commit {release.DisplayVersion}";
 				When = release.PublishedAt == default ? null : release.PublishedAt;
 			}
 

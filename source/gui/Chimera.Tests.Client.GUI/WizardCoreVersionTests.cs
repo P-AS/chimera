@@ -34,11 +34,12 @@ namespace Chimera.Tests.Client.GUI
 			var lines = form.CoreChoiceLines;
 
 			Assert.AreEqual(4, lines.Count);
-			StringAssert.Contains(lines[0], "2026-09-17  (e0c04b2c)");
-			StringAssert.Contains(lines[1], "2026-09-10  (a179a04f)");
-			StringAssert.Contains(lines[2], "2026-09-01  (8750be5a)");
+			static string When(string iso) => CoreVersionDates.Format(CoreVersionDates.Parse(iso)!.Value);
+			StringAssert.Contains(lines[0], $"{When("2026-09-17T12:00:00Z")}  (e0c04b2c)");
+			StringAssert.Contains(lines[1], $"{When("2026-09-10T12:00:00Z")}  (a179a04f)");
+			StringAssert.Contains(lines[2], $"{When("2026-09-01T12:00:00Z")}  (8750be5a)");
 			StringAssert.Contains(lines[3], "quickernes");
-			StringAssert.Contains(lines[3], "2026-08-20  (0eebbf6d)");
+			StringAssert.Contains(lines[3], $"{When("2026-08-20T12:00:00Z")}  (0eebbf6d)");
 			Assert.AreEqual(0, form.CoreChoiceIndex, "the picker opens on the latest");
 		}
 

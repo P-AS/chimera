@@ -446,8 +446,11 @@ including the project wizard's core picker.
 2026-09-17). Two commits say which versions they are and nothing about which is
 newer, and with several builds of one core in the New Project picker the only
 way to find out was the core manager's Check for updates. So wherever a version
-is listed it reads `2026-09-17  (4ed35321)`, the versions of one core are
-offered newest first, and the newest is the one a picker opens on.
+is listed it reads `2026-09-17 08:30  (4ed35321)`, the versions of one core are
+offered newest first, and the newest is the one a picker opens on. The minute
+(local time) was added on 2026-09-29: a core often has several versions in one
+day, and the day alone left them looking alike - the order was always by the
+full timestamp.
 
 The date is the package's own: the build script stamps `versionDate` beside
 `version` in the packaged `waterbox.config`. It is the COMMIT's date, in UTC,

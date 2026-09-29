@@ -90,7 +90,9 @@ namespace Chimera.Client.Common
 		/// <summary>
 		/// How a version is written wherever one is listed (issue #67): the date first, because
 		/// that is what says which of two is newer, then the commit that says which it IS -
-		/// <c>2026-09-17  (4ed35321)</c>. Just the commit when no date is known.
+		/// <c>2026-09-17 08:30  (4ed35321)</c>. The time is there because a core often has
+		/// several versions in one day, and the day alone left them looking alike (the order
+		/// was always by the full timestamp). Just the commit when no date is known.
 		/// </summary>
 		public string DatedVersion
 		{
@@ -98,7 +100,7 @@ namespace Chimera.Client.Common
 			{
 				var date = CoreVersionDates.Of(this);
 				if (date is null) return ShortVersion;
-				var day = date.Value.ToLocalTime().ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+				var day = CoreVersionDates.Format(date.Value);
 				return ShortVersion.Length is 0 ? day : $"{day}  ({ShortVersion})";
 			}
 		}

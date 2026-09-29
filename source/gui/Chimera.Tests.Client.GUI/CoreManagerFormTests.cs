@@ -27,6 +27,9 @@ namespace Chimera.Tests.Client.GUI
 			new() { Id = "gpgx", Name = "Genesis Plus GX", Repo = "ToolAssisted-run/chimera-core-gpgx", Systems = [ "GEN" ] },
 		];
 
+		/// <summary>A version's date as the lists write it: local day and minute.</summary>
+		private static string When(string iso) => CoreVersionDates.Format(CoreVersionDates.Parse(iso)!.Value);
+
 		private const string Feed = @"[
 			{ ""tag_name"": ""dev"", ""published_at"": ""2026-09-07T11:00:00Z"", ""assets"": [
 				{ ""name"": ""gpgx-cccccccccccc.chimeraCore"", ""browser_download_url"": ""https://example.invalid/c"", ""size"": 3145728 } ] },
@@ -126,7 +129,7 @@ namespace Chimera.Tests.Client.GUI
 			// the dev build is newest and is NOT offered by default: it is replaced on
 			// every push, so a movie recorded on it can stop being fetchable
 			CollectionAssert.AreEqual(
-				new[] { "2026-09-05  (bbbbbbbb)", "2026-09-01  (aaaaaaaa)" },
+				new[] { $"{When("2026-09-05T05:00:00Z")}  (bbbbbbbb)", $"{When("2026-09-01T05:00:00Z")}  (aaaaaaaa)" },
 				versions.Items.Cast<object>().Select(static i => i.ToString()).ToList());
 		}
 
@@ -139,7 +142,8 @@ namespace Chimera.Tests.Client.GUI
 			await form.FetchSelectedVersions();
 			foreach (var text in VersionsOf(form).Items.Cast<object>().Select(static i => i.ToString()))
 			{
-				StringAssert.Matches(text, new System.Text.RegularExpressions.Regex(@"^\d{4}-\d{2}-\d{2}\s+\([0-9a-f]{8}\)"), text);
+				// the day AND the minute: several versions in one day must read apart
+				StringAssert.Matches(text, new System.Text.RegularExpressions.Regex(@"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}\s+\([0-9a-f]{8}\)"), text);
 			}
 		}
 
