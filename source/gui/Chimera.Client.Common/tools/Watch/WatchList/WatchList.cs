@@ -26,6 +26,14 @@ namespace Chimera.Client.Common
 		public const string Type = "TypeColumn";
 		public const string Domain = "DomainColumn";
 		public const string Notes = "NotesColumn";
+		public const string OnScreen = "OnScreenColumn";
+
+		/// <summary>
+		/// Starts the line, after the watches, that lists which of them are drawn on the screen: their
+		/// places in the file, 0-based and comma-separated. A build without the flag skips it, as it
+		/// skips any line without a watch's five tabs.
+		/// </summary>
+		private const string OnScreenLine = "OnScreen\t";
 
 		private static readonly Dictionary<string, IComparer<Watch>> WatchComparers;
 
@@ -55,6 +63,7 @@ namespace Chimera.Client.Common
 				[Type] = new WatchFullDisplayTypeComparer(),
 				[Domain] = new WatchDomainComparer(),
 				[Notes] = new WatchNoteComparer(),
+				[OnScreen] = new WatchOnScreenComparer(),
 			};
 		}
 
@@ -319,6 +328,11 @@ namespace Chimera.Client.Common
 		/// </summary>
 		public int WatchCount => _watchList.Count(watch => !watch.IsSeparator);
 
+		/// <summary>
+		/// The watches ticked On Screen, in the list's order: what the OSD draws, one under the other
+		/// </summary>
+		public IEnumerable<Watch> OnScreenWatches => _watchList.Where(static watch => watch.OnScreen && !watch.IsSeparator);
+
 		public bool Load(string path, bool append)
 		{
 			var result = LoadFile(path, append);
@@ -358,10 +372,14 @@ namespace Chimera.Client.Common
 			var sb = new StringBuilder();
 			sb.Append("SystemID ").AppendLine(_systemId);
 
-			foreach (var watch in _watchList)
+			var onScreen = new List<int>();
+			for (var i = 0; i < _watchList.Count; i++)
 			{
-				sb.AppendLine(watch.ToString());
+				sb.AppendLine(_watchList[i].ToString());
+				if (_watchList[i].OnScreen) onScreen.Add(i);
 			}
+
+			if (onScreen.Count is not 0) sb.Append(OnScreenLine).AppendLine(string.Join(",", onScreen));
 
 			FileWriteResult result = FileWriter.Write(CurrentFileName, (fs) =>
 			{
@@ -392,6 +410,8 @@ namespace Chimera.Client.Common
 			var isOurWatchFormat = true; // Hack to support .wch files from other emulators
 			using var sr = file.OpenText();
 			string line;
+			var read = new List<Watch>(); // the file's watch lines in order, null for one that gave no watch
+			string onScreen = null;
 
 			if (!append)
 			{
@@ -411,11 +431,17 @@ namespace Chimera.Client.Common
 				if (line.StartsWithOrdinal("Domain")) isOurWatchFormat = true;
 				// is there a step missing here? --yoshi
 				if (line.StartsWithOrdinal("SystemID")) continue;
+				if (line.StartsWithOrdinal(OnScreenLine))
+				{
+					onScreen = line.Substring(OnScreenLine.Length);
+					continue;
+				}
 
 				var numColumns = line.Count(c => c == '\t');
 				int startIndex;
 				if (numColumns == 5)
 				{
+					read.Add(null);
 					// If 5, then this is a post 1.0.5 .wch file
 					if (isOurWatchFormat)
 					{
@@ -481,18 +507,29 @@ namespace Chimera.Client.Common
 				if (size is WatchSize.Property)
 				{
 					// known by its name, never its offset: a core may move it between versions
-					if (PropertyWatch.Find(GameProperties, _memoryDomains, notes) is { } found) _watchList.Add(found);
+					if (PropertyWatch.Find(GameProperties, _memoryDomains, notes) is { } found) _watchList.Add(read[^1] = found);
 					continue;
 				}
 
 				_watchList.Add(
-					Watch.GenerateWatch(
+					read[^1] = Watch.GenerateWatch(
 						memDomain,
 						addr,
 						size,
 						type,
 						bigEndian,
 						notes));
+			}
+
+			// a place names a line of this file, so a watch that gave nothing (a property the core no
+			// longer has) moves no other watch's flag
+			foreach (var place in onScreen?.Split(',') ?? [ ])
+			{
+				if (int.TryParse(place.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var i)
+					&& i < read.Count && read[i] is { IsSeparator: false } watch)
+				{
+					watch.OnScreen = true;
+				}
 			}
 
 			CurrentFileName = path;

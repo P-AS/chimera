@@ -1321,7 +1321,9 @@ namespace Chimera.Client.GUI
 		{
 			if (Config.RecentWatches.AutoLoad)
 			{
-				Tools.LoadRamWatch(!Config.DisplayRamWatch);
+				// the window opens: with the watches on the screen (the default) only the ones ticked
+				// On Screen are drawn, so the list is where the rest are seen
+				Tools.LoadRamWatch(true);
 			}
 
 			HandlePlatformMenus();

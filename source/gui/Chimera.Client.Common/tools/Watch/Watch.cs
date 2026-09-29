@@ -554,6 +554,13 @@ namespace Chimera.Client.Common
 		public string Notes { get; set; }
 
 		/// <summary>
+		/// Gets or sets whether the watch is drawn on the screen (the OSD) while watches are shown
+		/// there at all (<c>Config.DisplayWatchesOnScreen</c>). Off for a new watch; kept in the
+		/// list's file.
+		/// </summary>
+		public bool OnScreen { get; set; }
+
+		/// <summary>
 		/// Gets the current size of the watch
 		/// </summary>
 		public WatchSize Size { get; }

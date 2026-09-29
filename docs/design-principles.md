@@ -4598,3 +4598,29 @@ movie no longer makes, and a reader parsing projects has no way to tell.
 
 SDLPoP2's clock starts only with the first story scene after level 4, as the
 game's does, so its time reads 0 until then - the game's rule, not a gap.
+
+## A watch is drawn on the screen only when it is ticked (user-decided, 2026-09-29)
+
+RAM Watch's "Display Watches On Screen" drew every watch in the list, so it
+was off by default and a list of any length made it useless. Each watch now
+has an On Screen box, the list's first column, off for a new watch (user:
+"Disabled by default"); the screen draws the ticked ones, one under the other
+in the list's order. The switch stays as the master (user: "Needs to be on by
+default"), and was renamed `DisplayWatchesOnScreen`: every existing config had
+saved the old switch's default, off, which would have kept the boxes dead on
+every machine that ever ran Chimera. A config that had it on loses nothing it
+can see - it drew everything before, and draws the ticked ones now.
+
+The ticks live in the watch file, as one line after the watches -
+`OnScreen<TAB>0,3`, the places of the ticked ones in the file. A watch's own
+line keeps its five tabs, because an older build reads only lines with
+exactly five and would misread a sixth field into the notes; the new line has
+one, so an older build skips it. The places count the file's lines, not the
+watches loaded: a property watch the running core no longer has gives no
+watch, and must not move the other ticks up by one (a test fails if it
+does). A clipboard copy carries no tick - a paste is a new watch.
+
+With the switch on by default, a watch file loaded at start-up (Recent >
+Auto-load) opens the RAM Watch window. It used to open hidden when the switch
+was on, the screen being where every watch was; now the screen shows only the
+ticked ones, and the window is where the rest are.

@@ -338,7 +338,13 @@ namespace Chimera.Client.Common
 		// Watch Settings
 		public RecentFiles RecentWatches { get; set; } = new RecentFiles(8);
 		public PreviousType RamWatchDefinePrevious { get; set; } = PreviousType.LastFrame;
-		public bool DisplayRamWatch { get; set; }
+
+		/// <summary>
+		/// Whether the watches ticked On Screen are drawn on the screen. On by default, since a watch
+		/// is not drawn until it is ticked. It was <c>DisplayRamWatch</c>, which drew every watch and
+		/// was off: renamed so a config saved with the old switch's default starts with this one on.
+		/// </summary>
+		public bool DisplayWatchesOnScreen { get; set; } = true;
 
 		// Video dumping settings
 		public string VideoWriter { get; set; } = "";

@@ -714,7 +714,7 @@ namespace Chimera.Client.GUI
 
 		public void LoadRamWatch(bool loadDialog)
 		{
-			if (IsLoaded<RamWatch>() && !_config.DisplayRamWatch)
+			if (IsLoaded<RamWatch>() && !_config.DisplayWatchesOnScreen)
 			{
 				return;
 			}

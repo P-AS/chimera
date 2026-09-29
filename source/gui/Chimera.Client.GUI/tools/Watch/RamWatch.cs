@@ -140,6 +140,8 @@ namespace Chimera.Client.GUI
 
 			WatchListView.QueryItemText += WatchListView_QueryItemText;
 			WatchListView.QueryItemBkColor += WatchListView_QueryItemBkColor;
+			WatchListView.QueryItemIcon += WatchListView_QueryItemIcon;
+			WatchListView.MouseDown += WatchListView_MouseDown;
 			Closing += (o, e) =>
 			{
 				if (AskSaveChanges())
@@ -159,11 +161,20 @@ namespace Chimera.Client.GUI
 			SetColumns();
 		}
 
-		public override bool IsActive => Config!.DisplayRamWatch || base.IsActive;
+		public override bool IsActive => Config!.DisplayWatchesOnScreen || base.IsActive;
 		public override bool IsLoaded => base.IsActive;
+
+		private static RollColumn OnScreenColumn()
+			=> new(name: WatchList.OnScreen, widthUnscaled: 26, text: "OSD");
 
 		private void SetColumns()
 		{
+			// columns saved before the On Screen one existed gain it, first
+			if (!Settings.Columns.Exists(static c => c.Name == WatchList.OnScreen))
+			{
+				Settings.Columns.Insert(0, OnScreenColumn());
+			}
+
 			WatchListView.AllColumns.AddRange(Settings.Columns);
 			WatchListView.Refresh();
 		}
@@ -177,6 +188,7 @@ namespace Chimera.Client.GUI
 			{
 				Columns = new List<RollColumn>
 				{
+					OnScreenColumn(),
 					new(name: WatchList.Address, widthUnscaled: 60, text: "Address"),
 					new(name: WatchList.Value, widthUnscaled: 59, text: "Value"),
 					new(name: WatchList.Prev, widthUnscaled: 59, text: "Prev") { Visible = false },
@@ -289,7 +301,7 @@ namespace Chimera.Client.GUI
 
 		public override void Restart()
 		{
-			if ((!IsHandleCreated || IsDisposed) && !Config.DisplayRamWatch)
+			if ((!IsHandleCreated || IsDisposed) && !Config.DisplayWatchesOnScreen)
 			{
 				return;
 			}
@@ -328,7 +340,7 @@ namespace Chimera.Client.GUI
 
 		private void MinimalUpdate()
 		{
-			if ((!IsHandleCreated || IsDisposed) && !Config.DisplayRamWatch)
+			if ((!IsHandleCreated || IsDisposed) && !Config.DisplayWatchesOnScreen)
 			{
 				return;
 			}
@@ -342,7 +354,7 @@ namespace Chimera.Client.GUI
 
 		private void FrameUpdate()
 		{
-			if ((!IsHandleCreated || IsDisposed) && !Config.DisplayRamWatch)
+			if ((!IsHandleCreated || IsDisposed) && !Config.DisplayWatchesOnScreen)
 			{
 				return;
 			}
@@ -364,18 +376,19 @@ namespace Chimera.Client.GUI
 
 		private void DisplayOnScreenWatches()
 		{
-			if (Config.DisplayRamWatch)
+			if (Config.DisplayWatchesOnScreen)
 			{
 				DisplayManager.OSD.ClearRamWatches();
-				for (var i = 0; i < _watches.Count; i++)
+				var line = 0;
+				foreach (var watch in _watches.OnScreenWatches)
 				{
-					var frozen = !_watches[i].IsSeparator && MainForm.CheatList.IsActive(_watches[i].Domain, _watches[i].Address);
+					var frozen = MainForm.CheatList.IsActive(watch.Domain, watch.Address);
 					DisplayManager.OSD.AddRamWatch(
-						_watches[i].ToDisplayString(),
+						watch.ToDisplayString(),
 						new MessagePosition
 						{
 							X = Config.RamWatches.X,
-							Y = Config.RamWatches.Y + (i * 14),
+							Y = Config.RamWatches.Y + (line++ * 14),
 							Anchor = Config.RamWatches.Anchor,
 						},
 						Color.Black,
@@ -484,6 +497,7 @@ namespace Chimera.Client.GUI
 					{
 						for (var i = 0; i < we.Watches.Count; i++)
 						{
+							we.Watches[i].OnScreen = _watches[indexes[i]].OnScreen;
 							_watches[indexes[i]] = we.Watches[i];
 						}
 					}
@@ -725,6 +739,9 @@ namespace Chimera.Client.GUI
 
 			switch (column.Name)
 			{
+				case WatchList.OnScreen:
+					text = " "; // not empty, or the roll writes the column's name over the box on hover
+					break;
 				case WatchList.Address:
 					text = _watches[index].AddressString;
 					break;
@@ -901,6 +918,7 @@ namespace Chimera.Client.GUI
 			var ab = _watches[index];
 			if (!ab.IsSplittable) return;
 			var (a, b) = SplitWatch(ab);
+			a.OnScreen = b.OnScreen = ab.OnScreen;
 			_watches[index] = a;
 			_watches.Insert(index + 1, b);
 		}
@@ -1109,7 +1127,7 @@ namespace Chimera.Client.GUI
 
 		private void SettingsSubMenu_DropDownOpened(object sender, EventArgs e)
 		{
-			WatchesOnScreenMenuItem.Checked = Config.DisplayRamWatch;
+			WatchesOnScreenMenuItem.Checked = Config.DisplayWatchesOnScreen;
 		}
 
 		private void DefinePreviousValueSubMenu_DropDownOpened(object sender, EventArgs e)
@@ -1136,8 +1154,8 @@ namespace Chimera.Client.GUI
 
 		private void WatchesOnScreenMenuItem_Click(object sender, EventArgs e)
 		{
-			Config.DisplayRamWatch = !Config.DisplayRamWatch;
-			if (!Config.DisplayRamWatch)
+			Config.DisplayWatchesOnScreen = !Config.DisplayWatchesOnScreen;
+			if (!Config.DisplayWatchesOnScreen)
 			{
 				DisplayManager.OSD.ClearRamWatches();
 			}
@@ -1174,7 +1192,7 @@ namespace Chimera.Client.GUI
 					.First(x => x.Name == "GeneratedColumnsSubMenu"));
 
 			RamWatchMenu.Items.Add(WatchListView.ToColumnsMenu(ColumnToggleCallback));
-			Config.DisplayRamWatch = false;
+			Config.DisplayWatchesOnScreen = true;
 			WatchListView.AllColumns.Clear();
 			SetColumns();
 			WatchListView.Refresh();
@@ -1343,7 +1361,61 @@ namespace Chimera.Client.GUI
 
 		private void WatchListView_MouseDoubleClick(object sender, MouseEventArgs e)
 		{
+			// a double click on the box is two ticks, not an edit
+			if (WatchListView.CurrentCell?.Column?.Name == WatchList.OnScreen)
+			{
+				return;
+			}
+
 			OpenWatch();
+		}
+
+		private static readonly Dictionary<(int Size, bool Ticked), Bitmap> CheckBoxes = new();
+
+		private static Bitmap CheckBox(int size, bool ticked)
+		{
+			if (!CheckBoxes.TryGetValue((size, ticked), out var box))
+			{
+				box = new Bitmap(size, size);
+				using var g = Graphics.FromImage(box);
+				ControlPaint.DrawCheckBox(g, 0, 0, size, size, ButtonState.Flat | (ticked ? ButtonState.Checked : ButtonState.Normal));
+				CheckBoxes[(size, ticked)] = box;
+			}
+
+			return box;
+		}
+
+		private void WatchListView_QueryItemIcon(InputRoll sender, int index, RollColumn column, ref Bitmap icon, ref int offsetX, ref int offsetY)
+		{
+			if (column.Name != WatchList.OnScreen || index >= _watches.Count || _watches[index].IsSeparator)
+			{
+				return;
+			}
+
+			var size = Math.Max(9, sender.Font.Height - 2);
+			icon = CheckBox(size, _watches[index].OnScreen);
+			offsetX = Math.Max(0, (column.ScaledWidth - size) / 2 - 2);
+		}
+
+		/// <summary>A plain click on a watch's On Screen box ticks it or clears it.</summary>
+		private void WatchListView_MouseDown(object sender, MouseEventArgs e)
+		{
+			if (e.Button != MouseButtons.Left || ModifierKeys != Keys.None
+				|| WatchListView.CurrentCell is not { Column.Name: WatchList.OnScreen, RowIndex: int index }
+				|| index >= _watches.Count || _watches[index].IsSeparator)
+			{
+				return;
+			}
+
+			ToggleOnScreen(index);
+		}
+
+		private void ToggleOnScreen(int index)
+		{
+			_watches[index].OnScreen = !_watches[index].OnScreen;
+			Changes();
+			DisplayOnScreenWatches();
+			WatchListView.Refresh();
 		}
 
 		private void WatchListView_ColumnClick(object sender, InputRoll.ColumnClickEventArgs e)
