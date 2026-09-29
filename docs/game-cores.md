@@ -3,7 +3,9 @@
 A **game core** is one game rather than one machine: an open-source game
 (written open, or reconstructed from the original) built as a Chimera core,
 run by the same engine, sandbox, projects, movies and TAStudio as any other
-core. SDLPoP (Prince of Persia) is the first. User-decided, 2026-09-28.
+core. SDLPoP (Prince of Persia) is the first; SDLPoP2 (Prince of Persia 2)
+and OpenSamurai (Sword of the Samurai, a whole PC keyboard's worth of
+buttons) followed. User-decided, 2026-09-28.
 
 Two things set a game core apart from an emulator core, and nothing else
 does:
