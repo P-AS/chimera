@@ -249,15 +249,20 @@ question asked of every installed core at once, before any project: it
 surveys the packages present, says what the folder already answers, and
 takes a file for the rest - remembered where it lives, never copied. A per-item Select File button
 covers what the folder could not - allowed even when something was
-found - and only the exact file satisfies. Create stays DISABLED until
-every requirement is satisfied.
+found - and only the exact file satisfies, except for a game core, whose
+firmware may be a file of the project's own (docs/game-cores.md): that is
+taken, said to be the project's own, and its hash is the pin. Create stays
+DISABLED until every requirement is satisfied.
 
 The project records the chosen files as pins ("firmware": [{"id",
 "sha1"}]), actual hashes as always; the frontend remembers paths
 per-user in its config, never in the project. REOPENING is stricter
 than creation: each pin must be matched exactly, by hash, from the
 Firmware folder or the remembered paths - whichever file matches is
-what the session mounts - and a pin nothing satisfies takes a severe
+what the session mounts, even when the pin is not the declared hash and
+the declared dump is also on hand (2026-09-29: until then the declared
+dump won, and a game core's project booted on the original instead of its
+own file) - and a pin nothing satisfies takes a severe
 are-you-sure (different firmware is a different machine: expect
 desync) to get past. "Plausible" is by size alone, and the bar is a
 gigabyte: a PS3 system software update is 206 MB and is firmware, and

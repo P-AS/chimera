@@ -62,6 +62,9 @@ namespace Chimera.Client.GUI
 				_recovery?.End(clean: true);
 				_recovery = null;
 				CrashCapture.DescribeSession("no project open");
+				// its firmware pins end with it: a game loaded next takes what the
+				// person points at, not a closed project's own files
+				CoreFirmwareStore.ProjectPins = null;
 			}
 			finally
 			{
@@ -609,6 +612,7 @@ namespace Chimera.Client.GUI
 			local ??= new ProjectLocalPaths();
 			// where the LAST project's firmware was found is not this one's answer
 			ProjectLocalPaths.ForgetSessionFirmware();
+			CoreFirmwareStore.ProjectPins = null;
 			if (!EnsureProjectCore(project))
 			{
 				project.Dispose();
@@ -831,6 +835,11 @@ namespace Chimera.Client.GUI
 			if (pins.Count is 0) return true;
 
 			var coreName = project.CoreName;
+			// what the boot mounts: the pinned file, which for a game core may be
+			// the project's own and not the declared one (CoreFirmwareStore.GetPath)
+			CoreFirmwareStore.ProjectPins = (coreName, pins
+				.GroupBy(static pin => pin.Id, StringComparer.Ordinal)
+				.ToDictionary(static g => g.Key, static g => g.First().Sha1, StringComparer.Ordinal));
 			// the Firmware folder, every dump ever remembered for this core (Config >
 			// Firmware, earlier projects), where this project's own sidecar last had
 			// them, and what this run was told on the command line (--firmware, which

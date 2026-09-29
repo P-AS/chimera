@@ -4665,3 +4665,38 @@ external cores went the same way: their Source says "(added by hand)".
 
 The Cache Manager has no distinction at all (user: not useful there): what a
 cached thing costs to lose does not depend on the kind of core that made it.
+
+## A game core's firmware may be a file of the project's own (user-decided, 2026-09-29)
+
+A game core's firmware is the game's own data. A modified PRINCE.DAT, another
+release's file, a translation: each is a legitimate thing to play, so the user
+asked that a game core take any file, with the project pinning the SHA-1 of the
+file it actually uses. That model was nearly in place already. Projects pin
+files by hash, and the frontend hands any readable file to a core, with a
+warning. Three pieces were missing:
+
+- **The wizard.** Select File took only the declared hash. For a game core it
+  now takes any file, says it is the project's own ("your own: ..."), and pins
+  that file's hash. The file is remembered under its own hash, never under the
+  original's: under the original's key it would stand in for the original in
+  every other project. An emulator core's firmware still takes only the exact
+  file.
+- **The mount.** Reopening already matched each pin by the project's own hash.
+  The mount then asked `GetPath` with the package's declaration, which prefers
+  the dump remembered under the DECLARED hash. So a person who had ever
+  pointed at the original booted the project on it, silently. That is a
+  different machine, and a movie made on the custom file desyncs.
+  `CoreFirmwareStore.ProjectPins`, set when a project boots and cleared when
+  it closes, makes the pinned file win for that core. What is described and
+  recorded is then what is mounted. It was proven both ways, headlessly: a
+  Prince of Persia 2 project pinning a modified PRINCE.DAT, with the original
+  remembered, got the original's level before the change and its own after.
+- **The cores.** Each checked every file against the original's hash and
+  refused anything else. They now take whatever they are given. They still
+  name a missing file, and still refuse a build known not to work:
+  - SDLPoP2: the 1993 floppy's PRINCE.EXE, whose tables it would read from
+    the wrong places;
+  - OpenSamurai: the floppy's older AdLib driver.
+
+The declarations keep the originals' hashes: they are how the wizard and the
+Firmware folder recognise the original, and how "your own" is told from it.

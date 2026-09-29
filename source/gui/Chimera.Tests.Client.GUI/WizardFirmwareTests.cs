@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 using Chimera.Client.Common;
 using Chimera.Client.GUI;
@@ -9,8 +10,9 @@ namespace Chimera.Tests.Client.GUI
 	/// <summary>
 	/// The firmware page's rules: each requirement is ONE exact file (the hash
 	/// is the identity, a file's name plays no part), the folder answers before
-	/// the user, only that exact file satisfies, and nothing creates until
-	/// every requirement is satisfied. Optional firmware does not exist.
+	/// the user, only that exact file satisfies - but a game core's may be a
+	/// file of the project's own - and nothing creates until every requirement
+	/// is satisfied. Optional firmware does not exist.
 	/// </summary>
 	[TestClass]
 	public class WizardFirmwareTests
@@ -63,6 +65,30 @@ namespace Chimera.Tests.Client.GUI
 			File.WriteAllText(good, "FDS BIOS BYTES");
 			form.ProvideFirmware("bios", good);
 			Assert.IsTrue(form.FirmwareSatisfied("bios"), "the exact bytes under any name satisfy");
+		}
+
+		[TestMethod]
+		public void AGameCoreTakesAFileOfItsOwn()
+		{
+			// user-decided 2026-09-29: a game core's firmware may be a custom
+			// file (a modified one); it satisfies, and the project pins ITS hash
+			using var form = MakeForm(out var dir);
+			var (cfg, _) = ProjectFormsShots.MakeFirmwareFixture(dir);
+			cfg.Kind = "game";
+			form.UseFirmwareNeeds(cfg, [ ("bios", 2) ], [ ]);
+
+			var own = Path.Combine(dir, "random.bin");
+			form.ProvideFirmware("bios", own);
+			Assert.IsTrue(form.FirmwareSatisfied("bios"), "a game core's file of its own satisfies");
+			Assert.IsTrue(form.FirmwareIsCustom("bios"), "and is said to be the project's own");
+			var ownSha1 = Chimera.Emulation.Common.Engine.ChimeraEngine.Sha1Hex(File.ReadAllBytes(own));
+			var remembered = form.ProvidedFirmwareDumps.Single(d => d.Decl.Id == "bios");
+			Assert.AreEqual(ownSha1, remembered.Decl.Sha1, "remembered under its own hash, never the original's");
+
+			var good = Path.Combine(dir, "the original.bios");
+			File.WriteAllText(good, "FDS BIOS BYTES");
+			form.ProvideFirmware("bios", good);
+			Assert.IsFalse(form.FirmwareIsCustom("bios"), "the original is the original");
 		}
 
 		[TestMethod]

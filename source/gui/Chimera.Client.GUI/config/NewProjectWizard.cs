@@ -183,8 +183,16 @@ namespace Chimera.Client.GUI
 		{
 			public string Id = "";
 			public CoreFirmwareDecl? Decl;
-			public string? ChosenPath; // for a pinned entry, set only when the hash matched exactly
-			public string? ChosenSha1; // the actual hash - equals the pin, or names an unpinned choice
+			public string? ChosenPath; // for a pinned entry, set only when the hash matched exactly - or, for a game core, a file of the project's own
+			public string? ChosenSha1; // the actual hash - equals the pin, or names an unpinned (or custom) choice
+
+			/// <summary>
+			/// The chosen file is not the one the declaration pins: a game
+			/// core's firmware may be a file of the project's own (a modified
+			/// one), and the project pins ITS hash (docs/game-cores.md).
+			/// </summary>
+			public bool Custom => ChosenSha1 is not null && Decl?.Sha1 is { Length: > 0 } pinned
+				&& !ChosenSha1.Equals(pinned, StringComparison.OrdinalIgnoreCase);
 
 			/// <summary>
 			/// This file was picked BY HAND rather than found. It survives the
@@ -2629,7 +2637,7 @@ namespace Chimera.Client.GUI
 				item.SubItems.Add(need.Decl?.Name ?? "");
 				item.SubItems.Add(string.IsNullOrEmpty(need.Decl?.Sha1) ? "(your own dump)" : need.Decl!.Sha1);
 				item.SubItems.Add(need.ChosenPath is not null
-					? $"found: {Path.GetFileName(need.ChosenPath)}"
+					? need.Custom ? $"your own: {Path.GetFileName(need.ChosenPath)}" : $"found: {Path.GetFileName(need.ChosenPath)}"
 					: need.Satisfied ? "optional - core default used" : "not found");
 				_firmwareList.Items.Add(item);
 			}
@@ -2671,7 +2679,10 @@ namespace Chimera.Client.GUI
 		/// <summary>
 		/// Points one requirement at a file the user chose - allowed even when
 		/// the folder already found one. The hash decides: the requirement names
-		/// ONE exact file, and only that file satisfies it.
+		/// ONE exact file, and only that file satisfies it - except for a game
+		/// core, whose firmware may be a file of the project's own (a modified
+		/// one): that is taken, said so, and its own hash is what the project
+		/// pins (user-decided, 2026-09-29; docs/game-cores.md).
 		/// </summary>
 		public void ProvideFirmware(string id, string path)
 		{
@@ -2691,8 +2702,9 @@ namespace Chimera.Client.GUI
 			// a pinned entry names ONE exact file; an unpinned one (no declared
 			// hash - a file only the user can own, like a console's own font
 			// region nothing ships) takes what is chosen and records its hash
-			if (!string.IsNullOrEmpty(need.Decl?.Sha1)
-				&& !sha1.Equals(need.Decl!.Sha1, StringComparison.OrdinalIgnoreCase))
+			var custom = !string.IsNullOrEmpty(need.Decl?.Sha1)
+				&& !sha1.Equals(need.Decl!.Sha1, StringComparison.OrdinalIgnoreCase);
+			if (custom && _cfg?.IsGameCore is not true)
 			{
 				_status.Text = $"{System.IO.Path.GetFileName(path)} is not this file: its hash is {sha1},"
 					+ $" the requirement is {need.Decl!.Sha1}";
@@ -2700,7 +2712,10 @@ namespace Chimera.Client.GUI
 			}
 			need.ChosenPath = System.IO.Path.GetFullPath(path);
 			need.ChosenSha1 = sha1;
-			_status.Text = "";
+			_status.Text = custom
+				? $"{System.IO.Path.GetFileName(path)} is a file of your own, not the original {need.Id}:"
+					+ $" the project pins its hash ({sha1})"
+				: "";
 			RenderFirmwareRows();
 		}
 
@@ -2789,11 +2804,20 @@ namespace Chimera.Client.GUI
 			=> _firmwareNeeds.Where(static n => n.ChosenPath is not null)
 				.ToDictionary(static n => n.Id, static n => n.ChosenPath!);
 
-		/// <summary>The same, by declaration: what to remember under each dump's own key, so the survey and later projects find it.</summary>
+		/// <summary>
+		/// The same, by declaration: what to remember under each dump's own key,
+		/// so the survey and later projects find it. A file of the project's own
+		/// is remembered under ITS hash - never under the original's, where it
+		/// would stand in for the original in every other project.
+		/// </summary>
 		public IReadOnlyList<(Chimera.Emulation.Common.CoreFirmwareDecl Decl, string Path)> ProvidedFirmwareDumps
 			=> _firmwareNeeds.Where(static n => n.ChosenPath is not null && n.Decl is not null)
-				.Select(static n => (n.Decl!, n.ChosenPath!))
+				.Select(static n => (n.Custom ? new Chimera.Emulation.Common.CoreFirmwareDecl { Id = n.Id, Sha1 = n.ChosenSha1 } : n.Decl!, n.ChosenPath!))
 				.ToList();
+
+		/// <summary>whether the file chosen for a requirement is the project's own, for tests</summary>
+		public bool FirmwareIsCustom(string id)
+			=> _firmwareNeeds.FirstOrDefault(n => n.Id == id)?.Custom is true;
 
 		/// <summary>the requirement states, for tests</summary>
 		public bool FirmwareSatisfied(string id)

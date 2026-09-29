@@ -118,9 +118,30 @@ namespace Chimera.Client.Common
 		public static string KeyFor(string coreName, CoreFirmwareDecl decl)
 			=> decl.Sha1 is { Length: > 0 } pinned ? $"{coreName}/{decl.Id}#{pinned.ToUpperInvariant()}" : KeyFor(coreName, decl.Id);
 
-		/// <summary>The remembered path for THIS declaration: its own dump's first, then whatever is in use for its id.</summary>
+		/// <summary>
+		/// The firmware the open project pins, by id, for its core - set when a
+		/// project boots (MainForm's VerifyFirmwarePins), cleared when it closes.
+		/// A pin may name a file that is not the declared one: a game core's
+		/// firmware may be a file of the project's own (docs/game-cores.md), and
+		/// the project then pins ITS hash. Without this, the declared dump - if
+		/// the person ever pointed at it - is what <see cref="GetPath(Config,
+		/// string, CoreFirmwareDecl)"/> found first, and the project booted on
+		/// the original instead of its own file.
+		/// </summary>
+		public static (string Core, IReadOnlyDictionary<string, string> Pins)? ProjectPins { get; set; }
+
+		/// <summary>The remembered path for THIS declaration: the open project's pinned file first, its own dump's next, then whatever is in use for its id.</summary>
 		public static string? GetPath(Config config, string coreName, CoreFirmwareDecl decl)
 		{
+			if (ProjectPins is { } project
+				&& project.Core.Equals(coreName, StringComparison.OrdinalIgnoreCase)
+				&& project.Pins.TryGetValue(decl.Id, out var pin)
+				&& !pin.Equals(decl.Sha1 ?? "", StringComparison.OrdinalIgnoreCase)
+				&& config.CoreFirmware.TryGetValue(KeyFor(coreName, new CoreFirmwareDecl { Id = decl.Id, Sha1 = pin }), out var pinned)
+				&& !string.IsNullOrWhiteSpace(pinned))
+			{
+				return pinned;
+			}
 			if (!string.IsNullOrEmpty(decl.Sha1)
 				&& config.CoreFirmware.TryGetValue(KeyFor(coreName, decl), out var own) && !string.IsNullOrWhiteSpace(own))
 			{

@@ -231,11 +231,16 @@ a dark 1/10 s step.
 
 ## Settings and data
 
-- The game's original data files are firmware, each with its hash, and the
-  core itself checks it was given the version it plays (Prince of Persia 1.0,
-  1.1, 1.3 and 1.4 differ; SDLPoP's version setting picks one) and refuses any
-  other by name: a file given with a
-  mismatched hash is only a warning in the frontend, and chimera-run's
+- The game's original data files are firmware, each declared with the
+  original's hash - which is how the wizard and the Firmware folder find it.
+  **A file of the project's own may take an original's place** (user-decided,
+  2026-09-29): a modified PRINCE.DAT, another release's file, any file. The
+  wizard's Select File takes it for a game core (an emulator core's takes only
+  the exact file), says it is the project's own, and the project pins ITS
+  hash; reopening then mounts the file with that hash, never the original the
+  person may also have on hand. The core takes whatever it is given, and
+  refuses only a missing file or a build known not to work (SDLPoP2: the 1993
+  floppy's PRINCE.EXE; OpenSamurai: the floppy's AdLib driver). chimera-run's
   `--firmware` is not hash-checked at all.
 - A game core declares its project slots like any core, at `min` 0 when the
   project needs no file of its own - the game is all firmware. SDLPoP's are a
