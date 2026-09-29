@@ -4597,7 +4597,10 @@ Stale was the trap to avoid: a header that outlives an edit says a time the
 movie no longer makes, and a reader parsing projects has no way to tell.
 
 SDLPoP2's clock starts only with the first story scene after level 4, as the
-game's does, so its time reads 0 until then - the game's rule, not a gap.
+game's does, so on its own it counts nothing in levels 1 to 4 - the game's
+rule, not a gap. The core's IGT From Level 1 setting (user-asked, on by
+default) adds the ticks of play before then, so the time runs from the very
+beginning of level 1; the frontend sees only the number either way.
 
 ## A watch is drawn on the screen only when it is ticked (user-decided, 2026-09-29)
 
