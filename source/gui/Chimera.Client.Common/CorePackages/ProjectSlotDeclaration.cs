@@ -94,7 +94,9 @@ namespace Chimera.Client.Common
 						SettingGatedOnly = item["exposedWhen"] is JToken when && ReadsOnlySettings(when),
 					});
 				}
-				if (parsed.Count is 0) return null;
+				// none is a declaration too: a game core whose game is all firmware
+				// takes no file, and its form is empty and demands nothing (a missing
+				// or unreadable declaration is still no declaration)
 				List<IReadOnlyList<string>> groups = new();
 				if (root["atLeastOneOf"] is JArray atLeast)
 				{

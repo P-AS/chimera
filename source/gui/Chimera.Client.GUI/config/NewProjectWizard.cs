@@ -1793,6 +1793,16 @@ namespace Chimera.Client.GUI
 				group.Tag = group.Text;
 				y += 102;
 			}
+			if (_declaration.Slots.Count is 0)
+			{
+				// a core that takes no file (a game core whose game is all firmware)
+				_slotsHost.Controls.Add(new Label
+				{
+					AutoSize = true,
+					Location = Pt(0, 0),
+					Text = $"{ChosenCore?.Name ?? "This core"} takes no files: the game is its firmware.",
+				});
+			}
 			RefreshSlotAvailability();
 		}
 

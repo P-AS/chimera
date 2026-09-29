@@ -239,27 +239,80 @@ namespace Chimera.Emulation.Common
 				["Mouse Middle"] = 'c', // the base table knows Left and Right
 			},
 
-			// Game cores (docs/game-cores.md) are keyboards. Prince of Persia's
-			// Restart Level is Ctrl+A, and its last word would give it Left's L.
+			// Game cores (docs/game-cores.md) are keyboards, each key the game
+			// reads a button, so their names' letters collide everywhere.
+			// Prince of Persia: the prince's keys; the game's commands in
+			// lowercase, mostly their Ctrl letter; the cheats in capitals, digits
+			// (the looks, as a keypad points) and + and -.
 			["PrinceOfPersia"] = new()
 			{
 				["Shift"] = '^',
 				["Enter"] = 'e',
+				["Pause"] = 'p',
+				["Show Time"] = 't',
 				["Restart Level"] = 'a',
+				["Restart Game"] = 'r',
+				["Next Level"] = 'n',
+				["Sound On/Off"] = 's',
+				["Version"] = 'v',
+				["Joystick Mode"] = 'j',
+				["Keyboard Mode"] = 'k',
+				["Cheat Show Rooms"] = 'C',
+				["Cheat Show Corner Rooms"] = 'Q',
+				["Cheat Less Time"] = '-',
+				["Cheat More Time"] = '+',
+				["Cheat Revive"] = 'V',
+				["Cheat Kill Guard"] = 'K',
+				["Cheat Flip Screen"] = 'I',
+				["Cheat Feather Fall"] = 'W',
+				["Cheat Look Left"] = '4',
+				["Cheat Look Right"] = '6',
+				["Cheat Look Up"] = '8',
+				["Cheat Look Down"] = '2',
+				["Cheat Look Back"] = '5',
+				["Cheat Blind Mode"] = 'B',
+				["Cheat Add Hit Point"] = 'H',
+				["Cheat Add Max Hit Point"] = 'M',
 			},
-			// Prince of Persia 2: the prince's P1 keys, then the keys the program
-			// reads outside play - the letters keep their capitals, so the other
-			// keys take lowercase characters no letter has.
+			// Prince of Persia 2: the prince's P1 keys; the game's commands in
+			// lowercase, mostly their Alt letter; the cheats in capitals, digits
+			// (the looks) and + and -.
 			["PrinceOfPersia2"] = new()
 			{
 				["Shift"] = '^',
 				["Ctrl"] = 'c',
-				["Return"] = 'e',
-				["Space"] = 's',
-				["Escape"] = 'x',
-				["Tab"] = 't',
-				["Backspace"] = 'b',
-				["Alt"] = 'a',
+				["Pause"] = 'p',
+				["Show Time"] = 't',
+				["Restart Level"] = 'a',
+				["Restart Game"] = 'r',
+				["Next Level"] = 'n',
+				["Sound On/Off"] = 's',
+				["Music On/Off"] = 'm',
+				["Version"] = 'v',
+				["Joystick Mode"] = 'j',
+				["Keyboard Mode"] = 'k',
+				["Cheat Lose Hit Point"] = 'Y',
+				["Cheat Opponent Hit Point"] = 'O',
+				["Cheat Kill Room"] = 'K',
+				["Cheat Spirit Leaves"] = 'S',
+				["Cheat More Time"] = '+',
+				["Cheat Less Time"] = '-',
+				["Cheat Flip Screen"] = 'I',
+				["Cheat Show Room"] = '?',
+				["Cheat Add Max Hit Point"] = 'M',
+				["Cheat Feather Fall"] = 'W',
+				["Cheat Revive"] = 'V',
+				["Cheat Demo Player"] = 'P',
+				["Cheat God Mode"] = 'G',
+				["Cheat Leave Body"] = 'B',
+				["Cheat Leave Body Flame"] = 'F',
+				["Cheat Sword"] = 'Z',
+				["Cheat Look Left"] = '4',
+				["Cheat Look Right"] = '6',
+				["Cheat Look Up"] = '8',
+				["Cheat Look Down"] = '2',
+				["Cheat Teleport"] = 'T',
+				["Cheat Fly"] = 'A',
 			},
 
 			/* The Duke: A B X Y read from the base table; these are the names

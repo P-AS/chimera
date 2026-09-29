@@ -195,13 +195,16 @@ a dark 1/10 s step.
 
 - The game's original data files are firmware, each with its hash, and the
   core itself checks it was given the version it plays (Prince of Persia 1.0,
-  1.3 and 1.4 differ) and refuses any other by name: a file given with a
+  1.1, 1.3 and 1.4 differ; SDLPoP's version setting picks one) and refuses any
+  other by name: a file given with a
   mismatched hash is only a warning in the frontend, and chimera-run's
   `--firmware` is not hash-checked at all.
-- A game core declares its project slots like any core. When the project needs
-  no file of its own - the game is all firmware - it still declares the slots
-  it can take, at `min` 0: the new-project wizard wants at least one slot
-  declared. SDLPoP's is a custom level set.
+- A game core declares its project slots like any core, at `min` 0 when the
+  project needs no file of its own - the game is all firmware. SDLPoP's are a
+  custom level set and a savestate to start from. A core that takes no file
+  at all declares an empty list (`"slots": []`, SDLPoP2's): the wizard's files
+  page then says so and asks nothing (until 2026-09-29 the wizard wanted at
+  least one slot declared).
 - Options that change play - a port's fixes and enhancements, difficulty - are
   settings, part of the machine. Options that change only the picture or the
   sound are not.
