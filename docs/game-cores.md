@@ -32,6 +32,11 @@ row, then game cores. (A row rather than a ListView group: Mono's ListView
 ignores groups in Details view, which is why the Core Manager's "External
 cores" divide is a row too.)
 
+While a game core runs, the menu bar's Emulator menu is called **Game**
+(user-decided, 2026-09-29): there is no emulator, and the menu holds the
+game's own options (the timer below) beside what any core's menu holds
+(firmware, the core's tools).
+
 ## Properties
 
 A game core's properties are **a labelled memory domain** (user-decided): the
@@ -153,9 +158,10 @@ game core is simply the kind that always should.
   again before every step - whole, whatever its width - and one on a bit
   field touches no other bit. After the core is reloaded a frozen property is
   found again by name, and dropped when the core no longer has it.
-- The game's timer: View > Display Game Time (on by default, Game Time in the
+- The game's timer: Game > Display Game Time (on by default, Game Time in the
   message positions, a hotkey to toggle) draws it on the screen as
-  `IGT mm:ss.mmm`; the item is greyed for a core without one. A saved project
+  `IGT mm:ss.mmm`; the item is there only for a game whose core names a
+  timer, as it is the game's option and not every core's. A saved project
   carries it at the end of the movie, for whoever reads the project later:
   `GameTimeMs` (the number), `GameTime` (as shown) and `GameTimeFrame` (the
   frame it was read at, the movie's length). They are written only when the

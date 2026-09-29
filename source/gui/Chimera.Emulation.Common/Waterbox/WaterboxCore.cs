@@ -38,6 +38,9 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// </summary>
 		public CoreAttribute CoreIdentity => IdentityOf(_cfg);
 
+		/// <summary>One game rather than a machine (<c>"kind": "game"</c>; docs/game-cores.md).</summary>
+		public bool IsGameCore => _cfg.IsGameCore;
+
 		/// <summary>Builds a core's identity from its package declaration.</summary>
 		internal static CoreAttribute IdentityOf(WaterboxConfig cfg)
 			=> new PortedCoreAttribute(

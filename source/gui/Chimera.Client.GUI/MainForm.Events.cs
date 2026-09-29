@@ -210,7 +210,6 @@ namespace Chimera.Client.GUI
 			DisplayFPSMenuItem.Checked = Config.DisplayFps;
 			DisplayFrameCounterMenuItem.Checked = Config.DisplayFrameCounter;
 			DisplayLagCounterMenuItem.Checked = Config.DisplayLagCounter;
-			DisplayGameTimeMenuItem.Checked = Config.DisplayGameTime;
 			DisplayInputMenuItem.Checked = Config.DisplayInput;
 			DisplayRerecordCountMenuItem.Checked = Config.DisplayRerecordCount;
 			DisplaySubtitlesMenuItem.Checked = Config.DisplaySubtitles;
@@ -218,7 +217,6 @@ namespace Chimera.Client.GUI
 			DisplayFPSMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Display FPS"];
 			DisplayFrameCounterMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Frame Counter"];
 			DisplayLagCounterMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Lag Counter"];
-			DisplayGameTimeMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Game Time"];
 			DisplayInputMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Input Display"];
 			SwitchToFullscreenMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Full Screen"];
 
@@ -226,8 +224,6 @@ namespace Chimera.Client.GUI
 			DisplayLogWindowMenuItem.Checked = Tools.IsLoaded<LogWindow>();
 
 			DisplayLagCounterMenuItem.Enabled = Emulator.CanPollInput();
-			// only a game core that names its own timer has one to show
-			DisplayGameTimeMenuItem.Enabled = Emulator.ServiceProvider.GetService<IGameProperties>()?.GameTimeMs is not null;
 
 			DisplayMessagesMenuItem.Checked = Config.DisplayMessages;
 		}
@@ -302,6 +298,12 @@ namespace Chimera.Client.GUI
 		private void DisplayLagCounterMenuItem_Click(object sender, EventArgs e)
 		{
 			ToggleLagCounter();
+		}
+
+		private void GenericCoreSubMenu_DropDownOpened(object sender, EventArgs e)
+		{
+			DisplayGameTimeMenuItem.Checked = Config.DisplayGameTime;
+			DisplayGameTimeMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Game Time"];
 		}
 
 		private void DisplayGameTimeMenuItem_Click(object sender, EventArgs e)

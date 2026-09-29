@@ -323,6 +323,9 @@ namespace Chimera.Client.GUI
 			InitializeComponent();
 			Icon = Properties.Resources.Logo;
 			SetImages();
+			// here and not in the designer: the menu starts empty and is filled when a core
+			// runs (DisplayDefaultCoreMenu), and this only brings its checks up to date
+			GenericCoreSubMenu.DropDownOpened += GenericCoreSubMenu_DropDownOpened;
 #if !DEBUG
 #endif
 			Game = GameInfo.NullInstance;
@@ -1829,6 +1832,14 @@ namespace Chimera.Client.GUI
 				ToolStripMenuItem exportSaveDataMenuItem = new() { Text = "Export Save &Data..." };
 				exportSaveDataMenuItem.Click += (_, _) => ExportSaveData();
 				GenericCoreSubMenu.DropDownItems.Insert(0, exportSaveDataMenuItem);
+			}
+
+			// what a game core's own game offers (docs/game-cores.md): the timer only for a
+			// game whose core names one, so it is not a View option every core would carry
+			if (Emulator.ServiceProvider.GetService<IGameProperties>()?.GameTimeMs is not null)
+			{
+				GenericCoreSubMenu.DropDownItems.Insert(0, DisplayGameTimeMenuItem);
+				if (GenericCoreSubMenu.DropDownItems.Count > 1) GenericCoreSubMenu.DropDownItems.Insert(1, new ToolStripSeparator());
 			}
 
 			var coreTools = CoreProvidedTools.Concat(SpecializedTools)

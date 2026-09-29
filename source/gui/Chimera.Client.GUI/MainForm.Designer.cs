@@ -464,7 +464,6 @@ namespace Chimera.Client.GUI
             this.DisplayFPSMenuItem,
             this.DisplayFrameCounterMenuItem,
             this.DisplayLagCounterMenuItem,
-            this.DisplayGameTimeMenuItem,
             this.DisplayInputMenuItem,
             this.DisplayRerecordCountMenuItem,
             this.DisplaySubtitlesMenuItem,

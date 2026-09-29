@@ -4585,8 +4585,8 @@ engine checks that the name is one whole-number property, reads it, and owns
 the only formatting, `mm:ss.mmm` (user: "for humans to see"), so a solver
 linking the engine writes the same text the screen shows.
 
-It is shown on the screen (View > Display Game Time, on by default, greyed
-for a core without one) and saved in the project as three headers - the
+It is shown on the screen (Game > Display Game Time, on by default; see the
+next section) and saved in the project as three headers - the
 number, the text and the frame - **at the end of the movie only, and never
 stale**. The frontend records the time each frame the machine shows and
 forgets it after an edit, as it forgets lag; the headers are written when the
@@ -4624,3 +4624,18 @@ With the switch on by default, a watch file loaded at start-up (Recent >
 Auto-load) opens the RAM Watch window. It used to open hidden when the switch
 was on, the screen being where every watch was; now the screen shows only the
 ticked ones, and the window is where the rest are.
+
+## A game core's menu is "Game", and holds the game's own options (user-decided, 2026-09-29)
+
+The core's menu was "Emulator" always, never named after the system, so it
+stays where the user left it. A game core has no emulator to name: while one
+runs, the same menu is called Game, in the same place - the title follows the
+kind of core, not the game, so it still does not move from game to game.
+
+Display Game Time moved there from View. View is for what every core has
+(frames, lag, input); the timer is the game's, and only a game whose core
+names one (the two Prince of Persia cores) shows the item, rather than every
+core showing it greyed. The frontend asks the core whether it has a timer and
+never which game it is, so a third game core with a timer gets the item
+without a change here. The hotkey and the message position stay where the
+other displays' are.
