@@ -1235,6 +1235,14 @@ int main(int argc, char **argv)
 		int32_t ax = 0, ay = 0;
 		if (ce_session_display_aspect(session, &ax, &ay))
 			meta += "aspect=" + std::to_string(ax) + ":" + std::to_string(ay) + "\n";
+		// a game core's own timer at the end of the run, when it has one
+		int64_t gameMs = 0;
+		if (ce_session_game_time_ms(session, &gameMs))
+		{
+			char text[48];
+			ce_game_time_text(gameMs, text, sizeof text);
+			meta += "gameTimeMs=" + std::to_string(gameMs) + "\ngameTime=" + text + "\n";
+		}
 		writeWholeFile(metaPath, reinterpret_cast<const uint8_t *>(meta.data()), meta.size());
 	}
 	std::printf("frames=%lld\n", static_cast<long long>(frames));

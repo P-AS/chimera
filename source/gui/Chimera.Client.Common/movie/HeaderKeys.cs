@@ -39,6 +39,16 @@ namespace Chimera.Client.Common
 		// neutral entry looks like for this core's controller.
 		public const string LastInputFrame = "LastInputFrame";
 
+		// A game core's own timer (its property table's "gameTimer"; docs/game-cores.md)
+		// at the end of the movie: the milliseconds the game counted, the same as a timer
+		// shows them (mm:ss.mmm), and the frame they were read at - the movie's length,
+		// the machine as it stands after the last frame. Written only when the machine
+		// has run to that frame since anything before it was edited, and removed when
+		// it has not, so a value that is there is the movie's.
+		public const string GameTimeMs = "GameTimeMs";
+		public const string GameTime = "GameTime";
+		public const string GameTimeFrame = "GameTimeFrame";
+
 		// A GPU outside the sandbox drew this run's pictures - much faster than
 		// the software rasteriser and NOT deterministic: the GPU is outside the
 		// savestate and differs between machines. Recorded so that a replay

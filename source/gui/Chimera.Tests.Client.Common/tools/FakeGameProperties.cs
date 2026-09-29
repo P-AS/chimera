@@ -65,5 +65,8 @@ namespace Chimera.Tests.Client.Common
 			=> long.TryParse(Text(element), out var n) ? n : Text(element);
 
 		public string? Set(GamePropertyElement element, object value) => SetText(element, value.ToString() ?? "");
+
+		/// <summary>What the game's timer says; null for a core without one.</summary>
+		public long? GameTimeMs { get; set; }
 	}
 }

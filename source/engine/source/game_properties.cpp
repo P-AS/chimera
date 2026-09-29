@@ -185,6 +185,7 @@ void CeGameProperties::load(const char *json, const std::vector<Domain> &domains
 	m_props.clear();
 	m_problems.clear();
 	m_byName.clear();
+	m_timer = -1;
 	if (json == nullptr || json[0] == '\0')
 	{
 		describeAll();
@@ -374,8 +375,30 @@ void CeGameProperties::load(const char *json, const std::vector<Domain> &domains
 			m_props.push_back(std::move(p));
 		}
 	}
+	/* the game's own timer: one whole number, its elapsed time in ms */
+	const cJSON *timer = cJSON_GetObjectItemCaseSensitive(root, "gameTimer");
+	if (timer != nullptr)
+	{
+		const auto named = cJSON_IsString(timer) ? m_byName.find(lower(timer->valuestring)) : m_byName.end();
+		const Property *p = named != m_byName.end() ? &m_props[size_t(named->second)] : nullptr;
+		if (p != nullptr && kTypes[p->type].integer && p->count == 1) m_timer = named->second;
+		else
+			m_problems.push_back(std::string("\"gameTimer\" names ") +
+				(cJSON_IsString(timer) ? "\"" + std::string(timer->valuestring) + "\"" : "no property") +
+				", which is not one property holding a whole number");
+	}
 	cJSON_Delete(root);
 	describeAll();
+}
+
+std::string CeGameProperties::timeText(int64_t ms)
+{
+	const bool negative = ms < 0;
+	const uint64_t m = negative ? uint64_t(0) - uint64_t(ms) : uint64_t(ms);
+	char buf[48];
+	std::snprintf(buf, sizeof buf, "%s%02llu:%02llu.%03llu", negative ? "-" : "",
+		(unsigned long long)(m / 60000), (unsigned long long)(m / 1000 % 60), (unsigned long long)(m % 1000));
+	return buf;
 }
 
 void CeGameProperties::describeAll()
@@ -404,6 +427,7 @@ void CeGameProperties::describeAll()
 		for (const auto &v : p.values) cJSON_AddStringToObject(values, std::to_string(v.first).c_str(), v.second.c_str());
 		cJSON_AddItemToArray(list, o);
 	}
+	if (m_timer >= 0) cJSON_AddStringToObject(root, "gameTimer", m_props[size_t(m_timer)].name.c_str());
 	cJSON *problems = cJSON_AddArrayToObject(root, "problems");
 	for (const std::string &problem : m_problems) cJSON_AddItemToArray(problems, cJSON_CreateString(problem.c_str()));
 	char *text = cJSON_PrintUnformatted(root);

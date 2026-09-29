@@ -375,6 +375,44 @@ void whatTheGameWorksOutCannotBeSet()
 	v.kind = GP::Value::Int;
 	assert(!gp.write(idx(gp, "Level Name"), 0, v, error) && error.find("takes text") != std::string::npos);
 }
+void theGamesOwnTimer()
+{
+	// the table names a whole-number property as the game's timer, in ms
+	GP gp;
+	gp.load(R"({ "gameTimer": "IGT Ms", "properties": [
+		{ "name": "IGT Ms", "domain": "Game State", "offset": 64, "type": "u32" },
+		{ "name": "Speed", "domain": "Game State", "offset": 68, "type": "f32" },
+		{ "name": "Laps", "domain": "Game State", "offset": 72, "type": "u16", "count": 3 } ] })", domains());
+	assert(gp.problems().empty());
+	assert(gp.timer() == idx(gp, "IGT Ms"));
+	assert(gp.describe().find("\"gameTimer\":\"IGT Ms\"") != std::string::npos);
+	const uint32_t ms = 754083;
+	std::memcpy(g_state + 64, &ms, 4);
+	GP::Value v;
+	assert(gp.read(gp.timer(), 0, v) && v.kind == GP::Value::UInt && v.u == 754083);
+
+	// anything else it could name is not a timer, and is said
+	for (const char *named : { "\"Speed\"", "\"Laps\"", "\"Nothing\"", "3" })
+	{
+		GP bad;
+		bad.load((std::string(R"({ "gameTimer": )") + named + R"(, "properties": [
+			{ "name": "Speed", "domain": "Game State", "offset": 68, "type": "f32" },
+			{ "name": "Laps", "domain": "Game State", "offset": 72, "type": "u16", "count": 3 } ] })").c_str(), domains());
+		assert(bad.timer() == -1);
+		assert(bad.problems().size() == 1 && bad.problems()[0].find("gameTimer") != std::string::npos);
+	}
+	GP none;
+	none.load(kTable, domains());
+	assert(none.timer() == -1 && none.describe().find("gameTimer") == std::string::npos);
+
+	// as a timer shows it: mm:ss.mmm
+	assert(GP::timeText(0) == "00:00.000");
+	assert(GP::timeText(83) == "00:00.083");
+	assert(GP::timeText(754083) == "12:34.083");
+	assert(GP::timeText(3599999) == "59:59.999");
+	assert(GP::timeText(6000000) == "100:00.000");
+	assert(GP::timeText(-1500) == "-00:01.500");
+}
 } // namespace
 
 int main()
@@ -386,6 +424,7 @@ int main()
 	arraysAreAddressedByElement();
 	bitFieldsTouchOnlyTheirBits();
 	whatTheGameWorksOutCannotBeSet();
+	theGamesOwnTimer();
 	std::printf("test_game_properties: ok\n");
 	return 0;
 }

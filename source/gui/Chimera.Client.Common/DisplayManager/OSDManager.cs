@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Collections.Generic;
 
 using Chimera.Emulation.Common;
+using Chimera.Emulation.Common.Engine;
 
 namespace Chimera.Client.Common
 {
@@ -342,6 +343,14 @@ namespace Chimera.Client.Common
 				var counter = _emulator.AsInputPollable().LagCount.ToString();
 				var point = GetCoordinates(g, _config.LagCounter, counter);
 				DrawOsdMessage(g, counter, FixedAlertMessageColor, point.X, point.Y);
+			}
+
+			// a game core's own timer, as a timer shows it
+			if (_config.DisplayGameTime && _emulator.ServiceProvider.GetService<IGameProperties>()?.GameTimeMs is long gameMs)
+			{
+				var gameTime = "IGT " + ChimeraEngine.GameTimeText(gameMs);
+				var point = GetCoordinates(g, _config.GameTime, gameTime);
+				DrawOsdMessage(g, gameTime, FixedMessagesColor, point.X, point.Y);
 			}
 
 			if (_config.DisplayRerecordCount)

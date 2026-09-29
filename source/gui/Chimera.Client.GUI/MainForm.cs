@@ -2279,6 +2279,9 @@ namespace Chimera.Client.GUI
 		private void ToggleLagCounter()
 			=> Config.DisplayLagCounter = !Config.DisplayLagCounter;
 
+		private void ToggleGameTime()
+			=> Config.DisplayGameTime = !Config.DisplayGameTime;
+
 		private void ToggleInputDisplay()
 			=> Config.DisplayInput = !Config.DisplayInput;
 

@@ -119,6 +119,19 @@ namespace Chimera.Client.Common
 
 		public TasLagLog LagLog { get; } = new TasLagLog();
 
+		/// <summary>
+		/// A game core's own timer (IGameProperties.GameTimeMs) after each frame the machine
+		/// ran, forgotten past an edit as the lag log is: what the project's GameTime headers
+		/// are written from.
+		/// </summary>
+		public SortedList<int, long> GameTimeLog { get; } = new();
+
+		private void GameTimeForgetAfter(int frame)
+		{
+			while (GameTimeLog.Count is not 0 && GameTimeLog.Keys[GameTimeLog.Count - 1] > frame)
+				GameTimeLog.RemoveAt(GameTimeLog.Count - 1);
+		}
+
 		public override string PreferredExtension => Extension;
 		/// <summary>
 		/// Where the machine has been. Held by the engine, and this is the remote
@@ -241,6 +254,7 @@ namespace Chimera.Client.Common
 			}
 
 			LagLog.RemoveFrom(frame);
+			GameTimeForgetAfter(frame);
 			// asked before the drop, because afterwards there is nothing to see
 			var anyStateInvalidated = States.Nearest(int.MaxValue) > frame;
 			States.InvalidateAfter(frame);
@@ -323,6 +337,8 @@ namespace Chimera.Client.Common
 		public void GreenzoneCurrentFrame()
 		{
 			LagLog[Emulator.Frame] = _inputPollable.IsLagFrame;
+			if (Emulator.ServiceProvider.GetService<IGameProperties>()?.GameTimeMs is long gameMs)
+				GameTimeLog[Emulator.Frame] = gameMs;
 
 			// Every frame, unconditionally: the engine decides what a frame near
 			// the playhead costs to keep and what it costs once the playhead has
@@ -462,6 +478,7 @@ namespace Chimera.Client.Common
 			if (timelineBranchFrame.HasValue)
 			{
 				LagLog.RemoveFrom(timelineBranchFrame.Value);
+				GameTimeForgetAfter(timelineBranchFrame.Value);
 				States.InvalidateAfter(timelineBranchFrame.Value);
 				GreenzoneInvalidated?.Invoke(timelineBranchFrame.Value);
 			}

@@ -100,12 +100,22 @@ public:
 
 	static const char *typeName(Type type);
 
+	/* The game's own timer (the table's "gameTimer"): the property holding its
+	 * elapsed time in milliseconds, -1 when the core names none (or names one
+	 * that is not a single whole number, which is a problem). */
+	int32_t timer() const { return m_timer; }
+
+	/* A time in milliseconds as a person reads a timer, "mm:ss.mmm" (more
+	 * minute digits past 99; "-" before a negative one). */
+	static std::string timeText(int64_t ms);
+
 private:
 	std::vector<Domain> m_domains;
 	std::vector<Property> m_props;
 	std::vector<std::string> m_problems;
 	std::map<std::string, int32_t> m_byName; // lower-cased
 	std::string m_describe;
+	int32_t m_timer = -1;
 
 	bool valid(int32_t index, uint32_t element) const;
 	uint8_t *elementBytes(const Property &p, uint32_t element) const;

@@ -174,6 +174,52 @@ namespace Chimera.Tests.Client.Common.Movie
 		}
 
 		[TestMethod]
+		public void AGameCoresOwnTimerIsWrittenAtTheMoviesEndAndNeverStale()
+		{
+			var path = Path.Combine(_dir, "game-time.chimeraProject");
+			var movie = MakeWorkedMovie(path);   // six frames
+			var emu = (FakeEmulator)movie.Emulator;
+			FakeGameProperties timer = new("""{"properties":[]}""");
+			((BasicServiceProvider)emu.ServiceProvider).Register<IGameProperties>(timer);
+			string? Header(TasMovie m, string key) => m.HeaderEntries.TryGetValue(key, out var v) ? v : null;
+			void RunTo(int last)
+			{
+				for (var f = 1; f <= last; f++)
+				{
+					emu.Frame = f;
+					timer.GameTimeMs = f * 1000L / 12 + 754000;   // a tick a frame, from 12:34
+					movie.GreenzoneCurrentFrame();
+				}
+			}
+
+			// not run to the end: nothing is said
+			RunTo(4);
+			movie.Save();
+			Assert.IsNull(Header(LoadFresh(path), HeaderKeys.GameTimeMs), "the time at the end is not known yet");
+
+			// run to the end: the game's time there, and as a timer shows it
+			RunTo(6);
+			movie.Save();
+			var reloaded = LoadFresh(path);
+			Assert.AreEqual("754500", Header(reloaded, HeaderKeys.GameTimeMs));
+			Assert.AreEqual("12:34.500", Header(reloaded, HeaderKeys.GameTime));
+			Assert.AreEqual("6", Header(reloaded, HeaderKeys.GameTimeFrame));
+
+			// opened again and saved without running: still the movie's own
+			reloaded.Save();
+			Assert.AreEqual("754500", Header(LoadFresh(path), HeaderKeys.GameTimeMs), "a project keeps the time it was saved with");
+
+			// an edit before the end: that time is no longer the movie's, and goes
+			var edited = LoadFresh(path);
+			edited.SetBoolState(2, "B", true);
+			edited.Save();
+			var after = LoadFresh(path);
+			Assert.IsNull(Header(after, HeaderKeys.GameTimeMs), "a stale time is never written");
+			Assert.IsNull(Header(after, HeaderKeys.GameTime));
+			Assert.IsNull(Header(after, HeaderKeys.GameTimeFrame));
+		}
+
+		[TestMethod]
 		public void ARecordedRateIsWhatTheMovieIsTimedBy()
 		{
 			// Chimera keeps no per-system rate table - the fallback is a flat

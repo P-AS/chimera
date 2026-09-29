@@ -213,6 +213,8 @@ namespace Chimera.Client.Common
 		public bool DisplayLagCounter { get; set; }
 		public bool DisplayInput { get; set; }
 		public bool DisplayRerecordCount { get; set; }
+		/// <summary>A game core's own timer (IGT, mm:ss.mmm), for a core whose property table names one.</summary>
+		public bool DisplayGameTime { get; set; } = true;
 		public bool DisplayMessages { get; set; } = true;
 
 		public bool DispFixAspectRatio { get; set; } = true;
@@ -229,6 +231,7 @@ namespace Chimera.Client.Common
 		public MessagePosition Messages { get; set; } = DefaultMessagePositions.Messages.Clone();
 		public MessagePosition Autohold { get; set; } = DefaultMessagePositions.Autohold.Clone();
 		public MessagePosition RamWatches { get; set; } = DefaultMessagePositions.RamWatches.Clone();
+		public MessagePosition GameTime { get; set; } = DefaultMessagePositions.GameTime.Clone();
 
 		public int MessagesColor { get; set; } = DefaultMessagePositions.MessagesColor;
 		public int AlertMessageColor { get; set; } = DefaultMessagePositions.AlertMessageColor;

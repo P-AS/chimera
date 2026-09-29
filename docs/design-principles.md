@@ -4571,3 +4571,30 @@ least s64, an f64, cut and padded text, utf16le, bytes, big-endian, two
 interleaved arrays, two bit fields in one byte), and the cursor moved by
 `game.set` drawn where it was put. With the table emptied it fails at the
 first check.
+
+## A game's own clock, to the millisecond (user-asked, 2026-09-29)
+
+A game core may name one property as the game's timer (`"gameTimer"` in its
+table; docs/game-cores.md): the milliseconds the game itself has counted, as
+its speedrunners count them. Prince of Persia's is TASVideos' GameTimer, the
+one quickerSDLPoP prints as `IGT m:ss.mmm`: the clock loses one tick of 1/12 s
+per tick of play and rolls a minute over after 719, so the time is the ticks
+between the clock the game started with and the clock now, times 1000/12. The
+arithmetic is the game's and lives in the core (thin C#, heavy C++); the
+engine checks that the name is one whole-number property, reads it, and owns
+the only formatting, `mm:ss.mmm` (user: "for humans to see"), so a solver
+linking the engine writes the same text the screen shows.
+
+It is shown on the screen (View > Display Game Time, on by default, greyed
+for a core without one) and saved in the project as three headers - the
+number, the text and the frame - **at the end of the movie only, and never
+stale**. The frontend records the time each frame the machine shows and
+forgets it after an edit, as it forgets lag; the headers are written when the
+time at frame == InputLogLength is known and removed when it is not. A
+project opened with the headers seeds the end frame's time from them, so an
+open and a save without playing keep it, and an edit before the end drops it.
+Stale was the trap to avoid: a header that outlives an edit says a time the
+movie no longer makes, and a reader parsing projects has no way to tell.
+
+SDLPoP2's clock starts only with the first story scene after level 4, as the
+game's does, so its time reads 0 until then - the game's rule, not a gap.

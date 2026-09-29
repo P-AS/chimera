@@ -169,5 +169,11 @@ namespace Chimera.Emulation.Common
 
 		/// <summary>Sets the value from any of the kinds <see cref="Get"/> gives; null when set, else why not.</summary>
 		string? Set(GamePropertyElement element, object value);
+
+		/// <summary>
+		/// The game's own elapsed time in milliseconds, as the game counts it now (the table's
+		/// "gameTimer", docs/game-cores.md); null when the core names no timer.
+		/// </summary>
+		long? GameTimeMs { get; }
 	}
 }

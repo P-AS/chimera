@@ -43,6 +43,7 @@ namespace Chimera.Client.Common
 			Bind("General", "Display FPS");
 			Bind("General", "Frame Counter");
 			Bind("General", "Lag Counter");
+			Bind("General", "Game Time");
 			Bind("General", "Input Display");
 			Bind("General", "Toggle BG Input");
 			Bind("General", "Toggle Menu");

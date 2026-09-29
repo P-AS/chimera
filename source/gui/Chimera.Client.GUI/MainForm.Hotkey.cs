@@ -93,6 +93,9 @@ namespace Chimera.Client.GUI
 				case "Lag Counter":
 					if (Emulator.CanPollInput()) ToggleLagCounter();
 					break;
+				case "Game Time":
+					ToggleGameTime();
+					break;
 				case "Input Display":
 					ToggleInputDisplay();
 					break;

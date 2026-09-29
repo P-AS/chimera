@@ -98,5 +98,7 @@ namespace Chimera.Emulation.Common.Waterbox
 
 		public string? Set(GamePropertyElement element, object value)
 			=> _session.Disposed ? "the core has stopped" : _session.PropertySet(element.Property.Index, (uint)element.Index, value);
+
+		public long? GameTimeMs => _session.Disposed ? null : _session.GameTimeMs;
 	}
 }

@@ -2100,6 +2100,27 @@ const char *ce_host_build_info(void)
 
 const char *ce_session_property_table(const ce_session *s) { return s->properties.describe().c_str(); }
 
+int32_t ce_session_game_time_ms(ce_session *s, int64_t *ms_out)
+{
+	if (ms_out != nullptr) *ms_out = 0;
+	CeGameProperties::Value v;
+	if (s->properties.timer() < 0 || !s->properties.read(s->properties.timer(), 0, v)) return 0;
+	if (ms_out != nullptr) *ms_out = v.kind == CeGameProperties::Value::UInt ? int64_t(v.u) : v.i;
+	return 1;
+}
+
+int32_t ce_game_time_text(int64_t ms, char *buf, int32_t cap)
+{
+	const std::string text = CeGameProperties::timeText(ms);
+	if (buf != nullptr && cap > 0)
+	{
+		const size_t n = std::min(text.size(), size_t(cap - 1));
+		std::memcpy(buf, text.data(), n);
+		buf[n] = '\0';
+	}
+	return int32_t(text.size());
+}
+
 int32_t ce_session_property_find(const ce_session *s, const char *name, uint32_t *element_out)
 {
 	return name != nullptr ? s->properties.find(name, element_out) : -1;

@@ -366,6 +366,23 @@ namespace Chimera.Client.Common
 					Emulator.VsyncDenominator().ToString(CultureInfo.InvariantCulture);
 			}
 
+			// ...and a game core's own timer at the end of the movie, for whoever reads the
+			// project later: only when the machine has run to the end since the last edit
+			// before it - or the project said so when it was opened, and nothing before
+			// that has changed - and otherwise not at all, never a stale one
+			if (GameTimeLog.TryGetValue(InputLogLength, out var gameMs))
+			{
+				Header[HeaderKeys.GameTimeMs] = gameMs.ToString(CultureInfo.InvariantCulture);
+				Header[HeaderKeys.GameTime] = ChimeraEngine.GameTimeText(gameMs);
+				Header[HeaderKeys.GameTimeFrame] = InputLogLength.ToString(CultureInfo.InvariantCulture);
+			}
+			else
+			{
+				Header.Remove(HeaderKeys.GameTimeMs);
+				Header.Remove(HeaderKeys.GameTime);
+				Header.Remove(HeaderKeys.GameTimeFrame);
+			}
+
 			p.HeadersClear();
 			foreach (var (key, value) in Header)
 			{
@@ -863,6 +880,17 @@ namespace Chimera.Client.Common
 					}, skipHistory: true);
 				}
 				Branches.Add(b);
+			}
+
+			// the game time the project was saved with, as the end of the movie's own - an
+			// edit before the end forgets it, as it would one the machine had just shown
+			if (Header.TryGetValue(HeaderKeys.GameTimeFrame, out var timeFrame)
+				&& int.TryParse(timeFrame, NumberStyles.Integer, CultureInfo.InvariantCulture, out var atFrame)
+				&& atFrame == InputLogLength
+				&& Header.TryGetValue(HeaderKeys.GameTimeMs, out var timeMs)
+				&& long.TryParse(timeMs, NumberStyles.Integer, CultureInfo.InvariantCulture, out var savedMs))
+			{
+				GameTimeLog[atFrame] = savedMs;
 			}
 
 			EngineProgress.Report("reading the greenzone");

@@ -111,6 +111,15 @@ What a property is:
   step and would overwrite (a poke would do nothing).
 - `description` (optional): one line for a tooltip.
 
+Beside `properties`, the table may name **the game's own timer**:
+`"gameTimer": "Time.IGT Ms"` names one whole-number property (not an array,
+not a bit field, no named values) that holds the time the game has counted, in
+milliseconds - an in-game time, however the game defines it. The core does the
+game's arithmetic; the engine only reads the number and writes it as
+`mm:ss.mmm` (`ce_session_game_time_ms`, `ce_game_time_text`; minutes past 99
+take more digits). A name that is not such a property is a problem the engine
+reports, and the table works without the timer.
+
 The type system is the engine's (libchimera, `ce_session_property_*`): it
 reads the export once after `Init`, checks every property against the
 domains the core really has, and leaves out what it cannot use - a domain that
@@ -144,6 +153,15 @@ game core is simply the kind that always should.
   again before every step - whole, whatever its width - and one on a bit
   field touches no other bit. After the core is reloaded a frozen property is
   found again by name, and dropped when the core no longer has it.
+- The game's timer: View > Display Game Time (on by default, Game Time in the
+  message positions, a hotkey to toggle) draws it on the screen as
+  `IGT mm:ss.mmm`; the item is greyed for a core without one. A saved project
+  carries it at the end of the movie, for whoever reads the project later:
+  `GameTimeMs` (the number), `GameTime` (as shown) and `GameTimeFrame` (the
+  frame it was read at, the movie's length). They are written only when the
+  machine has run to the end since the last edit before it, and removed
+  otherwise, so a value that is there is the movie's; an edit before the end
+  forgets it, as it forgets lag.
 - RAM Search: an address that starts an element is listed with its name.
 - Hex Editor: the title names the element the highlighted byte belongs to,
   and which of its bytes it is.

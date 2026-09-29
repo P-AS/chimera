@@ -647,6 +647,12 @@ namespace Chimera.Emulation.Common.Engine
 		public abstract int ce_session_property_set_text(IntPtr session, int index, uint element, [MarshalAs(UnmanagedType.LPUTF8Str)] string text);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_game_time_ms(IntPtr session, out long ms);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_game_time_text(long ms, byte[] buf, int cap);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_session_drive_count(IntPtr session);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -1110,6 +1116,14 @@ namespace Chimera.Emulation.Common.Engine
 
 		public static unsafe string PtrToStringUtf8(IntPtr p, ulong len)
 			=> Encoding.UTF8.GetString((byte*)p, checked((int)len));
+
+		/// <summary>A game time in milliseconds as a timer shows it: "mm:ss.mmm" (the engine's format).</summary>
+		public static string GameTimeText(long ms)
+		{
+			var buf = new byte[48];
+			var n = Instance.ce_game_time_text(ms, buf, buf.Length);
+			return Encoding.ASCII.GetString(buf, 0, Math.Min(Math.Max(n, 0), buf.Length - 1));
+		}
 	}
 
 	/// <summary>
@@ -2054,6 +2068,13 @@ namespace Chimera.Emulation.Common.Engine
 		/// <summary>The property table as the engine understood it: {"properties": [...], "problems": [...]}.</summary>
 		public string PropertyTableJson
 			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_property_table(_session)) ?? "";
+
+		/// <summary>
+		/// The game's own elapsed time in milliseconds, as the game counts it now (the
+		/// table's "gameTimer"); null when the core names no timer.
+		/// </summary>
+		public long? GameTimeMs
+			=> E.ce_session_game_time_ms(_session, out var ms) is not 0 ? ms : null;
 
 		/// <summary>"Name" or "Name[3]": the property's index and the element, or -1.</summary>
 		public int PropertyFind(string name, out uint element)

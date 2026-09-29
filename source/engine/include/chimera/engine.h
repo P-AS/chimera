@@ -1194,6 +1194,15 @@ CE_API int32_t ce_session_property_set(ce_session *s, int32_t index, uint32_t el
 CE_API int32_t ce_session_property_text(ce_session *s, int32_t index, uint32_t element, int32_t named, char *buf, int32_t cap);
 CE_API int32_t ce_session_property_set_text(ce_session *s, int32_t index, uint32_t element, const char *text);
 
+/* A game core's own timer (docs/game-cores.md: the table's "gameTimer"): the
+ * game's elapsed time in milliseconds as the game counts it now, in *ms_out.
+ * Returns 1 when the core names one, 0 when it does not (and *ms_out is 0).
+ * _text: a time in milliseconds as a timer shows it, "mm:ss.mmm" (more
+ * minute digits past 99); returns the length (without the NUL, always written
+ * when cap > 0). */
+CE_API int32_t ce_session_game_time_ms(ce_session *s, int64_t *ms_out);
+CE_API int32_t ce_game_time_text(int64_t ms, char *buf, int32_t cap);
+
 /* "" when no error. Invalidated by the next call on the same session. */
 CE_API const char *ce_session_last_error(ce_session *s);
 

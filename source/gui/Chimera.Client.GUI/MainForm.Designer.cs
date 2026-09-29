@@ -62,6 +62,7 @@ namespace Chimera.Client.GUI
 			this.DisplayFPSMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.DisplayFrameCounterMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.DisplayLagCounterMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
+			this.DisplayGameTimeMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.DisplayInputMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.DisplayRerecordCountMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.DisplaySubtitlesMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
@@ -463,6 +464,7 @@ namespace Chimera.Client.GUI
             this.DisplayFPSMenuItem,
             this.DisplayFrameCounterMenuItem,
             this.DisplayLagCounterMenuItem,
+            this.DisplayGameTimeMenuItem,
             this.DisplayInputMenuItem,
             this.DisplayRerecordCountMenuItem,
             this.DisplaySubtitlesMenuItem,
@@ -507,6 +509,11 @@ namespace Chimera.Client.GUI
 			// 
 			this.DisplayLagCounterMenuItem.Text = "Display Lag Frame Count";
 			this.DisplayLagCounterMenuItem.Click += new System.EventHandler(this.DisplayLagCounterMenuItem_Click);
+			// 
+			// DisplayGameTimeMenuItem
+			// 
+			this.DisplayGameTimeMenuItem.Text = "Display Game Time";
+			this.DisplayGameTimeMenuItem.Click += new System.EventHandler(this.DisplayGameTimeMenuItem_Click);
 			// 
 			// DisplayInputMenuItem
 			// 
@@ -1218,6 +1225,7 @@ namespace Chimera.Client.GUI
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayFrameCounterMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayInputMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayLagCounterMenuItem;
+		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayGameTimeMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx LuaConsoleMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx RecentProjectSubMenu;
 		private Chimera.WinForms.Controls.ToolStripSeparatorEx toolStripSeparator3;
