@@ -29,15 +29,12 @@ Chimera is a minimal frontend for creating tool-assisted speedruns (TAS).
 
 Chimera is not designed for casual play. For that, use the original emulators directly, or a multi-emulation frontend such as RetroArch.
 
-## Supported systems
+## Cores
 
-Chimera ships **no cores**. Each is a separate project with its own repository,
-its own release history and its own licence; you install the ones you want from
-inside Chimera, through **File > Core Manager**, which downloads them from the
-projects below and checks each download against what that project published.
-See [docs/core-manager.md](docs/core-manager.md).
+Chimera ships no cores. Install them from **File > Core Manager**
+([docs/core-manager.md](docs/core-manager.md)).
 
-The officially maintained cores are:
+### Emulation cores
 
 | System | Core |
 | --- | --- |
@@ -88,10 +85,9 @@ The officially maintained cores are:
 | Flash | [Ruffle](https://github.com/ToolAssisted-run/chimera-core-ruffle) |
 | Symbian / Nokia N-Gage | [EKA2L1](https://github.com/ToolAssisted-run/chimera-core-eka2l1) |
 
-The officially maintained **game cores** - one game rather than one machine:
-an open-source game, or one reconstructed from its original program, built as
-a core and run from the game's own files (see
-[docs/game-cores.md](docs/game-cores.md)):
+### Game cores
+
+One game each, run from the game's own files ([docs/game-cores.md](docs/game-cores.md)).
 
 | Game | Core |
 | --- | --- |
