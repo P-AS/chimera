@@ -399,6 +399,14 @@ namespace Chimera.Client.Common
 		public Dictionary<string, Dictionary<string, FeedbackBind>> AllTrollersFeedbacks { get; set; } = new Dictionary<string, Dictionary<string, FeedbackBind>>();
 
 		/// <summary>
+		/// Which core package defaults each controller's bindings were last taken
+		/// from, as a fingerprint (<see cref="ControlDefaultsAdoption"/>): so a core
+		/// that changes its defaults reaches every config whose bindings nobody has
+		/// touched since (issue #157), and none whose bindings somebody has.
+		/// </summary>
+		public Dictionary<string, string> AdoptedControlDefaults { get; set; } = new Dictionary<string, string>();
+
+		/// <summary>
 		/// The core a system's roms open with, keyed by system ID - remembered from the last time the
 		/// user chose one (Emulator > Core), and consulted by RomLoader when more than one loaded
 		/// package can run the file. Not a matrix of everything the frontend could do: it holds only
