@@ -180,6 +180,14 @@
       "kind": "game",
       "repo": "ToolAssisted-run/chimera-core-syndicatfx",
       "tested": ""
+    },
+    {
+      "id": "rawgl",
+      "name": "rawgl",
+      "systems": [ "AnotherWorld" ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-rawgl",
+      "tested": ""
     }
   ]
 }

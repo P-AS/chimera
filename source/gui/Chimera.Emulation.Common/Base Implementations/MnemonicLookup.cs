@@ -411,6 +411,49 @@ namespace Chimera.Emulation.Common
 				["KeyPadMinus"] = '~',
 			},
 
+			// Another World (rawgl): the prince's P1 keys U D L R, Action F (as JaffarPlus
+			// writes Another World's inputs, UDLRF) and Jump J (the 3DO's); the rest are
+			// the keyboard: Code C (the password screen), Pause P, the letters their own
+			// lower case (a password is typed with them) and Backspace B.
+			["AnotherWorld"] = new()
+			{
+				["Up"] = 'U',
+				["Down"] = 'D',
+				["Left"] = 'L',
+				["Right"] = 'R',
+				["Action"] = 'F',
+				["Jump"] = 'J',
+				["Code"] = 'C',
+				["Pause"] = 'P',
+				["A"] = 'a',
+				["B"] = 'b',
+				["C"] = 'c',
+				["D"] = 'd',
+				["E"] = 'e',
+				["F"] = 'f',
+				["G"] = 'g',
+				["H"] = 'h',
+				["I"] = 'i',
+				["J"] = 'j',
+				["K"] = 'k',
+				["L"] = 'l',
+				["M"] = 'm',
+				["N"] = 'n',
+				["O"] = 'o',
+				["P"] = 'p',
+				["Q"] = 'q',
+				["R"] = 'r',
+				["S"] = 's',
+				["T"] = 't',
+				["U"] = 'u',
+				["V"] = 'v',
+				["W"] = 'w',
+				["X"] = 'x',
+				["Y"] = 'y',
+				["Z"] = 'z',
+				["Backspace"] = 'B',
+			},
+
 			["SwordOfTheSamurai"] = new()
 			{
 				["Up"] = 'U',
