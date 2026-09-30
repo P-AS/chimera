@@ -154,6 +154,12 @@ namespace Chimera.Client.Common
 		/// that has moved, or whose bytes no longer match what the project records,
 		/// is left unresolved for the resolution dialog to ask about - the hint is
 		/// never allowed to mount the wrong bytes quietly.
+		///
+		/// A file of the same name beside the project whose bytes are NOT the
+		/// recorded ones (another dump, a re-download) does not stop the hint:
+		/// the file the project was made with may still be where this machine had
+		/// it (issue #162). When the hint does not match either, the file beside
+		/// the project is put back, so the dialog shows that mismatch as before.
 		/// </summary>
 		/// <returns>how many files the sidecar resolved</returns>
 		public int ApplyTo(EngineProject project)
@@ -161,9 +167,13 @@ namespace Chimera.Client.Common
 			var resolved = 0;
 			for (var i = 0; i < project.FileCount; i++)
 			{
-				if (project.FileStatus(i) is not 1) continue; // already found beside the project
+				var status = project.FileStatus(i);
+				if (status is 0) continue; // found beside the project
 				if (!_files.TryGetValue(project.FileName(i), out var path)) continue;
 				if (!File.Exists(path)) continue;
+				// the other bytes found beside the project, to put back if the hint fails too
+				var beside = status is 2 ? project.FileSourcePath(i) : "";
+				if (beside.Length is not 0 && PathsEqual(beside, path)) continue; // the same file, already judged
 				try
 				{
 					project.FileResolve(i, path);
@@ -175,16 +185,27 @@ namespace Chimera.Client.Common
 				if (project.FileStatus(i) is 0)
 				{
 					resolved++;
+					continue;
 				}
-				else
+				// the path still exists but holds something else now: that is a
+				// question for the user, not an answer from a hint
+				project.FileUnresolve(i);
+				if (beside.Length is 0) continue;
+				try
 				{
-					// the path still exists but holds something else now: that is a
-					// question for the user, not an answer from a hint
-					project.FileUnresolve(i);
+					project.FileResolve(i, beside);
+				}
+				catch (InvalidOperationException)
+				{
+					// gone in the meantime: the dialog asks for it as not found
 				}
 			}
 			return resolved;
 		}
+
+		private static bool PathsEqual(string a, string b)
+			=> string.Equals(Path.GetFullPath(a), Path.GetFullPath(b),
+				Path.DirectorySeparatorChar is '\\' ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
 		/// <summary>
 		/// Writes down where the session actually read each file from, into this

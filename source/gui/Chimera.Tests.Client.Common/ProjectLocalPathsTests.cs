@@ -95,6 +95,42 @@ namespace Chimera.Tests.Client.Common
 			Assert.IsFalse(reopened.FilesOk, "so the resolution dialog still gets its say");
 		}
 
+		/// <summary>
+		/// Issue #162: a file of the same name beside the project, holding other
+		/// bytes (another dump, a re-download), stood in front of the remembered
+		/// location, and the project asked about a mismatch while the file it was
+		/// made with was still where this machine had it.
+		/// </summary>
+		[TestMethod]
+		public void OtherBytesBesideTheProjectDoNotHideTheRememberedFile()
+		{
+			var (projectPath, romPath) = MakeProject("shadowed");
+			File.WriteAllText(Path.Combine(Path.GetDirectoryName(projectPath)!, "game.nes"), "another dump of the game");
+
+			using var reopened = EngineProject.Open(projectPath);
+			reopened.ResolveDir(Path.GetDirectoryName(projectPath)!);
+			Assert.AreEqual(2, reopened.FileStatus(0), "the file beside the project is found, and its bytes are not the recorded ones");
+
+			Assert.AreEqual(1, ProjectLocalPaths.Read(reopened, projectPath).ApplyTo(reopened), "the remembered location still holds the recorded bytes");
+			Assert.IsTrue(reopened.FilesOk, "so the project opens with no dialog");
+			Assert.AreEqual(Path.GetFullPath(romPath), Path.GetFullPath(reopened.FileSourcePath(0)), "from the file it was made with");
+		}
+
+		[TestMethod]
+		public void OtherBytesBesideAndAtTheRememberedPathStillShowTheMismatch()
+		{
+			var (projectPath, romPath) = MakeProject("both-changed");
+			File.WriteAllText(romPath, "a different cartridge entirely");
+			var beside = Path.Combine(Path.GetDirectoryName(projectPath)!, "game.nes");
+			File.WriteAllText(beside, "another dump of the game");
+
+			using var reopened = EngineProject.Open(projectPath);
+			reopened.ResolveDir(Path.GetDirectoryName(projectPath)!);
+			Assert.AreEqual(0, ProjectLocalPaths.Read(reopened, projectPath).ApplyTo(reopened), "nothing was resolved");
+			Assert.AreEqual(2, reopened.FileStatus(0), "the dialog still shows the mismatch beside the project");
+			Assert.AreEqual(Path.GetFullPath(beside), Path.GetFullPath(reopened.FileSourcePath(0)), "the file beside the project, as before the hint was tried");
+		}
+
 		[TestMethod]
 		public void AMissingSidecarIsSimplyNoHint()
 		{
