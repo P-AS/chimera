@@ -235,6 +235,18 @@ namespace Chimera.Client.Common
 		/// The project as it stands, written to <paramref name="path"/> for <see cref="ProjectRecovery"/>:
 		/// exactly what a backup writes, so no greenzone and no change to what counts as saved.
 		/// </summary>
+		/// <summary>
+		/// The sandbox host that ran the core, refreshed on every save beside the
+		/// core pin: a project made on an older Chimera otherwise went on naming
+		/// the host it was first booted on after a newer one had run it
+		/// (user-decided, 2026-09-30). A host that cannot say what it is (not
+		/// loadable) leaves the recorded one alone.
+		/// </summary>
+		internal static void RecordRunningHost(IDictionary<string, string> header, string hostBuildInfo)
+		{
+			if (!string.IsNullOrWhiteSpace(hostBuildInfo)) header[HeaderKeys.WaterboxHost] = hostBuildInfo;
+		}
+
 		internal FileWriteResult WriteRecoverySnapshot(string path) => Write(path, isBackup: true);
 
 		/// <summary>Set for the duration of <see cref="SaveWithoutGreenzone"/>.</summary>
@@ -310,6 +322,7 @@ namespace Chimera.Client.Common
 				Header[HeaderKeys.CoreVersion] = core.Version;
 				Header[HeaderKeys.CorePackageSha1] = core.Sha1;
 				p.SetCore(core.Name, core.Version, core.Sha1);
+				RecordRunningHost(Header, EngineSession.HostBuildInfo);
 			}
 			else
 			{

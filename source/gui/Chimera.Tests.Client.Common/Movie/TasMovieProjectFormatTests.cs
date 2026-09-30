@@ -927,6 +927,22 @@ namespace Chimera.Tests.Client.Common.Movie
 		}
 
 		/// <summary>
+		/// The sandbox host is refreshed on save as the core pin is: a project made
+		/// on an older Chimera no longer goes on naming the host it was first booted
+		/// on after a newer one has run it (user-decided, 2026-09-30).
+		/// </summary>
+		[TestMethod]
+		public void ASaveRecordsTheHostThatRan()
+		{
+			System.Collections.Generic.Dictionary<string, string> header = new() { [HeaderKeys.WaterboxHost] = """{"commit":"old"}""" };
+			TasMovie.RecordRunningHost(header, """{"commit":"new"}""");
+			Assert.AreEqual("""{"commit":"new"}""", header[HeaderKeys.WaterboxHost], "the host that ran replaces the one the project was made on");
+
+			TasMovie.RecordRunningHost(header, "");
+			Assert.AreEqual("""{"commit":"new"}""", header[HeaderKeys.WaterboxHost], "a host that cannot say what it is leaves the record alone");
+		}
+
+		/// <summary>
 		/// The wizard records every exposed setting at its chosen value, and the
 		/// movie that starts from that project has no settings text of its own -
 		/// the project boot fills headers, never settings. Saving must keep the
