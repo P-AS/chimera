@@ -2071,6 +2071,13 @@ namespace Chimera.Client.GUI
 
 		/*internal*/public void Render()
 		{
+			// A window on its way out has nothing left to draw on: closing it (the
+			// core-stopped dialog's "save and close", issue #166) disposes the
+			// display before the run loop's last pass reaches here, and drawing -
+			// or asking where the pointer is over it - threw ObjectDisposedException
+			// in place of closing.
+			if (IsDisposed || _presentationPanel.Control.IsDisposed) return;
+
 			if (Config.DispSpeedupFeatures == 0)
 			{
 				DisplayManager.DiscardApiSurfaces();
