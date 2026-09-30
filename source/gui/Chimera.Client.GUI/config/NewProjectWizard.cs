@@ -1155,10 +1155,20 @@ namespace Chimera.Client.GUI
 		/// </summary>
 		private bool PageApplies(int page) => page switch
 		{
+			1 => FilesPageApplies(),
 			3 => AnyFirmwareRequired(),
 			4 => PrecompileApplies(),
 			_ => true,
 		};
+
+		/// <summary>
+		/// A core that takes no file at all - a game core whose game is all
+		/// firmware (SDLPoP2's, SyndicatFX's) - has no file step: the wizard goes
+		/// from the core straight to its settings, and Back comes straight back
+		/// (user, 2026-09-30). Until the core's declaration is read, the step is
+		/// assumed to be there.
+		/// </summary>
+		private bool FilesPageApplies() => _declaration is not { Slots.Count: 0 };
 
 		/// <summary>The next step that applies after this one, or -1 when this is the last.</summary>
 		private int NextApplicablePage(int page)
@@ -1227,8 +1237,8 @@ namespace Chimera.Client.GUI
 				case 0:
 					if (ChosenCore is null) { _status.Text = "pick a core (none are installed?)"; return; }
 					if (!BuildSlotForm()) return;
-					ShowPage(1);
-					break;
+					if (PageApplies(1)) { ShowPage(1); break; }
+					goto case 1; // no files to ask for: on to the settings
 				case 1:
 					var complaint = CardinalityComplaint();
 					if (complaint is not null) { _status.Text = complaint; return; }
@@ -1833,16 +1843,6 @@ namespace Chimera.Client.GUI
 				group.Tag = group.Text;
 				y += 102;
 			}
-			if (_declaration.Slots.Count is 0)
-			{
-				// a core that takes no file (a game core whose game is all firmware)
-				_slotsHost.Controls.Add(new Label
-				{
-					AutoSize = true,
-					Location = Pt(0, 0),
-					Text = $"{ChosenCore?.Name ?? "This core"} takes no files: the game is its firmware.",
-				});
-			}
 			RefreshSlotAvailability();
 		}
 
@@ -2093,6 +2093,9 @@ namespace Chimera.Client.GUI
 
 		/// <summary>The page's live complaint line, for tests.</summary>
 		public string StatusText => _status.Text;
+
+		/// <summary>The step on screen (0 the core, 1 the files, 2 the settings, 3 the firmware, 4 the compile), for tests.</summary>
+		public int PageForTest => _page;
 
 		/// <summary>ShowPage, for the test that checks a clean arrival says nothing</summary>
 		public void ShowPageForTest(int page) => ShowPage(page);
