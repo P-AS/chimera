@@ -264,6 +264,12 @@ int main(int argc, char **argv)
 	bool allowCoreMismatch = false;
 	bool wantGpu = false;
 	bool suggest = false;
+	/* --import-movie: the positional "rom" is a movie made elsewhere (a Doom
+	 * demo), mounted as "movie", and the core's ImportMovie is asked what it
+	 * amounts to (ce_import_movie); --mount name=path adds the files it needs,
+	 * under the names given */
+	bool importMovie = false;
+	std::vector<std::pair<std::string, std::string>> mounts;
 	/* Frames are drawn only when a screenshot asks for one, which makes this
 	 * runner a measurement of a seek rather than of play. --render-every-frame
 	 * is the other half of that A/B: the same run, drawing. */
@@ -331,6 +337,14 @@ int main(int argc, char **argv)
 		else if (arg == "--record" && i + 1 < argc) recordPath = argv[++i];
 		else if (arg == "--settings" && i + 1 < argc) settings = argv[++i];
 		else if (arg == "--suggest") suggest = true;
+		else if (arg == "--import-movie") importMovie = true;
+		else if (arg == "--mount" && i + 1 < argc)
+		{
+			const std::string spec = argv[++i];
+			const size_t eq = spec.find('=');
+			if (eq == std::string::npos) return fail(metaPath, "--mount wants <name>=<path>");
+			mounts.emplace_back(spec.substr(0, eq), spec.substr(eq + 1));
+		}
 		else if (arg == "--export-savedata" && i + 1 < argc) savedataDir = argv[++i];
 		else if (arg == "--meta" && i + 1 < argc) metaPath = argv[++i];
 		else if (arg == "--core-log" && i + 1 < argc) coreLogPath = argv[++i];
@@ -400,11 +414,12 @@ int main(int argc, char **argv)
 		else return fail(metaPath, "unexpected argument: " + arg);
 	}
 	bool projectMode = !projectPath.empty();
-	if (projectMode ? packagePath == nullptr : (suggest ? romPath == nullptr : moviePath == nullptr))
+	if (projectMode ? packagePath == nullptr : (suggest || importMovie ? romPath == nullptr : moviePath == nullptr))
 	{
 		std::fprintf(stderr, "usage: chimera-run <package> <rom> <movie.txt> [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--settings <json>] [--dump <domain>=<path>]... [--firmware <id>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame]\n"
 			"       chimera-run --project <p.chimeraProject> <package> [--files <dir>]... [--allow-core-mismatch] [the same run flags]\n"
-			"       chimera-run <package> <rom> --suggest [--settings <json>] [--firmware <id>=<path>]...\n");
+			"       chimera-run <package> <rom> --suggest [--settings <json>] [--firmware <id>=<path>]...\n"
+			"       chimera-run <package> <movie> --import-movie [--mount <name>=<path>]... [--settings <json>]\n");
 		return 1;
 	}
 	if (projectMode && settings != nullptr)
@@ -413,7 +428,7 @@ int main(int argc, char **argv)
 	}
 
 	std::vector<uint8_t> rom, movieText;
-	if (!projectMode && !suggest && !readWholeFile(moviePath, movieText)) return fail(metaPath, std::string("could not read movie ") + moviePath);
+	if (!projectMode && !suggest && !importMovie && !readWholeFile(moviePath, movieText)) return fail(metaPath, std::string("could not read movie ") + moviePath);
 
 	/* A .chimeraMultiFile rom is a multi-file game: the first image mounts as
 	 * the rom (rom.name carrying its real name), further images as rom2..N,
@@ -602,7 +617,7 @@ int main(int argc, char **argv)
 	}
 
 	ce_movie_log *movie = ce_movie_log_new();
-	if (!suggest && ce_movie_log_parse(movie, reinterpret_cast<const char *>(movieText.data()), movieText.size()) != 0)
+	if (!suggest && !importMovie && ce_movie_log_parse(movie, reinterpret_cast<const char *>(movieText.data()), movieText.size()) != 0)
 	{
 		return fail(metaPath, std::string("movie: ") + ce_movie_log_last_error(movie));
 	}
@@ -630,6 +645,32 @@ int main(int argc, char **argv)
 	}
 
 	const char *error = nullptr;
+	/* --import-movie: the movie is mounted as "movie", not as the rom, and the
+	 * --mount files beside it; the core's answer is printed as its JSON */
+	if (importMovie)
+	{
+		std::vector<const char *> names, paths;
+		std::vector<const uint8_t *> datas;
+		std::vector<uint64_t> lens;
+		names.push_back("movie");
+		paths.push_back(romPath);
+		for (const auto &m : mounts)
+		{
+			names.push_back(m.first.c_str());
+			paths.push_back(m.second.c_str());
+		}
+		datas.assign(names.size(), nullptr);
+		lens.assign(names.size(), 0);
+		uint64_t len = 0;
+		const char *answer = ce_import_movie(
+			packagePath, nullptr, 0, nullptr,
+			settings, fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
+			names.data(), datas.data(), lens.data(), paths.data(),
+			static_cast<int32_t>(names.size()), &len, &error);
+		if (answer == nullptr) return fail(metaPath, error != nullptr ? error : "could not open the core");
+		std::printf("%.*s\n", static_cast<int>(len), answer);
+		return 0;
+	}
 	/* --suggest: what the core would choose for this game, printed as its
 	 * JSON, and nothing is started (ce_suggest_settings) */
 	if (suggest)

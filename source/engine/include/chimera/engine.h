@@ -976,6 +976,30 @@ CE_API const char *ce_suggest_settings(
 	const char *const *extra_names, const uint8_t *const *extra_data,
 	const uint64_t *extra_lens, const char *const *extra_paths, int32_t extra_count,
 	uint64_t *len_out, const char **error_out);
+
+/* What a movie made elsewhere amounts to, as this core reads it - a Doom
+ * demo, say. The same session as ce_suggest_settings, asking the core's
+ * optional ImportMovie export instead of SuggestSettings: the files are
+ * mounted as given (the movie itself under the name "movie"), the settings
+ * JSON may carry import options the core declares (movieImport in
+ * waterbox.config), and the machine is thrown away unstarted.
+ *
+ * Returns the core's JSON answer: {"error": "<a sentence>"} when it refuses,
+ * otherwise the configuration the movie dictates - "settings", "firmware"
+ * [{id, sha1}], "files" [{name, sha1, slot}] in load order, "notes" - and
+ * "input", the movie as Chimera's input log. "" when the core has no such
+ * export; NULL with *error_out when the package or files cannot be opened.
+ * Nothing is applied: the frontend builds the project from it with its own
+ * project creation. */
+CE_API const char *ce_import_movie(
+	const char *package_path,
+	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
+	const char *settings_overrides_json,
+	const char *const *firmware_ids, const uint8_t *const *firmware_data,
+	const uint64_t *firmware_lens, int32_t firmware_count,
+	const char *const *extra_names, const uint8_t *const *extra_data,
+	const uint64_t *extra_lens, const char *const *extra_paths, int32_t extra_count,
+	uint64_t *len_out, const char **error_out);
 CE_API int64_t ce_session_button_count(const ce_session *s);
 CE_API const char *ce_session_button_name(const ce_session *s, int64_t index);
 CE_API int64_t ce_session_axis_count(const ce_session *s);

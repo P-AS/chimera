@@ -113,6 +113,75 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// </summary>
 		public string? MachineSetting { get; set; }
 
+		/// <summary>
+		/// The setting that picks the RELEASE of the machine's game or system - a
+		/// Doom II v1.9 IWAD against a Freedoom one. Asked beside the System on the
+		/// wizard's first page, its options narrowed by the chosen machine
+		/// (<see cref="MachineConfig.SettingOverrides"/>), and kept off the settings
+		/// page like the machine setting is. Optional; it must be one of the
+		/// package's own settings.
+		/// </summary>
+		public string? VersionSetting { get; set; }
+
+		/// <summary>
+		/// How the core reads a movie made elsewhere (a Doom demo), when it can:
+		/// the files its ImportMovie export needs and the options it takes. The
+		/// frontend renders the import dialog from this, the way it renders
+		/// settings, and builds the project from the core's answer with its own
+		/// project creation (engine.h, ce_import_movie).
+		/// </summary>
+		public MovieImportDecl? MovieImport { get; set; }
+
+		/// <summary>See <see cref="MovieImport"/>.</summary>
+		public sealed class MovieImportDecl
+		{
+			/// <summary>The menu item, ellipsis included ("Import Demo (LMP)...").</summary>
+			public string? Menu { get; set; }
+
+			/// <summary>The movie itself, always mounted as "movie".</summary>
+			public MovieImportMovie? Movie { get; set; }
+
+			/// <summary>The other files the importer reads, in the order they are asked.</summary>
+			public List<MovieImportFile>? Files { get; set; }
+
+			/// <summary>Import options (bools), set in the settings JSON only when ticked.</summary>
+			public List<SettingDecl>? Options { get; set; }
+		}
+
+		public sealed class MovieImportMovie
+		{
+			public string? Label { get; set; }
+
+			public List<string>? Extensions { get; set; }
+		}
+
+		/// <summary>
+		/// One file input of the import dialog. Its picked files are mounted under
+		/// their own names, and <see cref="Option"/> carries that name - or, for a
+		/// <see cref="Multiple"/> input, the names in the user's order joined by
+		/// <see cref="Separator"/> (left out entirely when none are picked).
+		/// </summary>
+		public sealed class MovieImportFile
+		{
+			public string? Option { get; set; }
+
+			public string? Label { get; set; }
+
+			/// <summary>The picked file is the project's firmware for the id the answer names.</summary>
+			public bool Firmware { get; set; }
+
+			/// <summary>Each picked file is a project file in this slot, as the answer lists them.</summary>
+			public string? Slot { get; set; }
+
+			public bool Multiple { get; set; }
+
+			public string? Separator { get; set; }
+
+			public bool Required { get; set; }
+
+			public List<string>? Extensions { get; set; }
+		}
+
 		/// <summary>True when this package describes more than one machine.</summary>
 		public bool HasMachines => Machines is { Count: > 0 };
 

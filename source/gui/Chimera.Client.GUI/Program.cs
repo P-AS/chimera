@@ -183,7 +183,7 @@ namespace Chimera.Client.GUI
 		private static int SubMain(string[] args)
 		{
 			// raw scan, not ArgParser: several dialogs below can fire before arguments are parsed
-			if (Array.IndexOf(args, "--headless") >= 0 || Array.IndexOf(args, "--suggest-settings") >= 0
+			if (Array.IndexOf(args, "--headless") >= 0 || Array.IndexOf(args, "--suggest-settings") >= 0 || Array.IndexOf(args, "--import-movie") >= 0
 				|| Array.Exists(args, a => a.StartsWith("--precompile", StringComparison.Ordinal))) HeadlessMode.Enabled = true;
 
 			// An error that can be caught must not be what ends a session (docs/project.md,
@@ -308,6 +308,38 @@ namespace Chimera.Client.GUI
 					return 0;
 				}
 				catch (InvalidOperationException e)
+				{
+					Console.Error.WriteLine(e.Message);
+					return 1;
+				}
+			}
+
+			// --import-movie <request.json> <answer.json>: what a movie made elsewhere
+			// amounts to, as its core reads it (ce_import_movie). The request names
+			// the package, the movie, the files to mount beside it and the import
+			// options; the core's answer is written to the answer file whole, never
+			// to stdout, where a core's own printing could land in the middle of it.
+			// A child process for the same reason the suggestion is one: a core that
+			// falls over while it reads must not take the frontend with it.
+			var importAt = Array.IndexOf(args, "--import-movie");
+			if (importAt >= 0)
+			{
+				if (importAt + 2 >= args.Length)
+				{
+					Console.Error.WriteLine("usage: --import-movie <request.json> <answer.json>");
+					return 2;
+				}
+				try
+				{
+					var request = Chimera.Client.Common.MovieImportRequest.Read(args[importAt + 1]);
+					var answer = Chimera.Emulation.Common.Engine.EngineSession.ImportMovie(
+						request.Package, request.Movie,
+						request.Files.Select(static f => (f.Name, f.Path)).ToList(),
+						request.SettingsJson);
+					File.WriteAllText(args[importAt + 2], answer, new System.Text.UTF8Encoding(false));
+					return 0;
+				}
+				catch (Exception e) when (e is InvalidOperationException or IOException or Newtonsoft.Json.JsonException)
 				{
 					Console.Error.WriteLine(e.Message);
 					return 1;

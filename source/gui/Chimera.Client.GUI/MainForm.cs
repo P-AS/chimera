@@ -1842,6 +1842,14 @@ namespace Chimera.Client.GUI
 				if (GenericCoreSubMenu.DropDownItems.Count > 1) GenericCoreSubMenu.DropDownItems.Insert(1, new ToolStripSeparator());
 			}
 
+			// a movie made elsewhere, read by the core whose project this is (a Doom demo)
+			if (RunningMovieImport() is var (_, movieImport))
+			{
+				ToolStripMenuItem importMenuItem = new() { Text = movieImport.Menu ?? "Import Movie..." };
+				importMenuItem.Click += (_, _) => ImportMovieDialog();
+				GenericCoreSubMenu.DropDownItems.Add(importMenuItem);
+			}
+
 			var coreTools = CoreProvidedTools.Concat(SpecializedTools)
 				.Where(Tools.IsAvailable)
 				.OrderBy(static t => t.Name)

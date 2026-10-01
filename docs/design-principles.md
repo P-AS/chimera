@@ -4724,3 +4724,29 @@ then sends its log, at the levels it already keeps, to stderr too.
 its goldens, and RPCS3's RAM after 150 frames of Rayman Legends is
 byte-identical. Trace channels are not raised: a fuller log would change
 RPCS3.log, which lives in the console's memory.
+
+## A movie made elsewhere is imported through the wizard (user-decided, 2026-10-01)
+
+The DSDA core reads Doom demos (.lmp). Its author's contract, written for
+the user and relayed by another session, asked for four things: an item in
+the Game menu; NOT an isolated tool that writes .chimeraProject files,
+because the format may change and a separate writer would drift; a dialog
+that takes the demo, the IWAD, the PWADs and patches in order, and the
+flags; and the user choosing where the project goes, with nothing left to
+fix by hand.
+
+So the core only suggests. `ce_import_movie` runs the core's
+`ImportMovie` export on a session that is never started (the same path
+as `SuggestSettings`), in a child process so a core that falls over
+while reading takes nothing with it. The answer seeds the New Project
+wizard: the machine, the release, the settings, the files in the core's
+load order, and the firmware, which is remembered where it was picked so
+the wizard finds it. The user checks it and presses Create, as for any
+project; the input log is then set, the user picks the path, and the
+project opens. Its first open fills in the headers only a running machine
+knows and saves once, since a file that is not fresh never gets them.
+
+Nothing about Doom is in the frontend. The dialog is drawn from the
+core's `movieImport` declaration and the release box from its
+`versionSetting`; a refusal is the core's own sentence.
+

@@ -160,6 +160,13 @@ copies of one binary, and since a package registers its core by name, four
 packages all called "Genesis Plus GX" meant three were silently dropped when
 all four were installed.
 
+A machine may also come in releases: Doom II v1.9 against Freedoom, the
+same game with different data. A package names that setting
+`versionSetting`, and the wizard asks it beside the System, its options
+those of the chosen machine (`settingOverrides` narrows them, as above).
+Like the machine, it is kept off the settings page, and the project
+records it like any other setting.
+
 ### Configuration presets
 
 A core may suggest whole machines: "1981 IBM PC/XT 5150", "Windows 98 with a
@@ -331,6 +338,32 @@ to build the form, and by `ce_project_*` to validate a manifest:
 - `support` is a reserved id: files referenced by a listed cue are
   auto-added to the manifest with slot `support`; a core never declares
   it.
+
+### Importing a movie
+
+A core may read movies made elsewhere - a Doom demo - and say what
+project they make. It declares `movieImport` in its `waterbox.config`,
+and the frontend renders the import dialog from it, the way it renders
+settings:
+
+- `menu`: the item in the core's Game menu ("Import Demo (LMP)...");
+- `movie`: its label and extensions; it is always mounted as `movie`;
+- `files`: the other files the importer reads, each mounted under its own
+  name. `option` carries that name - a `multiple` input's names joined by
+  `separator` in the user's order, and left out when none are picked.
+  `firmware` marks a file that becomes the project's firmware, `slot` the
+  slot its files go in, and `required` one that must be given;
+- `options`: bool settings, sent only when ticked.
+
+The core's `ImportMovie` export answers instead of `Init`
+(`ce_import_movie`): a refusal is one sentence, shown in the dialog with
+everything still picked so a missing file can be added. An answer only
+SUGGESTS: the machine and release, the settings, the firmware and the
+files in load order, plus notes for the user and the movie as an input
+log. The New Project wizard then opens on those answers, the project it
+creates gets the input log, the user chooses where it is written, and it
+opens. Nothing about an imported project is built outside the wizard, so
+it cannot drift from one made by hand.
 
 ## Editing
 

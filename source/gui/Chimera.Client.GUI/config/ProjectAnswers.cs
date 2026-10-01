@@ -24,11 +24,18 @@ namespace Chimera.Client.GUI
 	{
 		public string CoreName { get; private init; } = "";
 
+		/// <summary>The package to open on, when it has to be that build and not merely that core; null for any.</summary>
+		public string? CorePath { get; private init; }
+
 		/// <summary>The sync settings, as the flat JSON object the engine takes.</summary>
 		public string SettingsJson { get; private init; } = "{}";
 
 		/// <summary>Slot id and path, in the order the project holds them.</summary>
 		public IReadOnlyList<(string Slot, string Path)> Files { get; private init; } = [ ];
+
+		/// <summary>Answers from elsewhere than a project - a movie the core has read (MovieImportAnswer).</summary>
+		public static ProjectAnswers For(string coreName, string? corePath, string settingsJson, IReadOnlyList<(string Slot, string Path)> files)
+			=> new() { CoreName = coreName, CorePath = corePath, SettingsJson = settingsJson, Files = files };
 
 		/// <summary>Reads a project's answers out of it, copying everything it needs.</summary>
 		public static ProjectAnswers Of(EngineProject project)

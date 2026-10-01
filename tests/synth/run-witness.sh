@@ -255,6 +255,34 @@ if [ "$level" = "both" ] || [ "$level" = "e" ]; then
 			report "E:core-log" PASS "asked for, the log names its build and package and keeps the core's words; the machine is the goldens'"
 		fi
 
+		# A MOVIE MADE ELSEWHERE (ce_import_movie, Game > Import ... in the
+		# frontend): the core is asked what the movie amounts to INSTEAD of being
+		# started - the movie mounted as "movie", the files it names beside it,
+		# the import options in the settings - and its answer comes back as JSON
+		# for the frontend's own project creation. The synth reads its own movie
+		# text, so every frame must come back as an input line, the option it
+		# was given as the setting it dictates, and a game that is not at hand
+		# must be refused in a sentence, not crash anything.
+		imovie="$here/movies/gridWalker.win.txt"
+		ianswer="$("$chimera_run" "$epkg" "$imovie" --import-movie \
+			--mount gridWalker.testrom="$here/roms/gridWalker.testrom" \
+			--settings '{"importRom":"gridWalker.testrom","importFill":7}' 2>"$work/import.err")"
+		irefused="$("$chimera_run" "$epkg" "$imovie" --import-movie --settings '{"importRom":"gone.testrom"}' 2>>"$work/import.err")"
+		iframes="$(grep -c '^|' "$imovie")"
+		if printf '%s' "$ianswer" | python3 -c "
+import json, sys
+a = json.loads(sys.stdin.read())
+lines = [l for l in a['input'].split('\n') if l.startswith('|')]
+assert a['settings'] == {'initFillByte': 7}, a['settings']
+assert a['files'] == [{'name': 'gridWalker.testrom', 'slot': 'rom'}], a['files']
+assert a['frames'] == $iframes and len(lines) == $iframes, (a['frames'], len(lines))
+assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Input]')
+" 2>"$work/import.check" && printf '%s' "$irefused" | grep -q '"error": "the game gone.testrom is not at hand"'; then
+			report "E:import-movie" PASS "the core's answer comes back whole ($iframes frames, its setting, its file), and a missing game is a sentence"
+		else
+			report "E:import-movie" FAIL "$(tail -1 "$work/import.check" 2>/dev/null) refused=[$irefused] (see work/import.err)"
+		fi
+
 		# the history OUTLIVES its process, which is what reopening a project
 		# asks of it. One run plays the movie and keeps its history to a file; a
 		# second, fresh process starts from that file, seeks back into states it

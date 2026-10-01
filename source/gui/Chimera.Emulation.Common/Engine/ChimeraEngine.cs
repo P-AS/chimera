@@ -592,6 +592,15 @@ namespace Chimera.Emulation.Common.Engine
 			IntPtr[]? extraNames, IntPtr[]? extraData, ulong[]? extraLens, IntPtr[]? extraPaths, int extraCount,
 			ref ulong lenOut, ref IntPtr errorOut);
 
+		// what a movie made elsewhere amounts to, as the core reads it (engine.h:
+		// the arguments are ce_session_open's; the movie is mounted as "movie")
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_import_movie(
+			string packagePath, byte[]? rom, ulong romLen, string? romPath, string? settingsOverridesJson,
+			IntPtr[]? firmwareIds, IntPtr[]? firmwareData, ulong[]? firmwareLens, int firmwareCount,
+			IntPtr[]? extraNames, IntPtr[]? extraData, ulong[]? extraLens, IntPtr[]? extraPaths, int extraCount,
+			ref ulong lenOut, ref IntPtr errorOut);
+
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract ulong ce_session_cache_stored(IntPtr session);
 
@@ -2025,6 +2034,60 @@ namespace Chimera.Emulation.Common.Engine
 				throw new InvalidOperationException(ChimeraEngine.PtrToStringUtf8(error) ?? "the engine could not open the core");
 			}
 			return ChimeraEngine.PtrToStringUtf8(answer, len);
+		}
+
+		/// <summary>
+		/// What a movie made elsewhere amounts to, as the core reads it
+		/// (ce_import_movie): the core's own JSON - its refusal
+		/// (<c>{"error": ...}</c>) or the configuration and input the movie
+		/// dictates - or "" when the core has no importer. The movie is mounted as
+		/// "movie" and every other file under the name given; the import options
+		/// travel in the settings JSON. Nothing is started. Throws when the package
+		/// or a file cannot be opened at all.
+		/// </summary>
+		public static string ImportMovie(string packagePath, string moviePath,
+			IReadOnlyList<(string Name, string Path)> files, string? settingsJson)
+		{
+			var mounts = new List<(string Name, string Path)> { ("movie", moviePath) };
+			mounts.AddRange(files);
+			var count = mounts.Count;
+			var names = new IntPtr[count];
+			var paths = new IntPtr[count];
+			var datas = new IntPtr[count];
+			var lens = new ulong[count];
+			var allocated = new List<IntPtr>();
+			IntPtr AllocUtf8(string text)
+			{
+				var bytes = Encoding.UTF8.GetBytes(text + "\0");
+				var ptr = Marshal.AllocHGlobal(bytes.Length);
+				allocated.Add(ptr);
+				Marshal.Copy(bytes, 0, ptr, bytes.Length);
+				return ptr;
+			}
+			try
+			{
+				for (var i = 0; i < count; i++)
+				{
+					names[i] = AllocUtf8(mounts[i].Name);
+					paths[i] = AllocUtf8(mounts[i].Path);
+				}
+				var len = 0UL;
+				var error = IntPtr.Zero;
+				var none = new IntPtr[1];
+				var answer = ChimeraEngine.Instance.ce_import_movie(
+					packagePath, null, 0, null, settingsJson,
+					none, none, new ulong[1], 0,
+					names, datas, lens, paths, count, ref len, ref error);
+				if (answer == IntPtr.Zero)
+				{
+					throw new InvalidOperationException(ChimeraEngine.PtrToStringUtf8(error) ?? "the engine could not open the core");
+				}
+				return ChimeraEngine.PtrToStringUtf8(answer, len);
+			}
+			finally
+			{
+				foreach (var p in allocated) Marshal.FreeHGlobal(p);
+			}
 		}
 
 		public void Dispose()

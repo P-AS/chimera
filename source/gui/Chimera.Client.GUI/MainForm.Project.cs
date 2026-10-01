@@ -147,8 +147,9 @@ namespace Chimera.Client.GUI
 			if (chosen is not null) LoadProject(chosen);
 		}
 
+		/// <param name="seed">the answers to open on instead of the last project's - what a movie made elsewhere dictates</param>
 		/// <returns>the created project, in memory and unwritten, or null when cancelled</returns>
-		private EngineProject RunNewProjectWizard(string startFrom = null)
+		private EngineProject RunNewProjectWizard(string startFrom = null, ProjectAnswers seed = null)
 		{
 			ScanForCorePackages();
 			// Where each of the wizard's pickers opens. Config > Paths is an
@@ -226,7 +227,7 @@ namespace Chimera.Client.GUI
 			// sync setting changes the machine, so there is no editing one in place,
 			// and what made that unbearable was answering every question again to
 			// change one of them.
-			var answers = _openProject is not null ? ProjectAnswers.Of(_openProject) : _lastAnswers;
+			var answers = seed ?? (_openProject is not null ? ProjectAnswers.Of(_openProject) : _lastAnswers);
 
 			// A dropped file decides the core, so the last project's answers are
 			// only worth restoring when they were for the SAME core - otherwise
@@ -285,7 +286,12 @@ namespace Chimera.Client.GUI
 		/// pin, boot the machine from the manifest's mounts, start the project
 		/// as the movie it IS, and land in TAStudio (docs/project.md).
 		/// </summary>
-		public bool LoadProject(string path)
+		/// <param name="firstBoot">
+		/// the file was just written from a wizard's project rather than saved from a
+		/// session (a movie import): what only a running machine knows is filled in on
+		/// this boot as for a new project, and written straight back
+		/// </param>
+		public bool LoadProject(string path, bool firstBoot = false)
 		{
 			EngineProject project;
 			ProjectLocalPaths local;
@@ -366,7 +372,7 @@ namespace Chimera.Client.GUI
 
 			// the firmware the project pins is looked for where this machine last
 			// had it, as well as in the Firmware folder
-			if (!BootProject(project, path, saved: true, local)) return false;
+			if (!BootProject(project, path, saved: true, local, firstBoot)) return false;
 			if (recovered && MovieSession.Movie is ITasMovie recoveredMovie) recoveredMovie.MarkRecovered();
 			return true;
 		}
@@ -607,7 +613,7 @@ namespace Chimera.Client.GUI
 		/// machine up EXACTLY ONCE with the project's own core and settings,
 		/// with the project queued as the movie it IS.
 		/// </summary>
-		private bool BootProject(EngineProject project, string path, bool saved, ProjectLocalPaths local = null)
+		private bool BootProject(EngineProject project, string path, bool saved, ProjectLocalPaths local = null, bool firstBoot = false)
 		{
 			local ??= new ProjectLocalPaths();
 			// where the LAST project's firmware was found is not this one's answer
@@ -699,7 +705,7 @@ namespace Chimera.Client.GUI
 			PinIfSilent(tasMovie, HeaderKeys.CoreVersion, project.CoreVersion);
 			PinIfSilent(tasMovie, HeaderKeys.CorePackageSha1, project.CoreSha1);
 
-			var isFresh = tasMovie.InputLogLength is 0;
+			var isFresh = tasMovie.InputLogLength is 0 || firstBoot;
 
 			var oldDefaultCores = new Dictionary<string, string>(Config.DefaultCores);
 			_bootingProject = true;
@@ -743,6 +749,12 @@ namespace Chimera.Client.GUI
 				}
 				PopulateWithDefaultHeaderValues(tasMovie);
 				tasMovie.ClearChanges();
+				// a file that already exists gets them now, or it would never have them:
+				// they are filled on a fresh boot only, and the next one is not fresh
+				if (firstBoot && tasMovie.Save() is { IsError: true } unwritten)
+				{
+					ShowMessageBox(owner: null, unwritten.UserFriendlyErrorMessage(), "Cannot save the project");
+				}
 			}
 
 			// what this project was built from, for the next wizard to open on -

@@ -178,4 +178,54 @@ ECL_EXPORT const char *GetGameProperties(void)
 		"] }";
 }
 
+/* A movie made elsewhere, as this core reads it (engine.h, ce_import_movie):
+ * called INSTEAD of Init. The synth's "foreign" movie is its own movie text -
+ * one "|UDLRABsS|" line per frame - mounted as "movie", and the game it was
+ * made on is named by the importRom option and mounted under that name. The
+ * answer is what a real importer answers - the settings, firmware and files
+ * the movie dictates, notes, and the input as Chimera's log - so the witness
+ * and the frontend can take the whole path without a core that imports
+ * anything real. An importFill option stands in for a setting a movie can
+ * dictate. */
+static char g_import[64 * 1024];
+
+ECL_EXPORT const char *ImportMovie(void)
+{
+	FILE *f = fopen("movie", "rb");
+	if (!f) return "{\"error\": \"no movie: the file \\\"movie\\\" is not mounted\"}";
+	static char text[48 * 1024];
+	size_t n = fread(text, 1, sizeof text - 1, f);
+	fclose(f);
+	text[n] = 0;
+	char rom[128] = "";
+	wbx_setting_str("importRom", rom, sizeof rom);
+	if (rom[0] == 0) return "{\"error\": \"which game was this movie made on? (importRom)\"}";
+	FILE *g = fopen(rom, "rb");
+	if (!g) {
+		snprintf(g_import, sizeof g_import, "{\"error\": \"the game %s is not at hand\"}", rom);
+		return g_import;
+	}
+	fclose(g);
+	const long fill = wbx_setting_long("importFill", 0);
+
+	size_t o = (size_t)snprintf(g_import, sizeof g_import,
+		"{\"format\": \"Synth movie\", \"settings\": {\"initFillByte\": %ld}, \"firmware\": [],"
+		" \"files\": [{\"name\": \"%s\", \"slot\": \"rom\"}],"
+		" \"notes\": [\"imported by the synth core\"], \"input\": \"[Input]\\n", fill, rom);
+	long frames = 0;
+	for (const char *line = text; *line && o + 32 < sizeof g_import; ) {
+		const char *end = line;
+		while (*end && *end != '\n' && *end != '\r') end++;
+		if (*line == '|' && end > line) {
+			for (const char *c = line; c < end && o + 16 < sizeof g_import; c++) g_import[o++] = *c;
+			o += (size_t)snprintf(g_import + o, sizeof g_import - o, "\\n");
+			frames++;
+		}
+		line = end;
+		while (*line == '\n' || *line == '\r') line++;
+	}
+	snprintf(g_import + o, sizeof g_import - o, "[/Input]\\n\", \"frames\": %ld}", frames);
+	return g_import;
+}
+
 int main(void) { return 0; }
