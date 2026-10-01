@@ -107,10 +107,11 @@ namespace Chimera.Client.GUI
 
 		/// <summary>
 		/// The wizard's starting answers from the core's: its settings with the
-		/// machine and release it named, and the files it listed - in ITS order, the
-		/// order they load in - at the paths they were picked from. The firmware it
-		/// names is remembered where it was picked, the way the wizard remembers any
-		/// firmware, so the wizard finds it already there.
+		/// machine it named, the files it listed - in ITS order, the order they
+		/// load in - at the paths they were picked from, and the firmware picked
+		/// for each requirement it named. The firmware is the file the person gave,
+		/// whichever release it is: the wizard takes it as if picked on its own
+		/// page, and remembers it as it remembers any firmware.
 		/// </summary>
 		private ProjectAnswers? SeedFromImport(
 			WaterboxConfig cfg,
@@ -124,10 +125,6 @@ namespace Chimera.Client.GUI
 			if (cfg.MachineSetting is { Length: > 0 } machineSetting && answer.Game.Length is not 0 && !settings.ContainsKey(machineSetting))
 			{
 				settings[machineSetting] = answer.Game;
-			}
-			if (cfg.VersionSetting is { Length: > 0 } versionSetting && answer.Version.Length is not 0 && !settings.ContainsKey(versionSetting))
-			{
-				settings[versionSetting] = answer.Version;
 			}
 
 			var picked = request.Files.ToDictionary(static f => f.Name, static f => f.Path, StringComparer.Ordinal);
@@ -149,21 +146,15 @@ namespace Chimera.Client.GUI
 				.Where(f => decl.Files?.Any(d => d.Firmware && FileIsIn(request, d, f.Name)) is true)
 				.Select(static f => f.Path)
 				.ToList();
-			var remembered = false;
+			List<(string Id, string Path)> firmware = new();
 			foreach (var (id, sha1) in answer.Firmware)
 			{
 				var path = firmwareFiles.FirstOrDefault(f => Sha1Of(f).Equals(sha1, StringComparison.OrdinalIgnoreCase))
 					?? (firmwareFiles.Count is 1 && answer.Firmware.Count is 1 ? firmwareFiles[0] : null);
-				if (path is null) continue;
-				var full = Path.GetFullPath(path);
-				Config.CoreFirmware[CoreFirmwareStore.KeyFor(coreName, id)] = full;
-				var firmwareDecl = cfg.Firmware?.FirstOrDefault(d => d.Id == id && string.Equals(d.Sha1, sha1, StringComparison.OrdinalIgnoreCase));
-				if (firmwareDecl is not null) CoreFirmwareStore.Remember(Config, coreName, firmwareDecl, full);
-				remembered = true;
+				if (path is not null) firmware.Add((id, Path.GetFullPath(path)));
 			}
-			if (remembered) SaveConfig();
 
-			return ProjectAnswers.For(coreName, package, Newtonsoft.Json.JsonConvert.SerializeObject(settings), files);
+			return ProjectAnswers.For(coreName, package, Newtonsoft.Json.JsonConvert.SerializeObject(settings), files, firmware);
 		}
 
 		/// <summary>Whether a file input of the dialog is where this file was picked (its option names it).</summary>

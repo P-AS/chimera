@@ -62,16 +62,6 @@ namespace Chimera.Client.GUI
 
 		private readonly Label _machineLabel;
 
-		/// <summary>
-		/// Which release of the machine's game, for a package that declares one
-		/// (<see cref="WaterboxConfig.VersionSetting"/>): Doom II v1.9 against
-		/// Freedoom. Beside the System because it narrows with it, and hidden for
-		/// every core that has no such setting.
-		/// </summary>
-		private readonly ComboBox _version;
-
-		private readonly Label _versionLabel;
-
 		// page 5: what the core must compile for this game before it can run it
 		/// <summary>the config a precompile session must run with, so it sees the same paths</summary>
 		private readonly string? _configPath;
@@ -323,26 +313,8 @@ namespace Chimera.Client.GUI
 				PinMachine();
 				// a package that is several machines may offer different renderers
 				RefreshRendererChoices();
-				RefreshVersionChoices();
 			};
-			_versionLabel = new Label
-			{
-				Anchor = AnchorStyles.Top | AnchorStyles.Right,
-				AutoSize = true,
-				Location = Pt(330, 116),
-				Text = "Version:",
-				Visible = false,
-			};
-			_version = new ComboBox
-			{
-				Anchor = AnchorStyles.Top | AnchorStyles.Right,
-				DropDownStyle = ComboBoxStyle.DropDownList,
-				Location = Pt(382, 112),
-				Width = UIHelper.ScaleX(170),
-				Visible = false,
-			};
-			_version.SelectedIndexChanged += (_, _) => PinVersion();
-			p1.Controls.AddRange([ _machineLabel, _machine, _versionLabel, _version ]);
+			p1.Controls.AddRange([ _machineLabel, _machine ]);
 
 			p1.Controls.Add(MakeLabel("Renderer:", 8, 148));
 			_renderer = new ComboBox
@@ -775,7 +747,6 @@ namespace Chimera.Client.GUI
 			_machine.Enabled = _machine.Items.Count > 1;
 			PinMachine();
 			RefreshRendererChoices();
-			RefreshVersionChoices();
 		}
 
 		/// <summary>
@@ -865,7 +836,11 @@ namespace Chimera.Client.GUI
 			// the project's settings are its own: what the core would suggest for
 			// this game is shown on the settings page, not applied over them
 			_seededFor = SuggestionKey();
+			_seededFirmware = answers.Firmware;
 		}
+
+		/// <summary>Firmware the answers came with (<see cref="ProjectAnswers.Firmware"/>), offered on every firmware page build.</summary>
+		private IReadOnlyList<(string Id, string Path)> _seededFirmware = [ ];
 
 		/// <summary>
 		/// Puts a project's saved values into the settings object, then lets the
@@ -908,8 +883,6 @@ namespace Chimera.Client.GUI
 			PinMachine();
 			RefreshRendererChoices();
 			if (renderer is not null) SetRenderer(renderer);
-			// the version keeps what the project said, when this machine offers it
-			RefreshVersionChoices();
 		}
 
 		/// <summary>The setting that names the renderers, if this core has one.</summary>
@@ -1041,63 +1014,6 @@ namespace Chimera.Client.GUI
 			// the machine decides which files the project takes, so a form built for
 			// another machine is stale
 			_declarationCore = null;
-		}
-
-		private WaterboxConfig.SettingDecl? VersionDecl()
-		{
-			if (_cfg?.VersionSetting is not { Length: > 0 } versionSetting) return null;
-			var effective = _settings is null
-				? new Dictionary<string, object>()
-				: WaterboxCore.EffectiveSettingsFor(_cfg, _settings);
-			return _cfg.SettingsFor(_cfg.MachineFor(effective))
-				.FirstOrDefault(decl => decl.Name == versionSetting && decl.Options is { Count: > 0 });
-		}
-
-		/// <summary>
-		/// Offers the releases of the chosen machine. The one already chosen stays
-		/// chosen when the machine offers it too - a seeded project, or a switch
-		/// between two machines that share it - and otherwise the machine's
-		/// default is. A core with no version setting shows no box at all, and the
-		/// System takes the whole row back.
-		/// </summary>
-		private void RefreshVersionChoices()
-		{
-			var decl = VersionDecl();
-			var options = decl?.Options ?? [ ];
-			_version.Items.Clear();
-			foreach (var option in options) _version.Items.Add(option);
-			var shown = options.Count is not 0;
-			_version.Visible = _versionLabel.Visible = shown;
-			_machine.Width = (shown ? _versionLabel.Left - UIHelper.ScaleX(8) : _version.Right) - _machine.Left;
-			if (!shown) return;
-
-			var current = _settings?.Values.TryGetValue(decl!.Key, out var chosen) is true ? chosen?.ToString() : null;
-			var at = current is null ? -1 : options.IndexOf(current);
-			if (at < 0) at = options.IndexOf(decl!.DefaultValue as string ?? "");
-			_version.SelectedIndex = Math.Max(0, at);
-			_version.Enabled = options.Count > 1;
-			PinVersion();
-		}
-
-		/// <summary>Writes the chosen release into the settings, where the project records it.</summary>
-		private void PinVersion()
-		{
-			if (_settings is null || VersionDecl() is not { } decl) return;
-			if (_version.SelectedItem is string chosen) _settings.Values[decl.Key] = chosen;
-		}
-
-		/// <summary>the releases offered beside the System, in order, for tests (empty when the box is hidden)</summary>
-		public string[] VersionOptions => _version.Visible ? _version.Items.Cast<string>().ToArray() : [ ];
-
-		/// <summary>the release chosen beside the System, for tests</summary>
-		public string? ChosenVersion => _version.Visible ? _version.SelectedItem as string : null;
-
-		internal void ChooseVersionForTest(string version) => _version.SelectedItem = version;
-
-		internal void ChooseMachineForTest(string machineId)
-		{
-			var at = _cfg?.Machines?.FindIndex(m => m.Id == machineId) ?? -1;
-			if (at >= 0) _machine.SelectedIndex = at;
 		}
 
 		/// <summary>The machine chosen on page one, for tests.</summary>
@@ -1716,7 +1632,6 @@ namespace Chimera.Client.GUI
 			_cfg = cfg;
 			_settings = new WaterboxCoreSettings();
 			RefreshRendererChoices();   // as choosing the core does
-			RefreshVersionChoices();
 			RefreshExposedSettings();
 			_settingsGrid.SelectedObject = _settings;
 			ShowPage(2);
@@ -2269,9 +2184,9 @@ namespace Chimera.Client.GUI
 				.Where(entry => entry.Index >= 0 && entry.Index < all.Count
 					&& all[entry.Index] is { } decl && decl.Name == entry.Name)
 				.Select(entry => all[entry.Index])
-				// ...except the renderer, the machine and its version, which are
-				// asked beside the core on page one and would only be asked twice here
-				.Where(decl => decl.Name != RendererSetting && decl.Name != _cfg.MachineSetting && decl.Name != _cfg.VersionSetting)
+				// ...except the renderer and the machine, which are asked beside
+				// the core on page one and would only be asked twice here
+				.Where(decl => decl.Name != RendererSetting && decl.Name != _cfg.MachineSetting)
 				// ...and the chosen game's own settings, last (an arcade game's dip
 				// switches: the core named them when it was asked about the game)
 				.Concat(_gameSettings)
@@ -2563,6 +2478,7 @@ namespace Chimera.Client.GUI
 			_cfg = cfg;
 			_firmwareIndex = index ?? [ ];
 			BuildFirmwareNeeds(needed);
+			ApplySeededFirmware();
 			RenderFirmwareRows();
 			ShowPage(3);
 		}
@@ -2628,8 +2544,27 @@ namespace Chimera.Client.GUI
 				.Concat(_rememberedFirmwarePaths(ChosenCoreName ?? ""));
 			_firmwareIndex = FirmwareLocator.BuildIndex(_firmwareSearchDirs, remembered);
 			BuildFirmwareNeeds(needed);
+			ApplySeededFirmware();
 			RenderFirmwareRows();
 		}
+
+		/// <summary>
+		/// What the answers came with stands in for a pick on this page, checked
+		/// the same way - unless the person has since picked something else.
+		/// </summary>
+		private void ApplySeededFirmware()
+		{
+			foreach (var (id, path) in _seededFirmware)
+			{
+				if (_firmwareNeeds.FirstOrDefault(n => n.Id == id) is { PickedByHand: false } && File.Exists(path))
+				{
+					ProvideFirmware(id, path);
+				}
+			}
+		}
+
+		/// <summary>Firmware as answers would bring it, without a package to seed from - the test door.</summary>
+		internal void SeedFirmwareForTest(IReadOnlyList<(string Id, string Path)> firmware) => _seededFirmware = firmware;
 
 		/// <summary>
 		/// What the user chose by hand last time this page was built, by id,
@@ -3001,13 +2936,6 @@ namespace Chimera.Client.GUI
 					&& _settings.Values.TryGetValue(machineSetting, out var pinnedMachine))
 				{
 					recorded[machineSetting] = pinnedMachine;
-				}
-				if (VersionDecl() is { } versionDecl)
-				{
-					recorded[versionDecl.Key] = _settings?.Values is not null
-						&& _settings.Values.TryGetValue(versionDecl.Key, out var version)
-							? version
-							: versionDecl.DefaultValue;
 				}
 				if (recorded.Count is not 0)
 					project.SetSettingsJson(Newtonsoft.Json.JsonConvert.SerializeObject(recorded));

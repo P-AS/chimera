@@ -46,8 +46,8 @@ namespace Chimera.Client.Common
 
 	/// <summary>
 	/// The core's answer: a refusal (<see cref="Error"/>, a sentence for the
-	/// user), or what the movie dictates - the settings (game and version
-	/// included), the firmware and files it was made with, notes for the user,
+	/// user), or what the movie dictates - the settings (the machine included),
+	/// the firmware and files it was made with, notes for the user,
 	/// and the movie as Chimera's input log. Nothing in it is applied here: the
 	/// project is built from it by the frontend's own project creation.
 	/// </summary>
@@ -61,9 +61,6 @@ namespace Chimera.Client.Common
 
 		/// <summary>The machine the movie was made on, as the core's machine setting names it ("" when it did not say).</summary>
 		public string Game { get; private set; } = "";
-
-		/// <summary>The release, as the core's version setting names it ("" when it did not say).</summary>
-		public string Version { get; private set; } = "";
 
 		public Dictionary<string, object> Settings { get; private set; } = new();
 
@@ -90,7 +87,6 @@ namespace Chimera.Client.Common
 			a.Format = root["format"]?.Value<string>() ?? "";
 			a.Frames = root["frames"]?.Value<long>() ?? 0;
 			a.Game = root["game"]?.Value<string>() ?? "";
-			a.Version = root["version"]?.Value<string>() ?? "";
 			if (root["settings"] is JObject settings)
 			{
 				foreach (var (key, value) in settings)

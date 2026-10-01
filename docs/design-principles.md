@@ -4739,14 +4739,21 @@ So the core only suggests. `ce_import_movie` runs the core's
 `ImportMovie` export on a session that is never started (the same path
 as `SuggestSettings`), in a child process so a core that falls over
 while reading takes nothing with it. The answer seeds the New Project
-wizard: the machine, the release, the settings, the files in the core's
-load order, and the firmware, which is remembered where it was picked so
-the wizard finds it. The user checks it and presses Create, as for any
+wizard: the machine, the settings, the files in the core's load order,
+and the firmware picked in the dialog, which the wizard takes as if it
+had been picked on its own page. The user checks it and presses Create, as for any
 project; the input log is then set, the user picks the path, and the
 project opens. Its first open fills in the headers only a running machine
 knows and saves once, since a file that is not fresh never gets them.
 
 Nothing about Doom is in the frontend. The dialog is drawn from the
-core's `movieImport` declaration and the release box from its
-`versionSetting`; a refusal is the core's own sentence.
+core's `movieImport` declaration; a refusal is the core's own sentence.
+
+**No release setting (user-decided, 2026-10-01).** The first cut asked a
+Version beside the System - the IWAD release, from a `versionSetting` the
+core narrowed per machine. It could only offer the releases the core had
+hashes for, one for most games, so the box sat greyed with nothing to
+choose. Removed: the IWAD the person gives is the release, and the
+compatibility level is how it plays. The import hands that IWAD to the
+wizard whatever its hash, and a game core takes it as the project's own.
 

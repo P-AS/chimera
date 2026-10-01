@@ -45,7 +45,6 @@ namespace Chimera.Tests.Client.Common.Movie
 			Assert.AreEqual("MBF21", answer.Format);
 			Assert.AreEqual(2, answer.Frames);
 			Assert.AreEqual("doom2", answer.Game);
-			Assert.AreEqual("doom2-1.9", answer.Version);
 			Assert.AreEqual("4", answer.Settings["skill"]);
 			Assert.AreEqual(false, answer.Settings["soloNet"]);
 			Assert.AreEqual(1L, answer.Settings["map"]);

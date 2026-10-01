@@ -92,6 +92,34 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
+		public void AnImportedMoviesFirmwareIsTakenAsIfPickedHere()
+		{
+			// a Doom demo's IWAD is whichever release the person has: the import
+			// hands it to the wizard, and a game core takes it as the project's own
+			using var form = MakeForm(out var dir);
+			var (cfg, _) = ProjectFormsShots.MakeFirmwareFixture(dir);
+			cfg.Kind = "game";
+			var own = Path.Combine(dir, "random.bin");
+			form.SeedFirmwareForTest([ ("bios", own) ]);
+			form.UseFirmwareNeeds(cfg, [ ("bios", 2) ], [ ]);
+
+			Assert.IsTrue(form.FirmwareSatisfied("bios"), "nobody is asked again for the file the import was given");
+			Assert.AreEqual(Path.GetFullPath(own), form.ChosenFirmwarePath("bios"));
+			Assert.IsTrue(form.FirmwareIsCustom("bios"), "and the project pins its own hash");
+		}
+
+		[TestMethod]
+		public void ASeededFileIsCheckedLikeAPickedOne()
+		{
+			using var form = MakeForm(out var dir);
+			var (cfg, _) = ProjectFormsShots.MakeFirmwareFixture(dir);
+			form.SeedFirmwareForTest([ ("bios", Path.Combine(dir, "random.bin")) ]);
+			form.UseFirmwareNeeds(cfg, [ ("bios", 2) ], [ ]);
+
+			Assert.IsFalse(form.FirmwareSatisfied("bios"), "an emulator core's requirement is still one exact file");
+		}
+
+		[TestMethod]
 		public void TheVariantIsPickedUpstreamAndEachNailsOneFile()
 		{
 			// the same id, two entries - the sync setting decided which one

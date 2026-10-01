@@ -114,16 +114,6 @@ namespace Chimera.Emulation.Common.Waterbox
 		public string? MachineSetting { get; set; }
 
 		/// <summary>
-		/// The setting that picks the RELEASE of the machine's game or system - a
-		/// Doom II v1.9 IWAD against a Freedoom one. Asked beside the System on the
-		/// wizard's first page, its options narrowed by the chosen machine
-		/// (<see cref="MachineConfig.SettingOverrides"/>), and kept off the settings
-		/// page like the machine setting is. Optional; it must be one of the
-		/// package's own settings.
-		/// </summary>
-		public string? VersionSetting { get; set; }
-
-		/// <summary>
 		/// How the core reads a movie made elsewhere (a Doom demo), when it can:
 		/// the files its ImportMovie export needs and the options it takes. The
 		/// frontend renders the import dialog from this, the way it renders
