@@ -76,6 +76,11 @@
  * frame, "frame numerator denominator" a line, and draws every frame to get it:
  * the engine asks a core its rate again after every shown frame, since a game
  * core's step is as long as the game makes it (docs/game-cores.md).
+ * --ram-search-bench <domain> times RAM Search over that domain once the run is
+ * done, as the RAM Search window would run it (ce_ramsearch_*, straight onto
+ * the guest's memory): a start and an "equal to 0" search at each size,
+ * printed to stderr. The domain's memory is the machine's own, faults and all,
+ * which a benchmark over a host array is not.
  * --screenshot <frame>=<path> writes one frame's picture as a TGA. Repeatable.
  * The run is otherwise undrawn (turbo), so only the frames asked for cost
  * anything to draw - which is what makes "show me frame 1910 of this movie" a
@@ -218,6 +223,7 @@ int main(int argc, char **argv)
 	std::string coreLogPath;
 	std::string ratesPath;
 	std::vector<std::pair<std::string, std::string>> dumps; // domain -> path
+	std::string ramSearchBench;
 	std::map<int64_t, std::string> shots; // frame -> TGA path
 	std::vector<std::pair<std::string, std::string>> firmwareArgs; // id -> path
 	std::map<int64_t, std::string> stateOuts; // frame -> state path
@@ -401,6 +407,7 @@ int main(int argc, char **argv)
 			if (eq == std::string::npos) return fail(metaPath, "--screenshot wants <frame>=<path>");
 			shots[std::atoll(spec.substr(0, eq).c_str())] = spec.substr(eq + 1);
 		}
+		else if (arg == "--ram-search-bench" && i + 1 < argc) ramSearchBench = argv[++i];
 		else if (arg == "--dump" && i + 1 < argc)
 		{
 			std::string spec = argv[++i];
@@ -416,7 +423,7 @@ int main(int argc, char **argv)
 	bool projectMode = !projectPath.empty();
 	if (projectMode ? packagePath == nullptr : (suggest || importMovie ? romPath == nullptr : moviePath == nullptr))
 	{
-		std::fprintf(stderr, "usage: chimera-run <package> <rom> <movie.txt> [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--settings <json>] [--dump <domain>=<path>]... [--firmware <id>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame]\n"
+		std::fprintf(stderr, "usage: chimera-run <package> <rom> <movie.txt> [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--settings <json>] [--dump <domain>=<path>]... [--firmware <id>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--ram-search-bench <domain>] [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame]\n"
 			"       chimera-run --project <p.chimeraProject> <package> [--files <dir>]... [--allow-core-mismatch] [the same run flags]\n"
 			"       chimera-run <package> <rom> --suggest [--settings <json>] [--firmware <id>=<path>]...\n"
 			"       chimera-run <package> <movie> --import-movie [--mount <name>=<path>]... [--settings <json>]\n");
@@ -1126,6 +1133,33 @@ int main(int argc, char **argv)
 		if (!writeWholeFile(greenzoneMap, reinterpret_cast<const uint8_t *>(text.data()), text.size()))
 		{
 			return fail(metaPath, "could not write " + greenzoneMap);
+		}
+	}
+
+	if (!ramSearchBench.empty())
+	{
+		int32_t found = -1;
+		for (int32_t d = 0; d < ce_session_domain_count(session); d++)
+			if (ramSearchBench == ce_session_domain_name(session, d)) found = d;
+		if (found < 0) return fail(metaPath, "--ram-search-bench: no domain named " + ramSearchBench);
+		const auto *base = reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(ce_session_domain_ptr(session, found)));
+		const int64_t size = ce_session_domain_size(session, found);
+		for (int32_t width : { 1, 2, 4 })
+		{
+			ce_ramsearch *rs = ce_ramsearch_create(base, nullptr, nullptr, size);
+			if (rs == nullptr) return fail(metaPath, "--ram-search-bench: out of memory");
+			const auto t0 = std::chrono::steady_clock::now();
+			ce_ramsearch_start(rs, width, 0, 0, 0);
+			const auto t1 = std::chrono::steady_clock::now();
+			ce_ramsearch_search(rs, 1 /* specific value */, 0 /* equal */, 0, 0, 0, 1 /* last search */);
+			const auto t2 = std::chrono::steady_clock::now();
+			const int64_t left = ce_ramsearch_count(rs);
+			ce_ramsearch_search(rs, 0 /* previous */, 0, 0, 0, 0, 1);
+			const auto t3 = std::chrono::steady_clock::now();
+			const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+			std::fprintf(stderr, "ram-search-bench %s (%lld bytes) size %d: start %.0f ms, equal-to-0 %.0f ms (%lld left), previous %.0f ms\n",
+				ramSearchBench.c_str(), (long long)size, width, ms(t0, t1), ms(t1, t2), (long long)left, ms(t2, t3));
+			ce_ramsearch_destroy(rs);
 		}
 	}
 
