@@ -56,6 +56,7 @@ namespace Chimera.Client.GUI
 		private readonly Button _start;
 		private readonly Button _stop;
 		private readonly Button _openVideo;
+		private readonly Button _restoreDefaults;
 		private readonly Button _close;
 		private readonly Timer _tick;
 
@@ -277,6 +278,17 @@ namespace Chimera.Client.GUI
 			};
 			_openVideo.Click += (_, _) => OpenWrittenVideo();
 			Controls.Add(_openVideo);
+			// the command especially: one stray edit and the only way back was a
+			// copy of it kept somewhere else (#169)
+			_restoreDefaults = new Button
+			{
+				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
+				Location = Pt(112, 324),
+				Size = new(UIHelper.ScaleX(110), UIHelper.ScaleY(26)),
+				Text = "Restore Defaults",
+			};
+			_restoreDefaults.Click += (_, _) => RestoreDefaults();
+			Controls.Add(_restoreDefaults);
 			_start = new Button
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
@@ -396,6 +408,23 @@ namespace Chimera.Client.GUI
 			if (box.SelectedIndex < 0) return 0;
 			var ordered = _markers.OrderBy(static m => m.Frame).ToList();
 			return ordered[box.SelectedIndex].Frame;
+		}
+
+		/// <summary>
+		/// Puts the encode's own choices back to a fresh install's: the ffmpeg
+		/// command, audio sync, the capture boxes and no resize. Where the video
+		/// goes and which frames it holds are this encode's, and are left alone.
+		/// </summary>
+		public void RestoreDefaults()
+		{
+			Config fresh = new();
+			_command.Text = DefaultCommand;
+			_audioSync.Checked = fresh.VideoWriterAudioSync;
+			_captureLua.Checked = fresh.AviCaptureLua || fresh.AviCaptureOsd;
+			_captureOsd.Checked = fresh.AviCaptureOsd;
+			_pad.Checked = fresh.AVWriterPad;
+			_resize.Checked = fresh.AVWriterResizeWidth > 0;
+			UseCurrentSize();
 		}
 
 		private void FillFromConfig(Config config)
@@ -541,7 +570,7 @@ namespace Chimera.Client.GUI
 		private void SetInputsEnabled(bool enabled)
 		{
 			foreach (var control in new Control[]
-				{ _output, _browse, _command, _from, _to, _resize, _audioSync, _captureOsd, _captureLua })
+				{ _output, _browse, _command, _from, _to, _resize, _audioSync, _captureOsd, _captureLua, _restoreDefaults })
 			{
 				control.Enabled = enabled;
 			}

@@ -94,7 +94,7 @@ namespace Chimera.Tests.Client.GUI
 			Assert.AreEqual("/demos/run.lmp", asked.Movie);
 			Assert.AreEqual("DOOM2.WAD", asked.Settings!["importIwad"]);
 			Assert.AreEqual("b.wad;a.wad;fix.deh", asked.Settings["importPwads"], "joined in the order given, not sorted");
-			Assert.AreEqual(true, asked.Settings["importLongtics"]);
+			Assert.IsTrue((bool)asked.Settings["importLongtics"]);
 			Assert.IsFalse(asked.Settings.ContainsKey("importNoPwads"), "an option is sent only when ticked");
 			CollectionAssert.AreEqual(
 				new[] { "DOOM2.WAD=/iwads/DOOM2.WAD", "b.wad=/pwads/b.wad", "a.wad=/pwads/a.wad", "fix.deh=/pwads/fix.deh" },

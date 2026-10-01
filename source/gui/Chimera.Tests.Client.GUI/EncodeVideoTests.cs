@@ -64,6 +64,36 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
+		public void RestoreDefaultsPutsTheEncodesChoicesBackAndLeavesTheRest()
+		{
+			// #169: a stray edit to the command had no way back but a copy kept elsewhere
+			Config edited = new()
+			{
+				FFmpegCustomCommand = "-c:v ffv1 -f matroska oops",
+				VideoWriterAudioSync = false,
+				AVWriterPad = true,
+				AviCaptureOsd = true,
+				AVWriterResizeWidth = 640,
+				AVWriterResizeHeight = 480,
+			};
+			edited.VideoWriterAudioSyncEffective = false;
+			using Harness h = new(config: edited);
+			h.Form.Choose(output: "/videos/mine.mkv", to: h.Form.MarkerChoices[1]);
+
+			h.Form.RestoreDefaults();
+			var asked = h.Form.BuildRequest();
+
+			Assert.AreEqual(EncodeVideoForm.DefaultCommand, asked.FFmpegCommand);
+			Assert.IsTrue(asked.AudioSync, "audio sync is on by default");
+			Assert.IsFalse(asked.Pad);
+			Assert.IsFalse(asked.CaptureOsd);
+			Assert.IsFalse(asked.CaptureLua);
+			Assert.AreEqual(0, asked.Width, "no resize");
+			StringAssert.StartsWith(asked.OutputPath, "/videos/mine.", "where it goes is this encode's own");
+			Assert.AreEqual(h.Form.EndFrame, asked.EndFrame, "and so are the frames");
+		}
+
+		[TestMethod]
 		public void ItOpensOnTheWholeRun()
 		{
 			using Harness h = new();
