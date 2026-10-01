@@ -46,7 +46,7 @@ namespace Chimera.Tests.Client.Common.Movie
 			Assert.AreEqual(2, answer.Frames);
 			Assert.AreEqual("doom2", answer.Game);
 			Assert.AreEqual("4", answer.Settings["skill"]);
-			Assert.AreEqual(false, answer.Settings["soloNet"]);
+			Assert.IsFalse((bool)answer.Settings["soloNet"]);
 			Assert.AreEqual(1L, answer.Settings["map"]);
 			Assert.AreEqual(("DOOM2.WAD", "7ec7652fcfce8ddc6e801839291f0e28ef1d5ae7"), answer.Firmware[0]);
 			CollectionAssert.AreEqual(new[] { "z.wad", "a.deh" }, answer.Files.ConvertAll(static f => f.Name), "the core's order, not sorted");
