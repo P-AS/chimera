@@ -14,6 +14,7 @@
 #include "file_io.hpp"
 #include "zstd_dyn.hpp"
 #include "host_dyn.hpp"
+#include "core_log.hpp"
 #include "progress.hpp"
 #include "thread_string.hpp"
 #include "state_history.hpp"
@@ -1134,6 +1135,8 @@ ce_session *ce_session_open(
 		if (abytes == nullptr) return abort(std::string("package asset unreadable: ") + aname);
 		s->assetFiles.emplace_back(std::string(aname).substr(6), std::vector<uint8_t>(abytes, abytes + len));
 	}
+	const char *sha1 = ce_package_sha1(pkg);
+	const std::string packageSha1 = sha1 != nullptr ? sha1 : "";
 	ce_package_free(pkg);
 	pkg = nullptr; /* a later abort() must not free it again */
 
@@ -1142,7 +1145,7 @@ ce_session *ce_session_open(
 	s->settingsBytes = s->cfg.settingsJson;
 
 	// every mounted stream needs a stable address for the host's callback
-	s->streams.reserve(5 + static_cast<size_t>(firmware_count) + static_cast<size_t>(extra_count)
+	s->streams.reserve(6 + static_cast<size_t>(firmware_count) + static_cast<size_t>(extra_count)
 	                   + s->assetFiles.size());
 
 	chimera::WbxLayout layout{};
@@ -1269,6 +1272,18 @@ ce_session *ce_session_open(
 			host->wbx_mount_file(s->obj, extra_names[i], streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
 		}
 		if (!r.ok()) return abort(std::string("mounting ") + extra_names[i] + ": " + r.errorMessage);
+	}
+
+	/* The core log's request (ce_core_log): an empty file a core checks for
+	 * and never reads, so the machine is the same with the log on or off. A
+	 * caller that mounted its own "corelog" keeps it. */
+	if (chimera::coreLogOn())
+	{
+		static const uint8_t none = 0;
+		s->streams.push_back({ &none, 0 });
+		host->wbx_mount_file(s->obj, "corelog", streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
+		chimera::coreLogNote("session: core package " + std::string(package_path)
+			+ (packageSha1.empty() ? std::string() : " (sha1 " + packageSha1 + ")"));
 	}
 
 	std::string err;

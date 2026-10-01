@@ -39,8 +39,8 @@ cannot be filed without the build identifiers.
 - Attach: the .chimeraProject (inputs are small; it names every file by hash),
   a screenshot, and for a crash the three files Chimera writes:
   `<date> pid<N>.txt` (crash note), the `.dmp`, and `minibox-diag.log` - all
-  three, every time. For "no picture / wrong picture / no boot" on RPCS3:
-  the core log (firmware entry `logtrace`).
+  three, every time. And the core's log: Tools > Export Core Log..., which
+  is off until asked for and reboots the core so the log covers it from boot.
 - Checkbox: "I tried the newest nightly" (required).
 
 ### Core / game support request (new machine, new system, a game that does
@@ -201,6 +201,6 @@ Execution order (main session, not this fork):
    else, reopen on comment (stale removes the label on activity).
 4. README "Reporting a problem" section: build string, same-day
    frontend+core rule, where the three crash files are (verify the folder
-   crash-notes-wer writes to before writing it down), the logtrace trick
-   for RPCS3.
+   crash-notes-wer writes to before writing it down), Tools > Export Core
+   Log... for the core's own log.
 5. Later, with #111: crash dialog "Open the crash folder" button.

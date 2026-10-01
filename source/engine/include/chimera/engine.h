@@ -812,6 +812,21 @@ CE_API ce_session *ce_session_open(
 
 CE_API void ce_session_free(ce_session *s);
 
+/* The core log, kept only when a frontend asks for it. With a path (UTF-8),
+ * the file is started anew with a line saying when and by which Chimera, and
+ * from then on everything any core writes to its stdout and stderr is
+ * appended to it, flushed as it is written, so a crash leaves it whole. A
+ * session opened while it is on also notes its core package in it, and is
+ * mounted an empty file named "corelog": a core that keeps a fuller log only
+ * on request (RPCS3's) reads that as the request. It is checked for, never
+ * read, so the machine is the same with the log on or off. NULL or "" stops
+ * it; the file stays. 1 on success; 0 with ce_core_log_error() saying why.
+ * Process-wide, and never remembered: each run of a frontend starts off. */
+CE_API int32_t ce_core_log(const char *path);
+/* The file the core log goes to, or "" while it is off. */
+CE_API const char *ce_core_log_path(void);
+CE_API const char *ce_core_log_error(void);
+
 /* config-derived facts (borrowed strings live as long as the session) */
 CE_API const char *ce_session_core_name(const ce_session *s);
 CE_API const char *ce_session_system_id(const ce_session *s);

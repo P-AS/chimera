@@ -10,6 +10,7 @@
  *       [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>]
  *       [--settings <json>]
  *       [--dump <domain>=<path>]... [--export-savedata <dir>] [--meta <path>]
+ *       [--core-log <path>]
  *   chimera-run --project <p.chimeraProject> <package>
  *       [--files <dir>]... [--allow-core-mismatch] [the same run flags]
  *
@@ -212,6 +213,9 @@ int main(int argc, char **argv)
 	const char *packagePath = nullptr, *romPath = nullptr, *moviePath = nullptr;
 	const char *settings = nullptr;
 	std::string metaPath;
+	/* --core-log <path>: what the core says, kept in a file (ce_core_log), and
+	 * the "corelog" request mounted so a core with a fuller log keeps it */
+	std::string coreLogPath;
 	std::string ratesPath;
 	std::vector<std::pair<std::string, std::string>> dumps; // domain -> path
 	std::map<int64_t, std::string> shots; // frame -> TGA path
@@ -329,6 +333,7 @@ int main(int argc, char **argv)
 		else if (arg == "--suggest") suggest = true;
 		else if (arg == "--export-savedata" && i + 1 < argc) savedataDir = argv[++i];
 		else if (arg == "--meta" && i + 1 < argc) metaPath = argv[++i];
+		else if (arg == "--core-log" && i + 1 < argc) coreLogPath = argv[++i];
 		else if (arg == "--project" && i + 1 < argc) projectPath = argv[++i];
 		else if (arg == "--files" && i + 1 < argc) fileDirs.push_back(argv[++i]);
 		else if (arg == "--allow-core-mismatch") allowCoreMismatch = true;
@@ -639,6 +644,8 @@ int main(int argc, char **argv)
 		std::printf("%.*s\n", static_cast<int>(len), answer);
 		return 0;
 	}
+	if (!coreLogPath.empty() && ce_core_log(coreLogPath.c_str()) == 0)
+		return fail(metaPath, std::string("--core-log: ") + ce_core_log_error());
 	ce_session *session = ce_session_open(
 		packagePath, rom.data(), rom.size(), romPathStore.empty() ? nullptr : romPathStore.c_str(),
 		settings, fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),

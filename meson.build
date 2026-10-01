@@ -303,6 +303,7 @@ engine_src = files(
   'source/engine/source/host_dyn.cpp',
   'source/engine/source/movie_entry.cpp',
   'source/engine/source/session.cpp',
+  'source/engine/source/core_log.cpp',
   'source/engine/source/state_history.cpp',
   'source/engine/source/work_thread.cpp',
   'source/engine/source/media_maker.cpp',

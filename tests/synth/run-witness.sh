@@ -230,6 +230,31 @@ if [ "$level" = "both" ] || [ "$level" = "e" ]; then
 			report "E:core-crashes" FAIL "no stopped core reported (see work/crashes.log)"
 		fi
 
+		# THE CORE LOG (ce_core_log, Tools > Export Core Log... in the frontend):
+		# asked for, it starts a file saying when and by which Chimera, notes
+		# the session's core package, and keeps everything the core writes - the
+		# dying core's last words included. The "corelog" request it mounts must
+		# not move the machine: the same movie with the log on ends on the
+		# goldens.
+		clmovie="$here/movies/gridWalker.win.txt"
+		rm -f "$work/core.log" "$work/core-on.ram.bin" "$work/core-on.vram.bin"
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$dmovie" \
+			--core-log "$work/core.log" > "$work/core-log-dies.log" 2>&1
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$clmovie" --core-log "$work/core-on.log" \
+			--dump "RAM=$work/core-on.ram.bin" --dump "VRAM=$work/core-on.vram.bin" > "$work/core-log-on.log" 2>&1
+		if ! grep -q '^Chimera core log, started ' "$work/core.log" 2>/dev/null; then
+			report "E:core-log" FAIL "no core log, or no header in it (see work/core-log-dies.log)"
+		elif ! grep -q 'session: core package .*synth-box.chimeraCore (sha1 ' "$work/core.log"; then
+			report "E:core-log" FAIL "the core log does not name the session's package"
+		elif ! grep -q 'stopping on purpose' "$work/core.log"; then
+			report "E:core-log" FAIL "the core log does not hold what the core said"
+		elif ! cmp -s "$work/core-on.ram.bin" "$golden_dir/gridWalker.win.ram.bin" \
+			|| ! cmp -s "$work/core-on.vram.bin" "$golden_dir/gridWalker.win.vram.bin"; then
+			report "E:core-log" FAIL "with the core log on the machine differs from the goldens"
+		else
+			report "E:core-log" PASS "asked for, the log names its build and package and keeps the core's words; the machine is the goldens'"
+		fi
+
 		# the history OUTLIVES its process, which is what reopening a project
 		# asks of it. One run plays the movie and keeps its history to a file; a
 		# second, fresh process starts from that file, seeks back into states it

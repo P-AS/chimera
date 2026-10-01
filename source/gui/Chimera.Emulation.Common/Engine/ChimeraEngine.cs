@@ -565,6 +565,16 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_media_last_error();
 
+		/// <summary>The core log: a UTF-8 path turns it on (1, or 0 with ce_core_log_error), "" turns it off.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_core_log(string path);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_core_log_path();
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_core_log_error();
+
 		// the compile cache and precompile sessions (docs: a core's compiled
 		// objects, kept on the host; never machine state)
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -1026,6 +1036,25 @@ namespace Chimera.Emulation.Common.Engine
 
 		/// <summary>Engine build provenance (JSON), for the frontend to show and movies to record.</summary>
 		public static string BuildInfo => PtrToStringUtf8(Instance.ce_build_info()) ?? "{}";
+
+		/// <summary>
+		/// The core log (ce_core_log): from now on, everything the cores say is kept in
+		/// <paramref name="path"/>, and a core opened while it is on is asked for its fuller
+		/// log. It is on only because somebody asked (Tools &gt; Export Core Log...), and
+		/// nothing remembers it: every run of Chimera starts with it off.
+		/// </summary>
+		public static bool StartCoreLog(string path, out string error)
+		{
+			var ok = Instance.ce_core_log(path) is not 0;
+			error = ok ? "" : PtrToStringUtf8(Instance.ce_core_log_error()) ?? "the core log could not be started";
+			return ok;
+		}
+
+		/// <summary>Stops the core log; the file stays where it is.</summary>
+		public static void StopCoreLog() => Instance.ce_core_log("");
+
+		/// <summary>Where the core log is being written, or "" while it is off.</summary>
+		public static string CoreLogPath => PtrToStringUtf8(Instance.ce_core_log_path()) ?? "";
 
 		/// <summary>
 		/// The savestate format this build writes and reads (issue #115). A project records it,

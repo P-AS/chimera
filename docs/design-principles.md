@@ -4700,3 +4700,27 @@ warning. Three pieces were missing:
 
 The declarations keep the originals' hashes: they are how the wizard and the
 Firmware folder recognise the original, and how "your own" is told from it.
+
+## A core's log is kept only when asked for (user-decided, 2026-10-01)
+
+Tools > Export Core Log... keeps everything a core writes to stdout and
+stderr in a file the user chooses. Before this, a core's log reached nobody
+on Windows: a GUI process has no stderr. The only way to get RPCS3's log was
+a firmware entry named `logtrace`, which the GUI cannot add (#165's reporter
+was left stuck on the template line that asked for it).
+
+It is on only because somebody asked, and nothing remembers that they did:
+every run starts with it off. Turning it on reboots the core (with consent),
+because RPCS3 keeps its full log only from boot; using the item again turns
+it off and says where the file is. The work is in the engine and miniBox,
+not here: `ce_core_log` starts the file with the time and the engine build,
+notes each session's core package and sha1, and has miniBox copy every
+guest stdout/stderr write into it, flushed per write so a crash leaves it
+whole. A session opened while it is on gets an empty `corelog` file mounted.
+RPCS3 checks for it with `stat`, which allocates nothing in the guest, and
+then sends its log, at the levels it already keeps, to stderr too.
+
+**The machine does not move.** With the log on, the synth witness ends on
+its goldens, and RPCS3's RAM after 150 frames of Rayman Legends is
+byte-identical. Trace channels are not raised: a fuller log would change
+RPCS3.log, which lives in the console's memory.

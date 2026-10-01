@@ -128,6 +128,8 @@ namespace Chimera.Client.GUI
 			this.HexEditorMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.MacroToolMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.BatchRunnerMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
+			this.toolStripSeparatorCoreLog = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
+			this.ExportCoreLogMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.MediaMakerMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.toolStripSeparator22 = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
 			this.GenericCoreSubMenu = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
@@ -841,7 +843,9 @@ namespace Chimera.Client.GUI
             this.LuaConsoleMenuItem,
             this.HexEditorMenuItem,
             this.MacroToolMenuItem,
-            this.BatchRunnerMenuItem});
+            this.BatchRunnerMenuItem,
+            this.toolStripSeparatorCoreLog,
+            this.ExportCoreLogMenuItem});
 			this.ToolsSubMenu.Text = "&Tools";
 			this.ToolsSubMenu.DropDownOpened += new System.EventHandler(this.ToolsSubMenu_DropDownOpened);
 			// 
@@ -880,6 +884,11 @@ namespace Chimera.Client.GUI
 			this.BatchRunnerMenuItem.Text = "Batch Runner...";
 			this.BatchRunnerMenuItem.Visible = false;
 			this.BatchRunnerMenuItem.Click += new System.EventHandler(this.BatchRunnerMenuItem_Click);
+			// 
+			// ExportCoreLogMenuItem
+			// 
+			this.ExportCoreLogMenuItem.Text = "Export Core &Log...";
+			this.ExportCoreLogMenuItem.Click += new System.EventHandler(this.ExportCoreLogMenuItem_Click);
 			// 
 			// GenericCoreSubMenu
 			// 
@@ -1317,6 +1326,8 @@ namespace Chimera.Client.GUI
 		private Chimera.WinForms.Controls.ToolStripSeparatorEx ShowMenuContextMenuSeparator;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx GenericCoreSubMenu;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx BatchRunnerMenuItem;
+		private Chimera.WinForms.Controls.ToolStripSeparatorEx toolStripSeparatorCoreLog;
+		private Chimera.WinForms.Controls.ToolStripMenuItemEx ExportCoreLogMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx MediaMakerMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayConfigMenuItem;
 		private Chimera.WinForms.Controls.StatusLabelEx CoreNameStatusBarButton;

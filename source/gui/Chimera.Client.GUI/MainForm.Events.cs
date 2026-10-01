@@ -14,6 +14,7 @@ using Chimera.Client.GUI.ToolExtensions;
 using Chimera.Common;
 using Chimera.Common.PathExtensions;
 using Chimera.Emulation.Common;
+using Chimera.Emulation.Common.Engine;
 using Chimera.WinForms.Controls;
 
 namespace Chimera.Client.GUI
@@ -1067,6 +1068,8 @@ namespace Chimera.Client.GUI
 			HexEditorMenuItem.Enabled = Tools.IsAvailable<HexEditor>();
 			RamSearchMenuItem.Enabled = Tools.IsAvailable<RamSearch>();
 			RamWatchMenuItem.Enabled = Tools.IsAvailable<RamWatch>();
+			// ticked while the core log is on, which is only ever because somebody asked
+			ExportCoreLogMenuItem.Checked = ChimeraEngine.CoreLogPath.Length is not 0;
 
 
 			// Core-managed tooling: available exactly when the loaded core backs the

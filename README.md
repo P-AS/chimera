@@ -155,8 +155,8 @@ The witness gate runs with `tests/synth/run-witness.sh`. The engineering log (ob
 ## Reporting a problem
 
 Open an issue on this repository, whichever core it concerns - one inbox,
-and the issue template asks for what a fix needs. The three things that
-settle most reports before anybody opens a debugger:
+and the issue template asks for what a fix needs. What settles most
+reports before anybody opens a debugger:
 
 - **The build strings.** Help > About names the frontend build
   (`Nightly 2026-09-19 (cd4b89cd)`); the Core Manager names each core with
@@ -172,10 +172,9 @@ settle most reports before anybody opens a debugger:
   `minibox-diag.log` next to `Chimera.exe`. Attach all three: the note
   carries the faulting instruction and the machine's last words, and two of
   three crashes in one recent report were fixed off those files alone.
-
-For an RPCS3 game that boots to nothing or draws wrongly, add a firmware
-entry named `logtrace` to the project: the core then writes its own log
-into Chimera's, and that log says what the RSX was drawing to.
+- **The core's log.** Tools > Export Core Log... keeps everything the core
+  says in a file you choose; it is off until asked for, and reboots the core
+  so the log starts at boot. Use it again to turn it off, and attach the file.
 
 ## Contributing
 
