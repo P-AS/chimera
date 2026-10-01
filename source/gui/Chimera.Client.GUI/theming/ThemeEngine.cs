@@ -65,6 +65,9 @@ namespace Chimera.Client.GUI
 
 			public bool Hooked;
 
+			/// <summary>A themed drop-down re-themes its items as it opens (<see cref="ApplyItem"/>).</summary>
+			public bool ThemesOnOpening;
+
 			/// <summary>
 			/// Puts this control back the way the toolkit had it, before any theme
 			/// touched it. Built by <see cref="Prime"/>, which runs over the whole
@@ -1155,6 +1158,21 @@ namespace Chimera.Client.GUI
 					drop.DropDown.BackColor = theme[ThemeColorRole.MenuBackground];
 					drop.DropDown.ForeColor = theme[ThemeColorRole.MenuText];
 					foreach (ToolStripItem child in drop.DropDownItems) ApplyItem(child, theme, onDropDown: true);
+					// A menu built while the window is open - TAStudio's Columns, which
+					// groups its keys and players into sub-menus of its own - holds items
+					// the walk never saw. Their own drop-downs kept the toolkit's
+					// renderer, and their text came out grey on the theme's dark
+					// background (#173). So a themed drop-down themes what it holds
+					// each time it opens, which reaches anything added since.
+					if (!below.ThemesOnOpening)
+					{
+						below.ThemesOnOpening = true;
+						drop.DropDownOpening += static (sender, _) =>
+						{
+							if (sender is not ToolStripDropDownItem opening || IsSystemPalette(Current)) return;
+							foreach (ToolStripItem child in opening.DropDownItems) ApplyItem(child, Current, onDropDown: true);
+						};
+					}
 					break;
 				}
 				case ToolStripControlHost host when host.Control is not null:
