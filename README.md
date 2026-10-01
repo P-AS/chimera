@@ -96,6 +96,7 @@ One game each, run from the game's own files ([docs/game-cores.md](docs/game-cor
 | Sword of the Samurai (DOS) | [OpenSamurai](https://github.com/ToolAssisted-run/chimera-core-opensamurai) |
 | Syndicate (DOS) | [SyndicatFX](https://github.com/ToolAssisted-run/chimera-core-syndicatfx) |
 | Another World | [rawgl](https://github.com/ToolAssisted-run/chimera-core-rawgl) |
+| Doom, Doom II, Final Doom, Heretic, Hexen, Chex Quest, Freedoom | [DSDA-Doom](https://github.com/ToolAssisted-run/chimera-core-dsda) |
 
 ## Getting a build
 

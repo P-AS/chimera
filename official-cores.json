@@ -188,6 +188,14 @@
       "kind": "game",
       "repo": "ToolAssisted-run/chimera-core-rawgl",
       "tested": ""
+    },
+    {
+      "id": "dsda",
+      "name": "DSDA-Doom",
+      "systems": [ "Doom" ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-dsda",
+      "tested": ""
     }
   ]
 }
