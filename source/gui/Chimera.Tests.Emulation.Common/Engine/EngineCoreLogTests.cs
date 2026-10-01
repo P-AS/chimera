@@ -9,8 +9,12 @@ namespace Chimera.Tests.Emulation.Common.Engine
 	/// somebody asks, a file that says when and by which Chimera once they do, and
 	/// a refusal that says why when the file cannot be written. What the cores
 	/// write into it is the witness's E:core-log leg.
+	///
+	/// Serial: the log is one per process, and this assembly runs methods in
+	/// parallel, so one test's log was the next one's "it is off" failing.
 	/// </summary>
 	[TestClass]
+	[DoNotParallelize]
 	public class EngineCoreLogTests
 	{
 		[TestCleanup]
