@@ -94,6 +94,28 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
+		public void OpenFolderNamesTheFolderTheVideoGoesTo()
+		{
+			using Harness h = new();
+			var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"chimera-encode-{System.IO.Path.GetRandomFileName()}");
+			System.IO.Directory.CreateDirectory(folder);
+			try
+			{
+				h.Form.Choose(output: System.IO.Path.Combine(folder, "run.mp4"));
+				Assert.IsTrue(h.Form.OpenFolderEnabled, "a folder that exists can be opened before anything is written");
+				Assert.AreEqual(System.IO.Path.GetFullPath(folder), h.Form.OutputFolder);
+
+				h.Form.Choose(output: System.IO.Path.Combine(folder, "no such folder", "run.mp4"));
+				Assert.IsFalse(h.Form.OpenFolderEnabled, "and one that does not, cannot");
+				Assert.IsNull(h.Form.OutputFolder);
+			}
+			finally
+			{
+				System.IO.Directory.Delete(folder, recursive: true);
+			}
+		}
+
+		[TestMethod]
 		public void ItOpensOnTheWholeRun()
 		{
 			using Harness h = new();

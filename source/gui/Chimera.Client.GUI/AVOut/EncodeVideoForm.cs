@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -56,6 +57,7 @@ namespace Chimera.Client.GUI
 		private readonly Button _start;
 		private readonly Button _stop;
 		private readonly Button _openVideo;
+		private readonly Button _openFolder;
 		private readonly Button _restoreDefaults;
 		private readonly Button _close;
 		private readonly Timer _tick;
@@ -104,7 +106,8 @@ namespace Chimera.Client.GUI
 
 			SuspendLayout();
 			ClientSize = new(UIHelper.ScaleX(580), UIHelper.ScaleY(364));
-			MinimumSize = new(UIHelper.ScaleX(520), UIHelper.ScaleY(364));
+			// wide enough that the buttons on the left never reach the ones on the right
+			MinimumSize = new(UIHelper.ScaleX(600), UIHelper.ScaleY(364));
 			StartPosition = FormStartPosition.CenterParent;
 			ShowIcon = false;
 			MaximizeBox = false;
@@ -273,17 +276,29 @@ namespace Chimera.Client.GUI
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
 				Enabled = false,
 				Location = Pt(8, 324),
-				Size = new(UIHelper.ScaleX(96), UIHelper.ScaleY(26)),
+				Size = new(UIHelper.ScaleX(90), UIHelper.ScaleY(26)),
 				Text = "Open Video",
 			};
 			_openVideo.Click += (_, _) => OpenWrittenVideo();
 			Controls.Add(_openVideo);
+			// where the video is, in the machine's own file browser - with the
+			// file chosen once it has been written
+			_openFolder = new Button
+			{
+				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
+				Location = Pt(104, 324),
+				Size = new(UIHelper.ScaleX(90), UIHelper.ScaleY(26)),
+				Text = "Open Folder",
+			};
+			_openFolder.Click += (_, _) => OpenOutputFolder();
+			Controls.Add(_openFolder);
+			_output.TextChanged += (_, _) => _openFolder.Enabled = OutputFolder is not null;
 			// the command especially: one stray edit and the only way back was a
 			// copy of it kept somewhere else (#169)
 			_restoreDefaults = new Button
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-				Location = Pt(112, 324),
+				Location = Pt(200, 324),
 				Size = new(UIHelper.ScaleX(110), UIHelper.ScaleY(26)),
 				Text = "Restore Defaults",
 			};
@@ -325,6 +340,7 @@ namespace Chimera.Client.GUI
 
 			FillMarkers();
 			FillFromConfig(config);
+			_openFolder.Enabled = OutputFolder is not null;
 			ShowRange();
 			SyncSizeEnabled();
 			ShowProgress(new(VideoEncodePhase.Idle, 0, 0, 0, 0, null, null));
@@ -349,6 +365,27 @@ namespace Chimera.Client.GUI
 
 		/// <summary>Whether there is a finished video to open.</summary>
 		public bool OpenVideoEnabled => _openVideo.Enabled;
+
+		public bool OpenFolderEnabled => _openFolder.Enabled;
+
+		/// <summary>The folder the output file is in, when it exists; null otherwise.</summary>
+		public string? OutputFolder
+		{
+			get
+			{
+				var output = _output.Text.Trim();
+				if (output.Length is 0) return null;
+				try
+				{
+					var folder = Path.GetDirectoryName(Path.GetFullPath(output));
+					return folder is not null && Directory.Exists(folder) ? folder : null;
+				}
+				catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+				{
+					return null;
+				}
+			}
+		}
 
 		/// <summary>Where the level meters stand, 0 to 1 on their own dB scale.</summary>
 		public (double Left, double Right) AudioLevels => (_levels.LeftFraction, _levels.RightFraction);
@@ -627,6 +664,33 @@ namespace Chimera.Client.GUI
 		/// has been moved or deleted since, say so here rather than letting the
 		/// system fail silently somewhere the person is not looking.
 		/// </summary>
+		/// <summary>
+		/// Shows the output's folder in the machine's file browser - Explorer with
+		/// the video selected once it exists - and says so when nothing can.
+		/// </summary>
+		private void OpenOutputFolder()
+		{
+			if (OutputFolder is not { } folder)
+			{
+				_status.Text = "The output file's folder does not exist.";
+				_status.SetForeRole(ThemeColorRole.AccentError);
+				_openFolder.Enabled = false;
+				return;
+			}
+			var file = Path.GetFullPath(_output.Text.Trim());
+			try
+			{
+				if (OSTailoredCode.IsUnixHost) Process.Start("xdg-open", folder);
+				else if (File.Exists(file)) Process.Start("explorer.exe", $"/select,\"{file}\"");
+				else Process.Start("explorer.exe", $"\"{folder}\"");
+			}
+			catch (Exception ex)
+			{
+				_status.Text = $"Could not open {folder}: {ex.Message}";
+				_status.SetForeRole(ThemeColorRole.AccentError);
+			}
+		}
+
 		private void OpenWrittenVideo()
 		{
 			if (_written is null) return;
