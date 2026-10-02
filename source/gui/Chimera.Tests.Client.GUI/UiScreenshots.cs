@@ -203,6 +203,24 @@ namespace Chimera.Tests.Client.GUI
 			Shoot(form, "core-manager");
 		}
 
+		/// <summary>Core Manager &gt; Systems...: every system, its id and the cores that run it (#172).</summary>
+		[TestMethod]
+		public void SupportedSystemsWindow()
+		{
+			var systems = SupportedSystems.From(new (string, IReadOnlyList<string>, bool)[]
+			{
+				("Genesis Plus GX", [ "GEN", "SMS", "GG", "SG" ], true),
+				("ares", [ "GEN", "SMS", "GG", "SG", "PS1", "WS", "WSC", "NES", "SFC", "N64" ], false),
+				("quickerNES", [ "NES" ], true),
+				("PCSX2", [ "PS2" ], true),
+			});
+			using SupportedSystemsForm form = new(systems);
+			form.StartPosition = FormStartPosition.Manual;
+			form.Location = new Point(0, 0);
+			form.Show();
+			Shoot(form, "supported-systems");
+		}
+
 		/// <summary>
 		/// File &gt; Cache Manager: what is on disk that could be worked out again.
 		/// Every row is safe to delete, so the picture is mostly about whether the

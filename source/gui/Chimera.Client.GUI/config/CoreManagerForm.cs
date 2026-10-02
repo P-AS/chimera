@@ -54,6 +54,7 @@ namespace Chimera.Client.GUI
 		private readonly Button _downloadLatest;
 		private readonly Button _removeCore;
 		private readonly Button _addExternal;
+		private readonly Button _systems;
 		private readonly CheckBox _devChannel;
 
 		/// <summary>Set while the code is ticking boxes, so its own events do not answer back.</summary>
@@ -317,6 +318,20 @@ namespace Chimera.Client.GUI
 			};
 			_addExternal.Click += async (_, _) => await AddExternalCore().ConfigureAwait(true);
 
+			// which machines all of this adds up to, and which core runs each (#172)
+			_systems = new Button
+			{
+				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
+				Location = new(margin + (4 * (bw + gap)), buttonRow),
+				Size = new(bw, UIHelper.ScaleY(26)),
+				Text = "Systems...",
+			};
+			_systems.Click += (_, _) =>
+			{
+				using SupportedSystemsForm form = new(SupportedSystems.From(_rows));
+				form.ShowDialog(this);
+			};
+
 			Button close = new()
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
@@ -326,7 +341,7 @@ namespace Chimera.Client.GUI
 				Text = "Close",
 			};
 
-			Controls.AddRange(new Control[] { _header, _selectAll, _shows, _cores, side, _status, _checkUpdates, _downloadLatest, _removeCore, _addExternal, close });
+			Controls.AddRange(new Control[] { _header, _selectAll, _shows, _cores, side, _status, _checkUpdates, _downloadLatest, _removeCore, _addExternal, _systems, close });
 			AcceptButton = close;
 			ResumeLayout();
 
