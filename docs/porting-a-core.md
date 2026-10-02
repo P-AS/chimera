@@ -226,8 +226,13 @@ Probed once after `Init`; absent exports simply mean the tool is not offered.
 - **Memory domains** - a pointer and a size, published once. If the machine's
   memory is not a block (paged, per-chunk, or not allocated until the game
   runs), export a **bus** instead: `GetBusCount/Name/Size/Writable`,
-  `PeekBus`, `PokeBus`, resolved per access. Cache one page of translation and
-  a RAM search costs nothing.
+  `PeekBus`, `PokeBus`, resolved per access. Cache one page of translation,
+  and export `ReadBus` as well: `const uint8_t *ReadBus(int32_t bus, int64_t
+  addr, int32_t len)` fills up to 64 KiB at once and answers a pointer to it,
+  in an `ECL_INVISIBLE` buffer so what a tool read is no part of a savestate.
+  RAM Search reads the whole bus, and without it every byte is a call into the
+  sandbox: EKA2L1's 64 MB bus took 3 s a search that way and 0.2 s with it
+  (chimera#180). A core without it still works; the engine peeks for it.
 - **Drives** - `GetDriveCount/Name/Light`: one entry per medium the PROJECT
   put in the machine, lit on a frame it was read or written. Report none rather
   than a light that can never come on. **If a drive swaps between images, say

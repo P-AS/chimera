@@ -141,6 +141,33 @@ ECL_EXPORT int64_t GetMemoryDomainSize(int i) {
 
 ECL_EXPORT int GetMemoryDomainWritable(int i) { return i == 0 ? 1 : 0; }
 
+/* --- buses (engine.h, ce_session_bus_*) ---
+ * An address space the core resolves itself: three times 64 KiB, so a bulk
+ * read crosses the engine's chunks, each byte RAM mirrored and stirred by its
+ * own address, so an offset wrong by any amount reads something else. "Bus"
+ * answers runs through ReadBus; "Bus (peeks)" declines them, and the engine
+ * peeks it a byte at a time - both must read what PeekBus says (witness leg
+ * E:bus-read). */
+#define BUS_SIZE 0x30000
+static uint8_t bus_byte(int64_t addr)
+{
+	const uint8_t *ram = synth_get_ram(g_synth);
+	return (uint8_t)(ram[addr & 4095] ^ (uint8_t)(addr >> 12) ^ (uint8_t)(addr * 7));
+}
+
+ECL_EXPORT int32_t GetBusCount(void) { return g_synth ? 2 : 0; }
+ECL_EXPORT const char *GetBusName(int32_t b) { return b == 0 ? "Bus" : "Bus (peeks)"; }
+ECL_EXPORT int64_t GetBusSize(int32_t b) { (void)b; return BUS_SIZE; }
+ECL_EXPORT int32_t PeekBus(int32_t b, int32_t addr) { (void)b; return addr >= 0 && addr < BUS_SIZE ? bus_byte(addr) : 0; }
+
+ECL_INVISIBLE static uint8_t g_busRun[65536];
+ECL_EXPORT const uint8_t *ReadBus(int32_t b, int64_t addr, int32_t len)
+{
+	if (b != 0 || len < 0 || len > (int32_t)sizeof g_busRun) return 0;
+	for (int32_t i = 0; i < len; i++) g_busRun[i] = addr + i >= 0 && addr + i < BUS_SIZE ? bus_byte(addr + i) : 0;
+	return g_busRun;
+}
+
 /* --- a game core's property table (docs/game-cores.md) ---
  * Names for places in RAM, which the frontend's tools watch, poke and freeze by
  * name and Lua reaches through game.*. The synth is an emulator, not a game

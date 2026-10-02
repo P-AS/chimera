@@ -1141,11 +1141,60 @@ int main(int argc, char **argv)
 		int32_t found = -1;
 		for (int32_t d = 0; d < ce_session_domain_count(session); d++)
 			if (ramSearchBench == ce_session_domain_name(session, d)) found = d;
-		if (found < 0) return fail(metaPath, "--ram-search-bench: no domain named " + ramSearchBench);
-		const auto *base = reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(ce_session_domain_ptr(session, found)));
-		const int64_t size = ce_session_domain_size(session, found);
+		/* a bus is read through a function, as the frontend reads one: a byte
+		 * per call (what the frontend did until chimera#180) and then in runs */
+		int32_t bus = -1;
+		for (int32_t b = 0; found < 0 && b < ce_session_bus_count(session); b++)
+			if (ramSearchBench == ce_session_bus_name(session, b)) bus = b;
+		if (bus >= 0)
+		{
+			struct BusUser { ce_session *s; int32_t bus; };
+			BusUser user{ session, bus };
+			const ce_ramsearch_read_fn perByte = [](void *u, int64_t offset, uint8_t *buf, int64_t len) -> int64_t {
+				auto *bu = static_cast<BusUser *>(u);
+				for (int64_t i = 0; i < len; i++) buf[i] = static_cast<uint8_t>(ce_session_bus_peek(bu->s, bu->bus, static_cast<int32_t>(offset + i)));
+				return len;
+			};
+			const ce_ramsearch_read_fn inRuns = [](void *u, int64_t offset, uint8_t *buf, int64_t len) -> int64_t {
+				auto *bu = static_cast<BusUser *>(u);
+				return ce_session_bus_read(bu->s, bu->bus, offset, buf, len);
+			};
+			const int64_t size = ce_session_bus_size(session, bus);
+			/* the bulk read must BE the peeks, byte for byte: from an odd start,
+			 * across every chunk boundary, and past the end, where both read 0 */
+			{
+				const int64_t from = 3, span = size + 7;
+				std::vector<uint8_t> runs((size_t)span), peeks((size_t)span);
+				ce_session_bus_read(session, bus, from, runs.data(), span);
+				for (int64_t i = 0; i < span; i++)
+					peeks[(size_t)i] = from + i < size ? static_cast<uint8_t>(ce_session_bus_peek(session, bus, static_cast<int32_t>(from + i))) : 0;
+				for (int64_t i = 0; i < span; i++)
+					if (runs[(size_t)i] != peeks[(size_t)i])
+						return fail(metaPath, "--ram-search-bench: " + ramSearchBench + " read in runs differs from its peeks at " + std::to_string(from + i));
+				std::fprintf(stderr, "ram-search-bench %s: runs == peeks over %lld bytes\n", ramSearchBench.c_str(), (long long)span);
+			}
+			for (int way = 0; way < 2; way++)
+			{
+				ce_ramsearch *rs = ce_ramsearch_create(nullptr, way == 0 ? perByte : inRuns, &user, size);
+				if (rs == nullptr) return fail(metaPath, "--ram-search-bench: out of memory");
+				const auto t0 = std::chrono::steady_clock::now();
+				ce_ramsearch_start(rs, 1, 0, 0, 0);
+				const auto t1 = std::chrono::steady_clock::now();
+				ce_ramsearch_search(rs, 1, 0, 0, 0, 0, 1);
+				const auto t2 = std::chrono::steady_clock::now();
+				const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+				std::fprintf(stderr, "ram-search-bench %s (bus, %lld bytes) %s: start %.0f ms, equal-to-0 %.0f ms (%lld left)\n",
+					ramSearchBench.c_str(), (long long)size, way == 0 ? "a byte per call" : "in runs", ms(t0, t1), ms(t1, t2),
+					(long long)ce_ramsearch_count(rs));
+				ce_ramsearch_destroy(rs);
+			}
+		}
+		if (found < 0 && bus < 0) return fail(metaPath, "--ram-search-bench: no domain or bus named " + ramSearchBench);
+		const auto *base = found < 0 ? nullptr : reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(ce_session_domain_ptr(session, found)));
+		const int64_t size = found < 0 ? 0 : ce_session_domain_size(session, found);
 		for (int32_t width : { 1, 2, 4 })
 		{
+			if (found < 0) break;
 			ce_ramsearch *rs = ce_ramsearch_create(base, nullptr, nullptr, size);
 			if (rs == nullptr) return fail(metaPath, "--ram-search-bench: out of memory");
 			const auto t0 = std::chrono::steady_clock::now();

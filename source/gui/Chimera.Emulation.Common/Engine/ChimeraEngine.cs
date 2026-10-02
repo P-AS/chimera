@@ -884,6 +884,10 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract void ce_session_bus_poke(IntPtr session, int index, int addr, int value);
 
+		/// <summary>A run of a bus at once (engine.h): len bytes from addr into buf.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract long ce_session_bus_read(IntPtr session, int index, long addr, byte[] buf, long len);
+
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_session_trace_available(IntPtr session);
 
@@ -2526,6 +2530,9 @@ namespace Chimera.Emulation.Common.Engine
 		public bool BusWritable(int index) => E.ce_session_bus_writable(_session, index) is not 0;
 		public byte BusPeek(int index, int addr) => unchecked((byte)E.ce_session_bus_peek(_session, index, addr));
 		public void BusPoke(int index, int addr, byte value) => E.ce_session_bus_poke(_session, index, addr, value);
+
+		/// <summary>Fills <paramref name="buf"/> from <paramref name="addr"/> on: one call, however long, rather than a peek per byte.</summary>
+		public void BusRead(int index, long addr, byte[] buf) => E.ce_session_bus_read(_session, index, addr, buf, buf.LongLength);
 
 		public bool TraceAvailable => E.ce_session_trace_available(_session) is not 0;
 		public string TraceHeader => ChimeraEngine.PtrToStringUtf8(E.ce_session_trace_header(_session)) ?? "Instructions";

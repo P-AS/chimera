@@ -477,6 +477,7 @@ struct ce_session
 	std::vector<int32_t> regBits;
 	// buses
 	int32_t (*busPeek)(int32_t, int32_t) = nullptr;
+	uintptr_t (*busRead)(int32_t, int64_t, int32_t) = nullptr; /* optional: ReadBus */
 	void (*busPoke)(int32_t, int32_t, int32_t) = nullptr;
 	std::vector<std::string> busNames;
 	std::vector<int64_t> busSizes;
@@ -772,6 +773,7 @@ void ce_session::probeOptionalGroups()
 			}
 			busPeek = peek;
 			busPoke = poke;
+			busRead = reinterpret_cast<uintptr_t (*)(int32_t, int64_t, int32_t)>(opt("ReadBus", 3));
 		}
 	}
 
@@ -2325,6 +2327,40 @@ int32_t ce_session_bus_writable(const ce_session *s, int32_t index)
 int32_t ce_session_bus_peek(const ce_session *s, int32_t index, int32_t addr)
 {
 	return s->busPeek != nullptr ? s->busPeek(index, addr) : 0;
+}
+
+int64_t ce_session_bus_read(const ce_session *s, int32_t index, int64_t addr, uint8_t *buf, int64_t len)
+{
+	if (buf == nullptr || len <= 0) return 0;
+	if (s->busPeek == nullptr || index < 0 || index >= static_cast<int32_t>(s->busSizes.size()))
+	{
+		std::memset(buf, 0, static_cast<size_t>(len));
+		return 0;
+	}
+	const int64_t size = s->busSizes[static_cast<size_t>(index)];
+	int64_t done = 0;
+	while (done < len)
+	{
+		const int64_t at = addr + done;
+		int64_t n = std::min<int64_t>(len - done, CE_BUS_READ_CHUNK);
+		if (at < 0 || at >= size)
+		{
+			/* outside the bus: zeros, up to where the bus begins if it is ahead */
+			if (at < 0) n = std::min<int64_t>(n, -at);
+			std::memset(buf + done, 0, static_cast<size_t>(n));
+			done += n;
+			continue;
+		}
+		n = std::min<int64_t>(n, size - at);
+		const auto *from = s->busRead != nullptr
+			? reinterpret_cast<const uint8_t *>(s->busRead(index, at, static_cast<int32_t>(n)))
+			: nullptr;
+		if (from != nullptr) std::memcpy(buf + done, from, static_cast<size_t>(n));
+		else
+			for (int64_t i = 0; i < n; i++) buf[done + i] = static_cast<uint8_t>(s->busPeek(index, static_cast<int32_t>(at + i)));
+		done += n;
+	}
+	return len;
 }
 
 void ce_session_bus_poke(ce_session *s, int32_t index, int32_t addr, int32_t value)

@@ -1302,6 +1302,17 @@ CE_API const char *ce_session_bus_name(const ce_session *s, int32_t index);
 CE_API int64_t ce_session_bus_size(const ce_session *s, int32_t index);
 CE_API int32_t ce_session_bus_writable(const ce_session *s, int32_t index);
 CE_API int32_t ce_session_bus_peek(const ce_session *s, int32_t index, int32_t addr);
+/* A run of a bus at once: len bytes from addr into buf, the bytes that many
+ * peeks would read. A core that exports ReadBus is asked a chunk at a time -
+ * const uint8_t *ReadBus(int32_t bus, int64_t addr, int32_t len), len at most
+ * CE_BUS_READ_CHUNK, answering a pointer to len bytes in its own memory that
+ * stays good until the next call - and one without it is peeked a byte at a
+ * time from here, which still spares the caller a call per byte. Bytes outside
+ * the bus read as zero. Returns len, or 0 (and a zeroed buf) for a bus the core
+ * does not have. RAM Search reads a bus this way: 64 MB a byte per call was
+ * seconds of crossings into the guest (chimera#180). */
+#define CE_BUS_READ_CHUNK 65536
+CE_API int64_t ce_session_bus_read(const ce_session *s, int32_t index, int64_t addr, uint8_t *buf, int64_t len);
 CE_API void ce_session_bus_poke(ce_session *s, int32_t index, int32_t addr, int32_t value);
 
 /* savedata export: files the guest deems the user's progress (a memory

@@ -283,6 +283,22 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 			report "E:import-movie" FAIL "$(tail -1 "$work/import.check" 2>/dev/null) refused=[$irefused] (see work/import.err)"
 		fi
 
+		# a bus read in runs is the bus read a byte at a time (chimera#180):
+		# "Bus" answers through the core's ReadBus, "Bus (peeks)" declines it
+		# and the engine peeks for itself. chimera-run compares every byte of
+		# each against PeekBus, from an odd start and past the end.
+		busok=1
+		for bus in "Bus" "Bus (peeks)"; do
+			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+				--ram-search-bench "$bus" > "$work/bus.log" 2>&1
+			grep -q "^ram-search-bench $bus: runs == peeks over" "$work/bus.log" || busok=0
+		done
+		if [ "$busok" = 1 ]; then
+			report "E:bus-read" PASS "both buses read in runs exactly as peeked, the core's ReadBus and the engine's own"
+		else
+			report "E:bus-read" FAIL "$(grep -m1 -E 'differs|no domain' "$work/bus.log")"
+		fi
+
 		# the history OUTLIVES its process, which is what reopening a project
 		# asks of it. One run plays the movie and keeps its history to a file; a
 		# second, fresh process starts from that file, seeks back into states it

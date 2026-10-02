@@ -65,7 +65,15 @@ namespace Chimera.Emulation.Common.Waterbox
 					// guarded: a domain can outlive the core in a tool that kept a reference
 					addr => _session.Disposed ? (byte)0 : _session.BusPeek(bus, (int)addr),
 					!writable ? null : (addr, val) => { if (!_session.Disposed) _session.BusPoke(bus, (int)addr, val); },
-					1));
+					1,
+					// a run in one call: RAM Search reads the whole bus, and a peek per
+					// byte was a crossing into the guest per byte - seconds of them over
+					// a 64 MB bus (chimera#180)
+					bulkPeekByte: (range, values) =>
+					{
+						if (_session.Disposed) Array.Clear(values, 0, values.Length);
+						else _session.BusRead(bus, range.Start, values);
+					}));
 			}
 
 			if (surfaces is 0) services.Unregister<ICoreSurfaces>();
