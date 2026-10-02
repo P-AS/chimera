@@ -687,9 +687,10 @@ namespace Chimera.Client.GUI
 					&& targetRow < Branches.Count
 					&& Branches[targetRow] is { OSDFrameBuffer: { } bb } branch)
 				{
-					var width = bb.Width;
+					var shown = ScreenshotForm.FitWithin(bb.Width, bb.Height, ScreenshotForm.BranchPreviewSide);
+					var width = shown.Width;
 					Point location = PointToScreen(Location);
-					var bottom = location.Y + bb.Height;
+					var bottom = location.Y + shown.Height;
 					location.Offset(-width, 0);
 
 					if (location.X < 0)
@@ -714,7 +715,7 @@ namespace Chimera.Client.GUI
 						branch.UserText,
 						location,
 						width: width,
-						height: bb.Height,
+						height: shown.Height,
 						Graphics.FromHwnd(Handle).MeasureString);
 					_screenshot.FadeIn();
 				}

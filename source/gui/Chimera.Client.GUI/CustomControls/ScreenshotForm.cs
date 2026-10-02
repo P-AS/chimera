@@ -1,3 +1,4 @@
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -18,6 +19,26 @@ namespace Chimera.Client.GUI
 		private const int WS_EX_TOPMOST = 0x00000008;
 
 		private const int Interval = 40;
+
+		/// <summary>The longest side a branch's screenshot is shown at (user, 2026-10-02, issue #183).</summary>
+		public const int BranchPreviewSide = 128;
+
+		/// <summary>
+		/// A picture of <paramref name="width"/> x <paramref name="height"/> shrunk to fit inside
+		/// <paramref name="side"/> x <paramref name="side"/>, its proportions kept. Never enlarged.
+		/// </summary>
+		/// <remarks>
+		/// The branch screenshot is the whole display as it was when the branch was made: 1280x960
+		/// for an Xbox at 2x, and more on a big window. Shown at that size it covered the game and,
+		/// placed beside TAStudio, could land off the screen altogether (issue #183).
+		/// </remarks>
+		public static Size FitWithin(int width, int height, int side)
+		{
+			if (width <= 0 || height <= 0) return new(0, 0);
+			if (width <= side && height <= side) return new(width, height);
+			var scale = Math.Min((double)side / width, (double)side / height);
+			return new(Math.Max(1, (int)Math.Round(width * scale)), Math.Max(1, (int)Math.Round(height * scale)));
+		}
 		private const double AlphaStep = 0.125;
 
 		private Bitmap/*?*/ _bitmap = null;
