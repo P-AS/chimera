@@ -84,6 +84,7 @@ Chimera ships no cores. Install them from **File > Core Manager**
 | Linux (x86) | [PCem](https://github.com/ToolAssisted-run/chimera-core-pcem) |
 | Flash | [Ruffle](https://github.com/ToolAssisted-run/chimera-core-ruffle) |
 | Symbian / Nokia N-Gage | [EKA2L1](https://github.com/ToolAssisted-run/chimera-core-eka2l1) |
+| iPhone OS 2.x-4.0 (iPhone, iPod touch and iPad apps) | [touchHLE](https://github.com/ToolAssisted-run/chimera-core-touchhle) |
 
 ### Game cores
 

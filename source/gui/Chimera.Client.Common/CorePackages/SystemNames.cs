@@ -49,6 +49,7 @@ namespace Chimera.Client.Common
 			["GG"] = "Game Gear",
 			["GGL"] = "Game Gear Link",
 			["INTV"] = "Intellivision",
+			["iOS"] = "iPhone OS",
 			["Jaguar"] = "Atari Jaguar",
 			["Lynx"] = "Atari Lynx",
 			["MCD"] = "Mega CD / Sega CD",

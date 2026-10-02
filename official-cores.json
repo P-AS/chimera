@@ -150,6 +150,13 @@
       "tested": ""
     },
     {
+      "id": "touchhle",
+      "name": "touchHLE",
+      "systems": [ "iOS" ],
+      "repo": "ToolAssisted-run/chimera-core-touchhle",
+      "tested": ""
+    },
+    {
       "id": "sdlpop",
       "name": "SDLPoP",
       "systems": [ "PrinceOfPersia" ],
