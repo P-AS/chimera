@@ -586,6 +586,12 @@ namespace Chimera.Emulation.Common
 			},
 
 
+			[VSystemID.Raw.PSV] = new()
+			{
+				// the two touch panels: both would read 'T', which is Triangle's
+				["Front Touch"] = 'F',
+				["Rear Touch"] = 'B',
+			},
 			[VSystemID.Raw.PS3] = new()
 			{
 				// a DualShock 3: the PS2 pad's shoulders read the same way,

@@ -79,6 +79,7 @@ namespace Chimera.Client.Common
 			["PS2"] = "PlayStation 2",
 			["PS3"] = "PlayStation 3",
 			["PSP"] = "PlayStation Portable",
+			["PSV"] = "PlayStation Vita",
 			["PSX"] = "PlayStation",
 			["SAT"] = "Sega Saturn",
 			["SG"] = "SG-1000",
