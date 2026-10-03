@@ -157,6 +157,13 @@
       "tested": ""
     },
     {
+      "id": "vita3k",
+      "name": "Vita3K",
+      "systems": [ "PSV" ],
+      "repo": "ToolAssisted-run/chimera-core-vita3k",
+      "tested": ""
+    },
+    {
       "id": "sdlpop",
       "name": "SDLPoP",
       "systems": [ "PrinceOfPersia" ],

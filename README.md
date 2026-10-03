@@ -64,6 +64,7 @@ Chimera ships no cores. Install them from **File > Core Manager**
 | PlayStation | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
 | PlayStation 2 | [PCSX2](https://github.com/ToolAssisted-run/chimera-core-pcsx2) |
 | PlayStation Portable | [PPSSPP](https://github.com/ToolAssisted-run/chimera-core-ppsspp) |
+| PlayStation Vita | [Vita3K](https://github.com/ToolAssisted-run/chimera-core-vita3k) |
 | PlayStation 3 | [RPCS3](https://github.com/ToolAssisted-run/chimera-core-rpcs3) |
 | Xbox | [xemu](https://github.com/ToolAssisted-run/chimera-core-xemu) |
 | 3DO Interactive Multiplayer | [Opera](https://github.com/ToolAssisted-run/chimera-core-opera) |
