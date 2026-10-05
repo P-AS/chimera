@@ -155,7 +155,6 @@ namespace Chimera.Client.Common
 		public bool AcceptBackgroundInputControllerOnly { get; set; }
 		public bool HandleAlternateKeyboardLayouts { get; set; }
 		public bool SingleInstanceMode { get; set; }
-		public OpposingDirPolicy OpposingDirPolicy { get; set; }
 		public bool ShowContextMenu { get; set; } = true;
 		public bool HotkeyConfigAutoTab { get; set; } = true;
 		public bool InputConfigAutoTab { get; set; } = true;

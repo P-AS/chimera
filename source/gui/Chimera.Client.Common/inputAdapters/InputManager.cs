@@ -8,7 +8,7 @@ namespace Chimera.Client.Common
 {
 
 	// don't take my word for it, but here is a guide...
-	// user -> Input -> ActiveController -> UDLR -> StickyXORPlayerInputAdapter -> TurboAdapter(TBD) -> Lua(?TBD?) -> ..
+	// user -> Input -> ActiveController -> StickyXORPlayerInputAdapter -> TurboAdapter(TBD) -> Lua(?TBD?) -> ..
 	// .. -> MovieInputSourceAdapter -> (MovieSession) -> MovieOutputAdapter -> ControllerOutput(1) -> Game
 	// (1)->Input Display
 #pragma warning disable MA0104 // unlikely to conflict with System.Windows.Input.InputManager
@@ -23,8 +23,6 @@ namespace Chimera.Client.Common
 
 		// the "output" port for the controller chain.
 		public CopyControllerAdapter ControllerOutput { get; } = new CopyControllerAdapter();
-
-		private UdlrControllerAdapter UdLRControllerAdapter { get; } = new UdlrControllerAdapter();
 
 		public StickyHoldController StickyHoldController { get; private set; }
 		public StickyAutofireController StickyAutofireController { get; private set; }
@@ -78,12 +76,9 @@ namespace Chimera.Client.Common
 
 			// Wire up input chain
 
-			UdLRControllerAdapter.Source = ActiveController.Or(AutoFireController);
-			UdLRControllerAdapter.OpposingDirPolicy = config.OpposingDirPolicy;
-
 			StickyController = StickyHoldController.Or(StickyAutofireController);
 
-			session.MovieIn = UdLRControllerAdapter.Xor(StickyController);
+			session.MovieIn = ActiveController.Or(AutoFireController).Xor(StickyController);
 			session.StickySource = StickyController;
 			ControllerOutput.Source = session.MovieOut;
 		}

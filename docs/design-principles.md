@@ -4805,9 +4805,26 @@ are fixed in the cores' declarations. Every other letter is what it was.
 
 Left where it is, and why:
 
-- The direction pairs the frontend refuses to hold together (Up with Down)
-  are still found by name. A declaration would be better; it is not a
-  system table.
 - `GreenzoneSurvivesReload` still names cores in the frontend. It is a list
   of EVIDENCE, kept here on purpose (2026-09-14: a core's own declaration
   was not enough). Moving it is a different decision.
+
+## Opposite directions are sent as pressed (user-decided, 2026-10-05)
+
+The controller dialog had a U+D/L+R setting - Priority (the default),
+Forbid, Allow - inherited from BizHawk, and an adapter in the input chain
+that enforced it. It found its pairs by NAME: any button with "Up" in it
+was held against the same name with "Down", and so for Left and Right. It
+was the last place the frontend guessed something about a core's controls
+from their spelling, and the guess was wrong wherever the words were not
+directions: "Mouse Left" and "Mouse Right" could not be held together,
+"Left Trigger" was held against the pad's Right.
+
+The user's words: the setting is legacy, we no longer need it. It is gone
+with its adapter, its enum and its config key (an old config that still
+carries `OpposingDirPolicy` is read; the key is ignored). What is pressed
+is what the machine gets, as Allow did. A machine whose pad cannot press
+both ways is the core's to model.
+
+The earlier note in this log about `joypad.set` and the SOCD filter is
+history: there is no filter to pass through now.
