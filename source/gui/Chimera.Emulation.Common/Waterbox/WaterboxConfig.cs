@@ -187,6 +187,45 @@ namespace Chimera.Emulation.Common.Waterbox
 				: SystemId is { Length: > 0 } only ? new[] { only } : [ ];
 
 		/// <summary>
+		/// What each of the package's systems is called where a person reads it,
+		/// by system id ("PSV" -&gt; "PlayStation Vita"). The id is the identity a
+		/// movie and a project are keyed by and never changes; this is the word
+		/// for it, and it is the core's to say - the frontend holds no table of
+		/// machines. An id with no entry is shown as it is.
+		/// </summary>
+		public Dictionary<string, string>? SystemNames { get; set; }
+
+		/// <summary>The package's word for a system, or the id itself where it has none.</summary>
+		public string SystemNameOf(string systemId)
+			=> SystemNames is not null && SystemNames.TryGetValue(systemId, out var name) && !string.IsNullOrWhiteSpace(name)
+				? name
+				: systemId;
+
+		/// <summary>
+		/// What the core says its media needs beyond the files, for the media
+		/// maker: each a recipe the engine understands (ce_media_make_with), kept
+		/// here as the package wrote it. See <see cref="MediaRecipeDecl"/>.
+		/// </summary>
+		[JsonIgnore]
+		public IReadOnlyList<MediaRecipeDecl> Media { get; private set; } = [ ];
+
+		/// <summary>
+		/// One media recipe: which folders it is for and what the image needs,
+		/// both of which only the engine reads (<see cref="Json"/>); the frontend
+		/// reads the label, to say what it recognised.
+		/// </summary>
+		public sealed class MediaRecipeDecl
+		{
+			public string Id { get; init; } = "";
+
+			/// <summary>What the media is, in front of a person ("PlayStation 3 disc").</summary>
+			public string Label { get; init; } = "";
+
+			/// <summary>The declaration exactly as the package wrote it.</summary>
+			public string Json { get; init; } = "{}";
+		}
+
+		/// <summary>
 		/// Rom extension -&gt; system, over the whole package (every machine's).
 		/// When two machines claim the same extension - dolphin's GameCube and
 		/// Wii both boot .iso - the FIRST declaration wins, so a directly-opened
@@ -707,6 +746,15 @@ namespace Chimera.Emulation.Common.Waterbox
 			public List<string>? Buttons { get; set; }
 
 			/// <summary>
+			/// The letter each button writes into a movie's text and heads its
+			/// input column with, by the button's name - whole ("P2 Cross") or
+			/// without its player ("Cross", which then serves every pad). The
+			/// ENGINE reads these (control_names.hpp) and a window asks it; they
+			/// are here so a package's declaration can be looked at whole.
+			/// </summary>
+			public Dictionary<string, string>? Mnemonics { get; set; }
+
+			/// <summary>
 			/// Analog controls (paddles, sticks, triggers), in index order. They cannot
 			/// travel in the button mask, so the adapter pushes each one to the guest
 			/// with the optional <c>SetAxis(index, value)</c> export before every frame.
@@ -723,6 +771,9 @@ namespace Chimera.Emulation.Common.Waterbox
 
 			/// <summary>Value when the control is untouched (centre for a stick, rest position for a paddle).</summary>
 			public int Neutral { get; set; }
+
+			/// <summary>The short header of this axis's input column ("LX"). The engine reads it; absent, its rule answers.</summary>
+			public string? Header { get; set; }
 		}
 
 		public sealed class LagConfig
@@ -786,6 +837,21 @@ namespace Chimera.Emulation.Common.Waterbox
 					var root = Newtonsoft.Json.Linq.JObject.Parse(json);
 					if (root["firmware"] is Newtonsoft.Json.Linq.JArray fw) cfg.RawFirmwareJson = fw.ToString(Formatting.None);
 					if (root["settings"] is Newtonsoft.Json.Linq.JArray st) cfg.RawSettingsJson = st.ToString(Formatting.None);
+					if (root["media"] is Newtonsoft.Json.Linq.JArray media)
+					{
+						List<MediaRecipeDecl> recipes = new();
+						foreach (var item in media)
+						{
+							if (item is not Newtonsoft.Json.Linq.JObject recipe) continue;
+							recipes.Add(new MediaRecipeDecl
+							{
+								Id = recipe["id"]?.ToString() ?? "",
+								Label = recipe["label"]?.ToString() ?? "",
+								Json = recipe.ToString(Formatting.None),
+							});
+						}
+						cfg.Media = recipes;
+					}
 				}
 				catch (JsonException)
 				{

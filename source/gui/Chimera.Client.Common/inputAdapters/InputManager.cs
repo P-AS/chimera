@@ -58,7 +58,7 @@ namespace Chimera.Client.Common
 		public void SyncControls(IEmulator emulator, IMovieSession session, Config config)
 		{
 			var def = emulator.ControllerDefinition;
-			def.BuildMnemonicsCache(emulator.SystemId);
+			def.BuildMnemonicsCache();
 
 			// Core packages may ship default bindings for the controllers they declare
 			// (default_keybinds.json): a controller this config has never bound takes

@@ -11,6 +11,7 @@
 #include <cstdlib>
 
 #include "movie_entry.hpp"
+#include "control_names.hpp"
 #include "file_io.hpp"
 #include "zstd_dyn.hpp"
 #include "host_dyn.hpp"
@@ -74,6 +75,11 @@ struct SessionConfig
 	std::string inputName, inputWasRead;
 	std::vector<std::string> buttons;
 	std::vector<chimera::EntryAxis> axes;
+	/* what the package calls its controls and its system (control_names.hpp);
+	 * `mnemonics` is one character a button, in declaration order */
+	chimera::ControlNames names;
+	std::string mnemonics;
+	std::string systemName;
 	bool deterministic = false;
 	bool drawEveryFrame = false; // video.drawEveryFrame - see ce_session_draw_every_frame
 	/* video.rebuildOnStateLoad - whether a SAME-SESSION load should look like a
@@ -233,8 +239,36 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 			axis.min = intOf(item, "min");
 			axis.max = intOf(item, "max");
 			axis.neutral = intOf(item, "neutral");
+			const char *header = strOf(item, "header");
+			if (header[0] != '\0') cfg.names.axisHeaders[axis.name] = header;
 			cfg.axes.push_back(std::move(axis));
 		}
+	}
+	/* The letters the package gives its buttons. One that cannot be written
+	 * (longer than a character, a '.', a '|') is not taken: the rule answers
+	 * for that button, which is wrong in a way a person sees at once and no
+	 * movie is harmed by. */
+	const cJSON *mnemonics = cJSON_GetObjectItemCaseSensitive(input, "mnemonics");
+	if (cJSON_IsObject(mnemonics))
+	{
+		cJSON_ArrayForEach(item, mnemonics)
+		{
+			if (item->string != nullptr && cJSON_IsString(item) && item->valuestring[0] != '\0'
+				&& item->valuestring[1] == '\0' && chimera::usableMnemonic(item->valuestring[0]))
+			{
+				cfg.names.mnemonics[item->string] = item->valuestring[0];
+			}
+		}
+	}
+	for (const auto &b : cfg.buttons) cfg.mnemonics.push_back(cfg.names.mnemonicOf(b));
+	/* what to call the system in front of a person: the package's word for
+	 * this id, or the id */
+	cfg.systemName = cfg.systemId;
+	const cJSON *systemNames = cJSON_GetObjectItemCaseSensitive(root, "systemNames");
+	if (cJSON_IsObject(systemNames))
+	{
+		const char *named = strOf(systemNames, cfg.systemId.c_str());
+		if (named[0] != '\0') cfg.systemName = named;
 	}
 	const cJSON *lag = cJSON_GetObjectItemCaseSensitive(root, "lag");
 	if (cJSON_IsObject(lag)) cfg.inputWasRead = strOf(lag, "inputWasRead");
@@ -1664,6 +1698,40 @@ int32_t ce_session_axis_active(const ce_session *s, int64_t index)
 	return s->axisActive[static_cast<size_t>(index)];
 }
 
+const char *ce_session_button_mnemonics(const ce_session *s)
+{
+	return s->cfg.mnemonics.c_str();
+}
+
+int32_t ce_session_mnemonic_of(const ce_session *s, const char *name)
+{
+	return name != nullptr ? s->cfg.names.mnemonicOf(name) : '?';
+}
+
+const char *ce_session_axis_header_of(const ce_session *s, const char *name)
+{
+	static thread_local std::string held;
+	held = name != nullptr ? s->cfg.names.axisHeaderOf(name) : std::string();
+	return held.c_str();
+}
+
+const char *ce_session_system_name(const ce_session *s)
+{
+	return s->cfg.systemName.c_str();
+}
+
+int32_t ce_control_mnemonic(const char *name)
+{
+	return name != nullptr ? chimera::genericMnemonic(name) : '?';
+}
+
+const char *ce_control_axis_header(const char *name)
+{
+	static thread_local std::string held;
+	held = name != nullptr ? chimera::genericAxisHeader(name) : std::string();
+	return held.c_str();
+}
+
 const char *ce_session_axis_name(const ce_session *s, int64_t index)
 {
 	if (index < 0 || index >= static_cast<int64_t>(s->cfg.axes.size())) return nullptr;
@@ -2564,15 +2632,8 @@ void ce_session_movie_record(ce_session *s, const char *mnemonics)
 	}
 	else
 	{
-		/* neutral fallback: the button name's first character past any player
-		 * prefix - the frontend supplies its real per-system vocabulary */
-		s->mnemonics.clear();
-		for (const auto &b : s->cfg.buttons)
-		{
-			std::string bare = b;
-			if (chimera::playerNumberOf(bare) != 0) bare.erase(0, bare.find(' ') + 1);
-			s->mnemonics.push_back(bare.empty() ? '!' : bare[0]);
-		}
+		/* the package's own letters, and the rule where it gave none */
+		s->mnemonics = s->cfg.mnemonics;
 	}
 	s->movieMode = 2;
 }

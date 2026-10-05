@@ -1108,7 +1108,15 @@ namespace Chimera.Client.GUI
 		/// </summary>
 		private void MediaMakerMenuItem_Click(object sender, EventArgs e)
 		{
-			using var form = new MediaMakerForm();
+			// what the installed cores say their media needs (one line a recipe,
+			// however many versions of a core declare it)
+			var recipes = CorePackageDiscovery.ScanFor(Config)
+				.Where(static p => p.Error is null)
+				.SelectMany(static p => p.Media.Select(m => new MediaMakerForm.CoreRecipe(p.Name, m.Label, m.Json)))
+				.GroupBy(static r => (r.Core, r.Json))
+				.Select(static g => g.First())
+				.ToList();
+			using var form = new MediaMakerForm(recipes);
 			this.ShowDialogWithTempMute(form);
 		}
 

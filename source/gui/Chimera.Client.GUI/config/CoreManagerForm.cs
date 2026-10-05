@@ -370,7 +370,7 @@ namespace Chimera.Client.GUI
 			{
 				ListViewItem item = new(row.Name) { Tag = row };
 				item.SubItems.Add(CoreKindFilterExtensions.KindText(row.IsGameCore));
-				item.SubItems.Add(SystemNames.Of(row.Systems));
+				item.SubItems.Add(row.SystemsSpelled);
 				item.SubItems.Add(InstalledText(row));
 				item.SubItems.Add(ReleasedText(row));
 				item.SubItems.Add(SizeText(row));

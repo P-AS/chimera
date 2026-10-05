@@ -202,8 +202,8 @@ namespace Chimera.Client.Common
 					}
 				}
 
-				// This will take effect only for NES, and will pulse the cheat with compare option directly to the core
-				// Only works for byte cheats currently
+				// A core that takes cheats itself (a memory domain that answers SendCheatToCore) is handed
+				// the cheat with its compare option directly. Only works for byte cheats currently
 				if (_watch.Size == WatchSize.Byte && _watch.Domain.Name == "System Bus")
 				{
 					if (Compare.HasValue)

@@ -34,6 +34,26 @@ namespace Chimera.Client.Common
 		public IReadOnlyList<string> Systems
 			=> Core?.Systems is { Count: not 0 } fromRoster ? fromRoster : Installed.FirstOrDefault()?.Systems ?? [ ];
 
+		/// <summary>
+		/// What to call one of this core's systems: the roster row's word for it
+		/// (which is how a core nobody has installed is named at all), else what
+		/// an installed package of it says, else the id. Nothing here knows a
+		/// machine: both are the core's own words.
+		/// </summary>
+		public string SystemNameOf(string systemId)
+		{
+			if (Core?.SystemNameOf(systemId) is { } fromRoster) return fromRoster;
+			foreach (var package in Installed)
+			{
+				var named = package.SystemNameOf(systemId);
+				if (named != systemId) return named;
+			}
+			return systemId;
+		}
+
+		/// <summary>Every system the core runs, spelled out, in order.</summary>
+		public string SystemsSpelled => string.Join(", ", Systems.Select(SystemNameOf));
+
 		public bool IsInstalled => Installed.Count is not 0;
 
 		/// <summary>

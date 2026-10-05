@@ -1822,7 +1822,7 @@ namespace Chimera.Client.GUI
 			// rather than per core now, so "clear what this core compiled" is not
 			// a thing that can be pointed at: Tools > Pre-Compiled Modules...
 			// lists the games and removes them one at a time.
-			if (Emulator.SystemId is VSystemID.Raw.NULL) return; // a core, but no machine running yet
+			if (Emulator.SystemId is NullEmulator.NullSystemId) return; // a core, but no machine running yet
 
 			// The way OUT for what this machine keeps (docs/save-data.md): present
 			// exactly when the core exports the savedata group, with no change

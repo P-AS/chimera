@@ -17,7 +17,7 @@ namespace Chimera.Client.Common
 		{
 			public string Id { get; init; } = "";
 
-			/// <summary>The full name, as <see cref="SystemNames"/> spells it.</summary>
+			/// <summary>The full name, as the first core that runs it calls it.</summary>
 			public string Name { get; init; } = "";
 
 			/// <summary>The cores that run it, by name, installed or not.</summary>
@@ -29,25 +29,34 @@ namespace Chimera.Client.Common
 
 		/// <summary>The systems of these cores, sorted by name.</summary>
 		public static IReadOnlyList<Entry> From(IEnumerable<CoreManagerRow> rows)
-			=> From(rows.Select(static r => (r.Name, r.Systems, r.IsInstalled)));
+			=> From(rows.Select(static r => (r.Name,
+				(IReadOnlyList<(string Id, string Name)>) r.Systems.Select(id => (id, r.SystemNameOf(id))).ToList(),
+				r.IsInstalled)));
 
-		public static IReadOnlyList<Entry> From(IEnumerable<(string Core, IReadOnlyList<string> Systems, bool Installed)> cores)
+		/// <summary>
+		/// A system is called what the cores that run it call it. Two cores may
+		/// run the same system and need not agree on its name; the first one
+		/// listed that gives it a name (and not just its id back) is the one
+		/// heard, so the list does not depend on which cores happen to be here.
+		/// </summary>
+		public static IReadOnlyList<Entry> From(IEnumerable<(string Core, IReadOnlyList<(string Id, string Name)> Systems, bool Installed)> cores)
 		{
-			Dictionary<string, (SortedSet<string> Cores, bool Installed)> by = new(StringComparer.OrdinalIgnoreCase);
+			Dictionary<string, (SortedSet<string> Cores, bool Installed, string Name)> by = new(StringComparer.OrdinalIgnoreCase);
 			foreach (var (core, systems, installed) in cores)
 			{
-				foreach (var id in systems.Where(static s => !string.IsNullOrWhiteSpace(s)))
+				foreach (var (id, name) in systems.Where(static s => !string.IsNullOrWhiteSpace(s.Id)))
 				{
-					if (!by.TryGetValue(id, out var entry)) entry = (new SortedSet<string>(StringComparer.OrdinalIgnoreCase), false);
+					if (!by.TryGetValue(id, out var entry)) entry = (new SortedSet<string>(StringComparer.OrdinalIgnoreCase), false, id);
 					entry.Cores.Add(core);
-					by[id] = (entry.Cores, entry.Installed || installed);
+					var heard = entry.Name == id && !string.IsNullOrWhiteSpace(name) ? name : entry.Name;
+					by[id] = (entry.Cores, entry.Installed || installed, heard);
 				}
 			}
 			return by
 				.Select(static pair => new Entry
 				{
 					Id = pair.Key,
-					Name = SystemNames.Of(pair.Key),
+					Name = pair.Value.Name,
 					Cores = pair.Value.Cores.ToList(),
 					Installed = pair.Value.Installed,
 				})

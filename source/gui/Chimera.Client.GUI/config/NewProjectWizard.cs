@@ -687,7 +687,7 @@ namespace Chimera.Client.GUI
 				var build = _sharedNames.Contains(core.Name) && core.Sha1 is { Length: >= 8 } ? $"  [package {core.Sha1.Substring(0, 8)}]" : "";
 				// dated (issue #67): a commit says which version this is, and only a date says which is newer
 				var version = core.DatedVersion;
-				_core.Items.Add($"{core.Name}  ({SystemNames.Of(core.Systems)}{(version.Length is 0 ? "" : $", {version}")}){build}");
+				_core.Items.Add($"{core.Name}  ({core.SystemsSpelled}{(version.Length is 0 ? "" : $", {version}")}){build}");
 				_coreAt.Add(core);
 			}
 			_core.EndUpdate();
@@ -740,7 +740,7 @@ namespace Chimera.Client.GUI
 			else if (core is not null)
 			{
 				// a package that is one machine still says which machine it is
-				_machine.Items.Add(SystemNames.Of(core.Systems));
+				_machine.Items.Add(core.SystemsSpelled);
 			}
 			if (_machine.Items.Count is not 0) _machine.SelectedIndex = 0;
 			// one system is not a choice, and a disabled box still says what it is

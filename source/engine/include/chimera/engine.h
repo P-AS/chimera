@@ -385,6 +385,31 @@ typedef int32_t (*ce_media_progress_fn)(const char *file, uint64_t bytes_done,
 CE_API int32_t ce_media_make(const char *folder, const char *out_path, int32_t format,
 	ce_media_progress_fn progress, void *user);
 
+/* A RECIPE is what a core says its media needs beyond the files: one object of
+ * the "media" array in its package's waterbox.config, handed over as the JSON
+ * the package wrote.
+ *
+ *   { "id": "disc", "label": "...", "format": "iso9660",
+ *     "when": { "rootFile": "NAME.EXT" },
+ *     "systemArea": [ { "at": 0, "u32be": 1 }, { "at": 12, "u32be": "lastSector" } ] }
+ *
+ * "when" says which folders it is for (a file at the root, ASCII case ignored;
+ * absent: any). "systemArea" writes 32-bit values into the sixteen sectors an
+ * ISO 9660 image reserves: a number, or "lastSector" / "sectors", which only
+ * the writer knows. The packer itself knows no machine: an image made without
+ * a recipe is the files and nothing else.
+ *
+ * ce_media_recipe_applies: 1 when `folder` is what the recipe is for, 0 when
+ * it is not, -1 when the recipe cannot be read (ce_media_last_error).
+ * ce_media_recipe_format: the CE_MEDIA_* it writes, or -1.
+ * ce_media_make_with: ce_media_make, in the recipe's format and with what it
+ * asks for. It does not ask whether the recipe applies: that was the caller's
+ * question, and a person may know better. */
+CE_API int32_t ce_media_recipe_applies(const char *recipe_json, const char *folder);
+CE_API int32_t ce_media_recipe_format(const char *recipe_json);
+CE_API int32_t ce_media_make_with(const char *folder, const char *out_path, const char *recipe_json,
+	ce_media_progress_fn progress, void *user);
+
 /* The SHA1 of what the last successful ce_media_make wrote - what a project
  * would record - or "" if it did not finish. */
 CE_API const char *ce_media_last_sha1(void);
@@ -1004,6 +1029,35 @@ CE_API int64_t ce_session_button_count(const ce_session *s);
 CE_API const char *ce_session_button_name(const ce_session *s, int64_t index);
 CE_API int64_t ce_session_axis_count(const ce_session *s);
 CE_API const char *ce_session_axis_name(const ce_session *s, int64_t index);
+/* WHAT A CONTROL IS CALLED where a person reads very little of it: the one
+ * character a pressed button writes into a movie's text and heads its input
+ * column with, and the short header of an axis's column. The core's package
+ * declares them ("mnemonics" and each axis's "header", in its input
+ * declaration); a name it declares nothing for gets the rule - the first
+ * character of the last word, the initials of an axis - which is all this
+ * engine knows about naming, and knows of no machine (control_names.hpp).
+ *
+ * ce_session_button_mnemonics: one character a button, in declaration order.
+ * ce_session_mnemonic_of / ce_session_axis_header_of: ANY name, looked up the
+ * way the session's own are - a movie can carry a control the running machine
+ * does not have. ce_control_mnemonic / ce_control_axis_header: the rule
+ * alone, for when there is no machine to ask.
+ *
+ * None of it is what a movie means: an entry is read by position, and any
+ * character but '.' is a pressed button.
+ *
+ * The strings returned by the *_header* calls belong to the calling thread
+ * until its next such call. */
+CE_API const char *ce_session_button_mnemonics(const ce_session *s);
+CE_API int32_t ce_session_mnemonic_of(const ce_session *s, const char *name);
+CE_API const char *ce_session_axis_header_of(const ce_session *s, const char *name);
+CE_API int32_t ce_control_mnemonic(const char *name);
+CE_API const char *ce_control_axis_header(const char *name);
+
+/* What to call the session's system in front of a person: the package's own
+ * word for it ("systemNames", by system id), or the id where it has none. */
+CE_API const char *ce_session_system_name(const ce_session *s);
+
 /* The value an axis rests at when nothing moves it (the package's `neutral`;
  * 127 on an Apple II paddle, 0 on a signed stick). What idle input carries. */
 CE_API int32_t ce_session_axis_neutral(const ce_session *s, int64_t index);

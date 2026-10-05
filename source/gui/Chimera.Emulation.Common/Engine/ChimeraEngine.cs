@@ -559,6 +559,18 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_media_make(string folder, string outPath, int format, IntPtr progress, IntPtr user);
 
+		/// <summary>1 when the folder is what the recipe (a package's media declaration, as JSON) is for, 0 when not, -1 when the recipe cannot be read.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_media_recipe_applies([MarshalAs(UnmanagedType.LPUTF8Str)] string recipeJson, string folder);
+
+		/// <summary>The format a recipe writes (as ce_media_make's), or -1.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_media_recipe_format([MarshalAs(UnmanagedType.LPUTF8Str)] string recipeJson);
+
+		/// <summary>ce_media_make in the recipe's format, with what the recipe asks for.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_media_make_with(string folder, string outPath, [MarshalAs(UnmanagedType.LPUTF8Str)] string recipeJson, IntPtr progress, IntPtr user);
+
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_media_last_sha1();
 
@@ -621,6 +633,31 @@ namespace Chimera.Emulation.Common.Engine
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_session_button_name(IntPtr session, long index);
+
+		// what a control is called where a person reads very little of it: the
+		// package's own letters and headers, and the engine's rule where it
+		// declared none (control_names.hpp)
+		/// <summary>One character a button, in declaration order.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_session_button_mnemonics(IntPtr session);
+
+		/// <summary>The letter of ANY control name, looked up the way the session's own are.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_mnemonic_of(IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_session_axis_header_of(IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+
+		/// <summary>The rule alone: the letter of a name no package describes.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_control_mnemonic([MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_control_axis_header([MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+
+		/// <summary>The package's own word for the session's system, or its id.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_session_system_name(IntPtr session);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract long ce_session_axis_count(IntPtr session);
@@ -1121,7 +1158,37 @@ namespace Chimera.Emulation.Common.Engine
 		/// Returning false cancels, and a cancelled pack leaves no file behind.
 		/// Called on the calling thread, which is not the UI thread.
 		/// </param>
+		/// <summary>The engine's rule for a control no package describes: one letter.</summary>
+		public static char ControlMnemonic(string name) => (char) Instance.ce_control_mnemonic(name);
+
+		/// <summary>The same for an axis: a short header.</summary>
+		public static string ControlAxisHeader(string name)
+			=> PtrToStringUtf8(Instance.ce_control_axis_header(name)) ?? name;
+
 		public static bool MakeMedia(string folder, string outPath, int format,
+			Func<string, ulong, ulong, ulong, ulong, bool>? progress,
+			out string sha1, out string error)
+			=> MakeMedia(folder, outPath, format, recipeJson: null, progress, out sha1, out error);
+
+		/// <summary>
+		/// Whether a folder is what a core's media recipe is for. The recipe is
+		/// one object of a package's "media" declaration, as the package wrote
+		/// it; the answer is the engine's (ce_media_recipe_applies). A recipe it
+		/// cannot read applies to nothing.
+		/// </summary>
+		public static bool MediaRecipeApplies(string recipeJson, string folder)
+			=> Instance.ce_media_recipe_applies(recipeJson, folder) is 1;
+
+		/// <summary>The format a recipe writes (0 zip, 1 ISO, 2 FAT12), or -1 when it cannot be read.</summary>
+		public static int MediaRecipeFormat(string recipeJson)
+			=> Instance.ce_media_recipe_format(recipeJson);
+
+		/// <param name="recipeJson">
+		/// What a core says its media needs beyond the files, or null for the
+		/// files alone. With a recipe the format is the recipe's and
+		/// <paramref name="format"/> is not looked at.
+		/// </param>
+		public static bool MakeMedia(string folder, string outPath, int format, string? recipeJson,
 			Func<string, ulong, ulong, ulong, ulong, bool>? progress,
 			out string sha1, out string error)
 		{
@@ -1134,7 +1201,9 @@ namespace Chimera.Emulation.Common.Engine
 				handle = Marshal.GetFunctionPointerForDelegate(shim);
 			}
 
-			var ok = Instance.ce_media_make(folder, outPath, format, handle, IntPtr.Zero) is not 0;
+			var ok = (recipeJson is null
+				? Instance.ce_media_make(folder, outPath, format, handle, IntPtr.Zero)
+				: Instance.ce_media_make_with(folder, outPath, recipeJson, handle, IntPtr.Zero)) is not 0;
 			// the delegate must outlive the call it was handed to
 			GC.KeepAlive(shim);
 
@@ -2266,6 +2335,23 @@ namespace Chimera.Emulation.Common.Engine
 		public int DriveMediaInserted(int index) => E.ce_session_drive_media_inserted(_session, index);
 
 		public bool ButtonActive(int index) => E.ce_session_button_active(_session, index) is not 0;
+
+		/// <summary>
+		/// The letter a control writes into a movie's text: the package's own,
+		/// or the engine's rule where it declared none. Any name may be asked -
+		/// a movie can carry a control this machine does not have.
+		/// </summary>
+		public char MnemonicOf(string name)
+			=> Disposed ? ChimeraEngine.ControlMnemonic(name) : (char) E.ce_session_mnemonic_of(_session, name);
+
+		/// <summary>The short header of an axis's input column, found the same way.</summary>
+		public string AxisHeaderOf(string name)
+			=> Disposed
+				? ChimeraEngine.ControlAxisHeader(name)
+				: ChimeraEngine.PtrToStringUtf8(E.ce_session_axis_header_of(_session, name)) ?? name;
+
+		/// <summary>What to call this machine's system in front of a person: the package's word for it, or its id.</summary>
+		public string SystemName => ChimeraEngine.PtrToStringUtf8(E.ce_session_system_name(_session)) ?? "";
 
 		public bool AxisActive(int index) => E.ce_session_axis_active(_session, index) is not 0;
 

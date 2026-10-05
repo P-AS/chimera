@@ -302,6 +302,7 @@ engine_src = files(
   'source/engine/source/package.cpp',
   'source/engine/source/host_dyn.cpp',
   'source/engine/source/movie_entry.cpp',
+  'source/engine/source/control_names.cpp',
   'source/engine/source/session.cpp',
   'source/engine/source/core_log.cpp',
   'source/engine/source/state_history.cpp',
@@ -415,7 +416,7 @@ if not meson.is_cross_build()
     build_by_default: false,
   )
 
-  foreach engine_test : ['sha1', 'movie_log', 'movie_text', 'movie_entry', 'state_container', 'state_format', 'package', 'multifile', 'project', 'firmware', 'state_history', 'media', 'gl_flight', 'gl_sync', 'gl_buffer_pool', 'stride_tuner', 'greenzone_shape', 'ram_search', 'game_properties']
+  foreach engine_test : ['sha1', 'movie_log', 'movie_text', 'movie_entry', 'control_names', 'state_container', 'state_format', 'package', 'multifile', 'project', 'firmware', 'state_history', 'media', 'gl_flight', 'gl_sync', 'gl_buffer_pool', 'stride_tuner', 'greenzone_shape', 'ram_search', 'game_properties']
     test(
       'engine_' + engine_test,
       executable(

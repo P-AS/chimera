@@ -23,10 +23,6 @@ namespace Chimera.Client.Common
 		{
 			if (OpposingDirPolicy is OpposingDirPolicy.Allow) return Source.IsPressed(button);
 
-			// " C " is for N64 "P1 C Up" and the like, which should not be subject to mutexing
-			// regarding the unpressing and UDLR logic...... don't think about it. don't question it. don't look at it.
-			if (button.Contains(" C ")) return Source.IsPressed(button);
-
 			bool HandleOpposingDir(string opposingButtonName)
 			{
 				if (Source.IsPressed(opposingButtonName))

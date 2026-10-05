@@ -10,10 +10,10 @@ namespace Chimera.Tests.Client.GUI
 		[TestMethod]
 		public void TypingNarrowsTheList()
 		{
-			var systems = SupportedSystems.From(new (string, System.Collections.Generic.IReadOnlyList<string>, bool)[]
+			var systems = SupportedSystems.From(new (string, System.Collections.Generic.IReadOnlyList<(string Id, string Name)>, bool)[]
 			{
-				("ares", [ "PS1", "WS", "WSC" ], true),
-				("PCSX2", [ "PS2" ], true),
+				("ares", [ ("PS1", "PlayStation"), ("WS", "WonderSwan"), ("WSC", "WonderSwan Color") ], true),
+				("PCSX2", [ ("PS2", "PlayStation 2") ], true),
 			});
 			using SupportedSystemsForm form = new(systems);
 			form.Show();

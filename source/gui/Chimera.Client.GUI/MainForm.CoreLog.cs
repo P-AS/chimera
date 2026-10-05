@@ -55,7 +55,7 @@ namespace Chimera.Client.GUI
 				caption: "Export Core Log",
 				icon: EMsgBoxIcon.Question,
 				text: "The core log is on. Reboot the core now, so the log covers it from the start?"
-					+ " Some cores (RPCS3) keep their full log only from boot."
+					+ " Some cores keep their full log only from boot."
 					+ "\n\nThen do what shows the problem, and come back to Tools > Export Core Log... to turn it off."))
 			{
 				RebootCore();

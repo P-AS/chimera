@@ -207,12 +207,13 @@ namespace Chimera.Tests.Client.GUI
 		[TestMethod]
 		public void SupportedSystemsWindow()
 		{
-			var systems = SupportedSystems.From(new (string, IReadOnlyList<string>, bool)[]
+			var systems = SupportedSystems.From(new (string, IReadOnlyList<(string Id, string Name)>, bool)[]
 			{
-				("Genesis Plus GX", [ "GEN", "SMS", "GG", "SG" ], true),
-				("ares", [ "GEN", "SMS", "GG", "SG", "PS1", "WS", "WSC", "NES", "SFC", "N64" ], false),
-				("quickerNES", [ "NES" ], true),
-				("PCSX2", [ "PS2" ], true),
+				("Genesis Plus GX", [ ("GEN", "Mega Drive / Genesis"), ("SMS", "Master System"), ("GG", "Game Gear"), ("SG", "SG-1000") ], true),
+				("ares", [ ("GEN", "Mega Drive / Genesis"), ("SMS", "Master System"), ("GG", "Game Gear"), ("SG", "SG-1000"), ("PS1", "PlayStation"),
+					("WS", "WonderSwan"), ("WSC", "WonderSwan Color"), ("NES", "Nintendo Entertainment System"), ("SFC", "Super Famicom / SNES"), ("N64", "Nintendo 64") ], false),
+				("quickerNES", [ ("NES", "Nintendo Entertainment System") ], true),
+				("PCSX2", [ ("PS2", "PlayStation 2") ], true),
 			});
 			using SupportedSystemsForm form = new(systems);
 			form.StartPosition = FormStartPosition.Manual;

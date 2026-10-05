@@ -115,7 +115,8 @@ first run.
 **The roster** - `official-cores.json`, beside the executable, copied into the
 bundle by `tools/build-bundle.sh`. For each official core: its id (which is
 also the base name of its published asset and of the file in the store), its
-display name, the systems it emulates, its `owner/repo`, and the version this
+display name, the systems it emulates (each an `{ "id", "name" }` pair, the
+name being the core's own), its `owner/repo`, and the version this
 Chimera release's CI matrix passed against. An empty `tested` means the matrix
 has not run against that core yet, which is where every core starts; the
 manager then offers the newest of the chosen channel.
@@ -123,6 +124,13 @@ manager then offers the newest of the chosen channel.
 A missing or malformed roster is an EMPTY roster, never an error: a Chimera
 that lost the file should still run every core already installed and simply
 say it knows of none to fetch.
+
+Chimera has no list of systems of its own. An installed package names its
+systems in its `waterbox.config`; the roster row repeats those names
+(`"systems": [ { "id": "PSV", "name": "PlayStation Vita" } ]`, format 2) so a
+core not yet installed reads the same. A bare id (`"systems": [ "PSV" ]`, as
+format 1 had it, or a core added by hand) is still read, and is shown as the
+id. A test holds the roster to what the installed packages say.
 
 The roster is what lets the manager show you that a core *exists* before you
 have it, and it is what the first-run offer installs. It is not a catalogue of
@@ -396,7 +404,7 @@ Per core, six columns:
 | column | what it is |
 |---|---|
 | Core | its name |
-| Systems | the systems it emulates, spelled out (`SystemNames`) |
+| Systems | the systems it emulates, by the names the core gives them (the package's `systemNames`; the roster row's until it is installed) |
 | Installed | which version is here, or *not installed*, plus *update available* |
 | Released | when the **installed** version was published |
 | Size | how big it is |

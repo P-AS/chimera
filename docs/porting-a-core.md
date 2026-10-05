@@ -197,6 +197,29 @@ Advice earned the hard way:
 - **`waterbox.config`** - the machine: name, system id, video (buffer capacity
   and the live size the core reports per frame), audio, vsync as a rational,
   the memory layout, the button list, settings, firmware.
+- **What things are called is yours to say.** Chimera keeps no table of
+  systems or of controls; a package that says nothing is shown by its ids.
+  - `"systemNames": { "PSV": "PlayStation Vita" }` at the top - the name of
+    every system id the package answers to (its own and each machine's).
+    The same names go in the core's row of `official-cores.json`, so the
+    system reads the same before the core is installed.
+  - `"mnemonics": { "Select": "s" }` in each input declaration (the
+    package's, and each machine's) - the one character a button writes into
+    a movie's text and heads its input column with. Keyed by the button's
+    whole name, or by its name without the player ("P2 Up" is found under
+    "Up"). One printable ASCII character, never `.` or `|`. Declare one for
+    every button: a button left out gets the rule's guess (the first letter
+    of its last word), which is how two columns of one pad come to share a
+    letter. An entry is read by position, so a letter may change without
+    harming a movie made before.
+  - `"header": "LX"` on each axis - its column's header, five characters at
+    most.
+  - `"media": [ ... ]` - what a disc of yours needs that a plain image does
+    not have, for Tools > Media Maker: `{ "id", "label", "format":
+    "iso9660", "when": { "rootFile": "PS3_DISC.SFB" }, "systemArea": [ {
+    "at": 0, "u32be": 1 }, { "at": 12, "u32be": "lastSector" } ] }`. The
+    recipe is offered when the folder has the root file; the engine writes
+    the patches into the image's system area.
 - **`version` and `versionDate`** are not yours to write: `build-package.sh`
   stamps both into the packaged `waterbox.config` - the commit, and the date of
   that commit in UTC (never the build's date, which would make one commit two

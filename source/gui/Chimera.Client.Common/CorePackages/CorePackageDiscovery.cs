@@ -38,6 +38,23 @@ namespace Chimera.Client.Common
 		public IReadOnlyList<string> Systems { get; init; } = [ ];
 
 		/// <summary>
+		/// What the package calls its systems, by id. A package says this for
+		/// itself (waterbox.config's systemNames): the frontend has no table of
+		/// machines, so an id the package did not name is shown as it is.
+		/// </summary>
+		public IReadOnlyDictionary<string, string> SystemNames { get; init; } = new Dictionary<string, string>();
+
+		/// <summary>The package's word for one of its systems, or the id.</summary>
+		public string SystemNameOf(string systemId)
+			=> SystemNames.TryGetValue(systemId, out var name) && !string.IsNullOrWhiteSpace(name) ? name : systemId;
+
+		/// <summary>Every system the package emulates, spelled out, in order.</summary>
+		public string SystemsSpelled => string.Join(", ", Systems.Select(SystemNameOf));
+
+		/// <summary>What the package says its media needs, for the media maker.</summary>
+		public IReadOnlyList<WaterboxConfig.MediaRecipeDecl> Media { get; init; } = [ ];
+
+		/// <summary>
 		/// True for a game core (docs/game-cores.md): one game played from its own files,
 		/// listed apart from the emulators wherever cores are listed.
 		/// </summary>
@@ -328,6 +345,8 @@ namespace Chimera.Client.Common
 				Version = cfg.Version ?? "",
 				VersionDate = CoreVersionDates.Parse(cfg.VersionDate),
 				Systems = systems,
+				SystemNames = systems.ToDictionary(static id => id, cfg.SystemNameOf),
+				Media = cfg.Media,
 				IsGameCore = cfg.IsGameCore,
 				Extensions = NormaliseExtensions(cfg.AllExtensions),
 				Abi = cfg.Abi,

@@ -993,7 +993,7 @@ namespace Chimera.Tests.Client.Common.Movie
 		private static ControllerDefinition NullEmulatorControls()
 		{
 			var definition = new ControllerDefinition("Null Controller").MakeImmutable();
-			definition.BuildMnemonicsCache("NULL");
+			definition.BuildMnemonicsCache();
 			return definition;
 		}
 

@@ -310,7 +310,11 @@ namespace Chimera.Emulation.Common.Waterbox
 
 		private ControllerDefinition MakeControllerDefinition()
 		{
-			var def = new ControllerDefinition((_machine?.Input ?? _cfg.Input)?.Name ?? "Waterbox Controller");
+			// the names are the package's own, as the engine read them: a letter
+			// for each button and a header for each axis, or the engine's rule
+			// where the package declared none
+			var def = new ControllerDefinition((_machine?.Input ?? _cfg.Input)?.Name ?? "Waterbox Controller")
+				.WithControlNames(new SessionControlNames(_session));
 			// only the controls this machine HAS: a Four Score's players 3 and 4,
 			// or an Arkanoid's paddle, are declared by every NES package and exist
 			// only when a project plugged one in
@@ -325,6 +329,21 @@ namespace Chimera.Emulation.Common.Waterbox
 				def.Axes.Add(axis.Name ?? $"Axis {i}", new AxisSpec(axis.Min.RangeTo(axis.Max), axis.Neutral));
 			}
 			return def.MakeImmutable();
+		}
+
+		/// <summary>
+		/// A machine's control names, asked of its session - and of the rule
+		/// alone once the session is gone, since a definition can outlive it.
+		/// </summary>
+		private sealed class SessionControlNames : IControlNames
+		{
+			private readonly EngineSession _session;
+
+			public SessionControlNames(EngineSession session) => _session = session;
+
+			public char MnemonicOf(string button) => _session.MnemonicOf(button);
+
+			public string AxisHeaderOf(string axis) => _session.AxisHeaderOf(axis);
 		}
 
 		/// <inheritdoc/>

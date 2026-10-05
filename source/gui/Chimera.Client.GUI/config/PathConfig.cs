@@ -160,7 +160,8 @@ namespace Chimera.Client.GUI
 
 			if (IsTabPendingFocus(PathEntryCollection.GLOBAL))
 			{
-				comboSystem.SelectedIndex = systems.FindIndex(tuple => tuple.SysGroup == VSystemID.Raw.NES); // event handler selects correct tab in inner TabControl
+				// the first system there is, if there is one (-1 selects none); the event handler selects the matching tab in the inner TabControl
+				comboSystem.SelectedIndex = systems.Count is 0 ? -1 : 0;
 				// selected tab in tcMain is already 0 (Global)
 			}
 

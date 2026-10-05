@@ -4757,3 +4757,57 @@ choose. Removed: the IWAD the person gives is the release, and the
 compatibility level is how it plays. The import hands that IWAD to the
 wizard whatever its hash, and a game core takes it as the project's own.
 
+
+## Chimera knows no system: the cores say what theirs are called (user-decided, 2026-10-05)
+
+Chimera carried three tables about the machines it does not emulate:
+`VSystemID` (the ids), `SystemNames` (89 names, most for systems no core
+here runs) and `MnemonicLookup` (the letter of every button and the header
+of every axis, per system). A new core meant an edit to Chimera, and a
+name was right only if somebody remembered to add it. The user's words:
+Chimera should be completely agnostic to whatever systems are run with it;
+the names should be provided by the cores themselves.
+
+Four decisions, all the user's:
+
+- **The roster row carries the names** of a core not yet installed:
+  `official-cores.json` is format 2, `"systems": [ { "id", "name" } ]`.
+  Format 1 and a bare id are still read. A test holds the roster to what
+  the installed packages say.
+- **A package that declares nothing gets the generic rule only** - no
+  legacy table kept for old packages. The system reads as its id; a button's
+  letter is the first usable character of its last word; an axis header is
+  its initials. Published packages read that way until they are rebuilt.
+- **Everything moved to the cores**, including the names no core used.
+- **The PlayStation 3 disc layout left the engine** in the same round. The
+  ISO writer detected `PS3_DISC.SFB` and wrote two fields into the system
+  area; that is now a `media` recipe RPCS3 declares, and the engine writes
+  whatever patches a recipe lists. The image is the same file, byte for
+  byte, as the engine made before.
+
+What a package declares is in docs/porting-a-core.md: `systemNames`,
+`mnemonics` in each input declaration, `header` on each axis, `media`.
+The engine resolves a control's letter (whole name, then the name without
+its player, then the rule) and the frontend asks it - C# holds no table
+and no rule of its own; a definition with no session behind it asks the
+engine for the rule's answer.
+
+Movies are not touched by any of it: an entry is read by position, and any
+character but `.` is "pressed". That is also why the letters could be
+corrected while they moved. Moving them found that seven keys had `.` or
+`|` for a letter (a pressed `.` reads back as not pressed; `|` parts an
+entry's groups), that the kana keys of one keyboard had letters outside
+ASCII, which the engine's byte-wise entry cannot carry as one character,
+and - once the uniqueness test read each MACHINE's controller rather than
+only the package's - that 44 pairs of controls on one pad shared a letter
+(the four C buttons of one pad were all `C`; L2 was the `L` of Left). All
+are fixed in the cores' declarations. Every other letter is what it was.
+
+Left where it is, and why:
+
+- The direction pairs the frontend refuses to hold together (Up with Down)
+  are still found by name. A declaration would be better; it is not a
+  system table.
+- `GreenzoneSurvivesReload` still names cores in the frontend. It is a list
+  of EVIDENCE, kept here on purpose (2026-09-14: a core's own declaration
+  was not enough). Moving it is a different decision.

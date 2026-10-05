@@ -27,7 +27,7 @@ namespace Chimera.Tests.Client.Common.Movie
 
 		static FakeEmulator()
 		{
-			_cd.BuildMnemonicsCache("fake");
+			_cd.BuildMnemonicsCache();
 		}
 
 		public ControllerDefinition ControllerDefinition => _cd;
