@@ -1182,6 +1182,7 @@ namespace Chimera.Client.GUI
 				if (!saveResult.IsError)
 				{
 					MessageStatusLabel.Text = "File saved.";
+					MainForm.ProjectSavedAs(CurrentTasMovie.Filename);
 					ScheduleAutoSave(Settings.AutosaveInterval);
 				}
 				else

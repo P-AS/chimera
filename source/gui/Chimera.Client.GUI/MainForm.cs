@@ -3679,6 +3679,12 @@ namespace Chimera.Client.GUI
 
 		public void TAStudioHidden(bool hidden) => ShowTAStudioMenuItem.Visible = hidden;
 
+		public void ProjectSavedAs(string path)
+		{
+			Config.RecentProjects.Add(path);
+			SaveConfig();
+		}
+
 		private void ShowTAStudioMenuItem_Click(object sender, EventArgs e) => Tools.Load<TAStudio>();
 
 		private void CaptureRewind(bool suppressCaptureRewind)

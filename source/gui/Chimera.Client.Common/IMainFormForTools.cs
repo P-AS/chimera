@@ -38,6 +38,15 @@ namespace Chimera.Client.Common
 		/// <remarks>only referenced from TAStudio</remarks>
 		bool EnsureCoreIsAccurate();
 
+		/// <summary>
+		/// The project was written to a file of its own for the first time, or to a
+		/// new one: it is a recent project from now, and the list is written at
+		/// once - a session that ends badly would otherwise forget the project it
+		/// had just saved (issue #198).
+		/// </summary>
+		/// <remarks>only referenced from TAStudio</remarks>
+		void ProjectSavedAs(string path);
+
 		/// <summary>TAStudio was hidden with its "&lt;&lt; Hide" button, or shown again: the main window offers it back while hidden.</summary>
 		/// <remarks>only referenced from TAStudio</remarks>
 		void TAStudioHidden(bool hidden);
