@@ -4828,3 +4828,45 @@ both ways is the core's to model.
 
 The earlier note in this log about `joypad.set` and the SOCD filter is
 history: there is no filter to pass through now.
+
+## Reboot Core keeps the project (user-decided, 2026-10-06)
+
+Reboot Core was a rom reload like any other, inherited whole. A rom load
+ends by restarting the tools, and TAStudio's restart stops its movie and
+starts another: the most recent project file if this was it, a blank one
+otherwise. So a reboot inside a project asked whether to save, and then
+replaced the project - a 70-frame run became an empty
+`default.chimeraProject`. With the piano roll closed the movie was saved,
+stopped and disposed instead.
+
+The recovery session knew none of this. It went on holding the movie that
+had been replaced, whose machine was gone, and the next request to keep
+the work safe - a caught error, a core that stopped - read that machine's
+GPU description from the engine with a session that no longer existed. The
+process died (issue #196: Export Core Log offers a reboot, and a click in
+the piano roll then raised the error that asked).
+
+The user's words: reboot core should keep the project. So it does:
+
+- The SAME movie goes on to the new machine - inputs, markers, branches,
+  undo history, unsaved edits - queued before the load exactly as a
+  project boot queues it, so the machine boots once, with the project's
+  core and settings, and nothing is asked about saving.
+- The machine is at power-on, paused there when the piano roll is open.
+- The greenzone does not survive: the engine held it for the machine that
+  is gone. The saved greenzone is not read back either - it is the states
+  of the SAVED inputs, and the movie in hand may have been edited since.
+  Branch states are files beside the project and are still there.
+- Between the two machines the movie answers "nothing stored" itself
+  (`MachineIsGoing`) rather than ask the old machine's history: a piano
+  roll repainting in the middle of the reboot asks exactly that.
+- A disposed core answers "" for its GPU description instead of handing
+  the engine a null session.
+
+Proved by three witness legs (the roll closed, the roll open, and a core
+that dies after a reboot), each of which fails on the old path, and by a
+unit test of the movie changing machines.
+
+One thing found on the way and NOT fixed: under Mono, a core that dies
+with the piano roll open crashes in Mono's unwinder, reboot or no reboot.
+The death leg runs with the roll closed for that reason.

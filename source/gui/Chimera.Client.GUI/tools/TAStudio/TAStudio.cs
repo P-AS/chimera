@@ -1067,6 +1067,32 @@ namespace Chimera.Client.GUI
 			}
 		}
 
+		/// <summary>
+		/// The machine under the project was rebooted (Reboot Core): the same movie
+		/// is now running on a freshly booted machine, at power-on. Nothing of the
+		/// project changed, so nothing is reloaded - the roll, its columns, the
+		/// selection, the markers and the branches are where they were. What has
+		/// changed is where the machine is and what it remembers: any seek is over,
+		/// the machine is paused where it booted, and the greenzone shows what the
+		/// new machine holds.
+		/// </summary>
+		public void ProjectRebooted()
+		{
+			if (!IsActive || CurrentTasMovie is null) return;
+
+			MainForm.PauseOnFrame = null;
+			MainForm.PauseEmulator();
+			RestorePositionFrame = -1;
+			_lastRecordAction = -1;
+			_doPause = false;
+			StopSeeking();
+			MovieSession.ReadOnly = true;
+			_engaged = true;
+			SetVisibleFrame(Emulator.Frame);
+			RefreshDialog();
+			MainForm.AddOnScreenMessage("Core rebooted: the project is at power-on");
+		}
+
 		private void TastudioStopMovie()
 		{
 			MovieSession.StopMovie(false);

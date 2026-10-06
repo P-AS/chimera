@@ -47,6 +47,15 @@ namespace Chimera.Client.Common
 		/// <remarks>only referenced from TAStudio</remarks>
 		void ProjectSavedAs(string path);
 
+		/// <summary>
+		/// True while Reboot Core is restarting the machine under an open project.
+		/// The project's movie is kept and runs on the new machine, so a tool told to
+		/// restart in the middle of it has nothing of the project's to replace, and
+		/// nothing to ask about saving.
+		/// </summary>
+		/// <remarks>only referenced from TAStudio</remarks>
+		bool ProjectIsRebooting { get; }
+
 		/// <summary>TAStudio was hidden with its "&lt;&lt; Hide" button, or shown again: the main window offers it back while hidden.</summary>
 		/// <remarks>only referenced from TAStudio</remarks>
 		void TAStudioHidden(bool hidden);

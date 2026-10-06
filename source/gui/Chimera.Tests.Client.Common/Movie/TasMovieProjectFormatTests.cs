@@ -719,6 +719,45 @@ namespace Chimera.Tests.Client.Common.Movie
 		}
 
 		/// <summary>
+		/// Reboot Core inside a project (issue #196): the machine is destroyed and
+		/// another booted, and the movie is the same one throughout. Between the
+		/// two machines it must not ask the first one anything - the engine's
+		/// session is gone, and a question put to it ends the process - and on the
+		/// second it must not read the saved greenzone back: that file holds the
+		/// states of the SAVED inputs, and the movie in hand may have been edited
+		/// since. A fresh open of the same file is the control: it does read it.
+		/// </summary>
+		[TestMethod]
+		public void TheMovieOutlivesItsMachine()
+		{
+			var path = Path.Combine(_dir, "reboot.chimeraProject");
+			var movie = MakeWorkedMovie(path);
+			foreach (var f in new[] { 1, 2, 3, 4 }) movie.States.Capture(f);
+			Assert.IsFalse(movie.Save().IsError);
+			var frames = movie.InputLogLength;
+			var markers = movie.Markers.Count;
+			var branches = movie.Branches.Count;
+
+			movie.MachineIsGoing();
+			Assert.IsFalse(movie.States.Has(3), "the machine is going: nothing is stored anywhere that can be asked");
+			Assert.AreEqual(0L, movie.States.Count);
+			Assert.AreEqual(-1, movie.States.Nearest(100));
+			Assert.IsFalse(movie.States.RestoreTo(3));
+
+			FakeEmulator next = new();
+			movie.Attach(next);
+			Assert.IsTrue(next.Has(0), "the new machine keeps its power-on, as any does");
+			Assert.IsTrue(movie.States.Has(0), "and the movie asks the new machine now");
+			Assert.IsFalse(movie.States.Has(3), "the saved greenzone is the saved inputs': not read back after a reboot");
+			Assert.AreEqual(frames, movie.InputLogLength, "the inputs are the project");
+			Assert.IsTrue(movie.GetInputState(3).IsPressed("A"), "the same inputs");
+			Assert.AreEqual(markers, movie.Markers.Count, "and so are the markers");
+			Assert.AreEqual(branches, movie.Branches.Count, "and the branches");
+
+			Assert.IsTrue(LoadFresh(path).States.Has(3), "control: opening the project does read its greenzone");
+		}
+
+		/// <summary>
 		/// The states survive closing and reopening, which is the entire point of
 		/// keeping them. The engine owns the history and proves its own file
 		/// round trips; what is checked here is the wiring above it - that the

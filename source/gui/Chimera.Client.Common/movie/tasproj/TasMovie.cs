@@ -83,10 +83,15 @@ namespace Chimera.Client.Common
 			// core must be one whose greenzone has been shown to reload correctly
 			// (see GreenzoneMayOutliveSession), and the session that wrote this one
 			// must have finished.
-			if (GreenzoneMayOutliveSession && ProjectRecovery.LastSessionEndedCleanly(Project.Id))
+			//
+			// And never on a machine that replaces one this movie was already running
+			// on (MachineIsGoing): the file holds the states of the SAVED inputs, and
+			// the movie in hand may have been edited since.
+			if (!_machineReplaced && GreenzoneMayOutliveSession && ProjectRecovery.LastSessionEndedCleanly(Project.Id))
 			{
 				States.Load(StateHistoryFilename, MachineIdentityOf(Project));
 			}
+			_machineReplaced = false;
 			RefreshPins();
 
 			base.Attach(emulator);
@@ -139,6 +144,49 @@ namespace Chimera.Client.Common
 		/// because a second copy is a second thing to keep true.
 		/// </summary>
 		public IStateHistory States { get; private set; }
+
+		private bool _machineReplaced;
+
+		/// <summary>
+		/// The machine this movie is running on is about to be destroyed and another
+		/// booted in its place - Reboot Core inside a project (issue #196). The movie
+		/// stays: its inputs, markers, branches and unsaved edits are the project.
+		/// What goes with the machine is the history of where it has been, which the
+		/// engine held for it; until <see cref="Attach"/> hands over the next
+		/// machine's, a question about stored states is answered "none" here rather
+		/// than asked of a session that no longer exists (a piano roll repainting in
+		/// the middle of the reboot asks exactly that, and the engine does not
+		/// survive being asked).
+		/// </summary>
+		public void MachineIsGoing()
+		{
+			States = NoStates.Instance;
+			_machineReplaced = true;
+		}
+
+		/// <summary>The history of a machine that is not there: holds nothing, keeps nothing.</summary>
+		private sealed class NoStates : IStateHistory
+		{
+			public static readonly NoStates Instance = new();
+
+			public void Enable(long budgetBytes) {}
+			public void MaxNearStride(int stride) {}
+			public void SetCapturePeriod(int period) {}
+			public long Count => 0;
+			public int Nearest(int frame) => -1;
+			public bool Has(int frame) => false;
+			public void BeforeAdvance() {}
+			public void Capture(int frame) {}
+			public bool RestoreTo(int frame) => false;
+			public void InvalidateAfter(int afterFrame) {}
+			public bool Save(string path, string machineId) => false;
+			public bool SaveLater(string path, string machineId) => false;
+			public bool SavePending => false;
+			public bool SaveWait() => true;
+			public bool Load(string path, string machineId) => false;
+			public void Pin(int frame, bool pinned) {}
+			public void UnpinAll() {}
+		}
 
 		private int _greenzonePeriod = 1;
 

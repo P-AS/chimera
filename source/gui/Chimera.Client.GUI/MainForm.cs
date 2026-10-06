@@ -1279,6 +1279,14 @@ namespace Chimera.Client.GUI
 			else
 			{
 				if (CurrentlyOpenRomArgs == null) return true;
+				// Inside a project the project stays (RebootProject). Not when another
+				// movie is already queued: that is somebody starting a different movie,
+				// and the reboot is theirs.
+				if (_openProject is not null && !MovieSession.NewMovieQueued
+					&& MovieSession.Movie is ITasMovie tasMovie && tasMovie.IsActive())
+				{
+					return RebootProject(tasMovie);
+				}
 				return LoadRom(
 					CurrentlyOpenRomArgs.OpenAdvanced.SimplePath,
 					CurrentlyOpenRomArgs with { ForcedSysID = Emulator.SystemId });
@@ -3631,7 +3639,9 @@ namespace Chimera.Client.GUI
 				return false;
 			}
 			// If TAStudio is open, we already asked about saving the movie.
-			if (!Tools.IsLoaded<TAStudio>())
+			// A project being rebooted keeps its movie: it is not stopped, saved or
+			// disposed here, with or without the piano roll open (RebootProject).
+			if (!_rebootingProject && !Tools.IsLoaded<TAStudio>())
 			{
 				TryAgainResult saveMovieResult = this.DoWithTryAgainBox(() => MovieSession.StopMovie(), "Failed to save movie.");
 				if (saveMovieResult == TryAgainResult.Canceled) return false;

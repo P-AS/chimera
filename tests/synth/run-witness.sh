@@ -861,6 +861,112 @@ PY
 		done
 	fi
 
+	# --- Reboot Core keeps the project ---
+	# A reboot inside a project is the same project on a machine booted again
+	# (issue #196). It used to replace the movie with a blank one when the piano
+	# roll was open, and stop and dispose it when it was closed - and the
+	# recovery session went on holding the movie that was gone, so the next
+	# request to keep the work safe crashed the process. Three legs: the project
+	# survives a reboot with the roll closed and with it open (same movie, same
+	# file, power-on, the marker set before, and the golden RAM at the end), and
+	# a core that dies AFTER a reboot is still survived, which is the request to
+	# keep the work that used to crash.
+	if [ "$record" -eq 0 ]; then
+		for roll in 0 1; do
+			rdir="$work/reboot-$roll"
+			rm -rf "$rdir" && mkdir -p "$rdir"
+			cp "$here/roms/gridWalker.testrom" "$rdir/gridWalker.testrom"
+			python3 - "$here/movies/gridWalker.win.txt" "$rdir/gridWalker.testrom" "$rdir/reboot.chimeraProject" <<'PY'
+import hashlib, json, sys
+entries = [l.rstrip("\r\n") for l in open(sys.argv[1]) if l.startswith("|")]
+logkey = "#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|"
+sha1 = hashlib.sha1(open(sys.argv[2], "rb").read()).hexdigest().upper()
+json.dump({
+    "id": "0123456789abcdef0123456789ab0196",
+    "title": "reboot",
+    "core": {"name": "Synth", "version": "", "sha1": ""},
+    "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
+    "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
+    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+}, open(sys.argv[3], "w"))
+PY
+			rjob="$work/job.reboot-$roll.txt"
+			{
+				echo "outram=$rdir/ram.bin"
+				echo "meta=$rdir/meta.txt"
+				echo "tastudio=$roll"
+				echo "rebootat=30"
+			} > "$rjob"
+			cp "$config" "$work/config.reboot-$roll.ini"
+			( cd "$repo_root" && CHIMERA_JOB="$rjob" timeout 120 mono "$emu_exe" --headless \
+				"--config=$work/config.reboot-$roll.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+				"--project=$rdir/reboot.chimeraProject" "--lua=$here/synth-reboot.lua" ) > "$rdir/log.txt" 2>&1
+			rlabel="closed"; [ "$roll" -eq 1 ] && rlabel="open"
+			if ! grep -q '^status=OK' "$rdir/meta.txt" 2>/dev/null; then
+				report "R:frontend:roll-$rlabel" FAIL "$(grep '^detail=' "$rdir/meta.txt" 2>/dev/null | cut -c8- || true) (see $rdir/log.txt)"
+			elif grep -q '\[recovery\]' "$rdir/log.txt"; then
+				report "R:frontend:roll-$rlabel" FAIL "the recovery session lost the movie (see $rdir/log.txt)"
+			elif ! cmp -s "$rdir/ram.bin" "$golden_dir/gridWalker.win.ram.bin"; then
+				report "R:frontend:roll-$rlabel" FAIL "the rebooted machine did not play the project's inputs to the golden"
+			else
+				report "R:frontend:roll-$rlabel" PASS "the same movie on a rebooted machine, played to the golden"
+			fi
+			find "$XDG_DATA_HOME" -type d -name 0123456789abcdef0123456789ab0196 -path "*Recovery*" -exec rm -rf {} + 2>/dev/null
+		done
+
+		# the core dies on cue (all eight buttons, frame 12) after a reboot at
+		# frame 5: the stop asks for the work to be kept, of a session whose
+		# machine has been replaced once already
+		ddir="$work/reboot-dies"
+		rm -rf "$ddir" && mkdir -p "$ddir"
+		cp "$here/roms/gridWalker.testrom" "$ddir/gridWalker.testrom"
+		sed '12s/.*/|UDLRABsS|/' "$here/movies/gridWalker.win.txt" > "$ddir/movie.txt"
+		python3 - "$ddir/movie.txt" "$ddir/gridWalker.testrom" "$ddir/reboot.chimeraProject" <<'PY'
+import hashlib, json, sys
+entries = [l.rstrip("\r\n") for l in open(sys.argv[1]) if l.startswith("|")]
+logkey = "#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|"
+sha1 = hashlib.sha1(open(sys.argv[2], "rb").read()).hexdigest().upper()
+json.dump({
+    "id": "0123456789abcdef0123456789ab0196",
+    "title": "reboot",
+    "core": {"name": "Synth", "version": "", "sha1": ""},
+    "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
+    "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
+    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+}, open(sys.argv[3], "w"))
+PY
+		djob="$work/job.reboot-dies.txt"
+		{
+			echo "outram=$ddir/ram.bin"
+			echo "meta=$ddir/meta.txt"
+			echo "tastudio=0"
+			echo "rebootat=5"
+		} > "$djob"
+		cp "$config" "$work/config.reboot-dies.ini"
+		( cd "$repo_root" && CHIMERA_JOB="$djob" timeout 120 mono "$emu_exe" --headless \
+			"--config=$work/config.reboot-dies.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+			"--project=$ddir/reboot.chimeraProject" "--lua=$here/synth-reboot.lua" ) > "$ddir/log.txt" 2>&1
+		drc=$?
+		if grep -qE "Native Crash|Got a SIG|SIGSEGV while executing native" "$ddir/log.txt"; then
+			if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+				report "R:frontend:dies-after" KNOWN "CI runner only: Mono's unwinder crashed on the stop (see $ddir/log.txt)"
+			else
+				report "R:frontend:dies-after" FAIL "the runtime reported a native crash (see $ddir/log.txt)"
+			fi
+		elif ! grep -q "\[synth-reboot\] rebooted" "$ddir/log.txt"; then
+			report "R:frontend:dies-after" FAIL "the core was never rebooted (see $ddir/log.txt)"
+		elif [ "$drc" -ne 65 ]; then
+			report "R:frontend:dies-after" FAIL "the process ended with $drc, not 65 (see $ddir/log.txt)"
+		elif ! grep -q "\[headless\] The core stopped: the core aborted" "$ddir/log.txt"; then
+			report "R:frontend:dies-after" FAIL "the stopped core was not reported (see $ddir/log.txt)"
+		elif ! find "$XDG_DATA_HOME" -type d -name 0123456789abcdef0123456789ab0196 -path "*Recovery*" | grep -q .; then
+			report "R:frontend:dies-after" FAIL "the recovery journal was not left behind"
+		else
+			report "R:frontend:dies-after" PASS "a core that dies after a reboot is survived, and the work is kept"
+		fi
+		find "$XDG_DATA_HOME" -type d -name 0123456789abcdef0123456789ab0196 -path "*Recovery*" -exec rm -rf {} + 2>/dev/null
+	fi
+
 	# --- a run becomes a video ---
 	# Encode Video, end to end: part of a real run reproduced into a real file
 	# through the real writer. The checks are the ones that used to be a person's

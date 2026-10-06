@@ -464,7 +464,13 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// Whether a GPU outside the sandbox drew, and what it calls itself.
 		/// Empty when none did, which is every ordinary run.
 		/// </summary>
-		public string GpuRenderer => _session.GpuDescription;
+		/// <remarks>
+		/// Empty once the core is disposed. Whoever still holds a core that is gone
+		/// is wrong to ask, but the answer must not be a null session handed to the
+		/// engine: that is a crash of the whole process, and it is how a recovery
+		/// snapshot taken after a reboot ended the session it was protecting (issue #196).
+		/// </remarks>
+		public string GpuRenderer => _session.Disposed ? "" : _session.GpuDescription;
 
 		/// <summary>
 		/// Whether this core's renderer rebuilds after the context it drew on

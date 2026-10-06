@@ -69,6 +69,13 @@ namespace Chimera.Client.Common
 		/// store, so saves record what actually ran (docs/project.md).
 		/// </summary>
 		void UseResolvedProject(Chimera.Emulation.Common.Engine.EngineProject project);
+
+		/// <summary>
+		/// The machine under this movie is about to be replaced by a freshly booted
+		/// one (Reboot Core inside a project): the movie lets go of the old machine's
+		/// state history and waits for the next <see cref="IMovie.Attach"/>.
+		/// </summary>
+		void MachineIsGoing();
 		int LastEditedFrame { get; }
 		bool LastEditWasRecording { get; }
 

@@ -148,6 +148,15 @@ namespace Chimera.Client.GUI
 				return;
 			}
 
+			// Reboot Core inside a project: the movie in hand IS the project and goes
+			// on to the rebooted machine. Stopping it here and starting another is
+			// what used to replace the project with a blank one (issue #196); the
+			// main window calls ProjectRebooted when the new machine has the movie.
+			if (MainForm.ProjectIsRebooting)
+			{
+				return;
+			}
+
 			if (CurrentTasMovie != null)
 			{
 				bool loadRecent = Game.Hash == CurrentTasMovie.Hash && CurrentTasMovie.Filename == Settings.RecentTas.MostRecent;
@@ -173,6 +182,9 @@ namespace Chimera.Client.GUI
 			{
 				return true;
 			}
+
+			// a reboot of the project's machine loses nothing of the project
+			if (MainForm.ProjectIsRebooting) return true;
 
 			if (CurrentTasMovie?.Changes is not true) return true;
 

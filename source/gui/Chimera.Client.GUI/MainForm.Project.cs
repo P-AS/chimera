@@ -41,6 +41,74 @@ namespace Chimera.Client.GUI
 		/// </summary>
 		private bool _bootingProject;
 
+		/// <summary>True while <see cref="RebootProject"/> is replacing the machine under the open project.</summary>
+		private bool _rebootingProject;
+
+		public bool ProjectIsRebooting => _rebootingProject;
+
+		/// <summary>
+		/// Reboot Core inside a project (user-decided, 2026-10-06): the project
+		/// stays. The machine is destroyed and booted again from power-on, and the
+		/// SAME movie - inputs, markers, branches, undo history, unsaved edits - is
+		/// the one it runs, from frame 0.
+		///
+		/// It used to be a rom reload like any other, and the tool restart that ends
+		/// a rom load had TAStudio stop its movie and start a blank one: a reboot
+		/// asked to save the project and then replaced it with an empty
+		/// default.chimeraProject. The recovery session went on holding the movie
+		/// that had been replaced, whose machine was gone, so the next thing that
+		/// asked for the work to be kept called the engine with a session that no
+		/// longer existed and the process died (issue #196: Export Core Log offers
+		/// a reboot, and then any caught error did it).
+		///
+		/// What does not survive is the greenzone: the engine held it for the machine
+		/// that is gone, and the new machine starts with frame 0 alone. The saved
+		/// greenzone is not read back either - it belongs to the saved inputs, not
+		/// necessarily to these. Branch states are files beside the project and are
+		/// still there.
+		/// </summary>
+		private bool RebootProject(ITasMovie tasMovie)
+		{
+			// whatever the boot below does, the work as it stands now is kept
+			KeepWorkSafe();
+			var wasRecording = tasMovie.IsRecording();
+			var oldDefaultCores = new Dictionary<string, string>(Config.DefaultCores);
+			_rebootingProject = true;
+			// the tool restart inside the rom load must not start a movie of its own
+			_bootingProject = true;
+			try
+			{
+				// before the machine goes: nothing may ask the old one's history again
+				tasMovie.MachineIsGoing();
+				MovieSession.QueueNewMovie(
+					tasMovie,
+					systemId: tasMovie.SystemID,
+					loadedRomHash: tasMovie.Hash ?? "",
+					Config.PathEntries,
+					Config.DefaultCores);
+				if (!LoadRom(
+					CurrentlyOpenRomArgs.OpenAdvanced.SimplePath,
+					CurrentlyOpenRomArgs with { ForcedSysID = Emulator.SystemId }))
+				{
+					return false;
+				}
+				// never record mode: starting a recording clears the movie
+				MovieSession.RunQueuedMovie(recordMode: false, Emulator);
+				if (wasRecording) tasMovie.SwitchToRecord();
+			}
+			finally
+			{
+				_bootingProject = false;
+				_rebootingProject = false;
+				MovieSession.AbortQueuedMovie();
+				Config.DefaultCores = oldDefaultCores;
+			}
+
+			SetMainformMovieInfo();
+			if (Tools.IsLoaded<TAStudio>()) Tools.TAStudio.ProjectRebooted();
+			return true;
+		}
+
 		/// <summary>
 		/// A project and TAStudio are one thing: the window IS the session, so one is
 		/// open exactly when the other is. This is the single place that ends both,
