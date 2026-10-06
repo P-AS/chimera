@@ -1342,6 +1342,44 @@ namespace Chimera.Client.GUI
 			}
 		}
 
+		/// <summary>
+		/// What a selection drag does to the rows when the pointer goes from one row
+		/// to another: the ranges to select or deselect, in order. The drag began on
+		/// <paramref name="dragStart"/>, whose own state (<paramref name="dragState"/>)
+		/// is the state the drag spreads.
+		///
+		/// The roll does not always know where the pointer WAS. While a context menu
+		/// has the pointer the roll is told it left, so the first move after a click
+		/// that closed the menu comes from a cell with no row (issue #195: clicking a
+		/// frame number with the menu open threw "Nullable object must have a
+		/// value"). A drag with no row behind it comes from where it began.
+		/// </summary>
+		internal static List<(int From, int To, bool Selected)> SelectionDragSteps(int? oldRow, int newRow, int dragStart, bool dragState)
+		{
+			List<(int From, int To, bool Selected)> steps = new();
+			int rawStart = oldRow ?? dragStart;
+			int rawEnd = newRow;
+			int sign = Math.Sign(rawEnd - rawStart);
+			if (sign == 0) return steps; // moved to another cell horizontally
+
+			int startDiff = rawStart - dragStart;
+			int endDiff = rawEnd - dragStart;
+			if (Math.Sign(startDiff) == Math.Sign(endDiff))
+			{
+				// select if moving away from start, deselect if moving towards
+				bool movingAway = Math.Abs(endDiff) > Math.Abs(startDiff);
+				if (movingAway) steps.Add((rawStart + sign, rawEnd, dragState));
+				else steps.Add((rawStart, rawEnd - sign, !dragState));
+			}
+			else
+			{
+				// crossing from one side of selection start to the other
+				if (rawStart != dragStart) steps.Add((rawStart, dragStart - sign, !dragState));
+				if (rawEnd != dragStart) steps.Add((dragStart + sign, rawEnd, dragState));
+			}
+			return steps;
+		}
+
 		private void TasView_PointedCellChanged(object sender, InputRoll.CellEventArgs e)
 		{
 			InputRoll roll = (InputRoll)sender;
@@ -1389,26 +1427,10 @@ namespace Chimera.Client.GUI
 					if (a < b) for (int i = a; i <= b; i++) roll.SelectRow(i, v);
 					else for (int i = b; i <= a; i++) roll.SelectRow(i, v);
 				}
-				int rawStart = e.OldCell.RowIndex.Value;
-				int rawEnd = e.NewCell.RowIndex.Value;
-				int sign = Math.Sign(rawEnd - rawStart);
-				int startDiff = rawStart - _startSelectionDrag;
-				int endDiff = rawEnd - _startSelectionDrag;
-				if (sign != 0) // moved to another cell horizontally
+				foreach (var (from, to, selected) in SelectionDragSteps(
+					e.OldCell?.RowIndex, e.NewCell.RowIndex.Value, _startSelectionDrag, _selectionDragState))
 				{
-					if (Math.Sign(startDiff) == Math.Sign(endDiff))
-					{
-						// select if moving away from start, deselect if moving towards
-						bool movingAway = Math.Abs(endDiff) > Math.Abs(startDiff);
-						if (movingAway) selectRange(rawStart + sign, rawEnd, _selectionDragState);
-						else selectRange(rawStart, rawEnd - sign, !_selectionDragState);
-					}
-					else
-					{
-						// crossing from one side of selection start to the other
-						if (rawStart != _startSelectionDrag) selectRange(rawStart, _startSelectionDrag - sign, !_selectionDragState);
-						if (rawEnd != _startSelectionDrag) selectRange(_startSelectionDrag + sign, rawEnd, _selectionDragState);
-					}
+					selectRange(from, to, selected);
 				}
 
 				SetSplicer();
