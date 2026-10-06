@@ -221,7 +221,7 @@ namespace Chimera.Emulation.Common.Waterbox
 			// The optional tooling ABI (see WaterboxCore.Tooling.cs) - may append bus
 			// domains to the list, so it runs before the domains are published.
 			InitTooling((BasicServiceProvider)ServiceProvider, domains);
-			((BasicServiceProvider)ServiceProvider).Register<IMemoryDomains>(new MemoryDomainList(domains));
+			PublishMemory((BasicServiceProvider)ServiceProvider, domains);
 
 			// A game core's properties (docs/game-cores.md): named places in the domains
 			// above, which the tools watch, poke and freeze by name. The engine checked the
@@ -242,6 +242,20 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// is understood here without this file changing. A core with no renderer
 		/// setting never asks, which is most of them.
 		/// </summary>
+		/// <summary>
+		/// Offers the machine's memory to the tools - when it has any. The memory
+		/// tools (RAM Watch, RAM Search, the hex editor) require the service and
+		/// start from its first domain, so a machine that describes no memory at
+		/// all must not offer an empty list: they would be enabled, and fail on
+		/// opening (issue #197, a Flash movie). Without the service they are greyed
+		/// out, and a script that asks for memory is told the core has none.
+		/// </summary>
+		internal static void PublishMemory(BasicServiceProvider services, IList<MemoryDomain> domains)
+		{
+			if (domains.Count is 0) return;
+			services.Register<IMemoryDomains>(new MemoryDomainList(domains));
+		}
+
 		internal static bool WantsGpu(IReadOnlyDictionary<string, object> effective)
 			=> effective.TryGetValue("renderer", out var r)
 				&& r?.ToString() is string name
