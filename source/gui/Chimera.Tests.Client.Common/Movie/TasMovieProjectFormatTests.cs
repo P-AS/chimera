@@ -323,19 +323,20 @@ namespace Chimera.Tests.Client.Common.Movie
 		}
 
 		/// <summary>
-		/// A state a GPU drew does not TRAVEL: a branch's machine rides inside the
-		/// project file, which people hand to each other and open on other PCs, and
-		/// the renderer holds its OpenGL objects by names a particular driver handed
-		/// out. So a branch keeps its input and loses its machine.
+		/// A branch's state follows the greenzone's rule (user-decided 2026-10-06,
+		/// issue #186). Both are files in the cache beside the project, so a core
+		/// whose GPU-drawn states are known to reload keeps both across a clean
+		/// close - measured on the real 8916-frame nss102 project, where a 626 MB
+		/// greenzone written by one process and reloaded by another drew frame 8915
+		/// pixel for pixel.
 		///
-		/// The greenzone is the other case and is decided by the SHUTDOWN, not the
-		/// renderer (2026-09-16): it is a per-machine cache beside the project, and a
-		/// cleanly closed session's history reloads correctly - measured on the real
-		/// 8916-frame nss102 project, where a 626 MB greenzone written by one process
-		/// and reloaded by another drew frame 8915 pixel for pixel.
+		/// A branch used to lose its machine whenever a GPU drew it, from when the
+		/// state rode INSIDE the project file that people hand to each other. So a
+		/// reopened xemu or Flycast project had its greenzone and still replayed
+		/// every branch from power-on.
 		/// </summary>
 		[TestMethod]
-		public void AGpuDrawnBranchLosesItsMachineButTheGreenzoneSurvivesACleanClose()
+		public void AGpuDrawnBranchKeepsItsMachineWhereTheGreenzoneIsKept()
 		{
 			var path = Path.Combine(_dir, "gpudrawn.chimeraProject");
 			var movie = MakeWorkedMovie(path, gpuRenderer: "4.5 (Core Profile) Mesa on llvmpipe", coreName: "Ruffle");
@@ -345,8 +346,9 @@ namespace Chimera.Tests.Client.Common.Movie
 			Assert.AreEqual(6, loaded.InputLogLength, "the work itself is untouched");
 			Assert.AreEqual(1, loaded.Branches.Count);
 			Assert.AreEqual("risky route", loaded.Branches[0].UserText, "and so is what a branch IS");
-			Assert.IsNull(loaded.Branches[0].StateFile, "the branch keeps its input and loses its state");
-			// ...but nothing is said about the greenzone, because nothing was taken
+			CollectionAssert.AreEqual(new byte[] { 1, 2, 3, 4 }, StateOf(loaded, loaded.Branches[0]),
+				"the branch has its state, as the greenzone has its history");
+			// ...and nothing is said about the greenzone, because nothing was taken
 			// away: this project closed cleanly, so its history is trusted
 			Assert.IsNull(loaded.DroppedCacheNote, "a clean close keeps the greenzone, whoever drew it");
 
@@ -382,11 +384,15 @@ namespace Chimera.Tests.Client.Common.Movie
 			Assert.IsTrue(File.Exists(movie.StateHistoryFilename),
 				"a clean Ruffle session writes one - that is the behaviour this guards");
 
+			Assert.IsNotNull(LoadFresh(path).Branches[0].StateFile, "and its branch keeps its state");
+
 			movie.NoteCoreDied();
 			Assert.IsTrue(movie.CoreDiedThisSession, "and it stays said");
 			Assert.IsFalse(movie.Save().IsError);
 			Assert.IsFalse(File.Exists(movie.StateHistoryFilename),
 				"the history of a session that lost its machine is removed, not left for the next open");
+			Assert.IsNull(LoadFresh(path).Branches[0].StateFile,
+				"and a branch's state is not vouched for either: it replays");
 
 			// and a core that never had a greenzone to lose is unaffected
 			var plain = Path.Combine(_dir, "diedplain.chimeraProject");
@@ -416,6 +422,8 @@ namespace Chimera.Tests.Client.Common.Movie
 			Assert.AreEqual(6, loaded.InputLogLength, "the work itself is untouched");
 			Assert.IsNotNull(loaded.DroppedCacheNote, "and the person is told the states were not kept");
 			StringAssert.Contains(loaded.DroppedCacheNote, "not yet known to reload");
+			Assert.AreEqual(1, loaded.Branches.Count);
+			Assert.IsNull(loaded.Branches[0].StateFile, "a branch follows the greenzone: its state is not kept either");
 		}
 
 		/// <summary>
@@ -452,6 +460,7 @@ namespace Chimera.Tests.Client.Common.Movie
 				Assert.AreEqual(6, loaded.InputLogLength, "the work itself is never in doubt");
 				Assert.IsNotNull(loaded.DroppedCacheNote, "and the person is told the greenzone was not used");
 				StringAssert.Contains(loaded.DroppedCacheNote, "did not close normally");
+				Assert.IsNull(loaded.Branches[0].StateFile, "nor is a branch's state");
 			}
 			finally
 			{
@@ -464,17 +473,22 @@ namespace Chimera.Tests.Client.Common.Movie
 			// ...and with the folder gone, the very same project keeps its history:
 			// the refusal is the unfinished session's doing and nothing else's
 			Assert.IsTrue(ProjectRecovery.LastSessionEndedCleanly(movie.Project.Id));
-			Assert.IsNull(LoadFresh(path).DroppedCacheNote, "a clean close is trusted again");
+			var trusted = LoadFresh(path);
+			Assert.IsNull(trusted.DroppedCacheNote, "a clean close is trusted again");
+			// (the branch's state does not come back with it: a state file no branch
+			// names is swept on open, and the open above named none)
+			Assert.IsNull(trusted.Branches[0].StateFile);
 		}
 
 		/// <summary>
-		/// ...and a core that SAYS its renderer builds its objects again when the context it drew on is
-		/// gone is still not taken at its word for a state that TRAVELS. The claim is written down - it
-		/// is what the core said - and the branch's machine is left out all the same, because the
-		/// project file goes to other people and other PCs.
+		/// A core that SAYS its renderer builds its objects again when the context it drew on is gone
+		/// has that written down - it is what the core said - and it decides nothing. What a session
+		/// leaves for the next is decided by the evidence list: the same claim from a core that is not
+		/// on it keeps neither the greenzone nor a branch's state (AGpuCoreWithNoEvidenceStillStartsCold),
+		/// and a core that is on it keeps both whether it makes the claim or not.
 		/// </summary>
 		[TestMethod]
-		public void ARendererThatSaysItRebuildsStillDoesNotTravel()
+		public void WhatARendererSaysOfItselfIsRecordedAndDecidesNothing()
 		{
 			var path = Path.Combine(_dir, "rebuilds.chimeraProject");
 			var movie = MakeWorkedMovie(path, gpuRenderer: "4.5 Mesa on llvmpipe", statesSurvive: true, coreName: "Ruffle");
@@ -482,10 +496,17 @@ namespace Chimera.Tests.Client.Common.Movie
 
 			var loaded = LoadFresh(path);
 			Assert.AreEqual(6, loaded.InputLogLength, "the work itself is untouched");
-			Assert.IsNull(loaded.Branches[0].StateFile, "the branch keeps its input and loses its state");
-			Assert.IsNull(loaded.DroppedCacheNote, "the greenzone is untouched: this project closed cleanly");
 			Assert.AreEqual("1", loaded.HeaderEntries[HeaderKeys.GpuStatesSurvive],
-				"what the core declared is still on record");
+				"what the core declared is on record");
+			Assert.IsNull(loaded.DroppedCacheNote, "the greenzone is kept: this core is on the list, and it closed cleanly");
+			Assert.IsNotNull(loaded.Branches[0].StateFile, "and the branch's state with it");
+
+			// the same core saying nothing keeps exactly as much
+			var silent = Path.Combine(_dir, "silent.chimeraProject");
+			Assert.IsFalse(MakeWorkedMovie(silent, gpuRenderer: "4.5 Mesa on llvmpipe", coreName: "Ruffle").Save().IsError);
+			var silentLoaded = LoadFresh(silent);
+			Assert.IsFalse(silentLoaded.HeaderEntries.ContainsKey(HeaderKeys.GpuStatesSurvive));
+			Assert.IsNotNull(silentLoaded.Branches[0].StateFile, "the list decided, not the claim");
 		}
 
 		/// <summary>

@@ -4870,3 +4870,39 @@ unit test of the movie changing machines.
 One thing found on the way and NOT fixed: under Mono, a core that dies
 with the piano roll open crashes in Mono's unwinder, reboot or no reboot.
 The death leg runs with the roll closed for that reason.
+
+## A branch's state follows the greenzone's rule (user-decided, 2026-10-06)
+
+Reopening an xemu or Flycast project and loading a branch said "This branch
+has no saved state beside the project; replaying to its frame instead", and
+replayed from power-on - every branch, every time (issue #186). The same
+project had its greenzone.
+
+Two rules had drifted apart. A branch's state was left out of the cache for
+ANY machine a GPU drew, from when that state rode inside the project file:
+a file people hand to each other, and a state a GPU drew is only good where
+that GPU is. Since the PS3's four-gigabyte states (2026-09-17) a branch's
+state is a file of its own in the cache beside the project, exactly as the
+greenzone is - and the greenzone has been kept since 2026-09-16 for the
+cores whose GPU-drawn states are known, by evidence, to reload in another
+process, after a clean close.
+
+The user's words: branches should follow the greenzone rule. They do: which
+file is a branch's state is recorded, and read back, exactly when the
+greenzone may outlive the session - a machine no GPU drew, or a core on the
+evidence list; never from a session whose machine died; never read from a
+session that did not finish. A core's own claim that its states survive
+still decides nothing.
+
+Measured before it was changed, on Flycast drawn through the GPU bridge:
+one process played the 240p test suite to frame 700 and saved a state; a
+second process loaded it and played 200 frames, and its picture was the
+first process's frame 899 pixel for pixel (the control, frames 700 and 899
+of one run, differs by 140 pixels). The frame right after the load draws
+nothing, as after any load on these cores; TAStudio shows the branch's own
+stored picture there.
+
+What it does not change: a cache an older build wrote for a GPU-drawn
+machine names no state files, so those branches replay once more and keep
+their state from the next save. A state the engine refuses still falls back
+to the replay, with the reason shown.

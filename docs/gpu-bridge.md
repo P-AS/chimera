@@ -696,6 +696,12 @@ either way - a load there moves the id and the core rebuilds (see "Per load,
 too" above) - and a project that loses its cache replays,
 which is what an empty greenzone has always meant.
 
+What stands now: the greenzone of a GPU-drawn machine is kept across a clean
+close for the cores whose states have been SHOWN to reload in another process
+(the evidence list, 2026-09-16), and since 2026-10-06 a branch's state is kept
+under exactly the same rule (docs/design-principles.md, "A branch's state
+follows the greenzone's rule").
+
 Every core that draws on the host's GPU now says yes. Saying it is not the same
 as doing it, so `tests/gpu/run-reopen.sh` asks: open, play, save, close, open
 again IN THE SAME PROCESS, load the state, keep playing. A fresh process per run
