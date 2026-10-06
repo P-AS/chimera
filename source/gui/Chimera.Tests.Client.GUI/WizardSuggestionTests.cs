@@ -194,6 +194,41 @@ namespace Chimera.Tests.Client.GUI
 				"nameless and repeated entries are dropped");
 		}
 
+		/// <summary>
+		/// Issue #214: the wizard opens on the last project's answers. Those hold
+		/// what the core suggested for THAT project's game, and a game the core
+		/// knows nothing about kept them.
+		/// </summary>
+		[TestMethod]
+		public void ASeededWizardTakesBackTheSeededGamesSuggestionForAnotherGame()
+		{
+			using var form = FormWith(Package(suggests: true), game => (game == "last.iso" ? Found : NotFound, ""));
+			// the last project: made for last.iso with what was suggested for it,
+			// one suggested value changed by hand, and one setting of the user's own
+			form.SeedSettingsForTest(
+				"""{"writeColorBuffers":true,"frameLimit":"Off","resolutionScaleThreshold":320,"spuBlockSize":"Mega"}""",
+				"last.iso");
+
+			form.ArriveAtSettingsForTest("new.iso");
+
+			Assert.AreEqual(Default, Value(form, "writeColorBuffers"), "suggested for the last game, not for this one");
+			Assert.AreEqual(Default, Value(form, "resolutionScaleThreshold"), "likewise, compared as the declared int");
+			Assert.AreEqual("Off", Value(form, "frameLimit"), "the user had moved this away from the suggestion: it is theirs");
+			Assert.AreEqual("Mega", Value(form, "spuBlockSize"), "never suggested: the last project's answer carries over");
+		}
+
+		/// <summary>The seeded game itself keeps the project's settings, as it did.</summary>
+		[TestMethod]
+		public void ASeededWizardKeepsTheProjectsSettingsForItsOwnGame()
+		{
+			using var form = FormWith(Package(suggests: true), _ => (Found, ""));
+			form.SeedSettingsForTest("""{"writeColorBuffers":true,"frameLimit":"Off"}""", "last.iso");
+			form.ArriveAtSettingsForTest("last.iso");
+			Assert.AreEqual("True", Value(form, "writeColorBuffers"));
+			Assert.AreEqual("Off", Value(form, "frameLimit"), "not put back to the suggested 60");
+			StringAssert.Contains(form.SuggestionNoteText, "This project's own settings are kept.");
+		}
+
 		[TestMethod]
 		public void AFailedLookupSaysWhyAndMovesNothing()
 		{

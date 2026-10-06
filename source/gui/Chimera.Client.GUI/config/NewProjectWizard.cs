@@ -135,6 +135,14 @@ namespace Chimera.Client.GUI
 		/// project's own, so the suggestion is shown for them but not applied.
 		/// </summary>
 		private string? _seededFor;
+
+		/// <summary>
+		/// The game and the core the wizard was seeded with, for as long as what that
+		/// core suggested for that game may still be sitting in the settings (see
+		/// <see cref="TakeBackTheSeededSuggestion"/>).
+		/// </summary>
+		private string? _seededGame;
+		private string? _seededCore;
 		private readonly ComboBox _presets;
 		private readonly Button _applyPreset;
 		private WaterboxCoreSettings? _settings;
@@ -836,6 +844,8 @@ namespace Chimera.Client.GUI
 			// the project's settings are its own: what the core would suggest for
 			// this game is shown on the settings page, not applied over them
 			_seededFor = SuggestionKey();
+			_seededGame = PrecompileRomPath();
+			_seededCore = ChosenCore?.Path;
 			_seededFirmware = answers.Firmware;
 		}
 
@@ -2332,6 +2342,19 @@ namespace Chimera.Client.GUI
 			SuggestSettingsNow();
 		}
 
+		/// <summary>
+		/// Seeds the settings as a wizard opened on the last project's answers has
+		/// them: that project's values, and its game as the one they belong to.
+		/// </summary>
+		internal void SeedSettingsForTest(string settingsJson, string gamePath)
+		{
+			SeedSettings(settingsJson);
+			_precompileRomOverride = gamePath;
+			_seededFor = SuggestionKey();
+			_seededGame = gamePath;
+			_seededCore = ChosenCore?.Path;
+		}
+
 		/// <summary>The note above the settings, "" when none is shown - for tests.</summary>
 		public string SuggestionNoteText => _suggestionShown ? _suggestionNote.Text : "";
 
@@ -2360,6 +2383,12 @@ namespace Chimera.Client.GUI
 				return;
 			}
 			if (key == _suggestedFor) return;
+
+			if (_seededGame is { } seededGame && key != _seededFor)
+			{
+				_seededGame = null;
+				if (ChosenCore?.Path == _seededCore) TakeBackTheSeededSuggestion(seededGame);
+			}
 
 			// what the last game's suggestion set goes back to the default, and the
 			// last game's own settings go with it - another game has other ones
@@ -2426,6 +2455,45 @@ namespace Chimera.Client.GUI
 			RefreshExposedSettings();
 			_settingsGrid.Refresh();
 			UpdateNavLabels();
+		}
+
+		/// <summary>
+		/// A wizard seeded from the last project opens holding that project's
+		/// settings - the ones the core suggested for ITS game among them, and
+		/// nothing in a project says which those were. Another game has other ones:
+		/// a game the core knows nothing about kept the previous game's (issue
+		/// #214). So before another game's suggestion is looked up, the core is
+		/// asked what it would suggest for the seeded game, and every setting that
+		/// still holds exactly that goes back to its default. A value the user had
+		/// moved away from the suggestion is theirs, and stays.
+		/// </summary>
+		private void TakeBackTheSeededSuggestion(string seededGame)
+		{
+			var (json, _) = SuggestionSourceForTest?.Invoke(seededGame) ?? AskCoreForSuggestion(ChosenCore!.Path, seededGame);
+			if (json is null) return;
+			try
+			{
+				if (Newtonsoft.Json.Linq.JObject.Parse(json)["values"] is not Newtonsoft.Json.Linq.JObject values) return;
+				var effective = WaterboxCore.EffectiveSettingsFor(_cfg!, _settings!);
+				var byName = _cfg!.SettingsFor(_cfg.MachineFor(effective))
+					.Where(static d => d.Name is { Length: > 0 })
+					.GroupBy(static d => d.Name!, StringComparer.Ordinal)
+					.ToDictionary(static g => g.Key, static g => g.First(), StringComparer.Ordinal);
+				foreach (var pair in values)
+				{
+					if (pair.Key == RendererSetting || pair.Key == _cfg.MachineSetting) continue;
+					if (!byName.TryGetValue(pair.Key, out var decl)) continue;
+					if (pair.Value is not Newtonsoft.Json.Linq.JValue v || v.Value is null) continue;
+					if (_settings!.Values.TryGetValue(pair.Key, out var held) && Equals(decl.Coerce(held), decl.Coerce(v.Value)))
+					{
+						_settings.Values.Remove(pair.Key);
+					}
+				}
+			}
+			catch (Newtonsoft.Json.JsonException)
+			{
+				// an answer that cannot be read takes nothing back
+			}
 		}
 
 		/// <summary>Shows the note above the settings, or hides it (null).</summary>
