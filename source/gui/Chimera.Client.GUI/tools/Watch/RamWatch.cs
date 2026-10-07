@@ -842,7 +842,8 @@ namespace Chimera.Client.GUI
 			using GamePropertyPicker picker = new(
 				GameProperties,
 				e => GameProperties.Text(e),
-				e => _watches.Any(w => !w.IsSeparator && w.Notes == e.Name && w.Domain?.Name == e.Property.Domain && w.Address == e.Offset));
+				// a dynamic table's property is known by its name alone: where it is changes
+				e => _watches.Any(w => !w.IsSeparator && w.Notes == e.Name && w.Domain?.Name == e.Property.Domain && (e.Property.Dynamic || w.Address == e.Offset)));
 			if (!this.ShowDialogWithTempMute(picker).IsOk()) return;
 			foreach (var element in picker.Chosen)
 			{

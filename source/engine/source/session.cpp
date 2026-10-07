@@ -452,6 +452,10 @@ struct ce_session
 	int64_t (*mdSize)(int32_t) = nullptr;
 	int32_t (*mdWritable)(int32_t) = nullptr;
 	CeGameProperties properties;    // a game core's (docs/game-cores.md); empty for an emulator
+	uintptr_t (*gameProperties)() = nullptr;             // GetGameProperties: the table, again when it is dynamic
+	uintptr_t (*gameProperty)(const char *) = nullptr;   // GetGameProperty: one entry by name (a dynamic table's)
+	/* a dynamic table's property, looked for again by name before it is used */
+	void placeProperty(int32_t index);
 	CeGameProperties::Value propertyValue; // what the last ce_session_property_get lent out
 
 	int32_t vsyncNum = 0, vsyncDen = 0;
@@ -1538,14 +1542,23 @@ ce_session *ce_session_open(
 	s->mdWritable = reinterpret_cast<int32_t (*)(int32_t)>(s->proc("GetMemoryDomainWritable", 1, true, err));
 	if (s->mdWritable == nullptr) return abort(std::move(err));
 
-	/* a game core's properties: a fixed table, read once and checked against
-	 * the domains, whose pointers hold for the session's lifetime */
+	s->videoBuf.assign(static_cast<size_t>(s->cfg.width) * s->cfg.height, 0);
+	s->audioBuf.assign(static_cast<size_t>(s->cfg.samplesPerFrame) * 2, 0);
+	s->btnState.assign(s->cfg.buttons.size(), 0);
+	s->btnSent.assign(s->cfg.buttons.size(), 0); // a fresh guest holds nothing down
+	s->btnEffective.assign(s->cfg.buttons.size(), 0);
+	s->probeOptionalGroups();
+	s->buildControlActivity();
+	s->layout.build(s->cfg.buttons, s->cfg.axes, &s->buttonActive, &s->axisActive);
+
+	/* a game core's properties: a table read once and checked against the
+	 * domains, whose pointers hold for the session's lifetime - and against the
+	 * buses, which is why this comes after they were probed for */
 	{
 		const char *table = nullptr;
-		if (auto exported = reinterpret_cast<uintptr_t (*)()>(s->proc("GetGameProperties", 0, false, err)))
-		{
-			table = reinterpret_cast<const char *>(exported());
-		}
+		s->gameProperties = reinterpret_cast<uintptr_t (*)()>(s->proc("GetGameProperties", 0, false, err));
+		if (s->gameProperties != nullptr) table = reinterpret_cast<const char *>(s->gameProperties());
+		s->gameProperty = reinterpret_cast<uintptr_t (*)(const char *)>(s->proc("GetGameProperty", 1, false, err));
 		err.clear(); // allowed to be absent
 		std::vector<CeGameProperties::Domain> domains;
 		for (int32_t i = 0; table != nullptr && i < s->mdCount(); i++)
@@ -1557,21 +1570,30 @@ ce_session *ce_session_open(
 			d.writable = s->mdWritable(i) != 0;
 			domains.push_back(std::move(d));
 		}
+		/* A bus can hold properties too: it has no pointer, so its memory is
+		 * read and written through the bus (a Flash movie's variables are on
+		 * its emulator's heap, which is one - docs/game-cores.md). A domain
+		 * of the same name comes first and wins. */
+		for (int32_t b = 0; table != nullptr && b < static_cast<int32_t>(s->busNames.size()); b++)
+		{
+			CeGameProperties::Domain d;
+			d.name = s->busNames[static_cast<size_t>(b)];
+			d.size = s->busSizes[static_cast<size_t>(b)];
+			d.writable = s->busWritables[static_cast<size_t>(b)];
+			ce_session *session = s;
+			d.read = [session, b](int64_t offset, uint8_t *buf, int64_t len) { ce_session_bus_read(session, b, offset, buf, len); };
+			d.write = [session, b](int64_t offset, const uint8_t *buf, int64_t len)
+			{
+				for (int64_t k = 0; k < len; k++) ce_session_bus_poke(session, b, static_cast<int32_t>(offset + k), buf[k]);
+			};
+			domains.push_back(std::move(d));
+		}
 		s->properties.load(table, domains);
 		for (const std::string &problem : s->properties.problems())
 		{
 			fprintf(stderr, "[%s] game properties: %s\n", s->cfg.coreName.c_str(), problem.c_str());
 		}
 	}
-
-	s->videoBuf.assign(static_cast<size_t>(s->cfg.width) * s->cfg.height, 0);
-	s->audioBuf.assign(static_cast<size_t>(s->cfg.samplesPerFrame) * 2, 0);
-	s->btnState.assign(s->cfg.buttons.size(), 0);
-	s->btnSent.assign(s->cfg.buttons.size(), 0); // a fresh guest holds nothing down
-	s->btnEffective.assign(s->cfg.buttons.size(), 0);
-	s->probeOptionalGroups();
-	s->buildControlActivity();
-	s->layout.build(s->cfg.buttons, s->cfg.axes, &s->buttonActive, &s->axisActive);
 	return s;
 }
 
@@ -2203,6 +2225,35 @@ const char *ce_host_build_info(void)
 
 const char *ce_session_property_table(const ce_session *s) { return s->properties.describe().c_str(); }
 
+/* A dynamic table's property is where the core says it is NOW: asked by name
+ * before every use, because the thing it names (a variable on a heap) moves
+ * when its table grows and is gone when its object dies. One call into the
+ * core; the property keeps its index either way. */
+void ce_session::placeProperty(int32_t index)
+{
+	if (!properties.dynamic() || gameProperty == nullptr) return;
+	if (index < 0 || static_cast<size_t>(index) >= properties.all().size()) return;
+	const std::string name = properties.all()[static_cast<size_t>(index)].name;
+	properties.place(name, reinterpret_cast<const char *>(gameProperty(name.c_str())));
+}
+
+int32_t ce_session_property_dynamic(const ce_session *s) { return s->properties.dynamic() ? 1 : 0; }
+
+int32_t ce_session_property_refresh(ce_session *s)
+{
+	if (!s->properties.dynamic() || s->gameProperties == nullptr) return static_cast<int32_t>(s->properties.all().size());
+	return s->properties.relist(reinterpret_cast<const char *>(s->gameProperties()));
+}
+
+int64_t ce_session_property_offset(ce_session *s, int32_t index, uint32_t element)
+{
+	s->placeProperty(index);
+	const auto &all = s->properties.all();
+	if (index < 0 || static_cast<size_t>(index) >= all.size()) return -1;
+	const CeGameProperties::Property &p = all[static_cast<size_t>(index)];
+	return p.present && element < p.count ? p.elementOffset(element) : -1;
+}
+
 int32_t ce_session_game_time_ms(ce_session *s, int64_t *ms_out)
 {
 	if (ms_out != nullptr) *ms_out = 0;
@@ -2224,9 +2275,18 @@ int32_t ce_game_time_text(int64_t ms, char *buf, int32_t cap)
 	return int32_t(text.size());
 }
 
-int32_t ce_session_property_find(const ce_session *s, const char *name, uint32_t *element_out)
+int32_t ce_session_property_find(ce_session *s, const char *name, uint32_t *element_out)
 {
-	return name != nullptr ? s->properties.find(name, element_out) : -1;
+	if (name == nullptr) return -1;
+	int32_t index = s->properties.find(name, element_out);
+	/* a dynamic table may not have listed it yet, or ever: the core is asked */
+	if (index < 0 && s->properties.dynamic() && s->gameProperty != nullptr)
+	{
+		index = s->properties.place(name, reinterpret_cast<const char *>(s->gameProperty(name)));
+		if (index >= 0 && !s->properties.all()[static_cast<size_t>(index)].present) index = -1;
+		if (element_out != nullptr) *element_out = 0;
+	}
+	return index;
 }
 
 int32_t ce_session_property_at(const ce_session *s, const char *domain, int64_t address, uint32_t *element_out, int32_t *starts_out)
@@ -2240,6 +2300,7 @@ int32_t ce_session_property_at(const ce_session *s, const char *domain, int64_t 
 int32_t ce_session_property_get(ce_session *s, int32_t index, uint32_t element, ce_property_value *out)
 {
 	s->error.clear();
+	s->placeProperty(index);
 	CeGameProperties::Value &v = s->propertyValue;
 	if (out == nullptr || !s->properties.read(index, element, v))
 	{
@@ -2270,12 +2331,14 @@ int32_t ce_session_property_set(ce_session *s, int32_t index, uint32_t element, 
 	v.u = in->u;
 	v.f = in->f;
 	if (in->data != nullptr && in->len > 0) v.data.assign(in->data, size_t(in->len));
+	s->placeProperty(index);
 	return s->properties.write(index, element, v, s->error) ? 0 : 1;
 }
 
 int32_t ce_session_property_text(ce_session *s, int32_t index, uint32_t element, int32_t named, char *buf, int32_t cap)
 {
 	if (index < 0 || size_t(index) >= s->properties.all().size() || element >= s->properties.all()[size_t(index)].count) return -1;
+	s->placeProperty(index);
 	const std::string text = s->properties.text(index, element, named != 0);
 	if (buf != nullptr && cap > 0)
 	{
@@ -2289,6 +2352,7 @@ int32_t ce_session_property_text(ce_session *s, int32_t index, uint32_t element,
 int32_t ce_session_property_set_text(ce_session *s, int32_t index, uint32_t element, const char *text)
 {
 	s->error.clear();
+	s->placeProperty(index);
 	return s->properties.writeText(index, element, text != nullptr ? text : "", s->error) ? 0 : 1;
 }
 

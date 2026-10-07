@@ -21,9 +21,13 @@ namespace Chimera.Client.Common
 		public override string Name => "game";
 
 		[LuaMethodExample("for _, name in ipairs(game.list()) do console.log(name .. \" = \" .. tostring(game.get(name))); end;")]
-		[LuaMethod("list", "Returns the names of the loaded core's game properties, in the order the core lists them (an array once, by its own name); empty for a core without any")]
+		[LuaMethod("list", "Returns the names of the loaded core's game properties, in the order the core lists them (an array once, by its own name); empty for a core without any. A core whose properties come and go while it runs - a Flash movie's variables - is asked for them as they are now")]
 		public LuaTable List()
-			=> _th.ListToTable((Properties?.Properties ?? [ ]).Select(static p => p.Name).ToList());
+		{
+			// a dynamic table is asked for as it is now: what a movie keeps changes as it runs
+			if (Properties is { IsDynamic: true }) Properties.Refresh();
+			return _th.ListToTable((Properties?.Properties ?? [ ]).Where(static p => p.Listed).Select(static p => p.Name).ToList());
+		}
 
 		[LuaMethodExample("local x = game.get(\"Kid.X\"); local second = game.get(\"Guards.X[1]\"); local all = game.get(\"Guards.X\");")]
 		[LuaMethod("get", "Returns a game property's value: an integer (a u64 as the integer with the same 64 bits), a float for f32/f64, a boolean for bool, a string, or a table of byte values for bytes. An array by its own name is a table of its elements. A name the core does not have returns nil and says so in the console")]
@@ -60,7 +64,7 @@ namespace Chimera.Client.Common
 		}
 
 		[LuaMethodExample("local info = game.describe(\"Guards.X\"); console.log(info.type .. \"[\" .. info.count .. \"] at \" .. info.domain .. \":\" .. info.offset);")]
-		[LuaMethod("describe", "Returns a table describing a game property: name, domain, offset (of the element named, or the first), type, size (bytes in one element), count, first (the number the first element is called by), stride, endian, encoding, bit, bits, group, writable, description, and label (the value as the core names it, when it has names for its values); nil for a name the core does not have")]
+		[LuaMethod("describe", "Returns a table describing a game property: name, domain, offset (of the element named, or the first; where it is now, for a property that moves, and -1 while it is not there), type, size (bytes in one element), count, first (the number the first element is called by), stride, endian, encoding, bit, bits, group, writable, description, and label (the value as the core names it, when it has names for its values); nil for a name the core does not have")]
 		public LuaTable Describe(string name)
 		{
 			if (Find("describe", name) is not { } element) return null;
@@ -68,7 +72,7 @@ namespace Chimera.Client.Common
 			var table = _th.CreateTable();
 			table["name"] = element.Name;
 			table["domain"] = p.Domain;
-			table["offset"] = element.Offset;
+			table["offset"] = Properties.AddressNow(element);
 			table["type"] = p.TypeName;
 			table["size"] = (long)p.Size;
 			table["count"] = (long)p.Count;

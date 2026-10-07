@@ -1280,12 +1280,32 @@ typedef struct ce_property_value
 	int64_t len;
 } ce_property_value;
 CE_API const char *ce_session_property_table(const ce_session *s);
-CE_API int32_t ce_session_property_find(const ce_session *s, const char *name, uint32_t *element_out);
+CE_API int32_t ce_session_property_find(ce_session *s, const char *name, uint32_t *element_out);
 CE_API int32_t ce_session_property_at(const ce_session *s, const char *domain, int64_t address, uint32_t *element_out, int32_t *starts_out);
 CE_API int32_t ce_session_property_get(ce_session *s, int32_t index, uint32_t element, ce_property_value *out);
 CE_API int32_t ce_session_property_set(ce_session *s, int32_t index, uint32_t element, const ce_property_value *in);
 CE_API int32_t ce_session_property_text(ce_session *s, int32_t index, uint32_t element, int32_t named, char *buf, int32_t cap);
 CE_API int32_t ce_session_property_set_text(ce_session *s, int32_t index, uint32_t element, const char *text);
+
+/* A DYNAMIC table (its "dynamic": true): properties that move and come and go
+ * while the machine runs - a Flash movie's variables, which live on its
+ * emulator's heap. The table of such a core is its listing at one moment.
+ * _dynamic: 1 when the table is one.
+ * _refresh: takes the listing again (the core's GetGameProperties) and returns
+ * how many it has. A property already known keeps its index and takes its new
+ * place; a new one is added at the end; one the listing no longer has stays,
+ * marked `"listed": false, "present": false` in _table. Nothing for a table
+ * that is not dynamic.
+ * _offset: where an element is now in its domain, -1 when it is not there.
+ *
+ * Between listings a dynamic property is looked for by NAME before every use
+ * (the core's GetGameProperty): _get, _set, _text, _set_text and _offset each
+ * ask where it is now, so a watch follows a variable that moved and reads
+ * nothing from one that is gone. _find asks the core for a name the listing
+ * did not have. */
+CE_API int32_t ce_session_property_dynamic(const ce_session *s);
+CE_API int32_t ce_session_property_refresh(ce_session *s);
+CE_API int64_t ce_session_property_offset(ce_session *s, int32_t index, uint32_t element);
 
 /* A game core's own timer (docs/game-cores.md: the table's "gameTimer"): the
  * game's elapsed time in milliseconds as the game counts it now, in *ms_out.

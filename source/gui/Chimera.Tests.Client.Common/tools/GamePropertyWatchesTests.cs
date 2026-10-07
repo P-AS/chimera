@@ -49,6 +49,41 @@ namespace Chimera.Tests.Client.Common
 			Assert.AreEqual(8, watches[6].ByteSize);
 		}
 
+		/// <summary>A dynamic table (a Flash movie's variables): the engine's description says so, and of each property whether the last listing had it.</summary>
+		internal const string Moving = @"{ ""dynamic"": true, ""properties"": [
+			{ ""name"": ""_root.lives"", ""domain"": ""Game State"", ""offset"": 16, ""type"": ""u8"", ""size"": 1, ""count"": 1, ""stride"": 1, ""group"": ""_root"", ""listed"": true },
+			{ ""name"": ""_root.hp"", ""domain"": ""Game State"", ""offset"": 24, ""type"": ""f64"", ""size"": 8, ""count"": 1, ""stride"": 8, ""group"": ""_root"", ""listed"": true },
+			{ ""name"": ""_root.old"", ""domain"": ""Game State"", ""offset"": 40, ""type"": ""f64"", ""size"": 8, ""count"": 1, ""stride"": 8, ""group"": ""_root"", ""listed"": false }
+		], ""problems"": [] }";
+
+		[TestMethod]
+		public void APropertyThatMovesIsTheEnginesToWatchWhateverItsSize()
+		{
+			FakeGameProperties properties = new(Moving);
+			Assert.IsTrue(properties.IsDynamic);
+			var lives = properties.Find("_root.lives")!;
+			Assert.IsFalse(lives.Property.FitsAPlainWatch, "a byte watch at a fixed address would lose it the first time it moved");
+			var watch = GamePropertyWatches.WatchOf(properties, lives, Block());
+			Assert.IsInstanceOfType(watch, typeof(PropertyWatch));
+
+			properties.Values["_root.lives"] = "3";
+			Assert.AreEqual("3", watch.ValueString);
+			Assert.AreEqual("10", watch.AddressString, "where the table said it was");
+			properties.Addresses["_root.lives"] = 0x2C;
+			Assert.AreEqual("2C", watch.AddressString, "and where it is now, once it has moved");
+			properties.Addresses["_root.lives"] = -1;
+			Assert.AreEqual("-", watch.AddressString);
+			Assert.AreEqual(PropertyWatch.Gone, watch.ValueString, "a variable the movie no longer has reads as not there, not as nothing");
+			properties.Addresses["_root.lives"] = 0x30;
+			Assert.AreEqual("3", watch.ValueString, "and reads again when it is back");
+
+			FakeGameProperties still = new(Table);
+			Assert.IsFalse(still.IsDynamic);
+			Assert.IsTrue(still.Find("Kid.X")!.Property.FitsAPlainWatch, "a fixed table's byte is still a byte watch");
+			Assert.IsFalse(still.Find("Kid.X")!.Property.Dynamic);
+			Assert.IsFalse(properties.Find("_root.old")!.Property.Listed, "what the last listing did not have keeps its name and is marked");
+		}
+
 		[TestMethod]
 		public void AnArrayTheGameCountsFromOneIsNamedAsItCounts()
 		{

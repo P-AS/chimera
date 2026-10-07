@@ -48,6 +48,7 @@ static uint8_t *read_rom(uint32_t *out_len) {
 	return buf;
 }
 
+static int moving(void); /* the movingProperties setting, read once here */
 ECL_EXPORT int Init(void) {
 	uint32_t len = 0;
 	uint8_t *rom = read_rom(&len);
@@ -65,6 +66,7 @@ ECL_EXPORT int Init(void) {
 		uint8_t *ram = synth_get_ram(g_synth);
 		for (int i = 0; i < 4096; i++) ram[i] = (uint8_t)fill;
 	}
+	moving();
 	return 1;
 }
 
@@ -176,8 +178,69 @@ ECL_EXPORT const uint8_t *ReadBus(int32_t b, int64_t addr, int32_t len)
  * the tools and scripts using it - without a game core in the tree. Status is
  * every test rom's convention (SPEC.md, "Test goals"); the rest is gridWalker's
  * layout (roms/gridWalker.sasm). */
+/* --- the same, as a DYNAMIC table (engine.h, "A DYNAMIC table") ---
+ * With the movingProperties setting on, the table is the core's answer for
+ * now: properties that move and come and go as the game runs, which is what a
+ * Flash movie's variables do on its emulator's heap. Nothing here is on a
+ * heap; the cursor's row stands in for whatever makes a real one move:
+ *   Wanderer   a byte at RAM 0x200 + 4 * row: it is somewhere else whenever
+ *              the cursor changes row, and what was written at the old place
+ *              stays behind there;
+ *   Sometimes  a byte at RAM 0x240, there only while the row is odd;
+ *   Mirror     a byte on "Bus", which has no pointer: read through the bus;
+ *   Origin     the byte at RAM 0x200, which does not move: where Wanderer is
+ *              while the row is 0, and what tells a write that followed
+ *              Wanderer from one that went where it used to be;
+ *   Row, Steps where the others' places and values are worked out from.
+ * The engine asks for the list (GetGameProperties) when told to, and for one
+ * property by name (GetGameProperty) before every use; witness leg
+ * E:dynamic-properties follows them through a whole game. The text is made in
+ * memory that is in no state: asking must not change the machine. */
+ECL_INVISIBLE static char g_propsNow[1536];
+ECL_INVISIBLE static int g_moving; /* 0 not asked yet, 1 off, 2 on */
+
+static int moving(void)
+{
+	if (g_moving == 0) g_moving = wbx_setting_long("movingProperties", 0) != 0 ? 2 : 1;
+	return g_moving == 2;
+}
+
+static int moving_entry(char *out, size_t cap, const char *name)
+{
+	const uint8_t *ram = synth_get_ram(g_synth);
+	const char *shape = "{ \"name\": \"%s\", \"domain\": \"%s\", \"offset\": %d, \"type\": \"%s\", \"group\": \"Moving\" }";
+	if (!strcmp(name, "Wanderer")) return snprintf(out, cap, shape, name, "RAM", 0x200 + 4 * ram[2], "u8");
+	if (!strcmp(name, "Sometimes") && (ram[2] & 1)) return snprintf(out, cap, shape, name, "RAM", 0x240, "u8");
+	if (!strcmp(name, "Mirror")) return snprintf(out, cap, shape, name, "Bus", 4, "u8");
+	if (!strcmp(name, "Origin")) return snprintf(out, cap, shape, name, "RAM", 0x200, "u8");
+	if (!strcmp(name, "Row")) return snprintf(out, cap, shape, name, "RAM", 2, "u8");
+	if (!strcmp(name, "Steps")) return snprintf(out, cap, shape, name, "RAM", 4, "u32");
+	return 0;
+}
+
+ECL_EXPORT const char *GetGameProperty(const char *name)
+{
+	g_propsNow[0] = 0;
+	if (g_synth && moving() && name) moving_entry(g_propsNow, sizeof g_propsNow, name);
+	return g_propsNow;
+}
+
 ECL_EXPORT const char *GetGameProperties(void)
 {
+	if (moving())
+	{
+		static const char *const names[] = { "Wanderer", "Sometimes", "Mirror", "Origin", "Row", "Steps" };
+		size_t at = (size_t)snprintf(g_propsNow, sizeof g_propsNow, "{ \"dynamic\": true, \"properties\": [");
+		int listed = 0;
+		for (int k = 0; g_synth && k < 6; k++)
+		{
+			char one[256];
+			if (moving_entry(one, sizeof one, names[k]) <= 0) continue;
+			at += (size_t)snprintf(g_propsNow + at, sizeof g_propsNow - at, "%s%s", listed++ ? ", " : "", one);
+		}
+		snprintf(g_propsNow + at, sizeof g_propsNow - at, "] }");
+		return g_propsNow;
+	}
 	return "{ \"properties\": ["
 		"{ \"name\": \"Status\", \"domain\": \"RAM\", \"offset\": 0, \"type\": \"u8\", \"group\": \"Game\","
 		" \"values\": { \"0\": \"Playing\", \"1\": \"Won\", \"2\": \"Lost\" },"

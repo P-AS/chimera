@@ -487,7 +487,10 @@ namespace Chimera.Client.Common
 		/// <summary>
 		/// Gets the address in the <see cref="MemoryDomain"/> formatted as string
 		/// </summary>
-		public string AddressString => Address.ToString(AddressFormatStr);
+		public virtual string AddressString => FormatAddress(Address);
+
+		/// <summary>An address the way this watch's domain writes one.</summary>
+		protected string FormatAddress(long address) => address.ToString(AddressFormatStr);
 
 		/// <summary>
 		/// Gets or sets a value indicating the endianess of current <see cref="Watch"/>

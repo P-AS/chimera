@@ -4934,3 +4934,54 @@ writes it. Where it went is the implementer's choice, not the user's: the
 user decided what the About box holds, and this is what followed from it.
 The text is built in `VersionReport` (tested); the menu item only asks the
 running core which package it is.
+
+## A property table can be dynamic: a Flash movie's variables, by name (user-decided, 2026-10-07)
+
+Issue #216 asked how to watch a value in a Flash game: a movie has no RAM,
+and the Ruffle core published no memory at all. Two things were decided, in
+this order.
+
+First the bytes (the user: "the quickest solution to expose the data"): the
+core's heap is a bus, `Heap`. Every tool that reads memory reads it, and a
+number a movie keeps can be searched for and poked. That is enough to work
+with and awkward to live with - a number is a double, three copies of it are
+on the heap of which one is the variable, and the variable moves.
+
+Then the names. The user proposed a tool for Ruffle alone: a dialog of every
+variable, its type and its address, and a way to add one to the watch list.
+What was built is that dialog as the one Chimera already had - RAM Watch's
+Add Game Properties - by letting a core's property table be DYNAMIC, and the
+user agreed to it ("yes, build it that way, AS1/2 first"). The reasons it is
+not a Ruffle tool: Chimera holds no system-specific code; the engine already
+reads, shows and parses every type a variable can have, which a byte watch
+cannot (RAM Watch has no 8-byte watch, and a movie's numbers are doubles);
+and Lua, freezes, the OSD and watch files then work on a variable with
+nothing written for them.
+
+What "dynamic" had to mean, since a variable is not a place:
+
+- a property is known by its NAME, and where it is gets asked before every
+  read and write (`GetGameProperty`); its index in the engine's table never
+  changes, so a watch holds on through a move and through an absence;
+- the list is the core's answer when asked (when the dialog opens, on
+  Refresh, on `game.list()`), never kept up behind the user's back;
+- a property can live on a bus, since a heap is one;
+- and the rule that carries the weight: ANSWERING MUST NOT CHANGE THE
+  MACHINE. Opening a dialog is not input. The core's walk allocates nothing,
+  calls nothing of the movie's, and writes its answer outside every state;
+  the gate proves it by counting allocator calls (0) and comparing the heap
+  before and after (identical), with a control that allocates 24 bytes and
+  is caught on both counts.
+
+Decided by the user in the same message: RAM Search is NOT changed. "It's
+meant for byte-based operations - searching over game properties isn't
+useful and a pain to implement." It searches the Heap bus as bytes like any
+other memory.
+
+Scope, stated so nobody assumes more: ActionScript 1 and 2 only - a movie in
+ActionScript 3 lists nothing yet. Numbers, booleans and strings held by
+clips, by objects and arrays reachable from them, and by `_global`; a clip's
+`_x`, `_y` and `_currentframe`. Strings and the clip values are read-only (a
+string is shared and never changed in place; a clip's position has caches
+behind it). A property with a getter has no place and is not listed. A write
+is a poke: the bytes change and the movie's code is not told.

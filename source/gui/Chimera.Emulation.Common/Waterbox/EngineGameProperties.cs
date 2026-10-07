@@ -19,15 +19,30 @@ namespace Chimera.Emulation.Common.Waterbox
 	{
 		private readonly EngineSession _session;
 
-		public IReadOnlyList<GameProperty> Properties { get; }
+		public IReadOnlyList<GameProperty> Properties { get; private set; }
 
-		public IReadOnlyList<string> Problems { get; }
+		public IReadOnlyList<string> Problems { get; private set; }
+
+		public bool IsDynamic { get; }
 
 		public EngineGameProperties(EngineSession session)
 		{
 			_session = session;
+			IsDynamic = session.PropertyDynamic;
 			(Properties, Problems) = Describe(session.PropertyTableJson);
 		}
+
+		public void Refresh()
+		{
+			if (!IsDynamic || _session.Disposed) return;
+			_session.PropertyRefresh();
+			(Properties, Problems) = Describe(_session.PropertyTableJson);
+		}
+
+		public long AddressNow(GamePropertyElement element)
+			=> !IsDynamic ? element.Offset
+				: _session.Disposed ? -1
+				: _session.PropertyOffset(element.Property.Index, (uint)element.Index);
 
 		/// <summary>The engine's description of its table, as the frontend lists it.</summary>
 		public static (IReadOnlyList<GameProperty> Properties, IReadOnlyList<string> Problems) Describe(string tableJson)
@@ -36,6 +51,7 @@ namespace Chimera.Emulation.Common.Waterbox
 			List<string> problems = new();
 			if (string.IsNullOrWhiteSpace(tableJson)) return (properties, problems);
 			var root = JObject.Parse(tableJson);
+			var dynamic = (bool?)root["dynamic"] ?? false;
 			var index = 0;
 			foreach (var p in root["properties"] as JArray ?? new JArray())
 			{
@@ -62,6 +78,8 @@ namespace Chimera.Emulation.Common.Waterbox
 					Group = (string?)p["group"] ?? "",
 					Description = (string?)p["description"] ?? "",
 					Writable = (bool?)p["writable"] ?? true,
+					Dynamic = dynamic,
+					Listed = (bool?)p["listed"] ?? true,
 					Values = values,
 				});
 			}
@@ -76,6 +94,9 @@ namespace Chimera.Emulation.Common.Waterbox
 		{
 			if (_session.Disposed) return null;
 			var index = _session.PropertyFind(name, out var element);
+			// a dynamic table takes on a name it was asked for and had not listed: the
+			// engine's table is then longer than the copy here
+			if (IsDynamic && index >= Properties.Count) (Properties, Problems) = Describe(_session.PropertyTableJson);
 			return index >= 0 && index < Properties.Count ? Properties[index].Element((int)element) : null;
 		}
 

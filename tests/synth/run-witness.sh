@@ -299,6 +299,58 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 			report "E:bus-read" FAIL "$(grep -m1 -E 'differs|no domain' "$work/bus.log")"
 		fi
 
+		# a DYNAMIC property table (engine.h; chimera#216): with its
+		# movingProperties setting on, the synth lists properties that move
+		# and come and go with the cursor's row, the way a Flash movie's
+		# variables do on its emulator's heap (package-box/synth_wbx.c says
+		# where each is). chimera-run asks for each by name after every frame
+		# of a whole game, as a watch does, and what it prints is checked
+		# against the rule the core states, not against a recording:
+		#   Wanderer is at 0x200 + 4 * Row, every frame;
+		#   Sometimes is there exactly while Row is odd;
+		#   Mirror, on a bus with no pointer, reads what the bus says;
+		#   a 77 written to Wanderer before the first frame (Row 0) stays at
+		#   0x200 - Origin - and Wanderer, once it has moved on, does not have it;
+		#   the table says it is dynamic, and a fresh listing has Sometimes
+		#   or not by the last row.
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			--settings '{"movingProperties":1}' --property-set Wanderer=77 \
+			--property-trace Row,Steps,Wanderer,Sometimes,Mirror,Origin > "$work/dynamic.out" 2>"$work/dynamic.err"
+		if python3 - "$work/dynamic.out" > "$work/dynamic.check" 2>&1 <<'DYNAMIC'
+import json, sys
+frames, table, listed, set_line = {}, None, None, None
+for line in open(sys.argv[1]):
+    w = line.split()
+    if line.startswith("prop set "): set_line = line.strip()
+    elif line.startswith("prop table: {"): table = json.loads(line[len("prop table: "):])
+    elif line.startswith("prop table: "): listed = line.strip()
+    elif w and w[0] == "prop":
+        frames.setdefault(int(w[1]), {})[w[2]] = None if w[3] == "gone" else (int(w[4]), int(w[6]))
+assert set_line == "prop set Wanderer: done", set_line
+assert len(frames) >= 60, "only %d frames traced" % len(frames)
+rows = set()
+for f, p in sorted(frames.items()):
+    row, steps = p["Row"][1], p["Steps"][1]
+    rows.add(row)
+    assert p["Wanderer"] is not None and p["Wanderer"][0] == 0x200 + 4 * row, "frame %d: row %d, Wanderer %r" % (f, row, p["Wanderer"])
+    assert (p["Sometimes"] is not None) == (row % 2 == 1), "frame %d: row %d, Sometimes %r" % (f, row, p["Sometimes"])
+    assert p["Mirror"] == (4, (steps & 255) ^ 28), "frame %d: %d steps, Mirror %r" % (f, steps, p["Mirror"])
+    assert p["Origin"] == (0x200, 77), "frame %d: Origin %r" % (f, p["Origin"])
+    assert p["Wanderer"][1] == (77 if row == 0 else 0), "frame %d: row %d, Wanderer reads %d" % (f, row, p["Wanderer"][1])
+assert len(rows) >= 4, "the cursor only visited rows %r" % sorted(rows)
+last = frames[max(frames)]["Row"][1]
+names = {p["name"]: p for p in table["properties"]}
+assert table.get("dynamic") is True and listed == "prop table: dynamic, %d listed after the run" % (6 if last % 2 else 5), listed
+assert names["Sometimes"]["listed"] == (last % 2 == 1) and names["Sometimes"]["present"] == (last % 2 == 1), names["Sometimes"]
+assert names["Mirror"]["writable"] is False and names["Wanderer"]["offset"] == 0x200 + 4 * last
+print("%d frames over rows %s" % (len(frames), sorted(rows)))
+DYNAMIC
+		then
+			report "E:dynamic-properties" PASS "a property that moves is followed by name, one that goes is gone, one on a bus reads the bus ($(cat "$work/dynamic.check"))"
+		else
+			report "E:dynamic-properties" FAIL "$(tail -1 "$work/dynamic.check") (see work/dynamic.out)"
+		fi
+
 		# the history OUTLIVES its process, which is what reopening a project
 		# asks of it. One run plays the movie and keeps its history to a file; a
 		# second, fresh process starts from that file, seeks back into states it

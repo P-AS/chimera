@@ -413,6 +413,116 @@ void theGamesOwnTimer()
 	assert(GP::timeText(6000000) == "100:00.000");
 	assert(GP::timeText(-1500) == "-00:01.500");
 }
+
+// A domain with no pointer - a bus - holds properties through the two
+// functions it is given: every read and every write goes through them, a write
+// of part of an element (a bit field) reads the element first, and without
+// the functions the domain still cannot hold one.
+void aBusHoldsPropertiesThroughItsFunctions()
+{
+	static uint8_t heap[64];
+	std::memset(heap, 0, sizeof heap);
+	int reads = 0, writes = 0;
+	GP::Domain bus;
+	bus.name = "Heap";
+	bus.size = sizeof heap;
+	bus.writable = true;
+	bus.read = [&](int64_t offset, uint8_t *buf, int64_t len) { reads++; std::memcpy(buf, heap + offset, size_t(len)); };
+	bus.write = [&](int64_t offset, const uint8_t *buf, int64_t len) { writes++; std::memcpy(heap + offset, buf, size_t(len)); };
+	GP gp;
+	gp.load(R"({ "properties": [
+		{ "name": "v", "domain": "Heap", "offset": 8, "type": "f64" },
+		{ "name": "flag", "domain": "Heap", "offset": 16, "type": "bool" },
+		{ "name": "bit", "domain": "Heap", "offset": 17, "type": "u8", "bit": 2, "bits": 1 },
+		{ "name": "name", "domain": "Heap", "offset": 24, "type": "string", "length": 4, "encoding": "latin1" },
+		{ "name": "past", "domain": "Heap", "offset": 60, "type": "f64" },
+		{ "name": "nowhere", "domain": "Bus", "offset": 0, "type": "u8" } ] })", { bus, { "Bus", nullptr, 65536, true } });
+	assert(gp.all().size() == 4);
+	assert(gp.problems().size() == 2); // one runs past the end, one is in a domain with neither a pointer nor functions
+
+	const double d = 123456789.0;
+	std::memcpy(heap + 8, &d, 8);
+	GP::Value v;
+	assert(gp.read(gp.find("v", nullptr), 0, v) && v.kind == GP::Value::Float && v.f == 123456789.0);
+	assert(gp.text(gp.find("v", nullptr), 0, true) == "123456789");
+	assert(reads == 2 && writes == 0);
+
+	std::string error;
+	assert(gp.writeText(gp.find("v", nullptr), 0, "2.5", error));
+	double back = 0;
+	std::memcpy(&back, heap + 8, 8);
+	assert(back == 2.5 && writes == 1);
+
+	heap[17] = 0xF0;
+	assert(gp.writeText(gp.find("bit", nullptr), 0, "1", error));
+	assert(heap[17] == 0xF4); // the bits around it kept: the element was read first
+	assert(gp.writeText(gp.find("flag", nullptr), 0, "true", error) && heap[16] == 1);
+	std::memcpy(heap + 24, "Kid\0", 4);
+	assert(gp.text(gp.find("name", nullptr), 0, true) == "Kid");
+}
+
+// A table that says it is dynamic names places that move. Listed again, a
+// property keeps its index and takes its new place; a new one goes on the end;
+// one the listing lost stays, not there. Looked for by name, one is put back,
+// moved or marked gone without the others being touched.
+void aDynamicTableMovesAndKeepsItsIndices()
+{
+	std::memset(g_state, 0, sizeof g_state);
+	const double a = 1.5, a2 = 7.25;
+	std::memcpy(g_state + 0, &a, 8);
+	std::memcpy(g_state + 16, &a2, 8);
+	g_state[8] = 42;
+	g_state[40] = 99;
+
+	GP fixed;
+	fixed.load(kTable, domains());
+	assert(!fixed.dynamic());
+
+	GP gp;
+	gp.load(R"({ "dynamic": true, "properties": [
+		{ "name": "_root.a", "domain": "Game State", "offset": 0, "type": "f64" },
+		{ "name": "_root.b", "domain": "Game State", "offset": 8, "type": "u8" } ] })", domains());
+	assert(gp.dynamic() && gp.all().size() == 2);
+	assert(gp.describe().find("\"dynamic\":true") != std::string::npos);
+	const int32_t ia = gp.find("_root.a", nullptr), ib = gp.find("_root.b", nullptr);
+	assert(ia == 0 && ib == 1);
+	assert(gp.text(ia, 0, true) == "1.5" && gp.text(ib, 0, true) == "42");
+
+	const uint64_t g0 = gp.generation();
+	const int32_t listed = gp.relist(R"({ "dynamic": true, "properties": [
+		{ "name": "_root.c", "domain": "Game State", "offset": 24, "type": "u8" },
+		{ "name": "_root.a", "domain": "Game State", "offset": 16, "type": "f64" } ] })");
+	assert(listed == 2 && gp.all().size() == 3 && gp.generation() > g0);
+	assert(gp.find("_root.a", nullptr) == ia && gp.find("_root.b", nullptr) == ib && gp.find("_root.c", nullptr) == 2);
+	assert(gp.text(ia, 0, true) == "7.25"); // the same index, the new place
+	assert(gp.all()[size_t(ia)].listed && gp.all()[size_t(ia)].present);
+	assert(!gp.all()[size_t(ib)].listed && !gp.all()[size_t(ib)].present);
+	GP::Value v;
+	assert(!gp.read(ib, 0, v) && gp.text(ib, 0, true).empty());
+	std::string error;
+	assert(!gp.writeText(ib, 0, "1", error) && error.find("not there now") != std::string::npos);
+	assert(gp.describe().find("\"listed\":false") != std::string::npos);
+
+	// by name: back at another place, the same index
+	const uint64_t g1 = gp.generation();
+	assert(gp.place("_root.b", R"({ "name": "_root.b", "domain": "Game State", "offset": 40, "type": "u8" })") == ib);
+	assert(gp.generation() > g1 && gp.text(ib, 0, true) == "99");
+	// found where it already was: nothing changes, and the generation says so
+	const uint64_t g2 = gp.generation();
+	assert(gp.place("_root.b", R"({ "name": "_root.b", "domain": "Game State", "offset": 40, "type": "u8" })") == ib);
+	assert(gp.generation() == g2);
+	// gone: the index stays, the property is not there
+	assert(gp.place("_root.a", "") == ia && !gp.all()[size_t(ia)].present && !gp.read(ia, 0, v));
+	// an entry for another name is no answer
+	assert(gp.place("_root.c", R"({ "name": "_root.z", "domain": "Game State", "offset": 0, "type": "u8" })") == 2);
+	assert(!gp.all()[2].present);
+	// a name it never had: nothing when the core has none, added when it has
+	assert(gp.place("_root.nope", "") == -1 && gp.place("_root.nope", nullptr) == -1);
+	assert(gp.place("_root.d", R"({ "name": "_root.d", "domain": "Game State", "offset": 8, "type": "u8" })") == 3);
+	assert(gp.text(3, 0, true) == "42");
+	// an entry the engine cannot use is no answer either
+	assert(gp.place("_root.e", R"({ "name": "_root.e", "domain": "Nowhere", "offset": 0, "type": "u8" })") == -1);
+}
 } // namespace
 
 int main()
@@ -425,6 +535,8 @@ int main()
 	bitFieldsTouchOnlyTheirBits();
 	whatTheGameWorksOutCannotBeSet();
 	theGamesOwnTimer();
+	aBusHoldsPropertiesThroughItsFunctions();
+	aDynamicTableMovesAndKeepsItsIndices();
 	std::printf("test_game_properties: ok\n");
 	return 0;
 }

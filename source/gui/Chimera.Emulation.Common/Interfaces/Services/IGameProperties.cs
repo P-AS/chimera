@@ -83,6 +83,17 @@ namespace Chimera.Emulation.Common
 		/// <summary>False for what the game works out afresh every step, and for a domain that cannot be written.</summary>
 		public bool Writable { get; init; } = true;
 
+		/// <summary>
+		/// One of a table the core makes anew when asked (a movie's variables): where it is
+		/// can change from one frame to the next, so <see cref="Offset"/> is only where it
+		/// was when the table was last read and <see cref="IGameProperties.AddressNow"/>
+		/// says where it is.
+		/// </summary>
+		public bool Dynamic { get; init; }
+
+		/// <summary>False for a dynamic table's property that the core's latest list no longer has; it keeps its name and its index.</summary>
+		public bool Listed { get; init; } = true;
+
 		/// <summary>Names for an enumeration's values, shown instead of the number. Empty for a plain number.</summary>
 		public IReadOnlyDictionary<long, string> Values { get; init; } = new Dictionary<long, string>();
 
@@ -104,11 +115,13 @@ namespace Chimera.Emulation.Common
 		/// Whether an element fits one of the watch tools' own 1-, 2- or 4-byte watches
 		/// as it is: an integer, an f32 or a bool of that width, not a bit field and
 		/// without names for its values - which a plain watch would not show. Anything
-		/// else is watched through the engine.
+		/// else is watched through the engine - and so is anything in a dynamic table,
+		/// which a watch at a fixed address would lose the first time it moved.
 		/// </summary>
 		public bool FitsAPlainWatch
-			=> Type is GamePropertyType.U8 or GamePropertyType.S8 or GamePropertyType.U16 or GamePropertyType.S16
-					or GamePropertyType.U32 or GamePropertyType.S32 or GamePropertyType.F32 or GamePropertyType.Bool
+			=> !Dynamic
+				&& Type is GamePropertyType.U8 or GamePropertyType.S8 or GamePropertyType.U16 or GamePropertyType.S16
+						or GamePropertyType.U32 or GamePropertyType.S32 or GamePropertyType.F32 or GamePropertyType.Bool
 				&& !IsBitField
 				&& Values.Count is 0;
 
@@ -139,12 +152,28 @@ namespace Chimera.Emulation.Common
 	/// <summary>
 	/// A game core's properties (docs/game-cores.md), which the engine reads, writes,
 	/// shows and parses by one set of rules. Offered only by a core whose table names at
-	/// least one; the tools that name addresses ask for it optionally.
+	/// least one, or whose table is dynamic; the tools that name addresses ask for it
+	/// optionally.
 	/// </summary>
 	public interface IGameProperties : ISpecializedEmulatorService
 	{
-		/// <summary>Every property, in the order the core listed them.</summary>
+		/// <summary>
+		/// Every property, in the order the core listed them. A dynamic table's is the list
+		/// as of the last <see cref="Refresh"/>, plus whatever was asked for by name since.
+		/// </summary>
 		IReadOnlyList<GameProperty> Properties { get; }
+
+		/// <summary>
+		/// Whether the core makes the table anew when asked (a movie's variables, which come,
+		/// move and go while it runs) instead of once for good.
+		/// </summary>
+		bool IsDynamic { get; }
+
+		/// <summary>Has a dynamic table listed again; nothing for any other.</summary>
+		void Refresh();
+
+		/// <summary>Where the element is in its domain now; -1 for a dynamic table's that is not there.</summary>
+		long AddressNow(GamePropertyElement element);
 
 		/// <summary>What in the core's table was left out, and why; empty for a sound table.</summary>
 		IReadOnlyList<string> Problems { get; }

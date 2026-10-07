@@ -151,6 +151,63 @@ lists, shows and forwards. Any core may export a table (the synth test core
 does, naming gridWalker's RAM, so the witness can drive the whole path); a
 game core is simply the kind that always should.
 
+### A table that changes while the game runs
+
+Everything above is a table that holds for the session: the core lays its
+block out once. Some cores cannot say that. A Flash movie's variables live on
+its emulator's heap; there are as many as the movie makes, a variable's place
+moves when the object it belongs to gains another, and it is gone when the
+object is. For such a core the table is **dynamic** (user-decided, 2026-10-07;
+chimera#216): its answer for now, not for good.
+
+```json
+{ "dynamic": true,
+  "properties": [
+    { "name": "_root.hero.hp", "group": "_root.hero", "domain": "Heap",
+      "offset": 34251320, "type": "f64" } ] }
+```
+
+```c
+// one entry of the table, by name, as it is NOW; "" when there is no such
+// thing at the moment. Asked before every read and write of the property.
+ECL_EXPORT const char *GetGameProperty(const char *name);
+```
+
+What changes, and it is all in the engine:
+
+- The list is taken again when asked (`ce_session_property_refresh`, which
+  calls `GetGameProperties` again). A property already known keeps its index
+  and takes its new place; a new one is added at the end; one the listing no
+  longer has stays in the table, marked `"listed": false`, so whatever holds
+  its index - a watch, a freeze - still holds something.
+- Between listings a property is found **by name** before every use: `_get`,
+  `_set`, `_text`, `_set_text` and `_offset` each ask the core where it is
+  now (`GetGameProperty`). So a watch follows a variable that moved, reads
+  nothing from one that is gone, and reads it again when it is back.
+  `ce_session_property_find` asks the core for a name the last listing did
+  not have, so a script or a watch file can name a variable nobody listed.
+- A property may live on a **bus** as well as in a domain. A bus has no
+  pointer (engine.h, `ce_session_bus_*`); its properties are read and written
+  through it. A heap is a bus because only part of its address range is
+  memory at any moment.
+
+The rule for the core is one sentence and it is hard: **answering must not
+change the machine.** The list and the lookup are made between frames, by a
+tool, any number of times or never, and a run in which they were made must be
+the run in which they were not. On a heap that means allocating nothing while
+walking it (a string built and dropped leaves the allocator's free lists in
+another order), calling nothing of the game's (no getter), and writing the
+answer in memory that is in no state. The Ruffle core's gate counts its
+allocator calls across every listing and compares the heap byte for byte.
+
+A core says which of its dynamic properties can be set (`"writable": false`
+for the rest); a write goes to the bytes, in place, and is the tool's
+responsibility the way a poke into RAM is.
+
+RAM Search is not part of this, by decision: it searches bytes, and it
+searches the bus the variables are on like any other memory. Searching by
+variable is what the list is for.
+
 ### In the tools
 
 - RAM Watch: Watches > Add Game Properties lists the properties under their
@@ -182,6 +239,15 @@ game core is simply the kind that always should.
   machine has run to the end since the last edit before it, and removed
   otherwise, so a value that is there is the movie's; an edit before the end
   forgets it, as it forgets lag.
+- A dynamic table in Add Game Properties: the list is read from the core when
+  the window opens and again on Refresh, each property with its type, where
+  it is on its bus and what it reads now. The box at the top narrows a long
+  list to the names holding what is typed (any case), and ticks are kept
+  while narrowing; past 2000 rows the list says how many more there are.
+  Every watch made from it is the engine's, whatever its size - a byte watch
+  at a fixed address would lose the variable the first time it moved - so
+  its Address column shows where it is now, `-` while it is not there, and
+  its value then reads `(not there)`.
 - RAM Search: an address that starts an element is listed with its name.
 - Hex Editor: the title names the element the highlighted byte belongs to,
   and which of its bytes it is.
@@ -191,7 +257,8 @@ game core is simply the kind that always should.
 `memory.*` works on `Game State` as on any domain. On top of it, a small
 library by name:
 
-- `game.list()`: the property names, in the core's order (an array once).
+- `game.list()`: the property names, in the core's order (an array once). A
+  dynamic table is listed again first, so the names are the ones there now.
 - `game.get(name)`: an integer, a float for `f32`/`f64`, a boolean for `bool`,
   a string, or a table of byte values for `bytes`. A `u64` comes back as the
   Lua integer with the same 64 bits (Lua's integers are signed). An array by
@@ -204,7 +271,8 @@ library by name:
   its length.
 - `game.describe(name)`: name, domain, offset, type, size, count, stride,
   endian, encoding, bit, bits, group, writable, description, and label (the
-  value as the core names it).
+  value as the core names it). A dynamic property's offset is where it is
+  now, and -1 while it is not there.
 
 A name the core does not have is not an error: `get` and `describe` return
 nil, `set` returns false, and the console says why - the way `memory.*`

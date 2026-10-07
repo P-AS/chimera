@@ -81,6 +81,15 @@
  * the guest's memory): a start and an "equal to 0" search at each size,
  * printed to stderr. The domain's memory is the machine's own, faults and all,
  * which a benchmark over a host array is not.
+ * --property-trace <name>[,<name>...] prints, after every frame, where each of
+ * those game properties is and what it reads as - "prop <frame> <name> @
+ * <offset> = <text>", or "prop <frame> <name> gone" - found by name the way a
+ * watch finds it (ce_session_property_find, _offset, _text). After the run it
+ * has the table listed again (ce_session_property_refresh) and prints the
+ * count and whether the table is dynamic. --property-set <name>=<text> sets
+ * one from text before the first frame, and says so or says why not. Both are
+ * the witness's way to a dynamic table (docs/game-cores.md), whose properties
+ * move and come and go while the machine runs.
  * --screenshot <frame>=<path> writes one frame's picture as a TGA. Repeatable.
  * The run is otherwise undrawn (turbo), so only the frames asked for cost
  * anything to draw - which is what makes "show me frame 1910 of this movie" a
@@ -224,6 +233,8 @@ int main(int argc, char **argv)
 	std::string ratesPath;
 	std::vector<std::pair<std::string, std::string>> dumps; // domain -> path
 	std::string ramSearchBench;
+	std::vector<std::string> propertyTrace;
+	std::string propertySet;
 	std::map<int64_t, std::string> shots; // frame -> TGA path
 	std::vector<std::pair<std::string, std::string>> firmwareArgs; // id -> path
 	std::map<int64_t, std::string> stateOuts; // frame -> state path
@@ -408,6 +419,17 @@ int main(int argc, char **argv)
 			shots[std::atoll(spec.substr(0, eq).c_str())] = spec.substr(eq + 1);
 		}
 		else if (arg == "--ram-search-bench" && i + 1 < argc) ramSearchBench = argv[++i];
+		else if (arg == "--property-trace" && i + 1 < argc)
+		{
+			std::string names = argv[++i];
+			for (size_t at = 0; at <= names.size();)
+			{
+				const size_t comma = std::min(names.find(',', at), names.size());
+				if (comma > at) propertyTrace.push_back(names.substr(at, comma - at));
+				at = comma + 1;
+			}
+		}
+		else if (arg == "--property-set" && i + 1 < argc) propertySet = argv[++i];
 		else if (arg == "--dump" && i + 1 < argc)
 		{
 			std::string spec = argv[++i];
@@ -841,6 +863,18 @@ int main(int argc, char **argv)
 	const int64_t firstPass = playFrames >= 0 && playFrames < frames ? playFrames : frames;
 	FILE *rates = ratesPath.empty() ? nullptr : std::fopen(ratesPath.c_str(), "w");
 	if (!ratesPath.empty() && rates == nullptr) return fail(metaPath, "could not write " + ratesPath);
+	if (!propertySet.empty())
+	{
+		const size_t eq = propertySet.find('=');
+		if (eq == std::string::npos) return fail(metaPath, "--property-set wants <name>=<text>");
+		const std::string name = propertySet.substr(0, eq);
+		uint32_t element = 0;
+		const int32_t index = ce_session_property_find(session, name.c_str(), &element);
+		if (index < 0) std::printf("prop set %s: no such property\n", name.c_str());
+		else if (ce_session_property_set_text(session, index, element, propertySet.c_str() + eq + 1) != 0)
+			std::printf("prop set %s: %s\n", name.c_str(), ce_session_last_error(session));
+		else std::printf("prop set %s: done\n", name.c_str());
+	}
 	for (int64_t i = 0; i < firstPass; i++)
 	{
 		if (greenzonePeriod >= 0 && i == greenzonePeriodAt) ce_session_greenzone_capture_period(session, greenzonePeriod);
@@ -868,6 +902,16 @@ int main(int argc, char **argv)
 		if (rates != nullptr)
 		{
 			std::fprintf(rates, "%lld %d %d\n", (long long)i, ce_session_vsync_numerator(session), ce_session_vsync_denominator(session));
+		}
+		for (const std::string &name : propertyTrace)
+		{
+			uint32_t element = 0;
+			const int32_t index = ce_session_property_find(session, name.c_str(), &element);
+			const int64_t offset = index < 0 ? -1 : ce_session_property_offset(session, index, element);
+			char text[256] = "";
+			if (offset >= 0) ce_session_property_text(session, index, element, 0, text, sizeof text);
+			if (offset >= 0) std::printf("prop %lld %s @ %lld = %s\n", (long long)i, name.c_str(), (long long)offset, text);
+			else std::printf("prop %lld %s gone\n", (long long)i, name.c_str());
 		}
 		if (shot != shots.end()
 			&& !writeTga(shot->second, ce_session_video(session),
@@ -1136,6 +1180,12 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (!propertyTrace.empty())
+	{
+		const int32_t listed = ce_session_property_refresh(session);
+		std::printf("prop table: %s, %d listed after the run\n", ce_session_property_dynamic(session) != 0 ? "dynamic" : "fixed", listed);
+		std::printf("prop table: %s\n", ce_session_property_table(session));
+	}
 	if (!ramSearchBench.empty())
 	{
 		int32_t found = -1;

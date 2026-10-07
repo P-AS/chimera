@@ -703,6 +703,15 @@ namespace Chimera.Emulation.Common.Engine
 		public abstract int ce_session_property_set_text(IntPtr session, int index, uint element, [MarshalAs(UnmanagedType.LPUTF8Str)] string text);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_property_dynamic(IntPtr session);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_property_refresh(IntPtr session);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract long ce_session_property_offset(IntPtr session, int index, uint element);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_session_game_time_ms(IntPtr session, out long ms);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -2240,6 +2249,18 @@ namespace Chimera.Emulation.Common.Engine
 		/// </summary>
 		public long? GameTimeMs
 			=> E.ce_session_game_time_ms(_session, out var ms) is not 0 ? ms : null;
+
+		/// <summary>
+		/// Whether the table is the core's answer for now and not for good: a movie's
+		/// variables, which come, move and go while it runs (engine.h, dynamic tables).
+		/// </summary>
+		public bool PropertyDynamic => E.ce_session_property_dynamic(_session) is not 0;
+
+		/// <summary>Has a dynamic table listed again by the core; how many it lists now.</summary>
+		public int PropertyRefresh() => E.ce_session_property_refresh(_session);
+
+		/// <summary>Where an element is in its domain now; -1 for one that is not there.</summary>
+		public long PropertyOffset(int index, uint element) => E.ce_session_property_offset(_session, index, element);
 
 		/// <summary>"Name" or "Name[3]": the property's index and the element, or -1.</summary>
 		public int PropertyFind(string name, out uint element)

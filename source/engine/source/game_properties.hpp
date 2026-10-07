@@ -8,15 +8,26 @@
  * mean, and anything that links the engine gets the same properties.
  *
  * Memory is reached through each domain's pointer, which is stable for a
- * session's lifetime; a domain without one cannot hold a property.
+ * session's lifetime - or, for a domain that has none (a bus), through the
+ * pair of functions it was given instead.
+ *
+ * A table that says "dynamic": true describes places that MOVE and come and
+ * go while the machine runs (a Flash movie's variables on its emulator's
+ * heap). Such a table can be listed again (relist) and one property found
+ * again by name (place); a property keeps its index for the whole session
+ * through both, so whatever holds one - a watch, a freeze - goes on holding
+ * it.
  */
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 #include <utility>
 #include <vector>
+
+struct cJSON;
 
 class CeGameProperties
 {
@@ -31,6 +42,9 @@ public:
 		uint8_t *base = nullptr;
 		int64_t size = 0;
 		bool writable = false;
+		/* for a domain with no pointer: `len` bytes at `offset`, out and in */
+		std::function<void(int64_t offset, uint8_t *buf, int64_t len)> read;
+		std::function<void(int64_t offset, const uint8_t *buf, int64_t len)> write;
 	};
 
 	struct Property
@@ -48,6 +62,9 @@ public:
 		bool writable = true;
 		uint32_t bit = 0, bits = 0; // a bit field when bits is not 0
 		std::vector<std::pair<int64_t, std::string>> values;
+		/* a dynamic table's: in the core's last listing, and there at all the
+		 * last time it was looked for. Always true in a table that is not. */
+		bool listed = true, present = true;
 
 		int64_t elementOffset(uint32_t element) const { return offset + (int64_t)element * stride; }
 		int64_t span() const { return (int64_t)(count - 1) * stride + size; }
@@ -72,7 +89,26 @@ public:
 
 	/* The table as the engine understood it, every field filled in, and what
 	 * was left out: {"properties": [...], "problems": [...]}. */
-	const std::string &describe() const { return m_describe; }
+	const std::string &describe() const;
+
+	/* Whether the table said its places move ("dynamic": true). */
+	bool dynamic() const { return m_dynamic; }
+
+	/* The core's listing, taken again. A property already known keeps its
+	 * index and takes the place the listing gives it now; a new one goes on
+	 * the end; one the listing no longer has stays where it was, unlisted and
+	 * not present. Returns how many the listing has. */
+	int32_t relist(const char *json);
+
+	/* One property, looked for again by name: `entry` is its table entry as
+	 * the core gives it now, or empty when it has none. Known already, it
+	 * takes the new place (or is marked not present); new, it goes on the end.
+	 * Returns its index, or -1 for a name the table never had and the core
+	 * does not have now. */
+	int32_t place(const std::string &name, const char *entry);
+
+	/* Goes up whenever the list of properties or the place of one changes. */
+	uint64_t generation() const { return m_generation; }
 
 	/* "Name" or "Name[3]", any case: the property, and the element, counted
 	 * from 0 whatever the array's `first` (0 for a name without an index). The
@@ -114,12 +150,18 @@ private:
 	std::vector<Property> m_props;
 	std::vector<std::string> m_problems;
 	std::map<std::string, int32_t> m_byName; // lower-cased
-	std::string m_describe;
+	mutable std::string m_describe;
+	mutable bool m_describeStale = true;
 	int32_t m_timer = -1;
+	bool m_dynamic = false;
+	uint64_t m_generation = 0;
+	static constexpr size_t MaxProperties = 200000;
 
 	bool valid(int32_t index, uint32_t element) const;
+	bool parseEntry(const cJSON *entry, Property &p, std::string &why) const;
+	bool writeBytes(const Property &p, uint8_t *at, const Value &in, std::string &error) const;
 	uint8_t *elementBytes(const Property &p, uint32_t element) const;
 	uint64_t readRaw(const Property &p, const uint8_t *at) const;
 	void writeRaw(const Property &p, uint8_t *at, uint64_t raw) const;
-	void describeAll();
+	void describeAll() const;
 };

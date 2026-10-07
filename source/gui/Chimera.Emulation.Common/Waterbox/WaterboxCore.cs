@@ -225,9 +225,10 @@ namespace Chimera.Emulation.Common.Waterbox
 
 			// A game core's properties (docs/game-cores.md): named places in the domains
 			// above, which the tools watch, poke and freeze by name. The engine checked the
-			// table (and said what it left out); offered only when it names one.
+			// table (and said what it left out); offered only when it names one - or is
+			// dynamic, a table that may name nothing yet and a hundred things a frame on.
 			EngineGameProperties properties = new(_session);
-			if (properties.Properties.Count is not 0)
+			if (properties.IsDynamic || properties.Properties.Count is not 0)
 			{
 				((BasicServiceProvider)ServiceProvider).Register<IGameProperties>(properties);
 			}

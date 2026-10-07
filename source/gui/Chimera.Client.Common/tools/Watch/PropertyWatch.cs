@@ -54,7 +54,23 @@ namespace Chimera.Client.Common
 		/// <summary>Why the last <see cref="Poke"/> was refused; "" when it was not.</summary>
 		public string LastPokeError { get; private set; } = "";
 
-		private string Read() => _properties.Text(Element, named: true);
+		/// <summary>What a property of a dynamic table reads as while the game has no such thing.</summary>
+		public const string Gone = "(not there)";
+
+		private string Read()
+		{
+			var text = _properties.Text(Element, named: true);
+			return text.Length is 0 && _properties.IsDynamic && _properties.AddressNow(Element) < 0 ? Gone : text;
+		}
+
+		/// <summary>
+		/// Where it is now: a dynamic table's property (a movie's variable) moves, and the
+		/// engine follows it by name; "-" while it is not there.
+		/// </summary>
+		public override string AddressString
+			=> !_properties.IsDynamic ? base.AddressString
+				: _properties.AddressNow(Element) is >= 0 and var now ? FormatAddress(now)
+				: "-";
 
 		public override int ByteSize => Element.Property.Size;
 
