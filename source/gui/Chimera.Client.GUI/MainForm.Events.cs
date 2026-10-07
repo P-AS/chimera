@@ -826,10 +826,17 @@ namespace Chimera.Client.GUI
 			using CoreManagerForm form = new(
 				scan: () => CorePackageDiscovery.ScanFor(Config),
 				folder: () => CoresFolder.For(Config),
-				// nothing is kept for the default, so a bundle that is moved keeps finding its own Cores/
-				useFolder: chosen => Config.CoresFolder = CoresFolder.ToConfigure(chosen),
-				askForFolder: () => this.ShowFolderSelectDialog(
-					initDir: PathEntryExtensions.FirstExistingDir(CoresFolder.For(Config)),
+				// Remembered for the next time, and written at once rather than when
+				// Chimera closes: where the cores are must survive a session that does
+				// not end well. Nothing is kept for the default, so a bundle that is
+				// moved keeps finding its own Cores/.
+				useFolder: chosen =>
+				{
+					Config.CoresFolder = CoresFolder.ToConfigure(chosen);
+					SaveConfig();
+				},
+				askForFolder: start => this.ShowFolderSelectDialog(
+					initDir: PathEntryExtensions.FirstExistingDir(start),
 					subtitle: "The folder Chimera looks for core packages in"),
 				openFolder: ShowInFileBrowser,
 				// where versions that downloaded cores kept them, for somebody arriving from one

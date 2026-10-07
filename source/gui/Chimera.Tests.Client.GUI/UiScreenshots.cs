@@ -174,7 +174,7 @@ namespace Chimera.Tests.Client.GUI
 				() => installed,
 				() => @"C:\Chimera\Cores",
 				useFolder: static _ => { },
-				askForFolder: static () => null,
+				askForFolder: static _ => null,
 				openFolder: static _ => { });
 			form.StartPosition = FormStartPosition.Manual;
 			form.Location = new Point(0, 0);

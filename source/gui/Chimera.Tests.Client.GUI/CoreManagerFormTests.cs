@@ -70,7 +70,7 @@ namespace Chimera.Tests.Client.GUI
 			using var form = Open(OneCore);
 			form.Show();
 			CollectionAssert.AreEquivalent(
-				new[] { "Open cores folder", "Change folder...", "Look again", "Remove", "Systems...", "Use that folder", "Remove version", "Close" },
+				new[] { "Open cores folder", "Change folder...", "Refresh List", "Remove", "Show Systems...", "Remove version", "Close" },
 				Buttons(form),
 				"no Check for updates, no Download latest, no Install, no Add external core");
 			Assert.IsFalse(form.Controls.OfType<CheckBox>().Any(static b => b.Text.Contains("development")), "and no channel to choose a download from");
@@ -105,7 +105,6 @@ namespace Chimera.Tests.Client.GUI
 			form.Show();
 			Assert.AreEqual(0, ListOf(form).Items.Count, "there is no list of cores that exist somewhere else");
 			StringAssert.Contains(form.StatusText, "no cores in this folder");
-			Assert.IsFalse(form.OffersTheFormerFolder);
 		}
 
 		[TestMethod]
@@ -189,7 +188,11 @@ namespace Chimera.Tests.Client.GUI
 				() => holds[folder],
 				() => folder,
 				useFolder: chosen => folder = chosen,
-				askForFolder: () => "/elsewhere",
+				askForFolder: start =>
+				{
+					Assert.AreEqual("/cores", start, "the picker opens on the cores folder");
+					return "/elsewhere";
+				},
 				openFolder: opened.Add,
 				changed: () => changes++);
 			form.Show();
@@ -208,28 +211,39 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
-		public void CoresLeftWhereEarlierVersionsDownloadedThemAreOffered()
+		public void CoresLeftWhereEarlierVersionsDownloadedThemAreNamedAndChangeFolderOpensThere()
 		{
 			// somebody arriving from a Chimera that downloaded cores has them in the data
-			// directory, which is no longer searched: the window says so and offers the folder
+			// directory, which is no longer searched: the window says where they are, and
+			// Change folder... opens on that folder (user-decided: no button of its own)
 			var folder = "/cores";
+			List<string> pickerOpenedOn = new();
 			using CoreManagerForm form = new(
 				() => folder == "/data/Cores" ? [ Package("Ares", "1"), Package("Genesis Plus GX", "1") ] : [ ],
 				() => folder,
 				useFolder: chosen => folder = chosen,
+				askForFolder: start =>
+				{
+					pickerOpenedOn.Add(start);
+					return start;
+				},
 				former: () => ("/data/Cores", folder == "/data/Cores" ? 0 : 2));
 			form.Show();
-			Assert.IsTrue(form.OffersTheFormerFolder);
 			StringAssert.Contains(form.StatusText, "2 core package(s) are in /data/Cores");
+			StringAssert.Contains(form.StatusText, "Change folder...");
 
-			ButtonOf(form, "Use that folder").PerformClick();
+			ButtonOf(form, "Change folder...").PerformClick();
+			CollectionAssert.AreEqual(new[] { "/data/Cores" }, pickerOpenedOn);
 			Assert.AreEqual("/data/Cores", folder);
 			Assert.AreEqual(2, ListOf(form).Items.Count);
-			Assert.IsFalse(form.OffersTheFormerFolder, "once it is the cores folder there is nothing left to offer");
+			Assert.IsFalse(form.StatusText.Contains("earlier versions"), "once it is the cores folder there is nothing left to say");
+
+			ButtonOf(form, "Change folder...").PerformClick();
+			Assert.AreEqual("/data/Cores", pickerOpenedOn[1], "and from then on the picker opens on the cores folder, which is that one");
 		}
 
 		[TestMethod]
-		public void LookingAgainFindsWhatWasPutInTheFolderMeanwhile()
+		public void RefreshingTheListFindsWhatWasPutInTheFolderMeanwhile()
 		{
 			List<DiscoveredCorePackage> packages = new();
 			var changes = 0;
@@ -237,7 +251,7 @@ namespace Chimera.Tests.Client.GUI
 			form.Show();
 			Assert.AreEqual(0, ListOf(form).Items.Count);
 			packages.Add(Package("Ares", "1"));
-			ButtonOf(form, "Look again").PerformClick();
+			ButtonOf(form, "Refresh List").PerformClick();
 			Assert.AreEqual(1, ListOf(form).Items.Count, "a package copied in while the window is open");
 			Assert.AreEqual(1, changes);
 		}

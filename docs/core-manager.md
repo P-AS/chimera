@@ -168,8 +168,9 @@ The cores folder is `Cores/` beside the executable. It comes with the bundle,
 empty, and a package dropped into it is found. A user who wants it somewhere
 else - one set of cores shared by any number of unpacked Chimeras, or a faster
 disk - names another folder in File > Core Manager (**Change folder...**), kept
-as `CoresFolder` in the config: an absolute path, or one relative to the
-executable. Empty means the default, and choosing the default keeps nothing, so
+as `CoresFolder` in the config - written the moment it is chosen, so it is
+remembered next time however the session ends: an absolute path, or one
+relative to the executable. Empty means the default, and choosing the default keeps nothing, so
 a bundle that is moved keeps finding the `Cores/` that moved with it.
 (`CoresFolder` the class resolves it; a setting that is no path at all is the
 default too.)
@@ -182,9 +183,9 @@ only ever adds, has no window, and the manager removes nothing from them.
 downloaded cores put them (`%LOCALAPPDATA%\Chimera\Cores` on Windows,
 `~/.local/share/chimera/Cores` elsewhere, or under a moved data directory).
 Somebody updating from one would otherwise open Chimera to find every core
-apparently gone, so the manager says when packages are still there, how many,
-and offers **Use that folder** - which makes it the cores folder. Nothing is
-moved or copied for them.
+apparently gone, so the manager says when packages are still there and how
+many, and **Change folder...** opens on that folder, so making it the cores
+folder is choosing it. Nothing is moved or copied for them.
 
 ### One file per version, and no version is ever replaced
 
@@ -208,7 +209,7 @@ package renamed, or kept as the `.zip` older releases called it, is the same
 package.
 
 A package put in the folder while Chimera is running is found without a
-restart: discovery is separate from loading, the manager's **Look again**
+restart: discovery is separate from loading, the manager's **Refresh List**
 rescans, and so does opening the manager at all.
 
 ## What a package has to be
@@ -252,18 +253,17 @@ Along the bottom, about the folder first and then what is in it:
 
 * **Open cores folder** - shows it in the system's file browser, creating it if
   a folder somebody named is not there yet.
-* **Change folder...** - a folder picker; what is in the chosen folder is listed
-  at once and can be used straight away. A core already loaded stays loaded
-  until Chimera is restarted.
-* **Look again** - rescans, for a package copied in while the window is open.
+* **Change folder...** - a folder picker, opening on the cores folder; what is
+  in the chosen folder is listed at once and can be used straight away, and
+  the choice is remembered. A core already loaded stays loaded until Chimera
+  is restarted.
+* **Refresh List** - rescans, for a package copied in while the window is open.
 * **Remove** - deletes **every version** of each ticked core, behind a
   confirmation that says what it costs: a movie recorded on one of those exact
   builds needs it to replay, and Chimera cannot fetch it again. Every row has a
   tick box, and **Select all** above the list says how many are ticked.
-* **Systems...** - every system these cores run, and which core runs each
+* **Show Systems...** - every system these cores run, and which core runs each
   (#172).
-* **Use that folder** - only when packages were left where earlier versions
-  downloaded them; see *Where cores live*.
 
 The right-hand panel acts on the row *selected* rather than ticked: every
 version of that core that is here, newest first, with the file's path, when it

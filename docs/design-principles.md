@@ -5082,10 +5082,12 @@ thing to reverse if they are wrong:
 
 - **Somebody updating is told where their cores are.** Every existing install
   has its cores in the data directory, which this build does not search. The
-  Core Manager says how many packages are there and offers to make that the
-  cores folder. Nothing is moved for them, and nothing is searched silently:
-  the alternative was a Chimera that opens after an update with every core
-  apparently gone.
+  Core Manager says how many packages are there. Nothing is moved for them,
+  and nothing is searched silently: the alternative was a Chimera that opens
+  after an update with every core apparently gone. (It first had a button of
+  its own, "Use that folder". The user, having tried it the same day: no
+  button; Change folder... does that - so the picker opens on that folder
+  while packages are there.)
 - **Remove still deletes, and only files.** Removing was never fetching, so
   it stays, with a confirmation that now says Chimera cannot get the build
   back. It deletes package FILES in the cores folder; an unpacked package (a
@@ -5108,3 +5110,9 @@ Left as they are, and worth knowing:
 - A package from before packages stated their date is listed without one:
   the lookup was in the record of what cores had published, and there is no
   such record now.
+
+The window's words are the user's, from trying the staged build that day:
+**Refresh List** (it was "Look again"), **Show Systems...** (it was
+"Systems..."), and the folder chosen with Change folder... "is remembered for
+the next time" - it is written to the config when it is chosen, not when
+Chimera closes.

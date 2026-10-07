@@ -31,7 +31,7 @@ namespace Chimera.Client.GUI
 		private readonly Func<IReadOnlyList<DiscoveredCorePackage>> _scan;
 		private readonly Func<string> _folder;
 		private readonly Action<string>? _useFolder;
-		private readonly Func<string?>? _askForFolder;
+		private readonly Func<string, string?>? _askForFolder;
 		private readonly Action<string>? _openFolder;
 		private readonly Func<(string Path, int Packages)>? _former;
 		private readonly Action? _changed;
@@ -46,7 +46,6 @@ namespace Chimera.Client.GUI
 		private readonly Button _removeCore;
 		private readonly Button _open;
 		private readonly Button _change;
-		private readonly Button _useFormer;
 		private readonly Button _systems;
 
 		/// <summary>Set while the code is ticking boxes, so its own events do not answer back.</summary>
@@ -83,7 +82,7 @@ namespace Chimera.Client.GUI
 		/// <param name="scan">the packages in the cores folder, read afresh each time</param>
 		/// <param name="folder">the cores folder as it is configured now</param>
 		/// <param name="useFolder">told the folder somebody chose; absent, the folder cannot be changed from here</param>
-		/// <param name="askForFolder">a folder picker; null from it is a cancel</param>
+		/// <param name="askForFolder">a folder picker, told the folder to open on; null from it is a cancel</param>
 		/// <param name="openFolder">shows a folder in the system's file manager</param>
 		/// <param name="former">where earlier versions downloaded cores to, and how many packages are still there</param>
 		/// <param name="changed">told after anything here changed what is in the folder, or which folder it is</param>
@@ -91,7 +90,7 @@ namespace Chimera.Client.GUI
 			Func<IReadOnlyList<DiscoveredCorePackage>> scan,
 			Func<string> folder,
 			Action<string>? useFolder = null,
-			Func<string?>? askForFolder = null,
+			Func<string, string?>? askForFolder = null,
 			Action<string>? openFolder = null,
 			Func<(string Path, int Packages)>? former = null,
 			Action? changed = null,
@@ -260,7 +259,7 @@ namespace Chimera.Client.GUI
 			_change = Place(1, "Change folder...");
 			_change.Click += (_, _) => ChangeTheFolder();
 
-			Button rescan = Place(2, "Look again");
+			Button rescan = Place(2, "Refresh List");
 			rescan.Click += (_, _) =>
 			{
 				Reload();
@@ -272,18 +271,11 @@ namespace Chimera.Client.GUI
 			_removeCore.Click += (_, _) => RemoveCheckedCores();
 
 			// which machines all of this adds up to, and which core runs each (#172)
-			_systems = Place(4, "Systems...");
+			_systems = Place(4, "Show Systems...");
 			_systems.Click += (_, _) =>
 			{
 				using SupportedSystemsForm form = new(SupportedSystems.From(_rows));
 				form.ShowDialog(this);
-			};
-
-			// only there when earlier versions left packages where they downloaded them
-			_useFormer = Place(5, "Use that folder");
-			_useFormer.Click += (_, _) =>
-			{
-				if (_former?.Invoke() is { Packages: > 0 } left) UseFolder(left.Path);
 			};
 
 			Button close = new()
@@ -295,7 +287,7 @@ namespace Chimera.Client.GUI
 				Text = "Close",
 			};
 
-			Controls.AddRange(new Control[] { _header, _selectAll, _shows, _cores, side, _status, _open, _change, rescan, _removeCore, _systems, _useFormer, close });
+			Controls.AddRange(new Control[] { _header, _selectAll, _shows, _cores, side, _status, _open, _change, rescan, _removeCore, _systems, close });
 			AcceptButton = close;
 			ResumeLayout();
 
@@ -309,9 +301,6 @@ namespace Chimera.Client.GUI
 
 		/// <summary>The line under the list, as it reads now. For tests.</summary>
 		public string StatusText => _status.Text;
-
-		/// <summary>Whether the offer to use the folder earlier versions downloaded into is showing. For tests.</summary>
-		public bool OffersTheFormerFolder => _useFormer.Visible;
 
 		/// <summary>Rebuilds the list from a fresh scan of the folder, keeping the selection.</summary>
 		private void Reload()
@@ -346,13 +335,14 @@ namespace Chimera.Client.GUI
 				+ "Chimera downloads nothing. Get a core's package (.chimeraCore) from its project, or build it, and put it in this folder.";
 
 			// somebody who updated from a Chimera that downloaded cores has them
-			// somewhere this one does not look; say so where they will see it
+			// somewhere this one does not look; say so where they will see it.
+			// Change folder... opens on that folder then (user-decided: no button
+			// of its own for it).
 			var left = _former?.Invoke() ?? ("", 0);
-			_useFormer.Visible = left.Packages > 0 && _useFolder is not null;
 			if (left.Packages > 0)
 			{
 				Say($"{left.Packages} core package(s) are in {left.Path}, where earlier versions of Chimera downloaded them. "
-					+ "Move them here, or use that folder as the cores folder.");
+					+ "Move them here, or press Change folder... to use that folder.");
 			}
 			else if (_rows.Count is 0)
 			{
@@ -512,9 +502,15 @@ namespace Chimera.Client.GUI
 			}
 		}
 
+		/// <summary>
+		/// The picker opens on the cores folder - or, while packages are still
+		/// where earlier versions downloaded them, on that folder, which is the
+		/// one somebody in that position is most likely looking for.
+		/// </summary>
 		private void ChangeTheFolder()
 		{
-			if (_askForFolder?.Invoke() is { Length: not 0 } chosen) UseFolder(chosen);
+			var start = _former?.Invoke() is { Packages: > 0 } left ? left.Path : _folder();
+			if (_askForFolder?.Invoke(start) is { Length: not 0 } chosen) UseFolder(chosen);
 		}
 
 		/// <summary>Makes <paramref name="folder"/> the cores folder and lists what is in it. Public so a test can drive it.</summary>
