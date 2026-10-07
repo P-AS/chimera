@@ -31,7 +31,7 @@ namespace Chimera.Client.Common
 		public int MaxFutureFrames { get; set; }
 
 		/// <remarks>only referenced from <see cref="CommApi"/></remarks>
-		(HttpCommunication HTTP, MemoryMappedFiles MMF, SocketServer Sockets) NetworkingHelpers { get; }
+		MemoryMappedFiles MemoryMappedFiles { get; }
 
 		/// <remarks>only referenced from <see cref="EmuClientApi"/></remarks>
 		bool PauseAvi { get; set; }

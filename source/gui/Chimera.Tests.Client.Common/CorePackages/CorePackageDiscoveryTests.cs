@@ -260,14 +260,14 @@ namespace Chimera.Tests.Client.Common.CorePackages
 		}
 
 		[TestMethod]
-		public void SearchPathsAlwaysStartWithTheDefaultCoresFolder()
+		public void SearchPathsAlwaysStartWithTheCoresFolder()
 		{
 			Config config = new();
 			config.CorePackagePaths.Add("/somewhere/else");
 			var paths = CorePackageDiscovery.SearchPaths(config);
-			Assert.AreEqual(CorePackageDiscovery.DefaultSearchPath, paths[0], "the bundle's own folder wins: a portable install carries its cores with it");
-			Assert.AreEqual(CoreStore.Path, paths[1], "a core the manager just downloaded has to be found without being added by hand");
-			Assert.AreEqual("/somewhere/else", paths[2]);
+			Assert.AreEqual(2, paths.Count, "the cores folder and what the configuration adds; nowhere Chimera fills by itself, because it fills nothing");
+			Assert.AreEqual(CorePackageDiscovery.DefaultSearchPath, paths[0], "Cores/ beside the executable, where a package is put by hand");
+			Assert.AreEqual("/somewhere/else", paths[1]);
 		}
 	}
 }

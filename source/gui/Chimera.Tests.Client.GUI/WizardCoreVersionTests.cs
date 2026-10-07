@@ -85,7 +85,6 @@ namespace Chimera.Tests.Client.GUI
 		[TestMethod]
 		public void AVersionNobodyCanDateStillReadsAsItsCommit()
 		{
-			CoreVersionDates.Refresh();
 			using NewProjectWizard form = new([ Build("dosbox-x", "12d65377b7d3-dirty+local", null) ], static _ => [ ]);
 			StringAssert.Contains(form.CoreChoiceLines[0], "12d65377 local");
 		}

@@ -143,29 +143,6 @@ shared_library(
 )
 
 # ---------------------------------------------------------------------------
-# luasocket: socket/core + mime/core Lua modules (for user scripts)
-# ---------------------------------------------------------------------------
-luasocket_common = [
-  'luasocket', 'timeout', 'buffer', 'io', 'auxiliar', 'options', 'inet',
-  'except', 'select', 'tcp', 'udp', 'compat',
-]
-luasocket_src = []
-foreach f : luasocket_common + [host_windows ? 'wsocket' : 'usocket']
-  luasocket_src += files('extern/luasocket/src' / f + '.c')
-endforeach
-luasocket_args = []
-luasocket_deps = []
-if host_windows
-  luasocket_args += '-DLUASOCKET_API=__declspec(dllexport)'
-  luasocket_deps += cc.find_library('ws2_32')
-endif
-# both modules must be named "core" on disk; meson target names and per-dir
-# outputs are unique, so each builds in its own subdir (extern/meson/luasocket-*)
-lua_inc = include_directories('extern/lua')
-subdir('extern/meson/luasocket-socket')
-subdir('extern/meson/luasocket-mime')
-
-# ---------------------------------------------------------------------------
 # zstd: savestate compression; upstream's own meson build, nested
 # ---------------------------------------------------------------------------
 nested_tool = files('extern/meson/nested-build.sh')

@@ -23,10 +23,6 @@
 	path = extern/openal-soft
 	url = https://github.com/kcat/openal-soft.git
 	ignore = untracked
-[submodule "extern/luasocket"]
-	path = extern/luasocket
-	url = https://github.com/lunarmodules/luasocket.git
-	ignore = untracked
 [submodule "extern/sqlite3"]
 	path = extern/sqlite3
 	url = https://github.com/ericsink/cb.git

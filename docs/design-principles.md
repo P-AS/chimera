@@ -5041,3 +5041,70 @@ already true.
 Also removed: the `MSBuildProjectName` compiler-visible property, which
 only that generator read. Two generators remain, both in use: VersionInfo
 (the commit and its time) and SettingsUtil.
+
+## Chimera reaches for nothing over the network (user-decided, 2026-10-07)
+
+The user's words: "Chimera should download nothing from the internet (not
+even the core list or their metadata, not even information from github).
+Chimera should have no internet reaching logic at all anywhere. The new use
+case is: users must download or build cores themselves and place them in the
+cores folder." And, an hour later, of the scripting functions that had first
+been left alone: "do remove all internet reaching logic from Chimera, even
+the Lua script functions."
+
+This reverses the Core Manager as it was designed (docs/core-manager.md has
+the model that replaces it). What went:
+
+- the Core Manager's feed, installer, release-index reader and the cache of
+  what cores had published; its Check for updates, Download latest, Install
+  and Add external core; the development-build channel;
+- the roster. `official-cores.json` is not shipped and not read. Asked whether
+  a static list should stay in the app, the user chose none: a list that is
+  never refreshed is wrong the day after it is made, and where cores are is
+  something a person reads with a browser;
+- from Lua: `comm.socketServer*`, `comm.http*`, `comm.ws_*`, and the
+  `--socket-ip`, `--socket-port`, `--socket-udp`, `--url-get`, `--url-post`
+  flags. `comm.mmf*` stays: a memory-mapped file is on this machine;
+- LuaSocket, from the build and the bundle (the submodule is gone);
+- the frontend's reference to `System.Net.Http`.
+
+What a click on a link does - the About box, Help - is not Chimera reaching
+anywhere: it hands an address to the system's browser.
+
+Where cores go, in the user's words: "use Cores/, already coming empty on the
+distribution. The user may define a different Cores/ folder, if they wanted
+to." So there is ONE cores folder, `Cores/` beside the executable unless the
+config's `CoresFolder` names another, set from the Core Manager. The data
+directory's `Cores`, where downloads used to land, is no longer searched.
+
+Three things here are the implementer's, not the user's, and are the kind of
+thing to reverse if they are wrong:
+
+- **Somebody updating is told where their cores are.** Every existing install
+  has its cores in the data directory, which this build does not search. The
+  Core Manager says how many packages are there and offers to make that the
+  cores folder. Nothing is moved for them, and nothing is searched silently:
+  the alternative was a Chimera that opens after an update with every core
+  apparently gone.
+- **Remove still deletes, and only files.** Removing was never fetching, so
+  it stays, with a confirmation that now says Chimera cannot get the build
+  back. It deletes package FILES in the cores folder; an unpacked package (a
+  folder, which is how somebody keeps their own build) and a package in a
+  further search directory are named and left alone.
+- **A tripwire, not a proof.** `tools/check-no-network.sh` fails CI if the
+  frontend's or the engine's sources name a network API, or if the native
+  build names a network library. It reads names in source, so it catches the
+  ordinary way such code comes back and nothing cleverer.
+
+Left as they are, and worth knowing:
+
+- The cores still publish a `releases.json` index beside their packages. This
+  Chimera does not read it; the Chimera people already have does, so it is
+  still written.
+- CI still fetches the published packages (`tools/fetch-cores.sh`) to check
+  the frontend against them. That is the build's network, not Chimera's.
+- A Lua script can still load a native module of its own from the Lua folder.
+  Chimera ships none.
+- A package from before packages stated their date is listed without one:
+  the lookup was in the record of what cores had published, and there is no
+  such record now.

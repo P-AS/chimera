@@ -1,7 +1,6 @@
 #nullable enable
 
 using System.Collections.Generic;
-using System.Net.Sockets;
 
 namespace Chimera.Client.Common
 {
@@ -32,15 +31,9 @@ namespace Chimera.Client.Common
 
 		public readonly bool luaConsole;
 
-		public readonly (string IP, ushort Port)? SocketAddress;
-
-		public readonly ProtocolType SocketProtocol;
-
 		public readonly IReadOnlyList<(string Key, string Value)>? UserdataUnparsedPairs;
 
 		public readonly string? MMFFilename;
-
-		public readonly (string? UrlGet, string? UrlPost)? HTTPAddresses;
 
 		public readonly bool? audiosync;
 
@@ -70,11 +63,8 @@ namespace Chimera.Client.Common
 			bool startFullscreen,
 			string? luaScript,
 			bool luaConsole,
-			(string IP, ushort Port)? socketAddress,
 			string? mmfFilename,
-			(string? UrlGet, string? UrlPost)? httpAddresses,
 			bool? audiosync,
-			ProtocolType socketProtocol,
 			IReadOnlyList<(string Key, string Value)>? userdataUnparsedPairs,
 			string? cmdRom,
 			string? cmdCorePackage,
@@ -94,11 +84,8 @@ namespace Chimera.Client.Common
 			this.startFullscreen = startFullscreen;
 			this.luaScript = luaScript;
 			this.luaConsole = luaConsole;
-			SocketAddress = socketAddress;
 			MMFFilename = mmfFilename;
-			HTTPAddresses = httpAddresses;
 			this.audiosync = audiosync;
-			SocketProtocol = socketProtocol;
 			UserdataUnparsedPairs = userdataUnparsedPairs;
 			this.cmdRom = cmdRom;
 			this.cmdCorePackage = cmdCorePackage;

@@ -310,9 +310,10 @@ Probed once after `Init`; absent exports simply mean the tool is not offered.
 
 ## Publishing it
 
-Chimera ships no cores and builds none: a core is a repository that publishes
-itself, and the frontend downloads it (docs/core-manager.md). Joining the
-official set is therefore four things:
+Chimera ships no cores, builds none and downloads none: a core is a repository
+that publishes itself, and a user downloads its package and puts it in the
+cores folder (docs/core-manager.md). Joining the official set is therefore four
+things:
 
 1. Push the core repository (`ToolAssisted-run/chimera-core-<name>`, branch
    `main`).
@@ -340,7 +341,9 @@ official set is therefore four things:
 3. Add the `publish` job and a daily `schedule:` trigger, which is three lines
    calling `ToolAssisted-run/chimera/.github/workflows/publish-core.yml@main` -
    see any wired core, or docs/core-manager.md.
-4. A row in Chimera's `official-cores.json` and in the README's core table.
+4. A row in Chimera's `official-cores.json` (which CI fetches published
+   packages by; the frontend does not read it) and in the README's core table,
+   which is where a user finds the core.
 
 **The publish job runs `./waterbox/build-package.sh -r <chimera>` in a fresh
 recursive checkout, and nothing else.** Two consequences, both of which have

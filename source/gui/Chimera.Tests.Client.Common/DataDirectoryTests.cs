@@ -169,7 +169,7 @@ namespace Chimera.Tests.Client.Common
 				Environment.SetEnvironmentVariable("CHIMERA_DATA_HOME", null);
 				ProjectCache.CustomDataHome = Dir("custom");
 				Assert.AreEqual(Dir("custom"), ProjectCache.DataHome);
-				Assert.AreEqual(Path.Combine(Dir("custom"), "Cores"), CoreStore.Path, "the core store follows, and is not remembered from before");
+				Assert.AreEqual(Path.Combine(Dir("custom"), "Cores"), CoresFolder.Former, "where earlier versions kept downloaded cores follows too, for the manager to point at");
 				StringAssert.StartsWith(CacheStore.PrecompiledCode, Dir("custom"));
 				StringAssert.StartsWith(CrashCapture.Root, Dir("custom"));
 

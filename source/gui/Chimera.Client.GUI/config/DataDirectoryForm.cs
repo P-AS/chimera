@@ -79,7 +79,7 @@ namespace Chimera.Client.GUI
 				Location = new(UIHelper.ScaleX(12), UIHelper.ScaleY(10)),
 				Size = new(UIHelper.ScaleX(616), UIHelper.ScaleY(64)),
 				Text = "Everything Chimera keeps for you is in one directory: each project's greenzone, unpacked cores, "
-					+ "precompiled game code, the cores you downloaded, recovery journals and crash notes. "
+					+ "precompiled game code, recovery journals and crash notes. "
 					+ "It can run to many gigabytes, and it does not have to be on the system drive.",
 			};
 			_where = new Label
@@ -234,8 +234,8 @@ namespace Chimera.Client.GUI
 			var result = MessageBox.Show(this,
 				$"Move the {Bytes(size)} already here to {target}?{room}\n\n"
 					+ "Yes: it is moved when Chimera next starts.\n"
-					+ "No: start empty there. Greenzones and compiled code are made again as they are needed; "
-					+ "downloaded cores would have to be downloaded again. What is here stays here.",
+					+ "No: start empty there. Greenzones and compiled code are made again as they are needed. "
+					+ "What is here stays here.",
 				"Data Directory", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
 			return result switch
 			{

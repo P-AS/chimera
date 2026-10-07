@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Writes the licence of a Chimera bundle, from what its parts declare.
 
-A bundle is the frontend, and the frontend alone: Chimera ships no cores, and
-each is installed from its own project through File > Core Manager
-(docs/core-manager.md). So this states the frontend's terms and says plainly
-where the rest come from.
+A bundle is the frontend, and the frontend alone: Chimera ships no cores and
+downloads none; each comes from its own project and is put in the Cores folder
+by whoever wants it (docs/core-manager.md). So this states the frontend's terms
+and says plainly where the rest come from.
 
 It still reads Cores/ - a bundle assembled with packages in it, which a
 developer or a downstream packager may do, must state their terms too. A core
@@ -122,11 +122,11 @@ def main():
         lines.append("This bundle carries **no emulator cores**, so what is here is the")
         lines.append("frontend and its own dependencies, stated below.")
         lines.append("")
-        lines.append("**Installing a core changes this.** Cores are separate projects,")
-        lines.append("downloaded through File > Core Manager, and each brings its own terms")
+        lines.append("**Adding a core changes this.** Cores are separate projects; Chimera")
+        lines.append("downloads none, and each one put in `Cores/` brings its own terms")
         lines.append("with it - several (Genesis Plus GX, Opera, Snes9x) forbid commercial")
         lines.append("use, and that binds whatever they are installed into. Every package")
-        lines.append("carries its own `licenses/` and says so before you install it.")
+        lines.append("carries its own `licenses/`, and File > Core Manager shows a core's terms.")
     lines.append("")
     lines.append("## The frontend")
     lines.append("")
@@ -134,7 +134,7 @@ def main():
     lines.append("`licenses/chimera-LICENSE` (the MIT License), whose work it is and what")
     lines.append("those terms do not cover in `licenses/chimera-NOTICE`, and the people behind")
     lines.append("it in `licenses/chimera-CREDITS.md`. The native libraries it links (SDL2, OpenAL")
-    lines.append("Soft, Lua, zstd, SQLite, cimgui, luasocket and others) remain their authors'")
+    lines.append("Soft, Lua, zstd, SQLite, cimgui and others) remain their authors'")
     lines.append("under their own licences.")
     lines.append("")
     # A shipped GPL program has to be named and pointed at its source, and it is

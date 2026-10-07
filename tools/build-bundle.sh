@@ -1,16 +1,17 @@
 #!/bin/bash
-# Assembles a ready-to-run Chimera bundle: the frontend, its natives, the roster
-# of official cores, and the licences.
+# Assembles a ready-to-run Chimera bundle: the frontend, its natives and the
+# licences.
 #
-# It carries NO CORES. They are fifteen other repositories that build, package
-# and publish themselves, and the frontend downloads them through File > Core
-# Manager (docs/core-manager.md). Building them all here made the bundle large
-# and the release slow, and bumping any one of them rebuilt the world.
+# It carries NO CORES, and Chimera downloads none (docs/core-manager.md). They
+# are other repositories that build, package and publish themselves; a user
+# downloads a core's package from its project, or builds it, and puts it in the
+# bundle's Cores/ folder, which ships empty. Building them all here made the
+# bundle large and the release slow, and bumping any one of them rebuilt the
+# world.
 #
-# What is lost with them is "one chimera commit pins one exact bundle". Two
-# things replace it: official-cores.json names the core versions this release
-# was tested against, and a movie already cites the exact core package that
-# recorded it, which the manager can go and fetch.
+# What is lost with them is "one chimera commit pins one exact bundle". What
+# replaces it: a movie cites the exact core package that recorded it, by
+# version and SHA-1, which is what somebody replaying it has to find.
 #
 # Usage: tools/build-bundle.sh --platform windows|linux --out <dir>
 #                              [--skip-natives]
@@ -74,20 +75,14 @@ cp -r "$root"/build/Tools/. "$out/Tools/" 2>/dev/null || true
 
 if [ "$platform" = "windows" ]; then
 	cp "$native_dir"/*.dll "$out/dll/"
-	# luasocket ships .so files on Linux; the Windows modules live in the cross build
-	rm -f "$out"/Lua/mime/core.so "$out"/Lua/socket/core.so
-	cp "$native_dir/extern/meson/luasocket-mime/core.dll" "$out/Lua/mime/core.dll"
-	cp "$native_dir/extern/meson/luasocket-socket/core.dll" "$out/Lua/socket/core.dll"
 else
 	cp "$root"/build/dll/*.so "$out/dll/" 2>/dev/null || true
 	cp "$root/build/ChimeraMono.sh" "$out/" 2>/dev/null || true
 fi
 
-# The roster of official cores: what File > Core Manager can offer to fetch
-# before any of them is installed. It carries no versions - those come from each
-# core's own GitHub releases when the user asks - so it changes only when a core
-# is added, renamed, or moved.
-cp "$root/official-cores.json" "$out/"
+# No list of cores goes in: Chimera downloads nothing and knows of no core it
+# has not been given (docs/core-manager.md). Cores/ ships empty, and what a user
+# puts in it is what there is.
 
 # ffmpeg is part of the bundle, not something the frontend asks a person to go
 # and find the first time they encode a video.
@@ -95,8 +90,8 @@ say "ffmpeg"
 "$root/tools/fetch-ffmpeg.sh" "$platform" "$out/dll"
 
 say "licences"
-# What the bundle may be used for. It carries NO cores - each is installed from
-# its own project through File > Core Manager, and brings its own terms with it,
+# What the bundle may be used for. It carries NO cores - each comes from its own
+# project, put in Cores/ by whoever wants it, and brings its own terms with it,
 # several of which (Genesis Plus GX, Opera, Snes9x) forbid commercial use and
 # bind whatever they are installed into. This states the frontend's own terms
 # and says where the rest come from.
@@ -114,8 +109,8 @@ say "build stamp"
 	git -C "$root" submodule status extern/chimera-common-minibox 2>/dev/null | sed 's/^/  /'
 	printf "\nfiles (sha1):\n"
 	( cd "$out" && sha1sum Chimera.exe 2>/dev/null | sed 's/^/  /' )
-	printf "\ncores: none. Installed from their own projects (File > Core Manager);\n"
-	printf "a movie names the exact core package that recorded it.\n"
+	printf "\ncores: none, and Chimera downloads none. Get a core's package from its\n"
+	printf "project and put it in Cores/; a movie names the exact package that recorded it.\n"
 } > "$out/BUILD.txt"
 cat "$out/BUILD.txt"
 
@@ -132,6 +127,9 @@ for z in "$out"/Cores/*.chimeraCore; do
 	python3 -c "import sys,zipfile; zipfile.ZipFile(sys.argv[1]).testzip()" "$z" || { echo "CORRUPT: $z" >&2; bad=1; }
 done
 [ -s "$out/LICENSES.md" ] || { echo "MISSING: LICENSES.md" >&2; bad=1; }
-[ -s "$out/official-cores.json" ] || { echo "MISSING: official-cores.json (the Core Manager would have nothing to offer)" >&2; bad=1; }
+[ -d "$out/Cores" ] || { echo "MISSING: Cores/ (the folder a user puts core packages in)" >&2; bad=1; }
+[ ! -e "$out/official-cores.json" ] || { echo "PRESENT: official-cores.json (the bundle carries no list of cores)" >&2; bad=1; }
+# Chimera reaches for nothing over the network, so nothing that could is shipped
+if find "$out/Lua" -type f | grep -q .; then echo "PRESENT: files under Lua/ (the bundle ships no Lua modules)" >&2; bad=1; fi
 [ "$bad" -eq 0 ] || { echo "  the bundle is NOT clean" >&2; exit 1; }
 printf "  %s in %s\n" "$(du -sh "$out" | cut -f1)" "$out"

@@ -19,13 +19,11 @@ So the window lists five kinds, and the fifth is the one exception below:
   means unzipping it again.
 * **Compiled code** - a core's translation of a game's code
   (`docs/compile-cache.md`). Losing it means minutes on the next first boot.
-* **Core versions** - what each core repository last said it had published.
-  Losing it means the Core Manager asks again.
 * **Unsaved work** - a project's recovery journal (docs/project.md,
   "Recovery"): the open session's inputs, markers and branches as they change,
   or what a crashed session left of them. Losing it loses that work.
 
-And it lists nothing else. Installed cores are the Core Manager's, because a
+And it lists nothing else. The cores in the cores folder are the Core Manager's, because a
 movie needs the exact build that recorded it; projects, roms and firmware are
 not caches at all. A window that mixed those in would be a window where the
 rule stops being true, and then no row in it is safe.
@@ -60,8 +58,9 @@ Everything the window lists is under the user's data directory -
 
 **It does not have to be on the system drive** (issue #52). `Config > Data
 Directory...` sends the whole directory somewhere else - all of it, the rows
-above and the downloaded cores and crash notes beside them (user-decided,
-2026-09-17), which is what `CHIMERA_DATA_HOME` always did for anyone who knew
+above and the crash notes beside them (user-decided, 2026-09-17; the cores
+versions before 2026-10-07 downloaded into it go along, though Chimera no
+longer looks for cores there - docs/core-manager.md), which is what `CHIMERA_DATA_HOME` always did for anyone who knew
 to set it. The variable still wins where it is set. The window only records the
 change; the next start carries it out before anything in the directory is open
 (`DataDirectory`, and docs/design-principles.md for why).

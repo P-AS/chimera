@@ -9,7 +9,7 @@
 # the C++ workload including clang-cl, CMake, and Ninja components.
 param(
     [Parameter(Mandatory = $true)] [string]$OutDir,
-    [string[]]$Libs = @("chimerahash", "sdl2", "lua54", "zstd", "cimgui", "openal", "sqlite3", "chdcapi", "luasocket"),
+    [string[]]$Libs = @("chimerahash", "sdl2", "lua54", "zstd", "cimgui", "openal", "sqlite3", "chdcapi"),
     [switch]$Force
 )
 # native tools (cmake, clang) write progress/warnings to stderr; success is judged
@@ -212,35 +212,6 @@ function Build-ChdCapi {
     "chd_capi: ok"
 }
 
-# --- luasocket: socket/core.dll + mime/core.dll for user Lua scripts ---
-# Linked against our own lua54 import library, so lua54 must build first.
-function Build-LuaSocket {
-    $src = Join-Path $here "luasocket\src"
-    $luaObj = Join-Path $here "lua\obj"
-    $luaDir = [System.IO.Path]::GetFullPath((Join-Path $OutDir "..\Lua"))
-    $outSocket = Join-Path $luaDir "socket\core.dll"
-    $outMime = Join-Path $luaDir "mime\core.dll"
-    if (-not (Test-Path "$luaObj\lua54.lib")) { throw "lua54 import library missing; build lua54 first" }
-    if ((Test-Fresh $outSocket @($src) @()) -and (Test-Fresh $outMime @($src) @())) { "luasocket: up to date"; return }
-    "luasocket: building..."
-    New-Item -ItemType Directory -Force (Split-Path $outSocket), (Split-Path $outMime) | Out-Null
-    $objDir = Join-Path $here "luasocket\obj"; New-Item -ItemType Directory -Force $objDir | Out-Null
-    $socketSrcs = @("luasocket.c","timeout.c","buffer.c","io.c","auxiliar.c","options.c","inet.c","except.c","select.c","tcp.c","udp.c","compat.c","wsocket.c") | ForEach-Object { Join-Path $src $_ }
-    & clang-cl /nologo /O2 /MD /LD ("/I" + (Join-Path $here "lua")) `
-        "/DLUASOCKET_API=__declspec(dllexport)" `
-        $socketSrcs /Fo"$objDir\" /Fe"$outSocket" /link "$luaObj\lua54.lib" ws2_32.lib | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "luasocket (socket) build failed" }
-    $mimeSrcs = @("mime.c","compat.c") | ForEach-Object { Join-Path $src $_ }
-    & clang-cl /nologo /O2 /MD /LD ("/I" + (Join-Path $here "lua")) `
-        "/DMIME_API=__declspec(dllexport)" `
-        $mimeSrcs /Fo"$objDir\" /Fe"$outMime" /link "$luaObj\lua54.lib" | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "luasocket (mime) build failed" }
-    foreach ($d in (Split-Path $outSocket), (Split-Path $outMime)) {
-        Remove-Item (Join-Path $d "core.lib"), (Join-Path $d "core.exp") -ErrorAction SilentlyContinue
-    }
-    "luasocket: ok"
-}
-
 foreach ($lib in $Libs) {
     switch ($lib) {
         "chimerahash"   { Build-ChimeraHash }
@@ -251,7 +222,6 @@ foreach ($lib in $Libs) {
         "openal"    { Build-OpenAL }
         "sqlite3"   { Build-Sqlite3 }
         "chdcapi"   { Build-ChdCapi }
-        "luasocket" { Build-LuaSocket }
         default     { throw "unknown lib '$lib'" }
     }
 }

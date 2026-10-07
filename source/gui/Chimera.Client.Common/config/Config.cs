@@ -84,19 +84,19 @@ namespace Chimera.Client.Common
 		public string LastCorePackagePath { get; set; } = "";
 
 		/// <summary>
-		/// Directories scanned for core packages at startup, in order. Empty means the
-		/// default alone (<c>Cores/</c> beside the executable); the default is always
-		/// scanned first, so this only ever adds.
+		/// The folder core packages are looked for in, when it is not <c>Cores/</c>
+		/// beside the executable (<see cref="CoresFolder"/> the class resolves it; a
+		/// relative path is relative to the executable). Empty is that default. Set
+		/// from File &gt; Core Manager. Chimera downloads nothing: what is in this
+		/// folder is what somebody put there.
 		/// </summary>
-		public List<string> CorePackagePaths { get; set; } = new();
+		public string CoresFolder { get; set; } = "";
 
 		/// <summary>
-		/// Cores added by hand in File &gt; Core Manager, by the address of the GitHub
-		/// page that publishes them. They are listed below the official ones and
-		/// fetched the same way; removing one takes it out of here, and so out of the
-		/// list, because nothing else remembers it.
+		/// Further directories scanned for core packages at startup, in order, after
+		/// the cores folder. Empty means the cores folder alone; this only ever adds.
 		/// </summary>
-		public List<RosterCore> ExternalCores { get; set; } = new();
+		public List<string> CorePackagePaths { get; set; } = new();
 
 		/// <summary>
 		/// Where everything Chimera keeps per user lives, when that is not the platform's usual

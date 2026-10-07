@@ -6,8 +6,7 @@ namespace Chimera.Emulation.Common.Waterbox
 	/// The two sorts of core (docs/game-cores.md, user-decided 2026-09-28): an emulator,
 	/// which is a machine that plays games from their files, and a game core, which is one
 	/// game - open, or reconstructed - built as a core and played from that game's own
-	/// files. A package says which in waterbox.config's <c>kind</c>, and the roster says
-	/// it for the cores nobody has downloaded yet.
+	/// files. A package says which in waterbox.config's <c>kind</c>.
 	/// </summary>
 	public static class CoreKind
 	{

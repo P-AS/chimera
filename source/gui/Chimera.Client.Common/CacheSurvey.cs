@@ -16,9 +16,6 @@ namespace Chimera.Client.Common
 		/// <summary>A core package unzipped so it can be loaded.</summary>
 		CorePackage,
 
-		/// <summary>What each core's repository last said it had published.</summary>
-		CoreVersions,
-
 		/// <summary>
 		/// The journal of an open project's work, or what a crashed session left of it (ProjectRecovery):
 		/// inputs, markers and branches that may never have been saved. The one kind whose loss is work
@@ -108,7 +105,6 @@ namespace Chimera.Client.Common
 		{
 			CacheKind.Project => "The run replays instead of resuming, and its files are asked for once more.",
 			CacheKind.CorePackage => "The package is unzipped again the next time it is loaded.",
-			CacheKind.CoreVersions => "The Core Manager asks each repository again instead of showing what it saw last.",
 			CacheKind.Recovery => "Unsaved work - inputs, markers and branches a session never saved. Removing it loses that work for good.",
 			_ => "",
 		};
@@ -349,21 +345,6 @@ namespace Chimera.Client.Common
 			// granularity a person thinks in. A second view of it here, by core
 			// and build, described a layout that no longer exists.
 
-			var feed = System.IO.Path.Combine(CoreStore.Path, ".feed-cache");
-			if (Directory.Exists(feed))
-			{
-				items.Add(new CacheItem
-				{
-					Kind = CacheKind.CoreVersions,
-					Label = "Published core versions",
-					Detail = "",  /* the label says it; the column is for identifying detail */
-					Path = feed,
-					Bytes = SizeOf(feed),
-					LastUsed = TouchedAt(feed),
-					Locked = CacheLocks.IsLocked(locks, CacheKind.CoreVersions, feed),
-				});
-			}
-
 			return items
 				.OrderBy(static i => i.Kind)
 				.ThenByDescending(static i => i.Bytes)
@@ -563,7 +544,6 @@ namespace Chimera.Client.Common
 		{
 			CacheKind.Project => "Project",
 			CacheKind.CorePackage => "Unpacked core",
-			CacheKind.CoreVersions => "Core versions",
 			CacheKind.Recovery => "Unsaved work",
 			_ => kind.ToString(),
 		};

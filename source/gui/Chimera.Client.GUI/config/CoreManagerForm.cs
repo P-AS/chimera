@@ -5,8 +5,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 using Chimera.Client.Common;
@@ -14,15 +12,15 @@ using Chimera.Client.Common;
 namespace Chimera.Client.GUI
 {
 	/// <summary>
-	/// File &gt; Core Manager: the cores that exist, the ones installed, and the
-	/// versions of each.
+	/// File &gt; Core Manager: the core packages that are in the cores folder, and
+	/// the versions of each.
 	///
-	/// Chimera ships no cores (see docs/core-manager.md). This window is how they
-	/// arrive - and it is the ONLY thing that talks to GitHub. Nothing here happens
-	/// on a timer or at startup: every request is one somebody pressed a button to
-	/// make. The window opens by itself exactly once, when nothing is installed at
-	/// all, because that is the one moment a frontend with no cores cannot do
-	/// anything useful without help.
+	/// Chimera ships no cores and downloads none (user-decided, 2026-10-07; see
+	/// docs/core-manager.md). A core is a file somebody downloaded from its project
+	/// or built, and put in the cores folder; this window says which folder that
+	/// is, lets it be opened or changed, lists what is in it, and removes what is
+	/// no longer wanted. Nothing here reaches the network - nothing anywhere in
+	/// Chimera does.
 	///
 	/// Thin over <see cref="CoreManagerModel"/>, like the firmware windows are over
 	/// their surveys: what somebody is told is decided by the model, which is tested
@@ -30,16 +28,12 @@ namespace Chimera.Client.GUI
 	/// </summary>
 	public sealed class CoreManagerForm : FormBase
 	{
-		private readonly Func<IReadOnlyList<RosterCore>> _roster;
 		private readonly Func<IReadOnlyList<DiscoveredCorePackage>> _scan;
-		private readonly CoreFeed _feed;
-		private readonly CoreInstaller _installer;
-
-		/// <summary>Told about each package installed here: installing a build is choosing it (<see cref="CoreChoices.MakeDefaultBuild"/>).</summary>
-		private readonly Action<DiscoveredCorePackage>? _installed;
-		private readonly Action<RosterCore>? _rememberExternal;
-		private readonly Action<RosterCore>? _forgetExternal;
-		private readonly Func<string?>? _askForUrl;
+		private readonly Func<string> _folder;
+		private readonly Action<string>? _useFolder;
+		private readonly Func<string?>? _askForFolder;
+		private readonly Action<string>? _openFolder;
+		private readonly Func<(string Path, int Packages)>? _former;
 		private readonly Action? _changed;
 
 		private readonly ListView _cores;
@@ -48,14 +42,12 @@ namespace Chimera.Client.GUI
 		private readonly Label _versionDetail;
 		private readonly Label _header;
 		private readonly Label _status;
-		private readonly Button _install;
 		private readonly Button _removeVersion;
-		private readonly Button _checkUpdates;
-		private readonly Button _downloadLatest;
 		private readonly Button _removeCore;
-		private readonly Button _addExternal;
+		private readonly Button _open;
+		private readonly Button _change;
+		private readonly Button _useFormer;
 		private readonly Button _systems;
-		private readonly CheckBox _devChannel;
 
 		/// <summary>Set while the code is ticking boxes, so its own events do not answer back.</summary>
 		private bool _suppressCheckEvents;
@@ -82,46 +74,41 @@ namespace Chimera.Client.GUI
 		/// </summary>
 		private bool _ready;
 
-		private readonly Dictionary<string, IReadOnlyList<CoreRelease>> _feeds = new(StringComparer.OrdinalIgnoreCase);
-		private readonly Dictionary<string, string> _feedErrors = new(StringComparer.OrdinalIgnoreCase);
-
 		private List<CoreManagerRow> _rows = new();
 		private readonly CoreKindFilterBox _shows;
 		private readonly Action<CoreKindFilter>? _rememberShows;
-		private CancellationTokenSource? _work;
-		private bool _busy;
 
 		protected override string WindowTitleStatic => "Core Manager";
 
+		/// <param name="scan">the packages in the cores folder, read afresh each time</param>
+		/// <param name="folder">the cores folder as it is configured now</param>
+		/// <param name="useFolder">told the folder somebody chose; absent, the folder cannot be changed from here</param>
+		/// <param name="askForFolder">a folder picker; null from it is a cancel</param>
+		/// <param name="openFolder">shows a folder in the system's file manager</param>
+		/// <param name="former">where earlier versions downloaded cores to, and how many packages are still there</param>
+		/// <param name="changed">told after anything here changed what is in the folder, or which folder it is</param>
 		public CoreManagerForm(
-			Func<IReadOnlyList<RosterCore>> roster,
 			Func<IReadOnlyList<DiscoveredCorePackage>> scan,
-			CoreFeed feed,
-			CoreInstaller installer,
-			Action<RosterCore>? rememberExternal = null,
-			Action<RosterCore>? forgetExternal = null,
-			Func<string?>? askForUrl = null,
+			Func<string> folder,
+			Action<string>? useFolder = null,
+			Func<string?>? askForFolder = null,
+			Action<string>? openFolder = null,
+			Func<(string Path, int Packages)>? former = null,
 			Action? changed = null,
-			Action<DiscoveredCorePackage>? installed = null,
 			CoreKindFilter shows = CoreKindFilter.All,
 			Action<CoreKindFilter>? rememberShows = null)
 		{
-			_roster = roster;
 			_scan = scan;
-			_feed = feed;
-			_installer = installer;
-			_installed = installed;
-			_rememberExternal = rememberExternal;
-			_forgetExternal = forgetExternal;
-			_askForUrl = askForUrl;
+			_folder = folder;
+			_useFolder = useFolder;
+			_askForFolder = askForFolder;
+			_openFolder = openFolder;
+			_former = former;
 			_changed = changed;
 			_rememberShows = rememberShows;
 
 			SuspendLayout();
-			// wide because the list carries seven columns; the three it originally had
-			// already filled the width exactly, so every column added since has had
-			// to bring its own room with it
-			ClientSize = new(UIHelper.ScaleX(1250), UIHelper.ScaleY(500));
+			ClientSize = new(UIHelper.ScaleX(1100), UIHelper.ScaleY(500));
 			MinimumSize = new(UIHelper.ScaleX(900), UIHelper.ScaleY(420));
 			StartPosition = FormStartPosition.CenterParent;
 			ShowIcon = false;
@@ -129,15 +116,16 @@ namespace Chimera.Client.GUI
 			var margin = UIHelper.ScaleX(8);
 			var sideWidth = UIHelper.ScaleX(320);
 			var footer = UIHelper.ScaleY(76);
-					var listTop = UIHelper.ScaleY(56);
+			var listTop = UIHelper.ScaleY(76);
 
+			// two lines: which folder, and that it is the only way a core arrives
 			_header = new Label
 			{
 				AutoSize = false,
 				Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
 				Location = new(margin, UIHelper.ScaleY(9)),
-				Size = new(ClientSize.Width - (2 * margin), UIHelper.ScaleY(18)),
-				// filled in by Reload: it counts what is installed
+				Size = new(ClientSize.Width - (2 * margin), UIHelper.ScaleY(38)),
+				// filled in by Reload: it names the folder and counts what is in it
 			};
 
 			// The select-all sits above the list rather than in the header, because a
@@ -147,7 +135,7 @@ namespace Chimera.Client.GUI
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Left,
 				AutoSize = true,
-				Location = new(margin + UIHelper.ScaleX(2), UIHelper.ScaleY(34)),
+				Location = new(margin + UIHelper.ScaleX(2), UIHelper.ScaleY(54)),
 				Text = "Select all",
 			};
 			_selectAll.CheckedChanged += (_, _) => SelectAllChanged();
@@ -166,18 +154,14 @@ namespace Chimera.Client.GUI
 			// these have to add up to less than the list is wide (ClientSize minus the
 			// side panel and the margins), or the last one is only reachable by
 			// scrolling sideways
-			_cores.Columns.Add("Core", UIHelper.ScaleX(130));
-			// an emulator or a game (docs/game-cores.md): what the divider rows used to say
+			_cores.Columns.Add("Core", UIHelper.ScaleX(150));
+			// an emulator or a game (docs/game-cores.md)
 			_cores.Columns.Add("Type", UIHelper.ScaleX(70));
-			_cores.Columns.Add("Systems", UIHelper.ScaleX(160));
-			_cores.Columns.Add("Installed", UIHelper.ScaleX(190));
-			_cores.Columns.Add("Released", UIHelper.ScaleX(115));
+			_cores.Columns.Add("Systems", UIHelper.ScaleX(200));
+			// wide enough for a date, a commit and "(+2 more)"
+			_cores.Columns.Add("Version", UIHelper.ScaleX(250));
 			// right-aligned, because a column of sizes is read by comparing them
-			_cores.Columns.Add("Size", UIHelper.ScaleX(60), HorizontalAlignment.Right);
-			// owner/name rather than the whole address: it is the identifying part,
-			// and the full URL is on the right where there is room for it
-			// wide enough for an external core's "(added by hand)" after its repository
-			_cores.Columns.Add("Source", UIHelper.ScaleX(250));
+			_cores.Columns.Add("Size", UIHelper.ScaleX(70), HorizontalAlignment.Right);
 			_cores.SelectedIndexChanged += (_, _) => ShowSelectedCore();
 			_cores.ItemChecked += (_, e) =>
 			{
@@ -198,7 +182,7 @@ namespace Chimera.Client.GUI
 				Anchor = AnchorStyles.Top | AnchorStyles.Right,
 				Value = shows,
 			};
-			_shows.Location = new(_cores.Right - _shows.PreferredSize.Width, UIHelper.ScaleY(31));
+			_shows.Location = new(_cores.Right - _shows.PreferredSize.Width, UIHelper.ScaleY(51));
 			_shows.Changed += () =>
 			{
 				_rememberShows?.Invoke(_shows.Value);
@@ -231,43 +215,24 @@ namespace Chimera.Client.GUI
 			};
 			_versions.SelectedIndexChanged += (_, _) => ShowSelectedVersion();
 
-			var buttonWidth = (sideWidth - UIHelper.ScaleX(10)) / 2;
-			_install = new Button
+			_removeVersion = new Button
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Left,
 				Location = new(0, UIHelper.ScaleY(54)),
-				Size = new(buttonWidth, UIHelper.ScaleY(26)),
-				Text = "Install",
-			};
-			_install.Click += async (_, _) => await InstallSelected().ConfigureAwait(true);
-
-			_removeVersion = new Button
-			{
-				Anchor = AnchorStyles.Top | AnchorStyles.Right,
-				Location = new(sideWidth - buttonWidth, UIHelper.ScaleY(54)),
-				Size = new(buttonWidth, UIHelper.ScaleY(26)),
+				Size = new((sideWidth - UIHelper.ScaleX(10)) / 2, UIHelper.ScaleY(26)),
 				Text = "Remove version",
 			};
 			_removeVersion.Click += (_, _) => RemoveSelectedVersion();
-
-			_devChannel = new CheckBox
-			{
-				Anchor = AnchorStyles.Top | AnchorStyles.Left,
-				AutoSize = true,
-				Location = new(0, UIHelper.ScaleY(88)),
-				Text = "Show development builds",
-			};
-			_devChannel.CheckedChanged += (_, _) => ShowSelectedCore();
 
 			_versionDetail = new Label
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
 				AutoSize = false,
-				Location = new(0, UIHelper.ScaleY(118)),
-				Size = new(sideWidth, side.Height - UIHelper.ScaleY(118)),
+				Location = new(0, UIHelper.ScaleY(90)),
+				Size = new(sideWidth, side.Height - UIHelper.ScaleY(90)),
 			};
 
-			side.Controls.AddRange(new Control[] { versionLabel, _versions, _install, _removeVersion, _devChannel, _versionDetail });
+			side.Controls.AddRange(new Control[] { versionLabel, _versions, _removeVersion, _versionDetail });
 
 			_status = new Label
 			{
@@ -277,59 +242,48 @@ namespace Chimera.Client.GUI
 				Size = new(ClientSize.Width - (2 * margin), UIHelper.ScaleY(32)),
 			};
 
-			// The three that act on what is TICKED, in the order somebody uses them:
-			// find out what is new, take it, get rid of one.
+			// about the folder first - it is how a core gets here - then what is in it
 			var buttonRow = ClientSize.Height - UIHelper.ScaleY(34);
-			var bw = UIHelper.ScaleX(150);
+			var bw = UIHelper.ScaleX(140);
 			var gap = UIHelper.ScaleX(8);
-			_checkUpdates = new Button
+			Button Place(int slot, string text) => new()
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-				Location = new(margin, buttonRow),
+				Location = new(margin + (slot * (bw + gap)), buttonRow),
 				Size = new(bw, UIHelper.ScaleY(26)),
-				Text = "Check for updates",
+				Text = text,
 			};
-			_checkUpdates.Click += async (_, _) => await CheckForUpdates().ConfigureAwait(true);
 
-			_downloadLatest = new Button
-			{
-				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-				Location = new(margin + bw + gap, buttonRow),
-				Size = new(bw, UIHelper.ScaleY(26)),
-				Text = "Download latest",
-			};
-			_downloadLatest.Click += async (_, _) => await DownloadLatest().ConfigureAwait(true);
+			_open = Place(0, "Open cores folder");
+			_open.Click += (_, _) => OpenTheFolder();
 
-			_removeCore = new Button
+			_change = Place(1, "Change folder...");
+			_change.Click += (_, _) => ChangeTheFolder();
+
+			Button rescan = Place(2, "Look again");
+			rescan.Click += (_, _) =>
 			{
-				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-				Location = new(margin + (2 * (bw + gap)), buttonRow),
-				Size = new(bw, UIHelper.ScaleY(26)),
-				Text = "Remove",
+				Reload();
+				_changed?.Invoke();
+				Say($"{_rows.Count} core(s) in {_folder()}.");
 			};
+
+			_removeCore = Place(3, "Remove");
 			_removeCore.Click += (_, _) => RemoveCheckedCores();
 
-			_addExternal = new Button
-			{
-				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-				Location = new(margin + (3 * (bw + gap)), buttonRow),
-				Size = new(bw, UIHelper.ScaleY(26)),
-				Text = "Add external core...",
-			};
-			_addExternal.Click += async (_, _) => await AddExternalCore().ConfigureAwait(true);
-
 			// which machines all of this adds up to, and which core runs each (#172)
-			_systems = new Button
-			{
-				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-				Location = new(margin + (4 * (bw + gap)), buttonRow),
-				Size = new(bw, UIHelper.ScaleY(26)),
-				Text = "Systems...",
-			};
+			_systems = Place(4, "Systems...");
 			_systems.Click += (_, _) =>
 			{
 				using SupportedSystemsForm form = new(SupportedSystems.From(_rows));
 				form.ShowDialog(this);
+			};
+
+			// only there when earlier versions left packages where they downloaded them
+			_useFormer = Place(5, "Use that folder");
+			_useFormer.Click += (_, _) =>
+			{
+				if (_former?.Invoke() is { Packages: > 0 } left) UseFolder(left.Path);
 			};
 
 			Button close = new()
@@ -341,7 +295,7 @@ namespace Chimera.Client.GUI
 				Text = "Close",
 			};
 
-			Controls.AddRange(new Control[] { _header, _selectAll, _shows, _cores, side, _status, _checkUpdates, _downloadLatest, _removeCore, _addExternal, _systems, close });
+			Controls.AddRange(new Control[] { _header, _selectAll, _shows, _cores, side, _status, _open, _change, rescan, _removeCore, _systems, _useFormer, close });
 			AcceptButton = close;
 			ResumeLayout();
 
@@ -350,17 +304,25 @@ namespace Chimera.Client.GUI
 			Reload();
 		}
 
-		/// <summary>Rebuilds the list from the roster and a fresh scan, keeping the selection.</summary>
+		/// <summary>The two lines above the list, as they read now. For tests.</summary>
+		public string HeaderText => _header.Text;
+
+		/// <summary>The line under the list, as it reads now. For tests.</summary>
+		public string StatusText => _status.Text;
+
+		/// <summary>Whether the offer to use the folder earlier versions downloaded into is showing. For tests.</summary>
+		public bool OffersTheFormerFolder => _useFormer.Visible;
+
+		/// <summary>Rebuilds the list from a fresh scan of the folder, keeping the selection.</summary>
 		private void Reload()
 		{
 			var wasSelected = Selected()?.Name;
-			_rows = CoreManagerModel.Build(_roster(), _scan(), _feeds, _feedErrors).ToList();
+			_rows = CoreManagerModel.Build(_scan()).ToList();
 
-			// what was ticked survives a reload: an install or a removal must not
-			// silently change what the next button press would act on. A row that
-			// is gone leaves with it, or Remove would keep acting on a core that no
-			// longer has a line in the list - and so does one the filter hides: the
-			// buttons act on what can be seen ticked, never on something out of view.
+			// what was ticked survives a reload: a removal must not silently change
+			// what the next button press would act on. A row that is gone leaves with
+			// it - and so does one the filter hides: the button acts on what can be
+			// seen ticked, never on something out of view.
 			_ticked.IntersectWith(Shown().Select(static r => r.Name));
 
 			_suppressCheckEvents = true;
@@ -371,19 +333,31 @@ namespace Chimera.Client.GUI
 				ListViewItem item = new(row.Name) { Tag = row };
 				item.SubItems.Add(CoreKindFilterExtensions.KindText(row.IsGameCore));
 				item.SubItems.Add(row.SystemsSpelled);
-				item.SubItems.Add(InstalledText(row));
-				item.SubItems.Add(ReleasedText(row));
+				item.SubItems.Add(VersionText(row));
 				item.SubItems.Add(SizeText(row));
-				item.SubItems.Add(SourceText(row));
-				if (!row.IsInstalled) item.ForeColor = ThemeEngine.Color(ThemeColorRole.DisabledText);
 				item.Checked = _ticked.Contains(row.Name);
 				_cores.Items.Add(item);
 			}
 			_cores.EndUpdate();
 			_suppressCheckEvents = false;
 
-			var installed = _rows.Count(static r => r.IsInstalled);
-			_header.Text = $"Download or update the cores to use with Chimera. Currently installed cores: {installed}";
+			var folder = _folder();
+			_header.Text = $"Cores folder: {folder}   ({_rows.Count} core(s)){Environment.NewLine}"
+				+ "Chimera downloads nothing. Get a core's package (.chimeraCore) from its project, or build it, and put it in this folder.";
+
+			// somebody who updated from a Chimera that downloaded cores has them
+			// somewhere this one does not look; say so where they will see it
+			var left = _former?.Invoke() ?? ("", 0);
+			_useFormer.Visible = left.Packages > 0 && _useFolder is not null;
+			if (left.Packages > 0)
+			{
+				Say($"{left.Packages} core package(s) are in {left.Path}, where earlier versions of Chimera downloaded them. "
+					+ "Move them here, or use that folder as the cores folder.");
+			}
+			else if (_rows.Count is 0)
+			{
+				Say("There are no cores in this folder yet.");
+			}
 
 			if (wasSelected is not null && ItemFor(wasSelected) is { } keep) keep.Selected = true;
 			else if (_cores.Items.Count > 0) _cores.Items[0].Selected = true;
@@ -393,14 +367,6 @@ namespace Chimera.Client.GUI
 
 		/// <summary>The rows the filter lets through, in the model's order: the emulators, then the games.</summary>
 		private IEnumerable<CoreManagerRow> Shown() => _rows.Where(r => _shows.Value.Shows(r.IsGameCore));
-
-		/// <summary>
-		/// Where a core comes from. One the roster does not ship - added with Add external
-		/// core, or a package dropped into the Cores folder - says so, as the "External
-		/// cores" divider row used to.
-		/// </summary>
-		private static string SourceText(CoreManagerRow row)
-			=> row.IsOfficial ? row.Source : row.Source.Length is 0 ? "added by hand" : $"{row.Source}  (added by hand)";
 
 		/// <summary>The rows whose box is ticked, in list order.</summary>
 		private List<CoreManagerRow> Checked()
@@ -417,16 +383,17 @@ namespace Chimera.Client.GUI
 		}
 
 		/// <summary>
-		/// The three bulk buttons act on what is ticked, so with nothing ticked there
-		/// is nothing for them to do and they say so by being unavailable rather than
-		/// by complaining afterwards.
+		/// Remove acts on what is ticked, so with nothing ticked there is nothing for
+		/// it to do and it says so by being unavailable rather than by complaining
+		/// afterwards.
 		/// </summary>
 		private void UpdateButtons()
 		{
 			if (!_ready) return;
 			var any = Checked().Count is not 0;
-			_checkUpdates.Enabled = _downloadLatest.Enabled = _removeCore.Enabled = any && !_busy;
-			_addExternal.Enabled = !_busy;
+			_removeCore.Enabled = any;
+			_open.Enabled = _openFolder is not null;
+			_change.Enabled = _useFolder is not null && _askForFolder is not null;
 			_selectAll.Text = any ? $"Select all ({Checked().Count} ticked)" : "Select all";
 		}
 
@@ -441,26 +408,17 @@ namespace Chimera.Client.GUI
 			UpdateButtons();
 		}
 
-		private static string InstalledText(CoreManagerRow row)
+		/// <summary>The newest version here, by its date and commit, and how many more there are.</summary>
+		private static string VersionText(CoreManagerRow row)
 		{
-			if (!row.IsInstalled) return "not installed";
-			var versions = CoreVersionDates.NewestFirst(row.Installed).Select(static p => p.DatedVersion).Where(static v => v.Length is not 0).ToList();
-			var text = versions.Count switch
+			var versions = row.Installed.Select(static p => p.DatedVersion).Where(static v => v.Length is not 0).ToList();
+			return versions.Count switch
 			{
-				0 => $"{row.Installed.Count} installed",
+				0 => row.Installed.Count is 1 ? "" : $"{row.Installed.Count} versions",
 				1 => versions[0],
 				_ => $"{versions[0]}  (+{versions.Count - 1} more)",
 			};
-			return row.Update is not null ? $"{text}  - update available" : text;
 		}
-
-		/// <summary>
-		/// When the version this row is showing was published. Empty rather than
-		/// invented: a core nobody has asked about has no date to give, and it fills
-		/// in the moment somebody presses Fetch versions or Check for updates.
-		/// </summary>
-		private static string ReleasedText(CoreManagerRow row)
-			=> row.PublishedAt is { } when ? CoreVersionDates.Format(when) : "";
 
 		/// <summary>
 		/// How big the core is, to one decimal place. Cores run from half a megabyte
@@ -478,183 +436,40 @@ namespace Chimera.Client.GUI
 		private CoreManagerRow? Selected()
 			=> _cores.SelectedItems.Count is 0 ? null : _cores.SelectedItems[0].Tag as CoreManagerRow;
 
-		/// <summary>
-		/// The versions offered for the selected core: what is installed, plus
-		/// whatever has been fetched, newest first. Development builds are hidden
-		/// unless asked for - a dev release is replaced on every push, so a movie
-		/// recorded against one can stop being fetchable.
-		/// </summary>
+		/// <summary>The versions of the selected core that are here, newest first (issue #67).</summary>
 		private void ShowSelectedCore()
 		{
 			var row = Selected();
 			_versions.BeginUpdate();
 			_versions.Items.Clear();
-			if (row is not null)
-			{
-				List<VersionChoice> choices = new();
-				foreach (var release in Offered(row))
-				{
-					// a version that is both published and installed is ONE line: it can
-					// be removed, and there is nothing to install
-					var have = row.Installed.FirstOrDefault(p => string.Equals(p.Version, release.Version, StringComparison.OrdinalIgnoreCase));
-					choices.Add(new VersionChoice(release, have?.Path));
-				}
-				foreach (var package in row.Installed.Where(p => Offered(row).All(r => !string.Equals(r.Version, p.Version, StringComparison.OrdinalIgnoreCase))))
-				{
-					choices.Add(new VersionChoice(package));
-				}
-				// one list, newest first, whichever kind a line is (issue #67): a build that is only
-				// installed used to come after every published one, however new it was. The top line
-				// is the latest and is the one selected. OrderBy is stable, so undated lines keep their place
-				// at the end.
-				foreach (var choice in choices.OrderByDescending(static c => c.When ?? DateTimeOffset.MinValue)) _versions.Items.Add(choice);
-			}
+			foreach (var package in row?.Installed ?? [ ]) _versions.Items.Add(new VersionChoice(package));
 			_versions.EndUpdate();
 			if (_versions.Items.Count > 0) _versions.SelectedIndex = 0;
-
-			_devChannel.Enabled = row?.IsUnclaimed is false;
 			ShowSelectedVersion();
-			if (row?.FeedError is { } error) Say(error);
 		}
-
-		private IReadOnlyList<CoreRelease> Offered(CoreManagerRow row)
-			=> _devChannel.Checked
-				? row.Available
-				: row.Available.Where(static r => r.Channel is not CoreChannel.Dev).ToList();
 
 		private void ShowSelectedVersion()
 		{
-			var row = Selected();
 			var choice = _versions.SelectedItem as VersionChoice;
-			_versionDetail.Text = Detail(row, choice);
-			_install.Enabled = !_busy && choice?.Release is not null && !choice.Installed;
-			_removeVersion.Enabled = !_busy && choice?.InstalledPath is not null;
-			if (row is not null && row.Available.Count is 0 && !row.IsUnclaimed && choice is null)
-			{
-				_install.Enabled = !_busy;
-				_install.Text = "Fetch versions";
-			}
-			else
-			{
-				_install.Text = "Install";
-			}
+			_versionDetail.Text = choice is null ? "" : Detail(choice.Package);
+			_removeVersion.Enabled = choice is not null;
 		}
 
-		private string Detail(CoreManagerRow? row, VersionChoice? choice)
+		/// <summary>Where the file is, how big, and - the one thing only the package can say - its terms.</summary>
+		private static string Detail(DiscoveredCorePackage package)
 		{
-			if (row is null) return "";
-			if (row.IsUnclaimed) return "Installed from outside the official cores. Chimera has nowhere to check this one for updates.";
-			// the column shows owner/name; this is the address somebody can actually
-			// go to, which is the point of saying where a core came from
-			var source = row.Core?.Url is { Length: not 0 } url ? url : null;
-			if (choice is null)
-			{
-				var nothing = row.FeedError ?? "No versions fetched yet. Press Fetch versions to ask this core's repository what it has published.";
-				return source is null ? nothing : $"{nothing}{Environment.NewLine}{Environment.NewLine}{source}";
-			}
-			var lines = new List<string> { choice.Detail };
-			if (choice.Release is { } release)
-			{
-				// only the dev channel needs saying: it is the one with a catch. A
-				// published build behaving itself is what somebody already expects.
-				if (release.Channel is CoreChannel.Dev)
-				{
-					lines.Add("Development build: replaced on every change, so it may stop being downloadable.");
-				}
-				if (release.AssetSize > 0) lines.Add($"{release.AssetSize / 1024 / 1024} MB");
-			}
-			if (choice.Installed || choice.InstalledPath is not null) lines.Add("Installed.");
-			// The terms, once they can be read - which is once the package is here.
+			List<string> lines = new() { package.Path };
+			if (CoreVersionDates.Of(package) is { } built) lines.Add($"Built {CoreVersionDates.Format(built)}");
 			// The bundle used to carry every core and compute one LICENSES.md from
 			// them; it carries none now, so this is where a core says what it demands.
-			if (choice.InstalledPath is { } path)
-			{
-				lines.Add(CoreLicence.Read(path)?.Summary() is { Length: not 0 } terms
-					? terms
-					: "This package states no licence.");
-			}
-			if (source is not null)
-			{
-				lines.Add("");
-				lines.Add(source);
-			}
+			lines.Add("");
+			lines.Add(CoreLicence.Read(package.Path)?.Summary() is { Length: not 0 } terms
+				? terms
+				: "This package states no licence.");
 			return string.Join(Environment.NewLine, lines);
 		}
 
 		private void Say(string message) => _status.Text = message;
-
-		private void Busy(bool busy)
-		{
-			_busy = busy;
-			UpdateButtons();
-			ShowSelectedVersion();
-			Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
-		}
-
-		/// <summary>Asks one core's repository what it has, and remembers the answer for this session.</summary>
-		private async Task<bool> Fetch(RosterCore core, CancellationToken cancel)
-		{
-			var result = await _feed.FetchAsync(core, cancel).ConfigureAwait(true);
-			_feeds[core.Id] = result.Releases;
-			if (result.Error is null) _feedErrors.Remove(core.Id);
-			else _feedErrors[core.Id] = result.Error;
-			return result.Ok;
-		}
-
-		private async Task InstallSelected()
-		{
-			var row = Selected();
-			if (row?.Core is null) return;
-			// nothing chosen means nothing has been asked for yet: the button is
-			// Fetch versions, and pressing it is the request
-			if (_versions.SelectedItem is not VersionChoice { Release: { } release })
-			{
-				await FetchSelectedVersions().ConfigureAwait(true);
-				return;
-			}
-			_work = new();
-			try
-			{
-				Busy(true);
-				_ = await Install(row.Core, release, _work.Token).ConfigureAwait(true);
-			}
-			finally
-			{
-				Busy(false);
-				_work?.Dispose();
-				_work = null;
-			}
-		}
-
-		/// <summary>
-		/// Asks the selected core's repository what it has published, and fills the
-		/// version selector with the answer. Public so a test can drive it: it is the
-		/// one request in this window somebody makes on purpose, and what it fills in
-		/// is the whole point of the window.
-		/// </summary>
-		public async Task FetchSelectedVersions()
-		{
-			if (Selected()?.Core is not { } core) return;
-			_work = new();
-			try
-			{
-				Busy(true);
-				Say($"Asking {core.Repo} what it has published...");
-				var ok = await Fetch(core, _work.Token).ConfigureAwait(true);
-				Reload();
-				Say(ok
-					? _feeds[core.Id].Count is 0
-						? $"{core.Name} has published no versions yet."
-						: $"{core.Name}: {_feeds[core.Id].Count} versions published."
-					: _feedErrors[core.Id]);
-			}
-			finally
-			{
-				Busy(false);
-				_work?.Dispose();
-				_work = null;
-			}
-		}
 
 		/// <summary>Ticks or unticks the core named <paramref name="name"/>. For tests and screenshots.</summary>
 		public bool SetChecked(string name, bool ticked)
@@ -670,8 +485,8 @@ namespace Chimera.Client.GUI
 			return true;
 		}
 
-		/// <summary>Whether the buttons that act on ticked cores are available.</summary>
-		public bool BulkActionsEnabled => _checkUpdates.Enabled && _downloadLatest.Enabled && _removeCore.Enabled;
+		/// <summary>Whether the button that acts on ticked cores is available.</summary>
+		public bool BulkActionsEnabled => _removeCore.Enabled;
 
 		/// <summary>Selects the core named <paramref name="name"/>, if it is listed.</summary>
 		public bool Select(string name)
@@ -681,138 +496,55 @@ namespace Chimera.Client.GUI
 			return true;
 		}
 
-		/// <returns>true if the package is now in the store</returns>
-		private async Task<bool> Install(RosterCore core, CoreRelease release, CancellationToken cancel)
+		private void OpenTheFolder()
 		{
-			Say($"Downloading {core.Name} {release.ShortVersion}...");
-			var result = await _installer.InstallAsync(
-				core,
-				release,
-				(done, total) => Say(total > 0
-					? $"Downloading {core.Name} {release.ShortVersion}: {done * 100 / total}%"
-					: $"Downloading {core.Name} {release.ShortVersion}: {done / 1024} KB"),
-				cancel).ConfigureAwait(true);
-			if (result.Ok && result.Package is { } package) _installed?.Invoke(package);
+			var folder = _folder();
+			try
+			{
+				// an empty Cores/ comes with the bundle, but a folder somebody named
+				// may not be there yet, and "open it" should not be the thing that fails
+				Directory.CreateDirectory(folder);
+				_openFolder?.Invoke(folder);
+			}
+			catch (Exception ex)
+			{
+				Say($"{folder} could not be opened: {ex.Message}");
+			}
+		}
+
+		private void ChangeTheFolder()
+		{
+			if (_askForFolder?.Invoke() is { Length: not 0 } chosen) UseFolder(chosen);
+		}
+
+		/// <summary>Makes <paramref name="folder"/> the cores folder and lists what is in it. Public so a test can drive it.</summary>
+		public void UseFolder(string folder)
+		{
+			if (_useFolder is null) return;
+			_useFolder(folder);
 			Reload();
 			_changed?.Invoke();
-			Say(result.Ok
-				? $"Installed {core.Name} {release.ShortVersion}. It can be used straight away; a version of a core already in use needs a restart."
-				: $"{core.Name} {release.ShortVersion} was not installed: {result.Error}");
-			return result.Ok;
-		}
-
-		private async Task CheckForUpdates()
-		{
-			var wanted = Checked().Where(static r => r.Core is not null).ToList();
-			if (wanted.Count is 0)
+			if (_former?.Invoke() is not { Packages: > 0 })
 			{
-				Say("Those cores are not published anywhere Chimera can ask.");
-				return;
-			}
-			_work = new();
-			try
-			{
-				Busy(true);
-				var done = 0;
-				foreach (var row in wanted)
-				{
-					Say($"Checking {row.Core!.Name} ({++done} of {wanted.Count})...");
-					_ = await Fetch(row.Core, _work.Token).ConfigureAwait(true);
-				}
-				Reload();
-				// nothing is downloaded here: this says what is newer and stops
-				var updates = _rows.Where(static r => r.Update is not null).Select(static r => r.Name).ToList();
-				Say(updates.Count is 0
-					? $"Up to date: {string.Join(", ", wanted.Select(static r => r.Name))}."
-					: $"Updates available: {string.Join(", ", updates)}. Press Download latest to take them.");
-			}
-			finally
-			{
-				Busy(false);
-				_work?.Dispose();
-				_work = null;
+				Say($"The cores folder is now {_folder()}: {_rows.Count} core(s). A core already loaded stays loaded until Chimera is restarted.");
 			}
 		}
 
 		/// <summary>
-		/// Installs the newest published version of every ticked core that has not
-		/// got it. A core already holding the newest is left alone rather than
-		/// downloaded again.
-		/// </summary>
-		private async Task DownloadLatest()
-		{
-			var wanted = Checked().Where(static r => r.Core is not null).ToList();
-			if (wanted.Count is 0)
-			{
-				Say("Those cores are not published anywhere Chimera can fetch from.");
-				return;
-			}
-			_work = new();
-			try
-			{
-				Busy(true);
-				var installed = 0;
-				var already = 0;
-				List<string> failed = new();
-				foreach (var row in wanted)
-				{
-					var core = row.Core!;
-					if (row.Available.Count is 0)
-					{
-						Say($"Asking {core.Name} what it has published...");
-						if (!await Fetch(core, _work.Token).ConfigureAwait(true))
-						{
-							failed.Add($"{core.Name} ({_feedErrors[core.Id]})");
-							continue;
-						}
-						Reload();
-					}
-					var releases = _feeds.TryGetValue(core.Id, out var r) ? r : [ ];
-					if (CoreReleases.Newest(releases) is not { } release)
-					{
-						failed.Add($"{core.Name} (no published version)");
-						continue;
-					}
-					var current = _rows.FirstOrDefault(x => x.Core?.Id == core.Id);
-					if (current?.Has(release) is true) { already++; continue; }
-					if (await Install(core, release, _work.Token).ConfigureAwait(true)) installed++;
-					else failed.Add(core.Name);
-				}
-				Reload();
-				List<string> said = new();
-				if (installed is not 0) said.Add($"installed {installed}");
-				if (already is not 0) said.Add($"{already} already newest");
-				if (failed.Count is not 0) said.Add($"could not install {string.Join(", ", failed)}");
-				Say(said.Count is 0 ? "Nothing to do." : char.ToUpper(said[0][0]) + string.Join("; ", said).Substring(1) + ".");
-			}
-			finally
-			{
-				Busy(false);
-				_work?.Dispose();
-				_work = null;
-			}
-		}
-
-		/// <summary>
-		/// Removes every installed version of every ticked core.
-		///
-		/// An official core keeps its row and goes back to reading "not installed" -
-		/// it can be fetched again from the roster. An external one is forgotten
-		/// entirely, because nothing but its own entry was keeping it in the list.
+		/// Removes every version of every ticked core: deletes the package files,
+		/// behind a confirmation that says what it costs. Only files that are in the
+		/// cores folder itself; a package found in a further search directory is
+		/// somebody's arrangement and is left where it is.
 		/// </summary>
 		private void RemoveCheckedCores()
 		{
-			var wanted = Checked().Where(static r => r.IsInstalled || r.RowGoesWhenRemoved).ToList();
-			if (wanted.Count is 0)
-			{
-				Say("Nothing is installed for the cores you ticked.");
-				return;
-			}
+			var wanted = Checked();
+			if (wanted.Count is 0) return;
 			var versions = wanted.Sum(static r => r.Installed.Count);
 			if (MessageBox.Show(
 				this,
-				$"Remove {versions} installed version(s) of {wanted.Count} core(s)?{Environment.NewLine}{Environment.NewLine}"
-					+ "A movie recorded on one of these exact builds needs it to replay.",
+				$"Delete {versions} package file(s) of {wanted.Count} core(s) from the cores folder?{Environment.NewLine}{Environment.NewLine}"
+					+ "A movie recorded on one of these exact builds needs it to replay, and Chimera cannot fetch it again.",
 				"Remove cores",
 				MessageBoxButtons.OKCancel,
 				MessageBoxIcon.Warning) is not DialogResult.OK)
@@ -820,101 +552,47 @@ namespace Chimera.Client.GUI
 				return;
 			}
 
+			var folder = _folder();
 			var removed = 0;
 			List<string> kept = new();
-			foreach (var row in wanted)
+			foreach (var path in wanted.SelectMany(static r => r.InstalledPaths))
 			{
-				foreach (var path in row.InstalledPaths)
+				if (!CoresFolder.Holds(folder, path)) { kept.Add(Path.GetFileName(path)); continue; }
+				try
 				{
-					if (!CoreStore.Owns(path)) { kept.Add(Path.GetFileName(path)); continue; }
-					try
-					{
-						File.Delete(path);
-						removed++;
-					}
-					catch (Exception ex)
-					{
-						kept.Add($"{Path.GetFileName(path)} ({ex.Message})");
-					}
+					Delete(path);
+					removed++;
 				}
-				// an external core exists only because somebody added it; with its
-				// packages gone there is nothing left for a row to be about
-				if (row.RowGoesWhenRemoved && row.Core is { IsExternal: true }) _forgetExternal?.Invoke(row.Core);
+				catch (Exception ex)
+				{
+					kept.Add($"{Path.GetFileName(path)} ({ex.Message})");
+				}
 			}
 			Reload();
 			_changed?.Invoke();
 			Say(kept.Count is 0
-				? $"Removed {removed} version(s)."
-				: $"Removed {removed}; left alone {string.Join(", ", kept)} (not the manager's to delete).");
+				? $"Removed {removed} package(s)."
+				: $"Removed {removed}; left alone {string.Join(", ", kept)} (not in the cores folder).");
 		}
 
 		/// <summary>
-		/// Adds a core published somewhere other than the official set, by the address
-		/// of its GitHub page. The repository is asked what it publishes before it is
-		/// remembered, so a wrong address fails here rather than becoming a row that
-		/// can never do anything.
-		/// </summary>
-		private async Task AddExternalCore()
-		{
-			if (_askForUrl is null) return;
-			var typed = _askForUrl();
-			if (string.IsNullOrWhiteSpace(typed)) return;
-			if (RosterCore.RepoFromUrl(typed!) is not { } repo)
-			{
-				Say($"That is not a GitHub repository address: {typed}");
-				return;
-			}
-			// A repository already on the list is not added twice - the roster dedupes
-			// on it - so saying "Added" would be a lie, and the useful answer is which
-			// row it already is. Pointing at that row is also how somebody checks an
-			// official core's address is the one they meant.
-			if (_roster().FirstOrDefault(c => string.Equals(c.Repo, repo, StringComparison.OrdinalIgnoreCase)) is { } already)
-			{
-				_ = Select(already.Name);
-				Say($"{repo} is already on the list, as {already.Name}.");
-				return;
-			}
-			_work = new();
-			try
-			{
-				Busy(true);
-				Say($"Asking {repo} what it publishes...");
-				var (core, error) = await _feed.ProbeAsync(repo, _work.Token).ConfigureAwait(true);
-				if (core is null)
-				{
-					Say(error ?? $"{repo} could not be read.");
-					return;
-				}
-				_rememberExternal?.Invoke(core);
-				Reload();
-				_ = Select(core.Name);
-				Say($"Added {core.Name} from {repo}. Tick it and press Download latest.");
-			}
-			finally
-			{
-				Busy(false);
-				_work?.Dispose();
-				_work = null;
-			}
-		}
-
-		/// <summary>
-		/// Deletes one installed version. Only ever one, and only ever one the
-		/// manager put there: an old build is the only way to replay a movie recorded
-		/// on it, so nothing removes a version to make room for another.
+		/// Deletes one version. Only ever one: an old build is the only way to replay
+		/// a movie recorded on it, so nothing removes a version to make room for
+		/// another.
 		/// </summary>
 		private void RemoveSelectedVersion()
 		{
 			var row = Selected();
-			if (row is null || _versions.SelectedItem is not VersionChoice { InstalledPath: { } path }) return;
-			if (!CoreStore.Owns(path))
+			if (row is null || _versions.SelectedItem is not VersionChoice { Package.Path: var path }) return;
+			if (!CoresFolder.Holds(_folder(), path))
 			{
-				Say($"{Path.GetFileName(path)} was not downloaded by the manager, so it is not the manager's to delete. It is at {path}.");
+				Say($"{Path.GetFileName(path)} is not in the cores folder, so it is not the manager's to delete. It is at {path}.");
 				return;
 			}
 			if (MessageBox.Show(
 				this,
-				$"Remove {row.Name} {Path.GetFileNameWithoutExtension(path)}?{Environment.NewLine}{Environment.NewLine}A movie recorded on this exact build needs it to replay.",
+				$"Delete {Path.GetFileName(path)}?{Environment.NewLine}{Environment.NewLine}"
+					+ "A movie recorded on this exact build needs it to replay, and Chimera cannot fetch it again.",
 				"Remove core",
 				MessageBoxButtons.OKCancel,
 				MessageBoxIcon.Warning) is not DialogResult.OK)
@@ -923,7 +601,7 @@ namespace Chimera.Client.GUI
 			}
 			try
 			{
-				File.Delete(path);
+				Delete(path);
 				Reload();
 				_changed?.Invoke();
 				Say($"Removed {Path.GetFileName(path)}.");
@@ -934,54 +612,26 @@ namespace Chimera.Client.GUI
 			}
 		}
 
-		protected override void OnFormClosing(FormClosingEventArgs e)
+		/// <summary>
+		/// A package file is deleted. An unpacked package - a folder, which is how
+		/// somebody keeps their own build - is not: this window does not empty folders.
+		/// </summary>
+		/// <exception cref="IOException">it is a folder, or the file will not go</exception>
+		private static void Delete(string path)
 		{
-			_work?.Cancel();
-			base.OnFormClosing(e);
+			if (Directory.Exists(path)) throw new IOException("a folder; delete it yourself");
+			File.Delete(path);
 		}
 
-		/// <summary>One line of the version selector: a published version, an installed one, or both.</summary>
+		/// <summary>One line of the version selector: a package that is here.</summary>
 		private sealed class VersionChoice
 		{
-			public VersionChoice(CoreRelease release, string? installedPath)
-			{
-				Release = release;
-				InstalledPath = installedPath;
-				Installed = installedPath is not null;
-				Detail = $"Published {CoreVersionDates.Format(release.PublishedAt)}{Environment.NewLine}Commit {release.DisplayVersion}";
-				When = release.PublishedAt == default ? null : release.PublishedAt;
-			}
+			public VersionChoice(DiscoveredCorePackage package) => Package = package;
 
-			public VersionChoice(DiscoveredCorePackage package)
-			{
-				InstalledPath = package.Path;
-				Installed = true;
-				_text = package.DatedVersion.Length is 0 ? Path.GetFileNameWithoutExtension(package.Path) : package.DatedVersion;
-				Detail = $"Installed at {package.Path}";
-				When = CoreVersionDates.Of(package);
-			}
-
-			private readonly string? _text;
-
-			/// <summary>When this version was made or published, which is what the list is ordered by; null when nobody knows.</summary>
-			public DateTimeOffset? When { get; }
-
-			public CoreRelease? Release { get; }
-
-			public bool Installed { get; }
-
-			/// <summary>Where this version is in the store, when it is installed at all.</summary>
-			public string? InstalledPath { get; }
-
-			/// <summary>The date and the short commit: the two things somebody comparing builds needs.</summary>
-			public string Detail { get; } = "";
+			public DiscoveredCorePackage Package { get; }
 
 			public override string ToString()
-			{
-				if (Release is null) return $"{_text}  (installed)";
-				var mark = Installed ? "  (installed)" : "";
-				return $"{Release.DateAndCommit}{(Release.Channel is CoreChannel.Dev ? "  dev" : "")}{mark}";
-			}
+				=> Package.DatedVersion.Length is 0 ? Path.GetFileNameWithoutExtension(Package.Path) : Package.DatedVersion;
 		}
 	}
 }

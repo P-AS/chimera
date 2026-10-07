@@ -98,11 +98,12 @@ namespace Chimera.Client.GUI
 		}
 
 		/// <summary>
-		/// A Chimera with no core cannot open anything, and it ships with none. So
-		/// it says so once, and offers to do something about it. Not the manager
-		/// itself: opening a window somebody did not ask for, over an application
-		/// they have not seen yet, is a worse greeting than a sentence explaining
-		/// why the menus will not help them.
+		/// A Chimera with no core cannot open anything, and it ships with none and
+		/// downloads none. So it says so once, says where cores go, and offers the
+		/// window that shows the folder. Not the manager itself: opening a window
+		/// somebody did not ask for, over an application they have not seen yet, is
+		/// a worse greeting than a sentence explaining why the menus will not help
+		/// them.
 		///
 		/// Never when there is nobody to answer. HEADLESS is the case that matters:
 		/// a witness bootstraps its config by running the frontend with no rom, no
@@ -119,12 +120,11 @@ namespace Chimera.Client.GUI
 			if (HeadlessMode.Enabled) return;
 			if (_discoveredCorePackages.Count is not 0) return;
 			if (_argParser.cmdCorePackage is not null || _argParser.cmdRom is not null || _argParser.cmdProject is not null) return;
-			if (CoreRoster.Read().Count is 0) return; // nothing to offer; a window saying so would only be rude
 
 			// after the main window is up, so the dialog has something to sit over
 			BeginInvoke((Action) (() =>
 			{
-				using CoreManagerPrompt prompt = new();
+				using CoreManagerPrompt prompt = new(CoresFolder.For(Config));
 				if (this.ShowDialogWithTempMute(prompt).IsOk()) ShowCoreManager();
 			}));
 		}
@@ -347,18 +347,11 @@ namespace Chimera.Client.GUI
 			DisplayManager = new(Config, Emulator, InputManager, MovieSession, GL, _presentationPanel, () => DisableSecondaryThrottling);
 			Controls.InsertBefore(MainformMenu, insert: _presentationPanel.Control); // must be first for ??? WinForms reasons
 
-			// set up networking before ApiManager (in ToolManager)
-			byte[] NetworkingTakeScreenshot()
+			// the one way a script hands data to another program: a memory-mapped file
+			// on this machine. Set up before ApiManager (in ToolManager).
+			byte[] ScreenshotBytes()
 				=> (byte[]) new ImageConverter().ConvertTo(MakeScreenshotImage().ToSysdrawingBitmap(), typeof(byte[]));
-			NetworkingHelpers = (
-				_argParser.HTTPAddresses is var (httpGetURL, httpPostURL)
-					? new HttpCommunication(NetworkingTakeScreenshot, httpGetURL, httpPostURL)
-					: null,
-				new MemoryMappedFiles(NetworkingTakeScreenshot, _argParser.MMFFilename),
-				_argParser.SocketAddress is var (socketIP, socketPort)
-					? new SocketServer(NetworkingTakeScreenshot, _argParser.SocketProtocol, socketIP, socketPort)
-					: null
-			);
+			MemoryMappedFiles = new MemoryMappedFiles(ScreenshotBytes, _argParser.MMFFilename);
 
 			Tools = new ToolManager(this, Config, DisplayManager, InputManager, Emulator, MovieSession, Game);
 
@@ -1247,7 +1240,7 @@ namespace Chimera.Client.GUI
 
 		public CheatCollection CheatList { get; }
 
-		public (HttpCommunication HTTP, MemoryMappedFiles MMF, SocketServer Sockets) NetworkingHelpers { get; }
+		public MemoryMappedFiles MemoryMappedFiles { get; }
 
 		protected override void OnActivated(EventArgs e)
 		{

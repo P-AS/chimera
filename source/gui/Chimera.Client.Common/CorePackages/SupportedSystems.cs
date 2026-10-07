@@ -20,7 +20,7 @@ namespace Chimera.Client.Common
 			/// <summary>The full name, as the first core that runs it calls it.</summary>
 			public string Name { get; init; } = "";
 
-			/// <summary>The cores that run it, by name, installed or not.</summary>
+			/// <summary>The cores that run it, by name.</summary>
 			public IReadOnlyList<string> Cores { get; init; } = [ ];
 
 			/// <summary>Whether one of those cores is installed.</summary>

@@ -7,8 +7,9 @@ using System.Windows.Forms;
 namespace Chimera.Client.GUI
 {
 	/// <summary>
-	/// What a fresh install is told, once: Chimera ships no cores, so until one is
-	/// installed nothing it can open exists.
+	/// What a fresh install is told, once: Chimera ships no cores and downloads
+	/// none, so until somebody puts one in the cores folder nothing it can open
+	/// exists.
 	///
 	/// A sentence and a choice, rather than the Core Manager opening by itself.
 	/// Somebody who has just started the program for the first time should meet
@@ -19,7 +20,8 @@ namespace Chimera.Client.GUI
 	{
 		protected override string WindowTitleStatic => "No cores installed";
 
-		public CoreManagerPrompt()
+		/// <param name="coresFolder">where core packages are looked for</param>
+		public CoreManagerPrompt(string coresFolder)
 		{
 			SuspendLayout();
 			FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -34,18 +36,20 @@ namespace Chimera.Client.GUI
 			{
 				AutoSize = true,
 				Location = new(margin, UIHelper.ScaleY(16)),
-				Text = "You have currently no emulation cores installed. Please open the Core Manager to install them.",
+				Text = "There are no cores yet, and Chimera downloads none. Get a core's package from its project, or build it,"
+					+ Environment.NewLine + $"and put it in {coresFolder}",
 			};
 
 			// The sentence decides how wide the window is, rather than a width
 			// decided here deciding where the sentence breaks. A guessed width holds
 			// only for the font and DPI it was guessed at; measuring holds for both.
 			var buttonWidth = UIHelper.ScaleX(150);
-			var textWidth = TextRenderer.MeasureText(message.Text, Font, Size.Empty, TextFormatFlags.NoPadding).Width;
+			var textSize = TextRenderer.MeasureText(message.Text, Font, Size.Empty, TextFormatFlags.NoPadding);
+			var textWidth = textSize.Width;
 			var buttonsWidth = (2 * buttonWidth) + UIHelper.ScaleX(8);
 			ClientSize = new(
 				Math.Max(textWidth, buttonsWidth) + (2 * margin) + UIHelper.ScaleX(4),
-				UIHelper.ScaleY(92));
+				UIHelper.ScaleY(74) + textSize.Height);
 
 			var buttonRow = ClientSize.Height - UIHelper.ScaleY(38);
 

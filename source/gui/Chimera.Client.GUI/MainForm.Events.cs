@@ -824,43 +824,31 @@ namespace Chimera.Client.GUI
 		public void ShowCoreManager()
 		{
 			using CoreManagerForm form = new(
-				// the shipped roster, plus whatever cores have been added by hand
-				roster: () => CoreRoster.WithExternal(CoreRoster.Read(), Config.ExternalCores),
 				scan: () => CorePackageDiscovery.ScanFor(Config),
-				feed: new CoreFeed(),
-				installer: new CoreInstaller(),
-				rememberExternal: core => Config.ExternalCores.Add(core),
-				forgetExternal: core => Config.ExternalCores.RemoveAll(c => string.Equals(c.Repo, core.Repo, StringComparison.OrdinalIgnoreCase)),
-				askForUrl: () => PromptForCoreUrl(),
-				// a core that has just landed must be usable in this session: discovery
-				// is separate from loading precisely so a package can appear without a
-				// restart, and the menus read from the scan
+				folder: () => CoresFolder.For(Config),
+				// nothing is kept for the default, so a bundle that is moved keeps finding its own Cores/
+				useFolder: chosen => Config.CoresFolder = CoresFolder.ToConfigure(chosen),
+				askForFolder: () => this.ShowFolderSelectDialog(
+					initDir: PathEntryExtensions.FirstExistingDir(CoresFolder.For(Config)),
+					subtitle: "The folder Chimera looks for core packages in"),
+				openFolder: ShowInFileBrowser,
+				// where versions that downloaded cores kept them, for somebody arriving from one
+				former: () => (CoresFolder.Former, CoresFolder.LeftInFormer(CoresFolder.For(Config))),
+				// a core that has just been put in the folder must be usable in this
+				// session: discovery is separate from loading precisely so a package
+				// can appear without a restart, and the menus read from the scan
 				changed: ScanForCorePackages,
-				// installing a build of a core is choosing it, when several are installed
-				installed: package =>
-				{
-					if (package.Sha1 is not null) CoreChoices.MakeDefaultBuild(Config, package.Name, package.Sha1);
-				},
 				shows: Config.CoreManagerShows,
 				rememberShows: shows => Config.CoreManagerShows = shows);
 			this.ShowDialogWithTempMute(form);
 			ScanForCorePackages();
 		}
 
-		/// <summary>
-		/// Asks for the GitHub page of a core published outside the official set. A
-		/// plain input box: the address is all that is needed, and the manager checks
-		/// what is actually there before remembering it.
-		/// </summary>
-		private string PromptForCoreUrl()
+		/// <summary>Shows a folder in the machine's file browser: Explorer, or whatever xdg-open hands it to.</summary>
+		private static void ShowInFileBrowser(string folder)
 		{
-			using InputPrompt prompt = new()
-			{
-				TextInputType = InputPrompt.InputType.Text,
-				Message = "GitHub page of the core to add:",
-				InitialValue = "https://github.com/",
-			};
-			return this.ShowDialogWithTempMute(prompt).IsOk() ? prompt.PromptText : null;
+			if (OSTailoredCode.IsUnixHost) Process.Start("xdg-open", folder);
+			else Process.Start("explorer.exe", $"\"{folder}\"");
 		}
 
 		private void SoundMenuItem_Click(object sender, EventArgs e)

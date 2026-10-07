@@ -2,20 +2,12 @@
 
 namespace Chimera.Client.Common
 {
+	/// <summary>
+	/// Exchanging data with other programs on this machine: memory-mapped files,
+	/// and nothing else. Chimera has no network functions (user-decided, 2026-10-07).
+	/// </summary>
 	public interface ICommApi : IExternalApi
 	{
-		HttpCommunication? HTTP { get; }
-
 		MemoryMappedFiles MMF { get; }
-
-		SocketServer? Sockets { get; }
-
-#if ENABLE_WEBSOCKETS
-		WebSocketServer WebSockets { get; }
-#endif
-
-		string? HttpTest();
-
-		string? HttpTestGet();
 	}
 }

@@ -11,32 +11,51 @@ using Chimera.Emulation.Common.Waterbox;
 namespace Chimera.Tests.Client.Common.CorePackages
 {
 	/// <summary>
-	/// Every system a roster core runs reads as a name, not an id (#172): the
-	/// Core Manager once listed ares as "WS, WSC, ZXS, MYV, CV ...".
+	/// <c>official-cores.json</c>, the list of the cores this project publishes.
 	///
-	/// The names used to come from a table of this frontend's, keyed by system.
-	/// There is no such table now: a system is called what the core that runs it
-	/// calls it, and the roster row carries the core's word, because the row is
-	/// the only thing a core nobody has installed yet can speak through. What is
-	/// checked here is the roster itself, and that it still says what the
-	/// packages say.
+	/// Chimera does not read it and does not ship it: the frontend downloads
+	/// nothing and lists only the packages in its cores folder (user-decided,
+	/// 2026-10-07). The file stays in the repository as what CI fetches the
+	/// published packages by (tools/fetch-cores.sh) and what the documentation
+	/// lists, so what is checked here is the file: every system it names has a
+	/// name (#172 - a list once read "WS, WSC, ZXS, MYV, CV ..."), and it still
+	/// says what the packages say.
 	/// </summary>
 	[TestClass]
 	public class RosterNamesTests
 	{
-		private static IReadOnlyList<RosterCore> Roster()
+		private sealed record Row(string Id, string Name, IReadOnlyList<(string Id, string Name)> Systems);
+
+		private static IReadOnlyList<Row> Roster()
 		{
+			const string file = "official-cores.json";
 			var dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
-			while (dir is not null && !File.Exists(Path.Combine(dir.FullName, CoreRoster.FileName))) dir = dir.Parent;
-			if (dir is null) Assert.Inconclusive($"{CoreRoster.FileName} is not above the test binaries");
-			return CoreRoster.Parse(File.ReadAllText(Path.Combine(dir!.FullName, CoreRoster.FileName)));
+			while (dir is not null && !File.Exists(Path.Combine(dir.FullName, file))) dir = dir.Parent;
+			if (dir is null) Assert.Inconclusive($"{file} is not above the test binaries");
+			var root = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(Path.Combine(dir!.FullName, file)));
+			return (root["cores"] as Newtonsoft.Json.Linq.JArray ?? new())
+				.OfType<Newtonsoft.Json.Linq.JObject>()
+				.Select(static core => new Row(
+					(string?) core["id"] ?? "",
+					(string?) core["name"] ?? "",
+					(core["systems"] as Newtonsoft.Json.Linq.JArray ?? new())
+						// a row may give a bare id (format 1) or an { id, name } pair
+						.Select(static s => s is Newtonsoft.Json.Linq.JObject o
+							? ((string?) o["id"] ?? "", (string?) o["name"] ?? "")
+							: ((string?) s ?? "", ""))
+						.ToList()))
+				.ToList();
 		}
+
+		[TestMethod]
+		public void TheRosterListsCores()
+			=> Assert.IsTrue(Roster().Count > 0 && Roster().All(static r => r.Id.Length is not 0 && r.Name.Length is not 0), "every row has an id and a name");
 
 		[TestMethod]
 		public void EveryRosterSystemHasAName()
 		{
 			var unnamed = Roster()
-				.SelectMany(static core => core.SystemList.Select(system => (Core: core.Id, System: system)))
+				.SelectMany(static core => core.Systems.Select(system => (Core: core.Id, System: system)))
 				.Where(static x => string.IsNullOrWhiteSpace(x.System.Name) || string.IsNullOrWhiteSpace(x.System.Id))
 				.Select(static x => $"{x.Core}: {x.System.Id}")
 				.ToList();
@@ -53,7 +72,7 @@ namespace Chimera.Tests.Client.Common.CorePackages
 		public void OneSystemHasOneNameAcrossTheRoster()
 		{
 			var split = Roster()
-				.SelectMany(static core => core.SystemList.Select(system => (Core: core.Id, system.Id, system.Name)))
+				.SelectMany(static core => core.Systems.Select(system => (Core: core.Id, system.Id, system.Name)))
 				.GroupBy(static x => x.Id)
 				.Where(static g => g.Select(static x => x.Name).Distinct().Count() > 1)
 				.Select(static g => $"{g.Key}: {string.Join(" / ", g.Select(static x => $"\"{x.Name}\" ({x.Core})"))}")
@@ -82,7 +101,7 @@ namespace Chimera.Tests.Client.Common.CorePackages
 				if (cfg?.SystemNames is not { Count: > 0 } declared) continue;
 				var row = roster.FirstOrDefault(c => string.Equals(c.Name, cfg.CoreName, StringComparison.Ordinal));
 				if (row is null) continue;
-				foreach (var system in row.SystemList)
+				foreach (var system in row.Systems)
 				{
 					if (!declared.TryGetValue(system.Id, out var said)) continue;
 					asked++;
@@ -91,16 +110,6 @@ namespace Chimera.Tests.Client.Common.CorePackages
 			}
 			if (asked is 0) Assert.Inconclusive("no installed package names its systems yet");
 			Assert.AreEqual(0, drift.Count, string.Join("; ", drift));
-		}
-
-		/// <summary>A row that gave only an id is still shown, as that id.</summary>
-		[TestMethod]
-		public void AnIdNobodyNamedStillReads()
-		{
-			RosterCore row = new() { Id = "x", Name = "X", Repo = "someone/x", Systems = [ "XYZ9" ] };
-			CoreManagerRow shown = new() { Core = row };
-			Assert.AreEqual("XYZ9", shown.SystemNameOf("XYZ9"));
-			Assert.AreEqual("XYZ9", shown.SystemsSpelled);
 		}
 	}
 }

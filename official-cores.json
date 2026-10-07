@@ -1,5 +1,5 @@
 {
-  "_comment": "The official cores: which repository publishes each one, and the build this Chimera was tested against. Chimera ships no cores (see docs/core-manager.md); this roster is how File > Core Manager knows what EXISTS before anything is installed. Versions are not listed here - they come from the core's own GitHub releases, on demand. A row carries each system's id (what movies and projects are keyed by) and the CORE'S OWN NAME for it, copied from the core's package when it joined: Chimera has no table of machines, and a core nobody has installed yet has nowhere else to say what it runs.",
+  "_comment": "The cores this project publishes: which repository publishes each one. Chimera does NOT read this file and does not ship it - the frontend downloads nothing and lists only the packages somebody put in its Cores folder (docs/core-manager.md). It is kept in the repository for two readers: CI, which fetches each core's published package to check the frontend against it (tools/fetch-cores.sh), and the documentation, which lists where the cores are. A row carries each system's id (what movies and projects are keyed by) and the CORE'S OWN NAME for it, copied from the core's package when it joined; a test holds the row to what the packages say. \"tested\" is not used.",
   "formatVersion": 2,
   "cores": [
     {

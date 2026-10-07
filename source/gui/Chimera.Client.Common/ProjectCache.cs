@@ -41,7 +41,7 @@ namespace Chimera.Client.Common
 	{
 		/// <summary>
 		/// The root everything per-project hangs under. Follows the core store
-		/// (see <see cref="CoreStore"/>): <c>CHIMERA_DATA_HOME</c> wins where it is
+		/// (see <see cref="DataDirectory"/>): <c>CHIMERA_DATA_HOME</c> wins where it is
 		/// set, then the platform's per-user data location.
 		///
 		/// Worked out on every ask rather than cached, so that changing

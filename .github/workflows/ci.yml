@@ -37,6 +37,12 @@ jobs:
           # native dependencies (SDL2, OpenAL, ...)
           submodules: false
 
+      - name: No network code
+        # Chimera reaches for nothing over the network (docs/core-manager.md).
+        # First and here because it needs nothing built: a source that names a
+        # network API fails the push in seconds.
+        run: ./tools/check-no-network.sh
+
       - name: Check out miniBox
         run: git submodule update --init extern/chimera-common-minibox
 
@@ -71,7 +77,7 @@ jobs:
     # whole-machine savestate) modes.
     #
     # This builds the entire frontend: every native dependency (SDL2, OpenAL,
-    # zstd, cimgui, lua, luasocket, sqlite3) plus the .NET solution, so it
+    # zstd, cimgui, lua, sqlite3) plus the .NET solution, so it
     # takes minutes rather than seconds. It still runs per push - the level A
     # job above gives fast feedback meanwhile - and on a daily schedule, which
     # catches environment drift (toolchain/runner image changes) with no commit.

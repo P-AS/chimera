@@ -29,7 +29,7 @@ namespace Chimera.Tests.Client.Common
 
 		public bool IsRewinding => throw new NotImplementedException();
 
-		public (HttpCommunication HTTP, MemoryMappedFiles MMF, SocketServer Sockets) NetworkingHelpers => (null!, null!, null!);
+		public MemoryMappedFiles MemoryMappedFiles => null!;
 
 		public bool PauseAvi { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
 		public int MaxFutureFrames { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }

@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Linq;
-using System.Net.Sockets;
 
 using Chimera.Common;
 using Chimera.Common.CollectionExtensions;
@@ -85,16 +84,6 @@ namespace Chimera.Client.Common
 			Description = "unattended mode: any modal dialog is printed to the console and, if it would block for an answer, the process exits with code 64 instead of hanging",
 		};
 
-		private static readonly Option<string?> OptionHTTPClientURIGET = new("--url-get", "--url_get")
-		{
-			Description = "string; URI to use for HTTP 'GET' IPC (Lua `comm.http*Get*`)",
-		};
-
-		private static readonly Option<string?> OptionHTTPClientURIPOST = new("--url-post", "--url_post")
-		{
-			Description = "string; URI to use for HTTP 'POST' IPC (Lua `comm.http*Post*`)",
-		};
-
 		private static readonly Option<bool> OptionLaunchChromeless = new("--chromeless")
 		{
 			Description = "never show the GUI (a.k.a. 'chrome'), not even in windowed mode",
@@ -132,12 +121,6 @@ namespace Chimera.Client.Common
 			Description = "print version information and immediately exit",
 		};
 
-		private static readonly Option<string?> OptionSocketServerIP = new("--socket-ip", "--socket_ip"); // desc added in static ctor
-
-		private static readonly Option<ushort?> OptionSocketServerPort = new("--socket-port", "--socket_port"); // desc added in static ctor
-
-		private static readonly Option<bool> OptionSocketServerUseUDP = new("--socket-udp", "--socket_udp"); // desc added in static ctor
-
 		private static readonly Option<string?> OptionUserdataUnparsedPairs = new("--userdata")
 		{
 			Description = "pairs in the format `k1:v1;k2:v2` (mind your shell escape sequences); if the value is `true`/`false` it's interpreted as a boolean, if it's a valid 32-bit signed integer e.g. `-1234` it's interpreted as such, if it's a valid 32-bit float e.g. `12.34` it's interpreted as such, else it's interpreted as a string",
@@ -149,9 +132,6 @@ namespace Chimera.Client.Common
 			OptionAVDumpName.Description = $"ignored unless `{OptionAVDumpType.Name}` also passed";
 			OptionAVDumpType.Description = $"ignored unless `{OptionAVDumpName.Name}` also passed";
 			OptionLuaFilePath.Description = $"path; Lua script or Console session to load; implies `{OptionOpenLuaConsole.Name}`";
-			OptionSocketServerIP.Description = $"string; IP address for Unix socket IPC (Lua `comm.socket*`); must be paired with `{OptionSocketServerPort.Name}`";
-			OptionSocketServerPort.Description = $"int; port for Unix socket IPC (Lua `comm.socket*`); must be paired with `{OptionSocketServerIP.Name}`";
-			OptionSocketServerUseUDP.Description = $"pass to use UDP instead of TCP for Unix socket IPC (Lua `comm.socket*`); ignored unless `{OptionSocketServerIP.Name} {OptionSocketServerPort.Name}` also passed";
 		}
 
 		private static RootCommand GetRootCommand()
@@ -182,11 +162,6 @@ namespace Chimera.Client.Common
 			root.Add(/* --mmf */ OptionMMFPath);
 			root.Add(/* --movie */ OptionMovieFilePath);
 			root.Add(/* --project */ OptionProjectFilePath);
-			root.Add(/* --socket-ip */ OptionSocketServerIP);
-			root.Add(/* --socket-port */ OptionSocketServerPort);
-			root.Add(/* --socket-udp */ OptionSocketServerUseUDP);
-			root.Add(/* --url-get */ OptionHTTPClientURIGET);
-			root.Add(/* --url-post */ OptionHTTPClientURIPOST);
 			root.Add(/* --userdata */ OptionUserdataUnparsedPairs);
 			root.Add(/* --version */ OptionQueryAppVersion);
 
@@ -246,20 +221,6 @@ namespace Chimera.Client.Common
 			var luaScript = result.GetValue(OptionLuaFilePath);
 			var luaConsole = luaScript is not null || result.GetValue(OptionOpenLuaConsole);
 
-			var socketIP = result.GetValue(OptionSocketServerIP);
-			var socketPort = result.GetValue(OptionSocketServerPort);
-			var socketAddress = socketIP is null && socketPort is null
-				? ((string, ushort)?) null // don't bother
-				: socketIP is not null && socketPort is not null
-					? (socketIP, socketPort.Value)
-					: throw new ArgParserException("Socket server needs both --socket_ip and --socket_port. Socket server was not started");
-
-			var httpClientURIGET = result.GetValue(OptionHTTPClientURIGET);
-			var httpClientURIPOST = result.GetValue(OptionHTTPClientURIPOST);
-			var httpAddresses = httpClientURIGET is null && httpClientURIPOST is null
-					? ((string?, string?)?) null // don't bother
-					: (httpClientURIGET, httpClientURIPOST);
-
 			var audiosync = result.GetValue(OptionAVDumpAudioSync)?.EqualsIgnoreCase("true");
 
 			List<(string Key, string Value)>? userdataUnparsedPairs = null;
@@ -287,11 +248,8 @@ namespace Chimera.Client.Common
 				startFullscreen: result.GetValue(OptionLaunchFullscreen),
 				luaScript: luaScript,
 				luaConsole: luaConsole,
-				socketAddress: socketAddress,
 				mmfFilename: result.GetValue(OptionMMFPath),
-				httpAddresses: httpAddresses,
 				audiosync: audiosync,
-				socketProtocol: result.GetValue(OptionSocketServerUseUDP) ? ProtocolType.Udp : ProtocolType.Tcp,
 				userdataUnparsedPairs: userdataUnparsedPairs,
 				cmdRom: result.GetValue(ArgumentRomFilePath),
 				cmdCorePackage: result.GetValue(OptionCorePackagePath),

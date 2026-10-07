@@ -4,9 +4,9 @@ name: Release
 #
 # Two kinds of build, deliberately:
 #
-# The bundle is the FRONTEND. It carries no cores: those are fifteen other
-# repositories that publish themselves, and Chimera downloads them through File
-# > Core Manager (docs/core-manager.md). Each core's own releases are its
+# The bundle is the FRONTEND. It carries no cores and downloads none: those
+# are other repositories that publish themselves, and a user puts the packages
+# they want in the Cores folder (docs/core-manager.md). Each core's own releases are its
 # archive; the `cores` release here is the OLD one, kept because movies recorded
 # before the split cite packages in it, and it no longer grows.
 #
@@ -190,14 +190,15 @@ jobs:
             echo "| Windows x64 | \`chimera-win-x64-$short.zip\` |"
             echo "| Linux x64 | \`chimera-linux-x64-$short.tar.gz\` |"
             echo
-            echo "Both carry the frontend and its natives. They carry **no cores**:"
-            echo "open **File > Core Manager** and download the ones you want, from the"
-            echo "projects that build them. \`BUILD.txt\` names the exact commit this"
-            echo "was built from and \`LICENSES.md\` states its terms."
+            echo "Both carry the frontend and its natives. They carry **no cores**, and"
+            echo "Chimera downloads none: get a core's \`.chimeraCore\` package from the"
+            echo "project that builds it and put it in the \`Cores\` folder beside Chimera."
+            echo "\`BUILD.txt\` names the exact commit this was built from and"
+            echo "\`LICENSES.md\` states its terms."
             echo
             echo "Each core brings its own licence with it, and some (Genesis Plus GX,"
             echo "Opera, Snes9x) forbid commercial use - which binds whatever they are"
-            echo "installed into. Chimera shows a core's terms once it is installed."
+            echo "installed into. Chimera shows a core's terms once it is in the folder."
             echo
             echo "Windows will warn that the executable is unsigned and from an unknown"
             echo "publisher; it is not signed, and there is no way around that warning"

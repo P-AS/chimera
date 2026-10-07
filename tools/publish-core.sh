@@ -81,9 +81,9 @@ if [ -z "$notes" ]; then
 	{
 		echo "Core package for [Chimera](https://github.com/ToolAssisted-run/chimera)."
 		echo
-		echo "Install it with **File > Core Manager** inside Chimera, which checks the"
-		echo "download against what this release says it is. Dropping the file into the"
-		echo "Cores folder by hand works too."
+		echo "Download the \`.chimeraCore\` file below and put it in Chimera's \`Cores\`"
+		echo "folder (**File > Core Manager** shows where that is). Chimera downloads"
+		echo "nothing itself."
 		echo
 		echo "| | |"
 		echo "|---|---|"

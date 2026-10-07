@@ -25,16 +25,14 @@ did not read the controls.
 ## The kind
 
 `waterbox.config` carries `"kind": "game"`. Absent means `"emulator"`, which is
-every core before this one. `official-cores.json` carries the same field for
-the roster, so the Core Manager knows the kind of cores it has not downloaded
-yet.
+every core before this one. (`official-cores.json` carries the same field; the
+frontend does not read that file - docs/core-manager.md.)
 
 A list of cores is one list, the emulators first, with a choice above it
 (user-decided, 2026-09-29):
 
 - File > Core Manager: a Type column (Emulator or Game) and Show: All /
-  Emulators / Games. A core the roster does not ship says "(added by hand)" in
-  its Source. Select all and the bulk buttons act on the rows shown: a row the
+  Emulators / Games. Select all and Remove act on the rows shown: a row the
   filter hides is unticked.
 - Config > Firmware: Show: All / Emulators / Games, over the cores' groups.
 - The new-project wizard: Kind: Emulator / Game above the core, which lists

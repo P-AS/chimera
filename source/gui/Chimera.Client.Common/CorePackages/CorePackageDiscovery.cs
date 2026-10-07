@@ -99,8 +99,7 @@ namespace Chimera.Client.Common
 		/// <summary>
 		/// When this version was made, as the package itself says (see
 		/// <see cref="Chimera.Emulation.Common.Waterbox.WaterboxConfig.VersionDate"/>). Null for a package
-		/// from before packages said; <see cref="CoreVersionDates.Of"/> then asks what the core
-		/// manager last heard.
+		/// from before packages said: it is then listed without a date (<see cref="CoreVersionDates.Of"/>).
 		/// </summary>
 		public DateTimeOffset? VersionDate { get; init; }
 
@@ -205,8 +204,7 @@ namespace Chimera.Client.Common
 				|| path.EndsWith(LegacyExtension, StringComparison.OrdinalIgnoreCase);
 
 		/// <summary>The default search directory: <c>Cores/</c> beside the executable.</summary>
-		public static string DefaultSearchPath
-			=> System.IO.Path.Combine(PathUtils.ExeDirectoryPath, DefaultDirName);
+		public static string DefaultSearchPath => CoresFolder.Default;
 
 		/// <summary>
 		/// Scans <paramref name="searchPaths"/> (each a directory) for packages, in
@@ -261,18 +259,18 @@ namespace Chimera.Client.Common
 		}
 
 		/// <summary>
-		/// The directories to scan, in order: the default <c>Cores/</c> beside the
-		/// executable, then the core manager's store, then any the user added. Neither
-		/// of the first two is removable: a package dropped into Cores/ must always be
-		/// found, that being the whole point of the directory, and a core that was
-		/// downloaded must be there the moment it lands.
+		/// The directories to scan, in order: the cores folder (<see cref="CoresFolder"/>:
+		/// <c>Cores/</c> beside the executable, or the one the user named instead), then
+		/// any further ones the configuration lists. A package put in the cores folder
+		/// must always be found, that being the whole point of the folder - and the
+		/// only way a core arrives, since Chimera downloads nothing.
 		///
-		/// The bundle's own folder comes first so a portable install carrying its own
-		/// cores wins over whatever else the machine has. The two collapse into one
-		/// entry when CHIMERA_DATA_HOME points the store back at the bundle.
+		/// The data directory's <c>Cores</c>, where versions that downloaded cores kept
+		/// them, is not scanned: the manager says when packages are still there and
+		/// offers to make that the cores folder.
 		/// </summary>
 		public static IReadOnlyList<string> SearchPaths(Config config)
-			=> new[] { DefaultSearchPath, CoreStore.Path }.Concat(config.CorePackagePaths).ToList();
+			=> new[] { CoresFolder.For(config) }.Concat(config.CorePackagePaths).ToList();
 
 		/// <summary>Scans the directories <paramref name="config"/> designates.</summary>
 		public static IReadOnlyList<DiscoveredCorePackage> ScanFor(Config config)

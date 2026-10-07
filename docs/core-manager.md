@@ -1,15 +1,21 @@
 # The core manager
 
-How cores reach a Chimera install, once the frontend stops shipping them.
+How cores reach a Chimera install: somebody puts them there.
 
 Chimera used to be one repository that pinned fifteen core submodules, built
 them all, and shipped the result as one bundle. That had a real property -
 *one chimera commit pins one exact bundle* - and it stopped scaling: the
 bundle got large, the release took hours, and bumping any core rebuilt the
-world.
+world. So each core repository builds, packages and publishes itself, and
+Chimera ships bare.
 
-The new model: **each core repository builds, packages and publishes itself;
-Chimera ships bare and knows how to go and get them.**
+For a while Chimera also went and got them: File > Core Manager held a list of
+the official cores, asked each one's repository what it had published, and
+downloaded what was chosen. **It no longer does (user-decided, 2026-10-07).**
+Chimera downloads nothing and reaches for nothing over the network - not a
+core, not a list of cores, not what a core has published. A user downloads a
+core's package from its project, or builds it, and puts it in the cores folder.
+The Core Manager shows what is in that folder.
 
 ## What a core release is
 
@@ -55,9 +61,8 @@ nothing publishes that the gates did not pass, because `needs:` is what got it
 there.
 
 **The version is read out of the package, never passed in.** It is what the
-build stamped into `waterbox.config`, it is what a movie cites, and it is what
-the manager checks the download against; anything else is a way for a release
-and its package to disagree. A version carrying `+local` or `-dirty` is refused
+build stamped into `waterbox.config`, and it is what a movie cites; anything
+else is a way for a release and its package to disagree. A version carrying `+local` or `-dirty` is refused
 outright - a hand-built package is nobody else's build, and publishing one would
 put a version nothing can reproduce into somebody's movie header.
 
@@ -112,335 +117,177 @@ first run.
 
 ## What Chimera ships
 
-**The roster** - `official-cores.json`, beside the executable, copied into the
-bundle by `tools/build-bundle.sh`. For each official core: its id (which is
-also the base name of its published asset and of the file in the store), its
-display name, the systems it emulates (each an `{ "id", "name" }` pair, the
-name being the core's own), its `owner/repo`, and the version this
-Chimera release's CI matrix passed against. An empty `tested` means the matrix
-has not run against that core yet, which is where every core starts; the
-manager then offers the newest of the chosen channel.
+**No cores, and no list of cores.** A bundle is the frontend, its natives and
+an empty `Cores/` folder. There is no roster beside the executable: a Chimera
+that is not going to fetch anything has no use for a list of what could be
+fetched, and a list that is not refreshed is wrong the day after it is made.
+Which cores exist and where each is published is in the README, on the
+project's site and on each core's own releases page - places a person reads
+with a browser.
 
-A missing or malformed roster is an EMPTY roster, never an error: a Chimera
-that lost the file should still run every core already installed and simply
-say it knows of none to fetch.
+(`official-cores.json` is still in the repository. Chimera does not read it and
+the bundle does not carry it; CI fetches the published packages by it, see
+*Keeping the frontend honest*, and a test holds it to what the packages say.)
 
-Chimera has no list of systems of its own. An installed package names its
-systems in its `waterbox.config`; the roster row repeats those names
-(`"systems": [ { "id": "PSV", "name": "PlayStation Vita" } ]`, format 2) so a
-core not yet installed reads the same. A bare id (`"systems": [ "PSV" ]`, as
-format 1 had it, or a core added by hand) is still read, and is shown as the
-id. A test holds the roster to what the installed packages say.
+The manager is **File > Core Manager**. When there is no core at all - a fresh
+install - Chimera says so once, in a sentence that names the cores folder, and
+offers to open the manager. That is the one moment where it cannot do anything
+useful without help, so it is the one moment worth interrupting; once a core
+exists it never asks again. It is never said to a headless run, nor when a core
+package, a rom or a project was named on the command line.
 
-The roster is what lets the manager show you that a core *exists* before you
-have it, and it is what the first-run offer installs. It is not a catalogue of
-versions: versions come from GitHub, on demand.
+## Nothing reaches the network
 
-**No cores.** A fresh bundle has an empty store.
+Not the Core Manager, and not anything else. Chimera has no code that opens a
+socket, makes a request or resolves a name:
 
-The manager is **File > Core Manager**, and it opens by itself when there is no
-core installed at all. That is the one moment where Chimera cannot do anything
-useful without help, so it is the one moment worth interrupting: the window
-comes up with the roster's tested versions pre-ticked. Once one core exists it
-never opens itself again.
+* the Core Manager's feed, installer and roster are gone, with the release
+  index reader and the cache of what cores had published;
+* the Lua `comm` library keeps memory-mapped files, which are local, and has
+  lost `comm.socketServer*`, `comm.http*` and `comm.ws_*`, with the
+  `--socket-ip`, `--socket-port`, `--socket-udp`, `--url-get` and `--url-post`
+  flags that configured them;
+* LuaSocket (`socket/core`, `mime/core`) is no longer built or shipped;
+* the frontend no longer references `System.Net.Http`.
 
-## How versions are discovered
+What is left that names an address is a link: the About box and the Help menu
+hand a URL to the system's browser, and that is the browser's request, made by
+the person who clicked. `tools/check-no-network.sh` holds the line - it fails
+the build's gate if a network API is named anywhere in the frontend's or the
+engine's sources.
 
-Nothing is fetched until the user presses something. There is no background
-polling and no phoning home at startup.
-
-* **Download latest** (per core) - one request to
-  `GET /repos/<owner>/<repo>/releases`, take the newest of the chosen channel,
-  download its asset.
-* **Check for updates** - the same request for each *installed* core, and the
-  answer is a badge on the Cores menu, not a modal.
-* **Download all** - the roster, in one go.
-
-A release is a version only if it is published (not a draft) and carries an
-asset for this core. A repository can attach more than one package, and
-`quickernes` is a prefix of `quickerneshawk`, so an asset counts as this core's
-only when its name is the core's id exactly or the id followed by a hyphen.
-
-The default channel is **nightly**, for the reason nightlies exist: they are
-immutable and never deleted, so a movie recorded against one stays replayable.
-Dev is one click away per core for somebody chasing a fix.
-
-Being unable to answer is an ordinary answer, not an exception: no network, a
-repository that has gone, and a core with no index yet all come back as a
-message the manager shows, with whatever the cache still knows alongside it. An
-offline Chimera opens the manager and lists what it saw last time.
-
-## Where the versions come from
-
-Each core publishes its own index, on its own repository:
-
-    https://github.com/<repo>/releases/download/index/releases.json
-
-written by that core's publish job (`tools/write-core-index.sh`) in the same run
-that created the release. Chimera reads those files. It does not ask
-`api.github.com` anything, ever.
-
-It is an asset on a **permanent** release tagged `index` - created once, then
-only ever having its asset replaced. That is what makes the address fixed for
-the life of the core, which matters for the reason nightlies are immutable: a
-movie's core has to stay findable. An Actions artifact would have been the
-obvious home and is the wrong one, since artifacts expire and fetching one needs
-the API and a token. The index release excludes itself from its own index for
-free - the generator keeps only `.chimeraCore` assets, and it carries none.
-
-**Why not the API.** It allows an unauthenticated address 60 requests an hour,
-one per core per question, and charges for a `304` exactly as for a `200`
-(measured 2026-09-07: three conditional requests, three off the allowance). With
-sixteen cores, one press of *Check for updates* costs sixteen - so under four
-presses is the hour's whole budget. That is unusable for anybody developing, and the
-limit is per IP, so a shared address can be exhausted on somebody else's behalf.
-A release asset costs nothing: a download redirects to
-`release-assets.githubusercontent.com`, which is not the API and not counted.
-That was already true of the core packages themselves - the budget was only ever
-spent on *asking*, never on *fetching*, so this moves the asking off the API
-too.
-
-**Why per core rather than one aggregated index.** The job that creates a
-release is the job that records it, in the same repository, in the same run.
-There is nothing in between for the index to fall behind - no dispatch to miss,
-no aggregator to break, no cross-repository token. A core's index cannot go
-stale with respect to that core's releases. The cost is one small
-request per core instead of one in total, which is a few times nothing.
-
-**Why no fallback to the API.** A fallback would hide the case this has to get
-right - a core whose index is missing - behind a path that works four times an
-hour and then mysteriously stops. Missing is reported as missing.
-
-**The shape** is GitHub's own `/releases` response, trimmed to the fields the
-frontend reads, so `CoreReleases.Parse` reads it unchanged: one shape, one
-parser, and a generator that cannot drift from its reader. It is regenerated
-from the full release list every time rather than appended to, so a run that
-failed halfway leaves nothing to reconcile.
-
-**When it changes:** on every publish - a green push to `main` (`dev`), a
-scheduled nightly, or a manual dispatch. It is skipped only when nothing was
-published (a nightly whose commit has not moved), where the index is already
-right. Two things to know: replacing the asset is a delete and an upload, so
-there is a moment where the address 404s - a client landing in it is told the
-index is absent, and succeeds on the next press; and a release deleted or edited
-BY HAND, outside CI, is not noticed until the next publish.
-
-**A core with no index yet** - one that has not published since this arrangement
-existed - is reported as exactly that, and appears the next time it publishes.
+The cores' own publish jobs still write a `releases.json` index
+(`tools/write-core-index.sh`). Nothing in this Chimera reads it; builds from
+before this change do, which is the reason it is still written.
 
 ## Where cores live
 
-    <bundle>/Cores/            scanned first; whatever somebody put there by hand
-    <store>/                   what the manager downloads, one file per version
+    <the cores folder>/        one folder; a package is a file in it
 
-The store (`CoreStore.Path`) is per-user, not part of the bundle:
+The cores folder is `Cores/` beside the executable. It comes with the bundle,
+empty, and a package dropped into it is found. A user who wants it somewhere
+else - one set of cores shared by any number of unpacked Chimeras, or a faster
+disk - names another folder in File > Core Manager (**Change folder...**), kept
+as `CoresFolder` in the config: an absolute path, or one relative to the
+executable. Empty means the default, and choosing the default keeps nothing, so
+a bundle that is moved keeps finding the `Cores/` that moved with it.
+(`CoresFolder` the class resolves it; a setting that is no path at all is the
+default too.)
 
-| | |
-|---|---|
-| `CHIMERA_DATA_HOME` set | `$CHIMERA_DATA_HOME/Cores` |
-| Windows | `%LOCALAPPDATA%\Chimera\Cores` |
-| elsewhere | `$XDG_DATA_HOME/chimera/Cores`, default `~/.local/share/chimera/Cores` |
+It is **one** folder, the named one *instead of* the default. The config's
+`CorePackagePaths` can still list further directories to scan after it; that
+only ever adds, has no window, and the manager removes nothing from them.
 
-A Chimera bundle is a zip somebody unpacks, and updating it means unpacking a
-newer one. Cores inside the bundle would have to be downloaded again every time
-the frontend moved, which for a full install is unreasonable - so they
-live outside it and outlive any number of Chimeras. `CHIMERA_DATA_HOME` is the
-escape hatch for a genuinely portable install that wants everything under one
-root; Chimera already uses that variable for the rest of its user data.
-
-The bundle's own `Cores/` is scanned **first**, so a portable install that
-carries its own cores wins over whatever else the machine has lying around. The
-two collapse into one entry when `CHIMERA_DATA_HOME` points the store back at
-the bundle.
+**The data directory's `Cores` is not searched.** That is where versions that
+downloaded cores put them (`%LOCALAPPDATA%\Chimera\Cores` on Windows,
+`~/.local/share/chimera/Cores` elsewhere, or under a moved data directory).
+Somebody updating from one would otherwise open Chimera to find every core
+apparently gone, so the manager says when packages are still there, how many,
+and offers **Use that folder** - which makes it the cores folder. Nothing is
+moved or copied for them.
 
 ### One file per version, and no version is ever replaced
 
-A package in the store is named `<coreid>-<version>.chimeraCore`. Two versions
-of one core are two files sitting side by side, and **installing a new version
-never removes an older one**: an old build is the only way to replay a movie
-recorded on it, so throwing it away to save a few megabytes would be throwing
-away the run. Versions go only when the user removes them, one at a time, and
-the manager says which movies in the recent list would lose their core.
+A published package is named `<coreid>-<version>.chimeraCore`. Two versions of
+one core are two files sitting side by side, and nothing Chimera does removes
+an older one: an old build is the only way to replay a movie recorded on it,
+and Chimera cannot fetch it again. Versions go only when the user removes them.
 
-Installed side by side, they also RUN side by side: any number of builds of one
-core can be loaded in a session as long as their packages are different bytes
-(issue #63). A project boots the exact build it pins whenever that build is in
-the store; otherwise - a bare rom, a movie without a pin, a pin nobody has - the
-build that runs is the one last installed here or opened with File > Open Core,
-and failing that the most recently installed (`CoreChoices.PickBuild`,
-`Config.DefaultCoreBuilds`). Adapter packages (.NET assemblies rather than
-miniBox guests) are the exception: one build of each per session.
+Side by side in the folder, they also RUN side by side: any number of builds of
+one core can be loaded in a session as long as their packages are different
+bytes (issue #63). A project boots the exact build it pins whenever that build
+is in the folder; otherwise - a bare rom, a movie without a pin, a pin nobody
+has - the build that runs is the one last opened with File > Open Core, and
+failing that the newest (`CoreChoices.PickBuild`, `Config.DefaultCoreBuilds`).
+Adapter packages (.NET assemblies rather than miniBox guests) are the exception:
+one build of each per session.
 
-The version string comes from a git tag, so it is sanitised down to name-safe
-characters before it becomes a file name. That is only a NAME - the package's
-identity is still the SHA1 of its bytes, which is what discovery, the extract
-cache and the movie header all use.
+The file's name is only a NAME. A package's identity is the SHA1 of its bytes,
+which is what discovery, the extract cache and the movie header all use; a
+package renamed, or kept as the `.zip` older releases called it, is the same
+package.
 
-Writing into the store replaces a file only when the name matches exactly, i.e.
-the same core at the same version. That is idempotent rather than destructive,
-and it is how a truncated file from an interrupted download gets fixed.
+A package put in the folder while Chimera is running is found without a
+restart: discovery is separate from loading, the manager's **Look again**
+rescans, and so does opening the manager at all.
 
-### Picking a version
+## What a package has to be
 
-The manager shows one row per core, **newest version first**, with the
-installed ones marked. The selector is per core: the roster's tested build, the
-newest of the chosen channel, and every nightly still published, in date order,
-so choosing an older one is always one click and never requires knowing a tag.
+Chimera no longer verifies a download, because it makes none. The bytes arrive
+however the user got them; what says they came from the right place is the
+user's browser and the core's releases page (GitHub publishes a SHA-256 beside
+each asset). What Chimera checks is what it always checked of a file handed to
+it, when the folder is scanned:
 
-Discovery already lists every package in a directory separately, collapses
-duplicates by SHA1, and reads each one's version out of its config, so *picking
-a version* is nothing more than choosing which of the listed entries to open.
-
-**One version of a core per session.** `CoreRegistry.Register` keys on the core
-name and has no unregister, so installing a new core mid-session works (that is
-the point of discovery being separate from loading), but switching to a
-different build of a core already loaded takes a restart. The manager says so
-rather than appearing to do nothing.
-
-## Verifying a download
-
-Everything arrives over HTTPS from github.com, and that is what says the bytes
-came from the right place. What the installer adds is the check that they are
-what they claimed to **be**, in this order:
-
-1. the transfer completed - the body is as long as `Content-Length` said;
-2. the digest matches, where GitHub published one (`sha256:...` on the asset;
-   older releases carry none, and an unknown algorithm is not grounds to refuse
-   a file HTTPS already vouched for);
-3. discovery can read it as a core package at all;
-4. its guest ABI is one this Chimera runs - refused here rather than at the
+1. discovery can read it as a core package at all - one that cannot is listed
+   where packages are opened, with the reason, rather than silently missing;
+2. its guest ABI is one this Chimera runs - refused there rather than at the
    moment somebody tries to emulate with it;
-5. the version stamped inside the package matches the version the release
-   offered. A mismatch means something upstream attached the wrong asset, and
-   filing it in the store under a version it is not would put a lie in every
-   movie recorded against it.
+3. it stamps a version, which is what a movie cites.
 
-Only then is the temporary file moved into the store. Nothing is ever written
-into the store under a name it has not been verified to deserve, and a failed
-install leaves no trace.
-
-GitHub asset URLs redirect to object storage, so the client follows redirects.
-The SHA1 of the package file remains the identity Chimera uses everywhere - the
-extract cache, the movie header - so verification and identification stay the
-same act.
+A project names its core by version and SHA1. If no package of that core is in
+the folder, opening the project says which core it runs on and which folder to
+put it in.
 
 ## The window
 
-**File > Core Manager.** One list of cores on the left, one core's versions on
-the right.
+**File > Core Manager.** Two lines at the top: the cores folder and how many
+cores are in it, and that Chimera downloads nothing - get a package from its
+project, or build it, and put it in this folder. Then one list of cores on the
+left, one core's versions on the right.
 
-The left list is every core in the roster plus anything installed that the
-roster does not know about - somebody's own build, or a core from elsewhere.
-Those are shown, greyed as unofficial, rather than hidden: a window that listed
-only what it could fetch would leave somebody unable to see the core they are
-actually running.
-
-Every row has a **tick box**, and a **Select all** above the list that says how
-many are ticked. Three buttons act on what is ticked, and stay unavailable until
-something is:
-
-* **Check for updates** - asks each ticked core's repository and **downloads
-  nothing**. It marks the rows that have something newer and names them.
-  Deciding to take an update is a separate act.
-* **Download latest** - installs the newest published build of each ticked core
-  that has not got it. One already holding the newest is left alone rather than
-  downloaded again.
-* **Remove** - deletes **every installed version** of each ticked core, behind a
-  confirmation that says what it costs. An official core keeps its row and goes
-  back to reading "not installed"; it can always be fetched again. An external
-  one is forgotten entirely.
-
-The right-hand panel still acts on the row you have *selected* rather than
-ticked: pick a particular version, **Install** it, or **Remove version** to
-delete just that one. Ticking is for doing the same thing to several cores;
-selecting is for looking closely at one.
-
-### External cores
-
-**Add external core...** takes the address of a GitHub page - the one you are
-looking at, with or without scheme, trailing slash, `.git`, or a deeper path
-like `/releases`; a bare `owner/repo` works too. The repository is asked what it
-publishes *before* it is remembered, so a wrong address fails there rather than
-becoming a row that can never do anything. The core's id and name come from the
-newest published asset, since nothing else about it is known here.
-
-Added cores live in the config (`ExternalCores`) and are listed **below the
-official ones, under a separator**. Removing one takes it out of the list
-entirely, because nothing else was keeping it there.
-
-Adding a repository the roster already carries is dropped rather than listed
-twice - the roster dedupes on the repository - so the window says which row that
-address already is, and selects it. It used to say *Added ... Tick it and press
-Download latest* and then try to select a row under a name that does not exist,
-Probe reading the name from the asset (`gpgx`, not `Genesis Plus GX`): a silent
-no-op reported as success.
-
-That is also how the external mechanism gets tested without a second publisher:
-**an official core's address works here**, because an official core's index is
-the same file in the same place as an external one's. Paste
-`ToolAssisted-run/chimera-core-gpgx` and it is recognised, identified from what
-it publishes, and reported as already listed.
-
-The separator is a row rather than a `ListViewGroup`: Mono's ListView ignores
-groups in Details view. It carries a tick box it will not let you tick - a row
-in a checkbox list has one whether it wants it or not - and it is told apart
-from a real row by having no `Tag`, which is also how the list maps rows to
-cores now that the indices no longer line up.
-
-An **update** is the newest published version, and only when it is missing.
-Any older version that happens not to be installed is not an update - somebody
-holding the latest build would otherwise be told forever that there is
-something newer, naming a version from last month. A development build is never
-an update to a published one.
-
-Development builds are hidden behind a checkbox. A dev release is replaced on
-every push, so a movie recorded against one can stop being fetchable; anyone
-chasing a fix can still tick the box and take it.
-
-## What the manager shows
-
-Per core, six columns:
+The list is the packages in the folder, one row per core, the emulators and
+then the game cores, each by name; **Show:** narrows it to one kind. There is
+no row for a core that is not there.
 
 | column | what it is |
 |---|---|
 | Core | its name |
-| Systems | the systems it emulates, by the names the core gives them (the package's `systemNames`; the roster row's until it is installed) |
-| Installed | which version is here, or *not installed*, plus *update available* |
-| Released | when the **installed** version was published |
-| Size | how big it is |
-| Source | `owner/name` of the repository it came from |
+| Type | an emulator or a game (docs/game-cores.md) |
+| Systems | the systems it runs, by the names the package gives them |
+| Version | the newest version here, by its date and commit, and how many more |
+| Size | the newest version's file, measured on disk |
 
-Two of those are deliberately narrower than they look.
+Along the bottom, about the folder first and then what is in it:
 
-**Released is the installed version's date, not the newest published one.**
-Somebody holding an old build wants to know when *that* was made, not when they
-fell behind - the fact that something newer exists is what the Installed column
-already says. It is blank until the versions have been fetched, because a date
-is the one thing in the list that cannot be read off a local file.
+* **Open cores folder** - shows it in the system's file browser, creating it if
+  a folder somebody named is not there yet.
+* **Change folder...** - a folder picker; what is in the chosen folder is listed
+  at once and can be used straight away. A core already loaded stays loaded
+  until Chimera is restarted.
+* **Look again** - rescans, for a package copied in while the window is open.
+* **Remove** - deletes **every version** of each ticked core, behind a
+  confirmation that says what it costs: a movie recorded on one of those exact
+  builds needs it to replay, and Chimera cannot fetch it again. Every row has a
+  tick box, and **Select all** above the list says how many are ticked.
+* **Systems...** - every system these cores run, and which core runs each
+  (#172).
+* **Use that folder** - only when packages were left where earlier versions
+  downloaded them; see *Where cores live*.
 
-**Size is measured on disk where there is a file**, so the column says something
-useful before anybody asks a repository anything, and falls back to the size the
-release declared - for a core that is not installed, and for a file that cannot
-be measured. A blank would be worse than the declared figure.
+The right-hand panel acts on the row *selected* rather than ticked: every
+version of that core that is here, newest first, with the file's path, when it
+was built and the package's licence terms; **Remove version** deletes just that
+one.
 
-**Source is `owner/name`**, the identifying part of the address; the whole URL
-is in the right-hand panel where there is room for it. It is blank for a package
-nothing claims: for one installed by hand there is no source Chimera can
-honestly name, and the core's own `url` field is the upstream emulator's home,
-not where this package came from.
+Remove deletes files and only files, and only ones in the cores folder itself.
+A package found in a further search directory is somebody's own arrangement,
+and an unpacked package - a folder, which is how somebody keeps their own build
+- is never emptied by this window; both are named in what the window says it
+left alone.
 
 The columns have to add up to less than the list is wide or the last one is
-reachable only by scrolling sideways, and the three the window started with
-filled it exactly - so every column added since has had to bring its own width
-with it. That also means the **UI test harness's Xvfb** has to be wider than the
-window: a screenshot copies the window's rectangle off the screen, so a window
-wider than the screen fails outright with *XGetImage returned NULL* rather than
-producing a bad picture.
+reachable only by scrolling sideways. That also means the **UI test harness's
+Xvfb** has to be wider than the window: a screenshot copies the window's
+rectangle off the screen, so a window wider than the screen fails outright with
+*XGetImage returned NULL* rather than producing a bad picture.
 
-Per version, in the selector: **the publication date and the short commit**,
-because those are the two things somebody comparing two builds actually needs.
-A core's version IS the commit it was built from, so eight characters of it is
-the same identifier the rest of the frontend shows.
+### How a version reads
+
+Per version, **the date and the short commit**, because those are the two
+things somebody comparing two builds actually needs. A core's version IS the
+commit it was built from, so eight characters of it is the same identifier the
+rest of the frontend shows.
 
 A package built by hand rather than published carries `+local` (and `-dirty`
 where the tree was not clean) in its stamped version. That is worth knowing -
@@ -450,38 +297,30 @@ is named. So it reads as one trailing word: a published core is `4ed35321`, a
 hand-built one is `12d65377 local`. This applies wherever a core is named,
 including the project wizard's core picker.
 
-**A version is never listed without its date** (issue #67, user-decided
-2026-09-17). Two commits say which versions they are and nothing about which is
-newer, and with several builds of one core in the New Project picker the only
-way to find out was the core manager's Check for updates. So wherever a version
-is listed it reads `2026-09-17 08:30  (4ed35321)`, the versions of one core are
-offered newest first, and the newest is the one a picker opens on. The minute
-(local time) was added on 2026-09-29: a core often has several versions in one
-day, and the day alone left them looking alike - the order was always by the
-full timestamp.
+**A version is listed with its date wherever its package states one** (issue
+#67, user-decided 2026-09-17). Two commits say which versions they are and
+nothing about which is newer. So a version reads `2026-09-17 08:30  (4ed35321)`,
+the versions of one core are offered newest first, and the newest is the one a
+picker opens on. The minute (local time) was added on 2026-09-29: a core often
+has several versions in one day.
 
 The date is the package's own: the build script stamps `versionDate` beside
 `version` in the packaged `waterbox.config`. It is the COMMIT's date, in UTC,
 and never the build's - a package is a pure function of its commit, and a build
 time would make the same commit produce two different packages. A package from
-before the stamp is looked up in the core manager's feed cache, by commit, read
-from disk and never fetched: listing versions must not be what puts the frontend
-on the network. A commit published twice (dev, then a nightly) takes the first
-date. A version neither knows is listed by its commit alone rather than with a
-guess - the file's own time is when it was copied here, which is not the
-question.
+before the stamp has no date, and nothing else is asked: there used to be a
+lookup in what the manager had last heard from the cores' repositories, and
+there is no such record now. It is listed by its commit alone, after the dated
+ones, rather than with a guess - the file's own time is when it was copied
+here, which is not the question.
 
 ## What replaces "one commit pins one bundle"
 
-Two things, and between them they are stronger than what was lost:
-
-* **The roster's tested versions.** A Chimera release names the core versions
-  its CI matrix passed against. Installing that set reproduces a combination
-  somebody actually tested.
-* **Movies name their core exactly.** A movie header already carries
-  `CoreVersion` and `CorePackageSHA1`. The manager can fetch *that* version
-  from the nightly archive, which is a better answer than "find the old
-  bundle".
+**Movies name their core exactly.** A movie header carries `CoreVersion` and
+`CorePackageSHA1`, and a project pins the same. Each core's nightly releases
+are dated and never deleted, so the package a movie names stays where a person
+can download it. Finding it is theirs to do; Chimera says which core and which
+folder.
 
 ## Guarding the guest ABI
 
@@ -510,7 +349,7 @@ core that lacks it is detected and does without.
 
 Nothing in Chimera's own CI builds a real core any more, so a frontend change
 could break the generic waterbox adapter for every core at once and nothing
-here would notice - it would surface the first time somebody downloaded one.
+here would notice - it would surface the first time somebody tried one.
 
 The `published-cores` job closes that. `tools/fetch-cores.sh` downloads what
 each core last published into `build/Cores`, and the tests in
@@ -523,8 +362,7 @@ each core last published into `build/Cores`, and the tests in
   and so the real test of whether the frontend still understands what the cores
   are saying;
 * every package's default keybinds name only buttons its controller declares;
-* every package stamps a version, without which it cannot be filed in the
-  store or cited by a movie.
+* every package stamps a version, without which it cannot be cited by a movie.
 
 `MnemonicUniquenessTests` runs against them too, so a controller that grows a
 button is covered the day it does.
@@ -566,14 +404,14 @@ which is how the release notes came to say, correctly, that the whole
 distribution was non-commercial.
 
 A bare bundle is not. `LICENSES.md` now states the frontend's own terms and says
-plainly that **installing a core changes them**: several cores (Genesis Plus GX,
+plainly that **adding a core changes them**: several cores (Genesis Plus GX,
 Opera, Snes9x) forbid commercial use and that binds whatever they are installed
 into, while others are GPL and require their corresponding source to stay
 identifiable.
 
-So the terms move to install time. Every package carries
+So the terms travel with the package. Every package carries
 `licenses/licenses.json`, put there at package time; `CoreLicence` reads it and
-the manager shows what an installed core demands - commercial use first when it
+the manager shows what a core in the folder demands - commercial use first when it
 is forbidden, because that is the part that binds everything around it - rather
 than leaving somebody to open the zip.
 
