@@ -226,8 +226,7 @@ namespace Chimera.Client.GUI
 			// browsing for a folder they have already named (chimera#114). A
 			// configured folder that does not exist is no use as a starting
 			// point, so in that case the dialog is left to its own default.
-			string OpensIn(string configured)
-				=> !string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured) ? configured : "";
+			static string OpensIn(string configured) => PathEntryExtensions.FirstExistingDir(configured);
 			using NewProjectWizard wizard = new(
 				_discoveredCorePackages,
 				pickFiles: slot =>

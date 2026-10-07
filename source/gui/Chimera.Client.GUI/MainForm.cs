@@ -2224,7 +2224,7 @@ namespace Chimera.Client.GUI
 			var result = this.ShowFileOpenDialog(
 				filter: RomLoader.RomFilter,
 				filterIndex: ref _lastOpenRomFilter,
-				initDir: Config.PathEntries.RomAbsolutePath(Emulator.SystemId));
+				initDir: Config.PathEntries.RomDialogDir(Emulator.SystemId));
 			if (result is null) return;
 			var filePath = new FileInfo(result).FullName;
 			_ = LoadRom(filePath, new LoadRomArgs(new OpenAdvanced_OpenRom(filePath)));
@@ -3560,16 +3560,8 @@ namespace Chimera.Client.GUI
 				return;
 			}
 
-			// The system ROM dir need not exist (not every system keeps
-			// its ROMs there), and the dialog helper throws in DEBUG
-			// builds for a missing initial dir - so fall back to the
-			// last opened location, then to the dialog default (empty
-			// is allowed).
-			var romDir = Config.PathEntries.RomAbsolutePath(Emulator.SystemId);
-			var lastDir = Config.PathEntries.LastRomPath;
-			var initDir = romDir.Length is not 0 && Directory.Exists(romDir) ? romDir
-				: lastDir.Length is not 0 && lastDir is not "." && Directory.Exists(lastDir) ? lastDir
-				: string.Empty;
+			// the system's ROM folder if there is one, else where the last ROM came from
+			var initDir = Config.PathEntries.RomDialogDir(Emulator.SystemId);
 
 			try
 			{

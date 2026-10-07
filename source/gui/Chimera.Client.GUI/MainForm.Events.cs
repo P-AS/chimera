@@ -628,7 +628,7 @@ namespace Chimera.Client.GUI
 					{
 						Title = title,
 						Filter = "All Files|*.*",
-						InitialDirectory = Directory.Exists(firmwareFolder) ? firmwareFolder : "",
+						InitialDirectory = PathEntryExtensions.FirstExistingDir(firmwareFolder),
 					};
 					return picker.ShowDialog(this) is DialogResult.OK ? picker.FileName.WithoutWslgMirror() : null;
 				},
@@ -637,7 +637,7 @@ namespace Chimera.Client.GUI
 					using FolderBrowserEx picker = new()
 					{
 						Description = "Scan a folder for firmware files",
-						SelectedPath = Directory.Exists(firmwareFolder) ? firmwareFolder : "",
+						SelectedPath = PathEntryExtensions.FirstExistingDir(firmwareFolder),
 						CheckBoxLabel = FolderBrowserEx.ScanSubfoldersLabel,
 						CheckBoxChecked = includeSubfolders,
 					};
