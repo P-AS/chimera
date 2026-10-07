@@ -69,7 +69,7 @@ namespace Chimera.Client.Common
 			_apiContainer = apiContainer;
 
 			// Register lua libraries
-			foreach (var lib in ReflectionCache_Chi_Cli_Com.Types
+			foreach (var lib in typeof(LuaLibraries).Assembly.GetTypesWithoutLoadErrors()
 				.Where(static t => typeof(LuaLibraryBase).IsAssignableFrom(t) && t.IsSealed))
 			{
 				{
@@ -89,7 +89,7 @@ namespace Chimera.Client.Common
 					if (instance is ClientLuaLibrary clientLib)
 					{
 						clientLib.MainForm = _mainForm;
-						clientLib.AllAPINames = new(() => string.Join("\n", Docs.Select(static lf => lf.Name)) + "\n"); // Docs may not be fully populated now, depending on order of ReflectionCache.Types, but definitely will be when this is read
+						clientLib.AllAPINames = new(() => string.Join("\n", Docs.Select(static lf => lf.Name)) + "\n"); // Docs may not be fully populated now, depending on the order the types are met in, but definitely will be when this is read
 					}
 					else if (instance is EventsLuaLibrary eventsLib)
 					{
