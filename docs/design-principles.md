@@ -5002,7 +5002,9 @@ the MIT License with its two copyright lines. `NOTICE` is the paragraphs
 that stood in front of it, as they were, ending with where the terms are.
 A bundle carries both (`licenses/chimera-LICENSE`, `licenses/chimera-NOTICE`).
 
-Not done here: miniBox's LICENSE has the same shape and reads as "Other"
-too. It is another repository, and the commit of it a core was built with
-is written into every core package.
+miniBox's LICENSE had the same shape and read as "Other" too, and was split
+the same way the same day (miniBox dcb1f22): LICENSE the MIT text with its
+three copyright lines, NOTICE the summary of whose work each part is. No
+core package ships that file, so no package changes; and Chimera's pin of
+miniBox is not moved for it.
 
