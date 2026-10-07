@@ -151,8 +151,8 @@ Whatever CI does not run is not gated, whatever the script says.
 
 > The rpcs3 core's entire gate was unrunnable locally for eight days -
 > `waterbox/native.mk` was never updated when new sources arrived, so the
-> native reference did not link - and CI never noticed, because CI does not
-> build the native reference.
+> native reference did not link - and CI never noticed, because CI did not
+> build the native reference then. It does now.
 
 **What to do.** Keep a table, per repo, of what the gate script claims against
 what CI actually runs, and treat the gap as a known, named risk rather than an

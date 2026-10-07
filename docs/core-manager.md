@@ -103,10 +103,10 @@ dlopen a native library and go red without one. A workflow that runs them must
 build Chimera's natives first. (Found by moving `build/dll` aside and watching
 them fail; it would otherwise have been three first-run failures.)
 
-rpcs3 does not build its native reference in CI. That needs LLVM and ffmpeg for
-the host on top of `rpcs3_emu` twice - hours beyond the guest build, which is
-already the most expensive here - and without firmware it would prove nothing
-the guest build does not. `native == sandbox` for that core is run by hand.
+rpcs3 builds its native reference in CI too - LLVM and ffmpeg for the host on
+top of `rpcs3_emu` twice, the most expensive build here - because without it
+`native == sandbox` is a leg nobody runs. The firmware and disc legs still
+report SKIP there.
 
 What was verified locally rather than assumed: dosbox-x's core gate (18 legs)
 and frontend gate (4) both run green with nothing provisioned, and eka2l1's gate
