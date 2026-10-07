@@ -201,8 +201,8 @@ Advice earned the hard way:
   systems or of controls; a package that says nothing is shown by its ids.
   - `"systemNames": { "PSV": "PlayStation Vita" }` at the top - the name of
     every system id the package answers to (its own and each machine's).
-    The same names go in the core's row of `official-cores.json`, so the
-    system reads the same before the core is installed.
+    The same names go in the core's row of `official-cores.json`, which
+    Chimera does not read: it is what CI and the documentation go by.
   - `"mnemonics": { "Select": "s" }` in each input declaration (the
     package's, and each machine's) - the one character a button writes into
     a movie's text and heads its input column with. Keyed by the button's

@@ -1002,7 +1002,7 @@ namespace Chimera.Client.GUI
 							owner: null,
 							$"This project runs on \"{coreName}\", and no package of that core is in the cores folder."
 								+ $"\n\nChimera downloads nothing: get the package from the core's project, put it in\n{CoresFolder.For(Config)}\nand open the project again.",
-							"The project's core is not installed");
+							"The project's core is not in the cores folder");
 						return false;
 					}
 					if (!LoadCorePackage(candidate.Path, chooseBuild: false)) return false;

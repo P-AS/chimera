@@ -1250,7 +1250,7 @@ namespace Chimera.Client.GUI
 			switch (_page)
 			{
 				case 0:
-					if (ChosenCore is null) { _status.Text = "pick a core (none are installed?)"; return; }
+					if (ChosenCore is null) { _status.Text = "pick a core (none in the cores folder?)"; return; }
 					if (!BuildSlotForm()) return;
 					if (PageApplies(1)) { ShowPage(1); break; }
 					goto case 1; // no files to ask for: on to the settings

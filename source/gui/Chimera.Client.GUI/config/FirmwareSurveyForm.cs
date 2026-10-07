@@ -313,7 +313,7 @@ namespace Chimera.Client.GUI
 			_clearButton.Enabled = row is not null && row.Where is FirmwareWhere.Chosen;
 			if (row is null)
 			{
-				_detail.Text = _groups.Count is 0 ? "No core package is installed." : "";
+				_detail.Text = _groups.Count is 0 ? "No core package is in the cores folder." : "";
 				return;
 			}
 			var what = row.Decl.Description ?? $"{row.Decl.DisplayName}, {row.Decl.Size} bytes";

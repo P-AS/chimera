@@ -21,7 +21,7 @@ Chimera is a minimal frontend for creating tool-assisted speedruns (TAS).
 
 ## Goals
 
-- **Modularity.** The frontend contains no emulation core and no system-specific knowledge. Cores are external, self-contained packages (`.chimeraCore`), each maintained in its own repository under its own license, loaded explicitly like a ROM.
+- **Modularity.** The frontend contains no emulation core and no system-specific knowledge. Cores are external, self-contained packages (`.chimeraCore`), each maintained in its own repository under its own license, loaded explicitly like a ROM. Chimera includes none and downloads none.
 
 - **Performance.** All functional machinery (the sandbox host, movies, savestates, file formats, the running machine itself) lives in `libchimera`, a native C++ engine the GUI calls into.
 
@@ -31,7 +31,9 @@ Chimera is not designed for casual play. For that, use the original emulators di
 
 ## Cores
 
-Chimera ships no cores and downloads none. Get a core's `.chimeraCore` package from its project (linked below), or build it, and put it in the `Cores` folder beside Chimera; **File > Core Manager** shows what is there ([docs/core-manager.md](docs/core-manager.md)).
+Chimera does not include cores and does not download them. To use a core, download its `.chimeraCore` package from the core's own project (linked below) or build it yourself, and put it in the `Cores` folder beside Chimera.
+
+**File > Core Manager** lists the cores in that folder and lets you point Chimera at a different one ([docs/core-manager.md](docs/core-manager.md)).
 
 ### Emulation cores
 
@@ -106,11 +108,17 @@ The frontend is built for Linux and Windows and published here:
 - [**Latest development build**](https://github.com/ToolAssisted-run/chimera/releases/tag/dev) - rebuilt on every change to `main` that passes the gates, and replaced each time. Nothing is published that did not pass them. **Not for submissions:** a dev build is replaced on every change, so it may stop being downloadable and a movie made on it can stop being replayable. Do not use one to produce a TAS for submission to toolAssisted.run - use a nightly.
 - [**Nightly builds**](https://github.com/ToolAssisted-run/chimera/releases) - dated, immutable, and kept forever. Cite one of these in a bug report or beside a movie: a run is only reproducible while the build that recorded it still exists, and this is what a TAS submitted to toolAssisted.run should be made on.
 
-A bundle carries no cores, and Chimera never reaches the network. Download the
-cores you want from their own releases and put them in `Cores/`. Each core
-publishes a `dev` and nightly releases the same way, and its nightlies are never
-deleted - which is what lets a movie name the exact package that recorded it and
-still be replayable years later.
+A bundle carries no cores, and Chimera never reaches the network - it downloads
+nothing, not a core and not a list of them. To set one up:
+
+1. Download a build above and unpack it.
+2. Download the `.chimeraCore` package of each core you want from that core's
+   releases page (the [Cores](#cores) tables link them), or build it.
+3. Put the packages in the `Cores` folder beside `Chimera.exe`, and start Chimera.
+
+Each core publishes a `dev` build and nightly releases the same way, and its
+nightlies are never deleted - which is what lets a movie name the exact package
+that recorded it and still be replayable years later.
 
 Every bundle carries `BUILD.txt`, naming the exact commit it was built from, and
 `LICENSES.md`, stating its terms. **Adding a core adds that core's terms**,

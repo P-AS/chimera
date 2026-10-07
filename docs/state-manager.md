@@ -67,8 +67,8 @@ Taken by the user, 2026-09-08:
    beside an older project is read once, moved, and taken out of the folder -
    so a project's folder now holds only the project. Projects live in synced folders - the user's are in
    Google Drive - and a multi-gigabyte sidecar there is uploaded on every save,
-   with the sync client holding files open mid-write. It follows the core store
-   (docs/core-manager.md): `%LOCALAPPDATA%\Chimera` on Windows, the XDG data
+   with the sync client holding files open mid-write. It is in the user's data
+   directory: `%LOCALAPPDATA%\Chimera` on Windows, the XDG data
    directory elsewhere, `CHIMERA_DATA_HOME` overriding both.
 2. **One implementation.** `PagedStateManager`, `ZwinderStateManager`, the
    settings chooser and the type-dispatching converter all go. Settings naming

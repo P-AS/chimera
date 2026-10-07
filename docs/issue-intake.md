@@ -196,7 +196,7 @@ Execution order (main session, not this fork):
    blank issues off, one contact link "Report it in chimera" ->
    https://github.com/ToolAssisted-run/chimera/issues/new/choose.
 2. Labels in chimera (gh label create): kind, area (incl. one `core:<id>`
-   per roster entry), state, severity, as in section 3, plus `duplicate`.
+   per published core), state, severity, as in section 3, plus `duplicate`.
    Apply them to the 17 open issues per the 2026-09-19 triage.
 3. `.github/workflows/stale.yml` on `needs-info`: 14/28, exempt everything
    else, reopen on comment (stale removes the label on activity).

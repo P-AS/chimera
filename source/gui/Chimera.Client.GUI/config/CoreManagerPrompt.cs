@@ -18,7 +18,7 @@ namespace Chimera.Client.GUI
 	/// </summary>
 	public sealed class CoreManagerPrompt : FormBase
 	{
-		protected override string WindowTitleStatic => "No cores installed";
+		protected override string WindowTitleStatic => "No cores yet";
 
 		/// <param name="coresFolder">where core packages are looked for</param>
 		public CoreManagerPrompt(string coresFolder)
