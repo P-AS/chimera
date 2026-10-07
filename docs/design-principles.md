@@ -4906,3 +4906,31 @@ What it does not change: a cache an older build wrote for a GPU-drawn
 machine names no state files, so those branches replay once more and keep
 their state from the next save. A state the engine refuses still falls back
 to the replay, with the reason shown.
+
+## The About box is six lines, and versions are copied from the Help menu (user-decided, 2026-10-07)
+
+Issue #193 is the user's own specification of the About box, and it is
+exhaustive: the logo, small and centred; the name; the build, as its commit
+(a link to that commit) with the commit's date and time; a link to the
+repository; a link to toolAssisted.run; OK. The tagline, the credits link,
+the BizHawk line, the build configuration and the button that copied the
+commit hash are gone. Credit is where it was and still is: CREDITS.md.
+
+The build's time is the commit's, in UTC, read from git when the frontend
+is built (`GIT_COMMITTIME`, beside the day `GIT_SHORTDATE` the version-skew
+warning compares). Never the build's wall clock: a build must reproduce.
+
+Issue #188 asked for the running core's version to be copyable, next to
+Chimera's in the About box. The About box now has no room for it by
+decision, and the button it would have sat beside is one of the things
+removed. So the copying moved: Help > Copy Version Info puts two lines on
+the clipboard, in the words the bug report template asks for them -
+
+    **Chimera build:** Commit c7c06d7d5 (2026-10-06 16:55 UTC)
+    **Core and version:** RPCS3 2026-10-07 06:35  (1924ad8b)
+
+- the second only while a core is running, written as the Core Manager
+writes it. Where it went is the implementer's choice, not the user's: the
+user decided what the About box holds, and this is what followed from it.
+The text is built in `VersionReport` (tested); the menu item only asks the
+running core which package it is.

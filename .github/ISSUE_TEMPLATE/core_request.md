@@ -5,7 +5,7 @@ title: "[<core>] <system or game>"
 labels: core-request
 ---
 
-**Chimera build and core:** <!-- as Help > About and the Core Manager show them; leave empty for a new core -->
+**Chimera build and core:** <!-- Help > Copy Version Info copies both; leave empty for a new core -->
 
 **System or game:** <!-- for a game: the file name exactly as in the project; for a system: which machine -->
 

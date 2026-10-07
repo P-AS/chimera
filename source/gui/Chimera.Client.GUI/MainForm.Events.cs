@@ -1131,6 +1131,33 @@ namespace Chimera.Client.GUI
 			Util.OpenUrlExternal("https://toolassisted.run");
 		}
 
+		/// <summary>
+		/// The build of Chimera and the running core's version, on the clipboard in the
+		/// words a bug report asks for them (issue #188).
+		/// </summary>
+		private void CopyVersionInfoMenuItem_Click(object sender, EventArgs e)
+		{
+			try
+			{
+				Clipboard.SetText(VersionReportOfThisSession());
+				AddOnScreenMessage("Version info copied");
+			}
+			catch (System.Runtime.InteropServices.ExternalException)
+			{
+				// another program has the clipboard open; nothing was copied
+				AddOnScreenMessage("The clipboard is busy: version info not copied");
+			}
+		}
+
+		internal string VersionReportOfThisSession()
+		{
+			var running = Emulator.IsNull() ? null : CoreRegistry.Instance.PackageSha1Of(Emulator);
+			var package = string.IsNullOrWhiteSpace(running)
+				? null
+				: _discoveredCorePackages.FirstOrDefault(pkg => running!.Equals(pkg.Sha1, StringComparison.OrdinalIgnoreCase));
+			return VersionReport.Text(VersionInfo.GetBuildName(), package?.Name, package?.DatedVersion);
+		}
+
 		private void AboutMenuItem_Click(object sender, EventArgs e)
 		{
 			using AboutBox form = new();

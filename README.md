@@ -161,9 +161,9 @@ Open an issue on this repository, whichever core it concerns - one inbox,
 and the issue template asks for what a fix needs. What settles most
 reports before anybody opens a debugger:
 
-- **The build strings.** Help > About names the frontend build
-  (`Nightly 2026-09-19 (cd4b89cd)`); the Core Manager names each core with
-  its date and commit. A frontend and a core from different days may not
+- **The build strings.** Help > Copy Version Info puts the frontend's build
+  and the running core's version on the clipboard, in the template's words.
+  A frontend and a core from different days may not
   understand each other's states, so before reporting a save/load problem,
   match them.
 - **The project file.** A `.chimeraProject` is small and names every file

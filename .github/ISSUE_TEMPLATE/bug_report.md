@@ -7,6 +7,7 @@ labels: bug
 
 <!-- Fill what applies; the more of it there is, the fewer round trips. -->
 
+<!-- Help > Copy Version Info puts the next two lines on the clipboard: paste over them. -->
 **Chimera build:** <!-- the exact string from Help > About or the release name, e.g. Nightly 2026-09-19 (cd4b89cd) -->
 
 **Core and version:** <!-- as the Core Manager shows it, e.g. RPCS3 2026-09-19 (4e678a9). Frontend and core should be from the same day or later: a build from before a core's format changes cannot read what that core writes. -->
