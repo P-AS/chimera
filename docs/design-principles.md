@@ -4985,3 +4985,24 @@ clips, by objects and arrays reachable from them, and by `_global`; a clip's
 string is shared and never changed in place; a clip's position has caches
 behind it). A property with a getter has no place and is not listed. A write
 is a poke: the bytes change and the movie's code is not told.
+
+## LICENSE is the MIT text alone; the rest is in NOTICE (user-decided, 2026-10-07)
+
+`LICENSE` opened with three paragraphs - that Chimera is a fork of BizHawk,
+whose copyright is whose, and what in the tree is not under the MIT terms -
+and only then the MIT License. Nothing in it was wrong, and GitHub read the
+file as "Other": a licence it could not name. That is the first thing anyone
+checking the project's terms sees, a person or a program (it came up while
+looking at what signing the Windows binaries would need: a free signing
+service for open source asks for an OSI-approved licence, and "Other" is not
+an answer to that).
+
+So the file is split, and not one word of the terms changes. `LICENSE` is
+the MIT License with its two copyright lines. `NOTICE` is the paragraphs
+that stood in front of it, as they were, ending with where the terms are.
+A bundle carries both (`licenses/chimera-LICENSE`, `licenses/chimera-NOTICE`).
+
+Not done here: miniBox's LICENSE has the same shape and reads as "Other"
+too. It is another repository, and the commit of it a core was built with
+is written into every core package.
+
