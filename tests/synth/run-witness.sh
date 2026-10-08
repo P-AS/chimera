@@ -360,6 +360,32 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 			report "E:kept-pictures" FAIL "$(cat "$work/kept.far" "$work/kept.off" "$work/kept.on" "$work/kept.healthy" 2>/dev/null | grep -m1 -v 'xxxx' | cut -c1-120) (see work/kept.*)"
 		fi
 
+		# --settle-probe, the instrument that says how long a renderer IS wrong
+		# after a load on a given machine (chimera#190: on a GTX 1060 xemu is
+		# one frame behind in one game and wrong for five in another, which no
+		# amount of reasoning had said). It remembers frames as first drawn,
+		# goes back to the frame before them with pictures off and a state on
+		# every frame, draws them again and compares. Against a renderer whose
+		# answer is known - the synth's, wrong for 5 drawn frames, for 2, for
+		# none - it must give that answer, and the picture trace must show the
+		# load and the first frame after it.
+		probe() { # garble frames -> the summary line, then the trace's two
+			CHIMERA_PICTURE_TRACE=1 "$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+				--settings "{\"garbleAfterLoad\":$1}" --greenzone-period 1 --settle-probe 40,8 2>&1 \
+				| grep -a '^settle-probe: \(the picture is wrong\|every frame\)\|^pictrace: load, on frame 40\|^pictrace: frame 41, #1 after the load: read back'
+		}
+		probe 5 > "$work/probe.5"
+		probe 2 > "$work/probe.2"
+		probe 0 > "$work/probe.0"
+		if grep -q '^settle-probe: the picture is wrong up to drawn frame #5 after the load, of 8 drawn' "$work/probe.5" \
+			&& grep -q '^settle-probe: the picture is wrong up to drawn frame #2 after the load, of 8 drawn' "$work/probe.2" \
+			&& grep -q '^settle-probe: every frame drawn after the load is the picture it was' "$work/probe.0" \
+			&& [ "$(grep -c '^pictrace: ' "$work/probe.5")" = 2 ] && [ "$(grep -c '^pictrace: ' "$work/probe.0")" = 2 ]; then
+			report "E:settle-probe" PASS "a renderer wrong for 5 drawn frames after a load, for 2 and for none is measured as exactly that, and the picture trace names the load and the frame after it"
+		else
+			report "E:settle-probe" FAIL "$(cat "$work/probe.5" "$work/probe.2" "$work/probe.0" 2>/dev/null | grep -m1 '^settle-probe' | cut -c1-120) (see work/probe.*)"
+		fi
+
 		# a DYNAMIC property table (engine.h; chimera#216): with its
 		# movingProperties setting on, the synth lists properties that move
 		# and come and go with the cursor's row, the way a Flash movie's

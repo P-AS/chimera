@@ -395,6 +395,7 @@ struct ce_session
 	int64_t machineFrame = 0;
 	int64_t sinceLoad = int64_t{ 1 } << 40;
 	int32_t pictureSettle = 3;
+	int32_t tracedSinceLoad = 8;   /* CHIMERA_PICTURE_TRACE: frames reported since the last load */
 	int64_t lastKept = -1;
 	void afterFrame(bool rendered, int64_t known);
 	void afterLoad(int64_t landedOn);
@@ -1033,6 +1034,28 @@ void ce_session::trace(int32_t lag, int32_t render)
  * The state is a delta: telling a core the same thing every frame would be one
  * pointless guest call per frame on the seek path, which is the path this
  * exists for. */
+
+/* CHIMERA_PICTURE_TRACE=1: a line on stderr for every load, and for each of
+ * the eight frames that run after it - was the frame read back, how many have
+ * been shown since the load, and a sum of the picture AS THE CORE HANDED IT
+ * OVER, before a kept one stands in for it. Two frames with the same sum are
+ * the same picture, which is how the question "is this frame's picture its
+ * own?" is answered on a machine nobody is looking at: on a real card xemu's
+ * first frame after a load carries the sum of the frame it was loaded on
+ * (#190). One getenv a process until it is set. */
+static bool pictureTrace()
+{
+	static const bool on = std::getenv("CHIMERA_PICTURE_TRACE") != nullptr;
+	return on;
+}
+
+static unsigned pictureSum(const std::vector<uint32_t> &picture)
+{
+	unsigned sum = 2166136261u;
+	for (size_t i = 0; i < picture.size(); i += 7) sum = (sum ^ picture[i]) * 16777619u;
+	return sum;
+}
+
 /* A frame has run and was shown. For the first pictureSettle frames shown
  * after a state load - however many ran unseen in between, a seek's among them -
  * the picture just read back is suspect - a renderer on the far side of the
@@ -1047,6 +1070,13 @@ void ce_session::afterFrame(bool rendered, int64_t known)
 	if (known >= 0) machineFrame = known;
 	else if (machineFrame >= 0) machineFrame++;
 	lastKept = -1;
+	if (pictureTrace() && tracedSinceLoad < 8)
+	{
+		tracedSinceLoad++;
+		std::fprintf(stderr, "pictrace: frame %lld, #%d after the load: %s, %lld shown before it (settle %d), picture %08x\n",
+			(long long)machineFrame, tracedSinceLoad, rendered ? "read back" : "not read back",
+			(long long)sinceLoad, pictureSettle, pictureSum(videoBuf));
+	}
 	if (!rendered) return;
 	sinceLoad++;
 	if (machineFrame < 0 || pictures.budget() == 0) return;
@@ -1073,12 +1103,23 @@ void ce_session::afterLoad(int64_t landedOn)
 	machineFrame = landedOn;
 	sinceLoad = 0;
 	lastKept = -1;
-	if (landedOn < 0 || pictures.budget() == 0) return;
-	int32_t w = 0, h = 0;
-	if (pictures.show(landedOn, videoBuf.data(), videoBuf.size(), &w, &h))
+	tracedSinceLoad = 0;
+	const unsigned before = pictureTrace() ? pictureSum(videoBuf) : 0;
+	bool shown = false;
+	if (landedOn >= 0 && pictures.budget() != 0)
 	{
-		vidW = w;
-		vidH = h;
+		int32_t w = 0, h = 0;
+		shown = pictures.show(landedOn, videoBuf.data(), videoBuf.size(), &w, &h);
+		if (shown)
+		{
+			vidW = w;
+			vidH = h;
+		}
+	}
+	if (pictureTrace())
+	{
+		std::fprintf(stderr, "pictrace: load, on frame %lld: picture %08x before it, %s %08x\n", (long long)landedOn, before,
+			shown ? "the frame's kept picture put up," : "no kept picture, still", pictureSum(videoBuf));
 	}
 }
 

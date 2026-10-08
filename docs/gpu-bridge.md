@@ -839,3 +839,9 @@ docs/design-principles.md, chimera#190). It is on by itself for a session a
 GPU draws for, and it helps frames already seen, not frames drawn for the
 first time after an edit.
 
+How long a renderer is wrong is measured, not presumed: `chimera-run
+--settle-probe <frame>,<count>` on the card in question, with
+`--greenzone-period 1` so the load lands on the frame before. On a GTX 1060
+xemu is one frame behind after a load in one game and wrong for five frames
+in another (docs/design-principles.md, "What a real card shows").
+

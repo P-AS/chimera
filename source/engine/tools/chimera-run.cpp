@@ -40,6 +40,16 @@
  * --stop-at-seek ends the run where the seek landed, so the dumps describe
  * frame N itself rather than the end of a replay from it.
  *
+ * --settle-probe <frame>,<count>[,<tga prefix>] measures how long a renderer
+ * is wrong after a load, on the machine and the card it is run on: <count>
+ * frames from <frame> are remembered as first drawn, the kept pictures are
+ * switched off, the machine is put back on the frame before them and each is
+ * drawn again and compared, a line a frame and one for the whole. With
+ * --greenzone-period 1 the load lands on the frame before, which is the hard
+ * case - every frame that runs unseen after a load is a frame the renderer
+ * has had to recover in. The first four pairs are written as TGA files when a
+ * prefix is given.
+ *
  * --seek plays the movie to its end, seeks BACK to the given frame through
  * the greenzone, and plays to the end again - and that must not change
  * anything either.
@@ -303,6 +313,8 @@ int main(int argc, char **argv)
 	bool renderEveryFrame = false;
 	int64_t picturesMb = -1, picturesSettle = -1; /* --greenzone-pictures MiB[,settle] */
 	int64_t keptCheck = -1;                         /* --kept-pictures-check <frame> */
+	int64_t probeFrom = -1, probeCount = 0;         /* --settle-probe <frame>,<count>[,<tga prefix>] */
+	std::string probePrefix;
 	bool drawEveryFrame = false;
 	/* --rewind-loop <frame>,<times>: what re-recording actually does. A single
 	 * --seek asks whether the history holds one frame; this asks whether doing
@@ -313,6 +325,9 @@ int main(int argc, char **argv)
 	int64_t rewindTimes = 0;
 	int64_t keptFrame = -1;
 	uint64_t keptFirst = 0;
+	struct ProbePicture { int32_t w = 0, h = 0; std::vector<uint32_t> pixels; };
+	std::vector<ProbePicture> probeFirst;
+	int64_t probeFirstFrame = -1;
 	/* --greenzone-check: the machine at the seek/rewind destination, restored
 	 * through the history, must be byte-for-byte the machine the first pass had
 	 * at that frame. A full ce_session_save_state is captured there on the way
@@ -395,6 +410,20 @@ int main(int argc, char **argv)
 			if (comma != std::string::npos) picturesSettle = std::atoll(spec.substr(comma + 1).c_str());
 		}
 		else if (arg == "--kept-pictures-check" && i + 1 < argc) { keptCheck = std::atoll(argv[++i]); renderEveryFrame = true; }
+		else if (arg == "--settle-probe" && i + 1 < argc)
+		{
+			/* how long a renderer is wrong after a load, measured: <count> frames
+			 * from <frame> are remembered as they were first drawn, the machine
+			 * is put back before them, and each is drawn again and compared */
+			const std::string spec = argv[++i];
+			const auto c1 = spec.find(',');
+			if (c1 == std::string::npos) return fail(metaPath, "--settle-probe wants <frame>,<count>[,<tga prefix>]");
+			const auto c2 = spec.find(',', c1 + 1);
+			probeFrom = std::atoll(spec.substr(0, c1).c_str());
+			probeCount = std::atoll(spec.substr(c1 + 1, c2 == std::string::npos ? c2 : c2 - c1 - 1).c_str());
+			if (c2 != std::string::npos) probePrefix = spec.substr(c2 + 1);
+			renderEveryFrame = true;
+		}
 		else if (arg == "--rates" && i + 1 < argc) { ratesPath = argv[++i]; renderEveryFrame = true; }
 		else if (arg == "--draw-every-frame") drawEveryFrame = true;
 		else if (arg == "--greenzone-check") greenzoneCheck = true;
@@ -769,7 +798,7 @@ int main(int argc, char **argv)
 	/* --rewind-loop needs the history too: it seeks back through it, and a run
 	 * without one fails at the first pass with "no stored state at or before
 	 * the target frame". */
-	if (seekFrame >= 0 || rewindTo >= 0 || keptCheck >= 0 || !historyIn.empty() || !historyOut.empty() || !greenzoneMap.empty()
+	if (seekFrame >= 0 || rewindTo >= 0 || keptCheck >= 0 || probeFrom >= 0 || !historyIn.empty() || !historyOut.empty() || !greenzoneMap.empty()
 		|| greenzoneBytes > 0 || greenzonePeriod >= 0)
 	{
 		/* Bands before enabling: enabling captures the anchor, and the anchor
@@ -943,6 +972,16 @@ int main(int argc, char **argv)
 		{
 			keptFrame = ce_session_frame(session);
 			keptFirst = pictureHash(session);
+		}
+		if (probeFrom >= 0 && i >= probeFrom && i < probeFrom + probeCount)
+		{
+			if (i == probeFrom) probeFirstFrame = ce_session_frame(session);
+			ProbePicture pic;
+			pic.w = ce_session_video_width(session);
+			pic.h = ce_session_video_height(session);
+			const uint32_t *v = ce_session_video(session);
+			pic.pixels.assign(v, v + static_cast<size_t>(pic.w) * static_cast<size_t>(pic.h));
+			probeFirst.push_back(std::move(pic));
 		}
 		if (shot != shots.end()
 			&& !writeTga(shot->second, ce_session_video(session),
@@ -1127,6 +1166,54 @@ int main(int argc, char **argv)
 			if (ce_session_seek(session, frames) != 0) return fail(metaPath, ce_session_last_error(session));
 			if (ce_session_frame(session) != frames) return fail(metaPath, "replay landed on the wrong frame");
 		}
+	}
+
+	/* --settle-probe: how many frames a renderer draws wrong after a load, on
+	 * this machine and this core. The kept pictures are switched off for it -
+	 * this is the core's own picture - the machine is put back on the frame
+	 * before the remembered ones (a restore, and whatever replay the greenzone's
+	 * spacing makes necessary, undrawn), and each is drawn again and compared
+	 * with what it was the first time: how many pixels differ at all, how many
+	 * by more than 8 in a channel, and the largest difference. */
+	if (probeFrom >= 0)
+	{
+		if (probeFirstFrame < 1 || probeFirst.empty()) return fail(metaPath, "--settle-probe: the movie never reached that frame");
+		ce_session_greenzone_pictures(session, 0, -1);
+		if (ce_session_seek(session, probeFirstFrame - 1) != 0) return fail(metaPath, ce_session_last_error(session));
+		int64_t lastWrong = -1;
+		for (size_t k = 0; k < probeFirst.size(); k++)
+		{
+			if (ce_session_movie_advance(session, 0, nullptr, 1) < 0) return fail(metaPath, ce_session_last_error(session));
+			const ProbePicture &first = probeFirst[k];
+			const int32_t w = ce_session_video_width(session), h = ce_session_video_height(session);
+			const uint32_t *now = ce_session_video(session);
+			size_t differ = 0, apart = 0;
+			int largest = 0;
+			if (w != first.w || h != first.h) { differ = apart = first.pixels.size(); largest = 255; }
+			else
+				for (size_t px = 0; px < first.pixels.size(); px++)
+				{
+					if (now[px] == first.pixels[px]) continue;
+					differ++;
+					int most = 0;
+					for (int c = 0; c < 24; c += 8)
+						most = std::max(most, std::abs(int(now[px] >> c & 255) - int(first.pixels[px] >> c & 255)));
+					if (most > 8) apart++;
+					largest = std::max(largest, most);
+				}
+			const double total = first.pixels.empty() ? 1.0 : double(first.pixels.size());
+			std::printf("settle-probe: frame %lld, drawn #%zu after the load: %.2f%% of pixels differ, %.2f%% by more than 8 (largest %d), %dx%d\n",
+				(long long)(probeFirstFrame + (int64_t)k), k + 1, 100.0 * double(differ) / total, 100.0 * double(apart) / total, largest, w, h);
+			if (apart * 1000 > first.pixels.size()) lastWrong = (int64_t)k;
+			if (!probePrefix.empty() && k < 4)
+			{
+				writeTga(probePrefix + "-first-" + std::to_string(k + 1) + ".tga", first.pixels.data(), first.w, first.h);
+				writeTga(probePrefix + "-after-" + std::to_string(k + 1) + ".tga", now, w, h);
+			}
+		}
+		std::printf("settle-probe: %s\n", lastWrong < 0
+			? "every frame drawn after the load is the picture it was (within 0.1% of pixels)"
+			: (std::string("the picture is wrong up to drawn frame #") + std::to_string(lastWrong + 1) + " after the load, of " + std::to_string(probeFirst.size()) + " drawn").c_str());
 	}
 
 	/* --kept-pictures-check: the picture a frame shows when the machine is put

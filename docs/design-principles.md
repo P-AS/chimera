@@ -5250,3 +5250,58 @@ effect on the card and the core it was asked for (xemu on an NVIDIA card),
 and whether 3 frames is enough for it to recover there - llvmpipe never
 draws wrong after a load, so this machine cannot show it.
 
+### What a real card shows (measured 2026-10-08)
+
+That last sentence was wrong about the machine: its Windows side has a GTX
+1060, and the user pointed at it ("can you not use my 1060"). Measured there
+with xemu, the core of the report, two ways: the headless runner with
+`--settle-probe` and a state on every frame, so that a load lands on the
+frame before the ones compared; and the published frontend with TAStudio
+driven by a script, every screenshot compared with the picture the same frame
+had when nothing had been loaded.
+
+- **Soulcalibur II, its demonstration fight (a new picture every frame).**
+  The first frame drawn after a load shows the picture of the frame the load
+  landed on - the previous frame's, bit for bit, not garbage. From the second
+  frame on every picture is identical to the first pass.
+- **Prince of Persia: The Sands of Time, its pause screen.** Five frames
+  after a load are wrong - first what RAM last held at that address
+  (leftovers of the boot logo), then black - and the sixth is right, bit for
+  bit.
+- **After a seek** (50 and 110 frames run unseen between the load and the
+  first frame shown) the first picture shown is right in both games. xemu has
+  no way to be told not to draw, so its renderer recovers by frames RUN,
+  seen or not.
+- **TAStudio, window at 3 (the default), frames already seen:** going back a
+  frame at a time shows the right picture every time (7 of 7). With the
+  window at 0 the same steps show the previous frame's picture whenever the
+  load landed exactly one frame before (3 of 3), and the right one when two
+  frames ran (3 of 3).
+- **An input changed one frame behind the cursor:** the frame after the edit
+  has no kept picture and shows the one of the frame before it. The change is
+  not on the screen until one more frame is run.
+
+Why, in xemu: what the GPU drew is not in the state. Under TCG a surface is
+written into the machine's RAM only when the processor reads it; upstream
+writes them all out before its own savestates (`pre_savevm`), and a sandbox
+snapshot runs no such hook (the same gap as chimera#43). A load throws the GL
+objects away and what was drawn and not yet read goes with them: the buffer
+about to be flipped in the first game, a chain of them in the second. With no
+surface to scan out, the picture handed over is the VGA view of RAM, and that
+is taken at the START of the frame.
+
+Two things this says about what was built, neither decided yet:
+
+- 3 frames covers the first game and not the second.
+- The rule keeps a picture read back past the settle, in place of the one
+  the frame had. In the second game frames 4 and 5 after a load are past a
+  settle of 3 and still wrong, so the wrong picture replaces the right one
+  and is shown from then on. A settle long enough for that game is longer
+  than the user allowed; the remedy that needs no window is for the state to
+  hold what the GPU drew.
+
+The instruments stay: `chimera-run --settle-probe` (witness leg
+E:settle-probe holds it to a renderer whose answer is known) and
+`CHIMERA_PICTURE_TRACE=1`, which prints the picture's sum at every load and
+for the eight frames after it - two frames with one sum are one picture.
+
