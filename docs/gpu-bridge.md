@@ -841,7 +841,15 @@ first time after an edit.
 
 How long a renderer is wrong is measured, not presumed: `chimera-run
 --settle-probe <frame>,<count>` on the card in question, with
-`--greenzone-period 1` so the load lands on the frame before. On a GTX 1060
-xemu is one frame behind after a load in one game and wrong for five frames
-in another (docs/design-principles.md, "What a real card shows").
+`--greenzone-period 1 --greenzone-max-stride 1` so the load lands on the
+frame before. On a GTX 1060 xemu was one frame behind after a load in one
+game and wrong for five frames in another (docs/design-principles.md, "What
+a real card shows").
+
+That was not the renderer being slow. What it had drawn was not in the state:
+a core whose GPU surfaces reach the machine's memory only when the machine
+reads them is told before a state is taken, through the optional
+`StateSaving()` export, and writes them out then (docs/porting-a-core.md;
+docs/design-principles.md, "A core is told before a state is taken of it").
+xemu does, and its first frame after a load is the frame's own picture.
 

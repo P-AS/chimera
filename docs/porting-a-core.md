@@ -298,6 +298,21 @@ Probed once after `Init`; absent exports simply mean the tool is not offered.
   flushes it. Nothing a state needs may live there - only what the machine can
   rebuild from its own memory - or a state loaded in another session runs on
   a cache of the wrong machine.
+- **`StateSaving()`** - the other end: told before every state the engine
+  takes of the machine - a greenzone capture, a savestate, a branch's state
+  file - with the machine stopped between frames, and not for a frame the
+  history decides not to store. For a core part of whose machine is somewhere
+  a state does not reach until it is brought back. xemu is the case: its GPU
+  draws into surfaces that live in the driver, and writes one into the
+  console's RAM only when the processor reads it, so a state taken without
+  this held the RAM of a machine whose screen was elsewhere and a load lost
+  what had been drawn (chimera#190). What the export writes is in the state
+  that follows, and in the delta. It may draw on the GPU bridge to do it; the
+  engine gives the context back afterwards as it does after a frame. It must
+  leave the machine one the guest cannot tell apart from the one it would
+  have been untold - whether a state is taken is the frontend's business,
+  and a movie has to play the same with a greenzone and without.
+  `CHIMERA_NO_STATE_SAVING=1` leaves every core untold, for measuring.
 - **`SuggestSettings()`** - what the core would choose for a game before one
   boots, declared with `"suggestSettings": true` in `waterbox.config` so the
   frontend never loads a core that has nothing to say. It is called INSTEAD of

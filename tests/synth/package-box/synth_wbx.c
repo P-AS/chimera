@@ -97,12 +97,34 @@ ECL_EXPORT void StateLoaded(void)
 	g_garbleLeft = g_garbleFor;
 }
 
+/* --- told before a state is taken (StateSaving; chimera#190) ---
+ * A core part of whose machine is somewhere a state does not reach - xemu's
+ * surfaces, which live in the GPU driver until the processor reads them -
+ * brings it into the machine when told a state is about to be taken. The
+ * synth has no such part, so it keeps a note instead: the number of frames it
+ * had run the last time it was told, in memory a state carries, as a renderer
+ * would write a surface into the console's RAM. The witness (leg
+ * E:state-saving) reads it back through the Mailbox with the two counts
+ * beside it and asks what matters: a state that is restored holds the note of
+ * ITS OWN frame - so the core was told before the state was read, and what it
+ * wrote went into the delta - and a frame that was not stored was not told. */
+static uint32_t g_framesRun;           /* in a state, like the machine */
+static uint32_t g_toldAt;              /* in a state: frames run when last told */
+ECL_INVISIBLE static uint32_t g_told;  /* times told this session: in no state */
+
+ECL_EXPORT void StateSaving(void)
+{
+	g_told++;
+	g_toldAt = g_framesRun;
+}
+
 ECL_EXPORT void FrameAdvance(uint64_t pad) {
 	/* frames DRAWN, not frames run: a renderer rebuilds what a load threw away
 	 * by drawing, so one told not to draw through a seek is as wrong on the
 	 * first frame it draws afterwards as it would have been at once */
 	g_garbleNow = g_render && g_garbleLeft > 0;
 	if (g_garbleNow) g_garbleLeft--;
+	g_framesRun++;
 	if ((uint8_t)pad == 0xFF) {
 		fprintf(stderr, "synth: all eight buttons at once - stopping on purpose\n");
 		abort();
@@ -150,7 +172,8 @@ ECL_EXPORT uint32_t *GetVideoBgra(void)
  * no place of its own (chimera#218). It is HIDDEN (GetMemoryDomainHidden) -
  * the engine reads properties through it, and no memory tool lists it. It
  * lives in memory that is in no state, and holds the four letters the Letter
- * property reads. */
+ * property reads, followed by the three numbers of the StateSaving note
+ * (above), filled in whenever it is asked for. */
 #define MD_COUNT 3
 static const char *const md_names[MD_COUNT] = { "RAM", "VRAM", "Mailbox" };
 ECL_INVISIBLE static uint8_t g_mailbox[16];
@@ -162,7 +185,14 @@ ECL_EXPORT const char *GetMemoryDomainName(int i) { return (i >= 0 && i < MD_COU
 ECL_EXPORT uint8_t *GetMemoryDomainPtr(int i) {
 	if (i == 0) return synth_get_ram(g_synth);
 	if (i == 1) return (uint8_t *)synth_get_framebuffer(g_synth);
-	if (i == 2) { memcpy(g_mailbox, "MAIL", 4); return g_mailbox; }
+	if (i == 2) {
+		/* the four letters, then the StateSaving note: when last told, frames run, times told */
+		memcpy(g_mailbox, "MAIL", 4);
+		memcpy(g_mailbox + 4, &g_toldAt, 4);
+		memcpy(g_mailbox + 8, &g_framesRun, 4);
+		memcpy(g_mailbox + 12, &g_told, 4);
+		return g_mailbox;
+	}
 	return 0;
 }
 

@@ -96,6 +96,13 @@ public:
 	/* budget 0 disables and drops everything. */
 	void configure(const HostApi *host, void *obj, uint64_t budgetBytes);
 
+	/* Called before the history reads the machine to store it - a delta, an
+	 * anchor, a digest - and not for a frame it decides to skip. The session
+	 * passes its "a state is about to be taken" on (ce_session::stateSaving);
+	 * what that changes in the machine is in the state that follows, and in
+	 * the delta, which is read after it. */
+	void beforeState(std::function<void()> fn) { m_beforeState = std::move(fn); }
+
 	/* What the spill file may weigh, or 0 for no limit.
 	 *
 	 * The memory budget is met by MOVING bytes to disk, so on its own it bounds
@@ -711,6 +718,7 @@ private:
 	uint64_t m_verifyBookkeeping = 0;
 	std::vector<uint8_t> m_verifyInvisible;   /* the pages a state never carries, asked of the host once */
 	MachineDigest machineDigest(bool &ok);
+	std::function<void()> m_beforeState;
 	void verifyStored(int64_t frame);
 	void verifyRestored(int64_t frame, int64_t anchorFrame, int64_t steps, bool spilled);
 

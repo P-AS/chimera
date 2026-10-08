@@ -469,6 +469,16 @@ struct ce_session
 	 * memory) and has to throw it away when the memory it was derived from is
 	 * replaced. Called with the machine stopped, before it runs again. */
 	void (*stateLoaded)(void) = nullptr;
+	/* Optional, the other end: told BEFORE every state the engine takes of the
+	 * machine - a greenzone capture, a savestate, a branch's state file. For a
+	 * core part of whose machine is somewhere a state does not reach until it
+	 * is brought back: xemu's GPU draws into surfaces that live in the driver,
+	 * and writes one into the console's RAM only when the processor reads it,
+	 * so a state taken without this holds the RAM of a machine whose screen is
+	 * elsewhere, and a load loses what was drawn (chimera#190). Called with the
+	 * machine stopped between frames; what it writes is in the state. */
+	void (*stateSavingExport)(void) = nullptr;
+	void stateSaving();
 	std::vector<uint8_t> buttonActive;
 	std::vector<uint8_t> axisActive;
 	void buildControlActivity();
@@ -767,6 +777,8 @@ void ce_session::probeOptionalGroups()
 	isButtonActive = reinterpret_cast<int32_t (*)(int32_t)>(opt("IsButtonActive", 1));
 	isAxisActive = reinterpret_cast<int32_t (*)(int32_t)>(opt("IsAxisActive", 1));
 	stateLoaded = reinterpret_cast<void (*)(void)>(opt("StateLoaded", 0));
+	stateSavingExport = reinterpret_cast<void (*)(void)>(opt("StateSaving", 0));
+	history.beforeState([this] { stateSaving(); });
 
 	// surfaces: all five or nothing
 	{
@@ -1121,6 +1133,26 @@ void ce_session::afterLoad(int64_t landedOn)
 		std::fprintf(stderr, "pictrace: load, on frame %lld: picture %08x before it, %s %08x\n", (long long)landedOn, before,
 			shown ? "the frame's kept picture put up," : "no kept picture, still", pictureSum(videoBuf));
 	}
+}
+
+/* A state is about to be taken. The core may draw on the bridge to answer -
+ * a renderer reading back what it drew does - and it does so outside a frame,
+ * so the context it borrowed is given back here as a frame's is.
+ *
+ * CHIMERA_NO_STATE_SAVING=1 leaves the core untold: the machine as it was
+ * before the export existed, which is the control for what the export buys
+ * (the picture after a load) and for what it costs (a capture's time). */
+static bool stateSavingOff()
+{
+	static const bool off = std::getenv("CHIMERA_NO_STATE_SAVING") != nullptr;
+	return off;
+}
+
+void ce_session::stateSaving()
+{
+	if (stateSavingExport == nullptr || guestDied() || stateSavingOff()) return;
+	stateSavingExport();
+	ce_gl_release();
 }
 
 void ce_session::wantRendering(int32_t on)
@@ -2011,6 +2043,7 @@ const uint8_t *ce_session_save_state(ce_session *s, uint64_t *len_out)
 	s->error.clear();
 	s->stateBuf.clear();
 	chimera::WbxReturn r{};
+	s->stateSaving();
 	/* no deactivate/activate bracket: the host activates itself for the
 	 * duration - bracketing costs four full guest-address-space remaps per
 	 * state, which at rewind's one state per frame was a 10x slowdown */
@@ -2219,6 +2252,7 @@ int32_t ce_session_state_save_file(ce_session *s, const char *utf8_path, const u
 
 	StateFileSink sink{ &out, z, zcs, std::vector<uint8_t>(STATE_FILE_CHUNK), s->stateFileRawBytes };
 	chimera::WbxReturn r{};
+	s->stateSaving();
 	s->host->wbx_save_state(s->obj, stateFileWrite, reinterpret_cast<uintptr_t>(&sink), &r); // see ce_session_save_state re: no bracket
 	const bool flushed = sink.feed(nullptr, 0, 2) || zcs == nullptr;
 	if (zcs != nullptr) z->freeCStream(zcs);

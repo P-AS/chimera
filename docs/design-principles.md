@@ -5290,7 +5290,8 @@ about to be flipped in the first game, a chain of them in the second. With no
 surface to scan out, the picture handed over is the VGA view of RAM, and that
 is taken at the START of the frame.
 
-Two things this says about what was built, neither decided yet:
+Two things this says about what was built (the user's answer follows in the
+next section):
 
 - 3 frames covers the first game and not the second.
 - The rule keeps a picture read back past the settle, in place of the one
@@ -5304,4 +5305,62 @@ The instruments stay: `chimera-run --settle-probe` (witness leg
 E:settle-probe holds it to a renderer whose answer is known) and
 `CHIMERA_PICTURE_TRACE=1`, which prints the picture's sum at every load and
 for the eight frames after it - two frames with one sum are one picture.
+
+## A core is told before a state is taken of it (user-decided, 2026-10-08; chimera#190)
+
+Put the three ways out - fix it in the core, lengthen the window, leave it -
+the user chose: "fix it in the xemu core". A window hides a wrong picture
+behind an old one; the wrong picture was there because the state was not the
+whole machine.
+
+**The engine** has a second optional export beside `StateLoaded`:
+`StateSaving`, called before every state it takes - a greenzone capture, a
+savestate, a branch's state file - and not for a frame the history decides
+not to store. The history calls it at the point where a frame is certain to
+be stored, before the delta or the anchor is read, so what the core writes is
+in that state; the context it may have borrowed from the GPU bridge is given
+back as after a frame. `CHIMERA_NO_STATE_SAVING=1` leaves cores untold, which
+is the control every measurement below used.
+
+**xemu** answers it by writing the surfaces its GPU has drawn into the
+console's RAM (its patch 0019; the same thing upstream does before its own
+savestates). A load already rebuilt every GL object from RAM; now RAM has
+them.
+
+Measured, same instruments as above:
+
+- Boot animation through llvmpipe: the first frame after a load was black;
+  now all six compared are exact. Untold, black again.
+- Soulcalibur II on the GTX 1060: the first frame after a load is exact
+  (untold: 90% of its pixels differ). Through the published frontend with
+  TAStudio and the kept pictures switched off (window 0), every picture is
+  right - going back a frame at a time, and the frame after an input changed
+  behind the cursor, which showed the frame before it.
+- Prince of Persia on the GTX 1060: untold, five frames of leftovers and
+  black; told, frames 1, 3 and 5 on are exact and frames 2 and 4 differ
+  faintly - most of their pixels by one level, half a percent by more than 8,
+  none by more than 22. A render target the load threw away comes back as a
+  texture read from RAM, and that is not sampled quite as the surface was;
+  upstream's own loadvm does the same. Nobody could see it; it is written
+  here because "exact" would be untrue.
+- The machine does not notice. 300 frames told at every frame, at every
+  seventh and only at the end leave the same 64 MiB of RAM and the same
+  picture, byte for byte; untold, 9.6 MiB of that RAM is different - what the
+  GPU drew, missing.
+- It costs a capture about 5.6 ms on that card (640x480, colour and depth).
+  The history weighs what a capture costs against a frame, so a run does not
+  slow down - 2500 frames in 68 s told, 70 to 84 s untold, 52 s with no
+  history - and stores a state every 4 frames of the 3D part where it stored
+  one every 1 or 2.
+
+What this leaves of the kept pictures: for xemu, nothing to hide. They stay
+for every core a GPU draws for, with the 3-frame window, and what the other
+cores do after a load on a real card has not been measured.
+
+Witness leg E:state-saving holds the engine to it on the synthetic core,
+which notes the frame it was last told on in memory a state carries: never
+told without a history, 71 times with a state on every frame and 15 with one
+in five, and back on frame 32 from the state of frame 30 the note says 30 -
+told before the state was read. xemu's gate has gl:picture-after-load, with
+the untold run as its control.
 

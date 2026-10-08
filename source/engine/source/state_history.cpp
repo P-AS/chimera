@@ -1590,6 +1590,7 @@ StateHistory::MachineDigest StateHistory::machineDigest(bool &ok)
 	MachineDigest d;
 	if (m_host == nullptr || m_host->wbx_save_state == nullptr) return d;
 	finishPlan();
+	if (m_beforeState) m_beforeState();
 	Bytes bytes;
 	if (m_lastAnchorBytes != 0) bytes.reserve(m_lastAnchorBytes);
 	ByteSink sink{ &bytes };
@@ -1774,6 +1775,12 @@ void StateHistory::captureOnce(int64_t frame, const uint8_t *note, size_t noteLe
 	}
 
 	const double tCapture0 = nowSeconds();
+
+	/* This frame is stored, so the core is told before any of it is read: what
+	 * it brings into the machine now (xemu, the surfaces its GPU drew) is in
+	 * the pages the delta or the anchor below is made of. Inside the timing,
+	 * because it is part of what storing a frame costs. */
+	if (m_beforeState) m_beforeState();
 
 	/* Room for the delta before it is written, not while.
 	 *

@@ -335,8 +335,12 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 				--settings "{\"garbleAfterLoad\":$1}" --greenzone-pictures "$2" --kept-pictures-check 40 2>/dev/null | grep '^kept-pictures'
 		}
+		# The two runs that COUNT pictures pack them inline (CHIMERA_HELPERS=0):
+		# the helper drops a picture when it is three behind, which is right
+		# and depends on what else the machine is doing - a build running
+		# beside this once left 63 of the 70.
 		kept 5 0 > "$work/kept.off"
-		kept 5 64,8 > "$work/kept.on"
+		( export CHIMERA_HELPERS=0; kept 5 64,8 ) > "$work/kept.on"
 		kept 0 64,8 > "$work/kept.healthy"
 		# ...and the settle counts frames SHOWN, not frames run: with a state
 		# only every 50 frames, going back to frame 41 replays 40 frames nobody
@@ -344,7 +348,7 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 		# the frame it then draws as it would have been at once. That frame
 		# still shows the picture it had, and past an edit the wrong one is
 		# still not kept (the count before the replay is the count after).
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+		CHIMERA_HELPERS=0 "$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 			--settings '{"garbleAfterLoad":5}' --greenzone-period 50 --greenzone-pictures 64,8 --kept-pictures-check 40 2>/dev/null \
 			| grep '^kept-pictures' > "$work/kept.far"
 		farKept="$(sed -n 's/.*after an edit before frame 41: \([0-9]*\) kept before the replay, \([0-9]*\) after it.*/\1 \2/p' "$work/kept.far")"
@@ -384,6 +388,40 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 			report "E:settle-probe" PASS "a renderer wrong for 5 drawn frames after a load, for 2 and for none is measured as exactly that, and the picture trace names the load and the frame after it"
 		else
 			report "E:settle-probe" FAIL "$(cat "$work/probe.5" "$work/probe.2" "$work/probe.0" 2>/dev/null | grep -m1 '^settle-probe' | cut -c1-120) (see work/probe.*)"
+		fi
+
+		# StateSaving, the export a core is told with BEFORE every state the
+		# engine takes of it (engine: ce_session::stateSaving; chimera#190 -
+		# xemu writes the surfaces its GPU drew into the console's RAM there,
+		# and without it a load loses them). The synth notes the frame it was
+		# last told on in memory a state carries, and hands that out through
+		# its Mailbox with the frames it has run and the times it was told:
+		#   - a machine nobody stores is never told (0 times in 70 frames);
+		#   - a frame is told when it is STORED and not otherwise: 71 times
+		#     with a state on every frame (the anchor and 70), 15 with one in
+		#     five;
+		#   - back on frame 32 from the state of frame 30, the note says 30:
+		#     the state holds the note of its own frame, so the core was told
+		#     before the state was read and what it wrote is in the delta (told
+		#     after, it would say 25);
+		#   - and with CHIMERA_NO_STATE_SAVING=1, the control the measurements
+		#     use, it is never told at all.
+		told() { # name, then chimera-run's arguments -> "told-at frames-run times-told"
+			tname="$1"; shift
+			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+				--dump "Mailbox=$work/told.$tname.bin" "$@" > "$work/told.$tname.log" 2>&1
+			od -A n -t u4 -j 4 "$work/told.$tname.bin" 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//'
+		}
+		toldNone="$(told none)"
+		toldEvery="$(told every --greenzone-period 1 --greenzone-max-stride 1)"
+		toldFifth="$(told fifth --greenzone-period 5)"
+		toldBack="$(told back --greenzone-period 5 --seek 32 --stop-at-seek)"
+		toldOff="$(export CHIMERA_NO_STATE_SAVING=1; told off --greenzone-period 5 --seek 32 --stop-at-seek)"
+		if [ "$toldNone" = "0 70 0" ] && [ "$toldEvery" = "70 70 71" ] && [ "$toldFifth" = "70 70 15" ] \
+			&& [ "$toldBack" = "30 32 15" ] && [ "$toldOff" = "0 32 0" ]; then
+			report "E:state-saving" PASS "a core is told before each state taken of it and for no frame that is not stored (71 times at every frame, 15 at one in five, never without a history), and a restored state holds what it wrote then"
+		else
+			report "E:state-saving" FAIL "told-at/frames/times: none '$toldNone' every '$toldEvery' fifth '$toldFifth' back '$toldBack' off '$toldOff' (see work/told.*)"
 		fi
 
 		# a DYNAMIC property table (engine.h; chimera#216): with its
