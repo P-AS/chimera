@@ -37,70 +37,44 @@ Chimera does not include cores and does not download them. To use a core, downlo
 
 ### Emulation cores
 
-| System | Core |
+| Core | Systems |
 | --- | --- |
-| Nintendo Entertainment System / Famicom | [quickerNES](https://github.com/ToolAssisted-run/chimera-core-quickernes), [QuickerNesHawk](https://github.com/ToolAssisted-run/chimera-core-neshawk), [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Famicom Disk System | [QuickerNesHawk](https://github.com/ToolAssisted-run/chimera-core-neshawk) |
-| Super Nintendo | [Snes9x](https://github.com/ToolAssisted-run/chimera-core-snes9x), [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Satellaview | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Nintendo 64 | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| GameCube | [Dolphin](https://github.com/ToolAssisted-run/chimera-core-dolphin) |
-| Wii | [Dolphin](https://github.com/ToolAssisted-run/chimera-core-dolphin) |
-| Game Boy / Game Boy Color | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Game Boy Advance | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Nintendo 3DS / New Nintendo 3DS | [Azahar](https://github.com/ToolAssisted-run/chimera-core-azahar) |
-| Mega Drive / Genesis | [Genesis Plus GX](https://github.com/ToolAssisted-run/chimera-core-gpgx), [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Mega Drive 32X | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Sega CD / Mega CD | [Genesis Plus GX](https://github.com/ToolAssisted-run/chimera-core-gpgx), [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Sega CD 32X | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Master System | [Genesis Plus GX](https://github.com/ToolAssisted-run/chimera-core-gpgx), [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Game Gear | [Genesis Plus GX](https://github.com/ToolAssisted-run/chimera-core-gpgx), [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| SG-1000 | [Genesis Plus GX](https://github.com/ToolAssisted-run/chimera-core-gpgx), [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Dreamcast | [Flycast](https://github.com/ToolAssisted-run/chimera-core-flycast) |
-| Sega NAOMI / NAOMI 2 (arcade) | [Flycast](https://github.com/ToolAssisted-run/chimera-core-flycast) |
-| Sammy Atomiswave (arcade) | [Flycast](https://github.com/ToolAssisted-run/chimera-core-flycast) |
-| Capcom CPS-1 / CPS-2 / CPS-3 (arcade) | [FBNeo](https://github.com/ToolAssisted-run/chimera-core-fbneo) |
-| Neo Geo MVS (arcade) | [FBNeo](https://github.com/ToolAssisted-run/chimera-core-fbneo) |
-| Neo Geo CD | [FBNeo](https://github.com/ToolAssisted-run/chimera-core-fbneo) |
-| Sega System 16 (arcade) | [FBNeo](https://github.com/ToolAssisted-run/chimera-core-fbneo) |
-| PlayStation | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| PlayStation 2 | [PCSX2](https://github.com/ToolAssisted-run/chimera-core-pcsx2) |
-| PlayStation Portable | [PPSSPP](https://github.com/ToolAssisted-run/chimera-core-ppsspp) |
-| PlayStation Vita | [Vita3K](https://github.com/ToolAssisted-run/chimera-core-vita3k) |
-| PlayStation 3 | [RPCS3](https://github.com/ToolAssisted-run/chimera-core-rpcs3) |
-| Xbox | [xemu](https://github.com/ToolAssisted-run/chimera-core-xemu) |
-| 3DO Interactive Multiplayer | [Opera](https://github.com/ToolAssisted-run/chimera-core-opera) |
-| Atari 2600 | [Stella](https://github.com/ToolAssisted-run/chimera-core-stella), [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Atari 5200 | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| ColecoVision | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| MSX / MSX2 | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| PC Engine / TurboGrafx-16 / SuperGrafx | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| PC Engine CD / TurboDuo | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Neo Geo AES | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Neo Geo Pocket / Color | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| WonderSwan / WonderSwan Color | [ares](https://github.com/ToolAssisted-run/chimera-core-ares) |
-| Apple II / II Plus / IIe (and the Pravets, TK3000 and Base64A clones) | [AppleWin](https://github.com/ToolAssisted-run/chimera-core-applewin) |
-| Sharp X68000 | [MAME X68000](https://github.com/ToolAssisted-run/chimera-core-x68k) |
-| MS-DOS | [DOSBox-X](https://github.com/ToolAssisted-run/chimera-core-dosbox-x), [PCem](https://github.com/ToolAssisted-run/chimera-core-pcem) |
-| Windows 3.1 / 95 / 98 | [DOSBox-X](https://github.com/ToolAssisted-run/chimera-core-dosbox-x), [PCem](https://github.com/ToolAssisted-run/chimera-core-pcem) |
-| Windows XP | [PCem](https://github.com/ToolAssisted-run/chimera-core-pcem) |
-| Linux (x86) | [PCem](https://github.com/ToolAssisted-run/chimera-core-pcem) |
-| Flash | [Ruffle](https://github.com/ToolAssisted-run/chimera-core-ruffle) |
-| Symbian / Nokia N-Gage | [EKA2L1](https://github.com/ToolAssisted-run/chimera-core-eka2l1) |
-| iPhone OS 2.x-4.0 (iPhone, iPod touch and iPad apps) | [touchHLE](https://github.com/ToolAssisted-run/chimera-core-touchhle) |
+| [quickerNES](https://github.com/ToolAssisted-run/chimera-core-quickernes) | Nintendo Entertainment System / Famicom |
+| [QuickerNesHawk](https://github.com/ToolAssisted-run/chimera-core-neshawk) | Nintendo Entertainment System / Famicom, Famicom Disk System |
+| [ares](https://github.com/ToolAssisted-run/chimera-core-ares) | Nintendo Entertainment System / Famicom, Super Nintendo, Satellaview, Nintendo 64, Game Boy / Game Boy Color, Game Boy Advance, Mega Drive / Genesis, Mega Drive 32X, Sega CD / Mega CD, Sega CD 32X, Master System, Game Gear, SG-1000, PlayStation, Atari 2600, Atari 5200, ColecoVision, MSX / MSX2, PC Engine / TurboGrafx-16 / SuperGrafx, PC Engine CD / TurboDuo, Neo Geo AES, Neo Geo Pocket / Color, WonderSwan / WonderSwan Color |
+| [Snes9x](https://github.com/ToolAssisted-run/chimera-core-snes9x) | Super Nintendo |
+| [Dolphin](https://github.com/ToolAssisted-run/chimera-core-dolphin) | GameCube, Wii |
+| [Azahar](https://github.com/ToolAssisted-run/chimera-core-azahar) | Nintendo 3DS / New Nintendo 3DS |
+| [Genesis Plus GX](https://github.com/ToolAssisted-run/chimera-core-gpgx) | Mega Drive / Genesis, Sega CD / Mega CD, Master System, Game Gear, SG-1000 |
+| [Flycast](https://github.com/ToolAssisted-run/chimera-core-flycast) | Dreamcast, Sega NAOMI / NAOMI 2 (arcade), Sammy Atomiswave (arcade) |
+| [FBNeo](https://github.com/ToolAssisted-run/chimera-core-fbneo) | Capcom CPS-1 / CPS-2 / CPS-3 (arcade), Neo Geo MVS (arcade), Neo Geo CD, Sega System 16 (arcade) |
+| [PCSX2](https://github.com/ToolAssisted-run/chimera-core-pcsx2) | PlayStation 2 |
+| [PPSSPP](https://github.com/ToolAssisted-run/chimera-core-ppsspp) | PlayStation Portable |
+| [Vita3K](https://github.com/ToolAssisted-run/chimera-core-vita3k) | PlayStation Vita |
+| [RPCS3](https://github.com/ToolAssisted-run/chimera-core-rpcs3) | PlayStation 3 |
+| [xemu](https://github.com/ToolAssisted-run/chimera-core-xemu) | Xbox |
+| [Opera](https://github.com/ToolAssisted-run/chimera-core-opera) | 3DO Interactive Multiplayer |
+| [Stella](https://github.com/ToolAssisted-run/chimera-core-stella) | Atari 2600 |
+| [AppleWin](https://github.com/ToolAssisted-run/chimera-core-applewin) | Apple II / II Plus / IIe (and the Pravets, TK3000 and Base64A clones) |
+| [MAME X68000](https://github.com/ToolAssisted-run/chimera-core-x68k) | Sharp X68000 |
+| [DOSBox-X](https://github.com/ToolAssisted-run/chimera-core-dosbox-x) | MS-DOS, Windows 3.1 / 95 / 98 |
+| [PCem](https://github.com/ToolAssisted-run/chimera-core-pcem) | MS-DOS, Windows 3.1 / 95 / 98, Windows XP, Linux (x86) |
+| [Ruffle](https://github.com/ToolAssisted-run/chimera-core-ruffle) | Flash |
+| [EKA2L1](https://github.com/ToolAssisted-run/chimera-core-eka2l1) | Symbian / Nokia N-Gage |
+| [touchHLE](https://github.com/ToolAssisted-run/chimera-core-touchhle) | iPhone OS 2.x-4.0 (iPhone, iPod touch and iPad apps) |
 
 ### Game cores
 
 One game each, run from the game's own files ([docs/game-cores.md](docs/game-cores.md)).
 
-| Game | Core |
+| Core | Games |
 | --- | --- |
-| Prince of Persia (DOS) | [SDLPoP](https://github.com/ToolAssisted-run/chimera-core-sdlpop) |
-| Prince of Persia 2: The Shadow and the Flame (DOS) | [SDLPoP2](https://github.com/ToolAssisted-run/chimera-core-sdlpop2) |
-| Sword of the Samurai (DOS) | [OpenSamurai](https://github.com/ToolAssisted-run/chimera-core-opensamurai) |
-| Syndicate (DOS) | [SyndicatFX](https://github.com/ToolAssisted-run/chimera-core-syndicatfx) |
-| Another World | [rawgl](https://github.com/ToolAssisted-run/chimera-core-rawgl) |
-| Doom, Doom II, Final Doom, Heretic, Hexen, Chex Quest, Freedoom | [DSDA-Doom](https://github.com/ToolAssisted-run/chimera-core-dsda) |
+| [SDLPoP](https://github.com/ToolAssisted-run/chimera-core-sdlpop) | Prince of Persia (DOS) |
+| [SDLPoP2](https://github.com/ToolAssisted-run/chimera-core-sdlpop2) | Prince of Persia 2: The Shadow and the Flame (DOS) |
+| [OpenSamurai](https://github.com/ToolAssisted-run/chimera-core-opensamurai) | Sword of the Samurai (DOS) |
+| [SyndicatFX](https://github.com/ToolAssisted-run/chimera-core-syndicatfx) | Syndicate (DOS) |
+| [rawgl](https://github.com/ToolAssisted-run/chimera-core-rawgl) | Another World |
+| [DSDA-Doom](https://github.com/ToolAssisted-run/chimera-core-dsda) | Doom, Doom II, Final Doom, Heretic, Hexen, Chex Quest, Freedoom |
 
 ## Getting a build
 
