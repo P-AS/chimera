@@ -9,6 +9,7 @@
         { "id": "NES", "name": "Nintendo Entertainment System" }
       ],
       "repo": "ToolAssisted-run/chimera-core-quickernes",
+      "emulator": "source/quickNES/core",
       "tested": ""
     },
     {

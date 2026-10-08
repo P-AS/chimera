@@ -364,7 +364,12 @@ things:
    see any wired core, or docs/core-manager.md.
 4. A row in Chimera's `official-cores.json` (which CI fetches published
    packages by; the frontend does not read it) and in the README's core table,
-   which is where a user finds the core.
+   which is where a user finds the core. The README also says which commit of
+   its emulator each core builds: `tools/core-versions.py <folder of core
+   checkouts>` rewrites that table from the cores' own submodule pins. It
+   takes the emulator to be the first submodule your `package-licenses.json`
+   names; if that is something else, say which in your roster row
+   (`"emulator": "<submodule path>"`).
 
 **The publish job runs `./waterbox/build-package.sh -r <chimera>` in a fresh
 recursive checkout, and nothing else.** Two consequences, both of which have

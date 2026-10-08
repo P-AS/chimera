@@ -5171,3 +5171,15 @@ legs E:dynamic-properties, E:bus-ranges and the game-properties script. The
 search itself is held to its oracle - the same random script, over the live
 third of a domain, against a model that keeps a record only where a whole
 candidate is live.
+
+## Which emulator a core builds is in the README (user-decided, 2026-10-08; chimera#192)
+
+Asked for by a user who could not tell whether a fix upstream had reached the
+core he runs. The README has a second table now - core, emulator source, the
+commit it is pinned at, that commit's date, and the nearest release where the
+core's checkout knows one. It is written by `tools/core-versions.py` from the
+cores' own repositories (the submodule their `package-licenses.json` names
+first; a roster row may name another, as quickerNES's does), not by hand, and
+it says the day it was written: a core moves its pin without telling Chimera,
+and the core's repository is what is true today. Nothing in Chimera reads it.
+
