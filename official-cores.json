@@ -208,7 +208,8 @@
         { "id": "CPS2", "name": "Capcom CPS-2" },
         { "id": "CPS3", "name": "Capcom CPS-3" },
         { "id": "NEOGEO", "name": "SNK Neo Geo MVS" },
-        { "id": "SYS16", "name": "Sega System 16" }
+        { "id": "SYS16", "name": "Sega System 16" },
+        { "id": "NEOCD", "name": "SNK Neo Geo CD" }
       ],
       "repo": "ToolAssisted-run/chimera-core-fbneo",
       "tested": ""
