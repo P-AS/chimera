@@ -394,7 +394,7 @@ struct ce_session
 	bool picturesChosen = false;
 	int64_t machineFrame = 0;
 	int64_t sinceLoad = int64_t{ 1 } << 40;
-	int32_t pictureSettle = 60;
+	int32_t pictureSettle = 3;
 	int64_t lastKept = -1;
 	void afterFrame(bool rendered, int64_t known);
 	void afterLoad(int64_t landedOn);
@@ -3099,6 +3099,11 @@ void ce_session_greenzone_pictures(ce_session *s, uint64_t budget_bytes, int32_t
 }
 
 /* (asking takes in what the helper has finished: the store is lazy, the session is not changed) */
+void ce_session_greenzone_picture_settle(ce_session *s, int32_t settle_frames)
+{
+	if (s != nullptr) s->pictureSettle = settle_frames < 0 ? 0 : settle_frames;
+}
+
 int64_t ce_session_greenzone_picture_count(const ce_session *s) { return s != nullptr ? const_cast<ce_session *>(s)->pictures.count() : 0; }
 uint64_t ce_session_greenzone_picture_bytes(const ce_session *s) { return s != nullptr ? const_cast<ce_session *>(s)->pictures.bytes() : 0; }
 

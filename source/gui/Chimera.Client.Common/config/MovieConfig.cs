@@ -29,6 +29,15 @@ namespace Chimera.Client.Common
 		/// and slower; docs/state-manager.md has what each step cost on Ruffle.
 		/// </summary>
 		int GreenzoneMaxNearStride { get; }
+
+		/// <summary>
+		/// For how many frames shown after a state load a frame that has a kept picture
+		/// shows it instead of what the core just drew. A renderer on a GPU is wrong for
+		/// a moment after a load; while this lasts the core's own picture is not what is
+		/// on the screen, so it is short: 3 by default, 0 for never (user-decided,
+		/// 2026-10-08: "2~3 frames at most, configurable").
+		/// </summary>
+		int GreenzonePictureSettleFrames { get; }
 	}
 
 	public class MovieConfig : IMovieConfig
@@ -55,6 +64,11 @@ namespace Chimera.Client.Common
 		/// <summary>The range the near band's stride may be capped to.</summary>
 		public const int MinimumNearStride = 1;
 		public const int MaximumNearStride = 32;
+
+		public int GreenzonePictureSettleFrames { get; set; } = 3;
+
+		public const int MinimumPictureSettle = 0;
+		public const int MaximumPictureSettle = 10;
 
 		/// <summary>
 		/// The smallest memory budget that means anything.

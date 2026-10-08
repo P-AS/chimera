@@ -42,12 +42,16 @@ namespace Chimera.Client.GUI
 		private readonly CheckBox? _override;
 		private readonly NumericUpDown? _projectMemory;
 		private readonly NumericUpDown? _projectNearStride;
+		private readonly NumericUpDown _pictureSettle;
 
 		/// <summary>The default as the window leaves it.</summary>
 		public int DefaultMemoryMb => (int) _memory.Value;
 
 		/// <summary>The default near-band cap as the window leaves it.</summary>
 		public int DefaultMaxNearStride => (int) _nearStride.Value;
+
+		/// <summary>The picture settle as the window leaves it.</summary>
+		public int DefaultPictureSettle => (int) _pictureSettle.Value;
 
 		/// <summary>What the named project asks for, or nothing when it asks for the default.</summary>
 		public ProjectCache.ProjectBudgets ProjectBudgets
@@ -82,7 +86,8 @@ namespace Chimera.Client.GUI
 			int defaultMemoryMb,
 			int defaultMaxNearStride = 4,
 			string? projectLabel = null,
-			ProjectCache.ProjectBudgets? projectBudgets = null)
+			ProjectCache.ProjectBudgets? projectBudgets = null,
+			int defaultPictureSettle = 3)
 		{
 			// before anything else, and before any chance of the base class asking
 			// for a title: WindowTitle reads this field, and a field read too early
@@ -123,7 +128,15 @@ namespace Chimera.Client.GUI
 			Controls.Add(Note(
 				"1 keeps every frame and plays slowest. Higher plays faster on a heavy core.",
 				margin, y, width - (2 * margin), UIHelper.ScaleY(32)));
-			y += UIHelper.ScaleY(36) + UIHelper.ScaleY(10);
+			y += UIHelper.ScaleY(36);
+
+			_pictureSettle = Spin(MovieConfig.MinimumPictureSettle, MovieConfig.MaximumPictureSettle, defaultPictureSettle, 1);
+			AddRow("After a load, show kept pictures for", _pictureSettle, "frames", margin, y, labelWidth, boxWidth, unitWidth, width);
+			y += row;
+			Controls.Add(Note(
+				"On a GPU core the picture can be wrong right after a load. For this many frames a frame seen before shows the picture it had. 0 always shows what the core draws.",
+				margin, y, width - (2 * margin), UIHelper.ScaleY(46)));
+			y += UIHelper.ScaleY(50) + UIHelper.ScaleY(10);
 
 			if (projectLabel is { Length: > 0 })
 			{

@@ -63,6 +63,9 @@ namespace Chimera.Client.Common
 			States.MaxNearStride(Math.Min(Math.Max(
 				budgets.MaxNearStride ?? Session.Settings.GreenzoneMaxNearStride,
 				MovieConfig.MinimumNearStride), MovieConfig.MaximumNearStride));
+			States.PictureSettle(Math.Min(Math.Max(
+				Session.Settings.GreenzonePictureSettleFrames,
+				MovieConfig.MinimumPictureSettle), MovieConfig.MaximumPictureSettle));
 			States.Enable((long)memoryMb * 1024 * 1024);
 			// a machine attached while the greenzone is sparse or off stays so
 			if (_greenzonePeriod != 1) States.SetCapturePeriod(_greenzonePeriod);
@@ -171,6 +174,7 @@ namespace Chimera.Client.Common
 
 			public void Enable(long budgetBytes) {}
 			public void MaxNearStride(int stride) {}
+			public void PictureSettle(int frames) {}
 			public void SetCapturePeriod(int period) {}
 			public long Count => 0;
 			public int Nearest(int frame) => -1;

@@ -27,6 +27,13 @@ namespace Chimera.Emulation.Common
 		void MaxNearStride(int stride);
 
 		/// <summary>
+		/// For how many frames shown after a state load a frame that has a kept picture
+		/// shows it instead of what the core just drew (a GPU's renderer is wrong for a
+		/// moment after a load). 0: never - a frame advance always shows the core's picture.
+		/// </summary>
+		void PictureSettle(int frames);
+
+		/// <summary>
 		/// How often a frame is stored: 1 every frame (the default), N only the multiples
 		/// of N, 0 none. Off, BeforeAdvance and Capture store nothing and cost nothing;
 		/// what is stored stays, and Restore still works. Turning it on from off stores

@@ -581,6 +581,8 @@ namespace Chimera.Emulation.Common.Waterbox
 
 		public void MaxNearStride(int stride) => _session.GreenzoneMaxNearStride(stride);
 
+		public void PictureSettle(int frames) => _session.GreenzonePictureSettle(frames);
+
 		public void SetCapturePeriod(int period) => _session.GreenzoneCapturePeriod(period);
 
 		public long Count => _session.GreenzoneCount;

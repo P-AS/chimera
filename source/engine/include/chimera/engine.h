@@ -1699,10 +1699,19 @@ CE_API void ce_session_greenzone_invalidate(ce_session *s, int64_t after_frame);
  *
  * A session whose pictures a GPU draws keeps them without being asked, from
  * the moment its greenzone is enabled: an eighth of the greenzone's budget,
- * between 32 and 256 MiB, settling for 60 frames. _pictures chooses instead:
- * a budget in bytes (0: none are kept) and the settle in frames (negative:
- * leave it), for any session. */
+ * between 32 and 256 MiB. _pictures chooses instead: a budget in bytes (0:
+ * none are kept) and the settle in frames (negative: leave it), for any
+ * session.
+ *
+ * THE SETTLE IS SHORT ON PURPOSE: 3 frames unless told otherwise
+ * (user-decided, 2026-10-08: "2~3 frames at most, configurable"). While it
+ * lasts, a frame that has a kept picture does not show what the core has
+ * just drawn, and somebody who changed something wants to see what the core
+ * draws. _picture_settle sets it alone, leaving the budget as it is; 0 means
+ * a frame advance always shows the core's picture, and only a restore onto a
+ * frame shows its kept one. */
 CE_API void ce_session_greenzone_pictures(ce_session *s, uint64_t budget_bytes, int32_t settle_frames);
+CE_API void ce_session_greenzone_picture_settle(ce_session *s, int32_t settle_frames);
 CE_API int64_t ce_session_greenzone_picture_count(const ce_session *s);
 CE_API uint64_t ce_session_greenzone_picture_bytes(const ce_session *s);
 /* Restores the nearest stored state at or before frame, then replays the

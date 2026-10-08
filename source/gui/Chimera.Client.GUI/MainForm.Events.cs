@@ -726,11 +726,13 @@ namespace Chimera.Client.GUI
 				Config.Movies.GreenzoneBudgetMb,
 				Config.Movies.GreenzoneMaxNearStride,
 				projectLabel: id.Length is 0 ? null : project!.Label,
-				projectBudgets: id.Length is 0 ? null : ProjectCache.BudgetsOf(id));
+				projectBudgets: id.Length is 0 ? null : ProjectCache.BudgetsOf(id),
+				defaultPictureSettle: Config.Movies.GreenzonePictureSettleFrames);
 			if (this.ShowDialogWithTempMute(form) is not DialogResult.OK) return;
 
 			Config.Movies.GreenzoneBudgetMb = form.DefaultMemoryMb;
 			Config.Movies.GreenzoneMaxNearStride = form.DefaultMaxNearStride;
+			Config.Movies.GreenzonePictureSettleFrames = form.DefaultPictureSettle;
 			if (id.Length is not 0) ProjectCache.RememberBudgets(id, form.ProjectBudgets);
 		}
 

@@ -792,6 +792,9 @@ namespace Chimera.Emulation.Common.Engine
 		public abstract void ce_session_greenzone_capture_period(IntPtr session, long period);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract void ce_session_greenzone_picture_settle(IntPtr session, int settleFrames);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract void ce_session_greenzone_bands(
 			IntPtr session, long nearFrames, long midFrames, long midStride, long farStride, long anchorSpacing);
 
@@ -2504,6 +2507,9 @@ namespace Chimera.Emulation.Common.Engine
 		// a stored frame and leaves the replay to whoever asked.
 
 		public void GreenzoneEnable(ulong budgetBytes) => E.ce_session_greenzone_enable(_session, budgetBytes);
+
+		/// <summary>For how many frames shown after a load a frame's kept picture stands in for the core's (engine.h).</summary>
+		public void GreenzonePictureSettle(int frames) => E.ce_session_greenzone_picture_settle(_session, frames);
 
 		public void GreenzoneDiskBudget(ulong budgetBytes) => E.ce_session_greenzone_disk_budget(_session, budgetBytes);
 

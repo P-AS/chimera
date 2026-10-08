@@ -5203,8 +5203,15 @@ What was built, in the engine and nowhere else:
   `ce_session_greenzone_pictures` chooses otherwise. The frontend was not
   touched: a frame advance hands back the picture it always did, and for a
   while after a load that picture is the kept one.
-- **For the first `settle` frames shown after a load (60), a frame that has
-  a kept picture shows it** in place of what was read back. Frames shown, not
+- **For the first `settle` frames shown after a load, a frame that has a
+  kept picture shows it** in place of what was read back. The settle is 3
+  frames, and a setting (the greenzone window of the cache manager, 0 to 10;
+  0 is never): the first build said 60, and the user's answer on seeing it
+  was "2~3 frames at most, configurable ... anything above that is extremely
+  long, and prevents a user from observing the results of their changes"
+  (user-decided, 2026-10-08). While the settle lasts, what the core has just
+  drawn is not what is on the screen, and that is the thing somebody editing
+  a movie is looking for. Frames shown, not
   frames run: the first build counted every frame, so a seek that replayed
   more than 60 unseen ones made the very first picture drawn after the load a
   trusted one - shown, and kept - on a core that does not draw through a
@@ -5240,6 +5247,6 @@ picture it had, by replay and by restore alone; past an edit, what the core
 drew, and nothing kept. On a real bridge session (Flycast, through llvmpipe)
 it switches itself on and changes nothing that is shown. NOT proved: the
 effect on the card and the core it was asked for (xemu on an NVIDIA card),
-and whether 60 frames is the right settle there - llvmpipe never draws wrong
-after a load, so this machine cannot show it.
+and whether 3 frames is enough for it to recover there - llvmpipe never
+draws wrong after a load, so this machine cannot show it.
 

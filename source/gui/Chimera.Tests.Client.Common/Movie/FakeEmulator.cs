@@ -57,6 +57,11 @@ namespace Chimera.Tests.Client.Common.Movie
 
 		public void MaxNearStride(int stride) => NearStrideCap = stride;
 
+		/// <summary>The picture settle the movie last asked for; -1 until it asks.</summary>
+		public int PictureSettleFrames { get; private set; } = -1;
+
+		public void PictureSettle(int frames) => PictureSettleFrames = frames;
+
 		/// <summary>How often the movie has the history store a frame; 0 is off.</summary>
 		public int CapturePeriod { get; private set; } = 1;
 

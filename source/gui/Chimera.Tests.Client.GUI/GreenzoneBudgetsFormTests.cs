@@ -113,6 +113,32 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		/// <summary>
+		/// For how many frames after a load a kept picture stands in for the core's:
+		/// 3 unless somebody says, 0 for never, and never a long time (user-decided,
+		/// 2026-10-08: "2~3 frames at most, configurable").
+		/// </summary>
+		[TestMethod]
+		public void ThePictureSettleIsShortAndCanBeSet()
+		{
+			Assert.AreEqual(3, new MovieConfig().GreenzonePictureSettleFrames);
+			using (GreenzoneBudgetsForm form = new(defaultMemoryMb: 1024))
+			{
+				form.Show();
+				Assert.AreEqual(3, form.DefaultPictureSettle);
+			}
+			using (GreenzoneBudgetsForm form = new(defaultMemoryMb: 1024, defaultPictureSettle: 0))
+			{
+				form.Show();
+				Assert.AreEqual(0, form.DefaultPictureSettle);
+			}
+			using (GreenzoneBudgetsForm form = new(defaultMemoryMb: 1024, defaultPictureSettle: 600))
+			{
+				form.Show();
+				Assert.AreEqual(MovieConfig.MaximumPictureSettle, form.DefaultPictureSettle);
+			}
+		}
+
+		/// <summary>
 		/// A row's label has to stop where its box starts. Reported from use: the
 		/// grey ran on over the number and hid the first digit of it. The rows are
 		/// indented under their caption, so the label began 12 past the margin and
@@ -136,7 +162,7 @@ namespace Chimera.Tests.Client.GUI
 			form.Show();
 
 			var boxes = form.Controls.OfType<NumericUpDown>().ToList();
-			Assert.AreEqual(4, boxes.Count, "memory and near-band spacing, for every project and for this one");
+			Assert.AreEqual(5, boxes.Count, "memory and near-band spacing, for every project and for this one, and the picture settle");
 
 			foreach (var box in boxes)
 			{
