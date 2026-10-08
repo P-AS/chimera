@@ -338,14 +338,26 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 		kept 5 0 > "$work/kept.off"
 		kept 5 64,8 > "$work/kept.on"
 		kept 0 64,8 > "$work/kept.healthy"
+		# ...and the settle counts frames SHOWN, not frames run: with a state
+		# only every 50 frames, going back to frame 41 replays 40 frames nobody
+		# sees, and a renderer that was not drawing through them is as wrong on
+		# the frame it then draws as it would have been at once. That frame
+		# still shows the picture it had, and past an edit the wrong one is
+		# still not kept (the count before the replay is the count after).
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			--settings '{"garbleAfterLoad":5}' --greenzone-period 50 --greenzone-pictures 64,8 --kept-pictures-check 40 2>/dev/null \
+			| grep '^kept-pictures' > "$work/kept.far"
+		farKept="$(sed -n 's/.*after an edit before frame 41: \([0-9]*\) kept before the replay, \([0-9]*\) after it.*/\1 \2/p' "$work/kept.far")"
 		if [ "$(grep -c 'NOT the picture it had' "$work/kept.off")" = 2 ] \
 			&& grep -q '^kept-pictures: back on frame 41, replayed and drawn: the picture it had (70 kept' "$work/kept.on" \
 			&& grep -q '^kept-pictures: back on frame 41 by a restore alone: the picture it had' "$work/kept.on" \
 			&& grep -q '^kept-pictures: after an edit before frame 41: 40 kept before the replay, 40 after it, and the frame shows what the core drew' "$work/kept.on" \
-			&& [ "$(grep -c 'the picture it had' "$work/kept.healthy")" = 3 ] && ! grep -q 'NOT' "$work/kept.healthy"; then
+			&& [ "$(grep -c 'the picture it had' "$work/kept.healthy")" = 3 ] && ! grep -q 'NOT' "$work/kept.healthy" \
+			&& grep -q '^kept-pictures: back on frame 41, replayed and drawn: the picture it had' "$work/kept.far" \
+			&& [ -n "$farKept" ] && [ "${farKept% *}" = "${farKept#* }" ]; then
 			report "E:kept-pictures" PASS "back on a frame it has drawn, a session shows the picture the frame had (70 kept); without them, what a renderer wrong after a load made of it; past an edit, what the core draws"
 		else
-			report "E:kept-pictures" FAIL "$(cat "$work/kept.off" "$work/kept.on" "$work/kept.healthy" 2>/dev/null | grep -m1 -v 'xxxx' | cut -c1-120) (see work/kept.*)"
+			report "E:kept-pictures" FAIL "$(cat "$work/kept.far" "$work/kept.off" "$work/kept.on" "$work/kept.healthy" 2>/dev/null | grep -m1 -v 'xxxx' | cut -c1-120) (see work/kept.*)"
 		fi
 
 		# a DYNAMIC property table (engine.h; chimera#216): with its

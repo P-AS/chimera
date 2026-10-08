@@ -381,10 +381,13 @@ struct ce_session
 	 *   machineFrame  the frame the machine is on, as far as the session can
 	 *                 tell: counted here, and corrected by whoever counts it
 	 *                 for real (a capture, a restore); -1 when it cannot tell.
-	 *   sinceLoad     frames run since a state was last loaded. A picture
-	 *                 drawn within pictureSettle of one is never KEPT: that is
-	 *                 when a renderer is still rebuilding what the load threw
-	 *                 away, and a wrong picture kept would be shown for good.
+	 *   sinceLoad     frames SHOWN since a state was last loaded - not frames
+	 *                 run: a renderer rebuilds what a load threw away by
+	 *                 drawing, and a core told not to draw through a seek is
+	 *                 as wrong on the first frame it draws afterwards as it
+	 *                 would have been at once. A picture among the first
+	 *                 pictureSettle shown is never KEPT: a wrong picture kept
+	 *                 would be shown for good.
 	 *   lastKept      the frame the last advance kept a picture for, so that a
 	 *                 count that turns out wrong can take it back. */
 	CeKeptPictures pictures;
@@ -1030,7 +1033,8 @@ void ce_session::trace(int32_t lag, int32_t render)
  * The state is a delta: telling a core the same thing every frame would be one
  * pointless guest call per frame on the seek path, which is the path this
  * exists for. */
-/* A frame has run and was shown. Within pictureSettle frames of a state load
+/* A frame has run and was shown. For the first pictureSettle frames shown
+ * after a state load - however many ran unseen in between, a seek's among them -
  * the picture just read back is suspect - a renderer on the far side of the
  * bridge is still rebuilding what the load threw away - so a frame that has a
  * picture from an earlier time shows that one: the machine is the same
@@ -1042,9 +1046,10 @@ void ce_session::afterFrame(bool rendered, int64_t known)
 {
 	if (known >= 0) machineFrame = known;
 	else if (machineFrame >= 0) machineFrame++;
-	sinceLoad++;
 	lastKept = -1;
-	if (!rendered || machineFrame < 0 || pictures.budget() == 0) return;
+	if (!rendered) return;
+	sinceLoad++;
+	if (machineFrame < 0 || pictures.budget() == 0) return;
 	if (sinceLoad > pictureSettle)
 	{
 		if (pictures.keep(machineFrame, videoBuf.data(), vidW, vidH)) lastKept = machineFrame;

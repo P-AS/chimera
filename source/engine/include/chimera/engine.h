@@ -1681,9 +1681,11 @@ CE_API void ce_session_greenzone_invalidate(ce_session *s, int64_t after_frame);
  * touches them, and until then what comes back is pieces of the picture from
  * before the load. The picture the frame had before is the same picture, so
  * the session keeps the picture of every frame it shows, compressed, and for
- * `settle_frames` after a load a frame that has one shows that instead of
- * what was just read back. A restore onto a frame that has one shows it at
- * once: a load draws nothing by itself.
+ * the first `settle_frames` frames SHOWN after a load a frame that has one
+ * shows that instead of what was just read back. Shown, not run: a renderer
+ * rebuilds by drawing, so the frames a seek runs unseen do not count. A
+ * restore onto a frame that has one shows it at once: a load draws nothing by
+ * itself.
  *
  * What it cannot do is draw a frame nobody has seen: after an edit the frames
  * past it are new, they have no picture, and they show what the core draws.

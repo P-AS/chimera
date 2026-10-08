@@ -5203,8 +5203,13 @@ What was built, in the engine and nowhere else:
   `ce_session_greenzone_pictures` chooses otherwise. The frontend was not
   touched: a frame advance hands back the picture it always did, and for a
   while after a load that picture is the kept one.
-- **For `settle` frames after a load (60), a frame that has a kept picture
-  shows it** in place of what was read back, and a restore onto such a frame
+- **For the first `settle` frames shown after a load (60), a frame that has
+  a kept picture shows it** in place of what was read back. Frames shown, not
+  frames run: the first build counted every frame, so a seek that replayed
+  more than 60 unseen ones made the very first picture drawn after the load a
+  trusted one - shown, and kept - on a core that does not draw through a
+  seek, which is exactly when it is wrong (found the same day, answering a
+  question about the rule; the witness has that case now). A restore onto such a frame
   shows it at once - a load draws nothing by itself, which is why a seek used
   to leave the old picture on the screen. Past the settle the picture read
   back is shown, and replaces the kept one: a renderer can be late the first
