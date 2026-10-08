@@ -102,44 +102,6 @@ One game each, run from the game's own files ([docs/game-cores.md](docs/game-cor
 | Another World | [rawgl](https://github.com/ToolAssisted-run/chimera-core-rawgl) |
 | Doom, Doom II, Final Doom, Heretic, Hexen, Chex Quest, Freedoom | [DSDA-Doom](https://github.com/ToolAssisted-run/chimera-core-dsda) |
 
-### Which emulator each core builds
-
-Each core's repository pins its emulator at one commit. This table is that commit and its date, written by `tools/core-versions.py` from the cores' own repositories on 2026-10-08; a core's repository is what is true today.
-
-<!-- core-versions:begin -->
-| Core | Emulator source | Commit | Its date | Nearest release |
-| --- | --- | --- | --- | --- |
-| [quickerNES](https://github.com/ToolAssisted-run/chimera-core-quickernes) | [SergioMartin86/QuickNES_Core](https://github.com/SergioMartin86/QuickNES_Core) | [`5a146c579`](https://github.com/SergioMartin86/QuickNES_Core/commit/5a146c5795a0b68c8a05141c71d5984243d047f7) | 2025-09-17 |  |
-| [QuickerNesHawk](https://github.com/ToolAssisted-run/chimera-core-neshawk) | in the core's own repository | | | |
-| [Genesis Plus GX](https://github.com/ToolAssisted-run/chimera-core-gpgx) | [ekeeke/Genesis-Plus-GX](https://github.com/ekeeke/Genesis-Plus-GX) | [`27426f00a`](https://github.com/ekeeke/Genesis-Plus-GX/commit/27426f00aa68f9f358c86919e8a40985326fa05b) | 2026-08-04 |  |
-| [Snes9x](https://github.com/ToolAssisted-run/chimera-core-snes9x) | [snes9xgit/snes9x](https://github.com/snes9xgit/snes9x) | [`2971061cf`](https://github.com/snes9xgit/snes9x/commit/2971061cf07fdc6fc7d18883edf4e648eb16a6d2) | 2026-08-17 |  |
-| [Stella](https://github.com/ToolAssisted-run/chimera-core-stella) | [stella-emu/stella](https://github.com/stella-emu/stella) | [`c1ffb833c`](https://github.com/stella-emu/stella/commit/c1ffb833c8b180433b0cad76bb6b55f8dfbc46ee) | 2026-08-23 |  |
-| [Opera](https://github.com/ToolAssisted-run/chimera-core-opera) | [libretro/opera-libretro](https://github.com/libretro/opera-libretro) | [`a501a278d`](https://github.com/libretro/opera-libretro/commit/a501a278d057b952d1ad6165549c59ab178ca497) | 2026-08-21 |  |
-| [DOSBox-X](https://github.com/ToolAssisted-run/chimera-core-dosbox-x) | [joncampbell123/dosbox-x](https://github.com/joncampbell123/dosbox-x) | [`784240ad6`](https://github.com/joncampbell123/dosbox-x/commit/784240ad6d9cf3ae3f02fab819e2ed5cf5117dd4) | 2026-08-02 |  |
-| [Flycast](https://github.com/ToolAssisted-run/chimera-core-flycast) | [flyinghead/flycast](https://github.com/flyinghead/flycast) | [`c3763d8fc`](https://github.com/flyinghead/flycast/commit/c3763d8fc4208dd6f8f0bc456383543b8406a8a0) | 2026-08-23 |  |
-| [Dolphin](https://github.com/ToolAssisted-run/chimera-core-dolphin) | [dolphin-emu/dolphin](https://github.com/dolphin-emu/dolphin) | [`a1e636d72`](https://github.com/dolphin-emu/dolphin/commit/a1e636d72c8469acf747ac6542f0b7ace7cea02f) | 2026-09-01 |  |
-| [PPSSPP](https://github.com/ToolAssisted-run/chimera-core-ppsspp) | [hrydgard/ppsspp](https://github.com/hrydgard/ppsspp) | [`fa50bb197`](https://github.com/hrydgard/ppsspp/commit/fa50bb1976065c4f8b1b47af227d367fe9771555) | 2026-05-16 |  |
-| [PCSX2](https://github.com/ToolAssisted-run/chimera-core-pcsx2) | [PCSX2/pcsx2](https://github.com/PCSX2/pcsx2) | [`e1dd0a085`](https://github.com/PCSX2/pcsx2/commit/e1dd0a08599e86a9928a83b84923bce12a59aba7) | 2026-08-24 |  |
-| [RPCS3](https://github.com/ToolAssisted-run/chimera-core-rpcs3) | [RPCS3/rpcs3](https://github.com/RPCS3/rpcs3) | [`677e13da4`](https://github.com/RPCS3/rpcs3/commit/677e13da42a36dc16eef090cc2a7d4d22e48aa5a) | 2026-09-01 | v0.0.42 + 234 commits |
-| [xemu](https://github.com/ToolAssisted-run/chimera-core-xemu) | [xemu-project/xemu](https://github.com/xemu-project/xemu) | [`d73326b62`](https://github.com/xemu-project/xemu/commit/d73326b62199c6dd952ef512947710e1333a49d3) | 2026-08-26 | v0.8.136 + 30 commits |
-| [EKA2L1](https://github.com/ToolAssisted-run/chimera-core-eka2l1) | [EKA2L1/EKA2L1](https://github.com/EKA2L1/EKA2L1) | [`1bc5c8cf2`](https://github.com/EKA2L1/EKA2L1/commit/1bc5c8cf2e8c1dcf04475bcc5dc3e49b7282d47a) | 2026-09-05 |  |
-| [ares](https://github.com/ToolAssisted-run/chimera-core-ares) | [ares-emulator/ares](https://github.com/ares-emulator/ares) | [`af4cbb04f`](https://github.com/ares-emulator/ares/commit/af4cbb04f067682a8a3cf42695ff78bed634b38d) | 2026-09-06 |  |
-| [Ruffle](https://github.com/ToolAssisted-run/chimera-core-ruffle) | [ruffle-rs/ruffle](https://github.com/ruffle-rs/ruffle) | [`a1dd7bbc1`](https://github.com/ruffle-rs/ruffle/commit/a1dd7bbc180b6ee1cc2fcadf69e89c0e1c7477e6) | 2026-09-06 |  |
-| [AppleWin](https://github.com/ToolAssisted-run/chimera-core-applewin) | [AppleWin/AppleWin](https://github.com/AppleWin/AppleWin) | [`3e8054b46`](https://github.com/AppleWin/AppleWin/commit/3e8054b4627624398e4589f7f27b3d40a6b9718e) | 2026-07-26 | v1.32.0.0 + 12 commits |
-| [PCem](https://github.com/ToolAssisted-run/chimera-core-pcem) | [TASEmulators/pcem](https://github.com/TASEmulators/pcem) | [`fd4585bb1`](https://github.com/TASEmulators/pcem/commit/fd4585bb1eb2c411819391c7241c1ed5b621dfc7) | 2026-07-25 |  |
-| [FBNeo](https://github.com/ToolAssisted-run/chimera-core-fbneo) | [finalburnneo/FBNeo](https://github.com/finalburnneo/FBNeo) | [`6bde5e1dd`](https://github.com/finalburnneo/FBNeo/commit/6bde5e1dddb7dd53c1964e1a2c3d33f276870469) | 2026-09-26 |  |
-| [Azahar](https://github.com/ToolAssisted-run/chimera-core-azahar) | [azahar-emu/azahar](https://github.com/azahar-emu/azahar) | [`955ef51a2`](https://github.com/azahar-emu/azahar/commit/955ef51a27f2e2c3de340ec0f972407aef955eca) | 2026-09-26 |  |
-| [MAME X68000](https://github.com/ToolAssisted-run/chimera-core-x68k) | [mamedev/mame](https://github.com/mamedev/mame) | [`0cacb1a76`](https://github.com/mamedev/mame/commit/0cacb1a76d20d1b80a9e84185dabd758ee2ec876) | 2026-09-28 |  |
-| [touchHLE](https://github.com/ToolAssisted-run/chimera-core-touchhle) | [touchHLE/touchHLE](https://github.com/touchHLE/touchHLE) | [`8eb3418b3`](https://github.com/touchHLE/touchHLE/commit/8eb3418b3343bc1e3d1a330b55cb1d708a015721) | 2026-10-01 | v0.3.0 |
-| [Vita3K](https://github.com/ToolAssisted-run/chimera-core-vita3k) | [Vita3K/Vita3K](https://github.com/Vita3K/Vita3K) | [`a366df69b`](https://github.com/Vita3K/Vita3K/commit/a366df69bd66bedaa245e40902d1992038f7ccb7) | 2026-10-02 |  |
-| [SDLPoP](https://github.com/ToolAssisted-run/chimera-core-sdlpop) | [NagyD/SDLPoP](https://github.com/NagyD/SDLPoP) | [`3c5add5fb`](https://github.com/NagyD/SDLPoP/commit/3c5add5fb7f83d4ceb542823ab66d00146c4271b) | 2025-12-24 | v1.24-RC + 17 commits |
-| [SDLPoP2](https://github.com/ToolAssisted-run/chimera-core-sdlpop2) | [ToolAssisted-run/SDLPoP2](https://github.com/ToolAssisted-run/SDLPoP2) | [`37112dadd`](https://github.com/ToolAssisted-run/SDLPoP2/commit/37112dadd7301f2b8462415eec068b52fff5a8e4) | 2026-10-04 |  |
-| [OpenSamurai](https://github.com/ToolAssisted-run/chimera-core-opensamurai) | [ToolAssisted-run/OpenSamurai](https://github.com/ToolAssisted-run/OpenSamurai) | [`b40625a3e`](https://github.com/ToolAssisted-run/OpenSamurai/commit/b40625a3e039206d030d7a7f3bff2745069d4193) | 2026-10-03 |  |
-| [SyndicatFX](https://github.com/ToolAssisted-run/chimera-core-syndicatfx) | [swfans/syndicatfx](https://github.com/swfans/syndicatfx) | [`36320614c`](https://github.com/swfans/syndicatfx/commit/36320614c4c76363a9d225ab5022123ca70cfd83) | 2025-12-17 | 0.0.6.1022 + 13 commits |
-| [rawgl](https://github.com/ToolAssisted-run/chimera-core-rawgl) | [cyxx/rawgl](https://github.com/cyxx/rawgl) | [`049e4ade4`](https://github.com/cyxx/rawgl/commit/049e4ade49543a12414f68a7838a94ec0a6c149d) | 2025-06-28 | rawgl-0.2.1 + 221 commits |
-| [DSDA-Doom](https://github.com/ToolAssisted-run/chimera-core-dsda) | [kraflab/dsda-doom](https://github.com/kraflab/dsda-doom) | [`8c538098f`](https://github.com/kraflab/dsda-doom/commit/8c538098f193c66bbec96e4cf3c96a51f2754ec1) | 2026-09-29 | v0.30.0 |
-<!-- core-versions:end -->
-
 ## Getting a build
 
 The frontend is built for Linux and Windows and published here:
