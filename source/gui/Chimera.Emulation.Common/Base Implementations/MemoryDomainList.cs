@@ -15,19 +15,25 @@ namespace Chimera.Emulation.Common
 		private MemoryDomain _mainMemory;
 		private MemoryDomain _systemBus;
 
+		// Hidden domains (MemoryDomain.Hidden) are found by name and are not in the
+		// collection, so nothing that lists domains - a menu, a drop-down, a script -
+		// ever offers one.
+		private readonly MemoryDomain[] _hidden;
+
 		public bool Has(string name)
 		{
-			return this.Any(md => md.Name == name);
+			return this[name] is not null;
 		}
 
 		public MemoryDomainList(IList<MemoryDomain> domains, IDebuggable/*?*/ debuggableCore = null)
 			: base(debuggableCore is null
-				? domains
-				: domains.Append(new RegistersMemoryDomain(debuggableCore)).ToArray())
+				? domains.Where(static d => !d.Hidden).ToArray()
+				: domains.Where(static d => !d.Hidden).Append(new RegistersMemoryDomain(debuggableCore)).ToArray())
 		{
+			_hidden = domains.Where(static d => d.Hidden).ToArray();
 		}
 
-		public MemoryDomain this[string name] => this.FirstOrDefault(x => x.Name == name);
+		public MemoryDomain this[string name] => this.FirstOrDefault(x => x.Name == name) ?? _hidden.FirstOrDefault(x => x.Name == name);
 
 		public MemoryDomain MainMemory
 		{

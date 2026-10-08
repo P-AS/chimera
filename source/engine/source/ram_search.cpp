@@ -73,20 +73,125 @@ inline bool compareFloats(const CeRamSearch::Query &q, float a, float b)
 } // namespace
 
 CeRamSearch::CeRamSearch(const uint8_t *base, CeRamSearchReadFn fn, void *user, int64_t domainSize)
-	: m_base(base), m_fn(fn), m_user(user), m_domainSize(domainSize < 0 ? 0 : domainSize)
+	: m_base(base), m_fn(fn), m_user(user), m_realSize(domainSize < 0 ? 0 : domainSize), m_domainSize(m_realSize)
 {
 	m_set.dense = false;
 }
 
+/* ---- live ranges ---- */
+
+/* Ranges are kept whole multiples of four bytes - the largest candidate - so
+ * that an aligned candidate is aligned in the compacted domain too and lies in
+ * one range; a few bytes more than a core said are harmless, they read as the
+ * core reads them. */
+void CeRamSearch::setRanges(const int64_t *pairs, int64_t n)
+{
+	m_pending.clear();
+	if (pairs == nullptr || n < 0) return;
+	std::vector<Range> list;
+	for (int64_t i = 0; i < n; i++)
+	{
+		int64_t from = pairs[2 * i], length = pairs[2 * i + 1];
+		if (length <= 0 || from >= m_realSize || from < 0 && length <= -from) continue;
+		int64_t to = length > m_realSize - std::max<int64_t>(from, 0) ? m_realSize : from + length;
+		from = std::max<int64_t>(from, 0) & ~int64_t{ 3 };
+		to = std::min(m_realSize, (to + 3) & ~int64_t{ 3 });
+		Range r;
+		r.real = from;
+		r.length = to - from;
+		list.push_back(r);
+	}
+	std::sort(list.begin(), list.end(), [](const Range &a, const Range &b) { return a.real < b.real; });
+	for (const Range &r : list)
+	{
+		if (!m_pending.empty() && r.real <= m_pending.back().real + m_pending.back().length)
+		{
+			Range &last = m_pending.back();
+			last.length = std::max(last.length, r.real + r.length - last.real);
+		}
+		else m_pending.push_back(r);
+	}
+	/* No range at all is still an answer: nothing is live, nothing is searched. */
+	if (m_pending.empty())
+	{
+		Range none;
+		m_pending.push_back(none);
+	}
+	int64_t at = 0;
+	for (Range &r : m_pending)
+	{
+		r.at = at;
+		at += r.length;
+	}
+}
+
+uint64_t CeRamSearch::toReal(uint64_t address) const
+{
+	if (m_ranges.empty()) return address;
+	auto it = std::upper_bound(m_ranges.begin(), m_ranges.end(), address,
+		[](uint64_t a, const Range &r) { return a < (uint64_t)r.at; });
+	if (it == m_ranges.begin()) return address;
+	--it;
+	return (uint64_t)it->real + (address - (uint64_t)it->at);
+}
+
+bool CeRamSearch::toCompact(uint64_t real, uint64_t &address) const
+{
+	address = real;
+	if (m_ranges.empty()) return true;
+	auto it = std::upper_bound(m_ranges.begin(), m_ranges.end(), real,
+		[](uint64_t a, const Range &r) { return a < (uint64_t)r.real; });
+	if (it == m_ranges.begin()) return false;
+	--it;
+	if (real - (uint64_t)it->real >= (uint64_t)it->length) return false;
+	address = (uint64_t)it->at + (real - (uint64_t)it->real);
+	return true;
+}
+
+/* Does a candidate of this size at this (compacted) address lie in one range? */
+bool CeRamSearch::inOneRange(uint64_t address, int size) const
+{
+	if (m_ranges.empty()) return true;
+	auto it = std::upper_bound(m_ranges.begin(), m_ranges.end(), address,
+		[](uint64_t a, const Range &r) { return a < (uint64_t)r.at; });
+	if (it == m_ranges.begin()) return false;
+	--it;
+	return address - (uint64_t)it->at + (uint64_t)size <= (uint64_t)it->length;
+}
+
 /* ---- memory ---- */
 
+/* The compacted domain, a range at a time. */
 void CeRamSearch::readInto(int64_t offset, uint8_t *buf, int64_t len) const
+{
+	if (m_ranges.empty())
+	{
+		readReal(offset, buf, len);
+		return;
+	}
+	if (len <= 0) return;
+	auto it = std::upper_bound(m_ranges.begin(), m_ranges.end(), offset,
+		[](int64_t a, const Range &r) { return a < r.at; });
+	if (offset >= 0 && it != m_ranges.begin()) --it;
+	while (len > 0 && offset >= 0 && it != m_ranges.end() && offset - it->at < it->length)
+	{
+		const int64_t piece = std::min(len, it->length - (offset - it->at));
+		readReal(it->real + (offset - it->at), buf, piece);
+		buf += piece;
+		offset += piece;
+		len -= piece;
+		++it;
+	}
+	if (len > 0) std::memset(buf, 0, (size_t)len);
+}
+
+void CeRamSearch::readReal(int64_t offset, uint8_t *buf, int64_t len) const
 {
 	if (len <= 0) return;
 	int64_t got = 0;
-	if (offset >= 0 && offset < m_domainSize)
+	if (offset >= 0 && offset < m_realSize)
 	{
-		int64_t want = std::min(len, m_domainSize - offset);
+		int64_t want = std::min(len, m_realSize - offset);
 		if (m_base)
 		{
 			std::memcpy(buf, m_base + offset, (size_t)want);
@@ -104,7 +209,7 @@ void CeRamSearch::readInto(int64_t offset, uint8_t *buf, int64_t len) const
 
 const uint8_t *CeRamSearch::window(int64_t offset, int64_t len) const
 {
-	if (m_base) return m_base + offset;
+	if (m_base && m_ranges.empty()) return m_base + offset;
 	if ((int64_t)m_scratch.size() < len) m_scratch.resize((size_t)len);
 	readInto(offset, m_scratch.data(), len);
 	return m_scratch.data();
@@ -127,7 +232,7 @@ uint32_t CeRamSearch::load(const uint8_t *p, int size) const
 uint32_t CeRamSearch::peek(uint64_t address, int size) const
 {
 	if (address > (uint64_t)m_domainSize || (uint64_t)m_domainSize - address < (uint64_t)size) return 0;
-	if (m_base) return load(m_base + address, size);
+	if (m_base && m_ranges.empty()) return load(m_base + address, size);
 	uint8_t b[4];
 	readInto((int64_t)address, b, size);
 	return load(b, size);
@@ -314,6 +419,12 @@ void CeRamSearch::start(int size, bool misaligned, bool bigEndian, bool detailed
 	m_misaligned = misaligned;
 	if (size != 1 && size != 2 && size != 4) size = 1;
 
+	/* what is live now is what this search is over, until the next one starts */
+	m_ranges = m_pending;
+	if (m_ranges.size() == 1 && m_ranges[0].real == 0 && m_ranges[0].length == m_realSize) m_ranges.clear();
+	m_domainSize = m_realSize;
+	if (!m_ranges.empty()) m_domainSize = m_ranges.back().at + m_ranges.back().length;
+
 	Set s;
 	s.dense = true;
 	s.size = size;
@@ -323,6 +434,14 @@ void CeRamSearch::start(int size, bool misaligned, bool bigEndian, bool detailed
 		: (uint64_t)(m_domainSize / size);
 	s.bits.assign((size_t)((s.slots + 63) / 64), ~uint64_t{ 0 });
 	if (s.slots % 64) s.bits.back() = (uint64_t{ 1 } << (s.slots % 64)) - 1;
+	/* no candidate spans two ranges: the last few of each, when they overlap */
+	if (misaligned && size > 1)
+		for (size_t r = 0; r + 1 < m_ranges.size(); r++)
+		{
+			const uint64_t end = (uint64_t)(m_ranges[r].at + m_ranges[r].length);
+			for (uint64_t a = end >= (uint64_t)size ? end - (uint64_t)size + 1 : 0; a < end && a < s.slots; a++)
+				s.bits[(size_t)(a / 64)] &= ~(uint64_t{ 1 } << (a % 64));
+		}
 	snapshotImage(s.prevImage);
 	if (detailed)
 	{
@@ -343,6 +462,7 @@ bool CeRamSearch::row(int64_t index, Row &out) const
 		out.previous = load(m_set.prevImage.data() + out.address, m_set.size);
 		out.current = m_detailed ? load(m_set.curImage.data() + out.address, m_set.size) : peek(out.address, m_set.size);
 		out.changes = m_detailed ? m_set.changesBySlot[(size_t)slot] : 0;
+		out.address = toReal(out.address);
 		return true;
 	}
 	const size_t i = (size_t)index;
@@ -350,11 +470,14 @@ bool CeRamSearch::row(int64_t index, Row &out) const
 	out.previous = m_set.prev[i];
 	out.current = m_detailed ? m_set.cur[i] : peek(out.address, m_set.size);
 	out.changes = m_detailed ? m_set.changes[i] : 0;
+	out.address = toReal(out.address);
 	return true;
 }
 
-int64_t CeRamSearch::indexOf(uint64_t address) const
+int64_t CeRamSearch::indexOf(uint64_t realAddress) const
 {
+	uint64_t address;
+	if (!toCompact(realAddress, address)) return -1;
 	if (!m_set.dense)
 	{
 		auto it = std::find(m_set.addr.begin(), m_set.addr.end(), address);
@@ -377,6 +500,8 @@ int64_t CeRamSearch::search(const Query &q, int previousType)
 	recordUndo();
 	const uint64_t before = m_set.count;
 	const int size = m_set.size;
+	/* a search by address is by the real one */
+	const bool byAddress = q.compare == CmpSpecificAddress && !m_ranges.empty();
 
 	if (m_set.dense)
 	{
@@ -384,7 +509,7 @@ int64_t CeRamSearch::search(const Query &q, int previousType)
 		forEachDense(needMemory, [&](uint64_t slot, uint64_t address, const uint8_t *mem) {
 			const uint32_t prev = load(m_set.prevImage.data() + address, size);
 			const uint32_t cur = m_detailed ? load(m_set.curImage.data() + address, size) : mem ? load(mem, size) : 0;
-			return matches(q, size, address, cur, prev, m_detailed ? m_set.changesBySlot[(size_t)slot] : 0);
+			return matches(q, size, byAddress ? toReal(address) : address, cur, prev, m_detailed ? m_set.changesBySlot[(size_t)slot] : 0);
 		});
 		rebuildRank();
 	}
@@ -394,7 +519,7 @@ int64_t CeRamSearch::search(const Query &q, int previousType)
 		for (size_t i = 0; i < m_set.addr.size(); i++)
 		{
 			const uint32_t cur = m_detailed ? m_set.cur[i] : peek(m_set.addr[i], size);
-			if (!matches(q, size, m_set.addr[i], cur, m_set.prev[i], m_detailed ? m_set.changes[i] : 0)) continue;
+			if (!matches(q, size, byAddress ? toReal(m_set.addr[i]) : m_set.addr[i], cur, m_set.prev[i], m_detailed ? m_set.changes[i] : 0)) continue;
 			m_set.addr[kept] = m_set.addr[i];
 			m_set.prev[kept] = m_set.prev[i];
 			if (m_detailed)
@@ -526,8 +651,18 @@ void CeRamSearch::removeIndices(const int64_t *indices, int64_t n)
 	settle();
 }
 
-void CeRamSearch::removeAddresses(const uint64_t *addresses, int64_t n, bool withUndo)
+void CeRamSearch::removeAddresses(const uint64_t *realAddresses, int64_t n, bool withUndo)
 {
+	std::vector<uint64_t> compact;
+	const uint64_t *addresses = realAddresses;
+	if (!m_ranges.empty())
+	{
+		uint64_t a;
+		for (int64_t i = 0; i < n; i++)
+			if (toCompact(realAddresses[i], a)) compact.push_back(a);
+		addresses = compact.data();
+		n = (int64_t)compact.size();
+	}
 	if (withUndo) recordUndo();
 	if (m_set.dense)
 	{
@@ -563,8 +698,11 @@ void CeRamSearch::addAddresses(const uint64_t *addresses, int64_t n, bool append
 	}
 	for (int64_t i = 0; i < n; i++)
 	{
-		const uint32_t now = peek(addresses[i], m_set.size);
-		m_set.addr.push_back(addresses[i]);
+		/* an address outside what this search is over is not memory it has */
+		uint64_t address;
+		if (!toCompact(addresses[i], address) || !inOneRange(address, m_set.size)) continue;
+		const uint32_t now = peek(address, m_set.size);
+		m_set.addr.push_back(address);
 		m_set.prev.push_back(now);
 		if (m_detailed)
 		{
@@ -586,7 +724,8 @@ void CeRamSearch::convertTo(int size)
 	const int span = m_misaligned ? 1 : oldSize;
 	const int newStep = m_misaligned ? 1 : size;
 	auto fits = [&](uint64_t a) {
-		return m_domainSize >= size && a <= (uint64_t)(m_domainSize - size) && a % (uint64_t)newStep == 0;
+		return m_domainSize >= size && a <= (uint64_t)(m_domainSize - size) && a % (uint64_t)newStep == 0
+			&& inOneRange(a, size);
 	};
 
 	Set s;
@@ -758,6 +897,13 @@ int32_t ce_ramsearch_start(ce_ramsearch *rs, int32_t size, int32_t misaligned, i
 {
 	CE_RS_GUARD(rs->impl.start(size, misaligned != 0, big_endian != 0, detailed != 0); return 0, -1)
 }
+
+int32_t ce_ramsearch_set_ranges(ce_ramsearch *rs, const int64_t *pairs, int64_t n)
+{
+	CE_RS_GUARD(rs->impl.setRanges(pairs, n); return 0, -1)
+}
+
+int64_t ce_ramsearch_searched_size(const ce_ramsearch *rs) { return rs->impl.searchedSize(); }
 
 int64_t ce_ramsearch_count(const ce_ramsearch *rs) { return rs->impl.count(); }
 

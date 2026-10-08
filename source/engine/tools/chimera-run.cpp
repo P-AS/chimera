@@ -1238,6 +1238,44 @@ int main(int argc, char **argv)
 					(long long)ce_ramsearch_count(rs));
 				ce_ramsearch_destroy(rs);
 			}
+			/* A bus that says which of it is live (chimera#218): a search told
+			 * so covers those ranges and nothing else. Checked against the bus
+			 * itself - every candidate is an address the core called live (to
+			 * the four bytes a range is kept whole to), reads what the bus
+			 * peeks there, and there are as many as the ranges hold. */
+			const int32_t ranges = ce_session_bus_ranges(session, bus, nullptr, 0);
+			if (ranges < 0) std::fprintf(stderr, "ram-search-bench %s: no word on live ranges, all of it is searched\n", ramSearchBench.c_str());
+			else
+			{
+				std::vector<int64_t> pairs((size_t)ranges * 2 + 2);
+				if (ce_session_bus_ranges(session, bus, pairs.data(), ranges) != ranges)
+					return fail(metaPath, "--ram-search-bench: " + ramSearchBench + " changed its live ranges between two calls");
+				std::vector<uint8_t> live((size_t)size, 0);
+				int64_t liveBytes = 0;
+				for (int32_t r = 0; r < ranges; r++)
+				{
+					const int64_t from = std::max<int64_t>(pairs[(size_t)r * 2], 0) & ~int64_t{ 3 };
+					const int64_t to = std::min<int64_t>(size, (pairs[(size_t)r * 2] + pairs[(size_t)r * 2 + 1] + 3) & ~int64_t{ 3 });
+					for (int64_t a = from; a < to; a++) { liveBytes += live[(size_t)a] == 0; live[(size_t)a] = 1; }
+				}
+				ce_ramsearch *rs = ce_ramsearch_create(nullptr, inRuns, &user, size);
+				if (rs == nullptr || ce_ramsearch_set_ranges(rs, pairs.data(), ranges) != 0 || ce_ramsearch_start(rs, 1, 0, 0, 0) != 0)
+					return fail(metaPath, "--ram-search-bench: out of memory");
+				const int64_t count = ce_ramsearch_count(rs);
+				if (count != liveBytes || ce_ramsearch_searched_size(rs) != liveBytes)
+					return fail(metaPath, "--ram-search-bench: " + ramSearchBench + " has " + std::to_string(liveBytes) + " live bytes, the search is over " + std::to_string(count));
+				for (int64_t i = 0; i < count; i++)
+				{
+					uint64_t address = 0;
+					uint32_t current = 0, previous = 0, changes = 0;
+					if (ce_ramsearch_row(rs, i, &address, &current, &previous, &changes) != 1 || address >= (uint64_t)size || !live[(size_t)address]
+						|| current != static_cast<uint32_t>(ce_session_bus_peek(session, bus, static_cast<int32_t>(address))) || previous != current)
+						return fail(metaPath, "--ram-search-bench: " + ramSearchBench + " candidate " + std::to_string(i) + " at " + std::to_string(address) + " is not live, or does not read what the bus peeks");
+				}
+				ce_ramsearch_destroy(rs);
+				std::fprintf(stderr, "ram-search-bench %s: %d live ranges, %lld of %lld bytes searched, every candidate live and reading what the bus peeks\n",
+					ramSearchBench.c_str(), ranges, (long long)liveBytes, (long long)size);
+			}
 		}
 		if (found < 0 && bus < 0) return fail(metaPath, "--ram-search-bench: no domain or bus named " + ramSearchBench);
 		const auto *base = found < 0 ? nullptr : reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(ce_session_domain_ptr(session, found)));

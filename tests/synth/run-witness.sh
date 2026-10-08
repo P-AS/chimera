@@ -299,6 +299,27 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 			report "E:bus-read" FAIL "$(grep -m1 -E 'differs|no domain' "$work/bus.log")"
 		fi
 
+		# a bus says which of it is live (engine.h, ce_session_bus_ranges;
+		# chimera#218), and a RAM search told so is over those ranges alone.
+		# The synth's "Bus" calls three pieces live - out of order, at odd
+		# addresses, one running off its end - and the search of it holds
+		# exactly those bytes (each kept whole to four), every candidate
+		# reading what the bus peeks; "Bus (peeks)" says nothing, and is
+		# searched whole. Both lines are from the last bus-read run above
+		# and the one before it.
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			--ram-search-bench "Bus" > "$work/ranges.log" 2>&1
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			--ram-search-bench "Bus (peeks)" > "$work/ranges-none.log" 2>&1
+		# 0x20001+0xff0 -> 0x20000..0x20ff4 (4084); 0x1000+0x801 -> 0x1000..0x1804 (2052);
+		# 0x2fffa+64 -> 0x2fff8..0x30000 (8): 6144 bytes of 196608
+		if grep -q "^ram-search-bench Bus: 3 live ranges, 6144 of 196608 bytes searched, every candidate live" "$work/ranges.log" \
+			&& grep -q "^ram-search-bench Bus (peeks): no word on live ranges, all of it is searched" "$work/ranges-none.log"; then
+			report "E:bus-ranges" PASS "a search of a bus that says what is live is over that alone: 6144 of 196608 bytes, each reading what the bus peeks"
+		else
+			report "E:bus-ranges" FAIL "$(grep -m1 -E 'live|ranges|word' "$work/ranges.log" "$work/ranges-none.log" | tail -1)"
+		fi
+
 		# a DYNAMIC property table (engine.h; chimera#216): with its
 		# movingProperties setting on, the synth lists properties that move
 		# and come and go with the cursor's row, the way a Flash movie's
@@ -312,10 +333,13 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 		#   a 77 written to Wanderer before the first frame (Row 0) stays at
 		#   0x200 - Origin - and Wanderer, once it has moved on, does not have it;
 		#   the table says it is dynamic, and a fresh listing has Sometimes
-		#   or not by the last row.
+		#   or not by the last row;
+		#   a game's own names are exact (chimera#218): "wanderer" is another
+		#   property than Wanderer, at 0x244 every frame, and "WANDERER",
+		#   which the core does not have, is never there.
 		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 			--settings '{"movingProperties":1}' --property-set Wanderer=77 \
-			--property-trace Row,Steps,Wanderer,Sometimes,Mirror,Origin > "$work/dynamic.out" 2>"$work/dynamic.err"
+			--property-trace Row,Steps,Wanderer,Sometimes,Mirror,Origin,wanderer,WANDERER > "$work/dynamic.out" 2>"$work/dynamic.err"
 		if python3 - "$work/dynamic.out" > "$work/dynamic.check" 2>&1 <<'DYNAMIC'
 import json, sys
 frames, table, listed, set_line = {}, None, None, None
@@ -337,10 +361,13 @@ for f, p in sorted(frames.items()):
     assert p["Mirror"] == (4, (steps & 255) ^ 28), "frame %d: %d steps, Mirror %r" % (f, steps, p["Mirror"])
     assert p["Origin"] == (0x200, 77), "frame %d: Origin %r" % (f, p["Origin"])
     assert p["Wanderer"][1] == (77 if row == 0 else 0), "frame %d: row %d, Wanderer reads %d" % (f, row, p["Wanderer"][1])
+    assert p["wanderer"] is not None and p["wanderer"][0] == 0x244, "frame %d: wanderer %r is not its own property" % (f, p["wanderer"])
+    assert p["WANDERER"] is None, "frame %d: WANDERER, which the core does not have, read %r" % (f, p["WANDERER"])
 assert len(rows) >= 4, "the cursor only visited rows %r" % sorted(rows)
 last = frames[max(frames)]["Row"][1]
 names = {p["name"]: p for p in table["properties"]}
-assert table.get("dynamic") is True and listed == "prop table: dynamic, %d listed after the run" % (6 if last % 2 else 5), listed
+assert table.get("dynamic") is True and listed == "prop table: dynamic, %d listed after the run" % (7 if last % 2 else 6), listed
+assert "wanderer" in names and "Wanderer" in names and names["wanderer"]["offset"] == 0x244, sorted(names)
 assert names["Sometimes"]["listed"] == (last % 2 == 1) and names["Sometimes"]["present"] == (last % 2 == 1), names["Sometimes"]
 assert names["Mirror"]["writable"] is False and names["Wanderer"]["offset"] == 0x200 + 4 * last
 print("%d frames over rows %s" % (len(frames), sorted(rows)))

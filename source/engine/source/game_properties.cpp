@@ -337,6 +337,16 @@ bool CeGameProperties::parseEntry(const cJSON *entry, Property &p, std::string &
 	return true;
 }
 
+/* What a name is looked up by. A fixed table's names are a core author's
+ * labels for places, and are found whatever their case. A dynamic table's are
+ * the game's own, in a language that may tell "score" from "Score": those are
+ * exact (chimera#218) - two that differ by case are two properties, and one
+ * asked for in another case is not there. */
+std::string CeGameProperties::key(const std::string &name) const
+{
+	return m_dynamic ? name : lower(name);
+}
+
 void CeGameProperties::load(const char *json, const std::vector<Domain> &domains)
 {
 	m_domains = domains;
@@ -372,7 +382,7 @@ void CeGameProperties::load(const char *json, const std::vector<Domain> &domains
 				m_problems.emplace_back("a property with no name");
 				continue;
 			}
-			if (m_byName.count(lower(name)) != 0)
+			if (m_byName.count(key(name)) != 0)
 			{
 				m_problems.push_back("\"" + name + "\" is named twice; the second is left out");
 				continue;
@@ -382,7 +392,7 @@ void CeGameProperties::load(const char *json, const std::vector<Domain> &domains
 				m_problems.push_back("\"" + name + "\" " + why);
 				continue;
 			}
-			m_byName[lower(p.name)] = int32_t(m_props.size());
+			m_byName[key(p.name)] = int32_t(m_props.size());
 			m_props.push_back(std::move(p));
 		}
 	}
@@ -390,7 +400,7 @@ void CeGameProperties::load(const char *json, const std::vector<Domain> &domains
 	const cJSON *timer = cJSON_GetObjectItemCaseSensitive(root, "gameTimer");
 	if (timer != nullptr)
 	{
-		const auto named = cJSON_IsString(timer) ? m_byName.find(lower(timer->valuestring)) : m_byName.end();
+		const auto named = cJSON_IsString(timer) ? m_byName.find(key(timer->valuestring)) : m_byName.end();
 		const Property *p = named != m_byName.end() ? &m_props[size_t(named->second)] : nullptr;
 		if (p != nullptr && kTypes[p->type].integer && p->count == 1) m_timer = named->second;
 		else
@@ -421,7 +431,7 @@ int32_t CeGameProperties::relist(const char *json)
 			Property p;
 			std::string why;
 			const std::string name = stringMember(entry, "name");
-			const std::string key = lower(name);
+			const std::string key = this->key(name);
 			if (trim(name).empty())
 			{
 				m_problems.emplace_back("a property with no name");
@@ -463,12 +473,12 @@ int32_t CeGameProperties::relist(const char *json)
 
 int32_t CeGameProperties::place(const std::string &name, const char *entryJson)
 {
-	const std::string key = lower(name);
+	const std::string key = this->key(name);
 	const auto known = m_byName.find(key);
 	Property p;
 	std::string why;
 	cJSON *entry = entryJson != nullptr && entryJson[0] != '\0' ? cJSON_Parse(entryJson) : nullptr;
-	const bool there = cJSON_IsObject(entry) && lower(stringMember(entry, "name")) == key && parseEntry(entry, p, why);
+	const bool there = cJSON_IsObject(entry) && this->key(stringMember(entry, "name")) == key && parseEntry(entry, p, why);
 	cJSON_Delete(entry);
 	if (!there)
 	{
@@ -565,12 +575,12 @@ void CeGameProperties::describeAll() const
 int32_t CeGameProperties::find(const std::string &name, uint32_t *element) const
 {
 	if (element != nullptr) *element = 0;
-	const auto whole = m_byName.find(lower(name));
+	const auto whole = m_byName.find(key(name));
 	if (whole != m_byName.end()) return whole->second;
 	// "Name[3]": an element of an array
 	const size_t open = name.rfind('[');
 	if (open == std::string::npos || name.size() < open + 3 || name.back() != ']') return -1;
-	const auto base = m_byName.find(lower(name.substr(0, open)));
+	const auto base = m_byName.find(key(name.substr(0, open)));
 	if (base == m_byName.end()) return -1;
 	uint64_t index = 0;
 	for (size_t k = open + 1; k + 1 < name.size(); k++)

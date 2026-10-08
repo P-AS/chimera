@@ -5116,3 +5116,58 @@ The window's words are the user's, from trying the staged build that day:
 "Systems..."), and the folder chosen with Change folder... "is remembered for
 the next time" - it is written to the config when it is chosen, not when
 Chimera closes.
+
+## What a Flash core asked of the property tables (user-decided, 2026-10-08; chimera#218)
+
+The second core to list a game's variables by name (Flash Player itself, under
+the sandbox) came back with seven requests. Each was put to the user; three
+were taken, and one was a question with an answer.
+
+- **A dynamic table's names are exact** (decided: "exact case for dynamic
+  tables"). The engine found every property by its lower-cased name. That is
+  right for a fixed table, whose names are a core author's labels, and wrong
+  for a game's own: ActionScript 3 tells `score` from `Score`, so one of the
+  two was dropped as "named twice" and a lookup in the wrong case read the
+  other. `CeGameProperties::key()` is the one place that decides: lower-cased
+  for a fixed table, as written for a dynamic one. The picker's ticks were
+  keyed without case too, and are not now. A core whose game folds case
+  answers for whatever spelling it is asked.
+- **A bus says which of it is live** (decided: "yes, add live ranges"). A
+  bus's size is read once, so a heap arena is a gigabyte whatever is mapped,
+  and RAM Search's first passes - a bit and a byte per address - cost 1.1 GiB
+  and a read of all of it per pass. `GetBusRanges` in the core,
+  `ce_session_bus_ranges` in the engine, `ce_ramsearch_set_ranges` on a
+  search. The search lays the live ranges end to end and works on that
+  compacted domain exactly as it did on a whole one; addresses are the real
+  ones wherever they leave or enter. Three rules fell out: ranges are kept
+  whole to four bytes, so an aligned candidate stays aligned; no candidate
+  spans two ranges; and the ranges are those of the moment the search started
+  - memory mapped later is not part of a search already begun, the way memory
+  that did not exist could not have held the value being looked for. RAM
+  Search stays what it is: bytes at addresses (it was not taught about
+  properties, 2026-10-07).
+- **A domain can be hidden** (decided: "do the hidden domain only", of four
+  requests about values with no place of their own). A string the game keeps
+  in pieces has to be copied where the engine can read it, and that copy
+  showed in the Hex Editor and RAM Search as if it were memory. The core marks
+  the domain (`GetMemoryDomainHidden`); the frontend's domain list finds it by
+  name and never lists it. Not taken: a value carried inline in the table, a
+  kind for null and for an object reference, a write by name
+  (`SetGameProperty`), and listing by group. Each is a change to what a
+  property IS - today, a typed place - and none was needed for the tools to
+  work; they stay open on the issue.
+- **Which stack a between-frame export runs on** was a question. The answer
+  is miniBox's and was already written down: every host-called export runs on
+  the guest's one main stack, which is invisible - in no savestate, never
+  cleared. So a machine that reads stack it did not write is not reproducible
+  across a state load whether or not a tool ever asked it anything, and a core
+  wrapping such code gives its exports a stack of their own, as that core
+  does. docs/porting-a-core.md says so now. Whether the host should switch
+  stacks for every core instead was not decided, and nothing changed there.
+
+The synthetic core carries all three (a hidden Mailbox domain, `wanderer`
+beside `Wanderer`, three live pieces of its bus), so the witness holds them:
+legs E:dynamic-properties, E:bus-ranges and the game-properties script. The
+search itself is held to its oracle - the same random script, over the live
+third of a domain, against a model that keeps a record only where a whole
+candidate is live.

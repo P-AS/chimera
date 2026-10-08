@@ -149,7 +149,7 @@ private:
 	std::vector<Domain> m_domains;
 	std::vector<Property> m_props;
 	std::vector<std::string> m_problems;
-	std::map<std::string, int32_t> m_byName; // lower-cased
+	std::map<std::string, int32_t> m_byName; // by key(): lower-cased, or exact in a dynamic table
 	mutable std::string m_describe;
 	mutable bool m_describeStale = true;
 	int32_t m_timer = -1;
@@ -157,6 +157,7 @@ private:
 	uint64_t m_generation = 0;
 	static constexpr size_t MaxProperties = 200000;
 
+	std::string key(const std::string &name) const;
 	bool valid(int32_t index, uint32_t element) const;
 	bool parseEntry(const cJSON *entry, Property &p, std::string &why) const;
 	bool writeBytes(const Property &p, uint8_t *at, const Value &in, std::string &error) const;

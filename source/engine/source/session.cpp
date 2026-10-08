@@ -451,6 +451,7 @@ struct ce_session
 	uintptr_t (*mdPtr)(int32_t) = nullptr;
 	int64_t (*mdSize)(int32_t) = nullptr;
 	int32_t (*mdWritable)(int32_t) = nullptr;
+	int32_t (*mdHidden)(int32_t) = nullptr; /* optional: GetMemoryDomainHidden */
 	CeGameProperties properties;    // a game core's (docs/game-cores.md); empty for an emulator
 	uintptr_t (*gameProperties)() = nullptr;             // GetGameProperties: the table, again when it is dynamic
 	uintptr_t (*gameProperty)(const char *) = nullptr;   // GetGameProperty: one entry by name (a dynamic table's)
@@ -516,6 +517,7 @@ struct ce_session
 	// buses
 	int32_t (*busPeek)(int32_t, int32_t) = nullptr;
 	uintptr_t (*busRead)(int32_t, int64_t, int32_t) = nullptr; /* optional: ReadBus */
+	uintptr_t (*busRanges)(int32_t) = nullptr; /* optional: GetBusRanges */
 	void (*busPoke)(int32_t, int32_t, int32_t) = nullptr;
 	std::vector<std::string> busNames;
 	std::vector<int64_t> busSizes;
@@ -812,6 +814,7 @@ void ce_session::probeOptionalGroups()
 			busPeek = peek;
 			busPoke = poke;
 			busRead = reinterpret_cast<uintptr_t (*)(int32_t, int64_t, int32_t)>(opt("ReadBus", 3));
+			busRanges = reinterpret_cast<uintptr_t (*)(int32_t)>(opt("GetBusRanges", 1));
 		}
 	}
 
@@ -1541,6 +1544,10 @@ ce_session *ce_session_open(
 	s->mdSize = reinterpret_cast<int64_t (*)(int32_t)>(s->proc("GetMemoryDomainSize", 1, true, err));
 	s->mdWritable = reinterpret_cast<int32_t (*)(int32_t)>(s->proc("GetMemoryDomainWritable", 1, true, err));
 	if (s->mdWritable == nullptr) return abort(std::move(err));
+	{
+		std::string none;
+		s->mdHidden = reinterpret_cast<int32_t (*)(int32_t)>(s->proc("GetMemoryDomainHidden", 1, false, none));
+	}
 
 	s->videoBuf.assign(static_cast<size_t>(s->cfg.width) * s->cfg.height, 0);
 	s->audioBuf.assign(static_cast<size_t>(s->cfg.samplesPerFrame) * 2, 0);
@@ -2197,6 +2204,11 @@ int64_t ce_session_domain_size(const ce_session *s, int32_t index) { return s->m
 
 int32_t ce_session_domain_writable(const ce_session *s, int32_t index) { return s->mdWritable(index); }
 
+int32_t ce_session_domain_hidden(const ce_session *s, int32_t index)
+{
+	return s->mdHidden != nullptr && index >= 0 && index < s->mdCount() && s->mdHidden(index) != 0 ? 1 : 0;
+}
+
 int64_t ce_session_domain_read(const ce_session *s, int32_t index, int64_t offset, uint8_t *buf, int64_t len)
 {
 	int64_t size = s->mdSize(index);
@@ -2507,6 +2519,25 @@ int64_t ce_session_bus_read(const ce_session *s, int32_t index, int64_t addr, ui
 		done += n;
 	}
 	return len;
+}
+
+int32_t ce_session_bus_ranges(const ce_session *s, int32_t index, int64_t *pairs, int32_t cap)
+{
+	if (s->busRanges == nullptr || index < 0 || index >= static_cast<int32_t>(s->busSizes.size())) return -1;
+	const auto *list = reinterpret_cast<const int64_t *>(s->busRanges(index));
+	if (list == nullptr) return -1;
+	/* (address, length) pairs, ended by one of no length; a list with no end is cut */
+	int32_t n = 0;
+	while (n < CE_BUS_RANGES_MAX && list[2 * n + 1] > 0)
+	{
+		if (pairs != nullptr && n < cap)
+		{
+			pairs[2 * n] = list[2 * n];
+			pairs[2 * n + 1] = list[2 * n + 1];
+		}
+		n++;
+	}
+	return n;
 }
 
 void ce_session_bus_poke(ce_session *s, int32_t index, int32_t addr, int32_t value)

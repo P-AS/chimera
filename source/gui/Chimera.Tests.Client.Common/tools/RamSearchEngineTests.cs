@@ -32,6 +32,50 @@ namespace Chimera.Tests.Client.Common.tools
 			return engine;
 		}
 
+		/// <summary>
+		/// A domain that is mostly nothing says which of it is live, and the
+		/// search is over that alone, with the domain's own addresses (chimera#218).
+		/// </summary>
+		[TestMethod]
+		public void ADomainThatSaysWhatIsLiveIsSearchedThere()
+		{
+			var bytes = new byte[4096];
+			for (int i = 0; i < bytes.Length; i++) bytes[i] = (byte) (i * 7 + 1);
+			var domain = new MemoryDomainDelegate("Heap", bytes.Length, MemoryDomain.Endian.Little, addr => bytes[addr], null, 1)
+			{
+				LiveRanges = () => new long[] { 1024, 16, 256, 8 },
+			};
+			using var search = Make(domain);
+			Assert.AreEqual(24, search.Count);
+			Assert.AreEqual(256, search[0].Address);
+			Assert.AreEqual(1024, search[8].Address);
+			Assert.AreEqual((uint) bytes[1024], search[8].Previous);
+			Assert.AreEqual(8, search.IndexOf(1024));
+			Assert.AreEqual(-1, search.IndexOf(0), "an address outside what is live is not a candidate");
+
+			domain.LiveRanges = () => null; // no word on it: all of it, at the next start
+			search.Start();
+			Assert.AreEqual(4096, search.Count);
+		}
+
+		/// <summary>
+		/// A hidden domain holds what game properties point at: found by name,
+		/// and in no list a tool or a script draws its domains from.
+		/// </summary>
+		[TestMethod]
+		public void AHiddenDomainIsFoundByNameAndNeverListed()
+		{
+			var ram = new MemoryDomainByteArray("RAM", MemoryDomain.Endian.Little, new byte[16], writable: true, wordSize: 1);
+			var mailbox = new MemoryDomainByteArray("Mailbox", MemoryDomain.Endian.Little, new byte[16], writable: false, wordSize: 1) { Hidden = true };
+			var domains = new MemoryDomainList(new MemoryDomain[] { mailbox, ram });
+			Assert.AreEqual(1, domains.Count);
+			Assert.AreSame(ram, domains[0]);
+			Assert.AreSame(ram, domains.MainMemory, "the main memory is one that is shown");
+			Assert.IsFalse(domains.Any(static d => d.Name == "Mailbox"));
+			Assert.AreSame(mailbox, domains["Mailbox"]);
+			Assert.IsTrue(domains.Has("Mailbox") && domains.Has("RAM") && !domains.Has("VRAM"));
+		}
+
 		[TestMethod]
 		public void ADomainPastTheOldLimitIsSearchedThroughItsPointer()
 		{

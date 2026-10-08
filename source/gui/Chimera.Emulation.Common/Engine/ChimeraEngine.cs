@@ -861,6 +861,10 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_session_domain_writable(IntPtr session, int index);
 
+		/// <summary>A domain that only holds what game properties point at (engine.h): not for the memory tools.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_domain_hidden(IntPtr session, int index);
+
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract ulong ce_session_domain_ptr(IntPtr session, int index);
 
@@ -934,6 +938,10 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract long ce_session_bus_read(IntPtr session, int index, long addr, byte[] buf, long len);
 
+		/// <summary>Which of a bus is live now (engine.h): (address, length) pairs; -1 when the core says nothing.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_bus_ranges(IntPtr session, int index, long[]? pairs, int cap);
+
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_session_trace_available(IntPtr session);
 
@@ -971,6 +979,9 @@ namespace Chimera.Emulation.Common.Engine
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract void ce_ramsearch_destroy(IntPtr rs);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_ramsearch_set_ranges(IntPtr rs, long[]? pairs, long n);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_ramsearch_start(IntPtr rs, int size, int misaligned, int bigEndian, int detailed);
@@ -2601,6 +2612,7 @@ namespace Chimera.Emulation.Common.Engine
 		public string DomainName(int index) => ChimeraEngine.PtrToStringUtf8(E.ce_session_domain_name(_session, index)) ?? $"Domain {index}";
 		public long DomainSize(int index) => E.ce_session_domain_size(_session, index);
 		public bool DomainWritable(int index) => E.ce_session_domain_writable(_session, index) is not 0;
+		public bool DomainHidden(int index) => E.ce_session_domain_hidden(_session, index) is not 0;
 		public IntPtr DomainPtr(int index) => unchecked((IntPtr)(long)E.ce_session_domain_ptr(_session, index));
 
 		/// <returns>true when the running guest took the settings; false when it has no live-settings group (reboot instead)</returns>
@@ -2640,6 +2652,16 @@ namespace Chimera.Emulation.Common.Engine
 
 		/// <summary>Fills <paramref name="buf"/> from <paramref name="addr"/> on: one call, however long, rather than a peek per byte.</summary>
 		public void BusRead(int index, long addr, byte[] buf) => E.ce_session_bus_read(_session, index, addr, buf, buf.LongLength);
+
+		/// <summary>The bus's live ranges as (address, length) pairs, or null when the core says nothing about them.</summary>
+		public long[]? BusRanges(int index)
+		{
+			int n = E.ce_session_bus_ranges(_session, index, null, 0);
+			if (n < 0) return null;
+			var pairs = new long[n * 2];
+			int got = E.ce_session_bus_ranges(_session, index, pairs, n);
+			return got == n ? pairs : null; // it changed between the two calls: say nothing rather than half
+		}
 
 		public bool TraceAvailable => E.ce_session_trace_available(_session) is not 0;
 		public string TraceHeader => ChimeraEngine.PtrToStringUtf8(E.ce_session_trace_header(_session)) ?? "Instructions";

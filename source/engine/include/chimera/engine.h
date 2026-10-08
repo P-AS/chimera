@@ -1222,6 +1222,14 @@ CE_API int32_t ce_session_domain_count(const ce_session *s);
 CE_API const char *ce_session_domain_name(const ce_session *s, int32_t index);
 CE_API int64_t ce_session_domain_size(const ce_session *s, int32_t index);
 CE_API int32_t ce_session_domain_writable(const ce_session *s, int32_t index);
+/* A domain that is no memory of the machine's, only somewhere a core puts
+ * what its game properties point at - a value with no one place of its own,
+ * copied where the engine can read it (chimera#218). The core says so with an
+ * optional guest export, int32_t GetMemoryDomainHidden(int32_t index). Game
+ * properties read and write through such a domain like any other; the memory
+ * tools do not offer it: it is not in the Hex Editor's, RAM Search's or RAM
+ * Watch's domain lists. 0 for a core that does not say. */
+CE_API int32_t ce_session_domain_hidden(const ce_session *s, int32_t index);
 /* Copies out [offset, offset+len); returns bytes copied (clamped at end). */
 CE_API int64_t ce_session_domain_read(const ce_session *s, int32_t index, int64_t offset, uint8_t *buf, int64_t len);
 
@@ -1237,8 +1245,11 @@ CE_API int64_t ce_session_domain_read(const ce_session *s, int32_t index, int64_
  * property's index is its place in that list. Borrowed for the session's
  * lifetime. A core without the export has an empty table.
  * _find: "Name" or "Name[3]" (an array's element, by the number the game
- * calls it - from the table's `first`, 0 unless it says), any case; the
- * index, or -1. *element_out gets the element counted from 0, which is what
+ * calls it - from the table's `first`, 0 unless it says); the index, or -1.
+ * A fixed table's names are found in any case: they are a core author's
+ * labels. A dynamic table's are the game's own and EXACT - "score" and
+ * "Score" are two properties, and one asked for in another case is not there
+ * (chimera#218). *element_out gets the element counted from 0, which is what
  * every other call here takes (0 without an index).
  * _at: the first property, in the table's order, one of whose elements covers
  * `address` in the named domain; -1 when none does. *starts_out: 1 when the
@@ -1387,6 +1398,21 @@ CE_API int32_t ce_session_bus_peek(const ce_session *s, int32_t index, int32_t a
  * seconds of crossings into the guest (chimera#180). */
 #define CE_BUS_READ_CHUNK 65536
 CE_API int64_t ce_session_bus_read(const ce_session *s, int32_t index, int64_t addr, uint8_t *buf, int64_t len);
+/* Which of a bus is live now. A bus's size is read once, so one over an
+ * address space that is mostly nothing - a heap arena of a gigabyte with
+ * thirty megabytes mapped - is that large whatever is in it, and a search of
+ * it paid for all of it (chimera#218). A core that knows says, with an
+ * optional guest export
+ *   const int64_t *GetBusRanges(int32_t bus)
+ * answering (address, length) pairs in its own memory, ended by a pair whose
+ * length is 0, good until the next call; null for a bus it has no word on.
+ * Like every between-frame export it must not change the machine.
+ * This copies up to cap pairs into pairs and returns how many the bus has -
+ * more than cap means call again with room - or -1 when nothing is said, which
+ * is "all of it". 0 is an answer: nothing is live. The ranges are for
+ * ce_ramsearch_set_ranges; reading and poking a bus are what they were. */
+#define CE_BUS_RANGES_MAX (1 << 20)
+CE_API int32_t ce_session_bus_ranges(const ce_session *s, int32_t index, int64_t *pairs, int32_t cap);
 CE_API void ce_session_bus_poke(ce_session *s, int32_t index, int32_t addr, int32_t value);
 
 /* savedata export: files the guest deems the user's progress (a memory
@@ -1711,6 +1737,16 @@ typedef int64_t (*ce_ramsearch_read_fn)(void *user, int64_t offset, uint8_t *buf
 
 CE_API ce_ramsearch *ce_ramsearch_create(const uint8_t *base, ce_ramsearch_read_fn fn, void *user, int64_t domain_size);
 CE_API void ce_ramsearch_destroy(ce_ramsearch *rs);
+/* Which of the domain is live: n pairs of (address, length), in any order -
+ * what ce_session_bus_ranges answers for a bus that is mostly nothing. The
+ * next _start searches those alone (its memory and its reads cost what the
+ * live part costs), and keeps to them until the one after: what is mapped
+ * later is not part of a search already begun. No candidate spans two
+ * ranges, and an address outside them is not one _add_addresses takes.
+ * n < 0: the whole domain, which is how every search starts out. */
+CE_API int32_t ce_ramsearch_set_ranges(ce_ramsearch *rs, const int64_t *pairs, int64_t n);
+/* Bytes the running search covers: the domain's size, or its live part. */
+CE_API int64_t ce_ramsearch_searched_size(const ce_ramsearch *rs);
 /* Every address becomes a candidate. detailed keeps a current value and a
  * change count per candidate, fed by _update once a frame. */
 CE_API int32_t ce_ramsearch_start(ce_ramsearch *rs, int32_t size, int32_t misaligned, int32_t big_endian, int32_t detailed);

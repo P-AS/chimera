@@ -256,6 +256,27 @@ Probed once after `Init`; absent exports simply mean the tool is not offered.
   RAM Search reads the whole bus, and without it every byte is a call into the
   sandbox: EKA2L1's 64 MB bus took 3 s a search that way and 0.2 s with it
   (chimera#180). A core without it still works; the engine peeks for it.
+  **A bus that is mostly nothing says what is live**: a bus's size is read
+  once, so one over a heap arena is a gigabyte whatever is mapped in it, and a
+  RAM search pays for every byte. Export `const int64_t *GetBusRanges(int32_t
+  bus)` - (address, length) pairs in an `ECL_INVISIBLE` buffer, ended by a pair
+  of length 0, null for a bus you have no word on - and a search covers those
+  ranges alone, as they were when it started (chimera#218). Reads and pokes
+  are unchanged: an address outside them still reads as you read it.
+- **A domain that is only a mailbox** - somewhere you copy a value a game
+  property points at, because it has no one place in the machine - is marked
+  with `int32_t GetMemoryDomainHidden(int32_t index)`. Properties read and
+  write through it; no memory tool lists it. Keep its bytes in memory that is
+  in no state, like every answer to a tool.
+- **Which stack a tool's call runs on.** Every export the host calls - a
+  frame, and everything asked between frames - runs on the guest's one main
+  stack, from its top (miniBox, docs/MACHINE-SPEC.md: both guest stacks are
+  invisible, in no savestate, and never cleared). So what a call leaves below
+  the stack pointer is there for the next call to find, and it is NOT what was
+  there when a state was saved. A machine must never depend on it. If the code
+  you wrap reads stack it did not write - a binary blob can - give every
+  host-called export a stack of your own in invisible memory, or the run in
+  which a tool asked something is not the run in which it did not.
 - **Drives** - `GetDriveCount/Name/Light`: one entry per medium the PROJECT
   put in the machine, lit on a frame it was read or written. Report none rather
   than a light that can never come on. **If a drive swaps between images, say

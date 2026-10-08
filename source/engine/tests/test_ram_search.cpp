@@ -9,6 +9,11 @@
  * fails if either shape was never reached. Then a domain well past the old
  * limit is searched, and what it cost is printed.
  *
+ * The same script runs again over a domain that is mostly nothing, told
+ * which ranges of it are live (chimera#218): the model then holds a record
+ * only where a whole candidate is live, and must still agree on every row -
+ * with the real address of each.
+ *
  * Plain asserts, run by `meson test -C build/meson-linux`.
  */
 
@@ -42,6 +47,27 @@ struct Model
 	bool misaligned = false, bigEndian = false, detailed = false;
 	std::vector<Rec> list;
 	std::vector<std::vector<Rec>> undo, redo;
+	/* live ranges, as the search keeps them: a byte each, whole fours */
+	std::vector<uint8_t> liveMap;
+
+	void setLive(const std::vector<int64_t> &pairs)
+	{
+		liveMap.assign(mem->size(), 0);
+		for (size_t i = 0; i + 1 < pairs.size(); i += 2)
+		{
+			const int64_t from = std::max<int64_t>(pairs[i], 0) & ~int64_t{ 3 };
+			const int64_t to = std::min<int64_t>((int64_t)mem->size(), (pairs[i] + pairs[i + 1] + 3) & ~int64_t{ 3 });
+			for (int64_t a = from; a < to; a++) liveMap[(size_t)a] = 1;
+		}
+	}
+	/* every byte of the candidate live: then they are one range's, since a gap is not */
+	bool live(uint64_t a, int sz) const
+	{
+		if (liveMap.empty()) return true;
+		for (int i = 0; i < sz; i++)
+			if (a + (uint64_t)i >= liveMap.size() || !liveMap[a + (uint64_t)i]) return false;
+		return true;
+	}
 
 	uint32_t peek(uint64_t a, int sz) const
 	{
@@ -59,7 +85,7 @@ struct Model
 		undo.clear(); redo.clear(); list.clear();
 		const int step = mis ? 1 : sz;
 		for (uint64_t a = 0; a + (uint64_t)sz <= mem->size(); a += (uint64_t)step)
-			list.push_back({ a, peek(a, sz), peek(a, sz), 0 });
+			if (live(a, sz)) list.push_back({ a, peek(a, sz), peek(a, sz), 0 });
 	}
 	void record()
 	{
@@ -153,7 +179,7 @@ struct Model
 			for (int k = 0; k < span; k++)
 			{
 				const uint64_t a = r.addr + (uint64_t)k;
-				if (a + (uint64_t)newSize > mem->size() || a % (uint64_t)step) continue;
+				if (a + (uint64_t)newSize > mem->size() || a % (uint64_t)step || !live(a, newSize)) continue;
 				out.push_back({ a, peek(a, newSize), peek(a, newSize), 0 });
 			}
 		list = out;
@@ -203,7 +229,7 @@ struct Harness
 	}
 };
 
-void script(bool throughPointer, int size, bool misaligned, bool bigEndian, bool detailed, uint32_t seed, Harness &h)
+void script(bool throughPointer, int size, bool misaligned, bool bigEndian, bool detailed, uint32_t seed, Harness &h, bool ranged = false)
 {
 	std::mt19937 rng(seed);
 	h.mem.resize(256 * 1024 + 3); /* a tail no aligned slot covers */
@@ -212,7 +238,30 @@ void script(bool throughPointer, int size, bool misaligned, bool bigEndian, bool
 
 	RS rs(throughPointer ? h.mem.data() : nullptr, throughPointer ? nullptr : Harness::readFn, &h.mem, (int64_t)h.mem.size());
 	h.rs = &rs;
+	if (ranged)
+	{
+		/* a third of it live, in pieces of any length at any address, out of
+		 * order, two of them touching, one running off the end */
+		std::vector<int64_t> pairs;
+		for (int i = 0; i < 9; i++)
+		{
+			pairs.push_back((int64_t)(rng() % h.mem.size()));
+			pairs.push_back((int64_t)(1 + rng() % 20000));
+		}
+		pairs.push_back(pairs[0] + pairs[1]);
+		pairs.push_back(777);
+		pairs.push_back((int64_t)h.mem.size() - 5);
+		pairs.push_back(4000);
+		rs.setRanges(pairs.data(), (int64_t)pairs.size() / 2);
+		h.model.setLive(pairs);
+	}
 	rs.start(size, misaligned, bigEndian, detailed);
+	if (ranged)
+	{
+		int64_t liveBytes = 0;
+		for (uint8_t b : h.model.liveMap) liveBytes += b;
+		assert(rs.searchedSize() == liveBytes && liveBytes < (int64_t)h.mem.size() / 2);
+	}
 	h.model.start(size, misaligned, bigEndian, detailed);
 	h.agree("start");
 
@@ -369,6 +418,75 @@ void addedAddressesCanBeOutOfRange()
 	assert(rs.count() == 2 && rs.row(1, row) && row.address == 8 && row.previous == 0x0909);
 }
 
+/* Live ranges at the edges of what they mean: an address outside them is not
+ * found, removed or added; a candidate that would span two is not one; no
+ * range at all is nothing to search; the whole domain as one range, and no
+ * word about ranges, are the search it always was. */
+void liveRangesAtTheirEdges()
+{
+	std::vector<uint8_t> mem(4096);
+	for (size_t i = 0; i < mem.size(); i++) mem[i] = (uint8_t)(i * 13 + 1);
+	RS rs(nullptr, Harness::readFn, &mem, (int64_t)mem.size());
+
+	const int64_t two[] = { 1024, 16, 256, 8 }; /* out of order: 256..263 and 1024..1039 */
+	rs.setRanges(two, 2);
+	rs.start(4, true, false, false);
+	/* 4-byte candidates at every byte: 5 in the first range, 13 in the second, none across */
+	assert(rs.searchedSize() == 24 && rs.count() == 5 + 13);
+	RS::Row row;
+	uint32_t first;
+	std::memcpy(&first, mem.data() + 256, 4);
+	assert(rs.row(0, row) && row.address == 256 && row.current == first && row.previous == first);
+	assert(rs.row(4, row) && row.address == 260);
+	assert(rs.row(5, row) && row.address == 1024 && rs.row(17, row) && row.address == 1036);
+	assert(rs.indexOf(1024) == 5 && rs.indexOf(261) == -1 && rs.indexOf(0) == -1 && rs.indexOf(1040) == -1);
+
+	/* by address: the real one */
+	RS::Query q;
+	q.compare = RS::CmpSpecificAddress;
+	q.op = RS::OpGreaterThanEqual;
+	q.value = 1030;
+	assert(rs.search(q, RS::PrevLastSearch) == 5 + 6 && rs.count() == 7);
+	assert(rs.row(0, row) && row.address == 1030);
+
+	/* the address lists: what is outside is not memory this search has */
+	const uint64_t gone[] = { 1031, 300, 5000 };
+	rs.removeAddresses(gone, 3, false);
+	assert(rs.count() == 6 && rs.indexOf(1031) == -1 && rs.indexOf(1032) == 1);
+	const uint64_t add[] = { 256, 261, 300, 1038 }; /* in; across the end of its range; outside; across the end */
+	rs.addAddresses(add, 4, true);
+	assert(rs.count() == 7 && rs.row(6, row) && row.address == 256);
+
+	/* a conversion keeps to the ranges too */
+	rs.start(1, false, false, false);
+	assert(rs.count() == 24);
+	rs.convertTo(4);
+	assert(rs.count() == 2 + 4 && rs.row(1, row) && row.address == 260 && rs.row(2, row) && row.address == 1024);
+
+	/* nothing live: nothing to search, and the next word about ranges is taken at the next start */
+	rs.setRanges(two, 0);
+	assert(rs.count() == 6);
+	rs.start(1, false, false, false);
+	assert(rs.count() == 0 && rs.searchedSize() == 0 && !rs.row(0, row));
+
+	/* all of it, said in one range or not said: every byte */
+	const int64_t all[] = { 0, 4096 };
+	rs.setRanges(all, 1);
+	rs.start(1, false, false, false);
+	assert(rs.count() == 4096 && rs.searchedSize() == 4096);
+	rs.setRanges(nullptr, -1);
+	rs.start(2, false, false, false);
+	assert(rs.count() == 2048 && rs.row(2047, row) && row.address == 4094);
+
+	/* through the ABI */
+	ce_ramsearch *abi = ce_ramsearch_create(mem.data(), nullptr, nullptr, (int64_t)mem.size());
+	assert(abi && ce_ramsearch_set_ranges(abi, two, 2) == 0 && ce_ramsearch_start(abi, 1, 0, 0, 0) == 0);
+	assert(ce_ramsearch_count(abi) == 24 && ce_ramsearch_searched_size(abi) == 24);
+	uint64_t address; uint32_t current, previous, changes;
+	assert(ce_ramsearch_row(abi, 8, &address, &current, &previous, &changes) == 1 && address == 1024 && current == mem[1024]);
+	ce_ramsearch_destroy(abi);
+}
+
 /* Through the ABI, on a domain four times the size the frontend used to
  * refuse: what a first search and a narrowing one cost. */
 void pastTheOldLimit()
@@ -425,8 +543,24 @@ int main()
 				}
 	assert(dense && sparse);
 
+	/* the same, over the live third of the domain */
+	dense = sparse = false;
+	for (int pointer = 0; pointer < 2; pointer++)
+		for (int size : { 1, 2, 4 })
+			for (int misaligned = 0; misaligned < 2; misaligned++)
+				for (int detailed = 0; detailed < 2; detailed++)
+				{
+					Harness h;
+					script(pointer != 0, size, misaligned != 0, (seed & 1) != 0, detailed != 0, seed, h, true);
+					dense |= h.sawDense;
+					sparse |= h.sawSparse;
+					seed++;
+				}
+	assert(dense && sparse);
+
 	sortsByWhatIsShown();
 	addedAddressesCanBeOutOfRange();
+	liveRangesAtTheirEdges();
 	pastTheOldLimit();
 	std::printf("test_ram_search: ok\n");
 	return 0;

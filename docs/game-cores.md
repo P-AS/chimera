@@ -187,7 +187,20 @@ What changes, and it is all in the engine:
 - A property may live on a **bus** as well as in a domain. A bus has no
   pointer (engine.h, `ce_session_bus_*`); its properties are read and written
   through it. A heap is a bus because only part of its address range is
-  memory at any moment.
+  memory at any moment - and it can say which part, with `GetBusRanges`
+  (docs/porting-a-core.md), so that a RAM search of a gigabyte of address
+  space costs what the thirty megabytes in it cost.
+- **Names are exact.** A fixed table's names are a core author's labels, and
+  are found whatever their case. A dynamic table's are the game's own, in a
+  language that may tell `score` from `Score`: two that differ only by case
+  are two properties, and one asked for in another case is not there. A core
+  whose game folds case (a version-6 Flash movie) answers `GetGameProperty`
+  for any spelling it likes, under the name it was asked for.
+- **A value with no place of its own** - a string the game keeps in pieces, a
+  coordinate kept in another unit - has to be copied somewhere the engine can
+  read. Give it a memory domain of its own and mark that domain hidden
+  (`GetMemoryDomainHidden`, docs/porting-a-core.md): properties read through
+  it, and the Hex Editor, RAM Search and RAM Watch never list it.
 
 The rule for the core is one sentence and it is hard: **answering must not
 change the machine.** The list and the lookup are made between frames, by a

@@ -33,7 +33,8 @@ namespace Chimera.Client.GUI
 		private readonly ListView _list;
 		private readonly TextBox _filter;
 		private readonly Button _add;
-		private readonly Dictionary<string, GamePropertyElement> _ticked = new(StringComparer.OrdinalIgnoreCase);
+		// By the name as the engine gives it: a game's own names may differ only by case (chimera#218).
+		private readonly Dictionary<string, GamePropertyElement> _ticked = new(StringComparer.Ordinal);
 		private bool _filling;
 
 		protected override string WindowTitleStatic => "Add Game Properties";

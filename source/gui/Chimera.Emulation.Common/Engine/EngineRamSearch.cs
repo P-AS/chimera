@@ -77,7 +77,12 @@ namespace Chimera.Emulation.Common.Engine
 		}
 
 		public void Start(int size, bool misaligned, bool bigEndian, bool detailed)
-			=> Check(E.ce_ramsearch_start(_handle, size, misaligned ? 1 : 0, bigEndian ? 1 : 0, detailed ? 1 : 0));
+		{
+			// a domain that is mostly nothing says which of it is live; the engine searches that alone
+			var live = _domain.LiveRanges?.Invoke();
+			Check(E.ce_ramsearch_set_ranges(_handle, live, live is null ? -1 : live.Length / 2));
+			Check(E.ce_ramsearch_start(_handle, size, misaligned ? 1 : 0, bigEndian ? 1 : 0, detailed ? 1 : 0));
+		}
 
 		public long Count => _handle == IntPtr.Zero ? 0 : E.ce_ramsearch_count(_handle);
 

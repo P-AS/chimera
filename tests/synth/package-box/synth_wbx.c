@@ -121,9 +121,15 @@ ECL_EXPORT uint32_t *GetVideoBgra(void)
  * The generic Chimera adapter queries these AFTER Init, because a core's domain
  * sizes/count can depend on runtime settings (synth's are fixed, but the ABI is
  * uniform). Domain 0 is RAM (writable), domain 1 is VRAM (the palette-index
- * framebuffer, read-only). */
-#define MD_COUNT 2
-static const char *const md_names[MD_COUNT] = { "RAM", "VRAM" };
+ * framebuffer, read-only). Domain 2, "Mailbox", is no memory of the machine's:
+ * it is where a core puts what a game property points at when the value has
+ * no place of its own (chimera#218). It is HIDDEN (GetMemoryDomainHidden) -
+ * the engine reads properties through it, and no memory tool lists it. It
+ * lives in memory that is in no state, and holds the four letters the Letter
+ * property reads. */
+#define MD_COUNT 3
+static const char *const md_names[MD_COUNT] = { "RAM", "VRAM", "Mailbox" };
+ECL_INVISIBLE static uint8_t g_mailbox[16];
 
 ECL_EXPORT int GetMemoryDomainCount(void) { return MD_COUNT; }
 
@@ -132,16 +138,19 @@ ECL_EXPORT const char *GetMemoryDomainName(int i) { return (i >= 0 && i < MD_COU
 ECL_EXPORT uint8_t *GetMemoryDomainPtr(int i) {
 	if (i == 0) return synth_get_ram(g_synth);
 	if (i == 1) return (uint8_t *)synth_get_framebuffer(g_synth);
+	if (i == 2) { memcpy(g_mailbox, "MAIL", 4); return g_mailbox; }
 	return 0;
 }
 
 ECL_EXPORT int64_t GetMemoryDomainSize(int i) {
 	if (i == 0) return 4096;
 	if (i == 1) return FB_W * FB_H;
+	if (i == 2) return sizeof g_mailbox;
 	return 0;
 }
 
 ECL_EXPORT int GetMemoryDomainWritable(int i) { return i == 0 ? 1 : 0; }
+ECL_EXPORT int GetMemoryDomainHidden(int i) { return i == 2 ? 1 : 0; }
 
 /* --- buses (engine.h, ce_session_bus_*) ---
  * An address space the core resolves itself: three times 64 KiB, so a bulk
@@ -170,6 +179,17 @@ ECL_EXPORT const uint8_t *ReadBus(int32_t b, int64_t addr, int32_t len)
 	return g_busRun;
 }
 
+/* Which of a bus is live (engine.h, ce_session_bus_ranges). Nothing on the
+ * synth's bus is ever unmapped; it says three pieces are live anyway - out of
+ * order, at addresses that are no multiple of four, the last running off the
+ * end - so the witness can hold a search to them (leg E:bus-ranges). "Bus
+ * (peeks)" has no word on it, which is "all of it". */
+ECL_EXPORT const int64_t *GetBusRanges(int32_t b)
+{
+	static const int64_t live[] = { 0x20001, 0x0ff0, 0x1000, 0x0801, BUS_SIZE - 6, 64, 0, 0 };
+	return b == 0 ? live : 0;
+}
+
 /* --- a game core's property table (docs/game-cores.md) ---
  * Names for places in RAM, which the frontend's tools watch, poke and freeze by
  * name and Lua reaches through game.*. The synth is an emulator, not a game
@@ -191,6 +211,8 @@ ECL_EXPORT const uint8_t *ReadBus(int32_t b, int64_t addr, int32_t len)
  *   Origin     the byte at RAM 0x200, which does not move: where Wanderer is
  *              while the row is 0, and what tells a write that followed
  *              Wanderer from one that went where it used to be;
+ *   wanderer   a byte at RAM 0x244, which is not Wanderer: a game's own names
+ *              are exact, and two that differ by case are two (chimera#218);
  *   Row, Steps where the others' places and values are worked out from.
  * The engine asks for the list (GetGameProperties) when told to, and for one
  * property by name (GetGameProperty) before every use; witness leg
@@ -213,6 +235,7 @@ static int moving_entry(char *out, size_t cap, const char *name)
 	if (!strcmp(name, "Sometimes") && (ram[2] & 1)) return snprintf(out, cap, shape, name, "RAM", 0x240, "u8");
 	if (!strcmp(name, "Mirror")) return snprintf(out, cap, shape, name, "Bus", 4, "u8");
 	if (!strcmp(name, "Origin")) return snprintf(out, cap, shape, name, "RAM", 0x200, "u8");
+	if (!strcmp(name, "wanderer")) return snprintf(out, cap, shape, name, "RAM", 0x244, "u8");
 	if (!strcmp(name, "Row")) return snprintf(out, cap, shape, name, "RAM", 2, "u8");
 	if (!strcmp(name, "Steps")) return snprintf(out, cap, shape, name, "RAM", 4, "u32");
 	return 0;
@@ -229,10 +252,10 @@ ECL_EXPORT const char *GetGameProperties(void)
 {
 	if (moving())
 	{
-		static const char *const names[] = { "Wanderer", "Sometimes", "Mirror", "Origin", "Row", "Steps" };
+		static const char *const names[] = { "Wanderer", "Sometimes", "Mirror", "Origin", "wanderer", "Row", "Steps" };
 		size_t at = (size_t)snprintf(g_propsNow, sizeof g_propsNow, "{ \"dynamic\": true, \"properties\": [");
 		int listed = 0;
-		for (int k = 0; g_synth && k < 6; k++)
+		for (int k = 0; g_synth && k < (int)(sizeof names / sizeof names[0]); k++)
 		{
 			char one[256];
 			if (moving_entry(one, sizeof one, names[k]) <= 0) continue;
@@ -264,7 +287,10 @@ ECL_EXPORT const char *GetGameProperties(void)
 		"{ \"name\": \"Test.Row\", \"domain\": \"RAM\", \"offset\": 304, \"type\": \"s16\", \"count\": 4, \"stride\": 4, \"group\": \"Test\" },"
 		"{ \"name\": \"Test.Col\", \"domain\": \"RAM\", \"offset\": 306, \"type\": \"u8\", \"count\": 4, \"stride\": 4, \"group\": \"Test\" },"
 		"{ \"name\": \"Test.Flag\", \"domain\": \"RAM\", \"offset\": 320, \"type\": \"u8\", \"bit\": 2, \"bits\": 1, \"group\": \"Test\" },"
-		"{ \"name\": \"Test.Nibble\", \"domain\": \"RAM\", \"offset\": 320, \"type\": \"u8\", \"bit\": 4, \"bits\": 4, \"group\": \"Test\" }"
+		"{ \"name\": \"Test.Nibble\", \"domain\": \"RAM\", \"offset\": 320, \"type\": \"u8\", \"bit\": 4, \"bits\": 4, \"group\": \"Test\" },"
+		/* a value with no place of its own, read through the hidden domain */
+		"{ \"name\": \"Letter\", \"domain\": \"Mailbox\", \"offset\": 0, \"type\": \"string\", \"length\": 4, \"group\": \"Test\","
+		" \"description\": \"What the core left in its mailbox\" }"
 		"] }";
 }
 

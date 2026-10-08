@@ -207,7 +207,10 @@ namespace Chimera.Emulation.Common.Waterbox
 			{
 				domains.Add(new MemoryDomainIntPtr(
 					_session.DomainName(i), MemoryDomain.Endian.Little,
-					_session.DomainPtr(i), _session.DomainSize(i), _session.DomainWritable(i), 1));
+					_session.DomainPtr(i), _session.DomainSize(i), _session.DomainWritable(i), 1)
+				{
+					Hidden = _session.DomainHidden(i),
+				});
 			}
 
 			// The drive lights, if this machine has any media to light one for.
@@ -253,7 +256,7 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// </summary>
 		internal static void PublishMemory(BasicServiceProvider services, IList<MemoryDomain> domains)
 		{
-			if (domains.Count is 0) return;
+			if (domains.All(static d => d.Hidden)) return; // none, or none a tool may show
 			services.Register<IMemoryDomains>(new MemoryDomainList(domains));
 		}
 

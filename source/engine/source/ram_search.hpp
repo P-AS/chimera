@@ -11,6 +11,14 @@
  *
  * Memory comes through a pointer when the domain has one, and through a
  * callback in chunks when it has not (a bus, a test's byte array).
+ *
+ * A domain may be mostly nothing: a bus over a gigabyte of address space with
+ * thirty megabytes mapped (chimera#218). Told which ranges are live, a search
+ * is over those alone - its images and its reads cost what the live part
+ * costs. Inside, the live ranges are laid end to end and everything works on
+ * that compacted domain as it always has; addresses are the real ones again
+ * wherever they leave or enter (rows, indexOf, the address lists, a search by
+ * address). A candidate never spans two ranges.
  */
 #pragma once
 
@@ -48,6 +56,13 @@ public:
 	};
 
 	CeRamSearch(const uint8_t *base, CeRamSearchReadFn fn, void *user, int64_t domainSize);
+
+	/* Which of the domain is live: n pairs of (address, length), in any order.
+	 * Taken up by the next start() and kept until the one after - what is
+	 * mapped later is not part of a search already begun. n < 0: all of it. */
+	void setRanges(const int64_t *pairs, int64_t n);
+	/* Bytes the running search covers: the domain's size, or its live part. */
+	int64_t searchedSize() const { return m_domainSize; }
 
 	/* Every address of the domain becomes a candidate, its previous value what
 	 * memory holds now. History is forgotten. */
@@ -116,10 +131,20 @@ private:
 	static constexpr uint64_t RankWords = 64;
 	static constexpr int64_t Chunk = 1 << 20;
 
+	struct Range
+	{
+		int64_t real = 0;   /* where it is in the domain */
+		int64_t length = 0;
+		int64_t at = 0;     /* where it is in the compacted domain */
+	};
+
 	const uint8_t *m_base;
 	CeRamSearchReadFn m_fn;
 	void *m_user;
-	int64_t m_domainSize;
+	int64_t m_realSize;   /* the domain's */
+	int64_t m_domainSize; /* what is searched: m_realSize, or the live ranges' total */
+	std::vector<Range> m_ranges;  /* of the running search; empty = the whole domain */
+	std::vector<Range> m_pending; /* for the next start() */
 	bool m_bigEndian = false;
 	bool m_detailed = false;
 	bool m_misaligned = false;
@@ -129,7 +154,11 @@ private:
 	std::deque<Set> m_undo, m_redo;
 	mutable std::vector<uint8_t> m_scratch;
 
+	void readReal(int64_t offset, uint8_t *buf, int64_t len) const;
 	void readInto(int64_t offset, uint8_t *buf, int64_t len) const;
+	uint64_t toReal(uint64_t address) const;
+	bool toCompact(uint64_t real, uint64_t &address) const;
+	bool inOneRange(uint64_t address, int size) const;
 	const uint8_t *window(int64_t offset, int64_t len) const;
 	uint32_t load(const uint8_t *p, int size) const;
 	void store(uint8_t *p, int size, uint32_t v) const;

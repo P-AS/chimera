@@ -523,6 +523,47 @@ void aDynamicTableMovesAndKeepsItsIndices()
 	// an entry the engine cannot use is no answer either
 	assert(gp.place("_root.e", R"({ "name": "_root.e", "domain": "Nowhere", "offset": 0, "type": "u8" })") == -1);
 }
+
+// A fixed table's names are a core author's labels and are found in any case.
+// A dynamic table's are the game's own, and exact: two that differ only by
+// case are two properties, and one asked for in another case is not there.
+void aDynamicTablesNamesAreExact()
+{
+	std::memset(g_state, 0, sizeof g_state);
+	g_state[0] = 7;
+	g_state[1] = 9;
+
+	GP fixed;
+	fixed.load(R"({ "properties": [
+		{ "name": "Score", "domain": "Game State", "offset": 0, "type": "u8" },
+		{ "name": "score", "domain": "Game State", "offset": 1, "type": "u8" } ] })", domains());
+	assert(fixed.all().size() == 1 && fixed.problems().size() == 1);   // the second is the first again
+	assert(fixed.find("SCORE", nullptr) == 0 && fixed.find("score", nullptr) == 0);
+
+	GP gp;
+	gp.load(R"({ "dynamic": true, "properties": [
+		{ "name": "root.score", "domain": "Game State", "offset": 0, "type": "u8" },
+		{ "name": "root.Score", "domain": "Game State", "offset": 1, "type": "u8" } ] })", domains());
+	assert(gp.all().size() == 2 && gp.problems().empty());
+	const int32_t lowerCase = gp.find("root.score", nullptr), upperCase = gp.find("root.Score", nullptr);
+	assert(lowerCase == 0 && upperCase == 1);
+	assert(gp.text(lowerCase, 0, true) == "7" && gp.text(upperCase, 0, true) == "9");
+	assert(gp.find("root.SCORE", nullptr) == -1 && gp.find("Root.score", nullptr) == -1);
+
+	// listed again, each keeps its own index
+	assert(gp.relist(R"({ "dynamic": true, "properties": [
+		{ "name": "root.Score", "domain": "Game State", "offset": 0, "type": "u8" },
+		{ "name": "root.score", "domain": "Game State", "offset": 1, "type": "u8" } ] })") == 2);
+	assert(gp.all().size() == 2 && gp.problems().empty());
+	assert(gp.text(lowerCase, 0, true) == "9" && gp.text(upperCase, 0, true) == "7");
+
+	// by name: the core's answer for another case of the name is no answer,
+	// and a new case of a name is a new property
+	assert(gp.place("root.score", R"({ "name": "root.Score", "domain": "Game State", "offset": 0, "type": "u8" })") == lowerCase);
+	assert(!gp.all()[size_t(lowerCase)].present && gp.all()[size_t(upperCase)].present);
+	assert(gp.place("root.SCORE", R"({ "name": "root.SCORE", "domain": "Game State", "offset": 1, "type": "u8" })") == 2);
+	assert(gp.find("root.SCORE", nullptr) == 2 && gp.all().size() == 3);
+}
 } // namespace
 
 int main()
@@ -537,6 +578,7 @@ int main()
 	theGamesOwnTimer();
 	aBusHoldsPropertiesThroughItsFunctions();
 	aDynamicTableMovesAndKeepsItsIndices();
+	aDynamicTablesNamesAreExact();
 	std::printf("test_game_properties: ok\n");
 	return 0;
 }

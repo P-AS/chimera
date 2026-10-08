@@ -73,7 +73,11 @@ namespace Chimera.Emulation.Common.Waterbox
 					{
 						if (_session.Disposed) Array.Clear(values, 0, values.Length);
 						else _session.BusRead(bus, range.Start, values);
-					}));
+					})
+				{
+					// a bus over an address space that is mostly nothing (chimera#218)
+					LiveRanges = () => _session.Disposed ? null : _session.BusRanges(bus),
+				});
 			}
 
 			if (surfaces is 0) services.Unregister<ICoreSurfaces>();

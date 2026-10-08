@@ -34,6 +34,18 @@ namespace Chimera.Emulation.Common
 
 		public bool Writable { get; protected set; }
 
+		/// <summary>
+		/// No memory of the machine's: somewhere a core puts what its game properties point at.
+		/// Found by name, never listed - no tool offers it (engine.h, ce_session_domain_hidden).
+		/// </summary>
+		public bool Hidden { get; set; }
+
+		/// <summary>
+		/// Which of the domain is live now, as (address, length) pairs, for one that is mostly
+		/// nothing (engine.h, ce_session_bus_ranges). Null, or answering null: all of it.
+		/// </summary>
+		public Func<long[]> LiveRanges { get; set; }
+
 		public abstract byte PeekByte(long addr);
 
 		public abstract void PokeByte(long addr, byte val);

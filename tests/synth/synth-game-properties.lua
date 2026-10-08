@@ -44,7 +44,7 @@ end
 local names = game.list()
 local want = { "Status", "Cursor.X", "Cursor.Y", "Steps", "Started",
 	"Test.Frames", "Test.Balance", "Test.Gravity", "Test.Name", "Test.Wide", "Test.Key", "Test.Score",
-	"Test.Row", "Test.Col", "Test.Flag", "Test.Nibble" }
+	"Test.Row", "Test.Col", "Test.Flag", "Test.Nibble", "Letter" }
 check(#names == #want, "game.list() has " .. #names .. " names, the core exports " .. #want)
 for i, name in ipairs(want) do
 	check(names[i] == name, "game.list()[" .. i .. "] is " .. tostring(names[i]) .. ", not " .. name)
@@ -135,5 +135,15 @@ check(not game.set("Test.Flag", 2), "a one-bit field took 2")
 check(game.get("No Such Property") == nil, "game.get of an unknown name returned something")
 check(game.set("No Such Property", 1) == false, "game.set of an unknown name said it set it")
 check(game.set("Cursor.Y", 2) == true and game.get("Cursor.Y") == 2, "game.set of a known name did not say it set it")
+
+-- a value with no place of its own is read through a domain the core hides
+-- (chimera#218): the property reads, and nothing that lists domains has it
+check(game.get("Letter") == "MAIL", "the property in the hidden domain reads " .. tostring(game.get("Letter")) .. ", not MAIL")
+local listedDomains = 0
+for _, name in pairs(memory.getmemorydomainlist()) do
+	listedDomains = listedDomains + 1
+	check(name ~= "Mailbox", "the hidden domain is in the list of memory domains")
+end
+check(listedDomains >= 2, "only " .. listedDomains .. " memory domains are listed")
 
 finish("OK", "")
