@@ -481,6 +481,15 @@ named with its chain. The comparison is of the machine rather than of the bytes
 of its state, because a state also carries bookkeeping - which pages are dirty -
 that two copies of one machine can disagree about.
 
+`CHIMERA_PLAN_VERIFY=1` checks the one thing that cannot: an anchor filled in
+the background. The verify above finishes each planned anchor at once, so a
+page that changes while a helper is still copying is never in play; this
+takes the machine a second time, whole, just before the plan, lets the plan
+be filled as it is for a person, and says which pages of the two differ. The
+anchor it was written for turned out exact - what was wrong was the delta
+AFTER it (miniBox 109bcaa: a plan's hold cost the next epoch its own) - and
+`chimera-run --greenzone-check` without the verify is what shows that.
+
 The budget then decides only what happens to the far band. The engine can send
 it to disk, oldest first, into a directory its caller names (the spill described
 below, which `chimera-run --spill` still uses). **Chimera does not** (user-decided,
