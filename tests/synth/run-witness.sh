@@ -381,13 +381,30 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 		probe 5 > "$work/probe.5"
 		probe 2 > "$work/probe.2"
 		probe 0 > "$work/probe.0"
+		# --settle-probe-state asks the same of a WHOLE state taken on the frame
+		# before and loaded back, no history in it - what told a core that dies
+		# on any load from one that dies on a greenzone restore (Dolphin and
+		# RPCS3 on the GTX 1060). The movie is not wound back with the machine,
+		# so it is given one that presses nothing: a row recorded, repeated.
+		printf '[Input]\nLogKey:#\n' > "$work/probe.none.txt"
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$work/probe.none.txt" --frames 1 --record "$work/probe.row.txt" > /dev/null 2>&1
+		{ grep -v '^|' "$work/probe.row.txt" | grep -v '^\[/'; row="$(grep -m1 '^|' "$work/probe.row.txt")"; i=0; while [ "$i" -lt 60 ]; do printf '%s\n' "$row"; i=$((i + 1)); done; grep '^\[/' "$work/probe.row.txt"; } > "$work/probe.idle.txt"
+		probeState() { # garble frames -> the summary line
+			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$work/probe.idle.txt" \
+				--settings "{\"garbleAfterLoad\":$1}" --settle-probe 20,8 --settle-probe-state 2>&1 \
+				| grep -a '^settle-probe: \(the picture is wrong\|every frame\)'
+		}
+		probeState 5 > "$work/probe.state.5"
+		probeState 0 > "$work/probe.state.0"
 		if grep -q '^settle-probe: the picture is wrong up to drawn frame #5 after the load, of 8 drawn' "$work/probe.5" \
 			&& grep -q '^settle-probe: the picture is wrong up to drawn frame #2 after the load, of 8 drawn' "$work/probe.2" \
 			&& grep -q '^settle-probe: every frame drawn after the load is the picture it was' "$work/probe.0" \
+			&& grep -q '^settle-probe: the picture is wrong up to drawn frame #5 after the load, of 8 drawn' "$work/probe.state.5" \
+			&& grep -q '^settle-probe: every frame drawn after the load is the picture it was' "$work/probe.state.0" \
 			&& [ "$(grep -c '^pictrace: ' "$work/probe.5")" = 2 ] && [ "$(grep -c '^pictrace: ' "$work/probe.0")" = 2 ]; then
-			report "E:settle-probe" PASS "a renderer wrong for 5 drawn frames after a load, for 2 and for none is measured as exactly that, and the picture trace names the load and the frame after it"
+			report "E:settle-probe" PASS "a renderer wrong for 5 drawn frames after a load, for 2 and for none is measured as exactly that, through the greenzone and through a whole state loaded back, and the picture trace names the load and the frame after it"
 		else
-			report "E:settle-probe" FAIL "$(cat "$work/probe.5" "$work/probe.2" "$work/probe.0" 2>/dev/null | grep -m1 '^settle-probe' | cut -c1-120) (see work/probe.*)"
+			report "E:settle-probe" FAIL "$(cat "$work/probe.5" "$work/probe.2" "$work/probe.0" "$work/probe.state.5" "$work/probe.state.0" 2>/dev/null | grep -m1 '^settle-probe' | cut -c1-120) (see work/probe.*)"
 		fi
 
 		# StateSaving, the export a core is told with BEFORE every state the

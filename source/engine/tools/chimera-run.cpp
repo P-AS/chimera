@@ -48,7 +48,13 @@
  * --greenzone-period 1 the load lands on the frame before, which is the hard
  * case - every frame that runs unseen after a load is a frame the renderer
  * has had to recover in. The first four pairs are written as TGA files when a
- * prefix is given.
+ * prefix is given. A wrong picture that is exactly the one the frame before
+ * had is called that, and how many of the frames compared differ from the one
+ * before them is said too: a verdict over a still screen is not one.
+ * --settle-probe-state goes back by a whole state taken on the frame before
+ * and loaded again, with no history at all - the same question when the
+ * greenzone is the thing in doubt. The movie is not wound back with the
+ * machine, so use it where the movie holds the same input for twice the count.
  *
  * --seek plays the movie to its end, seeks BACK to the given frame through
  * the greenzone, and plays to the end again - and that must not change
@@ -327,6 +333,9 @@ int main(int argc, char **argv)
 	uint64_t keptFirst = 0;
 	struct ProbePicture { int32_t w = 0, h = 0; std::vector<uint32_t> pixels; };
 	std::vector<ProbePicture> probeFirst;
+	ProbePicture probeBefore;
+	bool probeByState = false;                      /* --settle-probe-state: go back by a whole state, not the greenzone */
+	std::vector<uint8_t> probeState;
 	int64_t probeFirstFrame = -1;
 	/* --greenzone-check: the machine at the seek/rewind destination, restored
 	 * through the history, must be byte-for-byte the machine the first pass had
@@ -410,6 +419,7 @@ int main(int argc, char **argv)
 			if (comma != std::string::npos) picturesSettle = std::atoll(spec.substr(comma + 1).c_str());
 		}
 		else if (arg == "--kept-pictures-check" && i + 1 < argc) { keptCheck = std::atoll(argv[++i]); renderEveryFrame = true; }
+		else if (arg == "--settle-probe-state") probeByState = true;
 		else if (arg == "--settle-probe" && i + 1 < argc)
 		{
 			/* how long a renderer is wrong after a load, measured: <count> frames
@@ -798,7 +808,7 @@ int main(int argc, char **argv)
 	/* --rewind-loop needs the history too: it seeks back through it, and a run
 	 * without one fails at the first pass with "no stored state at or before
 	 * the target frame". */
-	if (seekFrame >= 0 || rewindTo >= 0 || keptCheck >= 0 || probeFrom >= 0 || !historyIn.empty() || !historyOut.empty() || !greenzoneMap.empty()
+	if (seekFrame >= 0 || rewindTo >= 0 || keptCheck >= 0 || (probeFrom >= 0 && !probeByState) || !historyIn.empty() || !historyOut.empty() || !greenzoneMap.empty()
 		|| greenzoneBytes > 0 || greenzonePeriod >= 0)
 	{
 		/* Bands before enabling: enabling captures the anchor, and the anchor
@@ -972,6 +982,21 @@ int main(int argc, char **argv)
 		{
 			keptFrame = ce_session_frame(session);
 			keptFirst = pictureHash(session);
+		}
+		if (probeFrom >= 1 && i == probeFrom - 1)
+		{
+			/* the frame before the first one compared: what a stale picture would be */
+			probeBefore.w = ce_session_video_width(session);
+			probeBefore.h = ce_session_video_height(session);
+			const uint32_t *v = ce_session_video(session);
+			probeBefore.pixels.assign(v, v + static_cast<size_t>(probeBefore.w) * static_cast<size_t>(probeBefore.h));
+			if (probeByState)
+			{
+				uint64_t len = 0;
+				const uint8_t *state = ce_session_save_state(session, &len);
+				if (state == nullptr) return fail(metaPath, std::string("--settle-probe-state: ") + ce_session_last_error(session));
+				probeState.assign(state, state + len);
+			}
 		}
 		if (probeFrom >= 0 && i >= probeFrom && i < probeFrom + probeCount)
 		{
@@ -1179,7 +1204,16 @@ int main(int argc, char **argv)
 	{
 		if (probeFirstFrame < 1 || probeFirst.empty()) return fail(metaPath, "--settle-probe: the movie never reached that frame");
 		ce_session_greenzone_pictures(session, 0, -1);
-		if (ce_session_seek(session, probeFirstFrame - 1) != 0) return fail(metaPath, ce_session_last_error(session));
+		if (probeByState)
+		{
+			/* the whole state taken on the frame before, loaded back: no history
+			 * in it at all. The movie is not wound back with it, so the frames
+			 * drawn again take the entries that FOLLOW the ones compared - the
+			 * same input only where the movie is not pressing anything there. */
+			if (probeState.empty()) return fail(metaPath, "--settle-probe-state: no state was taken (the frame must be 1 or more)");
+			if (ce_session_load_state(session, probeState.data(), probeState.size()) != 0) return fail(metaPath, ce_session_last_error(session));
+		}
+		else if (ce_session_seek(session, probeFirstFrame - 1) != 0) return fail(metaPath, ce_session_last_error(session));
 		int64_t lastWrong = -1;
 		for (size_t k = 0; k < probeFirst.size(); k++)
 		{
@@ -1202,8 +1236,15 @@ int main(int argc, char **argv)
 					largest = std::max(largest, most);
 				}
 			const double total = first.pixels.empty() ? 1.0 : double(first.pixels.size());
-			std::printf("settle-probe: frame %lld, drawn #%zu after the load: %.2f%% of pixels differ, %.2f%% by more than 8 (largest %d), %dx%d\n",
-				(long long)(probeFirstFrame + (int64_t)k), k + 1, 100.0 * double(differ) / total, 100.0 * double(apart) / total, largest, w, h);
+			/* a wrong picture that is exactly the first-pass picture of the frame
+			 * before is a stale one - the frame's own was never handed over -
+			 * which is a different fault from a picture drawn wrong */
+			const ProbePicture &prev = k == 0 ? probeBefore : probeFirst[k - 1];
+			const bool stale = differ != 0 && prev.w == w && prev.h == h && prev.pixels.size() == first.pixels.size()
+				&& std::memcmp(prev.pixels.data(), now, prev.pixels.size() * sizeof(uint32_t)) == 0;
+			std::printf("settle-probe: frame %lld, drawn #%zu after the load: %.2f%% of pixels differ, %.2f%% by more than 8 (largest %d), %dx%d%s\n",
+				(long long)(probeFirstFrame + (int64_t)k), k + 1, 100.0 * double(differ) / total, 100.0 * double(apart) / total, largest, w, h,
+				stale ? " - the picture of the frame before" : "");
 			if (apart * 1000 > first.pixels.size()) lastWrong = (int64_t)k;
 			if (!probePrefix.empty() && k < 4)
 			{
@@ -1211,6 +1252,16 @@ int main(int argc, char **argv)
 				writeTga(probePrefix + "-after-" + std::to_string(k + 1) + ".tga", now, w, h);
 			}
 		}
+		/* A scene that does not move proves nothing: every picture is the one
+		 * before it, wrong or right. Said, so that a verdict over a still
+		 * screen is not taken for one. */
+		size_t moved = 0;
+		for (size_t k = 0; k < probeFirst.size(); k++)
+		{
+			const ProbePicture &prev = k == 0 ? probeBefore : probeFirst[k - 1];
+			if (prev.pixels != probeFirst[k].pixels) moved++;
+		}
+		std::printf("settle-probe: the scene moved in %zu of the %zu frames compared\n", moved, probeFirst.size());
 		std::printf("settle-probe: %s\n", lastWrong < 0
 			? "every frame drawn after the load is the picture it was (within 0.1% of pixels)"
 			: (std::string("the picture is wrong up to drawn frame #") + std::to_string(lastWrong + 1) + " after the load, of " + std::to_string(probeFirst.size()) + " drawn").c_str());

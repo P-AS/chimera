@@ -5354,8 +5354,8 @@ Measured, same instruments as above:
   one every 1 or 2.
 
 What this leaves of the kept pictures: for xemu, nothing to hide. They stay
-for every core a GPU draws for, with the 3-frame window, and what the other
-cores do after a load on a real card has not been measured.
+for every core a GPU draws for, with the 3-frame window; what the other cores
+do after a load on that card is the next section.
 
 Witness leg E:state-saving holds the engine to it on the synthetic core,
 which notes the frame it was last told on in memory a state carries: never
@@ -5363,4 +5363,49 @@ told without a history, 71 times with a state on every frame and 15 with one
 in five, and back on frame 32 from the state of frame 30 the note says 30 -
 told before the state was read. xemu's gate has gl:picture-after-load, with
 the untold run as its control.
+
+### The other cores a GPU draws for, on the same card (measured 2026-10-08)
+
+Asked for by the user once xemu was fixed. The published build of each core
+(its Development build of that day), the headless runner on the GTX 1060,
+`--settle-probe <frame>,12` with `--greenzone-period N` and the frame a
+multiple of N, so the load lands on the frame before the twelve compared
+(the trace says where it landed, and it did every time). Each scene was
+picked from a sheet of screenshots, and the probe now says how many of the
+frames it compared differ from the one before - a verdict over a still
+screen is not one.
+
+| Core | Scene | The frames drawn after a load |
+| --- | --- | --- |
+| Azahar | Cars 2, its 3D menu (moves every frame) | exact from the first |
+| Ruffle | Super Doggy, its animated title (every frame) | exact from the first |
+| Vita3K | Geometry Wars 3, its title with glow (every frame) | exact from the first |
+| Flycast | Re-Volt, the demo race | 1 an older picture, 2 and 3 black, exact from the 4th |
+| PCSX2 | Street Fighter EX3, the 3D intro | 1 garbage, 2 to 4 off in 6 to 8% of pixels, exact from the 5th |
+| Dolphin | Pro Rally 2002, the intro film | 1 exact, 2 and 3 black, exact from the 4th |
+| Dolphin | Pro Rally 2002, the demo race | **the core dies** on the first frame after the load |
+| RPCS3 | Dead or Alive 5 Last Round, a fight | 1 black; from 2 on the fighters are drawn black, and still are 12 frames later |
+
+Flycast and PCSX2 give the same numbers through a whole state loaded back
+(`--settle-probe-state`) as through the greenzone, to the hundredth of a
+percent, so it is their renderers and not the history.
+
+Three of these are not about a picture being late:
+
+- **Dolphin dies after any load in that 3D scene** - through the greenzone at
+  two different frames, and through a whole state saved and loaded at the
+  same frame. "VertexManager: Buffer not large enough for all vertices!
+  (2551574084 > 16777216)", then a jump into data. Not in the film that
+  precedes it.
+- **RPCS3 dies on a greenzone restore** of that fight with a state every 1700
+  frames - a read one byte past its 4 GiB of guest memory - by the probe and
+  by `--rewind-loop` alike, and survives a whole state loaded at the same
+  frame. Whether a denser history does it too was not tried.
+- **RPCS3's picture does not come back**: something the game draws once and
+  keeps on the GPU is lost with the load, as xemu's surfaces were, and
+  nothing redraws it.
+
+For the 3-frame window: Flycast and Dolphin's film fit inside it; PCSX2's
+fourth frame is past it, differs a little, and is kept. None of this has
+been acted on.
 
