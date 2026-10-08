@@ -1671,6 +1671,38 @@ CE_API int64_t ce_session_greenzone_nearest(const ce_session *s, int64_t frame);
 /* Drops stored states AFTER frame - an input edit at frame N makes every
  * later state a lie, while the state at N itself (inputs 0..N-1) still holds. */
 CE_API void ce_session_greenzone_invalidate(ce_session *s, int64_t after_frame);
+
+/* The pictures of frames already drawn, kept beside the greenzone and shown
+ * again (chimera#190).
+ *
+ * A machine put back on a frame it has been on draws that frame's picture
+ * again. A renderer on the far side of the GPU bridge draws it wrong for a
+ * while after a state load - it rebuilds its textures and buffers as the game
+ * touches them, and until then what comes back is pieces of the picture from
+ * before the load. The picture the frame had before is the same picture, so
+ * the session keeps the picture of every frame it shows, compressed, and for
+ * `settle_frames` after a load a frame that has one shows that instead of
+ * what was just read back. A restore onto a frame that has one shows it at
+ * once: a load draws nothing by itself.
+ *
+ * What it cannot do is draw a frame nobody has seen: after an edit the frames
+ * past it are new, they have no picture, and they show what the core draws.
+ * A picture drawn within the settle is never KEPT - a wrong one kept would be
+ * the one shown from then on - and past the settle the picture read back is
+ * the one shown, and replaces what the frame had.
+ *
+ * Pictures are in no savestate, history file or movie, and take no part in
+ * what the machine does. The least recently used go first when the budget is
+ * full; ce_session_greenzone_invalidate forgets those past the edit.
+ *
+ * A session whose pictures a GPU draws keeps them without being asked, from
+ * the moment its greenzone is enabled: an eighth of the greenzone's budget,
+ * between 32 and 256 MiB, settling for 60 frames. _pictures chooses instead:
+ * a budget in bytes (0: none are kept) and the settle in frames (negative:
+ * leave it), for any session. */
+CE_API void ce_session_greenzone_pictures(ce_session *s, uint64_t budget_bytes, int32_t settle_frames);
+CE_API int64_t ce_session_greenzone_picture_count(const ce_session *s);
+CE_API uint64_t ce_session_greenzone_picture_bytes(const ce_session *s);
 /* Restores the nearest stored state at or before frame, then replays the
  * movie to frame. Needs the movie's entries up to frame. 0 on success. */
 CE_API int32_t ce_session_seek(ce_session *s, int64_t frame);

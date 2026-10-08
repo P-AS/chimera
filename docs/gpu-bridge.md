@@ -827,3 +827,15 @@ reads the ring out of the dead process and writes the last calls into the note,
 oldest first, repeats folded (`glUniform4fv x37`), named from miniBox's master
 list - generated into the module at build time, so the numbering is the
 bridge's. `test_gl_flight` holds the layout to what the module reads.
+
+## The picture after a load
+
+A state load rewinds the machine and not the renderer. What the bridge
+rebuilds, it rebuilds as the game touches it (above), and for the frames in
+between the picture read back can be wrong on a real card. The session keeps
+the picture of every frame it shows and, for a while after a load, shows the
+kept one for a frame that has it (engine.h, `ce_session_greenzone_pictures`;
+docs/design-principles.md, chimera#190). It is on by itself for a session a
+GPU draws for, and it helps frames already seen, not frames drawn for the
+first time after an edit.
+

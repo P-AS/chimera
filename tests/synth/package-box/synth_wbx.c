@@ -78,7 +78,27 @@ ECL_EXPORT int Init(void) {
  * so that everything above the sandbox can be tested against a core that stops
  * (miniBox hands control back; Chimera offers what to do next). No witness movie
  * presses all eight. */
+/* --- a picture that is wrong for a while after a state load (chimera#190) ---
+ * A renderer on the far side of the GPU bridge rebuilds what a load threw
+ * away as the game touches it, and until it has, the picture it hands back is
+ * wrong. The synth draws in software and never is; with its garbleAfterLoad
+ * setting it pretends, for that many frames after every load, so the witness
+ * can hold the engine's kept pictures to something (leg E:kept-pictures). The
+ * machine does not notice: none of this is in a state, and only the picture
+ * handed out is touched - not the framebuffer the witness hashes. */
+ECL_INVISIBLE static int g_garbleFor = -1; /* the setting, once asked */
+ECL_INVISIBLE static int g_garbleLeft;     /* frames still to garble */
+ECL_INVISIBLE static int g_garbleNow;      /* the frame just run is one of them */
+
+ECL_EXPORT void StateLoaded(void)
+{
+	if (g_garbleFor < 0) g_garbleFor = (int)wbx_setting_long("garbleAfterLoad", 0);
+	g_garbleLeft = g_garbleFor;
+}
+
 ECL_EXPORT void FrameAdvance(uint64_t pad) {
+	g_garbleNow = g_garbleLeft > 0;
+	if (g_garbleLeft > 0) g_garbleLeft--;
 	if ((uint8_t)pad == 0xFF) {
 		fprintf(stderr, "synth: all eight buttons at once - stopping on purpose\n");
 		abort();
@@ -114,6 +134,8 @@ ECL_EXPORT void SetRenderingEnabled(int on) { g_render = on != 0; }
 ECL_EXPORT uint32_t *GetVideoBgra(void)
 {
 	if (g_render) synth_get_video_bgra(g_synth, g_video);
+	if (g_render && g_garbleNow)
+		for (int i = 0; i < FB_W * FB_H; i++) g_video[i] ^= 0x00FFFFFFu ^ (uint32_t)(i * 2654435761u >> 8 & 0x00FFFFFFu);
 	return g_video;
 }
 

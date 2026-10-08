@@ -5183,3 +5183,58 @@ first; a roster row may name another, as quickerNES's does), not by hand, and
 it says the day it was written: a core moves its pin without telling Chimera,
 and the core's repository is what is true today. Nothing in Chimera reads it.
 
+## The pictures of frames already drawn are kept, and shown after a load (user-decided, 2026-10-08; chimera#190)
+
+A renderer on the far side of the GPU bridge cannot be rewound with the
+machine. After a state load it rebuilds its textures and buffers as the game
+touches them, and until it has, the picture read back is wrong - on the
+reporter's machine, pieces of the frame from before the load, for a moment,
+every time an input was changed (chimera#187). Nothing in the machine is
+wrong, and nothing can make the driver hurry. The request was to keep a
+compressed picture with the greenzone and show that; the user said yes, for
+every core a GPU draws for.
+
+What was built, in the engine and nowhere else:
+
+- **A session keeps the picture of every frame it shows**, by frame,
+  compressed, in a budget of its own (an eighth of the greenzone's, between 32
+  and 256 MiB; least recently used first out). It is on by itself for a
+  session a GPU draws for, from the moment its greenzone is enabled;
+  `ce_session_greenzone_pictures` chooses otherwise. The frontend was not
+  touched: a frame advance hands back the picture it always did, and for a
+  while after a load that picture is the kept one.
+- **For `settle` frames after a load (60), a frame that has a kept picture
+  shows it** in place of what was read back, and a restore onto such a frame
+  shows it at once - a load draws nothing by itself, which is why a seek used
+  to leave the old picture on the screen. Past the settle the picture read
+  back is shown, and replaces the kept one: a renderer can be late the first
+  time too (a shader still compiling), and the later picture is the better.
+- **A picture drawn within the settle is never kept.** It may be the wrong
+  one, and a wrong picture kept would be shown from then on.
+- **An edit forgets the pictures past it** (`ce_session_greenzone_invalidate`).
+  They were drawn for input that is no longer the movie's.
+- **Packing is on a helper thread** (work_thread.hpp, by its rules). A frame
+  pays for a copy - 0.1 ms at 640x480, 0.8 ms at 1920x1080, measured - and
+  the helper packs it; three pictures behind, it is given no more. Pictures
+  above 16 MiB raw are not kept at all.
+
+What it cannot do, and the issue was told so: **draw a frame nobody has
+seen.** After an edit the frames past it are new. They have no picture, they
+are drawn inside the settle of the load that the edit caused, and what they
+show is what the core draws - wrong for a moment on a card that does that.
+Stepping back and forward over frames already seen is what this makes clean.
+
+Pictures are in no savestate, history file or movie, and take no part in
+what the machine does: a session with none shows what the core draws, as it
+always did.
+
+Proved on the synthetic core, which pretends to be a renderer that is wrong
+for five frames after every load (its `garbleAfterLoad` setting; witness leg
+E:kept-pictures): without pictures the frame shows the garbage, with them the
+picture it had, by replay and by restore alone; past an edit, what the core
+drew, and nothing kept. On a real bridge session (Flycast, through llvmpipe)
+it switches itself on and changes nothing that is shown. NOT proved: the
+effect on the card and the core it was asked for (xemu on an NVIDIA card),
+and whether 60 frames is the right settle there - llvmpipe never draws wrong
+after a load, so this machine cannot show it.
+

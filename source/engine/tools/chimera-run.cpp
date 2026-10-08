@@ -140,6 +140,16 @@ bool writeWholeFile(const std::string &path, const uint8_t *data, size_t len)
 
 /* One frame as an uncompressed 32-bit TGA. The engine hands over BGRA, which is
  * exactly what a TGA stores, so the rows only have to be written bottom-up. */
+/* the picture the session holds now, as one number */
+uint64_t pictureHash(const ce_session *session)
+{
+	const uint32_t *p = ce_session_video(session);
+	const size_t n = static_cast<size_t>(ce_session_video_width(session)) * static_cast<size_t>(ce_session_video_height(session));
+	uint64_t h = 1469598103934665603ull ^ (uint64_t)n;
+	for (size_t i = 0; i < n; i++) h = (h ^ p[i]) * 1099511628211ull;
+	return h;
+}
+
 bool writeTga(const std::string &path, const uint32_t *bgra, int32_t w, int32_t h)
 {
     if (bgra == nullptr || w <= 0 || h <= 0) return false;
@@ -291,6 +301,8 @@ int main(int argc, char **argv)
 	 * runner a measurement of a seek rather than of play. --render-every-frame
 	 * is the other half of that A/B: the same run, drawing. */
 	bool renderEveryFrame = false;
+	int64_t picturesMb = -1, picturesSettle = -1; /* --greenzone-pictures MiB[,settle] */
+	int64_t keptCheck = -1;                         /* --kept-pictures-check <frame> */
 	bool drawEveryFrame = false;
 	/* --rewind-loop <frame>,<times>: what re-recording actually does. A single
 	 * --seek asks whether the history holds one frame; this asks whether doing
@@ -299,6 +311,8 @@ int main(int argc, char **argv)
 	 * degrades a little on each pass, and only a repetition shows it. */
 	int64_t rewindTo = -1;
 	int64_t rewindTimes = 0;
+	int64_t keptFrame = -1;
+	uint64_t keptFirst = 0;
 	/* --greenzone-check: the machine at the seek/rewind destination, restored
 	 * through the history, must be byte-for-byte the machine the first pass had
 	 * at that frame. A full ce_session_save_state is captured there on the way
@@ -370,6 +384,17 @@ int main(int argc, char **argv)
 		else if (arg == "--allow-core-mismatch") allowCoreMismatch = true;
 		else if (arg == "--gpu") wantGpu = true;
 		else if (arg == "--render-every-frame") renderEveryFrame = true;
+		else if (arg == "--greenzone-pictures" && i + 1 < argc)
+		{
+			/* the pictures of frames already drawn (engine.h,
+			 * ce_session_greenzone_pictures): a budget in MiB, 0 for none,
+			 * and optionally how many frames after a load are not kept */
+			const std::string spec = argv[++i];
+			const auto comma = spec.find(',');
+			picturesMb = std::atoll(spec.substr(0, comma).c_str());
+			if (comma != std::string::npos) picturesSettle = std::atoll(spec.substr(comma + 1).c_str());
+		}
+		else if (arg == "--kept-pictures-check" && i + 1 < argc) { keptCheck = std::atoll(argv[++i]); renderEveryFrame = true; }
 		else if (arg == "--rates" && i + 1 < argc) { ratesPath = argv[++i]; renderEveryFrame = true; }
 		else if (arg == "--draw-every-frame") drawEveryFrame = true;
 		else if (arg == "--greenzone-check") greenzoneCheck = true;
@@ -744,7 +769,7 @@ int main(int argc, char **argv)
 	/* --rewind-loop needs the history too: it seeks back through it, and a run
 	 * without one fails at the first pass with "no stored state at or before
 	 * the target frame". */
-	if (seekFrame >= 0 || rewindTo >= 0 || !historyIn.empty() || !historyOut.empty() || !greenzoneMap.empty()
+	if (seekFrame >= 0 || rewindTo >= 0 || keptCheck >= 0 || !historyIn.empty() || !historyOut.empty() || !greenzoneMap.empty()
 		|| greenzoneBytes > 0 || greenzonePeriod >= 0)
 	{
 		/* Bands before enabling: enabling captures the anchor, and the anchor
@@ -772,6 +797,7 @@ int main(int argc, char **argv)
 		if (greenzoneMaxStride > 0) ce_session_greenzone_max_near_stride(session, greenzoneMaxStride);
 		if (greenzoneBandGoal > 0) ce_session_greenzone_band_goal(session, greenzoneBandGoal);
 		ce_session_greenzone_enable(session, greenzoneBytes > 0 ? (uint64_t)greenzoneBytes : (uint64_t)greenzoneMb << 20);
+		if (picturesMb >= 0) ce_session_greenzone_pictures(session, (uint64_t)picturesMb << 20, (int32_t)picturesSettle);
 	}
 	/* A history kept from a previous run, which is the thing a reopened project
 	 * lives on. The machine id is this tool's own convention; a frontend passes
@@ -912,6 +938,11 @@ int main(int argc, char **argv)
 			if (offset >= 0) ce_session_property_text(session, index, element, 0, text, sizeof text);
 			if (offset >= 0) std::printf("prop %lld %s @ %lld = %s\n", (long long)i, name.c_str(), (long long)offset, text);
 			else std::printf("prop %lld %s gone\n", (long long)i, name.c_str());
+		}
+		if (i == keptCheck)
+		{
+			keptFrame = ce_session_frame(session);
+			keptFirst = pictureHash(session);
 		}
 		if (shot != shots.end()
 			&& !writeTga(shot->second, ce_session_video(session),
@@ -1096,6 +1127,38 @@ int main(int argc, char **argv)
 			if (ce_session_seek(session, frames) != 0) return fail(metaPath, ce_session_last_error(session));
 			if (ce_session_frame(session) != frames) return fail(metaPath, "replay landed on the wrong frame");
 		}
+	}
+
+	/* --kept-pictures-check: the picture a frame shows when the machine is put
+	 * back on it, against the one it had the first time (chimera#190). Three
+	 * things are said, each on a line of its own for a gate to hold:
+	 *   back on the frame through a restore and a replay, drawn: the same
+	 *     picture or not;
+	 *   back on it by a restore alone, nothing run: the same or not;
+	 *   after an edit just before it, replayed and drawn: how many pictures
+	 *     are kept - the ones past the edit are gone, and the frame just
+	 *     drawn, so soon after a load, is not kept in their place. */
+	if (keptCheck >= 0)
+	{
+		if (keptFrame < 1) return fail(metaPath, "--kept-pictures-check: the movie never reached that frame");
+		const long long had = (long long)ce_session_greenzone_picture_count(session);
+		if (ce_session_seek(session, keptFrame - 1) != 0) return fail(metaPath, ce_session_last_error(session));
+		if (ce_session_movie_advance(session, 0, nullptr, 1) < 0) return fail(metaPath, ce_session_last_error(session));
+		std::printf("kept-pictures: back on frame %lld, replayed and drawn: %s (%lld kept, %llu bytes)\n", (long long)keptFrame,
+			pictureHash(session) == keptFirst ? "the picture it had" : "NOT the picture it had", had,
+			(unsigned long long)ce_session_greenzone_picture_bytes(session));
+		const int64_t stored = ce_session_greenzone_nearest(session, keptFrame);
+		if (stored == keptFrame && ce_session_greenzone_restore(session, keptFrame) == 0)
+			std::printf("kept-pictures: back on frame %lld by a restore alone: %s\n", (long long)keptFrame,
+				pictureHash(session) == keptFirst ? "the picture it had" : "NOT the picture it had");
+		else std::printf("kept-pictures: frame %lld has no state of its own to restore\n", (long long)keptFrame);
+		ce_session_greenzone_invalidate(session, keptFrame - 1);
+		const long long afterEdit = (long long)ce_session_greenzone_picture_count(session);
+		if (ce_session_seek(session, keptFrame - 1) != 0) return fail(metaPath, ce_session_last_error(session));
+		if (ce_session_movie_advance(session, 0, nullptr, 1) < 0) return fail(metaPath, ce_session_last_error(session));
+		std::printf("kept-pictures: after an edit before frame %lld: %lld kept before the replay, %lld after it, and the frame shows %s\n",
+			(long long)keptFrame, afterEdit, (long long)ce_session_greenzone_picture_count(session),
+			pictureHash(session) == keptFirst ? "the picture it had" : "what the core drew");
 	}
 
 	/* Re-recording, as many times as asked. Each pass goes back to the same

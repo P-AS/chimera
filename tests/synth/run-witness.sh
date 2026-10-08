@@ -320,6 +320,34 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 			report "E:bus-ranges" FAIL "$(grep -m1 -E 'live|ranges|word' "$work/ranges.log" "$work/ranges-none.log" | tail -1)"
 		fi
 
+		# the pictures of frames already drawn (engine.h,
+		# ce_session_greenzone_pictures; chimera#190). A renderer on the far
+		# side of the GPU bridge draws wrong for a while after a state load;
+		# the synth pretends to, for 5 frames, with its garbleAfterLoad
+		# setting (package-box/synth_wbx.c). Put back on frame 41 - by a
+		# restore and a replay, and by a restore alone - a session that keeps
+		# pictures shows the one the frame had; one that does not shows what
+		# the renderer made of it. After an edit the pictures past it are
+		# gone, the frame redrawn so soon after a load is not kept in their
+		# place, and what it shows is what the core drew. And with a renderer
+		# that is never wrong, keeping pictures changes nothing that is shown.
+		kept() { # garble frames, pictures spec -> the three lines
+			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+				--settings "{\"garbleAfterLoad\":$1}" --greenzone-pictures "$2" --kept-pictures-check 40 2>/dev/null | grep '^kept-pictures'
+		}
+		kept 5 0 > "$work/kept.off"
+		kept 5 64,8 > "$work/kept.on"
+		kept 0 64,8 > "$work/kept.healthy"
+		if [ "$(grep -c 'NOT the picture it had' "$work/kept.off")" = 2 ] \
+			&& grep -q '^kept-pictures: back on frame 41, replayed and drawn: the picture it had (70 kept' "$work/kept.on" \
+			&& grep -q '^kept-pictures: back on frame 41 by a restore alone: the picture it had' "$work/kept.on" \
+			&& grep -q '^kept-pictures: after an edit before frame 41: 40 kept before the replay, 40 after it, and the frame shows what the core drew' "$work/kept.on" \
+			&& [ "$(grep -c 'the picture it had' "$work/kept.healthy")" = 3 ] && ! grep -q 'NOT' "$work/kept.healthy"; then
+			report "E:kept-pictures" PASS "back on a frame it has drawn, a session shows the picture the frame had (70 kept); without them, what a renderer wrong after a load made of it; past an edit, what the core draws"
+		else
+			report "E:kept-pictures" FAIL "$(cat "$work/kept.off" "$work/kept.on" "$work/kept.healthy" 2>/dev/null | grep -m1 -v 'xxxx' | cut -c1-120) (see work/kept.*)"
+		fi
+
 		# a DYNAMIC property table (engine.h; chimera#216): with its
 		# movingProperties setting on, the synth lists properties that move
 		# and come and go with the cursor's row, the way a Flash movie's

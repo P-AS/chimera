@@ -19,6 +19,7 @@
 #include "progress.hpp"
 #include "thread_string.hpp"
 #include "state_history.hpp"
+#include "kept_pictures.hpp"
 #include "state_format.hpp"
 #include "game_properties.hpp"
 
@@ -373,6 +374,27 @@ struct ce_session
 	bool active = false;
 	/* a GPU outside the sandbox drew this session's pictures */
 	bool gpuDrew = false;
+	/* The pictures of frames already drawn, shown again when the machine is put
+	 * back on one (kept_pictures.hpp; chimera#190). On by itself for a session
+	 * whose pictures a GPU draws and whose greenzone is on; a caller may say
+	 * otherwise (ce_session_greenzone_pictures).
+	 *   machineFrame  the frame the machine is on, as far as the session can
+	 *                 tell: counted here, and corrected by whoever counts it
+	 *                 for real (a capture, a restore); -1 when it cannot tell.
+	 *   sinceLoad     frames run since a state was last loaded. A picture
+	 *                 drawn within pictureSettle of one is never KEPT: that is
+	 *                 when a renderer is still rebuilding what the load threw
+	 *                 away, and a wrong picture kept would be shown for good.
+	 *   lastKept      the frame the last advance kept a picture for, so that a
+	 *                 count that turns out wrong can take it back. */
+	CeKeptPictures pictures;
+	bool picturesChosen = false;
+	int64_t machineFrame = 0;
+	int64_t sinceLoad = int64_t{ 1 } << 40;
+	int32_t pictureSettle = 60;
+	int64_t lastKept = -1;
+	void afterFrame(bool rendered, int64_t known);
+	void afterLoad(int64_t landedOn);
 	/* the compile cache and precompile sessions (optional exports) */
 	bool precompile = false;
 	/* what the core answered, in a session that only asks (s_answerExport) */
@@ -1008,6 +1030,53 @@ void ce_session::trace(int32_t lag, int32_t render)
  * The state is a delta: telling a core the same thing every frame would be one
  * pointless guest call per frame on the seek path, which is the path this
  * exists for. */
+/* A frame has run and was shown. Within pictureSettle frames of a state load
+ * the picture just read back is suspect - a renderer on the far side of the
+ * bridge is still rebuilding what the load threw away - so a frame that has a
+ * picture from an earlier time shows that one: the machine is the same
+ * machine, so it is the same picture. Such a frame's own picture is never
+ * kept. Past the settle the picture read back is the one shown, and it is
+ * kept, replacing what the frame had: a renderer can also be late the FIRST
+ * time (a shader still compiling), and the later picture is the better one. */
+void ce_session::afterFrame(bool rendered, int64_t known)
+{
+	if (known >= 0) machineFrame = known;
+	else if (machineFrame >= 0) machineFrame++;
+	sinceLoad++;
+	lastKept = -1;
+	if (!rendered || machineFrame < 0 || pictures.budget() == 0) return;
+	if (sinceLoad > pictureSettle)
+	{
+		if (pictures.keep(machineFrame, videoBuf.data(), vidW, vidH)) lastKept = machineFrame;
+		return;
+	}
+	int32_t w = 0, h = 0;
+	if (pictures.show(machineFrame, videoBuf.data(), videoBuf.size(), &w, &h))
+	{
+		vidW = w;
+		vidH = h;
+	}
+}
+
+/* A state was loaded: the machine is on `landedOn` (-1: the caller knows, the
+ * session does not), and what it draws next is not to be kept for a while.
+ * A frame the session has a picture for shows it at once - a load draws
+ * nothing by itself, and until now the picture left on the screen was the one
+ * from before the load. */
+void ce_session::afterLoad(int64_t landedOn)
+{
+	machineFrame = landedOn;
+	sinceLoad = 0;
+	lastKept = -1;
+	if (landedOn < 0 || pictures.budget() == 0) return;
+	int32_t w = 0, h = 0;
+	if (pictures.show(landedOn, videoBuf.data(), videoBuf.size(), &w, &h))
+	{
+		vidW = w;
+		vidH = h;
+	}
+}
+
 void ce_session::wantRendering(int32_t on)
 {
 	if (drawAlways != 0) on = 1;
@@ -1049,6 +1118,7 @@ int32_t ce_session::advanceCore(const uint8_t *buttons, int32_t render)
 	}
 	sampleCount = nsamp;
 	frame++;
+	afterFrame(render != 0, frame);
 	ce_gl_audit_frame(frame);   /* which frame the bridge's objects are being made on */
 	/* The frame is over and the caller draws next, so the GL context the bridge
 	 * borrowed goes back before it does - the same thing ce_session_frame_advance
@@ -1089,6 +1159,7 @@ bool ce_session::greenzoneRestore(int64_t to)
 		{
 			frame = landed;
 			if (stateLoaded != nullptr) stateLoaded();   /* the anchor was loaded, and stays */
+			afterLoad(landed);
 		}
 		return false;
 	}
@@ -1108,6 +1179,7 @@ bool ce_session::greenzoneRestore(int64_t to)
 	ce_gl_release();
 	ce_gl_state_loaded(to);
 	frame = to;
+	afterLoad(to);
 	return true;
 }
 
@@ -1836,6 +1908,7 @@ int32_t ce_session_frame_advance(ce_session *s, uint64_t buttons, int32_t render
 		}
 	}
 	s->sampleCount = nsamp;
+	s->afterFrame(render != 0, -1);
 	/* The frame is over and the caller draws next: whatever GL context the
 	 * bridge borrowed goes back before it does. */
 	ce_gl_release();
@@ -1882,6 +1955,9 @@ static void afterStateLoaded(ce_session *s)
 		s->traceSetEnabled(s->traceDesired ? 1 : 0);
 		if (s->traceClear != nullptr) s->traceClear();
 	}
+	/* where the machine is now is the caller's to say (a capture will), and
+	 * what it draws next is not to be kept for a while (chimera#190) */
+	s->afterLoad(-1);
 }
 
 const uint8_t *ce_session_save_state(ce_session *s, uint64_t *len_out)
@@ -2869,9 +2945,20 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 	return lag;
 }
 
+/* The budget a session is given when nobody chose one: an eighth of the
+ * greenzone's, between 32 and 256 MiB. A 640x480 picture packs to a few
+ * hundred KiB, so that is the last several hundred to few thousand frames
+ * shown - where somebody working on a movie is. */
+static uint64_t defaultPictureBudget(uint64_t greenzoneBudget)
+{
+	const uint64_t mib = uint64_t{ 1 } << 20;
+	return std::min<uint64_t>(256 * mib, std::max<uint64_t>(32 * mib, greenzoneBudget / 8));
+}
+
 void ce_session_greenzone_enable(ce_session *s, uint64_t budget_bytes)
 {
 	s->history.configure(s->host, s->obj, budget_bytes);
+	if (!s->picturesChosen) s->pictures.budget(s->gpuDrew && budget_bytes != 0 ? defaultPictureBudget(budget_bytes) : 0);
 	if (budget_bytes != 0) s->greenzoneCapture(); // the anchor: the frame we stand on now
 }
 
@@ -2892,6 +2979,14 @@ int32_t ce_session_greenzone_capture(
 	ce_session *s, int64_t frame, const uint8_t *note, uint32_t note_len)
 {
 	if (s == nullptr) return 1;
+	/* the caller is the one counting: if the session's own count was off, the
+	 * picture the last frame kept was filed under the wrong frame */
+	if (s->machineFrame != frame)
+	{
+		if (s->lastKept >= 0) s->pictures.drop(s->lastKept);
+		s->machineFrame = frame;
+	}
+	s->lastKept = -1;
 	s->history.capture(frame, note, note_len);
 	return 0;
 }
@@ -2987,7 +3082,20 @@ int64_t ce_session_greenzone_nearest(const ce_session *s, int64_t frame)
 void ce_session_greenzone_invalidate(ce_session *s, int64_t after_frame)
 {
 	s->history.invalidateAfter(after_frame);
+	s->pictures.dropAfter(after_frame); /* drawn for input that is no longer the movie's */
 }
+
+void ce_session_greenzone_pictures(ce_session *s, uint64_t budget_bytes, int32_t settle_frames)
+{
+	if (s == nullptr) return;
+	s->picturesChosen = true;
+	s->pictures.budget(budget_bytes);
+	if (settle_frames >= 0) s->pictureSettle = settle_frames;
+}
+
+/* (asking takes in what the helper has finished: the store is lazy, the session is not changed) */
+int64_t ce_session_greenzone_picture_count(const ce_session *s) { return s != nullptr ? const_cast<ce_session *>(s)->pictures.count() : 0; }
+uint64_t ce_session_greenzone_picture_bytes(const ce_session *s) { return s != nullptr ? const_cast<ce_session *>(s)->pictures.bytes() : 0; }
 
 /* The id a persisted history is kept under.
  *
