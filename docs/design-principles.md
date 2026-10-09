@@ -5406,6 +5406,38 @@ Three of these are not about a picture being late:
   nothing redraws it.
 
 For the 3-frame window: Flycast and Dolphin's film fit inside it; PCSX2's
-fourth frame is past it, differs a little, and is kept. None of this has
-been acted on.
+fourth frame is past it, differs a little, and is kept.
+
+### The two that died (user: "fix the dolphin crash, then the rpcs3 ones", 2026-10-08)
+
+**Dolphin** was the core's own: the rebuild of its GL objects after a load
+freed every vertex loader and left the machine's vertex format groups
+pointing at them, so the first primitive ran a freed one. Its patch 0026
+(core 5866b6b) sets the pointers to null and marks them for refresh; the race
+survives both kinds of load and the twelve frames after each are exact.
+
+**RPCS3's was not RPCS3's.** The restored machine was wrong, and neither
+check said so: `CHIMERA_HISTORY_VERIFY` finishes every planned anchor at once,
+which is the one thing that was not happening, and with it on the restore
+was exact. Left to run as it does for a person, `--greenzone-check` found
+1768 bytes in four pages of RSX memory stale - the anchor of frame 3400
+exact, the delta from it to 5100 four pages short. The history plans an
+anchor as a frame ends and opens the next frame's epoch while a helper
+copies the pages; the plan's hold took those pages off the list the epoch
+makes its holds from without marking them held, so once copied they were
+owed to nobody, and the first thing that worked a protection out again -
+RPCS3 giving a range of its video memory the protection it already had -
+mapped them writable. What was written there was in no delta (miniBox
+109bcaa, with a test that fails on the old code in both orders). It is the
+sandbox's and so every core's; a guest that never re-protects its own memory
+could still meet it when a plan is finished in the middle of an epoch. With
+the default greenzone, a state a frame, the same restore did not kill the
+machine here; whether that machine was exact was not checked before the fix.
+
+`CHIMERA_PLAN_VERIFY=1` is what would have said it at once and stays: the
+machine is copied whole just before each plan, and when the plan has been
+filled the two are compared page by page.
+
+RPCS3's picture after a load - the fighters drawn black - is the third, and
+is what the GPU drew not being in the state, as it was for xemu.
 

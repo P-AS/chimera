@@ -1416,9 +1416,73 @@ bool StateHistory::planAvailable() const
  * so the history's accounting, its bands and its budget see exactly what they
  * would have seen, at exactly the moment they would have seen it. What arrives
  * late is only the contents, and nothing may read those without finishPlan. */
+/* CHIMERA_PLAN_VERIFY=1: a planned anchor is copied in the background while the
+ * machine runs on, and is only right if every page that changes meanwhile is
+ * copied first. CHIMERA_HISTORY_VERIFY cannot see that go wrong - it finishes
+ * each plan at once, which is exactly the thing not being tested. This takes
+ * the same machine a second time, whole and at once, just before the plan, and
+ * when the plan has been filled says which pages of the two differ: the page,
+ * its address, what the allocation map says it is, and the first byte. */
+static bool planVerify()
+{
+	static const bool on = getenv("CHIMERA_PLAN_VERIFY") != nullptr;
+	return on;
+}
+
+static void comparePlanned(int64_t frame, const uint8_t *truth, size_t truthLen, const uint8_t *planned, size_t plannedLen)
+{
+	static const char hostStart[] = "ActivatedWaterboxHost_v1";
+	static const char blockMagic[] = "ActivatedMemoryBlock";
+	const size_t head = (sizeof hostStart - 1) + 10 + 13 + sizeof(uintptr_t) + 9 + 32;
+	const size_t maps = head + (sizeof blockMagic - 1) + 32 + 2 * sizeof(uintptr_t);
+	if (truthLen != plannedLen || truthLen < maps)
+	{
+		fprintf(stderr, "[plan-verify] anchor of frame %lld: sizes differ (%zu at once, %zu planned)\n", (long long)frame, truthLen, plannedLen);
+		return;
+	}
+	uintptr_t start = 0, size = 0;
+	std::memcpy(&start, truth + maps - 2 * sizeof(uintptr_t), sizeof(uintptr_t));
+	std::memcpy(&size, truth + maps - sizeof(uintptr_t), sizeof(uintptr_t));
+	const size_t npages = static_cast<size_t>(size >> 12);
+	if (maps + 2 * npages > truthLen) return;
+	const uint8_t *const status = truth + maps;
+	const uint8_t *const dirty = truth + maps + npages;
+	const bool mapsDiffer = std::memcmp(truth, planned, maps + 2 * npages) != 0;
+	size_t at = maps + 2 * npages, carried = 0, wrong = 0;
+	for (size_t i = 0; i < npages && at + 4096 <= truthLen; i++)
+	{
+		if (!dirty[i]) continue;
+		carried++;
+		if (std::memcmp(truth + at, planned + at, 4096) != 0)
+		{
+			size_t first = 0, bytes = 0;
+			for (size_t k = 0; k < 4096; k++)
+				if (truth[at + k] != planned[at + k]) { if (bytes == 0) first = k; bytes++; }
+			if (wrong < 24)
+				fprintf(stderr, "[plan-verify]   page %zu at %llx, status %u: %zu bytes differ, first +0x%zx (%02x at once, %02x planned)\n",
+					i, (unsigned long long)(start + (static_cast<uintptr_t>(i) << 12)), (unsigned)status[i], bytes, first,
+					(unsigned)truth[at + first], (unsigned)planned[at + first]);
+			wrong++;
+		}
+		at += 4096;
+	}
+	const bool tailDiffers = at <= truthLen && std::memcmp(truth + at, planned + at, truthLen - at) != 0;
+	fprintf(stderr, "[plan-verify] anchor of frame %lld: %zu of %zu pages differ from the machine copied at once%s%s\n",
+		(long long)frame, wrong, carried, mapsDiffer ? "; the maps differ" : "", tailDiffers ? "; the thread set differs" : "");
+	fflush(stderr);
+}
+
 bool StateHistory::captureAnchorPlanned(int64_t frame, std::vector<uint8_t> &carried)
 {
 	if (!planAvailable()) return false;
+	if (planVerify())
+	{
+		m_planTruth.clear();
+		ByteSink truth{ &m_planTruth };
+		WbxReturn tr{};
+		m_host->wbx_save_state(m_obj, sinkWrite, reinterpret_cast<uintptr_t>(&truth), &tr);
+		if (!tr.ok()) m_planTruth.clear();
+	}
 	const double t0 = historyTrace() ? nowSeconds() : 0.0;
 
 	WbxReturn r{};
@@ -1687,11 +1751,23 @@ void StateHistory::finishPlan()
 			stillFilling ? "WAITED" : "waited", (nowSeconds() - tWait) * 1000);
 		fflush(stderr);
 	}
+	const int64_t plannedFrame = m_planFrame;
 	m_planPending = false;
 	m_planFrame = -1;
 	if (m_host == nullptr || m_host->wbx_state_finish == nullptr) return;
 	WbxReturn r{};
 	m_host->wbx_state_finish(m_obj, &r);
+	if (planVerify() && !m_planTruth.empty())
+	{
+		for (const Segment &seg : m_segments)
+		{
+			if (seg.anchorFrame != plannedFrame || seg.anchor.data() == nullptr) continue;
+			comparePlanned(plannedFrame, m_planTruth.data(), m_planTruth.size(), seg.anchor.data(), seg.anchor.size());
+			break;
+		}
+		m_planTruth.clear();
+		m_planTruth.shrink_to_fit();
+	}
 	if (!r.ok() && historyTrace())
 	{
 		fprintf(stderr, "[history] the planned anchor would not finish: %s\n", r.errorMessage);

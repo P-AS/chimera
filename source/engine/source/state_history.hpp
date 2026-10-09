@@ -785,6 +785,7 @@ private:
 
 	std::atomic<int64_t> m_fillMicros{ 0 };
 	int64_t m_planFrame = -1;          /* the anchor being filled */
+	Bytes m_planTruth;                 /* CHIMERA_PLAN_VERIFY: the same machine, copied at once */
 	WorkThread m_drainer{ "history drainer" };
 
 	/* ---- packing what is no longer being written to -----------------------
