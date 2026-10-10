@@ -37,9 +37,9 @@ jobs:
         # waterboxed core is built and checked on each (the arm runner is the
         # same Ubuntu as ubuntu-latest, with 4 KiB pages)
         include:
-          - arch: x86_64
+          - arch: x64
             runner: ubuntu-latest
-          - arch: aarch64
+          - arch: arm64
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -102,9 +102,9 @@ jobs:
         # waterboxed core is built and checked on each (the arm runner is the
         # same Ubuntu as ubuntu-latest, with 4 KiB pages)
         include:
-          - arch: x86_64
+          - arch: x64
             runner: ubuntu-latest
-          - arch: aarch64
+          - arch: arm64
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -203,9 +203,9 @@ jobs:
     # produced no packages, so a silent nothing cannot pass again.
     #
     # x86-64 only, for now: fetch-cores.sh takes the packages for the CPU it
-    # runs on, and no published core carries an aarch64 one yet, so on an arm
+    # runs on, and no published core carries an arm64 one yet, so on an arm
     # runner there would be nothing to check and the step below would fail.
-    # When cores publish aarch64 packages this gains the same matrix as the
+    # When cores publish arm64 packages this gains the same matrix as the
     # witness jobs.
     name: published cores (package contract)
     runs-on: ubuntu-latest
