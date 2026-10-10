@@ -864,3 +864,69 @@ reads them is told before a state is taken, through the optional
 docs/design-principles.md, "A core is told before a state is taken of it").
 xemu does, and its first frame after a load is the frame's own picture.
 
+## The Vulkan bridge (user-decided, 2026-10-10)
+
+For a core whose renderer has no OpenGL. The owner, on a request for an
+Xbox 360 core whose emulator draws with Vulkan or Direct3D 12 and nothing
+else: "Developing a Vulkan bridge for Chimera is something I wanted us to do
+anyway."
+
+It is the same seam - a guest's one callback, an opcode and a pointer to an
+argument block - and the same request: a renderer whose value ends in `-hw`,
+`chimera-run --gpu`, refused by `CHIMERA_NO_GPU`. A core takes it by
+exporting `SetVulkanBridge` where an OpenGL core exports `SetGpuBridge`; a
+core has one or the other. The engine's part is a hand-over and three calls:
+
+- before `Init`, the bridge's dispatcher is registered with the sandbox and
+  its address given to the core;
+- after every load - a state, a greenzone restore, a seek - the bridge is
+  told (`chimera_vk_host_state_loaded`), which destroys everything the guest
+  had made and makes the next call land on a new context;
+- when the session ends, the bridge is shut down.
+
+Everything else is miniBox's (`extern/chimera-common-minibox/source/vk`,
+whose README says how it is put together): the host half is ONE file, the
+same one a core's own test runner compiles, built into the engine with its
+dispatch generated from the Vulkan registry miniBox carries. It links
+against nothing. The machine's Vulkan loader is looked for when a core asks,
+so a machine without one loses this and nothing else, and the engine makes
+no instance and no device of its own - the guest's renderer asks for them
+through the bridge, and the bridge decides which device answers.
+
+What is different from the OpenGL bridge, and why:
+
+- **No driver handle reaches the guest.** A Vulkan handle is a pointer into
+  the driver, different in every process, and it would be written into the
+  guest's memory and so into every savestate. The guest holds counters into
+  a table the host keeps; one that names nothing refuses its call and the
+  driver never sees it.
+- **A load is always a new context.** The OpenGL bridge learned this
+  ("Per load, too", above); the Vulkan one starts there. So the question a
+  core must answer is not whether its objects survived but how it makes them
+  again, and `gpuStatesSurviveTheContext` is the core's promise that it does.
+- **Mapped memory is a buffer of the guest's own**, copied when the guest
+  says the bytes matter (a flush, an invalidate) and at no other time; every
+  memory type is reported as not coherent, so a correct renderer says so.
+- **There is no borrowed context** to give back: nothing here is bound to a
+  thread, so `ce_gl_release` has no counterpart.
+
+The core's export `StateSaving`, which the engine already calls before a
+state is made, is how a Vulkan core brings into the machine what only the
+device holds; the Xenia core uses it for its render targets.
+
+Measured (2026-10-10, Linux, llvmpipe from Mesa 25.2.8, the Xenia core's
+package - a local build, not published):
+
+- `chimera-run --gpu`, 120 frames recorded and played back: the bridge is
+  handed over (`chimera vk: the bridge was handed over`) and the picture the
+  engine is given at frame 60 is, byte for byte, the picture the core's own
+  runner has there and the picture the emulator draws with no sandbox at
+  all.
+- the same movie with `--rerecord` - the engine's own save and load before
+  every frame, each load a new context - runs to the end.
+
+Not proven: a real card (the bridge's own test has run on a GeForce GTX 1060
+on Windows, in miniBox; the engine's hand-over has not), the interface (only
+`chimera-run` has run it), and the on-screen "GPU: <driver>" line, which
+still names the OpenGL driver and so says nothing for a Vulkan core.
+

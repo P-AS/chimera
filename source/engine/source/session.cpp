@@ -415,6 +415,12 @@ extern "C" void ce_gl_state_loaded(int64_t to);
 extern "C" void ce_gl_rebuild_on_state_load(int32_t on);
 extern "C" uintptr_t ce_gl_dispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t);
 
+/* The Vulkan bridge's host half is miniBox's own file (source/vk/vk-host.c),
+ * compiled into the engine when the GPU bridge is: docs/gpu-bridge.md. */
+#ifdef CE_VK_BRIDGE
+#include "vk-host.h"
+#endif
+
 struct ce_session
 {
 	SessionConfig cfg;
@@ -423,6 +429,8 @@ struct ce_session
 	bool active = false;
 	/* a GPU outside the sandbox drew this session's pictures */
 	bool gpuDrew = false;
+	/* the core took the Vulkan bridge: a load is a new device to it */
+	bool vulkanBridge = false;
 	/* The pictures of frames already drawn, shown again when the machine is put
 	 * back on one (kept_pictures.hpp; chimera#190). On by itself for a session
 	 * whose pictures a GPU draws and whose greenzone is on; a caller may say
@@ -528,6 +536,7 @@ struct ce_session
 	 * machine stopped between frames; what it writes is in the state. */
 	void (*stateSavingExport)(void) = nullptr;
 	void stateSaving();
+	void vulkanStateLoaded();
 	std::vector<uint8_t> buttonActive;
 	std::vector<uint8_t> axisActive;
 	void buildControlActivity();
@@ -1197,6 +1206,17 @@ static bool stateSavingOff()
 	return off;
 }
 
+/* A savestate was loaded into the guest. To a core drawing through the Vulkan
+ * bridge everything its memory now names belongs to another moment: the host
+ * half destroys it all and the context is a new one, which the core finds out
+ * by asking (chimera_vk_context_id) and makes its objects again. */
+void ce_session::vulkanStateLoaded()
+{
+#ifdef CE_VK_BRIDGE
+	if (vulkanBridge) chimera_vk_host_state_loaded();
+#endif
+}
+
 void ce_session::stateSaving()
 {
 	if (stateSavingExport == nullptr || guestDied() || stateSavingOff()) return;
@@ -1305,6 +1325,7 @@ bool ce_session::greenzoneRestore(int64_t to)
 	 * the path a rewind and a re-record actually take. */
 	ce_gl_release();
 	ce_gl_state_loaded(to);
+	vulkanStateLoaded();
 	frame = to;
 	afterLoad(to);
 	return true;
@@ -1608,6 +1629,45 @@ ce_session *ce_session_open(
 		}
 	}
 
+#ifdef CE_VK_BRIDGE
+	/* The Vulkan bridge: the same offer, for a core whose renderer has no
+	 * OpenGL. The same request and the same refusal; another export, and a
+	 * core has one or the other. The host half finds the machine's Vulkan
+	 * loader when it is asked and makes nothing until the core asks for an
+	 * instance, so a machine with no Vulkan loses nothing but this. */
+	if (!(noGpu != nullptr && noGpu[0] != '\0' && noGpu[0] != '0') && ce_gl_requested() != 0)
+	{
+		std::string ignored;
+		auto setVulkan = reinterpret_cast<void (*)(uint64_t)>(
+			s->proc("SetVulkanBridge", 1, false, ignored));
+		char vkerr[256] = "";
+		if (setVulkan == nullptr)
+		{
+			/* not a failure: most cores draw some other way */
+		}
+		else if (chimera_vk_host_init(vkerr, (int)sizeof vkerr) != 0)
+		{
+			fprintf(stderr, "chimera vk: no Vulkan on this machine (%s)\n", vkerr);
+		}
+		else
+		{
+			chimera::WbxReturn r;
+			host->wbx_get_callback_addr(s->obj, reinterpret_cast<void *>(&chimera_vk_host_dispatch), 2, &r);
+			if (!r.ok() || r.data == 0)
+			{
+				fprintf(stderr, "chimera vk: the sandbox would not take the callback\n");
+			}
+			else
+			{
+				setVulkan(static_cast<uint64_t>(r.data));
+				s->gpuDrew = true;
+				s->vulkanBridge = true;
+				fprintf(stderr, "chimera vk: the bridge was handed over\n");
+			}
+		}
+	}
+#endif
+
 	/* The compile cache, before Init because Init is where a core first asks
 	 * for compiled objects. A core without the export keeps nothing. */
 	if (ce_cache_dir_get()[0] != 0)
@@ -1819,6 +1879,10 @@ void ce_session_free(ce_session *s)
 			(unsigned long long)ce_session_cache_stored(s), (unsigned long long)ce_session_cache_fetched(s));
 	}
 	if (s == nullptr) return;
+#ifdef CE_VK_BRIDGE
+	/* what the core made on the machine's Vulkan device goes with the session */
+	if (s->vulkanBridge) chimera_vk_host_shutdown();
+#endif
 	if (s->movie != nullptr) ce_movie_log_free(s->movie);
 	if (s->obj != nullptr)
 	{
@@ -2144,6 +2208,7 @@ int32_t ce_session_load_state(ce_session *s, const uint8_t *data, uint64_t len)
 	s->host->wbx_load_state(s->obj, streamRead, reinterpret_cast<uintptr_t>(&stream), &r); // see save re: no bracket
 	ce_gl_release(); /* a restore can run guest code, and guest code can draw */
 	ce_gl_state_loaded(s->frame);
+	s->vulkanStateLoaded();
 	if (s->traceEvery > 0)
 	{
 		fprintf(stderr, "[trace] load state: %llu bytes, %s, machine now: threads %d running %d digest %016llx\n",
@@ -2405,6 +2470,7 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 	if (zds != nullptr) z->freeDStream(zds);
 	ce_gl_release();
 	ce_gl_state_loaded(s->frame);
+	s->vulkanStateLoaded();
 	if (!r.ok() || source.failed)
 	{
 		s->error = !r.ok() ? r.errorMessage : std::string(utf8_path) + " is damaged";

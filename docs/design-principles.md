@@ -6223,3 +6223,50 @@ off all 3 fail. On Windows, with a data folder path long enough to fail:
 the published build 2385e5ea refuses the xemu package with the message
 above, and the same build with the fixed library loads it. Interface tests
 after a full rebuild: 119 / 61 / 557 / 302 with none failed (557 was 554).
+
+Tested: 7 new tests of the text, the settings comparison and the file list
+(`IssueReportTests`), 2 of the window (`ReportIssueFormTests`) and a
+screenshot in both themes. The settings comparison was broken on purpose
+and its test failed. Interface tests after a full rebuild: 119 / 59 / 550 /
+296 with none failed (550 was 543, 296 was 293). Not tested: the window on
+Windows, and the buttons that use the clipboard and the browser.
+
+## A Vulkan bridge (user-decided, 2026-10-10, issue 171)
+
+A core may now draw on the machine's graphics card through Vulkan, as two
+cores do through OpenGL. The request that brought it was an Xbox 360 core:
+its emulator (Xenia) draws with Vulkan or Direct3D 12 and has no OpenGL and
+no software renderer, so without a bridge it could show nothing. The owner:
+"Developing a Vulkan bridge for Chimera is something I wanted us to do
+anyway."
+
+What changed in what Chimera is:
+
+- **One more export a core may have: `SetVulkanBridge`.** It is offered
+  under exactly the conditions `SetGpuBridge` is - the project chose a
+  renderer whose value ends in `-hw`, this build has a bridge, the machine
+  has a driver - and a session that handed it over says, as an OpenGL one
+  does, that a GPU drew. No setting, no declaration and no name is new: the
+  `-hw` convention already says "this renderer wants the card" without
+  saying which API.
+- **Nothing system-specific.** The engine does not know which core asks or
+  why. The bridge itself, both halves and its list of commands, is
+  miniBox's; the engine compiles miniBox's host half and calls three of its
+  functions.
+- **No network, no new dependency.** The host half links against nothing
+  and finds the Vulkan loader at run time.
+
+What it costs is what the OpenGL bridge costs, said in docs/gpu-bridge.md:
+the device is outside the sandbox, so it is outside the savestate and
+different on every machine. The Vulkan bridge is stricter about the first -
+no driver handle is ever in guest memory, and every load is a new context -
+so a core using it has to be able to make its renderer again from what a
+state holds, and has to be able to prove it.
+
+Measured, and what was not, is in docs/gpu-bridge.md ("The Vulkan bridge").
+In short: on Linux with a software Vulkan the engine hands the bridge over,
+a core's picture arrives byte-identical to that core's own reference, and a
+movie replays with a state loaded before every frame. Engine unit tests 22
+of 22, the Windows build compiles, `check-no-network.sh` is clean. Not run:
+a real card through the engine, the interface, Windows.
+

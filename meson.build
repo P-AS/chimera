@@ -361,6 +361,31 @@ if gl_bridge
   else
     gl_bridge_deps = [meson.get_compiler('cpp').find_library('EGL', required: true)]
   endif
+
+  # The Vulkan bridge, for a core whose renderer has no OpenGL. Its host half
+  # is miniBox's own file - one implementation for the frontend and for a
+  # core's test runner - with its dispatch generated here from the registry
+  # miniBox carries. It links against nothing: the machine's Vulkan loader is
+  # looked for when a core asks, so a machine without one runs everything
+  # else.
+  vk_bridge_dir = repo_root / 'extern/chimera-common-minibox/source/vk'
+  vk_headers_dir = repo_root / 'extern/chimera-common-minibox/extern/vulkan-headers'
+  vk_bridge_gen = custom_target('ce-vk-bridge',
+    output: ['vk-bridge-ops.h', 'vk-bridge-guest.c', 'vk-bridge-host.inc'],
+    command: [find_program('python3'),
+      vk_bridge_dir / 'gen-vk-bridge.py',
+      vk_headers_dir / 'registry/vk.xml',
+      vk_bridge_dir / 'vk-entry-points.txt',
+      '@OUTDIR@'],
+    depend_files: [
+      files('extern/chimera-common-minibox/source/vk/vk-entry-points.txt'),
+      files('extern/chimera-common-minibox/source/vk/gen-vk-bridge.py'),
+    ])
+  gl_bridge_src += [vk_bridge_gen[0], vk_bridge_gen[2],
+    files('extern/chimera-common-minibox/source/vk/vk-host.c')]
+  engine_build_args += ['-DCE_VK_BRIDGE',
+    '-I' + vk_bridge_dir,
+    '-I' + vk_headers_dir / 'include']
 endif
 shared_library(
   'chimera',
