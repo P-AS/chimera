@@ -925,8 +925,21 @@ package - a local build, not published):
 - the same movie with `--rerecord` - the engine's own save and load before
   every frame, each load a new context - runs to the end.
 
-Not proven: a real card (the bridge's own test has run on a GeForce GTX 1060
-on Windows, in miniBox; the engine's hand-over has not), the interface (only
-`chimera-run` has run it), and the on-screen "GPU: <driver>" line, which
-still names the OpenGL driver and so says nothing for a Vulkan core.
+And on Windows, on a real card (the same day, `chimera-run.exe` cross-built
+here and run through WSL's interop, the same package):
+
+    chimera vk: the bridge was handed over
+    chimera vk: NVIDIA GeForce GTX 1060 6GB (Vulkan 1.4.312, driver 69.168.0)
+
+The second line is written after `Init`, which is where the core makes its
+device, and is the one place a person can see which card drew. A movie of
+100 frames records and plays back; with `--rerecord` it plays to the end,
+and its picture at frame 80 is the picture without (the same 1280x720, not
+blank). Against the software Vulkan's picture of the same frame the card's
+differs by at most 4 in 255 in any channel - the same picture from another
+rasteriser. 2400 frames ran to the game's title screen.
+
+Not proven: the interface (only `chimera-run` has run it), and the on-screen
+"GPU: <driver>" line, which still names the OpenGL driver and so says
+nothing for a Vulkan core.
 

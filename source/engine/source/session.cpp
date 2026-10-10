@@ -1705,6 +1705,16 @@ ce_session *ce_session_open(
 	/* Init is where a renderer makes its context and compiles its shaders, so
 	 * it is also where the bridge first borrows the caller's GL slot. */
 	ce_gl_release();
+#ifdef CE_VK_BRIDGE
+	/* ...and where a Vulkan renderer makes its device: which one is now
+	 * known, and is the one line that says which card drew this run. */
+	if (s->vulkanBridge)
+	{
+		const char *device = chimera_vk_host_description();
+		fprintf(stderr, "chimera vk: %s\n", device != nullptr && device[0] != '\0'
+			? device : "the core took the bridge and made no device");
+	}
+#endif
 	if (initResult != 1)
 	{
 		/* the core knows why it refused - GetLoadError is optional, so a core

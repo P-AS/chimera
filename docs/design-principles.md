@@ -6267,6 +6267,7 @@ Measured, and what was not, is in docs/gpu-bridge.md ("The Vulkan bridge").
 In short: on Linux with a software Vulkan the engine hands the bridge over,
 a core's picture arrives byte-identical to that core's own reference, and a
 movie replays with a state loaded before every frame. Engine unit tests 22
-of 22, the Windows build compiles, `check-no-network.sh` is clean. Not run:
-a real card through the engine, the interface, Windows.
+of 22, the Windows build compiles, `check-no-network.sh` is clean. The same
+day it ran on Windows on a GeForce GTX 1060, which the session names on
+standard error once the core has made its device. Not run: the interface.
 
