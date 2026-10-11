@@ -875,7 +875,8 @@ It is the same seam - a guest's one callback, an opcode and a pointer to an
 argument block - and the same request: a renderer whose value ends in `-hw`,
 `chimera-run --gpu`, refused by `CHIMERA_NO_GPU`. A core takes it by
 exporting `SetVulkanBridge` where an OpenGL core exports `SetGpuBridge`; a
-core has one or the other. The engine's part is a hand-over and three calls:
+core that exports both is handed both ("A renderer that also has OpenGL",
+below). The engine's part is a hand-over and three calls:
 
 - before `Init`, the bridge's dispatcher is registered with the sandbox and
   its address given to the core;
@@ -947,3 +948,44 @@ Not proven: the interface (only `chimera-run` has run it), and the on-screen
 "GPU: <driver>" line, which still names the OpenGL driver and so says
 nothing for a Vulkan core.
 
+### A renderer that also has OpenGL (2026-10-12, issue 248)
+
+A core may export both `SetGpuBridge` and `SetVulkanBridge`. The engine
+hands it both, and the core uses the one its Renderer setting names. The
+Vita3K core is the first: `opengl-hw` and `vulkan-hw` are both values of its
+setting, and the default did not change.
+
+What an emulator's Vulkan renderer needed before it ran over the bridge, in
+the order it was met. The other cores' renderers will need the same:
+
+- **A picture without a window.** No surface and no swapchain cross the
+  bridge. The renderer draws to an image of its own and copies it to a
+  mapped buffer when a frame is presented.
+- **To say when mapped bytes matter** (above), and **to ask for cached
+  memory** for every buffer it maps. Renderers ask for write-combined memory
+  for what they only write, which is right on a desktop and very slow here:
+  through the bridge a mapping is read once when it is made and again at
+  every invalidate, and reading write-combined memory took 25 ms for a 2 MB
+  picture and 0.94 s for one mapping on the GTX 1060 - ten frames a second
+  on a test app that runs at eighty with cached memory. Software Vulkan does
+  not show this at all. `CHIMERA_VK_STATS=1` does, in one run.
+- **To make everything again after a load.** The renderer asks which context
+  the calls land on where it would otherwise draw, and when it moved lets go
+  of every object with its own cleanup code and starts again. While it lets
+  go, the core keeps its calls from crossing (the function it gave
+  `chimera_vk_install` answers "done"), so nothing is asked of a device that
+  is gone and the cleanup frees what it kept on its own side. An emulator's
+  cleanup followed by its start-up is seldom a clean start, because desktop
+  users seldom go that way: in Vita3K four things survived it that should
+  not have, and one of them wrote through a freed pointer.
+- **To put what only the GPU holds into the machine's memory** before a
+  state is made, or as each scene ends, so that a state holds the pictures.
+
+Measured with the Vita3K core's package "Development build c4560f31" on the GTX 1060
+(Windows, `chimera-run.exe`): a game's 1500 frames take 17.2 s with Vulkan
+and 17.1 s with OpenGL and the pictures are the same; a state saved with
+Vulkan and loaded in a new process shows the unbroken run's picture 450
+frames later, byte for byte. A load costs 0.6 s with Vulkan against 0.2 s
+with OpenGL. Of that, 185 ms is the driver making a new device, which the
+bridge asks for after every load, and 68 ms is the bridge copying two
+freshly mapped blocks to the guest. Both are the bridge's to improve.

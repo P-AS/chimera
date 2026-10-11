@@ -6304,3 +6304,28 @@ Chimera's window, which the section above says was not run, has since run
 the package on Windows on the GeForce GTX 1060, driven by a script: 420
 frames, the project saved, and the saved project opened again. Nobody has
 yet used it by hand.
+
+## Vulkan in the cores whose emulators have it (user-decided, 2026-10-11, issue 248)
+
+Users asked for Vulkan as a renderer in eight cores whose emulators have a
+Vulkan renderer of their own: Vita3K, RPCS3, Flycast, xemu, PCSX2, Dolphin,
+DuckStation and PPSSPP. The owner: "Implement Vulkan support for all the
+cores that support it, as listed by the other users."
+
+What was decided:
+
+- Each of the eight gets `vulkan-hw` as another value of its Renderer
+  setting, beside what it has. A core's default does not change.
+- They are done one at a time. Each is published and reported on the issue
+  when it is done, and the issue stays open until all eight are.
+- Nothing in Chimera changes for it. The engine already hands a core the
+  Vulkan bridge when it exports `SetVulkanBridge`, and a core that exports
+  both that and `SetGpuBridge` is handed both.
+
+The first is Vita3K, published as "Development build c4560f31". What its renderer
+needed, which the other seven will need too, is in docs/gpu-bridge.md ("A
+renderer that also has OpenGL"), with what was measured on the GeForce GTX
+1060.
+
+What is not proven: Chimera's window has not run a core with the setting on
+`vulkan-hw` - only `chimera-run` has.
