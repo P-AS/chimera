@@ -263,6 +263,15 @@
       "tested": ""
     },
     {
+      "id": "xenia",
+      "name": "Xenia",
+      "systems": [
+        { "id": "X360", "name": "Xbox 360" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-xenia",
+      "tested": ""
+    },
+    {
       "id": "sdlpop",
       "name": "SDLPoP",
       "systems": [

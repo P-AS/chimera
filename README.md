@@ -53,6 +53,7 @@ Chimera does not include cores and does not download them. To use a core, downlo
 | [Vita3K](https://github.com/ToolAssisted-run/chimera-core-vita3k) | PlayStation Vita |
 | [RPCS3](https://github.com/ToolAssisted-run/chimera-core-rpcs3) | PlayStation 3 |
 | [xemu](https://github.com/ToolAssisted-run/chimera-core-xemu) | Xbox |
+| [Xenia](https://github.com/ToolAssisted-run/chimera-core-xenia) | Xbox 360 |
 | [Opera](https://github.com/ToolAssisted-run/chimera-core-opera) | 3DO Interactive Multiplayer |
 | [Stella](https://github.com/ToolAssisted-run/chimera-core-stella) | Atari 2600 |
 | [AppleWin](https://github.com/ToolAssisted-run/chimera-core-applewin) | Apple II / II Plus / IIe (and the Pravets, TK3000 and Base64A clones) |

@@ -6271,3 +6271,36 @@ of 22, the Windows build compiles, `check-no-network.sh` is clean. The same
 day it ran on Windows on a GeForce GTX 1060, which the session names on
 standard error once the core has made its device. Not run: the interface.
 
+
+## Xenia, the Xbox 360 core, joins the official cores (user-decided, 2026-10-11, issue 171)
+
+The owner asked for it: "add it", after the core's repository was made
+public the same day.
+
+What was decided:
+
+- `official-cores.json` has a row for the core `xenia`, system id `X360`,
+  named "Xbox 360" as the core's own package names it, and the README's
+  table of emulation cores lists it after xemu.
+- It is the first core that draws through the Vulkan bridge (the section
+  above). A Chimera older than that bridge cannot run it with a picture.
+
+What a user should know, said in the core's README and in the issue:
+
+- One game has been tried, Mirror's Edge. It runs from power-on into the
+  first level, with picture, sound, controllers and savestates.
+- It is slow: a third to a half of real time at the default CPU Speed
+  (500). The setting's description says 2000 is the closest to a real
+  console and why 500 is the default.
+- The core's CI has no game, so on a public runner only the build, Xenia's
+  instruction tests and Chimera's package tests run. The tests with the
+  game are run on the developer's machine before each push.
+
+What was measured: the published build "Development build 1f4b3f46", the
+same package as "Nightly 2026-10-11", passed the core's test script with
+the game present (16 tests, none failed, none skipped), and Chimera's
+roster and package tests named in the commit that added the row.
+Chimera's window, which the section above says was not run, has since run
+the package on Windows on the GeForce GTX 1060, driven by a script: 420
+frames, the project saved, and the saved project opened again. Nobody has
+yet used it by hand.
