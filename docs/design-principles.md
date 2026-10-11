@@ -6191,3 +6191,35 @@ full rebuild: 119 / 61 / 554 / 302 with none failed. Package tests on the
 core's new declarations, Chimera reads 48000 for the console and System
 246, 64000 for System 256 and 72000 for Super 256. Not tested: listening to
 a System 256 game in the interface, and the two games of the report.
+
+## The folder a core package is unpacked into has a short name (user-decided, 2026-10-11)
+
+Found while testing issue 236: on Windows the xemu package would not load
+("Could not find a part of the path") when the data folder's path was long.
+Windows refuses a path of 260 characters or more. A package was unpacked
+into `UnpackedCores/<id>-<commit>-<sha1>`, 86 characters for a core with a
+four-letter name, and into the same name plus 17 more while it was being
+unpacked. The xemu package holds a licence file with a name of 76
+characters. With the default data folder that left room for a Windows user
+name of about 24 characters; a data folder moved to a longer path failed.
+
+What changed:
+- The folder is `UnpackedCores/<id>-<sha1>`: the commit in a published
+  package's file name is left out, 41 characters fewer. The hash of the
+  file already names the folder exactly.
+- The folder used while unpacking is `UnpackedCores/tmp-<12 characters>`,
+  never longer than the one it becomes.
+- The folder holds a small file, `unpacked-from.txt`, with the package
+  file's name. The cleanup of older contents of the same file used to go by
+  the folder's name and now goes by that file. A folder with the old long
+  name is removed the first time its package is loaded again.
+- When unpacking fails, the half-written folder is removed.
+
+Not chosen: asking Windows for long paths. The engine and the sandbox open
+the package's files with ordinary calls, which have the same limit.
+
+Tested: 3 new tests (`UnpackedPackageFolderTests`); with the rule switched
+off all 3 fail. On Windows, with a data folder path long enough to fail:
+the published build 2385e5ea refuses the xemu package with the message
+above, and the same build with the fixed library loads it. Interface tests
+after a full rebuild: 119 / 61 / 557 / 302 with none failed (557 was 554).

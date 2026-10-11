@@ -122,19 +122,71 @@ namespace Chimera.Client.Common
 			return (manifest, factories.ToList(), packageDir, packageSha1);
 		}
 
+		/// <summary>The file inside an unpacked package that says which package file it came from.</summary>
+		internal const string UnpackedFromFileName = "unpacked-from.txt";
+
+		private static bool IsHex(string text)
+			=> text.Length is not 0 && text.All(static c => c is (>= '0' and <= '9') or (>= 'A' and <= 'F') or (>= 'a' and <= 'f'));
+
+		/// <summary>
+		/// A package file's name without the commit it carries: a published
+		/// package is named <c>id-commit</c>, forty characters of commit that
+		/// the folder it is unpacked into does not need, because that folder is
+		/// already named by the hash of the file.
+		/// </summary>
+		internal static string ShortPackageName(string packageName)
+		{
+			var kept = packageName.Split('-').Where(static part => !(part.Length is 40 && IsHex(part))).ToArray();
+			return kept.Length is 0 ? packageName : string.Join("-", kept);
+		}
+
+		/// <summary>
+		/// Where a package file is unpacked: <c>root/name-sha1</c>, the name
+		/// without its commit. Short on purpose (issue: a package would not load
+		/// on Windows when the data folder's path was long). Windows refuses a
+		/// path of 260 characters or more, a package holds licence files with
+		/// names of 76 characters and more, and the folder used to be named
+		/// <c>id-commit-sha1</c>, 86 characters for a four-letter core.
+		/// </summary>
+		internal static string UnpackedDirFor(string cacheRoot, string packageName, string packageSha1)
+			=> Path.Combine(cacheRoot, $"{ShortPackageName(packageName)}-{packageSha1}");
+
 		private static string ExtractZipToCache(string zipPath, string packageSha1)
+			=> ExtractZipToCache(zipPath, packageSha1, CacheStore.UnpackedCores);
+
+		internal static string ExtractZipToCache(string zipPath, string packageSha1, string cacheRoot)
 		{
 			// The cache dir name embeds the zip's SHA1 (its identity), and extraction goes
 			// to a private temp dir followed by an atomic rename. Concurrent Chimera
 			// instances (or a stale cache from an older zip) therefore never conflict:
 			// whoever wins the rename provides the cache, losers just use it.
 			var packageName = Path.GetFileNameWithoutExtension(zipPath);
-			var cacheRoot = CacheStore.UnpackedCores;
-			var cacheDir = Path.Combine(cacheRoot, $"{packageName}-{packageSha1}");
+			var cacheDir = UnpackedDirFor(cacheRoot, packageName, packageSha1);
 			if (Directory.Exists(cacheDir)) return cacheDir; // complete by construction (only ever appears via rename)
 			Directory.CreateDirectory(cacheRoot);
-			var tempDir = $"{cacheDir}.tmp-{Path.GetRandomFileName()}";
-			ZipFile.ExtractToDirectory(zipPath, tempDir);
+			// never longer than the folder it becomes, so a package that fits
+			// unpacked also fits while it is being unpacked
+			var tempDir = Path.Combine(cacheRoot, $"tmp-{Path.GetRandomFileName()}");
+			try
+			{
+				ZipFile.ExtractToDirectory(zipPath, tempDir);
+			}
+			catch (Exception)
+			{
+				// half a package is of no use to anybody, and nothing else would remove it
+				try
+				{
+					if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true);
+				}
+				catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+				{
+					// the reason the unpacking failed is the one worth reporting
+				}
+				throw;
+			}
+			// which file this came from: the folder's name no longer says, and the
+			// cleanup below needs it
+			File.WriteAllText(Path.Combine(tempDir, UnpackedFromFileName), packageName);
 			try
 			{
 				Directory.Move(tempDir, cacheDir);
@@ -144,13 +196,21 @@ namespace Chimera.Client.Common
 				// another process won the race; theirs is complete, discard ours
 				Directory.Delete(tempDir, recursive: true);
 			}
-			// best-effort cleanup of caches from other versions of this zip
-			foreach (var oldDir in Directory.GetDirectories(cacheRoot, $"{packageName}-*"))
+			// best-effort cleanup of what other contents of this same file left
+			// behind: a folder of the old long name, or one that says it came
+			// from a file of this name. Another build of the core, which is
+			// another file, keeps its folder.
+			foreach (var oldDir in Directory.GetDirectories(cacheRoot))
 			{
 				if (oldDir == cacheDir) continue;
-				var suffix = Path.GetFileName(oldDir).Substring(packageName.Length + 1);
-				var looksLikeOurs = suffix.Length is 40 && suffix.All(static c => c is (>= '0' and <= '9') or (>= 'A' and <= 'F') or (>= 'a' and <= 'f'));
-				if (!looksLikeOurs && !long.TryParse(suffix, out _)) continue; // some other package whose name merely starts with ours
+				var name = Path.GetFileName(oldDir);
+				var cut = name.LastIndexOf('-');
+				if (cut <= 0) continue;
+				var suffix = name.Substring(cut + 1);
+				var looksUnpacked = (suffix.Length is 40 && IsHex(suffix)) || long.TryParse(suffix, out _);
+				if (!looksUnpacked) continue;
+				var oldLongName = name.Substring(0, cut) == packageName;
+				if (!oldLongName && !CameFrom(oldDir, packageName)) continue;
 				try
 				{
 					Directory.Delete(oldDir, recursive: true);
@@ -161,6 +221,19 @@ namespace Chimera.Client.Common
 				}
 			}
 			return cacheDir;
+		}
+
+		private static bool CameFrom(string unpackedDir, string packageName)
+		{
+			try
+			{
+				var marker = Path.Combine(unpackedDir, UnpackedFromFileName);
+				return File.Exists(marker) && File.ReadAllText(marker).Trim() == packageName;
+			}
+			catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+			{
+				return false;
+			}
 		}
 
 		private static (CorePackageManifest Manifest, IEnumerable<ICoreFactory> Factories) LoadPackageDir(string packageDir)
