@@ -900,6 +900,10 @@ What is different from the OpenGL bridge, and why:
   guest's memory and so into every savestate. The guest holds counters into
   a table the host keeps; one that names nothing refuses its call and the
   driver never sees it.
+  That was not true of every call until 2026-10-11: a handle passed by
+  value was looked up after the check that refuses a bad call, so a handle
+  from before a load reached the driver as null and ended the host. Fixed in
+  miniBox 25955f4, with a test that keeps a card across a load.
 - **A load is always a new context.** The OpenGL bridge learned this
   ("Per load, too", above); the Vulkan one starts there. So the question a
   core must answer is not whether its objects survived but how it makes them
