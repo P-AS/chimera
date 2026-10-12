@@ -14,6 +14,8 @@ Built so far:
 - The tools that look: `status`, `controls`, `get_input`, `screenshot`,
   `list_memory`, `read_memory`, `registers`, `list_properties`,
   `get_property`, `list_branches`, `list_markers`.
+- RAM search, the agent's own: `search_start`, `search_filter`,
+  `search_results`, `search_undo`.
 - The tools that change things, refused until the tick box is ticked: `seek`,
   `set_input`, `set_buttons`, `insert_frames`, `delete_frames`, `undo`,
   `save_branch`, `load_branch`, `add_marker`, `write_memory`, `set_property`,
@@ -22,7 +24,7 @@ Built so far:
 - Two command-line flags for runs nobody clicks in: `--mcp-server` and
   `--mcp-allow-changes`.
 
-Not built yet: RAM search, `watch`, `advance_until`, and the windowless mode.
+Not built yet: `watch`, `advance_until`, and the windowless mode.
 `chimera-mcp` is built with Chimera but is not in the release bundles yet.
 
 On Windows: the same test that edits a movie in the window was run against
@@ -153,9 +155,16 @@ RAM search (the agent's own search, separate from the RAM Search window):
 
 | Tool | What it does |
 | --- | --- |
-| `search_start` | Starts a search over a domain with a value size. |
-| `search_filter` | Keeps the addresses that meet a comparison (equal, changed, greater than before, and so on). |
-| `search_results` | The addresses left, with current and previous values, up to a limit. |
+| `search_start` | Starts a search over a domain with a value size of 1, 2 or 4 bytes. Every address is a candidate and its value is remembered. |
+| `search_filter` | Keeps the candidates whose value now is equal to, different from, greater or less than a given value, or than the value remembered. Then remembers the value now. |
+| `search_results` | The candidates left, lowest address first, with the value now and the one remembered, up to a limit. |
+| `search_undo` | Takes the last filter back. |
+
+The way it is used: start a search, have the game change the thing looked for
+(`seek` to another frame, or the person plays), filter for "different" or
+"greater", and repeat until few addresses are left. It only reads, so it
+needs no permission. One search at a time; it ends when the project is
+closed or the server is stopped.
 
 Changes:
 

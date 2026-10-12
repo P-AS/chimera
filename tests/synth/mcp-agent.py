@@ -219,6 +219,29 @@ else:
     error, text, _ = call("list_markers")
     check("a tool the frontend runs is handed to the frontend", error and "window" in text)
 
+# RAM search: looking only, so it works whether or not changes are allowed. What is left
+# after a filter must be what the reference dump says is left.
+error, text, _ = call("search_results")
+check("search_results says that no search is running", error and "search_start" in text)
+check("search_start makes every byte a candidate", facts("search_start", domain="RAM").get("candidates") == len(ram))
+same = [i for i in range(len(ram)) if ram[i] == ram[0]]
+check("search_filter keeps the addresses equal to a value", facts("search_filter", op="equal", value=ram[0]).get("candidates") == len(same))
+found = facts("search_results", limit=5)
+check("search_results lists them lowest first, with their values",
+      found.get("candidates") == len(same) and [r["address"] for r in found.get("results", [])] == same[:5]
+      and all(r["value"] == ram[0] and r["previous"] == ram[0] for r in found.get("results", [])))
+check("nothing has changed since, so 'not equal to before' leaves none", facts("search_filter", op="not_equal").get("candidates") == 0)
+check("search_undo takes that filter back", facts("search_undo").get("candidates") == len(same))
+words = [ram[i] | ram[i + 1] << 8 for i in range(0, len(ram), 2)]
+check("a search over 16-bit values has half as many candidates", facts("search_start", domain="RAM", size=2).get("candidates") == len(words))
+big = [i * 2 for i, w in enumerate(words) if w > 1000]
+check("search_filter compares 16-bit values", facts("search_filter", op="greater", value=1000).get("candidates") == len(big))
+check("and lists their addresses", [r["address"] for r in facts("search_results", limit=500).get("results", [])] == big[:500])
+error, text, _ = call("search_start", domain="Bus")
+check("search_start says a bus cannot be searched", error and "bus" in text)
+error, text, _ = call("search_filter", op="about")
+check("search_filter names the comparisons it knows", error and "not_equal" in text)
+
 if not changes:
     # nobody allowed changes: each tool that changes something says how they are allowed
     for tool, arguments in (("add_marker", {"frame": 1, "text": "x"}), ("set_buttons", {"frame": 0, "buttons": {"P1 A": True}}),
@@ -296,6 +319,14 @@ if changes:
     after = facts("status")
     check("status says memory was written, and on which frame",
           after.get("memory_written_by_agent") is True and after.get("first_memory_write_frame") == frame_now)
+    # the search an agent really runs: remember, change something, keep what changed
+    facts("search_start", domain="RAM")
+    old = facts("read_memory", domain="RAM", address=0x900, count=1)["values"][0]
+    facts("write_memory", domain="RAM", address=0x900, values=[(old + 5) & 255])
+    check("after one byte was written, 'not equal to before' leaves that byte alone", facts("search_filter", op="not_equal").get("candidates") == 1)
+    check("and after the filter its value now is the one remembered",
+          facts("search_results").get("results") == [{"address": 0x900, "value": (old + 5) & 255, "previous": (old + 5) & 255}])
+    check("so 'equal to before' keeps it", facts("search_filter", op="equal").get("candidates") == 1)
     error, text, _ = call("write_memory", domain="RAM", address=0, values=[300])
     check("write_memory refuses a value that does not fit", error and "fits in u8" in text)
     error, text, _ = call("write_memory", domain="VRAM", address=0, values=[1])

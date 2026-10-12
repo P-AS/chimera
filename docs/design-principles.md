@@ -6710,3 +6710,36 @@ and the agent's whole test of changes in the window (`mcp-agent.py`,
 "window-changes") passed through `chimera-mcp.exe`: the edits, the undos, the
 branches, the seeks, and the reference memory at the end. What is still not
 known on Windows is how the dialog looks; nobody has opened it there.
+
+## The agent's own RAM search (2026-10-12)
+
+Four tools of the MCP server (docs/mcp-server.md) put the engine's RAM search
+in an agent's hands: start, filter, results, undo. What was chosen:
+
+- **It is the engine's search, not a new one.** The tools call `ce_ramsearch_*`,
+  the same code the RAM Search window runs, so a domain of any size is
+  searched at the cost the window pays.
+- **It is the agent's, not the window's.** A person's RAM Search window and
+  an agent's search do not see each other's candidates. An agent narrowing
+  four thousand addresses must not empty the list a person is reading.
+- **A filter compares with the value remembered and then remembers the value
+  now** (the window's "previous value: last search"). That is the one rule an
+  agent has to keep in mind, and it needs no call once a frame.
+- **Bytes, not properties.** RAM Search is byte-based by the owner's earlier
+  decision (2026-10-07); a game's named values have their own tools.
+- **The search holds a pointer into the machine's memory**, so before every
+  use the engine checks that the open machine still has that domain at that
+  address and of that size, and drops the search when it does not. It also
+  ends with the server.
+
+What was measured. The engine's tests 23 of 23. The test of the whole product
+85 of 85: the two checks that drive `chimera-run` through `chimera-mcp` now
+also search - the addresses equal to a value must be exactly those of the
+reference dump, lowest first; nothing having changed, "different from
+before" must leave none and undo must bring them back; a 16-bit search must
+list the right addresses; and, with changes allowed, after one byte is
+written "different from before" must leave that byte alone. With "equal"
+made to mean "different" and the addresses listed one too high, both checks
+failed. The interface is unchanged; its tests were run again against the new
+engine library and none failed (1,066). On Windows the engine compiles,
+`test_mcp.exe` passes and the same checks pass against the Windows programs.

@@ -89,6 +89,36 @@ const McpTool kTools[] = {
 	  "\"name\":{\"type\":\"string\"}"
 	  "},\"required\":[\"name\"],\"additionalProperties\":false}",
 	  false, false },
+	{ "search_start",
+	  "Starts a RAM search over a memory domain: every address becomes a candidate, and its value now is remembered as its "
+	  "'previous' value. Then change something in the game (seek, or let the person play) and narrow the candidates with "
+	  "search_filter. One search at a time; starting a new one drops the old.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"domain\":{\"type\":\"string\",\"description\":\"A domain from list_memory (not a bus).\"},"
+	  "\"size\":{\"type\":\"integer\",\"enum\":[1,2,4],\"description\":\"Bytes a value. 1 when left out.\"},"
+	  "\"big_endian\":{\"type\":\"boolean\",\"description\":\"false when left out.\"}"
+	  "},\"required\":[\"domain\"],\"additionalProperties\":false}",
+	  false, false },
+	{ "search_filter",
+	  "Keeps the candidates whose value now compares as asked, to 'value' when it is given and to their previous value when "
+	  "it is not. Afterwards each candidate's previous value is its value now. Answers how many are left.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"op\":{\"type\":\"string\",\"enum\":[\"equal\",\"not_equal\",\"greater\",\"greater_or_equal\",\"less\",\"less_or_equal\"]},"
+	  "\"value\":{\"type\":\"integer\",\"description\":\"Compare to this number instead of to the previous value.\"},"
+	  "\"signed\":{\"type\":\"boolean\",\"description\":\"Compare the values as signed numbers. false when left out.\"}"
+	  "},\"required\":[\"op\"],\"additionalProperties\":false}",
+	  false, false },
+	{ "search_results",
+	  "The candidates left, lowest address first: each with its value now and its previous value. "
+	  "At most 'limit' are returned; 'candidates' says how many there are.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":500,\"description\":\"50 when left out.\"},"
+	  "\"signed\":{\"type\":\"boolean\",\"description\":\"Show the values as signed numbers. false when left out.\"}"
+	  "},\"additionalProperties\":false}",
+	  false, false },
+	{ "search_undo",
+	  "Takes the last search_filter back.",
+	  kNoArguments, false, false },
 	{ "list_branches",
 	  "The project's branches: for each, its number, the frame it was taken on, when, and its note.",
 	  kNoArguments, false, true },
@@ -564,6 +594,15 @@ struct Service
 	int kept = 0;
 	uint64_t keepId = 0;
 	std::string keepError;
+	/* The agent's RAM search. It reads the machine's memory through a pointer,
+	 * so what it was started on is remembered and checked before every use:
+	 * the caller of ce_mcp_service's alone, like the machine. */
+	ce_ramsearch *search = nullptr;
+	std::string searchDomain;
+	const uint8_t *searchBase = nullptr;
+	int64_t searchBytes = 0;
+	int searchSize = 1;
+	bool searchBigEndian = false;
 };
 
 Service &service()
@@ -1152,6 +1191,146 @@ McpResult toolSetRegister(ce_session *s, const cJSON *arguments)
 	return mcpError(std::string("There is no register called '") + nameItem->valuestring + "'. registers names them.");
 }
 
+/* ---- RAM search ---- */
+
+void dropSearch(Service &sv)
+{
+	if (sv.search != nullptr) ce_ramsearch_destroy(sv.search);
+	sv.search = nullptr;
+	sv.searchBase = nullptr;
+}
+
+/* Whether the search still stands on the memory it was started on. A project
+ * closed, or another one opened, takes that memory away; the search is then
+ * dropped before anything reads through its pointer. */
+bool searchStands(Service &sv, ce_session *s)
+{
+	if (sv.search == nullptr) return false;
+	bool stands = false;
+	for (int32_t i = 0; s != nullptr && i < ce_session_domain_count(s) && !stands; i++)
+	{
+		stands = sv.searchDomain == ce_session_domain_name(s, i)
+			&& reinterpret_cast<const uint8_t *>(ce_session_domain_ptr(s, i)) == sv.searchBase
+			&& ce_session_domain_size(s, i) == sv.searchBytes;
+	}
+	if (!stands) dropSearch(sv);
+	return stands;
+}
+
+const char kNoSearch[] = "No search is running. search_start begins one (a search ends when the project is closed).";
+
+double searchNumber(uint32_t raw, int size, bool isSigned)
+{
+	if (!isSigned) return raw;
+	return size == 1 ? static_cast<double>(static_cast<int8_t>(raw))
+		: size == 2 ? static_cast<double>(static_cast<int16_t>(raw))
+		: static_cast<double>(static_cast<int32_t>(raw));
+}
+
+McpResult toolSearchStart(Service &sv, ce_session *s, const cJSON *arguments)
+{
+	const cJSON *domainItem = cJSON_GetObjectItemCaseSensitive(arguments, "domain");
+	if (!cJSON_IsString(domainItem)) return mcpError("'domain' must be a domain from list_memory.");
+	int64_t size = 1;
+	if (!integerArgument(arguments, "size", 1, 4, 1, size) || size == 3) return mcpError("'size' must be 1, 2 or 4.");
+	int32_t domainIndex = -1, busIndex = -1;
+	findMemory(s, domainItem->valuestring, domainIndex, busIndex);
+	if (domainIndex < 0)
+		return mcpError(std::string("'") + domainItem->valuestring + (busIndex >= 0
+			? "' is a bus. A search runs over a domain; list_memory names them."
+			: "' is not a domain. list_memory names them."));
+	const uint8_t *base = reinterpret_cast<const uint8_t *>(ce_session_domain_ptr(s, domainIndex));
+	if (base == nullptr) return mcpError(std::string("'") + domainItem->valuestring + "' cannot be searched: the core gives it no memory of its own.");
+	dropSearch(sv);
+	sv.searchBytes = ce_session_domain_size(s, domainIndex);
+	sv.search = ce_ramsearch_create(base, nullptr, nullptr, sv.searchBytes);
+	sv.searchDomain = domainItem->valuestring;
+	sv.searchBase = base;
+	sv.searchSize = static_cast<int>(size);
+	sv.searchBigEndian = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(arguments, "big_endian"));
+	if (sv.search != nullptr) ce_ramsearch_set_undo_enabled(sv.search, 1);
+	if (sv.search == nullptr || ce_ramsearch_start(sv.search, sv.searchSize, 0, sv.searchBigEndian ? 1 : 0, 0) != 0)
+	{
+		dropSearch(sv);
+		return mcpError("There is not enough memory to search that domain.");
+	}
+	cJSON *out = cJSON_CreateObject();
+	cJSON_AddStringToObject(out, "domain", sv.searchDomain.c_str());
+	cJSON_AddNumberToObject(out, "size", sv.searchSize);
+	cJSON_AddNumberToObject(out, "candidates", static_cast<double>(ce_ramsearch_count(sv.search)));
+	return textResult(out);
+}
+
+McpResult toolSearchFilter(Service &sv, ce_session *s, const cJSON *arguments)
+{
+	if (!searchStands(sv, s)) return mcpError(kNoSearch);
+	const cJSON *opItem = cJSON_GetObjectItemCaseSensitive(arguments, "op");
+	const std::string opName = cJSON_IsString(opItem) ? opItem->valuestring : "";
+	/* the engine's numbering (engine.h, RAM Search): 0 ==, 1 >, 2 >=, 3 <, 4 <=, 5 != */
+	const int op = opName == "equal" ? 0 : opName == "greater" ? 1 : opName == "greater_or_equal" ? 2
+		: opName == "less" ? 3 : opName == "less_or_equal" ? 4 : opName == "not_equal" ? 5 : -1;
+	if (op < 0) return mcpError("'op' must be one of equal, not_equal, greater, greater_or_equal, less, less_or_equal.");
+	const bool isSigned = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(arguments, "signed"));
+	const cJSON *valueItem = cJSON_GetObjectItemCaseSensitive(arguments, "value");
+	const bool toValue = valueItem != nullptr && !cJSON_IsNull(valueItem);
+	int64_t value = 0;
+	if (toValue && !integerArgument(arguments, "value", INT32_MIN, UINT32_MAX, 0, value)) return mcpError("'value' must be a whole number.");
+	/* compare: 0 to the previous value, 1 to a given value; previous type 1:
+	 * after the search, a candidate's previous value is its value now */
+	const int64_t removed = ce_ramsearch_search(sv.search, toValue ? 1 : 0, op, isSigned ? 1 : 0,
+		static_cast<uint32_t>(value), 0, 1);
+	if (removed < 0) return mcpError("There is not enough memory to run that search.");
+	cJSON *out = cJSON_CreateObject();
+	cJSON_AddNumberToObject(out, "removed", static_cast<double>(removed));
+	cJSON_AddNumberToObject(out, "candidates", static_cast<double>(ce_ramsearch_count(sv.search)));
+	return textResult(out);
+}
+
+McpResult toolSearchResults(Service &sv, ce_session *s, const cJSON *arguments)
+{
+	if (!searchStands(sv, s)) return mcpError(kNoSearch);
+	int64_t limit = 0;
+	if (!integerArgument(arguments, "limit", 1, 500, 50, limit)) return mcpError("'limit' must be between 1 and 500.");
+	const bool isSigned = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(arguments, "signed"));
+	cJSON *out = cJSON_CreateObject();
+	cJSON_AddStringToObject(out, "domain", sv.searchDomain.c_str());
+	cJSON_AddNumberToObject(out, "size", sv.searchSize);
+	const int64_t count = ce_ramsearch_count(sv.search);
+	cJSON_AddNumberToObject(out, "candidates", static_cast<double>(count));
+	cJSON *results = cJSON_CreateArray();
+	for (int64_t i = 0; i < count && i < limit; i++)
+	{
+		uint64_t address = 0;
+		uint32_t current = 0, previous = 0, changes = 0;
+		if (ce_ramsearch_row(sv.search, i, &address, &current, &previous, &changes) == 0) break;
+		/* the value now is read from the machine itself: the search keeps
+		 * only what it needs to compare with */
+		uint32_t now = 0;
+		for (int b = 0; b < sv.searchSize; b++)
+		{
+			now |= static_cast<uint32_t>(sv.searchBase[address + static_cast<uint64_t>(b)])
+				<< (8 * (sv.searchBigEndian ? sv.searchSize - 1 - b : b));
+		}
+		cJSON *row = cJSON_CreateObject();
+		cJSON_AddNumberToObject(row, "address", static_cast<double>(address));
+		cJSON_AddNumberToObject(row, "value", searchNumber(now, sv.searchSize, isSigned));
+		cJSON_AddNumberToObject(row, "previous", searchNumber(previous, sv.searchSize, isSigned));
+		cJSON_AddItemToArray(results, row);
+	}
+	cJSON_AddItemToObject(out, "results", results);
+	return textResult(out);
+}
+
+McpResult toolSearchUndo(Service &sv, ce_session *s)
+{
+	if (!searchStands(sv, s)) return mcpError(kNoSearch);
+	if (ce_ramsearch_can_undo(sv.search) == 0) return mcpError("There is no search_filter to take back.");
+	ce_ramsearch_undo(sv.search);
+	cJSON *out = cJSON_CreateObject();
+	cJSON_AddNumberToObject(out, "candidates", static_cast<double>(ce_ramsearch_count(sv.search)));
+	return textResult(out);
+}
+
 /* A tool that writes to the machine, and the note that it did. */
 McpResult runWriteTool(Service &sv, const std::string &tool, ce_session *s, int64_t frame, const cJSON *arguments)
 {
@@ -1171,6 +1350,8 @@ McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, con
 {
 	if (tool == "status") return toolStatus(s, log, frame, hostStatus, sv.allowChanges.load(), sv.wroteMemoryAt);
 	if (tool == "get_input") return toolGetInput(log, arguments);
+	/* a search whose memory is gone is dropped before anything else runs */
+	searchStands(sv, s);
 	if (s == nullptr) return mcpError(kNoMachine);
 	if (tool == "controls") return toolControls(s, log);
 	if (tool == "screenshot") return toolScreenshot(s, frame, arguments);
@@ -1180,6 +1361,10 @@ McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, con
 	if (tool == "list_properties") return toolListProperties(s, arguments);
 	if (tool == "get_property") return toolGetProperty(s, arguments);
 	if (tool == "write_memory" || tool == "set_property" || tool == "set_register") return runWriteTool(sv, tool, s, frame, arguments);
+	if (tool == "search_start") return toolSearchStart(sv, s, arguments);
+	if (tool == "search_filter") return toolSearchFilter(sv, s, arguments);
+	if (tool == "search_results") return toolSearchResults(sv, s, arguments);
+	if (tool == "search_undo") return toolSearchUndo(sv, s);
 	return mcpError("Chimera does not run the tool '" + tool + "' yet.");
 }
 
@@ -1239,6 +1424,9 @@ void ce_mcp_stop(void)
 	sv.withHost.clear();
 	sv.pending = 0;
 	sv.allowChanges = false;
+	/* the agent's search ends with the server (this is the thread that runs
+	 * the machine, as every call of ce_mcp_service is) */
+	chimera::dropSearch(sv);
 	chimera::addLog(sv, "the server was stopped");
 }
 

@@ -344,6 +344,12 @@ void theServer()
 	result = callThroughServer(link, "read_memory", "{\"domain\":\"RAM\",\"address\":0}");
 	assert(result.isError && has(textOf(result), "No project is open"));
 
+	/* the same for a search: there is no memory to search */
+	result = callThroughServer(link, "search_start", "{\"domain\":\"RAM\"}");
+	assert(result.isError && has(textOf(result), "No project is open"));
+	result = callThroughServer(link, "search_filter", "{\"op\":\"equal\"}");
+	assert(result.isError && has(textOf(result), "No project is open"));
+
 	/* a tool only the frontend can run is handed to it, and its answer is
 	 * what the agent gets */
 	std::string hostTool;
