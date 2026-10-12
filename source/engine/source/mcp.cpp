@@ -93,8 +93,100 @@ const McpTool kTools[] = {
 	  "The project's branches: for each, its number, the frame it was taken on, when, and its note.",
 	  kNoArguments, false, true },
 	{ "list_markers",
-	  "The project's markers: for each, its frame and its text.",
+	  "The project's markers: for each, its frame, its text, and whether a person placed it "
+	  "(every movie has three of its own: the run's start, its last input and its end).",
 	  kNoArguments, false, true },
+
+	/* The tools that change something. They are refused until the person
+	 * using Chimera allows changes, and before the first of them a branch of
+	 * the movie as it was is saved. */
+	{ "seek",
+	  "Moves the playback position to a frame, back or forward, and answers when the machine is there. "
+	  "Going back uses the saved states; going forward plays the movie's input.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"frame\":{\"type\":\"integer\",\"minimum\":0}"
+	  "},\"required\":[\"frame\"],\"additionalProperties\":false}",
+	  true, true },
+	{ "set_input",
+	  "Replaces the movie's input from a frame on, one line a frame in the form get_input returns. "
+	  "Frames past the movie's end are added. It is one step in the undo history. At most 1000 frames a call.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"frame\":{\"type\":\"integer\",\"minimum\":0,\"description\":\"The first frame to replace.\"},"
+	  "\"entries\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"minItems\":1,\"maxItems\":1000}"
+	  "},\"required\":[\"frame\",\"entries\"],\"additionalProperties\":false}",
+	  true, true },
+	{ "set_buttons",
+	  "Presses or releases buttons, and sets axes, over a range of frames, by the names 'controls' gives. "
+	  "Controls not named keep what they had. It is one step in the undo history.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"frame\":{\"type\":\"integer\",\"minimum\":0,\"description\":\"The first frame.\"},"
+	  "\"count\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":100000,\"description\":\"How many frames. 1 when left out.\"},"
+	  "\"buttons\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"boolean\"},\"description\":\"Button name to pressed (true) or released (false).\"},"
+	  "\"axes\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"integer\"},\"description\":\"Axis name to value.\"}"
+	  "},\"required\":[\"frame\"],\"additionalProperties\":false}",
+	  true, true },
+	{ "insert_frames",
+	  "Inserts empty frames before a frame; the input from there on moves later.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"frame\":{\"type\":\"integer\",\"minimum\":0},"
+	  "\"count\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":100000,\"description\":\"1 when left out.\"}"
+	  "},\"required\":[\"frame\"],\"additionalProperties\":false}",
+	  true, true },
+	{ "delete_frames",
+	  "Deletes frames from a frame on; the input after them moves earlier.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"frame\":{\"type\":\"integer\",\"minimum\":0},"
+	  "\"count\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":100000,\"description\":\"1 when left out.\"}"
+	  "},\"required\":[\"frame\"],\"additionalProperties\":false}",
+	  true, true },
+	{ "undo",
+	  "Undoes the last step in the movie's undo history, whoever made it: the same as Edit > Undo in TAStudio.",
+	  kNoArguments, true, true },
+	{ "save_branch",
+	  "Saves a branch: the movie's input and the machine as they are now, to come back to later.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"note\":{\"type\":\"string\",\"description\":\"A note shown beside the branch.\"}"
+	  "},\"additionalProperties\":false}",
+	  true, true },
+	{ "load_branch",
+	  "Loads a branch by its number in list_branches: the movie's input and the machine become what the branch saved.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"number\":{\"type\":\"integer\",\"minimum\":1}"
+	  "},\"required\":[\"number\"],\"additionalProperties\":false}",
+	  true, true },
+	{ "add_marker",
+	  "Places a marker with a text on a frame.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"frame\":{\"type\":\"integer\",\"minimum\":0},"
+	  "\"text\":{\"type\":\"string\"}"
+	  "},\"required\":[\"frame\"],\"additionalProperties\":false}",
+	  true, true },
+	{ "write_memory",
+	  "Writes values to a memory domain or a bus at the frame the machine is on. A movie cannot reproduce a memory write: "
+	  "it is for testing a guess, and 'status' says from then on that memory was written. At most 4096 bytes a call.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"domain\":{\"type\":\"string\",\"description\":\"A name from list_memory.\"},"
+	  "\"address\":{\"type\":\"integer\",\"minimum\":0},"
+	  "\"values\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"},\"minItems\":1},"
+	  "\"type\":{\"type\":\"string\",\"enum\":[\"u8\",\"s8\",\"u16\",\"s16\",\"u32\",\"s32\"],\"description\":\"u8 when left out.\"},"
+	  "\"big_endian\":{\"type\":\"boolean\",\"description\":\"false when left out.\"}"
+	  "},\"required\":[\"domain\",\"address\",\"values\"],\"additionalProperties\":false}",
+	  true, false },
+	{ "set_property",
+	  "Sets one named value of a game core from text: a number, a name the value can take, true or false. "
+	  "Like a memory write, a movie cannot reproduce it.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"name\":{\"type\":\"string\"},"
+	  "\"value\":{\"type\":\"string\"}"
+	  "},\"required\":[\"name\",\"value\"],\"additionalProperties\":false}",
+	  true, false },
+	{ "set_register",
+	  "Sets a processor register, for a core that allows it. Like a memory write, a movie cannot reproduce it.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"name\":{\"type\":\"string\",\"description\":\"A name from registers.\"},"
+	  "\"value\":{\"type\":\"integer\"}"
+	  "},\"required\":[\"name\",\"value\"],\"additionalProperties\":false}",
+	  true, false },
 };
 
 std::string printJson(cJSON *item)
@@ -465,7 +557,13 @@ struct Service
 	std::map<uint64_t, WaitingCall> withHost; /* calls the frontend is running */
 	std::deque<std::string> log;
 	uint64_t logTotal = 0;
-	bool wroteMemory = false;
+	int64_t wroteMemoryAt = -1;        /* the frame of the agent's first write to the machine, -1 for none */
+	/* Before the agent's first change the frontend is asked to keep the
+	 * person's work as it was (a branch). 0 not asked yet, 1 asked and
+	 * waiting, 2 kept, 3 could not be kept - and then nothing is changed. */
+	int kept = 0;
+	uint64_t keepId = 0;
+	std::string keepError;
 };
 
 Service &service()
@@ -608,7 +706,7 @@ McpResult textResult(cJSON *object)
 	return result;
 }
 
-McpResult toolStatus(ce_session *s, const ce_movie_log *log, int64_t frame, const char *hostStatus, bool allowChanges, bool wroteMemory)
+McpResult toolStatus(ce_session *s, const ce_movie_log *log, int64_t frame, const char *hostStatus, bool allowChanges, int64_t wroteMemoryAt)
 {
 	/* what the frontend knows (the project's name, whether it is paused)
 	 * comes first, and the engine's own facts are added to it */
@@ -636,7 +734,10 @@ McpResult toolStatus(ce_session *s, const ce_movie_log *log, int64_t frame, cons
 		const char *death = ce_session_guest_death(s);
 		if (death != nullptr) cJSON_AddStringToObject(out, "core_stopped", death);
 		else cJSON_AddBoolToObject(out, "core_stopped", false);
-		cJSON_AddBoolToObject(out, "memory_written_by_agent", wroteMemory);
+		/* a movie cannot reproduce a write to the machine, so it is said for as
+		 * long as the server stays started */
+		cJSON_AddBoolToObject(out, "memory_written_by_agent", wroteMemoryAt >= 0);
+		if (wroteMemoryAt >= 0) cJSON_AddNumberToObject(out, "first_memory_write_frame", static_cast<double>(wroteMemoryAt));
 	}
 	return textResult(out);
 }
@@ -785,6 +886,21 @@ McpResult toolListMemory(ce_session *s)
 	return textResult(out);
 }
 
+/* The domain or the bus of that name: one index is set, the other is -1. */
+bool findMemory(ce_session *s, const std::string &name, int32_t &domainIndex, int32_t &busIndex)
+{
+	domainIndex = busIndex = -1;
+	for (int32_t i = 0; i < ce_session_domain_count(s) && domainIndex < 0; i++)
+	{
+		if (ce_session_domain_hidden(s, i) == 0 && name == ce_session_domain_name(s, i)) domainIndex = i;
+	}
+	for (int32_t i = 0; domainIndex < 0 && i < ce_session_bus_count(s) && busIndex < 0; i++)
+	{
+		if (name == ce_session_bus_name(s, i)) busIndex = i;
+	}
+	return domainIndex >= 0 || busIndex >= 0;
+}
+
 McpResult toolReadMemory(ce_session *s, const cJSON *arguments)
 {
 	const cJSON *domainItem = cJSON_GetObjectItemCaseSensitive(arguments, "domain");
@@ -803,16 +919,8 @@ McpResult toolReadMemory(ce_session *s, const cJSON *arguments)
 	if (!integerArgument(arguments, "count", 1, 4096 / width, 1, count))
 		return mcpError("'count' must be at least 1, and the values read must fit in 4096 bytes.");
 
-	/* a domain by that name, else a bus by that name */
 	int32_t domainIndex = -1, busIndex = -1;
-	for (int32_t i = 0; i < ce_session_domain_count(s) && domainIndex < 0; i++)
-	{
-		if (ce_session_domain_hidden(s, i) == 0 && domain == ce_session_domain_name(s, i)) domainIndex = i;
-	}
-	for (int32_t i = 0; domainIndex < 0 && i < ce_session_bus_count(s) && busIndex < 0; i++)
-	{
-		if (domain == ce_session_bus_name(s, i)) busIndex = i;
-	}
+	findMemory(s, domain, domainIndex, busIndex);
 	if (domainIndex < 0 && busIndex < 0) return mcpError("There is no domain or bus called '" + domain + "'. list_memory names them.");
 	const int64_t size = domainIndex >= 0 ? ce_session_domain_size(s, domainIndex) : ce_session_bus_size(s, busIndex);
 	if (address + count * width > size)
@@ -938,10 +1046,130 @@ McpResult toolGetProperty(ce_session *s, const cJSON *arguments)
 	return textResult(out);
 }
 
+McpResult toolWriteMemory(ce_session *s, const cJSON *arguments)
+{
+	const cJSON *domainItem = cJSON_GetObjectItemCaseSensitive(arguments, "domain");
+	if (!cJSON_IsString(domainItem)) return mcpError("'domain' must be a name from list_memory.");
+	const std::string domain = domainItem->valuestring;
+	const cJSON *typeItem = cJSON_GetObjectItemCaseSensitive(arguments, "type");
+	const std::string type = cJSON_IsString(typeItem) ? typeItem->valuestring : "u8";
+	if (type.size() < 2 || (type[0] != 'u' && type[0] != 's')
+		|| (type.substr(1) != "8" && type.substr(1) != "16" && type.substr(1) != "32"))
+		return mcpError("'type' must be one of u8, s8, u16, s16, u32, s32.");
+	const bool isSigned = type[0] == 's';
+	const int64_t width = type.substr(1) == "8" ? 1 : type.substr(1) == "16" ? 2 : 4;
+	const bool bigEndian = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(arguments, "big_endian"));
+	int64_t address = 0;
+	if (!integerArgument(arguments, "address", 0, INT64_MAX / 8, 0, address)) return mcpError("'address' must be 0 or more.");
+	const cJSON *values = cJSON_GetObjectItemCaseSensitive(arguments, "values");
+	const int64_t count = cJSON_IsArray(values) ? cJSON_GetArraySize(values) : 0;
+	if (count < 1 || count * width > 4096) return mcpError("'values' must hold at least one value, and they must fit in 4096 bytes.");
+
+	/* every value is checked before a byte is written */
+	const double low = isSigned ? -static_cast<double>(1ULL << (8 * width - 1)) : 0;
+	const double high = isSigned ? static_cast<double>((1ULL << (8 * width - 1)) - 1) : static_cast<double>((1ULL << (8 * width)) - 1);
+	std::vector<uint8_t> bytes(static_cast<size_t>(count * width));
+	int64_t at = 0;
+	const cJSON *item = nullptr;
+	cJSON_ArrayForEach(item, values)
+	{
+		if (!cJSON_IsNumber(item) || item->valuedouble != static_cast<double>(static_cast<int64_t>(item->valuedouble))
+			|| item->valuedouble < low || item->valuedouble > high)
+			return mcpError("Every value must be a whole number that fits in " + type + ".");
+		const uint32_t value = static_cast<uint32_t>(static_cast<int64_t>(item->valuedouble));
+		for (int64_t b = 0; b < width; b++)
+		{
+			bytes[static_cast<size_t>(at * width + b)] = static_cast<uint8_t>(value >> (8 * (bigEndian ? width - 1 - b : b)));
+		}
+		at++;
+	}
+
+	int32_t domainIndex = -1, busIndex = -1;
+	if (!findMemory(s, domain, domainIndex, busIndex))
+		return mcpError("There is no domain or bus called '" + domain + "'. list_memory names them.");
+	const int64_t size = domainIndex >= 0 ? ce_session_domain_size(s, domainIndex) : ce_session_bus_size(s, busIndex);
+	if (address + static_cast<int64_t>(bytes.size()) > size)
+		return mcpError("'" + domain + "' is " + std::to_string(size) + " bytes, and the write goes past its end.");
+	if (domainIndex >= 0)
+	{
+		/* the same way the frontend's own memory tools write: through the
+		 * domain's memory itself */
+		uint8_t *memory = reinterpret_cast<uint8_t *>(ce_session_domain_ptr(s, domainIndex));
+		if (ce_session_domain_writable(s, domainIndex) == 0 || memory == nullptr)
+			return mcpError("'" + domain + "' cannot be written.");
+		std::memcpy(memory + address, bytes.data(), bytes.size());
+	}
+	else
+	{
+		if (ce_session_bus_writable(s, busIndex) == 0) return mcpError("'" + domain + "' cannot be written.");
+		for (size_t i = 0; i < bytes.size(); i++)
+		{
+			ce_session_bus_poke(s, busIndex, static_cast<int32_t>(address + static_cast<int64_t>(i)), bytes[i]);
+		}
+	}
+	cJSON *out = cJSON_CreateObject();
+	cJSON_AddStringToObject(out, "domain", domain.c_str());
+	cJSON_AddNumberToObject(out, "address", static_cast<double>(address));
+	cJSON_AddNumberToObject(out, "bytes_written", static_cast<double>(bytes.size()));
+	return textResult(out);
+}
+
+McpResult toolSetProperty(ce_session *s, const cJSON *arguments)
+{
+	const cJSON *nameItem = cJSON_GetObjectItemCaseSensitive(arguments, "name");
+	const cJSON *valueItem = cJSON_GetObjectItemCaseSensitive(arguments, "value");
+	if (!cJSON_IsString(nameItem) || !cJSON_IsString(valueItem)) return mcpError("'name' and 'value' must both be text.");
+	if (ce_session_property_dynamic(s) != 0) ce_session_property_refresh(s);
+	uint32_t element = 0;
+	const int32_t index = ce_session_property_find(s, nameItem->valuestring, &element);
+	if (index < 0) return mcpError(std::string("There is no property called '") + nameItem->valuestring + "'. list_properties names them.");
+	if (ce_session_property_set_text(s, index, element, valueItem->valuestring) != 0)
+	{
+		const char *why = ce_session_last_error(s);
+		return mcpError(std::string("'") + nameItem->valuestring + "' was not set: " + (why != nullptr && why[0] != '\0' ? why : "the value does not fit it") + ".");
+	}
+	cJSON *out = cJSON_CreateObject();
+	cJSON_AddStringToObject(out, "name", nameItem->valuestring);
+	cJSON_AddStringToObject(out, "value", propertyText(s, index, element).c_str());
+	return textResult(out);
+}
+
+McpResult toolSetRegister(ce_session *s, const cJSON *arguments)
+{
+	const cJSON *nameItem = cJSON_GetObjectItemCaseSensitive(arguments, "name");
+	const cJSON *valueItem = cJSON_GetObjectItemCaseSensitive(arguments, "value");
+	if (!cJSON_IsString(nameItem) || !cJSON_IsNumber(valueItem)) return mcpError("'name' must be a register from registers, and 'value' a whole number.");
+	for (int32_t i = 0; i < ce_session_register_count(s); i++)
+	{
+		if (std::strcmp(nameItem->valuestring, ce_session_register_name(s, i)) != 0) continue;
+		if (ce_session_register_set(s, i, static_cast<int64_t>(valueItem->valuedouble)) != 0)
+			return mcpError("This core does not allow its registers to be written.");
+		cJSON *out = cJSON_CreateObject();
+		cJSON_AddStringToObject(out, "name", nameItem->valuestring);
+		cJSON_AddNumberToObject(out, "value", static_cast<double>(ce_session_register_value(s, i)));
+		return textResult(out);
+	}
+	return mcpError(std::string("There is no register called '") + nameItem->valuestring + "'. registers names them.");
+}
+
+/* A tool that writes to the machine, and the note that it did. */
+McpResult runWriteTool(Service &sv, const std::string &tool, ce_session *s, int64_t frame, const cJSON *arguments)
+{
+	const McpResult result = tool == "write_memory" ? toolWriteMemory(s, arguments)
+		: tool == "set_property" ? toolSetProperty(s, arguments)
+		: toolSetRegister(s, arguments);
+	if (!result.isError)
+	{
+		std::lock_guard<std::mutex> hold(sv.lock);
+		if (sv.wroteMemoryAt < 0) sv.wroteMemoryAt = frame >= 0 ? frame : ce_session_frame(s);
+	}
+	return result;
+}
+
 McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, const ce_movie_log *log,
 	int64_t frame, const char *hostStatus, const cJSON *arguments)
 {
-	if (tool == "status") return toolStatus(s, log, frame, hostStatus, sv.allowChanges.load(), sv.wroteMemory);
+	if (tool == "status") return toolStatus(s, log, frame, hostStatus, sv.allowChanges.load(), sv.wroteMemoryAt);
 	if (tool == "get_input") return toolGetInput(log, arguments);
 	if (s == nullptr) return mcpError(kNoMachine);
 	if (tool == "controls") return toolControls(s, log);
@@ -951,6 +1179,7 @@ McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, con
 	if (tool == "registers") return toolRegisters(s);
 	if (tool == "list_properties") return toolListProperties(s, arguments);
 	if (tool == "get_property") return toolGetProperty(s, arguments);
+	if (tool == "write_memory" || tool == "set_property" || tool == "set_register") return runWriteTool(sv, tool, s, frame, arguments);
 	return mcpError("Chimera does not run the tool '" + tool + "' yet.");
 }
 
@@ -986,7 +1215,9 @@ int32_t ce_mcp_start(const char **error_out)
 		sv.pending = 0;
 		/* every start begins with changes not allowed */
 		sv.allowChanges = false;
-		sv.wroteMemory = false;
+		sv.wroteMemoryAt = -1;
+		sv.kept = 0;
+		sv.keepError.clear();
 		chimera::addLog(sv, "the server was started");
 	}
 	sv.running = true;
@@ -1092,6 +1323,39 @@ int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t frame, co
 					"Allow the agent to make changes."));
 				continue;
 			}
+			if (tool->changes && sv.kept == 0)
+			{
+				/* The first change since the server was started. The call goes
+				 * back to the head of the line, and the frontend is asked first
+				 * to keep the person's work as it is now. Its answer decides
+				 * whether the call is then run. */
+				sv.outgoing.pop_back(); /* not started after all */
+				sv.waiting.push_front(std::move(call));
+				sv.pending++;
+				sv.kept = 1;
+				sv.keepId = UINT64_MAX - sv.logTotal;
+				*heldTool = "keep_work";
+				*heldArguments = "{}";
+				if (id_out != nullptr) *id_out = sv.keepId;
+				if (tool_out != nullptr) *tool_out = heldTool->c_str();
+				if (arguments_out != nullptr) *arguments_out = heldArguments->c_str();
+				return 1;
+			}
+			if (tool->changes && sv.kept == 1)
+			{
+				/* the frontend has not answered yet: the call waits its turn */
+				sv.outgoing.pop_back();
+				sv.waiting.push_front(std::move(call));
+				sv.pending++;
+				return 0;
+			}
+			if (tool->changes && sv.kept == 3)
+			{
+				chimera::finish(sv, call, chimera::mcpError(
+					"Nothing was changed: Chimera could not keep a copy of the work as it was before the agent's first change ("
+					+ sv.keepError + "). Stop and start the server to try again."));
+				continue;
+			}
 			if (tool->host)
 			{
 				*heldTool = call.tool;
@@ -1117,6 +1381,17 @@ void ce_mcp_answer(uint64_t id, const char *text, int32_t is_error)
 {
 	Service &sv = service();
 	std::lock_guard<std::mutex> hold(sv.lock);
+	if (sv.kept == 1 && id == sv.keepId)
+	{
+		/* the frontend's answer to "keep the person's work": not a call of the
+		 * agent's, so nothing is sent; the call that waited is run next */
+		sv.kept = is_error != 0 ? 3 : 2;
+		sv.keepError = is_error != 0 && text != nullptr ? text : "";
+		chimera::addLog(sv, is_error != 0
+			? std::string("the work could not be kept before the agent's first change: ") + sv.keepError
+			: std::string("before the agent's first change, the work as it was has been kept: ") + (text != nullptr ? text : ""));
+		return;
+	}
 	const auto found = sv.withHost.find(id);
 	if (found == sv.withHost.end()) return;
 	chimera::McpResult result;

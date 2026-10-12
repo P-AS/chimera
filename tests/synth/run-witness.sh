@@ -305,27 +305,40 @@ PROJPY
 		if [ ! -x "$chimera_mcp" ]; then
 			report "E:mcp" SKIP "chimera-mcp not built (meson compile -C build/meson-linux)"
 		else
+			# Twice: as a person leaves it, where an agent may only look and every
+			# change must be refused; then with changes allowed (--mcp-serve
+			# changes), where what is written to the machine must read back and
+			# must be said by status from then on.
 			qname=gridWalker.win
-			qdir="$work/mcp"
-			rm -rf "$qdir" && mkdir -p "$qdir"
 			qlast=$(( $(grep -c '^|' "$here/movies/$qname.txt") - 1 ))
 			CHIMERA_MCP_NAME="witness$$"; export CHIMERA_MCP_NAME
-			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/$qname.txt" \
-				--screenshot "$qlast=$qdir/last.tga" --mcp-serve > "$qdir/serve.log" 2>&1 &
-			qserve=$!
-			qtries=0
-			while [ "$qtries" -lt 100 ] && ! grep -q "MCP server started" "$qdir/serve.log" 2>/dev/null; do
-				sleep 0.1; qtries=$((qtries+1))
+			for qallow in "" changes; do
+				qdir="$work/mcp${qallow:+-$qallow}"
+				rm -rf "$qdir" && mkdir -p "$qdir"
+				"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/$qname.txt" \
+					--screenshot "$qlast=$qdir/last.tga" --mcp-serve $qallow > "$qdir/serve.log" 2>&1 &
+				qserve=$!
+				qtries=0
+				while [ "$qtries" -lt 100 ] && ! grep -q "MCP server started" "$qdir/serve.log" 2>/dev/null; do
+					sleep 0.1; qtries=$((qtries+1))
+				done
+				timeout 120 python3 "$here/mcp-agent.py" "$chimera_mcp" "$golden_dir/$qname.ram.bin" "$golden_dir/$qname.vram.bin" \
+					"$here/movies/$qname.txt" "$qdir/last.tga" "runner${qallow:+-$qallow}" > "$qdir/agent.log" 2>&1
+				qrc=$?
+				wait "$qserve"; qsrc=$?
+				if [ -z "$qallow" ]; then
+					if [ "$qrc" -eq 0 ] && [ "$qsrc" -eq 0 ] && grep -q "mcp: .*the agent's program is the witness 1" "$qdir/serve.log"; then
+						report "E:mcp:tools" PASS "an agent reads the machine through chimera-mcp: memory, input and picture equal to the references; changes are refused"
+					else
+						report "E:mcp:tools" FAIL "agent rc=$qrc, chimera-run rc=$qsrc (see work/mcp/agent.log and serve.log)"
+					fi
+				elif [ "$qrc" -eq 0 ] && [ "$qsrc" -eq 0 ] && grep -q "mcp: .*the work as it was has been kept" "$qdir/serve.log"; then
+					report "E:mcp:writes" PASS "with changes allowed, memory and a named value are written and read back, and status says so"
+				else
+					report "E:mcp:writes" FAIL "agent rc=$qrc, chimera-run rc=$qsrc (see work/mcp-changes/agent.log and serve.log)"
+				fi
 			done
-			timeout 120 python3 "$here/mcp-agent.py" "$chimera_mcp" "$golden_dir/$qname.ram.bin" "$golden_dir/$qname.vram.bin" \
-				"$here/movies/$qname.txt" "$qdir/last.tga" > "$qdir/agent.log" 2>&1
-			qrc=$?
-			wait "$qserve"; qsrc=$?
-			if [ "$qrc" -eq 0 ] && [ "$qsrc" -eq 0 ] && grep -q "mcp: .*the agent's program is the witness 1" "$qdir/serve.log"; then
-				report "E:mcp:tools" PASS "an agent reads the machine through chimera-mcp: memory, input and picture equal to the references"
-			else
-				report "E:mcp:tools" FAIL "agent rc=$qrc, chimera-run rc=$qsrc (see work/mcp/agent.log and serve.log)"
-			fi
+			qdir="$work/mcp"
 			printf '%s\n%s\n' \
 				'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}' \
 				'{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"status","arguments":{}}}' \
@@ -1103,36 +1116,51 @@ json.dump({
     "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
 }, open(sys.argv[3], "w"))
 MCPPY
-			{
-				echo "ready=$wdir/ready"
-				echo "done=$wdir/done"
-			} > "$wdir/job.txt"
 			cp "$config" "$wdir/config.ini"
 			CHIMERA_MCP_NAME="witness$$"; export CHIMERA_MCP_NAME
-			( cd "$repo_root" && CHIMERA_JOB="$wdir/job.txt" timeout 300 mono "$emu_exe" --headless --mcp-server \
-				"--config=$wdir/config.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
-				"--project=$wdir/$wname.chimeraProject" "--lua=$here/synth-mcp.lua" ) > "$wdir/chimera.log" 2>&1 &
-			wpid=$!
-			wtries=0
-			while [ "$wtries" -lt 600 ] && [ ! -f "$wdir/ready" ] && kill -0 "$wpid" 2>/dev/null; do
-				sleep 0.2; wtries=$((wtries+1))
+			# Twice: started as pressing Start does, where the agent may only look;
+			# then with --mcp-allow-changes, which is the tick box, where it edits
+			# the input and undoes it, inserts and deletes frames, places a marker,
+			# saves and loads branches and moves the playback position - and the
+			# movie must then still play to the reference memory.
+			for wallow in "" changes; do
+				wtag="M:mcp:window${wallow:+:$wallow}"
+				wsub="$wdir/${wallow:-look}"
+				mkdir -p "$wsub"
+				cp "$wdir/gridWalker.testrom" "$wdir/$wname.chimeraProject" "$wsub/"
+				{
+					echo "ready=$wsub/ready"
+					echo "done=$wsub/done"
+				} > "$wsub/job.txt"
+				( cd "$repo_root" && CHIMERA_JOB="$wsub/job.txt" timeout 300 mono "$emu_exe" --headless --mcp-server ${wallow:+--mcp-allow-changes} \
+					"--config=$wdir/config.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+					"--project=$wsub/$wname.chimeraProject" "--lua=$here/synth-mcp.lua" ) > "$wsub/chimera.log" 2>&1 &
+				wpid=$!
+				wtries=0
+				while [ "$wtries" -lt 600 ] && [ ! -f "$wsub/ready" ] && kill -0 "$wpid" 2>/dev/null; do
+					sleep 0.2; wtries=$((wtries+1))
+				done
+				wrc=99
+				if [ -f "$wsub/ready" ]; then
+					timeout 180 python3 "$here/mcp-agent.py" "$wmcp" "$golden_dir/$wname.ram.bin" "$golden_dir/$wname.vram.bin" \
+						"$here/movies/$wname.txt" - "window${wallow:+-$wallow}" > "$wsub/agent.log" 2>&1
+					wrc=$?
+				fi
+				: > "$wsub/done"
+				wait "$wpid"; wexit=$?
+				if [ "$wrc" -eq 0 ] && [ "$wexit" -eq 0 ] && grep -q "^\[mcp\] the server is started" "$wsub/chimera.log"; then
+					if [ -z "$wallow" ]; then
+						report "$wtag" PASS "an agent reads the open project through the window's server: memory, input, markers, branches; changes are refused"
+					else
+						report "$wtag" PASS "with changes allowed, an agent edits, undoes, seeks and branches in the window, and the movie still plays to the reference memory"
+					fi
+				elif [ "$wrc" -eq 99 ]; then
+					report "$wtag" FAIL "Chimera never said the movie was played (see work/mcp-window/${wallow:-look}/chimera.log)"
+				else
+					report "$wtag" FAIL "agent rc=$wrc, Chimera rc=$wexit (see work/mcp-window/${wallow:-look}/agent.log and chimera.log)"
+				fi
 			done
-			wrc=99
-			if [ -f "$wdir/ready" ]; then
-				timeout 120 python3 "$here/mcp-agent.py" "$wmcp" "$golden_dir/$wname.ram.bin" "$golden_dir/$wname.vram.bin" \
-					"$here/movies/$wname.txt" - window > "$wdir/agent.log" 2>&1
-				wrc=$?
-			fi
-			: > "$wdir/done"
-			wait "$wpid"; wexit=$?
 			unset CHIMERA_MCP_NAME
-			if [ "$wrc" -eq 0 ] && [ "$wexit" -eq 0 ] && grep -q "^\[mcp\] the server is started" "$wdir/chimera.log"; then
-				report "M:mcp:window" PASS "an agent reads the open project through the window's server: memory, input, markers, branches"
-			elif [ "$wrc" -eq 99 ]; then
-				report "M:mcp:window" FAIL "Chimera never said the movie was played (see work/mcp-window/chimera.log)"
-			else
-				report "M:mcp:window" FAIL "agent rc=$wrc, Chimera rc=$wexit (see work/mcp-window/agent.log and chimera.log)"
-			fi
 		fi
 	fi
 

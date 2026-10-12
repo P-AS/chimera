@@ -6633,3 +6633,72 @@ the machine not handed to the engine) exactly the new tests failed: three
 interface tests and the window check. A picture of the dialog was looked at
 (`tests/ui/run-ui-tests.sh --shots`, `mcp-server.png`). The engine was not
 rebuilt for this part. Nothing of the window was tried on Windows.
+
+## An agent may change the movie, when a person allows it (2026-10-12)
+
+The tools of the MCP server that change something (docs/mcp-server.md): the
+playback position, the input, the movie's length, markers, branches, and the
+machine's memory. What was chosen while building them, and why:
+
+- **Refused until allowed, and the engine does the refusing.** Each tool is
+  marked in the engine's list as one that changes something or one that does
+  not. The check is made before a call is handed to anybody, so a tool added
+  later cannot forget it.
+- **The work is kept first, and that is the engine's rule too.** Before the
+  first change after a start the engine hands the frontend a call of its own,
+  `keep_work`, and runs the agent's change only after a good answer. The
+  window answers by saving a branch. If it cannot (TAStudio is not open), the
+  change is refused, and so is every later one until the server is started
+  again. This was met for real: the first unattended run had no TAStudio
+  open, and nothing was changed.
+- **Edits go through the calls TAStudio's own piano roll uses**
+  (`SetBoolStates`, `PokeFrame`, `InsertEmptyFrame`, `RemoveFrames`, the undo
+  history's batches). Nothing of what an edit means is written again: the
+  saved states after the edit are dropped, the piano roll redraws and the
+  step can be undone, because that is what those calls already do.
+- **One call is one undo step**, named "Agent: ...". An agent that sets
+  three buttons over forty frames has made one change, and a person undoes
+  it with one Ctrl+Z.
+- **`set_input` checks every line before writing any.** A line must have the
+  columns of this movie's lines. One bad line in a hundred changes nothing.
+- **`seek` answers when the machine has arrived.** A seek takes many passes
+  of the main loop. The call is held open, nothing else of the agent's runs
+  meanwhile, and the answer says the frame reached - or, if a person stopped
+  it, where it stopped.
+- **`undo` undoes the last step whoever made it.** It is the same history a
+  person uses, and an agent that could only undo "its own" steps would need a
+  second history beside the first.
+- **A write to memory is not hidden and not undone.** It is offered because
+  testing a guess needs it. `status` says from the first write on that memory
+  was written and on which frame; the saved states are not touched, exactly
+  as when a person pokes memory from the Hex Editor.
+- **`--mcp-allow-changes`** on the command line is the tick box for a run
+  nobody clicks in. Like `--mcp-server` it is new, exists for the tests, and
+  is for the owner to confirm or remove.
+
+What was measured. On Linux: the engine's tests 23 of 23 (`test_mcp` now also
+covers the refusal while changes are not allowed, the work being kept before
+the first change, and nothing being changed when it cannot be kept; 10 runs
+in a row). The interface tests: 0 failed of 1,066 (24 skipped), ten of them
+new, for the window's tools with a movie and a stand-in for the window. The
+test of the whole product: 85 of 85, two new. In one, `chimera-run` serves
+with changes allowed and memory, a 16-bit value in the other byte order and a
+game's named value are written and read back, the refusals refuse, and
+`status` says memory was written and on which frame. In the other the real
+window is opened with TAStudio and `--mcp-allow-changes`, and an agent sets
+buttons and undoes it, writes input lines past the movie's end and undoes
+it, inserts and deletes frames, places a marker, saves a second branch (the
+first having been saved for it before its first change), seeks back to frame
+10 and forward to the end - where the machine must hold the reference memory
+byte for byte, which it only can if every edit was taken back exactly - and
+loads a branch. The two checks that existed already now also require every
+change to be refused while changes are not allowed. With the code broken on
+purpose (the work not kept first, a write one byte off, undo doing nothing,
+a range of frames cut to one) exactly the new tests failed: `test_mcp`, two
+interface tests and the two new checks. On Windows: the engine compiles,
+`test_mcp.exe` passes, and the write checks pass against `chimera-run.exe`
+and `chimera-mcp.exe`. The window was not tried on Windows.
+
+One thing learnt about this machine: a test that fails an assertion took
+over a minute to end, because WSL hands every core dump to a program of its
+own. `test_mcp` now asks for no core dump.

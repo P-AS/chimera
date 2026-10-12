@@ -21,6 +21,7 @@
 #include <process.h>
 #define getpid _getpid
 #else
+#include <sys/resource.h>
 #include <unistd.h>
 #endif
 
@@ -225,7 +226,7 @@ std::string textOf(const chimera::McpResult &result)
  * back. `answerHost`, when not null, is the answer given to a call the engine
  * hands to the frontend. */
 chimera::McpResult callThroughServer(chimera::McpLink &link, const char *tool, const char *arguments,
-	const char *answerHost = nullptr, std::string *hostTool = nullptr)
+	const char *answerHost = nullptr, std::string *hostTool = nullptr, bool refuseToKeep = false)
 {
 	chimera::McpResult result;
 	std::atomic<bool> done{ false };
@@ -237,14 +238,78 @@ chimera::McpResult callThroughServer(chimera::McpLink &link, const char *tool, c
 		const char *name = nullptr, *args = nullptr;
 		if (ce_mcp_pending() != 0 && ce_mcp_service(nullptr, nullptr, -1, "{\"project\":\"the test\"}", &id, &name, &args) != 0)
 		{
-			if (hostTool != nullptr) *hostTool = std::string(name) + " " + args;
-			ce_mcp_answer(id, answerHost != nullptr ? answerHost : "", 0);
+			if (hostTool != nullptr) *hostTool += std::string(hostTool->empty() ? "" : " | ") + name + " " + args;
+			if (std::strcmp(name, "keep_work") == 0) ce_mcp_answer(id, refuseToKeep ? "the disk is full" : "branch 3", refuseToKeep ? 1 : 0);
+			else ce_mcp_answer(id, answerHost != nullptr ? answerHost : "", 0);
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
 	agent.join();
 	assert(done.load());
 	return result;
+}
+
+/* The tools that change something: refused until a person allows changes;
+ * before the first of them the frontend is asked to keep the work as it was,
+ * and only a good answer lets the change through. Called with the server
+ * started and changes allowed. */
+void theChanges(chimera::McpLink &link)
+{
+	const char *error = nullptr;
+	ce_mcp_stop();
+	assert(ce_mcp_start(&error) == 1);
+
+	/* not allowed: the call is refused with the way to allow it, and the
+	 * frontend is never asked anything */
+	std::string hostTool;
+	chimera::McpResult result = callThroughServer(link, "add_marker", "{\"frame\":3,\"text\":\"x\"}", "{}", &hostTool);
+	assert(result.isError && has(textOf(result), "Allow the agent to make changes"));
+	assert(hostTool.empty());
+	result = callThroughServer(link, "write_memory", "{\"domain\":\"RAM\",\"address\":0,\"values\":[1]}", "{}", &hostTool);
+	assert(result.isError && has(textOf(result), "Allow the agent to make changes"));
+	assert(hostTool.empty());
+
+	/* allowed: the first change is preceded by "keep the work", once */
+	ce_mcp_allow_changes(1);
+	result = callThroughServer(link, "add_marker", "{\"frame\":3,\"text\":\"x\"}", "{\"frame\":3}", &hostTool);
+	assert(hostTool == "keep_work {} | add_marker {\"frame\":3,\"text\":\"x\"}");
+	assert(!result.isError && textOf(result) == "{\"frame\":3}");
+	hostTool.clear();
+	result = callThroughServer(link, "undo", "{}", "{\"undone\":true}", &hostTool);
+	assert(hostTool == "undo {}");
+	assert(!result.isError);
+	/* looking never asks for the work to be kept */
+	hostTool.clear();
+	result = callThroughServer(link, "list_markers", "{}", "{\"markers\":[]}", &hostTool);
+	assert(hostTool == "list_markers {}");
+	/* a change the engine makes itself goes the same way; with no machine it
+	 * is then refused for that reason */
+	result = callThroughServer(link, "write_memory", "{\"domain\":\"RAM\",\"address\":0,\"values\":[1]}");
+	assert(result.isError && has(textOf(result), "No project is open"));
+	bool sawKept = false;
+	for (uint64_t i = 0; i < ce_mcp_log_total(); i++)
+	{
+		if (has(ce_mcp_log_line(i), "the work as it was has been kept: branch 3")) sawKept = true;
+	}
+	assert(sawKept);
+
+	/* a new start asks again; when the work cannot be kept, nothing is
+	 * changed, now or for the rest of that start */
+	ce_mcp_stop();
+	assert(ce_mcp_start(&error) == 1);
+	ce_mcp_allow_changes(1);
+	hostTool.clear();
+	result = callThroughServer(link, "add_marker", "{\"frame\":3}", "{}", &hostTool, true);
+	assert(hostTool == "keep_work {}");
+	assert(result.isError && has(textOf(result), "Nothing was changed") && has(textOf(result), "the disk is full"));
+	hostTool.clear();
+	result = callThroughServer(link, "set_input", "{\"frame\":0,\"entries\":[\"|.|\"]}", "{}", &hostTool, true);
+	assert(hostTool.empty());
+	assert(result.isError && has(textOf(result), "Nothing was changed"));
+	/* looking still works */
+	result = callThroughServer(link, "status", "{}");
+	assert(!result.isError);
+	ce_mcp_allow_changes(1);
 }
 
 void theServer()
@@ -307,6 +372,8 @@ void theServer()
 	assert(sawCall && sawRefusal && sawStart);
 	assert(std::strlen(ce_mcp_log_line(lines + 5)) == 0);
 
+	theChanges(link);
+
 	/* a server given a name serves on a pipe of that name. (The name is the
 	 * process's, so the link in this same process follows it; that two
 	 * programs with different names do not meet is what a pipe's name is.) */
@@ -339,6 +406,14 @@ void theServer()
 
 int main()
 {
+#ifndef _WIN32
+	/* An assertion that fails ends the test through abort(), and a core dump
+	 * is written first. On a machine that hands core dumps to another program
+	 * (WSL does) that took over a minute, during which the failed test looked
+	 * like a test that hangs. No dump is wanted from a test. */
+	const struct rlimit none = { 0, 0 };
+	setrlimit(RLIMIT_CORE, &none);
+#endif
 	/* a pipe of this test's own, so a Chimera the same user is running is
 	 * neither disturbed nor in the way */
 	chimera::pipeNameSuffixForTests("-test-" + std::to_string(static_cast<long>(getpid())));

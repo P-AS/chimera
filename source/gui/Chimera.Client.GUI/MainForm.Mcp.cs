@@ -16,6 +16,25 @@ namespace Chimera.Client.GUI
 	{
 		private McpServerForm? _mcpForm;
 
+		/// <summary>A seek an agent asked for that is still on its way: the call to answer when it arrives, and where to.</summary>
+		private (ulong Id, int Frame)? _mcpSeek;
+
+		/// <summary>TAStudio as the MCP server's tools see it (<see cref="IMcpWindow"/>).</summary>
+		private sealed class McpWindow : IMcpWindow
+		{
+			private readonly MainForm _main;
+
+			public McpWindow(MainForm main) => _main = main;
+
+			public int Frame => _main.Emulator.Frame;
+
+			public void SeekTo(int frame) => _main.Tools.TAStudio.GoToFrame(frame);
+
+			public int SaveBranch(string note) => _main.Tools.TAStudio.AddBranchWithNote(note);
+
+			public void LoadBranch(int number) => _main.Tools.TAStudio.LoadBranchByIndex(number - 1);
+		}
+
 		/// <summary>
 		/// Tools &gt; MCP Server... (docs/mcp-server.md): the window where the server that lets an
 		/// AI agent work on the open project is started, watched and stopped. Chimera never
@@ -41,6 +60,8 @@ namespace Chimera.Client.GUI
 		{
 			if (EngineMcp.Start(out var error))
 			{
+				// --mcp-allow-changes: the tick box, for a run nobody clicks in
+				if (_argParser.mcpAllowChanges) EngineMcp.ChangesAllowed = true;
 				Console.WriteLine($"[mcp] the server is started at {EngineMcp.Endpoint}");
 				UpdateWindowTitle();
 			}
@@ -58,6 +79,19 @@ namespace Chimera.Client.GUI
 		/// </summary>
 		private void ServiceMcp()
 		{
+			var tastudio = !Emulator.IsNull() && Tools.Has<TAStudio>();
+			IMcpWindow? window = tastudio ? new McpWindow(this) : null;
+			if (_mcpSeek is { } seek)
+			{
+				// A seek runs over many passes of this loop. Its call is answered when the playback
+				// position has stopped, and nothing else of the agent's is run before that.
+				if (tastudio && Tools.TAStudio.SeekInProgress) return;
+				var arrived = window is null
+					? "The project was closed while the playback position was moving."
+					: McpHostTools.SeekAnswer(window, seek.Frame, out _);
+				EngineMcp.Answer(seek.Id, arrived, window is null || window.Frame != seek.Frame);
+				_mcpSeek = null;
+			}
 			if (!EngineMcp.Pending) return;
 			var session = Emulator is WaterboxCore core ? core.SessionHandle : IntPtr.Zero;
 			var movie = MovieSession.Movie;
@@ -66,11 +100,11 @@ namespace Chimera.Client.GUI
 			var frame = Emulator.IsNull() ? -1 : Emulator.Frame;
 			while (EngineMcp.Service(session, log, frame, McpHostStatus(), out var id, out var tool, out var arguments))
 			{
-				string text;
+				string? text;
 				bool isError;
 				try
 				{
-					text = McpHostTools.Run(active ? movie as ITasMovie : null, tool, arguments, out isError);
+					text = McpHostTools.Run(active ? movie as ITasMovie : null, window, tool, arguments, out isError);
 				}
 				catch (Exception ex)
 				{
@@ -78,7 +112,16 @@ namespace Chimera.Client.GUI
 					text = $"Chimera could not run '{tool}': {ex.Message}";
 					isError = true;
 				}
+				if (text is null)
+				{
+					// a seek has begun: answered above, on the pass where it has arrived
+					_mcpSeek = (id, (int) (JObject.Parse(arguments)["frame"] ?? 0));
+					return;
+				}
 				EngineMcp.Answer(id, text, isError);
+				// what the agent changed is shown at once, as a change made by hand is
+				if (tastudio && !isError && !tool.StartsWith("list_", StringComparison.Ordinal)) Tools.TAStudio.RefreshDialog();
+				frame = Emulator.IsNull() ? -1 : Emulator.Frame;
 			}
 		}
 

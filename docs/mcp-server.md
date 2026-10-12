@@ -7,26 +7,26 @@ Built so far:
 
 - One engine call opens a project (step 1 of the order of work).
 - The engine's part of the server: the local pipe, the protocol, the log, and
-  the tools that only look and need nothing but the machine (`status`,
-  `controls`, `get_input`, `screenshot`, `list_memory`, `read_memory`,
-  `registers`, `list_properties`, `get_property`). `chimera-mcp`, the program
-  an agent starts, on Linux and Windows.
+  `chimera-mcp`, the program an agent starts, on Linux and Windows.
 - In the window: Tools > MCP Server... with start, stop, the state, the tick
   box, the set-up command and the log; the title bar says "MCP server
-  started" while it is; `list_branches` and `list_markers`; and the
-  `--mcp-server` command-line flag.
+  started" while it is.
+- The tools that look: `status`, `controls`, `get_input`, `screenshot`,
+  `list_memory`, `read_memory`, `registers`, `list_properties`,
+  `get_property`, `list_branches`, `list_markers`.
+- The tools that change things, refused until the tick box is ticked: `seek`,
+  `set_input`, `set_buttons`, `insert_frames`, `delete_frames`, `undo`,
+  `save_branch`, `load_branch`, `add_marker`, `write_memory`, `set_property`,
+  `set_register`. A branch of the movie as it was is saved before the first
+  of them.
+- Two command-line flags for runs nobody clicks in: `--mcp-server` and
+  `--mcp-allow-changes`.
 
-So an agent can look at the project a person has open, and cannot change
-anything yet. The tick box is there and reaches the engine, but no tool that
-changes something exists yet.
-
-Not built yet: every tool that changes something (with the branch saved
-before the first change), RAM search, `watch`, `advance_until`, and the
-windowless mode. `chimera-mcp` is built with Chimera but is not in the
-release bundles yet.
+Not built yet: RAM search, `watch`, `advance_until`, and the windowless mode.
+`chimera-mcp` is built with Chimera but is not in the release bundles yet.
 
 Not tried: the window on Windows. The engine's part and `chimera-mcp` were
-run there; the dialog was only run on Linux.
+run there; the dialog and the tools the window runs were only run on Linux.
 
 ## What it is
 
@@ -108,8 +108,9 @@ started" and the menu item is ticked, so it cannot be left on unnoticed.
 Closing the dialog does not stop the server; closing Chimera does.
 
 Chimera started with `--mcp-server` starts the server at launch, as pressing
-Start does. It exists for runs nobody clicks in (the tests use it); nothing
-else starts the server, and a tick box in a configuration file cannot.
+Start does, and `--mcp-allow-changes` beside it ticks the box. They exist for
+runs nobody clicks in (the tests use them); nothing else starts the server or
+allows changes, and no setting in a configuration file can.
 
 ## What protects the person's work
 
@@ -118,7 +119,10 @@ else starts the server, and a tick box in a configuration file cannot.
 - Every edit the agent makes is an ordinary TAStudio edit: it appears in the
   piano roll and in the undo history, and can be undone.
 - Before the agent's first change after the server is started, a branch of
-  the movie as it was is saved, named for the agent and the time.
+  the movie as it was is saved, with a note saying so and the time. If the
+  branch cannot be saved, nothing is changed: every change is refused until
+  the server is stopped and started again. The engine holds this rule, not
+  the window, so no path around the window's code skips it.
 - The agent cannot save, close or open a project in the window, and has no
   access to files there. Saving stays the person's act.
 - A memory write is not input: a movie cannot reproduce it. It is reported in
@@ -156,13 +160,20 @@ Changes:
 
 | Tool | What it does |
 | --- | --- |
-| `seek` | Moves the playback position to a frame, back or forward. |
-| `advance_until` | Plays forward until a memory value meets a condition or a frame limit is reached. |
-| `set_input` | Replaces the input over a range of frames. |
+| `seek` | Moves the playback position to a frame, back or forward, and answers when the machine is there. |
+| `set_input` | Replaces the input from a frame on, one line a frame as `get_input` returns them. Past the movie's end it adds frames. |
+| `set_buttons` | Presses or releases buttons, and sets axes, by name over a range of frames. Controls not named keep what they had. |
 | `insert_frames` / `delete_frames` | Changes the movie's length at a frame. |
+| `undo` | Undoes the last step of the undo history, the same as Edit > Undo. |
 | `save_branch` / `load_branch` | Keeps or restores a branch. |
-| `add_marker` | Adds a marker. |
+| `add_marker` | Places a marker with a text. |
 | `write_memory` / `set_property` / `set_register` | Writes to the machine. Reported as said above. |
+
+Each call that edits the input is one step in TAStudio's undo history, named
+"Agent: ...", so a person can undo an agent's edit as they undo their own.
+
+Not built yet: `advance_until` (play forward until a memory value meets a
+condition).
 
 Without a window only (second part of the work):
 

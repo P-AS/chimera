@@ -4,15 +4,25 @@
 input and output, and checks what the tools say about the synthetic core
 against files the other tests already trust.
 
-Usage: mcp-agent.py <chimera-mcp> <reference ram> <reference vram> <movie.txt> <last frame .tga> [window]
+Usage: mcp-agent.py <chimera-mcp> <reference ram> <reference vram> <movie.txt> <last frame .tga> [mode]
 
 A running Chimera must be serving. tests/synth/run-witness.sh starts one of
 two: chimera-run --mcp-serve, which has no window, or the real window with
 --mcp-server and a project ("window" as the last argument). The window is
 asked the same things and a few more that only it can answer; it writes no
 picture file to compare with, so "-" is given for the .tga and the picture is
-only checked to be one. Prints one line for each thing that is wrong and
-exits 1, or prints nothing and exits 0.
+only checked to be one.
+
+With "runner-changes" or "window-changes" as the mode the server was started
+with changes allowed, and after everything above the tools that change things
+are tried: memory and named values are written and read back, and in the
+window the input is edited and undone, frames are inserted and deleted, a
+marker and branches are made, the playback position is moved - and at the end
+the machine, played again to the movie's last frame, must hold the reference
+memory, which it only can if every edit was undone exactly.
+
+Prints one line for each thing that is wrong and exits 1, or prints nothing
+and exits 0.
 """
 import base64
 import json
@@ -22,7 +32,9 @@ import sys
 import zlib
 
 mcp, ram_path, vram_path, movie_path, tga_path = sys.argv[1:6]
-window = len(sys.argv) > 6 and sys.argv[6] == "window"
+mode = sys.argv[6] if len(sys.argv) > 6 else "runner"
+window = mode.startswith("window")
+changes = mode.endswith("-changes")
 wrong = []
 
 
@@ -133,7 +145,7 @@ status = facts("status")
 check("status names the core", status.get("core") == "Synth")
 check("status is on the movie's last frame", status.get("frame") == len(movie))
 check("status gives the movie's length", status.get("movie_length") == len(movie))
-check("status says changes are not allowed", status.get("changes_allowed") is False)
+check("status says whether changes are allowed", status.get("changes_allowed") is changes)
 check("status says the core has not stopped", status.get("core_stopped") is False)
 check("status gives the picture's size", status.get("picture", {}).get("width", 0) > 0)
 if window:
@@ -206,6 +218,101 @@ else:
     # a tool that needs the window says so here, where there is none
     error, text, _ = call("list_markers")
     check("a tool the frontend runs is handed to the frontend", error and "window" in text)
+
+if not changes:
+    # nobody allowed changes: each tool that changes something says how they are allowed
+    for tool, arguments in (("add_marker", {"frame": 1, "text": "x"}), ("set_buttons", {"frame": 0, "buttons": {"P1 A": True}}),
+                            ("seek", {"frame": 0}), ("write_memory", {"domain": "RAM", "address": 0, "values": [1]})):
+        error, text, _ = call(tool, **arguments)
+        check("%s is refused while changes are not allowed" % tool, error and "Allow the agent to make changes" in text)
+    check("refused changes changed nothing", facts("get_input", count=1000)["entries"] == movie
+          and bytes.fromhex(facts("read_memory", domain="RAM", address=0, count=16)["bytes_hex"]) == ram[:16])
+
+
+def all_input():
+    return facts("get_input", count=1000)["entries"]
+
+
+def ram_now():
+    return bytes.fromhex(facts("read_memory", domain="RAM", address=0, count=4096)["bytes_hex"])
+
+
+if mode == "window-changes":
+    last = len(movie)
+    # input: pressed by name over a range, seen, and taken back by one undo
+    answer = facts("set_buttons", frame=5, count=3, buttons={"P1 A": True})
+    check("set_buttons answers with the movie's length", answer.get("movie_length") == last)
+    edited = all_input()
+    check("set_buttons changed frames 5 to 7 and no others",
+          [i for i in range(last) if edited[i] != movie[i]] == [5, 6, 7] and all("A" in edited[i] for i in (5, 6, 7)))
+    # before that first change, the work as it was had been kept as a branch
+    branches = facts("list_branches").get("branches", [])
+    check("a branch was saved before the first change", len(branches) == 1 and branches[0]["note"].startswith("Before the agent's changes"))
+    check("status says the project has unsaved changes", facts("status").get("unsaved_changes") is True)
+    facts("undo")
+    check("undo takes the whole edit back", all_input() == movie)
+    # input lines written as given, also past the end, and undone in one step
+    facts("set_input", frame=last - 1, entries=[movie[1], movie[1], movie[1]])
+    check("set_input writes lines and lengthens the movie", all_input() == movie[:-1] + [movie[1]] * 3)
+    error, text, _ = call("set_input", frame=0, entries=["|this is not a line|"])
+    check("set_input refuses a line that is not one of the movie's", error and "Line 1" in text)
+    facts("undo")
+    check("undo takes the written lines back", all_input() == movie)
+    # frames inserted and deleted
+    check("insert_frames lengthens the movie", facts("insert_frames", frame=0, count=2).get("movie_length") == last + 2)
+    check("the input moved later", all_input()[2:] == movie)
+    check("delete_frames shortens it again", facts("delete_frames", frame=0, count=2).get("movie_length") == last)
+    check("the input is the movie's again", all_input() == movie)
+    # a marker, and branches
+    facts("add_marker", frame=9, text="placed by the witness")
+    placed = [m for m in facts("list_markers").get("markers", []) if m.get("placed_by_user")]
+    check("add_marker places a marker a person can tell from the movie's own",
+          placed == [{"frame": 9, "text": "placed by the witness", "placed_by_user": True}])
+    check("save_branch saves a second branch", facts("save_branch", note="made by the witness").get("number") == 2)
+    notes = [b["note"] for b in facts("list_branches").get("branches", [])]
+    check("the new branch has its note", len(notes) == 2 and notes[1] == "made by the witness")
+    error, text, _ = call("load_branch", number=7)
+    check("load_branch refuses a branch that does not exist", error and "between 1 and 2" in text)
+    # the playback position: back, then to the end again - and after all of the above the
+    # machine at the movie's last frame holds the reference memory
+    check("seek goes back to a frame", facts("seek", frame=10).get("frame") == 10 and facts("status").get("frame") == 10)
+    check("memory in the middle of the movie is not the end's", ram_now() != ram)
+    check("seek goes forward to the movie's end", facts("seek", frame=last).get("frame") == last)
+    check("after every edit was undone, the movie plays to the reference memory", ram_now() == ram)
+    error, text, _ = call("seek", frame=last + 50)
+    check("seek refuses a frame past the movie's end", error and str(last) in text)
+    check("load_branch loads the first branch", facts("load_branch", number=1).get("number") == 1)
+    check("the input after the load is the movie's", all_input() == movie)
+
+if changes:
+    # writing to the machine: read back, and said by status from then on
+    check("status says memory has not been written yet", facts("status").get("memory_written_by_agent") is False)
+    frame_now = facts("status").get("frame")
+    check("write_memory writes bytes", facts("write_memory", domain="RAM", address=0x800, values=[171, 205]).get("bytes_written") == 2)
+    check("the bytes written are read back", facts("read_memory", domain="RAM", address=0x800, count=2).get("bytes_hex") == "ABCD")
+    facts("write_memory", domain="RAM", address=0x810, values=[0x1234, -2], type="s16", big_endian=True)
+    check("write_memory writes wider values in the byte order asked for",
+          facts("read_memory", domain="RAM", address=0x810, count=4).get("bytes_hex") == "1234FFFE")
+    after = facts("status")
+    check("status says memory was written, and on which frame",
+          after.get("memory_written_by_agent") is True and after.get("first_memory_write_frame") == frame_now)
+    error, text, _ = call("write_memory", domain="RAM", address=0, values=[300])
+    check("write_memory refuses a value that does not fit", error and "fits in u8" in text)
+    error, text, _ = call("write_memory", domain="VRAM", address=0, values=[1])
+    check("write_memory refuses memory that cannot be written", error and "cannot be written" in text)
+    error, text, _ = call("write_memory", domain="RAM", address=4095, values=[1, 2])
+    check("write_memory refuses a write past the end", error and "past its end" in text)
+    check("the refused writes wrote nothing", facts("read_memory", domain="RAM", address=4095, count=1).get("values") == [ram[4095]])
+    # a game's named value
+    check("set_property sets a value from text", facts("set_property", name="Steps", value="7").get("value") == "7")
+    check("the value set is read back", facts("get_property", name="Steps").get("value") == "7")
+    error, text, _ = call("set_property", name="No Such Value", value="1")
+    check("set_property names a value that does not exist", error and "No Such Value" in text)
+    error, text, _ = call("set_register", name="PC", value=0)
+    check("set_register names a register that does not exist", error and "PC" in text)
+    if not window:
+        error, text, _ = call("add_marker", frame=1, text="x")
+        check("a change the window makes is handed to the frontend", error and "window" in text)
 
 agent.stdin.close()
 agent.wait()

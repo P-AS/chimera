@@ -169,8 +169,8 @@ namespace Chimera.Tests.Client.GUI
 						while (EngineMcp.Pending && EngineMcp.Service(System.IntPtr.Zero, System.IntPtr.Zero, -1, "{\"project\":\"the ui test\"}",
 							out var id, out var tool, out var arguments))
 						{
-							var text = McpHostTools.Run(null, tool, arguments, out var isError);
-							EngineMcp.Answer(id, text, isError);
+							var text = McpHostTools.Run(null, null, tool, arguments, out var isError);
+							EngineMcp.Answer(id, text ?? "", isError);
 						}
 						System.Threading.Thread.Sleep(2);
 					}

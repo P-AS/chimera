@@ -22,10 +22,21 @@ local function exists(path)
 	return f ~= nil
 end
 
+-- TAStudio is what a person has open when they work on a movie, and it is
+-- where the server's tools make their changes; a run nobody clicks in has to
+-- open it itself. It owns the playback position, so it is asked to play to
+-- the movie's end.
+if not tastudio.engaged() then
+	client.opentasstudio()
+end
 pcall(function() client.speedmode(6400) end)
 local length = movie.length()
-while emu.framecount() < length do
-	emu.frameadvance()
+pcall(function() tastudio.setplayback(length) end)
+local spins = 0
+while emu.framecount() < length and spins < 20000 do
+	client.unpause()
+	emu.yield()
+	spins = spins + 1
 end
 client.pause()
 

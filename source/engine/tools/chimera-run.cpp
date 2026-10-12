@@ -1707,7 +1707,10 @@ int main(int argc, char **argv)
 			while (ce_mcp_pending() != 0
 				&& ce_mcp_service(session, ce_session_movie_log(session), -1, "{\"frontend\":\"chimera-run\"}", &callId, &tool, &arguments) != 0)
 			{
-				ce_mcp_answer(callId, "This tool needs Chimera's window; chimera-run has none.", 1);
+				/* "keep_work" is the engine asking, before the agent's first
+				 * change, for the person's work to be kept: there is none here */
+				if (std::strcmp(tool, "keep_work") == 0) ce_mcp_answer(callId, "chimera-run has no work to keep", 0);
+				else ce_mcp_answer(callId, "This tool needs Chimera's window; chimera-run has none.", 1);
 			}
 #ifdef _WIN32
 			Sleep(2);

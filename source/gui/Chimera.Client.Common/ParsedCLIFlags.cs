@@ -34,6 +34,9 @@ namespace Chimera.Client.Common
 		/// <summary>--mcp-server: start the MCP server at launch (docs/mcp-server.md)</summary>
 		public readonly bool mcpServer;
 
+		/// <summary>--mcp-allow-changes: with --mcp-server, the agent may make changes from the start</summary>
+		public readonly bool mcpAllowChanges;
+
 		public readonly IReadOnlyList<(string Key, string Value)>? UserdataUnparsedPairs;
 
 		public readonly string? MMFFilename;
@@ -74,9 +77,11 @@ namespace Chimera.Client.Common
 			string? cmdPrecompile,
 			string[]? cmdFirmware = null,
 			string? cmdPrecompileSlots = null,
-			bool mcpServer = false)
+			bool mcpServer = false,
+			bool mcpAllowChanges = false)
 		{
 			this.mcpServer = mcpServer;
+			this.mcpAllowChanges = mcpAllowChanges;
 			this.cmdConfigFile = cmdConfigFile;
 			this.cmdMovie = cmdMovie;
 			this.cmdProject = cmdProject;

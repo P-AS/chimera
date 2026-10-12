@@ -1918,7 +1918,14 @@ CE_API int64_t ce_ramsearch_redo(ce_ramsearch *rs);
  *
  * A tool that changes the movie or the machine is refused unless
  * ce_mcp_allow_changes(1) was called since the last start: a person allows
- * changes, each time, and until then an agent can only look. */
+ * changes, each time, and until then an agent can only look.
+ *
+ * Before the first change after a start, ce_mcp_service hands the frontend a
+ * call named "keep_work" that is not the agent's: the frontend keeps the
+ * person's work as it is now (a branch of the movie) and answers with
+ * ce_mcp_answer - a few words saying where it was kept, or, as a refusal, why
+ * it could not be. Only after a good answer is the agent's change run; after
+ * a refusal every change is refused until the next start. */
 enum
 {
 	CE_MCP_STOPPED = 0,
