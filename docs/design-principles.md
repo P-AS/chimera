@@ -6702,3 +6702,11 @@ and `chimera-mcp.exe`. The window was not tried on Windows.
 One thing learnt about this machine: a test that fails an assertion took
 over a minute to end, because WSL hands every core dump to a program of its
 own. `test_mcp` now asks for no core dump.
+
+Added the same day: the window was then tried on Windows after all. The
+build was copied to a folder of its own and Chimera.exe started there with
+`--headless --mcp-server --mcp-allow-changes`, a project and the same script,
+and the agent's whole test of changes in the window (`mcp-agent.py`,
+"window-changes") passed through `chimera-mcp.exe`: the edits, the undos, the
+branches, the seeks, and the reference memory at the end. What is still not
+known on Windows is how the dialog looks; nobody has opened it there.

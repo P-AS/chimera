@@ -25,8 +25,9 @@ Built so far:
 Not built yet: RAM search, `watch`, `advance_until`, and the windowless mode.
 `chimera-mcp` is built with Chimera but is not in the release bundles yet.
 
-Not tried: the window on Windows. The engine's part and `chimera-mcp` were
-run there; the dialog and the tools the window runs were only run on Linux.
+On Windows: the same test that edits a movie in the window was run against
+the Windows build of Chimera, started with no window shown, and passed. The
+dialog itself has not been looked at on Windows; only its Linux picture has.
 
 ## What it is
 
