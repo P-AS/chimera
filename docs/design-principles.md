@@ -6397,3 +6397,60 @@ scribbles over it without flushing, unmaps it and maps it again, and the new
 mapping must show what the device wrote. A build of the bridge that takes
 all memory for unwritten fails that test, on lavapipe and on the GTX 1060.
 The engine's tests, the witness and the interface tests pass with it.
+
+## What a game calls a control, and the files a game needs (user-decided, 2026-10-12, issue 164)
+
+Two things a core of thousands of games knows only once it has the game,
+both decided by the owner while the MAME arcade core was being made.
+
+**A control keeps its name and gains a label.** The package declares its
+controls by what they are ("P1 Button 1"), and that name is the control's
+identity: a movie's column, a key binding and a script all go by it, so it
+cannot be different from one game to the next. The game has its own word
+for it ("Weak Punch", "Jump"). A core may now say that word: two optional
+exports, `GetButtonLabel(index)` and `GetAxisLabel(index)`, asked once after
+`Init`; the engine hands them out (`ce_session_button_label`,
+`ce_session_axis_label`). The interface shows the label beside the name and
+never instead of it: in the hover text of the control's TAStudio column
+("P1 Button 1 (Weak Punch)") and after the name in the key configuration. It
+is not written into a movie or a project. Not done: the label of an analog
+control in the key configuration (its TAStudio hover text has it).
+
+**The files a game needs beside its own are firmware.** An arcade project
+was one rom set plus whichever other sets the game reads from. The owner's
+decision: the project's file is the game's rom set, and the other sets -
+the board's BIOS set, a clone's parent set, the sets of the board's devices
+- are firmware, asked for on the wizard's firmware page and remembered by
+the firmware store, so a BIOS set given once serves every game of that
+board. A package cannot declare them (the MAME core has 36,721 machines),
+so the core lists them for the game in hand: a package that declares
+`"gameFirmware": true` returns a `"firmware"` array from `SuggestSettings`,
+in `waterbox.config`'s own firmware format. The wizard merges it with the
+package's declarations and the engine's decision tree decides as before; at
+load the core factory asks the core again before it resolves firmware
+(docs/project.md, "The firmware decision tree").
+
+Three things that had to hold, and how:
+
+- The answer must be the same before the firmware is given and after. The
+  MAME core decides "this game needs that set" by looking for the set's
+  files in the game's own file alone, not in what happens to be mounted.
+- A requirement may depend on a setting the user changes after the core
+  answered: a Neo Geo set that carries the default BIOS needs `neogeo.zip`
+  only with another BIOS. So an entry may carry `requiredWhen`, and the
+  decision tree re-reads it whenever the firmware page is built.
+- Firmware is read into memory, and a disc image may be gigabytes. Disc
+  images (CHD) stay files of the project, in a slot.
+
+What was measured: the engine's tests 22 of 22; the witness 76 of 76, one
+of them new (the synthetic core calls one control "Jump" and the engine
+must say so for that control and no other); the interface tests with 0
+failed, five of them new (the game's firmware joins the firmware page,
+follows the setting it depends on, leaves with the game, is ignored for a
+package that does not declare it; a label is shown beside a control's
+name). Each new test was seen to fail with the code it covers broken. With
+the MAME core, in Chimera's window under Xvfb: a game opened with its device
+set taken from the firmware store runs as the headless runner runs it, and
+with no such firmware known the project is not opened and the set is named.
+Nothing of this was tried on Windows.
+

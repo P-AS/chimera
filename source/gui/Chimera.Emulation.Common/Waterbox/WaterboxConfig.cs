@@ -80,6 +80,17 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// </summary>
 		public bool SuggestSettings { get; set; }
 
+		/// <summary>
+		/// The firmware a project needs depends on its GAME, and only the core can
+		/// say which: its SuggestSettings answer carries a "firmware" array, the
+		/// files this game needs beyond the package's own declarations (an arcade
+		/// game's BIOS set, its parent's set, the sets of the devices it uses - a
+		/// package of thousands of games cannot declare them once). The wizard's
+		/// firmware page asks for them with the rest, and a load asks the core
+		/// again before it builds the machine.
+		/// </summary>
+		public bool GameFirmware { get; set; }
+
 		/// <summary>Guest heap sizes in MiB, in order: sbrk, sealed, invis, plain, mmap.</summary>
 		public uint[]? MemoryLayoutMiB { get; set; }
 
@@ -842,6 +853,53 @@ namespace Chimera.Emulation.Common.Waterbox
 				if (d is null || string.IsNullOrEmpty(d.Name) || !taken.Add(d.Name)) continue;
 				result.Add(d);
 			}
+			return result;
+		}
+
+		/// <summary>
+		/// The firmware a core declares for ONE GAME (a SuggestSettings answer's
+		/// "firmware"): a JSON array in this file's own firmware format. Entries
+		/// with no id, or with an id the package already declares or that came
+		/// earlier in the list, are dropped - a game adds firmware, it cannot
+		/// redefine the package's. An entry may carry a "requiredWhen" like any
+		/// other: a game's BIOS set may be needed with one BIOS setting and not
+		/// with another, and the setting can change after the core answered.
+		/// <paramref name="rawJson"/> is the kept entries as the engine's
+		/// decision tree takes them, conditions and all.
+		/// </summary>
+		public static List<CoreFirmwareDecl> ParseGameFirmware(string? json, IEnumerable<string> packageIds, out string rawJson)
+		{
+			rawJson = "[]";
+			if (string.IsNullOrWhiteSpace(json)) return [ ];
+			Newtonsoft.Json.Linq.JArray entries;
+			try
+			{
+				entries = Newtonsoft.Json.Linq.JArray.Parse(json!);
+			}
+			catch (JsonException)
+			{
+				return [ ];
+			}
+			var taken = new HashSet<string>(packageIds, StringComparer.Ordinal);
+			var result = new List<CoreFirmwareDecl>();
+			var kept = new Newtonsoft.Json.Linq.JArray();
+			foreach (var entry in entries)
+			{
+				if (entry is not Newtonsoft.Json.Linq.JObject item) continue;
+				CoreFirmwareDecl? decl;
+				try
+				{
+					decl = item.ToObject<CoreFirmwareDecl>();
+				}
+				catch (JsonException)
+				{
+					continue;
+				}
+				if (decl is null || string.IsNullOrEmpty(decl.Id) || !taken.Add(decl.Id)) continue;
+				result.Add(decl);
+				kept.Add(item);
+			}
+			rawJson = kept.ToString(Formatting.None);
 			return result;
 		}
 

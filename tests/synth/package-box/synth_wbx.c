@@ -301,6 +301,11 @@ static int moving_entry(char *out, size_t cap, const char *name)
 	return 0;
 }
 
+/* What this "game" calls a control, beside the name the package declares:
+ * the witness checks it reaches the engine (ce_session_button_label). One
+ * control has a name of its own; the rest have none, which is what "" says. */
+ECL_EXPORT const char *GetButtonLabel(int32_t index) { return index == 4 ? "Jump" : ""; }
+
 ECL_EXPORT const char *GetGameProperty(const char *name)
 {
 	g_propsNow[0] = 0;

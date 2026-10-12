@@ -1130,6 +1130,24 @@ CE_API int32_t ce_session_drive_media_inserted(const ce_session *s, int32_t inde
 CE_API int32_t ce_session_button_active(const ce_session *s, int64_t index);
 CE_API int32_t ce_session_axis_active(const ce_session *s, int64_t index);
 
+/* What THIS GAME calls a control.
+ *
+ * A package that runs thousands of games declares its controls by what they
+ * are - "P1 Button 1" - and that declared name is the control's identity: a
+ * movie's column, a key binding and a Lua script all go by it, so it must not
+ * change from game to game. But the game has a name for it too - "Weak
+ * Punch" - and a person reads that one. The running core knows it (its
+ * optional GetButtonLabel/GetAxisLabel exports, asked once after Init with
+ * the control's index in the declaration), and a frontend shows it BESIDE the
+ * declared name: on hover over the control's column, in the key
+ * configuration. It is never written into a movie or a project.
+ *
+ * "" for a control the game gives no name of its own, for one the machine
+ * does not have, and for every control of a core that exports neither. The
+ * pointer is valid as long as the session. */
+CE_API const char *ce_session_button_label(const ce_session *s, int64_t index);
+CE_API const char *ce_session_axis_label(const ce_session *s, int64_t index);
+
 /* Axes are set per frame, before the advance they belong to. */
 CE_API void ce_session_set_axis(ce_session *s, int32_t index, int32_t value);
 

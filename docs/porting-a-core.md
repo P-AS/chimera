@@ -359,6 +359,34 @@ Probed once after `Init`; absent exports simply mean the tool is not offered.
   settings: mounted for `Init`, recorded in the project, cited by a movie. A
   declaration may not reuse a package setting's name - it is dropped. The
   FBNeo core names its switches `dip.<group>`.
+- **The firmware THIS GAME needs** - for a core of thousands of games whose
+  other files depend on the game (an arcade game's BIOS set, its parent's set,
+  the sets of the devices its board has), which cannot be declared once per
+  package. Declare `"gameFirmware": true` in `waterbox.config` beside
+  `"suggestSettings": true`, and return the declarations from
+  `SuggestSettings` under `"firmware"`: an array in `waterbox.config`'s own
+  firmware format (`id`, `display`, `description`, `name`, and `requiredWhen`
+  where an entry is needed with some settings only - a BIOS set that the
+  game's own file already holds for the default BIOS and not for another).
+  The new-project wizard asks for them on its firmware page with the
+  package's own, and a load asks the core again before it builds the
+  machine, so a game opened with no project is completed from the firmware
+  the person has already given. A file is mounted under its id, so make the
+  id the name the emulator looks for. Three rules: the answer must not depend
+  on whether the firmware is already mounted (the wizard asks before it is,
+  a load asks after); an id the package declares is the package's; and
+  firmware is read into memory, so a disc image is a slot's file, never
+  firmware. The MAME core is the example (`mame_game_firmware`).
+- **`GetButtonLabel(index)` / `GetAxisLabel(index)`** - what THIS GAME calls
+  a control: "Weak Punch" for the control the package declares as "P1 Button
+  1". The declared name stays the control's identity - a movie's column, a
+  key binding and a script go by it, so it cannot change from game to game -
+  and the label is shown beside it: in the hover text of the control's
+  TAStudio column and after its name in the key configuration. Asked once
+  after `Init`, with the control's index in the declaration; return `""` for
+  a control the game has no word of its own for. Leave the player out
+  ("Attack", not "P1 Attack"): the name beside it already says which
+  player's.
 - Registers, trace, core-rendered surfaces, save-data export, turbo
   (`SetRenderingEnabled`). **Turbo means "skip what is pure OUTPUT", not "skip
   the renderer".** If the export can only be implemented by skipping drawing -

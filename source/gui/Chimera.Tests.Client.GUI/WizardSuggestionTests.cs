@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using Chimera.Client.GUI;
 using Chimera.Emulation.Common.Waterbox;
@@ -182,6 +183,91 @@ namespace Chimera.Tests.Client.GUI
 			form.ArriveAtSettingsForTest("b.iso");
 			CollectionAssert.DoesNotContain(form.ExposedSettingNames, "dip.Lives", "game A's switches are not game B's");
 			Assert.AreEqual(Default, Value(form, "dip.Lives"), "and what was set on them goes too");
+		}
+
+		/// <summary>
+		/// A package of thousands of games whose firmware depends on the game: the
+		/// core's answer lists what THIS game needs (user, 2026-10-12: an arcade
+		/// game's other rom sets are asked for on the firmware page). One entry is
+		/// needed whatever the settings, one only with some BIOS choices.
+		/// </summary>
+		private static WaterboxConfig ArcadePackage(bool gameFirmware) => TestPackages.Config($$"""
+			{
+			  "coreName": "Arcade-shaped",
+			  "systemId": "ARCADE",
+			  "suggestSettings": true,
+			  "gameFirmware": {{(gameFirmware ? "true" : "false")}},
+			  "video": { "width": 320, "height": 240 },
+			  "audio": { "samplesPerFrame": 800 },
+			  "input": { "buttons": [] },
+			  "settings": [],
+			  "firmware": [ { "id": "always.rom", "display": "The package's own firmware" } ]
+			}
+			""");
+
+		private const string WithFirmware = """
+			{"values":{},"note":"The Firmware page asks for sound.zip.",
+			 "settings":[
+			  {"name":"bios","display":"BIOS","type":"enum","options":["Europe","Japan","Universe"],"default":"Europe"}
+			 ],
+			 "firmware":[
+			  {"id":"sound.zip","display":"sound.zip","description":"A device this game's board has."},
+			  {"id":"board.zip","display":"board.zip","requiredWhen":{"setting":"bios","in":["Universe"]}},
+			  {"id":"always.rom","display":"Hijack"},
+			  {"display":"no id"},
+			  {"id":"sound.zip","display":"twice"}
+			 ]}
+			""";
+
+		[TestMethod]
+		public void AGamesOwnFirmwareIsAskedForWithThePackages()
+		{
+			using var form = FormWith(ArcadePackage(gameFirmware: true), _ => (WithFirmware, ""));
+			form.ArriveAtSettingsForTest("game.iso");
+			CollectionAssert.AreEqual(new[] { "always.rom", "sound.zip" }, form.FirmwareAskedForTest().ToArray(),
+				"the package's firmware, then what this game needs; an entry with a condition waits for it");
+		}
+
+		[TestMethod]
+		public void AGamesFirmwareFollowsTheSettingItDependsOn()
+		{
+			using var form = FormWith(ArcadePackage(gameFirmware: true), _ => (WithFirmware, ""));
+			form.ArriveAtSettingsForTest("game.iso");
+			form.SetSettingValue("bios", "Universe");
+			CollectionAssert.AreEqual(new[] { "always.rom", "sound.zip", "board.zip" }, form.FirmwareAskedForTest().ToArray(),
+				"the BIOS chosen on the settings page needs a set the default did not");
+			form.SetSettingValue("bios", "Japan");
+			CollectionAssert.AreEqual(new[] { "always.rom", "sound.zip" }, form.FirmwareAskedForTest().ToArray());
+		}
+
+		[TestMethod]
+		public void AnotherGameTakesTheLastGamesFirmwareAway()
+		{
+			using var form = FormWith(ArcadePackage(gameFirmware: true), game => (game == "a.iso" ? WithFirmware : NotFound, ""));
+			form.ArriveAtSettingsForTest("a.iso");
+			CollectionAssert.Contains(form.FirmwareAskedForTest().ToArray(), "sound.zip");
+			form.ArriveAtSettingsForTest("b.iso");
+			CollectionAssert.AreEqual(new[] { "always.rom" }, form.FirmwareAskedForTest().ToArray(), "game A's sets are not game B's");
+		}
+
+		[TestMethod]
+		public void APackageThatDoesNotSayItsGamesHaveFirmwareIsNotGivenAny()
+		{
+			using var form = FormWith(ArcadePackage(gameFirmware: false), _ => (WithFirmware, ""));
+			form.ArriveAtSettingsForTest("game.iso");
+			CollectionAssert.AreEqual(new[] { "always.rom" }, form.FirmwareAskedForTest().ToArray());
+		}
+
+		[TestMethod]
+		public void AGamesFirmwareCannotRedefineThePackagesOrRepeatItself()
+		{
+			var decls = WaterboxConfig.ParseGameFirmware(
+				"""[{"id":"a.zip"},{"id":"pkg.rom"},{"display":"no id"},{"id":"a.zip"},{"id":"b.zip","requiredWhen":{"setting":"x","is":1}}]""",
+				[ "pkg.rom" ], out var raw);
+			CollectionAssert.AreEqual(new[] { "a.zip", "b.zip" }, decls.Select(static d => d.Id).ToArray());
+			StringAssert.Contains(raw, "requiredWhen", "a condition is kept for the engine to decide");
+			Assert.AreEqual(0, WaterboxConfig.ParseGameFirmware("not json", [ ], out raw).Count);
+			Assert.AreEqual("[]", raw);
 		}
 
 		[TestMethod]

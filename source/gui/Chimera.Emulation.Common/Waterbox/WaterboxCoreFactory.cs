@@ -185,11 +185,17 @@ namespace Chimera.Emulation.Common.Waterbox
 			Dictionary<string, byte[]> resolved = new();
 			List<CoreFirmwareDecl> used = new();
 			FirmwareInUse = used;
+			var needed = new List<CoreFirmwareDecl>();
 			foreach (var (id, index) in applicable)
 			{
 				var decl = index >= 0 && index < Firmware.Count ? Firmware[index] : null;
 				if (decl is null || decl.Id != id) decl = Firmware.FirstOrDefault(d => d.Id == id);
-				if (decl is null) continue;
+				if (decl is not null) needed.Add(decl);
+			}
+			// and what THIS GAME needs, which only the core can say
+			needed.AddRange(GameFirmwareFor(ctx, effective, slotsJson));
+			foreach (var decl in needed)
+			{
 				used.Add(decl);
 				var bytes = ctx.FirmwareProvider?.Invoke(decl);
 				if (bytes is null)
@@ -206,6 +212,45 @@ namespace Chimera.Emulation.Common.Waterbox
 				resolved[decl.Id] = bytes;
 			}
 			return resolved;
+		}
+
+		/// <summary>
+		/// The firmware the game in hand needs beyond the package's declarations,
+		/// for a core whose package says the game decides
+		/// (<see cref="WaterboxConfig.GameFirmware"/>): the core is asked, on the
+		/// game alone, exactly as the wizard asked it when the project was made
+		/// (its SuggestSettings answer's "firmware"). Asked again at every load
+		/// rather than read from the project, so a rom opened with no project is
+		/// completed the same way, and a project cannot carry a list the core no
+		/// longer agrees with. A core that cannot answer needs nothing more as
+		/// far as this goes: it then says what it lacks itself, when it starts.
+		/// </summary>
+		private List<CoreFirmwareDecl> GameFirmwareFor(CoreCreationContext ctx, Dictionary<string, object> effective, string slotsJson)
+		{
+			if (!_cfg.GameFirmware) return [ ];
+			var path = ctx.Roms is { Count: > 0 } roms ? roms[0]?.RomPath : null;
+			if (string.IsNullOrEmpty(path) || !File.Exists(path)) return [ ];
+			try
+			{
+				var answer = Engine.EngineSession.Suggest(
+					_packageDir, path!, Newtonsoft.Json.JsonConvert.SerializeObject(effective));
+				if (string.IsNullOrWhiteSpace(answer)) return [ ];
+				var root = Newtonsoft.Json.Linq.JObject.Parse(answer);
+				var decls = WaterboxConfig.ParseGameFirmware(
+					root["firmware"]?.ToString(Newtonsoft.Json.Formatting.None), Firmware.Select(static d => d.Id), out var raw);
+				// an entry may apply with some settings only (a BIOS set needed
+				// for one BIOS choice): the same decision tree decides
+				var settingsJson = Newtonsoft.Json.JsonConvert.SerializeObject(effective);
+				return Engine.EngineFirmware.Evaluate(raw, slotsJson, settingsJson)
+					.Select(entry => entry.Index >= 0 && entry.Index < decls.Count ? decls[entry.Index] : null)
+					.Where(static d => d is not null)
+					.Select(static d => d!)
+					.ToList();
+			}
+			catch (Exception e) when (e is InvalidOperationException or Newtonsoft.Json.JsonException)
+			{
+				return [ ];
+			}
 		}
 
 		/// <summary>

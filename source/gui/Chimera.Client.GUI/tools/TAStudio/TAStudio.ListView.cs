@@ -227,7 +227,12 @@ namespace Chimera.Client.GUI
 			{
 				if (e.NewCell.RowIndex is null)
 				{
-					toolTip1.Show(e.NewCell.Column!.Name, roll, roll.PointToClient(Cursor.HotSpot));
+					// the control's name, and beside it what this game calls it
+					// ("P1 Button 1 (Weak Punch)") when the core says
+					toolTip1.Show(
+						MovieSession.MovieController.Definition.NameWithLabel(e.NewCell.Column!.Name),
+						roll,
+						roll.PointToClient(Cursor.HotSpot));
 				}
 			};
 

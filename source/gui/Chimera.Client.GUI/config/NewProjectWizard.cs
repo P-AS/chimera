@@ -131,6 +131,37 @@ namespace Chimera.Client.GUI
 		private List<WaterboxConfig.SettingDecl> _gameSettings = [ ];
 
 		/// <summary>
+		/// The firmware the chosen GAME needs beyond the package's declarations
+		/// (a SuggestSettings answer's "firmware"; WaterboxConfig.GameFirmware):
+		/// the typed declarations, and the same entries as the engine's decision
+		/// tree takes them. Another game has other ones, so they go and come
+		/// with the suggestion.
+		/// </summary>
+		private List<CoreFirmwareDecl> _gameFirmware = [ ];
+		private string _gameFirmwareJson = "[]";
+
+		/// <summary>The firmware declarations the firmware page works from: the package's, then the game's.</summary>
+		private IReadOnlyList<CoreFirmwareDecl> FirmwareDecls()
+			=> _gameFirmware.Count is 0 ? (_cfg?.Firmware ?? [ ]) : [ ..(_cfg?.Firmware ?? [ ]), .._gameFirmware ];
+
+		/// <summary>The same list as JSON, in the same order: an index the engine answers with is an index into <see cref="FirmwareDecls"/>.</summary>
+		private string FirmwareDeclsJson()
+		{
+			var package = _cfg?.RawFirmwareJson is { Length: not 0 } raw ? raw : "[]";
+			if (_gameFirmware.Count is 0) return package;
+			try
+			{
+				var all = Newtonsoft.Json.Linq.JArray.Parse(package);
+				foreach (var entry in Newtonsoft.Json.Linq.JArray.Parse(_gameFirmwareJson)) all.Add(entry);
+				return all.ToString(Newtonsoft.Json.Formatting.None);
+			}
+			catch (Newtonsoft.Json.JsonException)
+			{
+				return package;
+			}
+		}
+
+		/// <summary>
 		/// The core and game a seeded project arrived with: its settings are the
 		/// project's own, so the suggestion is shown for them but not applied.
 		/// </summary>
@@ -1216,7 +1247,7 @@ namespace Chimera.Client.GUI
 		/// </summary>
 		private bool AnyFirmwareRequired()
 		{
-			if (_cfg?.RawFirmwareJson is not { Length: not 0 } declJson) return false;
+			if (FirmwareDeclsJson() is not { Length: > 2 } declJson) return false;
 			var effective = WaterboxCore.EffectiveSettingsFor(_cfg, _settings);
 			return Chimera.Emulation.Common.Engine.EngineFirmware.Evaluate(
 				declJson,
@@ -2401,6 +2432,8 @@ namespace Chimera.Client.GUI
 			if (key != _seededFor)
 				foreach (var decl in _gameSettings) _settings.Values.Remove(decl.Key);
 			_gameSettings = [ ];
+			_gameFirmware = [ ];
+			_gameFirmwareJson = "[]";
 			_suggestedFor = key;
 
 			_status.Text = "Looking this game up...";
@@ -2424,6 +2457,11 @@ namespace Chimera.Client.GUI
 				if (root["settings"] is Newtonsoft.Json.Linq.JArray gameSettings)
 					_gameSettings = WaterboxConfig.ParseGameSettings(gameSettings.ToString(),
 						_cfg.Settings?.Select(static d => d.Key) ?? [ ]);
+				// the files THIS game needs beyond the package's firmware: asked
+				// for on the firmware page with the rest
+				if (_cfg.GameFirmware && root["firmware"] is Newtonsoft.Json.Linq.JArray gameFirmware)
+					_gameFirmware = WaterboxConfig.ParseGameFirmware(gameFirmware.ToString(),
+						_cfg.Firmware?.Select(static d => d.Id) ?? [ ], out _gameFirmwareJson);
 				if (key != _seededFor && root["values"] is Newtonsoft.Json.Linq.JObject values)
 				{
 					var effective = WaterboxCore.EffectiveSettingsFor(_cfg, _settings);
@@ -2602,7 +2640,7 @@ namespace Chimera.Client.GUI
 			var effective = WaterboxCore.EffectiveSettingsFor(
 				_cfg ?? new WaterboxConfig(), _settings);
 			var needed = Chimera.Emulation.Common.Engine.EngineFirmware.Evaluate(
-				_cfg?.RawFirmwareJson ?? "[]",
+				FirmwareDeclsJson(),
 				CurrentSlotsJson(),
 				Newtonsoft.Json.JsonConvert.SerializeObject(effective));
 
@@ -2639,6 +2677,18 @@ namespace Chimera.Client.GUI
 		internal void SeedFirmwareForTest(IReadOnlyList<(string Id, string Path)> firmware) => _seededFirmware = firmware;
 
 		/// <summary>
+		/// The firmware page as the choices so far make it - the package's
+		/// declarations and the game's own, through the engine's decision tree -
+		/// and the ids it asks for, in order. The test door.
+		/// </summary>
+		internal IReadOnlyList<string> FirmwareAskedForTest()
+		{
+			if (!AnyFirmwareRequired()) return [ ];
+			BuildFirmwarePage();
+			return _firmwareNeeds.Select(static need => need.Id).ToList();
+		}
+
+		/// <summary>
 		/// What the user chose by hand last time this page was built, by id,
 		/// with enough of the requirement to tell whether it is still the same
 		/// requirement. The firmware page is rebuilt on every arrival, because
@@ -2664,7 +2714,7 @@ namespace Chimera.Client.GUI
 
 		private void BuildFirmwareNeeds(IReadOnlyList<(string Id, int Index)> needed)
 		{
-			var decls = _cfg?.Firmware ?? [ ];
+			var decls = FirmwareDecls();
 			var handPicked = HandPickedFirmware();
 			_firmwareNeeds = needed.Select(entry =>
 			{

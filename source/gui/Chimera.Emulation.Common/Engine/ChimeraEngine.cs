@@ -757,6 +757,12 @@ namespace Chimera.Emulation.Common.Engine
 		public abstract int ce_session_axis_active(IntPtr session, long index);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_session_button_label(IntPtr session, long index);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_session_axis_label(IntPtr session, long index);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract void ce_session_set_axis(IntPtr session, int index, int value);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -2380,6 +2386,14 @@ namespace Chimera.Emulation.Common.Engine
 		public int DriveMediaInserted(int index) => E.ce_session_drive_media_inserted(_session, index);
 
 		public bool ButtonActive(int index) => E.ce_session_button_active(_session, index) is not 0;
+
+		/// <summary>What the running game calls a control of the declaration, or "".</summary>
+		public string ButtonLabel(int index)
+			=> Disposed ? "" : ChimeraEngine.PtrToStringUtf8(E.ce_session_button_label(_session, index)) ?? "";
+
+		/// <summary>The same for an axis.</summary>
+		public string AxisLabel(int index)
+			=> Disposed ? "" : ChimeraEngine.PtrToStringUtf8(E.ce_session_axis_label(_session, index)) ?? "";
 
 		/// <summary>
 		/// The letter a control writes into a movie's text: the package's own,

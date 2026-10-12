@@ -154,6 +154,14 @@ if [ "$level" = "both" ] || [ "$level" = "e" ]; then
 				fi
 			done
 		done
+		# what the game calls a control reaches the engine beside the control's
+		# own name: the synthetic core calls "P1 A" Jump and nothing else anything
+		lmeta="$(ls "$work"/*.engine.simple.meta.txt 2>/dev/null | head -1)"
+		if [ -n "$lmeta" ] && grep -qx 'label=P1 A=Jump' "$lmeta" && [ "$(grep -c '^label=' "$lmeta")" = 1 ]; then
+			report "E:labels" PASS "the core's name for a control (P1 A = Jump) is the engine's, and only for that control"
+		else
+			report "E:labels" FAIL "expected exactly label=P1 A=Jump in ${lmeta:-no meta}: $(grep '^label=' "$lmeta" 2>/dev/null | tr '\n' ' ')"
+		fi
 		# the greenzone: play to the end, seek BACK mid-movie, invalidate (as an
 		# input edit would), replay to the end - the dumps must not change
 		for movie in "$here"/movies/*.txt; do

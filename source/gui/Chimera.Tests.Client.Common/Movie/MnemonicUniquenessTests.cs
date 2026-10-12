@@ -293,6 +293,31 @@ namespace Chimera.Tests.Client.Common
 		}
 
 		/// <summary>
+		/// What a game calls a control is shown BESIDE the control's name and
+		/// never instead of it (user, 2026-10-12): "P1 Button 1" stays what a
+		/// movie, a binding and a column go by, and "Weak Punch" is what a hover
+		/// or the key configuration adds. A control the game has no word for is
+		/// shown by its name alone.
+		/// </summary>
+		[TestMethod]
+		public void AGamesNameForAControlIsShownBesideItsOwn()
+		{
+			FixedControlNames names = new(labels: new Dictionary<string, string> { ["P1 Button 1"] = "Weak Punch", ["P1 Paddle"] = "Steering" });
+			var machine = new ControllerDefinition("panel") { BoolButtons = { "P1 Button 1", "P1 Up" } }
+				.WithControlNames(names)
+				.MakeImmutable();
+			Assert.AreEqual("Weak Punch", machine.LabelFor("P1 Button 1"));
+			Assert.AreEqual("P1 Button 1 (Weak Punch)", machine.NameWithLabel("P1 Button 1"));
+			Assert.AreEqual("", machine.LabelFor("P1 Up"));
+			Assert.AreEqual("P1 Up", machine.NameWithLabel("P1 Up"));
+			Assert.AreEqual("P1 Paddle (Steering)", machine.NameWithLabel("P1 Paddle"), "an axis has one too");
+			// the rule alone knows no game
+			Assert.AreEqual("", GenericControlNames.Instance.LabelOf("P1 Button 1"));
+			var plain = new ControllerDefinition("pad") { BoolButtons = { "P1 Button 1" } }.MakeImmutable();
+			Assert.AreEqual("P1 Button 1", plain.NameWithLabel("P1 Button 1"));
+		}
+
+		/// <summary>
 		/// A definition is called what it is told its controls are called, and a
 		/// definition made from a movie's key takes the names of the machine it
 		/// is shown beside - including for a control that machine does not have.

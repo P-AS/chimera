@@ -107,6 +107,17 @@ namespace Chimera.Emulation.Common
 		/// <summary>The header of an axis's input column.</summary>
 		public string AxisHeaderFor(string axisName) => ControlNames.AxisHeaderOf(axisName);
 
+		/// <summary>What the running game calls a control, or "" (<see cref="IControlNames.LabelOf"/>).</summary>
+		public string LabelFor(string controlName) => ControlNames.LabelOf(controlName);
+
+		/// <summary>
+		/// A control as a person is shown it where there is room for both names:
+		/// "P1 Button 1 (Weak Punch)", or the name alone when the game has none
+		/// of its own for it.
+		/// </summary>
+		public string NameWithLabel(string controlName)
+			=> LabelFor(controlName) is { Length: > 0 } label ? $"{controlName} ({label})" : controlName;
+
 		public ControllerDefinition(string name)
 			=> Name = name;
 

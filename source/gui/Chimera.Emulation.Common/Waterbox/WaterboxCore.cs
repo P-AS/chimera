@@ -335,7 +335,7 @@ namespace Chimera.Emulation.Common.Waterbox
 			// for each button and a header for each axis, or the engine's rule
 			// where the package declared none
 			var def = new ControllerDefinition((_machine?.Input ?? _cfg.Input)?.Name ?? "Waterbox Controller")
-				.WithControlNames(new SessionControlNames(_session));
+				.WithControlNames(new SessionControlNames(_session, _buttons, _axes.Select(static (a, i) => a.Name ?? $"Axis {i}").ToArray()));
 			// only the controls this machine HAS: a Four Score's players 3 and 4,
 			// or an Arkanoid's paddle, are declared by every NES package and exist
 			// only when a project plugged one in
@@ -360,7 +360,22 @@ namespace Chimera.Emulation.Common.Waterbox
 		{
 			private readonly EngineSession _session;
 
-			public SessionControlNames(EngineSession session) => _session = session;
+			// the declaration's controls by name: a label is asked by index
+			private readonly Dictionary<string, int> _buttonIndex = new(StringComparer.Ordinal);
+
+			private readonly Dictionary<string, int> _axisIndex = new(StringComparer.Ordinal);
+
+			public SessionControlNames(EngineSession session, IReadOnlyList<string> buttons, IReadOnlyList<string> axes)
+			{
+				_session = session;
+				for (var i = 0; i < buttons.Count; i++) _buttonIndex[buttons[i]] = i;
+				for (var i = 0; i < axes.Count; i++) _axisIndex[axes[i]] = i;
+			}
+
+			public string LabelOf(string control)
+				=> _buttonIndex.TryGetValue(control, out var button) ? _session.ButtonLabel(button)
+					: _axisIndex.TryGetValue(control, out var axis) ? _session.AxisLabel(axis)
+					: "";
 
 			public char MnemonicOf(string button) => _session.MnemonicOf(button);
 

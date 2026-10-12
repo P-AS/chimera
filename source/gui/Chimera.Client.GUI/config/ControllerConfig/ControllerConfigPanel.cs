@@ -26,6 +26,19 @@ namespace Chimera.Client.GUI
 
 		public ToolTip Tooltip { get; set; }
 
+		/// <summary>
+		/// What the running game calls a control ("Weak Punch" for "P1 Button 1"),
+		/// or "" - shown after the control's name. Null when nobody can say.
+		/// </summary>
+		public System.Func<string, string> LabelOf { get; set; }
+
+		/// <summary>A control's name as the panel writes it: with the game's own name for it, when there is one.</summary>
+		private string Shown(string button)
+		{
+			var name = button.Replace('_', ' ').Trim();
+			return LabelOf?.Invoke(button) is { Length: > 0 } label ? $"{name} ({label})" : name;
+		}
+
 		private readonly List<InputCompositeWidget> _inputs = new List<InputCompositeWidget>();
 
 		private Size _panelSize = new Size(0, 0);
@@ -110,7 +123,7 @@ namespace Chimera.Client.GUI
 
 		private void Startup()
 		{
-			var labelWidth = _buttons.Max(b => b.Length) * _charWidth;
+			var labelWidth = _buttons.Max(b => Shown(b).Length) * _charWidth;
 			var columnWidth = _inputSize + (_labelPadding * 2) + labelWidth;
 			int x = _inputMarginLeft;
 			int y = _marginTop - _ySpacing;
@@ -140,7 +153,7 @@ namespace Chimera.Client.GUI
 				{
 					Location = new Point(x + _inputSize + _labelPadding, y + UIHelper.ScaleY(3)),
 					Size = new Size(labelWidth, UIHelper.ScaleY(15)),
-					Text = _buttons[i].Replace('_', ' ').Trim(),
+					Text = Shown(_buttons[i]),
 				};
 
 				Tooltip.SetToolTip(label, label.Text);

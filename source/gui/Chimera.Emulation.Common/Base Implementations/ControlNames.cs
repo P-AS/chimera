@@ -34,6 +34,14 @@ namespace Chimera.Emulation.Common
 
 		/// <summary>The header of an axis's column.</summary>
 		string AxisHeaderOf(string axis);
+
+		/// <summary>
+		/// What THIS GAME calls a control, button or axis - "Weak Punch" for
+		/// "P1 Button 1" - or "" when it has no name of its own. Shown beside
+		/// the control's name (a column's hover text, the key configuration);
+		/// never a control's identity, and never written into a movie.
+		/// </summary>
+		string LabelOf(string control);
 	}
 
 	/// <summary>The engine's rule and nothing else: for when there is no machine to ask.</summary>
@@ -48,6 +56,8 @@ namespace Chimera.Emulation.Common
 		public string ButtonHeaderOf(string button) => ChimeraEngine.ControlButtonHeader(button);
 
 		public string AxisHeaderOf(string axis) => ChimeraEngine.ControlAxisHeader(axis);
+
+		public string LabelOf(string control) => "";
 	}
 
 	/// <summary>
@@ -62,15 +72,21 @@ namespace Chimera.Emulation.Common
 
 		private readonly IReadOnlyDictionary<string, string> _buttonHeaders;
 
+		private readonly IReadOnlyDictionary<string, string> _labels;
+
 		public FixedControlNames(
 			IReadOnlyDictionary<string, char>? mnemonics = null,
 			IReadOnlyDictionary<string, string>? axisHeaders = null,
-			IReadOnlyDictionary<string, string>? buttonHeaders = null)
+			IReadOnlyDictionary<string, string>? buttonHeaders = null,
+			IReadOnlyDictionary<string, string>? labels = null)
 		{
 			_mnemonics = mnemonics ?? new Dictionary<string, char>();
 			_axisHeaders = axisHeaders ?? new Dictionary<string, string>();
 			_buttonHeaders = buttonHeaders ?? new Dictionary<string, string>();
+			_labels = labels ?? new Dictionary<string, string>();
 		}
+
+		public string LabelOf(string control) => _labels.TryGetValue(control, out var s) ? s : "";
 
 		public string ButtonHeaderOf(string button)
 			=> _buttonHeaders.TryGetValue(button, out var s) ? s : MnemonicOf(button).ToString();

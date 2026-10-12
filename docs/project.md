@@ -294,6 +294,22 @@ shipped in the core package - the same pattern as `waterbox.config` for
 settings and `default_keybinds.json` for binds. The wizard reads it with
 no guest boot, and the declaration is versioned with the core.
 
+**Firmware that depends on the game** (user-decided, 2026-10-12, issue
+164). A package of thousands of games cannot declare each game's other
+files: an arcade game needs its board's BIOS set, its parent's set if it
+is a clone, the sets of the devices its board has. Such a package
+declares "gameFirmware": true, and its core lists what THIS game needs
+in the answer it already gives the wizard before a machine exists
+(SuggestSettings, under "firmware", in the same format, conditions
+included). The wizard adds those entries to the package's own and puts
+the whole list through the same decision tree, so the firmware page
+asks for them like any other firmware and the firmware store remembers
+them for the next game. At load the core factory asks the core the same
+question before it resolves firmware - a rom opened with no project is
+completed the same way, and a project cannot carry a list the core no
+longer agrees with. What the project pins is unchanged: the id and
+hash of each file it was made with.
+
 ### The slot declaration: file_slots.json
 
 One file per core package, beside `waterbox.config`. Read by the wizard

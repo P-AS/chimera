@@ -1715,6 +1715,20 @@ int main(int argc, char **argv)
 		int32_t ax = 0, ay = 0;
 		if (ce_session_display_aspect(session, &ax, &ay))
 			meta += "aspect=" + std::to_string(ax) + ":" + std::to_string(ay) + "\n";
+		// what this game calls its controls, for a core that says: one line a
+		// control, "label=<control>=<the game's name for it>"
+		for (int64_t i = 0; i < ce_session_button_count(session); i++)
+		{
+			const char *label = ce_session_button_label(session, i);
+			if (label != nullptr && label[0] != '\0')
+				meta += std::string("label=") + ce_session_button_name(session, i) + "=" + label + "\n";
+		}
+		for (int64_t i = 0; i < ce_session_axis_count(session); i++)
+		{
+			const char *label = ce_session_axis_label(session, i);
+			if (label != nullptr && label[0] != '\0')
+				meta += std::string("label=") + ce_session_axis_name(session, i) + "=" + label + "\n";
+		}
 		// a game core's own timer at the end of the run, when it has one
 		int64_t gameMs = 0;
 		if (ce_session_game_time_ms(session, &gameMs))

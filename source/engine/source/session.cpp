@@ -520,6 +520,9 @@ struct ce_session
 
 	int32_t (*isButtonActive)(int32_t) = nullptr;
 	int32_t (*isAxisActive)(int32_t) = nullptr;
+	/* what THIS GAME calls a control (see buttonLabels) */
+	const char *(*getButtonLabel)(int32_t) = nullptr;
+	const char *(*getAxisLabel)(int32_t) = nullptr;
 	/* Optional: told after every load of the machine - a savestate, a branch
 	 * file, a greenzone restore. For a core that keeps something DERIVED
 	 * outside its states (xemu's translated-code cache lives in invisible
@@ -539,6 +542,13 @@ struct ce_session
 	void vulkanStateLoaded();
 	std::vector<uint8_t> buttonActive;
 	std::vector<uint8_t> axisActive;
+	/* A control's supplemental name for this game, by its index in the
+	 * declaration; "" where the core has none. The declared name stays the
+	 * control's identity - a movie, a binding and a column are keyed by it -
+	 * and this is only what a person is shown beside it. Copied out once,
+	 * after Init, with the activity above. */
+	std::vector<std::string> buttonLabels;
+	std::vector<std::string> axisLabels;
 	void buildControlActivity();
 	int32_t (*mdCount)() = nullptr;
 	uintptr_t (*mdName)(int32_t) = nullptr;
@@ -753,6 +763,27 @@ void ce_session::buildControlActivity()
 		for (size_t i = 0; i < axisActive.size(); i++)
 			axisActive[i] = isAxisActive(static_cast<int32_t>(i)) != 0 ? 1 : 0;
 	}
+	/* what the game calls each control it has; a control it lacks has none */
+	buttonLabels.assign(cfg.buttons.size(), std::string());
+	axisLabels.assign(cfg.axes.size(), std::string());
+	if (getButtonLabel != nullptr)
+	{
+		for (size_t i = 0; i < buttonLabels.size(); i++)
+		{
+			if (buttonActive[i] == 0) continue;
+			const char *label = getButtonLabel(static_cast<int32_t>(i));
+			if (label != nullptr) buttonLabels[i] = label;
+		}
+	}
+	if (getAxisLabel != nullptr)
+	{
+		for (size_t i = 0; i < axisLabels.size(); i++)
+		{
+			if (axisActive[i] == 0) continue;
+			const char *label = getAxisLabel(static_cast<int32_t>(i));
+			if (label != nullptr) axisLabels[i] = label;
+		}
+	}
 }
 
 void ce_session::probeOptionalGroups()
@@ -834,6 +865,8 @@ void ce_session::probeOptionalGroups()
 
 	isButtonActive = reinterpret_cast<int32_t (*)(int32_t)>(opt("IsButtonActive", 1));
 	isAxisActive = reinterpret_cast<int32_t (*)(int32_t)>(opt("IsAxisActive", 1));
+	getButtonLabel = reinterpret_cast<const char *(*)(int32_t)>(opt("GetButtonLabel", 1));
+	getAxisLabel = reinterpret_cast<const char *(*)(int32_t)>(opt("GetAxisLabel", 1));
 	stateLoaded = reinterpret_cast<void (*)(void)>(opt("StateLoaded", 0));
 	stateSavingExport = reinterpret_cast<void (*)(void)>(opt("StateSaving", 0));
 	history.beforeState([this] { stateSaving(); });
@@ -2020,6 +2053,18 @@ int32_t ce_session_axis_active(const ce_session *s, int64_t index)
 {
 	if (index < 0 || index >= static_cast<int64_t>(s->axisActive.size())) return 0;
 	return s->axisActive[static_cast<size_t>(index)];
+}
+
+const char *ce_session_button_label(const ce_session *s, int64_t index)
+{
+	if (index < 0 || index >= static_cast<int64_t>(s->buttonLabels.size())) return "";
+	return s->buttonLabels[static_cast<size_t>(index)].c_str();
+}
+
+const char *ce_session_axis_label(const ce_session *s, int64_t index)
+{
+	if (index < 0 || index >= static_cast<int64_t>(s->axisLabels.size())) return "";
+	return s->axisLabels[static_cast<size_t>(index)].c_str();
 }
 
 const char *ce_session_button_mnemonics(const ce_session *s)
