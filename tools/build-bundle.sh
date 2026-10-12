@@ -75,10 +75,16 @@ cp -r "$root"/build/Tools/. "$out/Tools/" 2>/dev/null || true
 
 if [ "$platform" = "windows" ]; then
 	cp "$native_dir"/*.dll "$out/dll/"
+	mcp_program="chimera-mcp.exe"
 else
 	cp "$root"/build/dll/*.so "$out/dll/" 2>/dev/null || true
 	cp "$root/build/ChimeraMono.sh" "$out/" 2>/dev/null || true
+	mcp_program="chimera-mcp"
 fi
+# chimera-mcp: the program a person's AI agent starts to reach the Chimera they
+# have open (docs/mcp-server.md; Tools > MCP Server... shows the command that
+# names it). It goes beside the engine's library, where that command looks.
+cp "$native_dir/$mcp_program" "$out/dll/"
 
 # No list of cores goes in: Chimera downloads nothing and knows of no core it
 # has not been given (docs/core-manager.md). Cores/ ships empty, and what a user
@@ -127,6 +133,7 @@ for z in "$out"/Cores/*.chimeraCore; do
 	python3 -c "import sys,zipfile; zipfile.ZipFile(sys.argv[1]).testzip()" "$z" || { echo "CORRUPT: $z" >&2; bad=1; }
 done
 [ -s "$out/LICENSES.md" ] || { echo "MISSING: LICENSES.md" >&2; bad=1; }
+[ -s "$out/dll/$mcp_program" ] || { echo "MISSING: dll/$mcp_program (Tools > MCP Server... names it)" >&2; bad=1; }
 [ -d "$out/Cores" ] || { echo "MISSING: Cores/ (the folder a user puts core packages in)" >&2; bad=1; }
 [ ! -e "$out/official-cores.json" ] || { echo "PRESENT: official-cores.json (the bundle carries no list of cores)" >&2; bad=1; }
 # Chimera reaches for nothing over the network, so nothing that could is shipped

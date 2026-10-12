@@ -111,6 +111,10 @@ Core packages published before the split are kept in the
 release, named by SHA1. It no longer grows - each core archives its own now -
 but movies recorded then still cite packages in it.
 
+## Working with an AI agent
+
+An AI agent (Claude Code, or any program that speaks MCP) can look at the project you have open and, if you allow it, edit it. Start the server from **Tools > MCP Server...**, which also shows the command that sets the agent up; it is off until you start it, and nothing leaves your machine. See [docs/mcp-server.md](docs/mcp-server.md).
+
 ## Building
 
 The canonical build is Linux-hosted and meson-mediated, and produces the artifacts for both operating systems: the managed frontend is built once (platform-neutral IL, .NET Framework on Windows / Mono on Linux), and every native library is built twice: gcc for Linux, mingw-w64 cross for Windows. Clone with `--recursive`; the repository contains no precompiled binaries, and

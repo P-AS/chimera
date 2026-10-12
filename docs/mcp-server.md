@@ -24,8 +24,10 @@ Built so far:
 - Two command-line flags for runs nobody clicks in: `--mcp-server` and
   `--mcp-allow-changes`.
 
+- `chimera-mcp` is in the Linux and Windows release bundles, in `dll/`, where
+  the dialog's set-up command points.
+
 Not built yet: `watch`, `advance_until`, and the windowless mode.
-`chimera-mcp` is built with Chimera but is not in the release bundles yet.
 
 On Windows: the same test that edits a movie in the window was run against
 the Windows build of Chimera, started with no window shown, and passed. The
@@ -284,8 +286,9 @@ It downloads nothing. Games and firmware are the user's own files.
 5. The windowless mode and its file limits.
 6. Release bundles, README, a note for the website.
 
-`chimera-mcp` ships in the release bundles once step 6 is reached and its
-tests pass, not before.
+The owner changed the order on 2026-10-12, once the window mode was complete
+and tested on both systems: `chimera-mcp` ships in the release bundles now,
+and the convenience tools and the windowless mode follow.
 
 ## Not planned
 

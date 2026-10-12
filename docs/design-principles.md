@@ -6743,3 +6743,31 @@ made to mean "different" and the addresses listed one too high, both checks
 failed. The interface is unchanged; its tests were run again against the new
 engine library and none failed (1,066). On Windows the engine compiles,
 `test_mcp.exe` passes and the same checks pass against the Windows programs.
+
+## The MCP server ships with the window mode (user-decided, 2026-10-12)
+
+The owner's earlier decision was that `chimera-mcp` goes into the release
+bundles once it is tested. With the window mode complete - an agent looks at
+the open project, searches RAM and, when allowed, changes it - he decided to
+ship that now, and to build the two convenience tools (`watch`,
+`advance_until`) and the windowless mode after. He also confirmed the two
+command-line flags, `--mcp-server` and `--mcp-allow-changes`, as documented
+flags.
+
+What changed: `tools/build-bundle.sh` copies `chimera-mcp` (`.exe` on
+Windows) into the bundle's `dll/` folder, beside the engine's library, and
+fails the bundle when it is missing. That folder is where Tools > MCP
+Server... says the program is. The README has a short section.
+
+What was measured: both bundles were built from the existing build
+(`--skip-natives`) and passed the script's own check. The Linux bundle's
+`chimera-mcp` lists its tools and answers a call with "not started". The
+Windows bundle was copied to a folder of its own with the synthetic core
+added, Chimera.exe started there with no window shown, and the agent's test
+of changes in the window passed through that bundle's `dll\chimera-mcp.exe`.
+The Windows program needs no library that is not part of Windows. No engine
+or interface code changed, so the other tests were not run again.
+
+Not known: whether a second program in the Windows zip changes what
+antivirus software says of it (an earlier false alarm is on record,
+2026-10-07). Nobody has opened the dialog on Windows.
