@@ -242,10 +242,26 @@ check("search_start says a bus cannot be searched", error and "bus" in text)
 error, text, _ = call("search_filter", op="about")
 check("search_filter names the comparisons it knows", error and "not_equal" in text)
 
+# watch: values named once and told with every answer that lands on a frame
+steps_now = struct.unpack("<I", ram[4:8])[0]
+watched = facts("watch", watches=[{"name": "steps", "property": "Steps"},
+                                  {"domain": "RAM", "address": 4, "type": "u32"},
+                                  {"domain": "NO SUCH", "address": 0}]).get("watches", [])
+check("watch answers with the values now: a property as it reads, memory as a number",
+      watched[:2] == [{"name": "steps", "value": str(steps_now)}, {"name": "RAM 0x4 u32", "value": steps_now}])
+check("a watch that cannot be read says why and does not spoil the others",
+      len(watched) == 3 and watched[2]["name"] == "NO SUCH 0x0 u8" and "NO SUCH" in watched[2].get("error", ""))
+check("status carries the watches", facts("status").get("watches") == watched)
+error, text, _ = call("watch", watches=[{"address": 4}])
+check("a watch with nothing to read is refused", error and "Watch 1" in text)
+check("the refused list replaced nothing", facts("status").get("watches") == watched)
+check("an empty list ends watching", facts("watch", watches=[]).get("watches") == [] and "watches" not in facts("status"))
+
 if not changes:
     # nobody allowed changes: each tool that changes something says how they are allowed
     for tool, arguments in (("add_marker", {"frame": 1, "text": "x"}), ("set_buttons", {"frame": 0, "buttons": {"P1 A": True}}),
-                            ("seek", {"frame": 0}), ("write_memory", {"domain": "RAM", "address": 0, "values": [1]})):
+                            ("seek", {"frame": 0}), ("write_memory", {"domain": "RAM", "address": 0, "values": [1]}),
+                            ("advance_until", {"property": "Steps", "op": "changed"})):
         error, text, _ = call(tool, **arguments)
         check("%s is refused while changes are not allowed" % tool, error and "Allow the agent to make changes" in text)
     check("refused changes changed nothing", facts("get_input", count=1000)["entries"] == movie
@@ -296,6 +312,39 @@ if mode == "window-changes":
     check("the new branch has its note", len(notes) == 2 and notes[1] == "made by the witness")
     error, text, _ = call("load_branch", number=7)
     check("load_branch refuses a branch that does not exist", error and "between 1 and 2" in text)
+    # watched values come with a seek, and advance_until plays until a value meets a condition
+    steps = {"domain": "RAM", "address": 4, "type": "u32"}
+    facts("watch", watches=[dict(steps, name="steps")])
+    start = facts("seek", frame=0)
+    at_start = facts("read_memory", count=1, **steps)["values"][0]
+    check("a seek's answer carries the watched value", start.get("watches") == [{"name": "steps", "value": at_start}])
+    until = facts("advance_until", op="greater", value=3, **steps)
+    check("advance_until stops on the frame where the value first meets the condition",
+          until.get("met") is True and until.get("stopped_at") == "condition" and until.get("frame", 0) > 0
+          and until.get("frames_played") == until.get("frame") and until.get("watches", [{}])[0].get("value", 0) > 3)
+    check("and status agrees on the frame", facts("status").get("frame") == until.get("frame"))
+    check("one frame earlier the value did not meet it yet",
+          facts("seek", frame=until.get("frame", 1) - 1).get("watches", [{}])[0].get("value", 99) <= 3)
+    facts("seek", frame=0)
+    changed = facts("advance_until", property="Steps", op="changed")
+    check("advance_until with 'changed' stops when a property first differs",
+          changed.get("met") is True and changed.get("watches", [{}])[0].get("value") != at_start)
+    facts("seek", frame=0)
+    limit = facts("advance_until", op="equal", value=999999, max_frames=5, **steps)
+    check("advance_until stops after max_frames when the condition is never met",
+          limit.get("met") is False and limit.get("stopped_at") == "max_frames" and limit.get("frame") == 5 and limit.get("frames_played") == 5)
+    facts("seek", frame=last - 2)
+    ended = facts("advance_until", op="equal", value=999999, **steps)
+    check("advance_until stops at the movie's end", ended.get("met") is False and ended.get("stopped_at") == "movie_end" and ended.get("frame") == last)
+    error, text, _ = call("advance_until", op="equal", value=999999, **steps)
+    check("at the movie's end advance_until says there is nothing left to play", error and "movie's end" in text)
+    error, text, _ = call("advance_until", domain="NO SUCH", address=0, op="equal", value=1)
+    check("advance_until names a value it cannot read", error and "NO SUCH" in text)
+    error, text, _ = call("advance_until", property="Test.Name", op="greater", value=1)
+    check("advance_until takes a value that is not a number only for 'changed'", error and "'changed'" in text)
+    facts("watch", watches=[])
+    check("with watching ended, a seek's answer carries no watches", "watches" not in facts("seek", frame=3))
+
     # the playback position: back, then to the end again - and after all of the above the
     # machine at the movie's last frame holds the reference memory
     check("seek goes back to a frame", facts("seek", frame=10).get("frame") == 10 and facts("status").get("frame") == 10)
@@ -344,6 +393,8 @@ if changes:
     if not window:
         error, text, _ = call("add_marker", frame=1, text="x")
         check("a change the window makes is handed to the frontend", error and "window" in text)
+        error, text, _ = call("advance_until", property="Steps", op="changed")
+        check("advance_until needs the window too", error and "window" in text)
 
 agent.stdin.close()
 agent.wait()

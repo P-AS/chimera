@@ -28,6 +28,18 @@ namespace Chimera.Client.Common
 
 		/// <summary>Loads the branch of that number, counted from 1, as the Branches box does.</summary>
 		void LoadBranch(int number);
+
+		/// <summary>
+		/// advance_until: has the engine take the condition from the tool's arguments. False with the
+		/// reason when it is not understood or the value cannot be read.
+		/// </summary>
+		bool SetCondition(string argumentsJson, out string why);
+
+		/// <summary>Whether that condition is met on the frame the machine is on.</summary>
+		bool ConditionMet { get; }
+
+		/// <summary>Starts playing forward to a frame, to stop earlier when the condition is met.</summary>
+		void PlayUntil(int frame);
 	}
 
 	/// <summary>
@@ -47,8 +59,8 @@ namespace Chimera.Client.Common
 
 		/// <summary>
 		/// Runs one tool. <paramref name="isError"/> is true when the text is a refusal. Null is
-		/// returned for the one tool whose answer comes later: seek, which the caller answers with
-		/// <see cref="SeekAnswer"/> once the window has stopped moving.
+		/// returned for the two tools whose answer comes later, once the window has stopped moving:
+		/// seek (answered with <see cref="SeekAnswer"/>) and advance_until (<see cref="UntilAnswer"/>).
 		/// </summary>
 		/// <param name="movie">the open project's movie, or null when none is open</param>
 		/// <param name="window">the window that holds it, or null when there is none</param>
@@ -88,6 +100,8 @@ namespace Chimera.Client.Common
 						return AddMarker(movie, arguments, out isError);
 					case "seek":
 						return Seek(movie, window, arguments, out isError);
+					case "advance_until":
+						return AdvanceUntil(movie, window, arguments, argumentsJson, out isError);
 					case "save_branch":
 						return SaveBranch(window, arguments, out isError);
 					case "load_branch":
@@ -110,6 +124,27 @@ namespace Chimera.Client.Common
 			return isError
 				? $"The playback position stopped on frame {window.Frame}, not on frame {asked}: the seek was interrupted."
 				: new JObject { ["frame"] = window.Frame }.ToString(Formatting.None);
+		}
+
+		/// <summary>
+		/// The answer to advance_until, once the window has stopped: where the machine is, whether the
+		/// condition is met there, and what stopped the playing.
+		/// </summary>
+		/// <param name="start">the frame the playing began on</param>
+		/// <param name="target">the frame it was to stop on at the latest</param>
+		public static string UntilAnswer(IMcpWindow window, ITasMovie movie, int start, int target)
+		{
+			var met = window.ConditionMet;
+			return new JObject
+			{
+				["frame"] = window.Frame,
+				["met"] = met,
+				["frames_played"] = window.Frame - start,
+				["stopped_at"] = met ? "condition"
+					: window.Frame >= movie.InputLogLength ? "movie_end"
+					: window.Frame >= target ? "max_frames"
+					: "interrupted",
+			}.ToString(Formatting.None);
 		}
 
 		private static string Refuse(string why, out bool isError)
@@ -304,6 +339,24 @@ namespace Chimera.Client.Common
 			if (window.Frame == frame) return new JObject { ["frame"] = frame }.ToString(Formatting.None);
 			window.SeekTo(frame);
 			// answered when the window has arrived: McpHostTools.SeekAnswer
+			return null;
+		}
+
+		private static string? AdvanceUntil(ITasMovie movie, IMcpWindow? window, JObject arguments, string argumentsJson, out bool isError)
+		{
+			isError = false;
+			if (window is null) return Refuse("TAStudio is not open, so the movie cannot be played.", out isError);
+			if (!Number(arguments, "max_frames", 1, MostFrames, 600, out var most)) return Refuse($"'max_frames' must be between 1 and {MostFrames}.", out isError);
+			// what the condition means is the engine's: it reads the arguments itself
+			if (!window.SetCondition(argumentsJson, out var why)) return Refuse(why, out isError);
+			var start = window.Frame;
+			if (window.ConditionMet) return UntilAnswer(window, movie, start, start);
+			if (start >= movie.InputLogLength)
+			{
+				return Refuse($"The playback position is at the movie's end, frame {movie.InputLogLength}, so there is nothing left to play.", out isError);
+			}
+			window.PlayUntil(Math.Min(movie.InputLogLength, start + most));
+			// answered when the window has stopped: McpHostTools.UntilAnswer
 			return null;
 		}
 

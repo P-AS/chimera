@@ -170,7 +170,7 @@ namespace Chimera.Tests.Client.GUI
 							out var id, out var tool, out var arguments))
 						{
 							var text = McpHostTools.Run(null, null, tool, arguments, out var isError);
-							EngineMcp.Answer(id, text ?? "", isError);
+							EngineMcp.Answer(System.IntPtr.Zero, id, text ?? "", isError);
 						}
 						System.Threading.Thread.Sleep(2);
 					}

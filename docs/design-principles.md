@@ -6771,3 +6771,49 @@ or interface code changed, so the other tests were not run again.
 Not known: whether a second program in the Windows zip changes what
 antivirus software says of it (an earlier false alarm is on record,
 2026-10-07). Nobody has opened the dialog on Windows.
+
+## Two tools that save an agent its round trips: watch and advance_until (2026-10-12)
+
+Every call an agent makes costs it time and money. Finding "the frame on
+which the score first goes up" by seeking a frame and reading memory, again
+and again, is two calls a frame. Two tools of the MCP server
+(docs/mcp-server.md) make it one call:
+
+- **`watch`** names up to 32 values, each a place in memory or a game core's
+  property. From then on every answer that lands the machine on a frame -
+  `status`, `seek`, `advance_until`, `load_branch` - carries their values.
+  The engine reads them when the answer is given, so the frontend's answer
+  to a seek needs no knowledge of what is watched: it hands the engine the
+  machine with its answer (`ce_mcp_answer` takes it now).
+- **`advance_until`** plays the movie forward and stops on the first frame
+  where a value meets a condition: equal, not equal, greater, less, or
+  "changed" since the start. The window does the playing, because the
+  playback position is its own; what the condition means is the engine's
+  (`ce_mcp_condition_set`, `ce_mcp_condition_met`), asked after every frame.
+  It is the same seek TAStudio makes, stopped early.
+- **It plays the movie's own input and never past its end.** Playing past
+  the end adds frames to the movie; a tool that only waits for something to
+  happen must not lengthen it. It answers what stopped it: the condition, the
+  movie's end, the limit of frames, or a person.
+- **A value that cannot be read does not spoil the rest.** A watch on an
+  address that does not exist carries a sentence in place of its value, and
+  the other watches are still told.
+- **`advance_until` counts as a change**, like `seek`: it moves the playback
+  position, so it needs the tick box. `watch` only reads.
+
+What was measured, on Linux. The engine's tests 23 of 23. The interface
+tests: 0 failed of 1,067 (24 skipped), one new, for what `advance_until`
+asks of the window and what it answers for each way of stopping. The test of
+the whole product: 85 of 85, with the four checks that use the server made
+longer. All four set watches (a property, a memory value, and one that
+cannot be read), and require `status` to carry them and an empty list to end
+them. The one that edits in the real window also requires a seek's answer to
+carry the watched value; `advance_until` to stop on the first frame where the
+step counter is above 3, and the counter to be 3 or less one frame earlier;
+"changed" to stop when a property first differs; the frame limit and the
+movie's end each to stop it and be named; and a value that cannot be read, or
+is not a number, to be refused. With the code broken on purpose (a seek
+carrying no watches, "changed" never met, every watched number one too high,
+the window never asking the engine, the limit called the movie's end) the new
+interface test and all four checks failed. On Windows the engine compiles and
+`test_mcp.exe` passes; the tools themselves were not run there this time.

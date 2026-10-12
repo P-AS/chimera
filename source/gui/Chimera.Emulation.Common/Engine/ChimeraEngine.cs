@@ -628,7 +628,13 @@ namespace Chimera.Emulation.Common.Engine
 			ref ulong idOut, ref IntPtr toolOut, ref IntPtr argumentsOut);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
-		public abstract void ce_mcp_answer(ulong id, string text, int isError);
+		public abstract void ce_mcp_answer(IntPtr session, ulong id, string text, int isError);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_mcp_condition_set(IntPtr session, string argumentsJson, ref IntPtr errorOut);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_mcp_condition_met(IntPtr session);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract ulong ce_mcp_log_total();

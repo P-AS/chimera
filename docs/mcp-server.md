@@ -16,18 +16,20 @@ Built so far:
   `get_property`, `list_branches`, `list_markers`.
 - RAM search, the agent's own: `search_start`, `search_filter`,
   `search_results`, `search_undo`.
+- `watch`: values named once and told with every answer that lands on a
+  frame.
 - The tools that change things, refused until the tick box is ticked: `seek`,
   `set_input`, `set_buttons`, `insert_frames`, `delete_frames`, `undo`,
-  `save_branch`, `load_branch`, `add_marker`, `write_memory`, `set_property`,
-  `set_register`. A branch of the movie as it was is saved before the first
-  of them.
+  `advance_until`, `save_branch`, `load_branch`, `add_marker`,
+  `write_memory`, `set_property`, `set_register`. A branch of the movie as it
+  was is saved before the first of them.
 - Two command-line flags for runs nobody clicks in: `--mcp-server` and
   `--mcp-allow-changes`.
 
 - `chimera-mcp` is in the Linux and Windows release bundles, in `dll/`, where
   the dialog's set-up command points.
 
-Not built yet: `watch`, `advance_until`, and the windowless mode.
+Not built yet: the windowless mode.
 
 On Windows: the same test that edits a movie in the window was run against
 the Windows build of Chimera, started with no window shown, and passed. The
@@ -151,7 +153,7 @@ Looking:
 | `registers` | The CPU registers, where the core gives them. |
 | `list_properties` / `get_property` | A game core's named values (docs/game-cores.md). |
 | `list_branches` / `list_markers` | The project's branches and markers. |
-| `watch` | Names some addresses or properties; `seek` and `advance_until` then return their values every time. |
+| `watch` | Names up to 32 memory values or properties; `status`, `seek`, `advance_until` and `load_branch` then carry their values every time. An empty list ends it. |
 
 RAM search (the agent's own search, separate from the RAM Search window):
 
@@ -173,6 +175,7 @@ Changes:
 | Tool | What it does |
 | --- | --- |
 | `seek` | Moves the playback position to a frame, back or forward, and answers when the machine is there. |
+| `advance_until` | Plays the movie forward until a memory value or a property meets a condition (equal, greater, changed, ...) and stops on that frame. It stops at the movie's end or after `max_frames` otherwise, and says which. |
 | `set_input` | Replaces the input from a frame on, one line a frame as `get_input` returns them. Past the movie's end it adds frames. |
 | `set_buttons` | Presses or releases buttons, and sets axes, by name over a range of frames. Controls not named keep what they had. |
 | `insert_frames` / `delete_frames` | Changes the movie's length at a frame. |
@@ -184,8 +187,9 @@ Changes:
 Each call that edits the input is one step in TAStudio's undo history, named
 "Agent: ...", so a person can undo an agent's edit as they undo their own.
 
-Not built yet: `advance_until` (play forward until a memory value meets a
-condition).
+`advance_until` plays the movie's own input and never past its end, so it
+adds no frames. With `watch` it answers "on which frame does this value first
+become that" in one call instead of one call a frame.
 
 Without a window only (second part of the work):
 

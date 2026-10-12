@@ -239,8 +239,8 @@ chimera::McpResult callThroughServer(chimera::McpLink &link, const char *tool, c
 		if (ce_mcp_pending() != 0 && ce_mcp_service(nullptr, nullptr, -1, "{\"project\":\"the test\"}", &id, &name, &args) != 0)
 		{
 			if (hostTool != nullptr) *hostTool += std::string(hostTool->empty() ? "" : " | ") + name + " " + args;
-			if (std::strcmp(name, "keep_work") == 0) ce_mcp_answer(id, refuseToKeep ? "the disk is full" : "branch 3", refuseToKeep ? 1 : 0);
-			else ce_mcp_answer(id, answerHost != nullptr ? answerHost : "", 0);
+			if (std::strcmp(name, "keep_work") == 0) ce_mcp_answer(nullptr, id, refuseToKeep ? "the disk is full" : "branch 3", refuseToKeep ? 1 : 0);
+			else ce_mcp_answer(nullptr, id, answerHost != nullptr ? answerHost : "", 0);
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}

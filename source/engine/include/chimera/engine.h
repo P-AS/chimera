@@ -1972,8 +1972,23 @@ CE_API int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t fr
 	uint64_t *id_out, const char **tool_out, const char **arguments_out);
 /* The frontend's answer to a call ce_mcp_service handed it: text for the
  * agent (JSON by convention), and whether it is a refusal. An id that is not
- * waiting for an answer is ignored. */
-CE_API void ce_mcp_answer(uint64_t id, const char *text, int32_t is_error);
+ * waiting for an answer is ignored. `s` is the open machine as it is now, or
+ * NULL: an answer that lands the machine on a frame (seek, advance_until,
+ * load_branch) has the values the agent asked to watch read from it and
+ * added. */
+CE_API void ce_mcp_answer(ce_session *s, uint64_t id, const char *text, int32_t is_error);
+
+/* advance_until: play forward until a value meets a condition. The frontend
+ * does the playing, because the playback position is its own; what the
+ * condition means is the engine's.
+ * _set: takes the tool's arguments as they came (the value to read, the
+ * comparison, what to compare with) and remembers the value as it is now.
+ * 1 when the condition is understood and the value can be read; 0 with
+ * *error_out (static per-thread) saying why not.
+ * _met: asked after each frame played. 1 met, 0 not yet, -1 when no
+ * condition is set or the value can no longer be read. */
+CE_API int32_t ce_mcp_condition_set(ce_session *s, const char *arguments_json, const char **error_out);
+CE_API int32_t ce_mcp_condition_met(ce_session *s);
 
 /* The log: one line a call, and a line for each start, stop, connection and
  * change of what is allowed. _total counts every line since the process

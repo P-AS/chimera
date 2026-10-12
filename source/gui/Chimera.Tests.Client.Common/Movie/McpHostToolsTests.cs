@@ -96,6 +96,22 @@ namespace Chimera.Tests.Client.Common.Movie
 			}
 
 			public void LoadBranch(int number) => Loaded = number;
+
+			/// <summary>What <see cref="SetCondition"/> answers; null accepts the condition.</summary>
+			public string? ConditionRefusal;
+			public string? ConditionGiven;
+			public int PlayingTo = -1;
+
+			public bool SetCondition(string argumentsJson, out string why)
+			{
+				ConditionGiven = argumentsJson;
+				why = ConditionRefusal ?? "";
+				return ConditionRefusal is null;
+			}
+
+			public bool ConditionMet { get; set; }
+
+			public void PlayUntil(int frame) => PlayingTo = frame;
 		}
 
 		/// <summary>A movie of that many empty frames with nothing in its undo history (making it is a step, otherwise).</summary>
@@ -279,6 +295,62 @@ namespace Chimera.Tests.Client.Common.Movie
 			Assert.AreEqual(10, (int) JObject.Parse("{\"frame\":10}")["frame"]!);
 			Assert.IsNull(McpHostTools.Run(movie, window, "seek", "{\"frame\":10}", out _));
 			StringAssert.Contains(Refused(movie, "seek", "{\"frame\":3}"), "TAStudio is not open");
+		}
+
+		[TestMethod]
+		public void AdvanceUntilPlaysToTheLimitOrTheMoviesEndAndSaysWhatStoppedIt()
+		{
+			var movie = Fresh(10);
+			FakeWindow window = new() { Frame = 2 };
+			const string Condition = "{\"domain\":\"RAM\",\"address\":4,\"op\":\"greater\",\"value\":3,\"max_frames\":5}";
+
+			// the engine is given the arguments as they came, and the window plays to the limit
+			Assert.IsNull(McpHostTools.Run(movie, window, "advance_until", Condition, out var isError));
+			Assert.IsFalse(isError);
+			Assert.AreEqual(Condition, window.ConditionGiven);
+			Assert.AreEqual(7, window.PlayingTo);
+
+			// stopped because the condition was met
+			window.Frame = 4;
+			window.ConditionMet = true;
+			var answer = JObject.Parse(McpHostTools.UntilAnswer(window, movie, start: 2, target: 7));
+			Assert.AreEqual(4, (int) answer["frame"]!);
+			Assert.IsTrue((bool) answer["met"]!);
+			Assert.AreEqual(2, (int) answer["frames_played"]!);
+			Assert.AreEqual("condition", (string) answer["stopped_at"]!);
+			// stopped at the limit, at the movie's end, or by a person
+			window.ConditionMet = false;
+			window.Frame = 7;
+			Assert.AreEqual("max_frames", (string) JObject.Parse(McpHostTools.UntilAnswer(window, movie, 2, 7))["stopped_at"]!);
+			window.Frame = 10;
+			Assert.AreEqual("movie_end", (string) JObject.Parse(McpHostTools.UntilAnswer(window, movie, 2, 10))["stopped_at"]!);
+			window.Frame = 5;
+			Assert.AreEqual("interrupted", (string) JObject.Parse(McpHostTools.UntilAnswer(window, movie, 2, 7))["stopped_at"]!);
+
+			// without max_frames the limit is 600 frames, and never past the movie's end
+			window.Frame = 2;
+			window.PlayingTo = -1;
+			Assert.IsNull(McpHostTools.Run(movie, window, "advance_until", "{\"property\":\"Steps\",\"op\":\"changed\"}", out _));
+			Assert.AreEqual(10, window.PlayingTo);
+
+			// met already: answered at once, and nothing is played
+			window.PlayingTo = -1;
+			window.ConditionMet = true;
+			answer = Ok(movie, "advance_until", Condition, window);
+			Assert.AreEqual(0, (int) answer["frames_played"]!);
+			Assert.IsTrue((bool) answer["met"]!);
+			Assert.AreEqual(-1, window.PlayingTo);
+			window.ConditionMet = false;
+
+			// what the engine says of a condition it cannot use is what the agent is told
+			window.ConditionRefusal = "There is no domain or bus called 'NOPE'.";
+			Assert.AreEqual(window.ConditionRefusal, Refused(movie, "advance_until", Condition, window));
+			window.ConditionRefusal = null;
+			// at the movie's end there is nothing to play; with no window, nothing to play it in
+			window.Frame = 10;
+			StringAssert.Contains(Refused(movie, "advance_until", Condition, window), "movie's end");
+			StringAssert.Contains(Refused(movie, "advance_until", Condition), "TAStudio is not open");
+			Refused(movie, "advance_until", "{\"property\":\"Steps\",\"op\":\"changed\",\"max_frames\":0}", window);
 		}
 
 		[TestMethod]

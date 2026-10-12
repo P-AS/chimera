@@ -73,8 +73,27 @@ namespace Chimera.Emulation.Common.Engine
 			return handed;
 		}
 
-		public static void Answer(ulong id, string text, bool isError)
-			=> ChimeraEngine.Instance.ce_mcp_answer(id, text, isError ? 1 : 0);
+		/// <summary>
+		/// Answers a call <see cref="Service"/> handed over. <paramref name="session"/> is the open machine as it
+		/// is now, or zero: the engine reads the values the agent asked to watch from it.
+		/// </summary>
+		public static void Answer(IntPtr session, ulong id, string text, bool isError)
+			=> ChimeraEngine.Instance.ce_mcp_answer(session, id, text, isError ? 1 : 0);
+
+		/// <summary>
+		/// advance_until: gives the engine the tool's arguments, which say what to read and what to compare it
+		/// with. False with the engine's reason when it cannot be understood or read.
+		/// </summary>
+		public static bool SetCondition(IntPtr session, string argumentsJson, out string error)
+		{
+			var reason = IntPtr.Zero;
+			var ok = ChimeraEngine.Instance.ce_mcp_condition_set(session, argumentsJson, ref reason) is not 0;
+			error = ok ? "" : ChimeraEngine.PtrToStringUtf8(reason) ?? "the condition was not understood";
+			return ok;
+		}
+
+		/// <summary>Whether the condition is met on the frame the machine is on now. Asked after each frame played.</summary>
+		public static bool ConditionMet(IntPtr session) => ChimeraEngine.Instance.ce_mcp_condition_met(session) is 1;
 
 		/// <summary>How many log lines were ever written; the engine keeps the last 5000.</summary>
 		public static ulong LogTotal => ChimeraEngine.Instance.ce_mcp_log_total();

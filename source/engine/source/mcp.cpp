@@ -89,6 +89,22 @@ const McpTool kTools[] = {
 	  "\"name\":{\"type\":\"string\"}"
 	  "},\"required\":[\"name\"],\"additionalProperties\":false}",
 	  false, false },
+	{ "watch",
+	  "Names values to be told with every answer that lands the machine on a frame: status, seek, advance_until and "
+	  "load_branch then carry a 'watches' list, which saves a read_memory call after each. Each watch is a memory value "
+	  "(domain, address, type) or a game core's property. The list given replaces the one before; an empty list ends "
+	  "watching. Answers with the values now. At most 32.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"watches\":{\"type\":\"array\",\"maxItems\":32,\"items\":{\"type\":\"object\",\"properties\":{"
+	  "\"name\":{\"type\":\"string\",\"description\":\"What to call it in the answers. Made up from the rest when left out.\"},"
+	  "\"domain\":{\"type\":\"string\",\"description\":\"A domain or bus from list_memory. Give this with 'address', or give 'property'.\"},"
+	  "\"address\":{\"type\":\"integer\",\"minimum\":0},"
+	  "\"type\":{\"type\":\"string\",\"enum\":[\"u8\",\"s8\",\"u16\",\"s16\",\"u32\",\"s32\"],\"description\":\"u8 when left out.\"},"
+	  "\"big_endian\":{\"type\":\"boolean\",\"description\":\"false when left out.\"},"
+	  "\"property\":{\"type\":\"string\",\"description\":\"A game core's named value, in place of domain and address.\"}"
+	  "},\"additionalProperties\":false}}"
+	  "},\"required\":[\"watches\"],\"additionalProperties\":false}",
+	  false, false },
 	{ "search_start",
 	  "Starts a RAM search over a memory domain: every address becomes a candidate, and its value now is remembered as its "
 	  "'previous' value. Then change something in the game (seek, or let the person play) and narrow the candidates with "
@@ -136,6 +152,22 @@ const McpTool kTools[] = {
 	  "{\"type\":\"object\",\"properties\":{"
 	  "\"frame\":{\"type\":\"integer\",\"minimum\":0}"
 	  "},\"required\":[\"frame\"],\"additionalProperties\":false}",
+	  true, true },
+	{ "advance_until",
+	  "Plays the movie forward from the frame the machine is on until a value meets a condition, and stops there. "
+	  "The value is a memory value (domain, address, type) or a game core's property. 'op' compares it with 'value'; "
+	  "the op 'changed' needs no value and stops when it differs from what it was at the start. It stops at the movie's "
+	  "end or after max_frames if the condition is never met, and says which.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"domain\":{\"type\":\"string\",\"description\":\"A domain or bus from list_memory. Give this with 'address', or give 'property'.\"},"
+	  "\"address\":{\"type\":\"integer\",\"minimum\":0},"
+	  "\"type\":{\"type\":\"string\",\"enum\":[\"u8\",\"s8\",\"u16\",\"s16\",\"u32\",\"s32\"],\"description\":\"u8 when left out.\"},"
+	  "\"big_endian\":{\"type\":\"boolean\",\"description\":\"false when left out.\"},"
+	  "\"property\":{\"type\":\"string\",\"description\":\"A game core's named value, in place of domain and address.\"},"
+	  "\"op\":{\"type\":\"string\",\"enum\":[\"equal\",\"not_equal\",\"greater\",\"greater_or_equal\",\"less\",\"less_or_equal\",\"changed\"]},"
+	  "\"value\":{\"type\":\"number\",\"description\":\"What to compare with. Not needed for 'changed'.\"},"
+	  "\"max_frames\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":100000,\"description\":\"The most frames to play. 600 when left out.\"}"
+	  "},\"required\":[\"op\"],\"additionalProperties\":false}",
 	  true, true },
 	{ "set_input",
 	  "Replaces the movie's input from a frame on, one line a frame in the form get_input returns. "
@@ -559,6 +591,20 @@ McpResult McpLink::call(const std::string &tool, const std::string &argumentsJso
 namespace
 {
 
+/* A value of the machine an agent names: a place in memory, or a game core's
+ * property. What `watch` lists and what advance_until's condition reads. */
+struct Source
+{
+	std::string name;
+	bool isProperty = false;
+	std::string property;
+	std::string domain;
+	int64_t address = 0;
+	int width = 1;
+	bool isSigned = false;
+	bool bigEndian = false;
+};
+
 struct WaitingCall
 {
 	uint64_t id = 0;
@@ -597,6 +643,14 @@ struct Service
 	/* The agent's RAM search. It reads the machine's memory through a pointer,
 	 * so what it was started on is remembered and checked before every use:
 	 * the caller of ce_mcp_service's alone, like the machine. */
+	std::vector<Source> watches;
+	/* advance_until's condition, set by the frontend when it begins to play
+	 * and asked once per frame until it is met */
+	bool conditionSet = false;
+	Source conditionSource;
+	int conditionOp = 0;               /* 0 ==, 1 >, 2 >=, 3 <, 4 <=, 5 !=, 6 changed */
+	double conditionValue = 0;
+	std::string conditionStart;        /* the value at the start, as text, for "changed" */
 	ce_ramsearch *search = nullptr;
 	std::string searchDomain;
 	const uint8_t *searchBase = nullptr;
@@ -1191,6 +1245,176 @@ McpResult toolSetRegister(ce_session *s, const cJSON *arguments)
 	return mcpError(std::string("There is no register called '") + nameItem->valuestring + "'. registers names them.");
 }
 
+double searchNumber(uint32_t raw, int size, bool isSigned)
+{
+	if (!isSigned) return raw;
+	return size == 1 ? static_cast<double>(static_cast<int8_t>(raw))
+		: size == 2 ? static_cast<double>(static_cast<int16_t>(raw))
+		: static_cast<double>(static_cast<int32_t>(raw));
+}
+
+/* ---- named values: watch, and advance_until's condition ---- */
+
+/* Reads what an agent named out of a tool's arguments. False with `why`. */
+bool parseSource(const cJSON *arguments, Source &source, std::string &why)
+{
+	const cJSON *property = cJSON_GetObjectItemCaseSensitive(arguments, "property");
+	const cJSON *domain = cJSON_GetObjectItemCaseSensitive(arguments, "domain");
+	const cJSON *name = cJSON_GetObjectItemCaseSensitive(arguments, "name");
+	if (cJSON_IsString(property) && domain == nullptr)
+	{
+		source.isProperty = true;
+		source.property = property->valuestring;
+		source.name = cJSON_IsString(name) ? name->valuestring : source.property;
+		return true;
+	}
+	if (!cJSON_IsString(domain) || property != nullptr)
+	{
+		why = "Give either 'domain' and 'address', or 'property'.";
+		return false;
+	}
+	const cJSON *typeItem = cJSON_GetObjectItemCaseSensitive(arguments, "type");
+	const std::string type = cJSON_IsString(typeItem) ? typeItem->valuestring : "u8";
+	if (type.size() < 2 || (type[0] != 'u' && type[0] != 's')
+		|| (type.substr(1) != "8" && type.substr(1) != "16" && type.substr(1) != "32"))
+	{
+		why = "'type' must be one of u8, s8, u16, s16, u32, s32.";
+		return false;
+	}
+	if (!integerArgument(arguments, "address", 0, INT64_MAX / 8, -1, source.address) || source.address < 0)
+	{
+		why = "'address' must be given with 'domain', and be 0 or more.";
+		return false;
+	}
+	source.domain = domain->valuestring;
+	source.isSigned = type[0] == 's';
+	source.width = type.substr(1) == "8" ? 1 : type.substr(1) == "16" ? 2 : 4;
+	source.bigEndian = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(arguments, "big_endian"));
+	char place[64];
+	std::snprintf(place, sizeof(place), " 0x%llX ", static_cast<unsigned long long>(source.address));
+	source.name = cJSON_IsString(name) ? name->valuestring : source.domain + place + type;
+	return true;
+}
+
+/* The value now: as text always, and as a number when it is one. False with
+ * `why` when it cannot be read (no such domain, past its end, no such
+ * property). */
+bool readSource(ce_session *s, const Source &source, std::string &text, bool &isNumber, double &number, std::string &why)
+{
+	isNumber = false;
+	if (source.isProperty)
+	{
+		if (ce_session_property_dynamic(s) != 0) ce_session_property_refresh(s);
+		uint32_t element = 0;
+		const int32_t index = ce_session_property_find(s, source.property.c_str(), &element);
+		if (index < 0)
+		{
+			why = "there is no property called '" + source.property + "'";
+			return false;
+		}
+		text = propertyText(s, index, element);
+		ce_property_value value;
+		std::memset(&value, 0, sizeof(value));
+		if (ce_session_property_get(s, index, element, &value) == 0)
+		{
+			isNumber = value.kind == CE_PROPERTY_INT || value.kind == CE_PROPERTY_UINT
+				|| value.kind == CE_PROPERTY_FLOAT || value.kind == CE_PROPERTY_BOOL;
+			number = value.kind == CE_PROPERTY_UINT ? static_cast<double>(value.u)
+				: value.kind == CE_PROPERTY_FLOAT ? value.f : static_cast<double>(value.i);
+		}
+		return true;
+	}
+	int32_t domainIndex = -1, busIndex = -1;
+	if (!findMemory(s, source.domain, domainIndex, busIndex))
+	{
+		why = "there is no domain or bus called '" + source.domain + "'";
+		return false;
+	}
+	uint8_t bytes[4] = { 0, 0, 0, 0 };
+	const int64_t got = domainIndex >= 0
+		? ce_session_domain_read(s, domainIndex, source.address, bytes, source.width)
+		: ce_session_bus_read(s, busIndex, source.address, bytes, source.width);
+	if (got != source.width)
+	{
+		why = "'" + source.domain + "' has no such address";
+		return false;
+	}
+	uint32_t raw = 0;
+	for (int b = 0; b < source.width; b++)
+	{
+		raw |= static_cast<uint32_t>(bytes[b]) << (8 * (source.bigEndian ? source.width - 1 - b : b));
+	}
+	number = searchNumber(raw, source.width, source.isSigned);
+	isNumber = true;
+	char digits[32];
+	std::snprintf(digits, sizeof(digits), "%.0f", number);
+	text = digits;
+	return true;
+}
+
+/* [{"name":..,"value":..}] for the watches, a value that cannot be read
+ * carrying "error" in place of "value". The caller owns the array. */
+cJSON *watchValues(Service &sv, ce_session *s)
+{
+	cJSON *list = cJSON_CreateArray();
+	for (const Source &watch : sv.watches)
+	{
+		cJSON *item = cJSON_CreateObject();
+		cJSON_AddStringToObject(item, "name", watch.name.c_str());
+		std::string text, why;
+		bool isNumber = false;
+		double number = 0;
+		if (!readSource(s, watch, text, isNumber, number, why)) cJSON_AddStringToObject(item, "error", why.c_str());
+		else if (isNumber && !watch.isProperty) cJSON_AddNumberToObject(item, "value", number);
+		else cJSON_AddStringToObject(item, "value", text.c_str());
+		cJSON_AddItemToArray(list, item);
+	}
+	return list;
+}
+
+/* The tools whose answer lands the machine on a frame carry the watches. */
+bool carriesWatches(const std::string &tool)
+{
+	return tool == "status" || tool == "seek" || tool == "advance_until" || tool == "load_branch";
+}
+
+/* Adds "watches" to an answer that is a JSON object. Anything else is left
+ * as it is. */
+std::string withWatches(Service &sv, ce_session *s, const std::string &text)
+{
+	if (s == nullptr || sv.watches.empty()) return text;
+	cJSON *object = cJSON_Parse(text.c_str());
+	if (!cJSON_IsObject(object))
+	{
+		cJSON_Delete(object);
+		return text;
+	}
+	cJSON_AddItemToObject(object, "watches", watchValues(sv, s));
+	std::string out = printJson(object);
+	cJSON_Delete(object);
+	return out;
+}
+
+McpResult toolWatch(Service &sv, ce_session *s, const cJSON *arguments)
+{
+	const cJSON *list = cJSON_GetObjectItemCaseSensitive(arguments, "watches");
+	if (!cJSON_IsArray(list) || cJSON_GetArraySize(list) > 32) return mcpError("'watches' must be a list of at most 32 values to watch.");
+	std::vector<Source> watches;
+	const cJSON *item = nullptr;
+	cJSON_ArrayForEach(item, list)
+	{
+		Source source;
+		std::string why;
+		if (!cJSON_IsObject(item) || !parseSource(item, source, why))
+			return mcpError("Watch " + std::to_string(watches.size() + 1) + ": " + (why.empty() ? "it must be an object." : why));
+		watches.push_back(source);
+	}
+	sv.watches = watches;
+	cJSON *out = cJSON_CreateObject();
+	cJSON_AddItemToObject(out, "watches", watchValues(sv, s));
+	return textResult(out);
+}
+
 /* ---- RAM search ---- */
 
 void dropSearch(Service &sv)
@@ -1218,14 +1442,6 @@ bool searchStands(Service &sv, ce_session *s)
 }
 
 const char kNoSearch[] = "No search is running. search_start begins one (a search ends when the project is closed).";
-
-double searchNumber(uint32_t raw, int size, bool isSigned)
-{
-	if (!isSigned) return raw;
-	return size == 1 ? static_cast<double>(static_cast<int8_t>(raw))
-		: size == 2 ? static_cast<double>(static_cast<int16_t>(raw))
-		: static_cast<double>(static_cast<int32_t>(raw));
-}
 
 McpResult toolSearchStart(Service &sv, ce_session *s, const cJSON *arguments)
 {
@@ -1348,7 +1564,18 @@ McpResult runWriteTool(Service &sv, const std::string &tool, ce_session *s, int6
 McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, const ce_movie_log *log,
 	int64_t frame, const char *hostStatus, const cJSON *arguments)
 {
-	if (tool == "status") return toolStatus(s, log, frame, hostStatus, sv.allowChanges.load(), sv.wroteMemoryAt);
+	if (tool == "status")
+	{
+		McpResult result = toolStatus(s, log, frame, hostStatus, sv.allowChanges.load(), sv.wroteMemoryAt);
+		if (s != nullptr && !sv.watches.empty())
+		{
+			cJSON *content = cJSON_Parse(result.content.c_str());
+			const cJSON *text = cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(content, 0), "text");
+			if (cJSON_IsString(text)) result.content = mcpTextContent(withWatches(sv, s, text->valuestring));
+			cJSON_Delete(content);
+		}
+		return result;
+	}
 	if (tool == "get_input") return toolGetInput(log, arguments);
 	/* a search whose memory is gone is dropped before anything else runs */
 	searchStands(sv, s);
@@ -1361,6 +1588,7 @@ McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, con
 	if (tool == "list_properties") return toolListProperties(s, arguments);
 	if (tool == "get_property") return toolGetProperty(s, arguments);
 	if (tool == "write_memory" || tool == "set_property" || tool == "set_register") return runWriteTool(sv, tool, s, frame, arguments);
+	if (tool == "watch") return toolWatch(sv, s, arguments);
 	if (tool == "search_start") return toolSearchStart(sv, s, arguments);
 	if (tool == "search_filter") return toolSearchFilter(sv, s, arguments);
 	if (tool == "search_results") return toolSearchResults(sv, s, arguments);
@@ -1427,6 +1655,8 @@ void ce_mcp_stop(void)
 	/* the agent's search ends with the server (this is the thread that runs
 	 * the machine, as every call of ce_mcp_service is) */
 	chimera::dropSearch(sv);
+	sv.watches.clear();
+	sv.conditionSet = false;
 	chimera::addLog(sv, "the server was stopped");
 }
 
@@ -1565,7 +1795,7 @@ int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t frame, co
 	}
 }
 
-void ce_mcp_answer(uint64_t id, const char *text, int32_t is_error)
+void ce_mcp_answer(ce_session *s, uint64_t id, const char *text, int32_t is_error)
 {
 	Service &sv = service();
 	std::lock_guard<std::mutex> hold(sv.lock);
@@ -1583,10 +1813,71 @@ void ce_mcp_answer(uint64_t id, const char *text, int32_t is_error)
 	const auto found = sv.withHost.find(id);
 	if (found == sv.withHost.end()) return;
 	chimera::McpResult result;
-	result.content = chimera::mcpTextContent(text != nullptr ? text : "");
+	std::string answer = text != nullptr ? text : "";
+	if (is_error == 0 && chimera::carriesWatches(found->second.tool)) answer = chimera::withWatches(sv, s, answer);
+	result.content = chimera::mcpTextContent(answer);
 	result.isError = is_error != 0;
 	chimera::finish(sv, found->second, result);
 	sv.withHost.erase(found);
+}
+
+int32_t ce_mcp_condition_set(ce_session *s, const char *arguments_json, const char **error_out)
+{
+	static thread_local chimera::ThreadString error;   /* never destroyed: see thread_string.hpp */
+	Service &sv = service();
+	sv.conditionSet = false;
+	auto refuse = [&](const std::string &why)
+	{
+		*error = why;
+		if (error_out != nullptr) *error_out = error->c_str();
+		return 0;
+	};
+	if (s == nullptr) return refuse(chimera::kNoMachine);
+	cJSON *arguments = cJSON_Parse(arguments_json != nullptr ? arguments_json : "{}");
+	chimera::Source source;
+	std::string why;
+	const cJSON *opItem = cJSON_GetObjectItemCaseSensitive(arguments, "op");
+	const std::string opName = cJSON_IsString(opItem) ? opItem->valuestring : "";
+	const int op = opName == "equal" ? 0 : opName == "greater" ? 1 : opName == "greater_or_equal" ? 2
+		: opName == "less" ? 3 : opName == "less_or_equal" ? 4 : opName == "not_equal" ? 5 : opName == "changed" ? 6 : -1;
+	const cJSON *valueItem = cJSON_GetObjectItemCaseSensitive(arguments, "value");
+	std::string text;
+	bool isNumber = false;
+	double number = 0;
+	if (!cJSON_IsObject(arguments) || !chimera::parseSource(arguments, source, why)) why = why.empty() ? "The arguments are not a JSON object." : why;
+	else if (op < 0) why = "'op' must be one of equal, not_equal, greater, greater_or_equal, less, less_or_equal, changed.";
+	else if (op != 6 && !cJSON_IsNumber(valueItem)) why = "'value' must be a number, for every op but 'changed'.";
+	else if (!chimera::readSource(s, source, text, isNumber, number, why)) why = "The value cannot be read: " + why + ".";
+	else if (op != 6 && !isNumber) why = "'" + source.name + "' is not a number, so it can only be watched for 'changed'.";
+	const double value = cJSON_IsNumber(valueItem) ? valueItem->valuedouble : 0;
+	cJSON_Delete(arguments);
+	if (!why.empty()) return refuse(why);
+	sv.conditionSource = source;
+	sv.conditionOp = op;
+	sv.conditionValue = value;
+	sv.conditionStart = text;
+	sv.conditionSet = true;
+	return 1;
+}
+
+int32_t ce_mcp_condition_met(ce_session *s)
+{
+	Service &sv = service();
+	if (!sv.conditionSet || s == nullptr) return -1;
+	std::string text, why;
+	bool isNumber = false;
+	double number = 0;
+	if (!chimera::readSource(s, sv.conditionSource, text, isNumber, number, why)) return -1;
+	switch (sv.conditionOp)
+	{
+		case 0: return number == sv.conditionValue ? 1 : 0;
+		case 1: return number > sv.conditionValue ? 1 : 0;
+		case 2: return number >= sv.conditionValue ? 1 : 0;
+		case 3: return number < sv.conditionValue ? 1 : 0;
+		case 4: return number <= sv.conditionValue ? 1 : 0;
+		case 5: return number != sv.conditionValue ? 1 : 0;
+		default: return text != sv.conditionStart ? 1 : 0;
+	}
 }
 
 uint64_t ce_mcp_log_total(void)
