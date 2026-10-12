@@ -249,7 +249,57 @@ const McpTool kTools[] = {
 	  "\"value\":{\"type\":\"integer\"}"
 	  "},\"required\":[\"name\",\"value\"],\"additionalProperties\":false}",
 	  true, false },
+
+	/* The tools that exist only where there is no window: there the agent
+	 * opens a machine of its own, and saves what it made. */
+	{ "list_cores",
+	  "The core packages in the cores folder: for each, its file, the name the core gives itself, its version and the machines it is.",
+	  kNoArguments, false, false, true },
+	{ "describe_core",
+	  "What one core declares: its settings, the firmware it may ask for, and the slots a project of it holds files in.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"core\":{\"type\":\"string\",\"description\":\"A file or a name from list_cores.\"}"
+	  "},\"required\":[\"core\"],\"additionalProperties\":false}",
+	  false, false, true },
+	{ "open_game",
+	  "Starts a new project from a core and game files, with an empty movie, and opens its machine. "
+	  "A project open before is closed without being saved.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"core\":{\"type\":\"string\",\"description\":\"A file or a name from list_cores.\"},"
+	  "\"files\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},"
+	  "\"description\":\"Slot to the paths of the files that fill it, for the slots describe_core gives (\\\"rom\\\" for a core that declares none).\"},"
+	  "\"settings\":{\"type\":\"object\",\"description\":\"Settings of the core, by the keys describe_core gives. The core's own where left out.\"},"
+	  "\"firmware\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Firmware id to the path of its file.\"},"
+	  "\"title\":{\"type\":\"string\"}"
+	  "},\"required\":[\"core\",\"files\"],\"additionalProperties\":false}",
+	  false, false, true },
+	{ "open_project",
+	  "Opens a .chimeraProject: its files are looked for beside it and in the folders this server may read, and must be the "
+	  "ones it records. A project open before is closed without being saved.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"path\":{\"type\":\"string\"},"
+	  "\"firmware\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Firmware id to the path of its file.\"},"
+	  "\"allow_other_core_build\":{\"type\":\"boolean\",\"description\":\"Run it on the build in the cores folder when that is not the one the project names.\"}"
+	  "},\"required\":[\"path\"],\"additionalProperties\":false}",
+	  false, false, true },
+	{ "save_project",
+	  "Saves the open project, with its input, branches and markers, inside the work folder.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"path\":{\"type\":\"string\",\"description\":\"Where to save it. Where it was last saved or opened when left out.\"}"
+	  "},\"additionalProperties\":false}",
+	  false, false, true },
+	{ "export_movie",
+	  "Writes the movie's input alone to a file inside the work folder, as chimera-run plays it.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"path\":{\"type\":\"string\"}"
+	  "},\"required\":[\"path\"],\"additionalProperties\":false}",
+	  false, false, true },
+	{ "close",
+	  "Closes the open project and its machine. What was not saved is lost.",
+	  kNoArguments, false, false, true },
 };
+
+bool g_local = false;
 
 std::string printJson(cJSON *item)
 {
@@ -299,6 +349,8 @@ std::string base64(const uint8_t *data, size_t len)
 
 } // namespace
 
+void mcpSetLocal(bool local) { g_local = local; }
+
 const McpTool *mcpTools(size_t &count)
 {
 	count = sizeof(kTools) / sizeof(kTools[0]);
@@ -339,6 +391,11 @@ namespace
 /* The versions of the protocol this was written against. An agent's program
  * that asks for one of them gets it; any other gets the newest. */
 const char *const kProtocolVersions[] = { "2025-06-18", "2025-03-26", "2024-11-05" };
+
+const char kLocalInstructions[] =
+	"Chimera is a frontend for tool-assisted speedruns. This server has no window: it opens a machine of its own. "
+	"Call 'list_cores', then 'open_game' or 'open_project'; after that the other tools work on that machine and its movie. "
+	"It reads games and projects only from the folders it was started with, and writes only inside its work folder.";
 
 const char kInstructions[] =
 	"Chimera is a frontend for tool-assisted speedruns. These tools work on the project a person has open in a running "
@@ -427,7 +484,7 @@ std::string mcpHandleLine(const std::string &line, const McpExecutor &execute, s
 		cJSON_AddStringToObject(server, "title", "Chimera");
 		cJSON_AddStringToObject(server, "version", CE_BUILD_COMMIT);
 		cJSON_AddItemToObject(result, "serverInfo", server);
-		cJSON_AddStringToObject(result, "instructions", kInstructions);
+		cJSON_AddStringToObject(result, "instructions", g_local ? kLocalInstructions : kInstructions);
 		out = rpcReply(id, result);
 	}
 	else if (method == "ping")
@@ -439,6 +496,8 @@ std::string mcpHandleLine(const std::string &line, const McpExecutor &execute, s
 		cJSON *list = cJSON_CreateArray();
 		for (const McpTool &tool : kTools)
 		{
+			/* a tool for where there is no window is not offered where there is one */
+			if (tool.local && !g_local) continue;
 			cJSON *item = cJSON_CreateObject();
 			cJSON_AddStringToObject(item, "name", tool.name);
 			cJSON_AddStringToObject(item, "description", tool.description);
@@ -460,7 +519,7 @@ std::string mcpHandleLine(const std::string &line, const McpExecutor &execute, s
 		{
 			out = rpcError(id, -32602, "tools/call needs the tool's name");
 		}
-		else if (mcpFindTool(name->valuestring) == nullptr)
+		else if (mcpFindTool(name->valuestring) == nullptr || (mcpFindTool(name->valuestring)->local && !g_local))
 		{
 			out = rpcError(id, -32602, std::string("there is no tool called '") + name->valuestring + "'");
 		}
@@ -1749,7 +1808,8 @@ McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, con
 {
 	if (tool == "status")
 	{
-		McpResult result = toolStatus(s, log, frame, hostStatus, sv.allowChanges.load(), sv.wroteMemoryAt);
+		/* where there is no window the machine is the agent's own to change */
+		McpResult result = toolStatus(s, log, frame, hostStatus, sv.allowChanges.load() || g_local, sv.wroteMemoryAt);
 		if (s != nullptr && !sv.watches.empty())
 		{
 			cJSON *content = cJSON_Parse(result.content.c_str());
@@ -1780,6 +1840,33 @@ McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, con
 }
 
 } // namespace
+
+McpResult mcpRunDirect(const std::string &tool, const std::string &argumentsJson, ce_session *s, const ce_movie_log *log,
+	const std::string &hostStatusJson, const McpHostRunner &host)
+{
+	Service &sv = service();
+	const McpTool *found = mcpFindTool(tool);
+	if (found == nullptr) return mcpError("There is no tool called '" + tool + "'.");
+	if (!found->host)
+	{
+		cJSON *arguments = cJSON_Parse(argumentsJson.c_str());
+		const McpResult result = runEngineTool(sv, tool, s, log, -1, hostStatusJson.c_str(), arguments);
+		cJSON_Delete(arguments);
+		return result;
+	}
+	std::string hostTool = tool, hostArguments = argumentsJson;
+	McpResult refusal;
+	if (isEdit(tool) && !prepareEdit(s, log, hostTool, hostArguments, refusal)) return refusal;
+	McpResult result = host(hostTool, hostArguments);
+	if (!result.isError && carriesWatches(tool) && s != nullptr && !sv.watches.empty())
+	{
+		cJSON *content = cJSON_Parse(result.content.c_str());
+		const cJSON *text = cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(content, 0), "text");
+		if (cJSON_IsString(text)) result.content = mcpTextContent(withWatches(sv, s, text->valuestring));
+		cJSON_Delete(content);
+	}
+	return result;
+}
 
 } // namespace chimera
 

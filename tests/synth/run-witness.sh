@@ -350,6 +350,30 @@ PROJPY
 				report "E:mcp:stopped" FAIL "rc=$qrc (see work/mcp/stopped.log)"
 			fi
 			unset CHIMERA_MCP_NAME
+
+			# WITHOUT A WINDOW. Given a cores folder, chimera-mcp reaches no
+			# Chimera: it opens a machine of its own. mcp-agent.py lists the cores,
+			# starts a project from the game, writes the movie's input with the
+			# tools and plays it - and then everything the checks above ask of a
+			# running Chimera is asked of that machine, the changes too: memory
+			# and picture equal to the references, edits and undos, branches,
+			# seeks. It saves the project, closes, opens it again and plays it to
+			# the reference memory. Reads outside the folders given and writes
+			# outside the work folder must be refused.
+			ldir="$work/mcp-windowless"
+			rm -rf "$ldir" && mkdir -p "$ldir/cores" "$ldir/games" "$ldir/work"
+			cp "$epkg" "$ldir/cores/"
+			cp "$here/roms/gridWalker.testrom" "$ldir/games/"
+			MCP_TEST_ROM="$ldir/games/gridWalker.testrom" MCP_TEST_WORK="$ldir/work" timeout 180 python3 "$here/mcp-agent.py" \
+				"$chimera_mcp" "$golden_dir/$qname.ram.bin" "$golden_dir/$qname.vram.bin" "$here/movies/$qname.txt" "$qdir/last.tga" \
+				local --cores "$ldir/cores" --work "$ldir/work" --files "$ldir/games" > "$ldir/agent.log" 2>&1
+			lrc=$?
+			if [ "$lrc" -eq 0 ] && [ -s "$ldir/work/made.chimeraProject" ] && [ -s "$ldir/work/made.txt" ] \
+				&& [ "$(ls "$ldir/work" | wc -l)" -eq 2 ]; then
+				report "E:mcp:windowless" PASS "with no window an agent opens a game, makes its movie, edits, saves and reopens it; memory and picture equal to the references"
+			else
+				report "E:mcp:windowless" FAIL "agent rc=$lrc (see work/mcp-windowless/agent.log)"
+			fi
 		fi
 
 		# A PACKAGE WHOSE DECLARATIONS CANNOT BE READ says which file and what
@@ -1161,6 +1185,38 @@ MCPPY
 				fi
 			done
 			unset CHIMERA_MCP_NAME
+		fi
+	fi
+
+	# --- a project the windowless MCP server saved, opened in the window ---
+	# What an agent made with no window must be a project like any other: the
+	# window opens it, plays its movie and ends with the reference memory. (The
+	# game is copied beside it, where the window looks for a project's files.)
+	if [ "$record" -eq 0 ]; then
+		xsrc="$work/mcp-windowless/work/made.chimeraProject"
+		xdir="$work/mcp-windowless/window"
+		if [ ! -s "$xsrc" ]; then
+			report "M:mcp:windowless:project" SKIP "the windowless check saved no project (see E:mcp:windowless)"
+		else
+			rm -rf "$xdir" && mkdir -p "$xdir"
+			cp "$xsrc" "$xdir/made.chimeraProject"
+			cp "$here/roms/gridWalker.testrom" "$xdir/"
+			{
+				echo "outram=$xdir/ram.bin"
+				echo "outvram=$xdir/vram.bin"
+				echo "meta=$xdir/meta.txt"
+			} > "$xdir/job.txt"
+			cp "$config" "$xdir/config.ini"
+			( cd "$repo_root" && CHIMERA_JOB="$xdir/job.txt" timeout 300 mono "$emu_exe" --headless \
+				"--config=$xdir/config.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+				"--project=$xdir/made.chimeraProject" "--lua=$here/synth-movie-dump.lua" ) > "$xdir/chimera.log" 2>&1
+			if [ ! -f "$xdir/meta.txt" ] || ! grep -q "^status=OK" "$xdir/meta.txt"; then
+				report "M:mcp:windowless:project" FAIL "the window did not open and play it (see work/mcp-windowless/window/chimera.log)"
+			elif cmp -s "$xdir/ram.bin" "$golden_dir/gridWalker.win.ram.bin" && cmp -s "$xdir/vram.bin" "$golden_dir/gridWalker.win.vram.bin"; then
+				report "M:mcp:windowless:project" PASS "the window opens the project the windowless server saved and plays it to the reference memory"
+			else
+				report "M:mcp:windowless:project" FAIL "RAM or VRAM differs from the references (see work/mcp-windowless/window/)"
+			fi
 		fi
 	fi
 

@@ -113,7 +113,7 @@ but movies recorded then still cite packages in it.
 
 ## Working with an AI agent
 
-An AI agent (Claude Code, or any program that speaks MCP) can look at the project you have open and, if you allow it, edit it. Start the server from **Tools > MCP Server...**, which also shows the command that sets the agent up; it is off until you start it, and nothing leaves your machine. See [docs/mcp-server.md](docs/mcp-server.md).
+An AI agent (Claude Code, or any program that speaks MCP) can look at the project you have open and, if you allow it, edit it. Start the server from **Tools > MCP Server...**, which also shows the command that sets the agent up; it is off until you start it, and nothing leaves your machine. An agent can also work with no window at all, on a machine of its own. See [docs/mcp-server.md](docs/mcp-server.md).
 
 ## Building
 

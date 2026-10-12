@@ -167,8 +167,12 @@ void theProtocol()
 	const cJSON *tools = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(r, "result"), "tools");
 	size_t count = 0;
 	const chimera::McpTool *table = chimera::mcpTools(count);
-	assert(count > 0 && cJSON_GetArraySize(tools) == static_cast<int>(count));
-	for (size_t i = 0; i < count; i++)
+	/* the tools for where there is no window come last, and are not listed here */
+	size_t offered = 0;
+	while (offered < count && !table[offered].local) offered++;
+	for (size_t i = offered; i < count; i++) assert(table[i].local);
+	assert(offered > 0 && offered < count && cJSON_GetArraySize(tools) == static_cast<int>(offered));
+	for (size_t i = 0; i < offered; i++)
 	{
 		const cJSON *tool = cJSON_GetArrayItem(tools, static_cast<int>(i));
 		assert(std::strcmp(cJSON_GetObjectItemCaseSensitive(tool, "name")->valuestring, table[i].name) == 0);
@@ -181,6 +185,27 @@ void theProtocol()
 		assert(chimera::mcpFindTool(table[i].name) == &table[i]);
 	}
 	cJSON_Delete(r);
+
+	/* a tool for where there is no window does not exist here, and nothing is run */
+	seenTool.clear();
+	r = reply("{\"jsonrpc\":\"2.0\",\"id\":30,\"method\":\"tools/call\",\"params\":{\"name\":\"open_game\",\"arguments\":{}}}", execute);
+	assert(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(r, "error"), "code")->valuedouble == -32602);
+	assert(seenTool.empty());
+	cJSON_Delete(r);
+	/* with no window, every tool is listed (each with a schema that is JSON) and reaches the executor */
+	chimera::mcpSetLocal(true);
+	r = reply("{\"jsonrpc\":\"2.0\",\"id\":31,\"method\":\"tools/list\"}", execute);
+	const cJSON *all = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(r, "result"), "tools");
+	assert(cJSON_GetArraySize(all) == static_cast<int>(count));
+	for (size_t i = 0; i < count; i++)
+	{
+		assert(cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(all, static_cast<int>(i)), "inputSchema")));
+	}
+	cJSON_Delete(r);
+	r = reply("{\"jsonrpc\":\"2.0\",\"id\":32,\"method\":\"tools/call\",\"params\":{\"name\":\"open_game\",\"arguments\":{}}}", execute);
+	assert(seenTool == "open_game");
+	cJSON_Delete(r);
+	chimera::mcpSetLocal(false);
 
 	/* a call reaches the executor with its arguments, and its answer comes back */
 	r = reply("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"read_memory\","

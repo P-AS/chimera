@@ -23,6 +23,7 @@
 #include <string>
 
 struct ce_session;
+struct ce_movie_log;
 
 namespace chimera
 {
@@ -39,7 +40,12 @@ struct McpTool
 	const char *schema;  /* the JSON Schema of its arguments */
 	bool changes;        /* it changes the movie or the machine: refused unless the person allowed changes */
 	bool host;           /* the frontend runs it, not the engine */
+	bool local;          /* it exists only where there is no window (mcp_local.hpp) */
 };
+
+/* Whether this program serves a machine of its own, with no window. It
+ * decides which tools are listed and what the introduction says. */
+void mcpSetLocal(bool local);
 
 const McpTool *mcpTools(size_t &count);
 const McpTool *mcpFindTool(const std::string &name);
@@ -63,6 +69,16 @@ using McpExecutor = std::function<McpResult(const std::string &tool, const std::
  * when the line needs no answer. `client`, when given, receives the name and
  * version the agent's program gave when it introduced itself. */
 std::string mcpHandleLine(const std::string &line, const McpExecutor &execute, std::string *client);
+
+/* Runs one tool call at once, on the calling thread, where there is no
+ * frontend to hand anything to: the engine's own tools on `s` and `log`, and
+ * for a tool the movie's holder runs, `host` - after the engine has checked
+ * an edit and worked out the step it amounts to, and with the watched values
+ * added to an answer that lands on a frame. Nothing is refused for not being
+ * allowed: where there is no window, the machine is the agent's own. */
+using McpHostRunner = std::function<McpResult(const std::string &tool, const std::string &argumentsJson)>;
+McpResult mcpRunDirect(const std::string &tool, const std::string &argumentsJson, ce_session *s, const ce_movie_log *log,
+	const std::string &hostStatusJson, const McpHostRunner &host);
 
 /* The link from chimera-mcp to a running Chimera. It connects when a call
  * needs it and again after Chimera, or its server, went away and came back,

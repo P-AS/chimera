@@ -6853,3 +6853,71 @@ window now also requiring an unknown button, an edit with nothing named and
 an insertion past the movie's end to be refused and to change nothing. Those
 three were not yet broken on purpose; the next round does it. The engine
 compiles for Windows.
+
+## The MCP server without a window (2026-10-12)
+
+The last part of the MCP server (docs/mcp-server.md): `chimera-mcp --cores
+<dir> --work <dir>` opens a machine of its own for an agent, with no Chimera
+running. What was chosen while building it, and why:
+
+- **The same program, the same tools.** There is one `chimera-mcp`. With no
+  arguments it reaches the running window; with a cores folder it serves a
+  machine in its own process. The engine's tools (memory, picture, RAM
+  search, watches) are the very same code, and the editing tools arrive as
+  the steps the engine makes of them (the section "What an edit means").
+- **What a window would do is done by one class over the engine**
+  (`mcp_local.cpp`): open and save a project, hold the movie and its undo
+  history, move the playback position. It uses the engine's own movie
+  (`ce_session_movie_load`, `ce_session_seek`), so going back is through the
+  saved states and an edit drops the ones after it, as in the window.
+- **A project is opened by the one engine call** made for it earlier
+  (`ce_session_open_project`), the third program to use it.
+- **Nothing is asked.** In the window a person allows changes and their work
+  is kept first. Here the machine is the agent's own.
+- **The file limits are set when the program is started** and a call cannot
+  widen them: packages from `--cores`, reads from `--files` and `--work`,
+  writes inside `--work`. A path is worked out to where it really leads
+  before it is compared, so `..` and links do not get out.
+- **Firmware is given by path.** Looking in the Firmware folder, and the
+  rules of which file counts as which firmware, are the interface's. Writing
+  them a second time was the thing to avoid, so the windowless mode takes a
+  file for each id, as `chimera-run --firmware` does.
+- **The two holders of a movie answer alike, and one script holds them to
+  it.** TAStudio's side is C# and the windowless side is C++; the answers'
+  shapes are written in both. `tests/synth/mcp-agent.py` asks the same
+  questions of both and expects the same answers, which is what keeps them
+  from drifting.
+
+Found on the way: lines written by `set_buttons` carried "!" where the
+button's letter belongs, because the engine took the letters from a
+recording that a playing session never starts. In the window nobody saw it:
+TAStudio reads any character as "pressed" and writes the line again itself.
+It now takes the machine's own letters.
+
+Not done: the windowless mode does not look in Chimera's Firmware folder; a
+branch there keeps no state of the machine; nothing of it was run with a
+core that draws on a graphics card.
+
+What was measured. On Linux: the engine's tests 23 of 23 (`test_mcp` also
+checks that the windowless tools are listed only where there is no window).
+The interface tests 0 failed of 1,065 (24 skipped), against the new engine
+library; the interface itself did not change. The test of the whole product
+87 of 87, two new. In the first, `chimera-mcp` with a cores folder is given
+the same script as the window, in a mode of its own: it lists the cores,
+refuses a game outside the folders it was given, starts a project, writes
+the movie's 70 lines with `set_input` and plays them - memory equal to the
+reference dumps and the picture equal to the one `chimera-run` writes - then
+everything the window's check does (edits, undo, branches, seeks,
+`advance_until`, watches, RAM search, memory writes), then saves, refuses to
+write outside the work folder by a plain path and by one that climbs out,
+exports the movie, closes, opens the saved project and plays it to the
+reference memory. In the second, the real window opens the project the
+windowless mode saved and plays it to the reference memory. With the code
+broken on purpose (any path readable, the landing frame not drawn, undo
+restoring nothing, and the three edit refusals of the section before) the
+windowless check and the window's change check failed, on exactly those
+points. On Windows the engine compiles, and `chimera-mcp.exe` with a cores
+folder was driven by hand through the same steps: a read outside refused,
+the movie written and played to the reference memory, an edit and its undo,
+`advance_until`, a save, a write outside refused, and the saved project
+reopened and played to the reference memory.

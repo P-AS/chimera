@@ -21,11 +21,22 @@ marker and branches are made, the playback position is moved - and at the end
 the machine, played again to the movie's last frame, must hold the reference
 memory, which it only can if every edit was undone exactly.
 
+With "local" as the mode there is no Chimera at all: chimera-mcp is started
+with the arguments that follow the mode (--cores, --work, --files) and opens
+a machine of its own. The script lists the cores, starts a project from the
+game named in MCP_TEST_ROM, writes the movie's input with set_input and
+plays it - after which everything above is asked of that machine, changes
+included, and the picture is compared again. It then saves the project into
+the work folder (MCP_TEST_WORK), exports the movie, closes, opens the saved
+project and plays it to the reference memory, and checks that paths outside
+the folders it was given are refused.
+
 Prints one line for each thing that is wrong and exits 1, or prints nothing
 and exits 0.
 """
 import base64
 import json
+import os
 import struct
 import subprocess
 import sys
@@ -34,7 +45,9 @@ import zlib
 mcp, ram_path, vram_path, movie_path, tga_path = sys.argv[1:6]
 mode = sys.argv[6] if len(sys.argv) > 6 else "runner"
 window = mode.startswith("window")
-changes = mode.endswith("-changes")
+local = mode == "local"
+changes = mode.endswith("-changes") or local
+holder = window or local  # something holds a movie that can be edited: TAStudio, or chimera-mcp itself
 wrong = []
 
 
@@ -43,7 +56,7 @@ def check(what, ok):
         wrong.append(what)
 
 
-agent = subprocess.Popen([mcp], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
+agent = subprocess.Popen([mcp] + sys.argv[7:], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
 next_id = 0
 
 
@@ -140,6 +153,30 @@ movie = [line.rstrip("\r\n") for line in open(movie_path) if line.startswith("|"
 ram = open(ram_path, "rb").read()
 vram = open(vram_path, "rb").read()
 
+if local:
+    # no window: list what there is, start a project from a game, and write and play the movie
+    rom, work = os.environ["MCP_TEST_ROM"], os.environ["MCP_TEST_WORK"]
+    for needed in ("list_cores", "describe_core", "open_game", "open_project", "save_project", "export_movie", "close"):
+        check("the tool %s is listed where there is no window" % needed, needed in tools)
+    check("before anything is opened, status says no machine is open", facts("status").get("machine_open") is False)
+    error, text, _ = call("seek", frame=0)
+    check("and a tool that needs a project says how to open one", error and "open_game" in text)
+    cores = facts("list_cores").get("cores", [])
+    check("list_cores names the synthetic core", [c["name"] for c in cores] == ["Synth"] and cores[0]["file"].endswith(".chimeraCore"))
+    described = facts("describe_core", core="Synth")
+    check("describe_core gives what the core declares", described.get("name") == "Synth" and isinstance(described.get("settings"), list))
+    error, text, _ = call("describe_core", core="No Such Core")
+    check("a core that is not there is named", error and "No Such Core" in text)
+    error, text, _ = call("open_game", core="Synth", files={"rom": ["/etc/hostname"]})
+    check("a game outside the folders given is not read", error and "may read" in text)
+    check("and nothing was opened", facts("status").get("machine_open") is False)
+    opened = facts("open_game", core="Synth", files={"rom": [rom]}, title="gridWalker.win")
+    check("open_game starts a project with an empty movie", opened.get("core") == "Synth" and opened.get("movie_length") == 0)
+    check("on frame 0", facts("status").get("frame") == 0)
+    facts("set_input", frame=0, entries=movie[:35])
+    check("set_input writes the movie's input, lengthening the movie", facts("set_input", frame=35, entries=movie[35:]).get("movie_length") == len(movie))
+    check("seek plays it to its end", facts("seek", frame=len(movie)).get("frame") == len(movie))
+
 # status: the machine the run left
 status = facts("status")
 check("status names the core", status.get("core") == "Synth")
@@ -148,10 +185,10 @@ check("status gives the movie's length", status.get("movie_length") == len(movie
 check("status says whether changes are allowed", status.get("changes_allowed") is changes)
 check("status says the core has not stopped", status.get("core_stopped") is False)
 check("status gives the picture's size", status.get("picture", {}).get("width", 0) > 0)
-if window:
+if holder:
     check("status names the project", status.get("project") == "gridWalker.win")
-    check("status says the window is paused", status.get("paused") is True)
-    check("status says nothing is unsaved", status.get("unsaved_changes") is False)
+    check("status says the machine is paused", status.get("paused") is True)
+    check("status says whether anything is unsaved", status.get("unsaved_changes") is local)
 
 # controls: the buttons, in the order of the movie's columns
 controls = facts("controls")
@@ -208,11 +245,15 @@ if images:
     half = facts("screenshot", max_width=width // 2)
     check("screenshot scales a picture down to max_width", half.get("width") == width // 2 and half.get("picture_width") == width)
 
-if window:
-    # the tools the window runs: what TAStudio holds
+if holder:
+    # the tools the movie's holder runs
     markers = facts("list_markers").get("markers")
-    check("list_markers lists the project's markers, the first on frame 0",
-          isinstance(markers, list) and len(markers) > 0 and markers[0].get("frame") == 0 and "text" in markers[0])
+    if window:
+        # TAStudio gives every movie three markers of its own
+        check("list_markers lists the project's markers, the first on frame 0",
+              isinstance(markers, list) and len(markers) > 0 and markers[0].get("frame") == 0 and "text" in markers[0])
+    else:
+        check("list_markers lists the project's markers, of which there are none", markers == [])
     check("list_branches lists the project's branches, of which there are none", facts("list_branches").get("branches") == [])
 else:
     # a tool that needs the window says so here, where there is none
@@ -276,17 +317,23 @@ def ram_now():
     return bytes.fromhex(facts("read_memory", domain="RAM", address=0, count=4096)["bytes_hex"])
 
 
-if mode == "window-changes":
+if holder and changes:
     last = len(movie)
+    # in the window a branch of the person's work is saved before the first change; here there is no person
+    kept = 1 if window else 0
     # input: pressed by name over a range, seen, and taken back by one undo
     answer = facts("set_buttons", frame=5, count=3, buttons={"P1 A": True})
     check("set_buttons answers with the movie's length", answer.get("movie_length") == last)
     edited = all_input()
     check("set_buttons changed frames 5 to 7 and no others",
-          [i for i in range(last) if edited[i] != movie[i]] == [5, 6, 7] and all("A" in edited[i] for i in (5, 6, 7)))
+          [i for i in range(last) if edited[i] != movie[i]] == [5, 6, 7]
+          and all(edited[i].replace("|", "") == movie[i].replace("|", "")[:4] + "A" + movie[i].replace("|", "")[5:] for i in (5, 6, 7)))
     # before that first change, the work as it was had been kept as a branch
     branches = facts("list_branches").get("branches", [])
-    check("a branch was saved before the first change", len(branches) == 1 and branches[0]["note"].startswith("Before the agent's changes"))
+    if window:
+        check("a branch was saved before the first change", len(branches) == 1 and branches[0]["note"].startswith("Before the agent's changes"))
+    else:
+        check("no branch is saved where there is no person's work to keep", branches == [])
     check("status says the project has unsaved changes", facts("status").get("unsaved_changes") is True)
     facts("undo")
     check("undo takes the whole edit back", all_input() == movie)
@@ -314,11 +361,11 @@ if mode == "window-changes":
     placed = [m for m in facts("list_markers").get("markers", []) if m.get("placed_by_user")]
     check("add_marker places a marker a person can tell from the movie's own",
           placed == [{"frame": 9, "text": "placed by the witness", "placed_by_user": True}])
-    check("save_branch saves a second branch", facts("save_branch", note="made by the witness").get("number") == 2)
+    check("save_branch saves a branch", facts("save_branch", note="made by the witness").get("number") == kept + 1)
     notes = [b["note"] for b in facts("list_branches").get("branches", [])]
-    check("the new branch has its note", len(notes) == 2 and notes[1] == "made by the witness")
+    check("the new branch has its note", len(notes) == kept + 1 and notes[-1] == "made by the witness")
     error, text, _ = call("load_branch", number=7)
-    check("load_branch refuses a branch that does not exist", error and "between 1 and 2" in text)
+    check("load_branch refuses a branch that does not exist", error and "between 1 and %d" % (kept + 1) in text)
     # watched values come with a seek, and advance_until plays until a value meets a condition
     steps = {"domain": "RAM", "address": 4, "type": "u32"}
     facts("watch", watches=[dict(steps, name="steps")])
@@ -397,11 +444,39 @@ if changes:
     check("set_property names a value that does not exist", error and "No Such Value" in text)
     error, text, _ = call("set_register", name="PC", value=0)
     check("set_register names a register that does not exist", error and "PC" in text)
-    if not window:
+    if not holder:
         error, text, _ = call("add_marker", frame=1, text="x")
         check("a change the window makes is handed to the frontend", error and "window" in text)
         error, text, _ = call("advance_until", property="Steps", op="changed")
         check("advance_until needs the window too", error and "window" in text)
+
+if local:
+    # save, export, close, open again: the project made here plays to the reference memory
+    saved = facts("save_project", path="made.chimeraProject").get("saved", "")
+    check("save_project writes the project into the work folder", saved == os.path.join(os.path.realpath(work), "made.chimeraProject") and os.path.isfile(saved))
+    check("after saving nothing is unsaved", facts("status").get("unsaved_changes") is False)
+    error, text, _ = call("save_project", path="/tmp/chimera-mcp-outside.chimeraProject")
+    check("save_project writes nowhere but the work folder", error and "work folder" in text and not os.path.exists("/tmp/chimera-mcp-outside.chimeraProject"))
+    error, text, _ = call("export_movie", path="../outside.txt")
+    check("nor does export_movie, by a path that climbs out of it", error and "work folder" in text)
+    facts("export_movie", path="made.txt")
+    exported = os.path.join(work, "made.txt")
+    check("export_movie writes the movie's input",
+          os.path.isfile(exported) and [l.rstrip("\r\n") for l in open(exported) if l.startswith("|")] == movie)
+    check("close closes the machine", facts("close").get("closed") is True and facts("status").get("machine_open") is False)
+    error, text, _ = call("close")
+    check("with nothing open, close says so", error and "open_game" in text)
+    error, text, _ = call("open_project", path="/etc/hostname")
+    check("open_project reads nothing outside the folders given", error and "may read" in text)
+    again = facts("open_project", path="made.chimeraProject")
+    check("open_project opens what was saved", again.get("movie_length") == len(movie) and again.get("core") == "Synth")
+    check("with its input", all_input() == movie)
+    check("its branch", [b["note"] for b in facts("list_branches").get("branches", [])] == ["made by the witness"])
+    check("and its marker", facts("list_markers").get("markers") == [{"frame": 9, "text": "placed by the witness", "placed_by_user": True}])
+    check("the saved project starts on frame 0", facts("status").get("frame") == 0)
+    facts("seek", frame=len(movie))
+    check("and plays to the reference memory", ram_now() == ram)
+    facts("close")
 
 agent.stdin.close()
 agent.wait()

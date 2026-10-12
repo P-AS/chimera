@@ -293,6 +293,7 @@ engine_src = files(
   'source/engine/source/game_properties.cpp',
   'source/engine/source/local_pipe.cpp',
   'source/engine/source/mcp.cpp',
+  'source/engine/source/mcp_local.cpp',
   'extern/miniz/miniz.c',  # vendored (MIT): the zip half of the state container
   'extern/cjson/cJSON.c',  # vendored (MIT): bundle JSON
 )

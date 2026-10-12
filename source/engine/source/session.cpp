@@ -1371,7 +1371,9 @@ bool ce_session::greenzoneRestore(int64_t to)
  * engine's own. */
 std::string chimera::sessionMovieEntry(const ce_session *s, const uint8_t *states, const int32_t *axes)
 {
-	return s->layout.generate(states, axes, s->mnemonics);
+	/* the letters are the machine's own (cfg.mnemonics), not the ones a
+	 * recording was started with, which a session that only plays never has */
+	return s->layout.generate(states, axes, s->cfg.mnemonics);
 }
 
 extern "C" {

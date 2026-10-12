@@ -29,7 +29,13 @@ Built so far:
 - `chimera-mcp` is in the Linux and Windows release bundles, in `dll/`, where
   the dialog's set-up command points.
 
-Not built yet: the windowless mode.
+- The windowless mode: `chimera-mcp --cores <dir> --work <dir>` opens a
+  machine of its own, with `list_cores`, `describe_core`, `open_game`,
+  `open_project`, `save_project`, `export_movie` and `close`, and every tool
+  above.
+
+Everything in this document is built. What the windowless mode does not do
+is said in its section below.
 
 On Windows: the same test that edits a movie in the window was run against
 the Windows build of Chimera, started with no window shown, and passed. The
@@ -191,13 +197,14 @@ Each call that edits the input is one step in TAStudio's undo history, named
 adds no frames. With `watch` it answers "on which frame does this value first
 become that" in one call instead of one call a frame.
 
-Without a window only (second part of the work):
+Without a window only:
 
 | Tool | What it does |
 | --- | --- |
-| `list_cores` / `describe_core` | The packages in the Cores folder and what each declares. |
-| `open_project` / `open_game` | Opens a project, or starts one from a core and game files. |
-| `save_project` / `export_movie` | Writes the project or the input as a movie file. |
+| `list_cores` / `describe_core` | The packages in the cores folder, and what one declares: settings, firmware, file slots. |
+| `open_game` | Starts a project from a core and game files, with an empty movie. |
+| `open_project` | Opens a `.chimeraProject`; its files must be the ones it records. |
+| `save_project` / `export_movie` | Writes the project, or the input alone as a movie file, inside the work folder. |
 | `close` | Closes the machine. |
 
 ## Where the code lives
@@ -247,18 +254,54 @@ the windowless mode needs it; today only the interface knows how.
 - **Errors are the engine's own words.** A core that stopped, a refused
   write, a frame that does not exist are tool errors with the engine's text.
 
-## Which files the windowless mode may touch
+## Without a window
 
-In the window the agent has no file access. Without a window it must open and
-save, so the limits are set when `chimera-mcp` is started:
+An agent can also work with no Chimera running at all. Started with a cores
+folder, `chimera-mcp` reaches no window: it opens a machine of its own, in its
+own process.
+
+```sh
+claude mcp add chimera-headless -- /path/to/chimera/dll/chimera-mcp \
+    --cores /path/to/chimera/Cores --work /path/to/a/work/folder \
+    --files /path/to/my/games
+```
+
+The agent then calls `list_cores` and `describe_core` to see what there is,
+`open_game` (a core, the game's files by slot, settings, firmware) or
+`open_project`, and after that every tool of the window: it writes input,
+plays, looks, searches, undoes, branches. `save_project` and `export_movie`
+keep the result, and a project saved this way opens in the window like any
+other.
+
+What is different from the window:
+
+- **Nothing asks for permission.** The machine is the agent's own, so the
+  tools that change things are not refused and no branch is saved first.
+- **The movie is held by the engine**, with its own undo history (the last
+  100 edits). There is no TAStudio, so nothing of TAStudio's is there: no
+  markers of the movie's own, no recording mode, no lag log.
+- **A branch keeps the input and the frame, not the machine's state.**
+  Loading one plays its input to its frame.
+- **Firmware is given by path**, a file for each firmware id
+  (`describe_core` lists them), in `open_game` and `open_project`. It does
+  not look in Chimera's Firmware folder or its settings; only the window
+  knows those.
+- **One machine at a time.** Opening another closes the one before, without
+  saving it.
+
+### Which files it may touch
+
+An agent chooses every path it passes, so the limits are set when
+`chimera-mcp` is started and cannot be changed by a call:
 
 - core packages are read only from the `--cores` folder;
 - games, projects, movies and firmware are read only from the folders named
   with `--files <dir>` (repeatable) and from the work folder;
 - everything is written inside the work folder, `--work <dir>`;
-- any other path is refused;
-- a project's files are checked against the hashes it records, and a mismatch
-  is an error, since there is no person to ask.
+- any other path is refused, also one that climbs out with `..` or through a
+  link;
+- a project's files are checked against the hashes it records, and a
+  mismatch is an error, since there is no person to ask.
 
 It downloads nothing. Games and firmware are the user's own files.
 
