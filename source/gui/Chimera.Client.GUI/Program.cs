@@ -273,16 +273,28 @@ namespace Chimera.Client.GUI
 			{
 				if (suggestAt + 2 >= args.Length)
 				{
-					Console.Error.WriteLine("usage: --suggest-settings <core package> <game file>");
+					Console.Error.WriteLine("usage: --suggest-settings <core package> <game file> [<files and settings, a JSON file>]");
 					return 2;
 				}
 				try
 				{
-					Console.Out.Write(Chimera.Emulation.Common.Engine.EngineSession.Suggest(args[suggestAt + 1], args[suggestAt + 2]));
+					// the wizard's choices so far, when it wrote them down: the
+					// other files of the project to be, its slot map, its settings
+					// (NewProjectWizard.WriteFilesForSuggestion)
+					string? settingsJson = null;
+					System.Collections.Generic.IReadOnlyList<Chimera.Emulation.Common.CoreFile>? files = null;
+					if (suggestAt + 3 < args.Length && System.IO.File.Exists(args[suggestAt + 3]))
+					{
+						var doc = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(args[suggestAt + 3]));
+						files = Chimera.Emulation.Common.Waterbox.GameFilesForCore.FromSlotsDocument(doc);
+						if (doc["settings"] is Newtonsoft.Json.Linq.JObject settings) settingsJson = settings.ToString(Newtonsoft.Json.Formatting.None);
+					}
+					files = Chimera.Emulation.Common.Waterbox.GameFilesForCore.WithCueTracks(args[suggestAt + 2], files);
+					Console.Out.Write(Chimera.Emulation.Common.Engine.EngineSession.Suggest(args[suggestAt + 1], args[suggestAt + 2], settingsJson, files));
 					Console.Out.Flush();
 					return 0;
 				}
-				catch (InvalidOperationException e)
+				catch (Exception e) when (e is InvalidOperationException or System.IO.IOException or Newtonsoft.Json.JsonException)
 				{
 					Console.Error.WriteLine(e.Message);
 					return 1;

@@ -7048,3 +7048,52 @@ two cores its Vulkan renderer (Mesa's software Vulkan); Chimera's package
 tests pass on both packages (18 tests). Vita3K's Vulkan renderer was measured
 on a GeForce GTX 1060 when it was added; RPCS3's is in that core's
 docs/PLAN.md. Neither core's whole test script was run for this change.
+
+## A core is asked about a game with the game's files, not the one file that names it (2026-10-12)
+
+A core may be asked about a game before any machine exists (its
+`SuggestSettings` answer): which settings it suggests, which settings the
+game has of its own, and which firmware this game needs. The engine has
+always been able to ask with every file mounted as a run would have them
+(`ce_suggest_settings`). The interface asked with the game file alone, and
+with no settings.
+
+That was enough while a game was one file - a PS3 disc folder's entry, an
+arcade rom set. It is not enough for a disc: a `.cue` is a list of track
+files, and a core shown the `.cue` without them cannot read the disc. The
+Mednafen core has to read a Saturn disc's region to say which of two BIOS
+files the console starts with. Asked about the `.cue` alone it answered
+"Error opening file ... (Track 01).bin", no firmware was asked for, and the
+project failed to start for lack of a BIOS nobody had been asked for. A
+package of several machines also could not know which machine the file was
+for.
+
+So the question now carries what a run would have:
+
+- **The new-project window** writes down the files picked so far, the slot
+  each fills, and the settings chosen so far, and the helper process that
+  loads the core mounts them (`--suggest-settings <package> <game> <that
+  file>`).
+- **A load** (which asks again, so that a game opened with no project is
+  completed the same way) mounts the project's files and its slot map, or
+  the extra files of a game opened without a project.
+- **Both** add the track files of every `.cue` among them, from beside the
+  cue, under the names the cue gives them. A project already lists them as
+  its support files; a wizard that has not made its project yet does not.
+
+Firmware is still not mounted when the core is asked: the wizard asks before
+any is chosen, and an answer must not depend on it (the rule the MAME core's
+change set).
+
+Nothing changes for a core whose game is one file: it is asked as before,
+with the settings added.
+
+Measured: the Mednafen core's window test opens a Saturn project of
+Virtua Fighter Remix with the BIOS the core named, taken from Chimera's
+firmware; before the change the same project stopped with "Error opening
+file saturn_na_eu.bin". Unit tests: four for the file list (a cue's tracks
+come with it, nothing is listed twice or invented, a second disc's tracks
+come too, the wizard's document becomes the slot map and the files) and one
+for the wizard's document (picked files, slot map, settings); each was seen
+to fail with its behaviour taken out.
+

@@ -221,7 +221,7 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// The firmware the game in hand needs beyond the package's declarations,
 		/// for a core whose package says the game decides
 		/// (<see cref="WaterboxConfig.GameFirmware"/>): the core is asked, on the
-		/// game alone, exactly as the wizard asked it when the project was made
+		/// game and its files, exactly as the wizard asked it when the project was made
 		/// (its SuggestSettings answer's "firmware"). Asked again at every load
 		/// rather than read from the project, so a rom opened with no project is
 		/// completed the same way, and a project cannot carry a list the core no
@@ -235,8 +235,13 @@ namespace Chimera.Emulation.Common.Waterbox
 			if (string.IsNullOrEmpty(path) || !File.Exists(path)) return [ ];
 			try
 			{
+				// with the files the run will have: a disc's track files, a
+				// project's other files and its slot map - a core asked about a
+				// .cue alone cannot read the disc
+				var files = GameFilesForCore.WithCueTracks(
+					path, ctx.Project is { } project ? GameFilesForCore.FromProject(project) : ctx.ExtraFiles);
 				var answer = Engine.EngineSession.Suggest(
-					_packageDir, path!, Newtonsoft.Json.JsonConvert.SerializeObject(effective));
+					_packageDir, path!, Newtonsoft.Json.JsonConvert.SerializeObject(effective), files);
 				if (string.IsNullOrWhiteSpace(answer)) return [ ];
 				var root = Newtonsoft.Json.Linq.JObject.Parse(answer);
 				var decls = WaterboxConfig.ParseGameFirmware(

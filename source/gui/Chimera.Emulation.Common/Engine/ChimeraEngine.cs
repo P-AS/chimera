@@ -2217,20 +2217,59 @@ namespace Chimera.Emulation.Common.Engine
 		/// run would have them; nothing is started. Throws when either cannot be
 		/// opened at all.
 		/// </summary>
-		public static string Suggest(string packagePath, string romPath, string? settingsJson = null)
+		/// <param name="files">
+		/// The game's other files, each mounted under its name before the core
+		/// is asked: a disc's track files, the project's other discs, its slot
+		/// map ("slots"). See <see cref="Waterbox.GameFilesForCore"/>. Without
+		/// them a core sees the one file that names the game.
+		/// </param>
+		public static string Suggest(string packagePath, string romPath, string? settingsJson = null, IReadOnlyList<CoreFile>? files = null)
 		{
-			var len = 0UL;
-			var error = IntPtr.Zero;
-			var none = new IntPtr[1];
-			var answer = ChimeraEngine.Instance.ce_suggest_settings(
-				packagePath, null, 0, romPath, settingsJson,
-				none, none, new ulong[1], 0,
-				none, none, new ulong[1], none, 0, ref len, ref error);
-			if (answer == IntPtr.Zero)
+			var count = files?.Count ?? 0;
+			var names = new IntPtr[Math.Max(count, 1)];
+			var datas = new IntPtr[Math.Max(count, 1)];
+			var lens = new ulong[Math.Max(count, 1)];
+			var paths = new IntPtr[Math.Max(count, 1)];
+			var allocated = new List<IntPtr>();
+			IntPtr AllocUtf8(string text)
 			{
-				throw new InvalidOperationException(ChimeraEngine.PtrToStringUtf8(error) ?? "the engine could not open the core");
+				var bytes = Encoding.UTF8.GetBytes(text + "\0");
+				var ptr = Marshal.AllocHGlobal(bytes.Length);
+				allocated.Add(ptr);
+				Marshal.Copy(bytes, 0, ptr, bytes.Length);
+				return ptr;
 			}
-			return ChimeraEngine.PtrToStringUtf8(answer, len);
+			try
+			{
+				for (var i = 0; i < count; i++)
+				{
+					var file = files![i];
+					names[i] = AllocUtf8(file.Name);
+					// a path wins: the bytes were never read, and there are none
+					paths[i] = file.Path is null ? IntPtr.Zero : AllocUtf8(file.Path);
+					var data = file.Data ?? [ ];
+					datas[i] = Marshal.AllocHGlobal(data.Length is 0 ? 1 : data.Length);
+					allocated.Add(datas[i]);
+					if (data.Length is not 0) Marshal.Copy(data, 0, datas[i], data.Length);
+					lens[i] = (ulong)data.LongLength;
+				}
+				var len = 0UL;
+				var error = IntPtr.Zero;
+				var none = new IntPtr[1];
+				var answer = ChimeraEngine.Instance.ce_suggest_settings(
+					packagePath, null, 0, romPath, settingsJson,
+					none, none, new ulong[1], 0,
+					names, datas, lens, paths, count, ref len, ref error);
+				if (answer == IntPtr.Zero)
+				{
+					throw new InvalidOperationException(ChimeraEngine.PtrToStringUtf8(error) ?? "the engine could not open the core");
+				}
+				return ChimeraEngine.PtrToStringUtf8(answer, len);
+			}
+			finally
+			{
+				foreach (var ptr in allocated) Marshal.FreeHGlobal(ptr);
+			}
 		}
 
 		/// <summary>

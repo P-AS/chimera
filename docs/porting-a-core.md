@@ -347,7 +347,13 @@ Probed once after `Init`; absent exports simply mean the tool is not offered.
   the game was not found. The RPCS3 core answers from the RPCS3 wiki's per-game
   recommendations it carries; its note names the page, the compatibility
   status and the licence. Read the files, answer, return: nothing that boots,
-  and nothing a later `Init` would find changed.
+  and nothing a later `Init` would find changed. **What is mounted when you
+  are asked**: the game, the other files picked for the project under their
+  names, the slot map (`slots`), the track files of every `.cue` among them,
+  and the settings chosen so far - the machine among them, in a package of
+  several. So a disc can be read: the Mednafen core reads a Saturn disc's
+  region to say which BIOS it needs. Firmware is not mounted then (the
+  wizard asks before it is chosen).
 - **`GetGameSettings()`** - the settings THIS GAME has beyond the package's
   declaration, for a core whose games carry their own (an arcade game's dip
   switches differ game to game, so they cannot be declared once per package).

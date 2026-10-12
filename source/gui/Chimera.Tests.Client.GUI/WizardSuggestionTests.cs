@@ -106,6 +106,27 @@ namespace Chimera.Tests.Client.GUI
 			Assert.AreEqual(Default, Value(form, "writeColorBuffers"));
 		}
 
+		/// <summary>
+		/// The core is told of the project to be, not of the game file alone: the
+		/// files picked and the slot each fills, and the settings chosen so far.
+		/// A core shown a .cue without its tracks cannot read the disc, and a
+		/// package of several machines cannot read anything before it knows
+		/// which machine.
+		/// </summary>
+		[TestMethod]
+		public void TheCoreIsAskedWithThePickedFilesAndTheSettingsSoFar()
+		{
+			using var form = FormWith(Package(suggests: true), _ => (NotFound, ""));
+			form.AddFileToSlot("game", "/games/game.iso");
+			form.ArriveAtSettingsForTest("/games/game.iso");
+			form.SetSettingValue("frameLimit", "Off");
+			var doc = form.SuggestionFilesDocument();
+			Assert.AreEqual("game.iso", (string?)doc["slots"]?["game"]?[0], "the slot map, as the session will mount it");
+			Assert.AreEqual("/games/game.iso", (string?)doc["files"]?["game.iso"], "where the picked file lies, by the name the project will record");
+			Assert.AreEqual("Off", (string?)doc["settings"]?["frameLimit"], "a setting the person chose");
+			Assert.AreEqual("Safe", (string?)doc["settings"]?["spuBlockSize"], "and the package's default for one they did not");
+		}
+
 		[TestMethod]
 		public void AFoundGameHasItsValuesAppliedAndItsSourceShown()
 		{

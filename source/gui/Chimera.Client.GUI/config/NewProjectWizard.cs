@@ -2440,7 +2440,7 @@ namespace Chimera.Client.GUI
 			_status.Text = "Looking this game up...";
 			_status.Refresh();
 			var game = PrecompileRomPath()!;
-			var (json, why) = SuggestionSourceForTest?.Invoke(game) ?? AskCoreForSuggestion(ChosenCore!.Path, game);
+			var (json, why) = SuggestionSourceForTest?.Invoke(game) ?? AskCoreForSuggestion(ChosenCore!.Path, game, WriteFilesForSuggestion());
 			_status.Text = "";
 			if (json is null)
 			{
@@ -2552,10 +2552,34 @@ namespace Chimera.Client.GUI
 		/// Runs <c>Chimera --suggest-settings package game</c> and returns the
 		/// core's JSON, or null and why. The UI keeps painting while it waits.
 		/// </summary>
-		private static (string? Json, string Why) AskCoreForSuggestion(string packagePath, string gamePath)
+		/// <param name="filesDocument">
+		/// The file <see cref="WriteFilesForSuggestion"/> wrote, or null to ask
+		/// about the game file alone. It is deleted when the answer is in.
+		/// </param>
+		private static (string? Json, string Why) AskCoreForSuggestion(string packagePath, string gamePath, string? filesDocument = null)
+		{
+			try
+			{
+				return AskCoreForSuggestionWith(packagePath, gamePath, filesDocument);
+			}
+			finally
+			{
+				if (filesDocument is not null)
+				{
+					try { File.Delete(filesDocument); }
+					catch (IOException) { }
+					catch (UnauthorizedAccessException) { }
+				}
+			}
+		}
+
+		private static (string? Json, string Why) AskCoreForSuggestionWith(string packagePath, string gamePath, string? filesDocument)
 		{
 			var lines = new List<string>();
-			using var p = SelfProcess.Start(["--suggest-settings", packagePath, gamePath], line =>
+			string[] args = filesDocument is null
+				? ["--suggest-settings", packagePath, gamePath]
+				: ["--suggest-settings", packagePath, gamePath, filesDocument];
+			using var p = SelfProcess.Start(args, line =>
 			{
 				lock (lines) lines.Add(line);
 			});
@@ -2620,6 +2644,49 @@ namespace Chimera.Client.GUI
 			var path = Path.Combine(Path.GetTempPath(), $"chimera-precompile-slots-{Guid.NewGuid():N}.json");
 			File.WriteAllText(path, doc.ToString(Newtonsoft.Json.Formatting.None));
 			return path;
+		}
+
+		/// <summary>
+		/// What the core is told of the project to be when it is asked about the
+		/// game (<see cref="AskCoreForSuggestion"/>): the files picked so far and
+		/// the slot each fills, as <see cref="WriteSlotsForPrecompile"/> has
+		/// them, and the settings chosen so far - the machine among them, which
+		/// a package of several machines needs before it can read a game at all.
+		/// A core asked about a .cue alone cannot read the disc.
+		/// </summary>
+		internal Newtonsoft.Json.Linq.JObject SuggestionFilesDocument()
+		{
+			Newtonsoft.Json.Linq.JObject files = new();
+			if (_declaration is not null)
+			{
+				foreach (var slot in _declaration.Slots)
+				{
+					if (!_slotLists.TryGetValue(slot.Id, out var list)) continue;
+					foreach (var file in list.Items.OfType<PickedFile>()) files[file.Name] = file.Path;
+				}
+			}
+			var effective = WaterboxCore.EffectiveSettingsFor(_cfg ?? new WaterboxConfig(), _settings);
+			return new Newtonsoft.Json.Linq.JObject
+			{
+				["slots"] = Newtonsoft.Json.Linq.JObject.Parse(CurrentSlotsJson()),
+				["files"] = files,
+				["settings"] = Newtonsoft.Json.Linq.JObject.FromObject(effective),
+			};
+		}
+
+		/// <summary>The same, written to a file for the helper process; null when it cannot be written (the core is then asked about the game alone).</summary>
+		private string? WriteFilesForSuggestion()
+		{
+			try
+			{
+				var path = Path.Combine(Path.GetTempPath(), $"chimera-suggest-files-{Guid.NewGuid():N}.json");
+				File.WriteAllText(path, SuggestionFilesDocument().ToString(Newtonsoft.Json.Formatting.None));
+				return path;
+			}
+			catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+			{
+				return null;
+			}
 		}
 
 		private string CurrentSlotsJson()
