@@ -840,6 +840,7 @@ namespace Chimera.Client.GUI
             this.CacheManagerMenuItem,
             this.MediaMakerMenuItem,
             this.PrecompiledModulesMenuItem,
+            this.McpServerMenuItem,
             this.toolStripSeparatorManagers,
             this.RamWatchMenuItem,
             this.RamSearchMenuItem,
@@ -848,8 +849,7 @@ namespace Chimera.Client.GUI
             this.MacroToolMenuItem,
             this.BatchRunnerMenuItem,
             this.toolStripSeparatorCoreLog,
-            this.ExportCoreLogMenuItem,
-            this.McpServerMenuItem});
+            this.ExportCoreLogMenuItem});
 			this.ToolsSubMenu.Text = "&Tools";
 			this.ToolsSubMenu.DropDownOpened += new System.EventHandler(this.ToolsSubMenu_DropDownOpened);
 			// 
