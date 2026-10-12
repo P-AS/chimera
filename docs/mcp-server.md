@@ -1,9 +1,22 @@
 # An MCP server for Chimera (design)
 
 Status: the design was decided by the owner on 2026-10-12 (the decisions are
-listed at the end). The work is in progress; this document says what is built
-and what is not as each part lands. Today: step 1 of the order of work is
-done (one engine call opens a project); no part of the server is built yet.
+listed at the end). The work is in progress; this section says what is built.
+
+Built so far:
+
+- One engine call opens a project (step 1 of the order of work).
+- The engine's part of the server: the local pipe, the protocol, the log, and
+  the tools that only look and need nothing but the machine (`status`,
+  `controls`, `get_input`, `screenshot`, `list_memory`, `read_memory`,
+  `registers`, `list_properties`, `get_property`). `chimera-mcp`, the program
+  an agent starts, on Linux and Windows.
+
+Not built yet: Tools > MCP Server... in the window, `list_branches` and
+`list_markers`, every tool that changes something, RAM search, `watch`,
+`advance_until`, and the windowless mode. Until the window part exists the
+server can only be tried through `chimera-run --mcp-serve`, which is how it
+is tested.
 
 ## What it is
 
@@ -52,6 +65,10 @@ Nothing here opens a socket, listens on a port or resolves a name, so the rule
 that Chimera has no network code (docs/core-manager.md, "Nothing reaches the
 network") holds and `tools/check-no-network.sh` passes unchanged. MCP's other
 way to connect, over HTTP, is not offered, for the same rule.
+
+A second Chimera of the same user can serve beside the first under another
+name: the environment variable `CHIMERA_MCP_NAME`, set to the same word for
+that Chimera and for its `chimera-mcp`.
 
 A user sets it up once in their agent. The dialog shows the line to copy, for
 example for Claude Code:

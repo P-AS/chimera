@@ -6540,3 +6540,49 @@ What was decided:
 Why these: the person's work is what is at risk, so the server is off until
 asked for, read-only until allowed, and every change is an ordinary TAStudio
 edit that can be undone, with a branch saved before the first one.
+
+## The MCP server's engine part: a pipe, a protocol, and the tools that look (2026-10-12)
+
+The first part of the MCP server (docs/mcp-server.md) is in the engine. What
+was chosen while building it, and why:
+
+- **The agent's program starts `chimera-mcp`, and `chimera-mcp` reaches the
+  running Chimera through a local pipe.** MCP's local form has the agent's
+  program start the server as a child process. A window that is already open
+  cannot be started, so a small program stands in between and passes each
+  call on. It also answers the introduction and lists the tools by itself, so
+  an agent's program does not need restarting when Chimera is.
+- **The pipe is a named pipe on Windows and two FIFO files on Linux**, not a
+  Unix socket: no socket call is used at all, and `tools/check-no-network.sh`
+  passes unchanged. The Windows pipe refuses other machines and is given a
+  security descriptor naming this user only, because the default one lets
+  every user of the machine read a pipe. The Linux folder must be this
+  user's and closed to others, or the server does not start.
+- **A call runs on the thread that runs the machine.** A thread in the engine
+  only reads and writes the pipe. The frontend asks once per pass of its loop
+  whether a call waits (`ce_mcp_pending`) and has the engine run it
+  (`ce_mcp_service`); a call only the frontend can run is handed to it.
+- **A call that waited too long is not run.** If Chimera does not take a call
+  up within 30 seconds (a dialog is open), the agent is told it was not run;
+  Chimera drops any call older than 25 seconds when it gets to it, so a call
+  the agent was told had failed is never run afterwards.
+- **A kept connection that has gone stale is reopened once**, without the
+  agent seeing an error, when the request could not be sent. Nothing was run,
+  so sending it again is safe.
+
+What was measured. A new unit test (`test_mcp`: the pipe, the protocol, a
+call travelling to a server and back, a second server and a second client
+refused, reconnection) passes on Linux, 40 runs in a row, and its Windows
+build passes when run through WSL. One fault was found that way: on Windows
+the pipe did not listen again until the next wait after a client left, and a
+client arriving in between was told another agent was connected. The engine's
+tests are 23 of 23. The test of the whole product with the synthetic core is
+82 of 82, two of them new: `chimera-run --mcp-serve` plays the running
+Chimera, `tests/synth/mcp-agent.py` plays the agent through `chimera-mcp`,
+and memory must equal the reference dumps byte for byte, the input must equal
+the movie file, and the picture must equal the one `chimera-run` writes for
+the last frame; with no server running, a call must say how to start one.
+With the memory read, the picture, the input and the "not started" sentence
+broken on purpose, the checks failed. The same path by hand on Windows
+(`chimera-run.exe`, `chimera-mcp.exe`, the same script) gave the same
+answers. The interface is unchanged and its tests were not run again.

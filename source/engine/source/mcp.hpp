@@ -1,0 +1,82 @@
+/* mcp.hpp - internal: the MCP server's shared parts (docs/mcp-server.md). Not
+ * part of the ABI; the frontend's calls are the ce_mcp_* ones in engine.h.
+ *
+ * MCP (Model Context Protocol) is how an AI agent's program uses another
+ * program: the other program lists tools, and the agent calls them. Three
+ * pieces are here:
+ *
+ *   - the list of tools, the same for every program that offers them;
+ *   - the protocol: one line of JSON in from the agent's program, one line
+ *     out. chimera-mcp, the program the agent starts, runs this;
+ *   - the link from chimera-mcp to a running Chimera, over the local pipe.
+ *
+ * The other end of that link - the part that lives in the running Chimera and
+ * runs the tools on its machine - is behind ce_mcp_start and its neighbours.
+ */
+#pragma once
+
+#include "local_pipe.hpp"
+
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <string>
+
+namespace chimera
+{
+
+struct McpTool
+{
+	const char *name;
+	const char *description;
+	const char *schema;  /* the JSON Schema of its arguments */
+	bool changes;        /* it changes the movie or the machine: refused unless the person allowed changes */
+	bool host;           /* the frontend runs it, not the engine */
+};
+
+const McpTool *mcpTools(size_t &count);
+const McpTool *mcpFindTool(const std::string &name);
+
+/* What a tool call ends with: the MCP "content" array as JSON text, and
+ * whether it is an error. */
+struct McpResult
+{
+	std::string content;
+	bool isError = false;
+};
+
+/* [{"type":"text","text":<text>}] */
+std::string mcpTextContent(const std::string &text);
+McpResult mcpError(const std::string &sentence);
+
+/* Runs one tool call for the protocol. */
+using McpExecutor = std::function<McpResult(const std::string &tool, const std::string &argumentsJson)>;
+
+/* One line from the agent's program in, the line to send back out - empty
+ * when the line needs no answer. `client`, when given, receives the name and
+ * version the agent's program gave when it introduced itself. */
+std::string mcpHandleLine(const std::string &line, const McpExecutor &execute, std::string *client);
+
+/* The link from chimera-mcp to a running Chimera. It connects when a call
+ * needs it and again after Chimera, or its server, went away and came back,
+ * so the agent's program never has to be restarted for that. */
+class McpLink
+{
+public:
+	/* The name the running Chimera shows in Tools > MCP Server... */
+	void setClient(const std::string &nameAndVersion) { client = nameAndVersion; }
+	McpResult call(const std::string &tool, const std::string &argumentsJson);
+
+	/* how long a call may wait for Chimera to take it up, and (in Chimera) how
+	 * old a waiting call may be and still be run. The second is the shorter,
+	 * so a call the agent was told had failed is never run afterwards. */
+	static constexpr int kTakeUpMs = 30000;
+	static constexpr int kStaleMs = 25000;
+
+private:
+	PipeClient pipe;
+	std::string client;
+	uint64_t nextId = 1;
+};
+
+} // namespace chimera

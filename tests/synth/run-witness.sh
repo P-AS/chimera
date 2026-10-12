@@ -290,6 +290,55 @@ PROJPY
 			report "E:project:refusals" FAIL "wrong:$jbad (see work/engine-project/*.log)"
 		fi
 
+		# THE MCP SERVER (docs/mcp-server.md): the way an AI agent's program uses
+		# the machine a running Chimera has open. chimera-run plays the running
+		# Chimera here (--mcp-serve: it plays the movie, then serves the machine
+		# as the movie left it), chimera-mcp is the program an agent starts, and
+		# mcp-agent.py plays the agent. What the tools say must be what the other
+		# tests already trust: memory equal to the reference dumps byte for byte,
+		# the input equal to the movie file, the picture equal to the one
+		# chimera-run writes for the last frame. Then, with no server running, a
+		# call must say how to start one instead of hanging.
+		# The pipe is given a name of this run's own, so a Chimera this user has
+		# open with its server started is neither disturbed nor in the way.
+		chimera_mcp="$repo_root/build/meson-linux/chimera-mcp"
+		if [ ! -x "$chimera_mcp" ]; then
+			report "E:mcp" SKIP "chimera-mcp not built (meson compile -C build/meson-linux)"
+		else
+			qname=gridWalker.win
+			qdir="$work/mcp"
+			rm -rf "$qdir" && mkdir -p "$qdir"
+			qlast=$(( $(grep -c '^|' "$here/movies/$qname.txt") - 1 ))
+			CHIMERA_MCP_NAME="witness$$"; export CHIMERA_MCP_NAME
+			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/$qname.txt" \
+				--screenshot "$qlast=$qdir/last.tga" --mcp-serve > "$qdir/serve.log" 2>&1 &
+			qserve=$!
+			qtries=0
+			while [ "$qtries" -lt 100 ] && ! grep -q "MCP server started" "$qdir/serve.log" 2>/dev/null; do
+				sleep 0.1; qtries=$((qtries+1))
+			done
+			timeout 120 python3 "$here/mcp-agent.py" "$chimera_mcp" "$golden_dir/$qname.ram.bin" "$golden_dir/$qname.vram.bin" \
+				"$here/movies/$qname.txt" "$qdir/last.tga" > "$qdir/agent.log" 2>&1
+			qrc=$?
+			wait "$qserve"; qsrc=$?
+			if [ "$qrc" -eq 0 ] && [ "$qsrc" -eq 0 ] && grep -q "mcp: .*the agent's program is the witness 1" "$qdir/serve.log"; then
+				report "E:mcp:tools" PASS "an agent reads the machine through chimera-mcp: memory, input and picture equal to the references"
+			else
+				report "E:mcp:tools" FAIL "agent rc=$qrc, chimera-run rc=$qsrc (see work/mcp/agent.log and serve.log)"
+			fi
+			printf '%s\n%s\n' \
+				'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}' \
+				'{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"status","arguments":{}}}' \
+				| timeout 30 "$chimera_mcp" > "$qdir/stopped.log" 2>&1
+			qrc=$?
+			if [ "$qrc" -eq 0 ] && grep -q '"id":2.*not started.*Tools > MCP Server.*"isError":true' "$qdir/stopped.log"; then
+				report "E:mcp:stopped" PASS "with no server running, a call says how to start one"
+			else
+				report "E:mcp:stopped" FAIL "rc=$qrc (see work/mcp/stopped.log)"
+			fi
+			unset CHIMERA_MCP_NAME
+		fi
+
 		# A PACKAGE WHOSE DECLARATIONS CANNOT BE READ says which file and what
 		# is in it. The sentence reaches a person through a window that shows
 		# one line (the project wizard's compile step), and "not readable JSON"

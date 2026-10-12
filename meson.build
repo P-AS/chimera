@@ -291,6 +291,8 @@ engine_src = files(
   'source/engine/source/ram_search.cpp',
   'source/engine/source/kept_pictures.cpp',
   'source/engine/source/game_properties.cpp',
+  'source/engine/source/local_pipe.cpp',
+  'source/engine/source/mcp.cpp',
   'extern/miniz/miniz.c',  # vendored (MIT): the zip half of the state container
   'extern/cjson/cJSON.c',  # vendored (MIT): bundle JSON
 )
@@ -411,6 +413,35 @@ executable(
   install: true,
   install_dir: 'dll',  # beside libminiboxhost + libzstd, which it loads from its own directory
 )
+# The program an AI agent's program starts to reach a running Chimera
+# (docs/mcp-server.md). It talks on its standard input and output and passes
+# each call to Chimera over a local pipe; it opens no socket.
+executable(
+  'chimera-mcp',
+  ['source/engine/tools/chimera-mcp.cpp'] + engine_src + gl_bridge_src,
+  include_directories: engine_inc,
+  cpp_args: engine_build_args,
+  c_args: engine_build_args,
+  dependencies: [dl_dep] + gl_bridge_deps,
+  install: true,
+  install_dir: 'dll',
+)
+
+if meson.is_cross_build()
+  # The one unit test that is also built for Windows, by hand
+  # (meson compile -C build/meson-windows test_mcp): the pipe under the MCP
+  # server is different code on each system, and the Windows half can be run
+  # from Linux through WSL. The other tests are built for the host only.
+  executable(
+    'test_mcp',
+    ['source/engine/tests/test_mcp.cpp'] + engine_src + gl_bridge_src,
+    include_directories: engine_inc,
+    cpp_args: engine_build_args + ['-UNDEBUG'],
+    c_args: engine_build_args,
+    dependencies: [dl_dep] + gl_bridge_deps,
+    build_by_default: false,
+  )
+endif
 
 if not meson.is_cross_build()
   # Not a test: what a captured frame costs when the budget is full and
@@ -426,7 +457,7 @@ if not meson.is_cross_build()
     build_by_default: false,
   )
 
-  foreach engine_test : ['sha1', 'movie_log', 'movie_text', 'movie_entry', 'control_names', 'state_container', 'state_format', 'package', 'multifile', 'project', 'firmware', 'state_history', 'media', 'gl_flight', 'gl_sync', 'gl_buffer_pool', 'stride_tuner', 'plain_numbers', 'greenzone_shape', 'ram_search', 'kept_pictures', 'game_properties']
+  foreach engine_test : ['sha1', 'movie_log', 'movie_text', 'movie_entry', 'control_names', 'state_container', 'state_format', 'package', 'multifile', 'project', 'firmware', 'state_history', 'media', 'gl_flight', 'gl_sync', 'gl_buffer_pool', 'stride_tuner', 'plain_numbers', 'greenzone_shape', 'ram_search', 'kept_pictures', 'game_properties', 'mcp']
     test(
       'engine_' + engine_test,
       executable(

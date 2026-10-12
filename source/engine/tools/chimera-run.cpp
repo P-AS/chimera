@@ -116,6 +116,7 @@
 
 #include <chrono>
 #include <clocale>
+#include <ctime>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -325,6 +326,15 @@ int main(int argc, char **argv)
 	bool probeUnseen = false;                       /* --settle-probe-unseen: no picture read back before the probe's frames */
 	std::string probePrefix;
 	bool drawEveryFrame = false;
+	/* --mcp-serve [changes]: after the run, be the running Chimera that
+	 * chimera-mcp connects to (docs/mcp-server.md) - start the MCP server and
+	 * answer calls on the machine as the run left it, until the agent's
+	 * program disconnects or 60 seconds pass with none connected. With
+	 * "changes", tools that change things are allowed. A tool only a frontend
+	 * can run is answered with a sentence saying so. This is how the server is
+	 * tested with no window. */
+	bool mcpServe = false;
+	bool mcpChanges = false;
 	/* --rewind-loop <frame>,<times>: what re-recording actually does. A single
 	 * --seek asks whether the history holds one frame; this asks whether doing
 	 * it over and over leaves the machine, and the PICTURE, where a straight
@@ -460,6 +470,11 @@ int main(int argc, char **argv)
 		else if (arg == "--settle-probe-unseen") probeUnseen = true;
 		else if (arg == "--rates" && i + 1 < argc) { ratesPath = argv[++i]; renderEveryFrame = true; }
 		else if (arg == "--draw-every-frame") drawEveryFrame = true;
+		else if (arg == "--mcp-serve")
+		{
+			mcpServe = true;
+			if (i + 1 < argc && std::strcmp(argv[i + 1], "changes") == 0) { mcpChanges = true; i++; }
+		}
 		else if (arg == "--greenzone-check") greenzoneCheck = true;
 		else if (arg == "--greenzone-check-vs-restore") { greenzoneCheck = true; gzTruthFromRestore = true; }
 		else if (arg == "--rewind-warmup" && i + 1 < argc) rewindWarmup = std::atoll(argv[++i]);
@@ -1672,6 +1687,38 @@ int main(int argc, char **argv)
 	}
 	std::printf("frames=%lld\n", static_cast<long long>(frames));
 	ce_movie_log_free(movie);
+	if (mcpServe)
+	{
+		const char *mcpError = nullptr;
+		if (ce_mcp_start(&mcpError) == 0) return fail(metaPath, std::string("--mcp-serve: ") + (mcpError != nullptr ? mcpError : "could not start"));
+		ce_mcp_allow_changes(mcpChanges ? 1 : 0);
+		std::fprintf(stderr, "chimera-run: MCP server started at %s\n", ce_mcp_endpoint());
+		std::fflush(stderr);
+		bool everConnected = false;
+		const auto started = std::chrono::steady_clock::now();
+		for (;;)
+		{
+			const int32_t state = ce_mcp_state();
+			if (state == CE_MCP_CONNECTED) everConnected = true;
+			if (everConnected && state != CE_MCP_CONNECTED && ce_mcp_pending() == 0) break;
+			if (!everConnected && std::chrono::steady_clock::now() - started > std::chrono::seconds(60)) break;
+			uint64_t callId = 0;
+			const char *tool = nullptr, *arguments = nullptr;
+			while (ce_mcp_pending() != 0
+				&& ce_mcp_service(session, ce_session_movie_log(session), -1, "{\"frontend\":\"chimera-run\"}", &callId, &tool, &arguments) != 0)
+			{
+				ce_mcp_answer(callId, "This tool needs Chimera's window; chimera-run has none.", 1);
+			}
+#ifdef _WIN32
+			Sleep(2);
+#else
+			struct timespec nap = { 0, 2000000 };
+			nanosleep(&nap, nullptr);
+#endif
+		}
+		ce_mcp_stop();
+		for (uint64_t i = 0; i < ce_mcp_log_total(); i++) std::fprintf(stderr, "mcp: %s\n", ce_mcp_log_line(i));
+	}
 	ce_session_free(session);
 	if (multi != nullptr) ce_multifile_free(multi);
 	if (project != nullptr) ce_project_free(project);

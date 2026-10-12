@@ -1890,6 +1890,92 @@ CE_API void ce_ramsearch_clear_history(ce_ramsearch *rs);
 CE_API int64_t ce_ramsearch_undo(ce_ramsearch *rs);
 CE_API int64_t ce_ramsearch_redo(ce_ramsearch *rs);
 
+/* ---- the MCP server ----
+ *
+ * A way for an AI agent's program to use the machine a frontend has open
+ * (docs/mcp-server.md). MCP, the Model Context Protocol, is the standard such
+ * programs speak: a server lists tools and the agent calls them.
+ *
+ * The agent's program does not talk to the frontend. It starts chimera-mcp
+ * (source/engine/tools), and chimera-mcp reaches the frontend through a pipe
+ * that is local to the machine and open to the same user only - a named pipe
+ * on Windows, two FIFO files on Linux. No socket is opened and no network API
+ * is used.
+ *
+ * The frontend's part:
+ *   - ce_mcp_start when a person asks for it, ce_mcp_stop when they stop it.
+ *     Nothing starts it otherwise, and nothing remembers that it was started.
+ *   - Once per pass of the loop that runs the machine, and on that thread:
+ *     if ce_mcp_pending says a call waits, ce_mcp_service. It answers every
+ *     waiting call the engine can answer by itself (reading memory, the
+ *     picture, the input). For a call only the frontend can run - one that
+ *     must go through its own editor, so that the person sees the change and
+ *     can undo it - it returns 1 with the call; the frontend runs it and
+ *     gives the answer with ce_mcp_answer, at once or later, then calls
+ *     ce_mcp_service again for the calls behind it.
+ *   - The rest is for a window that shows what is happening: the state, the
+ *     name of the agent's program, and the log, one line a call.
+ *
+ * A tool that changes the movie or the machine is refused unless
+ * ce_mcp_allow_changes(1) was called since the last start: a person allows
+ * changes, each time, and until then an agent can only look. */
+enum
+{
+	CE_MCP_STOPPED = 0,
+	CE_MCP_WAITING = 1,    /* started; no agent's program is connected */
+	CE_MCP_CONNECTED = 2,
+};
+
+/* 1 when the server is started (or was already); 0 with *error_out (static
+ * per-thread) when the pipe cannot be made, which includes another program of
+ * this user already serving. */
+CE_API int32_t ce_mcp_start(const char **error_out);
+/* Stops the server and ends the connection. A call that was waiting is not
+ * run; one the frontend is running may still finish, and its answer is
+ * dropped. */
+CE_API void ce_mcp_stop(void);
+/* A name for this program's pipe, so that it does not meet the pipe of
+ * another Chimera of the same user: the second of two that both want to
+ * serve, or a test beside a Chimera in use. chimera-mcp is given the same
+ * name in the environment variable CHIMERA_MCP_NAME, which this program
+ * reads too when no name is set here. NULL or "" for none. Takes effect at
+ * the next ce_mcp_start. */
+CE_API void ce_mcp_name(const char *name);
+CE_API int32_t ce_mcp_state(void);
+/* The name and version the agent's program gave, "" when none is connected.
+ * Borrowed until this thread's next call of it. */
+CE_API const char *ce_mcp_client(void);
+/* The pipe's name (Windows) or folder (Linux), for a person to read. */
+CE_API const char *ce_mcp_endpoint(void);
+CE_API void ce_mcp_allow_changes(int32_t on);
+CE_API int32_t ce_mcp_changes_allowed(void);
+
+/* 1 when a call waits to be run. Cheap enough to ask on every pass. */
+CE_API int32_t ce_mcp_pending(void);
+/* Runs the waiting calls, on the thread that runs the machine. `s` is the
+ * open machine and `log` its movie's input, either NULL when there is none.
+ * `frame` is the frame the machine is on as the frontend counts it, or -1 to
+ * use ce_session_frame. `host_status_json`, when given, is a JSON object of
+ * what only the frontend knows (the project's title, whether it is paused);
+ * the status tool adds its own facts to it.
+ * Returns 0 when nothing waits any more, or 1 with a call for the frontend:
+ * *id_out for ce_mcp_answer, the tool's name and its arguments as a JSON
+ * object. Both strings are borrowed until this thread's next call. */
+CE_API int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t frame, const char *host_status_json,
+	uint64_t *id_out, const char **tool_out, const char **arguments_out);
+/* The frontend's answer to a call ce_mcp_service handed it: text for the
+ * agent (JSON by convention), and whether it is a refusal. An id that is not
+ * waiting for an answer is ignored. */
+CE_API void ce_mcp_answer(uint64_t id, const char *text, int32_t is_error);
+
+/* The log: one line a call, and a line for each start, stop, connection and
+ * change of what is allowed. _total counts every line since the process
+ * began; the last 5000 are kept. _line gives line `index` (0 the first ever
+ * written), "" for one no longer kept. Borrowed until this thread's next
+ * call of it. */
+CE_API uint64_t ce_mcp_log_total(void);
+CE_API const char *ce_mcp_log_line(uint64_t index);
+
 #ifdef __cplusplus
 }
 #endif
