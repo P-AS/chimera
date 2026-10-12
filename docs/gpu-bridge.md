@@ -905,6 +905,9 @@ What is different from the OpenGL bridge, and why:
   value was looked up after the check that refuses a bad call, so a handle
   from before a load reached the driver as null and ended the host. Fixed in
   miniBox 25955f4, with a test that keeps a card across a load.
+  One more such call was found on 2026-10-12: `vkUpdateDescriptorSets`
+  with a write to a set the bridge does not know reached the driver with a
+  null set. It is refused since miniBox a348f60.
 - **A load is always a new context.** The OpenGL bridge learned this
   ("Per load, too", above); the Vulkan one starts there. So the question a
   core must answer is not whether its objects survived but how it makes them
@@ -914,6 +917,16 @@ What is different from the OpenGL bridge, and why:
   memory type is reported as not coherent, so a correct renderer says so.
 - **There is no borrowed context** to give back: nothing here is bound to a
   thread, so `ce_gl_release` has no counterpart.
+
+Which extensions a core is offered is a list in miniBox (`kDeviceExtensions`
+in `source/vk/vk-host.c`), and which commands it may call is another
+(`source/vk/vk-entry-points.txt`). A renderer that needs something missing
+from either has it added there. Added on 2026-10-12 for PCSX2's renderer
+(issue 248, miniBox a348f60): `VK_KHR_push_descriptor` with its command, and
+the `KHR` names of the two dynamic rendering commands, which the bridge
+knew only by their newer names. The list of commands grew from 224 to 228,
+and a core built against the longer list does not start in a Chimera built
+before it; cores built against the shorter one are not affected.
 
 The core's export `StateSaving`, which the engine already calls before a
 state is made, is how a Vulkan core brings into the machine what only the
