@@ -272,6 +272,15 @@
       "tested": ""
     },
     {
+      "id": "zeebx",
+      "name": "Zeebx",
+      "systems": [
+        { "id": "ZEEBO", "name": "Zeebo" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-zeebx",
+      "tested": ""
+    },
+    {
       "id": "sdlpop",
       "name": "SDLPoP",
       "systems": [

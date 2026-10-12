@@ -6329,3 +6329,46 @@ renderer that also has OpenGL"), with what was measured on the GeForce GTX
 
 What is not proven: Chimera's window has not run a core with the setting on
 `vulkan-hw` - only `chimera-run` has.
+
+
+## Zeebx, the Zeebo core, joins the official cores (user-decided, 2026-10-12, issue 240)
+
+The owner said "publish" once the core ran two games the same natively and
+in the sandbox. The Zeebo is the console TecToy sold in Brazil and Mexico
+from 2009; the core is built on the emulator Zeebx.
+
+What was decided:
+
+- `official-cores.json` has a row for the core `zeebx`, system id `ZEEBO`,
+  named "Zeebo" as the core's own package names it, and the README's table
+  of emulation cores lists it after Opera.
+- Nothing in Chimera changed for it. The core draws its picture in software
+  and uses only what every core may: controllers with sticks, a game file,
+  an optional save data file, settings, and the game's memory as one bus.
+
+What a user should know, said in the core's README and in the issue:
+
+- Two games have been tried, Quake II and Um Jogo de Ovos. Both run from
+  power-on to their menus with picture, sound, controllers and savestates,
+  on Linux and on Windows. Quake II was played into its first level.
+- Quake II's level runs at about real time on a fast computer: the 3D
+  picture is drawn in software on one processor thread.
+- The console's system font and a MIDI sound bank, which Zeebx can use, are
+  not wired up; neither could be tested with the two games at hand.
+- The core's CI has no game, so on a public runner only the build, Zeebx's
+  own 608 unit tests and Chimera's package tests run. The tests with the
+  games are run on the developer's machine before each push.
+
+One thing was found on the way that is the emulator's own: its sound mixer
+added the playing sounds in an order that differs from one run to the next,
+so the same input did not always make exactly the same sound. The core
+carries a two-line patch for it. It has not been reported to Zeebx's authors.
+
+What was measured: the published build "Development build 0d06be4e", built
+on a CI runner, passed the core's test script here with both games present
+(10 tests, none failed, none skipped) - the sandboxed core printing the
+same clock, instruction count, picture, sound and memory digests as the
+native build, a minute of Quake II included - and Chimera's roster and
+package tests named in the commit that added the row. Chimera's window ran
+an earlier build of the core on Windows, driven by a script (600 frames,
+the project saved). Nobody has yet used it by hand.
