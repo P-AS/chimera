@@ -6921,3 +6921,22 @@ folder was driven by hand through the same steps: a read outside refused,
 the movie written and played to the reference memory, an edit and its undo,
 `advance_until`, a save, a write outside refused, and the saved project
 reopened and played to the reference memory.
+
+## chimera-mcp stays a program of its own (user-decided, 2026-10-12)
+
+The owner asked whether `chimera-mcp` could be dropped and an agent reach the
+open Chimera directly. What was looked at:
+
+- An agent's program can reach an MCP server in two ways only: start a
+  program and talk on its standard input and output, or connect over HTTP.
+  None can be told to open a named pipe. So with a listener that is not HTTP
+  - and Chimera's is a local pipe - the agent's program has to launch
+  something that relays to it.
+- That something could be `chimera-mcp`, or Chimera's own program started
+  with a flag and no window, or a tool already on the system (PowerShell,
+  `socat`) with the window speaking MCP on the pipe itself. A listener over
+  HTTP would need nothing launched, and is network code.
+
+He decided to keep `chimera-mcp` as it is: it starts fastest, it says how to
+start the server when Chimera is not running, and the pipe stays the only
+way in. HTTP was not chosen.
