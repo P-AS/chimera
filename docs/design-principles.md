@@ -6940,3 +6940,48 @@ open Chimera directly. What was looked at:
 He decided to keep `chimera-mcp` as it is: it starts fastest, it says how to
 start the server when Chimera is not running, and the pipe stays the only
 way in. HTTP was not chosen.
+
+## Cadmium (CHIP-8) and Fuse (ZX Spectrum) join the official cores (user-decided, 2026-10-12, issues 253 and 229)
+
+The owner said "commit and publish all you've done so far" once both cores
+were built and tested locally.
+
+What was decided:
+
+- `official-cores.json` has a row for the core `cadmium`, system id `CHIP8`
+  ("CHIP-8"), and a row for the core `fuse`, system id `ZXS` ("ZX
+  Spectrum"). The README's table of emulation cores lists Cadmium after
+  Stella and Fuse before the X68000.
+- Fuse has the same system id as the ZX Spectrum of the ares core, on
+  purpose: they are two cores of one system, and a project says which core
+  it was made with.
+- The Fuse core carries the eighteen machine ROMs Fuse itself is distributed
+  with, taken from Fuse's source at build time (the owner: "package the
+  ROMs"), so twelve of its sixteen machines start with no file from the
+  user. The other four (the three Pentagon models and the Scorpion) ask
+  for their ROMs as firmware.
+- Cadmium's source includes a few historic CHIP-8 programs; the owner said
+  that is not a problem.
+- Nothing in Chimera changed for either core.
+
+What a user should know, said in each core's README:
+
+- Cadmium runs CHIP-8 and its relatives (SUPER-CHIP, XO-CHIP, MegaChip and
+  others, twenty-one variants) and picks the variant from the program unless
+  a setting names one.
+- Fuse runs sixteen Spectrum models. Tapes, snapshots and disk images load;
+  Fuse's add-on hardware (Interface 1, DivIDE, the mouse and others) is not
+  offered yet, and a project takes one media file.
+
+What was measured: both cores' first CI runs passed and published
+"Development build 23000d99" (Cadmium: 12 tests, none failed, none skipped -
+all of its test programs come with its sources) and "Development build
+3e9981e5" (Fuse: 14 passed, 2 skipped for want of the ROMs and the game no
+runner may have). Each published package was downloaded and run here beside
+the local build through Chimera's headless runner: the same picture after
+1,500 frames of a CHIP-8 game, and the same memory and picture after 3,000
+frames of Manic Miner. Chimera's roster, package and control-letter tests
+pass with both packages installed (22 tests). On Windows, earlier local
+builds of both ran the same as on Linux in the headless runner; the
+published packages were not run there.
+
