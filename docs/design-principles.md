@@ -7097,3 +7097,41 @@ come too, the wizard's document becomes the slot map and the files) and one
 for the wizard's document (picked files, slot map, settings); each was seen
 to fail with its behaviour taken out.
 
+## MAME joins the official cores, as the arcade core (user-decided, 2026-10-12, issue 164)
+
+The owner asked for a MAME arcade core ("start 164"), decided its four open
+questions the same day, and then said "commit and publish all you've done so
+far" and "for the new cores: add the discord hook, update Chimera's
+README.md with the new cores, and anything else we typically do when adding
+a new core".
+
+What was decided:
+
+- `official-cores.json` has a row for the core `mame`, system id `ARCADE`
+  ("Arcade" - the owner: "Arcade is fine"). The README's table of emulation
+  cores lists MAME after FBNeo.
+- The core is every arcade machine of MAME: 36,721 machines from 1,766
+  driver files, in one package of 79 MB. Chimera's other arcade cores
+  (FBNeo, and the arcade boards of Flycast, DuckStation, PCSX2 and Dolphin)
+  stay: a project says which core it was made with.
+- A game's controls keep MAME's general names ("P1 Button 1") as their
+  identity, and the game's own word for each ("Weak Punch") is shown beside
+  it. A game's other rom sets (its BIOS set, a device's set) are asked for
+  as the project's firmware. Both needed additions to Chimera, which are in
+  the section "What a game calls a control, and the files a game needs"
+  above.
+- Issue 164 stays open: its reporters wait for a fix in MAME that the
+  version this core builds does not have yet.
+
+What was measured: the core's first complete CI run passed and published
+"Development build cdbaff4b" in 2 hours 11 minutes on a public runner (it
+builds MAME twice, for the host and for the sandbox). Its test script there:
+23 passed, 0 failed, 5 skipped (the tests that need rom sets no runner may
+have); the window test: 2 passed, 2 skipped for the same reason; Chimera's
+package tests: 18 passed. The published package was downloaded and run here
+beside the local build through Chimera's headless runner: the same picture
+after 600 frames of Pong, and the same picture and memory after 1,200 frames
+of Shinobi. The games that were played with the local build are listed in
+the core's docs/PLAN.md. The published package was not run on Windows; an
+earlier local build was.
+

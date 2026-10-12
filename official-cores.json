@@ -299,6 +299,15 @@
       "tested": ""
     },
     {
+      "id": "mame",
+      "name": "MAME",
+      "systems": [
+        { "id": "ARCADE", "name": "Arcade" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-mame",
+      "tested": ""
+    },
+    {
       "id": "sdlpop",
       "name": "SDLPoP",
       "systems": [
