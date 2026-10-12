@@ -1496,10 +1496,10 @@ std::string labelled(const char *what, int64_t frame, int64_t count)
 
 /* Whether a line has the columns of this machine's lines: as many characters
  * between its bars as the empty line has, and readable as one. The bars are
- * not counted, because the engine and the interface do not write them alike:
- * for a machine with no console buttons the engine writes an empty first
- * group ("||....|") and the interface leaves it out ("|....|"). Both read
- * either. */
+ * not counted, because a line may be written with or without the empty first
+ * group of a machine that has no console buttons: the engine and the
+ * interface write it ("||....|"), and movies written by hand, the test
+ * movies among them, leave it out ("|....|"). Both are read alike. */
 bool lineFits(ce_session *s, const std::string &line, const std::string &blank)
 {
 	const auto columns = [](const std::string &text)

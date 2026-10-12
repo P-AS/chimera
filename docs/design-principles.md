@@ -6837,13 +6837,16 @@ asked (the owner's rule of the same day: no logic written twice).
 - The window's side shrank to applying a step through TAStudio's own calls.
   It no longer knows which buttons exist or what a line looks like.
 
-Found on the way: the engine and the interface do not write a movie line
-alike. For a machine with no console buttons the engine writes an empty first
-group (`||........|`), the interface leaves it out (`|........|`). Both read
-either, and movies replay, so nothing was changed; the check of a line
-counts the characters between the bars and not the bars. It is noted here
-because a movie recorded by `chimera-run --record` and one saved by the
-window differ in text for that reason.
+Found on the way, and corrected the same day: a movie line may or may not
+carry the empty first group of a machine with no console buttons
+(`||........|` or `|........|`). It was first written here that the engine
+writes it and the interface leaves it out. That was wrong. Both write it: a
+project made in the window with a PlayStation 2 core shows it, and the
+interface's code writes every group. The short form is what movies written
+by hand have, the test movies of this repository among them, and the window
+keeps a line as it was loaded until the frame is edited. Both forms are read
+alike, so the check of a line counts the characters between the bars and not
+the bars.
 
 What was measured: the engine's tests 23 of 23; the interface tests 0 failed
 of 1,065 (24 skipped; four tests of the window's own button and line
