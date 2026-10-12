@@ -953,6 +953,7 @@ namespace Chimera.Client.GUI
 				"software" or "default" => "Software (Native)",
 				"opengl" => "Software (OpenGL)",
 				"opengl-hw" => "Hardware (OpenGL)",
+				"vulkan-hw" => "Hardware (Vulkan)",
 				_ => Value,
 			};
 		}

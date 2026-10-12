@@ -82,7 +82,8 @@ means porting that backend first, and that is a port, not a wiring job.
 Two things have to be true, and either may not be:
 
 1. **The project asks.** The core declares a renderer whose value ends in
-   `-hw` (PCSX2's is `opengl-hw`, shown in the wizard as "Hardware (OpenGL)"),
+   `-hw` (PCSX2's are `opengl-hw` and `vulkan-hw`, shown in the wizard as
+   "Hardware (OpenGL)" and "Hardware (Vulkan)"),
    and the project chose it. That suffix is the whole convention: the frontend
    recognises any core's hardware renderer without knowing the core.
 2. **This build has a bridge, and a driver gives it a context.** `-Dgl_bridge`

@@ -72,6 +72,25 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
+		public void AVulkanRendererIsNamedLikeTheOthers()
+		{
+			using var form = MakeForm(TestPackages.Config("""
+				{
+				  "coreName": "vulkan-renderer",
+				  "systemId": "PSV",
+				  "video": { "width": 960, "height": 544 },
+				  "audio": { "samplesPerFrame": 1024 },
+				  "input": { "buttons": [] },
+				  "settings": [
+				    { "name": "renderer", "type": "enum", "options": ["opengl-hw", "vulkan-hw"], "default": "vulkan-hw" }
+				  ]
+				}
+				"""));
+			CollectionAssert.AreEqual(new[] { "Hardware (OpenGL)", "Hardware (Vulkan)" }, form.RendererLabels,
+				"a core's Vulkan renderer is spelled out as its OpenGL one is, not shown as the raw value");
+		}
+
+		[TestMethod]
 		public void ChoosingHardwareSaysWhatItCosts()
 		{
 			using var form = MakeForm(CfgWithRenderers());

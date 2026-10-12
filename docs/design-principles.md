@@ -7004,3 +7004,47 @@ started".
 
 Measured: the interface tests, 0 failed of 1,065 with the screenshots on;
 the sheet of menu icons was looked at in the light and the dark theme.
+
+
+## Vulkan is the default where the emulator's own default is Vulkan (user-decided, 2026-10-12, issue 248)
+
+The owner, once the eight cores had their Vulkan renderers: "set Vulkan as
+default for the cores that manifestly prefer it (Xenia, for example?), keep
+OpenGL for those who are indifferent or manifest no preference."
+
+"Manifestly prefer" was read from each emulator's own source: what its
+Renderer setting defaults to, with nothing chosen.
+
+| Core | The emulator's own default | The core's default |
+|---|---|---|
+| Vita3K | Vulkan (`backend-renderer`) | `vulkan-hw`, was `opengl-hw` |
+| RPCS3 | Vulkan, in a build that has it | `vulkan-hw`, was `opengl-hw` |
+| Xenia | Vulkan or Direct3D 12; it has no OpenGL | `vulkan-hw`, as before |
+| xemu | OpenGL | `opengl-hw`, unchanged |
+| Dolphin | OpenGL, listed first outside macOS | `opengl-hw`, unchanged |
+| Flycast | OpenGL, in a build without Direct3D | `software`, unchanged |
+| PCSX2, DuckStation, PPSSPP | chosen by the computer | `software`, unchanged |
+
+A core whose default is its software renderer keeps it. That default is a
+different decision: a software renderer draws the same picture on every
+computer, and the owner's sentence is about which graphics API a core that
+already draws on the card asks for.
+
+What a Vulkan default costs: a project made with it needs a graphics driver
+with Vulkan and a Chimera that has the Vulkan bridge. Without either the
+project does not start, and the core's message says to choose `opengl-hw`.
+The core's own tests that ran the default before now name `opengl-hw`, so
+they still test the OpenGL renderer.
+
+RPCS3 was switched only after a second game was tried: Dengeki Bunko Fighting
+Climax Ignition drew nothing under Vulkan, the owner chose "fix it first,
+then switch", and the fault was the renderer's (chimera-core-rpcs3 9fe00b0).
+
+The new-project window shows `vulkan-hw` as "Hardware (Vulkan)", beside
+"Hardware (OpenGL)"; it used to show the raw value.
+
+Measured: with default settings, Chimera's headless runner gives each of the
+two cores its Vulkan renderer (Mesa's software Vulkan); Chimera's package
+tests pass on both packages (18 tests). Vita3K's Vulkan renderer was measured
+on a GeForce GTX 1060 when it was added; RPCS3's is in that core's
+docs/PLAN.md. Neither core's whole test script was run for this change.
