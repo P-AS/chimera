@@ -543,6 +543,10 @@ int main(int argc, char **argv)
 	{
 		return fail(metaPath, "--settings and --project do not mix: the project IS the settings");
 	}
+	if (projectMode && (suggest || importMovie))
+	{
+		return fail(metaPath, "--suggest and --import-movie take a game file, not --project");
+	}
 
 	std::vector<uint8_t> rom, movieText;
 	if (!projectMode && !suggest && !importMovie && !readWholeFile(moviePath, movieText)) return fail(metaPath, std::string("could not read movie ") + moviePath);
@@ -561,7 +565,6 @@ int main(int argc, char **argv)
 	std::vector<const char *> extraPaths;
 	std::string romPathStore;
 	std::vector<std::string> extraNameStore;
-	std::string settingsStore, slotsStore;
 	if (projectMode)
 	{
 		const char *perr = nullptr;
@@ -569,99 +572,20 @@ int main(int argc, char **argv)
 		if (project == nullptr) return fail(metaPath, perr != nullptr ? perr : "bad project");
 
 		/* resolution: the project's own folder first (the convenience), then
-		 * every --files dir; whatever is still missing or mismatched fails -
-		 * this tool has no user to knowingly override */
+		 * every --files dir; whatever is still missing or mismatched fails when
+		 * the machine is opened - this tool has no user to knowingly override */
 		size_t cut = projectPath.find_last_of("/\\");
 		std::string projFolder = cut == std::string::npos ? std::string(".") : projectPath.substr(0, cut);
 		ce_project_resolve_dir(project, projFolder.c_str());
 		for (const std::string &dir : fileDirs) ce_project_resolve_dir(project, dir.c_str());
-		if (ce_project_files_ok(project) == 0)
-		{
-			for (int32_t i = 0; i < ce_project_file_count(project); i++)
-			{
-				if (ce_project_file_status(project, i) != 0)
-					return fail(metaPath, std::string("project: '") + ce_project_file_name(project, i)
-						+ (ce_project_file_status(project, i) == 1
-							? "' was not found in the project's folder or any --files dir"
-							: "' does not match its recorded hash"));
-			}
-		}
-
-		/* the core pin, against the actual package; and the manifest against
-		 * the package's slot declaration when it ships one */
-		const char *kerr = nullptr;
-		ce_package *pkg = ce_package_open(packagePath, &kerr);
-		if (pkg != nullptr)
-		{
-			const char *pin = ce_project_core_sha1(project);
-			const char *actual = ce_package_sha1(pkg);
-			if (pin[0] != '\0' && actual != nullptr && std::strcmp(pin, actual) != 0 && !allowCoreMismatch)
-			{
-				std::string detail = std::string("the package is not the project's pinned core (pinned ")
-					+ pin + ", given " + actual + "); --allow-core-mismatch to run anyway";
-				ce_package_free(pkg);
-				return fail(metaPath, detail);
-			}
-			uint64_t declLen = 0;
-			const uint8_t *decl = ce_package_entry(pkg, "file_slots.json", &declLen);
-			if (decl != nullptr &&
-				ce_project_validate(project, reinterpret_cast<const char *>(decl), declLen, &perr) != 0)
-			{
-				std::string detail = perr != nullptr ? perr : "the manifest does not fit the core's slots";
-				ce_package_free(pkg);
-				return fail(metaPath, detail);
-			}
-			ce_package_free(pkg);
-		}
-
+		/* The rest is the engine's (ce_session_open_project, further down): it
+		 * refuses a file that was not found or does not match its hash and a
+		 * package that is not the project's, checks the files against the
+		 * package's slots, and gives the core its files. */
 		uint64_t len = 0;
-		settingsStore = ce_project_settings_text(project, &len);
-		settings = settingsStore.c_str();
 		const char *lump = ce_project_log_text(project, &len);
 		movieText.assign(reinterpret_cast<const uint8_t *>(lump),
 			reinterpret_cast<const uint8_t *>(lump) + len);
-
-		/* mounts: the slot map, every file under its canonical name, and the
-		 * transitional rom/rom.name/rom2..N view of the first slot */
-		slotsStore = ce_project_slots_text(project, &len);
-		extraNames.push_back("slots");
-		extraData.push_back(reinterpret_cast<const uint8_t *>(slotsStore.data()));
-		extraLens.push_back(slotsStore.size());
-		extraPaths.push_back(nullptr);
-		int32_t primary = -1;
-		for (int32_t i = 0; i < ce_project_file_count(project); i++)
-		{
-			/* Where it lies, not what it holds: the engine mounts the file
-			 * from disk and the guest reads it as it goes. */
-			extraNames.push_back(ce_project_file_name(project, i));
-			extraData.push_back(nullptr);
-			extraLens.push_back(0);
-			extraPaths.push_back(ce_project_file_source_path(project, i));
-			if (primary < 0 && std::strcmp(ce_project_file_slot(project, i), "support") != 0) primary = i;
-		}
-		if (primary >= 0)
-		{
-			/* pointers into extraNameStore go out as they are made, so the
-			 * vector must never reallocate: reserve the worst case */
-			extraNameStore.reserve(static_cast<size_t>(ce_project_file_count(project)) + 1);
-			romPathStore = ce_project_file_source_path(project, primary);
-			extraNameStore.push_back(ce_project_file_name(project, primary));
-			extraNames.push_back("rom.name");
-			extraData.push_back(reinterpret_cast<const uint8_t *>(extraNameStore.back().data()));
-			extraLens.push_back(extraNameStore.back().size());
-			extraPaths.push_back(nullptr);
-			int n = 2;
-			std::string primarySlot = ce_project_file_slot(project, primary);
-			for (int32_t i = primary + 1; i < ce_project_file_count(project); i++)
-			{
-				if (primarySlot != ce_project_file_slot(project, i)) continue;
-				extraNameStore.push_back("rom" + std::to_string(n++));
-				extraNames.push_back(extraNameStore.back().c_str());
-				extraData.push_back(nullptr);
-				extraLens.push_back(0);
-				extraPaths.push_back(ce_project_file_source_path(project, i));
-			}
-		}
 	}
 	std::string romPathStr = projectMode ? std::string() : romPath;
 	if (romPathStr.size() > 17 &&
@@ -804,11 +728,18 @@ int main(int argc, char **argv)
 	}
 	if (!coreLogPath.empty() && ce_core_log(coreLogPath.c_str()) == 0)
 		return fail(metaPath, std::string("--core-log: ") + ce_core_log_error());
-	ce_session *session = ce_session_open(
-		packagePath, rom.data(), rom.size(), romPathStore.empty() ? nullptr : romPathStore.c_str(),
-		settings, fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
-		extraNames.data(), extraData.data(), extraLens.data(), extraPaths.data(),
-		static_cast<int32_t>(extraNames.size()), &error);
+	/* A project is opened by the engine's one call for it, the same one the
+	 * frontend uses; a rom opened directly is given as it is. */
+	ce_session *session = projectMode
+		? ce_session_open_project(
+			packagePath, project, nullptr,
+			fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
+			allowCoreMismatch ? CE_OPEN_ALLOW_CORE_MISMATCH : 0u, &error)
+		: ce_session_open(
+			packagePath, rom.data(), rom.size(), romPathStore.empty() ? nullptr : romPathStore.c_str(),
+			settings, fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
+			extraNames.data(), extraData.data(), extraLens.data(), extraPaths.data(),
+			static_cast<int32_t>(extraNames.size()), &error);
 	if (session == nullptr) return fail(metaPath, error != nullptr ? error : "session open failed");
 
 	if (drawEveryFrame) ce_session_draw_every_frame(session, 1);

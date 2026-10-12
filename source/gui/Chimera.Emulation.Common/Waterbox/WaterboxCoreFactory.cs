@@ -107,7 +107,8 @@ namespace Chimera.Emulation.Common.Waterbox
 				_packageDir,
 				settings,
 				ResolveFirmware(ctx),
-				ctx.ExtraFiles);
+				ctx.ExtraFiles,
+				ctx.Project);
 		}
 
 		/// <summary>
@@ -156,8 +157,10 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// </summary>
 		private Dictionary<string, byte[]> ResolveFirmware(CoreCreationContext ctx)
 		{
-			var slotsJson = "{}";
-			if (ctx.ExtraFiles is not null)
+			// a project says which file fills which slot; a game opened without
+			// one may still have been given a slot map among its extra files
+			var slotsJson = ctx.Project?.SlotsJson ?? "{}";
+			if (ctx.Project is null && ctx.ExtraFiles is not null)
 			{
 				foreach (var extra in ctx.ExtraFiles)
 				{

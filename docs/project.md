@@ -552,6 +552,31 @@ at frame 21" - and where the note is.
 Linux has no equivalent here: the journal still keeps the work, and the kernel's
 core dump settings decide what else is kept.
 
+### One place starts the machine
+
+Finding the files is the caller's work, because only the caller knows where
+to look and whom to ask: the window has its dialog and its remembered paths,
+`chimera-run` has the project's folder and its `--files` folders. Everything
+after that is one engine call, `ce_session_open_project` (engine.h), used by
+both and by anything else that opens a project:
+
+- a file that was not found is refused, and so is a file that does not match
+  its recorded hash, unless the caller says a person saw the difference and
+  went on (the window, after its dialog);
+- a package that is not the build the project names is refused, unless the
+  caller allows it (`chimera-run --allow-core-mismatch`; the window, after
+  asking);
+- the project's files are checked against the slots the package declares;
+- the core is given its files: the slot map as `slots`, every file under its
+  own name, and the game - the first file that is not a support file
+  (`ce_project_game_file`) - as the rom, with its name as `rom.name` and the
+  later files of its slot as `rom2`..`romN`;
+- the machine starts with the project's settings.
+
+Before 2026-10-12 these steps were written twice, in `chimera-run.cpp` and in
+the window's `RomLoader`, and the window did not check the slots when it
+opened a project. It does now, with the engine's sentence as the refusal.
+
 ## Architecture decisions
 
 - **Serializer in the engine**: `ce_project_*` in libchimera reads,

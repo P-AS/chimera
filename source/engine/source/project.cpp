@@ -1065,6 +1065,15 @@ int32_t ce_project_files_ok(const ce_project *p)
 	return 1;
 }
 
+int32_t ce_project_game_file(const ce_project *p)
+{
+	for (size_t i = 0; i < p->files.size(); i++)
+	{
+		if (p->files[i].slot != "support") return static_cast<int32_t>(i);
+	}
+	return -1;
+}
+
 /* ---- validation against a core's file_slots.json ---- */
 
 int32_t ce_project_validate(const ce_project *p, const char *slots_json, uint64_t slots_len, const char **error_out)

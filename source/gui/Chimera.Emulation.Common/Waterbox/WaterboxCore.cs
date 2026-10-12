@@ -130,7 +130,7 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// mounts it and the machine reads it from there, so nothing is loaded.
 		/// A disc image is routinely bigger than a byte[] can be.
 		/// </param>
-		public WaterboxCore(byte[]? rom, string? romPath, WaterboxConfig cfg, string packageDir, WaterboxCoreSettings? settings = null, IReadOnlyDictionary<string, byte[]>? firmware = null, IReadOnlyList<CoreFile>? extraFiles = null)
+		public WaterboxCore(byte[]? rom, string? romPath, WaterboxConfig cfg, string packageDir, WaterboxCoreSettings? settings = null, IReadOnlyDictionary<string, byte[]>? firmware = null, IReadOnlyList<CoreFile>? extraFiles = null, Engine.EngineProject? project = null)
 		{
 			_cfg = cfg;
 			_settings = settings?.Clone() ?? new WaterboxCoreSettings();
@@ -179,7 +179,8 @@ namespace Chimera.Emulation.Common.Waterbox
 					packageDir, rom, romPath, SerializeSettings(effective), firmware, extraFiles,
 					wantGpu: WantsGpu(effective),
 					cacheDir: CoreCacheDirectoryFor(cfg, romPath),
-					precompile: PrecompileRequest);
+					precompile: PrecompileRequest,
+					project: project);
 			}
 			catch (InvalidOperationException ex)
 			{

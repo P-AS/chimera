@@ -1914,6 +1914,128 @@ ce_session *ce_session_open(
 	return s;
 }
 
+ce_session *ce_session_open_project(
+	const char *package_path, ce_project *project,
+	const char *settings_overrides_json,
+	const char *const *firmware_ids, const uint8_t *const *firmware_data,
+	const uint64_t *firmware_lens, int32_t firmware_count,
+	uint32_t flags, const char **error_out)
+{
+	auto fail = [&](std::string message) -> ce_session *
+	{
+		*g_openError = std::move(message);
+		if (error_out != nullptr) *error_out = g_openError->c_str();
+		return nullptr;
+	};
+	if (project == nullptr) return fail("no project was given");
+
+	/* every file found, and holding what the project recorded - unless the
+	 * caller says a person looked at the difference and went on */
+	const int32_t fileCount = ce_project_file_count(project);
+	for (int32_t i = 0; i < fileCount; i++)
+	{
+		const int32_t status = ce_project_file_status(project, i);
+		if (status == 1)
+			return fail(std::string("project: '") + ce_project_file_name(project, i) + "' was not found");
+		if (status == 2 && (flags & CE_OPEN_ALLOW_FILE_MISMATCH) == 0)
+			return fail(std::string("project: '") + ce_project_file_name(project, i) + "' does not match its recorded hash");
+	}
+
+	/* the core the project names, against the package given; and the project's
+	 * files against the slots that package declares, when it declares any */
+	{
+		const char *packageError = nullptr;
+		ce_package *pkg = ce_package_open(package_path, &packageError);
+		if (pkg != nullptr)
+		{
+			const char *pin = ce_project_core_sha1(project);
+			const char *actual = ce_package_sha1(pkg);
+			if (pin[0] != '\0' && actual != nullptr && std::strcmp(pin, actual) != 0
+				&& (flags & CE_OPEN_ALLOW_CORE_MISMATCH) == 0)
+			{
+				std::string detail = std::string("the package is not the project's pinned core (pinned ")
+					+ pin + ", given " + actual + ")";
+				ce_package_free(pkg);
+				return fail(detail);
+			}
+			uint64_t declLen = 0;
+			const uint8_t *decl = ce_package_entry(pkg, "file_slots.json", &declLen);
+			const char *slotError = nullptr;
+			if (decl != nullptr &&
+				ce_project_validate(project, reinterpret_cast<const char *>(decl), declLen, &slotError) != 0)
+			{
+				std::string detail = slotError != nullptr ? slotError : "the manifest does not fit the core's slots";
+				ce_package_free(pkg);
+				return fail(detail);
+			}
+			ce_package_free(pkg);
+		}
+	}
+
+	/* What the core sees: the slot map as "slots", every file under its own
+	 * name, and the first file that is not a support file as the rom, with its
+	 * name as "rom.name" and the later files of its slot as rom2..N
+	 * (docs/project.md). Files are given by where they lie, never read here. */
+	uint64_t len = 0;
+	std::string settingsText;
+	if (settings_overrides_json == nullptr)
+	{
+		settingsText = ce_project_settings_text(project, &len);
+		settings_overrides_json = settingsText.c_str();
+	}
+	const std::string slotsText = ce_project_slots_text(project, &len);
+
+	std::vector<std::string> names;      /* the names this function makes */
+	names.reserve(static_cast<size_t>(fileCount) + 1); /* pointers into it go out: it must not move */
+	std::vector<const char *> extraNames, extraPaths;
+	std::vector<const uint8_t *> extraData;
+	std::vector<uint64_t> extraLens;
+	auto addBytes = [&](const char *name, const std::string &bytes)
+	{
+		extraNames.push_back(name);
+		extraData.push_back(reinterpret_cast<const uint8_t *>(bytes.data()));
+		extraLens.push_back(bytes.size());
+		extraPaths.push_back(nullptr);
+	};
+	auto addFile = [&](const char *name, const char *path)
+	{
+		extraNames.push_back(name);
+		extraData.push_back(nullptr);
+		extraLens.push_back(0);
+		extraPaths.push_back(path);
+	};
+
+	addBytes("slots", slotsText);
+	for (int32_t i = 0; i < fileCount; i++)
+	{
+		addFile(ce_project_file_name(project, i), ce_project_file_source_path(project, i));
+	}
+	const int32_t primary = ce_project_game_file(project);
+	/* a project may hold no game at all: a machine that starts without a
+	 * medium is opened with no rom, and the core sees an empty slot */
+	const char *romPath = nullptr;
+	if (primary >= 0)
+	{
+		romPath = ce_project_file_source_path(project, primary);
+		names.emplace_back(ce_project_file_name(project, primary));
+		addBytes("rom.name", names.back());
+		const std::string primarySlot = ce_project_file_slot(project, primary);
+		int n = 2;
+		for (int32_t i = primary + 1; i < fileCount; i++)
+		{
+			if (primarySlot != ce_project_file_slot(project, i)) continue;
+			names.push_back("rom" + std::to_string(n++));
+			addFile(names.back().c_str(), ce_project_file_source_path(project, i));
+		}
+	}
+
+	return ce_session_open(
+		package_path, nullptr, 0, romPath, settings_overrides_json,
+		firmware_ids, firmware_data, firmware_lens, firmware_count,
+		extraNames.data(), extraData.data(), extraLens.data(), extraPaths.data(),
+		static_cast<int32_t>(extraNames.size()), error_out);
+}
+
 void ce_session_free(ce_session *s)
 {
 	if (s != nullptr && ce_cache_dir_get()[0] != 0 && (s->fnCacheStored != 0 || s->fnCacheFetched != 0))

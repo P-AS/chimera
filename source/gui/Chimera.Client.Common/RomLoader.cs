@@ -275,20 +275,16 @@ namespace Chimera.Client.Common
 		}
 
 		/// <summary>
-		/// A project's machine: the pinned core, the project's own sync settings
-		/// (queued by the movie the project IS), and the manifest's mounts - the
-		/// slot map as "slots", every file under its canonical name, and the
-		/// transitional rom/rom.name/rom2..N view of the first slot, exactly the
-		/// mounts chimera-run makes (docs/project.md).
+		/// A project's machine: the pinned core and the project's own sync settings
+		/// (queued by the movie the project IS). Which files the core sees is the
+		/// engine's to decide, from the project itself (engine.h,
+		/// ce_session_open_project) - the one place that knows, shared with
+		/// chimera-run (docs/project.md).
 		/// </summary>
 		private void LoadProjectGame(string path, CoreComm nextComm, out IEmulator nextEmulator, out GameInfo game)
 		{
 			var p = Project;
-			var primary = -1;
-			for (var i = 0; i < p.FileCount; i++)
-			{
-				if (p.FileSlot(i) is not "support") { primary = i; break; }
-			}
+			var primary = p.GameFile;
 			// A project MAY hold no game at all. Two of the ares core's machines
 			// are worth starting that way - a PlayStation reaches its own BIOS
 			// menu, an MSX its own BASIC - and a core that boots without a
@@ -296,36 +292,14 @@ namespace Chimera.Client.Common
 			// engine mounts the slot either way; what the core sees is a file of
 			// zero length, which is how it tells an empty drive from a full one.
 			var haveGame = primary >= 0;
-			// A project's files are mounted from WHERE THEY LIE. Nothing here reads
-			// one: a PS2 disc is over four gigabytes and a byte[] cannot reach two,
-			// so loading them was both wasteful and, past that size, impossible.
-			string PathOf(int i) => p.FileSourcePath(i) is { Length: > 0 } where
-				? where
-				: throw new CoreLoadException($"'{p.FileName(i)}' has not been resolved");
-			var primaryPath = haveGame ? PathOf(primary) : "";
+			// A project's files are mounted from WHERE THEY LIE, by the engine.
+			// Nothing here reads one: a PS2 disc is over four gigabytes and a
+			// byte[] cannot reach two. The game's path is kept for what is named
+			// after the game (its compile cache), not to open it.
+			var primaryPath = haveGame ? p.FileSourcePath(primary) : "";
 
 			var factory = CoreRegistry.Instance.FactoryFor(p.CoreName, p.CoreSha1)
 				?? throw new CoreLoadException($"the project's core '{p.CoreName}' is not loaded");
-
-			List<CoreFile> extras = new()
-			{
-				new("slots", System.Text.Encoding.UTF8.GetBytes(p.SlotsJson)),
-			};
-			for (var i = 0; i < p.FileCount; i++)
-			{
-				extras.Add(new(p.FileName(i), PathOf(i)));
-			}
-			if (haveGame)
-			{
-				extras.Add(new("rom.name", System.Text.Encoding.UTF8.GetBytes(p.FileName(primary))));
-				var primarySlot = p.FileSlot(primary);
-				var n = 2;
-				for (var i = primary + 1; i < p.FileCount; i++)
-				{
-					if (p.FileSlot(i) != primarySlot) continue;
-					extras.Add(new($"rom{n++}", PathOf(i)));
-				}
-			}
 
 			game = new GameInfo
 			{
@@ -365,7 +339,7 @@ namespace Chimera.Client.Common
 				Settings = MovieSettings.Decode(p.SettingsJson)
 					?? GetCoreSettings(factory.CoreType, factory.SettingsType),
 				FirmwareProvider = CoreFirmwareStore.ProviderFor(_config, factory.CoreName),
-				ExtraFiles = extras,
+				Project = p,
 			};
 			nextEmulator = factory.Create(ctx);
 			CoreRegistry.Instance.NoteCreated(nextEmulator, factory);

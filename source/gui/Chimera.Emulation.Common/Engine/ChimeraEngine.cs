@@ -484,6 +484,9 @@ namespace Chimera.Emulation.Common.Engine
 		public abstract int ce_project_files_ok(IntPtr project);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_project_game_file(IntPtr project);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_project_validate(IntPtr project, byte[] slotsJson, ulong slotsLen, ref IntPtr errorOut);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -495,6 +498,14 @@ namespace Chimera.Emulation.Common.Engine
 			IntPtr[]? firmwareIds, IntPtr[]? firmwareData, ulong[]? firmwareLens, int firmwareCount,
 			IntPtr[]? extraNames, IntPtr[]? extraData, ulong[]? extraLens, IntPtr[]? extraPaths, int extraCount,
 			ref IntPtr errorOut);
+
+		// a project's machine: the engine checks the project and gives the core
+		// its files (engine.h; the same call chimera-run makes)
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_session_open_project(
+			string packagePath, IntPtr project, string? settingsOverridesJson,
+			IntPtr[]? firmwareIds, IntPtr[]? firmwareData, ulong[]? firmwareLens, int firmwareCount,
+			uint flags, ref IntPtr errorOut);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract void ce_session_free(IntPtr session);
@@ -1670,6 +1681,9 @@ namespace Chimera.Emulation.Common.Engine
 
 		private EngineProject(IntPtr project) => _project = project;
 
+		/// <summary>The engine's handle, for the calls that take a project (<see cref="EngineSession.Open"/>).</summary>
+		public IntPtr Handle => _project;
+
 		/// <summary>The internal handle's liveness backstop, like EngineMovieLog's.</summary>
 		~EngineProject() => Free();
 
@@ -1992,6 +2006,9 @@ namespace Chimera.Emulation.Common.Engine
 		/// <summary>True when every file is resolved with a matching hash.</summary>
 		public bool FilesOk => ChimeraEngine.Instance.ce_project_files_ok(_project) is not 0;
 
+		/// <summary>Which file is the game (the first that is not a support file), or -1 for a project that holds none.</summary>
+		public int GameFile => ChimeraEngine.Instance.ce_project_game_file(_project);
+
 		/// <summary>The manifest against a core's file_slots.json declaration; null when it conforms, else the reason.</summary>
 		public string? Validate(string slotsJson)
 		{
@@ -2033,6 +2050,10 @@ namespace Chimera.Emulation.Common.Engine
 
 		private EngineSession(IntPtr session) => _session = session;
 
+		// engine.h: CE_OPEN_ALLOW_CORE_MISMATCH, CE_OPEN_ALLOW_FILE_MISMATCH
+		private const uint AllowCoreMismatch = 1;
+		private const uint AllowFileMismatch = 2;
+
 		/// <exception cref="InvalidOperationException">anything wrong with the package, the rom, or the core's own refusal</exception>
 		/// <remarks>extraFiles: a multi-file game's additional mounts (rom2..N,
 		/// support files, "savedata", "rom.name"), each ORDERED pair mounted
@@ -2050,13 +2071,19 @@ namespace Chimera.Emulation.Common.Engine
 		/// the only way a PS2 disc can be opened at all: over four gigabytes, and
 		/// a byte[] tops out below two.
 		/// </param>
+		/// <param name="project">
+		/// The project this machine is opened from, or null for a game opened by
+		/// itself. Given one, <paramref name="rom"/>, <paramref name="romPath"/>
+		/// and <paramref name="extraFiles"/> are not used.
+		/// </param>
 		public static EngineSession Open(
 			string packagePath, byte[]? rom, string? romPath, string? settingsOverridesJson,
 			IReadOnlyDictionary<string, byte[]>? firmware,
 			IReadOnlyList<CoreFile>? extraFiles = null,
 			bool wantGpu = false,
 			string? cacheDir = null,
-			PrecompileRequest? precompile = null)
+			PrecompileRequest? precompile = null,
+			EngineProject? project = null)
 		{
 			var count = firmware?.Count ?? 0;
 			var ids = new IntPtr[Math.Max(count, 1)];
@@ -2109,10 +2136,21 @@ namespace Chimera.Emulation.Common.Engine
 				ChimeraEngine.Instance.ce_cache_dir(cacheDir ?? "");
 				ChimeraEngine.Instance.ce_precompile_request(precompile?.Index ?? 0, precompile?.Count ?? 0, precompile?.FirmwareToo == true ? 1 : 0);
 				var error = IntPtr.Zero;
-				var session = ChimeraEngine.Instance.ce_session_open(
-					packagePath, rom, (ulong)(rom?.LongLength ?? 0), romPath, settingsOverridesJson,
-					ids, blobs, lens, count,
-					extraNames, extraData, extraLens, extraPaths, extraCount, ref error);
+				// A project is opened by the engine's own call for it: the engine
+				// checks the project and decides which files the core sees, so the
+				// rom and the extra files are not this side's to give. Both flags,
+				// because a person has answered by now: the resolution form does not
+				// close on a file that differs unless they accepted it, and a core
+				// build other than the project's was asked about before the boot.
+				var session = project is not null
+					? ChimeraEngine.Instance.ce_session_open_project(
+						packagePath, project.Handle, settingsOverridesJson,
+						ids, blobs, lens, count,
+						AllowCoreMismatch | AllowFileMismatch, ref error)
+					: ChimeraEngine.Instance.ce_session_open(
+						packagePath, rom, (ulong)(rom?.LongLength ?? 0), romPath, settingsOverridesJson,
+						ids, blobs, lens, count,
+						extraNames, extraData, extraLens, extraPaths, extraCount, ref error);
 				if (session == IntPtr.Zero)
 				{
 					throw new InvalidOperationException(ChimeraEngine.PtrToStringUtf8(error) ?? "the engine could not open a session");

@@ -206,6 +206,90 @@ if [ "$level" = "both" ] || [ "$level" = "e" ]; then
 			report "E:statefile:refusals" FAIL "garbage rc=$garbage_rc short rc=$short_rc good rc=$good_rc (see work/statefile-*.log)"
 		fi
 
+		# A PROJECT, opened by the engine's one call for it
+		# (ce_session_open_project), which chimera-run and the window both use.
+		# The project's files are found beside it, its input is played, and the
+		# machine must end where the reference dumps say. Then the project's own
+		# settings must reach the machine, and each thing the call refuses must
+		# be refused with its reason and without taking the process down: a file
+		# that is not there, a file that is not the one recorded, a package that
+		# is not the one the project names (allowed when the flag says so), and
+		# files that do not fit the slots the package declares.
+		jname=gridWalker.win
+		jdir="$work/engine-project"
+		rm -rf "$jdir" && mkdir -p "$jdir/ok" "$jdir/missing" "$jdir/changed" "$jdir/slots-package"
+		cp "$here/roms/gridWalker.testrom" "$jdir/ok/gridWalker.testrom"
+		head -c 64 "$here/roms/gridWalker.testrom" > "$jdir/changed/gridWalker.testrom"
+		python3 - "$here/movies/$jname.txt" "$jdir/ok/gridWalker.testrom" "$jdir" <<'PROJPY'
+import hashlib, json, sys
+entries = [l.rstrip("\r\n") for l in open(sys.argv[1]) if l.startswith("|")]
+logkey = "#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|"
+sha1 = hashlib.sha1(open(sys.argv[2], "rb").read()).hexdigest().upper()
+def write(path, pin="", settings=None):
+    doc = {
+        "title": "gridWalker.win",
+        "core": {"name": "Synth", "version": "", "sha1": pin},
+        "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
+        "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
+        "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+    }
+    if settings is not None: doc["settings"] = settings
+    json.dump(doc, open(path, "w"))
+out = sys.argv[3]
+write(out + "/ok/p.chimeraProject")
+write(out + "/ok/settings.chimeraProject", settings={"initFillByte": 171})
+write(out + "/ok/pinned.chimeraProject", pin="0123456789ABCDEF0123456789ABCDEF01234567")
+write(out + "/missing/p.chimeraProject")
+write(out + "/changed/p.chimeraProject")
+PROJPY
+		jrun() { # tag, then chimera-run's arguments; the exit code is left in jrc
+			jtag="$1"; shift
+			rm -f "$jdir/$jtag.ram.bin" "$jdir/$jtag.vram.bin"
+			"$chimera_run" "$@" --dump "RAM=$jdir/$jtag.ram.bin" --dump "VRAM=$jdir/$jtag.vram.bin" > "$jdir/$jtag.log" 2>&1
+			jrc=$?
+		}
+		jsame() { cmp -s "$jdir/$1.ram.bin" "$golden_dir/$jname.ram.bin" && cmp -s "$jdir/$1.vram.bin" "$golden_dir/$jname.vram.bin"; }
+		jrefused() { [ "$jrc" -ne 0 ] && [ "$jrc" -lt 128 ] && grep -q "$2" "$jdir/$1.log"; }
+
+		jrun plain --project "$jdir/ok/p.chimeraProject" "$epkg"
+		if [ "$jrc" -eq 0 ] && jsame plain; then
+			report "E:project:$jname" PASS "a project played through the engine's project call, RAM+VRAM byte-identical"
+		else
+			report "E:project:$jname" FAIL "rc=$jrc, or RAM or VRAM differs (see work/engine-project/plain.log)"
+		fi
+		jrun elsewhere --project "$jdir/missing/p.chimeraProject" "$epkg" --files "$jdir/ok"
+		if [ "$jrc" -eq 0 ] && jsame elsewhere; then
+			report "E:project:files-dir" PASS "a file that is not beside the project is found in a --files folder"
+		else
+			report "E:project:files-dir" FAIL "rc=$jrc, or RAM or VRAM differs (see work/engine-project/elsewhere.log)"
+		fi
+		jrun settings --project "$jdir/ok/settings.chimeraProject" "$epkg"
+		if [ "$jrc" -eq 0 ] && [ -s "$jdir/settings.ram.bin" ] && ! cmp -s "$jdir/settings.ram.bin" "$golden_dir/$jname.ram.bin"; then
+			report "E:project:settings" PASS "the project's own settings reach the machine"
+		else
+			report "E:project:settings" FAIL "rc=$jrc, or RAM matches the default dump: initFillByte never reached the machine"
+		fi
+
+		jbad=""
+		jrun missing --project "$jdir/missing/p.chimeraProject" "$epkg"
+		jrefused missing "'gridWalker.testrom' was not found" || jbad="$jbad missing(rc=$jrc)"
+		jrun changed --project "$jdir/changed/p.chimeraProject" "$epkg"
+		jrefused changed "'gridWalker.testrom' does not match its recorded hash" || jbad="$jbad changed(rc=$jrc)"
+		jrun pinned --project "$jdir/ok/pinned.chimeraProject" "$epkg"
+		jrefused pinned "is not the project's pinned core" || jbad="$jbad pinned(rc=$jrc)"
+		jrun allowed --project "$jdir/ok/pinned.chimeraProject" "$epkg" --allow-core-mismatch
+		{ [ "$jrc" -eq 0 ] && jsame allowed; } || jbad="$jbad allowed(rc=$jrc)"
+		# the package unpacked, with a declaration that has no slot called "rom"
+		( cd "$jdir/slots-package" && unzip -q -o "$epkg" )
+		printf '{"slots":[{"id":"cartridge","title":"Cartridge","min":1,"max":1,"formats":["testrom"]}]}\n' > "$jdir/slots-package/file_slots.json"
+		jrun slots --project "$jdir/ok/p.chimeraProject" "$jdir/slots-package"
+		{ [ "$jrc" -ne 0 ] && [ "$jrc" -lt 128 ] && [ ! -s "$jdir/slots.ram.bin" ]; } || jbad="$jbad slots(rc=$jrc)"
+		if [ -z "$jbad" ]; then
+			report "E:project:refusals" PASS "a missing file, a changed file, another core's package and files that fit no slot are each refused; the flag allows the package"
+		else
+			report "E:project:refusals" FAIL "wrong:$jbad (see work/engine-project/*.log)"
+		fi
+
 		# A PACKAGE WHOSE DECLARATIONS CANNOT BE READ says which file and what
 		# is in it. The sentence reaches a person through a window that shows
 		# one line (the project wizard's compile step), and "not readable JSON"

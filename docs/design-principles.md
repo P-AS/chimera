@@ -6454,3 +6454,58 @@ set taken from the firmware store runs as the headless runner runs it, and
 with no such firmware known the project is not opened and the set is named.
 Nothing of this was tried on Windows.
 
+
+## A project is opened in one place, in the engine (user-decided, 2026-10-12)
+
+The steps from a project to a running machine were written twice: in
+`chimera-run.cpp` and in the window's `RomLoader.LoadProjectGame`. A third
+program that opens projects was about to be written (the MCP server,
+docs/mcp-server.md), and the owner's decision was that the logic is brought
+into one piece of C++ that every program uses, now and not later: "avoiding
+code repetition is paramount in Chimera".
+
+What was decided:
+
+- One engine call, `ce_session_open_project`, takes a project whose files
+  the caller has found and does the rest: it refuses a file that was not
+  found or does not match its hash, refuses a package that is not the build
+  the project names, checks the files against the slots the package
+  declares, gives the core its files, and starts the machine with the
+  project's settings (docs/project.md, "One place starts the machine").
+- Finding the files stays with the caller, because that is where the two
+  programs really differ: the window asks a person and remembers paths, the
+  runner looks in the folders it was given.
+- A caller with a person in front of it may pass two flags, for a file that
+  differs and for a package that differs, after the person was shown the
+  difference and went on. The window passes both; `chimera-run` passes the
+  second only for `--allow-core-mismatch`.
+- "Which file is the game" is one engine answer too, `ce_project_game_file`.
+  The window used its own loop for it.
+
+What changes for a user: the window now checks a project's files against the
+core's slots when it opens a project, which only `chimera-run` and the New
+Project window did before. A project that names a slot its core does not have
+is refused with the engine's sentence. `chimera-run --project` no longer
+takes `--suggest` or `--import-movie`, which were never documented with it
+and which no test script of any core used.
+
+Not done here: the New Project window still builds its own, smaller list of
+files (the slot map and each file by name) for the steps that run before a
+project exists - the core's suggestion and the compile step.
+
+What was measured, on Linux: the engine's tests 22 of 22; the test of the
+whole product with the synthetic core 80 of 80, four of them new (a project
+played through `chimera-run --project` ends with the reference memory; a file
+is found in a `--files` folder; the project's settings reach the machine; a
+missing file, a changed file, another core's package and files that fit no
+slot are each refused); the interface tests 0 failed of 1,045 (24 skipped).
+The new checks were seen to fail with the call broken on purpose: all four
+with the game path, the hash check and the settings removed, and the settings
+check alone with only the settings removed. With a real core that is several
+machines (Genesis Plus GX, a free game, 300 frames): the runner on the
+project and on the bare game end with the same memory, the window opening the
+same project ends with the same memory as the runner after one boot, and a
+project naming the wrong slot is refused by both with the same sentence. On
+Windows: the engine compiles, and the runner plays the synthetic project to
+the reference memory and refuses the changed file. The window was not tried
+on Windows.

@@ -725,6 +725,11 @@ CE_API void ce_project_file_unresolve(ce_project *p, int32_t index);
 CE_API int32_t ce_project_resolve_dir(ce_project *p, const char *dir);
 /* 1 when every file is resolved with a matching hash */
 CE_API int32_t ce_project_files_ok(const ce_project *p);
+/* Which file is the game: the first that is not a support file, or -1 for a
+ * project that holds none (a machine that starts without a medium). It is the
+ * file ce_session_open_project gives the core as its rom, and the one a
+ * frontend names the project after. */
+CE_API int32_t ce_project_game_file(const ce_project *p);
 
 /* The manifest checked against a core's file_slots.json declaration (slot
  * ids, cardinality, formats, atLeastOneOf groups; "support" is exempt).
@@ -834,6 +839,43 @@ CE_API ce_session *ce_session_open(
 	const char *const *extra_names, const uint8_t *const *extra_data,
 	const uint64_t *extra_lens, const char *const *extra_paths, int32_t extra_count,
 	const char **error_out);
+
+/* Opens the machine a project describes. This is the one place that knows how
+ * a project becomes a running machine; chimera-run, the frontend and anything
+ * else that opens a project call it, so the rules below are written once.
+ *
+ * The caller has already resolved the project's files (ce_project_resolve_dir,
+ * ce_project_file_resolve): finding them is its business, since only it knows
+ * which folders to look in or whom to ask. This call then:
+ *
+ *   - refuses a project with a file still unresolved, and one whose file does
+ *     not match its recorded hash unless CE_OPEN_ALLOW_FILE_MISMATCH is given;
+ *   - refuses a package whose SHA1 is not the one the project names, unless
+ *     CE_OPEN_ALLOW_CORE_MISMATCH is given (a directory package has no SHA1
+ *     and is not compared);
+ *   - checks the project's files against the package's file_slots.json, when
+ *     the package has one (ce_project_validate);
+ *   - gives the core its files: the slot map as "slots", every file under its
+ *     own name, the first file that is not a support file as the rom with its
+ *     name as "rom.name", and the later files of that slot as rom2..N. Every
+ *     file is given by its path and none is read here. A project with no game
+ *     file opens the machine with no rom;
+ *   - starts the machine with settings_overrides_json, or with the project's
+ *     own settings when that is NULL.
+ *
+ * The two flags are for a caller with a person in front of it who was shown
+ * the difference and chose to go on. Firmware is the caller's to find and is
+ * passed as for ce_session_open. The project is only read, and may be freed
+ * once this returns. NULL with *error_out set as ce_session_open does. The
+ * project's input is not loaded: that is ce_session_movie_load, as before. */
+#define CE_OPEN_ALLOW_CORE_MISMATCH 1u
+#define CE_OPEN_ALLOW_FILE_MISMATCH 2u
+CE_API ce_session *ce_session_open_project(
+	const char *package_path, ce_project *project,
+	const char *settings_overrides_json,
+	const char *const *firmware_ids, const uint8_t *const *firmware_data,
+	const uint64_t *firmware_lens, int32_t firmware_count,
+	uint32_t flags, const char **error_out);
 
 CE_API void ce_session_free(ce_session *s);
 
