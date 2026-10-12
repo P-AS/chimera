@@ -139,57 +139,18 @@ namespace Chimera.Tests.Client.Common.Movie
 			return answer!;
 		}
 
-		[TestMethod]
-		public void ButtonsArePressedOverARangeByNameAndOneUndoTakesItAllBack()
-		{
-			var movie = TasMovieTests.MakeMovie(10);
-			var buttons = movie.Session.MovieController.Definition.BoolButtons;
-			// a button the calls below never name, pressed by hand on one frame
-			movie.SetBoolState(3, buttons[1], true);
-			movie.ChangeLog.Clear();
-			var before = Lines(movie);
-
-			var answer = Ok(movie, "set_buttons", $"{{\"frame\":2,\"count\":3,\"buttons\":{{\"{buttons[0]}\":true}}}}");
-
-			Assert.AreEqual(10, (int) answer["movie_length"]!);
-			for (var frame = 0; frame < 10; frame++)
-			{
-				Assert.AreEqual(frame is >= 2 and < 5, movie.GetInputState(frame).IsPressed(buttons[0]), $"{buttons[0]} on frame {frame}");
-				Assert.AreEqual(frame is 3, movie.GetInputState(frame).IsPressed(buttons[1]), $"{buttons[1]} was not named and must keep what it had, frame {frame}");
-			}
-			// released again by name on one frame
-			Ok(movie, "set_buttons", $"{{\"frame\":3,\"buttons\":{{\"{buttons[0]}\":false}}}}");
-			Assert.IsFalse(movie.GetInputState(3).IsPressed(buttons[0]));
-			Assert.IsTrue(movie.GetInputState(3).IsPressed(buttons[1]));
-			Assert.IsTrue(movie.GetInputState(4).IsPressed(buttons[0]));
-
-			// each call is one step in the undo history
-			Ok(movie, "undo", "{}");
-			Assert.IsTrue(movie.GetInputState(3).IsPressed(buttons[0]));
-			Ok(movie, "undo", "{}");
-			CollectionAssert.AreEqual(before, Lines(movie));
-			Assert.IsFalse(movie.ChangeLog.CanUndo);
-		}
+		// What set_input, set_buttons, insert_frames and delete_frames MEAN - which names exist,
+		// which lines are this movie's, what is past the end - is the engine's to decide, and is
+		// tested where the engine has a machine (tests/synth/run-witness.sh). What reaches this
+		// class is the step the engine made of them, and these check that it is applied.
 
 		[TestMethod]
-		public void AButtonOrAnAxisThatDoesNotExistIsRefusedAndNothingChanges()
+		public void LinesAreWrittenAsGivenPastTheEndTooAndAreOneNamedStepOfTheUndoHistory()
 		{
-			var movie = Fresh(5);
-			var before = Lines(movie);
-			StringAssert.Contains(Refused(movie, "set_buttons", "{\"frame\":0,\"buttons\":{\"No Such Button\":true}}"), "No Such Button");
-			StringAssert.Contains(Refused(movie, "set_buttons", "{\"frame\":0,\"axes\":{\"No Such Axis\":3}}"), "No Such Axis");
-			Refused(movie, "set_buttons", "{\"frame\":0}");
-			Refused(movie, "set_buttons", "{\"frame\":-1,\"buttons\":{}}");
-			CollectionAssert.AreEqual(before, Lines(movie));
-			Assert.IsFalse(movie.ChangeLog.CanUndo, "a refused call must leave no step in the undo history");
-		}
-
-		[TestMethod]
-		public void InputLinesAreWrittenAsGivenPastTheEndTooAndOneUndoTakesThemBack()
-		{
-			var movie = Fresh(6);
+			var movie = TasMovieTests.MakeMovie(6);
 			var buttons = movie.Session.MovieController.Definition.BoolButtons;
 			movie.SetBoolState(0, buttons[0], true);
+			movie.ChangeLog.Clear();
 			var pressedLine = movie.GetInputLogEntry(0);
 			var emptyLine = movie.GetInputLogEntry(1);
 			Assert.AreNotEqual(pressedLine, emptyLine);
@@ -200,6 +161,7 @@ namespace Chimera.Tests.Client.Common.Movie
 			{
 				["frame"] = 4,
 				["entries"] = new JArray(pressedLine, emptyLine, pressedLine, pressedLine),
+				["label"] = "Agent: set input, frames 4 to 7",
 			}.ToString());
 
 			Assert.AreEqual(8, (int) answer["movie_length"]!);
@@ -207,24 +169,10 @@ namespace Chimera.Tests.Client.Common.Movie
 			CollectionAssert.AreEqual(new[] { pressedLine, emptyLine, pressedLine, pressedLine }, Lines(movie).Skip(4).ToArray());
 			CollectionAssert.AreEqual(before.Take(4).ToArray(), Lines(movie).Take(4).ToArray());
 
+			// one step, whatever its length, and it has the name the engine gave it
 			Ok(movie, "undo", "{}");
 			CollectionAssert.AreEqual(before, Lines(movie));
-		}
-
-		[TestMethod]
-		public void ALineThatIsNotOneOfThisMoviesIsRefusedBeforeAnythingIsWritten()
-		{
-			var movie = Fresh(4);
-			var good = movie.GetInputLogEntry(0);
-			var before = Lines(movie);
-			foreach (var bad in new[] { "", "|", good + "|", good.Substring(1), "not a line at all" })
-			{
-				var answer = Refused(movie, "set_input", new JObject { ["frame"] = 1, ["entries"] = new JArray(good, bad) }.ToString());
-				StringAssert.Contains(answer, "Line 2");
-			}
-			Refused(movie, "set_input", "{\"frame\":0,\"entries\":[]}");
-			Refused(movie, "set_input", "{\"frame\":0}");
-			CollectionAssert.AreEqual(before, Lines(movie));
+			Assert.IsFalse(movie.ChangeLog.CanUndo);
 		}
 
 		[TestMethod]
@@ -233,20 +181,38 @@ namespace Chimera.Tests.Client.Common.Movie
 			var movie = Fresh(6);
 			var buttons = movie.Session.MovieController.Definition.BoolButtons;
 			movie.SetBoolState(2, buttons[0], true);
+			movie.ChangeLog.Clear();
 			var before = Lines(movie);
 
-			Assert.AreEqual(9, (int) Ok(movie, "insert_frames", "{\"frame\":2,\"count\":3}")["movie_length"]!);
+			Assert.AreEqual(9, (int) Ok(movie, "insert_frames", "{\"frame\":2,\"count\":3,\"label\":\"Agent: insert frames\"}")["movie_length"]!);
 			Assert.IsFalse(movie.GetInputState(2).IsPressed(buttons[0]));
 			Assert.IsTrue(movie.GetInputState(5).IsPressed(buttons[0]), "the input from the frame on moves later");
 
-			Assert.AreEqual(6, (int) Ok(movie, "delete_frames", "{\"frame\":2,\"count\":3}")["movie_length"]!);
+			Assert.AreEqual(6, (int) Ok(movie, "delete_frames", "{\"frame\":2,\"count\":3,\"label\":\"Agent: delete frames\"}")["movie_length"]!);
 			CollectionAssert.AreEqual(before, Lines(movie));
-			// deleting past the end stops at the end
-			Assert.AreEqual(2, (int) Ok(movie, "delete_frames", "{\"frame\":4,\"count\":50}")["deleted"]!);
-			Assert.AreEqual(4, movie.InputLogLength);
 
-			Refused(movie, "insert_frames", "{\"frame\":99}");
-			Refused(movie, "delete_frames", "{\"frame\":99}");
+			// each was one step
+			Ok(movie, "undo", "{}");
+			Ok(movie, "undo", "{}");
+			CollectionAssert.AreEqual(before, Lines(movie));
+			Assert.IsFalse(movie.ChangeLog.CanUndo);
+		}
+
+		[TestMethod]
+		public void AStepTheEngineWouldNotMakeIsRefusedAndNothingChanges()
+		{
+			var movie = Fresh(4);
+			var before = Lines(movie);
+			Refused(movie, "set_input", "{\"frame\":0}");
+			Refused(movie, "set_input", "{\"frame\":0,\"entries\":[]}");
+			Refused(movie, "set_input", "{\"frame\":0,\"entries\":[7]}");
+			Refused(movie, "insert_frames", "{\"frame\":99,\"count\":1}");
+			Refused(movie, "delete_frames", "{\"frame\":99,\"count\":1}");
+			Refused(movie, "delete_frames", "{\"frame\":2,\"count\":50}");
+			// set_buttons never reaches the window: the engine turns it into set_input
+			StringAssert.Contains(Refused(movie, "set_buttons", "{\"frame\":0,\"buttons\":{}}"), "set_buttons");
+			CollectionAssert.AreEqual(before, Lines(movie));
+			Assert.IsFalse(movie.ChangeLog.CanUndo, "a refused step must leave nothing in the undo history");
 		}
 
 		[TestMethod]

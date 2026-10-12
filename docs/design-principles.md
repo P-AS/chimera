@@ -6817,3 +6817,39 @@ carrying no watches, "changed" never met, every watched number one too high,
 the window never asking the engine, the limit called the movie's end) the new
 interface test and all four checks failed. On Windows the engine compiles and
 `test_mcp.exe` passes; the tools themselves were not run there this time.
+
+## What an edit means is decided once, in the engine (2026-10-12)
+
+The windowless mode of the MCP server needs the same editing tools as the
+window, with no TAStudio to run them. Rather than write them a second time,
+their meaning moved into the engine before either holder of the movie is
+asked (the owner's rule of the same day: no logic written twice).
+
+- For `set_input`, `set_buttons`, `insert_frames` and `delete_frames` the
+  engine now checks the arguments against the movie and the machine's
+  controls, and hands on one of three plain steps: these lines from this
+  frame, this many frames inserted here, this many deleted there. It also
+  gives the step its name in the undo history ("Agent: set controls, frames
+  5 to 7").
+- `set_buttons` is worked out into the lines it amounts to: each frame's line
+  is read, the named buttons and axes are set, and the line is written again.
+  The window receives it as `set_input`.
+- The window's side shrank to applying a step through TAStudio's own calls.
+  It no longer knows which buttons exist or what a line looks like.
+
+Found on the way: the engine and the interface do not write a movie line
+alike. For a machine with no console buttons the engine writes an empty first
+group (`||........|`), the interface leaves it out (`|........|`). Both read
+either, and movies replay, so nothing was changed; the check of a line
+counts the characters between the bars and not the bars. It is noted here
+because a movie recorded by `chimera-run --record` and one saved by the
+window differ in text for that reason.
+
+What was measured: the engine's tests 23 of 23; the interface tests 0 failed
+of 1,065 (24 skipped; four tests of the window's own button and line
+checking were removed with that code, and two for applying a step added);
+the test of the whole product 85 of 85, the check that edits in the real
+window now also requiring an unknown button, an edit with nothing named and
+an insertion past the movie's end to be refused and to change nothing. Those
+three were not yet broken on purpose; the next round does it. The engine
+compiles for Windows.

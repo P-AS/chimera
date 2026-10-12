@@ -22,6 +22,7 @@
 #include "kept_pictures.hpp"
 #include "state_format.hpp"
 #include "game_properties.hpp"
+#include "mcp.hpp"
 
 #include "../../extern/cjson/cJSON.h"
 
@@ -1362,6 +1363,15 @@ bool ce_session::greenzoneRestore(int64_t to)
 	frame = to;
 	afterLoad(to);
 	return true;
+}
+
+/* Internal (mcp.hpp): the line this session's movie holds for a set of
+ * pressed buttons and axis values. Not in the ABI on purpose - a frontend
+ * that wants a line drives the movie; the MCP server's editing tools are the
+ * engine's own. */
+std::string chimera::sessionMovieEntry(const ce_session *s, const uint8_t *states, const int32_t *axes)
+{
+	return s->layout.generate(states, axes, s->mnemonics);
 }
 
 extern "C" {

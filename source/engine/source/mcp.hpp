@@ -22,8 +22,15 @@
 #include <functional>
 #include <string>
 
+struct ce_session;
+
 namespace chimera
 {
+
+/* The line a session's movie holds for these buttons (one byte each, in the
+ * session's order; null for none pressed) and axis values (null for each at
+ * rest). Defined in session.cpp. */
+std::string sessionMovieEntry(const ce_session *s, const uint8_t *states, const int32_t *axes);
 
 struct McpTool
 {

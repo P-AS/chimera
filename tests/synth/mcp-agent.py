@@ -290,6 +290,13 @@ if mode == "window-changes":
     check("status says the project has unsaved changes", facts("status").get("unsaved_changes") is True)
     facts("undo")
     check("undo takes the whole edit back", all_input() == movie)
+    error, text, _ = call("set_buttons", frame=0, buttons={"No Such Button": True})
+    check("set_buttons names a button that does not exist", error and "No Such Button" in text)
+    error, text, _ = call("set_buttons", frame=0)
+    check("set_buttons with nothing named is refused", error and "at least one" in text)
+    error, text, _ = call("insert_frames", frame=last + 9)
+    check("insert_frames past the movie's end is refused", error and str(last) in text)
+    check("the refused edits changed nothing", all_input() == movie)
     # input lines written as given, also past the end, and undone in one step
     facts("set_input", frame=last - 1, entries=[movie[1], movie[1], movie[1]])
     check("set_input writes lines and lengthens the movie", all_input() == movie[:-1] + [movie[1]] * 3)

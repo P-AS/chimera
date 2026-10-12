@@ -182,7 +182,7 @@ const McpTool kTools[] = {
 	  "Controls not named keep what they had. It is one step in the undo history.",
 	  "{\"type\":\"object\",\"properties\":{"
 	  "\"frame\":{\"type\":\"integer\",\"minimum\":0,\"description\":\"The first frame.\"},"
-	  "\"count\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":100000,\"description\":\"How many frames. 1 when left out.\"},"
+	  "\"count\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":10000,\"description\":\"How many frames. 1 when left out.\"},"
 	  "\"buttons\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"boolean\"},\"description\":\"Button name to pressed (true) or released (false).\"},"
 	  "\"axes\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"integer\"},\"description\":\"Axis name to value.\"}"
 	  "},\"required\":[\"frame\"],\"additionalProperties\":false}",
@@ -1415,6 +1415,189 @@ McpResult toolWatch(Service &sv, ce_session *s, const cJSON *arguments)
 	return textResult(out);
 }
 
+/* ---- the editing tools: what they mean ----
+ *
+ * set_input, set_buttons, insert_frames and delete_frames are run by whoever
+ * holds the movie: TAStudio in the window, the engine itself where there is
+ * no window. What they MEAN is decided here, once, before either is asked:
+ * the arguments are checked against the movie and the machine's controls,
+ * set_buttons is turned into the lines it amounts to, and what is handed on
+ * is one of three plain steps - set these lines from this frame, insert this
+ * many frames here, delete this many there - with the name the step has in
+ * the undo history. The holder of the movie only applies it. */
+
+const char kNoMovie[] = "No project is open in Chimera.";
+
+std::string labelled(const char *what, int64_t frame, int64_t count)
+{
+	return std::string("Agent: ") + what + (count == 1
+		? ", frame " + std::to_string(frame)
+		: ", frames " + std::to_string(frame) + " to " + std::to_string(frame + count - 1));
+}
+
+/* Whether a line has the columns of this machine's lines: as many characters
+ * between its bars as the empty line has, and readable as one. The bars are
+ * not counted, because the engine and the interface do not write them alike:
+ * for a machine with no console buttons the engine writes an empty first
+ * group ("||....|") and the interface leaves it out ("|....|"). Both read
+ * either. */
+bool lineFits(ce_session *s, const std::string &line, const std::string &blank)
+{
+	const auto columns = [](const std::string &text)
+	{
+		return std::count_if(text.begin(), text.end(), [](char c) { return c != '|'; });
+	};
+	return !line.empty() && line.front() == '|' && line.back() == '|' && columns(line) == columns(blank)
+		&& ce_session_movie_entry_decode_wide(s, line.c_str(), nullptr, nullptr) == 0;
+}
+
+/* Hands back the step for the movie's holder as (tool, arguments), or an
+ * error. `tool` comes in as the agent's and goes out as the holder's. */
+bool prepareEdit(ce_session *s, const ce_movie_log *log, std::string &tool, std::string &argumentsJson, McpResult &refusal)
+{
+	auto refuse = [&](const std::string &why)
+	{
+		refusal = mcpError(why);
+		return false;
+	};
+	if (s == nullptr || log == nullptr) return refuse(kNoMovie);
+	cJSON *arguments = cJSON_Parse(argumentsJson.c_str());
+	const int64_t length = ce_movie_log_count(log);
+	const std::string blank = sessionMovieEntry(s, nullptr, nullptr);
+	cJSON *step = cJSON_CreateObject();
+	std::string why;
+	int64_t frame = 0, count = 0;
+
+	if (tool == "insert_frames" || tool == "delete_frames")
+	{
+		const bool inserting = tool == "insert_frames";
+		if (!integerArgument(arguments, "frame", 0, inserting ? length : length - 1, -1, frame) || frame < 0)
+			why = inserting ? "'frame' must be between 0 and the movie's length, " + std::to_string(length) + "."
+				: length == 0 ? "The movie has no frames."
+				: "'frame' must be a frame of the movie, which has " + std::to_string(length) + ".";
+		else if (!integerArgument(arguments, "count", 1, 100000, 1, count)) why = "'count' must be between 1 and 100000.";
+		else
+		{
+			/* deleting past the end stops at the end */
+			if (!inserting && count > length - frame) count = length - frame;
+			cJSON_AddNumberToObject(step, "frame", static_cast<double>(frame));
+			cJSON_AddNumberToObject(step, "count", static_cast<double>(count));
+			cJSON_AddStringToObject(step, "label", labelled(inserting ? "insert frames" : "delete frames", frame, count).c_str());
+		}
+	}
+	else if (tool == "set_input")
+	{
+		const cJSON *entries = cJSON_GetObjectItemCaseSensitive(arguments, "entries");
+		count = cJSON_IsArray(entries) ? cJSON_GetArraySize(entries) : 0;
+		if (!integerArgument(arguments, "frame", 0, INT32_MAX - 2000, -1, frame) || frame < 0) why = "'frame' must be a frame number, 0 or more.";
+		else if (count < 1 || count > 1000) why = "'entries' must be between 1 and 1000 lines of input, as get_input returns them.";
+		else
+		{
+			/* every line is checked before one is written */
+			int64_t at = 0;
+			const cJSON *entry = nullptr;
+			cJSON_ArrayForEach(entry, entries)
+			{
+				at++;
+				if (cJSON_IsString(entry) && lineFits(s, entry->valuestring, blank)) continue;
+				why = "Line " + std::to_string(at) + " of 'entries' does not have the shape of this movie's input lines. get_input shows them.";
+				break;
+			}
+			if (why.empty())
+			{
+				cJSON_AddNumberToObject(step, "frame", static_cast<double>(frame));
+				cJSON_AddItemToObject(step, "entries", cJSON_Duplicate(entries, 1));
+				cJSON_AddStringToObject(step, "label", labelled("set input", frame, count).c_str());
+			}
+		}
+	}
+	else /* set_buttons: the lines it amounts to */
+	{
+		const size_t buttonCount = static_cast<size_t>(ce_session_button_count(s));
+		const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s));
+		std::vector<int> buttonAsked(buttonCount, -1); /* -1 keep, 0 release, 1 press */
+		std::vector<bool> axisAsked(axisCount, false);
+		std::vector<int32_t> axisValue(axisCount, 0);
+		bool any = false;
+		const cJSON *asked = nullptr;
+		cJSON_ArrayForEach(asked, cJSON_GetObjectItemCaseSensitive(arguments, "buttons"))
+		{
+			size_t index = buttonCount;
+			for (size_t i = 0; i < buttonCount && index == buttonCount; i++)
+			{
+				if (std::strcmp(asked->string, ce_session_button_name(s, static_cast<int64_t>(i))) == 0) index = i;
+			}
+			if (index == buttonCount || ce_session_button_active(s, static_cast<int64_t>(index)) == 0)
+				why = std::string("There is no button called '") + asked->string + "'. 'controls' names them.";
+			else if (!cJSON_IsBool(asked)) why = std::string("The button '") + asked->string + "' must be true (pressed) or false (released).";
+			else buttonAsked[index] = cJSON_IsTrue(asked) ? 1 : 0;
+			any = true;
+			if (!why.empty()) break;
+		}
+		const cJSON *askedAxes = why.empty() ? cJSON_GetObjectItemCaseSensitive(arguments, "axes") : nullptr;
+		cJSON_ArrayForEach(asked, askedAxes)
+		{
+			size_t index = axisCount;
+			for (size_t i = 0; i < axisCount && index == axisCount; i++)
+			{
+				if (std::strcmp(asked->string, ce_session_axis_name(s, static_cast<int64_t>(i))) == 0) index = i;
+			}
+			if (index == axisCount || ce_session_axis_active(s, static_cast<int64_t>(index)) == 0)
+				why = std::string("There is no axis called '") + asked->string + "'. 'controls' names them.";
+			else if (!cJSON_IsNumber(asked) || asked->valuedouble != static_cast<double>(static_cast<int32_t>(asked->valuedouble)))
+				why = std::string("The axis '") + asked->string + "' must be a whole number.";
+			else
+			{
+				axisAsked[index] = true;
+				axisValue[index] = static_cast<int32_t>(asked->valuedouble);
+			}
+			any = true;
+			if (!why.empty()) break;
+		}
+		if (!why.empty()) {}
+		else if (!integerArgument(arguments, "frame", 0, INT32_MAX - 20000, -1, frame) || frame < 0) why = "'frame' must be a frame number, 0 or more.";
+		else if (!integerArgument(arguments, "count", 1, 10000, 1, count)) why = "'count' must be between 1 and 10000.";
+		else if (!any) why = "Name at least one button in 'buttons' or one axis in 'axes'.";
+		else
+		{
+			cJSON *entries = cJSON_CreateArray();
+			std::vector<uint8_t> states(buttonCount);
+			std::vector<int32_t> values(axisCount);
+			for (int64_t i = 0; i < count && why.empty(); i++)
+			{
+				/* the line the frame has now, or the empty one past the movie's end */
+				const char *now = frame + i < length ? ce_movie_log_entry(log, frame + i) : nullptr;
+				if (ce_session_movie_entry_decode_wide(s, now != nullptr ? now : blank.c_str(), states.data(), values.data()) != 0)
+				{
+					why = "The movie's input on frame " + std::to_string(frame + i) + " cannot be read.";
+					break;
+				}
+				for (size_t b = 0; b < buttonCount; b++) if (buttonAsked[b] >= 0) states[b] = static_cast<uint8_t>(buttonAsked[b]);
+				for (size_t a = 0; a < axisCount; a++) if (axisAsked[a]) values[a] = axisValue[a];
+				cJSON_AddItemToArray(entries, cJSON_CreateString(sessionMovieEntry(s, states.data(), values.data()).c_str()));
+			}
+			cJSON_AddNumberToObject(step, "frame", static_cast<double>(frame));
+			cJSON_AddItemToObject(step, "entries", entries);
+			cJSON_AddStringToObject(step, "label", labelled("set controls", frame, count).c_str());
+			tool = "set_input";
+		}
+	}
+	cJSON_Delete(arguments);
+	if (!why.empty())
+	{
+		cJSON_Delete(step);
+		return refuse(why);
+	}
+	argumentsJson = printJson(step);
+	cJSON_Delete(step);
+	return true;
+}
+
+bool isEdit(const std::string &tool)
+{
+	return tool == "set_input" || tool == "set_buttons" || tool == "insert_frames" || tool == "delete_frames";
+}
+
 /* ---- RAM search ---- */
 
 void dropSearch(Service &sv)
@@ -1778,6 +1961,14 @@ int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t frame, co
 			{
 				*heldTool = call.tool;
 				*heldArguments = call.arguments;
+				/* an edit is checked, and worked out into the step it amounts
+				 * to, before the movie's holder is asked to make it */
+				chimera::McpResult refusal;
+				if (chimera::isEdit(call.tool) && !chimera::prepareEdit(s, log, *heldTool, *heldArguments, refusal))
+				{
+					chimera::finish(sv, call, refusal);
+					continue;
+				}
 				if (id_out != nullptr) *id_out = call.id;
 				if (tool_out != nullptr) *tool_out = heldTool->c_str();
 				if (arguments_out != nullptr) *arguments_out = heldArguments->c_str();

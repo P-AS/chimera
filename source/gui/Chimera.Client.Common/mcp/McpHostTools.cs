@@ -48,6 +48,10 @@ namespace Chimera.Client.Common
 	/// the open movie with its branches, markers and undo history - and are handed over by
 	/// the engine (EngineMcp.Service). Every change goes through the calls TAStudio itself
 	/// uses, so it shows in the piano roll and is a step in the undo history.
+	/// What an edit MEANS is not decided here: the engine checks set_input, set_buttons,
+	/// insert_frames and delete_frames against the movie and the machine's controls and hands
+	/// over a plain step - these lines from this frame, this many frames inserted or deleted -
+	/// with the name the step has in the undo history. This only applies it.
 	/// Each tool returns the text for the agent, JSON by convention.
 	/// </summary>
 	public static class McpHostTools
@@ -87,9 +91,7 @@ namespace Chimera.Client.Common
 					case "list_branches":
 						return ListBranches(movie);
 					case "set_input":
-						return SetInput(movie, arguments, out isError);
-					case "set_buttons":
-						return SetButtons(movie, arguments, out isError);
+						return SetLines(movie, arguments, out isError);
 					case "insert_frames":
 						return InsertFrames(movie, arguments, out isError);
 					case "delete_frames":
@@ -217,96 +219,44 @@ namespace Chimera.Client.Common
 			return facts.ToString(Formatting.None);
 		}
 
-		private static string SetInput(ITasMovie movie, JObject arguments, out bool isError)
+		/// <summary>The name the engine gave the step, for the undo history.</summary>
+		private static string Label(JObject step) => step["label"] is { Type: JTokenType.String } label ? (string) label! : "Agent";
+
+		/// <summary>Lines of input written from a frame on, past the movie's end too. The engine has checked every line.</summary>
+		private static string SetLines(ITasMovie movie, JObject step, out bool isError)
 		{
 			isError = false;
-			if (!Number(arguments, "frame", 0, int.MaxValue - MostFrames, null, out var frame)) return Refuse("'frame' must be a frame number, 0 or more.", out isError);
-			if (arguments["entries"] is not JArray { Count: > 0 and <= 1000 } list || list.Any(static e => e.Type is not JTokenType.String))
+			if (!Number(step, "frame", 0, int.MaxValue - MostFrames, null, out var frame)
+				|| step["entries"] is not JArray { Count: > 0 } entries || entries.Any(static e => e.Type is not JTokenType.String))
 			{
-				return Refuse("'entries' must be between 1 and 1000 lines of input, as get_input returns them.", out isError);
+				return Refuse("The step to apply is not one the engine makes.", out isError);
 			}
-			var entries = list.Select(static e => (string) e!).ToList();
-			// Every line is checked before one is written: it must have the shape of this
-			// movie's lines, which is the shape of the empty one.
-			var shape = LogEntryGenerator.EmptyEntry(movie.Session.MovieController);
-			for (var i = 0; i < entries.Count; i++)
-			{
-				if (!SameShape(entries[i], shape))
-				{
-					return Refuse($"Line {i + 1} of 'entries' does not have the shape of this movie's input lines. An empty one is: {shape}", out isError);
-				}
-			}
-			movie.ChangeLog.BeginNewBatch($"Agent: set input, frames {frame} to {frame + entries.Count - 1}");
-			for (var i = 0; i < entries.Count; i++) movie.PokeFrame(frame + i, entries[i]);
+			movie.ChangeLog.BeginNewBatch(Label(step));
+			for (var i = 0; i < entries.Count; i++) movie.PokeFrame(frame + i, (string) entries[i]!);
 			return Done(movie, new JObject { ["frame"] = frame, ["count"] = entries.Count });
 		}
 
-		/// <summary>
-		/// Whether a line has the columns of the movie's own: the same length, the bars in the same
-		/// places, and where the empty line has a digit or a sign (an axis), only those or spaces.
-		/// </summary>
-		private static bool SameShape(string entry, string shape)
-		{
-			if (entry.Length != shape.Length) return false;
-			for (var i = 0; i < shape.Length; i++)
-			{
-				if ((shape[i] is '|') != (entry[i] is '|')) return false;
-				if (shape[i] is '.' && entry[i] is ' ' or ',') return false;
-			}
-			return true;
-		}
-
-		private static string SetButtons(ITasMovie movie, JObject arguments, out bool isError)
+		private static string InsertFrames(ITasMovie movie, JObject step, out bool isError)
 		{
 			isError = false;
-			if (!Number(arguments, "frame", 0, int.MaxValue - MostFrames, null, out var frame)) return Refuse("'frame' must be a frame number, 0 or more.", out isError);
-			if (!Number(arguments, "count", 1, MostFrames, 1, out var count)) return Refuse($"'count' must be between 1 and {MostFrames}.", out isError);
-			var definition = movie.Session.MovieController.Definition;
-			List<(string Name, bool Pressed)> buttons = new();
-			List<(string Name, int Value)> axes = new();
-			if (arguments["buttons"] is JObject askedButtons)
+			if (!Number(step, "frame", 0, movie.InputLogLength, null, out var frame) || !Number(step, "count", 1, MostFrames, null, out var count))
 			{
-				foreach (var asked in askedButtons.Properties())
-				{
-					if (!definition.BoolButtons.Contains(asked.Name)) return Refuse($"There is no button called '{asked.Name}'. 'controls' names them.", out isError);
-					if (asked.Value.Type is not JTokenType.Boolean) return Refuse($"The button '{asked.Name}' must be true (pressed) or false (released).", out isError);
-					buttons.Add((asked.Name, (bool) asked.Value));
-				}
+				return Refuse("The step to apply is not one the engine makes.", out isError);
 			}
-			if (arguments["axes"] is JObject askedAxes)
-			{
-				foreach (var asked in askedAxes.Properties())
-				{
-					if (!definition.Axes.ContainsKey(asked.Name)) return Refuse($"There is no axis called '{asked.Name}'. 'controls' names them.", out isError);
-					if (asked.Value.Type is not JTokenType.Integer) return Refuse($"The axis '{asked.Name}' must be a whole number.", out isError);
-					axes.Add((asked.Name, (int) asked.Value));
-				}
-			}
-			if (buttons.Count is 0 && axes.Count is 0) return Refuse("Name at least one button in 'buttons' or one axis in 'axes'.", out isError);
-			movie.ChangeLog.BeginNewBatch($"Agent: set controls, frames {frame} to {frame + count - 1}");
-			foreach (var (name, pressed) in buttons) movie.SetBoolStates(frame, count, name, pressed);
-			foreach (var (name, value) in axes) movie.SetAxisStates(frame, count, name, value);
-			return Done(movie, new JObject { ["frame"] = frame, ["count"] = count });
-		}
-
-		private static string InsertFrames(ITasMovie movie, JObject arguments, out bool isError)
-		{
-			isError = false;
-			if (!Number(arguments, "frame", 0, movie.InputLogLength, null, out var frame)) return Refuse($"'frame' must be between 0 and the movie's length, {movie.InputLogLength}.", out isError);
-			if (!Number(arguments, "count", 1, MostFrames, 1, out var count)) return Refuse($"'count' must be between 1 and {MostFrames}.", out isError);
-			movie.ChangeLog.BeginNewBatch($"Agent: insert {count} frames at {frame}");
+			movie.ChangeLog.BeginNewBatch(Label(step));
 			movie.InsertEmptyFrame(frame, count);
 			return Done(movie, new JObject { ["frame"] = frame, ["inserted"] = count });
 		}
 
-		private static string DeleteFrames(ITasMovie movie, JObject arguments, out bool isError)
+		private static string DeleteFrames(ITasMovie movie, JObject step, out bool isError)
 		{
 			isError = false;
-			if (!Number(arguments, "frame", 0, Math.Max(0, movie.InputLogLength - 1), null, out var frame)) return Refuse($"'frame' must be a frame of the movie, which has {movie.InputLogLength}.", out isError);
-			if (!Number(arguments, "count", 1, MostFrames, 1, out var count)) return Refuse($"'count' must be between 1 and {MostFrames}.", out isError);
-			if (movie.InputLogLength is 0) return Refuse("The movie has no frames.", out isError);
-			count = Math.Min(count, movie.InputLogLength - frame);
-			movie.ChangeLog.BeginNewBatch($"Agent: delete {count} frames at {frame}");
+			if (!Number(step, "frame", 0, Math.Max(0, movie.InputLogLength - 1), null, out var frame)
+				|| !Number(step, "count", 1, Math.Max(1, movie.InputLogLength - frame), null, out var count))
+			{
+				return Refuse("The step to apply is not one the engine makes.", out isError);
+			}
+			movie.ChangeLog.BeginNewBatch(Label(step));
 			movie.RemoveFrames(frame, frame + count);
 			return Done(movie, new JObject { ["frame"] = frame, ["deleted"] = count });
 		}
