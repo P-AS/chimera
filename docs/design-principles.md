@@ -6509,3 +6509,34 @@ project naming the wrong slot is refused by both with the same sentence. On
 Windows: the engine compiles, and the runner plays the synthetic project to
 the reference memory and refuses the changed file. The window was not tried
 on Windows.
+
+## An MCP server for agents, started from the window (user-decided, 2026-10-12)
+
+A user suggested that an AI agent should be able to use Chimera directly,
+through an MCP server (a program that offers an agent a list of named tools).
+The owner decided it is wanted and how. The design is docs/mcp-server.md;
+nothing of the server is built at the time of this section.
+
+What was decided:
+
+- The main use is a person working on a movie in the window who asks their
+  agent to look at it or change it. The server is started, watched, logged
+  and stopped from Tools > MCP Server..., at any time.
+- It always starts stopped, and that is never remembered.
+- In the window the agent may only look, until the person ticks a box that
+  allows changes. The box is off at first every time.
+- A program an agent starts and talks to over standard input and output is
+  inside the rule that Chimera has no network code. No socket is used; the
+  HTTP form of MCP is not offered.
+- The window comes first. A mode with no window, where an agent opens its
+  own machine, follows; there the files it may read and write are limited to
+  folders named when it is started.
+- Writing to the machine's memory is offered, and is reported from the first
+  write on, because a movie cannot reproduce it.
+- It ships in the release bundles once it is tested, not before.
+- Opening a project had to become one piece of engine code first (the
+  section above).
+
+Why these: the person's work is what is at risk, so the server is off until
+asked for, read-only until allowed, and every change is an ordinary TAStudio
+edit that can be undone, with a branch saved before the first one.
