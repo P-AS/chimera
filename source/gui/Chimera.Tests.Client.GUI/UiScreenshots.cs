@@ -224,6 +224,30 @@ namespace Chimera.Tests.Client.GUI
 			Shoot(form, "report-issue");
 		}
 
+		/// <summary>Tools &gt; MCP Server... (docs/mcp-server.md): started, changes allowed, with a few lines in the log.</summary>
+		[TestMethod]
+		public void McpServer()
+		{
+			Chimera.Emulation.Common.Engine.EngineMcp.Stop();
+			Chimera.Emulation.Common.Engine.EngineMcp.SetName("uishot" + System.Diagnostics.Process.GetCurrentProcess().Id);
+			try
+			{
+				using McpServerForm form = new();
+				form.StartPosition = FormStartPosition.Manual;
+				form.Location = new Point(0, 0);
+				form.Show();
+				form.Toggle();
+				form.AllowChanges = true;
+				form.RefreshNow();
+				Shoot(form, "mcp-server");
+			}
+			finally
+			{
+				Chimera.Emulation.Common.Engine.EngineMcp.Stop();
+				Chimera.Emulation.Common.Engine.EngineMcp.SetName(null);
+			}
+		}
+
 		/// <summary>
 		/// File &gt; Cache Manager: what is on disk that could be worked out again.
 		/// Every row is safe to delete, so the picture is mostly about whether the

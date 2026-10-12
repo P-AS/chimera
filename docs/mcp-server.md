@@ -11,12 +11,22 @@ Built so far:
   `controls`, `get_input`, `screenshot`, `list_memory`, `read_memory`,
   `registers`, `list_properties`, `get_property`). `chimera-mcp`, the program
   an agent starts, on Linux and Windows.
+- In the window: Tools > MCP Server... with start, stop, the state, the tick
+  box, the set-up command and the log; the title bar says "MCP server
+  started" while it is; `list_branches` and `list_markers`; and the
+  `--mcp-server` command-line flag.
 
-Not built yet: Tools > MCP Server... in the window, `list_branches` and
-`list_markers`, every tool that changes something, RAM search, `watch`,
-`advance_until`, and the windowless mode. Until the window part exists the
-server can only be tried through `chimera-run --mcp-serve`, which is how it
-is tested.
+So an agent can look at the project a person has open, and cannot change
+anything yet. The tick box is there and reaches the engine, but no tool that
+changes something exists yet.
+
+Not built yet: every tool that changes something (with the branch saved
+before the first change), RAM search, `watch`, `advance_until`, and the
+windowless mode. `chimera-mcp` is built with Chimera but is not in the
+release bundles yet.
+
+Not tried: the window on Windows. The engine's part and `chimera-mcp` were
+run there; the dialog was only run on Linux.
 
 ## What it is
 
@@ -93,8 +103,13 @@ One dialog, usable at any time while Chimera runs:
   or error, how long it took. It can be saved to a file.
 - **The set-up line** to paste into the agent, with a button to copy it.
 
-While the server is started the main window shows it, so it cannot be left on
-unnoticed.
+While the server is started the main window's title says "MCP server
+started" and the menu item is ticked, so it cannot be left on unnoticed.
+Closing the dialog does not stop the server; closing Chimera does.
+
+Chimera started with `--mcp-server` starts the server at launch, as pressing
+Start does. It exists for runs nobody clicks in (the tests use it); nothing
+else starts the server, and a tick box in a configuration file cannot.
 
 ## What protects the person's work
 

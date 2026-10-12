@@ -31,6 +31,9 @@ namespace Chimera.Client.Common
 
 		public readonly bool luaConsole;
 
+		/// <summary>--mcp-server: start the MCP server at launch (docs/mcp-server.md)</summary>
+		public readonly bool mcpServer;
+
 		public readonly IReadOnlyList<(string Key, string Value)>? UserdataUnparsedPairs;
 
 		public readonly string? MMFFilename;
@@ -70,8 +73,10 @@ namespace Chimera.Client.Common
 			string? cmdCorePackage,
 			string? cmdPrecompile,
 			string[]? cmdFirmware = null,
-			string? cmdPrecompileSlots = null)
+			string? cmdPrecompileSlots = null,
+			bool mcpServer = false)
 		{
+			this.mcpServer = mcpServer;
 			this.cmdConfigFile = cmdConfigFile;
 			this.cmdMovie = cmdMovie;
 			this.cmdProject = cmdProject;

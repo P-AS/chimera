@@ -124,6 +124,9 @@ namespace Chimera.Emulation.Common.Waterbox
 					? CoreCacheDirectoryFor(CoreCacheRoot, hashed.Sha1)
 					: null;
 
+		/// <summary>The engine's handle of this machine, for the engine calls that take one (the MCP server's).</summary>
+		public IntPtr SessionHandle => _session.Handle;
+
 		/// <param name="rom">the game's bytes, or null when <paramref name="romPath"/> is given</param>
 		/// <param name="romPath">
 		/// Where the game lies, for the usual case of a file on disk: the engine

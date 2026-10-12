@@ -6586,3 +6586,50 @@ With the memory read, the picture, the input and the "not started" sentence
 broken on purpose, the checks failed. The same path by hand on Windows
 (`chimera-run.exe`, `chimera-mcp.exe`, the same script) gave the same
 answers. The interface is unchanged and its tests were not run again.
+
+## Tools > MCP Server..., and what the window does for an agent (2026-10-12)
+
+The window's part of the MCP server (docs/mcp-server.md). What was chosen
+while building it, and why:
+
+- **The dialog shows the engine's server and holds nothing itself.** The
+  state, the name of the agent's program, whether changes are allowed and the
+  log are all asked of the engine a few times a second. So the dialog can be
+  closed and opened again, and two views can never disagree.
+- **It does not block the main window.** A person works on their movie with
+  it open. Closing it does not stop the server; closing Chimera does, so an
+  agent still connected is told the server is gone instead of waiting.
+- **The title bar says "MCP server started"** for as long as it is, and the
+  menu item is ticked. A server that can change a movie must not be left on
+  without the person seeing it.
+- **The main loop asks once per pass** whether a call waits, after it has
+  handled the window's own messages. Nothing is done when none waits. While a
+  blocking dialog is open the loop does not run, so calls wait, and the
+  30-second rule of the engine part answers them.
+- **The tools the window runs are in one class with no window in it**
+  (`McpHostTools`), given the open movie. So they are tested without a
+  window, and the window's own part is a dozen lines.
+- **A marker says whether a person placed it.** Every movie has three of its
+  own (the run's start, its last input, its end); an agent asked to "look at
+  my markers" needs to tell them apart.
+- **`--mcp-server` on the command line starts the server at launch.** It is
+  what lets the test of the whole product open a project in the real window
+  and talk to it with nobody to press Start. It is not remembered, and no
+  setting can start the server. This flag is new and was not one of the
+  owner's nine decisions; it is here for him to confirm or remove.
+
+What was measured, on Linux. The interface tests: 0 failed of 1,056 (24
+skipped), ten of them new - five for the dialog (it starts and stops the real
+server, the tick box reaches the engine and is off at every start, the log is
+saved as shown, the set-up command names the program beside the engine, and
+the real `chimera-mcp` connects, is named in the dialog and has its calls in
+the log) and five for the window's tools. The test of the whole product: 83
+of 83, one new - Chimera opens a project with `--mcp-server` in the real
+window, and what an agent reads through `chimera-mcp` is the reference memory
+byte for byte, the movie's input line for line, a picture, and the project's
+markers and branches. With the code broken on purpose (the tick box not
+following the engine, the agent's name left out, branches numbered from 0,
+the machine not handed to the engine) exactly the new tests failed: three
+interface tests and the window check. A picture of the dialog was looked at
+(`tests/ui/run-ui-tests.sh --shots`, `mcp-server.png`). The engine was not
+rebuilt for this part. Nothing of the window was tried on Windows.

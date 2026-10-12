@@ -4,11 +4,15 @@
 input and output, and checks what the tools say about the synthetic core
 against files the other tests already trust.
 
-Usage: mcp-agent.py <chimera-mcp> <reference ram> <reference vram> <movie.txt> <last frame .tga>
+Usage: mcp-agent.py <chimera-mcp> <reference ram> <reference vram> <movie.txt> <last frame .tga> [window]
 
-A running Chimera must be serving (tests/synth/run-witness.sh starts
-chimera-run --mcp-serve for that). Prints one line for each thing that is
-wrong and exits 1, or prints nothing and exits 0.
+A running Chimera must be serving. tests/synth/run-witness.sh starts one of
+two: chimera-run --mcp-serve, which has no window, or the real window with
+--mcp-server and a project ("window" as the last argument). The window is
+asked the same things and a few more that only it can answer; it writes no
+picture file to compare with, so "-" is given for the .tga and the picture is
+only checked to be one. Prints one line for each thing that is wrong and
+exits 1, or prints nothing and exits 0.
 """
 import base64
 import json
@@ -18,6 +22,7 @@ import sys
 import zlib
 
 mcp, ram_path, vram_path, movie_path, tga_path = sys.argv[1:6]
+window = len(sys.argv) > 6 and sys.argv[6] == "window"
 wrong = []
 
 
@@ -131,6 +136,10 @@ check("status gives the movie's length", status.get("movie_length") == len(movie
 check("status says changes are not allowed", status.get("changes_allowed") is False)
 check("status says the core has not stopped", status.get("core_stopped") is False)
 check("status gives the picture's size", status.get("picture", {}).get("width", 0) > 0)
+if window:
+    check("status names the project", status.get("project") == "gridWalker.win")
+    check("status says the window is paused", status.get("paused") is True)
+    check("status says nothing is unsaved", status.get("unsaved_changes") is False)
 
 # controls: the buttons, in the order of the movie's columns
 controls = facts("controls")
@@ -180,13 +189,23 @@ images = [c for c in content if c["type"] == "image"]
 check("screenshot returns a PNG", not error and len(images) == 1 and images[0]["mimeType"] == "image/png")
 if images:
     width, height, pixels = png_pixels(base64.b64decode(images[0]["data"]))
-    check("screenshot is the last frame's picture", (width, height, pixels) == tga_pixels(tga_path))
+    check("screenshot has the picture's size", (width, height) == (status["picture"]["width"], status["picture"]["height"]))
+    check("screenshot is not one flat colour", len(set(pixels[i:i + 3] for i in range(0, len(pixels), 3))) > 1)
+    if tga_path != "-":
+        check("screenshot is the last frame's picture", (width, height, pixels) == tga_pixels(tga_path))
     half = facts("screenshot", max_width=width // 2)
     check("screenshot scales a picture down to max_width", half.get("width") == width // 2 and half.get("picture_width") == width)
 
-# a tool that needs the window says so here, where there is none
-error, text, _ = call("list_markers")
-check("a tool the frontend runs is handed to the frontend", error and "window" in text)
+if window:
+    # the tools the window runs: what TAStudio holds
+    markers = facts("list_markers").get("markers")
+    check("list_markers lists the project's markers, the first on frame 0",
+          isinstance(markers, list) and len(markers) > 0 and markers[0].get("frame") == 0 and "text" in markers[0])
+    check("list_branches lists the project's branches, of which there are none", facts("list_branches").get("branches") == [])
+else:
+    # a tool that needs the window says so here, where there is none
+    error, text, _ = call("list_markers")
+    check("a tool the frontend runs is handed to the frontend", error and "window" in text)
 
 agent.stdin.close()
 agent.wait()

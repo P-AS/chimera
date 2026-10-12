@@ -116,6 +116,11 @@ namespace Chimera.Client.Common
 			Description = "open the Lua Console, even if not loading a script",
 		};
 
+		private static readonly Option<bool> OptionMcpServer = new("--mcp-server")
+		{
+			Description = "start the MCP server at launch, as Tools > MCP Server... > Start does (docs/mcp-server.md); it is not started otherwise",
+		};
+
 		private static readonly Option<bool> OptionQueryAppVersion = new("--version")
 		{
 			Description = "print version information and immediately exit",
@@ -159,6 +164,7 @@ namespace Chimera.Client.Common
 			root.Add(/* --headless */ OptionHeadless);
 			root.Add(/* --lua */ OptionLuaFilePath);
 			root.Add(/* --luaconsole */ OptionOpenLuaConsole);
+			root.Add(/* --mcp-server */ OptionMcpServer);
 			root.Add(/* --mmf */ OptionMMFPath);
 			root.Add(/* --movie */ OptionMovieFilePath);
 			root.Add(/* --project */ OptionProjectFilePath);
@@ -255,7 +261,8 @@ namespace Chimera.Client.Common
 				cmdCorePackage: result.GetValue(OptionCorePackagePath),
 				cmdPrecompile: result.GetValue(OptionPrecompile),
 				cmdFirmware: result.GetValue(OptionFirmware),
-				cmdPrecompileSlots: result.GetValue(OptionPrecompileSlots)
+				cmdPrecompileSlots: result.GetValue(OptionPrecompileSlots),
+				mcpServer: result.GetValue(OptionMcpServer)
 			);
 			return null;
 		}

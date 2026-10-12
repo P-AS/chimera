@@ -1067,6 +1067,8 @@ namespace Chimera.Client.GUI
 			RamWatchMenuItem.Enabled = Tools.IsAvailable<RamWatch>();
 			// ticked while the core log is on, which is only ever because somebody asked
 			ExportCoreLogMenuItem.Checked = ChimeraEngine.CoreLogPath.Length is not 0;
+			// ticked while the MCP server is started, which is only ever because somebody asked
+			McpServerMenuItem.Checked = EngineMcp.State is not EngineMcp.ServerState.Stopped;
 
 
 			// Core-managed tooling: available exactly when the loaded core backs the
@@ -1448,6 +1450,8 @@ namespace Chimera.Client.GUI
 			// what a crash would have kept is either saved or knowingly let go.
 			_recovery?.End(clean: true);
 			_recovery = null;
+			// an agent still connected is told the server is gone, not left waiting
+			EngineMcp.Stop();
 			_windowClosedAndSafeToExitProcess = true;
 			base.OnClosed(e);
 		}

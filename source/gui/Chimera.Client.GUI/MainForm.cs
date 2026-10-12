@@ -701,6 +701,8 @@ namespace Chimera.Client.GUI
 
 			Shown += (_, _) =>
 			{
+				// the MCP server, when the command line asked for it
+				if (_argParser.mcpServer) StartMcpServerFromCommandLine();
 				//start Lua Console if requested in the command line arguments
 				if (_argParser.luaConsole)
 				{
@@ -986,6 +988,9 @@ namespace Chimera.Client.GUI
 				phaseStarted = LoopTrace.Enabled ? Stopwatch.GetTimestamp() : 0;
 				if (serviceHost) CheckMessages();
 				LoopTrace.Add(LoopTrace.Messages, phaseStarted);
+
+				// an AI agent's calls, when the MCP server is started and one waits
+				ServiceMcp();
 
 				if (_exitRequestPending)
 				{
@@ -1729,6 +1734,9 @@ namespace Chimera.Client.GUI
 						sb.Append($"{(movie.Changes ? "*" : string.Empty)}{Path.GetFileName(movie.Filename)} - ");
 					}
 				}
+
+				// said in the title for as long as it is so, so it is not left on unnoticed
+				if (EngineMcp.State is not EngineMcp.ServerState.Stopped) sb.Append("MCP server started - ");
 
 				sb.Append(Config.MainFormStaticWindowTitleOverrideEffective);
 

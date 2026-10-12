@@ -130,6 +130,7 @@ namespace Chimera.Client.GUI
 			this.BatchRunnerMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.toolStripSeparatorCoreLog = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
 			this.ExportCoreLogMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
+			this.McpServerMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.MediaMakerMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.toolStripSeparator22 = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
 			this.GenericCoreSubMenu = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
@@ -847,7 +848,8 @@ namespace Chimera.Client.GUI
             this.MacroToolMenuItem,
             this.BatchRunnerMenuItem,
             this.toolStripSeparatorCoreLog,
-            this.ExportCoreLogMenuItem});
+            this.ExportCoreLogMenuItem,
+            this.McpServerMenuItem});
 			this.ToolsSubMenu.Text = "&Tools";
 			this.ToolsSubMenu.DropDownOpened += new System.EventHandler(this.ToolsSubMenu_DropDownOpened);
 			// 
@@ -891,6 +893,11 @@ namespace Chimera.Client.GUI
 			// 
 			this.ExportCoreLogMenuItem.Text = "Export Core &Log...";
 			this.ExportCoreLogMenuItem.Click += new System.EventHandler(this.ExportCoreLogMenuItem_Click);
+			// 
+			// McpServerMenuItem
+			// 
+			this.McpServerMenuItem.Text = "MCP &Server...";
+			this.McpServerMenuItem.Click += new System.EventHandler(this.McpServerMenuItem_Click);
 			// 
 			// GenericCoreSubMenu
 			// 
@@ -1344,6 +1351,7 @@ namespace Chimera.Client.GUI
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx BatchRunnerMenuItem;
 		private Chimera.WinForms.Controls.ToolStripSeparatorEx toolStripSeparatorCoreLog;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx ExportCoreLogMenuItem;
+		private Chimera.WinForms.Controls.ToolStripMenuItemEx McpServerMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx MediaMakerMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayConfigMenuItem;
 		private Chimera.WinForms.Controls.StatusLabelEx CoreNameStatusBarButton;

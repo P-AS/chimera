@@ -595,6 +595,47 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_core_log_path();
 
+		// the MCP server (engine.h; docs/mcp-server.md): see EngineMcp
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_mcp_start(ref IntPtr errorOut);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract void ce_mcp_stop();
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract void ce_mcp_name(string? name);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_mcp_state();
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_mcp_client();
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_mcp_endpoint();
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract void ce_mcp_allow_changes(int on);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_mcp_changes_allowed();
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_mcp_pending();
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_mcp_service(IntPtr session, IntPtr log, long frame, string? hostStatusJson,
+			ref ulong idOut, ref IntPtr toolOut, ref IntPtr argumentsOut);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract void ce_mcp_answer(ulong id, string text, int isError);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract ulong ce_mcp_log_total();
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_mcp_log_line(ulong index);
+
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_core_log_error();
 

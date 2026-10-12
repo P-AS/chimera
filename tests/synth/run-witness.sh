@@ -1073,6 +1073,69 @@ PY
 		fi
 	fi
 
+	# --- the MCP server in the real window (docs/mcp-server.md) ---
+	# Chimera opens a project with --mcp-server, which is what pressing Start in
+	# Tools > MCP Server... does. A script plays the movie to its end, pauses and
+	# keeps the window running; mcp-agent.py then plays an AI agent through
+	# chimera-mcp. What it reads must be what the references say - memory byte
+	# for byte, the input line for line - and the tools only the window can run
+	# (the project's markers and branches) must answer. The server's pipe has a
+	# name of this run's own.
+	if [ "$record" -eq 0 ]; then
+		wname=gridWalker.win
+		wdir="$work/mcp-window"
+		wmcp="$repo_root/build/meson-linux/chimera-mcp"
+		rm -rf "$wdir" && mkdir -p "$wdir"
+		if [ ! -x "$wmcp" ]; then
+			report "M:mcp:window" SKIP "chimera-mcp not built (meson compile -C build/meson-linux)"
+		else
+			cp "$here/roms/gridWalker.testrom" "$wdir/gridWalker.testrom"
+			python3 - "$here/movies/$wname.txt" "$wdir/gridWalker.testrom" "$wdir/$wname.chimeraProject" <<'MCPPY'
+import hashlib, json, sys
+entries = [l.rstrip("\r\n") for l in open(sys.argv[1]) if l.startswith("|")]
+logkey = "#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|"
+sha1 = hashlib.sha1(open(sys.argv[2], "rb").read()).hexdigest().upper()
+json.dump({
+    "title": "gridWalker.win",
+    "core": {"name": "Synth", "version": "", "sha1": ""},
+    "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
+    "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
+    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+}, open(sys.argv[3], "w"))
+MCPPY
+			{
+				echo "ready=$wdir/ready"
+				echo "done=$wdir/done"
+			} > "$wdir/job.txt"
+			cp "$config" "$wdir/config.ini"
+			CHIMERA_MCP_NAME="witness$$"; export CHIMERA_MCP_NAME
+			( cd "$repo_root" && CHIMERA_JOB="$wdir/job.txt" timeout 300 mono "$emu_exe" --headless --mcp-server \
+				"--config=$wdir/config.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+				"--project=$wdir/$wname.chimeraProject" "--lua=$here/synth-mcp.lua" ) > "$wdir/chimera.log" 2>&1 &
+			wpid=$!
+			wtries=0
+			while [ "$wtries" -lt 600 ] && [ ! -f "$wdir/ready" ] && kill -0 "$wpid" 2>/dev/null; do
+				sleep 0.2; wtries=$((wtries+1))
+			done
+			wrc=99
+			if [ -f "$wdir/ready" ]; then
+				timeout 120 python3 "$here/mcp-agent.py" "$wmcp" "$golden_dir/$wname.ram.bin" "$golden_dir/$wname.vram.bin" \
+					"$here/movies/$wname.txt" - window > "$wdir/agent.log" 2>&1
+				wrc=$?
+			fi
+			: > "$wdir/done"
+			wait "$wpid"; wexit=$?
+			unset CHIMERA_MCP_NAME
+			if [ "$wrc" -eq 0 ] && [ "$wexit" -eq 0 ] && grep -q "^\[mcp\] the server is started" "$wdir/chimera.log"; then
+				report "M:mcp:window" PASS "an agent reads the open project through the window's server: memory, input, markers, branches"
+			elif [ "$wrc" -eq 99 ]; then
+				report "M:mcp:window" FAIL "Chimera never said the movie was played (see work/mcp-window/chimera.log)"
+			else
+				report "M:mcp:window" FAIL "agent rc=$wrc, Chimera rc=$wexit (see work/mcp-window/agent.log and chimera.log)"
+			fi
+		fi
+	fi
+
 	# --- a script's input, while TAStudio extends the movie past its end ---
 	# The piano roll open is a different frame loop, and past the end of the log
 	# it is not replaying anything: each frame out there is AUTHORED as it is
