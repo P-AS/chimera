@@ -6372,3 +6372,28 @@ native build, a minute of Quake II included - and Chimera's roster and
 package tests named in the commit that added the row. Chimera's window ran
 an earlier build of the core on Windows, driven by a script (600 frames,
 the project saved). Nobody has yet used it by hand.
+
+## Making a mapping copies nothing for memory nothing has written (2026-10-12, issue 248)
+
+Through the Vulkan bridge a mapping is a buffer of the core's own, and
+making one copied what the memory holds into it. A renderer makes and maps
+its buffers before it draws, and does so again after every savestate load,
+because a load is a new Vulkan device. For those buffers the copy fetched
+nothing: the memory had just been allocated.
+
+What changed (miniBox c1ee3e6): the copy is left out for memory the core has
+flushed nothing into and that was allocated since the last time a queue was
+given work. Nobody can have written such memory, so it holds nothing to
+fetch. Memory the device may have written, or the core has flushed into, is
+copied as before.
+
+Why: the xemu core's Vulkan renderer maps 176 MiB of buffers when it starts.
+On the GeForce GTX 1060 the copy was 184 ms of every load (59 s over 321
+loads) and is 18 ms now. The other cores gain less, because their buffers
+were made smaller for this very reason.
+
+How it is held: the bridge's own test maps a buffer the device wrote,
+scribbles over it without flushing, unmaps it and maps it again, and the new
+mapping must show what the device wrote. A build of the bridge that takes
+all memory for unwritten fails that test, on lavapipe and on the GTX 1060.
+The engine's tests, the witness and the interface tests pass with it.

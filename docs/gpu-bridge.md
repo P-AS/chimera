@@ -915,6 +915,10 @@ What is different from the OpenGL bridge, and why:
 - **Mapped memory is a buffer of the guest's own**, copied when the guest
   says the bytes matter (a flush, an invalidate) and at no other time; every
   memory type is reported as not coherent, so a correct renderer says so.
+  Making a mapping fetches what the memory holds, except for memory nothing
+  has written yet (nothing flushed into it, and no queue given work since it
+  was allocated): that holds nothing, and nothing is copied (miniBox
+  c1ee3e6).
 - **There is no borrowed context** to give back: nothing here is bound to a
   thread, so `ce_gl_release` has no counterpart.
 
@@ -993,6 +997,24 @@ the order it was met. The other cores' renderers will need the same:
   not have, and one of them wrote through a freed pointer.
 - **To put what only the GPU holds into the machine's memory** before a
   state is made, or as each scene ends, so that a state holds the pictures.
+- **To be made again quickly.** Every load pays for the renderer's start-up,
+  and a desktop renderer's start-up was written to run once. xemu's cost
+  1.0 s a load on the GTX 1060 where its OpenGL renderer costs 0.3 s, and
+  came down to about 0.35 s. What it was made of, largest first: compiling
+  its shaders again (kept now by their text, since what a compiler makes of
+  a text does not depend on the device); the copy made with every mapping,
+  176 MiB of buffers that held nothing yet (the bridge no longer copies
+  that, above); a copy of the console's whole memory into a vertex buffer
+  (marked as changed instead, and copied as it is drawn from); stopping and
+  starting the shader compiler; a table of fifty thousand entries made and
+  walked. `CHIMERA_VK_STATS=1` shows the bridge's and the driver's share;
+  the core's own is found by timing the pieces of its start-up.
+- **To be compared with the core's other renderer in several games, on a
+  real card.** Software Vulkan and test programs passed everything in two
+  cores whose first runs of games on the GTX 1060 then showed faults:
+  Flycast's pictures one drawn frame late and its small textures black,
+  xemu's start-up crashing the driver with a memory type of -1 (it had asked
+  for coherent memory, found none, and passed "none" on as a number).
 
 Measured with the Vita3K core's package "Development build c4560f31" on the GTX 1060
 (Windows, `chimera-run.exe`): a game's 1500 frames take 17.2 s with Vulkan
