@@ -269,6 +269,36 @@ namespace Chimera.Client.GUI
 			g.FillEllipse(hole, 24, 24, 16, 16);
 		});
 
+		/// <summary>The MCP server (Tools &gt; MCP Server...): the sparkles an AI agent is usually marked with.</summary>
+		public static Image McpServer { get; } = Draw(static g => McpSparkles(g));
+
+		/// <summary>
+		/// The same with a green dot: the server is started. The menu item is not ticked to say so,
+		/// because a tick is drawn where the image is and the two would fight.
+		/// </summary>
+		public static Image McpServerStarted { get; } = Draw(static g =>
+		{
+			McpSparkles(g);
+			using SolidBrush started = new(Color.FromArgb(0x4C, 0xB8, 0x6C));
+			g.FillEllipse(started, 40, 40, 22, 22);
+		});
+
+		/// <summary>A large four-pointed sparkle and a small one above and to its right.</summary>
+		private static void McpSparkles(Graphics g)
+		{
+			using SolidBrush large = new(Color.FromArgb(0x8E, 0x6C, 0xE0));
+			using SolidBrush small = new(Color.FromArgb(0x60, 0xA8, 0xD8));
+			g.FillPolygon(large, Sparkle(26, 38, 26, 7));
+			g.FillPolygon(small, Sparkle(50, 13, 13, 4));
+		}
+
+		/// <summary>A four-pointed star: its points on the axes, its waist on the diagonals.</summary>
+		private static Point[] Sparkle(int x, int y, int reach, int waist) =>
+		[
+			new(x, y - reach), new(x + waist, y - waist), new(x + reach, y), new(x + waist, y + waist),
+			new(x, y + reach), new(x - waist, y + waist), new(x - reach, y), new(x - waist, y - waist),
+		];
+
 		/// <summary>Every icon above, by name, for the test that measures them.</summary>
 		public static IReadOnlyList<(string Name, Image Image)> All()
 			=> typeof(MenuIcons).GetProperties(BindingFlags.Public | BindingFlags.Static)

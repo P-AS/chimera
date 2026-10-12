@@ -1067,8 +1067,9 @@ namespace Chimera.Client.GUI
 			RamWatchMenuItem.Enabled = Tools.IsAvailable<RamWatch>();
 			// ticked while the core log is on, which is only ever because somebody asked
 			ExportCoreLogMenuItem.Checked = ChimeraEngine.CoreLogPath.Length is not 0;
-			// ticked while the MCP server is started, which is only ever because somebody asked
-			McpServerMenuItem.Checked = EngineMcp.State is not EngineMcp.ServerState.Stopped;
+			// a green dot on its icon while the MCP server is started, which is only ever because
+			// somebody asked. Not a tick: a tick is drawn where the icon is.
+			McpServerMenuItem.Image = EngineMcp.State is EngineMcp.ServerState.Stopped ? MenuIcons.McpServer : MenuIcons.McpServerStarted;
 
 
 			// Core-managed tooling: available exactly when the loaded core backs the

@@ -117,7 +117,8 @@ One dialog, usable at any time while Chimera runs:
 - **The set-up line** to paste into the agent, with a button to copy it.
 
 While the server is started the main window's title says "MCP server
-started" and the menu item is ticked, so it cannot be left on unnoticed.
+started" and the menu item's icon carries a green dot, so it cannot be left
+on unnoticed.
 Closing the dialog does not stop the server; closing Chimera does.
 
 Chimera started with `--mcp-server` starts the server at launch, as pressing

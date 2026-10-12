@@ -202,6 +202,7 @@ namespace Chimera.Client.GUI
 			CacheManagerMenuItem.Image = MenuIcons.CacheManager;
 			MediaMakerMenuItem.Image = MenuIcons.MediaMaker;
 			PrecompiledModulesMenuItem.Image = MenuIcons.PrecompiledModules;
+			McpServerMenuItem.Image = MenuIcons.McpServer;
 			MacroToolMenuItem.Image = MenuIcons.MacroTool;
 			BatchRunnerMenuItem.Image = MenuIcons.BatchRunner;
 			(RamWatchMenuItem.Image, /*RamWatchMenuItem.Text*/_) = ToolManager.IconAndNameCache[typeof(RamWatch)]

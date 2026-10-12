@@ -6988,3 +6988,19 @@ pass with both packages installed (22 tests). On Windows, earlier local
 builds of both ran the same as on Linux in the headless runner; the
 published packages were not run there.
 
+
+## The MCP server's menu entry has an icon, and a dot for "started" (user-decided, 2026-10-12)
+
+The owner asked for an icon on Tools > MCP Server..., as every other entry
+has, "some AI-like". It is two four-pointed sparkles, drawn in MenuIcons like
+the other drawn icons, flat and mid-toned so it shows on a white menu and on
+a dark one (MenuIconTests measures it on every theme).
+
+The entry used to be ticked while the server is started. A menu draws the
+tick where the image is, so an entry cannot have both (the rule at the top of
+MenuIcons). The entry now shows the same icon with a green dot while the
+server is started, and is not ticked. The title bar still says "MCP server
+started".
+
+Measured: the interface tests, 0 failed of 1,065 with the screenshots on;
+the sheet of menu icons was looked at in the light and the dark theme.
