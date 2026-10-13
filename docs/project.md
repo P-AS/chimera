@@ -339,6 +339,10 @@ to build the form, and by `ce_project_*` to validate a manifest:
   1/1, zero or more = 0/-1, one or more = 1/-1.
 - `formats`: accepted file extensions, lowercase without the dot; the
   wizard filters file pickers by them and validation checks membership.
+  The empty string is a file with no extension, for a machine that keeps a
+  game as one file with a long name and nothing after it: without it such a
+  file is refused when the project is made. The wizard shows it as "no
+  extension".
   An extension may legitimately appear in several slots (`.img` is a
   floppy or a hard disk - the user's slot choice resolves what
   sniffing had to guess).

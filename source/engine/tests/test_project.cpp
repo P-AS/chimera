@@ -227,6 +227,18 @@ int main(int argc, char **argv)
 		// nothing at all: the atLeastOneOf group speaks
 		assert(ce_project_validate(p, SLOTS_DECL, std::strlen(SLOTS_DECL), &err) != 0);
 		assert(std::strstr(err, "floppy, cdrom, hdd") != nullptr);
+		// a file with no extension is a format too, when a slot declares it
+		// as the empty string: some consoles keep a game as one file with a
+		// long name and nothing after it (chimera issue 250)
+		const char *bare = "{\"slots\":[{\"id\":\"game\",\"min\":1,\"max\":1,\"formats\":[\"iso\",\"\"]}]}";
+		const char *dotted = "{\"slots\":[{\"id\":\"game\",\"min\":1,\"max\":1,\"formats\":[\"iso\"]}]}";
+		assert(ce_project_file_add(p, "0123456789ABCDEF", "game", (g_dir + "/disc2.iso").c_str(), &err) == 0);
+		assert(ce_project_validate(p, bare, std::strlen(bare), &err) == 0);
+		assert(ce_project_validate(p, dotted, std::strlen(dotted), &err) != 0);
+		ce_project_file_remove(p, 0);
+		assert(ce_project_file_add(p, "save.hdd", "game", (g_dir + "/save.hdd").c_str(), &err) == 0);
+		assert(ce_project_validate(p, bare, std::strlen(bare), &err) != 0);
+		ce_project_file_remove(p, 0);
 		// a min is enforced
 		const char *needOne = "{\"slots\":[{\"id\":\"rom\",\"min\":1,\"max\":1}]}";
 		assert(ce_project_validate(p, needOne, std::strlen(needOne), &err) != 0);

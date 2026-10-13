@@ -132,8 +132,19 @@ namespace Chimera.Client.Common
 			return false;
 		}
 
-		/// <summary>The wizard's file-picker filter for one slot ("*.img;*.ima"), or null for any file.</summary>
+		/// <summary>
+		/// The wizard's file-picker filter for one slot ("*.img;*.ima"), or null
+		/// for any file. The empty format is a file with no extension, which a
+		/// file picker spells "*.".
+		/// </summary>
 		public static string? FilterFor(Slot slot)
 			=> slot.Formats.Count is 0 ? null : string.Join(";", slot.Formats.Select(static f => $"*.{f}"));
+
+		/// <summary>
+		/// A slot's formats as a person reads them: ".iso, .cue", with the empty
+		/// format - a file with no extension - said in words.
+		/// </summary>
+		public static string FormatsText(Slot slot)
+			=> string.Join(", ", slot.Formats.Select(static f => f.Length is 0 ? "no extension" : "." + f));
 	}
 }

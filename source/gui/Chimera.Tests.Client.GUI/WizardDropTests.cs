@@ -84,6 +84,34 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
+		public void AFileWithNoExtensionIsAFormatASlotCanDeclare()
+		{
+			// some consoles keep a game as one file with a long name and nothing
+			// after it; a slot says so with the empty format (chimera issue 250)
+			var declaration = TestPackages.Slots("""
+				{
+				  "slots": [
+				    { "id": "game", "title": "Game", "min": 1, "max": 1, "formats": ["iso", ""] }
+				  ]
+				}
+				""");
+			using NewProjectWizard form = new([ ], static _ => [ ]);
+			form.Show();
+			form.UseDeclaration(declaration);
+
+			form.AddFileToSlot("game", "/games/834312072F4985F9D33D0B9549FFAA32C505FDAD58");
+			Assert.AreEqual("", form.StatusText, "a file with no extension is one of the slot's formats, and nothing is said");
+
+			var slot = declaration.Slots[0];
+			Assert.AreEqual(".iso, no extension", ProjectSlotDeclaration.FormatsText(slot), "the empty format is said in words");
+			Assert.AreEqual("*.iso;*.", ProjectSlotDeclaration.FilterFor(slot), "and a file picker is asked for it as it spells it");
+
+			form.RemoveFileFromSlot("game", "834312072F4985F9D33D0B9549FFAA32C505FDAD58");
+			form.AddFileToSlot("game", "/games/thing.bin");
+			StringAssert.Contains(form.StatusText, ".iso, no extension", "a format the slot does not take is still said, with what it takes");
+		}
+
+		[TestMethod]
 		public void AnUnexpectedFormatIsSaidRatherThanRefused()
 		{
 			using var form = MakeForm();

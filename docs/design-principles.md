@@ -7135,3 +7135,29 @@ of Shinobi. The games that were played with the local build are listed in
 the core's docs/PLAN.md. The published package was not run on Windows; an
 earlier local build was.
 
+
+
+## A file with no extension is a format a slot can declare (2026-10-13, issue 250)
+
+An Xbox Live Arcade game is one file with a long name of letters and digits
+and no extension. The Xenia core's game slot declared `formats: ["iso"]`, so
+the New Project window said such a file was "not one of the .iso this slot
+expects", and the engine refused it when the project was made: a slot that
+names its formats takes nothing else.
+
+A slot's `formats` may hold the empty string, which is a file with no
+extension. The engine needed no change - it compares a file's extension,
+which is empty for such a name, with each declared format - but nothing said
+so, no test held it, and the window showed the empty format as a lone dot.
+Now docs/project.md says it, the engine's project test holds both sides of
+it (accepted where declared, refused where not), and the window shows it as
+"no extension" in the slot's heading and in its note about an unexpected
+file. The file picker is asked for `*.`, which is how Windows spells it.
+
+This is a declaration every core can use, not something about one console.
+
+Measured: the engine's tests (23 pass), the interface tests (1,072, none
+failed; one test of remembered firmware paths failed once in three runs and
+passed alone and in the other two - it shares a static with tests that run
+beside it, and is not touched here), the end-to-end test with the synthetic
+core rebuilt (87 pass).

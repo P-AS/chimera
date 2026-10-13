@@ -1811,7 +1811,7 @@ namespace Chimera.Client.GUI
 					Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
 					Location = Pt(0, y),
 					Size = new(UIHelper.ScaleX(520), UIHelper.ScaleY(96)),
-					Text = $"{slot.Title}  ({slot.CardinalityText}{(slot.Formats.Count is 0 ? "" : $"; {string.Join(", ", slot.Formats.Select(static f => "." + f))}")})",
+					Text = $"{slot.Title}  ({slot.CardinalityText}{(slot.Formats.Count is 0 ? "" : $"; {ProjectSlotDeclaration.FormatsText(slot)}")})",
 				};
 				// the core's own explanation of the slot, on hover - the row IS
 				// the affordance, so there is no glyph to wonder about
@@ -2114,7 +2114,7 @@ namespace Chimera.Client.GUI
 			var extension = Path.GetExtension(name).TrimStart('.');
 			_status.Text = slot is { Formats.Count: > 0 }
 				&& !slot.Formats.Any(f => string.Equals(f, extension, StringComparison.OrdinalIgnoreCase))
-					? $"{name} is not one of the {string.Join(", ", slot.Formats.Select(static f => "." + f))} this slot expects"
+					? $"{name} is not one of the formats this slot expects ({ProjectSlotDeclaration.FormatsText(slot)})"
 					: "";
 			RefreshSlotAvailability();
 		}
