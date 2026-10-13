@@ -7161,3 +7161,41 @@ failed; one test of remembered firmware paths failed once in three runs and
 passed alone and in the other two - it shares a static with tests that run
 beside it, and is not touched here), the end-to-end test with the synthetic
 core rebuilt (87 pass).
+
+## Mednafen joins the official cores: the Saturn, the ST-V, the Virtual Boy, the PC-FX and the Lynx (user-decided, 2026-10-13)
+
+The owner set the goal that every system BizHawk supports is supported in
+Chimera too, with the Mednafen core as the first step (2026-10-12), held its
+publishing back while it was finished, and on 2026-10-13 said "publish the
+mednafen core -- the usual: add to readme, add to tools/ page, add discord
+hook, etc".
+
+What was decided:
+
+- `official-cores.json` has a row for the core `mednafen` with five systems:
+  `SAT` (Sega Saturn), `VB` (Virtual Boy), `PCFX` (PC-FX), `LYNX` (Atari
+  Lynx) and `STV` (Sega ST-V, the Saturn's hardware as an arcade board). The
+  README's table of emulation cores lists Mednafen after Flycast.
+- The core is those systems of Mednafen 1.32.1 and no others: Chimera has
+  other cores for the rest of what Mednafen emulates.
+- Only the first player's port starts with a pad in it; every other port
+  starts empty (the owner, the same day). A second player's pad is a
+  setting.
+- The core needs the change in the section "A core is asked about a game
+  with the game's files" above: an older Chimera never asks for the Saturn's
+  BIOS, because the core cannot read a disc from its cue sheet alone.
+
+What was measured: the core's first CI run passed and published
+"Development build ad1dccee" in 17 minutes. No BIOS and no game may be put
+on a runner, so its test script there ran the tests of the Virtual Boy with
+a program the tests assemble: 15 passed, 0 failed, 73 skipped; the window
+test: 2 passed, 5 skipped; Chimera's package tests: 18 passed. Before the
+push, with a game of each system and Chimera's engine, the same script gave
+88 passed, 0 failed, 0 skipped and the window test 7 passed. The published
+package (built with GCC 13) was downloaded and run here beside the local
+build (GCC 14) through Chimera's headless runner, with a movie of a game of
+each of the five machines: the last picture, the save files and, where the
+machine's RAM is a memory domain, the RAM are the same. The games that were
+played are listed in the core's README and docs/PLAN.md. The published
+package was not run on Windows; the local build was, headless for all five
+machines and in Chimera's window for four (not the ST-V).

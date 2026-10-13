@@ -308,6 +308,19 @@
       "tested": ""
     },
     {
+      "id": "mednafen",
+      "name": "Mednafen",
+      "systems": [
+        { "id": "SAT", "name": "Sega Saturn" },
+        { "id": "VB", "name": "Virtual Boy" },
+        { "id": "PCFX", "name": "PC-FX" },
+        { "id": "LYNX", "name": "Atari Lynx" },
+        { "id": "STV", "name": "Sega ST-V" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-mednafen",
+      "tested": ""
+    },
+    {
       "id": "sdlpop",
       "name": "SDLPoP",
       "systems": [
