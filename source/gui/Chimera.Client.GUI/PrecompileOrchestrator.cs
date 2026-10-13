@@ -3,11 +3,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 
 using Chimera.Client.Common;
+using Chimera.Common;
+using Chimera.Emulation.Common.Engine;
 using Chimera.Emulation.Common.Waterbox;
 
 namespace Chimera.Client.GUI
@@ -44,43 +45,16 @@ namespace Chimera.Client.GUI
 		/// <summary>Why the last Run returned null, in the words of whatever refused it; null when it succeeded.</summary>
 		public static string LastFailure { get; private set; }
 
-		/// <summary>How much one session is assumed to need, measured rather than guessed.</summary>
-		/// <remarks>
-		/// A session holds a PlayStation 3's address space and an LLVM compiler at
-		/// once, but almost all of that is RESERVED and never touched: one
-		/// compiling Ultra Street Fighter IV, measured on Windows, peaked at
-		/// 1.75 GB of commit and a 3.0 GB working set, and eight of them together
-		/// held 8.7 GB while the machine never dropped below 79 GB free. So 4 GB
-		/// is a wide margin, and the figure it replaces (8 GB, times everything
-		/// the machine called free, with nothing kept back) was wrong in both
-		/// directions at once.
-		///
-		/// Do not measure this with maximum resident set size on Linux: the same
-		/// session reports 83 GB there, because the sandbox's arena is mapped and
-		/// its touched pages are counted. The Windows commit figure is the one
-		/// that means "what the machine has to find".
-		/// </remarks>
-		private const double GigabytesPerSession = 4;
-
-		/// <summary>Left for the system and for this process, never handed to sessions.</summary>
-		private const double GigabytesReserved = 4;
-
 		/// <summary>
-		/// How many sessions run side by side: one per <see cref="GigabytesPerSession"/>
-		/// of what the machine can spare AFTER <see cref="GigabytesReserved"/>, never
-		/// more than half the cores, never more than eight, never fewer than one.
-		/// Fewer sessions is slower; too many is a machine that swaps, or kills them.
+		/// How many sessions run side by side. The engine decides, from what the
+		/// machine can really spare (compile_sessions.h): about 8 GB a session
+		/// after 4 GB kept back, never more than half the processors, never
+		/// more than eight, never fewer than one. Fewer sessions is slower; too
+		/// many is a machine that swaps, fills its system drive with page file,
+		/// or kills them (chimera issue 259).
 		/// </summary>
 		public static int Workers
-		{
-			get
-			{
-				var byCores = Math.Max(1, Environment.ProcessorCount / 2);
-				var spare = Math.Max(0, AvailableGigabytes() - GigabytesReserved);
-				var byMemory = Math.Max(1, (int)(spare / GigabytesPerSession));
-				return Math.Min(8, Math.Min(byCores, byMemory));
-			}
-		}
+			=> ChimeraEngine.Instance.ce_compile_sessions(Environment.ProcessorCount, ChimeraEngine.Instance.ce_compile_memory_to_spare());
 
 		/// <summary>
 		/// What an exit code says about how a session ended. A session that dies
@@ -108,47 +82,33 @@ namespace Chimera.Client.GUI
 		/// <summary>Whether a code is one the machine gives for running out of memory.</summary>
 		internal static bool DiedForWantOfMemory(int code) => code is 137 or -1073741801;
 
-		/// <summary>What the machine can spare right now, in GB; 8 when it will not say.</summary>
-		private static double AvailableGigabytes()
-		{
-			try
-			{
-				if (File.Exists("/proc/meminfo"))
-				{
-					foreach (var line in File.ReadLines("/proc/meminfo"))
-					{
-						if (!line.StartsWith("MemAvailable:", StringComparison.Ordinal)) continue;
-						var kb = double.Parse(new string(line.Where(char.IsDigit).ToArray()));
-						return kb / (1024 * 1024);
-					}
-					return 8;
-				}
-				MemoryStatusEx status = new() { Length = (uint)Marshal.SizeOf<MemoryStatusEx>() };
-				return GlobalMemoryStatusEx(ref status) ? status.AvailPhys / (1024.0 * 1024 * 1024) : 8;
-			}
-			catch (Exception)
-			{
-				return 8; // an unknowable machine gets the middle of the road
-			}
-		}
+		/// <summary>
+		/// What a session says when the sandbox could not get the memory for the
+		/// machine: a refusal like any other to the code that reads it, and the
+		/// one refusal that fewer sessions at once can cure.
+		/// </summary>
+		internal static bool RefusedForWantOfMemory(string refusal)
+			=> refusal is not null && refusal.IndexOf("memory block", StringComparison.OrdinalIgnoreCase) >= 0;
 
-		[StructLayout(LayoutKind.Sequential)]
-		private struct MemoryStatusEx
+		/// <summary>
+		/// The failure in a person's words when memory was what ran out. It
+		/// says where the disk space went, because that is what was seen and
+		/// nothing on screen explained it: Windows makes its page file bigger to
+		/// give programs the memory they ask for, the file is on the system
+		/// drive whatever folder Chimera's data is in, and the drive fills while
+		/// a compile runs (chimera issue 259).
+		/// </summary>
+		internal static string OutOfMemoryMessage(int sessions)
 		{
-			public uint Length;
-			public uint MemoryLoad;
-			public ulong TotalPhys;
-			public ulong AvailPhys;
-			public ulong TotalPageFile;
-			public ulong AvailPageFile;
-			public ulong TotalVirtual;
-			public ulong AvailVirtual;
-			public ulong AvailExtendedVirtual;
+			var each = ChimeraEngine.Instance.ce_compile_session_bytes() / (1024.0 * 1024 * 1024);
+			var what = $"The computer ran out of memory while compiling. A compile session needs about {each:0} GB"
+				+ (sessions > 1 ? $", and {sessions} ran at once." : ".");
+			if (OSTailoredCode.IsUnixHost) return what + " Close other programs and compile again.";
+			return what
+				+ " When Windows runs short of memory it makes its page file bigger, and that file is on the system drive"
+				+ " (usually C:) wherever Chimera keeps its data, so free space there falls while a compile runs."
+				+ " Close other programs, or free some space on the system drive, and compile again.";
 		}
-
-		[DllImport("kernel32.dll", SetLastError = true)]
-		[return: MarshalAs(UnmanagedType.Bool)]
-		private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx buffer);
 
 		/// <summary>An object as the wizard shows it: named, hashed, and either there or not.</summary>
 		public sealed class Entry
@@ -281,9 +241,18 @@ namespace Chimera.Client.GUI
 				if (processes.Count is 0) return null;
 
 				var stopped = false;
+				// the least the machine could spare while they ran, looked at
+				// every couple of seconds: after they are dead it has it all back
+				ulong leastToSpare = 0;
+				var looks = 0;
 				while (processes.Any(p => !p.HasExited))
 				{
 					Thread.Sleep(150);
+					if (looks++ % 13 == 0)
+					{
+						var now = ChimeraEngine.Instance.ce_compile_memory_to_spare();
+						if (now != 0 && (leastToSpare == 0 || now < leastToSpare)) leastToSpare = now;
+					}
 					if (stopped || cancelled?.Invoke() != true) continue;
 					stopped = true;
 					foreach (var p in processes.Where(p => !p.HasExited))
@@ -305,11 +274,27 @@ namespace Chimera.Client.GUI
 				Console.Error.WriteLine(
 					$"precompile: {dead.Count} of {processes.Count} sessions failed ({why})");
 
-				if (failure is null && workers > 1 && dead.All(p => DiedForWantOfMemory(p.ExitCode)))
+				// Memory is what ran out when the system says it killed them for
+				// it, when a session said the sandbox could not get its memory, or
+				// when the machine had next to nothing left while they ran - a
+				// session Windows could not give a page to dies of an access
+				// violation like any other crash, and only the machine's own
+				// figures tell the two apart.
+				var ranShort = ChimeraEngine.Instance.ce_compile_memory_ran_short(leastToSpare) != 0;
+				var wantOfMemory = failure is null
+					? ranShort || dead.All(p => DiedForWantOfMemory(p.ExitCode))
+					: RefusedForWantOfMemory(failure);
+				if (wantOfMemory && workers > 1)
 				{
 					workers = Math.Max(1, workers / 2);
-					Console.Error.WriteLine($"precompile: retrying with {workers} session(s)");
+					Console.Error.WriteLine($"precompile: memory ran out; retrying with {workers} session(s)");
+					refused = null;
 					continue;
+				}
+				if (wantOfMemory)
+				{
+					LastFailure = OutOfMemoryMessage(processes.Count);
+					return null;
 				}
 
 				// Whatever else happened, it is not "without saying why" any more.

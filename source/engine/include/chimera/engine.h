@@ -2015,6 +2015,28 @@ CE_API void ce_average_fps_reset(ce_average_fps *a);
 CE_API void ce_average_fps_pass(ce_average_fps *a, int64_t frames, int64_t nanoseconds, int32_t paused, int32_t stepping, int32_t going_back);
 CE_API double ce_average_fps_value(const ce_average_fps *a);
 
+/* ---- how many compile sessions a machine can run at once -------------------
+ *
+ * A core that recompiles fills its cache in sessions run side by side before
+ * a game first runs (docs/compile-cache.md). Each holds about 8 GB, most of
+ * it the sandbox's memory, which Windows has to promise before it is used;
+ * asked for more than it has, Windows makes its page file bigger on the
+ * system drive until that is full (chimera issue 259). So the count is the
+ * engine's, from what the machine can really spare.
+ * _memory_to_spare: bytes that can be handed out now - on Windows the smaller
+ *   of free memory and of what the system can still promise with the page
+ *   file at its present size; 0 when the system will not say.
+ * _sessions: how many to run for that many processors and that much to
+ *   spare: one per session's worth after 4 GB kept back, at most half the
+ *   processors, at most 8, at least 1.
+ * _session_bytes: what one session is taken to need.
+ * _memory_ran_short: 1 when the least that could be spared while sessions
+ *   ran (the frontend samples _memory_to_spare) says they ran out. */
+CE_API uint64_t ce_compile_memory_to_spare(void);
+CE_API int32_t ce_compile_sessions(int32_t processors, uint64_t to_spare);
+CE_API uint64_t ce_compile_session_bytes(void);
+CE_API int32_t ce_compile_memory_ran_short(uint64_t least_to_spare);
+
 #ifdef __cplusplus
 }
 #endif

@@ -86,15 +86,31 @@ this same frontend as child processes, each compiling the modules whose names
 hash to its index. Rows appear as objects land, green, so the wait shows its
 work. The button is offered exactly while there is compiling left to do.
 
-How many run at once is bounded by memory as well as by cores. A session holds a
-machine's address space and an LLVM compiler at the same time, but nearly all of
-that is reserved and never touched: one compiling Ultra Street Fighter IV,
-measured on Windows, peaked at 1.75 GB of commit and a 3.0 GB working set, and
-eight together held 8.7 GB. The count is one session per 4 GB of what the machine
-can spare AFTER 4 GB left for the frontend and the system, never more than half
-the cores, never more than eight, never fewer than one. Do not take this figure
-from maximum resident set size on Linux - the same session reports 83 GB there,
-because the sandbox's arena is mapped and its touched pages are counted.
+How many run at once is bounded by memory as well as by processors, and the
+engine decides it (`ce_compile_sessions`, `source/engine/source/compile_sessions.h`):
+one session per 8 GB of what the machine can spare after 4 GB kept back for
+the frontend and the system, never more than half the processors, never more
+than eight, never fewer than one.
+
+A session holds about 7 GB (measured on Windows with MotorStorm, issue 259:
+four sessions took 25.8 GB of the system's commit within 80 seconds of
+starting, 27.9 GB at their peak). Only 1.6 to 1.75 GB of that is the
+process's private memory; the rest is the sandbox's, in sections backed by
+the page file. An earlier figure here - 4 GB a session - was made from the
+private memory alone, which is what Task Manager's "commit size" and a job
+object's limit show. Do not take the figure from maximum resident set size on
+Linux either: the same session reports 83 GB there, because the sandbox's
+arena is mapped and its touched pages are counted.
+
+What a machine can spare is, on Windows, the smaller of its free memory and
+of what the system can still promise with the page file at its present size
+(`ce_compile_memory_to_spare`). Windows has to promise memory before a
+program may use it, and when it is asked for more than it has it makes the
+page file bigger. That file is on the system drive whatever folder Chimera
+keeps its data in. Sized by free memory alone, a compile could take 18.8 GB
+of free space from C: and then fail when the drive was full. Nothing else is
+written outside the data folder: in the measured runs the system drive lost
+0.17 GB, and the cache is 172 MB.
 
 A session that dies prints nothing on its way out, so its exit code is the only
 account of it there is, and the orchestrator reports it: the POSIX signals and
@@ -102,9 +118,14 @@ the Windows status values both, and an unrecognised code by number. That is wort
 more than the sentence it replaces - "3 of 8 sessions failed without saying why"
 was holding an 0xC0000005, which is what turned a supposed memory shortage into
 the real fault, a JIT region in the rpcs3 core that wrapped onto its own code
-(docs/design-principles.md, 2026-09-12). Where every dead session died for want
-of memory and none of them refused out loud, the run halves the sessions and goes
-again - too much at once is a reason to want less, not a reason to stop. A
+(docs/design-principles.md, 2026-09-12). Where memory is what ran out, the run halves the sessions and goes again -
+too much at once is a reason to want less, not a reason to stop. Memory ran
+out when the system's code says so, when a session said the sandbox "failed
+to create memory block", or when the machine had less than 4 GB to spare at
+some moment while the sessions ran (the orchestrator looks every two
+seconds; a session Windows could not give a page to dies of an access
+violation like any crash). When one session alone still fails that way, the
+wizard says so in words, and on Windows says where the disk space went. A
 partial manifest is never written: a list of what a game needs with holes in it
 is worse than no list.
 

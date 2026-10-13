@@ -7285,3 +7285,67 @@ card.
 `vkCmdPushDescriptorSetWithTemplate`). No core calls them. Carrying them
 makes the bridge's list longer, which a core built with it then requires of
 Chimera.
+
+## A compile session is counted at what it really holds (user-decided, 2026-10-13, issue 259)
+
+**Reported:** compiling a PlayStation 3 game fails, with every session dead
+at the end, on several builds and cores; and free space on C: falls from
+18.9 GB to 100 MB while it runs, whichever drive the data folder is on.
+
+**Asked of the owner, and decided:** measure and fix - find what grows, keep
+temporary files in the data folder, run fewer sessions when the machine is
+short, and say "not enough" in plain words.
+
+**Measured** (Windows, 20 processors, 127 GB, no page file; MotorStorm, an
+empty cache):
+
+- One session: the process's private memory peaks at 1.75 GB, its working
+  set at 7.0 GB. The system's commit rose by 6.6 GB within a minute of its
+  start.
+- Four sessions at once, as the wizard runs them: commit rose by 25.8 GB in
+  80 seconds and by 27.9 GB at the peak. Private memory, all four: 6.3 to
+  7 GB. Working sets: 15.2 GB.
+- The system drive lost 0.17 GB in each run, and the cache written was
+  171 MB. No temporary file is made outside the data folder.
+
+So what grows is not a file of Chimera's. A session holds about 7 GB, and
+5 GB of it is the sandbox's memory, which lives in sections backed by the
+page file and is not in a process's private bytes. The wizard counted a
+session at 4 GB (from a private-memory figure of 1.75 GB) and counted them
+against free memory. Windows has to promise memory before it is used, the
+promise is limited by memory plus page file, and when it runs out Windows
+makes the page file bigger - on the system drive. Seven sessions asked for
+about 49 GB.
+
+**Changed.**
+
+- The count is the engine's (`compile_sessions.h`): one session per 8 GB of
+  what can be spared after 4 GB kept back, at most half the processors, at
+  most eight. What can be spared is, on Windows, the smaller of free memory
+  and of what can still be promised with the page file as it is.
+- While sessions run the wizard looks at that figure every two seconds. If
+  they die and it was ever under 4 GB, or a session said the sandbox could
+  not get its memory, the run goes again with half as many - before, only
+  two exit codes counted, and a session Windows refuses a page dies of an
+  access violation.
+- When one session alone fails for want of memory the wizard says so, and
+  says that Windows' page file on the system drive is where the space went.
+
+The rule and the reading of the machine's memory were in the interface;
+they are in the engine now, and the interface asks.
+
+**Tested.** The engine's `test_compile_sessions.cpp` (the reported machine
+gets three sessions where it got seven; the limits; the smaller of the two
+figures; this machine says something of itself), seen to fail with 4 GB put
+back. Three tests of the interface: it asks the engine, what counts as want
+of memory, and the message.
+
+**Not measured, and it matters:** the page file growing. This machine has
+none, so the cause is read from the commit figures and from how Windows
+works, not seen. And the reporter's sessions may have another reason to die
+as well: their first crash boxes were access violations, which this explains
+only if memory was short.
+
+**Open, for the owner:** 8 GB is what a PlayStation 3 session holds, and it
+is a number about one core written into Chimera. The core should say it in
+its package (beside `"precompile": true`), which is a new declaration.

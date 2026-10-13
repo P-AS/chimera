@@ -1,0 +1,70 @@
+/* test_compile_sessions.cpp - how many compile sessions a machine is given.
+ *
+ * Plain asserts, run by `meson test -C build/meson-linux`.
+ */
+
+#include "../source/compile_sessions.h"
+
+#include <cassert>
+#include <cstdio>
+
+int main()
+{
+	const uint64_t GB = 1ull << 30;
+
+	/* The report this was written for (chimera issue 259): sixteen processors
+	 * and 32 GB to spare got seven sessions at 4 GB each, which asked Windows
+	 * for 49 GB. At what a session really holds it gets three. */
+	assert(ceCompileSessions(16, 32 * GB) == 3);
+
+	/* Never more than half the processors, however much memory there is. */
+	assert(ceCompileSessions(4, 200 * GB) == 2);
+	assert(ceCompileSessions(1, 200 * GB) == 1);
+
+	/* Never more than eight. */
+	assert(ceCompileSessions(64, 500 * GB) == 8);
+
+	/* Four gigabytes are kept back before anything is handed out, and a
+	 * session is eight: 12 GB is one session, 20 GB is two. */
+	assert(ceCompileSessions(16, 12 * GB) == 1);
+	assert(ceCompileSessions(16, 20 * GB - 1) == 1);
+	assert(ceCompileSessions(16, 20 * GB) == 2);
+
+	/* A machine with almost nothing still gets its one session: it may fail,
+	 * and then it says why. One that will not say what it has gets one too. */
+	assert(ceCompileSessions(16, 1 * GB) == 1);
+	assert(ceCompileSessions(16, 0) == 1);
+
+	/* What can be spared is the smaller of free memory and of what the system
+	 * can still promise: a machine with 40 GB free and 9 GB of promises left
+	 * has 9. A figure the system would not give is left out, not taken for 0. */
+	{
+		CeHostMemory m;
+		m.freePhysical = 40 * GB;
+		m.freeCommit = 9 * GB;
+		assert(ceMemoryToSpare(m) == 9 * GB);
+		m.freeCommit = 0;
+		assert(ceMemoryToSpare(m) == 40 * GB);
+		m.freePhysical = 0;
+		assert(ceMemoryToSpare(m) == 0);
+		m.freeCommit = 5 * GB;
+		assert(ceMemoryToSpare(m) == 5 * GB);
+	}
+
+	/* Memory ran short when, at the worst moment, less than half a session's
+	 * worth was left. Nothing known is not "short". */
+	assert(ceCompileMemoryRanShort(1 * GB));
+	assert(ceCompileMemoryRanShort(4 * GB - 1));
+	assert(!ceCompileMemoryRanShort(4 * GB));
+	assert(!ceCompileMemoryRanShort(0));
+
+	/* And this machine says something of itself. */
+	{
+		const CeHostMemory m = ceReadHostMemory();
+		assert(m.freePhysical != 0);
+		assert(ceMemoryToSpare(m) != 0);
+	}
+
+	std::printf("compile_sessions: ok\n");
+	return 0;
+}

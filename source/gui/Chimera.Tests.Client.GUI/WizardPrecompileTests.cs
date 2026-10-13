@@ -345,10 +345,10 @@ namespace Chimera.Tests.Client.GUI
 	}
 
 	/// <summary>
-	/// One session compiling Ultra Street Fighter IV was measured on Windows at
-	/// 1.75 GB of commit and a 3.0 GB working set, so the sessions are counted
-	/// against memory at 4 GB each with something left over for the system -
-	/// never none, never more than eight, never more than half the cores.
+	/// The count is the engine's (compile_sessions.h, where the rule and what
+	/// was measured are written down, and test_compile_sessions.cpp, where the
+	/// rule is tested): never none, never more than eight, never more than
+	/// half the processors. This is that the interface asks it.
 	/// </summary>
 	[TestMethod]
 	public void SessionsAreBoundedByTheMachine()
@@ -358,6 +358,52 @@ namespace Chimera.Tests.Client.GUI
 		Assert.IsTrue(workers <= 8, $"never more than eight, got {workers}");
 		Assert.IsTrue(workers <= Math.Max(1, Environment.ProcessorCount / 2),
 			$"never more than half the cores ({Environment.ProcessorCount}), got {workers}");
+	}
+
+	/// <summary>
+	/// The sizing that failed (chimera issue 259): sixteen processors and
+	/// 32 GB to spare were given seven sessions. The engine gives three, and a
+	/// machine with nothing to spare still gets its one.
+	/// </summary>
+	[TestMethod]
+	public void SessionsAreCountedAtWhatOneReallyHolds()
+	{
+		const ulong GB = 1UL << 30;
+		var engine = Chimera.Emulation.Common.Engine.ChimeraEngine.Instance;
+		Assert.AreEqual(8 * GB, engine.ce_compile_session_bytes());
+		Assert.AreEqual(3, engine.ce_compile_sessions(16, 32 * GB));
+		Assert.AreEqual(1, engine.ce_compile_sessions(16, 1 * GB));
+		Assert.AreEqual(8, engine.ce_compile_sessions(64, 500 * GB));
+		Assert.IsTrue(engine.ce_compile_memory_to_spare() > 0, "this machine says what it can spare");
+	}
+
+	/// <summary>
+	/// What counts as dying for want of memory beside the system's own codes:
+	/// the sandbox saying it could not get its memory, and a machine that had
+	/// next to nothing left while the sessions ran.
+	/// </summary>
+	[TestMethod]
+	public void WantOfMemoryIsRecognisedWithoutAnExitCodeForIt()
+	{
+		const ulong GB = 1UL << 30;
+		var engine = Chimera.Emulation.Common.Engine.ChimeraEngine.Instance;
+		Assert.IsTrue(PrecompileOrchestrator.RefusedForWantOfMemory("failed to create memory block"));
+		Assert.IsFalse(PrecompileOrchestrator.RefusedForWantOfMemory("RPCS3 could not load this file."));
+		Assert.IsFalse(PrecompileOrchestrator.RefusedForWantOfMemory(null));
+		Assert.AreEqual(1, engine.ce_compile_memory_ran_short(1 * GB));
+		Assert.AreEqual(0, engine.ce_compile_memory_ran_short(6 * GB));
+		Assert.AreEqual(0, engine.ce_compile_memory_ran_short(0), "a machine that says nothing is not called short");
+	}
+
+	/// <summary>The message names the memory, and on Windows where the disk space went.</summary>
+	[TestMethod]
+	public void RunningOutOfMemoryIsSaidInWords()
+	{
+		var said = PrecompileOrchestrator.OutOfMemoryMessage(4);
+		StringAssert.Contains(said, "ran out of memory");
+		StringAssert.Contains(said, "about 8 GB");
+		StringAssert.Contains(said, "4 ran at once");
+		if (!Chimera.Common.OSTailoredCode.IsUnixHost) StringAssert.Contains(said, "page file");
 	}
 }
 }
