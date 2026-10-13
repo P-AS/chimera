@@ -16,7 +16,7 @@
 	</picture>
 </p>
 
-<p align="center">Chimera is a minimal frontend for creating tool-assisted speedruns (TAS).</p>
+<p align="center">Chimera is a modular frontend for creating tool-assisted speedruns (TAS).</p>
 
 ## Goals
 
