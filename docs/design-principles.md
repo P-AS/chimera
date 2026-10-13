@@ -7230,3 +7230,58 @@ with the synthetic core: "60 fps" over "avg 59.9 fps".
 
 **Not measured:** how it reads on a slow core; nothing here was run on one
 with it on.
+
+## A Vulkan command answers to every name it has (2026-10-13, issue 268)
+
+**Reported:** Tekken 6 in the RPCS3 core, with the Vulkan renderer, ended
+the program at frame 67: "access violation, execute 0x0".
+
+**Found.** RPCS3 asks the device by name for `vkCmdSetEvent2KHR`. A command
+that came through an extension and later joined a version of Vulkan has two
+names, and `vkCmdSetEvent2KHR` and `vkCmdSetEvent2` are one command. The
+Vulkan bridge offered the extension (`VK_KHR_synchronization2`) and knew the
+command by the newer name only: the core was answered with nothing and
+called it. Forty-two names of twelve offered extensions were like this.
+
+With that alone mended the game did not crash and did not go on either. The
+bridge's half in Chimera asked the driver for `vkCmdSetEvent2`, and a Mesa
+driver answers that name only to a program that asked for Vulkan 1.3; RPCS3
+asks for 1.2. Chimera had nothing to call, refused the call, and the
+renderer waited for ever for an event nobody had set.
+
+**Decided:** an extension the bridge offers is offered whole.
+
+- In a core, every name the Vulkan registry gives a command the bridge
+  carries answers, with the same function. This adds no command to the
+  bridge, so a core built with it still runs on a Chimera built before it.
+- In Chimera, the bridge asks the driver for a command under each of its
+  names in turn.
+
+The change is in miniBox (`source/vk`, commit 2b86a8a); a core gets its half
+by being built again.
+
+**Measured.** Tekken 6, RPCS3 with the Vulkan renderer:
+
+- On Linux with Mesa's software driver (llvmpipe 25.2.8): the published core
+  ends at the call to address 0; a core with the first half only spins for as
+  long as it is left (ten minutes), asking `vkGetEventStatus`; with both
+  halves 300 frames run.
+- On a GeForce GTX 1060 (Windows, Vulkan 1.4.312): the published core ends
+  as reported, at the same place. The rebuilt core runs 6,000 frames - the
+  logos, the menu, into a fight of the Scenario Campaign - and draws the same
+  picture at frames 3,000 and 5,999 with a Chimera built before this change
+  and with one built after it. That card's driver answers both names to any
+  program, so there the new core is enough.
+
+**Tested.** miniBox's test of the bridge asks for six commands by their
+extension's name and sets an event with one of them, on an instance that
+asked for Vulkan 1.0. It fails at the first with the old table of names and
+at the second with the old host, and a seventh on-purpose broken build keeps
+the second failure. On llvmpipe only: the new steps were not run on a real
+card.
+
+**Not done:** four commands of offered extensions are still not carried
+(`vkCmdSetPatchControlPointsEXT`, `vkCmdSetLogicOpEXT`, `vkCmdSetLineStipple`,
+`vkCmdPushDescriptorSetWithTemplate`). No core calls them. Carrying them
+makes the bridge's list longer, which a core built with it then requires of
+Chimera.

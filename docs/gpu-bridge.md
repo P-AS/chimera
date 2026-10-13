@@ -966,6 +966,22 @@ Not proven: the interface (only `chimera-run` has run it), and the on-screen
 "GPU: <driver>" line, which still names the OpenGL driver and so says
 nothing for a Vulkan core.
 
+### A command has more than one name (2026-10-13, issue 268)
+
+A Vulkan command that came through an extension and later joined a version
+of Vulkan has two names: `vkCmdSetEvent2KHR` and `vkCmdSetEvent2` are one
+command. A renderer asks for the name it was written against, and a driver
+answers the newer name only to a program that asked for that version and the
+extension's name only where the extension is on. So the bridge answers a
+core under every name of a command it carries, and asks the driver under
+each name in turn.
+
+What it looked like before: the RPCS3 core asked for `vkCmdSetEvent2KHR`,
+was answered with nothing, and called address 0 (Tekken 6, frame 67). A core
+that asks the device for a command by name must still check the answer: four
+commands of offered extensions are not carried, and the design log's section
+of this date names them.
+
 ### A renderer that also has OpenGL (2026-10-12, issue 248)
 
 A core may export both `SetGpuBridge` and `SetVulkanBridge`. The engine
