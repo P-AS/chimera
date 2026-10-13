@@ -554,6 +554,42 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 			report "E:bus-ranges" FAIL "$(grep -m1 -E 'live|ranges|word' "$work/ranges.log" "$work/ranges-none.log" | tail -1)"
 		fi
 
+		# a bus can be dumped (chimera-run --dump): a bus is an address space
+		# and may be 4 GiB, so what is written is a fingerprint of every
+		# 64 KiB of it, eight bytes each - enough to say whether two runs of
+		# a core with no memory domain left the same machine - and
+		# <bus>@<address>+<length> writes a span's bytes. The synth's bus is
+		# three runs of 64 KiB: the file is 24 bytes, its first eight are the
+		# FNV-1a of the first run's bytes as the span dump gives them, both
+		# buses give the same file, and a span past the end is refused.
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			--dump "Bus=$work/bus.prints" --dump "Bus (peeks)=$work/bus-peeks.prints" \
+			--dump "Bus@0+10000=$work/bus.span" --dump "Bus@1001+7ff=$work/bus.odd" > "$work/busdump.log" 2>&1
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			--dump "Bus@2fff8+10=$work/bus.past" > "$work/busdump-past.log" 2>&1
+		pastrc=$?
+		if python3 - "$work" <<'PYEOF' > "$work/busdump.check" 2>&1 && [ "$pastrc" -ne 0 ] && grep -q "that span is not inside the bus" "$work/busdump-past.log" && [ ! -e "$work/bus.past" ]
+import sys
+w = sys.argv[1]
+prints = open(w + "/bus.prints", "rb").read()
+span = open(w + "/bus.span", "rb").read()
+odd = open(w + "/bus.odd", "rb").read()
+assert len(prints) == 24, "the fingerprints are %d bytes, not 24" % len(prints)
+assert prints == open(w + "/bus-peeks.prints", "rb").read(), "the two buses' fingerprints differ"
+assert len(span) == 0x10000 and len(odd) == 0x7ff, "the spans are %d and %d bytes" % (len(span), len(odd))
+h = 0xcbf29ce484222325
+for b in span:
+    h = ((h ^ b) * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
+assert prints[:8] == h.to_bytes(8, "little"), "the first fingerprint is not the first 64 KiB's"
+assert odd == span[0x1001:0x1001 + 0x7ff], "a span from an odd address is not those bytes"
+assert len(set(span)) > 1, "the bus read as one value throughout"
+PYEOF
+		then
+			report "E:bus-dump" PASS "a bus is dumped as a fingerprint of every 64 KiB (24 bytes for its three), a span of it as its bytes, and a span past its end is refused"
+		else
+			report "E:bus-dump" FAIL "$(tail -1 "$work/busdump.check" 2>/dev/null) past=[rc $pastrc: $(tail -1 "$work/busdump-past.log" 2>/dev/null)]"
+		fi
+
 		# the pictures of frames already drawn (engine.h,
 		# ce_session_greenzone_pictures; chimera#190). A renderer on the far
 		# side of the GPU bridge draws wrong for a while after a state load;

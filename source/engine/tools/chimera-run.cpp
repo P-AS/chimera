@@ -110,6 +110,11 @@
  * The run is otherwise undrawn (turbo), so only the frames asked for cost
  * anything to draw - which is what makes "show me frame 1910 of this movie" a
  * cheap question to ask of a two-hour run.
+ * --dump <name>=<path> writes a memory domain whole. Where no domain has the
+ * name but a bus does (an address space, which may be 4 GiB), it writes a
+ * fingerprint of every 64 KiB of the bus instead, eight bytes each: enough to
+ * say whether two runs left the same machine, and where they did not.
+ * <bus>@<hex address>+<hex length> as the name writes that span's bytes.
  */
 
 #include "chimera/engine.h"
@@ -1519,6 +1524,60 @@ int main(int argc, char **argv)
 				break;
 			}
 		}
+		/* Not a domain: a bus of that name. A bus is an address space and may
+		 * be 4 GiB, so what is written is not its bytes but a fingerprint of
+		 * every 64 KiB of it, eight bytes each (FNV-1a), in order: two runs
+		 * have the same machine where the two files are the same, and where
+		 * they differ the place in the file says which 64 KiB. */
+		if (found < 0)
+		{
+			/* <bus>@<hex address>+<hex length>: that span of the bus, its bytes */
+			std::string busName = dump.first;
+			int64_t spanAt = -1, spanLen = 0;
+			const auto atSign = busName.find('@');
+			const auto plus = busName.find('+', atSign == std::string::npos ? 0 : atSign);
+			if (atSign != std::string::npos && plus != std::string::npos)
+			{
+				spanAt = std::strtoll(busName.substr(atSign + 1, plus - atSign - 1).c_str(), nullptr, 16);
+				spanLen = std::strtoll(busName.substr(plus + 1).c_str(), nullptr, 16);
+				busName.resize(atSign);
+			}
+			int32_t bus = -1;
+			for (int32_t b = 0; bus < 0 && b < ce_session_bus_count(session); b++)
+				if (busName == ce_session_bus_name(session, b)) bus = b;
+			if (bus >= 0 && spanAt >= 0)
+			{
+				const int64_t busSize = ce_session_bus_size(session, bus);
+				if (spanLen <= 0 || spanAt + spanLen > busSize)
+					return fail(metaPath, "--dump " + dump.first + ": that span is not inside the bus");
+				std::vector<uint8_t> bytes((size_t)spanLen, 0);
+				for (int64_t at = 0; at < spanLen; at += 65536)
+					ce_session_bus_read(session, bus, spanAt + at, bytes.data() + at, std::min<int64_t>(65536, spanLen - at));
+				if (!writeWholeFile(dump.second, bytes.data(), bytes.size()))
+					return fail(metaPath, "could not write " + dump.second);
+				continue;
+			}
+			if (bus >= 0)
+			{
+				const int64_t busSize = ce_session_bus_size(session, bus);
+				const int64_t run = 65536;
+				std::vector<uint8_t> buf((size_t)run);
+				std::vector<uint8_t> prints;
+				prints.reserve((size_t)((busSize + run - 1) / run) * 8);
+				for (int64_t at = 0; at < busSize; at += run)
+				{
+					const int64_t len = std::min(run, busSize - at);
+					std::fill(buf.begin(), buf.end(), uint8_t{ 0 });
+					ce_session_bus_read(session, bus, at, buf.data(), len);
+					uint64_t h = 0xcbf29ce484222325ull;
+					for (int64_t i = 0; i < len; i++) { h ^= buf[(size_t)i]; h *= 0x100000001b3ull; }
+					for (int k = 0; k < 8; k++) prints.push_back(static_cast<uint8_t>(h >> (8 * k)));
+				}
+				if (!writeWholeFile(dump.second, prints.data(), prints.size()))
+					return fail(metaPath, "could not write " + dump.second);
+				continue;
+			}
+		}
 		if (found < 0)
 		{
 			std::string had;
@@ -1526,6 +1585,11 @@ int main(int argc, char **argv)
 			{
 				had += (d ? ", " : "");
 				had += ce_session_domain_name(session, d);
+			}
+			for (int32_t b = 0; b < ce_session_bus_count(session); b++)
+			{
+				had += (had.empty() ? "" : ", ");
+				had += std::string(ce_session_bus_name(session, b)) + " (a bus)";
 			}
 			return fail(metaPath, "no memory domain named '" + dump.first
 				+ "'; this core has: " + had);

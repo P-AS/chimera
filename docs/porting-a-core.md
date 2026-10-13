@@ -172,6 +172,36 @@ Things that break them: host pointers stored in guest memory (some emulators do
 this deliberately - it is fine inside the arena, but it makes raw memory differ
 between flavors), GPU objects, and anything the core caches across `Init`.
 
+A core that draws on a real card needs a third comparison, and the two above
+do not make it: **a run with a rewind in it against a straight run, on the
+card**. Play a movie straight; play it again with a state taken every few
+hundred frames and none loaded; play it a third time with one rewind
+(`chimera-run ... --gpu --greenzone 32768 --greenzone-period 300
+--rewind-loop <frame>,1`). All three must end with the same machine. Compare
+a memory domain (`--dump <domain>=<file>`), or, for a core that has only a
+bus, the fingerprints `--dump <bus>=<file>` writes: eight bytes for every
+64 KiB of the address space, so two files differ exactly where the machines
+do; `--dump '<bus>@<hex address>+<hex length>=<file>'` then gives the bytes
+of one place to read.
+
+What that comparison found in two cores (2026-10-13), each a thing to look
+for in a new one:
+
+- **The card's answer in the machine's memory.** An emulator that asks the
+  real card how many pixels were visible (an occlusion query) and writes the
+  answer when it arrives has a machine that depends on the card and on the
+  moment. Give the made-up answer, or wait for the real one at a fixed place.
+- **The host's random numbers.** In the sandbox `getrandom` is a fixed
+  sequence, but C++'s `std::random_device` does not ask it: built for x86 it
+  uses the processor's own instruction (RDRAND), which nothing can stand in
+  front of. Two runs of one movie then differ. Give the emulator a sequence
+  of its own, kept in guest memory, and check that no object of the guest
+  build refers to `std::random_device`.
+- **Turns handed out by the renderer's rebuild.** After a load the renderer
+  is made again; if that waits through the emulator's own scheduler, the
+  machine's threads run beside it and the rewound run is no longer the
+  straight one.
+
 ## The gate
 
 One command, and every leg says what it compared.
