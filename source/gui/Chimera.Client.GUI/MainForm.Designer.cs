@@ -60,6 +60,8 @@ namespace Chimera.Client.GUI
 			this.SwitchToFullscreenMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.toolStripSeparator2 = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
 			this.DisplayFPSMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
+			this.DisplayAverageFPSMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
+			this.ResetAverageFPSMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.DisplayFrameCounterMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.DisplayLagCounterMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.DisplayGameTimeMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
@@ -467,6 +469,8 @@ namespace Chimera.Client.GUI
             this.SwitchToFullscreenMenuItem,
             this.toolStripSeparator2,
             this.DisplayFPSMenuItem,
+            this.DisplayAverageFPSMenuItem,
+            this.ResetAverageFPSMenuItem,
             this.DisplayFrameCounterMenuItem,
             this.DisplayLagCounterMenuItem,
             this.DisplayInputMenuItem,
@@ -503,6 +507,16 @@ namespace Chimera.Client.GUI
 			// 
 			this.DisplayFPSMenuItem.Text = "Display FPS";
 			this.DisplayFPSMenuItem.Click += new System.EventHandler(this.DisplayFpsMenuItem_Click);
+			// 
+			// DisplayAverageFPSMenuItem
+			// 
+			this.DisplayAverageFPSMenuItem.Text = "Display Average FPS";
+			this.DisplayAverageFPSMenuItem.Click += new System.EventHandler(this.DisplayAverageFpsMenuItem_Click);
+			// 
+			// ResetAverageFPSMenuItem
+			// 
+			this.ResetAverageFPSMenuItem.Text = "Reset Average FPS";
+			this.ResetAverageFPSMenuItem.Click += new System.EventHandler(this.ResetAverageFpsMenuItem_Click);
 			// 
 			// DisplayFrameCounterMenuItem
 			// 
@@ -1253,6 +1267,8 @@ namespace Chimera.Client.GUI
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx WindowSizeSubMenu;
 		private Chimera.WinForms.Controls.ToolStripSeparatorEx toolStripSeparator2;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayFPSMenuItem;
+		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayAverageFPSMenuItem;
+		private Chimera.WinForms.Controls.ToolStripMenuItemEx ResetAverageFPSMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayFrameCounterMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayInputMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayLagCounterMenuItem;

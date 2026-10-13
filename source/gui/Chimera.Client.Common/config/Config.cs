@@ -208,6 +208,9 @@ namespace Chimera.Client.Common
 
 		// Display options
 		public bool DisplayFps { get; set; }
+
+		/// <summary>The average speed since it was last reset, under the frame counter (View &gt; Display Average FPS).</summary>
+		public bool DisplayAverageFps { get; set; }
 		public bool DisplayFrameCounter { get; set; }
 		public bool DisplayLagCounter { get; set; }
 		public bool DisplayInput { get; set; }

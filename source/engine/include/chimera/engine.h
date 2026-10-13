@@ -1998,6 +1998,23 @@ CE_API int32_t ce_mcp_condition_met(ce_session *s);
 CE_API uint64_t ce_mcp_log_total(void);
 CE_API const char *ce_mcp_log_line(uint64_t index);
 
+/* ---- how fast the machine has been running, on average ---------------------
+ *
+ * Frames emulated over the time they took, since the last reset (chimera
+ * issue 265): the figure for comparing two settings, where the frame counter
+ * on screen is a figure for the moment. The frontend tells it of every pass
+ * of its loop - the frames that pass emulated, the nanoseconds since the pass
+ * before, and what the emulator was doing - and the engine decides what
+ * counts: free running does, fast-forward included; a pass made paused,
+ * advancing frames by hand, or going back does not, with neither its frames
+ * nor its time. _fps is 0 until something has counted. */
+typedef struct ce_average_fps ce_average_fps;
+CE_API ce_average_fps *ce_average_fps_create(void);
+CE_API void ce_average_fps_destroy(ce_average_fps *a);
+CE_API void ce_average_fps_reset(ce_average_fps *a);
+CE_API void ce_average_fps_pass(ce_average_fps *a, int64_t frames, int64_t nanoseconds, int32_t paused, int32_t stepping, int32_t going_back);
+CE_API double ce_average_fps_value(const ce_average_fps *a);
+
 #ifdef __cplusplus
 }
 #endif

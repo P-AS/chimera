@@ -1045,6 +1045,23 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract long ce_session_savedata_read(IntPtr session, int index, long offset, byte[] buf, long len);
 
+		// ---- the average speed (engine.h): what counts is the engine's to say ----
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_average_fps_create();
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract void ce_average_fps_destroy(IntPtr a);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract void ce_average_fps_reset(IntPtr a);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract void ce_average_fps_pass(IntPtr a, long frames, long nanoseconds, int paused, int stepping, int goingBack);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract double ce_average_fps_value(IntPtr a);
+
 		// ---- RAM Search (engine.h): the candidate set lives in the engine ----
 
 		[ChimeraImport(CallingConvention.Cdecl)]

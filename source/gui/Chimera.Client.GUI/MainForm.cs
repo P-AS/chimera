@@ -1644,6 +1644,46 @@ namespace Chimera.Client.GUI
 		private readonly double _fpsSmoothing = 8.0;
 		private double _lastFps;
 		private int _lastFpsRounded;
+
+		// The average speed (View > Display Average FPS, chimera issue 265). The
+		// count and what counts are the engine's (engine.h, ce_average_fps); this
+		// tells it of every pass of the loop, one pass late - what a pass did is
+		// only known when it is over.
+		private IntPtr _averageFps;
+		private long _averageFpsPassStarted;
+		private bool _averageFpsPassRanFrame;
+		private bool _averageFpsPassStepping;
+		private bool _averageFpsPassGoingBack;
+
+		private void AverageFpsPassBegins(long currentTimestamp)
+		{
+			if (_averageFps == IntPtr.Zero) _averageFps = ChimeraEngine.Instance.ce_average_fps_create();
+			if (_averageFps == IntPtr.Zero) return;
+			if (_averageFpsPassStarted != 0)
+			{
+				long nanoseconds = (long) ((currentTimestamp - _averageFpsPassStarted) * (1e9 / Stopwatch.Frequency));
+				ChimeraEngine.Instance.ce_average_fps_pass(_averageFps, _averageFpsPassRanFrame ? 1 : 0, nanoseconds,
+					EmulatorPaused ? 1 : 0, _averageFpsPassStepping ? 1 : 0, _averageFpsPassGoingBack ? 1 : 0);
+			}
+			_averageFpsPassStarted = currentTimestamp;
+			_averageFpsPassRanFrame = false;
+			_averageFpsPassStepping = false;
+			_averageFpsPassGoingBack = false;
+		}
+
+		private void ResetAverageFps()
+		{
+			if (_averageFps != IntPtr.Zero) ChimeraEngine.Instance.ce_average_fps_reset(_averageFps);
+			_averageFpsPassStarted = 0;
+			OSD.AverageFps = null;
+		}
+
+		private void ToggleAverageFps()
+		{
+			Config.DisplayAverageFps = !Config.DisplayAverageFps;
+			// counting starts when it is asked for: what ran before nobody was looking is not part of it
+			if (Config.DisplayAverageFps) ResetAverageFps();
+		}
 		private int _framesSinceLastFpsUpdate;
 		private long _timestampLastFpsUpdate;
 
@@ -2673,6 +2713,7 @@ namespace Chimera.Client.GUI
 		{
 			var runFrame = false;
 			var currentTimestamp = Stopwatch.GetTimestamp();
+			AverageFpsPassBegins(currentTimestamp);
 
 			double frameAdvanceTimestampDeltaMs = (double)(currentTimestamp - _frameAdvanceTimestamp) / Stopwatch.Frequency * 1000.0;
 			bool frameProgressTimeElapsed = frameAdvanceTimestampDeltaMs >= Config.FrameProgressDelayMs;
@@ -2724,6 +2765,7 @@ namespace Chimera.Client.GUI
 			}
 
 			_runloopFrameAdvance = frameAdvance;
+			_averageFpsPassStepping = frameAdvance;
 
 			if (!EmulatorPaused)
 			{
@@ -2739,6 +2781,7 @@ namespace Chimera.Client.GUI
 
 			bool isRewinding = Rewind(ref runFrame, currentTimestamp, out var returnToRecording);
 			IsRewinding = isRewinding;
+			_averageFpsPassGoingBack = isRewinding;
 			_runloopFrameProgress |= isRewinding;
 
 			float atten = 0;
@@ -2895,6 +2938,7 @@ namespace Chimera.Client.GUI
 
 				if (newFrame)
 				{
+					_averageFpsPassRanFrame = true;
 					_framesSinceLastFpsUpdate++;
 
 					CalcFramerateAndUpdateDisplay(currentTimestamp, isRewinding, isFastForwarding);
@@ -2990,6 +3034,11 @@ namespace Chimera.Client.GUI
 			}
 
 			OSD.Fps = fpsString;
+			if (Config.DisplayAverageFps && _averageFps != IntPtr.Zero)
+			{
+				double average = ChimeraEngine.Instance.ce_average_fps_value(_averageFps);
+				OSD.AverageFps = average > 0 ? $"avg {average.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)} fps" : null;
+			}
 
 			// need to refresh window caption in this case
 			if (Config.DispSpeedupFeatures is 0) UpdateWindowTitle();
@@ -3506,6 +3555,7 @@ namespace Chimera.Client.GUI
 		private void OnRomChanged()
 		{
 			OSD.Fps = "0 fps";
+			ResetAverageFps(); // another game, or the same one started again: another average
 			UpdateWindowTitle();
 			HandlePlatformMenus();
 			UpdateCoreStatusBarButton();

@@ -209,6 +209,8 @@ namespace Chimera.Client.GUI
 		private void ViewSubMenu_DropDownOpened(object sender, EventArgs e)
 		{
 			DisplayFPSMenuItem.Checked = Config.DisplayFps;
+			DisplayAverageFPSMenuItem.Checked = Config.DisplayAverageFps;
+			ResetAverageFPSMenuItem.Enabled = Config.DisplayAverageFps;
 			DisplayFrameCounterMenuItem.Checked = Config.DisplayFrameCounter;
 			DisplayLagCounterMenuItem.Checked = Config.DisplayLagCounter;
 			DisplayInputMenuItem.Checked = Config.DisplayInput;
@@ -289,6 +291,16 @@ namespace Chimera.Client.GUI
 		private void DisplayFpsMenuItem_Click(object sender, EventArgs e)
 		{
 			ToggleFps();
+		}
+
+		private void DisplayAverageFpsMenuItem_Click(object sender, EventArgs e)
+		{
+			ToggleAverageFps();
+		}
+
+		private void ResetAverageFpsMenuItem_Click(object sender, EventArgs e)
+		{
+			ResetAverageFps();
 		}
 
 		private void DisplayFrameCounterMenuItem_Click(object sender, EventArgs e)

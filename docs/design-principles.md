@@ -7199,3 +7199,34 @@ machine's RAM is a memory domain, the RAM are the same. The games that were
 played are listed in the core's README and docs/PLAN.md. The published
 package was not run on Windows; the local build was, headless for all five
 machines and in Chimera's window for four (not the ST-V).
+
+## An average speed beside the frame counter (user-decided, 2026-10-13, issue 265)
+
+**Asked for:** a figure for comparing settings. The frame counter on screen
+answers "how fast right now" and moves too much to read: on a heavy core it
+swings between single digits and full speed.
+
+**Decided:** View > Display Average FPS, off by default, drawn under the
+frame counter ("avg 59.9 fps"), with View > Reset Average FPS beside it.
+
+- **What it is.** Frames emulated over the time they took, since the last
+  reset. It starts again when the option is turned on, when a game is
+  loaded or started again, and when Reset Average FPS is chosen.
+- **What counts.** Free running, fast-forward and turbo included. A pass of
+  the main loop made while paused, while frames are advanced by hand, or
+  while going back adds neither its frames nor its time: an hour on pause
+  must not turn 60 into 3 (a commenter on the issue asked for exactly that),
+  and stepping a frame at a time is the speed of a finger.
+- **Where it lives.** The count and the rule for what counts are the
+  engine's (`ce_average_fps_*` in engine.h, `average_fps.h`). The interface
+  tells it of each pass of its loop and shows the number. No hotkey.
+
+**Tested.** The engine's unit test (`test_average_fps.cpp`: 60 then 30
+frames a second average 40; a pause, hand-stepping and going back change
+nothing; a reset starts again), seen to fail with the pause rule taken out.
+A managed test that the interface's calls reach the engine with each flag
+in its place. And looked at once in the real window on a private display,
+with the synthetic core: "60 fps" over "avg 59.9 fps".
+
+**Not measured:** how it reads on a slow core; nothing here was run on one
+with it on.
