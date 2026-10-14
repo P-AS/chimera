@@ -44,6 +44,7 @@ Chimera does not include cores and does not download them. To use a core, downlo
 | [Snes9x](https://github.com/ToolAssisted-run/chimera-core-snes9x) | Super Nintendo |
 | [Dolphin](https://github.com/ToolAssisted-run/chimera-core-dolphin) | GameCube, Wii |
 | [Azahar](https://github.com/ToolAssisted-run/chimera-core-azahar) | Nintendo 3DS / New Nintendo 3DS |
+| [melonDS](https://github.com/ToolAssisted-run/chimera-core-melonds) | Nintendo DS, Nintendo DSi |
 | [Genesis Plus GX](https://github.com/ToolAssisted-run/chimera-core-gpgx) | Mega Drive / Genesis, Sega CD / Mega CD, Master System, Game Gear, SG-1000 |
 | [Flycast](https://github.com/ToolAssisted-run/chimera-core-flycast) | Dreamcast, Sega NAOMI / NAOMI 2 (arcade), Sammy Atomiswave (arcade) |
 | [Mednafen](https://github.com/ToolAssisted-run/chimera-core-mednafen) | Sega Saturn, Sega ST-V (arcade), Virtual Boy, PC-FX, Atari Lynx |
@@ -59,8 +60,12 @@ Chimera does not include cores and does not download them. To use a core, downlo
 | [Opera](https://github.com/ToolAssisted-run/chimera-core-opera) | 3DO Interactive Multiplayer |
 | [Zeebx](https://github.com/ToolAssisted-run/chimera-core-zeebx) | Zeebo |
 | [Stella](https://github.com/ToolAssisted-run/chimera-core-stella) | Atari 2600 |
+| [Virtual Jaguar](https://github.com/ToolAssisted-run/chimera-core-virtualjaguar) | Atari Jaguar, Atari Jaguar CD |
 | [Cadmium](https://github.com/ToolAssisted-run/chimera-core-cadmium) | CHIP-8, SUPER-CHIP, XO-CHIP and their relatives |
+| [TIC-80](https://github.com/ToolAssisted-run/chimera-core-tic80) | TIC-80 (fantasy computer) |
+| [Uzem](https://github.com/ToolAssisted-run/chimera-core-uzem) | Uzebox |
 | [AppleWin](https://github.com/ToolAssisted-run/chimera-core-applewin) | Apple II / II Plus / IIe (and the Pravets, TK3000 and Base64A clones) |
+| [PUAE](https://github.com/ToolAssisted-run/chimera-core-puae) | Commodore Amiga |
 | [Fuse](https://github.com/ToolAssisted-run/chimera-core-fuse) | ZX Spectrum 16K / 48K / 128K / +2 / +3, Timex, Pentagon, Scorpion |
 | [MAME X68000](https://github.com/ToolAssisted-run/chimera-core-x68k) | Sharp X68000 |
 | [DOSBox-X](https://github.com/ToolAssisted-run/chimera-core-dosbox-x) | MS-DOS, Windows 3.1 / 95 / 98 |

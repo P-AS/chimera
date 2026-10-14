@@ -7363,3 +7363,71 @@ window shows the setting and writes it back - seen to fail with the write
 taken out. Engine tests 25 passed; end-to-end test script 88 passed;
 interface tests 1,077 run, 0 failed, 23 skipped.
 
+
+## Five cores join the official cores: melonDS, PUAE, Virtual Jaguar, TIC-80 and Uzem (user-decided, 2026-10-14)
+
+These are the next steps toward the owner's goal that every system BizHawk
+supports is supported in Chimera too (2026-10-12). Each core was made fresh
+from its emulator's latest source; BizHawk's ports were read for ideas only
+and nothing was taken from them (the owner's instruction for these cores).
+The owner held publishing back while they were finished ("keep this local")
+and on 2026-10-14 said to publish all five.
+
+What was decided:
+
+- `official-cores.json` has five new rows:
+  - `melonds` (melonDS 1.1): `NDS` (Nintendo DS) and `DSI` (Nintendo DSi);
+  - `puae` (libretro-uae): `AMIGA` (Commodore Amiga);
+  - `virtualjaguar` (virtualjaguar-libretro 3.9.0): `JAG` (Atari Jaguar)
+    and `JAGCD` (Atari Jaguar CD). The package carries Atari's boot ROMs and
+    CD BIOSes, which upstream's source embeds (the owner, 2026-10-14);
+  - `tic80` (TIC-80): `TIC80`, the TIC-80 fantasy computer. Carts written as
+    text (`.lua` and the like, a feature upstream sells in TIC-80 PRO) are
+    not loaded, only `.tic` and `.png` carts; Ruby is left out, because its
+    build needs a tool neither this machine nor the CI runner has;
+  - `uzem` (the Uzebox repository's emulator): `UZE` (Uzebox). Not there:
+    the SD card, the SPI RAM, the Uzenet adapter, and turning the picture for
+    games made for a vertical arcade screen.
+- The README's table of emulation cores lists melonDS after Azahar, Virtual
+  Jaguar after Stella, TIC-80 and Uzem after Cadmium, and PUAE after
+  AppleWin.
+- Each repository posts its releases to the project's Discord channel, as
+  the other cores' do.
+
+What was measured before the push, on this machine:
+
+- melonDS: its test script 45 passed, 0 failed, 0 skipped (with the owner's
+  BIOS, firmware and games), the window test 6 passed; the same projects on
+  Windows and Linux end the same.
+- PUAE: test script 27 passed, the window test 4 passed (one earlier window
+  run ended with a fault inside the sandbox's own code while a game played;
+  it did not come back in later runs and is not explained); Windows and
+  Linux the same.
+- Virtual Jaguar: test script 31 passed, window test 3 passed; Windows and
+  Linux the same. The games tried are free homebrew and upstream's test
+  images; no commercial game.
+- TIC-80: test script 39 passed, window test 3 passed; Windows and Linux the
+  same. No cart from the tic80.com site was tried.
+- Uzem: test script 75 passed, window test 3 passed. Thirteen of the Uzebox
+  repository's programs give upstream uzem's pictures frame for frame and
+  its sound sample for sample. Six projects (the test program, its mouse
+  twin and four games) end with the same memory on Windows and Linux.
+- Chimera's package tests pass with each package (18 tests each). Every
+  default key binding of the five uses a name Chimera sends to the bindings
+  (the names after `DistinctKeyNameOverrides`, and Shift, Ctrl and Alt as
+  one key each).
+
+What was measured after the push: each core's first CI run passed and
+published its development build: melonDS "Development build f322067f" (test
+script 20 passed, 0 failed, 25 skipped, because no BIOS and no game may go
+on a runner; window test 2 passed, 4 skipped), PUAE "85a942c6" (22 passed, 6
+skipped; window 2 passed, 2 skipped), Virtual Jaguar "65df7f90" (28 passed, 4
+skipped; window 3 passed), TIC-80 "22714826" (40 passed; window 3 passed)
+and Uzem "12a74bee" (75 passed; window 3 passed). Chimera's package tests
+passed with each (18). The runs took 13 to 24 minutes.
+Each published package was downloaded through `tools/fetch-cores.sh` with
+the new rows, and Chimera's roster, package and mnemonic tests passed with
+the five (22). Each core's own test script was then run here with the
+published core in place of the local build, with the owner's BIOSes,
+firmware and games: melonDS 45 passed, PUAE 28, Virtual Jaguar 32, TIC-80 40
+and Uzem 75, none failed and none skipped.

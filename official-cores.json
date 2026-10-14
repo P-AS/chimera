@@ -321,6 +321,53 @@
       "tested": ""
     },
     {
+      "id": "melonds",
+      "name": "melonDS",
+      "systems": [
+        { "id": "NDS", "name": "Nintendo DS" },
+        { "id": "DSI", "name": "Nintendo DSi" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-melonds",
+      "tested": ""
+    },
+    {
+      "id": "puae",
+      "name": "PUAE",
+      "systems": [
+        { "id": "AMIGA", "name": "Commodore Amiga" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-puae",
+      "tested": ""
+    },
+    {
+      "id": "virtualjaguar",
+      "name": "Virtual Jaguar",
+      "systems": [
+        { "id": "JAG", "name": "Atari Jaguar" },
+        { "id": "JAGCD", "name": "Atari Jaguar CD" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-virtualjaguar",
+      "tested": ""
+    },
+    {
+      "id": "tic80",
+      "name": "TIC-80",
+      "systems": [
+        { "id": "TIC80", "name": "TIC-80" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-tic80",
+      "tested": ""
+    },
+    {
+      "id": "uzem",
+      "name": "Uzem",
+      "systems": [
+        { "id": "UZE", "name": "Uzebox" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-uzem",
+      "tested": ""
+    },
+    {
       "id": "sdlpop",
       "name": "SDLPoP",
       "systems": [
