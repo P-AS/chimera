@@ -65,7 +65,7 @@ Chimera does not include cores and does not download them. To use a core, downlo
 | [TIC-80](https://github.com/ToolAssisted-run/chimera-core-tic80) | TIC-80 (fantasy computer) |
 | [Uzem](https://github.com/ToolAssisted-run/chimera-core-uzem) | Uzebox |
 | [AppleWin](https://github.com/ToolAssisted-run/chimera-core-applewin) | Apple II / II Plus / IIe (and the Pravets, TK3000 and Base64A clones) |
-| [PUAE](https://github.com/ToolAssisted-run/chimera-core-puae) | Commodore Amiga |
+| [PUAE](https://github.com/ToolAssisted-run/chimera-core-puae) | Commodore Amiga, Amiga CD32, Commodore CDTV |
 | [Fuse](https://github.com/ToolAssisted-run/chimera-core-fuse) | ZX Spectrum 16K / 48K / 128K / +2 / +3, Timex, Pentagon, Scorpion |
 | [MAME X68000](https://github.com/ToolAssisted-run/chimera-core-x68k) | Sharp X68000 |
 | [DOSBox-X](https://github.com/ToolAssisted-run/chimera-core-dosbox-x) | MS-DOS, Windows 3.1 / 95 / 98 |

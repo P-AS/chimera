@@ -334,7 +334,9 @@
       "id": "puae",
       "name": "PUAE",
       "systems": [
-        { "id": "AMIGA", "name": "Commodore Amiga" }
+        { "id": "AMIGA", "name": "Commodore Amiga" },
+        { "id": "CD32", "name": "Amiga CD32" },
+        { "id": "CDTV", "name": "Commodore CDTV" }
       ],
       "repo": "ToolAssisted-run/chimera-core-puae",
       "tested": ""

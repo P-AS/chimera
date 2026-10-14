@@ -7453,3 +7453,21 @@ was seen to fail with the name read from the wrong place and with the free
 memory read instead of the installed. The interface's report text tests
 cover the line filled in and left as a note.
 
+
+## PUAE runs the Amiga CD32 and the Commodore CDTV (user-decided, 2026-10-14)
+
+The owner asked for the CD32 and the CDTV in the PUAE core, then said to
+publish it and update the roster. `official-cores.json` gives the `puae` row
+two more systems, `CD32` (Amiga CD32) and `CDTV` (Commodore CDTV), and the
+README's table names them beside the Amiga. Nothing in Chimera changed: the
+core declares the two machines, their discs, firmware and save memory in its
+package.
+
+The core runs UAE's drive and CD audio threads one at a time against the
+emulated clock, so a run is the same every time and a savestate holds them.
+What was measured is in the core's design log (chimera-core-puae
+docs/PLAN.md): with the owner's ROMs, Worms boots from its CD32 disc, both
+machines' CD players play an audio CD the tests write, native and sandbox
+give the same results with savestates, and Windows gives Linux's. Turrican
+II does not start on the CDTV (it restarts after the start-up screen, in a
+build with upstream's own threads too).
