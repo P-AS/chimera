@@ -87,50 +87,33 @@ namespace Chimera.Client.GUI
 			var disabled = new List<Form>();
 			try
 			{
-				var token = $"chimera{Environment.TickCount & 0x7FFFFFFF}x{Interlocked.Increment(ref _tokens)}";
-				// The answer comes as a signal on a request object whose path is known from the
-				// connection's name and the token, so the match goes in BEFORE the call: a portal
-				// that answers at once cannot answer to nobody.
-				var expected = $"/org/freedesktop/portal/desktop/request/{UniqueNameAsPathPart(connection)}/{token}";
-				if (!AddMatch(connection, expected)) return Outcome.Unavailable;
-
-				var path = Call(connection, request, ParentWindow(owner), token);
-				if (path is null) return Outcome.Unavailable;
-				if (path != expected && !AddMatch(connection, path)) return Outcome.Unavailable;
-
 				foreach (Form form in Application.OpenForms)
 				{
 					if (!form.Enabled) continue;
 					form.Enabled = false;
 					disabled.Add(form);
 				}
-				while (true)
+				var parent = _parentRefused ? "" : ParentWindow(owner);
+				var code = Ask(connection, request, parent, answer);
+				if (code is 2 && parent.Length is not 0)
 				{
-					if (dbus_connection_read_write(connection, 20) == 0) return Outcome.Unavailable; // the bus went
-					IntPtr message;
-					while ((message = dbus_connection_pop_message(connection)) != IntPtr.Zero)
-					{
-						try
-						{
-							if (dbus_message_is_signal(message, RequestInterface, "Response") == 0) continue;
-							if (ReadUtf8(dbus_message_get_path(message)) != path) continue;
-							var code = ReadResponse(message, request, answer);
-							// 0 is an answer and 1 is Cancel. 2 is "ended some other way": a portal
-							// whose chooser failed to come up, so the toolkit dialog is offered instead.
-							return code switch
-							{
-								0 => answer.Paths.Count is 0 ? Outcome.Cancelled : Outcome.Chosen,
-								1 => Outcome.Cancelled,
-								_ => Outcome.Unavailable,
-							};
-						}
-						finally
-						{
-							dbus_message_unref(message);
-						}
-					}
-					Application.DoEvents();
+					// A chooser that fails when it is told which window it belongs to: GNOME's,
+					// which hands the dialog to Nautilus, and Nautilus crashes on an X11 parent
+					// under a Wayland compositor that is not GNOME Shell (niri, 2026-10-14). Asked
+					// again without one; and not told again this session, so only the first
+					// picker waits for the failure.
+					_parentRefused = true;
+					answer = new();
+					code = Ask(connection, request, "", answer);
 				}
+				// 0 is an answer and 1 is Cancel. 2 is "ended some other way": a portal whose
+				// chooser failed to come up, so the toolkit dialog is offered instead.
+				return code switch
+				{
+					0 => answer.Paths.Count is 0 ? Outcome.Cancelled : Outcome.Chosen,
+					1 => Outcome.Cancelled,
+					_ => Outcome.Unavailable,
+				};
 			}
 			finally
 			{
@@ -142,6 +125,47 @@ namespace Chimera.Client.GUI
 		}
 
 		private static int _tokens;
+
+		/// <summary>Set once a chooser has failed for being told its parent window; see <see cref="Show"/>.</summary>
+		private static bool _parentRefused;
+
+		/// <summary>
+		/// Asks once and waits for the answer, keeping the windows painted. The response code
+		/// (0 chosen, 1 cancelled, 2 failed), or null if the portal could not be asked at all.
+		/// </summary>
+		private static uint? Ask(IntPtr connection, Request request, string parent, Answer answer)
+		{
+			var token = $"chimera{Environment.TickCount & 0x7FFFFFFF}x{Interlocked.Increment(ref _tokens)}";
+			// The answer comes as a signal on a request object whose path is known from the
+			// connection's name and the token, so the match goes in BEFORE the call: a portal
+			// that answers at once cannot answer to nobody.
+			var expected = $"/org/freedesktop/portal/desktop/request/{UniqueNameAsPathPart(connection)}/{token}";
+			if (!AddMatch(connection, expected)) return null;
+
+			var path = Call(connection, request, parent, token);
+			if (path is null) return null;
+			if (path != expected && !AddMatch(connection, path)) return null;
+
+			while (true)
+			{
+				if (dbus_connection_read_write(connection, 20) == 0) return null; // the bus went
+				IntPtr message;
+				while ((message = dbus_connection_pop_message(connection)) != IntPtr.Zero)
+				{
+					try
+					{
+						if (dbus_message_is_signal(message, RequestInterface, "Response") == 0) continue;
+						if (ReadUtf8(dbus_message_get_path(message)) != path) continue;
+						return ReadResponse(message, request, answer);
+					}
+					finally
+					{
+						dbus_message_unref(message);
+					}
+				}
+				Application.DoEvents();
+			}
+		}
 
 		/// <summary>
 		/// Splits a WinForms filter string into the portal's filters: a label, and the glob

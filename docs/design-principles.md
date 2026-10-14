@@ -7388,6 +7388,17 @@ Tried in the running frontend with KDE's chooser: opening a project, the wizard'
 firmware folder scan (the tick box was in KDE's dialog), the data directory,
 and a save typed without its extension. All four worked.
 
-**Not proved:** how other desktops' choosers (GNOME's, and the rest) treat
-what they are sent. A chooser may ignore the tick box, the filter to open on,
+**GNOME's chooser.** Tried under niri with a second portal on a private bus
+set to GNOME's chooser (`xdg-desktop-portal-gnome` 51.0). It hands the dialog
+to Nautilus, and Nautilus crashed on every request: a plain `gdbus` request
+showed the cause is the `x11:` parent window, whichever window it names, and
+not the other options. The portal answers such a crash with "failed", and the
+frontend showed Mono's dialog. Now a request that named a parent and failed
+is asked again at once without one, and no parent is sent for the rest of the
+session. The first picker pauses for the crash; GNOME's chooser comes up, and
+the pickers after it do not pause. Against the stand-in portal, a chooser
+that takes the parent still gets it on every request.
+
+**Not proved:** GNOME's chooser under GNOME Shell, and the other desktops'
+choosers. A chooser may ignore the tick box, the filter to open on,
 or the window it belongs to.

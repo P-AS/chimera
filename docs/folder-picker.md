@@ -37,6 +37,13 @@ Linux desktop has. No package was added for it.
   "choice" with no options. The window it belongs to goes as `x11:` and the
   window's frame, which Mono's handle is not, so it is read from Mono's own
   bookkeeping; if that fails it says "no parent", which the portal allows.
+- **A chooser that fails for being given a parent.** GNOME's portal hands the
+  dialog to Nautilus, and under niri (a Wayland compositor that is not GNOME
+  Shell) Nautilus crashes on any `x11:` parent, valid or not, and the portal
+  answers "failed" (response 2). So when a request that named a parent fails,
+  it is asked again at once without one, and no parent is sent for the rest
+  of the session: the first picker waits for the failure, the rest do not. A
+  chooser that takes the parent keeps getting it.
 - **What is made of the answer.** The `file://` addresses become paths. The
   filter in use comes back as the filter index. A save typed without an
   extension gets the one the filter in use names, or the default extension,
@@ -125,6 +132,15 @@ And in the running frontend, with KDE's chooser behind the portal
 (2026-10-14): Open Project, the wizard's firmware Scan Folder (the sub-folders
 box was in KDE's dialog, and not on the page), the data directory, and a save
 typed without its extension. All four worked.
+
+And with GNOME's chooser (`xdg-desktop-portal-gnome` 51.0, which hands it to
+Nautilus), under niri, on 2026-10-14. A second portal was run on a private bus
+with a config of its own that chose GNOME's chooser, so the desktop's settings
+were not touched. Before the retry, Nautilus crashed on every request and
+Mono's dialog was shown each time. The same crash came from a plain `gdbus`
+request naming any X11 window as the parent, and not from Chimera's options
+without one. With the retry: one pause on the first picker, then GNOME's
+chooser, and none on the pickers after it.
 
 ### The Windows dialog
 
