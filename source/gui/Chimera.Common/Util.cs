@@ -252,6 +252,24 @@ namespace Chimera.Common
 			}
 		}
 
+		/// <summary>
+		/// Shows a folder in the machine's file browser: Explorer, Finder, or whatever
+		/// xdg-open hands it to. The opener is started as a program of its own and not
+		/// through the shell: Mono's shell launch of a folder waits until xdg-open
+		/// exits, and an xdg-open that runs the file manager in the foreground does not
+		/// exit until that window is closed - which froze the whole interface.
+		/// </summary>
+		public static void OpenFolderExternal(string folder)
+		{
+			var opener = OSTailoredCode.CurrentOS switch
+			{
+				OSTailoredCode.DistinctOS.Windows => "explorer.exe",
+				OSTailoredCode.DistinctOS.macOS => "open",
+				_ => "xdg-open",
+			};
+			Process.Start(new ProcessStartInfo(opener, $"\"{folder}\"") { UseShellExecute = false })?.Dispose();
+		}
+
 		// Process.Start does not correctly handle urls in mono version pre-6.12.0.122,
 		// so we use an explicit function handling it instead
 		public static void OpenUrlExternal(string url)
