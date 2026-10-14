@@ -7349,3 +7349,17 @@ only if memory was short.
 **Open, for the owner:** 8 GB is what a PlayStation 3 session holds, and it
 is a number about one core written into Chimera. The core should say it in
 its package (beside `"precompile": true`), which is a new declaration.
+
+**Then a setting (user-decided, 2026-10-14).** Asked whether a core should
+say in its package how much a compile session needs, the owner chose a
+setting instead, 8 GB by default: Tools > Pre-Compiled Modules, "Memory per
+compile session (GB)", 1 to 256, remembered. The wizard hands it to the
+compile run, which hands it to the engine (`ce_compile_sessions` and
+`ce_compile_memory_ran_short` take it; 0 is the engine's default), and the
+out-of-memory message names the figure in use and where to change it. No
+package declaration was added. Tested: the engine test (4 GB gives the
+reported machine seven sessions, 16 GB one), and an interface test that the
+window shows the setting and writes it back - seen to fail with the write
+taken out. Engine tests 25 passed; end-to-end test script 88 passed;
+interface tests 1,077 run, 0 failed, 23 skipped.
+

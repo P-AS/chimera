@@ -601,7 +601,8 @@ namespace Chimera.Client.GUI
 		private void PrecompiledModulesMenuItem_Click(object sender, EventArgs e)
 		{
 			using PrecompiledModulesForm form = new(
-				() => PrecompiledCodeSurvey.Take(CacheStore.PrecompiledCode, CacheStore.CompiledCode));
+				() => PrecompiledCodeSurvey.Take(CacheStore.PrecompiledCode, CacheStore.CompiledCode),
+				config: Config);
 			this.ShowDialogWithTempMute(form);
 		}
 

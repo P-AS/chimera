@@ -2027,15 +2027,17 @@ CE_API double ce_average_fps_value(const ce_average_fps *a);
  *   of free memory and of what the system can still promise with the page
  *   file at its present size; 0 when the system will not say.
  * _sessions: how many to run for that many processors and that much to
- *   spare: one per session's worth after 4 GB kept back, at most half the
- *   processors, at most 8, at least 1.
- * _session_bytes: what one session is taken to need.
+ *   spare: one per session_bytes after 4 GB kept back, at most half the
+ *   processors, at most 8, at least 1. session_bytes is the frontend's
+ *   setting (Tools > Pre-Compiled Modules); 0 takes the default.
+ * _session_bytes: the default, what one session is taken to need (8 GB).
  * _memory_ran_short: 1 when the least that could be spared while sessions
- *   ran (the frontend samples _memory_to_spare) says they ran out. */
+ *   ran (the frontend samples _memory_to_spare) was under half of
+ *   session_bytes (0: the default) - they ran out. */
 CE_API uint64_t ce_compile_memory_to_spare(void);
-CE_API int32_t ce_compile_sessions(int32_t processors, uint64_t to_spare);
+CE_API int32_t ce_compile_sessions(int32_t processors, uint64_t to_spare, uint64_t session_bytes);
 CE_API uint64_t ce_compile_session_bytes(void);
-CE_API int32_t ce_compile_memory_ran_short(uint64_t least_to_spare);
+CE_API int32_t ce_compile_memory_ran_short(uint64_t least_to_spare, uint64_t session_bytes);
 
 #ifdef __cplusplus
 }

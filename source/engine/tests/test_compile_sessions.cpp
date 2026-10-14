@@ -35,6 +35,14 @@ int main()
 	assert(ceCompileSessions(16, 1 * GB) == 1);
 	assert(ceCompileSessions(16, 0) == 1);
 
+	/* The figure is a setting (2026-10-14): 4 GB a session gives the reported
+	 * machine seven, 16 GB gives it one; 0 is the default, 8 GB. */
+	assert(ceCompileSessions(16, 32 * GB, 4 * GB) == 7);
+	assert(ceCompileSessions(16, 32 * GB, 16 * GB) == 1);
+	assert(ceCompileSessions(16, 32 * GB, 0) == 3);
+	assert(ceCompileMemoryRanShort(3 * GB, 8 * GB));
+	assert(!ceCompileMemoryRanShort(3 * GB, 4 * GB));
+
 	/* What can be spared is the smaller of free memory and of what the system
 	 * can still promise: a machine with 40 GB free and 9 GB of promises left
 	 * has 9. A figure the system would not give is left out, not taken for 0. */

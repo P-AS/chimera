@@ -90,7 +90,10 @@ How many run at once is bounded by memory as well as by processors, and the
 engine decides it (`ce_compile_sessions`, `source/engine/source/compile_sessions.h`):
 one session per 8 GB of what the machine can spare after 4 GB kept back for
 the frontend and the system, never more than half the processors, never more
-than eight, never fewer than one.
+than eight, never fewer than one. The 8 GB is a setting (Tools >
+Pre-Compiled Modules, "Memory per compile session"; user-decided
+2026-10-14): a person whose games compile in less can run more sessions at
+once, and one short of memory can run fewer.
 
 A session holds about 7 GB (measured on Windows with MotorStorm, issue 259:
 four sessions took 25.8 GB of the system's commit within 80 seconds of

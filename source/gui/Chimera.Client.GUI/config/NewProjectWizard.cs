@@ -267,6 +267,9 @@ namespace Chimera.Client.GUI
 
 		protected override string WindowTitleStatic => "New Chimera Project";
 
+		/// <summary>How much memory a compile session is counted at, in GB (the setting; 0 the engine's default).</summary>
+		public int CompileSessionGigabytes { get; set; }
+
 		public NewProjectWizard(
 			IReadOnlyList<DiscoveredCorePackage> cores,
 			Func<ProjectSlotDeclaration.Slot, string[]> pickFiles,
@@ -1589,7 +1592,8 @@ namespace Chimera.Client.GUI
 					ChosenCore.Path, _configPath, romPath, romSha1, dir,
 					_cfg?.CoreName ?? ChosenCore.Name, _cfg?.Version ?? "",
 					Entry, Progress, cancelled: PumpAndCheckCancel,
-					firmware: ProvidedFirmwarePaths, slotsFile: slotsFile);
+					firmware: ProvidedFirmwarePaths, slotsFile: slotsFile,
+					sessionGigabytes: CompileSessionGigabytes);
 			}
 			finally
 			{

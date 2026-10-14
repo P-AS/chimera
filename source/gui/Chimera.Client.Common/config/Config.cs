@@ -211,6 +211,13 @@ namespace Chimera.Client.Common
 
 		/// <summary>The average speed since it was last reset, under the frame counter (View &gt; Display Average FPS).</summary>
 		public bool DisplayAverageFps { get; set; }
+
+		/// <summary>
+		/// How much memory one compile session is counted at, in GB (Tools &gt; Pre-Compiled
+		/// Modules; chimera issue 259). The engine runs as many sessions side by side as the
+		/// machine can give this much each. 8 is what one RPCS3 session was measured to hold.
+		/// </summary>
+		public int CompileSessionGigabytes { get; set; } = 8;
 		public bool DisplayFrameCounter { get; set; }
 		public bool DisplayLagCounter { get; set; }
 		public bool DisplayInput { get; set; }

@@ -311,6 +311,7 @@ namespace Chimera.Client.GUI
 				wizard.SeedFrom(answers);
 			}
 
+			wizard.CompileSessionGigabytes = Config.CompileSessionGigabytes;
 			if (wizard.ShowDialog(this) is not DialogResult.OK) return null;
 			// the next wizard opens on this kind of core, when it has no project's answers to open on
 			Config.NewProjectKind = wizard.Kind;

@@ -53,8 +53,11 @@ namespace Chimera.Client.GUI
 		/// many is a machine that swaps, fills its system drive with page file,
 		/// or kills them (chimera issue 259).
 		/// </summary>
-		public static int Workers
-			=> ChimeraEngine.Instance.ce_compile_sessions(Environment.ProcessorCount, ChimeraEngine.Instance.ce_compile_memory_to_spare());
+		public static int Workers => WorkersFor(0);
+
+		/// <summary>The same, with one session counted at <paramref name="sessionBytes"/> (0: the engine's default).</summary>
+		public static int WorkersFor(ulong sessionBytes)
+			=> ChimeraEngine.Instance.ce_compile_sessions(Environment.ProcessorCount, ChimeraEngine.Instance.ce_compile_memory_to_spare(), sessionBytes);
 
 		/// <summary>
 		/// What an exit code says about how a session ended. A session that dies
@@ -98,16 +101,17 @@ namespace Chimera.Client.GUI
 		/// drive whatever folder Chimera's data is in, and the drive fills while
 		/// a compile runs (chimera issue 259).
 		/// </summary>
-		internal static string OutOfMemoryMessage(int sessions)
+		internal static string OutOfMemoryMessage(int sessions, ulong sessionBytes = 0)
 		{
-			var each = ChimeraEngine.Instance.ce_compile_session_bytes() / (1024.0 * 1024 * 1024);
+			var each = (sessionBytes is 0 ? ChimeraEngine.Instance.ce_compile_session_bytes() : sessionBytes) / (1024.0 * 1024 * 1024);
 			var what = $"The computer ran out of memory while compiling. A compile session needs about {each:0} GB"
 				+ (sessions > 1 ? $", and {sessions} ran at once." : ".");
-			if (OSTailoredCode.IsUnixHost) return what + " Close other programs and compile again.";
+			if (OSTailoredCode.IsUnixHost) return what + " Close other programs and compile again. Tools > Pre-Compiled Modules sets how much memory a session is counted at.";
 			return what
 				+ " When Windows runs short of memory it makes its page file bigger, and that file is on the system drive"
 				+ " (usually C:) wherever Chimera keeps its data, so free space there falls while a compile runs."
-				+ " Close other programs, or free some space on the system drive, and compile again.";
+				+ " Close other programs, or free some space on the system drive, and compile again."
+				+ " Tools > Pre-Compiled Modules sets how much memory a session is counted at.";
 		}
 
 		/// <summary>An object as the wizard shows it: named, hashed, and either there or not.</summary>
@@ -151,8 +155,11 @@ namespace Chimera.Client.GUI
 			string packagePath, string configPath, string romPath, string romSha1, string cacheDir,
 			string coreName, string coreVersion,
 			Action<Entry> onEntry, Action<uint, uint> onProgress, Func<bool> cancelled,
-			IReadOnlyDictionary<string, string> firmware = null, string slotsFile = null)
+			IReadOnlyDictionary<string, string> firmware = null, string slotsFile = null,
+			int sessionGigabytes = 0)
 		{
+			// the setting (Config.CompileSessionGigabytes); 0 is the engine's default
+			var sessionBytes = sessionGigabytes > 0 ? (ulong)sessionGigabytes << 30 : 0;
 			LastFailure = null;
 			if (string.IsNullOrEmpty(romPath) || !File.Exists(romPath) || cacheDir is null)
 			{
@@ -162,7 +169,7 @@ namespace Chimera.Client.GUI
 
 			var found = new Dictionary<string, string>(StringComparer.Ordinal);
 			LastFailure = null;
-			var workers = Workers;
+			var workers = WorkersFor(sessionBytes);
 			// kept across attempts: a session's own words are worth more than
 			// anything inferred from an exit code, whichever attempt said them
 			string refused = null;
@@ -280,7 +287,7 @@ namespace Chimera.Client.GUI
 				// session Windows could not give a page to dies of an access
 				// violation like any other crash, and only the machine's own
 				// figures tell the two apart.
-				var ranShort = ChimeraEngine.Instance.ce_compile_memory_ran_short(leastToSpare) != 0;
+				var ranShort = ChimeraEngine.Instance.ce_compile_memory_ran_short(leastToSpare, sessionBytes) != 0;
 				var wantOfMemory = failure is null
 					? ranShort || dead.All(p => DiedForWantOfMemory(p.ExitCode))
 					: RefusedForWantOfMemory(failure);
@@ -293,7 +300,7 @@ namespace Chimera.Client.GUI
 				}
 				if (wantOfMemory)
 				{
-					LastFailure = OutOfMemoryMessage(processes.Count);
+					LastFailure = OutOfMemoryMessage(processes.Count, sessionBytes);
 					return null;
 				}
 

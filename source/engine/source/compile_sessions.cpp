@@ -51,9 +51,9 @@ extern "C" uint64_t ce_compile_memory_to_spare(void)
 	return ceMemoryToSpare(ceReadHostMemory());
 }
 
-extern "C" int32_t ce_compile_sessions(int32_t processors, uint64_t to_spare)
+extern "C" int32_t ce_compile_sessions(int32_t processors, uint64_t to_spare, uint64_t session_bytes)
 {
-	return ceCompileSessions(processors, to_spare);
+	return ceCompileSessions(processors, to_spare, session_bytes);
 }
 
 extern "C" uint64_t ce_compile_session_bytes(void)
@@ -61,7 +61,7 @@ extern "C" uint64_t ce_compile_session_bytes(void)
 	return kCompileSessionBytes;
 }
 
-extern "C" int32_t ce_compile_memory_ran_short(uint64_t least_to_spare)
+extern "C" int32_t ce_compile_memory_ran_short(uint64_t least_to_spare, uint64_t session_bytes)
 {
-	return ceCompileMemoryRanShort(least_to_spare) ? 1 : 0;
+	return ceCompileMemoryRanShort(least_to_spare, session_bytes) ? 1 : 0;
 }
