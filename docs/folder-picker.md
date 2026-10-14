@@ -179,6 +179,10 @@ by hand afterwards on Plasma Wayland, GNOME and niri: the chooser in front,
 Chimera's windows not answering while it was open, and Cancel and a choice
 as before.
 
+Under their own desktops, by hand (2026-10-14): Plasma on Wayland and on X11,
+where the parent window is sent and the chooser is attached to Chimera's
+window, GNOME and COSMIC. All worked. LXQt's chooser was not tried under LXQt.
+
 The pauses with GTK and LXQt were not looked into. The test bus could not
 start gvfs (the desktop's own was already mounted), which GTK's chooser waits
 on, so they may belong to the test and not to the chooser.

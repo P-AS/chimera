@@ -7425,6 +7425,8 @@ termfilechooser does not draw the sub-folders box, and the wizard hides its
 own where the portal can pick folders, so there the scan uses the remembered
 answer. That is left for termfilechooser.
 
-**Not proved:** any chooser under its own desktop (GNOME Shell, Plasma,
-COSMIC, LXQt), where an X11 session would also send the parent. A chooser
-may ignore the tick box, the filter to open on, or the window it belongs to.
+Tried by hand under their own desktops as well: Plasma on Wayland and on X11
+(where the parent window is sent), GNOME and COSMIC. All worked.
+
+**Not proved:** LXQt's chooser under LXQt, and Windows, where the dialogs
+should be the ones they were.
