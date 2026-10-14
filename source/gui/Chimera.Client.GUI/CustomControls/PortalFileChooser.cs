@@ -76,8 +76,9 @@ namespace Chimera.Client.GUI
 		public static bool CanPickFolders => PortalVersion.Value >= 3;
 
 		/// <summary>
-		/// Shows the desktop's chooser and waits for it as a modal dialog would: every window
-		/// of Chimera's is disabled, and still painted, until the person answers.
+		/// Shows the desktop's chooser and waits for it as a modal dialog would: Chimera's
+		/// windows take no clicks, keys or closing, and are still painted, until the person
+		/// answers.
 		/// </summary>
 		public static Outcome Show(IWin32Window? owner, Request request, out Answer answer)
 		{
@@ -85,15 +86,13 @@ namespace Chimera.Client.GUI
 			if (request.Directory ? !CanPickFolders : !Available) return Outcome.Unavailable;
 			var connection = Connect();
 			if (connection == IntPtr.Zero) return Outcome.Unavailable;
-			var disabled = new List<Form>();
+			// The windows are kept from input and not disabled: a disabled Mono window that is
+			// modal itself (Config > Firmware is) kept the focus, and the chooser opened behind
+			// it and could not be brought in front (Plasma and GNOME on Wayland, 2026-10-14).
+			var blocked = new InputBlocker();
+			Application.AddMessageFilter(blocked);
 			try
 			{
-				foreach (Form form in Application.OpenForms)
-				{
-					if (!form.Enabled) continue;
-					form.Enabled = false;
-					disabled.Add(form);
-				}
 				var asked = Stopwatch.StartNew();
 				var code = Ask(connection, request, ParentWindow(owner), answer);
 				// 0 is an answer and 1 is Cancel. 2 is "ended some other way", and it is Cancel
@@ -110,7 +109,7 @@ namespace Chimera.Client.GUI
 			}
 			finally
 			{
-				foreach (var form in disabled) if (!form.IsDisposed) form.Enabled = true;
+				Application.RemoveMessageFilter(blocked);
 				(owner as Form)?.Activate();
 				dbus_connection_close(connection);
 				dbus_connection_unref(connection);
@@ -118,6 +117,28 @@ namespace Chimera.Client.GUI
 		}
 
 		private static int _tokens;
+
+		/// <summary>
+		/// Throws away what a person does to Chimera's windows while the chooser is open: mouse
+		/// buttons and wheel, keys, and the window manager's close. Mouse movement and painting
+		/// still go through.
+		/// </summary>
+		private sealed class InputBlocker : IMessageFilter
+		{
+			private const int WM_CLOSE = 0x0010;
+			private const int WM_KEYFIRST = 0x0100;
+			private const int WM_KEYLAST = 0x0109;
+			private const int WM_NCLBUTTONDOWN = 0x00A1;
+			private const int WM_NCMBUTTONDBLCLK = 0x00A9;
+			private const int WM_LBUTTONDOWN = 0x0201;
+			private const int WM_MOUSELAST = 0x020E;
+
+			public bool PreFilterMessage(ref Message m)
+				=> m.Msg is WM_CLOSE
+					or >= WM_KEYFIRST and <= WM_KEYLAST
+					or >= WM_NCLBUTTONDOWN and <= WM_NCMBUTTONDBLCLK
+					or >= WM_LBUTTONDOWN and <= WM_MOUSELAST;
+		}
 
 		/// <summary>How soon a "failed" answer means the chooser was never shown at all.</summary>
 		private const long NeverShownMilliseconds = 300;
@@ -440,7 +461,7 @@ namespace Chimera.Client.GUI
 		/// In a Wayland session Chimera's windows are XWayland's, and a chooser drawn on
 		/// Wayland is given no parent. An X11 parent there crashed GNOME's chooser (Nautilus,
 		/// under niri, on any X11 window it was given), and attached no dialog anywhere it was
-		/// tried; the dialog is modal regardless, since every window of Chimera's is disabled.
+		/// tried; the dialog is modal regardless, since Chimera's windows take no input meanwhile.
 		/// </remarks>
 		private static string ParentWindow(IWin32Window? owner)
 		{

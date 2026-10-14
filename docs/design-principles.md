@@ -7401,14 +7401,25 @@ turned off, and no bus. Two of them changed the code:
   the first picker. Instead, in a Wayland session (`WAYLAND_DISPLAY` set) no
   parent is sent at all: Chimera's windows belong to XWayland there, and the
   parent attached no dialog under any chooser tried. The chooser is still
-  modal, because Chimera disables its own windows. An X11 session still sends
-  the parent.
+  modal, because Chimera's windows take no input while it is open. An X11
+  session still sends the parent.
 - **"Failed" is Cancel.** shana answers every Cancel with response 2, "ended
   some other way", where the portal's own documentation gives 1. With the
   retry, Cancel reopened the chooser and then showed Mono's dialog. Now 2 is
   Cancel, unless it comes within 300 ms of the request - sooner than anyone
   can press Cancel - which only a chooser that never came up does, and then
   Mono's dialog is shown.
+
+**Chimera's windows are kept from input, not disabled.** On Plasma and GNOME
+on Wayland, a chooser opened from Config > Firmware came up behind Chimera's
+windows and could not be brought in front. KWin's record of its windows
+showed the cause: a Mono window that is modal itself keeps the focus once it
+is disabled, and disabling every window was how the chooser was made modal.
+Now a message filter throws away clicks, keys and closing for Chimera's
+windows while the chooser is open, and they stay enabled. Measured on Plasma
+Wayland: the chooser opens on top and active, and comes back to the front
+after another window takes the focus; tried by hand on Plasma Wayland, GNOME
+and niri.
 
 termfilechooser does not draw the sub-folders box, and the wizard hides its
 own where the portal can pick folders, so there the scan uses the remembered

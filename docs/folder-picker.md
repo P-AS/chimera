@@ -42,7 +42,7 @@ Linux desktop has. No package was added for it.
   windows belong to XWayland and the chooser is told no parent. An `x11:` parent
   there crashed GNOME's chooser (Nautilus, under niri, whichever X11 window it
   named) and attached no dialog anywhere it was tried. The chooser is modal
-  either way, because Chimera disables its own windows while it is open.
+  either way, because Chimera's windows take no input while it is open.
 - **Cancel.** The portal answers 0 for a choice, 1 for Cancel and 2 for "ended
   some other way". shana answers every Cancel with 2, so 2 is taken as Cancel
   too. Only a 2 that comes back within 300 ms, sooner than a person can press
@@ -53,9 +53,13 @@ Linux desktop has. No package was added for it.
   extension gets the one the filter in use names, or the default extension,
   as the toolkit dialog does. The portal's chooser asks before it overwrites,
   on its own, so `OverwritePrompt` is only for the toolkit dialog.
-- **Modal.** While the chooser is open, every window of Chimera's is disabled,
-  as a modal dialog would leave them, and they are still painted. Emulation
-  does not run meanwhile, as with any dialog.
+- **Modal.** While the chooser is open, Chimera's windows take no clicks, keys
+  or closing: a message filter (`Application.AddMessageFilter`) throws them
+  away. They are still painted and still see the mouse move. Emulation does
+  not run meanwhile, as with any dialog. They are not disabled: a Mono window
+  that is modal itself (Config > Firmware is one) kept the focus once it was
+  disabled, so the chooser opened behind it and could not be brought to the
+  front (Plasma and GNOME on Wayland).
 
 ## Why the sub-folders option lives in the dialog
 
@@ -157,6 +161,23 @@ Project, the wizard's firmware Scan Folder, the data directory and a save.
 | termfilechooser (yazi in kitty) | works; no sub-folders box |
 | a portal with its file chooser set to `none` | Mono's dialog, and no request sent to the portal |
 | no session bus | Mono's dialogs, and the wizard's own sub-folders box |
+
+The chooser behind Chimera's windows (Plasma and GNOME on Wayland, from
+Config > Firmware) was found with KWin's own record of its windows, read by a
+small KWin script while a test chooser was open. The chooser sat below
+Chimera's main window and its modal window, and asking KWin to activate it
+did not hold: within a second the modal window was active again. With no
+modal window the chooser opened on top. With no chooser at all, a disabled
+Mono modal window kept another program's window from taking the focus, and
+an enabled one did not. With the message filter in place of disabling, the
+chooser opened on top and active, and could be brought back to the front
+after another window took the focus. Keys and closing (through KWin and
+`wmctrl`) reached Chimera's window before the chooser opened and nothing did
+while it was open; the clicks `xdotool` sent did not arrive reliably even
+before, so blocking clicks rests on the code and on trying it by hand. Tried
+by hand afterwards on Plasma Wayland, GNOME and niri: the chooser in front,
+Chimera's windows not answering while it was open, and Cancel and a choice
+as before.
 
 The pauses with GTK and LXQt were not looked into. The test bus could not
 start gvfs (the desktop's own was already mounted), which GTK's chooser waits
