@@ -1226,6 +1226,9 @@ namespace Chimera.Client.GUI
 				CoreVersion = package?.DatedVersion,
 				Os = $"{System.Runtime.InteropServices.RuntimeInformation.OSDescription.Trim()} ({System.Runtime.InteropServices.RuntimeInformation.OSArchitecture})",
 				Gpu = Emulator is IGpuRendered gpu ? gpu.GpuRenderer : "",
+				Cpu = Chimera.Emulation.Common.Engine.EngineSession.HostCpuName,
+				Threads = Environment.ProcessorCount,
+				MemoryBytes = Chimera.Emulation.Common.Engine.EngineSession.HostMemoryTotal,
 				Files = files,
 				Settings = settings,
 			});

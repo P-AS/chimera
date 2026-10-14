@@ -29,6 +29,9 @@ namespace Chimera.Tests.Client.Common
 				CoreVersion = "2026-10-10 (18cd581)",
 				Os = "Microsoft Windows 10.0.19045 (X64)",
 				Gpu = "4.6.0 NVIDIA 536.23 on GeForce GTX 1060/PCIe/SSE2",
+				Cpu = "Intel(R) Core(TM) i7-8700K CPU @ 3.70GHz",
+				Threads = 12,
+				MemoryBytes = 34_281_996_288,
 				Files = [ new("disc", "Game (USA).iso"), new("savedata", "memcard1.ps2") ],
 				Settings = [ new("Renderer", "opengl-hw", "software"), new("Internal Resolution", "2", "1") ],
 			});
@@ -36,6 +39,7 @@ namespace Chimera.Tests.Client.Common
 				"**Chimera build:** " + Build + "\n"
 				+ "**Core and version:** PCSX2 2026-10-10 (18cd581)\n"
 				+ "**OS and GPU:** Microsoft Windows 10.0.19045 (X64), graphics driver 4.6.0 NVIDIA 536.23 on GeForce GTX 1060/PCIe/SSE2\n"
+				+ "**CPU and memory:** Intel(R) Core(TM) i7-8700K CPU @ 3.70GHz (12 threads), 31.9 GB of memory\n"
 				+ "**Game:**\n- disc: Game (USA).iso\n- savedata: memcard1.ps2\n"
 				+ "**Renderer and non-default settings:**\n- Renderer: opengl-hw (default: software)\n- Internal Resolution: 2 (default: 1)",
 				text);
@@ -49,6 +53,7 @@ namespace Chimera.Tests.Client.Common
 				"**Chimera build:** " + Build + "\n"
 				+ "**Core and version:** <!-- no core was running -->\n"
 				+ "**OS and GPU:** Linux 6.8 (X64), <!-- type your graphics card here -->\n"
+				+ "**CPU and memory:** <!-- type your processor here -->, <!-- type how much memory your computer has here -->\n"
 				+ "**Game:** <!-- no project was open -->\n"
 				+ "**Renderer and non-default settings:** <!-- no core was running -->",
 				text);

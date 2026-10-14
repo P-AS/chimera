@@ -1073,6 +1073,14 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract ulong ce_compile_session_bytes();
 
+		// ---- the computer, for a bug report (engine.h, issue 277) ----
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract IntPtr ce_host_cpu_name();
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract ulong ce_host_memory_total();
+
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_compile_memory_ran_short(ulong leastToSpare, ulong sessionBytes);
 
@@ -2893,6 +2901,12 @@ namespace Chimera.Emulation.Common.Engine
 
 		/// <summary>What built the waterbox host, as JSON; "" when the host is not loadable.</summary>
 		public static string HostBuildInfo => ChimeraEngine.PtrToStringUtf8(ChimeraEngine.Instance.ce_host_build_info()) ?? "";
+
+		/// <summary>The processor's name as it gives it; "" when it will not say.</summary>
+		public static string HostCpuName => ChimeraEngine.PtrToStringUtf8(ChimeraEngine.Instance.ce_host_cpu_name()) ?? "";
+
+		/// <summary>The memory installed, in bytes; 0 when the system will not say.</summary>
+		public static ulong HostMemoryTotal => ChimeraEngine.Instance.ce_host_memory_total();
 	}
 
 	/// <summary>The firmware verdict and the canonical movie line; declarations and files stay with the caller.</summary>

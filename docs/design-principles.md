@@ -7363,7 +7363,6 @@ window shows the setting and writes it back - seen to fail with the write
 taken out. Engine tests 25 passed; end-to-end test script 88 passed;
 interface tests 1,077 run, 0 failed, 23 skipped.
 
-
 ## Five cores join the official cores: melonDS, PUAE, Virtual Jaguar, TIC-80 and Uzem (user-decided, 2026-10-14)
 
 These are the next steps toward the owner's goal that every system BizHawk
@@ -7431,3 +7430,26 @@ the five (22). Each core's own test script was then run here with the
 published core in place of the local build, with the owner's BIOSes,
 firmware and games: melonDS 45 passed, PUAE 28, Virtual Jaguar 32, TIC-80 40
 and Uzem 75, none failed and none skipped.
+
+## The processor and the memory in a bug report (2026-10-14, issue 277)
+
+Asked for: Help > Report an Issue should give the computer's processor and
+memory, which are what a report of slowness is first measured against, and
+which people had to look up and type.
+
+Done: the text it fills in has a sixth line, "CPU and memory", for example
+`Intel(R) Core(TM) Ultra 7 265KF (20 threads), 47.0 GB of memory`. The
+engine reads the two facts (`ce_host_cpu_name`, `ce_host_memory_total`, in
+`host_machine.cpp`): the name is the processor's own (the brand string the
+`cpuid` instruction gives), and the memory is what Windows
+(`GlobalMemoryStatusEx`) or Linux (`/proc/meminfo`) says is installed. The
+thread count is .NET's. What is not known is left as a note in the form's
+style, as the other lines do. The bug report form on GitHub has the line
+too, so the text is still pasted over the form's first lines.
+
+Tested: the engine's `test_host_machine.cpp` holds the name to the one Linux
+gives in `/proc/cpuinfo` and the memory to more than can be handed out; it
+was seen to fail with the name read from the wrong place and with the free
+memory read instead of the installed. The interface's report text tests
+cover the line filled in and left as a note.
+

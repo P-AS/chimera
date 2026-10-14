@@ -26,7 +26,7 @@ cannot be filed without the build identifiers.
 
 ### Bug report (required fields marked *)
 Help > Report an Issue (issue 243) shows the link to these forms and fills
-in the first five fields below from the running session, ready to paste. It
+in the first six fields below from the running session, ready to paste. It
 also lists the project file, the newest crash note and the sandbox's log
 when they exist, and saves the ticked ones as one zip with the text and the
 game's picture. It sends nothing: the person attaches the zip.
@@ -38,6 +38,8 @@ game's picture. It sends nothing: the person attaches the zip.
   Note: frontend and core must be from the same day or later; a report
   mixing days is answered "retest matched" first.
 - *OS and GPU (the crash note carries it; type it anyway).
+- CPU and memory: the processor's name, its threads, and the memory
+  installed (issue 277). What slowness is measured against first.
 - *Game: full file name(s) as in the project (redump name; for arcade the
   MAME set name), and which slot each went in.
 - *Steps: numbered, from New Project. What was expected, what happened.

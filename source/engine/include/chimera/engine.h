@@ -2039,6 +2039,15 @@ CE_API int32_t ce_compile_sessions(int32_t processors, uint64_t to_spare, uint64
 CE_API uint64_t ce_compile_session_bytes(void);
 CE_API int32_t ce_compile_memory_ran_short(uint64_t least_to_spare, uint64_t session_bytes);
 
+/* ---- the computer, for a bug report (chimera issue 277) ---------------------
+ * _cpu_name: the processor's name as it gives it, for example "AMD Ryzen 7
+ *   5800X 8-Core Processor"; "" when it will not say. Static, never
+ *   invalidated.
+ * _memory_total: the memory installed, in bytes; 0 when the system will not
+ *   say. */
+CE_API const char *ce_host_cpu_name(void);
+CE_API uint64_t ce_host_memory_total(void);
+
 #ifdef __cplusplus
 }
 #endif

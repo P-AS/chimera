@@ -49,6 +49,15 @@ namespace Chimera.Client.Common
 			/// <summary>What the graphics driver calls itself, or empty when no core drew on a graphics card.</summary>
 			public string Gpu { get; init; } = "";
 
+			/// <summary>The processor's name as it gives it, or empty when it will not say.</summary>
+			public string Cpu { get; init; } = "";
+
+			/// <summary>How many threads the processor runs at once, or 0 when not known.</summary>
+			public int Threads { get; init; }
+
+			/// <summary>The memory installed, in bytes, or 0 when not known.</summary>
+			public ulong MemoryBytes { get; init; }
+
 			/// <summary>The open project's files, or null when no project is open.</summary>
 			public IReadOnlyList<ProjectFile>? Files { get; init; }
 
@@ -57,7 +66,7 @@ namespace Chimera.Client.Common
 		}
 
 		/// <summary>
-		/// The first five lines of the bug report form, filled in. The labels are the
+		/// The first six lines of the bug report form, filled in. The labels are the
 		/// form's own (.github/ISSUE_TEMPLATE/bug_report.md), so the text is pasted
 		/// over those lines. What Chimera cannot know is left as a note in the form's
 		/// own style, which the finished report does not show.
@@ -73,6 +82,14 @@ namespace Chimera.Client.Common
 				? "<!-- type your graphics card here -->"
 				: "graphics driver " + facts.Gpu.Trim();
 			text.Append("\n**OS and GPU:** ").Append(os).Append(", ").Append(gpu);
+
+			// what slowness is first measured against (issue 277)
+			var cpu = string.IsNullOrWhiteSpace(facts.Cpu) ? "<!-- type your processor here -->" : facts.Cpu.Trim();
+			if (facts.Threads > 0) cpu += $" ({facts.Threads} threads)";
+			var memory = facts.MemoryBytes is 0
+				? "<!-- type how much memory your computer has here -->"
+				: (facts.MemoryBytes / (double)(1UL << 30)).ToString("0.0", CultureInfo.InvariantCulture) + " GB of memory";
+			text.Append("\n**CPU and memory:** ").Append(cpu).Append(", ").Append(memory);
 
 			text.Append("\n**Game:**");
 			if (facts.Files is null) text.Append(" <!-- no project was open -->");
