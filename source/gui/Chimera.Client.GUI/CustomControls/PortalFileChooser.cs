@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -93,26 +94,18 @@ namespace Chimera.Client.GUI
 					form.Enabled = false;
 					disabled.Add(form);
 				}
-				var parent = _parentRefused ? "" : ParentWindow(owner);
-				var code = Ask(connection, request, parent, answer);
-				if (code is 2 && parent.Length is not 0)
-				{
-					// A chooser that fails when it is told which window it belongs to: GNOME's,
-					// which hands the dialog to Nautilus, and Nautilus crashes on an X11 parent
-					// under a Wayland compositor that is not GNOME Shell (niri, 2026-10-14). Asked
-					// again without one; and not told again this session, so only the first
-					// picker waits for the failure.
-					_parentRefused = true;
-					answer = new();
-					code = Ask(connection, request, "", answer);
-				}
-				// 0 is an answer and 1 is Cancel. 2 is "ended some other way": a portal whose
-				// chooser failed to come up, so the toolkit dialog is offered instead.
+				var asked = Stopwatch.StartNew();
+				var code = Ask(connection, request, ParentWindow(owner), answer);
+				// 0 is an answer and 1 is Cancel. 2 is "ended some other way", and it is Cancel
+				// too: shana answers every Cancel with 2 (2026-10-14). Only a 2 sooner than
+				// anyone could press Cancel is a chooser that never came up, and then the
+				// toolkit dialog is offered instead.
 				return code switch
 				{
+					null => Outcome.Unavailable,
 					0 => answer.Paths.Count is 0 ? Outcome.Cancelled : Outcome.Chosen,
-					1 => Outcome.Cancelled,
-					_ => Outcome.Unavailable,
+					2 when asked.ElapsedMilliseconds < NeverShownMilliseconds => Outcome.Unavailable,
+					_ => Outcome.Cancelled,
 				};
 			}
 			finally
@@ -126,8 +119,8 @@ namespace Chimera.Client.GUI
 
 		private static int _tokens;
 
-		/// <summary>Set once a chooser has failed for being told its parent window; see <see cref="Show"/>.</summary>
-		private static bool _parentRefused;
+		/// <summary>How soon a "failed" answer means the chooser was never shown at all.</summary>
+		private const long NeverShownMilliseconds = 300;
 
 		/// <summary>
 		/// Asks once and waits for the answer, keeping the windows painted. The response code
@@ -443,9 +436,16 @@ namespace Chimera.Client.GUI
 		/// window in hex. Mono's handle is its client area, so the frame is asked of Mono's
 		/// own bookkeeping; anything that fails says "no parent", which the portal allows.
 		/// </summary>
+		/// <remarks>
+		/// In a Wayland session Chimera's windows are XWayland's, and a chooser drawn on
+		/// Wayland is given no parent. An X11 parent there crashed GNOME's chooser (Nautilus,
+		/// under niri, on any X11 window it was given), and attached no dialog anywhere it was
+		/// tried; the dialog is modal regardless, since every window of Chimera's is disabled.
+		/// </remarks>
 		private static string ParentWindow(IWin32Window? owner)
 		{
 			if (owner is null || Environment.GetEnvironmentVariable("DISPLAY") is null or "") return "";
+			if (Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") is { Length: not 0 }) return "";
 			try
 			{
 				var hwndType = typeof(Control).Assembly.GetType("System.Windows.Forms.Hwnd");

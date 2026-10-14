@@ -28,22 +28,26 @@ Linux desktop has. No package was added for it.
 
 - **When it is used.** When there is a session bus and the portal on it has a
   file chooser. Folders need version 3 of the interface or later. Otherwise -
-  no bus, no portal, no `libdbus`, or a portal that answers that its chooser
-  could not come up (response 2) - the toolkit dialog is shown, as before.
+  no bus, no portal, no `libdbus`, or a portal whose file chooser is turned
+  off - the toolkit dialog is shown, as before.
 - **What it is told.** The title; the filters, converted from the WinForms
   filter string (`*.*` goes as `*`, so a file with no dot in its name is not
   left out); the filter to open on; the folder to open in; for a save, the
   name to offer; for the folder picker, the sub-folders tick box, as a portal
-  "choice" with no options. The window it belongs to goes as `x11:` and the
-  window's frame, which Mono's handle is not, so it is read from Mono's own
-  bookkeeping; if that fails it says "no parent", which the portal allows.
-- **A chooser that fails for being given a parent.** GNOME's portal hands the
-  dialog to Nautilus, and under niri (a Wayland compositor that is not GNOME
-  Shell) Nautilus crashes on any `x11:` parent, valid or not, and the portal
-  answers "failed" (response 2). So when a request that named a parent fails,
-  it is asked again at once without one, and no parent is sent for the rest
-  of the session: the first picker waits for the failure, the rest do not. A
-  chooser that takes the parent keeps getting it.
+  "choice" with no options.
+- **Which window it belongs to.** In an X11 session, Chimera's window, as
+  `x11:` and the window's frame (Mono's handle is the client area, so the frame
+  is read from Mono's own bookkeeping; if that fails it says "no parent", which
+  the portal allows). In a Wayland session (`WAYLAND_DISPLAY` set) Chimera's
+  windows belong to XWayland and the chooser is told no parent. An `x11:` parent
+  there crashed GNOME's chooser (Nautilus, under niri, whichever X11 window it
+  named) and attached no dialog anywhere it was tried. The chooser is modal
+  either way, because Chimera disables its own windows while it is open.
+- **Cancel.** The portal answers 0 for a choice, 1 for Cancel and 2 for "ended
+  some other way". shana answers every Cancel with 2, so 2 is taken as Cancel
+  too. Only a 2 that comes back within 300 ms, sooner than a person can press
+  Cancel, means the chooser never came up, and then the toolkit dialog is
+  shown instead.
 - **What is made of the answer.** The `file://` addresses become paths. The
   filter in use comes back as the filter index. A save typed without an
   extension gets the one the filter in use names, or the default extension,
@@ -88,7 +92,9 @@ other case it comes back exactly as it went in, on purpose:
 - **A Windows whose shell refuses `IFileDialogCustomize`** - the check button is
   never added, and the dialog still works.
 - **A portal chooser that does not draw choices** - the box is sent and not
-  shown, and nothing comes back for it.
+  shown, and nothing comes back for it. termfilechooser is one. There the
+  wizard's own box is hidden as well, so the scan uses the remembered answer;
+  that is for termfilechooser to change.
 
 `CheckBoxShown` says which happened, after the fact. `CanShowCheckBox` answers
 for the *platform*, before any dialog opens - Windows, or a portal that can pick
@@ -133,14 +139,28 @@ And in the running frontend, with KDE's chooser behind the portal
 box was in KDE's dialog, and not on the page), the data directory, and a save
 typed without its extension. All four worked.
 
-And with GNOME's chooser (`xdg-desktop-portal-gnome` 51.0, which hands it to
-Nautilus), under niri, on 2026-10-14. A second portal was run on a private bus
-with a config of its own that chose GNOME's chooser, so the desktop's settings
-were not touched. Before the retry, Nautilus crashed on every request and
-Mono's dialog was shown each time. The same crash came from a plain `gdbus`
-request naming any X11 window as the parent, and not from Chimera's options
-without one. With the retry: one pause on the first picker, then GNOME's
-chooser, and none on the pickers after it.
+And with every other chooser that could be installed, under niri, on
+2026-10-14. Each ran behind a second portal on a private bus, with a config of
+its own naming that chooser, so the desktop's own settings were not touched;
+`dbus-monitor` recorded every request and answer. The four checks were Open
+Project, the wizard's firmware Scan Folder, the data directory and a save.
+
+| Chooser | Result |
+| --- | --- |
+| KDE (`xdg-desktop-portal-kde`) | works; the sub-folders box is in the dialog |
+| GNOME (`xdg-desktop-portal-gnome` 51.0, which hands the dialog to Nautilus) | works. Given an `x11:` parent, Nautilus crashed on every request, and a plain `gdbus` request naming any X11 window did the same; without a parent it does not |
+| GTK (`xdg-desktop-portal-gtk`) | works, with a pause before the dialog |
+| COSMIC (`xdg-desktop-portal-cosmic`) | works, no pause |
+| LXQt (`xdg-desktop-portal-lxqt`) | works, with a pause before the dialog |
+| shana, sending files to LXQt's chooser and folders and saves to KDE's | works. It answers Cancel with 2, which reopened the chooser and then showed Mono's dialog until 2 was taken as Cancel |
+| xapp | has no file chooser; the portal used GNOME's instead, which worked |
+| termfilechooser (yazi in kitty) | works; no sub-folders box |
+| a portal with its file chooser set to `none` | Mono's dialog, and no request sent to the portal |
+| no session bus | Mono's dialogs, and the wizard's own sub-folders box |
+
+The pauses with GTK and LXQt were not looked into. The test bus could not
+start gvfs (the desktop's own was already mounted), which GTK's chooser waits
+on, so they may belong to the test and not to the chooser.
 
 ### The Windows dialog
 

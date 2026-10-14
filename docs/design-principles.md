@@ -7388,17 +7388,32 @@ Tried in the running frontend with KDE's chooser: opening a project, the wizard'
 firmware folder scan (the tick box was in KDE's dialog), the data directory,
 and a save typed without its extension. All four worked.
 
-**GNOME's chooser.** Tried under niri with a second portal on a private bus
-set to GNOME's chooser (`xdg-desktop-portal-gnome` 51.0). It hands the dialog
-to Nautilus, and Nautilus crashed on every request: a plain `gdbus` request
-showed the cause is the `x11:` parent window, whichever window it names, and
-not the other options. The portal answers such a crash with "failed", and the
-frontend showed Mono's dialog. Now a request that named a parent and failed
-is asked again at once without one, and no parent is sent for the rest of the
-session. The first picker pauses for the crash; GNOME's chooser comes up, and
-the pickers after it do not pause. Against the stand-in portal, a chooser
-that takes the parent still gets it on every request.
+**Every chooser that could be installed** was tried under niri, each behind a
+second portal on a private bus with a config of its own (table in
+docs/folder-picker.md): KDE, GNOME, GTK, COSMIC, LXQt, shana, termfilechooser,
+xapp (which has none, so the portal used GNOME's), a portal with its chooser
+turned off, and no bus. Two of them changed the code:
 
-**Not proved:** GNOME's chooser under GNOME Shell, and the other desktops'
-choosers. A chooser may ignore the tick box, the filter to open on,
-or the window it belongs to.
+- **No parent window in a Wayland session.** GNOME's chooser is Nautilus, and
+  Nautilus crashed on every request that named an `x11:` parent - a plain
+  `gdbus` request naming any X11 window did the same - and the portal answered
+  "failed". First a retry without the parent was tried, which cost a pause on
+  the first picker. Instead, in a Wayland session (`WAYLAND_DISPLAY` set) no
+  parent is sent at all: Chimera's windows belong to XWayland there, and the
+  parent attached no dialog under any chooser tried. The chooser is still
+  modal, because Chimera disables its own windows. An X11 session still sends
+  the parent.
+- **"Failed" is Cancel.** shana answers every Cancel with response 2, "ended
+  some other way", where the portal's own documentation gives 1. With the
+  retry, Cancel reopened the chooser and then showed Mono's dialog. Now 2 is
+  Cancel, unless it comes within 300 ms of the request - sooner than anyone
+  can press Cancel - which only a chooser that never came up does, and then
+  Mono's dialog is shown.
+
+termfilechooser does not draw the sub-folders box, and the wizard hides its
+own where the portal can pick folders, so there the scan uses the remembered
+answer. That is left for termfilechooser.
+
+**Not proved:** any chooser under its own desktop (GNOME Shell, Plasma,
+COSMIC, LXQt), where an X11 session would also send the parent. A chooser
+may ignore the tick box, the filter to open on, or the window it belongs to.
