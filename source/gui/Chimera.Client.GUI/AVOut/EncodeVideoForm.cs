@@ -701,7 +701,7 @@ namespace Chimera.Client.GUI
 				return;
 			}
 
-			Util.OpenUrlExternal(_written);
+			Util.OpenFileExternal(_written);
 		}
 
 		private static string Describe(TimeSpan span)
