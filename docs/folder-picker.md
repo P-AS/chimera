@@ -1,10 +1,50 @@
-# The folder picker, and the option it carries
+# The file and folder pickers, and the option the folder picker carries
 
 There is one folder picker in the frontend, `FolderBrowserEx`. On Windows it is
 the Explorer-style common item dialog - an address bar, and a box to type or
-paste a path into (issue #57, `Win32FolderPicker`). On anything else it is the
-toolkit's own dialog. A third path, `SHBrowseForFolder`, is what is left on a
-Windows where the item dialog cannot be had.
+paste a path into (issue #57, `Win32FolderPicker`). A third path,
+`SHBrowseForFolder`, is what is left on a Windows where the item dialog cannot
+be had. On Linux and the BSDs it is the desktop's own chooser, through the
+desktop portal (below), and Mono's toolkit dialog where there is no portal.
+
+Files are picked with `OpenFilePicker` and `SaveFilePicker`. They take the
+same properties as WinForms' `OpenFileDialog` and `SaveFileDialog`, and show
+the same dialogs on Windows. On Linux and the BSDs they ask the portal first.
+Nothing in the frontend makes an `OpenFileDialog`, `SaveFileDialog` or
+`FolderBrowserDialog` of its own.
+
+## The desktop's own chooser, through the portal (2026-10-14)
+
+Mono's file dialog is its own drawing of one: no bookmarks, no recent places,
+no typing a path with completion, and nothing like the dialog every other
+program on the desktop shows. The XDG desktop portal is how a program asks the
+desktop for that dialog: a service on the session D-Bus (the desktop's local
+message bus - a socket on this machine, not the network) whose
+`org.freedesktop.portal.FileChooser` interface draws whichever chooser the
+person's desktop is set to, KDE's or GNOME's or another.
+
+`PortalFileChooser` asks it, through `libdbus-1` (`DBusImports`), which every
+Linux desktop has. No package was added for it.
+
+- **When it is used.** When there is a session bus and the portal on it has a
+  file chooser. Folders need version 3 of the interface or later. Otherwise -
+  no bus, no portal, no `libdbus`, or a portal that answers that its chooser
+  could not come up (response 2) - the toolkit dialog is shown, as before.
+- **What it is told.** The title; the filters, converted from the WinForms
+  filter string (`*.*` goes as `*`, so a file with no dot in its name is not
+  left out); the filter to open on; the folder to open in; for a save, the
+  name to offer; for the folder picker, the sub-folders tick box, as a portal
+  "choice" with no options. The window it belongs to goes as `x11:` and the
+  window's frame, which Mono's handle is not, so it is read from Mono's own
+  bookkeeping; if that fails it says "no parent", which the portal allows.
+- **What is made of the answer.** The `file://` addresses become paths. The
+  filter in use comes back as the filter index. A save typed without an
+  extension gets the one the filter in use names, or the default extension,
+  as the toolkit dialog does. The portal's chooser asks before it overwrites,
+  on its own, so `OverwritePrompt` is only for the toolkit dialog.
+- **Modal.** While the chooser is open, every window of Chimera's is disabled,
+  as a modal dialog would leave them, and they are still painted. Emulation
+  does not run meanwhile, as with any dialog.
 
 ## Why the sub-folders option lives in the dialog
 
@@ -30,7 +70,7 @@ The flag goes **in** as the state to open on and comes back **out** as what the
 person settled on. A null return means no folder was chosen, and then the flag
 means nothing and must not be read.
 
-### The three pickers that cannot carry it
+### The pickers that cannot carry it
 
 `FolderBrowserEx.CheckBoxChecked` is changed in exactly one case: the box was
 shown, a person ticked or unticked it, and they pressed Select Folder. In every
@@ -40,18 +80,21 @@ other case it comes back exactly as it went in, on purpose:
 - **The `SHBrowseForFolder` tree** has none either.
 - **A Windows whose shell refuses `IFileDialogCustomize`** - the check button is
   never added, and the dialog still works.
+- **A portal chooser that does not draw choices** - the box is sent and not
+  shown, and nothing comes back for it.
 
 `CheckBoxShown` says which happened, after the fact. `CanShowCheckBox` answers
-for the *platform*, before any dialog opens, and is what a window asks when it
+for the *platform*, before any dialog opens - Windows, or a portal that can pick
+folders - and is what a window asks when it
 is deciding whether to carry the choice itself.
 
 ### Where the option is offered
 
-| Where | Windows | Mono |
-| --- | --- | --- |
-| New Project wizard, firmware step | in the dialog | the check box on the page |
-| Firmware Manager, Scan Folder | in the dialog | not offered; scans sub-folders, as it always did |
-| Locate Project Files, Scan Folder | in the dialog | not offered; scans sub-folders, as it always did |
+| Where | Windows | Linux, with a portal | Linux, without one |
+| --- | --- | --- | --- |
+| New Project wizard, firmware step | in the dialog | in the dialog | the check box on the page |
+| Firmware Manager, Scan Folder | in the dialog | in the dialog | not offered; scans sub-folders, as it always did |
+| Locate Project Files, Scan Folder | in the dialog | in the dialog | not offered; scans sub-folders, as it always did |
 
 The wizard's on-page check box is **hidden, not removed**, where the picker
 carries the option: it is still where that page remembers the answer between
@@ -62,6 +105,28 @@ asserts, for both platforms, on whichever one it runs.
 Cancelling a picker never changes the remembered answer.
 
 ## What the tests cover, and what they do not
+
+### The portal
+
+`PortalFileChooserTests` cover what needs no bus: the filters as converted, a
+`file://` address as a path, the request's name, and the extension a save is
+given. The suite has no portal to talk to, and does not get one.
+
+What was tried by hand, on 2026-10-14: a stand-in portal (a short Python D-Bus
+service) on a private bus that could start no other service, driven through the
+real `OpenFilePicker`, `SaveFilePicker` and `FolderBrowserEx`. One file, several
+files, Cancel, a save typed without an extension, a folder with the box unticked,
+a folder from a chooser that ignores the box, an owner window (disabled while
+the chooser was open, and given to the portal as `x11:` and a window), a portal
+too old to pick folders, no portal on the bus, and no bus at all. The calls it
+received were read back, option by option.
+
+And in the running frontend, with KDE's chooser behind the portal
+(2026-10-14): Open Project, the wizard's firmware Scan Folder (the sub-folders
+box was in KDE's dialog, and not on the page), the data directory, and a save
+typed without its extension. All four worked.
+
+### The Windows dialog
 
 Read this before trusting a green run. This is COM interop against the Windows
 shell, exercised from a suite that runs on the other platform - `docs/gates.md`

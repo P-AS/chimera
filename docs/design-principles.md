@@ -7349,3 +7349,45 @@ only if memory was short.
 **Open, for the owner:** 8 GB is what a PlayStation 3 session holds, and it
 is a number about one core written into Chimera. The core should say it in
 its package (beside `"precompile": true`), which is a new declaration.
+
+## Files and folders are picked with the desktop's own chooser on Linux (2026-10-14)
+
+**Asked for:** on Linux, use the file chooser of the XDG desktop
+portal instead of Mono's file dialog, because it is far more usable and is the
+dialog the rest of the desktop shows.
+
+**Decided.**
+
+- On Linux and the BSDs every file and folder picker asks the portal's
+  `org.freedesktop.portal.FileChooser` first, over the session D-Bus, and
+  shows Mono's dialog only where the portal cannot be asked. Windows and macOS
+  are unchanged.
+- It is spoken to through `libdbus-1` directly (`DBusImports`), not through a
+  package: every Linux desktop has the library, and the frontend gains no
+  dependency. D-Bus is local; `tools/check-no-network.sh` is unchanged and
+  passes.
+- `OpenFilePicker` and `SaveFilePicker` replace `OpenFileDialog` and
+  `SaveFileDialog` in every window, with the same properties, so a window
+  says what it wants once and the platform decides the dialog.
+  `FolderBrowserEx` asks the portal on Unix. The data directory window used
+  `FolderBrowserDialog`, the one picker that went around `FolderBrowserEx`;
+  it uses `FolderBrowserEx` now, which on Windows is the Explorer-style
+  dialog instead of the old tree.
+- The folder picker's "Include sub-folders" box goes into the portal's dialog
+  as a choice, so on Linux with a portal it is in the dialog as on Windows,
+  and the wizard's own box is hidden there.
+
+**Measured**, against a stand-in portal on a private bus (details in
+docs/folder-picker.md): every answer the frontend reads came back as sent,
+including paths with spaces and quotes; with no bus, no portal, or a portal
+too old for folders, the toolkit dialog is used. The interface tests: 326
+run, 2 failed - `PictureIt` and `WizardSettingsStep`, which fail the same way
+without this change.
+
+Tried in the running frontend with KDE's chooser: opening a project, the wizard's
+firmware folder scan (the tick box was in KDE's dialog), the data directory,
+and a save typed without its extension. All four worked.
+
+**Not proved:** how other desktops' choosers (GNOME's, and the rest) treat
+what they are sent. A chooser may ignore the tick box, the filter to open on,
+or the window it belongs to.
