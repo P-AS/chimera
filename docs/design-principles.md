@@ -1148,7 +1148,6 @@ the user owns), mounted hash-bound and cited by the movie header like any rom
 or firmware. Cores whose save data is plain machine memory (NES SRAM) export
 nothing and need nothing. First tenant: PPSSPP's RAM memstick.
 
-
 ## Wide input: a controller is as wide as it declares (2026-08-25)
 
 The packed uint64 button mask was an accident of the first cores, not a
@@ -1310,7 +1309,6 @@ The discipline that makes all of it hold: **everything recorded is a function of
 the inputs**. Not a timestamp, not a hostname, not a path. The moment provenance
 starts describing the moment rather than the ingredients, two builds of one
 commit stop matching and every hash in the chain becomes noise.
-
 
 ## A long wait says what it is waiting for (user-asked, 2026-09-05)
 
@@ -3112,7 +3110,6 @@ the next save removes it. Honoring the claim again needs the missing half first:
 a hardware path that reproduces itself, and a way to tell a history from a
 session that ended in a crash.
 
-
 ## A greenzone is trusted when the session that wrote it finished (user-decided, 2026-09-16)
 
 The 2026-09-14 withdrawal above is narrowed, not reversed. It refused every
@@ -4757,7 +4754,6 @@ choose. Removed: the IWAD the person gives is the release, and the
 compatibility level is how it plays. The import hands that IWAD to the
 wizard whatever its hash, and a game core takes it as the project's own.
 
-
 ## Chimera knows no system: the cores say what theirs are called (user-decided, 2026-10-05)
 
 Chimera carried three tables about the machines it does not emulate:
@@ -5746,7 +5742,6 @@ Tested with a new unit test (it fails without the fix, with the greenzone
 set to every frame and to every 7 frames) and the existing randomized
 history test, which loads branches.
 
-
 ## Azahar: internal resolution, with states that carry the renderer's surfaces (user-decided, 2026-10-10, issue 223)
 
 On 2026-10-09 Azahar's internal resolution was measured and left out: at 2x
@@ -6271,7 +6266,6 @@ of 22, the Windows build compiles, `check-no-network.sh` is clean. The same
 day it ran on Windows on a GeForce GTX 1060, which the session names on
 standard error once the core has made its device. Not run: the interface.
 
-
 ## Xenia, the Xbox 360 core, joins the official cores (user-decided, 2026-10-11, issue 171)
 
 The owner asked for it: "add it", after the core's repository was made
@@ -6329,7 +6323,6 @@ renderer that also has OpenGL"), with what was measured on the GeForce GTX
 
 What is not proven: Chimera's window has not run a core with the setting on
 `vulkan-hw` - only `chimera-run` has.
-
 
 ## Zeebx, the Zeebo core, joins the official cores (user-decided, 2026-10-12, issue 240)
 
@@ -6453,7 +6446,6 @@ the MAME core, in Chimera's window under Xvfb: a game opened with its device
 set taken from the firmware store runs as the headless runner runs it, and
 with no such firmware known the project is not opened and the set is named.
 Nothing of this was tried on Windows.
-
 
 ## A project is opened in one place, in the engine (user-decided, 2026-10-12)
 
@@ -6988,7 +6980,6 @@ pass with both packages installed (22 tests). On Windows, earlier local
 builds of both ran the same as on Linux in the headless runner; the
 published packages were not run there.
 
-
 ## The MCP server's menu entry has an icon, and a dot for "started" (user-decided, 2026-10-12)
 
 The owner asked for an icon on Tools > MCP Server..., as every other entry
@@ -7004,7 +6995,6 @@ started".
 
 Measured: the interface tests, 0 failed of 1,065 with the screenshots on;
 the sheet of menu icons was looked at in the light and the dark theme.
-
 
 ## Vulkan is the default where the emulator's own default is Vulkan (user-decided, 2026-10-12, issue 248)
 
@@ -7134,8 +7124,6 @@ after 600 frames of Pong, and the same picture and memory after 1,200 frames
 of Shinobi. The games that were played with the local build are listed in
 the core's docs/PLAN.md. The published package was not run on Windows; an
 earlier local build was.
-
-
 
 ## A file with no extension is a format a slot can declare (2026-10-13, issue 250)
 
@@ -7453,7 +7441,6 @@ was seen to fail with the name read from the wrong place and with the free
 memory read instead of the installed. The interface's report text tests
 cover the line filled in and left as a note.
 
-
 ## PUAE runs the Amiga CD32 and the Commodore CDTV (user-decided, 2026-10-14)
 
 The owner asked for the CD32 and the CDTV in the PUAE core, then said to
@@ -7471,3 +7458,31 @@ machines' CD players play an audio CD the tests write, native and sandbox
 give the same results with savestates, and Windows gives Linux's. Turrican
 II does not start on the CDTV (it restarts after the start-up screen, in a
 build with upstream's own threads too).
+
+## An encode keeps its way back in a state file (2026-10-15, issue 282)
+
+Encode Video refused to start on an RPCS3 project with "Arithmetic operation
+resulted in an overflow". Before an encode borrows the emulator it keeps
+where the user was, to give it back at the end; that went through
+`SaveStateBinary` into a `MemoryStream`, and both the engine call's length
+(`checked((int)len)`) and the stream stop at 2 GB. The reporter's state was
+2.1 GB.
+
+The way back is now a state file, written and read by the engine exactly as
+a branch's state is (#84, `IStatable.SaveStateToFile`, which falls back to a
+stream for a core that has no state files): `ITasMovie.NewScratchStatePath`
+gives a path in the project's cache folder, outside `Branches/`, whose
+tidying deletes any file no branch names. The file is deleted when the
+emulator is handed back. If it cannot be written, the encode does not start
+and says why.
+
+Not changed: two other places still copy a whole state into a byte array,
+Lua's future-frame callback and TAStudio's greenzone integrity check. Neither
+is on a path a person takes to make a video.
+
+Tested: the end-to-end test's encode now also checks that no such file is
+left behind; it was seen to fail with the delete taken out. End-to-end test
+script 88 passed; interface tests 1,077 run, 0 failed, 23 skipped. A state
+over 2 GB was not made in a test; the file path is the one branches have
+used with 4.31 GiB PlayStation 3 states since #84.
+

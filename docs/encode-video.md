@@ -59,6 +59,13 @@ greenzone state is kept and no lag is written down for the frames that go by.
 A run of a hundred thousand frames costs no memory and leaves the project
 exactly as it was found - looking at something should not change it.
 
+Where the emulator was when the encode borrowed it is kept as a state file
+in the project's cache folder (`encode-restore-<id>.state`), written and read
+by the engine the way a branch's state is, and deleted when the emulator is
+handed back. It used to be kept in memory, and a machine whose state is
+bigger than 2 GB (a PlayStation 3's often is) could not start an encode at
+all (chimera issue 282).
+
 The frames that go into the file are the frames the emulator produced, not a
 second rendering of them: the job does not emulate anything itself. It only
 makes the main run loop run a frame every iteration, unthrottled, and decides

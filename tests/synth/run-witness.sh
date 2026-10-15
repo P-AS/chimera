@@ -1657,8 +1657,13 @@ ENCPY
 				report "V:box:encode" FAIL "video holds ${ecount:-?} frames, asked for $eframes ($efrom to $eto inclusive)"
 			elif [ "$ebefore" != "$eafter" ]; then
 				report "V:box:encode" FAIL "emulator was left on frame $eafter, not the $ebefore it was borrowed from"
+			elif [ -n "$(find "$work" "$repo_root/build" -name 'encode-restore-*.state' 2>/dev/null | head -1)" ]; then
+				# where the user was is kept as a state file while the encode runs
+				# (chimera issue 282: a state over 2 GB did not fit the byte array
+				# it was kept in), and the file goes when the emulator is handed back
+				report "V:box:encode" FAIL "the state kept to hand the emulator back was left behind: $(find "$work" "$repo_root/build" -name 'encode-restore-*.state' | head -1)"
 			else
-				report "V:box:encode" PASS "$eframes frames written, emulator handed back on frame $eafter"
+				report "V:box:encode" PASS "$eframes frames written, emulator handed back on frame $eafter from a state file, which was then removed"
 			fi
 		fi
 	fi

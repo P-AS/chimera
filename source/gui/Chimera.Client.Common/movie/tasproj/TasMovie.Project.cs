@@ -61,6 +61,13 @@ namespace Chimera.Client.Common
 		/// <summary>Where a branch's state file is, from the name the branch holds.</summary>
 		public string BranchStatePath(string stateFile) => Path.Combine(BranchStateDirectory, stateFile);
 
+		public string NewScratchStatePath(string purpose)
+		{
+			var dir = ProjectCache.DirectoryFor(Project.Id);
+			Directory.CreateDirectory(dir);
+			return Path.Combine(dir, $"{purpose}-{Guid.NewGuid():N}.state");
+		}
+
 		/// <summary>A name nothing else has, in a directory that exists: where a new branch's state goes.</summary>
 		public string NewBranchStatePath(out string stateFile)
 		{
