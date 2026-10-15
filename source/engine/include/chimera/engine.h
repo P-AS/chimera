@@ -984,6 +984,9 @@ CE_API void ce_gl_release(void);
  * the rebuild exists for. Default 1: a core that says nothing is unaffected. */
 CE_API void ce_gl_rebuild_on_state_load(int32_t on);
 CE_API void *ce_gl_flight_recorder(uint32_t *bytes);
+/* A Vulkan bridge command into the same flight recorder, as opcode +
+ * 0x40000000 (the session hands this to miniBox's Vulkan host). */
+CE_API void ce_vk_flight_note(unsigned op);
 
 /* ---------------------------------------------------------------------------
  * The compile cache. A core that recompiles its machine's code keeps the

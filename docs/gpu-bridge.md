@@ -840,6 +840,17 @@ oldest first, repeats folded (`glUniform4fv x37`), named from miniBox's master
 list - generated into the module at build time, so the numbering is the
 bridge's. `test_gl_flight` holds the layout to what the module reads.
 
+**Vulkan commands too (2026-10-15, chimera issues 276 and 278).** Two Vulkan
+drivers (AMD's for Xenia, Intel's for Dolphin) crashed with notes that named
+the driver and nothing it had been given. miniBox's Vulkan host now tells a
+hook each command before the driver sees it
+(`chimera_vk_host_set_call_hook`); the session points it at
+`ce_vk_flight_note`, which writes the opcode plus 0x40000000 into the same
+ring. The crash module names those from miniBox's Vulkan list
+(`source/crash/gen-vk-names.py`), so a note now reads `vk vkCmdEndRenderPass`
+among the GL calls and markers, and a crash inside a Vulkan driver leaves its
+command last. The note's heading says "gl and vk".
+
 ## The picture after a load
 
 A state load rewinds the machine and not the renderer. What the bridge

@@ -1696,6 +1696,7 @@ ce_session *ce_session_open(
 		}
 		else
 		{
+			chimera_vk_host_set_call_hook(ce_vk_flight_note);
 			chimera::WbxReturn r;
 			host->wbx_get_callback_addr(s->obj, reinterpret_cast<void *>(&chimera_vk_host_dispatch), 2, &r);
 			if (!r.ok() || r.data == 0)

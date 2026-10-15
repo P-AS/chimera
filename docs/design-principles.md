@@ -7486,3 +7486,25 @@ script 88 passed; interface tests 1,077 run, 0 failed, 23 skipped. A state
 over 2 GB was not made in a test; the file path is the one branches have
 used with 4.31 GiB PlayStation 3 states since #84.
 
+## Vulkan commands in crash notes (2026-10-15, issues 276 and 278)
+
+Two reports crashed inside a Vulkan driver - AMD's (amdvlk64.dll) under
+Xenia, Intel's (igvk64.dll) under Dolphin - while standalone Xenia and
+standalone Dolphin ran on the same computers. The crash notes named the
+driver and an offset; the GPU bridge's flight recorder held only OpenGL
+calls, so nothing said what Chimera had just handed the driver.
+
+Decided: Vulkan commands go into the same flight recorder rather than a
+second one, so the crash block's layout and the module's reading of it are
+unchanged. miniBox's Vulkan host gained a hook called with each opcode
+before the driver (`chimera_vk_host_set_call_hook`, miniBox 9b67f67); the
+engine's `ce_vk_flight_note` writes it tagged with 0x40000000; the crash
+module names tagged entries from miniBox's Vulkan list, generated at build
+time like the GL names.
+
+Tested: `test_gl_flight` writes a Vulkan entry directly and through the
+host's dispatcher and reads it back tagged; it was seen to fail with the tag
+left out. Engine tests 26 passed; end-to-end test script 88 passed;
+miniBox's tests 19 passed; the Windows build compiles the module with the
+table. Not seen: a real crash note on Windows with Vulkan lines in it.
+

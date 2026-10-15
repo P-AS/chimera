@@ -62,9 +62,14 @@ if host_windows
     output: 'gl_names.h',
     command: [find_program('python3'), files('source/crash/gen-gl-names.py'),
       files('extern/chimera-common-minibox/source/gl/gl-entry-points.txt'), '@OUTPUT@'])
+  # and the Vulkan ones from the Vulkan bridge's list (chimera issues 276, 278)
+  chimera_crash_vk_names = custom_target('chimera-crash-vk-names',
+    output: 'vk_names.h',
+    command: [find_program('python3'), files('source/crash/gen-vk-names.py'),
+      files('extern/chimera-common-minibox/source/vk/vk-entry-points.txt'), '@OUTPUT@'])
   shared_library(
     'chimera_crash',
-    ['source/crash/chimera_crash.c', chimera_crash_gl_names],
+    ['source/crash/chimera_crash.c', chimera_crash_gl_names, chimera_crash_vk_names],
     name_prefix: '',
     dependencies: [cc.find_library('dbghelp'), cc.find_library('psapi')],
     install: true,

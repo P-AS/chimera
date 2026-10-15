@@ -11,6 +11,10 @@
 #include "chimera/engine.h"
 
 #include <cassert>
+#ifdef CE_VK_BRIDGE
+#include "vk-bridge.h"
+#include "vk-host.h"
+#endif
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -92,6 +96,28 @@ int main()
 	assert(h.written == before + 1 + h.capacity + 3);
 	e = newestOf(recorder);
 	assert(e.op == kStateLoaded && e.detail == h.capacity + 2);
+
+	/* A Vulkan bridge command goes into the same ring, as its opcode plus
+	 * 0x40000000 (issues 276 and 278): the crash module names it from Vulkan's
+	 * list, so a driver that crashes leaves its command last in the note. */
+	{
+		const uint64_t was = headerOf(recorder).written;
+		ce_vk_flight_note(236);
+		assert(headerOf(recorder).written == was + 1);
+		e = newestOf(recorder);
+		assert(e.op == (0x40000000u | 236u) && e.detail == 0);
+#ifdef CE_VK_BRIDGE
+		/* and miniBox's Vulkan host tells it, before answering: the bridge's
+		 * own question "how long is your list" needs no driver at all */
+		chimera_vk_host_set_call_hook(ce_vk_flight_note);
+		const uintptr_t length = chimera_vk_host_dispatch(VKB_OP_LIST_LENGTH, 0, 0, 0, 0, 0);
+		chimera_vk_host_set_call_hook(nullptr);
+		assert(length != 0);
+		assert(headerOf(recorder).written == was + 2);
+		e = newestOf(recorder);
+		assert(e.op == (0x40000000u | VKB_OP_LIST_LENGTH));
+#endif
+	}
 
 	/* A restore moves the id the guest compares (issue #43): its objects' names
 	 * came back, what they held did not, and a renderer rebuilds on a moved id.

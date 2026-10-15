@@ -595,6 +595,7 @@ enum : uint32_t
 	kFlightStateLoaded = 0xFFFFFF03, /* a savestate was restored; detail: the frame restored to */
 	kFlightSession = 0xFFFFFF04,     /* a session took the bridge (a fresh context id) */
 	kFlightStopped = 0xFFFFFF05,     /* the context was destroyed */
+	kFlightVulkan = 0x40000000,      /* added to a Vulkan bridge opcode: the crash module names it from Vulkan's list */
 };
 enum { kFlightCapacity = 8192 }; /* a power of two */
 struct FlightEntry
@@ -1610,6 +1611,14 @@ extern "C" void *ce_gl_flight_recorder(uint32_t *bytes)
 	return &g_flight;
 }
 
+/* The Vulkan bridge's commands go into the same ring (chimera issues 276 and
+ * 278: two Vulkan drivers crashed with nothing to say what they were given).
+ * miniBox's host calls this before the driver sees the command. */
+extern "C" void ce_vk_flight_note(unsigned op)
+{
+	flightNote(kFlightVulkan | (op & 0x0FFFFFFFu), 0);
+}
+
 /* Mint a fresh id. It need only DIFFER from any other - the guest compares it
  * for equality and nothing else - so it is taken from where this process sits
  * in memory (the loader decides that anew every run), the clock, and a
@@ -1750,6 +1759,7 @@ extern "C" int32_t ce_gl_requested(void) { return g_requested; }
 extern "C" int32_t ce_gl_available(void) { return 0; }
 extern "C" const char *ce_gl_description(void) { return ""; }
 extern "C" void *ce_gl_flight_recorder(uint32_t *bytes) { if (bytes) *bytes = 0; return nullptr; }
+extern "C" void ce_vk_flight_note(unsigned) { }
 extern "C" void ce_gl_release(void) { }
 extern "C" void ce_gl_audit_frame(int64_t) { }
 extern "C" void ce_gl_state_loaded(int64_t) { }
