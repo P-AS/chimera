@@ -1294,7 +1294,9 @@ CE_API int64_t ce_session_domain_size(const ce_session *s, int32_t index);
 CE_API int32_t ce_session_domain_writable(const ce_session *s, int32_t index);
 /* A domain that is no memory of the machine's, only somewhere a core puts
  * what its game properties point at - a value with no one place of its own,
- * copied where the engine can read it (chimera#218). The core says so with an
+ * copied where the engine can read it (chimera#218) - or a block that a bus
+ * already shows, in another byte order (ares' Nintendo 64, chimera#288). The
+ * core says so with an
  * optional guest export, int32_t GetMemoryDomainHidden(int32_t index). Game
  * properties read and write through such a domain like any other; the memory
  * tools do not offer it: it is not in the Hex Editor's, RAM Search's or RAM

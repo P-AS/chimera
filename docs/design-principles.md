@@ -8004,3 +8004,17 @@ at a time. What was decided, and what was done:
   install costs (2026-09-20) was put on main at its own date, and two local
   branches that were already merged or now carried were deleted.
 
+
+## A block that a bus already shows is hidden from the memory tools (2026-10-15)
+
+Issue 288: in an ares Nintendo 64 project, RAM Search, RAM Watch and the Hex
+Editor listed RDRAM twice, and the two copies disagreed on every value wider
+than a byte. ares publishes the console's memory twice: as blocks, which are
+its own storage with each 32-bit word's bytes in the computer's order (the
+core's tests digest them), and as buses in the console's order, mostly under
+the same names. Nothing new was needed in Chimera: the core marks the blocks
+hidden with the export a game core already uses for its mailboxes
+(`GetMemoryDomainHidden`, issue 218), lists its buses with RDRAM first, and
+exports `ReadBus` (chimera-core-ares 1597345). The porting guide and the
+comment on `ce_session_domain_hidden` now name this second use. Measured on
+Super Mario 64: a search over the 8 MB DCache bus went from 193 ms to 56 ms.

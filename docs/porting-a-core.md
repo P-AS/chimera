@@ -323,7 +323,13 @@ Probed once after `Init`; absent exports simply mean the tool is not offered.
   property points at, because it has no one place in the machine - is marked
   with `int32_t GetMemoryDomainHidden(int32_t index)`. Properties read and
   write through it; no memory tool lists it. Keep its bytes in memory that is
-  in no state, like every answer to a tool.
+  in no state, like every answer to a tool. The same export hides **a block a
+  bus already shows**: ares publishes the Nintendo 64's memory as blocks in
+  its own storage order, for its tests, and as buses in the console's order,
+  under the same names; listing both put RDRAM in the lists twice, with the
+  two disagreeing on every value wider than a byte (chimera#288). Hide the
+  copy a person should not search, and list the buses in the order a person
+  wants them, the main memory first: a tool opens on the first one.
 - **Which stack a tool's call runs on.** Every export the host calls - a
   frame, and everything asked between frames - runs on the guest's one main
   stack, from its top (miniBox, docs/MACHINE-SPEC.md: both guest stacks are
