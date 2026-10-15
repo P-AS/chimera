@@ -7647,3 +7647,21 @@ Tested: a new test (AProjectOpenedFromElsewhereLosesItsCachedGreenzone) keeps
 the greenzone for the same path, discards history, lag log and branch states
 for another, keeps the budgets, and leaves an unlabelled cache alone; with
 the path check made to always match, it failed.
+
+## A recycled GL buffer is unbound, but may still be one a vertex array points at (user-decided, 2026-10-15)
+
+The GL bridge keeps deleted buffers to serve the next glGenBuffers (a
+renderer's generations once cost 1.74 ms of a frame). Since a99045b a
+recycled buffer leaves every target it is still bound to, as GL's own
+delete would have it, and storage or maps made through the EXT and named
+calls stop it being recycled.
+
+What it does not do: send a buffer to the driver for real when a vertex
+array, a buffer texture or an indexed binding still holds it. In GL that
+holder keeps drawing the old contents; a recycled buffer shows it the next
+owner's data. Treating every such buffer as held made 1,127 of Ruffle's
+1,648 deletes real ones, giving back most of what the pool saves, for a
+pattern - drawing through a vertex array after deleting its buffer - that is
+legal but rare and that no core is known to use. The owner chose speed. A
+core that does it would draw wrong geometry; the cure then is that rule, or
+tracking which vertex arrays point at which buffers.
