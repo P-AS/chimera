@@ -1070,6 +1070,56 @@ static CeGlBufferPool &bufferPool()
 	return pool;
 }
 
+/* What each buffer target has bound, as the binds crossed the bridge. A pooled
+ * delete unbinds its name where a real one would - GL unbinds a deleted buffer
+ * from every target of the current context, and a pooled name left bound to
+ * the pixel-unpack target made the next upload read the guest's pointer as an
+ * offset into it. Asking the driver for every target on every delete would
+ * cost more than the pool saves, so this is consulted instead; it is only a
+ * hint, and the driver is asked before anything is unbound. */
+struct BoundRecord
+{
+	GLenum target;
+	GLuint name;
+};
+static BoundRecord g_bound[] = {
+	{ GL_ARRAY_BUFFER, 0 }, { GL_ELEMENT_ARRAY_BUFFER, 0 }, { GL_PIXEL_PACK_BUFFER, 0 },
+	{ GL_PIXEL_UNPACK_BUFFER, 0 }, { GL_UNIFORM_BUFFER, 0 }, { GL_COPY_READ_BUFFER, 0 },
+	{ GL_COPY_WRITE_BUFFER, 0 }, { 0x8C8E, 0 } /* GL_TRANSFORM_FEEDBACK_BUFFER */,
+	{ 0x8C2A, 0 } /* GL_TEXTURE_BUFFER */, { 0x8F3F, 0 } /* GL_DRAW_INDIRECT_BUFFER */,
+	{ 0x90EE, 0 } /* GL_DISPATCH_INDIRECT_BUFFER */, { 0x90D2, 0 } /* GL_SHADER_STORAGE_BUFFER */,
+	{ 0x92C0, 0 } /* GL_ATOMIC_COUNTER_BUFFER */, { 0x9192, 0 } /* GL_QUERY_BUFFER */,
+};
+
+static void recordBind(GLenum target, GLuint name)
+{
+	for (BoundRecord &r : g_bound)
+		if (r.target == target) { r.name = name; return; }
+}
+
+static GLuint recordedOn(GLenum target)
+{
+	for (const BoundRecord &r : g_bound)
+		if (r.target == target) return r.name;
+	return 0;
+}
+
+static GLuint boundBuffer(GLenum target);
+
+/* A name leaves every target it was bound to: really (`unbind`, a pooled
+ * delete, after the driver confirms it is still there) or in the record only
+ * (a real delete, which unbinds by itself). */
+static void forgetBinds(GLuint name, bool unbind)
+{
+	if (name == 0) return;
+	for (BoundRecord &r : g_bound)
+	{
+		if (r.name != name) continue;
+		if (unbind && boundBuffer(r.target) == name) glBindBuffer(r.target, 0);
+		r.name = 0;
+	}
+}
+
 /* Called once a buffer is mapped or given storage on a target boundBuffer() does
  * not know: the pool can no longer tell which names are safe to recycle, so it
  * stops for the rest of the process and gives back what it holds. */
@@ -1223,8 +1273,18 @@ extern "C" uintptr_t BRIDGE_ABI ce_gl_dispatch(uintptr_t op, uintptr_t a, uintpt
 						: what == CeGlBufferPool::Delete::Pool ? "pooled" : "real");
 			/* not ours, still mapped, immutable, or the pool is full: a real
 			 * delete, so a guest bug stays visible, a mapping and a storage end
-			 * the way the guest meant, and a lopsided guest cannot leak */
-			if (what == CeGlBufferPool::Delete::Real) glDeleteBuffers(1, &name);
+			 * the way the guest meant, and a lopsided guest cannot leak - and
+			 * either way the name leaves the targets it was bound to, as GL's
+			 * own delete would have it */
+			if (what == CeGlBufferPool::Delete::Real)
+			{
+				glDeleteBuffers(1, &name);
+				forgetBinds(name, false);
+			}
+			else if (what == CeGlBufferPool::Delete::Pool)
+			{
+				forgetBinds(name, true);
+			}
 		}
 		return 0;
 	}
@@ -1535,6 +1595,42 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			auto *p = reinterpret_cast<ChimeraGlArgs_glIsSync *>(a);
 			return (uintptr_t)(syncFor(p->sync) != nullptr ? GL_TRUE : GL_FALSE);
 		}
+
+		/* What the buffer pool must know of, noted on the way to the generated
+		 * case below (see BoundRecord and bufferPool()). */
+		case CHIMERA_GL_OP_glBindBuffer:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glBindBuffer *>(a);
+			recordBind(p->target, p->buffer);
+			break;
+		}
+		case CHIMERA_GL_OP_glBindBufferBase:
+		{
+			/* (the generic binding point is set too) */
+			auto *p = reinterpret_cast<ChimeraGlArgs_glBindBufferBase *>(a);
+			recordBind(p->target, p->buffer);
+			break;
+		}
+		case CHIMERA_GL_OP_glBindBufferRange:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glBindBufferRange *>(a);
+			recordBind(p->target, p->buffer);
+			break;
+		}
+		/* the storage and map calls the cases above do not cover, by their
+		 * other names: a buffer given storage or mapped through them was pooled */
+		case CHIMERA_GL_OP_glBufferStorageEXT:
+			if (glPool()) bufferPool().noteImmutable(boundBuffer(reinterpret_cast<ChimeraGlArgs_glBufferStorageEXT *>(a)->target), true);
+			break;
+		case CHIMERA_GL_OP_glNamedBufferStorageEXT:
+			bufferPool().noteImmutable(reinterpret_cast<ChimeraGlArgs_glNamedBufferStorageEXT *>(a)->buffer, true);
+			break;
+		case CHIMERA_GL_OP_glMapNamedBuffer:
+			bufferPool().noteMapped(reinterpret_cast<ChimeraGlArgs_glMapNamedBuffer *>(a)->buffer, true);
+			break;
+		case CHIMERA_GL_OP_glMapNamedBufferRangeEXT:
+			bufferPool().noteMapped(reinterpret_cast<ChimeraGlArgs_glMapNamedBufferRangeEXT *>(a)->buffer, true);
+			break;
 
 		default:
 			break;
