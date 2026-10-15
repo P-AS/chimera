@@ -27,6 +27,7 @@
  * be wrong in a way nobody would notice until a game read the end of it.
  */
 #include "media_maker.hpp"
+#include "file_io.hpp"
 
 #include "sha1.hpp"
 
@@ -415,7 +416,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 	const std::vector<uint8_t> jptMData = buildPathTable(true, true);
 
 	/* ---- write ---- */
-	std::FILE *out = std::fopen(outPath.c_str(), "wb");
+	std::FILE *out = chimera::openFile(outPath.c_str(), "wb");
 	if (!out)
 	{
 		error = "cannot create " + outPath;
@@ -569,7 +570,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 	for (size_t i = 0; i < filesFlat.size() && ok; i++)
 	{
 		Node *f = filesFlat[i];
-		std::FILE *in = std::fopen(f->abs.c_str(), "rb");
+		std::FILE *in = chimera::openFile(f->abs.c_str(), "rb");
 		if (!in)
 		{
 			error = "cannot read " + f->name;

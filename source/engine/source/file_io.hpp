@@ -9,6 +9,7 @@
 #define CHIMERA_FILE_IO_HPP
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -50,10 +51,13 @@ public:
 	FileWriter(const FileWriter &) = delete;
 	FileWriter &operator=(const FileWriter &) = delete;
 
+	/* a link is followed: the file it names is the one replaced */
 	bool open(const char *utf8Path);
 	bool write(const void *src, uint64_t len);
-	/* closes and moves into place; false (and nothing left behind) on any failure */
-	bool commit();
+	/* closes and moves into place; false (and nothing left behind) on any failure.
+	 * toDisk waits until the bytes are on the disk before the move, so a power
+	 * cut right after a save cannot leave the new name over an empty file. */
+	bool commit(bool toDisk = false);
 
 private:
 	void *_f = nullptr;
@@ -67,10 +71,26 @@ bool fileExists(const char *utf8Path);
  * answer about it still applies. false when the file cannot be stat'd. */
 bool fileStamp(const char *utf8Path, uint64_t *sizeOut, int64_t *mtimeOut);
 
-/* whole-file write (multifile descriptors); false on any failure */
+/* Whole-file write (projects, multifile descriptors); false on any failure.
+ * Written beside the file and moved over it, so a save that fails part way
+ * (a full disk, the process dying, the power going) leaves the last good copy. */
 bool writeFile(const char *utf8Path, const uint8_t *data, uint64_t len);
 
 bool isDirectory(const char *utf8Path);
+
+/* The C file calls, for UTF-8 paths. On Windows the plain fopen, remove and
+ * rename read a path in the ANSI code page, so a Windows user whose name is
+ * not plain ASCII could not open anything in their own profile folder; these
+ * widen the path first. */
+FILE *openFile(const char *utf8Path, const char *mode);
+bool removeFile(const char *utf8Path);
+/* Moves from over to, replacing it in one step. On Windows a virus scanner or
+ * the indexer may hold the old file for a moment; that is waited out (up to
+ * about a second). */
+bool replaceFile(const char *fromUtf8, const char *toUtf8);
+/* fseek with a 64-bit offset: Windows' long is 32 bits, so the plain call
+ * cannot reach past 2 GiB there. */
+bool seekFile(FILE *f, int64_t offset, int whence);
 
 } // namespace chimera
 

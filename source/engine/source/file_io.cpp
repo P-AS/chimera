@@ -8,8 +8,10 @@
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <io.h>
 #else
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace chimera {
@@ -84,6 +86,14 @@ FileWriter::~FileWriter()
 bool FileWriter::open(const char *utf8Path)
 {
 	_path = utf8Path;
+	std::error_code ec;
+	const auto asked = std::filesystem::u8path(_path);
+	if (std::filesystem::is_symlink(asked, ec))
+	{
+		/* moving a file over a link would replace the link, not what it names */
+		const auto target = std::filesystem::weakly_canonical(asked, ec);
+		if (!ec) _path = target.u8string();
+	}
 	_tmp = _path + ".writing";
 	_failed = false;
 	_f = openWrite(_tmp.c_str());
@@ -97,27 +107,70 @@ bool FileWriter::write(const void *src, uint64_t len)
 	return !_failed;
 }
 
-bool FileWriter::commit()
+bool FileWriter::commit(bool toDisk)
 {
 	if (_f == nullptr) return false;
-	const bool closed = std::fclose(static_cast<FILE *>(_f)) == 0;
-	_f = nullptr;
-	std::error_code ec;
-	const auto tmp = std::filesystem::u8path(_tmp), target = std::filesystem::u8path(_path);
-	if (_failed || !closed)
+	FILE *f = static_cast<FILE *>(_f);
+	if (toDisk && !_failed)
 	{
-		std::filesystem::remove(tmp, ec);
+#if defined(_WIN32)
+		if (std::fflush(f) != 0 || _commit(_fileno(f)) != 0) _failed = true;
+#else
+		if (std::fflush(f) != 0 || fsync(fileno(f)) != 0) _failed = true;
+#endif
+	}
+	const bool closed = std::fclose(f) == 0;
+	_f = nullptr;
+	if (_failed || !closed || !replaceFile(_tmp.c_str(), _path.c_str()))
+	{
+		removeFile(_tmp.c_str());
 		return false;
 	}
-	std::filesystem::rename(tmp, target, ec);
-	if (ec)
+	return true;
+}
+
+bool replaceFile(const char *fromUtf8, const char *toUtf8)
+{
+#if defined(_WIN32)
+	const std::wstring from = widen(fromUtf8), to = widen(toUtf8);
+	for (int attempt = 0;; attempt++)
 	{
-		/* not every platform's rename replaces */
-		std::filesystem::remove(target, ec);
-		std::filesystem::rename(tmp, target, ec);
+		if (MoveFileExW(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return true;
+		const DWORD e = GetLastError();
+		const bool held = e == ERROR_SHARING_VIOLATION || e == ERROR_ACCESS_DENIED || e == ERROR_LOCK_VIOLATION;
+		if (!held || attempt >= 20) return false;
+		Sleep(50);
 	}
-	if (ec) std::filesystem::remove(tmp, ec);
-	return !ec;
+#else
+	return std::rename(fromUtf8, toUtf8) == 0;
+#endif
+}
+
+bool removeFile(const char *utf8Path)
+{
+#if defined(_WIN32)
+	return _wremove(widen(utf8Path).c_str()) == 0;
+#else
+	return std::remove(utf8Path) == 0;
+#endif
+}
+
+bool seekFile(FILE *f, int64_t offset, int whence)
+{
+#if defined(_WIN32)
+	return _fseeki64(f, offset, whence) == 0;
+#else
+	return fseeko(f, static_cast<off_t>(offset), whence) == 0;
+#endif
+}
+
+FILE *openFile(const char *utf8Path, const char *mode)
+{
+#if defined(_WIN32)
+	return _wfopen(widen(utf8Path).c_str(), widen(mode).c_str());
+#else
+	return std::fopen(utf8Path, mode);
+#endif
 }
 
 bool readFile(const char *utf8Path, std::vector<uint8_t> &out)
@@ -138,11 +191,8 @@ bool readFile(const char *utf8Path, std::vector<uint8_t> &out)
 
 bool writeFile(const char *utf8Path, const uint8_t *data, uint64_t len)
 {
-	FILE *f = openWrite(utf8Path);
-	if (f == nullptr) return false;
-	bool ok = len == 0 || std::fwrite(data, 1, len, f) == len;
-	if (std::fclose(f) != 0) ok = false;
-	return ok;
+	FileWriter out;
+	return out.open(utf8Path) && out.write(data, len) && out.commit(true);
 }
 
 bool fileExists(const char *utf8Path)

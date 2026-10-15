@@ -1,5 +1,6 @@
 #include "state_history.hpp"
 #include "zstd_dyn.hpp"
+#include "file_io.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -750,14 +751,14 @@ void StateHistory::sweepStaleSpills(const std::string &dir)
 {
 	if (dir.empty()) return;
 	std::error_code ec;
-	for (const auto &entry : std::filesystem::directory_iterator(dir, ec))
+	for (const auto &entry : std::filesystem::directory_iterator(std::filesystem::u8path(dir), ec))
 	{
 		if (ec) return;
 		std::error_code one;
 		if (!entry.is_regular_file(one) || one) continue;
-		const std::string name = entry.path().filename().string();
+		const std::string name = entry.path().filename().u8string();
 		if (name.rfind("history-spill-", 0) != 0) continue;
-		if (name == std::filesystem::path(m_spillPath).filename().string()) continue;   /* ours */
+		if (name == std::filesystem::u8path(m_spillPath).filename().u8string()) continue;   /* ours */
 		std::filesystem::remove(entry.path(), one);
 	}
 }
@@ -928,8 +929,8 @@ bool StateHistory::compactSpill()
 		std::fclose(m_spill);
 		m_spill = nullptr;
 		if (m_spillRead != nullptr) { std::fclose(m_spillRead); m_spillRead = nullptr; }
-		m_spill = std::fopen(m_spillPath.c_str(), "w+b");
-		if (m_spill != nullptr) m_spillRead = std::fopen(m_spillPath.c_str(), "rb");
+		m_spill = chimera::openFile(m_spillPath.c_str(), "w+b");
+		if (m_spill != nullptr) m_spillRead = chimera::openFile(m_spillPath.c_str(), "rb");
 		m_spillBytes = 0;
 		m_fileBytes = 0;
 		m_writtenThrough = 0;
@@ -940,7 +941,7 @@ bool StateHistory::compactSpill()
 
 	const std::string path = m_spillPath;
 	const std::string tmp = path + ".compacting";
-	std::FILE *out = std::fopen(tmp.c_str(), "w+b");
+	std::FILE *out = chimera::openFile(tmp.c_str(), "w+b");
 	if (out == nullptr) return false;
 
 	/* What each stretch will be once this works - applied only if it does. The
@@ -960,17 +961,17 @@ bool StateHistory::compactSpill()
 			|| !writeAll(out, buf.data(), buf.size()))
 		{
 			std::fclose(out);
-			std::remove(tmp.c_str());
+			chimera::removeFile(tmp.c_str());
 			return false;
 		}
 		placed.emplace_back(at, physAt);
 		at += seg.spillLength;
 		physAt += seg.physLength;
 	}
-	if (std::fflush(out) != 0)
+	const bool flushed = std::fflush(out) == 0;
+	if (std::fclose(out) != 0 || !flushed)
 	{
-		std::fclose(out);
-		std::remove(tmp.c_str());
+		chimera::removeFile(tmp.c_str());
 		return false;
 	}
 
@@ -979,18 +980,18 @@ bool StateHistory::compactSpill()
 	std::fclose(m_spill);
 	m_spill = nullptr;
 	if (m_spillRead != nullptr) { std::fclose(m_spillRead); m_spillRead = nullptr; }
-	if (std::rename(tmp.c_str(), path.c_str()) != 0)
+	/* Every handle on both files is closed by now: Windows will not move a file
+	 * that is open, nor (with the C rename) over one that exists. */
+	if (!chimera::replaceFile(tmp.c_str(), path.c_str()))
 	{
 		/* the old file is still there and still right; reopen it and give up */
-		std::fclose(out);
-		std::remove(tmp.c_str());
-		m_spill = std::fopen(path.c_str(), "r+b");
-		m_spillRead = std::fopen(path.c_str(), "rb");
+		chimera::removeFile(tmp.c_str());
+		m_spill = chimera::openFile(path.c_str(), "r+b");
+		m_spillRead = chimera::openFile(path.c_str(), "rb");
 		return false;
 	}
-	std::fclose(out);
-	m_spill = std::fopen(path.c_str(), "r+b");
-	m_spillRead = std::fopen(path.c_str(), "rb");
+	m_spill = chimera::openFile(path.c_str(), "r+b");
+	m_spillRead = chimera::openFile(path.c_str(), "rb");
 	if (m_spill == nullptr || m_spillRead == nullptr) return false;
 	{
 		size_t k = 0;
@@ -1053,7 +1054,7 @@ void StateHistory::dropSpillFile()
 	{
 		std::fclose(m_spill);
 		m_spill = nullptr;
-		std::remove(m_spillPath.c_str());
+		chimera::removeFile(m_spillPath.c_str());
 	}
 	m_spillBytes = 0;
 	m_spillLive = 0;
@@ -2744,11 +2745,11 @@ bool StateHistory::spill(Segment &seg)
 	if (m_spill == nullptr)
 	{
 		m_spillPath = m_spillDir + "/" + spillFileName();
-		m_spill = std::fopen(m_spillPath.c_str(), "w+b");
+		m_spill = chimera::openFile(m_spillPath.c_str(), "w+b");
 		if (m_spill == nullptr) return false;
 		/* the loop's own view of the same file: its own position, so a read
 		 * here and a write there cannot move each other (see m_spillRead) */
-		m_spillRead = std::fopen(m_spillPath.c_str(), "rb");
+		m_spillRead = chimera::openFile(m_spillPath.c_str(), "rb");
 		if (m_spillRead == nullptr) { std::fclose(m_spill); m_spill = nullptr; return false; }
 		m_spillBytes = 0;
 	}
@@ -3358,7 +3359,7 @@ bool StateHistory::copySpilledBodyV5(std::FILE *spill, const std::function<bool(
 bool StateHistory::writeHistoryFile(std::FILE *spill, const char *path, const std::string &id,
 	const std::vector<Segment> &segments, std::string &error)
 {
-	std::FILE *f = std::fopen(path, "wb");
+	std::FILE *f = chimera::openFile(path, "wb");
 	if (f == nullptr)
 	{
 		error = std::string("could not write the state history: ") + std::strerror(errno);
@@ -3403,7 +3404,7 @@ bool StateHistory::writeHistoryFile(std::FILE *spill, const char *path, const st
 	if (!ok)
 	{
 		error = "the state history could not be written in full";
-		std::remove(path);   /* half a history is worse than none */
+		chimera::removeFile(path);   /* half a history is worse than none */
 		return false;
 	}
 	return true;
@@ -3505,7 +3506,7 @@ bool StateHistory::saveWait(std::string &error)
 bool StateHistory::loadFrom(const char *path, const char *machineId, std::string &error)
 {
 	clear();
-	std::FILE *f = std::fopen(path, "rb");
+	std::FILE *f = chimera::openFile(path, "rb");
 	if (f == nullptr) return true;   /* no history yet is not a failure */
 
 	auto give_up = [&](std::string why) {

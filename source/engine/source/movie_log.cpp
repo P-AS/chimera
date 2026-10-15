@@ -7,15 +7,14 @@
  */
 
 #include "chimera/engine.h"
+#include "file_io.hpp"
 
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <optional>
 #include <string>
-#include <system_error>
 #include <vector>
 
 #ifdef _WIN32
@@ -182,7 +181,7 @@ std::string imageOf(const ce_movie_log *log, bool withMagic)
 
 bool readAllText(const std::string &path, std::string &out)
 {
-	std::FILE *f = std::fopen(path.c_str(), "rb");
+	std::FILE *f = chimera::openFile(path.c_str(), "rb");
 	if (f == nullptr) return false;
 	char buf[1 << 16];
 	size_t n;
@@ -219,7 +218,7 @@ int32_t ce_movie_log_journal_open_with(ce_movie_log *log, const char *path, cons
 	/* The whole log goes to a fresh file first and only then replaces the old
 	 * journal: a crash half way through rewriting must still leave one journal
 	 * that rebuilds everything. */
-	std::FILE *f = std::fopen(fresh.c_str(), "wb");
+	std::FILE *f = chimera::openFile(fresh.c_str(), "wb");
 	if (f == nullptr) return 1;
 	std::string image = imageOf(log, true);
 	/* The frontend's own image - every marker, every branch - goes into the same fresh file, so a
@@ -241,7 +240,7 @@ int32_t ce_movie_log_journal_open_with(ce_movie_log *log, const char *path, cons
 	std::fclose(f);
 	if (!written)
 	{
-		std::remove(fresh.c_str());
+		chimera::removeFile(fresh.c_str());
 		return 1;
 	}
 
@@ -250,17 +249,8 @@ int32_t ce_movie_log_journal_open_with(ce_movie_log *log, const char *path, cons
 		std::fclose(log->journal);
 		log->journal = nullptr;
 	}
-	std::error_code ec;
-	std::filesystem::rename(fresh, target, ec);
-	if (ec)
-	{
-		/* not every platform's rename replaces; the replay reads the ".new" file
-		 * when the journal itself is missing, so this window is covered too */
-		std::filesystem::remove(target, ec);
-		std::filesystem::rename(fresh, target, ec);
-		if (ec) return 1;
-	}
-	log->journal = std::fopen(target.c_str(), "ab");
+	if (!chimera::replaceFile(fresh.c_str(), target.c_str())) return 1;
+	log->journal = chimera::openFile(target.c_str(), "ab");
 	if (log->journal == nullptr) return 1;
 	log->journalPath = target;
 	log->journalSynced = std::chrono::steady_clock::now();
@@ -284,8 +274,8 @@ void ce_movie_log_journal_close(ce_movie_log *log, int32_t remove)
 	}
 	if (remove != 0 && !log->journalPath.empty())
 	{
-		std::remove(log->journalPath.c_str());
-		std::remove((log->journalPath + ".new").c_str());
+		chimera::removeFile(log->journalPath.c_str());
+		chimera::removeFile((log->journalPath + ".new").c_str());
 	}
 	log->journalPath.clear();
 }

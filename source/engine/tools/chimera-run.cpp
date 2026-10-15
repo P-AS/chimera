@@ -118,12 +118,14 @@
  */
 
 #include "chimera/engine.h"
+#include "../source/file_io.hpp"
 
 #include <chrono>
 #include <clocale>
 #include <ctime>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <string>
 #include <vector>
@@ -141,7 +143,7 @@ namespace {
 
 bool readWholeFile(const char *path, std::vector<uint8_t> &out)
 {
-	FILE *f = std::fopen(path, "rb");
+	FILE *f = chimera::openFile(path, "rb");
 	if (f == nullptr) return false;
 	uint8_t chunk[1 << 16];
 	size_t got;
@@ -154,10 +156,10 @@ bool readWholeFile(const char *path, std::vector<uint8_t> &out)
 
 bool writeWholeFile(const std::string &path, const uint8_t *data, size_t len)
 {
-	FILE *f = std::fopen(path.c_str(), "wb");
+	FILE *f = chimera::openFile(path.c_str(), "wb");
 	if (f == nullptr) return false;
 	bool ok = len == 0 || std::fwrite(data, 1, len, f) == len;
-	std::fclose(f);
+	if (std::fclose(f) != 0) ok = false;
 	return ok;
 }
 
@@ -199,12 +201,8 @@ void makeParentDirs(const std::string &path)
 	for (size_t i = 1; i < path.size(); i++)
 	{
 		if (path[i] != '/') continue;
-		std::string dir = path.substr(0, i);
-#ifdef _WIN32
-		_mkdir(dir.c_str());
-#else
-		mkdir(dir.c_str(), 0777);
-#endif
+		std::error_code ec;
+		std::filesystem::create_directory(std::filesystem::u8path(path.substr(0, i)), ec);
 	}
 }
 
@@ -936,7 +934,7 @@ int main(int argc, char **argv)
 	}
 
 	const int64_t firstPass = playFrames >= 0 && playFrames < frames ? playFrames : frames;
-	FILE *rates = ratesPath.empty() ? nullptr : std::fopen(ratesPath.c_str(), "w");
+	FILE *rates = ratesPath.empty() ? nullptr : chimera::openFile(ratesPath.c_str(), "w");
 	if (!ratesPath.empty() && rates == nullptr) return fail(metaPath, "could not write " + ratesPath);
 	if (!propertySet.empty())
 	{
@@ -1070,7 +1068,7 @@ int main(int argc, char **argv)
 			{
 				return fail(metaPath, ce_session_last_error(session));
 			}
-			std::remove(path.c_str());
+			chimera::removeFile(path.c_str());
 		}
 		if (rerecord)
 		{
@@ -1615,7 +1613,7 @@ int main(int argc, char **argv)
 		{
 			std::string path = savedataDir + "/" + ce_session_savedata_name(session, f);
 			makeParentDirs(path);
-			FILE *out = std::fopen(path.c_str(), "wb");
+			FILE *out = chimera::openFile(path.c_str(), "wb");
 			if (out == nullptr) return fail(metaPath, "could not write " + path);
 			int64_t size = ce_session_savedata_size(session, f);
 			bool ok = true;

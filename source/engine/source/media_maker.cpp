@@ -3,6 +3,7 @@
 
 #include "chimera/engine.h"
 
+#include "file_io.hpp"
 #include "sha1.hpp"
 
 #include <algorithm>
@@ -64,7 +65,7 @@ struct OutFile
 
 	bool open(const std::string &path)
 	{
-		f = std::fopen(path.c_str(), "wb");
+		f = chimera::openFile(path.c_str(), "wb");
 		return f != nullptr;
 	}
 	bool write(const void *data, uint64_t len)
@@ -97,7 +98,7 @@ bool copyInto(OutFile &out, const MediaEntry &e, uint32_t &crcOut, uint64_t &byt
 	uint64_t bytesTotal, uint64_t filesDone, uint64_t filesTotal, const MediaProgress &progress,
 	std::string &error)
 {
-	std::FILE *in = std::fopen(e.abs.c_str(), "rb");
+	std::FILE *in = chimera::openFile(e.abs.c_str(), "rb");
 	if (!in)
 	{
 		error = "cannot read " + e.rel;
@@ -222,7 +223,7 @@ bool mediaWriteZipStored(const std::vector<MediaEntry> &files, const std::string
 
 		/* back to fill in the CRC, then on to where we were */
 		const uint64_t resume = out.at;
-		if (std::fseek(out.f, static_cast<long>(crcFieldAt), SEEK_SET) != 0)
+		if (!chimera::seekFile(out.f, static_cast<int64_t>(crcFieldAt), SEEK_SET))
 		{
 			error = "cannot seek in the output";
 			ok = false;
@@ -230,7 +231,7 @@ bool mediaWriteZipStored(const std::vector<MediaEntry> &files, const std::string
 		}
 		uint8_t crcLE[4] = { static_cast<uint8_t>(crc), static_cast<uint8_t>(crc >> 8),
 			static_cast<uint8_t>(crc >> 16), static_cast<uint8_t>(crc >> 24) };
-		if (std::fwrite(crcLE, 1, 4, out.f) != 4 || std::fseek(out.f, 0, SEEK_END) != 0)
+		if (std::fwrite(crcLE, 1, 4, out.f) != 4 || !chimera::seekFile(out.f, 0, SEEK_END))
 		{
 			error = "cannot write the output";
 			ok = false;
@@ -365,25 +366,37 @@ bool mediaCollect(const std::string &folder, std::vector<MediaEntry> &out, std::
 		error = "cannot read " + folder + ": " + ec.message();
 		return false;
 	}
-	for (const auto &entry : it)
-	{
+	auto consider = [&](const fs::directory_entry &entry) {
 		/* symlink_status, not status: a symlink is skipped rather than
 		 * followed, because what it points at is not in this folder and
 		 * following it would make the output depend on something outside. */
 		const fs::file_status st = entry.symlink_status(ec);
-		if (ec) continue;
-		if (!fs::is_regular_file(st)) continue;
+		if (ec || !fs::is_regular_file(st)) return;
 
 		MediaEntry e;
 		e.abs = entry.path().u8string();
 		std::string rel = fs::relative(entry.path(), root, ec).u8string();
-		if (ec || rel.empty()) continue;
+		if (ec || rel.empty()) return;
 		for (char &c : rel)
 			if (c == '\\') c = '/';
 		e.rel = rel;
 		e.size = static_cast<uint64_t>(fs::file_size(entry.path(), ec));
-		if (ec) continue;
+		if (ec) return;
 		out.push_back(std::move(e));
+	};
+	/* Stepped with an error code: the range-for steps with operator++, which
+	 * throws when a folder inside cannot be opened, and nothing between here
+	 * and the C API would catch it. A folder that cannot be read is an error,
+	 * not a skip, so the image never silently lacks files. */
+	for (const fs::recursive_directory_iterator end; it != end;)
+	{
+		consider(*it);
+		it.increment(ec);
+		if (ec)
+		{
+			error = "cannot read every folder in " + folder + ": " + ec.message();
+			return false;
+		}
 	}
 
 	if (out.empty())

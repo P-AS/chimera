@@ -11,11 +11,16 @@
 #include "chimera/engine.h"
 
 #include <cassert>
+#include <csignal>
 #include <cstdio>
 #include <filesystem>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+
+#ifndef _WIN32
+#include <sys/resource.h>
+#endif
 
 static std::string g_dir;
 
@@ -407,6 +412,52 @@ int main(int argc, char **argv)
 		assert(!text.empty() && text.find("\"tastudio\"") == std::string::npos);
 		std::remove(lpath.c_str());
 	}
+
+	// ---- a save that fails part way leaves the last good project ----
+	// The cap on file size makes the second save fail after its first 64 KiB,
+	// as a full disk would. A save that empties the file before writing it
+	// loses the first save; one written beside the file and moved over it does not.
+#ifndef _WIN32
+	{
+		const std::string kpath = g_dir + "/kept.chimeraProject";
+		auto readText = [](const std::string &path) {
+			std::string text;
+			if (FILE *f = std::fopen(path.c_str(), "rb"))
+			{
+				char buf[4096];
+				size_t n;
+				while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, n);
+				std::fclose(f);
+			}
+			return text;
+		};
+		ce_project *p = ce_project_new();
+		ce_project_set_title(p, "kept");
+		assert(ce_project_save(p, kpath.c_str(), &err) == 0);
+		const std::string before = readText(kpath);
+		assert(!before.empty() && before.size() < 64 * 1024);
+
+		ce_project_set_description(p, std::string(1 << 20, 'x').c_str());
+		struct rlimit old;
+		assert(getrlimit(RLIMIT_FSIZE, &old) == 0);
+		struct rlimit capped = old;
+		capped.rlim_cur = 64 * 1024;
+		void (*prev)(int) = std::signal(SIGXFSZ, SIG_IGN);
+		assert(setrlimit(RLIMIT_FSIZE, &capped) == 0);
+		const int rc = ce_project_save(p, kpath.c_str(), &err);
+		assert(setrlimit(RLIMIT_FSIZE, &old) == 0);
+		std::signal(SIGXFSZ, prev);
+		assert(rc != 0 && err != nullptr);
+		assert(readText(kpath) == before);
+		assert(!std::filesystem::exists(kpath + ".writing"));
+
+		// and with room again, the save goes through whole
+		assert(ce_project_save(p, kpath.c_str(), &err) == 0);
+		assert(readText(kpath).size() > (1u << 20));
+		ce_project_free(p);
+		std::remove(kpath.c_str());
+	}
+#endif
 
 	std::printf("project: all assertions passed\n");
 	return 0;

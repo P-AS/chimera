@@ -479,6 +479,17 @@ checks a project-recorded setting is live in the guest. Headless runs
 skip the TAStudio landing (it opens paused, and nobody is there to
 operate it): they just play the project.
 
+## Saving
+
+A save never writes over the project file. It writes the whole project
+beside it (`<name>.chimeraProject.writing`), waits until those bytes are on
+the disk, and then moves the new file over the old one in one step. A save
+that fails part way - a full disk, the process dying, a power cut - leaves
+the project as it was last saved, and nothing half-written behind. On
+Windows a virus scanner or the indexer may hold the old file for a moment;
+the move is tried again for up to a second. When the project file is a link,
+the file it names is the one replaced.
+
 ## Recovery
 
 The work in a project survives any end of the process - a GPU driver that

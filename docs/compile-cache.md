@@ -36,8 +36,14 @@ cross it, each as a pointer to an argument block in guest memory:
 - `CACHE_OP_STORE` with a name and bytes: the host keeps them, written beside
   and renamed, so a reader never sees half a file.
 
-Names are relative paths under a directory the host owns for this core and
-package; an absolute prefix or a `..` segment is refused. RPCS3's own object
+Names are relative paths, with `/` between folders, under a directory the
+host owns for this core and package. A core may build a name from what a game
+image says, so the host refuses every name that could reach outside that
+directory or something that is not a file: an absolute prefix, a segment of
+dots (`..` climbs out), a backslash or a colon (on Windows a backslash also
+separates folders, so `..\x` would climb out), a segment that ends in a dot or
+a space, a control character, and the Windows device names (`CON`, `NUL`,
+`COM1` and the like). A refused store answers 0, as a full disk does. RPCS3's own object
 names carry the module hash, its version and the CPU, so the same firmware
 library compiles once for every game.
 

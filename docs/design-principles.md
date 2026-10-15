@@ -7533,3 +7533,53 @@ Max Payne 3 on the GTX 1060 runs past the old crash into its opening scene,
 and in the Linux sandbox with Vulkan its run ends on the same line as with
 no renderer. Only disc 1, and only the opening, was played.
 
+## A save cannot destroy a project, and files open under any Windows user name (2026-10-15)
+
+A review of the engine's own code found that several kinds of file could be
+lost or never written at all.
+
+- A project was saved by emptying its file and writing it again. A save that
+  failed part way - a full disk, the process dying in the GPU driver, a power
+  cut - left an empty or cut-short project, and the last good copy was gone.
+  Now every whole-file write (`writeFile`: the project, multi-file
+  descriptors) goes to `<file>.writing` beside the target, is flushed to the
+  disk, and is moved over the old file in one step (`MoveFileExW` with
+  replace on Windows, tried again for up to a second while a scanner or the
+  indexer holds the file; `rename` elsewhere). A link is followed, so the file
+  it names is replaced and not the link. See docs/project.md, "Saving".
+- On Windows the C library reads a narrow path in the ANSI code page, but
+  the engine is handed UTF-8. The input journal, the saved greenzone
+  (history.bin and its spill file), the compile cache, the media maker and
+  chimera-run opened their files that way, so for a Windows user whose name
+  is not plain ASCII (the data folder is in the user's profile) there was no
+  journal to recover from, no saved greenzone and no compile cache, and
+  nothing said so. They now go through `openFile`, `removeFile` and
+  `replaceFile` in file_io, which widen the path first. The spill file's
+  compaction could never finish on Windows either: it renamed over an
+  existing file with the C rename, and while the new file was still open.
+- The compile cache's names come from the core, which may build them from
+  what a game image says. Only `/` was taken as a folder separator, so on
+  Windows a name like `..\..\x` reached outside the cache and a store could
+  replace any file the user can write. Backslashes, colons, segments of dots,
+  segments ending in a dot or a space, control characters and the Windows
+  device names are now refused (docs/compile-cache.md). RPCS3, the one core
+  that uses the cache, names its objects with `/` and none of these.
+- The media maker walked a folder with a loop that throws when a folder
+  inside cannot be opened (a drive's "System Volume Information", a folder
+  with other users' access rules), and nothing between it and the C API
+  caught it, so Chimera ended. It now stops with "cannot read every folder in
+  ...". Its zip writer also went back to fill in each file's CRC through a
+  32-bit seek, which fails or writes in the wrong place past 2 GiB on
+  Windows; it now uses `seekFile`, a 64-bit seek.
+
+Tested: a new engine test (test_utf8_paths) makes a journal, compile-cache
+objects, a media image and a project under a folder named with an e-acute
+and a u-umlaut, and checks the cache's name rules and the unreadable folder.
+It passes on Linux, and on Windows (built by hand, run on this PC); with the
+journal's old fopen put back it failed on Windows at the journal, with the
+old name check it failed at `..\..\escaped`, and with the old folder loop it
+ended in std::terminate. test_project gained a save made to fail after 64 KiB
+(a file-size limit): with the old write the first save was lost, now it is
+kept. Engine tests 27 passed; end-to-end test script 88 passed; interface
+tests 1,054 passed; the Windows build compiles. Not run on Windows: the
+saved greenzone and its spill compaction.

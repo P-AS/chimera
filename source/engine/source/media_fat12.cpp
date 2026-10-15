@@ -21,6 +21,7 @@
  * order rather than from the order a directory happened to be read in.
  */
 #include "media_maker.hpp"
+#include "file_io.hpp"
 
 #include "sha1.hpp"
 
@@ -348,7 +349,7 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 	{
 		Node *f = filesFlat[i];
 		if (f->size == 0) continue;
-		std::FILE *in = std::fopen(f->abs.c_str(), "rb");
+		std::FILE *in = chimera::openFile(f->abs.c_str(), "rb");
 		if (!in)
 		{
 			error = "cannot read " + f->name;
@@ -369,7 +370,7 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 		}
 	}
 
-	std::FILE *out = std::fopen(outPath.c_str(), "wb");
+	std::FILE *out = chimera::openFile(outPath.c_str(), "wb");
 	if (!out)
 	{
 		error = "cannot create " + outPath;
