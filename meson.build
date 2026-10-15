@@ -453,6 +453,18 @@ if meson.is_cross_build()
   # The same by hand for the files under a folder whose name is not plain
   # ASCII (meson compile -C build/meson-windows test_utf8_paths): the C
   # library reads such a path differently on Windows, so it is proved there.
+  # The same for the stubs a call into the guest takes on Windows
+  # (meson compile -C build/meson-windows test_guest_calls; run it with
+  # libminiboxhost.dll beside it): on Linux a guest call needs none.
+  executable(
+    'test_guest_calls',
+    ['source/engine/tests/test_guest_calls.cpp'] + engine_src + gl_bridge_src,
+    include_directories: engine_inc,
+    cpp_args: engine_build_args + ['-UNDEBUG'],
+    c_args: engine_build_args,
+    dependencies: [dl_dep] + gl_bridge_deps,
+    build_by_default: false,
+  )
   executable(
     'test_utf8_paths',
     ['source/engine/tests/test_utf8_paths.cpp'] + engine_src + gl_bridge_src,
@@ -478,7 +490,7 @@ if not meson.is_cross_build()
     build_by_default: false,
   )
 
-  foreach engine_test : ['sha1', 'movie_log', 'movie_text', 'movie_entry', 'control_names', 'state_container', 'state_format', 'package', 'multifile', 'project', 'firmware', 'state_history', 'media', 'gl_flight', 'gl_sync', 'gl_buffer_pool', 'stride_tuner', 'plain_numbers', 'greenzone_shape', 'ram_search', 'kept_pictures', 'game_properties', 'mcp', 'average_fps', 'compile_sessions', 'host_machine', 'utf8_paths', 'work_thread']
+  foreach engine_test : ['sha1', 'movie_log', 'movie_text', 'movie_entry', 'control_names', 'state_container', 'state_format', 'package', 'multifile', 'project', 'firmware', 'state_history', 'media', 'gl_flight', 'gl_sync', 'gl_buffer_pool', 'stride_tuner', 'plain_numbers', 'greenzone_shape', 'ram_search', 'kept_pictures', 'game_properties', 'mcp', 'average_fps', 'compile_sessions', 'host_machine', 'utf8_paths', 'work_thread', 'guest_calls']
     test(
       'engine_' + engine_test,
       executable(

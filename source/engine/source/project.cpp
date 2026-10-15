@@ -396,6 +396,7 @@ ce_project *ce_project_open(const char *path, const char **error_out)
 				{
 					cJSON *mFrame = cJSON_GetObjectItemCaseSensitive(m, "frame");
 					cJSON *mText = cJSON_GetObjectItemCaseSensitive(m, "text");
+					cJSON *mKeep = cJSON_GetObjectItemCaseSensitive(m, "keepState");
 					if (!cJSON_IsNumber(mFrame) || !cJSON_IsString(mText))
 					{
 						return rejectP("every branch marker needs number \"frame\" and string \"text\"");
@@ -403,6 +404,12 @@ ce_project *ce_project_open(const char *path, const char **error_out)
 					Marker mk;
 					mk.frame = static_cast<int64_t>(mFrame->valuedouble);
 					mk.text = mText->valuestring;
+					/* as for the project's own markers: written only when false */
+					if (mKeep != nullptr)
+					{
+						if (!cJSON_IsBool(mKeep)) return rejectP("a branch marker's \"keepState\" is not a boolean");
+						mk.keepState = cJSON_IsTrue(mKeep);
+					}
 					b.markers.push_back(std::move(mk));
 				}
 			}
@@ -511,6 +518,7 @@ int32_t ce_project_save(ce_project *p, const char *path, const char **error_out)
 				cJSON *mi = cJSON_CreateObject();
 				cJSON_AddNumberToObject(mi, "frame", static_cast<double>(m.frame));
 				cJSON_AddStringToObject(mi, "text", m.text.c_str());
+				if (!m.keepState) cJSON_AddBoolToObject(mi, "keepState", 0);
 				cJSON_AddItemToArray(bm, mi);
 			}
 		}

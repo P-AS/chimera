@@ -58,6 +58,17 @@ extern "C" intptr_t streamRead(uintptr_t userdata, void *dst, uintptr_t size)
 	return static_cast<intptr_t>(n);
 }
 
+/* A stream's bytes, given back once the host has read them into its own copy
+ * (every create and mount does, and none reads again). The stream is emptied
+ * too, so nothing can read the freed bytes through it. */
+void releaseStream(ByteStream &stream, std::vector<uint8_t> &bytes)
+{
+	std::vector<uint8_t>().swap(bytes);
+	stream.data = nullptr;
+	stream.len = 0;
+	stream.pos = 0;
+}
+
 extern "C" int32_t vectorWrite(uintptr_t userdata, const void *src, uintptr_t size)
 {
 	auto *v = reinterpret_cast<std::vector<uint8_t> *>(userdata);
@@ -1483,6 +1494,11 @@ ce_session *ce_session_open(
 	chimera::WbxReturn r{};
 	s->streams.push_back({ s->wbxBytes.data(), s->wbxBytes.size() });
 	host->wbx_create_host(&layout, "core.wbx", streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), &r);
+	/* Every create and mount reads its stream whole into the host's own copy
+	 * and never again, so the session's copy goes as soon as the host has one:
+	 * kept for the whole session it was the core (333 MB for MAME, 140 for
+	 * RPCS3), the firmware (a PS3 update is 206 MB) and the assets, twice. */
+	releaseStream(s->streams.back(), s->wbxBytes);
 	if (!r.ok()) return abort(r.errorMessage);
 	s->obj = reinterpret_cast<void *>(r.data);
 
@@ -1528,6 +1544,8 @@ ce_session *ce_session_open(
 			if (!r.ok()) return abort(std::string("mounting ") + alias + ": " + r.errorMessage);
 		}
 	}
+	/* (both rom mounts have their copies now) */
+	std::vector<uint8_t>().swap(s->romBytes);
 
 	/* a directly-opened rom has a name too: when no caller-provided extra
 	 * carries "rom.name", it is the name the rom was just MOUNTED under, so a
@@ -1570,13 +1588,15 @@ ce_session *ce_session_open(
 		s->firmwareBytes.emplace_back(firmware_data[i], firmware_data[i] + firmware_lens[i]);
 		s->streams.push_back({ s->firmwareBytes.back().data(), s->firmwareBytes.back().size() });
 		host->wbx_mount_file(s->obj, firmware_ids[i], streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
+		releaseStream(s->streams.back(), s->firmwareBytes.back());
 		if (!r.ok()) return abort(r.errorMessage);
 	}
 
-	for (const auto &asset : s->assetFiles)
+	for (auto &asset : s->assetFiles)
 	{
 		s->streams.push_back({ asset.second.data(), asset.second.size() });
 		host->wbx_mount_file(s->obj, asset.first.c_str(), streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
+		releaseStream(s->streams.back(), asset.second);
 		if (!r.ok()) return abort(std::string("mounting asset ") + asset.first + ": " + r.errorMessage);
 	}
 
@@ -1595,6 +1615,7 @@ ce_session *ce_session_open(
 			s->extraBytes.emplace_back(extra_data[i], extra_data[i] + extra_lens[i]);
 			s->streams.push_back({ s->extraBytes.back().data(), s->extraBytes.back().size() });
 			host->wbx_mount_file(s->obj, extra_names[i], streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
+			releaseStream(s->streams.back(), s->extraBytes.back());
 		}
 		if (!r.ok()) return abort(std::string("mounting ") + extra_names[i] + ": " + r.errorMessage);
 	}
@@ -2373,6 +2394,14 @@ const uint8_t *ce_session_save_state(ce_session *s, uint64_t *len_out)
 {
 	s->error.clear();
 	s->stateBuf.clear();
+	/* A machine that died is part way through the frame it died in. Saved, it
+	 * came back from the state as a live machine (a load clears the death). */
+	if (s->guestDied())
+	{
+		s->error = "the core stopped: " + s->death;
+		if (len_out != nullptr) *len_out = 0;
+		return nullptr;
+	}
 	chimera::WbxReturn r{};
 	s->stateSaving();
 	/* no deactivate/activate bracket: the host activates itself for the
@@ -2556,6 +2585,8 @@ int32_t ce_session_state_save_file(ce_session *s, const char *utf8_path, const u
 {
 	s->error.clear();
 	if (utf8_path == nullptr || (tag == nullptr && tag_len != 0)) { s->error = "no path to save the state to"; return 1; }
+	/* as ce_session_save_state: a dead machine is no state to keep */
+	if (s->guestDied()) { s->error = "the core stopped: " + s->death; return 1; }
 	chimera::FileWriter out;
 	if (!out.open(utf8_path)) { s->error = std::string("could not create ") + utf8_path; return 1; }
 
@@ -3392,6 +3423,9 @@ int32_t ce_session_greenzone_capture(
 	ce_session *s, int64_t frame, const uint8_t *note, uint32_t note_len)
 {
 	if (s == nullptr) return 1;
+	/* nothing of a machine that died is worth a frame: stored, a restore would
+	 * bring it back as if it were alive */
+	if (s->guestDied()) return 0;
 	/* the caller is the one counting: if the session's own count was off, the
 	 * picture the last frame kept was filed under the wrong frame */
 	if (s->machineFrame != frame)

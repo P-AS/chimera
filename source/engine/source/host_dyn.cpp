@@ -201,7 +201,20 @@ uintptr_t bridgeGuestCall(uintptr_t guestEntry, int argCount)
 	auto key = std::make_pair(guestEntry, argCount);
 	auto it = g_stubs.find(key);
 	if (it != g_stubs.end()) return it->second;
-	if (g_stubsUsed >= STUB_COUNT) return 0;
+	if (g_stubsUsed >= STUB_COUNT)
+	{
+		/* Full: another page. A session takes 40 to 90 stubs and a new one's
+		 * exports are new keys whenever its thunks land elsewhere, so a fixed
+		 * 256 ran out after a few reopens - and an export with no stub reads
+		 * exactly like one the core lacks. The full page stays: a stub in it
+		 * may be in a live session's table, and a page per 256 stubs is not
+		 * worth taking back. */
+		uint8_t *more = static_cast<uint8_t *>(VirtualAlloc(
+			nullptr, STUB_SIZE * STUB_COUNT, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+		if (more == nullptr) return 0;
+		g_stubPage = more;
+		g_stubsUsed = 0;
+	}
 
 	/* 48 B8 <target>  mov rax, imm64
 	 * 49 BB <departN> mov r11, imm64

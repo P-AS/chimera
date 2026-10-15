@@ -111,6 +111,7 @@ int main(int argc, char **argv)
 
 		ce_project_branch_add(p, "risky route", 400, "2026-08-26 21:00:00", "|..|\n", 5);
 		ce_project_branch_marker_add(p, 0, 350, "the setup", 1);
+		ce_project_branch_marker_add(p, 0, 360, "no state here", 0);
 		ce_project_subtitle_add(p, "subtitle 100 10 10 300 FFFFFFFF hello");
 		ce_project_header_set(p, "Author", "sergio");
 		ce_project_header_set(p, "Platform", "DOS");
@@ -145,9 +146,12 @@ int main(int argc, char **argv)
 		assert(std::strcmp(ce_project_branch_time(p, 0), "2026-08-26 21:00:00") == 0);
 		const char *branchLog = ce_project_branch_log_text(p, 0, &len);
 		assert(std::string(branchLog, len) == "|..|\n");
-		assert(ce_project_branch_marker_count(p, 0) == 1);
+		assert(ce_project_branch_marker_count(p, 0) == 2);
 		assert(ce_project_branch_marker_frame(p, 0, 0) == 350);
 		assert(std::strcmp(ce_project_branch_marker_text(p, 0, 0), "the setup") == 0);
+		/* a branch marker's keep-a-state choice survives the file, as a marker's does */
+		assert(ce_project_branch_marker_keep_state(p, 0, 0) == 1);
+		assert(ce_project_branch_marker_keep_state(p, 0, 1) == 0);
 		assert(ce_project_subtitle_count(p) == 1);
 		assert(std::strcmp(ce_project_subtitle_at(p, 0), "subtitle 100 10 10 300 FFFFFFFF hello") == 0);
 		assert(ce_project_header_count(p) == 2);

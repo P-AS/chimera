@@ -419,6 +419,31 @@ static void aFloppyIsReproducibleAndReadable()
 	assert(foundEboot);
 }
 
+/* A file that fills the disk ends its chain in the disk's last cluster. The
+ * FAT holds 2849 entries, an odd count, and they are packed in pairs: the last
+ * one went unwritten and read as free, so the file had no end of chain. */
+static void aFullFloppyEndsItsChainInTheLastCluster()
+{
+	const fs::path full = workRoot() / "full";
+	fs::remove_all(full);
+	const uint32_t clusters = 2880u - (1u + 2u * 9u + 14u);   /* 2847 data sectors */
+	put(full / "whole.bin", std::string(size_t(clusters) * 512u, 'x'));
+	std::string sha, err;
+	const fs::path out = workRoot() / "full.img";
+	if (!chimera::mediaMake(full.string(), out.string(), chimera::MediaFormat::Fat12, nullptr, sha, err))
+	{
+		std::fprintf(stderr, "full floppy: %s\n", err.c_str());
+		assert(false);
+	}
+	const std::vector<uint8_t> img = slurp(out);
+	auto entry = [&](uint32_t n) {
+		const uint8_t *f = &img[512u + (n * 3u) / 2u];   /* the first FAT */
+		return (n & 1u) ? uint32_t((f[0] >> 4) | (f[1] << 4)) : uint32_t(f[0] | ((f[1] & 0x0Fu) << 8));
+	};
+	assert(entry(2847) == 2848);    /* the chain reaches the last cluster */
+	assert(entry(2848) == 0xFFF);   /* and ends there */
+}
+
 static void aFloppyRefusesWhatDoesNotFit()
 {
 	const fs::path big = workRoot() / "big";
@@ -446,6 +471,7 @@ int main()
 	aRecipeWritesTheSystemArea();
 	aRecipeNotUnderstoodIsRefused();
 	aFloppyIsReproducibleAndReadable();
+	aFullFloppyEndsItsChainInTheLastCluster();
 	aFloppyRefusesWhatDoesNotFit();
 	aCancelledPackLeavesNothing();
 	anEmptyFolderIsRefused();

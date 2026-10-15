@@ -300,6 +300,10 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 
 	{
 		std::vector<uint8_t> packed(kSectorsPerFat * kSectorSize, 0);
+		/* Entries are packed in pairs, and a 1.44 MB disk has an odd number of
+		 * them (2849): the last, the disk's last cluster, went unwritten and
+		 * read as free - a file that filled the disk lost its end of chain. */
+		if (fat.size() % 2 != 0) fat.push_back(0);
 		for (size_t i = 0; i + 1 < fat.size(); i += 2)
 		{
 			const uint32_t a = fat[i], b = fat[i + 1];
