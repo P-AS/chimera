@@ -1004,7 +1004,15 @@ struct SyncSlot
 	uint32_t gen;  /* bumped on every reuse, so an old name stays old */
 };
 static std::vector<SyncSlot> g_syncs;
-static std::vector<uint32_t> g_syncFree; /* slots with no sync, to be taken without a search */
+/* slots with no sync, to be taken without a search. A function's static, not
+ * a file's: as a second vector among this file's globals it made the mingw
+ * GCC 13 that CI uses fail with an internal error in the file's static
+ * initializers (choose_baseaddr, without _GLIBCXX_ASSERTIONS). */
+static std::vector<uint32_t> &syncFree()
+{
+	static std::vector<uint32_t> list;
+	return list;
+}
 
 /* A state load leaves fences behind that no one will delete: those made after
  * the restored frame, which the restored guest never heard of. Once one has
@@ -1026,7 +1034,7 @@ static void syncReap()
 		if (status != GL_SIGNALED) continue;
 		glDeleteSync(slot.sync);
 		slot.sync = nullptr;
-		g_syncFree.push_back((uint32_t)i);
+		syncFree().push_back((uint32_t)i);
 	}
 }
 
@@ -1036,10 +1044,10 @@ static uintptr_t syncName(GLsync sync)
 {
 	if (g_syncReap) syncReap();
 	size_t at;
-	if (!g_syncFree.empty())
+	if (!syncFree().empty())
 	{
-		at = g_syncFree.back();
-		g_syncFree.pop_back();
+		at = syncFree().back();
+		syncFree().pop_back();
 	}
 	else
 	{
@@ -1073,7 +1081,7 @@ static void syncForget(GLsync name)
 	if (s.gen == ce_gl_sync_name_generation(v) && s.sync != nullptr)
 	{
 		s.sync = nullptr;
-		g_syncFree.push_back((uint32_t)slot);
+		syncFree().push_back((uint32_t)slot);
 	}
 }
 
@@ -1936,13 +1944,13 @@ static void forgetContext()
 {
 	bufferPool().reset();
 	for (BoundRecord &r : g_bound) r.name = 0;
-	g_syncFree.clear();
+	syncFree().clear();
 	for (size_t i = 0; i < g_syncs.size(); i++)
 	{
 		SyncSlot &slot = g_syncs[i];
 		if (slot.sync != nullptr) slot.gen++;
 		slot.sync = nullptr;
-		g_syncFree.push_back((uint32_t)i);
+		syncFree().push_back((uint32_t)i);
 	}
 	g_syncReap = false;
 	/* one large readback kept the scratch at its size for the process */
