@@ -684,6 +684,7 @@ struct ce_session
 	uint64_t sendButtons(const uint8_t *states);
 	void greenzoneCapture();
 	bool greenzoneRestore(int64_t to);
+	void greenzoneLoaded(int64_t at);
 	/* the half that must run BEFORE the advance: an epoch has to be marked
 	 * while the machine is still where the delta will be measured from */
 	void greenzoneBeforeAdvance() { history.beforeAdvance(); }
@@ -1336,14 +1337,20 @@ bool ce_session::greenzoneRestore(int64_t to)
 		 * asked for. Following it here is what keeps the session's idea of
 		 * where it is and the machine itself the same thing - a seek that
 		 * refuses is recoverable, a session that has quietly moved is not. */
-		if (landed >= 0)
-		{
-			frame = landed;
-			if (stateLoaded != nullptr) stateLoaded();   /* the anchor was loaded, and stays */
-			afterLoad(landed);
-		}
+		if (landed >= 0) greenzoneLoaded(landed);   /* the anchor was loaded, and stays */
 		return false;
 	}
+	greenzoneLoaded(to);
+	return true;
+}
+
+/* Everything a whole machine put in place by the history breaks, put right -
+ * after a restore, and after one that fell back to its anchor, which loads a
+ * machine just as much. That fallback used to do only the first and the last
+ * of these, so its next frames sent inputs against the latches of the machine
+ * before it and drew from GPU objects the load had replaced. */
+void ce_session::greenzoneLoaded(int64_t at)
+{
 	if (stateLoaded != nullptr) stateLoaded();
 	if (traceSetEnabled != nullptr)
 	{
@@ -1358,11 +1365,10 @@ bool ce_session::greenzoneRestore(int64_t to)
 	 * ce_session_load_state, so the bridge has to be told here too - this is
 	 * the path a rewind and a re-record actually take. */
 	ce_gl_release();
-	ce_gl_state_loaded(to);
+	ce_gl_state_loaded(at);
 	vulkanStateLoaded();
-	frame = to;
-	afterLoad(to);
-	return true;
+	frame = at;
+	afterLoad(at);
 }
 
 /* Internal (mcp.hpp): the line this session's movie holds for a set of
@@ -3460,8 +3466,13 @@ void ce_session_greenzone_capture_period(ce_session *s, int64_t period)
 	if (s == nullptr) return;
 	const bool resuming = s->history.capturePeriod() == 0 && period > 0;
 	s->history.capturePeriod(period);
-	/* the anchor the history goes on from, where the machine stands now */
-	if (resuming) s->greenzoneCapture();
+	/* The anchor the history goes on from, where the machine stands now. That
+	 * is where the last capture said it was (they go on while nothing is
+	 * stored), not the session's own frame, which only a restore and the
+	 * movie path move: under the frontend it was where the last seek went,
+	 * and the machine of frame N was filed under it. When nobody has said
+	 * yet, the next capture stores the anchor itself. */
+	if (resuming && s->history.machineFrame() >= 0) s->history.capture(s->history.machineFrame());
 }
 
 uint64_t ce_session_greenzone_disk_bytes(const ce_session *s)

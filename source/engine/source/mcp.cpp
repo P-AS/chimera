@@ -1579,7 +1579,16 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, std::string &tool, std:
 		std::vector<int32_t> axisValue(axisCount, 0);
 		bool any = false;
 		const cJSON *asked = nullptr;
-		cJSON_ArrayForEach(asked, cJSON_GetObjectItemCaseSensitive(arguments, "buttons"))
+		/* Each is an object from names to values. A list of names (a natural
+		 * slip) has children with no names, and a name is what is looked up. */
+		const cJSON *askedButtons = cJSON_GetObjectItemCaseSensitive(arguments, "buttons");
+		const cJSON *askedAxesArg = cJSON_GetObjectItemCaseSensitive(arguments, "axes");
+		if ((askedButtons != nullptr && !cJSON_IsObject(askedButtons)) || (askedAxesArg != nullptr && !cJSON_IsObject(askedAxesArg)))
+		{
+			why = "'buttons' and 'axes' are objects from names to values, such as {\"P1 A\": true} and {\"P1 X\": 128}.";
+			askedButtons = nullptr;
+		}
+		cJSON_ArrayForEach(asked, askedButtons)
 		{
 			size_t index = buttonCount;
 			for (size_t i = 0; i < buttonCount && index == buttonCount; i++)
@@ -1593,7 +1602,7 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, std::string &tool, std:
 			any = true;
 			if (!why.empty()) break;
 		}
-		const cJSON *askedAxes = why.empty() ? cJSON_GetObjectItemCaseSensitive(arguments, "axes") : nullptr;
+		const cJSON *askedAxes = why.empty() ? askedAxesArg : nullptr;
 		cJSON_ArrayForEach(asked, askedAxes)
 		{
 			size_t index = axisCount;

@@ -1380,8 +1380,20 @@ void StateHistory::capture(int64_t frame, const uint8_t *note, size_t noteLen)
 		catch (const std::bad_alloc &)
 		{
 			/* Already as small as a history gets: the frame is simply not
-			 * stored, which costs replaying to reach it and nothing else. */
-			if (!halveBudget()) return;
+			 * stored, which costs replaying to reach it and nothing else.
+			 * Halving gives memory back by thinning, which allocates too; when
+			 * even that fails, the frame is not stored either - an exception
+			 * from here would cross the C API and end the process. */
+			bool halved = false;
+			try
+			{
+				halved = halveBudget();
+			}
+			catch (const std::bad_alloc &)
+			{
+				halved = false;
+			}
+			if (!halved) return;
 		}
 	}
 }
@@ -2683,9 +2695,16 @@ void StateHistory::postWrite(PendingWrite &&job)
 		if (job.wanted->load())
 		{
 			uint64_t start = 0, end = 0;
-			job.ok = seekEnd(f) && tellAt(f, start)
-				&& writeSegmentBodyPacked(f, job.body, job.packed)
-				&& std::fflush(f) == 0 && tellAt(f, end);
+			try
+			{
+				job.ok = seekEnd(f) && tellAt(f, start)
+					&& writeSegmentBodyPacked(f, job.body, job.packed)
+					&& std::fflush(f) == 0 && tellAt(f, end);
+			}
+			catch (const std::bad_alloc &)
+			{
+				job.ok = false;   /* packing it ran out of memory: a write that did not land */
+			}
 			job.physAt = start;
 			job.physLength = job.ok ? end - start : 0;
 			if (job.ok) forgetCachedPages(f);
@@ -2698,8 +2717,9 @@ void StateHistory::postWrite(PendingWrite &&job)
 			job.ok = true;
 		}
 		/* the bodies go here, on the writer, rather than on the thread that
-		 * runs the machine */
-		job.body = Segment{};
+		 * runs the machine - unless the write failed: then applyWrites puts
+		 * them back into the stretch, which holds nothing else */
+		if (job.ok) job.body = Segment{};
 		std::lock_guard<std::mutex> lock(m_writtenLock);
 		m_written.push_back(std::move(job));
 	});
@@ -3476,7 +3496,16 @@ bool StateHistory::saveToLater(const char *path, const char *machineId, std::str
 	std::FILE *const spill = m_spill;
 	m_writer.post([this, spill, where, id, snapshot = std::move(snapshot)]() mutable {
 		std::string why;
-		const bool ok = writeHistoryFile(spill, where.c_str(), id, snapshot, why);
+		bool ok = false;
+		try
+		{
+			ok = writeHistoryFile(spill, where.c_str(), id, snapshot, why);
+		}
+		catch (const std::bad_alloc &)
+		{
+			why = "the state history could not be written: out of memory";
+			chimera::removeFile(where.c_str());   /* half a history is worse than none */
+		}
 		std::lock_guard<std::mutex> lock(m_savedLock);
 		m_saved.pending = false;
 		m_saved.ok = ok;

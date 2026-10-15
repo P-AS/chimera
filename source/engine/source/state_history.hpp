@@ -244,6 +244,8 @@ public:
 	 * from. */
 	void capturePeriod(int64_t period);
 	int64_t capturePeriod() const { return m_capturePeriod; }
+	/* where the machine stands, as the last capture or restore said; -1 unknown */
+	int64_t machineFrame() const { return m_machineFrame; }
 
 	/* Called immediately after that advance, with the frame now standing at.
 	 *

@@ -33,6 +33,13 @@
  *    then everything happens in line exactly as it did before any of this
  *    existed. That is not a fallback nobody exercises: it is the reference
  *    implementation the threaded path is tested against.
+ *
+ * And one rule about failing: a job that fails - an allocation it cannot
+ * have, above all, since these jobs move whole machines - leaves what it hands
+ * back consistent (a write that did not land keeps the bytes it was given; a
+ * picture that could not be packed is reported with none). An exception that
+ * still escapes a job is caught by the thread and said on stderr: one leaving
+ * a thread's function would end the process, and with it the session.
  */
 #ifndef CHIMERA_WORK_THREAD_HPP
 #define CHIMERA_WORK_THREAD_HPP

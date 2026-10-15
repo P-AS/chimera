@@ -339,6 +339,11 @@ if holder and changes:
     check("undo takes the whole edit back", all_input() == movie)
     error, text, _ = call("set_buttons", frame=0, buttons={"No Such Button": True})
     check("set_buttons names a button that does not exist", error and "No Such Button" in text)
+    # a list of names where names to values belong once ended the program serving the call
+    error, text, _ = call("set_buttons", frame=0, buttons=["P1 A"])
+    check("set_buttons with a list of names is refused", error and "objects" in text)
+    error, text, _ = call("set_buttons", frame=0, axes=[1])
+    check("set_buttons with a list of axis values is refused", error and "objects" in text)
     error, text, _ = call("set_buttons", frame=0)
     check("set_buttons with nothing named is refused", error and "at least one" in text)
     error, text, _ = call("insert_frames", frame=last + 9)

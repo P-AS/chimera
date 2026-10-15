@@ -21,6 +21,8 @@
 #include <fstream>
 #include <fcntl.h>
 #include <unistd.h>
+#include <csignal>
+#include <sys/resource.h>
 #include <map>
 #include <string>
 #include <new>
@@ -600,6 +602,54 @@ int main(void)
 		h.spillTo("work-history-elsewhere");
 		assert(!h.spillFailed());
 		std::filesystem::remove_all("work-history-elsewhere");
+	}
+
+	{ // A spill whose WRITE fails - the file opened, then the disk filled - gives
+	  // its stretch back whole. The writer used to throw the stretch's bodies
+	  // away before saying the write had failed, so the stretch came back empty
+	  // and its frames could not be restored. A cap on file size makes every
+	  // write to the spill file fail.
+		const chimera::HostApi api = fakeHost();
+		g_machine = Machine{};
+		std::filesystem::create_directories("work-history-capped");
+
+		chimera::StateHistory h;
+		h.configure(&api, nullptr, 512);
+		h.bands(2, 6, 3, 12, 8);
+		h.spillTo("work-history-capped");
+		struct rlimit old;
+		assert(getrlimit(RLIMIT_FSIZE, &old) == 0);
+		struct rlimit capped = old;
+		capped.rlim_cur = 1;
+		void (*prev)(int) = std::signal(SIGXFSZ, SIG_IGN);
+		assert(setrlimit(RLIMIT_FSIZE, &capped) == 0);
+		h.capture(0);
+		std::vector<std::array<uint8_t, Machine::kCells>> truth(1);
+		for (int64_t f = 1; f <= 60; f++)
+		{
+			h.beforeAdvance();
+			advance(f);
+			h.capture(f);
+			std::array<uint8_t, Machine::kCells> at{};
+			std::memcpy(at.data(), g_machine.cell, Machine::kCells);
+			truth.push_back(at);
+		}
+		std::string waited;
+		h.saveWait(waited);   /* every write reported, and taken in */
+		assert(setrlimit(RLIMIT_FSIZE, &old) == 0);
+		std::signal(SIGXFSZ, prev);
+
+		assert(h.spillFailed());
+		int64_t restored = 0;
+		for (int64_t f = 0; f <= 60; f++)
+		{
+			if (h.nearest(f) != f) continue;
+			assert(h.restore(f, error));
+			assert(std::memcmp(g_machine.cell, truth[static_cast<size_t>(f)].data(), Machine::kCells) == 0);
+			restored++;
+		}
+		assert(restored > 0);
+		std::filesystem::remove_all("work-history-capped");
 	}
 
 	{ // Running out of memory halves the budget instead of ending the session.

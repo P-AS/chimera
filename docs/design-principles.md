@@ -7583,3 +7583,42 @@ ended in std::terminate. test_project gained a save made to fail after 64 KiB
 kept. Engine tests 27 passed; end-to-end test script 88 passed; interface
 tests 1,054 passed; the Windows build compiles. Not run on Windows: the
 saved greenzone and its spill compaction.
+
+## A failure inside the greenzone costs that piece of work, not the session (2026-10-15)
+
+The same review found ways a single failure in the engine's background work
+ended Chimera, or quietly put a wrong machine in the greenzone.
+
+- An exception that leaves a helper thread's job ended the process
+  (`std::terminate`). The jobs pack and write whole machines - a PS3 anchor
+  wants about a gigabyte - so running out of memory there was a crash. The
+  helper now catches anything a job lets out and says so on stderr, and each
+  job keeps what it hands back consistent when it fails (the fourth rule in
+  work_thread.hpp).
+- A spill write that failed with the file already open (a full disk) gave
+  its stretch back with no bodies: the writer threw them away before saying
+  the write had failed. Restoring a frame of that stretch then put a wrong
+  machine in place, with no error. The bodies are now freed only when the
+  write landed.
+- The out-of-memory recovery in a capture halves the budget by thinning,
+  which allocates too; a second failure there left the C API and ended the
+  process. Now that frame is simply not stored.
+- A restore that falls back to its anchor (a delta that will not apply, a
+  spill that cannot be read) loads a whole machine, but it skipped what every
+  other load does: the inputs were not sent again and the GL and Vulkan
+  bridges were not told, so the next frames could play other inputs than the
+  movie's and draw from replaced GPU objects. Both paths now share one step.
+- Turning the greenzone back on from "Off" stored the machine under the
+  session's own frame number, which under the frontend is wherever the last
+  restore went; it now uses the frame the last capture reported.
+- The MCP tools that change input read "buttons" and "axes" as objects from
+  names to values; given a list (`["P1 A"]`), they looked up a name that was
+  not there and the program serving the call died. A list is now refused
+  with the shape it should have.
+
+Tested: test_work_thread (new) ended in std::terminate without the catch;
+test_state_history's new capped-spill test restored a wrong machine with the
+old writer and the right one now; the end-to-end test script's MCP agent
+sends the list, and the old chimera-mcp died of SIGSEGV on it. The fallback
+restore and the greenzone switch are not driven by any test: neither can be
+reached without a session, and no engine test opens one.
