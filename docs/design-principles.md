@@ -7508,3 +7508,28 @@ left out. Engine tests 26 passed; end-to-end test script 88 passed;
 miniBox's tests 19 passed; the Windows build compiles the module with the
 table. Not seen: a real crash note on Windows with Vulkan lines in it.
 
+## A fault taken in host code reaches the guest properly (2026-10-15, issue 280)
+
+Max Payne 3 (Xenia) ended the process at frame 1,247, at its "Press Start"
+screen, on Windows, and on Linux too once the Vulkan renderer was on. The
+crash was in miniBox's interop blob, entering the host for `mprotect` with
+no context: the call came from Xenia's fault handler (it unprotects a
+watched page), and that handler had been called for a fault that HOST code
+took - the Vulkan bridge writing a command's output into a page Xenia was
+watching. miniBox called the guest's handler directly, as if the faulting
+thread were inside the guest; it was not, so the handler's first system call
+found no context.
+
+miniBox 1f751ee enters the handler through the guest-entry thunk when the
+faulting instruction is host code, and directly, as before, when it is guest
+code. Its test (RunHostWriteFault: the host writes clock_gettime's result
+into a protected page) died of SIGSEGV without the change. Every core with a
+GuestFaultHandler (Xenia, and the others that watch memory) takes this path
+when a host write meets a watched page.
+
+Tested: miniBox's tests 19 passed; engine tests 26 passed; end-to-end test
+script 88 passed; Xenia's test script 27 passed; the Windows build compiles.
+Max Payne 3 on the GTX 1060 runs past the old crash into its opening scene,
+and in the Linux sandbox with Vulkan its run ends on the same line as with
+no renderer. Only disc 1, and only the opening, was played.
+
