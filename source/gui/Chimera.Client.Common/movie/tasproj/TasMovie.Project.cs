@@ -59,7 +59,7 @@ namespace Chimera.Client.Common
 		/// project's cache, written and read by the engine (see <see cref="TasBranch.StateFile"/>).
 		/// They are cache like the greenzone is - a branch without one replays to its frame.
 		/// </summary>
-		public string BranchStateDirectory => Path.Combine(ProjectCache.DirectoryFor(Project.Id), "Branches");
+		public string BranchStateDirectory => Path.Combine(ProjectCache.DirectoryFor(Project.Id), ProjectCache.BranchStatesDirName);
 
 		/// <summary>Where a branch's state file is, from the name the branch holds.</summary>
 		public string BranchStatePath(string stateFile) => Path.Combine(BranchStateDirectory, stateFile);
@@ -104,7 +104,7 @@ namespace Chimera.Client.Common
 		}
 
 		public string GreenZoneFilename
-			=> Path.Combine(ProjectCache.DirectoryFor(Project.Id), "greenzone.chimeraGreenZone");
+			=> Path.Combine(ProjectCache.DirectoryFor(Project.Id), ProjectCache.GreenZoneFileName);
 
 		/// <summary>
 		/// The engine's state history, beside the greenzone in the same cache.
@@ -113,7 +113,7 @@ namespace Chimera.Client.Common
 		/// whole design removed, and a zip lump would put straight back.
 		/// </summary>
 		public string StateHistoryFilename
-			=> Path.Combine(ProjectCache.DirectoryFor(Project.Id), "history.bin");
+			=> Path.Combine(ProjectCache.DirectoryFor(Project.Id), ProjectCache.HistoryFileName);
 
 		/// <summary>
 		/// Where a project written before the cache existed left its greenzone:

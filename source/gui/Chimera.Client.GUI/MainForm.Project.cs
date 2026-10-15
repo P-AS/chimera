@@ -388,6 +388,12 @@ namespace Chimera.Client.GUI
 				progress.Step("finding the project's files");
 				project.ResolveDir(Path.GetDirectoryName(Path.GetFullPath(path)));
 				local = ProjectLocalPaths.Read(project, path);
+				// a project opened from somewhere else than its cache was written for is a
+				// copy, or has moved: the greenzone there is not its own (docs/project.md)
+				if (ProjectCache.DiscardGreenzoneIfMoved(project.Id, path))
+				{
+					Console.Error.WriteLine($"[cache] {path} was last opened or saved elsewhere; its cached greenzone was discarded");
+				}
 				ProjectCache.Remember(project.Id, ProjectCache.FactsOf(project, path));
 				local.ApplyTo(project);
 			}

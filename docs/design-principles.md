@@ -7622,3 +7622,28 @@ old writer and the right one now; the end-to-end test script's MCP agent
 sends the list, and the old chimera-mcp died of SIGSEGV on it. The fallback
 restore and the greenzone switch are not driven by any test: neither can be
 reached without a session, and no engine test opens one.
+
+## A project opened from another path does not use the cached greenzone (user-decided, 2026-10-15)
+
+A project's cache is keyed by its id, and a copy keeps its original's id:
+Save As, Save Backup, a recovered copy and a file copied by hand all shared
+one cache. Opening one could load another copy's state history, lag log and
+branch states under its own inputs (branch states were even matched to
+branches by their place in the list), and could delete the other copy's
+branch states as unused.
+
+The owner chose the simple rule over checking the cache against the inputs:
+the cache already records the path the project was last opened or saved
+from (about.json, until now only a label), and a project opened from any
+other path - copied or moved - has its cached greenzone, lag log and branch
+states discarded, and starts with an empty greenzone. The budgets stay;
+they are the person's choice for the project. A cache that never recorded a
+path is left alone. Save As records the new path when it saves, so the
+session that goes on in the new file keeps its greenzone; the original,
+opened again later, starts empty. Opening a backup empties the main
+project's cache in the same way, which costs replaying and never work.
+
+Tested: a new test (AProjectOpenedFromElsewhereLosesItsCachedGreenzone) keeps
+the greenzone for the same path, discards history, lag log and branch states
+for another, keeps the budgets, and leaves an unlabelled cache alone; with
+the path check made to always match, it failed.
