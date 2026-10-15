@@ -1906,8 +1906,8 @@ the driver is told - was written and removed. It is 0.5 ms a frame WORSE:
 17.74 and 17.59 against 17.22 and 17.19 for buffer pooling alone.
 
 **Those are not the numbers this section first carried, and the first ones were
-worthless.** `chimera-run` compiles the engine's sources straight in
-(`meson.build`: `engine_src + gl_bridge_src`); it does not load
+worthless.** `chimera-run` has the engine linked straight in (`meson.build`:
+the engine's static library, linked whole); it does not load
 `libchimera.dll`. Every A/B taken by copying the DLL beside it and leaving the
 executable alone measured the same binary twice, and reported the difference
 between two runs of it as the difference between two builds. Copy BOTH, and
@@ -7726,3 +7726,47 @@ new test failed with the old code. Left for the owner: a FAT12 boot sector
 that runs nothing, the ISO path-table order and the auto frame skip (each
 changes what the user gets), the guest-visible `sysinfo` unit, and asking
 the Vulkan bridge for device functions.
+
+## The rest of the audit's small faults: history, the runner, the build (2026-10-15)
+
+The second half of the low findings, after 64d228b:
+
+- **The state history.** A packed body is read through a buffer no larger
+  than the body and not cleared first (a small link used to zero a megabyte).
+  A reader of a shared file seeks only when the file is not where it left it:
+  the Windows C library throws its buffer away on every seek, which cost a
+  system call and a 4 KB read for each small field of a history being opened
+  (not measured on Windows). The disk budget no longer drops stretches whose
+  write has not landed, which freed nothing it counted. A compaction that
+  renamed its file applies the new offsets at once, and forgets the spilled
+  stretches if the file cannot be opened again. A stretch whose anchor is
+  bigger than the memory budget is not settled, as docs/state-manager.md
+  says. A background save that failed is reported by the next one.
+- **The machine.** A null sound buffer is silence; a save-data read is held
+  to what was asked; the GL context is given back after the core's
+  StateLoaded in the buffer and file loads. The three load paths still call
+  StateLoaded at different points relative to the GL and Vulkan notices;
+  making them agree needs the GPU cores tried, and is not done.
+- **chimera-run.** A property set and a loaded state are part of the
+  history's anchor and of the `--rerecord` state (the set value was lost on
+  every frame of a `--rerecord` run); `--state` with `--history-in`, and a
+  greenzone check over two different frames, are refused; every output's
+  write is checked.
+- **The build.** The engine is compiled once, into a static library linked
+  whole into libchimera, the tools and the tests: a change to session.cpp
+  compiles one file, not 29. The exported functions are the same on both
+  systems. The engine's and the sandbox's commits are read at every build
+  (vcs_tag) and say "-dirty" for a tree with uncommitted changes; the bridge
+  generators depend on gl.h and vk.xml; the nested zstd, SDL2 and OpenAL
+  builds are asked at every build.
+- **Scripts.** The no-network check reads the sandbox's host side too; an
+  ffmpeg given by hand needs its licence, and is taken before 7-Zip is
+  looked for; a dev release that could not be deleted stops the publish.
+- **The interface.** An agent's lines are applied with one invalidation; a
+  movie line's axis values are written and read in no culture; the MCP
+  dialog keeps the last 5000 lines.
+
+Left for the owner, as before: the FAT12 boot code, the ISO path-table
+order, the auto frame skip, `sysinfo`'s unit and the Vulkan device
+functions; and TAStudio does not yet show a failed background save.
+

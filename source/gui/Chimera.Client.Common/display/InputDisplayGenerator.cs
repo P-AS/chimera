@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.Globalization;
+using System.Linq;
 using System.Text;
 using Chimera.Emulation.Common;
 
@@ -30,7 +31,7 @@ namespace Chimera.Client.Common
 					}
 					else
 					{
-						sb.Append(val.ToString().PadLeft(5, ' ')).Append(',');
+						sb.Append(val.ToString(CultureInfo.InvariantCulture).PadLeft(5, ' ')).Append(',');
 					}
 				}
 				else

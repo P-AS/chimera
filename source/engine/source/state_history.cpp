@@ -236,7 +236,10 @@ public:
 		if (z == nullptr) { m_failed = true; return; }
 		m_stream = z->createDStream();
 		if (m_stream == nullptr || z->isError(z->initDStream(m_stream))) { m_failed = true; return; }
-		m_out.resize(1u << 20);
+		/* no larger than the body, and not cleared first: a small link was
+		 * a megabyte zeroed for every one read */
+		m_outCap = static_cast<size_t>(std::min<uint64_t>(uint64_t{ 1 } << 20, std::max<uint64_t>(b.raw, 1)));
+		m_out.reset(new uint8_t[m_outCap]);
 	}
 	~MemBodyReader()
 	{
@@ -263,7 +266,7 @@ public:
 		{
 			if (m_outPos == m_outLen && !refill()) return false;
 			const size_t take = m_outLen - m_outPos < n ? m_outLen - m_outPos : n;
-			std::memcpy(dst, m_out.data() + m_outPos, take);
+			std::memcpy(dst, m_out.get() + m_outPos, take);
 			m_outPos += take;
 			dst += take;
 			n -= take;
@@ -283,7 +286,7 @@ private:
 		for (;;)
 		{
 			ZstdApi::Buffer in{ frame.data() + m_consumed, frame.size() - m_consumed, 0 };
-			ZstdApi::OutBuffer o{ m_out.data(), m_out.size(), 0 };
+			ZstdApi::OutBuffer o{ m_out.get(), m_outCap, 0 };
 			const size_t rc = z->decompressStream(m_stream, &o, &in);
 			if (z->isError(rc)) return false;
 			m_consumed += in.pos;
@@ -303,7 +306,8 @@ private:
 	bool m_failed = false;
 	void *m_stream = nullptr;
 	size_t m_consumed = 0;
-	std::vector<uint8_t> m_out;
+	std::unique_ptr<uint8_t[]> m_out;
+	size_t m_outCap = 0;
 	size_t m_outPos = 0, m_outLen = 0;
 };
 
@@ -618,6 +622,7 @@ bool SpillBodyReader::open(std::FILE *f, uint64_t at, uint64_t length, bool pack
 	m_length = length;
 	m_packed = packed;
 	m_pos = 0;
+	m_fileAt = UINT64_MAX; /* the first read seeks */
 	if (f == nullptr) return false;
 	if (!packed) return true;
 	const ZstdApi *z = zstdApi(nullptr);
@@ -627,6 +632,13 @@ bool SpillBodyReader::open(std::FILE *f, uint64_t at, uint64_t length, bool pack
 	m_in.resize(256u << 10);
 	m_out.resize(1u << 20);
 	return true;
+}
+
+bool SpillBodyReader::placeAt(uint64_t want)
+{
+	uint64_t now = 0;
+	if (m_fileAt == want && tellAt(m_f, now) && now == want) return true;
+	return seekTo(m_f, want);
 }
 
 bool SpillBodyReader::refill()
@@ -640,8 +652,9 @@ bool SpillBodyReader::refill()
 			if (m_consumed >= m_length) return false;   /* the extent is exhausted */
 			const uint64_t left = m_length - m_consumed;
 			const size_t take = static_cast<size_t>(left < m_in.size() ? left : m_in.size());
-			if (!seekTo(m_f, m_at + m_consumed) || !readAll(m_f, m_in.data(), take)) return false;
+			if (!placeAt(m_at + m_consumed) || !readAll(m_f, m_in.data(), take)) { m_fileAt = UINT64_MAX; return false; }
 			m_consumed += take;
+			m_fileAt = m_at + m_consumed;
 			m_inPos = 0;
 			m_inLen = take;
 		}
@@ -663,8 +676,9 @@ bool SpillBodyReader::read(void *out, size_t n)
 	if (!m_packed)
 	{
 		if (m_pos + n > m_length) return false;
-		if (!seekTo(m_f, m_at + m_pos) || !readAll(m_f, out, n)) return false;
+		if (!placeAt(m_at + m_pos) || !readAll(m_f, out, n)) { m_fileAt = UINT64_MAX; return false; }
 		m_pos += n;
+		m_fileAt = m_at + m_pos;
 		return true;
 	}
 	auto *dst = static_cast<uint8_t *>(out);
@@ -821,6 +835,10 @@ size_t StateHistory::chooseVictim(bool spilled) const
 		const Segment &s = m_segments[i];
 		if (s.spilled != spilled) continue;
 		if (holdsPinned(m_pinned, s.anchorFrame, s.lastFrame())) continue;
+		/* a spilled stretch whose write has not landed counts for nothing in
+		 * the disk's total yet: dropping it would free nothing that is
+		 * counted, and the disk budget's loop would go on dropping them all */
+		if (spilled && (s.writeWanted || s.physLength == 0)) continue;
 		const int64_t gap = m_segments[i + 1].anchorFrame - m_segments[i - 1].anchorFrame;
 		if (best == m_segments.size() || gap < bestGap) { best = i; bestGap = gap; }
 	}
@@ -990,9 +1008,8 @@ bool StateHistory::compactSpill()
 		m_spillRead = chimera::openFile(path.c_str(), "rb");
 		return false;
 	}
-	m_spill = chimera::openFile(path.c_str(), "r+b");
-	m_spillRead = chimera::openFile(path.c_str(), "rb");
-	if (m_spill == nullptr || m_spillRead == nullptr) return false;
+	/* The file on disk is the compacted one from here, whatever happens next:
+	 * the stretches are where it put them. */
 	{
 		size_t k = 0;
 		for (Segment &seg : m_segments)
@@ -1006,6 +1023,20 @@ bool StateHistory::compactSpill()
 	m_spillBytes = at;
 	m_fileBytes = physAt;
 	m_writtenThrough = at;   /* every live byte was just copied, here, in full */
+	m_spill = chimera::openFile(path.c_str(), "r+b");
+	m_spillRead = chimera::openFile(path.c_str(), "rb");
+	if (m_spill == nullptr || m_spillRead == nullptr)
+	{
+		/* a file that cannot be opened again cannot be read either: what was
+		 * in it goes, as when the folder changes, which costs replaying */
+		dropSpillFile();
+		chimera::removeFile(path.c_str());
+		for (size_t i = m_segments.size(); i-- > 0; )
+		{
+			if (m_segments[i].spilled) forgetSegment(i);
+		}
+		return false;
+	}
 	m_costs.compactions++;
 	if (historyTrace())
 	{
@@ -2330,6 +2361,16 @@ void StateHistory::settleSpilled(int64_t farFrame)
 				seg.settled = true;   /* unreadable: left as it is, and not asked again */
 				continue;
 			}
+			/* Its anchor is decoded whole to be composed against, on this
+			 * thread and outside the count: one bigger than the memory budget
+			 * is left as it is (docs/state-manager.md), the working copy would
+			 * not fit. */
+			if (st.anchorLen > m_budget)
+			{
+				seg.settled = true;
+				st = Settling{};
+				continue;
+			}
 			st.reader = std::move(reader);
 			st.active = true;
 			st.anchorFrame = seg.anchorFrame;
@@ -3517,8 +3558,15 @@ bool StateHistory::saveToLater(const char *path, const char *machineId, std::str
 
 	/* One at a time: the second would be describing a history the first has
 	 * already been told about, and a save nobody waited for is not worth
-	 * queueing twice. */
-	saveWait(error);
+	 * queueing twice. The first's failure is said, and answered: it used to
+	 * be overwritten by this one's result, so nobody ever heard of it. */
+	std::string previous;
+	const bool previousOk = saveWait(previous) || previous.empty();
+	if (!previousOk)
+	{
+		fprintf(stderr, "[history] the last background save of the state history failed: %s\n", previous.c_str());
+		fflush(stderr);
+	}
 
 	{
 		std::lock_guard<std::mutex> lock(m_savedLock);
@@ -3547,6 +3595,12 @@ bool StateHistory::saveToLater(const char *path, const char *machineId, std::str
 		m_saved.ok = ok;
 		m_saved.error = std::move(why);
 	});
+	/* this one is queued all the same; the answer is about the one before */
+	if (!previousOk)
+	{
+		error = "the previous save of the state history failed: " + previous;
+		return false;
+	}
 	return true;
 }
 

@@ -1332,9 +1332,10 @@ int32_t ce_session::advanceCore(const uint8_t *buttons, int32_t render)
 	if (nsamp < 0) nsamp = 0;
 	if (nsamp > cfg.samplesPerFrame) nsamp = cfg.samplesPerFrame;
 	const auto *src = reinterpret_cast<const int16_t *>(getAudio());
+	if (src == nullptr) nsamp = 0; /* no sound set up yet: silence, not a read of address 0 */
 	if (cfg.channels == 2)
 	{
-		std::memcpy(audioBuf.data(), src, static_cast<size_t>(nsamp) * 2 * sizeof(int16_t));
+		if (nsamp > 0) std::memcpy(audioBuf.data(), src, static_cast<size_t>(nsamp) * 2 * sizeof(int16_t));
 	}
 	else
 	{
@@ -2369,9 +2370,10 @@ int32_t ce_session_frame_advance(ce_session *s, uint64_t buttons, int32_t render
 	if (nsamp < 0) nsamp = 0;
 	if (nsamp > s->cfg.samplesPerFrame) nsamp = s->cfg.samplesPerFrame;
 	const auto *src = reinterpret_cast<const int16_t *>(s->getAudio());
+	if (src == nullptr) nsamp = 0; /* no sound set up yet: silence, not a read of address 0 */
 	if (s->cfg.channels == 2)
 	{
-		std::memcpy(s->audioBuf.data(), src, static_cast<size_t>(nsamp) * 2 * sizeof(int16_t));
+		if (nsamp > 0) std::memcpy(s->audioBuf.data(), src, static_cast<size_t>(nsamp) * 2 * sizeof(int16_t));
 	}
 	else
 	{
@@ -2493,6 +2495,7 @@ int32_t ce_session_load_state(ce_session *s, const uint8_t *data, uint64_t len)
 		return 1;
 	}
 	afterStateLoaded(s);
+	ce_gl_release(); /* StateLoaded is guest code too, and may have drawn */
 	return 0;
 }
 
@@ -2748,6 +2751,7 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 		return 1;
 	}
 	afterStateLoaded(s);
+	ce_gl_release(); /* StateLoaded is guest code too, and may have drawn */
 	s->stateFileRawBytes = source.raw;
 	s->stateFileStoredBytes = source.fileBytes;
 
@@ -3193,8 +3197,16 @@ int64_t ce_session_savedata_read(ce_session *s, int32_t index, int64_t offset, u
 		int64_t done = 0;
 		while (done < n)
 		{
-			const int64_t got = s->sdRead(guest, offset + done, n - done);
+			int64_t got = s->sdRead(guest, offset + done, n - done);
 			if (got <= 0) break;
+			/* the guest's count, so no more than was asked: past it is the
+			 * caller's memory, outside the sandbox */
+			if (got > n - done)
+			{
+				fprintf(stderr, "[%s] ReadSaveDataFile answered %lld bytes when %lld were asked; the rest is not copied\n",
+					s->cfg.coreName.c_str(), (long long)got, (long long)(n - done));
+				got = n - done;
+			}
 			const auto *win = reinterpret_cast<const uint8_t *>(s->sdScratch());
 			if (win == nullptr) break;
 			std::memcpy(buf + done, win, static_cast<size_t>(got));

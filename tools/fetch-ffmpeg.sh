@@ -15,7 +15,10 @@
 # first build.
 #
 # CHIMERA_FFMPEG_LINUX / CHIMERA_FFMPEG_WINDOWS name a local binary to use
-# instead, for a machine that cannot reach the network.
+# instead, for a machine that cannot reach the network. CHIMERA_FFMPEG_LICENSE
+# must then name a text file with that binary's licence and where its source
+# is: the bundle ships it as ffmpeg-LICENSE.txt, since an ffmpeg is usually
+# under the GPL and may not be handed on without them.
 set -eu
 
 platform="${1:?usage: fetch-ffmpeg.sh <linux|windows> <dest dir>}"
@@ -85,6 +88,29 @@ fetch() { # <url> <path> <sha256> <what>
 	}
 }
 
+# ---- a binary given by hand: before anything is downloaded, since it is for
+# a machine that cannot download (the 7-Zip bootstrap below would fail first)
+if [ -n "$override" ]; then
+	[ -f "$override" ] || { echo "fetch-ffmpeg: $override is not a file" >&2; exit 1; }
+	licence="${CHIMERA_FFMPEG_LICENSE:-}"
+	[ -n "$licence" ] && [ -f "$licence" ] || {
+		echo "fetch-ffmpeg: CHIMERA_FFMPEG_LICENSE must name a text file with the licence of $override" >&2
+		echo "  and where its source is; the bundle cannot ship the binary without them." >&2
+		exit 1
+	}
+	cp "$override" "$dest/$binary"
+	chmod +x "$dest/$binary"
+	{
+		printf "ffmpeg (%s), given by whoever built this bundle - not the build Chimera pins.\n\n" "$platform"
+		printf "Shipped as a separate program, which Chimera runs and talks to over a pipe.\n"
+		printf "It is not linked into Chimera. sha256 of this binary: %s\n\n" "$(sha256sum "$override" | cut -d' ' -f1)"
+		printf "Its licence, and where its source is, as the builder gave them:\n\n"
+		cat "$licence"
+	} > "$dest/ffmpeg-LICENSE.txt"
+	echo "  ffmpeg from $override"
+	exit 0
+fi
+
 # ---- the unpacker -----------------------------------------------------------
 sevenzip=""
 for candidate in 7zz 7z 7za; do
@@ -100,13 +126,6 @@ if [ -z "$sevenzip" ]; then
 fi
 
 # ---- the binary -------------------------------------------------------------
-if [ -n "$override" ]; then
-	[ -f "$override" ] || { echo "fetch-ffmpeg: $override is not a file" >&2; exit 1; }
-	cp "$override" "$dest/$binary"
-	chmod +x "$dest/$binary"
-	echo "  ffmpeg from $override"
-	exit 0
-fi
 
 fetch "$base/$archive" "$cache/$archive" "$archive_sha256" "$archive"
 fetch "$licence_url" "$cache/COPYING.GPLv3" "$licence_sha256" "the GPL v3 text"

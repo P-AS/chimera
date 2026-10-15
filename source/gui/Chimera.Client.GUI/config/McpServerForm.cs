@@ -2,6 +2,7 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Windows.Forms;
 
@@ -238,10 +239,26 @@ namespace Chimera.Client.GUI
 				// a line the engine no longer keeps (more than 5000 since we last looked)
 				if (line.Length is 0) continue;
 				added.Append(line).Append("\r\n");
+				_linesInBox++;
 			}
 			_logShown = total;
 			_log.AppendText(added.ToString());
+			// as many lines as the engine keeps, give or take a few hundred: the
+			// box grew for as long as the dialog stayed open
+			if (_linesInBox > KeptLines + 500)
+			{
+				var lines = _log.Lines;
+				_log.Lines = lines.Skip(Math.Max(0, lines.Length - 1 - KeptLines)).ToArray();
+				_linesInBox = KeptLines;
+				_log.SelectionStart = _log.TextLength;
+				_log.ScrollToCaret();
+			}
 		}
+
+		private int _linesInBox;
+
+		/// <summary>The engine keeps the last 5000 lines of the log; the box shows no more.</summary>
+		private const int KeptLines = 5000;
 
 		/// <summary>Writes the log as shown to a file. For the button, and for tests.</summary>
 		public void SaveLog(string path)

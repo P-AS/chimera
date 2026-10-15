@@ -830,12 +830,12 @@ int main(void)
 	  // is the control: it offers more old frames and weighs more on disk.
 		const chimera::HostApi api = fakeHost();
 		auto run = [&](const char *dir, int64_t farStride, chimera::StateHistory &h,
-			std::vector<std::array<uint8_t, Machine::kCells>> &truth)
+			std::vector<std::array<uint8_t, Machine::kCells>> &truth, uint64_t budget = 512)
 		{
 			g_machine = Machine{};
 			std::filesystem::remove_all(dir);
 			std::filesystem::create_directories(dir);
-			h.configure(&api, nullptr, 512);
+			h.configure(&api, nullptr, budget);
 			h.bands(2, 6, 3, farStride, 8);
 			h.spillTo(dir);
 			h.capture(0);
@@ -884,9 +884,23 @@ int main(void)
 				assert(std::memcmp(g_machine.cell, truthD[static_cast<size_t>(f)].data(), Machine::kCells) == 0);
 			}
 		}
+
+		/* A stretch whose anchor is bigger than the whole memory budget is left
+		 * as it is: settling decodes the anchor whole, outside the budget. With
+		 * a budget smaller than one anchor, settling changes nothing - the run
+		 * offers what the same run that keeps everything offers. */
+		chimera::StateHistory tight, tightDense;
+		std::vector<std::array<uint8_t, Machine::kCells>> truthT, truthTD;
+		run("work-history-settle-tight", 12, tight, truthT, Machine::kCells / 2);
+		run("work-history-settle-tight-control", 1, tightDense, truthTD, Machine::kCells / 2);
+		tight.flushWrites();
+		tightDense.flushWrites();
+		for (int64_t f = 0; f <= 160; f++) assert(tight.nearest(f) == tightDense.nearest(f));
 	}
 	std::filesystem::remove_all("work-history-settle");
 	std::filesystem::remove_all("work-history-settle-control");
+	std::filesystem::remove_all("work-history-settle-tight");
+	std::filesystem::remove_all("work-history-settle-tight-control");
 
 	{ // An edit that lands on the last frame of a spilled stretch starts a new
 	  // stretch. A delta pushed onto the spilled one would sit in memory while
@@ -1577,6 +1591,15 @@ int main(void)
 		during.configure(&api, nullptr, 1u << 20);
 		assert(during.loadFrom("work-history-save/during.bin", "fake", error));
 		assert(during.nearest(INT64_MAX) <= 90);
+
+		/* A save that fails in the background is heard of at the next one,
+		 * which is still made: its result used to overwrite the failure. */
+		assert(h.saveToLater("work-history-save/no-such-folder/h.bin", "fake", error));
+		error.clear();
+		assert(!h.saveToLater("work-history-save/after.bin", "fake", error));
+		assert(error.find("previous save") != std::string::npos);
+		assert(h.saveWait(error));
+		assert(std::filesystem::exists("work-history-save/after.bin"));
 
 		(void)sawPending;   /* a fast enough writer may have finished already */
 		std::filesystem::remove_all("work-history-save");

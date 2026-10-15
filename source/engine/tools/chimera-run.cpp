@@ -548,6 +548,11 @@ int main(int argc, char **argv)
 		else if (projectPath.empty() && moviePath == nullptr) moviePath = argv[i];
 		else return fail(metaPath, "unexpected argument: " + arg);
 	}
+	/* one reference machine, for one frame: a seek and a rewind to two
+	 * different frames would compare one landing against the other's machine
+	 * and always report a divergence */
+	if (greenzoneCheck && seekFrame >= 0 && rewindTo >= 0 && seekFrame != rewindTo)
+		return fail(metaPath, "--greenzone-check checks one frame: give --seek and --rewind-loop the same frame, or only one of them");
 	bool projectMode = !projectPath.empty();
 	if (projectMode ? packagePath == nullptr : (suggest || importMovie ? romPath == nullptr : moviePath == nullptr))
 	{
@@ -807,8 +812,12 @@ int main(int argc, char **argv)
 	/* --rewind-loop needs the history too: it seeks back through it, and a run
 	 * without one fails at the first pass with "no stored state at or before
 	 * the target frame". */
-	if (seekFrame >= 0 || rewindTo >= 0 || keptCheck >= 0 || (probeFrom >= 0 && !probeByState) || !historyIn.empty() || !historyOut.empty() || !greenzoneMap.empty()
-		|| greenzoneBytes > 0 || greenzonePeriod >= 0)
+	const bool greenzoneOn = seekFrame >= 0 || rewindTo >= 0 || keptCheck >= 0 || (probeFrom >= 0 && !probeByState) || !historyIn.empty() || !historyOut.empty() || !greenzoneMap.empty()
+		|| greenzoneBytes > 0 || greenzonePeriod >= 0;
+	const uint64_t greenzoneBudget = greenzoneBytes > 0 ? (uint64_t)greenzoneBytes : (uint64_t)greenzoneMb << 20;
+	if (greenzoneOn && !historyIn.empty() && (!stateIn.empty() || !stateFileIn.empty()))
+		return fail(metaPath, "--history-in describes the machine the movie starts from, and --state replaces that machine: they cannot be used together");
+	if (greenzoneOn)
 	{
 		/* Bands before enabling: enabling captures the anchor, and the anchor
 		 * spacing decides whether it is the only one. */
@@ -834,7 +843,7 @@ int main(int argc, char **argv)
 		ce_session_greenzone_disk_budget(session, (uint64_t)greenzoneDiskMb << 20);
 		if (greenzoneMaxStride > 0) ce_session_greenzone_max_near_stride(session, greenzoneMaxStride);
 		if (greenzoneBandGoal > 0) ce_session_greenzone_band_goal(session, greenzoneBandGoal);
-		ce_session_greenzone_enable(session, greenzoneBytes > 0 ? (uint64_t)greenzoneBytes : (uint64_t)greenzoneMb << 20);
+		ce_session_greenzone_enable(session, greenzoneBudget);
 		if (picturesMb >= 0) ce_session_greenzone_pictures(session, (uint64_t)picturesMb << 20, (int32_t)picturesSettle);
 	}
 	/* A history kept from a previous run, which is the thing a reopened project
@@ -871,7 +880,8 @@ int main(int argc, char **argv)
 			const char *name = ce_session_axis_name(session, a);
 			out += std::string(name) + "\t\t" + ce_session_axis_header_of(session, name) + "\n";
 		}
-		writeWholeFile(controlsPath, reinterpret_cast<const uint8_t *>(out.data()), out.size());
+		if (!writeWholeFile(controlsPath, reinterpret_cast<const uint8_t *>(out.data()), out.size()))
+			return fail(metaPath, "could not write " + controlsPath);
 	}
 
 	/* Record mode: decode the source movie's entries into machine input and
@@ -937,6 +947,27 @@ int main(int argc, char **argv)
 		}
 		fprintf(stderr, "state file tag: %.*s\n", (int)(tagLen < sizeof tag ? tagLen : sizeof tag), (const char *)tag);
 	}
+	/* --property-set: before the --rerecord state below is taken, or the
+	 * first frame's load of it would throw the write away */
+	if (!propertySet.empty())
+	{
+		const size_t eq = propertySet.find('=');
+		if (eq == std::string::npos) return fail(metaPath, "--property-set wants <name>=<text>");
+		const std::string name = propertySet.substr(0, eq);
+		uint32_t element = 0;
+		const int32_t index = ce_session_property_find(session, name.c_str(), &element);
+		if (index < 0) std::printf("prop set %s: no such property\n", name.c_str());
+		else if (ce_session_property_set_text(session, index, element, propertySet.c_str() + eq + 1) != 0)
+			std::printf("prop set %s: %s\n", name.c_str(), ce_session_last_error(session));
+		else std::printf("prop set %s: done\n", name.c_str());
+	}
+
+	/* The history's anchor was taken when it was enabled, of the machine as it
+	 * was then. A state loaded since, or a value set, makes the machine the
+	 * run starts from, and a seek back to the anchor would otherwise bring the
+	 * old one back. Enabling again empties the history and anchors it here. */
+	if (greenzoneOn && historyIn.empty() && (!stateIn.empty() || !stateFileIn.empty() || !propertySet.empty()))
+		ce_session_greenzone_enable(session, greenzoneBudget);
 
 	std::vector<uint8_t> state;
 	if (rerecord)
@@ -950,18 +981,6 @@ int main(int argc, char **argv)
 	const int64_t firstPass = playFrames >= 0 && playFrames < frames ? playFrames : frames;
 	FILE *rates = ratesPath.empty() ? nullptr : chimera::openFile(ratesPath.c_str(), "w");
 	if (!ratesPath.empty() && rates == nullptr) return fail(metaPath, "could not write " + ratesPath);
-	if (!propertySet.empty())
-	{
-		const size_t eq = propertySet.find('=');
-		if (eq == std::string::npos) return fail(metaPath, "--property-set wants <name>=<text>");
-		const std::string name = propertySet.substr(0, eq);
-		uint32_t element = 0;
-		const int32_t index = ce_session_property_find(session, name.c_str(), &element);
-		if (index < 0) std::printf("prop set %s: no such property\n", name.c_str());
-		else if (ce_session_property_set_text(session, index, element, propertySet.c_str() + eq + 1) != 0)
-			std::printf("prop set %s: %s\n", name.c_str(), ce_session_last_error(session));
-		else std::printf("prop set %s: done\n", name.c_str());
-	}
 	for (int64_t i = 0; i < firstPass; i++)
 	{
 		if (greenzonePeriod >= 0 && i == greenzonePeriodAt) ce_session_greenzone_capture_period(session, greenzonePeriod);
@@ -1630,15 +1649,17 @@ int main(int argc, char **argv)
 			FILE *out = chimera::openFile(path.c_str(), "wb");
 			if (out == nullptr) return fail(metaPath, "could not write " + path);
 			int64_t size = ce_session_savedata_size(session, f);
-			bool ok = true;
+			bool ok = true, readShort = false;
 			for (int64_t off = 0; off < size && ok;)
 			{
 				int64_t got = ce_session_savedata_read(session, f, off, chunk.data(), static_cast<int64_t>(chunk.size()));
-				if (got <= 0) { ok = false; break; }
+				if (got <= 0) { ok = false; readShort = true; break; }
 				ok = std::fwrite(chunk.data(), 1, static_cast<size_t>(got), out) == static_cast<size_t>(got);
 				off += got;
 			}
-			std::fclose(out);
+			if (std::fclose(out) != 0) ok = false;   /* a small file reaches the disk only here */
+			if (readShort)
+				return fail(metaPath, std::string("the core would not hand over all of ") + ce_session_savedata_name(session, f));
 			if (!ok) return fail(metaPath, "could not write " + path);
 		}
 		std::printf("savedata=%d\n", files);
@@ -1759,7 +1780,11 @@ int main(int argc, char **argv)
 			ce_game_time_text(gameMs, text, sizeof text);
 			meta += "gameTimeMs=" + std::to_string(gameMs) + "\ngameTime=" + text + "\n";
 		}
-		writeWholeFile(metaPath, reinterpret_cast<const uint8_t *>(meta.data()), meta.size());
+		if (!writeWholeFile(metaPath, reinterpret_cast<const uint8_t *>(meta.data()), meta.size()))
+		{
+			std::fprintf(stderr, "chimera-run: could not write %s\n", metaPath.c_str());
+			return 2;
+		}
 	}
 	std::printf("frames=%lld\n", static_cast<long long>(frames));
 	ce_movie_log_free(movie);

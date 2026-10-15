@@ -58,8 +58,11 @@ namespace chimera
  * walks its links - so this hands out exactly that, from either a raw extent or
  * a zstd frame, without ever holding the decompressed body whole.
  *
- * It re-seeks before every read of the file, because the handle it is given is
- * shared with the other readers on the same thread. */
+ * The handle it is given is shared with the other readers on the same thread,
+ * so before a read it makes sure the file is where it needs it: by a seek,
+ * unless it left the file there itself and the file is still there. A seek
+ * every time cost the Windows C library its buffer on every small field, a
+ * system call and a 4 KB read each. */
 class SpillBodyReader
 {
 public:
@@ -79,8 +82,10 @@ public:
 
 private:
 	bool refill();
+	bool placeAt(uint64_t want);
 
 	std::FILE *m_f = nullptr;
+	uint64_t m_fileAt = UINT64_MAX; /* where this reader last left m_f */
 	uint64_t m_at = 0, m_length = 0;
 	bool m_packed = false;
 	uint64_t m_pos = 0;

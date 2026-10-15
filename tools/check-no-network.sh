@@ -23,8 +23,13 @@ if grep -rnE --include='*.cs' --include='*.csproj' --include='*.props' --include
 	--exclude-dir=obj --exclude-dir=bin "$managed" "$root/source/gui"; then
 	found=1
 fi
+# and the sandbox's host side, which ships in every bundle too: libminiboxhost
+# is built from source/host, and libchimera compiles the GL, Vulkan and cache
+# bridges. Its guest side is not Chimera's: it is the C library a core is
+# built with, inside the sandbox, and a guest's socket call is refused there.
+mb="$root/extern/chimera-common-minibox/source"
 if grep -rnE --include='*.c' --include='*.cc' --include='*.cpp' --include='*.h' --include='*.hpp' \
-	"$native" "$root/source/engine"; then
+	"$native" "$root/source/engine" "$mb/host" "$mb/gl" "$mb/vk" "$mb/cache"; then
 	found=1
 fi
 # what is BUILT from extern/ for the bundle is named in meson.build; a network
@@ -37,4 +42,4 @@ if [ "$found" -ne 0 ]; then
 	echo "check-no-network: the lines above name a network API. Chimera has none; see docs/core-manager.md." >&2
 	exit 1
 fi
-echo "check-no-network: clean (source/gui, source/engine, meson.build)"
+echo "check-no-network: clean (source/gui, source/engine, miniBox's host side, meson.build)"

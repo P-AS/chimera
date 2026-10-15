@@ -1,0 +1,3 @@
+/* Generated at every build by meson's vcs_tag (meson.build): the commit the
+ * code was built from, with "-dirty" when the tree had uncommitted changes. */
+#define CE_GENERATED_BUILD_COMMIT "@COMMIT@"

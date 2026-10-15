@@ -154,7 +154,25 @@ if [ "$kind" = dev ]; then
 	# commit whose .github/workflows differ from the default branch's counts as
 	# exactly that. Deleting the release with its tag and recreating it goes
 	# through the API, which has no such restriction.
-	gh release delete dev --yes --cleanup-tag 2>/dev/null || true
+	#
+	# The delete is retried and then checked: a failed one left the old release
+	# standing, ensure_release found it and the new package went in beside the
+	# old one, under the old title, notes and commit. "Not found" is the only
+	# answer that means gone; any other failure to look is asked again.
+	dev_gone=0
+	for n in 1 2 3 4; do
+		gh release delete dev --yes --cleanup-tag >/dev/null 2>&1 || true
+		if look=$(gh release view dev 2>&1 >/dev/null); then
+			:
+		else
+			case "$look" in *"not found"*) dev_gone=1; break ;; esac
+		fi
+		[ "$n" -lt 4 ] && { echo "retrying in $((n * 15))s: delete the old dev release" >&2; sleep $((n * 15)); }
+	done
+	if [ "$dev_gone" -ne 1 ]; then
+		echo "publish-core: the old dev release could not be deleted; the new package is not put into it" >&2
+		exit 1
+	fi
 	ensure_release dev "Development build ${version:0:8}"
 	retry gh release upload dev "$staging/$asset" --clobber
 else

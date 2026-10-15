@@ -151,11 +151,17 @@ shared_library(
 # zstd: savestate compression; upstream's own meson build, nested
 # ---------------------------------------------------------------------------
 nested_tool = files('extern/meson/nested-build.sh')
+# The three nested builds below are asked at every build (build_always_stale):
+# meson cannot see their sources, so a bump of the submodule left the old
+# library in an existing build directory. Each sub-build is incremental and
+# reconfigures itself when its own build files change, so asking costs a
+# no-op there, and the library is copied out only when it changed.
 cross_arg = host_windows ? '--cross-file=' + repo_root / 'extern/meson/mingw-w64.ini' : ''
 zstd_out = host_windows ? 'libzstd.dll' : 'libzstd.so'
 custom_target(
   'zstd',
   output: zstd_out,
+  build_always_stale: true,
   command: [
     nested_tool, 'meson',
     repo_root / 'extern/zstd/build/meson',
@@ -176,6 +182,7 @@ cmake_toolchain = host_windows ? repo_root / 'extern/meson/mingw-toolchain.cmake
 custom_target(
   'sdl2',
   output: host_windows ? 'SDL2.dll' : 'libSDL2.so',
+  build_always_stale: true,
   command: [
     nested_tool, 'cmake',
     repo_root / 'extern/SDL2',
@@ -190,6 +197,7 @@ custom_target(
 custom_target(
   'openal',
   output: host_windows ? 'OpenAL32.dll' : 'libopenal.so',
+  build_always_stale: true,
   command: [
     nested_tool, 'cmake',
     repo_root / 'extern/openal-soft',
@@ -231,24 +239,32 @@ minibox_host_src = files(
 # Provenance compiled into the host, matching what miniBox's own build stamps: the
 # frontend shows it and a movie records it, so every binary in the emulation path can
 # say where it came from. Inputs only, never a timestamp.
-minibox_commit = run_command(
-  'git', '-C', repo_root / 'extern/chimera-common-minibox', 'rev-parse', '--short=12', 'HEAD',
-  check: false).stdout().strip()
-if minibox_commit == ''
-  minibox_commit = 'unknown'
-endif
+#
+# Read at every build (vcs_tag), not when meson configured: a pull and a compile
+# kept reporting the commit the build directory was set up at. "-dirty" marks a
+# build of a tree with uncommitted changes. A pattern no tag has makes describe
+# answer with the commit alone.
+minibox_commit_h = vcs_tag(
+  command: ['git', '-C', repo_root / 'extern/chimera-common-minibox', 'describe',
+    '--always', '--abbrev=12', '--dirty', '--match=chimera-no-tag-has-this-name'],
+  input: 'source/engine/source/build_commit.h.in',
+  output: 'mb_build_commit.h',
+  replace_string: '@COMMIT@',
+  fallback: 'unknown',
+)
 minibox_build_os = run_command(
   'sh', '-c', '. /etc/os-release 2>/dev/null && printf "%s %s" "$ID" "$VERSION_ID" || uname -s',
   check: false).stdout().strip()
 
 shared_library(
   'miniboxhost',
-  minibox_host_src,
+  minibox_host_src + [minibox_commit_h],
   name_prefix: 'lib',  # libminiboxhost.{so,dll} on both targets (the adapter resolves this name)
   include_directories: include_directories('extern/chimera-common-minibox/source/host'),
   c_args: [
     '-fno-strict-aliasing',
-    '-DMB_BUILD_COMMIT="' + minibox_commit + '"',
+    '-include', meson.current_build_dir() / 'mb_build_commit.h',
+    '-DMB_BUILD_COMMIT=CE_GENERATED_BUILD_COMMIT',
     '-DMB_BUILD_COMPILER="' + meson.get_compiler('c').get_id() + ' ' + meson.get_compiler('c').version() + '"',
     '-DMB_BUILD_OS="' + minibox_build_os + '"',
   ],
@@ -306,15 +322,21 @@ engine_src = files(
   'extern/cjson/cJSON.c',  # vendored (MIT): bundle JSON
 )
 # Provenance: this repo's commit, since the engine lives in-tree. Inputs only.
-engine_commit = run_command(
-  'git', '-C', repo_root, 'rev-parse', '--short=12', 'HEAD',
-  check: false).stdout().strip()
-if engine_commit == ''
-  engine_commit = 'unknown'
-endif
+# Read at every build, as the host's is above: it is in every state file the
+# engine writes (state_format.cpp) and in ce_build_info.
+engine_commit_h = vcs_tag(
+  command: ['git', '-C', repo_root, 'describe',
+    '--always', '--abbrev=12', '--dirty', '--match=chimera-no-tag-has-this-name'],
+  input: 'source/engine/source/build_commit.h.in',
+  output: 'ce_build_commit.h',
+  replace_string: '@COMMIT@',
+  fallback: 'unknown',
+)
+engine_src += [engine_commit_h]
 engine_build_args = [
   '-I' + repo_root / 'extern/chimera-common-minibox/source/cache',
-  '-DCE_BUILD_COMMIT="' + engine_commit + '"',
+  '-include', meson.current_build_dir() / 'ce_build_commit.h',
+  '-DCE_BUILD_COMMIT=CE_GENERATED_BUILD_COMMIT',
   # where the tree is, for the one test that reads it: test_state_format checks
   # the sandbox's own magic strings still say what the state layout claims
   '-DCE_REPO_ROOT="' + repo_root + '"',
@@ -358,6 +380,9 @@ if gl_bridge
     depend_files: [
       files('extern/chimera-common-minibox/source/gl/gl-entry-points.txt'),
       files('extern/chimera-common-minibox/source/gl/gen-gl-bridge.py'),
+      # and the header it reads the signatures from: a glad bump otherwise
+      # left the old generated code in an existing build directory
+      files('extern/glad/include/glad/gl.h'),
     ])
 
   gl_bridge_src = [gl_bridge_gen[0], files('extern/glad/src/gl.c')]
@@ -391,6 +416,7 @@ if gl_bridge
     depend_files: [
       files('extern/chimera-common-minibox/source/vk/vk-entry-points.txt'),
       files('extern/chimera-common-minibox/source/vk/gen-vk-bridge.py'),
+      files('extern/chimera-common-minibox/extern/vulkan-headers/registry/vk.xml'),
     ])
   gl_bridge_src += [vk_bridge_gen[0], vk_bridge_gen[2],
     files('extern/chimera-common-minibox/source/vk/vk-host.c')]
@@ -398,25 +424,47 @@ if gl_bridge
     '-I' + vk_bridge_dir,
     '-I' + vk_headers_dir / 'include']
 endif
-shared_library(
-  'chimera',
+# The engine is compiled ONCE, into a static library, and that is linked
+# whole into libchimera, the tools and every test. Each of them used to list
+# the engine's sources as its own, so a full build compiled every one of them
+# 29 times (about 2300 s of CPU, 6.4 s for each copy of session.cpp).
+# link_whole keeps every object, as compiling them in did: nothing that only
+# registers itself is dropped by the linker.
+engine_generated = [engine_commit_h]   # headers the engine's users include too
+if gl_bridge
+  engine_generated += [gl_bridge_gen[1], vk_bridge_gen[0]]
+endif
+engine_lib = static_library(
+  'chimera_engine',
   engine_src + gl_bridge_src,
-  name_prefix: 'lib',  # libchimera.{so,dll} on both targets (the frontend resolves this name)
   include_directories: engine_inc,
   cpp_args: engine_build_args,
   c_args: engine_build_args,
+  dependencies: [dl_dep] + gl_bridge_deps,
+  pic: true,
+  gnu_symbol_visibility: 'default',
+)
+engine_dep = declare_dependency(
+  link_whole: engine_lib,
+  sources: engine_generated,
+  include_directories: engine_inc,
   dependencies: [dl_dep] + gl_bridge_deps,  # zstd_dyn loads libzstd from beside the library
+)
+shared_library(
+  'chimera',
+  name_prefix: 'lib',  # libchimera.{so,dll} on both targets (the frontend resolves this name)
+  dependencies: [engine_dep],
   gnu_symbol_visibility: 'default',
   install: true,
   install_dir: 'dll',
 )
 executable(
   'chimera-run',
-  ['source/engine/tools/chimera-run.cpp'] + engine_src + gl_bridge_src,
+  ['source/engine/tools/chimera-run.cpp'],
   include_directories: engine_inc,
   cpp_args: engine_build_args,
   c_args: engine_build_args,
-  dependencies: [dl_dep] + gl_bridge_deps,
+  dependencies: [engine_dep],
   # CommandLineToArgvW: the tool takes its arguments from the wide command line on Windows
   link_args: host_machine.system() == 'windows' ? ['-lshell32'] : [],
   install: true,
@@ -427,11 +475,11 @@ executable(
 # each call to Chimera over a local pipe; it opens no socket.
 executable(
   'chimera-mcp',
-  ['source/engine/tools/chimera-mcp.cpp'] + engine_src + gl_bridge_src,
+  ['source/engine/tools/chimera-mcp.cpp'],
   include_directories: engine_inc,
   cpp_args: engine_build_args,
   c_args: engine_build_args,
-  dependencies: [dl_dep] + gl_bridge_deps,
+  dependencies: [engine_dep],
   install: true,
   install_dir: 'dll',
 )
@@ -443,11 +491,11 @@ if meson.is_cross_build()
   # from Linux through WSL. The other tests are built for the host only.
   executable(
     'test_mcp',
-    ['source/engine/tests/test_mcp.cpp'] + engine_src + gl_bridge_src,
+    ['source/engine/tests/test_mcp.cpp'],
     include_directories: engine_inc,
     cpp_args: engine_build_args + ['-UNDEBUG'],
     c_args: engine_build_args,
-    dependencies: [dl_dep] + gl_bridge_deps,
+    dependencies: [engine_dep],
     build_by_default: false,
   )
   # The same by hand for the files under a folder whose name is not plain
@@ -458,31 +506,31 @@ if meson.is_cross_build()
   # libminiboxhost.dll beside it): on Linux a guest call needs none.
   executable(
     'test_guest_calls',
-    ['source/engine/tests/test_guest_calls.cpp'] + engine_src + gl_bridge_src,
+    ['source/engine/tests/test_guest_calls.cpp'],
     include_directories: engine_inc,
     cpp_args: engine_build_args + ['-UNDEBUG'],
     c_args: engine_build_args,
-    dependencies: [dl_dep] + gl_bridge_deps,
+    dependencies: [engine_dep],
     build_by_default: false,
   )
   # And for the GL bridge's context on Windows (WGL; run it on a machine with a
   # GPU): a session's objects go with it.
   executable(
     'test_gl_session',
-    ['source/engine/tests/test_gl_session.cpp'] + engine_src + gl_bridge_src,
+    ['source/engine/tests/test_gl_session.cpp'],
     include_directories: engine_inc,
     cpp_args: engine_build_args + ['-UNDEBUG'],
     c_args: engine_build_args,
-    dependencies: [dl_dep] + gl_bridge_deps,
+    dependencies: [engine_dep],
     build_by_default: false,
   )
   executable(
     'test_utf8_paths',
-    ['source/engine/tests/test_utf8_paths.cpp'] + engine_src + gl_bridge_src,
+    ['source/engine/tests/test_utf8_paths.cpp'],
     include_directories: engine_inc,
     cpp_args: engine_build_args + ['-UNDEBUG'],
     c_args: engine_build_args,
-    dependencies: [dl_dep] + gl_bridge_deps,
+    dependencies: [engine_dep],
     build_by_default: false,
   )
 endif
@@ -493,11 +541,11 @@ if not meson.is_cross_build()
   # tests because it needs the engine; run by tests/perf/run-spillbench.sh.
   executable(
     'spillbench',
-    ['tests/perf/spillbench.cpp'] + engine_src + gl_bridge_src,
+    ['tests/perf/spillbench.cpp'],
     include_directories: engine_inc,
     cpp_args: engine_build_args,
     c_args: engine_build_args,
-    dependencies: [dl_dep] + gl_bridge_deps,
+    dependencies: [engine_dep],
     build_by_default: false,
   )
 
@@ -506,11 +554,11 @@ if not meson.is_cross_build()
       'engine_' + engine_test,
       executable(
         'test_' + engine_test,
-        ['source/engine/tests/test_' + engine_test + '.cpp'] + engine_src + gl_bridge_src,
+        ['source/engine/tests/test_' + engine_test + '.cpp'],
         include_directories: engine_inc,
         cpp_args: engine_build_args + ['-UNDEBUG'],  # these tests ARE asserts
         c_args: engine_build_args,
-        dependencies: [dl_dep] + gl_bridge_deps,
+        dependencies: [engine_dep],
       ),
       # (the state container test finds libzstd the way the shipped library
       # does: beside its own binary, which in the build dir it is)
