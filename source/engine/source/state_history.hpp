@@ -670,7 +670,27 @@ private:
 	 * frame whose going leaves the smallest gap. A merge counts against
 	 * `mergeLeft`, the composition this call may still spend. False when there
 	 * is nothing left that may go. See evict(). */
-	bool thinOne(uint64_t &mergeLeft);
+	/* Every stored frame in order, with the band it has fallen into: what
+	 * thinOne chooses from. Built once per evict() and kept up to date as
+	 * frames go, since nothing else moves while it thins (the frontier, and so
+	 * every band, stays put). Rebuilt for each frame given up, it was the cost
+	 * of thinning a full greenzone: a whole machine's worth of new anchor is a
+	 * thousand frames of a light core, each a pass over every frame stored. */
+	struct ThinEntry
+	{
+		int64_t frame;
+		size_t seg;
+		std::ptrdiff_t link;   /* -1: the stretch's anchor */
+		int band;
+	};
+	struct ThinIndex
+	{
+		std::vector<ThinEntry> entries;
+		std::vector<int64_t> counts;   /* per band, frame 0 and the frontier not counted */
+		bool valid = false;
+	};
+	bool thinOne(uint64_t &mergeLeft, ThinIndex &index);
+	void buildThinIndex(ThinIndex &index) const;
 
 	/* A stretch that was spilled before the far band reached it keeps the
 	 * density it had when it went - which used to be forever. Once the far

@@ -2916,6 +2916,7 @@ void StateHistory::evict()
 	const uint64_t target = m_budget - m_budget / 20;
 	uint64_t mergeLeft = kThinMergeBytes;
 	int thinned = 0;
+	ThinIndex index;
 	while (m_bytes > m_budget || (thinned > 0 && thinned < kThinExtraPerCall && m_bytes > target))
 	{
 		/* First choice: put the oldest stretch on disk, oldest to newest. It
@@ -2957,33 +2958,30 @@ void StateHistory::evict()
 			}
 			break;   /* nowhere to spill: everything after this fails the same way */
 		}
-		if (moved) continue;
+		if (moved)
+		{
+			index.valid = false;   /* a stretch went to disk: the index no longer says what is in memory */
+			continue;
+		}
 
-		if (!thinOne(mergeLeft)) return;
+		if (!thinOne(mergeLeft, index)) return;
 		thinned++;
 	}
 }
 
-bool StateHistory::thinOne(uint64_t &mergeLeft)
+void StateHistory::buildThinIndex(ThinIndex &index) const
 {
-	static constexpr uint64_t kThinMergeBytesPerCall = 32u << 20;   /* evict's allowance, below */
-	if (m_segments.empty()) return false;
 	const int64_t frontier = m_segments.back().lastFrame();
 	const int64_t nearSpacing = m_tuner.maxStride < 1 ? 1 : m_tuner.maxStride;
 
 	/* Every stored frame in order, with the band it has fallen into. Spilled
 	 * stretches count as members of their bands - they are still reachable -
 	 * but cost nothing in memory, so none of their frames is a candidate. */
-	struct Entry
-	{
-		int64_t frame;
-		size_t seg;
-		std::ptrdiff_t link;   /* -1: the stretch's anchor */
-		int band;
-	};
-	std::vector<Entry> entries;
+	std::vector<ThinEntry> &entries = index.entries;
+	std::vector<int64_t> &counts = index.counts;
+	entries.clear();
+	counts.clear();
 	entries.reserve(static_cast<size_t>(count()));
-	std::vector<int64_t> counts;
 	for (size_t si = 0; si < m_segments.size(); si++)
 	{
 		const Segment &seg = m_segments[si];
@@ -2991,7 +2989,7 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 			const int band = CeGreenzoneShape::bandOf(frontier - frame, nearSpacing, m_bandGoal);
 			if (static_cast<size_t>(band) >= counts.size()) counts.resize(static_cast<size_t>(band) + 1, 0);
 			counts[static_cast<size_t>(band)]++;
-			entries.push_back(Entry{ frame, si, link, band });
+			entries.push_back(ThinEntry{ frame, si, link, band });
 		};
 		add(seg.anchorFrame, -1);
 		for (size_t li = 0; li < seg.links.size(); li++) add(seg.links[li].endFrame, static_cast<std::ptrdiff_t>(li));
@@ -3006,6 +3004,34 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 		counts[static_cast<size_t>(entries.front().band)]--;
 		if (entries.size() > 1) counts[static_cast<size_t>(entries.back().band)]--;
 	}
+	index.valid = true;
+}
+
+bool StateHistory::thinOne(uint64_t &mergeLeft, ThinIndex &index)
+{
+	static constexpr uint64_t kThinMergeBytesPerCall = 32u << 20;   /* evict's allowance, below */
+	if (m_segments.empty()) return false;
+	if (!index.valid) buildThinIndex(index);
+	std::vector<ThinEntry> &entries = index.entries;
+	std::vector<int64_t> &counts = index.counts;
+
+	/* A frame went: the index follows, as a rebuild would have it. `shiftSeg`
+	 * when its whole stretch went (later stretches move down one), `shiftLink`
+	 * when it was merged into the link after it (that stretch's later links
+	 * move down one). */
+	const auto gone = [&](size_t i, bool shiftSeg, bool shiftLink) {
+		const ThinEntry e = entries[i];
+		counts[static_cast<size_t>(e.band)]--;
+		entries.erase(entries.begin() + static_cast<std::ptrdiff_t>(i));
+		if (shiftSeg)
+		{
+			for (size_t k = i; k < entries.size(); k++) entries[k].seg--;
+		}
+		else if (shiftLink)
+		{
+			for (size_t k = i; k < entries.size() && entries[k].seg == e.seg; k++) entries[k].link--;
+		}
+	};
 
 	/* A history that spills keeps the stretch being written whole in memory, as
 	 * it always has: its stretches go to disk in time, and settling composes
@@ -3018,7 +3044,7 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 		std::vector<std::pair<int64_t, size_t>> candidates;
 		for (size_t i = 1; i + 1 < entries.size(); i++)   /* never the first frame, never the frontier */
 		{
-			const Entry &e = entries[i];
+			const ThinEntry &e = entries[i];
 			if (e.band != band) continue;
 			const Segment &seg = m_segments[e.seg];
 			if (seg.spilled) continue;
@@ -3027,11 +3053,18 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 			if (e.link < 0 && (e.seg == 0 || !seg.links.empty())) continue;   /* an anchor goes only alone */
 			candidates.emplace_back(entries[i + 1].frame - entries[i - 1].frame, i);
 		}
-		std::sort(candidates.begin(), candidates.end());
+		/* Tried smallest gap first, and the first nearly always goes: so the
+		 * smallest is found and put first, and the rest are sorted only if it
+		 * does not. Sorting them all, once per frame given up, was most of what
+		 * thinning a full greenzone cost. Same order, same choice. */
+		if (candidates.empty()) continue;
+		std::iter_swap(candidates.begin(), std::min_element(candidates.begin(), candidates.end()));
 
-		for (const auto &[gap, i] : candidates)
+		for (size_t ci = 0; ci < candidates.size(); ci++)
 		{
-			const Entry e = entries[i];
+			if (ci == 1) std::sort(candidates.begin() + 1, candidates.end());
+			const auto [gap, i] = candidates[ci];
+			const ThinEntry e = entries[i];
 			Segment &seg = m_segments[e.seg];
 			if (e.link < 0)
 			{
@@ -3042,6 +3075,7 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 					fflush(stderr);
 				}
 				forgetSegment(e.seg);
+				gone(i, true, false);
 				return true;
 			}
 			const size_t li = static_cast<size_t>(e.link);
@@ -3057,6 +3091,7 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 						(long long)e.frame, band, (long long)counts[static_cast<size_t>(band)], (long long)gap);
 					fflush(stderr);
 				}
+				gone(i, false, false);
 				return true;
 			}
 			const uint64_t input = seg.links[li].bytes.size() + seg.links[li + 1].bytes.size();
@@ -3073,6 +3108,7 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 						(long long)e.frame, band, (long long)counts[static_cast<size_t>(band)], (long long)gap);
 					fflush(stderr);
 				}
+				gone(i, false, true);
 				return true;
 			}
 		}

@@ -164,7 +164,20 @@ chimera::HostApi host()
 void advance(int64_t frame)
 {
 	const size_t at = static_cast<size_t>(frame * 4093) % (g_machine.cell.size() - g_dirtyBytes);
-	std::memset(&g_machine.cell[at], static_cast<int>(frame & 0xFF), g_dirtyBytes);
+	/* CHIMERA_BENCH_NOISE=1: bytes that do not compress, so a frame costs the
+	 * budget what it changes and a small budget fills with many frames */
+	static const bool noise = getenv("CHIMERA_BENCH_NOISE") != nullptr;
+	if (!noise)
+	{
+		std::memset(&g_machine.cell[at], static_cast<int>(frame & 0xFF), g_dirtyBytes);
+		return;
+	}
+	uint32_t x = static_cast<uint32_t>(frame) * 2654435761u | 1u;
+	for (size_t i = 0; i < g_dirtyBytes; i++)
+	{
+		x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+		g_machine.cell[at + i] = static_cast<uint8_t>(x);
+	}
 }
 
 struct Result
@@ -194,11 +207,19 @@ Result run(bool threaded, int frames, size_t machineBytes, uint64_t budget, cons
 	 * default 600 would make one stretch out of a run this length and nothing
 	 * would ever reach the file. */
 	h.bands(120, 1800, 3, 1200, g_anchorSpacing);
-	h.spillTo(dir.c_str());
-	/* 0 means no limit on the file, which takes evictDisk and its compactions
-	 * out of the picture - they are the other thing that touches the file, and
-	 * telling the two apart is half of what this bench is for. */
-	if (g_diskTimes != 0) h.diskBudget(budget * g_diskTimes);
+	/* the shape check wants the same choices every run: the stride tuner reads
+	 * the wall clock, so it is fixed then */
+	if (getenv("CHIMERA_BENCH_SHAPE") != nullptr) h.fixNearStride(1);
+	/* CHIMERA_BENCH_NO_SPILL=1: no spill directory, as the frontend runs - a
+	 * full budget is then met by thinning alone, and that is what is timed */
+	if (getenv("CHIMERA_BENCH_NO_SPILL") == nullptr)
+	{
+		h.spillTo(dir.c_str());
+		/* 0 means no limit on the file, which takes evictDisk and its compactions
+		 * out of the picture - they are the other thing that touches the file, and
+		 * telling the two apart is half of what this bench is for. */
+		if (g_diskTimes != 0) h.diskBudget(budget * g_diskTimes);
+	}
 
 	if (getenv("CHIMERA_HISTORY_TRACE") != nullptr)
 	{
@@ -215,6 +236,24 @@ Result run(bool threaded, int frames, size_t machineBytes, uint64_t budget, cons
 		const double t0 = now();
 		h.capture(f);
 		each.push_back(now() - t0);
+		if (getenv("CHIMERA_BENCH_SLOW") != nullptr && each.back() > 0.05)
+		{
+			fprintf(stderr, "slow frame %lld: %.1f ms, %lld stored, %llu bytes\n", (long long)f, each.back() * 1e3,
+				(long long)h.count(), (unsigned long long)h.bytes());
+		}
+	}
+	/* CHIMERA_BENCH_SHAPE=1: which frames are stored at the end, as one number,
+	 * so a change to how the history thins can be shown to keep the same ones */
+	if (getenv("CHIMERA_BENCH_SHAPE") != nullptr)
+	{
+		uint64_t sig = 1469598103934665603ull;
+		for (int64_t f = 0; f <= frames; f++)
+		{
+			sig ^= static_cast<uint64_t>(h.nearest(f));
+			sig *= 1099511628211ull;
+		}
+		fprintf(stderr, "shape (%s): %lld stored, signature %016llx\n", threaded ? "helpers" : "in line",
+			(long long)h.count(), (unsigned long long)sig);
 	}
 	/* and what a project save costs: the whole history to a file, which is the
 	 * longest thing a save does and was happening on this thread */

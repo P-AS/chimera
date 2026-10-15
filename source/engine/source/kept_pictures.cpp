@@ -41,7 +41,11 @@ void CeKeptPictures::takeIn()
 
 void CeKeptPictures::settle()
 {
-	if (!m_packing.empty()) m_helper.drain();
+	if (!m_packing.empty())
+	{
+		m_waits++;
+		m_helper.drain();
+	}
 	takeIn();
 }
 
@@ -72,7 +76,14 @@ void CeKeptPictures::drop(int64_t frame)
 
 void CeKeptPictures::dropAfter(int64_t frame)
 {
-	settle(); /* a picture still being packed is one of those to forget */
+	/* A picture still being packed is waited for only when it is one of those
+	 * to forget. Recording calls this on every frame, and the picture in hand
+	 * then is the previous frame's - kept, not forgotten - so waiting for it
+	 * put the packing in line with the core: about 17 ms a frame at 1080p. */
+	bool forgetting = false;
+	for (const int64_t f : m_packing) forgetting = forgetting || f > frame;
+	if (forgetting) settle();
+	else takeIn();
 	while (!m_byFrame.empty() && m_byFrame.rbegin()->first > frame) drop(m_byFrame.rbegin()->first);
 }
 

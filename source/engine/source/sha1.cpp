@@ -135,26 +135,41 @@ struct Sha1
 	uint64_t total = 0;
 	size_t fill = 0;
 
+	/* The transform without SHA instructions, which every Intel desktop from
+	 * the 6th to the 10th generation lacks. Written out round by round with a
+	 * 16-word schedule rolled in place, so the compiler keeps everything in
+	 * registers: the loop over 80 rounds with a branch and a five-register
+	 * shuffle in each ran at about 270 MB/s here, this at about 1.25 GB/s, and
+	 * the digest is the same (test_sha1 checks it against the vectors). */
 	void processBlock(const uint8_t *p)
 	{
-		uint32_t w[80];
+		uint32_t w[16];
 		for (int i = 0; i < 16; i++)
 		{
 			w[i] = (uint32_t(p[i * 4]) << 24) | (uint32_t(p[i * 4 + 1]) << 16)
 				| (uint32_t(p[i * 4 + 2]) << 8) | uint32_t(p[i * 4 + 3]);
 		}
-		for (int i = 16; i < 80; i++) w[i] = rol(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
 		uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
-		for (int i = 0; i < 80; i++)
-		{
-			uint32_t f, k;
-			if (i < 20) { f = (b & c) | (~b & d); k = 0x5A827999u; }
-			else if (i < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1u; }
-			else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDCu; }
-			else { f = b ^ c ^ d; k = 0xCA62C1D6u; }
-			uint32_t t = rol(a, 5) + f + e + k + w[i];
-			e = d; d = c; c = rol(b, 30); b = a; a = t;
-		}
+#define CE_W(i) (w[(i) & 15] = rol(w[((i) + 13) & 15] ^ w[((i) + 8) & 15] ^ w[((i) + 2) & 15] ^ w[(i) & 15], 1))
+#define CE_R0(v, x, y, z, u, i) u += ((x & (y ^ z)) ^ z) + w[i] + 0x5A827999u + rol(v, 5); x = rol(x, 30);
+#define CE_R1(v, x, y, z, u, i) u += ((x & (y ^ z)) ^ z) + CE_W(i) + 0x5A827999u + rol(v, 5); x = rol(x, 30);
+#define CE_R2(v, x, y, z, u, i) u += (x ^ y ^ z) + CE_W(i) + 0x6ED9EBA1u + rol(v, 5); x = rol(x, 30);
+#define CE_R3(v, x, y, z, u, i) u += (((x | y) & z) | (x & y)) + CE_W(i) + 0x8F1BBCDCu + rol(v, 5); x = rol(x, 30);
+#define CE_R4(v, x, y, z, u, i) u += (x ^ y ^ z) + CE_W(i) + 0xCA62C1D6u + rol(v, 5); x = rol(x, 30);
+#define CE_FIVE(R, i) R(a, b, c, d, e, i) R(e, a, b, c, d, i + 1) R(d, e, a, b, c, i + 2) R(c, d, e, a, b, i + 3) R(b, c, d, e, a, i + 4)
+		CE_FIVE(CE_R0, 0) CE_FIVE(CE_R0, 5) CE_FIVE(CE_R0, 10)
+		CE_R0(a, b, c, d, e, 15)
+		CE_R1(e, a, b, c, d, 16) CE_R1(d, e, a, b, c, 17) CE_R1(c, d, e, a, b, 18) CE_R1(b, c, d, e, a, 19)
+		CE_FIVE(CE_R2, 20) CE_FIVE(CE_R2, 25) CE_FIVE(CE_R2, 30) CE_FIVE(CE_R2, 35)
+		CE_FIVE(CE_R3, 40) CE_FIVE(CE_R3, 45) CE_FIVE(CE_R3, 50) CE_FIVE(CE_R3, 55)
+		CE_FIVE(CE_R4, 60) CE_FIVE(CE_R4, 65) CE_FIVE(CE_R4, 70) CE_FIVE(CE_R4, 75)
+#undef CE_FIVE
+#undef CE_R4
+#undef CE_R3
+#undef CE_R2
+#undef CE_R1
+#undef CE_R0
+#undef CE_W
 		h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
 	}
 
