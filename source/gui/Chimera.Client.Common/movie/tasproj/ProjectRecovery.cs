@@ -88,6 +88,11 @@ namespace Chimera.Client.Common
 		{
 			MoveLegacy(projectId);
 			var dir = DirectoryFor(projectId);
+			// the open that recovered the work took the folder away before its boot asked
+			lock (DiscardedUnclean)
+			{
+				if (DiscardedUnclean.Contains(dir)) return false;
+			}
 			if (!Directory.Exists(dir)) return true;   // End(clean: true) took it away
 			// Somebody else is working in it. Not a crash, but not a finished
 			// session either - and its history is being written as we look.
@@ -159,6 +164,8 @@ namespace Chimera.Client.Common
 			{
 				MoveLegacy(projectId);
 				var dir = DirectoryFor(projectId);
+				// this session is the one the next open will ask about
+				lock (DiscardedUnclean) DiscardedUnclean.Remove(dir);
 				Directory.CreateDirectory(dir);
 				using (var current = Process.GetCurrentProcess())
 				{
@@ -623,8 +630,20 @@ namespace Chimera.Client.Common
 			return JObject.Load(reader);
 		}
 
+		/// <summary>
+		/// Folders whose leftover was taken away in this process (<see cref="Discard(Leftover)"/>) before the
+		/// project's next session began. The session that left it did not end cleanly, though the folder that
+		/// said so is gone: the open that recovers the work removes it before the boot asks whether the saved
+		/// greenzone can be trusted, and the answer must still be no. <see cref="Begin"/> forgets the folder.
+		/// </summary>
+		private static readonly HashSet<string> DiscardedUnclean = new(StringComparer.Ordinal);
+
 		/// <summary>Removes a leftover once its work is safely somewhere else (<see cref="BuildRecoveredCopy"/>).</summary>
-		public static void Discard(Leftover leftover) => Discard(leftover.Directory);
+		public static void Discard(Leftover leftover)
+		{
+			lock (DiscardedUnclean) DiscardedUnclean.Add(leftover.Directory);
+			Discard(leftover.Directory);
+		}
 
 		private static void Discard(string dir)
 		{

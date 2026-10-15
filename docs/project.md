@@ -523,7 +523,10 @@ newer of the snapshot and the saved file, with the journal's inputs, markers and
 branches, written to the backups folder as `<name>.recovered <time>.chimeraProject`.
 The person is then asked whether to open that work in place of the file's (it
 opens unsaved; saving writes it to the project) or the project as last saved
-(the copy stays). A recovered copy never overwrites a project. Headless runs do
+(the copy stays). Either way the folder is removed once the copy is written,
+and the boot that follows still treats the greenzone and branch states the
+crashed session saved as not trusted: the crash is remembered until the
+project's next session begins. A recovered copy never overwrites a project. Headless runs do
 not ask; they report the copy's path. A folder left where an earlier build kept
 it (`Projects/<id>/recovery`) is moved to the new root the first time.
 

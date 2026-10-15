@@ -753,7 +753,9 @@ namespace Chimera.Client.GUI
 			// project's core and sync settings - never a throwaway config-settings
 			// boot followed by a reboot (the BizHawk triple-init lineage: rom
 			// load, TAStudio open, tasproj load - each a full core init).
-			if (MovieSession.Get(path, loadMovie: saved) is not ITasMovie tasMovie)
+			// The movie is read from the project in hand, not from the file again: after a crash the
+			// project in hand is the recovered work, and the file is what that work replaces.
+			if (MovieSession.Get(path, loadMovie: saved, project: saved ? project : null) is not ITasMovie tasMovie)
 			{
 				// Never end in silence: everything above showed a dialog when it
 				// refused, and a user who just answered the resolution dialog is

@@ -29,6 +29,9 @@ namespace Chimera.Client.Common
 
 		private EngineProject _project;
 
+		/// <summary>The project handed in to load from, once (<see cref="LoadProjectFormat"/>).</summary>
+		private EngineProject _opened;
+
 		/// <summary>
 		/// The engine-side project backing this movie. Holds what the movie
 		/// machinery does not model (the file manifest, firmware pins, the
@@ -795,7 +798,12 @@ namespace Chimera.Client.Common
 		{
 			_project?.Dispose();
 			EngineProgress.Report("reading the project");
-			_project = EngineProject.Open(Filename); // structural errors surface with the engine's reason
+			// The frontend's own instance when it handed one in: the project as resolved for this
+			// session, and after a crash the recovered work, which the file at Filename does not hold.
+			// Reading the file again here is what made "Recover unsaved work?" open the work as last
+			// saved, only marked changed.
+			_project = _opened ?? EngineProject.Open(Filename); // structural errors surface with the engine's reason
+			_opened = null;
 
 			ClearBeforeLoad();
 			var p = _project;
