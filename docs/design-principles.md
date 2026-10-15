@@ -4223,6 +4223,122 @@ the one no Linux test can reach. Both new Linux legs were watched failing
 against a deliberately broken build before being believed. docs/folder-picker.md
 says plainly what the green run does and does not stand for.
 
+## What a PS3 install actually costs, and which half a wizard step can buy (measured, 2026-09-20)
+
+Sergio asked for the PS3 `.pkg` install to stop crushing the greenzone and host
+RAM, and proposed the shape of the answer himself: make the install a step in
+the wizard, the way precompilation is, and cache its outcome so a player never
+repeats it. Measuring it first moved the target, because the premise is half
+wrong and the half that is right is somewhere else.
+
+Two costs were separated on purpose. The PACKAGE install is deterministic,
+happens once per boot and produces a known tree. The GAME'S OWN data install is
+the game copying its archives to the console's hard disk, driven by emulated
+input, several gigabytes. Measured on this box (the sandboxed core through
+`run-wbx`, `CHIMERA_STATE_RAW=1`, every figure a byte count the core printed):
+
+| game | pre-seal install into memfs | state, raw |
+|---|---|---|
+| Super Stardust HD, its 305.2 MB package as the game | firmware 194.8 MB, then 500.0 MB | 118.0 MB at frame 5 |
+| the same, plus its 248.6 MB update package | 482.1 MB (the update replaces files) | 112.5 MB at frame 5 |
+| echochrome, its 107.6 MB package as the game | firmware 194.8 MB, then 302.6 MB | 853.1 MB at frame 5 |
+| Resident Evil 5 Gold, 14.4 GB Redump disc + key | firmware 194.8 MB, then 210.6 MB (the disc's own INSDIR package) | 1.141 GB at frame 400, 1.144 GB at frame 1300 |
+
+**A package install costs a state nothing.** Half a gigabyte of memory files
+and a 118 MB state; adding a second package of a quarter of a gigabyte left the
+state at 112 MB; and echochrome, with a THIRD of Super Stardust's memory files,
+saves a state seven times the size, because what makes a state big is how far
+into the console's own memory the game has got and not what is on its disk.
+That is not a coincidence and not a compressor: everything
+these installs write lands BEFORE `Emu.Init` seals the machine, and a miniBox
+state is the pages that are dirty since the seal (`mb_block_state_size`), so the
+whole installed tree is baseline and no savestate carries a byte of it. The
+question "does installed content need to be in the state at all" already has the
+answer "it is not in the state", for everything the console installs on the
+machine's behalf - the firmware's `/dev_flash`, a project's `.pkg` files, a
+digital title's own package, and the packages a disc carries in `INSDIR`.
+
+**The game's own install is the whole of the state cost**, because it happens
+after the seal. That is the four gigabytes the disc-mirror work removed for
+Oblivion the previous week (5.85 GB of state to 1.23 GB), and it is what made
+Resident Evil 5's process grow from 4.9 GB to 10.9 GB while its progress bar
+filled. Where the mirror cannot reach - a Redump disc, whose bytes the ISO layer
+decrypts, so what the game writes never equals what the disc holds - it is still
+there in full. A PS3 state with a game's install in it is larger than the
+ENTIRE greenzone budget (4 GB), so the greenzone of such a game holds no frames
+at all; without it, a PS3 state is about 1.14 GB and flat, which is the machine
+proper. So of the two costs, the game's own install dominates the greenzone
+absolutely and the package install contributes exactly zero.
+
+**What the package install does cost is the boot.** Two timed boots of Super
+Stardust HD with a warm compile cache, seconds from exec:
+
+| phase | run 1 | run 2 |
+|---|---|---|
+| firmware installed (194.8 MB of `/dev_flash` out of PS3UPDAT.PUP) | 91 | 83 |
+| the game's package installed (305.2 MB, 61 entries) | 96 | 88 |
+| the project's package installed (248.6 MB, 53 entries) | 97 | 90 |
+| booted | 101 | 94 |
+
+So the package installs are five and two seconds, and **the firmware install is
+eighty-five of a ninety-four second boot** - paid on every open of the project,
+and by every one of the eight precompile sessions, for a file that is the same
+on every PS3 project on the machine. If a wizard step is to cache an install,
+that is the install worth caching; the packages are a rounding error beside it.
+(Worth a profile before anyone builds around the number: with the log raised,
+most of the eighty-five seconds is rpcs3's TAR reader failing to parse a header
+once per 512-byte block across the padding, which may be cheaper to fix than to
+cache.)
+
+### What a cached install would have to be
+
+The mechanism already exists and is not new machinery: a memfs MIRROR is a
+writable file with no bytes of its own, reading through to a stretch of a
+read-only host-backed file, materialising itself the moment anything writes to
+it in a way the source does not describe. Today one is only ever INFERRED, from
+a game copying a disc file. The same node, DECLARED, is a cached install: the
+wizard step runs the installer once, writes the resulting tree into one packed
+file beside the compile cache, and every later session reconstitutes the tree as
+mirrors of that pack instead of decrypting anything. The boot loses eighty-five
+seconds and the guest arena loses the tree's size, because the bytes stay on the
+host's disk and are read as the machine asks for them, exactly as a mounted disc
+is. The step belongs BEFORE precompile, not after: for a digital title the
+modules to precompile are the ones the install created, and the eight sessions
+should start from the pack rather than each build it again.
+
+Three things about it are not ours to decide, because they touch what a movie
+means.
+
+The first is that a cached tree becomes part of the boot path, so a movie
+depends on it. That is only safe if the pack is a verifiable function of what
+the project already cites - the PUP, the packages in slot order, the disc - so
+the project records the pack's hash, a regenerated pack that hashes differently
+is a REFUSAL rather than a warning, and the reproduction contract stays the pair
+it is. A pack nobody can check would make a movie depend on a blob.
+
+The second is that cold and warm are not the same machine at the seal. Whether
+the installer ran or the pack was mirrored, the console reads identical bytes,
+but the emulator's own heap does not hold the same thing, so the sealed baseline
+differs and a state does not cross between them. The clean answer is the one
+precompile already uses: make the step mandatory before Create, so a project has
+one flavour and never the other - which is to say a PS3 project could not be
+created without doing the install first.
+
+The third is the room it takes. A pack is the installed tree: 195 MB for the
+firmware, and a digital title's own size on top - gigabytes for a big one. The
+firmware pack is the same for every PS3 project and should be shared, which is
+the opposite of what was decided for compiled code (one directory per game, no
+sharing) and for the opposite reason: there the shared part was 12 MB against a
+game's 47, here it is 195 MB against nothing at all for a disc game. And unlike
+compiled code it has to be INSIDE the Cache Manager's budget rather than beside
+it - `Tools > Pre-Compiled Modules...` is the only way compiled code is ever
+removed, and `CacheKind` has no member for it, which this document's cache
+chapter already describes as though it did.
+
+Not built here. It is recorded because the measurement is what found it, and
+because the measurement says the wizard step buys a boot rather than a
+greenzone.
+
 ## The fault handler gives up its pointers, and never reports twice (chimera#127, 2026-09-21)
 
 A PS3 core died in the main menu of a game. Everything Chimera is built to do
