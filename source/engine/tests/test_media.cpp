@@ -13,6 +13,7 @@
 
 #include "../../extern/miniz/miniz.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -395,6 +396,11 @@ static void aFloppyIsReproducibleAndReadable()
 	const std::vector<uint8_t> img = slurp(fa);
 	assert(img.size() == 2880u * 512u);
 	assert(img[510] == 0x55 && img[511] == 0xAA);
+	/* marked bootable, so it carries code to run: it says the disk holds no
+	 * system and waits for a key, as a DOS data floppy does (it was zeros) */
+	assert(img[0x3E] == 0xFA); /* cli, the code's first instruction */
+	const std::string bootSector(reinterpret_cast<const char *>(img.data()), 512);
+	assert(bootSector.find("This floppy holds files, not a system to start.") == 0x62 + 2);
 	/* the BPB a 1.44 MB floppy must carry */
 	assert(img[11] == 0x00 && img[12] == 0x02); /* 512 bytes per sector */
 	assert(img[13] == 1);                        /* one sector per cluster */
@@ -497,6 +503,36 @@ static void namesThatShortenAlikeStayApart()
 	assert(entries == 3 && names.size() == 3);
 }
 
+/* The path tables list folders by level, then by their parent's number,
+ * then by name (ECMA-119 6.9.1). B/A and A/Z sit at the same level under
+ * different parents: by name alone A came first, under a parent numbered
+ * after Z's. */
+static void pathTablesGoByParent()
+{
+	const fs::path tree = workRoot() / "levels";
+	put(tree / "B" / "A" / "one.txt", "1");
+	put(tree / "A" / "Z" / "two.txt", "2");
+	std::string sha, err;
+	const fs::path iso = workRoot() / "levels.iso";
+	assert(chimera::mediaMake(tree.string(), iso.string(), chimera::MediaFormat::Iso9660, nullptr, sha, err));
+	const std::vector<uint8_t> bytes = slurp(iso);
+	for (const uint32_t vd : { 16u, 17u }) /* the primary table, then the Joliet one */
+	{
+		const uint8_t *d = &bytes[size_t(vd) * 2048];
+		const uint32_t size = rd32le(d + 132), at = rd32le(d + 140);
+		const uint8_t *t = &bytes[size_t(at) * 2048];
+		std::vector<uint16_t> parents;
+		for (uint32_t pos = 0; pos < size;)
+		{
+			const uint8_t idLen = t[pos];
+			parents.push_back(uint16_t(t[pos + 6] | (t[pos + 7] << 8)));
+			pos += 8 + idLen + (idLen & 1);
+		}
+		assert(parents.size() == 5); /* the root, A, B, A/Z, B/A */
+		assert(std::is_sorted(parents.begin(), parents.end()));
+	}
+}
+
 int main()
 {
 	fs::remove_all(workRoot());
@@ -515,6 +551,7 @@ int main()
 	aCancelledPackLeavesNothing();
 	anEmptyFolderIsRefused();
 	namesThatShortenAlikeStayApart();
+	pathTablesGoByParent();
 
 	fs::remove_all(workRoot());
 	std::printf("test_media: ok\n");

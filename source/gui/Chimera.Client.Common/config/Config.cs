@@ -27,7 +27,26 @@ namespace Chimera.Client.Common
 			HotkeyInfo.ResolveWithDefaults(HotkeyBindings);
 			PathEntries.RefreshTempPath();
 			UnfloatToolsOnce();
+			NeverSkipOnce();
 		}
+
+		/// <summary>
+		/// Frame skip never skipped: the throttle reset its own measurement on
+		/// every pass, so with the old default of 4 every frame was drawn all the
+		/// same. Now it works, and the owner chose no skipping as the default
+		/// (2026-10-15). Every config written before carries the old 4, which
+		/// nobody chose and which would now start skipping, so it is set to 0
+		/// once, and recorded, so a later deliberate choice stands.
+		/// </summary>
+		private void NeverSkipOnce()
+		{
+			if (FrameSkipSettled) return;
+			FrameSkipSettled = true;
+			FrameSkip = 0;
+		}
+
+		/// <summary>Whether the one-time change above has run (see <see cref="NeverSkipOnce"/>).</summary>
+		public bool FrameSkipSettled { get; set; }
 
 		/// <summary>
 		/// Tools used to float free of the main window by default, and every
@@ -185,7 +204,7 @@ namespace Chimera.Client.Common
 
 		// Run-Control settings
 		public int FrameProgressDelayMs { get; set; } = 500; // how long until a frame advance hold turns into a frame progress?
-		public int FrameSkip { get; set; } = 4;
+		public int FrameSkip { get; set; } = 0;
 		public int SpeedPercent { get; set; } = 100;
 		public int SpeedPercentAlternate { get; set; } = 400;
 		public bool ClockThrottle { get; set; } = true;

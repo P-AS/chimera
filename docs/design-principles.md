@@ -7962,3 +7962,45 @@ Systems), "32c17a0e" (ares) and "6dab3e2c" (Genesis Plus GX).
 tools/fetch-cores.sh fetches all four with the new rows, and the package
 tests pass on what it fetched. Not tried: the Sufami Turbo's linked games
 past their first screen, and a 64DD game other than SimCity 64.
+
+## The owner's answers on the audit's open questions (user-decided, 2026-10-15)
+
+Seven questions the audit's small faults left open were put to the owner one
+at a time. What was decided, and what was done:
+
+- **Floppy images run a program when booted.** The boot sector the media
+  maker writes now holds our own few instructions: print that the floppy
+  holds files and no system, wait for a key, start the boot again (int 19h,
+  as a DOS data floppy does). Proved by booting a made floppy in the
+  DOSBox-X core with chimera-run: the message is on the screen at frame 1499.
+  Only floppies made from now on differ.
+- **ISO path tables follow the standard**: by level, by the parent's number,
+  by identifier, each table by its own identifiers. xorriso reads a made
+  image with no complaint. Only images with folders at one level under
+  different parents differ.
+- **Frame skip works, and is off by default.** The throttle reset its own
+  measurement on every pass, so auto frame skip never skipped; it now resets
+  only when the rate changes. The default is no skipping, and a config
+  written before, which carries the old default of 4 that did nothing, is
+  set to 0 once (Config.NeverSkipOnce, recorded in FrameSkipSettled), so
+  nobody sees a change they did not ask for.
+- **sysinfo's unit by guest kit revision.** The sandbox wrote mem_unit four
+  bytes early. Cores built with the guest kit from now on export
+  `__wbx_kit_revision` (from emulibc.c, which every core links) and get the
+  corrected answer; cores built before keep the old one, so their movies
+  replay (miniBox MACHINE-SPEC, "Guest kit revisions").
+- **vkGetDeviceProcAddr answers NULL for a command the device lacks.** The
+  guest now asks the host whether the driver gave the command under any of
+  its names (a new bridge op). The bridge's test compares, for seven
+  commands with two names, what the driver has with what the bridge says.
+- **The engine reads a movie by its LogKey's names**, as the window does
+  (EntryLayout::buildFromKey): reordered columns are read as what they are,
+  a column the machine lacks is skipped and written as '.', a control the
+  key lacks is released or neutral. A movie with no key is read by the
+  machine's order, as before. chimera-run and the MCP server without a
+  window read movies this way now; the witness replays the win movie with
+  its columns reversed and a key saying so, to the golden machine.
+- **A document left on a branch.** The measurement of what a PS3 package
+  install costs (2026-09-20) was put on main at its own date, and two local
+  branches that were already merged or now carried were deleted.
+

@@ -50,6 +50,19 @@ public:
 		const std::vector<uint8_t> *activeButtons = nullptr,
 		const std::vector<uint8_t> *activeAxes = nullptr);
 
+	/* The columns a movie's LogKey names ("#Reset|Power|#P1 Up|P1 Down|..."),
+	 * matched to the machine's controls by NAME, as the window's
+	 * MovieControllerDefinition does (user-decided, 2026-10-15): a name the
+	 * machine has as an axis is an axis column, any other name is a one-
+	 * character button column, and a column the machine lacks is read past
+	 * and written as '.'. A control the machine has and the key lacks stays
+	 * released or neutral. Reading by position against the machine's own
+	 * list instead read every column after a difference as its neighbour.
+	 * false (and nothing changed) for a key with no '#' group, or one that
+	 * names no control at all. */
+	bool buildFromKey(const std::string &key, const std::vector<std::string> &buttons,
+		const std::vector<EntryAxis> &axes);
+
 	/* Positional and '|'-tolerant - the exact Bk2Controller.SetFromMnemonic
 	 * walk. false when the entry runs out before the controller does, or an
 	 * axis field will not parse. buttonsOut is sized to the button count
@@ -72,7 +85,7 @@ private:
 	struct Item
 	{
 		bool isAxis;
-		int32_t index; // into buttons / axes
+		int32_t index; // into buttons / axes; -1 for a key column the machine lacks
 	};
 	std::vector<Item> items_;
 	std::vector<int32_t> groupStarts_;

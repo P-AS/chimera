@@ -698,6 +698,12 @@ struct ce_session
 	int64_t frame = 0;
 	std::string mnemonics; // one char per button, for generated entries
 	chimera::EntryLayout layout; // the Bk2 entry order (see movie_entry.hpp)
+	/* The movie's own columns, when its LogKey names them: lines are read and
+	 * written by those names, as the window reads them (user-decided,
+	 * 2026-10-15). A movie with no key goes by the machine's own order. */
+	chimera::EntryLayout movieLayout;
+	bool movieKeyed = false;
+	const chimera::EntryLayout &entries() const { return movieKeyed ? movieLayout : layout; }
 
 	// ---- the state history (docs/state-manager.md) ----
 	// Anchors and the deltas that walk forward from them, so a stored frame
@@ -1426,7 +1432,7 @@ std::string chimera::sessionMovieEntry(const ce_session *s, const uint8_t *state
 {
 	/* the letters are the machine's own (cfg.mnemonics), not the ones a
 	 * recording was started with, which a session that only plays never has */
-	return s->layout.generate(states, axes, s->cfg.mnemonics);
+	return s->entries().generate(states, axes, s->cfg.mnemonics);
 }
 
 extern "C" {
@@ -3307,6 +3313,7 @@ int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 	for (int64_t i = 0; i < n; i++) ce_movie_log_add(s->movie, ce_movie_log_entry(log, i));
 	const char *key = ce_movie_log_key(log);
 	ce_movie_log_set_key(s->movie, key);
+	s->movieKeyed = key != nullptr && key[0] != '\0' && s->movieLayout.buildFromKey(key, s->cfg.buttons, s->cfg.axes);
 	s->movieMode = 1;
 	return 0;
 }
@@ -3346,7 +3353,7 @@ int32_t ce_session_movie_entry_decode(
 	if (entry == nullptr) return -1;
 	std::vector<uint8_t> states;
 	std::vector<int32_t> values;
-	if (!s->layout.parse(entry, states, values)) return -1;
+	if (!s->entries().parse(entry, states, values)) return -1;
 	if (buttons_out != nullptr)
 	{
 		uint64_t mask = 0;
@@ -3369,7 +3376,7 @@ int32_t ce_session_movie_entry_decode_wide(
 	if (entry == nullptr) return -1;
 	std::vector<uint8_t> states;
 	std::vector<int32_t> values;
-	if (!s->layout.parse(entry, states, values)) return -1;
+	if (!s->entries().parse(entry, states, values)) return -1;
 	if (states_out != nullptr)
 	{
 		for (size_t i = 0; i < states.size(); i++) states_out[i] = states[i];
@@ -3399,7 +3406,7 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 	{
 		std::vector<int32_t> movieAxes;
 		const char *entry = ce_movie_log_entry(s->movie, s->frame);
-		if (!s->layout.parse(entry, s->movieButtons, movieAxes))
+		if (!s->entries().parse(entry, s->movieButtons, movieAxes))
 		{
 			s->error = std::string("unparseable movie entry at frame ") + std::to_string(s->frame);
 			return -1;
@@ -3436,7 +3443,7 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 		if (s->guestDied()) return -1;
 		if (s->movieMode == 2)
 		{
-			std::string entry = s->layout.generate(effective, axes, s->mnemonics);
+			std::string entry = s->entries().generate(effective, axes, s->mnemonics);
 			ce_movie_log_add(s->movie, entry.c_str());
 		}
 		lag = s->advanceCore(effective, render);
@@ -3734,7 +3741,7 @@ int32_t ce_session_seek(ce_session *s, int64_t frame)
 	{
 		std::vector<int32_t> movieAxes;
 		const char *entry = ce_movie_log_entry(s->movie, s->frame);
-		if (entry == nullptr || !s->layout.parse(entry, s->movieButtons, movieAxes))
+		if (entry == nullptr || !s->entries().parse(entry, s->movieButtons, movieAxes))
 		{
 			s->error = std::string("unparseable movie entry at frame ") + std::to_string(s->frame);
 			return 1;

@@ -162,6 +162,24 @@ if [ "$level" = "both" ] || [ "$level" = "e" ]; then
 		else
 			report "E:labels" FAIL "expected exactly label=P1 A=Jump in ${lmeta:-no meta}: $(grep '^label=' "$lmeta" 2>/dev/null | tr '\n' ' ')"
 		fi
+		# a movie's LogKey names its columns, and the engine reads them by name,
+		# as the window does: the win movie with its columns written in reverse,
+		# and a key saying so, must still reach the golden machine
+		kname=gridWalker.win
+		kmovie="$work/keyed-reversed.txt"
+		python3 - "$here/movies/$kname.txt" "$kmovie" <<'KEYED'
+import sys
+names = ["P1 Up", "P1 Down", "P1 Left", "P1 Right", "P1 A", "P1 B", "P1 Select", "P1 Start"]
+rows = ["|" + l.strip().strip("|")[::-1] + "|" for l in open(sys.argv[1]) if l.startswith("|")]
+open(sys.argv[2], "w").write("[Input]\nLogKey:#" + "|".join(reversed(names)) + "|\n" + "\n".join(rows) + "\n[/Input]\n")
+KEYED
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$kmovie" \
+			--dump "RAM=$work/keyed.ram.bin" --dump "VRAM=$work/keyed.vram.bin" > "$work/keyed.log" 2>&1
+		if cmp -s "$work/keyed.ram.bin" "$golden_dir/$kname.ram.bin" && cmp -s "$work/keyed.vram.bin" "$golden_dir/$kname.vram.bin"; then
+			report "E:logkey" PASS "a movie's columns are read by the names its LogKey gives them, in any order"
+		else
+			report "E:logkey" FAIL "the reversed, keyed movie did not reach the golden machine (see work/keyed.log)"
+		fi
 		# the greenzone: play to the end, seek BACK mid-movie, invalidate (as an
 		# input edit would), replay to the end - the dumps must not change
 		for movie in "$here"/movies/*.txt; do

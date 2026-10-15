@@ -288,6 +288,28 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 		boot.insert(boot.end(), label, label + 11);
 		const char *fsType = "FAT12   ";
 		boot.insert(boot.end(), fsType, fsType + 8);
+		/* What a machine runs when it boots from this floppy (user-decided,
+		 * 2026-10-15): it says the disk holds no system, waits for a key and
+		 * starts the boot again, as a DOS data floppy does, so the person can
+		 * take it out. It used to be zeros, which the CPU ran into whatever
+		 * followed. Our own code, loaded at 0000:7C00:
+		 *   cli; xor ax,ax; mov ds,ax; mov ss,ax; mov sp,7C00h; sti
+		 *   mov si,7C62h
+		 *   next: lodsb; or al,al; jz key; mov ah,0Eh; mov bx,7; int 10h; jmp next
+		 *   key:  xor ax,ax; int 16h; int 19h; jmp $
+		 * and the message after it, at 7C62h. */
+		static const uint8_t kBootCode[] = {
+			0xFA, 0x31, 0xC0, 0x8E, 0xD8, 0x8E, 0xD0, 0xBC, 0x00, 0x7C, 0xFB,
+			0xBE, 0x62, 0x7C,
+			0xAC, 0x08, 0xC0, 0x74, 0x09, 0xB4, 0x0E, 0xBB, 0x07, 0x00, 0xCD, 0x10, 0xEB, 0xF2,
+			0x31, 0xC0, 0xCD, 0x16, 0xCD, 0x19, 0xEB, 0xFE,
+		};
+		static const char kBootMessage[] =
+			"\r\nThis floppy holds files, not a system to start.\r\n"
+			"Take it out and press a key to start again.\r\n";
+		static_assert(0x3E + sizeof kBootCode == 0x62, "the message's address is in the code");
+		boot.insert(boot.end(), kBootCode, kBootCode + sizeof kBootCode);
+		boot.insert(boot.end(), kBootMessage, kBootMessage + sizeof kBootMessage); /* with its 0 */
 		boot.resize(510, 0);
 		boot.push_back(0x55);
 		boot.push_back(0xAA);

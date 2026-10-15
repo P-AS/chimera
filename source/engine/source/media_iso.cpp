@@ -41,6 +41,7 @@
 #include <memory>
 #include <string>
 #include <system_error>
+#include <type_traits>
 #include <vector>
 
 namespace chimera {
@@ -156,8 +157,25 @@ struct Node
 	uint32_t jolietLba = 0;  /* Joliet directory extent */
 	uint32_t dirBytes = 0;
 	uint32_t jolietBytes = 0;
-	uint32_t pathIndex = 0;  /* 1-based, for the path tables */
+	uint32_t pathIndex = 0;        /* 1-based, in the primary path table */
+	uint32_t jolietPathIndex = 0;  /* 1-based, in the Joliet path table */
 };
+
+/* Identifiers in path-table order: ECMA-119 compares them as if the shorter
+ * were padded on the right with spaces. */
+template <typename S>
+bool identifierLess(const S &a, const S &b)
+{
+	using U = std::make_unsigned_t<typename S::value_type>;
+	const size_t n = a.size() > b.size() ? a.size() : b.size();
+	for (size_t i = 0; i < n; i++)
+	{
+		const U ca = i < a.size() ? static_cast<U>(a[i]) : static_cast<U>(' ');
+		const U cb = i < b.size() ? static_cast<U>(b[i]) : static_cast<U>(' ');
+		if (ca != cb) return ca < cb;
+	}
+	return false;
+}
 
 Node *childDir(Node *parent, const std::string &name)
 {
@@ -291,6 +309,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 	/* names, then the order the records go in - both settled here so that
 	 * nothing downstream depends on how the directory was read */
 	std::vector<Node *> dirs;
+	std::vector<Node *> jolietDirs; /* the same folders in the Joliet path table's order */
 	std::vector<Node *> filesFlat;
 	{
 		std::vector<Node *> stack{ &root };
@@ -351,16 +370,36 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 				else filesFlat.push_back(k.get());
 			}
 		}
-		/* Path-table order: by level, then by parent, then by name. Sorting the
-		 * directory list the same way every time is what makes the tables - and
-		 * so the image - reproducible. */
-		std::stable_sort(dirs.begin(), dirs.end(), [](Node *a, Node *b) {
-			auto depth = [](Node *n) { int d = 0; for (Node *p = n->parent; p; p = p->parent) d++; return d; };
-			const int da = depth(a), db = depth(b);
-			if (da != db) return da < db;
-			return a->name.compare(b->name) < 0;
-		});
+		/* Path-table order, as ECMA-119 6.9.1 has it (user-decided, 2026-10-15):
+		 * by level, then by the parent's number in the table, then by
+		 * identifier. Taken a level at a time, parents in their own order, so
+		 * a level comes out grouped by parent; it used to be by level and
+		 * name only, which mixed folders of different parents together. Each
+		 * table orders by its own identifiers, so the Joliet one has its own
+		 * numbers. The primary order is also the order the folders are laid
+		 * out in, which keeps the image reproducible. */
+		auto tableOrder = [&root](auto identifierOf) {
+			std::vector<Node *> out{ &root };
+			for (size_t levelStart = 0; levelStart < out.size();)
+			{
+				const size_t levelEnd = out.size();
+				for (size_t i = levelStart; i < levelEnd; i++)
+				{
+					std::vector<Node *> kids;
+					for (auto &k : out[i]->kids)
+						if (k->dir) kids.push_back(k.get());
+					std::stable_sort(kids.begin(), kids.end(),
+						[&](Node *a, Node *b) { return identifierLess(identifierOf(a), identifierOf(b)); });
+					out.insert(out.end(), kids.begin(), kids.end());
+				}
+				levelStart = levelEnd;
+			}
+			return out;
+		};
+		dirs = tableOrder([](Node *n) -> const std::string & { return n->iso; });
 		for (size_t i = 0; i < dirs.size(); i++) dirs[i]->pathIndex = static_cast<uint32_t>(i + 1);
+		jolietDirs = tableOrder([](Node *n) -> const std::u16string & { return n->joliet; });
+		for (size_t i = 0; i < jolietDirs.size(); i++) jolietDirs[i]->jolietPathIndex = static_cast<uint32_t>(i + 1);
 	}
 
 	for (Node *d : dirs)
@@ -372,7 +411,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 	/* ---- path tables ---- */
 	auto buildPathTable = [&](bool joliet, bool bigEndian) {
 		std::vector<uint8_t> t;
-		for (Node *d : dirs)
+		for (Node *d : joliet ? jolietDirs : dirs)
 		{
 			std::vector<uint8_t> id;
 			if (d == &root) id.push_back(0);
@@ -387,7 +426,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 			t.push_back(static_cast<uint8_t>(id.size()));
 			t.push_back(0);
 			const uint32_t lba = joliet ? d->jolietLba : d->lba;
-			const uint16_t parent = static_cast<uint16_t>(d->parent ? d->parent->pathIndex : 1);
+			const uint16_t parent = static_cast<uint16_t>(d->parent ? (joliet ? d->parent->jolietPathIndex : d->parent->pathIndex) : 1);
 			if (bigEndian)
 			{
 				put32be(t, lba);
