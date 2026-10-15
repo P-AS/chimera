@@ -7800,3 +7800,49 @@ tests 4 passed, 2 skipped; package tests 18 passed) and published
 "Development build 9a9cd75f". Not tried: a link battle or any other link
 game, and a Super Game Boy cannot be linked.
 
+
+
+## VICE and MAME Home Systems join the official cores; ares adds the 64DD and the Sufami Turbo, Genesis Plus GX the Pico (user-decided, 2026-10-15)
+
+The owner said to publish every session's pending work, new cores with
+their repository, roster row, website row and release notifications. Two
+new cores are public, and two published ones gained systems. All four are
+part of the aim of covering every system BizHawk runs; nothing was taken
+from BizHawk.
+
+- **VICE** (ToolAssisted-run/chimera-core-vice): the Commodore 64, built
+  from VICE's x64sc emulator through the vice-libretro port. The package
+  carries VICE's own C64 and 1541 ROMs, as the owner decided.
+- **MAME Home Systems** (ToolAssisted-run/chimera-core-mamehome): the home
+  machines of MAME in one package, a Machine setting choosing among 25 -
+  Atari 7800 (A78), Intellivision (INTV), Vectrex (VEC), Odyssey 2 /
+  Videopac (O2), Channel F (ChannelF), Amstrad CPC with the CPC+ and GX4000
+  (AmstradCPC) and TI-83 (TI83). The user brings each machine's own ROMs as
+  firmware; the GX4000, CPC464+ and CPC6128+ need none. A CPC's disks can be
+  swapped while it runs, and Export Save Data hands out the disks it wrote.
+- **ares** adds the Nintendo 64DD (N64DD, a machine of its own: the drive's
+  IPL ROM is the user's firmware and the disk is the game; a 64DD game saves
+  on its disk, so Export Save Data hands out the written disk) and the
+  Sufami Turbo (the base cartridge with one or two linked minicarts, run as
+  a Super Famicom cartridge with no id of its own). Its Nintendo 64
+  cartridge saves now export in the order ares writes them, and the Save
+  data slot is used; both were wrong before.
+- **Genesis Plus GX** adds the Sega Pico (PICO): the pen as two axes, its
+  button, and the storyware pages.
+- official-cores.json has the rows vice and mamehome and the new systems of
+  ares and gpgx; the README's table of cores lists VICE after PUAE and MAME
+  Home Systems after MAME.
+
+Measured before publishing, built against miniBox dac416f with the owner's
+firmware and games: VICE's test script 21 passed; MAME Home Systems' 77
+passed and its window tests 4; ares's 97 passed with nothing skipped (the
+64DD with SimCity 64, the Sufami Turbo with two SD Gundam Generation
+minicarts, Super Mario 64's EEPROM out and back in); Genesis Plus GX's 30
+passed; Chimera's package and mnemonic tests 18 passed for each. The first
+CI runs passed with what needs no licensed content (VICE 18 passed, 3
+skipped; MAME Home Systems 18 passed, 8 skipped; ares and gpgx as before)
+and published "Development build 4755a656" (VICE), "3956272c" (MAME Home
+Systems), "32c17a0e" (ares) and "6dab3e2c" (Genesis Plus GX).
+tools/fetch-cores.sh fetches all four with the new rows, and the package
+tests pass on what it fetched. Not tried: the Sufami Turbo's linked games
+past their first screen, and a 64DD game other than SimCity 64.
