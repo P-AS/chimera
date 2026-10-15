@@ -7770,3 +7770,33 @@ Left for the owner, as before: the FAT12 boot code, the ISO path-table
 order, the auto frame skip, `sysinfo`'s unit and the Vulkan device
 functions; and TAStudio does not yet show a failed background save.
 
+
+## Gambatte joins the official cores: the Game Boy, the Game Boy Color and Game Boy Link (user-decided, 2026-10-15)
+
+The owner said to publish every session's pending work, new cores with
+their repository, roster row, website row and release notifications. The
+Gambatte core is public as ToolAssisted-run/chimera-core-gambatte. It
+builds Gambatte-Speedrun (pokemon-speedrunning/gambatte-core) unchanged,
+with no patches. BizHawk's source was read for ideas only; nothing was
+taken from it, not even a test file (the owner's rule, 2026-10-15).
+
+- official-cores.json has the row gambatte: GB Game Boy, GBC Game Boy
+  Color, SGB Super Game Boy, GBL Game Boy Link.
+- The README's table of cores lists it after melonDS.
+- Game Boy Link is a machine of two, three or four Game Boys joined by link
+  cables, each with its own game and saved data, as in BizHawk.
+- The boot ROMs are firmware the user brings (`dmg_boot.bin`,
+  `cgb_boot.bin`, `agb_boot.bin`, `sgb2_boot.bin`); playing without one is a
+  setting.
+
+Measured before publishing, built against miniBox dac416f: the core's own
+test script 55 passed, none failed or skipped (with the owner's boot ROMs and
+games; on CI the tests that need them are skipped); the window tests 6
+passed; Chimera's package and mnemonic tests 18 passed. One test plays
+Pokemon Gold from power-on to a save with inputs of the repository's own,
+then trades a Pokemon each way between two linked games. The first CI run
+passed (43 passed, 8 skipped for want of the boot ROMs and games; window
+tests 4 passed, 2 skipped; package tests 18 passed) and published
+"Development build 9a9cd75f". Not tried: a link battle or any other link
+game, and a Super Game Boy cannot be linked.
+
