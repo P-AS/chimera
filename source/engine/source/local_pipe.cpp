@@ -124,6 +124,34 @@ PSECURITY_DESCRIPTOR onlyThisUser()
 	return sd;
 }
 
+/* Whether the process at the other end of a pipe runs as this user. A pipe's
+ * name is only a name: any user of the machine may make one of it first, and
+ * a client that took whatever answered would hand its calls - and, with the
+ * default security, the right to act as this user - to that one. */
+bool serverIsThisUser(HANDLE pipe)
+{
+	ULONG pid = 0;
+	if (GetNamedPipeServerProcessId(pipe, &pid) == 0) return false;
+	HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+	if (process == nullptr) return false;   /* another user's process will not even be opened */
+	bool same = false;
+	HANDLE theirs = nullptr, mine = nullptr;
+	if (OpenProcessToken(process, TOKEN_QUERY, &theirs) != 0 && OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mine) != 0)
+	{
+		BYTE a[512], b[512];
+		DWORD used = 0;
+		if (GetTokenInformation(theirs, TokenUser, a, sizeof(a), &used) != 0
+			&& GetTokenInformation(mine, TokenUser, b, sizeof(b), &used) != 0)
+		{
+			same = EqualSid(reinterpret_cast<TOKEN_USER *>(a)->User.Sid, reinterpret_cast<TOKEN_USER *>(b)->User.Sid) != 0;
+		}
+	}
+	if (theirs != nullptr) CloseHandle(theirs);
+	if (mine != nullptr) CloseHandle(mine);
+	CloseHandle(process);
+	return same;
+}
+
 /* One end's reading: an overlapped read that a wait with a time limit can be
  * put on. Shared by the server and the client. */
 struct Reader
@@ -325,9 +353,17 @@ bool PipeClient::connect(std::string &error)
 	DWORD code = 0;
 	for (int attempt = 0; attempt < 2; attempt++)
 	{
+		/* identification only: the server may learn who called, never act as them */
 		impl->pipe = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
-			OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
-		if (impl->pipe != INVALID_HANDLE_VALUE) return true;
+			OPEN_EXISTING, FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
+		if (impl->pipe != INVALID_HANDLE_VALUE)
+		{
+			if (serverIsThisUser(impl->pipe)) return true;
+			CloseHandle(impl->pipe);
+			impl->pipe = INVALID_HANDLE_VALUE;
+			error = "the pipe Chimera serves on was made by another user of this machine, so nothing was sent to it";
+			return false;
+		}
 		code = GetLastError();
 		/* "busy" is also what a pipe says for the instant between one client
 		 * leaving and the server listening again: wait a moment and ask once
