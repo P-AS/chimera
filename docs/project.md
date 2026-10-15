@@ -509,8 +509,14 @@ it:
   writes its markers and branches in the same fresh file; then every change is
   appended as it happens - an input by the engine, a marker or branch by the
   frontend (`ce_movie_log_journal_note`: `M` the markers, `B` one branch whole,
-  `O` the branch order) - flushed to the OS at once and synced at most once a
-  second. It is rewritten only when it has grown well past its last image.
+  `O` the branch order) - flushed to the OS at once and synced to the disk by
+  a thread of its own, at most once a second and never more than a second
+  after a change, the last one before a pause included (the sync used to wait
+  for the next change, on TAStudio's thread). It is rewritten only when it has
+  grown well past its last image; if another program holds it open so that it
+  cannot be replaced, the changes go on into the journal as it is. On Windows
+  the files the engine opens are not handed to the programs Chimera starts
+  (FFmpeg, the precompile sessions), which once held the journal open.
 - `snapshot.chimeraProject` - the rest of the project as it stands (settings,
   headers; never the greenzone), rewritten every few seconds while there is
   unsaved work, and at once when an error is caught.

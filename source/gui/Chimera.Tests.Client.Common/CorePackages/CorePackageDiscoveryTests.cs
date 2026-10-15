@@ -150,6 +150,18 @@ namespace Chimera.Tests.Client.Common.CorePackages
 		}
 
 		[TestMethod]
+		public void AFileNamedLikeAPackageThatIsNotOneIsListedWithTheReason()
+		{
+			// an empty download, a web page saved under the name, a zip with the core one folder down
+			File.WriteAllBytes(Path.Combine(_root, "empty.chimeraCore"), []);
+			File.WriteAllText(Path.Combine(_root, "page.chimeraCore"), "<html><body>Not Found</body></html>");
+			_ = MakeZip("nested.chimeraCore", ("nested/core.wbx", "stub"), ("nested/waterbox.config", WaterboxConfigJson("Nested", "NES", ".nes")));
+			var found = CorePackageDiscovery.Scan([ _root ]);
+			Assert.AreEqual(3, found.Count, "each is listed, not left out");
+			Assert.IsTrue(found.All(static p => p.Error?.Contains("core.wbx") is true && !p.IsLoadable));
+		}
+
+		[TestMethod]
 		public void MissingSystemIdIsAnErrorNotACrash()
 		{
 			_ = MakeZip("nosys.chimeraCore", ("core.wbx", "stub"), ("waterbox.config", @"{ ""coreName"": ""Nameless"" }"));

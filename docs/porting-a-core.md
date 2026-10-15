@@ -230,7 +230,10 @@ Advice earned the hard way:
 
 - **`waterbox.config`** - the machine: name, system id, video (buffer capacity
   and the live size the core reports per frame), audio, vsync as a rational,
-  the memory layout, the button list, settings, firmware.
+  the memory layout, the button list, settings, firmware. A package with no
+  vsync (or a zero in it) runs at 60/1. A picture larger than the declared
+  buffer is cropped to it, and said once on stderr: declare the largest the
+  core can draw.
 - **The sound's rate is the chip's.** `audio.rate` is the rate the core mixes
   at, and Chimera converts it. In a package of several machines, one whose
   chip runs at another rate states its own: `"audioRate": 64000` in its entry

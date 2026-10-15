@@ -28,6 +28,20 @@ extern "C" uintptr_t ce_gl_dispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, 
 
 static uintptr_t call(uintptr_t op, void *args) { return ce_gl_dispatch(op, reinterpret_cast<uintptr_t>(args), 0, 0, 0, 0); }
 
+extern "C" void ce_gl_state_loaded(int64_t to);
+
+static GLsync fence()
+{
+	ChimeraGlArgs_glFenceSync a{ GL_SYNC_GPU_COMMANDS_COMPLETE, 0 };
+	return reinterpret_cast<GLsync>(ce_gl_dispatch(CHIMERA_GL_OP_glFenceSync, reinterpret_cast<uintptr_t>(&a), 0, 0, 0, 0));
+}
+
+static bool isSync(GLsync name)
+{
+	ChimeraGlArgs_glIsSync a{ name };
+	return ce_gl_dispatch(CHIMERA_GL_OP_glIsSync, reinterpret_cast<uintptr_t>(&a), 0, 0, 0, 0) != 0;
+}
+
 static bool isBuffer(GLuint name)
 {
 	ChimeraGlArgs_glIsBuffer a{ name };
@@ -65,6 +79,23 @@ int main()
 	ce_gl_release();
 	ce_gl_session_end();
 	assert(isBuffer(name));
+	ce_gl_session_end();
+
+	/* A load leaves fences no restored guest knows of; once signalled they
+	 * are deleted at the next fence, and a name for one answers as a fence
+	 * that is over. */
+	assert(ce_gl_start(err, (int32_t)sizeof err) != 0);
+	const GLsync before = fence();
+	call(CHIMERA_GL_OP_glFinish, nullptr);
+	const GLsync second = fence();
+	call(CHIMERA_GL_OP_glFinish, nullptr);
+	assert(before != nullptr && second != nullptr && isSync(before) && isSync(second));
+	ce_gl_release();
+	ce_gl_state_loaded(5);
+	const GLsync after = fence();
+	assert(after != nullptr && isSync(after));
+	assert(!isSync(before) && !isSync(second));
+	ce_gl_release();
 	ce_gl_session_end();
 
 	std::printf("test_gl_session: ok\n");

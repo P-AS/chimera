@@ -28,7 +28,11 @@
 
 #ifndef _WIN32
 #include <unistd.h>
+#else
+#include <windows.h>
+#include <io.h>
 #endif
+#include "../source/file_io.hpp"
 
 #if defined(_WIN32) && defined(__GNUC__)
 #define CE_BRIDGE_ABI __attribute__((sysv_abi))
@@ -78,6 +82,27 @@ int main()
 	fs::create_directories(base, ec);
 	assert(!ec);
 	const std::string dir = base.u8string();
+
+#ifdef _WIN32
+	// ---- a file the engine opens is not handed to the programs it starts ----
+	{
+		const std::string path = dir + "/inherit.bin";
+		auto inheritable = [](FILE *f)
+		{
+			DWORD flags = 0;
+			assert(GetHandleInformation(reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(f))), &flags) != 0);
+			return (flags & HANDLE_FLAG_INHERIT) != 0;
+		};
+		FILE *plain = _wfopen(fs::u8path(path).wstring().c_str(), L"wb");
+		assert(plain != nullptr && inheritable(plain)); // what the CRT does by itself
+		fclose(plain);
+		FILE *ours = chimera::openFile(path.c_str(), "ab");
+		assert(ours != nullptr && !inheritable(ours));
+		fclose(ours);
+		fs::remove(fs::u8path(path), ec);
+		printf("files: not inherited\n");
+	}
+#endif
 
 	// ---- the input journal: written, read back, removed ----
 	{

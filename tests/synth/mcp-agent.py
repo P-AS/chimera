@@ -475,6 +475,11 @@ if local:
     check("open_project reads nothing outside the folders given", error and "may read" in text)
     again = facts("open_project", path="made.chimeraProject")
     check("open_project opens what was saved", again.get("movie_length") == len(movie) and again.get("core") == "Synth")
+    # what the agent knew of the machine it closed is not carried into this one,
+    # although the sandbox puts its memory at the same address
+    check("a machine opened again has had no memory written", facts("status").get("memory_written_by_agent") is False)
+    error, text, _ = call("search_results")
+    check("and has no search running", error and "search_start" in text)
     check("with its input", all_input() == movie)
     check("its branch", [b["note"] for b in facts("list_branches").get("branches", [])] == ["made by the witness"])
     check("and its marker", facts("list_markers").get("markers") == [{"frame": 9, "text": "placed by the witness", "placed_by_user": True}])

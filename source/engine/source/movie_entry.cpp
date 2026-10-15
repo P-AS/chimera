@@ -29,7 +29,7 @@ bool parseAxisValue(const char *begin, const char *end, int32_t &out)
 	{
 		if (*begin < '0' || *begin > '9') return false;
 		value = value * 10 + (*begin - '0');
-		if (value > 2147483648LL) return false;
+		if (value > (negative ? 2147483648LL : 2147483647LL)) return false;
 	}
 	out = static_cast<int32_t>(negative ? -value : value);
 	return true;
@@ -44,10 +44,14 @@ int32_t playerNumberOf(const std::string &name)
 	int32_t value = 0;
 	while (i < name.size() && name[i] >= '0' && name[i] <= '9')
 	{
+		/* past kMostPlayers it is not a player's number (the frontend's
+		 * ControllerDefinition.PlayerNumber says the same): "P1000000000 A"
+		 * would be a billion groups, and longer would not fit in an int */
+		if (value > kMostPlayers) return 0;
 		value = value * 10 + (name[i] - '0');
 		i++;
 	}
-	return i > 1 && i < name.size() && name[i] == ' ' ? value : 0;
+	return i > 1 && i < name.size() && name[i] == ' ' && value <= kMostPlayers ? value : 0;
 }
 
 void EntryLayout::build(const std::vector<std::string> &buttons, const std::vector<EntryAxis> &axes,

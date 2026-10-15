@@ -176,7 +176,7 @@ void save_current()
 	s_lentDC = wglGetCurrentDC();
 }
 
-void bind_ours() { wglMakeCurrent(s_dc, s_context); }
+bool bind_ours() { return wglMakeCurrent(s_dc, s_context) != FALSE; }
 
 void return_current()
 {
@@ -299,9 +299,9 @@ void save_current()
 	s_lentDisplay = eglGetCurrentDisplay();
 }
 
-void bind_ours()
+bool bind_ours()
 {
-	eglMakeCurrent(s_display, EGL_NO_SURFACE, EGL_NO_SURFACE, s_context);
+	return eglMakeCurrent(s_display, EGL_NO_SURFACE, EGL_NO_SURFACE, s_context) == EGL_TRUE;
 }
 
 void return_current()
@@ -660,12 +660,15 @@ static void mint_context_id();
  * session opens, the way ce_gl_request and ce_cache_dir are; 1 unless a core
  * declares otherwise, so nothing changes for a core that says nothing. */
 static bool g_rebuildOnStateLoad = true;
+static bool g_syncReap; /* see syncReap */
 
 extern "C" void ce_gl_rebuild_on_state_load(int32_t on)
 {
 	g_rebuildOnStateLoad = on != 0;
 }
 
+/* `to` is the frame the state was taken at, -1 when the caller cannot say (a
+ * state handed in from outside, or read from a file) */
 extern "C" void ce_gl_state_loaded(int64_t to)
 {
 	flightNote(kFlightStateLoaded, (uint32_t)to);
@@ -687,8 +690,20 @@ extern "C" void ce_gl_state_loaded(int64_t to)
 	 * rebuild is the damage rather than the repair (see
 	 * ce_gl_rebuild_on_state_load). A core that declares nothing keeps the
 	 * behaviour above exactly. */
-	if (!keepObjects && g_rebuildOnStateLoad) mint_context_id();
+	if (!keepObjects && g_rebuildOnStateLoad)
+	{
+		mint_context_id();
+		g_syncReap = true;
+	}
 	if (!glAudit()) return;
+	if (to < 0)
+	{
+		g_auditLoads++;
+		fprintf(stderr, "[ce-gl-audit] restore %llu to a frame not known: not counted\n",
+			(unsigned long long)g_auditLoads);
+		fflush(stderr);
+		return;
+	}
 	uint64_t dead = 0, reused = 0, held = 0, leaked = 0;
 	for (int k = 0; k < kAuditKinds; k++)
 	{
@@ -837,8 +852,12 @@ static uint64_t g_bounceOverruns;
  * could not be grown (the caller then falls back to a direct, unguarded call -
  * a readback is better done unguarded than not at all). The canary is laid down
  * fresh each time, right where the guest's bytes end. */
+static const size_t kBounceMost = size_t{ 1 } << 30; /* past this a readback goes direct */
+
 static uint8_t *bounceFor(size_t need)
 {
+	/* the size is the guest's (glGetBufferSubData's), and can be anything */
+	if (need > kBounceMost) return nullptr;
 	const size_t want = need + kBounceCanary;
 	if (want > g_bounceCap)
 	{
@@ -922,9 +941,13 @@ static bool pixelBytes(GLenum format, GLenum type, GLsizei width, GLsizei height
 	if (skipPixels != 0 || skipRows != 0) return false;
 	if (alignment != 1 && alignment != 2 && alignment != 4 && alignment != 8) return false;
 
+	if (width <= 0 || height <= 0) return false;
+
 	const size_t effectiveWidth = rowLength > 0 ? (size_t)rowLength : (size_t)width;
 	const size_t rowRaw = (size_t)pixel * effectiveWidth;
 	const size_t rowStride = (rowRaw + (size_t)alignment - 1) & ~((size_t)alignment - 1);
+	/* the guest's numbers: a product that would not fit is not guarded */
+	if (rowStride > (SIZE_MAX >> 1) / (size_t)height) return false;
 	*tight = rowStride * ((size_t)height - 1) + (size_t)pixel * (size_t)width;
 	*scratch = rowStride * (size_t)height; /* generous: a padded last row lands here */
 	return true;
@@ -981,17 +1004,48 @@ struct SyncSlot
 	uint32_t gen;  /* bumped on every reuse, so an old name stays old */
 };
 static std::vector<SyncSlot> g_syncs;
+static std::vector<uint32_t> g_syncFree; /* slots with no sync, to be taken without a search */
+
+/* A state load leaves fences behind that no one will delete: those made after
+ * the restored frame, which the restored guest never heard of. Once one has
+ * signalled it answers exactly as a name the bridge does not know (a fence
+ * that is over), so at the next fence after a load that rebuilds, every
+ * signalled one is deleted and its slot given back. It waits for the next
+ * fence because only then is the bridge's context the current one.
+ * (g_syncReap, set by ce_gl_state_loaded) */
+
+static void syncReap()
+{
+	g_syncReap = false;
+	for (size_t i = 0; i < g_syncs.size(); i++)
+	{
+		SyncSlot &slot = g_syncs[i];
+		if (slot.sync == nullptr) continue;
+		GLint status = 0;
+		glGetSynciv(slot.sync, GL_SYNC_STATUS, 1, nullptr, &status);
+		if (status != GL_SIGNALED) continue;
+		glDeleteSync(slot.sync);
+		slot.sync = nullptr;
+		g_syncFree.push_back((uint32_t)i);
+	}
+}
 
 /* The name for a driver sync: generation in the high half, slot+1 in the low,
  * so a name is never zero and never collides with a name from a past life. */
 static uintptr_t syncName(GLsync sync)
 {
-	size_t at = g_syncs.size();
-	for (size_t i = 0; i < g_syncs.size(); i++)
+	if (g_syncReap) syncReap();
+	size_t at;
+	if (!g_syncFree.empty())
 	{
-		if (g_syncs[i].sync == nullptr) { at = i; break; }
+		at = g_syncFree.back();
+		g_syncFree.pop_back();
 	}
-	if (at == g_syncs.size()) g_syncs.push_back(SyncSlot{ nullptr, 0 });
+	else
+	{
+		at = g_syncs.size();
+		g_syncs.push_back(SyncSlot{ nullptr, 0 });
+	}
 	g_syncs[at].sync = sync;
 	g_syncs[at].gen++;
 	return (uintptr_t)ce_gl_sync_name_make((uint64_t)at, g_syncs[at].gen);
@@ -1016,7 +1070,11 @@ static void syncForget(GLsync name)
 	const uint64_t slot = ce_gl_sync_name_slot(v);
 	if (slot >= (uint64_t)g_syncs.size()) return;
 	SyncSlot &s = g_syncs[(size_t)slot];
-	if (s.gen == ce_gl_sync_name_generation(v)) s.sync = nullptr;
+	if (s.gen == ce_gl_sync_name_generation(v) && s.sync != nullptr)
+	{
+		s.sync = nullptr;
+		g_syncFree.push_back((uint32_t)slot);
+	}
 }
 
 /* ---------------------------------------------------------------------------
@@ -1116,13 +1174,6 @@ static void recordBind(GLenum target, GLuint name)
 		if (r.target == target) { r.name = name; return; }
 }
 
-static GLuint recordedOn(GLenum target)
-{
-	for (const BoundRecord &r : g_bound)
-		if (r.target == target) return r.name;
-	return 0;
-}
-
 static GLuint boundBuffer(GLenum target);
 
 /* A name leaves every target it was bound to: really (`unbind`, a pooled
@@ -1213,10 +1264,28 @@ extern "C" uintptr_t BRIDGE_ABI ce_gl_dispatch(uintptr_t op, uintptr_t a, uintpt
 	 * back when the frame is over. Two calls per frame, not two per GL call. */
 	if (!g_borrowed && g_ready)
 	{
-		save_current();
-		bind_ours();
-		g_borrowed = true;
+		/* noted first: a driver that dies making the context current is then
+		 * blamed, rather than the call that wanted it */
 		flightNote(kFlightBorrowed, 0);
+		save_current();
+		if (!bind_ours())
+		{
+			/* The frontend's context is the one current, and the guest's calls
+			 * would make objects in it and change its state: none of them is
+			 * run. (libglvnd's EGL refuses while a GLX context is current on
+			 * the thread.) wglMakeCurrent leaves no context current when it
+			 * fails, so what was lent is put back. */
+			return_current();
+			static bool said;
+			if (!said)
+			{
+				said = true;
+				fprintf(stderr, "[ce-gl] the bridge's context could not be made current; the core's GL calls are not run\n");
+				fflush(stderr);
+			}
+			return 0;
+		}
+		g_borrowed = true;
 		gpuTimeFrameBegin();
 		if (glTrace())
 			fprintf(stderr, "[ce-gl] borrowed the context (GL_VERSION now %s)\n",
@@ -1811,6 +1880,9 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 	 * on every path out of here. */
 	save_current();
 
+	/* noted before the driver is asked anything, so that a death inside
+	 * create_context or gladLoadGL is not blamed on the call before */
+	flightNote(kFlightSession, 0);
 	char err[192] = "";
 	if (!create_context(err, (int)sizeof err))
 	{
@@ -1852,7 +1924,6 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 	/* An identity the guest stores beside its GL objects and compares. Minted
 	 * per session, not merely per context (see the g_ready path above). */
 	mint_context_id();
-	flightNote(kFlightSession, 0);
 	g_holders++;
 	return_current();
 	return 1;
@@ -1865,11 +1936,19 @@ static void forgetContext()
 {
 	bufferPool().reset();
 	for (BoundRecord &r : g_bound) r.name = 0;
-	for (SyncSlot &slot : g_syncs)
+	g_syncFree.clear();
+	for (size_t i = 0; i < g_syncs.size(); i++)
 	{
+		SyncSlot &slot = g_syncs[i];
 		if (slot.sync != nullptr) slot.gen++;
 		slot.sync = nullptr;
+		g_syncFree.push_back((uint32_t)i);
 	}
+	g_syncReap = false;
+	/* one large readback kept the scratch at its size for the process */
+	free(g_bounce);
+	g_bounce = nullptr;
+	g_bounceCap = 0;
 	g_tsQuery[0] = g_tsQuery[1] = 0;
 	g_tsPending = false;
 	for (int k = 0; k < kAuditKinds; k++) auditLives()[k].clear();

@@ -18,6 +18,7 @@
 #include <cstring>
 #include <filesystem>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -458,6 +459,44 @@ static void aFloppyRefusesWhatDoesNotFit()
 	assert(!fs::exists(workRoot() / "big.img"));
 }
 
+/* Names that shorten to the same name each get one of their own: twelve that
+ * agree in their first 64 characters (Joliet's limit; its counter once had one
+ * digit, so the twelfth was given the second's name), and on a floppy two that
+ * shorten alike beside a file already called what the second would become. */
+static void namesThatShortenAlikeStayApart()
+{
+	const fs::path tree = workRoot() / "alike";
+	const std::string stem(64, 'n');
+	for (int i = 0; i < 12; i++) put(tree / (stem + "-" + std::to_string(i) + ".txt"), std::to_string(i));
+	std::string sha, err;
+	const fs::path iso = workRoot() / "alike.iso";
+	assert(chimera::mediaMake(tree.string(), iso.string(), chimera::MediaFormat::Iso9660, nullptr, sha, err));
+	const std::vector<uint8_t> bytes = slurp(iso);
+	const uint8_t *rootRec = &bytes[17 * 2048 + 156];
+	std::map<std::string, std::vector<uint8_t>> got;
+	readIsoJoliet(bytes, rd32le(rootRec + 2), rd32le(rootRec + 10), "", got);
+	assert(got.size() == 12);
+
+	const fs::path floppy = workRoot() / "alike-floppy";
+	put(floppy / "longname1.txt", "1");
+	put(floppy / "longname2.txt", "2");
+	put(floppy / "LONGNA~2.TXT", "3");
+	const fs::path img = workRoot() / "alike.img";
+	assert(chimera::mediaMake(floppy.string(), img.string(), chimera::MediaFormat::Fat12, nullptr, sha, err));
+	const std::vector<uint8_t> disk = slurp(img);
+	const uint32_t rootOff = (1u + 2u * 9u) * 512u;
+	std::set<std::string> names;
+	int entries = 0;
+	for (uint32_t i = 0; i < 224; i++)
+	{
+		const uint8_t *e = &disk[rootOff + i * 32];
+		if (e[0] == 0) break;
+		names.insert(std::string(reinterpret_cast<const char *>(e), 11));
+		entries++;
+	}
+	assert(entries == 3 && names.size() == 3);
+}
+
 int main()
 {
 	fs::remove_all(workRoot());
@@ -475,6 +514,7 @@ int main()
 	aFloppyRefusesWhatDoesNotFit();
 	aCancelledPackLeavesNothing();
 	anEmptyFolderIsRefused();
+	namesThatShortenAlikeStayApart();
 
 	fs::remove_all(workRoot());
 	std::printf("test_media: ok\n");

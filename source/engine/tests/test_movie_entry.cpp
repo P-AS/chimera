@@ -81,6 +81,12 @@ int main(void)
 		assert(chimera::playerNumberOf("Power") == 0);
 		assert(chimera::playerNumberOf("P1") == 0);    // no space, no player
 		assert(chimera::playerNumberOf("PX Up") == 0); // no digits, no player
+		// a number no machine has players for is no player's (and no
+		// billion-group layout, and no overflow on the way)
+		assert(chimera::playerNumberOf("P255 A") == 255);
+		assert(chimera::playerNumberOf("P256 A") == 0);
+		assert(chimera::playerNumberOf("P1000000000 A") == 0);
+		assert(chimera::playerNumberOf("P99999999999999999999 A") == 0);
 	}
 
 	{ // buttons only, one player - the synth core's own controller
@@ -138,6 +144,12 @@ int main(void)
 		// an explicit + sign parses, as it did in C#
 		assert(l.parse("|  +42,   -7,..|", states, axes));
 		assert(axes[0] == 42 && axes[1] == -7);
+		// the 32-bit range, by sign: 2147483648 is refused as C#'s int.Parse
+		// refuses it, rather than read as -2147483648
+		assert(l.parse("|2147483647,-2147483648,..|", states, axes));
+		assert(axes[0] == 2147483647 && axes[1] == INT32_MIN);
+		assert(!l.parse("|2147483648,    0,..|", states, axes));
+		assert(!l.parse("|+2147483648,    0,..|", states, axes));
 
 		// generate pads to 5 and puts axes first
 		const int32_t values[2] = { 127, -128 };

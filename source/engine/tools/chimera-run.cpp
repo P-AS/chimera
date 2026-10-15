@@ -583,6 +583,7 @@ int main(int argc, char **argv)
 	std::vector<const char *> extraPaths;
 	std::string romPathStore;
 	std::vector<std::string> extraNameStore;
+	std::vector<std::string> extraPathStore; /* reserved before use: extraPaths points into it */
 	if (projectMode)
 	{
 		const char *perr = nullptr;
@@ -621,10 +622,19 @@ int main(int argc, char **argv)
 						+ (ce_multifile_status(multi, i) == 1 ? "' is missing" : "' does not match its recorded hash"));
 			}
 		}
+		/* by path, as a single rom is and as a project's files are: the
+		 * engine reads each from where it lies (see THE PATH below) */
+		const std::string descriptorPath = romPath;
+		const size_t cut = descriptorPath.find_last_of("/\\");
+		const std::string folder = cut == std::string::npos ? std::string() : descriptorPath.substr(0, cut + 1);
+		auto pathOf = [&](int32_t i) -> const char *
+		{
+			extraPathStore.push_back(folder + ce_multifile_name(multi, i));
+			return extraPathStore.back().c_str();
+		};
+		extraPathStore.reserve(static_cast<size_t>(ce_multifile_count(multi)) + 1);
 		int32_t primary = ce_multifile_image_index(multi, 0);
-		uint64_t len = 0;
-		const uint8_t *data = ce_multifile_data(multi, primary, &len);
-		rom.assign(data, data + len);
+		romPathStore = pathOf(primary);
 		extraNameStore.push_back("rom.name");
 		extraNameStore.push_back(ce_multifile_name(multi, primary));
 		for (int32_t n = 1; n < ce_multifile_image_count(multi); n++)
@@ -638,13 +648,15 @@ int main(int argc, char **argv)
 			const std::string &nm = extraNameStore[store++];
 			extraData.push_back(reinterpret_cast<const uint8_t *>(nm.data()));
 			extraLens.push_back(nm.size());
+			extraPaths.push_back(nullptr);
 		}
 		for (int32_t n = 1; n < ce_multifile_image_count(multi); n++)
 		{
 			int32_t idx = ce_multifile_image_index(multi, n);
 			extraNames.push_back(extraNameStore[store++].c_str());
-			extraData.push_back(ce_multifile_data(multi, idx, &len));
-			extraLens.push_back(len);
+			extraData.push_back(nullptr);
+			extraLens.push_back(0);
+			extraPaths.push_back(pathOf(idx));
 		}
 		for (int32_t i = 0; i < ce_multifile_count(multi); i++)
 		{
@@ -652,14 +664,16 @@ int main(int argc, char **argv)
 			if (std::strcmp(role, "support") == 0)
 			{
 				extraNames.push_back(ce_multifile_name(multi, i));
-				extraData.push_back(ce_multifile_data(multi, i, &len));
-				extraLens.push_back(len);
+				extraData.push_back(nullptr);
+				extraLens.push_back(0);
+				extraPaths.push_back(pathOf(i));
 			}
 			else if (std::strcmp(role, "savedata") == 0)
 			{
 				extraNames.push_back("savedata");
-				extraData.push_back(ce_multifile_data(multi, i, &len));
-				extraLens.push_back(len);
+				extraData.push_back(nullptr);
+				extraLens.push_back(0);
+				extraPaths.push_back(pathOf(i));
 			}
 		}
 	}

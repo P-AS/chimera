@@ -71,6 +71,31 @@ bool fileExists(const char *utf8Path);
  * answer about it still applies. false when the file cannot be stat'd. */
 bool fileStamp(const char *utf8Path, uint64_t *sizeOut, int64_t *mtimeOut);
 
+/* Everything that says whether a file is still the one it was: its size, the
+ * time its bytes last changed at the resolution the file system keeps, the
+ * time anything about it last changed (which a copy that keeps the source's
+ * date, or a tool that sets the date back, cannot set back), and which file on
+ * which volume it is (a file replaced by another is another file). */
+struct FileIdentity
+{
+	uint64_t size = 0;
+	int64_t modified = 0, changed = 0;
+	uint64_t volume = 0, index = 0;
+	bool operator==(const FileIdentity &o) const
+	{
+		return size == o.size && modified == o.modified && changed == o.changed && volume == o.volume && index == o.index;
+	}
+	bool operator<(const FileIdentity &o) const
+	{
+		if (size != o.size) return size < o.size;
+		if (modified != o.modified) return modified < o.modified;
+		if (changed != o.changed) return changed < o.changed;
+		if (volume != o.volume) return volume < o.volume;
+		return index < o.index;
+	}
+};
+bool fileIdentity(const char *utf8Path, FileIdentity &out);
+
 /* Whole-file write (projects, multifile descriptors); false on any failure.
  * Written beside the file and moved over it, so a save that fails part way
  * (a full disk, the process dying, the power going) leaves the last good copy. */

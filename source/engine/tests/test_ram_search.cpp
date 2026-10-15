@@ -27,10 +27,30 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <new>
+#include <cstdlib>
 #include <random>
 #include <vector>
 
 using RS = CeRamSearch;
+
+/* An allocation that can be made to fail, the n-th from when it is armed:
+ * this test's whole program allocates through it. */
+static long g_failIn = -1;
+void *operator new(std::size_t n)
+{
+	if (g_failIn == 0)
+	{
+		g_failIn = -1;
+		throw std::bad_alloc();
+	}
+	if (g_failIn > 0) g_failIn--;
+	void *p = std::malloc(n != 0 ? n : 1);
+	if (p == nullptr) throw std::bad_alloc();
+	return p;
+}
+void operator delete(void *p) noexcept { std::free(p); }
+void operator delete(void *p, std::size_t) noexcept { std::free(p); }
 
 namespace
 {
@@ -526,8 +546,60 @@ void pastTheOldLimit()
 }
 } // namespace
 
+/* Running out of memory in the middle of a search leaves it as it was: the
+ * window says "Not enough memory for that search", and that must be true. A
+ * search that is left small changes shape (makeSparse), which allocates after
+ * the candidates have been filtered; it used to throw from there with the
+ * filtering done. Every allocation of the search is made to fail in turn. */
+void runningOutLeavesTheSearchAsItWas()
+{
+	std::vector<uint8_t> mem(1 << 16);
+	for (size_t i = 0; i < mem.size(); i++) mem[i] = static_cast<uint8_t>(i * 7);
+	int failed = 0, survived = 0;
+	for (long k = 0;; k++)
+	{
+		RS rs(mem.data(), nullptr, nullptr, (int64_t)mem.size());
+		rs.start(1, false, false, false);
+		for (size_t a = 100; a < 110; a++) mem[a]++;
+		RS::Query q;
+		q.compare = RS::CmpPrevious;
+		q.op = RS::OpNotEqual;
+		RS::Row first;
+		assert(rs.row(0, first));
+		g_failIn = k;
+		bool threw = false;
+		try
+		{
+			rs.search(q, RS::PrevLastSearch);
+		}
+		catch (const std::bad_alloc &)
+		{
+			threw = true;
+		}
+		const bool armedPast = g_failIn > 0; /* no allocation was the k-th */
+		g_failIn = -1;
+		for (size_t a = 100; a < 110; a++) mem[a]--;
+		if (threw)
+		{
+			failed++;
+			RS::Row row;
+			assert(rs.count() == (int64_t)mem.size());
+			assert(rs.row(0, row) && row.address == first.address && row.previous == first.previous);
+		}
+		else
+		{
+			survived++;
+			assert(rs.count() == 10);
+		}
+		if (armedPast) break;
+	}
+	assert(survived > 0);
+	std::printf("ram search: out of memory at each of %d allocations, %d refused and left as it was\n", failed + survived - 1, failed);
+}
+
 int main()
 {
+	runningOutLeavesTheSearchAsItWas();
 	bool dense = false, sparse = false;
 	uint32_t seed = 1;
 	for (int pointer = 0; pointer < 2; pointer++)

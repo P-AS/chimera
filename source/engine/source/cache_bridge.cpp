@@ -25,6 +25,12 @@ namespace
 std::string s_dir;
 uint64_t s_fetched, s_stored;
 
+/* whether each object is announced on stdout with its hash: only a precompile
+ * session has anyone reading (the wizard, collecting a game's manifest), and
+ * hashing everything a core boots from costs seconds on a CPU without the SHA
+ * instructions. CHIMERA_CACHE_ANNOUNCE=1 asks for it in any session. */
+bool s_announce;
+
 /* the relative name the caller gave, once it has been found acceptable */
 std::string s_rel;
 
@@ -96,6 +102,13 @@ extern "C" const char *ce_cache_dir_get(void)
 	return s_dir.c_str();
 }
 
+/* said by the session as it opens (session.cpp) */
+extern "C" void ce_cache_announce(int32_t precompile)
+{
+	const char *env = getenv("CHIMERA_CACHE_ANNOUNCE");
+	s_announce = precompile != 0 || (env != nullptr && env[0] == '1');
+}
+
 #if defined(_WIN32) && defined(__GNUC__)
 #define CE_BRIDGE_ABI __attribute__((sysv_abi))
 #else
@@ -135,9 +148,12 @@ static __attribute__((noinline)) uintptr_t dispatch_impl(uintptr_t op, uintptr_t
 			chimera::progress("loading compiled code", s_fetched, 0);
 			/* one line per object, for whoever is watching this process fill a
 			 * cache (the wizard's precompile step reads exactly these) */
-			printf("[cache] fetched %s %s\n", rel.c_str(),
-				chimera::sha1Hex(reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(args->dst)), static_cast<uint64_t>(size)).c_str());
-			fflush(stdout);
+			if (s_announce)
+			{
+				printf("[cache] fetched %s %s\n", rel.c_str(),
+					chimera::sha1Hex(reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(args->dst)), static_cast<uint64_t>(size)).c_str());
+				fflush(stdout);
+			}
 		}
 		fclose(f);
 		return static_cast<uintptr_t>(size);
@@ -170,9 +186,12 @@ static __attribute__((noinline)) uintptr_t dispatch_impl(uintptr_t op, uintptr_t
 		if (!ok || !chimera::replaceFile(tmp.c_str(), full.c_str())) { chimera::removeFile(tmp.c_str()); return 0; }
 		s_stored++;
 		chimera::progress("keeping compiled code", s_stored, 0);
-		printf("[cache] stored %s %s\n", rel.c_str(),
-			chimera::sha1Hex(reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(args->data)), args->size).c_str());
-		fflush(stdout);
+		if (s_announce)
+		{
+			printf("[cache] stored %s %s\n", rel.c_str(),
+				chimera::sha1Hex(reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(args->data)), args->size).c_str());
+			fflush(stdout);
+		}
 		return 1;
 	}
 	}

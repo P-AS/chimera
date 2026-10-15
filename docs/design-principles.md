@@ -7665,3 +7665,64 @@ pattern - drawing through a vertex array after deleting its buffer - that is
 legal but rare and that no core is known to use. The owner chose speed. A
 core that does it would draw wrong geometry; the cure then is that rule, or
 tracking which vertex arrays point at which buffers.
+
+## Small faults from the code audit, the low ones (2026-10-15)
+
+The audit of 2026-10-15 also listed faults it judged minor: none was seen by
+a user. Those fixed in this round, and what each now does:
+
+- **Agents.** The MCP server's notes about a machine (the first memory
+  write, the watches, the `advance_until` condition, the search) belong to
+  the session they were made in, and start again with the next one. They
+  used to be checked by the memory's address, and the sandbox gives a core's
+  memory the same address every time. An answer finished after its agent's
+  program left is not sent to the next program; a Windows write to a reader
+  that never reads gives up after five seconds, as on Linux. A client on
+  Linux looks for the server in each folder a server may have chosen.
+- **The input journal** is synced to the disk by a thread of its own, at
+  most once a second and never more than a second after a change. The sync
+  used to wait for the next change, so the last one before a pause was not
+  on the disk, and it ran on TAStudio's thread. Files the engine opens on
+  Windows are no longer inherited by the programs Chimera starts; a child
+  holding the journal open kept it from being replaced, and journaling then
+  stopped. Now it carries on in the journal as it was.
+- **Identities.** A project's id comes from the system's random source. The
+  old one used the library's address, which Windows keeps for every process
+  until a reboot, so two Chimeras making a project in the same second made
+  the same id. The file-hash cache keys on the full-resolution change time
+  and the file's identity, so a copy that keeps the original's date is
+  hashed again.
+- **Packages.** A package that names no frame rate runs at 60/1 (0/0 was a
+  frame rate the frontend divided by). A picture wider than the package
+  declares is cropped row by row instead of sheared. A file named
+  `.chimeraCore` that is not a package is listed with the reason. A
+  property past 2 GiB on a bus is read-only, since the bus takes 32-bit
+  addresses. A control called `P<n> ...` with n over 255 belongs to no
+  player.
+- **Numbers.** A float written to a 64-bit property is checked against the
+  exact range (-2^63 itself was refused before, and values near 2^64 were
+  converted with undefined results); an axis of 2147483648 is refused rather
+  than read as its negative; `0x-1` and `0xinf` are not numbers.
+- **Disc and floppy images.** Names that shorten alike each get a name no
+  other file in the folder has. Only images with such names change. The
+  media maker's last error and hash are kept per thread: the window asks its
+  questions on one thread while a pack runs on another.
+- **Files a game is made of.** A cue sheet saved with a byte-order mark, or
+  with `file` in small letters, names its first track too. A multi-file
+  descriptor hashes its files from the disk and reads one only when asked,
+  and chimera-run gives the engine their paths, as it does for one file.
+- **RAM search.** Running out of memory during a filter leaves the search
+  as it was, as the window says. A smaller shape that cannot be had is
+  simply not taken.
+- **The GL bridge.** A failed bind of its context is said once and the
+  core's GL calls are not run, instead of going to the frontend's context.
+  Fences a load left behind are deleted once they have signalled. A readback
+  over 1 GiB is not guarded, and the readback buffer goes with the context.
+- **The compile cache** announces and hashes objects only in a precompile
+  session, where the wizard reads the lines.
+
+Each was reproduced by a test first where one could be written, and each
+new test failed with the old code. Left for the owner: a FAT12 boot sector
+that runs nothing, the ISO path-table order and the auto frame skip (each
+changes what the user gets), the guest-visible `sysinfo` unit, and asking
+the Vulkan bridge for device functions.

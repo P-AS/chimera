@@ -52,9 +52,12 @@ the frontend names it `<data home>/Cache/PrecompiledCode/<game sha1>/`
 (see `CacheStore`; the data home is `%LOCALAPPDATA%\Chimera` or
 `$XDG_DATA_HOME/chimera`), and
 `ce_session_cache_stored` / `ce_session_cache_fetched` say what a session did.
-Every object that crosses is announced on stdout as `[cache] stored <name>
-<sha1>` or `[cache] fetched <name> <sha1>`, which is how a frontend watching a
-child process learns what a game needs.
+In a precompile session every object that crosses is announced on stdout as
+`[cache] stored <name> <sha1>` or `[cache] fetched <name> <sha1>`, which is
+how a frontend watching a child process learns what a game needs. An ordinary
+session says nothing and hashes nothing (the hash was seconds of a boot on a
+CPU without the SHA instructions); `CHIMERA_CACHE_ANNOUNCE=1` asks for the
+lines in any session.
 
 One directory per package version, because a different build of the package
 generates different code and must not read the old one's objects.

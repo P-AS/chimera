@@ -248,10 +248,13 @@ struct Sha1
  * a project is being made, and opening that project weighs it again. Two
  * gigabytes twice is a wait for an answer already known.
  *
- * Keyed on the STAMP, not the path: a file edited under a running Chimera has a
- * new mtime or a new size, and gets hashed again. It is a cache of work, not a
- * decision - a wrong answer here would be a movie pinned to the wrong bytes, so
- * it only ever skips work that would have produced the same forty characters.
+ * Keyed on the path AND the file's identity (fileIdentity): a file edited or
+ * replaced under a running Chimera has a new change time, or is another file,
+ * and gets hashed again. Size and the whole-second mtime were not enough: a
+ * copy, an unzip or an rsync keeps the source's date, and two dumps of one game
+ * are often the same size. It is a cache of work, not a decision - a wrong
+ * answer here would be a movie pinned to the wrong bytes, so it only ever skips
+ * work that would have produced the same forty characters.
  *
  * It lives as long as the process. Nothing is written to disk: a stale entry
  * surviving a restart is a bug nobody could see, and one hash of a disc image
@@ -259,13 +262,11 @@ struct Sha1
 struct CacheKey
 {
 	std::string path;
-	uint64_t size;
-	int64_t mtime;
+	FileIdentity id;
 	bool operator<(const CacheKey &o) const
 	{
 		if (path != o.path) return path < o.path;
-		if (size != o.size) return size < o.size;
-		return mtime < o.mtime;
+		return id < o.id;
 	}
 };
 
@@ -276,7 +277,7 @@ bool sha1HexOfFile(const char *utf8Path, uint64_t *lenOut, std::string &out)
 {
 	CacheKey key;
 	bool stamped = utf8Path != nullptr
-		&& fileStamp(utf8Path, &key.size, &key.mtime);
+		&& fileIdentity(utf8Path, key.id);
 	if (stamped)
 	{
 		key.path = utf8Path;
@@ -306,7 +307,7 @@ bool sha1HexOfFile(const char *utf8Path, uint64_t *lenOut, std::string &out)
 		}
 		stage += slash;
 	}
-	const uint64_t expected = stamped ? key.size : 0;
+	const uint64_t expected = stamped ? key.id.size : 0;
 	uint64_t sinceReport = 0;
 	for (;;)
 	{
@@ -333,7 +334,10 @@ bool sha1HexOfFile(const char *utf8Path, uint64_t *lenOut, std::string &out)
 		out[i * 2 + 1] = hex[digest[i] & 0xF];
 	}
 	if (lenOut != nullptr) *lenOut = total;
-	if (stamped)
+	/* kept only when the file is still the one that was read: one written to
+	 * while it was being hashed has a hash of neither version */
+	FileIdentity after;
+	if (stamped && fileIdentity(utf8Path, after) && after == key.id)
 	{
 		std::lock_guard<std::mutex> lock(g_cacheLock);
 		g_cache[key] = { out, total };

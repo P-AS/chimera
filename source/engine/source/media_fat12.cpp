@@ -30,6 +30,7 @@
 #include <cstring>
 #include <filesystem>
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <system_error>
@@ -179,21 +180,29 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 				return a->name.compare(b->name) < 0;
 			});
 		std::map<std::string, int> seen;
+		std::set<std::string> taken; /* every name given in this folder */
 		for (auto &k : d->kids)
 		{
 			k->shortName = shortNameOf(k->name, k->dir);
 			if (int &n = seen[k->shortName]; ++n > 1)
 			{
 				/* ~1, ~2 ... taken from the sorted order, so the same folder
-				 * always shortens the same way */
-				const std::string tail = "~" + std::to_string(n);
-				std::string base = k->shortName.substr(0, 8);
-				while (!base.empty() && base.back() == ' ') base.pop_back();
-				if (base.size() + tail.size() > 8) base.resize(8 - tail.size());
-				base += tail;
-				base.resize(8, ' ');
-				k->shortName = base + k->shortName.substr(8);
+				 * always shortens the same way - and past any name already
+				 * given, a file's own "NAME~2" among them */
+				const std::string wanted = k->shortName;
+				for (int c = n;; c++)
+				{
+					const std::string tail = "~" + std::to_string(c);
+					std::string base = wanted.substr(0, 8);
+					while (!base.empty() && base.back() == ' ') base.pop_back();
+					if (base.size() + tail.size() > 8) base.resize(8 - tail.size());
+					base += tail;
+					base.resize(8, ' ');
+					k->shortName = base + wanted.substr(8);
+					if (taken.count(k->shortName) == 0) break;
+				}
 			}
+			taken.insert(k->shortName);
 			if (k->dir) dirs.push_back(k.get());
 			else filesFlat.push_back(k.get());
 		}

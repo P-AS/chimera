@@ -1,4 +1,5 @@
 /* See media_maker.hpp. */
+#include "thread_string.hpp"
 #include "media_maker.hpp"
 
 #include "chimera/engine.h"
@@ -543,8 +544,11 @@ bool mediaMake(const std::string &folder, const std::string &outPath, MediaForma
  * hash and the last error belong to the caller until the next call. */
 extern "C" {
 
-static std::string g_lastSha1;
-static std::string g_lastError;
+/* per thread: the frontend packs on a worker and reads these there after,
+ * while the window asks the recipe questions (which set the error too) on its
+ * own thread - one string written from two threads was a data race */
+static thread_local chimera::ThreadString g_lastSha1;
+static thread_local chimera::ThreadString g_lastError;
 
 /* the pack both entry points run */
 static int32_t runMediaMake(const char *folder, const char *out_path, chimera::MediaFormat fmt,
@@ -562,21 +566,21 @@ static int32_t runMediaMake(const char *folder, const char *out_path, chimera::M
 	std::string sha, err;
 	if (!chimera::mediaMake(folder, out_path, fmt, cb, sha, err, recipe))
 	{
-		g_lastError = err;
+		*g_lastError = err;
 		return 0;
 	}
-	g_lastSha1 = sha;
+	*g_lastSha1 = sha;
 	return 1;
 }
 
 CE_API int32_t ce_media_make(const char *folder, const char *out_path, int32_t format,
 	ce_media_progress_fn progress, void *user)
 {
-	g_lastSha1.clear();
-	g_lastError.clear();
+	g_lastSha1->clear();
+	g_lastError->clear();
 	if (folder == nullptr || out_path == nullptr)
 	{
-		g_lastError = "no folder or no output file";
+		*g_lastError = "no folder or no output file";
 		return 0;
 	}
 	chimera::MediaFormat fmt;
@@ -586,7 +590,7 @@ CE_API int32_t ce_media_make(const char *folder, const char *out_path, int32_t f
 		case CE_MEDIA_ISO9660: fmt = chimera::MediaFormat::Iso9660; break;
 		case CE_MEDIA_FAT12: fmt = chimera::MediaFormat::Fat12; break;
 		default:
-			g_lastError = "unknown format";
+			*g_lastError = "unknown format";
 			return 0;
 	}
 	return runMediaMake(folder, out_path, fmt, nullptr, progress, user);
@@ -594,12 +598,12 @@ CE_API int32_t ce_media_make(const char *folder, const char *out_path, int32_t f
 
 CE_API int32_t ce_media_recipe_applies(const char *recipe_json, const char *folder)
 {
-	g_lastError.clear();
+	g_lastError->clear();
 	chimera::MediaRecipe recipe;
 	std::string err;
 	if (folder == nullptr || !chimera::mediaParseRecipe(recipe_json, recipe, err))
 	{
-		g_lastError = folder == nullptr ? "no folder" : err;
+		*g_lastError = folder == nullptr ? "no folder" : err;
 		return -1;
 	}
 	return chimera::mediaRecipeApplies(recipe, folder) ? 1 : 0;
@@ -607,12 +611,12 @@ CE_API int32_t ce_media_recipe_applies(const char *recipe_json, const char *fold
 
 CE_API int32_t ce_media_recipe_format(const char *recipe_json)
 {
-	g_lastError.clear();
+	g_lastError->clear();
 	chimera::MediaRecipe recipe;
 	std::string err;
 	if (!chimera::mediaParseRecipe(recipe_json, recipe, err))
 	{
-		g_lastError = err;
+		*g_lastError = err;
 		return -1;
 	}
 	switch (recipe.format)
@@ -627,24 +631,24 @@ CE_API int32_t ce_media_recipe_format(const char *recipe_json)
 CE_API int32_t ce_media_make_with(const char *folder, const char *out_path, const char *recipe_json,
 	ce_media_progress_fn progress, void *user)
 {
-	g_lastSha1.clear();
-	g_lastError.clear();
+	g_lastSha1->clear();
+	g_lastError->clear();
 	if (folder == nullptr || out_path == nullptr)
 	{
-		g_lastError = "no folder or no output file";
+		*g_lastError = "no folder or no output file";
 		return 0;
 	}
 	chimera::MediaRecipe recipe;
 	std::string err;
 	if (!chimera::mediaParseRecipe(recipe_json, recipe, err))
 	{
-		g_lastError = err;
+		*g_lastError = err;
 		return 0;
 	}
 	return runMediaMake(folder, out_path, recipe.format, &recipe, progress, user);
 }
 
-CE_API const char *ce_media_last_sha1(void) { return g_lastSha1.c_str(); }
-CE_API const char *ce_media_last_error(void) { return g_lastError.c_str(); }
+CE_API const char *ce_media_last_sha1(void) { return g_lastSha1->c_str(); }
+CE_API const char *ce_media_last_error(void) { return g_lastError->c_str(); }
 
 } // extern "C"

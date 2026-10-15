@@ -27,6 +27,7 @@
 #include "../../extern/cjson/cJSON.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -254,6 +255,14 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	}
 	cfg.vsyncNum = intOf(video, "vsyncNumerator");
 	cfg.vsyncDen = intOf(video, "vsyncDenominator");
+	/* a package that says nothing (or nothing usable) runs at 60 frames a
+	 * second, as the frontend's VideoConfig has always said; 0/0 was a frame
+	 * rate of NaN, and a frontend that divides by it stops */
+	if (cfg.vsyncNum <= 0 || cfg.vsyncDen <= 0)
+	{
+		cfg.vsyncNum = 60;
+		cfg.vsyncDen = 1;
+	}
 	cfg.getBgra = strOf(video, "getBgra", "GetVideoBgra");
 	cfg.drawEveryFrame = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(video, "drawEveryFrame"));
 	/* ABSENT MEANS TRUE here, unlike the flags above: a core that says nothing
@@ -402,6 +411,7 @@ bool composeSettings(const std::string &defaultsJson, const char *overrides, std
 extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len);
 extern "C" void ce_gl_session_end(void);
 extern "C" uintptr_t ce_cache_dispatch(uintptr_t op, uintptr_t a, uintptr_t b, uintptr_t c, uintptr_t d, uintptr_t e);
+extern "C" void ce_cache_announce(int32_t precompile);
 
 /* Sessions that ask the core one question instead of starting it: open stops
  * before Init, calls the named export (no arguments, a NUL-terminated string
@@ -614,6 +624,7 @@ struct ce_session
 	int32_t (*getVideoWidth)() = nullptr;
 	int32_t (*getVideoHeight)() = nullptr;
 	int32_t vidW = 0, vidH = 0;
+	bool saidOversize = false; /* copyVideo: a picture larger than declared, said once */
 	std::vector<uint32_t> videoBuf;
 	std::vector<int16_t> audioBuf;
 	int32_t sampleCount = 0;
@@ -676,6 +687,10 @@ struct ce_session
 	std::string traceHeader = "Instructions";
 	bool traceDesired = false;
 	std::vector<uint8_t> traceOut;
+
+	/* which session this is in the process, never reused (an address can be:
+	 * a new session may be allocated where a closed one was) */
+	uint64_t serial = 0;
 
 	// ---- the session's movie ----
 	ce_movie_log *movie = nullptr;
@@ -1080,18 +1095,36 @@ void ce_session::copyVideo()
 	 * A machine that has not rendered yet answers null (DOS before its first
 	 * mode set); the buffer keeps its previous frame. */
 	const void *src = reinterpret_cast<const void *>(getVideoBgra());
+	/* the core's rows are as long as ITS width: a picture wider than the
+	 * package declares is cropped row by row, not copied as one block at the
+	 * declared width (every row after the first then started in the wrong
+	 * place - Xenia's 1080p picture, sheared, chimera#270) */
+	int32_t srcStride = vidW;
 	if (getVideoWidth != nullptr && getVideoHeight != nullptr)
 	{
 		int32_t w = getVideoWidth(), h = getVideoHeight();
 		if (w > 0 && h > 0)
 		{
+			if ((w > cfg.width || h > cfg.height) && !saidOversize)
+			{
+				saidOversize = true;
+				fprintf(stderr, "chimera: %s draws %dx%d, larger than the %dx%d its package declares; the picture is cropped\n",
+					cfg.coreName.c_str(), w, h, cfg.width, cfg.height);
+			}
+			srcStride = w;
 			vidW = w < cfg.width ? w : cfg.width;
 			vidH = h < cfg.height ? h : cfg.height;
 		}
 	}
 	if (src != nullptr)
 	{
-		std::memcpy(videoBuf.data(), src, static_cast<size_t>(vidW) * vidH * sizeof(uint32_t));
+		if (srcStride == vidW)
+			std::memcpy(videoBuf.data(), src, static_cast<size_t>(vidW) * vidH * sizeof(uint32_t));
+		else
+			for (int32_t y = 0; y < vidH; y++)
+				std::memcpy(videoBuf.data() + static_cast<size_t>(y) * vidW,
+					static_cast<const uint32_t *>(src) + static_cast<size_t>(y) * srcStride,
+					static_cast<size_t>(vidW) * sizeof(uint32_t));
 	}
 }
 
@@ -1433,6 +1466,8 @@ ce_session *ce_session_open(
 	}
 
 	auto *s = new ce_session();
+	static std::atomic<uint64_t> serials{ 0 };
+	s->serial = ++serials;
 	s->host = host;
 	auto abort = [&](std::string message) -> ce_session *
 	{
@@ -1748,6 +1783,7 @@ ce_session *ce_session_open(
 	 * for compiled objects. A core without the export keeps nothing. */
 	if (ce_cache_dir_get()[0] != 0)
 	{
+		ce_cache_announce(s_precompileCount > 0);
 		std::string ignored;
 		auto setCache = reinterpret_cast<void (*)(uint64_t)>(s->proc("SetCacheBridge", 1, false, ignored));
 		if (setCache != nullptr)
@@ -1946,6 +1982,9 @@ ce_session *ce_session_open(
 			{
 				for (int64_t k = 0; k < len; k++) ce_session_bus_poke(session, b, static_cast<int32_t>(offset + k), buf[k]);
 			};
+			/* PokeBus takes a 32-bit address: past it a write would land at
+			 * another, so a property there is read-only */
+			d.writableBelow = int64_t{ INT32_MAX } + 1;
 			domains.push_back(std::move(d));
 		}
 		s->properties.load(table, domains);
@@ -2246,16 +2285,16 @@ int32_t ce_session_mnemonic_of(const ce_session *s, const char *name)
 
 const char *ce_session_button_header_of(const ce_session *s, const char *name)
 {
-	static thread_local std::string held;
-	held = name != nullptr ? s->cfg.names.buttonHeaderOf(name) : std::string();
-	return held.c_str();
+	static thread_local chimera::ThreadString held;   /* never destroyed: see thread_string.hpp */
+	*held = name != nullptr ? s->cfg.names.buttonHeaderOf(name) : std::string();
+	return held->c_str();
 }
 
 const char *ce_session_axis_header_of(const ce_session *s, const char *name)
 {
-	static thread_local std::string held;
-	held = name != nullptr ? s->cfg.names.axisHeaderOf(name) : std::string();
-	return held.c_str();
+	static thread_local chimera::ThreadString held;   /* never destroyed: see thread_string.hpp */
+	*held = name != nullptr ? s->cfg.names.axisHeaderOf(name) : std::string();
+	return held->c_str();
 }
 
 const char *ce_session_system_name(const ce_session *s)
@@ -2270,16 +2309,16 @@ int32_t ce_control_mnemonic(const char *name)
 
 const char *ce_control_button_header(const char *name)
 {
-	static thread_local std::string held;
-	held = name != nullptr ? std::string(1, chimera::genericMnemonic(name)) : std::string();
-	return held.c_str();
+	static thread_local chimera::ThreadString held;   /* never destroyed: see thread_string.hpp */
+	*held = name != nullptr ? std::string(1, chimera::genericMnemonic(name)) : std::string();
+	return held->c_str();
 }
 
 const char *ce_control_axis_header(const char *name)
 {
-	static thread_local std::string held;
-	held = name != nullptr ? chimera::genericAxisHeader(name) : std::string();
-	return held.c_str();
+	static thread_local chimera::ThreadString held;   /* never destroyed: see thread_string.hpp */
+	*held = name != nullptr ? chimera::genericAxisHeader(name) : std::string();
+	return held->c_str();
 }
 
 const char *ce_session_axis_name(const ce_session *s, int64_t index)
@@ -2437,7 +2476,7 @@ int32_t ce_session_load_state(ce_session *s, const uint8_t *data, uint64_t len)
 	chimera::WbxReturn r{};
 	s->host->wbx_load_state(s->obj, streamRead, reinterpret_cast<uintptr_t>(&stream), &r); // see save re: no bracket
 	ce_gl_release(); /* a restore can run guest code, and guest code can draw */
-	ce_gl_state_loaded(s->frame);
+	ce_gl_state_loaded(-1); /* which frame a state from outside belongs to is not known here */
 	s->vulkanStateLoaded();
 	if (s->traceEvery > 0)
 	{
@@ -2604,7 +2643,7 @@ int32_t ce_session_state_save_file(ce_session *s, const char *utf8_path, const u
 	const int level = levelEnv != nullptr && std::atoi(levelEnv) != 0 ? std::atoi(levelEnv) : 1;
 	const char *why = nullptr;
 	const chimera::ZstdApi *z = wantRaw ? nullptr : chimera::zstdApi(&why); /* without it the file is simply bigger */
-	void *zcs = z != nullptr ? z->createCStream() : nullptr;
+	void *zcs = z != nullptr && z->createCStream != nullptr ? z->createCStream() : nullptr;
 	if (zcs != nullptr && z->isError(z->initCStream(zcs, level))) { z->freeCStream(zcs); zcs = nullptr; }
 
 	/* The header says which savestate format this is and which build wrote it,
@@ -2701,7 +2740,7 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 	s->host->wbx_load_state(s->obj, stateFileRead, reinterpret_cast<uintptr_t>(&source), &r);
 	if (zds != nullptr) z->freeDStream(zds);
 	ce_gl_release();
-	ce_gl_state_loaded(s->frame);
+	ce_gl_state_loaded(-1); /* as ce_session_load_state */
 	s->vulkanStateLoaded();
 	if (!r.ok() || source.failed)
 	{
@@ -3040,7 +3079,10 @@ int64_t ce_session_bus_read(const ce_session *s, int32_t index, int64_t addr, ui
 			: nullptr;
 		if (from != nullptr) std::memcpy(buf + done, from, static_cast<size_t>(n));
 		else
-			for (int64_t i = 0; i < n; i++) buf[done + i] = static_cast<uint8_t>(s->busPeek(index, static_cast<int32_t>(at + i)));
+			/* PeekBus takes a 32-bit address: past it, zeros, not the byte
+			 * at an address wrapped into the negatives */
+			for (int64_t i = 0; i < n; i++)
+				buf[done + i] = at + i <= INT32_MAX ? static_cast<uint8_t>(s->busPeek(index, static_cast<int32_t>(at + i))) : 0;
 		done += n;
 	}
 	return len;
@@ -3280,6 +3322,9 @@ int64_t ce_session_movie_length(const ce_session *s)
 }
 
 int64_t ce_session_frame(const ce_session *s) { return s->frame; }
+
+/* for the engine's own bookkeeping (mcp.cpp): not in engine.h */
+extern "C" uint64_t ce_session_serial(const ce_session *s) { return s != nullptr ? s->serial : 0; }
 
 const ce_movie_log *ce_session_movie_log(const ce_session *s) { return s->movie; }
 

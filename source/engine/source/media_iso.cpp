@@ -37,6 +37,7 @@
 #include <filesystem>
 #include <cctype>
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <system_error>
@@ -301,6 +302,8 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 
 			std::map<std::string, int> seenIso;
 			std::map<std::u16string, int> seenJol;
+			std::set<std::string> takenIso;      /* every name given in this folder */
+			std::set<std::u16string> takenJol;
 			std::sort(d->kids.begin(), d->kids.end(),
 				[](const std::unique_ptr<Node> &a, const std::unique_ptr<Node> &b) {
 					if (a->dir != b->dir) return a->dir > b->dir;
@@ -315,19 +318,35 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 				 * folder always produces the same disambiguation. */
 				if (int &n = seenIso[k->iso]; ++n > 1)
 				{
-					const std::string suffix = "_" + std::to_string(n);
+					/* ...and past any name already given (a file's own
+					 * "NAME_2" among them) */
 					std::string base = k->iso;
 					const size_t semi = base.rfind(";1");
 					if (semi != std::string::npos) base.resize(semi);
-					if (base.size() + suffix.size() > 30) base.resize(30 - suffix.size());
-					k->iso = base + suffix + (k->dir ? "" : ";1");
+					for (int c = n;; c++)
+					{
+						const std::string suffix = "_" + std::to_string(c);
+						std::string cut = base;
+						if (cut.size() + suffix.size() > 30) cut.resize(30 - suffix.size());
+						k->iso = cut + suffix + (k->dir ? "" : ";1");
+						if (takenIso.count(k->iso) == 0) break;
+					}
 				}
+				takenIso.insert(k->iso);
 				if (int &n = seenJol[k->joliet]; ++n > 1)
 				{
-					const std::u16string suffix = u"_" + std::u16string(1, static_cast<char16_t>('0' + (n % 10)));
-					if (k->joliet.size() + suffix.size() > 64) k->joliet.resize(64 - suffix.size());
-					k->joliet += suffix;
+					const std::u16string base = k->joliet;
+					for (int c = n;; c++)
+					{
+						std::u16string suffix = u"_";
+						for (char digit : std::to_string(c)) suffix += static_cast<char16_t>(digit);
+						std::u16string cut = base;
+						if (cut.size() + suffix.size() > 64) cut.resize(64 - suffix.size());
+						k->joliet = cut + suffix;
+						if (takenJol.count(k->joliet) == 0) break;
+					}
 				}
+				takenJol.insert(k->joliet);
 				if (k->dir) stack.push_back(k.get());
 				else filesFlat.push_back(k.get());
 			}

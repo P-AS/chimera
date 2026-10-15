@@ -28,10 +28,27 @@ std::wstring widen(const char *utf8)
 }
 #endif
 
+#if defined(_WIN32)
+/* A file the engine opens is not handed to the programs Chimera starts: .NET
+ * starts every child with handle inheritance on (FFmpeg, the precompile and
+ * import sessions), and a child holding the input journal open kept it from
+ * being replaced. The CRT's own way ('N' in the mode) is not certain in the
+ * system msvcrt this links, so the handle is told directly. */
+FILE *notInherited(FILE *f)
+{
+	if (f != nullptr)
+	{
+		const intptr_t h = _get_osfhandle(_fileno(f));
+		if (h != -1) SetHandleInformation(reinterpret_cast<HANDLE>(h), HANDLE_FLAG_INHERIT, 0);
+	}
+	return f;
+}
+#endif
+
 FILE *openRead(const char *utf8Path)
 {
 #if defined(_WIN32)
-	return _wfopen(widen(utf8Path).c_str(), L"rb");
+	return notInherited(_wfopen(widen(utf8Path).c_str(), L"rb"));
 #else
 	return std::fopen(utf8Path, "rb");
 #endif
@@ -40,7 +57,7 @@ FILE *openRead(const char *utf8Path)
 FILE *openWrite(const char *utf8Path)
 {
 #if defined(_WIN32)
-	return _wfopen(widen(utf8Path).c_str(), L"wb");
+	return notInherited(_wfopen(widen(utf8Path).c_str(), L"wb"));
 #else
 	return std::fopen(utf8Path, "wb");
 #endif
@@ -167,7 +184,7 @@ bool seekFile(FILE *f, int64_t offset, int whence)
 FILE *openFile(const char *utf8Path, const char *mode)
 {
 #if defined(_WIN32)
-	return _wfopen(widen(utf8Path).c_str(), widen(mode).c_str());
+	return notInherited(_wfopen(widen(utf8Path).c_str(), widen(mode).c_str()));
 #else
 	return std::fopen(utf8Path, mode);
 #endif
@@ -233,6 +250,40 @@ bool fileStamp(const char *utf8Path, uint64_t *sizeOut, int64_t *mtimeOut)
 #endif
 	if (sizeOut != nullptr) *sizeOut = (uint64_t)st.st_size;
 	if (mtimeOut != nullptr) *mtimeOut = (int64_t)st.st_mtime;
+	return true;
+}
+
+bool fileIdentity(const char *utf8Path, FileIdentity &out)
+{
+	out = FileIdentity{};
+#ifdef _WIN32
+	/* attributes only: a file another program holds open for writing can
+	 * still be asked who it is */
+	HANDLE h = CreateFileW(widen(utf8Path).c_str(), FILE_READ_ATTRIBUTES,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+		FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return false;
+	BY_HANDLE_FILE_INFORMATION info;
+	FILE_BASIC_INFO basic;
+	const bool ok = GetFileInformationByHandle(h, &info) != 0
+		&& GetFileInformationByHandleEx(h, FileBasicInfo, &basic, sizeof basic) != 0;
+	CloseHandle(h);
+	if (!ok) return false;
+	out.size = (uint64_t(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+	out.volume = info.dwVolumeSerialNumber;
+	out.index = (uint64_t(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
+	/* 100 ns units: the resolution NTFS keeps */
+	out.modified = basic.LastWriteTime.QuadPart;
+	out.changed = basic.ChangeTime.QuadPart;
+#else
+	struct stat st;
+	if (stat(utf8Path, &st) != 0) return false;
+	out.size = (uint64_t)st.st_size;
+	out.volume = (uint64_t)st.st_dev;
+	out.index = (uint64_t)st.st_ino;
+	out.modified = (int64_t)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+	out.changed = (int64_t)st.st_ctim.tv_sec * 1000000000 + st.st_ctim.tv_nsec;
+#endif
 	return true;
 }
 

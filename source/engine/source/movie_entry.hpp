@@ -26,6 +26,8 @@ struct EntryAxis
 };
 
 /* ControllerDefinition.PlayerNumber: "^P(\d+) " captures the player, else 0 */
+/* the largest number a control's "P<n> " prefix is read as */
+constexpr int32_t kMostPlayers = 255;
 int32_t playerNumberOf(const std::string &name);
 
 /* The '|'-delimited groups an entry is written in, and where each control
