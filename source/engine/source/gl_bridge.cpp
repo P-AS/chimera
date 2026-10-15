@@ -155,6 +155,16 @@ void destroy_context()
 	if (s_window) { DestroyWindow(s_window); s_window = nullptr; }
 }
 
+/* The same at a session's end, without unbinding what the calling thread has
+ * current - the window's own context, it may be. Ours is not current by then
+ * (ce_gl_release gave it back). */
+void end_context()
+{
+	if (s_context) { wglDeleteContext(s_context); s_context = nullptr; }
+	if (s_dc) { ReleaseDC(s_window, s_dc); s_dc = nullptr; }
+	if (s_window) { DestroyWindow(s_window); s_window = nullptr; }
+}
+
 /* Whose context was current before we took the slot. Null is a legitimate
  * answer and must be restored as faithfully as any other. */
 HGLRC s_lentContext;
@@ -261,6 +271,15 @@ void destroy_context()
 		s_display = EGL_NO_DISPLAY;
 		s_context = EGL_NO_CONTEXT;
 	}
+}
+
+/* The same at a session's end: only the context goes. The display stays
+ * initialised for the next one, and nothing current is unbound - ours is not
+ * current by then (ce_gl_release gave it back). */
+void end_context()
+{
+	if (s_display != EGL_NO_DISPLAY && s_context != EGL_NO_CONTEXT) eglDestroyContext(s_display, s_context);
+	s_context = EGL_NO_CONTEXT;
 }
 
 /* Whose context was current before we took the slot. A frontend drawing
@@ -1715,6 +1734,9 @@ extern "C" void ce_vk_flight_note(unsigned op)
 	flightNote(kFlightVulkan | (op & 0x0FFFFFFFu), 0);
 }
 
+/* Sessions that took the bridge and have not ended (ce_gl_session_end). */
+static int g_holders;
+
 /* Mint a fresh id. It need only DIFFER from any other - the guest compares it
  * for equality and nothing else - so it is taken from where this process sits
  * in memory (the loader decides that anew every run), the clock, and a
@@ -1780,6 +1802,7 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 		 * below; this is the same signal for the in-process case. */
 		mint_context_id();
 		flightNote(kFlightSession, 0);
+		g_holders++;
 		return 1;
 	}
 
@@ -1830,8 +1853,45 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 	 * per session, not merely per context (see the g_ready path above). */
 	mint_context_id();
 	flightNote(kFlightSession, 0);
+	g_holders++;
 	return_current();
 	return 1;
+}
+
+/* What names objects of the context being ended: none of it means anything in
+ * the next one. A sync's slot keeps its generation, moved on, so an old name
+ * reads as a fence that has passed (see SyncSlot). */
+static void forgetContext()
+{
+	bufferPool().reset();
+	for (BoundRecord &r : g_bound) r.name = 0;
+	for (SyncSlot &slot : g_syncs)
+	{
+		if (slot.sync != nullptr) slot.gen++;
+		slot.sync = nullptr;
+	}
+	g_tsQuery[0] = g_tsQuery[1] = 0;
+	g_tsPending = false;
+	for (int k = 0; k < kAuditKinds; k++) auditLives()[k].clear();
+}
+
+/* A session that took the bridge has ended. When it is the last, its context
+ * goes, and with it every object its renderer made: no core tears its
+ * renderer down when its sandbox is destroyed, and the context used to live
+ * for the whole process, so every texture, buffer, framebuffer, program and
+ * sync a closed project made stayed in the driver - another project's worth
+ * with each one opened. The next session that asks makes a new context. */
+extern "C" void ce_gl_session_end(void)
+{
+	if (!g_ready || g_holders == 0) return;
+	if (--g_holders != 0) return;
+	ce_gl_release();
+	flightNote(kFlightStopped, 0);
+	end_context();
+	forgetContext();
+	g_ready = false;
+	g_context_id = 0;
+	g_description[0] = 0;
 }
 
 extern "C" void ce_gl_stop(void)
@@ -1867,5 +1927,6 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 	return 0;
 }
 extern "C" void ce_gl_stop(void) {}
+extern "C" void ce_gl_session_end(void) {}
 
 #endif

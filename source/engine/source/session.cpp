@@ -400,6 +400,7 @@ bool composeSettings(const std::string &defaultsJson, const char *overrides, std
 /* source/engine/source/gl_bridge.cpp - present in every build; a build without
  * CE_GL_BRIDGE answers that it has no context and nothing here happens. */
 extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len);
+extern "C" void ce_gl_session_end(void);
 extern "C" uintptr_t ce_cache_dispatch(uintptr_t op, uintptr_t a, uintptr_t b, uintptr_t c, uintptr_t d, uintptr_t e);
 
 /* Sessions that ask the core one question instead of starting it: open stops
@@ -443,6 +444,7 @@ struct ce_session
 	bool gpuDrew = false;
 	/* the core took the Vulkan bridge: a load is a new device to it */
 	bool vulkanBridge = false;
+	bool glBridge = false;   /* this session started the GL bridge: it ends it (ce_gl_session_end) */
 	/* The pictures of frames already drawn, shown again when the machine is put
 	 * back on one (kept_pictures.hpp; chimera#190). On by itself for a session
 	 * whose pictures a GPU draws and whose greenzone is on; a caller may say
@@ -1681,6 +1683,7 @@ ce_session *ce_session_open(
 		}
 		else
 		{
+			s->glBridge = true;
 			chimera::WbxReturn r;
 			host->wbx_get_callback_addr(s->obj, reinterpret_cast<void *>(&ce_gl_dispatch), 0, &r);
 			if (!r.ok() || r.data == 0)
@@ -2100,6 +2103,8 @@ void ce_session_free(ce_session *s)
 		chimera::WbxReturn r{};
 		s->host->wbx_destroy_host(s->obj, &r);
 	}
+	/* and what it made through the GL bridge, once nothing can call it */
+	if (s->glBridge) ce_gl_session_end();
 	delete s;
 }
 
