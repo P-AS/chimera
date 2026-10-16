@@ -351,7 +351,10 @@ namespace Chimera.Client.GUI
 			foreach (RollColumns cols in _movieSettings.Columns)
 			{
 				InputRoll roll = MakeInputRoll();
-				roll.AllColumns.AddRange(cols);
+				roll.AllColumns.AddRange(FitColumnsToControls(
+					cols,
+					MnemonicMap().Select(static c => (c.Name, c.Mnemonic)),
+					ControllerType.Axes.ContainsKey));
 				UpdateColumnWidths(roll);
 			}
 
