@@ -81,5 +81,40 @@ namespace Chimera.Tests.Client.Common
 				Directory.Delete(lastDir, recursive: true);
 			}
 		}
+
+		/// <summary>
+		/// A scan that found firmware names the Firmware folder of Config &gt; Paths, but only while the
+		/// folder named there is not there (issue #293): Scan Folder then opens where the files are, and
+		/// a folder the person made and named is never taken from them.
+		/// </summary>
+		[TestMethod]
+		public void AScannedFolderBecomesTheFirmwareFolderOnlyWhileThatIsNotThere()
+		{
+			var scanned = NewDir();
+			var made = NewDir();
+			var missing = Path.Combine(scanned, "not made");
+			try
+			{
+				// a new collection carries every default entry, Firmware among them
+				PathEntryCollection unmade = new();
+				unmade[PathEntryCollection.GLOBAL, "Firmware"].Path = missing;
+				Assert.IsFalse(unmade.AdoptFirmwareFolder(Path.Combine(scanned, "gone")), "a folder that is not there is not adopted");
+				Assert.AreEqual(missing, unmade.FirmwareAbsolutePath());
+				Assert.IsTrue(unmade.AdoptFirmwareFolder(scanned), "the named folder is not there, so the scanned one takes its place");
+				Assert.AreEqual(scanned, unmade.FirmwareAbsolutePath());
+				Assert.IsFalse(unmade.AdoptFirmwareFolder(made), "and once it is there, a later scan elsewhere leaves it");
+				Assert.AreEqual(scanned, unmade.FirmwareAbsolutePath());
+
+				PathEntryCollection named = new();
+				named[PathEntryCollection.GLOBAL, "Firmware"].Path = made;
+				Assert.IsFalse(named.AdoptFirmwareFolder(scanned), "a folder the person made is theirs");
+				Assert.AreEqual(made, named.FirmwareAbsolutePath());
+			}
+			finally
+			{
+				Directory.Delete(scanned, recursive: true);
+				Directory.Delete(made, recursive: true);
+			}
+		}
 	}
 }

@@ -8035,3 +8035,62 @@ cannot be fixed - two dated Dolphin packages from September in a
 developer's build/Cores failed it. The core's own
 check (`check-keybinds.py`, chimera-core-dolphin e8bd847) holds the same
 from its side; a scan of the other 44 cores' bindings found no other.
+
+## A firmware scan names the Firmware folder when there is none (user-decided, 2026-10-16)
+
+Issue 293: Config > Paths names a Firmware folder, `./Firmware` beside
+Chimera, that nothing creates. People keep their dumps elsewhere and point
+Scan Folder at them, which remembers each file it matches but left the
+folder entry alone. So Scan Folder opened wherever Windows had last been,
+and Config > Paths named a folder that was not there.
+
+Decided by the owner: when a scan (Config > Firmware, or the wizard's
+firmware page) finds firmware and the folder Config > Paths names does not
+exist, the scanned folder becomes the Firmware folder. A folder that
+exists is the person's choice and is never replaced. Not chosen: opening
+the picker on the last scanned folder while Paths stays as it is, or
+creating the default folder at start, which would leave the picker
+pointing at an empty folder.
+
+The rule is `PathEntryExtensions.AdoptFirmwareFolder`; the wizard reports
+the folder through `firmwareFoundIn` when the folder holds a file one of
+its requirements asks for, chosen already or not. Tests:
+`AScannedFolderBecomesTheFirmwareFolderOnlyWhileThatIsNotThere` (fails with
+the "folder exists" check removed) and
+`AScanThatFindsFirmwareSaysWhereAndOneThatDoesNotSaysNothing` (fails with
+the wizard's report removed). The Firmware folder is still read without
+its sub-folders; a file a scan found below it is remembered by its own
+path, as before.
+
+## A choice's values have labels, and the wizard lists the Boot ROMs on hand first (user-decided, 2026-10-16)
+
+Issue 293: a PlayStation 2 project picks its BIOS with the Boot ROM setting,
+whose seventy values are file names such as `ps2-0230a-20080220`. Nothing
+said that the `a` means USA, and only the next page, firmware, said whether
+the file was here. Files are found by their SHA-1, so their names never
+mattered, but the list gave no way to know that either.
+
+Decided by the owner, of three choices (on-hand first and labels; on-hand
+first only; explain only):
+
+- **A new optional package field, `optionLabels`**: an enum setting's
+  values may each have words to be shown by. It is display only; the
+  stored value, the project and the movie keep the value. Older Chimera
+  builds ignore the field, since unknown fields of a package are ignored.
+  The settings grid's converter shows the label and maps a label back to
+  its value; nothing stores a setting through the converter.
+- **On-hand values first, marked "(found)"**, on the wizard's settings page.
+  `FirmwareChoices.OnHand` asks the engine's firmware decision tree
+  (`ce_firmware_evaluate`) once per value of every setting a firmware
+  condition names, with the other settings and the chosen files as they
+  stand. The files every value calls for are set aside; a value whose own
+  files are all on hand (the Firmware folder, or a path remembered for the
+  core) is found. So the rule knows no core and no setting by name, and a
+  setting that decides no file is left exactly as declared. Config > Core
+  Settings shows the labels but no marks: it has no firmware to look at.
+
+Not done: moving the Boot ROM choice onto the firmware page, as the
+reporter suggested. The setting stays where every setting is.
+
+Tests: `WizardFirmwareChoicesTests` (three). Each failed with the ordering
+removed, and all three with the labels ignored.

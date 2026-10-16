@@ -621,9 +621,12 @@ namespace Chimera.Client.GUI
 
 		private void FirmwareMenuItem_Click(object sender, EventArgs e)
 		{
-			var firmwareFolder = Config.PathEntries.FirmwareAbsolutePath();
+			// read each time: a scan can make the scanned folder the Firmware folder
+			string FirmwareFolder() => Config.PathEntries.FirmwareAbsolutePath();
+			var adopted = false;
 			IReadOnlyList<FirmwareSurveyGroup> Survey()
 			{
+				var firmwareFolder = FirmwareFolder();
 				var packages = CorePackageDiscovery.ScanFor(Config);
 				var index = FirmwareSurvey.BuildIndex(Config, firmwareFolder, packages.Select(static p => p.Name));
 				return FirmwareSurvey.Build(Config, packages, p => FirmwareSurvey.DeclarationsOf(p.Path), firmwareFolder, index);
@@ -641,7 +644,7 @@ namespace Chimera.Client.GUI
 					{
 						Title = title,
 						Filter = "All Files|*.*",
-						InitialDirectory = PathEntryExtensions.FirstExistingDir(firmwareFolder),
+						InitialDirectory = PathEntryExtensions.FirstExistingDir(FirmwareFolder()),
 					};
 					return picker.ShowDialog(this) is DialogResult.OK ? picker.FileName.WithoutWslgMirror() : null;
 				},
@@ -650,7 +653,7 @@ namespace Chimera.Client.GUI
 					using FolderBrowserEx picker = new()
 					{
 						Description = "Scan a folder for firmware files",
-						SelectedPath = PathEntryExtensions.FirstExistingDir(firmwareFolder),
+						SelectedPath = PathEntryExtensions.FirstExistingDir(FirmwareFolder()),
 						CheckBoxLabel = FolderBrowserEx.ScanSubfoldersLabel,
 						CheckBoxChecked = includeSubfolders,
 					};
@@ -665,6 +668,7 @@ namespace Chimera.Client.GUI
 					// picker, what is under it; what is found is remembered where it lies
 					var packages = CorePackageDiscovery.ScanFor(Config);
 					var scanned = FirmwareLocator.BuildIndex([ ], ProjectFolderScan.Enumerate(folder, includeSubfolders).Take(ProjectFolderScan.MaxFiles));
+					var foundAny = false;
 					foreach (var package in packages.Where(static p => p.Error is null))
 					{
 						foreach (var decl in FirmwareSurvey.DeclarationsOf(package.Path).Decls)
@@ -672,13 +676,17 @@ namespace Chimera.Client.GUI
 							if (FirmwareLocator.FindEither(decl, scanned) is { } found)
 							{
 								CoreFirmwareStore.Remember(Config, package.Name, decl, found.Path);
+								foundAny = true;
 							}
 						}
 					}
+					// where the person keeps firmware, when Config > Paths names nowhere real (#293)
+					if (foundAny && Config.PathEntries.AdoptFirmwareFolder(folder)) adopted = true;
 				},
 				shows: Config.FirmwareShows,
 				rememberShows: shows => Config.FirmwareShows = shows);
 			this.ShowDialogWithTempMute(form);
+			if (adopted) SaveConfig();
 		}
 
 		/// <summary>

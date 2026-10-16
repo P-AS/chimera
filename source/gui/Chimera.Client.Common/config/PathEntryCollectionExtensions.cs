@@ -153,6 +153,23 @@ namespace Chimera.Client.Common
 			return collection.AbsolutePathFor(path, null);
 		}
 
+		/// <summary>
+		/// A folder a person scanned and found firmware in becomes the Firmware folder of
+		/// Config &gt; Paths, but only while the folder named there does not exist - which is
+		/// how a new install starts, since nothing creates it. Then Scan Folder opens there
+		/// next time and Paths says where the files really are (issue #293). A folder the
+		/// person named and made is never replaced. Returns whether the entry changed.
+		/// </summary>
+		public static bool AdoptFirmwareFolder(this PathEntryCollection collection, string scannedFolder)
+		{
+			if (string.IsNullOrWhiteSpace(scannedFolder) || !Directory.Exists(scannedFolder)) return false;
+			if (Directory.Exists(collection.FirmwareAbsolutePath())) return false;
+			var entry = collection[PathEntryCollection.GLOBAL, "Firmware"];
+			if (entry is null) return false;
+			entry.Path = Path.GetFullPath(scannedFolder);
+			return true;
+		}
+
 		public static string MovieAbsolutePath(this PathEntryCollection collection)
 		{
 			var path = collection[PathEntryCollection.GLOBAL, "Movies"].Path;

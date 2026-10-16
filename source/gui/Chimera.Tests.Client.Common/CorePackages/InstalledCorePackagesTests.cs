@@ -321,6 +321,62 @@ namespace Chimera.Tests.Client.Common.CorePackages
 			Assert.AreEqual("home-rom", WaterboxCore.EffectiveSettingsFor(byMachine, null)["bios"]);
 		}
 
+		/// <summary>
+		/// A label names a value the setting has (issue #293). One that names no value is never shown,
+		/// which is how a value renamed in "options" and not in "optionLabels" would lose its words
+		/// without anyone being told.
+		/// </summary>
+		[TestMethod]
+		public void EveryOptionLabelNamesAValueOfItsSetting()
+		{
+			List<string> stray = new();
+			foreach (var path in Packages())
+			{
+				var dir = Extracted(path);
+				if (dir is null) continue;
+				try
+				{
+					var config = WaterboxConfig.FromJson(File.ReadAllText(Path.Combine(dir, WaterboxCoreFactory.ConfigFileName)));
+					if (config is null) continue;
+					stray.AddRange(LabelsOfNoValue(config).Select(found => $"{InstalledPackages.NameOf(path)}: {found}"));
+				}
+				catch (Exception ex)
+				{
+					stray.Add($"{InstalledPackages.NameOf(path)}: {ex.Message}");
+				}
+				finally
+				{
+					TryDelete(dir);
+				}
+			}
+			Assert.AreEqual(0, stray.Count, string.Join("; ", stray));
+		}
+
+		[TestMethod]
+		public void ALabelOfNoValueIsFound()
+		{
+			var config = WaterboxConfig.FromJson("""
+				{ "settings": [
+				    { "name": "bios", "type": "enum", "options": [ "a-rom", "b-rom" ], "default": "a-rom",
+				      "optionLabels": { "a-rom": "USA", "c-rom": "Japan" } } ] }
+				""")!;
+			CollectionAssert.AreEqual(new[] { "'bios' labels 'c-rom', which is not one of its values" }, LabelsOfNoValue(config).ToArray());
+			Assert.AreEqual("USA", config.Settings![0].LabelFor("a-rom"));
+			Assert.AreEqual("b-rom", config.Settings![0].LabelFor("b-rom"), "a value with no label is shown as it is");
+		}
+
+		/// <summary>Each label, in every declaration, that names no value of its setting.</summary>
+		private static IEnumerable<string> LabelsOfNoValue(WaterboxConfig config)
+		{
+			foreach (var decl in config.Settings ?? [ ])
+			{
+				foreach (var value in (decl.OptionLabels?.Keys ?? Enumerable.Empty<string>()).Where(v => decl.Options?.Contains(v) is not true))
+				{
+					yield return $"'{decl.Name}' labels '{value}', which is not one of its values";
+				}
+			}
+		}
+
 		/// <summary>Each setting a machine of this package is left with more than one declaration of.</summary>
 		private static IEnumerable<string> SettingsDeclaredTwice(WaterboxConfig config)
 		{

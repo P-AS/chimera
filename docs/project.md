@@ -171,6 +171,18 @@ with exactly one declaration. Without it both stay, and the later one's
 default wins on every machine. The package tests refuse a package that
 leaves a machine with two declarations of one setting.
 
+A choice setting (`"type": "enum"`) may give its values words to be shown
+by: `"optionLabels": { "ps2-0230a-20080220": "USA v2.30 (2008-02-20)" }`.
+Only the words change. The project, the movie and the core keep the value
+itself, so a label can be reworded without changing any machine, and a
+value with no label is shown as it is (issue 293). On the wizard's settings
+page, a setting whose values call for different firmware files (a
+PlayStation 2's Boot ROM: one BIOS per value) lists first the values whose
+file is on hand, in the Firmware folder or at a path remembered for the
+core, each marked "(found)". The engine's own firmware decision tree is
+asked once per value, so this needs nothing more from a package than its
+firmware conditions.
+
 Loading a plain rom with no project has no pin, so the extension decides: the
 package's machines claim their own extensions, and a `.sms` opened with this
 package is a Master System.
@@ -267,7 +279,13 @@ plausible file is hashed and matched, and a satisfied requirement
 shows its checkmark and the file in use. Config > Firmware is the same
 question asked of every installed core at once, before any project: it
 surveys the packages present, says what the folder already answers, and
-takes a file for the rest - remembered where it lives, never copied. A per-item Select File button
+takes a file for the rest - remembered where it lives, never copied.
+Scan Folder, on both, hashes a folder the person picks. When it finds
+firmware there and the Firmware folder named in Config > Paths does not
+exist (as on a new install: nothing creates it), the scanned folder
+becomes the Firmware folder (issue 293), so the next scan opens there and
+Config > Paths says where the files are. A folder the person made and
+named is never replaced. A per-item Select File button
 covers what the folder could not - allowed even when something was
 found - and only the exact file satisfies, except for a game core, whose
 firmware may be a file of the project's own (docs/game-cores.md): that is

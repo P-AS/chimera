@@ -288,7 +288,12 @@ namespace Chimera.Client.GUI
 				// a precompile session is this frontend again: it must read the
 				// same config, or it would look for its cache somewhere else
 				configPath: _getConfigPath(),
-				kind: Config.NewProjectKind);
+				kind: Config.NewProjectKind,
+				// where the person keeps firmware, when Config > Paths names nowhere real (#293)
+				firmwareFoundIn: folder =>
+				{
+					if (Config.PathEntries.AdoptFirmwareFolder(folder)) SaveConfig();
+				});
 			// The wizard opens on the last project's answers - the open one, or the
 			// last one there was. This is how a project is reconfigured: changing a
 			// sync setting changes the machine, so there is no editing one in place,

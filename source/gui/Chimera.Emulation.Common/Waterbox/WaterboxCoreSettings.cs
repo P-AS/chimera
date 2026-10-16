@@ -38,6 +38,18 @@ namespace Chimera.Emulation.Common.Waterbox
 		[JsonIgnore]
 		public IReadOnlyList<WaterboxConfig.SettingDecl>? Declarations { get; set; }
 
+		/// <summary>
+		/// For a window that knows which files are on hand (the New Project wizard): whether a value of a
+		/// setting has the firmware it calls for - (setting, value) to true or false, or null for a value
+		/// that calls for no file of its own. Such values are listed first and marked found (issue #293).
+		/// Null, as everywhere else, leaves every list as the core declared it.
+		/// </summary>
+		[JsonIgnore]
+		public Func<string, string, bool?>? FirmwareOnHand { get; set; }
+
+		/// <summary>The words after a value whose firmware is on hand.</summary>
+		public const string FoundMark = "  (found)";
+
 		/// <summary>True if <paramref name="other"/> holds the same values.</summary>
 		public bool ValuesEqual(WaterboxSettingsBase other)
 		{
@@ -58,6 +70,7 @@ namespace Chimera.Emulation.Common.Waterbox
 		{
 			clone.Values = Values is null ? new Dictionary<string, object>() : new Dictionary<string, object>(Values);
 			clone.Declarations = Declarations;
+			clone.FirmwareOnHand = FirmwareOnHand;
 		}
 
 		private IReadOnlyList<WaterboxConfig.SettingDecl> Decls
@@ -140,7 +153,10 @@ namespace Chimera.Emulation.Common.Waterbox
 				=> !Equals(GetValue(component), _decl.DefaultValue);
 		}
 
-		/// <summary>Turns an enum setting's declared options into a dropdown.</summary>
+		/// <summary>
+		/// Turns an enum setting's declared options into a dropdown. The list holds the VALUES, which are
+		/// what is stored; each is shown by its label, and marked when its firmware is on hand.
+		/// </summary>
 		private sealed class OptionsConverter : StringConverter
 		{
 			// null when the grid built the converter from the attribute rather
@@ -158,8 +174,43 @@ namespace Chimera.Emulation.Common.Waterbox
 			/// <summary>The list is the whole set of legal values, so free text is not.</summary>
 			public override bool GetStandardValuesExclusive(ITypeDescriptorContext context) => true;
 
+			/// <summary>As declared - except that values whose firmware is on hand come first, in declared order.</summary>
 			public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext context)
-				=> new((ICollection) (_decl?.Options ?? [ ]));
+			{
+				var options = _decl?.Options ?? [ ];
+				if (OnHandOf(context) is not { } onHand) return new((ICollection) options);
+				return new(options.Where(o => onHand(o) is true).Concat(options.Where(o => onHand(o) is not true)).ToList());
+			}
+
+			public override bool CanConvertTo(ITypeDescriptorContext context, Type destinationType)
+				=> destinationType == typeof(string) || base.CanConvertTo(context, destinationType);
+
+			public override object ConvertTo(ITypeDescriptorContext context, System.Globalization.CultureInfo culture, object value, Type destinationType)
+				=> destinationType == typeof(string) && _decl is not null && value is string text
+					? Shown(context, text)
+					: base.ConvertTo(context, culture, value, destinationType);
+
+			/// <summary>Back from what was shown to the value: a label, a marked label, or the value itself.</summary>
+			public override object ConvertFrom(ITypeDescriptorContext context, System.Globalization.CultureInfo culture, object value)
+			{
+				if (value is string text && _decl?.Options is { } options)
+				{
+					foreach (var option in options)
+					{
+						if (text == option || text == _decl.LabelFor(option) || text == Shown(context, option)) return option;
+					}
+				}
+				return base.ConvertFrom(context, culture, value);
+			}
+
+			private string Shown(ITypeDescriptorContext? context, string value)
+				=> _decl!.LabelFor(value) + (OnHandOf(context)?.Invoke(value) is true ? FoundMark : "");
+
+			/// <summary>whether this setting's values have their files on hand, if the settings know</summary>
+			private Func<string, bool?>? OnHandOf(ITypeDescriptorContext? context)
+				=> _decl?.Name is { } name && context?.Instance is WaterboxSettingsBase { FirmwareOnHand: { } onHand }
+					? value => onHand(name, value)
+					: null;
 		}
 	}
 
