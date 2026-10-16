@@ -8018,3 +8018,20 @@ hidden with the export a game core already uses for its mailboxes
 exports `ReadBus` (chimera-core-ares 1597345). The porting guide and the
 comment on `ce_session_domain_hidden` now name this second use. Measured on
 Super Mario 64: a search over the 8 MB DCache bus went from 193 ms to 56 ms.
+
+## A package's default bindings name the controls exactly (2026-10-16)
+
+Issue 284: the Dolphin core's default bindings said "A" and "Main Stick X"
+while its controls are "P1 A" and "P1 Main Stick X". Chimera binds a control
+only by its exact name, so none of the 75 defaults ever applied, and the
+contract test that should have caught it compared names with the player
+prefix taken off, and buttons only. It now compares exact names, axes
+included (`KeybindsOnlyNameControlsTheControllerHas`), and fails on the
+package from before the fix (39 names that are no control in its nightly of
+2026-10-15). It judges each core's newest package only
+(`InstalledPackages.Newest`, by the package's versionDate): Chimera keeps a
+core's older versions for the projects made with them, and an older version
+cannot be fixed - two dated Dolphin packages from September in a
+developer's build/Cores failed it. The core's own
+check (`check-keybinds.py`, chimera-core-dolphin e8bd847) holds the same
+from its side; a scan of the other 44 cores' bindings found no other.

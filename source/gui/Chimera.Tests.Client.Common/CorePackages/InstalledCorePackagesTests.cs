@@ -105,14 +105,16 @@ namespace Chimera.Tests.Client.Common.CorePackages
 
 		/// <summary>
 		/// A package declares the bindings its controller ships with, and the
-		/// frontend has none of its own. A binding for a button the controller does
-		/// not declare is a binding nothing can ever use.
+		/// frontend has none of its own. A binding for a control the controller does
+		/// not declare is a binding nothing can ever use. Judged on each core's
+		/// newest package: an older version kept for old projects is what it was.
 		/// </summary>
 		[TestMethod]
-		public void KeybindsOnlyNameButtonsTheControllerHas()
+		public void KeybindsOnlyNameControlsTheControllerHas()
 		{
 			List<string> stray = new();
-			foreach (var path in Packages())
+			Packages();
+			foreach (var path in InstalledPackages.Newest)
 			{
 				var dir = Extracted(path);
 				if (dir is null) continue;
@@ -121,20 +123,31 @@ namespace Chimera.Tests.Client.Common.CorePackages
 					var keybinds = PackageKeybinds.Read(dir);
 					if (keybinds is null) continue;
 					var config = WaterboxConfig.FromJson(File.ReadAllText(Path.Combine(dir, WaterboxCoreFactory.ConfigFileName)));
-					// Compared WITHOUT the player prefix on either side. A multi-player
-					// controller declares "P1 A" and binds "A": the bindings are per
-					// controller and the frontend applies the player, so the prefix is
-					// on the declaration and not on the binding.
-					HashSet<string> declared = new(StringComparer.OrdinalIgnoreCase);
-					foreach (var button in AllButtons(config)) declared.Add(WithoutPlayer(button));
-					if (declared.Count is 0) continue;
+					// Compared by the exact name, as InputManager binds them: a control
+					// declared "P1 A" is bound only by a binding called "P1 A". This
+					// test used to drop the player prefix on both sides, on the belief
+					// that the frontend adds it - it does not - and so passed a Dolphin
+					// package none of whose 75 bindings ever applied (chimera#284).
+					HashSet<string> buttons = new(AllButtons(config), StringComparer.Ordinal);
+					HashSet<string> axes = new(AllAxes(config), StringComparer.Ordinal);
+					if (buttons.Count is 0 && axes.Count is 0) continue;
 					foreach (var (controller, bindings) in keybinds.AllTrollers)
 					{
 						foreach (var button in bindings.Keys)
 						{
-							if (!declared.Contains(WithoutPlayer(button)))
+							if (!buttons.Contains(button))
 							{
 								stray.Add($"{InstalledPackages.NameOf(path)}/{controller}: {button}");
+							}
+						}
+					}
+					foreach (var (controller, bindings) in keybinds.AllTrollersAnalog ?? new())
+					{
+						foreach (var axis in bindings.Keys)
+						{
+							if (!axes.Contains(axis))
+							{
+								stray.Add($"{InstalledPackages.NameOf(path)}/{controller}: {axis} (an axis)");
 							}
 						}
 					}
@@ -324,24 +337,21 @@ namespace Chimera.Tests.Client.Common.CorePackages
 			}
 		}
 
-		/// <summary>"P2 Start" -&gt; "Start"; anything without a player prefix unchanged.</summary>
-		private static string WithoutPlayer(string control)
-		{
-			var space = control.IndexOf(' ');
-			if (space < 2 || control[0] is not ('P' or 'p')) return control;
-			for (var i = 1; i < space; i++)
-			{
-				if (control[i] is < '0' or > '9') return control;
-			}
-			return control.Substring(space + 1);
-		}
-
 		private static IEnumerable<string> AllButtons(WaterboxConfig? config)
 		{
 			if (config?.Input?.Buttons is { } buttons) foreach (var b in buttons) yield return b;
 			foreach (var machine in config?.Machines ?? new List<WaterboxConfig.MachineConfig>())
 			{
 				foreach (var b in machine.Input?.Buttons ?? new List<string>()) yield return b;
+			}
+		}
+
+		private static IEnumerable<string> AllAxes(WaterboxConfig? config)
+		{
+			if (config?.Input?.Axes is { } axes) foreach (var a in axes) yield return a.Name ?? "";
+			foreach (var machine in config?.Machines ?? new List<WaterboxConfig.MachineConfig>())
+			{
+				foreach (var a in machine.Input?.Axes ?? new List<WaterboxConfig.AxisConfig>()) yield return a.Name ?? "";
 			}
 		}
 

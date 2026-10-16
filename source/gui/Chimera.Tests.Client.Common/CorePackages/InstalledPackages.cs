@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace Chimera.Tests.Client.Common.CorePackages
 {
@@ -56,6 +57,37 @@ namespace Chimera.Tests.Client.Common.CorePackages
 					.OrderBy(static p => p, StringComparer.OrdinalIgnoreCase)
 					.ToList();
 			}
+		}
+
+		/// <summary>
+		/// One package a core: its newest. Chimera keeps a core's older versions
+		/// beside the newest so that a project opens with the version it was made
+		/// with (docs/core-manager.md), and an older version can never be fixed, so
+		/// a check of what a core publishes judges the newest. The core is the
+		/// file's name without its version ("dolphin-30c1fc02...", "dolphin"); the
+		/// newest is the one whose waterbox.config has the latest versionDate, one
+		/// with none counting as older than any with one, and the file's time
+		/// breaking a tie.
+		/// </summary>
+		public static IReadOnlyList<string> Newest
+			=> Files
+				.GroupBy(static p => VersionSuffix.Replace(NameOf(p), ""), StringComparer.OrdinalIgnoreCase)
+				.Select(static g => g
+					.OrderByDescending(static p => VersionDate(p))
+					.ThenByDescending(static p => File.GetLastWriteTimeUtc(p))
+					.First())
+				.OrderBy(static p => p, StringComparer.OrdinalIgnoreCase)
+				.ToList();
+
+		private static readonly Regex VersionSuffix = new("-[0-9a-f]{7,40}$", RegexOptions.IgnoreCase);
+
+		/// <summary>The versionDate a package's waterbox.config says, or empty.</summary>
+		private static string VersionDate(string packagePath)
+		{
+			var config = ConfigOf(packagePath);
+			if (config is null) return "";
+			var m = Regex.Match(config, "\"versionDate\"\\s*:\\s*\"([^\"]*)\"");
+			return m.Success ? m.Groups[1].Value : "";
 		}
 
 		/// <summary>The text of one entry of a package, or null if it has none.</summary>
