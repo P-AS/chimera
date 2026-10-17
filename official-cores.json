@@ -458,6 +458,37 @@
       "tested": ""
     },
     {
+      "id": "rsdkv3",
+      "name": "RSDKv3",
+      "systems": [
+        { "id": "SonicCD", "name": "Sonic CD" }
+      ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-rsdkv3",
+      "tested": ""
+    },
+    {
+      "id": "rsdkv4",
+      "name": "RSDKv4",
+      "systems": [
+        { "id": "Sonic1", "name": "Sonic the Hedgehog (2013)" },
+        { "id": "Sonic2", "name": "Sonic the Hedgehog 2 (2013)" }
+      ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-rsdkv4",
+      "tested": ""
+    },
+    {
+      "id": "rsdkv5",
+      "name": "RSDKv5",
+      "systems": [
+        { "id": "SonicMania", "name": "Sonic Mania" }
+      ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-rsdkv5",
+      "tested": ""
+    },
+    {
       "id": "dsda",
       "name": "DSDA-Doom",
       "systems": [

@@ -8094,3 +8094,38 @@ reporter suggested. The setting stays where every setting is.
 
 Tests: `WizardFirmwareChoicesTests` (three). Each failed with the ordering
 removed, and all three with the labels ignored.
+
+## The Retro Engine cores: one a decompiled engine, Mania's logic compiled in (user-decided, 2026-10-17)
+
+Issue 295 asked for the RSDKv3, RSDKv4 and RSDKv5 decompilations (Sonic CD;
+Sonic 1 and 2's 2013 remasters; Sonic Mania). The owner chose three game
+cores, one per engine, rather than one v5U core playing all four games: the
+three code bases share global names, so one sandbox cannot hold them, and
+each older engine is the one its games' data files were made for.
+
+- **Licence.** The decompilations allow copying, changing and distributing,
+  for public or private use, but not for profit, with credit, with no game
+  asset, with the licence beside modified source, and with the downloadable
+  content off by default in any build given out. Each core is built with
+  `RSDK_AUTOBUILD`, declares `commercialUse: no` and carries the texts. For
+  Mania the owner asked for a Plus Content setting: allowed by the licence
+  "so long as it is set to off by default", and it is (a patch makes the two
+  places the engine forced the flag off read the setting).
+- **The game's data is firmware.** Each data file is the project's firmware,
+  by the hash of the copy checked (Android for v3 and v4, the owner's for
+  Mania); any other file may take its place, as for every game core.
+- **v4 needs an OpenGL.** The remasters' menus, 3D title and touch controls
+  are drawn only through the engine's OpenGL 1.x renderer, so the core
+  compiles in Mesa's softpipe behind OSMesa, as the touchHLE core does.
+- **v5 has no test game.** Its game is a program (the Sonic Mania
+  decompilation, compiled in), not scripts in the data, so CI proves the
+  build, the declarations, the refusals and the contract tests; everything
+  that plays runs where the data file is. The v3 and v4 cores test on games
+  written for them from scratch, in CI.
+
+Measured on the real games: Sonic CD 3600 frames, Sonic 1 and 2 4100 each,
+Mania 5200 (its opening video included), native = sandbox, a save and a
+load before every frame and a state moved to another process all landing on
+the straight run; the packages in Chimera on Windows matched Linux byte for
+byte. Nothing in Chimera's own source changed: a roster row for each core,
+and the README's game-core table.
