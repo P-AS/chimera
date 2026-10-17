@@ -1084,6 +1084,9 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_compile_memory_ran_short(ulong leastToSpare, ulong sessionBytes);
 
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_compile_session_begins();
+
 		// ---- RAM Search (engine.h): the candidate set lives in the engine ----
 
 		[ChimeraImport(CallingConvention.Cdecl)]

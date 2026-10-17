@@ -2043,6 +2043,14 @@ CE_API uint64_t ce_compile_memory_to_spare(void);
 CE_API int32_t ce_compile_sessions(int32_t processors, uint64_t to_spare, uint64_t session_bytes);
 CE_API uint64_t ce_compile_session_bytes(void);
 CE_API int32_t ce_compile_memory_ran_short(uint64_t least_to_spare, uint64_t session_bytes);
+/* _session_begins: called by a compile session for itself, first thing. On
+ *   Linux it asks the kernel to stop this process before any other when
+ *   memory runs out (oom_score_adj 1000), so a compile that wants more than
+ *   the computer has loses a session - which the frontend sees and retries
+ *   with fewer - and not the window that started it (chimera issue 300: the
+ *   kernel stopped Chimera itself). 1 when that was set; 0 elsewhere, where
+ *   there is no such choice to make (Windows refuses the memory instead). */
+CE_API int32_t ce_compile_session_begins(void);
 
 /* ---- the computer, for a bug report (chimera issue 277) ---------------------
  * _cpu_name: the processor's name as it gives it, for example "AMD Ryzen 7

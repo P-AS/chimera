@@ -8191,3 +8191,32 @@ Issue 297 is closed without openDoJa (user-decided, 2026-10-17): an
 openDoJa core is a new request, in an issue of its own. No DoJa game has
 been tried yet. Nothing in Chimera's own source changed: a roster row and
 the README's table of cores.
+
+## A compile session is the first thing Linux stops (2026-10-17)
+
+Issue 300: compiling Ratchet & Clank: Tools of Destruction (a 16 GB
+package) on a 31 GB Linux computer, the kernel stopped Chimera itself a
+minute in. Two causes. The RPCS3 core installed a package into memory once
+per session, so each held the whole game; that is fixed in the core (an
+installed file is kept as a reference to the package, chimera-core-rpcs3,
+the same day). And when memory runs out, Linux stops the process it judges
+the biggest, which was the window rather than a session, so the
+orchestrator's answer to memory running out - halve the sessions and go
+again - never got to run.
+
+A session now asks the kernel to stop it before anything else
+(`ce_compile_session_begins`: oom_score_adj 1000, which needs no privilege).
+On Windows there is no such choice: the system refuses the memory, and that
+case was already handled (issue 259). Exit code 64, which a headless session
+gives when it meets a message box it cannot show, is reported by name
+("stopped at a message it could not show"); issue 296 saw it as "exit code
+64".
+
+Measured on Linux, one Tekken 5 session: 6.4 GB proportional, 5.6 GB of it
+the sandbox's, and the system's free memory fell by about the same. The
+engine's 8 GB a session stands.
+
+Tests: `test_compile_sessions` checks the score in a child process (it
+failed with the write left out), and `ADeadSessionAlwaysSaysHowItDied`
+checks the wording for 64. Engine tests 30/30, interface tests 1,076 passed,
+the witness 89/0; the Windows build compiles.

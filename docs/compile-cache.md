@@ -141,6 +141,14 @@ wizard says so in words, and on Windows says where the disk space went. A
 partial manifest is never written: a list of what a game needs with holes in it
 is worse than no list.
 
+On Linux, running out of memory is settled by the kernel, which stops the
+process it judges biggest - and Chimera's own window was that process when a
+compile of a 16 GB game filled a 31 GB computer (issue 300). So a session
+asks to be stopped first (`ce_compile_session_begins`, oom_score_adj 1000):
+the kernel then stops a session, the window sees it killed for want of
+memory, and runs fewer. A session that meets a message box it cannot show
+quits with code 64, and the orchestrator says so by name.
+
 **Create stays unavailable until every listed module is green.** A project
 whose game is not compiled is a project that boots into a minutes-long stall,
 so it is not created at all. This is the only place the cache is filled from;

@@ -322,6 +322,9 @@ namespace Chimera.Tests.Client.GUI
 		// SIGILL on Linux, 0xC000001D on Windows (issue #74, eight sessions at once)
 		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(132), "illegal instruction");
 		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(unchecked((int)0xC000001D)), "illegal instruction");
+		// a headless session that met a message box quits with 64 (HeadlessMode):
+		// reported on Linux as "2 of 2 sessions failed (exit code 64)" (#296)
+		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(64), "message");
 		// and anything unrecognised still names itself rather than saying nothing
 		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(42), "42");
 		foreach (var code in new[] { 1, 2, 42, 134, 137, 139, -1, unchecked((int)0xC0000005) })

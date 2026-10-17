@@ -439,6 +439,9 @@ namespace Chimera.Client.GUI
 			// device - and the wizard runs eight of them at once. It never saves
 			// its config, so this does not follow the person into their next session.
 			if (_argParser.cmdPrecompile is not null) Config.SoundOutputMethod = ESoundOutputMethod.Dummy;
+			// And when memory runs out, the system stops a session before the
+			// window that started it, which then runs fewer at once (chimera#300).
+			if (_argParser.cmdPrecompile is not null) ChimeraEngine.Instance.ce_compile_session_begins();
 			try
 			{
 				Sound = new Sound(Config, () => Emulator.VsyncRate());

@@ -79,6 +79,7 @@ namespace Chimera.Client.GUI
 			-1073740791 => "crashed (stack buffer overrun)",        // 0xC0000409
 			-1073741571 => "crashed (ran out of stack)",            // 0xC00000FD
 			-1073741795 => "crashed (illegal instruction)",         // 0xC000001D: the same, on Windows
+			HeadlessMode.EXIT_CODE_DIALOG => "stopped at a message it could not show", // what it said is the refusal, when it said one
 			_ => $"exit code {code}",
 		};
 
