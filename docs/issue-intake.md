@@ -26,8 +26,10 @@ cannot be filed without the build identifiers.
 
 ### Bug report (required fields marked *)
 Help > Report an Issue (issue 243) shows the link to these forms and fills
-in the first six fields below from the running session, ready to paste. It
-also lists the project file, the newest crash note and the sandbox's log
+in the first six fields below from the running session, ready to paste,
+each field a paragraph of its own as in the form (a field after a list was
+read as part of the list, issue 304) and one file written on the Game line
+itself. It also lists the project file, the newest crash note and the sandbox's log
 when they exist, and saves the ticked ones as one zip with the text and the
 game's picture. It sends nothing: the person attaches the zip.
 

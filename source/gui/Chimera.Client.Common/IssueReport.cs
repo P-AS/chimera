@@ -66,22 +66,24 @@ namespace Chimera.Client.Common
 		}
 
 		/// <summary>
-		/// The first six lines of the bug report form, filled in. The labels are the
+		/// The first six fields of the bug report form, filled in. The labels are the
 		/// form's own (.github/ISSUE_TEMPLATE/bug_report.md), so the text is pasted
 		/// over those lines. What Chimera cannot know is left as a note in the form's
-		/// own style, which the finished report does not show.
+		/// own style, which the finished report does not show. A blank line parts the
+		/// fields, as in the form: without it GitHub reads a field that follows a list
+		/// as part of the list's last item (issue #304).
 		/// </summary>
 		public static string Text(Facts facts)
 		{
-			StringBuilder text = new();
-			text.Append(VersionReport.Text(facts.Build, facts.CoreName, facts.CoreVersion));
-			if (string.IsNullOrWhiteSpace(facts.CoreName)) text.Append("\n**Core and version:** <!-- no core was running -->");
+			List<string> fields = new();
+			fields.AddRange(VersionReport.Text(facts.Build, facts.CoreName, facts.CoreVersion).Split('\n'));
+			if (string.IsNullOrWhiteSpace(facts.CoreName)) fields.Add("**Core and version:** <!-- no core was running -->");
 
 			var os = string.IsNullOrWhiteSpace(facts.Os) ? "<!-- type your operating system here -->" : facts.Os.Trim();
 			var gpu = string.IsNullOrWhiteSpace(facts.Gpu)
 				? "<!-- type your graphics card here -->"
 				: "graphics driver " + facts.Gpu.Trim();
-			text.Append("\n**OS and GPU:** ").Append(os).Append(", ").Append(gpu);
+			fields.Add($"**OS and GPU:** {os}, {gpu}");
 
 			// what slowness is first measured against (issue 277)
 			var cpu = string.IsNullOrWhiteSpace(facts.Cpu) ? "<!-- type your processor here -->" : facts.Cpu.Trim();
@@ -89,24 +91,32 @@ namespace Chimera.Client.Common
 			var memory = facts.MemoryBytes is 0
 				? "<!-- type how much memory your computer has here -->"
 				: (facts.MemoryBytes / (double)(1UL << 30)).ToString("0.0", CultureInfo.InvariantCulture) + " GB of memory";
-			text.Append("\n**CPU and memory:** ").Append(cpu).Append(", ").Append(memory);
+			fields.Add($"**CPU and memory:** {cpu}, {memory}");
 
-			text.Append("\n**Game:**");
-			if (facts.Files is null) text.Append(" <!-- no project was open -->");
-			else if (facts.Files.Count is 0) text.Append(" the project has no files of its own");
-			else foreach (var file in facts.Files) text.Append("\n- ").Append(file.Slot).Append(": ").Append(file.Name);
+			StringBuilder game = new("**Game:**");
+			if (facts.Files is null) game.Append(" <!-- no project was open -->");
+			else if (facts.Files.Count is 0) game.Append(" the project has no files of its own");
+			// one file is the game, on the line itself; its slot is said when it is not the game's
+			else if (facts.Files.Count is 1) game.Append(' ').Append(Named(facts.Files[0], alone: true));
+			else foreach (var file in facts.Files) game.Append("\n- ").Append(Named(file, alone: false));
+			fields.Add(game.ToString());
 
-			text.Append("\n**Renderer and non-default settings:**");
-			if (facts.Settings is null) text.Append(" <!-- no core was running -->");
-			else if (facts.Settings.Count is 0) text.Append(" every setting is at its default");
+			StringBuilder settings = new("**Renderer and non-default settings:**");
+			if (facts.Settings is null) settings.Append(" <!-- no core was running -->");
+			else if (facts.Settings.Count is 0) settings.Append(" every setting is at its default");
 			else foreach (var setting in facts.Settings)
 			{
-				text.Append("\n- ").Append(setting.Name).Append(": ").Append(setting.Value)
+				settings.Append("\n- ").Append(setting.Name).Append(": ").Append(setting.Value)
 					.Append(" (default: ").Append(setting.Default).Append(')');
 			}
+			fields.Add(settings.ToString());
 
-			return text.ToString();
+			return string.Join("\n\n", fields.Where(f => f.Length > 0));
 		}
+
+		/// <summary>A file as the Game field lists it: its slot, and its name.</summary>
+		private static string Named(ProjectFile file, bool alone)
+			=> alone && string.Equals(file.Slot, "game", StringComparison.OrdinalIgnoreCase) ? file.Name : $"{file.Slot}: {file.Name}";
 
 		/// <summary>
 		/// The settings whose value differs from what the core declares as the

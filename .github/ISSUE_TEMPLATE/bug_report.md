@@ -7,7 +7,7 @@ labels: bug
 
 <!-- Fill what applies; the more of it there is, the fewer round trips. -->
 
-<!-- Help > Report an Issue in Chimera fills in the next six lines: copy its text and paste over them.
+<!-- Help > Report an Issue in Chimera fills in the next six fields: copy its text and paste over them.
      Its "Save as Zip..." button saves the files asked for under Attach as one zip.
      In an older build, Help > Copy Version Info gives the first two lines. -->
 **Chimera build:** <!-- the exact string from Help > About or the release name, e.g. Nightly 2026-09-19 (cd4b89cd) -->
