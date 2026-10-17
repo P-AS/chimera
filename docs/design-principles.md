@@ -8187,6 +8187,7 @@ nothing in Java calls back), and publishing the repository. Found on the
 way and fixed in miniBox (c0aad51): host values left in the vector
 registers at every entry into the guest.
 
-The issue stays open: openDoJa is not built, and no DoJa game has been
-tried. Nothing in Chimera's own source changed: a roster row and the
-README's table of cores.
+Issue 297 is closed without openDoJa (user-decided, 2026-10-17): an
+openDoJa core is a new request, in an issue of its own. No DoJa game has
+been tried yet. Nothing in Chimera's own source changed: a roster row and
+the README's table of cores.
