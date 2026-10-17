@@ -233,6 +233,14 @@ namespace Chimera.Client.GUI
 			public AutoPatternAxis[] AxisPatterns { get; set; }
 
 			/// <summary>
+			/// The value Auto-hold holds each analog axis at, by the axis's name. It is
+			/// asked for when Auto-hold is turned on for the axis's column (issue #298,
+			/// user-decided 2026-10-17). An axis that is not here, or whose value is
+			/// outside its range, holds its maximum, which is what Auto-hold always held.
+			/// </summary>
+			public Dictionary<string, int> AxisHoldValues { get; set; } = new();
+
+			/// <summary>
 			/// The Greenzone box's choice for this project: 1 every frame, N one in N,
 			/// 0 off. Saved in the project so reopening it finds the choice it was left
 			/// with (issue #158, user-decided 2026-09-28: in the .chimeraProject). A

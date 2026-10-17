@@ -69,6 +69,9 @@ themselves, which are named by their SHA1:
   (a new core, a new Chimera) and holds only what the last save wrote, so
   people set their columns up again after every update. A project saved
   before the move still has it in its cache, which is read once.
+  The same object keeps the value Auto-hold holds each analog axis at
+  (user-decided, 2026-10-17, issue #298), asked for when Auto-hold is
+  turned on for the axis's column.
 
 Not in the project:
 

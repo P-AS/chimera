@@ -8129,3 +8129,35 @@ load before every frame and a state moved to another process all landing on
 the straight run; the packages in Chimera on Windows matched Linux byte for
 byte. Nothing in Chimera's own source changed: a roster row for each core,
 and the README's game-core table.
+
+## Auto-hold on an analog axis asks what value to hold (user-decided, 2026-10-17)
+
+Issue 298: TAStudio's Auto-hold held an analog axis at its maximum, always
+(32767 on a PlayStation 2 stick, 127 on a Nintendo 64 one), and there was no
+way to hold another value except typing it into every frame.
+
+Decided by the owner, of four choices (ask with the current value filled in;
+hold the current frame's value without asking; a value per axis in TAStudio's
+settings; leave it and explain the custom-pattern way):
+
+- Turning Auto-hold on for an axis's column asks for the value, filled in
+  with the axis's value on the current frame. A value outside the axis's
+  range, or not a whole number, is refused with a message and Auto-hold
+  stays off; Cancel leaves it off.
+- The answer is kept in the project, with TAStudio's other per-project
+  settings (`MovieClientSettings.AxisHoldValues`), so a project reopened
+  holds the same value. An axis with no answer, or with one its range no
+  longer allows, holds the maximum as before; a project saved before this
+  has no answers.
+- With the custom pattern selected, the pattern says what the axis takes,
+  so nothing is asked. Autofire on an axis uses the same value as Auto-hold.
+
+This is interface only: the sticky controllers it feeds are the C# input
+layer's.
+
+Tests: `TAStudioAutoHoldValueTests` (five): the chosen value is held, a value
+out of range holds the maximum, only a value of the axis is taken from what
+was typed, the choices survive a save and load, and an older project has
+none. With the chosen value ignored (the maximum always held, as before),
+the first of them failed. The prompt itself is not driven by a test.
+
