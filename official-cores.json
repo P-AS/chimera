@@ -245,6 +245,15 @@
       "tested": ""
     },
     {
+      "id": "freej2me",
+      "name": "FreeJ2ME-Plus",
+      "systems": [
+        { "id": "J2ME", "name": "J2ME (Java phones)" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-freej2me",
+      "tested": ""
+    },
+    {
       "id": "vita3k",
       "name": "Vita3K",
       "systems": [

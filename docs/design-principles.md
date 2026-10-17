@@ -8161,3 +8161,32 @@ was typed, the choices survive a save and load, and an older project has
 none. With the chosen value ignored (the maximum always held, as before),
 the first of them failed. The prompt itself is not driven by a test.
 
+
+## FreeJ2ME-Plus joins the official cores: a Java VM inside the sandbox (user-decided, 2026-10-17)
+
+Issue 297 asked for Java phone games (J2ME, and DoJa/i-appli), with two
+emulators in mind, FreeJ2ME-Plus and openDoJa. Both are written in Java,
+and an earlier plan (2026-09-19, for KEmulator) had concluded that a core
+could not host a Java VM. That was before miniBox's machine spec 3 gave a
+guest timed waits on the sandbox's own clock.
+
+`chimera-core-freej2me` runs FreeJ2ME-Plus on OpenJDK 21's HotSpot built as
+Zero (its interpreter only, no generated machine code), linked statically
+into `core.wbx` with the JDK's native libraries. Every file the VM opens is
+served from guest memory; the runtime's files are built into the core
+image, so no savestate carries them; the VM starts during Init, before the
+seal. Sound goes through a Java Sound mixer of the core's own. A save and a
+load around every frame, a state moved to another process, two runs, the
+headless runner and the window on Linux and on Windows all land on the same
+machine, on the core's test program and on five commercial games.
+
+Decided by the owner on the way: the licence basis (HotSpot is GPL-2.0-only
+without the Classpath Exception, FreeJ2ME-Plus GPL-3.0-or-later; the core
+keeps the java launcher's boundary - its C calls Java through JNI, and
+nothing in Java calls back), and publishing the repository. Found on the
+way and fixed in miniBox (c0aad51): host values left in the vector
+registers at every entry into the guest.
+
+The issue stays open: openDoJa is not built, and no DoJa game has been
+tried. Nothing in Chimera's own source changed: a roster row and the
+README's table of cores.
