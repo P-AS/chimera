@@ -9496,3 +9496,21 @@ miniBox's 23 tests pass (6 expected failures); the engine's 30 unit tests
 pass, the witness 99 passed and 0 failed, the interface tests 1114 with none
 failed (23 skipped), the Windows build compiles, and the PCSX2 core's test
 script 44 passed, 0 failed, 6 skipped.
+
+## The input journal's flush on Windows: measured, left as it is (2026-10-18)
+
+**What was found.** The analysis of 2026-10-18 reasoned that on Windows the
+journal's once-a-second flush to the disk (_commit, which takes the C
+runtime's lock on the file) could hold up the thread writing inputs behind a
+slow disk, during a greenzone save for example, and asked for a measurement
+before any change.
+
+**What was measured.** A small program on this PC's Windows (through the
+engine's C API) kept a journal open and added an input line about 64 times a
+second for 10 seconds, timing each add, once on a quiet disk and twice while
+another thread wrote 8 MiB blocks to the same disk with a flush every 64 MiB.
+About 640 adds a run: the median add took 34 to 37 us; the worst took 2.2 ms
+on the quiet disk and 1.1 and 3.6 ms under the writing; none took over 5 ms.
+
+**What was decided.** Nothing changes: the flush does not hold the writer up
+by anything a person could see. A slower disk than this PC's was not tried.
