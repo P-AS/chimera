@@ -8559,3 +8559,36 @@ dead until a good one loads, and a refused one does not. Engine tests (30
 passed), the witness (89), the interface tests (none failed), the Windows
 build, miniBox on Linux and Windows, and the PCSX2 core's test script (44
 passed, 6 skipped) pass.
+
+## A broken core ends its machine, not Chimera, in seven more ways (user-decided, 2026-10-18)
+
+**What was found.** The miniBox analysis of 2026-10-18 listed the ways a
+core with a bug still took Chimera down with it, instead of ending only its
+own machine (which Chimera survives, keeping the project and the greenzone):
+a crash in the core's start-up code or while it is sealed; a call through a
+null or wild function pointer, or to a host callback that was never
+registered; a system call given a pointer to memory the core had freed; on
+Linux, the system refusing a memory protection change; a crash report that
+read memory it could not; a too-small signal stack left by the .NET or Mono
+runtime; and on Windows, memory a core gave up that stayed accessible.
+
+**What was decided.** The owner asked for all of them, as one round with a
+test each. Each is now the core's death with a reason, or an EFAULT answer
+as Linux would give, and Chimera carries on (miniBox cf163d2; MACHINE-SPEC,
+"A broken guest ends the machine, not the host").
+
+**Not done.** On Windows a core whose stack overflows into its guard page
+still ends Chimera: Windows builds the record of the fault on that same
+stack, and its own dispatcher and the handler need more room than a guard
+page leaves. The crash note (chimera_crash.dll) still records it. Checking
+GL pointers is left for the engine's GL round, which changes the same code.
+
+**Tested.** A test for each way, each seen to fail with its part removed:
+two cores that die while starting and while sealing; calls through a null
+pointer, to a wild address and to an unregistered callback; twelve system
+calls handed freed memory; a null call from a core that keeps its own thread
+pointer; a refused protection change; a 16 KiB signal stack replaced; and on
+Windows, no access over a partly committed range. miniBox's tests pass on
+Linux and Windows, and so do Chimera's engine tests (30), the witness (89),
+the PCSX2 core's test script (44 passed, 6 skipped) and RPCS3's (41 passed,
+2 skipped).
