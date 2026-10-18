@@ -77,9 +77,10 @@ int main(void)
 				"  kStateFormat is %u\n"
 				"  kStateLayoutDigest says %s\n"
 				"  the layout now hashes to %s\n\n"
-				"A state written under the old layout cannot be read under the new one, and\n"
-				"nothing else tells the two apart. In source/engine/source/state_format.hpp:\n"
-				"  - bump kStateFormat\n"
+				"A build that cannot read the new layout has to be told by the number. In\n"
+				"source/engine/source/state_format.hpp:\n"
+				"  - bump kStateFormat (and kOldestReadableStateFormat too when this build\n"
+				"    cannot read the old layout any more)\n"
 				"  - set kStateLayoutDigest to the hash above\n"
 				"See docs/state-manager.md, \"The savestate format number\".\n\n",
 				static_cast<unsigned>(kStateFormat), kStateLayoutDigest, digest.c_str());
@@ -149,17 +150,41 @@ int main(void)
 		assert(back.compressed);
 		assert(back.tag == tagBytes());
 		assert(back.length == headerLen);
-		if (kStateFormat == 1)
+		if (kOldestReadableStateFormat <= 1)
 		{
-			/* today: nothing in the wild is refused */
+			/* format 1 still read: nothing in the wild is refused */
 			assert(rc == 0 && why.empty());
 		}
 		else
 		{
-			/* after the first bump: refused, and it says the writer did not say */
+			/* once 1 is no longer read: refused, and it says the writer did not say */
 			assert(rc == 1);
 			assert(why.find("from before states said which") != std::string::npos);
 		}
+	}
+
+	{ // 2e. every format from the oldest readable to this build's is read; one
+	  // past it is refused, and so is one before the oldest (2026-10-18)
+		for (uint32_t f = 0; f <= kStateFormat + 1; f++)
+		{
+			StateFileHeader h;
+			h.format = f;
+			h.writer = "Chimera commit 0123456789ab";
+			h.tag = tagBytes();
+			std::vector<uint8_t> file;
+			writeStateFileHeader(h, file);
+			file.resize(file.size() + 16, 0);
+			StateFileHeader back;
+			std::string why;
+			const int rc = readStateFileHeader(file.data(), file.size(), back, why);
+			const bool readable = f >= kOldestReadableStateFormat && f <= kStateFormat;
+			assert(rc == (readable ? 0 : 1));
+			if (!readable) assert(why.find(std::to_string(kStateFormat)) != std::string::npos);
+		}
+		assert(ce_state_format_oldest() == kOldestReadableStateFormat);
+		assert(kOldestReadableStateFormat <= kStateFormat);
+		assert(historyFormatSuffix() == "#f" + std::to_string(kStateFormat));
+		assert(historyFormatSuffix(1) == "#f1");
 	}
 
 	{ // 2d. not a state file at all, and one cut short
@@ -235,8 +260,11 @@ int main(void)
 	{ // 4. the sandbox still frames a state the way the layout says it does
 		const char *host = "extern/chimera-common-minibox/source/host/host.c";
 		const char *block = "extern/chimera-common-minibox/source/host/memblock.c";
+		const char *threads = "extern/chimera-common-minibox/source/host/threading.c";
 		if (sourceSays(host, "static const char SAVE_START"))
 		{
+			assert(sourceSays(host, "\"" CE_SANDBOX_FILES_MAGIC "\""));
+			assert(sourceSays(threads, "\"" CE_SANDBOX_FPU_MAGIC "\""));
 			assert(sourceSays(host, "\"" CE_SANDBOX_SAVE_MAGIC "\""));
 			assert(sourceSays(host, "\"" CE_SANDBOX_DELTA_MAGIC "\""));
 			assert(sourceSays(block, "\"" CE_SANDBOX_BLOCK_DELTA_MAGIC "\""));

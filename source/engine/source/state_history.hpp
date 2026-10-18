@@ -326,7 +326,8 @@ public:
 	 * same empty answer, because losing this costs recomputation and never work.
 	 * False with `error` set. */
 	bool saveTo(const char *path, const char *machineId, std::string &error);
-	bool loadFrom(const char *path, const char *machineId, std::string &error);
+	bool loadFrom(const char *path, const char *machineId, std::string &error,
+		const std::vector<std::string> &alsoReadable = {});
 
 	/* The same save, on the writer, so that saving a project does not stop the
 	 * machine for as long as the history is big.

@@ -3622,7 +3622,8 @@ bool StateHistory::saveWait(std::string &error)
 	return m_saved.ok;
 }
 
-bool StateHistory::loadFrom(const char *path, const char *machineId, std::string &error)
+bool StateHistory::loadFrom(const char *path, const char *machineId, std::string &error,
+	const std::vector<std::string> &alsoReadable)
 {
 	clear();
 	std::FILE *f = chimera::openFile(path, "rb");
@@ -3675,7 +3676,8 @@ bool StateHistory::loadFrom(const char *path, const char *machineId, std::string
 	if (!in.readU64(idLen) || idLen > (1u << 20)) return give_up("the state history is damaged");
 	std::string id(static_cast<size_t>(idLen), '\0');
 	if (!in.read(id.data(), id.size())) return give_up("the state history is damaged");
-	if (id != (machineId != nullptr ? machineId : ""))
+	if (id != (machineId != nullptr ? machineId : "")
+		&& std::find(alsoReadable.begin(), alsoReadable.end(), id) == alsoReadable.end())
 	{
 		/* Not damage, and not an error the user did anything about: these states
 		 * belong to a machine with other settings, files or core. */

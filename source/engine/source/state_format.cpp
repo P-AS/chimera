@@ -145,14 +145,17 @@ int readStateFileHeader(const uint8_t *data, size_t len, StateFileHeader &h, std
 	at += tagLen;
 	h.length = at;
 
-	if (h.format != kStateFormat)
+	if (h.format < kOldestReadableStateFormat || h.format > kStateFormat)
 	{
 		/* A whole sentence, capitalised: it is shown to a person as it stands,
 		 * on its own or after a lead line, and never with a path in front. */
+		const std::string reads = kOldestReadableStateFormat == kStateFormat
+			? "writes and reads format " + std::to_string(kStateFormat)
+			: "writes format " + std::to_string(kStateFormat) + " and reads formats "
+				+ std::to_string(kOldestReadableStateFormat) + " to " + std::to_string(kStateFormat);
 		why = "This state was written in savestate format " + std::to_string(h.format)
 			+ " by " + (h.writer.empty() ? std::string("a build from before states said which") : h.writer)
-			+ ", and this Chimera (" + stateWriterId() + ") writes and reads format "
-			+ std::to_string(kStateFormat)
+			+ ", and this Chimera (" + stateWriterId() + ") " + reads
 			+ ". The machine's layout changed between the two, so the state cannot be loaded;"
 			+ " it was not touched.";
 		return 1;
@@ -162,9 +165,9 @@ int readStateFileHeader(const uint8_t *data, size_t len, StateFileHeader &h, std
 
 const char *stateWriterId() { return "Chimera commit " CE_BUILD_COMMIT; }
 
-std::string historyFormatSuffix()
+std::string historyFormatSuffix(uint32_t format)
 {
-	return "#f" + std::to_string(static_cast<unsigned long long>(kStateFormat));
+	return "#f" + std::to_string(static_cast<unsigned long long>(format));
 }
 
 std::string versionSkewMessage(
@@ -194,6 +197,8 @@ std::string versionSkewMessage(
 extern "C" {
 
 uint32_t ce_state_format(void) { return chimera::kStateFormat; }
+
+uint32_t ce_state_format_oldest(void) { return chimera::kOldestReadableStateFormat; }
 
 const char *ce_state_writer_id(void) { return chimera::stateWriterId(); }
 

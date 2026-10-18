@@ -66,17 +66,19 @@ CE_API const char *ce_build_info(void);
  *    The engine and the frontend come out of one repository at one commit, so
  *    this names the frontend too. Static string.
  *
- * 3. ce_state_format: the shape of a machine state as this build writes and
- *    reads it (source/engine/source/state_format.hpp). Every state file carries
- *    it and every load checks it, so a state of another format is refused by
- *    name instead of reaching a machine that cannot read it. The frontend
- *    records it in the project so a whole cache can be explained at open,
- *    before any one state is asked for. */
+ * 3. ce_state_format: the shape of a machine state as this build writes it
+ *    (source/engine/source/state_format.hpp), and ce_state_format_oldest the
+ *    oldest one it still reads. Every state file carries its format and every
+ *    load checks it, so a state this build cannot read is refused by name
+ *    instead of reaching a machine that cannot read it. The frontend records
+ *    it in the project so a whole cache can be explained at open, before any
+ *    one state is asked for. */
 CE_API const char *ce_version_skew(
 	const char *frontend_date, const char *frontend_build,
 	const char *core_date, const char *core_build, const char *core_name);
 CE_API const char *ce_state_writer_id(void);
 CE_API uint32_t ce_state_format(void);
+CE_API uint32_t ce_state_format_oldest(void);
 
 /* ---- movie input log ----
  *

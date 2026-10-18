@@ -32,9 +32,13 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_state_writer_id();
 
-		/// <summary>The shape of a machine state as this build writes and reads it (issue #115).</summary>
+		/// <summary>The shape of a machine state as this build writes it (issue #115).</summary>
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract uint ce_state_format();
+
+		/// <summary>The oldest savestate format this build still reads.</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract uint ce_state_format_oldest();
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_movie_log_new();
@@ -1246,6 +1250,10 @@ namespace Chimera.Emulation.Common.Engine
 		/// so a whole cache of states can be explained at open rather than one refusal at a time.
 		/// </summary>
 		public static uint StateFormat => Instance.ce_state_format();
+
+		/// <summary>The oldest savestate format this build still reads: states from
+		/// <see cref="StateFormatOldest"/> to <see cref="StateFormat"/> load.</summary>
+		public static uint StateFormatOldest => Instance.ce_state_format_oldest();
 
 		/// <summary>The build that wrote the states this session writes.</summary>
 		public static string StateWriterId => PtrToStringUtf8(Instance.ce_state_writer_id()) ?? "";

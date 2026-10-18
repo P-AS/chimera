@@ -2566,33 +2566,51 @@ one refusal at a time.
 ### 3. The format number, which is the one that decides
 
 `chimera::kStateFormat` in `source/engine/source/state_format.hpp`, currently
-**1**. It is the shape of a machine state as a build writes and reads it, and it
-is checked in three places:
+**2**, is the shape of a machine state as a build writes it, and
+`chimera::kOldestReadableStateFormat`, currently **1**, the oldest one it still
+reads (2026-10-18). A change that only adds to a state, which the new reader
+takes as optional, raises the first and leaves the second: the new build reads
+the old states, and an old build, which reads only its own number, refuses the
+new ones by name before it touches its machine. A change the new reader cannot
+take raises both. They are checked in three places:
 
 - **State files** (`ce_session_state_save_file` / `_load_file` - a TAStudio
   branch's state). The header is `"CESTATE2"`, a u32 format, a u32 writer length
   and the writer, then the compressed flag, the tag and the machine. A load that
   meets another format returns 2 - the machine was never offered the state and is
-  untouched - with a sentence naming both formats and both builds.
+  untouched - with a sentence naming both formats and both builds. Any format
+  from the oldest readable to the current one loads.
 - **The greenzone history** (`history.bin`). The format rides in the history's
-  machine id, which already carries the sandbox's machine hash. A history of
-  another format does exactly what a history of another machine does: it is
-  dropped, quietly, and rebuilt by playing. That is the contract for losing a
-  cache - it costs recomputation, never work.
+  machine id, which already carries the sandbox's machine hash. A history of a
+  format this build cannot read does exactly what a history of another machine
+  does: it is dropped, quietly, and rebuilt by playing. That is the contract for
+  losing a cache - it costs recomputation, never work. One of an older format it
+  still reads is kept.
 - **Nothing else.** The zip-of-lumps container (`ChimeraState 1.0`) holds no
   machine state any more: the greenzone cache zip keeps the lag log, the session
   position, branch state FILE NAMES and screenshots, and the states themselves
   are the engine's own files. There is nothing there for a format number to
   guard.
 
-### States written before this change
+### Format 2 (2026-10-18)
+
+miniBox added two records to every state and delta that day: the core's
+floating-point control words (`GuestFpuState1`, before the thread set) and its
+open files and random stream (`OpenFileTable1`, after it). This build reads
+states without them; a build from before cannot read states with them, and
+without a new number it failed half way through such a state, after the memory
+was replaced (found by the engine analysis of 2026-10-18). Format 2 makes it
+refuse them by name, and a format-1 state or history is still read here. Both
+records are in `kStateLayout`, and the test checks miniBox still writes them.
+
+### States written before format numbers
 
 They have no format number. A state file written by an older build carries the
 old magic `"CESTATE1"` and is read as **format 1** - because 1 is what the layout
-was on the day the number arrived. So nothing in the wild is refused today: every
-state an older Chimera wrote still loads, and a same-build round trip is exactly
-what it was. The first real bump, to 2, is what starts refusing them, and it
-refuses them by name ("written by a build from before states said which").
+was on the day the number arrived. Format 1 is still read, so every state an
+older Chimera wrote still loads. Raising the oldest readable format past 1 is
+what will start refusing them, by name ("written by a build from before states
+said which").
 
 A `history.bin` written before this change has no format in its id and is dropped
 once, on the first open after it - one greenzone rebuilt by replaying, which is
@@ -2611,8 +2629,9 @@ Forgetting to bump it is the failure mode, so it is made hard to do:
   engine gate, and the failure prints the new digest and says what to do: bump
   `kStateFormat`, paste the digest.
 - The same test checks miniBox's own magics (`ActivatedWaterboxHost_v1`,
-  `MiniBoxHostDelta_v1`, `MiniBoxDelta1`, `ActivatedMemoryBlock`) are still in
-  its sources, so a sandbox that RENAMES its format takes this number with it.
+  `MiniBoxHostDelta_v1`, `MiniBoxDelta1`, `ActivatedMemoryBlock`,
+  `GuestFpuState1`, `OpenFileTable1`) are still in its sources, so a sandbox
+  that RENAMES its format takes this number with it.
 
 What none of that catches: a sandbox change that alters the bytes without
 renaming any of its magics - miniBox's layout is miniBox's, and the engine

@@ -8525,3 +8525,37 @@ skipped) and PCSX2's (44 passed, 6 skipped) pass with it.
 **Not done:** giving memory back on Windows, for the reason above. The
 owner may want DiscardVirtualMemory followed by writing the zeros, which
 frees nothing that stays in use, or another way; it is left open.
+
+## Savestate format 2: older builds refuse today's states by name (2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18 found that the two
+records miniBox added to every savestate that day (the floating-point
+settings and the open files) were shipped without a new savestate format
+number. This build reads states without them, but an older Chimera cannot
+read states with them, and since the number stayed 1 it did not refuse them:
+it failed half way through, after the core's memory had been replaced, and
+played on with a mix of two machines. A state naming a file that is not
+mounted (a ROM opened directly and renamed since) failed the same way in
+this build.
+
+**What was done.**
+- The engine writes savestate format 2 and reads formats 1 and 2: a change
+  that only adds to a state raises the format written and keeps the older
+  ones readable (kOldestReadableStateFormat). An older build refuses a
+  format-2 state by name before it touches its machine. A greenzone history
+  of format 1 is kept. The interface's note at project open only speaks of
+  formats this build cannot read.
+- miniBox (2ad689f): a state naming a file that is not mounted loads leaving
+  the open files as they are, as before today; and a load that fails after it
+  began replacing memory marks the machine dead, with the reason, until a
+  state loads, as MACHINE-SPEC always said it should.
+docs/state-manager.md, "The savestate format number", has the rules.
+
+**Tested.** New checks, each seen to fail with its part removed: every
+format from the oldest readable to the current one loads and the ones around
+them are refused; a format-1 history is kept; in miniBox, a state naming an
+unmounted file loads, a state cut short in its thread set leaves the machine
+dead until a good one loads, and a refused one does not. Engine tests (30
+passed), the witness (89), the interface tests (none failed), the Windows
+build, miniBox on Linux and Windows, and the PCSX2 core's test script (44
+passed, 6 skipped) pass.

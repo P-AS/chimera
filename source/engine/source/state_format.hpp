@@ -54,6 +54,9 @@
 #define CE_SANDBOX_DELTA_MAGIC "MiniBoxHostDelta_v1"
 #define CE_SANDBOX_BLOCK_DELTA_MAGIC "MiniBoxDelta1"
 #define CE_SANDBOX_BLOCK_MAGIC "ActivatedMemoryBlock"
+/* records inside the sandbox's state that its reader takes as optional */
+#define CE_SANDBOX_FPU_MAGIC "GuestFpuState1"
+#define CE_SANDBOX_FILES_MAGIC "OpenFileTable1"
 
 namespace chimera
 {
@@ -61,10 +64,19 @@ namespace chimera
 /* The shape of a machine state as THIS build writes and reads it.
  *
  * 1: the first numbered format. Everything written before this existed is read
- *    as a 1, because 1 is what the layout was on the day the number arrived -
- *    so nothing in the wild is refused today, and the first real bump is what
- *    starts refusing the states that came before it. */
-constexpr uint32_t kStateFormat = 1;
+ *    as a 1, because 1 is what the layout was on the day the number arrived.
+ * 2: the sandbox's state holds the core's floating-point control words
+ *    (GuestFpuState1, before the thread set) and its open files and random
+ *    stream (OpenFileTable1, after it): miniBox 1c10a81 and c0c2ebc,
+ *    2026-10-18. A build before them cannot read either and, seeing format 2,
+ *    refuses the file by its number before it touches the machine; this build
+ *    reads format 1 still, the records being optional to its reader. */
+constexpr uint32_t kStateFormat = 2;
+
+/* The oldest format this build still reads. A change that only adds to a state,
+ * which the new reader takes as optional, raises kStateFormat and leaves this
+ * where it was; a change the new reader cannot take raises both. */
+constexpr uint32_t kOldestReadableStateFormat = 1;
 
 /* Two builds far enough apart that their pairing is worth a word. The states in
  * #111 came from builds a week apart; a fortnight is loose enough not to nag at
@@ -84,16 +96,19 @@ constexpr char kStateLayout[] =
 	" body = u64 rawLen, u64 heldLen, bytes (held < raw means a zstd frame)\n"
 	"history, read only: \"" CE_HISTORY_MAGIC_V4 "\" one zstd stream behind the magic;"
 	" \"" CE_HISTORY_MAGIC_V3 "\" raw, body = u64 len, bytes\n"
-	"history id: <caller's machine id>@<32-byte machine hash, lowercase hex>#f<format>\n"
+	"history id: <caller's machine id>@<32-byte machine hash, lowercase hex>#f<format>;"
+	" a history of any readable format is read\n"
+	"readable formats: oldest to current, each named by its number\n"
 	"history note cap: 4096 bytes\n"
 	"sandbox framing (miniBox's, passed through): \"" CE_SANDBOX_SAVE_MAGIC "\","
 	" \"" CE_SANDBOX_DELTA_MAGIC "\", \"" CE_SANDBOX_BLOCK_DELTA_MAGIC "\","
-	" \"" CE_SANDBOX_BLOCK_MAGIC "\"\n";
+	" \"" CE_SANDBOX_BLOCK_MAGIC "\"; inside it, read as optional:"
+	" \"" CE_SANDBOX_FPU_MAGIC "\" before the thread set, \"" CE_SANDBOX_FILES_MAGIC "\" after it\n";
 
 /* SHA1 of kStateLayout, recorded the last time kStateFormat was set. When the
  * engine gate says this no longer matches, the layout moved: bump kStateFormat
  * and paste the digest the test printed. */
-constexpr char kStateLayoutDigest[] = "A3F1EF44F9D1B704F1D25AF0F10C196552DE5895";
+constexpr char kStateLayoutDigest[] = "340DCF60C00050F640A755278ED81F9DCDBC7373";
 
 /* ---- the state file's header ---- */
 
@@ -123,9 +138,10 @@ int readStateFileHeader(const uint8_t *data, size_t len, StateFileHeader &h, std
  * the frontend that wrote it too. */
 const char *stateWriterId();
 
-/* The greenzone history's id for this format: a history written under another
- * one is another machine's as far as a load is concerned. */
-std::string historyFormatSuffix();
+/* The greenzone history's id for a format (this build's by default): a history
+ * written under a format this build cannot read is another machine's as far
+ * as a load is concerned. */
+std::string historyFormatSuffix(uint32_t format = kStateFormat);
 
 /* "Chimera was built on X, the core on Y, and that is N days apart" - or "" when
  * they are close enough, or when either side does not say. Dates are

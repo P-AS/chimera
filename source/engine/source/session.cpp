@@ -3708,7 +3708,13 @@ int32_t ce_session_history_save_wait(ce_session *s)
 int32_t ce_session_history_load(ce_session *s, const char *path, const char *machine_id)
 {
 	s->error.clear();
-	return s->history.loadFrom(path, historyId(s, machine_id).c_str(), s->error) ? 0 : 1;
+	/* a history this build can read, written in an older format, is kept */
+	const std::string id = historyId(s, machine_id);
+	const std::string now = chimera::historyFormatSuffix();
+	std::vector<std::string> older;
+	for (uint32_t f = chimera::kOldestReadableStateFormat; f < chimera::kStateFormat; f++)
+		older.push_back(id.substr(0, id.size() - now.size()) + chimera::historyFormatSuffix(f));
+	return s->history.loadFrom(path, id.c_str(), s->error, older) ? 0 : 1;
 }
 
 int32_t ce_session_seek(ce_session *s, int64_t frame)

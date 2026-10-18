@@ -313,6 +313,15 @@ int main(void)
 		assert(h.count() == 0);
 	}
 
+	{ // one written in an older format this build still reads is kept (2026-10-18)
+		write(historyFile("ChimeraHistory3", "machine#f1", 0, { 1, 2 }));
+		chimera::StateHistory h;
+		assert(h.loadFrom(kPath, "machine#f2", error, { "machine#f1" }));
+		assert(h.count() == 3);
+		assert(h.loadFrom(kPath, "machine#f2", error));   /* and without the list, dropped */
+		assert(h.count() == 0);
+	}
+
 	{ // and so is one an older build wrote: losing a cache costs replaying
 		for (const char *older : { "ChimeraHistory1", "ChimeraHistory2" })
 		{

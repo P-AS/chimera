@@ -955,14 +955,14 @@ namespace Chimera.Client.Common
 		{
 			if (!Header.TryGetValue(HeaderKeys.StateFormat, out var recorded)
 				|| !uint.TryParse(recorded, NumberStyles.None, CultureInfo.InvariantCulture, out var was)
-				|| was == ChimeraEngine.StateFormat)
+				|| (was >= ChimeraEngine.StateFormatOldest && was <= ChimeraEngine.StateFormat))
 			{
-				return null;
+				return null;   /* a format this build reads */
 			}
 			_ = Header.TryGetValue(HeaderKeys.StateWrittenBy, out var wroteThem);
 			var who = string.IsNullOrWhiteSpace(wroteThem) ? "another build" : wroteThem;
 			return $"This project's saved states are in savestate format {was}, written by {who}, and this"
-				+ $" Chimera ({ChimeraEngine.StateWriterId}) reads format {ChimeraEngine.StateFormat}."
+				+ $" Chimera ({ChimeraEngine.StateWriterId}) reads formats {ChimeraEngine.StateFormatOldest} to {ChimeraEngine.StateFormat}."
 				+ " The machine's layout changed between the two, so those states cannot be loaded:"
 				+ " the greenzone starts empty and fills as the movie plays, and a branch saved by"
 				+ " the older build replays to its frame instead of loading. Nothing is lost but"
