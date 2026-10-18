@@ -8871,3 +8871,44 @@ The randomized test that checks every operation against a model, through a
 pointer and a bus, every size, both modes and live ranges, passes. A detailed
 frame of a 64 MiB domain in which a little changes took 89 ms and takes 23 ms.
 Engine tests (30), witness (96), interface tests and the Windows build pass.
+
+## miniBox: seven small gaps closed from the analysis of 2026-10-18 (user-decided, 2026-10-18)
+
+**What was found.** The miniBox analysis of 2026-10-18 left a list the owner
+asked to fix after the larger items. Seven of them are small:
+- A page a background state still owed was made readable whatever the guest
+  had asked for since. A page the guest made inaccessible meanwhile read
+  without the fault it was waiting for (RPCS3's texture cache works that
+  way), depending on how far the background copy had got.
+- rbx, rbp and r12-r15 reached the guest holding the host's pointers, which
+  a guest saves into memory a state carries.
+- The x86 direction flag could come back from a guest set, and host code
+  would then copy memory backwards.
+- musl's stub for cancellable system calls passed the fourth argument where
+  the host does not look (a pread lost its offset once a core linked
+  pthread_cancel).
+- rt_sigprocmask and ioctl answered "done" and wrote nothing, so a core read
+  whatever was on its stack.
+- mprotect, munmap and madvise refused a length that was not a whole number
+  of pages, which Linux and miniBox's own mmap round up.
+- The Vulkan bridge never gave out a destroyed object's handle slot again,
+  so the table grew with every object until the next load.
+
+**What was decided.** Each is fixed as described: a hold takes away writing
+only; those registers read zero when a guest export is entered; the
+direction flag is cleared when control comes back from the guest and when a
+system call arrives; the stub passes the fourth argument in rcx (cores rebuilt
+with this guest kit get it); the answers are written (an empty signal mask, a
+zero window size, zero termios, nothing waiting); lengths are rounded up;
+destroyed objects' slots are reused.
+
+**Tested.** New miniBox tests for each, every one seen to fail with its part
+removed: a held page made inaccessible reads as inaccessible; a guest export
+finds those registers zero; the direction flag is clear after a guest returns
+with it set; a cancellable pread keeps its offset; the answers are written;
+unaligned lengths are accepted; 1000 semaphores made and destroyed use 36
+handle slots, 1038 without the fix. miniBox tests, Chimera's engine tests (30),
+witness (96), interface tests and the Windows build pass; the PCSX2 core's
+test script passes 43 with 6 skipped and fails ports:columns, which read the
+first line of a recording that chimera-run had begun writing with an
+[Input] header (fixed in the next change).
