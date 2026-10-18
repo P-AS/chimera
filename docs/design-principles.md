@@ -8659,3 +8659,31 @@ removed. Engine tests (30), witness (92), interface tests, miniBox's tests
 and the PCSX2 core's test script (44 passed, 6 skipped) pass, and the Windows
 build compiles. PCSX2 with its OpenGL renderer on a GTX 1060 gives the same
 picture at frame 2400 and the same record as the build before.
+
+## The greenzone no longer stores the old timeline after an edit and a capture with no frame run (user-decided, 2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18: an edit behind the
+machine stops the greenzone (the state history) from storing what the machine
+plays next, because that is the timeline the edit replaced, until a restore or
+a load puts the machine back at or before the edit. A capture on the frame
+just after the edit also ended it, on the belief that a capture always follows
+a frame, and so a seek back. Three captures follow no frame: turning the
+greenzone back on, resuming a capture period, and making a branch. With the
+machine on frame N and an edit at N - 1, any of them stored the old timeline's
+machine as frame N, and a later seek through it showed a machine the movie's
+inputs do not give. The same mistake was made after a load, where the history
+assumed a frame had run before the capture.
+
+**What was decided.** The owner chose to fix every confirmed finding of the
+analysis. Only a restore or a load ends the stop now; they always did, so the
+capture's own ending is gone. After a load, the history knows whether a frame
+ran before the capture (the frontend and the engine say so before every frame)
+and judges where the machine stood when the edit came from that.
+
+**Tested.** A new history test makes each of the three captures after an edit
+one frame behind the machine, and a load followed by an edit with and without a
+frame run. The randomized history test now makes such captures, and edits one
+frame behind the machine a third of the time. With the old ending put back,
+both tests fail (the random one with "a machine from another timeline"), and
+so they do with the old guess after a load. Engine tests (30), witness (92), interface tests
+and the Windows build pass.

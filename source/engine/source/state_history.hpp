@@ -737,6 +737,9 @@ private:
 	                                    * back at or before it, it is playing the old timeline */
 	int64_t m_editWhileUnknown = -1;   /* an edit made while where the machine stands was not
 	                                    * known (after a load): the next capture says which side */
+	bool m_advanced = false;           /* beforeAdvance since the last capture, restore or load:
+	                                    * the next capture follows a frame rather than being one
+	                                    * of the machine where it stands */
 
 	/* CHIMERA_HISTORY_VERIFY: see machineDigest */
 	struct MachineDigest

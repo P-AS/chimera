@@ -1278,6 +1278,7 @@ void StateHistory::capturePeriod(int64_t period)
 
 void StateHistory::beforeAdvance()
 {
+	m_advanced = true;
 	if (m_capturePeriod == 0) { m_epochOpen = false; return; }
 	if (!enabled() || !deltasAvailable()) { m_epochOpen = false; return; }
 	/* A delta continues the newest segment, and only while there is one with
@@ -1413,11 +1414,16 @@ void StateHistory::tuneStride(double captureSeconds, double wallSeconds)
  */
 void StateHistory::capture(int64_t frame, const uint8_t *note, size_t noteLen)
 {
+	const bool advanced = m_advanced;
+	m_advanced = false;
 	if (m_machineFrame < 0 && m_editWhileUnknown >= 0)
 	{
-		/* an edit came while a load had left the machine's frame unknown: the
-		 * machine was on frame - 1 then, and past the edit if that is after it */
-		if (frame - 1 > m_editWhileUnknown && (m_pastEditAt < 0 || m_editWhileUnknown < m_pastEditAt))
+		/* An edit came while a load had left the machine's frame unknown. After
+		 * a frame the machine was on frame - 1 then; a capture with no frame run
+		 * (the greenzone turned back on, a branch made) is of the machine where
+		 * it stood. It is past the edit if that is after it. */
+		const int64_t stood = advanced ? frame - 1 : frame;
+		if (stood > m_editWhileUnknown && (m_pastEditAt < 0 || m_editWhileUnknown < m_pastEditAt))
 		{
 			m_pastEditAt = m_editWhileUnknown;
 		}
@@ -1429,11 +1435,8 @@ void StateHistory::capture(int64_t frame, const uint8_t *note, size_t noteLen)
 	m_machineStored = false;
 	if (m_capturePeriod == 0)
 	{
-		/* nothing stored, and nothing to do but keep the edit bookkeeping true:
-		 * a machine brought back to the edit (a restore) has left the timeline
-		 * the edit replaced, as captureOnce would have noticed */
+		/* nothing stored; the edit bookkeeping is the restores' and the loads' */
 		m_epochOpen = false;
-		if (m_pastEditAt >= 0 && frame <= m_pastEditAt + 1) m_pastEditAt = -1;
 		return;
 	}
 	for (;;)
@@ -1661,6 +1664,7 @@ void StateHistory::beforeLoad()
 	 * new timeline's machine, not the old one's */
 	m_pastEditAt = -1;
 	m_editWhileUnknown = -1;
+	m_advanced = false;
 }
 
 /* CHIMERA_HISTORY_VERIFY=1: the whole machine is hashed as each frame is stored,
@@ -1902,12 +1906,13 @@ void StateHistory::captureOnce(int64_t frame, const uint8_t *note, size_t noteLe
 	/* A machine that was already past an edit when it was made (issue #68) is
 	 * playing the timeline the edit replaced, and nothing it reaches belongs
 	 * in the history - until a restore or a load puts it back at or before the
-	 * edit, which is the only way a frame this low can arrive. */
-	if (m_pastEditAt >= 0)
-	{
-		if (frame > m_pastEditAt + 1) { m_epochOpen = false; return; }
-		m_pastEditAt = -1;
-	}
+	 * edit, and those clear this themselves. It used to be cleared here too, by
+	 * a capture on the frame after the edit, on the belief that a capture
+	 * always follows a frame. Three do not (the greenzone turned back on, a
+	 * capture period resumed, a branch made): with the machine on N and an edit
+	 * at N - 1, such a capture stored the old timeline's N under the new one
+	 * (engine analysis, 2026-10-18). */
+	if (m_pastEditAt >= 0) { m_epochOpen = false; return; }
 	if (!m_segments.empty() && frame <= m_segments.back().lastFrame())
 	{
 		const Hole *hole = holeAt(frame);
@@ -3278,6 +3283,7 @@ bool StateHistory::restoreFailed(const Segment *seg, std::string &error, int64_t
 	m_machineStored = consistent;
 	m_pastEditAt = -1;
 	m_editWhileUnknown = -1;
+	m_advanced = false;
 	return false;
 }
 
@@ -3318,6 +3324,7 @@ bool StateHistory::restore(int64_t frame, std::string &error, int64_t *landedOn)
 		m_machineStored = true;
 		m_pastEditAt = -1;
 		m_editWhileUnknown = -1;
+		m_advanced = false;
 		if (historyVerify()) verifyRestored(frame, seg->anchorFrame, steps, true);
 		return true;
 	}
@@ -3370,6 +3377,7 @@ bool StateHistory::restore(int64_t frame, std::string &error, int64_t *landedOn)
 	m_machineStored = true;
 	m_pastEditAt = -1;
 	m_editWhileUnknown = -1;
+	m_advanced = false;
 	if (historyVerify()) verifyRestored(frame, seg->anchorFrame, steps, false);
 	return true;
 }

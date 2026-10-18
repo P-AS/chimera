@@ -475,6 +475,15 @@ replaced - until a restore or a load puts the machine back at or before the
 edit. A direct load (a branch) lets the epoch go, and an edit that arrives while
 a load has left the machine's frame unknown is decided by the next capture.
 
+Only a restore or a load ends that (2026-10-18). Some captures come with no
+frame run before them: turning the greenzone back on, resuming a capture
+period, making a branch. With the machine on frame N and an edit at N - 1, such
+a capture used to be taken for the first frame after a seek back, and the old
+timeline's N was stored under the new one. Likewise, after a load, the history
+knows whether a frame ran since (`beforeAdvance` was called): if one did, the
+machine stood on the frame before the capture when the edit came, and if none
+did, on the capture's own frame.
+
 `CHIMERA_HISTORY_VERIFY=1` checks this on a real core: every stored frame's
 machine is hashed, every restore is hashed again, and a restore that differs is
 named with its chain. The comparison is of the machine rather than of the bytes

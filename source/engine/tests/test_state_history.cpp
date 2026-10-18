@@ -2064,6 +2064,49 @@ int main(void)
 		}
 	}
 
+	{ // A capture with no frame run, after an edit behind the machine (engine
+	  // analysis, 2026-10-18). Turning the greenzone back on, resuming a
+	  // capture period and making a branch capture the machine where it stands.
+	  // With the machine on N and an edit at N - 1, such a capture used to clear
+	  // the guard the edit set, as a restore does, and store the old timeline's
+	  // N under the new one.
+		const chimera::HostApi api = fakeHost();
+		g_machine = Machine{};
+		chimera::StateHistory h;
+		h.configure(&api, nullptr, 1u << 20);
+		h.bands(1000, 1000, 1, 1, 0);
+		h.capture(0);
+		auto step = [&](int64_t f) { h.beforeAdvance(); advance(f); h.capture(f); };
+		for (int64_t f = 1; f <= 30; f++) step(f);
+		h.invalidateAfter(29);
+		h.capture(30);                      /* a branch made where the machine stands */
+		assert(h.nearest(INT64_MAX) == 29);
+		h.capturePeriod(0);
+		h.capturePeriod(1);
+		h.capture(30);                      /* a capture period resumed */
+		assert(h.nearest(INT64_MAX) == 29);
+		h.configure(&api, nullptr, 1u << 20);
+		h.capture(30);                      /* the greenzone turned back on */
+		assert(h.count() == 0);
+		/* a load puts the machine back: stored again from where it lands */
+		h.beforeLoad();
+		h.capture(29);
+		step(30);
+		assert(h.nearest(INT64_MAX) == 30);
+
+		/* An edit while a load left the machine's frame unknown. After a frame,
+		 * the machine was on the frame before the capture when the edit came;
+		 * with none, it is on the capture's frame. */
+		h.beforeLoad();                     /* the machine loaded on 30 */
+		h.invalidateAfter(29);
+		h.capture(30);
+		assert(h.nearest(INT64_MAX) == 29);
+		h.beforeLoad();                     /* and on 29, then a frame */
+		h.invalidateAfter(29);
+		step(30);
+		assert(h.nearest(INT64_MAX) == 30);
+	}
+
 	{ // TAStudio-shaped use at random, every restore checked (issue #68).
 	  //
 	  // A frame here depends on the input just before it and on the machine it
@@ -2159,7 +2202,7 @@ int main(void)
 			int restores = 0;
 			for (int op = 0; op < 3000; op++)
 			{
-				switch (rnd(0, 6))
+				switch (rnd(0, 7))
 				{
 				case 0: case 1: { /* a seek the way TAStudio does it: from the state before the target */
 					const int64_t target = rnd(1, 1500);
@@ -2169,8 +2212,9 @@ int main(void)
 					if (target > frame) play(target);
 					break;
 				}
-				case 2: { /* an edit, behind the machine or ahead of it, and maybe a frame or two before anything else */
-					const int64_t f = rnd(frame > 100 ? frame - 100 : 0, frame + 100);
+				case 2: { /* an edit, behind the machine or ahead of it, and maybe a frame or two before anything else;
+				           * often the frame just behind it, where a capture of the machine as it stands is the old timeline */
+					const int64_t f = frame > 0 && rnd(0, 2) == 0 ? frame - 1 : rnd(frame > 100 ? frame - 100 : 0, frame + 100);
 					input[static_cast<size_t>(f)] = static_cast<uint8_t>(input[static_cast<size_t>(f)] + 1 + rnd(0, 2));
 					h.invalidateAfter(f);
 					storedAs.erase(storedAs.upper_bound(f), storedAs.end());
@@ -2192,6 +2236,18 @@ int main(void)
 					play(frame + rnd(1, 200));
 					did("play to " + std::to_string(frame));
 					break;
+				case 7: { /* a capture with no frame run: the greenzone turned back on, a branch made */
+					const int64_t reached = h.nearest(INT64_MAX);
+					h.capture(frame);
+					if (frame > reached && h.nearest(frame) == frame)
+					{
+						std::array<uint8_t, Machine::kCells> now{};
+						std::memcpy(now.data(), g_machine.cell, Machine::kCells);
+						storedAs[frame] = now;
+					}
+					did("capture standing on " + std::to_string(frame));
+					break;
+				}
 				default: { /* one back */
 					const int64_t back = frame - 1;
 					const int64_t s = h.nearest(back > 0 ? back - 1 : 0);
