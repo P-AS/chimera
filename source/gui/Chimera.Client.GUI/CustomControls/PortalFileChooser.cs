@@ -34,6 +34,7 @@ namespace Chimera.Client.GUI
 		private const string ObjectPath = "/org/freedesktop/portal/desktop";
 		private const string Interface = "org.freedesktop.portal.FileChooser";
 		private const string RequestInterface = "org.freedesktop.portal.Request";
+		private const string BusName = "org.freedesktop.DBus";
 
 		/// <summary>The choice id the one tick box is sent and read back under.</summary>
 		private const string CheckBoxId = "checkbox";
@@ -145,7 +146,8 @@ namespace Chimera.Client.GUI
 
 		/// <summary>
 		/// Asks once and waits for the answer, keeping the windows painted. The response code
-		/// (0 chosen, 1 cancelled, 2 failed), or null if the portal could not be asked at all.
+		/// (0 chosen, 1 cancelled, 2 failed), or null if the portal could not be asked at all or
+		/// left the bus before it answered.
 		/// </summary>
 		private static uint? Ask(IntPtr connection, Request request, string parent, Answer answer)
 		{
@@ -154,11 +156,15 @@ namespace Chimera.Client.GUI
 			// connection's name and the token, so the match goes in BEFORE the call: a portal
 			// that answers at once cannot answer to nobody.
 			var expected = $"/org/freedesktop/portal/desktop/request/{UniqueNameAsPathPart(connection)}/{token}";
-			if (!AddMatch(connection, expected)) return null;
+			if (!AddMatch(connection, ResponseRule(expected))) return null;
+			// and if the portal itself leaves the bus (it crashed, or was stopped), no answer
+			// will come: the toolkit dialog is offered instead of waiting for ever with
+			// Chimera's windows deaf
+			if (!AddMatch(connection, $"type='signal',sender='{BusName}',interface='{BusName}',member='NameOwnerChanged',arg0='{Service}'")) return null;
 
 			var path = Call(connection, request, parent, token);
 			if (path is null) return null;
-			if (path != expected && !AddMatch(connection, path)) return null;
+			if (path != expected && !AddMatch(connection, ResponseRule(path))) return null;
 
 			while (true)
 			{
@@ -168,6 +174,11 @@ namespace Chimera.Client.GUI
 				{
 					try
 					{
+						if (dbus_message_is_signal(message, BusName, "NameOwnerChanged") != 0)
+						{
+							if (PortalLeft(message)) return null;
+							continue;
+						}
 						if (dbus_message_is_signal(message, RequestInterface, "Response") == 0) continue;
 						if (ReadUtf8(dbus_message_get_path(message)) != path) continue;
 						return ReadResponse(message, request, answer);
@@ -280,10 +291,24 @@ namespace Chimera.Client.GUI
 			return connection;
 		}
 
-		private static bool AddMatch(IntPtr connection, string path)
+		private static string ResponseRule(string path) => $"type='signal',interface='{RequestInterface}',member='Response',path='{path}'";
+
+		/// <summary>
+		/// Whether a NameOwnerChanged signal, <c>(s name, s old_owner, s new_owner)</c>, says the
+		/// portal's name lost its owner. A portal started by the call itself gains one: not that.
+		/// </summary>
+		private static bool PortalLeft(IntPtr message)
+		{
+			using var iter = new Iter();
+			if (dbus_message_iter_init(message, iter) == 0 || GetString(iter) != Service) return false;
+			if (dbus_message_iter_next(iter) == 0 || dbus_message_iter_next(iter) == 0) return false;
+			return GetString(iter) is "";
+		}
+
+		private static bool AddMatch(IntPtr connection, string rule)
 		{
 			var error = NewError();
-			dbus_bus_add_match(connection, $"type='signal',interface='{RequestInterface}',member='Response',path='{path}'", ref error);
+			dbus_bus_add_match(connection, rule, ref error);
 			var failed = dbus_error_is_set(ref error) != 0;
 			dbus_error_free(ref error);
 			return !failed;
