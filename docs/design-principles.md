@@ -8220,3 +8220,35 @@ Tests: `test_compile_sessions` checks the score in a child process (it
 failed with the write left out), and `ADeadSessionAlwaysSaysHowItDied`
 checks the wording for 64. Engine tests 30/30, interface tests 1,076 passed,
 the witness 89/0; the Windows build compiles.
+
+## Opening a folder or a file does not wait for the program it opens (2026-10-18)
+
+**The fault (pull request #274, by P-AS).** Open Folder, the Lua console's
+New and Edit Script and the other places that hand a path to the desktop
+froze Chimera until the program they opened was closed. They went through
+the shell (`UseShellExecute`), and under Mono that waits for `xdg-open` to
+exit. On a desktop `xdg-open` does not recognise it runs the program in the
+foreground, and a terminal editor such as nvim ran in the terminal Chimera
+was started from.
+
+**What was done.** Two helpers in `Chimera.Common/Util.cs`,
+`OpenFolderExternal` and `OpenFileExternal`, used everywhere a folder or a
+file is opened:
+- Linux and the BSDs: `gio open`, which returns once the program has
+  started and gives a terminal program a window of its own; `xdg-open` where
+  there is no `gio` or `gio` cannot open the path. Started with `setsid` and
+  an empty input, so neither can reach Chimera's terminal.
+- macOS: `open`. Windows: the shell, which does not wait. Folders went to
+  `explorer.exe` with a quoted path in the pull request; at review they go
+  to the shell too, because a drive's root quoted as `"D:\"` ends in `\"`,
+  which reads as an escaped quote.
+- `OpenUrlExternal` stops at the first opener that starts, instead of
+  opening a link once in each of three.
+
+**Measured.** The author, on Linux (niri): with stand-ins for the opener
+and the editor, the old call returned after 8,004 ms (the stand-in's 8
+seconds), the new ones in 4 to 6 ms, and a path with spaces, quotes and a
+`$` arrived intact. At review, the opener script with stand-in `gio` and
+`xdg-open`: `gio` that opens, `gio` that fails (`xdg-open` took the path),
+and the system's own `gio` failing on a missing file (`xdg-open` took it).
+Not tried: Windows and macOS.
