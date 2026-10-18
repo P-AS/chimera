@@ -77,6 +77,16 @@ public:
 	 * be null for all-neutral. */
 	std::string generate(const uint8_t *buttons, const int32_t *axes, const std::string &mnemonics) const;
 
+	/* Whether a column of this layout is the machine's button (or axis) at
+	 * that declared index. */
+	bool hasControl(bool isAxis, int32_t index) const;
+	/* The LogKey that names this layout's columns, in the window's form
+	 * (LogEntryGenerator.GenerateLogKey): '#' before each group, '|' after
+	 * each name. Empty when a column has no name the machine knows. */
+	std::string key(const std::vector<std::string> &buttons) const;
+	/* The names a piece of a LogKey holds, as "P1 A, P1 B", for messages. */
+	static std::string namesIn(const std::string &keyPart);
+
 	int32_t groups() const { return groups_; }
 	size_t size() const { return items_.size(); }
 	size_t buttonCount() const { return buttonCount_; }

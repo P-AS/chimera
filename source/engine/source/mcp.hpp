@@ -16,6 +16,7 @@
 #pragma once
 
 #include "local_pipe.hpp"
+#include "movie_entry.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -32,6 +33,25 @@ namespace chimera
  * session's order; null for none pressed) and axis values (null for each at
  * rest). Defined in session.cpp. */
 std::string sessionMovieEntry(const ce_session *s, const uint8_t *states, const int32_t *axes);
+/* The columns a movie log's lines are in, for this session's machine: its
+ * LogKey's when that names any, else the machine's own order. Defined in
+ * session.cpp, with the three below. */
+EntryLayout sessionLayoutOf(const ce_session *s, const ce_movie_log *log);
+/* The LogKey that names a layout's columns with this machine's names. */
+std::string sessionKeyOf(const ce_session *s, const EntryLayout &layout);
+/* A line in that layout for these controls, and back (false when it cannot
+ * be read). */
+std::string sessionEntryIn(const ce_session *s, const EntryLayout &layout, const uint8_t *states, const int32_t *axes);
+bool sessionDecodeIn(const ce_session *s, const EntryLayout &layout, const char *line, uint8_t *states, int32_t *axes);
+/* `layout`, whose log has `key`, widened by every control `states` presses or
+ * `axes` moves off its neutral that it does not have: a group of their own at
+ * the end of the key. False when it lacks none. `newKey` is the log's key
+ * then, and `columns` the new group's empty columns, which follow every line
+ * (user-decided, 2026-10-18: a control the key lacks joins it). */
+bool sessionWidenLayout(const ce_session *s, const EntryLayout &layout, const char *key,
+	const uint8_t *states, const int32_t *axes, EntryLayout &wider, std::string &newKey, std::string &columns);
+/* Gives a log that key, and every line of it those columns. */
+void widenMovieLog(ce_movie_log *log, const std::string &newKey, const std::string &columns);
 
 struct McpTool
 {

@@ -706,6 +706,7 @@ struct ce_session
 	chimera::EntryLayout movieLayout;
 	bool movieKeyed = false;
 	const chimera::EntryLayout &entries() const { return movieKeyed ? movieLayout : layout; }
+	void coverInKey(const uint8_t *states, const int32_t *axes);
 
 	// ---- the state history (docs/state-manager.md) ----
 	// Anchors and the deltas that walk forward from them, so a stored frame
@@ -1453,6 +1454,96 @@ void ce_session::greenzoneLoaded(int64_t at)
 	vulkanStateLoaded();
 	frame = at;
 	afterLoad(at);
+}
+
+std::string chimera::sessionKeyOf(const ce_session *s, const chimera::EntryLayout &layout)
+{
+	return layout.key(s->cfg.buttons);
+}
+
+chimera::EntryLayout chimera::sessionLayoutOf(const ce_session *s, const ce_movie_log *log)
+{
+	const char *key = log != nullptr ? ce_movie_log_key(log) : nullptr;
+	chimera::EntryLayout keyed;
+	if (key != nullptr && key[0] != '\0' && keyed.buildFromKey(key, s->cfg.buttons, s->cfg.axes)) return keyed;
+	return s->layout;
+}
+
+std::string chimera::sessionEntryIn(const ce_session *s, const chimera::EntryLayout &layout,
+	const uint8_t *states, const int32_t *axes)
+{
+	return layout.generate(states, axes, s->cfg.mnemonics);
+}
+
+bool chimera::sessionDecodeIn(const ce_session *s, const chimera::EntryLayout &layout, const char *line,
+	uint8_t *states, int32_t *axes)
+{
+	std::vector<uint8_t> pressed;
+	std::vector<int32_t> values;
+	if (line == nullptr || !layout.parse(line, pressed, values)) return false;
+	if (states != nullptr) std::copy(pressed.begin(), pressed.end(), states);
+	if (axes != nullptr) std::copy(values.begin(), values.end(), axes);
+	(void)s;
+	return true;
+}
+
+bool chimera::sessionWidenLayout(const ce_session *s, const chimera::EntryLayout &layout, const char *key,
+	const uint8_t *states, const int32_t *axes, chimera::EntryLayout &wider, std::string &newKey, std::string &columns)
+{
+	std::string group;
+	for (size_t i = 0; states != nullptr && i < s->cfg.buttons.size(); i++)
+	{
+		if (states[i] != 0 && !layout.hasControl(false, static_cast<int32_t>(i))) group.append(s->cfg.buttons[i]).push_back('|');
+	}
+	for (size_t i = 0; axes != nullptr && i < s->cfg.axes.size(); i++)
+	{
+		if (axes[i] != s->cfg.axes[i].neutral && !layout.hasControl(true, static_cast<int32_t>(i)))
+			group.append(s->cfg.axes[i].name).push_back('|');
+	}
+	if (group.empty()) return false;
+	/* a log with no key is in the machine's order: the key that names it */
+	std::string base = key != nullptr && key[0] != '\0' ? std::string(key) : layout.key(s->cfg.buttons);
+	if (base.empty()) return false;
+	newKey = base + "#" + group;
+	if (!wider.buildFromKey(newKey, s->cfg.buttons, s->cfg.axes)) return false;
+	/* the new group is last, so its empty columns follow every line */
+	const std::string before = layout.generate(nullptr, nullptr, s->cfg.mnemonics);
+	const std::string after = wider.generate(nullptr, nullptr, s->cfg.mnemonics);
+	if (after.compare(0, before.size(), before) != 0) return false;
+	columns = after.substr(before.size());
+	return true;
+}
+
+void chimera::widenMovieLog(ce_movie_log *log, const std::string &newKey, const std::string &columns)
+{
+	const int64_t n = ce_movie_log_count(log);
+	for (int64_t i = 0; i < n; i++)
+	{
+		std::string line = ce_movie_log_entry(log, i);
+		if (line.empty() || line.back() != '|') line.push_back('|');
+		ce_movie_log_set(log, i, (line + columns).c_str());
+	}
+	ce_movie_log_set_key(log, newKey.c_str());
+}
+
+/* A control the movie's LogKey does not name, pressed or off its neutral:
+ * the key gains it, as a group of its own at the end, and every line gains
+ * that group's empty columns (user-decided, 2026-10-18). Lines are read and
+ * written by the key's names, so without this the machine was given a press
+ * the movie did not keep, and the recording replayed differently. */
+void ce_session::coverInKey(const uint8_t *states, const int32_t *axes)
+{
+	if (!movieKeyed || movie == nullptr) return;
+	chimera::EntryLayout wider;
+	std::string newKey, columns;
+	if (!chimera::sessionWidenLayout(this, movieLayout, ce_movie_log_key(movie), states, axes, wider, newKey, columns)) return;
+	const char *was = ce_movie_log_key(movie);
+	const std::string added = newKey.substr(was != nullptr ? std::strlen(was) : 0);
+	chimera::widenMovieLog(movie, newKey, columns);
+	movieLayout = std::move(wider);
+	fprintf(stderr, "[%s] the movie's LogKey did not name %s; it does now, and every line has its columns\n",
+		cfg.coreName.c_str(), chimera::EntryLayout::namesIn(added).c_str());
+	fflush(stderr);
 }
 
 /* Internal (mcp.hpp): the line this session's movie holds for a set of
@@ -3424,10 +3515,32 @@ int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 		const int64_t was = ce_movie_log_count(s->movie);
 		const int64_t now = ce_movie_log_count(log);
 		int64_t agree = 0;
-		while (agree < was && agree < now
-			&& std::strcmp(ce_movie_log_entry(s->movie, agree), ce_movie_log_entry(log, agree)) == 0)
+		const char *oldKey = ce_movie_log_key(s->movie);
+		const char *newKey = ce_movie_log_key(log);
+		if (std::strcmp(oldKey != nullptr ? oldKey : "", newKey != nullptr ? newKey : "") == 0)
 		{
-			agree++;
+			while (agree < was && agree < now
+				&& std::strcmp(ce_movie_log_entry(s->movie, agree), ce_movie_log_entry(log, agree)) == 0)
+			{
+				agree++;
+			}
+		}
+		else
+		{
+			/* Other columns (a LogKey that gained a control): the lines differ
+			 * as text everywhere, so they are compared as the input they give
+			 * the machine, or the whole greenzone would go for nothing. */
+			const chimera::EntryLayout before = chimera::sessionLayoutOf(s, s->movie);
+			const chimera::EntryLayout after = chimera::sessionLayoutOf(s, log);
+			std::vector<uint8_t> b1, b2;
+			std::vector<int32_t> a1, a2;
+			while (agree < was && agree < now
+				&& before.parse(ce_movie_log_entry(s->movie, agree), b1, a1)
+				&& after.parse(ce_movie_log_entry(log, agree), b2, a2)
+				&& b1 == b2 && a1 == a2)
+			{
+				agree++;
+			}
 		}
 		s->history.invalidateAfter(agree);
 	}
@@ -3444,6 +3557,18 @@ int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 void ce_session_movie_record(ce_session *s, const char *mnemonics)
 {
 	if (s->movie == nullptr) s->movie = ce_movie_log_new();
+	/* A recording names its columns, so that it reads the same after the
+	 * package gains a control. A movie with no key is in the machine's own
+	 * order, and the key that names that order describes its lines too. */
+	if (!s->movieKeyed)
+	{
+		const std::string key = s->layout.key(s->cfg.buttons);
+		if (!key.empty() && s->movieLayout.buildFromKey(key, s->cfg.buttons, s->cfg.axes))
+		{
+			ce_movie_log_set_key(s->movie, key.c_str());
+			s->movieKeyed = true;
+		}
+	}
 	if (mnemonics != nullptr)
 	{
 		s->mnemonics = mnemonics;
@@ -3566,6 +3691,7 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 		if (s->guestDied()) return -1;
 		if (s->movieMode == 2)
 		{
+			s->coverInKey(effective, axes);
 			std::string entry = s->entries().generate(effective, axes, s->mnemonics);
 			ce_movie_log_add(s->movie, entry.c_str());
 		}

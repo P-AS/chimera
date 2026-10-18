@@ -168,6 +168,51 @@ bool EntryLayout::parse(const char *entry, std::vector<uint8_t> &buttonsOut, std
 	return true;
 }
 
+bool EntryLayout::hasControl(bool isAxis, int32_t index) const
+{
+	for (const Item &item : items_)
+	{
+		if (item.isAxis == isAxis && item.index == index) return true;
+	}
+	return false;
+}
+
+std::string EntryLayout::key(const std::vector<std::string> &buttons) const
+{
+	std::string out;
+	size_t next = 0;
+	for (int32_t g = 0; g < groups_; g++)
+	{
+		const size_t end = g + 1 < groups_
+			? static_cast<size_t>(groupStarts_[static_cast<size_t>(g) + 1])
+			: items_.size();
+		out.push_back('#');
+		for (; next < end; next++)
+		{
+			const Item &item = items_[next];
+			if (item.index < 0) return std::string();
+			const size_t at = static_cast<size_t>(item.index);
+			if (item.isAxis ? at >= axes_.size() : at >= buttons.size()) return std::string();
+			out.append(item.isAxis ? axes_[at].name : buttons[at]).push_back('|');
+		}
+	}
+	return out;
+}
+
+std::string EntryLayout::namesIn(const std::string &keyPart)
+{
+	std::string out, name;
+	for (const char c : keyPart + "|")
+	{
+		if (c != '|' && c != '#') { name.push_back(c); continue; }
+		if (name.empty()) continue;
+		if (!out.empty()) out += ", ";
+		out += name;
+		name.clear();
+	}
+	return out;
+}
+
 std::string EntryLayout::generate(const uint8_t *buttons, const int32_t *axes, const std::string &mnemonics) const
 {
 	std::string out;

@@ -1517,19 +1517,21 @@ std::string labelled(const char *what, int64_t frame, int64_t count)
  * group of a machine that has no console buttons: the engine and the
  * interface write it ("||....|"), and movies written by hand, the test
  * movies among them, leave it out ("|....|"). Both are read alike. */
-bool lineFits(ce_session *s, const std::string &line, const std::string &blank)
+bool lineFits(ce_session *s, const EntryLayout &held, const std::string &line, const std::string &blank)
 {
 	const auto columns = [](const std::string &text)
 	{
 		return std::count_if(text.begin(), text.end(), [](char c) { return c != '|'; });
 	};
 	return !line.empty() && line.front() == '|' && line.back() == '|' && columns(line) == columns(blank)
-		&& ce_session_movie_entry_decode_wide(s, line.c_str(), nullptr, nullptr) == 0;
+		&& sessionDecodeIn(s, held, line.c_str(), nullptr, nullptr);
 }
 
 /* Hands back the step for the movie's holder as (tool, arguments), or an
- * error. `tool` comes in as the agent's and goes out as the holder's. */
-bool prepareEdit(ce_session *s, const ce_movie_log *log, std::string &tool, std::string &argumentsJson, McpResult &refusal)
+ * error. `tool` comes in as the agent's and goes out as the holder's.
+ * `engineHolds` says the movie is the engine's own (no window), which takes a
+ * step that widens its LogKey. */
+bool prepareEdit(ce_session *s, const ce_movie_log *log, bool engineHolds, std::string &tool, std::string &argumentsJson, McpResult &refusal)
 {
 	auto refuse = [&](const std::string &why)
 	{
@@ -1539,7 +1541,9 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, std::string &tool, std:
 	if (s == nullptr || log == nullptr) return refuse(kNoMovie);
 	cJSON *arguments = cJSON_Parse(argumentsJson.c_str());
 	const int64_t length = ce_movie_log_count(log);
-	const std::string blank = sessionMovieEntry(s, nullptr, nullptr);
+	/* the lines are written and read in the held movie's own columns */
+	const EntryLayout held = sessionLayoutOf(s, log);
+	const std::string blank = sessionEntryIn(s, held, nullptr, nullptr);
 	cJSON *step = cJSON_CreateObject();
 	std::string why;
 	int64_t frame = 0, count = 0;
@@ -1575,7 +1579,7 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, std::string &tool, std:
 			cJSON_ArrayForEach(entry, entries)
 			{
 				at++;
-				if (cJSON_IsString(entry) && lineFits(s, entry->valuestring, blank)) continue;
+				if (cJSON_IsString(entry) && lineFits(s, held, entry->valuestring, blank)) continue;
 				why = "Line " + std::to_string(at) + " of 'entries' does not have the shape of this movie's input lines. get_input shows them.";
 				break;
 			}
@@ -1645,6 +1649,27 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, std::string &tool, std:
 		else if (!any) why = "Name at least one button in 'buttons' or one axis in 'axes'.";
 		else
 		{
+			/* A control the movie's LogKey does not name joins it, as a group
+			 * of its own at the end, rather than being left out of the lines
+			 * (user-decided, 2026-10-18). The step says so ("key", and the
+			 * "columns" every line gains) and its lines are written with it.
+			 * The engine's own movie (no window) takes it; the window's movie
+			 * keeps its columns in TAStudio, so there it is refused, said. */
+			std::vector<uint8_t> pressed(buttonCount, 0);
+			std::vector<int32_t> moved(axisCount, 0);
+			for (size_t b = 0; b < buttonCount; b++) pressed[b] = buttonAsked[b] == 1 ? 1 : 0;
+			for (size_t a = 0; a < axisCount; a++)
+				moved[a] = axisAsked[a] ? axisValue[a] : ce_session_axis_neutral(s, static_cast<int64_t>(a));
+			EntryLayout wider;
+			std::string newKey, columns;
+			const bool widened = sessionWidenLayout(s, held, ce_movie_log_key(log), pressed.data(), moved.data(), wider, newKey, columns);
+			if (widened && !engineHolds)
+			{
+				const char *was = ce_movie_log_key(log);
+				const std::string names = EntryLayout::namesIn(newKey.substr(was != nullptr ? std::strlen(was) : 0));
+				why = "This movie's columns (its LogKey) do not include " + names
+					+ ", so its input cannot hold them. Nothing was changed.";
+			}
 			cJSON *entries = cJSON_CreateArray();
 			std::vector<uint8_t> states(buttonCount);
 			std::vector<int32_t> values(axisCount);
@@ -1652,14 +1677,21 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, std::string &tool, std:
 			{
 				/* the line the frame has now, or the empty one past the movie's end */
 				const char *now = frame + i < length ? ce_movie_log_entry(log, frame + i) : nullptr;
-				if (ce_session_movie_entry_decode_wide(s, now != nullptr ? now : blank.c_str(), states.data(), values.data()) != 0)
+				std::fill(states.begin(), states.end(), 0);
+				for (size_t a = 0; a < axisCount; a++) values[a] = ce_session_axis_neutral(s, static_cast<int64_t>(a));
+				if (!sessionDecodeIn(s, held, now != nullptr ? now : blank.c_str(), states.data(), values.data()))
 				{
 					why = "The movie's input on frame " + std::to_string(frame + i) + " cannot be read.";
 					break;
 				}
 				for (size_t b = 0; b < buttonCount; b++) if (buttonAsked[b] >= 0) states[b] = static_cast<uint8_t>(buttonAsked[b]);
 				for (size_t a = 0; a < axisCount; a++) if (axisAsked[a]) values[a] = axisValue[a];
-				cJSON_AddItemToArray(entries, cJSON_CreateString(sessionMovieEntry(s, states.data(), values.data()).c_str()));
+				cJSON_AddItemToArray(entries, cJSON_CreateString(sessionEntryIn(s, widened ? wider : held, states.data(), values.data()).c_str()));
+			}
+			if (widened)
+			{
+				cJSON_AddStringToObject(step, "key", newKey.c_str());
+				cJSON_AddStringToObject(step, "columns", columns.c_str());
 			}
 			cJSON_AddNumberToObject(step, "frame", static_cast<double>(frame));
 			cJSON_AddItemToObject(step, "entries", entries);
@@ -1912,7 +1944,7 @@ McpResult mcpRunDirect(const std::string &tool, const std::string &argumentsJson
 	}
 	std::string hostTool = tool, hostArguments = argumentsJson;
 	McpResult refusal;
-	if (isEdit(tool) && !prepareEdit(s, log, hostTool, hostArguments, refusal)) return refusal;
+	if (isEdit(tool) && !prepareEdit(s, log, true, hostTool, hostArguments, refusal)) return refusal;
 	McpResult result = host(hostTool, hostArguments);
 	if (!result.isError && carriesWatches(tool) && s != nullptr && !sv.watches.empty())
 	{
@@ -2109,7 +2141,7 @@ int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t frame, co
 				/* an edit is checked, and worked out into the step it amounts
 				 * to, before the movie's holder is asked to make it */
 				chimera::McpResult refusal;
-				if (chimera::isEdit(call.tool) && !chimera::prepareEdit(s, log, *heldTool, *heldArguments, refusal))
+				if (chimera::isEdit(call.tool) && !chimera::prepareEdit(s, log, false, *heldTool, *heldArguments, refusal))
 				{
 					chimera::finish(sv, call, refusal);
 					continue;

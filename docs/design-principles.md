@@ -8711,3 +8711,34 @@ its default setting: the project with no settings opens and plays to the
 reference dumps, and the one that records another value is refused. With the
 defaults left out of the check, the first is refused again. Engine tests (30),
 witness (93), interface tests and the Windows build pass.
+
+## A control a movie's LogKey does not name joins it (user-decided, 2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18: a movie's first line,
+the LogKey, names its columns, and since 2026-10-15 the engine reads and
+writes lines by those names. A movie made with an older package can lack a
+column for a control the machine has now. When such a control was pressed
+while recording, the machine was given the press and the line left it out, so
+the recording replayed differently; an AI agent's set_buttons on it was
+answered as done and left it out too. chimera-run's recordings carried no
+LogKey at all, so they would be misread once the package gained a control.
+
+**What was decided.** The owner chose to extend the key: the control joins
+the LogKey as a group of its own at the end, and every line gains that
+group's empty column, in recordings and in the movie the MCP server holds
+when there is no window. A movie's key that changes this way does not cost
+its greenzone: lines are compared as the input they give the machine. The
+window keeps a movie's columns in TAStudio, so there the agent's call is
+refused and names the control; extending the window's movie is not done. A
+recording, and a project an agent starts, now always name their columns:
+chimera-run writes the movie with its LogKey. Lines an agent's edit writes
+follow the held movie's own columns, not the machine's order.
+
+**Tested.** A new witness test records a movie that starts with a two-control
+LogKey: the key gains the control the movie presses and the recording replays
+to the reference dumps. The agent script opens a project whose movie names two
+controls, sets P1 A, and finds the key and every line grown, then undoes it.
+An engine test checks the key text a layout is written by. Each failed with
+its part removed. The window's refusal is not exercised by a test. Engine
+tests (30), witness (94, among them the window opening a project the
+windowless server saved), interface tests and the Windows build pass.

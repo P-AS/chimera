@@ -245,6 +245,18 @@ bool McpLocal::startMachine(const std::string &firmwareJson, bool otherBuildAllo
 		why = std::string("The project's input cannot be read: ") + ce_movie_log_last_error(movie);
 		return false;
 	}
+	/* A movie with no LogKey is in the machine's own order: it is given the
+	 * key that names that order, so that the project an agent saves reads the
+	 * same after the package gains a control. */
+	{
+		const char *key = ce_movie_log_key(movie);
+		chimera::EntryLayout keyed;
+		if (key == nullptr || key[0] == '\0' || !keyed.buildFromKey(key, {}, {}))
+		{
+			const std::string named = sessionKeyOf(session, sessionLayoutOf(session, movie));
+			if (!named.empty()) ce_movie_log_set_key(movie, named.c_str());
+		}
+	}
 	if (ce_session_movie_load(session, movie) != 0)
 	{
 		why = "The project's input could not be given to the machine.";
@@ -594,8 +606,13 @@ McpResult McpLocal::runHost(const std::string &tool, const std::string &argument
 		else
 		{
 			rememberForUndo();
+			/* a control the movie's LogKey did not name: the key gains it and
+			 * every line its empty columns, before the step's lines go in */
+			const cJSON *key = cJSON_GetObjectItemCaseSensitive(arguments, "key");
+			const cJSON *columns = cJSON_GetObjectItemCaseSensitive(arguments, "columns");
+			if (cJSON_IsString(key) && cJSON_IsString(columns)) widenMovieLog(movie, key->valuestring, columns->valuestring);
 			/* past the movie's end the frames between are empty ones */
-			const std::string blank = sessionMovieEntry(session, nullptr, nullptr);
+			const std::string blank = sessionEntryIn(session, sessionLayoutOf(session, movie), nullptr, nullptr);
 			while (ce_movie_log_count(movie) < frame) ce_movie_log_add(movie, blank.c_str());
 			const cJSON *entry = nullptr;
 			int64_t at = frame;
@@ -622,7 +639,7 @@ McpResult McpLocal::runHost(const std::string &tool, const std::string &argument
 		else
 		{
 			rememberForUndo();
-			const std::string blank = sessionMovieEntry(session, nullptr, nullptr);
+			const std::string blank = sessionEntryIn(session, sessionLayoutOf(session, movie), nullptr, nullptr);
 			if (inserting) for (int64_t i = 0; i < count; i++) ce_movie_log_insert(movie, frame, blank.c_str());
 			else ce_movie_log_remove_range(movie, frame, count);
 			if (movieChanged(frame, why))

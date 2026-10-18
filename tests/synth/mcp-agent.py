@@ -488,6 +488,30 @@ if local:
     check("and plays to the reference memory", ram_now() == ram)
     facts("close")
 
+    # A project whose movie's LogKey names fewer controls than the machine has
+    # (made with an older package): a control it does not name joins the key
+    # when the agent sets it, and every line gets its column. It used to be
+    # left out of the line while the agent was told it was set.
+    short = json.load(open(saved))
+    short["input"] = "[Input]\nLogKey:#P1 Up|P1 Down|\n|.D|\n|..|\n|.D|\n[/Input]\n"
+    short["branches"] = []
+    short["markers"] = []
+    short_path = os.path.join(work, "short.chimeraProject")
+    json.dump(short, open(short_path, "w"))
+    facts("open_project", path="short.chimeraProject")
+    check("a movie with a short LogKey opens", all_input() == ["|.D|", "|..|", "|.D|"])
+    facts("set_buttons", frame=1, buttons={"P1 A": True})
+    check("a control its LogKey does not name joins it, and every line has its column",
+          all_input() == ["|.D|.|", "|..|A|", "|.D|.|"])
+    facts("export_movie", path="short.txt")
+    short_text = open(os.path.join(work, "short.txt")).read()
+    check("and the movie says so", "LogKey:#P1 Up|P1 Down|#P1 A|" in short_text)
+    facts("undo")
+    check("undo gives the movie back as it was", all_input() == ["|.D|", "|..|", "|.D|"])
+    facts("close")
+    os.remove(short_path)
+    os.remove(os.path.join(work, "short.txt"))
+
 agent.stdin.close()
 agent.wait()
 for line in wrong:

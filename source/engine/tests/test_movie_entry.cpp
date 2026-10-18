@@ -101,6 +101,24 @@ void keyedLayoutsGoByName()
 	assert(!l.buildFromKey("A|B|", buttons, axes));
 	assert(!l.buildFromKey("#", buttons, axes));
 	assert(!l.buildFromKey("#|#", buttons, axes));
+
+	// which controls a key names, and the key a layout is written by: a
+	// machine's own layout names itself, and reads back as the same columns
+	assert(l.buildFromKey("#P1 B|P1 A|", buttons, axes));
+	assert(l.hasControl(false, 0) && l.hasControl(false, 1) && !l.hasControl(false, 2) && !l.hasControl(true, 0));
+	assert(l.key(buttons) == "#P1 B|P1 A|");
+	EntryLayout own;
+	own.build(buttons, axes);
+	assert(own.key(buttons) == "##P1 Stick X|P1 A|P1 B|P1 C|");   /* the empty console group first */
+	EntryLayout again;
+	assert(again.buildFromKey(own.key(buttons), buttons, axes));
+	auto some = statesOf((1ull << 1) | (1ull << 2), buttons.size());
+	const int32_t moved[] = { -7 };
+	assert(again.generate(some.data(), moved, "ABC") == own.generate(some.data(), moved, "ABC"));
+	assert(EntryLayout::namesIn("#P1 Right|#P1 A|P1 B|") == "P1 Right, P1 A, P1 B");
+	// a column the machine lacks has no name to write
+	assert(l.buildFromKey("#P1 A|P9 Z|", buttons, axes));
+	assert(l.key(buttons).empty());
 }
 
 int main(void)

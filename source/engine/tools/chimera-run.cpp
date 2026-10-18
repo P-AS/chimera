@@ -64,6 +64,9 @@
  * log itself, and it is written to <out.txt>. Feeding that file back in as an
  * ordinary movie must reach the same machine - which is what witnesses record
  * mode and entry generation, the paths playback never touches.
+ * --record-key <LogKey> starts that recording as a movie whose LogKey is this
+ * one (as a movie made with an older package, which had fewer controls): a
+ * control it does not name must join it when pressed.
  * --history-out <file> keeps the state history, and --history-in <file> starts
  * from one kept earlier - which is what reopening a project does, and the only
  * way to witness that a history outlives the process that made it.
@@ -289,6 +292,7 @@ int main(int argc, char **argv)
 	int64_t greenzonePeriod = -1;   // TAStudio's "Greenzone" setting: 0 off, 1 every frame, n one in n
 	int64_t greenzonePeriodAt = 0;  // the frame of the first pass it is set at
 	std::string recordPath;
+	std::string recordKey;   /* --record-key: the LogKey the recording starts with */
 	std::string savedataDir;
 	std::string projectPath;
 	std::string historyIn, historyOut;
@@ -406,6 +410,7 @@ int main(int argc, char **argv)
 		else if (arg == "--greenzone-period-at" && i + 1 < argc) greenzonePeriodAt = std::atoll(argv[++i]);
 		else if (arg == "--stop-at-seek") stopAtSeek = true;
 		else if (arg == "--record" && i + 1 < argc) recordPath = argv[++i];
+		else if (arg == "--record-key" && i + 1 < argc) recordKey = argv[++i];
 		else if (arg == "--settings" && i + 1 < argc) settings = argv[++i];
 		else if (arg == "--suggest") suggest = true;
 		else if (arg == "--import-movie") importMovie = true;
@@ -556,7 +561,7 @@ int main(int argc, char **argv)
 	bool projectMode = !projectPath.empty();
 	if (projectMode ? packagePath == nullptr : (suggest || importMovie ? romPath == nullptr : moviePath == nullptr))
 	{
-		std::fprintf(stderr, "usage: chimera-run <package> <rom> <movie.txt> [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--settings <json>] [--dump <domain>=<path>]... [--firmware <id>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--ram-search-bench <domain>] [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame]\n"
+		std::fprintf(stderr, "usage: chimera-run <package> <rom> <movie.txt> [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--record-key <LogKey>] [--settings <json>] [--dump <domain>=<path>]... [--firmware <id>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--ram-search-bench <domain>] [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame]\n"
 			"       chimera-run --project <p.chimeraProject> <package> [--files <dir>]... [--allow-core-mismatch] [the same run flags]\n"
 			"       chimera-run <package> <rom> --suggest [--settings <json>] [--firmware <id>=<path>]...\n"
 			"       chimera-run <package> <movie> --import-movie [--mount <name>=<path>]... [--settings <json>]\n");
@@ -919,6 +924,17 @@ int main(int argc, char **argv)
 		/* NULL mnemonics: the generated characters are the engine's fallback
 		 * rather than a frontend vocabulary. Parsing ignores the character, so
 		 * a replay of this file lands on the same machine either way. */
+		/* --record-key: the recording starts as a movie whose LogKey is this,
+		 * as one made with an older package would; a control it does not name
+		 * joins it when pressed */
+		if (!recordKey.empty())
+		{
+			ce_movie_log *keyed = ce_movie_log_new();
+			ce_movie_log_set_key(keyed, recordKey.c_str());
+			const int32_t loaded = ce_session_movie_load(session, keyed);
+			ce_movie_log_free(keyed);
+			if (loaded != 0) return fail(metaPath, "could not start the recording with --record-key");
+		}
 		ce_session_movie_record(session, nullptr);
 	}
 
@@ -1394,15 +1410,17 @@ int main(int argc, char **argv)
 
 	if (!recordPath.empty())
 	{
-		/* the session's own log, one entry per line - the shape chimera-run
-		 * reads back in, so a recorded movie can simply be replayed */
+		/* the session's own log as a movie's [Input] block, its LogKey naming
+		 * the columns - what chimera-run and the window read back in, so a
+		 * recorded movie can simply be replayed, and read the same after the
+		 * package gains a control */
 		const ce_movie_log *log = ce_session_movie_log(session);
-		std::string text;
-		for (int64_t i = 0; i < ce_movie_log_count(log); i++)
-		{
-			text += ce_movie_log_entry(log, i);
-			text += '\n';
-		}
+		ce_movie_log *copy = ce_movie_log_new();
+		ce_movie_log_assign(copy, log);
+		uint64_t textLen = 0;
+		const char *serialized = ce_movie_log_serialize(copy, 0, &textLen);
+		const std::string text(serialized, static_cast<size_t>(textLen));
+		ce_movie_log_free(copy);
 		if (!writeWholeFile(recordPath, reinterpret_cast<const uint8_t *>(text.data()), text.size()))
 		{
 			return fail(metaPath, "could not write " + recordPath);

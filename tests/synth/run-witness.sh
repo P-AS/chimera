@@ -986,6 +986,26 @@ DYNAMIC
 			fi
 		done
 
+		# A recording that starts as a movie whose LogKey names fewer controls
+		# than the machine has (made with an older package): a control it does
+		# not name joins the key when pressed, and every line gets its column,
+		# so the recording replays to the same machine. Left out, the press
+		# reached the machine but not the movie.
+		kname=gridWalker.win
+		krom="$here/roms/${kname%%.*}.testrom"
+		rm -f "$work/$kname.keyed.txt" "$work/$kname.keyed.ram.bin" "$work/$kname.keyed.vram.bin"
+		"$chimera_run" "$epkg" "$krom" "$here/movies/$kname.txt" --record "$work/$kname.keyed.txt" \
+			--record-key "#P1 Up|P1 Down|" > "$work/$kname.keyed.log" 2>&1; krc=$?
+		"$chimera_run" "$epkg" "$krom" "$work/$kname.keyed.txt" \
+			--dump "RAM=$work/$kname.keyed.ram.bin" --dump "VRAM=$work/$kname.keyed.vram.bin" > "$work/$kname.keyed.replay.log" 2>&1
+		if [ "$krc" -eq 0 ] && grep -q '^LogKey:#P1 Up|P1 Down|#P1 ' "$work/$kname.keyed.txt" \
+			&& cmp -s "$work/$kname.keyed.ram.bin" "$golden_dir/$kname.ram.bin" \
+			&& cmp -s "$work/$kname.keyed.vram.bin" "$golden_dir/$kname.vram.bin"; then
+			report "E:record:key-gains" PASS "a control the recording's LogKey did not name joined it, and the recording replays to the goldens"
+		else
+			report "E:record:key-gains" FAIL "rc=$krc, the LogKey did not grow, or the replay differs (see work/$kname.keyed*.log)"
+		fi
+
 		# the settings channel, natively: a non-default sync setting must diverge
 		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" 			--settings '{"initFillByte":171}' --dump "RAM=$work/engine.settings.ram.bin" 			> "$work/engine.settings.log" 2>&1
 		if [ ! -f "$work/engine.settings.ram.bin" ]; then
