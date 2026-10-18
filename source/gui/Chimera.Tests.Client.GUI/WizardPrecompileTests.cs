@@ -322,6 +322,9 @@ namespace Chimera.Tests.Client.GUI
 		// SIGILL on Linux, 0xC000001D on Windows (issue #74, eight sessions at once)
 		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(132), "illegal instruction");
 		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(unchecked((int)0xC000001D)), "illegal instruction");
+		// a C++ exception nothing caught: Intel's Vulkan driver raised one in every
+		// session, and the window said only that memory ran out (#306, #307)
+		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(unchecked((int)0xE06D7363)), "never caught");
 		// a headless session that met a message box quits with 64 (HeadlessMode):
 		// reported on Linux as "2 of 2 sessions failed (exit code 64)" (#296)
 		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(64), "message");

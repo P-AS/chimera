@@ -79,6 +79,7 @@ namespace Chimera.Client.GUI
 			-1073740791 => "crashed (stack buffer overrun)",        // 0xC0000409
 			-1073741571 => "crashed (ran out of stack)",            // 0xC00000FD
 			-1073741795 => "crashed (illegal instruction)",         // 0xC000001D: the same, on Windows
+			-529697949 => "crashed (an error raised and never caught, as a graphics driver can)", // 0xE06D7363: a C++ exception (issues 306, 307)
 			HeadlessMode.EXIT_CODE_DIALOG => "stopped at a message it could not show", // what it said is the refusal, when it said one
 			_ => $"exit code {code}",
 		};
@@ -301,7 +302,11 @@ namespace Chimera.Client.GUI
 				}
 				if (wantOfMemory)
 				{
-					LastFailure = OutOfMemoryMessage(processes.Count, sessionBytes);
+					// memory was judged from the machine's figures; when the sessions
+					// died of something else, that is said too - a driver's crash on
+					// a busy machine was reported as memory alone (issue 307)
+					LastFailure = OutOfMemoryMessage(processes.Count, sessionBytes)
+						+ (dead.All(p => DiedForWantOfMemory(p.ExitCode)) ? "" : $" The sessions ended: {why}.");
 					return null;
 				}
 
