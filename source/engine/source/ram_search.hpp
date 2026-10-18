@@ -191,4 +191,5 @@ private:
 	void startUnguarded(int size, bool misaligned, bool bigEndian, bool detailed);
 	int64_t filter(const Query &q, int previousType); /* search()'s work */
 	template <typename F> void forEachDense(bool needMemory, F f);
+	void filterSameAsPrevious(bool keepSame); /* filter()'s fast case */
 };

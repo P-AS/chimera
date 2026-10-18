@@ -389,6 +389,68 @@ template <typename F> void CeRamSearch::forEachDense(bool needMemory, F f)
 	}
 }
 
+/* Dense, equal or not equal to the previous value, every candidate on bytes
+ * of its own (step == size): an integer is the same exactly when its bytes
+ * are, whatever the byte order or sign, so the memory is compared with the
+ * previous image eight bytes at a time, and a candidate is looked at alone
+ * only in eight bytes that differ. One call per candidate made this about 7
+ * times slower than it needs to be (engine analysis, 2026-10-18). A float is
+ * equal within a margin, and is left to filter(). */
+void CeRamSearch::filterSameAsPrevious(bool keepSame)
+{
+	const int size = m_set.size;
+	const int lanes = 8 / size;
+	const uint64_t laneBits = (uint64_t{ 1 } << lanes) - 1;
+	const uint64_t laneMask = size == 4 ? 0xFFFFFFFFull : size == 2 ? 0xFFFFull : 0xFFull;
+	const uint8_t *prev = m_set.prevImage.data();
+	const int64_t prevSize = (int64_t)m_set.prevImage.size();
+	for (int64_t chunkStart = 0; chunkStart < m_domainSize; chunkStart += Chunk)
+	{
+		const int64_t chunkEnd = std::min(chunkStart + Chunk, m_domainSize);
+		const uint64_t firstSlot = (uint64_t)chunkStart / (uint64_t)size;
+		const uint64_t endSlot = std::min(m_set.slots, (uint64_t)(chunkEnd + size - 1) / (uint64_t)size);
+		if (firstSlot >= endSlot) break;
+		const uint64_t firstWord = firstSlot / 64, endWord = (endSlot + 63) / 64;
+		bool any = false;
+		for (uint64_t w = firstWord; w < endWord && !any; w++) any = m_set.bits[(size_t)w] != 0;
+		if (!any) continue;
+		const int64_t windowLen = std::min(chunkEnd + size - 1, m_domainSize) - chunkStart;
+		const uint8_t *mem = window(chunkStart, windowLen);
+		for (uint64_t w = firstWord; w < endWord; w++)
+		{
+			const uint64_t bits = m_set.bits[(size_t)w];
+			if (bits == 0) continue;
+			uint64_t differ = 0;
+			for (int g = 0; g < 64; g += lanes)
+			{
+				if (((bits >> g) & laneBits) == 0) continue;
+				const int64_t at = (int64_t)((w * 64 + (uint64_t)g) * (uint64_t)size);
+				const int64_t rel = at - chunkStart;
+				if (rel >= 0 && rel + 8 <= windowLen && at + 8 <= prevSize)
+				{
+					uint64_t a, b;
+					std::memcpy(&a, mem + rel, 8);
+					std::memcpy(&b, prev + at, 8);
+					const uint64_t x = a ^ b;
+					if (x == 0) continue;
+					for (int k = 0; k < lanes; k++)
+						if ((x >> (k * size * 8)) & laneMask) differ |= uint64_t{ 1 } << (g + k);
+					continue;
+				}
+				/* the domain's last bytes, or a chunk's edge: one candidate at a time */
+				for (int k = 0; k < lanes; k++)
+				{
+					if (((bits >> (g + k)) & 1) == 0) continue;
+					const int64_t one = at + (int64_t)k * size;
+					if (one - chunkStart + size > windowLen || one + size > prevSize) continue;
+					if (std::memcmp(mem + (one - chunkStart), prev + one, (size_t)size) != 0) differ |= uint64_t{ 1 } << (g + k);
+				}
+			}
+			m_set.bits[(size_t)w] = keepSame ? bits & ~differ : bits & differ;
+		}
+	}
+}
+
 bool CeRamSearch::mustBeSparse() const
 {
 	return m_detailed && m_previousType == PrevLastChange && m_misaligned && m_set.size > 1;
@@ -637,7 +699,17 @@ int64_t CeRamSearch::filter(const Query &q, int previousType)
 	 * used to be read twice, and on a bus each read is a call into the core. */
 	const bool takeImage = m_set.dense && !m_detailed && previousType == PrevLastSearch && !(m_base && m_ranges.empty());
 	if (takeImage) snapshotImage(m_nextImage);
-	if (m_set.dense)
+	/* the commonest search there is, "the same as before" or "changed", over a
+	 * whole domain, eight bytes at a time */
+	if (m_set.dense && !m_detailed && q.compare == CmpPrevious && (q.op == OpEqual || q.op == OpNotEqual)
+		&& q.display != DispFloat && m_set.step == m_set.size)
+	{
+		m_walkImage = takeImage ? &m_nextImage : nullptr;
+		filterSameAsPrevious(q.op == OpEqual);
+		m_walkImage = nullptr;
+		rebuildRank();
+	}
+	else if (m_set.dense)
 	{
 		const bool needMemory = !m_detailed && q.compare != CmpSpecificAddress && q.compare != CmpChanges;
 		m_walkImage = takeImage ? &m_nextImage : nullptr;

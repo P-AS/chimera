@@ -9287,3 +9287,27 @@ declare it keeps nothing, and one of a core of any name that does is recorded
 and keeps its greenzone; it failed when every GPU core was let keep its
 greenzone. The format tests that used the name Ruffle now use the declaration
 (34 pass), and the package parser reads the new key.
+
+## RAM Search compares "the same as before" eight bytes at a time (2026-10-18)
+
+**What was found.** The commonest RAM Search step - keep what is equal (or
+not equal) to its previous value, over a whole domain - called the general
+comparison once for every candidate: read it, read its previous value, and
+go through every kind of search to find this one.
+
+**What was decided.** For whole-number values, each candidate on bytes of
+its own, the memory is compared with the previous values eight bytes at a
+time, and a candidate is looked at alone only where those eight bytes
+differ. A whole number is the same exactly when its bytes are, whatever the
+byte order or sign; a float is equal within a margin and keeps the general
+path, as do candidates that overlap. Measured with chimera-run's RAM Search
+measurement on the PS2's 32 MB main memory, best of three: a byte search
+91 ms before and 26 ms after, 2-byte 57 ms and 24 ms, 4-byte 39 ms and 23 ms
+(the rest is taking the new previous values).
+
+**Tested.** The RAM Search model test (a random script of searches checked
+against a simple model of every candidate) covers it: with the eight-byte
+step's lane arithmetic broken it fails at the first such search. The
+engine's 30 unit tests pass, the witness 99 passed and 0 failed, the
+interface tests 1108 with none failed (23 skipped), and the Windows build
+compiles.
