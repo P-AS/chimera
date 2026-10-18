@@ -8486,3 +8486,42 @@ passed, 6 skipped for content not on this machine) pass with it.
 
 **Not checked:** a real disc swap going back over the swap in Chimera's
 interface; the test above does it inside miniBox.
+
+## Memory a core frees is given back on Linux, and untouched memory is not written on either system (user-decided, 2026-10-18)
+
+**What was found.** When a core frees memory (munmap, or MADV_DONTNEED, which
+is how its allocator gives memory back), miniBox has to make those pages
+read as zeros. It did that by writing zeros over every page, through the
+second view of the core's memory that the host uses. That allocated real
+memory for pages the core had never touched, and kept it: RPCS3 frees 4 GiB
+of address space it reserved and never used, at every boot. Nothing was
+ever handed back to the operating system either.
+
+**What was decided.** The owner asked for memory to be given back on Linux
+(by punching a hole in the file behind the core's memory, which reads back
+as zeros) and on Windows (by decommitting it). Windows cannot do it: a page
+committed in a view of a section stays committed. Measured on the GTX 1060
+box, VirtualFree refuses to decommit it (error 87); MEM_RESET keeps the
+bytes; DiscardVirtualMemory frees them but documents what reads back as
+undefined, which a deterministic machine cannot build on. So:
+- on both systems, a page that is clean and was zero when the core started
+  is zero already and is not written at all;
+- on Linux, a freed run of 16 pages or more goes back to the operating
+  system;
+- a shorter run, and any run on Windows, is written over as before.
+miniBox 1d2be2e.
+
+**Measured.** RPCS3 booting Bejeweled 3 for 60 frames, two runs each: the
+most memory it held went from 6.05 GB to 1.81 GB, and the run from 8.1 to
+9.0 seconds to 6.3, with the same frames.
+
+**Tested.** A new unit test frees 1 MiB that was written (the memory behind
+it went from 1024 KiB to 0) and 1 MiB that was not, in pieces too short to
+release (nothing was written), and reads zeros back through both views.
+Each part was seen to fail with it removed. Chimera's engine tests (30
+passed), the witness (89 passed), the RPCS3 core's test script (41 passed, 2
+skipped) and PCSX2's (44 passed, 6 skipped) pass with it.
+
+**Not done:** giving memory back on Windows, for the reason above. The
+owner may want DiscardVirtualMemory followed by writing the zeros, which
+frees nothing that stays in use, or another way; it is left open.
