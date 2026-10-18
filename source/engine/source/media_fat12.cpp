@@ -181,9 +181,17 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 			});
 		std::map<std::string, int> seen;
 		std::set<std::string> taken; /* every name given in this folder */
+		/* every file's own short name first: a counter given to an earlier
+		 * loser could be a later file's own name, and the folder then held two
+		 * entries of one name (engine analysis, 2026-10-18) */
+		std::set<std::string> natural;
 		for (auto &k : d->kids)
 		{
 			k->shortName = shortNameOf(k->name, k->dir);
+			natural.insert(k->shortName);
+		}
+		for (auto &k : d->kids)
+		{
 			if (int &n = seen[k->shortName]; ++n > 1)
 			{
 				/* ~1, ~2 ... taken from the sorted order, so the same folder
@@ -199,7 +207,7 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 					base += tail;
 					base.resize(8, ' ');
 					k->shortName = base + wanted.substr(8);
-					if (taken.count(k->shortName) == 0) break;
+					if (taken.count(k->shortName) == 0 && natural.count(k->shortName) == 0) break;
 				}
 			}
 			taken.insert(k->shortName);
@@ -217,19 +225,23 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 		return false;
 	}
 
-	uint32_t needed = 0;
+	/* in 64 bits, and no file bigger than the disk: summed in 32, a file of
+	 * terabytes wrapped round to a few clusters, passed, and its read then ran
+	 * past the image buffer (engine analysis, 2026-10-18) */
+	uint64_t needed = 0;
 	for (Node *d : dirs)
 	{
 		if (d == &root) continue;
 		/* "." and ".." come first in every subdirectory */
 		const uint64_t bytes = (d->kids.size() + 2) * 32;
-		d->clusters = static_cast<uint32_t>((bytes + kSectorSize - 1) / kSectorSize);
+		d->clusters = static_cast<uint32_t>(std::min<uint64_t>((bytes + kSectorSize - 1) / kSectorSize, kClusterCount + 1));
 		needed += d->clusters;
 	}
 	for (Node *f : filesFlat)
 	{
-		f->clusters = static_cast<uint32_t>((f->size + kSectorSize - 1) / kSectorSize);
-		needed += f->clusters;
+		const uint64_t clusters = (f->size + kSectorSize - 1) / kSectorSize;
+		f->clusters = static_cast<uint32_t>(std::min<uint64_t>(clusters, kClusterCount + 1));
+		needed += clusters;
 	}
 	if (needed > kClusterCount)
 	{

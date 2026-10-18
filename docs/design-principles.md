@@ -8997,3 +8997,57 @@ an export through a link, a failed open, a watch past a bus's end. Each failed
 with its part removed. The pipe changes, the bulk insert's speed, the core
 lookup and the per-machine keep have no new test. Engine tests (30), witness
 (97), interface tests and the Windows build pass.
+
+## The engine's low findings, third round: images, chimera-run, the GPU bridge (user-decided, 2026-10-18)
+
+**What was found.** More low findings of the engine analysis:
+- images: a short name given to resolve a clash could be a later file's own
+  name, so a floppy or an ISO's primary tree held two entries of one name; the
+  floppy's fit check summed in 32 bits, and a file of terabytes wrapped round,
+  passed and was read past the image buffer; the collector left out a file it
+  could not look at without a word, and in the Windows build packed nothing
+  from a network share;
+- chimera-run: --final-screenshot wrote the buffer as it stood (blank in a
+  plain run, the first pass's picture after a seek); a number that was not one
+  read as 0; --edit-from, --stop-at-seek and --play did nothing without the
+  option they belong to; the bus dumps called the core once a byte through a
+  32-bit address; a domain dump wrote zeros where the core handed nothing over;
+- the GPU bridge: fence names repeated across processes, so a name in a state
+  from another could be a live fence; the buffer pool's flags grew to any name
+  a core passed (512 MiB for one); three more readbacks into the core's memory
+  were not guarded; compile-cache stores shared one temporary name across
+  processes and were not flushed before the rename.
+
+**What was decided.** Each is fixed as its finding names: every natural name
+is reserved before counters are given; the fit is summed in 64 bits; a file
+that cannot be looked at stops the image, named, and names are worked out from
+the path alone; the last frame is drawn for the final screenshot (run again,
+drawn, after a seek); numbers are read whole; the lone options are refused;
+buses are read in runs; a short domain dump is said (stderr and the meta file,
+and still written, since core test scripts compare such files today); fence
+generations start at this process's context id; only the pool's own names are
+flagged; glGetNamedBufferSubData, glReadnPixels and glGetTextureSubImage go
+through the guard; a cache store has a name of its own and is on the disk
+before it is renamed.
+
+Not done here, and why: files a file manager leaves in a folder (Thumbs.db,
+.DS_Store) still change an image's hash - skipping them changes images, so it
+is the owner's to decide; Windows still gives cores a compatibility GL profile
+and Linux a core one - changing that changes every GL core on Windows, also
+the owner's; a domain read through a raw pointer can still run a core's fault
+handler (RPCS3), which needs a read from miniBox that never enters the guest;
+the journal's sync on Windows wants a measurement first; the session's extra
+copies at open, a timeout for a guest call and two opens at once are larger
+changes, left for their own round.
+
+**Tested.** New tests: image names (a floppy and an ISO folder where a later
+file's own name is the counter an earlier one would get), the final
+screenshot (the last frame's picture in a plain run and after a seek, in two
+runs) with a bad number and a lone --play, the pool's flags, and the three
+readbacks refused like the others when miniBox says no. Each failed with its
+part removed. The fit check, the collector, the bus dumps, the fence names and
+the cache store have no new test. The engine's 30 unit tests pass, the
+witness 98 passed and 0 failed, the interface tests 1107 with none failed
+(23 skipped, as before), the Windows build compiles, and the PCSX2 core's
+test script 44 passed, 0 failed, 6 skipped (the skips need discs that are not
+here).

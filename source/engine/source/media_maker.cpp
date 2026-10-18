@@ -374,22 +374,43 @@ bool mediaCollect(const std::string &folder, std::vector<MediaEntry> &out, std::
 		error = "cannot read " + folder + ": " + ec.message();
 		return false;
 	}
+	/* A file that cannot be looked at stops the image, named: it was left out
+	 * without a word, so the image could depend on the machine (engine
+	 * analysis, 2026-10-18). The name in the image is worked out from the path
+	 * alone (lexically_relative): fs::relative asks the file system, and in the
+	 * Windows build fails for every file on a network share, which then packed
+	 * nothing. */
+	std::string failed;
 	auto consider = [&](const fs::directory_entry &entry) {
 		/* symlink_status, not status: a symlink is skipped rather than
 		 * followed, because what it points at is not in this folder and
 		 * following it would make the output depend on something outside. */
 		const fs::file_status st = entry.symlink_status(ec);
-		if (ec || !fs::is_regular_file(st)) return;
+		if (ec)
+		{
+			if (failed.empty()) failed = entry.path().u8string() + ": " + ec.message();
+			return;
+		}
+		if (!fs::is_regular_file(st)) return;
 
 		MediaEntry e;
 		e.abs = entry.path().u8string();
-		std::string rel = fs::relative(entry.path(), root, ec).u8string();
-		if (ec || rel.empty()) return;
+		const fs::path relPath = entry.path().lexically_relative(root);
+		std::string rel = relPath.u8string();
+		if (relPath.empty() || *relPath.begin() == ".." || rel == ".")
+		{
+			if (failed.empty()) failed = entry.path().u8string() + ": its name inside the folder could not be worked out";
+			return;
+		}
 		for (char &c : rel)
 			if (c == '\\') c = '/';
 		e.rel = rel;
 		e.size = static_cast<uint64_t>(fs::file_size(entry.path(), ec));
-		if (ec) return;
+		if (ec)
+		{
+			if (failed.empty()) failed = entry.path().u8string() + ": " + ec.message();
+			return;
+		}
 		out.push_back(std::move(e));
 	};
 	/* Stepped with an error code: the range-for steps with operator++, which
@@ -399,6 +420,11 @@ bool mediaCollect(const std::string &folder, std::vector<MediaEntry> &out, std::
 	for (const fs::recursive_directory_iterator end; it != end;)
 	{
 		consider(*it);
+		if (!failed.empty())
+		{
+			error = "cannot read " + failed;
+			return false;
+		}
 		it.increment(ec);
 		if (ec)
 		{

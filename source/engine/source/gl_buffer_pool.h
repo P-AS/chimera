@@ -34,7 +34,13 @@ struct CeGlBufferPool
 	};
 
 	/* A name the driver just generated: ours from now on. */
-	void made(uint32_t name) { flag(ours, name, true); }
+	void made(uint32_t name)
+	{
+		flag(ours, name, true);
+		/* a name the driver gives again starts unmapped and mutable */
+		flag(mapped, name, false);
+		flag(immutable, name, false);
+	}
 
 	/* A name for the next gen, or 0 when the pool has none to give. */
 	uint32_t take()
@@ -63,8 +69,12 @@ struct CeGlBufferPool
 		return Delete::Real;
 	}
 
-	void noteMapped(uint32_t name, bool on) { flag(mapped, name, on); }
-	void noteImmutable(uint32_t name, bool on) { flag(immutable, name, on); }
+	/* Only for names the pool made: only those can be pooled, and a flag is
+	 * a bit at the name's index, so any name a guest passed - a stale or
+	 * garbage one near 2^32 - grew the vector to 512 MiB (engine analysis,
+	 * 2026-10-18). */
+	void noteMapped(uint32_t name, bool on) { if (is(ours, name)) flag(mapped, name, on); }
+	void noteImmutable(uint32_t name, bool on) { if (is(ours, name)) flag(immutable, name, on); }
 	bool isOurs(uint32_t name) const { return is(ours, name); }
 	bool isPooled(uint32_t name) const { return is(pooled, name); }
 	bool isMapped(uint32_t name) const { return is(mapped, name); }

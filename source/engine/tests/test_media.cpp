@@ -506,6 +506,60 @@ static void namesThatShortenAlikeStayApart()
 	assert(entries == 3 && names.size() == 3);
 }
 
+/* A counter given to an earlier loser must not be a later file's own short
+ * name: the folder held two entries of one name, and one file could not be
+ * reached (engine analysis, 2026-10-18). The later file's name sorts after
+ * the losers (lower case, '~' and '_' after letters), which is the case the
+ * old check missed. */
+static void aCounterIsNeverALaterFilesOwnName()
+{
+	std::string sha, err;
+	const fs::path floppy = workRoot() / "counter-floppy";
+	fs::remove_all(floppy);
+	put(floppy / "aaaaaaaa1.txt", "1");
+	put(floppy / "aaaaaaaa2.txt", "2");
+	put(floppy / "aaaaaa~2.txt", "3");
+	const fs::path img = workRoot() / "counter.img";
+	assert(chimera::mediaMake(floppy.string(), img.string(), chimera::MediaFormat::Fat12, nullptr, sha, err));
+	const std::vector<uint8_t> disk = slurp(img);
+	const uint32_t rootOff = (1u + 2u * 9u) * 512u;
+	std::set<std::string> names;
+	int entries = 0;
+	for (uint32_t i = 0; i < 224; i++)
+	{
+		const uint8_t *e = &disk[rootOff + i * 32];
+		if (e[0] == 0) break;
+		names.insert(std::string(reinterpret_cast<const char *>(e), 11));
+		entries++;
+	}
+	assert(entries == 3 && names.size() == 3);
+
+	/* the ISO's primary tree: two names that mangle alike, and a later file
+	 * whose own name is what the second would be given */
+	const fs::path tree = workRoot() / "counter-iso";
+	fs::remove_all(tree);
+	put(tree / "a!b.txt", "1");
+	put(tree / "a#b.txt", "2");
+	put(tree / "a_b.txt_2", "3");   /* A_B.TXT_2;1, the counter the second would get */
+	const fs::path iso = workRoot() / "counter.iso";
+	assert(chimera::mediaMake(tree.string(), iso.string(), chimera::MediaFormat::Iso9660, nullptr, sha, err));
+	const std::vector<uint8_t> bytes = slurp(iso);
+	const uint8_t *pvdRoot = &bytes[16 * 2048 + 156];
+	const uint32_t at = rd32le(pvdRoot + 2) * 2048, len = rd32le(pvdRoot + 10);
+	std::set<std::string> isoNames;
+	int isoEntries = 0;
+	for (uint32_t off = 0; off < len;)
+	{
+		const uint8_t recLen = bytes[at + off];
+		if (recLen == 0) break;
+		const uint8_t nameLen = bytes[at + off + 32];
+		const std::string name(reinterpret_cast<const char *>(&bytes[at + off + 33]), nameLen);
+		if (!(nameLen == 1 && (name[0] == 0 || name[0] == 1))) { isoNames.insert(name); isoEntries++; }
+		off += recLen;
+	}
+	assert(isoEntries == 3 && isoNames.size() == 3);
+}
+
 /* The path tables list folders by level, then by their parent's number,
  * then by name (ECMA-119 6.9.1). B/A and A/Z sit at the same level under
  * different parents: by name alone A came first, under a parent numbered
@@ -603,6 +657,7 @@ int main()
 	aFailedPackKeepsTheImageThatWasThere();
 	anEmptyFolderIsRefused();
 	namesThatShortenAlikeStayApart();
+	aCounterIsNeverALaterFilesOwnName();
 	pathTablesGoByParent();
 
 	fs::remove_all(workRoot());

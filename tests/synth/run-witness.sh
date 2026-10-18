@@ -471,6 +471,27 @@ open(p, 'wb').write(codecs.BOM_UTF16_LE + t.encode('utf-16-le'))
 			report "E:core-dies-in:init" FAIL "rc=$dirc: $(tail -1 "$work/dies-in-init.log" | cut -c1-120)"
 		fi
 
+		# CHIMERA-RUN SAYS WHAT IT WAS ASKED (2026-10-18): --final-screenshot is
+		# the last frame's own picture, in a plain run and after a seek (it was
+		# a blank buffer, or the first pass's picture); a number that is not
+		# one, and --play with nothing to be the first pass of, are refused
+		# rather than read as 0 and ignored.
+		fsdir="$work/final-shot"; rm -rf "$fsdir"; mkdir -p "$fsdir"
+		fsmovie="$here/movies/gridWalker.win.txt"; fsrom="$here/roms/gridWalker.testrom"
+		fslast=$(( $(grep -c '^|' "$fsmovie") - 1 ))
+		"$chimera_run" "$epkg" "$fsrom" "$fsmovie" --screenshot "$fslast=$fsdir/drawn.tga" > "$fsdir/drawn.log" 2>&1
+		"$chimera_run" "$epkg" "$fsrom" "$fsmovie" --final-screenshot "$fsdir/plain.tga" > "$fsdir/plain.log" 2>&1; fsa=$?
+		"$chimera_run" "$epkg" "$fsrom" "$fsmovie" --seek 30 --final-screenshot "$fsdir/seek.tga" > "$fsdir/seek.log" 2>&1; fsb=$?
+		"$chimera_run" "$epkg" "$fsrom" "$fsmovie" --frames 10x > "$fsdir/number.log" 2>&1; fsc=$?
+		"$chimera_run" "$epkg" "$fsrom" "$fsmovie" --play 20 > "$fsdir/play.log" 2>&1; fsd=$?
+		if [ "$fsa" -eq 0 ] && [ "$fsb" -eq 0 ] && cmp -s "$fsdir/drawn.tga" "$fsdir/plain.tga" && cmp -s "$fsdir/drawn.tga" "$fsdir/seek.tga" \
+			&& [ "$fsc" -ne 0 ] && [ "$fsc" -lt 128 ] && grep -q "wants a whole number, not '10x'" "$fsdir/number.log" \
+			&& [ "$fsd" -ne 0 ] && [ "$fsd" -lt 128 ] && grep -q "first pass of a --seek" "$fsdir/play.log"; then
+			report "E:run:final-screenshot" PASS "the final screenshot is the last frame's picture, plain and after a seek; a bad number and a lone --play are refused"
+		else
+			report "E:run:final-screenshot" FAIL "rc=$fsa/$fsb/$fsc/$fsd (see work/final-shot/*.log)"
+		fi
+
 		# A PACKAGE WHOSE SIZES ARE IMPOSSIBLE is refused with the number and
 		# the range, and the process goes on to say so. A width of -1 sized a
 		# picture buffer of 2^64 bytes and ended Chimera (engine analysis,

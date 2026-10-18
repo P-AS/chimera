@@ -90,6 +90,19 @@ int main()
 		assert(pool.deleted(3) == D::Real);
 	}
 
+	{
+		/* a name the pool did not make is not flagged: the flags are bits at
+		 * the name's index, and a guest's stale name near 2^32 made the pool
+		 * allocate 512 MiB for one (2026-10-18) */
+		CeGlBufferPool pool;
+		pool.noteMapped(0xFFFFFF00u, true);
+		pool.noteImmutable(0xFFFFFF01u, true);
+		assert(!pool.isMapped(0xFFFFFF00u) && !pool.isImmutable(0xFFFFFF01u));
+		pool.made(7);
+		pool.noteMapped(7, true);
+		assert(pool.isMapped(7));
+	}
+
 	std::puts("gl buffer pool: ok");
 	return 0;
 }

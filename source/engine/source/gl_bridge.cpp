@@ -1120,8 +1120,13 @@ static uintptr_t syncName(GLsync sync)
 	}
 	else
 	{
+		/* A new slot's generations start where this process says, not at 0:
+		 * every process named its first fence 0x100000001, so a name in a state
+		 * from another process could be a live, unrelated fence here (engine
+		 * analysis, 2026-10-18). The context id is this process's own. */
+		static const uint32_t base = static_cast<uint32_t>(g_context_id ^ (g_context_id >> 32));
 		at = g_syncs.size();
-		g_syncs.push_back(SyncSlot{ nullptr, 0 });
+		g_syncs.push_back(SyncSlot{ nullptr, base });
 	}
 	g_syncs[at].sync = sync;
 	g_syncs[at].gen++;
@@ -1715,6 +1720,78 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			if (packBuffer == 0 && p->pixels != nullptr && !guestCan(p->pixels, 1, true))
 				return glRefused(op, "glReadPixels", kBadPointer);
 			glReadPixels(p->x, p->y, p->width, p->height, p->format, p->type, p->pixels);
+			return 0;
+		}
+
+		/* Three more readbacks into the core's memory go through the same guard
+		 * (engine analysis, 2026-10-18: it covered 3 of 12): a named buffer's
+		 * bytes, of exactly `size`; and pixels and a texture's part, whose
+		 * shape is the call's own and whose bufSize caps what GL may write. */
+		case CHIMERA_GL_OP_glGetNamedBufferSubData:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glGetNamedBufferSubData *>(a);
+			GL_PROVIDED_OR_REFUSE(glGetNamedBufferSubData);
+			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, true)) return glRefused(op, "glGetNamedBufferSubData", kBadPointer);
+			uint8_t *scratch = p->data != nullptr && p->size > 0 ? bounceFor((size_t)p->size) : nullptr;
+			if (scratch == nullptr)
+			{
+				glGetNamedBufferSubData(p->buffer, p->offset, p->size, p->data);
+				return 0;
+			}
+			glGetNamedBufferSubData(p->buffer, p->offset, p->size, scratch);
+			bounceCheckCanary((size_t)p->size, "glGetNamedBufferSubData");
+			memcpy(p->data, scratch, (size_t)p->size);
+			return 0;
+		}
+
+		case CHIMERA_GL_OP_glReadnPixels:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glReadnPixels *>(a);
+			GL_PROVIDED_OR_REFUSE(glReadnPixels);
+			size_t tight = 0, scratch = 0;
+			PixelRows shape;
+			uint8_t *buf = nullptr;
+			if (pixelReadGuarded(p->format, p->type, p->width, p->height, p->data, &tight, &scratch, &shape)
+				&& p->bufSize >= 0 && tight <= (size_t)p->bufSize && (buf = bounceFor(scratch)) != nullptr)
+			{
+				if (!guestCan(p->data, tight, true)) return glRefused(op, "glReadnPixels", kBadPointer);
+				glReadnPixels(p->x, p->y, p->width, p->height, p->format, p->type, (GLsizei)scratch, buf);
+				bounceCheckCanary(scratch, "glReadnPixels");
+				copyRows(p->data, buf, shape);
+				return 0;
+			}
+			GLint packBuffer = 0;
+			glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
+			if (packBuffer == 0 && p->data != nullptr && p->bufSize > 0 && !guestCan(p->data, (size_t)p->bufSize, true))
+				return glRefused(op, "glReadnPixels", kBadPointer);
+			glReadnPixels(p->x, p->y, p->width, p->height, p->format, p->type, p->bufSize, p->data);
+			return 0;
+		}
+
+		case CHIMERA_GL_OP_glGetTextureSubImage:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glGetTextureSubImage *>(a);
+			GL_PROVIDED_OR_REFUSE(glGetTextureSubImage);
+			size_t tight = 0, scratch = 0;
+			PixelRows shape;
+			uint8_t *buf = nullptr;
+			if (p->depth == 1
+				&& pixelReadGuarded(p->format, p->type, p->width, p->height, p->pixels, &tight, &scratch, &shape)
+				&& p->bufSize >= 0 && tight <= (size_t)p->bufSize && (buf = bounceFor(scratch)) != nullptr)
+			{
+				if (!guestCan(p->pixels, tight, true)) return glRefused(op, "glGetTextureSubImage", kBadPointer);
+				glGetTextureSubImage(p->texture, p->level, p->xoffset, p->yoffset, p->zoffset, p->width, p->height, p->depth,
+					p->format, p->type, (GLsizei)scratch, buf);
+				bounceCheckCanary(scratch, "glGetTextureSubImage");
+				copyRows(p->pixels, buf, shape);
+				return 0;
+			}
+			GLint packBuffer = 0;
+			glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
+			if (packBuffer == 0 && p->pixels != nullptr && p->bufSize > 0 && !guestCan(p->pixels, (size_t)p->bufSize, true))
+				return glRefused(op, "glGetTextureSubImage", kBadPointer);
+			glGetTextureSubImage(p->texture, p->level, p->xoffset, p->yoffset, p->zoffset, p->width, p->height, p->depth,
+				p->format, p->type, p->bufSize, p->pixels);
 			return 0;
 		}
 

@@ -19,6 +19,14 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <atomic>
+
+#ifdef _WIN32
+#include <io.h>
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace
 {
@@ -178,10 +186,26 @@ static __attribute__((noinline)) uintptr_t dispatch_impl(uintptr_t op, uintptr_t
 		if (full.empty() || !args->size) return 0;
 		const std::string rel = s_rel;
 		make_dirs(full);
-		const std::string tmp = full + ".part";
+		/* A temporary name of this process's own, and the bytes on the disk
+		 * before the name is taken: two processes storing one object (a second
+		 * Chimera on the same game) opened one ".part" and one cut the other's
+		 * short, and after a power cut a renamed object could hold zeros, which
+		 * a fetch hands the core as code (engine analysis, 2026-10-18). */
+		static std::atomic<uint64_t> made{ 0 };
+#ifdef _WIN32
+		const unsigned long pid = static_cast<unsigned long>(GetCurrentProcessId());
+#else
+		const unsigned long pid = static_cast<unsigned long>(getpid());
+#endif
+		const std::string tmp = full + ".part." + std::to_string(pid) + "." + std::to_string(made++);
 		FILE *f = chimera::openFile(tmp.c_str(), "wb");
 		if (!f) return 0;
 		bool ok = fwrite(reinterpret_cast<const void *>(static_cast<uintptr_t>(args->data)), 1, static_cast<size_t>(args->size), f) == static_cast<size_t>(args->size);
+#ifdef _WIN32
+		ok = ok && fflush(f) == 0 && _commit(_fileno(f)) == 0;
+#else
+		ok = ok && fflush(f) == 0 && fsync(fileno(f)) == 0;
+#endif
 		ok = fclose(f) == 0 && ok;
 		if (!ok || !chimera::replaceFile(tmp.c_str(), full.c_str())) { chimera::removeFile(tmp.c_str()); return 0; }
 		s_stored++;

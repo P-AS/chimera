@@ -64,6 +64,8 @@
  * log itself, and it is written to <out.txt>. Feeding that file back in as an
  * ordinary movie must reach the same machine - which is what witnesses record
  * mode and entry generation, the paths playback never touches.
+ * --final-screenshot <path> writes the picture of the frame the run ended on,
+ * drawn for it (after a --seek, that frame is run again, drawn), as a TGA.
  * --record-key <LogKey> starts that recording as a movie whose LogKey is this
  * one (as a movie made with an older package, which had fewer controls): a
  * control it does not name must join it when pressed.
@@ -123,7 +125,9 @@
 #include "chimera/engine.h"
 #include "../source/file_io.hpp"
 
+#include <cerrno>
 #include <chrono>
+#include <cstdlib>
 #include <clocale>
 #include <ctime>
 #include <cstdio>
@@ -245,6 +249,23 @@ std::vector<std::string> utf8Arguments()
 
 } // namespace
 
+/* A number an option was given, all of it: atoll read "--seek abc" as frame 0
+ * and "--frames 10x" as 10 (engine analysis, 2026-10-18). A bad one is said
+ * and the run refused once the options are read. */
+static std::string g_badNumber;
+static int64_t wholeNumber(const std::string &text, const std::string &option)
+{
+	errno = 0;
+	char *end = nullptr;
+	const long long value = std::strtoll(text.c_str(), &end, 10);
+	if (text.empty() || end == text.c_str() || *end != '\0' || errno == ERANGE)
+	{
+		if (g_badNumber.empty()) g_badNumber = option + " wants a whole number, not '" + text + "'";
+		return 0;
+	}
+	return static_cast<int64_t>(value);
+}
+
 int main(int argc, char **argv)
 {
 #if defined(_WIN32)
@@ -294,6 +315,7 @@ int main(int argc, char **argv)
 	std::string recordPath;
 	std::string recordKey;   /* --record-key: the LogKey the recording starts with */
 	std::string recordStartKey;   /* the recording's LogKey when it began */
+	std::string shortDumps;       /* domains a --dump got fewer bytes of than their size */
 	bool recordInKeyOrder = false; /* the input movie named its columns */
 	std::string savedataDir;
 	std::string projectPath;
@@ -387,8 +409,8 @@ int main(int argc, char **argv)
 	{
 		std::string arg = argv[i];
 		if (arg == "--rerecord") rerecord = true;
-		else if (arg == "--seek" && i + 1 < argc) seekFrame = std::atoll(argv[++i]);
-		else if (arg == "--play" && i + 1 < argc) playFrames = std::atoll(argv[++i]);
+		else if (arg == "--seek" && i + 1 < argc) seekFrame = wholeNumber(argv[++i], arg);
+		else if (arg == "--play" && i + 1 < argc) playFrames = wholeNumber(argv[++i], arg);
 		else if (arg == "--edit-from" && i + 1 < argc) editFrom = argv[++i];
 		else if (arg == "--final-state" && i + 1 < argc) finalStatePath = argv[++i];
 		else if (arg == "--final-screenshot" && i + 1 < argc) finalShot = argv[++i];
@@ -402,14 +424,14 @@ int main(int argc, char **argv)
 		}
 		else if (arg == "--bands" && i + 1 < argc) bands = argv[++i];
 		else if (arg == "--spill" && i + 1 < argc) spillDir = argv[++i];
-		else if (arg == "--greenzone" && i + 1 < argc) greenzoneMb = std::atoll(argv[++i]);
-		else if (arg == "--greenzone-disk" && i + 1 < argc) greenzoneDiskMb = std::atoll(argv[++i]);
+		else if (arg == "--greenzone" && i + 1 < argc) greenzoneMb = wholeNumber(argv[++i], arg);
+		else if (arg == "--greenzone-disk" && i + 1 < argc) greenzoneDiskMb = wholeNumber(argv[++i], arg);
 		else if (arg == "--greenzone-map" && i + 1 < argc) greenzoneMap = argv[++i];
-		else if (arg == "--greenzone-max-stride" && i + 1 < argc) greenzoneMaxStride = std::atoll(argv[++i]);
-		else if (arg == "--greenzone-band-goal" && i + 1 < argc) greenzoneBandGoal = std::atoll(argv[++i]);
-		else if (arg == "--greenzone-bytes" && i + 1 < argc) greenzoneBytes = std::atoll(argv[++i]);
-		else if (arg == "--greenzone-period" && i + 1 < argc) greenzonePeriod = std::atoll(argv[++i]);
-		else if (arg == "--greenzone-period-at" && i + 1 < argc) greenzonePeriodAt = std::atoll(argv[++i]);
+		else if (arg == "--greenzone-max-stride" && i + 1 < argc) greenzoneMaxStride = wholeNumber(argv[++i], arg);
+		else if (arg == "--greenzone-band-goal" && i + 1 < argc) greenzoneBandGoal = wholeNumber(argv[++i], arg);
+		else if (arg == "--greenzone-bytes" && i + 1 < argc) greenzoneBytes = wholeNumber(argv[++i], arg);
+		else if (arg == "--greenzone-period" && i + 1 < argc) greenzonePeriod = wholeNumber(argv[++i], arg);
+		else if (arg == "--greenzone-period-at" && i + 1 < argc) greenzonePeriodAt = wholeNumber(argv[++i], arg);
 		else if (arg == "--stop-at-seek") stopAtSeek = true;
 		else if (arg == "--record" && i + 1 < argc) recordPath = argv[++i];
 		else if (arg == "--record-key" && i + 1 < argc) recordKey = argv[++i];
@@ -452,10 +474,10 @@ int main(int argc, char **argv)
 			 * and optionally how many frames after a load are not kept */
 			const std::string spec = argv[++i];
 			const auto comma = spec.find(',');
-			picturesMb = std::atoll(spec.substr(0, comma).c_str());
-			if (comma != std::string::npos) picturesSettle = std::atoll(spec.substr(comma + 1).c_str());
+			picturesMb = wholeNumber(spec.substr(0, comma), arg);
+			if (comma != std::string::npos) picturesSettle = wholeNumber(spec.substr(comma + 1), arg);
 		}
-		else if (arg == "--kept-pictures-check" && i + 1 < argc) { keptCheck = std::atoll(argv[++i]); renderEveryFrame = true; }
+		else if (arg == "--kept-pictures-check" && i + 1 < argc) { keptCheck = wholeNumber(argv[++i], arg); renderEveryFrame = true; }
 		else if (arg == "--settle-probe-state") probeByState = true;
 		else if (arg == "--settle-probe" && i + 1 < argc)
 		{
@@ -466,8 +488,8 @@ int main(int argc, char **argv)
 			const auto c1 = spec.find(',');
 			if (c1 == std::string::npos) return fail(metaPath, "--settle-probe wants <frame>,<count>[,<tga prefix>]");
 			const auto c2 = spec.find(',', c1 + 1);
-			probeFrom = std::atoll(spec.substr(0, c1).c_str());
-			probeCount = std::atoll(spec.substr(c1 + 1, c2 == std::string::npos ? c2 : c2 - c1 - 1).c_str());
+			probeFrom = wholeNumber(spec.substr(0, c1), arg);
+			probeCount = wholeNumber(spec.substr(c1 + 1, c2 == std::string::npos ? c2 : c2 - c1 - 1), arg);
 			if (c2 != std::string::npos) probePrefix = spec.substr(c2 + 1);
 			renderEveryFrame = true;
 		}
@@ -487,14 +509,14 @@ int main(int argc, char **argv)
 		}
 		else if (arg == "--greenzone-check") greenzoneCheck = true;
 		else if (arg == "--greenzone-check-vs-restore") { greenzoneCheck = true; gzTruthFromRestore = true; }
-		else if (arg == "--rewind-warmup" && i + 1 < argc) rewindWarmup = std::atoll(argv[++i]);
+		else if (arg == "--rewind-warmup" && i + 1 < argc) rewindWarmup = wholeNumber(argv[++i], arg);
 		else if (arg == "--rewind-loop" && i + 1 < argc)
 		{
 			std::string spec = argv[++i];
 			auto comma = spec.find(',');
 			if (comma == std::string::npos) return fail(metaPath, "--rewind-loop wants <frame>,<times>");
-			rewindTo = std::atoll(spec.substr(0, comma).c_str());
-			rewindTimes = std::atoll(spec.substr(comma + 1).c_str());
+			rewindTo = wholeNumber(spec.substr(0, comma), arg);
+			rewindTimes = wholeNumber(spec.substr(comma + 1), arg);
 		}
 		else if (arg == "--history-in" && i + 1 < argc) historyIn = argv[++i];
 		else if (arg == "--history-out" && i + 1 < argc) historyOut = argv[++i];
@@ -511,25 +533,25 @@ int main(int argc, char **argv)
 			std::string spec = argv[++i];
 			auto eq = spec.find('=');
 			if (eq == std::string::npos) return fail(metaPath, "--save-state wants <frame>=<path>");
-			stateOuts[std::atoll(spec.substr(0, eq).c_str())] = spec.substr(eq + 1);
+			stateOuts[wholeNumber(spec.substr(0, eq), arg)] = spec.substr(eq + 1);
 		}
 		else if (arg == "--state" && i + 1 < argc) stateIn = argv[++i];
 		else if (arg == "--state-file" && i + 1 < argc) stateFileIn = argv[++i];
-		else if (arg == "--state-file-roundtrip" && i + 1 < argc) stateFileRoundTrip = std::atoll(argv[++i]);
+		else if (arg == "--state-file-roundtrip" && i + 1 < argc) stateFileRoundTrip = wholeNumber(argv[++i], arg);
 		else if (arg == "--save-state-file" && i + 1 < argc)
 		{
 			std::string spec = argv[++i];
 			auto eq = spec.find('=');
 			if (eq == std::string::npos) return fail(metaPath, "--save-state-file wants <frame>=<path>");
-			stateFileOuts[std::atoll(spec.substr(0, eq).c_str())] = spec.substr(eq + 1);
+			stateFileOuts[wholeNumber(spec.substr(0, eq), arg)] = spec.substr(eq + 1);
 		}
-		else if (arg == "--frames" && i + 1 < argc) frameLimit = std::atoll(argv[++i]);
+		else if (arg == "--frames" && i + 1 < argc) frameLimit = wholeNumber(argv[++i], arg);
 		else if (arg == "--screenshot" && i + 1 < argc)
 		{
 			std::string spec = argv[++i];
 			auto eq = spec.find('=');
 			if (eq == std::string::npos) return fail(metaPath, "--screenshot wants <frame>=<path>");
-			shots[std::atoll(spec.substr(0, eq).c_str())] = spec.substr(eq + 1);
+			shots[wholeNumber(spec.substr(0, eq), arg)] = spec.substr(eq + 1);
 		}
 		else if (arg == "--ram-search-bench" && i + 1 < argc) ramSearchBench = argv[++i];
 		else if (arg == "--property-trace" && i + 1 < argc)
@@ -555,6 +577,13 @@ int main(int argc, char **argv)
 		else if (projectPath.empty() && moviePath == nullptr) moviePath = argv[i];
 		else return fail(metaPath, "unexpected argument: " + arg);
 	}
+	if (!g_badNumber.empty()) return fail(metaPath, g_badNumber);
+	/* options that do nothing without another were taken and ignored: say so
+	 * (engine analysis, 2026-10-18) */
+	if ((!editFrom.empty() || stopAtSeek) && seekFrame < 0)
+		return fail(metaPath, "--edit-from and --stop-at-seek act on a --seek: give one");
+	if (playFrames >= 0 && seekFrame < 0 && rewindTo < 0)
+		return fail(metaPath, "--play is the first pass of a --seek or a --rewind-loop: give one, or use --frames");
 	/* one reference machine, for one frame: a seek and a rewind to two
 	 * different frames would compare one landing against the other's machine
 	 * and always report a divergence */
@@ -836,7 +865,7 @@ int main(int argc, char **argv)
 			{
 				if (at > bands.size()) break;
 				const size_t comma = bands.find(',', at);
-				slot = std::atoll(bands.substr(at, comma == std::string::npos ? comma : comma - at).c_str());
+				slot = wholeNumber(bands.substr(at, comma == std::string::npos ? comma : comma - at), "--bands");
 				if (comma == std::string::npos) break;
 				at = comma + 1;
 			}
@@ -1026,8 +1055,9 @@ int main(int argc, char **argv)
 			: recAxes[static_cast<size_t>(i)].data();
 		auto shot = shots.find(i);
 		const bool unseen = probeUnseen && probeFrom >= 0 && i < probeFrom;
+		const bool finalFrame = !finalShot.empty() && i == frames - 1;   /* drawn for --final-screenshot */
 		if (ce_session_movie_advance(session, 0, axes,
-			((renderEveryFrame && !unseen) || shot != shots.end()) ? 1 : 0) < 0)
+			((renderEveryFrame && !unseen) || shot != shots.end() || finalFrame) ? 1 : 0) < 0)
 		{
 			/* as fail(), and how many frames were done when it stopped: a frame
 			 * the core died in is not one of them (the witness's E:core-dies-*) */
@@ -1681,7 +1711,18 @@ int main(int argc, char **argv)
 		}
 		int64_t size = ce_session_domain_size(session, found);
 		std::vector<uint8_t> bytes(static_cast<size_t>(size));
-		ce_session_domain_read(session, found, 0, bytes.data(), size);
+		const int64_t got = ce_session_domain_read(session, found, 0, bytes.data(), size);
+		/* A core whose domain has no pointer hands over nothing, and a file of
+		 * zeros was written as though it were the memory, which two runs then
+		 * "agree" on (engine analysis, 2026-10-18). Said, here and in the
+		 * meta file; still written, since core test scripts compare such
+		 * files today. */
+		if (got != size)
+		{
+			std::fprintf(stderr, "chimera-run: --dump %s: the core handed over %lld of its %lld bytes; the rest of the file is zeros\n",
+				dump.first.c_str(), (long long)got, (long long)size);
+			shortDumps += (shortDumps.empty() ? "" : ",") + dump.first;
+		}
 		if (!writeWholeFile(dump.second, bytes.data(), bytes.size()))
 		{
 			return fail(metaPath, "could not write " + dump.second);
@@ -1719,13 +1760,6 @@ int main(int argc, char **argv)
 		std::printf("savedata=%d\n", files);
 	}
 
-	if (!finalShot.empty()
-		&& !writeTga(finalShot, ce_session_video(session),
-			ce_session_video_width(session), ce_session_video_height(session)))
-	{
-		return fail(metaPath, "could not write " + finalShot);
-	}
-
 	if (!finalBuses.empty())
 	{
 		/* Every bus the core publishes, end to end, where the run finished.
@@ -1738,11 +1772,22 @@ int main(int argc, char **argv)
 			int64_t size = ce_session_bus_size(session, b);
 			text += ce_session_bus_name(session, b);
 			text += ' ';
+			/* in runs, not a call into the guest per byte through a 32-bit
+			 * address: a bus of 4 GiB was four billion calls (engine analysis,
+			 * 2026-10-18) */
 			uint64_t h = 1469598103934665603ull;
-			for (int64_t a = 0; a < size; a++)
+			std::vector<uint8_t> run(1 << 20);
+			for (int64_t a = 0; a < size;)
 			{
-				h ^= (uint64_t)(uint8_t)ce_session_bus_peek(session, b, (int32_t)a);
-				h *= 1099511628211ull;
+				const int64_t want = std::min<int64_t>(static_cast<int64_t>(run.size()), size - a);
+				const int64_t got = ce_session_bus_read(session, b, a, run.data(), want);
+				if (got != want) return fail(metaPath, std::string("could not read the bus ") + ce_session_bus_name(session, b));
+				for (int64_t k = 0; k < got; k++)
+				{
+					h ^= run[static_cast<size_t>(k)];
+					h *= 1099511628211ull;
+				}
+				a += got;
 			}
 			char line[64];
 			std::snprintf(line, sizeof line, "%016llx %lld\n", (unsigned long long)h, (long long)size);
@@ -1762,8 +1807,13 @@ int main(int argc, char **argv)
 		if (which < 0) return fail(metaPath, "no bus named " + bd.first);
 		int64_t size = ce_session_bus_size(session, which);
 		std::vector<uint8_t> bytes(static_cast<size_t>(size));
-		for (int64_t a = 0; a < size; a++)
-			bytes[static_cast<size_t>(a)] = (uint8_t)ce_session_bus_peek(session, which, (int32_t)a);
+		for (int64_t a = 0; a < size;)
+		{
+			const int64_t want = std::min<int64_t>(int64_t{ 1 } << 20, size - a);
+			const int64_t got = ce_session_bus_read(session, which, a, bytes.data() + a, want);
+			if (got != want) return fail(metaPath, "could not read the bus " + bd.first);
+			a += got;
+		}
 		if (!writeWholeFile(bd.second, bytes.data(), bytes.size()))
 			return fail(metaPath, "could not write " + bd.second);
 	}
@@ -1779,6 +1829,26 @@ int main(int argc, char **argv)
 		{
 			return fail(metaPath, "could not write " + finalStatePath);
 		}
+	}
+
+	if (!finalShot.empty())
+	{
+		/* The picture of the frame the run ended on, drawn for it. The buffer
+		 * as it stood was blank in a plain run (frames are not drawn unless
+		 * asked) and, after a --seek, the last picture of the first pass, and a
+		 * blank or wrong file was reported as written (engine analysis,
+		 * 2026-10-18). So the last frame is run again, drawn - after every
+		 * other dump, since a GPU core's machine can differ by what a drawn
+		 * frame reads back. */
+		const int64_t at = ce_session_frame(session);
+		if (at <= 0) return fail(metaPath, "--final-screenshot: no frame was run, so there is no picture");
+		/* a plain run drew its last frame in the loop; after a seek or a
+		 * rewind the last frame is run again, drawn, from the greenzone */
+		const bool drawnInLoop = at == frames && seekFrame < 0 && rewindTo < 0;
+		if (!drawnInLoop && (ce_session_seek(session, at - 1) != 0 || ce_session_movie_advance(session, 0, nullptr, 1) < 0))
+			return fail(metaPath, std::string("--final-screenshot: could not draw the last frame: ") + ce_session_last_error(session));
+		if (!writeTga(finalShot, ce_session_video(session), ce_session_video_width(session), ce_session_video_height(session)))
+			return fail(metaPath, "could not write " + finalShot);
 	}
 
 	if (!historyOut.empty())
@@ -1808,6 +1878,7 @@ int main(int argc, char **argv)
 	if (!metaPath.empty())
 	{
 		std::string meta = "status=OK\ndetail=\nframes=" + std::to_string(frames) + "\nstartframe=0\n";
+		if (!shortDumps.empty()) meta += "shortdumps=" + shortDumps + "\n";
 		// the display aspect the core reports for the last picture, when it does
 		int32_t ax = 0, ay = 0;
 		if (ce_session_display_aspect(session, &ax, &ay))

@@ -328,10 +328,19 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 					if (a->dir != b->dir) return a->dir > b->dir;
 					return a->name.compare(b->name) < 0;
 				});
+			/* every entry's own names first, so a counter never takes a later
+			 * one's (engine analysis, 2026-10-18) */
+			std::set<std::string> naturalIso;
+			std::set<std::u16string> naturalJol;
 			for (auto &k : d->kids)
 			{
 				k->iso = isoName(k->name, k->dir);
 				k->joliet = jolietName(k->name);
+				naturalIso.insert(k->iso);
+				naturalJol.insert(k->joliet);
+			}
+			for (auto &k : d->kids)
+			{
 				/* A mangled name can collide with another mangled name. The
 				 * loser gets a counter, chosen by the order above, so the same
 				 * folder always produces the same disambiguation. */
@@ -348,7 +357,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 						std::string cut = base;
 						if (cut.size() + suffix.size() > 30) cut.resize(30 - suffix.size());
 						k->iso = cut + suffix + (k->dir ? "" : ";1");
-						if (takenIso.count(k->iso) == 0) break;
+						if (takenIso.count(k->iso) == 0 && naturalIso.count(k->iso) == 0) break;
 					}
 				}
 				takenIso.insert(k->iso);
@@ -362,7 +371,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 						std::u16string cut = base;
 						if (cut.size() + suffix.size() > 64) cut.resize(64 - suffix.size());
 						k->joliet = cut + suffix;
-						if (takenJol.count(k->joliet) == 0) break;
+						if (takenJol.count(k->joliet) == 0 && naturalJol.count(k->joliet) == 0) break;
 					}
 				}
 				takenJol.insert(k->joliet);
