@@ -1,8 +1,10 @@
 #include "host_dyn.hpp"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <mutex>
 #include <string>
 
 #if defined(_WIN32)
@@ -10,6 +12,7 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#include <unistd.h>
 #endif
 
 namespace chimera {
@@ -20,42 +23,6 @@ HostApi g_api;
 void *g_lib = nullptr;
 bool g_ok = false;
 std::string g_error;
-
-void *openBesideUs(const char *name)
-{
-#if defined(_WIN32)
-	HMODULE self = nullptr;
-	wchar_t path[MAX_PATH];
-	if (GetModuleHandleExW(
-			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-			reinterpret_cast<LPCWSTR>(&openBesideUs), &self)
-		&& GetModuleFileNameW(self, path, MAX_PATH) != 0)
-	{
-		std::wstring dir(path);
-		auto slash = dir.find_last_of(L"\\/");
-		if (slash != std::wstring::npos)
-		{
-			std::wstring full = dir.substr(0, slash + 1);
-			for (const char *c = name; *c != '\0'; c++) full.push_back(static_cast<wchar_t>(*c));
-			if (HMODULE h = LoadLibraryW(full.c_str())) return h;
-		}
-	}
-	return LoadLibraryA(name);
-#else
-	Dl_info info;
-	if (dladdr(reinterpret_cast<void *>(&openBesideUs), &info) != 0 && info.dli_fname != nullptr)
-	{
-		std::string dir(info.dli_fname);
-		auto slash = dir.find_last_of('/');
-		if (slash != std::string::npos)
-		{
-			std::string full = dir.substr(0, slash + 1) + name;
-			if (void *h = dlopen(full.c_str(), RTLD_NOW | RTLD_LOCAL)) return h;
-		}
-	}
-	return dlopen(name, RTLD_NOW | RTLD_LOCAL);
-#endif
-}
 
 void *sym(void *lib, const char *name)
 {
@@ -76,15 +43,11 @@ bool bind(T &fn, const char *name)
 void loadOnce()
 {
 #if defined(_WIN32)
-	g_lib = openBesideUs("libminiboxhost.dll");
+	g_lib = openLibraryBesideUs("libminiboxhost.dll", false, g_error);
 #else
-	g_lib = openBesideUs("libminiboxhost.so");
+	g_lib = openLibraryBesideUs("libminiboxhost.so", false, g_error);
 #endif
-	if (g_lib == nullptr)
-	{
-		g_error = "libminiboxhost not found beside libchimera";
-		return;
-	}
+	if (g_lib == nullptr) return;
 	g_ok = bind(g_api.wbx_build_info, "wbx_build_info")
 		&& bind(g_api.wbx_create_host, "wbx_create_host")
 		&& bind(g_api.wbx_destroy_host, "wbx_destroy_host")
@@ -144,12 +107,106 @@ void loadOnce()
 	}
 }
 
+std::mutex g_loadLock;
+
 } // namespace
+
+#if defined(_WIN32)
+static std::string lastErrorText(DWORD code)
+{
+	wchar_t *text = nullptr;
+	const DWORD n = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+		nullptr, code, 0, reinterpret_cast<LPWSTR>(&text), 0, nullptr);
+	std::string out;
+	if (n != 0 && text != nullptr)
+	{
+		const int len = WideCharToMultiByte(CP_UTF8, 0, text, (int)n, nullptr, 0, nullptr, nullptr);
+		out.resize(len > 0 ? (size_t)len : 0);
+		if (len > 0) WideCharToMultiByte(CP_UTF8, 0, text, (int)n, &out[0], len, nullptr, nullptr);
+		while (!out.empty() && (out.back() == '\n' || out.back() == '\r' || out.back() == ' ' || out.back() == '.')) out.pop_back();
+	}
+	if (text != nullptr) LocalFree(text);
+	char code_text[32];
+	std::snprintf(code_text, sizeof code_text, "error %lu", (unsigned long)code);
+	return out.empty() ? std::string(code_text) : out + " (" + code_text + ")";
+}
+#endif
+
+void *openLibraryBesideUs(const char *name, bool deepBind, std::string &why)
+{
+	why.clear();
+#if defined(_WIN32)
+	(void)deepBind;
+	HMODULE self = nullptr;
+	wchar_t path[MAX_PATH];
+	if (GetModuleHandleExW(
+			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			reinterpret_cast<LPCWSTR>(&openLibraryBesideUs), &self)
+		&& GetModuleFileNameW(self, path, MAX_PATH) != 0)
+	{
+		std::wstring dir(path);
+		auto slash = dir.find_last_of(L"\\/");
+		if (slash != std::wstring::npos)
+		{
+			std::wstring full = dir.substr(0, slash + 1);
+			for (const char *c = name; *c != '\0'; c++) full.push_back(static_cast<wchar_t>(*c));
+			if (HMODULE h = LoadLibraryW(full.c_str())) return h;
+			const DWORD code = GetLastError();
+			/* there but refused (blocked, held by a scanner, a runtime of its
+			 * own missing) says so, rather than being looked for elsewhere */
+			if (GetFileAttributesW(full.c_str()) != INVALID_FILE_ATTRIBUTES)
+			{
+				why = std::string(name) + " is beside libchimera but would not load: " + lastErrorText(code);
+				return nullptr;
+			}
+		}
+	}
+	if (HMODULE h = LoadLibraryExA(name, nullptr, LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32)) return h;
+	why = std::string(name) + " is not beside libchimera, nor in the program's folder: " + lastErrorText(GetLastError());
+	return nullptr;
+#else
+	const int flags = RTLD_NOW | RTLD_LOCAL | (deepBind ? RTLD_DEEPBIND : 0);
+	Dl_info info;
+	if (dladdr(reinterpret_cast<void *>(&openLibraryBesideUs), &info) != 0 && info.dli_fname != nullptr)
+	{
+		std::string dir(info.dli_fname);
+		auto slash = dir.find_last_of('/');
+		if (slash != std::string::npos)
+		{
+			std::string full = dir.substr(0, slash + 1) + name;
+			if (void *h = dlopen(full.c_str(), flags)) return h;
+			const char *e = dlerror();
+			if (access(full.c_str(), F_OK) == 0)
+			{
+				why = std::string(name) + " is beside libchimera but would not load: " + (e != nullptr ? e : "no reason given");
+				return nullptr;
+			}
+		}
+	}
+	if (void *h = dlopen(name, flags)) return h;
+	const char *e = dlerror();
+	why = std::string(name) + " was not found: " + (e != nullptr ? e : "no reason given");
+	return nullptr;
+#endif
+}
+
+bool retryLibraryLoad(int64_t &lastMs)
+{
+	const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+	if (lastMs != 0 && now - lastMs < 2000) return false;
+	lastMs = now;
+	return true;
+}
 
 const HostApi *hostApi(const char **error)
 {
-	static const bool loaded = (loadOnce(), true);
-	(void)loaded;
+	/* Loaded until it loads: a library that would not load the first time (a
+	 * scanner holding it, say) is tried again by the next caller. One that
+	 * loaded but lacks what is needed stays refused - it will not change. */
+	std::lock_guard<std::mutex> lock(g_loadLock);
+	static int64_t lastTry = 0;
+	if (g_lib == nullptr && retryLibraryLoad(lastTry)) loadOnce();
 	if (!g_ok)
 	{
 		if (error != nullptr) *error = g_error.c_str();
@@ -201,7 +258,20 @@ uintptr_t bridgeGuestCall(uintptr_t guestEntry, int argCount)
 	auto key = std::make_pair(guestEntry, argCount);
 	auto it = g_stubs.find(key);
 	if (it != g_stubs.end()) return it->second;
-	if (g_stubsUsed >= STUB_COUNT) return 0;
+	if (g_stubsUsed >= STUB_COUNT)
+	{
+		/* Full: another page. A session takes 40 to 90 stubs and a new one's
+		 * exports are new keys whenever its thunks land elsewhere, so a fixed
+		 * 256 ran out after a few reopens - and an export with no stub reads
+		 * exactly like one the core lacks. The full page stays: a stub in it
+		 * may be in a live session's table, and a page per 256 stubs is not
+		 * worth taking back. */
+		uint8_t *more = static_cast<uint8_t *>(VirtualAlloc(
+			nullptr, STUB_SIZE * STUB_COUNT, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+		if (more == nullptr) return 0;
+		g_stubPage = more;
+		g_stubsUsed = 0;
+	}
 
 	/* 48 B8 <target>  mov rax, imm64
 	 * 49 BB <departN> mov r11, imm64

@@ -13,6 +13,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -110,6 +111,29 @@ void thePipe()
 	client.close();
 	assert(!client.connect(error));
 	assert(has(error, "not started"));
+
+#ifndef _WIN32
+	/* Each end picks its folder from its own environment. A server started
+	 * without XDG_RUNTIME_DIR, and a client given one (or the other way round),
+	 * still meet. */
+	{
+		const char *had = std::getenv("XDG_RUNTIME_DIR");
+		const std::string kept = had != nullptr ? had : "";
+		unsetenv("XDG_RUNTIME_DIR");
+		chimera::PipeServer elsewhere;
+		assert(elsewhere.open(error));
+		setenv("XDG_RUNTIME_DIR", "/nonexistent-runtime-dir", 1);
+		chimera::PipeClient looking;
+		assert(looking.connect(error));
+		assert(looking.send("found"));
+		assert(next(elsewhere, line) == PipeEvent::Connected);
+		assert(next(elsewhere, line) == PipeEvent::Line && line == "found");
+		looking.close();
+		elsewhere.close();
+		if (had != nullptr) setenv("XDG_RUNTIME_DIR", kept.c_str(), 1);
+		else unsetenv("XDG_RUNTIME_DIR");
+	}
+#endif
 }
 
 /* The reply to one line, parsed. The caller deletes it. */

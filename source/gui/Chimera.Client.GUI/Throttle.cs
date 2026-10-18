@@ -135,7 +135,13 @@ namespace Chimera.Client.GUI
 
 		public void SetCoreFps(double desired_fps)
 		{
-			core_desiredfps = (ulong)(65536 * desired_fps);
+			// Called on every pass of the loop. Only a rate that changed resets
+			// the speed (and with it the frame skip's measurement): resetting it
+			// every pass started each frame's timer just before the frame, so
+			// auto frame skip always measured nothing and never skipped.
+			var fps = (ulong)(65536 * desired_fps);
+			if (fps == core_desiredfps) return;
+			core_desiredfps = fps;
 			int target_pct = pct;
 			pct = -1;
 			SetSpeedPercent(target_pct);

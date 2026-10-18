@@ -141,6 +141,13 @@ allows changes, and no setting in a configuration file can.
   access to files there. Saving stays the person's act.
 - A memory write is not input: a movie cannot reproduce it. It is reported in
   the log and in `status` from the first write on, with the frame.
+- What the agent was told about one machine stays with that machine: when a
+  project is closed and another opened (in the window or without one), the
+  first write, the watches, the condition `advance_until` waits for and the
+  search all start again. The sandbox puts a core's memory at the same
+  address every time, so this goes by the session, not by the memory.
+- An answer finished after its agent's program has gone is not sent to the
+  next one to connect (every program numbers its calls from 1).
 
 ## The tools
 

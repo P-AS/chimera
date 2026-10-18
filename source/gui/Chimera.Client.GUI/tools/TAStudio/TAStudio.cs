@@ -233,6 +233,14 @@ namespace Chimera.Client.GUI
 			public AutoPatternAxis[] AxisPatterns { get; set; }
 
 			/// <summary>
+			/// The value Auto-hold holds each analog axis at, by the axis's name. It is
+			/// asked for when Auto-hold is turned on for the axis's column (issue #298,
+			/// user-decided 2026-10-17). An axis that is not here, or whose value is
+			/// outside its range, holds its maximum, which is what Auto-hold always held.
+			/// </summary>
+			public Dictionary<string, int> AxisHoldValues { get; set; } = new();
+
+			/// <summary>
 			/// The Greenzone box's choice for this project: 1 every frame, N one in N,
 			/// 0 off. Saved in the project so reopening it finds the choice it was left
 			/// with (issue #158, user-decided 2026-09-28: in the .chimeraProject). A
@@ -648,29 +656,73 @@ namespace Chimera.Client.GUI
 		}
 
 		private IEnumerable<RollColumn> GetDefaultHiddenColums(InputRoll roll)
-		{
-			var columnsToHide = roll.AllColumns
-				.Where(c =>
-					// todo: make a proper user editable list?
-					c.Name == "Power"
-					|| c.Name == "Reset"
-					|| c.Name == "Light Sensor"
-					|| c.Name == "Disc Select"
-					|| c.Name == "Disk Index"
-					|| c.Name == "Next Drive"
-					|| c.Name == "Next Slot"
-					|| c.Name == "Insert Disk"
-					|| c.Name == "Eject Disk"
-					|| c.Name.StartsWithOrdinal("Tilt")
-					|| c.Name.StartsWithOrdinal("Key ")
-					|| c.Name.StartsWithOrdinal("Open")
-					|| c.Name.StartsWithOrdinal("Close")
-					|| c.Name.EndsWithOrdinal("Tape")
-					|| c.Name.EndsWithOrdinal("Disk")
-					|| c.Name.EndsWithOrdinal("Block")
-					|| c.Name.EndsWithOrdinal("Status"));
+			=> roll.AllColumns.Where(static c => IsHiddenByDefault(c.Name));
 
-			return columnsToHide;
+		// todo: make a proper user editable list?
+		private static bool IsHiddenByDefault(string name)
+			=> name == "Power"
+				|| name == "Reset"
+				|| name == "Light Sensor"
+				|| name == "Disc Select"
+				|| name == "Disk Index"
+				|| name == "Next Drive"
+				|| name == "Next Slot"
+				|| name == "Insert Disk"
+				|| name == "Eject Disk"
+				|| name.StartsWithOrdinal("Tilt")
+				|| name.StartsWithOrdinal("Key ")
+				|| name.StartsWithOrdinal("Open")
+				|| name.StartsWithOrdinal("Close")
+				|| name.EndsWithOrdinal("Tape")
+				|| name.EndsWithOrdinal("Disk")
+				|| name.EndsWithOrdinal("Block")
+				|| name.EndsWithOrdinal("Status");
+
+		/// <summary>
+		/// A project's saved piano-roll columns, fitted to the controls the core
+		/// declares now (issue #291). The columns were saved for the controller the
+		/// project had then; a control the controller has now and the save lacks
+		/// gets the column a new piano roll would give it, and a column for a
+		/// control the controller no longer has is left out. Every saved column
+		/// that still names a control keeps what the user set on it (shown or
+		/// hidden, emphasis). The order is the controller's, as in a new roll -
+		/// columns cannot be reordered by hand. Without this a missing column was
+		/// read as null when its width was set, and the project did not open.
+		/// </summary>
+		internal static List<RollColumn> FitColumnsToControls(
+			IEnumerable<RollColumn> saved,
+			IEnumerable<(string Name, string Mnemonic)> controls,
+			Func<string, bool> isAxis)
+		{
+			var byName = new Dictionary<string, RollColumn>();
+			foreach (var column in saved)
+			{
+				if (column?.Name is { } name && !byName.ContainsKey(name)) byName[name] = column;
+			}
+
+			var fitted = new List<RollColumn>
+			{
+				byName.TryGetValue(CursorColumnName, out var cursor)
+					? cursor
+					: new(name: CursorColumnName, widthUnscaled: 10, text: string.Empty),
+				byName.TryGetValue(FrameColumnName, out var frame)
+					? frame
+					: new(name: FrameColumnName, widthUnscaled: 10, text: "Frame#") { Rotatable = true },
+			};
+			foreach ((string name, string mnemonic) in controls)
+			{
+				if (byName.TryGetValue(name, out var column))
+				{
+					fitted.Add(column);
+					continue;
+				}
+				fitted.Add(new(name: name, widthUnscaled: 10, text: mnemonic)
+				{
+					Rotatable = isAxis(name),
+					Visible = !IsHiddenByDefault(name),
+				});
+			}
+			return fitted;
 		}
 
 		private void MakeDefaultColumns(InputRoll roll)
@@ -975,6 +1027,13 @@ namespace Chimera.Client.GUI
 					else if (settings is MovieClientSettings clientSettings)
 					{
 						_movieSettings = clientSettings;
+						// autofire patterns are kept one per control, by the controller's
+						// order: a save made for another controller has another count
+						if (_movieSettings.BoolPatterns?.Length != ControllerType.BoolButtons.Count
+							|| _movieSettings.AxisPatterns?.Length != ControllerType.Axes.Count)
+						{
+							SetupCustomPatterns();
+						}
 						CurrentTasMovie.GreenzonePeriod = Math.Max(0, _movieSettings.GreenzonePeriod);
 						if (_movieSettings.Columns.Length == 0)
 						{

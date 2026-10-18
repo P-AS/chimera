@@ -29,6 +29,9 @@ namespace Chimera.Client.Common
 
 		private EngineProject _project;
 
+		/// <summary>The project handed in to load from, once (<see cref="LoadProjectFormat"/>).</summary>
+		private EngineProject _opened;
+
 		/// <summary>
 		/// The engine-side project backing this movie. Holds what the movie
 		/// machinery does not model (the file manifest, firmware pins, the
@@ -56,10 +59,17 @@ namespace Chimera.Client.Common
 		/// project's cache, written and read by the engine (see <see cref="TasBranch.StateFile"/>).
 		/// They are cache like the greenzone is - a branch without one replays to its frame.
 		/// </summary>
-		public string BranchStateDirectory => Path.Combine(ProjectCache.DirectoryFor(Project.Id), "Branches");
+		public string BranchStateDirectory => Path.Combine(ProjectCache.DirectoryFor(Project.Id), ProjectCache.BranchStatesDirName);
 
 		/// <summary>Where a branch's state file is, from the name the branch holds.</summary>
 		public string BranchStatePath(string stateFile) => Path.Combine(BranchStateDirectory, stateFile);
+
+		public string NewScratchStatePath(string purpose)
+		{
+			var dir = ProjectCache.DirectoryFor(Project.Id);
+			Directory.CreateDirectory(dir);
+			return Path.Combine(dir, $"{purpose}-{Guid.NewGuid():N}.state");
+		}
 
 		/// <summary>A name nothing else has, in a directory that exists: where a new branch's state goes.</summary>
 		public string NewBranchStatePath(out string stateFile)
@@ -94,7 +104,7 @@ namespace Chimera.Client.Common
 		}
 
 		public string GreenZoneFilename
-			=> Path.Combine(ProjectCache.DirectoryFor(Project.Id), "greenzone.chimeraGreenZone");
+			=> Path.Combine(ProjectCache.DirectoryFor(Project.Id), ProjectCache.GreenZoneFileName);
 
 		/// <summary>
 		/// The engine's state history, beside the greenzone in the same cache.
@@ -103,7 +113,7 @@ namespace Chimera.Client.Common
 		/// whole design removed, and a zip lump would put straight back.
 		/// </summary>
 		public string StateHistoryFilename
-			=> Path.Combine(ProjectCache.DirectoryFor(Project.Id), "history.bin");
+			=> Path.Combine(ProjectCache.DirectoryFor(Project.Id), ProjectCache.HistoryFileName);
 
 		/// <summary>
 		/// Where a project written before the cache existed left its greenzone:
@@ -788,7 +798,12 @@ namespace Chimera.Client.Common
 		{
 			_project?.Dispose();
 			EngineProgress.Report("reading the project");
-			_project = EngineProject.Open(Filename); // structural errors surface with the engine's reason
+			// The frontend's own instance when it handed one in: the project as resolved for this
+			// session, and after a crash the recovered work, which the file at Filename does not hold.
+			// Reading the file again here is what made "Recover unsaved work?" open the work as last
+			// saved, only marked changed.
+			_project = _opened ?? EngineProject.Open(Filename); // structural errors surface with the engine's reason
+			_opened = null;
 
 			ClearBeforeLoad();
 			var p = _project;

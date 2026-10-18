@@ -69,6 +69,9 @@ themselves, which are named by their SHA1:
   (a new core, a new Chimera) and holds only what the last save wrote, so
   people set their columns up again after every update. A project saved
   before the move still has it in its cache, which is read once.
+  The same object keeps the value Auto-hold holds each analog axis at
+  (user-decided, 2026-10-17, issue #298), asked for when Auto-hold is
+  turned on for the axis's column.
 
 Not in the project:
 
@@ -82,7 +85,11 @@ Not in the project:
   uploaded again on every save. If present it is loaded, otherwise the
   session starts from a clean state-memory slate. A greenzone left beside
   an older project is moved into the cache the first time it is opened.
-  Losing it costs recomputation, never work. It records
+  The cache also records the path the project was last opened or saved
+  from (user-decided, 2026-10-15): a copy keeps its original's id, so a
+  project opened from any other path - copied, moved, a backup, a
+  recovered copy - has its cached greenzone and branch states discarded
+  and starts with an empty one. Losing it costs recomputation, never work. It records
   which machine made its states (core build, settings, firmware pins, file
   hashes) and is used only when the project still describes that machine:
   a savestate is the memory of one exact machine, and the sandbox checks
@@ -166,6 +173,18 @@ board's: each must name its machines in `when`, so that every machine is left
 with exactly one declaration. Without it both stay, and the later one's
 default wins on every machine. The package tests refuse a package that
 leaves a machine with two declarations of one setting.
+
+A choice setting (`"type": "enum"`) may give its values words to be shown
+by: `"optionLabels": { "ps2-0230a-20080220": "USA v2.30 (2008-02-20)" }`.
+Only the words change. The project, the movie and the core keep the value
+itself, so a label can be reworded without changing any machine, and a
+value with no label is shown as it is (issue 293). On the wizard's settings
+page, a setting whose values call for different firmware files (a
+PlayStation 2's Boot ROM: one BIOS per value) lists first the values whose
+file is on hand, in the Firmware folder or at a path remembered for the
+core, each marked "(found)". The engine's own firmware decision tree is
+asked once per value, so this needs nothing more from a package than its
+firmware conditions.
 
 Loading a plain rom with no project has no pin, so the extension decides: the
 package's machines claim their own extensions, and a `.sms` opened with this
@@ -263,7 +282,13 @@ plausible file is hashed and matched, and a satisfied requirement
 shows its checkmark and the file in use. Config > Firmware is the same
 question asked of every installed core at once, before any project: it
 surveys the packages present, says what the folder already answers, and
-takes a file for the rest - remembered where it lives, never copied. A per-item Select File button
+takes a file for the rest - remembered where it lives, never copied.
+Scan Folder, on both, hashes a folder the person picks. When it finds
+firmware there and the Firmware folder named in Config > Paths does not
+exist (as on a new install: nothing creates it), the scanned folder
+becomes the Firmware folder (issue 293), so the next scan opens there and
+Config > Paths says where the files are. A folder the person made and
+named is never replaced. A per-item Select File button
 covers what the folder could not - allowed even when something was
 found - and only the exact file satisfies, except for a game core, whose
 firmware may be a file of the project's own (docs/game-cores.md): that is
@@ -479,6 +504,17 @@ checks a project-recorded setting is live in the guest. Headless runs
 skip the TAStudio landing (it opens paused, and nobody is there to
 operate it): they just play the project.
 
+## Saving
+
+A save never writes over the project file. It writes the whole project
+beside it (`<name>.chimeraProject.writing`), waits until those bytes are on
+the disk, and then moves the new file over the old one in one step. A save
+that fails part way - a full disk, the process dying, a power cut - leaves
+the project as it was last saved, and nothing half-written behind. On
+Windows a virus scanner or the indexer may hold the old file for a moment;
+the move is tried again for up to a second. When the project file is a link,
+the file it names is the one replaced.
+
 ## Recovery
 
 The work in a project survives any end of the process - a GPU driver that
@@ -494,8 +530,14 @@ it:
   writes its markers and branches in the same fresh file; then every change is
   appended as it happens - an input by the engine, a marker or branch by the
   frontend (`ce_movie_log_journal_note`: `M` the markers, `B` one branch whole,
-  `O` the branch order) - flushed to the OS at once and synced at most once a
-  second. It is rewritten only when it has grown well past its last image.
+  `O` the branch order) - flushed to the OS at once and synced to the disk by
+  a thread of its own, at most once a second and never more than a second
+  after a change, the last one before a pause included (the sync used to wait
+  for the next change, on TAStudio's thread). It is rewritten only when it has
+  grown well past its last image; if another program holds it open so that it
+  cannot be replaced, the changes go on into the journal as it is. On Windows
+  the files the engine opens are not handed to the programs Chimera starts
+  (FFmpeg, the precompile sessions), which once held the journal open.
 - `snapshot.chimeraProject` - the rest of the project as it stands (settings,
   headers; never the greenzone), rewritten every few seconds while there is
   unsaved work, and at once when an error is caught.
@@ -512,7 +554,10 @@ newer of the snapshot and the saved file, with the journal's inputs, markers and
 branches, written to the backups folder as `<name>.recovered <time>.chimeraProject`.
 The person is then asked whether to open that work in place of the file's (it
 opens unsaved; saving writes it to the project) or the project as last saved
-(the copy stays). A recovered copy never overwrites a project. Headless runs do
+(the copy stays). Either way the folder is removed once the copy is written,
+and the boot that follows still treats the greenzone and branch states the
+crashed session saved as not trusted: the crash is remembered until the
+project's next session begins. A recovered copy never overwrites a project. Headless runs do
 not ask; they report the copy's path. A folder left where an earlier build kept
 it (`Projects/<id>/recovery`) is moved to the new root the first time.
 

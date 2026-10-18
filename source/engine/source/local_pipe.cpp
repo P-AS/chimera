@@ -124,6 +124,34 @@ PSECURITY_DESCRIPTOR onlyThisUser()
 	return sd;
 }
 
+/* Whether the process at the other end of a pipe runs as this user. A pipe's
+ * name is only a name: any user of the machine may make one of it first, and
+ * a client that took whatever answered would hand its calls - and, with the
+ * default security, the right to act as this user - to that one. */
+bool serverIsThisUser(HANDLE pipe)
+{
+	ULONG pid = 0;
+	if (GetNamedPipeServerProcessId(pipe, &pid) == 0) return false;
+	HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+	if (process == nullptr) return false;   /* another user's process will not even be opened */
+	bool same = false;
+	HANDLE theirs = nullptr, mine = nullptr;
+	if (OpenProcessToken(process, TOKEN_QUERY, &theirs) != 0 && OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mine) != 0)
+	{
+		BYTE a[512], b[512];
+		DWORD used = 0;
+		if (GetTokenInformation(theirs, TokenUser, a, sizeof(a), &used) != 0
+			&& GetTokenInformation(mine, TokenUser, b, sizeof(b), &used) != 0)
+		{
+			same = EqualSid(reinterpret_cast<TOKEN_USER *>(a)->User.Sid, reinterpret_cast<TOKEN_USER *>(b)->User.Sid) != 0;
+		}
+	}
+	if (theirs != nullptr) CloseHandle(theirs);
+	if (mine != nullptr) CloseHandle(mine);
+	CloseHandle(process);
+	return same;
+}
+
 /* One end's reading: an overlapped read that a wait with a time limit can be
  * put on. Shared by the server and the client. */
 struct Reader
@@ -187,7 +215,17 @@ bool writeLine(HANDLE pipe, const std::string &line)
 		ResetEvent(ov.hEvent);
 		if (WriteFile(pipe, data.data() + at, static_cast<DWORD>(data.size() - at), &wrote, &ov) == 0)
 		{
-			if (GetLastError() != ERROR_IO_PENDING || GetOverlappedResult(pipe, &ov, &wrote, TRUE) == 0) ok = false;
+			if (GetLastError() != ERROR_IO_PENDING) ok = false;
+			/* the reader is slow: give it five seconds, as on Linux, then give
+			 * up on it - a reader that never reads would otherwise hold this
+			 * thread, and the server's stop that waits for it, for ever */
+			else if (WaitForSingleObject(ov.hEvent, 5000) != WAIT_OBJECT_0)
+			{
+				CancelIoEx(pipe, &ov);
+				GetOverlappedResult(pipe, &ov, &wrote, TRUE);
+				ok = false;
+			}
+			else if (GetOverlappedResult(pipe, &ov, &wrote, FALSE) == 0) ok = false;
 		}
 		at += wrote;
 		if (ok && wrote == 0) ok = false;
@@ -325,9 +363,17 @@ bool PipeClient::connect(std::string &error)
 	DWORD code = 0;
 	for (int attempt = 0; attempt < 2; attempt++)
 	{
+		/* identification only: the server may learn who called, never act as them */
 		impl->pipe = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
-			OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
-		if (impl->pipe != INVALID_HANDLE_VALUE) return true;
+			OPEN_EXISTING, FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
+		if (impl->pipe != INVALID_HANDLE_VALUE)
+		{
+			if (serverIsThisUser(impl->pipe)) return true;
+			CloseHandle(impl->pipe);
+			impl->pipe = INVALID_HANDLE_VALUE;
+			error = "the pipe Chimera serves on was made by another user of this machine, so nothing was sent to it";
+			return false;
+		}
 		code = GetLastError();
 		/* "busy" is also what a pipe says for the instant between one client
 		 * leaving and the server listening again: wait a moment and ask once
@@ -365,6 +411,7 @@ PipeEvent PipeClient::wait(int timeout_ms, std::string &line)
 
 #else // POSIX
 
+#include <algorithm>
 #include <cerrno>
 #include <csignal>
 #include <fcntl.h>
@@ -373,6 +420,7 @@ PipeEvent PipeClient::wait(int timeout_ms, std::string &line)
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 namespace chimera
 {
@@ -388,6 +436,22 @@ std::string pipeDir()
 		? std::string(runtime) + "/chimera-mcp"
 		: "/tmp/chimera-mcp-" + std::to_string(static_cast<unsigned long>(getuid()));
 	return dir + nameSuffix();
+}
+
+/* Where a client looks: the server's folder is decided from ITS environment,
+ * and a chimera-mcp started by a program that cleared XDG_RUNTIME_DIR (or a
+ * Chimera started without it) would otherwise look in the other place and
+ * say no Chimera is running. So: this process's own choice first, then the
+ * usual runtime folder, then the /tmp one. */
+std::vector<std::string> pipeDirsToTry()
+{
+	std::vector<std::string> dirs{ pipeDir() };
+	const std::string uid = std::to_string(static_cast<unsigned long>(getuid()));
+	for (const std::string &d : { "/run/user/" + uid + "/chimera-mcp" + nameSuffix(), "/tmp/chimera-mcp-" + uid + nameSuffix() })
+	{
+		if (std::find(dirs.begin(), dirs.end(), d) == dirs.end()) dirs.push_back(d);
+	}
+	return dirs;
 }
 
 /* The folder must be ours and closed to everybody else: in /tmp anybody could
@@ -585,33 +649,31 @@ PipeClient::~PipeClient() { close(); delete impl; }
 bool PipeClient::connect(std::string &error)
 {
 	close();
-	const std::string dir = pipeDir();
-	if (!dirIsOurs(dir))
+	error = kNoServer;
+	for (const std::string &dir : pipeDirsToTry())
 	{
-		error = kNoServer;
-		return false;
-	}
-	impl->lockFd = ::open((dir + "/client.lock").c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
-	if (impl->lockFd < 0 || flock(impl->lockFd, LOCK_EX | LOCK_NB) != 0)
-	{
-		error = impl->lockFd < 0 ? std::string(kNoServer) : std::string(kOtherClient);
-		if (impl->lockFd >= 0) ::close(impl->lockFd);
-		impl->lockFd = -1;
-		return false;
-	}
-	/* the reading end first: the server opens its writing end when it sees our
-	 * first bytes, and that needs a reader to be there */
-	impl->readFd = ::open((dir + "/from-chimera").c_str(), openFlags(O_RDONLY));
-	/* opening a FIFO for writing fails when nobody has it open for reading,
-	 * which is how a server that is not there is told from one that is */
-	impl->writeFd = impl->readFd < 0 ? -1 : ::open((dir + "/to-chimera").c_str(), openFlags(O_WRONLY));
-	if (impl->writeFd < 0)
-	{
-		error = kNoServer;
+		if (!dirIsOurs(dir)) continue;
+		impl->lockFd = ::open((dir + "/client.lock").c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+		if (impl->lockFd < 0 || flock(impl->lockFd, LOCK_EX | LOCK_NB) != 0)
+		{
+			if (impl->lockFd >= 0) error = kOtherClient;
+			close();
+			continue;
+		}
+		/* the reading end first: the server opens its writing end when it sees our
+		 * first bytes, and that needs a reader to be there */
+		impl->readFd = ::open((dir + "/from-chimera").c_str(), openFlags(O_RDONLY));
+		/* opening a FIFO for writing fails when nobody has it open for reading,
+		 * which is how a server that is not there is told from one that is */
+		impl->writeFd = impl->readFd < 0 ? -1 : ::open((dir + "/to-chimera").c_str(), openFlags(O_WRONLY));
+		if (impl->writeFd >= 0)
+		{
+			error.clear();
+			return true;
+		}
 		close();
-		return false;
 	}
-	return true;
+	return false;
 }
 
 void PipeClient::close()

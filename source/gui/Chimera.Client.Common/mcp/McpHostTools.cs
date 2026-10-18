@@ -232,7 +232,13 @@ namespace Chimera.Client.Common
 				return Refuse("The step to apply is not one the engine makes.", out isError);
 			}
 			movie.ChangeLog.BeginNewBatch(Label(step));
-			for (var i = 0; i < entries.Count; i++) movie.PokeFrame(frame + i, (string) entries[i]!);
+			// one invalidation for the whole step, not one for each of up to
+			// ten thousand lines (each a pass over the lag log, the history and
+			// TAStudio's visible rows)
+			movie.SingleInvalidation(() =>
+			{
+				for (var i = 0; i < entries.Count; i++) movie.PokeFrame(frame + i, (string) entries[i]!);
+			});
 			return Done(movie, new JObject { ["frame"] = frame, ["count"] = entries.Count });
 		}
 

@@ -29,7 +29,8 @@
         { "id": "GEN", "name": "Mega Drive / Genesis" },
         { "id": "SMS", "name": "Master System" },
         { "id": "GG", "name": "Game Gear" },
-        { "id": "SG", "name": "SG-1000" }
+        { "id": "SG", "name": "SG-1000" },
+        { "id": "PICO", "name": "Sega Pico" }
       ],
       "repo": "ToolAssisted-run/chimera-core-gpgx",
       "tested": ""
@@ -142,6 +143,7 @@
       "name": "ares",
       "systems": [
         { "id": "N64", "name": "Nintendo 64" },
+        { "id": "N64DD", "name": "Nintendo 64DD" },
         { "id": "NES", "name": "Nintendo Entertainment System" },
         { "id": "GB", "name": "Game Boy" },
         { "id": "GBC", "name": "Game Boy Color" },
@@ -243,6 +245,15 @@
       "tested": ""
     },
     {
+      "id": "freej2me",
+      "name": "FreeJ2ME-Plus",
+      "systems": [
+        { "id": "J2ME", "name": "J2ME (Java phones)" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-freej2me",
+      "tested": ""
+    },
+    {
       "id": "vita3k",
       "name": "Vita3K",
       "systems": [
@@ -308,6 +319,21 @@
       "tested": ""
     },
     {
+      "id": "mamehome",
+      "name": "MAME Home Systems",
+      "systems": [
+        { "id": "A78", "name": "Atari 7800" },
+        { "id": "INTV", "name": "Intellivision" },
+        { "id": "VEC", "name": "Vectrex" },
+        { "id": "O2", "name": "Odyssey 2 / Videopac" },
+        { "id": "ChannelF", "name": "Channel F" },
+        { "id": "AmstradCPC", "name": "Amstrad CPC" },
+        { "id": "TI83", "name": "TI-83" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-mamehome",
+      "tested": ""
+    },
+    {
       "id": "mednafen",
       "name": "Mednafen",
       "systems": [
@@ -318,6 +344,76 @@
         { "id": "STV", "name": "Sega ST-V" }
       ],
       "repo": "ToolAssisted-run/chimera-core-mednafen",
+      "tested": ""
+    },
+    {
+      "id": "melonds",
+      "name": "melonDS",
+      "systems": [
+        { "id": "NDS", "name": "Nintendo DS" },
+        { "id": "DSI", "name": "Nintendo DSi" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-melonds",
+      "tested": ""
+    },
+    {
+      "id": "gambatte",
+      "name": "Gambatte",
+      "systems": [
+        { "id": "GB", "name": "Game Boy" },
+        { "id": "GBC", "name": "Game Boy Color" },
+        { "id": "SGB", "name": "Super Game Boy" },
+        { "id": "GBL", "name": "Game Boy Link" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-gambatte",
+      "tested": ""
+    },
+    {
+      "id": "puae",
+      "name": "PUAE",
+      "systems": [
+        { "id": "AMIGA", "name": "Commodore Amiga" },
+        { "id": "CD32", "name": "Amiga CD32" },
+        { "id": "CDTV", "name": "Commodore CDTV" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-puae",
+      "tested": ""
+    },
+    {
+      "id": "vice",
+      "name": "VICE",
+      "systems": [
+        { "id": "C64", "name": "Commodore 64" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-vice",
+      "tested": ""
+    },
+    {
+      "id": "virtualjaguar",
+      "name": "Virtual Jaguar",
+      "systems": [
+        { "id": "JAG", "name": "Atari Jaguar" },
+        { "id": "JAGCD", "name": "Atari Jaguar CD" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-virtualjaguar",
+      "tested": ""
+    },
+    {
+      "id": "tic80",
+      "name": "TIC-80",
+      "systems": [
+        { "id": "TIC80", "name": "TIC-80" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-tic80",
+      "tested": ""
+    },
+    {
+      "id": "uzem",
+      "name": "Uzem",
+      "systems": [
+        { "id": "UZE", "name": "Uzebox" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-uzem",
       "tested": ""
     },
     {
@@ -368,6 +464,37 @@
       ],
       "kind": "game",
       "repo": "ToolAssisted-run/chimera-core-rawgl",
+      "tested": ""
+    },
+    {
+      "id": "rsdkv3",
+      "name": "RSDKv3",
+      "systems": [
+        { "id": "SonicCD", "name": "Sonic CD" }
+      ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-rsdkv3",
+      "tested": ""
+    },
+    {
+      "id": "rsdkv4",
+      "name": "RSDKv4",
+      "systems": [
+        { "id": "Sonic1", "name": "Sonic the Hedgehog (2013)" },
+        { "id": "Sonic2", "name": "Sonic the Hedgehog 2 (2013)" }
+      ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-rsdkv4",
+      "tested": ""
+    },
+    {
+      "id": "rsdkv5",
+      "name": "RSDKv5",
+      "systems": [
+        { "id": "SonicMania", "name": "Sonic Mania" }
+      ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-rsdkv5",
       "tested": ""
     },
     {

@@ -25,6 +25,9 @@ namespace fs = std::filesystem;
 
 const char kNothingOpen[] = "No project is open. open_project opens one; open_game starts one from a core and a game.";
 const size_t kUndoKept = 100;
+/* ...and no more than this of the movie's text in all: each step is the
+ * whole movie, and a long movie's hundred copies were hundreds of MB */
+const size_t kUndoBytes = size_t{ 64 } << 20;
 
 std::string printed(cJSON *item)
 {
@@ -262,17 +265,26 @@ std::string McpLocal::movieText() const
 void McpLocal::rememberForUndo()
 {
 	undoSteps.push_back(movieText());
-	if (undoSteps.size() > kUndoKept) undoSteps.erase(undoSteps.begin());
+	size_t bytes = 0;
+	for (const std::string &step : undoSteps) bytes += step.size();
+	/* the newest is always kept: an edit can be undone at least once */
+	while (undoSteps.size() > 1 && (undoSteps.size() > kUndoKept || bytes > kUndoBytes))
+	{
+		bytes -= undoSteps.front().size();
+		undoSteps.erase(undoSteps.begin());
+	}
 }
 
 /* The movie was changed from `fromFrame` on. The machine goes back to that
  * frame when it is past it, plays the new input from there, and the saved
- * states after the change are dropped - what TAStudio does for an edit. */
+ * states after the change are dropped - what TAStudio does for an edit. The
+ * states before it stay, even when the machine is behind the edit: they hang
+ * on input that did not change. */
 bool McpLocal::movieChanged(int64_t fromFrame, std::string &why)
 {
 	unsaved = true;
-	const int64_t at = std::min(ce_session_frame(session), fromFrame);
-	if (ce_session_frame(session) > at && ce_session_seek(session, at) != 0)
+	const bool past = ce_session_frame(session) > fromFrame;
+	if (past && ce_session_seek(session, fromFrame) != 0)
 	{
 		why = ce_session_last_error(session);
 		return false;
@@ -282,8 +294,8 @@ bool McpLocal::movieChanged(int64_t fromFrame, std::string &why)
 		why = "The changed input could not be given to the machine.";
 		return false;
 	}
-	ce_session_greenzone_invalidate(session, at);
-	return landOn(at, why);
+	ce_session_greenzone_invalidate(session, fromFrame);
+	return past ? landOn(fromFrame, why) : true;
 }
 
 /* Puts the machine on a frame with that frame's picture drawn. A seek alone

@@ -36,8 +36,14 @@ cross it, each as a pointer to an argument block in guest memory:
 - `CACHE_OP_STORE` with a name and bytes: the host keeps them, written beside
   and renamed, so a reader never sees half a file.
 
-Names are relative paths under a directory the host owns for this core and
-package; an absolute prefix or a `..` segment is refused. RPCS3's own object
+Names are relative paths, with `/` between folders, under a directory the
+host owns for this core and package. A core may build a name from what a game
+image says, so the host refuses every name that could reach outside that
+directory or something that is not a file: an absolute prefix, a segment of
+dots (`..` climbs out), a backslash or a colon (on Windows a backslash also
+separates folders, so `..\x` would climb out), a segment that ends in a dot or
+a space, a control character, and the Windows device names (`CON`, `NUL`,
+`COM1` and the like). A refused store answers 0, as a full disk does. RPCS3's own object
 names carry the module hash, its version and the CPU, so the same firmware
 library compiles once for every game.
 
@@ -46,9 +52,12 @@ the frontend names it `<data home>/Cache/PrecompiledCode/<game sha1>/`
 (see `CacheStore`; the data home is `%LOCALAPPDATA%\Chimera` or
 `$XDG_DATA_HOME/chimera`), and
 `ce_session_cache_stored` / `ce_session_cache_fetched` say what a session did.
-Every object that crosses is announced on stdout as `[cache] stored <name>
-<sha1>` or `[cache] fetched <name> <sha1>`, which is how a frontend watching a
-child process learns what a game needs.
+In a precompile session every object that crosses is announced on stdout as
+`[cache] stored <name> <sha1>` or `[cache] fetched <name> <sha1>`, which is
+how a frontend watching a child process learns what a game needs. An ordinary
+session says nothing and hashes nothing (the hash was seconds of a boot on a
+CPU without the SHA instructions); `CHIMERA_CACHE_ANNOUNCE=1` asks for the
+lines in any session.
 
 One directory per package version, because a different build of the package
 generates different code and must not read the old one's objects.
@@ -90,7 +99,10 @@ How many run at once is bounded by memory as well as by processors, and the
 engine decides it (`ce_compile_sessions`, `source/engine/source/compile_sessions.h`):
 one session per 8 GB of what the machine can spare after 4 GB kept back for
 the frontend and the system, never more than half the processors, never more
-than eight, never fewer than one.
+than eight, never fewer than one. The 8 GB is a setting (Tools >
+Pre-Compiled Modules, "Memory per compile session"; user-decided
+2026-10-14): a person whose games compile in less can run more sessions at
+once, and one short of memory can run fewer.
 
 A session holds about 7 GB (measured on Windows with MotorStorm, issue 259:
 four sessions took 25.8 GB of the system's commit within 80 seconds of
@@ -128,6 +140,14 @@ violation like any crash). When one session alone still fails that way, the
 wizard says so in words, and on Windows says where the disk space went. A
 partial manifest is never written: a list of what a game needs with holes in it
 is worse than no list.
+
+On Linux, running out of memory is settled by the kernel, which stops the
+process it judges biggest - and Chimera's own window was that process when a
+compile of a 16 GB game filled a 31 GB computer (issue 300). So a session
+asks to be stopped first (`ce_compile_session_begins`, oom_score_adj 1000):
+the kernel then stops a session, the window sees it killed for want of
+memory, and runs fewer. A session that meets a message box it cannot show
+quits with code 64, and the orchestrator says so by name.
 
 **Create stays unavailable until every listed module is green.** A project
 whose game is not compiled is a project that boots into a minutes-long stall,

@@ -135,26 +135,41 @@ struct Sha1
 	uint64_t total = 0;
 	size_t fill = 0;
 
+	/* The transform without SHA instructions, which every Intel desktop from
+	 * the 6th to the 10th generation lacks. Written out round by round with a
+	 * 16-word schedule rolled in place, so the compiler keeps everything in
+	 * registers: the loop over 80 rounds with a branch and a five-register
+	 * shuffle in each ran at about 270 MB/s here, this at about 1.25 GB/s, and
+	 * the digest is the same (test_sha1 checks it against the vectors). */
 	void processBlock(const uint8_t *p)
 	{
-		uint32_t w[80];
+		uint32_t w[16];
 		for (int i = 0; i < 16; i++)
 		{
 			w[i] = (uint32_t(p[i * 4]) << 24) | (uint32_t(p[i * 4 + 1]) << 16)
 				| (uint32_t(p[i * 4 + 2]) << 8) | uint32_t(p[i * 4 + 3]);
 		}
-		for (int i = 16; i < 80; i++) w[i] = rol(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
 		uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
-		for (int i = 0; i < 80; i++)
-		{
-			uint32_t f, k;
-			if (i < 20) { f = (b & c) | (~b & d); k = 0x5A827999u; }
-			else if (i < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1u; }
-			else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDCu; }
-			else { f = b ^ c ^ d; k = 0xCA62C1D6u; }
-			uint32_t t = rol(a, 5) + f + e + k + w[i];
-			e = d; d = c; c = rol(b, 30); b = a; a = t;
-		}
+#define CE_W(i) (w[(i) & 15] = rol(w[((i) + 13) & 15] ^ w[((i) + 8) & 15] ^ w[((i) + 2) & 15] ^ w[(i) & 15], 1))
+#define CE_R0(v, x, y, z, u, i) u += ((x & (y ^ z)) ^ z) + w[i] + 0x5A827999u + rol(v, 5); x = rol(x, 30);
+#define CE_R1(v, x, y, z, u, i) u += ((x & (y ^ z)) ^ z) + CE_W(i) + 0x5A827999u + rol(v, 5); x = rol(x, 30);
+#define CE_R2(v, x, y, z, u, i) u += (x ^ y ^ z) + CE_W(i) + 0x6ED9EBA1u + rol(v, 5); x = rol(x, 30);
+#define CE_R3(v, x, y, z, u, i) u += (((x | y) & z) | (x & y)) + CE_W(i) + 0x8F1BBCDCu + rol(v, 5); x = rol(x, 30);
+#define CE_R4(v, x, y, z, u, i) u += (x ^ y ^ z) + CE_W(i) + 0xCA62C1D6u + rol(v, 5); x = rol(x, 30);
+#define CE_FIVE(R, i) R(a, b, c, d, e, i) R(e, a, b, c, d, i + 1) R(d, e, a, b, c, i + 2) R(c, d, e, a, b, i + 3) R(b, c, d, e, a, i + 4)
+		CE_FIVE(CE_R0, 0) CE_FIVE(CE_R0, 5) CE_FIVE(CE_R0, 10)
+		CE_R0(a, b, c, d, e, 15)
+		CE_R1(e, a, b, c, d, 16) CE_R1(d, e, a, b, c, 17) CE_R1(c, d, e, a, b, 18) CE_R1(b, c, d, e, a, 19)
+		CE_FIVE(CE_R2, 20) CE_FIVE(CE_R2, 25) CE_FIVE(CE_R2, 30) CE_FIVE(CE_R2, 35)
+		CE_FIVE(CE_R3, 40) CE_FIVE(CE_R3, 45) CE_FIVE(CE_R3, 50) CE_FIVE(CE_R3, 55)
+		CE_FIVE(CE_R4, 60) CE_FIVE(CE_R4, 65) CE_FIVE(CE_R4, 70) CE_FIVE(CE_R4, 75)
+#undef CE_FIVE
+#undef CE_R4
+#undef CE_R3
+#undef CE_R2
+#undef CE_R1
+#undef CE_R0
+#undef CE_W
 		h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
 	}
 
@@ -233,10 +248,13 @@ struct Sha1
  * a project is being made, and opening that project weighs it again. Two
  * gigabytes twice is a wait for an answer already known.
  *
- * Keyed on the STAMP, not the path: a file edited under a running Chimera has a
- * new mtime or a new size, and gets hashed again. It is a cache of work, not a
- * decision - a wrong answer here would be a movie pinned to the wrong bytes, so
- * it only ever skips work that would have produced the same forty characters.
+ * Keyed on the path AND the file's identity (fileIdentity): a file edited or
+ * replaced under a running Chimera has a new change time, or is another file,
+ * and gets hashed again. Size and the whole-second mtime were not enough: a
+ * copy, an unzip or an rsync keeps the source's date, and two dumps of one game
+ * are often the same size. It is a cache of work, not a decision - a wrong
+ * answer here would be a movie pinned to the wrong bytes, so it only ever skips
+ * work that would have produced the same forty characters.
  *
  * It lives as long as the process. Nothing is written to disk: a stale entry
  * surviving a restart is a bug nobody could see, and one hash of a disc image
@@ -244,13 +262,11 @@ struct Sha1
 struct CacheKey
 {
 	std::string path;
-	uint64_t size;
-	int64_t mtime;
+	FileIdentity id;
 	bool operator<(const CacheKey &o) const
 	{
 		if (path != o.path) return path < o.path;
-		if (size != o.size) return size < o.size;
-		return mtime < o.mtime;
+		return id < o.id;
 	}
 };
 
@@ -261,7 +277,7 @@ bool sha1HexOfFile(const char *utf8Path, uint64_t *lenOut, std::string &out)
 {
 	CacheKey key;
 	bool stamped = utf8Path != nullptr
-		&& fileStamp(utf8Path, &key.size, &key.mtime);
+		&& fileIdentity(utf8Path, key.id);
 	if (stamped)
 	{
 		key.path = utf8Path;
@@ -291,7 +307,7 @@ bool sha1HexOfFile(const char *utf8Path, uint64_t *lenOut, std::string &out)
 		}
 		stage += slash;
 	}
-	const uint64_t expected = stamped ? key.size : 0;
+	const uint64_t expected = stamped ? key.id.size : 0;
 	uint64_t sinceReport = 0;
 	for (;;)
 	{
@@ -318,7 +334,10 @@ bool sha1HexOfFile(const char *utf8Path, uint64_t *lenOut, std::string &out)
 		out[i * 2 + 1] = hex[digest[i] & 0xF];
 	}
 	if (lenOut != nullptr) *lenOut = total;
-	if (stamped)
+	/* kept only when the file is still the one that was read: one written to
+	 * while it was being hashed has a hash of neither version */
+	FileIdentity after;
+	if (stamped && fileIdentity(utf8Path, after) && after == key.id)
 	{
 		std::lock_guard<std::mutex> lock(g_cacheLock);
 		g_cache[key] = { out, total };

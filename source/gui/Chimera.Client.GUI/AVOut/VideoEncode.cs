@@ -118,13 +118,13 @@ namespace Chimera.Client.GUI
 	{
 		internal VideoEncodeJob(
 			VideoEncodeRequest request,
-			Stream restoreState,
+			string restoreStatePath,
 			bool wasReadOnly,
 			bool wasPaused,
 			bool wasRecording)
 		{
 			Request = request;
-			RestoreState = restoreState;
+			RestoreStatePath = restoreStatePath;
 			WasReadOnly = wasReadOnly;
 			WasPaused = wasPaused;
 			WasRecording = wasRecording;
@@ -134,8 +134,11 @@ namespace Chimera.Client.GUI
 
 		internal VideoEncodeRequest Request { get; }
 
-		/// <summary>where the user was before the encode borrowed the emulator</summary>
-		internal Stream RestoreState { get; }
+		/// <summary>
+		/// where the user was before the encode borrowed the emulator: a state file, because a
+		/// state can be bigger than a byte array (a PlayStation 3's is gigabytes, chimera issue 282)
+		/// </summary>
+		internal string RestoreStatePath { get; }
 
 		internal bool WasReadOnly { get; }
 

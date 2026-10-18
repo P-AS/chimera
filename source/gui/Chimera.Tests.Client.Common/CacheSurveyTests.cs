@@ -48,6 +48,39 @@ namespace Chimera.Tests.Client.Common
 		}
 
 		/// <summary>
+		/// A project opened from another path than its cache was written for is a copy or has
+		/// moved, and a copy keeps its original's id: its greenzone, lag log and branch states are
+		/// thrown away, and its budgets kept (user-decided, 2026-10-15). They were loaded under
+		/// another copy's inputs before.
+		/// </summary>
+		[TestMethod]
+		public void AProjectOpenedFromElsewhereLosesItsCachedGreenzone()
+		{
+			const string id = "0123456789abcdef0123456789abcd01";
+			var here = Path.Combine(_dir, "here", "run.chimeraProject");
+			var there = Path.Combine(_dir, "there", "run.chimeraProject");
+			ProjectCache.Remember(id, new ProjectCache.ProjectFacts { ProjectPath = here });
+			var dir = ProjectCache.DirectoryFor(id);
+			Fill(dir, ProjectCache.HistoryFileName, 64);
+			Fill(dir, ProjectCache.GreenZoneFileName, 64);
+			Fill(Path.Combine(dir, ProjectCache.BranchStatesDirName), "a.state", 64);
+			ProjectCache.RememberBudgets(id, new ProjectCache.ProjectBudgets { MemoryMb = 512 });
+
+			Assert.IsFalse(ProjectCache.DiscardGreenzoneIfMoved(id, here), "the same file keeps its greenzone");
+			Assert.IsTrue(File.Exists(Path.Combine(dir, ProjectCache.HistoryFileName)));
+
+			Assert.IsTrue(ProjectCache.DiscardGreenzoneIfMoved(id, there), "a copy or a moved file does not");
+			Assert.IsFalse(File.Exists(Path.Combine(dir, ProjectCache.HistoryFileName)));
+			Assert.IsFalse(File.Exists(Path.Combine(dir, ProjectCache.GreenZoneFileName)));
+			Assert.IsFalse(Directory.Exists(Path.Combine(dir, ProjectCache.BranchStatesDirName)));
+			Assert.AreEqual(512, ProjectCache.BudgetsOf(id).MemoryMb, "the budgets are the person's, and stay");
+
+			const string unlabelled = "0123456789abcdef0123456789abcd02";
+			Fill(ProjectCache.DirectoryFor(unlabelled), ProjectCache.HistoryFileName, 64);
+			Assert.IsFalse(ProjectCache.DiscardGreenzoneIfMoved(unlabelled, there), "a cache that never said where it was is left alone");
+		}
+
+		/// <summary>
 		/// A greenzone lives in memory now (user-decided, 2026-09-15), so the spill files an
 		/// earlier build left in a project's cache are swept when it opens - and only they
 		/// are: the saved history and everything else beside them stay. A project with no

@@ -146,9 +146,19 @@ namespace Chimera.Client.GUI
 			Config.AviCaptureOsd = request.CaptureOsd;
 			Config.AviCaptureLua = request.CaptureLua || request.CaptureOsd;
 
-			MemoryStream restore = new();
-			Emulator.AsStatable().SaveStateBinary(new BinaryWriter(restore));
-			restore.Position = 0;
+			// Where the user is, kept as a state file the engine writes: a machine's state
+			// can be bigger than a byte array holds (a PlayStation 3's is gigabytes, and the
+			// encode refused to start with an overflow, chimera issue 282).
+			var restore = movie.NewScratchStatePath("encode-restore");
+			try
+			{
+				Emulator.AsStatable().SaveStateToFile(restore);
+			}
+			catch (Exception e)
+			{
+				TryDeleteFile(restore);
+				return $"The encode cannot start: the emulator's state could not be kept to come back to ({e.Message}).";
+			}
 
 			// Whether it was RECORDING is taken here, before the switch below turns
 			// it off: it is one of the things the encode borrows and has to give
@@ -309,8 +319,7 @@ namespace Chimera.Client.GUI
 
 			try
 			{
-				job.RestoreState.Position = 0;
-				Emulator.AsStatable().LoadStateBinary(new BinaryReader(job.RestoreState));
+				Emulator.AsStatable().LoadStateFromFile(job.RestoreStatePath);
 			}
 			catch (Exception e)
 			{
@@ -318,7 +327,7 @@ namespace Chimera.Client.GUI
 			}
 			finally
 			{
-				job.RestoreState.Dispose();
+				TryDeleteFile(job.RestoreStatePath);
 			}
 
 			// The movie mode, which the summary above has always promised to give
@@ -354,5 +363,16 @@ namespace Chimera.Client.GUI
 		/// went after the run loop has let go of it.
 		/// </summary>
 		private VideoEncodeJob? _lastEncode;
+
+		/// <summary>Removes a file the encode made for itself; one that cannot go is left.</summary>
+		private static void TryDeleteFile(string path)
+		{
+			try
+			{
+				if (File.Exists(path)) File.Delete(path);
+			}
+			catch (IOException) { }
+			catch (UnauthorizedAccessException) { }
+		}
 	}
 }

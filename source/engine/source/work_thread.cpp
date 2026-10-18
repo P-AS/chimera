@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <utility>
 
 namespace chimera
@@ -85,7 +86,24 @@ void WorkThread::run()
 			m_jobs.pop_front();
 			m_running = true;
 		}
-		job();
+		/* An exception that left the thread function would end the process
+		 * (std::terminate), and a job's caller is not here to be told. Each job
+		 * keeps what it hands back consistent when it fails; this is the last
+		 * word, so that one that does not still ends no session. */
+		try
+		{
+			job();
+		}
+		catch (const std::exception &e)
+		{
+			fprintf(stderr, "[helpers] a job on %s failed: %s\n", m_name, e.what());
+			fflush(stderr);
+		}
+		catch (...)
+		{
+			fprintf(stderr, "[helpers] a job on %s failed\n", m_name);
+			fflush(stderr);
+		}
 		{
 			std::lock_guard<std::mutex> lock(m_lock);
 			m_running = false;

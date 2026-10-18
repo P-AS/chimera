@@ -25,6 +25,7 @@
 #include <wchar.h>
 
 #include "gl_names.h"
+#include "vk_names.h"
 
 /* What WER hands a runtime exception helper module. Declared here: mingw-w64's
  * werapi.h does not compile on its own, and this prefix is all this module reads. */
@@ -133,7 +134,14 @@ static void write_gl_entry(FILE *f, const flight_line *line)
 	case 0xFFFFFF04: snprintf(name, sizeof name, "-- a session takes the bridge (a fresh context id)"); break;
 	case 0xFFFFFF05: snprintf(name, sizeof name, "-- the context is destroyed"); break;
 	default:
-		if (line->op >= GL_NAMES_FIRST_OPCODE && line->op - GL_NAMES_FIRST_OPCODE < GL_NAMES_COUNT)
+		if (line->op & 0x40000000u) {
+			/* a Vulkan bridge command (the engine's ce_vk_flight_note) */
+			const UINT32 op = line->op & 0x0FFFFFFFu;
+			if (op >= VK_NAMES_FIRST_OPCODE && op - VK_NAMES_FIRST_OPCODE < VK_NAMES_COUNT && vk_names[op - VK_NAMES_FIRST_OPCODE][0])
+				snprintf(name, sizeof name, "vk %s", vk_names[op - VK_NAMES_FIRST_OPCODE]);
+			else
+				snprintf(name, sizeof name, "vk bridge op %lu", (unsigned long)op);
+		} else if (line->op >= GL_NAMES_FIRST_OPCODE && line->op - GL_NAMES_FIRST_OPCODE < GL_NAMES_COUNT)
 			snprintf(name, sizeof name, "%s", gl_names[line->op - GL_NAMES_FIRST_OPCODE]);
 		else
 			snprintf(name, sizeof name, "bridge op %lu", (unsigned long)line->op);
@@ -154,7 +162,7 @@ static void write_gl_calls(FILE *f, HANDLE process, UINT64 address, UINT32 bytes
 	if (header.magic != FLIGHT_MAGIC || header.capacity == 0 || (header.capacity & (header.capacity - 1)) != 0
 		|| sizeof header + (UINT64)header.capacity * sizeof(flight_entry) > bytes) return;
 	if (header.written == 0) {
-		fprintf(f, "\ngl: nothing crossed the GPU bridge this run\n");
+		fprintf(f, "\ngl and vk: nothing crossed the GPU bridge this run\n");
 		return;
 	}
 	const HANDLE heap = GetProcessHeap();
@@ -177,7 +185,7 @@ static void write_gl_calls(FILE *f, HANDLE process, UINT64 address, UINT32 bytes
 			count++;
 		}
 		const UINT32 first = count > FLIGHT_LINES ? count - FLIGHT_LINES : 0;
-		fprintf(f, "\ngl (the last %llu of %llu crossings of the GPU bridge, oldest first; the newest is last):\n",
+		fprintf(f, "\ngl and vk (the last %llu of %llu crossings of the GPU bridge, OpenGL and Vulkan, oldest first; the newest is last):\n",
 			(unsigned long long)kept, (unsigned long long)header.written);
 		for (UINT32 i = first; i < count; i++) write_gl_entry(f, &lines[i]);
 		fflush(f);

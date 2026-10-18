@@ -7,12 +7,14 @@
  */
 
 #include "chimera/engine.h"
+#include "../source/manifest_util.hpp"
 
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
 #include <cstring>
 #include <string>
+#include <vector>
 
 static std::string g_dir;
 
@@ -48,6 +50,18 @@ int main(int argc, char **argv)
 	 * names, so sharing the build directory made them race: one removed
 	 * save.hdd to prove a missing file is reported missing while the
 	 * other was writing it back. */
+	// ---- a cue's FILE lines: after a byte-order mark, in any case, and only
+	// the keyword itself ----
+	{
+		const std::string cue = "\xEF\xBB\xBF" "FILE \"Game (Track 1).bin\" BINARY\r\n  TRACK 01 MODE2/2352\r\n"
+			"file \"Game (Track 2).bin\" BINARY\r\n  TRACK 02 AUDIO\r\n"
+			"FILENAME \"not a file line\"\r\n\tFile Track3.bin BINARY\r\n";
+		const std::vector<uint8_t> bytes(cue.begin(), cue.end());
+		const std::vector<std::string> got = chimera::manifest::cueReferences(bytes);
+		assert(got.size() == 3);
+		assert(got[0] == "Game (Track 1).bin" && got[1] == "Game (Track 2).bin" && got[2] == "Track3.bin");
+	}
+
 	g_dir = argc > 1 ? argv[1] : "work-multifile";
 	std::filesystem::create_directories(g_dir);
 	const char *err = nullptr;

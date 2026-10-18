@@ -11,11 +11,16 @@
 #include "chimera/engine.h"
 
 #include <cassert>
+#include <csignal>
 #include <cstdio>
 #include <filesystem>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+
+#ifndef _WIN32
+#include <sys/resource.h>
+#endif
 
 static std::string g_dir;
 
@@ -106,6 +111,7 @@ int main(int argc, char **argv)
 
 		ce_project_branch_add(p, "risky route", 400, "2026-08-26 21:00:00", "|..|\n", 5);
 		ce_project_branch_marker_add(p, 0, 350, "the setup", 1);
+		ce_project_branch_marker_add(p, 0, 360, "no state here", 0);
 		ce_project_subtitle_add(p, "subtitle 100 10 10 300 FFFFFFFF hello");
 		ce_project_header_set(p, "Author", "sergio");
 		ce_project_header_set(p, "Platform", "DOS");
@@ -140,9 +146,12 @@ int main(int argc, char **argv)
 		assert(std::strcmp(ce_project_branch_time(p, 0), "2026-08-26 21:00:00") == 0);
 		const char *branchLog = ce_project_branch_log_text(p, 0, &len);
 		assert(std::string(branchLog, len) == "|..|\n");
-		assert(ce_project_branch_marker_count(p, 0) == 1);
+		assert(ce_project_branch_marker_count(p, 0) == 2);
 		assert(ce_project_branch_marker_frame(p, 0, 0) == 350);
 		assert(std::strcmp(ce_project_branch_marker_text(p, 0, 0), "the setup") == 0);
+		/* a branch marker's keep-a-state choice survives the file, as a marker's does */
+		assert(ce_project_branch_marker_keep_state(p, 0, 0) == 1);
+		assert(ce_project_branch_marker_keep_state(p, 0, 1) == 0);
 		assert(ce_project_subtitle_count(p) == 1);
 		assert(std::strcmp(ce_project_subtitle_at(p, 0), "subtitle 100 10 10 300 FFFFFFFF hello") == 0);
 		assert(ce_project_header_count(p) == 2);
@@ -407,6 +416,52 @@ int main(int argc, char **argv)
 		assert(!text.empty() && text.find("\"tastudio\"") == std::string::npos);
 		std::remove(lpath.c_str());
 	}
+
+	// ---- a save that fails part way leaves the last good project ----
+	// The cap on file size makes the second save fail after its first 64 KiB,
+	// as a full disk would. A save that empties the file before writing it
+	// loses the first save; one written beside the file and moved over it does not.
+#ifndef _WIN32
+	{
+		const std::string kpath = g_dir + "/kept.chimeraProject";
+		auto readText = [](const std::string &path) {
+			std::string text;
+			if (FILE *f = std::fopen(path.c_str(), "rb"))
+			{
+				char buf[4096];
+				size_t n;
+				while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, n);
+				std::fclose(f);
+			}
+			return text;
+		};
+		ce_project *p = ce_project_new();
+		ce_project_set_title(p, "kept");
+		assert(ce_project_save(p, kpath.c_str(), &err) == 0);
+		const std::string before = readText(kpath);
+		assert(!before.empty() && before.size() < 64 * 1024);
+
+		ce_project_set_description(p, std::string(1 << 20, 'x').c_str());
+		struct rlimit old;
+		assert(getrlimit(RLIMIT_FSIZE, &old) == 0);
+		struct rlimit capped = old;
+		capped.rlim_cur = 64 * 1024;
+		void (*prev)(int) = std::signal(SIGXFSZ, SIG_IGN);
+		assert(setrlimit(RLIMIT_FSIZE, &capped) == 0);
+		const int rc = ce_project_save(p, kpath.c_str(), &err);
+		assert(setrlimit(RLIMIT_FSIZE, &old) == 0);
+		std::signal(SIGXFSZ, prev);
+		assert(rc != 0 && err != nullptr);
+		assert(readText(kpath) == before);
+		assert(!std::filesystem::exists(kpath + ".writing"));
+
+		// and with room again, the save goes through whole
+		assert(ce_project_save(p, kpath.c_str(), &err) == 0);
+		assert(readText(kpath).size() > (1u << 20));
+		ce_project_free(p);
+		std::remove(kpath.c_str());
+	}
+#endif
 
 	std::printf("project: all assertions passed\n");
 	return 0;

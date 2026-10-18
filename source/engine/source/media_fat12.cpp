@@ -21,6 +21,7 @@
  * order rather than from the order a directory happened to be read in.
  */
 #include "media_maker.hpp"
+#include "file_io.hpp"
 
 #include "sha1.hpp"
 
@@ -29,6 +30,7 @@
 #include <cstring>
 #include <filesystem>
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <system_error>
@@ -178,21 +180,29 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 				return a->name.compare(b->name) < 0;
 			});
 		std::map<std::string, int> seen;
+		std::set<std::string> taken; /* every name given in this folder */
 		for (auto &k : d->kids)
 		{
 			k->shortName = shortNameOf(k->name, k->dir);
 			if (int &n = seen[k->shortName]; ++n > 1)
 			{
 				/* ~1, ~2 ... taken from the sorted order, so the same folder
-				 * always shortens the same way */
-				const std::string tail = "~" + std::to_string(n);
-				std::string base = k->shortName.substr(0, 8);
-				while (!base.empty() && base.back() == ' ') base.pop_back();
-				if (base.size() + tail.size() > 8) base.resize(8 - tail.size());
-				base += tail;
-				base.resize(8, ' ');
-				k->shortName = base + k->shortName.substr(8);
+				 * always shortens the same way - and past any name already
+				 * given, a file's own "NAME~2" among them */
+				const std::string wanted = k->shortName;
+				for (int c = n;; c++)
+				{
+					const std::string tail = "~" + std::to_string(c);
+					std::string base = wanted.substr(0, 8);
+					while (!base.empty() && base.back() == ' ') base.pop_back();
+					if (base.size() + tail.size() > 8) base.resize(8 - tail.size());
+					base += tail;
+					base.resize(8, ' ');
+					k->shortName = base + wanted.substr(8);
+					if (taken.count(k->shortName) == 0) break;
+				}
 			}
+			taken.insert(k->shortName);
 			if (k->dir) dirs.push_back(k.get());
 			else filesFlat.push_back(k.get());
 		}
@@ -278,6 +288,28 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 		boot.insert(boot.end(), label, label + 11);
 		const char *fsType = "FAT12   ";
 		boot.insert(boot.end(), fsType, fsType + 8);
+		/* What a machine runs when it boots from this floppy (user-decided,
+		 * 2026-10-15): it says the disk holds no system, waits for a key and
+		 * starts the boot again, as a DOS data floppy does, so the person can
+		 * take it out. It used to be zeros, which the CPU ran into whatever
+		 * followed. Our own code, loaded at 0000:7C00:
+		 *   cli; xor ax,ax; mov ds,ax; mov ss,ax; mov sp,7C00h; sti
+		 *   mov si,7C62h
+		 *   next: lodsb; or al,al; jz key; mov ah,0Eh; mov bx,7; int 10h; jmp next
+		 *   key:  xor ax,ax; int 16h; int 19h; jmp $
+		 * and the message after it, at 7C62h. */
+		static const uint8_t kBootCode[] = {
+			0xFA, 0x31, 0xC0, 0x8E, 0xD8, 0x8E, 0xD0, 0xBC, 0x00, 0x7C, 0xFB,
+			0xBE, 0x62, 0x7C,
+			0xAC, 0x08, 0xC0, 0x74, 0x09, 0xB4, 0x0E, 0xBB, 0x07, 0x00, 0xCD, 0x10, 0xEB, 0xF2,
+			0x31, 0xC0, 0xCD, 0x16, 0xCD, 0x19, 0xEB, 0xFE,
+		};
+		static const char kBootMessage[] =
+			"\r\nThis floppy holds files, not a system to start.\r\n"
+			"Take it out and press a key to start again.\r\n";
+		static_assert(0x3E + sizeof kBootCode == 0x62, "the message's address is in the code");
+		boot.insert(boot.end(), kBootCode, kBootCode + sizeof kBootCode);
+		boot.insert(boot.end(), kBootMessage, kBootMessage + sizeof kBootMessage); /* with its 0 */
 		boot.resize(510, 0);
 		boot.push_back(0x55);
 		boot.push_back(0xAA);
@@ -299,6 +331,10 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 
 	{
 		std::vector<uint8_t> packed(kSectorsPerFat * kSectorSize, 0);
+		/* Entries are packed in pairs, and a 1.44 MB disk has an odd number of
+		 * them (2849): the last, the disk's last cluster, went unwritten and
+		 * read as free - a file that filled the disk lost its end of chain. */
+		if (fat.size() % 2 != 0) fat.push_back(0);
 		for (size_t i = 0; i + 1 < fat.size(); i += 2)
 		{
 			const uint32_t a = fat[i], b = fat[i + 1];
@@ -348,7 +384,7 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 	{
 		Node *f = filesFlat[i];
 		if (f->size == 0) continue;
-		std::FILE *in = std::fopen(f->abs.c_str(), "rb");
+		std::FILE *in = chimera::openFile(f->abs.c_str(), "rb");
 		if (!in)
 		{
 			error = "cannot read " + f->name;
@@ -369,7 +405,7 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 		}
 	}
 
-	std::FILE *out = std::fopen(outPath.c_str(), "wb");
+	std::FILE *out = chimera::openFile(outPath.c_str(), "wb");
 	if (!out)
 	{
 		error = "cannot create " + outPath;

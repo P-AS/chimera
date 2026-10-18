@@ -1,5 +1,7 @@
 #include "zstd_dyn.hpp"
+#include "host_dyn.hpp"
 
+#include <mutex>
 #include <string>
 
 #if defined(_WIN32)
@@ -15,52 +17,9 @@ namespace {
 
 ZstdApi g_api;
 bool g_ok = false;
+bool g_tried = false; /* the library opened (whether or not it had everything) */
 std::string g_error;
-
-void *openBesideUs(const char *name)
-{
-#if defined(_WIN32)
-	/* the directory this DLL sits in, so we find OUR zstd, not a stray one */
-	HMODULE self = nullptr;
-	wchar_t path[MAX_PATH];
-	if (GetModuleHandleExW(
-			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-			reinterpret_cast<LPCWSTR>(&openBesideUs), &self)
-		&& GetModuleFileNameW(self, path, MAX_PATH) != 0)
-	{
-		std::wstring dir(path);
-		auto slash = dir.find_last_of(L"\\/");
-		if (slash != std::wstring::npos)
-		{
-			std::wstring full = dir.substr(0, slash + 1);
-			for (const char *c = name; *c != '\0'; c++) full.push_back(static_cast<wchar_t>(*c));
-			if (HMODULE h = LoadLibraryW(full.c_str())) return h;
-		}
-	}
-	return LoadLibraryA(name);
-#else
-	/* RTLD_DEEPBIND: the library's own symbols win over the process's global
-	 * ones when IT looks a symbol up. Mesa links the distro's libzstd, and SDL
-	 * loads Mesa with RTLD_GLOBAL, so by the time a savestate is written the
-	 * process already holds a libzstd of another version in its global scope.
-	 * Without this flag the bundled libzstd's internal calls (ZSTD_compress to
-	 * ZSTD_createCCtx, ZSTD_freeCCtx...) resolved to THAT one, a context made
-	 * by one version was torn down by the other, and the first big greenzone
-	 * write died in free() - a DOSBox-X project's save, a PS2 project's exit. */
-	Dl_info info;
-	if (dladdr(reinterpret_cast<void *>(&openBesideUs), &info) != 0 && info.dli_fname != nullptr)
-	{
-		std::string dir(info.dli_fname);
-		auto slash = dir.find_last_of('/');
-		if (slash != std::string::npos)
-		{
-			std::string full = dir.substr(0, slash + 1) + name;
-			if (void *h = dlopen(full.c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND)) return h;
-		}
-	}
-	return dlopen(name, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
-#endif
-}
+std::mutex g_loadLock;
 
 void *sym(void *lib, const char *name)
 {
@@ -77,15 +36,12 @@ void loadOnce()
 {
 	{
 #if defined(_WIN32)
-		void *lib = openBesideUs("libzstd.dll");
+		void *lib = openLibraryBesideUs("libzstd.dll", false, g_error);
 #else
-		void *lib = openBesideUs("libzstd.so");
+		void *lib = openLibraryBesideUs("libzstd.so", true, g_error);
 #endif
-		if (lib == nullptr)
-		{
-			g_error = "libzstd not found beside libchimera";
-		}
-		else
+		g_tried = lib != nullptr;
+		if (lib != nullptr)
 		{
 			g_api.compressBound = reinterpret_cast<size_t (*)(size_t)>(sym(lib, "ZSTD_compressBound"));
 			g_api.compress = reinterpret_cast<size_t (*)(void *, size_t, const void *, size_t, int)>(sym(lib, "ZSTD_compress"));
@@ -102,15 +58,26 @@ void loadOnce()
 				&& g_api.createDStream != nullptr && g_api.initDStream != nullptr
 				&& g_api.freeDStream != nullptr && g_api.decompressStream != nullptr;
 			if (!g_ok) g_error = "libzstd is missing expected symbols";
+			/* streaming compression is all four or none: a caller checks one */
+			if (g_api.createCStream == nullptr || g_api.initCStream == nullptr
+				|| g_api.freeCStream == nullptr || g_api.compressStream2 == nullptr)
+			{
+				g_api.createCStream = nullptr;
+				g_api.initCStream = nullptr;
+				g_api.freeCStream = nullptr;
+				g_api.compressStream2 = nullptr;
+			}
 		}
 	}
 }
 
 const ZstdApi *zstdApi(const char **error)
 {
-	/* a magic static: the load runs exactly once, and concurrent callers wait */
-	static const bool loaded = (loadOnce(), true);
-	(void)loaded;
+	/* loaded until it loads, as hostApi: a library a scanner held the first
+	 * time is tried again by the next caller */
+	std::lock_guard<std::mutex> lock(g_loadLock);
+	static int64_t lastTry = 0;
+	if (!g_tried && retryLibraryLoad(lastTry)) loadOnce();
 	if (!g_ok)
 	{
 		if (error != nullptr) *error = g_error.c_str();

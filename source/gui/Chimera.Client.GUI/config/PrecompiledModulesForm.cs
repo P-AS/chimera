@@ -45,6 +45,14 @@ namespace Chimera.Client.GUI
 		private readonly Button _openFolder;
 
 		/// <summary>
+		/// How much memory one compile session is counted at, in GB (chimera issue 259):
+		/// shown when the window is given the configuration, and written back to it as it
+		/// changes. The engine runs as many sessions side by side as the machine can give
+		/// this much each, so a smaller figure runs more at once and a larger one fewer.
+		/// </summary>
+		private readonly NumericUpDown? _sessionGigabytes;
+
+		/// <summary>
 		/// The ticked rows by directory, which is unique and survives the list
 		/// being rebuilt. A set rather than a walk of the ListView for the reason
 		/// the cache manager records: the tick event arrives as a posted message,
@@ -68,9 +76,11 @@ namespace Chimera.Client.GUI
 
 		/// <param name="survey">what is on disk; called on open and after every removal</param>
 		/// <param name="remove">takes one row away; the model's, so this window can be tested without a disk</param>
+		/// <param name="config">where the memory per compile session is kept; without it the setting is not shown</param>
 		public PrecompiledModulesForm(
 			Func<IReadOnlyList<PrecompiledGame>> survey,
-			Action<PrecompiledGame>? remove = null)
+			Action<PrecompiledGame>? remove = null,
+			Config? config = null)
 		{
 			_survey = survey;
 			_remove = remove ?? PrecompiledCodeSurvey.Remove;
@@ -154,6 +164,31 @@ namespace Chimera.Client.GUI
 				Text = "&Close",
 			};
 
+			if (config is not null)
+			{
+				Label sessionLabel = new()
+				{
+					Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
+					AutoSize = true,
+					Location = new(margin + (2 * (buttonWidth + margin)) + margin, buttonTop + UIHelper.ScaleY(5)),
+					Text = "&Memory per compile session (GB):",
+				};
+				_sessionGigabytes = new NumericUpDown
+				{
+					Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
+					Location = new(sessionLabel.Left + UIHelper.ScaleX(190), buttonTop + UIHelper.ScaleY(2)),
+					Size = new(UIHelper.ScaleX(60), buttonHeight),
+					Minimum = 1,
+					Maximum = 256,
+					Value = Math.Max(1, Math.Min(256, config.CompileSessionGigabytes)),
+				};
+				_sessionGigabytes.ValueChanged += (_, _) => config.CompileSessionGigabytes = (int)_sessionGigabytes.Value;
+				new ToolTip().SetToolTip(_sessionGigabytes,
+					"How much memory one compile session is counted at. Chimera runs as many sessions side by side as the computer can give this much each: a smaller figure runs more at once, a larger one fewer. 8 is what one RPCS3 session was measured to need.");
+				Controls.Add(sessionLabel);
+				Controls.Add(_sessionGigabytes);
+			}
+
 			Controls.Add(_header);
 			Controls.Add(_list);
 			Controls.Add(_detail);
@@ -171,6 +206,13 @@ namespace Chimera.Client.GUI
 		/// <summary>What the list shows right now, for tests: label, size and whether it is complete.</summary>
 		public IReadOnlyList<(string Label, long Bytes, bool Complete)> Rows
 			=> _items.Select(static i => (i.Label, i.Bytes, i.Complete)).ToList();
+
+		/// <summary>The memory per compile session the window shows, in GB; null when it was not given the configuration.</summary>
+		public int? SessionGigabytes
+		{
+			get => _sessionGigabytes is null ? null : (int)_sessionGigabytes.Value;
+			set { if (_sessionGigabytes is not null && value is int v) _sessionGigabytes.Value = Math.Max(1, Math.Min(256, v)); }
+		}
 
 		/// <summary>Ticks a row by its label, for tests driving the window without a mouse.</summary>
 		public void Tick(string label, bool ticked = true)

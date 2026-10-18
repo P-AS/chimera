@@ -7,7 +7,7 @@ labels: bug
 
 <!-- Fill what applies; the more of it there is, the fewer round trips. -->
 
-<!-- Help > Report an Issue in Chimera fills in the next five lines: copy its text and paste over them.
+<!-- Help > Report an Issue in Chimera fills in the next six fields: copy its text and paste over them.
      Its "Save as Zip..." button saves the files asked for under Attach as one zip.
      In an older build, Help > Copy Version Info gives the first two lines. -->
 **Chimera build:** <!-- the exact string from Help > About or the release name, e.g. Nightly 2026-09-19 (cd4b89cd) -->
@@ -15,6 +15,8 @@ labels: bug
 **Core and version:** <!-- as the Core Manager shows it, e.g. RPCS3 2026-09-19 (4e678a9). Frontend and core should be from the same day or later: a build from before a core's format changes cannot read what that core writes. -->
 
 **OS and GPU:** <!-- e.g. Windows 11, RTX 4060 Ti -->
+
+**CPU and memory:** <!-- e.g. AMD Ryzen 7 5800X (16 threads), 32 GB -->
 
 **Game:** <!-- the file name(s) exactly as they appear in the project, and which slot each went in -->
 

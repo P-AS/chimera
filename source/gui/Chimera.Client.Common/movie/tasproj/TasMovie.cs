@@ -6,6 +6,7 @@ using System.Linq;
 
 using Chimera.Common.StringExtensions;
 using Chimera.Emulation.Common;
+using Chimera.Emulation.Common.Engine;
 
 namespace Chimera.Client.Common
 {
@@ -16,10 +17,15 @@ namespace Chimera.Client.Common
 
 		public const double CurrentVersion = 1.1;
 
+		/// <param name="opened">
+		/// the project as the frontend already opened it, to read the movie from instead of the file at
+		/// <paramref name="path"/> (see <see cref="IMovieSession.Get"/>); null reads the file
+		/// </param>
 		/// <exception cref="InvalidOperationException">loaded core does not implement <see cref="IStatable"/></exception>
-		internal TasMovie(IMovieSession session, string path)
+		internal TasMovie(IMovieSession session, string path, EngineProject opened = null)
 			: base(session, path)
 		{
+			_opened = opened;
 			Branches = new TasBranchCollection(this);
 			ChangeLog = new TasMovieChangeLog(this);
 			Header[HeaderKeys.MovieVersion] = $"Chimera Project File v{CurrentVersion.ToString(CultureInfo.InvariantCulture)}";

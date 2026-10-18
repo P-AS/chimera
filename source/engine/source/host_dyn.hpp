@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace chimera {
 
@@ -120,6 +121,18 @@ const HostApi *hostApi(const char **error);
  * argCount <= 6. Stubs live for the process; there are finitely many guest
  * entry points. Returns 0 on failure (see hostApi error / stub exhaustion). */
 uintptr_t bridgeGuestCall(uintptr_t guestEntry, int argCount);
+
+/* A library of ours, opened from the folder libchimera itself was loaded from
+ * (the bundle's dll folder), or by name from the program's folder and the
+ * system's on Windows - never the current folder or PATH - and the loader's
+ * search on Linux. Null with the system's reason in `why` when it would not
+ * load. `deepBind`: on Linux, the library's own symbols before the process's. */
+void *openLibraryBesideUs(const char *name, bool deepBind, std::string &why);
+
+/* Whether a library that would not load is worth trying again now: at most
+ * once every two seconds, so a library that is simply not there costs a
+ * search per two seconds and not one per call. `last` is the caller's. */
+bool retryLibraryLoad(int64_t &lastMs);
 
 } // namespace chimera
 

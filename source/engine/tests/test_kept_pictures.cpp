@@ -133,6 +133,22 @@ void aHelperThatIsBehindKeepsNoMore()
 	std::printf("a helper kept %d of 40 pictures posted with no time between them\n", taken);
 }
 
+/* Recording forgets what is past the frame being recorded, every frame, and
+ * the picture still being packed then is the previous frame's own - which
+ * stays. Waiting for it anyway put the packing in line with the core. */
+void recordingDoesNotWaitForThePictureItKeeps()
+{
+	CeKeptPictures kept;
+	kept.budget(256u << 20);
+	const auto big = picture(3, 1600, 1200, true);
+	assert(kept.keep(5, big.data(), 1600, 1200));
+	const uint64_t before = kept.waits();
+	kept.dropAfter(5);   /* recording frame 6: frame 5's picture is kept */
+	assert(kept.waits() == before);
+	kept.dropAfter(4);   /* an edit at 5: that picture is forgotten, done or not */
+	assert(!kept.has(5));
+}
+
 void whatAFrameCosts()
 {
 	for (const auto &size : { std::pair<int32_t, int32_t>{ 640, 480 }, { 1280, 720 }, { 1920, 1080 } })
@@ -178,6 +194,7 @@ int main()
 	theLeastRecentlyUsedGoFirst();
 	whatWasDrawnPastAnEditIsForgotten();
 	aHelperThatIsBehindKeepsNoMore();
+	recordingDoesNotWaitForThePictureItKeeps();
 	whatAFrameCosts();
 	std::printf("test_kept_pictures: ok\n");
 	return 0;

@@ -13,11 +13,13 @@
 
 #include "../../extern/miniz/miniz.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -394,6 +396,11 @@ static void aFloppyIsReproducibleAndReadable()
 	const std::vector<uint8_t> img = slurp(fa);
 	assert(img.size() == 2880u * 512u);
 	assert(img[510] == 0x55 && img[511] == 0xAA);
+	/* marked bootable, so it carries code to run: it says the disk holds no
+	 * system and waits for a key, as a DOS data floppy does (it was zeros) */
+	assert(img[0x3E] == 0xFA); /* cli, the code's first instruction */
+	const std::string bootSector(reinterpret_cast<const char *>(img.data()), 512);
+	assert(bootSector.find("This floppy holds files, not a system to start.") == 0x62 + 2);
 	/* the BPB a 1.44 MB floppy must carry */
 	assert(img[11] == 0x00 && img[12] == 0x02); /* 512 bytes per sector */
 	assert(img[13] == 1);                        /* one sector per cluster */
@@ -419,6 +426,31 @@ static void aFloppyIsReproducibleAndReadable()
 	assert(foundEboot);
 }
 
+/* A file that fills the disk ends its chain in the disk's last cluster. The
+ * FAT holds 2849 entries, an odd count, and they are packed in pairs: the last
+ * one went unwritten and read as free, so the file had no end of chain. */
+static void aFullFloppyEndsItsChainInTheLastCluster()
+{
+	const fs::path full = workRoot() / "full";
+	fs::remove_all(full);
+	const uint32_t clusters = 2880u - (1u + 2u * 9u + 14u);   /* 2847 data sectors */
+	put(full / "whole.bin", std::string(size_t(clusters) * 512u, 'x'));
+	std::string sha, err;
+	const fs::path out = workRoot() / "full.img";
+	if (!chimera::mediaMake(full.string(), out.string(), chimera::MediaFormat::Fat12, nullptr, sha, err))
+	{
+		std::fprintf(stderr, "full floppy: %s\n", err.c_str());
+		assert(false);
+	}
+	const std::vector<uint8_t> img = slurp(out);
+	auto entry = [&](uint32_t n) {
+		const uint8_t *f = &img[512u + (n * 3u) / 2u];   /* the first FAT */
+		return (n & 1u) ? uint32_t((f[0] >> 4) | (f[1] << 4)) : uint32_t(f[0] | ((f[1] & 0x0Fu) << 8));
+	};
+	assert(entry(2847) == 2848);    /* the chain reaches the last cluster */
+	assert(entry(2848) == 0xFFF);   /* and ends there */
+}
+
 static void aFloppyRefusesWhatDoesNotFit()
 {
 	const fs::path big = workRoot() / "big";
@@ -431,6 +463,74 @@ static void aFloppyRefusesWhatDoesNotFit()
 		chimera::MediaFormat::Fat12, nullptr, sha, err));
 	assert(err.find("does not fit") != std::string::npos);
 	assert(!fs::exists(workRoot() / "big.img"));
+}
+
+/* Names that shorten to the same name each get one of their own: twelve that
+ * agree in their first 64 characters (Joliet's limit; its counter once had one
+ * digit, so the twelfth was given the second's name), and on a floppy two that
+ * shorten alike beside a file already called what the second would become. */
+static void namesThatShortenAlikeStayApart()
+{
+	const fs::path tree = workRoot() / "alike";
+	const std::string stem(64, 'n');
+	for (int i = 0; i < 12; i++) put(tree / (stem + "-" + std::to_string(i) + ".txt"), std::to_string(i));
+	std::string sha, err;
+	const fs::path iso = workRoot() / "alike.iso";
+	assert(chimera::mediaMake(tree.string(), iso.string(), chimera::MediaFormat::Iso9660, nullptr, sha, err));
+	const std::vector<uint8_t> bytes = slurp(iso);
+	const uint8_t *rootRec = &bytes[17 * 2048 + 156];
+	std::map<std::string, std::vector<uint8_t>> got;
+	readIsoJoliet(bytes, rd32le(rootRec + 2), rd32le(rootRec + 10), "", got);
+	assert(got.size() == 12);
+
+	const fs::path floppy = workRoot() / "alike-floppy";
+	put(floppy / "longname1.txt", "1");
+	put(floppy / "longname2.txt", "2");
+	put(floppy / "LONGNA~2.TXT", "3");
+	const fs::path img = workRoot() / "alike.img";
+	assert(chimera::mediaMake(floppy.string(), img.string(), chimera::MediaFormat::Fat12, nullptr, sha, err));
+	const std::vector<uint8_t> disk = slurp(img);
+	const uint32_t rootOff = (1u + 2u * 9u) * 512u;
+	std::set<std::string> names;
+	int entries = 0;
+	for (uint32_t i = 0; i < 224; i++)
+	{
+		const uint8_t *e = &disk[rootOff + i * 32];
+		if (e[0] == 0) break;
+		names.insert(std::string(reinterpret_cast<const char *>(e), 11));
+		entries++;
+	}
+	assert(entries == 3 && names.size() == 3);
+}
+
+/* The path tables list folders by level, then by their parent's number,
+ * then by name (ECMA-119 6.9.1). B/A and A/Z sit at the same level under
+ * different parents: by name alone A came first, under a parent numbered
+ * after Z's. */
+static void pathTablesGoByParent()
+{
+	const fs::path tree = workRoot() / "levels";
+	put(tree / "B" / "A" / "one.txt", "1");
+	put(tree / "A" / "Z" / "two.txt", "2");
+	std::string sha, err;
+	const fs::path iso = workRoot() / "levels.iso";
+	assert(chimera::mediaMake(tree.string(), iso.string(), chimera::MediaFormat::Iso9660, nullptr, sha, err));
+	const std::vector<uint8_t> bytes = slurp(iso);
+	for (const uint32_t vd : { 16u, 17u }) /* the primary table, then the Joliet one */
+	{
+		const uint8_t *d = &bytes[size_t(vd) * 2048];
+		const uint32_t size = rd32le(d + 132), at = rd32le(d + 140);
+		const uint8_t *t = &bytes[size_t(at) * 2048];
+		std::vector<uint16_t> parents;
+		for (uint32_t pos = 0; pos < size;)
+		{
+			const uint8_t idLen = t[pos];
+			parents.push_back(uint16_t(t[pos + 6] | (t[pos + 7] << 8)));
+			pos += 8 + idLen + (idLen & 1);
+		}
+		assert(parents.size() == 5); /* the root, A, B, A/Z, B/A */
+		assert(std::is_sorted(parents.begin(), parents.end()));
+	}
 }
 
 int main()
@@ -446,9 +546,12 @@ int main()
 	aRecipeWritesTheSystemArea();
 	aRecipeNotUnderstoodIsRefused();
 	aFloppyIsReproducibleAndReadable();
+	aFullFloppyEndsItsChainInTheLastCluster();
 	aFloppyRefusesWhatDoesNotFit();
 	aCancelledPackLeavesNothing();
 	anEmptyFolderIsRefused();
+	namesThatShortenAlikeStayApart();
+	pathTablesGoByParent();
 
 	fs::remove_all(workRoot());
 	std::printf("test_media: ok\n");

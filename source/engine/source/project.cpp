@@ -11,6 +11,9 @@
  * record.
  */
 
+#ifdef _WIN32
+#define _CRT_RAND_S /* rand_s, from the system's random source */
+#endif
 #include "chimera/engine.h"
 
 #include "file_io.hpp"
@@ -27,6 +30,10 @@
 #include <set>
 #include <string>
 #include <vector>
+
+#ifndef _WIN32
+#include <sys/random.h>
+#endif
 
 namespace {
 
@@ -159,16 +166,33 @@ struct ce_project
 extern "C" {
 
 /* An identity for one project. It need only be unique - nothing reads meaning
- * from it - so it is taken from where this process sits in memory (which the
- * loader decides anew every run), the clock, and a count, the same recipe the
- * GL bridge uses for a context. It is metadata and touches no machine state,
- * so there is nothing here for determinism to mind. */
+ * from it - but it is the key of the project's cache, greenzone, branch states
+ * and recovery folder, so two must never meet. It is 64 bits from the system's
+ * random source; where that gives nothing, where this process sits in memory,
+ * the clock and a count. That alone was not enough on Windows, which places a
+ * DLL at one address for every process until a reboot: two Chimeras making a
+ * project in the same second made the same id. It is metadata and touches no
+ * machine state, so there is nothing here for determinism to mind. */
+static uint64_t systemRandom64()
+{
+#ifdef _WIN32
+	unsigned int lo = 0, hi = 0;
+	if (rand_s(&lo) != 0 || rand_s(&hi) != 0) return 0;
+	return (static_cast<uint64_t>(hi) << 32) | lo;
+#else
+	uint64_t v = 0;
+	return getrandom(&v, sizeof v, 0) == static_cast<ssize_t>(sizeof v) ? v : 0;
+#endif
+}
+
 static std::string mintProjectId()
 {
 	static uint64_t made;
-	uint64_t bits = (static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&made)) << 16)
-		^ (static_cast<uint64_t>(std::time(nullptr)) << 8)
-		^ (++made);
+	uint64_t bits = systemRandom64();
+	if (bits == 0)
+		bits = (static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&made)) << 16)
+			^ (static_cast<uint64_t>(std::time(nullptr)) << 8)
+			^ (++made);
 	if (bits == 0) bits = 1;
 	char buf[17];
 	std::snprintf(buf, sizeof buf, "%016llx", static_cast<unsigned long long>(bits));
@@ -396,6 +420,7 @@ ce_project *ce_project_open(const char *path, const char **error_out)
 				{
 					cJSON *mFrame = cJSON_GetObjectItemCaseSensitive(m, "frame");
 					cJSON *mText = cJSON_GetObjectItemCaseSensitive(m, "text");
+					cJSON *mKeep = cJSON_GetObjectItemCaseSensitive(m, "keepState");
 					if (!cJSON_IsNumber(mFrame) || !cJSON_IsString(mText))
 					{
 						return rejectP("every branch marker needs number \"frame\" and string \"text\"");
@@ -403,6 +428,12 @@ ce_project *ce_project_open(const char *path, const char **error_out)
 					Marker mk;
 					mk.frame = static_cast<int64_t>(mFrame->valuedouble);
 					mk.text = mText->valuestring;
+					/* as for the project's own markers: written only when false */
+					if (mKeep != nullptr)
+					{
+						if (!cJSON_IsBool(mKeep)) return rejectP("a branch marker's \"keepState\" is not a boolean");
+						mk.keepState = cJSON_IsTrue(mKeep);
+					}
 					b.markers.push_back(std::move(mk));
 				}
 			}
@@ -511,6 +542,7 @@ int32_t ce_project_save(ce_project *p, const char *path, const char **error_out)
 				cJSON *mi = cJSON_CreateObject();
 				cJSON_AddNumberToObject(mi, "frame", static_cast<double>(m.frame));
 				cJSON_AddStringToObject(mi, "text", m.text.c_str());
+				if (!m.keepState) cJSON_AddBoolToObject(mi, "keepState", 0);
 				cJSON_AddItemToArray(bm, mi);
 			}
 		}

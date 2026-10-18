@@ -919,8 +919,47 @@ namespace Chimera.Client.GUI
 		private void AutoHoldContextMenuItem_Click(object sender, EventArgs e)
 		{
 			if (_clickedColumn == null) return;
+			// turning it on for an axis asks what value to hold (issue #298); a
+			// custom pattern already says what the axis takes
+			if (!_clickedColumn.Emphasis
+				&& ControllerType.Axes.TryGetValue(_clickedColumn.Name, out var spec)
+				&& Settings.PatternSelection != TAStudioSettings.PatternSelectionEnum.Custom
+				&& !AskAxisHoldValue(_clickedColumn.Name, spec))
+			{
+				return;
+			}
 			ToggleAutoFire(_clickedColumn);
 			_activeInputRoll.Refresh();
+		}
+
+		/// <summary>
+		/// Asks what value Auto-hold should hold the axis at, offering the axis's
+		/// value on the current frame, and keeps the answer in the project. False
+		/// when the user cancels or types something that is not a value of the axis.
+		/// </summary>
+		private bool AskAxisHoldValue(string axis, AxisSpec spec)
+		{
+			int frame = Emulator.Frame;
+			int current = frame < CurrentTasMovie.InputLogLength ? CurrentTasMovie.GetAxisState(frame, axis) : spec.Neutral;
+			using InputPrompt dialog = new()
+			{
+				Text = "Auto-hold",
+				Message = $"Hold {axis} at (from {spec.Min} to {spec.Max}):",
+				TextInputType = InputPrompt.InputType.Signed,
+				InitialValue = current.ToString(),
+			};
+			if (!this.ShowDialogWithTempMute(dialog).IsOk()) return false;
+
+			int? value = ParseAxisHoldValue(dialog.PromptText, spec);
+			if (value == null)
+			{
+				DialogController.ShowMessageBox($"\"{dialog.PromptText}\" is not a whole number from {spec.Min} to {spec.Max}, so Auto-hold was not turned on.", "Auto-hold", EMsgBoxIcon.Warning);
+				return false;
+			}
+			_movieSettings.AxisHoldValues ??= new();
+			_movieSettings.AxisHoldValues[axis] = value.Value;
+			CurrentTasMovie.FlagChanges();
+			return true;
 		}
 
 		private void HideColumnContextMenuItem_Click(object sender, EventArgs e)

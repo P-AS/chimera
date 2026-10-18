@@ -4,6 +4,7 @@
 #include "zstd_dyn.hpp"
 
 #include <cstring>
+#include <new>
 
 void CeKeptPictures::budget(uint64_t bytes)
 {
@@ -40,7 +41,11 @@ void CeKeptPictures::takeIn()
 
 void CeKeptPictures::settle()
 {
-	if (!m_packing.empty()) m_helper.drain();
+	if (!m_packing.empty())
+	{
+		m_waits++;
+		m_helper.drain();
+	}
 	takeIn();
 }
 
@@ -71,7 +76,14 @@ void CeKeptPictures::drop(int64_t frame)
 
 void CeKeptPictures::dropAfter(int64_t frame)
 {
-	settle(); /* a picture still being packed is one of those to forget */
+	/* A picture still being packed is waited for only when it is one of those
+	 * to forget. Recording calls this on every frame, and the picture in hand
+	 * then is the previous frame's - kept, not forgotten - so waiting for it
+	 * put the packing in line with the core: about 17 ms a frame at 1080p. */
+	bool forgetting = false;
+	for (const int64_t f : m_packing) forgetting = forgetting || f > frame;
+	if (forgetting) settle();
+	else takeIn();
 	while (!m_byFrame.empty() && m_byFrame.rbegin()->first > frame) drop(m_byFrame.rbegin()->first);
 }
 
@@ -101,13 +113,21 @@ bool CeKeptPictures::keep(int64_t frame, const uint32_t *bgra, int32_t w, int32_
 		r.frame = frame;
 		r.w = w;
 		r.h = h;
-		std::vector<uint8_t> room(z->compressBound(raw));
-		const size_t packed = z->compress(room.data(), room.size(), copy->data(), raw, 1);
-		if (z->isError(packed) == 0 && packed != 0)
+		try
 		{
-			room.resize(packed);
-			room.shrink_to_fit();
-			r.bytes = std::move(room);
+			std::vector<uint8_t> room(z->compressBound(raw));
+			const size_t packed = z->compress(room.data(), room.size(), copy->data(), raw, 1);
+			if (z->isError(packed) == 0 && packed != 0)
+			{
+				room.resize(packed);
+				room.shrink_to_fit();
+				r.bytes = std::move(room);
+			}
+		}
+		catch (const std::bad_alloc &)
+		{
+			/* no room to pack it: the frame is reported with no picture, as a
+			 * picture that would not compress is, so nothing waits for it */
 		}
 		std::lock_guard<std::mutex> hold(outbox->lock);
 		outbox->done.push_back(std::move(r));

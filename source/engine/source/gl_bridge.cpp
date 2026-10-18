@@ -155,6 +155,16 @@ void destroy_context()
 	if (s_window) { DestroyWindow(s_window); s_window = nullptr; }
 }
 
+/* The same at a session's end, without unbinding what the calling thread has
+ * current - the window's own context, it may be. Ours is not current by then
+ * (ce_gl_release gave it back). */
+void end_context()
+{
+	if (s_context) { wglDeleteContext(s_context); s_context = nullptr; }
+	if (s_dc) { ReleaseDC(s_window, s_dc); s_dc = nullptr; }
+	if (s_window) { DestroyWindow(s_window); s_window = nullptr; }
+}
+
 /* Whose context was current before we took the slot. Null is a legitimate
  * answer and must be restored as faithfully as any other. */
 HGLRC s_lentContext;
@@ -166,7 +176,7 @@ void save_current()
 	s_lentDC = wglGetCurrentDC();
 }
 
-void bind_ours() { wglMakeCurrent(s_dc, s_context); }
+bool bind_ours() { return wglMakeCurrent(s_dc, s_context) != FALSE; }
 
 void return_current()
 {
@@ -263,6 +273,15 @@ void destroy_context()
 	}
 }
 
+/* The same at a session's end: only the context goes. The display stays
+ * initialised for the next one, and nothing current is unbound - ours is not
+ * current by then (ce_gl_release gave it back). */
+void end_context()
+{
+	if (s_display != EGL_NO_DISPLAY && s_context != EGL_NO_CONTEXT) eglDestroyContext(s_display, s_context);
+	s_context = EGL_NO_CONTEXT;
+}
+
 /* Whose context was current before we took the slot. A frontend drawing
  * through GLX rather than EGL is invisible to eglGetCurrentContext, and there
  * is no way to put a GLX context back from here - so what it gets back is an
@@ -280,9 +299,9 @@ void save_current()
 	s_lentDisplay = eglGetCurrentDisplay();
 }
 
-void bind_ours()
+bool bind_ours()
 {
-	eglMakeCurrent(s_display, EGL_NO_SURFACE, EGL_NO_SURFACE, s_context);
+	return eglMakeCurrent(s_display, EGL_NO_SURFACE, EGL_NO_SURFACE, s_context) == EGL_TRUE;
 }
 
 void return_current()
@@ -595,6 +614,7 @@ enum : uint32_t
 	kFlightStateLoaded = 0xFFFFFF03, /* a savestate was restored; detail: the frame restored to */
 	kFlightSession = 0xFFFFFF04,     /* a session took the bridge (a fresh context id) */
 	kFlightStopped = 0xFFFFFF05,     /* the context was destroyed */
+	kFlightVulkan = 0x40000000,      /* added to a Vulkan bridge opcode: the crash module names it from Vulkan's list */
 };
 enum { kFlightCapacity = 8192 }; /* a power of two */
 struct FlightEntry
@@ -640,12 +660,15 @@ static void mint_context_id();
  * session opens, the way ce_gl_request and ce_cache_dir are; 1 unless a core
  * declares otherwise, so nothing changes for a core that says nothing. */
 static bool g_rebuildOnStateLoad = true;
+static bool g_syncReap; /* see syncReap */
 
 extern "C" void ce_gl_rebuild_on_state_load(int32_t on)
 {
 	g_rebuildOnStateLoad = on != 0;
 }
 
+/* `to` is the frame the state was taken at, -1 when the caller cannot say (a
+ * state handed in from outside, or read from a file) */
 extern "C" void ce_gl_state_loaded(int64_t to)
 {
 	flightNote(kFlightStateLoaded, (uint32_t)to);
@@ -667,8 +690,20 @@ extern "C" void ce_gl_state_loaded(int64_t to)
 	 * rebuild is the damage rather than the repair (see
 	 * ce_gl_rebuild_on_state_load). A core that declares nothing keeps the
 	 * behaviour above exactly. */
-	if (!keepObjects && g_rebuildOnStateLoad) mint_context_id();
+	if (!keepObjects && g_rebuildOnStateLoad)
+	{
+		mint_context_id();
+		g_syncReap = true;
+	}
 	if (!glAudit()) return;
+	if (to < 0)
+	{
+		g_auditLoads++;
+		fprintf(stderr, "[ce-gl-audit] restore %llu to a frame not known: not counted\n",
+			(unsigned long long)g_auditLoads);
+		fflush(stderr);
+		return;
+	}
 	uint64_t dead = 0, reused = 0, held = 0, leaked = 0;
 	for (int k = 0; k < kAuditKinds; k++)
 	{
@@ -817,8 +852,12 @@ static uint64_t g_bounceOverruns;
  * could not be grown (the caller then falls back to a direct, unguarded call -
  * a readback is better done unguarded than not at all). The canary is laid down
  * fresh each time, right where the guest's bytes end. */
+static const size_t kBounceMost = size_t{ 1 } << 30; /* past this a readback goes direct */
+
 static uint8_t *bounceFor(size_t need)
 {
+	/* the size is the guest's (glGetBufferSubData's), and can be anything */
+	if (need > kBounceMost) return nullptr;
 	const size_t want = need + kBounceCanary;
 	if (want > g_bounceCap)
 	{
@@ -902,9 +941,13 @@ static bool pixelBytes(GLenum format, GLenum type, GLsizei width, GLsizei height
 	if (skipPixels != 0 || skipRows != 0) return false;
 	if (alignment != 1 && alignment != 2 && alignment != 4 && alignment != 8) return false;
 
+	if (width <= 0 || height <= 0) return false;
+
 	const size_t effectiveWidth = rowLength > 0 ? (size_t)rowLength : (size_t)width;
 	const size_t rowRaw = (size_t)pixel * effectiveWidth;
 	const size_t rowStride = (rowRaw + (size_t)alignment - 1) & ~((size_t)alignment - 1);
+	/* the guest's numbers: a product that would not fit is not guarded */
+	if (rowStride > (SIZE_MAX >> 1) / (size_t)height) return false;
 	*tight = rowStride * ((size_t)height - 1) + (size_t)pixel * (size_t)width;
 	*scratch = rowStride * (size_t)height; /* generous: a padded last row lands here */
 	return true;
@@ -961,17 +1004,56 @@ struct SyncSlot
 	uint32_t gen;  /* bumped on every reuse, so an old name stays old */
 };
 static std::vector<SyncSlot> g_syncs;
+/* slots with no sync, to be taken without a search. A function's static, not
+ * a file's: as a second vector among this file's globals it made the mingw
+ * GCC 13 that CI uses fail with an internal error in the file's static
+ * initializers (choose_baseaddr, without _GLIBCXX_ASSERTIONS). */
+static std::vector<uint32_t> &syncFree()
+{
+	static std::vector<uint32_t> list;
+	return list;
+}
+
+/* A state load leaves fences behind that no one will delete: those made after
+ * the restored frame, which the restored guest never heard of. Once one has
+ * signalled it answers exactly as a name the bridge does not know (a fence
+ * that is over), so at the next fence after a load that rebuilds, every
+ * signalled one is deleted and its slot given back. It waits for the next
+ * fence because only then is the bridge's context the current one.
+ * (g_syncReap, set by ce_gl_state_loaded) */
+
+static void syncReap()
+{
+	g_syncReap = false;
+	for (size_t i = 0; i < g_syncs.size(); i++)
+	{
+		SyncSlot &slot = g_syncs[i];
+		if (slot.sync == nullptr) continue;
+		GLint status = 0;
+		glGetSynciv(slot.sync, GL_SYNC_STATUS, 1, nullptr, &status);
+		if (status != GL_SIGNALED) continue;
+		glDeleteSync(slot.sync);
+		slot.sync = nullptr;
+		syncFree().push_back((uint32_t)i);
+	}
+}
 
 /* The name for a driver sync: generation in the high half, slot+1 in the low,
  * so a name is never zero and never collides with a name from a past life. */
 static uintptr_t syncName(GLsync sync)
 {
-	size_t at = g_syncs.size();
-	for (size_t i = 0; i < g_syncs.size(); i++)
+	if (g_syncReap) syncReap();
+	size_t at;
+	if (!syncFree().empty())
 	{
-		if (g_syncs[i].sync == nullptr) { at = i; break; }
+		at = syncFree().back();
+		syncFree().pop_back();
 	}
-	if (at == g_syncs.size()) g_syncs.push_back(SyncSlot{ nullptr, 0 });
+	else
+	{
+		at = g_syncs.size();
+		g_syncs.push_back(SyncSlot{ nullptr, 0 });
+	}
 	g_syncs[at].sync = sync;
 	g_syncs[at].gen++;
 	return (uintptr_t)ce_gl_sync_name_make((uint64_t)at, g_syncs[at].gen);
@@ -996,7 +1078,11 @@ static void syncForget(GLsync name)
 	const uint64_t slot = ce_gl_sync_name_slot(v);
 	if (slot >= (uint64_t)g_syncs.size()) return;
 	SyncSlot &s = g_syncs[(size_t)slot];
-	if (s.gen == ce_gl_sync_name_generation(v)) s.sync = nullptr;
+	if (s.gen == ce_gl_sync_name_generation(v) && s.sync != nullptr)
+	{
+		s.sync = nullptr;
+		syncFree().push_back((uint32_t)slot);
+	}
 }
 
 /* ---------------------------------------------------------------------------
@@ -1067,6 +1153,49 @@ static CeGlBufferPool &bufferPool()
 {
 	static CeGlBufferPool pool;
 	return pool;
+}
+
+/* What each buffer target has bound, as the binds crossed the bridge. A pooled
+ * delete unbinds its name where a real one would - GL unbinds a deleted buffer
+ * from every target of the current context, and a pooled name left bound to
+ * the pixel-unpack target made the next upload read the guest's pointer as an
+ * offset into it. Asking the driver for every target on every delete would
+ * cost more than the pool saves, so this is consulted instead; it is only a
+ * hint, and the driver is asked before anything is unbound. */
+struct BoundRecord
+{
+	GLenum target;
+	GLuint name;
+};
+static BoundRecord g_bound[] = {
+	{ GL_ARRAY_BUFFER, 0 }, { GL_ELEMENT_ARRAY_BUFFER, 0 }, { GL_PIXEL_PACK_BUFFER, 0 },
+	{ GL_PIXEL_UNPACK_BUFFER, 0 }, { GL_UNIFORM_BUFFER, 0 }, { GL_COPY_READ_BUFFER, 0 },
+	{ GL_COPY_WRITE_BUFFER, 0 }, { 0x8C8E, 0 } /* GL_TRANSFORM_FEEDBACK_BUFFER */,
+	{ 0x8C2A, 0 } /* GL_TEXTURE_BUFFER */, { 0x8F3F, 0 } /* GL_DRAW_INDIRECT_BUFFER */,
+	{ 0x90EE, 0 } /* GL_DISPATCH_INDIRECT_BUFFER */, { 0x90D2, 0 } /* GL_SHADER_STORAGE_BUFFER */,
+	{ 0x92C0, 0 } /* GL_ATOMIC_COUNTER_BUFFER */, { 0x9192, 0 } /* GL_QUERY_BUFFER */,
+};
+
+static void recordBind(GLenum target, GLuint name)
+{
+	for (BoundRecord &r : g_bound)
+		if (r.target == target) { r.name = name; return; }
+}
+
+static GLuint boundBuffer(GLenum target);
+
+/* A name leaves every target it was bound to: really (`unbind`, a pooled
+ * delete, after the driver confirms it is still there) or in the record only
+ * (a real delete, which unbinds by itself). */
+static void forgetBinds(GLuint name, bool unbind)
+{
+	if (name == 0) return;
+	for (BoundRecord &r : g_bound)
+	{
+		if (r.name != name) continue;
+		if (unbind && boundBuffer(r.target) == name) glBindBuffer(r.target, 0);
+		r.name = 0;
+	}
 }
 
 /* Called once a buffer is mapped or given storage on a target boundBuffer() does
@@ -1143,10 +1272,28 @@ extern "C" uintptr_t BRIDGE_ABI ce_gl_dispatch(uintptr_t op, uintptr_t a, uintpt
 	 * back when the frame is over. Two calls per frame, not two per GL call. */
 	if (!g_borrowed && g_ready)
 	{
-		save_current();
-		bind_ours();
-		g_borrowed = true;
+		/* noted first: a driver that dies making the context current is then
+		 * blamed, rather than the call that wanted it */
 		flightNote(kFlightBorrowed, 0);
+		save_current();
+		if (!bind_ours())
+		{
+			/* The frontend's context is the one current, and the guest's calls
+			 * would make objects in it and change its state: none of them is
+			 * run. (libglvnd's EGL refuses while a GLX context is current on
+			 * the thread.) wglMakeCurrent leaves no context current when it
+			 * fails, so what was lent is put back. */
+			return_current();
+			static bool said;
+			if (!said)
+			{
+				said = true;
+				fprintf(stderr, "[ce-gl] the bridge's context could not be made current; the core's GL calls are not run\n");
+				fflush(stderr);
+			}
+			return 0;
+		}
+		g_borrowed = true;
 		gpuTimeFrameBegin();
 		if (glTrace())
 			fprintf(stderr, "[ce-gl] borrowed the context (GL_VERSION now %s)\n",
@@ -1222,8 +1369,18 @@ extern "C" uintptr_t BRIDGE_ABI ce_gl_dispatch(uintptr_t op, uintptr_t a, uintpt
 						: what == CeGlBufferPool::Delete::Pool ? "pooled" : "real");
 			/* not ours, still mapped, immutable, or the pool is full: a real
 			 * delete, so a guest bug stays visible, a mapping and a storage end
-			 * the way the guest meant, and a lopsided guest cannot leak */
-			if (what == CeGlBufferPool::Delete::Real) glDeleteBuffers(1, &name);
+			 * the way the guest meant, and a lopsided guest cannot leak - and
+			 * either way the name leaves the targets it was bound to, as GL's
+			 * own delete would have it */
+			if (what == CeGlBufferPool::Delete::Real)
+			{
+				glDeleteBuffers(1, &name);
+				forgetBinds(name, false);
+			}
+			else if (what == CeGlBufferPool::Delete::Pool)
+			{
+				forgetBinds(name, true);
+			}
 		}
 		return 0;
 	}
@@ -1535,6 +1692,42 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			return (uintptr_t)(syncFor(p->sync) != nullptr ? GL_TRUE : GL_FALSE);
 		}
 
+		/* What the buffer pool must know of, noted on the way to the generated
+		 * case below (see BoundRecord and bufferPool()). */
+		case CHIMERA_GL_OP_glBindBuffer:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glBindBuffer *>(a);
+			recordBind(p->target, p->buffer);
+			break;
+		}
+		case CHIMERA_GL_OP_glBindBufferBase:
+		{
+			/* (the generic binding point is set too) */
+			auto *p = reinterpret_cast<ChimeraGlArgs_glBindBufferBase *>(a);
+			recordBind(p->target, p->buffer);
+			break;
+		}
+		case CHIMERA_GL_OP_glBindBufferRange:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glBindBufferRange *>(a);
+			recordBind(p->target, p->buffer);
+			break;
+		}
+		/* the storage and map calls the cases above do not cover, by their
+		 * other names: a buffer given storage or mapped through them was pooled */
+		case CHIMERA_GL_OP_glBufferStorageEXT:
+			if (glPool()) bufferPool().noteImmutable(boundBuffer(reinterpret_cast<ChimeraGlArgs_glBufferStorageEXT *>(a)->target), true);
+			break;
+		case CHIMERA_GL_OP_glNamedBufferStorageEXT:
+			bufferPool().noteImmutable(reinterpret_cast<ChimeraGlArgs_glNamedBufferStorageEXT *>(a)->buffer, true);
+			break;
+		case CHIMERA_GL_OP_glMapNamedBuffer:
+			bufferPool().noteMapped(reinterpret_cast<ChimeraGlArgs_glMapNamedBuffer *>(a)->buffer, true);
+			break;
+		case CHIMERA_GL_OP_glMapNamedBufferRangeEXT:
+			bufferPool().noteMapped(reinterpret_cast<ChimeraGlArgs_glMapNamedBufferRangeEXT *>(a)->buffer, true);
+			break;
+
 		default:
 			break;
 	}
@@ -1610,6 +1803,17 @@ extern "C" void *ce_gl_flight_recorder(uint32_t *bytes)
 	return &g_flight;
 }
 
+/* The Vulkan bridge's commands go into the same ring (chimera issues 276 and
+ * 278: two Vulkan drivers crashed with nothing to say what they were given).
+ * miniBox's host calls this before the driver sees the command. */
+extern "C" void ce_vk_flight_note(unsigned op)
+{
+	flightNote(kFlightVulkan | (op & 0x0FFFFFFFu), 0);
+}
+
+/* Sessions that took the bridge and have not ended (ce_gl_session_end). */
+static int g_holders;
+
 /* Mint a fresh id. It need only DIFFER from any other - the guest compares it
  * for equality and nothing else - so it is taken from where this process sits
  * in memory (the loader decides that anew every run), the clock, and a
@@ -1675,6 +1879,7 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 		 * below; this is the same signal for the in-process case. */
 		mint_context_id();
 		flightNote(kFlightSession, 0);
+		g_holders++;
 		return 1;
 	}
 
@@ -1683,6 +1888,9 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 	 * on every path out of here. */
 	save_current();
 
+	/* noted before the driver is asked anything, so that a death inside
+	 * create_context or gladLoadGL is not blamed on the call before */
+	flightNote(kFlightSession, 0);
 	char err[192] = "";
 	if (!create_context(err, (int)sizeof err))
 	{
@@ -1724,9 +1932,53 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 	/* An identity the guest stores beside its GL objects and compares. Minted
 	 * per session, not merely per context (see the g_ready path above). */
 	mint_context_id();
-	flightNote(kFlightSession, 0);
+	g_holders++;
 	return_current();
 	return 1;
+}
+
+/* What names objects of the context being ended: none of it means anything in
+ * the next one. A sync's slot keeps its generation, moved on, so an old name
+ * reads as a fence that has passed (see SyncSlot). */
+static void forgetContext()
+{
+	bufferPool().reset();
+	for (BoundRecord &r : g_bound) r.name = 0;
+	syncFree().clear();
+	for (size_t i = 0; i < g_syncs.size(); i++)
+	{
+		SyncSlot &slot = g_syncs[i];
+		if (slot.sync != nullptr) slot.gen++;
+		slot.sync = nullptr;
+		syncFree().push_back((uint32_t)i);
+	}
+	g_syncReap = false;
+	/* one large readback kept the scratch at its size for the process */
+	free(g_bounce);
+	g_bounce = nullptr;
+	g_bounceCap = 0;
+	g_tsQuery[0] = g_tsQuery[1] = 0;
+	g_tsPending = false;
+	for (int k = 0; k < kAuditKinds; k++) auditLives()[k].clear();
+}
+
+/* A session that took the bridge has ended. When it is the last, its context
+ * goes, and with it every object its renderer made: no core tears its
+ * renderer down when its sandbox is destroyed, and the context used to live
+ * for the whole process, so every texture, buffer, framebuffer, program and
+ * sync a closed project made stayed in the driver - another project's worth
+ * with each one opened. The next session that asks makes a new context. */
+extern "C" void ce_gl_session_end(void)
+{
+	if (!g_ready || g_holders == 0) return;
+	if (--g_holders != 0) return;
+	ce_gl_release();
+	flightNote(kFlightStopped, 0);
+	end_context();
+	forgetContext();
+	g_ready = false;
+	g_context_id = 0;
+	g_description[0] = 0;
 }
 
 extern "C" void ce_gl_stop(void)
@@ -1750,6 +2002,7 @@ extern "C" int32_t ce_gl_requested(void) { return g_requested; }
 extern "C" int32_t ce_gl_available(void) { return 0; }
 extern "C" const char *ce_gl_description(void) { return ""; }
 extern "C" void *ce_gl_flight_recorder(uint32_t *bytes) { if (bytes) *bytes = 0; return nullptr; }
+extern "C" void ce_vk_flight_note(unsigned) { }
 extern "C" void ce_gl_release(void) { }
 extern "C" void ce_gl_audit_frame(int64_t) { }
 extern "C" void ce_gl_state_loaded(int64_t) { }
@@ -1761,5 +2014,6 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 	return 0;
 }
 extern "C" void ce_gl_stop(void) {}
+extern "C" void ce_gl_session_end(void) {}
 
 #endif

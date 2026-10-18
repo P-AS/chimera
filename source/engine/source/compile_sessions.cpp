@@ -51,9 +51,9 @@ extern "C" uint64_t ce_compile_memory_to_spare(void)
 	return ceMemoryToSpare(ceReadHostMemory());
 }
 
-extern "C" int32_t ce_compile_sessions(int32_t processors, uint64_t to_spare)
+extern "C" int32_t ce_compile_sessions(int32_t processors, uint64_t to_spare, uint64_t session_bytes)
 {
-	return ceCompileSessions(processors, to_spare);
+	return ceCompileSessions(processors, to_spare, session_bytes);
 }
 
 extern "C" uint64_t ce_compile_session_bytes(void)
@@ -61,7 +61,20 @@ extern "C" uint64_t ce_compile_session_bytes(void)
 	return kCompileSessionBytes;
 }
 
-extern "C" int32_t ce_compile_memory_ran_short(uint64_t least_to_spare)
+extern "C" int32_t ce_compile_memory_ran_short(uint64_t least_to_spare, uint64_t session_bytes)
 {
-	return ceCompileMemoryRanShort(least_to_spare) ? 1 : 0;
+	return ceCompileMemoryRanShort(least_to_spare, session_bytes) ? 1 : 0;
+}
+
+extern "C" int32_t ce_compile_session_begins(void)
+{
+#ifdef __linux__
+	// Raising one's own score needs no privilege; 1000 is "first".
+	FILE *f = std::fopen("/proc/self/oom_score_adj", "w");
+	if (!f) return 0;
+	const bool ok = std::fputs("1000", f) >= 0;
+	return std::fclose(f) == 0 && ok ? 1 : 0;
+#else
+	return 0;
+#endif
 }

@@ -26,6 +26,11 @@
 #include <string>
 #include <vector>
 
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/stat.h>
+#endif
+
 namespace {
 
 std::string hashWith(bool software, const std::vector<uint8_t> &data, size_t len)
@@ -87,11 +92,52 @@ void testProgressOfAFileHash()
 	printf("progress: a file hash reports its way to the end\n");
 }
 
+#ifndef _WIN32
+/* A file replaced by one of the same size that keeps the old one's date - an
+ * unzip, cp -p, rsync -t, Explorer's copy and replace - is another file, and
+ * its hash is its own. The cache once answered it from (size, whole-second
+ * mtime). */
+void testSameSizeSameDateIsHashedAgain()
+{
+	const char *path = "test_sha1_same_date.bin";
+	auto writeAll = [&](uint8_t fill)
+	{
+		FILE *f = fopen(path, "r+b");
+		if (f == nullptr) f = fopen(path, "wb");
+		assert(f != nullptr);
+		std::vector<uint8_t> block(64 << 10, fill);
+		assert(fwrite(block.data(), 1, block.size(), f) == block.size());
+		fclose(f);
+	};
+	writeAll(0x11);
+	struct stat before;
+	assert(stat(path, &before) == 0);
+	char first[41], second[41];
+	assert(ce_sha1_file(path, first, nullptr) == 1);
+	writeAll(0x22); /* in place: the same file, the same size */
+	const struct timespec times[2] = { before.st_atim, before.st_mtim };
+	assert(utimensat(AT_FDCWD, path, times, 0) == 0);
+	struct stat after;
+	assert(stat(path, &after) == 0);
+	assert(after.st_size == before.st_size && after.st_mtim.tv_sec == before.st_mtim.tv_sec
+		&& after.st_mtim.tv_nsec == before.st_mtim.tv_nsec);
+	assert(ce_sha1_file(path, second, nullptr) == 1);
+	std::vector<uint8_t> expect(64 << 10, 0x22);
+	assert(std::string(second) == chimera::sha1Hex(expect.data(), expect.size()));
+	assert(std::string(second) != std::string(first));
+	remove(path);
+	printf("cache: a same-size file with the old date is hashed again\n");
+}
+#endif
+
 } // namespace
 
 int main(void)
 {
 	testProgressOfAFileHash();
+#ifndef _WIN32
+	testSameSizeSameDateIsHashedAgain();
+#endif
 	{ // the known answers, so that "they agree" cannot mean "both are wrong"
 		const std::string empty = chimera::sha1Hex(nullptr, 0);
 		assert(empty == "DA39A3EE5E6B4B0D3255BFEF95601890AFD80709");

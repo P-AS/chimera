@@ -72,8 +72,40 @@ const std::vector<std::string> kSynthButtons = {
 
 } // namespace
 
+/* A movie's LogKey names its columns, and they are matched to the machine's
+ * controls by name, as the window does: reordered, missing or extra columns
+ * are read as what they are, not as their neighbours. */
+void keyedLayoutsGoByName()
+{
+	const std::vector<std::string> buttons{ "P1 A", "P1 B", "P1 C" };
+	const std::vector<EntryAxis> axes{ axis("P1 Stick X", -128, 127, 0) };
+	std::vector<uint8_t> states;
+	std::vector<int32_t> values;
+
+	EntryLayout l;
+	// reordered: B is written before A
+	assert(l.buildFromKey("#P1 B|P1 A|", buttons, axes));
+	assert(l.parse("|B.|", states, values));
+	assert(states[0] == 0 && states[1] == 1 && states[2] == 0); // B, by name
+	assert(values[0] == 0);                                     // the axis the key lacks: neutral
+	auto pressed = statesOf((1ull << 0) | (1ull << 2), buttons.size());
+	assert(l.generate(pressed.data(), nullptr, "ABC") == "|.A|"); // C is not a column of this movie
+
+	// a column the machine lacks is read past, and written as '.'
+	assert(l.buildFromKey("#P1 A|P1 Stick X|#P2 A|P2 B|", buttons, axes));
+	assert(l.parse("|A   -5,|AB|", states, values));
+	assert(states[0] == 1 && states[1] == 0 && values[0] == -5);
+	assert(l.generate(states.data(), values.data(), "ABC") == "|A   -5,|..|");
+
+	// a key without a '#' group, or naming no control, says nothing about columns
+	assert(!l.buildFromKey("A|B|", buttons, axes));
+	assert(!l.buildFromKey("#", buttons, axes));
+	assert(!l.buildFromKey("#|#", buttons, axes));
+}
+
 int main(void)
 {
+	keyedLayoutsGoByName();
 	{ // player number: "^P(\d+) " and nothing else
 		assert(chimera::playerNumberOf("P1 Up") == 1);
 		assert(chimera::playerNumberOf("P12 Up") == 12);
@@ -81,6 +113,12 @@ int main(void)
 		assert(chimera::playerNumberOf("Power") == 0);
 		assert(chimera::playerNumberOf("P1") == 0);    // no space, no player
 		assert(chimera::playerNumberOf("PX Up") == 0); // no digits, no player
+		// a number no machine has players for is no player's (and no
+		// billion-group layout, and no overflow on the way)
+		assert(chimera::playerNumberOf("P255 A") == 255);
+		assert(chimera::playerNumberOf("P256 A") == 0);
+		assert(chimera::playerNumberOf("P1000000000 A") == 0);
+		assert(chimera::playerNumberOf("P99999999999999999999 A") == 0);
 	}
 
 	{ // buttons only, one player - the synth core's own controller
@@ -138,6 +176,12 @@ int main(void)
 		// an explicit + sign parses, as it did in C#
 		assert(l.parse("|  +42,   -7,..|", states, axes));
 		assert(axes[0] == 42 && axes[1] == -7);
+		// the 32-bit range, by sign: 2147483648 is refused as C#'s int.Parse
+		// refuses it, rather than read as -2147483648
+		assert(l.parse("|2147483647,-2147483648,..|", states, axes));
+		assert(axes[0] == 2147483647 && axes[1] == INT32_MIN);
+		assert(!l.parse("|2147483648,    0,..|", states, axes));
+		assert(!l.parse("|+2147483648,    0,..|", states, axes));
 
 		// generate pads to 5 and puts axes first
 		const int32_t values[2] = { 127, -128 };

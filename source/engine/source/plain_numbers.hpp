@@ -33,6 +33,12 @@ inline bool parsePlainDouble(const std::string &text, double &out)
 	{
 		format = std::chars_format::hex;
 		first += 2;
+		/* from_chars takes a sign of its own, and inf and nan, after the 0x:
+		 * "0x-1" would be -1 and "-0x-1" +1. A hex number starts with a digit
+		 * or the point. */
+		const char c = *first;
+		const bool hexStart = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') || c == '.';
+		if (!hexStart) return false;
 	}
 	double value = 0;
 	const auto result = std::from_chars(first, last, value, format);

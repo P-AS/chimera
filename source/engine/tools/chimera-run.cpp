@@ -118,12 +118,14 @@
  */
 
 #include "chimera/engine.h"
+#include "../source/file_io.hpp"
 
 #include <chrono>
 #include <clocale>
 #include <ctime>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <string>
 #include <vector>
@@ -141,7 +143,7 @@ namespace {
 
 bool readWholeFile(const char *path, std::vector<uint8_t> &out)
 {
-	FILE *f = std::fopen(path, "rb");
+	FILE *f = chimera::openFile(path, "rb");
 	if (f == nullptr) return false;
 	uint8_t chunk[1 << 16];
 	size_t got;
@@ -154,10 +156,10 @@ bool readWholeFile(const char *path, std::vector<uint8_t> &out)
 
 bool writeWholeFile(const std::string &path, const uint8_t *data, size_t len)
 {
-	FILE *f = std::fopen(path.c_str(), "wb");
+	FILE *f = chimera::openFile(path.c_str(), "wb");
 	if (f == nullptr) return false;
 	bool ok = len == 0 || std::fwrite(data, 1, len, f) == len;
-	std::fclose(f);
+	if (std::fclose(f) != 0) ok = false;
 	return ok;
 }
 
@@ -199,12 +201,8 @@ void makeParentDirs(const std::string &path)
 	for (size_t i = 1; i < path.size(); i++)
 	{
 		if (path[i] != '/') continue;
-		std::string dir = path.substr(0, i);
-#ifdef _WIN32
-		_mkdir(dir.c_str());
-#else
-		mkdir(dir.c_str(), 0777);
-#endif
+		std::error_code ec;
+		std::filesystem::create_directory(std::filesystem::u8path(path.substr(0, i)), ec);
 	}
 }
 
@@ -550,6 +548,11 @@ int main(int argc, char **argv)
 		else if (projectPath.empty() && moviePath == nullptr) moviePath = argv[i];
 		else return fail(metaPath, "unexpected argument: " + arg);
 	}
+	/* one reference machine, for one frame: a seek and a rewind to two
+	 * different frames would compare one landing against the other's machine
+	 * and always report a divergence */
+	if (greenzoneCheck && seekFrame >= 0 && rewindTo >= 0 && seekFrame != rewindTo)
+		return fail(metaPath, "--greenzone-check checks one frame: give --seek and --rewind-loop the same frame, or only one of them");
 	bool projectMode = !projectPath.empty();
 	if (projectMode ? packagePath == nullptr : (suggest || importMovie ? romPath == nullptr : moviePath == nullptr))
 	{
@@ -585,6 +588,7 @@ int main(int argc, char **argv)
 	std::vector<const char *> extraPaths;
 	std::string romPathStore;
 	std::vector<std::string> extraNameStore;
+	std::vector<std::string> extraPathStore; /* reserved before use: extraPaths points into it */
 	if (projectMode)
 	{
 		const char *perr = nullptr;
@@ -623,10 +627,19 @@ int main(int argc, char **argv)
 						+ (ce_multifile_status(multi, i) == 1 ? "' is missing" : "' does not match its recorded hash"));
 			}
 		}
+		/* by path, as a single rom is and as a project's files are: the
+		 * engine reads each from where it lies (see THE PATH below) */
+		const std::string descriptorPath = romPath;
+		const size_t cut = descriptorPath.find_last_of("/\\");
+		const std::string folder = cut == std::string::npos ? std::string() : descriptorPath.substr(0, cut + 1);
+		auto pathOf = [&](int32_t i) -> const char *
+		{
+			extraPathStore.push_back(folder + ce_multifile_name(multi, i));
+			return extraPathStore.back().c_str();
+		};
+		extraPathStore.reserve(static_cast<size_t>(ce_multifile_count(multi)) + 1);
 		int32_t primary = ce_multifile_image_index(multi, 0);
-		uint64_t len = 0;
-		const uint8_t *data = ce_multifile_data(multi, primary, &len);
-		rom.assign(data, data + len);
+		romPathStore = pathOf(primary);
 		extraNameStore.push_back("rom.name");
 		extraNameStore.push_back(ce_multifile_name(multi, primary));
 		for (int32_t n = 1; n < ce_multifile_image_count(multi); n++)
@@ -640,13 +653,15 @@ int main(int argc, char **argv)
 			const std::string &nm = extraNameStore[store++];
 			extraData.push_back(reinterpret_cast<const uint8_t *>(nm.data()));
 			extraLens.push_back(nm.size());
+			extraPaths.push_back(nullptr);
 		}
 		for (int32_t n = 1; n < ce_multifile_image_count(multi); n++)
 		{
 			int32_t idx = ce_multifile_image_index(multi, n);
 			extraNames.push_back(extraNameStore[store++].c_str());
-			extraData.push_back(ce_multifile_data(multi, idx, &len));
-			extraLens.push_back(len);
+			extraData.push_back(nullptr);
+			extraLens.push_back(0);
+			extraPaths.push_back(pathOf(idx));
 		}
 		for (int32_t i = 0; i < ce_multifile_count(multi); i++)
 		{
@@ -654,14 +669,16 @@ int main(int argc, char **argv)
 			if (std::strcmp(role, "support") == 0)
 			{
 				extraNames.push_back(ce_multifile_name(multi, i));
-				extraData.push_back(ce_multifile_data(multi, i, &len));
-				extraLens.push_back(len);
+				extraData.push_back(nullptr);
+				extraLens.push_back(0);
+				extraPaths.push_back(pathOf(i));
 			}
 			else if (std::strcmp(role, "savedata") == 0)
 			{
 				extraNames.push_back("savedata");
-				extraData.push_back(ce_multifile_data(multi, i, &len));
-				extraLens.push_back(len);
+				extraData.push_back(nullptr);
+				extraLens.push_back(0);
+				extraPaths.push_back(pathOf(i));
 			}
 		}
 	}
@@ -795,8 +812,12 @@ int main(int argc, char **argv)
 	/* --rewind-loop needs the history too: it seeks back through it, and a run
 	 * without one fails at the first pass with "no stored state at or before
 	 * the target frame". */
-	if (seekFrame >= 0 || rewindTo >= 0 || keptCheck >= 0 || (probeFrom >= 0 && !probeByState) || !historyIn.empty() || !historyOut.empty() || !greenzoneMap.empty()
-		|| greenzoneBytes > 0 || greenzonePeriod >= 0)
+	const bool greenzoneOn = seekFrame >= 0 || rewindTo >= 0 || keptCheck >= 0 || (probeFrom >= 0 && !probeByState) || !historyIn.empty() || !historyOut.empty() || !greenzoneMap.empty()
+		|| greenzoneBytes > 0 || greenzonePeriod >= 0;
+	const uint64_t greenzoneBudget = greenzoneBytes > 0 ? (uint64_t)greenzoneBytes : (uint64_t)greenzoneMb << 20;
+	if (greenzoneOn && !historyIn.empty() && (!stateIn.empty() || !stateFileIn.empty()))
+		return fail(metaPath, "--history-in describes the machine the movie starts from, and --state replaces that machine: they cannot be used together");
+	if (greenzoneOn)
 	{
 		/* Bands before enabling: enabling captures the anchor, and the anchor
 		 * spacing decides whether it is the only one. */
@@ -822,7 +843,7 @@ int main(int argc, char **argv)
 		ce_session_greenzone_disk_budget(session, (uint64_t)greenzoneDiskMb << 20);
 		if (greenzoneMaxStride > 0) ce_session_greenzone_max_near_stride(session, greenzoneMaxStride);
 		if (greenzoneBandGoal > 0) ce_session_greenzone_band_goal(session, greenzoneBandGoal);
-		ce_session_greenzone_enable(session, greenzoneBytes > 0 ? (uint64_t)greenzoneBytes : (uint64_t)greenzoneMb << 20);
+		ce_session_greenzone_enable(session, greenzoneBudget);
 		if (picturesMb >= 0) ce_session_greenzone_pictures(session, (uint64_t)picturesMb << 20, (int32_t)picturesSettle);
 	}
 	/* A history kept from a previous run, which is the thing a reopened project
@@ -859,7 +880,8 @@ int main(int argc, char **argv)
 			const char *name = ce_session_axis_name(session, a);
 			out += std::string(name) + "\t\t" + ce_session_axis_header_of(session, name) + "\n";
 		}
-		writeWholeFile(controlsPath, reinterpret_cast<const uint8_t *>(out.data()), out.size());
+		if (!writeWholeFile(controlsPath, reinterpret_cast<const uint8_t *>(out.data()), out.size()))
+			return fail(metaPath, "could not write " + controlsPath);
 	}
 
 	/* Record mode: decode the source movie's entries into machine input and
@@ -925,19 +947,8 @@ int main(int argc, char **argv)
 		}
 		fprintf(stderr, "state file tag: %.*s\n", (int)(tagLen < sizeof tag ? tagLen : sizeof tag), (const char *)tag);
 	}
-
-	std::vector<uint8_t> state;
-	if (rerecord)
-	{
-		uint64_t len = 0;
-		const uint8_t *p = ce_session_save_state(session, &len);
-		if (p == nullptr) return fail(metaPath, ce_session_last_error(session));
-		state.assign(p, p + len);
-	}
-
-	const int64_t firstPass = playFrames >= 0 && playFrames < frames ? playFrames : frames;
-	FILE *rates = ratesPath.empty() ? nullptr : std::fopen(ratesPath.c_str(), "w");
-	if (!ratesPath.empty() && rates == nullptr) return fail(metaPath, "could not write " + ratesPath);
+	/* --property-set: before the --rerecord state below is taken, or the
+	 * first frame's load of it would throw the write away */
 	if (!propertySet.empty())
 	{
 		const size_t eq = propertySet.find('=');
@@ -950,6 +961,26 @@ int main(int argc, char **argv)
 			std::printf("prop set %s: %s\n", name.c_str(), ce_session_last_error(session));
 		else std::printf("prop set %s: done\n", name.c_str());
 	}
+
+	/* The history's anchor was taken when it was enabled, of the machine as it
+	 * was then. A state loaded since, or a value set, makes the machine the
+	 * run starts from, and a seek back to the anchor would otherwise bring the
+	 * old one back. Enabling again empties the history and anchors it here. */
+	if (greenzoneOn && historyIn.empty() && (!stateIn.empty() || !stateFileIn.empty() || !propertySet.empty()))
+		ce_session_greenzone_enable(session, greenzoneBudget);
+
+	std::vector<uint8_t> state;
+	if (rerecord)
+	{
+		uint64_t len = 0;
+		const uint8_t *p = ce_session_save_state(session, &len);
+		if (p == nullptr) return fail(metaPath, ce_session_last_error(session));
+		state.assign(p, p + len);
+	}
+
+	const int64_t firstPass = playFrames >= 0 && playFrames < frames ? playFrames : frames;
+	FILE *rates = ratesPath.empty() ? nullptr : chimera::openFile(ratesPath.c_str(), "w");
+	if (!ratesPath.empty() && rates == nullptr) return fail(metaPath, "could not write " + ratesPath);
 	for (int64_t i = 0; i < firstPass; i++)
 	{
 		if (greenzonePeriod >= 0 && i == greenzonePeriodAt) ce_session_greenzone_capture_period(session, greenzonePeriod);
@@ -1070,7 +1101,7 @@ int main(int argc, char **argv)
 			{
 				return fail(metaPath, ce_session_last_error(session));
 			}
-			std::remove(path.c_str());
+			chimera::removeFile(path.c_str());
 		}
 		if (rerecord)
 		{
@@ -1615,18 +1646,20 @@ int main(int argc, char **argv)
 		{
 			std::string path = savedataDir + "/" + ce_session_savedata_name(session, f);
 			makeParentDirs(path);
-			FILE *out = std::fopen(path.c_str(), "wb");
+			FILE *out = chimera::openFile(path.c_str(), "wb");
 			if (out == nullptr) return fail(metaPath, "could not write " + path);
 			int64_t size = ce_session_savedata_size(session, f);
-			bool ok = true;
+			bool ok = true, readShort = false;
 			for (int64_t off = 0; off < size && ok;)
 			{
 				int64_t got = ce_session_savedata_read(session, f, off, chunk.data(), static_cast<int64_t>(chunk.size()));
-				if (got <= 0) { ok = false; break; }
+				if (got <= 0) { ok = false; readShort = true; break; }
 				ok = std::fwrite(chunk.data(), 1, static_cast<size_t>(got), out) == static_cast<size_t>(got);
 				off += got;
 			}
-			std::fclose(out);
+			if (std::fclose(out) != 0) ok = false;   /* a small file reaches the disk only here */
+			if (readShort)
+				return fail(metaPath, std::string("the core would not hand over all of ") + ce_session_savedata_name(session, f));
 			if (!ok) return fail(metaPath, "could not write " + path);
 		}
 		std::printf("savedata=%d\n", files);
@@ -1747,7 +1780,11 @@ int main(int argc, char **argv)
 			ce_game_time_text(gameMs, text, sizeof text);
 			meta += "gameTimeMs=" + std::to_string(gameMs) + "\ngameTime=" + text + "\n";
 		}
-		writeWholeFile(metaPath, reinterpret_cast<const uint8_t *>(meta.data()), meta.size());
+		if (!writeWholeFile(metaPath, reinterpret_cast<const uint8_t *>(meta.data()), meta.size()))
+		{
+			std::fprintf(stderr, "chimera-run: could not write %s\n", metaPath.c_str());
+			return 2;
+		}
 	}
 	std::printf("frames=%lld\n", static_cast<long long>(frames));
 	ce_movie_log_free(movie);
