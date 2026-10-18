@@ -209,6 +209,7 @@ void CeRamSearch::readReal(int64_t offset, uint8_t *buf, int64_t len) const
 
 const uint8_t *CeRamSearch::window(int64_t offset, int64_t len) const
 {
+	if (m_walkImage != nullptr) return m_walkImage->data() + offset;
 	if (m_base && m_ranges.empty()) return m_base + offset;
 	if ((int64_t)m_scratch.size() < len) m_scratch.resize((size_t)len);
 	readInto(offset, m_scratch.data(), len);
@@ -236,6 +237,45 @@ uint32_t CeRamSearch::peek(uint64_t address, int size) const
 	uint8_t b[4];
 	readInto((int64_t)address, b, size);
 	return load(b, size);
+}
+
+/* Many candidates' values. Where the domain has no pointer (a bus, or live
+ * ranges) every read is a call through the frontend into the core, and a
+ * sparse set made one per candidate (engine analysis, 2026-10-18). So runs of
+ * candidates with little between them are read together: a run ends at a gap
+ * of more than 4 KiB, or at Chunk bytes. */
+void CeRamSearch::readValues(const std::vector<uint64_t> &addr, int size, std::vector<uint32_t> &out) const
+{
+	out.resize(addr.size());
+	if (m_base && m_ranges.empty())
+	{
+		for (size_t i = 0; i < addr.size(); i++) out[i] = peek(addr[i], size);
+		return;
+	}
+	const uint64_t domain = (uint64_t)m_domainSize, wide = (uint64_t)size, gap = 4096;
+	size_t i = 0;
+	while (i < addr.size())
+	{
+		const uint64_t start = addr[i];
+		if (start > domain || domain - start < wide)
+		{
+			out[i++] = 0;   /* does not fit inside the domain: zero, as peek says */
+			continue;
+		}
+		uint64_t end = start + wide;
+		size_t j = i + 1;
+		while (j < addr.size() && addr[j] >= addr[j - 1] && addr[j] <= end + gap
+			&& addr[j] + wide - start <= (uint64_t)Chunk && addr[j] <= domain && domain - addr[j] >= wide)
+		{
+			end = std::max(end, addr[j] + wide);
+			j++;
+		}
+		const int64_t len = (int64_t)(end - start);
+		if ((int64_t)m_scratch.size() < len) m_scratch.resize((size_t)len);
+		readInto((int64_t)start, m_scratch.data(), len);
+		for (size_t k = i; k < j; k++) out[k] = load(m_scratch.data() + (addr[k] - start), size);
+		i = j;
+	}
 }
 
 void CeRamSearch::snapshotImage(std::vector<uint8_t> &image) const
@@ -405,14 +445,38 @@ void CeRamSearch::settle()
 	}
 }
 
+uint64_t CeRamSearch::bytesOf(const Set &s)
+{
+	return s.bits.capacity() * 8 + s.rank.capacity() * 8 + s.prevImage.capacity() + s.curImage.capacity()
+		+ s.changesBySlot.capacity() * 4 + s.addr.capacity() * 8
+		+ (s.prev.capacity() + s.cur.capacity() + s.changes.capacity()) * 4;
+}
+
+/* A level is a whole copy of the set. Room is made BEFORE the copy, oldest
+ * first, so the history never holds more than its budget, not even for a
+ * moment: on Linux an allocation that does not fit is not refused, it ends the
+ * process, and the bad_alloc below is not a promise (engine analysis,
+ * 2026-10-18). */
 bool CeRamSearch::recordUndo()
 {
 	if (!m_undoEnabled) return false;
 	try
 	{
 		m_redo.clear();
+		const uint64_t need = bytesOf(m_set);
+		if (need > m_undoBudget)
+		{
+			clearHistory();
+			return false;
+		}
+		uint64_t held = 0;
+		for (const Set &s : m_undo) held += bytesOf(s);
+		while (!m_undo.empty() && ((int)m_undo.size() >= MaxUndoLevels || held + need > m_undoBudget))
+		{
+			held -= bytesOf(m_undo.front());
+			m_undo.pop_front();
+		}
 		m_undo.push_back(m_set);
-		while ((int)m_undo.size() > MaxUndoLevels) m_undo.pop_front();
 		return true;
 	}
 	catch (const std::bad_alloc &)
@@ -536,22 +600,31 @@ int64_t CeRamSearch::filter(const Query &q, int previousType)
 	/* a search by address is by the real one */
 	const bool byAddress = q.compare == CmpSpecificAddress && !m_ranges.empty();
 
+	/* The domain read once, when the previous values are to become what it
+	 * holds now: the walk serves from this image, and so do they after it. It
+	 * used to be read twice, and on a bus each read is a call into the core. */
+	const bool takeImage = m_set.dense && !m_detailed && previousType == PrevLastSearch && !(m_base && m_ranges.empty());
+	if (takeImage) snapshotImage(m_nextImage);
 	if (m_set.dense)
 	{
 		const bool needMemory = !m_detailed && q.compare != CmpSpecificAddress && q.compare != CmpChanges;
+		m_walkImage = takeImage ? &m_nextImage : nullptr;
 		forEachDense(needMemory, [&](uint64_t slot, uint64_t address, const uint8_t *mem) {
 			const uint32_t prev = load(m_set.prevImage.data() + address, size);
 			const uint32_t cur = m_detailed ? load(m_set.curImage.data() + address, size) : mem ? load(mem, size) : 0;
 			return matches(q, size, byAddress ? toReal(address) : address, cur, prev, m_detailed ? m_set.changesBySlot[(size_t)slot] : 0);
 		});
+		m_walkImage = nullptr;
 		rebuildRank();
 	}
 	else
 	{
+		std::vector<uint32_t> now;
+		if (!m_detailed) readValues(m_set.addr, size, now);
 		size_t kept = 0;
 		for (size_t i = 0; i < m_set.addr.size(); i++)
 		{
-			const uint32_t cur = m_detailed ? m_set.cur[i] : peek(m_set.addr[i], size);
+			const uint32_t cur = m_detailed ? m_set.cur[i] : now[i];
 			if (!matches(q, size, byAddress ? toReal(m_set.addr[i]) : m_set.addr[i], cur, m_set.prev[i], m_detailed ? m_set.changes[i] : 0)) continue;
 			m_set.addr[kept] = m_set.addr[i];
 			m_set.prev[kept] = m_set.prev[i];
@@ -574,7 +647,11 @@ int64_t CeRamSearch::filter(const Query &q, int previousType)
 
 	/* shape first: what is left is usually far less to take a previous of */
 	settle();
-	if (previousType == PrevLastSearch) setPreviousToCurrent();
+	if (previousType == PrevLastSearch)
+	{
+		if (takeImage) previousFrom(m_nextImage);
+		else setPreviousToCurrent();
+	}
 	return (int64_t)(before - m_set.count);
 }
 
@@ -594,8 +671,23 @@ void CeRamSearch::setPreviousToCurrent()
 		return;
 	}
 	if (m_detailed) m_set.prev = m_set.cur;
-	else
-		for (size_t i = 0; i < m_set.addr.size(); i++) m_set.prev[i] = peek(m_set.addr[i], m_set.size);
+	else readValues(m_set.addr, m_set.size, m_set.prev);
+}
+
+/* The previous values from an image of the domain read a moment ago. */
+void CeRamSearch::previousFrom(const std::vector<uint8_t> &image)
+{
+	if (m_set.dense)
+	{
+		m_set.prevImage = image;
+		return;
+	}
+	for (size_t i = 0; i < m_set.addr.size(); i++)
+	{
+		const uint64_t a = m_set.addr[i];
+		m_set.prev[i] = a <= (uint64_t)m_domainSize && (uint64_t)m_domainSize - a >= (uint64_t)m_set.size
+			? load(image.data() + a, m_set.size) : 0;
+	}
 }
 
 void CeRamSearch::update(int previousType)
@@ -603,26 +695,47 @@ void CeRamSearch::update(int previousType)
 	if (!m_detailed) return;
 	setPreviousType(previousType);
 	const int size = m_set.size;
+	m_walked = 0;
 	if (m_set.dense)
 	{
-		forEachDense(true, [&](uint64_t slot, uint64_t address, const uint8_t *mem) {
-			if (std::memcmp(mem, m_set.curImage.data() + address, (size_t)size) != 0)
+		/* The domain is read once, and only blocks whose bytes changed are
+		 * walked. Every candidate was compared every frame: about 1.3 ms a MiB
+		 * a frame, on a domain that mostly does not change (engine analysis,
+		 * 2026-10-18). A candidate starting in a block may end in the next, so
+		 * a block is compared with the size - 1 bytes after it. */
+		snapshotImage(m_nextImage);
+		const uint8_t *now = m_nextImage.data(), *was = m_set.curImage.data();
+		const int64_t block = 4096, step = m_set.step;
+		for (int64_t at = 0; at < m_domainSize; at += block)
+		{
+			const int64_t stop = std::min(at + block, m_domainSize);
+			const int64_t compared = std::min(stop + size - 1, m_domainSize) - at;
+			if (std::memcmp(now + at, was + at, (size_t)compared) == 0) continue;
+			const uint64_t first = (uint64_t)((at + step - 1) / step);
+			const uint64_t end = std::min(m_set.slots, (uint64_t)((stop + step - 1) / step));
+			for (uint64_t slot = first; slot < end; slot++)
 			{
+				if (((m_set.bits[(size_t)(slot / 64)] >> (slot % 64)) & 1) == 0) continue;
+				m_walked++;
+				const uint64_t address = slot * (uint64_t)step;
+				if (std::memcmp(now + address, was + address, (size_t)size) == 0) continue;
 				m_set.changesBySlot[(size_t)slot]++;
 				/* safe: never dense when candidates overlap (mustBeSparse) */
 				if (previousType == PrevLastChange)
-					std::memcpy(m_set.prevImage.data() + address, m_set.curImage.data() + address, (size_t)size);
+					std::memcpy(m_set.prevImage.data() + address, was + address, (size_t)size);
 			}
-			return true;
-		});
+		}
 		/* the images move whole, after the walk: candidates may overlap */
 		if (previousType == PrevLastFrame) std::swap(m_set.prevImage, m_set.curImage);
-		snapshotImage(m_set.curImage);
+		std::swap(m_set.curImage, m_nextImage);
 		return;
 	}
+	std::vector<uint32_t> values;
+	readValues(m_set.addr, size, values);
+	m_walked = m_set.addr.size();
 	for (size_t i = 0; i < m_set.addr.size(); i++)
 	{
-		const uint32_t now = peek(m_set.addr[i], size);
+		const uint32_t now = values[i];
 		if (now != m_set.cur[i])
 		{
 			m_set.changes[i]++;

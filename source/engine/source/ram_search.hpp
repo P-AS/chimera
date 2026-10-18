@@ -104,7 +104,14 @@ public:
 
 	/* For tests: the shape is not part of the contract, but both must be run. */
 	bool isDense() const { return m_set.dense; }
+	/* For tests: candidates the last detailed frame looked at. */
+	uint64_t walkedLastUpdate() const { return m_walked; }
 	static constexpr int MaxUndoLevels = 5;
+	/* What undo and redo may hold together (user-decided, 2026-10-18): the
+	 * oldest level goes first, and a set larger than all of it is not kept.
+	 * A detailed search of a 256 MiB domain is about 1.5 GiB a level. */
+	static constexpr uint64_t UndoBudgetBytes = uint64_t{ 1 } << 30;
+	void setUndoBudget(uint64_t bytes) { m_undoBudget = bytes; }
 
 private:
 	struct Set
@@ -152,7 +159,11 @@ private:
 	bool m_undoEnabled = true;
 	Set m_set;
 	std::deque<Set> m_undo, m_redo;
+	uint64_t m_undoBudget = UndoBudgetBytes;
 	mutable std::vector<uint8_t> m_scratch;
+	std::vector<uint8_t> m_nextImage;   /* detailed: the frame's image, before it becomes curImage */
+	const std::vector<uint8_t> *m_walkImage = nullptr; /* the domain already read: window() serves from it */
+	uint64_t m_walked = 0;
 
 	void readReal(int64_t offset, uint8_t *buf, int64_t len) const;
 	void readInto(int64_t offset, uint8_t *buf, int64_t len) const;
@@ -163,6 +174,9 @@ private:
 	uint32_t load(const uint8_t *p, int size) const;
 	void store(uint8_t *p, int size, uint32_t v) const;
 	uint32_t peek(uint64_t address, int size) const;
+	void readValues(const std::vector<uint64_t> &addr, int size, std::vector<uint32_t> &out) const;
+	void previousFrom(const std::vector<uint8_t> &image);
+	static uint64_t bytesOf(const Set &s);
 
 	static bool matches(const Query &q, int size, uint64_t address, uint32_t cur, uint32_t prev, uint32_t changes);
 	void rebuildRank();

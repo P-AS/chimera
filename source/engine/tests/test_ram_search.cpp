@@ -597,9 +597,93 @@ void runningOutLeavesTheSearchAsItWas()
 	std::printf("ram search: out of memory at each of %d allocations, %d refused and left as it was\n", failed + survived - 1, failed);
 }
 
+/* Undo keeps to its budget: the oldest level goes first, and a set larger
+ * than all of it is not kept (user-decided, 2026-10-18). */
+void undoKeepsToItsBudget()
+{
+	std::vector<uint8_t> mem(65536, 0);
+	RS rs(mem.data(), nullptr, nullptr, (int64_t)mem.size());
+	rs.start(1, false, false, false);   /* a level is the image and the bits: 72 KiB and a little */
+	rs.setUndoBudget(200 * 1024);
+	RS::Query q;
+	q.compare = RS::CmpSpecificAddress;
+	q.op = RS::OpNotEqual;
+	for (uint32_t a = 0; a < 5; a++)
+	{
+		q.value = a;
+		assert(rs.search(q, RS::PrevLastSearch) == 1);
+	}
+	int levels = 0;
+	while (rs.canUndo()) { rs.undo(); levels++; }
+	assert(levels == 2);                /* two fit in 200 KiB, not five */
+	rs.setUndoBudget(10 * 1024);
+	q.value = 100;
+	rs.search(q, RS::PrevLastSearch);
+	assert(!rs.canUndo());              /* larger than the whole budget: not kept */
+}
+
+/* A detailed frame walks only the blocks whose bytes changed (engine
+ * analysis, 2026-10-18), and still counts every change. */
+void aDetailedFrameWalksOnlyWhatChanged()
+{
+	std::vector<uint8_t> mem(1 << 20, 7);
+	for (int pointer = 0; pointer < 2; pointer++)
+	{
+		RS rs(pointer ? mem.data() : nullptr, pointer ? nullptr : Harness::readFn, &mem, (int64_t)mem.size());
+		rs.start(2, false, false, true);
+		rs.update(RS::PrevLastFrame);
+		assert(rs.walkedLastUpdate() == 0);
+		mem[300001]++;
+		rs.update(RS::PrevLastFrame);
+		assert(rs.walkedLastUpdate() > 0 && rs.walkedLastUpdate() <= 4096 / 2);
+		RS::Row row;
+		assert(rs.row(rs.indexOf(300000), row) && row.changes == 1 && row.previous == 0x0707 && row.current == 0x0807);
+		/* a candidate across two blocks is seen from the first */
+		mem[4096]++;
+		rs.update(RS::PrevLastFrame);
+		assert(rs.row(rs.indexOf(4096), row) && row.changes == 1);
+		mem[300001]--;
+		mem[4096]--;
+	}
+}
+
+/* On a bus, a sparse set is read a run of candidates at a time, not one call
+ * per candidate (engine analysis, 2026-10-18). */
+static int g_reads = 0;
+static int64_t countedRead(void *user, int64_t offset, uint8_t *buf, int64_t len)
+{
+	g_reads++;
+	return Harness::readFn(user, offset, buf, len);
+}
+void aBusIsReadAWindowAtATime()
+{
+	std::vector<uint8_t> mem(1 << 20);
+	for (size_t i = 0; i < mem.size(); i++) mem[i] = (uint8_t)(i * 7);
+	RS rs(nullptr, countedRead, &mem, (int64_t)mem.size());
+	rs.start(4, false, false, false);
+	RS::Query q;
+	q.compare = RS::CmpSpecificAddress;
+	q.op = RS::OpLessThan;
+	q.value = 400;                      /* 100 candidates, close together */
+	rs.search(q, RS::PrevOriginal);
+	assert(rs.count() == 100 && !rs.isDense());
+	g_reads = 0;
+	q.compare = RS::CmpPrevious;
+	q.op = RS::OpEqual;
+	assert(rs.search(q, RS::PrevLastSearch) == 0);
+	assert(g_reads <= 2);               /* the values, then the previous ones: was 200 */
+	mem[40] ^= 1;
+	g_reads = 0;
+	assert(rs.search(q, RS::PrevLastSearch) == 1);
+	assert(g_reads <= 2);
+}
+
 int main()
 {
 	runningOutLeavesTheSearchAsItWas();
+	undoKeepsToItsBudget();
+	aDetailedFrameWalksOnlyWhatChanged();
+	aBusIsReadAWindowAtATime();
 	bool dense = false, sparse = false;
 	uint32_t seed = 1;
 	for (int pointer = 0; pointer < 2; pointer++)

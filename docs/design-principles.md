@@ -8840,3 +8840,34 @@ plays a full disk: the run fails and says so, the image is as it was, and no
 temporary file is left; a run that works then replaces it. With the ISO
 writer deleting the image on failure again, the test fails. Engine tests (30),
 witness (96), interface tests and the Windows build pass.
+
+## RAM search on big memories: undo within a budget, a detailed frame walks only what changed, a bus is read in runs (user-decided, 2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18 measured three costs of
+RAM search on large memories. Undo kept five whole copies of the search, made
+before the oldest was dropped: in detailed mode a level is about six times the
+domain, so the history could reach 36.8 times it, and on Linux running out is
+the process killed rather than the fallback that was planned. Detailed mode
+compared every candidate every frame, about 1.3 ms a MiB a frame, though most
+memory does not change. And on a domain reached through a bus (no pointer, or
+live ranges), a sparse search read one candidate per call, each a call through
+the frontend into the core; a search that keeps the previous values read the
+whole domain twice.
+
+**What was decided.** The owner chose a byte budget for undo: 1 GiB for undo
+and redo together, the oldest level dropped first and before the copy is
+made, and a search larger than the whole budget not kept at all. A detailed
+frame reads the domain once and walks only the 4 KiB blocks whose bytes
+changed. Sparse candidates are read in runs (one read for candidates with
+less than 4 KiB between them, up to 1 MiB), and a dense search on a bus reads
+the domain once and takes the previous values from that read.
+
+**Tested.** Three new engine tests: five searches keep two levels under a
+200 KiB budget and none under 10 KiB; a detailed frame with no change walks no
+candidate, and one with a change walks one block and counts it (also for a
+candidate across two blocks); a sparse search of 100 close candidates on a bus
+makes at most two reads, where it made 200. Each failed with its part removed.
+The randomized test that checks every operation against a model, through a
+pointer and a bus, every size, both modes and live ranges, passes. A detailed
+frame of a 64 MiB domain in which a little changes took 89 ms and takes 23 ms.
+Engine tests (30), witness (96), interface tests and the Windows build pass.
