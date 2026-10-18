@@ -276,7 +276,7 @@ namespace Chimera.Client.GUI
 
 		private void AskWhereAndSaveLog()
 		{
-			using SaveFileDialog dialog = new()
+			using SaveFilePicker dialog = new()
 			{
 				AddExtension = true,
 				DefaultExt = "txt",
