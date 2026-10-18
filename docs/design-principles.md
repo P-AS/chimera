@@ -8451,3 +8451,38 @@ times in 300 frames, with the same memory and picture as before.
 this machine). RPCS3's own test script passed (41 passed, 2 skipped), but
 its GL test served no faults: a `||` and `&&` mix-up in it lets two empty
 counts pass. To be fixed in the RPCS3 repository.
+
+## Open files and the random-number stream are part of a savestate (user-decided, 2026-10-18)
+
+**What was found.** A core reads its game files through the sandbox's file
+descriptors, each with its own position. Those positions, which descriptor
+had which file open, and the position of the stream that answers a core's
+requests for random bytes (getrandom) were kept by miniBox outside the
+machine, so a savestate did not carry them. Set aside as too complex on
+2026-10-15. The analysis of 2026-10-18 found a concrete case: PCSX2's disc
+swap closes one disc image and opens the next, which gets the same
+descriptor number, so going back to before the swap read the second disc
+where the first was expected. A core that reads a file without seeking
+carried on from wherever the abandoned run had left it.
+
+**What was decided.** The owner chose to put them in states and deltas.
+After the thread set comes a record of every open descriptor (its number,
+the name of the file it has open, its position) and the random stream's
+position. A load puts all of it back; a state or delta written before has no
+record and loads leaving them as they are, as before. miniBox c0c2ebc; the
+layout is in MACHINE-SPEC, section 6.
+
+**Tested.** miniBox's conformance test, on Linux and on Windows:
+- a descriptor closed after a save and opened on a second disc reads the
+  first disc, from where it was, after the load;
+- the random stream goes on from where it was;
+- a delta applied to the state it was measured from lands on the machine
+  after a disc swap, descriptor and stream included;
+- a state written before this change still loads, leaving the open files
+  as they are.
+Each check was seen to fail with its part removed. Chimera's engine tests
+(30 passed), the witness (89 passed) and the PCSX2 core's test script (44
+passed, 6 skipped for content not on this machine) pass with it.
+
+**Not checked:** a real disc swap going back over the swap in Chimera's
+interface; the test above does it inside miniBox.
