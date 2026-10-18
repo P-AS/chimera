@@ -1070,13 +1070,23 @@ of commit to spare) and an old Vulkan loader (one machine has 1.4.309).
 Standalone Dolphin starts on the same driver. One difference a core cannot
 see is the thread: a core calls in on the thread that runs it, which in
 Chimera is the window's, and .NET makes that a single-threaded COM
-apartment. On Windows the bridge now creates the instance and the device on
-a thread made for the call (no COM apartment, an 8 MB stack) and waits for
-it. Vulkan allows an object made on one thread to be used on another.
+apartment. On Windows the bridge now creates the instance, chooses the
+device and creates the device on a thread of its own (no COM apartment, an
+8 MB stack). Vulkan allows an object made on one thread to be used on
+another. The thread is made once and kept, so whatever a driver ties to the
+thread that made its instance lives as long as the instance. The window
+thread waits for it while still answering messages other threads send to
+its windows, so a driver or an overlay that sends one during creation
+cannot hang Chimera (the first version, 5ed4270, waited without answering
+and made a new thread each time; the miniBox analysis of 2026-10-18 caught
+it).
 
 What is known: on the GTX 1060, PCSX2's Vulkan renderer through the new
 path draws Street Fighter EX3 the same as its OpenGL renderer, byte for
-byte, at frames 600, 899 and 2,400. What is not: whether this is the cause
+byte, at frames 600, 899 and 2,400; and from a state at frame 2,300, 100
+frames with a save and a load around each (a new device each time, on the
+kept thread) reach the straight run's frame 2,400, byte for byte. What is
+not: whether this is the cause
 on Intel's driver. There is no such card here, and the exception's type
 lives in the driver's memory, which the minidumps do not hold. A driver's
 C++ exception cannot be caught by code from Chimera's compiler (MinGW's
