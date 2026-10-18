@@ -14,10 +14,12 @@
 
 #include "../../extern/miniz/miniz.h"
 
+#include <cstdint>
 #include <cstring>
 #include <algorithm>
 #include <filesystem>
 #include <map>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -204,15 +206,32 @@ const uint8_t *ce_package_entry(ce_package *p, const char *name, uint64_t *len_o
 	{
 		auto it = p->entries.find(name);
 		if (it == p->entries.end()) return nullptr;
-		size_t rawLen = 0;
-		void *raw = mz_zip_reader_extract_to_heap(&p->zip, it->second, &rawLen, 0);
-		if (raw == nullptr)
+		/* straight into entryData: extracting to a buffer of its own and
+		 * copying that held the entry twice for a moment (engine analysis,
+		 * 2026-10-18; a core.wbx is up to 333 MB) */
+		mz_zip_archive_file_stat stat{};
+		bool ok = mz_zip_reader_file_stat(&p->zip, it->second, &stat) == MZ_TRUE && stat.m_uncomp_size < SIZE_MAX / 2;
+		if (ok)
+		{
+			try
+			{
+				p->entryData.clear();
+				p->entryData.resize(static_cast<size_t>(stat.m_uncomp_size));
+			}
+			catch (const std::bad_alloc &)
+			{
+				p->entryData = std::vector<uint8_t>();
+				p->error = std::string("there was not enough memory to read ") + name;
+				return nullptr;
+			}
+			if (!p->entryData.empty())
+				ok = mz_zip_reader_extract_to_mem(&p->zip, it->second, p->entryData.data(), p->entryData.size(), 0) == MZ_TRUE;
+		}
+		if (!ok)
 		{
 			p->error = std::string("could not extract ") + name;
 			return nullptr;
 		}
-		p->entryData.assign(static_cast<uint8_t *>(raw), static_cast<uint8_t *>(raw) + rawLen);
-		mz_free(raw);
 	}
 	if (len_out != nullptr) *len_out = p->entryData.size();
 	return p->entryData.data();

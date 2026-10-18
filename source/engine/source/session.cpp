@@ -60,12 +60,12 @@ extern "C" intptr_t streamRead(uintptr_t userdata, void *dst, uintptr_t size)
 	return static_cast<intptr_t>(n);
 }
 
-/* A stream's bytes, given back once the host has read them into its own copy
- * (every create and mount does, and none reads again). The stream is emptied
- * too, so nothing can read the freed bytes through it. */
-void releaseStream(ByteStream &stream, std::vector<uint8_t> &bytes)
+/* A stream is read whole by the create or mount it was handed to, and never
+ * again, so it points at bytes the open does not own (a package entry, the
+ * caller's buffer) and is emptied as soon as the host has its copy: nothing
+ * can read those bytes through it after the open returns. */
+void doneWith(ByteStream &stream)
 {
-	std::vector<uint8_t>().swap(bytes);
 	stream.data = nullptr;
 	stream.len = 0;
 	stream.pos = 0;
@@ -449,11 +449,16 @@ extern "C" void ce_cache_announce(int32_t precompile);
 /* Sessions that ask the core one question instead of starting it: open stops
  * before Init, calls the named export (no arguments, a NUL-terminated string
  * back) and keeps the answer. ce_suggest_settings asks SuggestSettings,
- * ce_import_movie asks ImportMovie. nullptr is an ordinary session. */
-static const char *s_answerExport = nullptr;
+ * ce_import_movie asks ImportMovie. nullptr is an ordinary session. One per
+ * thread: process-wide, a question asked on one thread while another thread
+ * opened a session turned that session into a question, with no frame
+ * export, and its first frame called a null pointer (engine analysis,
+ * 2026-10-18). */
+static thread_local const char *s_answerExport = nullptr;
 
-/* precompile sessions: asked for before open, like the GPU */
-static int32_t s_precompileIndex = 0, s_precompileCount = 0, s_precompileFirmware = 1;
+/* precompile sessions: asked for before open, on the thread that opens, like
+ * the question above */
+static thread_local int32_t s_precompileIndex = 0, s_precompileCount = 0, s_precompileFirmware = 1;
 
 extern "C" void ce_precompile_request(int32_t index, int32_t count, int32_t firmware_too)
 {
@@ -523,11 +528,8 @@ struct ce_session
 	uintptr_t fnPrecompileDone = 0, fnPrecompileDoneCount = 0, fnPrecompileTotal = 0;
 
 	// the mounted byte sources must outlive the mounts
-	std::vector<uint8_t> wbxBytes, romBytes, romNameBytes;
+	std::vector<uint8_t> romNameBytes;
 	std::string settingsBytes;
-	std::vector<std::vector<uint8_t>> firmwareBytes;
-	std::vector<std::pair<std::string, std::vector<uint8_t>>> assetFiles;
-	std::vector<std::vector<uint8_t>> extraBytes;
 	std::vector<ByteStream> streams; // stable addresses: reserved up front
 
 	// guest entry points (already bridged to our convention)
@@ -1680,33 +1682,15 @@ static ce_session *openSession(
 		if (cfgError == kConfigNotJson) cfgError += describeUnreadable(package_path, entry, len);
 		return abort(std::move(cfgError));
 	}
-	entry = ce_package_entry(pkg, "core.wbx", &len);
-	if (entry == nullptr) return abort("package has no core.wbx");
-	s->wbxBytes.assign(entry, entry + len);
-	/* core-owned assets travel in the package and are mounted below with the
-	 * "assets" prefix dropped: assets/sys/... becomes /sys/... in the guest */
-	const int32_t asset_count = ce_package_asset_count(pkg);
-	s->assetFiles.reserve(static_cast<size_t>(asset_count));
-	for (int32_t i = 0; i < asset_count; i++)
-	{
-		const char *aname = ce_package_asset_name(pkg, i);
-		if (aname == nullptr) continue;
-		const uint8_t *abytes = ce_package_entry(pkg, aname, &len);
-		if (abytes == nullptr) return abort(std::string("package asset unreadable: ") + aname);
-		s->assetFiles.emplace_back(std::string(aname).substr(6), std::vector<uint8_t>(abytes, abytes + len));
-	}
 	const char *sha1 = ce_package_sha1(pkg);
 	const std::string packageSha1 = sha1 != nullptr ? sha1 : "";
-	ce_package_free(pkg);
-	pkg = nullptr; /* a later abort() must not free it again */
-
+	const int32_t asset_count = ce_package_asset_count(pkg);
 	const bool romFromDisk = rom_path != nullptr && rom_path[0] != '\0';
-	if (!romFromDisk && rom != nullptr && rom_len != 0) s->romBytes.assign(rom, rom + rom_len);
 	s->settingsBytes = s->cfg.settingsJson;
 
 	// every mounted stream needs a stable address for the host's callback
 	s->streams.reserve(6 + static_cast<size_t>(firmware_count) + static_cast<size_t>(extra_count)
-	                   + s->assetFiles.size());
+	                   + static_cast<size_t>(asset_count > 0 ? asset_count : 0));
 
 	chimera::WbxLayout layout{};
 	layout.sbrkSize = static_cast<uintptr_t>(s->cfg.layoutMiB[0] << 20);
@@ -1715,16 +1699,40 @@ static ce_session *openSession(
 	layout.plainSize = static_cast<uintptr_t>(s->cfg.layoutMiB[3] << 20);
 	layout.mmapSize = static_cast<uintptr_t>(s->cfg.layoutMiB[4] << 20);
 
-	chimera::WbxReturn r{};
-	s->streams.push_back({ s->wbxBytes.data(), s->wbxBytes.size() });
-	host->wbx_create_host(&layout, "core.wbx", streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), &r);
 	/* Every create and mount reads its stream whole into the host's own copy
-	 * and never again, so the session's copy goes as soon as the host has one:
-	 * kept for the whole session it was the core (333 MB for MAME, 140 for
-	 * RPCS3), the firmware (a PS3 update is 206 MB) and the assets, twice. */
-	releaseStream(s->streams.back(), s->wbxBytes);
+	 * and never again, so each is handed the bytes where they already are -
+	 * the package's entry, the caller's buffer - and not a copy of its own.
+	 * The engine used to copy the core (333 MB for MAME, 140 for RPCS3), the
+	 * firmware (a PS3 update is 206 MB) and every asset first, all the assets
+	 * at once (engine analysis, 2026-10-18). */
+	chimera::WbxReturn r{};
+	entry = ce_package_entry(pkg, "core.wbx", &len);
+	if (entry == nullptr) return abort("package has no core.wbx");
+	s->streams.push_back({ entry, len });
+	host->wbx_create_host(&layout, "core.wbx", streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), &r);
+	doneWith(s->streams.back());
 	if (!r.ok()) return abort(r.errorMessage);
 	s->obj = reinterpret_cast<void *>(r.data);
+
+	/* The core's own files travel in the package and are mounted with the
+	 * "assets" prefix dropped: assets/sys/... becomes /sys/... in the guest.
+	 * One at a time, while the package is open (an entry lasts until the next
+	 * is read), and before the game: the order files are mounted in is not
+	 * something a core can see. */
+	for (int32_t i = 0; i < asset_count; i++)
+	{
+		const char *aname = ce_package_asset_name(pkg, i);
+		if (aname == nullptr) continue;
+		const std::string assetName = std::string(aname).substr(6);
+		const uint8_t *abytes = ce_package_entry(pkg, aname, &len);
+		if (abytes == nullptr) return abort(std::string("package asset unreadable: ") + aname);
+		s->streams.push_back({ abytes, len });
+		host->wbx_mount_file(s->obj, assetName.c_str(), streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
+		doneWith(s->streams.back());
+		if (!r.ok()) return abort(std::string("mounting asset ") + assetName + ": " + r.errorMessage);
+	}
+	ce_package_free(pkg);
+	pkg = nullptr; /* a later abort() must not free it again */
 
 	chimera::progress("mounting the game", 0, 0);
 	/* The game itself, which is the one most likely to be enormous: mounted
@@ -1735,8 +1743,9 @@ static ce_session *openSession(
 	}
 	else
 	{
-		s->streams.push_back({ s->romBytes.data(), s->romBytes.size() });
+		s->streams.push_back({ rom, rom != nullptr ? rom_len : 0 });
 		host->wbx_mount_file(s->obj, s->cfg.romFile.c_str(), streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
+		doneWith(s->streams.back());
 	}
 	if (!r.ok()) return abort(std::string("mounting ") + s->cfg.romFile + ": " + r.errorMessage);
 
@@ -1762,14 +1771,13 @@ static ce_session *openSession(
 			}
 			else
 			{
-				s->streams.push_back({ s->romBytes.data(), s->romBytes.size() });
+				s->streams.push_back({ rom, rom != nullptr ? rom_len : 0 });
 				host->wbx_mount_file(s->obj, alias.c_str(), streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
+				doneWith(s->streams.back());
 			}
 			if (!r.ok()) return abort(std::string("mounting ") + alias + ": " + r.errorMessage);
 		}
 	}
-	/* (both rom mounts have their copies now) */
-	std::vector<uint8_t>().swap(s->romBytes);
 
 	/* a directly-opened rom has a name too: when no caller-provided extra
 	 * carries "rom.name", it is the name the rom was just MOUNTED under, so a
@@ -1809,19 +1817,10 @@ static ce_session *openSession(
 
 	for (int32_t i = 0; i < firmware_count; i++)
 	{
-		s->firmwareBytes.emplace_back(firmware_data[i], firmware_data[i] + firmware_lens[i]);
-		s->streams.push_back({ s->firmwareBytes.back().data(), s->firmwareBytes.back().size() });
+		s->streams.push_back({ firmware_data[i], firmware_data[i] != nullptr ? firmware_lens[i] : 0 });
 		host->wbx_mount_file(s->obj, firmware_ids[i], streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
-		releaseStream(s->streams.back(), s->firmwareBytes.back());
+		doneWith(s->streams.back());
 		if (!r.ok()) return abort(r.errorMessage);
-	}
-
-	for (auto &asset : s->assetFiles)
-	{
-		s->streams.push_back({ asset.second.data(), asset.second.size() });
-		host->wbx_mount_file(s->obj, asset.first.c_str(), streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
-		releaseStream(s->streams.back(), asset.second);
-		if (!r.ok()) return abort(std::string("mounting asset ") + asset.first + ": " + r.errorMessage);
 	}
 
 	/* a multi-file game's additional mounts: rom2..romN, support files,
@@ -1836,10 +1835,9 @@ static ce_session *openSession(
 		}
 		else
 		{
-			s->extraBytes.emplace_back(extra_data[i], extra_data[i] + extra_lens[i]);
-			s->streams.push_back({ s->extraBytes.back().data(), s->extraBytes.back().size() });
+			s->streams.push_back({ extra_data[i], extra_data != nullptr && extra_data[i] != nullptr ? extra_lens[i] : 0 });
 			host->wbx_mount_file(s->obj, extra_names[i], streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
-			releaseStream(s->streams.back(), s->extraBytes.back());
+			doneWith(s->streams.back());
 		}
 		if (!r.ok()) return abort(std::string("mounting ") + extra_names[i] + ": " + r.errorMessage);
 	}

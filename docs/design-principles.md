@@ -9111,3 +9111,37 @@ the engine's 30 unit tests pass, the witness 99 passed and 0 failed, the
 interface tests 1108 with none failed (23 skipped, as before), the Windows
 build compiles, and the PCSX2 core's test script 44 passed, 0 failed, 6
 skipped.
+
+## Opening a session keeps no copies of its files, and two threads may open at once (2026-10-18)
+
+**What was found.** Opening a session copied the core out of its package, all
+of the core's own files at once, the firmware and the game's bytes out of the
+caller's buffers, and only then handed each to miniBox, which makes its own
+copy. Reading a package entry held it twice for a moment as well. And two
+switches that steer an open - "ask the core a question instead of starting
+it" and "this is a precompile session" - were shared by the whole process: a
+question asked on one thread while another thread opened a session turned
+that session into a question with no frame export, and its first frame would
+have called a null pointer. Nothing does that today (the interface asks on
+the same thread, the wizard in a child process).
+
+**What was decided.** miniBox reads each file whole during the call that
+mounts it and never again, so the open hands it the bytes where they already
+are: the package's entry, the caller's buffer. The core's own files are
+mounted one at a time straight after the core, while the package is open,
+which puts them before the game; a core cannot see the order files were
+mounted in. A package entry is extracted straight into its buffer. The two
+switches are per thread, and engine.h says which calls are the whole
+process's (the GPU request and the compile cache folder).
+
+Measured with chimera-run: the synthetic core opened with a 206 MB file as
+firmware peaked at 829 MB before and 628 MB after, one copy of the file. A
+PS3 session with its 206 MB firmware peaked at 1.69 GB before and after, and
+a PS2 session at 1.16 GB: their peak comes later, while the machine runs, so
+for them the open is smaller but the peak is not.
+
+**Tested.** No new test: the copies left show only as memory, measured above,
+and the race needs two opens interleaved. The engine's 30 unit tests pass,
+the witness 99 passed and 0 failed, the interface tests 1108 with none failed
+(23 skipped, as before), the Windows build compiles, and the PCSX2 core's
+test script 44 passed, 0 failed, 6 skipped.

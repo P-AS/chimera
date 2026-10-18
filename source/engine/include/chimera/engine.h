@@ -834,7 +834,13 @@ typedef struct ce_session ce_session;
  * read-only file has nothing a savestate must carry, and the machine cannot
  * tell the difference - so the only rule is that a file must not change while
  * a session has it open. Firmware stays bytes: it is small, and a frontend
- * resolves it from its own store rather than from a path the project knows. */
+ * resolves it from its own store rather than from a path the project knows.
+ *
+ * The bytes given are read during the call and not kept: the caller may free
+ * them as soon as it returns. Two threads may open sessions at once; what
+ * ce_precompile_request asks applies to the thread that asked. ce_gl_request
+ * and ce_cache_dir are the whole process's (one GPU context per process), so
+ * sessions that differ in them are opened one at a time. */
 CE_API ce_session *ce_session_open(
 	const char *package_path,
 	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
@@ -1021,7 +1027,8 @@ CE_API uint64_t ce_session_cache_fetched(const ce_session *s);
  * reports when it is done. The caller pumps ce_session_frame_advance until
  * ce_session_precompile_done and reads the progress for its bar.
  */
-/* Sessions opened after this call are precompile sessions (count 0: off). */
+/* Sessions this thread opens after this call are precompile sessions (count
+ * 0: off). */
 CE_API void ce_precompile_request(int32_t index, int32_t count, int32_t firmware_too);
 /* -1 when this session is no precompile session or the core has none. */
 CE_API int32_t ce_session_precompile_done(const ce_session *s);
