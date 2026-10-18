@@ -48,6 +48,13 @@ Linux desktop has. No package was added for it.
   too. Only a 2 that comes back within 300 ms, sooner than a person can press
   Cancel, means the chooser never came up, and then the toolkit dialog is
   shown instead.
+- **When the portal leaves the bus.** If the portal process goes away while
+  its chooser is open (it crashed, or was stopped), no answer will come. The
+  picker also listens for the portal's name losing its owner on the bus, and
+  then shows the toolkit dialog instead of waiting for ever (added at review,
+  2026-10-18). Tried against a stand-in portal that takes the request and
+  exits without answering: the toolkit dialog was offered after 1 second;
+  without the check the picker was still waiting when it was killed after 30.
 - **What is made of the answer.** The `file://` addresses become paths. The
   filter in use comes back as the filter index. A save typed without an
   extension gets the one the filter in use names, or the default extension,
