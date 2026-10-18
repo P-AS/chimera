@@ -856,7 +856,9 @@ CE_API ce_session *ce_session_open(
  *     CE_OPEN_ALLOW_CORE_MISMATCH is given (a directory package has no SHA1
  *     and is not compared);
  *   - checks the project's files against the package's file_slots.json, when
- *     the package has one (ce_project_validate);
+ *     the package has one (ce_project_validate), with a slot gated on a
+ *     setting judged by the settings the machine starts with: the package's
+ *     default for a setting neither the caller nor the project gives;
  *   - gives the core its files: the slot map as "slots", every file under its
  *     own name, the first file that is not a support file as the rom with its
  *     name as "rom.name", and the later files of that slot as rom2..N. Every

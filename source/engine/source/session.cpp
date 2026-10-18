@@ -20,6 +20,7 @@
 #include "thread_string.hpp"
 #include "state_history.hpp"
 #include "kept_pictures.hpp"
+#include "project_check.hpp"
 #include "state_format.hpp"
 #include "game_properties.hpp"
 #include "mcp.hpp"
@@ -2068,6 +2069,15 @@ ce_session *ce_session_open_project(
 			return fail(std::string("project: '") + ce_project_file_name(project, i) + "' does not match its recorded hash");
 	}
 
+	/* the settings the machine starts with: the caller's, or the project's own */
+	uint64_t len = 0;
+	std::string settingsText;
+	if (settings_overrides_json == nullptr)
+	{
+		settingsText = ce_project_settings_text(project, &len);
+		settings_overrides_json = settingsText.c_str();
+	}
+
 	/* the core the project names, against the package given; and the project's
 	 * files against the slots that package declares, when it declares any */
 	{
@@ -2086,10 +2096,32 @@ ce_session *ce_session_open_project(
 				return fail(detail);
 			}
 			uint64_t declLen = 0;
-			const uint8_t *decl = ce_package_entry(pkg, "file_slots.json", &declLen);
+			const uint8_t *declBytes = ce_package_entry(pkg, "file_slots.json", &declLen);
+			/* kept: the next entry read may reuse the package's buffer */
+			const std::string declText = declBytes != nullptr
+				? std::string(reinterpret_cast<const char *>(declBytes), static_cast<size_t>(declLen)) : std::string();
+			const char *decl = declBytes != nullptr ? declText.c_str() : nullptr;
+			/* A slot gated on a setting is judged by the value the machine
+			 * will boot with: the package's default where neither the caller
+			 * nor the project gives one. Judged on the project's settings
+			 * alone, a project that left the setting out (an agent's, a
+			 * hand-written one) was refused though the machine would boot. */
+			cJSON *running = nullptr;
+			uint64_t configLen = 0;
+			const uint8_t *config = ce_package_entry(pkg, "waterbox.config", &configLen);
+			SessionConfig declared;
+			std::string configError;
+			if (decl != nullptr && config != nullptr
+				&& parseConfig(reinterpret_cast<const char *>(config), configLen, settings_overrides_json, declared, configError))
+			{
+				running = cJSON_Parse(declared.settingsJson.c_str());
+			}
 			const char *slotError = nullptr;
-			if (decl != nullptr &&
-				ce_project_validate(project, reinterpret_cast<const char *>(decl), declLen, &slotError) != 0)
+			const int32_t refused = decl != nullptr
+				? ceProjectValidate(project, decl, declLen, running, &slotError)
+				: 0;
+			cJSON_Delete(running);
+			if (refused != 0)
 			{
 				std::string detail = slotError != nullptr ? slotError : "the manifest does not fit the core's slots";
 				ce_package_free(pkg);
@@ -2103,13 +2135,6 @@ ce_session *ce_session_open_project(
 	 * name, and the first file that is not a support file as the rom, with its
 	 * name as "rom.name" and the later files of its slot as rom2..N
 	 * (docs/project.md). Files are given by where they lie, never read here. */
-	uint64_t len = 0;
-	std::string settingsText;
-	if (settings_overrides_json == nullptr)
-	{
-		settingsText = ce_project_settings_text(project, &len);
-		settings_overrides_json = settingsText.c_str();
-	}
 	const std::string slotsText = ce_project_slots_text(project, &len);
 
 	std::vector<std::string> names;      /* the names this function makes */

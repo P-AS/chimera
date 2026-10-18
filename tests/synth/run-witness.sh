@@ -302,6 +302,24 @@ PROJPY
 		printf '{"slots":[{"id":"cartridge","title":"Cartridge","min":1,"max":1,"formats":["testrom"]}]}\n' > "$jdir/slots-package/file_slots.json"
 		jrun slots --project "$jdir/ok/p.chimeraProject" "$jdir/slots-package"
 		{ [ "$jrc" -ne 0 ] && [ "$jrc" -lt 128 ] && [ ! -s "$jdir/slots.ram.bin" ]; } || jbad="$jbad slots(rc=$jrc)"
+		# A slot gated on a setting the project leaves out is judged by the
+		# package's default for it, as the machine will boot: the project with
+		# no settings fits a "rom" slot shown only at initFillByte 0 (the
+		# default), and the one that records 171 does not.
+		mkdir -p "$jdir/defaults-package"
+		( cd "$jdir/defaults-package" && unzip -q -o "$epkg" )
+		printf '{"slots":[{"id":"rom","title":"Game","min":1,"max":1,"exposedWhen":{"setting":"initFillByte","is":0}}]}\n' > "$jdir/defaults-package/file_slots.json"
+		jrun defaults --project "$jdir/ok/p.chimeraProject" "$jdir/defaults-package"
+		dbad=""
+		{ [ "$jrc" -eq 0 ] && jsame defaults; } || dbad="$dbad left-out(rc=$jrc)"
+		jrun defaults-set --project "$jdir/ok/settings.chimeraProject" "$jdir/defaults-package"
+		jrefused defaults-set "which these files make unavailable" || dbad="$dbad recorded(rc=$jrc)"
+		if [ -z "$dbad" ]; then
+			report "E:project:setting-defaults" PASS "a slot gated on a setting the project leaves out is judged by the package's default"
+		else
+			report "E:project:setting-defaults" FAIL "wrong:$dbad (see work/engine-project/defaults*.log)"
+		fi
+
 		if [ -z "$jbad" ]; then
 			report "E:project:refusals" PASS "a missing file, a changed file, another core's package and files that fit no slot are each refused; the flag allows the package"
 		else

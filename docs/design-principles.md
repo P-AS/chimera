@@ -8685,5 +8685,29 @@ one frame behind the machine, and a load followed by an edit with and without a
 frame run. The randomized history test now makes such captures, and edits one
 frame behind the machine a third of the time. With the old ending put back,
 both tests fail (the random one with "a machine from another timeline"), and
-so they do with the old guess after a load. Engine tests (30), witness (92), interface tests
-and the Windows build pass.
+so they do with the old guess after a load. Engine tests (30), witness (92),
+interface tests and the Windows build pass.
+
+## A project that leaves a setting out is checked with the package's default for it (user-decided, 2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18: when the engine opens a
+project, it checks the project's files against the slots the core declares,
+and a slot may be shown only for some value of a setting (the Genesis Plus GX
+core shows its Mega Drive cartridge slot only when the machine setting says
+Genesis). That check read the project's own settings and nothing else. The
+window records every setting it shows, so its projects passed; a project made
+by an AI agent through the MCP server (whose settings are optional) or by hand
+could leave the setting out, and was refused although the machine would have
+started with the package's default.
+
+**What was decided.** The owner chose to fix every confirmed finding of the
+analysis. The engine's project opening checks the slots against the settings
+the machine starts with: the package's defaults, with the project's settings
+(or the caller's) on top. ce_project_validate itself is unchanged; the window
+calls it with every setting recorded.
+
+**Tested.** A new witness test gives the synthetic core a slot shown only at
+its default setting: the project with no settings opens and plays to the
+reference dumps, and the one that records another value is refused. With the
+defaults left out of the check, the first is refused again. Engine tests (30),
+witness (93), interface tests and the Windows build pass.

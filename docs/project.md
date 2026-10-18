@@ -125,7 +125,12 @@ settings (re-evaluated live as values change). Same-name variants are
 separate entries with disjoint conditions, exactly like firmware. The
 project records every EXPOSED sync setting explicitly at its effective
 value - the settings section is exactly the knobs the decisions
-offered, nothing else. And LAST, the firmware - last because everything
+offered, nothing else. A project made some other way (by an AI agent
+through the MCP server, or by hand) may leave settings out; the engine
+then checks its files against the slots with the package's default for
+each setting left out, the value the machine will start with (2026-10-18).
+Before, a slot shown only for one machine setting refused such a project
+although the machine would have started. And LAST, the firmware - last because everything
 before it has a say: the core itself may need a file regardless of
 anything else, the chosen game files may trigger a need (a Famicom disk
 needs the FDS bios where a cartridge does not; a CD image needs the CD

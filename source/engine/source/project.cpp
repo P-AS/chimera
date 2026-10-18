@@ -19,6 +19,7 @@
 #include "file_io.hpp"
 #include "manifest_util.hpp"
 #include "conditions.hpp"
+#include "project_check.hpp"
 #include "sha1.hpp"
 #include "thread_string.hpp"
 
@@ -1110,6 +1111,13 @@ int32_t ce_project_game_file(const ce_project *p)
 
 int32_t ce_project_validate(const ce_project *p, const char *slots_json, uint64_t slots_len, const char **error_out)
 {
+	return ceProjectValidate(p, slots_json, slots_len, nullptr, error_out);
+}
+
+int32_t ceProjectValidate(const ce_project *p, const char *slots_json, uint64_t slots_len,
+	const cJSON *settings, const char **error_out)
+{
+	if (settings == nullptr) settings = p->settings;
 	if (error_out != nullptr) *error_out = nullptr;
 	if (slots_json == nullptr) return failInt("no slot declaration given", error_out);
 
@@ -1204,10 +1212,11 @@ int32_t ce_project_validate(const ce_project *p, const char *slots_json, uint64_
 			cJSON *id = cJSON_GetObjectItemCaseSensitive(item, "id");
 			cJSON *when = cJSON_GetObjectItemCaseSensitive(item, "exposedWhen");
 			if (!cJSON_IsString(id) || when == nullptr) continue;
-			/* the project's own settings: a slot gated on the machine setting
-			 * (gpgx's per-machine cartridges) is exposed by what the project
-			 * records, not evaluated blind */
-			if (ceEvalCondition(when, slotMap, p->settings)) continue;
+			/* the settings the machine runs with: a slot gated on the machine
+			 * setting (gpgx's per-machine cartridges) is exposed by what the
+			 * project records, or by the package's default where it records
+			 * nothing, not evaluated blind */
+			if (ceEvalCondition(when, slotMap, settings)) continue;
 			unexposed.insert(id->valuestring);
 			for (const FileEntry &e : p->files)
 			{
