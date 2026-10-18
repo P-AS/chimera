@@ -9145,3 +9145,35 @@ and the race needs two opens interleaved. The engine's 30 unit tests pass,
 the witness 99 passed and 0 failed, the interface tests 1108 with none failed
 (23 skipped, as before), the Windows build compiles, and the PCSX2 core's
 test script 44 passed, 0 failed, 6 skipped.
+
+## A state's pages are found through the dirty map (2026-10-18)
+
+**What was found.** Taking an anchor (a whole state the history keeps) walked
+miniBox's page records - 40 bytes a page - four times: once to size the
+state, once more because the plan asked the size again, once to count the
+pages the plan holds and once to hold them. The PS3 core's block is 5.2
+million pages.
+
+**What was decided.** The pages a state carries are found through the dirty
+map, a byte a page read eight at a time, and a page record is read only
+where the map says dirty (invisible pages are dirty too, so it still asks).
+The plan is given the room it may use and says how much it took, instead of
+being asked its size first. Measured on a PS3-sized block (20 GiB, 128 MiB
+written since the seal), the best of five: sizing the state 23 ms before and
+3 ms after, planning it 51 ms before and 8 ms after, so an anchor's walking
+went from about 97 ms to 11 ms.
+
+Not done: on Windows each frame compares every stack page with its copy
+twice, once at the end of the frame and once at the start of the next. The
+second could be skipped when nothing ran in between, saving one compare of
+the stack pages a frame, but a copy that is wrongly called current is how
+issue #64's mixed restores happened; it stays.
+
+**Tested.** A new miniBox test plans a state with a byte less room than it
+needs (refused, nothing written or held) and with exactly the room (the
+bytes save writes), with invisible pages written; it fails with the room
+check taken out, and with invisible pages counted. miniBox's 22 tests pass (6
+expected failures, as before) and the state tests pass on Windows; the
+engine's 30 unit tests pass, the witness 99 passed and 0 failed, the
+interface tests 1108 with none failed (23 skipped), the Windows build
+compiles, and the PCSX2 core's test script 44 passed, 0 failed, 6 skipped.
