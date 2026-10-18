@@ -54,6 +54,8 @@ private:
 	ce_session *session = nullptr;
 	ce_movie_log *movie = nullptr;      /* the movie being worked on; the session plays a copy of it */
 	std::string projectPath;            /* where the project was opened from or last saved to, "" for neither */
+	std::string firmwarePins;           /* [{"id", "sha1"}] of what the last start was given */
+	std::vector<std::string> firmwareWarnings; /* its firmware against the project's pins */
 	std::string packagePath;
 	bool unsaved = false;
 	int currentBranch = -1;

@@ -2222,6 +2222,14 @@ ce_session *ce_session_open_project(
 		}
 	}
 
+	/* firmware other than what the project pins: said, not refused (the
+	 * window asks a person; a program going on is its own choice) */
+	for (const std::string &warning : ceFirmwarePinMismatches(project, firmware_ids, firmware_data, firmware_lens, firmware_count))
+	{
+		fprintf(stderr, "[project] %s\n", warning.c_str());
+	}
+	fflush(stderr);
+
 	/* What the core sees: the slot map as "slots", every file under its own
 	 * name, and the first file that is not a support file as the rom, with its
 	 * name as "rom.name" and the later files of its slot as rom2..N

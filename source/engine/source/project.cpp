@@ -1109,6 +1109,43 @@ int32_t ce_project_game_file(const ce_project *p)
 
 /* ---- validation against a core's file_slots.json ---- */
 
+} // extern "C"
+
+std::vector<std::string> ceFirmwarePinMismatches(const ce_project *p,
+	const char *const *ids, const uint8_t *const *data, const uint64_t *lens, int32_t count)
+{
+	std::vector<std::string> out;
+	if (p == nullptr || !cJSON_IsArray(p->firmware)) return out;
+	const cJSON *pin = nullptr;
+	cJSON_ArrayForEach(pin, p->firmware)
+	{
+		const cJSON *id = cJSON_GetObjectItemCaseSensitive(pin, "id");
+		const cJSON *sha1 = cJSON_GetObjectItemCaseSensitive(pin, "sha1");
+		if (!cJSON_IsString(id) || !cJSON_IsString(sha1)) continue;
+		int32_t given = -1;
+		for (int32_t i = 0; i < count && given < 0; i++)
+		{
+			if (ids[i] != nullptr && std::strcmp(ids[i], id->valuestring) == 0) given = i;
+		}
+		const std::string pinned = chimera::manifest::upperHex(sha1->valuestring);
+		if (given < 0)
+		{
+			out.push_back(std::string("the project pins the firmware '") + id->valuestring + "' (SHA-1 " + pinned
+				+ "), and none was given: the machine may not be the one the movie was made on");
+			continue;
+		}
+		const std::string actual = data[given] != nullptr ? chimera::sha1Hex(data[given], lens[given]) : std::string();
+		if (chimera::manifest::upperHex(actual) != pinned)
+		{
+			out.push_back(std::string("the firmware '") + id->valuestring + "' given is not the one the project pins (pinned "
+				+ pinned + ", given " + chimera::manifest::upperHex(actual) + "): expect the movie to desync");
+		}
+	}
+	return out;
+}
+
+extern "C" {
+
 int32_t ce_project_validate(const ce_project *p, const char *slots_json, uint64_t slots_len, const char **error_out)
 {
 	return ceProjectValidate(p, slots_json, slots_len, nullptr, error_out);

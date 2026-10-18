@@ -35,6 +35,7 @@ Prints one line for each thing that is wrong and exits 1, or prints nothing
 and exits 0.
 """
 import base64
+import hashlib
 import json
 import os
 import struct
@@ -511,6 +512,26 @@ if local:
     facts("close")
     os.remove(short_path)
     os.remove(os.path.join(work, "short.txt"))
+
+    # The firmware a game is started with is pinned in the project it makes,
+    # as the window's projects pin theirs; opening it on another file is said
+    # (not refused). The game file stands in for the firmware here.
+    facts("open_game", core="Synth", files={"rom": [rom]}, firmware={"bios": rom}, title="pins")
+    facts("save_project", path="pins.chimeraProject")
+    pins_path = os.path.join(work, "pins.chimeraProject")
+    rom_sha1 = hashlib.sha1(open(rom, "rb").read()).hexdigest().upper()
+    check("open_game pins the firmware it was given", json.load(open(pins_path)).get("firmware") == [{"id": "bios", "sha1": rom_sha1}])
+    facts("close")
+    other = os.path.join(work, "other.bin")
+    open(other, "wb").write(b"not the firmware the project pins")
+    reopened = facts("open_project", path="pins.chimeraProject", firmware={"bios": other})
+    check("open_project on other firmware says so and opens", reopened.get("core") == "Synth"
+          and any("not the one the project pins" in w for w in reopened.get("warnings", [])))
+    facts("close")
+    check("and on the pinned firmware says nothing", "warnings" not in facts("open_project", path="pins.chimeraProject", firmware={"bios": rom}))
+    facts("close")
+    os.remove(pins_path)
+    os.remove(other)
 
 agent.stdin.close()
 agent.wait()

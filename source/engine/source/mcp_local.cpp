@@ -1,6 +1,8 @@
 /* mcp_local.cpp - see mcp_local.hpp. */
 
 #include "mcp_local.hpp"
+#include "sha1.hpp"
+#include "project_check.hpp"
 
 #include "chimera/engine.h"
 
@@ -220,12 +222,22 @@ bool McpLocal::startMachine(const std::string &firmwareJson, bool otherBuildAllo
 	std::vector<const char *> idPointers;
 	std::vector<const uint8_t *> blobPointers;
 	std::vector<uint64_t> lengths;
+	cJSON *pins = cJSON_CreateArray();
 	for (size_t i = 0; i < ids.size(); i++)
 	{
 		idPointers.push_back(ids[i].c_str());
 		blobPointers.push_back(reinterpret_cast<const uint8_t *>(blobs[i].data()));
 		lengths.push_back(blobs[i].size());
+		cJSON *pin = cJSON_CreateObject();
+		cJSON_AddStringToObject(pin, "id", ids[i].c_str());
+		cJSON_AddStringToObject(pin, "sha1", sha1Hex(blobPointers.back(), lengths.back()).c_str());
+		cJSON_AddItemToArray(pins, pin);
 	}
+	firmwarePins = printed(pins);
+	cJSON_Delete(pins);
+	/* the project's pins against what was given: said to the agent, not refused */
+	firmwareWarnings = ceFirmwarePinMismatches(project, idPointers.data(), blobPointers.data(), lengths.data(),
+		static_cast<int32_t>(ids.size()));
 
 	ce_gl_request(options.gpu ? 1 : 0);
 	const char *error = nullptr;
@@ -469,6 +481,9 @@ McpResult McpLocal::openGame(const std::string &argumentsJson)
 		dropMachine();
 		return mcpError(why);
 	}
+	/* the firmware it was started with is pinned, as the window's projects
+	 * pin theirs, so that opening it later on other files is said */
+	ce_project_set_firmware_text(project, firmwarePins.c_str(), nullptr);
 	unsaved = true; /* a project that has never been saved */
 	cJSON *out = cJSON_CreateObject();
 	cJSON_AddStringToObject(out, "project", ce_project_title(project));
@@ -525,6 +540,11 @@ McpResult McpLocal::openProject(const std::string &argumentsJson)
 	cJSON_AddStringToObject(out, "project", ce_project_title(project));
 	cJSON_AddStringToObject(out, "core", ce_session_core_name(session));
 	cJSON_AddNumberToObject(out, "movie_length", static_cast<double>(ce_movie_log_count(movie)));
+	if (!firmwareWarnings.empty())
+	{
+		cJSON *warnings = cJSON_AddArrayToObject(out, "warnings");
+		for (const std::string &warning : firmwareWarnings) cJSON_AddItemToArray(warnings, cJSON_CreateString(warning.c_str()));
+	}
 	return answered(out);
 }
 

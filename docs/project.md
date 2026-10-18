@@ -310,7 +310,11 @@ the declared dump is also on hand (2026-09-29: until then the declared
 dump won, and a game core's project booted on the original instead of its
 own file) - and a pin nothing satisfies takes a severe
 are-you-sure (different firmware is a different machine: expect
-desync) to get past. "Plausible" is by size alone, and the bar is a
+desync) to get past. Without a window (chimera-run --project, the MCP
+server's open_project) nobody can be asked: the engine's project opening
+compares the firmware it is given with the pins and says which differ or
+are missing, on stderr and in the MCP answer, and opens the project anyway
+(2026-10-18). "Plausible" is by size alone, and the bar is a
 gigabyte: a PS3 system software update is 206 MB and is firmware, and
 the bar it replaced (64 MiB) let no PS3 project ever find its own,
 while a disc image is bigger still. That check is also the one that

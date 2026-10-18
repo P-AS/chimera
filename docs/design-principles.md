@@ -8742,3 +8742,26 @@ An engine test checks the key text a layout is written by. Each failed with
 its part removed. The window's refusal is not exercised by a test. Engine
 tests (30), witness (94, among them the window opening a project the
 windowless server saved), interface tests and the Windows build pass.
+
+## Firmware other than a project's pins is said without a window (user-decided, 2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18: a project pins the
+firmware it was made with (its SHA-1), and the window checks the pins when
+it opens the project and asks a person before going on with other files. The
+engine's own project opening never compared them, so chimera-run --project
+and the MCP server without a window ran a project on any firmware without a
+word, and a project an AI agent started with open_game pinned nothing at all.
+Either can desync a movie.
+
+**What was decided.** The owner chose a warning, not a refusal. The engine's
+project opening compares the firmware given with the pins and says, for each
+pin, that none was given or that the file is another; chimera-run writes it
+to stderr and the MCP server adds it to open_project's answer as
+`warnings`. open_game pins the firmware it was given, as the window does.
+
+**Tested.** A new witness test opens a project with a pin: with no firmware
+and with another file it runs to the reference dumps and says so; with the
+pinned file it says nothing. The agent script checks that open_game pins the
+firmware it was given and that open_project on another file warns and on the
+pinned one does not. Each failed with its part removed. Engine tests (30),
+witness (95), interface tests and the Windows build pass.

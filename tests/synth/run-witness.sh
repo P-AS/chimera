@@ -243,7 +243,7 @@ import hashlib, json, sys
 entries = [l.rstrip("\r\n") for l in open(sys.argv[1]) if l.startswith("|")]
 logkey = "#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|"
 sha1 = hashlib.sha1(open(sys.argv[2], "rb").read()).hexdigest().upper()
-def write(path, pin="", settings=None):
+def write(path, pin="", settings=None, firmware=None):
     doc = {
         "title": "gridWalker.win",
         "core": {"name": "Synth", "version": "", "sha1": pin},
@@ -252,11 +252,13 @@ def write(path, pin="", settings=None):
         "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
     }
     if settings is not None: doc["settings"] = settings
+    if firmware is not None: doc["firmware"] = firmware
     json.dump(doc, open(path, "w"))
 out = sys.argv[3]
 write(out + "/ok/p.chimeraProject")
 write(out + "/ok/settings.chimeraProject", settings={"initFillByte": 171})
 write(out + "/ok/pinned.chimeraProject", pin="0123456789ABCDEF0123456789ABCDEF01234567")
+write(out + "/ok/firmware.chimeraProject", firmware=[{"id": "bios", "sha1": sha1}])
 write(out + "/missing/p.chimeraProject")
 write(out + "/changed/p.chimeraProject")
 PROJPY
@@ -318,6 +320,23 @@ PROJPY
 			report "E:project:setting-defaults" PASS "a slot gated on a setting the project leaves out is judged by the package's default"
 		else
 			report "E:project:setting-defaults" FAIL "wrong:$dbad (see work/engine-project/defaults*.log)"
+		fi
+
+		# Firmware other than what the project pins is said and not refused
+		# (the owner's choice): none given, and another file, each run to the
+		# reference dumps with the warning; the pinned file runs without one.
+		# The game file stands in for the firmware: its hash is the pin.
+		fbad=""
+		jrun fw-none --project "$jdir/ok/firmware.chimeraProject" "$epkg"
+		{ [ "$jrc" -eq 0 ] && jsame fw-none && grep -q "pins the firmware 'bios'.*none was given" "$jdir/fw-none.log"; } || fbad="$fbad none(rc=$jrc)"
+		jrun fw-other --project "$jdir/ok/firmware.chimeraProject" "$epkg" --firmware "bios=$jdir/changed/gridWalker.testrom"
+		{ [ "$jrc" -eq 0 ] && jsame fw-other && grep -q "firmware 'bios' given is not the one the project pins" "$jdir/fw-other.log"; } || fbad="$fbad other(rc=$jrc)"
+		jrun fw-right --project "$jdir/ok/firmware.chimeraProject" "$epkg" --firmware "bios=$jdir/ok/gridWalker.testrom"
+		{ [ "$jrc" -eq 0 ] && jsame fw-right && ! grep -q "^\[project\]" "$jdir/fw-right.log"; } || fbad="$fbad right(rc=$jrc)"
+		if [ -z "$fbad" ]; then
+			report "E:project:firmware-pins" PASS "firmware other than the project's pin, or none, is said and the project still runs; the pinned file says nothing"
+		else
+			report "E:project:firmware-pins" FAIL "wrong:$fbad (see work/engine-project/fw-*.log)"
 		fi
 
 		if [ -z "$jbad" ]; then

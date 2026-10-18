@@ -293,7 +293,11 @@ What is different from the window:
 - **Firmware is given by path**, a file for each firmware id
   (`describe_core` lists them), in `open_game` and `open_project`. It does
   not look in Chimera's Firmware folder or its settings; only the window
-  knows those.
+  knows those. The project `open_game` starts pins the firmware it was given
+  (its SHA-1), as the window's projects do. `open_project` given firmware
+  other than the pinned one, or none, opens the project anyway and says so
+  in `warnings` (2026-10-18): other firmware is another machine, and the
+  movie may desync.
 - **One machine at a time.** Opening another closes the one before, without
   saving it.
 
