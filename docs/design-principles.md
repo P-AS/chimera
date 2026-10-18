@@ -9426,3 +9426,46 @@ off, so nothing else changes. miniBox's 23 tests pass (6 expected failures);
 the engine's 30 unit tests pass, the witness 99 passed and 0 failed, the
 interface tests 1114 with none failed (23 skipped), the Windows build
 compiles, and the PCSX2 core's test script 44 passed, 0 failed, 6 skipped.
+
+## Windows gives back what a big core frees: lazy blocks made of pieces (user-decided, 2026-10-18)
+
+**What was found.** On Windows a core's memory is a section with two views
+(the core's, and a mirror the host reads through). A page of a view of a
+section cannot be given back on its own: VirtualFree refuses to decommit it
+(error 87, measured), and resetting it keeps its bytes. So in a block over
+4 GiB, which is backed only as the core uses it, everything the core had
+ever used stayed taken until the core was closed, however much it freed.
+The owner chose a redesign of big blocks over leaving it.
+
+**What was decided.** A block over 4 GiB is made of 16 MiB pieces, each its
+own section, and both views are built of those sections on reserved address
+space (Windows' placeholders, Windows 10 1803 and later). When every page of
+a piece is free, the piece is unmapped from both views and its section
+closed, which gives its memory back; when the core maps there again, the
+piece is made again, empty. A piece is kept when a page in it is compared
+every frame (a hot page), is invisible, or when a memory tool's read view
+points into it. A page with nothing behind it is read as zeros by states,
+anchors and deltas, which used to commit it first, and would have made the
+piece again a frame later. Windows changes protection, and commits memory, one view at a time, so
+both are split at the pieces' edges (the first try committed across them,
+and the PS3 core's first allocation was refused: error 487). Without placeholders, or
+with MB_NO_PIECES set, the block is one section as before. Linux is
+unchanged: it already punches holes in its memory file.
+
+**Tested.** A new miniBox test on Windows maps four pieces, writes them,
+seals, and frees the second whole: both views of it are no longer committed
+and its pages are uncommitted, its neighbours keep their bytes, a saved state
+reads it as zeros and leaves it given back, half a freed piece is only
+zeroed, a piece under a read view is kept, and the second piece mapped again
+is backed, empty, and writable; and a mapping across four pieces is backed at
+once. It fails with pieces never given back (the old behaviour), with a
+saved state committing a page before reading it, and with commits not split
+at the pieces' edges. On Windows, RPCS3 with its test program and firmware,
+600 frames rewound five times to frame 100 on the GTX 1060, gave 86 pieces
+(1.4 GB) back to Windows, had no commit refused, and ended with the same main
+memory as with the block in one section (MB_NO_PIECES=1). miniBox's 23
+tests pass (6 expected failures) and its unit and guest tests pass on
+Windows; the engine's 30 unit tests pass, the witness 99 passed and 0
+failed, the interface tests 1114 with none failed (23 skipped), the Windows
+build compiles, and the PCSX2 core's test script 44 passed, 0 failed, 6
+skipped.
