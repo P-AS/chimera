@@ -257,7 +257,10 @@ namespace Chimera.Common
 		{
 			if (OSTailoredCode.CurrentOS is OSTailoredCode.DistinctOS.Windows)
 			{
-				Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = false })?.Dispose();
+				// the shell opens a folder in Explorer without waiting for it, and
+				// no quoting is involved: "D:\" quoted for explorer.exe ends in \",
+				// which reads as an escaped quote
+				Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true })?.Dispose();
 			}
 			else
 			{
@@ -279,8 +282,9 @@ namespace Chimera.Common
 		}
 
 		/// <summary>
-		/// Hands a file or folder to the desktop's opener (open on macOS; gio, or
-		/// xdg-open where there is no gio, elsewhere) and returns at once.
+		/// Hands a file or folder to the desktop's opener (open on macOS; elsewhere
+		/// gio, or xdg-open where there is no gio or gio cannot open it) and
+		/// returns at once.
 		/// </summary>
 		/// <remarks>
 		/// Mono's shell launch (UseShellExecute) of anything that is not a program
@@ -300,10 +304,12 @@ namespace Chimera.Common
 				Process.Start(new ProcessStartInfo("open", $"\"{path}\"") { UseShellExecute = false })?.Dispose();
 				return;
 			}
+			// gio first; xdg-open where there is no gio, or when gio could not open
+			// it (gio knows no program for that kind of file)
 			const string script = "exec </dev/null; "
-				+ "opener=xdg-open; command -v gio >/dev/null 2>&1 && opener='gio open'; "
-				+ "command -v setsid >/dev/null 2>&1 && exec setsid $opener \"$1\"; "
-				+ "exec $opener \"$1\"";
+				+ "s=; command -v setsid >/dev/null 2>&1 && s=setsid; "
+				+ "if command -v gio >/dev/null 2>&1; then $s gio open \"$1\" && exit 0; fi; "
+				+ "exec $s xdg-open \"$1\"";
 			Process.Start(new ProcessStartInfo("/bin/sh", $"-c {QuoteForShell(script)} sh {QuoteForShell(path)}") { UseShellExecute = false })?.Dispose();
 		}
 
