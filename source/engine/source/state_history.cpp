@@ -277,6 +277,32 @@ public:
 	/* how far into the raw body the next read begins */
 	uint64_t pos() const { return m_pos; }
 
+	/* After a load took what it needed: the rest of a packed frame decoded
+	 * too, so its checksum is checked - zstd checks it at the frame's end,
+	 * which a load that stops reading never reaches (2026-10-18). False when
+	 * it does not match, or the frame held more than the load read. */
+	bool verifyEnd()
+	{
+		if (m_failed) return false;
+		if (!m_body.packed) return true;
+		if (m_outPos != m_outLen) return false;
+		if (m_frameDone) return true;
+		const ZstdApi *z = zstdApi(nullptr);
+		if (z == nullptr) return false;
+		const Bytes &frame = *m_body.p;
+		uint8_t sink[64];
+		for (;;)
+		{
+			ZstdApi::Buffer in{ frame.data() + m_consumed, frame.size() - m_consumed, 0 };
+			ZstdApi::OutBuffer o{ sink, sizeof sink, 0 };
+			const size_t rc = z->decompressStream(m_stream, &o, &in);
+			if (z->isError(rc) || o.pos != 0) return false;
+			m_consumed += in.pos;
+			if (rc == 0) return true;
+			if (in.pos == 0) return false;   /* cut short */
+		}
+	}
+
 private:
 	bool refill()
 	{
@@ -289,6 +315,7 @@ private:
 			ZstdApi::OutBuffer o{ m_out.get(), m_outCap, 0 };
 			const size_t rc = z->decompressStream(m_stream, &o, &in);
 			if (z->isError(rc)) return false;
+			if (rc == 0) m_frameDone = true;
 			m_consumed += in.pos;
 			if (o.pos != 0)
 			{
@@ -309,6 +336,7 @@ private:
 	std::unique_ptr<uint8_t[]> m_out;
 	size_t m_outCap = 0;
 	size_t m_outPos = 0, m_outLen = 0;
+	bool m_frameDone = false;   /* the frame's end, and its checksum, were reached */
 };
 
 /* A read callback over a body in memory, for handing an anchor or a link
@@ -417,6 +445,7 @@ struct ZstdBodySink
 		/* level 1: 3.2 GB/s on a PlayStation 2 anchor for 23x, against level 3's
 		 * 2.6 GB/s for 25x - the writer has other bodies waiting */
 		if (cs == nullptr || z->isError(z->initCStream(cs, 1))) failed = true;
+		else zstdChecksum(z, cs);
 	}
 	~ZstdBodySink() { if (cs != nullptr) z->freeCStream(cs); }
 
@@ -465,6 +494,7 @@ StateHistory::Body StateHistory::packBody(const Body &b)
 	void *cs = z->createCStream();
 	if (cs == nullptr) return b;
 	if (z->isError(z->initCStream(cs, 1))) { z->freeCStream(cs); return b; }
+	zstdChecksum(z, cs);
 	Bytes frame;
 	/* a state packs at least seven times; asked for up front so the frame is
 	 * one allocation on the common path, and grown when it is not */
@@ -662,12 +692,25 @@ bool SpillBodyReader::refill()
 		ZstdApi::OutBuffer out{ m_out.data(), m_out.size(), 0 };
 		const size_t rc = z->decompressStream(m_stream, &out, &in);
 		if (z->isError(rc)) return false;
+		if (rc == 0) m_frameDone = true;
 		m_inPos = in.pos;
 		m_outPos = 0;
 		m_outLen = out.pos;
 		if (m_outLen != 0) return true;
 		if (rc == 0 && m_inPos == m_inLen && m_consumed >= m_length) return false;   /* the frame is over */
 	}
+}
+
+bool SpillBodyReader::verifyEnd()
+{
+	if (!m_packed) return true;
+	if (m_outPos != m_outLen) return false;
+	while (!m_frameDone)
+	{
+		if (!refill()) return m_frameDone;   /* an error, or the extent ran out first */
+		if (m_outLen != 0) return false;     /* more than the load read */
+	}
+	return true;
 }
 
 bool SpillBodyReader::read(void *out, size_t n)
@@ -1710,7 +1753,7 @@ StateHistory::MachineDigest StateHistory::machineDigest(bool &ok)
 	MachineDigest d;
 	if (m_host == nullptr || m_host->wbx_save_state == nullptr) return d;
 	finishPlan();
-	if (m_beforeState) m_beforeState();
+	if (m_beforeState && !m_beforeState()) return d;
 	Bytes bytes;
 	if (m_lastAnchorBytes != 0) bytes.reserve(m_lastAnchorBytes);
 	ByteSink sink{ &bytes };
@@ -1945,8 +1988,9 @@ void StateHistory::captureOnce(int64_t frame, const uint8_t *note, size_t noteLe
 	/* This frame is stored, so the core is told before any of it is read: what
 	 * it brings into the machine now (xemu, the surfaces its GPU drew) is in
 	 * the pages the delta or the anchor below is made of. Inside the timing,
-	 * because it is part of what storing a frame costs. */
-	if (m_beforeState) m_beforeState();
+	 * because it is part of what storing a frame costs. A core that dies in it
+	 * is a machine not worth a frame: nothing is stored (2026-10-18). */
+	if (m_beforeState && !m_beforeState()) { m_epochOpen = false; return; }
 
 	/* Room for the delta before it is written, not while.
 	 *
@@ -2930,6 +2974,14 @@ bool StateHistory::restoreSpilled(const Segment &seg, int64_t steps, std::string
 			return false;
 		}
 	}
+	/* read to its end, the stretch's one frame has its checksum checked: a
+	 * restore to its last frame does that for free, and one that stops sooner
+	 * does not pay to decode the rest (2026-10-18) */
+	if (static_cast<uint64_t>(steps) == linkCount && !body.verifyEnd())
+	{
+		error = "the spilled state history is damaged (its checksum does not match)";
+		return false;
+	}
 	return true;
 }
 
@@ -3178,32 +3230,51 @@ bool StateHistory::thinOne(uint64_t &mergeLeft, ThinIndex &index)
 bool StateHistory::restoreFailed(const Segment *seg, std::string &error, int64_t *landedOn)
 {
 	const int64_t anchorFrame = seg->anchorFrame;
-	bool consistent = false;
-	if (!seg->spilled)
-	{
-		WbxReturn r{};
-		MemBodyReader in(seg->anchor);
-		BodySource anchor{ &in, seg->anchor.size() };
-		m_host->wbx_load_state(m_obj, bodyRead, reinterpret_cast<uintptr_t>(&anchor), &r);
-		consistent = r.ok();
-	}
-	else
-	{
+	/* Back onto a whole machine: this stretch's anchor, or, when that will not
+	 * load either, the nearest earlier stretch's that does (frame 0's at
+	 * worst; the owner's decision, 2026-10-18). Only when none loads is the
+	 * machine not to be trusted - miniBox then has it dead, as a load that
+	 * failed after replacing memory leaves it, and the frontend reloads. */
+	auto loadAnchor = [this](const Segment &g) {
+		if (!g.spilled)
+		{
+			WbxReturn r{};
+			MemBodyReader in(g.anchor);
+			BodySource anchor{ &in, g.anchor.size() };
+			m_host->wbx_load_state(m_obj, bodyRead, reinterpret_cast<uintptr_t>(&anchor), &r);
+			return r.ok() && in.verifyEnd();
+		}
 		std::string ignored;
-		consistent = restoreSpilled(*seg, 0, ignored);
+		return restoreSpilled(g, 0, ignored);
+	};
+	int64_t landed = loadAnchor(*seg) ? anchorFrame : -1;
+	if (landed < 0)
+	{
+		for (size_t i = m_segments.size(); i-- > 0;)
+		{
+			const Segment &g = m_segments[i];
+			if (g.anchorFrame >= anchorFrame) continue;
+			if (loadAnchor(g)) { landed = g.anchorFrame; break; }
+		}
 	}
+	const bool consistent = landed >= 0;
 	fprintf(stderr, "[history] the stored frames from %lld could not be walked (%s); "
 		"the machine is %s and those frames are given up\n",
 		(long long)anchorFrame, error.c_str(),
-		consistent ? "back on that anchor" : "NOT to be trusted - reload it");
+		landed == anchorFrame ? "back on that anchor"
+		: consistent ? "back on an earlier anchor"
+		: "NOT to be trusted - reload it");
+	if (consistent && landed != anchorFrame)
+		fprintf(stderr, "[history]   (the anchor of frame %lld would not load either; frame %lld's did)\n",
+			(long long)anchorFrame, (long long)landed);
 	fflush(stderr);
 	for (size_t i = 0; i < m_segments.size(); i++)
 	{
 		if (m_segments[i].anchorFrame == anchorFrame) { forgetSegment(i); break; }
 	}
-	if (landedOn != nullptr) *landedOn = consistent ? anchorFrame : -1;
+	if (landedOn != nullptr) *landedOn = landed;
 	m_epochOpen = false;
-	m_machineFrame = consistent ? anchorFrame : -1;
+	m_machineFrame = landed;
 	m_machineStored = consistent;
 	m_pastEditAt = -1;
 	m_editWhileUnknown = -1;
@@ -3256,6 +3327,9 @@ bool StateHistory::restore(int64_t frame, std::string &error, int64_t *landedOn)
 		MemBodyReader in(seg->anchor);
 		BodySource anchor{ &in, seg->anchor.size() };
 		m_host->wbx_load_state(m_obj, bodyRead, reinterpret_cast<uintptr_t>(&anchor), &r);
+		if (r.ok() && !in.verifyEnd())
+			std::snprintf(r.errorMessage, sizeof r.errorMessage, "the stored state of frame %lld is damaged (its checksum does not match)",
+				(long long)seg->anchorFrame);
 	}
 	if (!r.ok())
 	{
@@ -3271,6 +3345,9 @@ bool StateHistory::restore(int64_t frame, std::string &error, int64_t *landedOn)
 		MemBodyReader in(d);
 		BodySource src{ &in, d.size() };
 		m_host->wbx_load_delta(m_obj, bodyRead, reinterpret_cast<uintptr_t>(&src), &r);
+		if (r.ok() && !in.verifyEnd())
+			std::snprintf(r.errorMessage, sizeof r.errorMessage, "a stored frame after %lld is damaged (its checksum does not match)",
+				(long long)seg->anchorFrame);
 		if (!r.ok())
 		{
 			error = r.errorMessage;

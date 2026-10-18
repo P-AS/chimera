@@ -54,6 +54,7 @@ void loadOnce()
 			g_api.initCStream = reinterpret_cast<size_t (*)(void *, int)>(sym(lib, "ZSTD_initCStream"));
 			g_api.freeCStream = reinterpret_cast<size_t (*)(void *)>(sym(lib, "ZSTD_freeCStream"));
 			g_api.compressStream2 = reinterpret_cast<size_t (*)(void *, ZstdApi::OutBuffer *, ZstdApi::Buffer *, int)>(sym(lib, "ZSTD_compressStream2"));
+			g_api.cctxSetParameter = reinterpret_cast<size_t (*)(void *, int, int)>(sym(lib, "ZSTD_CCtx_setParameter"));
 			g_ok = g_api.compressBound != nullptr && g_api.compress != nullptr && g_api.isError != nullptr
 				&& g_api.createDStream != nullptr && g_api.initDStream != nullptr
 				&& g_api.freeDStream != nullptr && g_api.decompressStream != nullptr;

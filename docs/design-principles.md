@@ -8592,3 +8592,36 @@ Windows, no access over a partly committed range. miniBox's tests pass on
 Linux and Windows, and so do Chimera's engine tests (30), the witness (89),
 the PCSX2 core's test script (44 passed, 6 skipped) and RPCS3's (41 passed,
 2 skipped).
+
+## A core that dies after its frame, or while a state is taken, is noticed (user-decided, 2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18: the engine checked
+whether the core was still alive right after its frame, and nowhere else.
+The core runs more code after the frame (the picture's readback, which is GPU
+work on several cores, the audio, the question whether input was read) and
+before every state (StateSaving, which nine GPU cores implement with
+readbacks). A core that died there went unnoticed: the frame was counted,
+recorded in the movie and stored in the greenzone, and a branch or a quicksave
+kept the dead machine (a later load brought it back to life). A greenzone
+restore whose anchor would not load either left the machine a mix of two, and
+the session played on.
+
+**What was decided.** The core's death is checked after everything it runs
+for a frame and after StateSaving: such a frame is not counted, recorded or
+stored, and such a state is not taken. A greenzone restore whose anchor will
+not load goes back onto the nearest earlier anchor that does (the owner's
+choice); only when none does is the machine treated as dead until a state
+loads or the project is opened again. Packed greenzone bodies, archive lumps
+and branch state files carry zstd checksums now, so damage fails to load
+instead of loading a wrong machine, and a branch state file is on the disk
+before it takes its name.
+
+**Tested.** Three new witness legs make the synthetic core die in its
+picture readback, its input question and StateSaving: the run stops with the
+core's reason and 11 frames done rather than 12, and under save-and-load
+around every frame no dead state is loaded back to life. Two greenzone tests
+cover the earlier anchor and a capture the core died in. Each was seen to fail
+with its part removed. Six one-byte changes to a PCSX2 state file that only a
+checksum can see (as the zstd tool shows) are all refused now. Engine tests
+(30), witness (92), interface tests and the PCSX2 core's test script (44
+passed, 6 skipped) pass.

@@ -1004,7 +1004,17 @@ int main(int argc, char **argv)
 		if (ce_session_movie_advance(session, 0, axes,
 			((renderEveryFrame && !unseen) || shot != shots.end()) ? 1 : 0) < 0)
 		{
-			return fail(metaPath, ce_session_last_error(session));
+			/* as fail(), and how many frames were done when it stopped: a frame
+			 * the core died in is not one of them (the witness's E:core-dies-*) */
+			const std::string detail = ce_session_last_error(session);
+			if (!metaPath.empty())
+			{
+				const std::string meta = "status=ERROR\ndetail=" + detail + "\nframes=0\nstartframe=-1\nfailedat="
+					+ std::to_string(ce_session_frame(session)) + "\n";
+				writeWholeFile(metaPath, reinterpret_cast<const uint8_t *>(meta.data()), meta.size());
+			}
+			std::fprintf(stderr, "chimera-run: %s\n", detail.c_str());
+			return 2;
 		}
 		if (rates != nullptr)
 		{

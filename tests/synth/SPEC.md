@@ -21,7 +21,10 @@ All multi-byte values are little-endian, in roms and in serialized state.
   All eight at once (0xFF) is reserved: the waterboxed core aborts on that
   frame, on purpose, to test what happens above a core that dies. All but Up
   (0xFE) is reserved too: the core writes through a wild pointer, which is the
-  same death arriving as a fault instead of a syscall. No movie presses either.
+  same death arriving as a fault instead of a syscall. Three more arm a death
+  in the next call of one export: all but Down (0xFD) in GetVideoBgra, all but
+  Left (0xFB) in StateSaving, all but Right (0xF7) in InputWasRead - a core
+  that dies after its frame, or while a state is taken. No movie presses any.
 - Registers: R0..R7, int32. PC: byte offset into CODE, u32.
 - RAM: 4096 bytes (0x000..0xFFF), all zero at power-on. This is the memory
   space the witness compares and the frontend exposes as the "RAM" domain.

@@ -172,6 +172,7 @@ int32_t ce_state_writer_put_lump(
 				return 1;
 			}
 			api->initCStream(zcs, level);
+			chimera::zstdChecksum(api, zcs);
 			const std::string stage = "compressing " + std::string(name);
 			chimera::ZstdApi::Buffer input{ data, static_cast<size_t>(len), 0 };
 			chimera::ZstdApi::OutBuffer output{ compressed.data(), compressed.size(), 0 };

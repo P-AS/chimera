@@ -562,7 +562,7 @@ struct ce_session
 	 * elsewhere, and a load loses what was drawn (chimera#190). Called with the
 	 * machine stopped between frames; what it writes is in the state. */
 	void (*stateSavingExport)(void) = nullptr;
-	void stateSaving();
+	bool stateSaving();
 	void vulkanStateLoaded();
 	std::vector<uint8_t> buttonActive;
 	std::vector<uint8_t> axisActive;
@@ -749,8 +749,20 @@ struct ce_session
 	 * null picture or audio buffer is not somewhere to copy from. A state load
 	 * (a greenzone restore, a branch) brings the machine back. */
 	std::string death;
+	/* A greenzone restore that could put no machine back at all - not its
+	 * anchor, nor any earlier one (2026-10-18). Whatever the core holds now is
+	 * not a frame the movie can go on from, so it counts as dead until a
+	 * state loads or a restore lands. */
+	std::string lostMachine;
+
 	bool guestDied()
 	{
+		if (!lostMachine.empty())
+		{
+			death = lostMachine;
+			error = std::string("the core stopped: ") + lostMachine;
+			return true;
+		}
 		if (host == nullptr || obj == nullptr || host->wbx_get_death == nullptr) return false;
 		char why[512] = {};
 		chimera::WbxReturn r{};
@@ -905,7 +917,7 @@ void ce_session::probeOptionalGroups()
 	getAxisLabel = reinterpret_cast<const char *(*)(int32_t)>(opt("GetAxisLabel", 1));
 	stateLoaded = reinterpret_cast<void (*)(void)>(opt("StateLoaded", 0));
 	stateSavingExport = reinterpret_cast<void (*)(void)>(opt("StateSaving", 0));
-	history.beforeState([this] { stateSaving(); });
+	history.beforeState([this] { return stateSaving(); });
 
 	// surfaces: all five or nothing
 	{
@@ -1304,11 +1316,16 @@ void ce_session::vulkanStateLoaded()
 #endif
 }
 
-void ce_session::stateSaving()
+/* False when the machine is dead - before, or because of, the core's
+ * StateSaving (nine GPU cores read textures back in it, and a core can die
+ * there): a state of a dead machine is not one to keep (2026-10-18). */
+bool ce_session::stateSaving()
 {
-	if (stateSavingExport == nullptr || guestDied() || stateSavingOff()) return;
+	if (guestDied()) return false;
+	if (stateSavingExport == nullptr || stateSavingOff()) return true;
 	stateSavingExport();
 	ce_gl_release();
+	return !guestDied();
 }
 
 void ce_session::wantRendering(int32_t on)
@@ -1334,6 +1351,11 @@ int32_t ce_session::advanceCore(const uint8_t *buttons, int32_t render)
 		copyVideo();
 		readRate(); // for whoever paces the frames that are shown; a seek's are not
 	}
+	/* The core runs after its frame too - the picture's readback, the audio, the
+	 * input question - and can die in any of them. A frame a dead machine ended
+	 * is not counted, recorded or stored, as one that died in FrameAdvance is
+	 * not (2026-10-18). */
+	const int32_t lag = inputWasRead != nullptr && inputWasRead() == 0 ? 1 : 0;
 	int32_t nsamp = getAudioSampleCount != nullptr ? getAudioSampleCount() : cfg.samplesPerFrame;
 	if (nsamp < 0) nsamp = 0;
 	if (nsamp > cfg.samplesPerFrame) nsamp = cfg.samplesPerFrame;
@@ -1352,6 +1374,11 @@ int32_t ce_session::advanceCore(const uint8_t *buttons, int32_t render)
 		}
 	}
 	sampleCount = nsamp;
+	if (guestDied())
+	{
+		ce_gl_release();
+		return -1;
+	}
 	frame++;
 	afterFrame(render != 0, frame);
 	ce_gl_audit_frame(frame);   /* which frame the bridge's objects are being made on */
@@ -1367,7 +1394,6 @@ int32_t ce_session::advanceCore(const uint8_t *buttons, int32_t render)
 	 * frame's worth of bookkeeping. On this path there were no frames at all,
 	 * and a measurement taken through chimera-run silently had none. */
 	ce_gl_release();
-	const int32_t lag = inputWasRead != nullptr && inputWasRead() == 0 ? 1 : 0;
 	trace(lag, render);
 	return lag;
 }
@@ -1390,7 +1416,9 @@ bool ce_session::greenzoneRestore(int64_t to)
 		 * asked for. Following it here is what keeps the session's idea of
 		 * where it is and the machine itself the same thing - a seek that
 		 * refuses is recoverable, a session that has quietly moved is not. */
-		if (landed >= 0) greenzoneLoaded(landed);   /* the anchor was loaded, and stays */
+		if (landed >= 0) greenzoneLoaded(landed);   /* an anchor was loaded, and stays */
+		else lostMachine = "the greenzone could not put any stored machine back (" + error
+			+ "); load a state or open the project again";
 		return false;
 	}
 	greenzoneLoaded(to);
@@ -1404,6 +1432,7 @@ bool ce_session::greenzoneRestore(int64_t to)
  * before it and drew from GPU objects the load had replaced. */
 void ce_session::greenzoneLoaded(int64_t at)
 {
+	lostMachine.clear();   /* a whole machine is back */
 	if (stateLoaded != nullptr) stateLoaded();
 	if (traceSetEnabled != nullptr)
 	{
@@ -2369,6 +2398,8 @@ int32_t ce_session_frame_advance(ce_session *s, uint64_t buttons, int32_t render
 		s->copyVideo();
 		s->readRate(); // for whoever paces the frames that are shown; a seek's are not
 	}
+	/* asked before the frame is counted: the core can die in it (advanceCore) */
+	const int32_t lag = s->inputWasRead != nullptr && s->inputWasRead() == 0 ? 1 : 0;
 	/* a core that reports its own count may produce a different number every
 	 * frame (blip resamplers do); the declared samplesPerFrame is the buffer
 	 * we must not overrun */
@@ -2390,11 +2421,15 @@ int32_t ce_session_frame_advance(ce_session *s, uint64_t buttons, int32_t render
 		}
 	}
 	s->sampleCount = nsamp;
+	if (s->guestDied())   /* in the readback, the audio or the input question */
+	{
+		ce_gl_release();
+		return -1;
+	}
 	s->afterFrame(render != 0, -1);
 	/* The frame is over and the caller draws next: whatever GL context the
 	 * bridge borrowed goes back before it does. */
 	ce_gl_release();
-	const int32_t lag = s->inputWasRead != nullptr && s->inputWasRead() == 0 ? 1 : 0;
 	s->trace(lag, render);
 	return lag;
 }
@@ -2415,6 +2450,7 @@ const int16_t *ce_session_audio(const ce_session *s, int32_t *sample_count)
 /* What every load owes the machine afterwards, however the state arrived. */
 static void afterStateLoaded(ce_session *s)
 {
+	s->lostMachine.clear();   /* a whole machine is back */
 	/* what the core derived from the memory that was just replaced goes first:
 	 * nothing below may run guest code on a cache of the old machine */
 	if (s->stateLoaded != nullptr) s->stateLoaded();
@@ -2455,7 +2491,12 @@ const uint8_t *ce_session_save_state(ce_session *s, uint64_t *len_out)
 		return nullptr;
 	}
 	chimera::WbxReturn r{};
-	s->stateSaving();
+	if (!s->stateSaving())   /* it died telling the core a state is coming */
+	{
+		s->error = "the core stopped: " + s->death;
+		if (len_out != nullptr) *len_out = 0;
+		return nullptr;
+	}
 	/* no deactivate/activate bracket: the host activates itself for the
 	 * duration - bracketing costs four full guest-address-space remaps per
 	 * state, which at rewind's one state per frame was a 10x slowdown */
@@ -2620,11 +2661,39 @@ struct StateFileSource
 				report();
 			}
 			chimera::ZstdApi::Buffer i{ buf.data(), have, pos };
-			if (z->isError(z->decompressStream(zds, &o, &i))) failed = true;
+			const size_t rc = z->decompressStream(zds, &o, &i);
+			if (z->isError(rc)) failed = true;
+			else if (rc == 0) frameDone = true;
 			pos = i.pos;
 		}
 		raw += o.pos;
 		return o.pos;
+	}
+
+	/* After the load took what it needed: the rest of the frame decoded, so
+	 * its checksum is checked - zstd checks it at the frame's end, which a load
+	 * that stops reading never reaches (2026-10-18). */
+	bool frameDone = false;
+	bool verifyEnd()
+	{
+		if (zds == nullptr) return !failed;
+		uint8_t sink[64];
+		while (!frameDone && !failed)
+		{
+			if (pos == have)
+			{
+				have = static_cast<size_t>(fill(buf.data(), buf.size()));
+				pos = 0;
+				if (have == 0) return false;   /* cut short */
+			}
+			chimera::ZstdApi::OutBuffer o{ sink, sizeof sink, 0 };
+			chimera::ZstdApi::Buffer i{ buf.data(), have, pos };
+			const size_t rc = z->decompressStream(zds, &o, &i);
+			if (z->isError(rc) || o.pos != 0) return false;   /* damaged, or more than was read */
+			if (rc == 0) frameDone = true;
+			pos = i.pos;
+		}
+		return frameDone && !failed;
 	}
 };
 
@@ -2654,6 +2723,7 @@ int32_t ce_session_state_save_file(ce_session *s, const char *utf8_path, const u
 	const chimera::ZstdApi *z = wantRaw ? nullptr : chimera::zstdApi(&why); /* without it the file is simply bigger */
 	void *zcs = z != nullptr && z->createCStream != nullptr ? z->createCStream() : nullptr;
 	if (zcs != nullptr && z->isError(z->initCStream(zcs, level))) { z->freeCStream(zcs); zcs = nullptr; }
+	chimera::zstdChecksum(z, zcs);
 
 	/* The header says which savestate format this is and which build wrote it,
 	 * so a load can refuse by name rather than hand the machine bytes it cannot
@@ -2668,13 +2738,20 @@ int32_t ce_session_state_save_file(ce_session *s, const char *utf8_path, const u
 
 	StateFileSink sink{ &out, z, zcs, std::vector<uint8_t>(STATE_FILE_CHUNK), s->stateFileRawBytes };
 	chimera::WbxReturn r{};
-	s->stateSaving();
+	if (!s->stateSaving())
+	{
+		if (zcs != nullptr) z->freeCStream(zcs);
+		s->error = "the core stopped: " + s->death;
+		return 1;
+	}
 	s->host->wbx_save_state(s->obj, stateFileWrite, reinterpret_cast<uintptr_t>(&sink), &r); // see ce_session_save_state re: no bracket
 	const bool flushed = sink.feed(nullptr, 0, 2) || zcs == nullptr;
 	if (zcs != nullptr) z->freeCStream(zcs);
 
 	if (!r.ok()) { s->error = r.errorMessage; return 1; }
-	if (sink.failed || !flushed || !out.commit())
+	/* on the disk before it takes the name: a branch is the user's work, and a
+	 * power cut must not leave half a state under it (2026-10-18) */
+	if (sink.failed || !flushed || !out.commit(true))
 	{
 		s->error = std::string("could not write ") + utf8_path + " (is the disk full?)";
 		return 1;
@@ -2747,13 +2824,25 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 	}
 	chimera::WbxReturn r{};
 	s->host->wbx_load_state(s->obj, stateFileRead, reinterpret_cast<uintptr_t>(&source), &r);
+	/* loaded, but is it what was saved: the checksum at the frame's end */
+	const bool intact = !r.ok() || source.verifyEnd();
 	if (zds != nullptr) z->freeDStream(zds);
 	ce_gl_release();
 	ce_gl_state_loaded(-1); /* as ce_session_load_state */
 	s->vulkanStateLoaded();
+	if (!intact)
+	{
+		/* the machine took the damaged bytes: not one to play on */
+		s->lostMachine = std::string(utf8_path) + " is damaged (its checksum does not match); load another state";
+		s->error = s->lostMachine;
+		return 1;
+	}
 	if (!r.ok() || source.failed)
 	{
-		s->error = !r.ok() ? r.errorMessage : std::string(utf8_path) + " is damaged";
+		/* a frame that does not decode, or whose checksum does not match, is the
+		 * reason - the sandbox only saw its state end early */
+		s->error = source.failed ? std::string(utf8_path) + " is damaged (it does not decode, or its checksum does not match)"
+		                         : std::string(r.errorMessage);
 		return 1;
 	}
 	afterStateLoaded(s);

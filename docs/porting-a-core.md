@@ -363,7 +363,8 @@ Probed once after `Init`; absent exports simply mean the tool is not offered.
 - **`StateSaving()`** - the other end: told before every state the engine
   takes of the machine - a greenzone capture, a savestate, a branch's state
   file - with the machine stopped between frames, and not for a frame the
-  history decides not to store. For a core part of whose machine is somewhere
+  history decides not to store. A core that dies in it gets no state taken:
+  the capture stores nothing and the save fails with the core's reason. For a core part of whose machine is somewhere
   a state does not reach until it is brought back. xemu is the case: its GPU
   draws into surfaces that live in the driver, and writes one into the
   console's RAM only when the processor reads it, so a state taken without

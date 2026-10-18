@@ -79,6 +79,9 @@ public:
 	bool readU64(uint64_t &v) { return read(&v, sizeof v); }
 	/* how far into the RAW body the next read begins */
 	uint64_t pos() const { return m_pos; }
+	/* After a load took what it needed: the rest of a packed frame decoded, so
+	 * its checksum is checked (MemBodyReader::verifyEnd). */
+	bool verifyEnd();
 
 private:
 	bool refill();
@@ -93,6 +96,7 @@ private:
 	void *m_stream = nullptr;
 	std::vector<uint8_t> m_in, m_out;
 	size_t m_inPos = 0, m_inLen = 0, m_outPos = 0, m_outLen = 0;
+	bool m_frameDone = false;
 };
 
 class StateHistory
@@ -106,7 +110,9 @@ public:
 	 * passes its "a state is about to be taken" on (ce_session::stateSaving);
 	 * what that changes in the machine is in the state that follows, and in
 	 * the delta, which is read after it. */
-	void beforeState(std::function<void()> fn) { m_beforeState = std::move(fn); }
+	/* Called before every state is taken; false when the machine died in it,
+	 * and a capture then stores nothing (2026-10-18). */
+	void beforeState(std::function<bool()> fn) { m_beforeState = std::move(fn); }
 
 	/* What the spill file may weigh, or 0 for no limit.
 	 *
@@ -746,7 +752,7 @@ private:
 	uint64_t m_verifyBookkeeping = 0;
 	std::vector<uint8_t> m_verifyInvisible;   /* the pages a state never carries, asked of the host once */
 	MachineDigest machineDigest(bool &ok);
-	std::function<void()> m_beforeState;
+	std::function<bool()> m_beforeState;
 	void verifyStored(int64_t frame);
 	void verifyRestored(int64_t frame, int64_t anchorFrame, int64_t steps, bool spilled);
 

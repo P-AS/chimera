@@ -112,8 +112,22 @@ static uint32_t g_framesRun;           /* in a state, like the machine */
 static uint32_t g_toldAt;              /* in a state: frames run when last told */
 ECL_INVISIBLE static uint32_t g_told;  /* times told this session: in no state */
 
+/* Three more ways to die on cue, each armed by a frame's buttons and taken in
+ * the next call of one export: all but Down in GetVideoBgra (the picture's
+ * readback), all but Left in StateSaving, all but Right in InputWasRead. The
+ * engine must notice a core that dies after its frame and not count, record or
+ * store that frame (2026-10-18). Invisible: an armed cue is in no state. */
+ECL_INVISIBLE static int g_dieIn;   /* 0 none, 1 GetVideoBgra, 2 StateSaving, 3 InputWasRead */
+static void die_if_armed(int where, const char *name)
+{
+	if (g_dieIn != where) return;
+	fprintf(stderr, "synth: dying in %s on purpose\n", name);
+	abort();
+}
+
 ECL_EXPORT void StateSaving(void)
 {
+	die_if_armed(2, "StateSaving");
 	g_told++;
 	g_toldAt = g_framesRun;
 }
@@ -136,6 +150,9 @@ ECL_EXPORT void FrameAdvance(uint64_t pad) {
 		volatile uintptr_t wild = 0x10;
 		*(volatile uint32_t *)wild = 1;
 	}
+	if ((uint8_t)pad == 0xFD) g_dieIn = 1;
+	if ((uint8_t)pad == 0xFB) g_dieIn = 2;
+	if ((uint8_t)pad == 0xF7) g_dieIn = 3;
 	synth_frame(g_synth, (uint8_t)pad);
 }
 
@@ -143,7 +160,7 @@ ECL_EXPORT void FrameAdvance(uint64_t pad) {
 ECL_EXPORT uint8_t *GetRam(void)         { return synth_get_ram(g_synth); }
 ECL_EXPORT uint8_t *GetFramebuffer(void) { return (uint8_t *)synth_get_framebuffer(g_synth); }
 ECL_EXPORT int16_t *GetAudio(void)       { return (int16_t *)synth_get_audio(g_synth); }
-ECL_EXPORT int      InputWasRead(void)   { return synth_input_was_read(g_synth); }
+ECL_EXPORT int      InputWasRead(void)   { die_if_armed(3, "InputWasRead"); return synth_input_was_read(g_synth); }
 
 /* Turbo (optional guest ABI group): the host says nobody will look at the next
  * frames. The synth machine's picture IS its VRAM domain, which the witness
@@ -159,6 +176,7 @@ ECL_INVISIBLE static uint32_t g_read;  /* pictures handed over while drawing, th
 
 ECL_EXPORT uint32_t *GetVideoBgra(void)
 {
+	die_if_armed(1, "GetVideoBgra");
 	if (g_render) g_read++;
 	if (g_render) synth_get_video_bgra(g_synth, g_video);
 	if (g_render && g_garbleNow)

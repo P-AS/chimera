@@ -482,6 +482,33 @@ open(p, 'wb').write(codecs.BOM_UTF16_LE + t.encode('utf-16-le'))
 			report "E:core-crashes" FAIL "no stopped core reported (see work/crashes.log)"
 		fi
 
+		# A CORE THAT DIES AFTER ITS FRAME (2026-10-18): in the picture's readback
+		# or the input question the frame it died in is not counted - the run
+		# stops with 11 frames done, not 12 - and in StateSaving, under
+		# --rerecord, the state of a dead machine is not taken, so the run stops
+		# instead of loading it back to life. (SPEC.md: the 0xFD/0xF7/0xFB cues.)
+		for cue in "GetVideoBgra:|U.LRABsS|:--screenshot 11=$work/dies-in.tga" \
+		           "InputWasRead:|UDL.ABsS|:" \
+		           "StateSaving:|UD.RABsS|:--rerecord"; do
+			where="${cue%%:*}"; rest="${cue#*:}"; line="${rest%%:*}"; extra="${rest#*:}"
+			sed "12s/.*/$line/" "$here/movies/gridWalker.win.txt" > "$work/dies-in-$where.txt"
+			rm -f "$work/dies-in-$where.meta.txt"
+			# shellcheck disable=SC2086
+			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$work/dies-in-$where.txt" $extra \
+				--meta "$work/dies-in-$where.meta.txt" > "$work/dies-in-$where.log" 2>&1
+			irc=$?
+			if [ "$irc" -ge 128 ]; then
+				report "E:core-dies-in:$where" FAIL "the process died with signal $((irc - 128)) (see work/dies-in-$where.log)"
+			elif ! grep -q "^status=ERROR" "$work/dies-in-$where.meta.txt" 2>/dev/null \
+			     || ! grep -q "dying in $where on purpose" "$work/dies-in-$where.meta.txt"; then
+				report "E:core-dies-in:$where" FAIL "the run did not stop with the core's reason: $(grep '^detail=\|^status=' "$work/dies-in-$where.meta.txt" 2>/dev/null | tr '\n' ' ')"
+			elif [ "$where" != StateSaving ] && ! grep -q "^failedat=11$" "$work/dies-in-$where.meta.txt"; then
+				report "E:core-dies-in:$where" FAIL "the frame the core died in was counted: $(grep '^failedat=' "$work/dies-in-$where.meta.txt")"
+			else
+				report "E:core-dies-in:$where" PASS "a core that dies in $where stops the run there, with its reason, and the process survives"
+			fi
+		done
+
 		# THE CORE LOG (ce_core_log, Tools > Export Core Log... in the frontend):
 		# asked for, it starts a file saying when and by which Chimera, notes
 		# the session's core package, and keeps everything the core writes - the

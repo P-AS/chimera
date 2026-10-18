@@ -985,8 +985,18 @@ Now the failure is contained. The anchor is loaded again, so the machine is one
 that did exist, at that anchor's frame; the stretch that would not walk is given
 up, because whatever is wrong with it will be wrong next time; and the frame it
 landed on is reported, so the session and the frontend follow the machine rather
-than believing the number they had. If even the anchor will not load, nothing
-here can help and it says so: that machine has to be reloaded.
+than believing the number they had. If the anchor will not load either, the
+nearest earlier stretch's anchor that does is loaded instead, frame 0's at worst
+(owner's decision, 2026-10-18). Only when none loads is the machine not to be
+trusted: the session then treats it as dead, as after a crash, until a state
+loads or the project is opened again.
+
+Damage that still decodes is caught too (2026-10-18): packed bodies, archive
+lumps and branch state files carry zstd checksums, and after a load the rest
+of a frame is read so the checksum at its end is checked. A spilled stretch is
+one frame from its anchor to its last link, so its checksum is checked when a
+restore reads it to the end. A frame from a core that died while the state was
+being taken (in StateSaving) is not stored at all.
 
 ## What the history is allowed to cost (user-reported, 2026-09-10)
 

@@ -171,9 +171,22 @@ void fakeSaveState(void *, chimera::WbxWriteCb cb, uintptr_t ud, chimera::WbxRet
 	writePad(cb, ud);
 }
 
+/* Set to have the Nth whole-machine load from now refuse (0: the next one),
+ * after writing part of the machine, as a half load does. */
+int g_refuseStateLoadIn = -1;
+
 void fakeLoadState(void *, chimera::WbxReadCb cb, uintptr_t ud, chimera::WbxReturn *r)
 {
 	*r = {};
+	if (g_refuseStateLoadIn == 0)
+	{
+		g_refuseStateLoadIn = -1;
+		g_machine.cell[0] = 0xBA;
+		g_machine.cell[1] = 0xD0;
+		std::snprintf(r->errorMessage, sizeof r->errorMessage, "memory block load failed");
+		return;
+	}
+	if (g_refuseStateLoadIn > 0) g_refuseStateLoadIn--;
 	cb(ud, g_machine.cell, Machine::kCells);
 	readPad(cb, ud);
 }
@@ -999,6 +1012,61 @@ int main(void)
 		assert(h.count() == 0);
 		assert(h.nearest(25) == -1);
 		g_refuseDeltaLoadIn = -1;
+	}
+
+	{ // When the stretch's anchor will not load either, the machine goes back
+	  // onto an earlier stretch's anchor, the nearest that loads, rather than
+	  // being left a mix of two (owner's decision, 2026-10-18).
+		const chimera::HostApi api = fakeHost();
+		g_machine = Machine{};
+		chimera::StateHistory h;
+		h.configure(&api, nullptr, 64ull << 20);
+		h.bands(4, 8, 1, 1, 10);   /* a stretch every ten frames */
+		h.capture(0);
+		std::vector<std::array<uint8_t, Machine::kCells>> truth(1);
+		for (int64_t f = 1; f <= 30; f++)
+		{
+			h.beforeAdvance();
+			advance(f);
+			h.capture(f);
+			std::array<uint8_t, Machine::kCells> at{};
+			std::memcpy(at.data(), g_machine.cell, Machine::kCells);
+			truth.push_back(at);
+		}
+		const int64_t anchor = h.nearest(25) - (h.nearest(25) % 10);
+		assert(anchor >= 10);
+		/* the walk's first delta refuses, and then so does the anchor's reload */
+		g_refuseDeltaLoadIn = 0;
+		g_refuseStateLoadIn = 1;
+		int64_t landed = -1;
+		assert(!h.restore(25, error, &landed));
+		assert(g_refuseStateLoadIn == -1 && g_refuseDeltaLoadIn == -1);
+		std::printf("history: an anchor that would not reload, at %lld: landed on %lld\n",
+			(long long)anchor, (long long)landed);
+		assert(landed >= 0 && landed < anchor);
+		assert(std::memcmp(g_machine.cell, truth[static_cast<size_t>(landed)].data(), Machine::kCells) == 0);
+		g_refuseDeltaLoadIn = -1;
+		g_refuseStateLoadIn = -1;
+	}
+
+	{ // A core that dies while it is told a state is coming (StateSaving): the
+	  // capture stores nothing - a dead machine is not a frame (2026-10-18).
+		const chimera::HostApi api = fakeHost();
+		g_machine = Machine{};
+		chimera::StateHistory h;
+		h.configure(&api, nullptr, 64ull << 20);
+		bool dies = false;
+		h.beforeState([&dies] { return !dies; });
+		h.capture(0);
+		h.beforeAdvance();
+		advance(1);
+		h.capture(1);
+		assert(h.nearest(1) == 1);
+		h.beforeAdvance();
+		advance(2);
+		dies = true;
+		h.capture(2);
+		assert(h.nearest(2) == 1);   /* frame 2 not stored */
 	}
 
 	{ // Frame zero is always reachable, whatever the budgets do. Going back to a

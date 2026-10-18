@@ -30,7 +30,18 @@ struct ZstdApi
 	size_t (*freeCStream)(void *zcs);
 	/* ZSTD_compressStream2: endOp 0 continue, 2 end */
 	size_t (*compressStream2)(void *zcs, OutBuffer *output, Buffer *input, int endOp);
+	/* ZSTD_CCtx_setParameter; null on a libzstd too old to have it */
+	size_t (*cctxSetParameter)(void *cctx, int param, int value);
 };
+
+/* A content checksum in every frame a stream writes from here on: damage to a
+ * stored state then fails to decode instead of restoring a wrong machine
+ * (2026-10-18). Any zstd reads such a frame; older frames still decode. */
+inline void zstdChecksum(const ZstdApi *z, void *cctx)
+{
+	if (z != nullptr && z->cctxSetParameter != nullptr && cctx != nullptr)
+		z->cctxSetParameter(cctx, 201 /* ZSTD_c_checksumFlag */, 1);
+}
 
 /* The loaded API, or nullptr with *error set to why. Loads once, then cached. */
 const ZstdApi *zstdApi(const char **error);
