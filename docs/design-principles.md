@@ -9400,3 +9400,29 @@ the checks after step 116, which never ran there before, pass) and on
 Linux. miniBox's 23 tests pass (6 expected failures); the engine builds for
 Linux and Windows and its 30 unit tests pass. The witness, interface tests
 and PCSX2 were not rerun: the engine's code is the same.
+
+## GPU timing in the Vulkan bridge: a switch, measured, off (2026-10-18)
+
+**What was found.** A Vulkan core can ask how far the GPU has got (a fence,
+an event, a semaphore, query results, a wait with a short timeout), and the
+answer depends on the GPU's speed, so a core could take a different path
+from one run to the next. The owner asked for the cost to be measured
+before deciding (miniBox decision 6).
+
+**What was decided.** The bridge has a switch, CHIMERA_VK_SETTLED=1, that
+waits for the whole device before each such question and turns a timed
+wait into a look; it is off. Measured on the GTX 1060 through chimera-run,
+Vulkan renderer, switch off and on, twice each: PCSX2 with a game disc, 900
+frames, made 896 such waits and spent 0.13 s more in the bridge's host half
+(4.0 s either way overall); RPCS3 with its test program, 600 frames, made
+1198 and took 58.0 s instead of 57.5 s; Dolphin with its test program asked
+nothing. Two runs of PCSX2 and of RPCS3 ended with the same memory with the
+switch off as with it on, so on these programs GPU timing did not reach the
+machine. Whether to turn it on for everyone is the owner's to decide;
+timestamps in query results stay the GPU's own times either way.
+
+**Tested.** The bridge's own test passes with the switch on; the switch is
+off, so nothing else changes. miniBox's 23 tests pass (6 expected failures);
+the engine's 30 unit tests pass, the witness 99 passed and 0 failed, the
+interface tests 1114 with none failed (23 skipped), the Windows build
+compiles, and the PCSX2 core's test script 44 passed, 0 failed, 6 skipped.
