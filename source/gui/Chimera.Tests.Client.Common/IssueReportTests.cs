@@ -29,14 +29,18 @@ namespace Chimera.Tests.Client.Common
 				CoreVersion = "2026-10-10 (18cd581)",
 				Os = "Microsoft Windows 10.0.19045 (X64)",
 				Gpu = "4.6.0 NVIDIA 536.23 on GeForce GTX 1060/PCIe/SSE2",
+				Cpu = "Intel(R) Core(TM) i7-8700K CPU @ 3.70GHz",
+				Threads = 12,
+				MemoryBytes = 34_281_996_288,
 				Files = [ new("disc", "Game (USA).iso"), new("savedata", "memcard1.ps2") ],
 				Settings = [ new("Renderer", "opengl-hw", "software"), new("Internal Resolution", "2", "1") ],
 			});
 			Assert.AreEqual(
-				"**Chimera build:** " + Build + "\n"
-				+ "**Core and version:** PCSX2 2026-10-10 (18cd581)\n"
-				+ "**OS and GPU:** Microsoft Windows 10.0.19045 (X64), graphics driver 4.6.0 NVIDIA 536.23 on GeForce GTX 1060/PCIe/SSE2\n"
-				+ "**Game:**\n- disc: Game (USA).iso\n- savedata: memcard1.ps2\n"
+				"**Chimera build:** " + Build + "\n\n"
+				+ "**Core and version:** PCSX2 2026-10-10 (18cd581)\n\n"
+				+ "**OS and GPU:** Microsoft Windows 10.0.19045 (X64), graphics driver 4.6.0 NVIDIA 536.23 on GeForce GTX 1060/PCIe/SSE2\n\n"
+				+ "**CPU and memory:** Intel(R) Core(TM) i7-8700K CPU @ 3.70GHz (12 threads), 31.9 GB of memory\n\n"
+				+ "**Game:**\n- disc: Game (USA).iso\n- savedata: memcard1.ps2\n\n"
 				+ "**Renderer and non-default settings:**\n- Renderer: opengl-hw (default: software)\n- Internal Resolution: 2 (default: 1)",
 				text);
 		}
@@ -46,12 +50,37 @@ namespace Chimera.Tests.Client.Common
 		{
 			var text = IssueReport.Text(new() { Build = Build, Os = "Linux 6.8 (X64)" });
 			Assert.AreEqual(
-				"**Chimera build:** " + Build + "\n"
-				+ "**Core and version:** <!-- no core was running -->\n"
-				+ "**OS and GPU:** Linux 6.8 (X64), <!-- type your graphics card here -->\n"
-				+ "**Game:** <!-- no project was open -->\n"
+				"**Chimera build:** " + Build + "\n\n"
+				+ "**Core and version:** <!-- no core was running -->\n\n"
+				+ "**OS and GPU:** Linux 6.8 (X64), <!-- type your graphics card here -->\n\n"
+				+ "**CPU and memory:** <!-- type your processor here -->, <!-- type how much memory your computer has here -->\n\n"
+				+ "**Game:** <!-- no project was open -->\n\n"
 				+ "**Renderer and non-default settings:** <!-- no core was running -->",
 				text);
+		}
+
+		/// <summary>
+		/// GitHub reads a line that follows a list as part of the list's last item,
+		/// so "**Renderer and non-default settings:**" came out inside the Game list
+		/// (issue #304). A blank line parts every field, as in the form. And one file
+		/// is written on the Game line itself; its slot is said when it is not the game's.
+		/// </summary>
+		[TestMethod]
+		public void AFieldAfterAListIsItsOwnParagraphAndOneFileSitsOnTheLine()
+		{
+			var several = IssueReport.Text(new()
+			{
+				Build = Build, CoreName = "FreeJ2ME-Plus", Os = "x",
+				Files = [ new("game", "Edge EX.jar"), new("savedata", "rms.zip") ],
+				Settings = [ new("Screen Size", "360x640", "240x320") ],
+			});
+			StringAssert.Contains(several, "- savedata: rms.zip\n\n**Renderer and non-default settings:**\n- Screen Size: 360x640 (default: 240x320)");
+
+			var one = IssueReport.Text(new() { Build = Build, CoreName = "FreeJ2ME-Plus", Os = "x", Files = [ new("game", "Edge EX.jar") ], Settings = [ ] });
+			StringAssert.Contains(one, "\n\n**Game:** Edge EX.jar\n\n");
+
+			var notTheGame = IssueReport.Text(new() { Build = Build, CoreName = "SDLPoP", Os = "x", Files = [ new("firmware", "PRINCE.DAT") ], Settings = [ ] });
+			StringAssert.Contains(notTheGame, "**Game:** firmware: PRINCE.DAT\n\n");
 		}
 
 		[TestMethod]

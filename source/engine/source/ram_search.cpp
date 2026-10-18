@@ -390,22 +390,36 @@ void CeRamSearch::settle()
 		return;
 	}
 	rebuildRank();
-	if (mustBeSparse() || m_set.count <= 4096 || m_set.count <= m_set.slots / 32) makeSparse();
+	if (mustBeSparse()) makeSparse();
+	else if (m_set.count <= 4096 || m_set.count <= m_set.slots / 32)
+	{
+		/* the smaller shape is a saving, not a need: without the memory for it
+		 * the set stays as it is (makeSparse changes nothing until the end) */
+		try
+		{
+			makeSparse();
+		}
+		catch (const std::bad_alloc &)
+		{
+		}
+	}
 }
 
-void CeRamSearch::recordUndo()
+bool CeRamSearch::recordUndo()
 {
-	if (!m_undoEnabled) return;
+	if (!m_undoEnabled) return false;
 	try
 	{
 		m_redo.clear();
 		m_undo.push_back(m_set);
 		while ((int)m_undo.size() > MaxUndoLevels) m_undo.pop_front();
+		return true;
 	}
 	catch (const std::bad_alloc &)
 	{
 		/* history is a convenience; the search is not */
 		clearHistory();
+		return false;
 	}
 }
 
@@ -497,7 +511,26 @@ int64_t CeRamSearch::indexOf(uint64_t realAddress) const
 int64_t CeRamSearch::search(const Query &q, int previousType)
 {
 	m_previousType = previousType;
-	recordUndo();
+	const bool recorded = recordUndo();
+	try
+	{
+		return filter(q, previousType);
+	}
+	catch (const std::bad_alloc &)
+	{
+		/* "not enough memory" means the search is as it was: the level just
+		 * recorded is what it was */
+		if (recorded)
+		{
+			m_set = std::move(m_undo.back());
+			m_undo.pop_back();
+		}
+		throw;
+	}
+}
+
+int64_t CeRamSearch::filter(const Query &q, int previousType)
+{
 	const uint64_t before = m_set.count;
 	const int size = m_set.size;
 	/* a search by address is by the real one */

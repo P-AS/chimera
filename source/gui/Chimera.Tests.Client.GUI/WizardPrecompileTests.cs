@@ -322,6 +322,9 @@ namespace Chimera.Tests.Client.GUI
 		// SIGILL on Linux, 0xC000001D on Windows (issue #74, eight sessions at once)
 		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(132), "illegal instruction");
 		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(unchecked((int)0xC000001D)), "illegal instruction");
+		// a headless session that met a message box quits with 64 (HeadlessMode):
+		// reported on Linux as "2 of 2 sessions failed (exit code 64)" (#296)
+		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(64), "message");
 		// and anything unrecognised still names itself rather than saying nothing
 		StringAssert.Contains(PrecompileOrchestrator.WhyItDied(42), "42");
 		foreach (var code in new[] { 1, 2, 42, 134, 137, 139, -1, unchecked((int)0xC0000005) })
@@ -371,9 +374,12 @@ namespace Chimera.Tests.Client.GUI
 		const ulong GB = 1UL << 30;
 		var engine = Chimera.Emulation.Common.Engine.ChimeraEngine.Instance;
 		Assert.AreEqual(8 * GB, engine.ce_compile_session_bytes());
-		Assert.AreEqual(3, engine.ce_compile_sessions(16, 32 * GB));
-		Assert.AreEqual(1, engine.ce_compile_sessions(16, 1 * GB));
-		Assert.AreEqual(8, engine.ce_compile_sessions(64, 500 * GB));
+		Assert.AreEqual(3, engine.ce_compile_sessions(16, 32 * GB, 0));
+		Assert.AreEqual(1, engine.ce_compile_sessions(16, 1 * GB, 0));
+		Assert.AreEqual(8, engine.ce_compile_sessions(64, 500 * GB, 0));
+		// the figure is the person's to set (Tools > Pre-Compiled Modules)
+		Assert.AreEqual(7, engine.ce_compile_sessions(16, 32 * GB, 4 * GB));
+		Assert.AreEqual(1, engine.ce_compile_sessions(16, 32 * GB, 16 * GB));
 		Assert.IsTrue(engine.ce_compile_memory_to_spare() > 0, "this machine says what it can spare");
 	}
 
@@ -390,9 +396,27 @@ namespace Chimera.Tests.Client.GUI
 		Assert.IsTrue(PrecompileOrchestrator.RefusedForWantOfMemory("failed to create memory block"));
 		Assert.IsFalse(PrecompileOrchestrator.RefusedForWantOfMemory("RPCS3 could not load this file."));
 		Assert.IsFalse(PrecompileOrchestrator.RefusedForWantOfMemory(null));
-		Assert.AreEqual(1, engine.ce_compile_memory_ran_short(1 * GB));
-		Assert.AreEqual(0, engine.ce_compile_memory_ran_short(6 * GB));
-		Assert.AreEqual(0, engine.ce_compile_memory_ran_short(0), "a machine that says nothing is not called short");
+		Assert.AreEqual(1, engine.ce_compile_memory_ran_short(1 * GB, 0));
+		Assert.AreEqual(0, engine.ce_compile_memory_ran_short(6 * GB, 0));
+		Assert.AreEqual(0, engine.ce_compile_memory_ran_short(0, 0), "a machine that says nothing is not called short");
+		Assert.AreEqual(1, engine.ce_compile_memory_ran_short(6 * GB, 16 * GB), "short for a session counted at 16 GB");
+	}
+
+	/// <summary>
+	/// The figure is a setting (2026-10-14): 8 GB unless the person changes it, and the
+	/// Pre-Compiled Modules window shows it and writes it back as it changes.
+	/// </summary>
+	[TestMethod]
+	public void MemoryPerSessionIsASettingTheWindowEdits()
+	{
+		var config = new Config();
+		Assert.AreEqual(8, config.CompileSessionGigabytes, "8 GB unless changed");
+		using (var without = new PrecompiledModulesForm(static () => [ ]))
+			Assert.IsNull(without.SessionGigabytes, "a window given no configuration shows no setting");
+		using var form = new PrecompiledModulesForm(static () => [ ], config: config);
+		Assert.AreEqual(8, form.SessionGigabytes);
+		form.SessionGigabytes = 12;
+		Assert.AreEqual(12, config.CompileSessionGigabytes, "the window writes the setting back");
 	}
 
 	/// <summary>The message names the memory, and on Windows where the disk space went.</summary>
@@ -403,6 +427,8 @@ namespace Chimera.Tests.Client.GUI
 		StringAssert.Contains(said, "ran out of memory");
 		StringAssert.Contains(said, "about 8 GB");
 		StringAssert.Contains(said, "4 ran at once");
+		StringAssert.Contains(said, "Pre-Compiled Modules", "the message says where the figure is set");
+		StringAssert.Contains(PrecompileOrchestrator.OutOfMemoryMessage(2, 12UL << 30), "about 12 GB", "it names the figure in use");
 		if (!Chimera.Common.OSTailoredCode.IsUnixHost) StringAssert.Contains(said, "page file");
 	}
 }

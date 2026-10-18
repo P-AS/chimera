@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.IO;
 using Chimera.Emulation.Common;
+using Chimera.Emulation.Common.Engine;
 
 namespace Chimera.Client.Common
 {
@@ -94,9 +95,11 @@ namespace Chimera.Client.Common
 
 		/// <summary>
 		/// Create a new (Tas)Movie with the given path as filename. If <paramref name="loadMovie"/> is true,
-		/// will also attempt to load an existing movie from <paramref name="path"/>.
+		/// will also attempt to load an existing movie from <paramref name="path"/> - or, when
+		/// <paramref name="project"/> is given, from that already-open project (the one the frontend
+		/// resolved, or recovered work), which the movie then keeps. Saves still go to <paramref name="path"/>.
 		/// </summary>
-		IMovie Get(string path, bool loadMovie = false);
+		IMovie Get(string path, bool loadMovie = false, EngineProject project = null);
 
 		string BackupDirectory { get; set; }
 

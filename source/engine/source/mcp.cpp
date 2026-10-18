@@ -24,6 +24,9 @@
 #include <thread>
 #include <vector>
 
+/* session.cpp: which session this is, never reused within the process */
+extern "C" uint64_t ce_session_serial(const ce_session *s);
+
 namespace chimera
 {
 
@@ -667,6 +670,9 @@ struct Source
 struct WaitingCall
 {
 	uint64_t id = 0;
+	/* which connection asked: every client numbers its calls from 1, so an
+	 * answer finished after its client left must not reach the next one */
+	uint64_t connection = 0;
 	std::string tool;
 	std::string arguments;
 	std::chrono::steady_clock::time_point at;
@@ -690,6 +696,7 @@ struct Service
 	std::atomic<int> pending{ 0 };
 	std::atomic<bool> allowChanges{ false };
 	std::map<uint64_t, WaitingCall> withHost; /* calls the frontend is running */
+	uint64_t connection = 0;           /* moved on by every connect and disconnect */
 	std::deque<std::string> log;
 	uint64_t logTotal = 0;
 	int64_t wroteMemoryAt = -1;        /* the frame of the agent's first write to the machine, -1 for none */
@@ -714,6 +721,8 @@ struct Service
 	std::string searchDomain;
 	const uint8_t *searchBase = nullptr;
 	int64_t searchBytes = 0;
+	uint64_t searchSession = 0; /* ce_session_serial of the session it was started in */
+	uint64_t machineSession = 0; /* the session the notes above are about (onMachine) */
 	int searchSize = 1;
 	bool searchBigEndian = false;
 };
@@ -771,6 +780,11 @@ std::string contentSummary(const std::string &content)
 /* with the lock held: queues the answer and writes the log line */
 void finish(Service &sv, const WaitingCall &call, const McpResult &result)
 {
+	if (call.connection != sv.connection)
+	{
+		addLog(sv, call.tool + " " + shortened(call.arguments, 120) + "  ->  not answered: the agent that asked has gone");
+		return;
+	}
 	cJSON *reply = cJSON_CreateObject();
 	cJSON_AddNumberToObject(reply, "id", static_cast<double>(call.id));
 	cJSON *content = cJSON_Parse(result.content.c_str());
@@ -799,12 +813,14 @@ void pipeThread(Service *sv)
 			std::lock_guard<std::mutex> hold(sv->lock);
 			if (event == PipeEvent::Connected)
 			{
+				sv->connection++;
 				sv->state = CE_MCP_CONNECTED;
 				sv->client = "an agent";
 				addLog(*sv, "an agent's program connected");
 			}
 			else if (event == PipeEvent::Disconnected)
 			{
+				sv->connection++;
 				sv->state = CE_MCP_WAITING;
 				sv->pending -= static_cast<int>(sv->waiting.size());
 				sv->waiting.clear();
@@ -830,6 +846,7 @@ void pipeThread(Service *sv)
 				{
 					WaitingCall call;
 					call.id = static_cast<uint64_t>(id->valuedouble);
+					call.connection = sv->connection;
 					call.tool = tool->valuestring;
 					cJSON *arguments = cJSON_GetObjectItemCaseSensitive(message, "arguments");
 					call.arguments = cJSON_IsObject(arguments) ? printJson(arguments) : "{}";
@@ -1579,7 +1596,16 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, std::string &tool, std:
 		std::vector<int32_t> axisValue(axisCount, 0);
 		bool any = false;
 		const cJSON *asked = nullptr;
-		cJSON_ArrayForEach(asked, cJSON_GetObjectItemCaseSensitive(arguments, "buttons"))
+		/* Each is an object from names to values. A list of names (a natural
+		 * slip) has children with no names, and a name is what is looked up. */
+		const cJSON *askedButtons = cJSON_GetObjectItemCaseSensitive(arguments, "buttons");
+		const cJSON *askedAxesArg = cJSON_GetObjectItemCaseSensitive(arguments, "axes");
+		if ((askedButtons != nullptr && !cJSON_IsObject(askedButtons)) || (askedAxesArg != nullptr && !cJSON_IsObject(askedAxesArg)))
+		{
+			why = "'buttons' and 'axes' are objects from names to values, such as {\"P1 A\": true} and {\"P1 X\": 128}.";
+			askedButtons = nullptr;
+		}
+		cJSON_ArrayForEach(asked, askedButtons)
 		{
 			size_t index = buttonCount;
 			for (size_t i = 0; i < buttonCount && index == buttonCount; i++)
@@ -1593,7 +1619,7 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, std::string &tool, std:
 			any = true;
 			if (!why.empty()) break;
 		}
-		const cJSON *askedAxes = why.empty() ? cJSON_GetObjectItemCaseSensitive(arguments, "axes") : nullptr;
+		const cJSON *askedAxes = why.empty() ? askedAxesArg : nullptr;
 		cJSON_ArrayForEach(asked, askedAxes)
 		{
 			size_t index = axisCount;
@@ -1668,11 +1694,19 @@ void dropSearch(Service &sv)
 
 /* Whether the search still stands on the memory it was started on. A project
  * closed, or another one opened, takes that memory away; the search is then
- * dropped before anything reads through its pointer. */
+ * dropped before anything reads through its pointer. The session is asked by
+ * serial: the sandbox puts guest memory at the same address every time, so a
+ * reopened project of the same core has a domain of the same name, pointer
+ * and size, and the old candidates would carry on against a new machine. */
 bool searchStands(Service &sv, ce_session *s)
 {
 	if (sv.search == nullptr) return false;
 	bool stands = false;
+	if (s == nullptr || ce_session_serial(s) != sv.searchSession)
+	{
+		dropSearch(sv);
+		return false;
+	}
 	for (int32_t i = 0; s != nullptr && i < ce_session_domain_count(s) && !stands; i++)
 	{
 		stands = sv.searchDomain == ce_session_domain_name(s, i)
@@ -1681,6 +1715,25 @@ bool searchStands(Service &sv, ce_session *s)
 	}
 	if (!stands) dropSearch(sv);
 	return stands;
+}
+
+/* The agent's notes about a machine - its first write, its watches, the
+ * condition advance_until waits for, the search - are about that machine. A
+ * project closed and another opened (with a window or without one) starts
+ * clean, rather than reporting the old machine's write, or reading the old
+ * core's watches in the new one. */
+void onMachine(Service &sv, ce_session *s)
+{
+	const uint64_t serial = s != nullptr ? ce_session_serial(s) : 0;
+	if (serial == 0 || serial == sv.machineSession) return;
+	if (sv.machineSession != 0)
+	{
+		sv.wroteMemoryAt = -1;
+		sv.watches.clear();
+		sv.conditionSet = false;
+		dropSearch(sv);
+	}
+	sv.machineSession = serial;
 }
 
 const char kNoSearch[] = "No search is running. search_start begins one (a search ends when the project is closed).";
@@ -1703,6 +1756,7 @@ McpResult toolSearchStart(Service &sv, ce_session *s, const cJSON *arguments)
 	sv.searchBytes = ce_session_domain_size(s, domainIndex);
 	sv.search = ce_ramsearch_create(base, nullptr, nullptr, sv.searchBytes);
 	sv.searchDomain = domainItem->valuestring;
+	sv.searchSession = ce_session_serial(s);
 	sv.searchBase = base;
 	sv.searchSize = static_cast<int>(size);
 	sv.searchBigEndian = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(arguments, "big_endian"));
@@ -1806,6 +1860,7 @@ McpResult runWriteTool(Service &sv, const std::string &tool, ce_session *s, int6
 McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, const ce_movie_log *log,
 	int64_t frame, const char *hostStatus, const cJSON *arguments)
 {
+	onMachine(sv, s);
 	if (tool == "status")
 	{
 		/* where there is no window the machine is the agent's own to change */
@@ -1845,6 +1900,7 @@ McpResult mcpRunDirect(const std::string &tool, const std::string &argumentsJson
 	const std::string &hostStatusJson, const McpHostRunner &host)
 {
 	Service &sv = service();
+	onMachine(sv, s);
 	const McpTool *found = mcpFindTool(tool);
 	if (found == nullptr) return mcpError("There is no tool called '" + tool + "'.");
 	if (!found->host)
@@ -1978,6 +2034,7 @@ int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t frame, co
 {
 	static thread_local chimera::ThreadString heldTool, heldArguments;
 	Service &sv = service();
+	chimera::onMachine(sv, s);
 	for (;;)
 	{
 		chimera::WaitingCall call;
@@ -1997,6 +2054,7 @@ int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t frame, co
 				chimera::addLog(sv, call.tool + "  ->  NOT RUN: it waited " + std::to_string(waited / 1000) + " s for Chimera to be free");
 				continue;
 			}
+			if (call.connection != sv.connection) continue; /* asked by an agent that has gone */
 			sv.outgoing.push_back("{\"id\":" + std::to_string(call.id) + ",\"started\":true}");
 			tool = chimera::mcpFindTool(call.tool);
 			if (tool == nullptr)
@@ -2076,6 +2134,7 @@ int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t frame, co
 void ce_mcp_answer(ce_session *s, uint64_t id, const char *text, int32_t is_error)
 {
 	Service &sv = service();
+	chimera::onMachine(sv, s);
 	std::lock_guard<std::mutex> hold(sv.lock);
 	if (sv.kept == 1 && id == sv.keepId)
 	{
@@ -2103,6 +2162,7 @@ int32_t ce_mcp_condition_set(ce_session *s, const char *arguments_json, const ch
 {
 	static thread_local chimera::ThreadString error;   /* never destroyed: see thread_string.hpp */
 	Service &sv = service();
+	chimera::onMachine(sv, s);
 	sv.conditionSet = false;
 	auto refuse = [&](const std::string &why)
 	{
@@ -2141,6 +2201,7 @@ int32_t ce_mcp_condition_set(ce_session *s, const char *arguments_json, const ch
 int32_t ce_mcp_condition_met(ce_session *s)
 {
 	Service &sv = service();
+	chimera::onMachine(sv, s);
 	if (!sv.conditionSet || s == nullptr) return -1;
 	std::string text, why;
 	bool isNumber = false;

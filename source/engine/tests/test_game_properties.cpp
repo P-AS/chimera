@@ -244,6 +244,17 @@ void everyIntegerHasItsWidthSignAndOrder()
 	assert(gp.write(idx(gp, "Guard.HP"), 0, v, error) && textOf(gp, "Guard.HP") == "-3"); // truncated
 	v.f = 1e30;
 	assert(!gp.write(idx(gp, "Frames"), 0, v, error));
+	// the edges of 64 bits exactly: 2^64 and a little past -2^63 are refused,
+	// not converted (undefined) or wrapped
+	const std::string frames = textOf(gp, "Frames");
+	v.f = 18446744073709551616.0;
+	assert(!gp.write(idx(gp, "Frames"), 0, v, error) && textOf(gp, "Frames") == frames);
+	v.f = -9.25e18;
+	assert(!gp.write(idx(gp, "Frames"), 0, v, error) && textOf(gp, "Frames") == frames);
+	v.f = -9223372036854775808.0;
+	assert(gp.write(idx(gp, "Balance"), 0, v, error) && textOf(gp, "Balance") == "-9223372036854775808");
+	v.f = 18446744073709549568.0; // the largest double below 2^64
+	assert(gp.write(idx(gp, "Frames"), 0, v, error) && textOf(gp, "Frames") == "18446744073709549568");
 	GP::Value out;
 	assert(gp.read(idx(gp, "Guard.HP"), 0, out) && out.kind == GP::Value::Int && out.i == -3);
 	assert(gp.read(idx(gp, "Seed"), 0, out) && out.kind == GP::Value::UInt && out.u == 0xDEADBEEF);
@@ -418,6 +429,32 @@ void theGamesOwnTimer()
 // functions it is given: every read and every write goes through them, a write
 // of part of an element (a bit field) reads the element first, and without
 // the functions the domain still cannot hold one.
+// A bus is written at a 32-bit address (PokeBus): a property past 2 GiB is
+// read-only, rather than written somewhere else and reported done.
+void aBusPropertyPastWhereItCanBeWrittenIsReadOnly()
+{
+	int writes = 0;
+	GP::Domain far;
+	far.name = "Far";
+	far.size = int64_t{ 1 } << 32;
+	far.writable = true;
+	far.read = [](int64_t, uint8_t *buf, int64_t len) { std::memset(buf, 0, size_t(len)); };
+	far.write = [&](int64_t, const uint8_t *, int64_t) { writes++; };
+	far.writableBelow = int64_t{ 1 } << 31;
+	GP gp;
+	gp.load(R"({ "properties": [
+		{ "name": "near", "domain": "Far", "offset": 2147483647, "type": "u8" },
+		{ "name": "across", "domain": "Far", "offset": 2147483647, "type": "u16" },
+		{ "name": "beyond", "domain": "Far", "offset": 2147483648, "type": "u8" } ] })", { far });
+	assert(gp.all().size() == 3);
+	assert(gp.all()[size_t(gp.find("near", nullptr))].writable);
+	assert(!gp.all()[size_t(gp.find("across", nullptr))].writable);
+	assert(!gp.all()[size_t(gp.find("beyond", nullptr))].writable);
+	std::string error;
+	assert(!gp.writeText(gp.find("beyond", nullptr), 0, "1", error) && writes == 0);
+	assert(gp.writeText(gp.find("near", nullptr), 0, "1", error) && writes == 1);
+}
+
 void aBusHoldsPropertiesThroughItsFunctions()
 {
 	static uint8_t heap[64];
@@ -511,8 +548,15 @@ void aDynamicTableMovesAndKeepsItsIndices()
 	const uint64_t g2 = gp.generation();
 	assert(gp.place("_root.b", R"({ "name": "_root.b", "domain": "Game State", "offset": 40, "type": "u8" })") == ib);
 	assert(gp.generation() == g2);
+	// in the same place but no longer writable: that is a change too
+	assert(gp.place("_root.b", R"({ "name": "_root.b", "domain": "Game State", "offset": 40, "type": "u8", "writable": false })") == ib);
+	assert(gp.generation() > g2 && !gp.all()[size_t(ib)].writable);
+	assert(!gp.writeText(ib, 0, "1", error));
 	// gone: the index stays, the property is not there
+	uint32_t at = 0;
+	assert(gp.at("Game State", 20, &at, nullptr) == ia && at == 0);
 	assert(gp.place("_root.a", "") == ia && !gp.all()[size_t(ia)].present && !gp.read(ia, 0, v));
+	assert(gp.at("Game State", 20, &at, nullptr) == -1); // and no longer names its old address
 	// an entry for another name is no answer
 	assert(gp.place("_root.c", R"({ "name": "_root.z", "domain": "Game State", "offset": 0, "type": "u8" })") == 2);
 	assert(!gp.all()[2].present);
@@ -577,6 +621,7 @@ int main()
 	whatTheGameWorksOutCannotBeSet();
 	theGamesOwnTimer();
 	aBusHoldsPropertiesThroughItsFunctions();
+	aBusPropertyPastWhereItCanBeWrittenIsReadOnly();
 	aDynamicTableMovesAndKeepsItsIndices();
 	aDynamicTablesNamesAreExact();
 	std::printf("test_game_properties: ok\n");

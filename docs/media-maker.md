@@ -47,7 +47,11 @@ one carrying the real names as UCS-2. That is exactly what rpcs3's
 `Loader/ISO.cpp` reads - it scans descriptors in 2048-byte steps for type 1 and
 type 2, decodes UCS-2 from the second, and strips a trailing `;1` or `.` from
 either. Joliet's name limit is enforced by deterministic truncation, and
-uniqueness settled deterministically after it.
+uniqueness settled deterministically after it: a name that collides gets the
+first counter no other name in the folder has. The path tables list folders
+by level, then by their parent's number, then by name, as ECMA-119 says; each
+table numbers its folders by its own names (since 2026-10-15; before, a level
+was in name order only, which mixed the folders of different parents).
 
 A single file of 4 GiB or more is REFUSED by name, with the sentence saying
 which file: an ISO 9660 directory record cannot describe one, and an image that
@@ -58,8 +62,12 @@ built for.
 **FAT12 floppy (.img).** 2880 sectors of 512 bytes, two copies of a 12-bit
 allocation table of 9 sectors each, a root directory of exactly 224 entries, one
 sector per cluster, data from sector 33. Names are 8.3, made deterministically
-with `~n` counters where they collide. What does not fit is refused rather than
-quietly left out.
+with `~n` counters where they collide, past any name already given. What does
+not fit is refused rather than quietly left out. The boot sector carries a
+small program of our own (since 2026-10-15): a machine that boots from the
+floppy is told it holds files and no system, and a key starts the boot again,
+as with a DOS data floppy. Before, it held zeros, which a machine ran into
+whatever followed.
 
 ## The PlayStation 3 exception
 

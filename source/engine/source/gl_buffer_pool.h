@@ -88,6 +88,9 @@ struct CeGlBufferPool
 
 	size_t held() const { return pool.size(); }
 
+	/* The context the names belonged to is gone: none of them names anything. */
+	void reset() { *this = CeGlBufferPool(); }
+
 private:
 	std::vector<uint32_t> pool;
 	std::vector<bool> ours, pooled, mapped, immutable;

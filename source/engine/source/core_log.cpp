@@ -6,6 +6,7 @@
  * notes the sessions that open while it is on, and tells them to mount the
  * "corelog" request. */
 #include "core_log.hpp"
+#include "file_io.hpp"
 
 #include "chimera/engine.h"
 #include "host_dyn.hpp"
@@ -31,15 +32,8 @@ std::string g_error;
 
 FILE *openUtf8(const std::string &path, bool append)
 {
-#if defined(_WIN32)
-	int n = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
-	if (n <= 0) return nullptr;
-	std::wstring wide(static_cast<size_t>(n - 1), L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, &wide[0], n);
-	return _wfopen(wide.c_str(), append ? L"ab" : L"wb");
-#else
-	return std::fopen(path.c_str(), append ? "ab" : "wb");
-#endif
+	/* UTF-8 on Windows, and not inherited by the programs Chimera starts */
+	return chimera::openFile(path.c_str(), append ? "ab" : "wb");
 }
 
 std::string utcNow()

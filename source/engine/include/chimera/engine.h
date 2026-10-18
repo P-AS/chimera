@@ -984,6 +984,9 @@ CE_API void ce_gl_release(void);
  * the rebuild exists for. Default 1: a core that says nothing is unaffected. */
 CE_API void ce_gl_rebuild_on_state_load(int32_t on);
 CE_API void *ce_gl_flight_recorder(uint32_t *bytes);
+/* A Vulkan bridge command into the same flight recorder, as opcode +
+ * 0x40000000 (the session hands this to miniBox's Vulkan host). */
+CE_API void ce_vk_flight_note(unsigned op);
 
 /* ---------------------------------------------------------------------------
  * The compile cache. A core that recompiles its machine's code keeps the
@@ -1291,7 +1294,9 @@ CE_API int64_t ce_session_domain_size(const ce_session *s, int32_t index);
 CE_API int32_t ce_session_domain_writable(const ce_session *s, int32_t index);
 /* A domain that is no memory of the machine's, only somewhere a core puts
  * what its game properties point at - a value with no one place of its own,
- * copied where the engine can read it (chimera#218). The core says so with an
+ * copied where the engine can read it (chimera#218) - or a block that a bus
+ * already shows, in another byte order (ares' Nintendo 64, chimera#288). The
+ * core says so with an
  * optional guest export, int32_t GetMemoryDomainHidden(int32_t index). Game
  * properties read and write through such a domain like any other; the memory
  * tools do not offer it: it is not in the Hex Editor's, RAM Search's or RAM
@@ -2027,15 +2032,34 @@ CE_API double ce_average_fps_value(const ce_average_fps *a);
  *   of free memory and of what the system can still promise with the page
  *   file at its present size; 0 when the system will not say.
  * _sessions: how many to run for that many processors and that much to
- *   spare: one per session's worth after 4 GB kept back, at most half the
- *   processors, at most 8, at least 1.
- * _session_bytes: what one session is taken to need.
+ *   spare: one per session_bytes after 4 GB kept back, at most half the
+ *   processors, at most 8, at least 1. session_bytes is the frontend's
+ *   setting (Tools > Pre-Compiled Modules); 0 takes the default.
+ * _session_bytes: the default, what one session is taken to need (8 GB).
  * _memory_ran_short: 1 when the least that could be spared while sessions
- *   ran (the frontend samples _memory_to_spare) says they ran out. */
+ *   ran (the frontend samples _memory_to_spare) was under half of
+ *   session_bytes (0: the default) - they ran out. */
 CE_API uint64_t ce_compile_memory_to_spare(void);
-CE_API int32_t ce_compile_sessions(int32_t processors, uint64_t to_spare);
+CE_API int32_t ce_compile_sessions(int32_t processors, uint64_t to_spare, uint64_t session_bytes);
 CE_API uint64_t ce_compile_session_bytes(void);
-CE_API int32_t ce_compile_memory_ran_short(uint64_t least_to_spare);
+CE_API int32_t ce_compile_memory_ran_short(uint64_t least_to_spare, uint64_t session_bytes);
+/* _session_begins: called by a compile session for itself, first thing. On
+ *   Linux it asks the kernel to stop this process before any other when
+ *   memory runs out (oom_score_adj 1000), so a compile that wants more than
+ *   the computer has loses a session - which the frontend sees and retries
+ *   with fewer - and not the window that started it (chimera issue 300: the
+ *   kernel stopped Chimera itself). 1 when that was set; 0 elsewhere, where
+ *   there is no such choice to make (Windows refuses the memory instead). */
+CE_API int32_t ce_compile_session_begins(void);
+
+/* ---- the computer, for a bug report (chimera issue 277) ---------------------
+ * _cpu_name: the processor's name as it gives it, for example "AMD Ryzen 7
+ *   5800X 8-Core Processor"; "" when it will not say. Static, never
+ *   invalidated.
+ * _memory_total: the memory installed, in bytes; 0 when the system will not
+ *   say. */
+CE_API const char *ce_host_cpu_name(void);
+CE_API uint64_t ce_host_memory_total(void);
 
 #ifdef __cplusplus
 }

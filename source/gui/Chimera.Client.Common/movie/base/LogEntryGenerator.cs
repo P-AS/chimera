@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 using Chimera.Emulation.Common;
@@ -54,7 +55,9 @@ namespace Chimera.Client.Common
 					if (axisSpec.HasValue)
 					{
 						var val = createEmpty ? axisSpec.Value.Neutral : source.AxisValue(buttonName);
-						sb.Append(val.ToString().PadLeft(5, ' ')).Append(',');
+						// in no culture: a Region setting may give the negative sign
+						// another character, and a movie must read the same everywhere
+						sb.Append(val.ToString(CultureInfo.InvariantCulture).PadLeft(5, ' ')).Append(',');
 					}
 					else
 					{

@@ -302,7 +302,16 @@ namespace Chimera.Client.Common
 				}
 				var full = System.IO.Path.GetFullPath(path);
 				using var package = EnginePackage.Open(full);
-				if (package is null) return null;
+				if (package is null)
+				{
+					// A folder that is not a package is an ordinary folder. A file
+					// named like one is listed with the reason (docs/core-manager.md):
+					// an empty download, a web page saved under the name, or a zip
+					// with everything one folder down would otherwise just be missing.
+					if (Directory.Exists(full)) return null;
+					throw new InvalidOperationException(
+						"this is not a core package: it is not a zip archive with core.wbx and waterbox.config at its top level");
+				}
 				var fallbackName = Directory.Exists(path)
 					? System.IO.Path.GetFileName(full.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar))
 					: System.IO.Path.GetFileNameWithoutExtension(full);

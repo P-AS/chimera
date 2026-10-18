@@ -6,6 +6,7 @@ using System.Linq;
 using Chimera.Common.PathExtensions;
 using Chimera.Common.StringExtensions;
 using Chimera.Emulation.Common;
+using Chimera.Emulation.Common.Engine;
 
 namespace Chimera.Client.Common
 {
@@ -319,7 +320,7 @@ namespace Chimera.Client.Common
 			return result ?? new();
 		}
 
-		public IMovie Get(string path, bool loadMovie)
+		public IMovie Get(string path, bool loadMovie, EngineProject project = null)
 		{
 			// there is exactly one movie-bearing artifact: the project (docs/project.md).
 			// Case-insensitively: a filesystem that preserves case still hands
@@ -328,7 +329,7 @@ namespace Chimera.Client.Common
 			// This was the ONE case-sensitive check on the open-project path,
 			// and it made the whole flow end in silence (issue #21).
 			if (Path.GetExtension(path)?.EndsWith(TasMovie.Extension, StringComparison.OrdinalIgnoreCase) is not true) return null;
-			IMovie movie = new TasMovie(this, path);
+			IMovie movie = new TasMovie(this, path, project);
 
 			if (loadMovie)
 			{

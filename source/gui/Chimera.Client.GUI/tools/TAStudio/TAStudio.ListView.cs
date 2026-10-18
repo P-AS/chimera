@@ -351,7 +351,10 @@ namespace Chimera.Client.GUI
 			foreach (RollColumns cols in _movieSettings.Columns)
 			{
 				InputRoll roll = MakeInputRoll();
-				roll.AllColumns.AddRange(cols);
+				roll.AllColumns.AddRange(FitColumnsToControls(
+					cols,
+					MnemonicMap().Select(static c => (c.Name, c.Mnemonic)),
+					ControllerType.Axes.ContainsKey));
 				UpdateColumnWidths(roll);
 			}
 
@@ -792,7 +795,7 @@ namespace Chimera.Client.GUI
 				InputManager.StickyAutofireController.SetAxisAutofire(button, null);
 				if (!isOn.Value) return;
 
-				int holdValue = ControllerType.Axes[button].Range.EndInclusive; // it's not clear what value to use for auto-hold, just use max i guess
+				int holdValue = AxisHoldValue(_movieSettings?.AxisHoldValues, button, ControllerType.Axes[button]);
 				if (useCustom)
 				{
 					InputManager.StickyAutofireController.SetAxisAutofire(button, holdValue, _movieSettings.AxisPatterns[ControllerType.Axes.IndexOf(button)]);
@@ -807,6 +810,20 @@ namespace Chimera.Client.GUI
 				}
 			}
 		}
+
+		/// <summary>
+		/// The value Auto-hold holds an axis at: the one chosen for it when Auto-hold
+		/// was turned on, or the axis's maximum when none was chosen or the chosen one
+		/// is outside the axis's range (issue #298).
+		/// </summary>
+		public static int AxisHoldValue(IReadOnlyDictionary<string, int> chosen, string axis, AxisSpec spec)
+			=> chosen != null && chosen.TryGetValue(axis, out int value) && value >= spec.Min && value <= spec.Max
+				? value
+				: spec.Max;
+
+		/// <summary>The value typed for Auto-hold: a whole number in the axis's range, or null.</summary>
+		public static int? ParseAxisHoldValue(string text, AxisSpec spec)
+			=> int.TryParse(text.Trim(), out int value) && value >= spec.Min && value <= spec.Max ? value : null;
 
 		private void TasView_ColumnReordered(object sender, InputRoll.ColumnReorderedEventArgs e)
 		{

@@ -89,6 +89,35 @@ namespace Chimera.Tests.Client.Common.Movie
 			Assert.AreEqual("|  100,  100,|", actual);
 		}
 
+		/// <summary>
+		/// A negative axis value is written with an ASCII '-' whatever the
+		/// person's Region setting gives as the negative sign: the movie has
+		/// to read the same on every machine, and the engine reads only '-'.
+		/// </summary>
+		[TestMethod]
+		public void GenerateLogEntry_NegativeAxisInAnyCulture()
+		{
+			var controller = new SimpleController(
+				new ControllerDefinition("Dummy Gamepad")
+					.AddXYPair("Stick{0}", AxisPairOrientation.RightAndUp, (-128).RangeTo(127), 0)
+					.MakeImmutable());
+			controller.Definition.BuildMnemonicsCache();
+			controller.AcceptNewAxis("StickX", -7);
+			controller.AcceptNewAxis("StickY", 12);
+			var before = System.Threading.Thread.CurrentThread.CurrentCulture;
+			var odd = (System.Globalization.CultureInfo)System.Globalization.CultureInfo.InvariantCulture.Clone();
+			odd.NumberFormat.NegativeSign = "~";
+			try
+			{
+				System.Threading.Thread.CurrentThread.CurrentCulture = odd;
+				Assert.AreEqual("|   -7,   12,|", LogEntryGenerator.GenerateLogEntry(controller));
+			}
+			finally
+			{
+				System.Threading.Thread.CurrentThread.CurrentCulture = before;
+			}
+		}
+
 		[TestMethod]
 		public void GenerateLogEntry_NoStupidHack()
 		{

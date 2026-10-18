@@ -4,9 +4,14 @@
  */
 
 #include "../source/compile_sessions.h"
+#include "chimera/engine.h"
 
 #include <cassert>
 #include <cstdio>
+#ifdef __linux__
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 int main()
 {
@@ -34,6 +39,14 @@ int main()
 	 * and then it says why. One that will not say what it has gets one too. */
 	assert(ceCompileSessions(16, 1 * GB) == 1);
 	assert(ceCompileSessions(16, 0) == 1);
+
+	/* The figure is a setting (2026-10-14): 4 GB a session gives the reported
+	 * machine seven, 16 GB gives it one; 0 is the default, 8 GB. */
+	assert(ceCompileSessions(16, 32 * GB, 4 * GB) == 7);
+	assert(ceCompileSessions(16, 32 * GB, 16 * GB) == 1);
+	assert(ceCompileSessions(16, 32 * GB, 0) == 3);
+	assert(ceCompileMemoryRanShort(3 * GB, 8 * GB));
+	assert(!ceCompileMemoryRanShort(3 * GB, 4 * GB));
 
 	/* What can be spared is the smaller of free memory and of what the system
 	 * can still promise: a machine with 40 GB free and 9 GB of promises left
@@ -64,6 +77,30 @@ int main()
 		assert(m.freePhysical != 0);
 		assert(ceMemoryToSpare(m) != 0);
 	}
+
+	/* A session asks Linux to stop it before anything else when memory runs
+	 * out (chimera issue 300: the kernel stopped Chimera's own window). Done
+	 * in a child, which reads its score back, so this test keeps its own. */
+#ifdef __linux__
+	{
+		const pid_t child = fork();
+		assert(child >= 0);
+		if (child == 0)
+		{
+			if (ce_compile_session_begins() != 1) _exit(2);
+			FILE *f = std::fopen("/proc/self/oom_score_adj", "r");
+			int score = 0;
+			if (!f || std::fscanf(f, "%d", &score) != 1) _exit(3);
+			std::fclose(f);
+			_exit(score == 1000 ? 0 : 4);
+		}
+		int status = 0;
+		assert(waitpid(child, &status, 0) == child);
+		assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	}
+#else
+	assert(ce_compile_session_begins() == 0);
+#endif
 
 	std::printf("compile_sessions: ok\n");
 	return 0;

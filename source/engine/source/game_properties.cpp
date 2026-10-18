@@ -319,7 +319,7 @@ bool CeGameProperties::parseEntry(const cJSON *entry, Property &p, std::string &
 	p.group = stringMember(entry, "group");
 	p.description = stringMember(entry, "description");
 	const cJSON *writable = cJSON_GetObjectItemCaseSensitive(entry, "writable");
-	p.writable = !cJSON_IsFalse(writable) && dom.writable;
+	p.writable = !cJSON_IsFalse(writable) && dom.writable && p.offset + p.span() <= dom.writableBelow;
 
 	const cJSON *values = cJSON_GetObjectItemCaseSensitive(entry, "values");
 	if (cJSON_IsObject(values) && info.integer)
@@ -505,8 +505,14 @@ int32_t CeGameProperties::place(const std::string &name, const char *entryJson)
 		return int32_t(m_props.size()) - 1;
 	}
 	Property &old = m_props[size_t(known->second)];
+	/* every field the core gives: an array that grew, or a property that
+	 * stopped being writable, is as much a change as one that moved */
 	const bool moved = !old.present || old.offset != p.offset || old.type != p.type || old.size != p.size
-		|| old.domainIndex != p.domainIndex || old.encoding != p.encoding;
+		|| old.domainIndex != p.domainIndex || old.encoding != p.encoding
+		|| old.count != p.count || old.first != p.first || old.stride != p.stride
+		|| old.bigEndian != p.bigEndian || old.writable != p.writable || old.bit != p.bit || old.bits != p.bits
+		|| old.values != p.values || old.name != p.name || old.domain != p.domain || old.group != p.group
+		|| old.description != p.description;
 	if (moved)
 	{
 		p.listed = true;
@@ -598,22 +604,60 @@ int32_t CeGameProperties::find(const std::string &name, uint32_t *element) const
 	return base->second;
 }
 
-int32_t CeGameProperties::at(const std::string &domain, int64_t address, uint32_t *element, bool *starts) const
+void CeGameProperties::indexAt() const
 {
+	if (m_atGeneration == m_generation) return;
+	m_at.clear();
 	for (size_t k = 0; k < m_props.size(); k++)
 	{
 		const Property &p = m_props[k];
-		if (p.domain != domain) continue;
-		const int64_t rel = address - p.offset;
-		if (rel < 0 || rel >= p.span()) continue;
+		if (!p.present) continue;
+		DomainIndex &d = m_at[p.domain];
+		d.byOffset.push_back({ p.offset, int32_t(k) });
+		d.widest = std::max(d.widest, p.span());
+	}
+	for (auto &d : m_at)
+	{
+		std::sort(d.second.byOffset.begin(), d.second.byOffset.end(),
+			[](const Placed &a, const Placed &b) { return a.offset != b.offset ? a.offset < b.offset : a.index < b.index; });
+	}
+	m_atGeneration = m_generation;
+}
+
+int32_t CeGameProperties::at(const std::string &domain, int64_t address, uint32_t *element, bool *starts) const
+{
+	indexAt();
+	const auto d = m_at.find(domain);
+	if (d == m_at.end()) return -1;
+	const std::vector<Placed> &list = d->second.byOffset;
+	/* every property that could cover the address starts at or before it and
+	 * no further back than the widest one: of those, the first in the table */
+	auto it = std::upper_bound(list.begin(), list.end(), address,
+		[](int64_t a, const Placed &p) { return a < p.offset; });
+	int32_t best = -1;
+	uint32_t bestElement = 0;
+	bool bestStarts = false;
+	while (it != list.begin())
+	{
+		--it;
+		const int64_t rel = address - it->offset;
+		if (rel >= d->second.widest) break;
+		if (best >= 0 && it->index > best) continue;
+		const Property &p = m_props[size_t(it->index)];
+		if (rel >= p.span()) continue;
 		const int64_t e = rel / p.stride;
 		const int64_t within = rel - e * p.stride;
 		if (e >= p.count || within >= p.size) continue;
-		if (element != nullptr) *element = uint32_t(e);
-		if (starts != nullptr) *starts = within == 0;
-		return int32_t(k);
+		best = it->index;
+		bestElement = uint32_t(e);
+		bestStarts = within == 0;
 	}
-	return -1;
+	if (best >= 0)
+	{
+		if (element != nullptr) *element = bestElement;
+		if (starts != nullptr) *starts = bestStarts;
+	}
+	return best;
 }
 
 bool CeGameProperties::valid(int32_t index, uint32_t element) const
@@ -797,14 +841,18 @@ bool CeGameProperties::writeBytes(const Property &p, uint8_t *at, const Value &i
 		uint64_t magnitude = 0;
 		if (in.kind == Value::Float)
 		{
+			/* the 64-bit range exactly: -2^63 and 2^64 are both doubles, and a
+			 * value outside them has no conversion to uint64_t at all */
 			const double t = std::trunc(in.f);
-			if (!std::isfinite(in.f) || t <= -9.3e18 || t >= 1.9e19)
+			if (!std::isfinite(in.f) || t < -9223372036854775808.0 || t >= 18446744073709551616.0)
 			{
 				error = "\"" + p.name + "\" takes a whole number that fits in it";
 				return false;
 			}
 			negative = t < 0;
-			magnitude = negative ? uint64_t(-(t + 1)) + 1 : uint64_t(t);
+			/* -t is at most 2^63 here, which a uint64_t holds; t + 1 would
+			 * round back to t at that size */
+			magnitude = negative ? uint64_t(-t) : uint64_t(t);
 		}
 		else if (in.kind == Value::UInt)
 		{
@@ -815,7 +863,7 @@ bool CeGameProperties::writeBytes(const Property &p, uint8_t *at, const Value &i
 			negative = in.i < 0;
 			magnitude = negative ? uint64_t(0) - uint64_t(in.i) : uint64_t(in.i);
 		}
-		const bool fits = negative ? (width >= 64 || magnitude <= (1ull << (width - 1))) : magnitude <= mask(width);
+		const bool fits = negative ? magnitude <= (1ull << ((width >= 64 ? 64 : width) - 1)) : magnitude <= mask(width);
 		if (!fits)
 		{
 			error = std::string(negative ? "-" : "") + std::to_string(magnitude) + " does not fit in \"" + p.name + "\" ("

@@ -1148,7 +1148,6 @@ the user owns), mounted hash-bound and cited by the movie header like any rom
 or firmware. Cores whose save data is plain machine memory (NES SRAM) export
 nothing and need nothing. First tenant: PPSSPP's RAM memstick.
 
-
 ## Wide input: a controller is as wide as it declares (2026-08-25)
 
 The packed uint64 button mask was an accident of the first cores, not a
@@ -1310,7 +1309,6 @@ The discipline that makes all of it hold: **everything recorded is a function of
 the inputs**. Not a timestamp, not a hostname, not a path. The moment provenance
 starts describing the moment rather than the ingredients, two builds of one
 commit stop matching and every hash in the chain becomes noise.
-
 
 ## A long wait says what it is waiting for (user-asked, 2026-09-05)
 
@@ -1908,8 +1906,8 @@ the driver is told - was written and removed. It is 0.5 ms a frame WORSE:
 17.74 and 17.59 against 17.22 and 17.19 for buffer pooling alone.
 
 **Those are not the numbers this section first carried, and the first ones were
-worthless.** `chimera-run` compiles the engine's sources straight in
-(`meson.build`: `engine_src + gl_bridge_src`); it does not load
+worthless.** `chimera-run` has the engine linked straight in (`meson.build`:
+the engine's static library, linked whole); it does not load
 `libchimera.dll`. Every A/B taken by copying the DLL beside it and leaving the
 executable alone measured the same binary twice, and reported the difference
 between two runs of it as the difference between two builds. Copy BOTH, and
@@ -3112,7 +3110,6 @@ the next save removes it. Honoring the claim again needs the missing half first:
 a hardware path that reproduces itself, and a way to tell a history from a
 session that ended in a crash.
 
-
 ## A greenzone is trusted when the session that wrote it finished (user-decided, 2026-09-16)
 
 The 2026-09-14 withdrawal above is narrowed, not reversed. It refused every
@@ -4226,6 +4223,122 @@ the one no Linux test can reach. Both new Linux legs were watched failing
 against a deliberately broken build before being believed. docs/folder-picker.md
 says plainly what the green run does and does not stand for.
 
+## What a PS3 install actually costs, and which half a wizard step can buy (measured, 2026-09-20)
+
+Sergio asked for the PS3 `.pkg` install to stop crushing the greenzone and host
+RAM, and proposed the shape of the answer himself: make the install a step in
+the wizard, the way precompilation is, and cache its outcome so a player never
+repeats it. Measuring it first moved the target, because the premise is half
+wrong and the half that is right is somewhere else.
+
+Two costs were separated on purpose. The PACKAGE install is deterministic,
+happens once per boot and produces a known tree. The GAME'S OWN data install is
+the game copying its archives to the console's hard disk, driven by emulated
+input, several gigabytes. Measured on this box (the sandboxed core through
+`run-wbx`, `CHIMERA_STATE_RAW=1`, every figure a byte count the core printed):
+
+| game | pre-seal install into memfs | state, raw |
+|---|---|---|
+| Super Stardust HD, its 305.2 MB package as the game | firmware 194.8 MB, then 500.0 MB | 118.0 MB at frame 5 |
+| the same, plus its 248.6 MB update package | 482.1 MB (the update replaces files) | 112.5 MB at frame 5 |
+| echochrome, its 107.6 MB package as the game | firmware 194.8 MB, then 302.6 MB | 853.1 MB at frame 5 |
+| Resident Evil 5 Gold, 14.4 GB Redump disc + key | firmware 194.8 MB, then 210.6 MB (the disc's own INSDIR package) | 1.141 GB at frame 400, 1.144 GB at frame 1300 |
+
+**A package install costs a state nothing.** Half a gigabyte of memory files
+and a 118 MB state; adding a second package of a quarter of a gigabyte left the
+state at 112 MB; and echochrome, with a THIRD of Super Stardust's memory files,
+saves a state seven times the size, because what makes a state big is how far
+into the console's own memory the game has got and not what is on its disk.
+That is not a coincidence and not a compressor: everything
+these installs write lands BEFORE `Emu.Init` seals the machine, and a miniBox
+state is the pages that are dirty since the seal (`mb_block_state_size`), so the
+whole installed tree is baseline and no savestate carries a byte of it. The
+question "does installed content need to be in the state at all" already has the
+answer "it is not in the state", for everything the console installs on the
+machine's behalf - the firmware's `/dev_flash`, a project's `.pkg` files, a
+digital title's own package, and the packages a disc carries in `INSDIR`.
+
+**The game's own install is the whole of the state cost**, because it happens
+after the seal. That is the four gigabytes the disc-mirror work removed for
+Oblivion the previous week (5.85 GB of state to 1.23 GB), and it is what made
+Resident Evil 5's process grow from 4.9 GB to 10.9 GB while its progress bar
+filled. Where the mirror cannot reach - a Redump disc, whose bytes the ISO layer
+decrypts, so what the game writes never equals what the disc holds - it is still
+there in full. A PS3 state with a game's install in it is larger than the
+ENTIRE greenzone budget (4 GB), so the greenzone of such a game holds no frames
+at all; without it, a PS3 state is about 1.14 GB and flat, which is the machine
+proper. So of the two costs, the game's own install dominates the greenzone
+absolutely and the package install contributes exactly zero.
+
+**What the package install does cost is the boot.** Two timed boots of Super
+Stardust HD with a warm compile cache, seconds from exec:
+
+| phase | run 1 | run 2 |
+|---|---|---|
+| firmware installed (194.8 MB of `/dev_flash` out of PS3UPDAT.PUP) | 91 | 83 |
+| the game's package installed (305.2 MB, 61 entries) | 96 | 88 |
+| the project's package installed (248.6 MB, 53 entries) | 97 | 90 |
+| booted | 101 | 94 |
+
+So the package installs are five and two seconds, and **the firmware install is
+eighty-five of a ninety-four second boot** - paid on every open of the project,
+and by every one of the eight precompile sessions, for a file that is the same
+on every PS3 project on the machine. If a wizard step is to cache an install,
+that is the install worth caching; the packages are a rounding error beside it.
+(Worth a profile before anyone builds around the number: with the log raised,
+most of the eighty-five seconds is rpcs3's TAR reader failing to parse a header
+once per 512-byte block across the padding, which may be cheaper to fix than to
+cache.)
+
+### What a cached install would have to be
+
+The mechanism already exists and is not new machinery: a memfs MIRROR is a
+writable file with no bytes of its own, reading through to a stretch of a
+read-only host-backed file, materialising itself the moment anything writes to
+it in a way the source does not describe. Today one is only ever INFERRED, from
+a game copying a disc file. The same node, DECLARED, is a cached install: the
+wizard step runs the installer once, writes the resulting tree into one packed
+file beside the compile cache, and every later session reconstitutes the tree as
+mirrors of that pack instead of decrypting anything. The boot loses eighty-five
+seconds and the guest arena loses the tree's size, because the bytes stay on the
+host's disk and are read as the machine asks for them, exactly as a mounted disc
+is. The step belongs BEFORE precompile, not after: for a digital title the
+modules to precompile are the ones the install created, and the eight sessions
+should start from the pack rather than each build it again.
+
+Three things about it are not ours to decide, because they touch what a movie
+means.
+
+The first is that a cached tree becomes part of the boot path, so a movie
+depends on it. That is only safe if the pack is a verifiable function of what
+the project already cites - the PUP, the packages in slot order, the disc - so
+the project records the pack's hash, a regenerated pack that hashes differently
+is a REFUSAL rather than a warning, and the reproduction contract stays the pair
+it is. A pack nobody can check would make a movie depend on a blob.
+
+The second is that cold and warm are not the same machine at the seal. Whether
+the installer ran or the pack was mirrored, the console reads identical bytes,
+but the emulator's own heap does not hold the same thing, so the sealed baseline
+differs and a state does not cross between them. The clean answer is the one
+precompile already uses: make the step mandatory before Create, so a project has
+one flavour and never the other - which is to say a PS3 project could not be
+created without doing the install first.
+
+The third is the room it takes. A pack is the installed tree: 195 MB for the
+firmware, and a digital title's own size on top - gigabytes for a big one. The
+firmware pack is the same for every PS3 project and should be shared, which is
+the opposite of what was decided for compiled code (one directory per game, no
+sharing) and for the opposite reason: there the shared part was 12 MB against a
+game's 47, here it is 195 MB against nothing at all for a disc game. And unlike
+compiled code it has to be INSIDE the Cache Manager's budget rather than beside
+it - `Tools > Pre-Compiled Modules...` is the only way compiled code is ever
+removed, and `CacheKind` has no member for it, which this document's cache
+chapter already describes as though it did.
+
+Not built here. It is recorded because the measurement is what found it, and
+because the measurement says the wizard step buys a boot rather than a
+greenzone.
+
 ## The fault handler gives up its pointers, and never reports twice (chimera#127, 2026-09-21)
 
 A PS3 core died in the main menu of a game. Everything Chimera is built to do
@@ -4756,7 +4869,6 @@ hashes for, one for most games, so the box sat greyed with nothing to
 choose. Removed: the IWAD the person gives is the release, and the
 compatibility level is how it plays. The import hands that IWAD to the
 wizard whatever its hash, and a game core takes it as the project's own.
-
 
 ## Chimera knows no system: the cores say what theirs are called (user-decided, 2026-10-05)
 
@@ -5746,7 +5858,6 @@ Tested with a new unit test (it fails without the fix, with the greenzone
 set to every frame and to every 7 frames) and the existing randomized
 history test, which loads branches.
 
-
 ## Azahar: internal resolution, with states that carry the renderer's surfaces (user-decided, 2026-10-10, issue 223)
 
 On 2026-10-09 Azahar's internal resolution was measured and left out: at 2x
@@ -6271,7 +6382,6 @@ of 22, the Windows build compiles, `check-no-network.sh` is clean. The same
 day it ran on Windows on a GeForce GTX 1060, which the session names on
 standard error once the core has made its device. Not run: the interface.
 
-
 ## Xenia, the Xbox 360 core, joins the official cores (user-decided, 2026-10-11, issue 171)
 
 The owner asked for it: "add it", after the core's repository was made
@@ -6329,7 +6439,6 @@ renderer that also has OpenGL"), with what was measured on the GeForce GTX
 
 What is not proven: Chimera's window has not run a core with the setting on
 `vulkan-hw` - only `chimera-run` has.
-
 
 ## Zeebx, the Zeebo core, joins the official cores (user-decided, 2026-10-12, issue 240)
 
@@ -6453,7 +6562,6 @@ the MAME core, in Chimera's window under Xvfb: a game opened with its device
 set taken from the firmware store runs as the headless runner runs it, and
 with no such firmware known the project is not opened and the set is named.
 Nothing of this was tried on Windows.
-
 
 ## A project is opened in one place, in the engine (user-decided, 2026-10-12)
 
@@ -6988,7 +7096,6 @@ pass with both packages installed (22 tests). On Windows, earlier local
 builds of both ran the same as on Linux in the headless runner; the
 published packages were not run there.
 
-
 ## The MCP server's menu entry has an icon, and a dot for "started" (user-decided, 2026-10-12)
 
 The owner asked for an icon on Tools > MCP Server..., as every other entry
@@ -7004,7 +7111,6 @@ started".
 
 Measured: the interface tests, 0 failed of 1,065 with the screenshots on;
 the sheet of menu icons was looked at in the light and the dark theme.
-
 
 ## Vulkan is the default where the emulator's own default is Vulkan (user-decided, 2026-10-12, issue 248)
 
@@ -7134,8 +7240,6 @@ after 600 frames of Pong, and the same picture and memory after 1,200 frames
 of Shinobi. The games that were played with the local build are listed in
 the core's docs/PLAN.md. The published package was not run on Windows; an
 earlier local build was.
-
-
 
 ## A file with no extension is a format a slot can declare (2026-10-13, issue 250)
 
@@ -7349,3 +7453,770 @@ only if memory was short.
 **Open, for the owner:** 8 GB is what a PlayStation 3 session holds, and it
 is a number about one core written into Chimera. The core should say it in
 its package (beside `"precompile": true`), which is a new declaration.
+
+**Then a setting (user-decided, 2026-10-14).** Asked whether a core should
+say in its package how much a compile session needs, the owner chose a
+setting instead, 8 GB by default: Tools > Pre-Compiled Modules, "Memory per
+compile session (GB)", 1 to 256, remembered. The wizard hands it to the
+compile run, which hands it to the engine (`ce_compile_sessions` and
+`ce_compile_memory_ran_short` take it; 0 is the engine's default), and the
+out-of-memory message names the figure in use and where to change it. No
+package declaration was added. Tested: the engine test (4 GB gives the
+reported machine seven sessions, 16 GB one), and an interface test that the
+window shows the setting and writes it back - seen to fail with the write
+taken out. Engine tests 25 passed; end-to-end test script 88 passed;
+interface tests 1,077 run, 0 failed, 23 skipped.
+
+## Five cores join the official cores: melonDS, PUAE, Virtual Jaguar, TIC-80 and Uzem (user-decided, 2026-10-14)
+
+These are the next steps toward the owner's goal that every system BizHawk
+supports is supported in Chimera too (2026-10-12). Each core was made fresh
+from its emulator's latest source; BizHawk's ports were read for ideas only
+and nothing was taken from them (the owner's instruction for these cores).
+The owner held publishing back while they were finished ("keep this local")
+and on 2026-10-14 said to publish all five.
+
+What was decided:
+
+- `official-cores.json` has five new rows:
+  - `melonds` (melonDS 1.1): `NDS` (Nintendo DS) and `DSI` (Nintendo DSi);
+  - `puae` (libretro-uae): `AMIGA` (Commodore Amiga);
+  - `virtualjaguar` (virtualjaguar-libretro 3.9.0): `JAG` (Atari Jaguar)
+    and `JAGCD` (Atari Jaguar CD). The package carries Atari's boot ROMs and
+    CD BIOSes, which upstream's source embeds (the owner, 2026-10-14);
+  - `tic80` (TIC-80): `TIC80`, the TIC-80 fantasy computer. Carts written as
+    text (`.lua` and the like, a feature upstream sells in TIC-80 PRO) are
+    not loaded, only `.tic` and `.png` carts; Ruby is left out, because its
+    build needs a tool neither this machine nor the CI runner has;
+  - `uzem` (the Uzebox repository's emulator): `UZE` (Uzebox). Not there:
+    the SD card, the SPI RAM, the Uzenet adapter, and turning the picture for
+    games made for a vertical arcade screen.
+- The README's table of emulation cores lists melonDS after Azahar, Virtual
+  Jaguar after Stella, TIC-80 and Uzem after Cadmium, and PUAE after
+  AppleWin.
+- Each repository posts its releases to the project's Discord channel, as
+  the other cores' do.
+
+What was measured before the push, on this machine:
+
+- melonDS: its test script 45 passed, 0 failed, 0 skipped (with the owner's
+  BIOS, firmware and games), the window test 6 passed; the same projects on
+  Windows and Linux end the same.
+- PUAE: test script 27 passed, the window test 4 passed (one earlier window
+  run ended with a fault inside the sandbox's own code while a game played;
+  it did not come back in later runs and is not explained); Windows and
+  Linux the same.
+- Virtual Jaguar: test script 31 passed, window test 3 passed; Windows and
+  Linux the same. The games tried are free homebrew and upstream's test
+  images; no commercial game.
+- TIC-80: test script 39 passed, window test 3 passed; Windows and Linux the
+  same. No cart from the tic80.com site was tried.
+- Uzem: test script 75 passed, window test 3 passed. Thirteen of the Uzebox
+  repository's programs give upstream uzem's pictures frame for frame and
+  its sound sample for sample. Six projects (the test program, its mouse
+  twin and four games) end with the same memory on Windows and Linux.
+- Chimera's package tests pass with each package (18 tests each). Every
+  default key binding of the five uses a name Chimera sends to the bindings
+  (the names after `DistinctKeyNameOverrides`, and Shift, Ctrl and Alt as
+  one key each).
+
+What was measured after the push: each core's first CI run passed and
+published its development build: melonDS "Development build f322067f" (test
+script 20 passed, 0 failed, 25 skipped, because no BIOS and no game may go
+on a runner; window test 2 passed, 4 skipped), PUAE "85a942c6" (22 passed, 6
+skipped; window 2 passed, 2 skipped), Virtual Jaguar "65df7f90" (28 passed, 4
+skipped; window 3 passed), TIC-80 "22714826" (40 passed; window 3 passed)
+and Uzem "12a74bee" (75 passed; window 3 passed). Chimera's package tests
+passed with each (18). The runs took 13 to 24 minutes.
+Each published package was downloaded through `tools/fetch-cores.sh` with
+the new rows, and Chimera's roster, package and mnemonic tests passed with
+the five (22). Each core's own test script was then run here with the
+published core in place of the local build, with the owner's BIOSes,
+firmware and games: melonDS 45 passed, PUAE 28, Virtual Jaguar 32, TIC-80 40
+and Uzem 75, none failed and none skipped.
+
+## The processor and the memory in a bug report (2026-10-14, issue 277)
+
+Asked for: Help > Report an Issue should give the computer's processor and
+memory, which are what a report of slowness is first measured against, and
+which people had to look up and type.
+
+Done: the text it fills in has a sixth line, "CPU and memory", for example
+`Intel(R) Core(TM) Ultra 7 265KF (20 threads), 47.0 GB of memory`. The
+engine reads the two facts (`ce_host_cpu_name`, `ce_host_memory_total`, in
+`host_machine.cpp`): the name is the processor's own (the brand string the
+`cpuid` instruction gives), and the memory is what Windows
+(`GlobalMemoryStatusEx`) or Linux (`/proc/meminfo`) says is installed. The
+thread count is .NET's. What is not known is left as a note in the form's
+style, as the other lines do. The bug report form on GitHub has the line
+too, so the text is still pasted over the form's first lines.
+
+Tested: the engine's `test_host_machine.cpp` holds the name to the one Linux
+gives in `/proc/cpuinfo` and the memory to more than can be handed out; it
+was seen to fail with the name read from the wrong place and with the free
+memory read instead of the installed. The interface's report text tests
+cover the line filled in and left as a note.
+
+## PUAE runs the Amiga CD32 and the Commodore CDTV (user-decided, 2026-10-14)
+
+The owner asked for the CD32 and the CDTV in the PUAE core, then said to
+publish it and update the roster. `official-cores.json` gives the `puae` row
+two more systems, `CD32` (Amiga CD32) and `CDTV` (Commodore CDTV), and the
+README's table names them beside the Amiga. Nothing in Chimera changed: the
+core declares the two machines, their discs, firmware and save memory in its
+package.
+
+The core runs UAE's drive and CD audio threads one at a time against the
+emulated clock, so a run is the same every time and a savestate holds them.
+What was measured is in the core's design log (chimera-core-puae
+docs/PLAN.md): with the owner's ROMs, Worms boots from its CD32 disc, both
+machines' CD players play an audio CD the tests write, native and sandbox
+give the same results with savestates, and Windows gives Linux's. Turrican
+II does not start on the CDTV (it restarts after the start-up screen, in a
+build with upstream's own threads too).
+
+## An encode keeps its way back in a state file (2026-10-15, issue 282)
+
+Encode Video refused to start on an RPCS3 project with "Arithmetic operation
+resulted in an overflow". Before an encode borrows the emulator it keeps
+where the user was, to give it back at the end; that went through
+`SaveStateBinary` into a `MemoryStream`, and both the engine call's length
+(`checked((int)len)`) and the stream stop at 2 GB. The reporter's state was
+2.1 GB.
+
+The way back is now a state file, written and read by the engine exactly as
+a branch's state is (#84, `IStatable.SaveStateToFile`, which falls back to a
+stream for a core that has no state files): `ITasMovie.NewScratchStatePath`
+gives a path in the project's cache folder, outside `Branches/`, whose
+tidying deletes any file no branch names. The file is deleted when the
+emulator is handed back. If it cannot be written, the encode does not start
+and says why.
+
+Not changed: two other places still copy a whole state into a byte array,
+Lua's future-frame callback and TAStudio's greenzone integrity check. Neither
+is on a path a person takes to make a video.
+
+Tested: the end-to-end test's encode now also checks that no such file is
+left behind; it was seen to fail with the delete taken out. End-to-end test
+script 88 passed; interface tests 1,077 run, 0 failed, 23 skipped. A state
+over 2 GB was not made in a test; the file path is the one branches have
+used with 4.31 GiB PlayStation 3 states since #84.
+
+## Vulkan commands in crash notes (2026-10-15, issues 276 and 278)
+
+Two reports crashed inside a Vulkan driver - AMD's (amdvlk64.dll) under
+Xenia, Intel's (igvk64.dll) under Dolphin - while standalone Xenia and
+standalone Dolphin ran on the same computers. The crash notes named the
+driver and an offset; the GPU bridge's flight recorder held only OpenGL
+calls, so nothing said what Chimera had just handed the driver.
+
+Decided: Vulkan commands go into the same flight recorder rather than a
+second one, so the crash block's layout and the module's reading of it are
+unchanged. miniBox's Vulkan host gained a hook called with each opcode
+before the driver (`chimera_vk_host_set_call_hook`, miniBox 9b67f67); the
+engine's `ce_vk_flight_note` writes it tagged with 0x40000000; the crash
+module names tagged entries from miniBox's Vulkan list, generated at build
+time like the GL names.
+
+Tested: `test_gl_flight` writes a Vulkan entry directly and through the
+host's dispatcher and reads it back tagged; it was seen to fail with the tag
+left out. Engine tests 26 passed; end-to-end test script 88 passed;
+miniBox's tests 19 passed; the Windows build compiles the module with the
+table. Not seen: a real crash note on Windows with Vulkan lines in it.
+
+## A fault taken in host code reaches the guest properly (2026-10-15, issue 280)
+
+Max Payne 3 (Xenia) ended the process at frame 1,247, at its "Press Start"
+screen, on Windows, and on Linux too once the Vulkan renderer was on. The
+crash was in miniBox's interop blob, entering the host for `mprotect` with
+no context: the call came from Xenia's fault handler (it unprotects a
+watched page), and that handler had been called for a fault that HOST code
+took - the Vulkan bridge writing a command's output into a page Xenia was
+watching. miniBox called the guest's handler directly, as if the faulting
+thread were inside the guest; it was not, so the handler's first system call
+found no context.
+
+miniBox 1f751ee enters the handler through the guest-entry thunk when the
+faulting instruction is host code, and directly, as before, when it is guest
+code. Its test (RunHostWriteFault: the host writes clock_gettime's result
+into a protected page) died of SIGSEGV without the change. Every core with a
+GuestFaultHandler (Xenia, and the others that watch memory) takes this path
+when a host write meets a watched page.
+
+Tested: miniBox's tests 19 passed; engine tests 26 passed; end-to-end test
+script 88 passed; Xenia's test script 27 passed; the Windows build compiles.
+Max Payne 3 on the GTX 1060 runs past the old crash into its opening scene,
+and in the Linux sandbox with Vulkan its run ends on the same line as with
+no renderer. Only disc 1, and only the opening, was played.
+
+## A save cannot destroy a project, and files open under any Windows user name (2026-10-15)
+
+A review of the engine's own code found that several kinds of file could be
+lost or never written at all.
+
+- A project was saved by emptying its file and writing it again. A save that
+  failed part way - a full disk, the process dying in the GPU driver, a power
+  cut - left an empty or cut-short project, and the last good copy was gone.
+  Now every whole-file write (`writeFile`: the project, multi-file
+  descriptors) goes to `<file>.writing` beside the target, is flushed to the
+  disk, and is moved over the old file in one step (`MoveFileExW` with
+  replace on Windows, tried again for up to a second while a scanner or the
+  indexer holds the file; `rename` elsewhere). A link is followed, so the file
+  it names is replaced and not the link. See docs/project.md, "Saving".
+- On Windows the C library reads a narrow path in the ANSI code page, but
+  the engine is handed UTF-8. The input journal, the saved greenzone
+  (history.bin and its spill file), the compile cache, the media maker and
+  chimera-run opened their files that way, so for a Windows user whose name
+  is not plain ASCII (the data folder is in the user's profile) there was no
+  journal to recover from, no saved greenzone and no compile cache, and
+  nothing said so. They now go through `openFile`, `removeFile` and
+  `replaceFile` in file_io, which widen the path first. The spill file's
+  compaction could never finish on Windows either: it renamed over an
+  existing file with the C rename, and while the new file was still open.
+- The compile cache's names come from the core, which may build them from
+  what a game image says. Only `/` was taken as a folder separator, so on
+  Windows a name like `..\..\x` reached outside the cache and a store could
+  replace any file the user can write. Backslashes, colons, segments of dots,
+  segments ending in a dot or a space, control characters and the Windows
+  device names are now refused (docs/compile-cache.md). RPCS3, the one core
+  that uses the cache, names its objects with `/` and none of these.
+- The media maker walked a folder with a loop that throws when a folder
+  inside cannot be opened (a drive's "System Volume Information", a folder
+  with other users' access rules), and nothing between it and the C API
+  caught it, so Chimera ended. It now stops with "cannot read every folder in
+  ...". Its zip writer also went back to fill in each file's CRC through a
+  32-bit seek, which fails or writes in the wrong place past 2 GiB on
+  Windows; it now uses `seekFile`, a 64-bit seek.
+
+Tested: a new engine test (test_utf8_paths) makes a journal, compile-cache
+objects, a media image and a project under a folder named with an e-acute
+and a u-umlaut, and checks the cache's name rules and the unreadable folder.
+It passes on Linux, and on Windows (built by hand, run on this PC); with the
+journal's old fopen put back it failed on Windows at the journal, with the
+old name check it failed at `..\..\escaped`, and with the old folder loop it
+ended in std::terminate. test_project gained a save made to fail after 64 KiB
+(a file-size limit): with the old write the first save was lost, now it is
+kept. Engine tests 27 passed; end-to-end test script 88 passed; interface
+tests 1,054 passed; the Windows build compiles. Not run on Windows: the
+saved greenzone and its spill compaction.
+
+## A failure inside the greenzone costs that piece of work, not the session (2026-10-15)
+
+The same review found ways a single failure in the engine's background work
+ended Chimera, or quietly put a wrong machine in the greenzone.
+
+- An exception that leaves a helper thread's job ended the process
+  (`std::terminate`). The jobs pack and write whole machines - a PS3 anchor
+  wants about a gigabyte - so running out of memory there was a crash. The
+  helper now catches anything a job lets out and says so on stderr, and each
+  job keeps what it hands back consistent when it fails (the fourth rule in
+  work_thread.hpp).
+- A spill write that failed with the file already open (a full disk) gave
+  its stretch back with no bodies: the writer threw them away before saying
+  the write had failed. Restoring a frame of that stretch then put a wrong
+  machine in place, with no error. The bodies are now freed only when the
+  write landed.
+- The out-of-memory recovery in a capture halves the budget by thinning,
+  which allocates too; a second failure there left the C API and ended the
+  process. Now that frame is simply not stored.
+- A restore that falls back to its anchor (a delta that will not apply, a
+  spill that cannot be read) loads a whole machine, but it skipped what every
+  other load does: the inputs were not sent again and the GL and Vulkan
+  bridges were not told, so the next frames could play other inputs than the
+  movie's and draw from replaced GPU objects. Both paths now share one step.
+- Turning the greenzone back on from "Off" stored the machine under the
+  session's own frame number, which under the frontend is wherever the last
+  restore went; it now uses the frame the last capture reported.
+- The MCP tools that change input read "buttons" and "axes" as objects from
+  names to values; given a list (`["P1 A"]`), they looked up a name that was
+  not there and the program serving the call died. A list is now refused
+  with the shape it should have.
+
+Tested: test_work_thread (new) ended in std::terminate without the catch;
+test_state_history's new capped-spill test restored a wrong machine with the
+old writer and the right one now; the end-to-end test script's MCP agent
+sends the list, and the old chimera-mcp died of SIGSEGV on it. The fallback
+restore and the greenzone switch are not driven by any test: neither can be
+reached without a session, and no engine test opens one.
+
+## A project opened from another path does not use the cached greenzone (user-decided, 2026-10-15)
+
+A project's cache is keyed by its id, and a copy keeps its original's id:
+Save As, Save Backup, a recovered copy and a file copied by hand all shared
+one cache. Opening one could load another copy's state history, lag log and
+branch states under its own inputs (branch states were even matched to
+branches by their place in the list), and could delete the other copy's
+branch states as unused.
+
+The owner chose the simple rule over checking the cache against the inputs:
+the cache already records the path the project was last opened or saved
+from (about.json, until now only a label), and a project opened from any
+other path - copied or moved - has its cached greenzone, lag log and branch
+states discarded, and starts with an empty greenzone. The budgets stay;
+they are the person's choice for the project. A cache that never recorded a
+path is left alone. Save As records the new path when it saves, so the
+session that goes on in the new file keeps its greenzone; the original,
+opened again later, starts empty. Opening a backup empties the main
+project's cache in the same way, which costs replaying and never work.
+
+Tested: a new test (AProjectOpenedFromElsewhereLosesItsCachedGreenzone) keeps
+the greenzone for the same path, discards history, lag log and branch states
+for another, keeps the budgets, and leaves an unlabelled cache alone; with
+the path check made to always match, it failed.
+
+## A recycled GL buffer is unbound, but may still be one a vertex array points at (user-decided, 2026-10-15)
+
+The GL bridge keeps deleted buffers to serve the next glGenBuffers (a
+renderer's generations once cost 1.74 ms of a frame). Since a99045b a
+recycled buffer leaves every target it is still bound to, as GL's own
+delete would have it, and storage or maps made through the EXT and named
+calls stop it being recycled.
+
+What it does not do: send a buffer to the driver for real when a vertex
+array, a buffer texture or an indexed binding still holds it. In GL that
+holder keeps drawing the old contents; a recycled buffer shows it the next
+owner's data. Treating every such buffer as held made 1,127 of Ruffle's
+1,648 deletes real ones, giving back most of what the pool saves, for a
+pattern - drawing through a vertex array after deleting its buffer - that is
+legal but rare and that no core is known to use. The owner chose speed. A
+core that does it would draw wrong geometry; the cure then is that rule, or
+tracking which vertex arrays point at which buffers.
+
+## Small faults from the code audit, the low ones (2026-10-15)
+
+The audit of 2026-10-15 also listed faults it judged minor: none was seen by
+a user. Those fixed in this round, and what each now does:
+
+- **Agents.** The MCP server's notes about a machine (the first memory
+  write, the watches, the `advance_until` condition, the search) belong to
+  the session they were made in, and start again with the next one. They
+  used to be checked by the memory's address, and the sandbox gives a core's
+  memory the same address every time. An answer finished after its agent's
+  program left is not sent to the next program; a Windows write to a reader
+  that never reads gives up after five seconds, as on Linux. A client on
+  Linux looks for the server in each folder a server may have chosen.
+- **The input journal** is synced to the disk by a thread of its own, at
+  most once a second and never more than a second after a change. The sync
+  used to wait for the next change, so the last one before a pause was not
+  on the disk, and it ran on TAStudio's thread. Files the engine opens on
+  Windows are no longer inherited by the programs Chimera starts; a child
+  holding the journal open kept it from being replaced, and journaling then
+  stopped. Now it carries on in the journal as it was.
+- **Identities.** A project's id comes from the system's random source. The
+  old one used the library's address, which Windows keeps for every process
+  until a reboot, so two Chimeras making a project in the same second made
+  the same id. The file-hash cache keys on the full-resolution change time
+  and the file's identity, so a copy that keeps the original's date is
+  hashed again.
+- **Packages.** A package that names no frame rate runs at 60/1 (0/0 was a
+  frame rate the frontend divided by). A picture wider than the package
+  declares is cropped row by row instead of sheared. A file named
+  `.chimeraCore` that is not a package is listed with the reason. A
+  property past 2 GiB on a bus is read-only, since the bus takes 32-bit
+  addresses. A control called `P<n> ...` with n over 255 belongs to no
+  player.
+- **Numbers.** A float written to a 64-bit property is checked against the
+  exact range (-2^63 itself was refused before, and values near 2^64 were
+  converted with undefined results); an axis of 2147483648 is refused rather
+  than read as its negative; `0x-1` and `0xinf` are not numbers.
+- **Disc and floppy images.** Names that shorten alike each get a name no
+  other file in the folder has. Only images with such names change. The
+  media maker's last error and hash are kept per thread: the window asks its
+  questions on one thread while a pack runs on another.
+- **Files a game is made of.** A cue sheet saved with a byte-order mark, or
+  with `file` in small letters, names its first track too. A multi-file
+  descriptor hashes its files from the disk and reads one only when asked,
+  and chimera-run gives the engine their paths, as it does for one file.
+- **RAM search.** Running out of memory during a filter leaves the search
+  as it was, as the window says. A smaller shape that cannot be had is
+  simply not taken.
+- **The GL bridge.** A failed bind of its context is said once and the
+  core's GL calls are not run, instead of going to the frontend's context.
+  Fences a load left behind are deleted once they have signalled. A readback
+  over 1 GiB is not guarded, and the readback buffer goes with the context.
+- **The compile cache** announces and hashes objects only in a precompile
+  session, where the wizard reads the lines.
+
+Each was reproduced by a test first where one could be written, and each
+new test failed with the old code. Left for the owner: a FAT12 boot sector
+that runs nothing, the ISO path-table order and the auto frame skip (each
+changes what the user gets), the guest-visible `sysinfo` unit, and asking
+the Vulkan bridge for device functions.
+
+## The rest of the audit's small faults: history, the runner, the build (2026-10-15)
+
+The second half of the low findings, after 64d228b:
+
+- **The state history.** A packed body is read through a buffer no larger
+  than the body and not cleared first (a small link used to zero a megabyte).
+  A reader of a shared file seeks only when the file is not where it left it:
+  the Windows C library throws its buffer away on every seek, which cost a
+  system call and a 4 KB read for each small field of a history being opened
+  (not measured on Windows). The disk budget no longer drops stretches whose
+  write has not landed, which freed nothing it counted. A compaction that
+  renamed its file applies the new offsets at once, and forgets the spilled
+  stretches if the file cannot be opened again. A stretch whose anchor is
+  bigger than the memory budget is not settled, as docs/state-manager.md
+  says. A background save that failed is reported by the next one.
+- **The machine.** A null sound buffer is silence; a save-data read is held
+  to what was asked; the GL context is given back after the core's
+  StateLoaded in the buffer and file loads. The three load paths still call
+  StateLoaded at different points relative to the GL and Vulkan notices;
+  making them agree needs the GPU cores tried, and is not done.
+- **chimera-run.** A property set and a loaded state are part of the
+  history's anchor and of the `--rerecord` state (the set value was lost on
+  every frame of a `--rerecord` run); `--state` with `--history-in`, and a
+  greenzone check over two different frames, are refused; every output's
+  write is checked.
+- **The build.** The engine is compiled once, into a static library linked
+  whole into libchimera, the tools and the tests: a change to session.cpp
+  compiles one file, not 29. The exported functions are the same on both
+  systems. The engine's and the sandbox's commits are read at every build
+  (vcs_tag) and say "-dirty" for a tree with uncommitted changes; the bridge
+  generators depend on gl.h and vk.xml; the nested zstd, SDL2 and OpenAL
+  builds are asked at every build.
+- **Scripts.** The no-network check reads the sandbox's host side too; an
+  ffmpeg given by hand needs its licence, and is taken before 7-Zip is
+  looked for; a dev release that could not be deleted stops the publish.
+- **The interface.** An agent's lines are applied with one invalidation; a
+  movie line's axis values are written and read in no culture; the MCP
+  dialog keeps the last 5000 lines.
+
+Left for the owner, as before: the FAT12 boot code, the ISO path-table
+order, the auto frame skip, `sysinfo`'s unit and the Vulkan device
+functions; and TAStudio does not yet show a failed background save.
+
+
+## Gambatte joins the official cores: the Game Boy, the Game Boy Color and Game Boy Link (user-decided, 2026-10-15)
+
+The owner said to publish every session's pending work, new cores with
+their repository, roster row, website row and release notifications. The
+Gambatte core is public as ToolAssisted-run/chimera-core-gambatte. It
+builds Gambatte-Speedrun (pokemon-speedrunning/gambatte-core) unchanged,
+with no patches. BizHawk's source was read for ideas only; nothing was
+taken from it, not even a test file (the owner's rule, 2026-10-15).
+
+- official-cores.json has the row gambatte: GB Game Boy, GBC Game Boy
+  Color, SGB Super Game Boy, GBL Game Boy Link.
+- The README's table of cores lists it after melonDS.
+- Game Boy Link is a machine of two, three or four Game Boys joined by link
+  cables, each with its own game and saved data, as in BizHawk.
+- The boot ROMs are firmware the user brings (`dmg_boot.bin`,
+  `cgb_boot.bin`, `agb_boot.bin`, `sgb2_boot.bin`); playing without one is a
+  setting.
+
+Measured before publishing, built against miniBox dac416f: the core's own
+test script 55 passed, none failed or skipped (with the owner's boot ROMs and
+games; on CI the tests that need them are skipped); the window tests 6
+passed; Chimera's package and mnemonic tests 18 passed. One test plays
+Pokemon Gold from power-on to a save with inputs of the repository's own,
+then trades a Pokemon each way between two linked games. The first CI run
+passed (43 passed, 8 skipped for want of the boot ROMs and games; window
+tests 4 passed, 2 skipped; package tests 18 passed) and published
+"Development build 9a9cd75f". Not tried: a link battle or any other link
+game, and a Super Game Boy cannot be linked.
+
+
+
+## VICE and MAME Home Systems join the official cores; ares adds the 64DD and the Sufami Turbo, Genesis Plus GX the Pico (user-decided, 2026-10-15)
+
+The owner said to publish every session's pending work, new cores with
+their repository, roster row, website row and release notifications. Two
+new cores are public, and two published ones gained systems. All four are
+part of the aim of covering every system BizHawk runs; nothing was taken
+from BizHawk.
+
+- **VICE** (ToolAssisted-run/chimera-core-vice): the Commodore 64, built
+  from VICE's x64sc emulator through the vice-libretro port. The package
+  carries VICE's own C64 and 1541 ROMs, as the owner decided.
+- **MAME Home Systems** (ToolAssisted-run/chimera-core-mamehome): the home
+  machines of MAME in one package, a Machine setting choosing among 25 -
+  Atari 7800 (A78), Intellivision (INTV), Vectrex (VEC), Odyssey 2 /
+  Videopac (O2), Channel F (ChannelF), Amstrad CPC with the CPC+ and GX4000
+  (AmstradCPC) and TI-83 (TI83). The user brings each machine's own ROMs as
+  firmware; the GX4000, CPC464+ and CPC6128+ need none. A CPC's disks can be
+  swapped while it runs, and Export Save Data hands out the disks it wrote.
+- **ares** adds the Nintendo 64DD (N64DD, a machine of its own: the drive's
+  IPL ROM is the user's firmware and the disk is the game; a 64DD game saves
+  on its disk, so Export Save Data hands out the written disk) and the
+  Sufami Turbo (the base cartridge with one or two linked minicarts, run as
+  a Super Famicom cartridge with no id of its own). Its Nintendo 64
+  cartridge saves now export in the order ares writes them, and the Save
+  data slot is used; both were wrong before.
+- **Genesis Plus GX** adds the Sega Pico (PICO): the pen as two axes, its
+  button, and the storyware pages.
+- official-cores.json has the rows vice and mamehome and the new systems of
+  ares and gpgx; the README's table of cores lists VICE after PUAE and MAME
+  Home Systems after MAME.
+
+Measured before publishing, built against miniBox dac416f with the owner's
+firmware and games: VICE's test script 21 passed; MAME Home Systems' 77
+passed and its window tests 4; ares's 97 passed with nothing skipped (the
+64DD with SimCity 64, the Sufami Turbo with two SD Gundam Generation
+minicarts, Super Mario 64's EEPROM out and back in); Genesis Plus GX's 30
+passed; Chimera's package and mnemonic tests 18 passed for each. The first
+CI runs passed with what needs no licensed content (VICE 18 passed, 3
+skipped; MAME Home Systems 18 passed, 8 skipped; ares and gpgx as before)
+and published "Development build 4755a656" (VICE), "3956272c" (MAME Home
+Systems), "32c17a0e" (ares) and "6dab3e2c" (Genesis Plus GX).
+tools/fetch-cores.sh fetches all four with the new rows, and the package
+tests pass on what it fetched. Not tried: the Sufami Turbo's linked games
+past their first screen, and a 64DD game other than SimCity 64.
+
+## The owner's answers on the audit's open questions (user-decided, 2026-10-15)
+
+Seven questions the audit's small faults left open were put to the owner one
+at a time. What was decided, and what was done:
+
+- **Floppy images run a program when booted.** The boot sector the media
+  maker writes now holds our own few instructions: print that the floppy
+  holds files and no system, wait for a key, start the boot again (int 19h,
+  as a DOS data floppy does). Proved by booting a made floppy in the
+  DOSBox-X core with chimera-run: the message is on the screen at frame 1499.
+  Only floppies made from now on differ.
+- **ISO path tables follow the standard**: by level, by the parent's number,
+  by identifier, each table by its own identifiers. xorriso reads a made
+  image with no complaint. Only images with folders at one level under
+  different parents differ.
+- **Frame skip works, and is off by default.** The throttle reset its own
+  measurement on every pass, so auto frame skip never skipped; it now resets
+  only when the rate changes. The default is no skipping, and a config
+  written before, which carries the old default of 4 that did nothing, is
+  set to 0 once (Config.NeverSkipOnce, recorded in FrameSkipSettled), so
+  nobody sees a change they did not ask for.
+- **sysinfo's unit by guest kit revision.** The sandbox wrote mem_unit four
+  bytes early. Cores built with the guest kit from now on export
+  `__wbx_kit_revision` (from emulibc.c, which every core links) and get the
+  corrected answer; cores built before keep the old one, so their movies
+  replay (miniBox MACHINE-SPEC, "Guest kit revisions").
+- **vkGetDeviceProcAddr answers NULL for a command the device lacks.** The
+  guest now asks the host whether the driver gave the command under any of
+  its names (a new bridge op). The bridge's test compares, for seven
+  commands with two names, what the driver has with what the bridge says.
+- **The engine reads a movie by its LogKey's names**, as the window does
+  (EntryLayout::buildFromKey): reordered columns are read as what they are,
+  a column the machine lacks is skipped and written as '.', a control the
+  key lacks is released or neutral. A movie with no key is read by the
+  machine's order, as before. chimera-run and the MCP server without a
+  window read movies this way now; the witness replays the win movie with
+  its columns reversed and a key saying so, to the golden machine.
+- **A document left on a branch.** The measurement of what a PS3 package
+  install costs (2026-09-20) was put on main at its own date, and two local
+  branches that were already merged or now carried were deleted.
+
+
+## A block that a bus already shows is hidden from the memory tools (2026-10-15)
+
+Issue 288: in an ares Nintendo 64 project, RAM Search, RAM Watch and the Hex
+Editor listed RDRAM twice, and the two copies disagreed on every value wider
+than a byte. ares publishes the console's memory twice: as blocks, which are
+its own storage with each 32-bit word's bytes in the computer's order (the
+core's tests digest them), and as buses in the console's order, mostly under
+the same names. Nothing new was needed in Chimera: the core marks the blocks
+hidden with the export a game core already uses for its mailboxes
+(`GetMemoryDomainHidden`, issue 218), lists its buses with RDRAM first, and
+exports `ReadBus` (chimera-core-ares 1597345). The porting guide and the
+comment on `ce_session_domain_hidden` now name this second use. Measured on
+Super Mario 64: a search over the 8 MB DCache bus went from 193 ms to 56 ms.
+
+## A package's default bindings name the controls exactly (2026-10-16)
+
+Issue 284: the Dolphin core's default bindings said "A" and "Main Stick X"
+while its controls are "P1 A" and "P1 Main Stick X". Chimera binds a control
+only by its exact name, so none of the 75 defaults ever applied, and the
+contract test that should have caught it compared names with the player
+prefix taken off, and buttons only. It now compares exact names, axes
+included (`KeybindsOnlyNameControlsTheControllerHas`), and fails on the
+package from before the fix (39 names that are no control in its nightly of
+2026-10-15). It judges each core's newest package only
+(`InstalledPackages.Newest`, by the package's versionDate): Chimera keeps a
+core's older versions for the projects made with them, and an older version
+cannot be fixed - two dated Dolphin packages from September in a
+developer's build/Cores failed it. The core's own
+check (`check-keybinds.py`, chimera-core-dolphin e8bd847) holds the same
+from its side; a scan of the other 44 cores' bindings found no other.
+
+## A firmware scan names the Firmware folder when there is none (user-decided, 2026-10-16)
+
+Issue 293: Config > Paths names a Firmware folder, `./Firmware` beside
+Chimera, that nothing creates. People keep their dumps elsewhere and point
+Scan Folder at them, which remembers each file it matches but left the
+folder entry alone. So Scan Folder opened wherever Windows had last been,
+and Config > Paths named a folder that was not there.
+
+Decided by the owner: when a scan (Config > Firmware, or the wizard's
+firmware page) finds firmware and the folder Config > Paths names does not
+exist, the scanned folder becomes the Firmware folder. A folder that
+exists is the person's choice and is never replaced. Not chosen: opening
+the picker on the last scanned folder while Paths stays as it is, or
+creating the default folder at start, which would leave the picker
+pointing at an empty folder.
+
+The rule is `PathEntryExtensions.AdoptFirmwareFolder`; the wizard reports
+the folder through `firmwareFoundIn` when the folder holds a file one of
+its requirements asks for, chosen already or not. Tests:
+`AScannedFolderBecomesTheFirmwareFolderOnlyWhileThatIsNotThere` (fails with
+the "folder exists" check removed) and
+`AScanThatFindsFirmwareSaysWhereAndOneThatDoesNotSaysNothing` (fails with
+the wizard's report removed). The Firmware folder is still read without
+its sub-folders; a file a scan found below it is remembered by its own
+path, as before.
+
+## A choice's values have labels, and the wizard lists the Boot ROMs on hand first (user-decided, 2026-10-16)
+
+Issue 293: a PlayStation 2 project picks its BIOS with the Boot ROM setting,
+whose seventy values are file names such as `ps2-0230a-20080220`. Nothing
+said that the `a` means USA, and only the next page, firmware, said whether
+the file was here. Files are found by their SHA-1, so their names never
+mattered, but the list gave no way to know that either.
+
+Decided by the owner, of three choices (on-hand first and labels; on-hand
+first only; explain only):
+
+- **A new optional package field, `optionLabels`**: an enum setting's
+  values may each have words to be shown by. It is display only; the
+  stored value, the project and the movie keep the value. Older Chimera
+  builds ignore the field, since unknown fields of a package are ignored.
+  The settings grid's converter shows the label and maps a label back to
+  its value; nothing stores a setting through the converter.
+- **On-hand values first, marked "(found)"**, on the wizard's settings page.
+  `FirmwareChoices.OnHand` asks the engine's firmware decision tree
+  (`ce_firmware_evaluate`) once per value of every setting a firmware
+  condition names, with the other settings and the chosen files as they
+  stand. The files every value calls for are set aside; a value whose own
+  files are all on hand (the Firmware folder, or a path remembered for the
+  core) is found. So the rule knows no core and no setting by name, and a
+  setting that decides no file is left exactly as declared. Config > Core
+  Settings shows the labels but no marks: it has no firmware to look at.
+
+Not done: moving the Boot ROM choice onto the firmware page, as the
+reporter suggested. The setting stays where every setting is.
+
+Tests: `WizardFirmwareChoicesTests` (three). Each failed with the ordering
+removed, and all three with the labels ignored.
+
+## The Retro Engine cores: one a decompiled engine, Mania's logic compiled in (user-decided, 2026-10-17)
+
+Issue 295 asked for the RSDKv3, RSDKv4 and RSDKv5 decompilations (Sonic CD;
+Sonic 1 and 2's 2013 remasters; Sonic Mania). The owner chose three game
+cores, one per engine, rather than one v5U core playing all four games: the
+three code bases share global names, so one sandbox cannot hold them, and
+each older engine is the one its games' data files were made for.
+
+- **Licence.** The decompilations allow copying, changing and distributing,
+  for public or private use, but not for profit, with credit, with no game
+  asset, with the licence beside modified source, and with the downloadable
+  content off by default in any build given out. Each core is built with
+  `RSDK_AUTOBUILD`, declares `commercialUse: no` and carries the texts. For
+  Mania the owner asked for a Plus Content setting: allowed by the licence
+  "so long as it is set to off by default", and it is (a patch makes the two
+  places the engine forced the flag off read the setting).
+- **The game's data is firmware.** Each data file is the project's firmware,
+  by the hash of the copy checked (Android for v3 and v4, the owner's for
+  Mania); any other file may take its place, as for every game core.
+- **v4 needs an OpenGL.** The remasters' menus, 3D title and touch controls
+  are drawn only through the engine's OpenGL 1.x renderer, so the core
+  compiles in Mesa's softpipe behind OSMesa, as the touchHLE core does.
+- **v5 has no test game.** Its game is a program (the Sonic Mania
+  decompilation, compiled in), not scripts in the data, so CI proves the
+  build, the declarations, the refusals and the contract tests; everything
+  that plays runs where the data file is. The v3 and v4 cores test on games
+  written for them from scratch, in CI.
+
+Measured on the real games: Sonic CD 3600 frames, Sonic 1 and 2 4100 each,
+Mania 5200 (its opening video included), native = sandbox, a save and a
+load before every frame and a state moved to another process all landing on
+the straight run; the packages in Chimera on Windows matched Linux byte for
+byte. Nothing in Chimera's own source changed: a roster row for each core,
+and the README's game-core table.
+
+## Auto-hold on an analog axis asks what value to hold (user-decided, 2026-10-17)
+
+Issue 298: TAStudio's Auto-hold held an analog axis at its maximum, always
+(32767 on a PlayStation 2 stick, 127 on a Nintendo 64 one), and there was no
+way to hold another value except typing it into every frame.
+
+Decided by the owner, of four choices (ask with the current value filled in;
+hold the current frame's value without asking; a value per axis in TAStudio's
+settings; leave it and explain the custom-pattern way):
+
+- Turning Auto-hold on for an axis's column asks for the value, filled in
+  with the axis's value on the current frame. A value outside the axis's
+  range, or not a whole number, is refused with a message and Auto-hold
+  stays off; Cancel leaves it off.
+- The answer is kept in the project, with TAStudio's other per-project
+  settings (`MovieClientSettings.AxisHoldValues`), so a project reopened
+  holds the same value. An axis with no answer, or with one its range no
+  longer allows, holds the maximum as before; a project saved before this
+  has no answers.
+- With the custom pattern selected, the pattern says what the axis takes,
+  so nothing is asked. Autofire on an axis uses the same value as Auto-hold.
+
+This is interface only: the sticky controllers it feeds are the C# input
+layer's.
+
+Tests: `TAStudioAutoHoldValueTests` (five): the chosen value is held, a value
+out of range holds the maximum, only a value of the axis is taken from what
+was typed, the choices survive a save and load, and an older project has
+none. With the chosen value ignored (the maximum always held, as before),
+the first of them failed. The prompt itself is not driven by a test.
+
+
+## FreeJ2ME-Plus joins the official cores: a Java VM inside the sandbox (user-decided, 2026-10-17)
+
+Issue 297 asked for Java phone games (J2ME, and DoJa/i-appli), with two
+emulators in mind, FreeJ2ME-Plus and openDoJa. Both are written in Java,
+and an earlier plan (2026-09-19, for KEmulator) had concluded that a core
+could not host a Java VM. That was before miniBox's machine spec 3 gave a
+guest timed waits on the sandbox's own clock.
+
+`chimera-core-freej2me` runs FreeJ2ME-Plus on OpenJDK 21's HotSpot built as
+Zero (its interpreter only, no generated machine code), linked statically
+into `core.wbx` with the JDK's native libraries. Every file the VM opens is
+served from guest memory; the runtime's files are built into the core
+image, so no savestate carries them; the VM starts during Init, before the
+seal. Sound goes through a Java Sound mixer of the core's own. A save and a
+load around every frame, a state moved to another process, two runs, the
+headless runner and the window on Linux and on Windows all land on the same
+machine, on the core's test program and on five commercial games.
+
+Decided by the owner on the way: the licence basis (HotSpot is GPL-2.0-only
+without the Classpath Exception, FreeJ2ME-Plus GPL-3.0-or-later; the core
+keeps the java launcher's boundary - its C calls Java through JNI, and
+nothing in Java calls back), and publishing the repository. Found on the
+way and fixed in miniBox (c0aad51): host values left in the vector
+registers at every entry into the guest.
+
+Issue 297 is closed without openDoJa (user-decided, 2026-10-17): an
+openDoJa core is a new request, in an issue of its own. No DoJa game has
+been tried yet. Nothing in Chimera's own source changed: a roster row and
+the README's table of cores.
+
+## A compile session is the first thing Linux stops (2026-10-17)
+
+Issue 300: compiling Ratchet & Clank: Tools of Destruction (a 16 GB
+package) on a 31 GB Linux computer, the kernel stopped Chimera itself a
+minute in. Two causes. The RPCS3 core installed a package into memory once
+per session, so each held the whole game; that is fixed in the core (an
+installed file is kept as a reference to the package, chimera-core-rpcs3,
+the same day). And when memory runs out, Linux stops the process it judges
+the biggest, which was the window rather than a session, so the
+orchestrator's answer to memory running out - halve the sessions and go
+again - never got to run.
+
+A session now asks the kernel to stop it before anything else
+(`ce_compile_session_begins`: oom_score_adj 1000, which needs no privilege).
+On Windows there is no such choice: the system refuses the memory, and that
+case was already handled (issue 259). Exit code 64, which a headless session
+gives when it meets a message box it cannot show, is reported by name
+("stopped at a message it could not show"); issue 296 saw it as "exit code
+64".
+
+Measured on Linux, one Tekken 5 session: 6.4 GB proportional, 5.6 GB of it
+the sandbox's, and the system's free memory fell by about the same. The
+engine's 8 GB a session stands.
+
+Tests: `test_compile_sessions` checks the score in a child process (it
+failed with the write left out), and `ADeadSessionAlwaysSaysHowItDied`
+checks the wording for 64. Engine tests 30/30, interface tests 1,076 passed,
+the witness 89/0; the Windows build compiles.

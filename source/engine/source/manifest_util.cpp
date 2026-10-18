@@ -51,7 +51,9 @@ std::vector<std::string> cueReferences(const std::vector<uint8_t> &bytes)
 {
 	std::vector<std::string> out;
 	std::string text(reinterpret_cast<const char *>(bytes.data()), bytes.size());
-	size_t pos = 0;
+	/* a cue saved as UTF-8 by Notepad starts with the byte-order mark, and in
+	 * a redump cue the first line is the data track's */
+	size_t pos = text.compare(0, 3, "\xEF\xBB\xBF") == 0 ? 3 : 0;
 	while (pos < text.size())
 	{
 		size_t eol = text.find('\n', pos);
@@ -61,7 +63,15 @@ std::vector<std::string> cueReferences(const std::vector<uint8_t> &bytes)
 
 		size_t at = 0;
 		while (at < line.size() && (line[at] == ' ' || line[at] == '\t' || line[at] == '\r')) at++;
-		if (line.compare(at, 4, "FILE") != 0) continue;
+		/* the keyword in any case, and a word of its own ("FILENAME" is not it) */
+		if (line.size() < at + 5) continue;
+		bool file = true;
+		for (int k = 0; k < 4; k++)
+		{
+			const char c = line[at + size_t(k)];
+			if ((c >= 'a' && c <= 'z' ? char(c - 'a' + 'A') : c) != "FILE"[k]) file = false;
+		}
+		if (!file || (line[at + 4] != ' ' && line[at + 4] != '\t')) continue;
 		at += 4;
 		while (at < line.size() && (line[at] == ' ' || line[at] == '\t')) at++;
 		std::string name;

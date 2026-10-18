@@ -43,6 +43,8 @@ public:
 	uint64_t bytes() { settle(); return m_bytes; }
 	int64_t count() { settle(); return static_cast<int64_t>(m_byFrame.size()); }
 	bool has(int64_t frame) { settle(); return m_byFrame.count(frame) != 0; }
+	/* how many times a frame waited for the helper (for the tests) */
+	uint64_t waits() const { return m_waits; }
 
 	/* A picture larger than this is not kept: copying it would itself cost
 	 * the frame too much. 16 MiB is 2560x1600. */
@@ -88,6 +90,7 @@ private:
 	uint64_t m_budget = 0, m_bytes = 0, m_clock = 0;
 	std::shared_ptr<Outbox> m_outbox = std::make_shared<Outbox>();
 	std::set<int64_t> m_packing; /* frames posted and not taken in yet */
+	uint64_t m_waits = 0;        /* settles that had something still out, for the tests */
 	chimera::WorkThread m_helper{ "pictures" };
 
 	void touch(int64_t frame, Picture &p);

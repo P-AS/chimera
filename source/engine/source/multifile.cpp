@@ -35,8 +35,29 @@ struct Entry
 	std::string sha1;       // declared (40 uppercase hex)
 	std::string actualSha1; // "" while missing
 	int32_t status = 1;     // 0 ok, 1 missing, 2 mismatch
-	std::vector<uint8_t> data;
+	/* Where it is, and its bytes once somebody asks for them: a cue sheet's at
+	 * once (its references are checked), anything else only when
+	 * ce_multifile_data is called. A descriptor of a few discs used to hold
+	 * every one of them in memory from the open on. */
+	std::string path;
+	mutable std::vector<uint8_t> data;
+	mutable bool loaded = false;
 };
+
+/* The file's hash, and its bytes only when it is a cue sheet. false when it
+ * cannot be read. */
+bool hashEntry(Entry &e, std::string &hash)
+{
+	if (hasCueSuffix(e.name))
+	{
+		if (!chimera::readFile(e.path.c_str(), e.data)) return false;
+		e.loaded = true;
+		hashInto(e.data, hash);
+		return true;
+	}
+	uint64_t len = 0;
+	return chimera::sha1HexOfFile(e.path.c_str(), &len, hash);
+}
 
 bool validRole(const std::string &r)
 {
@@ -170,12 +191,13 @@ ce_multifile *ce_multifile_open(const char *descriptor_path, const char **error_
 	std::string folder = folderOf(descriptor_path);
 	for (Entry &e : entries)
 	{
-		if (!chimera::readFile((folder + e.name).c_str(), e.data))
+		e.path = folder + e.name;
+		if (!hashEntry(e, e.actualSha1))
 		{
+			e.actualSha1.clear();
 			e.status = 1; // missing; the caller sees it per file
 			continue;
 		}
-		hashInto(e.data, e.actualSha1);
 		e.status = e.actualSha1 == e.sha1 ? 0 : 2;
 	}
 
@@ -243,6 +265,11 @@ const uint8_t *ce_multifile_data(const ce_multifile *m, int32_t index, uint64_t 
 	if (index < 0 || index >= ce_multifile_count(m)) return nullptr;
 	const Entry &e = m->entries[index];
 	if (e.status == 1) return nullptr;
+	if (!e.loaded)
+	{
+		if (!chimera::readFile(e.path.c_str(), e.data)) return nullptr;
+		e.loaded = true;
+	}
 	if (len_out != nullptr) *len_out = e.data.size();
 	return e.data.data();
 }
@@ -312,11 +339,11 @@ int32_t ce_multifile_save(
 	std::string folder = folderOf(descriptor_path);
 	for (Entry &e : entries)
 	{
-		if (!chimera::readFile((folder + e.name).c_str(), e.data))
+		e.path = folder + e.name;
+		if (!hashEntry(e, e.sha1))
 		{
 			return fail("file '" + e.name + "' is not in the descriptor's folder");
 		}
-		hashInto(e.data, e.sha1);
 	}
 	if (!checkCueClosure(entries, err)) return fail(std::move(err));
 

@@ -171,6 +171,7 @@ private:
 	void makeSparse();
 	void settle();
 	bool mustBeSparse() const;
-	void recordUndo();
+	bool recordUndo(); /* true when a level was recorded */
+	int64_t filter(const Query &q, int previousType); /* search()'s work */
 	template <typename F> void forEachDense(bool needMemory, F f);
 };

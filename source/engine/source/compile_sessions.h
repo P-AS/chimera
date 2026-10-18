@@ -31,7 +31,9 @@
 #include <algorithm>
 #include <cstdint>
 
-/* What one session is taken to need. */
+/* What one session is taken to need unless the person says otherwise (a
+ * setting of the frontend's, user-decided 2026-10-14: 8 GB is RPCS3's measured
+ * need, and a machine or a core may want another figure). */
 inline constexpr uint64_t kCompileSessionBytes = 8ull << 30;
 /* Left for the system and for the frontend itself, never handed to sessions. */
 inline constexpr uint64_t kCompileReservedBytes = 4ull << 30;
@@ -57,25 +59,28 @@ inline uint64_t ceMemoryToSpare(const CeHostMemory &m)
 	return std::min(m.freePhysical, m.freeCommit);
 }
 
-/* How many sessions run side by side: one per kCompileSessionBytes of what
- * can be spared after kCompileReservedBytes, never more than half the
- * processors, never more than kCompileSessionsAtMost, never fewer than one.
- * A machine that will not say what it has (0) gets one. */
-inline int32_t ceCompileSessions(int32_t processors, uint64_t toSpare)
+/* How many sessions run side by side: one per sessionBytes (0: the default,
+ * kCompileSessionBytes) of what can be spared after kCompileReservedBytes,
+ * never more than half the processors, never more than kCompileSessionsAtMost,
+ * never fewer than one. A machine that will not say what it has (0) gets one. */
+inline int32_t ceCompileSessions(int32_t processors, uint64_t toSpare, uint64_t sessionBytes = 0)
 {
+	if (sessionBytes == 0) sessionBytes = kCompileSessionBytes;
 	const int32_t byProcessors = std::max(1, processors / 2);
 	const uint64_t spare = toSpare > kCompileReservedBytes ? toSpare - kCompileReservedBytes : 0;
-	const uint64_t byMemory = std::max<uint64_t>(1, spare / kCompileSessionBytes);
+	const uint64_t byMemory = std::max<uint64_t>(1, spare / sessionBytes);
 	return static_cast<int32_t>(std::min<uint64_t>({static_cast<uint64_t>(kCompileSessionsAtMost),
 		static_cast<uint64_t>(byProcessors), byMemory}));
 }
 
 /* Whether memory ran short for sessions that were running: what could be
- * spared at the worst moment was less than half of what one more would need.
- * Unknown (0) is not "short": nothing is said of a machine that says nothing. */
-inline bool ceCompileMemoryRanShort(uint64_t leastToSpare)
+ * spared at the worst moment was less than half of what one more would need
+ * (sessionBytes, 0 the default). Unknown (0) is not "short": nothing is said
+ * of a machine that says nothing. */
+inline bool ceCompileMemoryRanShort(uint64_t leastToSpare, uint64_t sessionBytes = 0)
 {
-	return leastToSpare != 0 && leastToSpare < kCompileSessionBytes / 2;
+	if (sessionBytes == 0) sessionBytes = kCompileSessionBytes;
+	return leastToSpare != 0 && leastToSpare < sessionBytes / 2;
 }
 
 #endif

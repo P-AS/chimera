@@ -61,6 +61,13 @@ namespace Chimera.Client.Common
 
 		/// <summary>Removes the state files no branch names, nor <paramref name="alsoKeep"/>.</summary>
 		void RemoveUnusedBranchStates(params string[] alsoKeep);
+
+		/// <summary>
+		/// A path for a state the frontend keeps for a while and deletes itself (the machine
+		/// before a video encode borrows it): beside this project's cache, in a directory that
+		/// exists, and never among the branches' states, which are tidied by name.
+		/// </summary>
+		string NewScratchStatePath(string purpose);
 		TasLagLog LagLog { get; }
 		IStringLog VerificationLog { get; }
 

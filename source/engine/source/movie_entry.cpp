@@ -29,7 +29,7 @@ bool parseAxisValue(const char *begin, const char *end, int32_t &out)
 	{
 		if (*begin < '0' || *begin > '9') return false;
 		value = value * 10 + (*begin - '0');
-		if (value > 2147483648LL) return false;
+		if (value > (negative ? 2147483648LL : 2147483647LL)) return false;
 	}
 	out = static_cast<int32_t>(negative ? -value : value);
 	return true;
@@ -44,10 +44,14 @@ int32_t playerNumberOf(const std::string &name)
 	int32_t value = 0;
 	while (i < name.size() && name[i] >= '0' && name[i] <= '9')
 	{
+		/* past kMostPlayers it is not a player's number (the frontend's
+		 * ControllerDefinition.PlayerNumber says the same): "P1000000000 A"
+		 * would be a billion groups, and longer would not fit in an int */
+		if (value > kMostPlayers) return 0;
 		value = value * 10 + (name[i] - '0');
 		i++;
 	}
-	return i > 1 && i < name.size() && name[i] == ' ' ? value : 0;
+	return i > 1 && i < name.size() && name[i] == ' ' && value <= kMostPlayers ? value : 0;
 }
 
 void EntryLayout::build(const std::vector<std::string> &buttons, const std::vector<EntryAxis> &axes,
@@ -92,6 +96,50 @@ void EntryLayout::build(const std::vector<std::string> &buttons, const std::vect
 	}
 }
 
+bool EntryLayout::buildFromKey(const std::string &key, const std::vector<std::string> &buttons,
+	const std::vector<EntryAxis> &axes)
+{
+	const size_t first = key.find('#');
+	if (first == std::string::npos) return false;
+	std::vector<Item> items;
+	std::vector<int32_t> starts;
+	/* everything before the first '#' is ignored, as the window does */
+	size_t at = first;
+	while (at != std::string::npos && at < key.size())
+	{
+		const size_t next = key.find('#', at + 1);
+		const std::string group = key.substr(at + 1, next == std::string::npos ? std::string::npos : next - at - 1);
+		starts.push_back(static_cast<int32_t>(items.size()));
+		size_t from = 0;
+		while (from <= group.size())
+		{
+			size_t bar = group.find('|', from);
+			if (bar == std::string::npos) bar = group.size();
+			const std::string name = group.substr(from, bar - from);
+			from = bar + 1;
+			if (name.empty()) continue;
+			int32_t index = -1;
+			bool isAxis = false;
+			for (size_t i = 0; i < axes.size() && index < 0; i++)
+				if (axes[i].name == name) { index = static_cast<int32_t>(i); isAxis = true; }
+			for (size_t i = 0; i < buttons.size() && index < 0; i++)
+				if (buttons[i] == name) index = static_cast<int32_t>(i);
+			items.push_back({ isAxis, index });
+		}
+		at = next;
+	}
+	/* a key that names no control ("#", which a hand-made movie may carry
+	 * to say nothing) says nothing about the columns: read by the machine's
+	 * order, as a movie with no key is */
+	if (items.empty()) return false;
+	items_ = std::move(items);
+	groupStarts_ = std::move(starts);
+	groups_ = static_cast<int32_t>(groupStarts_.size());
+	axes_ = axes;
+	buttonCount_ = buttons.size();
+	return true;
+}
+
 bool EntryLayout::parse(const char *entry, std::vector<uint8_t> &buttonsOut, std::vector<int32_t> &axesOut) const
 {
 	buttonsOut.assign(buttonCount_, 0);
@@ -113,7 +161,7 @@ bool EntryLayout::parse(const char *entry, std::vector<uint8_t> &buttonsOut, std
 		}
 		else
 		{
-			if (*p != '.') buttonsOut[static_cast<size_t>(item.index)] = 1;
+			if (*p != '.' && item.index >= 0) buttonsOut[static_cast<size_t>(item.index)] = 1;
 			p++;
 		}
 	}
@@ -139,6 +187,10 @@ std::string EntryLayout::generate(const uint8_t *buttons, const int32_t *axes, c
 				std::string text = std::to_string(value);
 				while (text.size() < 5) text.insert(text.begin(), ' '); // PadLeft(5)
 				out.append(text).push_back(',');
+			}
+			else if (item.index < 0)
+			{
+				out.push_back('.'); /* a key column the machine does not have */
 			}
 			else
 			{

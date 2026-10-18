@@ -1,5 +1,6 @@
 #include "state_history.hpp"
 #include "zstd_dyn.hpp"
+#include "file_io.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -235,7 +236,10 @@ public:
 		if (z == nullptr) { m_failed = true; return; }
 		m_stream = z->createDStream();
 		if (m_stream == nullptr || z->isError(z->initDStream(m_stream))) { m_failed = true; return; }
-		m_out.resize(1u << 20);
+		/* no larger than the body, and not cleared first: a small link was
+		 * a megabyte zeroed for every one read */
+		m_outCap = static_cast<size_t>(std::min<uint64_t>(uint64_t{ 1 } << 20, std::max<uint64_t>(b.raw, 1)));
+		m_out.reset(new uint8_t[m_outCap]);
 	}
 	~MemBodyReader()
 	{
@@ -262,7 +266,7 @@ public:
 		{
 			if (m_outPos == m_outLen && !refill()) return false;
 			const size_t take = m_outLen - m_outPos < n ? m_outLen - m_outPos : n;
-			std::memcpy(dst, m_out.data() + m_outPos, take);
+			std::memcpy(dst, m_out.get() + m_outPos, take);
 			m_outPos += take;
 			dst += take;
 			n -= take;
@@ -282,7 +286,7 @@ private:
 		for (;;)
 		{
 			ZstdApi::Buffer in{ frame.data() + m_consumed, frame.size() - m_consumed, 0 };
-			ZstdApi::OutBuffer o{ m_out.data(), m_out.size(), 0 };
+			ZstdApi::OutBuffer o{ m_out.get(), m_outCap, 0 };
 			const size_t rc = z->decompressStream(m_stream, &o, &in);
 			if (z->isError(rc)) return false;
 			m_consumed += in.pos;
@@ -302,7 +306,8 @@ private:
 	bool m_failed = false;
 	void *m_stream = nullptr;
 	size_t m_consumed = 0;
-	std::vector<uint8_t> m_out;
+	std::unique_ptr<uint8_t[]> m_out;
+	size_t m_outCap = 0;
 	size_t m_outPos = 0, m_outLen = 0;
 };
 
@@ -617,6 +622,7 @@ bool SpillBodyReader::open(std::FILE *f, uint64_t at, uint64_t length, bool pack
 	m_length = length;
 	m_packed = packed;
 	m_pos = 0;
+	m_fileAt = UINT64_MAX; /* the first read seeks */
 	if (f == nullptr) return false;
 	if (!packed) return true;
 	const ZstdApi *z = zstdApi(nullptr);
@@ -626,6 +632,13 @@ bool SpillBodyReader::open(std::FILE *f, uint64_t at, uint64_t length, bool pack
 	m_in.resize(256u << 10);
 	m_out.resize(1u << 20);
 	return true;
+}
+
+bool SpillBodyReader::placeAt(uint64_t want)
+{
+	uint64_t now = 0;
+	if (m_fileAt == want && tellAt(m_f, now) && now == want) return true;
+	return seekTo(m_f, want);
 }
 
 bool SpillBodyReader::refill()
@@ -639,8 +652,9 @@ bool SpillBodyReader::refill()
 			if (m_consumed >= m_length) return false;   /* the extent is exhausted */
 			const uint64_t left = m_length - m_consumed;
 			const size_t take = static_cast<size_t>(left < m_in.size() ? left : m_in.size());
-			if (!seekTo(m_f, m_at + m_consumed) || !readAll(m_f, m_in.data(), take)) return false;
+			if (!placeAt(m_at + m_consumed) || !readAll(m_f, m_in.data(), take)) { m_fileAt = UINT64_MAX; return false; }
 			m_consumed += take;
+			m_fileAt = m_at + m_consumed;
 			m_inPos = 0;
 			m_inLen = take;
 		}
@@ -662,8 +676,9 @@ bool SpillBodyReader::read(void *out, size_t n)
 	if (!m_packed)
 	{
 		if (m_pos + n > m_length) return false;
-		if (!seekTo(m_f, m_at + m_pos) || !readAll(m_f, out, n)) return false;
+		if (!placeAt(m_at + m_pos) || !readAll(m_f, out, n)) { m_fileAt = UINT64_MAX; return false; }
 		m_pos += n;
+		m_fileAt = m_at + m_pos;
 		return true;
 	}
 	auto *dst = static_cast<uint8_t *>(out);
@@ -750,14 +765,14 @@ void StateHistory::sweepStaleSpills(const std::string &dir)
 {
 	if (dir.empty()) return;
 	std::error_code ec;
-	for (const auto &entry : std::filesystem::directory_iterator(dir, ec))
+	for (const auto &entry : std::filesystem::directory_iterator(std::filesystem::u8path(dir), ec))
 	{
 		if (ec) return;
 		std::error_code one;
 		if (!entry.is_regular_file(one) || one) continue;
-		const std::string name = entry.path().filename().string();
+		const std::string name = entry.path().filename().u8string();
 		if (name.rfind("history-spill-", 0) != 0) continue;
-		if (name == std::filesystem::path(m_spillPath).filename().string()) continue;   /* ours */
+		if (name == std::filesystem::u8path(m_spillPath).filename().u8string()) continue;   /* ours */
 		std::filesystem::remove(entry.path(), one);
 	}
 }
@@ -820,6 +835,10 @@ size_t StateHistory::chooseVictim(bool spilled) const
 		const Segment &s = m_segments[i];
 		if (s.spilled != spilled) continue;
 		if (holdsPinned(m_pinned, s.anchorFrame, s.lastFrame())) continue;
+		/* a spilled stretch whose write has not landed counts for nothing in
+		 * the disk's total yet: dropping it would free nothing that is
+		 * counted, and the disk budget's loop would go on dropping them all */
+		if (spilled && (s.writeWanted || s.physLength == 0)) continue;
 		const int64_t gap = m_segments[i + 1].anchorFrame - m_segments[i - 1].anchorFrame;
 		if (best == m_segments.size() || gap < bestGap) { best = i; bestGap = gap; }
 	}
@@ -928,8 +947,8 @@ bool StateHistory::compactSpill()
 		std::fclose(m_spill);
 		m_spill = nullptr;
 		if (m_spillRead != nullptr) { std::fclose(m_spillRead); m_spillRead = nullptr; }
-		m_spill = std::fopen(m_spillPath.c_str(), "w+b");
-		if (m_spill != nullptr) m_spillRead = std::fopen(m_spillPath.c_str(), "rb");
+		m_spill = chimera::openFile(m_spillPath.c_str(), "w+b");
+		if (m_spill != nullptr) m_spillRead = chimera::openFile(m_spillPath.c_str(), "rb");
 		m_spillBytes = 0;
 		m_fileBytes = 0;
 		m_writtenThrough = 0;
@@ -940,7 +959,7 @@ bool StateHistory::compactSpill()
 
 	const std::string path = m_spillPath;
 	const std::string tmp = path + ".compacting";
-	std::FILE *out = std::fopen(tmp.c_str(), "w+b");
+	std::FILE *out = chimera::openFile(tmp.c_str(), "w+b");
 	if (out == nullptr) return false;
 
 	/* What each stretch will be once this works - applied only if it does. The
@@ -960,17 +979,17 @@ bool StateHistory::compactSpill()
 			|| !writeAll(out, buf.data(), buf.size()))
 		{
 			std::fclose(out);
-			std::remove(tmp.c_str());
+			chimera::removeFile(tmp.c_str());
 			return false;
 		}
 		placed.emplace_back(at, physAt);
 		at += seg.spillLength;
 		physAt += seg.physLength;
 	}
-	if (std::fflush(out) != 0)
+	const bool flushed = std::fflush(out) == 0;
+	if (std::fclose(out) != 0 || !flushed)
 	{
-		std::fclose(out);
-		std::remove(tmp.c_str());
+		chimera::removeFile(tmp.c_str());
 		return false;
 	}
 
@@ -979,19 +998,18 @@ bool StateHistory::compactSpill()
 	std::fclose(m_spill);
 	m_spill = nullptr;
 	if (m_spillRead != nullptr) { std::fclose(m_spillRead); m_spillRead = nullptr; }
-	if (std::rename(tmp.c_str(), path.c_str()) != 0)
+	/* Every handle on both files is closed by now: Windows will not move a file
+	 * that is open, nor (with the C rename) over one that exists. */
+	if (!chimera::replaceFile(tmp.c_str(), path.c_str()))
 	{
 		/* the old file is still there and still right; reopen it and give up */
-		std::fclose(out);
-		std::remove(tmp.c_str());
-		m_spill = std::fopen(path.c_str(), "r+b");
-		m_spillRead = std::fopen(path.c_str(), "rb");
+		chimera::removeFile(tmp.c_str());
+		m_spill = chimera::openFile(path.c_str(), "r+b");
+		m_spillRead = chimera::openFile(path.c_str(), "rb");
 		return false;
 	}
-	std::fclose(out);
-	m_spill = std::fopen(path.c_str(), "r+b");
-	m_spillRead = std::fopen(path.c_str(), "rb");
-	if (m_spill == nullptr || m_spillRead == nullptr) return false;
+	/* The file on disk is the compacted one from here, whatever happens next:
+	 * the stretches are where it put them. */
 	{
 		size_t k = 0;
 		for (Segment &seg : m_segments)
@@ -1005,6 +1023,20 @@ bool StateHistory::compactSpill()
 	m_spillBytes = at;
 	m_fileBytes = physAt;
 	m_writtenThrough = at;   /* every live byte was just copied, here, in full */
+	m_spill = chimera::openFile(path.c_str(), "r+b");
+	m_spillRead = chimera::openFile(path.c_str(), "rb");
+	if (m_spill == nullptr || m_spillRead == nullptr)
+	{
+		/* a file that cannot be opened again cannot be read either: what was
+		 * in it goes, as when the folder changes, which costs replaying */
+		dropSpillFile();
+		chimera::removeFile(path.c_str());
+		for (size_t i = m_segments.size(); i-- > 0; )
+		{
+			if (m_segments[i].spilled) forgetSegment(i);
+		}
+		return false;
+	}
 	m_costs.compactions++;
 	if (historyTrace())
 	{
@@ -1053,7 +1085,7 @@ void StateHistory::dropSpillFile()
 	{
 		std::fclose(m_spill);
 		m_spill = nullptr;
-		std::remove(m_spillPath.c_str());
+		chimera::removeFile(m_spillPath.c_str());
 	}
 	m_spillBytes = 0;
 	m_spillLive = 0;
@@ -1379,8 +1411,20 @@ void StateHistory::capture(int64_t frame, const uint8_t *note, size_t noteLen)
 		catch (const std::bad_alloc &)
 		{
 			/* Already as small as a history gets: the frame is simply not
-			 * stored, which costs replaying to reach it and nothing else. */
-			if (!halveBudget()) return;
+			 * stored, which costs replaying to reach it and nothing else.
+			 * Halving gives memory back by thinning, which allocates too; when
+			 * even that fails, the frame is not stored either - an exception
+			 * from here would cross the C API and end the process. */
+			bool halved = false;
+			try
+			{
+				halved = halveBudget();
+			}
+			catch (const std::bad_alloc &)
+			{
+				halved = false;
+			}
+			if (!halved) return;
 		}
 	}
 }
@@ -2317,6 +2361,16 @@ void StateHistory::settleSpilled(int64_t farFrame)
 				seg.settled = true;   /* unreadable: left as it is, and not asked again */
 				continue;
 			}
+			/* Its anchor is decoded whole to be composed against, on this
+			 * thread and outside the count: one bigger than the memory budget
+			 * is left as it is (docs/state-manager.md), the working copy would
+			 * not fit. */
+			if (st.anchorLen > m_budget)
+			{
+				seg.settled = true;
+				st = Settling{};
+				continue;
+			}
 			st.reader = std::move(reader);
 			st.active = true;
 			st.anchorFrame = seg.anchorFrame;
@@ -2682,9 +2736,16 @@ void StateHistory::postWrite(PendingWrite &&job)
 		if (job.wanted->load())
 		{
 			uint64_t start = 0, end = 0;
-			job.ok = seekEnd(f) && tellAt(f, start)
-				&& writeSegmentBodyPacked(f, job.body, job.packed)
-				&& std::fflush(f) == 0 && tellAt(f, end);
+			try
+			{
+				job.ok = seekEnd(f) && tellAt(f, start)
+					&& writeSegmentBodyPacked(f, job.body, job.packed)
+					&& std::fflush(f) == 0 && tellAt(f, end);
+			}
+			catch (const std::bad_alloc &)
+			{
+				job.ok = false;   /* packing it ran out of memory: a write that did not land */
+			}
 			job.physAt = start;
 			job.physLength = job.ok ? end - start : 0;
 			if (job.ok) forgetCachedPages(f);
@@ -2697,8 +2758,9 @@ void StateHistory::postWrite(PendingWrite &&job)
 			job.ok = true;
 		}
 		/* the bodies go here, on the writer, rather than on the thread that
-		 * runs the machine */
-		job.body = Segment{};
+		 * runs the machine - unless the write failed: then applyWrites puts
+		 * them back into the stretch, which holds nothing else */
+		if (job.ok) job.body = Segment{};
 		std::lock_guard<std::mutex> lock(m_writtenLock);
 		m_written.push_back(std::move(job));
 	});
@@ -2744,11 +2806,11 @@ bool StateHistory::spill(Segment &seg)
 	if (m_spill == nullptr)
 	{
 		m_spillPath = m_spillDir + "/" + spillFileName();
-		m_spill = std::fopen(m_spillPath.c_str(), "w+b");
+		m_spill = chimera::openFile(m_spillPath.c_str(), "w+b");
 		if (m_spill == nullptr) return false;
 		/* the loop's own view of the same file: its own position, so a read
 		 * here and a write there cannot move each other (see m_spillRead) */
-		m_spillRead = std::fopen(m_spillPath.c_str(), "rb");
+		m_spillRead = chimera::openFile(m_spillPath.c_str(), "rb");
 		if (m_spillRead == nullptr) { std::fclose(m_spill); m_spill = nullptr; return false; }
 		m_spillBytes = 0;
 	}
@@ -2895,6 +2957,7 @@ void StateHistory::evict()
 	const uint64_t target = m_budget - m_budget / 20;
 	uint64_t mergeLeft = kThinMergeBytes;
 	int thinned = 0;
+	ThinIndex index;
 	while (m_bytes > m_budget || (thinned > 0 && thinned < kThinExtraPerCall && m_bytes > target))
 	{
 		/* First choice: put the oldest stretch on disk, oldest to newest. It
@@ -2936,33 +2999,30 @@ void StateHistory::evict()
 			}
 			break;   /* nowhere to spill: everything after this fails the same way */
 		}
-		if (moved) continue;
+		if (moved)
+		{
+			index.valid = false;   /* a stretch went to disk: the index no longer says what is in memory */
+			continue;
+		}
 
-		if (!thinOne(mergeLeft)) return;
+		if (!thinOne(mergeLeft, index)) return;
 		thinned++;
 	}
 }
 
-bool StateHistory::thinOne(uint64_t &mergeLeft)
+void StateHistory::buildThinIndex(ThinIndex &index) const
 {
-	static constexpr uint64_t kThinMergeBytesPerCall = 32u << 20;   /* evict's allowance, below */
-	if (m_segments.empty()) return false;
 	const int64_t frontier = m_segments.back().lastFrame();
 	const int64_t nearSpacing = m_tuner.maxStride < 1 ? 1 : m_tuner.maxStride;
 
 	/* Every stored frame in order, with the band it has fallen into. Spilled
 	 * stretches count as members of their bands - they are still reachable -
 	 * but cost nothing in memory, so none of their frames is a candidate. */
-	struct Entry
-	{
-		int64_t frame;
-		size_t seg;
-		std::ptrdiff_t link;   /* -1: the stretch's anchor */
-		int band;
-	};
-	std::vector<Entry> entries;
+	std::vector<ThinEntry> &entries = index.entries;
+	std::vector<int64_t> &counts = index.counts;
+	entries.clear();
+	counts.clear();
 	entries.reserve(static_cast<size_t>(count()));
-	std::vector<int64_t> counts;
 	for (size_t si = 0; si < m_segments.size(); si++)
 	{
 		const Segment &seg = m_segments[si];
@@ -2970,7 +3030,7 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 			const int band = CeGreenzoneShape::bandOf(frontier - frame, nearSpacing, m_bandGoal);
 			if (static_cast<size_t>(band) >= counts.size()) counts.resize(static_cast<size_t>(band) + 1, 0);
 			counts[static_cast<size_t>(band)]++;
-			entries.push_back(Entry{ frame, si, link, band });
+			entries.push_back(ThinEntry{ frame, si, link, band });
 		};
 		add(seg.anchorFrame, -1);
 		for (size_t li = 0; li < seg.links.size(); li++) add(seg.links[li].endFrame, static_cast<std::ptrdiff_t>(li));
@@ -2985,6 +3045,34 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 		counts[static_cast<size_t>(entries.front().band)]--;
 		if (entries.size() > 1) counts[static_cast<size_t>(entries.back().band)]--;
 	}
+	index.valid = true;
+}
+
+bool StateHistory::thinOne(uint64_t &mergeLeft, ThinIndex &index)
+{
+	static constexpr uint64_t kThinMergeBytesPerCall = 32u << 20;   /* evict's allowance, below */
+	if (m_segments.empty()) return false;
+	if (!index.valid) buildThinIndex(index);
+	std::vector<ThinEntry> &entries = index.entries;
+	std::vector<int64_t> &counts = index.counts;
+
+	/* A frame went: the index follows, as a rebuild would have it. `shiftSeg`
+	 * when its whole stretch went (later stretches move down one), `shiftLink`
+	 * when it was merged into the link after it (that stretch's later links
+	 * move down one). */
+	const auto gone = [&](size_t i, bool shiftSeg, bool shiftLink) {
+		const ThinEntry e = entries[i];
+		counts[static_cast<size_t>(e.band)]--;
+		entries.erase(entries.begin() + static_cast<std::ptrdiff_t>(i));
+		if (shiftSeg)
+		{
+			for (size_t k = i; k < entries.size(); k++) entries[k].seg--;
+		}
+		else if (shiftLink)
+		{
+			for (size_t k = i; k < entries.size() && entries[k].seg == e.seg; k++) entries[k].link--;
+		}
+	};
 
 	/* A history that spills keeps the stretch being written whole in memory, as
 	 * it always has: its stretches go to disk in time, and settling composes
@@ -2997,7 +3085,7 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 		std::vector<std::pair<int64_t, size_t>> candidates;
 		for (size_t i = 1; i + 1 < entries.size(); i++)   /* never the first frame, never the frontier */
 		{
-			const Entry &e = entries[i];
+			const ThinEntry &e = entries[i];
 			if (e.band != band) continue;
 			const Segment &seg = m_segments[e.seg];
 			if (seg.spilled) continue;
@@ -3006,11 +3094,18 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 			if (e.link < 0 && (e.seg == 0 || !seg.links.empty())) continue;   /* an anchor goes only alone */
 			candidates.emplace_back(entries[i + 1].frame - entries[i - 1].frame, i);
 		}
-		std::sort(candidates.begin(), candidates.end());
+		/* Tried smallest gap first, and the first nearly always goes: so the
+		 * smallest is found and put first, and the rest are sorted only if it
+		 * does not. Sorting them all, once per frame given up, was most of what
+		 * thinning a full greenzone cost. Same order, same choice. */
+		if (candidates.empty()) continue;
+		std::iter_swap(candidates.begin(), std::min_element(candidates.begin(), candidates.end()));
 
-		for (const auto &[gap, i] : candidates)
+		for (size_t ci = 0; ci < candidates.size(); ci++)
 		{
-			const Entry e = entries[i];
+			if (ci == 1) std::sort(candidates.begin() + 1, candidates.end());
+			const auto [gap, i] = candidates[ci];
+			const ThinEntry e = entries[i];
 			Segment &seg = m_segments[e.seg];
 			if (e.link < 0)
 			{
@@ -3021,6 +3116,7 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 					fflush(stderr);
 				}
 				forgetSegment(e.seg);
+				gone(i, true, false);
 				return true;
 			}
 			const size_t li = static_cast<size_t>(e.link);
@@ -3036,6 +3132,7 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 						(long long)e.frame, band, (long long)counts[static_cast<size_t>(band)], (long long)gap);
 					fflush(stderr);
 				}
+				gone(i, false, false);
 				return true;
 			}
 			const uint64_t input = seg.links[li].bytes.size() + seg.links[li + 1].bytes.size();
@@ -3052,6 +3149,7 @@ bool StateHistory::thinOne(uint64_t &mergeLeft)
 						(long long)e.frame, band, (long long)counts[static_cast<size_t>(band)], (long long)gap);
 					fflush(stderr);
 				}
+				gone(i, false, true);
 				return true;
 			}
 		}
@@ -3358,7 +3456,7 @@ bool StateHistory::copySpilledBodyV5(std::FILE *spill, const std::function<bool(
 bool StateHistory::writeHistoryFile(std::FILE *spill, const char *path, const std::string &id,
 	const std::vector<Segment> &segments, std::string &error)
 {
-	std::FILE *f = std::fopen(path, "wb");
+	std::FILE *f = chimera::openFile(path, "wb");
 	if (f == nullptr)
 	{
 		error = std::string("could not write the state history: ") + std::strerror(errno);
@@ -3403,7 +3501,7 @@ bool StateHistory::writeHistoryFile(std::FILE *spill, const char *path, const st
 	if (!ok)
 	{
 		error = "the state history could not be written in full";
-		std::remove(path);   /* half a history is worse than none */
+		chimera::removeFile(path);   /* half a history is worse than none */
 		return false;
 	}
 	return true;
@@ -3460,8 +3558,15 @@ bool StateHistory::saveToLater(const char *path, const char *machineId, std::str
 
 	/* One at a time: the second would be describing a history the first has
 	 * already been told about, and a save nobody waited for is not worth
-	 * queueing twice. */
-	saveWait(error);
+	 * queueing twice. The first's failure is said, and answered: it used to
+	 * be overwritten by this one's result, so nobody ever heard of it. */
+	std::string previous;
+	const bool previousOk = saveWait(previous) || previous.empty();
+	if (!previousOk)
+	{
+		fprintf(stderr, "[history] the last background save of the state history failed: %s\n", previous.c_str());
+		fflush(stderr);
+	}
 
 	{
 		std::lock_guard<std::mutex> lock(m_savedLock);
@@ -3475,12 +3580,27 @@ bool StateHistory::saveToLater(const char *path, const char *machineId, std::str
 	std::FILE *const spill = m_spill;
 	m_writer.post([this, spill, where, id, snapshot = std::move(snapshot)]() mutable {
 		std::string why;
-		const bool ok = writeHistoryFile(spill, where.c_str(), id, snapshot, why);
+		bool ok = false;
+		try
+		{
+			ok = writeHistoryFile(spill, where.c_str(), id, snapshot, why);
+		}
+		catch (const std::bad_alloc &)
+		{
+			why = "the state history could not be written: out of memory";
+			chimera::removeFile(where.c_str());   /* half a history is worse than none */
+		}
 		std::lock_guard<std::mutex> lock(m_savedLock);
 		m_saved.pending = false;
 		m_saved.ok = ok;
 		m_saved.error = std::move(why);
 	});
+	/* this one is queued all the same; the answer is about the one before */
+	if (!previousOk)
+	{
+		error = "the previous save of the state history failed: " + previous;
+		return false;
+	}
 	return true;
 }
 
@@ -3505,7 +3625,7 @@ bool StateHistory::saveWait(std::string &error)
 bool StateHistory::loadFrom(const char *path, const char *machineId, std::string &error)
 {
 	clear();
-	std::FILE *f = std::fopen(path, "rb");
+	std::FILE *f = chimera::openFile(path, "rb");
 	if (f == nullptr) return true;   /* no history yet is not a failure */
 
 	auto give_up = [&](std::string why) {

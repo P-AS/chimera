@@ -7,15 +7,17 @@
  */
 
 #include "chimera/engine.h"
+#include "file_io.hpp"
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
+#include <mutex>
 #include <optional>
 #include <string>
-#include <system_error>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -85,6 +87,10 @@ bool startsWith(const std::string &s, const char *prefix)
 
 } // namespace
 
+namespace {
+class JournalSyncer;
+}
+
 struct ce_movie_log : MovieLog
 {
 	/* The input journal (ce_movie_log_journal_open): every change to this log,
@@ -92,6 +98,9 @@ struct ce_movie_log : MovieLog
 	std::FILE *journal = nullptr;
 	std::string journalPath;
 	std::chrono::steady_clock::time_point journalSynced{};
+	/* syncs `journal` to the disk on its own thread (see JournalSyncer);
+	 * null when it could not start, and then the sync is done in line */
+	JournalSyncer *journalSyncer = nullptr;
 	/* The frontend's own records a replay found ("X ..." lines), in order: its markers and branches,
 	 * which the engine carries and does not interpret. */
 	std::vector<std::string> journalNotes;
@@ -99,10 +108,7 @@ struct ce_movie_log : MovieLog
 	ce_movie_log() = default;
 	ce_movie_log(const ce_movie_log &) = delete;
 	ce_movie_log &operator=(const ce_movie_log &) = delete;
-	~ce_movie_log()
-	{
-		if (journal != nullptr) std::fclose(journal);   /* kept on disk: only a close says remove */
-	}
+	~ce_movie_log();
 };
 
 namespace {
@@ -133,6 +139,90 @@ void syncFile(std::FILE *f)
 #endif
 }
 
+/* Hands a journal to the disk at most once a second, and never later than a
+ * second after a record was written - on a thread of its own. The sync used
+ * to be done by whichever change came at least a second after the last one,
+ * on the thread that made it (TAStudio's): a record written just before a
+ * pause then waited for the next change, and every sync was a disk flush on
+ * the main loop, behind whatever else was writing to that disk. It touches
+ * only the file's descriptor (fsync, _commit), which another thread writing
+ * through the FILE does not disturb; the FILE is closed only after this has
+ * stopped. */
+class JournalSyncer
+{
+public:
+	explicit JournalSyncer(std::FILE *f) : m_file(f) { m_thread = std::thread([this] { run(); }); }
+	~JournalSyncer()
+	{
+		{
+			std::lock_guard<std::mutex> hold(m_lock);
+			m_stop = true;
+		}
+		m_wake.notify_one();
+		m_thread.join();
+	}
+	void written()
+	{
+		{
+			std::lock_guard<std::mutex> hold(m_lock);
+			m_dirty = true;
+		}
+		m_wake.notify_one();
+	}
+
+private:
+	void run()
+	{
+		std::unique_lock<std::mutex> hold(m_lock);
+		auto last = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+		for (;;)
+		{
+			m_wake.wait(hold, [this] { return m_dirty || m_stop; });
+			/* the close syncs what is left, after this has stopped */
+			if (m_wake.wait_until(hold, last + std::chrono::seconds(1), [this] { return m_stop; })) return;
+			m_dirty = false;
+			hold.unlock();
+			syncFile(m_file);
+			hold.lock();
+			last = std::chrono::steady_clock::now();
+		}
+	}
+
+	std::FILE *m_file;
+	std::mutex m_lock;
+	std::condition_variable m_wake;
+	bool m_dirty = false, m_stop = false;
+	std::thread m_thread;
+};
+
+/* The journal's file and its syncer come and go together. */
+void journalAttach(ce_movie_log *log, std::FILE *f)
+{
+	log->journal = f;
+	log->journalSyncer = nullptr;
+	if (f == nullptr) return;
+	try
+	{
+		log->journalSyncer = new JournalSyncer(f);
+	}
+	catch (...)
+	{
+		log->journalSyncer = nullptr; /* no thread to be had: synced in line */
+	}
+}
+
+/* Stops the syncer, then syncs and closes the file. */
+void journalDetach(ce_movie_log *log)
+{
+	delete log->journalSyncer;
+	log->journalSyncer = nullptr;
+	if (log->journal == nullptr) return;
+	std::fflush(log->journal);
+	syncFile(log->journal);
+	std::fclose(log->journal);
+	log->journal = nullptr;
+}
+
 /* An entry is one line of the movie file, so it cannot hold a line end; one that
  * somehow does is written with spaces rather than splitting the record. */
 std::string oneLine(const char *text)
@@ -155,8 +245,12 @@ void journalAppend(ce_movie_log *log, const std::string &records)
 	if (std::fwrite(records.data(), 1, records.size(), log->journal) != records.size()
 		|| std::fflush(log->journal) != 0)
 	{
-		std::fclose(log->journal);
-		log->journal = nullptr;
+		journalDetach(log);
+		return;
+	}
+	if (log->journalSyncer != nullptr)
+	{
+		log->journalSyncer->written();
 		return;
 	}
 	const auto now = std::chrono::steady_clock::now();
@@ -182,7 +276,7 @@ std::string imageOf(const ce_movie_log *log, bool withMagic)
 
 bool readAllText(const std::string &path, std::string &out)
 {
-	std::FILE *f = std::fopen(path.c_str(), "rb");
+	std::FILE *f = chimera::openFile(path.c_str(), "rb");
 	if (f == nullptr) return false;
 	char buf[1 << 16];
 	size_t n;
@@ -204,6 +298,11 @@ bool parseInt64(const char *&p, int64_t &out)
 
 } // namespace
 
+ce_movie_log::~ce_movie_log()
+{
+	journalDetach(this);   /* kept on disk: only a close says remove */
+}
+
 extern "C" {
 
 ce_movie_log *ce_movie_log_new(void) { return new ce_movie_log(); }
@@ -219,7 +318,7 @@ int32_t ce_movie_log_journal_open_with(ce_movie_log *log, const char *path, cons
 	/* The whole log goes to a fresh file first and only then replaces the old
 	 * journal: a crash half way through rewriting must still leave one journal
 	 * that rebuilds everything. */
-	std::FILE *f = std::fopen(fresh.c_str(), "wb");
+	std::FILE *f = chimera::openFile(fresh.c_str(), "wb");
 	if (f == nullptr) return 1;
 	std::string image = imageOf(log, true);
 	/* The frontend's own image - every marker, every branch - goes into the same fresh file, so a
@@ -241,26 +340,26 @@ int32_t ce_movie_log_journal_open_with(ce_movie_log *log, const char *path, cons
 	std::fclose(f);
 	if (!written)
 	{
-		std::remove(fresh.c_str());
+		chimera::removeFile(fresh.c_str());
 		return 1;
 	}
 
-	if (log->journal != nullptr)
+	const bool hadThis = log->journal != nullptr && log->journalPath == target;
+	journalDetach(log);
+	if (!chimera::replaceFile(fresh.c_str(), target.c_str()))
 	{
-		std::fclose(log->journal);
-		log->journal = nullptr;
+		/* Kept from being replaced (another program holding it open). The
+		 * journal this log was writing to is still whole, and the changes
+		 * from here on go on into it; a file of that name from anything
+		 * else is not appended to. */
+		if (hadThis)
+		{
+			chimera::removeFile(fresh.c_str());
+			journalAttach(log, chimera::openFile(target.c_str(), "ab"));
+		}
+		return 1;
 	}
-	std::error_code ec;
-	std::filesystem::rename(fresh, target, ec);
-	if (ec)
-	{
-		/* not every platform's rename replaces; the replay reads the ".new" file
-		 * when the journal itself is missing, so this window is covered too */
-		std::filesystem::remove(target, ec);
-		std::filesystem::rename(fresh, target, ec);
-		if (ec) return 1;
-	}
-	log->journal = std::fopen(target.c_str(), "ab");
+	journalAttach(log, chimera::openFile(target.c_str(), "ab"));
 	if (log->journal == nullptr) return 1;
 	log->journalPath = target;
 	log->journalSynced = std::chrono::steady_clock::now();
@@ -275,17 +374,11 @@ int32_t ce_movie_log_journal_open(ce_movie_log *log, const char *path)
 void ce_movie_log_journal_close(ce_movie_log *log, int32_t remove)
 {
 	if (log == nullptr) return;
-	if (log->journal != nullptr)
-	{
-		std::fflush(log->journal);
-		syncFile(log->journal);
-		std::fclose(log->journal);
-		log->journal = nullptr;
-	}
+	journalDetach(log);
 	if (remove != 0 && !log->journalPath.empty())
 	{
-		std::remove(log->journalPath.c_str());
-		std::remove((log->journalPath + ".new").c_str());
+		chimera::removeFile(log->journalPath.c_str());
+		chimera::removeFile((log->journalPath + ".new").c_str());
 	}
 	log->journalPath.clear();
 }

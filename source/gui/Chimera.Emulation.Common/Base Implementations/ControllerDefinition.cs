@@ -218,10 +218,16 @@ namespace Chimera.Emulation.Common
 		public static int PlayerNumber(string buttonName)
 		{
 			var match = PlayerRegex.Match(buttonName);
-			return match.Success
-				? int.Parse(match.Groups[1].Value)
+			/* past 255 it is not a player's number, as the engine reads it
+			 * (movie_entry.cpp, kMostPlayers): "P1000000000 A" would be a
+			 * billion groups, and a longer one would not parse at all */
+			return match.Success && int.TryParse(match.Groups[1].Value, out var player) && player <= MostPlayers
+				? player
 				: 0;
 		}
+
+		/// <summary>The largest number a control's "P&lt;n&gt; " prefix is read as.</summary>
+		public const int MostPlayers = 255;
 
 		private static readonly Regex PlayerRegex = new Regex("^P(\\d+) ");
 

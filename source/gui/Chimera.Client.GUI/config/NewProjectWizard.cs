@@ -215,6 +215,8 @@ namespace Chimera.Client.GUI
 		/// </summary>
 		private readonly CheckBox _firmwareScanSubfolders;
 		private readonly PickScanFolder? _pickFirmwareFolder;
+		/// <summary>told of a folder Scan Folder found firmware in, so the owner can make it the Firmware folder (#293)</summary>
+		private readonly Action<string> _firmwareFoundIn;
 		private List<FirmwareNeed> _firmwareNeeds = new();
 		private IReadOnlyList<FirmwareLocator.IndexedFile> _firmwareIndex = [ ];
 
@@ -267,6 +269,9 @@ namespace Chimera.Client.GUI
 
 		protected override string WindowTitleStatic => "New Chimera Project";
 
+		/// <summary>How much memory a compile session is counted at, in GB (the setting; 0 the engine's default).</summary>
+		public int CompileSessionGigabytes { get; set; }
+
 		public NewProjectWizard(
 			IReadOnlyList<DiscoveredCorePackage> cores,
 			Func<ProjectSlotDeclaration.Slot, string[]> pickFiles,
@@ -277,8 +282,10 @@ namespace Chimera.Client.GUI
 			Action<string, IReadOnlyDictionary<string, string>>? rememberFirmwareNow = null,
 			string? configPath = null,
 			Func<string, IReadOnlyList<string>>? rememberedFirmwarePaths = null,
-			CoreKindFilter kind = CoreKindFilter.Emulators)
+			CoreKindFilter kind = CoreKindFilter.Emulators,
+			Action<string>? firmwareFoundIn = null)
 		{
+			_firmwareFoundIn = firmwareFoundIn ?? (static _ => { });
 			_rememberedFirmwarePaths = rememberedFirmwarePaths ?? (static _ => [ ]);
 			_configPath = configPath;
 			_pickFirmwareFile = pickFirmwareFile ?? (static _ => null);
@@ -470,6 +477,8 @@ namespace Chimera.Client.GUI
 			_settingsGrid.PropertyValueChanged += (_, _) =>
 			{
 				RefreshExposedSettings();
+				// another setting can change which files a value calls for
+				RefreshFirmwareOnHand();
 				UpdateNavLabels();
 			};
 			p3.Controls.Add(_settingsGrid);
@@ -1176,6 +1185,7 @@ namespace Chimera.Client.GUI
 		private void ShowPage(int page)
 		{
 			_page = Math.Max(0, Math.Min(_pages.Length - 1, page));
+			if (_page is 2) RefreshFirmwareOnHand();
 			for (var i = 0; i < _pages.Length; i++) _pages[i].Visible = i == _page;
 			_backButton.Enabled = _page > 0;
 			_status.Text = "";
@@ -1589,7 +1599,8 @@ namespace Chimera.Client.GUI
 					ChosenCore.Path, _configPath, romPath, romSha1, dir,
 					_cfg?.CoreName ?? ChosenCore.Name, _cfg?.Version ?? "",
 					Entry, Progress, cancelled: PumpAndCheckCancel,
-					firmware: ProvidedFirmwarePaths, slotsFile: slotsFile);
+					firmware: ProvidedFirmwarePaths, slotsFile: slotsFile,
+					sessionGigabytes: CompileSessionGigabytes);
 			}
 			finally
 			{
@@ -1775,6 +1786,7 @@ namespace Chimera.Client.GUI
 			// door cannot drift from the real path
 			_settings!.Values[name] = value;
 			RefreshExposedSettings();
+			RefreshFirmwareOnHand();
 			UpdateNavLabels();
 		}
 
@@ -2703,6 +2715,68 @@ namespace Chimera.Client.GUI
 			return slots.ToString(Newtonsoft.Json.Formatting.None);
 		}
 
+		/// <summary>
+		/// Marks the values of the settings that decide firmware (a PlayStation 2's Boot ROM) by whether
+		/// their file is on hand, so the settings grid lists those first and says so (issue #293). On hand
+		/// is what the firmware page would find by itself: the Firmware folder, and every path remembered
+		/// for this core.
+		/// </summary>
+		private void RefreshFirmwareOnHand()
+		{
+			if (_cfg is null || _settings?.Declarations is not { } declarations) return;
+			var raw = FirmwareDeclsJson();
+			Dictionary<string, Dictionary<string, bool>> table = new();
+			if (FirmwareChoices.SettingsNamedIn(raw).Count is not 0)
+			{
+				var index = FirmwareLocator.BuildIndex(_firmwareSearchDirs, _rememberedFirmwarePaths(ChosenCoreName ?? ""));
+				table = FirmwareChoices.OnHand(raw, FirmwareDecls(), CurrentSlotsJson(),
+					WaterboxCore.EffectiveSettingsFor(_cfg, _settings), declarations, index);
+			}
+			_firmwareOnHand = table;
+			_settings.FirmwareOnHand = table.Count is 0
+				? null
+				: (setting, value) => _firmwareOnHand.TryGetValue(setting, out var values) && values.TryGetValue(value, out var found)
+					? found
+					: null;
+			_settingsGrid.Refresh();
+		}
+
+		/// <summary>setting -&gt; value -&gt; whether that value's firmware is on hand (<see cref="RefreshFirmwareOnHand"/>)</summary>
+		private Dictionary<string, Dictionary<string, bool>> _firmwareOnHand = new();
+
+		/// <summary>what the settings grid shows for a value, and the order its list offers them in, for tests</summary>
+		public (string Shown, IReadOnlyList<string> Order) SettingChoicesForTest(string setting)
+		{
+			var property = ((ICustomTypeDescriptor) _settings!).GetProperties()[setting];
+			GridContext context = new(_settings!, property);
+			var values = property.Converter.GetStandardValues(context)!.Cast<string>().ToList();
+			return (property.Converter.ConvertToString(context, property.GetValue(_settings))!, values.Select(v => property.Converter.ConvertToString(context, v)!).ToList());
+		}
+
+		/// <summary>the context a property grid hands a converter: the object it is editing</summary>
+		private sealed class GridContext : ITypeDescriptorContext
+		{
+			public GridContext(object instance, PropertyDescriptor property)
+			{
+				Instance = instance;
+				PropertyDescriptor = property;
+			}
+
+			public IContainer? Container => null;
+
+			public object Instance { get; }
+
+			public PropertyDescriptor PropertyDescriptor { get; }
+
+			public object? GetService(Type serviceType) => null;
+
+			public void OnComponentChanged()
+			{
+			}
+
+			public bool OnComponentChanging() => true;
+		}
+
 		private void BuildFirmwarePage()
 		{
 			var effective = WaterboxCore.EffectiveSettingsFor(
@@ -2966,6 +3040,11 @@ namespace Chimera.Client.GUI
 				var index = FirmwareLocator.BuildIndex([ ], found);
 				_firmwareIndex = _firmwareIndex.Concat(index).ToList();
 				var filled = 0;
+				// a file this page asks for is in that folder, chosen already or not
+				if (_firmwareNeeds.Any(need => need.Decl is not null && FirmwareLocator.FindEither(need.Decl, index) is not null))
+				{
+					_firmwareFoundIn(folder);
+				}
 				foreach (var need in _firmwareNeeds)
 				{
 					if (need.ChosenPath is not null || need.Decl is null) continue;

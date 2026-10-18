@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 using Chimera.Emulation.Common;
@@ -65,11 +66,13 @@ namespace Chimera.Client.Common
 				if (axisSpec.HasValue)
 				{
 					var commaIndex = mnemonic.IndexOf(',', iterator);
+					// in no culture, as the line was written (LogEntryGenerator) and as
+					// the engine reads it: an ASCII '-' whatever the Region setting says
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP2_1_OR_GREATER
-					var val = int.Parse(mnemonic.AsSpan(start: iterator, length: commaIndex - iterator));
+					var val = int.Parse(mnemonic.AsSpan(start: iterator, length: commaIndex - iterator), NumberStyles.Integer, CultureInfo.InvariantCulture);
 #else
 					var axisValueString = mnemonic.Substring(startIndex: iterator, length: commaIndex - iterator);
-					var val = int.Parse(axisValueString);
+					var val = int.Parse(axisValueString, NumberStyles.Integer, CultureInfo.InvariantCulture);
 #endif
 					_myAxisControls[buttonName] = val;
 

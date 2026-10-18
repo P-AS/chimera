@@ -34,6 +34,13 @@ void plainNumbers()
 	assert(chimera::parsePlainDouble("-0.25", v) && v == -0.25);
 	assert(chimera::parsePlainDouble("1e3", v) && v == 1000);
 	assert(chimera::parsePlainDouble("0x10", v) && v == 16);
+	assert(chimera::parsePlainDouble("-0x1.8p1", v) && v == -3);
+	// after 0x, a hex number and nothing else: no second sign, no inf or nan
+	assert(!chimera::parsePlainDouble("0x-1", v));
+	assert(!chimera::parsePlainDouble("-0x-1", v));
+	assert(!chimera::parsePlainDouble("0x+1", v));
+	assert(!chimera::parsePlainDouble("0xinf", v));
+	assert(!chimera::parsePlainDouble("0xnan", v));
 	assert(chimera::parsePlainDouble("inf", v) && std::isinf(v) && v > 0);
 	assert(chimera::parsePlainDouble("-inf", v) && std::isinf(v) && v < 0);
 	assert(chimera::parsePlainDouble("nan", v) && std::isnan(v));

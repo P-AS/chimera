@@ -546,6 +546,49 @@ namespace Chimera.Tests.Client.Common.Movie
 		}
 
 		/// <summary>
+		/// Answering yes to "Recover unsaved work?" boots the movie from the recovered work. The movie
+		/// used to read the project file again by its path, so the work opened as last saved, only marked
+		/// changed. And the folder the crash left is removed before that boot, which must still not trust
+		/// the greenzone the crashed session saved.
+		/// </summary>
+		[TestMethod]
+		public void RecoveredWorkIsWhatTheMovieOpensAndItsCrashIsRemembered()
+		{
+			var path = Path.Combine(_dir, "recovered-boot.chimeraProject");
+			var movie = MakeWorkedMovie(path);
+			Assert.IsFalse(movie.Save().IsError);
+			var recovery = ProjectRecovery.Begin(movie, movie.Project.Id, path);
+			Assert.IsNotNull(recovery);
+			movie.Markers.Single(static m => m.Message == "the jump").Message = "the long jump";
+			recovery.Tick();
+
+			// the crash: the journal stops where it is and the folder names a process that is gone
+			recovery.End(clean: false);
+			var dir = ProjectRecovery.DirectoryFor(movie.Project.Id);
+			ProjectRecovery.WriteSession(dir, new ProjectRecovery.SessionRecord { ProcessId = int.MaxValue, ProcessStartedUtcTicks = 1, ProjectPath = path });
+			var leftover = ProjectRecovery.FindUnfinished(movie.Project.Id);
+			Assert.IsNotNull(leftover);
+			var copy = ProjectRecovery.BuildRecoveredCopy(leftover, path, Path.Combine(_dir, "Backups"));
+			ProjectRecovery.Discard(leftover);
+			Assert.IsFalse(Directory.Exists(dir));
+			Assert.IsFalse(ProjectRecovery.LastSessionEndedCleanly(movie.Project.Id),
+				"the folder is gone, but the session that left it still did not end cleanly");
+
+			FakeEmulator emu = new();
+			FakeMovieSession session = new(emu);
+			TasMovie reopened = new(session, path, EngineProject.Open(copy));
+			Assert.IsTrue(reopened.Load());
+			CollectionAssert.Contains(reopened.Markers.Select(static m => m.Message).ToArray(), "the long jump",
+				"the recovered work, not the file as last saved");
+			Assert.AreEqual(path, reopened.Filename, "and a save still writes the project's own file");
+
+			var next = ProjectRecovery.Begin(movie, movie.Project.Id, path);
+			Assert.IsNotNull(next);
+			next.End(clean: true);
+			Assert.IsTrue(ProjectRecovery.LastSessionEndedCleanly(movie.Project.Id), "a session that then ends cleanly is trusted again");
+		}
+
+		/// <summary>
 		/// A savestate is the memory of one exact machine, and the sandbox only
 		/// checks the core binary when it loads one. The cache says which machine
 		/// made its states, and a project whose machine has since changed - a

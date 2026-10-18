@@ -1,47 +1,80 @@
 // The host's side of the compile-cache bridge (miniBox source/cache/
 // cache-bridge.h): a directory of files a core names, kept between sessions.
 // The core promises the bytes are a pure function of its inputs; this keeps
-// them. Names are relative paths; an absolute prefix or a '..' segment is
+// them. Names are relative paths with '/' between folders; an absolute
+// prefix, a '..' segment, a backslash or a name Windows gives a meaning is
 // refused. A store writes beside and renames, so a reader never sees half.
 #include "chimera/engine.h"
 #include "cache-bridge.h"
+#include "file_io.hpp"
 #include "progress.hpp"
 #include "sha1.hpp"
 
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <climits>
+#include <filesystem>
 #include <string>
-#include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h>
-#define CE_MKDIR(p) _mkdir(p)
-#else
-#define CE_MKDIR(p) mkdir(p, 0777)
-#endif
+#include <system_error>
 
 namespace
 {
 std::string s_dir;
 uint64_t s_fetched, s_stored;
 
+/* whether each object is announced on stdout with its hash: only a precompile
+ * session has anyone reading (the wizard, collecting a game's manifest), and
+ * hashing everything a core boots from costs seconds on a CPU without the SHA
+ * instructions. CHIMERA_CACHE_ANNOUNCE=1 asks for it in any session. */
+bool s_announce;
+
 /* the relative name the caller gave, once it has been found acceptable */
 std::string s_rel;
 
+/* One folder or file name of a cache name. The core makes the name, perhaps
+ * from what a game image says, so every way a name could reach something other
+ * than a file in the cache is refused: a segment of dots (".." climbs out), a
+ * trailing dot or space (Windows drops them, so two names could reach one
+ * file), control characters, and the Windows device names (CON, NUL, COM1,
+ * ...), which open a device whatever extension follows them. */
+bool segment_ok(const std::string &seg)
+{
+	if (seg.empty() || seg.back() == '.' || seg.back() == ' ') return false;
+	for (char c : seg)
+	{
+		if (static_cast<unsigned char>(c) < 0x20) return false;
+	}
+	std::string stem = seg.substr(0, seg.find('.'));
+	while (!stem.empty() && stem.back() == ' ') stem.pop_back();
+	for (char &c : stem) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+	static const char *const devices[] = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"};
+	for (const char *d : devices)
+	{
+		if (stem == d) return false;
+	}
+	if (stem.size() == 4 && (stem.compare(0, 3, "COM") == 0 || stem.compare(0, 3, "LPT") == 0)
+		&& std::isdigit(static_cast<unsigned char>(stem[3])))
+	{
+		return false;
+	}
+	return true;
+}
+
 std::string safe_path(const char *name, uint64_t len)
 {
-	if (!name || !len || len > 1024 || name[0] == '/' || name[0] == '\\') return {};
+	if (!name || !len || len > 1024) return {};
 	std::string rel(name, static_cast<size_t>(len));
-	if (rel.find(':') != std::string::npos) return {};
+	/* a backslash is a folder separator on Windows, so ..\x would climb out */
+	if (rel.find_first_of(":\\") != std::string::npos || rel.find('\0') != std::string::npos) return {};
 	size_t start = 0;
 	while (start <= rel.size())
 	{
 		size_t end = rel.find('/', start);
 		if (end == std::string::npos) end = rel.size();
-		std::string seg = rel.substr(start, end - start);
-		if (seg.empty() || seg == "..") return {};
+		if (!segment_ok(rel.substr(start, end - start))) return {};
 		start = end + 1;
 	}
 	s_rel = rel;
@@ -50,10 +83,8 @@ std::string safe_path(const char *name, uint64_t len)
 
 void make_dirs(const std::string &full)
 {
-	for (size_t i = s_dir.size() + 1; i < full.size(); i++)
-	{
-		if (full[i] == '/') CE_MKDIR(full.substr(0, i).c_str());
-	}
+	std::error_code ec;
+	std::filesystem::create_directories(std::filesystem::u8path(full).parent_path(), ec);
 }
 }  // namespace
 
@@ -62,16 +93,20 @@ extern "C" void ce_cache_dir(const char *dir)
 	s_dir = dir ? dir : "";
 	while (!s_dir.empty() && (s_dir.back() == '/' || s_dir.back() == '\\')) s_dir.pop_back();
 	// the whole chain: the caller names a directory by core and package
-	for (size_t i = 1; i < s_dir.size(); i++)
-	{
-		if (s_dir[i] == '/' || s_dir[i] == '\\') CE_MKDIR(s_dir.substr(0, i).c_str());
-	}
-	if (!s_dir.empty()) CE_MKDIR(s_dir.c_str());
+	std::error_code ec;
+	if (!s_dir.empty()) std::filesystem::create_directories(std::filesystem::u8path(s_dir), ec);
 }
 
 extern "C" const char *ce_cache_dir_get(void)
 {
 	return s_dir.c_str();
+}
+
+/* said by the session as it opens (session.cpp) */
+extern "C" void ce_cache_announce(int32_t precompile)
+{
+	const char *env = getenv("CHIMERA_CACHE_ANNOUNCE");
+	s_announce = precompile != 0 || (env != nullptr && env[0] == '1');
 }
 
 #if defined(_WIN32) && defined(__GNUC__)
@@ -94,22 +129,31 @@ static __attribute__((noinline)) uintptr_t dispatch_impl(uintptr_t op, uintptr_t
 		const std::string full = safe_path(reinterpret_cast<const char *>(static_cast<uintptr_t>(args->name)), args->name_len);
 		if (full.empty()) return 0;
 		const std::string rel = s_rel;
-		FILE *f = fopen(full.c_str(), "rb");
+		FILE *f = chimera::openFile(full.c_str(), "rb");
 		if (!f) return 0;
-		fseek(f, 0, SEEK_END);
-		const long size = ftell(f);
+		/* the 64-bit calls: Windows' long is 32 bits */
+#ifdef _WIN32
+		_fseeki64(f, 0, SEEK_END);
+		const int64_t size = _ftelli64(f);
+#else
+		fseeko(f, 0, SEEK_END);
+		const int64_t size = ftello(f);
+#endif
 		if (size <= 0) { fclose(f); return 0; }
 		if (args->dst && args->cap >= static_cast<uint64_t>(size))
 		{
-			fseek(f, 0, SEEK_SET);
+			rewind(f);
 			if (fread(reinterpret_cast<void *>(static_cast<uintptr_t>(args->dst)), 1, static_cast<size_t>(size), f) != static_cast<size_t>(size)) { fclose(f); return 0; }
 			s_fetched++;
 			chimera::progress("loading compiled code", s_fetched, 0);
 			/* one line per object, for whoever is watching this process fill a
 			 * cache (the wizard's precompile step reads exactly these) */
-			printf("[cache] fetched %s %s\n", rel.c_str(),
-				chimera::sha1Hex(reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(args->dst)), static_cast<uint64_t>(size)).c_str());
-			fflush(stdout);
+			if (s_announce)
+			{
+				printf("[cache] fetched %s %s\n", rel.c_str(),
+					chimera::sha1Hex(reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(args->dst)), static_cast<uint64_t>(size)).c_str());
+				fflush(stdout);
+			}
 		}
 		fclose(f);
 		return static_cast<uintptr_t>(size);
@@ -135,20 +179,19 @@ static __attribute__((noinline)) uintptr_t dispatch_impl(uintptr_t op, uintptr_t
 		const std::string rel = s_rel;
 		make_dirs(full);
 		const std::string tmp = full + ".part";
-		FILE *f = fopen(tmp.c_str(), "wb");
+		FILE *f = chimera::openFile(tmp.c_str(), "wb");
 		if (!f) return 0;
 		bool ok = fwrite(reinterpret_cast<const void *>(static_cast<uintptr_t>(args->data)), 1, static_cast<size_t>(args->size), f) == static_cast<size_t>(args->size);
 		ok = fclose(f) == 0 && ok;
-		if (!ok) { remove(tmp.c_str()); return 0; }
-#ifdef _WIN32
-		remove(full.c_str());
-#endif
-		if (rename(tmp.c_str(), full.c_str()) != 0) { remove(tmp.c_str()); return 0; }
+		if (!ok || !chimera::replaceFile(tmp.c_str(), full.c_str())) { chimera::removeFile(tmp.c_str()); return 0; }
 		s_stored++;
 		chimera::progress("keeping compiled code", s_stored, 0);
-		printf("[cache] stored %s %s\n", rel.c_str(),
-			chimera::sha1Hex(reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(args->data)), args->size).c_str());
-		fflush(stdout);
+		if (s_announce)
+		{
+			printf("[cache] stored %s %s\n", rel.c_str(),
+				chimera::sha1Hex(reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(args->data)), args->size).c_str());
+			fflush(stdout);
+		}
 		return 1;
 	}
 	}

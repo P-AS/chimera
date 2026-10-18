@@ -45,6 +45,9 @@ public:
 		/* for a domain with no pointer: `len` bytes at `offset`, out and in */
 		std::function<void(int64_t offset, uint8_t *buf, int64_t len)> read;
 		std::function<void(int64_t offset, const uint8_t *buf, int64_t len)> write;
+		/* where `write` can reach: a property past it is not writable (a bus
+		 * is written a byte at a time at a 32-bit address) */
+		int64_t writableBelow = INT64_MAX;
 	};
 
 	struct Property
@@ -119,7 +122,9 @@ public:
 
 	/* The first property, in the table's order, one of whose elements covers
 	 * `address` in the named domain; -1 when none does. `starts` says whether
-	 * the address is the element's first byte. */
+	 * the address is the element's first byte. A property that is not there
+	 * now (a dynamic table's) covers nothing. Asked for every row RAM Search
+	 * shows, every frame, so it answers from an index by offset. */
 	int32_t at(const std::string &domain, int64_t address, uint32_t *element, bool *starts) const;
 
 	bool read(int32_t index, uint32_t element, Value &out) const;
@@ -156,6 +161,22 @@ private:
 	bool m_dynamic = false;
 	uint64_t m_generation = 0;
 	static constexpr size_t MaxProperties = 200000;
+
+	/* at()'s index: each domain's present properties by offset, made again
+	 * when the generation moves */
+	struct Placed
+	{
+		int64_t offset;
+		int32_t index;
+	};
+	struct DomainIndex
+	{
+		std::vector<Placed> byOffset;
+		int64_t widest = 0; /* the largest span, so a search knows how far back to look */
+	};
+	mutable std::map<std::string, DomainIndex> m_at;
+	mutable uint64_t m_atGeneration = ~uint64_t(0);
+	void indexAt() const;
 
 	std::string key(const std::string &name) const;
 	bool valid(int32_t index, uint32_t element) const;

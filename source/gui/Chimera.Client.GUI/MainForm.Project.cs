@@ -288,7 +288,12 @@ namespace Chimera.Client.GUI
 				// a precompile session is this frontend again: it must read the
 				// same config, or it would look for its cache somewhere else
 				configPath: _getConfigPath(),
-				kind: Config.NewProjectKind);
+				kind: Config.NewProjectKind,
+				// where the person keeps firmware, when Config > Paths names nowhere real (#293)
+				firmwareFoundIn: folder =>
+				{
+					if (Config.PathEntries.AdoptFirmwareFolder(folder)) SaveConfig();
+				});
 			// The wizard opens on the last project's answers - the open one, or the
 			// last one there was. This is how a project is reconfigured: changing a
 			// sync setting changes the machine, so there is no editing one in place,
@@ -311,6 +316,7 @@ namespace Chimera.Client.GUI
 				wizard.SeedFrom(answers);
 			}
 
+			wizard.CompileSessionGigabytes = Config.CompileSessionGigabytes;
 			if (wizard.ShowDialog(this) is not DialogResult.OK) return null;
 			// the next wizard opens on this kind of core, when it has no project's answers to open on
 			Config.NewProjectKind = wizard.Kind;
@@ -387,6 +393,12 @@ namespace Chimera.Client.GUI
 				progress.Step("finding the project's files");
 				project.ResolveDir(Path.GetDirectoryName(Path.GetFullPath(path)));
 				local = ProjectLocalPaths.Read(project, path);
+				// a project opened from somewhere else than its cache was written for is a
+				// copy, or has moved: the greenzone there is not its own (docs/project.md)
+				if (ProjectCache.DiscardGreenzoneIfMoved(project.Id, path))
+				{
+					Console.Error.WriteLine($"[cache] {path} was last opened or saved elsewhere; its cached greenzone was discarded");
+				}
 				ProjectCache.Remember(project.Id, ProjectCache.FactsOf(project, path));
 				local.ApplyTo(project);
 			}
@@ -752,7 +764,9 @@ namespace Chimera.Client.GUI
 			// project's core and sync settings - never a throwaway config-settings
 			// boot followed by a reboot (the BizHawk triple-init lineage: rom
 			// load, TAStudio open, tasproj load - each a full core init).
-			if (MovieSession.Get(path, loadMovie: saved) is not ITasMovie tasMovie)
+			// The movie is read from the project in hand, not from the file again: after a crash the
+			// project in hand is the recovered work, and the file is what that work replaces.
+			if (MovieSession.Get(path, loadMovie: saved, project: saved ? project : null) is not ITasMovie tasMovie)
 			{
 				// Never end in silence: everything above showed a dialog when it
 				// refused, and a user who just answered the resolution dialog is

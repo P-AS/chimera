@@ -55,4 +55,5 @@ if [ -z "$lib" ] || [ ! -f "$lib" ]; then
 	echo "nested-build: no library found for $out in $bld" >&2
 	exit 1
 fi
-cp "$lib" "$out"
+# only when it changed: the target is asked at every build (meson.build)
+cmp -s "$lib" "$out" 2>/dev/null || cp "$lib" "$out"

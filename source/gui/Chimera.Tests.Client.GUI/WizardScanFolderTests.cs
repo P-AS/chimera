@@ -43,9 +43,9 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		/// <summary>the wizard's firmware page, wanting the FDS bios, with a picker under the test's thumb</summary>
-		private static NewProjectWizard MakeForm(PickScanFolder picker)
+		private static NewProjectWizard MakeForm(PickScanFolder picker, System.Action<string>? foundIn = null)
 		{
-			NewProjectWizard form = new([ ], static _ => [ ], pickFirmwareFolder: picker);
+			NewProjectWizard form = new([ ], static _ => [ ], pickFirmwareFolder: picker, firmwareFoundIn: foundIn);
 			form.Show();
 			var fixtureDir = Path.Combine(_dir, Path.GetRandomFileName());
 			Directory.CreateDirectory(fixtureDir);
@@ -82,6 +82,34 @@ namespace Chimera.Tests.Client.GUI
 			CollectionAssert.AreEqual(new[] { true, false }, offered, "the second scan offers what the first settled on");
 			Assert.IsTrue(form.FirmwareSatisfied("bios"), "ticked, the scan reaches the dump below the folder");
 			Assert.IsTrue(form.FirmwareScanSubfolders);
+		}
+
+		/// <summary>
+		/// The owner is told of a folder the scan found firmware in, so Config &gt; Paths can name it
+		/// (issue #293) - and only then: a folder with nothing the page asks for is not where firmware lives.
+		/// </summary>
+		[TestMethod]
+		public void AScanThatFindsFirmwareSaysWhereAndOneThatDoesNotSaysNothing()
+		{
+			var folder = MakeBuriedFirmware("found-in");
+			var empty = Path.Combine(_dir, "nothing-here");
+			Directory.CreateDirectory(empty);
+			File.WriteAllText(Path.Combine(empty, "readme.txt"), "nothing to find here");
+			var pick = empty;
+			List<string> told = new();
+			using var form = MakeForm((ref bool includeSubfolders) => pick, told.Add);
+
+			form.ScanFirmwareFolderForTest();
+			CollectionAssert.AreEqual(new string[0], told, "nothing found, nothing said");
+
+			pick = folder;
+			form.ScanFirmwareFolderForTest();
+			Assert.IsTrue(form.FirmwareSatisfied("bios"));
+			CollectionAssert.AreEqual(new[] { folder }, told, "the folder that was picked, not the sub-folder the file was in");
+
+			// found again, though chosen already: it is still where the firmware is
+			form.ScanFirmwareFolderForTest();
+			CollectionAssert.AreEqual(new[] { folder, folder }, told);
 		}
 
 		[TestMethod]

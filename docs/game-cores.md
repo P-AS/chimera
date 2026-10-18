@@ -189,7 +189,9 @@ What changes, and it is all in the engine:
   through it. A heap is a bus because only part of its address range is
   memory at any moment - and it can say which part, with `GetBusRanges`
   (docs/porting-a-core.md), so that a RAM search of a gigabyte of address
-  space costs what the thirty megabytes in it cost.
+  space costs what the thirty megabytes in it cost. `PokeBus` and `PeekBus`
+  take a 32-bit address, so a property that reaches past 2 GiB on a bus is
+  read-only, and a read there without `ReadBus` gives zeros.
 - **Names are exact.** A fixed table's names are a core author's labels, and
   are found whatever their case. A dynamic table's are the game's own, in a
   language that may tell `score` from `Score`: two that differ only by case

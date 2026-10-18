@@ -552,6 +552,20 @@ namespace Chimera.Emulation.Common.Waterbox
 			/// <summary>Allowed values, for an enum setting.</summary>
 			public List<string>? Options { get; set; }
 
+			/// <summary>
+			/// What to show for an enum's values, by value: "ps2-0230a-20080220" is shown as "USA v2.30
+			/// (2008-02-20)". Optional, and words only - the project, the movie and the core keep the value
+			/// itself, so a label can be changed without changing any machine. A value with no label is shown
+			/// as it is (issue #293).
+			/// </summary>
+			public Dictionary<string, string>? OptionLabels { get; set; }
+
+			/// <summary>The words for one value: its label, or the value when it has none.</summary>
+			public string LabelFor(string value)
+				=> OptionLabels is not null && OptionLabels.TryGetValue(value, out var label) && !string.IsNullOrWhiteSpace(label)
+					? label
+					: value;
+
 			public int? Min { get; set; }
 
 			public int? Max { get; set; }

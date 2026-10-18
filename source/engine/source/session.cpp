@@ -27,6 +27,7 @@
 #include "../../extern/cjson/cJSON.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -56,6 +57,17 @@ extern "C" intptr_t streamRead(uintptr_t userdata, void *dst, uintptr_t size)
 		s->pos += n;
 	}
 	return static_cast<intptr_t>(n);
+}
+
+/* A stream's bytes, given back once the host has read them into its own copy
+ * (every create and mount does, and none reads again). The stream is emptied
+ * too, so nothing can read the freed bytes through it. */
+void releaseStream(ByteStream &stream, std::vector<uint8_t> &bytes)
+{
+	std::vector<uint8_t>().swap(bytes);
+	stream.data = nullptr;
+	stream.len = 0;
+	stream.pos = 0;
 }
 
 extern "C" int32_t vectorWrite(uintptr_t userdata, const void *src, uintptr_t size)
@@ -243,6 +255,14 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	}
 	cfg.vsyncNum = intOf(video, "vsyncNumerator");
 	cfg.vsyncDen = intOf(video, "vsyncDenominator");
+	/* a package that says nothing (or nothing usable) runs at 60 frames a
+	 * second, as the frontend's VideoConfig has always said; 0/0 was a frame
+	 * rate of NaN, and a frontend that divides by it stops */
+	if (cfg.vsyncNum <= 0 || cfg.vsyncDen <= 0)
+	{
+		cfg.vsyncNum = 60;
+		cfg.vsyncDen = 1;
+	}
 	cfg.getBgra = strOf(video, "getBgra", "GetVideoBgra");
 	cfg.drawEveryFrame = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(video, "drawEveryFrame"));
 	/* ABSENT MEANS TRUE here, unlike the flags above: a core that says nothing
@@ -389,7 +409,9 @@ bool composeSettings(const std::string &defaultsJson, const char *overrides, std
 /* source/engine/source/gl_bridge.cpp - present in every build; a build without
  * CE_GL_BRIDGE answers that it has no context and nothing here happens. */
 extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len);
+extern "C" void ce_gl_session_end(void);
 extern "C" uintptr_t ce_cache_dispatch(uintptr_t op, uintptr_t a, uintptr_t b, uintptr_t c, uintptr_t d, uintptr_t e);
+extern "C" void ce_cache_announce(int32_t precompile);
 
 /* Sessions that ask the core one question instead of starting it: open stops
  * before Init, calls the named export (no arguments, a NUL-terminated string
@@ -432,6 +454,7 @@ struct ce_session
 	bool gpuDrew = false;
 	/* the core took the Vulkan bridge: a load is a new device to it */
 	bool vulkanBridge = false;
+	bool glBridge = false;   /* this session started the GL bridge: it ends it (ce_gl_session_end) */
 	/* The pictures of frames already drawn, shown again when the machine is put
 	 * back on one (kept_pictures.hpp; chimera#190). On by itself for a session
 	 * whose pictures a GPU draws and whose greenzone is on; a caller may say
@@ -601,6 +624,7 @@ struct ce_session
 	int32_t (*getVideoWidth)() = nullptr;
 	int32_t (*getVideoHeight)() = nullptr;
 	int32_t vidW = 0, vidH = 0;
+	bool saidOversize = false; /* copyVideo: a picture larger than declared, said once */
 	std::vector<uint32_t> videoBuf;
 	std::vector<int16_t> audioBuf;
 	int32_t sampleCount = 0;
@@ -664,12 +688,22 @@ struct ce_session
 	bool traceDesired = false;
 	std::vector<uint8_t> traceOut;
 
+	/* which session this is in the process, never reused (an address can be:
+	 * a new session may be allocated where a closed one was) */
+	uint64_t serial = 0;
+
 	// ---- the session's movie ----
 	ce_movie_log *movie = nullptr;
 	int32_t movieMode = 0; // 0 none, 1 play, 2 record, 3 finished
 	int64_t frame = 0;
 	std::string mnemonics; // one char per button, for generated entries
 	chimera::EntryLayout layout; // the Bk2 entry order (see movie_entry.hpp)
+	/* The movie's own columns, when its LogKey names them: lines are read and
+	 * written by those names, as the window reads them (user-decided,
+	 * 2026-10-15). A movie with no key goes by the machine's own order. */
+	chimera::EntryLayout movieLayout;
+	bool movieKeyed = false;
+	const chimera::EntryLayout &entries() const { return movieKeyed ? movieLayout : layout; }
 
 	// ---- the state history (docs/state-manager.md) ----
 	// Anchors and the deltas that walk forward from them, so a stored frame
@@ -684,6 +718,7 @@ struct ce_session
 	uint64_t sendButtons(const uint8_t *states);
 	void greenzoneCapture();
 	bool greenzoneRestore(int64_t to);
+	void greenzoneLoaded(int64_t at);
 	/* the half that must run BEFORE the advance: an epoch has to be marked
 	 * while the machine is still where the delta will be measured from */
 	void greenzoneBeforeAdvance() { history.beforeAdvance(); }
@@ -1066,18 +1101,36 @@ void ce_session::copyVideo()
 	 * A machine that has not rendered yet answers null (DOS before its first
 	 * mode set); the buffer keeps its previous frame. */
 	const void *src = reinterpret_cast<const void *>(getVideoBgra());
+	/* the core's rows are as long as ITS width: a picture wider than the
+	 * package declares is cropped row by row, not copied as one block at the
+	 * declared width (every row after the first then started in the wrong
+	 * place - Xenia's 1080p picture, sheared, chimera#270) */
+	int32_t srcStride = vidW;
 	if (getVideoWidth != nullptr && getVideoHeight != nullptr)
 	{
 		int32_t w = getVideoWidth(), h = getVideoHeight();
 		if (w > 0 && h > 0)
 		{
+			if ((w > cfg.width || h > cfg.height) && !saidOversize)
+			{
+				saidOversize = true;
+				fprintf(stderr, "chimera: %s draws %dx%d, larger than the %dx%d its package declares; the picture is cropped\n",
+					cfg.coreName.c_str(), w, h, cfg.width, cfg.height);
+			}
+			srcStride = w;
 			vidW = w < cfg.width ? w : cfg.width;
 			vidH = h < cfg.height ? h : cfg.height;
 		}
 	}
 	if (src != nullptr)
 	{
-		std::memcpy(videoBuf.data(), src, static_cast<size_t>(vidW) * vidH * sizeof(uint32_t));
+		if (srcStride == vidW)
+			std::memcpy(videoBuf.data(), src, static_cast<size_t>(vidW) * vidH * sizeof(uint32_t));
+		else
+			for (int32_t y = 0; y < vidH; y++)
+				std::memcpy(videoBuf.data() + static_cast<size_t>(y) * vidW,
+					static_cast<const uint32_t *>(src) + static_cast<size_t>(y) * srcStride,
+					static_cast<size_t>(vidW) * sizeof(uint32_t));
 	}
 }
 
@@ -1285,9 +1338,10 @@ int32_t ce_session::advanceCore(const uint8_t *buttons, int32_t render)
 	if (nsamp < 0) nsamp = 0;
 	if (nsamp > cfg.samplesPerFrame) nsamp = cfg.samplesPerFrame;
 	const auto *src = reinterpret_cast<const int16_t *>(getAudio());
+	if (src == nullptr) nsamp = 0; /* no sound set up yet: silence, not a read of address 0 */
 	if (cfg.channels == 2)
 	{
-		std::memcpy(audioBuf.data(), src, static_cast<size_t>(nsamp) * 2 * sizeof(int16_t));
+		if (nsamp > 0) std::memcpy(audioBuf.data(), src, static_cast<size_t>(nsamp) * 2 * sizeof(int16_t));
 	}
 	else
 	{
@@ -1336,14 +1390,20 @@ bool ce_session::greenzoneRestore(int64_t to)
 		 * asked for. Following it here is what keeps the session's idea of
 		 * where it is and the machine itself the same thing - a seek that
 		 * refuses is recoverable, a session that has quietly moved is not. */
-		if (landed >= 0)
-		{
-			frame = landed;
-			if (stateLoaded != nullptr) stateLoaded();   /* the anchor was loaded, and stays */
-			afterLoad(landed);
-		}
+		if (landed >= 0) greenzoneLoaded(landed);   /* the anchor was loaded, and stays */
 		return false;
 	}
+	greenzoneLoaded(to);
+	return true;
+}
+
+/* Everything a whole machine put in place by the history breaks, put right -
+ * after a restore, and after one that fell back to its anchor, which loads a
+ * machine just as much. That fallback used to do only the first and the last
+ * of these, so its next frames sent inputs against the latches of the machine
+ * before it and drew from GPU objects the load had replaced. */
+void ce_session::greenzoneLoaded(int64_t at)
+{
 	if (stateLoaded != nullptr) stateLoaded();
 	if (traceSetEnabled != nullptr)
 	{
@@ -1358,11 +1418,10 @@ bool ce_session::greenzoneRestore(int64_t to)
 	 * ce_session_load_state, so the bridge has to be told here too - this is
 	 * the path a rewind and a re-record actually take. */
 	ce_gl_release();
-	ce_gl_state_loaded(to);
+	ce_gl_state_loaded(at);
 	vulkanStateLoaded();
-	frame = to;
-	afterLoad(to);
-	return true;
+	frame = at;
+	afterLoad(at);
 }
 
 /* Internal (mcp.hpp): the line this session's movie holds for a set of
@@ -1373,7 +1432,7 @@ std::string chimera::sessionMovieEntry(const ce_session *s, const uint8_t *state
 {
 	/* the letters are the machine's own (cfg.mnemonics), not the ones a
 	 * recording was started with, which a session that only plays never has */
-	return s->layout.generate(states, axes, s->cfg.mnemonics);
+	return s->entries().generate(states, axes, s->cfg.mnemonics);
 }
 
 extern "C" {
@@ -1414,6 +1473,8 @@ ce_session *ce_session_open(
 	}
 
 	auto *s = new ce_session();
+	static std::atomic<uint64_t> serials{ 0 };
+	s->serial = ++serials;
 	s->host = host;
 	auto abort = [&](std::string message) -> ce_session *
 	{
@@ -1477,6 +1538,11 @@ ce_session *ce_session_open(
 	chimera::WbxReturn r{};
 	s->streams.push_back({ s->wbxBytes.data(), s->wbxBytes.size() });
 	host->wbx_create_host(&layout, "core.wbx", streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), &r);
+	/* Every create and mount reads its stream whole into the host's own copy
+	 * and never again, so the session's copy goes as soon as the host has one:
+	 * kept for the whole session it was the core (333 MB for MAME, 140 for
+	 * RPCS3), the firmware (a PS3 update is 206 MB) and the assets, twice. */
+	releaseStream(s->streams.back(), s->wbxBytes);
 	if (!r.ok()) return abort(r.errorMessage);
 	s->obj = reinterpret_cast<void *>(r.data);
 
@@ -1522,6 +1588,8 @@ ce_session *ce_session_open(
 			if (!r.ok()) return abort(std::string("mounting ") + alias + ": " + r.errorMessage);
 		}
 	}
+	/* (both rom mounts have their copies now) */
+	std::vector<uint8_t>().swap(s->romBytes);
 
 	/* a directly-opened rom has a name too: when no caller-provided extra
 	 * carries "rom.name", it is the name the rom was just MOUNTED under, so a
@@ -1564,13 +1632,15 @@ ce_session *ce_session_open(
 		s->firmwareBytes.emplace_back(firmware_data[i], firmware_data[i] + firmware_lens[i]);
 		s->streams.push_back({ s->firmwareBytes.back().data(), s->firmwareBytes.back().size() });
 		host->wbx_mount_file(s->obj, firmware_ids[i], streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
+		releaseStream(s->streams.back(), s->firmwareBytes.back());
 		if (!r.ok()) return abort(r.errorMessage);
 	}
 
-	for (const auto &asset : s->assetFiles)
+	for (auto &asset : s->assetFiles)
 	{
 		s->streams.push_back({ asset.second.data(), asset.second.size() });
 		host->wbx_mount_file(s->obj, asset.first.c_str(), streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
+		releaseStream(s->streams.back(), asset.second);
 		if (!r.ok()) return abort(std::string("mounting asset ") + asset.first + ": " + r.errorMessage);
 	}
 
@@ -1589,6 +1659,7 @@ ce_session *ce_session_open(
 			s->extraBytes.emplace_back(extra_data[i], extra_data[i] + extra_lens[i]);
 			s->streams.push_back({ s->extraBytes.back().data(), s->extraBytes.back().size() });
 			host->wbx_mount_file(s->obj, extra_names[i], streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
+			releaseStream(s->streams.back(), s->extraBytes.back());
 		}
 		if (!r.ok()) return abort(std::string("mounting ") + extra_names[i] + ": " + r.errorMessage);
 	}
@@ -1654,6 +1725,7 @@ ce_session *ce_session_open(
 		}
 		else
 		{
+			s->glBridge = true;
 			chimera::WbxReturn r;
 			host->wbx_get_callback_addr(s->obj, reinterpret_cast<void *>(&ce_gl_dispatch), 0, &r);
 			if (!r.ok() || r.data == 0)
@@ -1696,6 +1768,7 @@ ce_session *ce_session_open(
 		}
 		else
 		{
+			chimera_vk_host_set_call_hook(ce_vk_flight_note);
 			chimera::WbxReturn r;
 			host->wbx_get_callback_addr(s->obj, reinterpret_cast<void *>(&chimera_vk_host_dispatch), 2, &r);
 			if (!r.ok() || r.data == 0)
@@ -1717,6 +1790,7 @@ ce_session *ce_session_open(
 	 * for compiled objects. A core without the export keeps nothing. */
 	if (ce_cache_dir_get()[0] != 0)
 	{
+		ce_cache_announce(s_precompileCount > 0);
 		std::string ignored;
 		auto setCache = reinterpret_cast<void (*)(uint64_t)>(s->proc("SetCacheBridge", 1, false, ignored));
 		if (setCache != nullptr)
@@ -1915,6 +1989,9 @@ ce_session *ce_session_open(
 			{
 				for (int64_t k = 0; k < len; k++) ce_session_bus_poke(session, b, static_cast<int32_t>(offset + k), buf[k]);
 			};
+			/* PokeBus takes a 32-bit address: past it a write would land at
+			 * another, so a property there is read-only */
+			d.writableBelow = int64_t{ INT32_MAX } + 1;
 			domains.push_back(std::move(d));
 		}
 		s->properties.load(table, domains);
@@ -2072,6 +2149,8 @@ void ce_session_free(ce_session *s)
 		chimera::WbxReturn r{};
 		s->host->wbx_destroy_host(s->obj, &r);
 	}
+	/* and what it made through the GL bridge, once nothing can call it */
+	if (s->glBridge) ce_gl_session_end();
 	delete s;
 }
 
@@ -2213,16 +2292,16 @@ int32_t ce_session_mnemonic_of(const ce_session *s, const char *name)
 
 const char *ce_session_button_header_of(const ce_session *s, const char *name)
 {
-	static thread_local std::string held;
-	held = name != nullptr ? s->cfg.names.buttonHeaderOf(name) : std::string();
-	return held.c_str();
+	static thread_local chimera::ThreadString held;   /* never destroyed: see thread_string.hpp */
+	*held = name != nullptr ? s->cfg.names.buttonHeaderOf(name) : std::string();
+	return held->c_str();
 }
 
 const char *ce_session_axis_header_of(const ce_session *s, const char *name)
 {
-	static thread_local std::string held;
-	held = name != nullptr ? s->cfg.names.axisHeaderOf(name) : std::string();
-	return held.c_str();
+	static thread_local chimera::ThreadString held;   /* never destroyed: see thread_string.hpp */
+	*held = name != nullptr ? s->cfg.names.axisHeaderOf(name) : std::string();
+	return held->c_str();
 }
 
 const char *ce_session_system_name(const ce_session *s)
@@ -2237,16 +2316,16 @@ int32_t ce_control_mnemonic(const char *name)
 
 const char *ce_control_button_header(const char *name)
 {
-	static thread_local std::string held;
-	held = name != nullptr ? std::string(1, chimera::genericMnemonic(name)) : std::string();
-	return held.c_str();
+	static thread_local chimera::ThreadString held;   /* never destroyed: see thread_string.hpp */
+	*held = name != nullptr ? std::string(1, chimera::genericMnemonic(name)) : std::string();
+	return held->c_str();
 }
 
 const char *ce_control_axis_header(const char *name)
 {
-	static thread_local std::string held;
-	held = name != nullptr ? chimera::genericAxisHeader(name) : std::string();
-	return held.c_str();
+	static thread_local chimera::ThreadString held;   /* never destroyed: see thread_string.hpp */
+	*held = name != nullptr ? chimera::genericAxisHeader(name) : std::string();
+	return held->c_str();
 }
 
 const char *ce_session_axis_name(const ce_session *s, int64_t index)
@@ -2297,9 +2376,10 @@ int32_t ce_session_frame_advance(ce_session *s, uint64_t buttons, int32_t render
 	if (nsamp < 0) nsamp = 0;
 	if (nsamp > s->cfg.samplesPerFrame) nsamp = s->cfg.samplesPerFrame;
 	const auto *src = reinterpret_cast<const int16_t *>(s->getAudio());
+	if (src == nullptr) nsamp = 0; /* no sound set up yet: silence, not a read of address 0 */
 	if (s->cfg.channels == 2)
 	{
-		std::memcpy(s->audioBuf.data(), src, static_cast<size_t>(nsamp) * 2 * sizeof(int16_t));
+		if (nsamp > 0) std::memcpy(s->audioBuf.data(), src, static_cast<size_t>(nsamp) * 2 * sizeof(int16_t));
 	}
 	else
 	{
@@ -2366,6 +2446,14 @@ const uint8_t *ce_session_save_state(ce_session *s, uint64_t *len_out)
 {
 	s->error.clear();
 	s->stateBuf.clear();
+	/* A machine that died is part way through the frame it died in. Saved, it
+	 * came back from the state as a live machine (a load clears the death). */
+	if (s->guestDied())
+	{
+		s->error = "the core stopped: " + s->death;
+		if (len_out != nullptr) *len_out = 0;
+		return nullptr;
+	}
 	chimera::WbxReturn r{};
 	s->stateSaving();
 	/* no deactivate/activate bracket: the host activates itself for the
@@ -2396,7 +2484,7 @@ int32_t ce_session_load_state(ce_session *s, const uint8_t *data, uint64_t len)
 	chimera::WbxReturn r{};
 	s->host->wbx_load_state(s->obj, streamRead, reinterpret_cast<uintptr_t>(&stream), &r); // see save re: no bracket
 	ce_gl_release(); /* a restore can run guest code, and guest code can draw */
-	ce_gl_state_loaded(s->frame);
+	ce_gl_state_loaded(-1); /* which frame a state from outside belongs to is not known here */
 	s->vulkanStateLoaded();
 	if (s->traceEvery > 0)
 	{
@@ -2413,6 +2501,7 @@ int32_t ce_session_load_state(ce_session *s, const uint8_t *data, uint64_t len)
 		return 1;
 	}
 	afterStateLoaded(s);
+	ce_gl_release(); /* StateLoaded is guest code too, and may have drawn */
 	return 0;
 }
 
@@ -2549,6 +2638,8 @@ int32_t ce_session_state_save_file(ce_session *s, const char *utf8_path, const u
 {
 	s->error.clear();
 	if (utf8_path == nullptr || (tag == nullptr && tag_len != 0)) { s->error = "no path to save the state to"; return 1; }
+	/* as ce_session_save_state: a dead machine is no state to keep */
+	if (s->guestDied()) { s->error = "the core stopped: " + s->death; return 1; }
 	chimera::FileWriter out;
 	if (!out.open(utf8_path)) { s->error = std::string("could not create ") + utf8_path; return 1; }
 
@@ -2561,7 +2652,7 @@ int32_t ce_session_state_save_file(ce_session *s, const char *utf8_path, const u
 	const int level = levelEnv != nullptr && std::atoi(levelEnv) != 0 ? std::atoi(levelEnv) : 1;
 	const char *why = nullptr;
 	const chimera::ZstdApi *z = wantRaw ? nullptr : chimera::zstdApi(&why); /* without it the file is simply bigger */
-	void *zcs = z != nullptr ? z->createCStream() : nullptr;
+	void *zcs = z != nullptr && z->createCStream != nullptr ? z->createCStream() : nullptr;
 	if (zcs != nullptr && z->isError(z->initCStream(zcs, level))) { z->freeCStream(zcs); zcs = nullptr; }
 
 	/* The header says which savestate format this is and which build wrote it,
@@ -2658,7 +2749,7 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 	s->host->wbx_load_state(s->obj, stateFileRead, reinterpret_cast<uintptr_t>(&source), &r);
 	if (zds != nullptr) z->freeDStream(zds);
 	ce_gl_release();
-	ce_gl_state_loaded(s->frame);
+	ce_gl_state_loaded(-1); /* as ce_session_load_state */
 	s->vulkanStateLoaded();
 	if (!r.ok() || source.failed)
 	{
@@ -2666,6 +2757,7 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 		return 1;
 	}
 	afterStateLoaded(s);
+	ce_gl_release(); /* StateLoaded is guest code too, and may have drawn */
 	s->stateFileRawBytes = source.raw;
 	s->stateFileStoredBytes = source.fileBytes;
 
@@ -2997,7 +3089,10 @@ int64_t ce_session_bus_read(const ce_session *s, int32_t index, int64_t addr, ui
 			: nullptr;
 		if (from != nullptr) std::memcpy(buf + done, from, static_cast<size_t>(n));
 		else
-			for (int64_t i = 0; i < n; i++) buf[done + i] = static_cast<uint8_t>(s->busPeek(index, static_cast<int32_t>(at + i)));
+			/* PeekBus takes a 32-bit address: past it, zeros, not the byte
+			 * at an address wrapped into the negatives */
+			for (int64_t i = 0; i < n; i++)
+				buf[done + i] = at + i <= INT32_MAX ? static_cast<uint8_t>(s->busPeek(index, static_cast<int32_t>(at + i))) : 0;
 		done += n;
 	}
 	return len;
@@ -3108,8 +3203,16 @@ int64_t ce_session_savedata_read(ce_session *s, int32_t index, int64_t offset, u
 		int64_t done = 0;
 		while (done < n)
 		{
-			const int64_t got = s->sdRead(guest, offset + done, n - done);
+			int64_t got = s->sdRead(guest, offset + done, n - done);
 			if (got <= 0) break;
+			/* the guest's count, so no more than was asked: past it is the
+			 * caller's memory, outside the sandbox */
+			if (got > n - done)
+			{
+				fprintf(stderr, "[%s] ReadSaveDataFile answered %lld bytes when %lld were asked; the rest is not copied\n",
+					s->cfg.coreName.c_str(), (long long)got, (long long)(n - done));
+				got = n - done;
+			}
 			const auto *win = reinterpret_cast<const uint8_t *>(s->sdScratch());
 			if (win == nullptr) break;
 			std::memcpy(buf + done, win, static_cast<size_t>(got));
@@ -3210,6 +3313,7 @@ int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 	for (int64_t i = 0; i < n; i++) ce_movie_log_add(s->movie, ce_movie_log_entry(log, i));
 	const char *key = ce_movie_log_key(log);
 	ce_movie_log_set_key(s->movie, key);
+	s->movieKeyed = key != nullptr && key[0] != '\0' && s->movieLayout.buildFromKey(key, s->cfg.buttons, s->cfg.axes);
 	s->movieMode = 1;
 	return 0;
 }
@@ -3238,6 +3342,9 @@ int64_t ce_session_movie_length(const ce_session *s)
 
 int64_t ce_session_frame(const ce_session *s) { return s->frame; }
 
+/* for the engine's own bookkeeping (mcp.cpp): not in engine.h */
+extern "C" uint64_t ce_session_serial(const ce_session *s) { return s != nullptr ? s->serial : 0; }
+
 const ce_movie_log *ce_session_movie_log(const ce_session *s) { return s->movie; }
 
 int32_t ce_session_movie_entry_decode(
@@ -3246,7 +3353,7 @@ int32_t ce_session_movie_entry_decode(
 	if (entry == nullptr) return -1;
 	std::vector<uint8_t> states;
 	std::vector<int32_t> values;
-	if (!s->layout.parse(entry, states, values)) return -1;
+	if (!s->entries().parse(entry, states, values)) return -1;
 	if (buttons_out != nullptr)
 	{
 		uint64_t mask = 0;
@@ -3269,7 +3376,7 @@ int32_t ce_session_movie_entry_decode_wide(
 	if (entry == nullptr) return -1;
 	std::vector<uint8_t> states;
 	std::vector<int32_t> values;
-	if (!s->layout.parse(entry, states, values)) return -1;
+	if (!s->entries().parse(entry, states, values)) return -1;
 	if (states_out != nullptr)
 	{
 		for (size_t i = 0; i < states.size(); i++) states_out[i] = states[i];
@@ -3299,7 +3406,7 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 	{
 		std::vector<int32_t> movieAxes;
 		const char *entry = ce_movie_log_entry(s->movie, s->frame);
-		if (!s->layout.parse(entry, s->movieButtons, movieAxes))
+		if (!s->entries().parse(entry, s->movieButtons, movieAxes))
 		{
 			s->error = std::string("unparseable movie entry at frame ") + std::to_string(s->frame);
 			return -1;
@@ -3336,7 +3443,7 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 		if (s->guestDied()) return -1;
 		if (s->movieMode == 2)
 		{
-			std::string entry = s->layout.generate(effective, axes, s->mnemonics);
+			std::string entry = s->entries().generate(effective, axes, s->mnemonics);
 			ce_movie_log_add(s->movie, entry.c_str());
 		}
 		lag = s->advanceCore(effective, render);
@@ -3385,6 +3492,9 @@ int32_t ce_session_greenzone_capture(
 	ce_session *s, int64_t frame, const uint8_t *note, uint32_t note_len)
 {
 	if (s == nullptr) return 1;
+	/* nothing of a machine that died is worth a frame: stored, a restore would
+	 * bring it back as if it were alive */
+	if (s->guestDied()) return 0;
 	/* the caller is the one counting: if the session's own count was off, the
 	 * picture the last frame kept was filed under the wrong frame */
 	if (s->machineFrame != frame)
@@ -3459,8 +3569,13 @@ void ce_session_greenzone_capture_period(ce_session *s, int64_t period)
 	if (s == nullptr) return;
 	const bool resuming = s->history.capturePeriod() == 0 && period > 0;
 	s->history.capturePeriod(period);
-	/* the anchor the history goes on from, where the machine stands now */
-	if (resuming) s->greenzoneCapture();
+	/* The anchor the history goes on from, where the machine stands now. That
+	 * is where the last capture said it was (they go on while nothing is
+	 * stored), not the session's own frame, which only a restore and the
+	 * movie path move: under the frontend it was where the last seek went,
+	 * and the machine of frame N was filed under it. When nobody has said
+	 * yet, the next capture stores the anchor itself. */
+	if (resuming && s->history.machineFrame() >= 0) s->history.capture(s->history.machineFrame());
 }
 
 uint64_t ce_session_greenzone_disk_bytes(const ce_session *s)
@@ -3626,7 +3741,7 @@ int32_t ce_session_seek(ce_session *s, int64_t frame)
 	{
 		std::vector<int32_t> movieAxes;
 		const char *entry = ce_movie_log_entry(s->movie, s->frame);
-		if (entry == nullptr || !s->layout.parse(entry, s->movieButtons, movieAxes))
+		if (entry == nullptr || !s->entries().parse(entry, s->movieButtons, movieAxes))
 		{
 			s->error = std::string("unparseable movie entry at frame ") + std::to_string(s->frame);
 			return 1;
