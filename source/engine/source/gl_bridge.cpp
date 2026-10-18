@@ -896,8 +896,14 @@ static void bounceCheckCanary(size_t need, const char *what)
  * buffer, not client memory) - and the caller passes the guest pointer straight
  * through, exactly as before. `tight` is the spec's write (the last row not
  * padded); `scratch` allows for a driver that pads the last row too. */
+/* The rows a readback writes: `rows` of `rowBytes` each, `rowStride` apart. GL
+ * writes those and nothing between them - with a row length larger than the
+ * width, or rows padded to the pack alignment, the bytes between rows are the
+ * client's own and stay as they were. */
+struct PixelRows { size_t rowStride = 0, rowBytes = 0, rows = 0; };
+
 static bool pixelBytes(GLenum format, GLenum type, GLsizei width, GLsizei height,
-                       size_t *tight, size_t *scratch)
+                       size_t *tight, size_t *scratch, PixelRows *shape = nullptr)
 {
 	if (width <= 0 || height <= 0) return false;
 
@@ -949,8 +955,26 @@ static bool pixelBytes(GLenum format, GLenum type, GLsizei width, GLsizei height
 	/* the guest's numbers: a product that would not fit is not guarded */
 	if (rowStride > (SIZE_MAX >> 1) / (size_t)height) return false;
 	*tight = rowStride * ((size_t)height - 1) + (size_t)pixel * (size_t)width;
-	*scratch = rowStride * (size_t)height; /* generous: a padded last row lands here */
+	/* generous: a padded last row lands here. And never less than the span GL
+	 * writes: with a row length SMALLER than the width the rows overlap, and
+	 * rowStride * height fell short of it - the driver then wrote past the
+	 * bounce buffer, into Chimera's own heap (2026-10-18). */
+	*scratch = rowStride * (size_t)height;
+	if (*scratch < *tight) *scratch = *tight;
+	if (shape != nullptr) *shape = PixelRows{ rowStride, (size_t)pixel * (size_t)width, (size_t)height };
 	return true;
+}
+
+/* What GL wrote into the bounce buffer, copied on to the guest row by row: the
+ * bytes between rows are not GL's, and copying them handed the guest whatever
+ * an earlier readback had left there - xemu reads surfaces straight into
+ * console RAM, so the machine depended on what was read before it
+ * (2026-10-18). Rows in order: where they overlap, the later wins, as GL's. */
+static void copyRows(void *dst, const uint8_t *src, const PixelRows &shape)
+{
+	uint8_t *d = static_cast<uint8_t *>(dst);
+	for (size_t r = 0; r < shape.rows; r++)
+		std::memcpy(d + r * shape.rowStride, src + r * shape.rowStride, shape.rowBytes);
 }
 
 /* Whether a readback with these args writes into client memory and can be sized
@@ -958,14 +982,59 @@ static bool pixelBytes(GLenum format, GLenum type, GLsizei width, GLsizei height
  * bound - then `pixels` is an offset into that buffer, not a client pointer -
  * or the format cannot be sized. Fills the byte counts when true. */
 static bool pixelReadGuarded(GLenum format, GLenum type, GLsizei width, GLsizei height,
-                             const void *pixels, size_t *tight, size_t *scratch)
+                             const void *pixels, size_t *tight, size_t *scratch, PixelRows *shape)
 {
 	if (pixels == nullptr) return false;
 	GLint packBuffer = 0;
 	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
 	if (packBuffer != 0) return false;
-	return pixelBytes(format, type, width, height, tight, scratch);
+	return pixelBytes(format, type, width, height, tight, scratch, shape);
 }
+
+/* Whether host code may read (write false) or write the guest's bytes the
+ * core handed GL: asked of the sandbox (wbx_guest_range_ok) through the
+ * session that started the bridge. A null, freed or garbage pointer used to
+ * be followed by the driver or by this file, a fault in host code that ended
+ * Chimera (2026-10-18). With no session, or an older host, the range is taken
+ * as before. */
+static int (*g_guestCan)(void *, uintptr_t, uintptr_t, int);
+static void *g_guestCanCtx;
+
+/* how many readbacks the driver wrote past what the guard sized (tests) */
+extern "C" uint64_t ce_gl_readback_overruns(void) { return g_bounceOverruns; }
+
+extern "C" void ce_gl_guest_check(int (*can)(void *, uintptr_t, uintptr_t, int), void *ctx)
+{
+	g_guestCan = can;
+	g_guestCanCtx = ctx;
+}
+
+static bool guestCan(const void *p, size_t n, bool write)
+{
+	if (n == 0 || g_guestCan == nullptr) return true;
+	return g_guestCan(g_guestCanCtx, reinterpret_cast<uintptr_t>(p), n, write ? 1 : 0) != 0;
+}
+
+/* A call the bridge would not make, said once per entry point: the driver
+ * lacks the function (glad left its pointer null - calling through it ended
+ * Chimera), or the core handed it memory the host may not touch. It answers
+ * 0, as a call the driver refused (2026-10-18). */
+static uintptr_t glRefused(uintptr_t op, const char *name, const char *why)
+{
+	static std::vector<bool> said;
+	if (op < 4096)
+	{
+		if (said.size() <= op) said.resize(op + 1, false);
+		if (said[op]) return 0;
+		said[op] = true;
+	}
+	fprintf(stderr, "[ce-gl] %s was not run: %s (said once)\n", name, why);
+	fflush(stderr);
+	return 0;
+}
+#define CHIMERA_GL_UNSUPPLIED(op, name) glRefused((op), (name), "this GL driver does not provide it")
+#define GL_PROVIDED_OR_REFUSE(fn) do { if (glad_##fn == nullptr) return glRefused(op, #fn, "this GL driver does not provide it"); } while (0)
+static const char kBadPointer[] = "the core handed it memory it does not have";
 
 /* ---------------------------------------------------------------------------
  * Sync objects are NAMED to the guest, never handed to it.
@@ -1492,6 +1561,40 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 {
 	(void)d; (void)e;
 
+	/* Buffers whose bytes the driver reads out of guest memory: the range is
+	 * asked of the sandbox first (guestCan), so a pointer into memory the core
+	 * gave back is a refused call, not a fault in the driver (2026-10-18). A
+	 * fine one goes on to the generated case. */
+	switch (op)
+	{
+		case CHIMERA_GL_OP_glBufferData:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glBufferData *>(a);
+			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glBufferData", kBadPointer);
+			break;
+		}
+		case CHIMERA_GL_OP_glBufferSubData:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glBufferSubData *>(a);
+			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glBufferSubData", kBadPointer);
+			break;
+		}
+		case CHIMERA_GL_OP_glNamedBufferData:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glNamedBufferData *>(a);
+			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glNamedBufferData", kBadPointer);
+			break;
+		}
+		case CHIMERA_GL_OP_glNamedBufferSubData:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glNamedBufferSubData *>(a);
+			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glNamedBufferSubData", kBadPointer);
+			break;
+		}
+		default:
+			break;
+	}
+
 	/* Readbacks that would have the driver write into guest memory go through
 	 * the bounce buffer above rather than the generated case below. */
 	switch (op)
@@ -1501,6 +1604,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glMapBufferRange:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glMapBufferRange *>(a);
+			GL_PROVIDED_OR_REFUSE(glMapBufferRange);
 			void *mapped = glMapBufferRange(p->target, p->offset, p->length, p->access);
 			if (mapped != nullptr && glPool()) bufferPool().noteMapped(boundBuffer(p->target), true);
 			if (poolTrace())
@@ -1511,6 +1615,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glMapBuffer:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glMapBuffer *>(a);
+			GL_PROVIDED_OR_REFUSE(glMapBuffer);
 			void *mapped = glMapBuffer(p->target, p->access);
 			if (mapped != nullptr && glPool()) bufferPool().noteMapped(boundBuffer(p->target), true);
 			return (uintptr_t)mapped;
@@ -1518,6 +1623,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glMapNamedBufferRange:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glMapNamedBufferRange *>(a);
+			GL_PROVIDED_OR_REFUSE(glMapNamedBufferRange);
 			void *mapped = glMapNamedBufferRange(p->buffer, p->offset, p->length, p->access);
 			if (mapped != nullptr) bufferPool().noteMapped(p->buffer, true);
 			return (uintptr_t)mapped;
@@ -1525,6 +1631,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glUnmapBuffer:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glUnmapBuffer *>(a);
+			GL_PROVIDED_OR_REFUSE(glUnmapBuffer);
 			const GLuint name = glPool() ? boundBuffer(p->target) : 0;
 			const GLboolean ok = glUnmapBuffer(p->target);
 			bufferPool().noteMapped(name, false);
@@ -1535,6 +1642,8 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glBufferStorage:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glBufferStorage *>(a);
+			GL_PROVIDED_OR_REFUSE(glBufferStorage);
+			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glBufferStorage", kBadPointer);
 			glBufferStorage(p->target, p->size, p->data, p->flags);
 			if (glPool()) bufferPool().noteImmutable(boundBuffer(p->target), true);
 			if (poolTrace())
@@ -1545,6 +1654,8 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glNamedBufferStorage:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glNamedBufferStorage *>(a);
+			GL_PROVIDED_OR_REFUSE(glNamedBufferStorage);
+			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glNamedBufferStorage", kBadPointer);
 			glNamedBufferStorage(p->buffer, p->size, p->data, p->flags);
 			bufferPool().noteImmutable(p->buffer, true);
 			return 0;
@@ -1552,6 +1663,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glUnmapNamedBuffer:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glUnmapNamedBuffer *>(a);
+			GL_PROVIDED_OR_REFUSE(glUnmapNamedBuffer);
 			const GLboolean ok = glUnmapNamedBuffer(p->buffer);
 			bufferPool().noteMapped(p->buffer, false);
 			return (uintptr_t)ok;
@@ -1560,7 +1672,9 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glGetBufferSubData:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glGetBufferSubData *>(a);
+			GL_PROVIDED_OR_REFUSE(glGetBufferSubData);
 			/* size is exactly the bytes written - no computation to get wrong */
+			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, true)) return glRefused(op, "glGetBufferSubData", kBadPointer);
 			if (p->data == nullptr || p->size <= 0)
 			{
 				glGetBufferSubData(p->target, p->offset, p->size, p->data);
@@ -1583,15 +1697,23 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glReadPixels *>(a);
 			size_t tight = 0, scratch = 0;
+			PixelRows shape;
 			uint8_t *buf = nullptr;
-			if (pixelReadGuarded(p->format, p->type, p->width, p->height, p->pixels, &tight, &scratch)
+			if (pixelReadGuarded(p->format, p->type, p->width, p->height, p->pixels, &tight, &scratch, &shape)
 				&& (buf = bounceFor(scratch)) != nullptr)
 			{
+				if (!guestCan(p->pixels, tight, true)) return glRefused(op, "glReadPixels", kBadPointer);
 				glReadPixels(p->x, p->y, p->width, p->height, p->format, p->type, buf);
 				bounceCheckCanary(scratch, "glReadPixels");
-				memcpy(p->pixels, buf, tight);
+				copyRows(p->pixels, buf, shape);
 				return 0;
 			}
+			/* unsized, or into a pack buffer: a client pointer is checked as far
+			 * as its first byte */
+			GLint packBuffer = 0;
+			glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
+			if (packBuffer == 0 && p->pixels != nullptr && !guestCan(p->pixels, 1, true))
+				return glRefused(op, "glReadPixels", kBadPointer);
 			glReadPixels(p->x, p->y, p->width, p->height, p->format, p->type, p->pixels);
 			return 0;
 		}
@@ -1604,6 +1726,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			 * or a level query that fails, falls through to a direct call. */
 			GLint w = 0, h = 0;
 			size_t tight = 0, scratch = 0;
+			PixelRows shape;
 			uint8_t *buf = nullptr;
 			if (p->pixels != nullptr && (p->target == GL_TEXTURE_2D || p->target == GL_TEXTURE_RECTANGLE))
 			{
@@ -1611,14 +1734,19 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 				glGetTexLevelParameteriv(p->target, p->level, GL_TEXTURE_HEIGHT, &h);
 			}
 			if (w > 0 && h > 0
-				&& pixelReadGuarded(p->format, p->type, w, h, p->pixels, &tight, &scratch)
+				&& pixelReadGuarded(p->format, p->type, w, h, p->pixels, &tight, &scratch, &shape)
 				&& (buf = bounceFor(scratch)) != nullptr)
 			{
+				if (!guestCan(p->pixels, tight, true)) return glRefused(op, "glGetTexImage", kBadPointer);
 				glGetTexImage(p->target, p->level, p->format, p->type, buf);
 				bounceCheckCanary(scratch, "glGetTexImage");
-				memcpy(p->pixels, buf, tight);
+				copyRows(p->pixels, buf, shape);
 				return 0;
 			}
+			GLint packBuffer = 0;
+			glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
+			if (packBuffer == 0 && p->pixels != nullptr && !guestCan(p->pixels, 1, true))
+				return glRefused(op, "glGetTexImage", kBadPointer);
 			glGetTexImage(p->target, p->level, p->format, p->type, p->pixels);
 			return 0;
 		}
@@ -1630,6 +1758,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glFenceSync:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glFenceSync *>(a);
+			GL_PROVIDED_OR_REFUSE(glFenceSync);
 			GLsync sync = glFenceSync(p->condition, p->flags);
 			if (sync == nullptr) return 0;
 			return syncName(sync);
@@ -1638,6 +1767,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glClientWaitSync:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glClientWaitSync *>(a);
+			GL_PROVIDED_OR_REFUSE(glClientWaitSync);
 			GLsync sync = syncFor(p->sync);
 			if (sync == nullptr) return (uintptr_t)GL_ALREADY_SIGNALED;
 			return (uintptr_t)glClientWaitSync(sync, p->flags, p->timeout);
@@ -1646,6 +1776,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glWaitSync:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glWaitSync *>(a);
+			GL_PROVIDED_OR_REFUSE(glWaitSync);
 			GLsync sync = syncFor(p->sync);
 			if (sync != nullptr) glWaitSync(sync, p->flags, p->timeout);
 			return 0;
@@ -1654,6 +1785,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glGetSynciv:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glGetSynciv *>(a);
+			GL_PROVIDED_OR_REFUSE(glGetSynciv);
 			GLsync sync = syncFor(p->sync);
 			if (sync != nullptr)
 			{
@@ -1680,6 +1812,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glDeleteSync:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glDeleteSync *>(a);
+			GL_PROVIDED_OR_REFUSE(glDeleteSync);
 			GLsync sync = syncFor(p->sync);
 			if (sync != nullptr) glDeleteSync(sync);
 			syncForget(p->sync);
@@ -2005,6 +2138,8 @@ extern "C" void *ce_gl_flight_recorder(uint32_t *bytes) { if (bytes) *bytes = 0;
 extern "C" void ce_vk_flight_note(unsigned) { }
 extern "C" void ce_gl_release(void) { }
 extern "C" void ce_gl_audit_frame(int64_t) { }
+extern "C" void ce_gl_guest_check(int (*)(void *, uintptr_t, uintptr_t, int), void *) { }
+extern "C" uint64_t ce_gl_readback_overruns(void) { return 0; }
 extern "C" void ce_gl_state_loaded(int64_t) { }
 extern "C" uintptr_t ce_gl_dispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t) { return 0; }
 extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)

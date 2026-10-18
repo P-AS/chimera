@@ -8625,3 +8625,37 @@ with its part removed. Six one-byte changes to a PCSX2 state file that only a
 checksum can see (as the zstd tool shows) are all refused now. Engine tests
 (30), witness (92), interface tests and the PCSX2 core's test script (44
 passed, 6 skipped) pass.
+
+## The GPU bridge refuses missing functions and memory the core does not have (user-decided, 2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18 found three ways a core's
+GL calls could end Chimera or make a machine depend on something outside it.
+A GL function the graphics driver does not provide was called through a null
+pointer (the core is given a wrapper for every name, whatever the driver has).
+A readback with a pack row length smaller than the picture's width made the
+driver write past the engine's buffer into its heap. And a readback whose rows
+leave gaps (a row length larger than the width, or rows padded to the pack
+alignment) wrote an earlier readback's leftovers into the core's memory
+between the rows; xemu reads surfaces straight into console RAM before every
+state, so the machine depended on what had been read before it. The miniBox
+analysis of the same day had also found that GL calls follow pointers the
+core hands them without asking whether the core has that memory.
+
+**What was decided.** The owner chose to fix every confirmed finding of the
+analysis, one tested change each. A function the driver lacks answers 0, as a
+call the driver refused, in every case, generated or hand-written, and the log
+says which, once. The readback buffer covers everything GL writes, and only
+GL's rows are copied back. Before a buffer upload or a readback, the engine
+asks miniBox whether the core's range is allocated with the access needed (a
+new export, wbx_guest_range_ok); a pointer into memory the core gave back is a
+refused call. Other GL calls that take a pointer are not checked yet; the
+detail is in [gpu-bridge.md](gpu-bridge.md).
+
+**Tested.** Four new GL tests (on Mesa's software GL): overlapping rows with
+nothing written past the buffer, gaps between rows keeping the core's bytes,
+a nulled generated and hand-written function returning 0, and uploads and
+readbacks refused when miniBox says no. Each was seen to fail with its part
+removed. Engine tests (30), witness (92), interface tests, miniBox's tests
+and the PCSX2 core's test script (44 passed, 6 skipped) pass, and the Windows
+build compiles. PCSX2 with its OpenGL renderer on a GTX 1060 gives the same
+picture at frame 2400 and the same record as the build before.

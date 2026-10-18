@@ -814,6 +814,32 @@ first in `chimera-core-dolphin`; the fix belongs there and not here, since the
 engine's side of the contract - mint an id per session, answer `GL_OP_CONTEXT_ID`
 with it - is doing exactly what the other four cores rebuild on.
 
+## What the bridge will not do for a core (2026-10-18)
+
+Found by the engine analysis of 2026-10-18; each used to end Chimera.
+
+- **A function the driver does not provide.** glad leaves its pointer null,
+  and the core is given a wrapper for every name, so a renderer that checks a
+  function pointer rather than the version or the extension string reached a
+  call through null. Every case, generated or written here, now answers 0, as
+  a call the driver refused, and the log says which function, once.
+- **Memory the core does not have.** Before the driver reads a buffer the core
+  hands it (glBufferData, glBufferSubData, the named and storage forms) or a
+  readback writes into the core's memory, the range is asked of the sandbox
+  (wbx_guest_range_ok): allocated pages with the access needed. A pointer into
+  memory the core gave back is a refused call, said once, not a fault in the
+  driver. An unsized readback is checked as far as its first byte. Other GL
+  calls that take a pointer are not checked yet.
+- **The readback guard.** With a pack row length smaller than the width the
+  rows overlap and GL writes more than rowStride * height; the guard's buffer
+  was sized for the smaller number and the driver wrote past it, into
+  Chimera's heap. And with a row length larger than the width, or rows padded
+  to the pack alignment, the bytes between rows are the core's own: the guard
+  copied its whole buffer back, handing the core whatever an earlier readback
+  had left there (xemu reads surfaces straight into console RAM, so the
+  machine depended on what was read before it). The buffer now covers what GL
+  writes, and only GL's rows are copied back.
+
 ## The flight recorder (2026-09-13)
 
 A driver that finds its own state corrupt fast-fails: the process ends inside

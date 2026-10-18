@@ -54,6 +54,10 @@ struct HostApi
 	 * dirty and 0x40 for invisible; optional, and only CHIMERA_HISTORY_VERIFY asks */
 	void (*wbx_get_page_len)(void *obj, WbxReturn *ret);
 	void (*wbx_get_page_data)(void *obj, uintptr_t index, WbxReturn *ret);
+	/* whether a range of guest memory may be read or written by host code
+	 * (data 1/0); optional - the GPU bridge asks it before following a
+	 * pointer the core handed GL, and an older host is not asked */
+	void (*wbx_guest_range_ok)(void *obj, uintptr_t addr, uintptr_t len, bool write, WbxReturn *ret);
 	/* Whether the guest has died - aborted, halted, faulted, exited - and why.
 	 * A dead guest returns from the call it died in, runs nothing until a state
 	 * is loaded, and the session reports it as an error. Optional: an older host
