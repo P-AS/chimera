@@ -39,9 +39,10 @@ namespace Chimera.Tests.Emulation.Common
 		[TestMethod]
 		public void TheAnswersAreReadFromTheNamesThePackageUses()
 		{
-			var video = VideoOf("{\"video\":{\"drawEveryFrame\":true,\"gpuStatesSurviveTheContext\":true}}");
+			var video = VideoOf("{\"video\":{\"drawEveryFrame\":true,\"gpuStatesSurviveTheContext\":true,\"greenzoneSurvivesReload\":true}}");
 			Assert.IsTrue(video.DrawEveryFrame);
 			Assert.IsTrue(video.GpuStatesSurviveTheContext);
+			Assert.IsTrue(video.GreenzoneSurvivesReload);
 		}
 
 		/// <summary>

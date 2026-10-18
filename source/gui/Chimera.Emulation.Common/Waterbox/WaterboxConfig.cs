@@ -707,6 +707,15 @@ namespace Chimera.Emulation.Common.Waterbox
 			public bool GpuStatesSurviveTheContext { get; set; }
 
 			/// <summary>
+			/// Whether a project's greenzone this core drew on a GPU may be loaded in a later session
+			/// (docs/gpu-bridge.md, "Keeping the greenzone across sessions"). A core declares it only
+			/// when its own repository has shown it: a greenzone saved by one process, loaded by
+			/// another, and the same frame drawn. Without it the greenzone of a GPU-drawn project
+			/// starts empty each time the project is opened.
+			/// </summary>
+			public bool GreenzoneSurvivesReload { get; set; }
+
+			/// <summary>
 			/// Whether a SAME-SESSION state load should look like a new context
 			/// to this core, so that its renderer builds its GL objects again.
 			///

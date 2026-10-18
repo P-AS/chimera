@@ -69,9 +69,9 @@ namespace Chimera.Tests.Client.Common.Movie
 				.ToArray();
 
 		private static TasMovie MakeWorkedMovie(string path, string gpuRenderer = "", bool statesSurvive = false,
-			string coreName = "quickernes")
+			string coreName = "quickernes", bool greenzoneSurvives = false)
 		{
-			FakeEmulator emu = new() { GpuRenderer = gpuRenderer, GpuStatesSurviveTheContext = statesSurvive };
+			FakeEmulator emu = new() { GpuRenderer = gpuRenderer, GpuStatesSurviveTheContext = statesSurvive, GreenzoneSurvivesReload = greenzoneSurvives };
 			FakeMovieSession session = new(emu);
 			TasMovie movie = new(session, path);
 			session.Movie = movie;
@@ -339,7 +339,7 @@ namespace Chimera.Tests.Client.Common.Movie
 		public void AGpuDrawnBranchKeepsItsMachineWhereTheGreenzoneIsKept()
 		{
 			var path = Path.Combine(_dir, "gpudrawn.chimeraProject");
-			var movie = MakeWorkedMovie(path, gpuRenderer: "4.5 (Core Profile) Mesa on llvmpipe", coreName: "Ruffle");
+			var movie = MakeWorkedMovie(path, gpuRenderer: "4.5 (Core Profile) Mesa on llvmpipe", coreName: "Ruffle", greenzoneSurvives: true);
 			Assert.IsFalse(movie.Save().IsError);
 
 			var loaded = LoadFresh(path);
@@ -379,7 +379,7 @@ namespace Chimera.Tests.Client.Common.Movie
 		public void ASessionWhoseMachineDiedLeavesNoGreenzoneBehind()
 		{
 			var path = Path.Combine(_dir, "died.chimeraProject");
-			var movie = MakeWorkedMovie(path, gpuRenderer: "4.5 (Core Profile) Mesa on llvmpipe", coreName: "Ruffle");
+			var movie = MakeWorkedMovie(path, gpuRenderer: "4.5 (Core Profile) Mesa on llvmpipe", coreName: "Ruffle", greenzoneSurvives: true);
 			Assert.IsFalse(movie.Save().IsError);
 			Assert.IsTrue(File.Exists(movie.StateHistoryFilename),
 				"a clean Ruffle session writes one - that is the behaviour this guards");
@@ -405,10 +405,9 @@ namespace Chimera.Tests.Client.Common.Movie
 		/// A GPU-drawn core with no evidence behind it keeps the old behaviour: its greenzone is not
 		/// kept between sessions at all, however cleanly the last one closed.
 		///
-		/// The list is evidence, not a promise a core makes about itself: Ruffle DECLARED that its
-		/// states survive a new context while being the core that bricked a project (2026-09-14). A core
-		/// joins the list when a history written by one process has been reloaded by another and shown
-		/// to draw the same frame.
+		/// Surviving a new context is not that evidence: Ruffle DECLARED that its states survive one while
+		/// being the core that bricked a project (2026-09-14). A core declares greenzoneSurvivesReload when
+		/// a history written by one process has been reloaded by another and shown to draw the same frame.
 		/// </summary>
 		[TestMethod]
 		public void AGpuCoreWithNoEvidenceStillStartsCold()
@@ -440,7 +439,7 @@ namespace Chimera.Tests.Client.Common.Movie
 		public void AHistoryFromASessionThatDidNotFinishIsNotTrusted()
 		{
 			var path = Path.Combine(_dir, "crashed.chimeraProject");
-			var movie = MakeWorkedMovie(path, gpuRenderer: "4.5 (Core Profile) Mesa on llvmpipe", coreName: "Ruffle");
+			var movie = MakeWorkedMovie(path, gpuRenderer: "4.5 (Core Profile) Mesa on llvmpipe", coreName: "Ruffle", greenzoneSurvives: true);
 			Assert.IsFalse(movie.Save().IsError);
 			var dir = ProjectRecovery.DirectoryFor(movie.Project.Id);
 			try
@@ -483,30 +482,51 @@ namespace Chimera.Tests.Client.Common.Movie
 		/// <summary>
 		/// A core that SAYS its renderer builds its objects again when the context it drew on is gone
 		/// has that written down - it is what the core said - and it decides nothing. What a session
-		/// leaves for the next is decided by the evidence list: the same claim from a core that is not
-		/// on it keeps neither the greenzone nor a branch's state (AGpuCoreWithNoEvidenceStillStartsCold),
-		/// and a core that is on it keeps both whether it makes the claim or not.
+		/// leaves for the next is decided by greenzoneSurvivesReload: the same claim from a core that does
+		/// not declare it keeps neither the greenzone nor a branch's state (AGpuCoreWithNoEvidenceStillStartsCold),
+		/// and a core that declares it keeps both whether it makes the claim or not.
 		/// </summary>
+		/// <summary>
+		/// No core is known by name: a GPU-drawn project of a core once on the old list of names keeps
+		/// nothing unless its package declares greenzoneSurvivesReload, and what the core declared is
+		/// written into the project, because the project is read before its core is booted.
+		/// </summary>
+		[TestMethod]
+		public void ACoresNameKeepsNothingAndItsDeclarationIsWrittenDown()
+		{
+			var named = Path.Combine(_dir, "named.chimeraProject");
+			Assert.IsFalse(MakeWorkedMovie(named, gpuRenderer: "4.5 Mesa on llvmpipe", coreName: "Ruffle").Save().IsError);
+			var namedLoaded = LoadFresh(named);
+			Assert.IsFalse(namedLoaded.HeaderEntries.ContainsKey(HeaderKeys.GreenzoneSurvivesReload));
+			Assert.IsNotNull(namedLoaded.DroppedCacheNote, "a name alone keeps no greenzone");
+
+			var declared = Path.Combine(_dir, "declared.chimeraProject");
+			Assert.IsFalse(MakeWorkedMovie(declared, gpuRenderer: "4.5 Mesa on llvmpipe", coreName: "any-core", greenzoneSurvives: true).Save().IsError);
+			var declaredLoaded = LoadFresh(declared);
+			Assert.AreEqual("1", declaredLoaded.HeaderEntries[HeaderKeys.GreenzoneSurvivesReload], "the declaration is on record");
+			Assert.IsNull(declaredLoaded.DroppedCacheNote, "and keeps the greenzone, whatever the core is called");
+		}
+
 		[TestMethod]
 		public void WhatARendererSaysOfItselfIsRecordedAndDecidesNothing()
 		{
 			var path = Path.Combine(_dir, "rebuilds.chimeraProject");
-			var movie = MakeWorkedMovie(path, gpuRenderer: "4.5 Mesa on llvmpipe", statesSurvive: true, coreName: "Ruffle");
+			var movie = MakeWorkedMovie(path, gpuRenderer: "4.5 Mesa on llvmpipe", statesSurvive: true, coreName: "Ruffle", greenzoneSurvives: true);
 			Assert.IsFalse(movie.Save().IsError);
 
 			var loaded = LoadFresh(path);
 			Assert.AreEqual(6, loaded.InputLogLength, "the work itself is untouched");
 			Assert.AreEqual("1", loaded.HeaderEntries[HeaderKeys.GpuStatesSurvive],
 				"what the core declared is on record");
-			Assert.IsNull(loaded.DroppedCacheNote, "the greenzone is kept: this core is on the list, and it closed cleanly");
+			Assert.IsNull(loaded.DroppedCacheNote, "the greenzone is kept: this core declares it, and it closed cleanly");
 			Assert.IsNotNull(loaded.Branches[0].StateFile, "and the branch's state with it");
 
 			// the same core saying nothing keeps exactly as much
 			var silent = Path.Combine(_dir, "silent.chimeraProject");
-			Assert.IsFalse(MakeWorkedMovie(silent, gpuRenderer: "4.5 Mesa on llvmpipe", coreName: "Ruffle").Save().IsError);
+			Assert.IsFalse(MakeWorkedMovie(silent, gpuRenderer: "4.5 Mesa on llvmpipe", coreName: "Ruffle", greenzoneSurvives: true).Save().IsError);
 			var silentLoaded = LoadFresh(silent);
 			Assert.IsFalse(silentLoaded.HeaderEntries.ContainsKey(HeaderKeys.GpuStatesSurvive));
-			Assert.IsNotNull(silentLoaded.Branches[0].StateFile, "the list decided, not the claim");
+			Assert.IsNotNull(silentLoaded.Branches[0].StateFile, "the declaration decided, not the claim");
 		}
 
 		/// <summary>

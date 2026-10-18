@@ -520,6 +520,9 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// </summary>
 		public bool GpuStatesSurviveTheContext => _cfg.Video?.GpuStatesSurviveTheContext is true;
 
+		/// <summary>Declared in waterbox.config (video.greenzoneSurvivesReload), and false unless it says so.</summary>
+		public bool GreenzoneSurvivesReload => _cfg.Video?.GreenzoneSurvivesReload is true;
+
 
 		// ICorePrecompile: only meaningful when the core was opened as a precompile session
 		public bool PrecompileDone => _session.PrecompileDone;

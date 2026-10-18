@@ -15,6 +15,9 @@ namespace Chimera.Tests.Client.Common.Movie
 		/// <summary>False, as for a renderer that does not rebuild after a context change.</summary>
 		public bool GpuStatesSurviveTheContext { get; set; }
 
+		/// <summary>False, as for a core with no evidence that its greenzone reloads.</summary>
+		public bool GreenzoneSurvivesReload { get; set; }
+
 		private BasicServiceProvider _serviceProvider;
 		public IEmulatorServiceProvider ServiceProvider => _serviceProvider;
 

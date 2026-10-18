@@ -32,5 +32,14 @@ namespace Chimera.Emulation.Common
 		/// objects came from and builds them again.
 		/// </summary>
 		bool GpuStatesSurviveTheContext { get; }
+
+		/// <summary>
+		/// Whether a project's greenzone, saved by one session of this core, may be loaded by the next.
+		/// Declared by the core's package (<c>video.greenzoneSurvivesReload</c>) and only on evidence: a
+		/// greenzone written by one process, reloaded by another, drawing the same frame. Surviving a new
+		/// context (above) is not enough on its own: Ruffle declared that while being the core that
+		/// bricked a project (2026-09-14).
+		/// </summary>
+		bool GreenzoneSurvivesReload { get; }
 	}
 }

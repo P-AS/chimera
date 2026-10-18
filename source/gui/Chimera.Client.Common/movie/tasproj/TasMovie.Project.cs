@@ -379,6 +379,10 @@ namespace Chimera.Client.Common
 				// again in another session, which is a question about the core
 				// and has to be answered while there is a core to ask
 				if (gpu.GpuStatesSurviveTheContext) Header[HeaderKeys.GpuStatesSurvive] = "1";
+				// ...and whether its greenzone may be loaded by the next session: the core's package says,
+				// on its own evidence, and a core that stops saying so takes the promise away
+				if (gpu.GreenzoneSurvivesReload) Header[HeaderKeys.GreenzoneSurvivesReload] = "1";
+				else Header.Remove(HeaderKeys.GreenzoneSurvivesReload);
 			}
 
 			if (IsAttached())
@@ -569,94 +573,6 @@ namespace Chimera.Client.Common
 		}
 
 		/// <summary>
-		/// Why a state a GPU drew is doubted at all: a bridged core's renderer keeps
-		/// its OpenGL objects - textures, programs, vertex arrays - by the NAMES a
-		/// driver gave it, and those names live in guest memory, so a savestate
-		/// carries them faithfully into a session whose context never issued them.
-		/// A core that does not rebuild them runs on perfectly and draws NOTHING,
-		/// which is what a PS3 project reopened after a few hundred frames once did:
-		/// a black screen, and then a crash. A core may DECLARE that its states
-		/// survive a new context (<c>video.gpuStatesSurviveTheContext</c>); that is
-		/// not taken on trust either.
-		///
-		/// So what crosses a restart - the greenzone, and since 2026-10-06 the
-		/// branch states with it, both of them files in the cache beside the
-		/// project - is decided by this list and by the shutdown
-		/// (<see cref="ProjectRecovery.LastSessionEndedCleanly"/>): what bricked
-		/// nss102 on 2026-09-14 was not the renderer but the SESSION, whose history
-		/// came from one already dying of guest heap corruption.
-		///
-		/// The GPU-drawn cores whose greenzone is known to survive a reload, by EVIDENCE:
-		/// a history written by one process, reloaded by another, drawing the same frame
-		/// pixel for pixel, with no guest death.
-		///
-		/// Ruffle: the real 8916-frame nss102 project, 626 MB greenzone, frame 8915
-		/// identical (2026-09-16), with a control at 8815 differing so the comparison
-		/// could tell frames apart.
-		///
-		/// Dolphin: Pro Rally 2002, 1000 frames of no input, 192 MB greenzone written by
-		/// one process and reloaded by another in 969 ms; frame 999 identical to the
-		/// straight run, 0 of 286,720 pixels different, control at frame 899 differing
-		/// by 98.9% (2026-09-16). No guest died.
-		///
-		/// xemu: Prince of Persia, 1000 frames of no input, a 241 MB greenzone ending at
-		/// frame 300 - BEFORE the title's static tail, so the reload had to replay 700
-		/// changing frames - loaded by another process in 966 ms; frame 999 identical,
-		/// 0 of 307,200 pixels different, control at frame 300 differing by 99.0%
-		/// (2026-09-16). An earlier attempt whose control sat inside the static tail
-		/// matched trivially and proved nothing; the frame a control photographs has to
-		/// be one the picture actually changes on.
-		///
-		/// PCSX2 (Gran Turismo 4), flycast (Re-Volt) and PPSSPP (Ridge Racer), all
-		/// 2026-09-16, all 1000 frames of no input with the greenzone written at frame
-		/// 900 and reloaded in a fresh process: frame 999 identical in every case - 0 of
-		/// 286,720, 0 of 307,200 and 0 of 130,560 pixels - and no guest died.
-		///
-		/// A control frame is half the measurement, and choosing one badly is how this
-		/// nearly shipped a false claim. flycast first "passed" against a control that
-		/// was 100% PURE BLACK, which made its 6.9% difference meaningless: it was
-		/// black against a frame 93% black. Re-Volt's picture also CYCLES on a period
-		/// of about 400 frames, so frames 400 apart are byte-identical and any control
-		/// at that spacing proves nothing whichever way it falls. Re-measured on the
-		/// current core against frame 850, in the other phase of that cycle, it differs
-		/// by 98.52% - and the target carries 900 colours. Greenzone 21.7 MB.
-		///
-		/// PCSX2's control (frame 200) is 88% near-black, which looked like the same
-		/// trap and is not: its target at frame 999 carries 1,066 colours and is 0.6%
-		/// near-black, so the 99.51% difference is real content, not an absence of it.
-		/// Greenzone 158.7 MB.
-		///
-		/// RPCS3 (a PopCap title, 2026-09-16) reloaded a 100 MB greenzone - the largest
-		/// of the seven - in a fresh process and replayed to frame 999 identically: 0 of
-		/// 921,600 pixels. Its control differs by 99.82%, the widest here. Read that
-		/// with its shape in mind: frame 999 is a dark screen, 72.6% pure black over 273
-		/// colours, so the match rests on the 252,811 pixels (27.4%) that carry
-		/// something. Solid evidence, but a darker target than PCSX2's.
-		///
-		/// The PS3 could not be photographed at all until the same day. It died during
-		/// RSX bring-up because the core embedded only Icons/ui/*.png and never the 36
-		/// icons under home/32 and home/256: the home-menu overlay asked for one, got an
-		/// image_info with null data and zero width, and the renderer built a GL texture
-		/// out of it - rpcs3's own "Invalid OpenGL texture definition" killed the RSX
-		/// thread, and all 26 guest threads then waited forever on a thread that was
-		/// gone. Fixed in the core (gen-assets.py walks the tree).
-		///
-		/// Every other GPU core keeps the old behaviour - greenzone cleared on save and
-		/// load - until its own evidence exists. A core's own declaration is NOT enough:
-		/// Ruffle declared <c>gpuStatesSurviveTheContext</c> while being the core that
-		/// bricked a project (docs/design-principles.md, 2026-09-14).
-		/// </summary>
-		private static readonly HashSet<string> GreenzoneSurvivesReload =
-			new(new[] { "Ruffle", "Dolphin", "xemu", "PCSX2", "flycast", "PPSSPP", "RPCS3" },
-				StringComparer.OrdinalIgnoreCase);
-
-		/// <summary>
-		/// Whether this project's greenzone may outlive its session: a machine no GPU
-		/// drew always may; one a GPU drew only if its core is on the evidence list
-		/// above. The core is named by the project's own header, because a project is
-		/// read before its core is booted.
-		/// </summary>
-		/// <summary>
 		/// The core's machine died at some point in this session (the core-stopped dialog was raised).
 		/// Sticky until the project is let go of: a machine that died may have been wrong for some time
 		/// before it faulted, so every state captured in this session is suspect, not just the last one.
@@ -673,6 +589,40 @@ namespace Chimera.Client.Common
 		/// <summary>Remembers that the machine died, so nothing captured in this session outlives it.</summary>
 		public void NoteCoreDied() => CoreDiedThisSession = true;
 
+		/// <summary>
+		/// Why a state a GPU drew is doubted at all: a bridged core's renderer keeps
+		/// its OpenGL objects - textures, programs, vertex arrays - by the NAMES a
+		/// driver gave it, and those names live in guest memory, so a savestate
+		/// carries them faithfully into a session whose context never issued them.
+		/// A core that does not rebuild them runs on perfectly and draws NOTHING,
+		/// which is what a PS3 project reopened after a few hundred frames once did:
+		/// a black screen, and then a crash. A core may DECLARE that its states
+		/// survive a new context (<c>video.gpuStatesSurviveTheContext</c>); that is
+		/// not taken on trust either.
+		///
+		/// So what crosses a restart - the greenzone, and since 2026-10-06 the
+		/// branch states with it, both of them files in the cache beside the
+		/// project - is decided by the core's declaration below and by the shutdown
+		/// (<see cref="ProjectRecovery.LastSessionEndedCleanly"/>): what bricked
+		/// nss102 on 2026-09-14 was not the renderer but the SESSION, whose history
+		/// came from one already dying of guest heap corruption.
+		///
+		/// Which GPU-drawn cores may keep it is the core's own declaration,
+		/// <c>video.greenzoneSurvivesReload</c>, made only on evidence: a greenzone written by one
+		/// process, reloaded by another, drawing the same frame pixel for pixel with no guest death
+		/// (docs/gpu-bridge.md). The measurements that first admitted Ruffle, Dolphin, xemu, PCSX2,
+		/// flycast, PPSSPP and RPCS3 (2026-09-16) are in the design log; until 2026-10-18 they were a
+		/// list of core names here, which the rule that no core is known by name forbids.
+		///
+		/// Surviving a new context (<c>gpuStatesSurviveTheContext</c>) is NOT enough: Ruffle declared
+		/// that while being the core that bricked a project (docs/design-principles.md, 2026-09-14).
+		/// The save writes what the running core declares into the project
+		/// (<see cref="HeaderKeys.GreenzoneSurvivesReload"/>), because a project is read before its
+		/// core is booted.
+		///
+		/// So: a machine no GPU drew may always keep its greenzone; one a GPU drew only when its core
+		/// declared it, and never after a session in which the machine died.
+		/// </summary>
 		private bool GreenzoneMayOutliveSession
 		{
 			get
@@ -680,12 +630,8 @@ namespace Chimera.Client.Common
 				// A session that lost its machine cannot vouch for what it stored.
 				if (CoreDiedThisSession) return false;
 				if (!StatesMadeByGpu) return true;   // nothing outside the savestate drew it
-				// The project's own record first: a project READ from disk may carry no
-				// Core header at all (nss102 does not), while the project object always
-				// knows the core it was made with.
-				var core = Project.CoreName;
-				if (core.Length is 0) HeaderEntries.TryGetValue(HeaderKeys.Core, out core);
-				return core is { Length: > 0 } && GreenzoneSurvivesReload.Contains(core);
+				// what the core that drew it declared, as the last save wrote it down
+				return HeaderEntries.TryGetValue(HeaderKeys.GreenzoneSurvivesReload, out var survives) && survives == "1";
 			}
 		}
 

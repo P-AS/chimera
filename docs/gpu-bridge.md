@@ -709,10 +709,25 @@ too" above) - and a project that loses its cache replays,
 which is what an empty greenzone has always meant.
 
 What stands now: the greenzone of a GPU-drawn machine is kept across a clean
-close for the cores whose states have been SHOWN to reload in another process
-(the evidence list, 2026-09-16), and since 2026-10-06 a branch's state is kept
-under exactly the same rule (docs/design-principles.md, "A branch's state
-follows the greenzone's rule").
+close for the cores whose states have been SHOWN to reload in another process,
+and since 2026-10-06 a branch's state is kept under exactly the same rule
+(docs/design-principles.md, "A branch's state follows the greenzone's rule").
+
+### Keeping the greenzone across sessions (user-decided, 2026-10-18)
+
+Which cores those are is the core's own declaration, `video.greenzoneSurvivesReload`
+in its `waterbox.config`. Until 2026-10-18 it was a list of seven core names in
+the interface, which the rule that no core is known by name forbids. A core
+declares it only on evidence, measured in its own repository: a project's
+greenzone saved by one process, loaded by another, and the frame after it drawn
+the same, pixel for pixel, with no guest death and a control frame that really
+differs. `gpuStatesSurviveTheContext` is not that evidence and is not enough on
+its own. Each save writes what the running core declares into the project
+(header `GreenzoneSurvivesReload`), because a project is read before its core is
+booted; a core that stops declaring it stops having its greenzone kept from the
+next save on. A project saved before 2026-10-18 has no such header, so its
+greenzone starts empty the first time it is opened, and is kept after its next
+save.
 
 Every core that draws on the host's GPU now says yes. Saying it is not the same
 as doing it, so `tests/gpu/run-reopen.sh` asks: open, play, save, close, open

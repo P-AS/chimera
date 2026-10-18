@@ -9244,3 +9244,46 @@ an empty one; arguments with an apostrophe, a backslash, a dollar sign and an
 empty string reach a child process unchanged under Mono. Engine tests (30),
 witness (96) and the interface tests (119, 62, 591 and 340, none failed)
 pass.
+
+## A core declares whether its greenzone reloads; no core is named (user-decided, 2026-10-18)
+
+**What was decided.** The interface kept a GPU-drawn project's greenzone and
+branch states across sessions only for seven cores named in its code
+(`GreenzoneSurvivesReload` in TasMovie.Project.cs), which the rule that no core
+is known by name forbids. The owner chose a new package declaration over
+trusting `gpuStatesSurviveTheContext` (which Ruffle declared while bricking a
+project) or keeping the list: `video.greenzoneSurvivesReload`, declared by a
+core only on evidence measured in its own repository. Each save writes what the
+running core declares into the project (header `GreenzoneSurvivesReload`), and
+the project reads it when it is opened, before its core is booted. The
+evidence that put the seven on the list moved into their packages, beside the
+declaration:
+
+| Core | Game, 1000 frames | Frame after the reload |
+| --- | --- | --- |
+| Ruffle | the 8916-frame nss102 project, 626 MB greenzone | frame 8915 identical |
+| Dolphin | Pro Rally 2002, 192 MB greenzone | 0 of 286,720 pixels differ |
+| xemu | Prince of Persia, 241 MB greenzone ending at 300 | 0 of 307,200 differ |
+| PCSX2 | Gran Turismo 4, 158.7 MB | 0 of 286,720 differ |
+| flycast | Re-Volt, 21.7 MB | 0 of 307,200 differ |
+| PPSSPP | Ridge Racer | 0 of 130,560 differ |
+| RPCS3 | a PopCap title, 100 MB | 0 of 921,600 differ |
+
+All measured 2026-09-16, with a greenzone saved by one process and loaded by
+another, and a control frame that really differs (the code comment that held
+the details is in this file's git history before this change).
+
+**What it costs.** A project saved before this change has no header, so the
+first time it is opened its greenzone starts empty; its next save writes the
+header and later opens keep it. A core that has not declared it (Xenia,
+DuckStation, Vita3K, Azahar and the rest) keeps clearing as before.
+
+**Also decided.** `MovieActionPaint`, an undo step nothing used, is deleted: had
+it been used, undoing a painted axis would have restored 0 or 1 instead of the
+axis value.
+
+**Tested.** A new test: a GPU-drawn project of a core named Ruffle that does not
+declare it keeps nothing, and one of a core of any name that does is recorded
+and keeps its greenzone; it failed when every GPU core was let keep its
+greenzone. The format tests that used the name Ruffle now use the declaration
+(34 pass), and the package parser reads the new key.

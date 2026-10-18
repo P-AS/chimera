@@ -62,6 +62,13 @@ namespace Chimera.Client.Common
 		/// opened - by which time there is no core to ask.
 		/// </summary>
 		public const string GpuStatesSurvive = "GpuStatesSurvive";
+
+		/// <summary>
+		/// "1" when the core that drew this project on a GPU declares that its greenzone may be loaded by a later
+		/// session (IGpuRendered.GreenzoneSurvivesReload). Written at every save, and removed when the core does
+		/// not say so, because it is read when the project is opened, before there is a core to ask.
+		/// </summary>
+		public const string GreenzoneSurvivesReload = "GreenzoneSurvivesReload";
 		public const string Core = "Core";
 		public const string WaterboxHost = "WaterboxHost"; // the sandbox the core ran inside, by its own build info
 		public const string Firmware = "Firmware"; // "<id>=<sha1>" per file the core was given; a BIOS changes what runs
