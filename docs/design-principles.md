@@ -8408,3 +8408,46 @@ which the compiler cannot see through.
 
 **Not checked:** whether any existing movie made in the interface on
 Windows replays differently.
+
+## A core's fault handler runs on its own thread's stack on Linux (user-decided, 2026-10-18)
+
+**What was found.** Some cores protect parts of their own memory and want to
+hear when it is touched: an emulator's texture cache watches the emulated
+console's memory that way. Such a core exports a fault handler, and miniBox
+calls it when a protected page is touched. On Linux that call was made from
+inside the operating system's signal handler, which runs on a separate stack,
+one per thread of Chimera. RPCS3's handler can wait for its renderer, and
+waiting means switching to another of the core's threads; when that thread
+touched a protected page too, its signal was delivered onto the same separate
+stack, over the first handler that was still waiting there. The miniBox
+analysis of 2026-10-18 proved the overwrite with a test program; the outcome
+is Chimera crashing, or a core going on with wrong values. Windows was never
+affected: its handler already runs on the stack of the thread that faulted.
+
+**What was decided.** The owner chose to run the core's handler on the stack
+of the thread that faulted, as Windows does, over refusing the thread switch.
+The signal handler no longer calls it. It points the thread at a small piece
+of code in miniBox (a trampoline) and returns; the trampoline saves every
+register and the vector registers, calls the core's handler on the thread's
+own stack, puts everything back and runs the faulting instruction again. A
+handler that does not claim the fault leaves a mark, and the retry is then
+an ordinary crash of the core, as before. miniBox 2a4107b; the rules are in
+MACHINE-SPEC, "Guest fault forwarding".
+
+**Tested.** miniBox's thread test has three new checks:
+- a handler that switches to another thread, which faults and runs the
+  handler too (this crashed the test program before the change);
+- every register, the flags and the vector registers, AVX included, are
+  what they were after a handler that changed them;
+- a fault the handler does not claim ends the core and not Chimera.
+Each was seen to fail with its part of the trampoline removed. They pass on
+Linux and on Windows. With real cores on Linux, against the previous
+miniBox: RPCS3 running Rayman Legends on its GL renderer called the
+handler 1015 times in 400 frames, twice with the same result and the same
+as before; Xenia running Mirror's Edge through chimera-run called it 776
+times in 300 frames, with the same memory and picture as before.
+
+**Not checked:** Vita3K, the third core with a handler (its build is not on
+this machine). RPCS3's own test script passed (41 passed, 2 skipped), but
+its GL test served no faults: a `||` and `&&` mix-up in it lets two empty
+counts pass. To be fixed in the RPCS3 repository.
