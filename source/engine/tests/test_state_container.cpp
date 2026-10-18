@@ -10,6 +10,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -17,6 +18,17 @@
 static std::vector<uint8_t> bytes(const char *s)
 {
 	return std::vector<uint8_t>(s, s + std::strlen(s));
+}
+
+/* CHIMERA_LUMP_LIMIT, set or taken away */
+static void lumpLimit(const char *bytes)
+{
+#ifdef _WIN32
+	_putenv_s("CHIMERA_LUMP_LIMIT", bytes != nullptr ? bytes : "");
+#else
+	if (bytes != nullptr) setenv("CHIMERA_LUMP_LIMIT", bytes, 1);
+	else unsetenv("CHIMERA_LUMP_LIMIT");
+#endif
 }
 
 int main(void)
@@ -52,6 +64,35 @@ int main(void)
 			assert(lump != nullptr && std::string(lump, lump + len) == "2.11 (chimera test)\n");
 			assert(ce_state_reader_lump(r, "Absent", "bin", &len) == nullptr);
 			assert(ce_state_reader_last_error(r)[0] == '\0'); // absent, not broken
+			ce_state_reader_free(r);
+			ce_state_writer_free(w);
+		}
+	}
+
+	{ // a lump has a ceiling: an archive is somebody else's file, and a lump of
+	  // 2 MB could claim 64 GB (engine analysis, 2026-10-18). Both ways of
+	  // claiming it are refused with a reason: the size the zip says, and what
+	  // a zstd lump turns out to unpack to.
+		for (int32_t level : { 0, 5 })
+		{
+			ce_state_writer *w = ce_state_writer_new(level, "2.11 (chimera test)");
+			auto big = std::vector<uint8_t>(100000, 0x5A);
+			assert(ce_state_writer_put_lump(w, "Core", "bin", 1, big.data(), big.size()) == 0);
+			assert(ce_state_writer_put_lump(w, "Plain", "txt", 0, big.data(), big.size()) == 0);
+			uint64_t zipLen = 0;
+			const uint8_t *zip = ce_state_writer_finish(w, &zipLen);
+			const char *error = nullptr;
+			ce_state_reader *r = ce_state_reader_open(zip, zipLen, 0, &error);
+			assert(r != nullptr);
+			lumpLimit("50000");
+			uint64_t len = 0;
+			assert(ce_state_reader_lump(r, "Core", "bin", &len) == nullptr);
+			assert(std::strstr(ce_state_reader_last_error(r), "50000") != nullptr);
+			assert(ce_state_reader_lump(r, "Plain", "txt", &len) == nullptr);
+			assert(std::strstr(ce_state_reader_last_error(r), "50000") != nullptr);
+			lumpLimit(nullptr);
+			const uint8_t *lump = ce_state_reader_lump(r, "Core", "bin", &len);
+			assert(lump != nullptr && len == big.size());
 			ce_state_reader_free(r);
 			ce_state_writer_free(w);
 		}

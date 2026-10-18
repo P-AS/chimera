@@ -456,6 +456,30 @@ open(p, 'wb').write(codecs.BOM_UTF16_LE + t.encode('utf-16-le'))
 			report "E:package:unreadable" FAIL "could not prepare the package (unzip, python3)"
 		fi
 
+		# A PACKAGE WHOSE SIZES ARE IMPOSSIBLE is refused with the number and
+		# the range, and the process goes on to say so. A width of -1 sized a
+		# picture buffer of 2^64 bytes and ended Chimera (engine analysis,
+		# 2026-10-18).
+		sizepkg="$work/impossible-package"
+		rm -rf "$sizepkg"; mkdir -p "$sizepkg"
+		if (cd "$sizepkg" && unzip -q "$epkg") 2>/dev/null && python3 -c "
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d['video']['width'] = -1
+json.dump(d, open(p, 'w'))
+" "$sizepkg/waterbox.config"; then
+			"$chimera_run" "$sizepkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+				> "$work/impossible-package.log" 2>&1; src=$?
+			if [ "$src" -ne 0 ] && [ "$src" -lt 128 ] && grep -q "video.width is -1, which is not between 1 and 16384" "$work/impossible-package.log"; then
+				report "E:package:sizes" PASS "a package declaring a width of -1 is refused with the number and the range"
+			else
+				report "E:package:sizes" FAIL "rc=$src: $(tail -1 "$work/impossible-package.log" | cut -c1-120)"
+			fi
+		else
+			report "E:package:sizes" FAIL "could not prepare the package (unzip, python3)"
+		fi
+
 		# NUMBERS DO NOT FOLLOW THE SYSTEM'S DECIMAL SEPARATOR (issue 244). On
 		# Linux the frontend's runtime puts the process in the user's locale;
 		# with a decimal comma the engine could not read "0.5" in a core's

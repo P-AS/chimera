@@ -18,6 +18,7 @@
 
 #include "../../extern/miniz/miniz.h"
 
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <string>
@@ -50,7 +51,24 @@ std::string keyOf(const std::string &path)
 	return dot == std::string::npos ? path : path.substr(0, dot);
 }
 
-bool zstdDecompress(const uint8_t *data, size_t len, std::vector<uint8_t> &out, std::string &error)
+/* The most a lump may become: half the machine's memory, and at least 1 GiB.
+ * Movie and state archives are files people share, and a zstd lump of 2 MB
+ * can unpack to 64 GB, which ended the process rather than the read (engine
+ * analysis, 2026-10-18). A PS3 machine's state, the largest there is, is
+ * 4.3 GiB. CHIMERA_LUMP_LIMIT=<bytes> sets it, for the tests. */
+uint64_t lumpLimit()
+{
+	if (const char *e = std::getenv("CHIMERA_LUMP_LIMIT"))
+	{
+		const unsigned long long asked = std::strtoull(e, nullptr, 10);
+		if (asked != 0) return asked;
+	}
+	const uint64_t total = ce_host_memory_total();
+	const uint64_t gib = uint64_t{ 1 } << 30;
+	return std::max<uint64_t>(gib, total / 2);
+}
+
+bool zstdDecompress(const uint8_t *data, size_t len, std::vector<uint8_t> &out, std::string &error, uint64_t most)
 {
 	const char *loadError = nullptr;
 	const chimera::ZstdApi *zstd = chimera::zstdApi(&loadError);
@@ -70,6 +88,8 @@ bool zstdDecompress(const uint8_t *data, size_t len, std::vector<uint8_t> &out, 
 	uint8_t chunk[1 << 16];
 	bool ok = true;
 	size_t reportedAt = 0;
+	/* the stream is given back whatever happens to the output */
+	struct Release { const chimera::ZstdApi *zstd; void *zds; ~Release() { zstd->freeDStream(zds); } } release{ zstd, zds };
 	for (;;)
 	{
 		chimera::ZstdApi::OutBuffer output{ chunk, sizeof chunk, 0 };
@@ -77,6 +97,12 @@ bool zstdDecompress(const uint8_t *data, size_t len, std::vector<uint8_t> &out, 
 		if (zstd->isError(rc) != 0)
 		{
 			error = "zstd: corrupt compressed lump";
+			ok = false;
+			break;
+		}
+		if (out.size() + output.pos > most)
+		{
+			error = "zstd: the lump would be larger than " + std::to_string(most) + " bytes";
 			ok = false;
 			break;
 		}
@@ -94,7 +120,6 @@ bool zstdDecompress(const uint8_t *data, size_t len, std::vector<uint8_t> &out, 
 			break;
 		}
 	}
-	zstd->freeDStream(zds);
 	return ok;
 }
 
@@ -315,7 +340,7 @@ bool readVersion(ce_state_reader *r)
 
 extern "C" {
 
-ce_state_reader *ce_state_reader_open(
+static ce_state_reader *openReader(
 	const uint8_t *data, uint64_t len, int32_t is_movie, const char **error_out)
 {
 	if (error_out != nullptr) *error_out = nullptr;
@@ -375,6 +400,22 @@ ce_state_reader *ce_state_reader_open(
 	return r;
 }
 
+ce_state_reader *ce_state_reader_open(
+	const uint8_t *data, uint64_t len, int32_t is_movie, const char **error_out)
+{
+	/* an archive is somebody's file: nothing in it may end the process */
+	try
+	{
+		return openReader(data, len, is_movie, error_out);
+	}
+	catch (const std::bad_alloc &)
+	{
+		*g_openError = "there was not enough memory to read the archive";
+		if (error_out != nullptr) *error_out = g_openError->c_str();
+		return nullptr;
+	}
+}
+
 void ce_state_reader_free(ce_state_reader *r)
 {
 	if (r == nullptr) return;
@@ -409,6 +450,14 @@ const uint8_t *ce_state_reader_lump(
 		}
 	}
 
+	const uint64_t most = lumpLimit();
+	mz_zip_archive_file_stat stat{};
+	if (mz_zip_reader_file_stat(&r->zip, it->second, &stat) && stat.m_uncomp_size > most)
+	{
+		r->error = std::string(name) + " says it is " + std::to_string(stat.m_uncomp_size)
+			+ " bytes, more than the " + std::to_string(most) + " a lump may be";
+		return nullptr;
+	}
 	size_t rawLen = 0;
 	void *raw = mz_zip_reader_extract_to_heap(&r->zip, it->second, &rawLen, 0);
 	if (raw == nullptr)
@@ -416,17 +465,27 @@ const uint8_t *ce_state_reader_lump(
 		r->error = std::string("could not extract ") + name;
 		return nullptr;
 	}
-	r->lump.clear();
-	if (compressed)
+	try
 	{
-		bool ok = zstdDecompress(static_cast<uint8_t *>(raw), rawLen, r->lump, r->error);
-		mz_free(raw);
-		if (!ok) return nullptr;
+		r->lump.clear();
+		if (compressed)
+		{
+			bool ok = zstdDecompress(static_cast<uint8_t *>(raw), rawLen, r->lump, r->error, most);
+			mz_free(raw);
+			if (!ok) return nullptr;
+		}
+		else
+		{
+			r->lump.assign(static_cast<uint8_t *>(raw), static_cast<uint8_t *>(raw) + rawLen);
+			mz_free(raw);
+		}
 	}
-	else
+	catch (const std::bad_alloc &)
 	{
-		r->lump.assign(static_cast<uint8_t *>(raw), static_cast<uint8_t *>(raw) + rawLen);
 		mz_free(raw);
+		r->lump = std::vector<uint8_t>();
+		r->error = std::string("there was not enough memory to read ") + name;
+		return nullptr;
 	}
 	if (len_out != nullptr) *len_out = r->lump.size();
 	return r->lump.data();

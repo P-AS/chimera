@@ -495,7 +495,7 @@ int64_t ce_movie_log_journal_replay(ce_movie_log *log, const char *path)
 	return applied;
 }
 
-int32_t ce_movie_log_parse(ce_movie_log *log, const char *text, uint64_t len)
+static int32_t parseLog(ce_movie_log *log, const char *text, uint64_t len)
 {
 	log->lastError.clear();
 	log->entries.clear();
@@ -538,6 +538,22 @@ int32_t ce_movie_log_parse(ce_movie_log *log, const char *text, uint64_t len)
 	}
 	journalAppend(log, imageOf(log, false));
 	return 0;
+}
+
+int32_t ce_movie_log_parse(ce_movie_log *log, const char *text, uint64_t len)
+{
+	/* a movie is somebody's file: nothing in it may end the process */
+	try
+	{
+		return parseLog(log, text, len);
+	}
+	catch (const std::bad_alloc &)
+	{
+		log->entries = std::vector<std::string>();
+		log->logKey.reset();
+		log->lastError = "there was not enough memory to read the movie";
+		return 1;
+	}
 }
 
 const char *ce_movie_log_last_error(ce_movie_log *log) { return log->lastError.c_str(); }

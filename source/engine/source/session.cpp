@@ -275,6 +275,26 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	}
 	cfg.samplesPerFrame = intOf(audio, "samplesPerFrame");
 	cfg.channels = intOf(audio, "channels", 1);
+	/* The sizes a package declares size buffers, so they are checked first: a
+	 * negative width became a buffer of 2^64 bytes and ended Chimera (engine
+	 * analysis, 2026-10-18). The largest any core declares today is 6144 x
+	 * 4608 and 65536 samples a frame. */
+	{
+		auto outside = [&](const char *what, int64_t value, int64_t least, int64_t most)
+		{
+			if (value >= least && value <= most) return false;
+			error = std::string("waterbox.config: ") + what + " is " + std::to_string(value)
+				+ ", which is not between " + std::to_string(least) + " and " + std::to_string(most);
+			return true;
+		};
+		if (outside("video.width", cfg.width, 1, 16384) || outside("video.height", cfg.height, 1, 16384)
+			|| outside("the virtual width", cfg.virtualWidth, 1, 16384) || outside("the virtual height", cfg.virtualHeight, 1, 16384)
+			|| outside("audio.samplesPerFrame", cfg.samplesPerFrame, 0, 1 << 20) || outside("audio.channels", cfg.channels, 1, 2))
+		{
+			cJSON_Delete(root);
+			return false;
+		}
+	}
 	cfg.getAudio = strOf(audio, "get", "GetAudio");
 	cfg.inputName = strOf(input, "name", "Waterbox Controller");
 	const cJSON *buttons = cJSON_GetObjectItemCaseSensitive(input, "buttons");
@@ -1559,7 +1579,15 @@ std::string chimera::sessionMovieEntry(const ce_session *s, const uint8_t *state
 
 extern "C" {
 
-ce_session *ce_session_open(
+/* ce_session_open's and ce_session_open_project's refusal, from outside them */
+static ce_session *openRefused(std::string message, const char **error_out)
+{
+	*g_openError = std::move(message);
+	if (error_out != nullptr) *error_out = g_openError->c_str();
+	return nullptr;
+}
+
+static ce_session *openSession(
 	const char *package_path,
 	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
 	const char *settings_overrides_json,
@@ -2133,7 +2161,36 @@ ce_session *ce_session_open(
 	return s;
 }
 
-ce_session *ce_session_open_project(
+ce_session *ce_session_open(
+	const char *package_path,
+	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
+	const char *settings_overrides_json,
+	const char *const *firmware_ids, const uint8_t *const *firmware_data,
+	const uint64_t *firmware_lens, int32_t firmware_count,
+	const char *const *extra_names, const uint8_t *const *extra_data,
+	const uint64_t *extra_lens, const char *const *extra_paths, int32_t extra_count,
+	const char **error_out)
+{
+	/* Nothing thrown while a machine starts may end the process: the package
+	 * and the memory it asks for are not Chimera's to vouch for (engine
+	 * analysis, 2026-10-18). A machine started part way is not given back. */
+	try
+	{
+		return openSession(package_path, rom, rom_len, rom_path, settings_overrides_json,
+			firmware_ids, firmware_data, firmware_lens, firmware_count,
+			extra_names, extra_data, extra_lens, extra_paths, extra_count, error_out);
+	}
+	catch (const std::bad_alloc &)
+	{
+		return openRefused("there was not enough memory to start the machine", error_out);
+	}
+	catch (const std::exception &e)
+	{
+		return openRefused(std::string("the machine could not be started: ") + e.what(), error_out);
+	}
+}
+
+static ce_session *openProjectSession(
 	const char *package_path, ce_project *project,
 	const char *settings_overrides_json,
 	const char *const *firmware_ids, const uint8_t *const *firmware_data,
@@ -2285,6 +2342,28 @@ ce_session *ce_session_open_project(
 		firmware_ids, firmware_data, firmware_lens, firmware_count,
 		extraNames.data(), extraData.data(), extraLens.data(), extraPaths.data(),
 		static_cast<int32_t>(extraNames.size()), error_out);
+}
+
+ce_session *ce_session_open_project(
+	const char *package_path, ce_project *project,
+	const char *settings_overrides_json,
+	const char *const *firmware_ids, const uint8_t *const *firmware_data,
+	const uint64_t *firmware_lens, int32_t firmware_count,
+	uint32_t flags, const char **error_out)
+{
+	try
+	{
+		return openProjectSession(package_path, project, settings_overrides_json,
+			firmware_ids, firmware_data, firmware_lens, firmware_count, flags, error_out);
+	}
+	catch (const std::bad_alloc &)
+	{
+		return openRefused("there was not enough memory to start the machine", error_out);
+	}
+	catch (const std::exception &e)
+	{
+		return openRefused(std::string("the machine could not be started: ") + e.what(), error_out);
+	}
 }
 
 void ce_session_free(ce_session *s)
@@ -2648,7 +2727,7 @@ const uint8_t *ce_session_save_state(ce_session *s, uint64_t *len_out)
 	return s->stateBuf.data();
 }
 
-int32_t ce_session_load_state(ce_session *s, const uint8_t *data, uint64_t len)
+static int32_t loadState(ce_session *s, const uint8_t *data, uint64_t len)
 {
 	s->error.clear();
 	/* a load rewrites the machine the history may still be copying an anchor of
@@ -2677,6 +2756,19 @@ int32_t ce_session_load_state(ce_session *s, const uint8_t *data, uint64_t len)
 	afterStateLoaded(s);
 	ce_gl_release(); /* StateLoaded is guest code too, and may have drawn */
 	return 0;
+}
+
+int32_t ce_session_load_state(ce_session *s, const uint8_t *data, uint64_t len)
+{
+	try
+	{
+		return loadState(s, data, len);
+	}
+	catch (const std::bad_alloc &)
+	{
+		s->error = "there was not enough memory to load the state";
+		return 1;
+	}
 }
 
 /* ---- a state kept in a file (engine.h, "A state kept in a file") ----------
@@ -3962,7 +4054,7 @@ int32_t ce_session_history_save_wait(ce_session *s)
 	return 1;
 }
 
-int32_t ce_session_history_load(ce_session *s, const char *path, const char *machine_id)
+static int32_t historyLoad(ce_session *s, const char *path, const char *machine_id)
 {
 	s->error.clear();
 	/* a history this build can read, written in an older format, is kept */
@@ -3972,6 +4064,20 @@ int32_t ce_session_history_load(ce_session *s, const char *path, const char *mac
 	for (uint32_t f = chimera::kOldestReadableStateFormat; f < chimera::kStateFormat; f++)
 		older.push_back(id.substr(0, id.size() - now.size()) + chimera::historyFormatSuffix(f));
 	return s->history.loadFrom(path, id.c_str(), s->error, older) ? 0 : 1;
+}
+
+int32_t ce_session_history_load(ce_session *s, const char *path, const char *machine_id)
+{
+	try
+	{
+		return historyLoad(s, path, machine_id);
+	}
+	catch (const std::bad_alloc &)
+	{
+		s->error = "there was not enough memory to read the saved states";
+		s->history.clear();
+		return 1;
+	}
 }
 
 int32_t ce_session_seek(ce_session *s, int64_t frame)

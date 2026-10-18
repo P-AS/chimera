@@ -233,7 +233,9 @@ Advice earned the hard way:
   the memory layout, the button list, settings, firmware. A package with no
   vsync (or a zero in it) runs at 60/1. A picture larger than the declared
   buffer is cropped to it, and said once on stderr: declare the largest the
-  core can draw.
+  core can draw. The engine refuses a package whose sizes are outside what it
+  can hold (2026-10-18): width and height 1 to 16384 (the virtual size too),
+  `audio.samplesPerFrame` 0 to 1048576, `audio.channels` 1 or 2.
 - **The sound's rate is the chip's.** `audio.rate` is the rate the core mixes
   at, and Chimera converts it. In a package of several machines, one whose
   chip runs at another rate states its own: `"audioRate": 64000` in its entry

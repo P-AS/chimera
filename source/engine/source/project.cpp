@@ -209,7 +209,7 @@ ce_project *ce_project_new(void)
 
 void ce_project_free(ce_project *p) { delete p; }
 
-ce_project *ce_project_open(const char *path, const char **error_out)
+static ce_project *openProject(const char *path, const char **error_out)
 {
 	if (error_out != nullptr) *error_out = nullptr;
 
@@ -462,6 +462,21 @@ ce_project *ce_project_open(const char *path, const char **error_out)
 
 	cJSON_Delete(root);
 	return p;
+}
+
+ce_project *ce_project_open(const char *path, const char **error_out)
+{
+	/* a project is somebody's file: nothing in it may end the process */
+	try
+	{
+		return openProject(path, error_out);
+	}
+	catch (const std::bad_alloc &)
+	{
+		*g_error = "there was not enough memory to read the project";
+		if (error_out != nullptr) *error_out = g_error->c_str();
+		return nullptr;
+	}
 }
 
 int32_t ce_project_save(ce_project *p, const char *path, const char **error_out)

@@ -58,7 +58,7 @@ struct ce_package
 
 extern "C" {
 
-ce_package *ce_package_open(const char *path, const char **error_out)
+static ce_package *openPackage(const char *path, const char **error_out)
 {
 	if (error_out != nullptr) *error_out = nullptr;
 
@@ -113,6 +113,21 @@ ce_package *ce_package_open(const char *path, const char **error_out)
 	 * know to be a package */
 	p->sha1 = chimera::sha1Hex(p->zipData.data(), p->zipData.size());
 	return p;
+}
+
+ce_package *ce_package_open(const char *path, const char **error_out)
+{
+	/* a package is somebody's file: nothing in it may end the process */
+	try
+	{
+		return openPackage(path, error_out);
+	}
+	catch (const std::bad_alloc &)
+	{
+		*g_openError = "there was not enough memory to read the package";
+		if (error_out != nullptr) *error_out = g_openError->c_str();
+		return nullptr;
+	}
 }
 
 void ce_package_free(ce_package *p) { delete p; }

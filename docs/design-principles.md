@@ -8765,3 +8765,34 @@ pinned file it says nothing. The agent script checks that open_game pins the
 firmware it was given and that open_project on another file warns and on the
 pinned one does not. Each failed with its part removed. Engine tests (30),
 witness (95), interface tests and the Windows build pass.
+
+## Somebody else's file cannot end Chimera (user-decided, 2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18 found two ways a file
+from outside ended the process instead of failing the call. A zstd-packed lump
+in a movie or state archive (files people share) unpacked without a ceiling,
+so 2 MB of file could ask for 64 GB; and no C++ exception was caught where the
+frontend calls the engine, so a package that declared a picture width of -1
+(the buffer it sized was 2^64 bytes), or running out of memory while reading a
+file, aborted Chimera.
+
+**What was decided.** The owner chose to fix every confirmed finding of the
+analysis.
+- A lump may be at most half the machine's memory, and at least 1 GiB; one
+  that says or turns out larger is refused with the sizes. A PS3 machine's
+  state, the largest there is, is 4.3 GiB.
+- A package's picture and sound sizes are checked against ranges every core
+  fits (the largest today is 6144 x 4608 and 65536 samples a frame) and a
+  package outside them is refused with the number and the range.
+- Opening a machine or a project, loading a state or a saved history, and
+  reading a project, a movie, an archive or a package now catch what is
+  thrown and fail the call with a sentence. A machine started part way is not
+  given back.
+
+**Tested.** A new engine test reads a stored and a zstd lump under a lowered
+ceiling and both are refused with the ceiling named. A new witness test runs a
+package declaring a width of -1: it is refused with the number and the range.
+With the check removed, the new guard refuses it instead ("could not be
+started"); with both removed, Chimera aborts, as the analysis found. Running out
+of memory part way is not tested. Engine tests (30), witness (96),
+interface tests and the Windows build pass.
