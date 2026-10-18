@@ -8333,3 +8333,29 @@ Tried by hand under their own desktops as well: Plasma on Wayland and on X11
 
 **Not proved:** LXQt's chooser under LXQt, and Windows, where the dialogs
 should be the ones they were.
+
+## Vulkan's instance and device are made on a thread of their own, on Windows (2026-10-18)
+
+**The reports.** Issues 278, 306, 307 and 308: Chimera closed when a Vulkan
+core started (Dolphin, RPCS3's pre-compile, xemu) on two machines with
+Intel's legacy driver, 31.0.101.2111 and .2112. Every crash note is the same:
+the driver raises a C++ exception inside `vkCreateInstance` and nothing
+catches it. The published nightly's own `libchimera.dll` named the caller,
+`vkb_special_vkCreateInstance`.
+
+**What was decided.** On Windows the bridge creates the instance and the
+device on a thread made for the call and waits for it (miniBox 5ed4270). A
+core calls in on Chimera's window thread, a single-threaded COM apartment;
+standalone Dolphin, which starts on the same driver, creates its instance on
+a thread of its own. Memory was ruled out from the minidumps (gigabytes of
+commit to spare) and so was an old loader (one machine has 1.4.309). Whether
+the thread is the cause is not proven: there is no Intel card here. A
+driver's exception cannot be caught by code from Chimera's compiler, so if
+it is not the thread, OpenGL stays the way on those machines.
+docs/gpu-bridge.md has the measurements.
+
+**And the compile window.** A session that died of an uncaught C++
+exception (exit code 0xE06D7363) was reported as "exit code -529697949", or,
+when the machine's memory looked low while sessions ran, as running out of
+memory alone (issue 307). The code now has words, and a memory verdict also
+says how the sessions ended when that was a crash.

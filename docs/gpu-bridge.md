@@ -1052,3 +1052,33 @@ frames later, byte for byte. A load costs 0.6 s with Vulkan against 0.2 s
 with OpenGL. Of that, 185 ms is the driver making a new device, which the
 bridge asks for after every load, and 68 ms is the bridge copying two
 freshly mapped blocks to the guest. Both are the bridge's to improve.
+
+### The instance and the device are made on a thread of their own (Windows, 2026-10-18, issues 278, 306, 307, 308)
+
+Two users with Intel's legacy driver for 6th- to 9th-generation graphics
+(31.0.101.2111 and 31.0.101.2112, on an HD Graphics 520 and on a UHD 630
+beside an NVIDIA card) saw Chimera close when a Vulkan core started: Dolphin
+(278), RPCS3's pre-compile (306, 307) and xemu (308). The crash notes are one
+place: the driver raises a C++ exception of its own inside
+`vkCreateInstance`, called from `vkb_special_vkCreateInstance`, and nothing
+catches it. Read with the published nightly's own `libchimera.dll`
+(2026-10-17, 67224ec2), whose symbols name the function. The driver offsets
+match on both machines.
+
+The minidumps rule out running short of memory (each machine had gigabytes
+of commit to spare) and an old Vulkan loader (one machine has 1.4.309).
+Standalone Dolphin starts on the same driver. One difference a core cannot
+see is the thread: a core calls in on the thread that runs it, which in
+Chimera is the window's, and .NET makes that a single-threaded COM
+apartment. On Windows the bridge now creates the instance and the device on
+a thread made for the call (no COM apartment, an 8 MB stack) and waits for
+it. Vulkan allows an object made on one thread to be used on another.
+
+What is known: on the GTX 1060, PCSX2's Vulkan renderer through the new
+path draws Street Fighter EX3 the same as its OpenGL renderer, byte for
+byte, at frames 600, 899 and 2,400. What is not: whether this is the cause
+on Intel's driver. There is no such card here, and the exception's type
+lives in the driver's memory, which the minidumps do not hold. A driver's
+C++ exception cannot be caught by code from Chimera's compiler (MinGW's
+`catch (...)` does not catch one; tried), so if the thread is not the cause
+the crash remains, and OpenGL is the way on those machines.
