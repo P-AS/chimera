@@ -9311,3 +9311,36 @@ step's lane arithmetic broken it fails at the first such search. The
 engine's 30 unit tests pass, the witness 99 passed and 0 failed, the
 interface tests 1108 with none failed (23 skipped), and the Windows build
 compiles.
+
+## Guest kit revision 2: Linux's file answers, and virtual time that cannot run backwards or stand still (2026-10-18)
+
+**What was found.** miniBox's file calls answered a descriptor that is not
+open with ENOENT or EINVAL where Linux says EBADF, seeking a stream with
+EINVAL where Linux says ESPIPE, and refused a seek past a file's end, which
+Linux allows (a read there is end of file). In virtual time (machine spec
+v3, used by FreeJ2ME), a sleep or timeout too large for the clock wrapped
+round and ran the clock backwards, a thread spinning on a wait that had
+already timed out never let another thread run, and a thread that only
+called sched_yield, alone with others waiting on timeouts, spun with the
+clock standing still.
+
+**What was decided.** All of it changes what a core sees, so it goes only to
+cores built with the new guest kit, revision 2 (the kit's emulibc declares
+the revision; a core built before keeps the answers its movies were made
+with, as revision 1 did for sysinfo). From revision 2: EBADF, ESPIPE and
+seeks past the end as on Linux (a write there fills the gap with zeros, and
+a position past the end survives a state load); huge times saturate at the
+clock's largest value; an expired wait gives way as a clock read does; and a
+lone sched_yield while others wait with timeouts costs one tick. miniBox's
+MACHINE-SPEC lists revision 2.
+
+**Tested.** miniBox's conformance guests, built once with the new kit and
+once with none, check every answer both ways: the file answers in the v2
+guest, and in the v3 guest a lone yield, an expired wait and a huge sleep.
+With the revision ignored (old answers for all) the new-kit runs fail; with
+revision 2's answers given to all, the no-kit runs fail. They pass on Linux
+and on Windows. miniBox's 23 tests pass (6 expected failures, as before);
+the synthetic core was rebuilt with the new kit, and the engine's 30 unit
+tests pass, the witness 99 passed and 0 failed, the interface tests 1114
+with none failed (23 skipped), the Windows build compiles, and the PCSX2
+core's test script 44 passed, 0 failed, 6 skipped.
