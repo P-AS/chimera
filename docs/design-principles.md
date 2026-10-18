@@ -8359,3 +8359,52 @@ exception (exit code 0xE06D7363) was reported as "exit code -529697949", or,
 when the machine's memory looked low while sessions ran, as running out of
 memory alone (issue 307). The code now has words, and a memory verdict also
 says how the sessions ended when that was a crash.
+
+## A core's floating-point settings are its own, the same on every system (user-decided, 2026-10-18)
+
+**What was found.** The processor has two small settings that decide how
+floating-point arithmetic rounds: the x87 control word (for the old
+floating-point unit: precision and rounding) and MXCSR (the same for SSE,
+plus what happens with very small numbers). Nothing at the sandbox's
+boundary set them, so a core ran with whatever the calling thread had.
+Windows starts its threads at 0x27F (53-bit precision), so the interface on
+Windows ran every core at 53-bit x87 precision; chimera-run, every test
+script and the interface on Linux ran them at 0x37F (64-bit). The C library
+inside the sandbox (musl) assumes 64-bit: at 0x27F it printed 2.7 rounded
+to a whole number as 2, and read 94% of two million decimal numbers back as
+a slightly different value. A core that prints or reads decimal numbers
+could therefore behave differently in the interface on Windows than in
+every test. The other way round, a core that changed MXCSR (PCSX2 sets
+round-toward-zero for the emulated CPU) left it changed on Chimera's thread.
+
+**What was decided.** The two settings are part of the machine, for every
+core now, old and new. The owner chose this over an opt-in per core: on
+Linux nothing changes, and on Windows a movie recorded in the interface
+with a core that prints or reads decimal numbers may replay differently.
+A core starts with 0x37F and 0x1F80. They are loaded on every way into the
+core (its exports, its start-up code, the return from a system call or from
+a call to Chimera such as a GPU call) and Chimera's are put back on every
+way out. What a core sets stays with the core and is saved in savestates;
+a state from before loads with the starting values. miniBox 1c10a81;
+the rules are in miniBox's MACHINE-SPEC, section 9.
+
+**Measured.** On the GTX 1060, PCSX2 with OpenGL for 2401 frames took 8.1
+to 8.8 s before and 8.3 to 8.6 s after (three runs each), with the same
+picture at frame 2400 and the same recorded file. Each call from a core to
+Chimera costs about 20 ns more. For Ruffle, the core that makes the most of
+them, that is about 0.1 ms in an average frame (6,000 GL calls) and 1 ms in
+the heaviest (50,000), against a frame of about 48 ms. miniBox's tests now
+check the settings at start-up, in an export, after a system call, inside
+and after a call to the host, and across a savestate; each check was seen
+to fail with its part of the change removed. Run on Linux and on Windows.
+
+**A compiler trap found on the way.** Chimera builds miniBox with -O3. At
+that level GCC removed the call into the core's start-up code: the call
+went through a constant address handed to a function it inlined, and a
+constant that is not a function's address counts as unreachable to it.
+miniBox's own build optimises less and passed every test; PCSX2 under
+chimera-run crashed. The address now goes through an empty asm statement,
+which the compiler cannot see through.
+
+**Not checked:** whether any existing movie made in the interface on
+Windows replays differently.
