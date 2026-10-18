@@ -349,6 +349,12 @@ if holder and changes:
     check("set_buttons with nothing named is refused", error and "at least one" in text)
     error, text, _ = call("insert_frames", frame=last + 9)
     check("insert_frames past the movie's end is refused", error and str(last) in text)
+    # two billion frames past the end were added one empty line at a time,
+    # until the process was killed
+    error, text, _ = call("set_buttons", frame=2000000000, buttons={"P1 A": True})
+    check("set_buttons far past the movie's end is refused", error and "past the movie's end" in text)
+    error, text, _ = call("set_input", frame=2000000000, entries=[movie[0]])
+    check("so is set_input", error and "past the movie's end" in text)
     check("the refused edits changed nothing", all_input() == movie)
     # input lines written as given, also past the end, and undone in one step
     facts("set_input", frame=last - 1, entries=[movie[1], movie[1], movie[1]])

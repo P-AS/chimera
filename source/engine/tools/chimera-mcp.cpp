@@ -47,6 +47,8 @@
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
+#else
+#include <unistd.h>
 #endif
 
 int main(int argc, char **argv)
@@ -91,6 +93,23 @@ int main(int argc, char **argv)
 	_setmode(_fileno(stdin), _O_BINARY);
 	_setmode(_fileno(stdout), _O_BINARY);
 #endif
+	/* Standard output carries the protocol and nothing else. A core prints to
+	 * its own standard output, which miniBox writes to this process's, and
+	 * without a window the core runs in this process: a line of its went into
+	 * the agent's stream (engine analysis, 2026-10-18). So the protocol keeps
+	 * a copy of the descriptor for itself, and standard output becomes
+	 * standard error for everything else. */
+	std::fflush(stdout);
+#ifdef _WIN32
+	const int protocolFd = _dup(_fileno(stdout));
+	FILE *protocol = protocolFd >= 0 ? _fdopen(protocolFd, "wb") : nullptr;
+	if (protocol != nullptr) _dup2(_fileno(stderr), _fileno(stdout));
+#else
+	const int protocolFd = dup(fileno(stdout));
+	FILE *protocol = protocolFd >= 0 ? fdopen(protocolFd, "w") : nullptr;
+	if (protocol != nullptr) dup2(fileno(stderr), fileno(stdout));
+#endif
+	if (protocol == nullptr) protocol = stdout;
 
 	chimera::McpLink link;
 	std::unique_ptr<chimera::McpLocal> machine;
@@ -114,9 +133,9 @@ int main(int argc, char **argv)
 		if (line.empty()) continue;
 		const std::string reply = chimera::mcpHandleLine(line, execute, &client);
 		if (reply.empty()) continue;
-		std::fwrite(reply.data(), 1, reply.size(), stdout);
-		std::fputc('\n', stdout);
-		std::fflush(stdout);
+		std::fwrite(reply.data(), 1, reply.size(), protocol);
+		std::fputc('\n', protocol);
+		std::fflush(protocol);
 	}
 	return 0;
 }

@@ -1527,6 +1527,18 @@ bool lineFits(ce_session *s, const EntryLayout &held, const std::string &line, c
 		&& sessionDecodeIn(s, held, line.c_str(), nullptr, nullptr);
 }
 
+/* How far past the movie's end an edit may start: the frames between are
+ * added empty, one at a time, and a frame number two billion past the end
+ * filled memory until the process was killed (engine analysis, 2026-10-18).
+ * The same as the most insert_frames adds at once. */
+const int64_t kMostPastEnd = 100000;
+
+std::string pastEndRefusal(int64_t length)
+{
+	return "'frame' may be at most " + std::to_string(kMostPastEnd) + " frames past the movie's end, which is frame "
+		+ std::to_string(length) + ". insert_frames adds more.";
+}
+
 /* Hands back the step for the movie's holder as (tool, arguments), or an
  * error. `tool` comes in as the agent's and goes out as the holder's.
  * `engineHolds` says the movie is the engine's own (no window), which takes a
@@ -1570,6 +1582,7 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, bool engineHolds, std::
 		const cJSON *entries = cJSON_GetObjectItemCaseSensitive(arguments, "entries");
 		count = cJSON_IsArray(entries) ? cJSON_GetArraySize(entries) : 0;
 		if (!integerArgument(arguments, "frame", 0, INT32_MAX - 2000, -1, frame) || frame < 0) why = "'frame' must be a frame number, 0 or more.";
+		else if (frame > length + kMostPastEnd) why = pastEndRefusal(length);
 		else if (count < 1 || count > 1000) why = "'entries' must be between 1 and 1000 lines of input, as get_input returns them.";
 		else
 		{
@@ -1645,6 +1658,7 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, bool engineHolds, std::
 		}
 		if (!why.empty()) {}
 		else if (!integerArgument(arguments, "frame", 0, INT32_MAX - 20000, -1, frame) || frame < 0) why = "'frame' must be a frame number, 0 or more.";
+		else if (frame > length + kMostPastEnd) why = pastEndRefusal(length);
 		else if (!integerArgument(arguments, "count", 1, 10000, 1, count)) why = "'count' must be between 1 and 10000.";
 		else if (!any) why = "Name at least one button in 'buttons' or one axis in 'axes'.";
 		else

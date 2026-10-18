@@ -190,8 +190,8 @@ Changes:
 | --- | --- |
 | `seek` | Moves the playback position to a frame, back or forward, and answers when the machine is there. |
 | `advance_until` | Plays the movie forward until a memory value or a property meets a condition (equal, greater, changed, ...) and stops on that frame. It stops at the movie's end or after `max_frames` otherwise, and says which. |
-| `set_input` | Replaces the input from a frame on, one line a frame as `get_input` returns them. Past the movie's end it adds frames. |
-| `set_buttons` | Presses or releases buttons, and sets axes, by name over a range of frames. Controls not named keep what they had. A movie made with an older package may not have a column for a control (its LogKey does not name it): without a window the control is added to the movie, a column on every line; with the window the call is refused and says which control. |
+| `set_input` | Replaces the input from a frame on, one line a frame as `get_input` returns them. Past the movie's end it adds frames, starting at most 100000 frames past it. |
+| `set_buttons` | Presses or releases buttons, and sets axes, by name over a range of frames. Controls not named keep what they had. Like `set_input` it starts at most 100000 frames past the movie's end. A movie made with an older package may not have a column for a control (its LogKey does not name it): without a window the control is added to the movie, a column on every line; with the window the call is refused and says which control. |
 | `insert_frames` / `delete_frames` | Changes the movie's length at a frame. |
 | `undo` | Undoes the last step of the undo history, the same as Edit > Undo. |
 | `save_branch` / `load_branch` | Keeps or restores a branch. |
@@ -300,6 +300,11 @@ What is different from the window:
   movie may desync.
 - **One machine at a time.** Opening another closes the one before, without
   saving it.
+- **What the core prints goes to standard error.** The core runs in
+  `chimera-mcp`'s own process, and its standard output would be the agent's
+  protocol stream: a line of it there broke the agent's reading of every
+  answer after it (2026-10-18). `chimera-mcp` keeps standard output for the
+  protocol and sends everything else to standard error.
 
 ### Which files it may touch
 

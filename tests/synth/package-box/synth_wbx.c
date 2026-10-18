@@ -67,6 +67,11 @@ ECL_EXPORT int Init(void) {
 		for (int i = 0; i < 4096; i++) ram[i] = (uint8_t)fill;
 	}
 	moving();
+	/* one line on standard output, as real cores print: without a window the
+	 * MCP server runs the core in its own process, and this line must not
+	 * reach the agent's protocol stream */
+	printf("synth: started\n");
+	fflush(stdout);
 	return 1;
 }
 

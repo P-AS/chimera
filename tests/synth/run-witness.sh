@@ -96,6 +96,9 @@ if [ "$level" = "both" ] || [ "$level" = "a" ]; then
 				|| { report "A:box:$name" FAIL "runner error"; continue; }
 			LD_LIBRARY_PATH="$box_host_dir" "$box_tester" "$box_wbx" "$rom" "$movie" --rerecord > "$work/$name.box.rerecord.out" 2>/dev/null \
 				|| { report "A:box:$name" FAIL "runner error (rerecord)"; continue; }
+			# the core's own line on its standard output (see synth_wbx.c's
+			# Init) reaches the box runner's; the native runner has no Init
+			sed -i '/^synth: started$/d' "$work/$name.box.simple.out" "$work/$name.box.rerecord.out"
 			if ! cmp -s "$work/$name.box.simple.out" "$work/$name.box.rerecord.out"; then
 				report "A:box:$name" FAIL "rerecord diverges from simple"
 			elif cmp -s "$work/$name.box.simple.out" "$golden"; then

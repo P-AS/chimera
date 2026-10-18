@@ -8796,3 +8796,27 @@ With the check removed, the new guard refuses it instead ("could not be
 started"); with both removed, Chimera aborts, as the analysis found. Running out
 of memory part way is not tested. Engine tests (30), witness (96),
 interface tests and the Windows build pass.
+
+## The MCP server: an edit far past the end is refused, and a core's printing stays out of the agent's stream (user-decided, 2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18 found two ways the MCP
+server without a window failed an AI agent. set_input and set_buttons took a
+frame number up to two billion past the movie's end, and the frames between
+were added one empty line at a time until the process was killed for want of
+memory. And the core runs in chimera-mcp's own process, so a line it printed
+on its standard output went into the agent's protocol stream, and the agent
+could not read the answers after it.
+
+**What was decided.** The owner chose to fix every confirmed finding of the
+analysis. An edit may start at most 100,000 frames past the movie's end, the
+most insert_frames adds at once, and the refusal says where the end is.
+chimera-mcp keeps standard output for the protocol and sends everything else
+printed there, the core's lines among them, to standard error.
+
+**Tested.** The synthetic core now prints one line on its standard output when
+it starts, and the agent script, which reads every answer as JSON, runs
+through without a window as before; with the redirect removed it fails on the
+core's line. The agent script asks for an edit two billion frames past the end
+and is refused; with the bound removed it ran until the test's time limit.
+The box runner's comparison with the native build leaves the core's line out.
+Engine tests (30), witness (96), interface tests and the Windows build pass.
