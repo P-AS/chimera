@@ -8950,4 +8950,6 @@ PCSX2 core's ports:columns test).
 six with the old measure) and a witness test for a core dying in Init (the
 reason is said; "could not load this file" with the fix removed). The other
 fixes have no new test: they are on paths that need memory to run out, a
-second process, or a file changed between two calls. RESULTS
+second process, or a file changed between two calls. Engine tests (30),
+witness (97), interface tests, the Windows build and the PCSX2 core's test
+script (44 passed, 6 skipped, ports:columns among them) pass.
