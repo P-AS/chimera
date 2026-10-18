@@ -8820,3 +8820,23 @@ core's line. The agent script asks for an edit two billion frames past the end
 and is refused; with the bound removed it ran until the test's time limit.
 The box runner's comparison with the native build leaves the core's line out.
 Engine tests (30), witness (96), interface tests and the Windows build pass.
+
+## A disc or zip image that fails leaves the one already there (user-decided, 2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18: the media maker's three
+writers (zip, ISO 9660 disc, FAT12 floppy) opened the output path itself and
+truncated it at the start, so a run that failed or was cancelled deleted the
+image that was already there; and none checked the final close, so an image
+whose last bytes did not reach the disk (a full disk) was reported as made.
+
+**What was decided.** The owner chose to fix every confirmed finding of the
+analysis. The writers write through the engine's file writer: under a
+temporary name beside the image, moved over it only when the file closed
+without an error.
+
+**Tested.** A new media test puts an image in place and, for each format,
+cancels a run over it and, on Linux, runs it under a file size limit that
+plays a full disk: the run fails and says so, the image is as it was, and no
+temporary file is left; a run that works then replaces it. With the ISO
+writer deleting the image on failure again, the test fails. Engine tests (30),
+witness (96), interface tests and the Windows build pass.

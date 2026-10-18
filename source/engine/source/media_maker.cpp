@@ -59,6 +59,11 @@ void put64(std::vector<uint8_t> &v, uint64_t x)
  * overwritten would be worse than not hashing at all: it would be wrong. */
 struct OutFile
 {
+	/* Written under a name of its own and moved over the image only when all
+	 * of it is on the disk: a pack that failed or was cancelled used to
+	 * delete the image that was already there, and a close that failed (a
+	 * full disk) was not noticed (engine analysis, 2026-10-18). */
+	chimera::FileWriter file;
 	std::FILE *f = nullptr;
 	Sha1Stream sha;
 	bool hashing = true;
@@ -66,8 +71,9 @@ struct OutFile
 
 	bool open(const std::string &path)
 	{
-		f = chimera::openFile(path.c_str(), "wb");
-		return f != nullptr;
+		if (!file.open(path.c_str())) return false;
+		f = file.file();
+		return true;
 	}
 	bool write(const void *data, uint64_t len)
 	{
@@ -78,10 +84,12 @@ struct OutFile
 		return true;
 	}
 	bool write(const std::vector<uint8_t> &v) { return write(v.data(), v.size()); }
-	void close()
+	/* closes and moves into place; false when the bytes did not all reach
+	 * the disk. Not called, the temporary file goes and the image stays. */
+	bool commit()
 	{
-		if (f) std::fclose(f);
 		f = nullptr;
+		return file.commit();
 	}
 };
 
@@ -332,11 +340,10 @@ bool mediaWriteZipStored(const std::vector<MediaEntry> &files, const std::string
 		}
 	}
 
-	out.close();
-	if (!ok)
+	if (!ok) return false;   /* the temporary file goes with `out`; the image is as it was */
+	if (!out.commit())
 	{
-		std::error_code ec;
-		std::filesystem::remove(std::filesystem::u8path(outPath), ec);
+		error = "cannot write the output (is the disk full?)";
 		return false;
 	}
 

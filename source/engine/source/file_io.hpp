@@ -58,6 +58,9 @@ public:
 	 * toDisk waits until the bytes are on the disk before the move, so a power
 	 * cut right after a save cannot leave the new name over an empty file. */
 	bool commit(bool toDisk = false);
+	/* the file being written (under its temporary name), for a writer that
+	 * seeks back to patch what it wrote; null when not open */
+	FILE *file() const { return static_cast<FILE *>(_f); }
 
 private:
 	void *_f = nullptr;

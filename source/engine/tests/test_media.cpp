@@ -23,7 +23,10 @@
 #include <string>
 #include <vector>
 
+#include <csignal>
+
 #if !defined(_WIN32)
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <utime.h>
 #endif
@@ -533,6 +536,54 @@ static void pathTablesGoByParent()
 	}
 }
 
+/* An image already there stays as it was when a pack of any format fails,
+ * and no temporary file is left beside it. A cancelled or failed pack used to
+ * delete it (engine analysis, 2026-10-18). On Linux a full disk is played by
+ * a file size limit: the pack must fail and say so, not report an image. */
+static void aFailedPackKeepsTheImageThatWasThere()
+{
+	const fs::path a = workRoot() / "a";
+	const struct { chimera::MediaFormat format; const char *name; } kinds[] = {
+		{ chimera::MediaFormat::ZipStored, "kept.zip" },
+		{ chimera::MediaFormat::Iso9660, "kept.iso" },
+		{ chimera::MediaFormat::Fat12, "kept.img" },
+	};
+	const fs::path small = workRoot() / "small";
+	fs::remove_all(small);
+	put(small / "ONE.TXT", std::string(200000, 'o'));
+	for (const auto &kind : kinds)
+	{
+		const fs::path out = workRoot() / kind.name;
+		put(out, "the image that was there");
+		std::string sha, err;
+		const bool ok = chimera::mediaMake(small.string(), out.string(), kind.format,
+			[&](const char *, uint64_t, uint64_t, uint64_t, uint64_t) { return false; }, sha, err);
+		assert(!ok && err == "cancelled");
+		const std::vector<uint8_t> kept = slurp(out);
+		assert(std::string(kept.begin(), kept.end()) == "the image that was there");
+		assert(!fs::exists(out.string() + ".writing"));
+#if !defined(_WIN32)
+		/* the disk fills: writes past 64 KiB fail, as on a full disk */
+		std::signal(SIGXFSZ, SIG_IGN);
+		struct rlimit was {};
+		getrlimit(RLIMIT_FSIZE, &was);
+		struct rlimit full = was;
+		full.rlim_cur = 64 * 1024;
+		setrlimit(RLIMIT_FSIZE, &full);
+		const bool wrote = chimera::mediaMake(small.string(), out.string(), kind.format, nullptr, sha, err);
+		setrlimit(RLIMIT_FSIZE, &was);
+		std::signal(SIGXFSZ, SIG_DFL);
+		assert(!wrote && err.find("disk") != std::string::npos);
+		assert(slurp(out).size() == 24);
+		assert(!fs::exists(out.string() + ".writing"));
+#endif
+		/* and when it works, the image is replaced */
+		assert(chimera::mediaMake(small.string(), out.string(), kind.format, nullptr, sha, err));
+		assert(slurp(out).size() > 24);
+	}
+	(void)a;
+}
+
 int main()
 {
 	fs::remove_all(workRoot());
@@ -549,6 +600,7 @@ int main()
 	aFullFloppyEndsItsChainInTheLastCluster();
 	aFloppyRefusesWhatDoesNotFit();
 	aCancelledPackLeavesNothing();
+	aFailedPackKeepsTheImageThatWasThere();
 	anEmptyFolderIsRefused();
 	namesThatShortenAlikeStayApart();
 	pathTablesGoByParent();

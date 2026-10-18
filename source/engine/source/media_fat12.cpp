@@ -405,18 +405,16 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 		}
 	}
 
-	std::FILE *out = chimera::openFile(outPath.c_str(), "wb");
-	if (!out)
+	/* under a name of its own, moved over the image when all of it is on the
+	 * disk: see OutFile in media_maker.cpp */
+	chimera::FileWriter writer;
+	if (!writer.open(outPath.c_str()))
 	{
 		error = "cannot create " + outPath;
 		return false;
 	}
-	const bool wrote = std::fwrite(img.data(), 1, img.size(), out) == img.size();
-	std::fclose(out);
-	if (!wrote)
+	if (!writer.write(img.data(), img.size()) || !writer.commit())
 	{
-		std::error_code ec;
-		std::filesystem::remove(std::filesystem::u8path(outPath), ec);
 		error = "cannot write the output (is the disk full?)";
 		return false;
 	}

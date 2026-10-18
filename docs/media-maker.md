@@ -101,6 +101,12 @@ output file: a half-written image that still looks like an image is worse than
 no image at all. The error is a sentence; `"cancelled"` is the one the window
 recognises and reports as "Cancelled; nothing was written."
 
+The image is written under a temporary name beside it (`<name>.writing`) and
+takes its name only when every byte reached the disk and the file closed
+(2026-10-18). A run that fails or is cancelled leaves an image that was
+already there as it was; it used to delete it. A close that fails, which is
+how a full disk can show itself, fails the run instead of reporting an image.
+
 The window (`tools/MediaMakerForm.cs`) chooses, shows and cancels, and decides
 nothing about the bytes. The bar is repainted from the packing thread at most
 every 50 ms, because a disc is millions of callbacks and a window that paints
@@ -111,7 +117,8 @@ them all is a window that stops the work.
 `test_media.cpp` holds what the format promises rather than what the code does:
 the same tree packs to the same SHA1 after its timestamps, mode bits and read
 order have all been disturbed; a zip round-trips; a cancel leaves nothing on
-disk; progress is monotonic; an empty folder is refused; a small ISO is read
+disk, and a cancel or a full disk (a file size limit, on Linux) leaves the
+image that was there, in each format; progress is monotonic; an empty folder is refused; a small ISO is read
 back by a Joliet reader written for the test; the PS3 region table is present
 for a PS3-shaped tree and absent otherwise; and the FAT12 cases, including what
 does not fit.

@@ -128,6 +128,8 @@ bool FileWriter::commit(bool toDisk)
 {
 	if (_f == nullptr) return false;
 	FILE *f = static_cast<FILE *>(_f);
+	/* a write through file() that failed is a failure here too */
+	if (std::ferror(f) != 0) _failed = true;
 	if (toDisk && !_failed)
 	{
 #if defined(_WIN32)

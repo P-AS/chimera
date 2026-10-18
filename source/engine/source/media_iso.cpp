@@ -474,12 +474,15 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 	const std::vector<uint8_t> jptMData = buildPathTable(true, true);
 
 	/* ---- write ---- */
-	std::FILE *out = chimera::openFile(outPath.c_str(), "wb");
-	if (!out)
+	/* under a name of its own, moved over the image when all of it is on the
+	 * disk: see OutFile in media_maker.cpp */
+	chimera::FileWriter writer;
+	if (!writer.open(outPath.c_str()))
 	{
 		error = "cannot create " + outPath;
 		return false;
 	}
+	std::FILE *out = writer.file();
 	Sha1Stream sha;
 	uint64_t written = 0;
 	bool ok = true;
@@ -661,12 +664,10 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 	}
 
 	if (ok) padTo(static_cast<uint64_t>(totalSectors) * kSector);
-	std::fclose(out);
-
-	if (!ok)
+	if (!ok) return false;   /* the temporary file goes with `writer`; the image is as it was */
+	if (!writer.commit())
 	{
-		std::error_code ec;
-		std::filesystem::remove(std::filesystem::u8path(outPath), ec);
+		error = "cannot write the output (is the disk full?)";
 		return false;
 	}
 	sha1Out = sha.finishHex();
