@@ -106,6 +106,8 @@ namespace Chimera.Client.Common
 			List<int> framesToDelete = frames
 				.Where(fr => fr >= 0 && fr < InputLogLength)
 				.Order().ToList();
+			// every frame given past the movie's end leaves nothing to delete (and the batch name below reads [0])
+			if (framesToDelete.Count is 0) return;
 
 			SingleInvalidation(() =>
 			{
@@ -417,7 +419,7 @@ namespace Chimera.Client.Common
 			bool endBatch = ChangeLog.BeginNewBatch($"Set {buttonName}({val}): {frame}-{frame + count - 1}", true);
 
 			int firstChangedFrame = -1;
-			if (frame + count >= Log.Count) // Insert blank frames up to this point
+			if (Log.Count < frame + count) // Insert blank frames up to this point (as SetBoolStates: an edit ending on the last frame extends nothing)
 			{
 				firstChangedFrame = Log.Count;
 				ExtendMovieForEdit(frame + count - Log.Count);

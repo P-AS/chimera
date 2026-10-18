@@ -275,13 +275,14 @@ namespace Chimera.Client.GUI
 				var region = Emulator.AsRegionable().Region;
 				if (region == DisplayType.PAL)
 				{
-					movie.HeaderEntries.Add(HeaderKeys.Pal, "1");
+					movie.HeaderEntries[HeaderKeys.Pal] = "1";
 				}
 			}
 
 			if (Emulator.HasCycleTiming())
 			{
-				movie.HeaderEntries.Add(HeaderKeys.ClockRate, Emulator.AsCycleTiming().ClockRate.ToString(NumberFormatInfo.InvariantInfo));
+				// set, not added: both come back from the file, and a project opened with no input yet is filled again
+				movie.HeaderEntries[HeaderKeys.ClockRate] = Emulator.AsCycleTiming().ClockRate.ToString(NumberFormatInfo.InvariantInfo);
 			}
 		}
 	}

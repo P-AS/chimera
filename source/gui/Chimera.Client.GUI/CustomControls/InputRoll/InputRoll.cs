@@ -66,7 +66,26 @@ namespace Chimera.Client.GUI
 		private readonly HScrollBar _hBar = new HScrollBar { Visible = false };
 
 		private readonly Timer _hoverTimer = new Timer();
-		private readonly byte[] _lagFrames = new byte[256]; // Large enough value that it shouldn't ever need resizing. // apparently not large enough for 4K
+		// How many lag frames each visible row hides. As many rows as the window shows: a tall or wide roll on a
+		// big screen shows more than any fixed size (256 was not enough at 4K), so the counts grow when written
+		// past their end, and a row past it reads as hiding none.
+		private readonly LagCounts _lagFrames = new();
+
+		private sealed class LagCounts
+		{
+			private byte[] _counts = new byte[256];
+
+			public byte this[int row]
+			{
+				get => (uint)row < (uint)_counts.Length ? _counts[row] : (byte)0;
+				set
+				{
+					if (row < 0) return;
+					if (row >= _counts.Length) Array.Resize(ref _counts, Math.Max(row + 1, _counts.Length * 2));
+					_counts[row] = value;
+				}
+			}
+		}
 
 		private Color _backColor;
 

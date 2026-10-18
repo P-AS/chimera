@@ -1421,6 +1421,11 @@ namespace Chimera.Emulation.Common.Engine
 
 		public bool Parse(string text, out string errorMessage)
 		{
+			if (Freed)
+			{
+				errorMessage = "the movie's input log was already freed";
+				return false;
+			}
 			var bytes = Encoding.UTF8.GetBytes(text);
 			if (ChimeraEngine.Instance.ce_movie_log_parse(_log, bytes, (ulong)bytes.LongLength) is 0)
 			{
@@ -1455,11 +1460,17 @@ namespace Chimera.Emulation.Common.Engine
 		public void Clear() { if (!Freed) ChimeraEngine.Instance.ce_movie_log_clear(_log); }
 
 		/// <summary>Replaces this log's entries and LogKey with another's, engine-side.</summary>
-		public void AssignFrom(EngineMovieLog source) => ChimeraEngine.Instance.ce_movie_log_assign(_log, source.Handle);
+		public void AssignFrom(EngineMovieLog source)
+		{
+			if (Freed) return;
+			if (source.Freed) Clear();   /* a freed log is an empty one */
+			else ChimeraEngine.Instance.ce_movie_log_assign(_log, source.Handle);
+		}
 
 		/// <summary>First frame where the logs differ; the shorter length when one is a prefix; null when identical.</summary>
 		public long? DivergentPoint(EngineMovieLog other)
 		{
+			if (Freed || other.Freed) return Count == 0 && other.Count == 0 ? null : 0;   /* a freed log is an empty one */
 			var result = ChimeraEngine.Instance.ce_movie_log_divergent_point(_log, other.Handle);
 			return result < 0 ? null : result;
 		}
@@ -1480,7 +1491,7 @@ namespace Chimera.Emulation.Common.Engine
 		/// which is how the journal is kept short. False when the file could not be written.
 		/// </summary>
 		public bool JournalTo(string path, string? frontendImage = null)
-			=> ChimeraEngine.Instance.ce_movie_log_journal_open_with(_log, path, frontendImage) is 0;
+			=> !Freed && ChimeraEngine.Instance.ce_movie_log_journal_open_with(_log, path, frontendImage) is 0;
 
 		/// <summary>
 		/// Appends one of the frontend's own records (its markers, its branches) to the journal, flushed and
@@ -1493,6 +1504,7 @@ namespace Chimera.Emulation.Common.Engine
 		{
 			get
 			{
+				if (Freed) return Array.Empty<string>();
 				var count = ChimeraEngine.Instance.ce_movie_log_journal_note_count(_log);
 				List<string> notes = new((int)Math.Min(count, int.MaxValue));
 				for (long i = 0; i < count; i++)
@@ -1526,6 +1538,7 @@ namespace Chimera.Emulation.Common.Engine
 		/// <summary>The whole [Input] block, ready to write into a movie file.</summary>
 		public string Serialize(bool crlf)
 		{
+			if (Freed) return "";
 			ulong len = 0;
 			var p = ChimeraEngine.Instance.ce_movie_log_serialize(_log, crlf ? 1 : 0, ref len);
 			return ChimeraEngine.PtrToStringUtf8(p, len);
@@ -2389,25 +2402,31 @@ namespace Chimera.Emulation.Common.Engine
 
 		public bool Disposed => _session == IntPtr.Zero;
 
+		// Every call into the engine goes through this. A session is closed when its core is (WaterboxCore.Dispose),
+		// and the window can still ask it something on the way - a paint, a tool's timer. The engine reads the
+		// session without checking it, so a closed one handed over is a crash of the whole process; here it is an
+		// exception instead, and the questions the window asks most answer as an empty machine (below).
+		private IntPtr Live => _session != IntPtr.Zero ? _session : throw new ObjectDisposedException(nameof(EngineSession), "this core has been closed");
+
 		private static LibChimera E => ChimeraEngine.Instance;
 
-		public string CoreName => ChimeraEngine.PtrToStringUtf8(E.ce_session_core_name(_session)) ?? "";
-		public string SystemId => ChimeraEngine.PtrToStringUtf8(E.ce_session_system_id(_session)) ?? "";
-		public int Width => E.ce_session_width(_session);
-		public int Height => E.ce_session_height(_session);
-		public int VirtualWidth => E.ce_session_virtual_width(_session);
+		public string CoreName => ChimeraEngine.PtrToStringUtf8(E.ce_session_core_name(Live)) ?? "";
+		public string SystemId => ChimeraEngine.PtrToStringUtf8(E.ce_session_system_id(Live)) ?? "";
+		public int Width => E.ce_session_width(Live);
+		public int Height => E.ce_session_height(Live);
+		public int VirtualWidth => E.ce_session_virtual_width(Live);
 
 		/// <summary>
 		/// The display aspect the core reports for what it shows now (x:y), or
 		/// null when it does not say and the declared virtual size stands.
 		/// </summary>
 		public (int X, int Y)? DisplayAspect
-			=> E.ce_session_display_aspect(_session, out var x, out var y) != 0 ? (x, y) : null;
-		public int VirtualHeight => E.ce_session_virtual_height(_session);
-		public int VsyncNumerator => E.ce_session_vsync_numerator(_session);
-		public int VsyncDenominator => E.ce_session_vsync_denominator(_session);
-		public int SamplesPerFrame => E.ce_session_samples_per_frame(_session);
-		public bool Deterministic => E.ce_session_deterministic(_session) is not 0;
+			=> E.ce_session_display_aspect(Live, out var x, out var y) != 0 ? (x, y) : null;
+		public int VirtualHeight => E.ce_session_virtual_height(Live);
+		public int VsyncNumerator => Disposed ? 60 : E.ce_session_vsync_numerator(Live);
+		public int VsyncDenominator => Disposed ? 1 : E.ce_session_vsync_denominator(Live);
+		public int SamplesPerFrame => E.ce_session_samples_per_frame(Live);
+		public bool Deterministic => E.ce_session_deterministic(Live) is not 0;
 
 		/// <summary>
 		/// Whether a GPU outside the sandbox drew this session's pictures. A
@@ -2415,13 +2434,13 @@ namespace Chimera.Emulation.Common.Engine
 		/// it replays on another machine and a desync elsewhere should be
 		/// explicable rather than mysterious.
 		/// </summary>
-		public bool GpuDrew => E.ce_session_gpu_drew(_session) is not 0;
+		public bool GpuDrew => E.ce_session_gpu_drew(Live) is not 0;
 
 		/// <summary>What the driver calls itself, or empty when none drew.</summary>
 		public string GpuDescription
 			=> GpuDrew ? (ChimeraEngine.PtrToStringUtf8(E.ce_gl_description()) ?? "") : "";
 
-		public void SetAxis(int index, int value) => E.ce_session_set_axis(_session, index, value);
+		public void SetAxis(int index, int value) => E.ce_session_set_axis(Live, index, value);
 
 		/// <summary>
 		/// Whether a declared control is one THIS machine has. waterbox.config
@@ -2435,49 +2454,49 @@ namespace Chimera.Emulation.Common.Engine
 		/// lit on any frame that drive was read or written. Zero when the core
 		/// has no removable media, which is most of them.
 		/// </summary>
-		public int DriveCount => E.ce_session_drive_count(_session);
+		public int DriveCount => Disposed ? 0 : E.ce_session_drive_count(Live);
 
 		/// <summary>
 		/// The settings this game has beyond the package's (an arcade game's dip
 		/// switches), as a JSON array of declarations; "" when the core has none.
 		/// </summary>
 		public string GameSettingsJson
-			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_game_settings(_session)) ?? "";
+			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_game_settings(Live)) ?? "";
 
 		// ---- a game core's properties (docs/game-cores.md; engine.h ce_session_property_*) ----
 		// The engine owns what the bytes mean; these only carry values across.
 
 		/// <summary>The property table as the engine understood it: {"properties": [...], "problems": [...]}.</summary>
 		public string PropertyTableJson
-			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_property_table(_session)) ?? "";
+			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_property_table(Live)) ?? "";
 
 		/// <summary>
 		/// The game's own elapsed time in milliseconds, as the game counts it now (the
 		/// table's "gameTimer"); null when the core names no timer.
 		/// </summary>
 		public long? GameTimeMs
-			=> E.ce_session_game_time_ms(_session, out var ms) is not 0 ? ms : null;
+			=> E.ce_session_game_time_ms(Live, out var ms) is not 0 ? ms : null;
 
 		/// <summary>
 		/// Whether the table is the core's answer for now and not for good: a movie's
 		/// variables, which come, move and go while it runs (engine.h, dynamic tables).
 		/// </summary>
-		public bool PropertyDynamic => E.ce_session_property_dynamic(_session) is not 0;
+		public bool PropertyDynamic => E.ce_session_property_dynamic(Live) is not 0;
 
 		/// <summary>Has a dynamic table listed again by the core; how many it lists now.</summary>
-		public int PropertyRefresh() => E.ce_session_property_refresh(_session);
+		public int PropertyRefresh() => E.ce_session_property_refresh(Live);
 
 		/// <summary>Where an element is in its domain now; -1 for one that is not there.</summary>
-		public long PropertyOffset(int index, uint element) => E.ce_session_property_offset(_session, index, element);
+		public long PropertyOffset(int index, uint element) => E.ce_session_property_offset(Live, index, element);
 
 		/// <summary>"Name" or "Name[3]": the property's index and the element, or -1.</summary>
 		public int PropertyFind(string name, out uint element)
-			=> E.ce_session_property_find(_session, name, out element);
+			=> E.ce_session_property_find(Live, name, out element);
 
 		/// <summary>The property one of whose elements covers the address, or -1.</summary>
 		public int PropertyAt(string domain, long address, out uint element, out bool starts)
 		{
-			var index = E.ce_session_property_at(_session, domain, address, out element, out var startsFlag);
+			var index = E.ce_session_property_at(Live, domain, address, out element, out var startsFlag);
 			starts = startsFlag is not 0;
 			return index;
 		}
@@ -2489,7 +2508,7 @@ namespace Chimera.Emulation.Common.Engine
 		public object? PropertyGet(int index, uint element)
 		{
 			LibChimera.CePropertyValue v = default;
-			if (E.ce_session_property_get(_session, index, element, ref v) is not 0) return null;
+			if (E.ce_session_property_get(Live, index, element, ref v) is not 0) return null;
 			var bytes = new byte[v.Len];
 			if (v.Len > 0) Marshal.Copy(v.Data, bytes, 0, bytes.Length);
 			return v.Kind switch
@@ -2524,7 +2543,7 @@ namespace Chimera.Emulation.Common.Engine
 			{
 				v.Data = (IntPtr)p;
 				v.Len = data?.LongLength ?? 0;
-				return E.ce_session_property_set(_session, index, element, ref v) is 0 ? null : LastError;
+				return E.ce_session_property_set(Live, index, element, ref v) is 0 ? null : LastError;
 			}
 		}
 
@@ -2532,46 +2551,46 @@ namespace Chimera.Emulation.Common.Engine
 		public string PropertyText(int index, uint element, bool named)
 		{
 			var buf = new byte[256];
-			var n = E.ce_session_property_text(_session, index, element, named ? 1 : 0, buf, buf.Length);
+			var n = E.ce_session_property_text(Live, index, element, named ? 1 : 0, buf, buf.Length);
 			if (n < 0) return "";
 			if (n >= buf.Length)
 			{
 				buf = new byte[n + 1];
-				n = E.ce_session_property_text(_session, index, element, named ? 1 : 0, buf, buf.Length);
+				n = E.ce_session_property_text(Live, index, element, named ? 1 : 0, buf, buf.Length);
 			}
 			return Encoding.UTF8.GetString(buf, 0, n);
 		}
 
 		/// <summary>Sets a value from text, the inverse of <see cref="PropertyText"/>; null when set, else why not.</summary>
 		public string? PropertySetText(int index, uint element, string text)
-			=> E.ce_session_property_set_text(_session, index, element, text) is 0 ? null : LastError;
+			=> E.ce_session_property_set_text(Live, index, element, text) is 0 ? null : LastError;
 
 		public string DriveName(int index)
-			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_drive_name(_session, index)) ?? "Drive";
+			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_drive_name(Live, index)) ?? "Drive";
 
-		public bool DriveLight(int index) => E.ce_session_drive_light(_session, index) is not 0;
+		public bool DriveLight(int index) => E.ce_session_drive_light(Live, index) is not 0;
 
 		/// <summary>How many images a drive can be given; zero for one that holds a fixed thing, and for most cores.</summary>
-		public int DriveMediaCount(int index) => E.ce_session_drive_media_count(_session, index);
+		public int DriveMediaCount(int index) => E.ce_session_drive_media_count(Live, index);
 
 		public string DriveMediaName(int index, int media)
-			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_drive_media_name(_session, index, media)) ?? "";
+			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_drive_media_name(Live, index, media)) ?? "";
 
 		/// <summary>Where the drive's selector stands.</summary>
-		public int DriveMediaSelected(int index) => E.ce_session_drive_media_selected(_session, index);
+		public int DriveMediaSelected(int index) => E.ce_session_drive_media_selected(Live, index);
 
 		/// <summary>Which image is actually in the drive, or -1 when it is empty.</summary>
-		public int DriveMediaInserted(int index) => E.ce_session_drive_media_inserted(_session, index);
+		public int DriveMediaInserted(int index) => E.ce_session_drive_media_inserted(Live, index);
 
-		public bool ButtonActive(int index) => E.ce_session_button_active(_session, index) is not 0;
+		public bool ButtonActive(int index) => E.ce_session_button_active(Live, index) is not 0;
 
 		/// <summary>What the running game calls a control of the declaration, or "".</summary>
 		public string ButtonLabel(int index)
-			=> Disposed ? "" : ChimeraEngine.PtrToStringUtf8(E.ce_session_button_label(_session, index)) ?? "";
+			=> Disposed ? "" : ChimeraEngine.PtrToStringUtf8(E.ce_session_button_label(Live, index)) ?? "";
 
 		/// <summary>The same for an axis.</summary>
 		public string AxisLabel(int index)
-			=> Disposed ? "" : ChimeraEngine.PtrToStringUtf8(E.ce_session_axis_label(_session, index)) ?? "";
+			=> Disposed ? "" : ChimeraEngine.PtrToStringUtf8(E.ce_session_axis_label(Live, index)) ?? "";
 
 		/// <summary>
 		/// The letter a control writes into a movie's text: the package's own,
@@ -2579,7 +2598,7 @@ namespace Chimera.Emulation.Common.Engine
 		/// a movie can carry a control this machine does not have.
 		/// </summary>
 		public char MnemonicOf(string name)
-			=> Disposed ? ChimeraEngine.ControlMnemonic(name) : (char) E.ce_session_mnemonic_of(_session, name);
+			=> Disposed ? ChimeraEngine.ControlMnemonic(name) : (char) E.ce_session_mnemonic_of(Live, name);
 
 		/// <summary>
 		/// What heads a button's input column: the package's header for it, or
@@ -2588,35 +2607,35 @@ namespace Chimera.Emulation.Common.Engine
 		public string ButtonHeaderOf(string name)
 			=> Disposed
 				? ChimeraEngine.ControlButtonHeader(name)
-				: ChimeraEngine.PtrToStringUtf8(E.ce_session_button_header_of(_session, name)) ?? MnemonicOf(name).ToString();
+				: ChimeraEngine.PtrToStringUtf8(E.ce_session_button_header_of(Live, name)) ?? MnemonicOf(name).ToString();
 
 		/// <summary>The short header of an axis's input column, found the same way.</summary>
 		public string AxisHeaderOf(string name)
 			=> Disposed
 				? ChimeraEngine.ControlAxisHeader(name)
-				: ChimeraEngine.PtrToStringUtf8(E.ce_session_axis_header_of(_session, name)) ?? name;
+				: ChimeraEngine.PtrToStringUtf8(E.ce_session_axis_header_of(Live, name)) ?? name;
 
 		/// <summary>What to call this machine's system in front of a person: the package's word for it, or its id.</summary>
-		public string SystemName => ChimeraEngine.PtrToStringUtf8(E.ce_session_system_name(_session)) ?? "";
+		public string SystemName => ChimeraEngine.PtrToStringUtf8(E.ce_session_system_name(Live)) ?? "";
 
-		public bool AxisActive(int index) => E.ce_session_axis_active(_session, index) is not 0;
+		public bool AxisActive(int index) => E.ce_session_axis_active(Live, index) is not 0;
 
 		/// <returns>true when the frame was a lag frame</returns>
 		/// <summary>Objects this session's core stored into the compile cache.</summary>
-		public ulong CacheStored => ChimeraEngine.Instance.ce_session_cache_stored(_session);
+		public ulong CacheStored => ChimeraEngine.Instance.ce_session_cache_stored(Live);
 
 		/// <summary>Objects this session's core fetched from the compile cache.</summary>
-		public ulong CacheFetched => ChimeraEngine.Instance.ce_session_cache_fetched(_session);
+		public ulong CacheFetched => ChimeraEngine.Instance.ce_session_cache_fetched(Live);
 
 		/// <summary>For a precompile session: whether the core has finished compiling its share.</summary>
-		public bool PrecompileDone => ChimeraEngine.Instance.ce_session_precompile_done(_session) == 1;
+		public bool PrecompileDone => ChimeraEngine.Instance.ce_session_precompile_done(Live) == 1;
 
 		/// <summary>For a precompile session: module parts done and in total, for a progress bar.</summary>
 		public (uint Done, uint Total) PrecompileProgress
 		{
 			get
 			{
-				if (ChimeraEngine.Instance.ce_session_precompile_progress(_session, out var done, out var total) != 0) return (0, 0);
+				if (ChimeraEngine.Instance.ce_session_precompile_progress(Live, out var done, out var total) != 0) return (0, 0);
 				return (done, total);
 			}
 		}
@@ -2634,7 +2653,7 @@ namespace Chimera.Emulation.Common.Engine
 		/// </remarks>
 		public bool FrameAdvance(ulong buttons, bool render)
 		{
-			var lag = E.ce_session_frame_advance(_session, buttons, render ? 1 : 0);
+			var lag = E.ce_session_frame_advance(Live, buttons, render ? 1 : 0);
 			if (lag < 0)
 			{
 				Stopped = GuestDeath ?? LastError;
@@ -2648,19 +2667,19 @@ namespace Chimera.Emulation.Common.Engine
 		public string? Stopped { get; private set; }
 
 		/// <summary>Why the core's machine died, or null while it lives.</summary>
-		public string? GuestDeath => ChimeraEngine.PtrToStringUtf8(E.ce_session_guest_death(_session));
+		public string? GuestDeath => Disposed ? null : ChimeraEngine.PtrToStringUtf8(E.ce_session_guest_death(Live));
 
 		/// <summary>Borrowed: the last rendered frame, BGRA, Width*Height ints.</summary>
-		public IntPtr VideoBuffer => E.ce_session_video(_session);
+		public IntPtr VideoBuffer => E.ce_session_video(Live);
 		/// <summary>The live frame size - a mode-changing machine (DOS) reports it per frame; others equal the config's.</summary>
-		public int VideoWidth => E.ce_session_video_width(_session);
-		public int VideoHeight => E.ce_session_video_height(_session);
+		public int VideoWidth => E.ce_session_video_width(Live);
+		public int VideoHeight => E.ce_session_video_height(Live);
 
 		/// <summary>Borrowed: the last frame's interleaved stereo s16 and its pair count.</summary>
 		public IntPtr AudioBuffer(out int sampleCount)
 		{
 			var n = 0;
-			var p = E.ce_session_audio(_session, ref n);
+			var p = E.ce_session_audio(Live, ref n);
 			sampleCount = n;
 			return p;
 		}
@@ -2669,7 +2688,7 @@ namespace Chimera.Emulation.Common.Engine
 		public IntPtr SaveState(out int length)
 		{
 			ulong len = 0;
-			var p = E.ce_session_save_state(_session, ref len);
+			var p = E.ce_session_save_state(Live, ref len);
 			if (p == IntPtr.Zero) throw new InvalidOperationException(LastError);
 			length = checked((int)len);
 			return p;
@@ -2682,7 +2701,7 @@ namespace Chimera.Emulation.Common.Engine
 		/// </summary>
 		public void SaveStateToFile(string path, byte[] tag)
 		{
-			if (E.ce_session_state_save_file(_session, path, tag, (uint) tag.Length) is not 0)
+			if (E.ce_session_state_save_file(Live, path, tag, (uint) tag.Length) is not 0)
 			{
 				throw new InvalidOperationException(LastError);
 			}
@@ -2693,7 +2712,7 @@ namespace Chimera.Emulation.Common.Engine
 		{
 			var tag = new byte[256];
 			uint length = 0;
-			if (E.ce_session_state_load_file(_session, path, tag, (uint) tag.Length, ref length) is not 0)
+			if (E.ce_session_state_load_file(Live, path, tag, (uint) tag.Length, ref length) is not 0)
 			{
 				throw new InvalidOperationException(LastError);
 			}
@@ -2703,7 +2722,7 @@ namespace Chimera.Emulation.Common.Engine
 
 		public void LoadState(byte[] data, int length)
 		{
-			if (E.ce_session_load_state(_session, data, (ulong)length) is not 0)
+			if (E.ce_session_load_state(Live, data, (ulong)length) is not 0)
 			{
 				throw new InvalidOperationException(LastError);
 			}
@@ -2717,21 +2736,21 @@ namespace Chimera.Emulation.Common.Engine
 		// Capture stores the frame just reached, and Restore puts the machine on
 		// a stored frame and leaves the replay to whoever asked.
 
-		public void GreenzoneEnable(ulong budgetBytes) => E.ce_session_greenzone_enable(_session, budgetBytes);
+		public void GreenzoneEnable(ulong budgetBytes) => E.ce_session_greenzone_enable(Live, budgetBytes);
 
 		/// <summary>For how many frames shown after a load a frame's kept picture stands in for the core's (engine.h).</summary>
-		public void GreenzonePictureSettle(int frames) => E.ce_session_greenzone_picture_settle(_session, frames);
+		public void GreenzonePictureSettle(int frames) => E.ce_session_greenzone_picture_settle(Live, frames);
 
-		public void GreenzoneDiskBudget(ulong budgetBytes) => E.ce_session_greenzone_disk_budget(_session, budgetBytes);
+		public void GreenzoneDiskBudget(ulong budgetBytes) => E.ce_session_greenzone_disk_budget(Live, budgetBytes);
 
-		public void GreenzoneMaxNearStride(long maxStride) => E.ce_session_greenzone_max_near_stride(_session, maxStride);
+		public void GreenzoneMaxNearStride(long maxStride) => E.ce_session_greenzone_max_near_stride(Live, maxStride);
 
-		public void GreenzoneCapturePeriod(int period) => E.ce_session_greenzone_capture_period(_session, period);
+		public void GreenzoneCapturePeriod(int period) => E.ce_session_greenzone_capture_period(Live, period);
 
 		public void GreenzoneBands(long nearFrames, long midFrames, long midStride, long farStride, long anchorSpacing)
-			=> E.ce_session_greenzone_bands(_session, nearFrames, midFrames, midStride, farStride, anchorSpacing);
+			=> E.ce_session_greenzone_bands(Live, nearFrames, midFrames, midStride, farStride, anchorSpacing);
 
-		public void GreenzoneSpillTo(string dir) => E.ce_session_greenzone_spill(_session, dir ?? "");
+		public void GreenzoneSpillTo(string dir) => E.ce_session_greenzone_spill(Live, dir ?? "");
 
 		/// <summary>
 		/// Whether the far band could not be put on disk - a full disk, near
@@ -2740,13 +2759,13 @@ namespace Chimera.Emulation.Common.Engine
 		/// between a greenzone going sparse for a reason and one doing it for no
 		/// reason anybody can see.
 		/// </summary>
-		public bool GreenzoneSpillFailed => E.ce_session_greenzone_spill_failed(_session) != 0;
+		public bool GreenzoneSpillFailed => E.ce_session_greenzone_spill_failed(Live) != 0;
 
-		public void GreenzonePin(long frame, bool pinned) => E.ce_session_greenzone_pin(_session, frame, pinned ? 1 : 0);
+		public void GreenzonePin(long frame, bool pinned) => E.ce_session_greenzone_pin(Live, frame, pinned ? 1 : 0);
 
-		public void GreenzoneUnpinAll() => E.ce_session_greenzone_unpin_all(_session);
+		public void GreenzoneUnpinAll() => E.ce_session_greenzone_unpin_all(Live);
 
-		public long GreenzoneCount => E.ce_session_greenzone_count(_session);
+		public long GreenzoneCount => Disposed ? 0 : E.ce_session_greenzone_count(Live);
 
 		/// <summary>
 		/// Which frame the engine believes the machine is on. Normally the
@@ -2755,14 +2774,14 @@ namespace Chimera.Emulation.Common.Engine
 		/// a frame that did exist rather than leave it half way along a chain
 		/// (docs/state-manager.md). This is how the frontend follows it.
 		/// </summary>
-		public long Frame => E.ce_session_frame(_session);
+		public long Frame => Disposed ? 0 : E.ce_session_frame(Live);
 
 		/// <summary>The greatest stored frame at or before this one, or -1.</summary>
-		public long GreenzoneNearest(long frame) => E.ce_session_greenzone_nearest(_session, frame);
+		public long GreenzoneNearest(long frame) => Disposed ? -1 : E.ce_session_greenzone_nearest(Live, frame);
 
-		public void GreenzoneInvalidate(long afterFrame) => E.ce_session_greenzone_invalidate(_session, afterFrame);
+		public void GreenzoneInvalidate(long afterFrame) => E.ce_session_greenzone_invalidate(Live, afterFrame);
 
-		public void GreenzoneBeforeAdvance() => E.ce_session_greenzone_before_advance(_session);
+		public void GreenzoneBeforeAdvance() => E.ce_session_greenzone_before_advance(Live);
 
 		/// <summary>
 		/// Stores the frame just reached, with the caller's own bookkeeping for
@@ -2771,20 +2790,20 @@ namespace Chimera.Emulation.Common.Engine
 		/// would mean mirroring all of that.
 		/// </summary>
 		public void GreenzoneCapture(long frame, byte[]? note = null)
-			=> E.ce_session_greenzone_capture(_session, frame, note, (uint)(note?.Length ?? 0));
+			=> E.ce_session_greenzone_capture(Live, frame, note, (uint)(note?.Length ?? 0));
 
 		/// <summary>What was stored with that frame, or null.</summary>
 		public byte[]? GreenzoneNote(long frame)
 		{
-			var len = E.ce_session_greenzone_note(_session, frame, null, 0);
+			var len = E.ce_session_greenzone_note(Live, frame, null, 0);
 			if (len is 0) return null;
 			var buf = new byte[len];
-			E.ce_session_greenzone_note(_session, frame, buf, len);
+			E.ce_session_greenzone_note(Live, frame, buf, len);
 			return buf;
 		}
 
 		/// <summary>False when that frame is not one the history can produce.</summary>
-		public bool GreenzoneRestore(long frame) => E.ce_session_greenzone_restore(_session, frame) is 0;
+		public bool GreenzoneRestore(long frame) => E.ce_session_greenzone_restore(Live, frame) is 0;
 
 		/// <summary>
 		/// Walks backwards towards a frame and answers with the one it reached.
@@ -2798,10 +2817,10 @@ namespace Chimera.Emulation.Common.Engine
 		/// never "the states are there" - losing them costs replaying.
 		/// </summary>
 		public bool HistorySave(string path, string machineId)
-			=> E.ce_session_history_save(_session, path, machineId ?? "") is 0;
+			=> E.ce_session_history_save(Live, path, machineId ?? "") is 0;
 
 		public bool HistoryLoad(string path, string machineId)
-			=> E.ce_session_history_load(_session, path, machineId ?? "") is 0;
+			=> E.ce_session_history_load(Live, path, machineId ?? "") is 0;
 
 		/// <summary>
 		/// The same save, queued on the engine's writer instead of waited for.
@@ -2813,31 +2832,31 @@ namespace Chimera.Emulation.Common.Engine
 		/// stands at this call; the run carries on while it is written.
 		/// </summary>
 		public bool HistorySaveLater(string path, string machineId)
-			=> E.ce_session_history_save_later(_session, path, machineId ?? "") is 0;
+			=> E.ce_session_history_save_later(Live, path, machineId ?? "") is 0;
 
 		/// <summary>Whether a queued history save is still being written.</summary>
-		public bool HistorySavePending => E.ce_session_history_save_pending(_session) is not 0;
+		public bool HistorySavePending => !Disposed && E.ce_session_history_save_pending(Live) is not 0;
 
 		/// <summary>
 		/// Waits for a queued history save. True when it worked, and when there was
 		/// nothing queued - closing a project is where this belongs, because the
 		/// file has to be whole before the project is let go.
 		/// </summary>
-		public bool HistorySaveWait() => E.ce_session_history_save_wait(_session) is 0;
+		public bool HistorySaveWait() => E.ce_session_history_save_wait(Live) is 0;
 
-		public int DomainCount => E.ce_session_domain_count(_session);
-		public string DomainName(int index) => ChimeraEngine.PtrToStringUtf8(E.ce_session_domain_name(_session, index)) ?? $"Domain {index}";
-		public long DomainSize(int index) => E.ce_session_domain_size(_session, index);
-		public bool DomainWritable(int index) => E.ce_session_domain_writable(_session, index) is not 0;
-		public bool DomainHidden(int index) => E.ce_session_domain_hidden(_session, index) is not 0;
-		public IntPtr DomainPtr(int index) => unchecked((IntPtr)(long)E.ce_session_domain_ptr(_session, index));
+		public int DomainCount => E.ce_session_domain_count(Live);
+		public string DomainName(int index) => ChimeraEngine.PtrToStringUtf8(E.ce_session_domain_name(Live, index)) ?? $"Domain {index}";
+		public long DomainSize(int index) => E.ce_session_domain_size(Live, index);
+		public bool DomainWritable(int index) => E.ce_session_domain_writable(Live, index) is not 0;
+		public bool DomainHidden(int index) => E.ce_session_domain_hidden(Live, index) is not 0;
+		public IntPtr DomainPtr(int index) => unchecked((IntPtr)(long)E.ce_session_domain_ptr(Live, index));
 		/// <summary>The same bytes for reading only, through a view that never runs the core's code (see ce_session_domain_read_ptr).</summary>
-		public IntPtr DomainReadPtr(int index) => unchecked((IntPtr)(long)E.ce_session_domain_read_ptr(_session, index));
+		public IntPtr DomainReadPtr(int index) => unchecked((IntPtr)(long)E.ce_session_domain_read_ptr(Live, index));
 
 		/// <returns>true when the running guest took the settings; false when it has no live-settings group (reboot instead)</returns>
 		/// <exception cref="InvalidOperationException">the guest has the group but the push failed</exception>
 		public bool ApplySettings(string overridesJson)
-			=> E.ce_session_apply_settings(_session, overridesJson) switch
+			=> E.ce_session_apply_settings(Live, overridesJson) switch
 			{
 				0 => true,
 				1 => false,
@@ -2846,53 +2865,53 @@ namespace Chimera.Emulation.Common.Engine
 
 		// ---- the optional guest ABI groups (zero count / false = absent) ----
 
-		public int SurfaceCount => E.ce_session_surface_count(_session);
-		public string SurfaceName(int index) => ChimeraEngine.PtrToStringUtf8(E.ce_session_surface_name(_session, index)) ?? $"Surface {index}";
-		public int SurfaceWidth(int index) => E.ce_session_surface_width(_session, index);
-		public int SurfaceHeight(int index) => E.ce_session_surface_height(_session, index);
+		public int SurfaceCount => E.ce_session_surface_count(Live);
+		public string SurfaceName(int index) => ChimeraEngine.PtrToStringUtf8(E.ce_session_surface_name(Live, index)) ?? $"Surface {index}";
+		public int SurfaceWidth(int index) => E.ce_session_surface_width(Live, index);
+		public int SurfaceHeight(int index) => E.ce_session_surface_height(Live, index);
 		/// <summary>Borrowed until the same surface renders again; IntPtr.Zero when the guest gave nothing.</summary>
-		public IntPtr RenderSurface(int index) => E.ce_session_surface_render(_session, index);
+		public IntPtr RenderSurface(int index) => E.ce_session_surface_render(Live, index);
 
-		public int RegisterCount => E.ce_session_register_count(_session);
-		public string RegisterName(int index) => ChimeraEngine.PtrToStringUtf8(E.ce_session_register_name(_session, index)) ?? $"R{index}";
-		public int RegisterBits(int index) => E.ce_session_register_bits(_session, index);
-		public long RegisterValue(int index) => E.ce_session_register_value(_session, index);
+		public int RegisterCount => E.ce_session_register_count(Live);
+		public string RegisterName(int index) => ChimeraEngine.PtrToStringUtf8(E.ce_session_register_name(Live, index)) ?? $"R{index}";
+		public int RegisterBits(int index) => E.ce_session_register_bits(Live, index);
+		public long RegisterValue(int index) => E.ce_session_register_value(Live, index);
 		/// <returns>false when this core does not support writing registers</returns>
-		public bool SetRegister(int index, long value) => E.ce_session_register_set(_session, index, value) is 0;
-		public bool HasExecutedCycles => E.ce_session_has_executed_cycles(_session) is not 0;
-		public long ExecutedCycles => E.ce_session_executed_cycles(_session);
+		public bool SetRegister(int index, long value) => E.ce_session_register_set(Live, index, value) is 0;
+		public bool HasExecutedCycles => E.ce_session_has_executed_cycles(Live) is not 0;
+		public long ExecutedCycles => E.ce_session_executed_cycles(Live);
 
-		public int BusCount => E.ce_session_bus_count(_session);
-		public string BusName(int index) => ChimeraEngine.PtrToStringUtf8(E.ce_session_bus_name(_session, index)) ?? $"Bus {index}";
-		public long BusSize(int index) => E.ce_session_bus_size(_session, index);
-		public bool BusWritable(int index) => E.ce_session_bus_writable(_session, index) is not 0;
-		public byte BusPeek(int index, int addr) => unchecked((byte)E.ce_session_bus_peek(_session, index, addr));
-		public void BusPoke(int index, int addr, byte value) => E.ce_session_bus_poke(_session, index, addr, value);
+		public int BusCount => E.ce_session_bus_count(Live);
+		public string BusName(int index) => ChimeraEngine.PtrToStringUtf8(E.ce_session_bus_name(Live, index)) ?? $"Bus {index}";
+		public long BusSize(int index) => E.ce_session_bus_size(Live, index);
+		public bool BusWritable(int index) => E.ce_session_bus_writable(Live, index) is not 0;
+		public byte BusPeek(int index, int addr) => unchecked((byte)E.ce_session_bus_peek(Live, index, addr));
+		public void BusPoke(int index, int addr, byte value) => E.ce_session_bus_poke(Live, index, addr, value);
 
 		/// <summary>Fills <paramref name="buf"/> from <paramref name="addr"/> on: one call, however long, rather than a peek per byte.</summary>
-		public void BusRead(int index, long addr, byte[] buf) => E.ce_session_bus_read(_session, index, addr, buf, buf.LongLength);
+		public void BusRead(int index, long addr, byte[] buf) => E.ce_session_bus_read(Live, index, addr, buf, buf.LongLength);
 
 		/// <summary>The bus's live ranges as (address, length) pairs, or null when the core says nothing about them.</summary>
 		public long[]? BusRanges(int index)
 		{
-			int n = E.ce_session_bus_ranges(_session, index, null, 0);
+			int n = E.ce_session_bus_ranges(Live, index, null, 0);
 			if (n < 0) return null;
 			var pairs = new long[n * 2];
-			int got = E.ce_session_bus_ranges(_session, index, pairs, n);
+			int got = E.ce_session_bus_ranges(Live, index, pairs, n);
 			return got == n ? pairs : null; // it changed between the two calls: say nothing rather than half
 		}
 
-		public bool TraceAvailable => E.ce_session_trace_available(_session) is not 0;
-		public string TraceHeader => ChimeraEngine.PtrToStringUtf8(E.ce_session_trace_header(_session)) ?? "Instructions";
+		public bool TraceAvailable => !Disposed && E.ce_session_trace_available(Live) is not 0;
+		public string TraceHeader => ChimeraEngine.PtrToStringUtf8(E.ce_session_trace_header(Live)) ?? "Instructions";
 		/// <summary>The session remembers the flag and re-asserts it after a state load.</summary>
-		public void TraceEnable(bool on) => E.ce_session_trace_enable(_session, on ? 1 : 0);
+		public void TraceEnable(bool on) { if (!Disposed) E.ce_session_trace_enable(Live, on ? 1 : 0); }
 		/// <summary>The traced lines since the last drain (consecutive NUL-terminated strings), cleared on the way out.</summary>
 		public byte[] TraceDrain(out int lineCount, out bool overflowed)
 		{
 			ulong len = 0;
 			var lines = 0;
 			var overflow = 0;
-			var p = E.ce_session_trace_drain(_session, ref len, ref lines, ref overflow);
+			var p = E.ce_session_trace_drain(Live, ref len, ref lines, ref overflow);
 			lineCount = lines;
 			overflowed = overflow is not 0;
 			if (len == 0) return [ ];
@@ -2902,19 +2921,19 @@ namespace Chimera.Emulation.Common.Engine
 		}
 
 		/// <summary>Buttons past the packed mask's 64 (wide controllers): set per frame, before the advance; values persist until changed.</summary>
-		public void SetButton(int index, bool pressed) => E.ce_session_set_button(_session, index, pressed ? 1 : 0);
+		public void SetButton(int index, bool pressed) => E.ce_session_set_button(Live, index, pressed ? 1 : 0);
 
-		public bool SaveDataAvailable => E.ce_session_savedata_available(_session) is not 0;
+		public bool SaveDataAvailable => E.ce_session_savedata_available(Live) is not 0;
 		/// <summary>Snapshots the guest's exportable files (the list is dynamic); names and sizes refer to this snapshot.</summary>
-		public int SaveDataSnapshot() => E.ce_session_savedata_count(_session);
-		public string SaveDataName(int index) => ChimeraEngine.PtrToStringUtf8(E.ce_session_savedata_name(_session, index)) ?? $"file{index}";
-		public long SaveDataSize(int index) => E.ce_session_savedata_size(_session, index);
+		public int SaveDataSnapshot() => E.ce_session_savedata_count(Live);
+		public string SaveDataName(int index) => (Disposed ? null : ChimeraEngine.PtrToStringUtf8(E.ce_session_savedata_name(Live, index))) ?? $"file{index}";
+		public long SaveDataSize(int index) => E.ce_session_savedata_size(Live, index);
 		/// <summary>Copies [offset, offset+buffer.Length) of file index into buffer; returns bytes copied (clamped at the file's end).</summary>
 		public int SaveDataRead(int index, long offset, byte[] buffer)
-			=> checked((int)E.ce_session_savedata_read(_session, index, offset, buffer, buffer.LongLength));
+			=> checked((int)E.ce_session_savedata_read(Live, index, offset, buffer, buffer.LongLength));
 
 		private string LastError
-			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_last_error(_session)) ?? "engine session error";
+			=> ChimeraEngine.PtrToStringUtf8(E.ce_session_last_error(Live)) ?? "engine session error";
 
 		/// <summary>What built the waterbox host, as JSON; "" when the host is not loadable.</summary>
 		public static string HostBuildInfo => ChimeraEngine.PtrToStringUtf8(ChimeraEngine.Instance.ce_host_build_info()) ?? "";

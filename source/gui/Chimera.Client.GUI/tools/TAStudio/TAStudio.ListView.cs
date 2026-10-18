@@ -1031,13 +1031,10 @@ namespace Chimera.Client.GUI
 					_rightClickAlt = (ModifierKeys | Keys.Alt) == ModifierKeys;
 					if (roll.IsRowSelected(frame))
 					{
-						_rightClickInput = new string[GetSelection().Count()];
+						// the selected frames' own inputs: a selection with gaps took the run starting at its first row
+						// instead, and one reaching past the movie's end silently left empty slots
+						_rightClickInput = GetSelection().Select(f => CurrentTasMovie.GetInputLogEntry(f)).ToArray();
 						_rightClickFrame = FirstSelectedRowIndex;
-						try
-						{
-							CurrentTasMovie.GetLogEntries().CopyTo(_rightClickFrame, _rightClickInput, 0, _rightClickInput.Length);
-						}
-						catch { }
 						if (_rightClickControl && _rightClickShift)
 						{
 							_rightClickFrame += _rightClickInput.Length;

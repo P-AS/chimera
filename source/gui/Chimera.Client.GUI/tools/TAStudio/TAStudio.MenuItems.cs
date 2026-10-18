@@ -360,9 +360,12 @@ namespace Chimera.Client.GUI
 			if (!AnyRowsSelected) return;
 			var input = Clipboard.GetText();
 			if (string.IsNullOrWhiteSpace(input)) return;
-			string[] lines = input.Split('\n');
+			// Copy writes Windows line ends (AppendLine), and so do most editors there: a line keeping its '\r' is
+			// not a valid entry, and the paste stopped at the first one
+			string[] lines = input.Split('\n').Select(static l => l.TrimEnd('\r')).ToArray();
 			if (lines.Length is 0) return;
 
+			var selectionStart = FirstSelectedRowIndex;
 			_tasClipboard.Clear();
 			int linesToPaste = lines.Length;
 			if (lines[lines.Length - 1].Length is 0) linesToPaste--;
@@ -375,10 +378,10 @@ namespace Chimera.Client.GUI
 				}
 
 				// remove inputs not in _visibleDefintion
-				_tasClipboard.Add(new TasClipboardEntry(i, line));
+				// the frame it lands on, as Copy records it: Reselect Clipboard selects these
+				_tasClipboard.Add(new TasClipboardEntry(selectionStart + i, line));
 			}
 
-			var selectionStart = FirstSelectedRowIndex;
 			var inputStates = _tasClipboard.Select(static x => x.ControllerState);
 			if (overwriteSelection) CurrentTasMovie.CopyOverInput(selectionStart, inputStates);
 			else CurrentTasMovie.InsertInput(selectionStart, inputStates);

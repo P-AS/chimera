@@ -1563,14 +1563,23 @@ namespace Chimera.Client.GUI
 			var seen = new HashSet<string>(StringComparer.Ordinal);
 			void Entry(PrecompileOrchestrator.Entry entry)
 			{
-				// arrives on a worker's reader thread; the list is the UI's
-				BeginInvoke(new Action(() =>
+				// arrives on a worker's reader thread; the list is the UI's. The wizard can be closed while a
+				// worker still prints: posting to it then throws on the reader thread, which would end the process.
+				if (IsDisposed || !IsHandleCreated) return;
+				try
 				{
-					if (!seen.Add(entry.Name)) return;
-					AddPrecompileRow(entry.Name, entry.Sha1, present: true);
-					UpdatePrecompileBar();
-					UpdatePrecompileStatus();
-				}));
+					BeginInvoke(new Action(() =>
+					{
+						if (!seen.Add(entry.Name)) return;
+						AddPrecompileRow(entry.Name, entry.Sha1, present: true);
+						UpdatePrecompileBar();
+						UpdatePrecompileStatus();
+					}));
+				}
+				catch (InvalidOperationException)
+				{
+					// the wizard went away between the check and the post
+				}
 			}
 			// The sessions cannot tell how many modules this game has until they
 			// have compiled them: most objects come from the executable and what

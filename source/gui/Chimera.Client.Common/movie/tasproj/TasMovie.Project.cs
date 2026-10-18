@@ -822,7 +822,7 @@ namespace Chimera.Client.Common
 			if (p.CoreVersion.Length is not 0) Header[HeaderKeys.CoreVersion] = p.CoreVersion;
 			if (p.CoreSha1.Length is not 0) Header[HeaderKeys.CorePackageSha1] = p.CoreSha1;
 			if (p.Title.Length is not 0) Header[HeaderKeys.GameName] = p.Title;
-			Header[HeaderKeys.Rerecords] = p.Rerecords.ToString();
+			Header[HeaderKeys.Rerecords] = p.Rerecords.ToString(CultureInfo.InvariantCulture);
 
 			foreach (var line in p.Description.Split('\n'))
 			{
@@ -1039,7 +1039,8 @@ namespace Chimera.Client.Common
 				{
 					try
 					{
-						TasSession = JsonConvert.DeserializeObject<TasSession>(tr.ReadToEnd());
+						// "null" is valid JSON and would leave no session at all
+						TasSession = JsonConvert.DeserializeObject<TasSession>(tr.ReadToEnd()) ?? new TasSession();
 						Branches.Current = TasSession.CurrentBranch;
 					}
 					catch

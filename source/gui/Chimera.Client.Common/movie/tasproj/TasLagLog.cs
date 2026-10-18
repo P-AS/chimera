@@ -75,10 +75,31 @@ namespace Chimera.Client.Common
 			tw.WriteLine(JsonConvert.SerializeObject(_wasLag));
 		}
 
+		/// <summary>
+		/// Reads what <see cref="Save"/> wrote. A damaged lump (unreadable, cut short, or "null") is an empty log
+		/// rather than an exception or a null one: a bad cache is a clean slate (LoadCacheFile), and a null log
+		/// here was written back as "null" by the next save and failed every later lag mark.
+		/// </summary>
 		public void Load(TextReader tr)
 		{
-			_lagLog = JsonConvert.DeserializeObject<SortedList<int, bool>>(tr.ReadLine());
-			_wasLag = JsonConvert.DeserializeObject<Dictionary<int, bool>>(tr.ReadLine());
+			SortedList<int, bool> lag = null;
+			Dictionary<int, bool> was = null;
+			try
+			{
+				lag = JsonConvert.DeserializeObject<SortedList<int, bool>>(tr.ReadLine() ?? "");
+				was = JsonConvert.DeserializeObject<Dictionary<int, bool>>(tr.ReadLine() ?? "");
+			}
+			catch (JsonException)
+			{
+				lag = null;
+			}
+			if (lag is null || was is null)
+			{
+				lag = new();
+				was = new();
+			}
+			_lagLog = lag;
+			_wasLag = was;
 		}
 
 		public bool? History(int frame)

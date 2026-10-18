@@ -184,8 +184,11 @@ namespace Chimera.Client.GUI
 			}
 			catch (Exception e)
 			{
-				FinishVideoEncode(VideoEncodePhase.Failed, $"Could not wind the run to frame {request.StartFrame}: {e.Message}");
-				return _encode?.Message ?? "Could not wind the run to the starting frame.";
+				// the reason is kept here: FinishVideoEncode ends the job, and _encode with it, so reading the message
+				// back from it always gave the generic one
+				var reason = $"Could not wind the run to frame {request.StartFrame}: {e.Message}";
+				FinishVideoEncode(VideoEncodePhase.Failed, reason);
+				return reason;
 			}
 
 			UnpauseEmulator();
@@ -273,10 +276,11 @@ namespace Chimera.Client.GUI
 		{
 			if (_encode is null) return null;
 			var request = _encode.Request;
+			IVideoWriter? writer = null;
 			try
 			{
 				var preset = FFmpegWriterForm.FormatPreset.CustomPreset(request.FFmpegCommand);
-				IVideoWriter writer = new FFmpegWriter(this);
+				writer = new FFmpegWriter(this);
 				writer = Config.VideoWriterAudioSyncEffective ? new VideoStretcher(writer) : new AudioStretcher(writer);
 				writer.SetMovieParameters(Emulator.VsyncNumerator(), Emulator.VsyncDenominator());
 				(IVideoProvider output, Action? dispose) = GetCaptureProvider();
@@ -289,6 +293,8 @@ namespace Chimera.Client.GUI
 			}
 			catch (Exception e)
 			{
+				// as RecordAv does: a writer that got as far as starting ffmpeg would otherwise leave it running
+				try { writer?.Dispose(); } catch { /* already failing; the reason below is the one to give */ }
 				var reason = $"Could not start writing {Path.GetFileName(request.OutputPath)}: {e.Message}";
 				FinishVideoEncode(VideoEncodePhase.Failed, reason);
 				return reason;

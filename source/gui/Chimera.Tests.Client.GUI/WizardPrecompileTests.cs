@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 using Chimera.Client.Common;
 using Chimera.Client.GUI;
@@ -273,6 +274,34 @@ namespace Chimera.Tests.Client.GUI
 		// a trailing run must double, or the closing quote stops being a delimiter
 		Assert.AreEqual("\"C:\\a b\\\\\"", Q("C:\\a b\\"),
 			"a trailing backslash run doubles so the quote still closes");
+	}
+
+	[TestMethod]
+	public void AnApostropheInAPathSurvivesTheTripToTheChildUnderMono()
+	{
+		// Mono on Linux splits a child's argument string with shell rules, so the Windows quoting made a game
+		// named "Tony Hawk's.iso" stop the child from starting ("Unfinished quote"). Sent through Mono's own
+		// parser to a shell that prints each argument back, every one must arrive as it was.
+		if (Type.GetType("Mono.Runtime") is null || !Chimera.Common.OSTailoredCode.IsUnixHost)
+		{
+			Assert.Inconclusive("only Mono on Linux or macOS splits arguments this way");
+		}
+		var argumentString = typeof(SelfProcess).GetMethod("ArgumentString",
+			System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+		Assert.IsNotNull(argumentString, "ArgumentString must exist to be tested");
+
+		string[] sent = [ "/games/Tony Hawk's Pro Skater.iso", "it's", "back\\slash", "--config=/a b/c.ini", "dq\"x", "$HOME", "" ];
+		var psi = new System.Diagnostics.ProcessStartInfo("/bin/sh")
+		{
+			UseShellExecute = false,
+			RedirectStandardOutput = true,
+			Arguments = (string)argumentString.Invoke(null, [ new[] { "-c", "printf '[%s]\\n' \"$@\"", "sh" }.Concat(sent) ]),
+		};
+		using var p = System.Diagnostics.Process.Start(psi);
+		var printed = p!.StandardOutput.ReadToEnd();
+		p.WaitForExit();
+		CollectionAssert.AreEqual(sent.Select(static a => $"[{a}]").ToArray(),
+			printed.Split('\n').Where(static l => l.Length > 0).ToArray());
 	}
 
 	[TestMethod]

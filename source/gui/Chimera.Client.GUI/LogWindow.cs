@@ -91,12 +91,28 @@ namespace Chimera.Client.GUI
 						if (invoked)
 						{
 							//basically an easy way to post an update message which should hopefully happen before anything else happens (redraw or user interaction)
-							BeginInvoke(doUpdateListSize);
+							PostListSizeUpdate();
 						}
 						else
 							doUpdateListSize();
 					}
 				}
+			}
+		}
+
+		// Any thread writes the console, and a thread can still be writing through this window's writer while the
+		// window closes, or before it has a handle. Posting to it then throws on the writing thread, and an
+		// exception there ends the whole process; the line is kept regardless and shows with the next update.
+		private void PostListSizeUpdate()
+		{
+			if (!IsHandleCreated || IsDisposed) return;
+			try
+			{
+				BeginInvoke(doUpdateListSize);
+			}
+			catch (InvalidOperationException)
+			{
+				// the window went away between the check and the post (ObjectDisposedException is one of these)
 			}
 		}
 

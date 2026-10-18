@@ -160,10 +160,23 @@ namespace Chimera.Client.Common
 			for (int i = 0; i < Count; i++)
 			{
 				// used to copy markers between branches
-				ret.Add(new TasMovieMarker(this[i].Frame, this[i].Message, this[i].Permanence), skipHistory: true);
+				ret.Add(new TasMovieMarker(this[i].Frame, this[i].Message, this[i].Permanence) { WantsState = this[i].WantsState }, skipHistory: true);
 			}
 
 			return ret;
+		}
+
+		/// <summary>
+		/// Takes another list's markers in place of this one's (a branch being loaded), without history. The list
+		/// stays the same object: the movie and TAStudio listen to it, and a new list would leave them listening
+		/// to the old one, so a marker edited after the load neither marked the project unsaved nor redrew.
+		/// </summary>
+		public void ReplaceWith(TasMovieMarkerList other)
+		{
+			var copies = other.DeepClone();
+			base.Clear();
+			base.AddRange(copies);
+			OnListChanged(NotifyCollectionChangedAction.Reset);
 		}
 
 		public event NotifyCollectionChangedEventHandler CollectionChanged;

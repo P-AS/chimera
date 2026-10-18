@@ -297,5 +297,75 @@ namespace Chimera.Tests.Client.Common.Movie
 			Assert.IsTrue(movie.GetInputState(0).IsPressed("A"));
 			Assert.IsFalse(movie.GetInputState(0).IsPressed("B"));
 		}
+
+		/// <summary>
+		/// Loading a branch replaced the marker list with a copy, and the movie listened only to the list it was made
+		/// with: a marker added after the load did not mark the project unsaved, and closing threw it away unasked.
+		/// </summary>
+		[TestMethod]
+		public void AMarkerAddedAfterABranchLoadMarksTheProjectChanged()
+		{
+			TasMovie movie = MakeMovie(10);
+			movie.BindMarkersToInput = true;
+			movie.Markers.Add(3, "three");
+			TasBranch branch = new()
+			{
+				Frame = 5,
+				InputLog = movie.GetLogEntries().Clone(),
+				ChangeLog = movie.ChangeLog.Clone(),
+				Markers = movie.Markers.DeepClone(),
+			};
+			var listened = movie.Markers;
+
+			movie.LoadBranch(branch);
+			movie.ClearChanges();
+			movie.Markers.Add(7, "seven");
+
+			Assert.AreSame(listened, movie.Markers, "the branch's markers are loaded into the list the movie listens to");
+			Assert.IsTrue(movie.Changes, "a marker added after the load is an unsaved change");
+			Assert.IsTrue(movie.Markers.IsMarker(3), "and the branch's own markers are there");
+		}
+
+		/// <summary>
+		/// Merging two undo steps removed the NEWEST step rather than the second of the two. The piano roll only ever
+		/// merges the newest, which hid it; a third step after the two shows it.
+		/// </summary>
+		[TestMethod]
+		public void MergingTwoUndoStepsKeepsTheOnesAfterThem()
+		{
+			TasMovie movie = MakeMovie(10);
+			movie.ChangeLog.Clear();
+			int Step(string name, int frame)
+			{
+				movie.ChangeLog.BeginNewBatch(name);
+				movie.SetBoolState(frame, "A", true);
+				movie.ChangeLog.EndBatch();
+				return movie.ChangeLog.MostRecentId;
+			}
+			var one = Step("one", 1);
+			var two = Step("two", 2);
+			Step("three", 3);
+
+			Assert.IsTrue(movie.ChangeLog.MergeActions(one, two));
+
+			Assert.AreEqual("one", movie.ChangeLog.GetActionName(0));
+			Assert.AreEqual("three", movie.ChangeLog.GetActionName(1), "the step after the merged two is still there");
+		}
+
+		/// <summary>
+		/// A cache lump of "null" (a damaged or hand-edited cache) left the lag log null: the next save wrote "null"
+		/// back and every later lag mark failed. A bad cache is a clean slate instead.
+		/// </summary>
+		[TestMethod]
+		public void ADamagedLagLogLoadsAsAnEmptyOne()
+		{
+			foreach (var lump in new[] { "null\nnull\n", "", "{not json\n" })
+			{
+				TasLagLog log = new();
+				log.Load(new System.IO.StringReader(lump));
+				log[4] = true;
+				Assert.AreEqual(true, log[4], $"a lag mark after loading {lump.Replace("\n", "\\n")}");
+			}
+		}
 	}
 }

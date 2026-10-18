@@ -9177,3 +9177,70 @@ expected failures, as before) and the state tests pass on Windows; the
 engine's 30 unit tests pass, the witness 99 passed and 0 failed, the
 interface tests 1108 with none failed (23 skipped), the Windows build
 compiles, and the PCSX2 core's test script 44 passed, 0 failed, 6 skipped.
+## The interface's audit: closed engine objects, lost work and a quoting fix (2026-10-18)
+
+**What was found.** A read of the C# interface on 2026-10-18 (the owner's, done
+with another agent) listed what can end the process, lose work or misbehave.
+Each item was checked against the code before it was changed; the ones below
+were real.
+
+**What changed.**
+- A closed core, movie log or RAM search no longer reaches the engine. The
+  engine reads these objects without checking them, so a window asking a
+  closed core something on the way out (a paint, a tool's timer) killed the
+  process. Every engine call in `EngineSession` and `EngineRamSearch` now goes
+  through one checked handle, which throws an ordinary .NET error once the
+  object is closed. The questions the window asks most (frame, frame rate,
+  drives, greenzone, trace, save data) answer as an empty machine instead.
+  `EngineMovieLog` already promised that a freed log answers as an empty one;
+  six of its members did not, and now do.
+- Threads that may not throw: the input thread keeps polling after a failed
+  poll (an unplugged gamepad), and the log window and the New Project
+  window's compile list no longer post to a window that has closed. On .NET
+  Framework an exception on any thread ends the process.
+- Work that was lost: answering No to "save changes?" while closing a project
+  left the project running but deleted its crash-recovery journal and its
+  firmware pins; now nothing is ended unless the close happens. The Close ROM
+  hotkey and a script's `client.closerom` now close the way the menu does.
+  Markers edited after loading a branch were not seen as changes (the branch's
+  markers replaced the list the project listened to); they are now loaded into
+  the same list, and a marker's "keep a state here" choice travels with it.
+  A damaged lag log in the cache (for example the word null) is now an empty
+  one, as a bad cache is meant to be, instead of failing every later lag mark.
+  The second open of a project with no input yet failed on headers the file
+  already had.
+- Smaller fixes: a piano roll taller or wider than 256 rows (a 4K screen) no
+  longer fails on every repaint; pasting input copied with Windows line ends
+  works, and Reselect Clipboard selects the pasted frames; right-dragging a
+  selection with gaps copies the selected frames; branches can be reordered
+  after the current one was deleted; merging two undo steps removes the right
+  one; single instance mode, which is Windows only, is skipped on Linux
+  instead of stopping Chimera from starting; a failed video encode says why
+  and stops its ffmpeg; dropping a file Chimera does not open says so; the
+  firmware window hashes the Firmware folder once, not once per firmware;
+  the Lua canvas frees its drawing objects; a core that fails while it is
+  being set up frees its memory; the crash-recovery record is written to a
+  temporary file and moved into place; some movie numbers are written and
+  read without the computer's regional settings.
+- Starting a helper process under Mono on Linux: Mono splits the argument
+  string with shell rules, not Windows rules, so a game file whose name has
+  an apostrophe (Tony Hawk's) stopped the precompile and movie-import helper
+  from starting at all ("Unfinished quote"). There each argument now goes in
+  single quotes.
+
+**Not changed.** Two items are the owner's: the interface names seven cores in
+`GreenzoneSurvivesReload` (TasMovie.Project.cs), which the rule "no core known
+by name" forbids and which needs a package declaration instead; and
+`MovieActionPaint`, unused, which would lose an axis value if used again.
+Several audit items were not bugs (a dragged branch does land on the row it is
+dropped on) or were left as they are (a frame written past the end of a movie
+is appended, which recording relies on).
+
+**Tested.** Five new tests, each seen to fail with its fix taken out: a freed
+movie log answers as an empty one (without the fix the test process crashes,
+as Chimera did); a marker added after a branch load marks the project changed;
+merging two undo steps keeps the step after them; a damaged lag log loads as
+an empty one; arguments with an apostrophe, a backslash, a dollar sign and an
+empty string reach a child process unchanged under Mono. Engine tests (30),
+witness (96) and the interface tests (119, 62, 591 and 340, none failed)
+pass.

@@ -662,7 +662,8 @@ namespace Chimera.Client.GUI
 		{
 			if (e.NewCell.IsDataCell() && e.OldCell.RowIndex < Branches.Count)
 			{
-				var guid = Branches.Current > Branches.Count
+				// no current branch is -1 (the current one was deleted), and an index past the end is none either
+				var guid = Branches.Current < 0 || Branches.Current >= Branches.Count
 					? Guid.Empty
 					: Branches[Branches.Current].Uuid;
 
@@ -670,7 +671,7 @@ namespace Chimera.Client.GUI
 				int newIndex = Branches.IndexOfHash(guid);
 				Branches.Current = newIndex;
 				BranchView.DeselectAll();
-				Select(newIndex, true);
+				if (newIndex >= 0) Select(newIndex, true);
 			}
 
 			Refresh();

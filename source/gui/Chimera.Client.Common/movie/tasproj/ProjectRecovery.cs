@@ -699,8 +699,15 @@ namespace Chimera.Client.Common
 
 		private static string? Existing(string path) => File.Exists(path) ? path : null;
 
+		/// <summary>
+		/// Through <see cref="FileWriter"/> (a temporary file moved into place): a record cut short
+		/// by a crash mid-write reads as no record, and a session still running would be offered for recovery.
+		/// </summary>
 		internal static void WriteSession(string dir, SessionRecord record)
-			=> File.WriteAllText(Path.Combine(dir, SessionFile), JsonConvert.SerializeObject(record));
+		{
+			var written = FileWriter.Write(Path.Combine(dir, SessionFile), System.Text.Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(record)));
+			if (written.IsError) throw written.Exception ?? new IOException($"the recovery record in {dir} could not be written ({written.Error})");
+		}
 
 		private static SessionRecord? ReadSession(string dir)
 		{

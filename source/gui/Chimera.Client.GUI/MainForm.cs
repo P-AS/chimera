@@ -264,7 +264,9 @@ namespace Chimera.Client.GUI
 
 			_getGlobalConfig = getGlobalConfig;
 
-			if (Config.SingleInstanceMode)
+			// Windows only (a named pipe with Windows security): a config brought over from Windows with it on
+			// would otherwise stop Chimera from starting at all on Linux, where the option cannot be turned off
+			if (Config.SingleInstanceMode && !OSTailoredCode.IsUnixHost)
 			{
 				if (SingleInstanceInit(args))
 				{
@@ -3729,11 +3731,15 @@ namespace Chimera.Client.GUI
 		/// <summary>
 		/// This closes the current ROM, closes tools that require emulator services, and sets things up for the user to interact with the client having no loaded ROM.
 		/// </summary>
-		public void LoadNullRom()
+		/// <summary>A script's client.closerom: the menu's close, so a project's recovery journal and pins end with it.</summary>
+		void IMainFormForApi.LoadNullRom() => CloseProject();
+
+		/// <returns>False when the person kept the game open (cancelled a save prompt): nothing was closed.</returns>
+		public bool LoadNullRom()
 		{
 			if (Tools.AskSave())
 			{
-				CloseGame();
+				if (!CloseGame()) return false;
 				Tools.Restart(Config, Emulator, Game);
 				DisplayManager.UpdateGlobals(Config, Emulator);
 				PauseOnFrame = null;
@@ -3743,7 +3749,9 @@ namespace Chimera.Client.GUI
 				_openProject?.Dispose();
 				_openProject = null;
 				OnRomChanged();
+				return true;
 			}
+			return false;
 		}
 
 		public bool EnsureCoreIsAccurate()

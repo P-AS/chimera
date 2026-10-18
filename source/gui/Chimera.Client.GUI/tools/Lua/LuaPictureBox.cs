@@ -49,12 +49,15 @@ namespace Chimera.Client.GUI
 		{
 			Width = width;
 			Height = height;
+			// the old picture is let go of here: a script resizing every frame otherwise held one bitmap per call
+			var old = Image;
 			Image = new Bitmap(width, height);
+			old?.Dispose();
 		}
 
 		public void Clear([LuaColorParam] object color)
 		{
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			boxBackground.Clear(TableHelper.ParseColor(color));
 		}
 
@@ -89,7 +92,7 @@ namespace Chimera.Client.GUI
 				}
 			}
 
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			boxBackground.DrawBezier(GetPen(TableHelper.ParseColor(color)), pointsArr[0], pointsArr[1], pointsArr[2], pointsArr[3]);
 		}
 
@@ -121,13 +124,12 @@ namespace Chimera.Client.GUI
 				y -= y2;
 			}
 
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			boxBackground.DrawRectangle(GetPen(TableHelper.SafeParseColor(line) ?? _defaultForeground), x, y, x2, y2);
 
 			var bg = TableHelper.SafeParseColor(background) ?? _defaultBackground;
 			if (bg.HasValue)
 			{
-				boxBackground = Graphics.FromImage(Image);
 				boxBackground.FillRectangle(GetBrush(bg.Value), x + 1, y + 1, x2 - 1, y2 - 1);
 			}
 		}
@@ -141,12 +143,11 @@ namespace Chimera.Client.GUI
 			[LuaColorParam] object background)
 		{
 			var bg = TableHelper.SafeParseColor(background) ?? _defaultBackground;
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			if (bg.HasValue)
 			{
 				var brush = GetBrush(bg.Value);
 				boxBackground.FillEllipse(brush, x, y, width, height);
-				boxBackground = Graphics.FromImage(Image);
 			}
 
 			boxBackground.DrawEllipse(GetPen(TableHelper.SafeParseColor(line) ?? _defaultForeground), x, y, width, height);
@@ -165,7 +166,7 @@ namespace Chimera.Client.GUI
 				icon = new Icon(path);
 			}
 
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			boxBackground.DrawIcon(icon, x, y);
 		}
 
@@ -180,7 +181,7 @@ namespace Chimera.Client.GUI
 				}
 			}
 
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			boxBackground.DrawImage(img, x, y, width ?? img.Width, height ?? img.Height);
 		}
 
@@ -208,13 +209,13 @@ namespace Chimera.Client.GUI
 			var img = _imageCache.GetValueOrPut(path, Image.FromFile);
 			var destRect = new Rectangle(destX, destY, destWidth ?? sourceWidth, destHeight ?? sourceHeight);
 
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			boxBackground.DrawImage(img, destRect, sourceX, sourceY, sourceWidth, sourceHeight, GraphicsUnit.Pixel);
 		}
 
 		public void DrawLine(int x1, int y1, int x2, int y2, [LuaColorParam] object color)
 		{
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			boxBackground.DrawLine(GetPen(TableHelper.SafeParseColor(color) ?? _defaultForeground), x1, y1, x2, y2);
 		}
 
@@ -234,7 +235,7 @@ namespace Chimera.Client.GUI
 			int sweepAngle,
 			[LuaColorParam] object line)
 		{
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			boxBackground.DrawArc(GetPen(TableHelper.SafeParseColor(line) ?? _defaultForeground), x, y, width, height, startAngle, sweepAngle);
 		}
 
@@ -249,12 +250,11 @@ namespace Chimera.Client.GUI
 			[LuaColorParam] object background)
 		{
 			var bg = TableHelper.SafeParseColor(background) ?? _defaultBackground;
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			if (bg.HasValue)
 			{
 				var brush = GetBrush(bg.Value);
 				boxBackground.FillPie(brush, x, y, width, height, startAngle, sweepAngle);
-				boxBackground = Graphics.FromImage(Image);
 			}
 
 			boxBackground.DrawPie(GetPen(TableHelper.SafeParseColor(line) ?? _defaultForeground), x + 1, y + 1, width - 1, height - 1, startAngle, sweepAngle);
@@ -262,7 +262,7 @@ namespace Chimera.Client.GUI
 
 		public void DrawPixel(int x, int y, [LuaColorParam] object color)
 		{
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			boxBackground.DrawLine(GetPen(TableHelper.SafeParseColor(color) ?? _defaultForeground), x, y, x + 0.1F, y);
 		}
 
@@ -284,12 +284,11 @@ namespace Chimera.Client.GUI
 				pointsArr[i++] = new(x1 + (int) point[0], y1 + (int) point[1]);
 			}
 
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			boxBackground.DrawPolygon(GetPen(TableHelper.SafeParseColor(line) ?? _defaultForeground), pointsArr);
 			var bg = TableHelper.SafeParseColor(background) ?? _defaultBackground;
 			if (bg.HasValue)
 			{
-				boxBackground = Graphics.FromImage(Image);
 				boxBackground.FillPolygon(GetBrush(bg.Value), pointsArr);
 			}
 		}
@@ -303,11 +302,10 @@ namespace Chimera.Client.GUI
 			[LuaColorParam] object background)
 		{
 			var bg = TableHelper.SafeParseColor(background) ?? _defaultBackground;
-			var boxBackground = Graphics.FromImage(Image);
+			using var boxBackground = Graphics.FromImage(Image);
 			if (bg.HasValue)
 			{
 				boxBackground.FillRectangle(GetBrush(bg.Value), x, y, width, height);
-				boxBackground = Graphics.FromImage(Image);
 			}
 
 			boxBackground.DrawRectangle(GetPen(TableHelper.SafeParseColor(line) ?? _defaultForeground), x, y, width, height);
@@ -354,9 +352,9 @@ namespace Chimera.Client.GUI
 				}
 			}
 
-			var f = new StringFormat(StringFormat.GenericDefault);
-			var font = new Font(family, fontSize ?? 12, fStyle, GraphicsUnit.Pixel);
-			var boxBackground = Graphics.FromImage(Image);
+			using var f = new StringFormat(StringFormat.GenericDefault);
+			using var font = new Font(family, fontSize ?? 12, fStyle, GraphicsUnit.Pixel);
+			using var boxBackground = Graphics.FromImage(Image);
 
 			Size sizeOfText = boxBackground.MeasureString(message, font, 0, f).ToSize();
 
@@ -394,9 +392,7 @@ namespace Chimera.Client.GUI
 				}
 			}
 			Rectangle rect = new Rectangle(new Point(x, y), sizeOfText);
-			boxBackground = Graphics.FromImage(Image);
 			boxBackground.FillRectangle(GetBrush(TableHelper.SafeParseColor(backColor) ?? _defaultTextBackground.Value), rect);
-			boxBackground = Graphics.FromImage(Image);
 			boxBackground.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
 			boxBackground.DrawString(message, font, GetBrush(TableHelper.SafeParseColor(foreColor) ?? Color.Black), x, y);
 		}

@@ -224,7 +224,16 @@ namespace Chimera.Client.GUI
 
 								_ = LoadMovie(filename, fileInformation.ArchiveName);
 								break;
+							default:
+								// savestate files and cheat files: sorted above, but nothing opens them by dropping, and
+								// saying nothing made a drop look lost
+								AddOnScreenMessage($"{fileInformation.FileName}: Chimera does not open this kind of file by dropping it");
+								break;
 						}
+						break;
+					default:
+						// asking which one is not done: none opens, and that is said rather than left silent
+						AddOnScreenMessage($"{sortedFiles[value].Count} files of one kind were dropped; drop them one at a time");
 						break;
 				}
 			}

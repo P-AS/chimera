@@ -82,7 +82,8 @@ namespace Chimera.Client.GUI
 					ToggleFullscreen();
 					break;
 				case "Close ROM":
-					LoadNullRom();
+					// the menu's close: a project's recovery journal, firmware pins and crash note end with it
+					CloseProject();
 					break;
 				case "Display FPS":
 					ToggleFps();

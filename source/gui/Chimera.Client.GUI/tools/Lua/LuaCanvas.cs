@@ -81,7 +81,9 @@ namespace Chimera.Client.GUI
 			// was this done after reflow for a reason? --yoshi
 			luaPictureBox.Width = width;
 			luaPictureBox.Height = height;
+			var old = luaPictureBox.Image;
 			luaPictureBox.Image = new Bitmap(width, height);
+			old?.Dispose();
 			PerformLayout();
 		}
 

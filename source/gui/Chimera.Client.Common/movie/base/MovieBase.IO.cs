@@ -40,7 +40,7 @@ namespace Chimera.Client.Common
 			{
 				// legacy movies may incorrectly have no ClockRate header value set
 				Header[HeaderKeys.ClockRate] = cycleCore.ClockRate.ToString(NumberFormatInfo.InvariantInfo);
-				Header[HeaderKeys.CycleCount] = cycleCore.CycleCount.ToString();
+				Header[HeaderKeys.CycleCount] = cycleCore.CycleCount.ToString(CultureInfo.InvariantCulture);
 			}
 			else
 			{

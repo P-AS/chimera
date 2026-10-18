@@ -48,7 +48,7 @@ namespace Chimera.Client.Common
 
 				if (Header.TryGetValue(HeaderKeys.CycleCount, out var numCyclesStr) && Header.TryGetValue(HeaderKeys.ClockRate, out var clockRateStr))
 				{
-					var numCycles = ulong.Parse(numCyclesStr);
+					var numCycles = ulong.Parse(numCyclesStr, CultureInfo.InvariantCulture);
 					var clockRate = double.Parse(clockRateStr, CultureInfo.InvariantCulture);
 					numSeconds = numCycles / clockRate;
 				}

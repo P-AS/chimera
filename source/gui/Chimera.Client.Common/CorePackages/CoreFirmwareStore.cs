@@ -192,13 +192,20 @@ namespace Chimera.Client.Common
 
 		/// <summary>Every declaration of every loaded package, with its current state - the firmware window's contents.</summary>
 		public static IReadOnlyList<CoreFirmwareEntry> Enumerate(Config config, CoreRegistry registry)
-			=> registry.AllFactories
+		{
+			// The Firmware folder is hashed once for the whole survey, and only if some declaration has to look
+			// there: asked per declaration, it was read and hashed in full for every one of them (seventy-odd).
+			IReadOnlyList<FirmwareLocator.IndexedFile>? index = null;
+			IReadOnlyList<FirmwareLocator.IndexedFile>? FolderIndex()
+				=> index ??= FirmwareFolder(config) is { } dir ? FirmwareLocator.BuildIndex([ dir ]) : [ ];
+			return registry.AllFactories
 				.OfType<ICoreFirmwareUser>()
-				.SelectMany(user => user.Firmware.Select(decl => Describe(config, ((ICoreFactory) user).CoreName, decl)))
+				.SelectMany(user => user.Firmware.Select(decl => Describe(config, ((ICoreFactory) user).CoreName, decl, FolderIndex)))
 				// two builds of one core loaded side by side declare the same files once
 				.GroupBy(static e => KeyFor(e.CoreName, e.Decl), StringComparer.OrdinalIgnoreCase)
 				.Select(static g => g.First())
 				.ToList();
+		}
 
 		/// <summary>True if any loaded package expects firmware at all (the firmware window is pointless otherwise).</summary>
 		public static bool AnyExpected(CoreRegistry registry)
@@ -218,16 +225,7 @@ namespace Chimera.Client.Common
 		/// </summary>
 		private static string? InFirmwareFolder(Config config, CoreFirmwareDecl decl)
 		{
-			string dir;
-			try
-			{
-				dir = config.PathEntries.FirmwareAbsolutePath();
-			}
-			catch (Exception ex) when (ex is IOException or ArgumentException)
-			{
-				return null;
-			}
-			if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return null;
+			if (FirmwareFolder(config) is not { } dir) return null;
 			if (string.IsNullOrEmpty(decl.Sha1))
 			{
 				// nothing to ask by but the name, and a name is compared the way
@@ -247,8 +245,23 @@ namespace Chimera.Client.Common
 			return FirmwareLocator.FindFor(decl, FirmwareLocator.BuildIndex([ dir ]))?.Path;
 		}
 
+		/// <summary>The Firmware folder, or null when there is none to look in.</summary>
+		private static string? FirmwareFolder(Config config)
+		{
+			string dir;
+			try
+			{
+				dir = config.PathEntries.FirmwareAbsolutePath();
+			}
+			catch (Exception ex) when (ex is IOException or ArgumentException)
+			{
+				return null;
+			}
+			return string.IsNullOrEmpty(dir) || !Directory.Exists(dir) ? null : dir;
+		}
+
 		public static CoreFirmwareEntry Describe(Config config, string coreName, CoreFirmwareDecl decl)
-			=> Describe(config, coreName, decl, null);
+			=> Describe(config, coreName, decl, (Func<IReadOnlyList<FirmwareLocator.IndexedFile>?>?)null);
 
 		/// <summary>
 		/// The same, answering the Firmware folder from an index the caller built
@@ -256,12 +269,17 @@ namespace Chimera.Client.Common
 		/// seventy-three times.
 		/// </summary>
 		public static CoreFirmwareEntry Describe(Config config, string coreName, CoreFirmwareDecl decl, IReadOnlyList<FirmwareLocator.IndexedFile>? index)
+			=> Describe(config, coreName, decl, index is null ? null : () => index);
+
+		/// <summary>The same, with the index built only when a declaration has to look in the folder.</summary>
+		private static CoreFirmwareEntry Describe(Config config, string coreName, CoreFirmwareDecl decl, Func<IReadOnlyList<FirmwareLocator.IndexedFile>?>? index)
 		{
 			var path = GetPath(config, coreName, decl);
 			// a choice that has moved is no longer an answer; the folder may hold one
 			if (path is null || !File.Exists(path))
 			{
-				path = (index is null ? InFirmwareFolder(config, decl) : FirmwareLocator.FindEither(decl, index)?.Path) ?? path;
+				var folder = index?.Invoke();
+				path = (folder is null ? InFirmwareFolder(config, decl) : FirmwareLocator.FindEither(decl, folder)?.Path) ?? path;
 			}
 			if (path is null) return new() { CoreName = coreName, Decl = decl, State = CoreFirmwareState.Missing };
 

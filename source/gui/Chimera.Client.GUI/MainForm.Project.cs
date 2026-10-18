@@ -121,10 +121,14 @@ namespace Chimera.Client.GUI
 			// before the close, which is what takes it away: the auto-clean below
 			// must know which run this session was working on
 			var wasOpen = _openProject?.Id;
+			var closed = false;
 			try
 			{
 				if (Tools.IsLoaded<TAStudio>()) Tools.Close<TAStudio>();
-				LoadNullRom();
+				// Cancelling a save prompt keeps the session running, and with it its crash-recovery journal, its
+				// firmware pins and its place in the crash note: none of the below may happen to it.
+				closed = LoadNullRom();
+				if (!closed) return;
 				// The close is done and whatever was to be saved was saved (or knowingly
 				// thrown away), so there is nothing left to recover.
 				_recovery?.End(clean: true);
@@ -139,7 +143,7 @@ namespace Chimera.Client.GUI
 				_closingProject = false;
 				// after the close, so a request TAStudio queued on the way out
 				// belongs to the session that has just ended rather than to this one
-				_projectSession++;
+				if (closed) _projectSession++;
 			}
 
 			// The cache has just grown by whatever the session added, and the
@@ -883,7 +887,16 @@ namespace Chimera.Client.GUI
 			if (!HeadlessMode.Enabled)
 			{
 				if (Visible) Tools.Load<TAStudio>();
-				else Shown += (_, _) => Tools.Load<TAStudio>();
+				else
+				{
+					// once: a handler left on Shown stays there for every later boot as well
+					void OpenOnShown(object sender, EventArgs e)
+					{
+						Shown -= OpenOnShown;
+						Tools.Load<TAStudio>();
+					}
+					Shown += OpenOnShown;
+				}
 			}
 			return true;
 		}

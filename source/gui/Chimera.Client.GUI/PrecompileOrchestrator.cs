@@ -390,6 +390,23 @@ namespace Chimera.Client.GUI
 			return sb.ToString();
 		}
 
+		/// <summary>
+		/// Mono on Linux and macOS does not read the argument string the way Windows does: it splits it with shell
+		/// rules, where a single quote or a backslash outside quotes is special. So <see cref="Quote"/>'s output
+		/// went wrong there, and a game whose name has an apostrophe in it ("Tony Hawk's.iso") stopped the child
+		/// from starting at all (Mono: "Unfinished quote"). There every argument goes in single quotes, inside
+		/// which nothing is special, and a single quote of its own is written '\''.
+		/// </summary>
+		private static string QuoteForShell(string a) => "'" + a.Replace("'", "'\\''") + "'";
+
+		/// <summary>The child's argument string, quoted the way the runtime starting it will split it.</summary>
+		private static string ArgumentString(IEnumerable<string> args)
+		{
+			var monoOnUnix = Type.GetType("Mono.Runtime") is not null && OSTailoredCode.IsUnixHost;
+			Func<string, string> quote = monoOnUnix ? QuoteForShell : Quote;
+			return string.Join(" ", args.Select(quote));
+		}
+
 		public static Process Start(IEnumerable<string> args, Action<string> onLine)
 		{
 			var psi = new ProcessStartInfo
@@ -406,7 +423,7 @@ namespace Chimera.Client.GUI
 			psi.FileName = exe; // under mono: the runtime itself, then the assembly
 			if (underMono) all.Add(entry);
 			all.AddRange(args);
-			psi.Arguments = string.Join(" ", all.Select(Quote));
+			psi.Arguments = ArgumentString(all);
 			try
 			{
 				var p = Process.Start(psi);

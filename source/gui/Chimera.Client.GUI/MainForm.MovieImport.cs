@@ -230,7 +230,8 @@ namespace Chimera.Client.GUI
 					{
 						return (MovieImportAnswer.Parse(File.ReadAllText(answerPath)), null);
 					}
-					catch (Newtonsoft.Json.JsonException ex)
+					// a field of the wrong kind ("frames": "many") throws one of the others, not a JsonException
+					catch (Exception ex) when (ex is Newtonsoft.Json.JsonException or FormatException or InvalidCastException or OverflowException)
 					{
 						return (null, $"the core's answer could not be read: {ex.Message}");
 					}

@@ -476,7 +476,7 @@ namespace Chimera.Client.Common
 					var split = line.Split(' ');
 					try
 					{
-						stateFrame = int.Parse(split[1]);
+						stateFrame = int.Parse(split[1], CultureInfo.InvariantCulture);
 					}
 					catch
 					{
@@ -554,7 +554,7 @@ namespace Chimera.Client.Common
 
 			if (BindMarkersToInput) // pretty critical not to erase them
 			{
-				Markers = branch.Markers.DeepClone();
+				Markers.ReplaceWith(branch.Markers);
 			}
 
 			ChangeLog = branch.ChangeLog.Clone();

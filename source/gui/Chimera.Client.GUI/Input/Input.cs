@@ -222,95 +222,113 @@ namespace Chimera.Client.GUI
 
 		private void UpdateThreadProc()
 		{
+			var reported = false;
 			while (true)
 			{
-				_currentConfig = _getConfigCallback();
-				UpdateModifierKeysEffective();
-
-				var keyEvents = Adapter.ProcessHostKeyboards();
-				var (mouseDeltaX, mouseDeltaY) = Adapter.ProcessHostMice();
-				Adapter.PreprocessHostGamepads();
-
-				//this block is going to massively modify data structures that the binding method uses, so we have to lock it all
-				lock (this)
+				// Nothing thrown here may end the thread: on .NET Framework an exception on any thread ends the whole
+				// process, and a gamepad unplugged mid-poll, or a window closing under Form.ActiveForm, can throw.
+				// The poll is skipped, said once, and tried again.
+				try
 				{
-					//analyze keys
-					foreach (var ke in keyEvents)
-					{
-						HandleButton(DistinctKeyNameOverrides.GetName(ke.Key), ke.Pressed, HostInputType.Keyboard);
-					}
-
-					lock (_axisValues)
-					{
-						//_axisValues.Clear();
-						Adapter.ProcessHostGamepads(HandleButton, HandleAxis);
-					}
-					EnqueueNewEvents();
-
-					// analyze moose
-					Control/*?*/ activeForm = Form.ActiveForm;
-					if (activeForm != _lastControl)
-					{
-						// On Windows, the tab key in a alt+tab combination cannot be detected. But it will change the active form.
-						// We need to generate an event, or alt+tab between windows will be detected as just alt.
-						EnqueueEvent(new InputEvent() {
-							EventType = InputEventType.Press,
-							LogicalButton = new(BUTTON_FORM_CHANGED, 0, () => _getConfigCallback().ModifierKeysEffective),
-							Source = HostInputType.Ignored,
-						});
-					}
-					bool newWantsMouse = _wantingMouseFocus.Contains(activeForm);
-					if (activeForm != _lastControl && !_wantsMouse && newWantsMouse)
-					{
-						// We set our internal state to unpress all mouse buttons, so any pressed buttons can get new events for the newly active form.
-						HandleButton("WMouse L", false, HostInputType.Mouse);
-						HandleButton("WMouse M", false, HostInputType.Mouse);
-						HandleButton("WMouse R", false, HostInputType.Mouse);
-						HandleButton("WMouse 1", false, HostInputType.Mouse);
-						HandleButton("WMouse 2", false, HostInputType.Mouse);
-						EnqueueNewEvents(prohibitInput: !_wantsMouse); // if any unpress event were generated, process them even though they probably do nothing
-					}
-					_lastControl = activeForm;
-					_wantsMouse = newWantsMouse;
-
-					if (_wantsMouse)
-					{
-						lock (_axisValues)
-						{
-							var mousePos = Control.MousePosition;
-							if (_trackDeltas)
-							{
-								// these are relative to screen coordinates, but that's not terribly important
-								const float MOUSE_DELTA_SCALE = 50.0f;
-								_axisDeltas["WMouse X"] = _axisDeltas.GetValueOrDefault("WMouse X")
-									+ MOUSE_DELTA_SCALE * Math.Abs(mousePos.X - _axisValues.GetValueOrDefault("WMouse X"));
-								_axisDeltas["WMouse Y"] = _axisDeltas.GetValueOrDefault("WMouse Y")
-									+ MOUSE_DELTA_SCALE * Math.Abs(mousePos.Y - _axisValues.GetValueOrDefault("WMouse Y"));
-							}
-							// coordinate translation happens later
-							_axisValues["WMouse X"] = mousePos.X;
-							_axisValues["WMouse Y"] = mousePos.Y;
-
-							// raw (relative) mouse input
-							_axisValues["RMouse X"] = mouseDeltaX + _axisValues.GetValueOrDefault("RMouse X");
-							_axisValues["RMouse Y"] = mouseDeltaY + _axisValues.GetValueOrDefault("RMouse Y");
-						}
-					}
-
-					var mouseBtns = Control.MouseButtons;
-					HandleButton("WMouse L", (mouseBtns & MouseButtons.Left) != 0, HostInputType.Mouse);
-					HandleButton("WMouse M", (mouseBtns & MouseButtons.Middle) != 0, HostInputType.Mouse);
-					HandleButton("WMouse R", (mouseBtns & MouseButtons.Right) != 0, HostInputType.Mouse);
-					HandleButton("WMouse 1", (mouseBtns & MouseButtons.XButton1) != 0, HostInputType.Mouse);
-					HandleButton("WMouse 2", (mouseBtns & MouseButtons.XButton2) != 0, HostInputType.Mouse);
-					EnqueueNewEvents(prohibitInput: !_wantsMouse);
-
-					_ignoreEventsNextPoll = false;
-				} //lock(this)
+					PollOnce();
+				}
+				catch (Exception e)
+				{
+					if (!reported) Console.Error.WriteLine($"Input: a poll of the keyboards, mice and gamepads failed and is retried: {e}");
+					reported = true;
+					Thread.Sleep(100);
+				}
 
 				//arbitrary selection of polling frequency:
 				Thread.Sleep(2);
 			}
+		}
+
+		private void PollOnce()
+		{
+			_currentConfig = _getConfigCallback();
+			UpdateModifierKeysEffective();
+
+			var keyEvents = Adapter.ProcessHostKeyboards();
+			var (mouseDeltaX, mouseDeltaY) = Adapter.ProcessHostMice();
+			Adapter.PreprocessHostGamepads();
+
+			//this block is going to massively modify data structures that the binding method uses, so we have to lock it all
+			lock (this)
+			{
+				//analyze keys
+				foreach (var ke in keyEvents)
+				{
+					HandleButton(DistinctKeyNameOverrides.GetName(ke.Key), ke.Pressed, HostInputType.Keyboard);
+				}
+
+				lock (_axisValues)
+				{
+					//_axisValues.Clear();
+					Adapter.ProcessHostGamepads(HandleButton, HandleAxis);
+				}
+				EnqueueNewEvents();
+
+				// analyze moose
+				Control/*?*/ activeForm = Form.ActiveForm;
+				if (activeForm != _lastControl)
+				{
+					// On Windows, the tab key in a alt+tab combination cannot be detected. But it will change the active form.
+					// We need to generate an event, or alt+tab between windows will be detected as just alt.
+					EnqueueEvent(new InputEvent() {
+						EventType = InputEventType.Press,
+						LogicalButton = new(BUTTON_FORM_CHANGED, 0, () => _getConfigCallback().ModifierKeysEffective),
+						Source = HostInputType.Ignored,
+					});
+				}
+				bool newWantsMouse = _wantingMouseFocus.Contains(activeForm);
+				if (activeForm != _lastControl && !_wantsMouse && newWantsMouse)
+				{
+					// We set our internal state to unpress all mouse buttons, so any pressed buttons can get new events for the newly active form.
+					HandleButton("WMouse L", false, HostInputType.Mouse);
+					HandleButton("WMouse M", false, HostInputType.Mouse);
+					HandleButton("WMouse R", false, HostInputType.Mouse);
+					HandleButton("WMouse 1", false, HostInputType.Mouse);
+					HandleButton("WMouse 2", false, HostInputType.Mouse);
+					EnqueueNewEvents(prohibitInput: !_wantsMouse); // if any unpress event were generated, process them even though they probably do nothing
+				}
+				_lastControl = activeForm;
+				_wantsMouse = newWantsMouse;
+
+				if (_wantsMouse)
+				{
+					lock (_axisValues)
+					{
+						var mousePos = Control.MousePosition;
+						if (_trackDeltas)
+						{
+							// these are relative to screen coordinates, but that's not terribly important
+							const float MOUSE_DELTA_SCALE = 50.0f;
+							_axisDeltas["WMouse X"] = _axisDeltas.GetValueOrDefault("WMouse X")
+								+ MOUSE_DELTA_SCALE * Math.Abs(mousePos.X - _axisValues.GetValueOrDefault("WMouse X"));
+							_axisDeltas["WMouse Y"] = _axisDeltas.GetValueOrDefault("WMouse Y")
+								+ MOUSE_DELTA_SCALE * Math.Abs(mousePos.Y - _axisValues.GetValueOrDefault("WMouse Y"));
+						}
+						// coordinate translation happens later
+						_axisValues["WMouse X"] = mousePos.X;
+						_axisValues["WMouse Y"] = mousePos.Y;
+
+						// raw (relative) mouse input
+						_axisValues["RMouse X"] = mouseDeltaX + _axisValues.GetValueOrDefault("RMouse X");
+						_axisValues["RMouse Y"] = mouseDeltaY + _axisValues.GetValueOrDefault("RMouse Y");
+					}
+				}
+
+				var mouseBtns = Control.MouseButtons;
+				HandleButton("WMouse L", (mouseBtns & MouseButtons.Left) != 0, HostInputType.Mouse);
+				HandleButton("WMouse M", (mouseBtns & MouseButtons.Middle) != 0, HostInputType.Mouse);
+				HandleButton("WMouse R", (mouseBtns & MouseButtons.Right) != 0, HostInputType.Mouse);
+				HandleButton("WMouse 1", (mouseBtns & MouseButtons.XButton1) != 0, HostInputType.Mouse);
+				HandleButton("WMouse 2", (mouseBtns & MouseButtons.XButton2) != 0, HostInputType.Mouse);
+				EnqueueNewEvents(prohibitInput: !_wantsMouse);
+
+				_ignoreEventsNextPoll = false;
+			} //lock(this)
 		}
 
 		private static bool ShouldSwallow(AllowInput allowInput, HostInputType inputFocus)

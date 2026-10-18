@@ -190,61 +190,71 @@ namespace Chimera.Emulation.Common.Waterbox
 				throw new CoreLoadException(ex.Message);
 			}
 
-			// WHICH OF THE DECLARED CONTROLS THIS MACHINE HAS. A package declares
-			// the union of every peripheral its ports can hold, because the
-			// declaration is static and cannot know what a project plugged in; the
-			// core read the port settings and built the machine, so it is asked.
-			// An inactive control is not in the controller, not a TAStudio column
-			// and not a character in a movie entry - but the arrays here stay the
-			// DECLARATION's, because an index on the wire must never move.
-			// The settings THIS GAME has beyond the package's (an arcade game's dip
-			// switches), which only the loaded core can name. Shown in the settings
-			// grid beside the package's; their values travel like any other.
-			_gameDecls = WaterboxConfig.ParseGameSettings(_session.GameSettingsJson, Decls.Select(static d => d.Key));
-
-			_buttonActive = new bool[_buttons.Length];
-			for (int i = 0; i < _buttons.Length; i++) _buttonActive[i] = _session.ButtonActive(i);
-			_axisActive = new bool[_axes.Length];
-			for (int i = 0; i < _axes.Length; i++) _axisActive[i] = _session.AxisActive(i);
-
-			// Memory domains are self-described by the guest at runtime (size/count
-			// can depend on settings); pointer-backed straight into guest memory.
-			// Reads go through the engine's read view, which never runs the core's
-			// own code (a core that protects pages to watch them, RPCS3, would hear
-			// of every read); writes through the core's own pointer.
-			var domains = new List<MemoryDomain>(_session.DomainCount);
-			for (int i = 0; i < _session.DomainCount; i++)
+			// The session holds the guest's memory (gigabytes for some cores) until it is disposed, and a core that
+			// fails to construct is never disposed by anyone: whatever goes wrong from here closes it first.
+			try
 			{
-				domains.Add(new MemoryDomainIntPtr(
-					_session.DomainName(i), MemoryDomain.Endian.Little,
-					_session.DomainPtr(i), _session.DomainSize(i), _session.DomainWritable(i), 1)
+				// WHICH OF THE DECLARED CONTROLS THIS MACHINE HAS. A package declares
+				// the union of every peripheral its ports can hold, because the
+				// declaration is static and cannot know what a project plugged in; the
+				// core read the port settings and built the machine, so it is asked.
+				// An inactive control is not in the controller, not a TAStudio column
+				// and not a character in a movie entry - but the arrays here stay the
+				// DECLARATION's, because an index on the wire must never move.
+				// The settings THIS GAME has beyond the package's (an arcade game's dip
+				// switches), which only the loaded core can name. Shown in the settings
+				// grid beside the package's; their values travel like any other.
+				_gameDecls = WaterboxConfig.ParseGameSettings(_session.GameSettingsJson, Decls.Select(static d => d.Key));
+
+				_buttonActive = new bool[_buttons.Length];
+				for (int i = 0; i < _buttons.Length; i++) _buttonActive[i] = _session.ButtonActive(i);
+				_axisActive = new bool[_axes.Length];
+				for (int i = 0; i < _axes.Length; i++) _axisActive[i] = _session.AxisActive(i);
+
+				// Memory domains are self-described by the guest at runtime (size/count
+				// can depend on settings); pointer-backed straight into guest memory.
+				// Reads go through the engine's read view, which never runs the core's
+				// own code (a core that protects pages to watch them, RPCS3, would hear
+				// of every read); writes through the core's own pointer.
+				var domains = new List<MemoryDomain>(_session.DomainCount);
+				for (int i = 0; i < _session.DomainCount; i++)
 				{
-					Hidden = _session.DomainHidden(i),
-					ReadData = _session.DomainReadPtr(i),
-				});
+					domains.Add(new MemoryDomainIntPtr(
+						_session.DomainName(i), MemoryDomain.Endian.Little,
+						_session.DomainPtr(i), _session.DomainSize(i), _session.DomainWritable(i), 1)
+					{
+						Hidden = _session.DomainHidden(i),
+						ReadData = _session.DomainReadPtr(i),
+					});
+				}
+
+				// The drive lights, if this machine has any media to light one for.
+				// Registered rather than always present: the status bar shows a light
+				// per drive a core reports, and a core that reports none gets none.
+				if (_session.DriveCount > 0)
+				{
+					((BasicServiceProvider)ServiceProvider).Register<IDriveLights>(this);
+				}
+
+				// The optional tooling ABI (see WaterboxCore.Tooling.cs) - may append bus
+				// domains to the list, so it runs before the domains are published.
+				InitTooling((BasicServiceProvider)ServiceProvider, domains);
+				PublishMemory((BasicServiceProvider)ServiceProvider, domains);
+
+				// A game core's properties (docs/game-cores.md): named places in the domains
+				// above, which the tools watch, poke and freeze by name. The engine checked the
+				// table (and said what it left out); offered only when it names one - or is
+				// dynamic, a table that may name nothing yet and a hundred things a frame on.
+				EngineGameProperties properties = new(_session);
+				if (properties.IsDynamic || properties.Properties.Count is not 0)
+				{
+					((BasicServiceProvider)ServiceProvider).Register<IGameProperties>(properties);
+				}
 			}
-
-			// The drive lights, if this machine has any media to light one for.
-			// Registered rather than always present: the status bar shows a light
-			// per drive a core reports, and a core that reports none gets none.
-			if (_session.DriveCount > 0)
+			catch
 			{
-				((BasicServiceProvider)ServiceProvider).Register<IDriveLights>(this);
-			}
-
-			// The optional tooling ABI (see WaterboxCore.Tooling.cs) - may append bus
-			// domains to the list, so it runs before the domains are published.
-			InitTooling((BasicServiceProvider)ServiceProvider, domains);
-			PublishMemory((BasicServiceProvider)ServiceProvider, domains);
-
-			// A game core's properties (docs/game-cores.md): named places in the domains
-			// above, which the tools watch, poke and freeze by name. The engine checked the
-			// table (and said what it left out); offered only when it names one - or is
-			// dynamic, a table that may name nothing yet and a hundred things a frame on.
-			EngineGameProperties properties = new(_session);
-			if (properties.IsDynamic || properties.Properties.Count is not 0)
-			{
-				((BasicServiceProvider)ServiceProvider).Register<IGameProperties>(properties);
+				_session.Dispose();
+				throw;
 			}
 		}
 

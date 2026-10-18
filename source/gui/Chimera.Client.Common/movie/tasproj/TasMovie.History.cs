@@ -246,8 +246,9 @@ namespace Chimera.Client.Common
 			if (_history[index1].id != action1) return false;
 
 			_history[index1].actions.AddRange(_history[index2].actions);
-			_history.RemoveAt(_history.Count - 1);
-			UndoIndex--;
+			// the second action's entry, wherever it is (not the newest: they are the same only when the newest is merged)
+			_history.RemoveAt(index2);
+			if (index2 <= UndoIndex) UndoIndex--;
 
 			return true;
 		}

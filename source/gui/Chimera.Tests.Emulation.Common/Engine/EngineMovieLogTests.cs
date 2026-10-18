@@ -56,6 +56,33 @@ namespace Chimera.Tests.Emulation.Common.Engine
 			Assert.IsFalse(log.HasStateFrame);
 		}
 
+		/// <summary>
+		/// A freed log answers as an empty one everywhere. Six members handed the engine the freed (null) log, which
+		/// it reads without checking: a save, a divergence check or the crash journal after a finalizer had run
+		/// killed the process.
+		/// </summary>
+		[TestMethod]
+		public void AFreedLogAnswersAsAnEmptyOne()
+		{
+			EngineMovieLog freed = new();
+			Assert.IsTrue(freed.Parse("|.|\n", out _));
+			freed.Dispose();
+			using EngineMovieLog other = new();
+			Assert.IsTrue(other.Parse("|.|\n|U|\n", out _));
+
+			Assert.AreEqual("", freed.Serialize(crlf: false));
+			Assert.IsFalse(freed.Parse("|.|\n", out var why), "nothing can be read into a freed log");
+			Assert.AreNotEqual("", why);
+			freed.AssignFrom(other);
+			Assert.AreEqual(0, freed.Count);
+			Assert.AreEqual(0L, freed.DivergentPoint(other), "an empty log differs from a longer one at its start");
+			Assert.AreEqual(0L, other.DivergentPoint(freed));
+			Assert.IsFalse(freed.JournalTo(Path.Combine(Path.GetTempPath(), "chimera-never-written-" + Guid.NewGuid().ToString("N"))));
+			Assert.AreEqual(0, freed.JournalNotes.Count);
+			other.AssignFrom(freed);
+			Assert.AreEqual(0, other.Count, "taking a freed log's entries is taking none");
+		}
+
 		[TestMethod]
 		public void ALogWithNoKeyStillWritesTheKeyLine()
 		{
