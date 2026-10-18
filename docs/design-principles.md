@@ -9344,3 +9344,37 @@ the synthetic core was rebuilt with the new kit, and the engine's 30 unit
 tests pass, the witness 99 passed and 0 failed, the interface tests 1114
 with none failed (23 skipped), the Windows build compiles, and the PCSX2
 core's test script 44 passed, 0 failed, 6 skipped.
+
+## The Vulkan bridge refuses an unknown handle where the driver follows it (2026-10-18)
+
+**What was found.** Some handle fields in Vulkan structures count only
+sometimes - a descriptor's image view, a pipeline's layout, the memory bound
+to an image - and when they do not, a program may leave anything in them. The
+bridge passed a handle it did not know in such a field to the driver as "no
+object" and let the call go ahead, also where the field did count. A handle
+from before a load, or one never made, then reached the driver as a null
+object, and the driver followed it.
+
+**What was decided.** Where the driver follows such a field, an unknown
+handle refuses the call, as it does everywhere else: a pipeline's layout
+(unless the pipeline is a library), the memory bound to an image (the bridge
+offers no swapchain, the one case it is ignored), and a descriptor's image
+view in a write of any type but a sampler. Fields the driver may ignore keep
+the soft reading. The rules sit in a table in the generator, beside the
+other rules about such fields.
+
+**Tested.** The bridge's test makes three wrong calls through the bridge (a
+pipeline with a layout, and a descriptor write with an image view, that the
+bridge never made, beside the two wrong calls it made before) and expects
+exactly those refused. With the rule table empty the test process dies in
+the driver (lavapipe), which is the bug; with it, it passes. On Windows
+against the GTX 1060's driver the calls were refused and nothing died, but
+the test as a whole fails there at an older check (step 116: the driver
+answers both names of all seven paired commands, and the bridge answers
+the two names of the first pair, vkCmdBeginRendering, differently); that failure is the same with
+these files taken back out and with the miniBox of the 16 October build,
+so it predates this change, and it is left for its own look. miniBox's 23
+tests pass (6 expected failures); the engine's 30 unit tests pass, the
+witness 99 passed and 0 failed, the interface tests 1114 with none failed
+(23 skipped), the Windows build compiles, and the PCSX2 core's test script
+44 passed, 0 failed, 6 skipped, its five Vulkan tests among them.
