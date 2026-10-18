@@ -9469,3 +9469,30 @@ Windows; the engine's 30 unit tests pass, the witness 99 passed and 0
 failed, the interface tests 1114 with none failed (23 skipped), the Windows
 build compiles, and the PCSX2 core's test script 44 passed, 0 failed, 6
 skipped.
+
+## Two small GPU bridge fixes: the GL profiler sees the buffer pool, and a GL string is not cut at 4 KiB (2026-10-18)
+
+**What was found.** The buffer pool (recycled GL buffer names) answered
+glGenBuffers and glDeleteBuffers before CHIMERA_GL_PROFILE and
+CHIMERA_GL_TIME measured anything, so the pool's own driver calls were
+missing from the profile and from the driver's share of a frame. And the
+guest's wrapper for glGetString and glGetStringi kept the answer in 4096
+bytes: a desktop driver's extension list is longer (NVIDIA's runs past 10
+KB), and the extensions after the cut were simply not there - Flycast, for
+one, looks for its anisotropic filtering extension in that list.
+
+**What was decided.** The pool's two calls are timed like every other call
+when either switch is on. The wrapper's buffer is 64 KiB; the host already
+writes no more than the guest gives it room for. A core gets the longer list
+when it is rebuilt with this miniBox. Which GL profile Windows and Linux
+hand a core (compatibility and core) is a separate question, the owner's.
+
+**Tested.** With CHIMERA_GL_PROFILE on Dolphin's test program, the previous
+code's profile has no row for glGenBuffers (74 rows) and the new one has it
+(75 rows, 9 calls). A new miniBox test keeps a 12 KB extension list whole in
+the string keeper behind the wrapper; the wrapper's own buffer has no test,
+and the generated wrapper was checked to carry 64 KiB for both calls.
+miniBox's 23 tests pass (6 expected failures); the engine's 30 unit tests
+pass, the witness 99 passed and 0 failed, the interface tests 1114 with none
+failed (23 skipped), the Windows build compiles, and the PCSX2 core's test
+script 44 passed, 0 failed, 6 skipped.

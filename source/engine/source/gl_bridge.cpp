@@ -1335,6 +1335,112 @@ static GLuint boundBuffer(GLenum target)
  * finished with and that is a real cost to carry for nothing.
  */
 
+/* One call's time, in the driver's share and, under CHIMERA_GL_PROFILE, in
+ * its opcode's counts. */
+static void noteTook(uintptr_t op, uint64_t took)
+{
+	g_driverNs += took;
+	if (!glProfile()) return;
+	if (g_opCalls == nullptr)
+	{
+		g_opCalls = (uint64_t *)calloc(kProfileOps, sizeof(uint64_t));
+		g_opNs = (uint64_t *)calloc(kProfileOps, sizeof(uint64_t));
+		g_opMax = (uint64_t *)calloc(kProfileOps, sizeof(uint64_t));
+		g_opSlow = (uint64_t *)calloc(kProfileOps, sizeof(uint64_t));
+		if (g_opCalls == nullptr || g_opNs == nullptr
+			|| g_opMax == nullptr || g_opSlow == nullptr)
+		{
+			free(g_opCalls); free(g_opNs); free(g_opMax); free(g_opSlow);
+			g_opCalls = nullptr; g_opNs = nullptr; g_opMax = nullptr; g_opSlow = nullptr;
+			return;
+		}
+		/* ce_gl_release marks the frame boundary, and a host that is not
+		 * drawing never calls it - so a run with rendering off would
+		 * otherwise collect the whole profile and print none of it. */
+		atexit(profileDump);
+	}
+	if (op >= (uintptr_t)kProfileOps) return;
+	g_opCalls[op]++;
+	g_opNs[op] += took;
+	if (took > g_opMax[op]) g_opMax[op] = took;
+	if (took > kSlowNs) g_opSlow[op]++;
+	if (glWhy())
+	{
+		if (took > kSlowNs && g_whyLeft > 0)
+		{
+			g_whyLeft--;
+			fprintf(stderr, "[ce-gl-why] op %lu blocked %.0f us after:",
+				(unsigned long)op, (double)took / 1e3);
+			for (unsigned i = 0; i < 16; i++)
+			{
+				const unsigned at = (g_whyAt + i) % 16;
+				if (g_whyRing[at] != 0) fprintf(stderr, " %u", g_whyRing[at]);
+			}
+			fprintf(stderr, "\n");
+			fflush(stderr);
+		}
+		g_whyRing[g_whyAt] = (unsigned)op;
+		g_whyAt = (g_whyAt + 1) % 16;
+	}
+}
+
+/* The buffer pool's two calls (see bufferPool()): glGenBuffers served from
+ * recycled names where it can, glDeleteBuffers into the pool where it can. */
+static void poolCall(uintptr_t op, uintptr_t a)
+{
+	if (op == CHIMERA_GL_OP_glGenBuffers)
+	{
+		struct ChimeraGlArgs_glGenBuffers *args = (struct ChimeraGlArgs_glGenBuffers *)a;
+		GLsizei served = 0;
+		while (served < args->n)
+		{
+			const GLuint name = bufferPool().take();
+			if (name == 0) break;
+			args->buffers[served++] = name;
+		}
+		if (served < args->n)
+		{
+			glGenBuffers(args->n - served, args->buffers + served);
+			for (GLsizei i = served; i < args->n; i++) bufferPool().made(args->buffers[i]);
+		}
+		/* Including the pooled ones: a name the pool hands back IS a different
+		 * object as far as the guest is concerned, and counting it is the whole
+		 * point of the audit. */
+		for (GLsizei i = 0; i < args->n; i++) auditGen(kAuditBuffer, args->buffers[i]);
+		if (poolTrace())
+			for (GLsizei i = 0; i < args->n; i++)
+				fprintf(stderr, "[pool] gen %u (%s)\n", (unsigned)args->buffers[i], i < served ? "recycled" : "driver");
+		return;
+	}
+	struct ChimeraGlArgs_glDeleteBuffers *args = (struct ChimeraGlArgs_glDeleteBuffers *)a;
+	for (GLsizei i = 0; i < args->n; i++)
+	{
+		const GLuint name = args->buffers[i];
+		const bool ours = bufferPool().isOurs(name), mapped = bufferPool().isMapped(name),
+			immutable = bufferPool().isImmutable(name);
+		const CeGlBufferPool::Delete what = bufferPool().deleted(name);
+		if (poolTrace())
+			fprintf(stderr, "[pool] delete %u: ours=%d mapped=%d immutable=%d -> %s\n", (unsigned)name,
+				(int)ours, (int)mapped, (int)immutable,
+				what == CeGlBufferPool::Delete::Ignore ? "already deleted, ignored"
+					: what == CeGlBufferPool::Delete::Pool ? "pooled" : "real");
+		/* not ours, still mapped, immutable, or the pool is full: a real
+		 * delete, so a guest bug stays visible, a mapping and a storage end
+		 * the way the guest meant, and a lopsided guest cannot leak - and
+		 * either way the name leaves the targets it was bound to, as GL's
+		 * own delete would have it */
+		if (what == CeGlBufferPool::Delete::Real)
+		{
+			glDeleteBuffers(1, &name);
+			forgetBinds(name, false);
+		}
+		else if (what == CeGlBufferPool::Delete::Pool)
+		{
+			forgetBinds(name, true);
+		}
+	}
+}
+
 extern "C" uintptr_t BRIDGE_ABI ce_gl_dispatch(uintptr_t op, uintptr_t a, uintptr_t b,
                                                uintptr_t c, uintptr_t d, uintptr_t e)
 {
@@ -1402,60 +1508,21 @@ extern "C" uintptr_t BRIDGE_ABI ce_gl_dispatch(uintptr_t op, uintptr_t a, uintpt
 
 	/* Recycled buffer names, before anything else looks at the opcode: see
 	 * bufferPool(). Both of these answer without reaching the driver when the
-	 * pool can serve them, which is the whole point. */
-	if (glPool() && op == CHIMERA_GL_OP_glGenBuffers)
+	 * pool can serve them, which is the whole point. Timed like any other call
+	 * when asked to: they used to return before CHIMERA_GL_PROFILE and
+	 * CHIMERA_GL_TIME saw them, so the pool's own driver calls were left out of
+	 * the driver's share (engine analysis, 2026-10-18). */
+	if (glPool() && (op == CHIMERA_GL_OP_glGenBuffers || op == CHIMERA_GL_OP_glDeleteBuffers))
 	{
-		struct ChimeraGlArgs_glGenBuffers *args = (struct ChimeraGlArgs_glGenBuffers *)a;
-		GLsizei served = 0;
-		while (served < args->n)
+		if (!glProfile() && !glTime())
 		{
-			const GLuint name = bufferPool().take();
-			if (name == 0) break;
-			args->buffers[served++] = name;
+			poolCall(op, a);
+			return 0;
 		}
-		if (served < args->n)
-		{
-			glGenBuffers(args->n - served, args->buffers + served);
-			for (GLsizei i = served; i < args->n; i++) bufferPool().made(args->buffers[i]);
-		}
-		/* Including the pooled ones: a name the pool hands back IS a different
-		 * object as far as the guest is concerned, and counting it is the whole
-		 * point of the audit. */
-		for (GLsizei i = 0; i < args->n; i++) auditGen(kAuditBuffer, args->buffers[i]);
-		if (poolTrace())
-			for (GLsizei i = 0; i < args->n; i++)
-				fprintf(stderr, "[pool] gen %u (%s)\n", (unsigned)args->buffers[i], i < served ? "recycled" : "driver");
-		return 0;
-	}
-	if (glPool() && op == CHIMERA_GL_OP_glDeleteBuffers)
-	{
-		struct ChimeraGlArgs_glDeleteBuffers *args = (struct ChimeraGlArgs_glDeleteBuffers *)a;
-		for (GLsizei i = 0; i < args->n; i++)
-		{
-			const GLuint name = args->buffers[i];
-			const bool ours = bufferPool().isOurs(name), mapped = bufferPool().isMapped(name),
-				immutable = bufferPool().isImmutable(name);
-			const CeGlBufferPool::Delete what = bufferPool().deleted(name);
-			if (poolTrace())
-				fprintf(stderr, "[pool] delete %u: ours=%d mapped=%d immutable=%d -> %s\n", (unsigned)name,
-					(int)ours, (int)mapped, (int)immutable,
-					what == CeGlBufferPool::Delete::Ignore ? "already deleted, ignored"
-						: what == CeGlBufferPool::Delete::Pool ? "pooled" : "real");
-			/* not ours, still mapped, immutable, or the pool is full: a real
-			 * delete, so a guest bug stays visible, a mapping and a storage end
-			 * the way the guest meant, and a lopsided guest cannot leak - and
-			 * either way the name leaves the targets it was bound to, as GL's
-			 * own delete would have it */
-			if (what == CeGlBufferPool::Delete::Real)
-			{
-				glDeleteBuffers(1, &name);
-				forgetBinds(name, false);
-			}
-			else if (what == CeGlBufferPool::Delete::Pool)
-			{
-				forgetBinds(name, true);
-			}
-		}
+		const auto at = std::chrono::steady_clock::now();
+		poolCall(op, a);
+		noteTook(op, (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now() - at).count());
 		return 0;
 	}
 
@@ -1499,63 +1566,12 @@ extern "C" uintptr_t BRIDGE_ABI ce_gl_dispatch(uintptr_t op, uintptr_t a, uintpt
 		}
 	}
 
-	if (glProfile())
-	{
-		if (g_opCalls == nullptr)
-		{
-			g_opCalls = (uint64_t *)calloc(kProfileOps, sizeof(uint64_t));
-			g_opNs = (uint64_t *)calloc(kProfileOps, sizeof(uint64_t));
-			g_opMax = (uint64_t *)calloc(kProfileOps, sizeof(uint64_t));
-			g_opSlow = (uint64_t *)calloc(kProfileOps, sizeof(uint64_t));
-			if (g_opCalls == nullptr || g_opNs == nullptr
-				|| g_opMax == nullptr || g_opSlow == nullptr)
-			{
-				free(g_opCalls); free(g_opNs); free(g_opMax); free(g_opSlow);
-				g_opCalls = nullptr; g_opNs = nullptr; g_opMax = nullptr; g_opSlow = nullptr;
-			}
-			/* ce_gl_release marks the frame boundary, and a host that is not
-			 * drawing never calls it - so a run with rendering off would
-			 * otherwise collect the whole profile and print none of it. */
-			else atexit(profileDump);
-		}
-		const auto at = std::chrono::steady_clock::now();
-		const uintptr_t rv = ce_gl_dispatch_one(op, a, b, c, d, e);
-		const uint64_t took = (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
-			std::chrono::steady_clock::now() - at).count();
-		g_driverNs += took;
-		if (g_opCalls != nullptr && op < (uintptr_t)kProfileOps)
-		{
-			g_opCalls[op]++;
-			g_opNs[op] += took;
-			if (took > g_opMax[op]) g_opMax[op] = took;
-			if (took > kSlowNs) g_opSlow[op]++;
-			if (glWhy())
-			{
-				if (took > kSlowNs && g_whyLeft > 0)
-				{
-					g_whyLeft--;
-					fprintf(stderr, "[ce-gl-why] op %lu blocked %.0f us after:",
-						(unsigned long)op, (double)took / 1e3);
-					for (unsigned i = 0; i < 16; i++)
-					{
-						const unsigned at = (g_whyAt + i) % 16;
-						if (g_whyRing[at] != 0) fprintf(stderr, " %u", g_whyRing[at]);
-					}
-					fprintf(stderr, "\n");
-					fflush(stderr);
-				}
-				g_whyRing[g_whyAt] = (unsigned)op;
-				g_whyAt = (g_whyAt + 1) % 16;
-			}
-		}
-		return rv;
-	}
-	if (glTime())
+	if (glProfile() || glTime())
 	{
 		const auto at = std::chrono::steady_clock::now();
 		const uintptr_t rv = ce_gl_dispatch_one(op, a, b, c, d, e);
-		g_driverNs += (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
-			std::chrono::steady_clock::now() - at).count();
+		noteTook(op, (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now() - at).count());
 		return rv;
 	}
 	return ce_gl_dispatch_one(op, a, b, c, d, e);
