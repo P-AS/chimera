@@ -945,6 +945,10 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract ulong ce_session_domain_ptr(IntPtr session, int index);
 
+		/// <summary>The same bytes for reading only, through a view that never runs the core's code (engine.h).</summary>
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract ulong ce_session_domain_read_ptr(IntPtr session, int index);
+
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_session_last_error(IntPtr session);
 
@@ -2827,6 +2831,8 @@ namespace Chimera.Emulation.Common.Engine
 		public bool DomainWritable(int index) => E.ce_session_domain_writable(_session, index) is not 0;
 		public bool DomainHidden(int index) => E.ce_session_domain_hidden(_session, index) is not 0;
 		public IntPtr DomainPtr(int index) => unchecked((IntPtr)(long)E.ce_session_domain_ptr(_session, index));
+		/// <summary>The same bytes for reading only, through a view that never runs the core's code (see ce_session_domain_read_ptr).</summary>
+		public IntPtr DomainReadPtr(int index) => unchecked((IntPtr)(long)E.ce_session_domain_read_ptr(_session, index));
 
 		/// <returns>true when the running guest took the settings; false when it has no live-settings group (reboot instead)</returns>
 		/// <exception cref="InvalidOperationException">the guest has the group but the push failed</exception>

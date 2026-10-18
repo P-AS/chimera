@@ -58,6 +58,10 @@ struct HostApi
 	 * (data 1/0); optional - the GPU bridge asks it before following a
 	 * pointer the core handed GL, and an older host is not asked */
 	void (*wbx_guest_range_ok)(void *obj, uintptr_t addr, uintptr_t len, bool write, WbxReturn *ret);
+	/* a pointer for READING a range of guest memory that never faults, so it
+	 * never runs the guest's own fault handler (data, or an error); optional -
+	 * an older host is read through the guest's pointer, as before */
+	void (*wbx_guest_read_view)(void *obj, uintptr_t addr, uintptr_t len, WbxReturn *ret);
 	/* Whether the guest has died - aborted, halted, faulted, exited - and why.
 	 * A dead guest returns from the call it died in, runs nothing until a state
 	 * is loaded, and the session reports it as an error. Optional: an older host

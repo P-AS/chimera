@@ -9051,3 +9051,63 @@ witness 98 passed and 0 failed, the interface tests 1107 with none failed
 (23 skipped, as before), the Windows build compiles, and the PCSX2 core's
 test script 44 passed, 0 failed, 6 skipped (the skips need discs that are not
 here).
+
+## Tools read a core's memory without running the core's code; the machine hash stays as it is (2026-10-18)
+
+**What was found.** The memory tools - RAM Search, the hex editor, RAM Watch,
+game properties, the MCP server's reads and searches, chimera-run's dumps -
+read a domain through the core's own pointer, from a thread that is not the
+core's, between frames. A core can make pages of its memory no-access to learn
+when they are touched (RPCS3's texture cache does, for pictures the GPU drew),
+and miniBox then runs the core's fault handler for the read. RPCS3's handler
+writes the picture back into memory, so a movie could play differently with
+RAM Search open. Measured with a miniBox test before the fix: a read from
+outside the guest ran the guest's handler once.
+
+**What was decided.** miniBox gives the engine a read view
+(`wbx_guest_read_view`): a pointer to the same bytes through its second view
+of the core's memory, which never faults and so never runs the core's code. A
+page the core gave back reads as zeros there, as it does in the core's own
+view. On Windows, a block over 4 GiB backs pages only when the core first maps
+them; a page with nothing behind it gets memory in that second view alone and
+reads zero. The engine reads every domain through it
+(`ce_session_domain_read`, the new `ce_session_domain_read_ptr`, game
+properties, the MCP server's search), and the interface reads its pointer
+domains through it too (`MemoryDomainIntPtr.ReadData`, which RAM Search
+uses). Writes still go through the core's own pointer, where the state
+history sees them, and a core that watches its memory hears of them as it
+should.
+
+The machine hash (what a state is checked against before it loads) names each
+page that held data at the seal by a tag, not by its bytes, so two boots that
+leave different bytes in the same pages are taken for the same machine. The
+analysis proposed hashing the bytes. Measured with six cores, each booted
+twice in two processes: on Linux the bytes were the same every time (up to
+195 MB of such pages, up to 112 ms to hash them), but on Windows Ruffle's two
+boots differed in 33 pages. The differing words are Windows host addresses:
+Windows handles a fault on the faulting thread's own stack, which is the
+core's, and the core later copies what was left there into its heap (the same
+cause found on 2026-09-16). Hashing the bytes would refuse those states in
+every new process on Windows, as issue #80 did. So the hash stays as it is,
+the measurement is in miniBox's MACHINE-SPEC, and miniBox's seal dump
+(`MB_SEAL_DUMP`) now writes those pages' bytes too, so two seals can be
+compared byte for byte. Whether to do more - clear what Windows leaves on a
+core's stack, or hash the bytes on Linux only - is the owner's to decide.
+
+**Tested.** New tests, each seen to fail with the fix taken out: miniBox's
+threads test reads a page its guest made no-access through the read view
+(the bytes are there, the guest's handler does not run) and, as the control,
+directly (it runs once); miniBox's block tests read a no-access page through
+the view, and on Windows a lazy block's unbacked pages, and a refused commit
+gives no view. The witness test E:tools:core-not-run gives the synthetic core
+a no-access page and a fault handler that counts: RAM Search's measurement and
+a dump read the page whole, and the count stays 0 (1 with the engine reading
+through the core's pointer). An interface test holds a pointer domain to
+reading through its read view and writing through the core's pointer. The
+game properties' and the MCP server's reads have no test of their own; they
+use the same read as the dump. miniBox's 22 tests pass (and its 6 expected
+failures fail, as before), its block and threads tests pass on Windows too;
+the engine's 30 unit tests pass, the witness 99 passed and 0 failed, the
+interface tests 1108 with none failed (23 skipped, as before), the Windows
+build compiles, and the PCSX2 core's test script 44 passed, 0 failed, 6
+skipped.

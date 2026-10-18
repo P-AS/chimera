@@ -69,7 +69,7 @@ namespace Chimera.Emulation.Common
 				if (domains.TryGetValue(src.Name, out var dst))
 				{
 					TryMerge<MemoryDomainByteArray>(dst, src, (d, s) => d.Data = s.Data);
-					TryMerge<MemoryDomainIntPtr>(dst, src, (d, s) => d.Data = s.Data);
+					TryMerge<MemoryDomainIntPtr>(dst, src, (d, s) => { d.Data = s.Data; d.ReadData = s.ReadData; });
 					TryMerge<MemoryDomainIntPtrSwap16>(dst, src, (d, s) => d.Data = s.Data);
 					TryMerge<MemoryDomainDelegate>(dst, src, (d, s) => { d.Peek = s.Peek; d.Poke = s.Poke; });
 				}

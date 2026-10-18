@@ -1428,6 +1428,14 @@ CE_API const char *ce_host_build_info(void);
  * (the hex editor's path). Stable for the session's lifetime - the guest is
  * non-PIE - and 0 when the domain has no linear backing. */
 CE_API uint64_t ce_session_domain_ptr(const ce_session *s, int32_t index);
+/* The same domain for READING only: a pointer to the same bytes that never
+ * runs the core's own code. A read through ce_session_domain_ptr can: a core
+ * that watches its memory by protecting pages (RPCS3's texture cache) hears
+ * of the read and may change the machine. For the tools that read between
+ * frames - the hex editor, RAM Search, RAM Watch. Never write through it: the
+ * state history would not see the write. Stable for the session's lifetime;
+ * 0 when the domain has no linear backing or miniBox cannot give a view. */
+CE_API uint64_t ce_session_domain_read_ptr(const ce_session *s, int32_t index);
 
 /* Re-composes the effective settings (declared defaults overlaid with
  * overrides_json) and hands them to the RUNNING guest through its live-

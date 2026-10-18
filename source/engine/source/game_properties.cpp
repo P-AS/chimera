@@ -705,7 +705,8 @@ bool CeGameProperties::read(int32_t index, uint32_t element, Value &out) const
 		copy.resize(p.size);
 		dom.read(p.elementOffset(element), copy.data(), int64_t(p.size));
 	}
-	const uint8_t *at = dom.base != nullptr ? elementBytes(p, element) : copy.data();
+	const uint8_t *at = dom.base == nullptr ? copy.data()
+		: dom.readBase != nullptr ? dom.readBase + p.elementOffset(element) : elementBytes(p, element);
 	const TypeInfo &info = kTypes[p.type];
 	out = Value{};
 	if (info.integer)

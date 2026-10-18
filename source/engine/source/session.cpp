@@ -1588,6 +1588,25 @@ std::string chimera::sessionMovieEntry(const ce_session *s, const uint8_t *state
 	return s->entries().generate(states, axes, s->cfg.mnemonics);
 }
 
+/* Where a tool READS a domain's bytes [offset, offset + len): miniBox's read
+ * view, a second view of the core's memory that never faults. Read through
+ * the core's own pointer, a page the core protected (RPCS3's texture cache
+ * watches pages that way) ran the core's fault handler on the tool's thread,
+ * and the handler may write the picture back into memory: a movie could play
+ * differently with RAM Search open (engine analysis, 2026-10-18). Null when
+ * miniBox gives no view; a miniBox without the call is read through the
+ * core's pointer, as before. Writes still go through the core's pointer,
+ * where the state history sees them. */
+static const uint8_t *domainReadView(const ce_session *s, int32_t index, int64_t offset, int64_t len)
+{
+	const uintptr_t base = s->mdPtr(index);
+	if (base == 0 || offset < 0 || len <= 0) return nullptr;
+	if (s->host->wbx_guest_read_view == nullptr) return reinterpret_cast<const uint8_t *>(base + static_cast<uintptr_t>(offset));
+	chimera::WbxReturn r{};
+	s->host->wbx_guest_read_view(s->obj, base + static_cast<uintptr_t>(offset), static_cast<uintptr_t>(len), &r);
+	return r.errorMessage[0] == 0 ? reinterpret_cast<const uint8_t *>(r.data) : nullptr;
+}
+
 extern "C" {
 
 /* ce_session_open's and ce_session_open_project's refusal, from outside them */
@@ -2148,6 +2167,7 @@ static ce_session *openSession(
 			if (const char *name = reinterpret_cast<const char *>(s->mdName(i))) d.name = name;
 			d.base = reinterpret_cast<uint8_t *>(s->mdPtr(i));
 			d.size = s->mdSize(i);
+			d.readBase = domainReadView(s, i, 0, d.size);
 			d.writable = s->mdWritable(i) != 0;
 			domains.push_back(std::move(d));
 		}
@@ -3173,9 +3193,9 @@ int64_t ce_session_domain_read(const ce_session *s, int32_t index, int64_t offse
 	int64_t size = s->mdSize(index);
 	if (offset < 0 || offset >= size || len <= 0) return 0;
 	int64_t n = len < size - offset ? len : size - offset;
-	const auto *src = reinterpret_cast<const uint8_t *>(s->mdPtr(index));
+	const uint8_t *src = domainReadView(s, index, offset, n);
 	if (src == nullptr) return 0;
-	std::memcpy(buf, src + offset, static_cast<size_t>(n));
+	std::memcpy(buf, src, static_cast<size_t>(n));
 	return n;
 }
 
@@ -3330,6 +3350,12 @@ int32_t ce_session_property_set_text(ce_session *s, int32_t index, uint32_t elem
 uint64_t ce_session_domain_ptr(const ce_session *s, int32_t index)
 {
 	return domainIndexOk(s, index) ? static_cast<uint64_t>(s->mdPtr(index)) : 0;
+}
+
+uint64_t ce_session_domain_read_ptr(const ce_session *s, int32_t index)
+{
+	if (!domainIndexOk(s, index)) return 0;
+	return reinterpret_cast<uintptr_t>(domainReadView(s, index, 0, s->mdSize(index)));
 }
 
 int32_t ce_session_apply_settings(ce_session *s, const char *overrides_json)

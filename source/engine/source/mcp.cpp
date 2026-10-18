@@ -1828,7 +1828,7 @@ bool searchStands(Service &sv, ce_session *s)
 	for (int32_t i = 0; s != nullptr && i < ce_session_domain_count(s) && !stands; i++)
 	{
 		stands = sv.searchDomain == ce_session_domain_name(s, i)
-			&& reinterpret_cast<const uint8_t *>(ce_session_domain_ptr(s, i)) == sv.searchBase
+			&& reinterpret_cast<const uint8_t *>(ce_session_domain_read_ptr(s, i)) == sv.searchBase
 			&& ce_session_domain_size(s, i) == sv.searchBytes;
 	}
 	if (!stands) dropSearch(sv);
@@ -1873,7 +1873,9 @@ McpResult toolSearchStart(Service &sv, ce_session *s, const cJSON *arguments)
 		return mcpError(std::string("'") + domainItem->valuestring + (busIndex >= 0
 			? "' is a bus. A search runs over a domain; list_memory names them."
 			: "' is not a domain. list_memory names them."));
-	const uint8_t *base = reinterpret_cast<const uint8_t *>(ce_session_domain_ptr(s, domainIndex));
+	/* read through the view that never runs the core's code (a search reads
+	 * the whole domain at every step) */
+	const uint8_t *base = reinterpret_cast<const uint8_t *>(ce_session_domain_read_ptr(s, domainIndex));
 	if (base == nullptr) return mcpError(std::string("'") + domainItem->valuestring + "' cannot be searched: the core gives it no memory of its own.");
 	dropSearch(sv);
 	sv.searchBytes = ce_session_domain_size(s, domainIndex);

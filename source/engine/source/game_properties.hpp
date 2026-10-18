@@ -48,6 +48,9 @@ public:
 		/* where `write` can reach: a property past it is not writable (a bus
 		 * is written a byte at a time at a 32-bit address) */
 		int64_t writableBelow = INT64_MAX;
+		/* the same bytes as `base` for reading, where reading never runs the
+		 * core's own code (ce_session_domain_read_ptr); null: read through `base` */
+		const uint8_t *readBase = nullptr;
 	};
 
 	struct Property

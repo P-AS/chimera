@@ -304,7 +304,11 @@ Advice earned the hard way:
 
 Probed once after `Init`; absent exports simply mean the tool is not offered.
 
-- **Memory domains** - a pointer and a size, published once. If the machine's
+- **Memory domains** - a pointer and a size, published once. The memory tools
+  read a domain through a second view of the core's memory that never faults,
+  so a core that watches pages by protecting them (`GuestFaultHandler`, as
+  RPCS3's texture cache does) is not told of a tool's read; a tool's write
+  goes through the core's own pointer, and is. If the machine's
   memory is not a block (paged, per-chunk, or not allocated until the game
   runs), export a **bus** instead: `GetBusCount/Name/Size/Writable`,
   `PeekBus`, `PokeBus`, resolved per access. Cache one page of translation,

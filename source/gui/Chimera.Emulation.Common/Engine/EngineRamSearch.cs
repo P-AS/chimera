@@ -43,9 +43,10 @@ namespace Chimera.Emulation.Common.Engine
 		public EngineRamSearch(MemoryDomain domain)
 		{
 			_domain = domain;
-			if (domain is MemoryDomainIntPtr direct && direct.Data != IntPtr.Zero)
+			if (domain is MemoryDomainIntPtr direct && direct.ReadData != IntPtr.Zero)
 			{
-				_handle = E.ce_ramsearch_create(direct.Data, IntPtr.Zero, IntPtr.Zero, domain.Size);
+				// the read view: a search reads the whole domain at every step
+				_handle = E.ce_ramsearch_create(direct.ReadData, IntPtr.Zero, IntPtr.Zero, domain.Size);
 			}
 			else
 			{

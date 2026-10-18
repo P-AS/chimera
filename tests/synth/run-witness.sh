@@ -895,6 +895,25 @@ PYEOF
 			report "E:state-saving" FAIL "told-at/frames/times: none '$toldNone' every '$toldEvery' fifth '$toldFifth' back '$toldBack' off '$toldOff' (see work/told.*)"
 		fi
 
+		# A tool reads a core's memory without running the core's own code
+		# (engine analysis, 2026-10-18). The synth keeps a page no-access, as
+		# RPCS3's texture cache keeps the pages it watches, and counts in its
+		# Mailbox every time its fault handler is asked about the page, which
+		# holds byte i = i * 7 + 3. After a run, RAM Search's measurement reads
+		# the page as a search does, and the run dumps it as the memory tools
+		# read: the bytes come out, and the handler never ran. Read through
+		# the core's own pointer, as the tools did, it ran.
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			--ram-search-bench Watched --dump "Watched=$work/watched.bin" --dump "Mailbox=$work/watched.mail.bin" \
+			> "$work/watched.log" 2>&1
+		watchedRuns="$(od -A n -t u4 -j 20 -N 4 "$work/watched.mail.bin" 2>/dev/null | tr -d ' ')"
+		if python3 -c 'import sys; d = open(sys.argv[1], "rb").read(); sys.exit(0 if d == bytes((i * 7 + 3) & 255 for i in range(4096)) else 1)' "$work/watched.bin" 2>/dev/null \
+			&& grep -q '^ram-search-bench Watched (4096 bytes) size 4: ' "$work/watched.log" && [ "$watchedRuns" = 0 ]; then
+			report "E:tools:core-not-run" PASS "a page the core made no-access, read by RAM Search and dumped between frames, comes out whole, and the core's fault handler was not run for it"
+		else
+			report "E:tools:core-not-run" FAIL "the handler ran '$watchedRuns' times; $(grep -m1 -E 'ram-search-bench Watched|chimera-run:' "$work/watched.log" | cut -c1-120) (see work/watched.*)"
+		fi
+
 		# a DYNAMIC property table (engine.h; chimera#216): with its
 		# movingProperties setting on, the synth lists properties that move
 		# and come and go with the cursor's row, the way a Flash movie's

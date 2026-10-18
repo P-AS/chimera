@@ -1605,7 +1605,7 @@ int main(int argc, char **argv)
 			}
 		}
 		if (found < 0 && bus < 0) return fail(metaPath, "--ram-search-bench: no domain or bus named " + ramSearchBench);
-		const auto *base = found < 0 ? nullptr : reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(ce_session_domain_ptr(session, found)));
+		const auto *base = found < 0 ? nullptr : reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(ce_session_domain_read_ptr(session, found)));
 		const int64_t size = found < 0 ? 0 : ce_session_domain_size(session, found);
 		for (int32_t width : { 1, 2, 4 })
 		{

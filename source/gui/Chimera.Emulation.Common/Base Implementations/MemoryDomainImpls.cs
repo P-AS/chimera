@@ -185,11 +185,23 @@ namespace Chimera.Emulation.Common
 	{
 		public IntPtr Data { get; set; }
 
+		private IntPtr _readData;
+
+		/// <summary>
+		/// Where reads go, when that is not <see cref="Data"/>: the same bytes through
+		/// a view that never runs the core's own code. Writes always go to Data.
+		/// </summary>
+		public IntPtr ReadData
+		{
+			get => _readData != IntPtr.Zero ? _readData : Data;
+			set => _readData = value;
+		}
+
 		public override byte PeekByte(long addr)
 		{
 			if ((ulong)addr < (ulong)Size)
 			{
-				return ((byte*)Data)[addr];
+				return ((byte*)ReadData)[addr];
 			}
 
 			throw new ArgumentOutOfRangeException(nameof(addr));
@@ -217,7 +229,7 @@ namespace Chimera.Emulation.Common
 
 			if (start < (ulong)Size && (start + count) <= (ulong)Size)
 			{
-				Marshal.Copy((IntPtr)((ulong)Data + start), values, 0, (int)count);
+				Marshal.Copy((IntPtr)((ulong)ReadData + start), values, 0, (int)count);
 			}
 			else
 			{

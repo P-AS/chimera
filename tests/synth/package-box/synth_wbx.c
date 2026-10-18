@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 
 #include <waterbox_settings.h>  /* miniBox guest kit: read the host settings channel */
 
@@ -48,6 +49,28 @@ static uint8_t *read_rom(uint32_t *out_len) {
 	return buf;
 }
 
+/* A page no tool may disturb (leg E:tools:core-not-run). The core makes it
+ * no-access the way RPCS3's texture cache watches memory, and its fault
+ * handler counts every access that reaches it, opens the page, and the next
+ * frame closes it again. The engine's tools read a domain through miniBox's
+ * read view, which never reaches the handler: before that, a tool's read
+ * between frames ran the handler on the tool's thread, and a handler that
+ * writes memory (RPCS3's writes the picture back) changed the machine
+ * (engine analysis, 2026-10-18). The page holds byte i = i * 7 + 3; the count
+ * is in the Mailbox. Both are in every state, as RPCS3's memory is. */
+static uint8_t *g_watchedPage;
+static uint32_t g_handlerRuns;
+static int g_watchedOpen;
+
+ECL_EXPORT int GuestFaultHandler(uint64_t addr, uint64_t is_write)
+{
+	(void)is_write;
+	if (g_watchedPage == 0 || addr < (uintptr_t)g_watchedPage || addr >= (uintptr_t)g_watchedPage + 4096) return 0;
+	g_handlerRuns++;
+	g_watchedOpen = 1;
+	return mprotect(g_watchedPage, 4096, PROT_READ) == 0;
+}
+
 static int moving(void); /* the movingProperties setting, read once here */
 ECL_EXPORT int Init(void) {
 	uint32_t len = 0;
@@ -74,6 +97,10 @@ ECL_EXPORT int Init(void) {
 		for (int i = 0; i < 4096; i++) ram[i] = (uint8_t)fill;
 	}
 	moving();
+	g_watchedPage = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (g_watchedPage == MAP_FAILED) return 0;
+	for (int i = 0; i < 4096; i++) g_watchedPage[i] = (uint8_t)(i * 7 + 3);
+	if (mprotect(g_watchedPage, 4096, PROT_NONE) != 0) return 0;
 	/* one line on standard output, as real cores print: without a window the
 	 * MCP server runs the core in its own process, and this line must not
 	 * reach the agent's protocol stream */
@@ -151,6 +178,10 @@ ECL_EXPORT void FrameAdvance(uint64_t pad) {
 	g_garbleNow = g_render && g_garbleLeft > 0;
 	if (g_garbleNow) g_garbleLeft--;
 	g_framesRun++;
+	if (g_watchedOpen) {
+		mprotect(g_watchedPage, 4096, PROT_NONE);
+		g_watchedOpen = 0;
+	}
 	if ((uint8_t)pad == 0xFF) {
 		fprintf(stderr, "synth: all eight buttons at once - stopping on purpose\n");
 		abort();
@@ -206,12 +237,14 @@ ECL_EXPORT uint32_t *GetVideoBgra(void)
  * the engine reads properties through it, and no memory tool lists it. It
  * lives in memory that is in no state, and holds the four letters the Letter
  * property reads, followed by the three numbers of the StateSaving note
- * (above) and by how many pictures the frontend has read, filled in whenever
- * it is asked for. The last is what tells a frame that was read from one that
- * was only run (leg E:settle-probe, --settle-probe-unseen). */
-#define MD_COUNT 3
-static const char *const md_names[MD_COUNT] = { "RAM", "VRAM", "Mailbox" };
-ECL_INVISIBLE static uint8_t g_mailbox[20];
+ * (above), by how many pictures the frontend has read, and by how many times
+ * the fault handler ran for the Watched page (above), filled in whenever it
+ * is asked for. The pictures read are what tell a frame that was read from
+ * one that was only run (leg E:settle-probe, --settle-probe-unseen). Domain
+ * 3, "Watched", is that page, hidden too. */
+#define MD_COUNT 4
+static const char *const md_names[MD_COUNT] = { "RAM", "VRAM", "Mailbox", "Watched" };
+ECL_INVISIBLE static uint8_t g_mailbox[24];
 
 ECL_EXPORT int GetMemoryDomainCount(void) { return MD_COUNT; }
 
@@ -227,8 +260,10 @@ ECL_EXPORT uint8_t *GetMemoryDomainPtr(int i) {
 		memcpy(g_mailbox + 8, &g_framesRun, 4);
 		memcpy(g_mailbox + 12, &g_told, 4);
 		memcpy(g_mailbox + 16, &g_read, 4);
+		memcpy(g_mailbox + 20, &g_handlerRuns, 4);
 		return g_mailbox;
 	}
+	if (i == 3) return g_watchedPage;
 	return 0;
 }
 
@@ -236,11 +271,12 @@ ECL_EXPORT int64_t GetMemoryDomainSize(int i) {
 	if (i == 0) return 4096;
 	if (i == 1) return FB_W * FB_H;
 	if (i == 2) return sizeof g_mailbox;
+	if (i == 3) return 4096;
 	return 0;
 }
 
 ECL_EXPORT int GetMemoryDomainWritable(int i) { return i == 0 ? 1 : 0; }
-ECL_EXPORT int GetMemoryDomainHidden(int i) { return i == 2 ? 1 : 0; }
+ECL_EXPORT int GetMemoryDomainHidden(int i) { return i >= 2 ? 1 : 0; }
 
 /* --- buses (engine.h, ce_session_bus_*) ---
  * An address space the core resolves itself: three times 64 KiB, so a bulk

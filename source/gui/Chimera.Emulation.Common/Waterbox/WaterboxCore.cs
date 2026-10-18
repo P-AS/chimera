@@ -209,6 +209,9 @@ namespace Chimera.Emulation.Common.Waterbox
 
 			// Memory domains are self-described by the guest at runtime (size/count
 			// can depend on settings); pointer-backed straight into guest memory.
+			// Reads go through the engine's read view, which never runs the core's
+			// own code (a core that protects pages to watch them, RPCS3, would hear
+			// of every read); writes through the core's own pointer.
 			var domains = new List<MemoryDomain>(_session.DomainCount);
 			for (int i = 0; i < _session.DomainCount; i++)
 			{
@@ -217,6 +220,7 @@ namespace Chimera.Emulation.Common.Waterbox
 					_session.DomainPtr(i), _session.DomainSize(i), _session.DomainWritable(i), 1)
 				{
 					Hidden = _session.DomainHidden(i),
+					ReadData = _session.DomainReadPtr(i),
 				});
 			}
 
