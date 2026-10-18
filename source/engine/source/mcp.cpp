@@ -388,6 +388,39 @@ McpResult mcpError(const std::string &sentence)
 
 /* ---- the protocol ---- */
 
+/* A reply is valid UTF-8, whatever a game's memory held: a property's text is
+ * the game's bytes, and an agent's MCP library decodes the stream strictly, so
+ * one bad byte ended its session (engine analysis, 2026-10-18). Each byte that
+ * does not begin or continue a valid sequence becomes U+FFFD. */
+std::string mcpValidUtf8(const std::string &in)
+{
+	std::string out;
+	out.reserve(in.size());
+	const auto *p = reinterpret_cast<const unsigned char *>(in.data());
+	const size_t n = in.size();
+	for (size_t i = 0; i < n;)
+	{
+		const unsigned char c = p[i];
+		size_t len = c < 0x80 ? 1 : (c & 0xE0) == 0xC0 ? 2 : (c & 0xF0) == 0xE0 ? 3 : (c & 0xF8) == 0xF0 ? 4 : 0;
+		bool ok = len != 0 && i + len <= n && !(len == 2 && c < 0xC2) && !(len == 4 && c > 0xF4);
+		for (size_t k = 1; ok && k < len; k++) ok = (p[i + k] & 0xC0) == 0x80;
+		if (ok && len == 3)
+		{
+			const unsigned c1 = p[i + 1];
+			ok = !(c == 0xE0 && c1 < 0xA0) && !(c == 0xED && c1 >= 0xA0);   /* overlong, surrogates */
+		}
+		if (ok && len == 4)
+		{
+			const unsigned c1 = p[i + 1];
+			ok = !(c == 0xF0 && c1 < 0x90) && !(c == 0xF4 && c1 >= 0x90);
+		}
+		if (ok) { out.append(in, i, len); i += len; }
+		else { out += "\xEF\xBF\xBD"; i++; }
+	}
+	return out;
+}
+
+
 namespace
 {
 
@@ -411,7 +444,7 @@ std::string rpcReply(const cJSON *id, cJSON *result)
 	cJSON_AddStringToObject(reply, "jsonrpc", "2.0");
 	cJSON_AddItemToObject(reply, "id", cJSON_Duplicate(id, 1));
 	cJSON_AddItemToObject(reply, "result", result);
-	std::string out = printJson(reply);
+	std::string out = mcpValidUtf8(printJson(reply));
 	cJSON_Delete(reply);
 	return out;
 }
@@ -425,7 +458,7 @@ std::string rpcError(const cJSON *id, int code, const std::string &message)
 	cJSON_AddNumberToObject(error, "code", code);
 	cJSON_AddStringToObject(error, "message", message.c_str());
 	cJSON_AddItemToObject(reply, "error", error);
-	std::string out = printJson(reply);
+	std::string out = mcpValidUtf8(printJson(reply));
 	cJSON_Delete(reply);
 	return out;
 }
@@ -590,13 +623,20 @@ McpResult McpLink::call(const std::string &tool, const std::string &argumentsJso
 			const bool greeted = pipe.send(printJson(hello));
 			cJSON_Delete(hello);
 			/* Chimera answers the greeting from its own thread, at once */
+			/* ...and only that line counts: on Linux a client that arrives
+			 * before the server noticed the last one leave can be handed lines
+			 * meant for it, which are skipped here (engine analysis,
+			 * 2026-10-18) */
 			PipeEvent event = PipeEvent::Nothing;
 			const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(3000);
-			while (greeted && event != PipeEvent::Line && event != PipeEvent::Disconnected && std::chrono::steady_clock::now() < until)
+			bool answered = false;
+			while (greeted && !answered && event != PipeEvent::Disconnected && std::chrono::steady_clock::now() < until)
 			{
 				event = pipe.wait(100, line);
+				answered = event == PipeEvent::Line && line.find("\"hello\"") != std::string::npos
+					&& line.find("\"chimera\"") != std::string::npos;
 			}
-			if (event != PipeEvent::Line)
+			if (!answered)
 			{
 				pipe.close();
 				return mcpError(std::string("Chimera's MCP server did not answer.") + howToStart);
@@ -838,6 +878,16 @@ void pipeThread(Service *sv)
 				const cJSON *tool = cJSON_GetObjectItemCaseSensitive(message, "tool");
 				if (cJSON_IsString(hello))
 				{
+					/* A greeting begins a connection, whether or not the last one
+					 * was seen to end: on Linux a client that opens the pipe
+					 * before the server's next look is not seen to leave, and
+					 * the old one's queued calls and answers went to the new one
+					 * (engine analysis, 2026-10-18). */
+					sv->connection++;
+					sv->pending -= static_cast<int>(sv->waiting.size());
+					sv->waiting.clear();
+					sv->outgoing.clear();
+					sv->withHost.clear();
 					sv->client = hello->valuestring;
 					addLog(*sv, "the agent's program is " + sv->client);
 					sv->outgoing.push_back("{\"hello\":\"chimera\"}");
@@ -1153,11 +1203,19 @@ McpResult toolRegisters(ce_session *s)
 	return textResult(out);
 }
 
+/* The whole text: a longer one was cut at 1023 bytes, inside a character as
+ * often as not (engine analysis, 2026-10-18). */
 std::string propertyText(ce_session *s, int32_t index, uint32_t element)
 {
-	char buffer[1024];
-	const int32_t length = ce_session_property_text(s, index, element, 1, buffer, sizeof(buffer));
-	return length >= 0 ? std::string(buffer) : std::string();
+	std::vector<char> buffer(1024);
+	int32_t length = ce_session_property_text(s, index, element, 1, buffer.data(), static_cast<int32_t>(buffer.size()));
+	if (length >= static_cast<int32_t>(buffer.size()) && length < (1 << 24))
+	{
+		buffer.resize(static_cast<size_t>(length) + 1);
+		length = ce_session_property_text(s, index, element, 1, buffer.data(), static_cast<int32_t>(buffer.size()));
+	}
+	if (length < 0) return std::string();
+	return std::string(buffer.data(), std::min<size_t>(static_cast<size_t>(length), std::strlen(buffer.data())));
 }
 
 McpResult toolListProperties(ce_session *s, const cJSON *arguments)
@@ -1380,7 +1438,10 @@ bool readSource(ce_session *s, const Source &source, std::string &text, bool &is
 	isNumber = false;
 	if (source.isProperty)
 	{
-		if (ce_session_property_dynamic(s) != 0) ce_session_property_refresh(s);
+		/* No refresh first: _find, _get and _text place a dynamic property by name
+		 * before every use (engine.h), and a refresh is a guest call and a full
+		 * parse of the table - once per watch per answer, and once a frame in
+		 * advance_until (engine analysis, 2026-10-18). */
 		uint32_t element = 0;
 		const int32_t index = ce_session_property_find(s, source.property.c_str(), &element);
 		if (index < 0)
@@ -1407,7 +1468,12 @@ bool readSource(ce_session *s, const Source &source, std::string &text, bool &is
 		return false;
 	}
 	uint8_t bytes[4] = { 0, 0, 0, 0 };
-	const int64_t got = domainIndex >= 0
+	/* a bus reads what is past its end as zeros, so its size is asked: a watch
+	 * there read 0, and advance_until "equal 0" stopped at once (engine
+	 * analysis, 2026-10-18) */
+	const int64_t limit = domainIndex >= 0 ? ce_session_domain_size(s, domainIndex) : ce_session_bus_size(s, busIndex);
+	const int64_t got = source.address < 0 || source.address > limit - source.width ? 0
+		: domainIndex >= 0
 		? ce_session_domain_read(s, domainIndex, source.address, bytes, source.width)
 		: ce_session_bus_read(s, busIndex, source.address, bytes, source.width);
 	if (got != source.width)
@@ -1523,7 +1589,13 @@ bool lineFits(ce_session *s, const EntryLayout &held, const std::string &line, c
 	{
 		return std::count_if(text.begin(), text.end(), [](char c) { return c != '|'; });
 	};
-	return !line.empty() && line.front() == '|' && line.back() == '|' && columns(line) == columns(blank)
+	/* printable ASCII only: a newline, another control byte or a byte of a
+	 * UTF-8 character each passed as a column, was played as a pressed button,
+	 * and a newline split the line when the movie was saved (engine analysis,
+	 * 2026-10-18) */
+	const bool printable = std::all_of(line.begin(), line.end(),
+		[](char c) { return static_cast<unsigned char>(c) >= 0x20 && static_cast<unsigned char>(c) < 0x7F; });
+	return printable && !line.empty() && line.front() == '|' && line.back() == '|' && columns(line) == columns(blank)
 		&& sessionDecodeIn(s, held, line.c_str(), nullptr, nullptr);
 }
 
@@ -1778,6 +1850,11 @@ void onMachine(Service &sv, ce_session *s)
 		sv.watches.clear();
 		sv.conditionSet = false;
 		dropSearch(sv);
+		/* the person's work is kept again before the agent's first change to
+		 * THIS machine: once per server start left a project opened later with
+		 * nothing kept (engine analysis, 2026-10-18). Not while a keep is being
+		 * answered. */
+		if (sv.kept != 1) sv.kept = 0;
 	}
 	sv.machineSession = serial;
 }

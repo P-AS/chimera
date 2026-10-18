@@ -230,6 +230,15 @@ uint32_t CeRamSearch::load(const uint8_t *p, int size) const
 }
 
 /* A value that does not fit inside the domain reads as zero, as it always has. */
+/* Turns a flag off for a scope and puts it back however the scope ends. */
+struct UndoOff
+{
+	bool &flag;
+	const bool was;
+	explicit UndoOff(bool &f) : flag(f), was(f) { flag = false; }
+	~UndoOff() { flag = was; }
+};
+
 uint32_t CeRamSearch::peek(uint64_t address, int size) const
 {
 	if (address > (uint64_t)m_domainSize || (uint64_t)m_domainSize - address < (uint64_t)size) return 0;
@@ -491,6 +500,29 @@ bool CeRamSearch::recordUndo()
 
 void CeRamSearch::start(int size, bool misaligned, bool bigEndian, bool detailed)
 {
+	/* Running out of memory below leaves the search as it was: the switches
+	 * and ranges were set before anything was allocated, so the next row read
+	 * a detailed image that was never made (engine analysis, 2026-10-18). */
+	const bool wasBigEndian = m_bigEndian, wasDetailed = m_detailed, wasMisaligned = m_misaligned;
+	const std::vector<Range> wasRanges = m_ranges;
+	const int64_t wasDomainSize = m_domainSize;
+	try
+	{
+		startUnguarded(size, misaligned, bigEndian, detailed);
+	}
+	catch (const std::bad_alloc &)
+	{
+		m_bigEndian = wasBigEndian;
+		m_detailed = wasDetailed;
+		m_misaligned = wasMisaligned;
+		m_ranges = wasRanges;
+		m_domainSize = wasDomainSize;
+		throw;
+	}
+}
+
+void CeRamSearch::startUnguarded(int size, bool misaligned, bool bigEndian, bool detailed)
+{
 	clearHistory();
 	m_bigEndian = bigEndian;
 	m_detailed = detailed;
@@ -746,6 +778,33 @@ void CeRamSearch::update(int previousType)
 	}
 }
 
+/* Switching the byte order mid-search: a dense set's previous and current
+ * values are bytes, read in the new order from now on. A sparse set holds them
+ * as numbers decoded in the old order, so each is turned round within its
+ * size, in the set and in every undo and redo level. Left alone, a sparse
+ * search dropped good candidates and detailed mode counted changes that were
+ * not there (engine analysis, 2026-10-18). */
+static uint32_t swapWithin(uint32_t v, int size)
+{
+	if (size == 2) return ((v & 0xFF) << 8) | ((v >> 8) & 0xFF);
+	if (size == 4) return ((v & 0xFF) << 24) | ((v & 0xFF00) << 8) | ((v >> 8) & 0xFF00) | (v >> 24);
+	return v;
+}
+
+void CeRamSearch::setBigEndian(bool bigEndian)
+{
+	if (bigEndian == m_bigEndian) return;
+	m_bigEndian = bigEndian;
+	auto turn = [](Set &s) {
+		if (s.dense || s.size == 1) return;
+		for (uint32_t &v : s.prev) v = swapWithin(v, s.size);
+		for (uint32_t &v : s.cur) v = swapWithin(v, s.size);
+	};
+	turn(m_set);
+	for (Set &s : m_undo) turn(s);
+	for (Set &s : m_redo) turn(s);
+}
+
 void CeRamSearch::setPreviousType(int previousType)
 {
 	m_previousType = previousType;
@@ -825,10 +884,11 @@ void CeRamSearch::removeAddresses(const uint64_t *realAddresses, int64_t n, bool
 	std::vector<int64_t> indices;
 	for (size_t i = 0; i < m_set.addr.size(); i++)
 		if (gone.count(m_set.addr[i])) indices.push_back((int64_t)i);
-	const bool undo = m_undoEnabled;
-	m_undoEnabled = false; /* recorded above, or not wanted */
+	/* undo is off for the removal (recorded above, or not wanted) and on again
+	 * however it ends: running out of memory in it skipped the restore and
+	 * left undo off for good (engine analysis, 2026-10-18) */
+	UndoOff off(m_undoEnabled);
 	removeIndices(indices.data(), (int64_t)indices.size());
-	m_undoEnabled = undo;
 }
 
 void CeRamSearch::addAddresses(const uint64_t *addresses, int64_t n, bool append)
@@ -880,6 +940,8 @@ void CeRamSearch::convertTo(int size)
 	if (m_set.dense)
 	{
 		s.dense = true;
+		/* the order a person sorted it in stays, as a sparse set's does */
+		s.reversed = m_set.reversed;
 		s.slots = m_domainSize < size ? 0
 			: m_misaligned ? (uint64_t)(m_domainSize - size + 1)
 			: (uint64_t)(m_domainSize / size);
@@ -993,10 +1055,8 @@ void CeRamSearch::removeOutOfRange()
 		const uint64_t a = m_set.addr[i];
 		if (a > (uint64_t)m_domainSize || (uint64_t)m_domainSize - a < (uint64_t)m_set.size) indices.push_back((int64_t)i);
 	}
-	const bool undo = m_undoEnabled;
-	m_undoEnabled = false;
+	UndoOff off(m_undoEnabled);
 	removeIndices(indices.data(), (int64_t)indices.size());
-	m_undoEnabled = undo;
 }
 
 int64_t CeRamSearch::undo()

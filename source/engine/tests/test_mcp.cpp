@@ -459,8 +459,23 @@ void theServer()
 
 } // namespace
 
+/* Replies are valid UTF-8 (2026-10-18): valid text passes untouched, and each
+ * byte that does not begin or continue a sequence becomes U+FFFD. */
+static void repliesAreValidUtf8()
+{
+	const std::string kept = "plain, caf\xC3\xA9, \xE2\x82\xAC, \xF0\x9F\x8E\xAE";
+	assert(chimera::mcpValidUtf8(kept) == kept);
+	const std::string fffd = "\xEF\xBF\xBD";
+	assert(chimera::mcpValidUtf8("a\xFF" "b") == "a" + fffd + "b");
+	assert(chimera::mcpValidUtf8("cut \xC3") == "cut " + fffd);                 /* a character cut short */
+	assert(chimera::mcpValidUtf8("\xC0\xAF") == fffd + fffd);                 /* overlong */
+	assert(chimera::mcpValidUtf8("\xED\xA0\x80") == fffd + fffd + fffd);     /* a surrogate */
+	assert(chimera::mcpValidUtf8("\xF4\x90\x80\x80") == fffd + fffd + fffd + fffd);   /* past U+10FFFF */
+}
+
 int main()
 {
+	repliesAreValidUtf8();
 #ifndef _WIN32
 	/* An assertion that fails ends the test through abort(), and a core dump
 	 * is written first. On a machine that hands core dumps to another program

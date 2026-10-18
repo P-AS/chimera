@@ -33,6 +33,9 @@ namespace chimera
  * session's order; null for none pressed) and axis values (null for each at
  * rest). Defined in session.cpp. */
 std::string sessionMovieEntry(const ce_session *s, const uint8_t *states, const int32_t *axes);
+/* The text with every byte that does not begin or continue valid UTF-8
+ * replaced by U+FFFD; what every reply goes through. */
+std::string mcpValidUtf8(const std::string &in);
 /* The columns a movie log's lines are in, for this session's machine: its
  * LogKey's when that names any, else the machine's own order. Defined in
  * session.cpp, with the three below. */

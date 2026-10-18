@@ -463,6 +463,27 @@ int main(int argc, char **argv)
 	}
 #endif
 
+	{ // A project with no id (written before ids, or by hand) gets the same one
+	  // at every open until a save writes it in, so the work of a session that
+	  // crashed before its first save is found again (2026-10-18).
+		writeFile("idless.chimeraProject",
+			"{\"title\":\"no id\",\"core\":{\"name\":\"Synth\",\"version\":\"\",\"sha1\":\"\"},\"files\":[]}");
+		const std::string ipath = g_dir + "/idless.chimeraProject";
+		const char *err = nullptr;
+		ce_project *a = ce_project_open(ipath.c_str(), &err);
+		ce_project *b = ce_project_open(ipath.c_str(), &err);
+		assert(a != nullptr && b != nullptr);
+		const std::string idA = ce_project_id(a);
+		assert(!idA.empty() && idA == ce_project_id(b));
+		assert(ce_project_save(a, ipath.c_str(), &err) == 0);
+		ce_project *c = ce_project_open(ipath.c_str(), &err);
+		assert(c != nullptr && idA == ce_project_id(c));
+		ce_project_free(a);
+		ce_project_free(b);
+		ce_project_free(c);
+		std::remove(ipath.c_str());
+	}
+
 	std::printf("project: all assertions passed\n");
 	return 0;
 }

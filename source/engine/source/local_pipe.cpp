@@ -520,6 +520,10 @@ struct PipeServer::Impl
 	{
 		if (inFd >= 0) ::close(inFd);
 		inFd = ::open(in().c_str(), openFlags(O_RDONLY));
+		/* deleted under us (the runtime directory goes when the user's last
+		 * session ends): made again */
+		if (inFd < 0 && errno == ENOENT && ::mkfifo(in().c_str(), 0600) == 0)
+			inFd = ::open(in().c_str(), openFlags(O_RDONLY));
 	}
 
 	void drop()
@@ -592,7 +596,19 @@ void PipeServer::close()
 
 PipeEvent PipeServer::wait(int timeout_ms, std::string &line)
 {
-	if (impl->inFd < 0) return PipeEvent::Nothing;
+	/* The pipe could not be opened again after a client left (it was deleted,
+	 * or no descriptor was free): tried again, and if it still cannot be, this
+	 * waits out its time rather than return at once. It returned at once, and
+	 * the server's thread spun at 100% (engine analysis, 2026-10-18). */
+	if (impl->inFd < 0)
+	{
+		impl->reopenIn();
+		if (impl->inFd < 0)
+		{
+			usleep(static_cast<useconds_t>((timeout_ms > 0 ? timeout_ms : 200) * 1000));
+			return PipeEvent::Nothing;
+		}
+	}
 	if (impl->connected && takeLine(impl->buffer, line)) return PipeEvent::Line;
 	struct pollfd p = { impl->inFd, POLLIN, 0 };
 	if (poll(&p, 1, timeout_ms < 0 ? 0 : timeout_ms) <= 0) return PipeEvent::Nothing;

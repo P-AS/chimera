@@ -124,6 +124,9 @@ CE_API void ce_movie_log_truncate(ce_movie_log *log, int64_t count);
 CE_API void ce_movie_log_set(ce_movie_log *log, int64_t index, const char *entry);
 /* index may equal the count (an append); beyond that is ignored. */
 CE_API void ce_movie_log_insert(ce_movie_log *log, int64_t index, const char *entry);
+/* The same entry `count` times at index, in one step: inserting many frames
+ * one at a time moved every line after them each time. */
+CE_API void ce_movie_log_insert_n(ce_movie_log *log, int64_t index, const char *entry, int64_t count);
 /* Removes [index, index+count), clamped to the log's bounds. */
 CE_API void ce_movie_log_remove_range(ce_movie_log *log, int64_t index, int64_t count);
 /* Replaces dst's entries and LogKey with src's. */
@@ -1318,8 +1321,12 @@ CE_API int64_t ce_session_domain_read(const ce_session *s, int32_t index, int64_
  *
  * _table: the table as the engine understood it, every field filled in, and
  * what it left out and why - {"properties": [...], "problems": [...]}; a
- * property's index is its place in that list. Borrowed for the session's
- * lifetime. A core without the export has an empty table.
+ * property's index is its place in that list. Borrowed until the next
+ * _table, and for a dynamic table also until the next _refresh or a call that
+ * finds a property moved or gone (_get, _set, _text, _offset), which make the
+ * next _table write it afresh; a caller that keeps it copies it (2026-10-18:
+ * it said "for the session's lifetime", which a dynamic table is not). A core
+ * without the export has an empty table.
  * _find: "Name" or "Name[3]" (an array's element, by the number the game
  * calls it - from the table's `first`, 0 unless it says); the index, or -1.
  * A fixed table's names are found in any case: they are a core author's

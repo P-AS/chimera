@@ -25,7 +25,10 @@
 
 #include "../../extern/cjson/cJSON.h"
 
+#include <cctype>
 #include <cstdio>
+#include <filesystem>
+#include <initializer_list>
 #include <cstring>
 #include <ctime>
 #include <set>
@@ -186,6 +189,22 @@ static uint64_t systemRandom64()
 #endif
 }
 
+/* The name of a member `obj` has that is not one of `known`, or nullptr. A
+ * key this build does not know is an error at every level, as it always was
+ * at the top: inside a file, a marker, a branch or the core it was accepted
+ * and then lost on the next save (engine analysis, 2026-10-18). */
+static const char *unknownKey(const cJSON *obj, std::initializer_list<const char *> known)
+{
+	for (const cJSON *item = obj != nullptr ? obj->child : nullptr; item != nullptr; item = item->next)
+	{
+		bool ok = false;
+		for (const char *k : known)
+			if (item->string != nullptr && std::strcmp(item->string, k) == 0) { ok = true; break; }
+		if (!ok) return item->string != nullptr ? item->string : "";
+	}
+	return nullptr;
+}
+
 static std::string mintProjectId()
 {
 	static uint64_t made;
@@ -267,7 +286,20 @@ static ce_project *openProject(const char *path, const char **error_out)
 		if (!cJSON_IsString(j)) return rejectP("\"id\" must be a string");
 		p->id = j->valuestring;
 	}
-	if (p->id.empty()) p->id = mintProjectId();  /* a project written before ids had one */
+	/* A project written before ids, or by hand, has none. It gets one made
+	 * from where the file is, the same at every open until a save writes it
+	 * in: a random one each time hid the work of a session that crashed
+	 * before its first save, which is looked for by id (engine analysis,
+	 * 2026-10-18). Where the path cannot be made whole, a random one. */
+	if (p->id.empty())
+	{
+		std::error_code ec;
+		const std::string whole = std::filesystem::weakly_canonical(std::filesystem::u8path(path), ec).u8string();
+		p->id = !ec && !whole.empty()
+			? chimera::sha1Hex(reinterpret_cast<const uint8_t *>(whole.data()), whole.size()).substr(0, 16)
+			: mintProjectId();
+		for (char &c : p->id) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "title")) != nullptr)
 	{
 		if (!cJSON_IsString(j)) return rejectP("\"title\" is not a string");
@@ -281,6 +313,7 @@ static ce_project *openProject(const char *path, const char **error_out)
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "core")) != nullptr)
 	{
 		if (!cJSON_IsObject(j)) return rejectP("\"core\" is not an object");
+		if (const char *k = unknownKey(j, { "name", "version", "sha1" })) return rejectP(std::string("unknown key \"") + k + "\" in \"core\"");
 		cJSON *name = cJSON_GetObjectItemCaseSensitive(j, "name");
 		cJSON *version = cJSON_GetObjectItemCaseSensitive(j, "version");
 		cJSON *sha1 = cJSON_GetObjectItemCaseSensitive(j, "sha1");
@@ -306,6 +339,7 @@ static ce_project *openProject(const char *path, const char **error_out)
 		if (!cJSON_IsArray(j)) return rejectP("\"files\" is not an array");
 		for (cJSON *item = j->child; item != nullptr; item = item->next)
 		{
+			if (const char *k = unknownKey(item, { "name", "sha1", "slot" })) return rejectP(std::string("unknown key \"") + k + "\" in a file");
 			cJSON *name = cJSON_GetObjectItemCaseSensitive(item, "name");
 			cJSON *sha1 = cJSON_GetObjectItemCaseSensitive(item, "sha1");
 			cJSON *slot = cJSON_GetObjectItemCaseSensitive(item, "slot");
@@ -360,6 +394,7 @@ static ce_project *openProject(const char *path, const char **error_out)
 		if (!cJSON_IsArray(j)) return rejectP("\"markers\" is not an array");
 		for (cJSON *item = j->child; item != nullptr; item = item->next)
 		{
+			if (const char *k = unknownKey(item, { "frame", "text", "keepState" })) return rejectP(std::string("unknown key \"") + k + "\" in a marker");
 			cJSON *frame = cJSON_GetObjectItemCaseSensitive(item, "frame");
 			cJSON *text = cJSON_GetObjectItemCaseSensitive(item, "text");
 			cJSON *keep = cJSON_GetObjectItemCaseSensitive(item, "keepState");
@@ -396,6 +431,7 @@ static ce_project *openProject(const char *path, const char **error_out)
 		if (!cJSON_IsArray(j)) return rejectP("\"branches\" is not an array");
 		for (cJSON *item = j->child; item != nullptr; item = item->next)
 		{
+			if (const char *k = unknownKey(item, { "name", "frame", "input", "time", "markers" })) return rejectP(std::string("unknown key \"") + k + "\" in a branch");
 			cJSON *name = cJSON_GetObjectItemCaseSensitive(item, "name");
 			cJSON *frame = cJSON_GetObjectItemCaseSensitive(item, "frame");
 			cJSON *input = cJSON_GetObjectItemCaseSensitive(item, "input");
@@ -419,6 +455,7 @@ static ce_project *openProject(const char *path, const char **error_out)
 				if (!cJSON_IsArray(markers)) return rejectP("a branch's \"markers\" is not an array");
 				for (cJSON *m = markers->child; m != nullptr; m = m->next)
 				{
+					if (const char *k = unknownKey(m, { "frame", "text", "keepState" })) return rejectP(std::string("unknown key \"") + k + "\" in a branch's marker");
 					cJSON *mFrame = cJSON_GetObjectItemCaseSensitive(m, "frame");
 					cJSON *mText = cJSON_GetObjectItemCaseSensitive(m, "text");
 					cJSON *mKeep = cJSON_GetObjectItemCaseSensitive(m, "keepState");

@@ -8953,3 +8953,47 @@ fixes have no new test: they are on paths that need memory to run out, a
 second process, or a file changed between two calls. Engine tests (30),
 witness (97), interface tests, the Windows build and the PCSX2 core's test
 script (44 passed, 6 skipped, ports:columns among them) pass.
+
+## The engine's low findings, second round: the MCP server, RAM search, projects (user-decided, 2026-10-18)
+
+**What was found.** More of the engine analysis's low findings:
+- the MCP server: a line given to set_input could hold a newline or other
+  control bytes, played as a pressed button and splitting the line when the
+  movie was saved; insert_frames without a window inserted one line at a
+  time; an open that failed lost the open project's unsaved input; export_movie
+  wrote through a link out of the work folder; a watch past a bus's end read
+  0; a reply could hold invalid UTF-8 (a long property text cut mid-character,
+  or a game's bytes), which an agent's library refuses; every property read
+  listed a dynamic table afresh; every core lookup read and hashed every
+  package; the person's work was kept once per server start, not per project;
+  on Linux a client arriving before the server noticed the last one leave got
+  that one's answers, and a pipe that could not be opened again made the
+  server's thread spin;
+- RAM search: switching the byte order left a sparse set's values in the old
+  order; a start that ran out of memory left the search half switched; a
+  removal that ran out turned undo off for good; converting the size of a
+  dense list sorted high-to-low reset its order; a property took a bus's
+  domain over the domain of the same name;
+- projects: a project with no id got a new random one at every open, which
+  hid the work of a session that crashed before its first save; unknown keys
+  inside files, markers, branches and the core were dropped on save; the
+  property table's pointer was documented as lasting the session.
+
+**What was decided.** Each is fixed as its finding names: lines in printable
+ASCII; one bulk insert (ce_movie_log_insert_n); the open project set aside
+and given back on failure; links refused; bus addresses bounded; replies made
+valid UTF-8 (each bad byte becomes U+FFFD) and property texts read whole; no
+listing before a read; cores found by file name first and hashed by file
+identity; work kept again per machine; a greeting starts a connection and the
+client waits for Chimera's own; the pipe made again or waited on. RAM search
+turns sparse values round, restores its switches and the undo flag, and keeps
+the order. A project with no id gets one made from its path until a save
+writes it in; unknown nested keys are refused like top-level ones (every key
+any build has written is known); the header says how long the table lasts.
+
+**Tested.** New engine tests: UTF-8 replies, the byte-order switch on a
+sparse set, an id-less project's id; new agent checks: a line with a newline,
+an export through a link, a failed open, a watch past a bus's end. Each failed
+with its part removed. The pipe changes, the bulk insert's speed, the core
+lookup and the per-machine keep have no new test. Engine tests (30), witness
+(97), interface tests and the Windows build pass.

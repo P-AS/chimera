@@ -3,6 +3,7 @@
 #include "mcp_local.hpp"
 #include "sha1.hpp"
 #include "project_check.hpp"
+#include "file_io.hpp"
 
 #include "chimera/engine.h"
 
@@ -149,11 +150,23 @@ bool McpLocal::mayWrite(const std::string &path, std::string &resolved, std::str
  * core gives itself. */
 bool McpLocal::findPackage(const std::string &asked, std::string &path, std::string &why) const
 {
+	/* By file name first, which opens nothing: every package opened here is
+	 * read whole and hashed, and that was done for every file in the folder
+	 * on every lookup (engine analysis, 2026-10-18). */
 	std::error_code failed;
+	for (const fs::directory_entry &entry : fs::directory_iterator(fs::u8path(options.coresDir), failed))
+	{
+		if (entry.path().filename().u8string() != asked && entry.path().stem().u8string() != asked) continue;
+		const char *ignored = nullptr;
+		ce_package *package = ce_package_open(entry.path().u8string().c_str(), &ignored);
+		if (package == nullptr) continue;
+		ce_package_free(package);
+		path = entry.path().u8string();
+		return true;
+	}
 	std::string byName;
 	for (const fs::directory_entry &entry : fs::directory_iterator(fs::u8path(options.coresDir), failed))
 	{
-		const std::string file = entry.path().filename().u8string();
 		const char *ignored = nullptr;
 		ce_package *package = ce_package_open(entry.path().u8string().c_str(), &ignored);
 		if (package == nullptr) continue;
@@ -161,11 +174,6 @@ bool McpLocal::findPackage(const std::string &asked, std::string &path, std::str
 		const std::string name = textOf(config, "coreName");
 		cJSON_Delete(config);
 		ce_package_free(package);
-		if (file == asked || entry.path().stem().u8string() == asked)
-		{
-			path = entry.path().u8string();
-			return true;
-		}
 		if (name == asked && byName.empty()) byName = entry.path().u8string();
 	}
 	if (!byName.empty())
@@ -192,6 +200,60 @@ void McpLocal::dropMachine()
 	unsaved = false;
 	currentBranch = -1;
 	undoSteps.clear();
+}
+
+McpLocal::Previous McpLocal::setAside()
+{
+	Previous previous;
+	if (session != nullptr) ce_session_free(session);
+	session = nullptr;
+	previous.project = project;
+	previous.movie = movie;
+	previous.projectPath = projectPath;
+	previous.packagePath = packagePath;
+	previous.firmware = startedFirmware;
+	previous.otherBuild = startedOtherBuild;
+	previous.unsaved = unsaved;
+	previous.currentBranch = currentBranch;
+	previous.undoSteps = std::move(undoSteps);
+	project = nullptr;
+	movie = nullptr;
+	dropMachine();
+	return previous;
+}
+
+void McpLocal::giveUp(Previous &previous)
+{
+	if (previous.movie != nullptr) ce_movie_log_free(previous.movie);
+	if (previous.project != nullptr) ce_project_free(previous.project);
+	previous = Previous{};
+}
+
+/* The project that was open, open again with its input as it was; its machine
+ * starts from the beginning, since it could not be kept. Said in the refusal. */
+std::string McpLocal::bringBack(Previous &previous)
+{
+	if (previous.project == nullptr) return std::string();
+	dropMachine();
+	project = previous.project;
+	packagePath = previous.packagePath;
+	previous.project = nullptr;
+	std::string why;
+	if (!startMachine(previous.firmware, previous.otherBuild, why))
+	{
+		dropMachine();
+		giveUp(previous);
+		return " The project that was open could not be started again (" + why + "), so nothing is open.";
+	}
+	ce_movie_log_free(movie);
+	movie = previous.movie;
+	previous.movie = nullptr;
+	ce_session_movie_load(session, movie);
+	projectPath = previous.projectPath;
+	unsaved = previous.unsaved;
+	currentBranch = previous.currentBranch;
+	undoSteps = std::move(previous.undoSteps);
+	return " The project that was open is open again, its input as it was; its machine starts again from frame 0.";
 }
 
 /* Starts the machine of `project` on the package at `packagePath`, with the
@@ -276,6 +338,8 @@ bool McpLocal::startMachine(const std::string &firmwareJson, bool otherBuildAllo
 	}
 	/* the saved states that make going back cheap, from frame 0 on */
 	ce_session_greenzone_enable(session, static_cast<uint64_t>(options.historyMiB) << 20);
+	startedFirmware = firmwareJson;
+	startedOtherBuild = otherBuildAllowed;
 	return true;
 }
 
@@ -433,7 +497,7 @@ McpResult McpLocal::openGame(const std::string &argumentsJson)
 		cJSON_Delete(arguments);
 		return mcpError(why);
 	}
-	dropMachine();
+	Previous previous = setAside();
 	packagePath = package;
 	project = ce_project_new();
 	const char *ignored = nullptr;
@@ -479,8 +543,9 @@ McpResult McpLocal::openGame(const std::string &argumentsJson)
 	if (!why.empty() || !startMachine(firmwareJson, false, why))
 	{
 		dropMachine();
-		return mcpError(why);
+		return mcpError(why + bringBack(previous));
 	}
+	giveUp(previous);
 	/* the firmware it was started with is pinned, as the window's projects
 	 * pin theirs, so that opening it later on other files is said */
 	ce_project_set_firmware_text(project, firmwarePins.c_str(), nullptr);
@@ -502,10 +567,12 @@ McpResult McpLocal::openProject(const std::string &argumentsJson)
 	cJSON_Delete(arguments);
 	std::string path, why;
 	if (!mayRead(asked, path, why)) return mcpError(why);
-	dropMachine();
+	Previous previous = setAside();
 	const char *error = nullptr;
 	project = ce_project_open(path.c_str(), &error);
-	if (project == nullptr) return mcpError(std::string("The project could not be opened: ") + (error != nullptr ? error : "it is not a project"));
+	if (project == nullptr)
+		return mcpError(std::string("The project could not be opened: ") + (error != nullptr ? error : "it is not a project")
+			+ bringBack(previous));
 	/* its files: beside it first, then in every folder this server may read */
 	ce_project_resolve_dir(project, fs::u8path(path).parent_path().u8string().c_str());
 	for (const std::string &dir : options.fileDirs) ce_project_resolve_dir(project, dir.c_str());
@@ -515,26 +582,34 @@ McpResult McpLocal::openProject(const std::string &argumentsJson)
 	 * package of the same core, which the engine refuses unless allowed */
 	const std::string wantedSha1 = ce_project_core_sha1(project);
 	std::error_code failed;
+	/* a package's SHA-1 is its file's, which is kept by the file's identity:
+	 * a second look at an unchanged folder hashes nothing */
 	for (const fs::directory_entry &entry : fs::directory_iterator(fs::u8path(options.coresDir), failed))
 	{
+		if (wantedSha1.empty() || !entry.is_regular_file(failed)) continue;
+		uint64_t length = 0;
+		std::string sha1;
+		if (!chimera::sha1HexOfFile(entry.path().u8string().c_str(), &length, sha1) || sha1 != wantedSha1) continue;
 		const char *ignored = nullptr;
 		ce_package *package = ce_package_open(entry.path().u8string().c_str(), &ignored);
 		if (package == nullptr) continue;
-		const char *sha1 = ce_package_sha1(package);
-		if (!wantedSha1.empty() && sha1 != nullptr && wantedSha1 == sha1) packagePath = entry.path().u8string();
 		ce_package_free(package);
+		packagePath = entry.path().u8string();
+		break;
 	}
 	if (packagePath.empty() && !findPackage(ce_project_core_name(project), packagePath, why))
 	{
+		const std::string coreName = ce_project_core_name(project);
 		dropMachine();
-		return mcpError(std::string("The project runs on the core '") + ce_project_core_name(project) + "', which is not in the cores folder.");
+		return mcpError("The project runs on the core '" + coreName + "', which is not in the cores folder." + bringBack(previous));
 	}
 	if (!startMachine(firmwareJson, otherBuild, why))
 	{
 		dropMachine();
 		return mcpError(why + (why.find("pinned core") != std::string::npos
-			? ". To run it on the build that is in the cores folder, give allow_other_core_build: true." : ""));
+			? ". To run it on the build that is in the cores folder, give allow_other_core_build: true." : "") + bringBack(previous));
 	}
+	giveUp(previous);
 	projectPath = path;
 	cJSON *out = cJSON_CreateObject();
 	cJSON_AddStringToObject(out, "project", ce_project_title(project));
@@ -580,10 +655,16 @@ McpResult McpLocal::exportMovie(const std::string &argumentsJson)
 	std::string path, why;
 	if (asked.empty()) return mcpError("Give 'path', the file to write the movie's input to.");
 	if (!mayWrite(asked, path, why)) return mcpError(why);
-	std::ofstream out(fs::u8path(path), std::ios::binary);
+	/* A link is refused: one whose target does not exist passed the check as
+	 * a plain new file inside the work folder, and writing followed it out
+	 * (engine analysis, 2026-10-18). Written beside it and moved into place. */
+	std::error_code linkError;
+	if (fs::is_symlink(fs::u8path(path), linkError))
+		return mcpError("'" + asked + "' is a link. The movie is written only to a plain file in the work folder.");
 	const std::string text = movieText();
-	out.write(text.data(), static_cast<std::streamsize>(text.size()));
-	if (!out) return mcpError("The movie was not written: the file could not be written.");
+	chimera::FileWriter out;
+	if (!out.open(path.c_str()) || !out.write(text.data(), text.size()) || !out.commit())
+		return mcpError("The movie was not written: the file could not be written.");
 	cJSON *done = cJSON_CreateObject();
 	cJSON_AddStringToObject(done, "written", path.c_str());
 	cJSON_AddNumberToObject(done, "movie_length", static_cast<double>(ce_movie_log_count(movie)));
@@ -660,7 +741,9 @@ McpResult McpLocal::runHost(const std::string &tool, const std::string &argument
 		{
 			rememberForUndo();
 			const std::string blank = sessionEntryIn(session, sessionLayoutOf(session, movie), nullptr, nullptr);
-			if (inserting) for (int64_t i = 0; i < count; i++) ce_movie_log_insert(movie, frame, blank.c_str());
+			/* in one step: one at a time moved every line after them each time
+			 * (engine analysis, 2026-10-18) */
+			if (inserting) ce_movie_log_insert_n(movie, frame, blank.c_str(), count);
 			else ce_movie_log_remove_range(movie, frame, count);
 			if (movieChanged(frame, why))
 			{

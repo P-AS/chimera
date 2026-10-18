@@ -72,6 +72,25 @@ private:
 
 	bool startMachine(const std::string &firmwareJson, bool otherBuildAllowed, std::string &why);
 	void dropMachine();
+
+	/* What was open, set aside while another opens: one machine at a time is
+	 * all a process can hold, so the old one's session goes and its project and
+	 * input are kept. An open that fails brings them back (engine analysis,
+	 * 2026-10-18: a failed open used to lose the unsaved input). */
+	struct Previous
+	{
+		ce_project *project = nullptr;
+		ce_movie_log *movie = nullptr;
+		std::string projectPath, packagePath, firmware;
+		bool otherBuild = false, unsaved = false;
+		int currentBranch = -1;
+		std::vector<std::string> undoSteps;
+	};
+	Previous setAside();
+	void giveUp(Previous &previous);
+	std::string bringBack(Previous &previous);
+	std::string startedFirmware;        /* what the running machine was started with */
+	bool startedOtherBuild = false;
 	std::string movieText() const;
 	void rememberForUndo();
 	bool movieChanged(int64_t fromFrame, std::string &why);

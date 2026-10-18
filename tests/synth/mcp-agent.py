@@ -298,6 +298,13 @@ error, text, _ = call("watch", watches=[{"address": 4}])
 check("a watch with nothing to read is refused", error and "Watch 1" in text)
 check("the refused list replaced nothing", facts("status").get("watches") == watched)
 check("an empty list ends watching", facts("watch", watches=[]).get("watches") == [] and "watches" not in facts("status"))
+# a bus reads what is past its end as zeros; a watch there says it cannot be read (2026-10-18)
+buses = {b["name"]: b["size"] for b in facts("list_memory").get("buses", [])}
+if buses:
+    bus_name, bus_size = next(iter(buses.items()))
+    past = facts("watch", watches=[{"domain": bus_name, "address": bus_size}]).get("watches", [])
+    check("a watch past a bus's end says it cannot be read", len(past) == 1 and "error" in past[0])
+    facts("watch", watches=[])
 
 if not changes:
     # nobody allowed changes: each tool that changes something says how they are allowed
@@ -518,6 +525,25 @@ if local:
     facts("close")
     os.remove(short_path)
     os.remove(os.path.join(work, "short.txt"))
+
+    # Three refusals that used to cost something (2026-10-18). A line with a
+    # newline in it was played as a pressed button and split the saved movie;
+    # an export through a link in the work folder was written outside it; an
+    # open that failed closed the project that was open, unsaved input and all.
+    facts("open_game", core="Synth", files={"rom": [rom]}, title="kept")
+    facts("set_input", frame=0, entries=["|.D......|"])
+    error, text, _ = call("set_input", frame=1, entries=["|.D\n.....|"])
+    check("set_input refuses a line with a newline in it", error and "shape" in text)
+    link = os.path.join(work, "link.txt")
+    os.symlink("/tmp/chimera-mcp-outside-%d.txt" % os.getpid(), link)
+    error, text, _ = call("export_movie", path="link.txt")
+    check("export_movie does not write through a link", error and "link" in text
+          and not os.path.exists("/tmp/chimera-mcp-outside-%d.txt" % os.getpid()))
+    os.remove(link)
+    error, text, _ = call("open_project", path="no-such.chimeraProject")
+    check("an open that fails keeps the project that was open", error and "open again" in text
+          and all_input() == ["|.D......|"] and facts("status").get("unsaved_changes") is True)
+    facts("close")
 
     # The firmware a game is started with is pinned in the project it makes,
     # as the window's projects pin theirs; opening it on another file is said

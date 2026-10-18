@@ -202,7 +202,10 @@ bool CeGameProperties::parseEntry(const cJSON *entry, Property &p, std::string &
 	const TypeInfo &info = kTypes[t];
 
 	p.domain = stringMember(entry, "domain");
-	for (size_t d = 0; d < m_domains.size(); d++)
+	/* the first of that name: domains come before buses, and a domain wins,
+	 * as the session and the MCP server say (it took the last, so a bus of the
+	 * domain's name took the domain's properties; engine analysis, 2026-10-18) */
+	for (size_t d = 0; d < m_domains.size() && p.domainIndex < 0; d++)
 	{
 		if (m_domains[d].name == p.domain) p.domainIndex = int32_t(d);
 	}

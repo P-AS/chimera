@@ -596,6 +596,21 @@ void ce_movie_log_insert(ce_movie_log *log, int64_t index, const char *entry)
 	if (log->journal != nullptr) journalAppend(log, "I " + std::to_string(index) + " " + oneLine(entry) + "\n");
 }
 
+void ce_movie_log_insert_n(ce_movie_log *log, int64_t index, const char *entry, int64_t count)
+{
+	if (index < 0 || index > static_cast<int64_t>(log->entries.size()) || count <= 0) return;
+	log->entries.insert(log->entries.begin() + static_cast<ptrdiff_t>(index), static_cast<size_t>(count), std::string(entry));
+	if (log->journal != nullptr)
+	{
+		/* the journal keeps its one-line records; one write for all of them */
+		const std::string one = "I " + std::to_string(index) + " " + oneLine(entry) + "\n";
+		std::string all;
+		all.reserve(one.size() * static_cast<size_t>(count));
+		for (int64_t i = 0; i < count; i++) all += one;
+		journalAppend(log, all);
+	}
+}
+
 void ce_movie_log_remove_range(ce_movie_log *log, int64_t index, int64_t count)
 {
 	int64_t size = static_cast<int64_t>(log->entries.size());

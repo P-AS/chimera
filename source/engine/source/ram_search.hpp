@@ -80,7 +80,9 @@ public:
 	void update(int previousType);
 	void setPreviousToCurrent();
 	void clearChangeCounts();
-	void setBigEndian(bool bigEndian) { m_bigEndian = bigEndian; }
+	/* A sparse set keeps its values as numbers read in the old byte order, so
+	 * they are turned round when the order changes; a dense one keeps bytes. */
+	void setBigEndian(bool bigEndian);
 	/* LastChange moves one candidate's previous at a time, which a byte image
 	 * cannot hold for overlapping candidates. */
 	void setPreviousType(int previousType);
@@ -186,6 +188,7 @@ private:
 	void settle();
 	bool mustBeSparse() const;
 	bool recordUndo(); /* true when a level was recorded */
+	void startUnguarded(int size, bool misaligned, bool bigEndian, bool detailed);
 	int64_t filter(const Query &q, int previousType); /* search()'s work */
 	template <typename F> void forEachDense(bool needMemory, F f);
 };

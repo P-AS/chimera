@@ -678,9 +678,37 @@ void aBusIsReadAWindowAtATime()
 	assert(g_reads <= 2);
 }
 
+/* Switching the byte order of a sparse search keeps previous and current
+ * meaning the same bytes: an unchanged memory still equals its previous
+ * (2026-10-18). Sparse values were left decoded in the old order. */
+void aByteOrderSwitchKeepsSparseValues()
+{
+	std::vector<uint8_t> mem(4096);
+	for (size_t i = 0; i < mem.size(); i++) mem[i] = (uint8_t)(i * 31 + 7);
+	for (int pointer = 0; pointer < 2; pointer++)
+	{
+		RS rs(pointer ? mem.data() : nullptr, pointer ? nullptr : Harness::readFn, &mem, (int64_t)mem.size());
+		rs.start(2, false, false, false);
+		RS::Query q;
+		q.compare = RS::CmpSpecificAddress;
+		q.op = RS::OpLessThan;
+		q.value = 64;                       /* 32 candidates: sparse */
+		rs.search(q, RS::PrevOriginal);
+		assert(!rs.isDense() && rs.count() == 32);
+		rs.setBigEndian(true);
+		RS::Row row;
+		assert(rs.row(1, row) && row.address == 2 && row.previous == row.current
+			&& row.current == (uint32_t)(mem[2] << 8 | mem[3]));
+		q.compare = RS::CmpPrevious;
+		q.op = RS::OpEqual;
+		assert(rs.search(q, RS::PrevLastSearch) == 0 && rs.count() == 32);
+	}
+}
+
 int main()
 {
 	runningOutLeavesTheSearchAsItWas();
+	aByteOrderSwitchKeepsSparseValues();
 	undoKeepsToItsBudget();
 	aDetailedFrameWalksOnlyWhatChanged();
 	aBusIsReadAWindowAtATime();
