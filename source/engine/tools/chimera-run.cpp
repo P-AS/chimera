@@ -293,6 +293,8 @@ int main(int argc, char **argv)
 	int64_t greenzonePeriodAt = 0;  // the frame of the first pass it is set at
 	std::string recordPath;
 	std::string recordKey;   /* --record-key: the LogKey the recording starts with */
+	std::string recordStartKey;   /* the recording's LogKey when it began */
+	bool recordInKeyOrder = false; /* the input movie named its columns */
 	std::string savedataDir;
 	std::string projectPath;
 	std::string historyIn, historyOut;
@@ -936,6 +938,13 @@ int main(int argc, char **argv)
 			if (loaded != 0) return fail(metaPath, "could not start the recording with --record-key");
 		}
 		ce_session_movie_record(session, nullptr);
+		const char *key = ce_movie_log_key(ce_session_movie_log(session));
+		recordStartKey = key != nullptr ? key : "";
+		/* an input movie whose LogKey names columns is recorded in ITS order,
+		 * which need not be the machine's */
+		const char *inputKey = ce_movie_log_key(movie);
+		for (const char *c = inputKey != nullptr ? inputKey : ""; *c != '\0'; c++)
+			if (*c != '#' && *c != '|' && *c != ' ') { recordInKeyOrder = true; break; }
 	}
 
 	/* --state: begin from a machine somebody saved earlier. The movie's read
@@ -1410,17 +1419,34 @@ int main(int argc, char **argv)
 
 	if (!recordPath.empty())
 	{
-		/* the session's own log as a movie's [Input] block, its LogKey naming
-		 * the columns - what chimera-run and the window read back in, so a
-		 * recorded movie can simply be replayed, and read the same after the
-		 * package gains a control */
+		/* The session's own log. In the machine's own order it is written one
+		 * entry per line, as it always was - core test scripts read the first
+		 * line of a recording as its idle row. In any other order (a
+		 * --record-key, or a key that grew while recording) it is written as a
+		 * movie's [Input] block, its LogKey naming the columns, which is what
+		 * makes the lines readable. Both are read back by chimera-run and the
+		 * window. */
 		const ce_movie_log *log = ce_session_movie_log(session);
-		ce_movie_log *copy = ce_movie_log_new();
-		ce_movie_log_assign(copy, log);
-		uint64_t textLen = 0;
-		const char *serialized = ce_movie_log_serialize(copy, 0, &textLen);
-		const std::string text(serialized, static_cast<size_t>(textLen));
-		ce_movie_log_free(copy);
+		const char *keyNow = ce_movie_log_key(log);
+		const bool keyed = !recordKey.empty() || recordInKeyOrder || recordStartKey != (keyNow != nullptr ? keyNow : "");
+		std::string text;
+		if (keyed)
+		{
+			ce_movie_log *copy = ce_movie_log_new();
+			ce_movie_log_assign(copy, log);
+			uint64_t textLen = 0;
+			const char *serialized = ce_movie_log_serialize(copy, 0, &textLen);
+			text.assign(serialized, static_cast<size_t>(textLen));
+			ce_movie_log_free(copy);
+		}
+		else
+		{
+			for (int64_t i = 0; i < ce_movie_log_count(log); i++)
+			{
+				text += ce_movie_log_entry(log, i);
+				text += '\n';
+			}
+		}
 		if (!writeWholeFile(recordPath, reinterpret_cast<const uint8_t *>(text.data()), text.size()))
 		{
 			return fail(metaPath, "could not write " + recordPath);

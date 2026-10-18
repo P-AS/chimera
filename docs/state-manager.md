@@ -536,6 +536,17 @@ gigabytes.
 
 **It is not a reservation.** A short session never comes near it.
 
+What counts against it (2026-10-18): the bytes of every stored frame, and the
+bookkeeping each stored frame in memory costs besides - its link, its note,
+the shared body's block and the allocator's headers, counted as 192 bytes.
+Leaving that out held a light core, whose frames pack to 1 to 3 KB, 6 to 18%
+over the budget somebody set. With a capture period of N, a stretch is closed
+after its spacing in STORED frames, so a sparse greenzone stores deltas; with
+the period at 600 or more it closed after every delta, and every other stored
+frame was a whole machine. The history file a project save writes is written
+under a name of its own and moved over the old one when it is whole, so a save
+cut off by a crash or a full disk leaves the last good one.
+
 ### Running out of memory halves the budget
 
 The history is the biggest thing Chimera holds that it does not need, so it is
@@ -551,6 +562,15 @@ alternative is a throw out of a capture and a session lost.
 The halved figure is **not written back to the settings**. What a machine can
 spare this afternoon is not a decision somebody made, and it must not silently
 become one.
+
+While a project's history is being saved in the background, the save holds
+everything the history gave up since it began, out of the budget's sight;
+halving then freed nothing and halved again, to the floor, for the rest of the
+session. So the save is waited for first, once, and the frame tried again
+(2026-10-18). Running out while miniBox writes a state is told to miniBox as a
+failed write and raised again once its call returns, not thrown through its C
+code; and running out just after an anchor was planned finishes the plan
+before its buffer can go.
 
 ### What is on disk is settled into the far band (2026-09-10)
 

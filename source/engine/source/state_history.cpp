@@ -29,13 +29,30 @@ namespace
 const uint64_t kMaxNote = 4096;
 
 /* the stream shims the host's callbacks want */
-struct ByteSink { StateHistory::Bytes *out; };
+/* Running out of memory here is said to miniBox as a failed write, the C
+ * contract's own way, and raised again in C++ once its call has returned
+ * (raiseIfOut): thrown from here it unwound through miniBox's C frames,
+ * skipping their cleanup (engine analysis, 2026-10-18). */
+struct ByteSink { StateHistory::Bytes *out; bool outOfMemory = false; };
 int32_t sinkWrite(uintptr_t ud, const void *data, uintptr_t len)
 {
 	auto *s = reinterpret_cast<ByteSink *>(ud);
 	const auto *p = static_cast<const uint8_t *>(data);
-	s->out->insert(s->out->end(), p, p + len);
+	try
+	{
+		s->out->insert(s->out->end(), p, p + len);
+	}
+	catch (const std::bad_alloc &)
+	{
+		s->outOfMemory = true;
+		return -1;
+	}
 	return 0;
+}
+
+void raiseIfOut(const ByteSink &s)
+{
+	if (s.outOfMemory) throw std::bad_alloc();
 }
 
 struct ByteSource { const uint8_t *data; uintptr_t len, pos; };
@@ -1185,7 +1202,12 @@ void StateHistory::bands(int64_t nearFrames, int64_t midFrames, int64_t midStrid
 bool StateHistory::hasRoom(const Segment &seg) const
 {
 	static constexpr int64_t kAnchorFloor = 30;
-	const int64_t span = seg.lastFrame() - seg.anchorFrame;
+	/* The span in STORED frames: what a restore walks is one delta per stored
+	 * frame. Measured in frames, a capture period of 600 or more closed every
+	 * stretch after one delta, so every other stored frame was a whole machine
+	 * (engine analysis, 2026-10-18). */
+	const int64_t period = m_capturePeriod > 1 ? m_capturePeriod : 1;
+	const int64_t span = (seg.lastFrame() - seg.anchorFrame) / period;
 	if (span >= m_anchorSpacing) return false;
 	if (!m_anchorByBytes || span < kAnchorFloor || seg.spilled) return true;
 	const uint64_t walk = seg.linkBytes();
@@ -1439,6 +1461,7 @@ void StateHistory::capture(int64_t frame, const uint8_t *note, size_t noteLen)
 		m_epochOpen = false;
 		return;
 	}
+	bool waitedForSave = false;
 	for (;;)
 	{
 		try
@@ -1460,7 +1483,21 @@ void StateHistory::capture(int64_t frame, const uint8_t *note, size_t noteLen)
 			 * stored, which costs replaying to reach it and nothing else.
 			 * Halving gives memory back by thinning, which allocates too; when
 			 * even that fails, the frame is not stored either - an exception
-			 * from here would cross the C API and end the process. */
+			 * from here would cross the C API and end the process.
+			 *
+			 * While a background save is being written, everything the history
+			 * gave up since it began is still held by the save's copy of the
+			 * list, out of the budget's sight. Halving then frees nothing and
+			 * halves again, to the floor, for the rest of the session (engine
+			 * analysis, 2026-10-18). So the save is waited for first, which
+			 * lets that memory go, and the frame is tried again. */
+			if (!waitedForSave && savePending())
+			{
+				std::string ignored;
+				saveWait(ignored);
+				waitedForSave = true;
+				continue;
+			}
 			bool halved = false;
 			try
 			{
@@ -1606,21 +1643,35 @@ bool StateHistory::captureAnchorPlanned(int64_t frame, std::vector<uint8_t> &car
 	m_host->wbx_state_pages(m_obj, &r);
 	if (r.ok() && r.data > 0) pages = static_cast<uint64_t>(r.data);
 
+	/* miniBox now holds a pointer into `bytes` and fills it in the background.
+	 * Running out of memory between here and m_planPending used to leave the
+	 * plan pointing at a buffer the unwinding had freed (engine analysis,
+	 * 2026-10-18). So what allocates comes first, and if it fails the plan is
+	 * finished - the buffer is still alive - before anything goes. */
 	m_lastAnchorBytes = size;
 	Segment seg;
 	seg.anchorFrame = frame;
 	seg.bytes = size;
-	seg.anchor = Body::make(std::move(bytes));
-	seg.anchorNote = std::move(carried);
-	m_bytes += seg.bytes;
-	m_segments.push_back(std::move(seg));
+	try
+	{
+		seg.anchor = Body::make(std::move(bytes));
+		seg.anchorNote = std::move(carried);
+		m_segments.push_back(std::move(seg));
+	}
+	catch (const std::bad_alloc &)
+	{
+		WbxReturn fr{};
+		m_host->wbx_state_finish(m_obj, &fr);
+		throw;
+	}
+	m_bytes += size;
+	m_planPending = true;
+	m_planFrame = frame;
 	/* the stretch before this one has closed: what the packer made of the one
 	 * before THAT is taken, and this one goes to it */
 	finishPacking();
 	if (m_segments.size() >= 2) packSegmentLater(m_segments.size() - 2);
 
-	m_planPending = true;
-	m_planFrame = frame;
 	if (pages != 0)
 	{
 		void *const obj = m_obj;
@@ -1651,6 +1702,12 @@ const StateHistory::Hole *StateHistory::holeAt(int64_t frame) const
 		if (frame > h.after && frame < h.before) return &h;
 	}
 	return nullptr;
+}
+
+void StateHistory::prepareForLoad()
+{
+	finishPlan();
+	m_epochOpen = false;
 }
 
 void StateHistory::beforeLoad()
@@ -1763,6 +1820,7 @@ StateHistory::MachineDigest StateHistory::machineDigest(bool &ok)
 	ByteSink sink{ &bytes };
 	WbxReturn r{};
 	m_host->wbx_save_state(m_obj, sinkWrite, reinterpret_cast<uintptr_t>(&sink), &r);
+	raiseIfOut(sink);
 	if (!r.ok()) return d;
 	ok = true;
 	static constexpr size_t kBlock = 4096;
@@ -2034,6 +2092,7 @@ void StateHistory::captureOnce(int64_t frame, const uint8_t *note, size_t noteLe
 	if (wantDelta)
 	{
 		m_host->wbx_save_delta(m_obj, true, sinkWrite, reinterpret_cast<uintptr_t>(&sink), &r);
+		raiseIfOut(sink);
 		const double tSaved = historyTrace() ? nowSeconds() : 0.0;
 		if (r.ok())
 		{
@@ -2091,6 +2150,7 @@ void StateHistory::captureOnce(int64_t frame, const uint8_t *note, size_t noteLe
 
 	if (m_lastAnchorBytes != 0) bytes.reserve(m_lastAnchorBytes + (m_lastAnchorBytes >> 4));
 	m_host->wbx_save_state(m_obj, sinkWrite, reinterpret_cast<uintptr_t>(&sink), &r);
+	raiseIfOut(sink);
 	if (!r.ok()) return;   /* a missed capture only costs a longer replay later */
 	m_lastAnchorBytes = bytes.size();
 	const double anchorMs = historyTrace() ? (nowSeconds() - tCapture0) * 1000 : 0.0;
@@ -2313,6 +2373,7 @@ bool StateHistory::composePair(const Link &a, const Link &b, uint64_t anchorLen,
 			sourceRead, reinterpret_cast<uintptr_t>(&sb),
 			sinkWrite, reinterpret_cast<uintptr_t>(&sink), &r);
 	}
+	raiseIfOut(sink);
 	return r.ok();   /* a merge that will not happen costs memory, nothing else */
 }
 
@@ -2372,6 +2433,12 @@ void StateHistory::settleSpilled(int64_t farFrame)
 {
 	/* a far stride of one keeps every landing, so there is nothing to settle */
 	if (!composeAvailable() || m_spill == nullptr || m_farStride <= 1) return;
+	/* Not while a save is being written, for the reason a spill is not (see
+	 * evict): its rewrite would queue behind the save and the next write wait
+	 * for both on this thread. It settles once the save is done. Found when the
+	 * budget began counting each frame's bookkeeping (2026-10-18), which made
+	 * a small budget spill, and so settle, often enough to meet a save. */
+	if (savePending()) return;
 	/* This one runs inside a capture, so it must not simply wait for the writer
 	 * - that would put the write back on the frame's critical path, which is
 	 * the whole thing being removed. But it must not SKIP on a busy writer
@@ -3007,6 +3074,22 @@ bool StateHistory::restoreSpilled(const Segment &seg, int64_t steps, std::string
  * (kThinExtraPerCall frames), and composition by kThinMergeBytes, so meeting
  * the budget is a little work each frame rather than a stall. Getting back
  * under the budget itself is not bounded - the budget is the promise. */
+/* What the history holds against its budget: the bodies, and the bookkeeping
+ * of every stored frame - its link, its note, the shared body's control block
+ * and the allocator's headers, about 180 bytes measured. For a light core
+ * whose deltas pack to 1 to 3 KB, leaving that out held 6 to 18% more than the
+ * budget a person set (engine analysis, 2026-10-18). */
+uint64_t StateHistory::heldAgainstBudget() const
+{
+	static constexpr uint64_t kPerStoredFrame = 192;
+	/* a stretch on disk keeps only its frames' numbers here, which the thinning
+	 * of memory cannot reduce without rewriting the file */
+	uint64_t frames = 0;
+	for (const Segment &seg : m_segments)
+		if (!seg.spilled) frames += seg.links.size() + 1;
+	return m_bytes + frames * kPerStoredFrame;
+}
+
 void StateHistory::evict()
 {
 	static constexpr int kThinExtraPerCall = 16;
@@ -3015,7 +3098,7 @@ void StateHistory::evict()
 	uint64_t mergeLeft = kThinMergeBytes;
 	int thinned = 0;
 	ThinIndex index;
-	while (m_bytes > m_budget || (thinned > 0 && thinned < kThinExtraPerCall && m_bytes > target))
+	while (heldAgainstBudget() > m_budget || (thinned > 0 && thinned < kThinExtraPerCall && heldAgainstBudget() > target))
 	{
 		/* First choice: put the oldest stretch on disk, oldest to newest. It
 		 * costs reading it back rather than replaying to it, and the far end of
@@ -3541,12 +3624,18 @@ bool StateHistory::copySpilledBodyV5(std::FILE *spill, const std::function<bool(
 bool StateHistory::writeHistoryFile(std::FILE *spill, const char *path, const std::string &id,
 	const std::vector<Segment> &segments, std::string &error)
 {
-	std::FILE *f = chimera::openFile(path, "wb");
-	if (f == nullptr)
+	/* Written under a name of its own and moved over the old file only when it
+	 * is whole: a save is tens of seconds on a heavy core, and one cut off by a
+	 * crash, a power cut or a full disk used to take the last good history with
+	 * it (engine analysis, 2026-10-18). It is a cache, but hours of emulation
+	 * to make again. */
+	chimera::FileWriter writer;
+	if (!writer.open(path))
 	{
 		error = std::string("could not write the state history: ") + std::strerror(errno);
 		return false;
 	}
+	std::FILE *f = writer.file();
 
 	/* ChimeraHistory5: the bodies as they are held, packed where they were
 	 * not. A saved history is what the greenzone was, and most of it is
@@ -3582,11 +3671,11 @@ bool StateHistory::writeHistoryFile(std::FILE *spill, const char *path, const st
 		}
 		ok = packed ? writeSegmentBodyV5(put, seg) : writeSegmentBodyTo(put, seg);
 	}
-	if (std::fclose(f) != 0) ok = false;
-	if (!ok)
+	/* half a history is worse than none: not committed, the temporary file
+	 * goes and the old one stays */
+	if (!ok || !writer.commit())
 	{
 		error = "the state history could not be written in full";
-		chimera::removeFile(path);   /* half a history is worse than none */
 		return false;
 	}
 	return true;

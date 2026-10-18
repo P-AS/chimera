@@ -215,6 +215,8 @@ public:
 	 * machine has run out of memory since. */
 	uint64_t budget() const { return m_budget; }
 	uint64_t bytes() const { return m_bytes; }
+	/* bytes() and the bookkeeping of every stored frame: what the budget holds */
+	uint64_t heldAgainstBudget() const;
 
 	/* Frames the history can produce, which is every anchor plus every delta -
 	 * NOT the number of stored objects, because a frame reached by walking
@@ -303,6 +305,10 @@ public:
 	 * and the open epoch is let go, because it measures a machine that is about
 	 * to be gone. Where the load leaves the machine, the next capture says. */
 	void beforeLoad();
+	/* What has to happen before a load is TRIED: the plan finished (the load
+	 * rewrites the pages it copies) and the epoch let go. beforeLoad is for
+	 * once the load has changed the machine. */
+	void prepareForLoad();
 
 	/* Holds the near band's stride where it is put, rather than where the
 	 * measured cost of capturing would move it. For tests: a fake machine costs

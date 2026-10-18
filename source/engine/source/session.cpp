@@ -71,11 +71,22 @@ void releaseStream(ByteStream &stream, std::vector<uint8_t> &bytes)
 	stream.pos = 0;
 }
 
+/* Running out of memory is a failed write to miniBox (a negative answer), not
+ * an exception through its C frames (engine analysis, 2026-10-18). */
+struct VectorSink { std::vector<uint8_t> *v; bool outOfMemory = false; };
 extern "C" int32_t vectorWrite(uintptr_t userdata, const void *src, uintptr_t size)
 {
-	auto *v = reinterpret_cast<std::vector<uint8_t> *>(userdata);
+	auto *s = reinterpret_cast<VectorSink *>(userdata);
 	const auto *p = static_cast<const uint8_t *>(src);
-	v->insert(v->end(), p, p + size);
+	try
+	{
+		s->v->insert(s->v->end(), p, p + size);
+	}
+	catch (const std::bad_alloc &)
+	{
+		s->outOfMemory = true;
+		return -1;
+	}
 	return 0;
 }
 
@@ -1992,6 +2003,10 @@ static ce_session *openSession(
 			? device : "the core took the bridge and made no device");
 	}
 #endif
+	/* A core that died in Init returns 0 like one that refused the file, and
+	 * its reason - an assertion, a missing BIOS, what it printed - was lost to
+	 * "could not load this file" (engine analysis, 2026-10-18). */
+	if (s->guestDied()) return abort("the core stopped while starting: " + s->death);
 	if (initResult != 1)
 	{
 		/* the core knows why it refused - GetLoadError is optional, so a core
@@ -2097,7 +2112,12 @@ static ce_session *openSession(
 	s->mdPtr = reinterpret_cast<uintptr_t (*)(int32_t)>(s->proc("GetMemoryDomainPtr", 1, true, err));
 	s->mdSize = reinterpret_cast<int64_t (*)(int32_t)>(s->proc("GetMemoryDomainSize", 1, true, err));
 	s->mdWritable = reinterpret_cast<int32_t (*)(int32_t)>(s->proc("GetMemoryDomainWritable", 1, true, err));
-	if (s->mdWritable == nullptr) return abort(std::move(err));
+	/* every one of the five, not only the last: a core that lacked one opened,
+	 * and the first domain call went through a null pointer (engine analysis,
+	 * 2026-10-18) */
+	if (s->mdCount == nullptr || s->mdName == nullptr || s->mdPtr == nullptr || s->mdSize == nullptr
+		|| s->mdWritable == nullptr)
+		return abort(err.empty() ? std::string("the core lacks a memory domain export") : std::move(err));
 	{
 		std::string none;
 		s->mdHidden = reinterpret_cast<int32_t (*)(int32_t)>(s->proc("GetMemoryDomainHidden", 1, false, none));
@@ -2210,6 +2230,16 @@ static ce_session *openProjectSession(
 	const int32_t fileCount = ce_project_file_count(project);
 	for (int32_t i = 0; i < fileCount; i++)
 	{
+		/* Found when the project was opened, and maybe changed on the disk
+		 * since (a ROM rebuilt in place, then Reboot Core): it is read again
+		 * here, which costs nothing while the file is the one it was (the
+		 * hash is kept by the file's identity), so the machine runs the bytes
+		 * the project is checked against and a save records them (engine
+		 * analysis, 2026-10-18). A file that cannot be read any more is not
+		 * found. */
+		const std::string source = ce_project_file_source_path(project, i);
+		if (!source.empty() && ce_project_file_resolve(project, i, source.c_str(), nullptr) != 0)
+			ce_project_file_unresolve(project, i);
 		const int32_t status = ce_project_file_status(project, i);
 		if (status == 1)
 			return fail(std::string("project: '") + ce_project_file_name(project, i) + "' was not found");
@@ -2581,9 +2611,14 @@ int32_t ce_session_axis_neutral(const ce_session *s, int64_t index)
 	return s->cfg.axes[static_cast<size_t>(index)].neutral;
 }
 
+/* The index calls below check the index against what the session knows
+ * before the core sees it: a core indexes its own arrays without a check, and
+ * a stale index (a tool window holding one across a reboot) made it write
+ * outside them, or hand back a pointer the host then read (engine analysis,
+ * 2026-10-18). */
 void ce_session_set_axis(ce_session *s, int32_t index, int32_t value)
 {
-	if (s->setAxis != nullptr) s->setAxis(index, value);
+	if (s->setAxis != nullptr && index >= 0 && static_cast<size_t>(index) < s->cfg.axes.size()) s->setAxis(index, value);
 }
 
 void ce_session_set_button(ce_session *s, int32_t index, int32_t pressed)
@@ -2712,10 +2747,26 @@ const uint8_t *ce_session_save_state(ce_session *s, uint64_t *len_out)
 	/* no deactivate/activate bracket: the host activates itself for the
 	 * duration - bracketing costs four full guest-address-space remaps per
 	 * state, which at rewind's one state per frame was a 10x slowdown */
-	s->host->wbx_save_state(s->obj, vectorWrite, reinterpret_cast<uintptr_t>(&s->stateBuf), &r);
+	/* Sized to the state before it is written: grown by doubling, a state of
+	 * N bytes was copied once more on the way and the buffer kept up to 2N for
+	 * the rest of the session, which on Windows is committed memory (engine
+	 * analysis, 2026-10-18). One much bigger than this state is let go. */
+	if (s->host->wbx_state_size != nullptr)
+	{
+		chimera::WbxReturn sr{};
+		s->host->wbx_state_size(s->obj, &sr);
+		if (sr.ok() && sr.data > 0)
+		{
+			const size_t want = static_cast<size_t>(sr.data);
+			if (s->stateBuf.capacity() > want * 2) std::vector<uint8_t>().swap(s->stateBuf);
+			try { s->stateBuf.reserve(want); } catch (const std::bad_alloc &) {}
+		}
+	}
+	VectorSink sink{ &s->stateBuf };
+	s->host->wbx_save_state(s->obj, vectorWrite, reinterpret_cast<uintptr_t>(&sink), &r);
 	if (!r.ok())
 	{
-		s->error = r.errorMessage;
+		s->error = sink.outOfMemory ? std::string("there was not enough memory to save the state") : std::string(r.errorMessage);
 		return nullptr;
 	}
 	if (len_out != nullptr) *len_out = s->stateBuf.size();
@@ -2732,13 +2783,23 @@ static int32_t loadState(ce_session *s, const uint8_t *data, uint64_t len)
 	s->error.clear();
 	/* a load rewrites the machine the history may still be copying an anchor of
 	 * in the background (a branch loaded right after one was taken) */
-	s->history.beforeLoad();
+	s->history.prepareForLoad();
 	ByteStream stream{ data, len };
 	chimera::WbxReturn r{};
 	s->host->wbx_load_state(s->obj, streamRead, reinterpret_cast<uintptr_t>(&stream), &r); // see save re: no bracket
 	ce_gl_release(); /* a restore can run guest code, and guest code can draw */
-	ce_gl_state_loaded(-1); /* which frame a state from outside belongs to is not known here */
-	s->vulkanStateLoaded();
+	/* A load the sandbox refused before it touched memory (a state of another
+	 * build or another boot) changed nothing: the machine is the one it was,
+	 * still past an edit if it was, and its GPU objects are its own. It was
+	 * handled as a load all the same - the history forgot the edit and every
+	 * GPU core was told to rebuild (engine analysis, 2026-10-18). One that
+	 * failed after it began left a dead machine, which is a change. */
+	if (r.ok() || s->guestDied())
+	{
+		s->history.beforeLoad();
+		ce_gl_state_loaded(-1); /* which frame a state from outside belongs to is not known here */
+		s->vulkanStateLoaded();
+	}
 	if (s->traceEvery > 0)
 	{
 		fprintf(stderr, "[trace] load state: %llu bytes, %s, machine now: threads %d running %d digest %016llx\n",
@@ -2823,9 +2884,12 @@ struct StateFileSink
 	}
 };
 
+/* miniBox reads a NEGATIVE answer as a failed write; 1 read as success, so a
+ * save whose file could not be written went on to the end (engine analysis,
+ * 2026-10-18). The sink remembers the failure for the caller too. */
 extern "C" int32_t stateFileWrite(uintptr_t userdata, const void *src, uintptr_t size)
 {
-	return reinterpret_cast<StateFileSink *>(userdata)->feed(src, size, 0) ? 0 : 1;
+	return reinterpret_cast<StateFileSink *>(userdata)->feed(src, size, 0) ? 0 : -1;
 }
 
 struct StateFileSource
@@ -3039,7 +3103,7 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 		return 2;
 	}
 
-	s->history.beforeLoad(); /* see ce_session_load_state */
+	s->history.prepareForLoad(); /* see ce_session_load_state */
 	StateFileSource source{ &in, z, zds, std::vector<uint8_t>(STATE_FILE_CHUNK) };
 	source.pending.assign(prefix.begin() + static_cast<std::ptrdiff_t>(head.length), prefix.end());
 	{
@@ -3053,8 +3117,12 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 	const bool intact = !r.ok() || source.verifyEnd();
 	if (zds != nullptr) z->freeDStream(zds);
 	ce_gl_release();
-	ce_gl_state_loaded(-1); /* as ce_session_load_state */
-	s->vulkanStateLoaded();
+	if (r.ok() || s->guestDied())   /* as ce_session_load_state */
+	{
+		s->history.beforeLoad();
+		ce_gl_state_loaded(-1);
+		s->vulkanStateLoaded();
+	}
 	if (!intact)
 	{
 		/* the machine took the damaged bytes: not one to play on */
@@ -3083,14 +3151,16 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 
 int32_t ce_session_domain_count(const ce_session *s) { return s->mdCount(); }
 
+static bool domainIndexOk(const ce_session *s, int32_t index) { return index >= 0 && index < s->mdCount(); }
+
 const char *ce_session_domain_name(const ce_session *s, int32_t index)
 {
-	return reinterpret_cast<const char *>(s->mdName(index));
+	return domainIndexOk(s, index) ? reinterpret_cast<const char *>(s->mdName(index)) : nullptr;
 }
 
-int64_t ce_session_domain_size(const ce_session *s, int32_t index) { return s->mdSize(index); }
+int64_t ce_session_domain_size(const ce_session *s, int32_t index) { return domainIndexOk(s, index) ? s->mdSize(index) : 0; }
 
-int32_t ce_session_domain_writable(const ce_session *s, int32_t index) { return s->mdWritable(index); }
+int32_t ce_session_domain_writable(const ce_session *s, int32_t index) { return domainIndexOk(s, index) ? s->mdWritable(index) : 0; }
 
 int32_t ce_session_domain_hidden(const ce_session *s, int32_t index)
 {
@@ -3099,6 +3169,7 @@ int32_t ce_session_domain_hidden(const ce_session *s, int32_t index)
 
 int64_t ce_session_domain_read(const ce_session *s, int32_t index, int64_t offset, uint8_t *buf, int64_t len)
 {
+	if (!domainIndexOk(s, index)) return 0;
 	int64_t size = s->mdSize(index);
 	if (offset < 0 || offset >= size || len <= 0) return 0;
 	int64_t n = len < size - offset ? len : size - offset;
@@ -3258,7 +3329,7 @@ int32_t ce_session_property_set_text(ce_session *s, int32_t index, uint32_t elem
 
 uint64_t ce_session_domain_ptr(const ce_session *s, int32_t index)
 {
-	return static_cast<uint64_t>(s->mdPtr(index));
+	return domainIndexOk(s, index) ? static_cast<uint64_t>(s->mdPtr(index)) : 0;
 }
 
 int32_t ce_session_apply_settings(ce_session *s, const char *overrides_json)
@@ -3335,12 +3406,12 @@ int32_t ce_session_register_bits(const ce_session *s, int32_t index)
 
 int64_t ce_session_register_value(const ce_session *s, int32_t index)
 {
-	return s->regValue != nullptr ? s->regValue(index) : 0;
+	return s->regValue != nullptr && index >= 0 && static_cast<size_t>(index) < s->regNames.size() ? s->regValue(index) : 0;
 }
 
 int32_t ce_session_register_set(ce_session *s, int32_t index, int64_t value)
 {
-	if (s->regSet == nullptr) return 1;
+	if (s->regSet == nullptr || index < 0 || static_cast<size_t>(index) >= s->regNames.size()) return 1;
 	s->regSet(index, value);
 	return 0;
 }
@@ -3372,7 +3443,7 @@ int32_t ce_session_bus_writable(const ce_session *s, int32_t index)
 
 int32_t ce_session_bus_peek(const ce_session *s, int32_t index, int32_t addr)
 {
-	return s->busPeek != nullptr ? s->busPeek(index, addr) : 0;
+	return s->busPeek != nullptr && index >= 0 && static_cast<size_t>(index) < s->busNames.size() ? s->busPeek(index, addr) : 0;
 }
 
 int64_t ce_session_bus_read(const ce_session *s, int32_t index, int64_t addr, uint8_t *buf, int64_t len)
@@ -3643,6 +3714,9 @@ int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 			}
 		}
 		s->history.invalidateAfter(agree);
+		/* and the pictures kept for frames past it, which were drawn for the
+		 * input the new log replaces (engine analysis, 2026-10-18) */
+		s->pictures.dropAfter(agree);
 	}
 	ce_movie_log_clear(s->movie);
 	int64_t n = ce_movie_log_count(log);
@@ -3744,6 +3818,14 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 		s->error = "no movie is loaded";
 		return -1;
 	}
+	/* A dead machine plays nothing, and recording on it must change nothing:
+	 * the check came after the movie was cut at this frame and the greenzone
+	 * past it dropped (engine analysis, 2026-10-18). */
+	if (s->guestDied())
+	{
+		s->error = "the core stopped: " + s->death;
+		return -1;
+	}
 
 	/* the epoch the coming frame's delta is measured against, marked while the
 	 * machine is still where it starts */
@@ -3779,6 +3861,7 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 		 * so here. A capture no longer does it for us: a frame it has already
 		 * gone past is a replay, and a replay keeps what is ahead. */
 		s->history.invalidateAfter(s->frame);
+		s->pictures.dropAfter(s->frame);
 		for (size_t i = 0; i < s->cfg.axes.size(); i++)
 		{
 			int32_t value = axes != nullptr ? axes[i] : s->cfg.axes[i].neutral;

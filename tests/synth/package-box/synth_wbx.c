@@ -53,6 +53,13 @@ ECL_EXPORT int Init(void) {
 	uint32_t len = 0;
 	uint8_t *rom = read_rom(&len);
 	if (!rom) return 0;
+	/* A rom of the four bytes DIE! makes the core die in Init: the engine must
+	 * say the core stopped, with its reason, not that it could not load the
+	 * file (2026-10-18). */
+	if (len == 4 && memcmp(rom, "DIE!", 4) == 0) {
+		fprintf(stderr, "synth: dying in Init on purpose\n");
+		abort();
+	}
 	g_synth = synth_create(rom, len);   /* copies the rom internally */
 	free(rom);
 	if (!g_synth) return 0;

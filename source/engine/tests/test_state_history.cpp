@@ -2611,6 +2611,25 @@ int main(void)
 		assert(h.nearest(58) == 58);
 	}
 
+	{ // A long capture period still stores deltas: a stretch's length is
+	  // counted in stored frames, not frames. With the period at 600 every
+	  // other stored frame was an anchor (engine analysis, 2026-10-18).
+		const chimera::HostApi api = fakeHost();
+		g_machine = Machine{};
+		chimera::StateHistory h;
+		h.configure(&api, nullptr, 64u << 20);
+		h.capturePeriod(600);
+		h.capture(0);
+		for (int64_t f = 1; f <= 6000; f++)
+		{
+			h.beforeAdvance();
+			advance(f);
+			h.capture(f);
+		}
+		assert(h.nearest(6000) == 6000 && h.count() == 11);
+		assert(h.anchors() == 1);
+	}
+
 	{ // Sparse (capturePeriod N): only multiples of N are stored, as deltas that
 	  // span the frames between - one epoch per stored frame, not per frame -
 	  // and every stored frame restores exactly. Turning it on from off stores

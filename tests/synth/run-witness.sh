@@ -459,6 +459,18 @@ open(p, 'wb').write(codecs.BOM_UTF16_LE + t.encode('utf-16-le'))
 			report "E:package:unreadable" FAIL "could not prepare the package (unzip, python3)"
 		fi
 
+		# A CORE THAT DIES IN INIT is reported as stopped, with miniBox's
+		# reason, not as a file it could not load (2026-10-18). The synthetic
+		# core dies in Init on a rom of the four bytes DIE!.
+		printf 'DIE!' > "$work/dies-in-init.testrom"
+		"$chimera_run" "$epkg" "$work/dies-in-init.testrom" "$here/movies/gridWalker.win.txt" > "$work/dies-in-init.log" 2>&1; dirc=$?
+		if [ "$dirc" -ne 0 ] && [ "$dirc" -lt 128 ] && grep -q "the core stopped while starting" "$work/dies-in-init.log" \
+			&& ! grep -q "could not load this file" "$work/dies-in-init.log"; then
+			report "E:core-dies-in:init" PASS "a core that dies in Init is said to have stopped, with the reason: $(grep -o 'the core stopped while starting.*' "$work/dies-in-init.log" | head -1 | cut -c1-80)"
+		else
+			report "E:core-dies-in:init" FAIL "rc=$dirc: $(tail -1 "$work/dies-in-init.log" | cut -c1-120)"
+		fi
+
 		# A PACKAGE WHOSE SIZES ARE IMPOSSIBLE is refused with the number and
 		# the range, and the process goes on to say so. A width of -1 sized a
 		# picture buffer of 2^64 bytes and ended Chimera (engine analysis,

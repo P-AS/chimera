@@ -8912,3 +8912,42 @@ witness (96), interface tests and the Windows build pass; the PCSX2 core's
 test script passes 43 with 6 skipped and fails ports:columns, which read the
 first line of a recording that chimera-run had begun writing with an
 [Input] header (fixed in the next change).
+
+## The engine's low findings, first round: the greenzone, loads, the session (user-decided, 2026-10-18)
+
+**What was found.** The engine analysis of 2026-10-18 rated about fifty
+findings low; the owner chose to fix them after the mediums, skipping what is
+not worth it. This round takes the greenzone's, the loads' and the session's:
+- the budget left out each stored frame's bookkeeping (6 to 18% over for a
+  light core); a capture period of 600 or more made every other stored frame
+  an anchor; the history file was overwritten in place, so a save cut short
+  lost the last good one;
+- running out of memory during a background save halved the budget to the
+  floor; just after an anchor was planned, it left miniBox filling a freed
+  buffer; in miniBox's write callbacks it was thrown through miniBox's C code;
+  and the state-file write told miniBox a failed write had worked;
+- a load the sandbox refused before touching memory was handled as a load
+  (the greenzone forgot an edit, every GPU core rebuilt); two paths that
+  replace the movie's input kept the old timeline's kept pictures; a project
+  file changed on disk after it was found was mounted unchecked; recording on
+  a dead machine cut the movie before noticing;
+- a core dying in Init was reported as "could not load this file"; a core
+  lacking one of four memory-domain exports opened and crashed on the first
+  domain call; several index arguments reached the core unchecked; the
+  in-memory save buffer grew by doubling and kept its peak.
+
+**What was decided.** Each is fixed in the plain way the finding names (the
+details are in docs/state-manager.md and the code's comments). Settling a
+stretch already on disk now waits for a background save, as a spill always
+did: counting the bookkeeping made a small budget spill, and so settle, often
+enough to meet a save. Also: chimera-run's recordings are bare lines again
+when their columns are the machine's own order, as five core test scripts
+read the first line of one; the [Input] header and LogKey are written when
+the columns are another order (38a88e0 wrote them always, which broke the
+PCSX2 core's ports:columns test).
+
+**Tested.** A history test for a period of 600 (one anchor over 6000 frames;
+six with the old measure) and a witness test for a core dying in Init (the
+reason is said; "could not load this file" with the fix removed). The other
+fixes have no new test: they are on paths that need memory to run out, a
+second process, or a file changed between two calls. RESULTS
