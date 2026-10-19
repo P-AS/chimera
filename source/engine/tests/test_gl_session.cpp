@@ -12,10 +12,12 @@
 #include "chimera/engine.h"
 #include <glad/gl.h>
 #include "gl-bridge-ops.h"
+#include "gl-bridge.h"
 
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len);
@@ -30,6 +32,7 @@ extern "C" uintptr_t ce_gl_dispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, 
 static uintptr_t call(uintptr_t op, void *args) { return ce_gl_dispatch(op, reinterpret_cast<uintptr_t>(args), 0, 0, 0, 0); }
 
 extern "C" void ce_gl_state_loaded(int64_t to);
+extern "C" void ce_gl_rebuild_on_state_load(int32_t on);
 extern "C" uint64_t ce_gl_contexts_renewed(void);
 extern "C" uint64_t ce_gl_readback_overruns(void);
 extern "C" void ce_gl_guest_check(int (*can)(void *, uintptr_t, uintptr_t, int), void *ctx);
@@ -192,6 +195,135 @@ int main()
 		assert(ce_gl_contexts_renewed() == renewed && isTexture(other));
 	}
 	ce_gl_session_end();
+	ce_gl_session_end();
+
+	/* ---- shadows of mapped buffers (2026-10-19): a mapping the guest flushes
+	 * or unmaps is a buffer of its own, filled from the driver and copied back
+	 * on the flush and the unmap; a guest that hands in none gets the driver's
+	 * pointer, as before ---- */
+	assert(ce_gl_start(err, (int32_t)sizeof err) != 0);
+	{
+		uint8_t pattern[64];
+		for (int i = 0; i < 64; i++) pattern[i] = (uint8_t)(i + 1);
+		GLuint buf = 0;
+		ChimeraGlArgs_glGenBuffers gb{ 1, &buf }; call(CHIMERA_GL_OP_glGenBuffers, &gb);
+		ChimeraGlArgs_glBindBuffer bb{ GL_ARRAY_BUFFER, buf }; call(CHIMERA_GL_OP_glBindBuffer, &bb);
+		ChimeraGlArgs_glBufferData bd{ GL_ARRAY_BUFFER, 64, pattern, GL_DYNAMIC_DRAW }; call(CHIMERA_GL_OP_glBufferData, &bd);
+		auto contents = [&](uint8_t *out) {
+			ChimeraGlArgs_glGetBufferSubData gs{ GL_ARRAY_BUFFER, 0, 64, out };
+			call(CHIMERA_GL_OP_glGetBufferSubData, &gs);
+		};
+		assert(ce_gl_dispatch(GL_OP_BUFFER_SIZE, GL_ARRAY_BUFFER, 0, 0, 0, 0) == 64);
+
+		/* a range: filled from the buffer, written back on the unmap */
+		alignas(64) uint8_t shadow[32];
+		std::memset(shadow, 0xEE, sizeof shadow);
+		ChimeraGlArgs_glMapBufferRange mr{ GL_ARRAY_BUFFER, 16, 32, GL_MAP_READ_BIT | GL_MAP_WRITE_BIT };
+		const uintptr_t got = ce_gl_dispatch(CHIMERA_GL_OP_glMapBufferRange, reinterpret_cast<uintptr_t>(&mr),
+			reinterpret_cast<uintptr_t>(shadow), sizeof shadow, 0, 0);
+		assert(got == reinterpret_cast<uintptr_t>(shadow));
+		for (int i = 0; i < 32; i++) assert(shadow[i] == pattern[16 + i]);
+		std::memcpy(shadow, "WXYZ", 4);
+		uint64_t back = 0;
+		ChimeraGlArgs_glUnmapBuffer ub{ GL_ARRAY_BUFFER };
+		assert(ce_gl_dispatch(CHIMERA_GL_OP_glUnmapBuffer, reinterpret_cast<uintptr_t>(&ub), reinterpret_cast<uintptr_t>(&back), 0, 0, 0) != 0);
+		assert(back == reinterpret_cast<uintptr_t>(shadow));
+		uint8_t now[64];
+		contents(now);
+		assert(std::memcmp(now + 16, "WXYZ", 4) == 0 && now[20] == pattern[20] && now[15] == pattern[15]);
+
+		/* a map that lets the range go is not filled */
+		std::memset(shadow, 0xEE, sizeof shadow);
+		ChimeraGlArgs_glMapBufferRange mi{ GL_ARRAY_BUFFER, 0, 32, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT };
+		assert(ce_gl_dispatch(CHIMERA_GL_OP_glMapBufferRange, reinterpret_cast<uintptr_t>(&mi),
+			reinterpret_cast<uintptr_t>(shadow), sizeof shadow, 0, 0) == reinterpret_cast<uintptr_t>(shadow));
+		assert(shadow[0] == 0xEE && shadow[31] == 0xEE);
+		std::memset(shadow, 0x55, sizeof shadow);
+		back = 0;
+		ce_gl_dispatch(CHIMERA_GL_OP_glUnmapBuffer, reinterpret_cast<uintptr_t>(&ub), reinterpret_cast<uintptr_t>(&back), 0, 0, 0);
+		contents(now);
+		assert(back == reinterpret_cast<uintptr_t>(shadow) && now[0] == 0x55 && now[31] == 0x55 && now[32] == pattern[32]);
+
+		/* flushed explicitly: only what is flushed reaches the buffer, and a
+		 * map only written is not filled (reading it from the driver is slow) */
+		std::memset(shadow, 0, sizeof shadow);
+		ChimeraGlArgs_glMapBufferRange mf{ GL_ARRAY_BUFFER, 32, 32, GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT };
+		assert(ce_gl_dispatch(CHIMERA_GL_OP_glMapBufferRange, reinterpret_cast<uintptr_t>(&mf),
+			reinterpret_cast<uintptr_t>(shadow), sizeof shadow, 0, 0) == reinterpret_cast<uintptr_t>(shadow));
+		assert(shadow[0] == 0 && shadow[31] == 0);
+		std::memset(shadow, 0x77, sizeof shadow);
+		ChimeraGlArgs_glFlushMappedBufferRange fl{ GL_ARRAY_BUFFER, 4, 8 };
+		call(CHIMERA_GL_OP_glFlushMappedBufferRange, &fl);
+		back = 0;
+		ce_gl_dispatch(CHIMERA_GL_OP_glUnmapBuffer, reinterpret_cast<uintptr_t>(&ub), reinterpret_cast<uintptr_t>(&back), 0, 0, 0);
+		contents(now);
+		assert(now[36] == 0x77 && now[43] == 0x77 && now[44] == pattern[44]);
+
+		/* a whole buffer (glMapBuffer), sized by the host */
+		alignas(64) uint8_t whole[64];
+		ChimeraGlArgs_glMapBuffer mw{ GL_ARRAY_BUFFER, GL_READ_WRITE };
+		assert(ce_gl_dispatch(CHIMERA_GL_OP_glMapBuffer, reinterpret_cast<uintptr_t>(&mw),
+			reinterpret_cast<uintptr_t>(whole), sizeof whole, 0, 0) == reinterpret_cast<uintptr_t>(whole));
+		assert(whole[36] == 0x77 && whole[44] == pattern[44]);
+		whole[63] = 0x99;
+		ce_gl_dispatch(CHIMERA_GL_OP_glUnmapBuffer, reinterpret_cast<uintptr_t>(&ub), reinterpret_cast<uintptr_t>(&back), 0, 0, 0);
+		contents(now);
+		assert(now[63] == 0x99);
+
+		/* a guest built before shadows: the driver's pointer, and nothing given back */
+		ChimeraGlArgs_glMapBufferRange mo{ GL_ARRAY_BUFFER, 0, 16, GL_MAP_READ_BIT };
+		const uintptr_t driver = call(CHIMERA_GL_OP_glMapBufferRange, &mo);
+		assert(driver != 0 && driver != reinterpret_cast<uintptr_t>(shadow) && driver != reinterpret_cast<uintptr_t>(whole));
+		assert(call(CHIMERA_GL_OP_glUnmapBuffer, &ub) != 0);
+
+		/* a load that keeps the context (a core that keeps its objects): a
+		 * mapping left open by the frames it undid is closed, nothing is copied
+		 * and nothing is given back to free; the next map works */
+		ce_gl_rebuild_on_state_load(0);
+		ChimeraGlArgs_glMapBufferRange ml{ GL_ARRAY_BUFFER, 0, 32, GL_MAP_WRITE_BIT };
+		assert(ce_gl_dispatch(CHIMERA_GL_OP_glMapBufferRange, reinterpret_cast<uintptr_t>(&ml),
+			reinterpret_cast<uintptr_t>(shadow), sizeof shadow, 0, 0) == reinterpret_cast<uintptr_t>(shadow));
+		std::memset(shadow, 0x31, sizeof shadow);
+		ce_gl_state_loaded(-1);
+		back = 0;
+		assert(ce_gl_dispatch(CHIMERA_GL_OP_glUnmapBuffer, reinterpret_cast<uintptr_t>(&ub), reinterpret_cast<uintptr_t>(&back), 0, 0, 0) == 0);
+		assert(back == 0);
+		call(CHIMERA_GL_OP_glGetError, nullptr);   /* the unmap of a buffer not mapped */
+		contents(now);
+		assert(now[0] == 0x55 && now[31] == 0x55);
+		assert(ce_gl_dispatch(CHIMERA_GL_OP_glMapBufferRange, reinterpret_cast<uintptr_t>(&ml),
+			reinterpret_cast<uintptr_t>(shadow), sizeof shadow, 0, 0) == reinterpret_cast<uintptr_t>(shadow));
+		ce_gl_dispatch(CHIMERA_GL_OP_glUnmapBuffer, reinterpret_cast<uintptr_t>(&ub), reinterpret_cast<uintptr_t>(&back), 0, 0, 0);
+		assert(back == reinterpret_cast<uintptr_t>(shadow));
+
+		/* ...and a persistent one stays open: the restored machine holds it */
+		GLuint pbuf = 0;
+		ChimeraGlArgs_glGenBuffers gp{ 1, &pbuf }; call(CHIMERA_GL_OP_glGenBuffers, &gp);
+		ChimeraGlArgs_glBindBuffer bp{ GL_ARRAY_BUFFER, pbuf }; call(CHIMERA_GL_OP_glBindBuffer, &bp);
+		ChimeraGlArgs_glBufferStorage bs{ GL_ARRAY_BUFFER, 64, pattern, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT };
+		call(CHIMERA_GL_OP_glBufferStorage, &bs);
+		ChimeraGlArgs_glMapBufferRange mp{ GL_ARRAY_BUFFER, 0, 32, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_FLUSH_EXPLICIT_BIT };
+		const uintptr_t pm = ce_gl_dispatch(CHIMERA_GL_OP_glMapBufferRange, reinterpret_cast<uintptr_t>(&mp),
+			reinterpret_cast<uintptr_t>(shadow), sizeof shadow, 0, 0);
+		if (pm == 0)
+			printf("persistent maps: skipped, the driver has none\n");
+		else
+		{
+			assert(pm == reinterpret_cast<uintptr_t>(shadow));
+			ce_gl_state_loaded(-1);
+			std::memset(shadow, 0x42, 8);
+			ChimeraGlArgs_glFlushMappedBufferRange fp{ GL_ARRAY_BUFFER, 0, 8 };
+			call(CHIMERA_GL_OP_glFlushMappedBufferRange, &fp);
+			back = 0;
+			ce_gl_dispatch(CHIMERA_GL_OP_glUnmapBuffer, reinterpret_cast<uintptr_t>(&ub), reinterpret_cast<uintptr_t>(&back), 0, 0, 0);
+			assert(back == reinterpret_cast<uintptr_t>(shadow));
+			contents(now);
+			assert(now[0] == 0x42 && now[7] == 0x42 && now[8] == pattern[8]);
+		}
+		ChimeraGlArgs_glDeleteBuffers dp{ 1, &pbuf }; call(CHIMERA_GL_OP_glDeleteBuffers, &dp);
+		ce_gl_rebuild_on_state_load(1);
+		ce_gl_release();
+	}
 	ce_gl_session_end();
 
 	/* ---- readbacks, functions a driver lacks, and memory the core does not

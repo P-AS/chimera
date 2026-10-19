@@ -769,6 +769,7 @@ static void renewContext();
  * declares otherwise, so nothing changes for a core that says nothing. */
 static bool g_rebuildOnStateLoad = true;
 static bool g_syncReap; /* see syncReap */
+static bool g_shadowReap; /* see shadowReap */
 
 extern "C" void ce_gl_rebuild_on_state_load(int32_t on)
 {
@@ -804,6 +805,8 @@ extern "C" void ce_gl_state_loaded(int64_t to)
 		mint_context_id();
 		g_syncReap = true;
 	}
+	/* mappings left open in a context that is kept (shadowReap) */
+	g_shadowReap = true;
 	if (!glAudit()) return;
 	if (to < 0)
 	{
@@ -1426,6 +1429,154 @@ static GLuint boundBuffer(GLenum target)
 	return (GLuint)name;
 }
 
+/* ---------------------------------------------------------------------------
+ * Shadows of mapped buffers (owner's decision, 2026-10-19).
+ *
+ * A mapped buffer is the driver's memory, and a guest given its pointer writes
+ * into the host's memory: those bytes are in no state, and the pointer dangles
+ * once the context goes (a load that rebuilds makes a fresh one). So a mapping the guest
+ * flushes or unmaps is a buffer of the guest's own: the generated wrapper
+ * hands one in (b, with its size in c), it is filled from the driver here, its
+ * bytes are copied to the driver on each flush and on the unmap, and the unmap
+ * gives it back to be freed (miniBox gl-bridge.h, GL_OP_BUFFER_SIZE). A
+ * persistent map not flushed explicitly - coherent, or only read - keeps the
+ * driver's pointer: its writes reach the GPU with no call at all. A guest
+ * built before this hands in no buffer and gets the driver's pointer as ever.
+ */
+struct GlShadow
+{
+	GLuint buffer;
+	uint8_t *driver;     /* the driver's mapping */
+	uint8_t *shadow;     /* the guest's buffer */
+	GLsizeiptr length;
+	bool write;          /* copied to the driver on the unmap */
+	bool explicitFlush;  /* only flushed ranges are copied */
+	bool persistent;     /* kept open across a load (shadowReap) */
+};
+
+static std::vector<GlShadow> &glShadows()
+{
+	static std::vector<GlShadow> list;
+	return list;
+}
+
+static GlShadow *shadowOf(GLuint buffer)
+{
+	for (GlShadow &s : glShadows())
+		if (s.buffer == buffer) return &s;
+	return nullptr;
+}
+
+static void shadowForget(GLuint buffer)
+{
+	std::vector<GlShadow> &list = glShadows();
+	for (size_t i = 0; i < list.size(); i++)
+	{
+		if (list[i].buffer != buffer) continue;
+		list.erase(list.begin() + (std::ptrdiff_t)i);
+		return;
+	}
+}
+
+/* After a map: the guest's buffer in place of the driver's pointer, filled with
+ * what the buffer holds when the guest may read it or the unmap copies all of
+ * it back - a write covering part of the range must leave the rest as it was.
+ * A map that lets the old bytes go is not filled, nor one written and flushed
+ * range by range: only what is flushed goes back. Reading a mapping a driver
+ * made for writing is slow (write-combined memory: the Vulkan bridge measured
+ * 25 ms for 2 MB on a GTX 1060). Anything amiss answers the driver's pointer,
+ * which the guest takes as a host that does not shadow. */
+static bool shadowFills(GLbitfield access)
+{
+	if ((access & GL_MAP_READ_BIT) != 0) return true;
+	return (access & (GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_FLUSH_EXPLICIT_BIT)) == 0;
+}
+
+static uintptr_t shadowMap(void *mapped, GLuint buffer, GLsizeiptr length, bool write, bool fill,
+                           bool explicitFlush, bool persistent, uintptr_t b, uintptr_t c)
+{
+	if (mapped == nullptr || b == 0 || buffer == 0 || length <= 0 || (uintptr_t)length > c) return (uintptr_t)mapped;
+	if (!guestCan(reinterpret_cast<const void *>(b), (size_t)length, true)) return (uintptr_t)mapped;
+	uint8_t *shadow = reinterpret_cast<uint8_t *>(b);
+	if (fill) std::memcpy(shadow, mapped, (size_t)length);
+	/* CHIMERA_GL_SHADOW_TRACE: the first shadows made, and how many */
+	static const bool trace = getenv("CHIMERA_GL_SHADOW_TRACE") != nullptr;
+	static uint64_t made;
+	if (trace && (++made <= 20 || (made & (made - 1)) == 0))
+		fprintf(stderr, "[ce-gl-shadow] #%llu: buffer %u, %lld bytes%s%s%s\n", (unsigned long long)made, (unsigned)buffer,
+			(long long)length, write ? ", written" : ", read", fill ? "" : ", not filled", explicitFlush ? ", flushed by range" : "");
+	shadowForget(buffer);
+	glShadows().push_back(GlShadow{ buffer, static_cast<uint8_t *>(mapped), shadow, length, write, explicitFlush, persistent });
+	return b;
+}
+
+/* A flush: the range's bytes to the driver (offset is from the mapping's start). */
+static void shadowFlush(GLuint buffer, GLintptr offset, GLsizeiptr length)
+{
+	GlShadow *s = shadowOf(buffer);
+	if (s == nullptr || offset < 0 || length <= 0 || offset + length > s->length) return;
+	std::memcpy(s->driver + offset, s->shadow + offset, (size_t)length);
+}
+
+/* Before an unmap: the bytes to the driver, unless they were only read or are
+ * flushed range by range; the guest's buffer, to give back, or null. */
+static uint8_t *shadowUnmap(GLuint buffer)
+{
+	GlShadow *s = shadowOf(buffer);
+	if (s == nullptr) return nullptr;
+	if (s->write && !s->explicitFlush) std::memcpy(s->driver, s->shadow, (size_t)s->length);
+	uint8_t *given = s->shadow;
+	shadowForget(buffer);
+	return given;
+}
+
+static void shadowGiveBack(uint8_t *given, uintptr_t b)
+{
+	if (given == nullptr || b == 0 || !guestCan(reinterpret_cast<const void *>(b), sizeof(uint64_t), true)) return;
+	*reinterpret_cast<uint64_t *>(b) = (uint64_t)(uintptr_t)given;
+}
+
+/* After a load that keeps the context (a core that keeps its objects, or a
+ * second session holding the context): a mapping that is not persistent was
+ * made by the frames the load threw away, and the restored machine does not
+ * know it - it may even be in the middle of a map of its own, made with
+ * another buffer of its own. So at the first GL call after the load the
+ * driver's mapping is closed, nothing is copied (the guest's memory is the
+ * restored machine's now), and nothing is given back to free: an unmap the
+ * restored machine makes is then refused by the driver, and its next map
+ * works. A persistent mapping is kept: it is made once and the restored
+ * machine holds the same buffer. */
+static void shadowReap()
+{
+	g_shadowReap = false;
+	std::vector<GlShadow> &list = glShadows();
+	size_t closed = 0;
+	for (size_t i = 0; i < list.size();)
+	{
+		if (list[i].persistent) { i++; continue; }
+		const GLuint buffer = list[i].buffer;
+		list.erase(list.begin() + (std::ptrdiff_t)i);
+		if (glad_glUnmapNamedBuffer != nullptr)
+			glUnmapNamedBuffer(buffer);
+		else
+		{
+			GLint was = 0;
+			glGetIntegerv(GL_COPY_WRITE_BUFFER_BINDING, &was);
+			glBindBuffer(GL_COPY_WRITE_BUFFER, buffer);
+			glUnmapBuffer(GL_COPY_WRITE_BUFFER);
+			glBindBuffer(GL_COPY_WRITE_BUFFER, (GLuint)was);
+		}
+		bufferPool().noteMapped(buffer, false);
+		closed++;
+	}
+	static bool said;
+	if (closed != 0 && !said)
+	{
+		said = true;
+		fprintf(stderr, "chimera gl: a load left %zu mapped buffer(s) open from the frames it undid; closed\n", closed);
+	}
+}
+
 
 /* Textures are NOT recycled, and the reason is worth keeping.
  *
@@ -1589,6 +1740,8 @@ static void namesOf(int kind, GLsizei n, const GLuint *list, bool made)
 	{
 		if (made) glNames().made(kind, list[i]);
 		else glNames().gone(kind, list[i]);
+		/* a deleted buffer is unmapped by the driver: its shadow stays with the guest */
+		if (!made && kind == kNameBuffer && !glShadows().empty()) shadowForget(list[i]);
 	}
 }
 
@@ -1962,6 +2115,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
                                     uintptr_t c, uintptr_t d, uintptr_t e)
 {
 	(void)d; (void)e;
+	if (g_shadowReap) shadowReap();
 
 	/* Buffers whose bytes the driver reads out of guest memory: the range is
 	 * asked of the sandbox first (guestCan), so a pointer into memory the core
@@ -2008,19 +2162,26 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			auto *p = reinterpret_cast<ChimeraGlArgs_glMapBufferRange *>(a);
 			GL_PROVIDED_OR_REFUSE(glMapBufferRange);
 			void *mapped = glMapBufferRange(p->target, p->offset, p->length, p->access);
-			if (mapped != nullptr && glPool()) bufferPool().noteMapped(boundBuffer(p->target), true);
+			const GLuint name = boundBuffer(p->target);
+			if (mapped != nullptr && glPool()) bufferPool().noteMapped(name, true);
 			if (poolTrace())
 				fprintf(stderr, "[pool] mapRange target=%#x bound=%u access=%#x -> %p\n", (unsigned)p->target,
-					(unsigned)boundBuffer(p->target), (unsigned)p->access, mapped);
-			return (uintptr_t)mapped;
+					(unsigned)name, (unsigned)p->access, mapped);
+			return shadowMap(mapped, name, p->length, (p->access & GL_MAP_WRITE_BIT) != 0,
+				shadowFills(p->access), (p->access & GL_MAP_FLUSH_EXPLICIT_BIT) != 0,
+				(p->access & GL_MAP_PERSISTENT_BIT) != 0, b, c);
 		}
 		case CHIMERA_GL_OP_glMapBuffer:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glMapBuffer *>(a);
 			GL_PROVIDED_OR_REFUSE(glMapBuffer);
 			void *mapped = glMapBuffer(p->target, p->access);
-			if (mapped != nullptr && glPool()) bufferPool().noteMapped(boundBuffer(p->target), true);
-			return (uintptr_t)mapped;
+			const GLuint name = boundBuffer(p->target);
+			if (mapped != nullptr && glPool()) bufferPool().noteMapped(name, true);
+			GLint64 size = 0;
+			if (mapped != nullptr && b != 0 && glad_glGetBufferParameteri64v != nullptr)
+				glGetBufferParameteri64v(p->target, GL_BUFFER_SIZE, &size);
+			return shadowMap(mapped, name, (GLsizeiptr)size, p->access != GL_READ_ONLY, true, false, false, b, c);
 		}
 		case CHIMERA_GL_OP_glMapNamedBufferRange:
 		{
@@ -2028,15 +2189,46 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			GL_PROVIDED_OR_REFUSE(glMapNamedBufferRange);
 			void *mapped = glMapNamedBufferRange(p->buffer, p->offset, p->length, p->access);
 			if (mapped != nullptr) bufferPool().noteMapped(p->buffer, true);
-			return (uintptr_t)mapped;
+			return shadowMap(mapped, p->buffer, p->length, (p->access & GL_MAP_WRITE_BIT) != 0,
+				shadowFills(p->access), (p->access & GL_MAP_FLUSH_EXPLICIT_BIT) != 0,
+				(p->access & GL_MAP_PERSISTENT_BIT) != 0, b, c);
+		}
+		case CHIMERA_GL_OP_glMapNamedBuffer:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glMapNamedBuffer *>(a);
+			GL_PROVIDED_OR_REFUSE(glMapNamedBuffer);
+			void *mapped = glMapNamedBuffer(p->buffer, p->access);
+			if (mapped != nullptr) bufferPool().noteMapped(p->buffer, true);
+			GLint64 size = 0;
+			if (mapped != nullptr && b != 0 && glad_glGetNamedBufferParameteri64v != nullptr)
+				glGetNamedBufferParameteri64v(p->buffer, GL_BUFFER_SIZE, &size);
+			return shadowMap(mapped, p->buffer, (GLsizeiptr)size, p->access != GL_READ_ONLY, true, false, false, b, c);
+		}
+		case CHIMERA_GL_OP_glFlushMappedBufferRange:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glFlushMappedBufferRange *>(a);
+			GL_PROVIDED_OR_REFUSE(glFlushMappedBufferRange);
+			if (!glShadows().empty()) shadowFlush(boundBuffer(p->target), p->offset, p->length);
+			glFlushMappedBufferRange(p->target, p->offset, p->length);
+			return 0;
+		}
+		case CHIMERA_GL_OP_glFlushMappedNamedBufferRange:
+		{
+			auto *p = reinterpret_cast<ChimeraGlArgs_glFlushMappedNamedBufferRange *>(a);
+			GL_PROVIDED_OR_REFUSE(glFlushMappedNamedBufferRange);
+			shadowFlush(p->buffer, p->offset, p->length);
+			glFlushMappedNamedBufferRange(p->buffer, p->offset, p->length);
+			return 0;
 		}
 		case CHIMERA_GL_OP_glUnmapBuffer:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glUnmapBuffer *>(a);
 			GL_PROVIDED_OR_REFUSE(glUnmapBuffer);
-			const GLuint name = glPool() ? boundBuffer(p->target) : 0;
+			const GLuint name = boundBuffer(p->target);
+			uint8_t *given = shadowUnmap(name);
 			const GLboolean ok = glUnmapBuffer(p->target);
 			bufferPool().noteMapped(name, false);
+			shadowGiveBack(given, b);
 			if (poolTrace())
 				fprintf(stderr, "[pool] unmap target=%#x bound=%u -> %d\n", (unsigned)p->target, (unsigned)name, (int)ok);
 			return (uintptr_t)ok;
@@ -2066,8 +2258,10 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glUnmapNamedBuffer *>(a);
 			GL_PROVIDED_OR_REFUSE(glUnmapNamedBuffer);
+			uint8_t *given = shadowUnmap(p->buffer);
 			const GLboolean ok = glUnmapNamedBuffer(p->buffer);
 			bufferPool().noteMapped(p->buffer, false);
+			shadowGiveBack(given, b);
 			return (uintptr_t)ok;
 		}
 
@@ -2328,9 +2522,6 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glNamedBufferStorageEXT:
 			bufferPool().noteImmutable(reinterpret_cast<ChimeraGlArgs_glNamedBufferStorageEXT *>(a)->buffer, true);
 			break;
-		case CHIMERA_GL_OP_glMapNamedBuffer:
-			bufferPool().noteMapped(reinterpret_cast<ChimeraGlArgs_glMapNamedBuffer *>(a)->buffer, true);
-			break;
 		case CHIMERA_GL_OP_glMapNamedBufferRangeEXT:
 			bufferPool().noteMapped(reinterpret_cast<ChimeraGlArgs_glMapNamedBufferRangeEXT *>(a)->buffer, true);
 			break;
@@ -2341,6 +2532,17 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 
 	switch (op)
 	{
+		case GL_OP_BUFFER_SIZE:
+		{
+			/* a buffer's size, for a shadow of a whole mapping: a = the target, or
+			 * the buffer's name when b is 1 */
+			GLint64 size = 0;
+			if (b != 0 && glad_glGetNamedBufferParameteri64v != nullptr)
+				glGetNamedBufferParameteri64v((GLuint)a, GL_BUFFER_SIZE, &size);
+			else if (b == 0 && glad_glGetBufferParameteri64v != nullptr)
+				glGetBufferParameteri64v((GLenum)a, GL_BUFFER_SIZE, &size);
+			return size > 0 ? (uintptr_t)size : 0;
+		}
 		case GL_OP_LIST_LENGTH:
 			/* How many entry points this host knows. The guest compares it with
 			 * what it was built against and declines us if we are behind; the
@@ -2574,6 +2776,8 @@ static void forgetContext()
 	g_bounceCap = 0;
 	g_tsQuery[0] = g_tsQuery[1] = 0;
 	g_tsPending = false;
+	glShadows().clear();   /* the mappings went with the context */
+	g_shadowReap = false;
 	for (int k = 0; k < kAuditKinds; k++) auditLives()[k].clear();
 }
 

@@ -27,11 +27,14 @@ that master list, so every core and this engine mean the same thing by the same
 number. A guest asks how long the host's list is and declines a host that knows
 fewer entry points than it was built against.
 
-One rule decides everything about safety: **no host pointer is ever handed to
-the guest.** A mapped buffer is a pointer into the driver, and a sandbox is
-right to refuse it. PCSX2 already had two streaming paths that keep their own
-CPU buffer, for drivers where mapping is slow; the bridged build takes one of
-those (its patch 0015), so the bridge is a plain pass-through.
+One rule decides most of the safety: **the core is not handed pointers into
+Chimera's memory or the driver's.** A mapped buffer is the one exception left:
+a mapping the core flushes or unmaps is a buffer in the core's own memory,
+copied to the driver's, and only a persistent mapping that is never flushed
+keeps the driver's pointer ("Mapped buffers are the core's own memory",
+below). PCSX2 already had two streaming paths that keep their own CPU buffer,
+for drivers where mapping is slow; the bridged build takes one of those (its
+patch 0015).
 
 ## Determinism, and what a movie says
 
@@ -907,6 +910,56 @@ Found by the engine analysis of 2026-10-18; each used to end Chimera.
   had left there (xemu reads surfaces straight into console RAM, so the
   machine depended on what was read before it). The buffer now covers what GL
   writes, and only GL's rows are copied back.
+
+## Mapped buffers are the core's own memory (user-decided, 2026-10-19)
+
+When a renderer maps a GL buffer (glMapBufferRange, glMapBuffer and their
+named forms), the driver answers with a pointer to memory of its own. The
+bridge used to hand that pointer to the core, and the core wrote outside its
+sandbox: those bytes were in no saved state, and the pointer pointed at
+nothing once the context was replaced (a load that rebuilds makes a fresh
+one). Now a mapping the core flushes or unmaps is a buffer in the core's own
+memory, a "shadow":
+
+- The core's wrapper for the map call (generated in miniBox,
+  `source/gl/gen-gl-bridge.py`) allocates the shadow and hands it in.
+  Chimera maps the driver's buffer and answers the shadow. The wrapper keeps
+  one freed shadow for the next map of a like size: RPCS3 maps 3.6 MB
+  and unmaps it every two or three frames, and new memory each time made
+  its first 900 frames about 1.5 seconds slower on the GTX 1060 (every page
+  faulted in again).
+- The shadow is filled from the driver only when the core may read it, or
+  when the unmap copies all of it back (then the bytes the core did not
+  write must stay as they were). A map that lets the old bytes go, or that
+  is written and flushed range by range, is not filled: reading a mapping a
+  driver made for writing is slow (the Vulkan bridge measured 25 ms for 2 MB
+  on a GTX 1060).
+- Each glFlushMappedBufferRange copies the flushed bytes to the driver. The
+  unmap copies the whole range, unless the core flushes range by range or
+  only reads, and hands the shadow back for the wrapper to free.
+- A whole-buffer map asks Chimera for the buffer's size first
+  (`GL_OP_BUFFER_SIZE` in miniBox `gl-bridge.h`).
+- A persistent mapping that is not flushed explicitly (a coherent one, or
+  one that is only read) keeps the driver's pointer, as before. Its writes
+  reach the GPU with no call at all, so there is no moment to copy them
+  except before every draw. The owner chose this split.
+- After a load that keeps the context (a core that declares
+  `video.rebuildOnStateLoad` false, or a second session holding the
+  context), a mapping still open that is not persistent was made by the
+  frames the load threw away. At the first GL call after the load the
+  driver's mapping is closed; nothing is copied, and the shadow is not handed
+  back, since the restored core does not know it and freeing it could free
+  memory the restored core uses. The core's next map of that buffer works.
+  Persistent shadows stay open: the restored core holds the same one.
+
+A core and Chimera built on either side of this work together. A core built
+before it hands in no shadow and gets the driver's pointer. A core built with
+it, on an older Chimera, gets the driver's pointer too: the older Chimera
+ignores the shadow and answers 0 to the size question, and the wrapper frees
+the shadow.
+
+`CHIMERA_GL_SHADOW_TRACE=1` prints the first 20 shadows and then every power
+of two, with the buffer, its size, and whether it was filled.
 
 ## The flight recorder (2026-09-13)
 
