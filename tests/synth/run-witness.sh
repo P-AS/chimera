@@ -606,6 +606,31 @@ json.dump(d, open(p, 'w'))
 			fi
 		done
 
+		# A CORE THAT NEVER COMES BACK (2026-10-19): the session's watchdog
+		# stops a call that runs past its time - 20 seconds for a frame and 2
+		# minutes for starting, 1.5 seconds here - and the run reports the core
+		# stopped, with the reason, instead of hanging. The synthetic core loops
+		# forever in its own code: in its third frame on a rom ending in
+		# SPINFRAME, and in Init on a rom of the four bytes SPIN.
+		cat "$here/roms/gridWalker.testrom" > "$work/stuck-frame.testrom"
+		printf 'SPINFRAME' >> "$work/stuck-frame.testrom"
+		rm -f "$work/stuck-frame.meta.txt"
+		CHIMERA_FRAME_TIMEOUT_MS=1500 timeout 60 "$chimera_run" "$epkg" "$work/stuck-frame.testrom" "$here/movies/gridWalker.win.txt" \
+			--meta "$work/stuck-frame.meta.txt" > "$work/stuck-frame.log" 2>&1; sfrc=$?
+		printf 'SPIN' > "$work/stuck-start.testrom"
+		CHIMERA_START_TIMEOUT_MS=1500 timeout 60 "$chimera_run" "$epkg" "$work/stuck-start.testrom" "$here/movies/gridWalker.win.txt" \
+			> "$work/stuck-start.log" 2>&1; ssrc=$?
+		if [ "$sfrc" -eq 124 ] || [ "$ssrc" -eq 124 ]; then
+			report "E:core-stuck" FAIL "a stuck core was not stopped: the run was killed after 60 s (frame rc=$sfrc, start rc=$ssrc)"
+		elif ! grep -q "^failedat=2$" "$work/stuck-frame.meta.txt" 2>/dev/null \
+		     || ! grep -q "did not finish a frame in 1 seconds" "$work/stuck-frame.meta.txt" "$work/stuck-frame.log" 2>/dev/null; then
+			report "E:core-stuck" FAIL "the stuck frame was not reported as such: $(grep '^detail=\|^status=\|^failedat=' "$work/stuck-frame.meta.txt" 2>/dev/null | tr '\n' ' ')"
+		elif [ "$ssrc" -eq 0 ] || ! grep -q "the core stopped while starting: the core did not finish starting in 1 seconds" "$work/stuck-start.log"; then
+			report "E:core-stuck" FAIL "the stuck start was not reported as such: rc=$ssrc $(tail -1 "$work/stuck-start.log" | cut -c1-120)"
+		else
+			report "E:core-stuck" PASS "a core stuck in a frame or in starting is stopped after its time and reported, with the reason, and the process survives"
+		fi
+
 		# THE CORE LOG (ce_core_log, Tools > Export Core Log... in the frontend):
 		# asked for, it starts a file saying when and by which Chimera, notes
 		# the session's core package, and keeps everything the core writes - the

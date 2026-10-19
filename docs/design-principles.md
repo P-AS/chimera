@@ -9530,3 +9530,68 @@ passed and 0 failed, the interface tests 1114 with none failed (23 skipped),
 the Windows build compiles, and the PCSX2 core's test script 44 passed, 0
 failed, 6 skipped, its five Vulkan tests among them (its later tests ran
 with an engine that also had the next change, the watchdog, built in).
+
+## A core that does not come back is stopped: 20 seconds a frame, 2 minutes to start (user-decided, 2026-10-19)
+
+**What was wrong.** A core that looped forever inside a frame, or while
+starting, froze Chimera: nothing could end the call from outside (engine
+analysis, 2026-10-18). The owner chose the limits: 20 seconds for a frame and
+2 minutes for starting.
+
+**What changed.**
+
+- miniBox can stop a guest call from another thread (sandbox spec, "Stopping
+  a guest that does not come back"). A guest running its own code is stopped
+  at once: on Linux by a signal, on Windows by suspending the thread and
+  sending it out of the call. A guest inside a system call is stopped at its
+  next one. A guest inside host code that never returns (a driver call that
+  waits for ever) is not stopped. The call ends as a crash ends it: the
+  machine is dead and the session reports the reason.
+- Each session has a watchdog thread, armed around a frame and around
+  starting. Past the limit it asks miniBox for the stop every quarter second
+  until the call comes back. The user sees "the core stopped: the core did
+  not finish a frame in 20 seconds", or "the core stopped while starting: the
+  core did not finish starting in 120 seconds".
+- A core that is working is not stopped. miniBox counts the guest's system
+  calls, leaving out the ones a waiting or polling loop makes (yield, sleep,
+  clock reads, futex, gettid, getpid), and the watchdog starts the time again
+  whenever the count moves. A use of the compile cache counts too. What is
+  stopped is a core spinning in its own code, or one that only waits, yields
+  or reads the clock.
+- `CHIMERA_FRAME_TIMEOUT_MS` and `CHIMERA_START_TIMEOUT_MS` set other limits in
+  milliseconds; 0 turns a limit off. A session that only compiles a game's
+  code ahead of time has no frame limit: its frames are long by design.
+- Not timed: the other calls into a core (a state save or load, the optional
+  exports). They are short in every core measured.
+
+**Why the count of system calls.** A first version timed the frame alone.
+RPCS3 running Bejeweled 3 with the LLVM code compiler (`ppu_decoder` llvm)
+and no compile cache spends 98 seconds in its first two frames compiling the
+game's code. It was stopped at 20 seconds. With the count it is not: 600
+frames in 116 seconds, status OK.
+
+**Tested.**
+
+- miniBox's new test `conformance-stop`: a guest spinning in its own code and
+  one spinning on `sched_yield` are each stopped from a second thread (on
+  Linux the second with the stop's signal blocked, so the check at a system
+  call is what stops it), a stop asked for and cancelled ends nothing, and
+  the count moves by 1000 for 1000 `getppid` calls and not at all for 1000
+  yields. It passes on Linux and on Windows. Broken on purpose (the check at
+  a system call off, `getppid` counted as waiting) it failed: the count check
+  failed and the second spin was never stopped.
+- The witness has a new test, "core-stuck", with both limits set to 1.5
+  seconds: the synthetic core's ROM "SPIN" never finishes starting and one
+  ending "SPINFRAME" never finishes frame 3. Both are stopped with the right
+  message, and the run ends instead of hanging. The Windows build of the
+  command-line runner stops both the same way. With the watchdog turned off
+  on purpose the witness failed it: "a stuck core was not stopped: the run
+  was killed after 60 s".
+- The rest: miniBox's 24 tests pass (6 expected failures); the engine's 30
+  unit tests pass; the witness 100 passed and 0 failed; the interface tests
+  1114 with none failed (23 skipped); the Windows build compiles; the PCSX2
+  core's test script 44 passed, 0 failed, 6 skipped.
+
+**Still to do.** A single GPU driver call longer than the limit (a very long
+shader compile) is not stopped while it runs, but the core is stopped as soon
+as it returns. The calls through the GPU bridges do not count as work yet.

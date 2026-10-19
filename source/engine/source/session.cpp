@@ -29,10 +29,15 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -482,6 +487,135 @@ extern "C" uintptr_t ce_gl_dispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, 
 #include "vk-host.h"
 #endif
 
+/* A core that never comes back from a call - a frame, or starting - froze
+ * Chimera: nothing could stop it (engine analysis, 2026-10-18). A watchdog of
+ * the session's, armed around the call, asks miniBox to stop it when it runs
+ * past its time (wbx_stop_guest): it then ends as a crash does, with the reason
+ * the session reports. 20 seconds for a frame and 2 minutes for starting (the
+ * owner's numbers, 2026-10-19); CHIMERA_FRAME_TIMEOUT_MS and
+ * CHIMERA_START_TIMEOUT_MS set others, 0 none. A core that is working, not
+ * stuck, shows it, and the time starts again from that: it makes system calls
+ * of the kind a waiting or polling loop does not (wbx_guest_activity - RPCS3
+ * compiling a game's code with LLVM spends 90 seconds in its first frames
+ * here, and was stopped at 20 before this), or it uses its compile cache
+ * (ce_guest_alive). What is stopped is a core looping in its own code, or
+ * one only waiting and polling. Not in a precompile session, whose frames are
+ * long by design. */
+std::atomic<int64_t> g_guestAliveMs{ 0 };
+
+static int64_t nowMs()
+{
+	return std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+extern "C" void ce_guest_alive(void) { g_guestAliveMs.store(nowMs(), std::memory_order_relaxed); }
+
+static int64_t timeoutMs(const char *variable, int64_t fallback)
+{
+	const char *e = std::getenv(variable);
+	return e != nullptr && e[0] != '\0' ? std::strtoll(e, nullptr, 10) : fallback;
+}
+
+struct GuestWatchdog
+{
+	const chimera::HostApi *host;
+	void *obj;
+	std::mutex lock;
+	std::condition_variable wake;
+	std::thread thread;
+	bool armed = false, quit = false;
+	int64_t armedAt = 0, limit = 0, activeAt = 0;
+	uint64_t activity = 0;
+	std::string why;
+	std::thread::id caller;
+
+	GuestWatchdog(const chimera::HostApi *h, void *o) : host(h), obj(o) {}
+	~GuestWatchdog()
+	{
+		{
+			std::lock_guard<std::mutex> hold(lock);
+			quit = true;
+		}
+		wake.notify_one();
+		if (thread.joinable()) thread.join();
+	}
+	bool usable() const { return host->wbx_stop_guest != nullptr && host->wbx_stop_from_here != nullptr; }
+	uint64_t readActivity() const
+	{
+		if (host->wbx_guest_activity == nullptr) return 0;
+		chimera::WbxReturn r{};
+		host->wbx_guest_activity(obj, &r);
+		return r.data;
+	}
+	void arm(int64_t ms, std::string reason)
+	{
+		if (ms <= 0 || !usable()) return;
+		/* the thread making the call is the one a stop goes to */
+		if (caller != std::this_thread::get_id())
+		{
+			chimera::WbxReturn r{};
+			host->wbx_stop_from_here(obj, &r);
+			caller = std::this_thread::get_id();
+		}
+		{
+			std::lock_guard<std::mutex> hold(lock);
+			armed = true;
+			armedAt = nowMs();
+			activeAt = armedAt;
+			activity = readActivity();
+			limit = ms;
+			why = std::move(reason);
+			if (!thread.joinable()) thread = std::thread([this] { run(); });
+		}
+		wake.notify_one();
+	}
+	void disarm()
+	{
+		if (!usable()) return;
+		{
+			std::lock_guard<std::mutex> hold(lock);
+			if (!armed) return;
+			armed = false;
+		}
+		chimera::WbxReturn r{};
+		if (host->wbx_stop_cancel != nullptr) host->wbx_stop_cancel(obj, &r);
+	}
+	void run()
+	{
+		std::unique_lock<std::mutex> hold(lock);
+		while (!quit)
+		{
+			if (!armed)
+			{
+				wake.wait(hold);
+				continue;
+			}
+			const uint64_t now = readActivity();
+			if (now != activity)
+			{
+				activity = now;
+				activeAt = nowMs();
+			}
+			const int64_t from = std::max({ armedAt, activeAt, g_guestAliveMs.load(std::memory_order_relaxed) });
+			const int64_t left = from + limit - nowMs();
+			if (left > 0)
+			{
+				wake.wait_for(hold, std::chrono::milliseconds(std::min<int64_t>(left, 1000)));
+				continue;
+			}
+			/* past its time: asked until the call comes back (a core in host
+			 * code - a system call, a driver - is asked again later) */
+			const std::string reason = why;
+			hold.unlock();
+			chimera::WbxReturn r{};
+			host->wbx_stop_guest(obj, reason.c_str(), &r);
+			hold.lock();
+			wake.wait_for(hold, std::chrono::milliseconds(250));
+		}
+	}
+};
+
 struct ce_session
 {
 	SessionConfig cfg;
@@ -534,6 +668,9 @@ struct ce_session
 
 	// guest entry points (already bridged to our convention)
 	void (*frameAdvance)(uint64_t) = nullptr;
+	/* frameAdvance under the watchdog (GuestWatchdog) */
+	void runFrame(uint64_t pad);
+	std::unique_ptr<struct GuestWatchdog> watchdog;
 	uintptr_t (*getVideoBgra)() = nullptr;
 	uintptr_t (*getAudio)() = nullptr;
 	int32_t (*inputWasRead)() = nullptr;
@@ -1372,11 +1509,22 @@ void ce_session::wantRendering(int32_t on)
 	renderingSent = on;
 }
 
+void ce_session::runFrame(uint64_t pad)
+{
+	if (watchdog && !precompile)
+	{
+		static const int64_t limit = timeoutMs("CHIMERA_FRAME_TIMEOUT_MS", 20000);
+		watchdog->arm(limit, "the core did not finish a frame in " + std::to_string(limit / 1000) + " seconds");
+	}
+	frameAdvance(pad);
+	if (watchdog) watchdog->disarm();
+}
+
 int32_t ce_session::advanceCore(const uint8_t *buttons, int32_t render)
 {
 	if (guestDied()) return -1;
 	wantRendering(render != 0 ? 1 : 0);
-	frameAdvance(sendButtons(buttons));
+	runFrame(sendButtons(buttons));
 	if (guestDied())
 	{
 		ce_gl_release();   /* the frame's borrowed context, which the frame never gave back */
@@ -2006,7 +2154,13 @@ static ce_session *openSession(
 	chimera::progress("starting the machine", 0, 0);
 	auto init = reinterpret_cast<int32_t (*)()>(s->proc("Init", 0, true, err));
 	if (init == nullptr) return abort(std::move(err));
+	s->watchdog = std::make_unique<GuestWatchdog>(host, s->obj);
+	{
+		static const int64_t limit = timeoutMs("CHIMERA_START_TIMEOUT_MS", 120000);
+		s->watchdog->arm(limit, "the core did not finish starting in " + std::to_string(limit / 1000) + " seconds");
+	}
 	const int32_t initResult = init();
+	s->watchdog->disarm();
 	/* Init is where a renderer makes its context and compiles its shaders, so
 	 * it is also where the bridge first borrows the caller's GL slot. */
 	ce_gl_release();
@@ -2436,6 +2590,7 @@ void ce_session_free(ce_session *s)
 		std::string err;
 		s->deactivate(err); // tearing down anyway
 		chimera::WbxReturn r{};
+		s->watchdog.reset();   /* before the machine it watches goes */
 		s->host->wbx_destroy_host(s->obj, &r);
 	}
 	/* and what it made through the GL bridge, once nothing can call it */
@@ -2652,7 +2807,7 @@ int32_t ce_session_frame_advance(ce_session *s, uint64_t buttons, int32_t render
 	/* -1: the guest is dead (ce_session_guest_death says why); nothing ran */
 	if (s->guestDied()) return -1;
 	s->wantRendering(render != 0 ? 1 : 0);
-	s->frameAdvance(s->sendButtons(s->computeEffective(buttons)));
+	s->runFrame(s->sendButtons(s->computeEffective(buttons)));
 	if (s->guestDied())
 	{
 		ce_gl_release();

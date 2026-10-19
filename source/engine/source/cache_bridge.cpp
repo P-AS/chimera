@@ -223,8 +223,13 @@ static __attribute__((noinline)) uintptr_t dispatch_impl(uintptr_t op, uintptr_t
 }
 
 // entered from guest code: sysv on every host, the sandbox's callback shape
+extern "C" void ce_guest_alive(void);
+
 extern "C" uintptr_t CE_BRIDGE_ABI ce_cache_dispatch(uintptr_t op, uintptr_t a, uintptr_t b, uintptr_t, uintptr_t, uintptr_t)
 {
+	/* a core using its compile cache is compiling, not stuck: the session's
+	 * watchdog counts it as life (session.cpp, GuestWatchdog) */
+	ce_guest_alive();
 	return dispatch_impl(op, a, b);
 }
 

@@ -71,6 +71,9 @@ ECL_EXPORT int GuestFaultHandler(uint64_t addr, uint64_t is_write)
 	return mprotect(g_watchedPage, 4096, PROT_READ) == 0;
 }
 
+static volatile uint64_t g_spun;
+static uint32_t g_spinFrame;   /* SPINFRAME: the frame that never ends, or 0 */
+
 static int moving(void); /* the movingProperties setting, read once here */
 ECL_EXPORT int Init(void) {
 	uint32_t len = 0;
@@ -83,6 +86,13 @@ ECL_EXPORT int Init(void) {
 		fprintf(stderr, "synth: dying in Init on purpose\n");
 		abort();
 	}
+	/* A core that never comes back (2026-10-19): a rom of the four bytes
+	 * SPIN loops forever in Init, and a rom ending in SPINFRAME loops forever
+	 * in its third frame - in its own code, making no system call, so only the
+	 * session's watchdog (wbx_stop_guest) can end it. */
+	if (len == 4 && memcmp(rom, "SPIN", 4) == 0)
+		for (;;) g_spun++;
+	if (len >= 9 && memcmp(rom + len - 9, "SPINFRAME", 9) == 0) g_spinFrame = 3;
 	g_synth = synth_create(rom, len);   /* copies the rom internally */
 	free(rom);
 	if (!g_synth) return 0;
@@ -178,6 +188,8 @@ ECL_EXPORT void FrameAdvance(uint64_t pad) {
 	g_garbleNow = g_render && g_garbleLeft > 0;
 	if (g_garbleNow) g_garbleLeft--;
 	g_framesRun++;
+	if (g_spinFrame != 0 && g_framesRun == g_spinFrame)
+		for (;;) g_spun++;
 	if (g_watchedOpen) {
 		mprotect(g_watchedPage, 4096, PROT_NONE);
 		g_watchedOpen = 0;

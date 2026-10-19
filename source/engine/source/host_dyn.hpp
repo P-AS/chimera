@@ -67,6 +67,14 @@ struct HostApi
 	 * is loaded, and the session reports it as an error. Optional: an older host
 	 * has no such thing, and its guest takes the process down as it always did. */
 	void (*wbx_get_death)(void *obj, char *out, uintptr_t cap, WbxReturn *ret);
+	/* Stopping a guest that does not come back (2026-10-19): the thread that
+	 * calls it, a stop asked for from another, and a stop cancelled once the
+	 * call came back. Optional: an older host has no such thing. */
+	void (*wbx_stop_from_here)(void *obj, WbxReturn *ret);
+	void (*wbx_stop_guest)(void *obj, const char *why, WbxReturn *ret);
+	void (*wbx_stop_cancel)(void *obj, WbxReturn *ret);
+	/* the guest's working system calls, counted (a sign of life) */
+	void (*wbx_guest_activity)(void *obj, WbxReturn *ret);
 	void (*wbx_mount_file)(void *obj, const char *name, WbxReadCb cb, uintptr_t userdata, uint8_t writable, WbxReturn *ret);
 	/* read-only, read from the host's disk as the guest asks - no copy */
 	void (*wbx_mount_file_path)(void *obj, const char *name, const char *host_path, WbxReturn *ret);

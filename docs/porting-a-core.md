@@ -120,6 +120,15 @@ say nothing. Compare `rev-parse --show-toplevel` with the path you meant.
   tricks: `handle SIGSEGV nostop noprint pass` first, or you will "catch" the
   sandbox working correctly.
 - A guest that hangs rather than faults is usually the timed-wait trap above.
+- Chimera stops a core that does not finish a frame in 20 seconds, or does
+  not finish starting in 2 minutes, and shows "the core did not finish a
+  frame in 20 seconds". A core that is working is not stopped: every system
+  call other than a sleep, a yield, a clock read or a futex call counts as
+  work and starts the time again, and so does a use of the compile cache.
+  What is stopped is a core spinning in its own code, or one only polling a
+  clock or yielding. While you debug, `CHIMERA_FRAME_TIMEOUT_MS=0` and
+  `CHIMERA_START_TIMEOUT_MS=0` turn the limits off; other values set them in
+  milliseconds.
 - Build the reference with the same change and reproduce there first. Most
   "sandbox bugs" are ordinary bugs that the sandbox merely made visible.
 
