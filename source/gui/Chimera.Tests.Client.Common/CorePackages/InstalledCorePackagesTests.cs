@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 using Chimera.Client.Common;
 using Chimera.Emulation.Common.Waterbox;
@@ -162,6 +163,94 @@ namespace Chimera.Tests.Client.Common.CorePackages
 				}
 			}
 			Assert.AreEqual(0, stray.Count, string.Join("; ", stray));
+		}
+
+		/// <summary>
+		/// The names a game controller's inputs arrive by (SDL2Gamepad: the buttons, and the axes of GetAxes, which
+		/// SDL2InputAdapter sends as "X1 LeftThumbX Axis"). A joystick that is not a game controller ("J1 ...") has
+		/// the ones in <see cref="JoystickButton"/> and <see cref="JoystickAxis"/>.
+		/// </summary>
+		private static readonly HashSet<string> ControllerButtons = new(StringComparer.Ordinal)
+		{
+			"A", "B", "X", "Y", "Back", "Guide", "Start", "LeftThumb", "RightThumb", "LeftShoulder", "RightShoulder",
+			"DpadUp", "DpadDown", "DpadLeft", "DpadRight", "Misc", "Paddle1", "Paddle2", "Paddle3", "Paddle4", "Touchpad",
+			"LStickUp", "LStickDown", "LStickLeft", "LStickRight", "RStickUp", "RStickDown", "RStickLeft", "RStickRight",
+			"LeftTrigger", "RightTrigger",
+		};
+
+		private static readonly HashSet<string> ControllerAxes = new(StringComparer.Ordinal)
+		{
+			"LeftThumbX", "LeftThumbY", "RightThumbX", "RightThumbY", "LeftTrigger", "RightTrigger", "TouchpadX", "TouchpadY",
+		};
+
+		private static readonly Regex JoystickButton = new(@"^([XYZWVSQPN][+-]|Axis\d+[+-]|B\d+|POV\d+[UDLR])$");
+
+		private static readonly Regex JoystickAxis = new(@"^([XYZWVSQPN]|Axis\d+) Axis$");
+
+		/// <summary>
+		/// A default binding to a gamepad names an input Chimera sends. The ares package bound its sticks to
+		/// "X1 LStickX", which nothing sends ("X1 LeftThumbX Axis" is the stick), so a Nintendo 64's stick did nothing
+		/// until bound by hand (chimera#314); RPCS3's did the same, and three cores bound L3 and R3 to "LeftStick" and
+		/// "RightStick" (the stick buttons are LeftThumb and RightThumb). The key-name checks looked only at the keyboard.
+		/// </summary>
+		[TestMethod]
+		public void KeybindsNameGamepadInputsChimeraSends()
+		{
+			List<string> unknown = new();
+			Packages();
+			foreach (var path in InstalledPackages.Newest)
+			{
+				var dir = Extracted(path);
+				if (dir is null) continue;
+				try
+				{
+					var keybinds = PackageKeybinds.Read(dir);
+					if (keybinds is null) continue;
+					var name = InstalledPackages.NameOf(path);
+					foreach (var (controller, bindings) in keybinds.AllTrollers)
+					{
+						foreach (var (button, value) in bindings)
+						{
+							foreach (var part in (value ?? "").Split(',', '+').Select(static p => p.Trim()))
+							{
+								var m = Regex.Match(part, @"^([XJ])\d+ (.+)$");
+								if (m.Success && !(m.Groups[1].Value is "X" ? ControllerButtons.Contains(m.Groups[2].Value) : JoystickButton.IsMatch(m.Groups[2].Value)))
+								{
+									unknown.Add($"{name}/{controller}/{button}: {part}");
+								}
+							}
+						}
+					}
+					foreach (var (controller, bindings) in keybinds.AllTrollersAnalog ?? new())
+					{
+						foreach (var (axis, bind) in bindings)
+						{
+							foreach (var part in (bind.Value ?? "").Split(',').Select(static p => p.Trim()))
+							{
+								var m = Regex.Match(part, @"^([XJ])\d+ (.+)$");
+								if (!m.Success) continue;
+								var known = m.Groups[1].Value is "X"
+									? m.Groups[2].Value.EndsWith(" Axis", StringComparison.Ordinal)
+										&& ControllerAxes.Contains(m.Groups[2].Value.Substring(0, m.Groups[2].Value.Length - " Axis".Length))
+									: JoystickAxis.IsMatch(m.Groups[2].Value);
+								if (!known)
+								{
+									unknown.Add($"{name}/{controller}/{axis}: {part} (an axis)");
+								}
+							}
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					unknown.Add($"{InstalledPackages.NameOf(path)}: {ex.Message}");
+				}
+				finally
+				{
+					TryDelete(dir);
+				}
+			}
+			Assert.AreEqual(0, unknown.Count, "gamepad inputs Chimera does not send: " + string.Join("; ", unknown));
 		}
 
 		/// <summary>

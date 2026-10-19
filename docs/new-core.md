@@ -110,6 +110,11 @@ these files, each of which a published core has:
 - `waterbox/` - the adapter, both builds, `build-package.sh`, `run-gate.sh`,
   `tests/run-frontend.sh`, and the four declarations (`waterbox.config`,
   `file_slots.json`, `default_keybinds.json`, `package-licenses.json`).
+  A default binding names inputs as Chimera sends them: a game controller's
+  as `X1 A`, `X1 LeftThumb` (the stick's click) and, for a stick,
+  `X1 LeftThumbX Axis`; a plain joystick's as `J1 B1`, `J1 X Axis`. A name
+  nothing sends binds nothing, and the contract test
+  `KeybindsNameGamepadInputsChimeraSends` refuses it.
 
 Upstream is a pinned submodule, never edited in place; every change is a
 numbered patch. No absolute path and no `$HOME` anywhere in a build script.

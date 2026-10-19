@@ -35,7 +35,7 @@ namespace Chimera.Client.Common
 
 		public string Fps { get; set; }
 
-		/// <summary>The average speed, as text; drawn under <see cref="Fps"/>, or in its place when that is off.</summary>
+		/// <summary>The average speed, as text; drawn after <see cref="Fps"/> on its line, or in its place when that is off.</summary>
 		public string AverageFps { get; set; }
 
 		/// <summary>
@@ -335,23 +335,18 @@ namespace Chimera.Client.Common
 				}
 			}
 
-			if (_config.DisplayFps && Fps != null)
+			// The speed and the average speed share the speed's line. The average used to go one line further from
+			// the edge, which with the default places is the frame counter's line, so the two were drawn over each
+			// other (issue #312).
+			var speed = string.Join("   ", new[]
 			{
-				var point = GetCoordinates(g, _config.Fps, Fps);
-				DrawOsdMessage(g, Fps, FixedMessagesColor, point.X, point.Y);
-			}
-
-			if (_config.DisplayAverageFps && AverageFps != null)
+				_config.DisplayFps ? Fps : null,
+				_config.DisplayAverageFps ? AverageFps : null,
+			}.Where(static s => s != null));
+			if (speed.Length != 0)
 			{
-				// one line further from the screen's edge than the frame counter
-				// when both are shown, so neither covers the other
-				var point = GetCoordinates(g, _config.Fps, AverageFps);
-				if (_config.DisplayFps && Fps != null)
-				{
-					var line = (int) Math.Ceiling(g.MeasureString(Fps).Height);
-					point.Y += _config.Fps.Anchor.IsTop() ? line : -line;
-				}
-				DrawOsdMessage(g, AverageFps, FixedMessagesColor, point.X, point.Y);
+				var point = GetCoordinates(g, _config.Fps, speed);
+				DrawOsdMessage(g, speed, FixedMessagesColor, point.X, point.Y);
 			}
 
 			if (_config.DisplayLagCounter && _emulator.CanPollInput())

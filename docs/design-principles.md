@@ -9595,3 +9595,31 @@ frames in 116 seconds, status OK.
 **Still to do.** A single GPU driver call longer than the limit (a very long
 shader compile) is not stopped while it runs, but the core is stopped as soon
 as it returns. The calls through the GPU bridges do not count as work yet.
+## Issues 311, 312, 313 and 314: a clipped choice, overlapping counters, a save name and dead gamepad bindings (2026-10-19)
+
+**What was found and changed.**
+- #311: on Linux the Greenzone box's "Off" choice was below the box: Mono
+  places the buttons for its own font, lower than the designer did, and the
+  box kept its designed height. The box now grows to hold its last choice.
+- #312: with the speed, the average speed and the frame counter all shown,
+  the average was drawn one line under the speed, which is the frame
+  counter's line. The average now follows the speed on its own line.
+- #313 (the ares core): the save data slot took `.fla` but not `.flash`,
+  though the core's own Export Save Data names a Flash save `save.flash`, as
+  ares does. It takes `.flash` and `.eeprom` now.
+- #314: the ares package bound the Nintendo 64 stick to `X1 LStickX`, which
+  Chimera never sends; a controller's stick arrives as `X1 LeftThumbX Axis`.
+  A check over every core found the same mistake in RPCS3 (`X1 LStickX`,
+  `J1 RotationZ Axis`) and stick clicks bound to `X1 LeftStick` in Dolphin,
+  DuckStation and PCSX2 (the name is `X1 LeftThumb`). Each core's bindings
+  are fixed in its own repository, and a new contract test,
+  `KeybindsNameGamepadInputsChimeraSends`, refuses a gamepad name SDL2 does
+  not send; the key-name checks had looked only at the keyboard.
+
+**Tested.** Three new tests, each seen to fail first: the Greenzone box at
+fonts from 8.25 to 14 points ("Off" ended at 83 pixels in an 80-pixel box
+on Mono); the speed, its average and the frame counter drawn without
+overlap (they overlapped at y=14 before); the contract test, which found
+69 dead names in the published Dolphin, PCSX2 and RPCS3 packages and none
+once their bindings were fixed. Engine tests (30), witness (99) and the
+interface tests (119, 63, 594 and 341, none failed) pass.

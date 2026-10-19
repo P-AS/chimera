@@ -29,6 +29,18 @@ namespace Chimera.Client.GUI
 			OffRadio.Click += (_, _) => Selected = Level.Off;
 		}
 
+		/// <summary>
+		/// Tall enough for the last choice, whatever the font. The designer placed the buttons for Windows' font;
+		/// on Linux each one is taller, so they reach further down while the box kept its designed height, and
+		/// "Off" was cut off (issue #311). The box grows to hold it, with the same room below it as above the first.
+		/// </summary>
+		protected override void OnLayout(LayoutEventArgs e)
+		{
+			base.OnLayout(e);
+			var needed = GreenzoneGroupBox.Top + OffRadio.Bottom + EveryFrameRadio.Top / 2;
+			if (Height < needed) Height = needed;
+		}
+
 		public Level Selected
 		{
 			get => _level;
