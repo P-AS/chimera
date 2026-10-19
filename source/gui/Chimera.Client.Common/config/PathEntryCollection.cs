@@ -107,6 +107,7 @@ namespace Chimera.Client.Common
 				new(GLOBAL, "A/V Dumps", "."),
 				new(GLOBAL, "Tools", Path.Combine(".", "Tools")),
 				new(GLOBAL, "Lua", Path.Combine(".", "Lua")),
+				new(GLOBAL, "Themes", Path.Combine(".", "Themes")),
 				new(GLOBAL, "Watch (.wch)", Path.Combine(".", ".")),
 				new(GLOBAL, "Debug Logs", Path.Combine(".", "")),
 				new(GLOBAL, "Macros", Path.Combine(".", "Movies", "Macros")),

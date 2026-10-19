@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 
 using Chimera.Common;
+using Chimera.Common.PathExtensions;
 
 namespace Chimera.Client.Common
 {
@@ -14,10 +15,12 @@ namespace Chimera.Client.Common
 	/// <summary>
 	/// The themes this build can offer, and which one is on.
 	///
-	/// Two are compiled in and always there; the rest are files somebody dropped
-	/// in the themes folder under the data directory. A file that will not parse
-	/// is left out and its reason kept in <see cref="Failures"/> - it is not
-	/// applied half-way and it does not stop the frontend from starting.
+	/// Two are compiled in and always there; the rest are files in the themes
+	/// folder (Config &gt; Paths, Themes), which is the Themes folder beside
+	/// Chimera.exe unless somebody chose another, and in the folder themes were
+	/// kept in before that one existed. A file that will not parse is left out and
+	/// its reason kept in <see cref="Failures"/> - it is not applied half-way and
+	/// it does not stop the frontend from starting.
 	/// </summary>
 	public static class ThemeLibrary
 	{
@@ -44,6 +47,8 @@ namespace Chimera.Client.Common
 		private static List<ThemeLoadFailure> _failures = new();
 
 		private static Theme? _current;
+
+		private static string _directory = "";
 
 		/// <summary>The theme everything paints with. Never null once anything has asked for it.</summary>
 		public static Theme Current
@@ -77,8 +82,50 @@ namespace Chimera.Client.Common
 			get { lock (Sync) { EnsureLoadedLocked(); return _failures.ToList(); } }
 		}
 
-		/// <summary>Where a person puts a theme they wrote or was given.</summary>
-		public static string ThemesDirectory => Path.Combine(ProjectCache.DataHome, "Themes");
+		/// <summary>
+		/// Where a person puts a theme they wrote or was given, and where the themes
+		/// Chimera ships with are: the Themes path in Config &gt; Paths, set at
+		/// startup by <see cref="UseDirectory"/>. Before that, and in a program that
+		/// never sets it, the Themes folder beside Chimera.exe.
+		/// </summary>
+		public static string ThemesDirectory
+		{
+			get { lock (Sync) return _directory.Length is 0 ? DefaultThemesDirectory : _directory; }
+		}
+
+		/// <summary>The folder the bundle ships its themes in, beside Chimera.exe.</summary>
+		public static string DefaultThemesDirectory => Path.Combine(PathUtils.ExeDirectoryPath, "Themes");
+
+		/// <summary>
+		/// Where themes were kept before there was a folder beside Chimera.exe: under
+		/// the data directory. Still read, after <see cref="ThemesDirectory"/>, so a
+		/// theme somebody wrote there is not lost; nothing is written there any more.
+		/// </summary>
+		public static string FormerThemesDirectory => Path.Combine(ProjectCache.DataHome, "Themes");
+
+		/// <summary>
+		/// Reads themes from another folder from now on. If the themes were already
+		/// read and the folder is a different one, they are read again, keeping the
+		/// current theme when the new folder has it too. Says whether they were.
+		/// </summary>
+		public static bool UseDirectory(string? directory)
+		{
+			bool reread;
+			lock (Sync)
+			{
+				var before = _directory.Length is 0 ? DefaultThemesDirectory : _directory;
+				_directory = directory?.Trim() ?? "";
+				var after = _directory.Length is 0 ? DefaultThemesDirectory : _directory;
+				reread = _themes.Count is not 0 && !SameDirectory(before, after);
+			}
+			if (reread) Reload();
+			return reread;
+		}
+
+		/// <summary>Whether a theme is one of the two compiled into Chimera rather than a file.</summary>
+		public static bool IsBuiltIn(Theme theme) => theme.Origin.StartsWith(BuiltInOrigin, StringComparison.Ordinal);
+
+		private const string BuiltInOrigin = "built-in theme ";
 
 		public static Theme? Find(string? name)
 		{
@@ -152,20 +199,37 @@ namespace Chimera.Client.Common
 		{
 			if (_themes.Count is not 0) return;
 			LoadBuiltIns(_themes);
-			LoadDirectory(SafeThemesDirectory(), _themes, _failures);
+			var folder = _directory.Length is 0 ? DefaultThemesDirectory : _directory;
+			LoadDirectory(folder, _themes, _failures);
+			var former = SafeFormerThemesDirectory();
+			if (former is not null && !SameDirectory(former, folder)) LoadDirectory(former, _themes, _failures);
 		}
 
-		private static string? SafeThemesDirectory()
+		private static string? SafeFormerThemesDirectory()
 		{
 			try
 			{
-				return ThemesDirectory;
+				return FormerThemesDirectory;
 			}
 			catch (Exception)
 			{
-				// no data directory yet (a unit test, a first run): built-ins only
+				// no data directory yet (a unit test, a first run): nothing to read there
 				return null;
 			}
+		}
+
+		private static bool SameDirectory(string a, string b)
+		{
+			try
+			{
+				a = Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+				b = Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			}
+			catch (Exception)
+			{
+				// a path that cannot even be made whole is compared as it was written
+			}
+			return string.Equals(a, b, OSTailoredCode.IsUnixHost ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
 		}
 
 		private static void LoadBuiltIns(List<Theme> into)
@@ -174,7 +238,7 @@ namespace Chimera.Client.Common
 			{
 				using var stream = typeof(ThemeLibrary).Assembly.EmbeddedResourceStream($"Chimera.Client.Common.Resources.themes.{name}.json");
 				using StreamReader reader = new(stream);
-				into.Add(ThemeFile.Parse(reader.ReadToEnd(), $"built-in theme \"{name}\"", n => In(into, n)));
+				into.Add(ThemeFile.Parse(reader.ReadToEnd(), $"{BuiltInOrigin}\"{name}\"", n => In(into, n)));
 			}
 		}
 

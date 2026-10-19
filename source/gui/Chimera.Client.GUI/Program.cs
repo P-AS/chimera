@@ -395,9 +395,11 @@ namespace Chimera.Client.GUI
 			// history, a package or a journal open yet, so nothing has to be closed to move it.
 			SettleDataDirectory(initialConfig, configPath);
 
-			// ...and only then the theme, which is read from a folder under that
-			// directory. Before any window exists, so the first one comes up in the
-			// right colours rather than repainting in front of the user.
+			// ...and only then the theme. Its folder is the config's (Config > Paths,
+			// Themes), and the one under that directory is read after it for the
+			// themes kept there before. Before any window exists, so the first one
+			// comes up in the right colours rather than repainting in front of the user.
+			ThemeLibrary.UseDirectory(initialConfig.PathEntries.ThemesAbsolutePath());
 			initialConfig.ResolveTheme(configExisted);
 			ThemeLibrary.Select(initialConfig.Theme);
 

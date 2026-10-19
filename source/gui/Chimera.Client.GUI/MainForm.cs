@@ -187,7 +187,7 @@ namespace Chimera.Client.GUI
 			FirmwareMenuItem.Image = MenuIcons.Firmware;
 			DataDirectoryMenuItem.Image = MenuIcons.DataDirectory;
 			MessagesMenuItem.Image = MenuIcons.Messages;
-			ThemeSubMenu.Image = MenuIcons.ThemePalette;
+			ThemeMenuItem.Image = MenuIcons.ThemePalette;
 			AutofireMenuItem.Image = MenuIcons.Autofire;
 			ClientOptionsMenuItem.Image = MenuIcons.Customize;
 			SpeedSkipSubMenu.Image = MenuIcons.SpeedSkip;

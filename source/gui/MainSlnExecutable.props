@@ -48,6 +48,11 @@
 		<Move SourceFiles="@(ExecFilesFromExecProj->Replace('$(MSBuildProjectName)', '$(Product)'))" DestinationFolder="$(ExecFilesDest)" />
 		<Move SourceFiles="@(ExecConfigFilesFromExecProj)" DestinationFolder="$(ExecFilesDest)" />
 		<Copy SourceFiles="$(MSBuildProjectDirectory)/ChimeraMono.sh" DestinationFolder="$(ExecFilesDest)" SkipUnchangedFiles="true" Condition="Exists('$(MSBuildProjectDirectory)/ChimeraMono.sh')" />
+		<!-- the themes Chimera ships with (docs/theming.md), beside the executable where Config > Paths looks by default -->
+		<ItemGroup>
+			<ShippedThemes Include="$(MSBuildThisFileDirectory)../../Themes/*.chimeraTheme.json" />
+		</ItemGroup>
+		<Copy SourceFiles="@(ShippedThemes)" DestinationFolder="$(ExecFilesDest)Themes" SkipUnchangedFiles="true" />
 		<MakeDir Directories="@(EmptyDirsToCreate)" />
 		<Touch Files="@(EmptyDirsToCreate->Combine('.keep'))" AlwaysCreate="true" />
 	</Target>

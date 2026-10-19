@@ -46,6 +46,21 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		/// <summary>
+		/// Config &gt; Theme, with its drawing of Chimera in the theme picked - which
+		/// is Dark here whatever the window itself is painted in, so the pictures
+		/// show the drawing keeping its own colours while the window changes round it.
+		/// </summary>
+		[TestMethod]
+		public void ThemeChooserWindow()
+		{
+			using ThemeChooserForm form = new(openFolder: static _ => { });
+			form.StartPosition = FormStartPosition.Manual;
+			form.Location = new Point(0, 0);
+			form.Pick("Dark");
+			Shoot(form, "theme-chooser");
+		}
+
+		/// <summary>
 		/// The firmware survey, which is the one list in the frontend that uses
 		/// GROUPS - and group headers are drawn by the toolkit even when the rest
 		/// of the list has been taken over for theming, which is a claim worth

@@ -7,6 +7,10 @@
 
 Emulation cores are separate projects with their own authors and licenses; each core package carries its licenses and cites its source repository.
 
+## Themes
+
+The sixty colour themes in [Themes](Themes) were made by **Nelson/Geferulf**, who gave them to the project to ship with Chimera.
+
 ## BizHawk
 
 Chimera is a derivative fork of [BizHawk](https://github.com/TASEmulators/BizHawk). The frontend architecture, the TAS toolchain, the emulation service interfaces, and years of accumulated correctness are the work of the BizHawk team, and this project would not exist without them.

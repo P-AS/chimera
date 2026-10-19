@@ -9943,3 +9943,79 @@ Z key) and named all three; it passes on the 49 published packages and on
 them with the three fixed cores' bindings. The other two checks are a
 survey, not a test: a binding shared on purpose cannot be told from one
 shared by mistake without reading the core.
+
+## Chimera ships sixty themes, and Config > Theme is a window that shows them (user-decided, 2026-10-19)
+
+The owner was given sixty colour themes, made by Nelson/Geferulf, and asked
+for three things: put them in the repository and in the release, make their
+folder the place Chimera reads themes from, and let a theme be seen before it
+is chosen, which meant turning the Config > Theme menu into a window.
+
+What changed:
+
+- **A `Themes` folder** in the repository holds the sixty files. The build
+  copies them into `build/Themes`, and `tools/build-bundle.sh` copies them
+  from the repository into `Themes` beside Chimera.exe in the release; the
+  bundle check fails if any is missing. They ship under Chimera's licence,
+  with `"author": "Nelson/Geferulf"` in every file and a line in CREDITS.md
+  (owner's answers).
+- **Where themes are read from** is a path in Config > Paths, "Themes", which
+  by default is `Themes` beside Chimera.exe, like Cores, Lua and Tools (the
+  owner chose the name). The folder used before, `Themes` in the data
+  directory, is still read after it so nobody loses a theme, but nothing is
+  written there any more. A name in both folders is the Themes path's; the
+  other file is listed as not loaded. Changing the path in Config > Paths
+  re-reads the themes at once.
+- **Config > Theme is a window** (`ThemeChooserForm`): the themes on the left,
+  Light and Dark first and then by name; a drawing of Chimera in the theme
+  picked on the right (`ThemePreview`); the description, author and file under
+  it; and Open Themes Folder, Write a Copy to Edit and Reload Themes as
+  buttons. Picking only changes the drawing; OK turns the theme on. Pointing at
+  the drawing names the colour role and its value. Write a Copy to Edit now
+  copies the theme picked rather than the one on, and never writes over a file
+  that is there ("Dark copy 2" when "Dark copy" exists); before, it
+  overwrote one silently.
+
+The drawing is drawn rather than made of real controls because real controls
+take their colours from the theme that is on: the theme engine walks them, and
+much of the frontend asks for the current theme while painting.
+
+**The shipped themes are taken as given (owner's decision).** 57 of the 60
+have text under the 3:1 contrast floor that `ThemeContrastTests` holds themes
+to: 129 of the pairs are disabled text or disabled glyphs, and of the other
+243, 73 are under 2:1 (Halloweentown's green text on a row under the pointer
+is 1.5:1). Offered the choice of nudging the colours, exempting disabled text,
+or shipping as given, the owner chose to ship as given. So the contrast test
+now measures only the built-in themes, and `ShippedThemesTests` holds that
+every shipped file loads, names its author and has a plain ASCII file name.
+
+Changed from the files as given, colours untouched (checked by the import
+script): each file named after its theme in ASCII without spaces (Gyudon,
+Tankoban; "Srping Leaves" became SpringLeaves; Evergreen and Frankenberry
+lacked the `.chimeraTheme.json` ending); raw line breaks inside four
+descriptions written as JSON escapes; and four descriptions that quoted song
+lyrics or a translated poem at length cut to a few words (Electric Eye,
+Plumbers, Skellington, Dim Sum), which the owner chose over keeping them.
+
+Tested:
+
+- Interface tests: 598 logic tests and 348 window tests, none failed or
+  skipped. New: `EveryShippedThemeLoads`, `ThePathsDefaultIsTheFolderBesideTheProgram`,
+  `TheChosenFolderIsReadAndTheFormerOneAfterIt`, and six window tests of the
+  dialog, among them `TheDrawingIsInThePickedThemesColours`, which reads 24
+  surfaces of the drawing off the screen for each of the 62 themes.
+- Each was seen to fail when broken: a theme file with a misspelt role made
+  `EveryShippedThemeLoads` fail naming it, and painting the drawing's status
+  bar in its text colour made the drawing test fail for every theme.
+- The dialog photographed under all 62 themes passed the screenshot checks
+  (no toolkit beige, a chosen row readable).
+- On Windows, `tests/ui/windows/theme-chooser.sh` (new) opened the dialog on
+  .NET Framework WinForms: all 15 surfaces checked were in the picked theme's
+  colours for Aizome, Hackerman, Win98 and Bubblegum Pop, with the window round
+  it Dark. It listed 63 themes: the 62 and a "Dark copy" from the owner's old
+  data-directory folder, which is the old folder being read as intended.
+- The witness: 101 ok, 0 failed. A Linux bundle built from this tree carries
+  the 60 files in `Themes`.
+
+Not tried: clicking through the window by hand in the Windows build. The
+harness opens it, picks and accepts in code.

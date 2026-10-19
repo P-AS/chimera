@@ -194,6 +194,13 @@ namespace Chimera.Client.Common
 			return collection.AbsolutePathFor(path, null);
 		}
 
+		/// <summary>Where the themes are: the folder the bundle ships them in, unless somebody chose another (docs/theming.md).</summary>
+		public static string ThemesAbsolutePath(this PathEntryCollection collection)
+		{
+			var path = collection[PathEntryCollection.GLOBAL, "Themes"].Path;
+			return collection.AbsolutePathFor(path, null);
+		}
+
 		public static string LogAbsolutePath(this PathEntryCollection collection)
 		{
 			var path = collection.ResolveToolsPath(collection[PathEntryCollection.GLOBAL, "Debug Logs"].Path);

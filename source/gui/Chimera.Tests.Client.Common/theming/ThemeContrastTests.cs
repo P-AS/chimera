@@ -20,8 +20,10 @@ namespace Chimera.Tests.Client.Common
 	///
 	/// The theme that follows the desktop is exempt, and deliberately: those are
 	/// the desktop's colours, they are what Chimera has always had, and they are
-	/// not ours to refuse. Every other theme - Dark, and anything a contributor
-	/// writes - answers for itself.
+	/// not ours to refuse. So the theme held to it is Dark, the one Chimera itself
+	/// makes. The themes in the Themes folder are taken as their author made them
+	/// and are not measured here (user-decided, 2026-10-19); ShippedThemesTests
+	/// holds only that each of them loads.
 	/// </summary>
 	[TestClass]
 	public class ThemeContrastTests
@@ -163,7 +165,9 @@ namespace Chimera.Tests.Client.Common
 
 			List<string> bad = new();
 			var looked = 0;
-			foreach (var theme in ThemeLibrary.All.Where(static t => !t.FollowsDesktop))
+			// the built-in themes only: ThemeLibrary.All would also be whatever a
+			// themes folder held on the machine running the tests
+			foreach (var theme in ThemeLibrary.Read(null).Themes.Where(static t => !t.FollowsDesktop))
 			{
 				looked++;
 				foreach (var (ink, ground) in pairs)
@@ -176,7 +180,7 @@ namespace Chimera.Tests.Client.Common
 					}
 				}
 			}
-			Assert.IsTrue(looked > 0, "no theme of its own was checked");
+			Assert.IsTrue(looked > 0, "no built-in theme of its own was checked");
 			Assert.AreEqual(
 				0,
 				bad.Count,

@@ -67,11 +67,14 @@ fi
 
 say "staging into $out"
 rm -rf "$out"
-mkdir -p "$out/dll" "$out/Cores" "$out/Lua" "$out/Tools"
+mkdir -p "$out/dll" "$out/Cores" "$out/Lua" "$out/Tools" "$out/Themes"
 cp "$root/build/Chimera.exe" "$root/build/Chimera.exe.config" "$root/build/Chimera.xml" "$out/" 2>/dev/null || true
 cp "$root"/build/dll/*.dll "$out/dll/" 2>/dev/null || true   # managed assemblies (IL, portable)
 cp -r "$root"/build/Lua/. "$out/Lua/" 2>/dev/null || true
 cp -r "$root"/build/Tools/. "$out/Tools/" 2>/dev/null || true
+# the themes Chimera ships with, from the repository rather than build/, so one
+# renamed or removed since the last build does not travel along (docs/theming.md)
+cp "$root"/Themes/*.chimeraTheme.json "$out/Themes/"
 
 if [ "$platform" = "windows" ]; then
 	cp "$native_dir"/*.dll "$out/dll/"
@@ -135,6 +138,9 @@ done
 [ -s "$out/LICENSES.md" ] || { echo "MISSING: LICENSES.md" >&2; bad=1; }
 [ -s "$out/dll/$mcp_program" ] || { echo "MISSING: dll/$mcp_program (Tools > MCP Server... names it)" >&2; bad=1; }
 [ -d "$out/Cores" ] || { echo "MISSING: Cores/ (the folder a user puts core packages in)" >&2; bad=1; }
+shipped=$(find "$root/Themes" -name '*.chimeraTheme.json' | wc -l)
+bundled=$(find "$out/Themes" -name '*.chimeraTheme.json' | wc -l)
+[ "$shipped" -gt 0 ] && [ "$bundled" -eq "$shipped" ] || { echo "MISSING: Themes/ has $bundled of the $shipped themes in the repository" >&2; bad=1; }
 [ ! -e "$out/official-cores.json" ] || { echo "PRESENT: official-cores.json (the bundle carries no list of cores)" >&2; bad=1; }
 # Chimera reaches for nothing over the network, so nothing that could is shipped
 if find "$out/Lua" -type f | grep -q .; then echo "PRESENT: files under Lua/ (the bundle ships no Lua modules)" >&2; bad=1; fi

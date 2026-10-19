@@ -83,7 +83,7 @@ namespace Chimera.Client.GUI
 			this.PrecompiledModulesMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.DataDirectoryMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.MessagesMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.ThemeSubMenu = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
+			this.ThemeMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.AutofireMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.ClientOptionsMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.toolStripSeparator9 = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
@@ -176,7 +176,6 @@ namespace Chimera.Client.GUI
 			this.toolStripMenuItem13 = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.customizeToolStripMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.toolStripSeparator30 = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
-			this.toolStripSeparator31 = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
 			this.toolStripMenuItem66 = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.toolStripMenuItem67 = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.ScreenshotContextMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
@@ -574,7 +573,7 @@ namespace Chimera.Client.GUI
             this.FirmwareMenuItem,
             this.DataDirectoryMenuItem,
             this.MessagesMenuItem,
-            this.ThemeSubMenu,
+            this.ThemeMenuItem,
             this.AutofireMenuItem,
             this.ClientOptionsMenuItem,
             this.toolStripSeparator9,
@@ -633,17 +632,10 @@ namespace Chimera.Client.GUI
 			this.MessagesMenuItem.Text = "&Messages...";
 			this.MessagesMenuItem.Click += new System.EventHandler(this.MessagesMenuItem_Click);
 			// 
-			// ThemeSubMenu
+			// ThemeMenuItem
 			// 
-			// Seeded with a separator, like RecentProjectSubMenu above and for the
-			// same reason: a ToolStripMenuItem whose DropDownItems is EMPTY does not
-			// open a dropdown at all, so DropDownOpened never fires and the handler
-			// that fills this menu never runs. The menu is built there, so without a
-			// starting item clicking Theme does nothing whatsoever.
-			this.ThemeSubMenu.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.toolStripSeparator31});
-			this.ThemeSubMenu.Text = "&Theme";
-			this.ThemeSubMenu.DropDownOpened += new System.EventHandler(this.ThemeSubMenu_DropDownOpened);
+			this.ThemeMenuItem.Text = "&Theme...";
+			this.ThemeMenuItem.Click += new System.EventHandler(this.ThemeMenuItem_Click);
 			// 
 			// AutofireMenuItem
 			// 
@@ -1305,7 +1297,7 @@ namespace Chimera.Client.GUI
 		private StatusStripEx MainStatusBar;
 		private Chimera.WinForms.Controls.StatusLabelEx EmuStatus;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx MessagesMenuItem;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx ThemeSubMenu;
+		private Chimera.WinForms.Controls.ToolStripMenuItemEx ThemeMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx PathsMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx FirmwareMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx PrecompiledModulesMenuItem;
@@ -1379,7 +1371,6 @@ namespace Chimera.Client.GUI
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx toolStripMenuItem12;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx toolStripMenuItem13;
 		private Chimera.WinForms.Controls.ToolStripSeparatorEx toolStripSeparator30;
-		private Chimera.WinForms.Controls.ToolStripSeparatorEx toolStripSeparator31;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx toolStripMenuItem66;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx toolStripMenuItem67;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx ClientOptionsMenuItem;

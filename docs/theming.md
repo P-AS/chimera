@@ -1,16 +1,33 @@
 # Themes
 
 Chimera's colours are data. A theme is one colour for every role the frontend
-paints with, written in a JSON file; two are compiled in (Light and Dark) and
-any number more can be dropped in a folder. This file says how to write one and
-how the frontend applies it.
+paints with, written in a JSON file. Two are compiled in (Light and Dark),
+sixty more ship in the `Themes` folder, and any number more can be dropped in
+that folder. This file says how to choose one, how to write one and how the
+frontend applies it.
 
 ## Choosing one
 
-Config > Theme lists what is on offer and turns one on straight away - every
-open window repaints, including TAStudio. The choice is saved with the rest of
-the config and read back before the first window exists, so a start is never a
-flash of the wrong colours.
+Config > Theme opens a window. On the left is every theme on offer: Light and
+Dark first, then the rest by name, each marked Light or Dark. On the right is a
+small drawing of Chimera in the theme picked in the list: the menu bar with a
+menu open, a tool strip, a form with its fields and buttons, the coloured words
+and marks, a list with a chosen row and a row under the pointer, a piano roll
+with every kind of row, and the status bar. Pointing at a part of the drawing
+names the colour it is painted with and its value, as in
+`MenuSelectedBackground #B4D7ED`. Under the drawing are the theme's
+description, its author and where it came from.
+
+Picking a theme in the list only changes the drawing. **OK** (or a double
+click) turns it on: every open window repaints, including TAStudio. The choice
+is saved with the rest of the config and read back before the first window
+exists, so a start is never a flash of the wrong colours.
+
+The drawing is drawn, not built out of real controls, and that is on purpose.
+Real controls take their colours from the theme that is on, and half the
+frontend asks for the current theme as it paints, so a second theme in the
+same window would be fought over. Every colour in the drawing comes from the
+theme picked and nothing else (`ThemePreview`).
 
 A config being created now starts on **Dark**. A config that already existed
 and had never chosen a theme was written before there were any, so it keeps
@@ -18,20 +35,61 @@ and had never chosen a theme was written before there were any, so it keeps
 not a feature. Either way the answer is written into the config the first time
 it matters, so the question is asked once.
 
-The same menu has:
+The same window has three buttons:
 
-- **Open Themes Folder** - where a theme file goes. It is `Themes/` under the
-  data directory (Config > Data Directory says where that is; by default
-  `~/.local/share/chimera` on Linux and `%LOCALAPPDATA%\Chimera` on Windows).
-- **Write a Copy to Edit...** - writes the theme that is on into that folder as
-  a complete file. This is the easy way to start: every role is already there
-  with its current value, so a new theme is a matter of changing the ones you
-  want and the name at the top.
-- **Reload Themes** - re-reads the folder without restarting.
+- **Open Themes Folder** - where a theme file goes: the Themes path in
+  Config > Paths, which is the `Themes` folder beside Chimera.exe unless you
+  choose another.
+- **Write a Copy to Edit** - writes the theme picked in the list into that
+  folder as a complete file, named "<theme> copy" (or "copy 2", and so on: it
+  never writes over a file that is already there). This is the easy way to
+  start: every role is already there with its value, so a new theme is a
+  matter of changing the ones you want and the name at the top.
+- **Reload Themes** - re-reads the folders without restarting.
 
-A file that will not load is left out and the menu says how many and why. It is
-never applied half way: a theme with one colour missing is refused whole, so
-there is no such thing as a window that is dark except for one panel.
+A file that will not load is left out, and the line above the buttons says how
+many and, behind "why?", the reason for each. It is never applied half way: a
+theme with one colour missing is refused whole, so there is no such thing as a
+window that is dark except for one panel.
+
+## Where themes are read from
+
+Two folders, in this order:
+
+1. **The Themes path** in Config > Paths. By default it is `Themes` beside
+   Chimera.exe, like `Cores`, `Lua` and `Tools`, and the release ships sixty
+   themes in it. Changing the path re-reads the themes at once.
+2. **`Themes` in the data directory** (Config > Data Directory says where that
+   is; by default `~/.local/share/chimera` on Linux and `%LOCALAPPDATA%\Chimera`
+   on Windows). This is where themes went before there was a folder beside
+   Chimera.exe. It is still read, so a theme somebody put there is not lost,
+   but nothing is written there any more.
+
+If both folders have a theme of the same name, the one in the Themes path is
+used and the other file is listed among the files that would not load.
+
+## The themes Chimera ships
+
+The sixty themes in the repository's `Themes` folder were made by
+Nelson/Geferulf and are shipped under Chimera's licence (user-decided,
+2026-10-19). The build copies them into `build/Themes` and the release bundle
+into `Themes` beside Chimera.exe (`tools/build-bundle.sh` takes them from the
+repository, so a theme renamed or removed since the last build does not ship).
+
+They are taken as their author made them. Most of them have some text below
+the 3:1 contrast that Dark is held to (see "How it is applied"),
+and that was the owner's choice: the test measures the two themes Chimera makes
+itself, and `ShippedThemesTests` holds only that every shipped file loads, says
+who made it, and has a plain ASCII file name ending in `.chimeraTheme.json`.
+Someone who finds a shipped theme hard to read can pick another, or write a
+copy and change the colours.
+
+What was changed from the files as they were given: each was named after its
+theme in ASCII without spaces, each got `"author": "Nelson/Geferulf"`, line
+breaks inside four descriptions were written as JSON escapes, and four
+descriptions that quoted song lyrics or a translated poem at length were cut to
+a few words (Electric Eye, Plumbers, Skellington, Dim Sum). No colour was
+changed.
 
 ## The file
 
@@ -233,8 +291,10 @@ frontend:
   paired with the background it lands on. A theme is ninety numbers somebody
   typed, and two of them being the same shade is not something anyone spots by
   reading the file - it is something they find later, as a row that looks
-  blank. Every theme that is not the desktop's is held to 3:1, which is the
-  accessibility floor for anything a person has to pick out.
+  blank. Dark, the built-in theme with colours of its own, is held to 3:1,
+  which is the accessibility floor for anything a person has to pick out
+  (Light is the desktop's colours, and the shipped themes are their author's:
+  see "The themes Chimera ships").
 
 ## Looking at it
 
@@ -347,6 +407,18 @@ be mid-rebuild, which is what its own comments always said it should do. The
 exact timing was not reproduced in a harness. The Windows harness opens that
 window on a dark theme and would catch a plain regression; it is not proof that
 the original race cannot recur.
+
+### Config > Theme on Windows
+
+`tests/ui/windows/theme-chooser.sh` opens the theme window on .NET Framework
+WinForms with the shipped themes, picks four of them in turn (Aizome,
+Hackerman, Win98, Bubblegum Pop) and reads, off a PrintWindow picture of the
+window, a pixel of fifteen surfaces of the drawing. Each must be the picked
+theme's colour while the window round it stays Dark. Mono asks the same of
+every shipped theme (`TheDrawingIsInThePickedThemesColours`). Drawn at a scale
+that is not a whole number, as on Windows, a pixel next to an edge is a blend
+of the colours either side, so both pick pixels at least two clear of any
+edge.
 
 ### A themed combo box repaints whole when it is resized (chimera#230)
 
