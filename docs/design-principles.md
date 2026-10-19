@@ -9514,3 +9514,19 @@ on the quiet disk and 1.1 and 3.6 ms under the writing; none took over 5 ms.
 
 **What was decided.** Nothing changes: the flush does not hold the writer up
 by anything a person could see. A slower disk than this PC's was not tried.
+
+## Vulkan answers about the GPU's progress are settled for everyone (user-decided, 2026-10-19)
+
+The switch measured on 2026-10-18 (under 1% on the GTX 1060, no difference
+seen in two runs) is now on by default: a question about how far the GPU has
+got waits for the device first, so a core's path cannot depend on the GPU's
+speed. The owner chose it over leaving it as an option. CHIMERA_VK_SETTLED=0
+turns it off. Recorded GPU movies were already marked as not reproducible;
+one that went down a timing-dependent path may now go down the other.
+
+**Tested.** miniBox's 23 tests pass (6 expected failures; the bridge's test
+with the answers settled); the engine's 30 unit tests pass, the witness 99
+passed and 0 failed, the interface tests 1114 with none failed (23 skipped),
+the Windows build compiles, and the PCSX2 core's test script 44 passed, 0
+failed, 6 skipped, its five Vulkan tests among them (its later tests ran
+with an engine that also had the next change, the watchdog, built in).

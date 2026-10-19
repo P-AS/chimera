@@ -1078,12 +1078,12 @@ the order it was met. The other cores' renderers will need the same:
   starting the shader compiler; a table of fifty thousand entries made and
   walked. `CHIMERA_VK_STATS=1` shows the bridge's and the driver's share;
   the core's own is found by timing the pieces of its start-up.
-- **Answers about the GPU's progress depend on its speed.** A fence's
-  status, a timed wait and the like are answered as the GPU stands at that
-  moment. `CHIMERA_VK_SETTLED=1` waits for the device first, so the answer
-  depends only on what was submitted; it is off, measured (miniBox's
-  `source/vk/README.md`: under 1% on the GTX 1060) and left for the owner
-  to turn on or not.
+- **Answers about the GPU's progress do not depend on its speed.** A
+  fence's status, a timed wait and the like are answered after the device
+  has finished what was submitted, so the answer depends only on what was
+  submitted (on since 2026-10-19, the owner's decision; under 1% on the
+  GTX 1060, miniBox's `source/vk/README.md`). `CHIMERA_VK_SETTLED=0` turns
+  it off.
 - **To be compared with the core's other renderer in several games, on a
   real card.** Software Vulkan and test programs passed everything in two
   cores whose first runs of games on the GTX 1060 then showed faults:
