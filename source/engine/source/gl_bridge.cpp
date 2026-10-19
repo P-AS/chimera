@@ -60,6 +60,10 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <glad/wgl.h>
+#elif defined(__APPLE__)
+#include <OpenGL/OpenGL.h>
+#include <dlfcn.h>
+#include <unistd.h>   /* getpid: per-process entropy for a context's identity */
 #else
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -183,6 +187,80 @@ void return_current()
 	wglMakeCurrent(s_lentDC, s_lentContext);
 	s_lentContext = nullptr;
 	s_lentDC = nullptr;
+}
+
+#elif defined(__APPLE__)
+
+/* ---------------------------------------------------------------------------
+ * macOS: a CGL context with no drawable. CGL, unlike WGL, needs no window for a
+ * pixel format, and like EGL's surfaceless platform it leaves no framebuffer 0,
+ * which the bridge never draws into anyway (see the Linux half below). Its
+ * desktop OpenGL is 4.1 core - every 3.3 core call the bridge answers, as Linux
+ * asks EGL for - and is deprecated, not gone; Apple's own translates to Metal.
+ */
+CGLContextObj s_context;
+void *s_opengl;   /* OpenGL.framework, where every entry point is exported */
+
+GLADapiproc loader(const char *name)
+{
+	return (GLADapiproc)dlsym(s_opengl, name);
+}
+
+bool create_context(char *err, int errlen)
+{
+	s_opengl = dlopen("/System/Library/Frameworks/OpenGL.framework/OpenGL", RTLD_NOW | RTLD_LOCAL);
+	if (s_opengl == nullptr)
+	{
+		snprintf(err, errlen, "no OpenGL framework");
+		return false;
+	}
+	/* 3.2 core is the name CGL gives every core profile it has: 4.1 here */
+	const CGLPixelFormatAttribute attribs[] = {
+		kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,
+		kCGLPFAAccelerated,
+		kCGLPFAAllowOfflineRenderers,
+		(CGLPixelFormatAttribute)0,
+	};
+	CGLPixelFormatObj format = nullptr;
+	GLint count = 0;
+	if (CGLChoosePixelFormat(attribs, &format, &count) != kCGLNoError || format == nullptr)
+	{
+		snprintf(err, errlen, "no pixel format offers a core OpenGL profile");
+		return false;
+	}
+	const CGLError made = CGLCreateContext(format, nullptr, &s_context);
+	CGLReleasePixelFormat(format);
+	if (made != kCGLNoError || s_context == nullptr || CGLSetCurrentContext(s_context) != kCGLNoError)
+	{
+		snprintf(err, errlen, "the driver would not make a context current");
+		return false;
+	}
+	return true;
+}
+
+void destroy_context()
+{
+	if (s_context) { CGLSetCurrentContext(nullptr); CGLReleaseContext(s_context); s_context = nullptr; }
+}
+
+/* the same at a session's end, without unbinding what the calling thread has */
+void end_context()
+{
+	if (s_context) { CGLReleaseContext(s_context); s_context = nullptr; }
+}
+
+/* Whose context was current before we took the slot. Null is a legitimate
+ * answer and must be restored as faithfully as any other. */
+CGLContextObj s_lentContext;
+
+void save_current() { s_lentContext = CGLGetCurrentContext(); }
+
+bool bind_ours() { return CGLSetCurrentContext(s_context) == kCGLNoError; }
+
+void return_current()
+{
+	CGLSetCurrentContext(s_lentContext);
+	s_lentContext = nullptr;
 }
 
 #else

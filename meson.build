@@ -25,6 +25,14 @@ project(
 
 fs = import('fs')
 host_windows = host_machine.system() == 'windows'
+host_macos = host_machine.system() == 'darwin'
+# what a shared library is called on the target: .dll, .dylib or .so
+shlib_ext = 'so'
+if host_windows
+  shlib_ext = 'dll'
+elif host_macos
+  shlib_ext = 'dylib'
+endif
 repo_root = meson.project_source_root()
 
 cc = meson.get_compiler('c')
@@ -95,11 +103,17 @@ foreach f : [
 ]
   lua_src += files('extern/lua' / f + '.c')
 endforeach
+lua_args = ['-DLUA_USE_LINUX']
+if host_windows
+  lua_args = ['-DLUA_BUILD_AS_DLL']
+elif host_macos
+  lua_args = ['-DLUA_USE_MACOSX']
+endif
 lua54 = shared_library(
   'lua54',
   lua_src,
   name_prefix: host_windows ? '' : 'lib',
-  c_args: host_windows ? ['-DLUA_BUILD_AS_DLL'] : ['-DLUA_USE_LINUX'],
+  c_args: lua_args,
   dependencies: [m_dep, dl_dep],
   install: true,
   install_dir: 'dll',
@@ -162,7 +176,7 @@ nested_tool = files('extern/meson/nested-build.sh')
 # reconfigures itself when its own build files change, so asking costs a
 # no-op there, and the library is copied out only when it changed.
 cross_arg = host_windows ? '--cross-file=' + repo_root / 'extern/meson/mingw-w64.ini' : ''
-zstd_out = host_windows ? 'libzstd.dll' : 'libzstd.so'
+zstd_out = host_windows ? 'libzstd.dll' : 'libzstd.' + shlib_ext
 custom_target(
   'zstd',
   output: zstd_out,
@@ -186,7 +200,7 @@ custom_target(
 cmake_toolchain = host_windows ? repo_root / 'extern/meson/mingw-toolchain.cmake' : ''
 custom_target(
   'sdl2',
-  output: host_windows ? 'SDL2.dll' : 'libSDL2.so',
+  output: host_windows ? 'SDL2.dll' : 'libSDL2.' + shlib_ext,
   build_always_stale: true,
   command: [
     nested_tool, 'cmake',
@@ -199,9 +213,19 @@ custom_target(
   install: true,
   install_dir: 'dll',
 )
+# macOS: CoreAudio and nothing else - not the backends (and D-Bus, for rtkit)
+# a development machine's Homebrew offers, which would tie the library to
+# Homebrew and put Homebrew's headers ahead of OpenAL's own fmt
+openal_platform_args = []
+if host_macos
+  openal_platform_args = ['-DALSOFT_REQUIRE_COREAUDIO=ON', '-DALSOFT_RTKIT=OFF',
+    '-DALSOFT_BACKEND_PORTAUDIO=OFF', '-DALSOFT_BACKEND_PULSEAUDIO=OFF',
+    '-DALSOFT_BACKEND_PIPEWIRE=OFF', '-DALSOFT_BACKEND_JACK=OFF',
+    '-DALSOFT_BACKEND_SDL2=OFF', '-DALSOFT_BACKEND_SDL3=OFF']
+endif
 custom_target(
   'openal',
-  output: host_windows ? 'OpenAL32.dll' : 'libopenal.so',
+  output: host_windows ? 'OpenAL32.dll' : 'libopenal.' + shlib_ext,
   build_always_stale: true,
   command: [
     nested_tool, 'cmake',
@@ -211,7 +235,7 @@ custom_target(
     cmake_toolchain,
     '-DALSOFT_UTILS=OFF', '-DALSOFT_EXAMPLES=OFF', '-DALSOFT_TESTS=OFF',
     '-DLIBTYPE=SHARED',
-  ],
+  ] + openal_platform_args,
   console: true,
   install: true,
   install_dir: 'dll',
@@ -236,8 +260,14 @@ minibox_host_src = files(
   minibox_host / 'host.c',
   minibox_host / 'threading.c',
   minibox_host / 'cinterface.c',
-  minibox_host / (host_windows ? 'pal_win.c' : 'pal_linux.c'),
 )
+if host_windows
+  minibox_host_src += files(minibox_host / 'pal_win.c')
+elif host_macos
+  minibox_host_src += files(minibox_host / 'pal_darwin.c')
+else
+  minibox_host_src += files(minibox_host / 'pal_linux.c')
+endif
 # The machine's own code - the interop area and the guarded call - is written
 # for the CPU the host runs on (as miniBox's source/host/meson.build selects it).
 if host_machine.cpu_family() == 'aarch64'
@@ -406,6 +436,10 @@ if gl_bridge
   if host_windows
     gl_bridge_src += files('extern/glad/src/wgl.c')
     gl_bridge_deps = [meson.get_compiler('cpp').find_library('opengl32', required: true)]
+  elif host_macos
+    # CGL, from the OpenGL framework (deprecated by Apple, still there)
+    gl_bridge_deps = [dependency('appleframeworks', modules: ['OpenGL'])]
+    engine_build_args += ['-DGL_SILENCE_DEPRECATION']
   else
     gl_bridge_deps = [meson.get_compiler('cpp').find_library('EGL', required: true)]
   endif
