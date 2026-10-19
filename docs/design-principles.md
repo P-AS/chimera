@@ -10069,3 +10069,32 @@ key read back as itself) and LogGeneratorTests.LogKeyNamesMayHoldItsSeparators
 (the window's reading) both fail on the old reader and pass. Engine tests
 30/30, witness 102 ok and 0 failed, interface tests 119/63/599/348 with none
 failed, the Windows build compiles.
+
+## Four more Vulkan commands, and descriptor update templates (user-decided, 2026-10-19)
+
+The Vulkan bridge offered three extensions whose commands it did not have:
+`vkCmdSetPatchControlPointsEXT` and `vkCmdSetLogicOpEXT`
+(`VK_EXT_extended_dynamic_state2`), `vkCmdSetLineStipple`
+(`VK_EXT_line_rasterization`) and `vkCmdPushDescriptorSetWithTemplate`
+(`VK_KHR_push_descriptor`). A renderer that saw the extension offered and
+asked for one got nothing. No core is known to have failed for it. The
+owner decided to add all four now, knowing that a core built afterwards
+needs a Chimera at least as new (miniBox 9ebf68b).
+
+The last one needs descriptor update templates, which the bridge had
+retired: a template's data holds image views, samplers, buffers and buffer
+views at offsets only the template says, and the driver was handed the
+guest's handles and killed the host. They are back, written by hand: the
+host keeps each template's entries and, for each use, copies the data and
+translates every handle in it, as it does for `vkUpdateDescriptorSets`. A
+template entry it cannot translate (an acceleration structure) is refused
+when the template is made.
+
+Tested on llvmpipe by miniBox's Vulkan test: the pushed triangle is drawn
+again through a template whose buffer sits eight bytes into the data, and the
+picture through the bridge is the direct run's; the bridge answers the six
+new commands with two names as the driver does. With the bridge as it was,
+the test fails on both. The same test passes on the GeForce GTX 1060 (the
+Windows runner, NVIDIA's Vulkan 1.4 driver: the same pictures, and every
+one of the thirteen commands with two names present on both sides). No
+core calls these commands yet.
