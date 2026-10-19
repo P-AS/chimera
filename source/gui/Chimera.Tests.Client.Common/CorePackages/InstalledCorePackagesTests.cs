@@ -254,6 +254,89 @@ namespace Chimera.Tests.Client.Common.CorePackages
 		}
 
 		/// <summary>
+		/// The names the keyboard and the mouse arrive by: each key as Input hands it to the bindings
+		/// (<see cref="DistinctKeyNameOverrides.GetName"/>), Shift, Ctrl and Alt for either key of each (the
+		/// default, Config.MergeLAndRModifierKeys), and the mouse's buttons.
+		/// </summary>
+		private static HashSet<string> KeyAndMouseButtons()
+		{
+			HashSet<string> names = new(StringComparer.Ordinal) { "Shift", "Ctrl", "Alt", "WMouse L", "WMouse M", "WMouse R", "WMouse 1", "WMouse 2" };
+			foreach (Chimera.Input.DistinctKey k in Enum.GetValues(typeof(Chimera.Input.DistinctKey))) names.Add(DistinctKeyNameOverrides.GetName(k));
+			return names;
+		}
+
+		/// <summary>The mouse's axes: its place in the window and its movement.</summary>
+		private static readonly HashSet<string> MouseAxes = new(StringComparer.Ordinal) { "WMouse X", "WMouse Y", "RMouse X", "RMouse Y" };
+
+		/// <summary>On a default setup a left or right modifier key arrives under the merged name only.</summary>
+		private static readonly Dictionary<string, string> MergedModifiers = new(StringComparer.Ordinal)
+		{
+			["LeftShift"] = "Shift", ["RightShift"] = "Shift", ["LeftCtrl"] = "Ctrl", ["RightCtrl"] = "Ctrl", ["LeftAlt"] = "Alt", ["RightAlt"] = "Alt",
+		};
+
+		/// <summary>
+		/// A default binding to a key or the mouse names one Chimera sends, and an axis is bound to an axis. Sixteen
+		/// cores once shipped keys by names nothing sends ("D1", "Return", "Multiply"), found by a script in four core
+		/// repositories; this holds every package to it (chimera#317). A panel that binds LeftShift must bind Shift
+		/// too, as a default setup sends only Shift.
+		/// </summary>
+		[TestMethod]
+		public void KeybindsNameKeysAndMouseInputsChimeraSends()
+		{
+			var keys = KeyAndMouseButtons();
+			List<string> unknown = new();
+			Packages();
+			foreach (var path in InstalledPackages.Newest)
+			{
+				var dir = Extracted(path);
+				if (dir is null) continue;
+				try
+				{
+					var keybinds = PackageKeybinds.Read(dir);
+					if (keybinds is null) continue;
+					var name = InstalledPackages.NameOf(path);
+					foreach (var (controller, bindings) in keybinds.AllTrollers)
+					{
+						HashSet<string> bound = new(StringComparer.Ordinal);
+						foreach (var (button, value) in bindings)
+						{
+							foreach (var part in (value ?? "").Split(',', '+').Select(static p => p.Trim()).Where(static p => p.Length is not 0))
+							{
+								bound.Add(part);
+								if (Regex.IsMatch(part, @"^[XJ]\d+ ")) continue; // a gamepad's: KeybindsNameGamepadInputsChimeraSends
+								if (!keys.Contains(part)) unknown.Add($"{name}/{controller}/{button}: {part}");
+							}
+						}
+						foreach (var (side, merged) in MergedModifiers)
+						{
+							if (bound.Contains(side) && !bound.Contains(merged)) unknown.Add($"{name}/{controller}: {side} is bound but not {merged}, the only one a default setup sends");
+						}
+					}
+					foreach (var (controller, bindings) in keybinds.AllTrollersAnalog ?? new())
+					{
+						foreach (var (axis, bind) in bindings)
+						{
+							foreach (var part in (bind.Value ?? "").Split(',').Select(static p => p.Trim()).Where(static p => p.Length is not 0))
+							{
+								if (Regex.IsMatch(part, @"^[XJ]\d+ ")) continue;
+								if (!MouseAxes.Contains(part)) unknown.Add($"{name}/{controller}/{axis}: {part} (an axis bound to what is not one)");
+							}
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					unknown.Add($"{InstalledPackages.NameOf(path)}: {ex.Message}");
+				}
+				finally
+				{
+					TryDelete(dir);
+				}
+			}
+			Assert.AreEqual(0, unknown.Count, "keys and mouse inputs Chimera does not send: " + string.Join("; ", unknown));
+		}
+
+		/// <summary>
 		/// What the manager will call each package in the store, checked against what
 		/// the package says it is. A published package with no version cannot be
 		/// filed, cited by a movie, or told apart from the next one.

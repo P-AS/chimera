@@ -112,9 +112,14 @@ these files, each of which a published core has:
   `file_slots.json`, `default_keybinds.json`, `package-licenses.json`).
   A default binding names inputs as Chimera sends them: a game controller's
   as `X1 A`, `X1 LeftThumb` (the stick's click) and, for a stick,
-  `X1 LeftThumbX Axis`; a plain joystick's as `J1 B1`, `J1 X Axis`. A name
-  nothing sends binds nothing, and the contract test
-  `KeybindsNameGamepadInputsChimeraSends` refuses it.
+  `X1 LeftThumbX Axis`; a plain joystick's as `J1 B1`, `J1 X Axis`; a key
+  as `Number1`, `Enter`, `KeypadMultiply`, `Shift` (a default setup sends
+  either Shift as `Shift`, so a binding to `LeftShift` needs `Shift` beside
+  it); the mouse as `WMouse L` and, for an axis, `WMouse X` (its place) or
+  `RMouse X` (its movement). A name nothing sends binds nothing, and the
+  contract tests `KeybindsNameGamepadInputsChimeraSends` and
+  `KeybindsNameKeysAndMouseInputsChimeraSends` refuse it, as they refuse
+  an axis bound to a key.
 
 Upstream is a pinned submodule, never edited in place; every change is a
 numbered patch. No absolute path and no `$HOME` anywhere in a build script.

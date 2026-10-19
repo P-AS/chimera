@@ -9892,3 +9892,54 @@ the engine before this change:
 
 Not tested: an AMD or Intel card, where the cores may map buffers in
 other ways.
+
+## Issue 317: every core's default bindings, checked (2026-10-19)
+
+Issue 314 found a Nintendo 64 stick that did nothing because its default
+binding named a gamepad input Chimera does not send. Issue 317 asked for the
+same look at every core's other inputs. The default bindings of all 49
+published packages (the dev builds of 2026-10-19) were read and checked:
+
+- Every key, mouse button, gamepad button and axis a binding names is one
+  Chimera sends. None was found wrong: the 16 cores with misspelt keys
+  were fixed on 2026-10-14, and issue 314 fixed the gamepads.
+- Every binding is for a control the core declares. None was found wrong.
+- Every axis is bound to an axis. None was found wrong.
+- No host input presses two controls by mistake. Three cores did:
+  - MAME home bound the keyboard's X to player 2's button 2 on the Atari
+    7800, Intellivision, Vectrex, Channel F and GX4000, beside player 1's,
+    and on the CPCs to the joystick's button 2: the test that keeps only a
+    pad's bindings was "starts with J or X", which the X key passes. The
+    French CPC's number row was bound by the first character of each key's
+    name ("E Acute 2 ~" to the E key), and the CPC6128's keypad Enter
+    shared the PC's Enter with Return. Fixed in its generator (mamehome
+    639c216).
+  - EKA2L1 bound the phone's # to the 3 key, which is also its 3. # is on
+    Equals now and * on Minus as well (eka2l1 b6e158f).
+- A pointing device that moves can also press. One could not: Virtual
+  Jaguar's light gun aimed with the host mouse and its mouse moved with
+  it, but neither had a button bound (virtualjaguar 0f955bc).
+
+Some shared keys are on purpose and stay. Where two devices can be plugged
+into one port (PCSX2's pad and light gun, DuckStation's mouse and light gun,
+Dolphin's GameCube pad and Wii Remote), they share keys, as only the plugged
+one reads them. DOSBox-X and the X68000 put the joystick and the cursor keys
+on the same keys, so a game reading either works. DOSBox-X and PCem leave the
+mouse's middle and right buttons unbound: the middle button is the Capture
+Mouse hotkey, and a right button that is bound takes the right click from
+Chimera's menu.
+
+The first three checks are now one more contract test,
+`KeybindsNameKeysAndMouseInputsChimeraSends`, beside
+`KeybindsNameGamepadInputsChimeraSends`: a key is known by the name Input
+gives it (`DistinctKeyNameOverrides.GetName`), so the test cannot drift from
+what is sent. It also refuses a panel that binds LeftShift without Shift,
+since a default setup sends only Shift. It was a script in four core
+repositories before.
+
+Tested: the new test failed on a copy of the TIC-80 package with three
+faults put in (a key called Return, LeftShift without Shift, an axis on the
+Z key) and named all three; it passes on the 49 published packages and on
+them with the three fixed cores' bindings. The other two checks are a
+survey, not a test: a binding shared on purpose cannot be told from one
+shared by mistake without reading the core.
