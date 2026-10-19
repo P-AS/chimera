@@ -52,6 +52,10 @@ the frontend names it `<data home>/Cache/PrecompiledCode/<game sha1>/`
 (see `CacheStore`; the data home is `%LOCALAPPDATA%\Chimera` or
 `$XDG_DATA_HOME/chimera`), and
 `ce_session_cache_stored` / `ce_session_cache_fetched` say what a session did.
+The command-line runner takes the directory as `chimera-run --cache-dir
+<folder>`. Each call to the cache counts as the core's work for the time
+limit on a frame (a core compiling is not stuck; see "Debugging inside the
+sandbox" in porting-a-core.md).
 In a precompile session every object that crosses is announced on stdout as
 `[cache] stored <name> <sha1>` or `[cache] fetched <name> <sha1>`, which is
 how a frontend watching a child process learns what a game needs. An ordinary

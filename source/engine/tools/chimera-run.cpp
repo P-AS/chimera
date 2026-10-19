@@ -340,6 +340,7 @@ int main(int argc, char **argv)
 	std::vector<std::string> fileDirs;
 	bool allowCoreMismatch = false;
 	bool wantGpu = false;
+	std::string cacheDir;
 	bool suggest = false;
 	/* --import-movie: the positional "rom" is a movie made elsewhere (a Doom
 	 * demo), mounted as "movie", and the core's ImportMovie is asked what it
@@ -453,6 +454,7 @@ int main(int argc, char **argv)
 		else if (arg == "--files" && i + 1 < argc) fileDirs.push_back(argv[++i]);
 		else if (arg == "--allow-core-mismatch") allowCoreMismatch = true;
 		else if (arg == "--gpu") wantGpu = true;
+		else if (arg == "--cache-dir" && i + 1 < argc) cacheDir = argv[++i];   /* a compile cache, as the frontend keeps one */
 		else if (arg == "--locale-from-environment")
 		{
 			/* What a frontend's runtime does at start (Mono calls
@@ -592,7 +594,7 @@ int main(int argc, char **argv)
 	bool projectMode = !projectPath.empty();
 	if (projectMode ? packagePath == nullptr : (suggest || importMovie ? romPath == nullptr : moviePath == nullptr))
 	{
-		std::fprintf(stderr, "usage: chimera-run <package> <rom> <movie.txt> [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--record-key <LogKey>] [--settings <json>] [--dump <domain>=<path>]... [--firmware <id>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--ram-search-bench <domain>] [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame]\n"
+		std::fprintf(stderr, "usage: chimera-run <package> <rom> <movie.txt> [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--record-key <LogKey>] [--settings <json>] [--dump <domain>=<path>]... [--firmware <id>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--ram-search-bench <domain>] [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame] [--cache-dir <folder>]\n"
 			"       chimera-run --project <p.chimeraProject> <package> [--files <dir>]... [--allow-core-mismatch] [the same run flags]\n"
 			"       chimera-run <package> <rom> --suggest [--settings <json>] [--firmware <id>=<path>]...\n"
 			"       chimera-run <package> <movie> --import-movie [--mount <name>=<path>]... [--settings <json>]\n");
@@ -741,6 +743,7 @@ int main(int argc, char **argv)
 	 * driver, or with a core that has no GL renderer, the software path
 	 * draws and ce_session_deterministic still says 1. */
 	ce_gl_request(wantGpu ? 1 : 0);
+	if (!cacheDir.empty()) ce_cache_dir(cacheDir.c_str());
 
 	/* firmware, read whole: a bios is small and the engine wants the bytes */
 	std::vector<std::vector<uint8_t>> fwBytes(firmwareArgs.size());

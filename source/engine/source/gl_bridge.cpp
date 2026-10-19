@@ -1441,8 +1441,26 @@ static void poolCall(uintptr_t op, uintptr_t a)
 	}
 }
 
+static uintptr_t BRIDGE_ABI glDispatchBody(uintptr_t op, uintptr_t a, uintptr_t b,
+                                          uintptr_t c, uintptr_t d, uintptr_t e);
+
+extern "C" uint64_t ce_guest_work;   /* session.cpp */
+
+/* Each call is the core's work once the driver has answered it: one that took
+ * long (a shader compiled) is not a stuck core (session.cpp, ce_guest_work).
+ * Counted here rather than by a destructor in the body: a sysv function may
+ * carry no C++ unwind data under mingw (".seh_handlerdata used outside of
+ * .seh_proc"). */
 extern "C" uintptr_t BRIDGE_ABI ce_gl_dispatch(uintptr_t op, uintptr_t a, uintptr_t b,
                                                uintptr_t c, uintptr_t d, uintptr_t e)
+{
+	const uintptr_t r = glDispatchBody(op, a, b, c, d, e);
+	__atomic_store_n(&ce_guest_work, __atomic_load_n(&ce_guest_work, __ATOMIC_RELAXED) + 1, __ATOMIC_RELAXED);
+	return r;
+}
+
+static uintptr_t BRIDGE_ABI glDispatchBody(uintptr_t op, uintptr_t a, uintptr_t b,
+                                          uintptr_t c, uintptr_t d, uintptr_t e)
 {
 	(void)d; (void)e;
 	g_calls++;

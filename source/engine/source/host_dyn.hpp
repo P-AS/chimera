@@ -75,6 +75,8 @@ struct HostApi
 	void (*wbx_stop_cancel)(void *obj, WbxReturn *ret);
 	/* the guest's working system calls, counted (a sign of life) */
 	void (*wbx_guest_activity)(void *obj, WbxReturn *ret);
+	/* a count of the frontend's own work for the guest, added into that */
+	void (*wbx_count_work_from)(void *obj, const uint64_t *counter, WbxReturn *ret);
 	void (*wbx_mount_file)(void *obj, const char *name, WbxReadCb cb, uintptr_t userdata, uint8_t writable, WbxReturn *ret);
 	/* read-only, read from the host's disk as the guest asks - no copy */
 	void (*wbx_mount_file_path)(void *obj, const char *name, const char *host_path, WbxReturn *ret);

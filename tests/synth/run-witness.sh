@@ -623,12 +623,28 @@ json.dump(d, open(p, 'w'))
 		if [ "$sfrc" -eq 124 ] || [ "$ssrc" -eq 124 ]; then
 			report "E:core-stuck" FAIL "a stuck core was not stopped: the run was killed after 60 s (frame rc=$sfrc, start rc=$ssrc)"
 		elif ! grep -q "^failedat=2$" "$work/stuck-frame.meta.txt" 2>/dev/null \
-		     || ! grep -q "did not finish a frame in 1 seconds" "$work/stuck-frame.meta.txt" "$work/stuck-frame.log" 2>/dev/null; then
+		     || ! grep -q "did not finish a frame in 1.5 seconds" "$work/stuck-frame.meta.txt" "$work/stuck-frame.log" 2>/dev/null; then
 			report "E:core-stuck" FAIL "the stuck frame was not reported as such: $(grep '^detail=\|^status=\|^failedat=' "$work/stuck-frame.meta.txt" 2>/dev/null | tr '\n' ' ')"
-		elif [ "$ssrc" -eq 0 ] || ! grep -q "the core stopped while starting: the core did not finish starting in 1 seconds" "$work/stuck-start.log"; then
+		elif [ "$ssrc" -eq 0 ] || ! grep -q "the core stopped while starting: the core did not finish starting in 1.5 seconds" "$work/stuck-start.log"; then
 			report "E:core-stuck" FAIL "the stuck start was not reported as such: rc=$ssrc $(tail -1 "$work/stuck-start.log" | cut -c1-120)"
 		else
 			report "E:core-stuck" PASS "a core stuck in a frame or in starting is stopped after its time and reported, with the reason, and the process survives"
+		fi
+
+		# ...and a core that is working is not stopped, even when the work is
+		# done for it by Chimera: a frame that only asks the compile cache for
+		# an object it never stored, and yields - about half a second here -
+		# runs past a 0.1 second limit, because each call to the cache counts
+		# as the core's work (calls through the GPU bridges count the same way).
+		cat "$here/roms/gridWalker.testrom" > "$work/cache-work.testrom"
+		printf 'CACHEWORK' >> "$work/cache-work.testrom"
+		rm -rf "$work/cache-work.cache" "$work/cache-work.meta.txt"
+		CHIMERA_FRAME_TIMEOUT_MS=100 timeout 60 "$chimera_run" "$epkg" "$work/cache-work.testrom" "$here/movies/gridWalker.win.txt" \
+			--cache-dir "$work/cache-work.cache" --meta "$work/cache-work.meta.txt" > "$work/cache-work.log" 2>&1; cwrc=$?
+		if [ "$cwrc" -ne 0 ] || ! grep -q "^status=OK$" "$work/cache-work.meta.txt" 2>/dev/null; then
+			report "E:core-working" FAIL "a core working through the compile cache was stopped: rc=$cwrc $(grep '^detail=' "$work/cache-work.meta.txt" 2>/dev/null)"
+		else
+			report "E:core-working" PASS "a frame that is long but busy (calls to the compile cache) is not stopped"
 		fi
 
 		# THE CORE LOG (ce_core_log, Tools > Export Core Log... in the frontend):

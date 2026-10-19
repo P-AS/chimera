@@ -9623,3 +9623,55 @@ overlap (they overlapped at y=14 before); the contract test, which found
 69 dead names in the published Dolphin, PCSX2 and RPCS3 packages and none
 once their bindings were fixed. Engine tests (30), witness (99) and the
 interface tests (119, 63, 594 and 341, none failed) pass.
+
+## Calls through the GPU bridges count as a core's work (2026-10-19)
+
+**What was wrong.** The time limit on a frame (two entries above, "A core
+that does not come back is stopped") counted only the core's own system
+calls as work. A call through a GPU bridge is not a system call: Chimera runs
+it for the core. A driver call longer than 20
+seconds (a very long shader compile) could not be stopped while it ran, but
+the stop asked for meanwhile ended the core as soon as the call came back.
+
+**What changed.**
+
+- Chimera counts its own work for the core: one more after each call through
+  the GL or Vulkan bridge, and each call to the compile cache, once it has
+  been answered. miniBox adds that count to the core's
+  (`wbx_count_work_from`, sandbox spec), so the watchdog sees it.
+- miniBox carries out a stop only if the core has not worked since it was
+  asked for. A driver call that took long and came back drops the stop, and
+  the watchdog asks again if the core gets stuck after all.
+- A stop asked on the core's own thread, from inside a host callback, waits
+  for the core's next system call. On Windows it used to suspend the thread
+  that asked, which would never have come back.
+- The message shows a limit under a second, or with a fraction, with
+  decimals ("1.5 seconds", not "1 seconds").
+- `chimera-run --cache-dir <folder>` keeps a compile cache, as the frontend
+  does, so a run from the command line can use one.
+
+The cost on the GL path is one load and one store per call, on a counter the
+core's thread alone writes.
+
+**Tested.**
+
+- miniBox's `conformance-stop` has two more checks, on Linux and on Windows:
+  a stop asked from inside a host callback ends the guest at its next yield,
+  and the same stop with the frontend's work counted after it is dropped and
+  the call ends by itself. With the drop turned off on purpose the second
+  check failed.
+- The witness has a new test, "core-working": the synthetic core's ROM
+  ending "CACHEWORK" spends its third frame only asking the compile cache
+  for an object it never stored and yielding, about half a second here, and
+  it is not stopped under a 0.1 second limit. With the engine's count not
+  handed to miniBox on purpose, the witness failed it: "the core did not
+  finish a frame in 0.1 seconds". The Windows build of chimera-run runs the
+  same frame (6.6 seconds there) without a stop, and still stops the stuck
+  one.
+- The count in the GL dispatcher is a thin wrapper around it, not a
+  destructor: a sysv function may carry no C++ unwind data under mingw, and
+  the first version did not build for Windows.
+- The rest: miniBox's 24 tests pass (6 expected failures); the engine's 30
+  unit tests pass; the witness 101 passed and 0 failed; the interface tests
+  1114 with none failed (23 skipped); the Windows build compiles; the PCSX2
+  core's test script, as committed, 44 passed, 0 failed, 6 skipped.

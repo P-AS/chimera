@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <sched.h>
 
 #include <waterbox_settings.h>  /* miniBox guest kit: read the host settings channel */
 
@@ -74,6 +75,24 @@ ECL_EXPORT int GuestFaultHandler(uint64_t addr, uint64_t is_write)
 static volatile uint64_t g_spun;
 static uint32_t g_spinFrame;   /* SPINFRAME: the frame that never ends, or 0 */
 
+/* The compile cache's bridge, handed over when the frontend keeps a cache
+ * (SetCacheBridge). A rom ending in CACHEWORK spends its third frame only
+ * asking it for an object it never stored, and yielding: work the frontend
+ * does for the core, which its watchdog must count as the core working, not
+ * stuck (2026-10-19). */
+typedef ECL_ENTRY uint64_t (*cache_bridge_fn)(uint64_t op, uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e);
+static cache_bridge_fn g_cache;
+static uint32_t g_cacheWorkFrame;
+ECL_EXPORT void SetCacheBridge(uint64_t fn) { g_cache = (cache_bridge_fn)(uintptr_t)fn; }
+static void cache_work(void) {
+	static const char name[] = "synth/never-stored";
+	struct { uint64_t name, name_len, dst, cap; } fetch = { (uintptr_t)name, sizeof name - 1, 0, 0 };
+	for (uint32_t i = 0; i < 1000000; i++) {
+		if (g_cache) g_cache(1 /* CACHE_OP_FETCH */, (uintptr_t)&fetch, 0, 0, 0, 0);
+		sched_yield();
+	}
+}
+
 static int moving(void); /* the movingProperties setting, read once here */
 ECL_EXPORT int Init(void) {
 	uint32_t len = 0;
@@ -93,6 +112,7 @@ ECL_EXPORT int Init(void) {
 	if (len == 4 && memcmp(rom, "SPIN", 4) == 0)
 		for (;;) g_spun++;
 	if (len >= 9 && memcmp(rom + len - 9, "SPINFRAME", 9) == 0) g_spinFrame = 3;
+	if (len >= 9 && memcmp(rom + len - 9, "CACHEWORK", 9) == 0) g_cacheWorkFrame = 3;
 	g_synth = synth_create(rom, len);   /* copies the rom internally */
 	free(rom);
 	if (!g_synth) return 0;
@@ -190,6 +210,7 @@ ECL_EXPORT void FrameAdvance(uint64_t pad) {
 	g_framesRun++;
 	if (g_spinFrame != 0 && g_framesRun == g_spinFrame)
 		for (;;) g_spun++;
+	if (g_cacheWorkFrame != 0 && g_framesRun == g_cacheWorkFrame) cache_work();
 	if (g_watchedOpen) {
 		mprotect(g_watchedPage, 4096, PROT_NONE);
 		g_watchedOpen = 0;

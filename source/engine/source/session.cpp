@@ -494,14 +494,37 @@ extern "C" uintptr_t ce_gl_dispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, 
  * the session reports. 20 seconds for a frame and 2 minutes for starting (the
  * owner's numbers, 2026-10-19); CHIMERA_FRAME_TIMEOUT_MS and
  * CHIMERA_START_TIMEOUT_MS set others, 0 none. A core that is working, not
- * stuck, shows it, and the time starts again from that: it makes system calls
- * of the kind a waiting or polling loop does not (wbx_guest_activity - RPCS3
+ * stuck, shows it, and the time starts again from that (wbx_guest_activity):
+ * it makes system calls of the kind a waiting or polling loop does not (RPCS3
  * compiling a game's code with LLVM spends 90 seconds in its first frames
- * here, and was stopped at 20 before this), or it uses its compile cache
- * (ce_guest_alive). What is stopped is a core looping in its own code, or
- * one only waiting and polling. Not in a precompile session, whose frames are
+ * here, and was stopped at 20 before this), or a call through a GPU bridge or
+ * to the compile cache comes back (ce_guest_work, below). A stop asked for
+ * before such work is dropped by miniBox: a driver call that took long is not
+ * a stuck core. What is stopped is a core looping in its own code, or one
+ * only waiting and polling. Not in a precompile session, whose frames are
  * long by design. */
-std::atomic<int64_t> g_guestAliveMs{ 0 };
+
+/* The engine's own work for the guest: one more after each call through the GL
+ * or Vulkan bridge or to the compile cache has been answered. miniBox adds it
+ * into the guest's activity (wbx_count_work_from). Written by the thread
+ * running the guest, read by others; only its moving matters. */
+extern "C" { uint64_t ce_guest_work = 0; }
+static inline void guestWorked()
+{
+	__atomic_store_n(&ce_guest_work, __atomic_load_n(&ce_guest_work, __ATOMIC_RELAXED) + 1, __ATOMIC_RELAXED);
+}
+
+#ifdef CE_VK_BRIDGE
+/* The Vulkan bridge's dispatcher, each call counted as work once the driver
+ * has answered it. */
+static uintptr_t VKB_GUEST_ABI vkDispatchCounted(uintptr_t op, uintptr_t a, uintptr_t b,
+                                                 uintptr_t c, uintptr_t d, uintptr_t e)
+{
+	const uintptr_t r = chimera_vk_host_dispatch(op, a, b, c, d, e);
+	guestWorked();
+	return r;
+}
+#endif
 
 static int64_t nowMs()
 {
@@ -509,7 +532,21 @@ static int64_t nowMs()
 		std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-extern "C" void ce_guest_alive(void) { g_guestAliveMs.store(nowMs(), std::memory_order_relaxed); }
+/* "20 seconds", "1.5 seconds", "1 second": a limit as the user reads it,
+ * with a point whatever the locale */
+static std::string secondsText(int64_t ms)
+{
+	std::string text = std::to_string(ms / 1000);
+	if (ms % 1000 != 0)
+	{
+		char frac[8];
+		std::snprintf(frac, sizeof frac, "%03d", static_cast<int>(ms % 1000));
+		std::string f = frac;
+		while (!f.empty() && f.back() == '0') f.pop_back();
+		text += "." + f;
+	}
+	return text + (ms == 1000 ? " second" : " seconds");
+}
 
 static int64_t timeoutMs(const char *variable, int64_t fallback)
 {
@@ -530,7 +567,11 @@ struct GuestWatchdog
 	std::string why;
 	std::thread::id caller;
 
-	GuestWatchdog(const chimera::HostApi *h, void *o) : host(h), obj(o) {}
+	GuestWatchdog(const chimera::HostApi *h, void *o) : host(h), obj(o)
+	{
+		chimera::WbxReturn r{};
+		if (host->wbx_count_work_from != nullptr) host->wbx_count_work_from(obj, &ce_guest_work, &r);
+	}
 	~GuestWatchdog()
 	{
 		{
@@ -597,7 +638,7 @@ struct GuestWatchdog
 				activity = now;
 				activeAt = nowMs();
 			}
-			const int64_t from = std::max({ armedAt, activeAt, g_guestAliveMs.load(std::memory_order_relaxed) });
+			const int64_t from = std::max(armedAt, activeAt);
 			const int64_t left = from + limit - nowMs();
 			if (left > 0)
 			{
@@ -1514,7 +1555,7 @@ void ce_session::runFrame(uint64_t pad)
 	if (watchdog && !precompile)
 	{
 		static const int64_t limit = timeoutMs("CHIMERA_FRAME_TIMEOUT_MS", 20000);
-		watchdog->arm(limit, "the core did not finish a frame in " + std::to_string(limit / 1000) + " seconds");
+		watchdog->arm(limit, "the core did not finish a frame in " + secondsText(limit));
 	}
 	frameAdvance(pad);
 	if (watchdog) watchdog->disarm();
@@ -2104,7 +2145,7 @@ static ce_session *openSession(
 		{
 			chimera_vk_host_set_call_hook(ce_vk_flight_note);
 			chimera::WbxReturn r;
-			host->wbx_get_callback_addr(s->obj, reinterpret_cast<void *>(&chimera_vk_host_dispatch), 2, &r);
+			host->wbx_get_callback_addr(s->obj, reinterpret_cast<void *>(&vkDispatchCounted), 2, &r);
 			if (!r.ok() || r.data == 0)
 			{
 				fprintf(stderr, "chimera vk: the sandbox would not take the callback\n");
@@ -2157,7 +2198,7 @@ static ce_session *openSession(
 	s->watchdog = std::make_unique<GuestWatchdog>(host, s->obj);
 	{
 		static const int64_t limit = timeoutMs("CHIMERA_START_TIMEOUT_MS", 120000);
-		s->watchdog->arm(limit, "the core did not finish starting in " + std::to_string(limit / 1000) + " seconds");
+		s->watchdog->arm(limit, "the core did not finish starting in " + secondsText(limit));
 	}
 	const int32_t initResult = init();
 	s->watchdog->disarm();
