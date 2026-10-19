@@ -9675,3 +9675,50 @@ core's thread alone writes.
   unit tests pass; the witness 101 passed and 0 failed; the interface tests
   1114 with none failed (23 skipped); the Windows build compiles; the PCSX2
   core's test script, as committed, 44 passed, 0 failed, 6 skipped.
+
+## The same OpenGL on Windows as on Linux: the core profile, the newest version (user-decided, 2026-10-19)
+
+**What was different.** Linux's GPU bridge context is EGL's, which is the
+core profile: the old fixed-function OpenGL is not there. Windows made its
+context with `wglCreateContext`, which is the compatibility profile: the old
+calls worked. A renderer could call something old and work on Windows only,
+and a test on Linux would not show it. The owner chose the core profile on
+both.
+
+**What changed.**
+
+- Windows makes a context of the old kind first (WGL hands out the call that
+  makes any other kind only while one is current), then asks
+  `wglCreateContextAttribsARB` for a core-profile context and uses it. A
+  driver without that call keeps the old kind.
+- Both systems ask for the newest version first, 4.6 down to 3.3. Asked for
+  3.3, NVIDIA's driver on Windows made exactly a 3.3 context, where its
+  compatibility context had been 4.6, and a renderer that looks for 4.x
+  would have taken an older path. Mesa answers with its newest anyway.
+- 3.3 is required on both: a Windows driver of the old kind that offers 3.0
+  to 3.2 is refused, as Linux's request already was.
+- The line on standard error, and the description a core can ask for, say
+  which profile was made: "4.6.0 NVIDIA 581.42 on NVIDIA GeForce GTX 1060
+  6GB/PCIe/SSE2, core profile".
+
+**Measured on the GTX 1060.** Each of the eight cores that draw through the
+GL bridge ran the same blank movie with the old engine (compatibility 4.6)
+and the new one (core 4.6), and the pictures were compared byte for byte:
+Ruffle (Super Doggy, frames 600 and 1400), Azahar (Cars 2, 1200 and 2390),
+Flycast (Re-Volt, 3600 and 4190), PCSX2 (Street Fighter EX3, 2400 and 3590),
+DuckStation (NHL Blades of Steel 2000, 1200 and 2390), Dolphin (Pro Rally
+2002, 3600 and 7490), RPCS3 (Bejeweled 3, 600 and 890) and xemu (Soulcalibur
+II, 1500 and 2390). All sixteen pairs are identical, every one a real picture,
+and the run times are the same within a few seconds. With every GL call
+checked (`CHIMERA_GL_CHECK=1`, 600 to 1200 frames each) the old context
+raised no error in any core; the new one raised one, in Flycast:
+`glGetString(GL_EXTENSIONS)`, which the core profile does not answer. Linux
+has always answered it that way, and Flycast draws the same.
+
+**Tested.** The engine's 30 unit tests pass; the witness 101 passed and 0
+failed; the interface tests 1117 with none failed (23 skipped; the new test
+of the packages' default bindings first failed on this checkout's own
+Dolphin, PCSX2 and RPCS3 packages, built before their bindings were fixed,
+and passed once they were replaced with the published ones); the Windows
+build compiles; the PCSX2 core's test script 44 passed, 0 failed, 6
+skipped; on Linux the context is still Mesa's "4.5 (Core Profile)".

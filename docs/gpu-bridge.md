@@ -90,13 +90,22 @@ Two things have to be true, and either may not be:
    is on by default and needs EGL on Linux (`libegl-dev`) and `opengl32` on
    Windows.
 
+The context is the same kind on both systems: the newest OpenGL the driver
+has, 3.3 at the least, with the core profile, which leaves out the old
+fixed-function calls (owner, 2026-10-19; Windows had the compatibility
+profile before, so a call a renderer still made from the old OpenGL worked on
+Windows and failed on Linux). The newest version is asked for first because a
+driver may give exactly what is asked: NVIDIA's, asked for 3.3, made a 3.3
+context. A Windows driver without `WGL_ARB_create_context` keeps the old kind,
+and a driver below 3.3 is refused.
+
 When either fails the core draws the way it draws without a GPU - the
 deterministic way - and the session simply does not claim otherwise. A run that
 did get one says so on screen when it starts ("GPU: <driver> - this run is not
 deterministic"), which is the only place a person can see WHICH driver drew.
 There is a line on standard error either way:
 
-    chimera gl: 4.5 (Core Profile) Mesa 25.2.8 on llvmpipe    <- a context
+    chimera gl: 4.5 (Core Profile) Mesa 25.2.8 on llvmpipe, core profile    <- a context
     chimera gl: no context (...); drawing in software         <- no context
 
 `chimera-run --gpu` makes the same ask from the command line.

@@ -72,6 +72,12 @@
 namespace
 {
 
+/* The versions asked for, newest first. A driver may answer a request with
+ * exactly the version asked for and no more - NVIDIA's does, on Windows: asked
+ * for 3.3 core it made a 3.3 context, where its compatibility context had been
+ * 4.6, and a renderer that looks for 4.x would have taken its older path. */
+const int kAskVersions[][2] = { {4, 6}, {4, 5}, {4, 4}, {4, 3}, {4, 2}, {4, 1}, {4, 0}, {3, 3} };
+
 int g_version;
 bool g_ready;
 /* Which context is current - see GL_OP_CONTEXT_ID. Zero until one is made. */
@@ -137,6 +143,8 @@ bool create_context(char *err, int errlen)
 		return false;
 	}
 
+	/* A context of the old kind first: WGL hands out the call that makes any
+	 * other kind only while a context is current. */
 	s_context = wglCreateContext(s_dc);
 	if (s_context == nullptr || !wglMakeCurrent(s_dc, s_context))
 	{
@@ -145,7 +153,40 @@ bool create_context(char *err, int errlen)
 	}
 
 	s_opengl32 = LoadLibraryA("opengl32.dll");
-	return s_opengl32 != nullptr;
+	if (s_opengl32 == nullptr)
+	{
+		snprintf(err, errlen, "opengl32.dll would not load");
+		return false;
+	}
+
+	/* Then the newest OpenGL the driver has, 3.3 at the least, with the core
+	 * profile, which is what Linux's context is: a core then meets the same
+	 * OpenGL on both systems, and an old call a renderer still makes is
+	 * refused on Windows as it is on Linux instead of working on one only
+	 * (owner, 2026-10-19). A driver without WGL_ARB_create_context keeps the
+	 * old kind. */
+	auto createAttribs = reinterpret_cast<PFNWGLCREATECONTEXTATTRIBSARBPROC>(
+		reinterpret_cast<void *>(wglGetProcAddress("wglCreateContextAttribsARB")));
+	for (size_t v = 0; createAttribs != nullptr && v < sizeof kAskVersions / sizeof kAskVersions[0]; v++)
+	{
+		const int attribs[] = {
+			WGL_CONTEXT_MAJOR_VERSION_ARB, kAskVersions[v][0],
+			WGL_CONTEXT_MINOR_VERSION_ARB, kAskVersions[v][1],
+			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+			0
+		};
+		HGLRC core = createAttribs(s_dc, nullptr, attribs);
+		if (core == nullptr) continue;
+		if (wglMakeCurrent(s_dc, core))
+		{
+			wglDeleteContext(s_context);
+			s_context = core;
+			break;
+		}
+		wglDeleteContext(core);
+		wglMakeCurrent(s_dc, s_context);
+	}
+	return true;
 }
 
 void destroy_context()
@@ -240,12 +281,16 @@ bool create_context(char *err, int errlen)
 		return false;
 	}
 
-	static const EGLint contextAttribs[] = {
-		EGL_CONTEXT_MAJOR_VERSION, 3,
-		EGL_CONTEXT_MINOR_VERSION, 3,
-		EGL_NONE
-	};
-	s_context = eglCreateContext(s_display, config, EGL_NO_CONTEXT, contextAttribs);
+	/* the newest the driver has, 3.3 at the least (kAskVersions) */
+	for (size_t v = 0; s_context == EGL_NO_CONTEXT && v < sizeof kAskVersions / sizeof kAskVersions[0]; v++)
+	{
+		const EGLint contextAttribs[] = {
+			EGL_CONTEXT_MAJOR_VERSION, kAskVersions[v][0],
+			EGL_CONTEXT_MINOR_VERSION, kAskVersions[v][1],
+			EGL_NONE
+		};
+		s_context = eglCreateContext(s_display, config, EGL_NO_CONTEXT, contextAttribs);
+	}
 	if (s_context == EGL_NO_CONTEXT)
 	{
 		snprintf(err, errlen, "the driver would not make an OpenGL 3.3 context");
@@ -2156,13 +2201,21 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 
 	const char *renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
 	const char *version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
-	snprintf(g_description, sizeof g_description, "%s on %s",
-		version ? version : "?", renderer ? renderer : "?");
+	/* which profile the driver gave: core, or the old kind (a Windows driver
+	 * without the call that asks for core) */
+	GLint profile = 0;
+	if (GLAD_VERSION_MAJOR(g_version) > 3 || (GLAD_VERSION_MAJOR(g_version) == 3 && GLAD_VERSION_MINOR(g_version) >= 2))
+		glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profile);
+	snprintf(g_description, sizeof g_description, "%s on %s, %s profile",
+		version ? version : "?", renderer ? renderer : "?",
+		(profile & GL_CONTEXT_CORE_PROFILE_BIT) != 0 ? "core" : "compatibility");
 
-	/* A driver offering only the old fixed-function pipeline cannot run any of
-	 * these renderers, and saying so here is kinder than a null call in the
-	 * middle of a shader compile. */
-	if (GLAD_VERSION_MAJOR(g_version) < 3)
+	/* Every renderer here is written for OpenGL 3.3 or later, and saying a
+	 * driver offers less here is kinder than a null call in the middle of a
+	 * shader compile. Linux asks EGL for 3.3 and gets nothing less; a Windows
+	 * driver of the old kind could answer 3.0 to 3.2 (owner, 2026-10-19: 3.3
+	 * on both). */
+	if (GLAD_VERSION_MAJOR(g_version) < 3 || (GLAD_VERSION_MAJOR(g_version) == 3 && GLAD_VERSION_MINOR(g_version) < 3))
 	{
 		destroy_context();
 		return_current();
