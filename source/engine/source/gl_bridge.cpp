@@ -53,6 +53,7 @@
 #include "gl-bridge-ops.h"
 #include "gl_sync_names.h"
 #include "gl_buffer_pool.h"
+#include "gl_names.h"
 
 #include <cstdio>
 #include <cstring>
@@ -95,6 +96,10 @@ HWND s_window;
 HDC s_dc;
 HGLRC s_context;
 HMODULE s_opengl32;
+/* how the context was made, for another like it (replace_context): the
+ * version asked for in kAskVersions, or -1 for the old kind */
+PFNWGLCREATECONTEXTATTRIBSARBPROC s_createAttribs;
+int s_askedVersion = -1;
 
 GLADapiproc loader(const char *name)
 {
@@ -165,9 +170,10 @@ bool create_context(char *err, int errlen)
 	 * refused on Windows as it is on Linux instead of working on one only
 	 * (owner, 2026-10-19). A driver without WGL_ARB_create_context keeps the
 	 * old kind. */
-	auto createAttribs = reinterpret_cast<PFNWGLCREATECONTEXTATTRIBSARBPROC>(
+	s_createAttribs = reinterpret_cast<PFNWGLCREATECONTEXTATTRIBSARBPROC>(
 		reinterpret_cast<void *>(wglGetProcAddress("wglCreateContextAttribsARB")));
-	for (size_t v = 0; createAttribs != nullptr && v < sizeof kAskVersions / sizeof kAskVersions[0]; v++)
+	s_askedVersion = -1;
+	for (size_t v = 0; s_createAttribs != nullptr && v < sizeof kAskVersions / sizeof kAskVersions[0]; v++)
 	{
 		const int attribs[] = {
 			WGL_CONTEXT_MAJOR_VERSION_ARB, kAskVersions[v][0],
@@ -175,17 +181,45 @@ bool create_context(char *err, int errlen)
 			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
 			0
 		};
-		HGLRC core = createAttribs(s_dc, nullptr, attribs);
+		HGLRC core = s_createAttribs(s_dc, nullptr, attribs);
 		if (core == nullptr) continue;
 		if (wglMakeCurrent(s_dc, core))
 		{
 			wglDeleteContext(s_context);
 			s_context = core;
+			s_askedVersion = (int)v;
 			break;
 		}
 		wglDeleteContext(core);
 		wglMakeCurrent(s_dc, s_context);
 	}
+	return true;
+}
+
+/* Another context made as the one above was, current in its place; the old
+ * one, and every object in it, goes. False leaves the old one as it was. */
+bool replace_context()
+{
+	HGLRC fresh = nullptr;
+	if (s_askedVersion >= 0 && s_createAttribs != nullptr)
+	{
+		const int attribs[] = {
+			WGL_CONTEXT_MAJOR_VERSION_ARB, kAskVersions[s_askedVersion][0],
+			WGL_CONTEXT_MINOR_VERSION_ARB, kAskVersions[s_askedVersion][1],
+			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+			0
+		};
+		fresh = s_createAttribs(s_dc, nullptr, attribs);
+	}
+	else fresh = wglCreateContext(s_dc);
+	if (fresh == nullptr) return false;
+	if (!wglMakeCurrent(s_dc, fresh))
+	{
+		wglDeleteContext(fresh);
+		return false;
+	}
+	wglDeleteContext(s_context);
+	s_context = fresh;
 	return true;
 }
 
@@ -235,6 +269,9 @@ void return_current()
  * those, never from the default one.
  */
 EGLDisplay s_display = EGL_NO_DISPLAY;
+/* how the context was made, for another like it (replace_context) */
+EGLConfig s_config;
+int s_askedVersion = -1;
 EGLContext s_context = EGL_NO_CONTEXT;
 
 GLADapiproc loader(const char *name)
@@ -282,6 +319,7 @@ bool create_context(char *err, int errlen)
 	}
 
 	/* the newest the driver has, 3.3 at the least (kAskVersions) */
+	s_config = config;
 	for (size_t v = 0; s_context == EGL_NO_CONTEXT && v < sizeof kAskVersions / sizeof kAskVersions[0]; v++)
 	{
 		const EGLint contextAttribs[] = {
@@ -290,6 +328,7 @@ bool create_context(char *err, int errlen)
 			EGL_NONE
 		};
 		s_context = eglCreateContext(s_display, config, EGL_NO_CONTEXT, contextAttribs);
+		s_askedVersion = (int)v;
 	}
 	if (s_context == EGL_NO_CONTEXT)
 	{
@@ -325,6 +364,28 @@ void end_context()
 {
 	if (s_display != EGL_NO_DISPLAY && s_context != EGL_NO_CONTEXT) eglDestroyContext(s_display, s_context);
 	s_context = EGL_NO_CONTEXT;
+}
+
+/* Another context made as the one above was, current in its place; the old
+ * one, and every object in it, goes. False leaves the old one as it was. */
+bool replace_context()
+{
+	if (s_display == EGL_NO_DISPLAY || s_askedVersion < 0) return false;
+	const EGLint attribs[] = {
+		EGL_CONTEXT_MAJOR_VERSION, kAskVersions[s_askedVersion][0],
+		EGL_CONTEXT_MINOR_VERSION, kAskVersions[s_askedVersion][1],
+		EGL_NONE
+	};
+	EGLContext fresh = eglCreateContext(s_display, s_config, EGL_NO_CONTEXT, attribs);
+	if (fresh == EGL_NO_CONTEXT) return false;
+	if (!eglMakeCurrent(s_display, EGL_NO_SURFACE, EGL_NO_SURFACE, fresh))
+	{
+		eglDestroyContext(s_display, fresh);
+		return false;
+	}
+	eglDestroyContext(s_display, s_context);
+	s_context = fresh;
+	return true;
 }
 
 /* Whose context was current before we took the slot. A frontend drawing
@@ -659,6 +720,7 @@ enum : uint32_t
 	kFlightStateLoaded = 0xFFFFFF03, /* a savestate was restored; detail: the frame restored to */
 	kFlightSession = 0xFFFFFF04,     /* a session took the bridge (a fresh context id) */
 	kFlightStopped = 0xFFFFFF05,     /* the context was destroyed */
+	kFlightRenewed = 0xFFFFFF06,     /* a load gave the core a fresh context; detail: the names kept */
 	kFlightVulkan = 0x40000000,      /* added to a Vulkan bridge opcode: the crash module names it from Vulkan's list */
 };
 enum { kFlightCapacity = 8192 }; /* a power of two */
@@ -700,6 +762,7 @@ extern "C" void ce_gl_audit_frame(int64_t frame)
  *         it and nothing will ever delete it.
  */
 static void mint_context_id();
+static void renewContext();
 
 /* Whether a same-session load moves the context id. Global and set before a
  * session opens, the way ce_gl_request and ce_cache_dir are; 1 unless a core
@@ -737,6 +800,7 @@ extern "C" void ce_gl_state_loaded(int64_t to)
 	 * behaviour above exactly. */
 	if (!keepObjects && g_rebuildOnStateLoad)
 	{
+		renewContext();
 		mint_context_id();
 		g_syncReap = true;
 	}
@@ -827,6 +891,7 @@ static void gpuTimeFrameEnd(void);
 extern "C" void ce_gl_release(void)
 {
 	if (!g_borrowed) return;
+
 	flightNote(kFlightReleased, (uint32_t)(g_calls - g_callsAtFrame));
 	gpuTimeFrameEnd();
 	return_current();
@@ -1496,12 +1561,265 @@ extern "C" uint64_t ce_guest_work;   /* session.cpp */
  * Counted here rather than by a destructor in the body: a sysv function may
  * carry no C++ unwind data under mingw (".seh_handlerdata used outside of
  * .seh_proc"). */
+static void noteNames(uintptr_t op, uintptr_t a, uintptr_t r);
+
 extern "C" uintptr_t BRIDGE_ABI ce_gl_dispatch(uintptr_t op, uintptr_t a, uintptr_t b,
                                                uintptr_t c, uintptr_t d, uintptr_t e)
 {
 	const uintptr_t r = glDispatchBody(op, a, b, c, d, e);
+	noteNames(op, a, r);
 	__atomic_store_n(&ce_guest_work, __atomic_load_n(&ce_guest_work, __ATOMIC_RELAXED) + 1, __ATOMIC_RELAXED);
 	return r;
+}
+
+/* The names the core holds (gl_names.h): what each call that makes or deletes
+ * objects did to them, as the core sees it - a delete takes a name away
+ * whatever the pool or the driver then does with it. Only while the context
+ * is ours: a call that was not run made nothing. */
+static CeGlNames &glNames()
+{
+	static CeGlNames names;
+	return names;
+}
+
+static void namesOf(int kind, GLsizei n, const GLuint *list, bool made)
+{
+	if (n <= 0 || n > (1 << 20) || list == nullptr || !guestCan(list, (size_t)n * sizeof(GLuint), false)) return;
+	for (GLsizei i = 0; i < n; i++)
+	{
+		if (made) glNames().made(kind, list[i]);
+		else glNames().gone(kind, list[i]);
+	}
+}
+
+/* CHIMERA_GL_STALE: the first uses of a name the core held from before a fresh
+ * context (renewContext) - a bind, an attach, a read - which reach an empty
+ * name: the object it meant went with the old context, and the core did not
+ * make it again. A core that rebuilds everything never shows one. */
+static void staleSay(int kind, GLuint name, const char *what)
+{
+	static int left = 60;
+	if (left <= 0 || name == 0 || (glNames().isLive(kind, name) && !glNames().isKept(kind, name))) return;
+	const bool never = !glNames().isLive(kind, name);
+	left--;
+	/* with the calls before it, from the flight recorder: what the core was doing */
+	char before[160] = "";
+	size_t at = 0;
+	for (uint64_t i = g_flight.written > 12 ? g_flight.written - 12 : 0; i + 1 < g_flight.written && at + 12 < sizeof before; i++)
+	{
+		const uint32_t o = g_flight.entries[i & (kFlightCapacity - 1)].op;
+		at += (size_t)snprintf(before + at, sizeof before - at, " %u", (unsigned)o);
+	}
+	fprintf(stderr, "[ce-gl-stale] %s names %u, %s (calls before it:%s)%s\n", what, (unsigned)name,
+		never ? "which no call the bridge saw made" : "held from before the fresh context", before,
+		left == 0 ? " (no more said)" : "");
+}
+
+static void staleList(int kind, GLsizei n, const GLuint *list, const char *what)
+{
+	if (n <= 0 || n > 64 || list == nullptr || !guestCan(list, (size_t)n * sizeof(GLuint), false)) return;
+	for (GLsizei i = 0; i < n; i++) staleSay(kind, list[i], what);
+}
+
+static void staleUse(uintptr_t op, uintptr_t a)
+{
+	static const bool on = getenv("CHIMERA_GL_STALE") != nullptr;
+	if (!on) return;
+#define CE_STALE(OP, KIND, FIELD) \
+	case CHIMERA_GL_OP_##OP: staleSay(KIND, reinterpret_cast<ChimeraGlArgs_##OP *>(a)->FIELD, #OP); break;
+#define CE_STALE2(OP, KIND1, FIELD1, KIND2, FIELD2) \
+	case CHIMERA_GL_OP_##OP: \
+		staleSay(KIND1, reinterpret_cast<ChimeraGlArgs_##OP *>(a)->FIELD1, #OP); \
+		staleSay(KIND2, reinterpret_cast<ChimeraGlArgs_##OP *>(a)->FIELD2, #OP); \
+		break;
+#define CE_STALES(OP, KIND, COUNT, LIST) \
+	case CHIMERA_GL_OP_##OP: \
+		staleList(KIND, reinterpret_cast<ChimeraGlArgs_##OP *>(a)->COUNT, reinterpret_cast<ChimeraGlArgs_##OP *>(a)->LIST, #OP); \
+		break;
+	switch (op)
+	{
+		CE_STALE(glBindTexture, kNameTexture, texture)
+		CE_STALE(glBindTextureUnit, kNameTexture, texture)
+		CE_STALES(glBindTextures, kNameTexture, count, textures)
+		CE_STALE(glBindImageTexture, kNameTexture, texture)
+		CE_STALE(glGetTextureSubImage, kNameTexture, texture)
+		CE_STALE(glTextureSubImage2D, kNameTexture, texture)
+		CE_STALE(glTextureSubImage3D, kNameTexture, texture)
+		CE_STALE(glTextureStorage2D, kNameTexture, texture)
+		CE_STALE(glTextureStorage3D, kNameTexture, texture)
+		CE_STALE(glTextureParameteri, kNameTexture, texture)
+		CE_STALE(glGenerateTextureMipmap, kNameTexture, texture)
+		CE_STALE(glCopyTextureSubImage2D, kNameTexture, texture)
+		CE_STALE(glClearTexImage, kNameTexture, texture)
+		CE_STALE(glClearTexSubImage, kNameTexture, texture)
+		CE_STALE2(glTextureView, kNameTexture, texture, kNameTexture, origtexture)
+		CE_STALE2(glCopyImageSubData, kNameTexture, srcName, kNameTexture, dstName)
+		CE_STALE(glFramebufferTexture, kNameTexture, texture)
+		CE_STALE(glFramebufferTexture2D, kNameTexture, texture)
+		CE_STALE(glFramebufferTextureLayer, kNameTexture, texture)
+		CE_STALE2(glNamedFramebufferTexture, kNameFramebuffer, framebuffer, kNameTexture, texture)
+		CE_STALE(glFramebufferRenderbuffer, kNameRenderbuffer, renderbuffer)
+		CE_STALE2(glNamedFramebufferRenderbuffer, kNameFramebuffer, framebuffer, kNameRenderbuffer, renderbuffer)
+		CE_STALE2(glBlitNamedFramebuffer, kNameFramebuffer, readFramebuffer, kNameFramebuffer, drawFramebuffer)
+		CE_STALE(glBindBuffer, kNameBuffer, buffer)
+		CE_STALE(glBindBufferBase, kNameBuffer, buffer)
+		CE_STALE(glBindBufferRange, kNameBuffer, buffer)
+		CE_STALES(glBindBuffersBase, kNameBuffer, count, buffers)
+		CE_STALE(glBindVertexBuffer, kNameBuffer, buffer)
+		CE_STALE(glNamedBufferSubData, kNameBuffer, buffer)
+		CE_STALE(glNamedBufferData, kNameBuffer, buffer)
+		CE_STALE2(glCopyNamedBufferSubData, kNameBuffer, readBuffer, kNameBuffer, writeBuffer)
+		CE_STALE(glTexBuffer, kNameBuffer, buffer)
+		CE_STALE2(glTextureBuffer, kNameTexture, texture, kNameBuffer, buffer)
+		CE_STALE(glBindFramebuffer, kNameFramebuffer, framebuffer)
+		CE_STALE(glBindRenderbuffer, kNameRenderbuffer, renderbuffer)
+		CE_STALE(glBindSampler, kNameSampler, sampler)
+		CE_STALES(glBindSamplers, kNameSampler, count, samplers)
+		CE_STALE(glBindVertexArray, kNameVertexArray, array)
+		CE_STALE(glUseProgram, kNameProgram, program)
+		CE_STALE(glAttachShader, kNameProgram, program)
+		default: break;
+	}
+#undef CE_STALE
+#undef CE_STALE2
+#undef CE_STALES
+}
+
+static void noteNames(uintptr_t op, uintptr_t a, uintptr_t r)
+{
+	if (!g_borrowed) return;
+	staleUse(op, a);
+#define CE_NAMES(OP, KIND, COUNT, LIST, MADE) \
+	case CHIMERA_GL_OP_##OP: { auto *p = reinterpret_cast<ChimeraGlArgs_##OP *>(a); namesOf(KIND, p->COUNT, p->LIST, MADE); break; }
+	switch (op)
+	{
+		CE_NAMES(glGenTextures, kNameTexture, n, textures, true)
+		CE_NAMES(glCreateTextures, kNameTexture, n, textures, true)
+		CE_NAMES(glDeleteTextures, kNameTexture, n, textures, false)
+		CE_NAMES(glGenBuffers, kNameBuffer, n, buffers, true)
+		CE_NAMES(glCreateBuffers, kNameBuffer, n, buffers, true)
+		CE_NAMES(glDeleteBuffers, kNameBuffer, n, buffers, false)
+		CE_NAMES(glGenFramebuffers, kNameFramebuffer, n, framebuffers, true)
+		CE_NAMES(glCreateFramebuffers, kNameFramebuffer, n, framebuffers, true)
+		CE_NAMES(glDeleteFramebuffers, kNameFramebuffer, n, framebuffers, false)
+		CE_NAMES(glGenRenderbuffers, kNameRenderbuffer, n, renderbuffers, true)
+		CE_NAMES(glCreateRenderbuffers, kNameRenderbuffer, n, renderbuffers, true)
+		CE_NAMES(glDeleteRenderbuffers, kNameRenderbuffer, n, renderbuffers, false)
+		CE_NAMES(glGenSamplers, kNameSampler, count, samplers, true)
+		CE_NAMES(glCreateSamplers, kNameSampler, n, samplers, true)
+		CE_NAMES(glDeleteSamplers, kNameSampler, count, samplers, false)
+		CE_NAMES(glGenQueries, kNameQuery, n, ids, true)
+		CE_NAMES(glCreateQueries, kNameQuery, n, ids, true)
+		CE_NAMES(glDeleteQueries, kNameQuery, n, ids, false)
+		CE_NAMES(glGenVertexArrays, kNameVertexArray, n, arrays, true)
+		CE_NAMES(glCreateVertexArrays, kNameVertexArray, n, arrays, true)
+		CE_NAMES(glDeleteVertexArrays, kNameVertexArray, n, arrays, false)
+		CE_NAMES(glGenProgramPipelines, kNamePipeline, n, pipelines, true)
+		CE_NAMES(glCreateProgramPipelines, kNamePipeline, n, pipelines, true)
+		CE_NAMES(glDeleteProgramPipelines, kNamePipeline, n, pipelines, false)
+		CE_NAMES(glGenTransformFeedbacks, kNameTransformFeedback, n, ids, true)
+		CE_NAMES(glCreateTransformFeedbacks, kNameTransformFeedback, n, ids, true)
+		CE_NAMES(glDeleteTransformFeedbacks, kNameTransformFeedback, n, ids, false)
+		case CHIMERA_GL_OP_glCreateProgram:
+		case CHIMERA_GL_OP_glCreateShader:
+		case CHIMERA_GL_OP_glCreateShaderProgramv:
+			glNames().made(kNameProgram, (uint32_t)r);
+			break;
+		case CHIMERA_GL_OP_glDeleteProgram:
+			glNames().gone(kNameProgram, reinterpret_cast<ChimeraGlArgs_glDeleteProgram *>(a)->program);
+			break;
+		case CHIMERA_GL_OP_glDeleteShader:
+			glNames().gone(kNameProgram, reinterpret_cast<ChimeraGlArgs_glDeleteShader *>(a)->shader);
+			break;
+		default: break;
+	}
+#undef CE_NAMES
+}
+
+/* In a fresh context (renewContext), every name the core held is taken
+ * again, empty, before the core runs: names are handed out from 1 in a new
+ * context, so a new object could otherwise get a number a stale call in the
+ * restored state still uses. The driver hands out the lowest free names, so
+ * taking up to the highest and giving back the ones the core does not hold
+ * leaves exactly the core's. Programs and shaders share one namespace and
+ * are taken as empty programs. Answers how many names are kept. */
+static size_t reserveNames()
+{
+	size_t kept = 0, missed = 0;
+	for (int k = 0; k < kNameKinds; k++)
+	{
+		const uint32_t top = glNames().highest(k);
+		if (top == 0) continue;
+		std::vector<GLuint> got;
+		if (k == kNameProgram)
+		{
+			for (uint32_t i = 0; i < top + 64u && glad_glCreateProgram != nullptr; i++)
+			{
+				const GLuint p = glCreateProgram();
+				if (p == 0) break;
+				got.push_back(p);
+				if (p >= top) break;
+			}
+		}
+		else
+		{
+			got.assign(top, 0);
+			switch (k)
+			{
+				case kNameTexture: glGenTextures((GLsizei)top, got.data()); break;
+				case kNameBuffer: glGenBuffers((GLsizei)top, got.data()); break;
+				case kNameFramebuffer: glGenFramebuffers((GLsizei)top, got.data()); break;
+				case kNameRenderbuffer: glGenRenderbuffers((GLsizei)top, got.data()); break;
+				case kNameSampler: if (glad_glGenSamplers) glGenSamplers((GLsizei)top, got.data()); break;
+				case kNameQuery: glGenQueries((GLsizei)top, got.data()); break;
+				case kNameVertexArray: glGenVertexArrays((GLsizei)top, got.data()); break;
+				case kNamePipeline: if (glad_glGenProgramPipelines) glGenProgramPipelines((GLsizei)top, got.data()); break;
+				case kNameTransformFeedback: if (glad_glGenTransformFeedbacks) glGenTransformFeedbacks((GLsizei)top, got.data()); break;
+				default: break;
+			}
+		}
+		/* what the core does not hold goes back */
+		std::vector<GLuint> back;
+		std::vector<bool> taken(top + 1, false);
+		for (GLuint g : got)
+		{
+			if (g == 0) continue;
+			if (g <= top && glNames().isLive(k, g)) taken[g] = true;
+			else back.push_back(g);
+		}
+		for (uint32_t n = 1; n <= top; n++)
+		{
+			if (!glNames().isLive(k, n)) continue;
+			if (taken[n]) kept++;
+			else missed++;
+		}
+		if (back.empty()) continue;
+		switch (k)
+		{
+			case kNameTexture: glDeleteTextures((GLsizei)back.size(), back.data()); break;
+			case kNameBuffer: glDeleteBuffers((GLsizei)back.size(), back.data()); break;
+			case kNameFramebuffer: glDeleteFramebuffers((GLsizei)back.size(), back.data()); break;
+			case kNameRenderbuffer: glDeleteRenderbuffers((GLsizei)back.size(), back.data()); break;
+			case kNameSampler: glDeleteSamplers((GLsizei)back.size(), back.data()); break;
+			case kNameQuery: glDeleteQueries((GLsizei)back.size(), back.data()); break;
+			case kNameVertexArray: glDeleteVertexArrays((GLsizei)back.size(), back.data()); break;
+			case kNamePipeline: glDeleteProgramPipelines((GLsizei)back.size(), back.data()); break;
+			case kNameTransformFeedback: glDeleteTransformFeedbacks((GLsizei)back.size(), back.data()); break;
+			case kNameProgram: for (GLuint g : back) glDeleteProgram(g); break;
+			default: break;
+		}
+	}
+	if (missed != 0)
+	{
+		static bool said;
+		if (!said)
+		{
+			said = true;
+			fprintf(stderr, "chimera gl: a fresh context did not hand back %llu of the names the core held"
+				" (this driver does not give out the lowest free names)\n", (unsigned long long)missed);
+		}
+	}
+	return kept;
 }
 
 static uintptr_t BRIDGE_ABI glDispatchBody(uintptr_t op, uintptr_t a, uintptr_t b,
@@ -2259,6 +2577,44 @@ static void forgetContext()
 	for (int k = 0; k < kAuditKinds; k++) auditLives()[k].clear();
 }
 
+/* A load that makes the core rebuild its GL objects (ce_gl_state_loaded) also
+ * ends the context they were in, and the core rebuilds in a fresh one (owner,
+ * 2026-10-19; the Vulkan bridge does the same). The objects of the frames
+ * after the restored one are orphans - nothing in the restored machine names
+ * them - and stayed in the driver until the session ended: RPCS3 left about
+ * 55 objects and 600 MB in it with each rewind. Every name the core held is
+ * taken again in the fresh context (reserveNames). Not while a second session
+ * holds the context: its objects are in it. CHIMERA_GL_SAME_CONTEXT_ON_LOAD
+ * keeps the old behaviour (the same context, the id moved), for A/B. */
+static uint64_t g_renewed;
+static void renewContext()
+{
+	static const bool off = getenv("CHIMERA_GL_SAME_CONTEXT_ON_LOAD") != nullptr;
+	if (off || !g_ready || g_holders != 1) return;
+	ce_gl_release();
+	save_current();
+	if (!replace_context())
+	{
+		return_current();
+		static bool said;
+		if (!said)
+		{
+			said = true;
+			fprintf(stderr, "chimera gl: no fresh context for a load; the old one is kept\n");
+		}
+		return;
+	}
+	gladLoadGL(loader);   /* the entry points, for the context that is current now */
+	forgetContext();
+	glNames().keepAll();
+	const size_t kept = reserveNames();
+	flightNote(kFlightRenewed, (uint32_t)kept);
+	g_renewed++;
+	return_current();
+}
+
+extern "C" uint64_t ce_gl_contexts_renewed(void) { return g_renewed; }
+
 /* A session that took the bridge has ended. When it is the last, its context
  * goes, and with it every object its renderer made: no core tears its
  * renderer down when its sandbox is destroyed, and the context used to live
@@ -2273,6 +2629,7 @@ extern "C" void ce_gl_session_end(void)
 	flightNote(kFlightStopped, 0);
 	end_context();
 	forgetContext();
+	glNames().clear();
 	g_ready = false;
 	g_context_id = 0;
 	g_description[0] = 0;
@@ -2284,6 +2641,7 @@ extern "C" void ce_gl_stop(void)
 	ce_gl_release();
 	flightNote(kFlightStopped, 0);
 	destroy_context();
+	glNames().clear();
 	g_ready = false;
 	g_context_id = 0;
 	g_description[0] = 0;
@@ -2305,6 +2663,7 @@ extern "C" void ce_gl_audit_frame(int64_t) { }
 extern "C" void ce_gl_guest_check(int (*)(void *, uintptr_t, uintptr_t, int), void *) { }
 extern "C" uint64_t ce_gl_readback_overruns(void) { return 0; }
 extern "C" void ce_gl_state_loaded(int64_t) { }
+extern "C" uint64_t ce_gl_contexts_renewed(void) { return 0; }
 extern "C" uintptr_t ce_gl_dispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t) { return 0; }
 extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 {

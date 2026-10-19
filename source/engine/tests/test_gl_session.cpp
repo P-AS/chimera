@@ -30,6 +30,7 @@ extern "C" uintptr_t ce_gl_dispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, 
 static uintptr_t call(uintptr_t op, void *args) { return ce_gl_dispatch(op, reinterpret_cast<uintptr_t>(args), 0, 0, 0, 0); }
 
 extern "C" void ce_gl_state_loaded(int64_t to);
+extern "C" uint64_t ce_gl_contexts_renewed(void);
 extern "C" uint64_t ce_gl_readback_overruns(void);
 extern "C" void ce_gl_guest_check(int (*can)(void *, uintptr_t, uintptr_t, int), void *ctx);
 
@@ -67,6 +68,25 @@ static bool isSync(GLsync name)
 {
 	ChimeraGlArgs_glIsSync a{ name };
 	return ce_gl_dispatch(CHIMERA_GL_OP_glIsSync, reinterpret_cast<uintptr_t>(&a), 0, 0, 0, 0) != 0;
+}
+
+static bool isTexture(GLuint name)
+{
+	ChimeraGlArgs_glIsTexture a{ name };
+	const bool is = call(CHIMERA_GL_OP_glIsTexture, &a) != 0;
+	ce_gl_release();
+	return is;
+}
+
+/* a texture with storage, under a new name, the way a guest makes one */
+static GLuint texture()
+{
+	GLuint name = 0;
+	ChimeraGlArgs_glGenTextures gt{ 1, &name }; call(CHIMERA_GL_OP_glGenTextures, &gt);
+	ChimeraGlArgs_glBindTexture bt{ GL_TEXTURE_2D, name }; call(CHIMERA_GL_OP_glBindTexture, &bt);
+	ChimeraGlArgs_glTexImage2D ti{ GL_TEXTURE_2D, 0, GL_RGBA8, 64, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr };
+	call(CHIMERA_GL_OP_glTexImage2D, &ti);
+	return name;
 }
 
 static bool isBuffer(GLuint name)
@@ -123,6 +143,55 @@ int main()
 	assert(after != nullptr && isSync(after));
 	assert(!isSync(before) && !isSync(second));
 	ce_gl_release();
+	ce_gl_session_end();
+
+	/* ---- a load that makes the core rebuild gives it a fresh context
+	 * (2026-10-19): the old objects go with the old context, and every name
+	 * the core still holds is taken in the new one, empty, so no new object
+	 * gets a number a stale call in the restored state could reach ---- */
+	assert(ce_gl_start(err, (int32_t)sizeof err) != 0);
+	{
+		const GLuint kept1 = texture(), dropped = texture(), kept2 = texture();
+		ChimeraGlArgs_glDeleteTextures del{ 1, &dropped };
+		call(CHIMERA_GL_OP_glDeleteTextures, &del);   /* the core let this one go before the load */
+		const GLuint program = (GLuint)ce_gl_dispatch(CHIMERA_GL_OP_glCreateProgram, 0, 0, 0, 0, 0);
+		ce_gl_release();
+		assert(kept1 != 0 && kept2 != 0 && program != 0 && isTexture(kept1) && isTexture(kept2));
+
+		const uint64_t renewed = ce_gl_contexts_renewed();
+		ce_gl_state_loaded(7);
+		assert(ce_gl_contexts_renewed() == renewed + 1);
+		/* the objects went with the context: their names name nothing now */
+		assert(!isTexture(kept1) && !isTexture(kept2));
+		/* new objects never get a name the core holds; the one it let go may come back */
+		GLuint fresh[4] = { 0, 0, 0, 0 };
+		for (GLuint &f : fresh)
+		{
+			f = texture();
+			std::printf("test_gl_session: after the load a new texture is %u (the core holds %u and %u)\n",
+				(unsigned)f, (unsigned)kept1, (unsigned)kept2);
+			assert(f != 0 && f != kept1 && f != kept2);
+		}
+		const GLuint program2 = (GLuint)ce_gl_dispatch(CHIMERA_GL_OP_glCreateProgram, 0, 0, 0, 0, 0);
+		assert(program2 != 0 && program2 != program);
+		/* a stale delete of a name the core held leaves the new objects alone */
+		ChimeraGlArgs_glDeleteTextures stale{ 1, &kept1 };
+		call(CHIMERA_GL_OP_glDeleteTextures, &stale);
+		ce_gl_release();
+		for (GLuint f : fresh) assert(isTexture(f));
+	}
+	ce_gl_session_end();
+	/* two sessions holding the context: a load keeps it, with the other's objects */
+	assert(ce_gl_start(err, (int32_t)sizeof err) != 0);
+	assert(ce_gl_start(err, (int32_t)sizeof err) != 0);
+	{
+		const GLuint other = texture();
+		ce_gl_release();
+		const uint64_t renewed = ce_gl_contexts_renewed();
+		ce_gl_state_loaded(9);
+		assert(ce_gl_contexts_renewed() == renewed && isTexture(other));
+	}
+	ce_gl_session_end();
 	ce_gl_session_end();
 
 	/* ---- readbacks, functions a driver lacks, and memory the core does not

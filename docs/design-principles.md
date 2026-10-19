@@ -9722,3 +9722,71 @@ Dolphin, PCSX2 and RPCS3 packages, built before their bindings were fixed,
 and passed once they were replaced with the published ones); the Windows
 build compiles; the PCSX2 core's test script 44 passed, 0 failed, 6
 skipped; on Linux the context is still Mesa's "4.5 (Core Profile)".
+
+## A fresh GL context with every load that rebuilds (user-decided, 2026-10-19)
+
+**What was wrong.** A load moved the GL context id, so a core rebuilt its
+objects, but the old objects stayed in the driver: nothing in the restored
+machine names the ones the frames after the restored frame made. They were
+freed only when the session ended.
+
+**What changed.** The owner chose a fresh context, as the Vulkan bridge
+already has:
+
+- A load that moves the id also makes a new context (made as the first
+  one was, then made current), destroys the old one with everything in it,
+  and lets the core rebuild in the new one. Not while a second session
+  holds the context, and not for a core that declares it keeps its objects.
+  If no new context can be made, the old one is kept, as before.
+- A new context hands out names from 1 again, and a restored state can still
+  hold names of the old one. The bridge keeps the names the core holds, by
+  kind, from the calls that make and delete objects (`gl_names.h`), and takes
+  every one of them again in the new context, empty, before the core runs:
+  a stale name names nothing, and no new object gets one. The driver hands
+  out the lowest free names; one that did not would be said once.
+- `CHIMERA_GL_STALE=1` lists the first uses of a name held from before the
+  fresh context, each with the calls before it. `CHIMERA_GL_SAME_CONTEXT_ON_LOAD=1`
+  keeps the old behaviour, for A/B. The crash notes name the renewal.
+
+**What it found.** Dolphin's rebuild leaned on the old context in six
+places (a use of freed memory among them); the owner chose to fix Dolphin
+before this was published. Dolphin's patch 0031 (dolphin repository,
+docs/PLAN.md) has them. Before the fix, one rewind of Pro Rally 2002 left
+129 KB of System RAM different from a straight run; after it, nothing.
+
+**Measured on the GTX 1060.** Each of the nine cores that draw through the GL
+bridge ran straight to a frame and again with 8 rewinds, with this engine
+and with the one before it, and the final picture and the main memory were
+compared with the straight run's:
+
+| core | scene | picture | memory | GPU memory peak, before / fresh |
+|---|---|---|---|---|
+| Ruffle | Super Doggy, 1500 | same | (the heap moves with any rebuild) | 4845 / 4837 MiB |
+| Azahar | Cars 2, 2400 | same | FCRAM, VRAM same | 4858 / 4856 |
+| Flycast | Re-Volt, 4200 | same | System RAM, VRAM same | 4799 / 4799 |
+| PCSX2 | Street Fighter EX3, 3600 | same | EE RAM, IOP RAM same | 5011 / 4955 |
+| DuckStation | NHL Blades of Steel 2000, 2400 | same | Main RAM same | 4796 / 4796 |
+| RPCS3 | Bejeweled 3, 900 | same | MainRAM same | 4969 / 4917 |
+| xemu | Soulcalibur II, 2400 | same | (differs the same with both engines) | 4901 / 4887 |
+| Vita3K | Geometry Wars 3, 1500 | same | (16 bytes differ with both engines) | 4822 / 4822 |
+| Dolphin | Pro Rally 2002, 7800 | same | System RAM, ARAM same | 4932 / 4810 |
+
+xemu's memory differs from a straight run with either engine because its
+StateSaving writes the GPU's surfaces into the console's memory before a
+state (xemu patch 0019); Vita3K's 16 bytes are the same with both. Neither
+comes from this change. The table's fresh runs were made with a build whose
+names report was narrower; the build committed repeated all nine with the
+same pictures and memory (its memory peaks are not comparable: the card's
+use by other programs had moved by then).
+
+**Tested.** The engine's GL session test has a new part: textures made, one
+deleted, a load; the old textures are gone, every new texture gets a name
+the core does not hold (the one it deleted comes back), a stale delete
+leaves the new ones alone, and with two sessions holding the context a load
+keeps it. It passes through Mesa here and on the GTX 1060 (WGL). Broken on
+purpose - no names taken again, then no new context - it failed both times,
+at the line that checks each. The engine's 30 unit tests pass; the witness
+101 passed and 0 failed; the interface tests 1117 with none failed (23
+skipped); the Windows build compiles; the PCSX2 core's test script 44
+passed, 0 failed, 6 skipped. Dolphin's gate passes with a fresh context
+(25 ok, 9 skipped).

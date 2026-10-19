@@ -490,6 +490,50 @@ The fix is in the engine, because every bridged core already rebuilds on a
 moved id. The same stress ran its whole 20 minutes (212 steps) with it.
 `CHIMERA_GL_KEEP_OBJECTS_ON_LOAD` keeps the old behaviour for A/B.
 
+### And a fresh context with it (user-decided, 2026-10-19)
+
+Moving the id left the old objects where they were. Nothing in the restored
+machine names the objects the frames after the restored one made, so they
+stayed in the driver until the session ended: RPCS3 left about 55 objects
+and 600 MB with each rewind. Since 2026-10-19 a load that moves the id also
+replaces the context, as the Vulkan bridge does: a new context is made, the
+old one is destroyed with everything in it, and the core rebuilds in the new
+one. Not while a second session holds the context (its objects are in it),
+and not for a core that declares it keeps its objects across a load.
+
+A new context hands out names from 1 again, and a restored state can still
+hold names from the old one: a texture the core deletes after it has
+rebuilt, a sampler it forgot. If a new object were given one of those
+numbers, the stale call would reach it - a delete would free it, a bind would
+draw the wrong thing, with no error (Ruffle did exactly this on 2026-09-15,
+by itself). So the bridge keeps the names the core holds, by kind, as the
+calls that make and delete objects cross it (`gl_names.h`), and in the new
+context it takes every one of them again, empty, before the core runs. A
+stale name then names nothing, and no new object gets one. The driver hands
+out the lowest free names, so taking names up to the highest the core holds
+and giving back the rest leaves exactly the core's; a driver that did not
+would be said once on standard error.
+
+What a fresh context finds out about a core is whether it really rebuilds.
+A core that let an object survive the rebuild, kept a binding, or set some of
+the context's settings only once or only when the machine changed them,
+worked only because the old context lived on. Dolphin did all of these (its
+patch 0031, six fixes): after one rewind its RAM differed from a straight
+run's. Two kinds of help find them:
+
+- `CHIMERA_GL_STALE=1` lists the first uses of a name held from before the
+  fresh context, or of one no call made, each with the calls before it.
+  Note that a core which deletes an old name and makes a new object can get
+  the same number back from the driver, so a stale use of that number is not
+  always reported: compare what each draw does, too.
+- A state that is set rarely - the viewport, a uniform block binding - is
+  not a name at all. In a fresh context it is OpenGL's default (a 0x0
+  viewport without a surface), and the first draws after a load go nowhere.
+  Comparing `glGet` answers at the first draw after a load, with the same
+  context and with a fresh one, is what found Dolphin's last two.
+
+`CHIMERA_GL_SAME_CONTEXT_ON_LOAD=1` keeps the same context, for A/B.
+
 ### The one state that did not rebuild: the frame-0 anchor (issue #126, 2026-09-21)
 
 "Every bridged core already rebuilds on a moved id" was true of every state but

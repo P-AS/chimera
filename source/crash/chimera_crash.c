@@ -133,6 +133,7 @@ static void write_gl_entry(FILE *f, const flight_line *line)
 	case 0xFFFFFF03: snprintf(name, sizeof name, "-- a state is loaded (frame %lu)", (unsigned long)line->detail); break;
 	case 0xFFFFFF04: snprintf(name, sizeof name, "-- a session takes the bridge (a fresh context id)"); break;
 	case 0xFFFFFF05: snprintf(name, sizeof name, "-- the context is destroyed"); break;
+	case 0xFFFFFF06: snprintf(name, sizeof name, "-- a load gives the core a fresh context (%lu names kept)", (unsigned long)line->detail); break;
 	default:
 		if (line->op & 0x40000000u) {
 			/* a Vulkan bridge command (the engine's ce_vk_flight_note) */
