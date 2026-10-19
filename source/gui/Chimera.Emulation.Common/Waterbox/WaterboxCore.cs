@@ -60,7 +60,15 @@ namespace Chimera.Emulation.Common.Waterbox
 
 		private readonly int _width, _height, _samplesPerFrame;
 		private int _nsamp; // what the last frame actually produced
-		private readonly int[] _videoBuff;
+		/// <summary>
+		/// The picture, as large as the largest the machine has drawn (the engine's buffer grows the same way):
+		/// the package's video size is the most a core can draw, and a session that never draws that much
+		/// does not hold room for it.
+		/// </summary>
+		private int[] _videoBuff = [ ];
+
+		/// <summary>The size of the last picture handed over, for when the session is gone.</summary>
+		private int _lastWidth, _lastHeight;
 		private readonly short[] _stereoBuff;
 
 		// A core that mixes at a rate other than the 44100 the sound path assumes is
@@ -154,7 +162,6 @@ namespace Chimera.Emulation.Common.Waterbox
 			_width = _video.Width;
 			_height = _video.Height;
 			_samplesPerFrame = audio.SamplesPerFrame;
-			_videoBuff = new int[_width * _height];
 			_stereoBuff = new short[_samplesPerFrame * 2];
 			// the machine's rate where it states one: two machines of one package
 			// can have sound chips that run at different rates (issue #226)
@@ -451,7 +458,12 @@ namespace Chimera.Emulation.Common.Waterbox
 			Frame++;
 			if (IsLagFrame) LagCount++;
 
-			if (render) Marshal.Copy(_session.VideoBuffer, _videoBuff, 0, _session.VideoWidth * _session.VideoHeight);
+			if (render)
+			{
+				_lastWidth = _session.VideoWidth;
+				_lastHeight = _session.VideoHeight;
+				Marshal.Copy(_session.VideoBuffer, VideoRoom(_lastWidth * _lastHeight), 0, _lastWidth * _lastHeight);
+			}
 			var audio = _session.AudioBuffer(out _nsamp);
 			Marshal.Copy(audio, _stereoBuff, 0, _nsamp * 2);
 			if (_resampler is not null)
@@ -559,8 +571,8 @@ namespace Chimera.Emulation.Common.Waterbox
 
 		// The LIVE size: a mode-changing machine (DOS) reports it per frame,
 		// clamped by the engine to the config's buffer; others equal the config.
-		public int BufferWidth => _session.Disposed ? _width : _session.VideoWidth;
-		public int BufferHeight => _session.Disposed ? _height : _session.VideoHeight;
+		public int BufferWidth => _session.Disposed ? (_lastWidth > 0 ? _lastWidth : _width) : _session.VideoWidth;
+		public int BufferHeight => _session.Disposed ? (_lastHeight > 0 ? _lastHeight : _height) : _session.VideoHeight;
 		// The display aspect. A core that declares none is saying its pixels are
 		// square, so the live picture IS its own aspect - which is the only
 		// honest answer for a machine whose picture changes size (a Flash movie
@@ -582,7 +594,17 @@ namespace Chimera.Emulation.Common.Waterbox
 		public int BackgroundColor => unchecked((int)0xFF000000);
 		public int VsyncNumerator => _session.VsyncNumerator;
 		public int VsyncDenominator => _session.VsyncDenominator;
-		public int[] GetVideoBuffer() => _videoBuff;
+		/// <summary>
+		/// Never shorter than <see cref="BufferWidth"/> x <see cref="BufferHeight"/>: a load can put up a kept
+		/// picture of another size without a frame being copied here.
+		/// </summary>
+		public int[] GetVideoBuffer() => VideoRoom(BufferWidth * BufferHeight);
+
+		private int[] VideoRoom(int pixels)
+		{
+			if (_videoBuff.Length < pixels) _videoBuff = new int[pixels];
+			return _videoBuff;
+		}
 
 		// ---------------- ISoundProvider ----------------
 

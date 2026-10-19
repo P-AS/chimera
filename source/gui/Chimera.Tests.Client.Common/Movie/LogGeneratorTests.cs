@@ -138,6 +138,30 @@ namespace Chimera.Tests.Client.Common.Movie
 			Assert.AreEqual("|||.|", logEntry);
 		}
 
+		/// <summary>
+		/// A control's name may hold the key's own separators: Virtual Jaguar's keypad has "P1 #", MAME's keyboards
+		/// "| @" and "# >". Splitting the key at every '#' made "P2 #" two names and a group too many, and every
+		/// column after it was read as another (chimera-core-virtualjaguar's engine:jag).
+		/// </summary>
+		[TestMethod]
+		public void LogKeyNamesMayHoldItsSeparators()
+		{
+			var machine = new ControllerDefinition("Keypads") { BoolButtons = { "P1 A", "P1 #", "P2 A", "P2 #", "| @", "# >" } }.MakeImmutable();
+			machine.BuildMnemonicsCache();
+			var key = LogEntryGenerator.GenerateLogKey(machine);
+			Assert.AreEqual("#| @|# >|#P1 A|P1 #|#P2 A|P2 #|", key);
+
+			var movie = new MovieController(machine, key);
+			Assert.AreEqual(key, LogEntryGenerator.GenerateLogKey(movie.Definition), "the key reads back as itself");
+			movie.SetFromMnemonic("|X.|.X|X.|");
+			Assert.IsTrue(movie.IsPressed("| @"));
+			Assert.IsFalse(movie.IsPressed("# >"));
+			Assert.IsFalse(movie.IsPressed("P1 A"));
+			Assert.IsTrue(movie.IsPressed("P1 #"));
+			Assert.IsTrue(movie.IsPressed("P2 A"));
+			Assert.IsFalse(movie.IsPressed("P2 #"));
+		}
+
 		[TestMethod]
 		public void GenerateLogKey_EmptyPlayerGroups()
 		{

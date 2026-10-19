@@ -1237,6 +1237,57 @@ if [ "$level" = "both" ] || [ "$level" = "b" ]; then
 		done
 	done
 
+	# --- a package's picture size is room, not a buffer held ---
+	# The size a package declares is the most its core can draw: DuckStation's
+	# 16x is 12288x9216, 450 MB a buffer. The engine and the window hold room
+	# for the picture the core draws, and grow when it draws more; they used to
+	# take the declared size up front, for every session at any resolution.
+	# The same movie runs with the synthetic package declaring 8192x8192 (256 MB
+	# a buffer) and as it is: the machine and the picture are the goldens', and
+	# the process's peak memory is within 128 MB of the plain run's (it was
+	# 512 MB more).
+	if [ "$record" -eq 0 ] && [ -x /usr/bin/time ]; then
+		rname=gridWalker.win
+		rrom="$here/roms/${rname%%.*}.testrom"
+		roompkg="$work/picture-room"
+		rm -rf "$roompkg"; mkdir -p "$roompkg"
+		(cd "$roompkg" && unzip -q "$repo_root/build/Cores/synth-box.chimeraCore") && python3 -c "
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d['video']['width'] = d['video']['height'] = 8192
+json.dump(d, open(p, 'w'))
+" "$roompkg/waterbox.config"
+		for rkind in plain roomy; do
+			rpkg="$repo_root/build/Cores/synth-box.chimeraCore"
+			[ "$rkind" = roomy ] && rpkg="$roompkg"
+			rjob="$work/job.room-$rkind.txt"
+			{
+				echo "movie=$here/movies/$rname.txt"
+				echo "outram=$work/room-$rkind.ram.bin"
+				echo "outvram=$work/room-$rkind.vram.bin"
+				echo "meta=$work/room-$rkind.meta.txt"
+				echo "mode=simple"
+			} > "$rjob"
+			rm -f "$work/room-$rkind.ram.bin" "$work/room-$rkind.vram.bin" "$work/room-$rkind.meta.txt"
+			cp "$config" "$work/config.room-$rkind.ini"
+			( cd "$repo_root" && CHIMERA_JOB="$rjob" timeout 300 /usr/bin/time -f "peak %M" -o "$work/room-$rkind.peak" mono "$emu_exe" --headless \
+				"--config=$work/config.room-$rkind.ini" "--core=$rpkg" \
+				"--lua=$here/synth-replay.lua" "$rrom" ) > "$work/room-$rkind.log" 2>&1
+		done
+		rplain="$(sed -n 's/^peak \([0-9]*\)$/\1/p' "$work/room-plain.peak" 2>/dev/null)"
+		rroomy="$(sed -n 's/^peak \([0-9]*\)$/\1/p' "$work/room-roomy.peak" 2>/dev/null)"
+		if ! grep -q "^status=OK" "$work/room-roomy.meta.txt" 2>/dev/null || [ -z "$rplain" ] || [ -z "$rroomy" ]; then
+			report "B:box:picture-room" FAIL "no OK meta or no peak memory (see work/room-*.log)"
+		elif ! cmp -s "$work/room-roomy.ram.bin" "$golden_dir/$rname.ram.bin" || ! cmp -s "$work/room-roomy.vram.bin" "$golden_dir/$rname.vram.bin"; then
+			report "B:box:picture-room" FAIL "with 8192x8192 declared, RAM or VRAM differs from the goldens"
+		elif [ $(( rroomy - rplain )) -ge 131072 ]; then
+			report "B:box:picture-room" FAIL "with 8192x8192 declared the process peaked at $(( rroomy / 1024 )) MB against $(( rplain / 1024 )) MB: room for the declared size was taken"
+		else
+			report "B:box:picture-room" PASS "with 8192x8192 declared: the goldens' RAM and picture, and a peak of $(( rroomy / 1024 )) MB against $(( rplain / 1024 )) MB as declared"
+		fi
+	fi
+
 	# --- settings -> guest channel ---
 	# Same package + movie, but with initFillByte set non-zero via the core's SYNC
 	# settings (injected into the config exactly as the UI/movie would). The guest

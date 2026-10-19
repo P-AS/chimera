@@ -10019,3 +10019,53 @@ Tested:
 
 Not tried: clicking through the window by hand in the Windows build. The
 harness opens it, picks and accepts in code.
+
+## A package's picture size is room, not a buffer held (2026-10-19)
+
+The owner decided DuckStation offers internal resolutions up to 16x (#316's
+round; the DuckStation core's plan has the decision). Its package must then
+declare a picture of 12288x9216, and the engine and the window each allocated
+the declared size up front: 450 MB a buffer, in every DuckStation session at
+any resolution. The engine filled its buffer when the session began, so the
+memory was really used.
+
+Now both keep as much as the largest picture the core has drawn, and grow
+when it draws a larger one: the engine before it copies a frame, and before
+it puts up a kept picture after a load (room for the largest one the kept
+pictures hold, 16 MiB); the window when it copies a frame and whenever a
+caller asks for the buffer, which a load can resize without a copy. A
+session that has gone keeps reporting the size of its last picture. The
+package's size is still the most a core may draw, and a larger picture is
+still cropped to it.
+
+Tested: the synthetic core now reports its live size (128x120, the size it
+declares, so nothing else changes), and the witness's B:box:picture-room
+replays a movie with its package declaring 8192x8192: the goldens' RAM and
+picture, and a process peak of 286 MB against 285 MB as declared. The same
+two runs on the published build before the change (fce46b88) peaked at 480
+MB against 225 MB, which the leg's limit of 128 MB more refuses.
+
+## A control's name may hold a LogKey's separators (2026-10-19)
+
+A movie's LogKey names its columns: "#" starts a group of them and "|" ends
+a name. Since 2026-10-15 the engine reads a movie's lines by those names, as
+the window always did, and both split the key at every "#". Three cores have
+names that hold a separator: Virtual Jaguar's keypads ("P1 #" to "P8 #"),
+PUAE's "Key #", and MAME home's "# >", "0 #", "3 #" and "| @". So "P2 #" was
+read as a name "P2 " and a group too many, and every column after it as
+another: Virtual Jaguar's test of a project played in the headless runner
+has failed every day since 2026-10-16, and a movie of those cores pressing
+those keys played back with the presses on other columns.
+
+A key is now read with the machine's own names first: at each place the
+longest of them that is there whole, followed by "|" or the key's end, is one
+name; otherwise "#" starts a group and a name runs to the next "|". The engine
+(EntryLayout::buildFromKey) and the window (MovieController.ReadLogKey) read
+it the same way. Nothing a key is written as changes.
+
+Tested: test_movie_entry's keyNamesMayHoldSeparators (three groups from a key
+with "P1 #", "| @" and "# >", each press on its own control, a machine's own
+key read back as itself) and LogGeneratorTests.LogKeyNamesMayHoldItsSeparators
+(the window's reading) both fail on the old reader and pass. Engine tests
+30/30, witness 102 ok and 0 failed, interface tests 119/63/599/348 with none
+failed, the Windows build compiles.

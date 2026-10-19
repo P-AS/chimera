@@ -260,6 +260,13 @@ ECL_EXPORT uint32_t *GetVideoBgra(void)
 	return g_video;
 }
 
+/* The picture's live size. The same as the package declares, so nothing reads
+ * the picture differently; it is here so a package can declare more room than
+ * the core draws, as a core with an internal resolution does (leg
+ * B:box:picture-room). */
+ECL_EXPORT int GetVideoWidth(void)  { return FB_W; }
+ECL_EXPORT int GetVideoHeight(void) { return FB_H; }
+
 /* --- self-described memory domains (guest ABI v1) ---
  * The generic Chimera adapter queries these AFTER Init, because a core's domain
  * sizes/count can depend on runtime settings (synth's are fixed, but the ABI is

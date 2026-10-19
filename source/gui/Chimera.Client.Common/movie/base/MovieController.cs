@@ -103,13 +103,64 @@ namespace Chimera.Client.Common
 			public MovieControllerDefinition(ControllerDefinition sourceDefinition, string logKey)
 				: base(sourceDefinition)
 			{
-				var groups = logKey.Split('#');
-
-				_controlsFromLogKey = groups.Skip(1) // ignore everything before the first '#'
-					.Select(group => group.Split('|', StringSplitOptions.RemoveEmptyEntries)
+				var known = sourceDefinition.BoolButtons.Concat(sourceDefinition.Axes.Keys);
+				_controlsFromLogKey = ReadLogKey(logKey, known)
+					.Select(group => group
 						.Select(buttonname => (buttonname, sourceDefinition.Axes.TryGetValue(buttonname, out var axisSpec) ? axisSpec : (AxisSpec?)null))
 						.ToArray())
 					.ToArray();
+			}
+
+			/// <summary>
+			/// A key's groups of names. '#' starts a group and '|' ends a name, but a control's own name may hold
+			/// either (Virtual Jaguar's "P2 #", MAME's "| @" and "# >"): splitting at every '#' made "P2 #" two
+			/// names and a group too many, and every column after it was read as another. So at each place the
+			/// machine's own names come first, the longest of them, when one is there whole and a '|' or the key's
+			/// end follows it; otherwise a '#' starts a group and a name runs to the next '|'. Everything before
+			/// the first '#' is ignored. The engine reads a key the same way (EntryLayout::buildFromKey).
+			/// </summary>
+			internal static List<List<string>> ReadLogKey(string logKey, IEnumerable<string> known)
+			{
+				var names = known.Where(static n => n.Length is not 0).Distinct().OrderByDescending(static n => n.Length).ToArray();
+				string NameAt(int at)
+				{
+					foreach (var n in names)
+					{
+						if (string.CompareOrdinal(logKey, at, n, 0, n.Length) is not 0 || at + n.Length > logKey.Length) continue;
+						var end = at + n.Length;
+						if (end == logKey.Length || logKey[end] == '|') return n;
+					}
+					return null;
+				}
+				List<List<string>> groups = new();
+				var pos = logKey.IndexOf('#');
+				if (pos < 0) return groups;
+				while (pos < logKey.Length)
+				{
+					var whole = groups.Count is 0 ? null : NameAt(pos);
+					if (whole is null && logKey[pos] == '#')
+					{
+						groups.Add(new());
+						pos++;
+						continue;
+					}
+					string name;
+					if (whole is not null)
+					{
+						name = whole;
+						pos += whole.Length;
+					}
+					else
+					{
+						var bar = logKey.IndexOf('|', pos);
+						var end = bar < 0 ? logKey.Length : bar;
+						name = logKey.Substring(pos, end - pos);
+						pos = end;
+					}
+					if (pos < logKey.Length && logKey[pos] == '|') pos++;
+					if (name.Length is not 0) groups[groups.Count - 1].Add(name);
+				}
+				return groups;
 			}
 
 			protected override IReadOnlyList<IReadOnlyList<(string Name, AxisSpec? AxisSpec)>> GenOrderedControls() => _controlsFromLogKey;

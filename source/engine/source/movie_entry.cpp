@@ -101,32 +101,65 @@ bool EntryLayout::buildFromKey(const std::string &key, const std::vector<std::st
 {
 	const size_t first = key.find('#');
 	if (first == std::string::npos) return false;
+	/* '#' starts a group and '|' ends a name, but a control's own name may
+	 * hold either: Virtual Jaguar's "P2 #", MAME's "| @" and "# >". Splitting
+	 * at every '#' made "P2 #" two names and a group too many, and every
+	 * column after it was read as another (chimera-core-virtualjaguar's
+	 * engine:jag). So at each place the machine's own names come first, the
+	 * longest of them, when one is there whole and a '|' or the key's end
+	 * follows it; otherwise a '#' starts a group and a name runs to the next
+	 * '|'. The window reads a key the same way (MovieController). */
+	std::vector<const std::string *> known;
+	for (const auto &b : buttons) known.push_back(&b);
+	for (const auto &a : axes) known.push_back(&a.name);
+	std::stable_sort(known.begin(), known.end(),
+		[](const std::string *x, const std::string *y) { return x->size() > y->size(); });
+	auto nameAt = [&](size_t at) -> const std::string * {
+		for (const std::string *n : known)
+		{
+			if (n->empty() || key.compare(at, n->size(), *n) != 0) continue;
+			const size_t end = at + n->size();
+			if (end == key.size() || key[end] == '|') return n;
+		}
+		return nullptr;
+	};
 	std::vector<Item> items;
 	std::vector<int32_t> starts;
 	/* everything before the first '#' is ignored, as the window does */
 	size_t at = first;
-	while (at != std::string::npos && at < key.size())
+	bool inGroup = false;
+	while (at < key.size())
 	{
-		const size_t next = key.find('#', at + 1);
-		const std::string group = key.substr(at + 1, next == std::string::npos ? std::string::npos : next - at - 1);
-		starts.push_back(static_cast<int32_t>(items.size()));
-		size_t from = 0;
-		while (from <= group.size())
+		const std::string *whole = inGroup ? nameAt(at) : nullptr;
+		if (whole == nullptr && key[at] == '#')
 		{
-			size_t bar = group.find('|', from);
-			if (bar == std::string::npos) bar = group.size();
-			const std::string name = group.substr(from, bar - from);
-			from = bar + 1;
-			if (name.empty()) continue;
-			int32_t index = -1;
-			bool isAxis = false;
-			for (size_t i = 0; i < axes.size() && index < 0; i++)
-				if (axes[i].name == name) { index = static_cast<int32_t>(i); isAxis = true; }
-			for (size_t i = 0; i < buttons.size() && index < 0; i++)
-				if (buttons[i] == name) index = static_cast<int32_t>(i);
-			items.push_back({ isAxis, index });
+			starts.push_back(static_cast<int32_t>(items.size()));
+			inGroup = true;
+			at++;
+			continue;
 		}
-		at = next;
+		std::string name;
+		if (whole != nullptr)
+		{
+			name = *whole;
+			at += whole->size();
+		}
+		else
+		{
+			const size_t bar = key.find('|', at);
+			const size_t end = bar == std::string::npos ? key.size() : bar;
+			name = key.substr(at, end - at);
+			at = end;
+		}
+		if (at < key.size() && key[at] == '|') at++;
+		if (name.empty()) continue;
+		int32_t index = -1;
+		bool isAxis = false;
+		for (size_t i = 0; i < axes.size() && index < 0; i++)
+			if (axes[i].name == name) { index = static_cast<int32_t>(i); isAxis = true; }
+		for (size_t i = 0; i < buttons.size() && index < 0; i++)
+			if (buttons[i] == name) index = static_cast<int32_t>(i);
+		items.push_back({ isAxis, index });
 	}
 	/* a key that names no control ("#", which a hand-made movie may carry
 	 * to say nothing) says nothing about the columns: read by the machine's

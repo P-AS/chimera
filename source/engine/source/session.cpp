@@ -838,7 +838,21 @@ struct ce_session
 	int32_t (*getVideoHeight)() = nullptr;
 	int32_t vidW = 0, vidH = 0;
 	bool saidOversize = false; /* copyVideo: a picture larger than declared, said once */
+	/* The picture, as large as the largest one the machine has drawn: the
+	 * package's video size is the most a core can draw (DuckStation's 16x is
+	 * 12288x9216, 450 MB), and a session that never draws that much does not
+	 * hold room for it. Never smaller than vidW x vidH. */
 	std::vector<uint32_t> videoBuf;
+	void growVideo(size_t pixels)
+	{
+		if (videoBuf.size() < pixels) videoBuf.resize(pixels, 0);
+	}
+	/* room for any kept picture: none is larger than CeKeptPictures keeps */
+	void roomForKept()
+	{
+		const size_t most = static_cast<size_t>(cfg.width) * static_cast<size_t>(cfg.height);
+		growVideo(std::min(most, CeKeptPictures::MaxRawBytes / sizeof(uint32_t)));
+	}
 	std::vector<int16_t> audioBuf;
 	int32_t sampleCount = 0;
 	std::vector<uint8_t> stateBuf;
@@ -1348,6 +1362,7 @@ void ce_session::copyVideo()
 			vidH = h < cfg.height ? h : cfg.height;
 		}
 	}
+	growVideo(static_cast<size_t>(vidW) * static_cast<size_t>(vidH));
 	if (src != nullptr)
 	{
 		if (srcStride == vidW)
@@ -1469,6 +1484,7 @@ void ce_session::afterFrame(bool rendered, int64_t known)
 		return;
 	}
 	int32_t w = 0, h = 0;
+	roomForKept();
 	if (pictures.show(machineFrame, videoBuf.data(), videoBuf.size(), &w, &h))
 	{
 		vidW = w;
@@ -1492,6 +1508,7 @@ void ce_session::afterLoad(int64_t landedOn)
 	if (landedOn >= 0 && pictures.budget() != 0)
 	{
 		int32_t w = 0, h = 0;
+		roomForKept();
 		shown = pictures.show(landedOn, videoBuf.data(), videoBuf.size(), &w, &h);
 		if (shown)
 		{
@@ -2335,7 +2352,8 @@ static ce_session *openSession(
 		s->mdHidden = reinterpret_cast<int32_t (*)(int32_t)>(s->proc("GetMemoryDomainHidden", 1, false, none));
 	}
 
-	s->videoBuf.assign(static_cast<size_t>(s->cfg.width) * s->cfg.height, 0);
+	/* the live size the guest gave, or the package's when it gave none */
+	s->videoBuf.assign(static_cast<size_t>(s->vidW) * static_cast<size_t>(s->vidH), 0);
 	s->audioBuf.assign(static_cast<size_t>(s->cfg.samplesPerFrame) * 2, 0);
 	s->btnState.assign(s->cfg.buttons.size(), 0);
 	s->btnSent.assign(s->cfg.buttons.size(), 0); // a fresh guest holds nothing down

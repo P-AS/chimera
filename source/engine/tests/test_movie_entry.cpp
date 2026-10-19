@@ -121,9 +121,40 @@ void keyedLayoutsGoByName()
 	assert(l.key(buttons).empty());
 }
 
+/* A control's name may hold the key's own separators: Virtual Jaguar's
+ * keypad has "P1 #", MAME's keyboards "| @" and "# >". The key is read by
+ * the machine's names first, so each is one column of its own group. */
+static void keyNamesMayHoldSeparators()
+{
+	const std::vector<std::string> buttons = { "P1 A", "P1 #", "P2 A", "P2 #", "| @", "# >" };
+	const std::vector<EntryAxis> axes;
+	std::vector<uint8_t> states;
+	std::vector<int32_t> values;
+	EntryLayout l;
+	assert(l.buildFromKey("#| @|# >|#P1 A|P1 #|#P2 A|P2 #|", buttons, axes));
+	assert(l.groups() == 3);
+	assert(l.parse("|X.|.X|X.|", states, values));
+	assert(states[4] == 1 && states[5] == 0); // | @ pressed, # > not
+	assert(states[0] == 0 && states[1] == 1); // P1 # pressed, P1 A not
+	assert(states[2] == 1 && states[3] == 0); // P2 A pressed, P2 # not
+	// the machine's own key reads back as its own columns
+	EntryLayout own;
+	own.build(buttons, axes);
+	EntryLayout again;
+	assert(again.buildFromKey(own.key(buttons), buttons, axes));
+	assert(again.groups() == own.groups() && again.size() == own.size());
+	auto some = statesOf((1ull << 1) | (1ull << 4) | (1ull << 5), buttons.size());
+	assert(again.generate(some.data(), nullptr, "AHAHB>") == own.generate(some.data(), nullptr, "AHAHB>"));
+	// a name the machine lacks still ends at the next '|'
+	assert(l.buildFromKey("#P1 A|P9 #|P1 #|", buttons, axes));
+	assert(l.parse("|.zX|", states, values));
+	assert(states[0] == 0 && states[1] == 1);
+}
+
 int main(void)
 {
 	keyedLayoutsGoByName();
+	keyNamesMayHoldSeparators();
 	{ // player number: "^P(\d+) " and nothing else
 		assert(chimera::playerNumberOf("P1 Up") == 1);
 		assert(chimera::playerNumberOf("P12 Up") == 12);
