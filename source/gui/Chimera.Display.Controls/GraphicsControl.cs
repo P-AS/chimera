@@ -12,6 +12,12 @@ namespace Chimera.Display.Controls
 		}
 
 		/// <summary>
+		/// true when the picture is drawn in a window of its own rather than in this control,
+		/// which then takes no place in the interface and only holds the picture's size
+		/// </summary>
+		public virtual bool DrawsInOwnWindow => false;
+
+		/// <summary>
 		/// Sets whether presentation operations on this control will vsync
 		/// </summary>
 		public abstract void SetVsync(bool state);

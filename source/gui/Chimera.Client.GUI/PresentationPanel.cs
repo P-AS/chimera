@@ -29,7 +29,15 @@ namespace Chimera.Client.GUI
 			_fullscreenToggleCallback = fullscreenToggleCallback;
 
 			GraphicsControl = GraphicsControlFactory.CreateGraphicsControl(gl);
-			GraphicsControl.Dock = DockStyle.Fill;
+			if (GraphicsControl.DrawsInOwnWindow)
+			{
+				// the picture is a window of its own: the control takes no place in the interface
+				GraphicsControl.Visible = false;
+			}
+			else
+			{
+				GraphicsControl.Dock = DockStyle.Fill;
+			}
 			GraphicsControl.BackColor = ThemeEngine.Color(ThemeColorRole.EmulatorViewport);
 
 			// pass through these events to the form. we might need a more scalable solution for mousedown etc. for zapper and whatnot.

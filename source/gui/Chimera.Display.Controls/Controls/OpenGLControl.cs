@@ -1,4 +1,3 @@
-using System.Drawing;
 using System.Windows.Forms;
 
 using Chimera.Common;
@@ -10,7 +9,7 @@ namespace Chimera.Display.Controls
 		private readonly Action _initGLState;
 		private SDL2OpenGLContext _context;
 
-		/// <summary>keeps the standalone window responsive while nothing is being drawn</summary>
+		/// <summary>keeps the standalone window responsive while nothing is being drawn, and notices it being resized</summary>
 		private readonly Timer _pumpTimer;
 
 		public OpenGLControl(Action initGLState)
@@ -24,16 +23,31 @@ namespace Chimera.Display.Controls
 			SetStyle(ControlStyles.UserMouse, true);
 			DoubleBuffered = false;
 
-			if (SDL2OpenGLContext.UsesStandaloneWindow)
+			if (DrawsInOwnWindow)
 			{
 				_pumpTimer = new() { Interval = 15 };
-				_pumpTimer.Tick += (_, _) => SDL2OpenGLContext.PumpWindowEvents();
+				_pumpTimer.Tick += (_, _) =>
+				{
+					SDL2OpenGLContext.PumpWindowEvents();
+					FollowWindowSize();
+				};
 			}
 		}
 
+		public override bool DrawsInOwnWindow => SDL2OpenGLContext.UsesStandaloneWindow;
+
 		protected override void Dispose(bool disposing)
 		{
-			if (disposing) _pumpTimer?.Dispose();
+			if (disposing)
+			{
+				_pumpTimer?.Dispose();
+				if (DrawsInOwnWindow)
+				{
+					// the window is the control's for its whole life, not its handle's
+					_context?.Dispose();
+					_context = null;
+				}
+			}
 			base.Dispose(disposing);
 		}
 
@@ -59,48 +73,45 @@ namespace Chimera.Display.Controls
 		protected override void OnHandleCreated(EventArgs e)
 		{
 			base.OnHandleCreated(e);
-			if (SDL2OpenGLContext.UsesStandaloneWindow)
+			if (DrawsInOwnWindow)
 			{
-				_context = new("Chimera", ClientSize.Width, ClientSize.Height, 3, 2, true);
-				_context.SetWindowVisible(Visible);
-				_pumpTimer.Start();
+				CreateOwnWindow();
+				return;
 			}
-			else
-			{
-				_context = new(Handle, 3, 2, true);
-			}
+			_context = new(Handle, 3, 2, true);
 			_initGLState();
 		}
 
-		protected override void OnPaint(PaintEventArgs e)
+		/// <summary>
+		/// the standalone window doesn't need this control's handle, and the control is never shown,
+		/// so the window is made when it's first needed rather than when a handle is
+		/// </summary>
+		private void CreateOwnWindow()
 		{
-			if (!SDL2OpenGLContext.UsesStandaloneWindow)
-			{
-				base.OnPaint(e);
-				return;
-			}
+			if (_context is not null) return;
+			_context = new("Chimera", ClientSize.Width, ClientSize.Height, 3, 2, true);
+			_pumpTimer.Start();
+			_initGLState();
+		}
 
-			e.Graphics.Clear(Color.Black);
-			TextRenderer.DrawText(e.Graphics, "The display is in its own window", Font, ClientRectangle, Color.Gray,
-				TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+		/// <summary>the person resized the standalone window: what is drawn follows it</summary>
+		private void FollowWindowSize()
+		{
+			if (_context is null) return;
+			var (width, height) = _context.GetWindowSize();
+			if (width != ClientSize.Width || height != ClientSize.Height) ClientSize = new(width, height);
 		}
 
 		protected override void OnClientSizeChanged(EventArgs e)
 		{
 			base.OnClientSizeChanged(e);
-			_context?.SetWindowSize(ClientSize.Width, ClientSize.Height);
-		}
-
-		protected override void OnVisibleChanged(EventArgs e)
-		{
-			base.OnVisibleChanged(e);
-			_context?.SetWindowVisible(Visible);
+			if (DrawsInOwnWindow) _context?.SetWindowSize(ClientSize.Width, ClientSize.Height);
 		}
 
 		protected override void OnHandleDestroyed(EventArgs e)
 		{
 			base.OnHandleDestroyed(e);
-			_pumpTimer?.Stop();
+			if (DrawsInOwnWindow) return;
 			_context.Dispose();
 			_context = null;
 		}
@@ -114,7 +125,8 @@ namespace Chimera.Display.Controls
 
 			if (_context is null)
 			{
-				CreateControl();
+				if (DrawsInOwnWindow) CreateOwnWindow();
+				else CreateControl();
 			}
 			else
 			{
@@ -138,7 +150,7 @@ namespace Chimera.Display.Controls
 		{
 			MakeContextCurrent();
 			_context.SwapBuffers();
-			if (SDL2OpenGLContext.UsesStandaloneWindow) SDL2OpenGLContext.PumpWindowEvents();
+			if (DrawsInOwnWindow) SDL2OpenGLContext.PumpWindowEvents();
 		}
 	}
 }

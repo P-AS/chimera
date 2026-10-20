@@ -8420,3 +8420,24 @@ glBufferSubData) and 13% more submitting the work it flushed; the game's
 own code was under 10%. With the buffers renewed first: 34 frames a second.
 Renewing a buffer before rewriting it is OpenGL's ordinary way to do this,
 and other drivers lose nothing by it, so it is not limited to macOS.
+
+## On macOS the interface keeps its size, and the picture's window takes the picture's (user-decided, 2026-10-20)
+
+**What was decided.** With the picture in a window of its own on macOS, a
+game changing the size of its picture resizes that window only, never the
+interface window, and the interface shows nothing where the picture would
+be: no "The display is in its own window" placeholder.
+
+**How.** GraphicsControl.DrawsInOwnWindow says the picture is drawn in a
+window of its own (OpenGLControl on macOS). The control is then hidden and
+takes no place in the interface: it only holds the picture's size.
+MainForm.FrameBufferResized gives that size to the control, and so to its
+window, instead of to the main window; the main window stays as tall as
+its menu and status bar (FitToChrome), and wide enough for the whole menu
+on one row. The menu there is laid out on one row instead of flowing onto
+more: a flowing menu that had wrapped (when "Show TAStudio >>" appeared, in
+a window of menu width) stayed two rows tall after the window widened, and
+left a blank row above the status bar. The picture's window can also be
+resized by hand: the control follows the window's size, and what is drawn
+follows the control. The window is made when it is first drawn to, since
+the hidden control may never get an X11 window of its own.

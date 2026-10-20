@@ -348,6 +348,12 @@ namespace Chimera.Client.GUI
 
 			DisplayManager = new(Config, Emulator, InputManager, MovieSession, GL, _presentationPanel, () => DisableSecondaryThrottling);
 			Controls.InsertBefore(MainformMenu, insert: _presentationPanel.Control); // must be first for ??? WinForms reasons
+			if (_presentationPanel.GraphicsControl.DrawsInOwnWindow)
+			{
+				// the window is kept wide enough for the menu (FitToChrome), so it is one row and never flows:
+				// a flowing menu that had wrapped stayed two rows tall after the window widened, a blank row
+				MainformMenu.LayoutStyle = ToolStripLayoutStyle.HorizontalStackWithOverflow;
+			}
 
 			// the one way a script hands data to another program: a memory-mapped file
 			// on this machine. Set up before ApiManager (in ToolManager).
@@ -378,6 +384,9 @@ namespace Chimera.Client.GUI
 			};
 
 			Resize += (_, _) => UpdateWindowTitle();
+			Resize += (_, _) => FitToChrome();
+			Shown += (_, _) => FitToChrome();
+			MainformMenu.SizeChanged += (_, _) => FitToChrome(); // the menu wraps onto more rows when the window narrows
 
 			ResizeEnd += (o, e) =>
 			{
@@ -1385,6 +1394,12 @@ namespace Chimera.Client.GUI
 
 		public void FrameBufferResized(bool forceWindowResize = false)
 		{
+			if (_presentationPanel.GraphicsControl.DrawsInOwnWindow)
+			{
+				// the picture's own window takes the picture's size; the interface keeps its own
+				if (Config.ResizeWithFramebuffer || forceWindowResize) ResizeOwnWindowToFramebuffer();
+				return;
+			}
 			if (WindowState is not FormWindowState.Normal)
 			{
 				// Wait until no longer maximized/minimized to get correct size/location values
@@ -1446,6 +1461,46 @@ namespace Chimera.Client.GUI
 			DoPresentationPanelResize();
 		}
 
+		private void ResizeOwnWindowToFramebuffer()
+		{
+			var area = Screen.FromControl(this).WorkingArea;
+			// start at target zoom and work way down until we find acceptable zoom
+			Size size = new(1, 1);
+			for (var zoom = Config.GetWindowScaleFor(Emulator.SystemId); zoom >= 1; zoom--)
+			{
+				size = DisplayManager.CalculateClientSize(_currentVideoProvider, zoom);
+				if (size.Width < area.Width && size.Height < area.Height) break;
+			}
+			_presentationPanel.Control.ClientSize = size;
+		}
+
+		/// <summary>
+		/// with the picture in a window of its own, there is nothing below the menu and the status bar,
+		/// so the interface is as tall as they are
+		/// </summary>
+		private void FitToChrome()
+		{
+			if (_presentationPanel?.GraphicsControl.DrawsInOwnWindow is not true || WindowState is not FormWindowState.Normal) return;
+			var before = ClientSize;
+			// from the settings, not Visible: a control reads as hidden until its window has been shown
+			var showMenu = (_inFullscreen ? Config.DispChromeMenuFullscreen : Config.DispChromeMenuWindowed) && !_argParser._chromeless;
+			var showStatusBar = (_inFullscreen ? Config.DispChromeStatusBarFullscreen : Config.DispChromeStatusBarWindowed) && !_argParser._chromeless;
+			if (showMenu)
+			{
+				// wide enough for the whole menu on its one row: what does not fit would not be shown
+				var oneRow = MainformMenu.Padding.Horizontal + 8
+					+ MainformMenu.Items.Cast<ToolStripItem>().Where(static item => item.Available).Sum(static item => item.GetPreferredSize(Size.Empty).Width);
+				var minimum = oneRow + (Width - ClientSize.Width);
+				if (MinimumSize.Width != minimum) MinimumSize = new(minimum, 0);
+				if (ClientSize.Width < oneRow) ClientSize = new(oneRow, ClientSize.Height);
+				PerformLayout();
+			}
+			var height = (showMenu ? MainformMenu.Height : 0) + (showStatusBar ? MainStatusBar.Height : 0);
+			if (ClientSize.Height != height) ClientSize = new(ClientSize.Width, height);
+			// XQuartz left the menu's old pixels where the window had grown, until something else repainted it
+			if (ClientSize != before) Invalidate(invalidateChildren: true);
+		}
+
 		private void SynchChrome()
 		{
 			if (_inFullscreen)
@@ -1473,6 +1528,7 @@ namespace Chimera.Client.GUI
 					FormBorderStyle = FormBorderStyle.Sizable;
 				}
 			}
+			FitToChrome();
 		}
 
 		public void ToggleFullscreen(bool allowSuppress = false)
@@ -3749,7 +3805,11 @@ namespace Chimera.Client.GUI
 		public bool EnsureCoreIsAccurate()
 			=> true; // single-core build: no more-accurate alternative to offer
 
-		public void TAStudioHidden(bool hidden) => ShowTAStudioMenuItem.Visible = hidden;
+		public void TAStudioHidden(bool hidden)
+		{
+			ShowTAStudioMenuItem.Visible = hidden;
+			FitToChrome();
+		}
 
 		public void ProjectSavedAs(string path)
 		{

@@ -245,7 +245,7 @@ namespace Chimera.Display
 			SetAttributes(majorVersion, minorVersion, coreProfile, shareContext: false);
 
 			_sdlWindow = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, Math.Max(width, 1), Math.Max(height, 1),
-				SDL_WindowFlags.SDL_WINDOW_OPENGL | SDL_WindowFlags.SDL_WINDOW_SHOWN);
+				SDL_WindowFlags.SDL_WINDOW_OPENGL | SDL_WindowFlags.SDL_WINDOW_SHOWN | SDL_WindowFlags.SDL_WINDOW_RESIZABLE);
 			if (_sdlWindow == IntPtr.Zero)
 			{
 				throw new Exception($"Could not create SDL Window! SDL Error: {SDL_GetError()}");
@@ -265,10 +265,10 @@ namespace Chimera.Display
 		public void SetWindowSize(int width, int height)
 			=> SDL_SetWindowSize(_sdlWindow, Math.Max(width, 1), Math.Max(height, 1));
 
-		public void SetWindowVisible(bool visible)
+		public (int Width, int Height) GetWindowSize()
 		{
-			if (visible) SDL_ShowWindow(_sdlWindow);
-			else SDL_HideWindow(_sdlWindow);
+			SDL_GetWindowSize(_sdlWindow, out var width, out var height);
+			return (width, height);
 		}
 
 		/// <summary>

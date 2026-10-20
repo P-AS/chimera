@@ -49,9 +49,12 @@ Mono. On macOS:
   display is an OpenGL 3.2 core context, and XQuartz's OpenGL (GLX) stops at
   2.1, so it cannot be drawn in the interface's X11 window. On macOS SDL uses
   its native driver (Cocoa) instead, and the display is a separate native
-  window with OpenGL 4.1 core from the system. It follows the size and the
-  visibility of the place it has in the interface, which says "The display is
-  in its own window". See docs/design-principles.md.
+  window with OpenGL 4.1 core from the system. The interface window is only
+  its menu and status bar: it keeps its size when a game changes the size of
+  its picture, and shows nothing in the picture's place. The picture's window
+  takes the picture's size the way the interface window does on other
+  systems, and can be resized by hand; what is drawn follows it. See
+  docs/design-principles.md.
 
 Run it with the X11 libgdiplus first on the library path, Homebrew's
 libraries only as a fallback (`DYLD_FALLBACK_LIBRARY_PATH`): Homebrew's
