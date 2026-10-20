@@ -26,11 +26,12 @@ namespace Chimera.Client.Common
 				out var parsed) ? parsed : null;
 
 		/// <summary>
-		/// A version's date as every list writes it: the local day and minute. The minute is what
-		/// tells apart several versions made on one day.
+		/// A version's date as every list writes it: the day and minute in Central European time,
+		/// with its zone (<see cref="Chimera.Common.EuropeanClock"/>, issue 331), which is how the
+		/// core's release notes give it too. The minute is what tells apart several versions made
+		/// on one day.
 		/// </summary>
-		public static string Format(DateTimeOffset when)
-			=> when.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+		public static string Format(DateTimeOffset when) => Chimera.Common.EuropeanClock.Format(when);
 
 		public static DateTimeOffset? Of(DiscoveredCorePackage package) => package.VersionDate;
 

@@ -48,7 +48,8 @@ namespace Chimera.Tests.Client.GUI
 			using AboutBox box = new();
 			box.Show();
 			var commit = (LinkLabel) box.Controls["CommitLink"];
-			StringAssert.Matches(commit.Text, new Regex(@"^Commit [0-9a-f]{9} \(\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC\)$"));
+			// the commit's time in Central European time, with the zone (issue 331)
+			StringAssert.Matches(commit.Text, new Regex(@"^Commit [0-9a-f]{9} \(\d{4}-\d{2}-\d{2} \d{2}:\d{2} CES?T\)$"));
 			Assert.AreEqual(VersionInfo.GIT_SHORTHASH, commit.Text.Substring(commit.LinkArea.Start, commit.LinkArea.Length), "only the commit is the link");
 			Assert.AreEqual($"https://github.com/ToolAssisted-run/chimera/commit/{VersionInfo.GIT_HASH}", (string) commit.Tag);
 		}

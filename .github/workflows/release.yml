@@ -235,9 +235,12 @@ jobs:
           # cost the day's dev build. A create whose answer was lost may still
           # have happened, so it looks before it tries again.
           source tools/release-retry.sh
+          # when the commit was made, on the clock Chimera's build line shows
+          # it in (issue 331), so the two can be matched by eye
+          made="$(python3 tools/european-time.py "$(git log -1 --format=%ct "${{ steps.what.outputs.sha }}")")"
           gh release delete dev --yes --cleanup-tag 2>/dev/null || true
           ensure_release dev "${{ steps.what.outputs.sha }}" \
-            "Development build ${{ steps.what.outputs.short }}" build/release/NOTES.md
+            "Development build ${{ steps.what.outputs.short }} (made $made)" build/release/NOTES.md
 
           # straight away, so the window in which /releases/tag/dev has nothing
           # to download is as short as an upload
@@ -257,7 +260,8 @@ jobs:
           if gh release view "$tag" --json assets --jq '.assets[].name' 2>/dev/null | grep -q '^chimera-.*\.zip$'; then
             echo "$tag already exists"; exit 0
           fi
+          made="$(python3 tools/european-time.py "$(git log -1 --format=%ct "${{ steps.what.outputs.sha }}")")"
           ensure_release "$tag" "${{ steps.what.outputs.sha }}" \
-            "Nightly ${{ steps.what.outputs.date }} (${{ steps.what.outputs.short }})" build/release/NOTES.md
+            "Nightly ${{ steps.what.outputs.date }} (${{ steps.what.outputs.short }}, made $made)" build/release/NOTES.md
           retry gh release upload "$tag" build/release/chimera-*.zip build/release/chimera-*.tar.gz \
             build/release/LICENSES.md build/release/BUILD.txt --clobber

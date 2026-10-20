@@ -13,7 +13,7 @@ namespace Chimera.Tests.Client.Common
 	[TestClass]
 	public class IssueReportTests
 	{
-		private const string Build = "Commit 1ab07c06c (2026-10-06 17:05 UTC)";
+		private const string Build = "Commit 1ab07c06c (2026-10-06 19:05 CEST)";
 
 		[TestMethod]
 		public void TheLinkIsTheProjectsOwnIssueForm()

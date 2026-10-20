@@ -10171,3 +10171,29 @@ supplies, as MAME needs them. No Acorn ROMs were at hand, and the owner
 decided to publish without booting one; the issue is closed on that build,
 saying so. One row of the roster changes (a system added to
 `mamehome`) and the README's table of cores.
+
+
+## One clock for a build's and a core version's date (user-decided, 2026-10-20)
+
+Issue 331: Chimera listed an xemu core as "2026-10-18 12:35 (8c11acc3)",
+and its release was "Nightly 2026-10-19". Both were right. The first is when
+the commit was made (issue 67), in the computer's own time zone (the
+reporter's was UTC-4: the commit was made at 16:35 UTC). The second is the
+day the daily build ran. The report's build line, meanwhile, was in UTC.
+
+The owner decided that every date Chimera shows for a build or a core
+version is in Central European time as Zurich keeps it: CET in winter, CEST
+in summer, with the zone written after it. The core version above now reads
+"2026-10-18 18:35 CEST  (8c11acc3)", and the build line reads "Commit
+9dbd35bac (2026-10-20 10:58 CEST)". New release titles carry the commit and
+its time on the same clock, "Nightly 2026-10-19 (8c11acc3, made 2026-10-18
+18:35 CEST)", and a core's release notes give the exact line Chimera lists.
+Release names already published stay as they are.
+
+The rule (the last Sundays of March and October, at 01:00 UTC) is worked out
+in `EuropeanClock.cs` and `tools/european-time.py` rather than read from the
+computer's time zones, so two computers write the same text for one moment.
+The script agreed with the system's Europe/Zurich zone on 200,000 random
+moments from 2001 to 2031. Times of the user's own actions, such as when
+unsaved work was last kept or a cache entry last used, stay in the
+computer's local time: they are not compared with anything published.

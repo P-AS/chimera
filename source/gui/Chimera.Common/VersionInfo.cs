@@ -40,10 +40,18 @@ namespace Chimera.Common
 
 		/// <summary>
 		/// What this build is called wherever it is named - the About box, a bug
-		/// report: its commit, and when that commit was made.
+		/// report: its commit, and when that commit was made, on the
+		/// <see cref="EuropeanClock"/> every date Chimera shows is written in (issue 331).
 		/// </summary>
 		public static string GetBuildName()
-			=> $"Commit {GIT_SHORTHASH} ({GIT_COMMITTIME} UTC)";
+			=> BuildName(GIT_SHORTHASH, GIT_COMMITTIME);
+
+		/// <summary><see cref="GetBuildName"/> for a commit and its time as the build stamps it (UTC).</summary>
+		public static string BuildName(string shortHash, string commitTimeUtc)
+			=> DateTimeOffset.TryParseExact(commitTimeUtc, "yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture,
+				System.Globalization.DateTimeStyles.AssumeUniversal, out var when)
+				? $"Commit {shortHash} ({EuropeanClock.Format(when)})"
+				: $"Commit {shortHash} ({commitTimeUtc})"; // a day alone, from a build that could not ask git the time
 
 		/// <summary>
 		/// Chimera has no versions: a build is identified by its commit and that

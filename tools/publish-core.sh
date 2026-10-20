@@ -56,6 +56,18 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     print(json.loads(z.read("waterbox.config").decode("utf-8")).get("version", ""))
 PY
 )"
+# When the commit was made, as the package states it (versionDate, UTC), on
+# the clock Chimera shows it in (issue 331): "2026-10-18 18:35 CEST". The
+# release says it the same way, so the version a person sees in Chimera can
+# be found on the release page. Empty for a package that states no date.
+version_date="$(python3 - "$package" <<'PY'
+import json, sys, zipfile
+with zipfile.ZipFile(sys.argv[1]) as z:
+    print(json.loads(z.read("waterbox.config").decode("utf-8")).get("versionDate", ""))
+PY
+)"
+made=""
+[ -z "$version_date" ] || made="$(python3 "$(dirname "$0")/european-time.py" "$version_date")"
 if [ -z "$version" ]; then
 	echo "the package stamps no version; the build must set CORE_VERSION" >&2
 	exit 1
@@ -71,6 +83,11 @@ esac
 asset="$core_id-$version.chimeraCore"
 [ -n "$sha" ] || sha="$(git rev-parse HEAD)"
 date="$(date -u +%Y-%m-%d)"
+if [ "$kind" = dev ]; then
+	title="Development build ${version:0:8}${made:+ (made $made)}"
+else
+	title="Nightly $date (${version:0:8}${made:+, made $made})"
+fi
 
 staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
@@ -89,6 +106,7 @@ if [ -z "$notes" ]; then
 		echo "|---|---|"
 		echo "| Core | \`$core_id\` |"
 		echo "| Version | \`$version\` |"
+		[ -z "$made" ] || echo "| Made | $made (Chimera lists it as \`$made  (${version:0:8})\`) |"
 		echo "| Built from | \`$sha\` |"
 		echo
 		if [ "$kind" = dev ]; then
@@ -105,7 +123,7 @@ fi
 
 echo "publishing $asset ($kind) from $sha"
 if [ "$dry" -eq 1 ]; then
-	echo "--dry-run: would publish"
+	echo "--dry-run: would publish \"$title\""
 	sed 's/^/  | /' "$notes"
 	exit 0
 fi
@@ -173,7 +191,7 @@ if [ "$kind" = dev ]; then
 		echo "publish-core: the old dev release could not be deleted; the new package is not put into it" >&2
 		exit 1
 	fi
-	ensure_release dev "Development build ${version:0:8}"
+	ensure_release dev "$title"
 	retry gh release upload dev "$staging/$asset" --clobber
 else
 	tag="nightly-$date"
@@ -185,7 +203,7 @@ else
 		echo "$tag already exists; a nightly is never republished"
 		exit 0
 	fi
-	ensure_release "$tag" "Nightly $date"
+	ensure_release "$tag" "$title"
 	retry gh release upload "$tag" "$staging/$asset" --clobber
 fi
 echo "published $asset"

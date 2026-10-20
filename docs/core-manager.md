@@ -299,10 +299,22 @@ including the project wizard's core picker.
 
 **A version is listed with its date wherever its package states one** (issue
 #67, user-decided 2026-09-17). Two commits say which versions they are and
-nothing about which is newer. So a version reads `2026-09-17 08:30  (4ed35321)`,
+nothing about which is newer. So a version reads `2026-09-17 10:30 CEST  (4ed35321)`,
 the versions of one core are offered newest first, and the newest is the one a
-picker opens on. The minute (local time) was added on 2026-09-29: a core often
-has several versions in one day.
+picker opens on. The minute was added on 2026-09-29: a core often has several
+versions in one day.
+
+**Every date is on one clock** (issue 331, user-decided 2026-10-20): Central
+European time as Zurich keeps it, CET (UTC+1) in winter and CEST (UTC+2) in
+summer, written with the zone. That holds for a core's version and for
+Chimera's own build line ("Commit 9dbd35bac (2026-10-20 10:58 CEST)"). Release
+titles say it the same way: `tools/publish-core.sh` names a core's nightly
+`Nightly 2026-10-19 (8c11acc3, made 2026-10-18 18:35 CEST)`, with the date
+the build ran first and the commit's time after it, and its notes give the
+line Chimera lists. The rule lives in `Chimera.Common/EuropeanClock.cs` and,
+for the release scripts, `tools/european-time.py`. Both work it out
+themselves rather than ask the computer's time zones, so every machine writes
+the same text.
 
 The date is the package's own: the build script stamps `versionDate` beside
 `version` in the packaged `waterbox.config`. It is the COMMIT's date, in UTC,

@@ -9,13 +9,13 @@ namespace Chimera.Tests.Client.Common
 	[TestClass]
 	public class VersionReportTests
 	{
-		private const string Build = "Commit 1ab07c06c (2026-10-06 17:05 UTC)";
+		private const string Build = "Commit 1ab07c06c (2026-10-06 19:05 CEST)";
 
 		[TestMethod]
 		public void ARunningCoreIsNamedWithItsVersionUnderTheBuild()
 			=> Assert.AreEqual(
-				"**Chimera build:** Commit 1ab07c06c (2026-10-06 17:05 UTC)\n**Core and version:** RPCS3 2026-10-07 06:35  (1924ad8b)",
-				VersionReport.Text(Build, "RPCS3", "2026-10-07 06:35  (1924ad8b)"));
+				"**Chimera build:** Commit 1ab07c06c (2026-10-06 19:05 CEST)\n**Core and version:** RPCS3 2026-10-07 08:35 CEST  (1924ad8b)",
+				VersionReport.Text(Build, "RPCS3", "2026-10-07 08:35 CEST  (1924ad8b)"));
 
 		[TestMethod]
 		public void WithNoCoreRunningThereIsOnlyTheBuild()
