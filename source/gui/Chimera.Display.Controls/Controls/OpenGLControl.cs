@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Windows.Forms;
 
 using Chimera.Common;
@@ -9,6 +10,9 @@ namespace Chimera.Display.Controls
 		private readonly Action _initGLState;
 		private SDL2OpenGLContext _context;
 
+		/// <summary>keeps the standalone window responsive while nothing is being drawn</summary>
+		private readonly Timer _pumpTimer;
+
 		public OpenGLControl(Action initGLState)
 		{
 			_initGLState = initGLState;
@@ -19,6 +23,18 @@ namespace Chimera.Display.Controls
 			SetStyle(ControlStyles.AllPaintingInWmPaint, true);
 			SetStyle(ControlStyles.UserMouse, true);
 			DoubleBuffered = false;
+
+			if (SDL2OpenGLContext.UsesStandaloneWindow)
+			{
+				_pumpTimer = new() { Interval = 15 };
+				_pumpTimer.Tick += (_, _) => SDL2OpenGLContext.PumpWindowEvents();
+			}
+		}
+
+		protected override void Dispose(bool disposing)
+		{
+			if (disposing) _pumpTimer?.Dispose();
+			base.Dispose(disposing);
 		}
 
 		protected override CreateParams CreateParams
@@ -43,13 +59,48 @@ namespace Chimera.Display.Controls
 		protected override void OnHandleCreated(EventArgs e)
 		{
 			base.OnHandleCreated(e);
-			_context = new(Handle, 3, 2, true);
+			if (SDL2OpenGLContext.UsesStandaloneWindow)
+			{
+				_context = new("Chimera", ClientSize.Width, ClientSize.Height, 3, 2, true);
+				_context.SetWindowVisible(Visible);
+				_pumpTimer.Start();
+			}
+			else
+			{
+				_context = new(Handle, 3, 2, true);
+			}
 			_initGLState();
+		}
+
+		protected override void OnPaint(PaintEventArgs e)
+		{
+			if (!SDL2OpenGLContext.UsesStandaloneWindow)
+			{
+				base.OnPaint(e);
+				return;
+			}
+
+			e.Graphics.Clear(Color.Black);
+			TextRenderer.DrawText(e.Graphics, "The display is in its own window", Font, ClientRectangle, Color.Gray,
+				TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+		}
+
+		protected override void OnClientSizeChanged(EventArgs e)
+		{
+			base.OnClientSizeChanged(e);
+			_context?.SetWindowSize(ClientSize.Width, ClientSize.Height);
+		}
+
+		protected override void OnVisibleChanged(EventArgs e)
+		{
+			base.OnVisibleChanged(e);
+			_context?.SetWindowVisible(Visible);
 		}
 
 		protected override void OnHandleDestroyed(EventArgs e)
 		{
 			base.OnHandleDestroyed(e);
+			_pumpTimer?.Stop();
 			_context.Dispose();
 			_context = null;
 		}
@@ -87,6 +138,7 @@ namespace Chimera.Display.Controls
 		{
 			MakeContextCurrent();
 			_context.SwapBuffers();
+			if (SDL2OpenGLContext.UsesStandaloneWindow) SDL2OpenGLContext.PumpWindowEvents();
 		}
 	}
 }

@@ -18,10 +18,17 @@ namespace Chimera.Display
 	/// </summary>
 	public class SDL2OpenGLContext : IDisposable
 	{
+		/// <summary>
+		/// true where the display can't live in the interface's own window: macOS, whose Windows Forms
+		/// is X11 (XQuartz) and whose X server offers no OpenGL 3.2, so SDL there is Cocoa and the display
+		/// is a native window of its own beside the interface
+		/// </summary>
+		public static readonly bool UsesStandaloneWindow = OSTailoredCode.CurrentOS is OSTailoredCode.DistinctOS.macOS;
+
 #pragma warning disable CA1065 // not sure how else to handle failure other than throwing with a good message
 		static SDL2OpenGLContext()
 		{
-			if (OSTailoredCode.IsUnixHost)
+			if (OSTailoredCode.IsUnixHost && !UsesStandaloneWindow)
 			{
 				// make sure that Linux uses the x11 video driver
 				// we need this as mono winforms uses x11
@@ -44,7 +51,7 @@ namespace Chimera.Display
 				throw new Exception($"Could not init SDL video! SDL Error: {SDL_GetError()}");
 			}
 
-			if (OSTailoredCode.IsUnixHost)
+			if (OSTailoredCode.IsUnixHost && !UsesStandaloneWindow)
 			{
 				// if we fail to load EGL, we'll just try again with GLX...
 				var loadGlx = SDL_GL_LoadLibrary(null) != 0;
@@ -230,6 +237,46 @@ namespace Chimera.Display
 				throw;
 			}
 		}
+
+		/// <summary>a visible window of the display's own (see <see cref="UsesStandaloneWindow"/>)</summary>
+		/// <exception cref="Exception">unmanaged call failed</exception>
+		public SDL2OpenGLContext(string title, int width, int height, int majorVersion, int minorVersion, bool coreProfile)
+		{
+			SetAttributes(majorVersion, minorVersion, coreProfile, shareContext: false);
+
+			_sdlWindow = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, Math.Max(width, 1), Math.Max(height, 1),
+				SDL_WindowFlags.SDL_WINDOW_OPENGL | SDL_WindowFlags.SDL_WINDOW_SHOWN);
+			if (_sdlWindow == IntPtr.Zero)
+			{
+				throw new Exception($"Could not create SDL Window! SDL Error: {SDL_GetError()}");
+			}
+
+			try
+			{
+				CreateContext();
+			}
+			catch
+			{
+				Dispose();
+				throw;
+			}
+		}
+
+		public void SetWindowSize(int width, int height)
+			=> SDL_SetWindowSize(_sdlWindow, Math.Max(width, 1), Math.Max(height, 1));
+
+		public void SetWindowVisible(bool visible)
+		{
+			if (visible) SDL_ShowWindow(_sdlWindow);
+			else SDL_HideWindow(_sdlWindow);
+		}
+
+		/// <summary>
+		/// lets the OS's window system get to the standalone window (Cocoa needs this on the main thread);
+		/// the events themselves are dropped by the input adapter's filter
+		/// </summary>
+		public static void PumpWindowEvents()
+			=> SDL_PumpEvents();
 
 		public void Dispose()
 		{

@@ -161,7 +161,7 @@ tools/fetch-cores.sh                                # every published core -> bu
 tools/build-bundle.sh --platform linux --out <dir>  # the distributable (no cores)
 ```
 
-On macOS the engine builds and runs headless, but the interface does not yet: see [docs/macos.md](docs/macos.md).
+On macOS the engine runs natively and the interface through XQuartz, with the game's picture in a window of its own: see [docs/macos.md](docs/macos.md).
 
 To run: `build\Chimera.exe` on Windows, `build/ChimeraMono.sh` on Linux, then
 `File > New Project...` and pick a core. To play a rom with no project, pass

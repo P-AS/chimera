@@ -8373,3 +8373,31 @@ core goes in the `Cores` folder, not both. The words are the SRB2 core's
 table of packages, only when the release has an arm64 package; Chimera's own
 release notes, above the table of bundles; the README's "Getting a build";
 `docs/core-manager.md`.
+
+## On macOS the picture is a window of its own (user-decided, 2026-10-19)
+
+**What was decided.** On macOS the interface stays Windows Forms on Mono's
+X11 driver, through XQuartz, and everything that needs SDL2 and OpenGL - the
+display - is a native macOS window of its own beside it.
+
+**Why.** The display needs an OpenGL 3.2 core context, and the interface's
+windows are X11 windows on XQuartz, whose OpenGL (GLX) stops at 2.1. Mono's
+native macOS driver for Windows Forms (Carbon) was never ported to 64-bit,
+so X11 is the only way the interface runs. On a native window SDL's Cocoa
+driver gets OpenGL 4.1 core from the system.
+
+**Tried first, and dropped.** Xwayland, built for macOS, inside the Wawona
+Wayland compositor: Mesa's software OpenGL (llvmpipe) gave the display 4.6
+core and the interface ran in one window, but it took a self-built
+libwayland, Xwayland and libdrm stand-in, all drawing in software. The user
+chose the separate window instead (2026-10-19).
+
+**How.** SDL2OpenGLContext.UsesStandaloneWindow is true on macOS: SDL is not
+forced onto X11 or EGL there, and OpenGLControl makes a visible SDL window
+instead of turning its own X11 window into one. That window follows the
+control's size and visibility; the control paints "The display is in its
+own window". Nothing else on macOS reads SDL's window events (the input
+adapter's filter drops them), so the control has the system handle them -
+after each frame it shows, and every 15 ms on a timer - or the window would
+stop responding. Every other platform is as it was. docs/macos.md has the
+rest.
