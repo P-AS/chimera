@@ -38,6 +38,7 @@ namespace Chimera.Client.GUI
 
 		private readonly TextBox _output;
 		private readonly Button _browse;
+		private readonly ComboBox _preset;
 		private readonly TextBox _command;
 		private readonly ComboBox _from;
 		private readonly ComboBox _to;
@@ -68,12 +69,53 @@ namespace Chimera.Client.GUI
 		/// <summary>the file the last finished encode wrote, for Open Video</summary>
 		private string? _written;
 
+		/// <summary>set while the preset box is moved to follow the command, so that is not taken for a pick</summary>
+		private bool _followingCommand;
+
 		/// <summary>
 		/// What fills the file when nobody has said otherwise: h264 and aac in an
 		/// mp4, at a pixel format every player will take. A person who wants
 		/// something else writes it, and it is theirs from then on.
 		/// </summary>
 		public const string DefaultCommand = "-c:v libx264 -c:a aac -pix_fmt yuv420p -f mp4";
+
+		/// <summary>A ready-made ffmpeg command, offered by name.</summary>
+		public sealed class EncodePreset
+		{
+			public string Name { get; }
+
+			public string Command { get; }
+
+			public EncodePreset(string name, string command)
+			{
+				Name = name;
+				Command = command;
+			}
+		}
+
+		/// <summary>
+		/// The commands the Preset box offers (#323). Picking one writes it into the
+		/// command box, which stays the choice: it can be edited after, and the box
+		/// then says the command is your own. The YouTube ones scale the picture to
+		/// 2160 lines (or 2160 wide, for a picture taller than it is wide) at a
+		/// quality YouTube keeps, smooth for pictures drawn as photographs and sharp
+		/// (nearest neighbour) for pixel art; the lossless ones keep every pixel.
+		/// </summary>
+		public static readonly IReadOnlyList<EncodePreset> Presets = new EncodePreset[]
+		{
+			new("MP4, H.264 and AAC (the default)", DefaultCommand),
+			new("YouTube 2160p, landscape, smooth scaling", "-vf scale=-2:2160:flags=lanczos -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"),
+			new("YouTube 2160p, landscape, sharp pixels", "-vf scale=-2:2160:flags=neighbor -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"),
+			new("YouTube 2160p, portrait, smooth scaling", "-vf scale=2160:-2:flags=lanczos -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"),
+			new("YouTube 2160p, portrait, sharp pixels", "-vf scale=2160:-2:flags=neighbor -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"),
+			new("Lossless H.264, MKV", "-c:v libx264 -qp 0 -c:a aac -f matroska"),
+			new("Lossless H.264 RGB, MKV", "-c:v libx264rgb -qp 0 -pix_fmt rgb24 -c:a aac -f matroska"),
+			new("Lossless H.265, MKV", "-c:v libx265 -x265-params lossless=1 -pix_fmt yuv444p -c:a aac -f matroska"),
+			new("Lossless UT Video, MKV", "-c:v utvideo -pix_fmt gbrp -c:a aac -f matroska"),
+		};
+
+		/// <summary>What the Preset box says when the command is none of the presets.</summary>
+		public const string OwnCommand = "Your own command";
 
 		private bool _running;
 
@@ -105,9 +147,9 @@ namespace Chimera.Client.GUI
 			Config = config;
 
 			SuspendLayout();
-			ClientSize = new(UIHelper.ScaleX(580), UIHelper.ScaleY(364));
+			ClientSize = new(UIHelper.ScaleX(580), UIHelper.ScaleY(400));
 			// wide enough that the buttons on the left never reach the ones on the right
-			MinimumSize = new(UIHelper.ScaleX(600), UIHelper.ScaleY(364));
+			MinimumSize = new(UIHelper.ScaleX(600), UIHelper.ScaleY(400));
 			StartPosition = FormStartPosition.CenterParent;
 			ShowIcon = false;
 			MaximizeBox = false;
@@ -133,33 +175,49 @@ namespace Chimera.Client.GUI
 			Controls.Add(_browse);
 
 			// ---- what writes it --------------------------------------------------
-			// The command IS the choice. A list of canned formats sat here for a
-			// while and only ever answered a question this box answers better: the
-			// container it names decides the file's extension either way.
-			Controls.Add(MakeLabel("FFmpeg Command:", 8, 50));
-			_command = new TextBox
+			// The command is the choice: the container it names decides the file's
+			// extension. The presets above it only write a command into it (#323),
+			// and say which one it is while it is one.
+			Controls.Add(MakeLabel("Preset:", 8, 50));
+			_preset = new ComboBox
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+				DropDownStyle = ComboBoxStyle.DropDownList,
 				Location = Pt(124, 46),
 				Width = UIHelper.ScaleX(448),
 			};
-			_command.TextChanged += (_, _) => UpdateSuggestedExtension();
+			foreach (var preset in Presets) _preset.Items.Add(preset.Name);
+			_preset.Items.Add(OwnCommand);
+			_preset.SelectedIndexChanged += (_, _) => PresetChosen();
+			Controls.Add(_preset);
+			Controls.Add(MakeLabel("FFmpeg Command:", 8, 86));
+			_command = new TextBox
+			{
+				Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+				Location = Pt(124, 82),
+				Width = UIHelper.ScaleX(448),
+			};
+			_command.TextChanged += (_, _) =>
+			{
+				UpdateSuggestedExtension();
+				FollowCommand();
+			};
 			Controls.Add(_command);
 
 			// ---- which frames ----------------------------------------------------
-			Controls.Add(MakeLabel("From marker:", 8, 86));
+			Controls.Add(MakeLabel("From marker:", 8, 122));
 			_from = new ComboBox
 			{
 				DropDownStyle = ComboBoxStyle.DropDownList,
-				Location = Pt(124, 82),
+				Location = Pt(124, 118),
 				Width = UIHelper.ScaleX(176),
 			};
 			Controls.Add(_from);
-			Controls.Add(MakeLabel("To marker:", 310, 86));
+			Controls.Add(MakeLabel("To marker:", 310, 122));
 			_to = new ComboBox
 			{
 				DropDownStyle = ComboBoxStyle.DropDownList,
-				Location = Pt(390, 82),
+				Location = Pt(390, 118),
 				Width = UIHelper.ScaleX(182),
 			};
 			Controls.Add(_to);
@@ -168,7 +226,7 @@ namespace Chimera.Client.GUI
 			_range = new Label
 			{
 				AutoSize = false,
-				Location = Pt(124, 110),
+				Location = Pt(124, 146),
 				Size = new(UIHelper.ScaleX(448), UIHelper.ScaleY(18)),
 			};
 			Controls.Add(_range);
@@ -177,30 +235,30 @@ namespace Chimera.Client.GUI
 			_resize = new CheckBox
 			{
 				AutoSize = true,
-				Location = Pt(8, 142),
+				Location = Pt(8, 178),
 				Text = "Resize to",
 			};
 			_resize.CheckedChanged += (_, _) => SyncSizeEnabled();
 			Controls.Add(_resize);
-			_width = MakeSize(100, 140);
-			_height = MakeSize(172, 140);
+			_width = MakeSize(100, 176);
+			_height = MakeSize(172, 176);
 			Controls.Add(_width);
-			Controls.Add(MakeLabel("x", 156, 144));
+			Controls.Add(MakeLabel("x", 156, 180));
 			Controls.Add(_height);
 			_useCurrentSize = new Button
 			{
-				Location = Pt(244, 139),
+				Location = Pt(244, 175),
 				Size = new(UIHelper.ScaleX(96), UIHelper.ScaleY(23)),
 				Text = "Current size",
 			};
 			_useCurrentSize.Click += (_, _) => UseCurrentSize();
 			Controls.Add(_useCurrentSize);
-			_currentSize = MakeLabel($"now {currentOutputSize.Width}x{currentOutputSize.Height}", 348, 144);
+			_currentSize = MakeLabel($"now {currentOutputSize.Width}x{currentOutputSize.Height}", 348, 180);
 			Controls.Add(_currentSize);
 			_pad = new CheckBox
 			{
 				AutoSize = true,
-				Location = Pt(444, 142),
+				Location = Pt(444, 178),
 				Text = "Pad",
 			};
 			Controls.Add(_pad);
@@ -208,7 +266,7 @@ namespace Chimera.Client.GUI
 			_audioSync = new CheckBox
 			{
 				AutoSize = true,
-				Location = Pt(8, 170),
+				Location = Pt(8, 206),
 				Text = "Sync to audio",
 			};
 			Controls.Add(_audioSync);
@@ -217,13 +275,13 @@ namespace Chimera.Client.GUI
 			_captureOsd = new CheckBox
 			{
 				AutoSize = true,
-				Location = Pt(140, 170),
+				Location = Pt(140, 206),
 				Text = "Capture OSD",
 			};
 			_captureLua = new CheckBox
 			{
 				AutoSize = true,
-				Location = Pt(272, 170),
+				Location = Pt(272, 206),
 				Text = "Capture Lua",
 			};
 			_captureOsd.CheckedChanged += (_, _) =>
@@ -242,7 +300,7 @@ namespace Chimera.Client.GUI
 			_progress = new ProgressBar
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-				Location = Pt(8, 208),
+				Location = Pt(8, 244),
 				Maximum = 1,
 				Size = new(UIHelper.ScaleX(564), UIHelper.ScaleY(20)),
 			};
@@ -251,7 +309,7 @@ namespace Chimera.Client.GUI
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
 				AutoSize = false,
-				Location = Pt(8, 234),
+				Location = Pt(8, 270),
 				Size = new(UIHelper.ScaleX(564), UIHelper.ScaleY(34)),
 			};
 			Controls.Add(_status);
@@ -260,11 +318,11 @@ namespace Chimera.Client.GUI
 			// The speakers are muted while a video is written (MainForm.Encode),
 			// so without these there is no way to tell a silent encode from a
 			// working one until the file is finished and played.
-			Controls.Add(MakeLabel("Audio:", 8, 274));
+			Controls.Add(MakeLabel("Audio:", 8, 310));
 			_levels = new AudioLevelMeter
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-				Location = Pt(56, 270),
+				Location = Pt(56, 306),
 				Size = new(UIHelper.ScaleX(516), UIHelper.ScaleY(26)),
 			};
 			_levels.SetBackRole(ThemeColorRole.ShadedBackground);
@@ -275,7 +333,7 @@ namespace Chimera.Client.GUI
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
 				Enabled = false,
-				Location = Pt(8, 324),
+				Location = Pt(8, 360),
 				Size = new(UIHelper.ScaleX(90), UIHelper.ScaleY(26)),
 				Text = "Open Video",
 			};
@@ -286,7 +344,7 @@ namespace Chimera.Client.GUI
 			_openFolder = new Button
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-				Location = Pt(104, 324),
+				Location = Pt(104, 360),
 				Size = new(UIHelper.ScaleX(90), UIHelper.ScaleY(26)),
 				Text = "Open Folder",
 			};
@@ -298,7 +356,7 @@ namespace Chimera.Client.GUI
 			_restoreDefaults = new Button
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-				Location = Pt(200, 324),
+				Location = Pt(200, 360),
 				Size = new(UIHelper.ScaleX(110), UIHelper.ScaleY(26)),
 				Text = "Restore Defaults",
 			};
@@ -307,7 +365,7 @@ namespace Chimera.Client.GUI
 			_start = new Button
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
-				Location = Pt(320, 324),
+				Location = Pt(320, 360),
 				Size = new(UIHelper.ScaleX(96), UIHelper.ScaleY(26)),
 				Text = "Start Encode",
 			};
@@ -317,7 +375,7 @@ namespace Chimera.Client.GUI
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
 				Enabled = false,
-				Location = Pt(424, 324),
+				Location = Pt(424, 360),
 				Size = new(UIHelper.ScaleX(70), UIHelper.ScaleY(26)),
 				Text = "Stop",
 			};
@@ -326,7 +384,7 @@ namespace Chimera.Client.GUI
 			_close = new Button
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
-				Location = Pt(502, 324),
+				Location = Pt(502, 360),
 				Size = new(UIHelper.ScaleX(70), UIHelper.ScaleY(26)),
 				Text = "Close",
 			};
@@ -356,6 +414,12 @@ namespace Chimera.Client.GUI
 		public int EndFrame => FrameOf(_to);
 
 		public string FFmpegCommand => _command.Text;
+
+		/// <summary>The names the Preset box offers, in its order (its last is <see cref="OwnCommand"/>).</summary>
+		public string[] PresetChoices => _preset.Items.Cast<string>().ToArray();
+
+		/// <summary>What the Preset box shows: the preset the command is, or <see cref="OwnCommand"/>.</summary>
+		public string? SelectedPreset => _preset.SelectedItem as string;
 
 		public string OutputPath => _output.Text;
 
@@ -393,12 +457,13 @@ namespace Chimera.Client.GUI
 		public string StatusText => _status.Text;
 
 		/// <summary>Fills in the dialog as if a person had, for tests and for callers.</summary>
-		public void Choose(string? from = null, string? to = null, string? output = null, string? command = null)
+		public void Choose(string? from = null, string? to = null, string? output = null, string? command = null, string? preset = null)
 		{
 			if (from is not null) _from.SelectedIndex = Array.IndexOf(MarkerChoices, from);
 			if (to is not null) _to.SelectedIndex = Array.IndexOf(MarkerChoices, to);
 			if (output is not null) _output.Text = output;
 			if (command is not null) _command.Text = command;
+			if (preset is not null) _preset.SelectedIndex = Array.IndexOf(PresetChoices, preset);
 		}
 
 		/// <summary>Presses Start Encode.</summary>
@@ -411,6 +476,33 @@ namespace Chimera.Client.GUI
 		/// window without one.
 		/// </summary>
 		public void Poll() => ShowProgress(_poll());
+
+		// ---- the presets -----------------------------------------------------------
+
+		/// <summary>A preset picked: its command goes into the box. Picking "your own" changes nothing.</summary>
+		private void PresetChosen()
+		{
+			if (_followingCommand) return;
+			var index = _preset.SelectedIndex;
+			if (index < 0 || index >= Presets.Count) return;
+			_command.Text = Presets[index].Command;
+		}
+
+		/// <summary>The command changed: the box shows the preset it is, or that it is your own.</summary>
+		private void FollowCommand()
+		{
+			var command = _command.Text.Trim();
+			var index = Presets.ToList().FindIndex(p => p.Command == command);
+			_followingCommand = true;
+			try
+			{
+				_preset.SelectedIndex = index >= 0 ? index : Presets.Count;
+			}
+			finally
+			{
+				_followingCommand = false;
+			}
+		}
 
 		// ---- filling it in --------------------------------------------------------
 
@@ -607,7 +699,7 @@ namespace Chimera.Client.GUI
 		private void SetInputsEnabled(bool enabled)
 		{
 			foreach (var control in new Control[]
-				{ _output, _browse, _command, _from, _to, _resize, _audioSync, _captureOsd, _captureLua, _restoreDefaults })
+				{ _output, _browse, _preset, _command, _from, _to, _resize, _audioSync, _captureOsd, _captureLua, _restoreDefaults })
 			{
 				control.Enabled = enabled;
 			}

@@ -24,8 +24,8 @@ wrongly was a file that looked plausible and was not what you asked for.
 `File > Encode Video...` opens a window that asks for everything at once:
 
 - **the file** to write
-- **the ffmpeg command** that fills it, picked from the canned formats or
-  written by hand; the container it names (`-f`) decides the file's extension
+- **the ffmpeg command** that fills it, written by hand or put there by a
+  **preset**; the container it names (`-f`) decides the file's extension
 - **the two markers** to encode between, inclusive at both ends
 - **the picture**: an output size (or the size the core draws), whether to pad
   or scale to it, whether to sync to audio, and whether the OSD and the Lua
@@ -41,6 +41,18 @@ word said. The window shows how far along it is, how many
 frames a second it is managing and roughly how much longer it will take. Stop
 ends it early and leaves a playable file of what got written. Closing the window
 stops it too: nothing keeps running behind the dialog.
+
+## Presets
+
+The Preset box above the command offers ready-made commands by name (issue
+323): the default (H.264 and AAC in an MP4), four for YouTube at 2160 lines -
+landscape or portrait, scaled smoothly (lanczos, for pictures drawn as
+photographs) or sharply (nearest neighbour, for pixel art), at a quality
+YouTube keeps - and four that keep every pixel (H.264, H.264 in RGB, H.265
+and UT Video, in Matroska). Picking one writes its command into the command
+box and nothing else; the command box is still what the encode uses, and an
+edit to it makes the Preset box say "Your own command". A command typed that
+is a preset's shows that preset.
 
 ## Markers, not frame numbers
 

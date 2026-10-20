@@ -94,6 +94,37 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		[TestMethod]
+		public void APresetWritesItsCommandAndTheBoxSaysWhichCommandItIs()
+		{
+			// #323: ready-made commands, picked by name; the command box stays the choice
+			using Harness h = new();
+			Assert.AreEqual(EncodeVideoForm.Presets[0].Name, h.Form.SelectedPreset, "the default command is the first preset");
+			CollectionAssert.AreEqual(
+				EncodeVideoForm.Presets.Select(static p => p.Name).Append(EncodeVideoForm.OwnCommand).ToArray(),
+				h.Form.PresetChoices);
+
+			h.Form.Choose(preset: "YouTube 2160p, portrait, sharp pixels");
+			StringAssert.Contains(h.Form.FFmpegCommand, "scale=2160:-2:flags=neighbor", "the preset's command is in the box");
+			StringAssert.EndsWith(h.Form.OutputPath, ".mp4");
+
+			h.Form.Choose(preset: "Lossless UT Video, MKV");
+			Assert.AreEqual("-c:v utvideo -pix_fmt gbrp -c:a aac -f matroska", h.Form.FFmpegCommand);
+			StringAssert.EndsWith(h.Form.OutputPath, ".mkv", "the container it names still decides the extension");
+			Assert.AreEqual("Lossless UT Video, MKV", h.Form.SelectedPreset);
+
+			h.Form.Choose(command: h.Form.FFmpegCommand + " -threads 2");
+			Assert.AreEqual(EncodeVideoForm.OwnCommand, h.Form.SelectedPreset, "an edited command is your own");
+			StringAssert.EndsWith(h.Form.FFmpegCommand, "-threads 2", "and the edit stays");
+
+			h.Form.Choose(preset: EncodeVideoForm.OwnCommand);
+			StringAssert.EndsWith(h.Form.FFmpegCommand, "-threads 2", "picking 'your own' changes nothing");
+
+			h.Form.Choose(command: EncodeVideoForm.DefaultCommand);
+			Assert.AreEqual(EncodeVideoForm.Presets[0].Name, h.Form.SelectedPreset, "typing a preset's command finds it");
+			Assert.AreEqual(EncodeVideoForm.DefaultCommand, h.Form.BuildRequest().FFmpegCommand);
+		}
+
+		[TestMethod]
 		public void OpenFolderNamesTheFolderTheVideoGoesTo()
 		{
 			using Harness h = new();

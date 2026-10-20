@@ -10098,3 +10098,26 @@ the test fails on both. The same test passes on the GeForce GTX 1060 (the
 Windows runner, NVIDIA's Vulkan 1.4 driver: the same pictures, and every
 one of the thirteen commands with two names present on both sides). No
 core calls these commands yet.
+
+## Encode Video has presets that write the command (user-decided, 2026-10-20)
+
+Issue 323 asked for ready-made encoding commands to pick from. The Encode
+Video window had only its command box: a list of the A/V writer's formats
+had sat there once and was taken out, because the command box answers the
+question better, and the list left behind (`GetCannedPresets`) was called
+by nothing. The owner chose presets that fill the box: a Preset box above
+the command offers nine commands by name - the default, YouTube at 2160
+lines (landscape or portrait, smooth or sharp scaling) and four lossless
+ones from the issue - and picking one writes its command into the box. The
+box stays the choice: an edit makes the Preset box say "Your own command",
+and typing a preset's command shows that preset. The presets are the
+window's own (`EncodeVideoForm.Presets`); the dead list is gone.
+
+Tested: the window tests (EncodeVideoTests, new
+APresetWritesItsCommandAndTheBoxSaysWhichCommandItIs) pick a preset, see
+its command and extension, edit it into "your own" and type the default
+back; with picks ignored the test fails. All four test projects pass
+(Chimera.Tests.Client.GUI 348 and 1 skipped). Each preset's command encoded
+a one-second test picture with Ubuntu's ffmpeg 6.1.1 (the YouTube ones to
+2880x2160 and 2160x1620 from 320x240); whether an encoder (libx265,
+utvideo) is in another ffmpeg is that ffmpeg's.
