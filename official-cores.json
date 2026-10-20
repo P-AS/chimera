@@ -417,6 +417,24 @@
       "tested": ""
     },
     {
+      "id": "godot",
+      "name": "Godot",
+      "systems": [
+        { "id": "Godot", "name": "Godot 4" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-godot",
+      "tested": ""
+    },
+    {
+      "id": "openbor",
+      "name": "OpenBOR",
+      "systems": [
+        { "id": "OpenBOR", "name": "OpenBOR" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-openbor",
+      "tested": ""
+    },
+    {
       "id": "sdlpop",
       "name": "SDLPoP",
       "systems": [

@@ -77,6 +77,8 @@ Chimera does not include cores and does not download them. To use a core, downlo
 | [EKA2L1](https://github.com/ToolAssisted-run/chimera-core-eka2l1) | Symbian / Nokia N-Gage |
 | [touchHLE](https://github.com/ToolAssisted-run/chimera-core-touchhle) | iPhone OS 2.x-4.0 (iPhone, iPod touch and iPad apps) |
 | [FreeJ2ME-Plus](https://github.com/ToolAssisted-run/chimera-core-freej2me) | J2ME (Java games of 2000s phones) |
+| [Godot](https://github.com/ToolAssisted-run/chimera-core-godot) | Godot 4.7 (games made with the Godot Engine) |
+| [OpenBOR](https://github.com/ToolAssisted-run/chimera-core-openbor) | OpenBOR (2D beat 'em up games) |
 
 ### Game cores
 

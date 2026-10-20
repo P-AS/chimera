@@ -10121,3 +10121,38 @@ back; with picks ignored the test fails. All four test projects pass
 a one-second test picture with Ubuntu's ffmpeg 6.1.1 (the YouTube ones to
 2880x2160 and 2160x1620 from 320x240); whether an encoder (libx265,
 utvideo) is in another ffmpeg is that ffmpeg's.
+
+
+## Godot and OpenBOR join the official cores (user-decided, 2026-10-20)
+
+Issue 322 asked for games made with the Godot Engine, issue 325 for
+OpenBOR, the engine of 2D beat 'em ups. The owner decided to build both
+and, once each passed its tests, to publish them.
+
+`chimera-core-godot` is Godot 4.7.2's engine for exported games, built for
+the sandbox with a Chimera module in it: the clock and the date are the
+frames', the files the game writes live in the core's memory, the window is
+a software OpenGL context (Mesa's llvmpipe, linked into the core and made to
+generate the same machine code on every computer: one CPU, 128-bit vectors),
+and the picture is read back from it. A game's compiled scripts load only in
+the Godot version that exported it, so the owner chose a core per version:
+the 4.6, 4.5 and 4.4 cores are the same code with another Godot pinned, and
+a core refuses a game of another version, naming the core to use. Games
+written in C# and games that need native extensions cannot run in the
+sandbox.
+
+`chimera-core-openbor` is OpenBOR's SDL port with SDL 2, run on a stack of
+its own inside the core: each picture OpenBOR presents ends a frame. A loop
+that waits by reading the clock over and over (OpenBOR's fades do) ends the
+frame after 4096 reads, since the clock only moves when the game waits. Two
+patches to OpenBOR: players 2 to 4 get keys by default (upstream gives them
+none), and the core is told when the game has loaded and why OpenBOR stops,
+so a game that cannot load is refused when it is opened.
+
+Neither core has been tried on a commercial or published game. Each is
+tested on games anyone may have, in CI too: Godot's "Dodge the Creeps" demo
+(MIT) and a probe game; for OpenBOR, a small game its repository's script
+makes. The native build and the sandbox agree on every picture, the sound
+and what the game saw, and a save and load before every frame changes
+nothing. Nothing in Chimera's own source changed: two roster rows and the
+README's table of cores.
