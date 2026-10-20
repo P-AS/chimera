@@ -25,9 +25,10 @@ namespace Chimera.Client.GUI
 	/// <summary>
 	/// The one folder picker. On Windows it is the Explorer-style dialog with an address bar and a box to
 	/// type or paste a path into (<see cref="Win32FolderPicker"/>, issue #57); the old Browse For Folder tree
-	/// below is only what is left if that dialog cannot be had. On Linux and the BSDs it is the desktop's
-	/// own chooser, through the XDG desktop portal (<see cref="PortalFileChooser"/>), and the toolkit's
-	/// dialog where there is no portal. Call ShowDialog() to bring it up.
+	/// below is only what is left if that dialog cannot be had. On macOS it is the system's open panel
+	/// (<see cref="MacFileChooser"/>); on Linux and the BSDs the desktop's own chooser, through the XDG
+	/// desktop portal (<see cref="PortalFileChooser"/>); and the toolkit's dialog where neither can be had.
+	/// Call ShowDialog() to bring it up.
 	/// </summary>
 	/// <remarks>
 	/// I believe this code is from http://support.microsoft.com/kb/306285<br/>
@@ -79,7 +80,7 @@ namespace Chimera.Client.GUI
 		/// not for one dialog: a Windows that falls back to the tree has no tick box on that occasion, which
 		/// only <see cref="CheckBoxShown"/> can say, and then the scan runs on the state passed in.
 		/// </summary>
-		public static bool CanShowCheckBox => !OSTailoredCode.IsUnixHost || PortalFileChooser.CanPickFolders;
+		public static bool CanShowCheckBox => !OSTailoredCode.IsUnixHost || SystemFileChooser.CanPickFolders;
 
 		/// <summary>Shows the folder picker with the specified owner window.</summary>
 		public DialogResult ShowDialog(IWin32Window owner = null)
@@ -95,7 +96,7 @@ namespace Chimera.Client.GUI
 					CheckBoxLabel = CheckBoxLabel,
 					CheckBoxChecked = CheckBoxChecked,
 				};
-				switch (PortalFileChooser.Show(owner, request, out var answer))
+				switch (SystemFileChooser.Show(owner, request, out var answer))
 				{
 					case PortalFileChooser.Outcome.Chosen:
 						SelectedPath = answer.Paths[0];

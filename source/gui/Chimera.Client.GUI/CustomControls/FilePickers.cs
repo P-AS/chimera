@@ -8,9 +8,10 @@ namespace Chimera.Client.GUI
 {
 	/// <summary>
 	/// What the open and save pickers share. They take the same properties as WinForms'
-	/// <see cref="OpenFileDialog"/> and <see cref="SaveFileDialog"/>, and show the desktop's
-	/// own file chooser (<see cref="PortalFileChooser"/>) where there is one - on Linux and
-	/// the BSDs, through the XDG desktop portal - and the toolkit's dialog everywhere else.
+	/// <see cref="OpenFileDialog"/> and <see cref="SaveFileDialog"/>, and show the system's
+	/// own file chooser (<see cref="SystemFileChooser"/>) where there is one - macOS's panels,
+	/// or on Linux and the BSDs the desktop's, through the XDG desktop portal - and the
+	/// toolkit's dialog everywhere else.
 	/// </summary>
 	public abstract class FilePicker : IDisposable
 	{
@@ -55,7 +56,7 @@ namespace Chimera.Client.GUI
 				FileName = FileName,
 			};
 			Describe(request);
-			switch (PortalFileChooser.Show(owner, request, out var answer))
+			switch (SystemFileChooser.Show(owner, request, out var answer))
 			{
 				case PortalFileChooser.Outcome.Chosen:
 					if (answer.FilterIndex is not 0) FilterIndex = answer.FilterIndex;
@@ -92,6 +93,21 @@ namespace Chimera.Client.GUI
 		}
 
 		public void Dispose() { }
+	}
+
+	/// <summary>
+	/// The system's own file chooser, where Chimera has one to ask: macOS's open and save panels
+	/// (<see cref="MacFileChooser"/>) on a Mac, and the desktop's through the XDG desktop portal
+	/// (<see cref="PortalFileChooser"/>) on Linux and the BSDs.
+	/// </summary>
+	internal static class SystemFileChooser
+	{
+		public static bool CanPickFolders => MacFileChooser.Available || PortalFileChooser.CanPickFolders;
+
+		public static PortalFileChooser.Outcome Show(IWin32Window? owner, PortalFileChooser.Request request, out PortalFileChooser.Answer answer)
+			=> MacFileChooser.Available
+				? MacFileChooser.Show(owner, request, out answer)
+				: PortalFileChooser.Show(owner, request, out answer);
 	}
 
 	/// <summary>Picks one file to open, or several; see <see cref="FilePicker"/>.</summary>

@@ -8441,3 +8441,15 @@ left a blank row above the status bar. The picture's window can also be
 resized by hand: the control follows the window's size, and what is drawn
 follows the control. The window is made when it is first drawn to, since
 the hidden control may never get an X11 window of its own.
+
+## Files and folders are picked with macOS's own panels (user-decided, 2026-10-20)
+
+**What was decided.** On macOS every file and folder picker in Chimera shows
+the system's open and save panels, not Mono's toolkit dialog.
+
+**How.** `MacFileChooser` drives AppKit's `NSOpenPanel` and `NSSavePanel`
+through the Objective-C runtime, taking the same request and giving the same
+answer as the Linux portal chooser, so `OpenFilePicker`, `SaveFilePicker` and
+`FolderBrowserEx` needed only to ask `SystemFileChooser` instead of the
+portal. docs/folder-picker.md has what it does with filters, the tick box,
+saving and focus.

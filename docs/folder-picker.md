@@ -4,12 +4,14 @@ There is one folder picker in the frontend, `FolderBrowserEx`. On Windows it is
 the Explorer-style common item dialog - an address bar, and a box to type or
 paste a path into (issue #57, `Win32FolderPicker`). A third path,
 `SHBrowseForFolder`, is what is left on a Windows where the item dialog cannot
-be had. On Linux and the BSDs it is the desktop's own chooser, through the
-desktop portal (below), and Mono's toolkit dialog where there is no portal.
+be had. On macOS it is the system's open panel (below). On Linux and the BSDs
+it is the desktop's own chooser, through the desktop portal (below), and
+Mono's toolkit dialog where there is no portal.
 
 Files are picked with `OpenFilePicker` and `SaveFilePicker`. They take the
 same properties as WinForms' `OpenFileDialog` and `SaveFileDialog`, and show
-the same dialogs on Windows. On Linux and the BSDs they ask the portal first.
+the same dialogs on Windows. On macOS they show the system's open and save panels;
+on Linux and the BSDs they ask the portal first.
 Nothing in the frontend makes an `OpenFileDialog`, `SaveFileDialog` or
 `FolderBrowserDialog` of its own.
 
@@ -67,6 +69,31 @@ Linux desktop has. No package was added for it.
   that is modal itself (Config > Firmware is one) kept the focus once it was
   disabled, so the chooser opened behind it and could not be brought to the
   front (Plasma and GNOME on Wayland).
+
+## macOS's own panels (user-decided, 2026-10-20)
+
+On macOS Chimera's windows are X11 windows on XQuartz, and Mono's dialog is
+drawn in one of them. `MacFileChooser` shows the panels every Mac program
+shows instead - AppKit's `NSOpenPanel` and `NSSavePanel` - through the
+Objective-C runtime (`ObjCImports`), with nothing added to the build.
+`SystemFileChooser` sends a request to it on a Mac and to the portal
+elsewhere; both take the same request and give the same answer.
+
+- **Filters.** A Mac panel has no list of filters. When there is more than
+  one, a "Show:" menu under the panel lists them and changes which files can
+  be picked; the one chosen comes back as the filter index. A filter's
+  `*.ext` patterns become the file types the panel allows; a `*`, or a
+  pattern with no extension to check, allows every file.
+- **The folder picker's tick box** goes under the panel in the same way.
+- **Saving.** The save panel asks before it overwrites, on its own. A name
+  typed without an extension gets the filter's, as from the portal.
+- **Focus.** The panel is brought in front of XQuartz, and the program that
+  was in front gets the focus back when it closes.
+- **Modal.** The panel runs its own loop, so Chimera's windows are not
+  painted while it is open. Clicks and keys sent to them meanwhile are
+  thrown away when it closes, not acted on.
+- **Mono's dialog** is still shown if the panel cannot be: AppKit only
+  answers on the process's first thread, which is the interface's.
 
 ## Why the sub-folders option lives in the dialog
 

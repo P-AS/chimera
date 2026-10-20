@@ -124,7 +124,7 @@ namespace Chimera.Client.GUI
 		/// buttons and wheel, keys, and the window manager's close. Mouse movement and painting
 		/// still go through.
 		/// </summary>
-		private sealed class InputBlocker : IMessageFilter
+		internal sealed class InputBlocker : IMessageFilter
 		{
 			private const int WM_CLOSE = 0x0010;
 			private const int WM_KEYFIRST = 0x0100;
