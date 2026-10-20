@@ -8401,3 +8401,22 @@ adapter's filter drops them), so the control has the system handle them -
 after each frame it shows, and every 15 ms on a timer - or the window would
 stop responding. Every other platform is as it was. docs/macos.md has the
 rest.
+
+## The display does not wait for the GPU to rewrite its buffers (2026-10-19)
+
+**What changed.** OpenGLPipeline.SetVertexData and SetIndexData give a
+buffer fresh storage of the same size (glBufferData with no data) before
+writing it again with glBufferSubData. A draw still reading the old
+contents keeps them, and the write does not wait for it.
+
+**Why.** On macOS, whose OpenGL runs on Metal, rewriting a buffer a queued
+draw may still read makes the driver flush its work and wait for the GPU,
+and the display rewrote these buffers on every draw. Measured on an M1
+(macOS 27), SRB2 in Greenflower Zone at 1280x800: 12 frames a second in the
+interface, against about 200 headless (chimera-run) and 35 - the game's own
+rate - on Linux on the same machine. A profile of the interface put 54% of
+its main thread in that wait (GLDContextRec::flushContext under
+glBufferSubData) and 13% more submitting the work it flushed; the game's
+own code was under 10%. With the buffers renewed first: 34 frames a second.
+Renewing a buffer before rewriting it is OpenGL's ordinary way to do this,
+and other drivers lose nothing by it, so it is not limited to macOS.

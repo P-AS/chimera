@@ -68,6 +68,8 @@ cd build && mono Chimera.exe
 
 Played this way on an M1: SRB2 (its software and its `opengl-hw` renderers),
 and PCSX2 with the software renderer, savestates included.
+SRB2 runs at its full 35 frames a second there (34 measured at 1280x800),
+as on Linux on the same machine.
 
 What does not work yet:
 

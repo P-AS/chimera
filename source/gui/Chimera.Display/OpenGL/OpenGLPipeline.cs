@@ -221,6 +221,7 @@ namespace Chimera.Display
 			}
 			else
 			{
+				Orphan(GLEnum.ArrayBuffer, VertexBufferLen);
 				GL.BufferSubData(GLEnum.ArrayBuffer, 0, vertexes);
 			}
 		}
@@ -235,9 +236,18 @@ namespace Chimera.Display
 			}
 			else
 			{
+				Orphan(GLEnum.ElementArrayBuffer, IndexBufferLen);
 				GL.BufferSubData(GLEnum.ElementArrayBuffer, 0, indexes);
 			}
 		}
+
+		/// <summary>
+		/// gives the buffer fresh storage of the same size before it is written again, so a draw still reading
+		/// the old contents keeps them and the write doesn't wait for it; without this, Apple's OpenGL (on Metal)
+		/// flushes and waits for the GPU on every BufferSubData, which cost the display most of each frame
+		/// </summary>
+		private unsafe void Orphan(GLEnum target, int length)
+			=> GL.BufferData(target, (nuint)length, null, GLEnum.DynamicDraw);
 
 		public bool HasUniformSampler(string name)
 			=> _samplers.ContainsKey(name);
