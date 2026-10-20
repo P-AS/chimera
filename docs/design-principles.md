@@ -10136,8 +10136,10 @@ a software OpenGL context (Mesa's llvmpipe, linked into the core and made to
 generate the same machine code on every computer: one CPU, 128-bit vectors),
 and the picture is read back from it. A game's compiled scripts load only in
 the Godot version that exported it, so the owner chose a core per version:
-the 4.6, 4.5 and 4.4 cores are the same code with another Godot pinned, and
-a core refuses a game of another version, naming the core to use. Games
+the 4.6, 4.5 and 4.4 cores (`chimera-core-godot46`, `-godot45`,
+`-godot44`) are the same code with another Godot pinned, each its own
+package and roster row, and a core refuses a game of another version,
+naming the core to use. The 4.4 core also takes games of 4.0 to 4.3. Games
 written in C# and games that need native extensions cannot run in the
 sandbox.
 

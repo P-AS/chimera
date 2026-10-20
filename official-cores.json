@@ -426,6 +426,33 @@
       "tested": ""
     },
     {
+      "id": "godot46",
+      "name": "Godot 4.6",
+      "systems": [
+        { "id": "Godot", "name": "Godot 4" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-godot46",
+      "tested": ""
+    },
+    {
+      "id": "godot45",
+      "name": "Godot 4.5",
+      "systems": [
+        { "id": "Godot", "name": "Godot 4" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-godot45",
+      "tested": ""
+    },
+    {
+      "id": "godot44",
+      "name": "Godot 4.4",
+      "systems": [
+        { "id": "Godot", "name": "Godot 4" }
+      ],
+      "repo": "ToolAssisted-run/chimera-core-godot44",
+      "tested": ""
+    },
+    {
       "id": "openbor",
       "name": "OpenBOR",
       "systems": [
