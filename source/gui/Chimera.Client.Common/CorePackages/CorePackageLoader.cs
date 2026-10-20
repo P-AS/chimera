@@ -276,7 +276,7 @@ namespace Chimera.Client.Common
 			// preload declared natives (of this platform's flavor) from absolute paths:
 			// the OS loader dedupes by module name, so the adapter's later by-name
 			// load resolves to these pinned modules
-			var nativeExt = Chimera.Common.OSTailoredCode.IsUnixHost ? ".so" : ".dll";
+			var nativeExt = Chimera.Common.OSTailoredCode.NativeLibExt;
 			foreach (var native in manifest.Natives)
 			{
 				if (!native.EndsWith(nativeExt, StringComparison.OrdinalIgnoreCase)) continue; // other platform's build

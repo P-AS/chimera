@@ -18,6 +18,9 @@
 		<PackageReference Include="System.Runtime.CompilerServices.Unsafe" />
 	</ItemGroup>
 	<ItemGroup>
+		<None Include="Chimera.Common.dll.config" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+	<ItemGroup>
 		<ProjectReference Include="$(MSBuildProjectDirectory)/../../../extern/Chimera.SrcGen.VersionInfo/Chimera.SrcGen.VersionInfo.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
 	</ItemGroup>
 </Project>

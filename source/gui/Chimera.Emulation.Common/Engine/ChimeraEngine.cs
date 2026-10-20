@@ -1180,7 +1180,7 @@ namespace Chimera.Emulation.Common.Engine
 	{
 		private static readonly Lazy<LibChimera> _instance = new(Load, isThreadSafe: true);
 
-		private static readonly string LibName = $"libchimera{(OSTailoredCode.IsUnixHost ? ".so" : ".dll")}";
+		private static readonly string LibName = $"libchimera{OSTailoredCode.NativeLibExt}";
 
 		public static LibChimera Instance => _instance.Value;
 

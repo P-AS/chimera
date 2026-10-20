@@ -12,6 +12,9 @@ namespace Chimera.Common
 		public static readonly DistinctOS CurrentOS;
 		public static readonly bool IsUnixHost;
 
+		/// <summary>the file extension of this host's shared libraries</summary>
+		public static readonly string NativeLibExt;
+
 		static OSTailoredCode()
 		{
 			if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
@@ -36,6 +39,12 @@ namespace Chimera.Common
 			}
 
 			IsUnixHost = CurrentOS != DistinctOS.Windows;
+			NativeLibExt = CurrentOS switch
+			{
+				DistinctOS.Windows => ".dll",
+				DistinctOS.macOS => ".dylib",
+				_ => ".so",
+			};
 		}
 
 		private static readonly Lazy<(WindowsVersion, Version?)?> _HostWindowsVersion = new(() =>

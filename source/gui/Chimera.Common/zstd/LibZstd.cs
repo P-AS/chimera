@@ -8,7 +8,13 @@ namespace Chimera.Common
 		static LibZstd()
 		{
 			var resolver = new DynamicLibraryImportResolver(
-				OSTailoredCode.IsUnixHost ? "libzstd.so.1" : "libzstd.dll", hasLimitedLifetime: false);
+				OSTailoredCode.CurrentOS switch
+				{
+					OSTailoredCode.DistinctOS.Windows => "libzstd.dll",
+					OSTailoredCode.DistinctOS.macOS => "libzstd.dylib",
+					_ => "libzstd.so.1",
+				},
+				hasLimitedLifetime: false);
 			ZSTD_isError = (delegate* unmanaged[Cdecl]<nuint, uint>)resolver.GetProcAddrOrThrow(nameof(ZSTD_isError));
 			ZSTD_getErrorName = (delegate* unmanaged[Cdecl]<nuint, IntPtr>)resolver.GetProcAddrOrThrow(nameof(ZSTD_getErrorName));
 			ZSTD_minCLevel = (delegate* unmanaged[Cdecl]<int>)resolver.GetProcAddrOrThrow(nameof(ZSTD_minCLevel));
