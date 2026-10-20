@@ -10158,3 +10158,16 @@ makes. The native build and the sandbox agree on every picture, the sound
 and what the game saw, and a save and load before every frame changes
 nothing. Nothing in Chimera's own source changed: two roster rows and the
 README's table of cores.
+
+
+## The BBC Micro joins MAME Home Systems (user-decided, 2026-10-20)
+
+Issue 329 asked for the BBC Micro. The owner decided to add it to the MAME
+Home Systems core instead of building a core of its own: MAME emulates it in
+software, step by step with its 6502, and that core already runs MAME's
+other home computers. The Model A, Model B, B+ and Master 128 are offered,
+with their discs, tapes and keyboard; the Acorn ROMs are firmware the user
+supplies, as MAME needs them. No Acorn ROMs were at hand, and the owner
+decided to publish without booting one; the issue is closed on that build,
+saying so. One row of the roster changes (a system added to
+`mamehome`) and the README's table of cores.
