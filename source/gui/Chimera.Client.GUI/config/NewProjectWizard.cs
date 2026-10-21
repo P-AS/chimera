@@ -1909,6 +1909,14 @@ namespace Chimera.Client.GUI
 					_slotOrderRefresh[slot.Id] = Refresh;
 					group.Controls.AddRange([ up, down ]);
 				}
+				// The group is laid out for a panel 544 wide and anchored to both
+				// sides, which keeps the gap to the panel's right edge that it has
+				// when it is added. Made while the window was wider, it kept a wide
+				// gap, did not reach across the window, and narrowing the window
+				// shrank it to nothing (issue 333). So it takes the panel's width
+				// now, once everything in it is placed; the list and the buttons
+				// follow their own anchors.
+				group.Width = Math.Max(UIHelper.ScaleX(400), _slotsHost.ClientSize.Width - UIHelper.ScaleX(24));
 				_slotsHost.Controls.Add(group);
 				_slotLists[slot.Id] = list;
 				_slotGroups[slot.Id] = group;

@@ -10418,3 +10418,26 @@ row in the grid colour; before the change they were the control's white. The
 hover itself was not driven there: it needs the real pointer, and a repaint
 of single rows asked for by the program kept the old lines too, so the old
 loss was not reproduced on this machine.
+
+
+## The wizard's Game step fits the window however wide it was (2026-10-21)
+
+In the New Project wizard, the boxes on the Game step (one per file the core
+takes) did not reach across a wide window, and narrowing the window shrank
+them until they and their Add and Remove buttons disappeared (issue 333). Each
+box is laid out for a panel 544 pixels wide and anchored to both sides, which
+keeps the gap to the panel's right edge it has when it is added. The step is
+built when the core is chosen; on Windows the panel already has the window's
+width then, even though the step is not yet shown, so a window widened before
+Next gave every box a wide gap, and the gap stayed as the window narrowed.
+Each box now takes the panel's width when it is made, leaving the 24-pixel
+gap it was designed with.
+
+Test: `TheGameStepFitsAnyWidthTheWindowHad` builds the step again in a window
+1100 pixels wide, finds every box reaching to within 60 pixels of the edge,
+then narrows the window to its smallest and finds every box, list and button
+inside it. Without the change it failed (the box stopped 650 pixels short).
+Mono lays out the hidden step only when it is shown, so the test builds it
+while it is in view. On Windows the wizard tests hang when run from a copy of
+the test folder (an older wizard test too), so this one was not run there;
+a picture of that run showed the first box across the full width.
