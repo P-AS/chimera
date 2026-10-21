@@ -308,6 +308,49 @@ namespace Chimera.Tests.Client.Common.CorePackages
 		}
 
 		/// <summary>
+		/// A default binding to a joystick's hat names its first hat. Chimera numbers a joystick's hats from 0
+		/// (SDL2Gamepad: "POV0U"), so "POV1U" is a second hat, which a stick with one does not have. 33 cores bound
+		/// their directions to POV1 and none to POV0, so a joystick that is not a game controller moved nothing
+		/// until bound by hand (found with chimera#336). A package that binds a later hat binds the first too.
+		/// </summary>
+		[TestMethod]
+		public void KeybindsNameAJoysticksFirstHat()
+		{
+			List<string> wrong = new();
+			Packages();
+			foreach (var path in InstalledPackages.Newest)
+			{
+				var dir = Extracted(path);
+				if (dir is null) continue;
+				try
+				{
+					var keybinds = PackageKeybinds.Read(dir);
+					if (keybinds is null) continue;
+					var hats = keybinds.AllTrollers
+						.SelectMany(static c => c.Value.Values)
+						.SelectMany(static v => (v ?? "").Split(',', '+').Select(static p => p.Trim()))
+						.Select(static p => Regex.Match(p, @"^J\d+ POV(\d+)[UDLR]$"))
+						.Where(static m => m.Success)
+						.Select(static m => int.Parse(m.Groups[1].Value))
+						.ToHashSet();
+					if (hats.Count is not 0 && !hats.Contains(0))
+					{
+						wrong.Add($"{InstalledPackages.NameOf(path)} binds POV{string.Join("/POV", hats.OrderBy(static h => h))} and not POV0");
+					}
+				}
+				catch (Exception ex)
+				{
+					wrong.Add($"{InstalledPackages.NameOf(path)}: {ex.Message}");
+				}
+				finally
+				{
+					TryDelete(dir);
+				}
+			}
+			Assert.AreEqual(0, wrong.Count, "joystick hats past the first, with the first unbound: " + string.Join("; ", wrong));
+		}
+
+		/// <summary>
 		/// The names the keyboard and the mouse arrive by: each key as Input hands it to the bindings
 		/// (<see cref="DistinctKeyNameOverrides.GetName"/>), Shift, Ctrl and Alt for either key of each (the
 		/// default, Config.MergeLAndRModifierKeys), and the mouse's buttons.

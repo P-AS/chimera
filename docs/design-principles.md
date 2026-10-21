@@ -10492,7 +10492,7 @@ table of cores.
 
 ## Bug report zips go to a Bug reports folder (user-decided, 2026-10-21)
 
-Report a Bug's Save as Zip opened on the desktop every time, and the person
+The Save as Zip... button of Help > Report an Issue... opened on the desktop every time, and the person
 browsed to Chimera's folder each time (issue 340). Config > Paths now has a
 Bug reports entry, by default a Reports folder in Chimera's base folder, as
 Screenshots is; Save as Zip opens there, making the folder when it is not
@@ -10573,3 +10573,30 @@ for each frame that was not a lag frame, and the machine ends on the goldens)
 and `T:box:inputPolls` (a script in the real window registers
 `event.oninputpoll`, sees one call in a frame the game reads its pad in,
 reads memory from inside it, and no call once it is removed).
+
+## Default bindings use a joystick's first hat, and controls are listed in groups and rows (user-decided, 2026-10-21)
+
+Chimera numbers a joystick's hats from 0 ("J1 POV0U" is the first hat's up).
+33 cores bound their directions to POV1, a second hat that a stick with one
+does not have, and none to POV0, so a joystick that is not a game controller
+moved nothing until it was bound by hand (issue 336). Every core now binds
+POV0. The console cores that had no game controller defaults got them, by
+place: the bottom face button is where a Super NES's B is. Computers, phones
+and touch screens keep the keyboard and the mouse. Only bindings changed:
+nothing a movie records did. A package test, KeybindsNameAJoysticksFirstHat,
+fails on a package that binds a later hat without the first; it went in once
+every core's build with POV0 was published, and failed before that on the 33.
+
+The owner also decided how controls are listed (issue 337). A pad's controls
+of one kind sit together: Dolphin's Triforce and Flycast's arcade boards list
+Coin beside Start, and MAME home no longer interleaves the Amstrad CPC's
+joystick with its keyboard. The Genesis pad keeps its own A B C Start X Y Z
+Mode. A computer's keyboard is listed as it sits on a desk: the top row
+first, left to right, then the keys above the arrows, the arrows and the
+number pad. Godot's four cores and Ruffle take a whole PC keyboard and were
+put in rows too, on the owner's word. A project made before keeps playing:
+a movie's columns are read by their names (EntryLayout::buildFromKey), which
+Uzem's projects from before the change showed. A core that turns a held key
+into an event in its table's order (DOSBox-X, TIC-80, Godot, Ruffle) keeps
+that order and maps the listed number to it, so two keys pressed on one frame
+still reach the game as they did.
