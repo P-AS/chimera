@@ -10457,9 +10457,10 @@ clock, which is the frames'). It draws with its OpenGL 3.3 renderer on a
 software OpenGL inside the core (Mesa's llvmpipe, made to generate the same
 code on every computer); its background videos play through FFmpeg, decoded
 on each frame; every file call goes to the game's zip and the files the game
-writes, kept in the core's memory. It is a game core: the round, its time,
-the random seed and each fighter's life, power, position and gauges are
-properties, most of them writable. A game made for an older Ikemen GO
+writes, kept in the core's memory. The round, its time, the random seed and
+each fighter's life, power, position and gauges are game properties, most of
+them writable. (It was listed as a game core here at first; it is an
+emulator core, see below.) A game made for an older Ikemen GO
 (0.97 to 0.99) plays too: the core recognizes the older release's own
 scripts in the game's folder and uses its v1.0 ones instead, as Ikemen GO's
 upgrade advice says, swaps the older Boss Rush, Score Challenge, Time
@@ -10503,3 +10504,42 @@ when it is read (missing global entries are added from the defaults).
 Test: `SaveAsZipOpensInTheBugReportsFolder` finds the default path to be
 Reports in the base folder, and the folder made and used; with the folder
 ignored it failed.
+
+
+## A package may ship a picture of its controller (user-decided, 2026-10-21)
+
+Config > Controls listed a core's buttons with no idea what the controller
+looks like, and a person matching an unfamiliar pad looked it up on the web
+(issue 338). The window always had a picture column, kept closed because
+the frontend knows no controller's looks. The owner chose to let a package
+ship one, over drawing a schematic from declared button positions and over
+tooltips only.
+
+An input declaration (the package's, and each machine's) may name a PNG in
+the package: `"picture": "pictures/pad.png"`. The waterbox core offers its
+file through a new service, `IControllerPicture`, when the file is there and
+inside the package (a name that leaves the package is no picture), and the
+window opens the column and shows it, scaled to fit; without one, or with a
+file that is not a picture, the column stays closed. The picture's licence
+is declared like any component's, and the owner's condition holds: only
+pictures that are free to redistribute, or drawn for Chimera.
+
+Tests: `ControllerPictureTests` (the file is found only inside the package;
+the window reads what the core offers, and nothing from a file that is not a
+picture), which failed with the inside-the-package check removed; and the
+contract test `APictureOfTheControllerIsAPngThePackageLicenses`, which on
+made-up packages failed for a missing picture and for one the licence list
+does not name, and passed for one that is present and named. No published
+package declares a picture yet.
+
+
+## Ikemen GO is an emulator core, as OpenBOR is (user-decided, 2026-10-21)
+
+Ikemen GO was listed with the game cores in the README and marked
+`"kind": "game"` in `official-cores.json`. The owner corrected it: like
+OpenBOR, it is an engine that plays many games made for it (and M.U.G.E.N
+characters and stages), so it is an emulator core. The README lists it with
+the emulator cores, beside OpenBOR, and the roster no longer marks it a game.
+Its package still declares `"kind": "game"` in its own `waterbox.config`,
+which is what Chimera's windows go by; that is the core repository's to
+change.
