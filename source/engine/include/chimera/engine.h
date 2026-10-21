@@ -1221,6 +1221,17 @@ CE_API void ce_session_set_axis(ce_session *s, int32_t index, int32_t value);
  * column per declared button - so recording and playback are unchanged. */
 CE_API void ce_session_set_button(ce_session *s, int32_t index, int32_t pressed);
 
+/* CALLS DURING A FRAME (issue 344). A core that reports each time the machine
+ * reads its controls - its optional SetInputPollCallback export - has the
+ * engine call fn(ctx) at each such read, part way through an advance. fn runs
+ * on the advancing thread, inside the frame: it may read the machine's memory,
+ * and must not advance, save, load or end the session. Null stops the calls.
+ * ce_session_input_polls_reported is 1 when the core reports its reads, 0 when
+ * it does not (fn is then never called). */
+typedef void (*ce_input_poll_fn)(void *ctx);
+CE_API int32_t ce_session_input_polls_reported(const ce_session *s);
+CE_API void ce_session_set_input_poll_callback(ce_session *s, ce_input_poll_fn fn, void *ctx);
+
 /* One frame: buttons is the bitmask (bit i = the config's buttons[i]);
  * buttons beyond 63 ride ce_session_set_button. Returns nonzero when the frame
  * was a lag frame (the guest never read input), per the config's lag export.

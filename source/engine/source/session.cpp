@@ -517,6 +517,20 @@ static inline void guestWorked()
 	__atomic_store_n(&ce_guest_work, __atomic_load_n(&ce_guest_work, __ATOMIC_RELAXED) + 1, __ATOMIC_RELAXED);
 }
 
+/* The session whose frame this thread is running: a core calling back part
+ * way through a frame (an input read, issue 344) is that session's. */
+static thread_local ce_session *t_framing = nullptr;
+
+#if defined(_WIN32) && defined(__GNUC__)
+#define CE_GUEST_CALLBACK_ABI __attribute__((sysv_abi))
+#else
+#define CE_GUEST_CALLBACK_ABI
+#endif
+
+/* A core read its controls (its call through callback slot 3). The caller's
+ * function runs now, inside the frame; the read counts as the core's work. */
+static uintptr_t CE_GUEST_CALLBACK_ABI inputPollDispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t);
+
 #ifdef CE_VK_BRIDGE
 /* The Vulkan bridge's dispatcher, each call counted as work once the driver
  * has answered it. */
@@ -683,6 +697,12 @@ struct ce_session
 	/* the core took the Vulkan bridge: a load is a new device to it */
 	bool vulkanBridge = false;
 	bool glBridge = false;   /* this session started the GL bridge: it ends it (ce_gl_session_end) */
+	/* The core reports each read of its controls during a frame (issue 344):
+	 * its SetInputPollCallback export took the engine's callback. fn is the
+	 * caller's, called at each read. */
+	bool inputPollsReported = false;
+	ce_input_poll_fn inputPollFn = nullptr;
+	void *inputPollCtx = nullptr;
 	/* The pictures of frames already drawn, shown again when the machine is put
 	 * back on one (kept_pictures.hpp; chimera#190). On by itself for a session
 	 * whose pictures a GPU draws and whose greenzone is on; a caller may say
@@ -1602,7 +1622,9 @@ void ce_session::runFrame(uint64_t pad)
 		}
 	}
 	firstFrame = false;
+	t_framing = this;
 	frameAdvance(pad);
+	t_framing = nullptr;
 	if (watchdog) watchdog->disarm();
 }
 
@@ -2221,6 +2243,25 @@ static ce_session *openSession(
 				fprintf(stderr, "chimera cache: the sandbox would not take the callback\n");
 			else
 				setCache(static_cast<uint64_t>(r.data));
+		}
+	}
+
+	/* Calls during a frame: a core that reports its input reads is handed the
+	 * engine's callback (issue 344). A core without the export has none. */
+	{
+		std::string ignored;
+		auto setInputPoll = reinterpret_cast<void (*)(uint64_t)>(s->proc("SetInputPollCallback", 1, false, ignored));
+		if (setInputPoll != nullptr)
+		{
+			chimera::WbxReturn r;
+			host->wbx_get_callback_addr(s->obj, reinterpret_cast<void *>(&inputPollDispatch), 3, &r);
+			if (!r.ok() || r.data == 0)
+				fprintf(stderr, "chimera input polls: the sandbox would not take the callback\n");
+			else
+			{
+				setInputPoll(static_cast<uint64_t>(r.data));
+				s->inputPollsReported = true;
+			}
 		}
 	}
 
@@ -4574,4 +4615,24 @@ extern "C" int32_t ce_session_precompile_progress(const ce_session *s, uint32_t 
 		fflush(stdout);
 	}
 	return 0;
+}
+
+static uintptr_t CE_GUEST_CALLBACK_ABI inputPollDispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t)
+{
+	ce_session *s = t_framing;
+	if (s != nullptr && s->inputPollFn != nullptr) s->inputPollFn(s->inputPollCtx);
+	guestWorked();
+	return 0;
+}
+
+int32_t ce_session_input_polls_reported(const ce_session *s)
+{
+	return s != nullptr && s->inputPollsReported ? 1 : 0;
+}
+
+void ce_session_set_input_poll_callback(ce_session *s, ce_input_poll_fn fn, void *ctx)
+{
+	if (s == nullptr) return;
+	s->inputPollFn = fn;
+	s->inputPollCtx = ctx;
 }

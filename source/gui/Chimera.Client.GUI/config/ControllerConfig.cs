@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
@@ -147,11 +148,42 @@ namespace Chimera.Client.GUI
 
 			checkBoxAutoTab.Checked = _config.InputConfigAutoTab;
 
-			// the frontend has no idea what any controller looks like; a package declares buttons,
-			// not artwork, so the picture column stays collapsed
-			tableLayoutPanel1.ColumnStyles[1].Width = 0;
+			// The frontend has no idea what any controller looks like. A package may ship a
+			// picture of its controller (issue 338); without one the column stays collapsed.
+			var picture = ControllerPicture(emulator);
+			if (picture is null)
+			{
+				tableLayoutPanel1.ColumnStyles[1].Width = 0;
+			}
+			else
+			{
+				pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
+				pictureBox1.Image = picture;
+				FormClosed += (_, _) => pictureBox1.Image?.Dispose();
+			}
 			ResumeLayout();
 		}
+
+		/// <summary>The picture the core's package ships of its controller, or null (issue 338).</summary>
+		public static Image? ControllerPicture(IEmulator emulator)
+		{
+			if (emulator.ServiceProvider.GetService<IControllerPicture>()?.ControllerPicturePath is not { } path) return null;
+			try
+			{
+				using var stream = new MemoryStream(File.ReadAllBytes(path));
+				using var image = Image.FromStream(stream);
+				// a copy, so the picture does not need the stream it was read from
+				return new Bitmap(image);
+			}
+			catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or OutOfMemoryException)
+			{
+				// a picture that cannot be read is no picture: the bindings matter, it does not
+				return null;
+			}
+		}
+
+		/// <summary>Whether the window shows a picture of the controller, for tests.</summary>
+		public bool ShowsControllerPicture => pictureBox1.Image is not null && tableLayoutPanel1.ColumnStyles[1].Width > 0;
 
 		private void LoadPanels(
 			IDictionary<string, Dictionary<string, string>> normal,

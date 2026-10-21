@@ -254,6 +254,60 @@ namespace Chimera.Tests.Client.Common.CorePackages
 		}
 
 		/// <summary>
+		/// A package that ships a picture of its controller (issue 338) ships it: the picture an
+		/// input declaration names is a PNG inside the package, and the package's licence list names
+		/// it, so where it came from and on what terms travels with it.
+		/// </summary>
+		[TestMethod]
+		public void APictureOfTheControllerIsAPngThePackageLicenses()
+		{
+			List<string> wrong = new();
+			Packages();
+			foreach (var path in InstalledPackages.Newest)
+			{
+				var dir = Extracted(path);
+				if (dir is null) continue;
+				try
+				{
+					var configPath = Path.Combine(dir, "waterbox.config");
+					if (!File.Exists(configPath) || WaterboxConfig.FromJson(File.ReadAllText(configPath)) is not { } cfg) continue;
+					var inputs = new[] { cfg.Input }.Concat((cfg.Machines ?? new()).Select(static m => m.Input)).Where(static i => i?.Picture is { Length: > 0 });
+					var licences = Path.Combine(dir, "licenses", "licenses.json");
+					var licenceText = File.Exists(licences) ? File.ReadAllText(licences) : "";
+					foreach (var input in inputs)
+					{
+						var picture = input!.Picture!;
+						var name = InstalledPackages.NameOf(path);
+						var file = WaterboxCore.PictureIn(dir, picture);
+						if (file is null)
+						{
+							wrong.Add($"{name}: {picture} is not in the package");
+							continue;
+						}
+						var head = File.ReadAllBytes(file).Take(8).ToArray();
+						if (!head.SequenceEqual(new byte[] { 0x89, (byte) 'P', (byte) 'N', (byte) 'G', 0x0D, 0x0A, 0x1A, 0x0A }))
+						{
+							wrong.Add($"{name}: {picture} is not a PNG");
+						}
+						if (!licenceText.Contains(Path.GetFileName(picture)))
+						{
+							wrong.Add($"{name}: licenses/licenses.json does not name {Path.GetFileName(picture)}");
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					wrong.Add($"{InstalledPackages.NameOf(path)}: {ex.Message}");
+				}
+				finally
+				{
+					TryDelete(dir);
+				}
+			}
+			Assert.AreEqual(0, wrong.Count, string.Join("; ", wrong));
+		}
+
+		/// <summary>
 		/// The names the keyboard and the mouse arrive by: each key as Input hands it to the bindings
 		/// (<see cref="DistinctKeyNameOverrides.GetName"/>), Shift, Ctrl and Alt for either key of each (the
 		/// default, Config.MergeLAndRModifierKeys), and the mouse's buttons.

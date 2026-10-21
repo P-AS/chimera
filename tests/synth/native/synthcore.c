@@ -52,6 +52,11 @@ typedef struct
 	uint8_t inputRead; /* did INPUT execute during the last frame (lag tracking) */
 } synth_t;
 
+/* Called at each INPUT the machine executes, when set: a host that wants to
+ * hear of every read of the pad part way through a frame (issue 344). Not
+ * machine state; the native builds leave it unset. */
+SYNTH_EXPORT void (*synth_on_input)(void) = 0;
+
 static uint16_t rd16(const uint8_t* p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 static uint32_t rd32(const uint8_t* p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
 static void wr32(uint8_t* p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24); }
@@ -180,7 +185,7 @@ static void run_frame_code(synth_t* s, uint8_t pad)
 			case 0x22: taken = (*Ra != *Rb); break;
 			case 0x23: taken = (*Ra < *Rb); break;
 			case 0x24: taken = (*Ra >= *Rb); break;
-			case 0x30: *Ra = pad; s->inputRead = 1; break;
+			case 0x30: *Ra = pad; s->inputRead = 1; if (synth_on_input) synth_on_input(); break;
 			case 0x31: *Ra = (int32_t)s->frameCounter; break;
 			case 0x40: memset(s->fb, (uint8_t)(*Ra & 15), FB_SIZE); break;
 			case 0x41: s->fb[((uint32_t)*Rb % FB_H) * FB_W + (uint32_t)*Ra % FB_W] = (uint8_t)(*Rc & 15); break;

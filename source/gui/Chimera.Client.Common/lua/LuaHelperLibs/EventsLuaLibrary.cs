@@ -98,9 +98,8 @@ namespace Chimera.Client.Common
 			=> CreateAndRegisterNamedFunction(luaf, NamedLuaFunction.EVENT_TYPE_PREFRAME, name: name)
 				.GuidStr;
 
-		[LuaUnavailableMethod]
 		[LuaMethodExample("local ok, steveoni = pcall(event.oninputpoll,\r\n\tfunction()\r\n\t\tconsole.log( \"Calls the given lua function after each time the emulator core polls for input\" );\r\n\tend\r\n\t, \"Frame name\" );\r\nif not ok then console.log( steveoni ); end")]
-		[LuaMethod("oninputpoll", NotAvailable + "calls the given lua function after each time the emulator core polls for input.")]
+		[LuaMethod("oninputpoll", "Calls the given lua function each time the core reads the controls, part way through a frame. Only a core that reports its reads can (its notes say so); any other refuses it with an error, because a core runs in a sandbox that Chimera calls once a frame and cannot otherwise stop part way through one. The function runs inside the frame: it may read memory, but not advance, save or load.")]
 		public string OnInputPoll(LuaFunction luaf, string name = null)
 		{
 			// The core is asked FIRST, and the function is registered only once
@@ -128,8 +127,9 @@ namespace Chimera.Client.Common
 		/// <summary>Same refusal as the memory callbacks above, for the same reason.</summary>
 		private Exception InputPollCallbacksNotImplemented()
 			=> new InvalidOperationException(
-				$"{Emulator.Attributes().CoreName} cannot call a Lua function when it reads the controls. "
-				+ WhyNotAvailable + " Remove the registration, or guard it with pcall.");
+				$"{Emulator.Attributes().CoreName} does not report its reads of the controls, so it cannot call a Lua function when it reads them. "
+				+ "A core runs in a sandbox that Chimera calls once a frame, and only a core that reports its reads stops part way through a frame to call back. "
+				+ "Remove the registration, or guard it with pcall.");
 
 		[LuaUnavailableMethod]
 		[LuaDeprecatedMethod]

@@ -29,7 +29,7 @@ namespace Chimera.Emulation.Common.Waterbox
 		portedVersion: "1.0.0",
 		portedUrl: "https://github.com/SergioMartin86/miniBox")]
 	public sealed partial class WaterboxCore : IEmulator, IVideoProvider, ISoundProvider, IStatable, IStateHistory, IInputPollable, IGpuRendered, ICorePrecompile, ICoreStops,
-		ICoreIdentity, ISettable<WaterboxCoreSettings>, IDriveLights, IStateFiles
+		ICoreIdentity, ISettable<WaterboxCoreSettings>, IDriveLights, IStateFiles, IControllerPicture
 	{
 		/// <summary>
 		/// The identity of the PACKAGE this instance is running - what the status bar,
@@ -132,6 +132,28 @@ namespace Chimera.Emulation.Common.Waterbox
 					? CoreCacheDirectoryFor(CoreCacheRoot, hashed.Sha1)
 					: null;
 
+		/// <inheritdoc/>
+		public string? ControllerPicturePath { get; }
+
+		/// <summary>
+		/// The file a package's <c>"picture"</c> names (issue 338), when it is there and inside the
+		/// package: a name that climbs out of it (<c>"../x.png"</c>) or names nothing is no picture.
+		/// </summary>
+		public static string? PictureIn(string packageDir, string? picture)
+		{
+			if (picture is not { Length: > 0 } || string.IsNullOrEmpty(packageDir)) return null;
+			try
+			{
+				var root = Path.GetFullPath(packageDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+				var full = Path.GetFullPath(Path.Combine(root, picture));
+				return full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(full) ? full : null;
+			}
+			catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
+			{
+				return null;
+			}
+		}
+
 		/// <summary>The engine's handle of this machine, for the engine calls that take one (the MCP server's).</summary>
 		public IntPtr SessionHandle => _session.Handle;
 
@@ -159,6 +181,7 @@ namespace Chimera.Emulation.Common.Waterbox
 				$"{WaterboxCoreFactory.ConfigFileName}: no \"audio\" block, so the sound has no rate");
 			var input = _machine?.Input ?? cfg.Input ?? throw new InvalidOperationException(
 				$"{WaterboxCoreFactory.ConfigFileName}: no \"input\" block, so the machine has no controller");
+			ControllerPicturePath = PictureIn(packageDir, input.Picture);
 			_width = _video.Width;
 			_height = _video.Height;
 			_samplesPerFrame = audio.SamplesPerFrame;
@@ -212,6 +235,16 @@ namespace Chimera.Emulation.Common.Waterbox
 				// switches), which only the loaded core can name. Shown in the settings
 				// grid beside the package's; their values travel like any other.
 				_gameDecls = WaterboxConfig.ParseGameSettings(_session.GameSettingsJson, Decls.Select(static d => d.Key));
+
+				// A core that reports its reads of the controls gets input callbacks
+				// (event.oninputpoll, issue 344): the engine calls back only while one
+				// is registered.
+				if (_session.InputPollsReported)
+				{
+					var callbacks = new InputCallbackSystem();
+					callbacks.ActiveChanged += () => _session.SetInputPollCallback(callbacks.Count is 0 ? null : callbacks.Call);
+					_inputCallbacks = callbacks;
+				}
 
 				_buttonActive = new bool[_buttons.Length];
 				for (int i = 0; i < _buttons.Length; i++) _buttonActive[i] = _session.ButtonActive(i);
@@ -820,12 +853,17 @@ namespace Chimera.Emulation.Common.Waterbox
 		public int LagCount { get; set; }
 		public bool IsLagFrame { get; set; }
 
+		/// <summary>The callbacks for each read of the controls, when the core reports its reads (issue 344).</summary>
+		private readonly InputCallbackSystem? _inputCallbacks;
+
+		/// <summary>
+		/// Called at each read of the controls, part way through a frame - for a core whose package
+		/// reports its reads (its SetInputPollCallback export, issue 344). Any other core cannot stop
+		/// part way through a frame to call anything, and says so.
+		/// </summary>
 		public IInputCallbackSystem InputCallbacks
-		{
-			[FeatureNotImplemented]
-#pragma warning disable CA1065 // convention for [FeatureNotImplemented] is to throw NIE
-			get => throw new NotImplementedException();
+#pragma warning disable CA1065 // the convention for a feature a core lacks is to throw NIE
+			=> _inputCallbacks ?? throw new NotImplementedException($"{_cfg.CoreName} does not report its reads of the controls");
 #pragma warning restore CA1065
-		}
 	}
 }

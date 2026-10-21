@@ -693,6 +693,31 @@ json.dump(d, open(p, 'w'))
 			report "E:core-recovers" PASS "a frame stopped after scribbling over RAM and the heap, the machine put back on the frame before it, played on: it ends on the goldens"
 		fi
 
+		# CALLS DURING A FRAME (issue 344). The synthetic core reports each INPUT
+		# its machine executes, part way through the frame (its
+		# SetInputPollCallback export), and chimera-run --count-input-polls counts
+		# the engine's calls. gridWalker reads its pad once in each frame it
+		# plays and not at all once the game is over, so the calls are exactly
+		# the frames that were not lag frames - and counting them must not move
+		# the machine.
+		rm -f "$work/polls.meta.txt" "$work/polls.ram.bin" "$work/polls.vram.bin"
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" --count-input-polls \
+			--dump "RAM=$work/polls.ram.bin" --dump "VRAM=$work/polls.vram.bin" \
+			--meta "$work/polls.meta.txt" > "$work/polls.log" 2>&1
+		polls=$(sed -n 's/^inputPolls=//p' "$work/polls.meta.txt" 2>/dev/null)
+		lags=$(sed -n 's/^lagFrames=//p' "$work/polls.meta.txt" 2>/dev/null)
+		pframes=$(sed -n 's/^frames=//p' "$work/polls.meta.txt" 2>/dev/null)
+		if [ -z "$polls" ] || [ "$polls" = none ]; then
+			report "E:input-polls" FAIL "the core's reads of its pad were not reported: inputPolls=${polls:-missing} (see work/polls.log)"
+		elif [ "$polls" -eq 0 ] || [ "$polls" -ne $(( ${pframes:-0} - ${lags:-0} )) ]; then
+			report "E:input-polls" FAIL "$polls calls in ${pframes:-?} frames with ${lags:-?} lag frames: not one for each frame the pad was read"
+		elif ! cmp -s "$work/polls.ram.bin" "$golden_dir/gridWalker.win.ram.bin" \
+			|| ! cmp -s "$work/polls.vram.bin" "$golden_dir/gridWalker.win.vram.bin"; then
+			report "E:input-polls" FAIL "counting the calls moved the machine off the goldens"
+		else
+			report "E:input-polls" PASS "$polls calls part way through $pframes frames, one for each frame the core read its pad ($lags lag frames had none); the machine ends on the goldens"
+		fi
+
 		# THE CORE LOG (ce_core_log, Tools > Export Core Log... in the frontend):
 		# asked for, it starts a file saying when and by which Chimera, notes
 		# the session's core package, and keeps everything the core writes - the
@@ -1738,6 +1763,29 @@ GZPY
 			report "T:box:gameProperties" PASS "every kind of property reads and sets its own bytes by name, and the game plays on what was set"
 		else
 			report "T:box:gameProperties" FAIL "$(sed -n 's/^detail=//p' "$pdir/meta.txt" 2>/dev/null || echo "run failed") (see $pdir/run.log)"
+		fi
+	fi
+
+	# --- a function called at each read of the controls (issue 344) ---
+	# The synth reports each INPUT its machine executes, part way through the
+	# frame. A script registers event.oninputpoll, sees it called once in a frame
+	# the game reads its pad in, reading the machine's memory from inside it,
+	# and no more once it is removed.
+	if [ "$record" -eq 0 ]; then
+		idir="$work/input-polls-leg"
+		rm -rf "$idir" && mkdir -p "$idir"
+		cp "$tdir/gridWalker.testrom" "$idir/gridWalker.testrom"
+		cp "$tdir/$tname.chimeraProject" "$idir/p.chimeraProject"
+		ijob="$work/job.input-polls.txt"
+		echo "meta=$idir/meta.txt" > "$ijob"
+		cp "$config" "$work/config.input-polls.ini"
+		( cd "$repo_root" && CHIMERA_JOB="$ijob" timeout 300 mono "$emu_exe" --headless \
+			"--config=$work/config.input-polls.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+			"--project=$idir/p.chimeraProject" "--lua=$here/synth-input-polls.lua" ) > "$idir/run.log" 2>&1
+		if grep -q "^status=OK" "$idir/meta.txt" 2>/dev/null; then
+			report "T:box:inputPolls" PASS "event.oninputpoll is called once in a frame the game reads its pad in, reads memory there, and stops when removed"
+		else
+			report "T:box:inputPolls" FAIL "$(sed -n 's/^detail=//p' "$idir/meta.txt" 2>/dev/null || echo "run failed") (see $idir/run.log)"
 		fi
 	fi
 

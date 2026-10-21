@@ -813,6 +813,13 @@ namespace Chimera.Emulation.Common.Waterbox
 			/// A core that declares axes must export it.
 			/// </summary>
 			public List<AxisConfig>? Axes { get; set; }
+
+			/// <summary>
+			/// A picture of this controller: a PNG's path inside the package
+			/// (<c>"pictures/pad.png"</c>), shown in Config &gt; Controls (issue 338). Optional;
+			/// its licence is declared in package-licenses.json like any other component's.
+			/// </summary>
+			public string? Picture { get; set; }
 		}
 
 		public sealed class AxisConfig

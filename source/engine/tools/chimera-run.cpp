@@ -64,6 +64,10 @@
  * safe point" does: the machine is put back on the newest stored frame
  * before it and the movie plays on from there, once. The machine must then
  * end where a run that never stopped ends (chimera#330).
+ * --count-input-polls counts the core's calls during its frames, one for each
+ * read of its controls (issue 344), and writes inputPolls=<count> into the
+ * results, with lagFrames=<count>, the frames it did not read them in; a core
+ * that does not report its reads writes inputPolls=none.
  * --record drives RECORD mode instead of playback: the given movie is only an
  * input source (each entry decoded to buttons/axes), the session generates the
  * log itself, and it is written to <out.txt>. Feeding that file back in as an
@@ -308,6 +312,9 @@ int main(int argc, char **argv)
 	int64_t seekFrame = -1;
 	bool stopAtSeek = false;
 	bool recoverStops = false;
+	bool countInputPolls = false;
+	int64_t inputPolls = 0;
+	int64_t lagFrames = 0;   /* frames the core did not read its controls in (the play loop's) */
 	std::string bands;
 	std::string spillDir;
 	int64_t greenzoneMb = 256;
@@ -441,6 +448,7 @@ int main(int argc, char **argv)
 		else if (arg == "--greenzone-period-at" && i + 1 < argc) greenzonePeriodAt = wholeNumber(argv[++i], arg);
 		else if (arg == "--stop-at-seek") stopAtSeek = true;
 		else if (arg == "--recover") recoverStops = true;
+		else if (arg == "--count-input-polls") countInputPolls = true;
 		else if (arg == "--record" && i + 1 < argc) recordPath = argv[++i];
 		else if (arg == "--record-key" && i + 1 < argc) recordKey = argv[++i];
 		else if (arg == "--settings" && i + 1 < argc) settings = argv[++i];
@@ -826,6 +834,8 @@ int main(int argc, char **argv)
 	if (session == nullptr) return fail(metaPath, error != nullptr ? error : "session open failed");
 
 	if (drawEveryFrame) ce_session_draw_every_frame(session, 1);
+	if (countInputPolls)
+		ce_session_set_input_poll_callback(session, [](void *ctx) { ++*static_cast<int64_t *>(ctx); }, &inputPolls);
 
 	int64_t frames = ce_movie_log_count(movie);
 
@@ -1067,8 +1077,10 @@ int main(int argc, char **argv)
 		auto shot = shots.find(i);
 		const bool unseen = probeUnseen && probeFrom >= 0 && i < probeFrom;
 		const bool finalFrame = !finalShot.empty() && i == frames - 1;   /* drawn for --final-screenshot */
-		if (ce_session_movie_advance(session, 0, axes,
-			((renderEveryFrame && !unseen) || shot != shots.end() || finalFrame) ? 1 : 0) < 0)
+		const int32_t advanced = ce_session_movie_advance(session, 0, axes,
+			((renderEveryFrame && !unseen) || shot != shots.end() || finalFrame) ? 1 : 0);
+		if (advanced > 0) lagFrames++;
+		if (advanced < 0)
 		{
 			/* --recover: back to the newest stored frame before the one the core
 			 * stopped in, as the frontend's CoreStoppedForm offers, and on */
@@ -1906,6 +1918,11 @@ int main(int argc, char **argv)
 	{
 		std::string meta = "status=OK\ndetail=\nframes=" + std::to_string(frames) + "\nstartframe=0\n";
 		if (recoverStops) meta += "recovered=" + std::to_string(recovered) + "\n";
+		if (countInputPolls)
+		{
+			meta += "inputPolls=" + (ce_session_input_polls_reported(session) ? std::to_string(inputPolls) : std::string("none")) + "\n";
+			meta += "lagFrames=" + std::to_string(lagFrames) + "\n";
+		}
 		if (!shortDumps.empty()) meta += "shortdumps=" + shortDumps + "\n";
 		// the display aspect the core reports for the last picture, when it does
 		int32_t ax = 0, ay = 0;

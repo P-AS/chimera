@@ -288,6 +288,12 @@ Advice earned the hard way:
     none of this.
   - `"header": "LX"` on each axis - its column's header, five characters at
     most.
+  - `"picture": "pictures/pad.png"` in an input declaration (the package's,
+    and each machine's) - a PNG of the controller inside the package, shown
+    beside the bindings in Config > Controls (issue 338). Draw it yourself or
+    take one that is free to redistribute, and name its file in a component
+    of `package-licenses.json` with its licence and source; the contract
+    tests refuse a picture that is missing, not a PNG, or unlicensed.
   - `"media": [ ... ]` - what a disc of yours needs that a plain image does
     not have, for Tools > Media Maker: `{ "id", "label", "format":
     "iso9660", "when": { "rootFile": "PS3_DISC.SFB" }, "systemArea": [ {
@@ -320,6 +326,18 @@ Advice earned the hard way:
 
 Probed once after `Init`; absent exports simply mean the tool is not offered.
 
+- **Calls during a frame: each read of the controls** (issue 344) -
+  `void SetInputPollCallback(uint64_t fn)`. The engine hands over a function
+  in one of miniBox's callback slots before `Init`; keep it in an
+  `ECL_INVISIBLE` variable (it is the same slot address in every session and
+  no savestate carries it) and call it - as
+  `((uintptr_t (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t,
+  uintptr_t))fn)(0, 0, 0, 0, 0, 0)` - each time the machine reads its
+  controls, where the core already notes the read for lag frames. A Lua
+  script's `event.oninputpoll` then runs there, part way through the frame;
+  a core without the export refuses it. The call costs nothing when no
+  script listens: the engine returns at once. The synthetic core
+  (`tests/synth/package-box/synth_wbx.c`) is the example.
 - **Memory domains** - a pointer and a size, published once. The memory tools
   read a domain through a second view of the core's memory that never faults,
   so a core that watches pages by protecting them (`GuestFaultHandler`, as

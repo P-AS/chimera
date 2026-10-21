@@ -10543,3 +10543,33 @@ the emulator cores, beside OpenBOR, and the roster no longer marks it a game.
 Its package still declares `"kind": "game"` in its own `waterbox.config`,
 which is what Chimera's windows go by; that is the core repository's to
 change.
+
+
+## A core may call back part way through a frame, at each read of its controls (user-decided, 2026-10-21)
+
+Every core runs in a sandbox that Chimera calls once a frame, so a Lua
+function could not run in the middle of a frame, and `event.oninputpoll`
+refused on every core (issue 341). Issue 344 asked for a mode that allows
+such calls. The owner chose to start with the reads of the controls, core by
+core, and to keep memory callbacks (`on_bus_*`) refused: they need a hook in
+each emulated CPU, which the recompiling cores cannot offer, and they slow
+emulation down.
+
+The way back out of the frame already existed: miniBox's callback slots,
+through which the GPU bridges and the code cache are reached. A core that
+exports `SetInputPollCallback` is handed the engine's function in slot 3 and
+calls it at each read of its controls. The engine keeps which session is
+running a frame on this thread, and calls the frontend's function
+(`ce_session_set_input_poll_callback`) from inside the frame; the call counts
+as the core's work for the frame watchdog. The waterbox core gives such a
+core input callbacks (`IInputPollable.InputCallbacks`), switched on in the
+engine only while a script has one registered; any other core still refuses
+`event.oninputpoll`, now saying it does not report its reads. A Lua function
+called there may read memory, and must not advance, save or load.
+
+The synthetic core reports each INPUT its machine executes. Tests: the
+witness's `E:input-polls` (`chimera-run --count-input-polls` counts one call
+for each frame that was not a lag frame, and the machine ends on the goldens)
+and `T:box:inputPolls` (a script in the real window registers
+`event.oninputpoll`, sees one call in a frame the game reads its pad in,
+reads memory from inside it, and no call once it is removed).

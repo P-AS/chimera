@@ -17,7 +17,8 @@ namespace Chimera.Tests.Client.Common.lua
 	{
 		private static readonly string[] Refused =
 		[
-			"on_bus_exec", "on_bus_exec_any", "on_bus_read", "on_bus_write", "oninputpoll",
+			// oninputpoll is not here: a core that reports its reads of the controls has it (issue 344)
+			"on_bus_exec", "on_bus_exec_any", "on_bus_read", "on_bus_write",
 			"onmemoryexecute", "onmemoryexecuteany", "onmemoryread", "onmemorywrite",
 		];
 

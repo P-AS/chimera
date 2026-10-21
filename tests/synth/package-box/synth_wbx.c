@@ -245,6 +245,8 @@ ECL_EXPORT void StateSaving(void)
 	g_toldAt = g_framesRun;
 }
 
+ECL_INVISIBLE static uintptr_t (*g_inputPoll)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t);
+
 ECL_EXPORT void FrameAdvance(uint64_t pad) {
 	/* frames DRAWN, not frames run: a renderer rebuilds what a load threw away
 	 * by drawing, so one told not to draw through a seek is as wrong on the
@@ -277,6 +279,18 @@ ECL_EXPORT void FrameAdvance(uint64_t pad) {
 	if ((uint8_t)pad == 0xFB) g_dieIn = 2;
 	if ((uint8_t)pad == 0xF7) g_dieIn = 3;
 	synth_frame(g_synth, (uint8_t)pad);
+}
+
+/* Calls during a frame (issue 344): the host's function, in a callback slot,
+ * called at each INPUT the machine executes - part way through the advance,
+ * as a core that reports its input reads does. Invisible: it is the same fixed
+ * slot address in every session, and no state carries it. */
+extern void (*synth_on_input)(void);
+static void input_polled(void) { if (g_inputPoll != 0) g_inputPoll(0, 0, 0, 0, 0, 0); }
+ECL_EXPORT void SetInputPollCallback(uint64_t fn)
+{
+	g_inputPoll = (uintptr_t (*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t))(uintptr_t)fn;
+	synth_on_input = g_inputPoll != 0 ? input_polled : 0;
 }
 
 /* Guest-memory pointers the host reads while active (RAM/VRAM/audio domains). */

@@ -1039,6 +1039,12 @@ namespace Chimera.Emulation.Common.Engine
 		public abstract void ce_session_set_button(IntPtr session, int index, int pressed);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_session_input_polls_reported(IntPtr session);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract void ce_session_set_input_poll_callback(IntPtr session, IntPtr fn, IntPtr ctx);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_session_savedata_available(IntPtr session);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -2922,6 +2928,42 @@ namespace Chimera.Emulation.Common.Engine
 
 		/// <summary>Buttons past the packed mask's 64 (wide controllers): set per frame, before the advance; values persist until changed.</summary>
 		public void SetButton(int index, bool pressed) => E.ce_session_set_button(Live, index, pressed ? 1 : 0);
+
+		/// <summary>Whether the core reports each read of its controls during a frame (issue 344).</summary>
+		public bool InputPollsReported => E.ce_session_input_polls_reported(Live) is not 0;
+
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+		private delegate void InputPollFn(IntPtr ctx);
+
+		/// <summary>The engine's hold on the callback below, kept alive while the engine may call it.</summary>
+		private InputPollFn? _inputPoll;
+
+		/// <summary>
+		/// Calls <paramref name="onPoll"/> at each read of the controls, part way through a frame,
+		/// on the advancing thread (issue 344); null stops the calls. What it throws is written to
+		/// the error output and goes no further: it must not cross into the engine.
+		/// </summary>
+		public void SetInputPollCallback(Action? onPoll)
+		{
+			if (onPoll is null)
+			{
+				E.ce_session_set_input_poll_callback(Live, IntPtr.Zero, IntPtr.Zero);
+				_inputPoll = null;
+				return;
+			}
+			_inputPoll = _ =>
+			{
+				try
+				{
+					onPoll();
+				}
+				catch (Exception e)
+				{
+					Console.Error.WriteLine($"an input poll callback failed: {e.Message}");
+				}
+			};
+			E.ce_session_set_input_poll_callback(Live, Marshal.GetFunctionPointerForDelegate(_inputPoll), IntPtr.Zero);
+		}
 
 		public bool SaveDataAvailable => E.ce_session_savedata_available(Live) is not 0;
 		/// <summary>Snapshots the guest's exportable files (the list is dynamic); names and sizes refer to this snapshot.</summary>
