@@ -8453,3 +8453,40 @@ answer as the Linux portal chooser, so `OpenFilePicker`, `SaveFilePicker` and
 `FolderBrowserEx` needed only to ask `SystemFileChooser` instead of the
 portal. docs/folder-picker.md has what it does with filters, the tick box,
 saving and focus.
+
+## On macOS, Vulkan is KosmicKrisp and the newer OpenGL is zink (user-decided, 2026-10-20)
+
+**What was decided.** On macOS the Vulkan bridge draws on Mesa's KosmicKrisp
+(Vulkan on Metal), and the OpenGL bridge on Mesa's zink (OpenGL on Vulkan)
+over KosmicKrisp, with Apple's OpenGL 4.1 kept for a Mac without Mesa. The
+owner asked for both.
+
+**Why.** Apple's OpenGL stops at 4.1, short of what PCSX2's OpenGL renderer
+needs (GL_ARB_shading_language_420pack). KosmicKrisp is conformant Vulkan
+1.4; MoltenVK, the other Vulkan on macOS, is a subset.
+
+**How.**
+- The OpenGL bridge loads Mesa's `libEGL.1.dylib` when a core asks, makes a
+  surfaceless context as on Linux, and falls back to CGL, saying why, when
+  it cannot. `CHIMERA_GL_APPLE=1` keeps to Apple's. It is loaded at run
+  time, so the build needs no Mesa and links nothing new.
+- KosmicKrisp has no geometry shaders and no transform feedback, so zink
+  says OpenGL 2.1 on it. The bridge sets `MESA_GL_VERSION_OVERRIDE=4.6` and
+  `MESA_GLSL_VERSION_OVERRIDE=460` (unless set), and zink says 4.6 with 212
+  extensions, 420pack among them. A renderer that uses one of the two
+  missing stages is refused when its shader compiles, not before. Chosen
+  here, not by the owner: without it zink cannot make the 3.3 context the
+  bridge asks for at all.
+- When the same GPU is listed by MoltenVK and KosmicKrisp, the Vulkan
+  bridge (miniBox) takes the one without `VK_KHR_portability_subset`. Zink
+  takes the loader's first device, so Mesa is built with a patch that makes
+  the same choice, and another that lets EGL's surfaceless platform load
+  zink with no DRM device. docs/macos.md says how Mesa is built.
+
+**Measured** (M1, macOS 27, Mesa 26.2.5, PCSX2 arm64 package, 1500 frames of
+a Klonoa 2 movie through `chimera-run --gpu`): `vulkan-hw` on KosmicKrisp
+58 s, `opengl-hw` on zink 61 s, `software` 64 s. The two hardware renderers'
+pictures at frames 1000 and 1499 agree in every pixel's colour. The
+engine's tests pass with Mesa and with Apple's OpenGL; miniBox's Vulkan
+bridge tests pass on KosmicKrisp, the six broken on purpose failing.
+

@@ -88,7 +88,9 @@ Two things have to be true, and either may not be:
    recognises any core's hardware renderer without knowing the core.
 2. **This build has a bridge, and a driver gives it a context.** `-Dgl_bridge`
    is on by default and needs EGL on Linux (`libegl-dev`) and `opengl32` on
-   Windows.
+   Windows. On macOS it needs nothing to build, and draws with Mesa's zink
+   when Mesa is installed and with Apple's OpenGL 4.1 when not
+   ([macos.md](macos.md), "Mesa").
 
 When either fails the core draws the way it draws without a GPU - the
 deterministic way - and the session simply does not claim otherwise. A run that

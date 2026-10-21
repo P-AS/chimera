@@ -15,7 +15,10 @@ runs, what it needs, and why it is put together this way.
   aarch64 package runs as built for Linux - miniBox's aarch64 machine keeps
   the guest's thread pointer in memory and leaves x18 alone, because macOS
   keeps neither for it (miniBox MACHINE-SPEC, "aarch64").
-- **The GPU bridge**, on a CGL context with no drawable (OpenGL 4.1 core).
+- **The GPU bridges.** OpenGL on zink, Mesa's OpenGL over Vulkan, when
+  Mesa is installed, and otherwise on Apple's CGL with no drawable (OpenGL
+  4.1 core). Vulkan on whatever Vulkan driver the machine has: Mesa's
+  KosmicKrisp, or MoltenVK. See "Mesa" below.
 - **Headless**: `chimera-run` (and `chimera-mcp` builds; the engine's MCP
   tests pass, its pipe included, but nothing has driven it here). The SRB2
   core's arm64 package plays through `chimera-run` here, records and replays
@@ -76,10 +79,10 @@ as on Linux on the same machine.
 
 What does not work yet:
 
-- PCSX2's `opengl-hw` renderer: it needs GL_ARB_shading_language_420pack
-  (OpenGL 4.2), and macOS stops at 4.1. Its `vulkan-hw` would need the Vulkan
-  bridge on macOS, which is not begun. The software renderer plays the same
-  run: no renderer changes the machine.
+- Without Mesa (below), PCSX2's `opengl-hw` renderer: it needs
+  GL_ARB_shading_language_420pack (OpenGL 4.2), and Apple's OpenGL stops at
+  4.1. The software renderer plays the same run: no renderer changes the
+  machine.
 - The display window takes no mouse input, does not go full screen with the
   interface, and moves on its own; closing it does nothing.
 - Two path helpers (`PathExtensions.IsSubfolderOf`, `GetRelativePath`) call
@@ -88,3 +91,62 @@ What does not work yet:
 - The interface tests run under XQuartz until XQuartz itself stops ("Could
   not destroy window"), about 95 tests in, at a test that re-opens a context
   menu.
+
+## Mesa: Vulkan and the newer OpenGL
+
+Apple's OpenGL stops at 4.1 and macOS has no Vulkan of its own. Mesa has
+both for Apple silicon (user-decided, 2026-10-20):
+
+- **KosmicKrisp**, Mesa's Vulkan driver on Metal (macOS 26 or later). It is
+  conformant Vulkan 1.4, unlike MoltenVK, which is a subset. The Vulkan
+  bridge draws on it: when the same GPU is listed by both, the bridge takes
+  the driver that is not a subset (`VK_KHR_portability_subset`).
+- **zink**, Mesa's OpenGL on Vulkan, on KosmicKrisp. The OpenGL bridge loads
+  Mesa's EGL (`libEGL.1.dylib`) when a core asks for the bridge and makes a
+  surfaceless context, as on Linux; if there is no Mesa, or it makes no
+  context, it uses Apple's OpenGL as before, and says why on stderr
+  (`chimera gl: ...; using Apple's OpenGL`). `CHIMERA_GL_APPLE=1` keeps to
+  Apple's.
+
+KosmicKrisp has no geometry shaders and no transform feedback (Mesa 26.2.5,
+and Mesa's main branch on 2026-10-20), so zink calls itself OpenGL 2.1 on it.
+Everything else of OpenGL 4.6 it has, so the bridge tells Mesa to say 4.6
+(`MESA_GL_VERSION_OVERRIDE=4.6`, `MESA_GLSL_VERSION_OVERRIDE=460`, unless
+they are already set). A renderer that uses one of the two missing stages
+finds out when it compiles the shader.
+
+Mesa is built from its release with two small patches, kept beside the build
+script (`build-mesa.sh` and `patches/` in the macOS working folder, outside
+this repository):
+
+- EGL's surfaceless platform loads zink without a DRM device (macOS has
+  none) without asking it for a software Vulkan device;
+- zink, like the Vulkan bridge, prefers a device that is not a portability
+  subset when MoltenVK and KosmicKrisp both list the GPU.
+
+Mesa's libraries go on `DYLD_FALLBACK_LIBRARY_PATH` (the build has no
+`libGL.dylib`, so nothing stands in for OpenGL.framework), and its
+KosmicKrisp manifest on `VK_ADD_DRIVER_FILES`:
+
+```sh
+export DYLD_FALLBACK_LIBRARY_PATH="<mesa>/lib:/opt/homebrew/lib:/usr/local/lib:/usr/lib"
+export VK_ADD_DRIVER_FILES="<mesa>/share/vulkan/icd.d/kosmickrisp_mesa_icd.aarch64.json"
+```
+
+Measured on an M1 (2026-10-20, macOS 27, Mesa 26.2.5, the PCSX2 core's arm64
+package, `chimera-run --gpu`, 1500 frames of a Klonoa 2 movie):
+
+- `vulkan-hw`: `chimera vk: Apple M1 (Vulkan 1.4.354, driver 26.2.5)`, with
+  MoltenVK installed too. 58 s; 11.9 s of it is KosmicKrisp compiling 173
+  pipelines.
+- `opengl-hw`: `chimera gl: 4.6 (Core Profile) Mesa 26.2.5 on zink Vulkan
+  1.4(Apple M1 (MESA_KOSMICKRISP))`. 61 s.
+- `software`: 64 s.
+- The two hardware renderers' pictures at frames 1000 and 1499 are the same
+  colour in every pixel. The software renderer's is the same at 1000; at
+  1499, 17% of pixels differ, nearly all by 8 in 255 or less.
+- The engine's tests pass with Mesa and with `CHIMERA_GL_APPLE=1`, and
+  miniBox's Vulkan bridge tests pass on KosmicKrisp.
+
+Not tried yet: the interface with a hardware renderer on Mesa (only
+`chimera-run` has run it), and a renderer that needs geometry shaders.
