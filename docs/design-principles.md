@@ -10277,3 +10277,28 @@ miniBox builds with GCC 15.
 
 Nothing in Chimera's own source changed: a roster row and the README's
 table of cores.
+
+
+## Going back after a core stopped partway is tested (2026-10-21)
+
+Issue 330: Halo on xemu was stopped at frame 3 with "the core did not finish
+a frame in 20 seconds", and after Chimera put the machine back on a stored
+frame the core crashed inside its own `malloc`. The stop had a plain cause in
+the core: at boot the Xbox BIOS sets the GPU's clock far ahead, and xemu
+stepped the GPU's timer alarm forward one 32-bit epoch per firing, 220
+million firings in frame 3, about ten seconds of host time on a GTX 1060
+machine and more than twenty on the reporters'. The frame watchdog, new on
+2026-10-19, saw no sign of life in that time. The xemu core now moves the
+alarm to the current epoch at once (its patch 0021), and the boot frame takes
+a moment.
+
+The crash after going back was not reproduced, so the path itself is now
+tested. `chimera-run --recover` answers a core that stops partway through a
+frame the way the frontend's "go back to the latest safe point" does: it
+restores the newest stored frame before the one that died and plays on, once.
+The witness test "core-recovers" stops the synthetic core in frame 5, after it
+has scribbled over its RAM and left a block of its heap written (a ROM ending
+STOPONCE), goes back to frame 3 and plays the movie to the end. The machine
+ends on the goldens, RAM and VRAM. With the synthetic core changed on purpose
+to keep one byte of the dead frame's writes after going back, the RAM differed
+and the test failed.

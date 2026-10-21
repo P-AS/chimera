@@ -59,6 +59,11 @@
  * --seek plays the movie to its end, seeks BACK to the given frame through
  * the greenzone, and plays to the end again - and that must not change
  * anything either.
+ * --recover answers a core that stops partway through a frame (it crashed,
+ * or the watchdog stopped it) the way the frontend's "go back to the latest
+ * safe point" does: the machine is put back on the newest stored frame
+ * before it and the movie plays on from there, once. The machine must then
+ * end where a run that never stopped ends (chimera#330).
  * --record drives RECORD mode instead of playback: the given movie is only an
  * input source (each entry decoded to buttons/axes), the session generates the
  * log itself, and it is written to <out.txt>. Feeding that file back in as an
@@ -302,6 +307,7 @@ int main(int argc, char **argv)
 	bool rerecord = false;
 	int64_t seekFrame = -1;
 	bool stopAtSeek = false;
+	bool recoverStops = false;
 	std::string bands;
 	std::string spillDir;
 	int64_t greenzoneMb = 256;
@@ -434,6 +440,7 @@ int main(int argc, char **argv)
 		else if (arg == "--greenzone-period" && i + 1 < argc) greenzonePeriod = wholeNumber(argv[++i], arg);
 		else if (arg == "--greenzone-period-at" && i + 1 < argc) greenzonePeriodAt = wholeNumber(argv[++i], arg);
 		else if (arg == "--stop-at-seek") stopAtSeek = true;
+		else if (arg == "--recover") recoverStops = true;
 		else if (arg == "--record" && i + 1 < argc) recordPath = argv[++i];
 		else if (arg == "--record-key" && i + 1 < argc) recordKey = argv[++i];
 		else if (arg == "--settings" && i + 1 < argc) settings = argv[++i];
@@ -852,7 +859,7 @@ int main(int argc, char **argv)
 	 * without one fails at the first pass with "no stored state at or before
 	 * the target frame". */
 	const bool greenzoneOn = seekFrame >= 0 || rewindTo >= 0 || keptCheck >= 0 || (probeFrom >= 0 && !probeByState) || !historyIn.empty() || !historyOut.empty() || !greenzoneMap.empty()
-		|| greenzoneBytes > 0 || greenzonePeriod >= 0;
+		|| greenzoneBytes > 0 || greenzonePeriod >= 0 || recoverStops;
 	const uint64_t greenzoneBudget = greenzoneBytes > 0 ? (uint64_t)greenzoneBytes : (uint64_t)greenzoneMb << 20;
 	if (greenzoneOn && !historyIn.empty() && (!stateIn.empty() || !stateFileIn.empty()))
 		return fail(metaPath, "--history-in describes the machine the movie starts from, and --state replaces that machine: they cannot be used together");
@@ -1038,6 +1045,7 @@ int main(int argc, char **argv)
 	const int64_t firstPass = playFrames >= 0 && playFrames < frames ? playFrames : frames;
 	FILE *rates = ratesPath.empty() ? nullptr : chimera::openFile(ratesPath.c_str(), "w");
 	if (!ratesPath.empty() && rates == nullptr) return fail(metaPath, "could not write " + ratesPath);
+	int recovered = 0;   /* --recover: how often the machine was put back */
 	for (int64_t i = 0; i < firstPass; i++)
 	{
 		if (greenzonePeriod >= 0 && i == greenzonePeriodAt) ce_session_greenzone_capture_period(session, greenzonePeriod);
@@ -1062,6 +1070,22 @@ int main(int argc, char **argv)
 		if (ce_session_movie_advance(session, 0, axes,
 			((renderEveryFrame && !unseen) || shot != shots.end() || finalFrame) ? 1 : 0) < 0)
 		{
+			/* --recover: back to the newest stored frame before the one the core
+			 * stopped in, as the frontend's CoreStoppedForm offers, and on */
+			if (recoverStops && recovered == 0)
+			{
+				const int64_t stoppedAt = ce_session_frame(session);
+				const int64_t safe = ce_session_greenzone_nearest(session, stoppedAt > 0 ? stoppedAt - 1 : 0);
+				std::fprintf(stderr, "chimera-run: the core stopped at frame %lld (%s); back to frame %lld\n",
+					(long long)stoppedAt, ce_session_last_error(session), (long long)safe);
+				if (safe >= 0 && ce_session_greenzone_restore(session, safe) == 0)
+				{
+					recovered++;
+					i = safe - 1;
+					continue;
+				}
+				std::fprintf(stderr, "chimera-run: could not go back: %s\n", ce_session_last_error(session));
+			}
 			/* as fail(), and how many frames were done when it stopped: a frame
 			 * the core died in is not one of them (the witness's E:core-dies-*) */
 			const std::string detail = ce_session_last_error(session);
@@ -1881,6 +1905,7 @@ int main(int argc, char **argv)
 	if (!metaPath.empty())
 	{
 		std::string meta = "status=OK\ndetail=\nframes=" + std::to_string(frames) + "\nstartframe=0\n";
+		if (recoverStops) meta += "recovered=" + std::to_string(recovered) + "\n";
 		if (!shortDumps.empty()) meta += "shortdumps=" + shortDumps + "\n";
 		// the display aspect the core reports for the last picture, when it does
 		int32_t ax = 0, ay = 0;

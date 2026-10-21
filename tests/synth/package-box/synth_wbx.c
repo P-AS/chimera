@@ -97,6 +97,33 @@ static void slow_first(void) {
 	fprintf(stderr, "synth: a long first frame\n");
 	for (uint32_t i = 0; i < (1u << 31); i++) g_spun++;
 }
+/* A rom ending in STOPONCE: the frame the session stops partway, and what it
+ * left behind (chimera#330). In frame 5 the core scribbles over the
+ * machine's RAM and leaves a block of its heap allocated and written, then
+ * loops in its own code until the session's watchdog stops it - the first
+ * time only (invisible: no state remembers it). Every frame also allocates
+ * and frees a block whose size changes, so the heap's own bookkeeping is in
+ * every state. A machine put back on an earlier stored frame must carry none
+ * of the dead frame's writes: played on, it ends on the goldens. */
+static uint32_t g_framesRun;           /* defined with StateSaving, below */
+static int g_stopOnce;
+ECL_INVISIBLE static int g_stoppedOnce;
+static void *g_leftBehind;
+static void heap_churn(void) {
+	if (!g_stopOnce) return;
+	size_t n = 100 + (g_framesRun % 50) * 64;
+	uint8_t *q = malloc(n);
+	if (q) { memset(q, (int)g_framesRun, n); free(q); }
+}
+static void stop_once(void) {
+	if (!g_stopOnce || g_stoppedOnce || g_framesRun != 5) return;
+	g_stoppedOnce = 1;
+	memset(synth_get_ram(g_synth), 0xA5, 4096);
+	g_leftBehind = malloc(65536);
+	if (g_leftBehind) memset(g_leftBehind, 0x5A, 65536);
+	fprintf(stderr, "synth: frame 5 scribbled and stuck on purpose\n");
+	for (;;) g_spun++;
+}
 ECL_EXPORT void SetCacheBridge(uint64_t fn) { g_cache = (cache_bridge_fn)(uintptr_t)fn; }
 static void cache_work(void) {
 	static const char name[] = "synth/never-stored";
@@ -128,6 +155,7 @@ ECL_EXPORT int Init(void) {
 	if (len >= 9 && memcmp(rom + len - 9, "SPINFRAME", 9) == 0) g_spinFrame = 3;
 	if (len >= 9 && memcmp(rom + len - 9, "CACHEWORK", 9) == 0) g_cacheWorkFrame = 3;
 	if (len >= 9 && memcmp(rom + len - 9, "SLOWFIRST", 9) == 0) g_slowFirst = g_slowNext = 1;
+	if (len >= 8 && memcmp(rom + len - 8, "STOPONCE", 8) == 0) g_stopOnce = 1;
 	g_synth = synth_create(rom, len);   /* copies the rom internally */
 	free(rom);
 	if (!g_synth) return 0;
@@ -228,6 +256,8 @@ ECL_EXPORT void FrameAdvance(uint64_t pad) {
 		for (;;) g_spun++;
 	if (g_cacheWorkFrame != 0 && g_framesRun == g_cacheWorkFrame) cache_work();
 	slow_first();
+	heap_churn();
+	stop_once();
 	if (g_watchedOpen) {
 		mprotect(g_watchedPage, 4096, PROT_NONE);
 		g_watchedOpen = 0;

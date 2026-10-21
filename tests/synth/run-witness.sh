@@ -667,6 +667,32 @@ json.dump(d, open(p, 'w'))
 			report "E:first-frame-time" PASS "the first frame after starting and after a load ($slow_frames of them) has the start's time, not a frame's"
 		fi
 
+		# A FRAME STOPPED PARTWAY, AND THE MACHINE PUT BACK (chimera#330). A
+		# core stopped in the middle of a frame - by the watchdog, here - may
+		# have written anywhere before it stopped: the machine's RAM, its heap.
+		# The frontend then offers to go back to the latest stored frame
+		# (CoreStoppedForm), and chimera-run --recover does the same. A rom
+		# ending in STOPONCE scribbles over the machine's RAM and leaves a block
+		# of its heap written in frame 5, and loops there until it is stopped,
+		# once; put back on frame 3 and played on, the machine must end on the
+		# goldens, every byte the dead frame wrote gone.
+		cat "$here/roms/gridWalker.testrom" > "$work/stop-once.testrom"
+		printf 'STOPONCE' >> "$work/stop-once.testrom"
+		rm -f "$work/stop-once.meta.txt" "$work/stop-once.ram.bin" "$work/stop-once.vram.bin"
+		CHIMERA_FRAME_TIMEOUT_MS=500 timeout 120 "$chimera_run" "$epkg" "$work/stop-once.testrom" "$here/movies/gridWalker.win.txt" \
+			--recover --dump "RAM=$work/stop-once.ram.bin" --dump "VRAM=$work/stop-once.vram.bin" \
+			--meta "$work/stop-once.meta.txt" > "$work/stop-once.log" 2>&1; sorc=$?
+		if [ "$sorc" -ne 0 ] || ! grep -q "^status=OK$" "$work/stop-once.meta.txt" 2>/dev/null; then
+			report "E:core-recovers" FAIL "the run did not go on after the stop: rc=$sorc $(grep '^detail=' "$work/stop-once.meta.txt" 2>/dev/null) $(grep 'chimera-run:' "$work/stop-once.log" | tail -1 | cut -c1-160)"
+		elif ! grep -q "^recovered=1$" "$work/stop-once.meta.txt"; then
+			report "E:core-recovers" FAIL "the core was not stopped and put back once: $(grep '^recovered=' "$work/stop-once.meta.txt")"
+		elif ! cmp -s "$work/stop-once.ram.bin" "$golden_dir/gridWalker.win.ram.bin" \
+		     || ! cmp -s "$work/stop-once.vram.bin" "$golden_dir/gridWalker.win.vram.bin"; then
+			report "E:core-recovers" FAIL "put back after the stop, the machine did not end on the goldens: what the dead frame wrote survived"
+		else
+			report "E:core-recovers" PASS "a frame stopped after scribbling over RAM and the heap, the machine put back on the frame before it, played on: it ends on the goldens"
+		fi
+
 		# THE CORE LOG (ce_core_log, Tools > Export Core Log... in the frontend):
 		# asked for, it starts a file saying when and by which Chimera, notes
 		# the session's core package, and keeps everything the core writes - the
