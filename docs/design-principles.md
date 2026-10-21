@@ -10265,8 +10265,27 @@ a load before every step change nothing, and a new process finishes each
 run from a state half way through. Every check new to this core was seen to
 fail when what it checks was broken. Package checks: 22 passed, here and in
 the core's CI; the first published build is "Development build 039785ef".
-Not yet run: the frontend gate (the core in Chimera's window, a movie
-recorded there and replayed on Windows).
+
+The frontend gate ran the same day, on that build's nightly package and
+Chimera's own bundles of this commit (e5dd821f): the exhibition's 31,200
+frames end on the native reference's memory through `chimera-run` (a build
+of the commit before; the bundles carry none), in Chimera's window
+(headless), in a new Chimera playing the project the first
+one saved, and in the Windows build playing that saved project; the
+property library, the core's refusal of a start date that is not a date
+and the package's keybinds reach the frontend, and nothing is written in
+Chimera's folder or its default data home. 10 checks passed, each seen to
+fail on a break of its own. The Windows build ran under Wine 10.0 on Linux,
+not on a Windows machine, and three things it needed there are Chimera's
+to know. Microsoft's .NET Framework 4.8 in the prefix: on Wine Mono 9.4.0
+Chimera died inside Mono's runtime as it booted the core in 3 of 6 runs, on
+.NET 4.8 in none of 7. On a machine with more than 255 CPUs (jaffanator2
+has 256) Wine tells Windows programs there are none - the count wraps in a
+byte - and Chimera stopped before its first window, in a
+ConcurrentDictionary given a concurrency level of 0; a preloaded `sysconf`
+that says 8 got past it. And headless under Wine, Chimera's first window
+does not bring up Wine's desktop, so the OpenGL probe failed ("no driver
+could be loaded") until something had brought the desktop up first.
 
 Found on the way: on a host with GCC 15 (Ubuntu 26.04), miniBox's C++
 guest toolchain does not build. GCC 15 compiles C as C23, where the guest
