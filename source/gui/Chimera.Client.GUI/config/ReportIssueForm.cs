@@ -27,15 +27,18 @@ namespace Chimera.Client.GUI
 		private readonly Label _status;
 		private readonly byte[]? _gamePicturePng;
 		private readonly IReadOnlyList<string> _paths;
+		private readonly string? _zipFolder;
 
 		protected override string WindowTitleStatic => "Report an Issue";
 
 		/// <param name="reportText">what <see cref="IssueReport.Text"/> made of this session</param>
 		/// <param name="filesToAttach">the files worth attaching that exist on this computer</param>
 		/// <param name="gamePicturePng">the game's picture as a PNG, or null when no game is running</param>
-		public ReportIssueForm(string reportText, IReadOnlyList<string> filesToAttach, byte[]? gamePicturePng = null)
+		/// <param name="zipFolder">where Save as Zip opens: Config > Paths, Bug reports (issue 340); null is the desktop</param>
+		public ReportIssueForm(string reportText, IReadOnlyList<string> filesToAttach, byte[]? gamePicturePng = null, string? zipFolder = null)
 		{
 			_paths = filesToAttach;
+			_zipFolder = zipFolder;
 			_gamePicturePng = gamePicturePng is { Length: > 0 } ? gamePicturePng : null;
 			SuspendLayout();
 			ClientSize = new(UIHelper.ScaleX(680), UIHelper.ScaleY(560));
@@ -198,10 +201,33 @@ namespace Chimera.Client.GUI
 				OverwritePrompt = true,
 				Title = "Save the report's files as one zip",
 			};
-			var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-			if (!string.IsNullOrEmpty(desktop) && Directory.Exists(desktop)) dialog.InitialDirectory = desktop;
+			var folder = ZipFolder();
+			if (folder is not null) dialog.InitialDirectory = folder;
 			if (dialog.ShowDialog(this) is not DialogResult.OK) return;
 			SaveZip(dialog.FileName);
+		}
+
+		/// <summary>
+		/// The folder Save as Zip opens in: the Bug reports path, made when it is
+		/// not there yet, or the desktop when there is no such path or it cannot be
+		/// made. Null when neither is there. Public so a test can ask.
+		/// </summary>
+		public string? ZipFolder()
+		{
+			if (!string.IsNullOrEmpty(_zipFolder))
+			{
+				try
+				{
+					Directory.CreateDirectory(_zipFolder);
+					return _zipFolder;
+				}
+				catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+				{
+					// a folder that cannot be made: the desktop, as before
+				}
+			}
+			var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+			return !string.IsNullOrEmpty(desktop) && Directory.Exists(desktop) ? desktop : null;
 		}
 
 		/// <summary>

@@ -213,6 +213,13 @@ namespace Chimera.Client.Common
 			return collection.AbsolutePathFor(path, null);
 		}
 
+		/// <summary>Where Report a Bug's Save as Zip opens: Config > Paths, Bug reports (issue 340).</summary>
+		public static string BugReportsAbsolutePath(this PathEntryCollection collection)
+		{
+			var path = collection[PathEntryCollection.GLOBAL, "Bug reports"].Path;
+			return collection.AbsolutePathFor(path, null);
+		}
+
 		public static string ToolsAbsolutePath(this PathEntryCollection collection)
 		{
 			var path = collection[PathEntryCollection.GLOBAL, "Tools"].Path;

@@ -110,6 +110,8 @@ namespace Chimera.Client.Common
 				new(GLOBAL, "Themes", Path.Combine(".", "Themes")),
 				new(GLOBAL, "Watch (.wch)", Path.Combine(".", ".")),
 				new(GLOBAL, "Debug Logs", Path.Combine(".", "")),
+				// where Report a Bug's Save as Zip opens (issue 340, user-decided 2026-10-21)
+				new(GLOBAL, "Bug reports", Path.Combine(".", "Reports")),
 				new(GLOBAL, "Macros", Path.Combine(".", "Movies", "Macros")),
 				new(GLOBAL, "Temp Files", ""),
 			},

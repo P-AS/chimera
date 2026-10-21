@@ -34,6 +34,7 @@ namespace Chimera.Client.Common
 				"Watch (.wch)" => 0x16,
 				"Debug Logs" => 0x17,
 				"Macros" => 0x18,
+				"Bug reports" => 0x19,
 				"External Tools" => 0x1B,
 				"Temp Files" => 0x1C,
 

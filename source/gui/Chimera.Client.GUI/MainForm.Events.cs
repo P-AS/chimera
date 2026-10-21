@@ -1078,7 +1078,7 @@ namespace Chimera.Client.GUI
 		/// </summary>
 		private void ReportIssueMenuItem_Click(object sender, EventArgs e)
 		{
-			using ReportIssueForm form = new(IssueReportOfThisSession(), IssueFilesOfThisSession(), GamePictureForAReport());
+			using ReportIssueForm form = new(IssueReportOfThisSession(), IssueFilesOfThisSession(), GamePictureForAReport(), Config.PathEntries.BugReportsAbsolutePath());
 			this.ShowDialogWithTempMute(form);
 		}
 

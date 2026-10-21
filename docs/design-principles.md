@@ -10487,3 +10487,19 @@ at about 29.
 
 Nothing in Chimera's own source changed: a roster row and the README's
 table of cores.
+
+
+## Bug report zips go to a Bug reports folder (user-decided, 2026-10-21)
+
+Report a Bug's Save as Zip opened on the desktop every time, and the person
+browsed to Chimera's folder each time (issue 340). Config > Paths now has a
+Bug reports entry, by default a Reports folder in Chimera's base folder, as
+Screenshots is; Save as Zip opens there, making the folder when it is not
+there yet, and falls back to the desktop when it cannot be made. The owner
+chose this over opening in Chimera's folder and remembering the last folder
+used, and over remembering only. A configuration saved before gets the entry
+when it is read (missing global entries are added from the defaults).
+
+Test: `SaveAsZipOpensInTheBugReportsFolder` finds the default path to be
+Reports in the base folder, and the folder made and used; with the folder
+ignored it failed.

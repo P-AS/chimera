@@ -34,6 +34,33 @@ namespace Chimera.Tests.Client.GUI
 			StringAssert.StartsWith(form.StatusText, "No saved project, crash note or log was found");
 		}
 
+		/// <summary>
+		/// Save as Zip opens in Config > Paths' Bug reports folder, a Reports folder in Chimera's
+		/// own by default, made when it is not there yet (issue 340). It used to open on the
+		/// desktop.
+		/// </summary>
+		[TestMethod]
+		public void SaveAsZipOpensInTheBugReportsFolder()
+		{
+			PathEntryCollection paths = new();
+			var reports = paths.BugReportsAbsolutePath();
+			Assert.AreEqual("Reports", Path.GetFileName(reports.TrimEnd(Path.DirectorySeparatorChar)));
+			Assert.AreEqual(Path.GetFullPath(Path.Combine(paths.GlobalBaseAbsolutePath(), "Reports")), Path.GetFullPath(reports));
+
+			var root = Path.Combine(Path.GetTempPath(), "chimera-report-folder-" + Path.GetRandomFileName());
+			try
+			{
+				var folder = Path.Combine(root, "Reports");
+				using ReportIssueForm form = new("**Chimera build:** x", [ ], zipFolder: folder);
+				Assert.AreEqual(folder, form.ZipFolder());
+				Assert.IsTrue(Directory.Exists(folder), "the folder was not made");
+			}
+			finally
+			{
+				if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+			}
+		}
+
 		[TestMethod]
 		public void TheZipHoldsTheTextAndOnlyWhatIsTicked()
 		{
