@@ -369,11 +369,10 @@ namespace Chimera.Client.GUI
 			Frameskip7MenuItem.Checked = Config.FrameSkip == 7;
 			Frameskip8MenuItem.Checked = Config.FrameSkip == 8;
 			Frameskip9MenuItem.Checked = Config.FrameSkip == 9;
+			// greyed out at Never skip, where it has no effect (the throttle leaves its
+			// controller off there, issue 346), and showing the real setting: it used
+			// to show a tick whatever the setting was (issue 347)
 			MinimizeSkippingMenuItem.Enabled = !NeverSkipMenuItem.Checked;
-			if (!MinimizeSkippingMenuItem.Enabled)
-			{
-				MinimizeSkippingMenuItem.Checked = true;
-			}
 
 			AudioThrottleMenuItem.Enabled = Config.SoundEnabled;
 			AudioThrottleMenuItem.Checked = Config.SoundThrottle;

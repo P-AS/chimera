@@ -82,7 +82,12 @@ namespace Chimera.Client.GUI
 				SpeedThrottle(sound, signal_paused);
 			}
 
-			if (signal_unthrottle || !config.AutoMinimizeSkipping)
+			// The auto frame skip's controller only at a frame skip that can skip
+			// (issue 346). At Never skip it can skip nothing, and its one effect was
+			// the credit it gives the timetable after a slow frame (ltime, below):
+			// on top of the timetable's own catch-up that ran the core faster than
+			// its rate - 24.4 frames a second for a 24 one.
+			if (signal_unthrottle || !config.AutoMinimizeSkipping || skipRate == 0)
 			{
 				if (framesToSkip < 1)
 					framesToSkip += skipRate;
