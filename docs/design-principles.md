@@ -10233,3 +10233,47 @@ Tested:
   nothing was stopped. The 600 frames the test asked for took about 18
   minutes, 16 of them in the core while it compiled (201 pieces stored).
   With the engine before this change the same run stopped 40 seconds in.
+
+
+## Open4DBoxing joins the official cores: 4D Sports Boxing (user-decided, 2026-10-21)
+
+The owner asked for a core of Open4DBoxing, a reconstruction of 4D Sports
+Boxing (Distinctive Software, DOS, 1991), and then for it to be published.
+The game's four programs, one for each video card (MCGA, EGA, CGA and
+Tandy), are recompiled whole from their machine code into C, on a model of
+the PC they expect: the timer chip, the BIOS, DOS, the sound cards, and an
+MT-32 through Munt.
+
+`chimera-core-open4dboxing` is built the way the OpenSamurai core is: the
+game runs on a stack of its own inside the core, and each video frame it
+passes ends a step - 70.086 Hz for the MCGA program, 59.92 Hz for the
+others; which program runs is a setting. The user's two floppy images are
+firmware, read in memory and never written; the files the game writes live
+in the core's memory, so a savestate carries them. Nothing reads the host's
+clock: the game's clocks go by the instructions it runs, and the date and
+time it starts at is a setting. The controls are the mouse (its buttons,
+and its place as two axes in the picture's pixels) and the 55 keys the game
+reads. Properties - each boxer's health, stamina and endurance, whether a
+boxer is down, the punches thrown and landed, the name the manual's question
+asks for - are given for the MCGA program, whose data the reconstruction
+maps.
+
+Tested on the owner's floppies, which CI does not have: native and sandbox
+agree on every step of six runs (the title; an exhibition bout from the
+title into the ring; the EGA, CGA and Tandy titles; the MT-32), a save and
+a load before every step change nothing, and a new process finishes each
+run from a state half way through. Every check new to this core was seen to
+fail when what it checks was broken. Package checks: 22 passed, here and in
+the core's CI; the first published build is "Development build 039785ef".
+Not yet run: the frontend gate (the core in Chimera's window, a movie
+recorded there and replayed on Windows).
+
+Found on the way: on a host with GCC 15 (Ubuntu 26.04), miniBox's C++
+guest toolchain does not build. GCC 15 compiles C as C23, where the guest
+musl's `char *basename();` declares a function of no arguments, and
+libbacktrace stops there. GitHub's `ubuntu-latest` was still 24.04 on
+2026-10-20; the core's CI names `ubuntu-24.04` so that it stays there until
+miniBox builds with GCC 15.
+
+Nothing in Chimera's own source changed: a roster row and the README's
+table of cores.

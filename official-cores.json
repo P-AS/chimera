@@ -554,6 +554,16 @@
       "tested": ""
     },
     {
+      "id": "open4dboxing",
+      "name": "Open4DBoxing",
+      "systems": [
+        { "id": "4DSportsBoxing", "name": "4D Sports Boxing" }
+      ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-open4dboxing",
+      "tested": ""
+    },
+    {
       "id": "srb2",
       "name": "SRB2",
       "systems": [

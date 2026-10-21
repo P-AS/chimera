@@ -98,6 +98,7 @@ One game each, run from the game's own files ([docs/game-cores.md](docs/game-cor
 | [RSDKv4](https://github.com/ToolAssisted-run/chimera-core-rsdkv4) | Sonic the Hedgehog and Sonic the Hedgehog 2 (the 2013 remasters) |
 | [RSDKv5](https://github.com/ToolAssisted-run/chimera-core-rsdkv5) | Sonic Mania |
 | [DSDA-Doom](https://github.com/ToolAssisted-run/chimera-core-dsda) | Doom, Doom II, Final Doom, Heretic, Hexen, Chex Quest, Freedoom |
+| [Open4DBoxing](https://github.com/ToolAssisted-run/chimera-core-open4dboxing) | 4D Sports Boxing (DOS) |
 | [SRB2](https://github.com/P-AS/chimera-core-srb2) | Sonic Robo Blast 2 |
 
 SRB2 is published by its author, P-AS, from their own repository.
