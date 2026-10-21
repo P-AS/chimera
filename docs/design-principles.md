@@ -10372,3 +10372,23 @@ and described as not available, that a script guarding `on_bus_read` with
 reason once on the first line. `LuaFunctionsCopyTests` checks the copied text.
 Each failed once on purpose: with `on_bus_read` unmarked, with NLua's old
 message, and with `//` put back.
+
+
+## Config > Firmware keeps its place on a rescan (2026-10-21)
+
+Scan Folder, Rescan and Set File in Config > Firmware build the list again,
+and it went back to its first row, so after a scan the person scrolled down
+again to see whether the file they wanted was found (issue 348). The window
+now notes the row drawn halfway down the list and how far down it is drawn,
+and after the rebuild brings the same row back to the same place (the row at
+the same position when that row is gone). Halfway rather than the top row:
+on Mono a row scrolled under the column headings still answers a hit test
+there, which put the list two rows off. The list can only be scrolled by
+bringing a row into view, so the row put at the top is corrected until the
+noted row is back within a row of its place.
+
+Test: `ARescanKeepsTheListWhereItWasScrolled` scrolls 80 rows to row 50,
+rescans, and finds the same row at the same height; with a row removed
+further up, the same row (now one index earlier) is still at that height.
+It passes on Mono and on Windows' .NET Framework 4.8 (the test program run
+there), and failed on Mono with the scroll-back call removed.

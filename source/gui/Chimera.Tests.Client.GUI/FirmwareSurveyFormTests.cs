@@ -137,6 +137,42 @@ namespace Chimera.Tests.Client.GUI
 			Assert.AreEqual("release 0", h.Remembered[1].Row.Decl.Label);
 		}
 
+		/// <summary>
+		/// Rescan, Scan Folder and Set File build the list again; the list stays where the reader
+		/// had scrolled it, rather than going back to its first row (issue 348).
+		/// </summary>
+		[TestMethod]
+		public void ARescanKeepsTheListWhereItWasScrolled()
+		{
+			var groups = Enumerable.Range(0, 40)
+				.Select(static i => new FirmwareSurveyGroup
+				{
+					CoreName = $"core{i:D2}",
+					Rows = [ Row($"core{i:D2}", "bios", null, CoreFirmwareState.Missing), Row($"core{i:D2}", "disk", null, CoreFirmwareState.Missing) ],
+				})
+				.ToArray();
+			using Harness h = new(groups);
+			var list = ListOf(h.Form);
+			list.EnsureVisible(list.Items.Count - 1);
+			list.EnsureVisible(50);
+			var before = h.Form.ScrollAnchor()!.Value;
+			Assert.IsTrue(before.Index > 50, $"the test did not scroll the list down (row {before.Index} halfway down)");
+			var anchorRow = h.Form.DisplayedRows[before.Index];
+
+			h.Form.Controls.OfType<Button>().Single(static b => b.Text == "Rescan").PerformClick();
+			Assert.AreEqual(before, h.Form.ScrollAnchor(), "a rescan moved the list");
+
+			// a row fewer further up: the same row stays where it was drawn
+			h.Groups = groups.Select(static g => g.CoreName == "core01"
+				? new FirmwareSurveyGroup { CoreName = g.CoreName, Rows = [ g.Rows[0] ] }
+				: g).ToArray();
+			h.Form.Populate();
+			var after = h.Form.ScrollAnchor()!.Value;
+			Assert.AreEqual(before.Index - 1, after.Index, "not the same row halfway down");
+			Assert.AreSame(anchorRow.Decl, h.Form.DisplayedRows[after.Index].Decl);
+			Assert.AreEqual(before.Y, after.Y);
+		}
+
 		[TestMethod]
 		public void APickThatIsCancelledChangesNothing()
 		{

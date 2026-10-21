@@ -235,6 +235,9 @@ namespace Chimera.Client.GUI
 		private void Render()
 		{
 			var selected = SelectedRow;
+			// a row in view and where it is drawn, so a rescan keeps the reader's place (issue 348)
+			var anchor = ScrollAnchor();
+			var anchorRow = anchor is { } a && a.Index < _rowOf.Count ? _rowOf[a.Index] : null;
 			_list.BeginUpdate();
 			_list.Items.Clear();
 			_list.Groups.Clear();
@@ -293,7 +296,52 @@ namespace Chimera.Client.GUI
 				}
 			}
 			_list.EndUpdate();
+			if (anchor is { } was) ScrollBack(anchorRow, was.Index, was.Y);
 			UpdateDetail();
+		}
+
+		/// <summary>
+		/// The row drawn halfway down the list (or the nearest one above it), and how far down it is
+		/// drawn, or null for an empty list. Halfway rather than at the top edge: a row scrolled
+		/// under the column headings still answers to a point there. Public so a test can read
+		/// where the list is scrolled to.
+		/// </summary>
+		public (int Index, int Y)? ScrollAnchor()
+		{
+			if (_list.Items.Count is 0 || !_list.IsHandleCreated) return null;
+			var x = _list.ClientSize.Width / 3;
+			for (var y = _list.ClientSize.Height / 2; y >= 0; y -= 2)
+			{
+				var item = _list.GetItemAt(x, y);
+				if (item is not null) return (item.Index, item.Bounds.Top);
+			}
+			return null;
+		}
+
+		/// <summary>
+		/// After the list was built again, draws the anchor row where it was: the same row when it
+		/// is still listed, or else the row at the same place. The list scrolls only to bring a
+		/// row into view, and a row brought in from below stops at the top, so the row put at the
+		/// top is corrected until the anchor is back within a row of where it was.
+		/// </summary>
+		private void ScrollBack(FirmwareSurveyRow? row, int index, int y)
+		{
+			var at = row is null ? -1 : _rowOf.FindIndex(r => r is not null && SameRow(r, row));
+			if (at < 0) at = Math.Min(index, _list.Items.Count - 1);
+			if (at < 0) return;
+			var rowHeight = Math.Max(1, _list.Items[at].Bounds.Height);
+			if (Math.Abs(y - _list.Items[at].Bounds.Top) < rowHeight / 2) return; // the list was not scrolled
+			var top = at;
+			for (var tries = 0; tries < 4; tries++)
+			{
+				_list.EnsureVisible(_list.Items.Count - 1);
+				_list.EnsureVisible(top);
+				var off = y - _list.Items[at].Bounds.Top;
+				if (Math.Abs(off) < rowHeight / 2) return;
+				var next = Math.Max(0, top - (int) Math.Round((double) off / rowHeight));
+				if (next == top) return;
+				top = next;
+			}
 		}
 
 		private static bool SameRow(FirmwareSurveyRow a, FirmwareSurveyRow b)

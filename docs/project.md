@@ -293,7 +293,9 @@ firmware there and the Firmware folder named in Config > Paths does not
 exist (as on a new install: nothing creates it), the scanned folder
 becomes the Firmware folder (issue 293), so the next scan opens there and
 Config > Paths says where the files are. A folder the person made and
-named is never replaced. A per-item Select File button
+named is never replaced. In Config > Firmware, Scan Folder, Rescan and Set
+File keep the list where it was scrolled, so the row being looked at stays
+in view (issue 348). A per-item Select File button
 covers what the folder could not - allowed even when something was
 found - and only the exact file satisfies, except for a game core, whose
 firmware may be a file of the project's own (docs/game-cores.md): that is
