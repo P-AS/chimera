@@ -2945,6 +2945,13 @@ namespace Chimera.Emulation.Common.Engine
 		/// </summary>
 		public void SetInputPollCallback(Action? onPoll)
 		{
+			// a closed core reads nothing more: a script whose function is taken off as Chimera
+			// closes reaches here after the core is gone, and there is nothing to start or stop
+			if (Disposed)
+			{
+				_inputPoll = null;
+				return;
+			}
 			if (onPoll is null)
 			{
 				E.ce_session_set_input_poll_callback(Live, IntPtr.Zero, IntPtr.Zero);

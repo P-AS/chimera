@@ -1770,7 +1770,9 @@ GZPY
 	# The synth reports each INPUT its machine executes, part way through the
 	# frame. A script registers event.oninputpoll, sees it called once in a frame
 	# the game reads its pad in, reading the machine's memory from inside it,
-	# and no more once it is removed.
+	# and no more once it is removed. It leaves another registered, and Chimera
+	# must close without an error (it once failed taking that function off the
+	# core it had already closed).
 	if [ "$record" -eq 0 ]; then
 		idir="$work/input-polls-leg"
 		rm -rf "$idir" && mkdir -p "$idir"
@@ -1782,8 +1784,10 @@ GZPY
 		( cd "$repo_root" && CHIMERA_JOB="$ijob" timeout 300 mono "$emu_exe" --headless \
 			"--config=$work/config.input-polls.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 			"--project=$idir/p.chimeraProject" "--lua=$here/synth-input-polls.lua" ) > "$idir/run.log" 2>&1
-		if grep -q "^status=OK" "$idir/meta.txt" 2>/dev/null; then
-			report "T:box:inputPolls" PASS "event.oninputpoll is called once in a frame the game reads its pad in, reads memory there, and stops when removed"
+		if grep -q "^status=OK" "$idir/meta.txt" 2>/dev/null && grep -qi "fatal" "$idir/run.log"; then
+			report "T:box:inputPolls" FAIL "Chimera stopped with an error as it closed: $(grep -i -m1 "fatal" "$idir/run.log") (see $idir/run.log)"
+		elif grep -q "^status=OK" "$idir/meta.txt" 2>/dev/null; then
+			report "T:box:inputPolls" PASS "event.oninputpoll is called once in a frame the game reads its pad in, reads memory there, and stops when removed; Chimera closes cleanly with one still registered"
 		else
 			report "T:box:inputPolls" FAIL "$(sed -n 's/^detail=//p' "$idir/meta.txt" 2>/dev/null || echo "run failed") (see $idir/run.log)"
 		fi

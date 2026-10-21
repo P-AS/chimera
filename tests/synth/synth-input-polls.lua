@@ -5,7 +5,7 @@
 -- the frame (package-box/synth_wbx.c, SetInputPollCallback), and gridWalker reads
 -- its pad once in each frame it plays. So a registered function is called once
 -- a frame, inside it, where it can read the machine's memory; and removed, it
--- is called no more.
+-- is called no more. A second one is left registered when Chimera closes.
 --
 -- Job description is read from the file named by the CHIMERA_JOB env var:
 --   meta=<path for result metadata>
@@ -61,4 +61,8 @@ before = calls
 emu.frameadvance()
 check(calls == before, "the function was still called after it was removed (" .. (calls - before) .. " calls)")
 
+-- one more, left registered when the script ends, as most scripts leave
+-- theirs: Chimera closes the core before the script, and taking the function
+-- off a closed core must not stop Chimera with an error
+event.oninputpoll(function() end, "left registered")
 finish("OK", "")
