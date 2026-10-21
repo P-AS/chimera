@@ -10321,3 +10321,19 @@ STOPONCE), goes back to frame 3 and plays the movie to the end. The machine
 ends on the goldens, RAM and VRAM. With the synthetic core changed on purpose
 to keep one byte of the dead frame's writes after going back, the RAM differed
 and the test failed.
+
+
+## On Linux a stop of a guest with its own thread pointer ends cleanly (2026-10-21)
+
+While issue 330 was measured on Linux, a stop of xemu by the frame watchdog
+crashed in the C library's `realloc` instead of ending the frame; on Windows
+the same stop ended cleanly. xemu keeps its own `%fs` (it declares thread
+locals), and the stop arrives by a signal, usually while the guest runs. The
+stop's handler read its own thread's variable through `%fs` before putting
+the host's back, which miniBox's fault handler never does. miniBox 207c5d1
+puts the host's `%fs` back first, and the guest's on every way back to the
+guest. Its test `foreign-signal` now stops a guest with thread locals while
+it spins: the call ends with the stop's reason, and the host's thread locals
+and allocator are its own afterwards. Without the change that test never
+ended. xemu stopped by a one-second frame limit on Linux now reports "did not
+finish a frame in 1 second", where it crashed.
