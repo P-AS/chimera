@@ -292,6 +292,54 @@ namespace Chimera.Tests.Client.GUI
 			Assert.AreEqual(0, complaints.Count, string.Join("\n", complaints));
 		}
 
+		/// <summary>
+		/// A list with grid lines keeps them on a row repainted alone (issue 339). The toolkit's
+		/// own lines are drawn only when the whole list is painted, so a row the pointer moved
+		/// onto lost them under every theme but Light. A themed list draws its lines with each
+		/// cell, in the theme's grid colour, and the toolkit's are off until the theme gives the
+		/// list back.
+		/// </summary>
+		[TestMethod]
+		public void AHoveredCellKeepsItsGridLines()
+		{
+			List<string> complaints = new();
+			foreach (var theme in ThemeLibrary.All.Where(static t => !t.FollowsDesktop))
+			{
+				ThemeLibrary.Select(theme.Name);
+				using Form host = new() { ClientSize = new(Width, 160) };
+				using var list = Build();
+				list.GridLines = true;
+				host.Controls.Add(list);
+				host.Show();
+				ThemeEngine.Apply(host, theme);
+				if (list.GridLines) complaints.Add($"{theme.Name}: the toolkit's grid lines are still on");
+
+				var item = list.Items[0];
+				var cell = Cell(list, new Rectangle(0, 0, Width, Height), 0);
+				using Bitmap bmp = new(Width, Height, PixelFormat.Format32bppArgb);
+				using (var g = Graphics.FromImage(bmp))
+				{
+					g.Clear(Color.Magenta);
+					Raise(list, "OnDrawSubItem", new DrawListViewSubItemEventArgs(
+						g, cell, item, null, -1, 0, list.Columns[0], ListViewItemStates.Hot));
+				}
+				var line = theme[ThemeColorRole.GridLines].ToArgb();
+				var bottom = bmp.GetPixel(cell.Width / 2, cell.Bottom - 1).ToArgb();
+				var right = bmp.GetPixel(cell.Right - 1, cell.Height / 2).ToArgb();
+				if (bottom != line || right != line)
+				{
+					complaints.Add($"{theme.Name}: a hovered cell's edges are {bottom:X8} and {right:X8}, not the grid colour {line:X8}");
+				}
+
+				ThemeEngine.Apply(host, ThemeLibrary.Select("Light"));
+				if (!list.GridLines) complaints.Add($"{theme.Name}: back under Light, the toolkit's grid lines did not come back");
+				host.Close();
+			}
+
+			ThemeLibrary.Select("Light");
+			Assert.AreEqual(0, complaints.Count, string.Join("\n", complaints));
+		}
+
 		/// <summary>Where one column sits inside a row, the way a ListView lays them out.</summary>
 		private static Rectangle Cell(ListView list, Rectangle row, int column)
 		{

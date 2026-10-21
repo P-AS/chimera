@@ -268,7 +268,11 @@ owner-drawn - background, tick box, small image, text with its own font,
 alignment and per-item colour. The third cannot be painted by anybody, since no
 event is raised for it, so the last column is grown to the edge instead and
 given its width back when the window is narrowed or the theme goes back to the
-desktop's.
+desktop's. A list with grid lines has them drawn with each cell, in the
+theme's `GridLines` colour, and the toolkit's own lines are off while the theme
+draws the list: the toolkit draws its lines only when the whole list is
+painted, so a row repainted alone, as the one under the pointer is, lost them
+(issue 339).
 
 `ThemedForm` is what every window in the frontend derives from, and it runs
 that walk when the window's handle is created - so a window is themed by

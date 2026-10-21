@@ -10392,3 +10392,29 @@ rescans, and finds the same row at the same height; with a row removed
 further up, the same row (now one index earlier) is still at that height.
 It passes on Mono and on Windows' .NET Framework 4.8 (the test program run
 there), and failed on Mono with the scroll-back call removed.
+
+
+## A themed list draws its own grid lines (2026-10-21)
+
+Under every theme but Light, the Lua Functions list lost the lines between
+its rows on each row the pointer crossed, until the window was opened again
+(issue 339). Such a list is drawn by Chimera: each cell is filled edge to
+edge. Its grid lines were the Windows control's own, drawn only when the whole
+list is painted, so a row repainted alone was left without them. While a theme
+draws a list, its grid lines are now drawn with each cell along the cell's
+bottom and right edges, in the theme's `GridLines` colour (the colour the theme
+preview already showed), and the control's own lines are off; they come back
+when the theme gives the list back under Light. The four lists with grid lines
+get this: Lua Functions, the Lua registered functions, the archive chooser and
+the debugger's breakpoints. The empty space below the last row no longer has
+lines.
+
+Test: `AHoveredCellKeepsItsGridLines` draws a cell in the hovered state the
+way a hover repaint does, and finds the grid colour on its bottom and right
+edges, the control's own lines off, and back on under Light. With the lines
+not drawn it failed (Dark: the edges were the row colour). On Windows (.NET
+Framework 4.8, a dark list captured with PrintWindow) the lines show on every
+row in the grid colour; before the change they were the control's white. The
+hover itself was not driven there: it needs the real pointer, and a repaint
+of single rows asked for by the program kept the old lines too, so the old
+loss was not reproduced on this machine.

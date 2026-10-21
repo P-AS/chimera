@@ -55,6 +55,12 @@ namespace Chimera.Client.GUI
 
 			public bool OwnerDrawn;
 
+			/// <summary>
+			/// The list asked for grid lines, which the theme draws itself while it draws the list
+			/// (<see cref="DrawCell"/>), with the toolkit's own turned off.
+			/// </summary>
+			public bool GridLines;
+
 			/// <summary>The last column's width as somebody other than the walk left it.</summary>
 			public int NaturalLastWidth;
 
@@ -768,6 +774,14 @@ namespace Chimera.Client.GUI
 			var top = live && list.View is View.Details ? list.TopItem?.Index ?? -1 : -1;
 			if (wanted)
 			{
+				// The toolkit's grid lines are drawn only when the whole list is
+				// painted. A row repainted alone - the one the pointer moves onto -
+				// has its cells filled edge to edge by DrawCell and lost its lines for
+				// good, so on a themed list every row the pointer crossed had none
+				// (issue 339). The lines are drawn with each cell instead, in the
+				// theme's grid colour.
+				state.GridLines = list.GridLines;
+				list.GridLines = false;
 				list.OwnerDraw = true;
 				list.DrawColumnHeader += DrawHeader;
 				list.DrawItem += DrawRow;
@@ -783,6 +797,8 @@ namespace Chimera.Client.GUI
 				list.Resize -= RefillLastColumn;
 				list.ColumnWidthChanged -= RefillLastColumn;
 				list.OwnerDraw = false;
+				if (state.GridLines) list.GridLines = true;
+				state.GridLines = false;
 			}
 			FillLastColumn(list, wanted);
 			foreach (var i in chosen)
@@ -971,6 +987,13 @@ namespace Chimera.Client.GUI
 				? RowBackground(list, item, theme, e.ItemState)
 				: sub.BackColor);
 			e.Graphics.FillRectangle(back, e.Bounds);
+			if (For(list).GridLines)
+			{
+				// along the cell's bottom and right edges, where the toolkit puts them
+				using Pen line = new(theme[ThemeColorRole.GridLines]);
+				e.Graphics.DrawLine(line, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right - 1, e.Bounds.Bottom - 1);
+				e.Graphics.DrawLine(line, e.Bounds.Right - 1, e.Bounds.Top, e.Bounds.Right - 1, e.Bounds.Bottom - 1);
+			}
 
 			var x = e.Bounds.Left + 2;
 			if (e.ColumnIndex is 0)
