@@ -57,8 +57,8 @@ namespace Chimera.Client.GUI
 			e.Item = new ListViewItem(entry.ReturnType);
 			e.Item.SubItems.Add(entry.Library);
 
-			var deprecated = entry.IsDeprecated ? "[Deprecated] " : "";
-			e.Item.SubItems.Add(deprecated + entry.Name);
+			var marks = (entry.IsUnavailable ? "[Not available] " : "") + (entry.IsDeprecated ? "[Deprecated] " : "");
+			e.Item.SubItems.Add(marks + entry.Name);
 			e.Item.SubItems.Add(entry.ParameterList);
 			e.Item.SubItems.Add(entry.Description);
 		}
@@ -126,18 +126,27 @@ namespace Chimera.Client.GUI
 			foreach (int index in FunctionView.SelectedIndices)
 			{
 				var itm = _filteredList[index];
-				sb.Append($"//{itm.Library}.{itm.Name}{itm.ParameterList}"); // comment style not an accident: the 'declaration' is not legal lua, so use of -- to comment it shouldn't suggest it. right?
-				if (itm.Example != null)
-				{
-					sb.AppendLine();
-					sb.AppendLine(itm.Example);
-				}
+				sb.Append(CopyText(itm.Library, itm.Name, itm.ParameterList, itm.Example));
 			}
 
 			if (sb.Length > 0)
 			{
 				Clipboard.SetText(sb.ToString());
 			}
+		}
+
+		/// <summary>
+		/// What Copy puts on the clipboard for one function: its declaration as a
+		/// Lua comment, then its example when it has one, each on a line of its own.
+		/// The declaration is not Lua, and it used to be a C comment ("//"), which
+		/// stopped a script it was pasted into (issue 343).
+		/// </summary>
+		public static string CopyText(string library, string name, string parameterList, string example)
+		{
+			var sb = new StringBuilder();
+			sb.AppendLine($"--{library}.{name}{parameterList}");
+			if (example != null) sb.AppendLine(example);
+			return sb.ToString();
 		}
 
 		private void UpdateList()

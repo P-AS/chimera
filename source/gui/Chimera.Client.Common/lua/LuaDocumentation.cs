@@ -106,6 +106,7 @@ namespace Chimera.Client.Common
 			SuggestInREPL = suggestInREPL;
 
 			IsDeprecated = method.GetCustomAttribute<LuaDeprecatedMethodAttribute>(false) != null;
+			IsUnavailable = method.GetCustomAttribute<LuaUnavailableMethodAttribute>(false) != null;
 			Library = library;
 			LibraryDescription = libraryDescription;
 		}
@@ -114,6 +115,9 @@ namespace Chimera.Client.Common
 		public string LibraryDescription { get; }
 
 		public readonly bool IsDeprecated;
+
+		/// <summary>The function raises an error in every Chimera core; see <see cref="LuaUnavailableMethodAttribute"/>.</summary>
+		public readonly bool IsUnavailable;
 
 		public MethodInfo Method { get; }
 

@@ -6,6 +6,14 @@ namespace Chimera.Client.Common
 	[AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
 	public sealed class LuaDeprecatedMethodAttribute : Attribute {}
 
+	/// <summary>
+	/// A function that is kept so scripts written for other emulators still load, but that
+	/// raises an error in every Chimera core. The Lua Functions list shows it as
+	/// "[Not available]", and its description says why (issue 341).
+	/// </summary>
+	[AttributeUsage(AttributeTargets.Method)]
+	public sealed class LuaUnavailableMethodAttribute : Attribute {}
+
 	[AttributeUsage(AttributeTargets.Method)]
 	public sealed class LuaMethodAttribute : Attribute
 	{

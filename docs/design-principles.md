@@ -10337,3 +10337,38 @@ it spins: the call ends with the stop's reason, and the host's thread locals
 and allocator are its own afterwards. Without the change that test never
 ended. xemu stopped by a one-second frame limit on Linux now reports "did not
 finish a frame in 1 second", where it crashed.
+
+
+## Lua events no core can run are marked, and Copy gives Lua (2026-10-21)
+
+Nine Lua events can never run in Chimera: `event.on_bus_exec`,
+`on_bus_exec_any`, `on_bus_read`, `on_bus_write`, `oninputpoll` and the old
+names `onmemoryexecute`, `onmemoryexecuteany`, `onmemoryread` and
+`onmemorywrite`. Each would run a Lua function in the middle of a frame, and a
+core runs in a sandbox that Chimera calls once a frame and that cannot stop
+part way through it. Since issue 113 they raise an error rather than hand back
+an id that never fires, but the Lua Functions list (Lua Console, Help) still
+described them as working (issue 341). They are kept so that scripts written
+for other emulators load and can guard the call with `pcall`. Now:
+
+- the list shows them as "[Not available]", from a new `LuaUnavailableMethod`
+  mark in the interface, and each description begins by saying why;
+- their examples show the call guarded with `pcall`;
+- the error a script gets from `pcall` says why. NLua (the library that runs
+  Lua scripts, kept in `extern/NLua`) used to give a fixed sentence, "A .NET
+  exception occurred in user-code", with the reason only in an inner
+  exception a script cannot read. Its message is now the reason, and the Lua
+  Console prints the reason once, followed by where it came from;
+- `event.availableScopes` and `event.can_use_callback_params` say that no
+  Chimera core has these events.
+
+Copy in the Lua Functions list wrote the function as `//library.name(...)`,
+a C comment that Lua reads as an error; it now writes `--library.name(...)`,
+a Lua comment (issue 343).
+
+Tests: `LuaUnavailableEventsTests` checks that exactly these nine are marked
+and described as not available, that a script guarding `on_bus_read` with
+`pcall` reads the reason and goes on, and that an unguarded one logs the
+reason once on the first line. `LuaFunctionsCopyTests` checks the copied text.
+Each failed once on purpose: with `on_bus_read` unmarked, with NLua's old
+message, and with `//` put back.

@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Chimera.Common;
 using NLua;
+using NLua.Exceptions;
 
 // TODO - evaluate for re-entrancy problems
 namespace Chimera.Client.Common
@@ -58,7 +59,13 @@ namespace Chimera.Client.Common
 			catch (Exception ex)
 			{
 				var exStr = ex.ToString() + '\n';
-				if (ex.InnerException is not null)
+				if (ex is LuaScriptException { IsNetException: true, InnerException: { } netEx })
+				{
+					// The first line already says what went wrong (the wrapper
+					// carries the .NET exception's message), so only where.
+					exStr += netEx.GetType().FullName + '\n' + netEx.StackTrace + '\n';
+				}
+				else if (ex.InnerException is not null)
 				{
 					exStr += ex.InnerException.ToString() + '\n';
 				}

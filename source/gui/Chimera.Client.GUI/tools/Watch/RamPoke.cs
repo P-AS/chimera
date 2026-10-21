@@ -108,7 +108,7 @@ namespace Chimera.Client.GUI
 			}
 			else
 			{
-				OutputLabel.Text = "An error occured when writing Value.";
+				OutputLabel.Text = "An error occurred when writing Value.";
 			}
 		}
 	}

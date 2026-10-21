@@ -61,15 +61,27 @@ namespace Chimera.Client.Common
 		 * script; the frontend and the emulation are unaffected. */
 		private Exception MemoryCallbacksNotImplemented(bool isWildcard, bool execute)
 			=> new InvalidOperationException(
-				$"{Emulator.Attributes().CoreName} does not implement {(isWildcard ? "wildcard " : string.Empty)}memory {(execute ? "execute " : string.Empty)}callbacks. "
-				+ "No Chimera core does: a core runs as a waterbox guest, and that ABI is one FrameAdvance call per frame with no re-entry, "
-				+ "so a core cannot stop part way through a frame to run a callback. Remove the registration or guard it.");
+				$"{Emulator.Attributes().CoreName} cannot call a Lua function on {(isWildcard ? "every " : "a ")}memory {(execute ? "execute" : "access")}. "
+				+ WhyNotAvailable + " Remove the registration, or guard it with pcall.");
 
 		private Exception ScopeNotAvailable(string scope)
 			=> new InvalidOperationException(
 				$"{scope} is not an available scope for {Emulator.Attributes().CoreName}");
 
-		[LuaMethod("can_use_callback_params", "Returns whether Chimera will pass arguments to callbacks. The current version passes arguments to \"memory\" callbacks (RAM/ROM/bus R/W), so this function will return true for that input. (It returns false for any other input.) This tells you whether it's necessary to enable workarounds/hacks because a script is running in a version without parameter support.")]
+		/* Why the events that would run a Lua function in the middle of a frame
+		 * are refused, said once for the error messages and the descriptions
+		 * (issue 341). */
+		private const string WhyNotAvailable
+			= "No Chimera core can: a core runs in a sandbox that Chimera calls once a frame, "
+			+ "and the core cannot stop part way through a frame to run a Lua function.";
+
+		/* The start of the description of each of those events. The rest of
+		 * the description says what the event does where it is available. */
+		private const string NotAvailable
+			= "Not available in Chimera: every core refuses it with an error. " + WhyNotAvailable
+			+ " It is kept so that scripts written for other emulators can guard the call with pcall. Where it is available, it ";
+
+		[LuaMethod("can_use_callback_params", "Returns whether Chimera will pass arguments to callbacks. The current version passes arguments to \"memory\" callbacks (RAM/ROM/bus R/W), so this function will return true for that input. (It returns false for any other input.) This tells you whether it's necessary to enable workarounds/hacks because a script is running in a version without parameter support. No Chimera core has memory callbacks (see event.on_bus_read), so the answer only matters to a script that also runs elsewhere.")]
 		[LuaMethodExample("local mem_callback = event.can_use_callback_params(\"memory\") and mem_callback or mem_callback_pre_29;")]
 		public bool CanUseCallbackParams(string subset = null)
 			=> subset is "memory";
@@ -86,8 +98,9 @@ namespace Chimera.Client.Common
 			=> CreateAndRegisterNamedFunction(luaf, NamedLuaFunction.EVENT_TYPE_PREFRAME, name: name)
 				.GuidStr;
 
-		[LuaMethodExample("local steveoni = event.oninputpoll(\r\n\tfunction()\r\n\t\tconsole.log( \"Calls the given lua function after each time the emulator core polls for input\" );\r\n\tend\r\n\t, \"Frame name\" );")]
-		[LuaMethod("oninputpoll", "Calls the given lua function after each time the emulator core polls for input")]
+		[LuaUnavailableMethod]
+		[LuaMethodExample("local ok, steveoni = pcall(event.oninputpoll,\r\n\tfunction()\r\n\t\tconsole.log( \"Calls the given lua function after each time the emulator core polls for input\" );\r\n\tend\r\n\t, \"Frame name\" );\r\nif not ok then console.log( steveoni ); end")]
+		[LuaMethod("oninputpoll", NotAvailable + "calls the given lua function after each time the emulator core polls for input.")]
 		public string OnInputPoll(LuaFunction luaf, string name = null)
 		{
 			// The core is asked FIRST, and the function is registered only once
@@ -115,12 +128,12 @@ namespace Chimera.Client.Common
 		/// <summary>Same refusal as the memory callbacks above, for the same reason.</summary>
 		private Exception InputPollCallbacksNotImplemented()
 			=> new InvalidOperationException(
-				$"{Emulator.Attributes().CoreName} does not implement input polling callbacks. "
-				+ "No Chimera core does: a core runs as a waterbox guest, and that ABI is one FrameAdvance call per frame with no re-entry, "
-				+ "so a core cannot stop part way through a frame to run a callback. Remove the registration or guard it.");
+				$"{Emulator.Attributes().CoreName} cannot call a Lua function when it reads the controls. "
+				+ WhyNotAvailable + " Remove the registration, or guard it with pcall.");
 
+		[LuaUnavailableMethod]
 		[LuaDeprecatedMethod]
-		[LuaMethod("onmemoryexecute", "Fires immediately before the given address is executed by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).")]
+		[LuaMethod("onmemoryexecute", NotAvailable + "fires immediately before the given address is executed by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).")]
 		public string OnMemoryExecute(
 			LuaFunction luaf,
 			uint address,
@@ -131,8 +144,9 @@ namespace Chimera.Client.Common
 			return OnBusExec(luaf, address, name: name, scope: scope);
 		}
 
-		[LuaMethodExample("local exec_cb_id = event.on_bus_exec(\r\n\tfunction(addr, val, flags)\r\n\t\tconsole.log( \"Fires immediately before the given address is executed by the core. {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).\" );\r\n\tend\r\n\t, 0x200, \"Frame name\", \"System Bus\" );")]
-		[LuaMethod("on_bus_exec", "Fires immediately before the given address is executed by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).")]
+		[LuaUnavailableMethod]
+		[LuaMethodExample("local ok, exec_cb_id = pcall(event.on_bus_exec,\r\n\tfunction(addr, val, flags)\r\n\t\tconsole.log( \"Fires immediately before the given address is executed by the core. {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).\" );\r\n\tend\r\n\t, 0x200, \"Frame name\", \"System Bus\" );\r\nif not ok then console.log( exec_cb_id ); end")]
+		[LuaMethod("on_bus_exec", NotAvailable + "fires immediately before the given address is executed by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).")]
 		public string OnBusExec(
 			LuaFunction luaf,
 			uint address,
@@ -160,8 +174,9 @@ namespace Chimera.Client.Common
 			throw MemoryCallbacksNotImplemented(isWildcard: false, execute: true);
 		}
 
+		[LuaUnavailableMethod]
 		[LuaDeprecatedMethod]
-		[LuaMethod("onmemoryexecuteany", "Fires immediately before every instruction executed (in the specified scope) by the core (CPU-intensive). Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).")]
+		[LuaMethod("onmemoryexecuteany", NotAvailable + "fires immediately before every instruction executed (in the specified scope) by the core (CPU-intensive). Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).")]
 		public string OnMemoryExecuteAny(
 			LuaFunction luaf,
 			string name = null,
@@ -171,8 +186,9 @@ namespace Chimera.Client.Common
 			return OnBusExecAny(luaf, name: name, scope: scope);
 		}
 
-		[LuaMethodExample("local exec_cb_id = event.on_bus_exec_any(\r\n\tfunction(addr, val, flags)\r\n\t\tconsole.log( \"Fires immediately before every instruction executed (in the specified scope) by the core (CPU-intensive). {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).\" );\r\n\tend\r\n\t, \"Frame name\", \"System Bus\" );")]
-		[LuaMethod("on_bus_exec_any", "Fires immediately before every instruction executed (in the specified scope) by the core (CPU-intensive). Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).")]
+		[LuaUnavailableMethod]
+		[LuaMethodExample("local ok, exec_cb_id = pcall(event.on_bus_exec_any,\r\n\tfunction(addr, val, flags)\r\n\t\tconsole.log( \"Fires immediately before every instruction executed (in the specified scope) by the core (CPU-intensive). {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).\" );\r\n\tend\r\n\t, \"Frame name\", \"System Bus\" );\r\nif not ok then console.log( exec_cb_id ); end")]
+		[LuaMethod("on_bus_exec_any", NotAvailable + "fires immediately before every instruction executed (in the specified scope) by the core (CPU-intensive). Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be executed (or {{0}} always, if this feature is only partially implemented).")]
 		public string OnBusExecAny(
 			LuaFunction luaf,
 			string name = null,
@@ -198,8 +214,9 @@ namespace Chimera.Client.Common
 			throw MemoryCallbacksNotImplemented(isWildcard: true, execute: true);
 		}
 
+		[LuaUnavailableMethod]
 		[LuaDeprecatedMethod]
-		[LuaMethod("onmemoryread", "Fires immediately before the given address is read by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value read. If no address is given, it will fire on every memory read.")]
+		[LuaMethod("onmemoryread", NotAvailable + "fires immediately before the given address is read by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value read. If no address is given, it will fire on every memory read.")]
 		public string OnMemoryRead(
 			LuaFunction luaf,
 			uint? address = null,
@@ -210,8 +227,9 @@ namespace Chimera.Client.Common
 			return OnBusRead(luaf, address, name: name, scope: scope);
 		}
 
-		[LuaMethodExample("local exec_cb_id = event.on_bus_read(\r\n\tfunction(addr, val, flags)\r\n\t\tconsole.log( \"Fires immediately before the given address is read by the core. {{val}} is the value read. If no address is given, it will fire on every memory read.\" );\r\n\tend\r\n\t, 0x200, \"Frame name\" );")]
-		[LuaMethod("on_bus_read", "Fires immediately before the given address is read by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value read. If no address is given, it will fire on every memory read.")]
+		[LuaUnavailableMethod]
+		[LuaMethodExample("local ok, exec_cb_id = pcall(event.on_bus_read,\r\n\tfunction(addr, val, flags)\r\n\t\tconsole.log( \"Fires immediately before the given address is read by the core. {{val}} is the value read. If no address is given, it will fire on every memory read.\" );\r\n\tend\r\n\t, 0x200, \"Frame name\" );\r\nif not ok then console.log( exec_cb_id ); end")]
+		[LuaMethod("on_bus_read", NotAvailable + "fires immediately before the given address is read by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value read. If no address is given, it will fire on every memory read.")]
 		public string OnBusRead(
 			LuaFunction luaf,
 			uint? address = null,
@@ -237,8 +255,9 @@ namespace Chimera.Client.Common
 			throw MemoryCallbacksNotImplemented(isWildcard: address is null, execute: false);
 		}
 
+		[LuaUnavailableMethod]
 		[LuaDeprecatedMethod]
-		[LuaMethod("onmemorywrite", "Fires immediately before the given address is written by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be written (or {{0}} always, if this feature is only partially implemented). If no address is given, it will fire on every memory write.")]
+		[LuaMethod("onmemorywrite", NotAvailable + "fires immediately before the given address is written by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be written (or {{0}} always, if this feature is only partially implemented). If no address is given, it will fire on every memory write.")]
 		public string OnMemoryWrite(
 			LuaFunction luaf,
 			uint? address = null,
@@ -249,8 +268,9 @@ namespace Chimera.Client.Common
 			return OnBusWrite(luaf, address, name: name, scope: scope);
 		}
 
-		[LuaMethodExample("local exec_cb_id = event.on_bus_write(\r\n\tfunction(addr, val, flags)\r\n\t\tconsole.log( \"Fires immediately before the given address is written by the core. {{val}} is the value to be written (or {{0}} always, if this feature is only partially implemented). If no address is given, it will fire on every memory write.\" );\r\n\tend\r\n\t, 0x200, \"Frame name\" );")]
-		[LuaMethod("on_bus_write", "Fires immediately before the given address is written by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be written (or {{0}} always, if this feature is only partially implemented). If no address is given, it will fire on every memory write.")]
+		[LuaUnavailableMethod]
+		[LuaMethodExample("local ok, exec_cb_id = pcall(event.on_bus_write,\r\n\tfunction(addr, val, flags)\r\n\t\tconsole.log( \"Fires immediately before the given address is written by the core. {{val}} is the value to be written (or {{0}} always, if this feature is only partially implemented). If no address is given, it will fire on every memory write.\" );\r\n\tend\r\n\t, 0x200, \"Frame name\" );\r\nif not ok then console.log( exec_cb_id ); end")]
+		[LuaMethod("on_bus_write", NotAvailable + "fires immediately before the given address is written by the core. Your callback can have 3 parameters {{(addr, val, flags)}}. {{val}} is the value to be written (or {{0}} always, if this feature is only partially implemented). If no address is given, it will fire on every memory write.")]
 		public string OnBusWrite(
 			LuaFunction luaf,
 			uint? address = null,
@@ -302,7 +322,7 @@ namespace Chimera.Client.Common
 			=> RemoveNamedFunctionMatching(nlf => nlf.Name == name);
 
 		[LuaMethodExample("local scopes = event.availableScopes();")]
-		[LuaMethod("availableScopes", "Lists the available scopes that can be specified for on_bus_* events")]
+		[LuaMethod("availableScopes", "Lists the available scopes that can be specified for on_bus_* events. No Chimera core has those events, so in Chimera the list is always empty.")]
 		[return: LuaZeroIndexed]
 		public LuaTable AvailableScopes()
 		{

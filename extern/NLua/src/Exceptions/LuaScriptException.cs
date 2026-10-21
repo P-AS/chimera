@@ -10,7 +10,7 @@ namespace NLua.Exceptions
 	public class LuaScriptException : LuaException
 	{
 		/// <summary>
-		/// Returns true if the exception has occured as the result of a .NET exception in user code
+		/// Returns true if the exception has occurred as the result of a .NET exception in user code
 		/// </summary>
 		public bool IsNetException { get;  }
 
@@ -37,7 +37,12 @@ namespace NLua.Exceptions
 		/// <param name="innerException">The .NET exception triggered by user-code.</param>
 		/// <param name="source">The position in the script where the exception was triggered.</param>
 		public LuaScriptException(Exception innerException, string source)
-			: base("A .NET exception occured in user-code", innerException)
+			// Chimera: the message is the .NET exception's own, so a script that
+			// catches the error with pcall can read why the call failed. It was a
+			// fixed sentence saying only that a .NET exception happened, and the
+			// reason was in the inner exception, which a script cannot print
+			// (issue 341).
+			: base(innerException.Message, innerException)
 		{
 			_source = source;
 			IsNetException = true;
