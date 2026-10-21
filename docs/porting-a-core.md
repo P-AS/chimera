@@ -122,7 +122,9 @@ say nothing. Compare `rev-parse --show-toplevel` with the path you meant.
 - A guest that hangs rather than faults is usually the timed-wait trap above.
 - Chimera stops a core that does not finish a frame in 20 seconds, or does
   not finish starting in 2 minutes, and shows "the core did not finish a
-  frame in 20 seconds". A core that is working is not stopped: every system
+  frame in 20 seconds". The first frame after starting, and the first after
+  every state load, has the 2 minutes too: a core may analyse or compile a
+  game's code there, or rebuild what a load threw away. A core that is working is not stopped: every system
   call other than a sleep, a yield, a clock read or a futex call counts as
   work and starts the time again, and so does every call through the GPU
   bridges or to the compile cache, once it has been answered (a shader

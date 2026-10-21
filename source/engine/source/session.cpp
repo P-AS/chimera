@@ -493,7 +493,10 @@ extern "C" uintptr_t ce_gl_dispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, 
  * past its time (wbx_stop_guest): it then ends as a crash does, with the reason
  * the session reports. 20 seconds for a frame and 2 minutes for starting (the
  * owner's numbers, 2026-10-19); CHIMERA_FRAME_TIMEOUT_MS and
- * CHIMERA_START_TIMEOUT_MS set others, 0 none. A core that is working, not
+ * CHIMERA_START_TIMEOUT_MS set others, 0 none. The first frame after starting
+ * and after every state load has the 2 minutes too (owner, 2026-10-21, issue
+ * 332): RPCS3 analyses and compiles a game's code in it, and a core rebuilds
+ * what a load threw away there. A core that is working, not
  * stuck, shows it, and the time starts again from that (wbx_guest_activity):
  * it makes system calls of the kind a waiting or polling loop does not (RPCS3
  * compiling a game's code with LLVM spends 90 seconds in its first frames
@@ -552,6 +555,18 @@ static int64_t timeoutMs(const char *variable, int64_t fallback)
 {
 	const char *e = std::getenv(variable);
 	return e != nullptr && e[0] != '\0' ? std::strtoll(e, nullptr, 10) : fallback;
+}
+
+static int64_t frameLimitMs()
+{
+	static const int64_t limit = timeoutMs("CHIMERA_FRAME_TIMEOUT_MS", 20000);
+	return limit;
+}
+
+static int64_t startLimitMs()
+{
+	static const int64_t limit = timeoutMs("CHIMERA_START_TIMEOUT_MS", 120000);
+	return limit;
 }
 
 struct GuestWatchdog
@@ -712,6 +727,9 @@ struct ce_session
 	/* frameAdvance under the watchdog (GuestWatchdog) */
 	void runFrame(uint64_t pad);
 	std::unique_ptr<struct GuestWatchdog> watchdog;
+	/* the next frame is the first after starting or a state load: it has the
+	 * start's time (GuestWatchdog) */
+	bool firstFrame = true;
 	uintptr_t (*getVideoBgra)() = nullptr;
 	uintptr_t (*getAudio)() = nullptr;
 	int32_t (*inputWasRead)() = nullptr;
@@ -1501,6 +1519,7 @@ void ce_session::afterLoad(int64_t landedOn)
 {
 	machineFrame = landedOn;
 	sinceLoad = 0;
+	firstFrame = true;
 	lastKept = -1;
 	tracedSinceLoad = 0;
 	const unsigned before = pictureTrace() ? pictureSum(videoBuf) : 0;
@@ -1571,9 +1590,18 @@ void ce_session::runFrame(uint64_t pad)
 {
 	if (watchdog && !precompile)
 	{
-		static const int64_t limit = timeoutMs("CHIMERA_FRAME_TIMEOUT_MS", 20000);
-		watchdog->arm(limit, "the core did not finish a frame in " + secondsText(limit));
+		if (firstFrame)
+		{
+			const int64_t limit = startLimitMs();
+			watchdog->arm(limit, "the core did not finish its first frame after starting or a state load in " + secondsText(limit));
+		}
+		else
+		{
+			const int64_t limit = frameLimitMs();
+			watchdog->arm(limit, "the core did not finish a frame in " + secondsText(limit));
+		}
 	}
+	firstFrame = false;
 	frameAdvance(pad);
 	if (watchdog) watchdog->disarm();
 }
@@ -2213,10 +2241,7 @@ static ce_session *openSession(
 	auto init = reinterpret_cast<int32_t (*)()>(s->proc("Init", 0, true, err));
 	if (init == nullptr) return abort(std::move(err));
 	s->watchdog = std::make_unique<GuestWatchdog>(host, s->obj);
-	{
-		static const int64_t limit = timeoutMs("CHIMERA_START_TIMEOUT_MS", 120000);
-		s->watchdog->arm(limit, "the core did not finish starting in " + secondsText(limit));
-	}
+	s->watchdog->arm(startLimitMs(), "the core did not finish starting in " + secondsText(startLimitMs()));
 	const int32_t initResult = init();
 	s->watchdog->disarm();
 	/* Init is where a renderer makes its context and compiles its shaders, so

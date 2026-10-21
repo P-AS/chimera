@@ -10197,3 +10197,39 @@ The script agreed with the system's Europe/Zurich zone on 200,000 random
 moments from 2001 to 2031. Times of the user's own actions, such as when
 unsaved work was last kept or a cache entry last used, stay in the
 computer's local time: they are not compared with anything published.
+
+
+## The first frame after starting or a state load has 2 minutes (user-decided, 2026-10-21)
+
+Issue 332: Oblivion on RPCS3 stopped in its first frame with "the core did
+not finish a frame in 20 seconds". RPCS3 analyses and compiles a game's code
+in its first frame. The frame limit (2026-10-19) starts again whenever the
+core shows it is working, and storing a compiled piece of code counts, but
+on a GTX 1060 machine the gaps between two stored pieces reached 12 seconds,
+and the analysis before the first one is longer still. The first frame died
+40 seconds in, with nothing stored. Chimera then loaded a state, the frame
+after it was stopped the same way, and the reporter saw one such message
+after another.
+
+The owner decided that the first frame after starting, and the first frame
+after every state load, has the start's limit, 2 minutes, instead of a
+frame's 20 seconds. The time still starts again whenever the core shows it
+is working. A frame after that has 20 seconds as before. A load includes a
+seek or a rewind through the stored states, a state file, and the load
+Chimera makes after a core stopped.
+
+Tested:
+
+- The witness has a new test, "first-frame-time". The synthetic core, on a
+  ROM ending "SLOWFIRST", spends about 0.4 seconds in its own code in the
+  first frame after starting and in the first after every load. With a frame
+  limit of 0.1 seconds the run plays the movie, seeks back through a stored
+  state and ends with status OK, after two such frames. Before the change
+  it stopped in frame 0: "the core did not finish a frame in 0.1 seconds".
+  The test of a core stuck in its third frame still stops it at the frame
+  limit.
+- Oblivion in the Windows build of the interface on the GTX 1060, with the
+  reporter's core (cc813e47), disc and firmware, and an empty compile cache:
+  nothing was stopped. The 600 frames the test asked for took about 18
+  minutes, 16 of them in the core while it compiled (201 pieces stored).
+  With the engine before this change the same run stopped 40 seconds in.

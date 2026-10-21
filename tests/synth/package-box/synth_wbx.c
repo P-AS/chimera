@@ -83,6 +83,20 @@ static uint32_t g_spinFrame;   /* SPINFRAME: the frame that never ends, or 0 */
 typedef ECL_ENTRY uint64_t (*cache_bridge_fn)(uint64_t op, uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e);
 static cache_bridge_fn g_cache;
 static uint32_t g_cacheWorkFrame;
+
+/* A rom ending in SLOWFIRST makes the first frame after starting, and the
+ * first after every state load, long: half a second or so in the core's own
+ * code, with no system call, as RPCS3's first frame is while it analyses and
+ * compiles a game. The watchdog gives those frames the start's time, not a
+ * frame's (2026-10-21, issue 332). Invisible: the flag is in no state. */
+static int g_slowFirst;
+ECL_INVISIBLE static int g_slowNext;
+static void slow_first(void) {
+	if (!g_slowNext) return;
+	g_slowNext = 0;
+	fprintf(stderr, "synth: a long first frame\n");
+	for (uint32_t i = 0; i < (1u << 31); i++) g_spun++;
+}
 ECL_EXPORT void SetCacheBridge(uint64_t fn) { g_cache = (cache_bridge_fn)(uintptr_t)fn; }
 static void cache_work(void) {
 	static const char name[] = "synth/never-stored";
@@ -113,6 +127,7 @@ ECL_EXPORT int Init(void) {
 		for (;;) g_spun++;
 	if (len >= 9 && memcmp(rom + len - 9, "SPINFRAME", 9) == 0) g_spinFrame = 3;
 	if (len >= 9 && memcmp(rom + len - 9, "CACHEWORK", 9) == 0) g_cacheWorkFrame = 3;
+	if (len >= 9 && memcmp(rom + len - 9, "SLOWFIRST", 9) == 0) g_slowFirst = g_slowNext = 1;
 	g_synth = synth_create(rom, len);   /* copies the rom internally */
 	free(rom);
 	if (!g_synth) return 0;
@@ -164,6 +179,7 @@ ECL_EXPORT void StateLoaded(void)
 {
 	if (g_garbleFor < 0) g_garbleFor = (int)wbx_setting_long("garbleAfterLoad", 0);
 	g_garbleLeft = g_garbleFor;
+	g_slowNext = g_slowFirst;
 }
 
 /* --- told before a state is taken (StateSaving; chimera#190) ---
@@ -211,6 +227,7 @@ ECL_EXPORT void FrameAdvance(uint64_t pad) {
 	if (g_spinFrame != 0 && g_framesRun == g_spinFrame)
 		for (;;) g_spun++;
 	if (g_cacheWorkFrame != 0 && g_framesRun == g_cacheWorkFrame) cache_work();
+	slow_first();
 	if (g_watchedOpen) {
 		mprotect(g_watchedPage, 4096, PROT_NONE);
 		g_watchedOpen = 0;

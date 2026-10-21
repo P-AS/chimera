@@ -647,6 +647,26 @@ json.dump(d, open(p, 'w'))
 			report "E:core-working" PASS "a frame that is long but busy (calls to the compile cache) is not stopped"
 		fi
 
+		# ...and the first frame after starting, and the first after a state
+		# load, have the start's time (2026-10-21, issue 332): RPCS3 analyses
+		# and compiles a game in its first frame. A rom ending in SLOWFIRST
+		# spends half a second or so of those frames in the core's own code; a
+		# frame limit of 0.1 seconds must not stop them. The seek loads a state,
+		# so there are two such frames at least.
+		cat "$here/roms/gridWalker.testrom" > "$work/slow-first.testrom"
+		printf 'SLOWFIRST' >> "$work/slow-first.testrom"
+		rm -f "$work/slow-first.meta.txt"
+		CHIMERA_FRAME_TIMEOUT_MS=100 timeout 120 "$chimera_run" "$epkg" "$work/slow-first.testrom" "$here/movies/gridWalker.win.txt" \
+			--seek 5 --meta "$work/slow-first.meta.txt" > "$work/slow-first.log" 2>&1; slrc=$?
+		slow_frames=$(grep -c "synth: a long first frame" "$work/slow-first.log" 2>/dev/null)
+		if [ "$slrc" -ne 0 ] || ! grep -q "^status=OK$" "$work/slow-first.meta.txt" 2>/dev/null; then
+			report "E:first-frame-time" FAIL "a long first frame was stopped: rc=$slrc $(grep '^detail=' "$work/slow-first.meta.txt" 2>/dev/null)"
+		elif [ "${slow_frames:-0}" -lt 2 ]; then
+			report "E:first-frame-time" FAIL "expected a long first frame after starting and after the seek's load, saw ${slow_frames:-0} (see work/slow-first.log)"
+		else
+			report "E:first-frame-time" PASS "the first frame after starting and after a load ($slow_frames of them) has the start's time, not a frame's"
+		fi
+
 		# THE CORE LOG (ce_core_log, Tools > Export Core Log... in the frontend):
 		# asked for, it starts a file saying when and by which Chimera, notes
 		# the session's core package, and keeps everything the core writes - the
