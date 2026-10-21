@@ -10441,3 +10441,49 @@ Mono lays out the hidden step only when it is shown, so the test builds it
 while it is in view. On Windows the wizard tests hang when run from a copy of
 the test folder (an older wizard test too), so this one was not run there;
 a picture of that run showed the first box across the full width.
+
+
+## Ikemen GO joins the official cores (user-decided, 2026-10-21)
+
+Issue 324 asked for Ikemen GO, the open-source fighting game engine that runs
+M.U.G.E.N characters, stages and screenpacks. The owner first deferred it,
+then asked for a trial, the core, background videos, and a game of their
+own to work with every one of its music files and sounds, before publishing.
+
+`chimera-core-ikemen` is Ikemen GO 1.0.0, which is written in Go, built as a
+C archive with a Go 1.27.3 of the core's own: a few patches to Go make a Go
+program run in the sandbox (its system calls, its threads' stacks, and its
+clock, which is the frames'). It draws with its OpenGL 3.3 renderer on a
+software OpenGL inside the core (Mesa's llvmpipe, made to generate the same
+code on every computer); its background videos play through FFmpeg, decoded
+on each frame; every file call goes to the game's zip and the files the game
+writes, kept in the core's memory. It is a game core: the round, its time,
+the random seed and each fighter's life, power, position and gauges are
+properties, most of them writable. A game made for an older Ikemen GO
+(0.97 to 0.99) plays too: the core recognizes the older release's own
+scripts in the game's folder and uses its v1.0 ones instead, as Ikemen GO's
+upgrade advice says, swaps the older Boss Rush, Score Challenge, Time
+Challenge and VS 100 Kumite modules for their current versions, and turns
+the old save/config.json into the config.ini v1.0 reads (the owner chose
+this over a separate core for v0.99). Ikemen GO's MP3 decoder is patched to
+look past junk at a file's end, and music in a format Ikemen GO has no
+decoder for (Musepack) plays through the core's FFmpeg; Ikemen GO's rule of
+not playing sounds under 128 bytes stays (owner).
+
+Tested on the screenpack Ikemen GO 1.0.0 shipped with (Kung Fu Man), on
+probes of the core's own, on a game made from them for v0.99.0, and on the
+owner's KOF Special, a fan game made for v0.99 that cannot be shared and
+that CI therefore skips: Arcade, VS Mode, Training, Survival, Boss Rush and
+Watch Mode, native and sandbox identical, a savestate in a fight the same as
+the straight run, and all its 329 music files and 13,447 sounds as ffmpeg
+decodes them. The core's test script: 53 passed, none skipped, on a computer
+with KOF Special; on CI 48 passed and the KOF Special test skipped. The
+frontend test 6 ok; package checks 22 passed; Chimera on Windows draws KOF
+Special's frames 1600 and 4000 as Linux does (its sound was not compared).
+The first published build is "Development build ccaaa382 (made 2026-10-21
+15:38 CEST)". Not there: netplay, the Vulkan renderer, the GPU; a 1280x720
+game runs at about 7 to 10 frames a second on a fast computer, a 640x480 one
+at about 29.
+
+Nothing in Chimera's own source changed: a roster row and the README's
+table of cores.

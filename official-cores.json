@@ -564,6 +564,16 @@
       "tested": ""
     },
     {
+      "id": "ikemen",
+      "name": "Ikemen GO",
+      "systems": [
+        { "id": "IkemenGO", "name": "Ikemen GO" }
+      ],
+      "kind": "game",
+      "repo": "ToolAssisted-run/chimera-core-ikemen",
+      "tested": ""
+    },
+    {
       "id": "srb2",
       "name": "SRB2",
       "systems": [
