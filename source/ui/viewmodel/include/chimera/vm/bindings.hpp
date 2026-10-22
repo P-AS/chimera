@@ -24,8 +24,15 @@ public:
 
 	size_t boundKeys() const { return byKey_.size(); }
 
+	/* each button's keys as the file writes them ("Down, J1 POV0D"), by
+	 * index; "" for a button with none */
+	const std::vector<std::string> &texts() const { return texts_; }
+	/* the keys of every button given again, by index */
+	void setTexts(std::vector<std::string> texts);
+
 private:
 	std::map<std::string, std::vector<int>> byKey_;
+	std::vector<std::string> texts_;
 };
 
 } // namespace chimera::vm

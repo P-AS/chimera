@@ -39,6 +39,9 @@ private:
 	};
 
 	bool index(const Args &a, size_t &out, std::string &error) const;
+	/* the run as it stands, as a new branch (slot -1, or past the last) or
+	 * over the one at `slot`; where it went */
+	int64_t keepRun(int64_t slot, std::string name);
 	void changed();
 
 	InputLog &inputs_;

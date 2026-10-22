@@ -264,6 +264,72 @@ void SessionViewModel::key(const std::string &name, bool down)
 	held_.store(mask);
 }
 
+void SessionViewModel::holdFrameAdvance(bool down)
+{
+	submit([this, down] {
+		if (s_ == nullptr) return;
+		if (down)
+		{
+			runningM_ = false;
+			advanceOnMachine();
+			later([this] { running.set(false); });
+			holdM_ = Hold::Advance;
+			holdSince_ = Clock::now();
+			holdRunning_ = false;
+		}
+		else if (holdM_ == Hold::Advance)
+		{
+			holdM_ = Hold::None;
+			if (holdRunning_)
+			{
+				runningM_ = false;
+				holdRunning_ = false;
+				later([this] { running.set(false); });
+			}
+		}
+	});
+}
+
+void SessionViewModel::holdRewind(bool down)
+{
+	submit([this, down] {
+		if (s_ == nullptr) return;
+		if (down)
+		{
+			runningM_ = false;
+			later([this] { running.set(false); });
+			if (frameM_ > 0) seekOnMachine(frameM_ - 1);
+			holdM_ = Hold::Rewind;
+			/* the first step back at once, the next after a moment */
+			due_ = Clock::now() + std::chrono::milliseconds(500);
+		}
+		else if (holdM_ == Hold::Rewind)
+			holdM_ = Hold::None;
+	});
+}
+
+void SessionViewModel::holdFastForward(bool down)
+{
+	submit([this, down] {
+		fastM_ = down;
+		if (!down) due_ = Clock::now();
+	});
+}
+
+void SessionViewModel::setBindingTexts(std::vector<std::string> texts)
+{
+	texts.resize(buttonNames_.size());
+	bindings_.setTexts(texts);
+	/* the keys held now hold what they hold now */
+	uint64_t mask = 0;
+	for (const auto &[k, isDown] : keysDown_)
+		if (isDown)
+			for (int b : bindings_.buttonsOf(k))
+				if (b < 64) mask |= uint64_t{1} << b;
+	held_.store(mask);
+	submit([this, texts] { bindingsM_.setTexts(texts); });
+}
+
 void SessionViewModel::submit(std::function<void()> job)
 {
 	{
@@ -278,7 +344,7 @@ void SessionViewModel::loop()
 	for (;;)
 	{
 		std::function<void()> job;
-		bool advance = false;
+		bool advance = false, runOn = false, back = false;
 		{
 			std::unique_lock<std::mutex> lock(m_);
 			for (;;)
@@ -289,6 +355,21 @@ void SessionViewModel::loop()
 					job = std::move(jobs_.front());
 					jobs_.pop_front();
 					break;
+				}
+				/* frame advance held half a second runs on */
+				if (s_ != nullptr && holdM_ == Hold::Advance && !runningM_)
+				{
+					const auto when = holdSince_ + std::chrono::milliseconds(500);
+					if (Clock::now() >= when) { runOn = true; break; }
+					cv_.wait_until(lock, when);
+					continue;
+				}
+				/* rewind held goes back a frame a frame */
+				if (s_ != nullptr && holdM_ == Hold::Rewind)
+				{
+					if (Clock::now() >= due_) { back = true; break; }
+					cv_.wait_until(lock, due_);
+					continue;
 				}
 				if (runningM_ && s_ != nullptr)
 				{
@@ -305,10 +386,26 @@ void SessionViewModel::loop()
 			job();
 			continue;
 		}
+		if (runOn)
+		{
+			runningM_ = true;
+			holdRunning_ = true;
+			due_ = Clock::now();
+			later([this] { running.set(true); });
+			continue;
+		}
+		if (back)
+		{
+			if (frameM_ > 0) seekOnMachine(frameM_ - 1);
+			due_ += period_;
+			if (Clock::now() - due_ > 4 * period_) due_ = Clock::now();
+			continue;
+		}
 		if (advance)
 		{
 			advanceOnMachine();
-			due_ += period_;
+			/* fast forward: the next frame at once */
+			due_ += fastM_ ? Clock::duration::zero() : period_;
 			/* behind by more than a few frames (a slow frame, a busy machine):
 			 * carry on from now rather than race to catch up */
 			const auto now = Clock::now();
@@ -1312,6 +1409,8 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		mnemonics_ = mnemonics;
 		std::string why;
 		const bool bound = keybinds.empty() || bindings_.parse(keybinds, buttonNames_, why);
+		defaultBindings_ = bindings_.texts();
+		defaultBindings_.resize(buttonNames_.size());
 		buttonCount.set(static_cast<int64_t>(names.size()));
 		coreName.set(coreText);
 		systemName.set(systemText);

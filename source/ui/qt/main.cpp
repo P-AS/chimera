@@ -17,6 +17,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QQuickItem>
 #include <QQuickWindow>
 #include <QPalette>
 #include <QStandardPaths>
@@ -29,6 +30,7 @@
 #include <windows.h>
 #endif
 #include <mutex>
+#include <map>
 #include <set>
 #include <vector>
 
@@ -42,6 +44,8 @@
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/new_project_vm.hpp"
 #include "chimera/vm/hex_editor_vm.hpp"
+#include "chimera/vm/controls_vm.hpp"
+#include "chimera/vm/hotkeys_vm.hpp"
 #include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "key_names.hpp"
@@ -67,12 +71,15 @@ private:
 	QObject *context_;
 };
 
-/* Keys pressed in the window go to the machine, by Chimera's key names; a
- * window that loses the keyboard lets go of every key it held. */
+/* Keys pressed in the window go to the machine, by Chimera's key names, and
+ * to the hotkeys, named with the modifiers held as Chimera writes them
+ * ("Ctrl+Shift+V"); both, as Chimera does by default. A key typed into a
+ * text field is the field's. A window that loses the keyboard lets go of
+ * every key it held. */
 class KeyFilter : public QObject
 {
 public:
-	explicit KeyFilter(vm::SessionViewModel &session) : session_(session) {}
+	KeyFilter(vm::SessionViewModel &session, vm::HotkeysViewModel &hotkeys) : session_(session), hotkeys_(hotkeys) {}
 
 protected:
 	bool eventFilter(QObject *watched, QEvent *e) override
@@ -80,21 +87,38 @@ protected:
 		if (e->type() == QEvent::KeyPress || e->type() == QEvent::KeyRelease)
 		{
 			auto *k = static_cast<QKeyEvent *>(e);
+			auto *typing = qobject_cast<QQuickItem *>(QGuiApplication::focusObject());
+			const bool down = e->type() == QEvent::KeyPress;
+			if (down && typing != nullptr && typing->flags().testFlag(QQuickItem::ItemAcceptsInputMethod))
+				return QObject::eventFilter(watched, e);
 			if (!k->isAutoRepeat())
 			{
 				const QString name = qt::keyName(k->key(), k->modifiers());
 				if (!name.isEmpty())
 				{
-					const bool down = e->type() == QEvent::KeyPress;
 					session_.key(name.toStdString(), down);
-					if (down) down_.insert(name);
-					else down_.erase(name);
+					if (down)
+					{
+						/* the combination it was pressed with is the one let go */
+						const QString combo = qt::keyCombination(k->key(), k->modifiers());
+						down_[name] = combo;
+						hotkeys_.key(combo.toStdString(), true);
+					}
+					else if (const auto it = down_.find(name); it != down_.end())
+					{
+						hotkeys_.key(it->second.toStdString(), false);
+						down_.erase(it);
+					}
 				}
 			}
 		}
 		else if (e->type() == QEvent::FocusOut || e->type() == QEvent::WindowDeactivate)
 		{
-			for (const QString &name : down_) session_.key(name.toStdString(), false);
+			for (const auto &[name, combo] : down_)
+			{
+				session_.key(name.toStdString(), false);
+				hotkeys_.key(combo.toStdString(), false);
+			}
 			down_.clear();
 		}
 		return QObject::eventFilter(watched, e);
@@ -102,7 +126,8 @@ protected:
 
 private:
 	vm::SessionViewModel &session_;
-	std::set<QString> down_;
+	vm::HotkeysViewModel &hotkeys_;
+	std::map<QString, QString> down_;
 };
 
 #ifdef _WIN32
@@ -163,7 +188,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark, whatever the system says"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, settings, lua, branches, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, settings, lua, branches, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -199,8 +224,66 @@ int main(int argc, char **argv)
 	vm::RamSearchViewModel ramSearch(dispatcher, session);
 	vm::RamWatchViewModel ramWatch(dispatcher, session);
 	vm::HexEditorViewModel hexEditor(dispatcher, session);
-	vm::SettingsViewModel settings(dispatcher, session);
 	vm::BranchesViewModel branches(dispatcher, inputs, session, pianoRoll);
+	vm::ControlsViewModel controls(dispatcher, session);
+	/* Chimera's hotkeys, with its keys, for what this window has */
+	vm::HotkeysViewModel hotkeys(dispatcher);
+	{
+		auto run = [](vm::ViewModel &vm, std::string command, vm::Args args = {}) {
+			std::string e;
+			vm.run(command, args, e);
+		};
+		hotkeys.add("General", "Frame Advance", "F", [&session](bool down) { session.holdFrameAdvance(down); });
+		hotkeys.add("General", "Rewind", "Shift+R", [&session](bool down) { session.holdRewind(down); });
+		hotkeys.add("General", "Pause", "Pause", [&session, run](bool down) {
+			if (down) run(session, session.running.get() ? "pause" : "play");
+		});
+		hotkeys.add("General", "Fast Forward", "Tab", [&session](bool down) { session.holdFastForward(down); });
+		hotkeys.add("General", "Reboot Core", "Ctrl+R", [&session, run](bool down) {
+			if (down) run(session, "restart");
+		});
+		hotkeys.add("General", "Close ROM", "Ctrl+W", [&session, run](bool down) {
+			if (down) run(session, "close");
+		});
+		hotkeys.add("TAStudio", "Add Branch", "Alt+Insert", [&branches, run](bool down) {
+			if (down) run(branches, "create");
+		});
+		for (int slot = 1; slot <= 10; slot++)
+		{
+			const std::string n = std::to_string(slot), key = "F" + n;
+			hotkeys.add("TAStudio", "Save Branch " + n, "Shift+" + key, [&branches, run, slot](bool down) {
+				if (down) run(branches, "saveSlot", {int64_t{slot - 1}});
+			});
+			hotkeys.add("TAStudio", "Load Branch " + n, key, [&branches, run, slot](bool down) {
+				if (down) run(branches, "load", {int64_t{slot - 1}});
+			});
+		}
+		hotkeys.add("TAStudio", "Toggle Follow Cursor", "Shift+F", [&pianoRoll](bool down) {
+			if (down) pianoRoll.followPlayback.set(!pianoRoll.followPlayback.get());
+		});
+		hotkeys.add("TAStudio", "Toggle Auto-Restore", "Alt+R", [&session](bool down) {
+			if (down) session.autoRestore.set(!session.autoRestore.get());
+		});
+		hotkeys.add("TAStudio", "Set Marker", "M", [&pianoRoll, run](bool down) {
+			if (down) run(pianoRoll, "addMarker", {pianoRoll.currentFrame.get(), std::string()});
+		});
+		hotkeys.add("TAStudio", "Delete Marker", "Ctrl+M", [&pianoRoll, run](bool down) {
+			if (down) run(pianoRoll, "removeMarker", {pianoRoll.currentFrame.get()});
+		});
+		auto seekMarker = [&pianoRoll, &session, run](const char *which) {
+			std::string e;
+			const auto to = pianoRoll.run(which, {pianoRoll.currentFrame.get()}, e);
+			int64_t frame = -1;
+			if (to && vm::fromValue(*to, frame) && frame >= 0) run(session, "seek", {frame});
+		};
+		hotkeys.add("TAStudio", "Seek To Prev Marker", "Shift+PageUp", [seekMarker](bool down) {
+			if (down) seekMarker("previousMarker");
+		});
+		hotkeys.add("TAStudio", "Seek To Next Marker", "Shift+PageDown", [seekMarker](bool down) {
+			if (down) seekMarker("nextMarker");
+		});
+	}
+	vm::SettingsViewModel settings(dispatcher, session);
 	/* the cores and the firmware: beside the program, as Chimera keeps them,
 	 * unless the environment names others */
 	vm::CoresViewModel cores(dispatcher);
@@ -229,6 +312,8 @@ int main(int argc, char **argv)
 			: (QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/projects")).toStdString());
 	config.keep(session, "autoRestore");
 	config.keep(ramWatch, "showOnScreen");
+	config.keep(controls, "saved");
+	config.keep(hotkeys, "saved");
 	config.keep(session, "recentProjects");
 	config.keep(pianoRoll, "followPlayback");
 	if (!config.problem().empty()) session.status.set(config.problem());
@@ -238,6 +323,9 @@ int main(int argc, char **argv)
 	qt::QmlViewModel ramWatchQml(ramWatch);
 	qt::QmlViewModel newProjectQml(newProject);
 	qt::QmlViewModel hexEditorQml(hexEditor);
+	qt::QmlViewModel controlsQml(controls);
+	qt::QmlViewModel hotkeysQml(hotkeys);
+	qt::KeyNamer keyNamer;
 	qt::QmlViewModel settingsQml(settings);
 	qt::QmlViewModel branchesQml(branches);
 	qt::QmlViewModel coresQml(cores);
@@ -256,6 +344,8 @@ int main(int argc, char **argv)
 	lua.add(ramWatch);
 	lua.add(newProject);
 	lua.add(hexEditor);
+	lua.add(controls);
+	lua.add(hotkeys);
 	lua.add(settings);
 	lua.add(luaConsole);
 	lua.add(branches);
@@ -280,6 +370,9 @@ int main(int argc, char **argv)
 		{QStringLiteral("ramWatch"), QVariant::fromValue<QObject *>(&ramWatchQml)},
 		{QStringLiteral("newProject"), QVariant::fromValue<QObject *>(&newProjectQml)},
 		{QStringLiteral("hexEditor"), QVariant::fromValue<QObject *>(&hexEditorQml)},
+		{QStringLiteral("controls"), QVariant::fromValue<QObject *>(&controlsQml)},
+		{QStringLiteral("hotkeys"), QVariant::fromValue<QObject *>(&hotkeysQml)},
+		{QStringLiteral("keyNamer"), QVariant::fromValue<QObject *>(&keyNamer)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},
@@ -288,13 +381,14 @@ int main(int argc, char **argv)
 	engine.load(QUrl(QStringLiteral("qrc:/chimera/Main.qml")));
 	if (engine.rootObjects().isEmpty()) return 1;
 	auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
-	KeyFilter keys(session);
+	KeyFilter keys(session, hotkeys);
 	window->installEventFilter(&keys);
 	/* --show ram-search or settings: the tool windows by name */
 	const QString showName = args.value(showOpt) == QStringLiteral("ram-search") ? QStringLiteral("ramSearchWindow")
 		: args.value(showOpt) == QStringLiteral("ram-watch") ? QStringLiteral("ramWatchWindow")
 		: args.value(showOpt) == QStringLiteral("new-project") ? QStringLiteral("newProjectWindow")
 		: args.value(showOpt) == QStringLiteral("hex") ? QStringLiteral("hexEditorWindow")
+		: args.value(showOpt) == QStringLiteral("controls") ? QStringLiteral("controlsWindow")
 		: args.value(showOpt) == QStringLiteral("settings") ? QStringLiteral("settingsWindow")
 		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")
 		: args.value(showOpt) == QStringLiteral("branches") ? QStringLiteral("branchesWindow")

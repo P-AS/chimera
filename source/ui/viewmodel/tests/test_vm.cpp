@@ -27,6 +27,8 @@
 
 #include "chimera/vm/bindings.hpp"
 #include "chimera/vm/config_store.hpp"
+#include "chimera/vm/controls_vm.hpp"
+#include "chimera/vm/hotkeys_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/firmware.hpp"
 #include "chimera/vm/hex_editor_vm.hpp"
@@ -1646,6 +1648,147 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 	return true;
 }
 
+/* Controls rebound and remembered per core; hotkeys run, rebound and let
+ * go; frame advance and rewind held; branch slots */
+bool controlsAndHotkeys(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	BranchesViewModel branches(d, inputs, session, roll);
+	ControlsViewModel controls(d, session);
+	HotkeysViewModel hotkeys(d);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && controls.core.get() == "Synth"; }, 60));
+	RowModel &buttons = *controls.rowLists()[0].model;
+	auto text = [&](int64_t row, int32_t column) {
+		std::string t;
+		fromValue(buttons.cell(row, column), t);
+		return t;
+	};
+	int64_t down = -1;
+	for (int64_t r = 0; r < buttons.rowCount(); r++)
+		if (text(r, 0) == "P1 Down") down = r;
+	CHECK(down >= 0);
+	if (down < 0) return false;
+	const std::string packageKeys = text(down, 2);
+	CHECK(text(down, 1) == packageKeys && packageKeys.find("Down") != std::string::npos);
+	int64_t frame = 0;
+	auto step = [&] {
+		session.run("frameAdvance", {}, error);
+		frame++;
+		CHECK(d.until([&] { return session.frame.get() == frame; }, 20));
+	};
+	/* rebound: K holds Down, and Down holds nothing */
+	CHECK(controls.run("bind", {down, std::string("K")}, error).has_value());
+	bool changed = false;
+	fromValue(buttons.cell(down, 3), changed);
+	CHECK(text(down, 1) == "K" && changed);
+	session.key("K", true);
+	step();
+	session.key("K", false);
+	session.key("Down", true);
+	step();
+	session.key("Down", false);
+	CHECK(inputs.at(0) == (uint64_t{1} << down) && inputs.at(1) == 0);
+	{
+		json::Json all;
+		CHECK(json::parse(controls.saved.get(), all, error) && all.find("Synth") != nullptr &&
+			  all.find("Synth")->find("P1 Down") != nullptr && all.find("Synth")->find("P1 Down")->text == "K");
+	}
+	/* remembered when the machine starts again */
+	session.run("restart", {}, error);
+	CHECK(d.until([&] { return session.opens.get() == 2; }, 60));
+	CHECK(session.bindingTexts()[static_cast<size_t>(down)] == "K");
+	frame = session.frame.get();
+	/* one more key, then back to the package's */
+	controls.run("addKey", {down, std::string("J")}, error);
+	CHECK(text(down, 1) == "K, J");
+	controls.run("addKey", {down, std::string("J")}, error);
+	CHECK(text(down, 1) == "K, J");
+	controls.run("reset", {down}, error);
+	CHECK(text(down, 1) == packageKeys && controls.saved.get() == "{}");
+	controls.run("bind", {down, std::string("")}, error);
+	CHECK(text(down, 1).empty());
+	controls.run("resetAll", {}, error);
+	CHECK(text(down, 1) == packageKeys && controls.saved.get() == "{}");
+	CHECK(!controls.run("bind", {int64_t{99}, std::string("K")}, error) && error == "no button 99");
+
+	/* hotkeys: run, repeat ignored, let go, rebound, back */
+	int downs = 0, ups = 0;
+	hotkeys.add("General", "Frame Advance", "F", [&](bool isDown) { (isDown ? downs : ups)++; });
+	hotkeys.add("General", "Rewind", "Shift+R", [&](bool) {});
+	CHECK(hotkeys.key("F", true) && downs == 1);
+	CHECK(!hotkeys.key("F", true) && downs == 1);
+	CHECK(hotkeys.key("F", false) && ups == 1);
+	CHECK(!hotkeys.key("R", true) && !hotkeys.key("Shift+F", true));
+	CHECK(hotkeys.run("bind", {std::string("Frame Advance"), std::string("G")}, error).has_value());
+	CHECK(!hotkeys.key("F", true) && hotkeys.key("G", true) && downs == 2);
+	hotkeys.key("G", false);
+	CHECK(hotkeys.saved.get().find("\"G\"") != std::string::npos);
+	/* a key let go after its action was rebound still lets the action go */
+	hotkeys.key("G", true);
+	hotkeys.run("reset", {std::string("Frame Advance")}, error);
+	CHECK(hotkeys.key("G", false) && ups == 3);
+	CHECK(hotkeys.saved.get() == "{}" && hotkeys.key("F", true));
+	hotkeys.key("F", false);
+	CHECK(!hotkeys.run("bind", {std::string("Fly"), std::string("Z")}, error) && error == "no action Fly");
+	const int before = downs;
+	hotkeys.run("run", {std::string("Frame Advance")}, error);
+	CHECK(downs == before + 1);
+
+	/* frame advance held: a frame, then after half a second it runs on until let go */
+	const int64_t start = session.frame.get();
+	session.holdFrameAdvance(true);
+	CHECK(d.until([&] { return session.frame.get() == start + 1; }, 10));
+	d.until([] { return false; }, 0.25);
+	CHECK(session.frame.get() == start + 1 && !session.running.get());
+	CHECK(d.until([&] { return session.running.get() && session.frame.get() > start + 3; }, 5));
+	session.holdFrameAdvance(false);
+	CHECK(d.until([&] { return !session.running.get(); }, 5));
+	d.until([] { return false; }, 0.2);
+	const int64_t stopped = session.frame.get();
+	d.until([] { return false; }, 0.3);
+	CHECK(session.frame.get() == stopped);
+	/* rewind held: a frame back at once, then on back */
+	session.holdRewind(true);
+	CHECK(d.until([&] { return session.frame.get() == stopped - 1; }, 10));
+	CHECK(d.until([&] { return session.frame.get() < stopped - 3; }, 5));
+	session.holdRewind(false);
+	d.until([] { return false; }, 0.2);
+	const int64_t back = session.frame.get();
+	d.until([] { return false; }, 0.3);
+	CHECK(session.frame.get() == back && back >= 0);
+	/* fast forward: faster than the machine's own rate while held */
+	session.run("play", {}, error);
+	session.holdFastForward(true);
+	const int64_t fastFrom = session.frame.get();
+	d.until([] { return false; }, 0.5);
+	session.holdFastForward(false);
+	session.run("pause", {}, error);
+	CHECK(session.frame.get() - fastFrom > 45);
+
+	/* branch slots: saved into, over, and a new one past the last */
+	CHECK(branches.run("saveSlot", {int64_t{0}}, error).has_value() && branches.count.get() == 1);
+	CHECK(d.until([&] { return branches.made.get() == 1; }, 20));
+	session.run("frameAdvance", {}, error);
+	const int64_t later = session.frame.get() + 1;
+	CHECK(d.until([&] { return session.frame.get() == later; }, 20));
+	CHECK(branches.run("saveSlot", {int64_t{0}}, error).has_value() && branches.count.get() == 1);
+	CHECK(d.until([&] { return branches.made.get() == 2; }, 20));
+	int64_t slotFrame = -1;
+	std::string slotName;
+	fromValue(branches.rowLists()[0].model->cell(0, 1), slotFrame);
+	fromValue(branches.rowLists()[0].model->cell(0, 0), slotName);
+	CHECK(slotFrame == later && slotName == "Branch 1");
+	CHECK(branches.run("saveSlot", {int64_t{5}}, error).has_value() && branches.count.get() == 2);
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	return true;
+}
+
 /* Rerecords, counted as Chimera's TAStudio counts them: an edit over frames
  * the machine has stored states past counts one, a stroke counts once
  * however many cells it crosses, frames added at the end count none, a
@@ -1982,6 +2125,7 @@ int main(int argc, char **argv)
 			ranMachine = ramWatch(argv[1], argv[2]) && ranMachine;
 			ranMachine = hexEditor(argv[1], argv[2]) && ranMachine;
 			ranMachine = pianoRollEditing(argv[1], argv[2]) && ranMachine;
+			ranMachine = controlsAndHotkeys(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;

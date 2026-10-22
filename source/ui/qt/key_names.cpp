@@ -5,6 +5,16 @@ namespace chimera::qt {
 /* The names Chimera has always given keys (the C# DistinctKeyNameOverrides),
  * so a package's default_keybinds.json means the same here. Left and right
  * Shift, Ctrl and Alt arrive merged, as Chimera's default does. */
+QString keyCombination(int key, Qt::KeyboardModifiers modifiers)
+{
+	QString n = keyName(key, modifiers);
+	if (n.isEmpty() || n == QStringLiteral("Shift") || n == QStringLiteral("Ctrl") || n == QStringLiteral("Alt")) return n;
+	if (modifiers.testFlag(Qt::ShiftModifier)) n.prepend(QStringLiteral("Shift+"));
+	if (modifiers.testFlag(Qt::AltModifier)) n.prepend(QStringLiteral("Alt+"));
+	if (modifiers.testFlag(Qt::ControlModifier)) n.prepend(QStringLiteral("Ctrl+"));
+	return n;
+}
+
 QString keyName(int key, Qt::KeyboardModifiers modifiers)
 {
 	const bool keypad = modifiers.testFlag(Qt::KeypadModifier);

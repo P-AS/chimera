@@ -35,38 +35,19 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 		[this](const Args &a, std::string &error) -> Value {
 			std::string name;
 			if (!a.empty() && !arg(a, 0, name, error)) return {};
-			if (name.empty()) name = "Branch " + std::to_string(branches_.size() + 1);
-			/* listed at once; the machine says its frame and movie, and keeps
-			 * its state, when it gets to it */
-			SessionViewModel::Branch b;
-			b.name = name;
-			b.time = now();
-			b.frame = session_.frame.get();
-			b.text = inputs_.text();
-			b.frames = inputs_.size();
-			b.id = ++lastId_;
-			for (const auto &[f, m] : roll_.markers()) b.markers.push_back(m);
-			branches_.push_back(b);
-			changed();
-			status.set("Making " + name + "...");
-			session_.makeBranch(name, b.time, [this, id = b.id](SessionViewModel::Branch done, const std::string &why) {
-				for (SessionViewModel::Branch &x : branches_)
-					if (x.id == id)
-					{
-						x.frame = done.frame;
-						x.text = std::move(done.text);
-						x.frames = done.frames;
-						x.state = done.state;
-						x.picture = done.picture;
-						changed();
-						status.set("Made " + x.name + " at frame " + std::to_string(x.frame) +
-							(!why.empty() ? "; its state could not be kept (" + why + "), so loading it replays"
-							 : x.state.empty() ? "" : ", its state kept"));
-						break;
-					}
-				made.set(made.get() + 1);
-			});
-			return static_cast<int64_t>(branches_.size() - 1);
+			return keepRun(-1, name);
+		}, &session_.isOpen);
+	command("saveSlot", "puts the run as it stands into the branch at this place, over what it held (a new branch "
+		"when there is none there): Chimera's numbered branch slots", {"index"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t i = 0;
+			if (!arg(a, 0, i, error)) return {};
+			if (i < 0)
+			{
+				error = "no branch " + std::to_string(i);
+				return {};
+			}
+			return keepRun(i, "");
 		}, &session_.isOpen);
 	command("load", "puts a branch's movie back, and the machine on its frame", {"index"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -111,6 +92,56 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 		count.set(static_cast<int64_t>(branches_.size()));
 		rows_.reset.emit();
 	});
+}
+
+int64_t BranchesViewModel::keepRun(int64_t slot, std::string name)
+{
+	/* listed at once; the machine says its frame and movie, and keeps its
+	 * state, when it gets to it */
+	SessionViewModel::Branch b;
+	b.time = now();
+	b.frame = session_.frame.get();
+	b.text = inputs_.text();
+	b.frames = inputs_.size();
+	b.id = ++lastId_;
+	for (const auto &[f, m] : roll_.markers()) b.markers.push_back(m);
+	int64_t at = 0;
+	if (slot >= 0 && slot < static_cast<int64_t>(branches_.size()))
+	{
+		/* the slot keeps its name; what it held goes, its state file too */
+		const SessionViewModel::Branch old = branches_[static_cast<size_t>(slot)];
+		b.name = name.empty() ? old.name : name;
+		branches_[static_cast<size_t>(slot)] = b;
+		at = slot;
+		changed();
+		session_.forgetBranch(old);
+	}
+	else
+	{
+		b.name = name.empty() ? "Branch " + std::to_string(branches_.size() + 1) : name;
+		branches_.push_back(b);
+		at = static_cast<int64_t>(branches_.size()) - 1;
+		changed();
+	}
+	status.set("Making " + b.name + "...");
+	session_.makeBranch(b.name, b.time, [this, id = b.id](SessionViewModel::Branch done, const std::string &why) {
+		for (SessionViewModel::Branch &x : branches_)
+			if (x.id == id)
+			{
+				x.frame = done.frame;
+				x.text = std::move(done.text);
+				x.frames = done.frames;
+				x.state = done.state;
+				x.picture = done.picture;
+				changed();
+				status.set("Made " + x.name + " at frame " + std::to_string(x.frame) +
+					(!why.empty() ? "; its state could not be kept (" + why + "), so loading it replays"
+					 : x.state.empty() ? "" : ", its state kept"));
+				break;
+			}
+		made.set(made.get() + 1);
+	});
+	return at;
 }
 
 bool BranchesViewModel::index(const Args &a, size_t &out, std::string &error) const

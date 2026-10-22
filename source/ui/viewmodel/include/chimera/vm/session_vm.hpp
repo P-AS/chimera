@@ -90,6 +90,11 @@ public:
 		int64_t min = -32768, max = 32767, neutral = 0;
 	};
 	const std::vector<Axis> &axes() const { return axes_; }
+	/* each button's keys ("Down, J1 POV0D"), by index: as they are, as the
+	 * package has them, and given again (the view's thread) */
+	const std::vector<std::string> &bindingTexts() const { return bindings_.texts(); }
+	const std::vector<std::string> &defaultBindingTexts() const { return defaultBindings_; }
+	void setBindingTexts(std::vector<std::string> texts);
 	const std::string &mnemonics() const { return mnemonics_; }
 	Signal<> buttonsChanged;
 
@@ -162,6 +167,14 @@ public:
 
 	/* for the window: a key went down or up, by Chimera's key names */
 	void key(const std::string &name, bool down);
+
+	/* Held keys, as Chimera's hotkeys work: frame advance runs a frame, and
+	 * held half a second runs on until let go; rewind goes a frame back, and
+	 * held goes on back a frame a frame; fast forward runs as fast as the
+	 * machine can while held. */
+	void holdFrameAdvance(bool down);
+	void holdRewind(bool down);
+	void holdFastForward(bool down);
 
 	/* the inputs of frame `first` (and maybe later ones) were edited: the
 	 * machine's states after it no longer hold */
@@ -248,6 +261,7 @@ private:
 	InputLog &inputs_;
 	std::vector<std::string> buttonNames_;
 	std::vector<Axis> axes_;
+	std::vector<std::string> defaultBindings_;
 	std::string mnemonics_;
 	Bindings bindings_;
 	std::map<std::string, bool> keysDown_;
@@ -308,6 +322,11 @@ private:
 	int64_t greenEndM_ = 0;
 	std::atomic<bool> autoRestoreM_{true};
 	bool runningM_ = false;
+	/* what a held key is doing (the machine's thread) */
+	enum class Hold { None, Advance, Rewind };
+	Hold holdM_ = Hold::None;
+	Clock::time_point holdSince_{};
+	bool holdRunning_ = false, fastM_ = false;
 	Clock::time_point due_{};
 	Clock::duration period_ = std::chrono::microseconds(16667);
 	int64_t fpsFrames_ = 0;

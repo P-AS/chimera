@@ -21,9 +21,28 @@ std::string trim(std::string_view s)
 
 } // namespace
 
+void Bindings::setTexts(std::vector<std::string> texts)
+{
+	byKey_.clear();
+	texts_ = std::move(texts);
+	for (size_t index = 0; index < texts_.size(); index++)
+	{
+		std::string_view rest = texts_[index];
+		while (!rest.empty())
+		{
+			const size_t comma = rest.find(',');
+			const std::string key = trim(rest.substr(0, comma));
+			if (!key.empty()) byKey_[key].push_back(static_cast<int>(index));
+			if (comma == std::string_view::npos) break;
+			rest.remove_prefix(comma + 1);
+		}
+	}
+}
+
 bool Bindings::parse(std::string_view json, const std::vector<std::string> &buttonNames, std::string &error)
 {
 	byKey_.clear();
+	texts_.assign(buttonNames.size(), std::string());
 	Json root;
 	if (!json::parse(json, root, error)) return false;
 	if (root.kind != Json::Kind::Object)
@@ -52,23 +71,14 @@ bool Bindings::parse(std::string_view json, const std::vector<std::string> &butt
 	}
 	if (best == nullptr) return true;
 
+	std::vector<std::string> texts(buttonNames.size());
 	for (const auto &[button, keys] : best->members)
 	{
 		if (keys.kind != Json::Kind::String) continue;
-		int index = -1;
 		for (size_t b = 0; b < buttonNames.size(); b++)
-			if (buttonNames[b] == button) { index = static_cast<int>(b); break; }
-		if (index < 0) continue;
-		std::string_view rest = keys.text;
-		while (!rest.empty())
-		{
-			const size_t comma = rest.find(',');
-			const std::string key = trim(rest.substr(0, comma));
-			if (!key.empty()) byKey_[key].push_back(index);
-			if (comma == std::string_view::npos) break;
-			rest.remove_prefix(comma + 1);
-		}
+			if (buttonNames[b] == button) texts[b] = keys.text;
 	}
+	setTexts(std::move(texts));
 	return true;
 }
 

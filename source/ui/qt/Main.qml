@@ -15,6 +15,9 @@ ApplicationWindow {
     required property QtObject ramWatch
     required property QtObject newProject
     required property QtObject hexEditor
+    required property QtObject controls
+    required property QtObject hotkeys
+    required property QtObject keyNamer
     required property QtObject settings
     required property QtObject luaConsole
     required property QtObject branches
@@ -63,6 +66,7 @@ ApplicationWindow {
             Action { text: qsTr("&Play"); shortcut: "Ctrl+P"; enabled: root.session.playEnabled && !root.session.running; onTriggered: root.session.run("play") }
             Action { text: qsTr("P&ause"); shortcut: "Ctrl+Space"; enabled: root.session.running; onTriggered: root.session.run("pause") }
             Action { text: qsTr("&Settings..."); onTriggered: { settingsWindow.show(); settingsWindow.raise() } }
+            Action { text: qsTr("&Controls and Hotkeys..."); onTriggered: { controlsWindow.show(); controlsWindow.raise() } }
             Action { text: qsTr("&Frame Advance"); shortcut: "Ctrl+F"; enabled: root.session.frameAdvanceEnabled; onTriggered: root.session.run("frameAdvance") }
             Action { text: qsTr("Go to Frame &0"); shortcut: "Ctrl+Home"; enabled: root.session.seekEnabled; onTriggered: root.session.run("seek", [0]) }
             Action {
@@ -143,7 +147,7 @@ ApplicationWindow {
             Action { text: qsTr("&Redo"); shortcut: StandardKey.Redo; enabled: root.pianoRoll.redoEnabled; onTriggered: root.pianoRoll.run("redo") }
             MenuSeparator {}
             Action { text: qsTr("&Branches..."); shortcut: "Ctrl+B"; onTriggered: { branchesWindow.show(); branchesWindow.raise() } }
-            Action { text: qsTr("Add &Marker Here..."); shortcut: "Ctrl+M"; enabled: root.session.isOpen; onTriggered: markerDialog.open() }
+            Action { text: qsTr("Add &Marker Here..."); enabled: root.session.isOpen; onTriggered: markerDialog.open() }
             Action { text: qsTr("Remove Marker Here"); enabled: root.session.isOpen; onTriggered: root.pianoRoll.run("removeMarker", [root.pianoRoll.currentFrame]) }
             Action {
                 text: qsTr("&Next Marker"); shortcut: "Ctrl+Down"; enabled: root.session.isOpen
@@ -190,6 +194,7 @@ ApplicationWindow {
     RamWatch { id: ramWatchWindow; vm: root.ramWatch; visible: false }
     NewProject { id: newProjectWindow; vm: root.newProject; visible: false }
     HexEditor { id: hexEditorWindow; vm: root.hexEditor; visible: false }
+    Controls { id: controlsWindow; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; visible: false }
     Settings { id: settingsWindow; settings: root.settings; visible: false }
     LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; visible: false }
     Branches { id: branchesWindow; vm: root.branches; visible: false }

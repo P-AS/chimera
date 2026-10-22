@@ -57,9 +57,11 @@ made from.
 | luaConsole | edit, run, open and save scripts; their output | Lua Console |
 | newProject | a project made before any machine runs, as Chimera's New Project window makes one: the core among the installed ones, its machine, files in the slots its package declares (kinds, how many, the ones a choice rules out, at least one of a group, names a slot asks for, a cue's tracks checked at once), the settings that apply, the firmware found by the engine's rules or chosen by hand; what is missing said a line at a time; made, then opened | New Project |
 | hexEditor | a memory domain sixteen bytes a line, by 1, 2 or 4 bytes either end first, with its text; only the lines on screen held and read after every frame, the bytes that changed marked; a value written into the machine (the states after the frame dropped); bytes found | Hex Editor |
+| controls | each button's keys and gamepad controls, the package's at first, changed a button at a time (typed, or caught from a key press) and remembered per core | Controls and Hotkeys |
+| hotkeys | the window's actions on keys, with Chimera's names and keys: frame advance (held half a second it runs on), rewind (held it goes on back), pause, fast forward, reboot, close, branch slots F1-F10 and Shift+F1-F10, add branch, follow, auto-restore, markers; changed and remembered; a key that is a hotkey and a button does both, as in Chimera | Controls and Hotkeys |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 597 checks on the
+The tests drive the view models with no window: 642 checks on the
 synthetic core (and on two packages made from it at build time: one under
 another name, one of two machines with declared slots and a firmware). They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
@@ -190,8 +192,11 @@ A suggested order, each step usable on its own:
    commands, so MCP has them too. Coordinate with the New-Features
    session, whose the MCP code is.
 5. **Movie import, video recording, the debugger and trace logger.**
-6. **Hotkeys and their configuration,** themes, recent files. Then the
-   Qt window is the default, and the C# one goes.
+6. **Hotkeys and their configuration,** themes, recent files. Hotkeys,
+   controls and recent files are done; still: Chimera's other hotkeys
+   (speed, screenshots, read-only, the RAM Search ones), a gamepad
+   control caught by pressing it, and the themes. Then the Qt window is
+   the default, and the C# one goes.
 
 ## Yours to decide
 
