@@ -1,0 +1,148 @@
+# A Qt interface for Chimera (issue 142)
+
+Private for now (owner, 2026-10-22). This is the prototype of a new
+interface in C++ only, to replace the Windows Forms one and with it C#. The
+code is in `source/ui`; how it is built and run is in
+[source/ui/README.md](../source/ui/README.md).
+
+## What was decided
+
+- Qt 6.12 (a long-term-support release), with the windows written in Qt
+  Quick (QML) (owner, 2026-10-22).
+- The logic behind each window lives in C++ "view models" with no Qt in
+  them. A window only lays things out and binds to them (owner,
+  2026-10-22).
+- Slint was considered and set aside for now. It is the closest fit to
+  this pattern, but it has no docking, fewer desktop controls, and its
+  licence is GPLv3 or an attribution licence, against Chimera's MIT.
+
+## What the prototype does
+
+Each window binds to view models through one generic adapter that knows
+none of them. Lua scripts reach the same view models by the same names;
+the list of names (`--describe`) is what an MCP server's tools would be
+made from.
+
+| View model | What it does | Window |
+|---|---|---|
+| session | open a game or a project, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone, settings applied live or by restarting | main window |
+| pianoRoll | a row a frame and a column a button; press, drag, paint, fill; follows the current frame; greenzone and lag colours | main window (a C++ item draws it) |
+| ramSearch | the engine's RAM Search, updated after every frame, with undo | RAM Search (Qt's own table) |
+| settings | the package's declared settings, those that apply, edits applied live or by restarting | Settings (a form generated from the declaration) |
+| luaConsole | edit, run, open and save scripts; their output | Lua Console |
+
+The tests drive the view models with no window: 150 checks on the
+synthetic core. They include a project whose movie ends with the machine's
+memory byte for byte as the witness recorded it. One more test loads the
+whole window off-screen and runs it for a second. Every new check was
+broken on purpose once and seen to fail.
+
+## What was measured
+
+Linux, headless, Qt's software drawing:
+
+- **Full speed while the piano roll scrolls.** Snes9x, Genesis Plus GX
+  and the synthetic core ran at their own rate (60 frames a second) while
+  the piano roll scrolled through 1,000,000 frames. Each redraw took
+  0.24 to 0.52 ms.
+- **Running without the picture:** about 3,850 frames a second (Genesis
+  Plus GX) and 3,950 (Snes9x).
+- **Seeking:**
+  - jumping back 1,500 frames, to a stored state: 9 to 10 ms;
+  - an edit 2,900 frames back, replayed to where the machine was: 0.7 s.
+
+Windows (the GTX 1060, through WSL, screen locked):
+
+- **Tests and speed:**
+  - the view-model tests pass natively;
+  - Qt chose Direct3D 11 on the GTX 1060;
+  - the machine held 59.9 frames a second while the piano roll scrolled.
+- **Download size:** 69 MB with debug information stripped, of which Qt
+  is 57 MB.
+- **Not measured yet:** the window on screen on the GPU. Windows lets no
+  Direct3D window present frames while the screen is locked.
+
+## What went wrong, and what was done
+
+- **Qt's threading variant on Windows.** Qt built for Windows with the
+  compiler's "win32" threading variant (the one the rest of Chimera's
+  Windows build uses) crashed in `libstdc++-6.dll` as a Qt thread ended at
+  exit. Built with the "posix" variant, as Qt supports, the crash is gone.
+  The Qt window's Windows build uses its own cross file
+  (`extern/meson/mingw-w64-qt.ini`).
+- **OPEN: the exit hang.** On Windows, a program that has shown a Qt
+  Quick window does not finish exiting; it stays listed, holding memory,
+  and cannot be stopped. A minimal Qt Quick program built the same way
+  does too, while one with no window exits cleanly. To be retried with
+  the screen unlocked, and then against Qt's own prebuilt Windows
+  libraries.
+- **zstd in resources.** The Linux Qt's resource compiler packs with
+  zstd, which the Windows Qt (built without it) cannot unpack:
+  `--no-zstd`.
+- **Network code.** The Linux Qt downloaded from Qt has its network
+  module inside QML; the Windows one built here leaves it out, since
+  Chimera has no network code. A shipped Linux build would need the same.
+- **Caches in Chimera's folder.** Qt keeps caches under the application's
+  name. Named "Chimera", the prototype wrote two cache files into the real
+  Chimera's data folder; they were removed, and the prototype has a name
+  of its own.
+- **Engine export.** The engine counts frames only for a movie it plays
+  itself, and a seek away and back within one report changes no frame
+  number. The view models count their own frames, and Lua's per-frame
+  hook runs on every report.
+- **Lua and C++ destructors.** Lua reports errors by jumping out of the C
+  function, past C++ destructors, so the bridge raises its errors only
+  after its C++ objects have ended.
+
+## The rest of the move, by size
+
+The C# interface by area, in lines (Designer files are generated layout,
+which QML replaces):
+
+| Area | Lines | Becomes |
+|---|---|---|
+| config (settings, wizard, firmware, Core Manager, paths) | 14,979 (3,783 Designer) | view models over the engine's project, package and firmware calls; QML forms |
+| TAStudio (piano roll, branches, markers, bookmarks, undo) | 11,185 + 363 | pianoRoll and session (started), branches, markers, undo history |
+| MainForm (menus, files, hotkeys, movies, MCP hooks) | 10,167 | the main window and session (started), hotkeys, recent files |
+| movie (formats, import, Bk2) | 7,548 + 1,045 | mostly the engine's already (movie log, import); the rest moves there |
+| Lua (console, libraries, NLua) | 7,005 + 4,197 | the console (started), the libraries as view model commands, Lua 5.4 directly |
+| Watch, RAM Search | 6,800 + 2,620 + 325 | RAM Search (done), RAM Watch, cheats |
+| custom controls, theming | 6,766 + 3,631 | Qt's controls; the shipped themes as palettes |
+| AV out (recording video) | 6,624 | a view model over an encoder; separate work |
+| hex editor, debugger, trace logger | 3,217 + 2,203 | C++ items like the piano roll |
+| display, input, sound | about 9,000 | done here (picture, keys, SDL pads, OpenAL) |
+
+About 150,000 lines of C# become about 40,000 to 60,000 of C++ and QML, if
+the prototype's ratio holds. The prototype is 4,000 lines of view models,
+1,600 of Qt (440 of them QML) and 740 of tests.
+
+A suggested order, each step usable on its own:
+
+1. **TAStudio's remaining parts:** markers, branches, undo, saving
+   projects with everything they hold (bookmarks, subtitles, headers).
+   This is what a TAS author lives in.
+2. **New project wizard, firmware and Core Manager.** Opening anything
+   without the C# window first.
+3. **RAM Watch, cheats, hex editor.**
+4. **Lua's libraries** (memory, joypad, gui drawing, forms) as view model
+   commands, so MCP has them too. Coordinate with the New-Features
+   session, whose the MCP code is.
+5. **Movie import, video recording, the debugger and trace logger.**
+6. **Hotkeys and their configuration,** themes, recent files. Then the
+   Qt window is the default, and the C# one goes.
+
+## Yours to decide
+
+1. **The engine export `ce_session_movie_entry_encode`.** The engine kept
+   writing movie lines internal on purpose ("a frontend that wants a line
+   drives the movie"). The C# window has its own copy of the Bk2 format,
+   which a C++ window would otherwise have to copy too. The export is in
+   this branch only.
+2. **How Qt is obtained for Windows.** Here it is built from source with
+   Ubuntu's mingw (posix threading), in 12 minutes, without the network
+   module. The other way is Qt's own prebuilt Windows libraries, built
+   with a different compiler.
+3. **When this leaves the private branch:** a public branch, CI, a
+   preview build beside the C# window.
+4. **macOS:** there is no Mac here; CI runners are the only way to check
+   it.
