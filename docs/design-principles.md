@@ -10584,11 +10584,10 @@ POV0. The console cores that had no game controller defaults got them, by
 place: the bottom face button is where a Super NES's B is. Computers, phones
 and touch screens keep the keyboard and the mouse. Only bindings changed:
 nothing a movie records did. A package test, KeybindsNameAJoysticksFirstHat,
-fails on a package that binds a later hat without the first. It passes on
-every core's published development build, but Chimera's own tests run against
-the cores' nightly builds, and 33 of those still bind POV1 until each core's
-next nightly; so the test waits until they are all published, and goes in
-then.
+fails on a package that binds a later hat without the first. Chimera's own
+tests run against the cores' nightly builds, and 33 of those bound POV1 until
+each core's next nightly, so the test waited until they were all published
+(2026-10-22: none of the 56 nightlies binds a later hat) and went in then.
 
 The owner also decided how controls are listed (issue 337). A pad's controls
 of one kind sit together: Dolphin's Triforce and Flycast's arcade boards list
