@@ -86,7 +86,7 @@ Windows (the GTX 1060, through WSL, screen locked):
   name. Named "Chimera", the prototype wrote two cache files into the real
   Chimera's data folder; they were removed, and the prototype has a name
   of its own.
-- **Engine export.** The engine counts frames only for a movie it plays
+- **Frame numbers.** The engine counts frames only for a movie it plays
   itself, and a seek away and back within one report changes no frame
   number. The view models count their own frames, and Lua's per-frame
   hook runs on every report.
