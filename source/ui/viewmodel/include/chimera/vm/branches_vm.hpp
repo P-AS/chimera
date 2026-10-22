@@ -18,6 +18,11 @@ public:
 
 	Property<int64_t> count{0};
 	Property<std::string> status;
+	/* branches the machine has made (their states kept or not), branches
+	 * loaded, and whether the last one loaded came from its state */
+	Property<int64_t> made{0};
+	Property<int64_t> loads{0};
+	Property<bool> loadedFromState{false};
 
 private:
 	class Rows : public RowModel
@@ -42,6 +47,7 @@ private:
 	std::vector<SessionViewModel::Branch> branches_;
 	Rows rows_{*this};
 	Connection loadedWatch_;
+	uint64_t lastId_ = 0;
 };
 
 } // namespace chimera::vm

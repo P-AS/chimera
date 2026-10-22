@@ -1,5 +1,7 @@
 #include "chimera/vm/session_vm.hpp"
 
+#include "chimera/vm/branch_state.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -43,6 +45,10 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("choices", "the cores the waiting game could be opened with, a line each", choices);
 	picture("screen", "the machine's picture", screen, screenChanged);
 	autoRestoreWatch_ = autoRestore.changed.connect([this] { autoRestoreM_.store(autoRestore.get()); });
+	expose("cacheFolder", "where what a project can make again is kept (its branches' states), a folder per project", cacheFolder, true);
+	cacheFolderWatch_ = cacheFolder.changed.connect([this] {
+		submit([this, folder = cacheFolder.get()] { cacheFolderM_ = folder; });
+	});
 
 	command("open", "opens a core package with a game file", {"package", "game"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -507,20 +513,168 @@ void SessionViewModel::loadMovie(std::string text, int64_t target)
 		if (s_ == nullptr) return;
 		runningM_ = false;
 		later([this] { running.set(false); });
-		/* where the two movies part: frames before it keep their green */
-		ce_movie_log *now = ce_movie_log_new(), *next = ce_movie_log_new();
-		const std::string current = movieTextOnMachine();
-		if (!current.empty()) ce_movie_log_parse(now, current.data(), current.size());
-		if (!text.empty()) ce_movie_log_parse(next, text.data(), text.size());
-		const int64_t from = ce_movie_log_divergent_point(now, next);
-		ce_session_movie_load(s_, next);
-		ce_movie_log_free(now);
-		ce_movie_log_free(next);
-		if (from >= 0) greenEndM_ = std::min(greenEndM_, from);
+		replaceMovieOnMachine(text);
 		seekOnMachine(target);
 		later([this] { inputsReset.emit(); });
 		report(-1, -1, -1, -1, -1);
 	});
+}
+
+int64_t SessionViewModel::replaceMovieOnMachine(const std::string &text)
+{
+	/* where the two movies part: frames before it keep their green */
+	ce_movie_log *now = ce_movie_log_new(), *next = ce_movie_log_new();
+	const std::string current = movieTextOnMachine();
+	if (!current.empty()) ce_movie_log_parse(now, current.data(), current.size());
+	if (!text.empty()) ce_movie_log_parse(next, text.data(), text.size());
+	const int64_t from = ce_movie_log_divergent_point(now, next);
+	ce_session_movie_load(s_, next);
+	ce_movie_log_free(now);
+	ce_movie_log_free(next);
+	if (from >= 0) greenEndM_ = std::min(greenEndM_, from);
+	return from;
+}
+
+std::filesystem::path SessionViewModel::branchDirOnMachine() const
+{
+	if (projectM_ == nullptr || cacheFolderM_.empty()) return {};
+	const char *id = ce_project_id(projectM_);
+	if (id == nullptr || *id == '\0') return {};
+	return std::filesystem::path(cacheFolderM_) / id / "Branches";
+}
+
+std::string SessionViewModel::machineIdOnMachine()
+{
+	if (packageSha1M_.empty())
+	{
+		const char *perr = nullptr;
+		if (ce_package *pk = ce_package_open(package_.c_str(), &perr))
+		{
+			if (const char *sha = ce_package_sha1(pk)) packageSha1M_ = sha;
+			ce_package_free(pk);
+		}
+	}
+	return branch_state::fingerprint(packageSha1M_ + "\n" + settingsOnMachine() + "\n" + slotsOnMachine());
+}
+
+void SessionViewModel::makeBranch(std::string name, std::string time, std::function<void(Branch, std::string)> done)
+{
+	submit([this, name = std::move(name), time = std::move(time), done = std::move(done)] {
+		if (s_ == nullptr) return;
+		namespace fs = std::filesystem;
+		Branch b;
+		b.name = name;
+		b.time = time;
+		b.frame = ce_session_frame(s_);
+		b.text = movieTextOnMachine();
+		b.frames = ce_session_movie_length(s_);
+		/* the picture shown now, which a state load will not draw */
+		auto picture = std::make_shared<Picture::Frame>();
+		screen.takeIfNewer(~uint64_t{0}, *picture);
+		if (picture->width > 0 && picture->height > 0) b.picture = picture;
+		std::string why;
+		if (const fs::path dir = branchDirOnMachine(); !dir.empty())
+		{
+			std::error_code ec;
+			fs::create_directories(dir, ec);
+			const std::string stem = branch_state::nameFor(b.time, b.frame, b.text);
+			const fs::path state = dir / (stem + ".state");
+			if (ce_session_state_save_file(s_, branch_state::utf8(state).c_str(), nullptr, 0) != 0)
+				why = ce_session_last_error(s_);
+			else if (!branch_state::writeNote(dir / (stem + ".note"),
+						 {machineIdOnMachine(), b.frame, b.picture ? *b.picture : Picture::Frame{}}))
+			{
+				why = "its note could not be written in " + dir.string();
+				fs::remove(state, ec);
+			}
+			else
+				b.state = stem;
+		}
+		later([done, b, why] { done(b, why); });
+	});
+}
+
+void SessionViewModel::loadBranch(Branch b, std::function<void(bool, std::string)> done)
+{
+	submit([this, b = std::move(b), done = std::move(done)] {
+		if (s_ == nullptr) return;
+		namespace fs = std::filesystem;
+		runningM_ = false;
+		later([this] { running.set(false); });
+		bool fromState = false;
+		std::string why;
+		const fs::path dir = branchDirOnMachine();
+		branch_state::Note note;
+		const bool fits = !b.state.empty() && !dir.empty() && branch_state::readNote(dir / (b.state + ".note"), note) &&
+						  note.frame == b.frame && note.machine == machineIdOnMachine();
+		const int64_t was = ce_session_frame(s_);
+		replaceMovieOnMachine(b.text);
+		if (fits)
+		{
+			const int32_t loaded = ce_session_state_load_file(s_, branch_state::utf8(dir / (b.state + ".state")).c_str(), nullptr, 0, nullptr);
+			if (loaded == 0 && ce_session_movie_at(s_, b.frame) == 0)
+			{
+				fromState = true;
+				frameM_ = b.frame;
+				const Picture::Frame &shown = b.picture ? *b.picture : note.picture;
+				if (shown.width > 0 && shown.height > 0) screen.publish(shown.pixels.data(), shown.width, shown.height, shown.aspect);
+				for (const Hooks &h : hooksM_)
+					if (h.frame) h.frame(s_);
+			}
+			else
+			{
+				why = ce_session_last_error(s_);
+				/* a state the machine took and could not use leaves it on no
+				 * frame at all: back to a stored one first */
+				if (loaded == 1)
+				{
+					const int64_t base = ce_session_greenzone_nearest(s_, std::min(was, b.frame));
+					if (base >= 0 && ce_session_greenzone_restore(s_, base) == 0) frameM_ = ce_session_frame(s_);
+				}
+			}
+		}
+		if (!fromState) seekOnMachine(b.frame);
+		later([this, done, fromState, why] {
+			inputsReset.emit();
+			done(fromState, why);
+		});
+		report(-1, -1, -1, -1, -1);
+	});
+}
+
+void SessionViewModel::forgetBranch(Branch b)
+{
+	submit([this, b = std::move(b)] {
+		if (b.state.empty()) return;
+		/* another branch may be the same one */
+		for (const Branch &other : branchesM_)
+			if (other.state == b.state) return;
+		const std::filesystem::path dir = branchDirOnMachine();
+		if (dir.empty()) return;
+		std::error_code ec;
+		std::filesystem::remove(dir / (b.state + ".state"), ec);
+		std::filesystem::remove(dir / (b.state + ".note"), ec);
+	});
+}
+
+void SessionViewModel::tidyBranchStatesOnMachine()
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = branchDirOnMachine();
+	std::error_code ec;
+	if (dir.empty() || !fs::is_directory(dir, ec)) return;
+	std::vector<fs::path> gone;
+	for (const auto &entry : fs::directory_iterator(dir, ec))
+	{
+		const fs::path f = entry.path();
+		const std::string ext = f.extension().string();
+		if (ext != ".state" && ext != ".note" && ext != ".writing") continue;
+		const std::string stem = f.stem().string();
+		bool kept = false;
+		for (const Branch &b : branchesM_) kept = kept || (!b.state.empty() && stem.rfind(b.state, 0) == 0 && ext != ".writing");
+		if (!kept) gone.push_back(f);
+	}
+	for (const fs::path &f : gone) fs::remove(f, ec);
 }
 
 std::string SessionViewModel::movieTextOnMachine() const
@@ -792,6 +946,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 				b.markers.push_back({ce_project_branch_marker_frame(p, i, k), t != nullptr ? t : "",
 					ce_project_branch_marker_keep_state(p, i, k) != 0});
 			}
+			b.state = branch_state::nameFor(b.time, b.frame, b.text);
 			branches.push_back(std::move(b));
 		}
 		branchesM_ = branches;
@@ -802,6 +957,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	projectPathM_ = path;
 	package_ = package;
 	game_.clear();
+	tidyBranchStatesOnMachine();
 	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
 	adoptOnMachine(s, package, (title.empty() ? path : title) + note, true);
 	later([this, path, title] {
@@ -967,6 +1123,7 @@ std::vector<uint8_t> SessionViewModel::readDomain(const std::string &name)
 void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package, const std::string &label, bool inputsReplaced)
 {
 	s_ = s;
+	packageSha1M_.clear();
 	inputs_.bind(s);
 	inputs_.clearLags();
 	frameM_ = ce_session_frame(s);

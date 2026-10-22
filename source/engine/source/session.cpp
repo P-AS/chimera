@@ -4692,6 +4692,29 @@ int32_t ce_session_seek(ce_session *s, int64_t frame)
 	return 0;
 }
 
+int32_t ce_session_movie_at(ce_session *s, int64_t frame)
+{
+	s->error.clear();
+	if (s->movieMode == 0 || s->movie == nullptr)
+	{
+		s->error = "the session has no movie";
+		return 1;
+	}
+	if (frame < 0 || frame > ce_session_movie_length(s))
+	{
+		s->error = "frame " + std::to_string(frame) + " is past the movie's end";
+		return 1;
+	}
+	/* edits drop the states past them; the machine itself is the one loaded */
+	s->takeEdits();
+	s->staleFrom = -1;
+	s->frame = frame;
+	s->machineFrame = frame;
+	s->greenzoneCapture();
+	if (s->movieMode == 3 && s->frame < ce_session_movie_length(s)) s->movieMode = 1;
+	return 0;
+}
+
 } // extern "C"
 
 /* ---- the compile cache and precompile sessions -------------------------- */

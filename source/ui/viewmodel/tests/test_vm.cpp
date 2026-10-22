@@ -890,43 +890,119 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	CHECK(openIt(dir / "saved.chimeraProject"));
 	CHECK(inputs.at(10) == (before[10] | (uint64_t{1} << 4)));
 	/* branches: the winning movie kept at its end, the movie spoiled, the
-	 * branch loaded - and the machine is where the winning movie leaves it */
+	 * branch loaded - and the machine is where the winning movie leaves it.
+	 * With a project open a branch keeps its state in the cache folder, so
+	 * loading it is a state load, not a replay. */
+	const fs::path cache = dir / "cache";
+	session.cacheFolder.set(cache.string());
+	auto filesNamed = [&](const char *extension) {
+		std::vector<fs::path> found;
+		std::error_code ec;
+		for (const auto &e : fs::recursive_directory_iterator(cache, ec))
+			if (e.path().extension() == extension) found.push_back(e.path());
+		return found;
+	};
+	auto shown = [&] {
+		Picture::Frame f;
+		session.screen.takeIfNewer(~uint64_t{0}, f);
+		return f.pixels;
+	};
 	CHECK(openIt(dir / "p.chimeraProject"));
 	session.run("seek", {end}, error);
 	CHECK(d.until([&] { return session.frame.get() == end; }, 30));
+	d.until([] { return false; }, 0.1);
+	const std::vector<uint32_t> winPicture = shown();
 	CHECK(branches.run("create", {std::string("win")}, error).has_value() && branches.count.get() == 1);
+	CHECK(d.until([&] { return branches.made.get() == 1; }, 30));
+	CHECK(filesNamed(".state").size() == 1 && filesNamed(".note").size() == 1);
 	roll.run("addMarker", {int64_t{20}, std::string("in the branch")}, error);
 	branches.run("remove", {int64_t{0}}, error);
 	CHECK(branches.count.get() == 0);
+	d.until([] { return false; }, 0.2);
+	CHECK(filesNamed(".state").empty() && filesNamed(".note").empty());
 	branches.run("create", {std::string("win")}, error);
+	CHECK(d.until([&] { return branches.made.get() == 2; }, 30));
+	CHECK(filesNamed(".state").size() == 1 && branches.status.get().find("its state kept") != std::string::npos);
 	roll.run("removeMarker", {int64_t{20}}, error);
-	roll.run("paint", {int64_t{0}, end - 1, int64_t{1}, false}, error);
-	CHECK(d.until([&] { return session.frame.get() == end && session.greenEnd.get() == end; }, 30));
-	CHECK(session.readDomain("RAM") != std::vector<uint8_t>(ram.begin(), ram.end()));
-	CHECK(branches.run("load", {int64_t{0}}, error).has_value());
-	CHECK(d.until([&] { return session.frame.get() == end && session.greenEnd.get() == end; }, 30));
-	d.until([] { return false; }, 0.1);
-	CHECK(session.readDomain("RAM") == std::vector<uint8_t>(ram.begin(), ram.end()));
-	CHECK(session.readDomain("VRAM") == std::vector<uint8_t>(vram.begin(), vram.end()));
+	auto spoil = [&] {
+		roll.run("paint", {int64_t{0}, end - 1, int64_t{1}, false}, error);
+		CHECK(d.until([&] { return session.frame.get() == end && session.greenEnd.get() == end; }, 30));
+		d.until([] { return false; }, 0.1);
+		CHECK(session.readDomain("RAM") != std::vector<uint8_t>(ram.begin(), ram.end()));
+		CHECK(shown() != winPicture);
+	};
+	auto loadIt = [&](bool fromState) {
+		const int64_t was = branches.loads.get();
+		CHECK(branches.run("load", {int64_t{0}}, error).has_value());
+		CHECK(d.until([&] { return branches.loads.get() > was && session.frame.get() == end; }, 30));
+		d.until([] { return false; }, 0.1);
+		CHECK(branches.loadedFromState.get() == fromState);
+		/* a state load replays nothing: the states past where the movies
+		 * part are not there again, as a replay would make them */
+		CHECK(fromState ? session.greenEnd.get() < end : session.greenEnd.get() == end);
+		CHECK(session.readDomain("RAM") == std::vector<uint8_t>(ram.begin(), ram.end()));
+		CHECK(session.readDomain("VRAM") == std::vector<uint8_t>(vram.begin(), vram.end()));
+		CHECK(shown() == winPicture);
+	};
+	spoil();
+	loadIt(true);
 	CHECK(roll.frameCount.get() == end && roll.markerCount.get() == 1 && roll.rowLists()[0].model->rowNote(20) == "in the branch");
+	/* loaded from another frame, and played on: the session counts from
+	 * the branch's frame */
+	session.run("seek", {int64_t{5}}, error);
+	CHECK(d.until([&] { return session.frame.get() == 5; }, 30));
+	loadIt(true);
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == end + 1; }, 30));
+	d.until([] { return false; }, 0.1);
+	CHECK(session.frame.get() == end + 1 && inputs.size() == end + 1);
+	session.run("seek", {end}, error);
+	CHECK(d.until([&] { return session.frame.get() == end; }, 30));
 	CHECK(!branches.run("load", {int64_t{3}}, error) && error == "no branch 3");
-	/* kept with the project */
+	/* a state that does not fit is not loaded, and the branch is replayed
+	 * to: a note naming another machine, then a state cut short */
+	const fs::path stateFile = filesNamed(".state").at(0), noteFile = filesNamed(".note").at(0);
+	const std::string note = readFile(noteFile), state = readFile(stateFile);
+	{
+		std::string other = note;
+		const size_t at = other.find("machine ");
+		CHECK(at != std::string::npos);
+		other.replace(at + 8, 16, "0123456789abcdef");
+		std::ofstream(noteFile, std::ios::binary | std::ios::trunc) << other;
+	}
+	spoil();
+	loadIt(false);
+	std::ofstream(noteFile, std::ios::binary | std::ios::trunc) << note;
+	std::ofstream(stateFile, std::ios::binary | std::ios::trunc) << state.substr(0, state.size() / 2);
+	spoil();
+	loadIt(false);
+	CHECK(branches.status.get().find("its state could not be loaded") != std::string::npos);
+	std::ofstream(stateFile, std::ios::binary | std::ios::trunc) << state;
+	spoil();
+	loadIt(true);
+	/* kept with the project, and found again by it; what no branch has is
+	 * cleared away when the project opens (as Chimera does: a copy of a
+	 * project keeps its id and so shares the folder, and opening the other
+	 * copy would clear this branch's state - which costs a replay, no more) */
 	session.run("saveProject", {(dir / "branched.chimeraProject").string()}, error);
 	CHECK(d.until([&] { return session.projectPath.get() == (dir / "branched.chimeraProject").string(); }, 20));
-	CHECK(openIt(dir / "p.chimeraProject"));
-	CHECK(branches.count.get() == 0);
+	{
+		std::ofstream(stateFile.parent_path() / "0123456789abcdef.state") << "left behind";
+		std::ofstream(stateFile.parent_path() / "0123456789abcdef.note") << "left behind";
+	}
+	CHECK(filesNamed(".state").size() == 2);
 	CHECK(openIt(dir / "branched.chimeraProject"));
 	CHECK(branches.count.get() == 1);
+	CHECK(filesNamed(".state") == std::vector<fs::path>{stateFile} && filesNamed(".note") == std::vector<fs::path>{noteFile});
 	std::string branchName;
 	int64_t branchFrames = 0;
 	fromValue(branches.rowLists()[0].model->cell(0, 0), branchName);
 	fromValue(branches.rowLists()[0].model->cell(0, 3), branchFrames);
 	CHECK(branchName == "win" && branchFrames == end);
-	roll.run("paint", {int64_t{0}, end - 1, int64_t{1}, false}, error);
-	branches.run("load", {int64_t{0}}, error);
-	CHECK(d.until([&] { return session.frame.get() == end && session.greenEnd.get() == end; }, 30));
-	d.until([] { return false; }, 0.1);
-	CHECK(session.readDomain("RAM") == std::vector<uint8_t>(ram.begin(), ram.end()));
+	session.run("seek", {end}, error);
+	CHECK(d.until([&] { return session.frame.get() == end; }, 30));
+	spoil();
+	loadIt(true);
 
 	/* opened with no package given: the installed core is found for it, and
 	 * a cores folder without it says which core is missing */

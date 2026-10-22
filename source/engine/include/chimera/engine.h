@@ -1862,6 +1862,15 @@ CE_API uint64_t ce_session_greenzone_picture_bytes(const ce_session *s);
  * movie to frame. Needs the movie's entries up to frame. 0 on success. */
 CE_API int32_t ce_session_seek(ce_session *s, int64_t frame);
 
+/* The machine was put on `frame` of the session's movie by a state the
+ * caller loaded itself - a branch's, kept in a file (ce_session_state_load_file)
+ * - and the caller vouches that it is the machine the movie makes there. The
+ * session counts from that frame, a machine the movie had left behind is no
+ * longer behind, edits made meanwhile still drop the states after them, and
+ * the frame is stored in the history so that coming back to it is a restore.
+ * 0 done; 1 there is no movie, or the frame is past its end. */
+CE_API int32_t ce_session_movie_at(ce_session *s, int64_t frame);
+
 /* The history, kept between sessions. It is written to one file, streamed a
  * segment at a time - nothing about it is ever assembled in memory, which is
  * the whole point: the greenzone this replaces serialized itself through a

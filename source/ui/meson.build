@@ -25,6 +25,7 @@ vm_lib = static_library(
     'viewmodel/src/branches_vm.cpp',
     'viewmodel/src/firmware.cpp',
     'viewmodel/src/cores_vm.cpp',
+    'viewmodel/src/branch_state.cpp',
     'viewmodel/src/config_store.cpp',
   ],
   include_directories: [vm_inc, engine_inc, include_directories('../../extern/lua')],
@@ -103,7 +104,8 @@ if qt_dep.found()
     args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
       '--play', '--measure', '1', '--show', 'lua'],
     env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software', 'ALSOFT_DRIVERS=null',
-      'CHIMERA_QT_CONFIG=' + meson.current_build_dir() / 'window-test-settings.json'],
+      'CHIMERA_QT_CONFIG=' + meson.current_build_dir() / 'window-test-settings.json',
+      'CHIMERA_QT_CACHE=' + meson.current_build_dir() / 'window-test-cache'],
     timeout: 60,
   )
 endif

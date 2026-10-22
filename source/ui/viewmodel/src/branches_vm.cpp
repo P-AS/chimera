@@ -26,6 +26,9 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 {
 	expose("count", "how many branches the movie has", count);
 	expose("status", "what the branches last had to say", status);
+	expose("made", "branches the machine has made, their states kept or not", made);
+	expose("loads", "branches loaded", loads);
+	expose("loadedFromState", "whether the last branch loaded came from its state, not a replay", loadedFromState);
 	rows("branches", "one row a branch: name, frame, when it was made, how many frames it has", rows_);
 
 	command("create", "keeps the movie as it is now, and the frame the machine is on, as a branch", {"name"},
@@ -33,16 +36,36 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			std::string name;
 			if (!a.empty() && !arg(a, 0, name, error)) return {};
 			if (name.empty()) name = "Branch " + std::to_string(branches_.size() + 1);
+			/* listed at once; the machine says its frame and movie, and keeps
+			 * its state, when it gets to it */
 			SessionViewModel::Branch b;
 			b.name = name;
 			b.time = now();
 			b.frame = session_.frame.get();
 			b.text = inputs_.text();
 			b.frames = inputs_.size();
+			b.id = ++lastId_;
 			for (const auto &[f, m] : roll_.markers()) b.markers.push_back(m);
-			branches_.push_back(std::move(b));
+			branches_.push_back(b);
 			changed();
-			status.set("Made " + name + " at frame " + std::to_string(session_.frame.get()));
+			status.set("Making " + name + "...");
+			session_.makeBranch(name, b.time, [this, id = b.id](SessionViewModel::Branch done, const std::string &why) {
+				for (SessionViewModel::Branch &x : branches_)
+					if (x.id == id)
+					{
+						x.frame = done.frame;
+						x.text = std::move(done.text);
+						x.frames = done.frames;
+						x.state = done.state;
+						x.picture = done.picture;
+						changed();
+						status.set("Made " + x.name + " at frame " + std::to_string(x.frame) +
+							(!why.empty() ? "; its state could not be kept (" + why + "), so loading it replays"
+							 : x.state.empty() ? "" : ", its state kept"));
+						break;
+					}
+				made.set(made.get() + 1);
+			});
 			return static_cast<int64_t>(branches_.size() - 1);
 		}, &session_.isOpen);
 	command("load", "puts a branch's movie back, and the machine on its frame", {"index"},
@@ -50,19 +73,27 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			size_t i = 0;
 			if (!index(a, i, error)) return {};
 			const SessionViewModel::Branch &b = branches_[i];
-			/* the engine takes the branch's movie, keeps the states before
-			 * the first frame where the two differ, and replays from there */
-			session_.loadMovie(b.text, b.frame);
+			/* its state when it has one, else the engine takes the branch's
+			 * movie, keeps the states before the first frame where the two
+			 * differ, and replays from there */
+			status.set("Loading " + b.name + "...");
+			session_.loadBranch(b, [this, name = b.name](bool fromState, const std::string &why) {
+				status.set("Loaded " + name + (fromState ? " from its state" : ", replayed to") +
+					(why.empty() ? "" : " (its state could not be loaded: " + why + ")"));
+				loadedFromState.set(fromState);
+				loads.set(loads.get() + 1);
+			});
 			roll_.replaceAll(b.markers);
-			status.set("Loaded " + b.name);
 			return {};
 		}, &session_.isOpen);
 	command("remove", "forgets a branch", {"index"}, [this](const Args &a, std::string &error) -> Value {
 		size_t i = 0;
 		if (!index(a, i, error)) return {};
 		status.set("Removed " + branches_[i].name);
+		const SessionViewModel::Branch gone = branches_[i];
 		branches_.erase(branches_.begin() + static_cast<long>(i));
 		changed();
+		session_.forgetBranch(gone);
 		return {};
 	});
 	command("rename", "names a branch again", {"index", "name"}, [this](const Args &a, std::string &error) -> Value {
@@ -76,6 +107,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 
 	loadedWatch_ = session_.branchesLoaded.connect([this](const std::vector<SessionViewModel::Branch> &loaded) {
 		branches_ = loaded;
+		for (SessionViewModel::Branch &b : branches_) b.id = ++lastId_;
 		count.set(static_cast<int64_t>(branches_.size()));
 		rows_.reset.emit();
 	});

@@ -8,6 +8,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <filesystem>
+#include <memory>
 #include <mutex>
 #include <thread>
 
@@ -102,15 +104,37 @@ public:
 		std::string text;
 		int64_t frames = 0;
 		std::vector<Marker> markers;
+		/* its state's file name in the project's cache folder, "" when it
+		 * has none (it is then replayed to), and the picture it had */
+		std::string state;
+		std::shared_ptr<const Picture::Frame> picture;
+		/* which branch this is while the window is open (not saved) */
+		uint64_t id = 0;
 	};
 	/* a project opened with these branches */
 	Signal<std::vector<Branch>> branchesLoaded;
 	/* the branches to save with the project */
 	void setBranches(std::vector<Branch> branches);
-	/* another movie (a branch's) becomes the machine's, and the machine goes
-	 * to `frame`: the engine keeps the states before the first frame where
-	 * the two differ, and replays from there */
+	/* another movie becomes the machine's, and the machine goes to `frame`:
+	 * the engine keeps the states before the first frame where the two
+	 * differ, and replays from there */
 	void loadMovie(std::string text, int64_t frame);
+	/* A branch of the movie as it is, made on the machine's thread: its
+	 * frame, movie and picture, and with a project open its state kept in a
+	 * file in the cache folder. done gets it on the view's thread, with why
+	 * its state could not be kept ("" when it was, or there is no project). */
+	void makeBranch(std::string name, std::string time, std::function<void(Branch, std::string why)> done);
+	/* A branch put back: its movie, and the machine on its frame - by its
+	 * state file when it has one this machine can take, else by replaying
+	 * from where the two movies differ. done says which, on the view's
+	 * thread, with why a state it had could not be loaded. */
+	void loadBranch(Branch branch, std::function<void(bool fromState, std::string why)> done);
+	/* a branch is gone, and its state file with it */
+	void forgetBranch(Branch branch);
+
+	/* where what a project can make again is kept (its branches' states), a
+	 * folder per project; "" keeps nothing */
+	Property<std::string> cacheFolder;
 
 	/* Where packages and firmware are found (the cores view model's), asked
 	 * on the machine's thread: a project that names no package runs the one
@@ -171,6 +195,14 @@ private:
 	/* keepMovie: the machine starts again with the movie it has */
 	void openOnMachine(const std::string &package, const std::string &game, bool keepMovie);
 	std::string movieTextOnMachine() const;
+	/* the movie replaced by this one; where the two part, or -1 */
+	int64_t replaceMovieOnMachine(const std::string &text);
+	/* the open project's branch states' folder, empty when there is none */
+	std::filesystem::path branchDirOnMachine() const;
+	/* which machine this is, as a state of it needs: core, settings, files */
+	std::string machineIdOnMachine();
+	/* the state files no branch of the project has any more go */
+	void tidyBranchStatesOnMachine();
 	static void loadMovieOnMachine(ce_session *s, const std::string &text);
 	void openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs,
 		ce_project *reuse = nullptr);
@@ -236,6 +268,9 @@ private:
 	bool firmwareOnMachine(const std::string &package, const std::string &slots, const std::string &settings,
 		const std::string &pins, Firmware &out, std::string &why);
 	std::vector<Branch> branchesM_;
+	std::string cacheFolderM_;
+	Connection cacheFolderWatch_;
+	std::string packageSha1M_;
 
 	void pinMarkersOnMachine();
 	/* frames run since the machine opened: the engine counts only the
