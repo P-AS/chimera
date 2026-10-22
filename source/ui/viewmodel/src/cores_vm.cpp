@@ -14,6 +14,7 @@ CoresViewModel::CoresViewModel(Dispatcher &dispatcher) : ViewModel("cores", disp
 {
 	expose("coresFolder", "the folder core packages are looked for in", coresFolder, true);
 	expose("firmwareFolder", "the folder firmware is looked for in", firmwareFolder, true);
+	expose("chosenFirmware", "the firmware files chosen by hand, every core's, as {\"core\": {\"id\": \"file\"}}", chosenFirmware, true);
 	expose("count", "packages found", count);
 	expose("status", "what the last look at the folder found", status);
 	rows("cores", "one row a package: core, version, when it was made, file", rows_);
@@ -30,7 +31,35 @@ CoresViewModel::CoresViewModel(Dispatcher &dispatcher) : ViewModel("cores", disp
 		firmwareM_ = firmwareFolder.get();
 	});
 	firmwareM_ = firmwareFolder.get();
+	chosenWatch_ = chosenFirmware.changed.connect([this] {
+		json::Json all;
+		std::string error;
+		std::vector<std::string> files;
+		if (json::parse(chosenFirmware.get(), all, error))
+			for (const auto &[core, ids] : all.members)
+				for (const auto &[id, file] : ids.members)
+					if (file.kind == json::Json::Kind::String && !file.text.empty()) files.push_back(file.text);
+		std::lock_guard<std::mutex> lock(m_);
+		chosenM_ = std::move(files);
+	});
 	scan();
+}
+
+void CoresViewModel::rememberFirmware(const std::string &coreName, const std::string &id, const std::string &path)
+{
+	json::Json all;
+	std::string error;
+	if (!json::parse(chosenFirmware.get(), all, error) || all.kind != json::Json::Kind::Object) all = json::Json(), all.kind = json::Json::Kind::Object;
+	auto member = [](json::Json &obj, const std::string &name) -> json::Json & {
+		for (auto &[k, v] : obj.members)
+			if (k == name) return v;
+		obj.members.emplace_back(name, json::Json());
+		return obj.members.back().second;
+	};
+	json::Json &mine = member(all, coreName);
+	if (mine.kind != json::Json::Kind::Object) mine = json::Json(), mine.kind = json::Json::Kind::Object;
+	member(mine, id) = json::Json::string(path);
+	chosenFirmware.set(json::write(all));
 }
 
 void CoresViewModel::scan()
@@ -143,7 +172,10 @@ std::vector<std::pair<std::string, std::string>> CoresViewModel::installed() con
 std::vector<std::string> CoresViewModel::firmwareFolders() const
 {
 	std::lock_guard<std::mutex> lock(m_);
-	return firmwareM_.empty() ? std::vector<std::string>{} : std::vector<std::string>{firmwareM_};
+	std::vector<std::string> out;
+	if (!firmwareM_.empty()) out.push_back(firmwareM_);
+	out.insert(out.end(), chosenM_.begin(), chosenM_.end());
+	return out;
 }
 
 int64_t CoresViewModel::Rows::rowCount() const

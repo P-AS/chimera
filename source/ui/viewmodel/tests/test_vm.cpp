@@ -2232,6 +2232,84 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	return true;
 }
 
+/* A firmware with a hash names one exact file. Another file is refused,
+ * except by a game core, which takes a file of the person's own and pins
+ * that file's hash in the project */
+bool customFirmware(const char *rom, const char *hashedPackage, const char *gamePackage)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	if (fs::file_size(hashedPackage, ec) == 0 || ec || fs::file_size(gamePackage, ec) == 0 || ec)
+	{
+		std::printf("SKIP custom firmware: the packages with a hashed firmware were not made\n");
+		return false;
+	}
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-logo-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "Cores");
+	fs::create_directories(dir / "Firmware");
+	fs::copy_file(hashedPackage, dir / "Cores" / "synth-hashed.chimeraCore");
+	fs::copy_file(gamePackage, dir / "Cores" / "synth-game.chimeraCore");
+	const std::string game = (dir / "walker.testrom").string();
+	fs::copy_file(rom, game);
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	CoresViewModel installed(d);
+	std::string error;
+	installed.set("coresFolder", (dir / "Cores").string(), error);
+	installed.set("firmwareFolder", (dir / "Firmware").string(), error);
+	session.setFinders([&installed](const std::string &n, const std::string &h, std::string &note) { return installed.packageFor(n, h, note); },
+		[&installed] { return installed.firmwareFolders(); });
+	NewProjectViewModel wizard(d, session, installed);
+	auto text = [&](const char *rowsName, int64_t row, int32_t column) {
+		std::string t;
+		for (const auto &r : wizard.rowLists())
+			if (r.name == rowsName) fromValue(r.model->cell(row, column), t);
+		return t;
+	};
+	const std::string original = "CE31CFD83A86A850B5B110A3AC05B634F186C1F1";
+	const fs::path mine = dir / "mylogo.bin", theirs = dir / "logo.bin";
+	std::ofstream(mine, std::ios::binary) << "a logo of my own";
+	std::ofstream(theirs, std::ios::binary) << "the original logo";
+	char sha[41];
+	uint64_t len = 0;
+	CHECK(ce_sha1_file(mine.string().c_str(), sha, &len) == 1);
+	const std::string mySha = sha;
+	CHECK(ce_sha1_file(theirs.string().c_str(), sha, &len) == 1 && lower(sha) == lower(original));
+	CHECK(wizard.coreNames.get() == "Synth Game\nSynth Hashed");
+
+	/* not a game: only the file the package names */
+	CHECK(wizard.run("chooseCore", {std::string("Synth Hashed")}, error).has_value());
+	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && !wizard.ready.get());
+	CHECK(!wizard.run("chooseFirmware", {std::string("logo"), mine.string()}, error) &&
+		error == "mylogo.bin is not this file: its hash is " + mySha + ", the requirement is " + original);
+	CHECK(!wizard.ready.get());
+	CHECK(wizard.run("chooseFirmware", {std::string("logo"), theirs.string()}, error).has_value());
+	CHECK(wizard.ready.get() && text("firmware", 0, 3) == "chosen" && wizard.status.get().empty());
+
+	/* a game: a file of the person's own, its hash pinned */
+	CHECK(wizard.run("chooseCore", {std::string("Synth Game")}, error).has_value());
+	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && !wizard.ready.get());
+	CHECK(wizard.run("chooseFirmware", {std::string("logo"), mine.string()}, error).has_value());
+	CHECK(wizard.status.get() == "mylogo.bin is a file of your own, not the original logo: the project pins its hash (" + mySha + ")");
+	CHECK(wizard.ready.get() && text("firmware", 0, 2) == mine.string() && text("firmware", 0, 3) == "your own");
+	const fs::path made = dir / "mylogo.chimeraProject";
+	CHECK(wizard.run("create", {made.string()}, error).has_value());
+	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == made.string(); }, 60));
+	{
+		const std::string project = readFile(made);
+		CHECK(project.find(mySha) != std::string::npos || project.find(lower(mySha)) != std::string::npos);
+		CHECK(project.find(original) == std::string::npos && project.find(lower(original)) == std::string::npos);
+	}
+	/* where it was chosen is remembered: that is how the project found it */
+	CHECK(installed.chosenFirmware.get().find("\"Synth Game\"") != std::string::npos &&
+		installed.chosenFirmware.get().find("mylogo.bin") != std::string::npos);
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
 /* A movie made elsewhere: the core says what it amounts to, the New Project
  * form takes its answer, and the project made has the movie's inputs */
 bool movieImport(const char *slotsPackage, const char *rom, const std::string &movies)
@@ -2436,6 +2514,8 @@ int main(int argc, char **argv)
 			if (argc >= 7) ranMachine = pianoRollAxes(argv[6], argv[2]) && ranMachine;
 			if (argc >= 7) ranMachine = movieImport(argv[6], argv[2], argv[3]) && ranMachine;
 			else std::printf("SKIP New Project: no slots package given\n");
+			if (argc >= 9) ranMachine = customFirmware(argv[2], argv[7], argv[8]) && ranMachine;
+			else std::printf("SKIP custom firmware: no packages with a hashed firmware given\n");
 		}
 		else
 			std::printf("SKIP the machine tests: %s or %s is missing\n", argv[1], argv[2]);

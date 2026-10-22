@@ -399,7 +399,25 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				error = "cannot read " + path;
 				return {};
 			}
+			/* an entry with a hash names one exact file; a game core takes a
+			 * file of the person's own instead and the project pins its hash,
+			 * as Chimera's New Project does */
+			std::string declared;
+			if (const Json *list = cfg_.find("firmware"))
+				for (const Json &f : list->items)
+					if (const Json *i = f.find("id"); i != nullptr && i->text == id)
+						if (const Json *h = f.find("sha1")) declared = h->text;
+			const bool custom = !declared.empty() && lower(declared) != lower(sha);
+			const Json *kind = cfg_.find("kind");
+			const bool gameCore = kind != nullptr && lower(kind->text) == "game";
+			if (custom && !gameCore)
+			{
+				error = baseName(path) + " is not this file: its hash is " + sha + ", the requirement is " + declared;
+				return {};
+			}
 			chosenFirmware_[id] = {path, sha};
+			status.set(custom ? baseName(path) + " is a file of your own, not the original " + id + ": the project pins its hash (" + sha + ")"
+							  : std::string());
 			evaluate();
 			return {};
 		});
@@ -448,7 +466,11 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			}
 			const std::string settings = json::write(form_.recorded()), firmware = json::write(pins);
 			const std::string coreName = core.get(), version = version_, sha = packageSha1_, slotsText = slotsText_, package = package_;
-		const std::string input = pendingInput_;
+			const std::string input = pendingInput_;
+			/* a file chosen by hand is remembered, so the project finds it when it opens */
+			std::vector<std::pair<std::string, std::string>> chosen;
+			for (const Need &n : needs_)
+				if (n.how == "chosen" || n.how == "your own") chosen.emplace_back(n.id, n.path);
 			status.set("Making " + path + "...");
 			session_.onMachine([=, this](ce_session *) {
 				ce_project *p = ce_project_new();
@@ -465,18 +487,19 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				if (why.empty() && ce_project_set_settings_text(p, settings.c_str(), &err) != 0) why = err != nullptr ? err : "settings";
 				if (why.empty() && firmware != "[]" && ce_project_set_firmware_text(p, firmware.c_str(), &err) != 0) why = err != nullptr ? err : "firmware";
 				ce_project_set_title(p, name.c_str());
-			/* an imported movie's inputs are the project's */
-			if (!input.empty()) ce_project_set_log_text(p, input.data(), input.size());
+				/* an imported movie's inputs are the project's */
+				if (!input.empty()) ce_project_set_log_text(p, input.data(), input.size());
 				if (why.empty() && !slotsText.empty() && ce_project_validate(p, slotsText.data(), slotsText.size(), &err) != 0)
 					why = err != nullptr ? err : "the files do not fit the package's slots";
 				if (why.empty() && ce_project_save(p, path.c_str(), &err) != 0) why = err != nullptr ? err : "it could not be written";
 				ce_project_free(p);
-				later([this, why, path, package, open] {
+				later([this, why, path, package, open, coreName, chosen] {
 					if (!why.empty())
 					{
 						status.set("Not made: " + why);
 						return;
 					}
+					for (const auto &[id, file] : chosen) cores_.rememberFirmware(coreName, id, file);
 					status.set("Made " + path);
 					std::string e;
 					if (open) session_.run("openProject", {path, package}, e);
@@ -906,6 +929,10 @@ void NewProjectViewModel::evaluate()
 			need.path = it->second.first;
 			need.sha1 = it->second.second;
 			need.how = "chosen";
+			if (const Json *list = cfg_.find("firmware"))
+				for (const Json &f : list->items)
+					if (const Json *i = f.find("id"); i != nullptr && i->text == n.id)
+						if (const Json *h = f.find("sha1"); h != nullptr && lower(h->text) != lower(need.sha1)) need.how = "your own";
 		}
 		needs_.push_back(need);
 	}

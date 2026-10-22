@@ -34,6 +34,14 @@ std::vector<FirmwareFile> indexFirmware(const std::vector<std::string> &folders)
 	for (const std::string &folder : folders)
 	{
 		std::error_code ec;
+		/* a file chosen by hand stands for itself */
+		if (!folder.empty() && fs::is_regular_file(folder, ec))
+		{
+			const auto size = static_cast<int64_t>(fs::file_size(folder, ec));
+			if (!ec && size > 0 && size < kMostBytes && seen.insert(folder).second)
+				index.push_back({folder, fs::path(folder).filename().string(), size, {}});
+			continue;
+		}
 		if (folder.empty() || !fs::is_directory(folder, ec)) continue;
 		for (fs::recursive_directory_iterator it(folder, fs::directory_options::skip_permission_denied, ec), end; it != end;
 			it.increment(ec))

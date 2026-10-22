@@ -73,11 +73,30 @@ synth_slots = custom_target(
   build_always_stale: true,
   build_by_default: true,
 )
+# a firmware that declares the hash of its original file, in a core that is
+# not a game and in one that is
+logo_firmware = '[{"id": "logo", "display": "The logo", "name": "logo.bin", "sha1": "CE31CFD83A86A850B5B110A3AC05B634F186C1F1", "required": true}]'
+synth_hashed = custom_target(
+  'synth-hashed',
+  output: 'synth-hashed.chimeraCore',
+  command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Hashed', '@OUTPUT@', '', logo_firmware],
+  build_always_stale: true,
+  build_by_default: true,
+)
+synth_game = custom_target(
+  'synth-game',
+  output: 'synth-game.chimeraCore',
+  command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Game', '@OUTPUT@', 'game', logo_firmware],
+  build_always_stale: true,
+  build_by_default: true,
+)
 test(
   'view models',
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots],
+    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game],
   # OpenAL's device that plays to nowhere: the sound check runs with no speakers
   env: ['ALSOFT_DRIVERS=null'],
   timeout: 180,

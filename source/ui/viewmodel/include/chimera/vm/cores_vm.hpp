@@ -18,6 +18,9 @@ public:
 
 	Property<std::string> coresFolder;
 	Property<std::string> firmwareFolder;
+	/* the firmware files chosen by hand, every core's, as {"core": {"id": "file"}}:
+	 * a file chosen outside the firmware folder is found there again */
+	Property<std::string> chosenFirmware{"{}"};
 	Property<int64_t> count{0};
 	Property<std::string> status{"No cores folder"};
 
@@ -30,8 +33,11 @@ public:
 	/* any thread: the newest package of each installed core, by name, as
 	 * {core name, package} */
 	std::vector<std::pair<std::string, std::string>> installed() const;
-	/* any thread: the folders firmware is looked for in */
+	/* any thread: where firmware is looked for - the folders, then the files
+	 * chosen by hand */
 	std::vector<std::string> firmwareFolders() const;
+	/* the file chosen for a core's firmware, remembered */
+	void rememberFirmware(const std::string &coreName, const std::string &id, const std::string &path);
 
 private:
 	struct Core
@@ -58,8 +64,9 @@ private:
 	mutable std::mutex m_;
 	std::vector<Core> cores_;
 	std::string firmwareM_;
+	std::vector<std::string> chosenM_;
 	Rows rows_{*this};
-	Connection folderWatch_, firmwareWatch_;
+	Connection folderWatch_, firmwareWatch_, chosenWatch_;
 };
 
 } // namespace chimera::vm
