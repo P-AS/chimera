@@ -1,0 +1,212 @@
+#include "chimera/vm/watch_values.hpp"
+
+#include <charconv>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+namespace chimera::vm::watch {
+
+const std::vector<Display> &displaysFor(int size)
+{
+	static const std::vector<Display> one{Display::Unsigned, Display::Signed, Display::Hex, Display::Binary};
+	static const std::vector<Display> two{Display::Unsigned, Display::Signed, Display::Hex, Display::Binary, Display::Fixed12_4};
+	static const std::vector<Display> four{Display::Unsigned, Display::Signed, Display::Hex, Display::Binary,
+		Display::Fixed20_12, Display::Fixed16_16, Display::Float};
+	static const std::vector<Display> none;
+	return size == 1 ? one : size == 2 ? two : size == 4 ? four : none;
+}
+
+bool fits(int size, Display display)
+{
+	for (const Display d : displaysFor(size))
+		if (d == display) return true;
+	return false;
+}
+
+namespace {
+
+/* bits in groups of four, the highest first */
+std::string binary(uint32_t value, int bits)
+{
+	std::string out;
+	for (int i = bits - 1; i >= 0; i--)
+	{
+		out += ((value >> i) & 1u) != 0 ? '1' : '0';
+		if (i != 0 && i % 4 == 0) out += ' ';
+	}
+	return out;
+}
+
+/* n / 2^shift with `decimals` places, the last rounded half away from zero
+ * (as .NET rounds a format's digits): exact, since the value is exact */
+std::string fixedPoint(int64_t n, int shift, int decimals, bool trim)
+{
+	const bool negative = n < 0;
+	const uint64_t magnitude = static_cast<uint64_t>(negative ? -n : n);
+	uint64_t scale = 1;
+	for (int i = 0; i < decimals; i++) scale *= 10;
+	/* magnitude * scale / 2^shift, rounded half up on the magnitude */
+	const uint64_t whole = magnitude >> shift;
+	const uint64_t rest = magnitude & ((uint64_t{1} << shift) - 1);
+	uint64_t fraction = (rest * scale * 2 + (uint64_t{1} << shift)) >> (shift + 1);
+	uint64_t integer = whole;
+	if (fraction >= scale)
+	{
+		integer++;
+		fraction -= scale;
+	}
+	std::string digits = std::to_string(fraction);
+	digits.insert(0, static_cast<size_t>(decimals) - digits.size(), '0');
+	if (trim)
+		while (!digits.empty() && digits.back() == '0') digits.pop_back();
+	const bool zero = integer == 0 && digits.find_first_not_of('0') == std::string::npos;
+	std::string out = (negative && !zero ? "-" : "") + std::to_string(integer);
+	if (!digits.empty()) out += "." + digits;
+	return out;
+}
+
+/* A float the way .NET writes one: the shortest digits that read back as
+ * the same float, written plainly unless its power of ten is 9 or more or
+ * below -4, where it takes an exponent of at least two digits. */
+std::string shortestFloat(float f)
+{
+	if (std::isnan(f)) return "NaN";
+	if (std::isinf(f)) return f < 0 ? "-Infinity" : "Infinity";
+	char buf[64];
+	const auto r = std::to_chars(buf, buf + sizeof buf, f, std::chars_format::scientific);
+	const std::string sci(buf, r.ptr);
+	const bool negative = sci[0] == '-';
+	const size_t e = sci.find('e');
+	std::string digits;
+	for (size_t i = negative ? 1 : 0; i < e; i++)
+		if (sci[i] != '.') digits += sci[i];
+	const int exponent = std::atoi(sci.c_str() + e + 1);
+	std::string out = negative ? "-" : "";
+	if (exponent >= 9 || exponent < -4)
+	{
+		out += digits.substr(0, 1);
+		if (digits.size() > 1) out += "." + digits.substr(1);
+		char ex[16];
+		std::snprintf(ex, sizeof ex, "E%c%02d", exponent < 0 ? '-' : '+', exponent < 0 ? -exponent : exponent);
+		return out + ex;
+	}
+	if (exponent < 0) return out + "0." + std::string(static_cast<size_t>(-exponent - 1), '0') + digits;
+	const size_t point = static_cast<size_t>(exponent) + 1;
+	if (digits.size() <= point) return out + digits + std::string(point - digits.size(), '0');
+	return out + digits.substr(0, point) + "." + digits.substr(point);
+}
+
+} // namespace
+
+std::string format(uint32_t value, int size, Display display)
+{
+	char buf[32];
+	switch (display)
+	{
+	case Display::Unsigned: return std::to_string(size == 1 ? value & 0xFFu : size == 2 ? value & 0xFFFFu : value);
+	case Display::Signed:
+		return std::to_string(size == 1	  ? static_cast<int32_t>(static_cast<int8_t>(value))
+							  : size == 2 ? static_cast<int32_t>(static_cast<int16_t>(value))
+										  : static_cast<int32_t>(value));
+	case Display::Hex:
+		std::snprintf(buf, sizeof buf, "%0*X", size * 2, size == 1 ? value & 0xFFu : size == 2 ? value & 0xFFFFu : value);
+		return buf;
+	case Display::Binary: return binary(value, size * 8);
+	case Display::Fixed12_4: return fixedPoint(static_cast<int16_t>(value), 4, 4, false);
+	case Display::Fixed20_12: return fixedPoint(static_cast<int32_t>(value), 12, 6, true);
+	case Display::Fixed16_16: return fixedPoint(static_cast<int32_t>(value), 16, 6, true);
+	case Display::Float:
+	{
+		float f;
+		std::memcpy(&f, &value, sizeof f);
+		return shortestFloat(f);
+	}
+	}
+	return std::to_string(value);
+}
+
+int addressDigits(int64_t number)
+{
+	if (number < 0) return 8;
+	if (number < 0x100) return 2;
+	if (number < 0x10000) return 4;
+	if (number < 0x1000000) return 6;
+	if (number < 0x100000000ll) return 8;
+	return 16;
+}
+
+std::string hex(int64_t number, int digits)
+{
+	char buf[32];
+	std::snprintf(buf, sizeof buf, "%0*llX", digits, static_cast<unsigned long long>(number));
+	return buf;
+}
+
+char sizeLetter(int size)
+{
+	return size == 1 ? 'b' : size == 2 ? 'w' : size == 4 ? 'd' : 'S';
+}
+
+int sizeFromLetter(char c)
+{
+	switch (c)
+	{
+	case 'b': return 1;
+	case 'w': return 2;
+	case 'd': return 4;
+	case 'S': return 0;
+	default: return -1;
+	}
+}
+
+char displayLetter(Display display)
+{
+	switch (display)
+	{
+	case Display::Unsigned: return 'u';
+	case Display::Signed: return 's';
+	case Display::Hex: return 'h';
+	case Display::Binary: return 'b';
+	case Display::Fixed12_4: return '1';
+	case Display::Fixed20_12: return '2';
+	case Display::Fixed16_16: return '3';
+	case Display::Float: return 'f';
+	}
+	return '_';
+}
+
+bool displayFromLetter(char c, Display &out)
+{
+	switch (c)
+	{
+	case 'u': out = Display::Unsigned; return true;
+	case 's': out = Display::Signed; return true;
+	case 'h': out = Display::Hex; return true;
+	case 'b': out = Display::Binary; return true;
+	case '1': out = Display::Fixed12_4; return true;
+	case '2': out = Display::Fixed20_12; return true;
+	case '3': out = Display::Fixed16_16; return true;
+	case 'f': out = Display::Float; return true;
+	default: return false;
+	}
+}
+
+const char *displayName(Display display)
+{
+	switch (display)
+	{
+	case Display::Unsigned: return "Unsigned";
+	case Display::Signed: return "Signed";
+	case Display::Hex: return "Hexadecimal";
+	case Display::Binary: return "Binary";
+	case Display::Fixed12_4: return "Fixed Point 12.4";
+	case Display::Fixed20_12: return "Fixed Point 20.12";
+	case Display::Fixed16_16: return "Fixed Point 16.16";
+	case Display::Float: return "Float";
+	}
+	return "";
+}
+
+} // namespace chimera::vm::watch

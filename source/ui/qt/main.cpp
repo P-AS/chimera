@@ -39,6 +39,7 @@
 #include "chimera/vm/lua_console_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
+#include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "key_names.hpp"
@@ -160,7 +161,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark, whatever the system says"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: ram-search, settings, lua, branches, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: ram-search, ram-watch, settings, lua, branches, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -194,6 +195,7 @@ int main(int argc, char **argv)
 	vm::SessionViewModel session(dispatcher, inputs);
 	vm::PianoRollViewModel pianoRoll(dispatcher, inputs, session);
 	vm::RamSearchViewModel ramSearch(dispatcher, session);
+	vm::RamWatchViewModel ramWatch(dispatcher, session);
 	vm::SettingsViewModel settings(dispatcher, session);
 	vm::BranchesViewModel branches(dispatcher, inputs, session, pianoRoll);
 	/* the cores and the firmware: beside the program, as Chimera keeps them,
@@ -228,6 +230,7 @@ int main(int argc, char **argv)
 	qt::QmlViewModel sessionQml(session);
 	qt::QmlViewModel pianoRollQml(pianoRoll);
 	qt::QmlViewModel ramSearchQml(ramSearch);
+	qt::QmlViewModel ramWatchQml(ramWatch);
 	qt::QmlViewModel settingsQml(settings);
 	qt::QmlViewModel branchesQml(branches);
 	qt::QmlViewModel coresQml(cores);
@@ -243,6 +246,7 @@ int main(int argc, char **argv)
 	lua.add(session);
 	lua.add(pianoRoll);
 	lua.add(ramSearch);
+	lua.add(ramWatch);
 	lua.add(settings);
 	lua.add(luaConsole);
 	lua.add(branches);
@@ -264,6 +268,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("session"), QVariant::fromValue<QObject *>(&sessionQml)},
 		{QStringLiteral("pianoRoll"), QVariant::fromValue<QObject *>(&pianoRollQml)},
 		{QStringLiteral("ramSearch"), QVariant::fromValue<QObject *>(&ramSearchQml)},
+		{QStringLiteral("ramWatch"), QVariant::fromValue<QObject *>(&ramWatchQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},
@@ -276,6 +281,7 @@ int main(int argc, char **argv)
 	window->installEventFilter(&keys);
 	/* --show ram-search or settings: the tool windows by name */
 	const QString showName = args.value(showOpt) == QStringLiteral("ram-search") ? QStringLiteral("ramSearchWindow")
+		: args.value(showOpt) == QStringLiteral("ram-watch") ? QStringLiteral("ramWatchWindow")
 		: args.value(showOpt) == QStringLiteral("settings") ? QStringLiteral("settingsWindow")
 		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")
 		: args.value(showOpt) == QStringLiteral("branches") ? QStringLiteral("branchesWindow")

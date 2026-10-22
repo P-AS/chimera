@@ -87,8 +87,14 @@ QVariant QmlRows::data(const QModelIndex &index, int role) const
 QHash<int, QByteArray> QmlRows::roleNames() const
 {
 	QHash<int, QByteArray> roles = QAbstractTableModel::roleNames();
+	/* a column by its name, unless the name is one of Qt's own (a column
+	 * called "display" would take the cell text from every delegate) */
+	const QList<QByteArray> qts = roles.values();
 	for (int c = 0; c < rows_.columnCount(); c++)
-		roles.insert(Qt::UserRole + c, QByteArray::fromStdString(rows_.columnName(c)));
+	{
+		const QByteArray name = QByteArray::fromStdString(rows_.columnName(c));
+		if (!qts.contains(name)) roles.insert(Qt::UserRole + c, name);
+	}
 	return roles;
 }
 

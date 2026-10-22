@@ -12,6 +12,7 @@ ApplicationWindow {
     required property QtObject session
     required property QtObject pianoRoll
     required property QtObject ramSearch
+    required property QtObject ramWatch
     required property QtObject settings
     required property QtObject luaConsole
     required property QtObject branches
@@ -72,6 +73,7 @@ ApplicationWindow {
             title: qsTr("&Tools")
             Action { text: qsTr("&Cores..."); onTriggered: { coresWindow.show(); coresWindow.raise() } }
             Action { text: qsTr("RAM &Search..."); onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
+            Action { text: qsTr("RAM &Watch..."); onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
             Action { text: qsTr("&Lua Console..."); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
         }
         Menu {
@@ -112,6 +114,7 @@ ApplicationWindow {
         onAccepted: root.pianoRoll.run("addMarker", [root.pianoRoll.currentFrame, markerText.text])
     }
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
+    RamWatch { id: ramWatchWindow; vm: root.ramWatch; visible: false }
     Settings { id: settingsWindow; settings: root.settings; visible: false }
     LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; visible: false }
     Branches { id: branchesWindow; vm: root.branches; visible: false }

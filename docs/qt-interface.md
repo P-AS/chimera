@@ -50,11 +50,12 @@ made from.
 | pianoRoll | a row a frame and a column a button; press, drag, paint, fill; undo and redo (a stroke is one step); markers; follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
 | branches | other versions of the movie, kept in the project, each with its state in a file in the project's cache folder and the picture it had; loading one loads that state, or replays from where the two movies differ when the state is missing or is another machine's | Branches |
 | ramSearch | the engine's RAM Search, updated after every frame, with undo | RAM Search (Qt's own table) |
+| ramWatch | addresses kept an eye on, read after every frame, shown unsigned, signed, in hex, in binary, as fixed point or as a float exactly as Chimera writes them; the previous value three ways, changes counted; Chimera's .wch files both ways (other emulators' too) | RAM Watch |
 | settings | the package's declared settings, those that apply, edits applied live or by restarting | Settings (a form generated from the declaration) |
 | luaConsole | edit, run, open and save scripts; their output | Lua Console |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 351 checks on the
+The tests drive the view models with no window: 435 checks on the
 synthetic core. They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
 whole window off-screen and runs it for a second. Every new check was
@@ -116,6 +117,16 @@ Windows (the GTX 1060, through WSL, screen locked):
 - **Lua and C++ destructors.** Lua reports errors by jumping out of the C
   function, past C++ destructors, so the bridge raises its errors only
   after its C++ objects have ended.
+- **Two differences from Chimera's RAM Watch, on purpose.** A float is
+  written as the shortest text that reads back as the same float, as .NET
+  8 writes it (compared over 200,000 values); Chimera's C#, on .NET
+  Framework, writes seven digits, so two different floats can look alike.
+  And with "before the last change" chosen, the previous value is the one
+  before the change; Chimera's C# sets it to the new value, so the column
+  always equals the value.
+- **Column names are not Qt's.** A table column called "display" took
+  every cell's text, because Qt calls a cell's text "display". The adapter
+  no longer lets a column name shadow one of Qt's.
 - **Copies of a project share a cache folder.** A project keeps its id
   when saved under another name, and the cache folder is by id. Opening a
   project clears the branch states none of its branches have, as Chimera
@@ -141,8 +152,8 @@ which QML replaces):
 | display, input, sound | about 9,000 | done here (picture, keys, SDL pads, OpenAL) |
 
 About 150,000 lines of C# become about 40,000 to 60,000 of C++ and QML, if
-the prototype's ratio holds. The prototype is 5,600 lines of view models,
-1,800 of Qt (650 of them QML) and 1,150 of tests.
+the prototype's ratio holds. The prototype is 7,000 lines of view models,
+2,000 of Qt (790 of them QML) and 1,500 of tests.
 
 A suggested order, each step usable on its own:
 
@@ -157,7 +168,9 @@ A suggested order, each step usable on its own:
    the engine's rules, a project made of an open game, a game opened by its
    kind of file. Still to do: the wizard's slots, machines and settings
    before the first frame.
-3. **RAM Watch, cheats, hex editor.**
+3. **RAM Watch, cheats, hex editor.** RAM Watch is done, but for game
+   property watches (kept in its files as they are, not read yet), its
+   values over the picture, and poking a value.
 4. **Lua's libraries** (memory, joypad, gui drawing, forms) as view model
    commands, so MCP has them too. Coordinate with the New-Features
    session, whose the MCP code is.

@@ -26,6 +26,8 @@ vm_lib = static_library(
     'viewmodel/src/firmware.cpp',
     'viewmodel/src/cores_vm.cpp',
     'viewmodel/src/branch_state.cpp',
+    'viewmodel/src/watch_values.cpp',
+    'viewmodel/src/ram_watch_vm.cpp',
     'viewmodel/src/config_store.cpp',
   ],
   include_directories: [vm_inc, engine_inc, include_directories('../../extern/lua')],

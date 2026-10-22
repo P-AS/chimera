@@ -33,6 +33,8 @@
 #include "chimera/vm/lua_console_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
+#include "chimera/vm/ram_watch_vm.hpp"
+#include "chimera/vm/watch_values.hpp"
 #include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "chimera/engine.h"
@@ -1118,6 +1120,195 @@ bool newProject(const char *package, const char *rom)
 	return true;
 }
 
+/* Values written as Chimera's RAM Watch writes them (the whole range was
+ * compared with .NET's own text; these few keep it so) */
+void watchValues()
+{
+	using watch::Display;
+	using watch::format;
+	CHECK(format(0x80, 1, Display::Unsigned) == "128" && format(0x80, 1, Display::Signed) == "-128");
+	CHECK(format(0x0A, 1, Display::Hex) == "0A" && format(0xA5, 1, Display::Binary) == "1010 0101");
+	CHECK(format(0xABCD, 2, Display::Binary) == "1010 1011 1100 1101" && format(0xFFFF, 2, Display::Signed) == "-1");
+	CHECK(format(0x0008, 2, Display::Fixed12_4) == "0.5000" && format(0xFFF8, 2, Display::Fixed12_4) == "-0.5000");
+	CHECK(format(0x0000, 2, Display::Fixed12_4) == "0.0000" && format(0x1234, 2, Display::Hex) == "1234");
+	CHECK(format(0xFFFFF000, 4, Display::Fixed20_12) == "-1" && format(0x00000800, 4, Display::Fixed20_12) == "0.5");
+	CHECK(format(1, 4, Display::Fixed16_16) == "0.000015" && format(0xFFFFFFFF, 4, Display::Fixed16_16) == "-0.000015");
+	CHECK(format(0x00000080, 4, Display::Fixed16_16) == "0.001953");
+	CHECK(format(0x3DCCCCCD, 4, Display::Float) == "0.1" && format(0x4CBEBC20, 4, Display::Float) == "100000000");
+	CHECK(format(0x4E6E6B28, 4, Display::Float) == "1E+09" && format(0x3727C5AC, 4, Display::Float) == "1E-05");
+	CHECK(format(0x38D1B717, 4, Display::Float) == "0.0001" && format(0x80000000, 4, Display::Float) == "-0");
+	CHECK(format(0x7F800000, 4, Display::Float) == "Infinity" && format(0x7FC00000, 4, Display::Float) == "NaN");
+	CHECK(format(0x7F7FFFFF, 4, Display::Float) == "3.4028235E+38" && format(0x00000001, 4, Display::Float) == "1E-45");
+	CHECK(format(0x12345678, 4, Display::Hex) == "12345678" && format(0x80000000, 4, Display::Signed) == "-2147483648");
+	CHECK(watch::addressDigits(0xFF) == 2 && watch::addressDigits(0x100) == 4 && watch::addressDigits(0x10000) == 6);
+	CHECK(watch::fits(2, Display::Fixed12_4) && !watch::fits(1, Display::Float) && !watch::fits(4, Display::Fixed12_4));
+}
+
+/* RAM Watch: values read after every frame, the previous value and the
+ * changes counted three ways, and Chimera's .wch files both ways */
+bool ramWatch(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-watch-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	RamWatchViewModel watches(d, session);
+	std::string error;
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && !watches.domains.get().empty(); }, 60));
+	const std::string firstDomain = watches.domains.get().substr(0, watches.domains.get().find(','));
+	CHECK(("," + watches.domains.get() + ",").find(",RAM,") != std::string::npos);
+	/* a byte the game changes from one frame to the next */
+	session.key("Down", true);
+	int64_t frame = 0;
+	auto step = [&] {
+		session.run("frameAdvance", {}, error);
+		frame++;
+		CHECK(d.until([&] { return session.frame.get() == frame; }, 20));
+	};
+	step();
+	std::vector<uint8_t> before = session.readDomain("RAM");
+	step();
+	std::vector<uint8_t> now = session.readDomain("RAM");
+	const int64_t ramSize = static_cast<int64_t>(now.size());
+	int64_t at = -1;
+	for (int64_t i = 0; i + 4 <= ramSize && at < 0; i++)
+		if (before[static_cast<size_t>(i)] != now[static_cast<size_t>(i)]) at = i;
+	CHECK(at >= 0);
+	if (at < 0) return false;
+	const int64_t a2 = at & ~int64_t{1}, a4 = at & ~int64_t{3};
+	CHECK(watches.run("add", {std::string("RAM"), at, int64_t{1}, int64_t{0}, false, std::string("changing byte")}, error).has_value());
+	watches.run("add", {std::string("RAM"), a2, int64_t{2}, int64_t{2}, false, std::string("word, little end first")}, error);
+	watches.run("add", {std::string("RAM"), a2, int64_t{2}, int64_t{2}, true, std::string("word, big end first")}, error);
+	watches.run("add", {std::string("RAM"), a4, int64_t{4}, int64_t{3}, false, std::string("bits")}, error);
+	watches.run("addSeparator", {std::string("below")}, error);
+	watches.run("add", {std::string("RAM"), ramSize - 1, int64_t{2}, int64_t{0}, false, std::string("past the end")}, error);
+	watches.run("add", {std::string("RAM"), a4, int64_t{4}, int64_t{7}, false, std::string("as a float")}, error);
+	CHECK(!watches.run("add", {std::string("RAM"), at, int64_t{1}, int64_t{7}, false, std::string("")}, error));
+	CHECK(!watches.run("add", {std::string("RAM"), at, int64_t{3}, int64_t{0}, false, std::string("")}, error));
+	CHECK(watches.count.get() == 7 && watches.changed.get());
+	auto text = [&](int64_t row, int32_t column) {
+		std::string t;
+		fromValue(watches.rowLists()[0].model->cell(row, column), t);
+		return t;
+	};
+	auto number = [&](int64_t row, int32_t column) {
+		int64_t n = -1;
+		fromValue(watches.rowLists()[0].model->cell(row, column), n);
+		return n;
+	};
+	auto shownAs = [&](const std::vector<uint8_t> &r) {
+		const size_t i = static_cast<size_t>(at), w = static_cast<size_t>(a2), q = static_cast<size_t>(a4);
+		const uint32_t little = r[w] | (r[w + 1] << 8), big = (r[w] << 8) | r[w + 1];
+		const uint32_t dword = r[q] | (r[q + 1] << 8) | (r[q + 2] << 16) | (static_cast<uint32_t>(r[q + 3]) << 24);
+		return text(0, 1) == std::to_string(r[i]) && text(1, 1) == watch::format(little, 2, watch::Display::Hex) &&
+			   text(2, 1) == watch::format(big, 2, watch::Display::Hex) && text(3, 1) == watch::format(dword, 4, watch::Display::Binary) &&
+			   text(6, 1) == watch::format(dword, 4, watch::Display::Float);
+	};
+	CHECK(d.until([&] { return shownAs(now); }, 10));
+	CHECK(text(5, 1) == "-" && text(5, 4) == "-" && text(4, 6) == "below" && text(4, 1).empty());
+	CHECK(text(0, 0) == watch::hex(at, watch::addressDigits(ramSize - 1)) && text(0, 5) == "RAM" && text(1, 8) == "Hexadecimal");
+	CHECK(text(0, 2) == text(0, 1) && number(0, 3) == 0);
+	/* the last frame's value as the previous one: every frame that moves it is a change */
+	int64_t changes = 0;
+	uint8_t value = now[static_cast<size_t>(at)], previous = value;
+	for (int k = 0; k < 6; k++)
+	{
+		step();
+		now = session.readDomain("RAM");
+		previous = value;
+		value = now[static_cast<size_t>(at)];
+		if (value != previous) changes++;
+		CHECK(d.until([&] { return shownAs(now) && text(0, 2) == std::to_string(previous) && number(0, 3) == changes; }, 10));
+	}
+	const int64_t diff = static_cast<int64_t>(value) - previous;
+	CHECK(text(0, 4) == (diff > 0 ? "+" : "") + std::to_string(diff));
+	/* the value before the last change */
+	watches.set("previousType", int64_t{3}, error);
+	uint8_t beforeChange = previous;
+	for (int k = 0; k < 6; k++)
+	{
+		step();
+		now = session.readDomain("RAM");
+		const uint8_t read = now[static_cast<size_t>(at)];
+		if (read != value)
+		{
+			beforeChange = value;
+			value = read;
+			changes++;
+		}
+		CHECK(d.until([&] { return shownAs(now) && text(0, 2) == std::to_string(beforeChange) && number(0, 3) == changes; }, 10));
+	}
+	/* the first value seen: nothing moves it, nothing is counted */
+	watches.set("previousType", int64_t{0}, error);
+	const std::string kept = text(0, 2);
+	for (int k = 0; k < 3; k++)
+	{
+		step();
+		now = session.readDomain("RAM");
+		CHECK(d.until([&] { return shownAs(now) && text(0, 2) == kept && number(0, 3) == changes; }, 10));
+	}
+	watches.run("clearChangeCounts", {}, error);
+	CHECK(number(0, 3) == 0);
+
+	/* saved as Chimera saves it */
+	watches.run("setOnScreen", {int64_t{0}, true}, error);
+	watches.run("setOnScreen", {int64_t{6}, true}, error);
+	CHECK(!watches.run("setOnScreen", {int64_t{4}, true}, error));
+	const fs::path file = dir / "w.wch";
+	CHECK(watches.run("save", {file.string()}, error).has_value() && !watches.changed.get() && watches.path.get() == file.string());
+	const std::string saved = readFile(file);
+#ifdef _WIN32
+	const std::string nl = "\r\n";
+#else
+	const std::string nl = "\n";
+#endif
+	const std::string digits = watch::hex(at, watch::addressDigits(ramSize));
+	CHECK(saved.rfind("SystemID Synth" + nl + digits + "\tb\tu\t0\tRAM\tchanging byte" + nl, 0) == 0);
+	CHECK(saved.find(nl + "0\tS\t_\t1\t\tbelow" + nl) != std::string::npos);
+	CHECK(saved.find(watch::hex(a2, watch::addressDigits(ramSize)) + "\tw\th\t1\tRAM\tword, big end first" + nl) != std::string::npos);
+	CHECK(saved.size() > 2 * nl.size() && saved.substr(saved.size() - (nl.size() + 12 + nl.size())) == "OnScreen\t0,6" + nl + nl);
+	/* and read back */
+	watches.run("newList", {}, error);
+	CHECK(watches.count.get() == 0 && watches.path.get().empty());
+	CHECK(watches.run("open", {file.string()}, error).has_value());
+	CHECK(watches.count.get() == 7 && !watches.changed.get());
+	CHECK(text(0, 6) == "changing byte" && number(0, 7) == 1 && text(2, 8) == "Hexadecimal" && text(4, 6) == "below");
+	bool on0 = false, on1 = true, on6 = false;
+	fromValue(watches.rowLists()[0].model->cell(0, 9), on0);
+	fromValue(watches.rowLists()[0].model->cell(1, 9), on1);
+	fromValue(watches.rowLists()[0].model->cell(6, 9), on6);
+	CHECK(on0 && !on1 && on6);
+	CHECK(d.until([&] { return shownAs(now); }, 10));
+	/* opened with another: appended, and the list has changed */
+	CHECK(watches.run("open", {file.string(), true}, error).has_value() && watches.count.get() == 14 && watches.changed.get());
+	/* another emulator's file (a count first, a place before each line, no
+	 * domain), a domain this machine lacks, and a game property, which is
+	 * kept as it was */
+	{
+		std::ofstream(dir / "other.wch", std::ios::binary) << "2\r\n00001\t0010\tw\th\t1\tfrom elsewhere\r\n00002\t0020\tb\tu\t0\tsecond\r\n";
+		CHECK(watches.run("open", {(dir / "other.wch").string()}, error).has_value() && watches.count.get() == 2);
+		CHECK(text(0, 0) == watch::hex(0x10, watch::addressDigits(ramSize - 1)) && text(0, 5) == firstDomain && text(0, 6) == "from elsewhere");
+		CHECK(number(0, 7) == 2 && text(0, 8) == "Hexadecimal" && text(1, 6) == "second");
+		std::ofstream(dir / "odd.wch", std::ios::binary)
+			<< "SystemID Synth\n0010\tb\tu\t0\tNowhere\tlost domain\n0\tp\t_\t0\t\tplayer x\nOnScreen\t1\n";
+		CHECK(watches.run("open", {(dir / "odd.wch").string()}, error).has_value() && watches.count.get() == 2);
+		CHECK(text(0, 5) == firstDomain && text(1, 6) == "player x" && text(1, 5) == "game property");
+		CHECK(watches.run("save", {(dir / "odd-saved.wch").string()}, error).has_value());
+		CHECK(readFile(dir / "odd-saved.wch").find(nl + "0\tp\t_\t0\t\tplayer x" + nl) != std::string::npos);
+		CHECK(readFile(dir / "odd-saved.wch").find("OnScreen\t1" + nl) != std::string::npos);
+	}
+	CHECK(!watches.run("open", {(dir / "missing.wch").string()}, error) && error.find("cannot read") != std::string::npos);
+	session.key("Down", false);
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
 /* Rerecords, counted as Chimera's TAStudio counts them: an edit over frames
  * the machine has stored states past counts one, a stroke counts once
  * however many cells it crosses, frames added at the end count none, a
@@ -1287,6 +1478,7 @@ int main(int argc, char **argv)
 	firmware();
 	settingsByMachine();
 	pianoRollWithoutAMachine();
+	watchValues();
 	const bool ranPads = gamepads();
 	bool ranMachine = false;
 	if (argc >= 3)
@@ -1299,6 +1491,7 @@ int main(int argc, char **argv)
 			ranMachine = settings(argv[1], argv[2]) && ranMachine;
 			ranMachine = newProject(argv[1], argv[2]) && ranMachine;
 			ranMachine = rerecordCount(argv[1], argv[2]) && ranMachine;
+			ranMachine = ramWatch(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;
