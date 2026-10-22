@@ -450,7 +450,7 @@ engine_dep = declare_dependency(
   include_directories: engine_inc,
   dependencies: [dl_dep] + gl_bridge_deps,  # zstd_dyn loads libzstd from beside the library
 )
-shared_library(
+chimera_shared = shared_library(
   'chimera',
   name_prefix: 'lib',  # libchimera.{so,dll} on both targets (the frontend resolves this name)
   dependencies: [engine_dep],
@@ -580,4 +580,9 @@ if not meson.is_cross_build()
       command: [dotnet, 'build', repo_root / 'source/gui/Chimera.sln', '-c', 'Release', '/nodeReuse:false', '-p:UseSharedCompilation=false'],
     )
   endif
+endif
+
+# The Qt window (issue 142, a private prototype): source/ui/meson.build
+if get_option('qt_ui').allowed()
+  subdir('source/ui')
 endif
