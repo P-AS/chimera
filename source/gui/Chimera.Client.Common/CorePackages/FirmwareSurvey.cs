@@ -35,15 +35,25 @@ namespace Chimera.Client.Common
 		/// <summary>"bios = ps2-0220e-20060210", "with a file in cd", or "" when unconditional.</summary>
 		public string Condition { get; init; } = "";
 
+		/// <summary>
+		/// For a row with no file: how many different files its size and name hints
+		/// point at. Two or more, and the person chooses one (issue 349).
+		/// </summary>
+		public int Candidates { get; init; }
+
 		public bool OnHand => State is CoreFirmwareState.Good or CoreFirmwareState.Unrecognised or CoreFirmwareState.Custom;
 
 		public string StatusText => State switch
 		{
-			CoreFirmwareState.Good => string.IsNullOrEmpty(Decl.Sha1) ? "found by name" : "found, hash matches",
+			CoreFirmwareState.Good => !string.IsNullOrEmpty(Decl.Sha1) ? "found, hash matches"
+				: Path is not null && !string.IsNullOrEmpty(Decl.Name)
+					&& !string.Equals(System.IO.Path.GetFileName(Path), Decl.Name, StringComparison.OrdinalIgnoreCase)
+					? "found by size and name"
+					: "found by name",
 			CoreFirmwareState.Unrecognised => "right size, a dump the core has never seen - used anyway",
 			CoreFirmwareState.Custom => $"not the {Decl.Size} bytes the core expects - used anyway",
 			CoreFirmwareState.Unreadable => "chosen file is gone",
-			_ => "not found",
+			_ => Candidates >= 2 ? $"{Candidates} candidates - choose one with Set..." : "not found",
 		};
 
 		public string WhereText => Where switch
@@ -190,6 +200,7 @@ namespace Chimera.Client.Common
 								: IsUnder(firmwareFolder, entry.Path) ? FirmwareWhere.FirmwareFolder
 								: FirmwareWhere.Chosen,
 							Condition = i < raw.Count && raw[i] is JObject o && o["requiredWhen"] is { } when ? ConditionText(when) : "",
+							Candidates = entry.Path is null ? FirmwareLocator.HintCandidates(decl, index).Count : 0,
 						});
 					}
 				}

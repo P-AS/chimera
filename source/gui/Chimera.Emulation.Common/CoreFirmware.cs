@@ -43,6 +43,16 @@ namespace Chimera.Emulation.Common
 		/// <summary>the file name this dump usually goes by - a hint, never a requirement</summary>
 		public string? Name { get; set; }
 
+		/// <summary>
+		/// For an entry that pins no hash: pieces of a file name that mark this file,
+		/// whatever else the name holds ("7i" for NDS_Bios7i.bin, "nand" for
+		/// DSi_Nand_USA.bin). A file of the declared <see cref="Size"/> (any size when
+		/// it is 0) whose name holds one of them, compared without case, answers the
+		/// entry when it is the only such file; with several, nothing is guessed and
+		/// the person chooses (issue 349).
+		/// </summary>
+		public List<string>? NameHints { get; set; }
+
 		/// <summary>which release this is ("US v1.10", "6.61 official") - shown beside the name</summary>
 		public string? Label { get; set; }
 

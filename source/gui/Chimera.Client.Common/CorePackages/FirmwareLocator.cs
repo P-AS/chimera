@@ -50,11 +50,36 @@ namespace Chimera.Client.Common
 					Path.GetFileName(f.Path).Equals(decl.Name, StringComparison.OrdinalIgnoreCase));
 
 		/// <summary>
-		/// Whichever of the two answers this requirement: the hash when it pins
-		/// one, the declared name when it does not.
+		/// The files that could answer a requirement that pins no hash, by what its
+		/// core says marks it (<see cref="CoreFirmwareDecl.NameHints"/>): the declared
+		/// size, when there is one, and a name holding one of the hints. One file
+		/// in several places is one candidate - the bytes are what count - so a
+		/// candidate per distinct hash, the first place each was found.
+		/// </summary>
+		public static IReadOnlyList<IndexedFile> HintCandidates(CoreFirmwareDecl decl, IReadOnlyList<IndexedFile> index)
+		{
+			if (!string.IsNullOrEmpty(decl.Sha1) || decl.NameHints is not { Count: > 0 } hints) return [ ];
+			return index
+				.Where(f => (decl.Size is 0 || f.Length == decl.Size)
+					&& hints.Any(h => h.Length is not 0
+						&& Path.GetFileName(f.Path).IndexOf(h, StringComparison.OrdinalIgnoreCase) >= 0))
+				.GroupBy(static f => f.Sha1, StringComparer.OrdinalIgnoreCase)
+				.Select(static g => g.First())
+				.ToList();
+		}
+
+		/// <summary>
+		/// Whichever answers this requirement: the hash when it pins one. When it
+		/// does not, the declared name, and failing that the one file its size and
+		/// name hints point at - never one of several (issue 349).
 		/// </summary>
 		public static IndexedFile? FindEither(CoreFirmwareDecl decl, IReadOnlyList<IndexedFile> index)
-			=> string.IsNullOrEmpty(decl.Sha1) ? FindNamed(decl, index) : FindFor(decl, index);
+		{
+			if (!string.IsNullOrEmpty(decl.Sha1)) return FindFor(decl, index);
+			if (FindNamed(decl, index) is { } named) return named;
+			var candidates = HintCandidates(decl, index);
+			return candidates.Count is 1 ? candidates[0] : null;
+		}
 
 		/// <summary>
 		/// Files this large or larger are never firmware, because the frontend

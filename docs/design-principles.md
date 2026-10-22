@@ -10603,3 +10603,21 @@ Uzem's projects from before the change showed. A core that turns a held key
 into an event in its table's order (DOSBox-X, TIC-80, Godot, Ruffle) keeps
 that order and maps the listed number to it, so two keys pressed on one frame
 still reach the game as they did.
+
+## Firmware with no hash is found by its size and a name hint (user-decided, 2026-10-22)
+
+Some firmware has no hash a core can pin, because every console writes its own:
+the DS firmware, the DSi's BIOS, firmware and NAND. Scan Folder and the
+Firmware folder found such a file only under the exact name the core declares
+(bios7i.bin, nand.bin), and people's files are named otherwise
+(NDS_Bios7i.bin, DSi_Nand_USA.bin), so none was found (issue 349). The owner
+chose: a firmware entry may list `nameHints`, pieces of a file name that mark
+it. When the declared name finds nothing, a file of the declared size (any
+size when none is declared) whose name holds one of the hints, compared
+without case, answers the entry if it is the only one. One dump in two places
+counts once: candidates are counted by hash. With two or more, nothing is
+guessed, and Config > Firmware says "N candidates - choose one with Set...".
+A file found this way says "found by size and name". An entry with a hash is
+still found by its hash and nothing else. The hints sit in the package, so a
+core decides what marks its files; melonDS declares them for its unpinned
+entries.

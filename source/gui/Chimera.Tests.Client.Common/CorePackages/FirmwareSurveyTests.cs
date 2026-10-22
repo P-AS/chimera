@@ -94,6 +94,55 @@ namespace Chimera.Tests.Client.Common
 				"every declaration any version makes, once each");
 		}
 
+		/// <summary>
+		/// A firmware with no hash - a console's own dump - is found by the size and
+		/// the name hints its core declares when exactly one file fits, and when
+		/// several do, the row says how many and nothing is guessed (issue 349: a
+		/// folder of melonDS files named NDS_Bios7i.bin, DSi_Nand_USA.bin and so on,
+		/// none of them under the name the core declares).
+		/// </summary>
+		[TestMethod]
+		public void AFirmwareWithNoHashIsFoundBySizeAndNameHint()
+		{
+			FileOf(_firmware, "NDS_Bios7i.bin", 4096, 1);
+			FileOf(_firmware, "NDS_Bios9i.bin", 4096, 2);
+			FileOf(_firmware, "DSi_Firmware.bin", 2048, 3);
+			FileOf(_firmware, "DSi_Nand_USA.bin", 3000, 4);
+			FileOf(_firmware, "DSi_Nand_EUR.bin", 3000, 5);
+			FileOf(_firmware, "NDS_Firmware_1.bin", 1024, 6);
+			FileOf(_firmware, "NDS_Firmware_2.bin", 1024, 7);
+			CoreFirmwareDecl Hinted(string id, string name, int size, params string[] hints)
+				=> new() { Id = id, Display = id, Size = size, Name = name, NameHints = hints.ToList() };
+			var decls = new[]
+			{
+				Hinted("bios7i.bin", "bios7i.bin", 4096, "7i"),
+				Hinted("bios9i.bin", "bios9i.bin", 4096, "9i"),
+				Hinted("dsi_firmware.bin", "dsifirmware.bin", 2048, "dsi"),
+				Hinted("dsi_nand.bin", "nand.bin", 0, "nand"),
+				Hinted("firmware.bin", "firmware.bin", 0, "firmware"),
+				// a hash, when there is one, is the only thing that answers
+				new CoreFirmwareDecl { Id = "bios7.bin", Display = "bios7", Size = 4096, Name = "bios7.bin", Sha1 = new string('1', 40), NameHints = [ "7i" ] },
+			};
+			var melonds = Package("melonDS");
+			var config = new Config();
+			var rows = Survey(config, [ melonds ],
+				new Dictionary<string, (IReadOnlyList<CoreFirmwareDecl>, JArray)> { ["melonDS"] = (decls, new JArray()) },
+				_firmware).Single().Rows.ToDictionary(static r => r.Decl.Id);
+
+			foreach (var (id, file) in new[] { ("bios7i.bin", "NDS_Bios7i.bin"), ("bios9i.bin", "NDS_Bios9i.bin"), ("dsi_firmware.bin", "DSi_Firmware.bin") })
+			{
+				Assert.IsTrue(rows[id].OnHand, $"{id}: one file has its size and a name with its hint - {rows[id].StatusText}");
+				Assert.AreEqual(file, Path.GetFileName(rows[id].Path), id);
+				Assert.AreEqual("found by size and name", rows[id].StatusText, id);
+			}
+			Assert.IsFalse(rows["dsi_nand.bin"].OnHand, "two NAND images: which console's is the person's to say");
+			Assert.AreEqual("2 candidates - choose one with Set...", rows["dsi_nand.bin"].StatusText);
+			Assert.IsFalse(rows["firmware.bin"].OnHand, "NDS_Firmware_1, _2 and DSi_Firmware all say firmware");
+			Assert.AreEqual("3 candidates - choose one with Set...", rows["firmware.bin"].StatusText);
+			Assert.IsFalse(rows["bios7.bin"].OnHand, "a pinned entry is not found by a hint");
+			Assert.AreEqual("not found", rows["bios7.bin"].StatusText);
+		}
+
 		[TestMethod]
 		public void TheGameCoresComeAfterEveryEmulator()
 		{

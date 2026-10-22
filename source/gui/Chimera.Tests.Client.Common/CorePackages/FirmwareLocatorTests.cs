@@ -115,5 +115,34 @@ namespace Chimera.Tests.Client.Common.CorePackages
 				Directory.Delete(dir, recursive: true);
 			}
 		}
+
+		/// <summary>
+		/// The same dump in two folders is one candidate, not two: what answers is
+		/// the bytes (issue 349). A file of the wrong size is no candidate, whatever
+		/// its name says.
+		/// </summary>
+		[TestMethod]
+		public void OneDumpInTwoPlacesIsOneCandidate()
+		{
+			var first = MakeFolder();
+			var second = MakeFolder();
+			try
+			{
+				File.WriteAllText(Path.Combine(first, "DSi_Nand_USA.bin"), "the console's nand");
+				File.WriteAllText(Path.Combine(second, "backup of DSi_NAND_USA.bin"), "the console's nand");
+				File.WriteAllText(Path.Combine(second, "nand-notes.txt"), "not the right size at all");
+				var index = FirmwareLocator.BuildIndex([ first, second ]);
+				CoreFirmwareDecl nand = new() { Id = "dsi_nand.bin", Name = "nand.bin", Size = "the console's nand".Length, NameHints = [ "nand" ] };
+				Assert.AreEqual(1, FirmwareLocator.HintCandidates(nand, index).Count, "one dump, two places, one candidate");
+				Assert.IsNotNull(FirmwareLocator.FindEither(nand, index), "the only candidate answers");
+				nand.NameHints = null;
+				Assert.IsNull(FirmwareLocator.FindEither(nand, index), "with no hints, only the declared name finds it");
+			}
+			finally
+			{
+				Directory.Delete(first, recursive: true);
+				Directory.Delete(second, recursive: true);
+			}
+		}
 	}
 }

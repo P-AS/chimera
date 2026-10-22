@@ -313,6 +313,10 @@ Advice earned the hard way:
   (`{"slot": "game", "extension": "blz"}`, a setting's value, `any`/`all`/`not`).
   Optional firmware does not exist; if it is not always needed, spell the
   condition.
+  An entry that pins no `sha1` (a dump every console writes differently) can
+  list `nameHints`, pieces of a file name that mark it (`["7i"]`, `["nand"]`):
+  when its `name` finds nothing, the one file of its `size` whose name holds a
+  hint answers it, and with several the person chooses (issue 349).
 - **`package-licenses.json` is not optional.** Every component, its terms, its
   source link, and its licence text travel with the package; the bundle's
   LICENSES.md is computed from them, and a package that declares nothing stops
