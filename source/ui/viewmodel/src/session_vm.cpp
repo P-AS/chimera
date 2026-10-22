@@ -1237,14 +1237,54 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	const char *mn = ce_session_button_mnemonics(s);
 	const std::string mnemonics = mn != nullptr ? mn : "";
 
-	std::string keybinds;
+	std::string keybinds, config;
 	const char *perr = nullptr;
 	if (ce_package *p = ce_package_open(package.c_str(), &perr))
 	{
 		uint64_t len = 0;
 		if (const uint8_t *d = ce_package_entry(p, "default_keybinds.json", &len))
 			keybinds.assign(reinterpret_cast<const char *>(d), static_cast<size_t>(len));
+		if (const uint8_t *d = ce_package_entry(p, "waterbox.config", &len))
+			config.assign(reinterpret_cast<const char *>(d), static_cast<size_t>(len));
 		ce_package_free(p);
+	}
+	/* the analog controls: the engine's names, headers and rest values, the
+	 * ranges as the package declares them (its own input, or a machine's) */
+	std::vector<Axis> axes;
+	{
+		json::Json cfg;
+		std::string jerr;
+		const bool read = json::parse(config, cfg, jerr);
+		auto declared = [&](const std::string &name) -> const json::Json * {
+			if (!read) return nullptr;
+			auto look = [&](const json::Json *input) -> const json::Json * {
+				if (input == nullptr) return nullptr;
+				if (const json::Json *list = input->find("axes"))
+					for (const json::Json &a : list->items)
+						if (const json::Json *n = a.find("name"); n != nullptr && n->text == name) return &a;
+				return nullptr;
+			};
+			if (const json::Json *a = look(cfg.find("input"))) return a;
+			if (const json::Json *machines = cfg.find("machines"))
+				for (const json::Json &m : machines->items)
+					if (const json::Json *a = look(m.find("input"))) return a;
+			return nullptr;
+		};
+		for (int64_t i = 0; i < ce_session_axis_count(s); i++)
+		{
+			Axis a;
+			const char *n = ce_session_axis_name(s, i);
+			a.name = n != nullptr ? n : "";
+			const char *h = ce_session_axis_header_of(s, a.name.c_str());
+			a.header = h != nullptr ? h : a.name;
+			a.neutral = ce_session_axis_neutral(s, i);
+			if (const json::Json *d = declared(a.name))
+			{
+				if (const json::Json *v = d->find("min")) a.min = static_cast<int64_t>(v->number());
+				if (const json::Json *v = d->find("max")) a.max = static_cast<int64_t>(v->number());
+			}
+			axes.push_back(a);
+		}
 	}
 
 	std::string bindError;
@@ -1266,8 +1306,9 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	const double rate = num > 0 && den > 0 ? static_cast<double>(num) / den : 0;
 
 	const int64_t frames = inputs_.size();
-	later([this, names, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames] {
+	later([this, names, axes, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames] {
 		buttonNames_ = names;
+		axes_ = axes;
 		mnemonics_ = mnemonics;
 		std::string why;
 		const bool bound = keybinds.empty() || bindings_.parse(keybinds, buttonNames_, why);

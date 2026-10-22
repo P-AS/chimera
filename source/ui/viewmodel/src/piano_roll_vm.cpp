@@ -69,10 +69,24 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!paint(f, f, b, std::nullopt, false, error)) return {};
 			return (inputs_.at(f) >> b & 1) != 0;
 		});
-	command("press", "a press on a cell: flips it, and a drag from it gives the cells it passes the same state",
-		{"frame", "button"}, [this](const Args &a, std::string &error) -> Value {
+	command("press", "a press on a cell: a button's flips, and a drag from it gives the cells it passes the same state; "
+		"an analog control's is picked to edit, and a drag from it gives the cells it passes its value",
+		{"frame", "column"}, [this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0, b = 0;
 			if (!arg(a, 0, f, error) || !arg(a, 1, b, error)) return {};
+			if (b >= buttonCount())
+			{
+				const int64_t axis = b - buttonCount();
+				if (axis >= static_cast<int64_t>(session_.axes().size()) || f < 0 || f >= inputs_.size())
+				{
+					error = "no such frame or control";
+					return {};
+				}
+				pickAxis(f, axis);
+				dragAxisValue_ = axisValue.get();
+				axisJoin_ = false;
+				return axisValue.get();
+			}
 			if (!paint(f, f, b, std::nullopt, false, error)) return {};
 			dragHeld_ = (inputs_.at(f) >> b & 1) != 0;
 			/* the drag that follows is the same edit: one undo takes it all back */
@@ -83,9 +97,17 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		{"frame", "button"}, [this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0, b = 0;
 			if (!arg(a, 0, f, error) || !arg(a, 1, b, error)) return {};
-			/* the press counted the stroke's rerecord; the cells after it do not */
-			inputs_.countRerecords(!stroke_);
-			paint(f, f, b, dragHeld_, stroke_, error);
+			/* the stroke's first edit counts a rerecord; the cells after it do not */
+			if (b >= buttonCount())
+			{
+				inputs_.countRerecords(!axisJoin_);
+				if (paintAxis(f, f, b - buttonCount(), dragAxisValue_, axisJoin_, error)) axisJoin_ = true;
+			}
+			else
+			{
+				inputs_.countRerecords(!stroke_);
+				paint(f, f, b, dragHeld_, stroke_, error);
+			}
 			inputs_.countRerecords(true);
 			return {};
 		});
@@ -120,6 +142,31 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("selectLast", "the last frame picked, -1 for none", selectLast, true);
 	expose("clipboardFrames", "frames copied, ready to paste", clipboardFrames);
 	expose("bindMarkers", "markers move with the frames when frames are put in or taken out", bindMarkers, true);
+	expose("pickedFrame", "the frame of the analog cell picked to edit, -1 for none", pickedFrame);
+	expose("pickedAxis", "the analog control picked to edit, by its place among the analog controls", pickedAxis);
+	expose("axisName", "the picked analog control's name", axisName);
+	expose("axisMin", "the picked analog control's least value", axisMin);
+	expose("axisMax", "the picked analog control's greatest value", axisMax);
+	expose("axisValue", "the picked analog cell's value", axisValue);
+	command("unpick", "no analog cell is picked for editing", {}, [this](const Args &, std::string &) -> Value {
+		pickedFrame.set(-1);
+		pickedAxis.set(-1);
+		return {};
+	});
+	command("setAxis", "an analog control's value on a frame", {"frame", "axis", "value"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t f = 0, axis = 0, value = 0;
+			if (!arg(a, 0, f, error) || !arg(a, 1, axis, error) || !arg(a, 2, value, error)) return {};
+			paintAxis(f, f, axis, value, false, error);
+			return {};
+		});
+	command("paintAxis", "an analog control's value on frames first..last", {"first", "last", "axis", "value"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t first = 0, last = 0, axis = 0, value = 0;
+			if (!arg(a, 0, first, error) || !arg(a, 1, last, error) || !arg(a, 2, axis, error) || !arg(a, 3, value, error)) return {};
+			paintAxis(first, last, axis, value, false, error);
+			return {};
+		});
 	command("select", "picks the frames first to last (-1, -1 for none)", {"first", "last"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t first = 0, last = 0;
@@ -324,6 +371,12 @@ void PianoRollViewModel::keep(Step step, bool join)
 			if (it == last.frames.end()) last.frames.emplace(f, change);
 			else it->second.second = change.second;
 		}
+		for (const auto &[f, change] : step.axes)
+		{
+			auto it = last.axes.find(f);
+			if (it == last.axes.end()) last.axes.emplace(f, change);
+			else it->second.second = change.second;
+		}
 		last.sizeAfter = step.sizeAfter;
 	}
 	else
@@ -514,6 +567,54 @@ void PianoRollViewModel::overwrite(int64_t at, const std::vector<Row> &rows)
 	edited(at, at + static_cast<int64_t>(rows.size()) - 1, before);
 }
 
+void PianoRollViewModel::pickAxis(int64_t frame, int64_t axis)
+{
+	const SessionViewModel::Axis &ax = session_.axes()[static_cast<size_t>(axis)];
+	std::vector<int32_t> values(inputs_.axisCount());
+	if (!values.empty()) inputs_.axesAt(frame, values.data());
+	axisName.set(ax.name);
+	axisMin.set(ax.min);
+	axisMax.set(ax.max);
+	axisValue.set(static_cast<size_t>(axis) < values.size() ? values[static_cast<size_t>(axis)] : ax.neutral);
+	pickedFrame.set(frame);
+	pickedAxis.set(axis);
+}
+
+bool PianoRollViewModel::paintAxis(int64_t first, int64_t last, int64_t axis, int64_t value, bool join, std::string &error)
+{
+	if (first > last) std::swap(first, last);
+	const auto &axes = session_.axes();
+	if (axis < 0 || axis >= static_cast<int64_t>(axes.size()) || first < 0)
+	{
+		error = "no such frame or analog control";
+		return false;
+	}
+	const SessionViewModel::Axis &ax = axes[static_cast<size_t>(axis)];
+	if (value < ax.min || value > ax.max)
+	{
+		error = ax.name + " goes from " + std::to_string(ax.min) + " to " + std::to_string(ax.max);
+		return false;
+	}
+	const int64_t before = inputs_.size();
+	Step step;
+	step.sizeBefore = before;
+	for (int64_t f = first; f <= last; f++)
+	{
+		const Row was = readRow(f);
+		Row now = was;
+		if (static_cast<size_t>(axis) < now.axes.size()) now.axes[static_cast<size_t>(axis)] = static_cast<int32_t>(value);
+		writeRow(f, now);
+		step.frames[f] = {was.buttons, was.buttons};
+		step.axes[f] = {was.axes, now.axes};
+	}
+	step.sizeAfter = inputs_.size();
+	keep(std::move(step), join);
+	frames_.forget();
+	edited(first, last, before);
+	if (pickedAxis.get() == axis && pickedFrame.get() >= first && pickedFrame.get() <= last) axisValue.set(value);
+	return true;
+}
+
 bool PianoRollViewModel::range(const Args &a, int64_t &first, int64_t &last, std::string &error) const
 {
 	if (!arg(a, 0, first, error) || !arg(a, 1, last, error)) return false;
@@ -542,11 +643,20 @@ void PianoRollViewModel::edited(int64_t first, int64_t last, int64_t oldCount)
 std::string PianoRollViewModel::Frames::columnName(int32_t column) const
 {
 	const auto &names = vm_.session_.buttonNames();
-	return column >= 0 && column < static_cast<int32_t>(names.size()) ? names[static_cast<size_t>(column)] : std::string();
+	if (column >= 0 && column < static_cast<int32_t>(names.size())) return names[static_cast<size_t>(column)];
+	const auto &axes = vm_.session_.axes();
+	const size_t axis = static_cast<size_t>(column - static_cast<int32_t>(names.size()));
+	return column >= 0 && axis < axes.size() ? axes[axis].name : std::string();
 }
 
 std::string PianoRollViewModel::Frames::columnShortName(int32_t column) const
 {
+	if (column >= vm_.buttonCount())
+	{
+		const size_t axis = static_cast<size_t>(column - vm_.buttonCount());
+		const auto &axes = vm_.session_.axes();
+		return axis < axes.size() ? axes[axis].header : std::string();
+	}
 	const std::string &mn = vm_.session_.mnemonics();
 	if (column >= 0 && column < static_cast<int32_t>(mn.size()) && mn[static_cast<size_t>(column)] != '.')
 		return std::string(1, mn[static_cast<size_t>(column)]);
@@ -611,12 +721,21 @@ Value PianoRollViewModel::MarkerRows::cell(int64_t row, int32_t column) const
 
 Value PianoRollViewModel::Frames::cell(int64_t row, int32_t column) const
 {
-	if (column < 0 || column >= 64) return false;
+	const int32_t buttons = vm_.buttonCount();
+	if (column < 0 || column >= columnCount()) return false;
 	if (row != cachedRow_)
 	{
 		cachedBits_ = vm_.inputs_.at(row);
+		cachedAxes_.assign(vm_.inputs_.axisCount(), 0);
+		if (!cachedAxes_.empty()) vm_.inputs_.axesAt(row, cachedAxes_.data());
 		cachedRow_ = row;
 	}
+	if (column >= buttons)
+	{
+		const size_t axis = static_cast<size_t>(column - buttons);
+		return axis < cachedAxes_.size() ? Value(static_cast<int64_t>(cachedAxes_[axis])) : Value();
+	}
+	if (column >= 64) return false;
 	return (cachedBits_ >> column & 1) != 0;
 }
 

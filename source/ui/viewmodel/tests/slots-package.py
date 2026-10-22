@@ -2,8 +2,9 @@
 two machines (boards) with declared file slots, for the New Project tests.
 Board A takes the synthetic game as a cartridge; board B takes disks (a cue
 sheet or an image named like a disk) and needs a firmware file. At least
-one of the two kinds of file is needed. With no package to copy it writes
-an empty file, and the tests that need it skip."""
+one of the two kinds of file is needed. It has an analog control, a dial.
+With no package to copy it writes an empty file, and the tests that need it
+skip."""
 import json
 import sys
 import zipfile
@@ -43,6 +44,8 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
             ]
             cfg["firmware"] = [{"id": "bios", "display": "Board B BIOS", "name": "boardb.bin",
                                 "requiredWhen": {"setting": "board", "is": "b"}}]
+            # an analog control, for the piano roll's analog columns
+            cfg["input"]["axes"] = [{"name": "P1 Dial", "min": -100, "max": 100, "neutral": 0, "header": "Dl"}]
             data = json.dumps(cfg, indent=2).encode()
         zout.writestr(info, data)
     zout.writestr("file_slots.json", json.dumps(slots, indent=2))

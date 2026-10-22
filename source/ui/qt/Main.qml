@@ -321,7 +321,7 @@ ApplicationWindow {
             PianoRollItem {
                 id: roll
                 objectName: "pianoRoll"
-                anchors { left: parent.left; top: parent.top; bottom: parent.bottom; right: scroll.left }
+                anchors { left: parent.left; top: parent.top; bottom: axisBar.top; right: scroll.left }
                 rows: root.pianoRoll.rows("frames")
                 currentRow: root.pianoRoll.currentFrame
                 topRow: root.pianoRoll.topFrame
@@ -332,11 +332,33 @@ ApplicationWindow {
                 onFrameClicked: (row) => root.session.run("seek", [row])
                 selectFirst: root.pianoRoll.selectFirst
                 selectLast: root.pianoRoll.selectLast
+                // the analog cell being edited: its column is after the buttons
+                pickedRow: root.pianoRoll.pickedFrame
+                pickedColumn: root.pianoRoll.pickedAxis < 0 ? -1 : root.session.buttonCount + root.pianoRoll.pickedAxis
                 onSelectionRequested: (first, last) => root.pianoRoll.run("select", [first, last])
+            }
+            // the analog cell picked: its value, set here
+            RowLayout {
+                id: axisBar
+                anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: visible ? 4 : 0 }
+                height: visible ? implicitHeight : 0
+                visible: root.pianoRoll.pickedAxis >= 0
+                Label { text: qsTr("%1, frame %2").arg(root.pianoRoll.axisName).arg(root.pianoRoll.pickedFrame) }
+                SpinBox {
+                    id: axisSpin
+                    editable: true
+                    from: root.pianoRoll.axisMin
+                    to: root.pianoRoll.axisMax
+                    value: root.pianoRoll.axisValue
+                    Keys.onReturnPressed: axisSet.clicked()
+                }
+                Button { id: axisSet; text: qsTr("Set"); onClicked: root.pianoRoll.run("setAxis", [root.pianoRoll.pickedFrame, root.pianoRoll.pickedAxis, axisSpin.value]) }
+                Item { Layout.fillWidth: true }
+                Button { text: qsTr("Done"); onClicked: root.pianoRoll.run("unpick") }
             }
             ScrollBar {
                 id: scroll
-                anchors { right: parent.right; top: parent.top; bottom: parent.bottom }
+                anchors { right: parent.right; top: parent.top; bottom: axisBar.top }
                 orientation: Qt.Vertical
                 policy: ScrollBar.AlwaysOn
                 size: roll.rowCount > 0 ? Math.min(1, roll.visibleRows / roll.rowCount) : 1

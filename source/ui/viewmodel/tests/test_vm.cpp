@@ -1587,6 +1587,65 @@ bool pianoRollEditing(const char *package, const char *rom)
 	return true;
 }
 
+/* Analog controls in the piano roll: a column each, its value shown; a
+ * press picks a cell to edit, a drag paints its value, each one step */
+bool pianoRollAxes(const char *slotsPackage, const char *rom)
+{
+	std::error_code ec;
+	if (std::filesystem::file_size(slotsPackage, ec) == 0 || ec)
+	{
+		std::printf("SKIP analog controls: no slots package was made\n");
+		return false;
+	}
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	std::string error;
+	session.run("open", {std::string(slotsPackage), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	for (int i = 0; i < 7; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 7; }, 20));
+	RowModel &rows = roll.frames();
+	CHECK(session.axes().size() == 1 && session.axes()[0].min == -100 && session.axes()[0].max == 100);
+	CHECK(rows.columnCount() == 9 && rows.columnName(8) == "P1 Dial" && rows.columnShortName(8) == "Dl" && rows.columnIsNumber(8) && !rows.columnIsNumber(7));
+	auto dial = [&](int64_t f) {
+		int64_t v = -999;
+		fromValue(rows.cell(f, 8), v);
+		return v;
+	};
+	CHECK(dial(2) == 0);
+	/* picked */
+	CHECK(roll.run("press", {int64_t{2}, int64_t{8}}, error).has_value());
+	CHECK(roll.pickedFrame.get() == 2 && roll.pickedAxis.get() == 0 && roll.axisName.get() == "P1 Dial" && roll.axisMin.get() == -100 && roll.axisMax.get() == 100 && roll.axisValue.get() == 0);
+	/* set, and refused out of range */
+	CHECK(roll.run("setAxis", {int64_t{2}, int64_t{0}, int64_t{50}}, error).has_value() && dial(2) == 50 && roll.axisValue.get() == 50);
+	CHECK(!roll.run("setAxis", {int64_t{2}, int64_t{0}, int64_t{101}}, error) && error == "P1 Dial goes from -100 to 100");
+	/* a drag paints the pressed cell's value, one step */
+	roll.run("setAxis", {int64_t{3}, int64_t{0}, int64_t{77}}, error);
+	roll.run("press", {int64_t{3}, int64_t{8}}, error);
+	roll.run("drag", {int64_t{4}, int64_t{8}}, error);
+	roll.run("drag", {int64_t{5}, int64_t{8}}, error);
+	CHECK(dial(3) == 77 && dial(4) == 77 && dial(5) == 77 && dial(6) == 0);
+	roll.run("undo", {}, error);
+	CHECK(dial(3) == 77 && dial(4) == 0 && dial(5) == 0);
+	roll.run("undo", {}, error);
+	CHECK(dial(3) == 0 && dial(2) == 50);
+	/* a button pressed on the same frame keeps the dial */
+	roll.run("press", {int64_t{2}, int64_t{4}}, error);
+	CHECK(dial(2) == 50 && (inputs.at(2) >> 4 & 1) != 0);
+	/* frames taken out and put back keep their dials */
+	roll.run("deleteFrames", {int64_t{1}, int64_t{1}}, error);
+	CHECK(dial(1) == 50);
+	roll.run("undo", {}, error);
+	CHECK(dial(2) == 50 && dial(1) == 0);
+	/* the movie carries the dial */
+	CHECK(inputs.text().find("50") != std::string::npos);
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	return true;
+}
+
 /* Rerecords, counted as Chimera's TAStudio counts them: an edit over frames
  * the machine has stored states past counts one, a stroke counts once
  * however many cells it crosses, frames added at the end count none, a
@@ -1928,6 +1987,7 @@ int main(int argc, char **argv)
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;
 			else std::printf("SKIP choosing between cores: no second package given\n");
 			if (argc >= 7) ranMachine = newProjectWizard(argv[1], argv[2], argv[6]) && ranMachine;
+			if (argc >= 7) ranMachine = pianoRollAxes(argv[6], argv[2]) && ranMachine;
 			else std::printf("SKIP New Project: no slots package given\n");
 		}
 		else

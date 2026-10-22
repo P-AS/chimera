@@ -293,6 +293,16 @@ ECL_EXPORT void SetInputPollCallback(uint64_t fn)
 	synth_on_input = g_inputPoll != 0 ? input_polled : 0;
 }
 
+/* An analog control's value, set before each frame. The synthetic game reads
+ * none, so the values are only kept: the export is here so that a package
+ * made from this one may declare analog controls (the engine refuses axes a
+ * core cannot take). Invisible, and in no state, like the callback above. */
+ECL_INVISIBLE static int32_t g_axes[8];
+ECL_EXPORT void SetAxis(int32_t index, int32_t value)
+{
+	if (index >= 0 && index < 8) g_axes[index] = value;
+}
+
 /* Guest-memory pointers the host reads while active (RAM/VRAM/audio domains). */
 ECL_EXPORT uint8_t *GetRam(void)         { return synth_get_ram(g_synth); }
 ECL_EXPORT uint8_t *GetFramebuffer(void) { return (uint8_t *)synth_get_framebuffer(g_synth); }

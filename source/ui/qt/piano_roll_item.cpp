@@ -5,6 +5,7 @@
 #include <QGuiApplication>
 #include <QPalette>
 #include <QPainter>
+#include <QPen>
 
 #include <algorithm>
 
@@ -17,6 +18,19 @@ PianoRollItem::PianoRollItem(QQuickItem *parent) : QQuickPaintedItem(parent)
 	setOpaquePainting(true);
 	setAntialiasing(false);
 	setAcceptedMouseButtons(Qt::LeftButton);
+	connect(this, &PianoRollItem::pickedChanged, this, [this] { update(); });
+}
+
+int PianoRollItem::columnW(int column) const
+{
+	return rows_ != nullptr && rows_->rows().columnIsNumber(column) ? numberWidth_ : columnWidth_;
+}
+
+int PianoRollItem::columnX(int column) const
+{
+	int x = frameColumnWidth();
+	for (int c = 0; c < column; c++) x += columnW(c);
+	return x;
 }
 
 QObject *PianoRollItem::rows() const { return rows_.data(); }
@@ -111,9 +125,12 @@ bool PianoRollItem::cellAt(QPointF p, qint64 &row, int &column) const
 	if (rows_ == nullptr) return false;
 	const int fx = frameColumnWidth();
 	if (p.x() < fx || p.y() < rowHeight_) return false;
-	column = static_cast<int>((p.x() - fx) / columnWidth_);
+	const int columns = rows_->rows().columnCount();
+	column = -1;
+	for (int c = 0, x = fx; c < columns; x += columnW(c), c++)
+		if (p.x() >= x && p.x() < x + columnW(c)) column = c;
 	row = top_ + static_cast<qint64>((p.y() - rowHeight_) / rowHeight_);
-	return column < rows_->rows().columnCount() && row < rows_->rows().rowCount();
+	return column >= 0 && row < rows_->rows().rowCount();
 }
 
 void PianoRollItem::paint(QPainter *p)
@@ -157,10 +174,10 @@ void PianoRollItem::paint(QPainter *p)
 		QString name = QString::fromStdString(rows.columnName(c));
 		const qsizetype space = name.indexOf(' ');
 		if (space > 0 && space < 4) name = name.mid(space + 1);
-		if (QFontMetrics(p->font()).horizontalAdvance(name) > columnWidth_ - 2)
+		if (QFontMetrics(p->font()).horizontalAdvance(name) > columnW(c) - 2)
 			name = QString::fromStdString(rows.columnShortName(c));
-		const QRect cell(fx + c * columnWidth_, 0, columnWidth_, rowHeight_);
-		p->drawText(cell, Qt::AlignCenter, QFontMetrics(p->font()).elidedText(name, Qt::ElideRight, columnWidth_ - 2));
+		const QRect cell(columnX(c), 0, columnW(c), rowHeight_);
+		p->drawText(cell, Qt::AlignCenter, QFontMetrics(p->font()).elidedText(name, Qt::ElideRight, columnW(c) - 2));
 	}
 
 	for (int i = 0; i < shown; i++)
@@ -176,7 +193,7 @@ void PianoRollItem::paint(QPainter *p)
 		{
 			p->fillRect(0, y, fx, rowHeight_, tint(QColor(0xe0, 0xa0, 0x20), dark ? 0.5 : 0.45));
 			p->setPen(text);
-			p->drawText(QRect(fx + columns * columnWidth_ + 6, y, w - fx - columns * columnWidth_ - 8, rowHeight_),
+			p->drawText(QRect(columnX(columns) + 6, y, w - columnX(columns) - 8, rowHeight_),
 				Qt::AlignVCenter | Qt::AlignLeft, QString::fromStdString(rows.rowNote(row)));
 		}
 		/* picked frames: their numbers on the highlight */
@@ -195,14 +212,32 @@ void PianoRollItem::paint(QPainter *p)
 		p->drawText(QRect(kCursorWidth + 4, y, fx - kCursorWidth - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, QString::number(row));
 		for (int c = 0; c < columns; c++)
 		{
-			bool held = false;
-			vm::fromValue(rows.cell(row, c), held);
-			if (held) p->fillRect(fx + c * columnWidth_ + 2, y + 2, columnWidth_ - 4, rowHeight_ - 4, lit);
+			const int cx = columnX(c), cw = columnW(c);
+			if (rows.columnIsNumber(c))
+			{
+				int64_t value = 0;
+				if (vm::fromValue(rows.cell(row, c), value))
+				{
+					p->setPen(text);
+					p->drawText(QRect(cx + 2, y, cw - 6, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, QString::number(value));
+				}
+			}
+			else
+			{
+				bool held = false;
+				vm::fromValue(rows.cell(row, c), held);
+				if (held) p->fillRect(cx + 2, y + 2, cw - 4, rowHeight_ - 4, lit);
+			}
+			if (row == pickedRow_ && c == pickedColumn_)
+			{
+				p->setPen(QPen(lit, 2));
+				p->drawRect(cx + 1, y + 1, cw - 2, rowHeight_ - 2);
+			}
 		}
 	}
 
 	p->setPen(grid);
-	for (int c = 0; c <= columns; c++) p->drawLine(fx + c * columnWidth_, 0, fx + c * columnWidth_, h);
+	for (int c = 0; c <= columns; c++) p->drawLine(columnX(c), 0, columnX(c), h);
 	p->drawLine(0, rowHeight_, w, rowHeight_);
 
 	lastPaintMs_ = timer.nsecsElapsed() / 1.0e6;
@@ -253,9 +288,8 @@ void PianoRollItem::mouseMoveEvent(QMouseEvent *e)
 		return;
 	}
 	if (dragColumn_ < 0) return;
-	const int fx = frameColumnWidth();
 	/* a drag stays in the column it began in, whatever the pointer's x */
-	const QPointF at(fx + dragColumn_ * columnWidth_ + 1, e->position().y());
+	const QPointF at(columnX(dragColumn_) + 1, e->position().y());
 	qint64 row = 0;
 	int column = 0;
 	if (cellAt(at, row, column) && row != dragRow_)

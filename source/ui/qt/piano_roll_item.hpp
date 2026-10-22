@@ -20,6 +20,9 @@ class PianoRollItem : public QQuickPaintedItem
 	/* the frames picked, drawn on the frame numbers */
 	Q_PROPERTY(qint64 selectFirst READ selectFirst WRITE setSelectFirst NOTIFY selectionChanged)
 	Q_PROPERTY(qint64 selectLast READ selectLast WRITE setSelectLast NOTIFY selectionChanged)
+	/* the analog cell picked for editing, outlined (-1: none) */
+	Q_PROPERTY(qint64 pickedRow MEMBER pickedRow_ NOTIFY pickedChanged)
+	Q_PROPERTY(int pickedColumn MEMBER pickedColumn_ NOTIFY pickedChanged)
 	Q_PROPERTY(qint64 rowCount READ rowCount NOTIFY rowCountChanged)
 	Q_PROPERTY(int visibleRows READ visibleRows NOTIFY visibleRowsChanged)
 	Q_PROPERTY(int rowHeight READ rowHeight CONSTANT)
@@ -60,6 +63,7 @@ Q_SIGNALS:
 	/* the frame numbers pressed or dragged over, or Shift-pressed */
 	void selectionRequested(qint64 first, qint64 last);
 	void selectionChanged();
+	void pickedChanged();
 	/* the wheel asks for another first row; whoever owns topRow decides */
 	void topRowRequested(qint64 row);
 
@@ -80,7 +84,13 @@ private:
 	qint64 top_ = 0, current_ = 0;
 	qint64 selectFirst_ = -1, selectLast_ = -1, selectAnchor_ = -1;
 	bool selecting_ = false;
-	int rowHeight_ = 18, columnWidth_ = 26;
+	qint64 pickedRow_ = -1;
+	int pickedColumn_ = -1;
+	int rowHeight_ = 18, columnWidth_ = 26, numberWidth_ = 48;
+	/* where a column starts and how wide it is: an analog control's column
+	 * shows a number, and is wider */
+	int columnX(int column) const;
+	int columnW(int column) const;
 	double lastPaintMs_ = 0;
 	int dragColumn_ = -1;
 	qint64 dragRow_ = -1;

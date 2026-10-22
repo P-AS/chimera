@@ -41,6 +41,14 @@ public:
 	/* markers move with the frames when frames are put in or taken out
 	 * (off, as in Chimera, they stay on their frame numbers) */
 	Property<bool> bindMarkers{false};
+	/* the analog cell picked for editing: its frame and control (-1: none),
+	 * the control's name and range, and the value there */
+	Property<int64_t> pickedFrame{-1};
+	Property<int64_t> pickedAxis{-1};
+	Property<std::string> axisName;
+	Property<int64_t> axisMin{0};
+	Property<int64_t> axisMax{0};
+	Property<int64_t> axisValue{0};
 
 	/* the rows, for a view that draws its own cells (cells as bits, no Value) */
 	uint64_t frameBits(int64_t frame) const { return inputs_.at(frame); }
@@ -58,7 +66,8 @@ private:
 	public:
 		explicit Frames(PianoRollViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return vm_.inputs_.size(); }
-		int32_t columnCount() const override { return vm_.buttonCount(); }
+		int32_t columnCount() const override { return vm_.buttonCount() + static_cast<int32_t>(vm_.session_.axes().size()); }
+		bool columnIsNumber(int32_t column) const override { return column >= vm_.buttonCount(); }
 		std::string columnName(int32_t column) const override;
 		/* the button's letter in a movie's input log */
 		std::string columnShortName(int32_t column) const override;
@@ -74,6 +83,7 @@ private:
 		PianoRollViewModel &vm_;
 		mutable int64_t cachedRow_ = -1;
 		mutable uint64_t cachedBits_ = 0;
+		mutable std::vector<int32_t> cachedAxes_;
 	};
 
 	class MarkerRows : public RowModel
@@ -124,6 +134,14 @@ private:
 	/* markers moved as frames move, when they are bound to them */
 	void moveMarkers(Step &step, int64_t at, int64_t by);
 	bool range(const Args &a, int64_t &first, int64_t &last, std::string &error) const;
+	/* an analog control's value on frames first..last, as one step (join:
+	 * part of the stroke under way) */
+	bool paintAxis(int64_t first, int64_t last, int64_t axis, int64_t value, bool join, std::string &error);
+	void pickAxis(int64_t frame, int64_t axis);
+	int64_t dragAxisValue_ = 0;
+	/* a press on an analog cell edits nothing: the drag's first cell starts
+	 * the step, the rest join it */
+	bool axisJoin_ = false;
 	void undoOrRedo(bool back);
 	void edited(int64_t first, int64_t last, int64_t oldCount);
 	void markersEdited(int64_t frame);

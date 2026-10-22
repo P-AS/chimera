@@ -24,6 +24,9 @@ public:
 	/* what a row is, beyond its cells, as flags the list defines (the piano
 	 * roll: a lag frame, a frame in the greenzone) */
 	virtual uint32_t rowFlags(int64_t) const { return 0; }
+	/* a column whose cells are numbers to show as numbers (an analog
+	 * control's), not marks */
+	virtual bool columnIsNumber(int32_t) const { return false; }
 	/* a note a row carries (the piano roll: a marker's text), "" for none */
 	virtual std::string rowNote(int64_t) const { return {}; }
 

@@ -83,6 +83,13 @@ public:
 
 	/* the machine's buttons, and the one-letter name a movie gives each */
 	const std::vector<std::string> &buttonNames() const { return buttonNames_; }
+	/* the machine's analog controls, as its package declares them */
+	struct Axis
+	{
+		std::string name, header;
+		int64_t min = -32768, max = 32767, neutral = 0;
+	};
+	const std::vector<Axis> &axes() const { return axes_; }
 	const std::string &mnemonics() const { return mnemonics_; }
 	Signal<> buttonsChanged;
 
@@ -240,6 +247,7 @@ private:
 
 	InputLog &inputs_;
 	std::vector<std::string> buttonNames_;
+	std::vector<Axis> axes_;
 	std::string mnemonics_;
 	Bindings bindings_;
 	std::map<std::string, bool> keysDown_;
