@@ -22,6 +22,9 @@
 
 #include <algorithm>
 #include <cstdio>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <mutex>
 #include <set>
 #include <vector>
@@ -90,6 +93,24 @@ private:
 	std::set<QString> down_;
 };
 
+#ifdef _WIN32
+/* A crash names the DLL it happened in and where, on stderr: a prototype has
+ * no crash report of its own yet. */
+LONG WINAPI crashNote(EXCEPTION_POINTERS *e)
+{
+	void *at = e->ExceptionRecord->ExceptionAddress;
+	HMODULE mod = nullptr;
+	wchar_t name[MAX_PATH] = L"?";
+	if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			static_cast<LPCWSTR>(at), &mod))
+		GetModuleFileNameW(mod, name, MAX_PATH);
+	std::fprintf(stderr, "crash: exception %08lx at %ls+0x%llx (thread %lu)\n", e->ExceptionRecord->ExceptionCode, name,
+		static_cast<unsigned long long>(static_cast<char *>(at) - reinterpret_cast<char *>(mod)), GetCurrentThreadId());
+	std::fflush(stderr);
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
 struct Spread
 {
 	double median = 0, p95 = 0, worst = 0;
@@ -110,8 +131,13 @@ Spread spread(std::vector<double> v)
 
 int main(int argc, char **argv)
 {
+#ifdef _WIN32
+	SetUnhandledExceptionFilter(crashNote);
+#endif
 	QGuiApplication app(argc, argv);
-	QGuiApplication::setApplicationName(QStringLiteral("Chimera"));
+	/* not "Chimera": Qt keeps its caches under the application's name, and
+	 * the prototype must not write into Chimera's own folder */
+	QGuiApplication::setApplicationName(QStringLiteral("chimera-qt-prototype"));
 	QQuickStyle::setStyle(QStringLiteral("Fusion"));
 
 	QCommandLineParser args;

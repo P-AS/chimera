@@ -54,7 +54,9 @@ if qt_dep.found()
     include_directories: [vm_inc, engine_inc],
     dependencies: [qt_dep],
   )
-  qt_rcc = qt6.compile_resources(sources: ['qt/ui.qrc'])
+  # the resource compiler runs on the build machine; its Qt may pack with
+  # zstd, which a Qt built without zstd (the Windows one) cannot unpack
+  qt_rcc = qt6.compile_resources(sources: ['qt/ui.qrc'], extra_args: ['--no-zstd'])
   executable(
     'chimera-qt',
     [
