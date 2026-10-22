@@ -1541,8 +1541,9 @@ void SessionViewModel::advanceOnMachine()
 	report(-1, -1, f >= size ? size : -1, f >= size ? f : -1, measured);
 }
 
-int32_t SessionViewModel::stepOnMachine(bool live, bool render)
+int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 {
+	movesM_++;
 	const int64_t f = ce_session_frame(s_);
 	uint64_t held = 0;
 	if (live)
@@ -1574,6 +1575,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render)
 	axesBuf_.resize(axisCount);
 	uint64_t logged = 0;
 	const int32_t had = ce_session_movie_get(s_, f, &logged, axisCount ? axesBuf_.data() : nullptr);
+	if (had == 1 && !grow) return 0;
 	if (had == 1)
 		ce_session_movie_set(s_, f, held, nullptr);
 	else if ((logged | held) != logged)
@@ -1586,9 +1588,16 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render)
 	const int32_t lag = ce_session_movie_advance(s_, 0, nullptr, render ? 1 : 0);
 	if (lag < 0)
 	{
+		const char *death = ce_session_guest_death(s_);
+		/* the window took the frame out just as it was to be played: the
+		 * machine is well, and the edit's own turn puts it right */
+		if ((death == nullptr || *death == '\0') && ce_session_movie_length(s_) <= f)
+		{
+			frameM_ = ce_session_frame(s_);
+			return 0;
+		}
 		runningM_ = false;
 		diedM_ = true;
-		const char *death = ce_session_guest_death(s_);
 		const std::string why = death != nullptr && *death != '\0' ? std::string("The machine stopped: ") + death
 																	 : std::string("The movie could not be played: ") + ce_session_last_error(s_);
 		later([this, why] { running.set(false); status.set(why); });
@@ -1630,13 +1639,21 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render)
 	return lag;
 }
 
-void SessionViewModel::seekOnMachine(int64_t target)
+void SessionViewModel::seekOnMachine(int64_t target, bool grow)
 {
 	if (s_ == nullptr || target < 0) return;
+	movesM_++;
 	const auto start = Clock::now();
 	const int64_t from = ce_session_frame(s_);
-	/* a frame past the movie's end: the movie grows to it, with empty frames */
-	if (target > ce_session_movie_length(s_)) ce_session_movie_resize(s_, target);
+	/* a frame past the movie's end: the movie grows to it, with empty frames,
+	 * or the machine stops at the end. The length is read here, at the last
+	 * moment: the window edits the movie while this thread runs. */
+	const int64_t length = ce_session_movie_length(s_);
+	if (target > length)
+	{
+		if (grow) ce_session_movie_resize(s_, target);
+		else target = length;
+	}
 	/* The engine seeks: back to its nearest stored state and forward by the
 	 * movie. It draws nothing on the way, so the seek stops a frame short
 	 * and the last frame is run with its picture. What it ran, roughly: from
@@ -1648,6 +1665,14 @@ void SessionViewModel::seekOnMachine(int64_t target)
 	const int64_t ran = (stored >= 0 && (stored > from || from > want) ? want - stored : want - from) + (target > 0 ? 1 : 0);
 	if (ce_session_seek(s_, want) != 0)
 	{
+		/* the window took frames out while the machine went through them:
+		 * that edit's own turn comes next and puts the machine right */
+		if (!grow && ce_session_movie_length(s_) < length)
+		{
+			frameM_ = ce_session_frame(s_);
+			report(-1, -1, -1, -1, -1);
+			return;
+		}
 		const std::string why = std::string("Could not go to frame ") + std::to_string(target) + ": " + ce_session_last_error(s_);
 		later([this, why] { status.set(why); });
 		frameM_ = ce_session_frame(s_);
@@ -1655,7 +1680,7 @@ void SessionViewModel::seekOnMachine(int64_t target)
 		return;
 	}
 	frameM_ = ce_session_frame(s_);
-	if (target > 0) stepOnMachine(false, true);
+	if (target > 0) stepOnMachine(false, true, grow);
 	const double ms = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 	later([this, ms, ran] {
 		lastSeekMs.set(ms);
@@ -1677,13 +1702,23 @@ void SessionViewModel::edited(int64_t first)
 	submit([this, first] {
 		if (s_ == nullptr) return;
 		greenEndM_ = std::min(greenEndM_, first);
-		if (frameM_ > first)
+		/* moved since the last edit moved it: that edit's frame is forgotten */
+		if (movesM_ != restoredMovesM_ || frameM_ != restoredAtM_) restoreFrameM_ = -1;
+		const int64_t length = ce_session_movie_length(s_);
+		/* an edit that gave a movie made shorter its frames again (an undo)
+		 * lets the machine go on to where the first edit found it */
+		const bool shortOfIt = autoRestoreM_.load() && restoreFrameM_ > frameM_ && length > frameM_;
+		if (frameM_ > first || shortOfIt)
 		{
 			/* The machine is past the edit. The engine honours it before the
 			 * machine next moves; here the window says where: with autoRestore
-			 * back on the frame it was on, with the new inputs, else at the
-			 * edit. */
-			seekOnMachine(autoRestoreM_.load() ? frameM_ : first);
+			 * back on the frame it was on at the first edit, with the new
+			 * inputs, else at the edit. Going back adds no frames to the
+			 * movie: one made shorter is followed to its end. */
+			if (restoreFrameM_ < 0) restoreFrameM_ = frameM_;
+			seekOnMachine(autoRestoreM_.load() ? restoreFrameM_ : first, false);
+			restoredMovesM_ = movesM_;
+			restoredAtM_ = frameM_;
 		}
 		report(-1, -1, -1, -1, -1);
 	});

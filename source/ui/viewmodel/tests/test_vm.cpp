@@ -1659,6 +1659,19 @@ bool pianoRollEditing(const char *package, const char *rom)
 	CHECK(markerAt(5) == "five" && markerAt(8) == "eight" && masks() == start);
 	/* the machine follows: the edits before it were honoured */
 	CHECK(d.until([&] { return session.frame.get() == 10; }, 30));
+	/* going back after an edit adds no frames, however soon the machine gets
+	 * there: it follows a shorter movie to its end, and goes on to where the
+	 * first edit found it once an undo gives the frames back */
+	CHECK(roll.run("deleteFrames", {int64_t{2}, int64_t{4}}, error).has_value());
+	CHECK(d.until([&] { return session.frame.get() == 7; }, 30) && masks().size() == 7);
+	CHECK(undoTo(start));
+	CHECK(d.until([&] { return session.frame.get() == 10; }, 30) && masks() == start);
+	CHECK(roll.run("truncate", {int64_t{6}}, error).has_value());
+	CHECK(d.until([&] { return session.frame.get() == 6; }, 30) && masks().size() == 6);
+	CHECK(undoTo(start));
+	CHECK(d.until([&] { return session.frame.get() == 10; }, 30) && masks() == start);
+	/* and no seek cut short by an edit said it could not go somewhere */
+	CHECK(session.status.get().find("Could not go") == std::string::npos);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;

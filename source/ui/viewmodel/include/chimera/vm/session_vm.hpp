@@ -258,8 +258,13 @@ private:
 	void advanceOnMachine();
 	/* one frame: `live` takes the keys and pads held and plays the sound
 	 * (a replay does neither); `render` makes the picture. The lag result. */
-	int32_t stepOnMachine(bool live, bool render);
-	void seekOnMachine(int64_t target);
+	/* runs one frame; grow false: a frame past the movie's end is not
+	 * played (the window took it out since the machine was sent there) */
+	int32_t stepOnMachine(bool live, bool render, bool grow = true);
+	/* puts the machine on a frame; past the movie's end the movie grows to
+	 * it, unless grow is false (going back after an edit): then it stops at
+	 * the end */
+	void seekOnMachine(int64_t target, bool grow = true);
 	void report(int64_t changedFirst, int64_t changedLast, int64_t appendedFrom, int64_t appendedTo, double fpsNow);
 	void tick();
 
@@ -326,6 +331,13 @@ private:
 	int64_t frameM_ = 0;
 	int64_t greenEndM_ = 0;
 	std::atomic<bool> autoRestoreM_{true};
+	/* Where an edit sends the machine back to, as Chimera's TAStudio does: the
+	 * frame it was on at the first edit, kept through the edits that follow
+	 * until the machine is moved some other way (-1: none). movesM_ counts
+	 * the machine's moves; restoredMovesM_ and restoredAtM_ say how many there
+	 * had been, and where it was, when the last edit had moved it. */
+	int64_t restoreFrameM_ = -1, restoredAtM_ = -1;
+	uint64_t movesM_ = 0, restoredMovesM_ = 0;
 	bool runningM_ = false;
 	/* what a held key is doing (the machine's thread) */
 	enum class Hold { None, Advance, Rewind };

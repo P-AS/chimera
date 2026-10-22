@@ -19,7 +19,14 @@ code is in `source/ui`; how it is built and run is in
   thread while another runs the machine: the movie has a lock of its own.
   An edit is honoured before the machine next moves: the engine drops the
   states after the earliest frame edited and, when the machine is already
-  past it, goes back before it and plays the movie up to where it was. The
+  past it, goes back before it and plays the movie up to where it was. As
+  in Chimera's TAStudio, "where it was" is the frame the machine was on at
+  the first of a run of edits, kept until the machine is moved some other
+  way; going back adds no frames to the movie (one made shorter is followed
+  to its end, and an undo that gives the frames back lets the machine go
+  on). The window edits while the machine thread seeks, so a seek may find
+  frames taken out under it: it then stops quietly, since the edit that
+  took them sends the machine where it belongs next. The
   window plays and seeks with the engine's own calls
   (`ce_session_movie_advance`, `ce_session_seek`). The other ways - an
   export of the engine's line writer to the window, or a copy of the
@@ -62,7 +69,7 @@ made from.
 | themes | Chimera's colour themes: its built-in Light (the desktop's own colours) and Dark, and every theme file in the themes folder; one chosen (Dark at first, as Chimera's default) and remembered; the window's palette and the piano roll's TAStudio colours follow it | Themes |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 760 checks on the
+The tests drive the view models with no window: 769 checks on the
 synthetic core (and on four packages made from it at build time: one under
 another name, one of two machines with declared slots and a firmware, and
 two whose firmware declares the hash of its file, one of them a game core). They include a project whose movie ends with the machine's
