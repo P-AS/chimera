@@ -117,7 +117,14 @@ public:
 	 * found for its core, and every machine gets the firmware it needs. */
 	using PackageFinder = std::function<std::string(const std::string &coreName, const std::string &sha1, std::string &note)>;
 	using FolderFinder = std::function<std::vector<std::string>()>;
-	void setFinders(PackageFinder packages, FolderFinder firmwareFolders);
+	/* the cores that take a file of this extension: {name, package} */
+	using ExtensionFinder = std::function<std::vector<std::pair<std::string, std::string>>(const std::string &extension)>;
+	void setFinders(PackageFinder packages, FolderFinder firmwareFolders, ExtensionFinder byExtension = {});
+
+	/* a game waiting for its core to be chosen, and the cores it could be
+	 * opened with, a line each ("" when nothing is waiting) */
+	Property<std::string> chooseFor;
+	Property<std::string> choices;
 
 	/* for the window: a key went down or up, by Chimera's key names */
 	void key(const std::string &name, bool down);
@@ -211,9 +218,13 @@ private:
 	std::string settingsM_;
 	/* the firmware the open game was given, as a project records it */
 	std::string firmwarePinsM_;
+	/* the slot the open game went in (by its kind of file) */
+	std::string gameSlotM_;
 	std::vector<int32_t> axesBuf_;
 	std::vector<Marker> markersM_;
 	PackageFinder findPackageM_;
+	ExtensionFinder byExtension_; /* the view's thread's */
+	std::vector<std::pair<std::string, std::string>> offered_;
 	FolderFinder firmwareFoldersM_;
 	struct Firmware
 	{

@@ -39,7 +39,7 @@ ApplicationWindow {
             Layout.fillHeight: true
             clip: true
             model: win.vm.rows("cores")
-            columnWidthProvider: (c) => [180, 120, 180, table.width - 494][c]
+            columnWidthProvider: (c) => [150, 110, 150, 160, Math.max(120, table.width - 584)][c]
             ScrollBar.vertical: ScrollBar {}
             delegate: Label { required property var display; text: display === undefined ? "" : display; padding: 3; elide: Text.ElideRight }
         }

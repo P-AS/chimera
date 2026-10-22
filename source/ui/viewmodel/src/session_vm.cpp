@@ -1,6 +1,7 @@
 #include "chimera/vm/session_vm.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -38,6 +39,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("projectPath", "the open project's file, \"\" when a game was opened without one", projectPath);
 	expose("projectTitle", "the open project's title", projectTitle);
 	expose("recentProjects", "projects opened, newest first, a line each", recentProjects, true);
+	expose("chooseFor", "a game waiting for its core to be chosen", chooseFor);
+	expose("choices", "the cores the waiting game could be opened with, a line each", choices);
 	picture("screen", "the machine's picture", screen, screenChanged);
 	autoRestoreWatch_ = autoRestore.changed.connect([this] { autoRestoreM_.store(autoRestore.get()); });
 
@@ -55,6 +58,47 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				openOnMachine(package, game, false);
 			});
 			return {};
+		});
+	command("openGame", "opens a game with the installed core that takes its kind of file; when several do, they are "
+		"offered (chooseFor, choices) and chooseCore picks one", {"game"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string game;
+			if (!arg(a, 0, game, error)) return {};
+			const size_t dot = game.find_last_of('.');
+			std::string ext = dot == std::string::npos ? "" : game.substr(dot + 1);
+			for (char &ch : ext) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+			offered_ = byExtension_ ? byExtension_(ext) : decltype(offered_){};
+			if (offered_.empty())
+			{
+				error = "no installed core takes ." + ext + " files";
+				return {};
+			}
+			if (offered_.size() == 1)
+			{
+				run("open", {offered_[0].second, game}, error);
+				return offered_[0].first;
+			}
+			std::string names;
+			for (const auto &[name, path] : offered_) names += (names.empty() ? "" : "\n") + name;
+			choices.set(names);
+			chooseFor.set(game);
+			return {};
+		});
+	command("chooseCore", "opens the game waiting for a core with the one at this place in choices; -1 opens nothing", {"index"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t i = 0;
+			if (!arg(a, 0, i, error)) return {};
+			if (chooseFor.get().empty() || i < -1 || i >= static_cast<int64_t>(offered_.size()))
+			{
+				error = "no such choice";
+				return {};
+			}
+			const std::string game = chooseFor.get();
+			chooseFor.set("");
+			choices.set("");
+			if (i == -1) return {};
+			run("open", {offered_[static_cast<size_t>(i)].second, game}, error);
+			return offered_[static_cast<size_t>(i)].first;
 		});
 	command("openProject", "opens a Chimera project; its files are looked for beside it, its core among the installed "
 		"ones unless a package is given", {"project", "package"}, [this](const Args &a, std::string &error) -> Value {
@@ -289,6 +333,9 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	Firmware fw;
 	{
 		std::string slotId = "rom";
+		const size_t dot = game.find_last_of('.');
+		std::string ext = dot == std::string::npos ? "" : game.substr(dot + 1);
+		for (char &ch : ext) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
 		const char *perr = nullptr;
 		if (ce_package *pk = ce_package_open(package.c_str(), &perr))
 		{
@@ -298,9 +345,29 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 			if (const uint8_t *d = ce_package_entry(pk, "file_slots.json", &len);
 				d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), slots, jerr))
 				if (const json::Json *list = slots.find("slots"); list != nullptr && !list->items.empty())
+				{
+					/* the slot that takes this kind of file, else the first */
 					if (const json::Json *id = list->items[0].find("id")) slotId = id->text;
+					for (const json::Json &slot : list->items)
+					{
+						bool takes = false;
+						if (const json::Json *formats = slot.find("formats"))
+							for (const json::Json &f : formats->items)
+							{
+								std::string e = f.text;
+								for (char &ch : e) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+								takes = takes || e == ext;
+							}
+						if (takes)
+						{
+							if (const json::Json *id = slot.find("id")) slotId = id->text;
+							break;
+						}
+					}
+				}
 			ce_package_free(pk);
 		}
+		gameSlotM_ = slotId;
 		const size_t slash = game.find_last_of("/\\");
 		const std::string base = slash == std::string::npos ? game : game.substr(slash + 1);
 		json::Json slotMap;
@@ -480,8 +547,9 @@ void SessionViewModel::pinMarkersOnMachine()
 		if (m.keepState) ce_session_greenzone_pin(s_, m.frame, 1);
 }
 
-void SessionViewModel::setFinders(PackageFinder packages, FolderFinder firmwareFolders)
+void SessionViewModel::setFinders(PackageFinder packages, FolderFinder firmwareFolders, ExtensionFinder byExtension)
 {
+	byExtension_ = byExtension;
 	submit([this, packages = std::move(packages), firmwareFolders = std::move(firmwareFolders)] {
 		findPackageM_ = packages;
 		firmwareFoldersM_ = firmwareFolders;
@@ -782,9 +850,8 @@ void SessionViewModel::newProjectOnMachine(const std::string &path, const std::s
 	/* the machine, as the New Project window stamps it */
 	if (const char *system = ce_session_system_id(s_); system != nullptr && *system != '\0') ce_project_header_set(p, "Platform", system);
 	/* the game, in the package's first slot, by its own name */
-	std::string slotId = "rom";
-	if (const json::Json *list = fileSlots.find("slots"); list != nullptr && !list->items.empty())
-		if (const json::Json *id = list->items[0].find("id")) slotId = id->text;
+	const std::string slotId = gameSlotM_.empty() ? std::string("rom") : gameSlotM_;
+	(void)fileSlots;
 	const size_t slash = game_.find_last_of("/\\");
 	const std::string base = slash == std::string::npos ? game_ : game_.substr(slash + 1);
 	const char *error = nullptr;

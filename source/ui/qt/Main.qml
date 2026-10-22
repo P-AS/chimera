@@ -28,7 +28,8 @@ ApplicationWindow {
     menuBar: MenuBar {
         Menu {
             title: qsTr("&File")
-            Action { text: qsTr("&Open Game..."); shortcut: "Ctrl+O"; onTriggered: packageDialog.open() }
+            Action { text: qsTr("&Open Game..."); shortcut: "Ctrl+O"; onTriggered: gameDialog.open() }
+            Action { text: qsTr("Open Game &With a Core Package..."); onTriggered: packageDialog.open() }
             Action { text: qsTr("Open &Project..."); shortcut: "Ctrl+Shift+O"; onTriggered: projectDialog.open() }
             Menu {
                 id: recentMenu
@@ -120,7 +121,12 @@ ApplicationWindow {
         id: packageDialog
         title: qsTr("Choose a core package")
         nameFilters: [qsTr("Core packages (*.chimeraCore)"), qsTr("All files (*)")]
-        onAccepted: { root.chosenPackage = selectedFile; gameDialog.open() }
+        onAccepted: { root.chosenPackage = selectedFile; gameWithDialog.open() }
+    }
+    FileDialog {
+        id: gameWithDialog
+        title: qsTr("Choose a game")
+        onAccepted: root.session.run("open", [root.chosenPackage, selectedFile])
     }
     property url chosenProject
     FileDialog {
@@ -153,7 +159,40 @@ ApplicationWindow {
     FileDialog {
         id: gameDialog
         title: qsTr("Choose a game")
-        onAccepted: root.session.run("open", [root.chosenPackage, selectedFile])
+        // the installed core that takes this kind of file opens it
+        onAccepted: root.session.run("openGame", [selectedFile])
+    }
+    // several installed cores take it: the session offers them
+    Dialog {
+        id: chooseCoreDialog
+        objectName: "chooseCoreDialog"
+        title: qsTr("Open it with which core?")
+        anchors.centerIn: parent
+        modal: true
+        visible: root.session.chooseFor !== ""
+        standardButtons: Dialog.Open | Dialog.Cancel
+        ColumnLayout {
+            Label { text: root.session.chooseFor.replace(/^.*[\\/]/, ""); elide: Text.ElideMiddle; Layout.maximumWidth: 420 }
+            ListView {
+                id: coreChoices
+                Layout.fillWidth: true
+                implicitWidth: 320
+                implicitHeight: Math.min(contentHeight, 240)
+                clip: true
+                model: root.session.choices === "" ? [] : root.session.choices.split("\n")
+                delegate: ItemDelegate {
+                    required property string modelData
+                    required property int index
+                    width: coreChoices.width
+                    text: modelData
+                    highlighted: ListView.isCurrentItem
+                    onClicked: coreChoices.currentIndex = index
+                    onDoubleClicked: chooseCoreDialog.accept()
+                }
+            }
+        }
+        onAccepted: root.session.run("chooseCore", [coreChoices.currentIndex])
+        onRejected: root.session.run("chooseCore", [-1])
     }
 
     SplitView {

@@ -204,7 +204,8 @@ int main(int argc, char **argv)
 	if (cores.firmwareFolder.get().empty())
 		cores.firmwareFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Firmware")).toStdString());
 	session.setFinders([&cores](const std::string &n, const std::string &h, std::string &note) { return cores.packageFor(n, h, note); },
-		[&cores] { return cores.firmwareFolders(); });
+		[&cores] { return cores.firmwareFolders(); },
+		[&cores](const std::string &extension) { return cores.coresFor(extension); });
 
 	/* what the window remembers, in a file of its own (CHIMERA_QT_CONFIG for
 	 * a test): folders the environment names are the environment's, and

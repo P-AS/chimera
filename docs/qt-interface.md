@@ -37,14 +37,15 @@ made from.
 
 | View model | What it does | Window |
 |---|---|---|
-| session | open a game or a project, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone, settings applied live or by restarting | main window |
+| session | open a game (the installed core that takes its kind of file opens it; when several do, they are offered), open, save and make projects, recent projects, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone, settings applied live or by restarting | main window |
 | pianoRoll | a row a frame and a column a button; press, drag, paint, fill; undo and redo (a stroke is one step); markers; follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
 | branches | other versions of the movie, kept in the project; loading one replays only from where the two differ | Branches |
 | ramSearch | the engine's RAM Search, updated after every frame, with undo | RAM Search (Qt's own table) |
 | settings | the package's declared settings, those that apply, edits applied live or by restarting | Settings (a form generated from the declaration) |
 | luaConsole | edit, run, open and save scripts; their output | Lua Console |
+| cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 193 checks on the
+The tests drive the view models with no window: 254 checks on the
 synthetic core. They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
 whole window off-screen and runs it for a second. Every new check was
@@ -126,8 +127,8 @@ which QML replaces):
 | display, input, sound | about 9,000 | done here (picture, keys, SDL pads, OpenAL) |
 
 About 150,000 lines of C# become about 40,000 to 60,000 of C++ and QML, if
-the prototype's ratio holds. The prototype is 4,000 lines of view models,
-1,600 of Qt (440 of them QML) and 740 of tests.
+the prototype's ratio holds. The prototype is 5,600 lines of view models,
+1,800 of Qt (650 of them QML) and 1,150 of tests.
 
 A suggested order, each step usable on its own:
 
@@ -136,7 +137,10 @@ A suggested order, each step usable on its own:
    saving everything else a project holds (subtitles, headers, the piano
    roll's layout). This is what a TAS author lives in.
 2. **New project wizard, firmware and Core Manager.** Opening anything
-   without the C# window first.
+   without the C# window first. Done: the Cores window, firmware found by
+   the engine's rules, a project made of an open game, a game opened by its
+   kind of file. Still to do: the wizard's slots, machines and settings
+   before the first frame.
 3. **RAM Watch, cheats, hex editor.**
 4. **Lua's libraries** (memory, joypad, gui drawing, forms) as view model
    commands, so MCP has them too. Coordinate with the New-Features

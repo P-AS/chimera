@@ -24,6 +24,9 @@ public:
 	/* any thread: the package to run for a core, "" when none is here;
 	 * `note` says when it is not the pinned one */
 	std::string packageFor(const std::string &coreName, const std::string &pinnedSha1, std::string &note) const;
+	/* any thread: the newest package of each core whose files include this
+	 * extension (lower case, no dot), as {core name, package} */
+	std::vector<std::pair<std::string, std::string>> coresFor(const std::string &extension) const;
 	/* any thread: the folders firmware is looked for in */
 	std::vector<std::string> firmwareFolders() const;
 
@@ -32,13 +35,14 @@ private:
 	{
 		std::string coreName, version, made, path;
 		long long modified = 0;
+		std::vector<std::string> extensions;
 	};
 	class Rows : public RowModel
 	{
 	public:
 		explicit Rows(CoresViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override;
-		int32_t columnCount() const override { return 4; }
+		int32_t columnCount() const override { return 5; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 

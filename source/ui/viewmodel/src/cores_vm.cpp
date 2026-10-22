@@ -1,6 +1,7 @@
 #include "chimera/vm/cores_vm.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 
@@ -58,6 +59,21 @@ void CoresViewModel::scan()
 				if (const json::Json *m = cfg.find("versionDate")) c.made = m->text;
 				c.path = path;
 				c.modified = static_cast<long long>(fs::last_write_time(entry.path(), ec).time_since_epoch().count());
+				/* the files it takes, as Chimera reads them: the package's
+				 * "extensions" and then each machine's */
+				const auto take = [&c](const json::Json *exts) {
+					if (exts == nullptr) return;
+					for (const auto &[ext, system] : exts->members)
+					{
+						std::string e = ext;
+						for (char &ch : e) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+						if (!e.empty() && e[0] == '.') e.erase(0, 1);
+						if (!e.empty() && std::find(c.extensions.begin(), c.extensions.end(), e) == c.extensions.end()) c.extensions.push_back(e);
+					}
+				};
+				take(cfg.find("extensions"));
+				if (const json::Json *machines = cfg.find("machines"))
+					for (const json::Json &m : machines->items) take(m.find("extensions"));
 				if (!c.coreName.empty()) found.push_back(std::move(c));
 			}
 			ce_package_free(p);
@@ -101,6 +117,20 @@ std::string CoresViewModel::packageFor(const std::string &coreName, const std::s
 	return builds.front().path;
 }
 
+std::vector<std::pair<std::string, std::string>> CoresViewModel::coresFor(const std::string &extension) const
+{
+	std::vector<std::pair<std::string, std::string>> out;
+	std::lock_guard<std::mutex> lock(m_);
+	/* sorted by core, newest first: the first of each core is the one */
+	for (const Core &c : cores_)
+	{
+		if (!out.empty() && out.back().first == c.coreName) continue;
+		if (std::find(c.extensions.begin(), c.extensions.end(), extension) != c.extensions.end())
+			out.emplace_back(c.coreName, c.path);
+	}
+	return out;
+}
+
 std::vector<std::string> CoresViewModel::firmwareFolders() const
 {
 	std::lock_guard<std::mutex> lock(m_);
@@ -115,8 +145,8 @@ int64_t CoresViewModel::Rows::rowCount() const
 
 std::string CoresViewModel::Rows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"core", "version", "made", "file"};
-	return column >= 0 && column < 4 ? names[column] : "";
+	static const char *const names[] = {"core", "version", "made", "takes", "file"};
+	return column >= 0 && column < 5 ? names[column] : "";
 }
 
 Value CoresViewModel::Rows::cell(int64_t row, int32_t column) const
@@ -129,7 +159,13 @@ Value CoresViewModel::Rows::cell(int64_t row, int32_t column) const
 	case 0: return c.coreName;
 	case 1: return c.version.substr(0, 12);
 	case 2: return c.made;
-	case 3: return std::filesystem::path(c.path).filename().string();
+	case 3:
+	{
+		std::string takes;
+		for (const std::string &e : c.extensions) takes += (takes.empty() ? "." : " .") + e;
+		return takes;
+	}
+	case 4: return std::filesystem::path(c.path).filename().string();
 	default: return {};
 	}
 }

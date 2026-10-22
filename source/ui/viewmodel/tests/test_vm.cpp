@@ -1007,6 +1007,81 @@ bool newProject(const char *package, const char *rom)
 	return true;
 }
 
+/* Open Game asks only for the game: the installed core that takes its kind of
+ * file opens it, and when two do, both are offered */
+bool openByKind(const char *package, const char *rom, const char *again)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	if (fs::file_size(again, ec) == 0 || ec)
+	{
+		std::printf("SKIP choosing between cores: no second package was made\n");
+		return false;
+	}
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-kind-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	const fs::path cores = dir / "Cores";
+	fs::create_directories(cores);
+	fs::copy_file(package, cores / "synth-box.chimeraCore");
+	/* the case of the name does not matter */
+	const std::string game = (dir / "Walker.TestRom").string();
+	fs::copy_file(rom, game);
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	CoresViewModel installed(d);
+	std::string error;
+	installed.set("coresFolder", cores.string(), error);
+	const auto takes = installed.coresFor("testrom");
+	CHECK(takes.size() == 1 && takes[0].first == "Synth" && installed.coresFor("md").empty());
+	CHECK(installed.rowLists()[0].model->columnName(3) == "takes");
+	std::string column;
+	fromValue(installed.rowLists()[0].model->cell(0, 3), column);
+	CHECK(column == ".testrom");
+	session.setFinders([&installed](const std::string &n, const std::string &h, std::string &note) { return installed.packageFor(n, h, note); },
+		[&installed] { return installed.firmwareFolders(); },
+		[&installed](const std::string &ext) { return installed.coresFor(ext); });
+
+	/* a kind of file no core takes says so */
+	error.clear();
+	CHECK(!session.run("openGame", {(dir / "notes.txt").string()}, error));
+	CHECK(error == "no installed core takes .txt files");
+
+	/* one core takes it: it opens */
+	int64_t was = session.opens.get();
+	CHECK(session.run("openGame", {game}, error).has_value());
+	CHECK(d.until([&] { return session.opens.get() > was; }, 60));
+	CHECK(session.isOpen.get() && session.coreName.get() == "Synth" && session.chooseFor.get().empty());
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+
+	/* two do: both are offered and nothing opens until one is chosen */
+	fs::copy_file(again, cores / "synth-again.chimeraCore");
+	installed.run("refresh", {}, error);
+	CHECK(installed.coresFor("testrom").size() == 2);
+	was = session.opens.get();
+	session.run("openGame", {game}, error);
+	CHECK(session.chooseFor.get() == game && session.choices.get() == "Synth\nSynth Again");
+	d.until([] { return false; }, 0.2);
+	CHECK(session.opens.get() == was && !session.isOpen.get());
+	CHECK(!session.run("chooseCore", {int64_t{2}}, error));
+	CHECK(session.run("chooseCore", {int64_t{1}}, error).has_value());
+	CHECK(d.until([&] { return session.opens.get() > was; }, 60));
+	CHECK(session.coreName.get() == "Synth Again" && session.chooseFor.get().empty() && session.choices.get().empty());
+
+	/* and turning the offer down opens nothing */
+	was = session.opens.get();
+	session.run("openGame", {game}, error);
+	CHECK(session.chooseFor.get() == game);
+	CHECK(session.run("chooseCore", {int64_t{-1}}, error).has_value());
+	d.until([] { return false; }, 0.2);
+	CHECK(session.chooseFor.get().empty() && session.opens.get() == was && session.coreName.get() == "Synth Again");
+	CHECK(!session.run("chooseCore", {int64_t{0}}, error));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -1033,6 +1108,8 @@ int main(int argc, char **argv)
 			ranMachine = newProject(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
+			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;
+			else std::printf("SKIP choosing between cores: no second package given\n");
 		}
 		else
 			std::printf("SKIP the machine tests: %s or %s is missing\n", argv[1], argv[2]);

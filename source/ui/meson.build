@@ -46,11 +46,20 @@ test_vm = executable(
   override_options: ['cpp_std=c++20'],
   build_by_default: true,
 )
+# a second core that takes the synthetic core's files, for choosing between them
+synth_again = custom_target(
+  'synth-again',
+  output: 'synth-again.chimeraCore',
+  command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Again', '@OUTPUT@'],
+  build_always_stale: true,
+  build_by_default: true,
+)
 test(
   'view models',
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens'],
+    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again],
   # OpenAL's device that plays to nowhere: the sound check runs with no speakers
   env: ['ALSOFT_DRIVERS=null'],
   timeout: 180,
