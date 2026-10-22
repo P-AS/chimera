@@ -105,6 +105,11 @@ namespace Chimera.Client.GUI
 		/// <summary>Per slot that orders its files: re-evaluates whether Up and Down apply.</summary>
 		private readonly Dictionary<string, Action> _slotOrderRefresh = new();
 		private readonly Dictionary<string, GroupBox> _slotGroups = new();
+
+		/// <summary>Per slot box: the line that lists its formats, or null, and where each of its
+		/// other controls sits below the top of the content (see <see cref="LayOutSlotGroups"/>).</summary>
+		private readonly Dictionary<GroupBox, (Label? Formats, Dictionary<Control, int> Below)> _slotLayout = new();
+		private bool _layingOutSlots;
 		private readonly ToolTip _tips = new();
 
 		// page 3
@@ -412,6 +417,7 @@ namespace Chimera.Client.GUI
 				Size = new(UIHelper.ScaleX(544), UIHelper.ScaleY(324)),
 			};
 			p2.Controls.Add(_slotsHost);
+			_slotsHost.ClientSizeChanged += (_, _) => LayOutSlotGroups();
 
 			// ---- page 3: settings ------------------------------------------------
 			var p3 = _pages[2];
@@ -1812,6 +1818,7 @@ namespace Chimera.Client.GUI
 			_slotsHost.Controls.Clear();
 			_slotLists.Clear();
 			_slotGroups.Clear();
+			_slotLayout.Clear();
 			_slotOrderRefresh.Clear();
 			var y = 0;
 			// What the chosen MACHINE exposes, before any file is picked. A slot
@@ -1827,12 +1834,23 @@ namespace Chimera.Client.GUI
 			{
 				if (declared.SettingGatedOnly && !machineExposed.Contains(declared.Id)) continue;
 				var slot = ForMachine(declared);
+				// The formats are a line of their own inside the box, which wraps and
+				// pushes the list down. In the box's title a long list wrapped behind
+				// the list and its last formats could not be read (issue 350).
 				GroupBox group = new()
 				{
-					Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+					// its width is LayOutSlotGroups' to set, from the panel's
+					Anchor = AnchorStyles.Top | AnchorStyles.Left,
 					Location = Pt(0, y),
 					Size = new(UIHelper.ScaleX(520), UIHelper.ScaleY(96)),
-					Text = $"{slot.Title}  ({slot.CardinalityText}{(slot.Formats.Count is 0 ? "" : $"; {ProjectSlotDeclaration.FormatsText(slot)}")})",
+					Text = $"{slot.Title}  ({slot.CardinalityText})",
+				};
+				Label? formats = slot.Formats.Count is 0 ? null : new()
+				{
+					Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+					AutoSize = false,
+					Location = Pt(8, 18),
+					Text = $"Formats: {ProjectSlotDeclaration.FormatsText(slot)}",
 				};
 				// the core's own explanation of the slot, on hover - the row IS
 				// the affordance, so there is no glyph to wonder about
@@ -1877,6 +1895,7 @@ namespace Chimera.Client.GUI
 					RefreshSlotAvailability();
 				};
 				group.Controls.AddRange([ list, add, remove ]);
+				if (formats is not null) group.Controls.Add(formats);
 
 				// THE ORDER IS PART OF THE MACHINE, not a convenience: the first file is what is in
 				// the drive at boot and the rest follow in swap order, and a PC-98 game can want
@@ -1909,21 +1928,72 @@ namespace Chimera.Client.GUI
 					_slotOrderRefresh[slot.Id] = Refresh;
 					group.Controls.AddRange([ up, down ]);
 				}
-				// The group is laid out for a panel 544 wide and anchored to both
-				// sides, which keeps the gap to the panel's right edge that it has
-				// when it is added. Made while the window was wider, it kept a wide
-				// gap, did not reach across the window, and narrowing the window
-				// shrank it to nothing (issue 333). So it takes the panel's width
-				// now, once everything in it is placed; the list and the buttons
-				// follow their own anchors.
+				// The group's contents are placed for a box 520 wide. It takes the
+				// panel's width once they are, and again whenever the panel changes
+				// size (LayOutSlotGroups); the list and the buttons follow their own
+				// anchors. A box anchored to both sides kept the gap it was added
+				// with, so one made while the window was wide did not reach across
+				// it, and narrowing the window shrank it to nothing (issue 333).
 				group.Width = Math.Max(UIHelper.ScaleX(400), _slotsHost.ClientSize.Width - UIHelper.ScaleX(24));
 				_slotsHost.Controls.Add(group);
 				_slotLists[slot.Id] = list;
 				_slotGroups[slot.Id] = group;
 				group.Tag = group.Text;
+				var below = new Dictionary<Control, int>();
+				foreach (Control inside in group.Controls)
+					if (inside != formats) below[inside] = inside.Top - UIHelper.ScaleY(18);
+				_slotLayout[group] = (formats, below);
 				y += 102;
 			}
+			LayOutSlotGroups();
 			RefreshSlotAvailability();
+		}
+
+		/// <summary>
+		/// Stacks the slot boxes across the panel's width, each as tall as its
+		/// formats line needs at that width: the list and its buttons go below the
+		/// line, and the next box below this one. Run again whenever the panel
+		/// changes size, since a narrower box wraps the formats onto more lines. The
+		/// boxes are not anchored to the right for this: Mono's anchoring set a
+		/// box's size after a handler had made it taller, and put the old height back.
+		/// </summary>
+		private void LayOutSlotGroups()
+		{
+			if (_layingOutSlots) return;
+			_layingOutSlots = true;
+			try
+			{
+				var top = _slotsHost.AutoScrollPosition.Y;
+				foreach (Control child in _slotsHost.Controls)
+				{
+					if (child is not GroupBox group || !_slotLayout.TryGetValue(group, out var layout)) continue;
+					group.Width = Math.Max(UIHelper.ScaleX(400), _slotsHost.ClientSize.Width - UIHelper.ScaleX(24));
+					var contentTop = UIHelper.ScaleY(18);
+					if (layout.Formats is { } formats)
+					{
+						var width = Math.Max(UIHelper.ScaleX(40), group.ClientSize.Width - UIHelper.ScaleX(16));
+						var needed = TextRenderer.MeasureText(formats.Text, formats.Font, new Size(width, int.MaxValue),
+							TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
+						formats.Bounds = new(UIHelper.ScaleX(8), UIHelper.ScaleY(18), width, needed);
+						contentTop = formats.Bottom + UIHelper.ScaleY(4);
+					}
+					foreach (var (inside, offset) in layout.Below) inside.Top = contentTop + offset;
+					group.Top = top;
+					group.Height = contentTop + UIHelper.ScaleY(78);
+					top = group.Bottom + UIHelper.ScaleY(6);
+				}
+			}
+			finally
+			{
+				_layingOutSlots = false;
+			}
+		}
+
+		/// <summary>The line inside a slot's box that lists its formats, and the box's list, for tests.</summary>
+		internal (Label? Formats, ListBox List, GroupBox Group) SlotLayoutForTest(string slotId)
+		{
+			var group = _slotGroups[slotId];
+			return (_slotLayout[group].Formats, _slotLists[slotId], group);
 		}
 
 		/// <summary>

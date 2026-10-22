@@ -131,6 +131,52 @@ namespace Chimera.Tests.Client.GUI
 			}
 		}
 
+		/// <summary>
+		/// Every format a slot takes can be read, at any width (issue 350). The X68000's floppy
+		/// slot takes sixteen; in the box's title they wrapped behind the list, and the last one
+		/// could not be seen until the window was widened. The formats are a line inside the box
+		/// now, which wraps and moves the list down, and the boxes below move with it.
+		/// </summary>
+		[TestMethod]
+		public void EveryFormatOfASlotCanBeReadAtAnyWidth()
+		{
+			const string Declaration = """
+				{
+				  "slots": [
+				    { "id": "floppy", "title": "Floppy disks", "min": 1, "max": 2,
+				      "formats": ["dim", "xdf", "hdm", "2hd", "d88", "d77", "1dd", "mfm", "td0", "imd", "86f", "cqm", "cqi", "dsk", "mfi", "dfi"] },
+				    { "id": "savedata", "title": "SRAM", "min": 0, "max": 1, "formats": ["dat", "nv", "bin"] }
+				  ]
+				}
+				""";
+			NewProjectWizard form = new([ ], static _ => [ ]);
+			using (form)
+			{
+				form.Show();
+				form.UseDeclaration(TestPackages.Slots(Declaration));
+				form.ShowPageForTest(1);
+				foreach (var width in new[] { form.MinimumSize.Width, UIHelper.ScaleX(1100), form.MinimumSize.Width })
+				{
+					form.Width = width;
+					System.Windows.Forms.Application.DoEvents();
+					var (formats, list, group) = form.SlotLayoutForTest("floppy");
+					var (_, _, next) = form.SlotLayoutForTest("savedata");
+					Assert.IsNotNull(formats, "a slot with formats has a line that lists them");
+					StringAssert.EndsWith(formats.Text, ".dfi", "the line holds every format, the last one too");
+					Assert.IsFalse(group.Text.Contains(".dim"), $"the formats are no longer in the box's title: \"{group.Text}\"");
+					var needed = System.Windows.Forms.TextRenderer.MeasureText(formats.Text, formats.Font,
+						new System.Drawing.Size(formats.Width, int.MaxValue),
+						System.Windows.Forms.TextFormatFlags.WordBreak | System.Windows.Forms.TextFormatFlags.TextBoxControl).Height;
+					Assert.IsTrue(formats.Height >= needed,
+						$"at {width}px the formats need {needed}px and their line is {formats.Height}px tall");
+					Assert.IsTrue(formats.Right <= group.ClientSize.Width, $"at {width}px the line runs past its box");
+					Assert.IsTrue(formats.Bottom <= list.Top, $"at {width}px the list ({list.Top}) covers the formats (down to {formats.Bottom})");
+					Assert.IsTrue(list.Bottom <= group.ClientSize.Height, $"at {width}px the list ({list.Top}..{list.Bottom}) runs out of its box ({group.ClientSize.Height}px inside, {group.Height}px tall; formats {formats.Top}..{formats.Bottom})");
+					Assert.IsTrue(group.Bottom <= next.Top, $"at {width}px the next box ({next.Top}) covers this one (down to {group.Bottom})");
+				}
+			}
+		}
+
 		private static System.Collections.Generic.IEnumerable<System.Windows.Forms.Control> Descendants(System.Windows.Forms.Control parent)
 		{
 			foreach (System.Windows.Forms.Control child in parent.Controls)
