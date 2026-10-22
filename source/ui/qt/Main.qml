@@ -112,6 +112,7 @@ ApplicationWindow {
             anchors.leftMargin: 8
             anchors.rightMargin: 8
             Label { text: root.session.status; elide: Text.ElideRight; Layout.fillWidth: true }
+            Label { text: root.session.gamepads; elide: Text.ElideRight; Layout.maximumWidth: 260 }
             Label { text: root.session.error !== "" ? root.session.error : root.pianoRoll.error; color: "#b00020" }
             Label {
                 text: qsTr("Frame %1 of %2").arg(Number(root.pianoRoll.currentFrame).toLocaleString(Qt.locale(), "f", 0))

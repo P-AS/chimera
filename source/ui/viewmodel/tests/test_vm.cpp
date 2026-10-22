@@ -6,6 +6,7 @@
  * Without the package and rom the machine tests are skipped (exit 77 when
  * nothing else ran). */
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <deque>
@@ -14,7 +15,12 @@
 #include <string>
 #include <thread>
 
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
+
 #include "chimera/vm/bindings.hpp"
+#include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 
@@ -175,6 +181,65 @@ void pianoRollWithoutAMachine()
 	CHECK(roll.set("topFrame", int64_t{5000000}, error) && roll.topFrame.get() == 999999);
 }
 
+/* SDL's virtual joystick stands in for a real pad: it is held, and the
+ * names Chimera's bindings use come out */
+bool gamepads()
+{
+#ifdef _WIN32
+	return false;
+#else
+	Gamepads pads;
+	if (!pads.available())
+	{
+		std::printf("SKIP the gamepad tests: %s\n", pads.problem().c_str());
+		return false;
+	}
+	void *sdl = dlopen("libSDL2.so", RTLD_NOW | RTLD_NOLOAD);
+	if (sdl == nullptr) sdl = dlopen("libSDL2-2.0.so.0", RTLD_NOW | RTLD_NOLOAD);
+	using Attach = int (*)(int, int, int, int);
+	using SetButton = int (*)(void *, int, uint8_t);
+	using SetHat = int (*)(void *, int, uint8_t);
+	using SetAxis = int (*)(void *, int, int16_t);
+	using Open = void *(*)(int);
+	auto attach = sdl ? reinterpret_cast<Attach>(dlsym(sdl, "SDL_JoystickAttachVirtual")) : nullptr;
+	auto setButton = sdl ? reinterpret_cast<SetButton>(dlsym(sdl, "SDL_JoystickSetVirtualButton")) : nullptr;
+	auto setHat = sdl ? reinterpret_cast<SetHat>(dlsym(sdl, "SDL_JoystickSetVirtualHat")) : nullptr;
+	auto setAxis = sdl ? reinterpret_cast<SetAxis>(dlsym(sdl, "SDL_JoystickSetVirtualAxis")) : nullptr;
+	auto open = sdl ? reinterpret_cast<Open>(dlsym(sdl, "SDL_JoystickOpen")) : nullptr;
+	if (!attach || !setButton || !setHat || !setAxis || !open)
+	{
+		std::printf("SKIP the gamepad tests: this SDL2 has no virtual joysticks\n");
+		return false;
+	}
+	std::vector<std::string> held;
+	pads.poll(held);
+	const size_t before = pads.names().size();
+	/* a plain joystick (type 0, not a game controller): 2 axes, 4 buttons, 1 hat */
+	const int index = attach(0, 2, 4, 1);
+	CHECK(index >= 0);
+	pads.poll(held);
+	CHECK(pads.names().size() == before + 1);
+	void *joy = open(index); /* a second handle to the same device, to move it */
+	CHECK(joy != nullptr);
+	if (joy == nullptr) return true;
+	const std::string j = "J" + std::to_string(index + 1) + " ";
+	setButton(joy, 2, 1);
+	setHat(joy, 0, 1 | 2); /* up and right */
+	setAxis(joy, 1, -30000);
+	pads.poll(held);
+	auto has = [&](const std::string &n) { return std::find(held.begin(), held.end(), n) != held.end(); };
+	CHECK(has(j + "B3"));
+	CHECK(has(j + "POV0U") && has(j + "POV0R") && !has(j + "POV0D"));
+	CHECK(has(j + "Y-") && !has(j + "Y+") && !has(j + "X+"));
+	setButton(joy, 2, 0);
+	setHat(joy, 0, 0);
+	setAxis(joy, 1, 0);
+	pads.poll(held);
+	CHECK(!has(j + "B3") && !has(j + "POV0U") && !has(j + "Y-"));
+	return true;
+#endif
+}
+
 bool machine(const char *package, const char *rom)
 {
 	ManualDispatcher d;
@@ -254,6 +319,7 @@ int main(int argc, char **argv)
 	registry();
 	bindings();
 	pianoRollWithoutAMachine();
+	const bool ranPads = gamepads();
 	bool ranMachine = false;
 	if (argc >= 3)
 	{
@@ -265,6 +331,7 @@ int main(int argc, char **argv)
 	}
 	else
 		std::printf("SKIP the machine tests: no package and rom given\n");
-	std::printf("%d checks, %d failed%s\n", checks, failures, ranMachine ? "" : " (machine tests skipped)");
+	std::printf("%d checks, %d failed%s%s\n", checks, failures, ranMachine ? "" : " (machine tests skipped)",
+		ranPads ? "" : " (gamepad tests skipped)");
 	return failures == 0 ? 0 : 1;
 }

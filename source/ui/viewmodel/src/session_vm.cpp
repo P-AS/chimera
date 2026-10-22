@@ -20,6 +20,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("coreName", "the open core", coreName);
 	expose("systemName", "the machine the core runs", systemName);
 	expose("buttonCount", "how many buttons the machine has", buttonCount);
+	expose("gamepads", "the gamepads in use, or why there are none", gamepads);
 	picture("screen", "the machine's picture", screen, screenChanged);
 
 	command("open", "opens a core package with a game file", {"package", "game"},
@@ -159,6 +160,7 @@ void SessionViewModel::loop()
 		ce_session_free(s_);
 		s_ = nullptr;
 	}
+	padsM_.reset(); /* SDL stops on the thread that started it */
 }
 
 void SessionViewModel::openOnMachine(const std::string &package, const std::string &game)
@@ -211,6 +213,14 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 		ce_package_free(p);
 	}
 
+	std::string bindError;
+	bindingsM_ = Bindings();
+	if (!keybinds.empty()) bindingsM_.parse(keybinds, names, bindError);
+	if (!padsM_) padsM_ = std::make_unique<Gamepads>();
+	padCount_ = 0;
+	std::string padText = padsM_->available() ? "No gamepads" : padsM_->problem();
+	later([this, padText] { gamepads.set(padText); });
+
 	const int32_t num = ce_session_vsync_numerator(s), den = ce_session_vsync_denominator(s);
 	if (num > 0 && den > 0)
 		period_ = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(static_cast<double>(den) / num));
@@ -255,7 +265,23 @@ void SessionViewModel::closeOnMachine()
 void SessionViewModel::advanceOnMachine()
 {
 	const int64_t f = frameM_;
-	const uint64_t held = held_.load();
+	uint64_t padMask = 0;
+	if (padsM_)
+	{
+		padsM_->poll(padHeld_);
+		for (const std::string &name : padHeld_)
+			for (int b : bindingsM_.buttonsOf(name))
+				if (b < 64) padMask |= uint64_t{1} << b;
+		const std::vector<std::string> open = padsM_->names();
+		if (open.size() != padCount_)
+		{
+			padCount_ = open.size();
+			std::string text = open.empty() ? "No gamepads" : std::to_string(open.size()) + (open.size() == 1 ? " gamepad:" : " gamepads:");
+			for (const std::string &n : open) text += " " + n;
+			later([this, text] { gamepads.set(text); });
+		}
+	}
+	const uint64_t held = held_.load() | padMask;
 	const int64_t size = inputs_.size();
 	const uint64_t logged = inputs_.at(f);
 	const uint64_t mask = logged | held;

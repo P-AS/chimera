@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "chimera/vm/bindings.hpp"
+#include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/input_log.hpp"
 #include "chimera/vm/view_model.hpp"
 
@@ -34,6 +35,8 @@ public:
 	Property<std::string> coreName;
 	Property<std::string> systemName;
 	Property<int64_t> buttonCount{0};
+	/* the gamepads in use, or why there are none */
+	Property<std::string> gamepads{"No gamepads yet"};
 
 	Picture screen;
 	Signal<> screenChanged;
@@ -85,6 +88,11 @@ private:
 	int64_t fpsFrames_ = 0;
 	Clock::time_point fpsSince_{};
 	std::string package_, game_;
+	/* gamepads are read on this thread, just before each frame */
+	std::unique_ptr<Gamepads> padsM_;
+	Bindings bindingsM_;
+	std::vector<std::string> padHeld_;
+	size_t padCount_ = 0;
 
 	std::atomic<uint64_t> held_{0};
 

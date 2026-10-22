@@ -14,9 +14,10 @@ vm_lib = static_library(
     'viewmodel/src/bindings.cpp',
     'viewmodel/src/session_vm.cpp',
     'viewmodel/src/piano_roll_vm.cpp',
+    'viewmodel/src/gamepads.cpp',
   ],
   include_directories: [vm_inc, engine_inc],
-  dependencies: [thread_dep],
+  dependencies: [thread_dep, dl_dep],
   override_options: ['cpp_std=c++20'],
   pic: true,
 )
