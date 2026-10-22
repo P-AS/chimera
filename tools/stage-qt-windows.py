@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Puts the Qt window's Windows build in one folder that runs on its own: the
-program, Chimera's DLLs, the QML modules the window imports, and every DLL
-those import (from Qt or the compiler), found by reading their import tables.
+program, Chimera's DLLs, the QML modules the window imports, every DLL those
+import (from Qt or the compiler), found by reading their import tables, and
+the themes Chimera ships.
 Everything is stripped of debug information, as it would ship.
 
     tools/stage-qt-windows.py <meson build dir> <installed dll dir> <windows qt> <out>
@@ -25,6 +26,9 @@ for d in ("libchimera.dll", "libminiboxhost.dll", "libzstd.dll", "lua54.dll", "S
     shutil.copy2(f"{dlls}/{d}", out)
 os.makedirs(f"{out}/platforms")
 shutil.copy2(f"{qt}/plugins/platforms/qwindows.dll", f"{out}/platforms")
+# the themes Chimera ships, in the place Chimera keeps them: beside the program
+here = os.path.dirname(os.path.abspath(__file__))
+shutil.copytree(os.path.join(here, "..", "Themes"), f"{out}/Themes")
 
 # QML: QtQml, QtCore and the QtQuick modules the window imports. Of the
 # control styles only Fusion (the one used) and Basic (every style's fallback).
