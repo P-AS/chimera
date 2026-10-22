@@ -23,6 +23,7 @@
 #endif
 
 #include "chimera/vm/bindings.hpp"
+#include "chimera/vm/branches_vm.hpp"
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -666,6 +667,7 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
 	PianoRollViewModel roll(d, inputs, session);
+	BranchesViewModel branches(d, inputs, session, roll);
 	std::string error;
 	auto openIt = [&](const fs::path &p) {
 		std::string e;
@@ -739,6 +741,46 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	CHECK(inputs.at(10) == before[10]);
 	CHECK(openIt(dir / "saved.chimeraProject"));
 	CHECK(inputs.at(10) == (before[10] | (uint64_t{1} << 4)));
+	/* branches: the winning movie kept at its end, the movie spoiled, the
+	 * branch loaded - and the machine is where the winning movie leaves it */
+	CHECK(openIt(dir / "p.chimeraProject"));
+	session.run("seek", {end}, error);
+	CHECK(d.until([&] { return session.frame.get() == end; }, 30));
+	CHECK(branches.run("create", {std::string("win")}, error).has_value() && branches.count.get() == 1);
+	roll.run("addMarker", {int64_t{20}, std::string("in the branch")}, error);
+	branches.run("remove", {int64_t{0}}, error);
+	CHECK(branches.count.get() == 0);
+	branches.run("create", {std::string("win")}, error);
+	roll.run("removeMarker", {int64_t{20}}, error);
+	roll.run("paint", {int64_t{0}, end - 1, int64_t{1}, false}, error);
+	CHECK(d.until([&] { return session.frame.get() == end && session.greenEnd.get() == end; }, 30));
+	CHECK(session.readDomain("RAM") != std::vector<uint8_t>(ram.begin(), ram.end()));
+	const auto from = branches.run("load", {int64_t{0}}, error);
+	CHECK(from && std::get<int64_t>(*from) >= 1);
+	CHECK(d.until([&] { return session.frame.get() == end && session.greenEnd.get() == end; }, 30));
+	d.until([] { return false; }, 0.1);
+	CHECK(session.readDomain("RAM") == std::vector<uint8_t>(ram.begin(), ram.end()));
+	CHECK(session.readDomain("VRAM") == std::vector<uint8_t>(vram.begin(), vram.end()));
+	CHECK(roll.frameCount.get() == end && roll.markerCount.get() == 1 && roll.rowLists()[0].model->rowNote(20) == "in the branch");
+	CHECK(!branches.run("load", {int64_t{3}}, error) && error == "no branch 3");
+	/* kept with the project */
+	session.run("saveProject", {(dir / "branched.chimeraProject").string()}, error);
+	CHECK(d.until([&] { return session.projectPath.get() == (dir / "branched.chimeraProject").string(); }, 20));
+	CHECK(openIt(dir / "p.chimeraProject"));
+	CHECK(branches.count.get() == 0);
+	CHECK(openIt(dir / "branched.chimeraProject"));
+	CHECK(branches.count.get() == 1);
+	std::string branchName;
+	int64_t branchFrames = 0;
+	fromValue(branches.rowLists()[0].model->cell(0, 0), branchName);
+	fromValue(branches.rowLists()[0].model->cell(0, 3), branchFrames);
+	CHECK(branchName == "win" && branchFrames == end);
+	roll.run("paint", {int64_t{0}, end - 1, int64_t{1}, false}, error);
+	branches.run("load", {int64_t{0}}, error);
+	CHECK(d.until([&] { return session.frame.get() == end && session.greenEnd.get() == end; }, 30));
+	d.until([] { return false; }, 0.1);
+	CHECK(session.readDomain("RAM") == std::vector<uint8_t>(ram.begin(), ram.end()));
+
 	/* and a project whose file is missing says which */
 	fs::remove(dir / "gridWalker.testrom");
 	session.run("openProject", {(dir / "p.chimeraProject").string(), std::string(package)}, error);

@@ -31,6 +31,7 @@
 #include <set>
 #include <vector>
 
+#include "chimera/vm/branches_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
@@ -156,7 +157,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark, whatever the system says"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: ram-search, settings, lua"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: ram-search, settings, lua, branches"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -191,10 +192,12 @@ int main(int argc, char **argv)
 	vm::PianoRollViewModel pianoRoll(dispatcher, inputs, session);
 	vm::RamSearchViewModel ramSearch(dispatcher, session);
 	vm::SettingsViewModel settings(dispatcher, session);
+	vm::BranchesViewModel branches(dispatcher, inputs, session, pianoRoll);
 	qt::QmlViewModel sessionQml(session);
 	qt::QmlViewModel pianoRollQml(pianoRoll);
 	qt::QmlViewModel ramSearchQml(ramSearch);
 	qt::QmlViewModel settingsQml(settings);
+	qt::QmlViewModel branchesQml(branches);
 
 	/* scripts reach the same view models, by the same names */
 	vm::LuaBridge lua;
@@ -209,6 +212,7 @@ int main(int argc, char **argv)
 	lua.add(ramSearch);
 	lua.add(settings);
 	lua.add(luaConsole);
+	lua.add(branches);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -228,6 +232,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("ramSearch"), QVariant::fromValue<QObject *>(&ramSearchQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
+		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},
 	});
 	engine.load(QUrl(QStringLiteral("qrc:/chimera/Main.qml")));
 	if (engine.rootObjects().isEmpty()) return 1;
@@ -237,7 +242,8 @@ int main(int argc, char **argv)
 	/* --show ram-search or settings: the tool windows by name */
 	const QString showName = args.value(showOpt) == QStringLiteral("ram-search") ? QStringLiteral("ramSearchWindow")
 		: args.value(showOpt) == QStringLiteral("settings") ? QStringLiteral("settingsWindow")
-		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow") : QString();
+		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")
+		: args.value(showOpt) == QStringLiteral("branches") ? QStringLiteral("branchesWindow") : QString();
 	if (!showName.isEmpty())
 		if (auto *tool = window->findChild<QQuickWindow *>(showName)) tool->show();
 

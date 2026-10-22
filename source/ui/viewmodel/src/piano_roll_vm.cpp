@@ -289,6 +289,20 @@ std::string PianoRollViewModel::Frames::rowNote(int64_t row) const
 	return it == vm_.markers_.end() ? std::string() : it->second.text;
 }
 
+void PianoRollViewModel::replaceAll(const std::vector<Marker> &markers)
+{
+	markers_.clear();
+	for (const Marker &m : markers) markers_[m.frame] = m;
+	undo_.clear();
+	redo_.clear();
+	canUndo.set(false);
+	canRedo.set(false);
+	frameCount.set(inputs_.size());
+	clampTop();
+	markersEdited(0);
+	frames_.reset.emit();
+}
+
 void PianoRollViewModel::markersEdited(int64_t frame)
 {
 	markerCount.set(static_cast<int64_t>(markers_.size()));

@@ -14,6 +14,7 @@ ApplicationWindow {
     required property QtObject ramSearch
     required property QtObject settings
     required property QtObject luaConsole
+    required property QtObject branches
     property url chosenPackage
 
     width: 1280
@@ -59,6 +60,7 @@ ApplicationWindow {
             Action { text: qsTr("&Undo"); shortcut: StandardKey.Undo; enabled: root.pianoRoll.undoEnabled; onTriggered: root.pianoRoll.run("undo") }
             Action { text: qsTr("&Redo"); shortcut: StandardKey.Redo; enabled: root.pianoRoll.redoEnabled; onTriggered: root.pianoRoll.run("redo") }
             MenuSeparator {}
+            Action { text: qsTr("&Branches..."); shortcut: "Ctrl+B"; onTriggered: { branchesWindow.show(); branchesWindow.raise() } }
             Action { text: qsTr("Add &Marker Here..."); shortcut: "Ctrl+M"; enabled: root.session.isOpen; onTriggered: markerDialog.open() }
             Action { text: qsTr("Remove Marker Here"); enabled: root.session.isOpen; onTriggered: root.pianoRoll.run("removeMarker", [root.pianoRoll.currentFrame]) }
             Action {
@@ -93,6 +95,7 @@ ApplicationWindow {
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
     Settings { id: settingsWindow; settings: root.settings; visible: false }
     LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; visible: false }
+    Branches { id: branchesWindow; vm: root.branches; visible: false }
 
     FileDialog {
         id: packageDialog

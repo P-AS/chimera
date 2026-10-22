@@ -21,6 +21,7 @@ vm_lib = static_library(
     'viewmodel/src/ram_search_vm.cpp',
     'viewmodel/src/settings_vm.cpp',
     'viewmodel/src/lua_console_vm.cpp',
+    'viewmodel/src/branches_vm.cpp',
   ],
   include_directories: [vm_inc, engine_inc, include_directories('../../extern/lua')],
   dependencies: [thread_dep, dl_dep],

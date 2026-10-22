@@ -45,7 +45,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			submit([this, package, game] {
 				settingsM_.clear();
 				markersM_.clear();
-				later([this] { markersLoaded.emit({}); });
+				branchesM_.clear();
+				later([this] { markersLoaded.emit({}); branchesLoaded.emit({}); });
 				openOnMachine(package, game);
 			});
 			return {};
@@ -329,6 +330,71 @@ void SessionViewModel::setMarkers(std::vector<Marker> markers)
 	});
 }
 
+void SessionViewModel::setBranches(std::vector<Branch> branches)
+{
+	submit([this, branches = std::move(branches)] { branchesM_ = branches; });
+}
+
+void SessionViewModel::inputsReplaced(int64_t divergence, int64_t target)
+{
+	submit([this, divergence, target] {
+		if (s_ == nullptr) return;
+		runningM_ = false;
+		later([this] { running.set(false); });
+		if (divergence >= 0)
+		{
+			ce_session_greenzone_invalidate(s_, divergence);
+			greenEndM_ = std::min(greenEndM_, divergence);
+			/* the machine is past the change: what it holds was made from the
+			 * old inputs, so it goes back to the change before anything else -
+			 * even when the target is the frame it is on */
+			if (frameM_ > divergence) seekOnMachine(divergence);
+		}
+		seekOnMachine(target);
+		report(-1, -1, -1, -1, -1);
+	});
+}
+
+std::string SessionViewModel::encodeOnMachine(const InputLog::Copy &c)
+{
+	ce_movie_log *log = ce_movie_log_new();
+	if (!logKeyM_.empty()) ce_movie_log_set_key(log, logKeyM_.c_str());
+	const size_t axisCount = inputs_.axisCount();
+	std::vector<char> line(256);
+	for (size_t f = 0; f < c.masks.size(); f++)
+	{
+		const int32_t *axes = axisCount && (f + 1) * axisCount <= c.axes.size() ? &c.axes[f * axisCount] : nullptr;
+		const int32_t need = ce_session_movie_entry_encode(s_, c.masks[f], axes, line.data(), static_cast<int32_t>(line.size()));
+		if (need >= static_cast<int32_t>(line.size()))
+		{
+			line.resize(static_cast<size_t>(need) + 1);
+			ce_session_movie_entry_encode(s_, c.masks[f], axes, line.data(), static_cast<int32_t>(line.size()));
+		}
+		ce_movie_log_add(log, line.data());
+	}
+	uint64_t len = 0;
+	const char *text = ce_movie_log_serialize(log, 0, &len);
+	std::string out(text != nullptr ? text : "", static_cast<size_t>(len));
+	ce_movie_log_free(log);
+	return out;
+}
+
+InputLog::Copy SessionViewModel::decodeOnMachine(const char *text, uint64_t len)
+{
+	InputLog::Copy c;
+	ce_movie_log *log = ce_movie_log_new();
+	if (text != nullptr && len > 0) ce_movie_log_parse(log, text, len);
+	const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s_));
+	const int64_t n = ce_movie_log_count(log);
+	c.masks.assign(static_cast<size_t>(n), 0);
+	c.axes.assign(axisCount * static_cast<size_t>(n), 0);
+	for (int64_t i = 0; i < n; i++)
+		ce_session_movie_entry_decode(s_, ce_movie_log_entry(log, i), &c.masks[static_cast<size_t>(i)],
+			axisCount ? &c.axes[static_cast<size_t>(i) * axisCount] : nullptr);
+	ce_movie_log_free(log);
+	return c;
+}
+
 void SessionViewModel::pinMarkersOnMachine()
 {
 	if (s_ == nullptr) return;
@@ -472,6 +538,30 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		}
 		markersM_ = markers;
 		later([this, markers] { markersLoaded.emit(markers); });
+		/* the branches, read in the movie's layout */
+		ce_session *was = s_;
+		s_ = s;
+		std::vector<Branch> branches;
+		for (int32_t i = 0; i < ce_project_branch_count(p); i++)
+		{
+			Branch b;
+			b.name = ce_project_branch_name(p, i) != nullptr ? ce_project_branch_name(p, i) : "";
+			b.time = ce_project_branch_time(p, i) != nullptr ? ce_project_branch_time(p, i) : "";
+			b.frame = ce_project_branch_frame(p, i);
+			uint64_t blen = 0;
+			const char *btext = ce_project_branch_log_text(p, i, &blen);
+			b.inputs = decodeOnMachine(btext, blen);
+			for (int32_t k = 0; k < ce_project_branch_marker_count(p, i); k++)
+			{
+				const char *t = ce_project_branch_marker_text(p, i, k);
+				b.markers.push_back({ce_project_branch_marker_frame(p, i, k), t != nullptr ? t : "",
+					ce_project_branch_marker_keep_state(p, i, k) != 0});
+			}
+			branches.push_back(std::move(b));
+		}
+		s_ = was;
+		branchesM_ = branches;
+		later([this, branches] { branchesLoaded.emit(branches); });
 	}
 	if (projectM_ != nullptr && projectM_ != p) ce_project_free(projectM_);
 	projectM_ = p;
@@ -492,31 +582,19 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to)
 		later([this] { status.set("Not saved: this machine has more than 64 buttons, which the prototype does not keep"); });
 		return;
 	}
-	ce_movie_log *log = ce_movie_log_new();
-	if (!logKeyM_.empty()) ce_movie_log_set_key(log, logKeyM_.c_str());
-	const size_t axisCount = inputs_.axisCount();
-	std::vector<int32_t> axes(axisCount);
-	std::vector<char> line(256);
 	const int64_t n = inputs_.size();
-	for (int64_t f = 0; f < n; f++)
-	{
-		if (axisCount) inputs_.axesAt(f, axes.data());
-		const int32_t need = ce_session_movie_entry_encode(s_, inputs_.at(f), axisCount ? axes.data() : nullptr,
-			line.data(), static_cast<int32_t>(line.size()));
-		if (need >= static_cast<int32_t>(line.size()))
-		{
-			line.resize(static_cast<size_t>(need) + 1);
-			ce_session_movie_entry_encode(s_, inputs_.at(f), axisCount ? axes.data() : nullptr, line.data(),
-				static_cast<int32_t>(line.size()));
-		}
-		ce_movie_log_add(log, line.data());
-	}
-	uint64_t len = 0;
-	const char *text = ce_movie_log_serialize(log, 0, &len);
-	ce_project_set_log_text(projectM_, text, len);
+	const std::string log = encodeOnMachine(inputs_.copy());
+	ce_project_set_log_text(projectM_, log.data(), log.size());
 	for (int32_t i = ce_project_marker_count(projectM_) - 1; i >= 0; i--) ce_project_marker_remove(projectM_, i);
 	for (const Marker &m : markersM_) ce_project_marker_add(projectM_, m.frame, m.text.c_str(), m.keepState ? 1 : 0);
-	ce_movie_log_free(log);
+	for (int32_t i = ce_project_branch_count(projectM_) - 1; i >= 0; i--) ce_project_branch_remove(projectM_, i);
+	for (const Branch &b : branchesM_)
+	{
+		const std::string text = encodeOnMachine(b.inputs);
+		ce_project_branch_add(projectM_, b.name.c_str(), b.frame, b.time.c_str(), text.data(), text.size());
+		const int32_t at = ce_project_branch_count(projectM_) - 1;
+		for (const Marker &m : b.markers) ce_project_branch_marker_add(projectM_, at, m.frame, m.text.c_str(), m.keepState ? 1 : 0);
+	}
 	const char *error = nullptr;
 	if (ce_project_save(projectM_, path.c_str(), &error) != 0)
 	{

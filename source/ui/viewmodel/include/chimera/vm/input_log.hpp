@@ -7,6 +7,7 @@
  * lag frame (the game did not read its input). That is the machine's, not
  * the movie's, and an edit leaves it until the frame is run again. */
 
+#include <algorithm>
 #include <cstdint>
 #include <mutex>
 #include <shared_mutex>
@@ -104,6 +105,47 @@ public:
 		masks_ = std::move(masks);
 		axes_ = std::move(axes);
 		lags_.clear();
+	}
+
+	/* every frame's buttons and axes, copied out (a branch) */
+	struct Copy
+	{
+		std::vector<uint64_t> masks;
+		std::vector<int32_t> axes;
+	};
+	Copy copy() const
+	{
+		std::shared_lock lock(m_);
+		Copy c{masks_, axes_};
+		/* axes for every frame, neutral where none were set */
+		const size_t n = neutral_.size();
+		if (n > 0)
+		{
+			const size_t had = c.axes.size() / n;
+			c.axes.resize(masks_.size() * n);
+			for (size_t f = had; f < masks_.size(); f++)
+				for (size_t i = 0; i < n; i++) c.axes[f * n + i] = neutral_[i];
+		}
+		return c;
+	}
+	/* the first frame where this differs from a copy, or -1 when they are the same */
+	int64_t divergence(const Copy &c) const
+	{
+		std::shared_lock lock(m_);
+		const size_t n = neutral_.size();
+		const size_t most = std::max(masks_.size(), c.masks.size());
+		for (size_t f = 0; f < most; f++)
+		{
+			const uint64_t a = f < masks_.size() ? masks_[f] : 0, b = f < c.masks.size() ? c.masks[f] : 0;
+			if (a != b || f >= masks_.size() || f >= c.masks.size()) return static_cast<int64_t>(f);
+			for (size_t i = 0; i < n; i++)
+			{
+				const int32_t x = f * n + i < axes_.size() ? axes_[f * n + i] : neutral_[i];
+				const int32_t y = f * n + i < c.axes.size() ? c.axes[f * n + i] : neutral_[i];
+				if (x != y) return static_cast<int64_t>(f);
+			}
+		}
+		return -1;
 	}
 
 	/* true when the frame's lag flag changed */

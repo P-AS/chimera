@@ -91,6 +91,22 @@ public:
 	 * and the frames of those that keep a state pinned in the greenzone */
 	void setMarkers(std::vector<Marker> markers);
 
+	/* A branch: another version of the movie, kept to come back to. */
+	struct Branch
+	{
+		std::string name, time;
+		int64_t frame = 0;
+		InputLog::Copy inputs;
+		std::vector<Marker> markers;
+	};
+	/* a project opened with these branches */
+	Signal<std::vector<Branch>> branchesLoaded;
+	/* the branches to save with the project */
+	void setBranches(std::vector<Branch> branches);
+	/* the inputs were replaced from `divergence` on (a branch was loaded):
+	 * the states after it go, and the machine goes to `frame` */
+	void inputsReplaced(int64_t divergence, int64_t frame);
+
 	/* for the window: a key went down or up, by Chimera's key names */
 	void key(const std::string &name, bool down);
 
@@ -178,6 +194,9 @@ private:
 	std::string settingsM_;
 	std::vector<int32_t> axesBuf_;
 	std::vector<Marker> markersM_;
+	std::vector<Branch> branchesM_;
+	std::string encodeOnMachine(const InputLog::Copy &c);
+	InputLog::Copy decodeOnMachine(const char *text, uint64_t len);
 	void pinMarkersOnMachine();
 	/* frames run since the machine opened: the engine counts only the
 	 * frames of a movie it plays, and this plays frames by hand */

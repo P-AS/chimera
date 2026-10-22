@@ -40,6 +40,9 @@ public:
 	int32_t buttonCount() const;
 	RowModel &frames() { return frames_; }
 	const std::map<int64_t, Marker> &markers() const { return markers_; }
+	/* the inputs were replaced whole (a branch loaded), with these markers:
+	 * the rows start again, and what could be undone is forgotten */
+	void replaceAll(const std::vector<Marker> &markers);
 
 private:
 	class Frames : public RowModel
