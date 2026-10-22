@@ -3,5 +3,6 @@
   <qresource prefix="/chimera">
     <file>Main.qml</file>
     <file>RamSearch.qml</file>
+    <file>Settings.qml</file>
   </qresource>
 </RCC>

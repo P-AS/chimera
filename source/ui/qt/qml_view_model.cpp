@@ -53,9 +53,10 @@ QmlRows::QmlRows(vm::RowModel &rows, QObject *parent) : QAbstractTableModel(pare
 		Q_EMIT rowsReset();
 	}));
 	watches_.push_back(rows_.changed.connect([this](int64_t first, int64_t last) {
+		/* every role: a list's delegate reads the columns by name */
 		if (first < shown_)
 			Q_EMIT dataChanged(index(static_cast<int>(first), 0),
-				index(clampRows(std::min<int64_t>(last, shown_ - 1)), std::max(0, columnCount() - 1)));
+				index(clampRows(std::min<int64_t>(last, shown_ - 1)), std::max(0, columnCount() - 1)), {});
 		Q_EMIT rowsEdited(first, last);
 	}));
 	watches_.push_back(rows_.appended.connect([this](int64_t, int64_t) {
@@ -76,8 +77,19 @@ int QmlRows::columnCount(const QModelIndex &parent) const { return parent.isVali
 
 QVariant QmlRows::data(const QModelIndex &index, int role) const
 {
-	if (!index.isValid() || role != Qt::DisplayRole) return {};
-	return toVariant(rows_.cell(index.row(), index.column()));
+	if (!index.isValid()) return {};
+	if (role == Qt::DisplayRole) return toVariant(rows_.cell(index.row(), index.column()));
+	if (role >= Qt::UserRole && role < Qt::UserRole + rows_.columnCount())
+		return toVariant(rows_.cell(index.row(), role - Qt::UserRole));
+	return {};
+}
+
+QHash<int, QByteArray> QmlRows::roleNames() const
+{
+	QHash<int, QByteArray> roles = QAbstractTableModel::roleNames();
+	for (int c = 0; c < rows_.columnCount(); c++)
+		roles.insert(Qt::UserRole + c, QByteArray::fromStdString(rows_.columnName(c)));
+	return roles;
 }
 
 QVariant QmlRows::headerData(int section, Qt::Orientation orientation, int role) const

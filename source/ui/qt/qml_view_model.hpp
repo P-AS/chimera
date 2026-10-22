@@ -29,6 +29,9 @@ public:
 	int columnCount(const QModelIndex &parent = {}) const override;
 	QVariant data(const QModelIndex &index, int role) const override;
 	QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
+	/* every column is also a role by its name, for a list (rather than a
+	 * table) whose delegate reads a row's fields: model.label, model.value */
+	QHash<int, QByteArray> roleNames() const override;
 
 	vm::RowModel &rows() { return rows_; }
 

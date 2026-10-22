@@ -41,7 +41,11 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			std::string package, game;
 			if (!arg(a, 0, package, error) || !arg(a, 1, game, error)) return {};
 			status.set("Opening " + game + "...");
-			submit([this, package, game] { openOnMachine(package, game); });
+			/* another game starts from its package's own settings */
+			submit([this, package, game] {
+				settingsM_.clear();
+				openOnMachine(package, game);
+			});
 			return {};
 		});
 	command("openProject", "opens a Chimera project with a core package; its files are looked for beside it",
@@ -224,7 +228,8 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	}
 	const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 	const char *error = nullptr;
-	ce_session *s = ce_session_open(package.c_str(), bytes.data(), bytes.size(), game.c_str(), nullptr,
+	ce_session *s = ce_session_open(package.c_str(), bytes.data(), bytes.size(), game.c_str(),
+		settingsM_.empty() ? nullptr : settingsM_.c_str(),
 		nullptr, nullptr, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, &error);
 	if (s == nullptr)
 	{
@@ -251,6 +256,67 @@ void SessionViewModel::freeSessionOnMachine()
 void SessionViewModel::onMachine(MachineJob job)
 {
 	submit([this, job = std::move(job)] { job(s_); });
+}
+
+std::string SessionViewModel::settingsOnMachine() const
+{
+	if (projectM_ != nullptr)
+	{
+		uint64_t len = 0;
+		const char *t = ce_project_settings_text(projectM_, &len);
+		return t != nullptr ? std::string(t, static_cast<size_t>(len)) : std::string("{}");
+	}
+	return settingsM_.empty() ? std::string("{}") : settingsM_;
+}
+
+std::string SessionViewModel::slotsOnMachine() const
+{
+	if (projectM_ == nullptr) return "{}";
+	uint64_t len = 0;
+	const char *t = ce_project_slots_text(projectM_, &len);
+	return t != nullptr ? std::string(t, static_cast<size_t>(len)) : std::string("{}");
+}
+
+void SessionViewModel::changeSettings(std::string json, std::function<void(bool, std::string)> done)
+{
+	submit([this, json, done] {
+		auto answer = [this, done](bool ok, std::string what) { later([done, ok, what] { done(ok, what); }); };
+		if (s_ == nullptr)
+		{
+			answer(false, "No machine is open");
+			return;
+		}
+		const int32_t live = ce_session_apply_settings(s_, json.c_str());
+		if (live == 2)
+		{
+			answer(false, std::string("The core refused them: ") + ce_session_last_error(s_));
+			return;
+		}
+		/* kept for the next open either way: the project's, or the game's */
+		if (projectM_ != nullptr)
+		{
+			const char *error = nullptr;
+			if (ce_project_set_settings_text(projectM_, json.c_str(), &error) != 0)
+			{
+				answer(false, std::string("The project refused them: ") + (error != nullptr ? error : "?"));
+				return;
+			}
+		}
+		else
+			settingsM_ = json;
+		if (live == 0)
+		{
+			answer(true, "Applied to the running machine");
+			return;
+		}
+		/* the core takes them only at start: open it again with them */
+		runningM_ = false;
+		later([this] { running.set(false); });
+		if (projectM_ != nullptr) openProjectOnMachine(projectPathM_, package_, true, projectM_);
+		else openOnMachine(package_, game_);
+		answer(s_ != nullptr, s_ != nullptr ? "The machine started again with them, at frame 0"
+											: "The machine would not start again with them");
+	});
 }
 
 void SessionViewModel::onMachineWait(MachineJob job)
@@ -290,7 +356,8 @@ void SessionViewModel::freeProjectOnMachine()
 	logKeyM_.clear();
 }
 
-void SessionViewModel::openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs)
+void SessionViewModel::openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs,
+	ce_project *reuse)
 {
 	freeSessionOnMachine();
 	runningM_ = false;
@@ -298,13 +365,15 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		later([this, why] { status.set(why); isOpen.set(false); });
 	};
 
+	/* reuse: the project already open, changed in memory (its settings) */
 	const char *error = nullptr;
-	ce_project *p = ce_project_open(path.c_str(), &error);
+	ce_project *p = reuse != nullptr ? reuse : ce_project_open(path.c_str(), &error);
 	if (p == nullptr)
 	{
 		fail("Could not open " + path + ": " + (error != nullptr ? error : "no reason given"));
 		return;
 	}
+	if (reuse != nullptr) projectM_ = nullptr; /* taken over below, not freed */
 	/* the files are looked for beside the project (more places, later) */
 	const size_t slash = path.find_last_of("/\\");
 	const std::string dir = slash == std::string::npos ? "." : path.substr(0, slash);

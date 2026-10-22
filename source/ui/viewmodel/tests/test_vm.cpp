@@ -27,6 +27,7 @@
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
+#include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "chimera/engine.h"
 
@@ -469,6 +470,66 @@ bool ramSearch(const char *package, const char *rom)
 	return true;
 }
 
+/* Settings: the synthetic core declares one, the byte its RAM starts filled
+ * with. Set and applied, the machine starts again with it, and its RAM says so */
+bool settings(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	SettingsViewModel settings(d, session);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && settings.shown.get() == 1; }, 60));
+	RowModel &rows = *settings.rowLists()[0].model;
+	std::string name, type;
+	fromValue(rows.cell(0, SettingsViewModel::kName), name);
+	fromValue(rows.cell(0, SettingsViewModel::kType), type);
+	CHECK(name == "initFillByte" && type == "int");
+	int64_t value = -1;
+	fromValue(rows.cell(0, SettingsViewModel::kValue), value);
+	CHECK(value == 0);
+	auto filled = [&](uint8_t b) {
+		const std::vector<uint8_t> ram = session.readDomain("RAM");
+		return std::count(ram.begin(), ram.end(), b);
+	};
+	const auto zeros = filled(0);
+	CHECK(zeros > 1000); /* most of the 4 KiB is never written by the game */
+
+	/* refused: out of range, not declared, not a number */
+	CHECK(!settings.run("set", {std::string("initFillByte"), int64_t{256}}, error) && error.find("goes from 0 to 255") != std::string::npos);
+	CHECK(!settings.run("set", {std::string("nothing"), int64_t{1}}, error) && error.find("no setting nothing") != std::string::npos);
+	CHECK(!settings.run("set", {std::string("initFillByte"), std::string("lots")}, error));
+
+	/* set, discarded, set again, applied */
+	CHECK(settings.run("set", {std::string("initFillByte"), int64_t{171}}, error).has_value());
+	CHECK(settings.pending.get());
+	bool edited = false;
+	fromValue(rows.cell(0, SettingsViewModel::kEdited), edited);
+	CHECK(edited);
+	settings.run("discard", {}, error);
+	CHECK(!settings.pending.get());
+	settings.run("set", {std::string("initFillByte"), int64_t{171}}, error);
+	const int64_t opensBefore = session.opens.get();
+	settings.run("apply", {}, error);
+	CHECK(d.until([&] { return session.opens.get() > opensBefore && !settings.pending.get(); }, 60));
+	CHECK(settings.status.get().find("started again") != std::string::npos);
+	CHECK(filled(0xAB) >= zeros); /* the machine started with its RAM filled with 171 */
+	fromValue(rows.cell(0, SettingsViewModel::kValue), value);
+	CHECK(value == 171);
+	/* and the restart (File > Restart) keeps it */
+	const int64_t opensAgain = session.opens.get();
+	session.run("restart", {}, error);
+	CHECK(d.until([&] { return session.opens.get() > opensAgain; }, 60));
+	CHECK(filled(0xAB) >= zeros);
+	/* another game starts from the package's own settings */
+	const int64_t opensThird = session.opens.get();
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.opens.get() > opensThird; }, 60));
+	CHECK(filled(0) == zeros);
+	return true;
+}
+
 std::string readFile(const std::filesystem::path &p)
 {
 	std::ifstream in(p, std::ios::binary);
@@ -597,6 +658,7 @@ int main(int argc, char **argv)
 		{
 			ranMachine = machine(argv[1], argv[2]);
 			ranMachine = ramSearch(argv[1], argv[2]) && ranMachine;
+			ranMachine = settings(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 		}

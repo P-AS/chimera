@@ -12,6 +12,7 @@ ApplicationWindow {
     required property QtObject session
     required property QtObject pianoRoll
     required property QtObject ramSearch
+    required property QtObject settings
     property url chosenPackage
 
     width: 1280
@@ -37,6 +38,7 @@ ApplicationWindow {
             title: qsTr("&Emulation")
             Action { text: qsTr("&Play"); shortcut: "Ctrl+P"; enabled: root.session.playEnabled && !root.session.running; onTriggered: root.session.run("play") }
             Action { text: qsTr("P&ause"); shortcut: "Ctrl+Space"; enabled: root.session.running; onTriggered: root.session.run("pause") }
+            Action { text: qsTr("&Settings..."); onTriggered: { settingsWindow.show(); settingsWindow.raise() } }
             Action { text: qsTr("&Frame Advance"); shortcut: "Ctrl+F"; enabled: root.session.frameAdvanceEnabled; onTriggered: root.session.run("frameAdvance") }
             Action { text: qsTr("Go to Frame &0"); shortcut: "Ctrl+Home"; enabled: root.session.seekEnabled; onTriggered: root.session.run("seek", [0]) }
             Action {
@@ -63,6 +65,7 @@ ApplicationWindow {
     }
 
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
+    Settings { id: settingsWindow; settings: root.settings; visible: false }
 
     FileDialog {
         id: packageDialog

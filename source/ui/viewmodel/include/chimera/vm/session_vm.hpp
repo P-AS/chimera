@@ -101,13 +101,26 @@ public:
 	int addMachineHooks(MachineJob frame, MachineJob closing);
 	void removeMachineHooks(int id);
 
+	/* Settings, for the settings view model. On the machine's thread: what
+	 * the machine was opened with (a JSON object; the project's own when
+	 * a project is open), and the slot map the settings' conditions read.
+	 * Changing them is tried live; a core that cannot take them live is
+	 * opened again with them, at frame 0, its inputs kept. The answer
+	 * comes back on the view's thread: true when applied, with what
+	 * happened. */
+	std::string settingsOnMachine() const;
+	std::string packageOnMachine() const { return package_; }
+	std::string slotsOnMachine() const;
+	void changeSettings(std::string json, std::function<void(bool, std::string)> done);
+
 private:
 	using Clock = std::chrono::steady_clock;
 
 	void submit(std::function<void()> job);
 	void loop();
 	void openOnMachine(const std::string &package, const std::string &game);
-	void openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs);
+	void openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs,
+		ce_project *reuse = nullptr);
 	void saveProjectOnMachine(const std::string &path);
 	void freeProjectOnMachine();
 	/* what every open shares, once the session exists */
@@ -146,6 +159,8 @@ private:
 	void freeSessionOnMachine();
 	ce_project *projectM_ = nullptr;
 	std::string projectPathM_, logKeyM_;
+	/* a game's settings (a project keeps its own) */
+	std::string settingsM_;
 	std::vector<int32_t> axesBuf_;
 	/* frames run since the machine opened: the engine counts only the
 	 * frames of a movie it plays, and this plays frames by hand */
