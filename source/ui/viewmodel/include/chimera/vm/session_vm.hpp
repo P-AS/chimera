@@ -96,16 +96,19 @@ public:
 	{
 		std::string name, time;
 		int64_t frame = 0;
-		InputLog::Copy inputs;
+		/* the movie, as the engine writes it, and how many frames it has */
+		std::string text;
+		int64_t frames = 0;
 		std::vector<Marker> markers;
 	};
 	/* a project opened with these branches */
 	Signal<std::vector<Branch>> branchesLoaded;
 	/* the branches to save with the project */
 	void setBranches(std::vector<Branch> branches);
-	/* the inputs were replaced from `divergence` on (a branch was loaded):
-	 * the states after it go, and the machine goes to `frame` */
-	void inputsReplaced(int64_t divergence, int64_t frame);
+	/* another movie (a branch's) becomes the machine's, and the machine goes
+	 * to `frame`: the engine keeps the states before the first frame where
+	 * the two differ, and replays from there */
+	void loadMovie(std::string text, int64_t frame);
 
 	/* for the window: a key went down or up, by Chimera's key names */
 	void key(const std::string &name, bool down);
@@ -149,7 +152,10 @@ private:
 
 	void submit(std::function<void()> job);
 	void loop();
-	void openOnMachine(const std::string &package, const std::string &game);
+	/* keepMovie: the machine starts again with the movie it has */
+	void openOnMachine(const std::string &package, const std::string &game, bool keepMovie);
+	std::string movieTextOnMachine() const;
+	static void loadMovieOnMachine(ce_session *s, const std::string &text);
 	void openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs,
 		ce_project *reuse = nullptr);
 	void saveProjectOnMachine(const std::string &path);
@@ -189,14 +195,13 @@ private:
 	std::atomic<int> nextHook_{1};
 	void freeSessionOnMachine();
 	ce_project *projectM_ = nullptr;
-	std::string projectPathM_, logKeyM_;
+	std::string projectPathM_;
 	/* a game's settings (a project keeps its own) */
 	std::string settingsM_;
 	std::vector<int32_t> axesBuf_;
 	std::vector<Marker> markersM_;
 	std::vector<Branch> branchesM_;
-	std::string encodeOnMachine(const InputLog::Copy &c);
-	InputLog::Copy decodeOnMachine(const char *text, uint64_t len);
+
 	void pinMarkersOnMachine();
 	/* frames run since the machine opened: the engine counts only the
 	 * frames of a movie it plays, and this plays frames by hand */

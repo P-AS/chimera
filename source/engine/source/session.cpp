@@ -970,6 +970,17 @@ struct ce_session
 	bool movieKeyed = false;
 	const chimera::EntryLayout &entries() const { return movieKeyed ? movieLayout : layout; }
 	void coverInKey(const uint8_t *states, const int32_t *axes);
+	/* The movie edited from another thread (ce_session_movie_set): the lock
+	 * every touch of `movie` takes, and the earliest frame edited since the
+	 * machine last moved. */
+	mutable std::mutex movieLock;
+	int64_t editedFrom = -1;
+	/* the machine's thread's: the earliest edited frame the machine is past */
+	int64_t staleFrom = -1;
+	void takeEdits();
+	bool catchUp(int64_t to, int64_t render);
+	bool movieEntry(int64_t at, std::vector<int32_t> &axes);
+	void nameColumns();
 
 	// ---- the state history (docs/state-manager.md) ----
 	// Anchors and the deltas that walk forward from them, so a stored frame
@@ -3979,6 +3990,8 @@ const uint8_t *ce_session_trace_drain(
 
 int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 {
+	s->takeEdits();
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
 	if (s->movie == nullptr) s->movie = ce_movie_log_new();
 	/* What the history holds past the first entry the two logs disagree on
 	 * describes the old movie. A capture used to find that out on the way
@@ -4021,6 +4034,8 @@ int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 		/* and the pictures kept for frames past it, which were drawn for the
 		 * input the new log replaces (engine analysis, 2026-10-18) */
 		s->pictures.dropAfter(agree);
+		/* a machine past the first changed frame was made by the old movie */
+		if (s->frame > agree) s->staleFrom = s->staleFrom < 0 ? agree : std::min(s->staleFrom, agree);
 	}
 	ce_movie_log_clear(s->movie);
 	int64_t n = ce_movie_log_count(log);
@@ -4034,6 +4049,7 @@ int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 
 void ce_session_movie_record(ce_session *s, const char *mnemonics)
 {
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
 	if (s->movie == nullptr) s->movie = ce_movie_log_new();
 	/* A recording names its columns, so that it reads the same after the
 	 * package gains a control. A movie with no key is in the machine's own
@@ -4063,7 +4079,158 @@ int32_t ce_session_movie_mode(const ce_session *s) { return s->movieMode; }
 
 int64_t ce_session_movie_length(const ce_session *s)
 {
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
 	return s->movie != nullptr ? ce_movie_log_count(s->movie) : 0;
+}
+
+/* ---- the movie, edited frame by frame (engine.h) ---- */
+
+void ce_session::nameColumns()
+{
+	/* as a recording does: a movie edited names its columns (movieLock held) */
+	if (movieKeyed) return;
+	const std::string key = layout.key(cfg.buttons);
+	if (!key.empty() && movieLayout.buildFromKey(key, cfg.buttons, cfg.axes))
+	{
+		ce_movie_log_set_key(movie, key.c_str());
+		movieKeyed = true;
+	}
+}
+
+int32_t ce_session_movie_get(const ce_session *s, int64_t frame, uint64_t *buttons_out, int32_t *axes_out)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (buttons_out != nullptr) *buttons_out = 0;
+	if (axes_out != nullptr)
+		for (size_t i = 0; i < s->cfg.axes.size(); i++) axes_out[i] = s->cfg.axes[i].neutral;
+	if (s->movie == nullptr || frame < 0 || frame >= ce_movie_log_count(s->movie)) return 1;
+	std::vector<uint8_t> states;
+	std::vector<int32_t> values;
+	if (!s->entries().parse(ce_movie_log_entry(s->movie, frame), states, values)) return -1;
+	if (buttons_out != nullptr)
+		for (size_t i = 0; i < states.size() && i < 64; i++)
+			if (states[i] != 0) *buttons_out |= uint64_t{1} << i;
+	if (axes_out != nullptr)
+		for (size_t i = 0; i < values.size(); i++) axes_out[i] = values[i];
+	return 0;
+}
+
+int32_t ce_session_movie_set(ce_session *s, int64_t frame, uint64_t buttons, const int32_t *axes)
+{
+	if (frame < 0) return -1;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr) s->movie = ce_movie_log_new();
+	if (s->movieMode == 0) s->movieMode = 1;
+	s->nameColumns();
+	std::vector<uint8_t> states(s->cfg.buttons.size(), 0);
+	for (size_t i = 0; i < states.size() && i < 64; i++) states[i] = (buttons >> i) & 1u;
+	s->coverInKey(states.data(), axes);
+	const int64_t count = ce_movie_log_count(s->movie);
+	if (frame > count)
+	{
+		const std::string blank = s->entries().generate(nullptr, nullptr, s->cfg.mnemonics);
+		for (int64_t f = count; f < frame; f++) ce_movie_log_add(s->movie, blank.c_str());
+	}
+	const std::string line = s->entries().generate(states.data(), axes, s->cfg.mnemonics);
+	if (frame >= count) ce_movie_log_add(s->movie, line.c_str());
+	else ce_movie_log_set(s->movie, frame, line.c_str());
+	const int64_t from = std::min(frame, count);
+	s->editedFrom = s->editedFrom < 0 ? from : std::min(s->editedFrom, from);
+	return 0;
+}
+
+void ce_session_movie_resize(ce_session *s, int64_t frames)
+{
+	if (frames < 0) frames = 0;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr) s->movie = ce_movie_log_new();
+	if (s->movieMode == 0) s->movieMode = 1;
+	s->nameColumns();
+	const int64_t count = ce_movie_log_count(s->movie);
+	if (frames < count) ce_movie_log_truncate(s->movie, frames);
+	else if (frames > count)
+	{
+		const std::string blank = s->entries().generate(nullptr, nullptr, s->cfg.mnemonics);
+		for (int64_t f = count; f < frames; f++) ce_movie_log_add(s->movie, blank.c_str());
+	}
+	const int64_t from = std::min(frames, count);
+	if (frames != count) s->editedFrom = s->editedFrom < 0 ? from : std::min(s->editedFrom, from);
+}
+
+const char *ce_session_movie_text(ce_session *s, uint64_t *len_out)
+{
+	static thread_local std::string text;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr)
+	{
+		text.clear();
+	}
+	else
+	{
+		uint64_t len = 0;
+		const char *t = ce_movie_log_serialize(s->movie, 0, &len);
+		text.assign(t != nullptr ? t : "", static_cast<size_t>(len));
+	}
+	if (len_out != nullptr) *len_out = text.size();
+	return text.c_str();
+}
+
+/* What was edited since the machine last moved: the states past it go, and
+ * a machine already past it is behind its movie (machine's thread). */
+void ce_session::takeEdits()
+{
+	int64_t from;
+	{
+		std::lock_guard<std::mutex> movieLocked(movieLock);
+		from = editedFrom;
+		editedFrom = -1;
+	}
+	if (from < 0) return;
+	history.invalidateAfter(from);
+	pictures.dropAfter(from);
+	if (frame > from) staleFrom = staleFrom < 0 ? from : std::min(staleFrom, from);
+}
+
+/* The entry for frame `at`, parsed into movieButtons and axes (movieLock
+ * taken here): false when there is none or it does not read. */
+bool ce_session::movieEntry(int64_t at, std::vector<int32_t> &axes)
+{
+	std::lock_guard<std::mutex> movieLocked(movieLock);
+	const char *entry = movie != nullptr && at < ce_movie_log_count(movie) ? ce_movie_log_entry(movie, at) : nullptr;
+	if (entry == nullptr || !entries().parse(entry, movieButtons, axes))
+	{
+		error = std::string("unparseable movie entry at frame ") + std::to_string(at);
+		return false;
+	}
+	return true;
+}
+
+/* A machine behind its movie (staleFrom) put back on a stored frame before
+ * the edit and played to `to`. */
+bool ce_session::catchUp(int64_t to, int64_t render)
+{
+	if (staleFrom < 0) return true;
+	const int64_t base = ce_session_greenzone_nearest(this, std::min(staleFrom, to));
+	staleFrom = -1;
+	if (base < 0)
+	{
+		error = "the movie changed before the frame the machine is on, and no stored state is before the change";
+		return false;
+	}
+	if (!greenzoneRestore(base)) return false;
+	while (frame < to)
+	{
+		std::vector<int32_t> movieAxes;
+		if (!movieEntry(frame, movieAxes)) return false;
+		for (size_t i = 0; i < movieAxes.size(); i++)
+		{
+			if (setAxis != nullptr) setAxis(static_cast<int32_t>(i), movieAxes[i]);
+		}
+		greenzoneBeforeAdvance();
+		if (advanceCore(movieButtons.data(), render) < 0) return false;
+		greenzoneCapture();
+	}
+	return true;
 }
 
 int64_t ce_session_frame(const ce_session *s) { return s->frame; }
@@ -4094,21 +4261,6 @@ int32_t ce_session_movie_entry_decode(
 		for (size_t i = 0; i < values.size(); i++) axes_out[i] = values[i];
 	}
 	return 0;
-}
-
-int32_t ce_session_movie_entry_encode(
-	const ce_session *s, uint64_t buttons, const int32_t *axes, char *out, int32_t cap)
-{
-	std::vector<uint8_t> states(s->cfg.buttons.size(), 0);
-	for (size_t i = 0; i < states.size() && i < 64; i++) states[i] = (buttons >> i) & 1u;
-	const std::string line = s->entries().generate(states.data(), axes, s->cfg.mnemonics);
-	if (out != nullptr && cap > 0)
-	{
-		const size_t n = std::min(line.size(), static_cast<size_t>(cap - 1));
-		std::memcpy(out, line.data(), n);
-		out[n] = '\0';
-	}
-	return static_cast<int32_t>(line.size());
 }
 
 int32_t ce_session_movie_entry_decode_wide(
@@ -4146,20 +4298,22 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 		return -1;
 	}
 
+	/* edits made since the machine last moved, honoured first: a machine past
+	 * them catches up with the movie it now has */
+	s->takeEdits();
+	if (!s->catchUp(s->frame, 0)) return -1;
+	/* a movie that ran out and has since grown plays again */
+	if (s->movieMode == 3 && s->frame < ce_session_movie_length(s)) s->movieMode = 1;
+
 	/* the epoch the coming frame's delta is measured against, marked while the
 	 * machine is still where it starts */
 	s->greenzoneBeforeAdvance();
 
 	int32_t lag;
-	if (s->movieMode == 1 && s->frame < ce_movie_log_count(s->movie))
+	if (s->movieMode == 1 && s->frame < ce_session_movie_length(s))
 	{
 		std::vector<int32_t> movieAxes;
-		const char *entry = ce_movie_log_entry(s->movie, s->frame);
-		if (!s->entries().parse(entry, s->movieButtons, movieAxes))
-		{
-			s->error = std::string("unparseable movie entry at frame ") + std::to_string(s->frame);
-			return -1;
-		}
+		if (!s->movieEntry(s->frame, movieAxes)) return -1;
 		for (size_t i = 0; i < movieAxes.size(); i++)
 		{
 			if (s->setAxis != nullptr) s->setAxis(static_cast<int32_t>(i), movieAxes[i]);
@@ -4170,10 +4324,11 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 	else
 	{
 		if (s->movieMode == 1) s->movieMode = 3; // the log ran out: input is the caller's again
-		if (s->movieMode == 2 && s->frame < ce_movie_log_count(s->movie))
+		if (s->movieMode == 2 && s->frame < ce_session_movie_length(s))
 		{
 			/* recording over existing entries IS the rerecord: everything from
 			 * here on described a timeline that no longer happens */
+			std::lock_guard<std::mutex> movieLocked(s->movieLock);
 			ce_movie_log_truncate(s->movie, s->frame);
 		}
 		/* Input that is not the log's changes what follows, so the history says
@@ -4193,6 +4348,7 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 		if (s->guestDied()) return -1;
 		if (s->movieMode == 2)
 		{
+			std::lock_guard<std::mutex> movieLocked(s->movieLock);
 			s->coverInKey(effective, axes);
 			std::string entry = s->entries().generate(effective, axes, s->mnemonics);
 			ce_movie_log_add(s->movie, entry.c_str());
@@ -4201,7 +4357,11 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 		if (lag < 0)
 		{
 			/* it died playing it: the entry describes a frame that never happened */
-			if (s->movieMode == 2) ce_movie_log_truncate(s->movie, s->frame);
+			if (s->movieMode == 2)
+			{
+				std::lock_guard<std::mutex> movieLocked(s->movieLock);
+				ce_movie_log_truncate(s->movie, s->frame);
+			}
 			return -1;
 		}
 	}
@@ -4490,10 +4650,18 @@ int32_t ce_session_seek(ce_session *s, int64_t frame)
 		s->error = "seeking needs a movie";
 		return 1;
 	}
-	if (frame > ce_movie_log_count(s->movie))
+	if (frame > ce_session_movie_length(s))
 	{
 		s->error = "cannot seek past the movie's end";
 		return 1;
+	}
+
+	/* edits since the machine last moved: a machine past them goes back
+	 * before them, even to stay on the frame it is on */
+	s->takeEdits();
+	if (s->staleFrom >= 0)
+	{
+		if (!s->catchUp(std::min(frame, s->frame), 0)) return 1;
 	}
 
 	int64_t base = ce_session_greenzone_nearest(s, frame);
@@ -4511,12 +4679,7 @@ int32_t ce_session_seek(ce_session *s, int64_t frame)
 	while (s->frame < frame)
 	{
 		std::vector<int32_t> movieAxes;
-		const char *entry = ce_movie_log_entry(s->movie, s->frame);
-		if (entry == nullptr || !s->entries().parse(entry, s->movieButtons, movieAxes))
-		{
-			s->error = std::string("unparseable movie entry at frame ") + std::to_string(s->frame);
-			return 1;
-		}
+		if (!s->movieEntry(s->frame, movieAxes)) return 1;
 		for (size_t i = 0; i < movieAxes.size(); i++)
 		{
 			if (s->setAxis != nullptr) s->setAxis(static_cast<int32_t>(i), movieAxes[i]);
@@ -4525,7 +4688,7 @@ int32_t ce_session_seek(ce_session *s, int64_t frame)
 		if (s->advanceCore(s->movieButtons.data(), 0) < 0) return 1;   /* the guest died */
 		s->greenzoneCapture();
 	}
-	if (s->movieMode == 3 && s->frame < ce_movie_log_count(s->movie)) s->movieMode = 1;
+	if (s->movieMode == 3 && s->frame < ce_session_movie_length(s)) s->movieMode = 1;
 	return 0;
 }
 

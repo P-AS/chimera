@@ -261,7 +261,17 @@ int main(int argc, char **argv)
 			luaConsole.run("run", {}, error);
 		}
 	}
-	if (args.isSet(fillOpt)) pianoRoll.run("fill", {static_cast<int64_t>(args.value(fillOpt).toLongLong())}, error);
+	/* the movie is the machine's: it is made longer once one is open */
+	vm::Connection fillWatch;
+	if (args.isSet(fillOpt))
+	{
+		const int64_t frames = static_cast<int64_t>(args.value(fillOpt).toLongLong());
+		fillWatch = session.opens.changed.connect([&pianoRoll, &fillWatch, frames] {
+			std::string e;
+			pianoRoll.run("fill", {frames}, e);
+			fillWatch.disconnect();
+		});
+	}
 	const QStringList positional = args.positionalArguments();
 	if (positional.size() >= 2)
 	{

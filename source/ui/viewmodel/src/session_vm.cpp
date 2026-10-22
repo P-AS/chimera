@@ -47,7 +47,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				markersM_.clear();
 				branchesM_.clear();
 				later([this] { markersLoaded.emit({}); branchesLoaded.emit({}); });
-				openOnMachine(package, game);
+				openOnMachine(package, game, false);
 			});
 			return {};
 		});
@@ -120,8 +120,10 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	command("restart", "opens the same core and game again at frame 0; the inputs stay", {},
 		[this](const Args &, std::string &) -> Value {
 			submit([this] {
-				const std::string package = package_, game = game_;
-				if (!package.empty()) openOnMachine(package, game);
+				/* a project opens again as it is in memory, its movie and
+				 * markers as they are now; a game with the movie it has */
+				if (projectM_ != nullptr) openProjectOnMachine(projectPathM_, package_, true, projectM_);
+				else if (!package_.empty()) openOnMachine(package_, game_, true);
 			});
 			return {};
 		}, &isOpen);
@@ -218,8 +220,9 @@ void SessionViewModel::loop()
 	soundM_.reset();
 }
 
-void SessionViewModel::openOnMachine(const std::string &package, const std::string &game)
+void SessionViewModel::openOnMachine(const std::string &package, const std::string &game, bool keepMovie)
 {
+	const std::string movie = keepMovie && s_ != nullptr ? movieTextOnMachine() : std::string();
 	freeSessionOnMachine();
 	runningM_ = false;
 
@@ -242,7 +245,9 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	}
 	freeProjectOnMachine();
 	later([this] { projectPath.set(""); projectTitle.set(""); });
-	adoptOnMachine(s, package, game, false);
+	/* the movie: the one it had when started again, else an empty one */
+	loadMovieOnMachine(s, movie);
+	adoptOnMachine(s, package, game, true);
 	package_ = package;
 	game_ = game;
 }
@@ -252,6 +257,7 @@ void SessionViewModel::freeSessionOnMachine()
 	if (s_ == nullptr) return;
 	for (const Hooks &h : hooksM_)
 		if (h.closing) h.closing(s_);
+	inputs_.bind(nullptr);
 	ce_session_free(s_);
 	s_ = nullptr;
 }
@@ -316,7 +322,7 @@ void SessionViewModel::changeSettings(std::string json, std::function<void(bool,
 		runningM_ = false;
 		later([this] { running.set(false); });
 		if (projectM_ != nullptr) openProjectOnMachine(projectPathM_, package_, true, projectM_);
-		else openOnMachine(package_, game_);
+		else openOnMachine(package_, game_, true);
 		answer(s_ != nullptr, s_ != nullptr ? "The machine started again with them, at frame 0"
 											: "The machine would not start again with them");
 	});
@@ -335,64 +341,42 @@ void SessionViewModel::setBranches(std::vector<Branch> branches)
 	submit([this, branches = std::move(branches)] { branchesM_ = branches; });
 }
 
-void SessionViewModel::inputsReplaced(int64_t divergence, int64_t target)
+void SessionViewModel::loadMovie(std::string text, int64_t target)
 {
-	submit([this, divergence, target] {
+	submit([this, text, target] {
 		if (s_ == nullptr) return;
 		runningM_ = false;
 		later([this] { running.set(false); });
-		if (divergence >= 0)
-		{
-			ce_session_greenzone_invalidate(s_, divergence);
-			greenEndM_ = std::min(greenEndM_, divergence);
-			/* the machine is past the change: what it holds was made from the
-			 * old inputs, so it goes back to the change before anything else -
-			 * even when the target is the frame it is on */
-			if (frameM_ > divergence) seekOnMachine(divergence);
-		}
+		/* where the two movies part: frames before it keep their green */
+		ce_movie_log *now = ce_movie_log_new(), *next = ce_movie_log_new();
+		const std::string current = movieTextOnMachine();
+		if (!current.empty()) ce_movie_log_parse(now, current.data(), current.size());
+		if (!text.empty()) ce_movie_log_parse(next, text.data(), text.size());
+		const int64_t from = ce_movie_log_divergent_point(now, next);
+		ce_session_movie_load(s_, next);
+		ce_movie_log_free(now);
+		ce_movie_log_free(next);
+		if (from >= 0) greenEndM_ = std::min(greenEndM_, from);
 		seekOnMachine(target);
+		later([this] { inputsReset.emit(); });
 		report(-1, -1, -1, -1, -1);
 	});
 }
 
-std::string SessionViewModel::encodeOnMachine(const InputLog::Copy &c)
+std::string SessionViewModel::movieTextOnMachine() const
 {
-	ce_movie_log *log = ce_movie_log_new();
-	if (!logKeyM_.empty()) ce_movie_log_set_key(log, logKeyM_.c_str());
-	const size_t axisCount = inputs_.axisCount();
-	std::vector<char> line(256);
-	for (size_t f = 0; f < c.masks.size(); f++)
-	{
-		const int32_t *axes = axisCount && (f + 1) * axisCount <= c.axes.size() ? &c.axes[f * axisCount] : nullptr;
-		const int32_t need = ce_session_movie_entry_encode(s_, c.masks[f], axes, line.data(), static_cast<int32_t>(line.size()));
-		if (need >= static_cast<int32_t>(line.size()))
-		{
-			line.resize(static_cast<size_t>(need) + 1);
-			ce_session_movie_entry_encode(s_, c.masks[f], axes, line.data(), static_cast<int32_t>(line.size()));
-		}
-		ce_movie_log_add(log, line.data());
-	}
+	if (s_ == nullptr) return {};
 	uint64_t len = 0;
-	const char *text = ce_movie_log_serialize(log, 0, &len);
-	std::string out(text != nullptr ? text : "", static_cast<size_t>(len));
-	ce_movie_log_free(log);
-	return out;
+	const char *t = ce_session_movie_text(s_, &len);
+	return std::string(t != nullptr ? t : "", static_cast<size_t>(len));
 }
 
-InputLog::Copy SessionViewModel::decodeOnMachine(const char *text, uint64_t len)
+void SessionViewModel::loadMovieOnMachine(ce_session *s, const std::string &text)
 {
-	InputLog::Copy c;
 	ce_movie_log *log = ce_movie_log_new();
-	if (text != nullptr && len > 0) ce_movie_log_parse(log, text, len);
-	const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s_));
-	const int64_t n = ce_movie_log_count(log);
-	c.masks.assign(static_cast<size_t>(n), 0);
-	c.axes.assign(axisCount * static_cast<size_t>(n), 0);
-	for (int64_t i = 0; i < n; i++)
-		ce_session_movie_entry_decode(s_, ce_movie_log_entry(log, i), &c.masks[static_cast<size_t>(i)],
-			axisCount ? &c.axes[static_cast<size_t>(i) * axisCount] : nullptr);
+	if (!text.empty()) ce_movie_log_parse(log, text.data(), text.size());
+	ce_session_movie_load(s, log);
 	ce_movie_log_free(log);
-	return c;
 }
 
 void SessionViewModel::pinMarkersOnMachine()
@@ -437,12 +421,12 @@ void SessionViewModel::freeProjectOnMachine()
 	if (projectM_ != nullptr) ce_project_free(projectM_);
 	projectM_ = nullptr;
 	projectPathM_.clear();
-	logKeyM_.clear();
 }
 
 void SessionViewModel::openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs,
 	ce_project *reuse)
 {
+	const std::string kept = keepInputs && s_ != nullptr ? movieTextOnMachine() : std::string();
 	freeSessionOnMachine();
 	runningM_ = false;
 	auto fail = [this](const std::string &why) {
@@ -499,34 +483,16 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		return;
 	}
 
-	/* the movie: given to the session, which then reads and writes entries
-	 * in its layout (the movie's LogKey), and read into the inputs */
-	uint64_t len = 0;
-	const char *text = ce_project_log_text(p, &len);
-	ce_movie_log *log = ce_movie_log_new();
-	if (text != nullptr && len > 0) ce_movie_log_parse(log, text, len);
-	ce_session_movie_load(s, log);
-	const ce_movie_log *held = ce_session_movie_log(s);
-	const char *key = held != nullptr ? ce_movie_log_key(held) : nullptr;
-	logKeyM_ = key != nullptr ? key : (ce_movie_log_key(log) != nullptr ? ce_movie_log_key(log) : "");
-	const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s));
-	if (!keepInputs)
+	/* the movie: the project's, given to the machine, which keeps it from
+	 * now on and writes every line of it - or, started again, the one it had */
+	if (keepInputs)
+		loadMovieOnMachine(s, kept);
+	else
 	{
-		const int64_t n = ce_movie_log_count(log);
-		std::vector<uint64_t> masks(static_cast<size_t>(n), 0);
-		std::vector<int32_t> axes(axisCount * static_cast<size_t>(n), 0);
-		int64_t unreadable = 0;
-		for (int64_t i = 0; i < n; i++)
-			if (ce_session_movie_entry_decode(s, ce_movie_log_entry(log, i), &masks[static_cast<size_t>(i)],
-					axisCount ? &axes[static_cast<size_t>(i) * axisCount] : nullptr) != 0)
-				unreadable++;
-		std::vector<int32_t> neutral(axisCount);
-		for (size_t i = 0; i < axisCount; i++) neutral[i] = ce_session_axis_neutral(s, static_cast<int64_t>(i));
-		inputs_.setAxes(neutral);
-		inputs_.assign(std::move(masks), std::move(axes));
-		if (unreadable > 0) note += "; " + std::to_string(unreadable) + " frames of the movie could not be read";
+		uint64_t len = 0;
+		const char *text = ce_project_log_text(p, &len);
+		loadMovieOnMachine(s, std::string(text != nullptr ? text : "", static_cast<size_t>(len)));
 	}
-	ce_movie_log_free(log);
 
 	if (!keepInputs)
 	{
@@ -538,9 +504,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		}
 		markersM_ = markers;
 		later([this, markers] { markersLoaded.emit(markers); });
-		/* the branches, read in the movie's layout */
-		ce_session *was = s_;
-		s_ = s;
+		/* the branches: their movies as text, as the project keeps them */
 		std::vector<Branch> branches;
 		for (int32_t i = 0; i < ce_project_branch_count(p); i++)
 		{
@@ -550,7 +514,11 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 			b.frame = ce_project_branch_frame(p, i);
 			uint64_t blen = 0;
 			const char *btext = ce_project_branch_log_text(p, i, &blen);
-			b.inputs = decodeOnMachine(btext, blen);
+			b.text.assign(btext != nullptr ? btext : "", static_cast<size_t>(blen));
+			ce_movie_log *bl = ce_movie_log_new();
+			if (!b.text.empty()) ce_movie_log_parse(bl, b.text.data(), b.text.size());
+			b.frames = ce_movie_log_count(bl);
+			ce_movie_log_free(bl);
 			for (int32_t k = 0; k < ce_project_branch_marker_count(p, i); k++)
 			{
 				const char *t = ce_project_branch_marker_text(p, i, k);
@@ -559,7 +527,6 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 			}
 			branches.push_back(std::move(b));
 		}
-		s_ = was;
 		branchesM_ = branches;
 		later([this, branches] { branchesLoaded.emit(branches); });
 	}
@@ -569,7 +536,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	package_ = package;
 	game_.clear();
 	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
-	adoptOnMachine(s, package, (title.empty() ? path : title) + note, !keepInputs);
+	adoptOnMachine(s, package, (title.empty() ? path : title) + note, true);
 	later([this, path, title] { projectPath.set(path); projectTitle.set(title); });
 }
 
@@ -577,21 +544,16 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to)
 {
 	if (projectM_ == nullptr || s_ == nullptr) return;
 	const std::string path = to.empty() ? projectPathM_ : to;
-	if (ce_session_button_count(s_) > 64)
-	{
-		later([this] { status.set("Not saved: this machine has more than 64 buttons, which the prototype does not keep"); });
-		return;
-	}
-	const int64_t n = inputs_.size();
-	const std::string log = encodeOnMachine(inputs_.copy());
+	/* the movie as the machine keeps it: the engine wrote every line */
+	const int64_t n = ce_session_movie_length(s_);
+	const std::string log = movieTextOnMachine();
 	ce_project_set_log_text(projectM_, log.data(), log.size());
 	for (int32_t i = ce_project_marker_count(projectM_) - 1; i >= 0; i--) ce_project_marker_remove(projectM_, i);
 	for (const Marker &m : markersM_) ce_project_marker_add(projectM_, m.frame, m.text.c_str(), m.keepState ? 1 : 0);
 	for (int32_t i = ce_project_branch_count(projectM_) - 1; i >= 0; i--) ce_project_branch_remove(projectM_, i);
 	for (const Branch &b : branchesM_)
 	{
-		const std::string text = encodeOnMachine(b.inputs);
-		ce_project_branch_add(projectM_, b.name.c_str(), b.frame, b.time.c_str(), text.data(), text.size());
+		ce_project_branch_add(projectM_, b.name.c_str(), b.frame, b.time.c_str(), b.text.data(), b.text.size());
 		const int32_t at = ce_project_branch_count(projectM_) - 1;
 		for (const Marker &m : b.markers) ce_project_branch_marker_add(projectM_, at, m.frame, m.text.c_str(), m.keepState ? 1 : 0);
 	}
@@ -631,7 +593,9 @@ std::vector<uint8_t> SessionViewModel::readDomain(const std::string &name)
 void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package, const std::string &label, bool inputsReplaced)
 {
 	s_ = s;
-	frameM_ = 0;
+	inputs_.bind(s);
+	inputs_.clearLags();
+	frameM_ = ce_session_frame(s);
 	greenEndM_ = 0;
 	/* a history of the machine's states, so a seek replays from the nearest
 	 * one rather than from power-on (a setting, later) */
@@ -657,11 +621,6 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 			keybinds.assign(reinterpret_cast<const char *>(d), static_cast<size_t>(len));
 		ce_package_free(p);
 	}
-
-	/* axes rest at their neutral until a frame moves them */
-	std::vector<int32_t> neutral(static_cast<size_t>(ce_session_axis_count(s)));
-	for (size_t i = 0; i < neutral.size(); i++) neutral[i] = ce_session_axis_neutral(s, static_cast<int64_t>(i));
-	if (inputs_.axisCount() != neutral.size()) inputs_.setAxes(neutral);
 
 	std::string bindError;
 	bindingsM_ = Bindings();
@@ -722,8 +681,8 @@ void SessionViewModel::closeOnMachine()
 
 void SessionViewModel::advanceOnMachine()
 {
-	const int64_t f = frameM_;
-	const int64_t size = inputs_.size();
+	const int64_t f = ce_session_frame(s_);
+	const int64_t size = ce_session_movie_length(s_);
 	stepOnMachine(true, true);
 	/* the step reports what it changed; here the frames added and the rate */
 	double measured = -1;
@@ -741,7 +700,7 @@ void SessionViewModel::advanceOnMachine()
 
 int32_t SessionViewModel::stepOnMachine(bool live, bool render)
 {
-	const int64_t f = frameM_;
+	const int64_t f = ce_session_frame(s_);
 	uint64_t held = 0;
 	if (live)
 	{
@@ -763,46 +722,39 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render)
 		}
 		held = held_.load() | padMask;
 	}
-	const int64_t size = inputs_.size();
-	const uint64_t logged = inputs_.at(f);
-	const uint64_t mask = logged | held;
+	/* What is held goes into the movie before the frame plays it: past the
+	 * end the movie grows, and over a frame it has, a press it lacks is an
+	 * edit of that frame (the engine drops the states after it). The engine
+	 * plays the movie; the window never hands the machine input of its own. */
 	bool changed = false;
-	if (f >= size)
-		inputs_.set(f, mask);
-	else if (mask != logged)
+	const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s_));
+	axesBuf_.resize(axisCount);
+	uint64_t logged = 0;
+	const int32_t had = ce_session_movie_get(s_, f, &logged, axisCount ? axesBuf_.data() : nullptr);
+	if (had == 1)
+		ce_session_movie_set(s_, f, held, nullptr);
+	else if ((logged | held) != logged)
 	{
-		/* a key held over a frame that has inputs is an edit of it: the
-		 * states after it no longer hold */
-		inputs_.set(f, mask);
-		ce_session_greenzone_invalidate(s_, f);
+		ce_session_movie_set(s_, f, logged | held, axisCount ? axesBuf_.data() : nullptr);
 		greenEndM_ = std::min(greenEndM_, f);
 		changed = true;
 	}
 
-	const size_t axisCount = inputs_.axisCount();
-	if (axisCount > 0)
+	const int32_t lag = ce_session_movie_advance(s_, 0, nullptr, render ? 1 : 0);
+	if (lag < 0)
 	{
-		axesBuf_.resize(axisCount);
-		inputs_.axesAt(f, axesBuf_.data());
-		for (size_t i = 0; i < axisCount; i++) ce_session_set_axis(s_, static_cast<int32_t>(i), axesBuf_[i]);
+		runningM_ = false;
+		const char *death = ce_session_guest_death(s_);
+		const std::string why = death != nullptr && *death != '\0' ? std::string("The machine stopped: ") + death
+																	 : std::string("The movie could not be played: ") + ce_session_last_error(s_);
+		later([this, why] { running.set(false); status.set(why); });
+		return lag;
 	}
-
-	ce_session_greenzone_before_advance(s_);
-	const int32_t lag = ce_session_frame_advance(s_, mask, render ? 1 : 0);
-	frameM_++;
-	ce_session_greenzone_capture(s_, frameM_, nullptr, 0);
+	frameM_ = ce_session_frame(s_);
 	greenEndM_ = std::max(greenEndM_, frameM_);
 	for (const Hooks &h : hooksM_)
 		if (h.frame) h.frame(s_);
 	if (inputs_.setLag(f, lag > 0)) changed = true;
-
-	const char *death = ce_session_guest_death(s_);
-	if (death != nullptr && *death != '\0')
-	{
-		runningM_ = false;
-		const std::string why = death;
-		later([this, why] { running.set(false); status.set("The machine stopped: " + why); });
-	}
 
 	if (live && soundM_)
 	{
@@ -836,37 +788,35 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render)
 
 void SessionViewModel::seekOnMachine(int64_t target)
 {
-	if (s_ == nullptr || target < 0 || target == frameM_) return;
+	if (s_ == nullptr || target < 0) return;
 	const auto start = Clock::now();
-	const int64_t from = frameM_;
-	/* the picture of `target` is drawn by running its last frame, so the
-	 * machine goes back to a state at or before target - 1 */
+	const int64_t from = ce_session_frame(s_);
+	/* a frame past the movie's end: the movie grows to it, with empty frames */
+	if (target > ce_session_movie_length(s_)) ce_session_movie_resize(s_, target);
+	/* The engine seeks: back to its nearest stored state and forward by the
+	 * movie. It draws nothing on the way, so the seek stops a frame short
+	 * and the last frame is run with its picture. What it ran, roughly: from
+	 * the stored state it went back to, or from where it was. */
 	const int64_t want = target > 0 ? target - 1 : 0;
-	const int64_t stored = ce_session_greenzone_nearest(s_, want);
-	const bool ahead = target > frameM_ && (stored < 0 || stored <= frameM_);
-	if (!ahead)
+	/* an edit the engine has not honoured yet (greenEnd fell to it) sends
+	 * the machine back before it */
+	const int64_t stored = ce_session_greenzone_nearest(s_, greenEndM_ < from ? std::min(want, greenEndM_) : want);
+	const int64_t ran = (stored >= 0 && (stored > from || from > want) ? want - stored : want - from) + (target > 0 ? 1 : 0);
+	if (ce_session_seek(s_, want) != 0)
 	{
-		if (stored < 0 || ce_session_greenzone_restore(s_, stored) != 0)
-		{
-			const std::string why = std::string("Could not go back to frame ") + std::to_string(target) + ": " +
-				(ce_session_last_error(s_) != nullptr ? ce_session_last_error(s_) : "no state stored before it");
-			later([this, why] { status.set(why); });
-			return;
-		}
-		frameM_ = stored;
+		const std::string why = std::string("Could not go to frame ") + std::to_string(target) + ": " + ce_session_last_error(s_);
+		later([this, why] { status.set(why); });
+		frameM_ = ce_session_frame(s_);
+		report(-1, -1, -1, -1, -1);
+		return;
 	}
-	int64_t ran = 0;
-	while (frameM_ < target && s_ != nullptr)
-	{
-		stepOnMachine(false, frameM_ == target - 1);
-		ran++;
-	}
+	frameM_ = ce_session_frame(s_);
+	if (target > 0) stepOnMachine(false, true);
 	const double ms = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 	later([this, ms, ran] {
 		lastSeekMs.set(ms);
 		lastSeekFrames.set(ran);
 	});
-	(void)from;
 	report(-1, -1, -1, -1, -1);
 }
 
@@ -874,15 +824,14 @@ void SessionViewModel::edited(int64_t first)
 {
 	submit([this, first] {
 		if (s_ == nullptr) return;
-		ce_session_greenzone_invalidate(s_, first);
 		greenEndM_ = std::min(greenEndM_, first);
 		if (frameM_ > first)
 		{
-			/* the machine is past the edit: go back to it, and with
-			 * autoRestore run on to where it was with the new inputs */
-			const int64_t was = frameM_;
-			seekOnMachine(first);
-			if (autoRestoreM_.load()) seekOnMachine(was);
+			/* The machine is past the edit. The engine honours it before the
+			 * machine next moves; here the window says where: with autoRestore
+			 * back on the frame it was on, with the new inputs, else at the
+			 * edit. */
+			seekOnMachine(autoRestoreM_.load() ? frameM_ : first);
 		}
 		report(-1, -1, -1, -1, -1);
 	});

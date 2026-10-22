@@ -1593,7 +1593,8 @@ CE_API int64_t ce_session_frame(const ce_session *s);
 
 /* The session's own log, for saving through ce_movie_log_serialize.
  * Borrowed and READ-ONLY: mutate the movie through the session, never
- * through this. Invalidated when the session is freed. */
+ * through this. Invalidated when the session is freed, and not to be read
+ * while another thread edits the movie: ce_session_movie_text is. */
 CE_API const ce_movie_log *ce_session_movie_log(const ce_session *s);
 
 /* Decodes one entry against THIS session's controller: buttons_out gets the
@@ -1612,17 +1613,39 @@ CE_API int32_t ce_session_movie_entry_decode(
 CE_API int32_t ce_session_movie_entry_decode_wide(
 	const ce_session *s, const char *entry, uint8_t *states_out, int32_t *axes_out);
 
-/* The line this session's movie holds for a set of pressed buttons (bit per
- * button in config order, the first 64) and axis values (ce_session_axis_count
- * of them in config order, or NULL for all neutral): what record mode would
- * append, in the layout ce_session_movie_load chose (the movie's LogKey when
- * it had one). Writes at most cap bytes, NUL included, and returns the
- * line's full length, so a caller whose buffer was short asks again.
+/* ---- the movie, edited frame by frame (the Qt window, issue 142, prototype)
  *
- * (The Qt window, issue 142, prototype: a frontend in C++ has no Bk2 writer
- * of its own, as the C# one did, so it writes the engine's.) */
-CE_API int32_t ce_session_movie_entry_encode(
-	const ce_session *s, uint64_t buttons, const int32_t *axes, char *out, int32_t cap);
+ * The session's movie is the one a piano roll edits: a frontend reads and
+ * writes a frame's input through these calls and never writes a line itself -
+ * the engine writes it, in the movie's own columns (its LogKey), widening the
+ * key for a control it does not name yet, as recording does (owner,
+ * 2026-10-22: the engine owns the movie).
+ *
+ * These four, ce_session_movie_length and ce_session_movie_text may be called
+ * from any thread while another runs the machine: the movie has a lock of its
+ * own. Every other session call stays on one thread.
+ *
+ * An edit is honoured before the machine moves again: the next
+ * ce_session_movie_advance or ce_session_seek drops the stored states after
+ * the earliest frame edited, and when the machine is already past it, puts the
+ * machine back on a stored frame before the edit and plays the movie up to
+ * where it was - so the machine is always what the movie it has makes it. */
+
+/* A frame's buttons (bit per button in config order, the first 64) and axes
+ * (ce_session_axis_count values; may be NULL). 0 read; 1 past the movie's
+ * end (nothing pressed, axes neutral); -1 the line cannot be read. */
+CE_API int32_t ce_session_movie_get(const ce_session *s, int64_t frame, uint64_t *buttons_out, int32_t *axes_out);
+/* Writes a frame's input (axes may be NULL for neutral). A frame past the end
+ * lengthens the movie with empty frames up to it. A session with no movie
+ * gets one, in play mode, naming its columns as a recording does. 0, or -1
+ * for a frame before 0. */
+CE_API int32_t ce_session_movie_set(ce_session *s, int64_t frame, uint64_t buttons, const int32_t *axes);
+/* Shortens the movie, or lengthens it with empty frames. */
+CE_API void ce_session_movie_resize(ce_session *s, int64_t frames);
+/* The whole movie as ce_movie_log_serialize writes it (the [Input] block), to
+ * save or to keep as a branch; ce_session_movie_load takes it back. Belongs to
+ * the calling thread until its next call of this. */
+CE_API const char *ce_session_movie_text(ce_session *s, uint64_t *len_out);
 
 /* One frame under the movie. In play mode the input comes from the log
  * (buttons/axes are ignored) until the log runs out, which flips the mode to

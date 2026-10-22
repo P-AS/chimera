@@ -248,15 +248,15 @@ void pianoRollWithoutAMachine()
 	SessionViewModel session(d, inputs);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
+	/* the movie is the machine's: with none open there is none to fill or edit */
 	auto n = roll.run("fill", {int64_t{1000000}}, error);
-	CHECK(n && std::get<int64_t>(*n) == 1000000);
-	CHECK(roll.frameCount.get() == 1000000);
-	CHECK(roll.rowLists()[0].name == "frames" && roll.rowLists()[0].model->rowCount() == 1000000);
-	/* no machine, so no buttons to flip */
+	CHECK(n && std::get<int64_t>(*n) == 0);
+	CHECK(roll.frameCount.get() == 0);
+	CHECK(roll.rowLists()[0].name == "frames" && roll.rowLists()[0].model->rowCount() == 0);
 	CHECK(!roll.run("toggle", {int64_t{5}, int64_t{0}}, error) && error == "no such frame or button");
-	/* the view says how many rows fit; the first row in view stays inside the log */
+	/* the first row in view stays inside the movie */
 	roll.visibleFrames.set(40);
-	CHECK(roll.set("topFrame", int64_t{5000000}, error) && roll.topFrame.get() == 999999);
+	CHECK(roll.set("topFrame", int64_t{5000000}, error) && roll.topFrame.get() == 0);
 }
 
 /* SDL's virtual joystick stands in for a real pad: it is held, and the
@@ -446,6 +446,42 @@ bool machine(const char *package, const char *rom)
 	CHECK(session.greenEnd.get() == 3);
 	roll.run("toggle", {int64_t{3}, static_cast<int64_t>(right)}, error);
 	session.autoRestore.set(true);
+
+	/* The engine honours an edit behind the machine whoever asks next: a
+	 * seek forward past it, or one frame - with no piano roll to send the
+	 * machine back. What it gives equals a whole replay from frame 0. The
+	 * edits span several frames: on some the game reads no input. */
+	{
+		const int64_t at = session.frame.get();
+		std::vector<uint64_t> kept(20);
+		inputs.read(0, kept);
+		auto flip = [&](int64_t first, int64_t last) {
+			for (int64_t f = first; f <= last; f++) inputs.set(f, inputs.at(f) ^ (uint64_t{1} << right)); /* straight into the engine's movie */
+		};
+		auto replayed = [&](int64_t to) {
+			std::string e;
+			session.run("seek", {int64_t{0}}, e);
+			d.until([&] { return session.frame.get() == 0; }, 20);
+			session.run("seek", {to}, e);
+			d.until([&] { return session.frame.get() == to; }, 20);
+			return session.readDomain("RAM");
+		};
+		flip(2, 9);
+		session.run("seek", {at + 5}, error);
+		CHECK(d.until([&] { return session.frame.get() == at + 5; }, 20));
+		const std::vector<uint8_t> forward = session.readDomain("RAM");
+		CHECK(replayed(at + 5) == forward);
+		/* and one frame: the same frames back as they were, which matter */
+		flip(2, 9);
+		session.run("frameAdvance", {}, error);
+		CHECK(d.until([&] { return session.frame.get() == at + 6; }, 20));
+		const std::vector<uint8_t> stepped = session.readDomain("RAM");
+		CHECK(replayed(at + 6) == stepped);
+		for (int64_t f = 0; f < 20; f++) inputs.set(f, kept[static_cast<size_t>(f)]);
+		inputs.resize(at);
+		session.run("seek", {at}, error);
+		CHECK(d.until([&] { return session.frame.get() == at; }, 20));
+	}
 
 	/* restart: frame 0 again, the inputs kept */
 	const int64_t logged = inputs.size();
@@ -709,6 +745,18 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	CHECK(before == after && inputs.size() == end);
 	CHECK(readFile(dir / "saved.chimeraProject").find("|.D......|") != std::string::npos);
 
+	/* File > Restart on a project: frame 0 again, the movie as edited */
+	{
+		const uint64_t was = inputs.at(40);
+		roll.run("toggle", {int64_t{40}, int64_t{5}}, error);
+		const int64_t opensBefore = session.opens.get();
+		session.run("restart", {}, error);
+		CHECK(d.until([&] { return session.opens.get() > opensBefore; }, 30));
+		CHECK(session.isOpen.get() && session.frame.get() == 0 && session.projectPath.get() == (dir / "saved.chimeraProject").string());
+		CHECK(inputs.at(40) == (was ^ (uint64_t{1} << 5)));
+		roll.run("toggle", {int64_t{40}, int64_t{5}}, error);
+	}
+
 	/* markers survive the trip too */
 	roll.run("addMarker", {int64_t{30}, std::string("the corner")}, error);
 	roll.run("addMarker", {int64_t{12}, std::string("turn")}, error);
@@ -755,8 +803,7 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	roll.run("paint", {int64_t{0}, end - 1, int64_t{1}, false}, error);
 	CHECK(d.until([&] { return session.frame.get() == end && session.greenEnd.get() == end; }, 30));
 	CHECK(session.readDomain("RAM") != std::vector<uint8_t>(ram.begin(), ram.end()));
-	const auto from = branches.run("load", {int64_t{0}}, error);
-	CHECK(from && std::get<int64_t>(*from) >= 1);
+	CHECK(branches.run("load", {int64_t{0}}, error).has_value());
 	CHECK(d.until([&] { return session.frame.get() == end && session.greenEnd.get() == end; }, 30));
 	d.until([] { return false; }, 0.1);
 	CHECK(session.readDomain("RAM") == std::vector<uint8_t>(ram.begin(), ram.end()));

@@ -57,9 +57,15 @@ private:
 		Value cell(int64_t row, int32_t column) const override;
 		uint32_t rowFlags(int64_t row) const override;
 		std::string rowNote(int64_t row) const override;
+		/* the row read last: a view asks for a row's cells one after another,
+		 * and each read is the engine's (a line to parse). Forgotten on every
+		 * change of the rows. */
+		void forget() const { cachedRow_ = -1; }
 
 	private:
 		PianoRollViewModel &vm_;
+		mutable int64_t cachedRow_ = -1;
+		mutable uint64_t cachedBits_ = 0;
 	};
 
 	class MarkerRows : public RowModel
@@ -99,6 +105,7 @@ private:
 	std::map<int64_t, Marker> markers_;
 	MarkerRows markerRows_{*this};
 	Connection markersWatch_;
+	std::vector<Connection> forgetWatches_;
 	Connection frameWatch_, buttonsWatch_, changedWatch_, appendedWatch_, topWatch_, greenWatch_, resetWatch_;
 	/* what a drag paints: the state the pressed cell was given */
 	bool dragHeld_ = false;

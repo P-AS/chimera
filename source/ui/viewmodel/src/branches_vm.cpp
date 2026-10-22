@@ -37,7 +37,8 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			b.name = name;
 			b.time = now();
 			b.frame = session_.frame.get();
-			b.inputs = inputs_.copy();
+			b.text = inputs_.text();
+			b.frames = inputs_.size();
 			for (const auto &[f, m] : roll_.markers()) b.markers.push_back(m);
 			branches_.push_back(std::move(b));
 			changed();
@@ -49,12 +50,12 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			size_t i = 0;
 			if (!index(a, i, error)) return {};
 			const SessionViewModel::Branch &b = branches_[i];
-			const int64_t from = inputs_.divergence(b.inputs);
-			inputs_.assign(b.inputs.masks, b.inputs.axes);
+			/* the engine takes the branch's movie, keeps the states before
+			 * the first frame where the two differ, and replays from there */
+			session_.loadMovie(b.text, b.frame);
 			roll_.replaceAll(b.markers);
-			session_.inputsReplaced(from, b.frame);
-			status.set("Loaded " + b.name + (from < 0 ? " (the same movie)" : ", which differs from frame " + std::to_string(from)));
-			return from;
+			status.set("Loaded " + b.name);
+			return {};
 		}, &session_.isOpen);
 	command("remove", "forgets a branch", {"index"}, [this](const Args &a, std::string &error) -> Value {
 		size_t i = 0;
@@ -115,7 +116,7 @@ Value BranchesViewModel::Rows::cell(int64_t row, int32_t column) const
 	case 0: return b.name;
 	case 1: return b.frame;
 	case 2: return b.time;
-	case 3: return static_cast<int64_t>(b.inputs.masks.size());
+	case 3: return b.frames;
 	default: return {};
 	}
 }

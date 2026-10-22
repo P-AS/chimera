@@ -12,6 +12,18 @@ code is in `source/ui`; how it is built and run is in
 - The logic behind each window lives in C++ "view models" with no Qt in
   them. A window only lays things out and binds to them (owner,
   2026-10-22).
+- **The engine owns the movie** (owner, 2026-10-22). The window reads
+  and edits a frame's input through the engine (`ce_session_movie_get`,
+  `_set`, `_resize`, `_text`), which writes every line in the movie's own
+  columns; the window never writes one. Those calls may come from any
+  thread while another runs the machine: the movie has a lock of its own.
+  An edit is honoured before the machine next moves: the engine drops the
+  states after the earliest frame edited and, when the machine is already
+  past it, goes back before it and plays the movie up to where it was. The
+  window plays and seeks with the engine's own calls
+  (`ce_session_movie_advance`, `ce_session_seek`). The other ways - an
+  export of the engine's line writer to the window, or a copy of the
+  format in the window as the C# one has - were set aside.
 - Slint was considered and set aside for now. It is the closest fit to
   this pattern, but it has no docking, fewer desktop controls, and its
   licence is GPLv3 or an attribution licence, against Chimera's MIT.
@@ -135,16 +147,11 @@ A suggested order, each step usable on its own:
 
 ## Yours to decide
 
-1. **The engine export `ce_session_movie_entry_encode`.** The engine kept
-   writing movie lines internal on purpose ("a frontend that wants a line
-   drives the movie"). The C# window has its own copy of the Bk2 format,
-   which a C++ window would otherwise have to copy too. The export is in
-   this branch only.
-2. **How Qt is obtained for Windows.** Here it is built from source with
+1. **How Qt is obtained for Windows.** Here it is built from source with
    Ubuntu's mingw (posix threading), in 12 minutes, without the network
    module. The other way is Qt's own prebuilt Windows libraries, built
    with a different compiler.
-3. **When this leaves the private branch:** a public branch, CI, a
+2. **When this leaves the private branch:** a public branch, CI, a
    preview build beside the C# window.
-4. **macOS:** there is no Mac here; CI runners are the only way to check
+3. **macOS:** there is no Mac here; CI runners are the only way to check
    it.

@@ -11,6 +11,7 @@ vm_lib = static_library(
   'chimera-vm',
   [
     'viewmodel/src/view_model.cpp',
+    'viewmodel/src/input_log.cpp',
     'viewmodel/src/bindings.cpp',
     'viewmodel/src/json.cpp',
     'viewmodel/src/session_vm.cpp',

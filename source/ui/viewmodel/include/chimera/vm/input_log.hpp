@@ -1,176 +1,56 @@
 #pragma once
-/* The buttons held on every frame, one bit per button (the first 64), shared
- * by the session, which plays and records them, and the piano roll, which
- * shows and edits them. Either may touch it from its own thread.
+/* The movie, as the view models see it: the engine's own (owner, 2026-10-22:
+ * the engine owns the movie). Every read and edit goes to the open machine's
+ * movie, which the engine keeps, writes and takes edits for from any thread;
+ * with no machine open there is no movie. The engine writes every line.
  *
- * Beside them, what the machine said of each frame it ran: whether it was a
- * lag frame (the game did not read its input). That is the machine's, not
- * the movie's, and an edit leaves it until the frame is run again. */
+ * Beside it, what the machine said of each frame it ran: whether it was a lag
+ * frame (the game did not read its input). That is the machine's, not the
+ * movie's, and is kept here. */
 
-#include <algorithm>
 #include <cstdint>
-#include <mutex>
 #include <shared_mutex>
+#include <string>
 #include <vector>
+
+struct ce_session;
 
 namespace chimera::vm {
 
 class InputLog
 {
 public:
-	int64_t size() const
-	{
-		std::shared_lock lock(m_);
-		return static_cast<int64_t>(masks_.size());
-	}
+	int64_t size() const;
+	/* a frame's buttons, one bit each (the first 64); nothing past the end */
+	uint64_t at(int64_t frame) const;
+	/* frames first.. into out (as many as out holds) */
+	void read(int64_t first, std::vector<uint64_t> &out) const;
+	/* sets a frame's buttons, keeping its axes; past the end lengthens the
+	 * movie. False with no machine open. */
+	bool set(int64_t frame, uint64_t mask);
+	void resize(int64_t frames);
 
-	/* nothing held past the end */
-	uint64_t at(int64_t frame) const
-	{
-		std::shared_lock lock(m_);
-		return frame >= 0 && frame < static_cast<int64_t>(masks_.size()) ? masks_[static_cast<size_t>(frame)] : 0;
-	}
+	size_t axisCount() const;
+	/* out gets axisCount() values, neutral past the end */
+	void axesAt(int64_t frame, int32_t *out) const;
+	bool setAxesAt(int64_t frame, const int32_t *values);
 
-	/* copies frames first.. into out (as many as out holds), nothing past the end */
-	void read(int64_t first, std::vector<uint64_t> &out) const
-	{
-		std::shared_lock lock(m_);
-		for (size_t i = 0; i < out.size(); i++)
-		{
-			const int64_t f = first + static_cast<int64_t>(i);
-			out[i] = f >= 0 && f < static_cast<int64_t>(masks_.size()) ? masks_[static_cast<size_t>(f)] : 0;
-		}
-	}
-
-	/* grows the log with empty frames when frame is past its end */
-	void set(int64_t frame, uint64_t mask)
-	{
-		if (frame < 0) return;
-		std::unique_lock lock(m_);
-		if (frame >= static_cast<int64_t>(masks_.size())) masks_.resize(static_cast<size_t>(frame) + 1, 0);
-		masks_[static_cast<size_t>(frame)] = mask;
-	}
-
-	void resize(int64_t frames)
-	{
-		std::unique_lock lock(m_);
-		masks_.resize(static_cast<size_t>(frames < 0 ? 0 : frames), 0);
-	}
-
-	/* Axis values (sticks, paddles): `count` per frame in the machine's
-	 * order, each at its neutral until a frame sets it. Setting the count
-	 * forgets every frame's values. */
-	void setAxes(const std::vector<int32_t> &neutral)
-	{
-		std::unique_lock lock(m_);
-		neutral_ = neutral;
-		axes_.clear();
-	}
-	size_t axisCount() const
-	{
-		std::shared_lock lock(m_);
-		return neutral_.size();
-	}
-	/* out gets axisCount() values */
-	void axesAt(int64_t frame, int32_t *out) const
-	{
-		std::shared_lock lock(m_);
-		const size_t n = neutral_.size(), at = static_cast<size_t>(frame) * n;
-		for (size_t i = 0; i < n; i++)
-			out[i] = frame >= 0 && at + n <= axes_.size() ? axes_[at + i] : neutral_[i];
-	}
-	void setAxesAt(int64_t frame, const int32_t *values)
-	{
-		if (frame < 0) return;
-		std::unique_lock lock(m_);
-		const size_t n = neutral_.size();
-		if (n == 0) return;
-		const size_t at = static_cast<size_t>(frame) * n;
-		if (axes_.size() < at + n)
-		{
-			/* the frames between keep their neutral values */
-			const size_t from = axes_.size() / n;
-			axes_.resize(at + n);
-			for (size_t f = from; f * n < at; f++)
-				for (size_t i = 0; i < n; i++) axes_[f * n + i] = neutral_[i];
-		}
-		for (size_t i = 0; i < n; i++) axes_[at + i] = values[i];
-	}
-
-	/* every frame at once (a project's movie): masks, and axes when the
-	 * machine has any (axisCount() values a frame); the lag flags go */
-	void assign(std::vector<uint64_t> masks, std::vector<int32_t> axes)
-	{
-		std::unique_lock lock(m_);
-		masks_ = std::move(masks);
-		axes_ = std::move(axes);
-		lags_.clear();
-	}
-
-	/* every frame's buttons and axes, copied out (a branch) */
-	struct Copy
-	{
-		std::vector<uint64_t> masks;
-		std::vector<int32_t> axes;
-	};
-	Copy copy() const
-	{
-		std::shared_lock lock(m_);
-		Copy c{masks_, axes_};
-		/* axes for every frame, neutral where none were set */
-		const size_t n = neutral_.size();
-		if (n > 0)
-		{
-			const size_t had = c.axes.size() / n;
-			c.axes.resize(masks_.size() * n);
-			for (size_t f = had; f < masks_.size(); f++)
-				for (size_t i = 0; i < n; i++) c.axes[f * n + i] = neutral_[i];
-		}
-		return c;
-	}
-	/* the first frame where this differs from a copy, or -1 when they are the same */
-	int64_t divergence(const Copy &c) const
-	{
-		std::shared_lock lock(m_);
-		const size_t n = neutral_.size();
-		const size_t most = std::max(masks_.size(), c.masks.size());
-		for (size_t f = 0; f < most; f++)
-		{
-			const uint64_t a = f < masks_.size() ? masks_[f] : 0, b = f < c.masks.size() ? c.masks[f] : 0;
-			if (a != b || f >= masks_.size() || f >= c.masks.size()) return static_cast<int64_t>(f);
-			for (size_t i = 0; i < n; i++)
-			{
-				const int32_t x = f * n + i < axes_.size() ? axes_[f * n + i] : neutral_[i];
-				const int32_t y = f * n + i < c.axes.size() ? c.axes[f * n + i] : neutral_[i];
-				if (x != y) return static_cast<int64_t>(f);
-			}
-		}
-		return -1;
-	}
+	/* the whole movie, as text the engine reads back (a branch) */
+	std::string text() const;
 
 	/* true when the frame's lag flag changed */
-	bool setLag(int64_t frame, bool lag)
-	{
-		if (frame < 0) return false;
-		std::unique_lock lock(m_);
-		if (frame >= static_cast<int64_t>(lags_.size())) lags_.resize(static_cast<size_t>(frame) + 1, 0);
-		const uint8_t now = lag ? 1 : 0;
-		if (lags_[static_cast<size_t>(frame)] == now) return false;
-		lags_[static_cast<size_t>(frame)] = now;
-		return true;
-	}
+	bool setLag(int64_t frame, bool lag);
+	bool lagAt(int64_t frame) const;
+	void clearLags();
 
-	bool lagAt(int64_t frame) const
-	{
-		std::shared_lock lock(m_);
-		return frame >= 0 && frame < static_cast<int64_t>(lags_.size()) && lags_[static_cast<size_t>(frame)] != 0;
-	}
+	/* the machine's thread: the machine whose movie this is, nullptr for
+	 * none - before it frees one */
+	void bind(ce_session *s);
 
 private:
 	mutable std::shared_mutex m_;
-	std::vector<uint64_t> masks_;
+	ce_session *s_ = nullptr;
 	std::vector<uint8_t> lags_;
-	std::vector<int32_t> neutral_, axes_;
 };
 
 } // namespace chimera::vm

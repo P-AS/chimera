@@ -122,6 +122,9 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		return {};
 	}, &canRedo);
 
+	forgetWatches_.push_back(frames_.changed.connect([this](int64_t, int64_t) { frames_.forget(); }));
+	forgetWatches_.push_back(frames_.appended.connect([this](int64_t, int64_t) { frames_.forget(); }));
+	forgetWatches_.push_back(frames_.reset.connect([this] { frames_.forget(); }));
 	markersWatch_ = session_.markersLoaded.connect([this](const std::vector<Marker> &loaded) {
 		markers_.clear();
 		for (const Marker &m : loaded) markers_[m.frame] = m;
@@ -336,7 +339,12 @@ Value PianoRollViewModel::MarkerRows::cell(int64_t row, int32_t column) const
 Value PianoRollViewModel::Frames::cell(int64_t row, int32_t column) const
 {
 	if (column < 0 || column >= 64) return false;
-	return (vm_.inputs_.at(row) >> column & 1) != 0;
+	if (row != cachedRow_)
+	{
+		cachedBits_ = vm_.inputs_.at(row);
+		cachedRow_ = row;
+	}
+	return (cachedBits_ >> column & 1) != 0;
 }
 
 } // namespace chimera::vm
