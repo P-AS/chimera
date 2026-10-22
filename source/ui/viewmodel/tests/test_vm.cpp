@@ -2194,6 +2194,93 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	return true;
 }
 
+/* A movie made elsewhere: the core says what it amounts to, the New Project
+ * form takes its answer, and the project made has the movie's inputs */
+bool movieImport(const char *slotsPackage, const char *rom, const std::string &movies)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	if (fs::file_size(slotsPackage, ec) == 0 || ec || !fs::exists(movies + "/gridWalker.win.txt"))
+	{
+		std::printf("SKIP movie import: no slots package or no movie\n");
+		return false;
+	}
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-import-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "Cores");
+	fs::copy_file(slotsPackage, dir / "Cores" / "synth-slots.chimeraCore");
+	fs::copy_file(rom, dir / "gridWalker.testrom");
+	fs::copy_file(movies + "/gridWalker.win.txt", dir / "win.txt");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	CoresViewModel installed(d);
+	std::string error;
+	installed.set("coresFolder", (dir / "Cores").string(), error);
+	installed.set("firmwareFolder", (dir / "Firmware").string(), error);
+	session.setFinders([&installed](const std::string &n, const std::string &h, std::string &note) { return installed.packageFor(n, h, note); },
+		[&installed] { return installed.firmwareFolders(); });
+	NewProjectViewModel wizard(d, session, installed);
+	CHECK(wizard.run("chooseCore", {std::string("Synth Slots")}, error).has_value());
+	CHECK(wizard.importMenu.get() == "Import Synth Movie..." && wizard.importMovieFilter.get() == "*.txt" && wizard.importMovieLabel.get() == "A synthetic movie");
+	RowModel *files = nullptr;
+	for (const auto &r : wizard.rowLists())
+		if (r.name == "importFiles") files = r.model;
+	CHECK(files != nullptr && files->rowCount() == 1);
+	std::string t;
+	fromValue(files->cell(0, 0), t);
+	CHECK(t == "importRom");
+	fromValue(files->cell(0, 2), t);
+	CHECK(t == "*.testrom");
+	CHECK(!wizard.run("importRun", {}, error) && error == "pick the movie first");
+	CHECK(wizard.run("importSetMovie", {(dir / "win.txt").string()}, error).has_value());
+	CHECK(!wizard.run("importRun", {}, error) && error == "The game is needed");
+	CHECK(wizard.run("importAddFile", {std::string("importRom"), (dir / "gridWalker.testrom").string()}, error).has_value());
+	fromValue(files->cell(0, 5), t);
+	CHECK(t == "gridWalker.testrom");
+	wizard.run("importSetOption", {std::string("importFill"), true}, error);
+	/* the form's value before: the movie's answer replaces it */
+	CHECK(wizard.run("set", {std::string("initFillByte"), int64_t{5}}, error).has_value());
+	CHECK(wizard.run("importRun", {}, error).has_value());
+	/* the answer in the form: its file in the slot, its setting, its notes */
+	int64_t frames = 0;
+	{
+		std::istringstream lines(readFile(dir / "win.txt"));
+		for (std::string l; std::getline(lines, l);) frames += !l.empty() && l[0] == '|' ? 1 : 0;
+	}
+	CHECK(wizard.status.get() == "Imported win.txt (" + std::to_string(frames) + " frames)");
+	CHECK(wizard.imported.get() && wizard.importNotes.get() == "imported by the synth core" && wizard.title.get() == "win");
+	RowModel *slots = nullptr, *settings = nullptr;
+	for (const auto &r : wizard.rowLists())
+	{
+		if (r.name == "slots") slots = r.model;
+		if (r.name == "settings") settings = r.model;
+	}
+	fromValue(slots->cell(0, 7), t);
+	CHECK(t == "gridWalker.testrom" && wizard.ready.get());
+	int64_t fill = -1;
+	for (int64_t r = 0; r < settings->rowCount(); r++)
+	{
+		std::string n;
+		fromValue(settings->cell(r, 0), n);
+		if (n == "initFillByte") fromValue(settings->cell(r, 3), fill);
+	}
+	/* what the synthetic importer dictates for a ticked option (sent as true,
+	 * as Chimera sends it, which it reads as no number) */
+	CHECK(fill == 0);
+	/* made: the project has the movie's inputs, and opens on them */
+	const fs::path project = dir / "win.chimeraProject";
+	CHECK(wizard.run("create", {project.string()}, error).has_value());
+	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == project.string(); }, 60));
+	CHECK(inputs.size() == frames);
+	/* forgotten: the next project starts empty */
+	wizard.run("importForget", {}, error);
+	CHECK(!wizard.imported.get());
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
 /* Open Game asks only for the game: the installed core that takes its kind of
  * file opens it, and when two do, both are offered */
 bool openByKind(const char *package, const char *rom, const char *again)
@@ -2307,6 +2394,7 @@ int main(int argc, char **argv)
 			else std::printf("SKIP choosing between cores: no second package given\n");
 			if (argc >= 7) ranMachine = newProjectWizard(argv[1], argv[2], argv[6]) && ranMachine;
 			if (argc >= 7) ranMachine = pianoRollAxes(argv[6], argv[2]) && ranMachine;
+			if (argc >= 7) ranMachine = movieImport(argv[6], argv[2], argv[3]) && ranMachine;
 			else std::printf("SKIP New Project: no slots package given\n");
 		}
 		else

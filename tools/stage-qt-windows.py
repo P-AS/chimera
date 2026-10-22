@@ -21,6 +21,8 @@ if os.path.exists(out):
 os.makedirs(out)
 for exe in ("chimera-qt.exe", "test_vm.exe"):
     shutil.copy2(f"{build}/source/ui/{exe}", out)
+# a movie import asks the core in a process of its own: chimera-run
+shutil.copy2(f"{build}/chimera-run.exe", out)
 for d in ("libchimera.dll", "libminiboxhost.dll", "libzstd.dll", "lua54.dll", "SDL2.dll", "OpenAL32.dll",
           "libchimerahash.dll", "chimera_crash.dll"):
     shutil.copy2(f"{dlls}/{d}", out)

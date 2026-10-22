@@ -17,6 +17,8 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QProcess>
+#include <QFileInfo>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QPalette>
@@ -274,6 +276,47 @@ int main(int argc, char **argv)
 	if (cores.firmwareFolder.get().empty())
 		cores.firmwareFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Firmware")).toStdString());
 	vm::NewProjectViewModel newProject(dispatcher, session, cores);
+	/* a movie import asks the core in a process of its own (one machine to a
+	 * process), as Chimera does: chimera-run, beside the program or, in the
+	 * build tree, where it is built (CHIMERA_RUN names another) */
+	newProject.setImportRunner([&app](const std::string &package, const std::string &movie,
+								   const std::vector<std::pair<std::string, std::string>> &mounts, const std::string &settings,
+								   std::function<void(std::string, std::string)> done) {
+#ifdef _WIN32
+		const QString exe = QStringLiteral("chimera-run.exe");
+#else
+		const QString exe = QStringLiteral("chimera-run");
+#endif
+		QString runner = qEnvironmentVariable("CHIMERA_RUN");
+		for (const QString &dir : {QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
+			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
+		if (runner.isEmpty())
+		{
+			done({}, "chimera-run is not beside the program");
+			return;
+		}
+		QStringList args{QString::fromStdString(package), QString::fromStdString(movie), QStringLiteral("--import-movie"),
+			QStringLiteral("--settings"), QString::fromStdString(settings)};
+		for (const auto &[name, path] : mounts) args << QStringLiteral("--mount") << QString::fromStdString(name + "=" + path);
+		auto *proc = new QProcess(&app);
+		QObject::connect(proc, &QProcess::finished, proc, [proc, done](int code, QProcess::ExitStatus) {
+			/* the answer is the last line that is a JSON object; a core may print */
+			const QList<QByteArray> lines = proc->readAllStandardOutput().split('\n');
+			QByteArray answer;
+			for (const QByteArray &l : lines)
+				if (l.trimmed().startsWith('{')) answer = l.trimmed();
+			const QByteArray err = proc->readAllStandardError().trimmed();
+			proc->deleteLater();
+			if (code == 0 && !answer.isEmpty()) done(answer.toStdString(), {});
+			else done({}, err.isEmpty() ? std::string("chimera-run gave no answer") : err.split('\n').last().toStdString());
+		});
+		QObject::connect(proc, &QProcess::errorOccurred, proc, [proc, done](QProcess::ProcessError e) {
+			if (e != QProcess::FailedToStart) return;
+			proc->deleteLater();
+			done({}, "chimera-run could not be started");
+		});
+		proc->start(runner, args);
+	});
 	session.setFinders([&cores](const std::string &n, const std::string &h, std::string &note) { return cores.packageFor(n, h, note); },
 		[&cores] { return cores.firmwareFolders(); },
 		[&cores](const std::string &extension) { return cores.coresFor(extension); });

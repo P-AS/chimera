@@ -44,6 +44,15 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
             ]
             cfg["firmware"] = [{"id": "bios", "display": "Board B BIOS", "name": "boardb.bin",
                                 "requiredWhen": {"setting": "board", "is": "b"}}]
+            # the synthetic core's importer: a movie of its own lines, the game it
+            # was made on, and a setting the movie dictates
+            cfg["movieImport"] = {
+                "menu": "Import Synth Movie...",
+                "movie": {"label": "A synthetic movie", "extensions": ["txt"]},
+                "files": [{"option": "importRom", "label": "The game", "extensions": ["testrom"],
+                           "slot": "rom", "required": True}],
+                "options": [{"name": "importFill", "display": "Fill RAM", "type": "bool"}],
+            }
             # an analog control, for the piano roll's analog columns
             cfg["input"]["axes"] = [{"name": "P1 Dial", "min": -100, "max": 100, "neutral": 0, "header": "Dl"}]
             data = json.dumps(cfg, indent=2).encode()

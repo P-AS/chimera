@@ -29,6 +29,19 @@ ApplicationWindow {
         onAccepted: win.vm.run("chooseFirmware", [win.firmwareFor, selectedFile])
     }
     FileDialog {
+        id: importMovieDialog
+        title: win.vm.importMovieLabel
+        nameFilters: [win.vm.importMovieLabel + " (" + win.vm.importMovieFilter + ")", qsTr("All files (*)")]
+        onAccepted: win.vm.run("importSetMovie", [selectedFile])
+    }
+    property string importFor: ""
+    FileDialog {
+        id: importFileDialog
+        title: qsTr("Choose a file")
+        fileMode: FileDialog.OpenFiles
+        onAccepted: { for (const f of selectedFiles) win.vm.run("importAddFile", [win.importFor, f]) }
+    }
+    FileDialog {
         id: createDialog
         title: qsTr("Save the new project as")
         fileMode: FileDialog.SaveFile
@@ -59,6 +72,62 @@ ApplicationWindow {
                 Layout.preferredWidth: 220
             }
             Item { Layout.fillWidth: true }
+        }
+
+        // a movie made elsewhere, when the core reads them: the core's answer fills the rest
+        Frame {
+            Layout.fillWidth: true
+            visible: win.vm.importMenu !== ""
+            ColumnLayout {
+                anchors.fill: parent
+                Label { text: win.vm.importMenu.replace("...", ""); font.bold: true }
+                RowLayout {
+                    Label { text: win.vm.importMovieLabel; Layout.preferredWidth: 160 }
+                    Label { text: win.vm.importMovie === "" ? qsTr("none") : win.vm.importMovie.replace(/^.*[\\/]/, ""); Layout.fillWidth: true; elide: Text.ElideMiddle }
+                    Button { text: qsTr("Choose..."); onClicked: importMovieDialog.open() }
+                }
+                Repeater {
+                    model: win.vm.rows("importFiles")
+                    delegate: RowLayout {
+                        id: input
+                        required property string option
+                        required property string label
+                        required property string filter
+                        required property bool required
+                        required property string files
+                        Label { text: input.label + (input.required ? " *" : ""); Layout.preferredWidth: 160 }
+                        Label { text: input.files === "" ? qsTr("none") : input.files.split("\n").join(", "); Layout.fillWidth: true; elide: Text.ElideRight }
+                        Button {
+                            text: qsTr("Add...")
+                            onClicked: {
+                                win.importFor = input.option
+                                importFileDialog.nameFilters = [input.label + " (" + input.filter + ")", qsTr("All files (*)")]
+                                importFileDialog.open()
+                            }
+                        }
+                    }
+                }
+                Repeater {
+                    model: win.vm.rows("importOptions")
+                    delegate: CheckBox {
+                        required property string name
+                        required property string label
+                        required property bool on
+                        text: label
+                        checked: on
+                        onToggled: win.vm.run("importSetOption", [name, checked])
+                    }
+                }
+                RowLayout {
+                    Button { text: qsTr("Import"); onClicked: win.vm.run("importRun") }
+                    Label {
+                        text: win.vm.imported ? qsTr("The project will take the movie's inputs") : ""
+                        Layout.fillWidth: true
+                    }
+                    Button { text: qsTr("Forget"); visible: win.vm.imported; onClicked: win.vm.run("importForget") }
+                }
+                Label { text: win.vm.importNotes; visible: text !== ""; wrapMode: Text.Wrap; opacity: 0.75; Layout.fillWidth: true }
+            }
         }
 
         Label { text: qsTr("Files"); font.bold: true }

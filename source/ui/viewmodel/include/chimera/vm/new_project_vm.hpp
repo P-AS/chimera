@@ -8,6 +8,7 @@
  * or chosen by hand. What keeps the project from being made is said, a line
  * each, until nothing does. Making it writes the project file and opens it. */
 
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -39,6 +40,26 @@ public:
 	Property<bool> ready{false};
 	Property<std::string> status;
 
+	/* Importing a movie made elsewhere (the package's movieImport): the
+	 * menu item it asks for ("" when the core imports nothing), what the
+	 * movie is and the kinds it comes in, the movie picked, the notes the
+	 * core's answer had, and whether the project will take its inputs. */
+	Property<std::string> importMenu;
+	Property<std::string> importMovieLabel;
+	Property<std::string> importMovieFilter;
+	Property<std::string> importMovie;
+	Property<std::string> importNotes;
+	Property<bool> imported{false};
+	/* Asks the core what a movie amounts to, away from the machine running
+	 * (a process holds one machine): package, the movie, the files it reads
+	 * as {name, path}, the import settings; done gets the core's JSON answer
+	 * or why there is none, on the view's thread. Without one the engine is
+	 * asked here, which only works with no machine open. */
+	using ImportRunner = std::function<void(const std::string &package, const std::string &movie,
+		const std::vector<std::pair<std::string, std::string>> &mounts, const std::string &settings,
+		std::function<void(std::string answer, std::string error)> done)>;
+	void setImportRunner(ImportRunner runner) { importRunner_ = std::move(runner); }
+
 private:
 	struct Picked
 	{
@@ -62,6 +83,30 @@ private:
 		explicit SlotRows(NewProjectViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.slots_.size()); }
 		int32_t columnCount() const override { return 10; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
+
+	private:
+		NewProjectViewModel &vm_;
+	};
+	class ImportFileRows : public RowModel
+	{
+	public:
+		explicit ImportFileRows(NewProjectViewModel &vm) : vm_(vm) {}
+		int64_t rowCount() const override;
+		int32_t columnCount() const override { return 6; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
+
+	private:
+		NewProjectViewModel &vm_;
+	};
+	class ImportOptionRows : public RowModel
+	{
+	public:
+		explicit ImportOptionRows(NewProjectViewModel &vm) : vm_(vm) {}
+		int64_t rowCount() const override;
+		int32_t columnCount() const override { return 3; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -94,6 +139,16 @@ private:
 	SettingsForm form_;
 	SettingsForm::Rows settingRows_{form_};
 	FirmwareRows firmwareRows_{*this};
+	ImportFileRows importFileRows_{*this};
+	ImportOptionRows importOptionRows_{*this};
+	/* the core's answer, put into the form */
+	void applyImport(const std::string &answer);
+	const json::Json *importInput(const std::string &option) const;
+	ImportRunner importRunner_;
+	json::Json import_;
+	std::map<std::string, std::vector<std::string>> importPicked_;
+	std::map<std::string, bool> importOptions_;
+	std::string pendingInput_;
 
 	std::string package_, packageSha1_, version_, slotsText_;
 	json::Json cfg_;
