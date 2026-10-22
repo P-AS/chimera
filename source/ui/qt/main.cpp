@@ -33,6 +33,7 @@
 
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
+#include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "key_names.hpp"
 #include "picture_item.hpp"
@@ -153,8 +154,9 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark, whatever the system says"), QStringLiteral("scheme"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: ram-search"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
-	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt});
+	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
 	if (args.isSet(schemeOpt))
 	{
@@ -185,8 +187,10 @@ int main(int argc, char **argv)
 	vm::InputLog inputs;
 	vm::SessionViewModel session(dispatcher, inputs);
 	vm::PianoRollViewModel pianoRoll(dispatcher, inputs, session);
+	vm::RamSearchViewModel ramSearch(dispatcher, session);
 	qt::QmlViewModel sessionQml(session);
 	qt::QmlViewModel pianoRollQml(pianoRoll);
+	qt::QmlViewModel ramSearchQml(ramSearch);
 
 	/* scripts reach the same view models, by the same names */
 	vm::LuaBridge lua;
@@ -196,6 +200,7 @@ int main(int argc, char **argv)
 	};
 	lua.add(session);
 	lua.add(pianoRoll);
+	lua.add(ramSearch);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -212,12 +217,15 @@ int main(int argc, char **argv)
 	engine.setInitialProperties({
 		{QStringLiteral("session"), QVariant::fromValue<QObject *>(&sessionQml)},
 		{QStringLiteral("pianoRoll"), QVariant::fromValue<QObject *>(&pianoRollQml)},
+		{QStringLiteral("ramSearch"), QVariant::fromValue<QObject *>(&ramSearchQml)},
 	});
 	engine.load(QUrl(QStringLiteral("qrc:/chimera/Main.qml")));
 	if (engine.rootObjects().isEmpty()) return 1;
 	auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
 	KeyFilter keys(session);
 	window->installEventFilter(&keys);
+	if (args.value(showOpt) == QStringLiteral("ram-search"))
+		if (auto *tool = window->findChild<QQuickWindow *>(QStringLiteral("ramSearchWindow"))) tool->show();
 
 	std::string error;
 	if (args.isSet(luaOpt))
@@ -309,7 +317,18 @@ int main(int argc, char **argv)
 			std::printf("piano roll: %lld rows, %zu paints, ms median %.3f, 95th %.3f, worst %.3f\n",
 				static_cast<long long>(inputs.size()), paints.size(), p.median, p.p95, p.worst);
 			if (args.isSet(shotOpt))
+			{
 				std::printf("screenshot: %s\n", window->grabWindow().save(args.value(shotOpt)) ? "saved" : "FAILED");
+				/* every other window open, beside it: shot.png -> shot-ramSearchWindow.png */
+				for (QWindow *w : QGuiApplication::topLevelWindows())
+				{
+					auto *q = qobject_cast<QQuickWindow *>(w);
+					if (q == nullptr || q == window || !q->isVisible()) continue;
+					QString path = args.value(shotOpt);
+					path.insert(path.lastIndexOf('.'), QStringLiteral("-") + q->objectName());
+					std::printf("screenshot: %s %s\n", qPrintable(q->objectName()), q->grabWindow().save(path) ? "saved" : "FAILED");
+				}
+			}
 			std::fflush(stdout);
 			app.quit();
 		});

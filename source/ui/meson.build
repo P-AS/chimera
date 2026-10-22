@@ -17,6 +17,7 @@ vm_lib = static_library(
     'viewmodel/src/gamepads.cpp',
     'viewmodel/src/sound.cpp',
     'viewmodel/src/lua_bridge.cpp',
+    'viewmodel/src/ram_search_vm.cpp',
   ],
   include_directories: [vm_inc, engine_inc, include_directories('../../extern/lua')],
   dependencies: [thread_dep, dl_dep],

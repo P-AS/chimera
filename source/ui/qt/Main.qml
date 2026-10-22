@@ -11,6 +11,7 @@ ApplicationWindow {
     id: root
     required property QtObject session
     required property QtObject pianoRoll
+    required property QtObject ramSearch
     property url chosenPackage
 
     width: 1280
@@ -46,6 +47,10 @@ ApplicationWindow {
             }
         }
         Menu {
+            title: qsTr("&Tools")
+            Action { text: qsTr("RAM &Search..."); onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
+        }
+        Menu {
             title: qsTr("Piano &Roll")
             Action { text: qsTr("Make the Inputs 1,000,000 Frames Long"); onTriggered: root.pianoRoll.run("fill", [1000000]) }
             Action {
@@ -56,6 +61,8 @@ ApplicationWindow {
             }
         }
     }
+
+    RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
 
     FileDialog {
         id: packageDialog

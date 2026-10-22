@@ -204,11 +204,7 @@ void SessionViewModel::loop()
 			if (now - due_ > 4 * period_) due_ = now;
 		}
 	}
-	if (s_ != nullptr)
-	{
-		ce_session_free(s_);
-		s_ = nullptr;
-	}
+	freeSessionOnMachine();
 	if (projectM_ != nullptr) ce_project_free(projectM_);
 	projectM_ = nullptr;
 	padsM_.reset(); /* SDL stops on the thread that started it */
@@ -217,11 +213,7 @@ void SessionViewModel::loop()
 
 void SessionViewModel::openOnMachine(const std::string &package, const std::string &game)
 {
-	if (s_ != nullptr)
-	{
-		ce_session_free(s_);
-		s_ = nullptr;
-	}
+	freeSessionOnMachine();
 	runningM_ = false;
 
 	std::ifstream in(game, std::ios::binary);
@@ -247,6 +239,49 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	game_ = game;
 }
 
+void SessionViewModel::freeSessionOnMachine()
+{
+	if (s_ == nullptr) return;
+	for (const Hooks &h : hooksM_)
+		if (h.closing) h.closing(s_);
+	ce_session_free(s_);
+	s_ = nullptr;
+}
+
+void SessionViewModel::onMachine(MachineJob job)
+{
+	submit([this, job = std::move(job)] { job(s_); });
+}
+
+void SessionViewModel::onMachineWait(MachineJob job)
+{
+	auto done = std::make_shared<std::promise<void>>();
+	std::future<void> ran = done->get_future();
+	submit([this, job = std::move(job), done] {
+		job(s_);
+		done->set_value();
+	});
+	ran.wait();
+}
+
+int SessionViewModel::addMachineHooks(MachineJob frame, MachineJob closing)
+{
+	const int id = nextHook_++;
+	submit([this, id, frame = std::move(frame), closing = std::move(closing)] { hooksM_.push_back({id, frame, closing}); });
+	return id;
+}
+
+void SessionViewModel::removeMachineHooks(int id)
+{
+	auto done = std::make_shared<std::promise<void>>();
+	std::future<void> gone = done->get_future();
+	submit([this, id, done] {
+		std::erase_if(hooksM_, [id](const Hooks &h) { return h.id == id; });
+		done->set_value();
+	});
+	gone.wait();
+}
+
 void SessionViewModel::freeProjectOnMachine()
 {
 	if (projectM_ != nullptr) ce_project_free(projectM_);
@@ -257,11 +292,7 @@ void SessionViewModel::freeProjectOnMachine()
 
 void SessionViewModel::openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs)
 {
-	if (s_ != nullptr)
-	{
-		ce_session_free(s_);
-		s_ = nullptr;
-	}
+	freeSessionOnMachine();
 	runningM_ = false;
 	auto fail = [this](const std::string &why) {
 		later([this, why] { status.set(why); isOpen.set(false); });
@@ -497,8 +528,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 void SessionViewModel::closeOnMachine()
 {
 	if (s_ == nullptr) return;
-	ce_session_free(s_);
-	s_ = nullptr;
+	freeSessionOnMachine();
 	freeProjectOnMachine();
 	runningM_ = false;
 	later([this] {
@@ -583,6 +613,8 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render)
 	frameM_++;
 	ce_session_greenzone_capture(s_, frameM_, nullptr, 0);
 	greenEndM_ = std::max(greenEndM_, frameM_);
+	for (const Hooks &h : hooksM_)
+		if (h.frame) h.frame(s_);
 	if (inputs_.setLag(f, lag > 0)) changed = true;
 
 	const char *death = ce_session_guest_death(s_);

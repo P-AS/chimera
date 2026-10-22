@@ -88,6 +88,19 @@ public:
 	 * tests, not for every frame. */
 	std::vector<uint8_t> readDomain(const std::string &name);
 
+	/* For other view models (RAM Search, RAM Watch, a hex editor) whose
+	 * work is the machine's: run it on the machine's thread, with the open
+	 * session or nullptr. */
+	using MachineJob = std::function<void(ce_session *)>;
+	void onMachine(MachineJob job);
+	/* the same, and waits for it */
+	void onMachineWait(MachineJob job);
+	/* frame runs after every frame (seeks' too), closing just before a
+	 * machine goes (its memory with it). removeMachineHooks waits until the
+	 * machine's thread has let go of them. */
+	int addMachineHooks(MachineJob frame, MachineJob closing);
+	void removeMachineHooks(int id);
+
 private:
 	using Clock = std::chrono::steady_clock;
 
@@ -123,6 +136,14 @@ private:
 	bool quit_ = false;
 
 	ce_session *s_ = nullptr;
+	struct Hooks
+	{
+		int id;
+		MachineJob frame, closing;
+	};
+	std::vector<Hooks> hooksM_;
+	std::atomic<int> nextHook_{1};
+	void freeSessionOnMachine();
 	ce_project *projectM_ = nullptr;
 	std::string projectPathM_, logKeyM_;
 	std::vector<int32_t> axesBuf_;

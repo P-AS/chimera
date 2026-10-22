@@ -2,5 +2,6 @@
 <RCC version="1.0">
   <qresource prefix="/chimera">
     <file>Main.qml</file>
+    <file>RamSearch.qml</file>
   </qresource>
 </RCC>

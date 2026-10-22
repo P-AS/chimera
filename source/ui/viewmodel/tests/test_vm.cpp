@@ -26,6 +26,7 @@
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
+#include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "chimera/engine.h"
 
@@ -399,6 +400,75 @@ bool machine(const char *package, const char *rom)
 	return true;
 }
 
+/* RAM Search: after "not equal to the value at the start", the candidates are
+ * exactly the addresses whose byte differs between two reads of RAM */
+bool ramSearch(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	RamSearchViewModel search(d, session);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && search.domains.get().find("RAM") != std::string::npos; }, 60));
+	search.set("domain", std::string("RAM"), error);
+	search.set("size", int64_t{1}, error);
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 1; }, 10));
+	const std::vector<uint8_t> before = session.readDomain("RAM");
+	CHECK(!before.empty());
+	CHECK(search.run("start", {}, error).has_value());
+	CHECK(d.until([&] { return search.searching.get() && search.count.get() == static_cast<int64_t>(before.size()); }, 20));
+
+	/* the walker walks down for ten frames */
+	session.key("Down", true);
+	for (int i = 0; i < 10; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 11; }, 20));
+	session.key("Down", false);
+	const std::vector<uint8_t> after = session.readDomain("RAM");
+	std::vector<std::string> changed;
+	for (size_t a = 0; a < before.size() && a < after.size(); a++)
+		if (before[a] != after[a])
+		{
+			char buf[24];
+			std::snprintf(buf, sizeof buf, "%06zX", a);
+			changed.emplace_back(buf);
+		}
+	CHECK(!changed.empty());
+	search.set("compare", int64_t{0}, error); /* the previous value */
+	search.set("op", int64_t{5}, error);      /* not equal */
+	search.run("search", {}, error);
+	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(changed.size()); }, 20));
+	std::vector<std::string> listed;
+	RowModel &rows = *search.rowLists()[0].model;
+	for (int64_t r = 0; r < rows.rowCount(); r++)
+	{
+		std::string a;
+		fromValue(rows.cell(r, 0), a);
+		listed.push_back(a);
+	}
+	std::sort(listed.begin(), listed.end());
+	CHECK(listed == changed);
+	/* the value column is the byte now */
+	if (!listed.empty())
+	{
+		int64_t v = -1;
+		fromValue(rows.cell(0, 1), v);
+		CHECK(v == after[std::stoul(listed[0], nullptr, 16)]);
+	}
+	/* taken back, and done again */
+	CHECK(search.canUndo.get());
+	search.run("undo", {}, error);
+	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(before.size()); }, 20));
+	CHECK(search.canRedo.get());
+	search.run("redo", {}, error);
+	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(changed.size()); }, 20));
+	/* the machine closing ends the search: its memory goes with it */
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !search.searching.get() && search.count.get() == 0; }, 20));
+	return true;
+}
+
 std::string readFile(const std::filesystem::path &p)
 {
 	std::ifstream in(p, std::ios::binary);
@@ -523,9 +593,15 @@ int main(int argc, char **argv)
 	if (argc >= 3)
 	{
 		FILE *p = std::fopen(argv[1], "rb"), *r = std::fopen(argv[2], "rb");
-		if (p != nullptr && r != nullptr) ranMachine = machine(argv[1], argv[2]);
-		if (p != nullptr && r != nullptr && argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
-		else std::printf("SKIP the machine tests: %s or %s is missing\n", argv[1], argv[2]);
+		if (p != nullptr && r != nullptr)
+		{
+			ranMachine = machine(argv[1], argv[2]);
+			ranMachine = ramSearch(argv[1], argv[2]) && ranMachine;
+			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
+			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
+		}
+		else
+			std::printf("SKIP the machine tests: %s or %s is missing\n", argv[1], argv[2]);
 		if (p) std::fclose(p);
 		if (r) std::fclose(r);
 	}
