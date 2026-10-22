@@ -28,9 +28,12 @@ public:
 	{
 		/* a separator is a line with only a note */
 		bool separator = false;
-		/* a game property watch, kept as its file line until this window can
-		 * read game properties: shown, not read, saved back as it was */
-		std::string propertyLine;
+		/* a watch on a game core's property (docs/game-cores.md), known by
+		 * its name, never its address: the engine reads it and writes it as
+		 * text, as a script and Chimera's watch see it. Its file line is
+		 * kept from the file, for when no machine has it to write afresh. */
+		std::string property, propertyLine;
+		std::string valueText, previousText;
 		std::string domain;
 		int64_t address = 0;
 		int size = 1;
@@ -95,6 +98,7 @@ private:
 	void refreshDomains();
 	/* the machine's thread */
 	void readOnMachine(ce_session *s, bool fresh);
+	void readProperty(ce_session *s, Watch &w, bool fresh);
 
 	SessionViewModel &session_;
 	std::vector<Watch> watches_;

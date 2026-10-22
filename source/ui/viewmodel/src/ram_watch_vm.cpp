@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "chimera/engine.h"
+#include "chimera/vm/json.hpp"
 
 namespace chimera::vm {
 
@@ -122,6 +123,27 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 				bigEndian, note}, error);
 			return added.has_value() ? *added : Value{};
 		});
+	command("addProperty", "watches a game core's property by its name (\"Score\", \"Row[2]\")", {"name"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string name;
+			if (!arg(a, 0, name, error)) return {};
+			bool found = false;
+			session_.onMachineWait([&](ce_session *s) {
+				uint32_t element = 0;
+				found = s != nullptr && ce_session_property_find(s, name.c_str(), &element) >= 0;
+			});
+			if (!found)
+			{
+				error = "the game has no property " + name;
+				return {};
+			}
+			Watch w;
+			w.property = name;
+			w.note = name;
+			watches_.push_back(w);
+			listChanged(true);
+			return static_cast<int64_t>(watches_.size() - 1);
+		});
 	command("addSeparator", "a line with only a note, to group watches", {"note"},
 		[this](const Args &a, std::string &error) -> Value {
 			Watch w;
@@ -159,7 +181,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		size_t i = 0;
 		int64_t display = 0;
 		if (!index(a, 0, i, error) || !arg(a, 1, display, error)) return {};
-		if (display < 0 || display > 7 || watches_[i].separator || !watches_[i].propertyLine.empty() || !watch::fits(watches_[i].size, static_cast<watch::Display>(display)))
+		if (display < 0 || display > 7 || watches_[i].separator || !watches_[i].property.empty() || !watch::fits(watches_[i].size, static_cast<watch::Display>(display)))
 		{
 			error = "that watch cannot be shown that way";
 			return {};
@@ -278,14 +300,77 @@ RamWatchViewModel::~RamWatchViewModel()
 	session_.onMachineWait([](ce_session *) {});
 }
 
+void RamWatchViewModel::readProperty(ce_session *s, Watch &w, bool fresh)
+{
+	uint32_t element = 0;
+	const int32_t index = ce_session_property_find(s, w.property.c_str(), &element);
+	bool ok = index >= 0;
+	std::string now;
+	if (ok)
+	{
+		char buf[1024];
+		const int32_t n = ce_session_property_text(s, index, element, 1, buf, sizeof buf);
+		ok = n >= 0;
+		if (ok) now.assign(buf, static_cast<size_t>(std::min<int32_t>(n, sizeof buf - 1)));
+		/* where it is now, and in which domain, as the engine's table says */
+		const int64_t offset = ce_session_property_offset(s, index, element);
+		if (offset >= 0) w.address = offset;
+		/* a property of a dynamic table that is not there now */
+		if (offset < 0 && ce_session_property_dynamic(s) != 0 && now.empty()) now = "(not there)";
+		/* the table is read on a first read only: a property keeps its domain */
+		json::Json table;
+		std::string jerr;
+		if (const char *t = (fresh || !w.readable) ? ce_session_property_table(s) : nullptr; t != nullptr && json::parse(t, table, jerr))
+			if (const json::Json *list = table.find("properties"); list != nullptr && static_cast<size_t>(index) < list->items.size())
+			{
+				const json::Json &p = list->items[static_cast<size_t>(index)];
+				if (const json::Json *dm = p.find("domain")) w.domain = dm->text;
+				if (const json::Json *en = p.find("endian")) w.bigEndian = en->text == "big";
+			}
+		if (w.domainSize == 0)
+			for (int32_t i = 0; i < ce_session_domain_count(s); i++)
+				if (w.domain == ce_session_domain_name(s, i)) w.domainSize = ce_session_domain_size(s, i);
+	}
+	const bool was = w.readable;
+	w.readable = ok;
+	if (!ok) return;
+	if (!was)
+	{
+		w.valueText = now;
+		if (!w.seen) w.previousText = now;
+		w.seen = true;
+		return;
+	}
+	if (fresh) return;
+	switch (previousTypeM_)
+	{
+	case 0: w.valueText = now; break;
+	case 3:
+		if (now != w.valueText)
+		{
+			w.previousText = w.valueText;
+			w.valueText = now;
+			w.changes++;
+		}
+		break;
+	default:
+		w.previousText = w.valueText;
+		w.valueText = now;
+		if (w.valueText != w.previousText) w.changes++;
+		break;
+	}
+}
+
 void RamWatchViewModel::refreshOnScreen()
 {
 	std::string lines;
 	if (showOnScreen.get())
 		for (const Watch &w : watches_)
 		{
-			if (!w.onScreen || w.separator || !w.propertyLine.empty()) continue;
-			lines += (lines.empty() ? "" : "\n") + w.note + ": " + (w.readable ? watch::format(w.value, w.size, w.display) : std::string("-"));
+			if (!w.onScreen || w.separator) continue;
+			const std::string value = !w.property.empty() ? (w.readable ? w.valueText : std::string("-"))
+									: w.readable ? watch::format(w.value, w.size, w.display) : std::string("-");
+			lines += (lines.empty() ? "" : "\n") + w.note + ": " + value;
 		}
 	onScreenText.set(lines);
 }
@@ -330,7 +415,12 @@ void RamWatchViewModel::readOnMachine(ce_session *s, bool fresh)
 	for (int32_t i = 0; i < ce_session_domain_count(s); i++) byName[ce_session_domain_name(s, i)] = i;
 	for (Watch &w : watchesM_)
 	{
-		if (w.separator || !w.propertyLine.empty()) continue;
+		if (w.separator) continue;
+		if (!w.property.empty())
+		{
+			readProperty(s, w, fresh);
+			continue;
+		}
 		const auto found = byName.find(w.domain);
 		bool ok = false;
 		uint32_t now = 0;
@@ -397,6 +487,14 @@ void RamWatchViewModel::readOnMachine(ce_session *s, bool fresh)
 				watches_[i].changes = read[i].changes;
 				watches_[i].readable = read[i].readable;
 				watches_[i].seen = read[i].seen;
+				watches_[i].valueText = read[i].valueText;
+				watches_[i].previousText = read[i].previousText;
+				if (!read[i].property.empty())
+				{
+					watches_[i].address = read[i].address;
+					watches_[i].domain = read[i].domain;
+					watches_[i].bigEndian = read[i].bigEndian;
+				}
 				watches_[i].domainSize = read[i].domainSize;
 			}
 			if (!watches_.empty()) rows_.changed.emit(0, static_cast<int64_t>(watches_.size()) - 1);
@@ -466,10 +564,13 @@ bool RamWatchViewModel::load(const std::string &file, bool append, std::string &
 		const int size = watch::sizeFromLetter(f[1][0]);
 		if (f[1][0] == 'p' && ours)
 		{
-			/* a game property, known by its name (the note): kept as it is */
+			/* a game property, known by its name (the note) */
 			Watch p;
 			p.propertyLine = line;
-			p.note = trimLineEnds(f[5]);
+			p.property = p.note = trimLineEnds(f[5]);
+			p.address = w.address;
+			p.domain = f[4];
+			p.bigEndian = !f[3].empty() && f[3][0] != '0';
 			placeOf.back() = static_cast<int>(read.size());
 			read.push_back(p);
 			continue;
@@ -523,8 +624,13 @@ bool RamWatchViewModel::save(const std::string &file, std::string &error)
 	for (size_t i = 0; i < watches_.size(); i++)
 	{
 		const Watch &w = watches_[i];
-		if (!w.propertyLine.empty())
-			text += w.propertyLine + kNewLine;
+		if (!w.property.empty())
+			/* as Chimera writes one: where it is now when a machine says so,
+			 * else the line the file had */
+			text += w.domainSize != 0 || w.propertyLine.empty()
+				? watch::hex(w.address, watch::addressDigits(w.domainSize != 0 ? w.domainSize : 0xFE)) + "\tp\tu\t" +
+					  (w.bigEndian ? "1" : "0") + "\t" + w.domain + "\t" + w.property + kNewLine
+				: w.propertyLine + kNewLine;
 		else if (w.separator)
 			text += std::string("0\tS\t_\t1\t\t") + trimLineEnds(w.note) + kNewLine;
 		else
@@ -573,9 +679,20 @@ Value RamWatchViewModel::Rows::cell(int64_t row, int32_t column) const
 	if (row < 0 || row >= rowCount()) return {};
 	const Watch &w = vm_.watches_[static_cast<size_t>(row)];
 	if (w.separator) return column == 6 ? Value(w.note) : column == 9 ? Value(false) : Value(std::string());
-	if (!w.propertyLine.empty())
-		return column == 6 ? Value(w.note) : column == 5 ? Value(std::string("game property"))
-			 : column == 9 ? Value(w.onScreen) : column == 1 || column == 2 ? Value(std::string("-")) : Value(std::string());
+	if (!w.property.empty())
+		switch (column)
+		{
+		case 0: return w.domainSize != 0 ? watch::hex(w.address, watch::addressDigits(w.domainSize - 1)) : std::string("-");
+		case 1: return w.readable ? w.valueText : std::string("-");
+		case 2: return w.readable ? w.previousText : std::string("-");
+		case 3: return w.changes;
+		case 5: return w.domain;
+		case 6: return w.note;
+		case 7: return int64_t{0};
+		case 8: return std::string("Game property");
+		case 9: return w.onScreen;
+		default: return std::string();
+		}
 	switch (column)
 	{
 	case 0: return watch::hex(w.address, watch::addressDigits(w.domainSize != 0 ? w.domainSize - 1 : 0xFE));

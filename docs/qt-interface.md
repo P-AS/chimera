@@ -52,7 +52,7 @@ made from.
 | pianoRoll | a row a frame and a column a button; press, drag, paint, fill; frames picked (on the frame numbers, as in TAStudio, with the thin column before them moving the machine), put in, taken out, cloned, cleared, copied, cut and pasted (over or in), cut off, with TAStudio's keys; analog controls a column each with their values, a cell picked to edit and a drag painting its value; markers that can move with the frames; undo and redo (a stroke is one step); follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
 | branches | other versions of the movie, kept in the project, each with its state in a file in the project's cache folder and the picture it had; loading one loads that state, or replays from where the two movies differ when the state is missing or is another machine's | Branches |
 | ramSearch | the engine's RAM Search, updated after every frame, with undo; values shown and typed every way RAM Watch shows them | RAM Search (Qt's own table) |
-| ramWatch | addresses kept an eye on, read after every frame, shown unsigned, signed, in hex, in binary, as fixed point or as a float exactly as Chimera writes them; the previous value three ways, changes counted; Chimera's .wch files both ways (other emulators' too); the marked ones shown over the picture where Chimera shows them | RAM Watch |
+| ramWatch | addresses kept an eye on, read after every frame, shown unsigned, signed, in hex, in binary, as fixed point or as a float exactly as Chimera writes them; the previous value three ways, changes counted; Chimera's .wch files both ways (other emulators' too); a game core's properties watched by name, read and written as text by the engine; the marked ones shown over the picture where Chimera shows them | RAM Watch |
 | settings | the package's declared settings, those that apply, edits applied live or by restarting | Settings (a form generated from the declaration) |
 | luaConsole | edit, run, open and save scripts; their output | Lua Console |
 | newProject | a project made before any machine runs, as Chimera's New Project window makes one: the core among the installed ones, its machine, files in the slots its package declares (kinds, how many, the ones a choice rules out, at least one of a group, names a slot asks for, a cue's tracks checked at once), the settings that apply, the firmware found by the engine's rules or chosen by hand; what is missing said a line at a time; made, then opened | New Project |
@@ -62,7 +62,7 @@ made from.
 | themes | Chimera's colour themes: its built-in Light (the desktop's own colours) and Dark, and every theme file in the themes folder; one chosen (Dark at first, as Chimera's default) and remembered; the window's palette and the piano roll's TAStudio colours follow it | Themes |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 674 checks on the
+The tests drive the view models with no window: 702 checks on the
 synthetic core (and on two packages made from it at build time: one under
 another name, one of two machines with declared slots and a firmware). They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
@@ -188,8 +188,7 @@ A suggested order, each step usable on its own:
    and the project written only when the work is first saved (here it is
    written when made).
 3. **RAM Watch, cheats, hex editor.** RAM Watch and the hex editor are
-   done, but for game property watches (kept in RAM Watch's files as they
-   are, not read yet). Cheats (frozen addresses) wait on a question for
+   done, game property watches included. Cheats (frozen addresses) wait on a question for
    the owner: with the engine owning the movie, a frozen value has to be
    written inside the engine's own replays too (a seek replays without
    the window), so it becomes a list the engine keeps.

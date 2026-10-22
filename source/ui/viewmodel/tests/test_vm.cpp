@@ -1389,12 +1389,48 @@ bool ramWatch(const char *package, const char *rom)
 		std::ofstream(dir / "odd.wch", std::ios::binary)
 			<< "SystemID Synth\n0010\tb\tu\t0\tNowhere\tlost domain\n0\tp\t_\t0\t\tplayer x\nOnScreen\t1\n";
 		CHECK(watches.run("open", {(dir / "odd.wch").string()}, error).has_value() && watches.count.get() == 2);
-		CHECK(text(0, 5) == firstDomain && text(1, 6) == "player x" && text(1, 5) == "game property");
+		/* the game has no "player x": it reads as nothing, and is saved as it was */
+		CHECK(text(0, 5) == firstDomain && text(1, 6) == "player x" && text(1, 8) == "Game property" && text(1, 1) == "-");
 		CHECK(watches.run("save", {(dir / "odd-saved.wch").string()}, error).has_value());
 		CHECK(readFile(dir / "odd-saved.wch").find(nl + "0\tp\t_\t0\t\tplayer x" + nl) != std::string::npos);
 		CHECK(readFile(dir / "odd-saved.wch").find("OnScreen\t1" + nl) != std::string::npos);
 	}
 	CHECK(!watches.run("open", {(dir / "missing.wch").string()}, error) && error.find("cannot read") != std::string::npos);
+	/* the game's own properties, by name: read by the engine as text, named
+	 * values by their names, changes counted, saved as Chimera saves them */
+	watches.run("newList", {}, error);
+	watches.set("previousType", int64_t{2}, error);
+	CHECK(watches.run("addProperty", {std::string("Steps")}, error).has_value());
+	CHECK(watches.run("addProperty", {std::string("Status")}, error).has_value());
+	CHECK(!watches.run("addProperty", {std::string("Nope")}, error) && error == "the game has no property Nope");
+	auto stepsNow = [&] {
+		const std::vector<uint8_t> r = session.readDomain("RAM");
+		return std::to_string(r[4] | (r[5] << 8) | (r[6] << 16) | (static_cast<uint32_t>(r[7]) << 24));
+	};
+	CHECK(d.until([&] { return text(0, 1) == stepsNow() && text(1, 1) == "Playing"; }, 10));
+	CHECK(text(0, 0) == watch::hex(4, watch::addressDigits(ramSize - 1)) && text(0, 5) == "RAM" && text(0, 8) == "Game property");
+	/* a few frames each way: every frame Steps reads differently is a change */
+	int64_t expectChanges = number(0, 3);
+	std::string last = stepsNow();
+	for (const char *key : {"Up", "Up", "Left", "Left", "Right", "Right", "Down", "Down"})
+	{
+		session.key(key, true);
+		step();
+		session.key(key, false);
+		const std::string nowSteps = stepsNow();
+		if (nowSteps != last) expectChanges++;
+		last = nowSteps;
+		CHECK(d.until([&] { return text(0, 1) == nowSteps && number(0, 3) == expectChanges; }, 10));
+	}
+	CHECK(expectChanges > 0);
+	CHECK(!watches.run("setDisplay", {int64_t{0}, int64_t{2}}, error));
+	watches.run("setOnScreen", {int64_t{1}, true}, error);
+	CHECK(watches.onScreenText.get() == "Status: Playing");
+	CHECK(watches.run("save", {(dir / "props.wch").string()}, error).has_value());
+	CHECK(readFile(dir / "props.wch").find(nl + watch::hex(4, watch::addressDigits(ramSize)) + "\tp\tu\t0\tRAM\tSteps" + nl) != std::string::npos);
+	watches.run("newList", {}, error);
+	CHECK(watches.run("open", {(dir / "props.wch").string()}, error).has_value() && watches.count.get() == 2);
+	CHECK(d.until([&] { return text(0, 1) == stepsNow() && text(1, 1) == "Playing"; }, 10));
 	session.key("Down", false);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
