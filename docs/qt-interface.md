@@ -48,7 +48,7 @@ made from.
 
 | View model | What it does | Window |
 |---|---|---|
-| session | open a game (the installed core that takes its kind of file opens it; when several do, they are offered), open, save and make projects, recent projects, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone (kept with the project in its cache folder and loaded when the project opens, unless the last session did not end), settings applied live or by restarting | main window |
+| session | open a game (the installed core that takes its kind of file opens it; when several do, they are offered), open, save and make projects, recent projects, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone (kept with the project in its cache folder and loaded when the project opens, unless the last session did not end; TAStudio's Greenzone box - every frame, one in N, none - saved in the project's TAStudio part as Chimera saves it), settings applied live or by restarting | main window |
 | pianoRoll | a row a frame and a column a button; press, drag, paint, fill; frames picked (on the frame numbers, as in TAStudio, with the thin column before them moving the machine), put in, taken out, cloned, cleared, copied, cut and pasted (over or in), cut off, with TAStudio's keys; analog controls a column each with their values, a cell picked to edit and a drag painting its value; markers that can move with the frames; undo and redo (a stroke is one step); follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
 | branches | other versions of the movie, kept in the project, each with its state in a file in the project's cache folder and the picture it had; loading one loads that state, or replays from where the two movies differ when the state is missing or is another machine's | Branches |
 | ramSearch | the engine's RAM Search, updated after every frame, with undo; values shown and typed every way RAM Watch shows them | RAM Search (Qt's own table) |
@@ -62,7 +62,7 @@ made from.
 | themes | Chimera's colour themes: its built-in Light (the desktop's own colours) and Dark, and every theme file in the themes folder; one chosen (Dark at first, as Chimera's default) and remembered; the window's palette and the piano roll's TAStudio colours follow it | Themes |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 653 checks on the
+The tests drive the view models with no window: 674 checks on the
 synthetic core (and on two packages made from it at build time: one under
 another name, one of two machines with declared slots and a firmware). They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
@@ -71,6 +71,10 @@ broken on purpose once and seen to fail.
 
 ## What was measured
 
+- A project made by this window with the greenzone every 5 frames opened
+  in Chimera's own TAStudio (Mono, Xvfb) with no warning, which read the
+  choice and saved it back with its columns; opened again here and saved
+  with another choice, every field Chimera had written was kept.
 - A real DOSBox-X project made with the New Project window from a script
   (a configuration file whose autoexec prints a line and the DOS version)
   boots and runs it, at the machine's own 70 frames a second (Linux,

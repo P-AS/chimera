@@ -162,6 +162,22 @@ ApplicationWindow {
             }
             MenuSeparator {}
             Action { text: qsTr("Make the Inputs 1,000,000 Frames Long"); onTriggered: root.pianoRoll.run("fill", [1000000]) }
+            Menu {
+                title: qsTr("&Greenzone")
+                Action {
+                    text: qsTr("Store &Every Frame"); checkable: true; checked: root.session.greenzonePeriod === 1
+                    onTriggered: root.session.greenzonePeriod = 1
+                }
+                Action {
+                    text: qsTr("Store Every &%1 Frames...").arg(root.session.greenzoneEvery); checkable: true
+                    checked: root.session.greenzonePeriod > 1
+                    onTriggered: { checked = root.session.greenzonePeriod > 1; everyDialog.open() }
+                }
+                Action {
+                    text: qsTr("Store &None"); checkable: true; checked: root.session.greenzonePeriod === 0
+                    onTriggered: root.session.greenzonePeriod = 0
+                }
+            }
             Action {
                 text: qsTr("&Follow the Current Frame")
                 checkable: true
@@ -171,6 +187,15 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: everyDialog
+        title: qsTr("Store every how many frames")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        SpinBox { id: everyCount; from: 2; to: 999; value: root.session.greenzoneEvery; editable: true }
+        onAccepted: { root.session.greenzoneEvery = everyCount.value; root.session.greenzonePeriod = everyCount.value }
+    }
     Dialog {
         id: insertDialog
         title: qsTr("Insert frames")

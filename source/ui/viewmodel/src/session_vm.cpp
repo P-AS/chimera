@@ -37,6 +37,23 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("greenzoneStates", "machine states the greenzone holds", greenzoneStates);
 	expose("rerecords", "how many times the movie was changed over work already done (saved with the project)", rerecords);
 	expose("autoRestore", "after an edit before the current frame, run on to where the machine was", autoRestore, true);
+	expose("greenzonePeriod", "which frames the greenzone stores: 1 every frame, N one in N, 0 none (saved with the project)",
+		greenzonePeriod, true);
+	expose("greenzoneEvery", "the N of storing every N frames, 2 to 999", greenzoneEvery, true);
+	command("cycleGreenzone", "every frame, then every N frames, then none, then every frame again", {},
+		[this](const Args &, std::string &) -> Value {
+			const int64_t now = greenzonePeriod.get();
+			greenzonePeriod.set(now == 1 ? std::clamp<int64_t>(greenzoneEvery.get(), 2, 999) : now == 0 ? 1 : 0);
+			return greenzonePeriod.get();
+		});
+	periodWatch_ = greenzonePeriod.changed.connect([this] {
+		if (greenzonePeriod.get() < 0) greenzonePeriod.set(0);
+		const int64_t p = greenzonePeriod.get();
+		periodM_.store(p);
+		submit([this, p] {
+			if (s_ != nullptr) ce_session_greenzone_capture_period(s_, p);
+		});
+	});
 	expose("lastSeekMs", "how long the last seek took, in milliseconds", lastSeekMs);
 	expose("lastSeekFrames", "how many frames the last seek ran", lastSeekFrames);
 	expose("projectPath", "the open project's file, \"\" when a game was opened without one", projectPath);
@@ -512,6 +529,12 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	later([this] { projectPath.set(""); projectTitle.set(""); });
 	/* the movie: the one it had when started again, else an empty one */
 	loadMovieOnMachine(s, movie);
+	/* a game alone starts storing every frame, as a new project does */
+	if (!keepMovie)
+	{
+		periodM_.store(1);
+		later([this] { greenzonePeriod.set(1); });
+	}
 	ce_session_set_rerecords(s, counted);
 	adoptOnMachine(s, package, game, true);
 	package_ = package;
@@ -1100,6 +1123,20 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	}
 	/* the count goes on from the project's, or from where a restart was */
 	ce_session_set_rerecords(s, keepInputs ? keptRerecords : ce_project_rerecords(p));
+	/* the Greenzone box's choice, from TAStudio's part of the project */
+	if (!keepInputs)
+	{
+		int64_t period = 1;
+		uint64_t tlen = 0;
+		json::Json tastudio;
+		std::string terr;
+		if (const char *t = ce_project_tastudio_text(p, &tlen);
+			t != nullptr && tlen > 0 && json::parse(std::string_view(t, static_cast<size_t>(tlen)), tastudio, terr))
+			if (const json::Json *o = tastudio.find("o"))
+				if (const json::Json *g = o->find("GreenzonePeriod")) period = std::max<int64_t>(0, static_cast<int64_t>(g->number()));
+		periodM_.store(period);
+		later([this, period] { greenzonePeriod.set(period); });
+	}
 
 	if (!keepInputs)
 	{
@@ -1267,6 +1304,45 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to)
 	const std::string log = movieTextOnMachine();
 	ce_project_set_log_text(projectM_, log.data(), log.size());
 	ce_project_set_rerecords(projectM_, ce_session_rerecords(s_));
+	/* the Greenzone box's choice, into TAStudio's part, whatever else is there */
+	{
+		uint64_t tlen = 0;
+		json::Json tastudio;
+		std::string terr;
+		const char *t = ce_project_tastudio_text(projectM_, &tlen);
+		if (t == nullptr || tlen == 0 || !json::parse(std::string_view(t, static_cast<size_t>(tlen)), tastudio, terr) ||
+			tastudio.kind != json::Json::Kind::Object)
+		{
+			tastudio = json::Json();
+			tastudio.kind = json::Json::Kind::Object;
+		}
+		json::Json *o = nullptr;
+		for (auto &[k, v] : tastudio.members)
+			if (k == "o") o = &v;
+		if (o == nullptr || o->kind != json::Json::Kind::Object)
+		{
+			if (o == nullptr)
+			{
+				tastudio.members.emplace_back("o", json::Json());
+				o = &tastudio.members.back().second;
+			}
+			*o = json::Json();
+			o->kind = json::Json::Kind::Object;
+			/* the type Chimera's TAStudio reads it as, first, as it writes it:
+			 * without it Chimera says the movie's client settings would not load */
+			o->members.emplace_back("$type", json::Json::string("Chimera.Client.GUI.TAStudio+MovieClientSettings, Chimera.Client.GUI"));
+		}
+		bool set = false;
+		for (auto &[k, v] : o->members)
+			if (k == "GreenzonePeriod")
+			{
+				v = json::Json::integer(periodM_.load());
+				set = true;
+			}
+		if (!set) o->members.emplace_back("GreenzonePeriod", json::Json::integer(periodM_.load()));
+		const char *err = nullptr;
+		ce_project_set_tastudio_text(projectM_, json::write(tastudio).c_str(), &err);
+	}
 	for (int32_t i = ce_project_marker_count(projectM_) - 1; i >= 0; i--) ce_project_marker_remove(projectM_, i);
 	for (const Marker &m : markersM_) ce_project_marker_add(projectM_, m.frame, m.text.c_str(), m.keepState ? 1 : 0);
 	for (int32_t i = ce_project_branch_count(projectM_) - 1; i >= 0; i--) ce_project_branch_remove(projectM_, i);
@@ -1322,6 +1398,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	/* a history of the machine's states, so a seek replays from the nearest
 	 * one rather than from power-on (a setting, later) */
 	ce_session_greenzone_enable(s, uint64_t{1} << 30);
+	ce_session_greenzone_capture_period(s, periodM_.load());
 	pinMarkersOnMachine();
 
 	std::vector<std::string> names;

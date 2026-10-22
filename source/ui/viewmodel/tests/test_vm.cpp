@@ -1828,6 +1828,104 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	return true;
 }
 
+/* The Greenzone box: read from TAStudio's part of the project, given to
+ * the engine, saved back without disturbing the rest of that part */
+bool greenzoneChoice(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-gzbox-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	std::string error;
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	const fs::path project = dir / "g.chimeraProject";
+	session.run("saveAsProject", {project.string()}, error);
+	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* a part made here carries the type Chimera's TAStudio reads it as, first */
+	{
+		json::Json p;
+		CHECK(json::parse(readFile(project), p, error));
+		const json::Json *o = p.find("tastudio") != nullptr ? p.find("tastudio")->find("o") : nullptr;
+		CHECK(o != nullptr && !o->members.empty() && o->members.front().first == "$type" &&
+			  o->members.front().second.text == "Chimera.Client.GUI.TAStudio+MovieClientSettings, Chimera.Client.GUI" &&
+			  o->find("GreenzonePeriod") != nullptr && o->find("GreenzonePeriod")->number() == 1);
+	}
+	/* TAStudio's part as Chimera writes it, with a choice of 5 and another setting */
+	{
+		json::Json p;
+		CHECK(json::parse(readFile(project), p, error));
+		json::Json o, tastudio;
+		o.kind = tastudio.kind = json::Json::Kind::Object;
+		o.members.emplace_back("HorizontalOrientation", json::Json::boolean_(true));
+		o.members.emplace_back("GreenzonePeriod", json::Json::integer(5));
+		tastudio.members.emplace_back("o", o);
+		/* in place of the part the save wrote */
+		bool replaced = false;
+		for (auto &[k, v] : p.members)
+			if (k == "tastudio")
+			{
+				v = tastudio;
+				replaced = true;
+			}
+		if (!replaced) p.members.emplace_back("tastudio", tastudio);
+		std::ofstream(project, std::ios::binary | std::ios::trunc) << json::write(p);
+	}
+	session.run("openProject", {project.string(), std::string(package)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && session.greenzonePeriod.get() == 5; }, 60));
+	auto advance = [&](int n) {
+		const int64_t to = session.frame.get() + n;
+		for (int i = 0; i < n; i++) session.run("frameAdvance", {}, error);
+		CHECK(d.until([&] { return session.frame.get() == to; }, 30));
+		d.until([] { return false; }, 0.1);
+	};
+	/* one in five: twenty frames store few states; every frame: many more */
+	const int64_t s0 = session.greenzoneStates.get();
+	advance(20);
+	const int64_t fifths = session.greenzoneStates.get() - s0;
+	session.greenzonePeriod.set(1);
+	advance(20);
+	const int64_t every = session.greenzoneStates.get() - s0 - fifths;
+	CHECK(fifths <= 6 && every >= 15);
+	/* none: nothing more is stored */
+	session.greenzonePeriod.set(0);
+	const int64_t before = session.greenzoneStates.get();
+	advance(10);
+	CHECK(session.greenzoneStates.get() == before);
+	/* saved into TAStudio's part, the rest of it as it was */
+	session.run("saveProject", {std::string()}, error);
+	CHECK(d.until([&] { return session.status.get().rfind("Saved", 0) == 0; }, 20));
+	{
+		json::Json p;
+		CHECK(json::parse(readFile(project), p, error));
+		const json::Json *o = p.find("tastudio") != nullptr ? p.find("tastudio")->find("o") : nullptr;
+		CHECK(o != nullptr && o->find("GreenzonePeriod") != nullptr && o->find("GreenzonePeriod")->number() == 0 &&
+			  o->find("HorizontalOrientation") != nullptr && o->find("HorizontalOrientation")->boolean);
+	}
+	/* cycled: every frame, every N, none */
+	session.run("cycleGreenzone", {}, error);
+	CHECK(session.greenzonePeriod.get() == 1);
+	session.greenzoneEvery.set(4);
+	session.run("cycleGreenzone", {}, error);
+	CHECK(session.greenzonePeriod.get() == 4);
+	session.run("cycleGreenzone", {}, error);
+	CHECK(session.greenzonePeriod.get() == 0);
+	/* a game alone starts on every frame */
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && session.greenzonePeriod.get() == 1; }, 60));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
 /* Rerecords, counted as Chimera's TAStudio counts them: an edit over frames
  * the machine has stored states past counts one, a stroke counts once
  * however many cells it crosses, frames added at the end count none, a
@@ -2166,6 +2264,7 @@ int main(int argc, char **argv)
 			ranMachine = hexEditor(argv[1], argv[2]) && ranMachine;
 			ranMachine = pianoRollEditing(argv[1], argv[2]) && ranMachine;
 			ranMachine = controlsAndHotkeys(argv[1], argv[2]) && ranMachine;
+			ranMachine = greenzoneChoice(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;

@@ -240,6 +240,9 @@ int main(int argc, char **argv)
 		hotkeys.add("TAStudio", "Toggle Follow Cursor", "Shift+F", [&pianoRoll](bool down) {
 			if (down) pianoRoll.followPlayback.set(!pianoRoll.followPlayback.get());
 		});
+		hotkeys.add("TAStudio", "Cycle Greenzone", "", [&session, run](bool down) {
+			if (down) run(session, "cycleGreenzone");
+		});
 		hotkeys.add("TAStudio", "Toggle Auto-Restore", "Alt+R", [&session](bool down) {
 			if (down) session.autoRestore.set(!session.autoRestore.get());
 		});
@@ -290,6 +293,7 @@ int main(int argc, char **argv)
 			? qEnvironmentVariable("CHIMERA_QT_CACHE").toStdString()
 			: (QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/projects")).toStdString());
 	config.keep(session, "autoRestore");
+	config.keep(session, "greenzoneEvery");
 	config.keep(ramWatch, "showOnScreen");
 	config.keep(controls, "saved");
 	/* the themes: Chimera's built-in two, and the folder beside the program

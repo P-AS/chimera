@@ -69,6 +69,11 @@ public:
 	/* after an edit before the current frame, go back to the edit and run
 	 * forward to where the machine was, with the new inputs */
 	Property<bool> autoRestore{true};
+	/* which frames the greenzone stores: 1 every frame, N one in N, 0 none
+	 * (TAStudio's Greenzone box; saved with the project, 1 for one saved
+	 * before it was), and the N the "every N frames" choice uses */
+	Property<int64_t> greenzonePeriod{1};
+	Property<int64_t> greenzoneEvery{2};
 	/* how long the last seek took, in milliseconds, and how many frames it ran */
 	Property<double> lastSeekMs{0.0};
 	Property<int64_t> lastSeekFrames{0};
@@ -335,7 +340,8 @@ private:
 	/* gamepads are read on this thread, just before each frame */
 	std::unique_ptr<Gamepads> padsM_;
 	Bindings bindingsM_;
-	Connection autoRestoreWatch_;
+	Connection autoRestoreWatch_, periodWatch_;
+	std::atomic<int64_t> periodM_{1};
 	std::vector<std::string> padHeld_;
 	size_t padCount_ = 0;
 	std::unique_ptr<Sound> soundM_;
