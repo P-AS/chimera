@@ -36,6 +36,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("lastSeekFrames", "how many frames the last seek ran", lastSeekFrames);
 	expose("projectPath", "the open project's file, \"\" when a game was opened without one", projectPath);
 	expose("projectTitle", "the open project's title", projectTitle);
+	expose("recentProjects", "projects opened, newest first, a line each", recentProjects, true);
 	picture("screen", "the machine's picture", screen, screenChanged);
 	autoRestoreWatch_ = autoRestore.changed.connect([this] { autoRestoreM_.store(autoRestore.get()); });
 
@@ -719,7 +720,27 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	game_.clear();
 	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
 	adoptOnMachine(s, package, (title.empty() ? path : title) + note, true);
-	later([this, path, title] { projectPath.set(path); projectTitle.set(title); });
+	later([this, path, title] {
+		projectPath.set(path);
+		projectTitle.set(title);
+		/* newest first, each once, ten at most */
+		std::string list = path, rest = recentProjects.get();
+		int kept = 1;
+		size_t at = 0;
+		while (at <= rest.size() && kept < 10)
+		{
+			const size_t end = rest.find('\n', at);
+			const std::string line = rest.substr(at, end == std::string::npos ? std::string::npos : end - at);
+			if (!line.empty() && line != path)
+			{
+				list += "\n" + line;
+				kept++;
+			}
+			if (end == std::string::npos) break;
+			at = end + 1;
+		}
+		recentProjects.set(list);
+	});
 }
 
 void SessionViewModel::saveProjectOnMachine(const std::string &to)

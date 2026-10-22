@@ -30,6 +30,21 @@ ApplicationWindow {
             title: qsTr("&File")
             Action { text: qsTr("&Open Game..."); shortcut: "Ctrl+O"; onTriggered: packageDialog.open() }
             Action { text: qsTr("Open &Project..."); shortcut: "Ctrl+Shift+O"; onTriggered: projectDialog.open() }
+            Menu {
+                id: recentMenu
+                title: qsTr("&Recent Projects")
+                enabled: root.session.recentProjects !== ""
+                Instantiator {
+                    model: root.session.recentProjects === "" ? [] : root.session.recentProjects.split("\n")
+                    delegate: MenuItem {
+                        required property string modelData
+                        text: modelData
+                        onTriggered: root.session.run("openProject", [modelData])
+                    }
+                    onObjectAdded: (index, object) => recentMenu.insertItem(index, object)
+                    onObjectRemoved: (index, object) => recentMenu.removeItem(object)
+                }
+            }
             Action { text: qsTr("&Save Project"); shortcut: "Ctrl+S"; enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveProject") }
             Action { text: qsTr("Save Project &As..."); enabled: root.session.projectPath !== ""; onTriggered: saveAsDialog.open() }
             Action { text: qsTr("&Restart"); enabled: root.session.restartEnabled; onTriggered: root.session.run("restart") }

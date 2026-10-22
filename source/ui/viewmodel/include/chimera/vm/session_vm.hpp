@@ -70,6 +70,8 @@ public:
 	/* the open project, "" when a game was opened without one */
 	Property<std::string> projectPath;
 	Property<std::string> projectTitle;
+	/* projects opened, newest first, a line each (ten kept) */
+	Property<std::string> recentProjects;
 
 	Picture screen;
 	Signal<> screenChanged;

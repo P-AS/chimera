@@ -19,6 +19,7 @@
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QPalette>
+#include <QStandardPaths>
 #include <QStyleHints>
 #include <QTimer>
 
@@ -32,6 +33,7 @@
 #include <vector>
 
 #include "chimera/vm/branches_vm.hpp"
+#include "chimera/vm/config_store.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -203,6 +205,20 @@ int main(int argc, char **argv)
 		cores.firmwareFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Firmware")).toStdString());
 	session.setFinders([&cores](const std::string &n, const std::string &h, std::string &note) { return cores.packageFor(n, h, note); },
 		[&cores] { return cores.firmwareFolders(); });
+
+	/* what the window remembers, in a file of its own (CHIMERA_QT_CONFIG for
+	 * a test): folders the environment names are the environment's, and
+	 * not remembered */
+	const QString configPath = qEnvironmentVariableIsSet("CHIMERA_QT_CONFIG")
+		? qEnvironmentVariable("CHIMERA_QT_CONFIG")
+		: QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + QStringLiteral("/settings.json");
+	vm::ConfigStore config(configPath.toStdString());
+	if (!qEnvironmentVariableIsSet("CHIMERA_CORES_DIR")) config.keep(cores, "coresFolder");
+	if (!qEnvironmentVariableIsSet("CHIMERA_FIRMWARE_DIR")) config.keep(cores, "firmwareFolder");
+	config.keep(session, "autoRestore");
+	config.keep(session, "recentProjects");
+	config.keep(pianoRoll, "followPlayback");
+	if (!config.problem().empty()) session.status.set(config.problem());
 	qt::QmlViewModel sessionQml(session);
 	qt::QmlViewModel pianoRollQml(pianoRoll);
 	qt::QmlViewModel ramSearchQml(ramSearch);

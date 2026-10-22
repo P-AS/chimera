@@ -24,6 +24,7 @@
 #endif
 
 #include "chimera/vm/bindings.hpp"
+#include "chimera/vm/config_store.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/firmware.hpp"
 #include "chimera/vm/branches_vm.hpp"
@@ -269,6 +270,35 @@ void firmware()
 	CHECK(neededFirmware(fwDecl, setDecl, "{}", none, noPins, index).empty());
 	const auto needs = neededFirmware(fwDecl, setDecl, "{}", on, noPins, index);
 	CHECK(needs.size() == 1 && needs[0].id == "b" && needs[0].path.find("BIOS.BIN") != std::string::npos && needs[0].sha1.size() == 40);
+	fs::remove_all(dir);
+}
+
+/* What the window remembers: a property kept by its name comes back in the
+ * next run; a file that does not read is set aside, not written over */
+void configStore()
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-config-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	const std::string file = (dir / "settings.json").string();
+	ManualDispatcher d;
+	{
+		ConfigStore store(file);
+		Sample vm(d);
+		store.keep(vm, "count");
+		vm.count.set(42);
+		CHECK(store.problem().empty() && fs::exists(file));
+	}
+	{
+		ConfigStore store(file);
+		Sample vm(d);
+		store.keep(vm, "count");
+		CHECK(vm.count.get() == 42);
+	}
+	std::ofstream(file, std::ios::binary | std::ios::trunc) << "{ not json";
+	{
+		ConfigStore store(file);
+		CHECK(!store.problem().empty() && fs::exists(file + ".unreadable") && !fs::exists(file));
+	}
 	fs::remove_all(dir);
 }
 
@@ -786,6 +816,7 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 		return true;
 	}
 	CHECK(session.projectTitle.get() == "gridWalker.win");
+	CHECK(session.recentProjects.get() == (dir / "p.chimeraProject").string());
 	CHECK(roll.frameCount.get() == static_cast<int64_t>(entries.size()));
 	CHECK(inputs.at(0) == 0 && inputs.at(1) == (uint64_t{1} << 1)); /* "|.D......|" is P1 Down */
 
@@ -838,6 +869,8 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	CHECK(d.until([&] { return readFile(dir / "saved.chimeraProject") != beforeMarkers; }, 20));
 	CHECK(openIt(dir / "p.chimeraProject"));
 	CHECK(roll.markerCount.get() == 0); /* the other project has none */
+	/* the newest first, each once */
+	CHECK(session.recentProjects.get() == (dir / "p.chimeraProject").string() + "\n" + (dir / "saved.chimeraProject").string());
 	CHECK(openIt(dir / "saved.chimeraProject"));
 	CHECK(roll.markerCount.get() == 2 && roll.rowLists()[0].model->rowNote(12) == "turn");
 	RowModel &marks = *roll.rowLists()[1].model;
@@ -938,6 +971,7 @@ int main(int argc, char **argv)
 	bindings();
 	lua();
 	luaConsole();
+	configStore();
 	firmware();
 	settingsByMachine();
 	pianoRollWithoutAMachine();
