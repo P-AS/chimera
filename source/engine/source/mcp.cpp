@@ -145,6 +145,14 @@ const McpTool kTools[] = {
 	  "The project's markers: for each, its frame, its text, and whether a person placed it "
 	  "(every movie has three of its own: the run's start, its last input and its end).",
 	  kNoArguments, false, true },
+	{ "server_info",
+	  "Which Chimera this is and where it keeps things: its build, the folder it runs from, and the folders it saves "
+	  "projects (Movies), reads cores from and looks for firmware in. Without a window: the build, and the folders this "
+	  "server was started with.",
+	  kNoArguments, false, true },
+	{ "pause",
+	  "Pauses the machine, as System > Pause does, and answers the frame it is on. A machine that is already paused stays so.",
+	  kNoArguments, false, true },
 
 	/* The tools that change something. They are refused until the person
 	 * using Chimera allows changes, and before the first of them a branch of
@@ -226,6 +234,27 @@ const McpTool kTools[] = {
 	  "\"text\":{\"type\":\"string\"}"
 	  "},\"required\":[\"frame\"],\"additionalProperties\":false}",
 	  true, true },
+	{ "resume",
+	  "Lets the machine run, as unpausing does: TAStudio plays the movie, and past its end every frame played is added to "
+	  "it, as when a person plays on. Answers at once with the frame it started from; 'pause' stops it, and 'status' says "
+	  "where it is.",
+	  kNoArguments, true, true, false, true },
+	{ "save_project",
+	  "Saves the open project: where it was last saved or opened when no path is given, else at 'path'. A file that is "
+	  "already at 'path' is not replaced unless 'overwrite' is true; nothing asks. Without a window the path must be inside "
+	  "the work folder.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"path\":{\"type\":\"string\",\"description\":\"Where to save it, a .chimeraProject file. Where it was last saved or opened when left out.\"},"
+	  "\"overwrite\":{\"type\":\"boolean\",\"description\":\"Replace a file that is already at 'path'. false when left out.\"}"
+	  "},\"additionalProperties\":false}",
+	  true, true },
+	{ "close_tastudio",
+	  "Closes the open project: TAStudio and the machine, as closing TAStudio does. A project with changes that are not "
+	  "saved is not closed unless 'discard_unsaved' is true; nothing asks. Without a window, 'close' does this.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"discard_unsaved\":{\"type\":\"boolean\",\"description\":\"Close even with changes that are not saved, which are then lost. false when left out.\"}"
+	  "},\"additionalProperties\":false}",
+	  true, true, false, true },
 	{ "write_memory",
 	  "Writes values to a memory domain or a bus at the frame the machine is on. A movie cannot reproduce a memory write: "
 	  "it is for testing a guess, and 'status' says from then on that memory was written. At most 4096 bytes a call.",
@@ -284,12 +313,6 @@ const McpTool kTools[] = {
 	  "\"firmware\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Firmware id to the path of its file.\"},"
 	  "\"allow_other_core_build\":{\"type\":\"boolean\",\"description\":\"Run it on the build in the cores folder when that is not the one the project names.\"}"
 	  "},\"required\":[\"path\"],\"additionalProperties\":false}",
-	  false, false, true },
-	{ "save_project",
-	  "Saves the open project, with its input, branches and markers, inside the work folder.",
-	  "{\"type\":\"object\",\"properties\":{"
-	  "\"path\":{\"type\":\"string\",\"description\":\"Where to save it. Where it was last saved or opened when left out.\"}"
-	  "},\"additionalProperties\":false}",
 	  false, false, true },
 	{ "export_movie",
 	  "Writes the movie's input alone to a file inside the work folder, as chimera-run plays it.",
@@ -358,6 +381,11 @@ const McpTool *mcpTools(size_t &count)
 {
 	count = sizeof(kTools) / sizeof(kTools[0]);
 	return kTools;
+}
+
+bool mcpOffered(const McpTool &tool)
+{
+	return g_local ? !tool.window : !tool.local;
 }
 
 const McpTool *mcpFindTool(const std::string &name)
@@ -532,8 +560,8 @@ std::string mcpHandleLine(const std::string &line, const McpExecutor &execute, s
 		cJSON *list = cJSON_CreateArray();
 		for (const McpTool &tool : kTools)
 		{
-			/* a tool for where there is no window is not offered where there is one */
-			if (tool.local && !g_local) continue;
+			/* a tool for where there is no window is not offered where there is one, and the other way round */
+			if (!mcpOffered(tool)) continue;
 			cJSON *item = cJSON_CreateObject();
 			cJSON_AddStringToObject(item, "name", tool.name);
 			cJSON_AddStringToObject(item, "description", tool.description);
@@ -555,7 +583,7 @@ std::string mcpHandleLine(const std::string &line, const McpExecutor &execute, s
 		{
 			out = rpcError(id, -32602, "tools/call needs the tool's name");
 		}
-		else if (mcpFindTool(name->valuestring) == nullptr || (mcpFindTool(name->valuestring)->local && !g_local))
+		else if (mcpFindTool(name->valuestring) == nullptr || !mcpOffered(*mcpFindTool(name->valuestring)))
 		{
 			out = rpcError(id, -32602, std::string("there is no tool called '") + name->valuestring + "'");
 		}
@@ -947,6 +975,14 @@ McpResult toolStatus(ce_session *s, const ce_movie_log *log, int64_t frame, cons
 		cJSON_AddNumberToObject(picture, "width", ce_session_video_width(s));
 		cJSON_AddNumberToObject(picture, "height", ce_session_video_height(s));
 		cJSON_AddItemToObject(out, "picture", picture);
+		/* the names set_buttons and press_buttons take, for the controls this
+		 * machine has plugged in; 'controls' says more of each */
+		cJSON *buttons = cJSON_AddArrayToObject(out, "buttons");
+		for (int64_t i = 0; i < ce_session_button_count(s); i++)
+			if (ce_session_button_active(s, i) != 0) cJSON_AddItemToArray(buttons, cJSON_CreateString(ce_session_button_name(s, i)));
+		cJSON *axes = cJSON_AddArrayToObject(out, "axes");
+		for (int64_t i = 0; i < ce_session_axis_count(s); i++)
+			if (ce_session_axis_active(s, i) != 0) cJSON_AddItemToArray(axes, cJSON_CreateString(ce_session_axis_name(s, i)));
 		const int32_t numerator = ce_session_vsync_numerator(s);
 		const int32_t denominator = ce_session_vsync_denominator(s);
 		if (denominator > 0) cJSON_AddNumberToObject(out, "frames_per_second", static_cast<double>(numerator) / denominator);
@@ -1796,6 +1832,15 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, bool engineHolds, std::
 	return true;
 }
 
+/* A tool the tick box governs that does not change the movie or the machine:
+ * it saves, or closes, the work as it is. No branch is saved before it, which
+ * would itself be a change to the work: a project closed first thing would
+ * have had unsaved changes the agent had not made. */
+bool leavesTheWorkAsItIs(const std::string &tool)
+{
+	return tool == "save_project" || tool == "close_tastudio";
+}
+
 bool isEdit(const std::string &tool)
 {
 	return tool == "set_input" || tool == "set_buttons" || tool == "insert_frames" || tool == "delete_frames";
@@ -2194,7 +2239,7 @@ int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t frame, co
 					"Allow the agent to make changes."));
 				continue;
 			}
-			if (tool->changes && sv.kept == 0)
+			if (tool->changes && sv.kept == 0 && !chimera::leavesTheWorkAsItIs(call.tool))
 			{
 				/* The first change since the server was started. The call goes
 				 * back to the head of the line, and the frontend is asked first

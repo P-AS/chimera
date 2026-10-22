@@ -32,13 +32,21 @@ namespace Chimera.Client.GUI
 		private ulong _logShown;
 		private string _startError = "";
 
+		/// <summary>Where the tick box is remembered (Config.McpAllowChanges).</summary>
+		private readonly Config _config;
+
+		/// <summary>Set while the window puts the tick box right itself, which is no person's choice to remember.</summary>
+		private bool _showing;
+
 		protected override string WindowTitleStatic => "MCP Server";
 
 		/// <summary>Raised after the server was started or stopped from this window.</summary>
 		public event Action? ServerToggled;
 
-		public McpServerForm()
+		/// <param name="config">where the tick box is remembered; a test that gives none gets one of its own</param>
+		public McpServerForm(Config? config = null)
 		{
+			_config = config ?? new Config();
 			SuspendLayout();
 			ClientSize = new(UIHelper.ScaleX(700), UIHelper.ScaleY(520));
 			MinimumSize = new(UIHelper.ScaleX(560), UIHelper.ScaleY(420));
@@ -78,12 +86,15 @@ namespace Chimera.Client.GUI
 				Size = new(width, UIHelper.ScaleY(20)),
 				Text = "Allow the agent to make changes (edit input, move the playback position, write memory)",
 			};
+			// the person's choice is remembered for every later start (user-decided, 2026-10-22, issue 355)
 			_allowChanges.CheckedChanged += (_, _) =>
 			{
+				if (_showing) return;
+				_config.McpAllowChanges = _allowChanges.Checked;
 				if (EngineMcp.State is not EngineMcp.ServerState.Stopped) EngineMcp.ChangesAllowed = _allowChanges.Checked;
 			};
 			y += UIHelper.ScaleY(22);
-			Label allowNote = Caption("Off every time the server is started. While it is off the agent can only look.", margin + UIHelper.ScaleX(18), y, width - UIHelper.ScaleX(18));
+			Label allowNote = Caption("Remembered, and applied every time the server is started. While it is off the agent can only look.", margin + UIHelper.ScaleX(18), y, width - UIHelper.ScaleX(18));
 			y += UIHelper.ScaleY(30);
 
 			Label setupLabel = Caption("To set up an agent, once: give it this command. This one is for Claude Code; other programs run the same file as an MCP server.", margin, y, width);
@@ -185,9 +196,6 @@ namespace Chimera.Client.GUI
 			set => _allowChanges.Checked = value;
 		}
 
-		/// <summary>Whether the tick box can be ticked now (only while the server is started).</summary>
-		public bool AllowChangesEnabled => _allowChanges.Enabled;
-
 		/// <summary>The log as shown, with plain line ends.</summary>
 		public string LogText => _log.Text.Replace("\r\n", "\n");
 
@@ -201,6 +209,7 @@ namespace Chimera.Client.GUI
 			if (EngineMcp.State is EngineMcp.ServerState.Stopped)
 			{
 				if (!EngineMcp.Start(out var error)) _startError = error;
+				else EngineMcp.ChangesAllowed = _config.McpAllowChanges;
 			}
 			else
 			{
@@ -224,11 +233,15 @@ namespace Chimera.Client.GUI
 			var buttonText = state is EngineMcp.ServerState.Stopped ? "Start" : "Stop";
 			if (_startStop.Text != buttonText) _startStop.Text = buttonText;
 
-			// the engine's word is the truth: a new start begins with changes off
-			var started = state is not EngineMcp.ServerState.Stopped;
-			if (_allowChanges.Enabled != started) _allowChanges.Enabled = started;
-			var allowed = started && EngineMcp.ChangesAllowed;
-			if (_allowChanges.Checked != allowed) _allowChanges.Checked = allowed;
+			// started, the engine's word is the truth (--mcp-allow-changes ticks it for one run without
+			// it being remembered); stopped, the box shows what the next start will apply
+			var allowed = state is not EngineMcp.ServerState.Stopped ? EngineMcp.ChangesAllowed : _config.McpAllowChanges;
+			if (_allowChanges.Checked != allowed)
+			{
+				_showing = true;
+				_allowChanges.Checked = allowed;
+				_showing = false;
+			}
 
 			var total = EngineMcp.LogTotal;
 			if (total == _logShown) return;

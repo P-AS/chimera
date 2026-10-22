@@ -3,6 +3,7 @@
 using System;
 
 using Chimera.Client.Common;
+using Chimera.Common;
 using Chimera.Emulation.Common;
 using Chimera.Emulation.Common.Engine;
 using Chimera.Emulation.Common.Waterbox;
@@ -58,6 +59,70 @@ namespace Chimera.Client.GUI
 			public void LoadBranch(int number) => _main.Tools.TAStudio.LoadBranchByIndex(number - 1);
 		}
 
+		/// <summary>Chimera's main window as the MCP server's tools see it (<see cref="IMcpChimera"/>).</summary>
+		private sealed class McpChimera : IMcpChimera
+		{
+			private readonly MainForm _main;
+
+			public McpChimera(MainForm main) => _main = main;
+
+			public int Frame => _main.Emulator.IsNull() ? -1 : _main.Emulator.Frame;
+
+			public bool Paused => _main.EmulatorPaused;
+
+			public void Pause() => _main.PauseEmulator();
+
+			public void Resume() => _main.UnpauseEmulator();
+
+			public JObject ServerInfo() => _main.McpServerInfo();
+
+			public string ProjectsFolder => _main.Config.PathEntries.MovieAbsolutePath();
+
+			public string? SaveProject(string path)
+			{
+				if (!_main.Tools.Has<TAStudio>()) return "TAStudio is not open";
+				var saved = _main.Tools.TAStudio.SaveProjectAs(path);
+				return saved.IsError ? $"{saved.UserFriendlyErrorMessage()} {saved.Exception?.Message}".Trim() : null;
+			}
+
+			public string? CloseProject()
+			{
+				_main.CloseProject();
+				return _main.Emulator.IsNull() ? null : "something asked to keep it open";
+			}
+		}
+
+		/// <summary>server_info: this build, and the folders it reads and writes.</summary>
+		private JObject McpServerInfo()
+		{
+			JObject engine;
+			try
+			{
+				engine = JObject.Parse(ChimeraEngine.BuildInfo);
+			}
+			catch (JsonException)
+			{
+				engine = new() { ["text"] = ChimeraEngine.BuildInfo };
+			}
+			return new JObject
+			{
+				["chimera"] = VersionInfo.GetBuildName(),
+				["commit"] = VersionInfo.GIT_HASH,
+				["engine"] = engine,
+				["window"] = true,
+				["program_folder"] = AppContext.BaseDirectory,
+				["config_file"] = _getConfigPath(),
+				["folders"] = new JObject
+				{
+					["projects"] = Config.PathEntries.MovieAbsolutePath(),
+					["cores"] = new JArray(CorePackageDiscovery.SearchPaths(Config)),
+					["firmware"] = Config.PathEntries.FirmwareAbsolutePath(),
+					["lua"] = Config.PathEntries.LuaAbsolutePath(),
+				},
+				["mcp_name"] = EngineMcp.Endpoint,
+			};
+		}
+
 		/// <summary>
 		/// Tools &gt; MCP Server... (docs/mcp-server.md): the window where the server that lets an
 		/// AI agent work on the open project is started, watched and stopped. Chimera never
@@ -68,7 +133,7 @@ namespace Chimera.Client.GUI
 		{
 			if (_mcpForm is null or { IsDisposed: true })
 			{
-				_mcpForm = new McpServerForm();
+				_mcpForm = new McpServerForm(Config);
 				_mcpForm.ServerToggled += UpdateWindowTitle;
 				_mcpForm.Show(this);
 			}
@@ -83,8 +148,8 @@ namespace Chimera.Client.GUI
 		{
 			if (EngineMcp.Start(out var error))
 			{
-				// --mcp-allow-changes: the tick box, for a run nobody clicks in
-				if (_argParser.mcpAllowChanges) EngineMcp.ChangesAllowed = true;
+				// the tick box as it was left, or --mcp-allow-changes, which ticks it for a run nobody clicks in
+				EngineMcp.ChangesAllowed = Config.McpAllowChanges || _argParser.mcpAllowChanges;
 				Console.WriteLine($"[mcp] the server is started at {EngineMcp.Endpoint}");
 				UpdateWindowTitle();
 			}
@@ -135,15 +200,23 @@ namespace Chimera.Client.GUI
 				_mcpSeek = null;
 			}
 			if (!EngineMcp.Pending) return;
-			var log = active && movie.GetLogEntries() is EngineStringLog entries ? entries.Engine.Handle : IntPtr.Zero;
-			var frame = Emulator.IsNull() ? -1 : Emulator.Frame;
-			while (EngineMcp.Service(session, log, frame, McpHostStatus(), out var id, out var tool, out var arguments))
+			McpChimera chimera = new(this);
+			for (;;)
 			{
+				// asked again for every call: one that closed the project leaves no machine for the next
+				tastudio = !Emulator.IsNull() && Tools.Has<TAStudio>();
+				window = tastudio ? new McpWindow(this) : null;
+				session = McpSession;
+				movie = MovieSession.Movie;
+				active = movie.IsActive();
+				var log = active && movie.GetLogEntries() is EngineStringLog entries ? entries.Engine.Handle : IntPtr.Zero;
+				var frame = Emulator.IsNull() ? -1 : Emulator.Frame;
+				if (!EngineMcp.Service(session, log, frame, McpHostStatus(), out var id, out var tool, out var arguments)) break;
 				string? text;
 				bool isError;
 				try
 				{
-					text = McpHostTools.Run(active ? movie as ITasMovie : null, window, tool, arguments, out isError);
+					text = McpHostTools.Run(active ? movie as ITasMovie : null, window, tool, arguments, out isError, chimera);
 				}
 				catch (Exception ex)
 				{
@@ -157,10 +230,10 @@ namespace Chimera.Client.GUI
 					_mcpSeek = (id, _mcpAsked.Start, _mcpAsked.Frame, _mcpAsked.Until);
 					return;
 				}
-				EngineMcp.Answer(session, id, text, isError);
+				// the machine as it is now: a closed project's session is gone
+				EngineMcp.Answer(McpSession, id, text, isError);
 				// what the agent changed is shown at once, as a change made by hand is
-				if (tastudio && !isError && !tool.StartsWith("list_", StringComparison.Ordinal)) Tools.TAStudio.RefreshDialog();
-				frame = Emulator.IsNull() ? -1 : Emulator.Frame;
+				if (!Emulator.IsNull() && Tools.Has<TAStudio>() && !isError && !tool.StartsWith("list_", StringComparison.Ordinal)) Tools.TAStudio.RefreshDialog();
 			}
 		}
 
@@ -178,6 +251,38 @@ namespace Chimera.Client.GUI
 					status["unsaved_changes"] = movie.Changes;
 				}
 				status["paused"] = EmulatorPaused;
+				// how fast it is running, measured, beside the machine's own rate the engine adds
+				status["measured_frames_per_second"] = Math.Round(_lastFps, 2);
+				status["speed_percent"] = Config.SpeedPercent;
+				if (_openProject is { } project)
+				{
+					JArray files = new();
+					for (var i = 0; i < project.FileCount; i++)
+					{
+						files.Add(new JObject { ["slot"] = project.FileSlot(i), ["name"] = project.FileName(i), ["path"] = project.FileSourcePath(i) });
+					}
+					status["files"] = files;
+				}
+				// the firmware files the machine was started with: where each was found shows a file from an
+				// old folder, or one chosen long ago, for what it is
+				if (Emulator is WaterboxCore)
+				{
+					JArray firmware = new();
+					foreach (var entry in CoreFirmwareStore.InUse(Config, CoreRegistry.Instance, Emulator.Attributes().CoreName, CoreRegistry.Instance.PackageSha1Of(Emulator)))
+					{
+						if (entry.Path is null) continue;
+						firmware.Add(new JObject
+						{
+							["id"] = entry.Decl.Id,
+							["name"] = entry.Decl.DisplayName,
+							["file"] = entry.Path,
+							["sha1"] = entry.Sha1,
+							["source"] = entry.SourceText,
+							["state"] = entry.StatusText,
+						});
+					}
+					status["firmware"] = firmware;
+				}
 			}
 			return status.ToString(Formatting.None);
 		}

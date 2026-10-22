@@ -33,6 +33,24 @@ namespace Chimera.Client.Common
 		Good,
 	}
 
+	/// <summary>
+	/// Where a firmware file was found. A file chosen once for a core is used before the Firmware folder is
+	/// looked in, so a file from an old folder can be what runs (issue 355): saying where it came from shows it.
+	/// </summary>
+	public enum CoreFirmwareSource
+	{
+		None,
+
+		/// <summary>The open project pins a file of its own (<see cref="CoreFirmwareStore.ProjectPins"/>).</summary>
+		Project,
+
+		/// <summary>A file chosen for the core before, which the config remembers.</summary>
+		Chosen,
+
+		/// <summary>Found in the Firmware folder.</summary>
+		FirmwareFolder,
+	}
+
 	/// <summary>One firmware declaration plus what the user has (or has not) provided for it.</summary>
 	public sealed class CoreFirmwareEntry
 	{
@@ -43,6 +61,18 @@ namespace Chimera.Client.Common
 
 		/// <summary>Where the user pointed, or null if nowhere.</summary>
 		public string? Path { get; init; }
+
+		/// <summary>Where <see cref="Path"/> was found.</summary>
+		public CoreFirmwareSource Source { get; init; }
+
+		/// <summary>The same in words.</summary>
+		public string SourceText => Source switch
+		{
+			CoreFirmwareSource.Project => "the open project's own file",
+			CoreFirmwareSource.Chosen => "a file chosen for this core before",
+			CoreFirmwareSource.FirmwareFolder => "the Firmware folder",
+			_ => "nowhere",
+		};
 
 		public CoreFirmwareState State { get; init; }
 
@@ -132,6 +162,10 @@ namespace Chimera.Client.Common
 
 		/// <summary>The remembered path for THIS declaration: the open project's pinned file first, its own dump's next, then whatever is in use for its id.</summary>
 		public static string? GetPath(Config config, string coreName, CoreFirmwareDecl decl)
+			=> RememberedPath(config, coreName, decl).Path;
+
+		/// <summary><see cref="GetPath(Config, string, CoreFirmwareDecl)"/>, and whether the open project's pin is what answered.</summary>
+		private static (string? Path, CoreFirmwareSource Source) RememberedPath(Config config, string coreName, CoreFirmwareDecl decl)
 		{
 			if (ProjectPins is { } project
 				&& project.Core.Equals(coreName, StringComparison.OrdinalIgnoreCase)
@@ -140,14 +174,14 @@ namespace Chimera.Client.Common
 				&& config.CoreFirmware.TryGetValue(KeyFor(coreName, new CoreFirmwareDecl { Id = decl.Id, Sha1 = pin }), out var pinned)
 				&& !string.IsNullOrWhiteSpace(pinned))
 			{
-				return pinned;
+				return (pinned, CoreFirmwareSource.Project);
 			}
 			if (!string.IsNullOrEmpty(decl.Sha1)
 				&& config.CoreFirmware.TryGetValue(KeyFor(coreName, decl), out var own) && !string.IsNullOrWhiteSpace(own))
 			{
-				return own;
+				return (own, CoreFirmwareSource.Chosen);
 			}
-			return GetPath(config, coreName, decl.Id);
+			return GetPath(config, coreName, decl.Id) is { } chosen ? (chosen, CoreFirmwareSource.Chosen) : (null, CoreFirmwareSource.None);
 		}
 
 		/// <summary>Remembers (or, for null, forgets) the file chosen for one declaration, under its own dump's key.</summary>
@@ -274,12 +308,13 @@ namespace Chimera.Client.Common
 		/// <summary>The same, with the index built only when a declaration has to look in the folder.</summary>
 		private static CoreFirmwareEntry Describe(Config config, string coreName, CoreFirmwareDecl decl, Func<IReadOnlyList<FirmwareLocator.IndexedFile>?>? index)
 		{
-			var path = GetPath(config, coreName, decl);
+			var (path, source) = RememberedPath(config, coreName, decl);
 			// a choice that has moved is no longer an answer; the folder may hold one
 			if (path is null || !File.Exists(path))
 			{
 				var folder = index?.Invoke();
-				path = (folder is null ? InFirmwareFolder(config, decl) : FirmwareLocator.FindEither(decl, folder)?.Path) ?? path;
+				var found = folder is null ? InFirmwareFolder(config, decl) : FirmwareLocator.FindEither(decl, folder)?.Path;
+				if (found is not null) (path, source) = (found, CoreFirmwareSource.FirmwareFolder);
 			}
 			if (path is null) return new() { CoreName = coreName, Decl = decl, State = CoreFirmwareState.Missing };
 
@@ -290,7 +325,7 @@ namespace Chimera.Client.Common
 			}
 			catch
 			{
-				return new() { CoreName = coreName, Decl = decl, Path = path, State = CoreFirmwareState.Unreadable };
+				return new() { CoreName = coreName, Decl = decl, Path = path, Source = source, State = CoreFirmwareState.Unreadable };
 			}
 			var sha1 = Sha1Of(bytes); // computed even for a file that will be refused: the user wants to see WHAT they pointed at
 			// the verdict is the engine's (see docs/engine-migration.md)
@@ -300,7 +335,7 @@ namespace Chimera.Client.Common
 				EngineFirmware.Verdict.Unrecognised => CoreFirmwareState.Unrecognised,
 				_ => CoreFirmwareState.Good,
 			};
-			return new() { CoreName = coreName, Decl = decl, Path = path, Sha1 = sha1, State = state };
+			return new() { CoreName = coreName, Decl = decl, Path = path, Source = source, Sha1 = sha1, State = state };
 		}
 
 		/// <summary>

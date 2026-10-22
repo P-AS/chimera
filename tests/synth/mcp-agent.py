@@ -41,6 +41,8 @@ import os
 import struct
 import subprocess
 import sys
+import tempfile
+import time
 import zlib
 
 mcp, ram_path, vram_path, movie_path, tga_path = sys.argv[1:6]
@@ -157,8 +159,15 @@ vram = open(vram_path, "rb").read()
 if local:
     # no window: list what there is, start a project from a game, and write and play the movie
     rom, work = os.environ["MCP_TEST_ROM"], os.environ["MCP_TEST_WORK"]
-    for needed in ("list_cores", "describe_core", "open_game", "open_project", "save_project", "export_movie", "close"):
+    for needed in ("list_cores", "describe_core", "open_game", "open_project", "save_project", "export_movie", "close",
+                   "server_info", "pause"):
         check("the tool %s is listed where there is no window" % needed, needed in tools)
+    for absent in ("resume", "close_tastudio"):
+        check("the tool %s, for a window, is not listed where there is none" % absent, absent not in tools)
+    info = facts("server_info")
+    check("server_info says there is no window and gives the folders it was started with",
+          info.get("window") is False and os.path.realpath(info.get("work_folder", "")) == os.path.realpath(work)
+          and "commit" in info.get("build", {}))
     check("before anything is opened, status says no machine is open", facts("status").get("machine_open") is False)
     error, text, _ = call("seek", frame=0)
     check("and a tool that needs a project says how to open one", error and "open_game" in text)
@@ -186,6 +195,23 @@ check("status gives the movie's length", status.get("movie_length") == len(movie
 check("status says whether changes are allowed", status.get("changes_allowed") is changes)
 check("status says the core has not stopped", status.get("core_stopped") is False)
 check("status gives the picture's size", status.get("picture", {}).get("width", 0) > 0)
+check("status names the buttons a press takes", status.get("buttons", [])[:4] == ["P1 Up", "P1 Down", "P1 Left", "P1 Right"])
+check("and the axes", isinstance(status.get("axes"), list))
+if window:
+    # what only the window knows: the files the machine runs, the firmware it was given, how fast it runs
+    files = status.get("files", [])
+    check("status gives the project's files with their paths",
+          [f.get("name") for f in files] == ["gridWalker.testrom"] and os.path.isfile(files[0].get("path", "")))
+    check("status gives the firmware in use, of which the synthetic core has none", status.get("firmware") == [])
+    check("status gives the speed measured", isinstance(status.get("measured_frames_per_second"), (int, float)))
+    for needed in ("server_info", "pause", "resume", "save_project", "close_tastudio"):
+        check("the tool %s is listed in the window" % needed, needed in tools)
+    check("the tool close, for no window, is not listed in one", "close" not in tools)
+    info = facts("server_info")
+    check("server_info says it is the window and where projects go",
+          info.get("window") is True and info.get("folders", {}).get("projects") and info.get("commit"))
+    check("pause answers that the machine is paused, on its frame",
+          facts("pause") == {"paused": True, "frame": len(movie)})
 if holder:
     check("status names the project", status.get("project") == "gridWalker.win")
     check("status says the machine is paused", status.get("paused") is True)
@@ -469,11 +495,56 @@ if changes:
         error, text, _ = call("advance_until", property="Steps", op="changed")
         check("advance_until needs the window too", error and "window" in text)
 
+if window and changes:
+    # the end of an agent's run, with nothing asked (issue 355): save, play, pause, close
+    folder = tempfile.mkdtemp(prefix="chimera-mcp-save-")
+    path = os.path.join(folder, "agent.chimeraProject")
+    saved = facts("save_project", path=path)
+    check("save_project saves where it is told, and nothing is unsaved after",
+          saved.get("saved") == path and os.path.isfile(path) and saved.get("unsaved_changes") is False
+          and facts("status").get("unsaved_changes") is False)
+    check("saving it again where it is needs no 'overwrite'", facts("save_project").get("saved") == path)
+    other = os.path.join(folder, "someone else's.chimeraProject")
+    open(other, "w").write("theirs")
+    error, text, _ = call("save_project", path=other)
+    check("a file that is there is not replaced", error and "overwrite: true" in text and open(other).read() == "theirs")
+    check("unless overwrite is given", facts("save_project", path=other, overwrite=True).get("saved") == other
+          and open(other).read() != "theirs")
+    facts("seek", frame=10)
+    check("resume lets the machine run", facts("resume") == {"paused": False, "frame": 10})
+    ran = 10
+    for _ in range(100):
+        ran = facts("status").get("frame", 10)
+        if ran > 12:
+            break
+        time.sleep(0.05)
+    check("it plays on by itself", ran > 12)
+    stopped = facts("pause")
+    check("pause stops it", stopped.get("paused") is True and stopped.get("frame", 0) >= ran)
+    facts("add_marker", frame=3, text="added after saving")
+    error, text, _ = call("close_tastudio")
+    check("a project with unsaved changes is not closed", error and "discard_unsaved" in text and facts("status").get("machine_open") is True)
+    closed = facts("close_tastudio", discard_unsaved=True)
+    check("discard_unsaved closes it without asking", closed.get("closed") is True and closed.get("machine_open") is False
+          and facts("status").get("machine_open") is False)
+    error, text, _ = call("pause")
+    check("with nothing open there is nothing to pause", error)
+    check("the project saved before is as it was saved", "added after saving" not in open(path).read())
+
 if local:
     # save, export, close, open again: the project made here plays to the reference memory
     saved = facts("save_project", path="made.chimeraProject").get("saved", "")
     check("save_project writes the project into the work folder", saved == os.path.join(os.path.realpath(work), "made.chimeraProject") and os.path.isfile(saved))
     check("after saving nothing is unsaved", facts("status").get("unsaved_changes") is False)
+    check("saving it again where it is needs no 'overwrite'", facts("save_project", path="made.chimeraProject").get("saved") == saved)
+    open(os.path.join(work, "theirs.chimeraProject"), "w").write("theirs")
+    error, text, _ = call("save_project", path="theirs.chimeraProject")
+    check("a file that is there is not replaced without 'overwrite'", error and "overwrite: true" in text
+          and open(os.path.join(work, "theirs.chimeraProject")).read() == "theirs")
+    check("and is with it", facts("save_project", path="theirs.chimeraProject", overwrite=True).get("saved", "").endswith("theirs.chimeraProject"))
+    os.remove(os.path.join(work, "theirs.chimeraProject"))
+    facts("save_project", path="made.chimeraProject", overwrite=True)
+    check("pause says the machine is paused", facts("pause").get("paused") is True)
     error, text, _ = call("save_project", path="/tmp/chimera-mcp-outside.chimeraProject")
     check("save_project writes nowhere but the work folder", error and "work folder" in text and not os.path.exists("/tmp/chimera-mcp-outside.chimeraProject"))
     error, text, _ = call("export_movie", path="../outside.txt")

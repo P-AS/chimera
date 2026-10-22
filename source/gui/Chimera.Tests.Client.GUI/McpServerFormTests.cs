@@ -61,34 +61,58 @@ namespace Chimera.Tests.Client.GUI
 			StringAssert.Contains(form.LogText, "the server was stopped");
 		}
 
+		/// <summary>
+		/// The tick box is remembered (user-decided, 2026-10-22, issue 355): it was off at every start,
+		/// and a run an agent was doing stopped at its first change until someone ticked it again.
+		/// </summary>
 		[TestMethod]
-		public void ChangesCanBeAllowedOnlyWhileStartedAndAreOffAtEveryStart()
+		public void TheTickIsRememberedAndAppliedAtEveryStart()
 		{
-			using McpServerForm form = new();
+			Config config = new();
+			using McpServerForm form = new(config);
 			form.Show();
-			// stopped: there is nothing to allow
-			Assert.IsFalse(form.AllowChangesEnabled);
-			Assert.IsFalse(form.AllowChanges);
+			Assert.IsFalse(form.AllowChanges, "nothing was ever ticked");
 
 			form.Toggle();
-			Assert.IsTrue(form.AllowChangesEnabled);
-			Assert.IsFalse(form.AllowChanges, "a start must begin with changes off");
 			Assert.IsFalse(EngineMcp.ChangesAllowed);
-
 			form.AllowChanges = true;
 			Assert.IsTrue(EngineMcp.ChangesAllowed, "ticking the box must reach the engine");
+			Assert.IsTrue(config.McpAllowChanges, "and be remembered");
+
+			// stopped and started again: the tick is still there, in the engine and in the window
+			form.Toggle();
+			Assert.AreEqual(EngineMcp.ServerState.Stopped, EngineMcp.State);
+			Assert.IsTrue(form.AllowChanges, "stopped, the box shows what the next start applies");
+			form.Toggle();
+			Assert.IsTrue(EngineMcp.ChangesAllowed, "a new start applies the remembered tick");
+			Assert.IsTrue(form.AllowChanges);
+
+			// and so does a window opened later, as after Chimera was started again
 			form.AllowChanges = false;
 			Assert.IsFalse(EngineMcp.ChangesAllowed);
-			form.AllowChanges = true;
+			Assert.IsFalse(config.McpAllowChanges);
+			form.Toggle();
+			using McpServerForm later = new(config);
+			later.Show();
+			later.AllowChanges = true;
+			Assert.IsTrue(config.McpAllowChanges, "ticked while the server is stopped, it is remembered");
+			later.Toggle();
+			Assert.IsTrue(EngineMcp.ChangesAllowed);
+			StringAssert.Contains(later.LogText, "changes by the agent were allowed");
+		}
 
-			// stopped and started again: the tick is gone, in the engine and in the window
-			form.Toggle();
-			Assert.IsFalse(form.AllowChangesEnabled);
-			Assert.IsFalse(form.AllowChanges);
-			form.Toggle();
-			Assert.IsFalse(form.AllowChanges, "a new start must begin with changes off");
-			Assert.IsFalse(EngineMcp.ChangesAllowed);
-			StringAssert.Contains(form.LogText, "changes by the agent were allowed");
+		/// <summary>The window putting the box right is not the person's choice: --mcp-allow-changes is not remembered.</summary>
+		[TestMethod]
+		public void ATickTheWindowOnlyShowsIsNotRemembered()
+		{
+			Config config = new();
+			using McpServerForm form = new(config);
+			form.Show();
+			Assert.IsTrue(EngineMcp.Start(out _));
+			EngineMcp.ChangesAllowed = true; // what --mcp-allow-changes does
+			form.RefreshNow();
+			Assert.IsTrue(form.AllowChanges);
+			Assert.IsFalse(config.McpAllowChanges);
 		}
 
 		[TestMethod]

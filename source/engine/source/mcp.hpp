@@ -64,7 +64,12 @@ struct McpTool
 	bool changes;        /* it changes the movie or the machine: refused unless the person allowed changes */
 	bool host;           /* the frontend runs it, not the engine */
 	bool local;          /* it exists only where there is no window (mcp_local.hpp) */
+	bool window = false; /* it exists only where there is a window */
 };
+
+/* Whether a tool is offered by this program: a tool of one kind of server is
+ * not listed, or run, by the other. */
+bool mcpOffered(const McpTool &tool);
 
 /* Whether this program serves a machine of its own, with no window. It
  * decides which tools are listed and what the introduction says. */

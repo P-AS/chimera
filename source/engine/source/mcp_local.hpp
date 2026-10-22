@@ -67,6 +67,8 @@ private:
 	McpResult openGame(const std::string &argumentsJson);
 	McpResult openProject(const std::string &argumentsJson);
 	McpResult saveProject(const std::string &argumentsJson);
+	McpResult serverInfo() const;
+	McpResult pause() const;
 	McpResult exportMovie(const std::string &argumentsJson);
 	McpResult closeMachine();
 

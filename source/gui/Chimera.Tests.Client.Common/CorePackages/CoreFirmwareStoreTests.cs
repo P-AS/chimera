@@ -67,9 +67,12 @@ namespace Chimera.Tests.Client.Common.CorePackages
 				var entry = CoreFirmwareStore.Describe(config, "QuickNES", decl);
 				Assert.AreEqual(ownSha1, entry.Sha1, "what is described (and recorded) is what is mounted");
 				Assert.AreEqual(CoreFirmwareState.Unrecognised, entry.State, "and it is said to be no original");
+				Assert.AreEqual(CoreFirmwareSource.Project, entry.Source, "and where it came from is said (issue 355)");
+				Assert.AreEqual(CoreFirmwareSource.None, CoreFirmwareStore.Describe(config, "SomeOtherCore", decl).Source, "another core has nothing chosen");
 
 				CoreFirmwareStore.ProjectPins = ("SomeOtherCore", new Dictionary<string, string> { ["bios"] = ownSha1 });
 				Assert.AreEqual(original, CoreFirmwareStore.GetPath(config, "QuickNES", decl), "another core's pins are not this core's");
+				Assert.AreEqual(CoreFirmwareSource.Chosen, CoreFirmwareStore.Describe(config, "QuickNES", decl).Source, "the file chosen for the core before");
 
 				CoreFirmwareStore.ProjectPins = ("QuickNES", new Dictionary<string, string> { ["bios"] = originalSha1 });
 				Assert.AreEqual(original, CoreFirmwareStore.GetPath(config, "QuickNES", decl), "a pin that is the declared hash changes nothing");
@@ -305,6 +308,8 @@ namespace Chimera.Tests.Client.Common.CorePackages
 				var entry = CoreFirmwareStore.Describe(WithFirmwareFolder(dir), "Core", Decl(8192, sha1));
 				Assert.AreEqual(CoreFirmwareState.Good, entry.State);
 				Assert.IsTrue(entry.Usable, "the folder answered for a choice nobody ever made");
+				Assert.AreEqual(CoreFirmwareSource.FirmwareFolder, entry.Source, "and says so (issue 355)");
+				Assert.AreEqual("the Firmware folder", entry.SourceText);
 			}
 			finally
 			{

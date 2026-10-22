@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 #include <thread>
 
 #ifdef _WIN32
@@ -191,14 +192,20 @@ void theProtocol()
 	const cJSON *tools = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(r, "result"), "tools");
 	size_t count = 0;
 	const chimera::McpTool *table = chimera::mcpTools(count);
-	/* the tools for where there is no window come last, and are not listed here */
-	size_t offered = 0;
-	while (offered < count && !table[offered].local) offered++;
-	for (size_t i = offered; i < count; i++) assert(table[i].local);
-	assert(offered > 0 && offered < count && cJSON_GetArraySize(tools) == static_cast<int>(offered));
-	for (size_t i = 0; i < offered; i++)
+	/* listed here: every tool but those for where there is no window, in the table's order */
+	std::vector<size_t> windowed, windowless;
+	for (size_t i = 0; i < count; i++)
 	{
-		const cJSON *tool = cJSON_GetArrayItem(tools, static_cast<int>(i));
+		if (!table[i].local) windowed.push_back(i);
+		if (!table[i].window) windowless.push_back(i);
+		assert(!(table[i].local && table[i].window));
+	}
+	assert(!windowed.empty() && windowed.size() < count && windowless.size() < count);
+	assert(cJSON_GetArraySize(tools) == static_cast<int>(windowed.size()));
+	for (size_t n = 0; n < windowed.size(); n++)
+	{
+		const size_t i = windowed[n];
+		const cJSON *tool = cJSON_GetArrayItem(tools, static_cast<int>(n));
 		assert(std::strcmp(cJSON_GetObjectItemCaseSensitive(tool, "name")->valuestring, table[i].name) == 0);
 		assert(std::strlen(cJSON_GetObjectItemCaseSensitive(tool, "description")->valuestring) > 20);
 		const cJSON *schema = cJSON_GetObjectItemCaseSensitive(tool, "inputSchema");
@@ -216,18 +223,26 @@ void theProtocol()
 	assert(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(r, "error"), "code")->valuedouble == -32602);
 	assert(seenTool.empty());
 	cJSON_Delete(r);
-	/* with no window, every tool is listed (each with a schema that is JSON) and reaches the executor */
+	/* with no window, every tool but the window's is listed (each with a schema that is JSON) and reaches the executor */
 	chimera::mcpSetLocal(true);
 	r = reply("{\"jsonrpc\":\"2.0\",\"id\":31,\"method\":\"tools/list\"}", execute);
 	const cJSON *all = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(r, "result"), "tools");
-	assert(cJSON_GetArraySize(all) == static_cast<int>(count));
-	for (size_t i = 0; i < count; i++)
+	assert(cJSON_GetArraySize(all) == static_cast<int>(windowless.size()));
+	for (size_t n = 0; n < windowless.size(); n++)
 	{
-		assert(cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(cJSON_GetArrayItem(all, static_cast<int>(i)), "inputSchema")));
+		const cJSON *tool = cJSON_GetArrayItem(all, static_cast<int>(n));
+		assert(std::strcmp(cJSON_GetObjectItemCaseSensitive(tool, "name")->valuestring, table[windowless[n]].name) == 0);
+		assert(cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(tool, "inputSchema")));
 	}
 	cJSON_Delete(r);
 	r = reply("{\"jsonrpc\":\"2.0\",\"id\":32,\"method\":\"tools/call\",\"params\":{\"name\":\"open_game\",\"arguments\":{}}}", execute);
 	assert(seenTool == "open_game");
+	cJSON_Delete(r);
+	/* and a tool for a window does not exist there (issue 355: resume, close_tastudio) */
+	seenTool.clear();
+	r = reply("{\"jsonrpc\":\"2.0\",\"id\":33,\"method\":\"tools/call\",\"params\":{\"name\":\"resume\",\"arguments\":{}}}", execute);
+	assert(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(r, "error"), "code")->valuedouble == -32602);
+	assert(seenTool.empty());
 	cJSON_Delete(r);
 	chimera::mcpSetLocal(false);
 

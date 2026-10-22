@@ -10680,3 +10680,41 @@ back as written; a project keeps 18446744073709551615; a condition tells
 tests of the types in the settings grid, and the package tests. Each new
 test failed with its fix taken out. No core uses the new types yet, so none
 has been tried with a game.
+
+## An agent's whole run without clicking: save, close, pause, run (user-decided, 2026-10-22)
+
+An agent making projects and screenshots for many games drove everything
+around the MCP server by clicking through the interface: the New Project
+wizard, System > Pause, the Save As dialog, the question on closing
+TAStudio. Those clicks were where its runs broke (issue 355). The owner
+decided that all six requests are built, and that every Lua function is
+offered through the server as well. This is the first part.
+
+- `pause` and `resume`, as System > Pause and unpausing. `resume` is a
+  change: TAStudio adds every frame played past the movie's end.
+- `save_project` and `close_tastudio`. Nothing asks: a file that is
+  already there is kept unless the agent gives `overwrite`, and unsaved
+  changes are lost only with `discard_unsaved`. The windowless server's
+  `save_project` follows the same rule. No branch is saved before either:
+  they change no input, and a branch saved first was itself an unsaved
+  change, so a project closed first thing could never close.
+- `server_info`: the build, and the folders for projects, cores, firmware
+  and Lua. The agent ran several nightly builds side by side and could not
+  tell which folder a project would be saved in.
+- `status` also gives the controls' names, the project's files with their
+  paths, the speed measured, and each firmware file in use with its path
+  and where it was found. A file chosen once for a core comes before the
+  Firmware folder, which is how the agent's Saturn ran a BIOS from an old
+  folder unseen.
+- The tick box "Allow the agent to make changes" is remembered, which
+  reverses the decision of 2026-10-12 that it is off at every start. The
+  server itself still starts stopped.
+
+A tool now belongs to the window, to the windowless server, or to both,
+and is listed only where it exists. Tested: engine tests 30 of 30 (the
+lists of both kinds of server), 8 tests of the new tools in the window, 2
+of the remembered tick, the firmware store's tests saying where each file
+was found, and the end-to-end test: in the real window an agent saves,
+refuses to replace another file and then replaces it, runs and pauses the
+machine, and is refused a close with unsaved changes before closing with
+`discard_unsaved`. Each test failed with its fix taken out.

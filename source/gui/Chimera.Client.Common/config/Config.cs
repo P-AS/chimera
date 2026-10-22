@@ -232,6 +232,13 @@ namespace Chimera.Client.Common
 		public bool DisplayAverageFps { get; set; }
 
 		/// <summary>
+		/// Tools &gt; MCP Server...'s "Allow the agent to make changes", as the person last left it, and
+		/// applied whenever the server is started (user-decided, 2026-10-22, issue 355). The server itself
+		/// still starts stopped on every run.
+		/// </summary>
+		public bool McpAllowChanges { get; set; }
+
+		/// <summary>
 		/// How much memory one compile session is counted at, in GB (Tools &gt; Pre-Compiled
 		/// Modules; chimera issue 259). The engine runs as many sessions side by side as the
 		/// machine can give this much each. 8 is what one RPCS3 session was measured to hold.

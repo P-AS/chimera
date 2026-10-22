@@ -1260,34 +1260,44 @@ namespace Chimera.Client.GUI
 				TAStudioProjectsFSFilterSet,
 				this);
 
-			FileWriteResult saveResult = null;
-			if (fileInfo != null)
+			if (fileInfo is null)
 			{
-				MessageStatusLabel.Text = "Saving...";
-				MessageStatusLabel.Owner.Update();
-				Cursor = Cursors.WaitCursor;
-				CurrentTasMovie.Filename = fileInfo.FullName;
-				saveResult = withoutGreenzone ? CurrentTasMovie.SaveWithoutGreenzone() : CurrentTasMovie.Save();
-				Settings.RecentTas.Add(CurrentTasMovie.Filename);
-				Cursor = Cursors.Default;
+				UpdateWindowTitle();
+				MainForm.UpdateWindowTitle();
+				return new(); // user cancelled, so we were successful in not saving
+			}
+			return SaveProjectAs(fileInfo.FullName, withoutGreenzone);
+		}
 
-				if (!saveResult.IsError)
-				{
-					MessageStatusLabel.Text = "File saved.";
-					MainForm.ProjectSavedAs(CurrentTasMovie.Filename);
-					ScheduleAutoSave(Settings.AutosaveInterval);
-				}
-				else
-				{
-					MessageStatusLabel.Text = "Failed to save.";
-				}
+		/// <summary>
+		/// Save Project As once the file is chosen: by the dialog, or by an agent through the MCP server's
+		/// save_project, which names the file itself and is never asked anything.
+		/// </summary>
+		public FileWriteResult SaveProjectAs(string path, bool withoutGreenzone = false)
+		{
+			_autosaveTimer.Stop();
+			MessageStatusLabel.Text = "Saving...";
+			MessageStatusLabel.Owner.Update();
+			Cursor = Cursors.WaitCursor;
+			CurrentTasMovie.Filename = path;
+			var saveResult = withoutGreenzone ? CurrentTasMovie.SaveWithoutGreenzone() : CurrentTasMovie.Save();
+			Settings.RecentTas.Add(CurrentTasMovie.Filename);
+			Cursor = Cursors.Default;
+
+			if (!saveResult.IsError)
+			{
+				MessageStatusLabel.Text = "File saved.";
+				MainForm.ProjectSavedAs(CurrentTasMovie.Filename);
+				ScheduleAutoSave(Settings.AutosaveInterval);
+			}
+			else
+			{
+				MessageStatusLabel.Text = "Failed to save.";
 			}
 
 			UpdateWindowTitle(); // changing the movie's filename does not flag changes, so we need to ensure the window title is always updated
 			MainForm.UpdateWindowTitle();
-
-			if (fileInfo != null) return saveResult;
-			else return new(); // user cancelled, so we were successful in not saving
+			return saveResult;
 		}
 
 		protected override string WindowTitle

@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 
 using Newtonsoft.Json;
@@ -43,6 +44,34 @@ namespace Chimera.Client.Common
 	}
 
 	/// <summary>
+	/// What the MCP server's tools need of Chimera's main window, with or without a project open:
+	/// pausing and running the machine, saving and closing the project, and where things are kept.
+	/// </summary>
+	public interface IMcpChimera
+	{
+		/// <summary>The frame the machine is on, or -1 when no machine is open.</summary>
+		int Frame { get; }
+
+		bool Paused { get; }
+
+		void Pause();
+
+		void Resume();
+
+		/// <summary>What server_info answers: this build and the folders it uses.</summary>
+		JObject ServerInfo();
+
+		/// <summary>The folder a project saved by a relative path goes in: the Movies folder.</summary>
+		string ProjectsFolder { get; }
+
+		/// <summary>Saves the open project to that file, as File &gt; Save Project As does once a file is chosen. Null when saved, else why not.</summary>
+		string? SaveProject(string path);
+
+		/// <summary>Closes the open project and its machine without asking anything. Null when closed, else why not.</summary>
+		string? CloseProject();
+	}
+
+	/// <summary>
 	/// The MCP server's tools that the frontend runs (docs/mcp-server.md). The engine runs
 	/// every tool that needs only the machine; the ones here need what the frontend holds -
 	/// the open movie with its branches, markers and undo history - and are handed over by
@@ -58,6 +87,11 @@ namespace Chimera.Client.Common
 	{
 		public const string NoMovie = "No project is open in Chimera.";
 
+		private const string NoChimera = "Chimera's main window cannot be asked.";
+
+		/// <summary>What a project file is called.</summary>
+		private const string ProjectExtension = ".chimeraProject";
+
 		/// <summary>The most frames one call may write, which keeps a slip of the agent's small.</summary>
 		private const int MostFrames = 100000;
 
@@ -68,11 +102,11 @@ namespace Chimera.Client.Common
 		/// </summary>
 		/// <param name="movie">the open project's movie, or null when none is open</param>
 		/// <param name="window">the window that holds it, or null when there is none</param>
-		public static string? Run(ITasMovie? movie, IMcpWindow? window, string tool, string argumentsJson, out bool isError)
+		/// <param name="chimera">Chimera's main window, for the tools that do not need a project; null in a test that has none</param>
+		public static string? Run(ITasMovie? movie, IMcpWindow? window, string tool, string argumentsJson, out bool isError, IMcpChimera? chimera = null)
 		{
 			isError = false;
 			if (tool is "keep_work") return KeepWork(movie, window, out isError);
-			if (movie is null) return Refuse(NoMovie, out isError);
 			JObject arguments;
 			try
 			{
@@ -82,6 +116,21 @@ namespace Chimera.Client.Common
 			{
 				return Refuse("The arguments are not a JSON object.", out isError);
 			}
+			// the tools of the main window: they need no project, or only the project as a file
+			switch (tool)
+			{
+				case "server_info":
+					return chimera is null ? Refuse(NoChimera, out isError) : chimera.ServerInfo().ToString(Formatting.None);
+				case "pause":
+					return PauseOrResume(chimera, pause: true, out isError);
+				case "resume":
+					return PauseOrResume(chimera, pause: false, out isError);
+				case "save_project":
+					return SaveProject(movie, chimera, arguments, out isError);
+				case "close_tastudio":
+					return CloseProject(movie, chimera, arguments, out isError);
+			}
+			if (movie is null) return Refuse(NoMovie, out isError);
 			try
 			{
 				switch (tool)
@@ -117,6 +166,87 @@ namespace Chimera.Client.Common
 				// whatever happened, the next edit made by hand is a step of its own
 				movie.ChangeLog.EndBatch();
 			}
+		}
+
+		private static string PauseOrResume(IMcpChimera? chimera, bool pause, out bool isError)
+		{
+			isError = false;
+			if (chimera is null) return Refuse(NoChimera, out isError);
+			if (chimera.Frame < 0) return Refuse(NoMovie, out isError);
+			if (pause) chimera.Pause();
+			else chimera.Resume();
+			return new JObject { ["paused"] = chimera.Paused, ["frame"] = chimera.Frame }.ToString(Formatting.None);
+		}
+
+		/// <summary>
+		/// save_project: where it was saved or opened, or the path given - which is not a file already there
+		/// unless 'overwrite' says so, since nothing asks. A relative path is in the Movies folder, and a
+		/// path without the project extension gets it.
+		/// </summary>
+		private static string SaveProject(ITasMovie? movie, IMcpChimera? chimera, JObject arguments, out bool isError)
+		{
+			isError = false;
+			if (chimera is null) return Refuse(NoChimera, out isError);
+			if (movie is null) return Refuse(NoMovie, out isError);
+			var own = string.IsNullOrEmpty(movie.Filename) ? null : Path.GetFullPath(movie.Filename);
+			string path;
+			if (arguments["path"] is { Type: JTokenType.String } given && ((string) given!).Trim() is { Length: not 0 } asked)
+			{
+				if (!asked.EndsWith(ProjectExtension, StringComparison.OrdinalIgnoreCase)) asked += ProjectExtension;
+				try
+				{
+					path = Path.GetFullPath(Path.IsPathRooted(asked) ? asked : Path.Combine(chimera.ProjectsFolder, asked));
+				}
+				catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+				{
+					return Refuse($"'{asked}' is not a path a file can have: {ex.Message}", out isError);
+				}
+			}
+			else if (own is not null && File.Exists(own))
+			{
+				path = own;
+			}
+			else
+			{
+				return Refuse("This project has not been saved yet: give 'path'.", out isError);
+			}
+			var overwrite = arguments["overwrite"] is { Type: JTokenType.Boolean } flag && (bool) flag!;
+			if (!overwrite && !string.Equals(path, own, StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+			{
+				return Refuse($"A file is already at '{path}', so the project was not saved. Give overwrite: true to replace it.", out isError);
+			}
+			if (Path.GetDirectoryName(path) is { } folder && !Directory.Exists(folder))
+			{
+				return Refuse($"The folder '{folder}' does not exist, so the project was not saved.", out isError);
+			}
+			if (chimera.SaveProject(path) is { } failed) return Refuse($"The project was not saved: {failed}", out isError);
+			return new JObject
+			{
+				["saved"] = path,
+				["movie_length"] = movie.InputLogLength,
+				["unsaved_changes"] = movie.Changes,
+			}.ToString(Formatting.None);
+		}
+
+		/// <summary>close_tastudio: a project with unsaved changes is closed only when the agent says they may be lost.</summary>
+		private static string CloseProject(ITasMovie? movie, IMcpChimera? chimera, JObject arguments, out bool isError)
+		{
+			isError = false;
+			if (chimera is null) return Refuse(NoChimera, out isError);
+			if (movie is null) return Refuse(NoMovie, out isError);
+			var discard = arguments["discard_unsaved"] is { Type: JTokenType.Boolean } flag && (bool) flag!;
+			var lost = movie.Changes;
+			if (lost && !discard)
+			{
+				return Refuse("The project has changes that are not saved, so it was not closed. Save it with save_project, "
+					+ "or give discard_unsaved: true to close it without them.", out isError);
+			}
+			// what is thrown away is thrown away here, so closing asks nothing
+			if (lost) movie.ClearChanges();
+			if (chimera.CloseProject() is { } failed) return Refuse($"The project was not closed: {failed}", out isError);
+			JObject closed = new() { ["closed"] = true, ["machine_open"] = chimera.Frame >= 0 };
+			if (lost) closed["note"] = "The changes that were not saved are lost.";
+			return closed.ToString(Formatting.None);
 		}
 
 		/// <summary>The answer to a seek, once the window has stopped moving: where the machine is now.</summary>
