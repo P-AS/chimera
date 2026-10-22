@@ -962,6 +962,51 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	return true;
 }
 
+/* A game made a project, as the New Project window makes one: reopened, it
+ * has the same movie, its core, its machine and every setting that applies */
+bool newProject(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-new-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	std::string error;
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	session.key("Down", true);
+	for (int i = 0; i < 5; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 5; }, 20));
+	session.key("Down", false);
+	std::vector<uint64_t> made(5);
+	inputs.read(0, made);
+	const fs::path project = dir / "walker.chimeraProject";
+	CHECK(session.run("saveAsProject", {project.string(), std::string("down the corridor")}, error).has_value());
+	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	const std::string text = readFile(project);
+	CHECK(text.find("\"Platform\"") != std::string::npos && text.find("initFillByte") != std::string::npos &&
+		text.find("walker.testrom") != std::string::npos && text.find("Synth") != std::string::npos);
+	/* a project open, Save As Project is Save Project As's */
+	CHECK(!session.run("saveAsProject", {project.string()}, error) && error.find("a project is open") != std::string::npos);
+	/* opened again in a new session (one machine at a time: the sandbox
+	 * puts each at the same address) */
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	InputLog inputs2;
+	SessionViewModel session2(d, inputs2);
+	session2.run("openProject", {project.string(), std::string(package)}, error);
+	CHECK(d.until([&] { return session2.isOpen.get() && session2.projectPath.get() == project.string(); }, 60));
+	std::vector<uint64_t> back(5);
+	inputs2.read(0, back);
+	CHECK(session2.projectTitle.get() == "down the corridor" && inputs2.size() == 5 && back == made);
+	CHECK(made[0] != 0); /* Down was held */
+	fs::remove_all(dir);
+	return true;
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -985,6 +1030,7 @@ int main(int argc, char **argv)
 			ranMachine = machine(argv[1], argv[2]);
 			ranMachine = ramSearch(argv[1], argv[2]) && ranMachine;
 			ranMachine = settings(argv[1], argv[2]) && ranMachine;
+			ranMachine = newProject(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 		}

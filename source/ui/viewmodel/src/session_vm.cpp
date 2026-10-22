@@ -10,6 +10,7 @@
 #include "chimera/engine.h"
 #include "chimera/vm/firmware.hpp"
 #include "chimera/vm/json.hpp"
+#include "chimera/vm/settings_vm.hpp"
 
 namespace chimera::vm {
 
@@ -74,6 +75,20 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				return {};
 			}
 			submit([this, path] { saveProjectOnMachine(path); });
+			return {};
+		}, &isOpen);
+	command("saveAsProject", "makes the open game a project, saved at the path: its core, file, settings, firmware and "
+		"movie; the game's file is looked for beside the project when it is opened again", {"path", "title"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string path, title;
+			if (!arg(a, 0, path, error)) return {};
+			if (a.size() > 1 && !arg(a, 1, title, error)) return {};
+			if (!projectPath.get().empty())
+			{
+				error = "a project is open: Save Project As keeps it";
+				return {};
+			}
+			submit([this, path, title] { newProjectOnMachine(path, title); });
 			return {};
 		}, &isOpen);
 	command("close", "closes the machine", {}, [this](const Args &, std::string &) -> Value {
@@ -310,6 +325,7 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 		fwData.push_back(fw.data[i].data());
 		fwLens.push_back(fw.data[i].size());
 	}
+	firmwarePinsM_ = fw.pins;
 	const char *error = nullptr;
 	ce_session *s = ce_session_open(package.c_str(), bytes.data(), bytes.size(), game.c_str(),
 		settingsM_.empty() ? nullptr : settingsM_.c_str(), fwIds.data(), fwData.data(), fwLens.data(),
@@ -736,6 +752,94 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 				list += "\n" + line;
 				kept++;
 			}
+			if (end == std::string::npos) break;
+			at = end + 1;
+		}
+		recentProjects.set(list);
+	});
+}
+
+void SessionViewModel::newProjectOnMachine(const std::string &path, const std::string &titleGiven)
+{
+	if (s_ == nullptr || game_.empty()) return;
+	auto fail = [this](const std::string &why) { later([this, why] { status.set("Not made: " + why); }); };
+	json::Json cfg, fileSlots;
+	std::string jerr, sha;
+	const char *perr = nullptr;
+	if (ce_package *pk = ce_package_open(package_.c_str(), &perr))
+	{
+		uint64_t len = 0;
+		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len))
+			json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, jerr);
+		if (const uint8_t *d = ce_package_entry(pk, "file_slots.json", &len))
+			json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), fileSlots, jerr);
+		sha = ce_package_sha1(pk) != nullptr ? ce_package_sha1(pk) : "";
+		ce_package_free(pk);
+	}
+	ce_project *p = ce_project_new();
+	const json::Json *coreName = cfg.find("coreName"), *version = cfg.find("version");
+	ce_project_set_core(p, coreName != nullptr ? coreName->text.c_str() : "", version != nullptr ? version->text.c_str() : "", sha.c_str());
+	/* the machine, as the New Project window stamps it */
+	if (const char *system = ce_session_system_id(s_); system != nullptr && *system != '\0') ce_project_header_set(p, "Platform", system);
+	/* the game, in the package's first slot, by its own name */
+	std::string slotId = "rom";
+	if (const json::Json *list = fileSlots.find("slots"); list != nullptr && !list->items.empty())
+		if (const json::Json *id = list->items[0].find("id")) slotId = id->text;
+	const size_t slash = game_.find_last_of("/\\");
+	const std::string base = slash == std::string::npos ? game_ : game_.substr(slash + 1);
+	const char *error = nullptr;
+	if (ce_project_file_add(p, base.c_str(), slotId.c_str(), game_.c_str(), &error) != 0)
+	{
+		ce_project_free(p);
+		fail(error != nullptr ? error : "the game's file could not be added");
+		return;
+	}
+	/* every setting that applies, at its value: the project is the settings */
+	{
+		json::Json overrides, recorded;
+		recorded.kind = json::Json::Kind::Object;
+		if (!json::parse(settingsM_.empty() ? "{}" : settingsM_, overrides, jerr)) overrides.kind = json::Json::Kind::Object;
+		const json::Json *decl = cfg.find("settings");
+		json::Json slotMap;
+		slotMap.kind = json::Json::Kind::Object;
+		json::Json files;
+		files.kind = json::Json::Kind::Array;
+		files.items.push_back(json::Json::string(base));
+		slotMap.members.emplace_back(slotId, files);
+		if (decl != nullptr)
+		{
+			const std::vector<json::Json> &items = decl->items;
+			std::string machineSetting;
+			if (const json::Json *m = cfg.find("machineSetting")) machineSetting = m->text;
+			for (size_t i : SettingsViewModel::applicable(items, json::write(slotMap), overrides, machineSetting))
+			{
+				const json::Json *name = items[i].find("name");
+				if (name == nullptr) continue;
+				const json::Json *v = overrides.find(name->text);
+				if (v == nullptr) v = items[i].find("default");
+				if (v != nullptr) recorded.members.emplace_back(name->text, *v);
+			}
+		}
+		ce_project_set_settings_text(p, json::write(recorded).c_str(), &error);
+	}
+	if (!firmwarePinsM_.empty() && firmwarePinsM_ != "[]") ce_project_set_firmware_text(p, firmwarePinsM_.c_str(), &error);
+	const std::string title = !titleGiven.empty() ? titleGiven : base.substr(0, base.find_last_of('.'));
+	ce_project_set_title(p, title.c_str());
+	/* it becomes the open project; saving writes its movie, markers and branches */
+	if (projectM_ != nullptr) ce_project_free(projectM_);
+	projectM_ = p;
+	projectPathM_ = path;
+	game_.clear();
+	saveProjectOnMachine(path);
+	later([this, path, title] {
+		projectPath.set(path);
+		projectTitle.set(title);
+		std::string list = path;
+		for (size_t at = 0, n = 1; at < recentProjects.get().size() && n < 10;)
+		{
+			const size_t end = recentProjects.get().find('\n', at);
+			const std::string line = recentProjects.get().substr(at, end == std::string::npos ? std::string::npos : end - at);
+			if (!line.empty() && line != path) { list += "\n" + line; n++; }
 			if (end == std::string::npos) break;
 			at = end + 1;
 		}

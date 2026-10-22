@@ -168,6 +168,8 @@ private:
 	void openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs,
 		ce_project *reuse = nullptr);
 	void saveProjectOnMachine(const std::string &path);
+	/* a game's session made a project, as the New Project window makes one */
+	void newProjectOnMachine(const std::string &path, const std::string &title);
 	void freeProjectOnMachine();
 	/* what every open shares, once the session exists */
 	void adoptOnMachine(ce_session *s, const std::string &package, const std::string &label, bool inputsReplaced);
@@ -207,6 +209,8 @@ private:
 	std::string projectPathM_;
 	/* a game's settings (a project keeps its own) */
 	std::string settingsM_;
+	/* the firmware the open game was given, as a project records it */
+	std::string firmwarePinsM_;
 	std::vector<int32_t> axesBuf_;
 	std::vector<Marker> markersM_;
 	PackageFinder findPackageM_;
