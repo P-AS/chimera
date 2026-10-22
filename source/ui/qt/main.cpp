@@ -174,7 +174,9 @@ int main(int argc, char **argv)
 		std::printf("%s", lua.describe().c_str());
 		return 0;
 	}
-	vm::Connection luaFrames = session.frame.changed.connect([&lua] { lua.frameDone(); });
+	/* after each report from the machine, every property updated - not on a
+	 * change of frame number, which a seek away and back again never makes */
+	vm::Connection luaFrames = session.screenChanged.connect([&lua] { lua.frameDone(); });
 
 	qmlRegisterType<qt::PictureItem>("Chimera", 1, 0, "PictureItem");
 	qmlRegisterType<qt::PianoRollItem>("Chimera", 1, 0, "PianoRollItem");

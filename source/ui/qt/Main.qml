@@ -32,6 +32,13 @@ ApplicationWindow {
             Action { text: qsTr("&Play"); shortcut: "Ctrl+P"; enabled: root.session.playEnabled && !root.session.running; onTriggered: root.session.run("play") }
             Action { text: qsTr("P&ause"); shortcut: "Ctrl+Space"; enabled: root.session.running; onTriggered: root.session.run("pause") }
             Action { text: qsTr("&Frame Advance"); shortcut: "Ctrl+F"; enabled: root.session.frameAdvanceEnabled; onTriggered: root.session.run("frameAdvance") }
+            Action { text: qsTr("Go to Frame &0"); shortcut: "Ctrl+Home"; enabled: root.session.seekEnabled; onTriggered: root.session.run("seek", [0]) }
+            Action {
+                text: qsTr("After an Edit, &Return to Where It Was")
+                checkable: true
+                checked: root.session.autoRestore
+                onToggled: root.session.autoRestore = checked
+            }
         }
         Menu {
             title: qsTr("Piano &Roll")
@@ -92,6 +99,7 @@ ApplicationWindow {
                 onTopRowRequested: (row) => root.pianoRoll.topFrame = row
                 onCellPressed: (row, column) => root.pianoRoll.run("press", [row, column])
                 onCellDragged: (row, column) => root.pianoRoll.run("drag", [row, column])
+                onFrameClicked: (row) => root.session.run("seek", [row])
             }
             ScrollBar {
                 id: scroll
@@ -121,6 +129,8 @@ ApplicationWindow {
             }
             Label { text: qsTr("%1 fps").arg(Number(root.session.fps).toFixed(1)) }
             Label { text: qsTr("roll %1 ms").arg(Number(roll.lastPaintMs).toFixed(2)) }
+            Label { text: qsTr("seek %1 frames, %2 ms").arg(root.session.lastSeekFrames).arg(Number(root.session.lastSeekMs).toFixed(0)) }
+            Label { text: qsTr("%1 states").arg(root.session.greenzoneStates) }
         }
     }
 }

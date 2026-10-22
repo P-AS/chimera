@@ -10,6 +10,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("currentFrame", "the frame the machine is about to run", currentFrame);
 	expose("frameCount", "how many frames have inputs", frameCount);
 	expose("followPlayback", "keep the current frame in view while the machine runs", followPlayback, true);
+	expose("greenEnd", "frames before this one were run with the inputs they have now", greenEnd);
 	expose("topFrame", "the first frame in view", topFrame, true);
 	expose("visibleFrames", "how many frames the view shows at once (the view sets it)", visibleFrames, true);
 	rows("frames", "one row a frame, one column a button; a cell is true where the button is held", frames_);
@@ -85,6 +86,12 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		follow();
 	});
 	topWatch_ = topFrame.changed.connect([this] { clampTop(); });
+	greenWatch_ = session_.greenEnd.changed.connect([this] {
+		const int64_t was = greenEnd.get(), now = session_.greenEnd.get();
+		greenEnd.set(now);
+		const int64_t first = std::min(was, now), last = std::min(std::max(was, now), inputs_.size()) - 1;
+		if (last >= first) frames_.changed.emit(first, last);
+	});
 	buttonsWatch_ = session_.buttonsChanged.connect([this] { frames_.reset.emit(); });
 	changedWatch_ = session_.inputsChanged.connect([this](int64_t a, int64_t b) { frames_.changed.emit(a, b); });
 	appendedWatch_ = session_.inputsAppended.connect([this](int64_t a, int64_t b) {
@@ -116,7 +123,12 @@ void PianoRollViewModel::edited(int64_t first, int64_t last, int64_t oldCount)
 {
 	const int64_t now = inputs_.size();
 	frameCount.set(now);
-	if (first < oldCount) frames_.changed.emit(first, std::min(last, oldCount - 1));
+	if (first < oldCount)
+	{
+		frames_.changed.emit(first, std::min(last, oldCount - 1));
+		/* frames the machine may have run: its states after the edit no longer hold */
+		session_.edited(first);
+	}
 	if (now > oldCount) frames_.appended.emit(oldCount, now - 1);
 }
 
@@ -132,6 +144,11 @@ std::string PianoRollViewModel::Frames::columnShortName(int32_t column) const
 	if (column >= 0 && column < static_cast<int32_t>(mn.size()) && mn[static_cast<size_t>(column)] != '.')
 		return std::string(1, mn[static_cast<size_t>(column)]);
 	return columnName(column);
+}
+
+uint32_t PianoRollViewModel::Frames::rowFlags(int64_t row) const
+{
+	return (vm_.inputs_.lagAt(row) ? kLag : 0) | (row < vm_.greenEnd.get() ? kGreen : 0);
 }
 
 Value PianoRollViewModel::Frames::cell(int64_t row, int32_t column) const

@@ -11,6 +11,9 @@ namespace chimera::vm {
 class PianoRollViewModel : public ViewModel
 {
 public:
+	/* Frames::rowFlags */
+	static constexpr uint32_t kLag = 1, kGreen = 2;
+
 	PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs, SessionViewModel &session);
 
 	/* the frame the machine is about to run */
@@ -18,6 +21,8 @@ public:
 	Property<int64_t> frameCount{0};
 	/* keep the current frame in view while the machine runs */
 	Property<bool> followPlayback{true};
+	/* frames before this one were run with the inputs they have now: the greenzone */
+	Property<int64_t> greenEnd{0};
 	/* the first frame in view, and how many fit: the view says how many */
 	Property<int64_t> topFrame{0};
 	Property<int64_t> visibleFrames{0};
@@ -39,6 +44,7 @@ private:
 		/* the button's letter in a movie's input log */
 		std::string columnShortName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
+		uint32_t rowFlags(int64_t row) const override;
 
 	private:
 		PianoRollViewModel &vm_;
@@ -51,7 +57,7 @@ private:
 	InputLog &inputs_;
 	SessionViewModel &session_;
 	Frames frames_{*this};
-	Connection frameWatch_, buttonsWatch_, changedWatch_, appendedWatch_, topWatch_;
+	Connection frameWatch_, buttonsWatch_, changedWatch_, appendedWatch_, topWatch_, greenWatch_;
 	/* what a drag paints: the state the pressed cell was given */
 	bool dragHeld_ = false;
 };

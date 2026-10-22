@@ -48,6 +48,8 @@ Q_SIGNALS:
 	void painted();
 	void cellPressed(qint64 row, int column);
 	void cellDragged(qint64 row, int column);
+	/* a press on a row's frame number */
+	void frameClicked(qint64 row);
 	/* the wheel asks for another first row; whoever owns topRow decides */
 	void topRowRequested(qint64 row);
 

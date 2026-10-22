@@ -43,6 +43,16 @@ public:
 	/* sample pairs sent to the speakers, and those dropped for running ahead */
 	Property<int64_t> soundQueued{0};
 	Property<int64_t> soundDropped{0};
+	/* frames before this one were run with the inputs they have now */
+	Property<int64_t> greenEnd{0};
+	/* machine states the greenzone holds */
+	Property<int64_t> greenzoneStates{0};
+	/* after an edit before the current frame, go back to the edit and run
+	 * forward to where the machine was, with the new inputs */
+	Property<bool> autoRestore{true};
+	/* how long the last seek took, in milliseconds, and how many frames it ran */
+	Property<double> lastSeekMs{0.0};
+	Property<int64_t> lastSeekFrames{0};
 
 	Picture screen;
 	Signal<> screenChanged;
@@ -60,6 +70,10 @@ public:
 	/* for the window: a key went down or up, by Chimera's key names */
 	void key(const std::string &name, bool down);
 
+	/* the inputs of frame `first` (and maybe later ones) were edited: the
+	 * machine's states after it no longer hold */
+	void edited(int64_t first);
+
 private:
 	using Clock = std::chrono::steady_clock;
 
@@ -68,6 +82,11 @@ private:
 	void openOnMachine(const std::string &package, const std::string &game);
 	void closeOnMachine();
 	void advanceOnMachine();
+	/* one frame: `live` takes the keys and pads held and plays the sound
+	 * (a replay does neither); `render` makes the picture. The lag result. */
+	int32_t stepOnMachine(bool live, bool render);
+	void seekOnMachine(int64_t target);
+	void report(int64_t changedFirst, int64_t changedLast, int64_t appendedFrom, int64_t appendedTo, double fpsNow);
 	void tick();
 
 	InputLog &inputs_;
@@ -88,6 +107,8 @@ private:
 	/* frames run since the machine opened: the engine counts only the
 	 * frames of a movie it plays, and this plays frames by hand */
 	int64_t frameM_ = 0;
+	int64_t greenEndM_ = 0;
+	std::atomic<bool> autoRestoreM_{true};
 	bool runningM_ = false;
 	Clock::time_point due_{};
 	Clock::duration period_ = std::chrono::microseconds(16667);
@@ -97,6 +118,7 @@ private:
 	/* gamepads are read on this thread, just before each frame */
 	std::unique_ptr<Gamepads> padsM_;
 	Bindings bindingsM_;
+	Connection autoRestoreWatch_;
 	std::vector<std::string> padHeld_;
 	size_t padCount_ = 0;
 	std::unique_ptr<Sound> soundM_;
@@ -109,6 +131,7 @@ private:
 	int64_t pendingFrame_ = 0;
 	double pendingFps_ = -1;
 	int64_t pendingQueued_ = 0, pendingDropped_ = 0;
+	int64_t pendingGreenEnd_ = 0, pendingStates_ = 0;
 	int64_t changedFirst_ = -1, changedLast_ = -1;
 	int64_t appendedFirst_ = -1, appendedLast_ = -1;
 };

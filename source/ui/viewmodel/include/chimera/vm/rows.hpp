@@ -21,6 +21,9 @@ public:
 	/* a name for a narrow column; the full name unless the list has a shorter one */
 	virtual std::string columnShortName(int32_t column) const { return columnName(column); }
 	virtual Value cell(int64_t row, int32_t column) const = 0;
+	/* what a row is, beyond its cells, as flags the list defines (the piano
+	 * roll: a lag frame, a frame in the greenzone) */
+	virtual uint32_t rowFlags(int64_t) const { return 0; }
 
 	/* anything may have changed, the number of rows and columns too */
 	Signal<> reset;

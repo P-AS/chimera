@@ -99,9 +99,11 @@ void PianoRollItem::paint(QPainter *p)
 	QElapsedTimer timer;
 	timer.start();
 
-	const QColor base(0xff, 0xff, 0xff), stripe(0xf3, 0xf5, 0xf8), grid(0xd8, 0xdc, 0xe2),
-		header(0xe8, 0xeb, 0xf0), text(0x20, 0x24, 0x2a), dim(0x80, 0x88, 0x92),
-		lit(0x2f, 0x6f, 0xd6), now(0xc9, 0xf2, 0xc7), future(0xff, 0xff, 0xff);
+	/* TAStudio's meanings: the current frame blue, the greenzone green, a
+	 * lag frame in it red, frames not run with their inputs plain */
+	const QColor base(0xff, 0xff, 0xff), grid(0xd8, 0xdc, 0xe2), header(0xe8, 0xeb, 0xf0),
+		text(0x20, 0x24, 0x2a), lit(0x2f, 0x6f, 0xd6), now(0xbf, 0xd9, 0xff), green(0xd9, 0xf2, 0xd4),
+		lag(0xf6, 0xd0, 0xcc), plain(0xff, 0xff, 0xff);
 	const int w = static_cast<int>(width()), h = static_cast<int>(height());
 	p->fillRect(0, 0, w, h, base);
 	if (rows_ == nullptr) return;
@@ -133,9 +135,10 @@ void PianoRollItem::paint(QPainter *p)
 		const qint64 row = top_ + i;
 		if (row >= count) break;
 		const int y = rowHeight_ * (i + 1);
-		const QColor back = row == current_ ? now : (row > current_ ? future : stripe);
+		const uint32_t flags = rows.rowFlags(row);
+		const QColor back = row == current_ ? now : (flags & 2) ? ((flags & 1) ? lag : green) : plain;
 		p->fillRect(0, y, w, rowHeight_, (row % 2 && row != current_) ? back.darker(103) : back);
-		p->setPen(row < current_ ? dim : text);
+		p->setPen(text);
 		p->drawText(QRect(4, y, fx - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, QString::number(row));
 		for (int c = 0; c < columns; c++)
 		{
@@ -157,6 +160,13 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 {
 	qint64 row = 0;
 	int column = 0;
+	if (e->position().x() < frameColumnWidth() && e->position().y() >= rowHeight_ && rows_ != nullptr)
+	{
+		row = top_ + static_cast<qint64>((e->position().y() - rowHeight_) / rowHeight_);
+		if (row < rowCount()) Q_EMIT frameClicked(row);
+		e->accept();
+		return;
+	}
 	if (!cellAt(e->position(), row, column))
 	{
 		e->ignore();

@@ -336,6 +336,52 @@ bool machine(const char *package, const char *rom)
 	CHECK(inputs.at(3) == (uint64_t{1} << 7)); /* played, not overwritten */
 	CHECK(inputs.size() >= stopped);
 
+	/* seeking: back to a frame and forward again draws the same picture,
+	 * and a seek near a stored state runs only the last frame */
+	auto pictureNow = [&] {
+		Picture::Frame p;
+		session.screen.takeIfNewer(0, p);
+		return p.pixels;
+	};
+	auto seek = [&](int64_t f) {
+		std::string e;
+		session.run("seek", {f}, e);
+		const bool there = d.until([&] { return session.frame.get() == f; }, 20);
+		d.until([] { return false; }, 0.05); /* let the last report land */
+		return there;
+	};
+	const std::vector<uint32_t> atStop = pictureNow();
+	CHECK(session.greenEnd.get() == stopped);
+	CHECK(session.greenzoneStates.get() > 0);
+	CHECK(seek(10));
+	CHECK(session.frame.get() == 10 && session.lastSeekFrames.get() == 1);
+	CHECK(session.greenEnd.get() == stopped); /* going back changes no input */
+	CHECK(seek(stopped));
+	CHECK(pictureNow() == atStop);
+
+	/* an edit before the current frame: the states after it go, the
+	 * machine goes back to it and runs on to where it was (autoRestore) */
+	session.autoRestore.set(true);
+	const auto right = std::find(session.buttonNames().begin(), session.buttonNames().end(), "P1 Right") - session.buttonNames().begin();
+	CHECK(right < 8);
+	roll.run("paint", {int64_t{5}, int64_t{25}, static_cast<int64_t>(right), true}, error);
+	CHECK(d.until([&] { return session.frame.get() == stopped && session.greenEnd.get() == stopped && session.lastSeekFrames.get() > 0; }, 20));
+	d.until([] { return false; }, 0.1);
+	const std::vector<uint32_t> walked = pictureNow();
+	CHECK(walked != atStop); /* the walker walked: the edit reached the machine */
+	/* and taking the edit back gives the first picture again */
+	roll.run("paint", {int64_t{5}, int64_t{25}, static_cast<int64_t>(right), false}, error);
+	CHECK(d.until([&] { return session.frame.get() == stopped && session.greenEnd.get() == stopped; }, 20));
+	d.until([] { return false; }, 0.1);
+	CHECK(pictureNow() == atStop);
+	/* without autoRestore the machine stays at the edit */
+	session.autoRestore.set(false);
+	roll.run("toggle", {int64_t{3}, static_cast<int64_t>(right)}, error);
+	CHECK(d.until([&] { return session.frame.get() == 3; }, 20));
+	CHECK(session.greenEnd.get() == 3);
+	roll.run("toggle", {int64_t{3}, static_cast<int64_t>(right)}, error);
+	session.autoRestore.set(true);
+
 	/* restart: frame 0 again, the inputs kept */
 	const int64_t logged = inputs.size();
 	session.run("restart", {}, error);
