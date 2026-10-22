@@ -250,7 +250,7 @@ void pianoRollWithoutAMachine()
 	auto n = roll.run("fill", {int64_t{1000000}}, error);
 	CHECK(n && std::get<int64_t>(*n) == 1000000);
 	CHECK(roll.frameCount.get() == 1000000);
-	CHECK(roll.rowLists().size() == 1 && roll.rowLists()[0].model->rowCount() == 1000000);
+	CHECK(roll.rowLists()[0].name == "frames" && roll.rowLists()[0].model->rowCount() == 1000000);
 	/* no machine, so no buttons to flip */
 	CHECK(!roll.run("toggle", {int64_t{5}, int64_t{0}}, error) && error == "no such frame or button");
 	/* the view says how many rows fit; the first row in view stays inside the log */
@@ -684,6 +684,29 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	inputs.read(0, after);
 	CHECK(before == after && inputs.size() == end);
 	CHECK(readFile(dir / "saved.chimeraProject").find("|.D......|") != std::string::npos);
+
+	/* markers survive the trip too */
+	roll.run("addMarker", {int64_t{30}, std::string("the corner")}, error);
+	roll.run("addMarker", {int64_t{12}, std::string("turn")}, error);
+	CHECK(roll.markerCount.get() == 2);
+	CHECK((roll.rowLists()[0].model->rowFlags(12) & PianoRollViewModel::kMarker) != 0);
+	CHECK(roll.rowLists()[0].model->rowNote(30) == "the corner");
+	CHECK(std::get<int64_t>(*roll.run("nextMarker", {int64_t{12}}, error)) == 30);
+	CHECK(std::get<int64_t>(*roll.run("previousMarker", {int64_t{12}}, error)) == -1);
+	CHECK(!roll.run("removeMarker", {int64_t{13}}, error) && error == "no marker on frame 13");
+	const std::string beforeMarkers = readFile(dir / "saved.chimeraProject");
+	session.run("saveProject", {std::string()}, error);
+	CHECK(d.until([&] { return readFile(dir / "saved.chimeraProject") != beforeMarkers; }, 20));
+	CHECK(openIt(dir / "p.chimeraProject"));
+	CHECK(roll.markerCount.get() == 0); /* the other project has none */
+	CHECK(openIt(dir / "saved.chimeraProject"));
+	CHECK(roll.markerCount.get() == 2 && roll.rowLists()[0].model->rowNote(12) == "turn");
+	RowModel &marks = *roll.rowLists()[1].model;
+	int64_t firstFrame = -1;
+	fromValue(marks.cell(0, 0), firstFrame);
+	CHECK(marks.rowCount() == 2 && firstFrame == 12);
+	roll.run("removeMarker", {int64_t{12}}, error);
+	CHECK(roll.markerCount.get() == 1);
 
 	/* an edit survives the trip: P1 A on frame 10 */
 	const std::string unedited = readFile(dir / "saved.chimeraProject");

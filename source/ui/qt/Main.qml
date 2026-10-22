@@ -56,6 +56,17 @@ ApplicationWindow {
         }
         Menu {
             title: qsTr("Piano &Roll")
+            Action { text: qsTr("Add &Marker Here..."); shortcut: "Ctrl+M"; enabled: root.session.isOpen; onTriggered: markerDialog.open() }
+            Action { text: qsTr("Remove Marker Here"); enabled: root.session.isOpen; onTriggered: root.pianoRoll.run("removeMarker", [root.pianoRoll.currentFrame]) }
+            Action {
+                text: qsTr("&Next Marker"); shortcut: "Ctrl+Down"; enabled: root.session.isOpen
+                onTriggered: root.session.run("seek", [root.pianoRoll.run("nextMarker", [root.pianoRoll.currentFrame])])
+            }
+            Action {
+                text: qsTr("&Previous Marker"); shortcut: "Ctrl+Up"; enabled: root.session.isOpen
+                onTriggered: root.session.run("seek", [root.pianoRoll.run("previousMarker", [root.pianoRoll.currentFrame])])
+            }
+            MenuSeparator {}
             Action { text: qsTr("Make the Inputs 1,000,000 Frames Long"); onTriggered: root.pianoRoll.run("fill", [1000000]) }
             Action {
                 text: qsTr("&Follow the Current Frame")
@@ -66,6 +77,16 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: markerDialog
+        title: qsTr("Marker on frame %1").arg(root.pianoRoll.currentFrame)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        anchors.centerIn: parent
+        modal: true
+        TextField { id: markerText; placeholderText: qsTr("What happens here"); width: 300; focus: true }
+        onOpened: { markerText.text = ""; markerText.forceActiveFocus() }
+        onAccepted: root.pianoRoll.run("addMarker", [root.pianoRoll.currentFrame, markerText.text])
+    }
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
     Settings { id: settingsWindow; settings: root.settings; visible: false }
     LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; visible: false }

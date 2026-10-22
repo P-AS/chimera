@@ -24,6 +24,8 @@ public:
 	/* what a row is, beyond its cells, as flags the list defines (the piano
 	 * roll: a lag frame, a frame in the greenzone) */
 	virtual uint32_t rowFlags(int64_t) const { return 0; }
+	/* a note a row carries (the piano roll: a marker's text), "" for none */
+	virtual std::string rowNote(int64_t) const { return {}; }
 
 	/* anything may have changed, the number of rows and columns too */
 	Signal<> reset;

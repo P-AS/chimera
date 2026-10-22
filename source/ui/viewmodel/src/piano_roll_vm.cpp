@@ -14,6 +14,51 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("topFrame", "the first frame in view", topFrame, true);
 	expose("visibleFrames", "how many frames the view shows at once (the view sets it)", visibleFrames, true);
 	rows("frames", "one row a frame, one column a button; a cell is true where the button is held", frames_);
+	rows("markers", "the movie's markers: frame, text, whether the frame's state is kept", markerRows_);
+	expose("markerCount", "how many markers the movie has", markerCount);
+
+	command("addMarker", "puts a marker on a frame (or renames the one there)", {"frame", "text"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t f = 0;
+			std::string text;
+			if (!arg(a, 0, f, error)) return {};
+			if (a.size() > 1 && !arg(a, 1, text, error)) return {};
+			if (f < 0)
+			{
+				error = "no frame before 0";
+				return {};
+			}
+			markers_[f] = Marker{f, text, true};
+			markersEdited(f);
+			return {};
+		});
+	command("removeMarker", "takes the marker off a frame", {"frame"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t f = 0;
+			if (!arg(a, 0, f, error)) return {};
+			if (markers_.erase(f) == 0)
+			{
+				error = "no marker on frame " + std::to_string(f);
+				return {};
+			}
+			markersEdited(f);
+			return {};
+		});
+	command("nextMarker", "the first marker after a frame, or -1", {"frame"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t f = 0;
+			if (!arg(a, 0, f, error)) return {};
+			const auto it = markers_.upper_bound(f);
+			return it == markers_.end() ? int64_t{-1} : it->first;
+		});
+	command("previousMarker", "the last marker before a frame, or -1", {"frame"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t f = 0;
+			if (!arg(a, 0, f, error)) return {};
+			auto it = markers_.lower_bound(f);
+			if (it == markers_.begin()) return int64_t{-1};
+			return (--it)->first;
+		});
 
 	command("toggle", "flips one button on one frame", {"frame", "button"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -81,6 +126,13 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			return inputs_.size();
 		});
 
+	markersWatch_ = session_.markersLoaded.connect([this](const std::vector<Marker> &loaded) {
+		markers_.clear();
+		for (const Marker &m : loaded) markers_[m.frame] = m;
+		markerCount.set(static_cast<int64_t>(markers_.size()));
+		markerRows_.reset.emit();
+		frames_.reset.emit();
+	});
 	frameWatch_ = session_.frame.changed.connect([this] {
 		currentFrame.set(session_.frame.get());
 		follow();
@@ -153,7 +205,44 @@ std::string PianoRollViewModel::Frames::columnShortName(int32_t column) const
 
 uint32_t PianoRollViewModel::Frames::rowFlags(int64_t row) const
 {
-	return (vm_.inputs_.lagAt(row) ? kLag : 0) | (row < vm_.greenEnd.get() ? kGreen : 0);
+	return (vm_.inputs_.lagAt(row) ? kLag : 0) | (row < vm_.greenEnd.get() ? kGreen : 0) |
+		(vm_.markers_.count(row) ? kMarker : 0);
+}
+
+std::string PianoRollViewModel::Frames::rowNote(int64_t row) const
+{
+	const auto it = vm_.markers_.find(row);
+	return it == vm_.markers_.end() ? std::string() : it->second.text;
+}
+
+void PianoRollViewModel::markersEdited(int64_t frame)
+{
+	markerCount.set(static_cast<int64_t>(markers_.size()));
+	std::vector<Marker> all;
+	for (const auto &[f, m] : markers_) all.push_back(m);
+	session_.setMarkers(std::move(all));
+	markerRows_.reset.emit();
+	if (frame < inputs_.size()) frames_.changed.emit(frame, frame);
+}
+
+std::string PianoRollViewModel::MarkerRows::columnName(int32_t column) const
+{
+	static const char *const names[] = {"frame", "text", "keepState"};
+	return column >= 0 && column < 3 ? names[column] : "";
+}
+
+Value PianoRollViewModel::MarkerRows::cell(int64_t row, int32_t column) const
+{
+	if (row < 0 || row >= rowCount()) return {};
+	auto it = vm_.markers_.begin();
+	std::advance(it, row);
+	switch (column)
+	{
+	case 0: return it->first;
+	case 1: return it->second.text;
+	case 2: return it->second.keepState;
+	default: return {};
+	}
 }
 
 Value PianoRollViewModel::Frames::cell(int64_t row, int32_t column) const

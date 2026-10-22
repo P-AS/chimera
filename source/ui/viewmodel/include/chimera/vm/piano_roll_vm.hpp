@@ -2,6 +2,8 @@
 /* The piano roll: every frame a row, every button a column, a cell lit where
  * the button is held. It reads and edits the same inputs the session plays. */
 
+#include <map>
+
 #include "chimera/vm/input_log.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "chimera/vm/view_model.hpp"
@@ -12,7 +14,7 @@ class PianoRollViewModel : public ViewModel
 {
 public:
 	/* Frames::rowFlags */
-	static constexpr uint32_t kLag = 1, kGreen = 2;
+	static constexpr uint32_t kLag = 1, kGreen = 2, kMarker = 4;
 
 	PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs, SessionViewModel &session);
 
@@ -26,12 +28,14 @@ public:
 	/* the first frame in view, and how many fit: the view says how many */
 	Property<int64_t> topFrame{0};
 	Property<int64_t> visibleFrames{0};
+	Property<int64_t> markerCount{0};
 
 	/* the rows, for a view that draws its own cells (cells as bits, no Value) */
 	uint64_t frameBits(int64_t frame) const { return inputs_.at(frame); }
 	void readBits(int64_t first, std::vector<uint64_t> &out) const { inputs_.read(first, out); }
 	int32_t buttonCount() const;
 	RowModel &frames() { return frames_; }
+	const std::map<int64_t, Marker> &markers() const { return markers_; }
 
 private:
 	class Frames : public RowModel
@@ -45,18 +49,36 @@ private:
 		std::string columnShortName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 		uint32_t rowFlags(int64_t row) const override;
+		std::string rowNote(int64_t row) const override;
+
+	private:
+		PianoRollViewModel &vm_;
+	};
+
+	class MarkerRows : public RowModel
+	{
+	public:
+		explicit MarkerRows(PianoRollViewModel &vm) : vm_(vm) {}
+		int64_t rowCount() const override { return static_cast<int64_t>(vm_.markers_.size()); }
+		int32_t columnCount() const override { return 3; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
 
 	private:
 		PianoRollViewModel &vm_;
 	};
 
 	void edited(int64_t first, int64_t last, int64_t oldCount);
+	void markersEdited(int64_t frame);
 	void follow();
 	void clampTop();
 
 	InputLog &inputs_;
 	SessionViewModel &session_;
 	Frames frames_{*this};
+	std::map<int64_t, Marker> markers_;
+	MarkerRows markerRows_{*this};
+	Connection markersWatch_;
 	Connection frameWatch_, buttonsWatch_, changedWatch_, appendedWatch_, topWatch_, greenWatch_, resetWatch_;
 	/* what a drag paints: the state the pressed cell was given */
 	bool dragHeld_ = false;

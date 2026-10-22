@@ -151,6 +151,14 @@ void PianoRollItem::paint(QPainter *p)
 		const uint32_t flags = rows.rowFlags(row);
 		const QColor back = row == current_ ? now : (flags & 2) ? ((flags & 1) ? lag : green) : plain;
 		p->fillRect(0, y, w, rowHeight_, (row % 2 && row != current_) ? (dark ? back.lighter(112) : back.darker(103)) : back);
+		/* a marker: its frame number on the accent, its text after the buttons */
+		if (flags & 4)
+		{
+			p->fillRect(0, y, fx, rowHeight_, tint(QColor(0xe0, 0xa0, 0x20), dark ? 0.5 : 0.45));
+			p->setPen(text);
+			p->drawText(QRect(fx + columns * columnWidth_ + 6, y, w - fx - columns * columnWidth_ - 8, rowHeight_),
+				Qt::AlignVCenter | Qt::AlignLeft, QString::fromStdString(rows.rowNote(row)));
+		}
 		p->setPen(text);
 		p->drawText(QRect(4, y, fx - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, QString::number(row));
 		for (int c = 0; c < columns; c++)

@@ -22,6 +22,16 @@ struct ce_project;
 
 namespace chimera::vm {
 
+/* A named frame of the movie: a place to come back to. keepState asks the
+ * greenzone to keep that frame's state whatever it thins. */
+struct Marker
+{
+	int64_t frame = 0;
+	std::string text;
+	bool keepState = true;
+	bool operator==(const Marker &) const = default;
+};
+
 class SessionViewModel : public ViewModel
 {
 public:
@@ -75,6 +85,11 @@ public:
 	Signal<int64_t, int64_t> inputsAppended;
 	/* every frame's inputs were replaced (a project opened) */
 	Signal<> inputsReset;
+	/* a project opened with these markers */
+	Signal<std::vector<Marker>> markersLoaded;
+	/* the movie's markers, from whoever edits them: saved with the project,
+	 * and the frames of those that keep a state pinned in the greenzone */
+	void setMarkers(std::vector<Marker> markers);
 
 	/* for the window: a key went down or up, by Chimera's key names */
 	void key(const std::string &name, bool down);
@@ -162,6 +177,8 @@ private:
 	/* a game's settings (a project keeps its own) */
 	std::string settingsM_;
 	std::vector<int32_t> axesBuf_;
+	std::vector<Marker> markersM_;
+	void pinMarkersOnMachine();
 	/* frames run since the machine opened: the engine counts only the
 	 * frames of a movie it plays, and this plays frames by hand */
 	int64_t frameM_ = 0;

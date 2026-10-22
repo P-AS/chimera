@@ -44,6 +44,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			/* another game starts from its package's own settings */
 			submit([this, package, game] {
 				settingsM_.clear();
+				markersM_.clear();
+				later([this] { markersLoaded.emit({}); });
 				openOnMachine(package, game);
 			});
 			return {};
@@ -319,6 +321,22 @@ void SessionViewModel::changeSettings(std::string json, std::function<void(bool,
 	});
 }
 
+void SessionViewModel::setMarkers(std::vector<Marker> markers)
+{
+	submit([this, markers = std::move(markers)] {
+		markersM_ = markers;
+		pinMarkersOnMachine();
+	});
+}
+
+void SessionViewModel::pinMarkersOnMachine()
+{
+	if (s_ == nullptr) return;
+	ce_session_greenzone_unpin_all(s_);
+	for (const Marker &m : markersM_)
+		if (m.keepState) ce_session_greenzone_pin(s_, m.frame, 1);
+}
+
 void SessionViewModel::onMachineWait(MachineJob job)
 {
 	auto done = std::make_shared<std::promise<void>>();
@@ -444,6 +462,17 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	}
 	ce_movie_log_free(log);
 
+	if (!keepInputs)
+	{
+		std::vector<Marker> markers;
+		for (int32_t i = 0; i < ce_project_marker_count(p); i++)
+		{
+			const char *text = ce_project_marker_text(p, i);
+			markers.push_back({ce_project_marker_frame(p, i), text != nullptr ? text : "", ce_project_marker_keep_state(p, i) != 0});
+		}
+		markersM_ = markers;
+		later([this, markers] { markersLoaded.emit(markers); });
+	}
 	if (projectM_ != nullptr && projectM_ != p) ce_project_free(projectM_);
 	projectM_ = p;
 	projectPathM_ = path;
@@ -485,6 +514,8 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to)
 	uint64_t len = 0;
 	const char *text = ce_movie_log_serialize(log, 0, &len);
 	ce_project_set_log_text(projectM_, text, len);
+	for (int32_t i = ce_project_marker_count(projectM_) - 1; i >= 0; i--) ce_project_marker_remove(projectM_, i);
+	for (const Marker &m : markersM_) ce_project_marker_add(projectM_, m.frame, m.text.c_str(), m.keepState ? 1 : 0);
 	ce_movie_log_free(log);
 	const char *error = nullptr;
 	if (ce_project_save(projectM_, path.c_str(), &error) != 0)
@@ -527,6 +558,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	/* a history of the machine's states, so a seek replays from the nearest
 	 * one rather than from power-on (a setting, later) */
 	ce_session_greenzone_enable(s, uint64_t{1} << 30);
+	pinMarkersOnMachine();
 
 	std::vector<std::string> names;
 	const int64_t count = ce_session_button_count(s);
