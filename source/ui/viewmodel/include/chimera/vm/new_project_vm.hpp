@@ -60,6 +60,16 @@ public:
 		std::function<void(std::string answer, std::string error)> done)>;
 	void setImportRunner(ImportRunner runner) { importRunner_ = std::move(runner); }
 
+	/* What the core suggests for the game chosen, for a core that says it
+	 * suggests (its "suggestSettings"): where the values come from, and which
+	 * were applied ("" when nothing was asked). Asked once a game, away from
+	 * the machine running, as an import is; the values a game's suggestion
+	 * set go back when another game is chosen. */
+	Property<std::string> suggestion;
+	using SuggestRunner = std::function<void(const std::string &package, const std::string &game,
+		std::function<void(std::string answer, std::string error)> done)>;
+	void setSuggestRunner(SuggestRunner runner) { suggestRunner_ = std::move(runner); }
+
 private:
 	struct Picked
 	{
@@ -145,6 +155,15 @@ private:
 	void applyImport(const std::string &answer);
 	const json::Json *importInput(const std::string &option) const;
 	ImportRunner importRunner_;
+	SuggestRunner suggestRunner_;
+	bool suggests_ = false;
+	std::string suggestedFor_;
+	std::vector<std::string> suggestedKeys_;
+	/* an import is filling the form: its settings are the project's own */
+	bool seeding_ = false;
+	/* asks for the game's suggestion when the game is another than last time */
+	void suggestFor(const std::string &game);
+	void applySuggestion(const std::string &answer, const std::string &why);
 	json::Json import_;
 	std::map<std::string, std::vector<std::string>> importPicked_;
 	std::map<std::string, bool> importOptions_;

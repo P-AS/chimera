@@ -69,6 +69,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	rows("slots", "the kinds of file the project holds: id, title, min, max, formats, help, exposed, files, count, filter", slotRows_);
 	rows("settings", "the settings that apply, as the Settings window lists them", settingRows_);
 	rows("firmware", "the firmware the machine needs: id, name, the file, how it was found, missing", firmwareRows_);
+	expose("suggestion", "what the core suggests for the game chosen, and what of it was applied", suggestion);
 	expose("importMenu", "the movie import's menu item (\"\" when the core imports none)", importMenu);
 	expose("importMovieLabel", "what the movie to import is", importMovieLabel);
 	expose("importMovieFilter", "the kinds of file it comes in, for a file dialog", importMovieFilter);
@@ -552,6 +553,11 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 		slots_.push_back(s);
 	}
 
+	/* whether it suggests settings for a game */
+	suggests_ = cfg_.find("suggestSettings") != nullptr && cfg_.find("suggestSettings")->boolean;
+	suggestedFor_.clear();
+	suggestedKeys_.clear();
+	suggestion.set("");
 	/* the movie import it declares, if any */
 	import_ = Json();
 	importPicked_.clear();
@@ -625,6 +631,87 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	return true;
 }
 
+void NewProjectViewModel::suggestFor(const std::string &game)
+{
+	/* what the last game's suggestion set goes back to the default */
+	if (!suggestedKeys_.empty())
+	{
+		Json values = form_.values();
+		for (const std::string &k : suggestedKeys_)
+			for (auto it = values.members.begin(); it != values.members.end(); ++it)
+				if (it->first == k)
+				{
+					values.members.erase(it);
+					break;
+				}
+		form_.setValues(values);
+		suggestedKeys_.clear();
+	}
+	suggestedFor_ = game;
+	suggestion.set(game.empty() ? "" : "Looking this game up...");
+	if (game.empty()) return;
+	const std::string asked = game;
+	auto done = [this, asked](std::string answer, std::string why) {
+		/* an answer for a game no longer chosen is no answer */
+		if (asked != suggestedFor_) return;
+		applySuggestion(answer, why);
+	};
+	if (suggestRunner_)
+	{
+		suggestRunner_(package_, game, done);
+		return;
+	}
+	/* here, with no machine open */
+	std::ifstream in(game, std::ios::binary);
+	const std::string rom((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+	uint64_t len = 0;
+	const char *err = nullptr;
+	const char *answer = ce_suggest_settings(package_.c_str(), reinterpret_cast<const uint8_t *>(rom.data()), rom.size(), game.c_str(), "{}",
+		nullptr, nullptr, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, &len, &err);
+	done(answer != nullptr ? std::string(answer, static_cast<size_t>(len)) : std::string(), err != nullptr ? err : "");
+}
+
+void NewProjectViewModel::applySuggestion(const std::string &text, const std::string &why)
+{
+	Json answer;
+	std::string jerr;
+	if (text.empty() || !json::parse(text, answer, jerr) || answer.kind != Json::Kind::Object)
+	{
+		suggestion.set("No suggested settings: " + (!why.empty() ? why : text.empty() ? std::string("the core gave none") : "its answer does not read"));
+		return;
+	}
+	std::string applied;
+	if (const Json *values = answer.find("values"))
+	{
+		form_.evaluate();
+		for (const auto &[name, value] : values->members)
+		{
+			/* never the machine: that is the person's choice */
+			if (name == form_.machineSetting()) continue;
+			Value v;
+			switch (value.kind)
+			{
+			case Json::Kind::Bool: v = value.boolean; break;
+			case Json::Kind::Number:
+				v = std::floor(value.number()) == value.number() ? Value(static_cast<int64_t>(value.number())) : Value(value.number());
+				break;
+			default: v = value.text; break;
+			}
+			std::string e;
+			if (!form_.set(name, v, e)) continue;
+			suggestedKeys_.push_back(name);
+			const Json *d = form_.declared(name);
+			const Json *label = d != nullptr ? d->find("display") : nullptr;
+			applied += (applied.empty() ? "" : ", ") + (label != nullptr ? label->text : name);
+		}
+	}
+	const Json *note = answer.find("note");
+	std::string out = note != nullptr ? note->text : std::string();
+	if (!applied.empty()) out += (out.empty() ? "" : "\n") + std::string("Applied below: ") + applied + ".";
+	suggestion.set(out);
+	evaluate();
+}
+
 const Json *NewProjectViewModel::importInput(const std::string &option) const
 {
 	if (const Json *files = import_.find("files"))
@@ -680,6 +767,7 @@ void NewProjectViewModel::applyImport(const std::string &text)
 		}
 	/* the files, in the answer's order: the ones picked for the import */
 	files_.clear();
+	seeding_ = true;
 	if (const Json *files = answer.find("files"))
 		for (const Json &f : files->items)
 		{
@@ -722,6 +810,7 @@ void NewProjectViewModel::applyImport(const std::string &text)
 					}
 				}
 		}
+	seeding_ = false;
 	if (const Json *n = answer.find("notes"))
 		for (const Json &line : n->items) notes.push_back(line.text);
 	pendingInput_ = answer.find("input") != nullptr ? answer.find("input")->text : std::string();
@@ -798,6 +887,26 @@ void NewProjectViewModel::evaluate()
 			need.how = "chosen";
 		}
 		needs_.push_back(need);
+	}
+
+	/* the core's suggestion for the game, once a game */
+	if (suggests_)
+	{
+		std::string game;
+		for (const Slot &s : slots_)
+			if (auto it = files_.find(s.id); game.empty() && it != files_.end() && !it->second.empty()) game = it->second.front().path;
+		if (game != suggestedFor_)
+		{
+			if (seeding_)
+			{
+				/* a movie's settings are kept: no suggestion over them */
+				suggestedFor_ = game;
+				suggestedKeys_.clear();
+				suggestion.set(game.empty() ? "" : "This project's own settings are kept.");
+			}
+			else
+				suggestFor(game);
+		}
 	}
 
 	/* what is missing */

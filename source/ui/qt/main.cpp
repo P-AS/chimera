@@ -276,6 +276,34 @@ int main(int argc, char **argv)
 	if (cores.firmwareFolder.get().empty())
 		cores.firmwareFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Firmware")).toStdString());
 	vm::NewProjectViewModel newProject(dispatcher, session, cores);
+	/* the core's suggested settings for a game, asked as an import is */
+	newProject.setSuggestRunner([&app](const std::string &package, const std::string &game,
+									std::function<void(std::string, std::string)> done) {
+#ifdef _WIN32
+		const QString exe = QStringLiteral("chimera-run.exe");
+#else
+		const QString exe = QStringLiteral("chimera-run");
+#endif
+		QString runner = qEnvironmentVariable("CHIMERA_RUN");
+		for (const QString &dir : {QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
+			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
+		if (runner.isEmpty())
+		{
+			done({}, "chimera-run is not beside the program");
+			return;
+		}
+		auto *proc = new QProcess(&app);
+		QObject::connect(proc, &QProcess::finished, proc, [proc, done](int code, QProcess::ExitStatus) {
+			QByteArray answer;
+			for (const QByteArray &l : proc->readAllStandardOutput().split('\n'))
+				if (l.trimmed().startsWith('{')) answer = l.trimmed();
+			const QByteArray err = proc->readAllStandardError().trimmed();
+			proc->deleteLater();
+			if (code == 0 && !answer.isEmpty()) done(answer.toStdString(), {});
+			else done({}, err.isEmpty() ? std::string("the core gave none") : err.split('\n').last().toStdString());
+		});
+		proc->start(runner, {QString::fromStdString(package), QString::fromStdString(game), QStringLiteral("--suggest")});
+	});
 	/* a movie import asks the core in a process of its own (one machine to a
 	 * process), as Chimera does: chimera-run, beside the program or, in the
 	 * build tree, where it is built (CHIMERA_RUN names another) */

@@ -586,4 +586,13 @@ ECL_EXPORT const char *ImportMovie(void)
 	return g_import;
 }
 
+/* What this core would choose for a game before a project exists
+ * (ce_suggest_settings): called INSTEAD of Init, for a package that declares
+ * "suggestSettings". The synth suggests one value, with a note saying where
+ * it comes from, so a frontend's suggestion step can be tested. */
+ECL_EXPORT const char *SuggestSettings(void)
+{
+	return "{\"values\": {\"initFillByte\": 9}, \"note\": \"The synthetic core suggests a fill of 9.\"}";
+}
+
 int main(void) { return 0; }

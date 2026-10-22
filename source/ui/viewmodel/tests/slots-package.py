@@ -44,6 +44,8 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
             ]
             cfg["firmware"] = [{"id": "bios", "display": "Board B BIOS", "name": "boardb.bin",
                                 "requiredWhen": {"setting": "board", "is": "b"}}]
+            # the synthetic core suggests settings for a game (SuggestSettings)
+            cfg["suggestSettings"] = True
             # the synthetic core's importer: a movie of its own lines, the game it
             # was made on, and a setting the movie dictates
             cfg["movieImport"] = {

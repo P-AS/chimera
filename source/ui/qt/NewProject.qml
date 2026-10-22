@@ -202,6 +202,13 @@ ApplicationWindow {
         }
 
         Label { text: qsTr("Settings"); font.bold: true }
+        Label {
+            text: win.vm.suggestion
+            visible: text !== ""
+            wrapMode: Text.Wrap
+            opacity: 0.8
+            Layout.fillWidth: true
+        }
         SettingsList {
             vm: win.vm
             Layout.fillWidth: true

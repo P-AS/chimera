@@ -2176,9 +2176,24 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 		CHECK(project.find("\"support\"") != std::string::npos);
 	}
 	CHECK(!session.isOpen.get());
-	/* board A with its cartridge: made and opened, and it plays */
+	/* board A with its cartridge: made and opened, and it plays; the core
+	 * suggests a setting for the game, which is applied, and taken back
+	 * when the game is taken out */
 	CHECK(wizard.run("chooseMachine", {int64_t{0}}, error).has_value());
+	auto fillNow = [&] {
+		int64_t v = -1;
+		for (int64_t r = 0; r < rowCount("settings"); r++)
+			if (text("settings", r, 0) == "initFillByte") fromValue(cell("settings", r, 3), v);
+		return v;
+	};
+	CHECK(wizard.run("removeFile", {std::string("disk"), int64_t{1}}, error).has_value());
+	CHECK(wizard.run("removeFile", {std::string("disk"), int64_t{0}}, error).has_value());
+	CHECK(wizard.suggestion.get().empty());
 	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && wizard.ready.get());
+	CHECK(wizard.suggestion.get() == "The synthetic core suggests a fill of 9.\nApplied below: Initial RAM Fill." && fillNow() == 9);
+	CHECK(wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value());
+	CHECK(wizard.suggestion.get().empty() && fillNow() == 0);
+	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && fillNow() == 9);
 	const fs::path boardA = dir / "boarda.chimeraProject";
 	CHECK(wizard.run("create", {boardA.string()}, error).has_value());
 	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == boardA.string(); }, 60));
@@ -2249,6 +2264,8 @@ bool movieImport(const char *slotsPackage, const char *rom, const std::string &m
 	}
 	CHECK(wizard.status.get() == "Imported win.txt (" + std::to_string(frames) + " frames)");
 	CHECK(wizard.imported.get() && wizard.importNotes.get() == "imported by the synth core" && wizard.title.get() == "win");
+	/* the movie's settings are the project's own: no suggestion over them */
+	CHECK(wizard.suggestion.get() == "This project's own settings are kept.");
 	RowModel *slots = nullptr, *settings = nullptr;
 	for (const auto &r : wizard.rowLists())
 	{
