@@ -53,10 +53,12 @@ made from.
 | ramWatch | addresses kept an eye on, read after every frame, shown unsigned, signed, in hex, in binary, as fixed point or as a float exactly as Chimera writes them; the previous value three ways, changes counted; Chimera's .wch files both ways (other emulators' too); the marked ones shown over the picture where Chimera shows them | RAM Watch |
 | settings | the package's declared settings, those that apply, edits applied live or by restarting | Settings (a form generated from the declaration) |
 | luaConsole | edit, run, open and save scripts; their output | Lua Console |
+| newProject | a project made before any machine runs, as Chimera's New Project window makes one: the core among the installed ones, its machine, files in the slots its package declares (kinds, how many, the ones a choice rules out, at least one of a group, names a slot asks for, a cue's tracks checked at once), the settings that apply, the firmware found by the engine's rules or chosen by hand; what is missing said a line at a time; made, then opened | New Project |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 458 checks on the
-synthetic core. They include a project whose movie ends with the machine's
+The tests drive the view models with no window: 515 checks on the
+synthetic core (and on two packages made from it at build time: one under
+another name, one of two machines with declared slots and a firmware). They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
 whole window off-screen and runs it for a second. Every new check was
 broken on purpose once and seen to fail.
@@ -152,8 +154,8 @@ which QML replaces):
 | display, input, sound | about 9,000 | done here (picture, keys, SDL pads, OpenAL) |
 
 About 150,000 lines of C# become about 40,000 to 60,000 of C++ and QML, if
-the prototype's ratio holds. The prototype is 7,000 lines of view models,
-2,000 of Qt (790 of them QML) and 1,500 of tests.
+the prototype's ratio holds. The prototype is 7,900 lines of view models,
+2,200 of Qt (1,000 of them QML) and 1,700 of tests.
 
 A suggested order, each step usable on its own:
 
@@ -166,8 +168,10 @@ A suggested order, each step usable on its own:
 2. **New project wizard, firmware and Core Manager.** Opening anything
    without the C# window first. Done: the Cores window, firmware found by
    the engine's rules, a project made of an open game, a game opened by its
-   kind of file. Still to do: the wizard's slots, machines and settings
-   before the first frame.
+   kind of file, the New Project window. Still to do in it: settings
+   suggested by a core, presets, a game core's own firmware, movie import,
+   and the project written only when the work is first saved (here it is
+   written when made).
 3. **RAM Watch, cheats, hex editor.** RAM Watch is done, but for game
    property watches (kept in its files as they are, not read yet) and
    poking a value.

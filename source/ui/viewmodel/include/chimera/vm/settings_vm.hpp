@@ -6,6 +6,7 @@
  * knows no setting by name: a row is whatever the package declared. */
 
 #include "chimera/vm/json.hpp"
+#include "chimera/vm/settings_form.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "chimera/vm/view_model.hpp"
 
@@ -21,44 +22,24 @@ public:
 	Property<int64_t> shown{0};
 	Property<std::string> status{"No machine is open"};
 
-	/* Which of a declaration's settings apply, in its order: those the
-	 * engine exposes for these game files and values, and of those, the
-	 * ones whose "when" names the machine the package's machineSetting
-	 * (if it has one) chose. */
+	/* which of a declaration's settings apply (SettingsForm's rule) */
 	static std::vector<size_t> applicable(const std::vector<json::Json> &decl, const std::string &slots,
-		const json::Json &values, const std::string &machineSetting);
+		const json::Json &values, const std::string &machineSetting)
+	{
+		return SettingsForm::applicable(decl, slots, values, machineSetting);
+	}
 
 	/* columns of the "settings" rows */
 	enum Column { kName, kLabel, kType, kValue, kOptions, kOptionLabels, kMin, kMax, kDescription, kEdited, kColumns };
 
 private:
-	class Rows : public RowModel
-	{
-	public:
-		explicit Rows(SettingsViewModel &vm) : vm_(vm) {}
-		int64_t rowCount() const override { return static_cast<int64_t>(vm_.exposed_.size()); }
-		int32_t columnCount() const override { return kColumns; }
-		std::string columnName(int32_t column) const override;
-		Value cell(int64_t row, int32_t column) const override;
-
-	private:
-		SettingsViewModel &vm_;
-	};
-
 	void evaluate();
-	const json::Json *declared(const std::string &name) const;
-	Value valueOf(const json::Json &decl, const json::Json &values) const;
 
 	SessionViewModel &session_;
-	Rows rows_{*this};
+	SettingsForm form_;
+	SettingsForm::Rows rows_{form_};
 	Connection opensWatch_;
-	std::vector<json::Json> decl_;
-	std::string declText_, slots_;
-	/* the setting that chooses the machine, when the package has several;
-	 * a setting with "when" belongs to the machines it names */
-	std::string machineSetting_;
-	json::Json applied_, values_;
-	std::vector<size_t> exposed_;
+	json::Json applied_;
 };
 
 } // namespace chimera::vm

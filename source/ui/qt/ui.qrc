@@ -5,6 +5,8 @@
     <file>RamSearch.qml</file>
     <file>RamWatch.qml</file>
     <file>Settings.qml</file>
+    <file>SettingsList.qml</file>
+    <file>NewProject.qml</file>
     <file>LuaConsole.qml</file>
     <file>Branches.qml</file>
     <file>Cores.qml</file>

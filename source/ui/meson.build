@@ -27,6 +27,8 @@ vm_lib = static_library(
     'viewmodel/src/cores_vm.cpp',
     'viewmodel/src/branch_state.cpp',
     'viewmodel/src/watch_values.cpp',
+    'viewmodel/src/settings_form.cpp',
+    'viewmodel/src/new_project_vm.cpp',
     'viewmodel/src/ram_watch_vm.cpp',
     'viewmodel/src/config_store.cpp',
   ],
@@ -58,11 +60,20 @@ synth_again = custom_target(
   build_always_stale: true,
   build_by_default: true,
 )
+# a package of two machines with declared slots, for New Project
+synth_slots = custom_target(
+  'synth-slots',
+  output: 'synth-slots.chimeraCore',
+  command: [find_program('python3'), files('viewmodel/tests/slots-package.py'),
+    repo_root / 'build/Cores/synth-box.chimeraCore', '@OUTPUT@'],
+  build_always_stale: true,
+  build_by_default: true,
+)
 test(
   'view models',
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again],
+    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots],
   # OpenAL's device that plays to nowhere: the sound check runs with no speakers
   env: ['ALSOFT_DRIVERS=null'],
   timeout: 180,

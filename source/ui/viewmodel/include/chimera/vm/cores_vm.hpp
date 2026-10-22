@@ -27,6 +27,9 @@ public:
 	/* any thread: the newest package of each core whose files include this
 	 * extension (lower case, no dot), as {core name, package} */
 	std::vector<std::pair<std::string, std::string>> coresFor(const std::string &extension) const;
+	/* any thread: the newest package of each installed core, by name, as
+	 * {core name, package} */
+	std::vector<std::pair<std::string, std::string>> installed() const;
 	/* any thread: the folders firmware is looked for in */
 	std::vector<std::string> firmwareFolders() const;
 

@@ -131,6 +131,15 @@ std::vector<std::pair<std::string, std::string>> CoresViewModel::coresFor(const 
 	return out;
 }
 
+std::vector<std::pair<std::string, std::string>> CoresViewModel::installed() const
+{
+	std::vector<std::pair<std::string, std::string>> out;
+	std::lock_guard<std::mutex> lock(m_);
+	for (const Core &c : cores_)
+		if (out.empty() || out.back().first != c.coreName) out.emplace_back(c.coreName, c.path);
+	return out;
+}
+
 std::vector<std::string> CoresViewModel::firmwareFolders() const
 {
 	std::lock_guard<std::mutex> lock(m_);

@@ -13,6 +13,7 @@ ApplicationWindow {
     required property QtObject pianoRoll
     required property QtObject ramSearch
     required property QtObject ramWatch
+    required property QtObject newProject
     required property QtObject settings
     required property QtObject luaConsole
     required property QtObject branches
@@ -29,6 +30,7 @@ ApplicationWindow {
     menuBar: MenuBar {
         Menu {
             title: qsTr("&File")
+            Action { text: qsTr("&New Project..."); shortcut: "Ctrl+N"; onTriggered: { newProjectWindow.show(); newProjectWindow.raise() } }
             Action { text: qsTr("&Open Game..."); shortcut: "Ctrl+O"; onTriggered: gameDialog.open() }
             Action { text: qsTr("Open Game &With a Core Package..."); onTriggered: packageDialog.open() }
             Action { text: qsTr("Open &Project..."); shortcut: "Ctrl+Shift+O"; onTriggered: projectDialog.open() }
@@ -115,6 +117,7 @@ ApplicationWindow {
     }
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
     RamWatch { id: ramWatchWindow; vm: root.ramWatch; visible: false }
+    NewProject { id: newProjectWindow; vm: root.newProject; visible: false }
     Settings { id: settingsWindow; settings: root.settings; visible: false }
     LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; visible: false }
     Branches { id: branchesWindow; vm: root.branches; visible: false }

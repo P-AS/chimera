@@ -7,6 +7,7 @@
  * nothing else ran). */
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -16,6 +17,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <regex>
 #include <string>
 #include <thread>
 
@@ -31,6 +33,7 @@
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
+#include "chimera/vm/new_project_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
@@ -1438,6 +1441,157 @@ bool rerecordCount(const char *package, const char *rom)
 	return true;
 }
 
+/* New Project, as Chimera's window makes one: a core, its machine, files
+ * in the slots it declares, its settings, its firmware; made, then opened */
+std::string lower(std::string s)
+{
+	for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	return s;
+}
+
+bool newProjectWizard(const char *package, const char *rom, const char *slotsPackage)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	if (fs::file_size(slotsPackage, ec) == 0 || ec)
+	{
+		std::printf("SKIP New Project: no slots package was made\n");
+		return false;
+	}
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-wizard-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "Cores");
+	fs::create_directories(dir / "Firmware");
+	fs::copy_file(package, dir / "Cores" / "synth-box.chimeraCore");
+	fs::copy_file(slotsPackage, dir / "Cores" / "synth-slots.chimeraCore");
+	const std::string game = (dir / "walker.testrom").string();
+	fs::copy_file(rom, game);
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	CoresViewModel installed(d);
+	std::string error;
+	installed.set("coresFolder", (dir / "Cores").string(), error);
+	installed.set("firmwareFolder", (dir / "Firmware").string(), error);
+	session.setFinders([&installed](const std::string &n, const std::string &h, std::string &note) { return installed.packageFor(n, h, note); },
+		[&installed] { return installed.firmwareFolders(); });
+	NewProjectViewModel wizard(d, session, installed);
+	auto cell = [&](const char *rowsName, int64_t row, int32_t column) {
+		for (const auto &r : wizard.rowLists())
+			if (r.name == rowsName) return r.model->cell(row, column);
+		return Value{};
+	};
+	auto text = [&](const char *rowsName, int64_t row, int32_t column) {
+		std::string t;
+		fromValue(cell(rowsName, row, column), t);
+		return t;
+	};
+	auto rowCount = [&](const char *rowsName) {
+		for (const auto &r : wizard.rowLists())
+			if (r.name == rowsName) return r.model->rowCount();
+		return int64_t{-1};
+	};
+	auto settingNames = [&] {
+		std::string out;
+		for (int64_t r = 0; r < rowCount("settings"); r++) out += text("settings", r, 0) + " ";
+		return out;
+	};
+	CHECK(wizard.coreNames.get() == "Synth\nSynth Slots");
+	CHECK(wizard.problems.get() == "Choose a core" && !wizard.ready.get());
+	CHECK(!wizard.run("addFile", {std::string("rom"), game}, error) && error == "choose a core first");
+
+	/* a package of one kind of file: the game */
+	CHECK(wizard.run("chooseCore", {std::string("Synth")}, error).has_value());
+	CHECK(rowCount("slots") == 1 && text("slots", 0, 0) == "rom" && text("slots", 0, 4) == ".testrom" && text("slots", 0, 9) == "*.testrom");
+	CHECK(wizard.problems.get() == "Game: a file is needed" && wizard.machines.get().empty());
+	std::ofstream(dir / "notes.txt") << "not a game";
+	CHECK(!wizard.run("addFile", {std::string("rom"), (dir / "notes.txt").string()}, error) && error == "notes.txt: Game takes a .testrom file");
+	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && wizard.ready.get() && wizard.problems.get().empty());
+	CHECK(!wizard.run("addFile", {std::string("rom"), game}, error) && error == "Game takes 1 file at most");
+	CHECK(text("slots", 0, 7) == "walker.testrom");
+	CHECK(settingNames() == "initFillByte ");
+	CHECK(!wizard.run("set", {std::string("initFillByte"), int64_t{300}}, error) && error == "initFillByte goes from 0 to 255");
+	CHECK(wizard.run("set", {std::string("initFillByte"), int64_t{7}}, error).has_value());
+	wizard.set("title", std::string("down the corridor"), error);
+	const fs::path plain = dir / "walker.chimeraProject";
+	CHECK(wizard.run("create", {plain.string()}, error).has_value());
+	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == plain.string(); }, 60));
+	{
+		const std::string project = readFile(plain);
+		CHECK(std::regex_search(project, std::regex("\"initFillByte\"\\s*:\\s*7[^0-9]")));
+		CHECK(project.find("down the corridor") != std::string::npos && project.find("walker.testrom") != std::string::npos);
+		CHECK(project.find("\"Platform\"") != std::string::npos);
+	}
+	CHECK(session.projectTitle.get() == "down the corridor" && session.coreName.get() == "Synth");
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+
+	/* two boards: each its own kinds of file, settings and firmware */
+	CHECK(wizard.run("chooseCore", {std::string("Synth Slots")}, error).has_value());
+	CHECK(wizard.machines.get() == "Board A\nBoard B" && wizard.machine.get() == 0);
+	CHECK(wizard.problems.get() == "One of these is needed: Cartridge, Disks");
+	bool exposed = false;
+	fromValue(cell("slots", 0, 6), exposed);
+	CHECK(exposed && rowCount("firmware") == 0);
+	CHECK(settingNames() == "initFillByte ");
+	CHECK(wizard.run("chooseMachine", {int64_t{1}}, error).has_value() && wizard.machine.get() == 1);
+	fromValue(cell("slots", 0, 6), exposed);
+	CHECK(!exposed && settingNames() == "initFillByte diskSpeed ");
+	CHECK(!wizard.run("addFile", {std::string("rom"), game}, error) && error == "Cartridge does not go with the files or the machine chosen");
+	CHECK(rowCount("firmware") == 1 && text("firmware", 0, 1) == "Board B BIOS");
+	CHECK(wizard.problems.get() == "One of these is needed: Disks\nBoard B BIOS: not found in the firmware folder; choose its file");
+	/* a cue whose track is not beside it is said at once; names a slot asks for */
+	std::ofstream(dir / "disk1.cue") << "FILE \"disk1.bin\" BINARY\n  TRACK 01 MODE1/2048\n    INDEX 01 00:00:00\n";
+	CHECK(!wizard.run("addFile", {std::string("disk"), (dir / "disk1.cue").string()}, error) && error == "disk1.cue names disk1.bin, which is not beside it");
+	std::ofstream(dir / "disk1.bin") << "the first disk's track";
+	CHECK(wizard.run("addFile", {std::string("disk"), (dir / "disk1.cue").string()}, error).has_value());
+	std::ofstream(dir / "game.img") << "a disk by another name";
+	CHECK(!wizard.run("addFile", {std::string("disk"), (dir / "game.img").string()}, error) && error == "game.img: A disk is called disk, a number and .cue or .img.");
+	std::ofstream(dir / "disk2.img") << "the second disk";
+	CHECK(wizard.run("addFile", {std::string("disk"), (dir / "disk2.img").string()}, error).has_value());
+	CHECK(wizard.run("moveFile", {std::string("disk"), int64_t{1}, int64_t{0}}, error).has_value() && text("slots", 1, 7) == "disk2.img\ndisk1.cue");
+	CHECK(wizard.run("set", {std::string("diskSpeed"), int64_t{3}}, error).has_value());
+	CHECK(!wizard.run("set", {std::string("board"), std::string("a")}, error));
+	/* the firmware: chosen by hand, forgotten, then found in the folder */
+	std::ofstream(dir / "mybios.bin") << "a board B BIOS";
+	CHECK(wizard.run("chooseFirmware", {std::string("bios"), (dir / "mybios.bin").string()}, error).has_value());
+	CHECK(text("firmware", 0, 2) == (dir / "mybios.bin").string() && text("firmware", 0, 3) == "chosen" && wizard.ready.get());
+	wizard.run("forgetFirmware", {std::string("bios")}, error);
+	CHECK(!wizard.ready.get());
+	wizard.run("chooseFirmware", {std::string("bios"), (dir / "mybios.bin").string()}, error);
+	const fs::path boardB = dir / "boardb.chimeraProject";
+	CHECK(wizard.run("create", {boardB.string(), false}, error).has_value());
+	CHECK(d.until([&] { return wizard.status.get() == "Made " + boardB.string(); }, 30));
+	{
+		const std::string project = readFile(boardB);
+		char sha[41];
+		uint64_t len = 0;
+		ce_sha1_file((dir / "mybios.bin").string().c_str(), sha, &len);
+		CHECK(project.find("SynthB") != std::string::npos && std::regex_search(project, std::regex("\"diskSpeed\"\\s*:\\s*3[^0-9]")));
+		CHECK(std::regex_search(project, std::regex("\"board\"\\s*:\\s*\"b\"")));
+		CHECK(project.find(sha) != std::string::npos || project.find(lower(sha)) != std::string::npos);
+		const size_t d2 = project.find("disk2.img"), d1 = project.find("disk1.cue"), track = project.find("disk1.bin");
+		CHECK(d2 != std::string::npos && d1 != std::string::npos && track != std::string::npos && d2 < d1);
+		CHECK(project.find("\"support\"") != std::string::npos);
+	}
+	CHECK(!session.isOpen.get());
+	/* board A with its cartridge: made and opened, and it plays */
+	CHECK(wizard.run("chooseMachine", {int64_t{0}}, error).has_value());
+	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && wizard.ready.get());
+	const fs::path boardA = dir / "boarda.chimeraProject";
+	CHECK(wizard.run("create", {boardA.string()}, error).has_value());
+	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == boardA.string(); }, 60));
+	CHECK(session.coreName.get() == "Synth Slots");
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* nothing to make until everything is there */
+	CHECK(wizard.run("chooseCore", {std::string("Synth")}, error).has_value());
+	CHECK(!wizard.run("create", {(dir / "never.chimeraProject").string()}, error) && error == "not yet: Game: a file is needed");
+	fs::remove_all(dir);
+	return true;
+}
+
 /* Open Game asks only for the game: the installed core that takes its kind of
  * file opens it, and when two do, both are offered */
 bool openByKind(const char *package, const char *rom, const char *again)
@@ -1544,6 +1698,8 @@ int main(int argc, char **argv)
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;
 			else std::printf("SKIP choosing between cores: no second package given\n");
+			if (argc >= 7) ranMachine = newProjectWizard(argv[1], argv[2], argv[6]) && ranMachine;
+			else std::printf("SKIP New Project: no slots package given\n");
 		}
 		else
 			std::printf("SKIP the machine tests: %s or %s is missing\n", argv[1], argv[2]);
