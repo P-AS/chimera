@@ -201,3 +201,17 @@ A suggested order, each step usable on its own:
    preview build beside the C# window.
 3. **macOS:** there is no Mac here; CI runners are the only way to check
    it.
+4. **Where Lua scripts run.** Here they run on the window's thread and
+   hear of frames after the machine has moved on, so a script that sets
+   the next frame's input (a bot) can miss frames, and every memory read
+   waits for the machine's thread. Chimera's scripts run between frames on
+   the one thread there is. The choices: scripts on the machine's thread,
+   called before and after every frame, reaching the window's view models
+   by waiting on the window (Chimera's behaviour, a little slower for
+   scripts that drive windows); or scripts on the window's thread with a
+   frame-by-frame lock step for those that ask for it.
+5. **Frozen addresses (cheats).** With the engine owning the movie, a
+   seek replays inside the engine without the window, so a frozen value
+   has to be written there too: a list of frozen addresses the engine
+   keeps and writes before every frame. Whether it is saved with the
+   project, and whether a movie made with one says so, are the questions.
