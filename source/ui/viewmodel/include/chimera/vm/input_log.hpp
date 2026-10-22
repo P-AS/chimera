@@ -29,6 +29,14 @@ public:
 	 * movie. False with no machine open. */
 	bool set(int64_t frame, uint64_t mask);
 	void resize(int64_t frames);
+	/* empty frames put in at `frame`, or frames taken out from it (the lag
+	 * flags move with them) */
+	void insert(int64_t frame, int64_t count);
+	void remove(int64_t frame, int64_t count);
+	/* a whole frame: its buttons and its analog values (nullptr: as they are) */
+	bool setRow(int64_t frame, uint64_t mask, const int32_t *axes);
+	/* an analog control's value when nothing is held */
+	void neutralAxes(int32_t *out) const;
 	/* whether the edits made from now on count as rerecords (off for the
 	 * rest of a stroke after its first cell) */
 	void countRerecords(bool on);

@@ -29,7 +29,9 @@ code is in `source/ui`; how it is built and run is in
   the engine counts from there instead of replaying to it. And the rule
   for which machine a project makes (core build, settings, firmware,
   files), which decides whether kept states may be loaded, moved from the
-  C# into the engine as `ce_project_machine_id`, and so did rerecord
+  C# into the engine as `ce_project_machine_id`; frames are put in and
+  taken out of the engine's movie by `ce_session_movie_insert` and
+  `_remove`; and so did rerecord
   counting (`ce_session_rerecords`): an edit counts one when it drops a
   stored state, a stroke counts once, a branch loaded over the movie
   counts one, as Chimera's TAStudio counts them.
@@ -47,7 +49,7 @@ made from.
 | View model | What it does | Window |
 |---|---|---|
 | session | open a game (the installed core that takes its kind of file opens it; when several do, they are offered), open, save and make projects, recent projects, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone (kept with the project in its cache folder and loaded when the project opens, unless the last session did not end), settings applied live or by restarting | main window |
-| pianoRoll | a row a frame and a column a button; press, drag, paint, fill; undo and redo (a stroke is one step); markers; follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
+| pianoRoll | a row a frame and a column a button; press, drag, paint, fill; frames picked (on the frame numbers, as in TAStudio, with the thin column before them moving the machine), put in, taken out, cloned, cleared, copied, cut and pasted (over or in), cut off, with TAStudio's keys; markers that can move with the frames; undo and redo (a stroke is one step); follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
 | branches | other versions of the movie, kept in the project, each with its state in a file in the project's cache folder and the picture it had; loading one loads that state, or replays from where the two movies differ when the state is missing or is another machine's | Branches |
 | ramSearch | the engine's RAM Search, updated after every frame, with undo; values shown and typed every way RAM Watch shows them | RAM Search (Qt's own table) |
 | ramWatch | addresses kept an eye on, read after every frame, shown unsigned, signed, in hex, in binary, as fixed point or as a float exactly as Chimera writes them; the previous value three ways, changes counted; Chimera's .wch files both ways (other emulators' too); the marked ones shown over the picture where Chimera shows them | RAM Watch |
@@ -57,7 +59,7 @@ made from.
 | hexEditor | a memory domain sixteen bytes a line, by 1, 2 or 4 bytes either end first, with its text; only the lines on screen held and read after every frame, the bytes that changed marked; a value written into the machine (the states after the frame dropped); bytes found | Hex Editor |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 542 checks on the
+The tests drive the view models with no window: 580 checks on the
 synthetic core (and on two packages made from it at build time: one under
 another name, one of two machines with declared slots and a firmware). They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the

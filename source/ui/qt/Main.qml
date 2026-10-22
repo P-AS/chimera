@@ -81,6 +81,63 @@ ApplicationWindow {
             Action { text: qsTr("&Lua Console..."); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
         }
         Menu {
+            // TAStudio's editing, on the frames picked (or the current one), with its keys
+            title: qsTr("E&dit")
+            readonly property bool picked: root.pianoRoll.selectFirst >= 0
+            readonly property int at: picked ? root.pianoRoll.selectFirst : root.pianoRoll.currentFrame
+            id: editMenu
+            Action {
+                text: qsTr("&Insert Frame"); shortcut: "Insert"; enabled: root.session.isOpen
+                onTriggered: root.pianoRoll.run("insertFrames", [Math.min(editMenu.at, root.pianoRoll.frameCount), 1])
+            }
+            Action { text: qsTr("Insert &Number of Frames..."); shortcut: "Shift+Insert"; enabled: root.session.isOpen; onTriggered: insertDialog.open() }
+            Action {
+                text: qsTr("&Delete Frames"); shortcut: "Ctrl+Delete"; enabled: editMenu.picked
+                onTriggered: root.pianoRoll.run("deleteFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
+            }
+            Action {
+                text: qsTr("C&lone Frames"); shortcut: "Ctrl+Insert"; enabled: editMenu.picked
+                onTriggered: root.pianoRoll.run("cloneFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
+            }
+            Action {
+                text: qsTr("Cl&ear Frames"); shortcut: "Delete"; enabled: editMenu.picked
+                onTriggered: root.pianoRoll.run("clearFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
+            }
+            MenuSeparator {}
+            Action {
+                text: qsTr("&Copy"); shortcut: StandardKey.Copy; enabled: editMenu.picked
+                onTriggered: root.pianoRoll.run("copyFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
+            }
+            Action {
+                text: qsTr("Cu&t"); shortcut: StandardKey.Cut; enabled: editMenu.picked
+                onTriggered: root.pianoRoll.run("cutFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
+            }
+            Action {
+                text: qsTr("&Paste"); shortcut: StandardKey.Paste; enabled: root.pianoRoll.clipboardFrames > 0
+                onTriggered: root.pianoRoll.run("pasteFrames", [Math.min(editMenu.at, root.pianoRoll.frameCount)])
+            }
+            Action {
+                text: qsTr("Paste In&sert"); shortcut: "Ctrl+Shift+V"; enabled: root.pianoRoll.clipboardFrames > 0
+                onTriggered: root.pianoRoll.run("pasteInsertFrames", [Math.min(editMenu.at, root.pianoRoll.frameCount)])
+            }
+            MenuSeparator {}
+            Action {
+                text: qsTr("T&runcate From Here"); enabled: root.session.isOpen && editMenu.at < root.pianoRoll.frameCount
+                onTriggered: root.pianoRoll.run("truncate", [editMenu.at])
+            }
+            Action {
+                text: qsTr("Select &All"); shortcut: "Ctrl+Shift+A"; enabled: root.pianoRoll.frameCount > 0
+                onTriggered: root.pianoRoll.run("select", [0, root.pianoRoll.frameCount - 1])
+            }
+            Action { text: qsTr("Select N&othing"); enabled: editMenu.picked; onTriggered: root.pianoRoll.run("select", [-1, -1]) }
+            Action {
+                text: qsTr("&Markers Move With the Frames")
+                checkable: true
+                checked: root.pianoRoll.bindMarkers
+                onToggled: root.pianoRoll.bindMarkers = checked
+            }
+        }
+        Menu {
             title: qsTr("Piano &Roll")
             Action { text: qsTr("&Undo"); shortcut: StandardKey.Undo; enabled: root.pianoRoll.undoEnabled; onTriggered: root.pianoRoll.run("undo") }
             Action { text: qsTr("&Redo"); shortcut: StandardKey.Redo; enabled: root.pianoRoll.redoEnabled; onTriggered: root.pianoRoll.run("redo") }
@@ -107,6 +164,18 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: insertDialog
+        title: qsTr("Insert frames")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        RowLayout {
+            Label { text: qsTr("How many") }
+            SpinBox { id: insertCount; from: 1; to: 1000000; value: 1; editable: true }
+        }
+        onAccepted: root.pianoRoll.run("insertFrames", [Math.min(editMenu.at, root.pianoRoll.frameCount), insertCount.value])
+    }
     Dialog {
         id: markerDialog
         title: qsTr("Marker on frame %1").arg(root.pianoRoll.currentFrame)
@@ -261,6 +330,9 @@ ApplicationWindow {
                 onCellPressed: (row, column) => root.pianoRoll.run("press", [row, column])
                 onCellDragged: (row, column) => root.pianoRoll.run("drag", [row, column])
                 onFrameClicked: (row) => root.session.run("seek", [row])
+                selectFirst: root.pianoRoll.selectFirst
+                selectLast: root.pianoRoll.selectLast
+                onSelectionRequested: (first, last) => root.pianoRoll.run("select", [first, last])
             }
             ScrollBar {
                 id: scroll

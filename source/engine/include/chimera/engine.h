@@ -1653,6 +1653,11 @@ CE_API int32_t ce_session_movie_get(const ce_session *s, int64_t frame, uint64_t
 CE_API int32_t ce_session_movie_set(ce_session *s, int64_t frame, uint64_t buttons, const int32_t *axes);
 /* Shortens the movie, or lengthens it with empty frames. */
 CE_API void ce_session_movie_resize(ce_session *s, int64_t frames);
+/* `count` empty frames put in at `frame` (the frames from it move later),
+ * and `count` frames taken out from `frame` (the ones after move earlier).
+ * Either is an edit from `frame`, honoured as _set's are. Any thread. */
+CE_API void ce_session_movie_insert(ce_session *s, int64_t frame, int64_t count);
+CE_API void ce_session_movie_remove(ce_session *s, int64_t frame, int64_t count);
 /* The whole movie as ce_movie_log_serialize writes it (the [Input] block), to
  * save or to keep as a branch; ce_session_movie_load takes it back. Belongs to
  * the calling thread until its next call of this. */

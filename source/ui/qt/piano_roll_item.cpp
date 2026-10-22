@@ -70,14 +70,34 @@ void PianoRollItem::setCurrentRow(qint64 row)
 	if ((was >= top_ && was <= last) || (row >= top_ && row <= last)) update();
 }
 
+void PianoRollItem::setSelectFirst(qint64 row)
+{
+	if (row == selectFirst_) return;
+	selectFirst_ = row;
+	Q_EMIT selectionChanged();
+	update();
+}
+
+void PianoRollItem::setSelectLast(qint64 row)
+{
+	if (row == selectLast_) return;
+	selectLast_ = row;
+	Q_EMIT selectionChanged();
+	update();
+}
+
 void PianoRollItem::rowsTouched(qint64 first, qint64 last)
 {
 	if (last >= top_ && first <= top_ + visibleRows()) update();
 }
 
+/* TAStudio's two columns before the buttons: a narrow one a press in moves
+ * the machine to its frame, then the frame numbers, which pick frames */
+static constexpr int kCursorWidth = 14;
+
 int PianoRollItem::frameColumnWidth() const
 {
-	return QFontMetrics(QFont()).horizontalAdvance(QStringLiteral("00000000")) + 8;
+	return kCursorWidth + QFontMetrics(QFont()).horizontalAdvance(QStringLiteral("00000000")) + 8;
 }
 
 void PianoRollItem::geometryChange(const QRectF &now, const QRectF &before)
@@ -131,7 +151,7 @@ void PianoRollItem::paint(QPainter *p)
 	 * share, or its letter in a movie when the name does not fit */
 	p->fillRect(0, 0, w, rowHeight_, header);
 	p->setPen(text);
-	p->drawText(QRect(4, 0, fx - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("Frame"));
+	p->drawText(QRect(kCursorWidth + 4, 0, fx - kCursorWidth - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("Frame"));
 	for (int c = 0; c < columns; c++)
 	{
 		QString name = QString::fromStdString(rows.columnName(c));
@@ -159,8 +179,20 @@ void PianoRollItem::paint(QPainter *p)
 			p->drawText(QRect(fx + columns * columnWidth_ + 6, y, w - fx - columns * columnWidth_ - 8, rowHeight_),
 				Qt::AlignVCenter | Qt::AlignLeft, QString::fromStdString(rows.rowNote(row)));
 		}
-		p->setPen(text);
-		p->drawText(QRect(4, y, fx - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, QString::number(row));
+		/* picked frames: their numbers on the highlight */
+		const bool picked = selectFirst_ >= 0 && row >= selectFirst_ && row <= selectLast_;
+		if (picked) p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, lit);
+		/* the frame the machine is on: an arrow in the cursor column */
+		if (row == current_)
+		{
+			p->setPen(Qt::NoPen);
+			p->setBrush(text);
+			const QPointF arrow[3] = {QPointF(3, y + 3), QPointF(kCursorWidth - 3, y + rowHeight_ / 2.0), QPointF(3, y + rowHeight_ - 3)};
+			p->drawPolygon(arrow, 3);
+			p->setBrush(Qt::NoBrush);
+		}
+		p->setPen(picked ? pal.color(QPalette::HighlightedText) : text);
+		p->drawText(QRect(kCursorWidth + 4, y, fx - kCursorWidth - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, QString::number(row));
 		for (int c = 0; c < columns; c++)
 		{
 			bool held = false;
@@ -184,7 +216,20 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 	if (e->position().x() < frameColumnWidth() && e->position().y() >= rowHeight_ && rows_ != nullptr)
 	{
 		row = top_ + static_cast<qint64>((e->position().y() - rowHeight_) / rowHeight_);
-		if (row < rowCount()) Q_EMIT frameClicked(row);
+		if (row >= rowCount())
+		{
+			e->accept();
+			return;
+		}
+		if (e->position().x() < kCursorWidth)
+			Q_EMIT frameClicked(row);
+		else
+		{
+			/* Shift extends from where picking began; a drag picks what it passes */
+			if (!(e->modifiers() & Qt::ShiftModifier) || selectAnchor_ < 0) selectAnchor_ = row;
+			selecting_ = true;
+			Q_EMIT selectionRequested(std::min(selectAnchor_, row), std::max(selectAnchor_, row));
+		}
 		e->accept();
 		return;
 	}
@@ -201,6 +246,12 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 
 void PianoRollItem::mouseMoveEvent(QMouseEvent *e)
 {
+	if (selecting_ && rows_ != nullptr && e->position().y() >= rowHeight_)
+	{
+		const qint64 row = std::min(rowCount() - 1, top_ + static_cast<qint64>((e->position().y() - rowHeight_) / rowHeight_));
+		if (row >= 0) Q_EMIT selectionRequested(std::min(selectAnchor_, row), std::max(selectAnchor_, row));
+		return;
+	}
 	if (dragColumn_ < 0) return;
 	const int fx = frameColumnWidth();
 	/* a drag stays in the column it began in, whatever the pointer's x */
@@ -218,6 +269,7 @@ void PianoRollItem::mouseMoveEvent(QMouseEvent *e)
 
 void PianoRollItem::mouseReleaseEvent(QMouseEvent *)
 {
+	selecting_ = false;
 	dragColumn_ = -1;
 	dragRow_ = -1;
 }

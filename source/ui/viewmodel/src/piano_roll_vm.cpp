@@ -116,6 +116,116 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			}
 			return inputs_.size();
 		});
+	expose("selectFirst", "the first frame picked, -1 for none", selectFirst, true);
+	expose("selectLast", "the last frame picked, -1 for none", selectLast, true);
+	expose("clipboardFrames", "frames copied, ready to paste", clipboardFrames);
+	expose("bindMarkers", "markers move with the frames when frames are put in or taken out", bindMarkers, true);
+	command("select", "picks the frames first to last (-1, -1 for none)", {"first", "last"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t first = 0, last = 0;
+			if (!arg(a, 0, first, error) || !arg(a, 1, last, error)) return {};
+			if (first > last) std::swap(first, last);
+			selectFirst.set(std::max<int64_t>(-1, first));
+			selectLast.set(std::max<int64_t>(-1, last));
+			return {};
+		});
+	command("insertFrames", "puts empty frames in at a frame; the frames from it move later", {"frame", "count"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t frame = 0, count = 1;
+			if (!arg(a, 0, frame, error)) return {};
+			if (a.size() > 1 && !arg(a, 1, count, error)) return {};
+			if (frame < 0 || frame > inputs_.size() || count < 1 || count > (int64_t{1} << 24))
+			{
+				error = "frames go in at 0 to " + std::to_string(inputs_.size()) + ", 1 to 16777216 of them";
+				return {};
+			}
+			std::vector<Row> rows(static_cast<size_t>(count));
+			std::vector<int32_t> neutral(static_cast<size_t>(inputs_.axisCount()));
+			if (!neutral.empty()) inputs_.neutralAxes(neutral.data());
+			for (Row &r : rows) r.axes = neutral;
+			putIn(frame, rows);
+			return {};
+		});
+	command("deleteFrames", "takes the frames first to last out; the frames after move earlier", {"first", "last"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t first = 0, last = 0;
+			if (!range(a, first, last, error)) return {};
+			takeOut(first, last);
+			return {};
+		});
+	command("cloneFrames", "puts a copy of the frames first to last in after them", {"first", "last"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t first = 0, last = 0;
+			if (!range(a, first, last, error)) return {};
+			std::vector<Row> rows;
+			for (int64_t f = first; f <= last; f++) rows.push_back(readRow(f));
+			putIn(last + 1, rows);
+			return {};
+		});
+	command("clearFrames", "empties the frames first to last (nothing held, analog controls at rest)", {"first", "last"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t first = 0, last = 0;
+			if (!range(a, first, last, error)) return {};
+			std::vector<int32_t> neutral(static_cast<size_t>(inputs_.axisCount()));
+			if (!neutral.empty()) inputs_.neutralAxes(neutral.data());
+			overwrite(first, std::vector<Row>(static_cast<size_t>(last - first + 1), Row{0, neutral}));
+			return {};
+		});
+	command("copyFrames", "keeps the frames first to last, to paste", {"first", "last"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t first = 0, last = 0;
+			if (!range(a, first, last, error)) return {};
+			clipboard_.clear();
+			for (int64_t f = first; f <= last; f++) clipboard_.push_back(readRow(f));
+			clipboardFrames.set(static_cast<int64_t>(clipboard_.size()));
+			return clipboardFrames.get();
+		});
+	command("cutFrames", "keeps the frames first to last to paste, and takes them out", {"first", "last"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t first = 0, last = 0;
+			if (!range(a, first, last, error)) return {};
+			clipboard_.clear();
+			for (int64_t f = first; f <= last; f++) clipboard_.push_back(readRow(f));
+			clipboardFrames.set(static_cast<int64_t>(clipboard_.size()));
+			takeOut(first, last);
+			return clipboardFrames.get();
+		});
+	command("pasteFrames", "writes the frames copied over the frames from this one", {"frame"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t frame = 0;
+			if (!arg(a, 0, frame, error)) return {};
+			if (clipboard_.empty() || frame < 0 || frame > inputs_.size())
+			{
+				error = clipboard_.empty() ? "nothing was copied" : "no frame " + std::to_string(frame);
+				return {};
+			}
+			overwrite(frame, clipboard_);
+			return {};
+		});
+	command("pasteInsertFrames", "puts the frames copied in at this frame; the frames from it move later", {"frame"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t frame = 0;
+			if (!arg(a, 0, frame, error)) return {};
+			if (clipboard_.empty() || frame < 0 || frame > inputs_.size())
+			{
+				error = clipboard_.empty() ? "nothing was copied" : "no frame " + std::to_string(frame);
+				return {};
+			}
+			putIn(frame, clipboard_);
+			return {};
+		});
+	command("truncate", "takes out every frame from this one to the end", {"frame"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t frame = 0;
+			if (!arg(a, 0, frame, error)) return {};
+			if (frame < 0 || frame >= inputs_.size())
+			{
+				error = "no frame " + std::to_string(frame);
+				return {};
+			}
+			takeOut(frame, inputs_.size() - 1);
+			return {};
+		});
 	command("undo", "takes the last edit back", {}, [this](const Args &, std::string &) -> Value {
 		undoOrRedo(true);
 		return {};
@@ -235,25 +345,185 @@ void PianoRollViewModel::undoOrRedo(bool back)
 	from.pop_back();
 	stroke_ = false;
 	const int64_t before = inputs_.size();
-	/* the frames as they were (or were made), and the length */
-	if (!back) inputs_.resize(std::max(step.sizeAfter, before));
-	for (const auto &[f, change] : step.frames) inputs_.set(f, back ? change.first : change.second);
-	inputs_.resize(back ? step.sizeBefore : step.sizeAfter);
-	const int64_t first = step.frames.empty() ? std::min(step.sizeBefore, step.sizeAfter) : step.frames.begin()->first;
-	const int64_t last = step.frames.empty() ? std::max(step.sizeBefore, step.sizeAfter) - 1 : step.frames.rbegin()->first;
+	const bool shifted = step.shiftCount != 0;
+	/* the rows the step set, as they were or became (where frames moved,
+	 * in the places after the move) */
+	auto setRows = [&](bool asBefore) {
+		std::map<int64_t, bool> touched;
+		for (const auto &[f, change] : step.frames) touched[f] = true;
+		for (const auto &[f, change] : step.axes) touched[f] = true;
+		for (const auto &[f, unused] : touched)
+		{
+			const auto b = step.frames.find(f);
+			const auto x = step.axes.find(f);
+			const uint64_t mask = b != step.frames.end() ? (asBefore ? b->second.first : b->second.second) : inputs_.at(f);
+			const std::vector<int32_t> *axes = x != step.axes.end() ? (asBefore ? &x->second.first : &x->second.second) : nullptr;
+			inputs_.setRow(f, mask, axes != nullptr && !axes->empty() ? axes->data() : nullptr);
+		}
+	};
+	if (back)
+	{
+		setRows(true);
+		if (step.shiftCount > 0) inputs_.remove(step.shiftAt, step.shiftCount);
+		else if (step.shiftCount < 0)
+		{
+			inputs_.insert(step.shiftAt, -step.shiftCount);
+			for (size_t i = 0; i < step.removedButtons.size(); i++)
+				inputs_.setRow(step.shiftAt + static_cast<int64_t>(i), step.removedButtons[i],
+					step.removedAxes[i].empty() ? nullptr : step.removedAxes[i].data());
+		}
+		if (!shifted) inputs_.resize(step.sizeBefore);
+		if (step.markersBefore) markers_ = *step.markersBefore;
+	}
+	else
+	{
+		if (step.shiftCount > 0) inputs_.insert(step.shiftAt, step.shiftCount);
+		else if (step.shiftCount < 0) inputs_.remove(step.shiftAt, -step.shiftCount);
+		if (!shifted) inputs_.resize(std::max(step.sizeAfter, before));
+		setRows(false);
+		if (!shifted) inputs_.resize(step.sizeAfter);
+		if (step.markersAfter) markers_ = *step.markersAfter;
+	}
+	int64_t first = step.frames.empty() ? std::min(step.sizeBefore, step.sizeAfter) : step.frames.begin()->first;
+	int64_t last = step.frames.empty() ? std::max(step.sizeBefore, step.sizeAfter) - 1 : step.frames.rbegin()->first;
+	if (!step.axes.empty())
+	{
+		first = std::min(first, step.axes.begin()->first);
+		last = std::max(last, step.axes.rbegin()->first);
+	}
+	const bool markersMoved = step.markersBefore.has_value();
+	const int64_t shiftAt = step.shiftAt;
 	to.push_back(std::move(step));
 	canUndo.set(!undo_.empty());
 	canRedo.set(!redo_.empty());
-	if (inputs_.size() < before)
+	if (markersMoved) markersEdited(0);
+	if (shifted || inputs_.size() < before)
 	{
-		/* frames went: the list is told so as a whole */
+		/* frames moved or went: the list is told so as a whole */
+		const int64_t from = shifted ? shiftAt : first;
 		frameCount.set(inputs_.size());
 		clampTop();
+		frames_.forget();
 		frames_.reset.emit();
-		if (first < inputs_.size()) session_.edited(first);
+		if (from < std::max(before, inputs_.size())) session_.edited(from);
 		return;
 	}
 	edited(first, last, before);
+}
+
+PianoRollViewModel::Row PianoRollViewModel::readRow(int64_t frame) const
+{
+	Row r;
+	r.buttons = inputs_.at(frame);
+	r.axes.resize(inputs_.axisCount());
+	if (!r.axes.empty()) inputs_.axesAt(frame, r.axes.data());
+	return r;
+}
+
+void PianoRollViewModel::writeRow(int64_t frame, const Row &row)
+{
+	inputs_.setRow(frame, row.buttons, row.axes.empty() ? nullptr : row.axes.data());
+}
+
+void PianoRollViewModel::moveMarkers(Step &step, int64_t at, int64_t by)
+{
+	if (!bindMarkers.get() || markers_.empty()) return;
+	step.markersBefore = markers_;
+	std::map<int64_t, Marker> moved;
+	for (const auto &[f, m] : markers_)
+	{
+		/* a marker on a frame taken out goes with it */
+		if (by < 0 && f >= at && f < at - by) continue;
+		Marker n = m;
+		if (f >= at) n.frame = f + by;
+		moved[n.frame] = n;
+	}
+	markers_ = moved;
+	step.markersAfter = markers_;
+}
+
+void PianoRollViewModel::putIn(int64_t at, const std::vector<Row> &rows)
+{
+	if (rows.empty()) return;
+	const int64_t before = inputs_.size(), n = static_cast<int64_t>(rows.size());
+	Step step;
+	step.sizeBefore = before;
+	step.shiftAt = at;
+	step.shiftCount = n;
+	std::vector<int32_t> neutral(static_cast<size_t>(inputs_.axisCount()));
+	if (!neutral.empty()) inputs_.neutralAxes(neutral.data());
+	moveMarkers(step, at, n);
+	inputs_.insert(at, n);
+	for (int64_t i = 0; i < n; i++)
+	{
+		writeRow(at + i, rows[static_cast<size_t>(i)]);
+		step.frames[at + i] = {0, rows[static_cast<size_t>(i)].buttons};
+		if (!neutral.empty()) step.axes[at + i] = {neutral, rows[static_cast<size_t>(i)].axes};
+	}
+	step.sizeAfter = inputs_.size();
+	keep(std::move(step), false);
+	if (bindMarkers.get()) markersEdited(0);
+	frameCount.set(inputs_.size());
+	frames_.forget();
+	frames_.reset.emit();
+	if (at < before) session_.edited(at);
+}
+
+void PianoRollViewModel::takeOut(int64_t first, int64_t last)
+{
+	const int64_t before = inputs_.size(), n = last - first + 1;
+	Step step;
+	step.sizeBefore = before;
+	step.shiftAt = first;
+	step.shiftCount = -n;
+	for (int64_t f = first; f <= last; f++)
+	{
+		Row r = readRow(f);
+		step.removedButtons.push_back(r.buttons);
+		step.removedAxes.push_back(std::move(r.axes));
+	}
+	moveMarkers(step, first, -n);
+	inputs_.remove(first, n);
+	step.sizeAfter = inputs_.size();
+	keep(std::move(step), false);
+	if (bindMarkers.get()) markersEdited(0);
+	frameCount.set(inputs_.size());
+	clampTop();
+	frames_.forget();
+	frames_.reset.emit();
+	session_.edited(first);
+}
+
+void PianoRollViewModel::overwrite(int64_t at, const std::vector<Row> &rows)
+{
+	if (rows.empty()) return;
+	const int64_t before = inputs_.size();
+	Step step;
+	step.sizeBefore = before;
+	for (size_t i = 0; i < rows.size(); i++)
+	{
+		const int64_t f = at + static_cast<int64_t>(i);
+		const Row was = readRow(f);
+		writeRow(f, rows[i]);
+		step.frames[f] = {was.buttons, rows[i].buttons};
+		if (!was.axes.empty()) step.axes[f] = {was.axes, rows[i].axes};
+	}
+	step.sizeAfter = inputs_.size();
+	keep(std::move(step), false);
+	frames_.forget();
+	edited(at, at + static_cast<int64_t>(rows.size()) - 1, before);
+}
+
+bool PianoRollViewModel::range(const Args &a, int64_t &first, int64_t &last, std::string &error) const
+{
+	if (!arg(a, 0, first, error) || !arg(a, 1, last, error)) return false;
+	if (first > last) std::swap(first, last);
+	if (first < 0 || last >= inputs_.size())
+	{
+		error = "the frames go from 0 to " + std::to_string(inputs_.size() - 1);
+		return false;
+	}
+	return true;
 }
 
 void PianoRollViewModel::edited(int64_t first, int64_t last, int64_t oldCount)

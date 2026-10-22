@@ -4150,6 +4150,33 @@ int32_t ce_session_movie_set(ce_session *s, int64_t frame, uint64_t buttons, con
 	return 0;
 }
 
+void ce_session_movie_insert(ce_session *s, int64_t frame, int64_t count)
+{
+	if (frame < 0 || count <= 0) return;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr) s->movie = ce_movie_log_new();
+	if (s->movieMode == 0) s->movieMode = 1;
+	s->nameColumns();
+	const int64_t had = ce_movie_log_count(s->movie);
+	const std::string blank = s->entries().generate(nullptr, nullptr, s->cfg.mnemonics);
+	/* past the end: the frames up to it first, as _set does */
+	if (frame > had) ce_movie_log_insert_n(s->movie, had, blank.c_str(), frame - had);
+	ce_movie_log_insert_n(s->movie, frame, blank.c_str(), count);
+	const int64_t from = std::min(frame, had);
+	s->editedFrom = s->editedFrom < 0 ? from : std::min(s->editedFrom, from);
+	if (s->countingRerecords) s->countedEdit = true;
+}
+
+void ce_session_movie_remove(ce_session *s, int64_t frame, int64_t count)
+{
+	if (frame < 0 || count <= 0) return;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr || frame >= ce_movie_log_count(s->movie)) return;
+	ce_movie_log_remove_range(s->movie, frame, count);
+	s->editedFrom = s->editedFrom < 0 ? frame : std::min(s->editedFrom, frame);
+	if (s->countingRerecords) s->countedEdit = true;
+}
+
 void ce_session_movie_resize(ce_session *s, int64_t frames)
 {
 	if (frames < 0) frames = 0;

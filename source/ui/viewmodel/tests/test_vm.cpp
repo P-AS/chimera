@@ -1483,6 +1483,110 @@ bool hexEditor(const char *package, const char *rom)
 	return true;
 }
 
+/* The piano roll's editing: frames put in, taken out, cloned, cleared,
+ * copied and pasted, cut off - each one step to undo - and markers that
+ * move with the frames when bound to them */
+bool pianoRollEditing(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	for (int i = 0; i < 10; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 10; }, 20));
+	/* frame f holds button f % 8 */
+	for (int64_t f = 0; f < 10; f++) roll.run("paint", {f, f, f % 8, true}, error);
+	auto masks = [&] {
+		std::vector<uint64_t> m(static_cast<size_t>(inputs.size()));
+		inputs.read(0, m);
+		return m;
+	};
+	auto bit = [](int64_t b) { return uint64_t{1} << b; };
+	const std::vector<uint64_t> start = masks();
+	CHECK(start.size() == 10 && start[3] == bit(3) && start[9] == bit(1));
+	auto undoTo = [&](const std::vector<uint64_t> &want) {
+		roll.run("undo", {}, error);
+		return masks() == want;
+	};
+	/* put in */
+	CHECK(roll.run("insertFrames", {int64_t{3}, int64_t{2}}, error).has_value());
+	std::vector<uint64_t> want = start;
+	want.insert(want.begin() + 3, 2, 0);
+	CHECK(masks() == want && roll.frameCount.get() == 12);
+	CHECK(undoTo(start) && roll.frameCount.get() == 10);
+	roll.run("redo", {}, error);
+	CHECK(masks() == want);
+	CHECK(undoTo(start));
+	/* taken out */
+	CHECK(roll.run("deleteFrames", {int64_t{2}, int64_t{4}}, error).has_value());
+	want = start;
+	want.erase(want.begin() + 2, want.begin() + 5);
+	CHECK(masks() == want);
+	CHECK(undoTo(start));
+	/* cloned after themselves */
+	CHECK(roll.run("cloneFrames", {int64_t{1}, int64_t{2}}, error).has_value());
+	want = start;
+	want.insert(want.begin() + 3, {start[1], start[2]});
+	CHECK(masks() == want);
+	CHECK(undoTo(start));
+	/* cleared */
+	CHECK(roll.run("clearFrames", {int64_t{5}, int64_t{6}}, error).has_value());
+	want = start;
+	want[5] = want[6] = 0;
+	CHECK(masks() == want);
+	CHECK(undoTo(start));
+	/* copied, pasted over, pasted in */
+	CHECK(roll.run("copyFrames", {int64_t{0}, int64_t{2}}, error).has_value() && roll.clipboardFrames.get() == 3);
+	CHECK(roll.run("pasteFrames", {int64_t{8}}, error).has_value());
+	want = start;
+	want[8] = start[0];
+	want[9] = start[1];
+	want.push_back(start[2]);
+	CHECK(masks() == want);
+	CHECK(undoTo(start));
+	CHECK(roll.run("pasteInsertFrames", {int64_t{5}}, error).has_value());
+	want = start;
+	want.insert(want.begin() + 5, {start[0], start[1], start[2]});
+	CHECK(masks() == want);
+	CHECK(undoTo(start));
+	/* cut: kept to paste, and taken out */
+	CHECK(roll.run("cutFrames", {int64_t{1}, int64_t{2}}, error).has_value() && roll.clipboardFrames.get() == 2);
+	want = start;
+	want.erase(want.begin() + 1, want.begin() + 3);
+	CHECK(masks() == want);
+	CHECK(undoTo(start));
+	/* cut off */
+	CHECK(roll.run("truncate", {int64_t{6}}, error).has_value() && roll.frameCount.get() == 6);
+	CHECK(undoTo(start) && roll.frameCount.get() == 10);
+	/* refused */
+	CHECK(!roll.run("deleteFrames", {int64_t{8}, int64_t{12}}, error) && error == "the frames go from 0 to 9");
+	CHECK(!roll.run("insertFrames", {int64_t{11}, int64_t{1}}, error));
+	/* markers stay on their frames, unless bound to the frames */
+	roll.run("addMarker", {int64_t{5}, std::string("five")}, error);
+	roll.run("addMarker", {int64_t{8}, std::string("eight")}, error);
+	auto markerAt = [&](int64_t f) { return roll.rowLists()[0].model->rowNote(f); };
+	roll.run("insertFrames", {int64_t{3}, int64_t{2}}, error);
+	CHECK(markerAt(5) == "five" && markerAt(8) == "eight");
+	roll.run("undo", {}, error);
+	roll.set("bindMarkers", true, error);
+	roll.run("insertFrames", {int64_t{3}, int64_t{2}}, error);
+	CHECK(markerAt(7) == "five" && markerAt(10) == "eight" && markerAt(5).empty() && roll.markerCount.get() == 2);
+	roll.run("deleteFrames", {int64_t{6}, int64_t{7}}, error);
+	CHECK(markerAt(8) == "eight" && roll.markerCount.get() == 1);
+	roll.run("undo", {}, error);
+	CHECK(markerAt(7) == "five" && markerAt(10) == "eight");
+	roll.run("undo", {}, error);
+	CHECK(markerAt(5) == "five" && markerAt(8) == "eight" && masks() == start);
+	/* the machine follows: the edits before it were honoured */
+	CHECK(d.until([&] { return session.frame.get() == 10; }, 30));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	return true;
+}
+
 /* Rerecords, counted as Chimera's TAStudio counts them: an edit over frames
  * the machine has stored states past counts one, a stroke counts once
  * however many cells it crosses, frames added at the end count none, a
@@ -1818,6 +1922,7 @@ int main(int argc, char **argv)
 			ranMachine = rerecordCount(argv[1], argv[2]) && ranMachine;
 			ranMachine = ramWatch(argv[1], argv[2]) && ranMachine;
 			ranMachine = hexEditor(argv[1], argv[2]) && ranMachine;
+			ranMachine = pianoRollEditing(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;

@@ -17,6 +17,9 @@ class PianoRollItem : public QQuickPaintedItem
 	Q_PROPERTY(QObject *rows READ rows WRITE setRows NOTIFY rowsChanged)
 	Q_PROPERTY(qint64 topRow READ topRow WRITE setTopRow NOTIFY topRowChanged)
 	Q_PROPERTY(qint64 currentRow READ currentRow WRITE setCurrentRow NOTIFY currentRowChanged)
+	/* the frames picked, drawn on the frame numbers */
+	Q_PROPERTY(qint64 selectFirst READ selectFirst WRITE setSelectFirst NOTIFY selectionChanged)
+	Q_PROPERTY(qint64 selectLast READ selectLast WRITE setSelectLast NOTIFY selectionChanged)
 	Q_PROPERTY(qint64 rowCount READ rowCount NOTIFY rowCountChanged)
 	Q_PROPERTY(int visibleRows READ visibleRows NOTIFY visibleRowsChanged)
 	Q_PROPERTY(int rowHeight READ rowHeight CONSTANT)
@@ -32,6 +35,10 @@ public:
 	void setTopRow(qint64 row);
 	qint64 currentRow() const { return current_; }
 	void setCurrentRow(qint64 row);
+	qint64 selectFirst() const { return selectFirst_; }
+	qint64 selectLast() const { return selectLast_; }
+	void setSelectFirst(qint64 row);
+	void setSelectLast(qint64 row);
 	qint64 rowCount() const;
 	int visibleRows() const;
 	int rowHeight() const { return rowHeight_; }
@@ -50,6 +57,9 @@ Q_SIGNALS:
 	void cellDragged(qint64 row, int column);
 	/* a press on a row's frame number */
 	void frameClicked(qint64 row);
+	/* the frame numbers pressed or dragged over, or Shift-pressed */
+	void selectionRequested(qint64 first, qint64 last);
+	void selectionChanged();
 	/* the wheel asks for another first row; whoever owns topRow decides */
 	void topRowRequested(qint64 row);
 
@@ -68,6 +78,8 @@ private:
 	QPointer<QmlRows> rows_;
 	std::vector<QMetaObject::Connection> watches_;
 	qint64 top_ = 0, current_ = 0;
+	qint64 selectFirst_ = -1, selectLast_ = -1, selectAnchor_ = -1;
+	bool selecting_ = false;
 	int rowHeight_ = 18, columnWidth_ = 26;
 	double lastPaintMs_ = 0;
 	int dragColumn_ = -1;

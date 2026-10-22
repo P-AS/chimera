@@ -1,5 +1,6 @@
 #include "chimera/vm/input_log.hpp"
 
+#include <algorithm>
 #include <mutex>
 
 #include "chimera/engine.h"
@@ -47,6 +48,41 @@ void InputLog::resize(int64_t frames)
 {
 	std::shared_lock lock(m_);
 	if (s_ != nullptr) ce_session_movie_resize(s_, frames);
+}
+
+bool InputLog::setRow(int64_t frame, uint64_t mask, const int32_t *axes)
+{
+	std::shared_lock lock(m_);
+	if (s_ == nullptr) return false;
+	if (axes != nullptr) return ce_session_movie_set(s_, frame, mask, axes) == 0;
+	std::vector<int32_t> was(static_cast<size_t>(ce_session_axis_count(s_)));
+	uint64_t old = 0;
+	ce_session_movie_get(s_, frame, &old, was.empty() ? nullptr : was.data());
+	return ce_session_movie_set(s_, frame, mask, was.empty() ? nullptr : was.data()) == 0;
+}
+
+void InputLog::insert(int64_t frame, int64_t count)
+{
+	std::unique_lock lock(m_);
+	if (s_ == nullptr || frame < 0 || count <= 0) return;
+	ce_session_movie_insert(s_, frame, count);
+	if (frame < static_cast<int64_t>(lags_.size())) lags_.insert(lags_.begin() + frame, static_cast<size_t>(count), 0);
+}
+
+void InputLog::remove(int64_t frame, int64_t count)
+{
+	std::unique_lock lock(m_);
+	if (s_ == nullptr || frame < 0 || count <= 0) return;
+	ce_session_movie_remove(s_, frame, count);
+	if (frame < static_cast<int64_t>(lags_.size()))
+		lags_.erase(lags_.begin() + frame, lags_.begin() + std::min<int64_t>(frame + count, static_cast<int64_t>(lags_.size())));
+}
+
+void InputLog::neutralAxes(int32_t *out) const
+{
+	std::shared_lock lock(m_);
+	if (s_ == nullptr) return;
+	for (int64_t i = 0; i < ce_session_axis_count(s_); i++) out[i] = ce_session_axis_neutral(s_, i);
 }
 
 void InputLog::countRerecords(bool on)
