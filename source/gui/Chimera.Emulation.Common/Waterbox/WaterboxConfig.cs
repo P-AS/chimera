@@ -544,8 +544,28 @@ namespace Chimera.Emulation.Common.Waterbox
 			/// <summary>The sentence shown when the row is selected.</summary>
 			public string? Description { get; set; }
 
-			/// <summary>"bool", "int" or "enum" (the default is inferred from the other fields).</summary>
+			/// <summary>
+			/// One of <see cref="KnownTypes"/>; when left out, inferred from the other fields. The whole-number
+			/// types hold what their C types hold: "int" -2147483648 to 2147483647, "uint" 0 to 4294967295,
+			/// "long" and "ulong" 64 bits, with and without a sign. A "datetime" is a date and time in UTC,
+			/// kept as the number of seconds since 1970-01-01 00:00:00 - the number a core reads, as a "long"
+			/// - and shown and typed as 2000-01-01 00:00:00 (issue 358).
+			/// </summary>
 			public string? Type { get; set; }
+
+			/// <summary>The types a declaration may name.</summary>
+			public static readonly IReadOnlyList<string> KnownTypes = [ "bool", "int", "uint", "long", "ulong", "float", "string", "enum", "datetime" ];
+
+			/// <summary>How a "datetime" is shown and typed.</summary>
+			public const string DateTimeFormat = "yyyy-MM-dd HH:mm:ss";
+
+			/// <summary>The forms a typed "datetime" may take: the shown one, or without seconds, or a date alone.</summary>
+			private static readonly string[] DateTimeForms = [ DateTimeFormat, "yyyy-MM-dd HH:mm", "yyyy-MM-dd" ];
+
+			/// <summary>The first and last moments a "datetime" can be: years 1 to 9999, what a date can show.</summary>
+			private static readonly long FirstSecond = new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).ToUnixTimeSeconds();
+
+			private static readonly long LastSecond = new DateTimeOffset(DateTime.MaxValue.AddTicks(-(DateTime.MaxValue.Ticks % TimeSpan.TicksPerSecond)), TimeSpan.Zero).ToUnixTimeSeconds();
 
 			public object? Default { get; set; }
 
@@ -566,9 +586,13 @@ namespace Chimera.Emulation.Common.Waterbox
 					? label
 					: value;
 
-			public int? Min { get; set; }
+			/// <summary>
+			/// The smallest and largest values a whole-number or "datetime" setting may take (a "datetime"'s
+			/// in seconds since 1970). Decimal, so that every "long" and "ulong" bound is held exactly.
+			/// </summary>
+			public decimal? Min { get; set; }
 
-			public int? Max { get; set; }
+			public decimal? Max { get; set; }
 
 			/// <summary>
 			/// Values of the package's machine setting this belongs to, or empty for
@@ -600,7 +624,11 @@ namespace Chimera.Emulation.Common.Waterbox
 			{
 				"bool" => typeof(bool),
 				"int" => typeof(int),
+				"uint" => typeof(uint),
+				"long" => typeof(long),
+				"ulong" => typeof(ulong),
 				"float" => typeof(double),
+				"datetime" => typeof(DateTime),
 				_ => typeof(string),
 			};
 
@@ -614,19 +642,26 @@ namespace Chimera.Emulation.Common.Waterbox
 					return Default switch
 					{
 						bool => "bool",
-						sbyte or byte or short or ushort or int or uint or long or ulong => "int",
+						// a whole number beyond an int's range is a long, or a ulong past a long's
+						long l when l is < int.MinValue or > int.MaxValue => "long",
+						System.Numerics.BigInteger or ulong => "ulong",
+						sbyte or byte or short or ushort or int or uint or long => "int",
 						float or double or decimal => "float",
 						_ => "string",
 					};
 				}
 			}
 
-			/// <summary>The default, coerced to <see cref="ClrType"/>.</summary>
+			/// <summary>The default, coerced as <see cref="Coerce"/> does.</summary>
 			public object DefaultValue => Coerce(Default);
 
 			/// <summary>
 			/// Brings a value (from JSON, so possibly a boxed long or a string) to the
-			/// type this setting is edited as, clamping ints to any declared range.
+			/// type this setting is kept as, clamping whole numbers to any declared range.
+			/// That is <see cref="ClrType"/>, except for a "datetime": it is kept as its
+			/// seconds since 1970 (a long), which is what a project, a movie and the core
+			/// hold, and given to a settings grid as a date by <see cref="Edited"/>. A
+			/// date given here is turned into its seconds.
 			/// </summary>
 			public object Coerce(object? value)
 			{
@@ -635,17 +670,15 @@ namespace Chimera.Emulation.Common.Waterbox
 					case "bool":
 						return value switch { null => false, bool b => b, _ => bool.TryParse(value.ToString(), out var pb) && pb };
 					case "int":
-					{
-						var n = value switch
-						{
-							null => 0,
-							int i => i,
-							_ => int.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out var pi) ? pi : 0,
-						};
-						if (Min is int min && n < min) n = min;
-						if (Max is int max && n > max) n = max;
-						return n;
-					}
+						return (int) Whole(value, int.MinValue, int.MaxValue);
+					case "uint":
+						return (uint) Whole(value, uint.MinValue, uint.MaxValue);
+					case "long":
+						return (long) Whole(value, long.MinValue, long.MaxValue);
+					case "ulong":
+						return (ulong) Whole(value, ulong.MinValue, ulong.MaxValue);
+					case "datetime":
+						return (long) Whole(Seconds(value), FirstSecond, LastSecond);
 					case "float":
 					{
 						return value switch
@@ -672,6 +705,50 @@ namespace Chimera.Emulation.Common.Waterbox
 					}
 				}
 			}
+
+			/// <summary>
+			/// A whole number within the range of its type and then within any declared one. One that is
+			/// not a whole number at all is 0, as it always was for an int.
+			/// </summary>
+			private decimal Whole(object? value, decimal lowest, decimal highest)
+			{
+				var n = value switch
+				{
+					null => 0m,
+					int i => i,
+					long l => l,
+					uint u => u,
+					ulong ul => ul,
+					short or ushort or byte or sbyte => Convert.ToDecimal(value, CultureInfo.InvariantCulture),
+					_ => decimal.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0m,
+				};
+				if (Min is { } min && n < min) n = min;
+				if (Max is { } max && n > max) n = max;
+				return n < lowest ? lowest : n > highest ? highest : n;
+			}
+
+			/// <summary>A date's seconds since 1970, in UTC; anything else as it is, for <see cref="Whole"/> to read.</summary>
+			private static object? Seconds(object? value) => value switch
+			{
+				DateTime date => new DateTimeOffset(DateTime.SpecifyKind(date, DateTimeKind.Utc)).ToUnixTimeSeconds(),
+				DateTimeOffset moment => moment.ToUnixTimeSeconds(),
+				string text when ParseDateTime(text) is { } typed => typed.ToUnixTimeSeconds(),
+				_ => value,
+			};
+
+			/// <summary>A date and time as typed, in UTC, or null when the text is not one.</summary>
+			public static DateTimeOffset? ParseDateTime(string text)
+				=> DateTimeOffset.TryParseExact(text.Trim(), DateTimeForms, CultureInfo.InvariantCulture,
+					DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var typed) ? typed : null;
+
+			/// <summary>
+			/// A kept value as a settings grid edits it: a "datetime"'s seconds as a date in UTC, anything
+			/// else as it is.
+			/// </summary>
+			public object Edited(object kept)
+				=> EffectiveType is "datetime" && kept is long seconds
+					? DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime
+					: kept;
 		}
 
 		public sealed class VideoConfig

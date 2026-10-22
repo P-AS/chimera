@@ -131,8 +131,8 @@ namespace Chimera.Client.Common
 			{
 				if (string.IsNullOrWhiteSpace(declaration.Name)) continue;
 				if (settings.Values is null || !settings.Values.TryGetValue(declaration.Key, out var raw)) continue;
-				var value = Shown(declaration.Coerce(raw));
-				var standard = Shown(declaration.DefaultValue);
+				var value = Shown(declaration.Edited(declaration.Coerce(raw)));
+				var standard = Shown(declaration.Edited(declaration.DefaultValue));
 				if (string.Equals(value, standard, StringComparison.Ordinal)) continue;
 				changed.Add(new(declaration.DisplayName ?? declaration.Key, value, standard));
 			}
@@ -145,6 +145,7 @@ namespace Chimera.Client.Common
 			null => "",
 			bool b => b ? "true" : "false",
 			string s => s.Length is 0 ? "(empty)" : s,
+			DateTime date => date.ToString(WaterboxConfig.SettingDecl.DateTimeFormat, CultureInfo.InvariantCulture),
 			IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
 			_ => value.ToString() ?? "",
 		};

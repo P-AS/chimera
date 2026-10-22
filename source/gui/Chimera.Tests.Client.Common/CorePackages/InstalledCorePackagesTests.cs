@@ -634,6 +634,61 @@ namespace Chimera.Tests.Client.Common.CorePackages
 			Assert.AreEqual("b-rom", config.Settings![0].LabelFor("b-rom"), "a value with no label is shown as it is");
 		}
 
+		/// <summary>
+		/// A setting's type is one Chimera knows (issue 358). Any other word was taken for text, so a
+		/// misspelt "unit" or "date" turned a number into a string the core then could not read.
+		/// </summary>
+		[TestMethod]
+		public void EverySettingTypeIsOneChimeraKnows()
+		{
+			List<string> unknown = new();
+			foreach (var path in Packages())
+			{
+				var dir = Extracted(path);
+				if (dir is null) continue;
+				try
+				{
+					var config = WaterboxConfig.FromJson(File.ReadAllText(Path.Combine(dir, WaterboxCoreFactory.ConfigFileName)));
+					if (config is null) continue;
+					unknown.AddRange(UnknownSettingTypes(config).Select(found => $"{InstalledPackages.NameOf(path)}: {found}"));
+				}
+				catch (Exception ex)
+				{
+					unknown.Add($"{InstalledPackages.NameOf(path)}: {ex.Message}");
+				}
+				finally
+				{
+					TryDelete(dir);
+				}
+			}
+			Assert.AreEqual(0, unknown.Count, string.Join("; ", unknown));
+		}
+
+		[TestMethod]
+		public void ASettingTypeChimeraDoesNotKnowIsFound()
+		{
+			var config = WaterboxConfig.FromJson("""
+				{ "settings": [
+				    { "name": "seed", "type": "unit", "default": 1 },
+				    { "name": "clock", "type": "datetime", "default": 946684800 },
+				    { "name": "wide", "type": "ULong", "default": 1 },
+				    { "name": "guessed", "default": 3 } ] }
+				""")!;
+			CollectionAssert.AreEqual(new[] { "'seed' is of type 'unit', which Chimera does not know" }, UnknownSettingTypes(config).ToArray());
+		}
+
+		/// <summary>Each declaration, in the package and in its machines, whose type Chimera does not know.</summary>
+		private static IEnumerable<string> UnknownSettingTypes(WaterboxConfig config)
+		{
+			var machines = config.Machines is { Count: > 0 } several
+				? several.Cast<WaterboxConfig.MachineConfig?>()
+				: new WaterboxConfig.MachineConfig?[] { null };
+			return machines.SelectMany(config.SettingsFor).Concat(config.Settings ?? [ ])
+				.Where(static d => !WaterboxConfig.SettingDecl.KnownTypes.Contains(d.EffectiveType))
+				.Select(static d => $"'{d.Name}' is of type '{d.Type}', which Chimera does not know")
+				.Distinct();
+		}
+
 		/// <summary>Each label, in every declaration, that names no value of its setting.</summary>
 		private static IEnumerable<string> LabelsOfNoValue(WaterboxConfig config)
 		{

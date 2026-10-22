@@ -117,6 +117,7 @@ namespace Chimera.Emulation.Common.Waterbox
 				List<Attribute> attrs = [ new DisplayNameAttribute(decl.DisplayName) ];
 				if (!string.IsNullOrWhiteSpace(decl.Description)) attrs.Add(new DescriptionAttribute(decl.Description));
 				if (decl.EffectiveType is "enum") attrs.Add(new TypeConverterAttribute(typeof(OptionsConverter)));
+				if (decl.EffectiveType is "datetime") attrs.Add(new TypeConverterAttribute(typeof(DateTimeTextConverter)));
 				return attrs.ToArray();
 			}
 
@@ -126,14 +127,21 @@ namespace Chimera.Emulation.Common.Waterbox
 
 			public override Type PropertyType => _decl.ClrType;
 
-			public override TypeConverter Converter
-				=> _decl.EffectiveType is "enum" ? new OptionsConverter(_decl) : base.Converter;
+			public override TypeConverter Converter => _decl.EffectiveType switch
+			{
+				"enum" => new OptionsConverter(_decl),
+				"datetime" => new DateTimeTextConverter(),
+				_ => base.Converter,
+			};
 
-			public override object GetValue(object component)
+			/// <summary>The value as kept, and as the grid edits it (a "datetime" kept as seconds is edited as a date).</summary>
+			private object Kept(object component)
 			{
 				var values = ((WaterboxSettingsBase) component).Values;
 				return _decl.Coerce(values is not null && values.TryGetValue(_decl.Key, out var v) ? v : _decl.Default);
 			}
+
+			public override object GetValue(object component) => _decl.Edited(Kept(component));
 
 			public override void SetValue(object component, object value)
 			{
@@ -150,7 +158,25 @@ namespace Chimera.Emulation.Common.Waterbox
 			// the core's default is shown bold, which is the only cue that a setting
 			// has been changed from what the package ships with
 			public override bool ShouldSerializeValue(object component)
-				=> !Equals(GetValue(component), _decl.DefaultValue);
+				=> !Equals(Kept(component), _decl.DefaultValue);
+		}
+
+		/// <summary>
+		/// A "datetime" as 2000-01-01 00:00:00 in UTC whatever the computer's language, typed back the same
+		/// way (or without the seconds, or as a date alone). The date list the grid opens is the usual one.
+		/// </summary>
+		private sealed class DateTimeTextConverter : DateTimeConverter
+		{
+			public override object ConvertTo(ITypeDescriptorContext context, System.Globalization.CultureInfo culture, object value, Type destinationType)
+				=> destinationType == typeof(string) && value is DateTime date
+					? date.ToString(WaterboxConfig.SettingDecl.DateTimeFormat, System.Globalization.CultureInfo.InvariantCulture)
+					: base.ConvertTo(context, culture, value, destinationType);
+
+			public override object ConvertFrom(ITypeDescriptorContext context, System.Globalization.CultureInfo culture, object value)
+				=> value is string text
+					? WaterboxConfig.SettingDecl.ParseDateTime(text)?.UtcDateTime
+						?? throw new FormatException($"\"{text.Trim()}\" is not a date and time written as {WaterboxConfig.SettingDecl.DateTimeFormat}")
+					: base.ConvertFrom(context, culture, value);
 		}
 
 		/// <summary>

@@ -10636,3 +10636,47 @@ core's publishing job runs, so all cores have it from their next release
 without a change of their own. Measured: on the X68000 core's history it lists
 the two commits since nightly-2026-10-15, with chimera#352, #351 and #336
 linked; outside a checkout it adds nothing.
+
+## Settings may be wider whole numbers, and a date and time (2026-10-22)
+
+A setting could be a `bool`, an `int`, a `float`, a `string` or an `enum`.
+A core that wanted a number from 1 to 4294967295 had no type for it (issue
+358), and the owner asked for that and more. Four types were added, each
+because cores need it:
+
+- `uint`, `long` and `ulong`, the ranges of their C types. Seeds are the
+  common case: nine cores stop a random seed at 2147483647 because an `int`
+  does.
+- `datetime`, a date and time in UTC. Sixteen cores declare a clock's start
+  as an `int` of seconds since 1970, which ends in 2038, and four more as
+  text in the form 2000-01-01 00:00:00 that each core parses itself. A
+  `datetime` is kept, recorded and handed to the core as those seconds, a
+  64-bit number. The grid shows and takes the text. So a core whose `int`
+  is seconds changes only its declaration, and its projects keep their
+  values.
+
+Numbers past 2^53 needed a change in the engine. Its JSON library (cJSON,
+vendored in `extern/cjson`) keeps every number as a double, which holds a
+whole number exactly only up to 2^53. It also printed one of 10^15 or more
+as `1e+15`, which a core's `strtol` reads as 1. Settings pass through it on
+their way to the core and to the project file, so a `ulong` came back
+rounded. Now a whole number of 10^15 or more keeps the digits it was read
+with, and they are written back as they came. Copies keep them, and a new
+value replaces them. A condition on a setting (`"is"`) compares those digits,
+so two values one apart past 2^53 are told apart. Below 10^15 nothing
+changed. miniBox's guest kit gained `wbx_setting_ulong`, because
+`wbx_setting_long` stops at the top of a long.
+
+The settings grid edits each type as itself: a `uint` row refuses -1, and a
+`datetime` row opens a calendar. A value from a file is clamped to its
+type's range and then to `min` and `max`, which are now decimals so that a
+`ulong`'s bounds are exact. A type Chimera does not know used to be taken
+for text without a word. Now a package test, EverySettingTypeIsOneChimeraKnows,
+refuses it.
+
+Tested: the engine's tests (a 64-bit number, -2^63, 2^53+1 and 10^15 come
+back as written; a project keeps 18446744073709551615; a condition tells
+9007199254740993 from 9007199254740992), miniBox's settings test, seven
+tests of the types in the settings grid, and the package tests. Each new
+test failed with its fix taken out. No core uses the new types yet, so none
+has been tried with a game.

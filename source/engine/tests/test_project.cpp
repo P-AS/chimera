@@ -83,7 +83,7 @@ int main(int argc, char **argv)
 		ce_project_set_description(p, "the funny cat game");
 		ce_project_set_core(p, "dosbox-x", "abc123+local", sha1Of("a package").c_str());
 		ce_project_set_rerecords(p, 421);
-		assert(ce_project_set_settings_text(p, "{\"cpuCycles\":3000,\"machinePreset\":\"x\"}", &err) == 0);
+		assert(ce_project_set_settings_text(p, "{\"cpuCycles\":3000,\"machinePreset\":\"x\",\"seed\":18446744073709551615}", &err) == 0);
 		std::string firmware = "[{\"id\":\"font\",\"sha1\":\"" + sha1Of("f") + "\"}]";
 		assert(ce_project_set_firmware_text(p, firmware.c_str(), &err) == 0);
 		const char *lump = "LogKey:#P1 Up|\n|..|\n|U.|\n";
@@ -136,6 +136,8 @@ int main(int argc, char **argv)
 		assert(ce_project_rerecords(p) == 421);
 		uint64_t len = 0;
 		assert(std::string(ce_project_settings_text(p, &len)).find("\"cpuCycles\":3000") != std::string::npos);
+		// a 64-bit setting comes back with every digit (issue 358)
+		assert(std::string(ce_project_settings_text(p, &len)).find("\"seed\":18446744073709551615") != std::string::npos);
 		assert(std::string(ce_project_firmware_text(p, &len)).find("\"font\"") != std::string::npos);
 		const char *logText = ce_project_log_text(p, &len);
 		assert(std::string(logText, len) == "LogKey:#P1 Up|\n|..|\n|U.|\n");
