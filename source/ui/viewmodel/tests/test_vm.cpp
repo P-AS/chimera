@@ -29,6 +29,7 @@
 #include "chimera/vm/config_store.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/firmware.hpp"
+#include "chimera/vm/hex_editor_vm.hpp"
 #include "chimera/vm/branches_vm.hpp"
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/lua_bridge.hpp"
@@ -1360,6 +1361,128 @@ bool ramWatch(const char *package, const char *rom)
 	return true;
 }
 
+/* The hex editor: the lines on screen read after every frame, shown by
+ * size and byte order, the values that changed marked; a poke written into
+ * the machine; bytes found */
+bool hexEditor(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	HexEditorViewModel hex(d, session);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && !hex.domains.get().empty(); }, 60));
+	hex.set("domain", std::string("RAM"), error);
+	std::vector<uint8_t> ram = session.readDomain("RAM");
+	const int64_t size = static_cast<int64_t>(ram.size());
+	CHECK(size >= 256 && hex.lineCount.get() == (size + 15) / 16 && hex.writable.get());
+	hex.set("visibleLines", int64_t{8}, error);
+	RowModel &lines = *hex.rowLists()[0].model;
+	auto text = [&](int64_t row, int32_t column) {
+		std::string t;
+		fromValue(lines.cell(row, column), t);
+		return t;
+	};
+	auto flag = [&](int64_t row, int32_t column) {
+		bool b = false;
+		fromValue(lines.cell(row, column), b);
+		return b;
+	};
+	const int digits = watch::addressDigits(size - 1);
+	auto byteText = [](uint8_t b) { return watch::format(b, 1, watch::Display::Hex); };
+	auto showsRam = [&](int64_t top) {
+		if (lines.rowCount() != 8) return false;
+		for (int64_t r = 0; r < 8; r++)
+		{
+			const int64_t address = (top + r) * 16;
+			if (text(r, 0) != watch::hex(address, digits)) return false;
+			for (int k = 0; k < 16; k++)
+				if (text(r, 1 + 2 * k) != byteText(ram[static_cast<size_t>(address + k)])) return false;
+		}
+		return true;
+	};
+	CHECK(d.until([&] { ram = session.readDomain("RAM"); return showsRam(0); }, 10));
+	/* the text the bytes spell */
+	{
+		std::string spelled;
+		for (int k = 0; k < 16; k++) spelled += ram[static_cast<size_t>(k)] >= 0x20 && ram[static_cast<size_t>(k)] < 0x7F ? static_cast<char>(ram[static_cast<size_t>(k)]) : '.';
+		CHECK(text(0, 33) == spelled);
+	}
+	/* two bytes a value, each end first */
+	hex.set("size", int64_t{2}, error);
+	CHECK(d.until([&] { return text(0, 1) == watch::format(ram[0] | (ram[1] << 8), 2, watch::Display::Hex); }, 10));
+	CHECK(text(0, 3) == watch::format(ram[2] | (ram[3] << 8), 2, watch::Display::Hex) && text(0, 17).empty());
+	hex.set("bigEndian", true, error);
+	CHECK(d.until([&] { return text(0, 1) == watch::format((ram[0] << 8) | ram[1], 2, watch::Display::Hex); }, 10));
+	hex.set("bigEndian", false, error);
+	hex.set("size", int64_t{1}, error);
+	/* scrolled */
+	hex.set("topLine", int64_t{3}, error);
+	CHECK(d.until([&] { return showsRam(3); }, 10));
+	/* a frame: the bytes it changed are marked, and no others */
+	const std::vector<uint8_t> before = session.readDomain("RAM");
+	session.key("Down", true);
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
+	const std::vector<uint8_t> atOne = session.readDomain("RAM");
+	int64_t moved = -1;
+	for (int64_t i = 0; i < size && moved < 0; i++)
+		if (before[static_cast<size_t>(i)] != atOne[static_cast<size_t>(i)]) moved = i;
+	CHECK(moved >= 0);
+	if (moved < 0) return false;
+	hex.run("goTo", {moved}, error);
+	CHECK(hex.picked.get() == moved && moved / 16 >= hex.topLine.get() && moved / 16 < hex.topLine.get() + 8);
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 2; }, 20));
+	session.key("Down", false);
+	const std::vector<uint8_t> atTwo = session.readDomain("RAM");
+	ram = atTwo;
+	CHECK(d.until([&] { return showsRam(hex.topLine.get()); }, 10));
+	int64_t marked = 0;
+	bool marksRight = true;
+	for (int64_t r = 0; r < 8; r++)
+		for (int k = 0; k < 16; k++)
+		{
+			const size_t a = static_cast<size_t>((hex.topLine.get() + r) * 16 + k);
+			const bool differs = atOne[a] != atTwo[a];
+			marksRight = marksRight && flag(r, 2 + 2 * k) == differs;
+			marked += differs ? 1 : 0;
+		}
+	CHECK(marksRight && marked > 0);
+	/* a poke: written into the machine, shown, and the states after this
+	 * frame dropped */
+	CHECK(hex.run("poke", {moved, std::string("AB")}, error).has_value());
+	CHECK(d.until([&] { return session.readDomain("RAM")[static_cast<size_t>(moved)] == 0xAB; }, 10));
+	ram = session.readDomain("RAM");
+	CHECK(d.until([&] { return showsRam(hex.topLine.get()); }, 10));
+	CHECK(session.greenEnd.get() <= session.frame.get());
+	hex.set("size", int64_t{2}, error);
+	hex.set("bigEndian", true, error);
+	const int64_t at = (moved + 2) & ~int64_t{1};
+	CHECK(hex.run("poke", {at, std::string("1234")}, error).has_value());
+	CHECK(d.until([&] { ram = session.readDomain("RAM"); return ram[static_cast<size_t>(at)] == 0x12 && ram[static_cast<size_t>(at + 1)] == 0x34; }, 10));
+	CHECK(!hex.run("poke", {at, std::string("12345")}, error) && !hex.run("poke", {at, std::string("zz")}, error));
+	CHECK(!hex.run("poke", {size, std::string("00")}, error));
+	hex.set("size", int64_t{1}, error);
+	hex.set("bigEndian", false, error);
+	/* found: the bytes poked, from the start */
+	hex.set("picked", int64_t{-1}, error);
+	CHECK(hex.run("find", {std::string("12 34")}, error).has_value());
+	CHECK(d.until([&] { return hex.status.get().rfind("Found at", 0) == 0; }, 20));
+	{
+		/* the first place they are in the domain */
+		int64_t expected = -1;
+		for (int64_t i = 0; i + 1 < size && expected < 0; i++)
+			if (ram[static_cast<size_t>(i)] == 0x12 && ram[static_cast<size_t>(i + 1)] == 0x34) expected = i;
+		CHECK(hex.picked.get() == expected && hex.picked.get() / 16 >= hex.topLine.get() && hex.picked.get() / 16 < hex.topLine.get() + 8);
+	}
+	CHECK(!hex.run("find", {std::string("1")}, error) && !hex.run("find", {std::string("xy")}, error));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	return true;
+}
+
 /* Rerecords, counted as Chimera's TAStudio counts them: an edit over frames
  * the machine has stored states past counts one, a stroke counts once
  * however many cells it crosses, frames added at the end count none, a
@@ -1694,6 +1817,7 @@ int main(int argc, char **argv)
 			ranMachine = newProject(argv[1], argv[2]) && ranMachine;
 			ranMachine = rerecordCount(argv[1], argv[2]) && ranMachine;
 			ranMachine = ramWatch(argv[1], argv[2]) && ranMachine;
+			ranMachine = hexEditor(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;

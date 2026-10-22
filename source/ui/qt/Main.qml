@@ -14,6 +14,7 @@ ApplicationWindow {
     required property QtObject ramSearch
     required property QtObject ramWatch
     required property QtObject newProject
+    required property QtObject hexEditor
     required property QtObject settings
     required property QtObject luaConsole
     required property QtObject branches
@@ -76,6 +77,7 @@ ApplicationWindow {
             Action { text: qsTr("&Cores..."); onTriggered: { coresWindow.show(); coresWindow.raise() } }
             Action { text: qsTr("RAM &Search..."); onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
             Action { text: qsTr("RAM &Watch..."); onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
+            Action { text: qsTr("&Hex Editor..."); onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
             Action { text: qsTr("&Lua Console..."); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
         }
         Menu {
@@ -118,6 +120,7 @@ ApplicationWindow {
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
     RamWatch { id: ramWatchWindow; vm: root.ramWatch; visible: false }
     NewProject { id: newProjectWindow; vm: root.newProject; visible: false }
+    HexEditor { id: hexEditorWindow; vm: root.hexEditor; visible: false }
     Settings { id: settingsWindow; settings: root.settings; visible: false }
     LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; visible: false }
     Branches { id: branchesWindow; vm: root.branches; visible: false }

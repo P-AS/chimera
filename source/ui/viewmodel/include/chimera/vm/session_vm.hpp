@@ -165,6 +165,10 @@ public:
 	 * tests, not for every frame. */
 	std::vector<uint8_t> readDomain(const std::string &name);
 
+	/* On the machine's thread: the machine was changed by hand (a poke) at
+	 * the frame it is on, so the stored states after it no longer hold */
+	void dropStatesAfterOnMachine(int64_t frame);
+
 	/* For other view models (RAM Search, RAM Watch, a hex editor) whose
 	 * work is the machine's: run it on the machine's thread, with the open
 	 * session or nullptr. */

@@ -29,6 +29,7 @@ vm_lib = static_library(
     'viewmodel/src/watch_values.cpp',
     'viewmodel/src/settings_form.cpp',
     'viewmodel/src/new_project_vm.cpp',
+    'viewmodel/src/hex_editor_vm.cpp',
     'viewmodel/src/ram_watch_vm.cpp',
     'viewmodel/src/config_store.cpp',
   ],

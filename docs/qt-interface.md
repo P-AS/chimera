@@ -54,9 +54,10 @@ made from.
 | settings | the package's declared settings, those that apply, edits applied live or by restarting | Settings (a form generated from the declaration) |
 | luaConsole | edit, run, open and save scripts; their output | Lua Console |
 | newProject | a project made before any machine runs, as Chimera's New Project window makes one: the core among the installed ones, its machine, files in the slots its package declares (kinds, how many, the ones a choice rules out, at least one of a group, names a slot asks for, a cue's tracks checked at once), the settings that apply, the firmware found by the engine's rules or chosen by hand; what is missing said a line at a time; made, then opened | New Project |
+| hexEditor | a memory domain sixteen bytes a line, by 1, 2 or 4 bytes either end first, with its text; only the lines on screen held and read after every frame, the bytes that changed marked; a value written into the machine (the states after the frame dropped); bytes found | Hex Editor |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 515 checks on the
+The tests drive the view models with no window: 542 checks on the
 synthetic core (and on two packages made from it at build time: one under
 another name, one of two machines with declared slots and a firmware). They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
@@ -177,9 +178,12 @@ A suggested order, each step usable on its own:
    suggested by a core, presets, a game core's own firmware, movie import,
    and the project written only when the work is first saved (here it is
    written when made).
-3. **RAM Watch, cheats, hex editor.** RAM Watch is done, but for game
-   property watches (kept in its files as they are, not read yet) and
-   poking a value.
+3. **RAM Watch, cheats, hex editor.** RAM Watch and the hex editor are
+   done, but for game property watches (kept in RAM Watch's files as they
+   are, not read yet). Cheats (frozen addresses) wait on a question for
+   the owner: with the engine owning the movie, a frozen value has to be
+   written inside the engine's own replays too (a seek replays without
+   the window), so it becomes a list the engine keeps.
 4. **Lua's libraries** (memory, joypad, gui drawing, forms) as view model
    commands, so MCP has them too. Coordinate with the New-Features
    session, whose the MCP code is.

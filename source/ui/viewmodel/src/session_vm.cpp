@@ -1447,6 +1447,14 @@ void SessionViewModel::seekOnMachine(int64_t target)
 	report(-1, -1, -1, -1, -1);
 }
 
+void SessionViewModel::dropStatesAfterOnMachine(int64_t frame)
+{
+	if (s_ == nullptr) return;
+	ce_session_greenzone_invalidate(s_, frame);
+	greenEndM_ = std::min(greenEndM_, frame);
+	report(-1, -1, -1, -1, -1);
+}
+
 void SessionViewModel::edited(int64_t first)
 {
 	submit([this, first] {

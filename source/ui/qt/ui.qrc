@@ -4,6 +4,7 @@
     <file>Main.qml</file>
     <file>RamSearch.qml</file>
     <file>RamWatch.qml</file>
+    <file>HexEditor.qml</file>
     <file>Settings.qml</file>
     <file>SettingsList.qml</file>
     <file>NewProject.qml</file>
