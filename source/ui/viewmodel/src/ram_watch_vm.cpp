@@ -59,6 +59,8 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	expose("path", "the .wch file the list was opened from or saved to", path);
 	expose("changed", "the list changed since it was opened or saved", changed);
 	expose("status", "what RAM Watch last had to say", status);
+	expose("showOnScreen", "the watches marked for it are shown over the picture", showOnScreen, true);
+	expose("onScreenText", "what is shown over the picture: \"note: value\", a line each", onScreenText);
 	expose("formSize", "the new watch's size: 1, 2 or 4 bytes", formSize, true);
 	expose("formDisplays", "the ways a value of that size can be shown, a line each", formDisplays);
 	expose("formDisplay", "the way chosen, by its place in formDisplays", formDisplay, true);
@@ -233,6 +235,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		if (formDisplay.get() >= n) formDisplay.set(0);
 	};
 	formSizeWatch_ = formSize.changed.connect(showWays);
+	showWatch_ = showOnScreen.changed.connect([this] { refreshOnScreen(); });
 	showWays();
 	opensWatch_ = session_.opens.changed.connect([this] { refreshDomains(); });
 	refreshDomains();
@@ -275,6 +278,18 @@ RamWatchViewModel::~RamWatchViewModel()
 	session_.onMachineWait([](ce_session *) {});
 }
 
+void RamWatchViewModel::refreshOnScreen()
+{
+	std::string lines;
+	if (showOnScreen.get())
+		for (const Watch &w : watches_)
+		{
+			if (!w.onScreen || w.separator || !w.propertyLine.empty()) continue;
+			lines += (lines.empty() ? "" : "\n") + w.note + ": " + (w.readable ? watch::format(w.value, w.size, w.display) : std::string("-"));
+		}
+	onScreenText.set(lines);
+}
+
 void RamWatchViewModel::sizeFromDomain(Watch &w) const
 {
 	const auto found = domainSizes_.find(w.domain);
@@ -305,6 +320,7 @@ void RamWatchViewModel::listChanged(bool edit)
 		readOnMachine(s, true);
 	});
 	rows_.reset.emit();
+	refreshOnScreen();
 }
 
 void RamWatchViewModel::readOnMachine(ce_session *s, bool fresh)
@@ -384,6 +400,7 @@ void RamWatchViewModel::readOnMachine(ce_session *s, bool fresh)
 				watches_[i].domainSize = read[i].domainSize;
 			}
 			if (!watches_.empty()) rows_.changed.emit(0, static_cast<int64_t>(watches_.size()) - 1);
+			refreshOnScreen();
 		});
 }
 

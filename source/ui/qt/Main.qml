@@ -211,6 +211,27 @@ ApplicationWindow {
                 anchors.fill: parent
                 source: root.session.picture("screen")
             }
+            // RAM Watch's on-screen watches, where Chimera puts them: from
+            // the top left, 70 down, a line every 14
+            Column {
+                objectName: "onScreenWatches"
+                x: 0
+                y: 70
+                visible: root.session.isOpen
+                Repeater {
+                    model: root.ramWatch.onScreenText === "" ? [] : root.ramWatch.onScreenText.split("\n")
+                    delegate: Text {
+                        required property string modelData
+                        text: modelData
+                        height: 14
+                        color: "white"
+                        style: Text.Outline
+                        styleColor: "black"
+                        font.family: "monospace"
+                        font.pixelSize: 12
+                    }
+                }
+            }
             Label {
                 anchors.centerIn: parent
                 visible: !root.session.isOpen

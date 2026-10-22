@@ -93,6 +93,7 @@ ApplicationWindow {
                 onClicked: win.vm.run("toggleOnScreen", [win.current])
             }
             Button { text: qsTr("Clear Changes"); onClicked: win.vm.run("clearChangeCounts") }
+            CheckBox { text: qsTr("Show on screen"); checked: win.vm.showOnScreen; onToggled: win.vm.showOnScreen = checked }
             Item { Layout.fillWidth: true }
             Label { text: win.vm.status; elide: Text.ElideRight; Layout.maximumWidth: 300 }
         }

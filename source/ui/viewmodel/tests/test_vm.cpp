@@ -1295,6 +1295,17 @@ bool ramWatch(const char *package, const char *rom)
 	watches.run("setOnScreen", {int64_t{0}, true}, error);
 	watches.run("setOnScreen", {int64_t{6}, true}, error);
 	CHECK(!watches.run("setOnScreen", {int64_t{4}, true}, error));
+	/* shown over the picture, "note: value", in the list's order */
+	CHECK(d.until([&] {
+		return watches.onScreenText.get() == "changing byte: " + text(0, 1) + "\nas a float: " + text(6, 1);
+	}, 10));
+	watches.set("showOnScreen", false, error);
+	CHECK(watches.onScreenText.get().empty());
+	watches.set("showOnScreen", true, error);
+	CHECK(watches.onScreenText.get().rfind("changing byte: ", 0) == 0);
+	step();
+	now = session.readDomain("RAM");
+	CHECK(d.until([&] { return watches.onScreenText.get().rfind("changing byte: " + std::to_string(now[static_cast<size_t>(at)]) + "\n", 0) == 0; }, 10));
 	const fs::path file = dir / "w.wch";
 	CHECK(watches.run("save", {file.string()}, error).has_value() && !watches.changed.get() && watches.path.get() == file.string());
 	const std::string saved = readFile(file);

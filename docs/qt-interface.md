@@ -50,12 +50,12 @@ made from.
 | pianoRoll | a row a frame and a column a button; press, drag, paint, fill; undo and redo (a stroke is one step); markers; follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
 | branches | other versions of the movie, kept in the project, each with its state in a file in the project's cache folder and the picture it had; loading one loads that state, or replays from where the two movies differ when the state is missing or is another machine's | Branches |
 | ramSearch | the engine's RAM Search, updated after every frame, with undo; values shown and typed every way RAM Watch shows them | RAM Search (Qt's own table) |
-| ramWatch | addresses kept an eye on, read after every frame, shown unsigned, signed, in hex, in binary, as fixed point or as a float exactly as Chimera writes them; the previous value three ways, changes counted; Chimera's .wch files both ways (other emulators' too) | RAM Watch |
+| ramWatch | addresses kept an eye on, read after every frame, shown unsigned, signed, in hex, in binary, as fixed point or as a float exactly as Chimera writes them; the previous value three ways, changes counted; Chimera's .wch files both ways (other emulators' too); the marked ones shown over the picture where Chimera shows them | RAM Watch |
 | settings | the package's declared settings, those that apply, edits applied live or by restarting | Settings (a form generated from the declaration) |
 | luaConsole | edit, run, open and save scripts; their output | Lua Console |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 453 checks on the
+The tests drive the view models with no window: 458 checks on the
 synthetic core. They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
 whole window off-screen and runs it for a second. Every new check was
@@ -169,8 +169,8 @@ A suggested order, each step usable on its own:
    kind of file. Still to do: the wizard's slots, machines and settings
    before the first frame.
 3. **RAM Watch, cheats, hex editor.** RAM Watch is done, but for game
-   property watches (kept in its files as they are, not read yet), its
-   values over the picture, and poking a value.
+   property watches (kept in its files as they are, not read yet) and
+   poking a value.
 4. **Lua's libraries** (memory, joypad, gui drawing, forms) as view model
    commands, so MCP has them too. Coordinate with the New-Features
    session, whose the MCP code is.

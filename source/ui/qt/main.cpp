@@ -224,6 +224,7 @@ int main(int argc, char **argv)
 			? qEnvironmentVariable("CHIMERA_QT_CACHE").toStdString()
 			: (QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/projects")).toStdString());
 	config.keep(session, "autoRestore");
+	config.keep(ramWatch, "showOnScreen");
 	config.keep(session, "recentProjects");
 	config.keep(pianoRoll, "followPlayback");
 	if (!config.problem().empty()) session.status.set(config.problem());

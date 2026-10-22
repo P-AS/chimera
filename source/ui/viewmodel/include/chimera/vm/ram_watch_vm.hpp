@@ -57,6 +57,10 @@ public:
 	Property<std::string> path;
 	Property<bool> changed{false};
 	Property<std::string> status;
+	/* the watches marked to be shown over the picture, "note: value" a line
+	 * each ("" while showOnScreen is off), as Chimera shows them */
+	Property<bool> showOnScreen{true};
+	Property<std::string> onScreenText;
 	/* the window's form for a new watch: its size, the ways a value of that
 	 * size can be shown (a line each) and the one chosen, by place */
 	Property<int64_t> formSize{1};
@@ -81,6 +85,7 @@ private:
 	};
 
 	bool index(const Args &a, size_t at, size_t &out, std::string &error) const;
+	void refreshOnScreen();
 	/* the list changed: the machine gets the new one, the window is told */
 	void listChanged(bool edit);
 	bool load(const std::string &file, bool append, std::string &error);
@@ -95,7 +100,7 @@ private:
 	std::vector<Watch> watches_;
 	Rows rows_{*this};
 	int hooks_ = 0;
-	Connection opensWatch_, previousTypeWatch_, formSizeWatch_;
+	Connection opensWatch_, previousTypeWatch_, formSizeWatch_, showWatch_;
 	std::string systemId_;
 	/* each domain's size, as the machine last said (the view's thread) */
 	std::map<std::string, int64_t> domainSizes_;
