@@ -26,7 +26,10 @@ code is in `source/ui`; how it is built and run is in
   format in the window as the C# one has - were set aside. One more call
   follows from it: `ce_session_movie_at` says that a state the window
   loaded itself (a branch's) put the machine on a frame of the movie, so
-  the engine counts from there instead of replaying to it.
+  the engine counts from there instead of replaying to it. And the rule
+  for which machine a project makes (core build, settings, firmware,
+  files), which decides whether kept states may be loaded, moved from the
+  C# into the engine as `ce_project_machine_id`.
 - Slint was considered and set aside for now. It is the closest fit to
   this pattern, but it has no docking, fewer desktop controls, and its
   licence is GPLv3 or an attribution licence, against Chimera's MIT.
@@ -40,7 +43,7 @@ made from.
 
 | View model | What it does | Window |
 |---|---|---|
-| session | open a game (the installed core that takes its kind of file opens it; when several do, they are offered), open, save and make projects, recent projects, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone, settings applied live or by restarting | main window |
+| session | open a game (the installed core that takes its kind of file opens it; when several do, they are offered), open, save and make projects, recent projects, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone (kept with the project in its cache folder and loaded when the project opens, unless the last session did not end), settings applied live or by restarting | main window |
 | pianoRoll | a row a frame and a column a button; press, drag, paint, fill; undo and redo (a stroke is one step); markers; follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
 | branches | other versions of the movie, kept in the project, each with its state in a file in the project's cache folder and the picture it had; loading one loads that state, or replays from where the two movies differ when the state is missing or is another machine's | Branches |
 | ramSearch | the engine's RAM Search, updated after every frame, with undo | RAM Search (Qt's own table) |
@@ -48,7 +51,7 @@ made from.
 | luaConsole | edit, run, open and save scripts; their output | Lua Console |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 315 checks on the
+The tests drive the view models with no window: 331 checks on the
 synthetic core. They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
 whole window off-screen and runs it for a second. Every new check was
@@ -141,10 +144,11 @@ the prototype's ratio holds. The prototype is 5,600 lines of view models,
 A suggested order, each step usable on its own:
 
 1. **TAStudio's remaining parts.** Markers, branches (with a state file
-   each, so loading one is a state load) and undo are done. Still to do:
-   the greenzone kept between sessions (`ce_session_history_save`), and
-   saving everything else a project holds (subtitles, headers, the piano
-   roll's layout). This is what a TAS author lives in.
+   each, so loading one is a state load), undo and the greenzone kept with
+   the project are done. Still to do: saving everything else a project
+   holds (subtitles, headers, the piano roll's layout), and the rules for
+   a machine a GPU drew once the window has the GPU bridge. This is what a
+   TAS author lives in.
 2. **New project wizard, firmware and Core Manager.** Opening anything
    without the C# window first. Done: the Cores window, firmware found by
    the engine's rules, a project made of an open game, a game opened by its

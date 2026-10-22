@@ -1004,6 +1004,41 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	spoil();
 	loadIt(true);
 
+	/* The greenzone is kept with the project: saved, it is there when the
+	 * project opens again, and going to the end runs from its states
+	 * rather than from the start. */
+	const fs::path projectCache = stateFile.parent_path().parent_path(), history = projectCache / "history.bin";
+	const std::string branched = (dir / "branched.chimeraProject").string();
+	/* played through from the start, so it holds the frames near the end */
+	session.run("seek", {int64_t{0}}, error);
+	CHECK(d.until([&] { return session.frame.get() == 0; }, 30));
+	session.run("seek", {end}, error);
+	CHECK(d.until([&] { return session.frame.get() == end; }, 30));
+	session.run("saveProject", {std::string()}, error);
+	CHECK(d.until([&] { return session.status.get().rfind("Saved " + branched, 0) == 0; }, 20));
+	CHECK(openIt(branched));
+	CHECK(fs::exists(history) && fs::exists(projectCache / "session.running"));
+	CHECK(d.until([&] { return session.greenEnd.get() > 0; }, 10));
+	session.run("seek", {end}, error);
+	CHECK(d.until([&] { return session.frame.get() == end; }, 30));
+	d.until([] { return false; }, 0.1);
+	CHECK(session.lastSeekFrames.get() < end / 2);
+	CHECK(session.readDomain("RAM") == std::vector<uint8_t>(ram.begin(), ram.end()));
+	/* a session that did not end keeps nothing it wrote: the mark it
+	 * leaves while running is found, its greenzone is not loaded and goes */
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	CHECK(!fs::exists(projectCache / "session.running"));
+	std::ofstream(projectCache / "session.running") << "a session that never ended";
+	CHECK(openIt(branched));
+	d.until([] { return false; }, 0.2);
+	CHECK(session.greenEnd.get() == 0 && !fs::exists(history));
+	session.run("seek", {end}, error);
+	CHECK(d.until([&] { return session.frame.get() == end; }, 30));
+	d.until([] { return false; }, 0.1);
+	CHECK(session.lastSeekFrames.get() == end);
+	CHECK(session.readDomain("RAM") == std::vector<uint8_t>(ram.begin(), ram.end()));
+
 	/* opened with no package given: the installed core is found for it, and
 	 * a cores folder without it says which core is missing */
 	{

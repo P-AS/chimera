@@ -636,6 +636,17 @@ CE_API int32_t ce_project_set_tastudio_text(ce_project *p, const char *json, con
 CE_API const char *ce_project_firmware_text(ce_project *p, uint64_t *len_out);
 CE_API int32_t ce_project_set_firmware_text(ce_project *p, const char *json, const char **error_out);
 
+/* Which machine a project makes, as the SHA-1 (40 hex digits) of the core
+ * build that runs it, its settings and firmware (keys in order, so the same
+ * settings written in another order are the same machine) and each file's
+ * slot and hash (its name is not its identity). A state is the memory of one
+ * exact machine; what a frontend keeps beside a project - branch states, the
+ * greenzone - is checked against this before it reaches the sandbox, which
+ * checks only the core binary (issue #63). running_core_sha1 is the package
+ * that will run, which can differ from the one the project pins; NULL or ""
+ * takes the pin. */
+CE_API void ce_project_machine_id(ce_project *p, const char *running_core_sha1, char *out41);
+
 /* The input log lump, exactly what ce_movie_log_parse/_serialize exchange
  * (LogKey line + entries). "" for a project with no frames yet. */
 CE_API const char *ce_project_log_text(const ce_project *p, uint64_t *len_out);

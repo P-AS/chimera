@@ -424,8 +424,16 @@ void SessionViewModel::freeSessionOnMachine()
 	for (const Hooks &h : hooksM_)
 		if (h.closing) h.closing(s_);
 	inputs_.bind(nullptr);
+	/* a greenzone being written is finished before its session goes */
+	ce_session_history_save_wait(s_);
 	ce_session_free(s_);
 	s_ = nullptr;
+	if (!runningMarkM_.empty())
+	{
+		std::error_code ec;
+		std::filesystem::remove(runningMarkM_, ec);
+		runningMarkM_.clear();
+	}
 }
 
 void SessionViewModel::onMachine(MachineJob job)
@@ -535,12 +543,18 @@ int64_t SessionViewModel::replaceMovieOnMachine(const std::string &text)
 	return from;
 }
 
-std::filesystem::path SessionViewModel::branchDirOnMachine() const
+std::filesystem::path SessionViewModel::projectCacheOnMachine() const
 {
 	if (projectM_ == nullptr || cacheFolderM_.empty()) return {};
 	const char *id = ce_project_id(projectM_);
 	if (id == nullptr || *id == '\0') return {};
-	return std::filesystem::path(cacheFolderM_) / id / "Branches";
+	return std::filesystem::path(cacheFolderM_) / id;
+}
+
+std::filesystem::path SessionViewModel::branchDirOnMachine() const
+{
+	const std::filesystem::path dir = projectCacheOnMachine();
+	return dir.empty() ? dir : dir / "Branches";
 }
 
 std::string SessionViewModel::machineIdOnMachine()
@@ -554,7 +568,76 @@ std::string SessionViewModel::machineIdOnMachine()
 			ce_package_free(pk);
 		}
 	}
+	/* the engine's rule, for a project; a game alone keeps nothing, but
+	 * the same three things name its machine */
+	if (projectM_ != nullptr)
+	{
+		char id[41];
+		ce_project_machine_id(projectM_, packageSha1M_.c_str(), id);
+		return id;
+	}
 	return branch_state::fingerprint(packageSha1M_ + "\n" + settingsOnMachine() + "\n" + slotsOnMachine());
+}
+
+void SessionViewModel::startProjectSessionOnMachine(bool loadHistory)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = projectCacheOnMachine();
+	if (dir.empty() || s_ == nullptr) return;
+	std::error_code ec;
+	fs::create_directories(dir, ec);
+	const fs::path mark = dir / "session.running", history = dir / "history.bin";
+	if (fs::exists(mark, ec))
+	{
+		/* the last session did not end: what it wrote may be half a file,
+		 * and a machine that killed it may have stored it */
+		fs::remove(history, ec);
+	}
+	else if (loadHistory && fs::exists(history, ec) &&
+			 ce_session_history_load(s_, branch_state::utf8(history).c_str(), machineIdOnMachine().c_str()) == 0)
+	{
+		const int64_t newest = ce_session_greenzone_nearest(s_, ce_session_movie_length(s_));
+		greenEndM_ = std::max<int64_t>(0, newest);
+		report(-1, -1, -1, -1, -1);
+	}
+	std::ofstream(mark) << "a session of this project is running\n";
+	runningMarkM_ = mark;
+}
+
+void SessionViewModel::keepHistoryOnMachine()
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = projectCacheOnMachine();
+	if (dir.empty() || s_ == nullptr) return;
+	/* A machine a GPU drew makes states good only in the session that
+	 * made them, unless its core says they outlive it; a machine that died
+	 * cannot vouch for anything it stored. */
+	bool survives = ce_session_gpu_drew(s_) == 0;
+	if (!survives)
+	{
+		const char *perr = nullptr;
+		if (ce_package *pk = ce_package_open(package_.c_str(), &perr))
+		{
+			uint64_t len = 0;
+			json::Json cfg;
+			std::string jerr;
+			if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+				d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, jerr))
+				if (const json::Json *video = cfg.find("video"))
+					if (const json::Json *keep = video->find("greenzoneSurvivesReload")) survives = keep->boolean;
+			ce_package_free(pk);
+		}
+	}
+	std::error_code ec;
+	fs::create_directories(dir, ec);
+	const fs::path history = dir / "history.bin";
+	if (survives && !diedM_)
+		ce_session_history_save_later(s_, branch_state::utf8(history).c_str(), machineIdOnMachine().c_str());
+	else
+	{
+		ce_session_history_save_wait(s_);
+		fs::remove(history, ec);
+	}
 }
 
 void SessionViewModel::makeBranch(std::string name, std::string time, std::function<void(Branch, std::string)> done)
@@ -960,6 +1043,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	tidyBranchStatesOnMachine();
 	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
 	adoptOnMachine(s, package, (title.empty() ? path : title) + note, true);
+	startProjectSessionOnMachine(!keepInputs);
 	later([this, path, title] {
 		projectPath.set(path);
 		projectTitle.set(title);
@@ -1053,6 +1137,7 @@ void SessionViewModel::newProjectOnMachine(const std::string &path, const std::s
 	projectM_ = p;
 	projectPathM_ = path;
 	game_.clear();
+	startProjectSessionOnMachine(false);
 	saveProjectOnMachine(path);
 	later([this, path, title] {
 		projectPath.set(path);
@@ -1095,6 +1180,7 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to)
 		return;
 	}
 	projectPathM_ = path;
+	keepHistoryOnMachine();
 	later([this, path, n] {
 		projectPath.set(path);
 		status.set("Saved " + path + " (" + std::to_string(n) + " frames)");
@@ -1124,6 +1210,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 {
 	s_ = s;
 	packageSha1M_.clear();
+	diedM_ = false;
 	inputs_.bind(s);
 	inputs_.clearLags();
 	frameM_ = ce_session_frame(s);
@@ -1181,6 +1268,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		coreName.set(coreText);
 		systemName.set(systemText);
 		frame.set(0);
+		greenEnd.set(0);
 		running.set(false);
 		isOpen.set(true);
 		opens.set(opens.get() + 1);
@@ -1275,6 +1363,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render)
 	if (lag < 0)
 	{
 		runningM_ = false;
+		diedM_ = true;
 		const char *death = ce_session_guest_death(s_);
 		const std::string why = death != nullptr && *death != '\0' ? std::string("The machine stopped: ") + death
 																	 : std::string("The movie could not be played: ") + ce_session_last_error(s_);

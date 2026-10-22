@@ -197,8 +197,18 @@ private:
 	std::string movieTextOnMachine() const;
 	/* the movie replaced by this one; where the two part, or -1 */
 	int64_t replaceMovieOnMachine(const std::string &text);
-	/* the open project's branch states' folder, empty when there is none */
+	/* the open project's folder in the cache, and its branch states' folder
+	 * in that; empty when there is no project or no cache */
+	std::filesystem::path projectCacheOnMachine() const;
 	std::filesystem::path branchDirOnMachine() const;
+	/* A project's session starts: the greenzone the last one kept is
+	 * loaded when that session ended cleanly (not on a restart, whose
+	 * movie may have been edited since the save), and the session is
+	 * marked as running until it ends. */
+	void startProjectSessionOnMachine(bool loadHistory);
+	/* the greenzone kept with the project as it is saved, when it may
+	 * outlive the session: written in the background */
+	void keepHistoryOnMachine();
 	/* which machine this is, as a state of it needs: core, settings, files */
 	std::string machineIdOnMachine();
 	/* the state files no branch of the project has any more go */
@@ -271,6 +281,10 @@ private:
 	std::string cacheFolderM_;
 	Connection cacheFolderWatch_;
 	std::string packageSha1M_;
+	/* the mark that a project's session is running, removed when it ends */
+	std::filesystem::path runningMarkM_;
+	/* the machine died in this session: what it stored is not kept */
+	bool diedM_ = false;
 
 	void pinMarkersOnMachine();
 	/* frames run since the machine opened: the engine counts only the
