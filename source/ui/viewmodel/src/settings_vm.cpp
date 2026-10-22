@@ -151,8 +151,13 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 				decl_.clear();
 				std::string error;
 				Json cfg, extra, v;
+				machineSetting_.clear();
 				if (json::parse(config, cfg, error))
+				{
 					if (const Json *list = cfg.find("settings")) decl_ = list->items;
+					if (const Json *m = cfg.find("machineSetting"); m != nullptr && m->kind == Json::Kind::String)
+						machineSetting_ = m->text;
+				}
 				if (!gameText.empty() && json::parse(gameText, extra, error))
 					for (const Json &d : extra.items) decl_.push_back(d);
 				Json array;
@@ -170,21 +175,48 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	});
 }
 
-void SettingsViewModel::evaluate()
+std::vector<size_t> SettingsViewModel::applicable(const std::vector<Json> &decl, const std::string &slots,
+	const Json &values, const std::string &machineSetting)
 {
 	/* which settings apply is the engine's to say: the game files and the
 	 * other settings' values decide */
-	exposed_.clear();
+	Json array;
+	array.kind = Json::Kind::Array;
+	array.items = decl;
+	const std::string declText = json::write(array), valueText = json::write(values);
 	uint64_t len = 0;
-	const std::string values = json::write(values_);
-	const char *out = ce_settings_evaluate(declText_.data(), declText_.size(), slots_.data(), slots_.size(),
-		values.data(), values.size(), &len);
+	const char *out = ce_settings_evaluate(declText.data(), declText.size(), slots.data(), slots.size(),
+		valueText.data(), valueText.size(), &len);
+	/* and a setting that names machines belongs to those alone */
+	std::string machine;
+	if (!machineSetting.empty())
+		for (const Json &d : decl)
+			if (const Json *n = d.find("name"); n != nullptr && n->text == machineSetting)
+			{
+				const Json *v = values.find(machineSetting);
+				if (v == nullptr) v = d.find("default");
+				if (v != nullptr && v->kind == Json::Kind::String) machine = v->text;
+			}
+	std::vector<size_t> shown;
 	Json list;
 	std::string error;
 	if (out != nullptr && json::parse(std::string_view(out, static_cast<size_t>(len)), list, error))
 		for (const Json &e : list.items)
-			if (const Json *i = e.find("index"); i != nullptr && i->number() >= 0 && i->number() < decl_.size())
-				exposed_.push_back(static_cast<size_t>(i->number()));
+			if (const Json *i = e.find("index"); i != nullptr && i->number() >= 0 && i->number() < decl.size())
+			{
+				const Json &d = decl[static_cast<size_t>(i->number())];
+				const Json *when = d.find("when");
+				bool fits = when == nullptr || when->kind != Json::Kind::Array || machineSetting.empty();
+				if (!fits)
+					for (const Json &m : when->items) fits = fits || m.text == machine;
+				if (fits) shown.push_back(static_cast<size_t>(i->number()));
+			}
+	return shown;
+}
+
+void SettingsViewModel::evaluate()
+{
+	exposed_ = applicable(decl_, slots_, values_, machineSetting_);
 	shown.set(static_cast<int64_t>(exposed_.size()));
 	rows_.reset.emit();
 }

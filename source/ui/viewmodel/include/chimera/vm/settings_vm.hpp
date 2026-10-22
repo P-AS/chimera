@@ -21,6 +21,13 @@ public:
 	Property<int64_t> shown{0};
 	Property<std::string> status{"No machine is open"};
 
+	/* Which of a declaration's settings apply, in its order: those the
+	 * engine exposes for these game files and values, and of those, the
+	 * ones whose "when" names the machine the package's machineSetting
+	 * (if it has one) chose. */
+	static std::vector<size_t> applicable(const std::vector<json::Json> &decl, const std::string &slots,
+		const json::Json &values, const std::string &machineSetting);
+
 	/* columns of the "settings" rows */
 	enum Column { kName, kLabel, kType, kValue, kOptions, kOptionLabels, kMin, kMax, kDescription, kEdited, kColumns };
 
@@ -47,6 +54,9 @@ private:
 	Connection opensWatch_;
 	std::vector<json::Json> decl_;
 	std::string declText_, slots_;
+	/* the setting that chooses the machine, when the package has several;
+	 * a setting with "when" belongs to the machines it names */
+	std::string machineSetting_;
 	json::Json applied_, values_;
 	std::vector<size_t> exposed_;
 };

@@ -470,6 +470,33 @@ bool ramSearch(const char *package, const char *rom)
 	return true;
 }
 
+/* Which settings apply: a setting naming machines belongs to them alone,
+ * the machine being what the package's machineSetting says */
+void settingsByMachine()
+{
+	json::Json decl;
+	std::string error;
+	CHECK(json::parse(R"([
+		{"name": "machine", "type": "enum", "options": ["pc", "pc98"], "default": "pc"},
+		{"name": "everywhere", "type": "bool", "default": false},
+		{"name": "sound", "type": "enum", "options": ["sb", "none"], "default": "sb", "when": ["pc"]},
+		{"name": "fm", "type": "bool", "default": true, "when": ["pc98"]}
+	])", decl, error));
+	json::Json values;
+	values.kind = json::Json::Kind::Object;
+	auto names = [&](const std::vector<size_t> &shown) {
+		std::string out;
+		for (size_t i : shown) out += decl.items[i].find("name")->text + " ";
+		return out;
+	};
+	CHECK(names(SettingsViewModel::applicable(decl.items, "{}", values, "machine")) == "machine everywhere sound ");
+	json::Json pc98;
+	CHECK(json::parse(R"({"machine": "pc98"})", pc98, error));
+	CHECK(names(SettingsViewModel::applicable(decl.items, "{}", pc98, "machine")) == "machine everywhere fm ");
+	/* a package with no machineSetting shows them all */
+	CHECK(names(SettingsViewModel::applicable(decl.items, "{}", values, "")) == "machine everywhere sound fm ");
+}
+
 /* Settings: the synthetic core declares one, the byte its RAM starts filled
  * with. Set and applied, the machine starts again with it, and its RAM says so */
 bool settings(const char *package, const char *rom)
@@ -648,6 +675,7 @@ int main(int argc, char **argv)
 	registry();
 	bindings();
 	lua();
+	settingsByMachine();
 	pianoRollWithoutAMachine();
 	const bool ranPads = gamepads();
 	bool ranMachine = false;
