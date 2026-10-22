@@ -8,6 +8,7 @@
 
 #include "chimera/vm/session_vm.hpp"
 #include "chimera/vm/view_model.hpp"
+#include "chimera/vm/watch_values.hpp"
 
 struct ce_ramsearch;
 
@@ -25,7 +26,9 @@ public:
 	/* bytes a value takes: 1, 2 or 4 */
 	Property<int64_t> size{1};
 	Property<bool> bigEndian{false};
-	/* how values read: 0 unsigned, 1 signed, 2 a real number (4 bytes) */
+	/* the ways a value of this size can be shown (a line each), and the one
+	 * chosen, by its place there: values are shown, and typed, that way */
+	Property<std::string> displays;
 	Property<int64_t> display{0};
 	/* what a search compares with: 0 the previous value, 1 a value,
 	 * 2 an address, 3 the number of changes, 4 a difference */
@@ -33,7 +36,9 @@ public:
 	/* how: 0 equal, 1 more, 2 at least, 3 less, 4 at most, 5 not equal,
 	 * 6 different by */
 	Property<int64_t> op{0};
-	Property<int64_t> value{0};
+	/* the value, address (hex), count or difference compared with, typed
+	 * as shown */
+	Property<std::string> value{"0"};
 	Property<int64_t> differentBy{0};
 	/* candidates left, and whether a search can be taken back or redone */
 	Property<int64_t> count{0};
@@ -63,11 +68,14 @@ private:
 	void dropOnMachine();
 	void reportOnMachine(const std::string &text);
 	Value shown(uint32_t raw) const;
+	/* the chosen way to show a value of the search's size */
+	watch::Display way() const;
 
 	SessionViewModel &session_;
 	Results results_{*this};
 	int hooks_ = 0;
-	Connection opensWatch_;
+	Connection opensWatch_, sizeWatch_;
+	int64_t domainSize_ = 0;
 
 	/* the search, the machine's thread's; the window reads rows under rsM_ */
 	mutable std::mutex rsM_;

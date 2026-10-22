@@ -29,10 +29,11 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 	expose("domain", "the domain searched", domain, true);
 	expose("size", "bytes a value takes: 1, 2 or 4", size, true);
 	expose("bigEndian", "values are stored most significant byte first", bigEndian, true);
-	expose("display", "how values read: 0 unsigned, 1 signed, 2 a real number", display, true);
+	expose("displays", "the ways a value of this size can be shown, a line each", displays);
+	expose("display", "the way values are shown and typed, by its place in displays", display, true);
 	expose("compare", "a search compares with: 0 the previous value, 1 a value, 2 an address, 3 changes, 4 a difference", compare, true);
 	expose("op", "how: 0 equal, 1 more, 2 at least, 3 less, 4 at most, 5 not equal, 6 different by", op, true);
-	expose("value", "the value, address, count or difference compared with", value, true);
+	expose("value", "the value, address (hex), count or difference compared with, typed as values are shown", value, true);
 	expose("differentBy", "for \"different by\": by how much", differentBy, true);
 	expose("count", "candidates left", count);
 	expose("canUndo", "a search can be taken back", canUndo);
@@ -61,9 +62,22 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 				error = "no search is open: start one";
 				return {};
 			}
-			const int32_t c = static_cast<int32_t>(compare.get()), o = static_cast<int32_t>(op.get()),
-				dsp = static_cast<int32_t>(display.get());
-			const uint32_t v = static_cast<uint32_t>(value.get()), by = static_cast<uint32_t>(differentBy.get());
+			const int32_t c = static_cast<int32_t>(compare.get()), o = static_cast<int32_t>(op.get());
+			/* the engine compares raw, signed or float; every other way is raw */
+			const watch::Display w = way();
+			const int32_t dsp = w == watch::Display::Signed ? 1 : w == watch::Display::Float ? 2 : 0;
+			uint32_t v = 0;
+			if (c != 0)
+			{
+				const watch::Display typed = c == 2 ? watch::Display::Hex : c == 3 ? watch::Display::Unsigned : w;
+				if (!watch::parse(value.get(), typed, v))
+				{
+					error = "\"" + value.get() + "\" is not " + (c == 2 ? std::string("an address in hex")
+						: c == 3 ? std::string("a number of changes") : "a value shown as " + std::string(watch::displayName(w)));
+					return {};
+				}
+			}
+			const uint32_t by = static_cast<uint32_t>(differentBy.get());
 			session_.onMachine([this, c, o, dsp, v, by](ce_session *) { searchOnMachine(c, o, dsp, v, by); });
 			return {};
 		}, &searching);
@@ -98,6 +112,16 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 		return {};
 	}, &searching);
 
+	auto showWays = [this] {
+		std::string lines;
+		for (const watch::Display d : watch::displaysFor(static_cast<int>(size.get())))
+			lines += (lines.empty() ? "" : "\n") + std::string(watch::displayName(d));
+		displays.set(lines);
+		if (display.get() >= static_cast<int64_t>(watch::displaysFor(static_cast<int>(size.get())).size())) display.set(0);
+		if (rows_ > 0) results_.changed.emit(0, rows_ - 1);
+	};
+	sizeWatch_ = size.changed.connect(showWays);
+	showWays();
 	hooks_ = session_.addMachineHooks([this](ce_session *) { afterFrameOnMachine(); }, [this](ce_session *) { dropOnMachine(); });
 	/* each machine opened: its domains */
 	opensWatch_ = session_.opens.changed.connect([this] {
@@ -179,7 +203,11 @@ void RamSearchViewModel::startOnMachine(ce_session *s, const std::string &name, 
 		if (rs_ != nullptr) ce_ramsearch_destroy(rs_);
 		rs_ = rs;
 	}
-	later([this, sz] { searching.set(true); size.set(sz); });
+	later([this, sz, bytes] {
+		domainSize_ = bytes;
+		searching.set(true);
+		size.set(sz);
+	});
 	reportOnMachine("Started on " + name);
 }
 
@@ -234,23 +262,16 @@ void RamSearchViewModel::reportOnMachine(const std::string &text)
 	});
 }
 
+watch::Display RamSearchViewModel::way() const
+{
+	const std::vector<watch::Display> &ways = watch::displaysFor(static_cast<int>(size.get()));
+	const int64_t i = display.get();
+	return i >= 0 && i < static_cast<int64_t>(ways.size()) ? ways[static_cast<size_t>(i)] : watch::Display::Unsigned;
+}
+
 Value RamSearchViewModel::shown(uint32_t raw) const
 {
-	const int64_t sz = size.get();
-	switch (display.get())
-	{
-	case 1:
-		if (sz == 1) return static_cast<int64_t>(static_cast<int8_t>(raw));
-		if (sz == 2) return static_cast<int64_t>(static_cast<int16_t>(raw));
-		return static_cast<int64_t>(static_cast<int32_t>(raw));
-	case 2:
-	{
-		float f;
-		std::memcpy(&f, &raw, sizeof f);
-		return static_cast<double>(f);
-	}
-	default: return static_cast<int64_t>(raw);
-	}
+	return watch::format(raw, static_cast<int>(size.get()), way());
 }
 
 std::string RamSearchViewModel::Results::columnName(int32_t column) const
@@ -269,12 +290,7 @@ Value RamSearchViewModel::Results::cell(int64_t row, int32_t column) const
 	}
 	switch (column)
 	{
-	case 0:
-	{
-		char buf[24];
-		std::snprintf(buf, sizeof buf, "%06llX", static_cast<unsigned long long>(address));
-		return std::string(buf);
-	}
+	case 0: return watch::hex(static_cast<int64_t>(address), watch::addressDigits(vm_.domainSize_ > 0 ? vm_.domainSize_ - 1 : 0xFFFFFF));
 	case 1: return vm_.shown(current);
 	case 2: return vm_.shown(previous);
 	case 3: return static_cast<int64_t>(changes);

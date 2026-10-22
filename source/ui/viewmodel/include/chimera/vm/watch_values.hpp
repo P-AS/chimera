@@ -29,6 +29,12 @@ bool fits(int size, Display display);
 /* the value, `size` bytes of it, as shown */
 std::string format(uint32_t value, int size, Display display);
 
+/* A value typed as it is shown, read as Chimera's value boxes read one:
+ * decimal, signed decimal, hex, binary digits, a decimal number for the
+ * fixed points (cut toward zero) and for a float. false when it does not
+ * read. */
+bool parse(const std::string &text, Display display, uint32_t &out);
+
 /* how big an address in a domain of `domainSize` bytes is written: the
  * window shows the digits its last address needs, a file the digits of
  * its size (as Chimera writes them) */

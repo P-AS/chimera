@@ -35,9 +35,10 @@ ApplicationWindow {
             }
             Label { text: qsTr("Shown") }
             ComboBox {
-                model: [qsTr("Unsigned"), qsTr("Signed"), qsTr("Real")]
+                model: win.search.displays === "" ? [] : win.search.displays.split("\n")
                 currentIndex: win.search.display
                 onActivated: (i) => win.search.display = i
+                Layout.preferredWidth: 150
             }
             Item { Layout.fillWidth: true }
             Button { text: qsTr("Start"); enabled: win.search.startEnabled; onClicked: win.search.run("start") }
@@ -58,8 +59,7 @@ ApplicationWindow {
             }
             TextField {
                 text: win.search.value
-                validator: IntValidator {}
-                onEditingFinished: win.search.value = Number(text)
+                onEditingFinished: win.search.value = text
                 Layout.preferredWidth: 90
             }
             Item { Layout.fillWidth: true }
@@ -69,6 +69,7 @@ ApplicationWindow {
         }
 
         Label { text: win.search.status }
+        Label { text: win.search.error; color: "#b00020"; visible: text !== "" }
 
         HorizontalHeaderView {
             syncView: table

@@ -622,13 +622,9 @@ bool ramSearch(const char *package, const char *rom)
 	session.key("Down", false);
 	const std::vector<uint8_t> after = session.readDomain("RAM");
 	std::vector<std::string> changed;
+	const int digits = watch::addressDigits(static_cast<int64_t>(before.size()) - 1);
 	for (size_t a = 0; a < before.size() && a < after.size(); a++)
-		if (before[a] != after[a])
-		{
-			char buf[24];
-			std::snprintf(buf, sizeof buf, "%06zX", a);
-			changed.emplace_back(buf);
-		}
+		if (before[a] != after[a]) changed.push_back(watch::hex(static_cast<int64_t>(a), digits));
 	CHECK(!changed.empty());
 	search.set("compare", int64_t{0}, error); /* the previous value */
 	search.set("op", int64_t{5}, error);      /* not equal */
@@ -644,13 +640,43 @@ bool ramSearch(const char *package, const char *rom)
 	}
 	std::sort(listed.begin(), listed.end());
 	CHECK(listed == changed);
-	/* the value column is the byte now */
-	if (!listed.empty())
+	/* the value column is the byte now, shown each way a byte can be */
+	CHECK(search.displays.get() == "Unsigned\nSigned\nHexadecimal\nBinary");
+	std::string address, shownValue;
+	fromValue(rows.cell(0, 0), address);
+	const uint8_t byte = after[std::stoul(address, nullptr, 16)];
+	fromValue(rows.cell(0, 1), shownValue);
+	CHECK(shownValue == std::to_string(byte));
+	search.set("display", int64_t{2}, error);
+	fromValue(rows.cell(0, 1), shownValue);
+	CHECK(shownValue == watch::format(byte, 1, watch::Display::Hex));
+	/* a value typed as shown: in hex, the candidates holding it are kept */
+	const int64_t before2 = search.count.get();
+	search.set("compare", int64_t{1}, error);
+	search.set("op", int64_t{0}, error);
+	search.set("value", watch::format(byte, 1, watch::Display::Hex), error);
+	CHECK(search.run("search", {}, error).has_value());
+	CHECK(d.until([&] { return search.count.get() < before2 || search.status.get().find("0 removed") != std::string::npos; }, 20));
+	d.until([] { return false; }, 0.1);
+	for (int64_t r = 0; r < rows.rowCount(); r++)
 	{
-		int64_t v = -1;
-		fromValue(rows.cell(0, 1), v);
-		CHECK(v == after[std::stoul(listed[0], nullptr, 16)]);
+		fromValue(rows.cell(r, 1), shownValue);
+		CHECK(shownValue == watch::format(byte, 1, watch::Display::Hex));
 	}
+	search.set("value", std::string("0x10"), error);
+	CHECK(!search.run("search", {}, error) && error == "\"0x10\" is not a value shown as Hexadecimal");
+	/* four bytes: seven ways, and a way that no longer fits goes back to the first */
+	search.set("display", int64_t{3}, error);
+	search.set("size", int64_t{4}, error);
+	CHECK(search.displays.get().find("Float") != std::string::npos && search.display.get() == 3);
+	search.set("display", int64_t{6}, error);
+	search.set("size", int64_t{2}, error);
+	CHECK(search.display.get() == 0);
+	search.set("size", int64_t{1}, error);
+	search.set("compare", int64_t{0}, error);
+	search.set("op", int64_t{5}, error);
+	search.run("undo", {}, error);
+	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(changed.size()); }, 20));
 	/* taken back, and done again */
 	CHECK(search.canUndo.get());
 	search.run("undo", {}, error);
@@ -1142,6 +1168,17 @@ void watchValues()
 	CHECK(format(0x12345678, 4, Display::Hex) == "12345678" && format(0x80000000, 4, Display::Signed) == "-2147483648");
 	CHECK(watch::addressDigits(0xFF) == 2 && watch::addressDigits(0x100) == 4 && watch::addressDigits(0x10000) == 6);
 	CHECK(watch::fits(2, Display::Fixed12_4) && !watch::fits(1, Display::Float) && !watch::fits(4, Display::Fixed12_4));
+	/* and typed back, as Chimera's value boxes read them */
+	uint32_t v = 0;
+	CHECK(watch::parse("FF", Display::Hex, v) && v == 0xFF && watch::parse(" 7fffffff ", Display::Hex, v) && v == 0x7FFFFFFF);
+	CHECK(!watch::parse("0x10", Display::Hex, v) && !watch::parse("123456789", Display::Hex, v) && !watch::parse("-1", Display::Hex, v));
+	CHECK(watch::parse("-1", Display::Signed, v) && v == 0xFFFFFFFF && !watch::parse("2147483648", Display::Signed, v));
+	CHECK(watch::parse("4294967295", Display::Unsigned, v) && v == 0xFFFFFFFF && !watch::parse("4294967296", Display::Unsigned, v));
+	CHECK(watch::parse("10100101", Display::Binary, v) && v == 0xA5 && !watch::parse("1010 0101", Display::Binary, v));
+	CHECK(watch::parse("0.5", Display::Fixed12_4, v) && v == 8 && watch::parse("1.99", Display::Fixed12_4, v) && v == 31);
+	CHECK(watch::parse("-0.5", Display::Fixed20_12, v) && v == 0xFFFFF800 && watch::parse("1", Display::Fixed16_16, v) && v == 0x10000);
+	CHECK(watch::parse("0.1", Display::Float, v) && v == 0x3DCCCCCD && !watch::parse("1e40", Display::Float, v));
+	CHECK(!watch::parse("", Display::Unsigned, v) && !watch::parse("abc", Display::Unsigned, v) && watch::parse(" 12 ", Display::Unsigned, v) && v == 12);
 }
 
 /* RAM Watch: values read after every frame, the previous value and the

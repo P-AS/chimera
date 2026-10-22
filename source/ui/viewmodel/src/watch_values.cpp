@@ -1,6 +1,8 @@
 #include "chimera/vm/watch_values.hpp"
 
+#include <cerrno>
 #include <charconv>
+#include <climits>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -125,6 +127,83 @@ std::string format(uint32_t value, int size, Display display)
 	}
 	}
 	return std::to_string(value);
+}
+
+namespace {
+std::string trimmed(const std::string &s)
+{
+	const size_t a = s.find_first_not_of(" \t\r\n");
+	if (a == std::string::npos) return {};
+	return s.substr(a, s.find_last_not_of(" \t\r\n") - a + 1);
+}
+
+bool wholeNumber(const std::string &t, int base, long long low, long long high, long long &out)
+{
+	if (t.empty()) return false;
+	const char *b = t.c_str();
+	if (base != 10 && (*b == '+' || *b == '-')) return false;
+	/* hex digits only: no 0x in front, as Chimera's boxes take none */
+	if (base == 16 && t.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) return false;
+	char *end = nullptr;
+	errno = 0;
+	const long long v = std::strtoll(b, &end, base);
+	if (end == b || *end != '\0' || errno == ERANGE || v < low || v > high) return false;
+	out = v;
+	return true;
+}
+
+bool decimal(const std::string &t, double &out)
+{
+	if (t.empty()) return false;
+	char *end = nullptr;
+	out = std::strtod(t.c_str(), &end);
+	return end != t.c_str() && *end == '\0' && std::isfinite(out);
+}
+} // namespace
+
+bool parse(const std::string &text, Display display, uint32_t &out)
+{
+	const std::string t = trimmed(text);
+	long long whole = 0;
+	double d = 0;
+	switch (display)
+	{
+	case Display::Unsigned:
+		if (!wholeNumber(t, 10, 0, 0xFFFFFFFFll, whole)) return false;
+		out = static_cast<uint32_t>(whole);
+		return true;
+	case Display::Signed:
+		if (!wholeNumber(t, 10, INT32_MIN, INT32_MAX, whole)) return false;
+		out = static_cast<uint32_t>(static_cast<int32_t>(whole));
+		return true;
+	case Display::Hex:
+		if (t.size() > 8 || !wholeNumber(t, 16, 0, 0xFFFFFFFFll, whole)) return false;
+		out = static_cast<uint32_t>(whole);
+		return true;
+	case Display::Binary:
+		if (t.size() > 32 || t.find_first_not_of("01") != std::string::npos || !wholeNumber(t, 2, 0, 0xFFFFFFFFll, whole)) return false;
+		out = static_cast<uint32_t>(whole);
+		return true;
+	case Display::Fixed12_4:
+	case Display::Fixed20_12:
+	case Display::Fixed16_16:
+	{
+		if (!decimal(t, d)) return false;
+		const double scale = display == Display::Fixed12_4 ? 16.0 : display == Display::Fixed20_12 ? 4096.0 : 65536.0;
+		const double v = std::trunc(d * scale);
+		if (v < INT32_MIN || v > INT32_MAX) return false;
+		out = static_cast<uint32_t>(static_cast<int32_t>(v));
+		return true;
+	}
+	case Display::Float:
+	{
+		if (!decimal(t, d) || std::fabs(d) > 3.4028235677973366e38) return false;
+		const float f = static_cast<float>(d);
+		std::memcpy(&out, &f, sizeof out);
+		return true;
+	}
+	}
+	return false;
 }
 
 int addressDigits(int64_t number)
