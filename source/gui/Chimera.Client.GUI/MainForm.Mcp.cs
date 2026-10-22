@@ -107,7 +107,31 @@ namespace Chimera.Client.GUI
 			}
 
 			public McpProjectMade CreateProject(McpProjectRequest request) => _main.McpCreateProject(request);
+
+			public IReadOnlyList<LibraryFunction>? LuaFunctions() => _main.McpLuaConsole()?.Documentation;
+
+			public (object[] Results, string? Error, string Output) RunLua(string code)
+			{
+				var console = _main.McpLuaConsole()!;
+				var (results, error) = console.RunForAgent(code);
+				return (results, error, console.TakeOutputForAgent());
+			}
+
+			public (bool Running, string Output) LuaScript(string path, bool stop)
+			{
+				var console = _main.McpLuaConsole()!;
+				if (stop) console.RemoveLuaFile(path);
+				else console.StartScriptForAgent(path);
+				return (console.ScriptRunning(path), console.TakeOutputForAgent());
+			}
 		}
+
+		/// <summary>
+		/// The Lua Console, opened as a person opens it when it is not open: the agent's Lua runs there, where the
+		/// person sees it (issue 355). Null when Lua cannot run in this Chimera.
+		/// </summary>
+		private LuaConsole? McpLuaConsole()
+			=> LuaLibraries.IsAvailable ? Tools.Load<LuaConsole>(focus: false) : null;
 
 		/// <summary>
 		/// create_project: the New Project wizard, never shown, given the agent's answers

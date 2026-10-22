@@ -213,6 +213,10 @@ if window:
     synth = [c for c in facts("list_cores").get("cores", []) if c.get("name") == "Synth"]
     check("list_cores in the window names the synthetic core and the files it opens", len(synth) >= 1 and "testrom" in synth[0].get("extensions", []))
     check("describe_core in the window says what it declares", facts("describe_core", core="Synth").get("name") == "Synth")
+    # every Lua function is offered (issue 355), as the Lua Console documents them
+    lua = facts("lua_functions", search="framecount")
+    check("lua_functions lists the Lua functions by words", "emu.framecount" in [f.get("name") for f in lua.get("functions", [])]
+          and "memory" in lua.get("libraries", []))
     info = facts("server_info")
     check("server_info says it is the window and where projects go",
           info.get("window") is True and info.get("folders", {}).get("projects") and info.get("commit"))
@@ -350,7 +354,7 @@ if not changes:
     # nobody allowed changes: each tool that changes something says how they are allowed
     for tool, arguments in (("add_marker", {"frame": 1, "text": "x"}), ("set_buttons", {"frame": 0, "buttons": {"P1 A": True}}),
                             ("seek", {"frame": 0}), ("write_memory", {"domain": "RAM", "address": 0, "values": [1]}),
-                            ("advance_until", {"property": "Steps", "op": "changed"})):
+                            ("advance_until", {"property": "Steps", "op": "changed"})) + ((("run_lua", {"code": "return 1"}),) if window else ()):
         error, text, _ = call(tool, **arguments)
         check("%s is refused while changes are not allowed" % tool, error and "Allow the agent to make changes" in text)
     check("refused changes changed nothing", facts("get_input", count=1000)["entries"] == movie
@@ -613,6 +617,26 @@ if window and changes:
     check("it plays on by itself", ran > 12)
     stopped = facts("pause")
     check("pause stops it", stopped.get("paused") is True and stopped.get("frame", 0) >= ran)
+    # Lua, as the Lua Console's input line runs it (issue 355)
+    frame_now = facts("status").get("frame")
+    ran = facts("run_lua", code="return emu.framecount(), movie.length()")
+    check("run_lua answers what the Lua returned", ran.get("results") == [frame_now, 0] or ran.get("results", [None])[0] == frame_now)
+    ran = facts("run_lua", code="print('hello from the agent') return {1, 2, x = nil}, 1 + 1")
+    check("and what it printed", ran.get("results") == [[1, 2], 2] and "hello from the agent" in ran.get("output", ""))
+    facts("run_lua", code="agent_said = 41")
+    check("a statement runs, and what it set is there for the next call", facts("run_lua", code="agent_said + 1").get("results") == [42])
+    error, text, _ = call("run_lua", code="error('on purpose')")
+    check("an error Lua raises is the answer", error and "on purpose" in text)
+    error, text, _ = call("run_lua", code="emu.frameadvance()")
+    check("a function that waits for a frame is for scripts", error)
+    script = os.path.join(folder, "agent.lua")
+    open(script, "w").write("print('the script started')\nwhile true do emu.frameadvance() end\n")
+    started = facts("lua_script", path=script)
+    facts("status")
+    stopped = facts("lua_script", path=script, stop=True)
+    check("lua_script starts a script, and stops it",
+          started.get("running") is True and stopped.get("running") is False
+          and "the script started" in started.get("output", "") + stopped.get("output", ""))
     facts("add_marker", frame=3, text="added after saving")
     error, text, _ = call("close_tastudio")
     check("a project with unsaved changes is not closed", error and "discard_unsaved" in text and facts("status").get("machine_open") is True)

@@ -35,6 +35,9 @@ Built so far:
 - `press_buttons`, a schedule of presses written into the input as one
   step, and `capture_series`, pictures on a schedule of the machine's own
   frames, each saying whether it is blank; `screenshot` says so too.
+- Every Lua function, in the window: `lua_functions` lists them as the Lua
+  Console documents them, `run_lua` runs Lua there and answers what it
+  returned and printed, and `lua_script` starts or stops a script file.
 - `create_project` in the window: the New Project window, never shown,
   given the agent's answers; missing firmware is listed instead of asked
   for. `list_cores` (with the kinds of file each core opens) and
@@ -191,6 +194,7 @@ Looking:
 | `list_branches` / `list_markers` | The project's branches and markers. |
 | `server_info` | This build, the folder it runs from, and the folders for projects, cores, firmware and Lua scripts. Without a window: the build and the folders it was started with. |
 | `pause` | Pauses the machine and says the frame. |
+| `lua_functions` | Chimera's Lua functions as the Lua Console documents them: name, parameters, what each returns and does. By library, or by words. Window only. |
 | `list_cores` / `describe_core` | The core packages in the cores folder, with the machines each is and the kinds of file it opens; and what one declares: settings, firmware, file slots. |
 | `watch` | Names up to 32 memory values or properties; `status`, `seek`, `advance_until` and `load_branch` then carry their values every time. An empty list ends it. |
 
@@ -227,6 +231,8 @@ Changes:
 | `resume` | Lets the machine run, as unpausing does; past the movie's end each frame played is added to it. Window only. |
 | `save_project` | Saves the project where it was saved, or at a path (a relative one is in the Movies folder; without a window, the path must be inside the work folder). A file already there is replaced only with `overwrite`. |
 | `create_project` | Makes a project and opens it, as the New Project window does: the agent gives the core, the machine, the game's files (by slot, or each put where its kind of file goes), settings and firmware. The core's suggested settings for the game are applied first, as on that window's settings page. Firmware is looked for where that window looks and in a folder the agent names; when some is missing nothing is made, and the answer lists each file missing, the files that would do, and where it looked. A project with unsaved changes is replaced only with `discard_unsaved`. Window only; without a window, `open_game`. |
+| `run_lua` | Runs Lua in the Lua Console, where the person sees it, and answers what it returned (a table as a list or an object) and what it printed. Every Lua function is there. It runs as a script does, in a coroutine of its own; the functions that wait for a frame are refused, as on the console's input line. Window only. |
+| `lua_script` | Starts a script file in the Lua Console, as File > Open Script does, or stops it; answers whether it runs and what the console printed since the agent last asked. Window only. |
 | `close_tastudio` | Closes the project and its machine. Unsaved changes are lost only with `discard_unsaved`. Window only; without a window, `close`. |
 
 Each call that edits the input is one step in TAStudio's undo history, named
@@ -391,7 +397,7 @@ and the convenience tools and the windowless mode follow.
 
 ## Not planned
 
-- Sound, video encoding, running Lua scripts through the server, CPU traces.
+- Sound, video encoding, CPU traces.
 - More than one agent connected at once, or one agent on several Chimera
   windows.
 - Any connection that is not local to the machine and the user.
@@ -415,5 +421,6 @@ and the convenience tools and the windowless mode follow.
 ## What was decided (owner, 2026-10-22, issue 355)
 
 The six requests of issue 355 are all built, and every Lua function is
-offered through the server too. Decision 8 changed: the tick box is
+offered through the server too (in the window, where Lua runs; the
+windowless server has no Lua). Decision 8 changed: the tick box is
 remembered between starts. The server itself still starts stopped (9).

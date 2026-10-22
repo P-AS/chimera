@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
@@ -521,8 +522,60 @@ namespace Chimera.Client.GUI
 
 		private string/*?*/ _lastLoadedFilePathHack = null;
 
+		/// <summary>What this console printed since the agent last asked (the MCP server's Lua tools, issue 355).</summary>
+		private readonly System.Text.StringBuilder _forAgent = new();
+
+		/// <summary>The most the agent's copy of the output keeps, its end kept.</summary>
+		private const int MostForAgent = 64 * 1024;
+
+		/// <summary>What this console printed since the last time this was asked, scripts' prints among it.</summary>
+		public string TakeOutputForAgent()
+		{
+			var text = _forAgent.ToString();
+			_forAgent.Clear();
+			return text;
+		}
+
+		/// <summary>
+		/// The MCP server's run_lua (issue 355): the agent's Lua, with every library there and what it returned
+		/// handed back. It runs as a script runs, in a coroutine of its own (<see cref="LuaLibraries.RunText"/>):
+		/// an error a function raised from C# took Mono down when it was run as the input line runs a line, with
+		/// a pcall on the main Lua state, and is survived in a coroutine, as in any script. The functions that wait
+		/// for a frame are refused, as on the input line. The code is shown in the output, as the person's lines
+		/// are, so what the agent ran is seen; Lua functions it registers for events stay, as a line's do.
+		/// </summary>
+		/// <returns>what the code returned, and the error it raised, or null</returns>
+		public (object[] Results, string/*?*/ Error) RunForAgent(string code)
+		{
+			WriteToOutputWindow($"[agent] {code}\n");
+			string/*?*/ error = null;
+			LuaFile agent = new(Path.Combine(Config.PathEntries.LuaAbsolutePath(), "agent"), UpdateRegisteredFunctionsDialog);
+			var results = LuaImp.RunText(agent, code, message =>
+			{
+				error = message;
+				WriteToOutputWindow(message + "\n");
+			});
+			// a function it registered keeps it, beside the input line's own, for its events to run; else it is done
+			if (error is null && agent.ShouldKeepRunning()) LuaImp.ScriptList.Add(agent);
+			else agent.Stop();
+			_messageCount = 0;
+			return (results, error);
+		}
+
+		/// <summary>The MCP server's lua_script: a script file started, as File &gt; Open Script starts one, or stopped and taken out.</summary>
+		public void StartScriptForAgent(string path) => LoadLuaFile(path);
+
+		/// <summary>Every Lua function, as this console documents them (lua_functions).</summary>
+		public IReadOnlyList<LibraryFunction>/*?*/ Documentation => LuaImp?.Docs;
+
+		/// <summary>Whether a script of that file is open here and running.</summary>
+		public bool ScriptRunning(string path)
+			=> _openedFiles.Find(f => !f.IsSeparator && f.Path == Path.GetFullPath(path)) is { Enabled: true };
+
 		public void WriteToOutputWindow(string message)
 		{
+			_forAgent.Append(message);
+			if (_forAgent.Length > MostForAgent) _forAgent.Remove(0, _forAgent.Length - MostForAgent);
 			if (!OutputBox.IsHandleCreated || OutputBox.IsDisposed)
 			{
 				return;

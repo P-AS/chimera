@@ -297,12 +297,64 @@ namespace Chimera.Client.Common
 		}
 
 		public LuaThread SpawnCoroutineAndSandbox(string file)
+			=> SpawnCoroutineAndSandbox(File.ReadAllText(file), "main", Path.GetDirectoryName(file));
+
+		/// <summary>A coroutine running this Lua text, as a script's runs its file.</summary>
+		private LuaThread SpawnCoroutineAndSandbox(string text, string chunkName, string directory)
 		{
-			var content = File.ReadAllText(file);
-			var main = _lua.LoadString(content, "main");
+			var main = _lua.LoadString(text, chunkName);
 			var thread = _lua.NewThread(main);
-			LuaSandbox.CreateSandbox(thread, Path.GetDirectoryName(file));
+			LuaSandbox.CreateSandbox(thread, directory);
 			return thread;
+		}
+
+		/// <summary>The global the values <see cref="RunText"/>'s code returned are left in for a moment.</summary>
+		private const string RunTextResults = "__chimera_run_text_results";
+
+		/// <summary>
+		/// Lua text run to its end in a coroutine of its own, started in <paramref name="file"/>, as a script runs
+		/// (the MCP server's run_lua, issue 355). An expression gives its value, as on the Lua Console's input
+		/// line; statements give what they return. The functions that wait for a frame are refused, since nothing
+		/// is waiting to resume it.
+		/// </summary>
+		/// <remarks>
+		/// Whether the text is an expression is asked of Lua's own <c>load</c>, inside the coroutine, which
+		/// answers a failure rather than raising one. Asked through NLua's LoadString first, as ExecuteString
+		/// does, a text that did not compile was followed by a crash of Mono on the next call, every time, with
+		/// the bundled Lua library; why was not found, and nothing of the agent's is compiled through NLua now.
+		/// </remarks>
+		/// <returns>what it returned; empty when it raised an error, which <paramref name="onError"/> is told</returns>
+		public object[] RunText(LuaFile file, string code, Action<string> onError)
+		{
+			// the code as a Lua long string, whose brackets it does not contain
+			var level = new string('=', Enumerable.Range(0, 64).First(n => !code.Contains("]" + new string('=', n) + "]")));
+			var text = $"[{level}[\n{code}]{level}]";
+			var chunk = $"local code = {text}\n"
+				+ "local run, failed = load('return ' .. code, '=input')\n"
+				+ "if not run then run, failed = load(code, '=input') end\n"
+				+ "if not run then error(failed, 0) end\n"
+				+ $"{RunTextResults} = table.pack(run())\n";
+			file.Start(SpawnCoroutineAndSandbox(chunk, "run_lua", Path.GetDirectoryName(file.Path)));
+			LuaStatus? status = null;
+			var failed = false;
+			Sandbox(file, () => status = file.Thread.Resume(), message =>
+			{
+				failed = true;
+				onError(message);
+			}, ApiGroup.YIELDING);
+			if (failed) return [ ];
+			if (status != LuaStatus.OK)
+			{
+				onError($"The code did not run to its end ({status}).");
+				return [ ];
+			}
+			using var packed = _lua[RunTextResults] as LuaTable;
+			_lua[RunTextResults] = null;
+			if (packed is null) return [ ];
+			var count = packed["n"] is double n ? (int) n : packed["n"] is long l ? (int) l : 0;
+			var results = new object[count];
+			for (var i = 0; i < count; i++) results[i] = packed[(long) (i + 1)];
+			return results;
 		}
 
 		public LuaThread SpawnBlankCoroutineAndSandbox(string directory)

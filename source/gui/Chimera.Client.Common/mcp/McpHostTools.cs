@@ -78,6 +78,15 @@ namespace Chimera.Client.Common
 
 		/// <summary>create_project: a project made as the New Project wizard makes it, from these answers, and opened.</summary>
 		McpProjectMade CreateProject(McpProjectRequest request);
+
+		/// <summary>Every Lua function, as the Lua Console documents them; null when Lua cannot run here.</summary>
+		IReadOnlyList<LibraryFunction>? LuaFunctions();
+
+		/// <summary>run_lua: code run as a line typed into the Lua Console is; what it returned, the error it raised, and what the console printed.</summary>
+		(object[] Results, string? Error, string Output) RunLua(string code);
+
+		/// <summary>lua_script: a script file started in the Lua Console, or stopped; whether it runs now, and what the console printed.</summary>
+		(bool Running, string Output) LuaScript(string path, bool stop);
 	}
 
 	/// <summary>What an agent's create_project asks for (docs/mcp-server.md).</summary>
@@ -179,6 +188,12 @@ namespace Chimera.Client.Common
 					return CloseProject(movie, chimera, arguments, out isError);
 				case "create_project":
 					return CreateProject(movie, chimera, arguments, out isError);
+				case "lua_functions":
+					return LuaFunctions(chimera, arguments, out isError);
+				case "run_lua":
+					return RunLua(chimera, arguments, out isError);
+				case "lua_script":
+					return LuaScript(chimera, arguments, out isError);
 			}
 			if (movie is null) return Refuse(NoMovie, out isError);
 			try
@@ -388,6 +403,130 @@ namespace Chimera.Client.Common
 			}
 			if (made.Opened is null) return Refuse(made.Refusal ?? "No project was made.", out isError);
 			return made.Opened.ToString(Formatting.None);
+		}
+
+		private const string NoLua = "Lua cannot run in this Chimera: its library could not be loaded.";
+
+		/// <summary>
+		/// lua_functions: the functions Chimera's Lua offers, as the Lua Console documents them, by library or by
+		/// words in their names and descriptions (issue 355: every Lua function is offered through the server).
+		/// </summary>
+		private static string LuaFunctions(IMcpChimera? chimera, JObject arguments, out bool isError)
+		{
+			isError = false;
+			if (chimera is null) return Refuse(NoChimera, out isError);
+			if (chimera.LuaFunctions() is not { } functions) return Refuse(NoLua, out isError);
+			var library = arguments["library"] is { Type: JTokenType.String } given ? (string) given! : null;
+			var search = arguments["search"] is { Type: JTokenType.String } words ? (string) words! : null;
+			if (!Number(arguments, "limit", 1, 1000, 200, out var limit)) return Refuse("'limit' must be between 1 and 1000.", out isError);
+			var matching = functions
+				.Where(f => library is null || string.Equals(f.Library, library, StringComparison.OrdinalIgnoreCase))
+				.Where(f => search is null || $"{f.Library}.{f.Name} {f.Description}".IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0)
+				.OrderBy(static f => f.Library, StringComparer.Ordinal).ThenBy(static f => f.Name, StringComparer.Ordinal)
+				.ToList();
+			JArray listed = new();
+			foreach (var function in matching.Take(limit))
+			{
+				JObject item = new()
+				{
+					["name"] = $"{function.Library}.{function.Name}",
+					["parameters"] = function.ParameterList,
+					["returns"] = function.ReturnType,
+					["description"] = function.Description,
+				};
+				if (function.Example is { Length: not 0 } example) item["example"] = example;
+				if (function.IsUnavailable) item["unavailable"] = "it raises an error in every core";
+				if (function.IsDeprecated) item["deprecated"] = true;
+				listed.Add(item);
+			}
+			return new JObject
+			{
+				["total"] = matching.Count,
+				["libraries"] = new JArray(functions.Select(static f => f.Library).Distinct().OrderBy(static l => l, StringComparer.Ordinal)),
+				["functions"] = listed,
+			}.ToString(Formatting.None);
+		}
+
+		/// <summary>
+		/// run_lua: the code run as the Lua Console's input line runs it, which a person sees there. What it
+		/// returned comes back as JSON; a table as an object, or as a list when its keys are 1 to n.
+		/// </summary>
+		private static string RunLua(IMcpChimera? chimera, JObject arguments, out bool isError)
+		{
+			isError = false;
+			if (chimera is null) return Refuse(NoChimera, out isError);
+			if (arguments["code"] is not { Type: JTokenType.String } given || ((string) given!).Trim().Length is 0)
+			{
+				return Refuse("Give 'code': the Lua to run, such as \"return emu.framecount()\".", out isError);
+			}
+			if (chimera.LuaFunctions() is null) return Refuse(NoLua, out isError);
+			var (results, error, output) = chimera.RunLua((string) given!);
+			if (error is not null)
+			{
+				isError = true;
+				return new JObject { ["error"] = error, ["output"] = output }.ToString(Formatting.None);
+			}
+			return new JObject
+			{
+				["results"] = new JArray(results.Select(static r => LuaValue(r, 0))),
+				["output"] = output,
+			}.ToString(Formatting.None);
+		}
+
+		/// <summary>lua_script: a script file started in the Lua Console, which then runs frame after frame, or stopped.</summary>
+		private static string LuaScript(IMcpChimera? chimera, JObject arguments, out bool isError)
+		{
+			isError = false;
+			if (chimera is null) return Refuse(NoChimera, out isError);
+			if (arguments["path"] is not { Type: JTokenType.String } given || ((string) given!).Trim().Length is 0)
+			{
+				return Refuse("Give 'path': the .lua file to run.", out isError);
+			}
+			var path = (string) given!;
+			var stop = arguments["stop"] is { Type: JTokenType.Boolean } flag && (bool) flag!;
+			if (!stop && !File.Exists(path)) return Refuse($"There is no file at '{path}'.", out isError);
+			if (chimera.LuaFunctions() is null) return Refuse(NoLua, out isError);
+			var (running, output) = chimera.LuaScript(path, stop);
+			return new JObject { ["script"] = path, ["running"] = running, ["output"] = output }.ToString(Formatting.None);
+		}
+
+		/// <summary>The most tables within tables a Lua value is followed into.</summary>
+		private const int LuaDepth = 8;
+
+		/// <summary>A value Lua returned, as JSON.</summary>
+		public static JToken LuaValue(object? value, int depth)
+		{
+			switch (value)
+			{
+				case null:
+					return JValue.CreateNull();
+				case bool or string or long or int:
+					return new JValue(value);
+				case double number:
+					// Lua's numbers are doubles; a whole one is said as one
+					return number == Math.Floor(number) && Math.Abs(number) < 9e15 ? new JValue((long) number) : new JValue(number);
+				case NLua.LuaTable table:
+				{
+					if (depth >= LuaDepth) return "(a table, too deep to show)";
+					var keys = table.Keys.Cast<object>().ToList();
+					var whole = keys.Select(static k => k is long l ? l : k is double d && d == Math.Floor(d) ? (long) d : 0L).ToList();
+					if (keys.Count is not 0 && whole.OrderBy(static k => k).SequenceEqual(Enumerable.Range(1, keys.Count).Select(static k => (long) k)))
+					{
+						return new JArray(whole.OrderBy(static k => k).Select(k => LuaValue(table[keys[whole.IndexOf(k)]], depth + 1)));
+					}
+					// by name: Lua keeps a table's keys in no order, and an answer should read the same each time
+					JObject fields = new();
+					foreach (var key in keys.OrderBy(static k => Convert.ToString(k, CultureInfo.InvariantCulture), StringComparer.Ordinal))
+					{
+						fields[Convert.ToString(key, CultureInfo.InvariantCulture) ?? ""] = LuaValue(table[key], depth + 1);
+					}
+					return fields;
+				}
+				case NLua.LuaFunction:
+					return "(a function)";
+				default:
+					return Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
+			}
 		}
 
 		/// <summary>The answer to a seek, once the window has stopped moving: where the machine is now.</summary>

@@ -57,6 +57,27 @@ namespace Chimera.Tests.Client.Common.Movie
 				Asked = request;
 				return Made;
 			}
+
+			public IReadOnlyList<LibraryFunction>? Functions;
+
+			public IReadOnlyList<LibraryFunction>? LuaFunctions() => Functions;
+
+			public (object[] Results, string? Error, string Output) Ran = ([ ], null, "");
+			public string? RanCode;
+
+			public (object[] Results, string? Error, string Output) RunLua(string code)
+			{
+				RanCode = code;
+				return Ran;
+			}
+
+			public (string Path, bool Stop)? Script;
+
+			public (bool Running, string Output) LuaScript(string path, bool stop)
+			{
+				Script = (path, stop);
+				return (!stop, stop ? "stopped\n" : "started\n");
+			}
 		}
 
 		private string _folder = "";
@@ -280,6 +301,101 @@ namespace Chimera.Tests.Client.Common.Movie
 				StringAssert.Contains(text, said, arguments);
 			}
 			Assert.IsNull(chimera.Asked, "nothing reached the window");
+		}
+
+		/// <summary>The functions lua_functions lists in these tests, as a library declares them.</summary>
+		private static class Emu
+		{
+			[LuaMethod("framecount", "The frame the machine is on.")]
+			[LuaMethodExample("local frame = emu.framecount();")]
+			public static int FrameCount() => 0;
+
+			[LuaMethod("yield", "Waits for the next frame; for scripts.")]
+			public static void Yield()
+			{
+			}
+		}
+
+		private static class Memory
+		{
+			[LuaMethod("read_u8", "Reads one byte.")]
+			public static uint ReadByte(long address, string? domain = null) => 0;
+		}
+
+		private static IReadOnlyList<LibraryFunction> Functions()
+			=>
+			[
+				new("emu", "", typeof(Emu).GetMethod(nameof(Emu.FrameCount))!),
+				new("emu", "", typeof(Emu).GetMethod(nameof(Emu.Yield))!),
+				new("memory", "", typeof(Memory).GetMethod(nameof(Memory.ReadByte))!),
+			];
+
+		/// <summary>Every Lua function is offered through the server (issue 355): lua_functions lists them as the Lua Console documents them.</summary>
+		[TestMethod]
+		public void TheLuaFunctionsAreListedByLibraryOrByWords()
+		{
+			FakeChimera chimera = new() { Functions = Functions() };
+			var all = JObject.Parse(Run(null, chimera, "lua_functions").Text);
+			Assert.AreEqual(3, (int) all["total"]!);
+			CollectionAssert.AreEqual(new[] { "emu", "memory" }, all["libraries"]!.Select(static l => (string) l!).ToArray());
+			var first = all["functions"]![0]!;
+			Assert.AreEqual("emu.framecount", (string) first["name"]!);
+			Assert.AreEqual("The frame the machine is on.", (string) first["description"]!);
+			Assert.AreEqual("local frame = emu.framecount();", (string) first["example"]!);
+			StringAssert.Contains((string) all["functions"]![2]!["parameters"]!, "address");
+
+			var memory = JObject.Parse(Run(null, chimera, "lua_functions", """{ "library": "memory" }""").Text);
+			Assert.AreEqual("memory.read_u8", (string) memory["functions"]!.Single()["name"]!);
+			var byWords = JObject.Parse(Run(null, chimera, "lua_functions", """{ "search": "NEXT FRAME" }""").Text);
+			Assert.AreEqual("emu.yield", (string) byWords["functions"]!.Single()["name"]!);
+			var one = JObject.Parse(Run(null, chimera, "lua_functions", """{ "limit": 1 }""").Text);
+			Assert.AreEqual(3, (int) one["total"]!, "the total counts them all");
+			Assert.AreEqual(1, one["functions"]!.Count());
+		}
+
+		[TestMethod]
+		public void LuaRunsAndWhatItReturnedAndPrintedComesBack()
+		{
+			Assert.IsTrue(LuaLibraries.IsAvailable, "the Lua library loads");
+			using NLua.Lua lua = new();
+			var returned = lua.DoString("return 3, 2.5, 'x', true, nil, {1, 2, 3}, {a = 1, b = {c = 'd'}}, function() end");
+			FakeChimera chimera = new() { Functions = Functions(), Ran = (returned, null, "printed\n") };
+			var (isError, text) = Run(null, chimera, "run_lua", """{ "code": "return emu.framecount()" }""");
+			Assert.IsFalse(isError, text);
+			Assert.AreEqual("return emu.framecount()", chimera.RanCode);
+			var answer = JObject.Parse(text);
+			Assert.AreEqual("""[3,2.5,"x",true,null,[1,2,3],{"a":1,"b":{"c":"d"}},"(a function)"]""",
+				answer["results"]!.ToString(Newtonsoft.Json.Formatting.None), "a whole number as one, a table as a list or an object");
+			Assert.AreEqual("printed\n", (string) answer["output"]!);
+
+			chimera.Ran = ([ ], "attempt to call a nil value (field 'nope')", "");
+			(isError, text) = Run(null, chimera, "run_lua", """{ "code": "emu.nope()" }""");
+			Assert.IsTrue(isError);
+			StringAssert.Contains((string) JObject.Parse(text)["error"]!, "nil value");
+
+			(isError, text) = Run(null, chimera, "run_lua", """{ "code": " " }""");
+			Assert.IsTrue(isError);
+			StringAssert.Contains(text, "Give 'code'");
+			(isError, text) = Run(null, new FakeChimera(), "run_lua", """{ "code": "return 1" }""");
+			Assert.IsTrue(isError, "with no Lua there is nothing to run it");
+			StringAssert.Contains(text, "Lua cannot run");
+		}
+
+		[TestMethod]
+		public void AScriptFileIsStartedAndStopped()
+		{
+			FakeChimera chimera = new() { Functions = Functions() };
+			var script = Path.Combine(_folder, "watch.lua");
+			File.WriteAllText(script, "print('started')");
+			var started = JObject.Parse(Run(null, chimera, "lua_script", new JObject { ["path"] = script }.ToString()).Text);
+			Assert.IsTrue((bool) started["running"]!);
+			Assert.AreEqual((script, false), chimera.Script);
+			var stopped = JObject.Parse(Run(null, chimera, "lua_script", new JObject { ["path"] = script, ["stop"] = true }.ToString()).Text);
+			Assert.IsFalse((bool) stopped["running"]!);
+			Assert.AreEqual("stopped\n", (string) stopped["output"]!);
+			var (isError, text) = Run(null, chimera, "lua_script", new JObject { ["path"] = Path.Combine(_folder, "nope.lua") }.ToString());
+			Assert.IsTrue(isError);
+			StringAssert.Contains(text, "There is no file");
 		}
 
 		[TestMethod]

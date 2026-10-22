@@ -10798,3 +10798,50 @@ their kinds of file, a project of the synthetic core made, opened on
 frame 0 with an empty movie, and closed. Each failed with its fix taken
 out. Not tried: a core that suggests settings for a game, or that compiles
 a game's code first; no test core does either.
+
+## Every Lua function through the MCP server (user-decided, 2026-10-22)
+
+The owner asked, with issue 355, that every Lua function be available
+through the MCP server. Three tools do it, in the window, where Lua runs:
+`lua_functions` lists the functions as the Lua Console documents them,
+`run_lua` runs Lua there and answers what it returned and printed, and
+`lua_script` starts or stops a script file as File > Open Script does. A
+list of functions kept by hand beside the libraries would have drifted
+from them; these read the libraries themselves, so a function added
+tomorrow is offered with nothing changed here.
+
+`run_lua` was first run as the Lua Console's input line runs a line: a
+pcall on the main Lua state, in the console's own context. Under Mono that
+crashed Chimera. The context had lost its Lua thread after the first frame
+(ResumeScripts stops it as an ended script), and a line run in it then
+crashed. Given a thread, an error raised from C# (emu.frameadvance
+refused, say) still crashed it. The same errors inside a script's
+coroutine are survived, which the witness exercises, so the agent's Lua
+runs as a script runs: in a coroutine of its own, with the functions that
+wait for a frame refused, and what it returned read back. A third crash
+came then, only with Chimera's bundled Lua library (the witness loads it,
+as a release does; by hand the system's Lua had been loaded, which did not
+crash): the coroutine's code was first compiled through NLua as
+`return <the code>` to learn whether it was an expression, and when that
+failed (any statement, `x = 1`) the next call crashed, every time. Neither
+half alone crashed - the failed compile, or the chunk that followed it -
+and why the two together do was not found. Lua's own `load`, called inside
+the coroutine, now decides whether the text is an expression; it answers a
+failure instead of raising one, and nothing of the agent's is compiled
+through NLua. The person's input line is unchanged. It compiles each line
+through NLua the same way first, so it may crash the same way under Mono on
+a line that is a statement; that was not tried.
+
+`run_lua` can do anything a script can, so it is refused until changes are
+allowed; `lua_functions` only reads. The code the agent runs is shown in
+the Lua Console's output as `[agent] ...`. The windowless server has no
+Lua: its machine runs in chimera-mcp's own process, which has no Lua
+Console.
+
+Tested: 3 tests of the tools (the list by library and by words, results
+and prints and errors, a script started and stopped), and the end-to-end
+test in the real window with the bundled Lua: the functions listed, values
+returned and printed, a statement and then a call that reads what it set,
+an error and emu.frameadvance refused with Chimera running on, and a
+script file started and stopped. Each failed with its fix taken
+out.

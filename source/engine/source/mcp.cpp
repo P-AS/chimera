@@ -164,6 +164,16 @@ const McpTool kTools[] = {
 	  "\"core\":{\"type\":\"string\",\"description\":\"A file or a name from list_cores.\"}"
 	  "},\"required\":[\"core\"],\"additionalProperties\":false}",
 	  false, false },
+	{ "lua_functions",
+	  "Chimera's Lua functions, as the Lua Console documents them: for each, its name, parameters, what it returns and "
+	  "what it does. Every one of them can be called with run_lua. 'library' keeps one library, 'search' the functions "
+	  "whose name or description holds those words.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"library\":{\"type\":\"string\",\"description\":\"Such as emu, memory, joypad, movie, tastudio, gui.\"},"
+	  "\"search\":{\"type\":\"string\"},"
+	  "\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":1000,\"description\":\"200 when left out.\"}"
+	  "},\"additionalProperties\":false}",
+	  false, true, false, true },
 	{ "pause",
 	  "Pauses the machine, as System > Pause does, and answers the frame it is on. A machine that is already paused stays so.",
 	  kNoArguments, false, true },
@@ -310,6 +320,24 @@ const McpTool kTools[] = {
 	  "\"firmware_folder\":{\"type\":\"string\",\"description\":\"A folder to look for firmware in as well.\"},"
 	  "\"discard_unsaved\":{\"type\":\"boolean\",\"description\":\"Close an open project even with changes that are not saved. false when left out.\"}"
 	  "},\"required\":[\"core\"],\"additionalProperties\":false}",
+	  true, true, false, true },
+	{ "run_lua",
+	  "Runs Lua as a line typed into the Lua Console runs, where the person sees it: every Lua function is there "
+	  "(lua_functions lists them), and what it returns and prints comes back. A function that waits for a frame "
+	  "(emu.frameadvance, emu.yield) is for scripts, as in the Lua Console: lua_script runs one. It can do anything a "
+	  "script can, so it is refused until changes are allowed.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"code\":{\"type\":\"string\",\"description\":\"Lua, such as \\\"return emu.framecount()\\\".\"}"
+	  "},\"required\":[\"code\"],\"additionalProperties\":false}",
+	  true, true, false, true },
+	{ "lua_script",
+	  "Starts a Lua script file in the Lua Console, as File > Open Script does; it then runs frame after frame. With "
+	  "'stop' it is stopped and taken out. Answers whether it runs, and what the console printed since the agent last "
+	  "asked.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"path\":{\"type\":\"string\",\"description\":\"The .lua file.\"},"
+	  "\"stop\":{\"type\":\"boolean\",\"description\":\"Stop it instead. false when left out.\"}"
+	  "},\"required\":[\"path\"],\"additionalProperties\":false}",
 	  true, true, false, true },
 	{ "close_tastudio",
 	  "Closes the open project: TAStudio and the machine, as closing TAStudio does. A project with changes that are not "
