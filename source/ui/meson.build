@@ -32,6 +32,7 @@ vm_lib = static_library(
     'viewmodel/src/hex_editor_vm.cpp',
     'viewmodel/src/controls_vm.cpp',
     'viewmodel/src/hotkeys_vm.cpp',
+    'viewmodel/src/themes_vm.cpp',
     'viewmodel/src/ram_watch_vm.cpp',
     'viewmodel/src/config_store.cpp',
   ],
@@ -86,7 +87,7 @@ qt6 = import('qt6')
 qt_dep = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'QuickControls2'], required: get_option('qt_ui'))
 if qt_dep.found()
   qt_moc = qt6.compile_moc(
-    headers: ['qt/qml_view_model.hpp', 'qt/picture_item.hpp', 'qt/piano_roll_item.hpp', 'qt/key_names.hpp'],
+    headers: ['qt/qml_view_model.hpp', 'qt/picture_item.hpp', 'qt/piano_roll_item.hpp', 'qt/key_names.hpp', 'qt/theme_palette.hpp'],
     include_directories: [vm_inc, engine_inc],
     dependencies: [qt_dep],
   )
@@ -101,6 +102,7 @@ if qt_dep.found()
       'qt/picture_item.cpp',
       'qt/piano_roll_item.cpp',
       'qt/key_names.cpp',
+      'qt/theme_palette.cpp',
       qt_moc,
       qt_rcc,
     ],

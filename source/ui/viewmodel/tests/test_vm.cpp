@@ -42,6 +42,7 @@
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
 #include "chimera/vm/settings_vm.hpp"
+#include "chimera/vm/themes_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "chimera/engine.h"
 
@@ -1152,6 +1153,44 @@ bool newProject(const char *package, const char *rom)
 	return true;
 }
 
+/* Themes: built in and from the folder, one chosen; files that do not read
+ * are named, colours that are not colours left out */
+void themes()
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-themes-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	std::ofstream(dir / "Sea.chimeraTheme.json") << R"({"name": "Sea", "author": "A", "description": "waves\nand more", "dark": true,
+		"colors": {"WindowBackground": "#102030", "WindowText": "#E0E0E0", "Selection": "#3060A0", "Bogus": "blue"}})";
+	std::ofstream(dir / "Broken.chimeraTheme.json") << R"({"colors": {}})";
+	std::ofstream(dir / "Light.chimeraTheme.json") << R"({"name": "Light", "colors": {"WindowBackground": "#000000"}})";
+	std::ofstream(dir / "notes.json") << "{}";
+	ManualDispatcher d;
+	ThemesViewModel t(d);
+	std::string error;
+	CHECK(t.addBuiltIn(R"({"name": "Light", "dark": false, "colors": {"WindowBackground": "system:Control", "WindowText": "#000000"}})", error));
+	CHECK(t.addBuiltIn(R"({"name": "Dark", "dark": true, "colors": {"WindowBackground": "#202020"}})", error));
+	CHECK(!t.addBuiltIn(R"({"name": "", "colors": {}})", error) && error == "it has no name");
+	t.folder.set(dir.string());
+	/* the built-ins, then the folder's in name order; a file's theme by a
+	 * built-in's name stays the built-in */
+	CHECK(t.count.get() == 3);
+	RowModel &rows = *t.rowLists()[0].model;
+	std::string name, desc;
+	fromValue(rows.cell(2, 0), name);
+	fromValue(rows.cell(2, 2), desc);
+	CHECK(name == "Sea" && desc == "waves and more");
+	CHECK(t.status.get().find("Broken.chimeraTheme.json (it has no name)") != std::string::npos);
+	/* Dark at first, as Chimera's default */
+	CHECK(t.current.get() == "Dark" && t.dark.get() && t.colors.get().find("#202020") != std::string::npos);
+	CHECK(t.run("choose", {std::string("Sea")}, error).has_value());
+	CHECK(t.colors.get().find("#102030") != std::string::npos && t.colors.get().find("Bogus") == std::string::npos && t.dark.get());
+	t.run("choose", {std::string("Light")}, error);
+	CHECK(t.colors.get().find("system:Control") != std::string::npos && t.colors.get().find("#000000") != std::string::npos && !t.dark.get());
+	CHECK(!t.run("choose", {std::string("Nope")}, error) && error == "no theme called Nope");
+	fs::remove_all(dir);
+}
+
 /* Values written as Chimera's RAM Watch writes them (the whole range was
  * compared with .NET's own text; these few keep it so) */
 void watchValues()
@@ -2110,6 +2149,7 @@ int main(int argc, char **argv)
 	settingsByMachine();
 	pianoRollWithoutAMachine();
 	watchValues();
+	themes();
 	const bool ranPads = gamepads();
 	bool ranMachine = false;
 	if (argc >= 3)

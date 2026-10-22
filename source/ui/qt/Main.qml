@@ -18,6 +18,8 @@ ApplicationWindow {
     required property QtObject controls
     required property QtObject hotkeys
     required property QtObject keyNamer
+    required property QtObject themes
+    required property QtObject themeColors
     required property QtObject settings
     required property QtObject luaConsole
     required property QtObject branches
@@ -67,6 +69,7 @@ ApplicationWindow {
             Action { text: qsTr("P&ause"); shortcut: "Ctrl+Space"; enabled: root.session.running; onTriggered: root.session.run("pause") }
             Action { text: qsTr("&Settings..."); onTriggered: { settingsWindow.show(); settingsWindow.raise() } }
             Action { text: qsTr("&Controls and Hotkeys..."); onTriggered: { controlsWindow.show(); controlsWindow.raise() } }
+            Action { text: qsTr("&Themes..."); onTriggered: { themesWindow.show(); themesWindow.raise() } }
             Action { text: qsTr("&Frame Advance"); shortcut: "Ctrl+F"; enabled: root.session.frameAdvanceEnabled; onTriggered: root.session.run("frameAdvance") }
             Action { text: qsTr("Go to Frame &0"); shortcut: "Ctrl+Home"; enabled: root.session.seekEnabled; onTriggered: root.session.run("seek", [0]) }
             Action {
@@ -194,6 +197,7 @@ ApplicationWindow {
     RamWatch { id: ramWatchWindow; vm: root.ramWatch; visible: false }
     NewProject { id: newProjectWindow; vm: root.newProject; visible: false }
     HexEditor { id: hexEditorWindow; vm: root.hexEditor; visible: false }
+    Themes { id: themesWindow; vm: root.themes; colors: root.themeColors; visible: false }
     Controls { id: controlsWindow; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; visible: false }
     Settings { id: settingsWindow; settings: root.settings; visible: false }
     LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; visible: false }

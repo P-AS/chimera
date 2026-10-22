@@ -10,6 +10,7 @@
 #include <algorithm>
 
 #include "qml_view_model.hpp"
+#include "theme_palette.hpp"
 
 namespace chimera::qt {
 
@@ -143,7 +144,7 @@ void PianoRollItem::paint(QPainter *p)
 	 * colours follow the system's light or dark theme: each meaning is a
 	 * tint mixed into the theme's own background. */
 	const QPalette pal = QGuiApplication::palette();
-	const QColor base = pal.color(QPalette::Base), text = pal.color(QPalette::Text);
+	QColor base = pal.color(QPalette::Base), text = pal.color(QPalette::Text);
 	const bool dark = base.lightnessF() < 0.5;
 	auto tint = [&](QColor c, double amount) {
 		return QColor::fromRgbF(base.redF() + (c.redF() - base.redF()) * amount,
@@ -151,11 +152,28 @@ void PianoRollItem::paint(QPainter *p)
 			base.blueF() + (c.blueF() - base.blueF()) * amount);
 	};
 	const double a = dark ? 0.32 : 0.22;
-	const QColor plain = base, header = pal.color(QPalette::Button), grid = tint(text, 0.18),
+	QColor plain = base, header = pal.color(QPalette::Button), headerText = text, grid = tint(text, 0.18),
 		lit = pal.color(QPalette::Highlight), now = tint(QColor(0x3d, 0x8b, 0xff), a + 0.08),
-		green = tint(QColor(0x3c, 0xc0, 0x3c), a), lag = tint(QColor(0xe0, 0x40, 0x30), a);
+		green = tint(QColor(0x3c, 0xc0, 0x3c), a), lag = tint(QColor(0xe0, 0x40, 0x30), a),
+		marker = tint(QColor(0xe0, 0xa0, 0x20), dark ? 0.5 : 0.45), picked = lit, pickedText = pal.color(QPalette::HighlightedText);
+	/* a Chimera theme says TAStudio's colours itself */
+	auto themed = [](QColor &c, const char *role) {
+		const QColor t = themeColor(role);
+		if (t.isValid()) c = t;
+	};
+	themed(plain, "RollBackground");
+	themed(text, "RollText");
+	themed(header, "HeaderBackground");
+	themed(headerText, "HeaderText");
+	themed(grid, "RollGridLines");
+	themed(now, "TasCurrentFrame");
+	themed(green, "TasGreenZoneInput");
+	themed(lag, "TasLagZoneInput");
+	themed(marker, "TasMarker");
+	themed(picked, "RollSelection");
+	themed(pickedText, "RollSelectionText");
 	const int w = static_cast<int>(width()), h = static_cast<int>(height());
-	p->fillRect(0, 0, w, h, base);
+	p->fillRect(0, 0, w, h, plain);
 	if (rows_ == nullptr) return;
 
 	vm::RowModel &rows = rows_->rows();
@@ -167,7 +185,7 @@ void PianoRollItem::paint(QPainter *p)
 	/* the header: each button's name without the "P1 " a player's buttons
 	 * share, or its letter in a movie when the name does not fit */
 	p->fillRect(0, 0, w, rowHeight_, header);
-	p->setPen(text);
+	p->setPen(headerText);
 	p->drawText(QRect(kCursorWidth + 4, 0, fx - kCursorWidth - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("Frame"));
 	for (int c = 0; c < columns; c++)
 	{
@@ -191,14 +209,14 @@ void PianoRollItem::paint(QPainter *p)
 		/* a marker: its frame number on the accent, its text after the buttons */
 		if (flags & 4)
 		{
-			p->fillRect(0, y, fx, rowHeight_, tint(QColor(0xe0, 0xa0, 0x20), dark ? 0.5 : 0.45));
+			p->fillRect(0, y, fx, rowHeight_, marker);
 			p->setPen(text);
 			p->drawText(QRect(columnX(columns) + 6, y, w - columnX(columns) - 8, rowHeight_),
 				Qt::AlignVCenter | Qt::AlignLeft, QString::fromStdString(rows.rowNote(row)));
 		}
 		/* picked frames: their numbers on the highlight */
-		const bool picked = selectFirst_ >= 0 && row >= selectFirst_ && row <= selectLast_;
-		if (picked) p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, lit);
+		const bool isPicked = selectFirst_ >= 0 && row >= selectFirst_ && row <= selectLast_;
+		if (isPicked) p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, picked);
 		/* the frame the machine is on: an arrow in the cursor column */
 		if (row == current_)
 		{
@@ -208,7 +226,7 @@ void PianoRollItem::paint(QPainter *p)
 			p->drawPolygon(arrow, 3);
 			p->setBrush(Qt::NoBrush);
 		}
-		p->setPen(picked ? pal.color(QPalette::HighlightedText) : text);
+		p->setPen(isPicked ? pickedText : text);
 		p->drawText(QRect(kCursorWidth + 4, y, fx - kCursorWidth - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, QString::number(row));
 		for (int c = 0; c < columns; c++)
 		{

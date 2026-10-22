@@ -59,9 +59,10 @@ made from.
 | hexEditor | a memory domain sixteen bytes a line, by 1, 2 or 4 bytes either end first, with its text; only the lines on screen held and read after every frame, the bytes that changed marked; a value written into the machine (the states after the frame dropped); bytes found | Hex Editor |
 | controls | each button's keys and gamepad controls, the package's at first, changed a button at a time (typed, or caught from a key press) and remembered per core | Controls and Hotkeys |
 | hotkeys | the window's actions on keys, with Chimera's names and keys: frame advance (held half a second it runs on), rewind (held it goes on back), pause, fast forward, reboot, close, branch slots F1-F10 and Shift+F1-F10, add branch, follow, auto-restore, markers; changed and remembered; a key that is a hotkey and a button does both, as in Chimera | Controls and Hotkeys |
+| themes | Chimera's colour themes: its built-in Light (the desktop's own colours) and Dark, and every theme file in the themes folder; one chosen (Dark at first, as Chimera's default) and remembered; the window's palette and the piano roll's TAStudio colours follow it | Themes |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 642 checks on the
+The tests drive the view models with no window: 653 checks on the
 synthetic core (and on two packages made from it at build time: one under
 another name, one of two machines with declared slots and a firmware). They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
@@ -195,7 +196,7 @@ A suggested order, each step usable on its own:
 6. **Hotkeys and their configuration,** themes, recent files. Hotkeys,
    controls and recent files are done; still: Chimera's other hotkeys
    (speed, screenshots, read-only, the RAM Search ones), a gamepad
-   control caught by pressing it, and the themes. Then the Qt window is
+   control caught by pressing it. Themes are done. Then the Qt window is
    the default, and the C# one goes.
 
 ## Yours to decide

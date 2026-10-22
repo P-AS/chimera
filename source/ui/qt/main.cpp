@@ -46,6 +46,8 @@
 #include "chimera/vm/hex_editor_vm.hpp"
 #include "chimera/vm/controls_vm.hpp"
 #include "chimera/vm/hotkeys_vm.hpp"
+#include "chimera/vm/themes_vm.hpp"
+#include "theme_palette.hpp"
 #include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "key_names.hpp"
@@ -187,36 +189,11 @@ int main(int argc, char **argv)
 	QCommandLineOption scrollOpt(QStringLiteral("scroll"), QStringLiteral("while measuring, scroll the piano roll all the time"));
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
-	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark, whatever the system says"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, settings, lua, branches, cores"), QStringLiteral("tool"));
+	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
-	if (args.isSet(schemeOpt))
-	{
-		const bool dark = args.value(schemeOpt) == QStringLiteral("dark");
-		QGuiApplication::styleHints()->setColorScheme(dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
-		/* a platform with no dark theme of its own gets a plain dark palette */
-		if (dark && QGuiApplication::palette().color(QPalette::Window).lightnessF() > 0.5)
-		{
-			QPalette p;
-			const QColor window(0x2b, 0x2d, 0x30), base(0x1e, 0x1f, 0x22), text(0xe6, 0xe6, 0xe6);
-			p.setColor(QPalette::Window, window);
-			p.setColor(QPalette::WindowText, text);
-			p.setColor(QPalette::Base, base);
-			p.setColor(QPalette::AlternateBase, window);
-			p.setColor(QPalette::Text, text);
-			p.setColor(QPalette::Button, window);
-			p.setColor(QPalette::ButtonText, text);
-			p.setColor(QPalette::Highlight, QColor(0x3d, 0x8b, 0xff));
-			p.setColor(QPalette::HighlightedText, Qt::white);
-			p.setColor(QPalette::ToolTipBase, window);
-			p.setColor(QPalette::ToolTipText, text);
-			p.setColor(QPalette::PlaceholderText, QColor(0x8a, 0x8a, 0x8a));
-			QGuiApplication::setPalette(p);
-		}
-	}
-
 	QtDispatcher dispatcher(&app);
 	vm::InputLog inputs;
 	vm::SessionViewModel session(dispatcher, inputs);
@@ -226,6 +203,8 @@ int main(int argc, char **argv)
 	vm::HexEditorViewModel hexEditor(dispatcher, session);
 	vm::BranchesViewModel branches(dispatcher, inputs, session, pianoRoll);
 	vm::ControlsViewModel controls(dispatcher, session);
+	vm::ThemesViewModel themes(dispatcher);
+	vm::Connection themesWatch;
 	/* Chimera's hotkeys, with its keys, for what this window has */
 	vm::HotkeysViewModel hotkeys(dispatcher);
 	{
@@ -313,6 +292,24 @@ int main(int argc, char **argv)
 	config.keep(session, "autoRestore");
 	config.keep(ramWatch, "showOnScreen");
 	config.keep(controls, "saved");
+	/* the themes: Chimera's built-in two, and the folder beside the program
+	 * (CHIMERA_THEMES_DIR for a test); --color-scheme picks Light or Dark for
+	 * this run only */
+	for (const QString &file : {QStringLiteral(":/chimera/themes/light.json"), QStringLiteral(":/chimera/themes/dark.json")})
+	{
+		QFile f(file);
+		std::string why;
+		if (f.open(QIODevice::ReadOnly)) themes.addBuiltIn(f.readAll().toStdString(), why);
+	}
+	themes.folder.set(qEnvironmentVariableIsSet("CHIMERA_THEMES_DIR") ? qEnvironmentVariable("CHIMERA_THEMES_DIR").toStdString()
+		: (QCoreApplication::applicationDirPath() + QStringLiteral("/Themes")).toStdString());
+	if (args.isSet(schemeOpt))
+		themes.current.set(args.value(schemeOpt) == QStringLiteral("light") ? "Light" : "Dark");
+	else
+		config.keep(themes, "current");
+	auto applyTheme = [&themes] { qt::applyTheme(QString::fromStdString(themes.colors.get())); };
+	themesWatch = themes.colors.changed.connect(applyTheme);
+	applyTheme();
 	config.keep(hotkeys, "saved");
 	config.keep(session, "recentProjects");
 	config.keep(pianoRoll, "followPlayback");
@@ -324,8 +321,10 @@ int main(int argc, char **argv)
 	qt::QmlViewModel newProjectQml(newProject);
 	qt::QmlViewModel hexEditorQml(hexEditor);
 	qt::QmlViewModel controlsQml(controls);
+	qt::QmlViewModel themesQml(themes);
 	qt::QmlViewModel hotkeysQml(hotkeys);
 	qt::KeyNamer keyNamer;
+	qt::ThemeColors themeColors;
 	qt::QmlViewModel settingsQml(settings);
 	qt::QmlViewModel branchesQml(branches);
 	qt::QmlViewModel coresQml(cores);
@@ -345,6 +344,7 @@ int main(int argc, char **argv)
 	lua.add(newProject);
 	lua.add(hexEditor);
 	lua.add(controls);
+	lua.add(themes);
 	lua.add(hotkeys);
 	lua.add(settings);
 	lua.add(luaConsole);
@@ -371,6 +371,8 @@ int main(int argc, char **argv)
 		{QStringLiteral("newProject"), QVariant::fromValue<QObject *>(&newProjectQml)},
 		{QStringLiteral("hexEditor"), QVariant::fromValue<QObject *>(&hexEditorQml)},
 		{QStringLiteral("controls"), QVariant::fromValue<QObject *>(&controlsQml)},
+		{QStringLiteral("themes"), QVariant::fromValue<QObject *>(&themesQml)},
+		{QStringLiteral("themeColors"), QVariant::fromValue<QObject *>(&themeColors)},
 		{QStringLiteral("hotkeys"), QVariant::fromValue<QObject *>(&hotkeysQml)},
 		{QStringLiteral("keyNamer"), QVariant::fromValue<QObject *>(&keyNamer)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
@@ -389,6 +391,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("new-project") ? QStringLiteral("newProjectWindow")
 		: args.value(showOpt) == QStringLiteral("hex") ? QStringLiteral("hexEditorWindow")
 		: args.value(showOpt) == QStringLiteral("controls") ? QStringLiteral("controlsWindow")
+		: args.value(showOpt) == QStringLiteral("themes") ? QStringLiteral("themesWindow")
 		: args.value(showOpt) == QStringLiteral("settings") ? QStringLiteral("settingsWindow")
 		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")
 		: args.value(showOpt) == QStringLiteral("branches") ? QStringLiteral("branchesWindow")
