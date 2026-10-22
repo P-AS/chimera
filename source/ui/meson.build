@@ -16,14 +16,15 @@ vm_lib = static_library(
     'viewmodel/src/piano_roll_vm.cpp',
     'viewmodel/src/gamepads.cpp',
     'viewmodel/src/sound.cpp',
+    'viewmodel/src/lua_bridge.cpp',
   ],
-  include_directories: [vm_inc, engine_inc],
+  include_directories: [vm_inc, engine_inc, include_directories('../../extern/lua')],
   dependencies: [thread_dep, dl_dep],
   override_options: ['cpp_std=c++20'],
   pic: true,
 )
 vm_dep = declare_dependency(
-  link_with: [vm_lib, chimera_shared],
+  link_with: [vm_lib, chimera_shared, lua54],
   include_directories: [vm_inc, engine_inc],
   dependencies: [thread_dep],
 )

@@ -4,6 +4,7 @@
  *
  *   chimera-qt [<package> <game>] [--fill <frames>] [--play]
  *              [--measure <seconds>] [--scroll] [--screenshot <path>]
+ *              [--lua <script>] [--describe]
  *
  * --measure runs for that long and prints what it measured, then quits:
  * frames the machine ran, pictures drawn, the window's frame intervals and,
@@ -11,6 +12,7 @@
 
 #include <QCommandLineParser>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -24,6 +26,7 @@
 #include <set>
 #include <vector>
 
+#include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "key_names.hpp"
@@ -120,7 +123,9 @@ int main(int argc, char **argv)
 	QCommandLineOption measureOpt(QStringLiteral("measure"), QStringLiteral("measure for this many seconds, print, quit"), QStringLiteral("seconds"));
 	QCommandLineOption scrollOpt(QStringLiteral("scroll"), QStringLiteral("while measuring, scroll the piano roll all the time"));
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
-	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt});
+	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
+	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
+	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt});
 	args.process(app);
 
 	QtDispatcher dispatcher(&app);
@@ -129,6 +134,21 @@ int main(int argc, char **argv)
 	vm::PianoRollViewModel pianoRoll(dispatcher, inputs, session);
 	qt::QmlViewModel sessionQml(session);
 	qt::QmlViewModel pianoRollQml(pianoRoll);
+
+	/* scripts reach the same view models, by the same names */
+	vm::LuaBridge lua;
+	lua.onLog = [](const std::string &line) {
+		std::printf("lua: %s\n", line.c_str());
+		std::fflush(stdout);
+	};
+	lua.add(session);
+	lua.add(pianoRoll);
+	if (args.isSet(describeOpt))
+	{
+		std::printf("%s", lua.describe().c_str());
+		return 0;
+	}
+	vm::Connection luaFrames = session.frame.changed.connect([&lua] { lua.frameDone(); });
 
 	qmlRegisterType<qt::PictureItem>("Chimera", 1, 0, "PictureItem");
 	qmlRegisterType<qt::PianoRollItem>("Chimera", 1, 0, "PianoRollItem");
@@ -145,6 +165,14 @@ int main(int argc, char **argv)
 	window->installEventFilter(&keys);
 
 	std::string error;
+	if (args.isSet(luaOpt))
+	{
+		QFile file(args.value(luaOpt));
+		if (!file.open(QIODevice::ReadOnly))
+			std::printf("lua: could not read %s\n", qPrintable(args.value(luaOpt)));
+		else if (!lua.run(file.readAll().toStdString(), args.value(luaOpt).toStdString(), error))
+			std::printf("lua: %s\n", error.c_str());
+	}
 	if (args.isSet(fillOpt)) pianoRoll.run("fill", {static_cast<int64_t>(args.value(fillOpt).toLongLong())}, error);
 	const QStringList positional = args.positionalArguments();
 	if (positional.size() >= 2)

@@ -21,6 +21,7 @@
 
 #include "chimera/vm/bindings.hpp"
 #include "chimera/vm/gamepads.hpp"
+#include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 
@@ -141,6 +142,40 @@ void registry()
 	CHECK(!vm.run("add", {int64_t{1}}, error) && error.find("cannot run now") != std::string::npos);
 	CHECK(!vm.run("subtract", {}, error) && error.find("no command") != std::string::npos);
 	CHECK(vm.properties().size() == 2 && vm.commands().size() == 1);
+}
+
+/* A script reaches a view model only through its registry */
+void lua()
+{
+	ManualDispatcher d;
+	Sample vm(d);
+	LuaBridge lua;
+	std::vector<std::string> lines;
+	lua.onLog = [&](const std::string &l) { lines.push_back(l); };
+	lua.add(vm);
+	std::string error;
+	CHECK(lua.run("print(chimera.sample.count, chimera.sample.label)", "t1", error));
+	CHECK(lines.size() == 1 && lines[0] == "0\tx");
+	CHECK(lua.run("chimera.sample.count = 4; print(chimera.sample.add(3))", "t2", error));
+	CHECK(vm.count.get() == 7 && lines.back() == "7");
+	/* the view model's own refusals come back as Lua errors, with its words */
+	CHECK(!lua.run("chimera.sample.label = 'y'", "t3", error) && error.find("cannot be set") != std::string::npos);
+	CHECK(!lua.run("chimera.sample.add('lots')", "t4", error) && error.find("argument 1 cannot be") != std::string::npos);
+	CHECK(!lua.run("return chimera.sample.nothing", "t5", error) && error.find("no property or command nothing") != std::string::npos);
+	CHECK(lua.run("local ok, e = pcall(chimera.sample.add); print(ok, e)", "t6", error));
+	CHECK(lines.back().rfind("false\t", 0) == 0 && lines.back().find("missing") != std::string::npos);
+	/* onFrame functions run on every frame; one that fails is dropped, the others stay */
+	CHECK(lua.run("n = 0; chimera.onFrame(function() n = n + 1 end); chimera.onFrame(function() error('boom') end)", "t7", error));
+	lua.frameDone();
+	lua.frameDone();
+	CHECK(lua.run("print(n)", "t8", error) && lines.back() == "2");
+	int dropped = 0;
+	for (const auto &l : lines) dropped += l.find("onFrame function dropped") != std::string::npos && l.find("boom") != std::string::npos;
+	CHECK(dropped == 1);
+	/* what an MCP server would list: the same names, from the same registry */
+	const std::string d1 = lua.describe();
+	CHECK(d1.find("\"name\": \"sample\"") != std::string::npos && d1.find("\"name\": \"add\"") != std::string::npos &&
+		d1.find("\"params\": [\"amount\"]") != std::string::npos && d1.find("\"settable\": false") != std::string::npos);
 }
 
 void bindings()
@@ -321,6 +356,7 @@ int main(int argc, char **argv)
 	signalsAndProperties();
 	registry();
 	bindings();
+	lua();
 	pianoRollWithoutAMachine();
 	const bool ranPads = gamepads();
 	bool ranMachine = false;
