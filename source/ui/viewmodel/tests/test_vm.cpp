@@ -25,6 +25,7 @@
 #include "chimera/vm/bindings.hpp"
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/lua_bridge.hpp"
+#include "chimera/vm/lua_console_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/settings_vm.hpp"
@@ -182,6 +183,41 @@ void lua()
 	const std::string d1 = lua.describe();
 	CHECK(d1.find("\"name\": \"sample\"") != std::string::npos && d1.find("\"name\": \"add\"") != std::string::npos &&
 		d1.find("\"params\": [\"amount\"]") != std::string::npos && d1.find("\"settable\": false") != std::string::npos);
+}
+
+/* The console: a script run there prints to its rows; a failing one says why */
+void luaConsole()
+{
+	namespace fs = std::filesystem;
+	ManualDispatcher d;
+	Sample vm(d);
+	LuaBridge lua;
+	lua.add(vm);
+	LuaConsoleViewModel console(d, lua);
+	std::string error;
+	RowModel &out = *console.rowLists()[0].model;
+	auto lastLine = [&] {
+		std::string l;
+		fromValue(out.cell(out.rowCount() - 1, 0), l);
+		return l;
+	};
+	console.set("script", std::string("print(chimera.sample.add(2) * 10)"), error);
+	console.run("run", {}, error);
+	CHECK(console.lines.get() == 1 && lastLine() == "20");
+	console.set("script", std::string("chimera.sample.nothing()"), error);
+	console.run("run", {}, error);
+	CHECK(console.lines.get() == 2 && lastLine().rfind("error:", 0) == 0 && lastLine().find("no property or command nothing") != std::string::npos);
+	/* saved and read back */
+	const fs::path file = fs::temp_directory_path() / ("chimera-test-console-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".lua");
+	console.set("script", std::string("print('from the file')"), error);
+	CHECK(console.run("save", {file.string()}, error).has_value() && console.path.get() == file.string());
+	console.set("script", std::string(""), error);
+	CHECK(console.run("load", {file.string()}, error).has_value() && console.script.get() == "print('from the file')");
+	console.run("run", {}, error);
+	CHECK(lastLine() == "from the file");
+	console.run("clear", {}, error);
+	CHECK(console.lines.get() == 0 && out.rowCount() == 0);
+	fs::remove(file);
 }
 
 void bindings()
@@ -675,6 +711,7 @@ int main(int argc, char **argv)
 	registry();
 	bindings();
 	lua();
+	luaConsole();
 	settingsByMachine();
 	pianoRollWithoutAMachine();
 	const bool ranPads = gamepads();

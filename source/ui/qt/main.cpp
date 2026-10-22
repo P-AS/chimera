@@ -32,6 +32,7 @@
 #include <vector>
 
 #include "chimera/vm/lua_bridge.hpp"
+#include "chimera/vm/lua_console_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/settings_vm.hpp"
@@ -155,7 +156,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark, whatever the system says"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: ram-search, settings"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: ram-search, settings, lua"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -197,14 +198,17 @@ int main(int argc, char **argv)
 
 	/* scripts reach the same view models, by the same names */
 	vm::LuaBridge lua;
-	lua.onLog = [](const std::string &line) {
+	/* what scripts print goes to the console window, and to stdout too */
+	vm::LuaConsoleViewModel luaConsole(dispatcher, lua, [](const std::string &line) {
 		std::printf("lua: %s\n", line.c_str());
 		std::fflush(stdout);
-	};
+	});
+	qt::QmlViewModel luaConsoleQml(luaConsole);
 	lua.add(session);
 	lua.add(pianoRoll);
 	lua.add(ramSearch);
 	lua.add(settings);
+	lua.add(luaConsole);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -223,6 +227,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("pianoRoll"), QVariant::fromValue<QObject *>(&pianoRollQml)},
 		{QStringLiteral("ramSearch"), QVariant::fromValue<QObject *>(&ramSearchQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
+		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
 	});
 	engine.load(QUrl(QStringLiteral("qrc:/chimera/Main.qml")));
 	if (engine.rootObjects().isEmpty()) return 1;
@@ -231,7 +236,8 @@ int main(int argc, char **argv)
 	window->installEventFilter(&keys);
 	/* --show ram-search or settings: the tool windows by name */
 	const QString showName = args.value(showOpt) == QStringLiteral("ram-search") ? QStringLiteral("ramSearchWindow")
-		: args.value(showOpt) == QStringLiteral("settings") ? QStringLiteral("settingsWindow") : QString();
+		: args.value(showOpt) == QStringLiteral("settings") ? QStringLiteral("settingsWindow")
+		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow") : QString();
 	if (!showName.isEmpty())
 		if (auto *tool = window->findChild<QQuickWindow *>(showName)) tool->show();
 
@@ -241,8 +247,13 @@ int main(int argc, char **argv)
 		QFile file(args.value(luaOpt));
 		if (!file.open(QIODevice::ReadOnly))
 			std::printf("lua: could not read %s\n", qPrintable(args.value(luaOpt)));
-		else if (!lua.run(file.readAll().toStdString(), args.value(luaOpt).toStdString(), error))
-			std::printf("lua: %s\n", error.c_str());
+		else
+		{
+			/* the script goes into the console too, as if opened and run there */
+			luaConsole.path.set(args.value(luaOpt).toStdString());
+			luaConsole.script.set(file.readAll().toStdString());
+			luaConsole.run("run", {}, error);
+		}
 	}
 	if (args.isSet(fillOpt)) pianoRoll.run("fill", {static_cast<int64_t>(args.value(fillOpt).toLongLong())}, error);
 	const QStringList positional = args.positionalArguments();

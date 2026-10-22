@@ -20,6 +20,7 @@ vm_lib = static_library(
     'viewmodel/src/lua_bridge.cpp',
     'viewmodel/src/ram_search_vm.cpp',
     'viewmodel/src/settings_vm.cpp',
+    'viewmodel/src/lua_console_vm.cpp',
   ],
   include_directories: [vm_inc, engine_inc, include_directories('../../extern/lua')],
   dependencies: [thread_dep, dl_dep],
@@ -61,7 +62,7 @@ if qt_dep.found()
   # the resource compiler runs on the build machine; its Qt may pack with
   # zstd, which a Qt built without zstd (the Windows one) cannot unpack
   qt_rcc = qt6.compile_resources(sources: ['qt/ui.qrc'], extra_args: ['--no-zstd'])
-  executable(
+  chimera_qt = executable(
     'chimera-qt',
     [
       'qt/main.cpp',
@@ -78,5 +79,16 @@ if qt_dep.found()
     override_options: ['cpp_std=c++20'],
     install: true,
     install_dir: 'dll',
+  )
+  # the whole window loads (every QML file, every view model bound), runs a
+  # game for a second and quits cleanly: a QML mistake fails here, not at
+  # someone's desk
+  test(
+    'window loads',
+    chimera_qt,
+    args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
+      '--play', '--measure', '1', '--show', 'lua'],
+    env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software', 'ALSOFT_DRIVERS=null'],
+    timeout: 60,
   )
 endif

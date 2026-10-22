@@ -4,5 +4,6 @@
     <file>Main.qml</file>
     <file>RamSearch.qml</file>
     <file>Settings.qml</file>
+    <file>LuaConsole.qml</file>
   </qresource>
 </RCC>

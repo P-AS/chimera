@@ -13,6 +13,7 @@ ApplicationWindow {
     required property QtObject pianoRoll
     required property QtObject ramSearch
     required property QtObject settings
+    required property QtObject luaConsole
     property url chosenPackage
 
     width: 1280
@@ -51,6 +52,7 @@ ApplicationWindow {
         Menu {
             title: qsTr("&Tools")
             Action { text: qsTr("RAM &Search..."); onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
+            Action { text: qsTr("&Lua Console..."); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
         }
         Menu {
             title: qsTr("Piano &Roll")
@@ -66,6 +68,7 @@ ApplicationWindow {
 
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
     Settings { id: settingsWindow; settings: root.settings; visible: false }
+    LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; visible: false }
 
     FileDialog {
         id: packageDialog
