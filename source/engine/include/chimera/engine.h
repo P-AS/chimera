@@ -2020,6 +2020,13 @@ CE_API int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t fr
  * added. */
 CE_API void ce_mcp_answer(ce_session *s, uint64_t id, const char *text, int32_t is_error);
 
+/* capture_series (issue 355): the frontend plays the movie to each frame of
+ * the plan it was handed (its arguments' "frames") and, on each, has the
+ * engine take the picture with this, saying the frame it is on as it counts
+ * them; the pictures go with its answer. 1, or 0 with the reason (borrowed
+ * until this thread's next call). */
+CE_API int32_t ce_mcp_capture(ce_session *s, uint64_t id, int64_t frame, const char **error_out);
+
 /* advance_until: play forward until a value meets a condition. The frontend
  * does the playing, because the playback position is its own; what the
  * condition means is the engine's.

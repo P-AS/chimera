@@ -32,6 +32,9 @@ Built so far:
   `server_info`, and `status` with the controls' names, the project's
   files, the firmware files in use and where each was found, and the speed
   measured. The tick box is remembered.
+- `press_buttons`, a schedule of presses written into the input as one
+  step, and `capture_series`, pictures on a schedule of the machine's own
+  frames, each saying whether it is blank; `screenshot` says so too.
 
 - `chimera-mcp` is in the Linux and Windows release bundles, in `dll/`, where
   the dialog's set-up command points.
@@ -176,7 +179,7 @@ Looking:
 | `status` | Core, game, frame, movie length, picture size, frame rate, whether changes are allowed, whether the core has stopped, and the names of the controls plugged in. In the window also: the project's file and whether it is saved, whether the machine is paused, the speed measured, the project's files with their paths, and each firmware file in use with its path and where it was found (the project's own, a file chosen for the core before, or the Firmware folder). |
 | `controls` | The machine's buttons and axes by name, with each axis's rest value. |
 | `get_input` | The movie's input over a range of frames. |
-| `screenshot` | The picture of the current frame as a PNG, optionally scaled down. |
+| `screenshot` | The picture of the current frame as a PNG, optionally scaled down, with whether it is blank: its commonest colour and how much of it that colour covers (one colour over 99% or more is blank). |
 | `list_memory` | The memory domains and address buses, with sizes. |
 | `read_memory` | Bytes or typed values at an address. |
 | `registers` | The CPU registers, where the core gives them. |
@@ -209,6 +212,8 @@ Changes:
 | `advance_until` | Plays the movie forward until a memory value or a property meets a condition (equal, greater, changed, ...) and stops on that frame. It stops at the movie's end or after `max_frames` otherwise, and says which. |
 | `set_input` | Replaces the input from a frame on, one line a frame as `get_input` returns them, in printable ASCII. Past the movie's end it adds frames, starting at most 100000 frames past it. |
 | `set_buttons` | Presses or releases buttons, and sets axes, by name over a range of frames. Controls not named keep what they had. Like `set_input` it starts at most 100000 frames past the movie's end. A movie made with an older package may not have a column for a control (its LogKey does not name it): without a window the control is added to the movie, a column on every line; with the window the call is refused and says which control. |
+| `press_buttons` | Presses buttons on a schedule: each press its buttons, its frame (or so many frames from the frame the machine is on) and how long it is held. All of it is written into the input as one step; buttons not named keep what they had. |
+| `capture_series` | Plays the movie and takes a picture on each of `count` frames, `every` frames (or seconds of the machine's own time) apart. Past the movie's end empty frames are added first, one step. Each picture says whether it is blank; with `folder` each is also written there as a PNG at its own size, and a file already there stops the series before it starts. |
 | `insert_frames` / `delete_frames` | Changes the movie's length at a frame. |
 | `undo` | Undoes the last step of the undo history, the same as Edit > Undo. |
 | `save_branch` / `load_branch` | Keeps or restores a branch. |

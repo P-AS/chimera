@@ -1,6 +1,7 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
 
 using Chimera.Client.Common;
 using Chimera.Common;
@@ -27,6 +28,13 @@ namespace Chimera.Client.GUI
 		/// <summary>What the window was last asked to move to, by <see cref="McpWindow"/>.</summary>
 		private (int Start, int Frame, bool Until) _mcpAsked;
 
+		/// <summary>
+		/// The frames a capture_series still has to take pictures of, the next first; null when none is
+		/// running. Each is reached by a seek of its own (<see cref="_mcpSeek"/>), and the picture is taken
+		/// when the seek has stopped there, with the frame drawn.
+		/// </summary>
+		private Queue<int>? _mcpPictures;
+
 		private IntPtr McpSession => Emulator is WaterboxCore core ? core.SessionHandle : IntPtr.Zero;
 
 		/// <summary>TAStudio as the MCP server's tools see it (<see cref="IMcpWindow"/>).</summary>
@@ -52,6 +60,12 @@ namespace Chimera.Client.GUI
 			{
 				_main._mcpAsked = (Frame, frame, true);
 				_main.Tools.TAStudio.GoToFrame(frame);
+			}
+
+			public void TakePictures(IReadOnlyList<int> frames)
+			{
+				_main._mcpPictures = new(frames);
+				SeekTo(frames[0]);
 			}
 
 			public int SaveBranch(string note) => _main.Tools.TAStudio.AddBranchWithNote(note);
@@ -188,6 +202,30 @@ namespace Chimera.Client.GUI
 				{
 					EngineMcp.Answer(session, seek.Id, "The project was closed while the playback position was moving.", isError: true);
 				}
+				else if (_mcpPictures is { } pictures)
+				{
+					// on a frame of a capture_series: its picture, then on to the next
+					string? failed = null;
+					if (window.Frame != pictures.Peek())
+					{
+						failed = $"The playback position stopped on frame {window.Frame}, not on frame {pictures.Peek()}: the pictures were interrupted.";
+					}
+					else if (!EngineMcp.Capture(session, seek.Id, window.Frame, out var why))
+					{
+						failed = $"The picture of frame {window.Frame} was not taken: {why}";
+					}
+					else
+					{
+						pictures.Dequeue();
+						if (pictures.Count is not 0)
+						{
+							window.SeekTo(pictures.Peek());
+							_mcpSeek = (seek.Id, _mcpAsked.Start, _mcpAsked.Frame, false);
+							return;
+						}
+					}
+					EngineMcp.Answer(session, seek.Id, failed ?? McpHostTools.PicturesAnswer(window, tasMovie), isError: failed is not null);
+				}
 				else if (seek.Until)
 				{
 					EngineMcp.Answer(session, seek.Id, McpHostTools.UntilAnswer(window, tasMovie, seek.Start, seek.Frame), isError: false);
@@ -198,6 +236,7 @@ namespace Chimera.Client.GUI
 					EngineMcp.Answer(session, seek.Id, arrived, interrupted);
 				}
 				_mcpSeek = null;
+				_mcpPictures = null;
 			}
 			if (!EngineMcp.Pending) return;
 			McpChimera chimera = new(this);

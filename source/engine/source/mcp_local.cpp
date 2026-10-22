@@ -913,6 +913,43 @@ McpResult McpLocal::runHost(const std::string &tool, const std::string &argument
 			}
 		}
 	}
+	else if (tool == "capture_series")
+	{
+		/* the plan the engine made: past the movie's end empty frames are
+		 * added first, then each frame is played to and its picture taken */
+		McpShotPlan plan;
+		std::string folder;
+		const cJSON *blank = cJSON_GetObjectItemCaseSensitive(arguments, "blank");
+		if (!mcpReadShotPlan(argumentsJson, plan) || !cJSON_IsString(blank)) why = "The step to apply is not one the engine makes.";
+		else if (!plan.folder.empty() && mayWrite(plan.folder, folder, why)) plan.folder = folder;
+		std::vector<std::string> facts, pictures;
+		if (why.empty() && plan.frames.back() > length)
+		{
+			rememberForUndo();
+			while (ce_movie_log_count(movie) < plan.frames.back()) ce_movie_log_add(movie, blank->valuestring);
+			movieChanged(length, why);
+		}
+		for (size_t n = 1; why.empty() && n <= plan.frames.size(); n++)
+		{
+			std::string fact, picture;
+			if (landOn(plan.frames[n - 1], why) && mcpTakeShot(session, plan, n, ce_session_frame(session), fact, picture, why))
+			{
+				facts.push_back(std::move(fact));
+				pictures.push_back(std::move(picture));
+			}
+		}
+		if (why.empty())
+		{
+			cJSON_AddNumberToObject(out, "frame", static_cast<double>(ce_session_frame(session)));
+			cJSON_AddNumberToObject(out, "movie_length", static_cast<double>(ce_movie_log_count(movie)));
+			const std::string answer = printed(out);
+			cJSON_Delete(out);
+			cJSON_Delete(arguments);
+			McpResult result;
+			result.content = mcpShotsContent(answer, facts, pictures);
+			return result;
+		}
+	}
 	else
 	{
 		why = "This server does not run the tool '" + tool + "'.";

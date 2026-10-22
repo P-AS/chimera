@@ -38,6 +38,7 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -271,6 +272,14 @@ if images:
         check("screenshot is the last frame's picture", (width, height, pixels) == tga_pixels(tga_path))
     half = facts("screenshot", max_width=width // 2)
     check("screenshot scales a picture down to max_width", half.get("width") == width // 2 and half.get("picture_width") == width)
+    # whether the picture is blank, by its commonest colour (issue 355)
+    colours = {}
+    for i in range(0, len(pixels), 3):
+        colours[pixels[i:i + 3]] = colours.get(pixels[i:i + 3], 0) + 1
+    commonest = max(colours, key=colours.get)
+    check("screenshot says the picture is not blank, and its commonest colour",
+          half.get("blank") is False and half.get("dominant_colour") == "#%02X%02X%02X" % tuple(commonest)
+          and abs(half.get("coverage", -1) - colours[commonest] / (width * height)) < 0.002)
 
 if holder:
     # the tools the movie's holder runs
@@ -371,6 +380,35 @@ if holder and changes:
     check("status says the project has unsaved changes", facts("status").get("unsaved_changes") is True)
     facts("undo")
     check("undo takes the whole edit back", all_input() == movie)
+    # buttons pressed on a schedule (issue 355): one step, the buttons not named kept
+    pressed = facts("press_buttons", presses=[{"frame": 5, "buttons": ["P1 A"], "hold": 3},
+                                              {"frame": 7, "buttons": ["P1 B", "P1 Start"]}])
+    edited = all_input()
+
+    def with_pressed(line, letters):
+        flat = list(line.replace("|", ""))
+        for column, letter in letters:
+            flat[column] = letter
+        return flat
+
+    expected = [with_pressed(movie[i], ([(4, "A")] if 5 <= i < 8 else []) + ([(5, "B"), (7, "S")] if 7 <= i < 13 else []))
+                for i in range(last)]
+    check("press_buttons presses each button on its frames and leaves the rest as it was",
+          [list(line.replace("|", "")) for line in edited] == expected)
+    check("and answers with the frames it wrote", pressed.get("frame") == 5 and pressed.get("count") == 8)
+    facts("undo")
+    check("one undo takes all the presses back", all_input() == movie)
+    facts("seek", frame=10)
+    facts("press_buttons", presses=[{"after": 2, "buttons": ["P1 A"], "hold": 1}])
+    check("a press 'after' frames counts from the frame the machine is on",
+          [list(line.replace("|", "")) for line in all_input()]
+          == [with_pressed(movie[i], [(4, "A")] if i == 12 else []) for i in range(last)])
+    facts("undo")
+    error, text, _ = call("press_buttons", presses=[{"frame": 1, "after": 1, "buttons": ["P1 A"]}])
+    check("a press with both 'frame' and 'after' is refused", error and "one of them" in text)
+    error, text, _ = call("press_buttons", presses=[{"frame": 1, "buttons": ["P1 A"]}, {"frame": 2, "buttons": ["No Such Button"]}])
+    check("a press of a button that does not exist is refused, and names it", error and "Press 2" in text and "No Such Button" in text)
+    check("the refused presses changed nothing", all_input() == movie)
     error, text, _ = call("set_buttons", frame=0, buttons={"No Such Button": True})
     check("set_buttons names a button that does not exist", error and "No Such Button" in text)
     # a list of names where names to values belong once ended the program serving the call
@@ -443,6 +481,55 @@ if holder and changes:
     check("advance_until takes a value that is not a number only for 'changed'", error and "'changed'" in text)
     facts("watch", watches=[])
     check("with watching ended, a seek's answer carries no watches", "watches" not in facts("seek", frame=3))
+
+    # pictures taken on a schedule of the machine's own frames (issue 355)
+    facts("seek", frame=0)
+    error, text, content = call("capture_series", every=10, count=3, first=5)
+    answer = json.loads(text) if not error else {}
+    shots = answer.get("shots", [])
+    check("capture_series takes a picture on each frame of the schedule",
+          not error and [shot.get("frame") for shot in shots] == [5, 15, 25] and [shot.get("n") for shot in shots] == [1, 2, 3]
+          and len([c for c in content if c["type"] == "image"]) == 3)
+    check("each says whether it is blank", all(shot.get("blank") is False and 0 < shot.get("coverage", 0) <= 1 for shot in shots))
+    check("and it stops on the last", answer.get("frame") == 25 and facts("status").get("frame") == 25)
+    pictures = [c for c in content if c["type"] == "image"]
+    _, _, now_content = call("screenshot", max_width=320)
+    now_pictures = [c for c in now_content if c["type"] == "image"]
+    check("each picture is the frame's own: the last is what screenshot shows on that frame",
+          pictures and now_pictures and png_pixels(base64.b64decode(pictures[-1]["data"])) == png_pixels(base64.b64decode(now_pictures[0]["data"])))
+    check("frames the movie has are played, not added", all_input() == movie)
+    fps = facts("status").get("frames_per_second", 60)
+    facts("seek", frame=0)
+    half_second = facts("capture_series", every=0.5, unit="seconds", count=1, images=False)
+    check("in seconds, the frame nearest is the machine's own time",
+          [shot.get("frame") for shot in half_second.get("shots", [])] == [round(0.5 * fps)])
+    # without a window, pictures are written only inside the work folder, like everything else
+    folder = os.path.join(os.environ["MCP_TEST_WORK"], "shots") if local else tempfile.mkdtemp(prefix="chimera-mcp-shots-")
+    os.makedirs(folder, exist_ok=True)
+    if local:
+        outside = tempfile.mkdtemp(prefix="chimera-mcp-outside-")
+        error, text, _ = call("capture_series", every=1, count=1, folder=outside)
+        check("without a window, pictures are written nowhere but the work folder", error and "work folder" in text and os.listdir(outside) == [])
+        os.rmdir(outside)
+    written = facts("capture_series", every=1, count=2, first=0, folder=folder, name="walk-{n}-{frame}.png", images=False)
+    files = sorted(os.listdir(folder))
+    frame0 = written.get("shots", [{}])[0].get("frame", -1)
+    check("with a folder, each picture is written there at its own size",
+          files == ["walk-01-%d.png" % frame0, "walk-02-%d.png" % (frame0 + 1)]
+          and png_pixels(open(os.path.join(folder, files[0]), "rb").read())[:2] == (status["picture"]["width"], status["picture"]["height"]))
+    facts("seek", frame=frame0)
+    error, text, _ = call("capture_series", every=1, count=2, first=0, folder=folder, name="walk-{n}-{frame}.png")
+    check("a file that is already there is not replaced, and no picture is taken", error and "already" in text)
+    shutil.rmtree(folder)
+    facts("seek", frame=last)
+    beyond = facts("capture_series", every=2, count=2)
+    check("past the movie's end, empty frames are added first",
+          [shot.get("frame") for shot in beyond.get("shots", [])] == [last + 2, last + 4] and len(all_input()) == last + 4
+          and all_input()[:last] == movie)
+    facts("undo")
+    check("which one undo takes back", all_input() == movie)
+    error, text, _ = call("capture_series", every=10, count=51)
+    check("capture_series takes at most 50 pictures", error and "50" in text)
 
     # the playback position: back, then to the end again - and after all of the above the
     # machine at the movie's last frame holds the reference memory

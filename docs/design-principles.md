@@ -10718,3 +10718,36 @@ was found, and the end-to-end test: in the real window an agent saves,
 refuses to replace another file and then replaces it, runs and pauses the
 machine, and is refused a close with unsaved changes before closing with
 `discard_unsaved`. Each test failed with its fix taken out.
+
+## Buttons and pictures on the machine's own schedule (2026-10-22)
+
+The second part of issue 355. An agent pressed Start with `set_buttons`
+and took pictures with `screenshot`, one call at a time, so its schedule
+ran on its own clock: presses meant for 10 s and 20 s landed at 14 s and
+23 s, and games never left their title screens. Four runs saved only black
+or one-colour pictures, which nobody saw until afterwards.
+
+- `press_buttons` takes the whole schedule in one call. The engine writes
+  it into the movie's input as one step of the undo history: each press on
+  its frames, buttons not named as they were. It is the input, so it plays
+  the same way every time. Its lines are built by the same code as
+  `set_buttons`' now.
+- `capture_series` plays to each frame of a schedule, counted in frames or
+  in seconds of the machine's own time, and takes a picture there. The
+  engine plans the frames and takes the pictures; the window only plays to
+  each frame, one seek at a time, so each picture is of a frame that was
+  drawn. Past the movie's end empty frames are added first, as one step.
+  Pictures can also be written to a folder at their own size. A file that
+  is already there stops the series before anything is played, since
+  nothing asks.
+- Every picture, and `screenshot`'s, says whether it is blank: its
+  commonest colour and how much of it that colour covers, blank at 99% or
+  more.
+
+Tested: 1 host test (frames added past the end, in one step), and the
+end-to-end test in the window and without one: presses on their frames
+and nothing else, `after` counted from the frame the machine is on, three
+pictures on frames 5, 15 and 25, half a second as 30 frames, files written
+at the picture's size and not replaced, frames added past the end and taken
+back by one undo, and the commonest colour of a picture checked against
+its pixels. Each failed with its fix taken out.

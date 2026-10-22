@@ -41,6 +41,12 @@ namespace Chimera.Client.Common
 
 		/// <summary>Starts playing forward to a frame, to stop earlier when the condition is met.</summary>
 		void PlayUntil(int frame);
+
+		/// <summary>
+		/// capture_series: plays the movie to each of these frames in turn, and on each has the engine take its
+		/// picture. The call is answered after the last (<see cref="McpHostTools.PicturesAnswer"/>).
+		/// </summary>
+		void TakePictures(IReadOnlyList<int> frames);
 	}
 
 	/// <summary>
@@ -153,6 +159,8 @@ namespace Chimera.Client.Common
 						return Seek(movie, window, arguments, out isError);
 					case "advance_until":
 						return AdvanceUntil(movie, window, arguments, argumentsJson, out isError);
+					case "capture_series":
+						return CaptureSeries(movie, window, arguments, out isError);
 					case "save_branch":
 						return SaveBranch(window, arguments, out isError);
 					case "load_branch":
@@ -445,6 +453,34 @@ namespace Chimera.Client.Common
 			// answered when the window has stopped: McpHostTools.UntilAnswer
 			return null;
 		}
+
+		/// <summary>
+		/// capture_series, as the engine planned it: the frames to take pictures of. Frames past the movie's end
+		/// are added first, empty and in one step of the undo history, so that playing reaches every one.
+		/// </summary>
+		private static string? CaptureSeries(ITasMovie movie, IMcpWindow? window, JObject step, out bool isError)
+		{
+			isError = false;
+			if (window is null) return Refuse("TAStudio is not open, so the movie cannot be played.", out isError);
+			if (step["frames"] is not JArray { Count: > 0 } list || list.Any(static f => f.Type is not JTokenType.Integer))
+			{
+				return Refuse("The step to apply is not one the engine makes.", out isError);
+			}
+			var frames = list.Select(static f => (int) f).ToList();
+			var last = frames.Max();
+			if (last > movie.InputLogLength)
+			{
+				movie.ChangeLog.BeginNewBatch(Label(step));
+				movie.InsertEmptyFrame(movie.InputLogLength, last - movie.InputLogLength);
+			}
+			window.TakePictures(frames);
+			// answered after the last picture: McpHostTools.PicturesAnswer
+			return null;
+		}
+
+		/// <summary>The answer to capture_series once the last picture is taken; the engine adds the pictures.</summary>
+		public static string PicturesAnswer(IMcpWindow window, ITasMovie movie)
+			=> new JObject { ["frame"] = window.Frame, ["movie_length"] = movie.InputLogLength }.ToString(Formatting.None);
 
 		private static string SaveBranch(IMcpWindow? window, JObject arguments, out bool isError)
 		{
