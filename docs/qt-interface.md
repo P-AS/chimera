@@ -26,12 +26,13 @@ made from.
 | View model | What it does | Window |
 |---|---|---|
 | session | open a game or a project, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone, settings applied live or by restarting | main window |
-| pianoRoll | a row a frame and a column a button; press, drag, paint, fill; follows the current frame; greenzone and lag colours | main window (a C++ item draws it) |
+| pianoRoll | a row a frame and a column a button; press, drag, paint, fill; undo and redo (a stroke is one step); markers; follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
+| branches | other versions of the movie, kept in the project; loading one replays only from where the two differ | Branches |
 | ramSearch | the engine's RAM Search, updated after every frame, with undo | RAM Search (Qt's own table) |
 | settings | the package's declared settings, those that apply, edits applied live or by restarting | Settings (a form generated from the declaration) |
 | luaConsole | edit, run, open and save scripts; their output | Lua Console |
 
-The tests drive the view models with no window: 150 checks on the
+The tests drive the view models with no window: 193 checks on the
 synthetic core. They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
 whole window off-screen and runs it for a second. Every new check was
@@ -102,7 +103,7 @@ which QML replaces):
 | Area | Lines | Becomes |
 |---|---|---|
 | config (settings, wizard, firmware, Core Manager, paths) | 14,979 (3,783 Designer) | view models over the engine's project, package and firmware calls; QML forms |
-| TAStudio (piano roll, branches, markers, bookmarks, undo) | 11,185 + 363 | pianoRoll and session (started), branches, markers, undo history |
+| TAStudio (piano roll, branches, markers, bookmarks, undo) | 11,185 + 363 | pianoRoll, session and branches (markers, branches and undo done) |
 | MainForm (menus, files, hotkeys, movies, MCP hooks) | 10,167 | the main window and session (started), hotkeys, recent files |
 | movie (formats, import, Bk2) | 7,548 + 1,045 | mostly the engine's already (movie log, import); the rest moves there |
 | Lua (console, libraries, NLua) | 7,005 + 4,197 | the console (started), the libraries as view model commands, Lua 5.4 directly |
@@ -118,9 +119,10 @@ the prototype's ratio holds. The prototype is 4,000 lines of view models,
 
 A suggested order, each step usable on its own:
 
-1. **TAStudio's remaining parts:** markers, branches, undo, saving
-   projects with everything they hold (bookmarks, subtitles, headers).
-   This is what a TAS author lives in.
+1. **TAStudio's remaining parts.** Markers, branches and undo are done.
+   Still to do: a state file per branch, so loading one is instant, and
+   saving everything else a project holds (subtitles, headers, the piano
+   roll's layout). This is what a TAS author lives in.
 2. **New project wizard, firmware and Core Manager.** Opening anything
    without the C# window first.
 3. **RAM Watch, cheats, hex editor.**
