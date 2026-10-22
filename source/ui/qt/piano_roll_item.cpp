@@ -2,6 +2,8 @@
 
 #include <QElapsedTimer>
 #include <QFontMetrics>
+#include <QGuiApplication>
+#include <QPalette>
 #include <QPainter>
 
 #include <algorithm>
@@ -100,10 +102,21 @@ void PianoRollItem::paint(QPainter *p)
 	timer.start();
 
 	/* TAStudio's meanings: the current frame blue, the greenzone green, a
-	 * lag frame in it red, frames not run with their inputs plain */
-	const QColor base(0xff, 0xff, 0xff), grid(0xd8, 0xdc, 0xe2), header(0xe8, 0xeb, 0xf0),
-		text(0x20, 0x24, 0x2a), lit(0x2f, 0x6f, 0xd6), now(0xbf, 0xd9, 0xff), green(0xd9, 0xf2, 0xd4),
-		lag(0xf6, 0xd0, 0xcc), plain(0xff, 0xff, 0xff);
+	 * lag frame in it red, frames not run with their inputs plain. The
+	 * colours follow the system's light or dark theme: each meaning is a
+	 * tint mixed into the theme's own background. */
+	const QPalette pal = QGuiApplication::palette();
+	const QColor base = pal.color(QPalette::Base), text = pal.color(QPalette::Text);
+	const bool dark = base.lightnessF() < 0.5;
+	auto tint = [&](QColor c, double amount) {
+		return QColor::fromRgbF(base.redF() + (c.redF() - base.redF()) * amount,
+			base.greenF() + (c.greenF() - base.greenF()) * amount,
+			base.blueF() + (c.blueF() - base.blueF()) * amount);
+	};
+	const double a = dark ? 0.32 : 0.22;
+	const QColor plain = base, header = pal.color(QPalette::Button), grid = tint(text, 0.18),
+		lit = pal.color(QPalette::Highlight), now = tint(QColor(0x3d, 0x8b, 0xff), a + 0.08),
+		green = tint(QColor(0x3c, 0xc0, 0x3c), a), lag = tint(QColor(0xe0, 0x40, 0x30), a);
 	const int w = static_cast<int>(width()), h = static_cast<int>(height());
 	p->fillRect(0, 0, w, h, base);
 	if (rows_ == nullptr) return;
@@ -137,7 +150,7 @@ void PianoRollItem::paint(QPainter *p)
 		const int y = rowHeight_ * (i + 1);
 		const uint32_t flags = rows.rowFlags(row);
 		const QColor back = row == current_ ? now : (flags & 2) ? ((flags & 1) ? lag : green) : plain;
-		p->fillRect(0, y, w, rowHeight_, (row % 2 && row != current_) ? back.darker(103) : back);
+		p->fillRect(0, y, w, rowHeight_, (row % 2 && row != current_) ? (dark ? back.lighter(112) : back.darker(103)) : back);
 		p->setPen(text);
 		p->drawText(QRect(4, y, fx - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, QString::number(row));
 		for (int c = 0; c < columns; c++)

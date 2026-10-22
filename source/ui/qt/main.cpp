@@ -18,6 +18,8 @@
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QPalette>
+#include <QStyleHints>
 #include <QTimer>
 
 #include <algorithm>
@@ -150,9 +152,34 @@ int main(int argc, char **argv)
 	QCommandLineOption scrollOpt(QStringLiteral("scroll"), QStringLiteral("while measuring, scroll the piano roll all the time"));
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
+	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark, whatever the system says"), QStringLiteral("scheme"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
-	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt});
+	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt});
 	args.process(app);
+	if (args.isSet(schemeOpt))
+	{
+		const bool dark = args.value(schemeOpt) == QStringLiteral("dark");
+		QGuiApplication::styleHints()->setColorScheme(dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+		/* a platform with no dark theme of its own gets a plain dark palette */
+		if (dark && QGuiApplication::palette().color(QPalette::Window).lightnessF() > 0.5)
+		{
+			QPalette p;
+			const QColor window(0x2b, 0x2d, 0x30), base(0x1e, 0x1f, 0x22), text(0xe6, 0xe6, 0xe6);
+			p.setColor(QPalette::Window, window);
+			p.setColor(QPalette::WindowText, text);
+			p.setColor(QPalette::Base, base);
+			p.setColor(QPalette::AlternateBase, window);
+			p.setColor(QPalette::Text, text);
+			p.setColor(QPalette::Button, window);
+			p.setColor(QPalette::ButtonText, text);
+			p.setColor(QPalette::Highlight, QColor(0x3d, 0x8b, 0xff));
+			p.setColor(QPalette::HighlightedText, Qt::white);
+			p.setColor(QPalette::ToolTipBase, window);
+			p.setColor(QPalette::ToolTipText, text);
+			p.setColor(QPalette::PlaceholderText, QColor(0x8a, 0x8a, 0x8a));
+			QGuiApplication::setPalette(p);
+		}
+	}
 
 	QtDispatcher dispatcher(&app);
 	vm::InputLog inputs;
