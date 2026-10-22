@@ -43,6 +43,11 @@ jobs:
         # network API fails the push in seconds.
         run: ./tools/check-no-network.sh
 
+      - name: The cores' release notes
+        # tools/release-changes.py writes the "What changed" list on every
+        # core's release page (issue 357); its own check needs nothing built
+        run: python3 tools/release-changes.py --self-test
+
       - name: Check out miniBox
         run: git submodule update --init extern/chimera-common-minibox
 

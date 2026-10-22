@@ -40,6 +40,12 @@ will drift, so the logic lives once, here, in two files:
 * `.github/workflows/publish-core.yml` - a `workflow_call` wrapper that
   downloads the gated artifact and runs that script.
 
+A release page ends with **What changed**: every commit since the core's last
+nightly, each linked, with the Chimera issues its subject names
+(`chimera#352`) linked to Chimera's issues rather than the core's own (issue
+357). `tools/release-changes.py` writes it from the core's history, which the
+workflow checks out whole; CI runs its `--self-test`.
+
 A core's own workflow adds one job:
 
 ```yaml

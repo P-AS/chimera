@@ -10621,3 +10621,19 @@ A file found this way says "found by size and name". An entry with a hash is
 still found by its hash and nothing else. The hints sit in the package, so a
 core decides what marks its files; melonDS declares them for its unpinned
 entries.
+
+## A core's release page says what changed since its last nightly (2026-10-22)
+
+Every nightly's page said the same thing but its hashes, so finding what a
+nightly changed meant reading the core's history by hand (issue 357). Now each
+release, nightly and development build alike, lists the commits since the
+core's last nightly, each linked to the commit. The cores' commit subjects
+name Chimera's issues as `chimera#352`, which GitHub does not link on another
+repository's page, and a bare `#352` there would be the core's own issue 352;
+so those are linked to Chimera's issues and a bare `#N` is left for GitHub.
+Long lists stop at 50 with a link to the rest. It is written by
+`tools/release-changes.py`, called from `tools/publish-core.sh`, which every
+core's publishing job runs, so all cores have it from their next release
+without a change of their own. Measured: on the X68000 core's history it lists
+the two commits since nightly-2026-10-15, with chimera#352, #351 and #336
+linked; outside a checkout it adds nothing.
