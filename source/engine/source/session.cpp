@@ -4096,6 +4096,21 @@ int32_t ce_session_movie_entry_decode(
 	return 0;
 }
 
+int32_t ce_session_movie_entry_encode(
+	const ce_session *s, uint64_t buttons, const int32_t *axes, char *out, int32_t cap)
+{
+	std::vector<uint8_t> states(s->cfg.buttons.size(), 0);
+	for (size_t i = 0; i < states.size() && i < 64; i++) states[i] = (buttons >> i) & 1u;
+	const std::string line = s->entries().generate(states.data(), axes, s->cfg.mnemonics);
+	if (out != nullptr && cap > 0)
+	{
+		const size_t n = std::min(line.size(), static_cast<size_t>(cap - 1));
+		std::memcpy(out, line.data(), n);
+		out[n] = '\0';
+	}
+	return static_cast<int32_t>(line.size());
+}
+
 int32_t ce_session_movie_entry_decode_wide(
 	const ce_session *s, const char *entry, uint8_t *states_out, int32_t *axes_out)
 {

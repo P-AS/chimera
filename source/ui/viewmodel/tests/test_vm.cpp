@@ -1,13 +1,16 @@
 /* The view models with no window: what a script, the MCP server or a test
  * sees. No Qt is linked here; the dispatcher is drained by hand.
  *
- *   test_vm [<synth-box package> <synth test rom>]
+ *   test_vm [<synth-box package> <synth test rom> [<synth movies dir> <synth goldens dir>]]
  *
  * Without the package and rom the machine tests are skipped (exit 77 when
  * nothing else ran). */
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <cstdio>
 #include <deque>
 #include <functional>
@@ -24,6 +27,7 @@
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
+#include "chimera/engine.h"
 
 using namespace chimera::vm;
 
@@ -395,6 +399,116 @@ bool machine(const char *package, const char *rom)
 	return true;
 }
 
+std::string readFile(const std::filesystem::path &p)
+{
+	std::ifstream in(p, std::ios::binary);
+	std::stringstream ss;
+	ss << in.rdbuf();
+	return ss.str();
+}
+
+/* A project: the synthetic game's winning movie, played to its end, leaves
+ * the machine's memory exactly as the witness's recorded run does; saved and
+ * opened again, it holds the same inputs, and an edit survives the trip. */
+bool project(const char *package, const char *rom, const std::string &movies, const std::string &goldens)
+{
+	namespace fs = std::filesystem;
+	const std::string movie = readFile(movies + "/gridWalker.win.txt");
+	const std::string ram = readFile(goldens + "/gridWalker.win.ram.bin"), vram = readFile(goldens + "/gridWalker.win.vram.bin");
+	if (movie.empty() || ram.empty() || vram.empty())
+	{
+		std::printf("SKIP the project tests: the witness's movie or goldens are missing\n");
+		return false;
+	}
+	std::vector<std::string> entries;
+	std::istringstream lines(movie);
+	for (std::string l; std::getline(lines, l);)
+	{
+		if (!l.empty() && l.back() == '\r') l.pop_back();
+		if (!l.empty() && l[0] == '|') entries.push_back(l);
+	}
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-vm-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "gridWalker.testrom");
+	char sha[41];
+	const std::string romBytes = readFile(rom);
+	ce_sha1_hex(reinterpret_cast<const uint8_t *>(romBytes.data()), romBytes.size(), sha);
+	std::string input = "[Input]\nLogKey:#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|\n";
+	for (const auto &e : entries) input += e + "\n";
+	input += "[/Input]\n";
+	std::string escaped;
+	for (char c : input) escaped += c == '\n' ? std::string("\\n") : std::string(1, c);
+	{
+		std::ofstream out(dir / "p.chimeraProject", std::ios::binary);
+		out << "{\"title\": \"gridWalker.win\", \"core\": {\"name\": \"Synth\", \"version\": \"\", \"sha1\": \"\"}, "
+			<< "\"headers\": {\"MovieVersion\": \"Chimera Project File v1.1\", \"Platform\": \"Synth\"}, "
+			<< "\"files\": [{\"name\": \"gridWalker.testrom\", \"sha1\": \"" << sha << "\", \"slot\": \"rom\"}], "
+			<< "\"input\": \"" << escaped << "\"}";
+	}
+
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	std::string error;
+	auto openIt = [&](const fs::path &p) {
+		std::string e;
+		const int64_t was = session.opens.get();
+		session.run("openProject", {(p).string(), std::string(package)}, e);
+		return d.until([&] { return session.opens.get() > was && session.projectPath.get() == p.string(); }, 60);
+	};
+	CHECK(openIt(dir / "p.chimeraProject"));
+	if (!session.isOpen.get())
+	{
+		std::fprintf(stderr, "FAIL: the project did not open: %s\n", session.status.get().c_str());
+		failures++;
+		return true;
+	}
+	CHECK(session.projectTitle.get() == "gridWalker.win");
+	CHECK(roll.frameCount.get() == static_cast<int64_t>(entries.size()));
+	CHECK(inputs.at(0) == 0 && inputs.at(1) == (uint64_t{1} << 1)); /* "|.D......|" is P1 Down */
+
+	/* played to its end: the witness's memory, byte for byte */
+	const int64_t end = static_cast<int64_t>(entries.size());
+	session.run("seek", {end}, error);
+	CHECK(d.until([&] { return session.frame.get() == end; }, 30));
+	CHECK(session.readDomain("RAM") == std::vector<uint8_t>(ram.begin(), ram.end()));
+	CHECK(session.readDomain("VRAM") == std::vector<uint8_t>(vram.begin(), vram.end()));
+	/* the comparison can fail: without its Down presses the movie ends elsewhere
+	 * (it does not notice a shift of one frame: this movie ends the same way) */
+	roll.run("paint", {int64_t{0}, end - 1, int64_t{1}, false}, error);
+	CHECK(d.until([&] { return session.frame.get() == end && session.greenEnd.get() == end; }, 30));
+	CHECK(session.readDomain("RAM") != std::vector<uint8_t>(ram.begin(), ram.end()));
+	CHECK(openIt(dir / "p.chimeraProject"));
+
+	/* saved and opened again: the same inputs, and the same input text */
+	session.run("saveProject", {(dir / "saved.chimeraProject").string()}, error);
+	CHECK(d.until([&] { return session.projectPath.get() == (dir / "saved.chimeraProject").string(); }, 20));
+	std::vector<uint64_t> before(entries.size()), after(entries.size());
+	inputs.read(0, before);
+	CHECK(openIt(dir / "saved.chimeraProject"));
+	inputs.read(0, after);
+	CHECK(before == after && inputs.size() == end);
+	CHECK(readFile(dir / "saved.chimeraProject").find("|.D......|") != std::string::npos);
+
+	/* an edit survives the trip: P1 A on frame 10 */
+	const std::string unedited = readFile(dir / "saved.chimeraProject");
+	roll.run("toggle", {int64_t{10}, int64_t{4}}, error);
+	session.run("saveProject", {std::string()}, error);
+	CHECK(d.until([&] { return readFile(dir / "saved.chimeraProject") != unedited; }, 20));
+	CHECK(openIt(dir / "p.chimeraProject"));
+	CHECK(inputs.at(10) == before[10]);
+	CHECK(openIt(dir / "saved.chimeraProject"));
+	CHECK(inputs.at(10) == (before[10] | (uint64_t{1} << 4)));
+	/* and a project whose file is missing says which */
+	fs::remove(dir / "gridWalker.testrom");
+	session.run("openProject", {(dir / "p.chimeraProject").string(), std::string(package)}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	CHECK(session.status.get().find("gridWalker.testrom (not found)") != std::string::npos);
+	fs::remove_all(dir);
+	return true;
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -410,6 +524,7 @@ int main(int argc, char **argv)
 	{
 		FILE *p = std::fopen(argv[1], "rb"), *r = std::fopen(argv[2], "rb");
 		if (p != nullptr && r != nullptr) ranMachine = machine(argv[1], argv[2]);
+		if (p != nullptr && r != nullptr && argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 		else std::printf("SKIP the machine tests: %s or %s is missing\n", argv[1], argv[2]);
 		if (p) std::fclose(p);
 		if (r) std::fclose(r);

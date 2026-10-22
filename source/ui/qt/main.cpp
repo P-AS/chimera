@@ -2,7 +2,7 @@
  * session and piano roll view models. Everything a window does here goes
  * through the view models' registries, so a script could do the same.
  *
- *   chimera-qt [<package> <game>] [--fill <frames>] [--play]
+ *   chimera-qt [<package> <game> | <project> <package>] [--fill <frames>] [--play]
  *              [--measure <seconds>] [--scroll] [--screenshot <path>]
  *              [--lua <script>] [--describe]
  *
@@ -205,7 +205,11 @@ int main(int argc, char **argv)
 	const QStringList positional = args.positionalArguments();
 	if (positional.size() >= 2)
 	{
-		session.run("open", {positional[0].toStdString(), positional[1].toStdString()}, error);
+		/* a project and its package, or a package and a game */
+		if (positional[0].endsWith(QStringLiteral(".chimeraProject"), Qt::CaseInsensitive))
+			session.run("openProject", {positional[0].toStdString(), positional[1].toStdString()}, error);
+		else
+			session.run("open", {positional[0].toStdString(), positional[1].toStdString()}, error);
 		if (args.isSet(playOpt))
 		{
 			/* play once the machine is open */

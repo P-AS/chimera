@@ -93,6 +93,11 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		if (last >= first) frames_.changed.emit(first, last);
 	});
 	buttonsWatch_ = session_.buttonsChanged.connect([this] { frames_.reset.emit(); });
+	resetWatch_ = session_.inputsReset.connect([this] {
+		frameCount.set(inputs_.size());
+		clampTop();
+		frames_.reset.emit();
+	});
 	changedWatch_ = session_.inputsChanged.connect([this](int64_t a, int64_t b) { frames_.changed.emit(a, b); });
 	appendedWatch_ = session_.inputsAppended.connect([this](int64_t a, int64_t b) {
 		frameCount.set(inputs_.size());

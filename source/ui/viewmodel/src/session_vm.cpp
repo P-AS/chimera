@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
+#include <future>
 #include <iterator>
 
 #include "chimera/engine.h"
@@ -13,6 +14,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	: ViewModel("session", dispatcher), inputs_(inputs)
 {
 	expose("isOpen", "whether a machine is open", isOpen);
+	expose("opens", "how many times a machine has been opened", opens);
 	expose("running", "whether the machine is running on its own", running);
 	expose("frame", "the frame the machine is about to run", frame);
 	expose("fps", "frames run in the last half second, per second", fps);
@@ -29,6 +31,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("autoRestore", "after an edit before the current frame, run on to where the machine was", autoRestore, true);
 	expose("lastSeekMs", "how long the last seek took, in milliseconds", lastSeekMs);
 	expose("lastSeekFrames", "how many frames the last seek ran", lastSeekFrames);
+	expose("projectPath", "the open project's file, \"\" when a game was opened without one", projectPath);
+	expose("projectTitle", "the open project's title", projectTitle);
 	picture("screen", "the machine's picture", screen, screenChanged);
 	autoRestoreWatch_ = autoRestore.changed.connect([this] { autoRestoreM_.store(autoRestore.get()); });
 
@@ -40,6 +44,26 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			submit([this, package, game] { openOnMachine(package, game); });
 			return {};
 		});
+	command("openProject", "opens a Chimera project with a core package; its files are looked for beside it",
+		{"project", "package"}, [this](const Args &a, std::string &error) -> Value {
+			std::string project, package;
+			if (!arg(a, 0, project, error) || !arg(a, 1, package, error)) return {};
+			status.set("Opening " + project + "...");
+			submit([this, project, package] { openProjectOnMachine(project, package, false); });
+			return {};
+		});
+	command("saveProject", "saves the open project with its inputs, to its own file or to the one given",
+		{"path"}, [this](const Args &a, std::string &error) -> Value {
+			std::string path;
+			if (!a.empty() && !arg(a, 0, path, error)) return {};
+			if (projectPath.get().empty())
+			{
+				error = "no project is open";
+				return {};
+			}
+			submit([this, path] { saveProjectOnMachine(path); });
+			return {};
+		}, &isOpen);
 	command("close", "closes the machine", {}, [this](const Args &, std::string &) -> Value {
 		submit([this] { closeOnMachine(); });
 		return {};
@@ -185,6 +209,8 @@ void SessionViewModel::loop()
 		ce_session_free(s_);
 		s_ = nullptr;
 	}
+	if (projectM_ != nullptr) ce_project_free(projectM_);
+	projectM_ = nullptr;
 	padsM_.reset(); /* SDL stops on the thread that started it */
 	soundM_.reset();
 }
@@ -214,14 +240,193 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 		later([this, why] { status.set("Could not open: " + why); isOpen.set(false); });
 		return;
 	}
+	freeProjectOnMachine();
+	later([this] { projectPath.set(""); projectTitle.set(""); });
+	adoptOnMachine(s, package, game, false);
+	package_ = package;
+	game_ = game;
+}
+
+void SessionViewModel::freeProjectOnMachine()
+{
+	if (projectM_ != nullptr) ce_project_free(projectM_);
+	projectM_ = nullptr;
+	projectPathM_.clear();
+	logKeyM_.clear();
+}
+
+void SessionViewModel::openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs)
+{
+	if (s_ != nullptr)
+	{
+		ce_session_free(s_);
+		s_ = nullptr;
+	}
+	runningM_ = false;
+	auto fail = [this](const std::string &why) {
+		later([this, why] { status.set(why); isOpen.set(false); });
+	};
+
+	const char *error = nullptr;
+	ce_project *p = ce_project_open(path.c_str(), &error);
+	if (p == nullptr)
+	{
+		fail("Could not open " + path + ": " + (error != nullptr ? error : "no reason given"));
+		return;
+	}
+	/* the files are looked for beside the project (more places, later) */
+	const size_t slash = path.find_last_of("/\\");
+	const std::string dir = slash == std::string::npos ? "." : path.substr(0, slash);
+	ce_project_resolve_dir(p, dir.c_str());
+	if (ce_project_files_ok(p) == 0)
+	{
+		std::string missing;
+		for (int32_t i = 0; i < ce_project_file_count(p); i++)
+			if (ce_project_file_status(p, i) != 0)
+				missing += std::string(missing.empty() ? "" : ", ") + ce_project_file_name(p, i) +
+					(ce_project_file_status(p, i) == 1 ? " (not found)" : " (a different file)");
+		ce_project_free(p);
+		fail("The project's files are not all beside it: " + missing);
+		return;
+	}
+	/* a package other than the one the project names opens, and says so */
+	uint32_t flags = 0;
+	std::string note;
+	const std::string pinned = ce_project_core_sha1(p) != nullptr ? ce_project_core_sha1(p) : "";
+	if (!pinned.empty())
+	{
+		const char *perr = nullptr;
+		if (ce_package *pk = ce_package_open(package.c_str(), &perr))
+		{
+			const char *sha = ce_package_sha1(pk);
+			if (sha == nullptr || pinned != sha)
+			{
+				flags |= CE_OPEN_ALLOW_CORE_MISMATCH;
+				note = "; this is not the package the project was made with";
+			}
+			ce_package_free(pk);
+		}
+	}
+	ce_session *s = ce_session_open_project(package.c_str(), p, nullptr, nullptr, nullptr, nullptr, 0, flags, &error);
+	if (s == nullptr)
+	{
+		ce_project_free(p);
+		fail(std::string("Could not open the project's machine: ") + (error != nullptr ? error : "no reason given"));
+		return;
+	}
+
+	/* the movie: given to the session, which then reads and writes entries
+	 * in its layout (the movie's LogKey), and read into the inputs */
+	uint64_t len = 0;
+	const char *text = ce_project_log_text(p, &len);
+	ce_movie_log *log = ce_movie_log_new();
+	if (text != nullptr && len > 0) ce_movie_log_parse(log, text, len);
+	ce_session_movie_load(s, log);
+	const ce_movie_log *held = ce_session_movie_log(s);
+	const char *key = held != nullptr ? ce_movie_log_key(held) : nullptr;
+	logKeyM_ = key != nullptr ? key : (ce_movie_log_key(log) != nullptr ? ce_movie_log_key(log) : "");
+	const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s));
+	if (!keepInputs)
+	{
+		const int64_t n = ce_movie_log_count(log);
+		std::vector<uint64_t> masks(static_cast<size_t>(n), 0);
+		std::vector<int32_t> axes(axisCount * static_cast<size_t>(n), 0);
+		int64_t unreadable = 0;
+		for (int64_t i = 0; i < n; i++)
+			if (ce_session_movie_entry_decode(s, ce_movie_log_entry(log, i), &masks[static_cast<size_t>(i)],
+					axisCount ? &axes[static_cast<size_t>(i) * axisCount] : nullptr) != 0)
+				unreadable++;
+		std::vector<int32_t> neutral(axisCount);
+		for (size_t i = 0; i < axisCount; i++) neutral[i] = ce_session_axis_neutral(s, static_cast<int64_t>(i));
+		inputs_.setAxes(neutral);
+		inputs_.assign(std::move(masks), std::move(axes));
+		if (unreadable > 0) note += "; " + std::to_string(unreadable) + " frames of the movie could not be read";
+	}
+	ce_movie_log_free(log);
+
+	if (projectM_ != nullptr && projectM_ != p) ce_project_free(projectM_);
+	projectM_ = p;
+	projectPathM_ = path;
+	package_ = package;
+	game_.clear();
+	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
+	adoptOnMachine(s, package, (title.empty() ? path : title) + note, !keepInputs);
+	later([this, path, title] { projectPath.set(path); projectTitle.set(title); });
+}
+
+void SessionViewModel::saveProjectOnMachine(const std::string &to)
+{
+	if (projectM_ == nullptr || s_ == nullptr) return;
+	const std::string path = to.empty() ? projectPathM_ : to;
+	if (ce_session_button_count(s_) > 64)
+	{
+		later([this] { status.set("Not saved: this machine has more than 64 buttons, which the prototype does not keep"); });
+		return;
+	}
+	ce_movie_log *log = ce_movie_log_new();
+	if (!logKeyM_.empty()) ce_movie_log_set_key(log, logKeyM_.c_str());
+	const size_t axisCount = inputs_.axisCount();
+	std::vector<int32_t> axes(axisCount);
+	std::vector<char> line(256);
+	const int64_t n = inputs_.size();
+	for (int64_t f = 0; f < n; f++)
+	{
+		if (axisCount) inputs_.axesAt(f, axes.data());
+		const int32_t need = ce_session_movie_entry_encode(s_, inputs_.at(f), axisCount ? axes.data() : nullptr,
+			line.data(), static_cast<int32_t>(line.size()));
+		if (need >= static_cast<int32_t>(line.size()))
+		{
+			line.resize(static_cast<size_t>(need) + 1);
+			ce_session_movie_entry_encode(s_, inputs_.at(f), axisCount ? axes.data() : nullptr, line.data(),
+				static_cast<int32_t>(line.size()));
+		}
+		ce_movie_log_add(log, line.data());
+	}
+	uint64_t len = 0;
+	const char *text = ce_movie_log_serialize(log, 0, &len);
+	ce_project_set_log_text(projectM_, text, len);
+	ce_movie_log_free(log);
+	const char *error = nullptr;
+	if (ce_project_save(projectM_, path.c_str(), &error) != 0)
+	{
+		const std::string why = error != nullptr ? error : "no reason given";
+		later([this, path, why] { status.set("Could not save " + path + ": " + why); });
+		return;
+	}
+	projectPathM_ = path;
+	later([this, path, n] {
+		projectPath.set(path);
+		status.set("Saved " + path + " (" + std::to_string(n) + " frames)");
+	});
+}
+
+std::vector<uint8_t> SessionViewModel::readDomain(const std::string &name)
+{
+	auto done = std::make_shared<std::promise<std::vector<uint8_t>>>();
+	std::future<std::vector<uint8_t>> result = done->get_future();
+	submit([this, name, done] {
+		std::vector<uint8_t> bytes;
+		if (s_ != nullptr)
+			for (int32_t i = 0; i < ce_session_domain_count(s_); i++)
+				if (name == ce_session_domain_name(s_, i))
+				{
+					bytes.resize(static_cast<size_t>(ce_session_domain_size(s_, i)));
+					ce_session_domain_read(s_, i, 0, bytes.data(), static_cast<int64_t>(bytes.size()));
+					break;
+				}
+		done->set_value(std::move(bytes));
+	});
+	return result.get();
+}
+
+void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package, const std::string &label, bool inputsReplaced)
+{
 	s_ = s;
 	frameM_ = 0;
 	greenEndM_ = 0;
 	/* a history of the machine's states, so a seek replays from the nearest
 	 * one rather than from power-on (a setting, later) */
 	ce_session_greenzone_enable(s, uint64_t{1} << 30);
-	package_ = package;
-	game_ = game;
 
 	std::vector<std::string> names;
 	const int64_t count = ce_session_button_count(s);
@@ -243,6 +448,11 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 		ce_package_free(p);
 	}
 
+	/* axes rest at their neutral until a frame moves them */
+	std::vector<int32_t> neutral(static_cast<size_t>(ce_session_axis_count(s)));
+	for (size_t i = 0; i < neutral.size(); i++) neutral[i] = ce_session_axis_neutral(s, static_cast<int64_t>(i));
+	if (inputs_.axisCount() != neutral.size()) inputs_.setAxes(neutral);
+
 	std::string bindError;
 	bindingsM_ = Bindings();
 	if (!keybinds.empty()) bindingsM_.parse(keybinds, names, bindError);
@@ -261,7 +471,8 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	const std::string coreText = core != nullptr ? core : "", systemText = system != nullptr ? system : "";
 	const double rate = num > 0 && den > 0 ? static_cast<double>(num) / den : 0;
 
-	later([this, names, mnemonics, keybinds, coreText, systemText, rate, game] {
+	const int64_t frames = inputs_.size();
+	later([this, names, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames] {
 		buttonNames_ = names;
 		mnemonics_ = mnemonics;
 		std::string why;
@@ -272,11 +483,14 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 		frame.set(0);
 		running.set(false);
 		isOpen.set(true);
+		opens.set(opens.get() + 1);
 		char hz[32];
 		std::snprintf(hz, sizeof hz, "%.3f", rate);
-		status.set("Opened " + game + " (" + hz + " frames a second, " + std::to_string(bindings_.boundKeys()) +
+		status.set("Opened " + label + " (" + hz + " frames a second, " + std::to_string(bindings_.boundKeys()) +
 			" keys bound" + (bound ? "" : "; the package's bindings are not readable: " + why) + ")");
 		buttonsChanged.emit();
+		if (inputsReplaced) inputsReset.emit();
+		(void)frames;
 	});
 }
 
@@ -285,11 +499,14 @@ void SessionViewModel::closeOnMachine()
 	if (s_ == nullptr) return;
 	ce_session_free(s_);
 	s_ = nullptr;
+	freeProjectOnMachine();
 	runningM_ = false;
 	later([this] {
 		isOpen.set(false);
 		running.set(false);
 		fps.set(0.0);
+		projectPath.set("");
+		projectTitle.set("");
 		status.set("Closed");
 	});
 }
@@ -351,6 +568,14 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render)
 		ce_session_greenzone_invalidate(s_, f);
 		greenEndM_ = std::min(greenEndM_, f);
 		changed = true;
+	}
+
+	const size_t axisCount = inputs_.axisCount();
+	if (axisCount > 0)
+	{
+		axesBuf_.resize(axisCount);
+		inputs_.axesAt(f, axesBuf_.data());
+		for (size_t i = 0; i < axisCount; i++) ce_session_set_axis(s_, static_cast<int32_t>(i), axesBuf_[i]);
 	}
 
 	ce_session_greenzone_before_advance(s_);

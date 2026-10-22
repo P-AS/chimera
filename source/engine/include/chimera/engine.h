@@ -1612,6 +1612,18 @@ CE_API int32_t ce_session_movie_entry_decode(
 CE_API int32_t ce_session_movie_entry_decode_wide(
 	const ce_session *s, const char *entry, uint8_t *states_out, int32_t *axes_out);
 
+/* The line this session's movie holds for a set of pressed buttons (bit per
+ * button in config order, the first 64) and axis values (ce_session_axis_count
+ * of them in config order, or NULL for all neutral): what record mode would
+ * append, in the layout ce_session_movie_load chose (the movie's LogKey when
+ * it had one). Writes at most cap bytes, NUL included, and returns the
+ * line's full length, so a caller whose buffer was short asks again.
+ *
+ * (The Qt window, issue 142, prototype: a frontend in C++ has no Bk2 writer
+ * of its own, as the C# one did, so it writes the engine's.) */
+CE_API int32_t ce_session_movie_entry_encode(
+	const ce_session *s, uint64_t buttons, const int32_t *axes, char *out, int32_t cap);
+
 /* One frame under the movie. In play mode the input comes from the log
  * (buttons/axes are ignored) until the log runs out, which flips the mode to
  * finished; in record and finished modes the input is the caller's - the

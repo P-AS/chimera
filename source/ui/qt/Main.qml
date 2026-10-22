@@ -16,12 +16,17 @@ ApplicationWindow {
     width: 1280
     height: 760
     visible: true
-    title: session.isOpen ? qsTr("Chimera - %1 (%2)").arg(session.coreName).arg(session.systemName) : qsTr("Chimera")
+    title: !session.isOpen ? qsTr("Chimera")
+         : session.projectTitle !== "" ? qsTr("Chimera - %1 - %2 (%3)").arg(session.projectTitle).arg(session.coreName).arg(session.systemName)
+         : qsTr("Chimera - %1 (%2)").arg(session.coreName).arg(session.systemName)
 
     menuBar: MenuBar {
         Menu {
             title: qsTr("&File")
-            Action { text: qsTr("&Open..."); shortcut: "Ctrl+O"; onTriggered: packageDialog.open() }
+            Action { text: qsTr("&Open Game..."); shortcut: "Ctrl+O"; onTriggered: packageDialog.open() }
+            Action { text: qsTr("Open &Project..."); shortcut: "Ctrl+Shift+O"; onTriggered: projectDialog.open() }
+            Action { text: qsTr("&Save Project"); shortcut: "Ctrl+S"; enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveProject") }
+            Action { text: qsTr("Save Project &As..."); enabled: root.session.projectPath !== ""; onTriggered: saveAsDialog.open() }
             Action { text: qsTr("&Restart"); enabled: root.session.restartEnabled; onTriggered: root.session.run("restart") }
             Action { text: qsTr("&Close"); enabled: root.session.closeEnabled; onTriggered: root.session.run("close") }
             MenuSeparator {}
@@ -57,6 +62,26 @@ ApplicationWindow {
         title: qsTr("Choose a core package")
         nameFilters: [qsTr("Core packages (*.chimeraCore)"), qsTr("All files (*)")]
         onAccepted: { root.chosenPackage = selectedFile; gameDialog.open() }
+    }
+    property url chosenProject
+    FileDialog {
+        id: projectDialog
+        title: qsTr("Choose a project")
+        nameFilters: [qsTr("Chimera projects (*.chimeraProject)"), qsTr("All files (*)")]
+        onAccepted: { root.chosenProject = selectedFile; projectPackageDialog.open() }
+    }
+    FileDialog {
+        id: projectPackageDialog
+        title: qsTr("Choose the core package to open it with")
+        nameFilters: [qsTr("Core packages (*.chimeraCore)"), qsTr("All files (*)")]
+        onAccepted: root.session.run("openProject", [root.chosenProject, selectedFile])
+    }
+    FileDialog {
+        id: saveAsDialog
+        title: qsTr("Save the project as")
+        fileMode: FileDialog.SaveFile
+        nameFilters: [qsTr("Chimera projects (*.chimeraProject)")]
+        onAccepted: root.session.run("saveProject", [selectedFile])
     }
     FileDialog {
         id: gameDialog

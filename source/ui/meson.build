@@ -40,7 +40,8 @@ test_vm = executable(
 test(
   'view models',
   test_vm,
-  args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom'],
+  args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
+    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens'],
   # OpenAL's device that plays to nowhere: the sound check runs with no speakers
   env: ['ALSOFT_DRIVERS=null'],
   timeout: 180,

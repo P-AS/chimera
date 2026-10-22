@@ -56,6 +56,56 @@ public:
 		masks_.resize(static_cast<size_t>(frames < 0 ? 0 : frames), 0);
 	}
 
+	/* Axis values (sticks, paddles): `count` per frame in the machine's
+	 * order, each at its neutral until a frame sets it. Setting the count
+	 * forgets every frame's values. */
+	void setAxes(const std::vector<int32_t> &neutral)
+	{
+		std::unique_lock lock(m_);
+		neutral_ = neutral;
+		axes_.clear();
+	}
+	size_t axisCount() const
+	{
+		std::shared_lock lock(m_);
+		return neutral_.size();
+	}
+	/* out gets axisCount() values */
+	void axesAt(int64_t frame, int32_t *out) const
+	{
+		std::shared_lock lock(m_);
+		const size_t n = neutral_.size(), at = static_cast<size_t>(frame) * n;
+		for (size_t i = 0; i < n; i++)
+			out[i] = frame >= 0 && at + n <= axes_.size() ? axes_[at + i] : neutral_[i];
+	}
+	void setAxesAt(int64_t frame, const int32_t *values)
+	{
+		if (frame < 0) return;
+		std::unique_lock lock(m_);
+		const size_t n = neutral_.size();
+		if (n == 0) return;
+		const size_t at = static_cast<size_t>(frame) * n;
+		if (axes_.size() < at + n)
+		{
+			/* the frames between keep their neutral values */
+			const size_t from = axes_.size() / n;
+			axes_.resize(at + n);
+			for (size_t f = from; f * n < at; f++)
+				for (size_t i = 0; i < n; i++) axes_[f * n + i] = neutral_[i];
+		}
+		for (size_t i = 0; i < n; i++) axes_[at + i] = values[i];
+	}
+
+	/* every frame at once (a project's movie): masks, and axes when the
+	 * machine has any (axisCount() values a frame); the lag flags go */
+	void assign(std::vector<uint64_t> masks, std::vector<int32_t> axes)
+	{
+		std::unique_lock lock(m_);
+		masks_ = std::move(masks);
+		axes_ = std::move(axes);
+		lags_.clear();
+	}
+
 	/* true when the frame's lag flag changed */
 	bool setLag(int64_t frame, bool lag)
 	{
@@ -78,6 +128,7 @@ private:
 	mutable std::shared_mutex m_;
 	std::vector<uint64_t> masks_;
 	std::vector<uint8_t> lags_;
+	std::vector<int32_t> neutral_, axes_;
 };
 
 } // namespace chimera::vm

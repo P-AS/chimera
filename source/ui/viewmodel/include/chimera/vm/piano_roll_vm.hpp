@@ -57,7 +57,7 @@ private:
 	InputLog &inputs_;
 	SessionViewModel &session_;
 	Frames frames_{*this};
-	Connection frameWatch_, buttonsWatch_, changedWatch_, appendedWatch_, topWatch_, greenWatch_;
+	Connection frameWatch_, buttonsWatch_, changedWatch_, appendedWatch_, topWatch_, greenWatch_, resetWatch_;
 	/* what a drag paints: the state the pressed cell was given */
 	bool dragHeld_ = false;
 };
