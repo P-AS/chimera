@@ -65,6 +65,11 @@ broken on purpose once and seen to fail.
 
 ## What was measured
 
+- A real DOSBox-X project made with the New Project window from a script
+  (a configuration file whose autoexec prints a line and the DOS version)
+  boots and runs it, at the machine's own 70 frames a second (Linux,
+  off-screen).
+
 Linux, headless, Qt's software drawing:
 
 - **Full speed while the piano roll scrolls.** Snes9x, Genesis Plus GX

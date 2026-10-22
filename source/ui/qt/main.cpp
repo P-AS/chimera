@@ -335,9 +335,10 @@ int main(int argc, char **argv)
 		/* a project alone: its core is found among the installed ones */
 		session.run("openProject", {positional[0].toStdString()}, error);
 	}
-	if (!positional.isEmpty() && args.isSet(playOpt))
+	if (args.isSet(playOpt))
 	{
-		/* play once the machine is open */
+		/* play once a machine is open: the one named here, or one a script
+		 * opened */
 		auto connection = std::make_shared<vm::Connection>();
 		*connection = session.opens.changed.connect([&session, connection] {
 			std::string e;
