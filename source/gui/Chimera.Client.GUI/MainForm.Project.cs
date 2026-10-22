@@ -224,6 +224,44 @@ namespace Chimera.Client.GUI
 		private EngineProject RunNewProjectWizard(string startFrom = null, ProjectAnswers seed = null)
 		{
 			ScanForCorePackages();
+			using var wizard = MakeNewProjectWizard([ Config.PathEntries.FirmwareAbsolutePath() ]);
+			// The wizard opens on the last project's answers - the open one, or the
+			// last one there was. This is how a project is reconfigured: changing a
+			// sync setting changes the machine, so there is no editing one in place,
+			// and what made that unbearable was answering every question again to
+			// change one of them.
+			var answers = seed ?? (_openProject is not null ? ProjectAnswers.Of(_openProject) : _lastAnswers);
+
+			// A dropped file decides the core, so the last project's answers are
+			// only worth restoring when they were for the SAME core - otherwise
+			// they would put another machine's files and settings behind this one.
+			if (startFrom is not null)
+			{
+				var sameCore = wizard.GuessCoreFor(startFrom) is { } guess && answers is not null
+					&& string.Equals(guess.Name, answers.CoreName, StringComparison.OrdinalIgnoreCase);
+				if (sameCore) wizard.SeedFrom(answers);
+				wizard.StartFrom(startFrom);
+			}
+			else if (answers is not null)
+			{
+				wizard.SeedFrom(answers);
+			}
+
+			wizard.CompileSessionGigabytes = Config.CompileSessionGigabytes;
+			if (wizard.ShowDialog(this) is not DialogResult.OK) return null;
+			// the next wizard opens on this kind of core, when it has no project's answers to open on
+			Config.NewProjectKind = wizard.Kind;
+
+			RememberWizardFirmware(wizard);
+			return wizard.CreatedProject;
+		}
+
+		/// <summary>
+		/// The New Project wizard as the window builds it, looking for firmware in these folders: the one
+		/// File &gt; New Project shows, and the one an agent's create_project fills in without showing it.
+		/// </summary>
+		private NewProjectWizard MakeNewProjectWizard(IReadOnlyList<string> firmwareSearchDirs)
+		{
 			// Where each of the wizard's pickers opens. Config > Paths is an
 			// answer the person has already given, so a picker that ignores it
 			// and reopens wherever the process last happened to be sends them
@@ -231,7 +269,7 @@ namespace Chimera.Client.GUI
 			// configured folder that does not exist is no use as a starting
 			// point, so in that case the dialog is left to its own default.
 			static string OpensIn(string configured) => PathEntryExtensions.FirstExistingDir(configured);
-			using NewProjectWizard wizard = new(
+			return new(
 				_discoveredCorePackages,
 				pickFiles: slot =>
 				{
@@ -255,7 +293,7 @@ namespace Chimera.Client.GUI
 					};
 					return dialog.ShowDialog(this) is DialogResult.OK ? dialog.FileName.WithoutWslgMirror() : null;
 				},
-				firmwareSearchDirs: [ Config.PathEntries.FirmwareAbsolutePath() ],
+				firmwareSearchDirs: firmwareSearchDirs,
 				pickFirmwareFolder: (ref bool includeSubfolders) =>
 				{
 					using FolderBrowserEx picker = new()
@@ -298,54 +336,29 @@ namespace Chimera.Client.GUI
 				{
 					if (Config.PathEntries.AdoptFirmwareFolder(folder)) SaveConfig();
 				});
-			// The wizard opens on the last project's answers - the open one, or the
-			// last one there was. This is how a project is reconfigured: changing a
-			// sync setting changes the machine, so there is no editing one in place,
-			// and what made that unbearable was answering every question again to
-			// change one of them.
-			var answers = seed ?? (_openProject is not null ? ProjectAnswers.Of(_openProject) : _lastAnswers);
+		}
 
-			// A dropped file decides the core, so the last project's answers are
-			// only worth restoring when they were for the SAME core - otherwise
-			// they would put another machine's files and settings behind this one.
-			if (startFrom is not null)
-			{
-				var sameCore = wizard.GuessCoreFor(startFrom) is { } guess && answers is not null
-					&& string.Equals(guess.Name, answers.CoreName, StringComparison.OrdinalIgnoreCase);
-				if (sameCore) wizard.SeedFrom(answers);
-				wizard.StartFrom(startFrom);
-			}
-			else if (answers is not null)
-			{
-				wizard.SeedFrom(answers);
-			}
-
-			wizard.CompileSessionGigabytes = Config.CompileSessionGigabytes;
-			if (wizard.ShowDialog(this) is not DialogResult.OK) return null;
-			// the next wizard opens on this kind of core, when it has no project's answers to open on
-			Config.NewProjectKind = wizard.Kind;
-
-			// remember where the firmware lives, keyed the way the resolver reads
-			// it back at load (Config.CoreFirmware) - and WRITE IT DOWN. Held in
-			// memory it lasted until the next clean exit, so a session that ended
-			// any other way left a project whose firmware nothing on the machine
-			// could name, and opening it asked for all of it again (issue #40).
+		/// <summary>
+		/// Where the firmware a finished wizard found lives, remembered keyed the way the resolver reads it
+		/// back at load (Config.CoreFirmware) - and WRITTEN DOWN. Held in memory it lasted until the next clean
+		/// exit, so a session that ended any other way left a project whose firmware nothing on the machine
+		/// could name, and opening it asked for all of it again (issue #40).
+		/// </summary>
+		private void RememberWizardFirmware(NewProjectWizard wizard)
+		{
 			var coreName = wizard.ChosenCoreName;
-			if (coreName is not null && wizard.ProvidedFirmwarePaths.Count is not 0)
+			if (coreName is null || wizard.ProvidedFirmwarePaths.Count is 0) return;
+			foreach (var (id, path) in wizard.ProvidedFirmwarePaths)
 			{
-				foreach (var (id, path) in wizard.ProvidedFirmwarePaths)
-				{
-					Config.CoreFirmware[CoreFirmwareStore.KeyFor(coreName, id)] = path;
-				}
-				// and under each dump's own key, so Config > Firmware and the next
-				// project that wants this release find it without asking
-				foreach (var (decl, path) in wizard.ProvidedFirmwareDumps)
-				{
-					CoreFirmwareStore.Remember(Config, coreName, decl, path);
-				}
-				SaveConfig();
+				Config.CoreFirmware[CoreFirmwareStore.KeyFor(coreName, id)] = path;
 			}
-			return wizard.CreatedProject;
+			// and under each dump's own key, so Config > Firmware and the next
+			// project that wants this release find it without asking
+			foreach (var (decl, path) in wizard.ProvidedFirmwareDumps)
+			{
+				CoreFirmwareStore.Remember(Config, coreName, decl, path);
+			}
+			SaveConfig();
 		}
 
 		private string PickProjectToOpen()

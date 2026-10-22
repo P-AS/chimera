@@ -154,6 +154,16 @@ const McpTool kTools[] = {
 	  "projects (Movies), reads cores from and looks for firmware in. Without a window: the build, and the folders this "
 	  "server was started with.",
 	  kNoArguments, false, true },
+	{ "list_cores",
+	  "The core packages in the cores folder: for each, its file, the name the core gives itself, its version, the machines it "
+	  "is and the kinds of file (extensions) it opens.",
+	  kNoArguments, false, false },
+	{ "describe_core",
+	  "What one core declares: its settings, the firmware it may ask for, and the slots a project of it holds files in.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"core\":{\"type\":\"string\",\"description\":\"A file or a name from list_cores.\"}"
+	  "},\"required\":[\"core\"],\"additionalProperties\":false}",
+	  false, false },
 	{ "pause",
 	  "Pauses the machine, as System > Pause does, and answers the frame it is on. A machine that is already paused stays so.",
 	  kNoArguments, false, true },
@@ -284,6 +294,23 @@ const McpTool kTools[] = {
 	  "\"overwrite\":{\"type\":\"boolean\",\"description\":\"Replace a file that is already at 'path'. false when left out.\"}"
 	  "},\"additionalProperties\":false}",
 	  true, true },
+	{ "create_project",
+	  "Makes a new project and opens it, as finishing the New Chimera Project window does - with the core's suggested "
+	  "settings for the game, then the settings given - and asks nothing. Firmware is looked for where that window looks "
+	  "(the Firmware folder, files chosen for the core before) and in 'firmware_folder'; when some is missing nothing is "
+	  "made, and the answer lists each missing file with the files that would do. A project already open is closed first, "
+	  "and one with changes that are not saved only with 'discard_unsaved'. list_cores and describe_core say what to give.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"core\":{\"type\":\"string\",\"description\":\"A core's name or file, from list_cores.\"},"
+	  "\"system\":{\"type\":\"string\",\"description\":\"The machine, for a core that is several: its id or what it is called.\"},"
+	  "\"game\":{\"type\":[\"string\",\"array\"],\"items\":{\"type\":\"string\"},\"description\":\"The game's file (or files), each put in the slot that takes its kind of file.\"},"
+	  "\"files\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"description\":\"Files by slot, as describe_core names the slots.\"},"
+	  "\"settings\":{\"type\":\"object\",\"description\":\"Settings by name, as describe_core names them.\"},"
+	  "\"firmware\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Firmware id to the path of its file.\"},"
+	  "\"firmware_folder\":{\"type\":\"string\",\"description\":\"A folder to look for firmware in as well.\"},"
+	  "\"discard_unsaved\":{\"type\":\"boolean\",\"description\":\"Close an open project even with changes that are not saved. false when left out.\"}"
+	  "},\"required\":[\"core\"],\"additionalProperties\":false}",
+	  true, true, false, true },
 	{ "close_tastudio",
 	  "Closes the open project: TAStudio and the machine, as closing TAStudio does. A project with changes that are not "
 	  "saved is not closed unless 'discard_unsaved' is true; nothing asks. Without a window, 'close' does this.",
@@ -320,15 +347,6 @@ const McpTool kTools[] = {
 
 	/* The tools that exist only where there is no window: there the agent
 	 * opens a machine of its own, and saves what it made. */
-	{ "list_cores",
-	  "The core packages in the cores folder: for each, its file, the name the core gives itself, its version and the machines it is.",
-	  kNoArguments, false, false, true },
-	{ "describe_core",
-	  "What one core declares: its settings, the firmware it may ask for, and the slots a project of it holds files in.",
-	  "{\"type\":\"object\",\"properties\":{"
-	  "\"core\":{\"type\":\"string\",\"description\":\"A file or a name from list_cores.\"}"
-	  "},\"required\":[\"core\"],\"additionalProperties\":false}",
-	  false, false, true },
 	{ "open_game",
 	  "Starts a new project from a core and game files, with an empty movie, and opens its machine. "
 	  "A project open before is closed without being saved.",
@@ -809,6 +827,7 @@ struct Service
 	std::atomic<bool> allowChanges{ false };
 	std::map<uint64_t, WaitingCall> withHost; /* calls the frontend is running */
 	std::map<uint64_t, ShotsTaken> shots;     /* by the call: capture_series' pictures so far */
+	std::vector<std::string> coresFolders;    /* where the frontend finds core packages, for list_cores */
 	uint64_t connection = 0;           /* moved on by every connect and disconnect */
 	std::deque<std::string> log;
 	uint64_t logTotal = 0;
@@ -2140,7 +2159,7 @@ bool prepareCapture(ce_session *s, const ce_movie_log *log, int64_t frameNow, st
  * have had unsaved changes the agent had not made. */
 bool leavesTheWorkAsItIs(const std::string &tool)
 {
-	return tool == "save_project" || tool == "close_tastudio";
+	return tool == "save_project" || tool == "close_tastudio" || tool == "create_project";
 }
 
 bool isEdit(const std::string &tool)
@@ -2347,6 +2366,18 @@ McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, con
 		return result;
 	}
 	if (tool == "get_input") return toolGetInput(log, arguments);
+	if (tool == "list_cores" || tool == "describe_core")
+	{
+		std::vector<std::string> folders;
+		{
+			std::lock_guard<std::mutex> hold(sv.lock);
+			folders = sv.coresFolders;
+		}
+		cJSON *copy = cJSON_Duplicate(arguments, 1);
+		const std::string argumentsJson = copy != nullptr ? printJson(copy) : "{}";
+		cJSON_Delete(copy);
+		return tool == "list_cores" ? mcpListCores(folders) : mcpDescribeCore(folders, argumentsJson);
+	}
 	/* a search whose memory is gone is dropped before anything else runs */
 	searchStands(sv, s);
 	if (s == nullptr) return mcpError(kNoMachine);
@@ -2749,6 +2780,19 @@ void ce_mcp_answer(ce_session *s, uint64_t id, const char *text, int32_t is_erro
 	}
 	chimera::finish(sv, found->second, result);
 	sv.withHost.erase(found);
+}
+
+void ce_mcp_cores_folders(const char *folders_json)
+{
+	Service &sv = service();
+	std::vector<std::string> folders;
+	cJSON *list = folders_json != nullptr ? cJSON_Parse(folders_json) : nullptr;
+	const cJSON *folder = nullptr;
+	cJSON_ArrayForEach(folder, list)
+		if (cJSON_IsString(folder)) folders.push_back(folder->valuestring);
+	cJSON_Delete(list);
+	std::lock_guard<std::mutex> hold(sv.lock);
+	sv.coresFolders = std::move(folders);
 }
 
 int32_t ce_mcp_capture(ce_session *s, uint64_t id, int64_t frame, const char **error_out)

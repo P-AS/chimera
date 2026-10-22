@@ -174,6 +174,7 @@ if local:
     check("and a tool that needs a project says how to open one", error and "open_game" in text)
     cores = facts("list_cores").get("cores", [])
     check("list_cores names the synthetic core", [c["name"] for c in cores] == ["Synth"] and cores[0]["file"].endswith(".chimeraCore"))
+    check("and the kinds of file it opens", cores[0].get("extensions") == ["testrom"])
     described = facts("describe_core", core="Synth")
     check("describe_core gives what the core declares", described.get("name") == "Synth" and isinstance(described.get("settings"), list))
     error, text, _ = call("describe_core", core="No Such Core")
@@ -208,6 +209,10 @@ if window:
     for needed in ("server_info", "pause", "resume", "save_project", "close_tastudio"):
         check("the tool %s is listed in the window" % needed, needed in tools)
     check("the tool close, for no window, is not listed in one", "close" not in tools)
+    # what the cores folder holds, as in the window's own New Project window (issue 355)
+    synth = [c for c in facts("list_cores").get("cores", []) if c.get("name") == "Synth"]
+    check("list_cores in the window names the synthetic core and the files it opens", len(synth) >= 1 and "testrom" in synth[0].get("extensions", []))
+    check("describe_core in the window says what it declares", facts("describe_core", core="Synth").get("name") == "Synth")
     info = facts("server_info")
     check("server_info says it is the window and where projects go",
           info.get("window") is True and info.get("folders", {}).get("projects") and info.get("commit"))
@@ -617,6 +622,16 @@ if window and changes:
     error, text, _ = call("pause")
     check("with nothing open there is nothing to pause", error)
     check("the project saved before is as it was saved", "added after saving" not in open(path).read())
+    # a new project, as the New Project window would make it, opened with nothing asked (issue 355)
+    error, text, _ = call("create_project", core="No Such Core", game=status["files"][0]["path"])
+    check("create_project names a core that is not there", error and "list_cores" in text)
+    made = facts("create_project", core="Synth", game=status["files"][0]["path"])
+    check("create_project makes the project and opens it on frame 0",
+          made.get("core") == "Synth" and made.get("frame") == 0 and [f.get("name") for f in made.get("files", [])] == ["gridWalker.testrom"])
+    now = facts("status")
+    check("and it is what is open", now.get("machine_open") is True and now.get("core") == "Synth" and now.get("frame") == 0)
+    check("with an empty movie", made.get("movie_length") == 0 and now.get("movie_length") == 0)
+    facts("close_tastudio", discard_unsaved=True)
 
 if local:
     # save, export, close, open again: the project made here plays to the reference memory

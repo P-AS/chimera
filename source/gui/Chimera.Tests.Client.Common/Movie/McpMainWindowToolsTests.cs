@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 using Chimera.Client.Common;
 
@@ -46,6 +47,15 @@ namespace Chimera.Tests.Client.Common.Movie
 				Closed++;
 				Frame = -1;
 				return null;
+			}
+
+			public McpProjectRequest? Asked;
+			public McpProjectMade Made = new() { Opened = new JObject { ["core"] = "Synth" } };
+
+			public McpProjectMade CreateProject(McpProjectRequest request)
+			{
+				Asked = request;
+				return Made;
 			}
 		}
 
@@ -178,6 +188,98 @@ namespace Chimera.Tests.Client.Common.Movie
 			Assert.IsTrue((bool) answer["closed"]!);
 			Assert.IsFalse((bool) answer["machine_open"]!);
 			StringAssert.Contains((string) answer["note"]!, "lost");
+		}
+
+		[TestMethod]
+		public void CreateProjectHandsTheWindowTheAgentsAnswers()
+		{
+			FakeChimera chimera = new();
+			var game = Path.Combine(_folder, "game.nes");
+			File.WriteAllText(game, "a game");
+			var (isError, text) = Run(null, chimera, "create_project", new JObject
+			{
+				["core"] = " Synth ",
+				["system"] = "NES",
+				["game"] = game,
+				["files"] = new JObject { ["disk"] = new JArray(game, game) },
+				["settings"] = new JObject { ["region"] = "pal", ["seed"] = 4000000000L },
+				["firmware"] = new JObject { ["bios"] = game },
+				["firmware_folder"] = _folder,
+			}.ToString());
+			Assert.IsFalse(isError, text);
+			Assert.AreEqual("Synth", (string) JObject.Parse(text)["core"]!, "the window's answer is the agent's");
+			var asked = chimera.Asked!;
+			Assert.AreEqual("Synth", asked.Core);
+			Assert.AreEqual("NES", asked.System);
+			CollectionAssert.AreEqual(new[] { game }, asked.Games.ToArray());
+			CollectionAssert.AreEqual(new[] { ("disk", game), ("disk", game) }, asked.Files.ToArray());
+			Assert.AreEqual("pal", asked.Settings["region"]);
+			Assert.AreEqual(4000000000L, asked.Settings["seed"]);
+			CollectionAssert.AreEqual(new[] { ("bios", game) }, asked.Firmware.ToArray());
+			Assert.AreEqual(_folder, asked.FirmwareFolder);
+			Assert.IsFalse(asked.DiscardUnsaved);
+		}
+
+		[TestMethod]
+		public void AProjectWithUnsavedChangesIsNotReplacedUnlessTheAgentSaysSo()
+		{
+			var movie = TasMovieTests.MakeMovie(3);
+			FakeChimera chimera = new();
+			var (isError, text) = Run(movie, chimera, "create_project", """{ "core": "Synth" }""");
+			Assert.IsTrue(isError);
+			StringAssert.Contains(text, "discard_unsaved: true");
+			Assert.IsNull(chimera.Asked, "the window was not asked");
+
+			(isError, text) = Run(movie, chimera, "create_project", """{ "core": "Synth", "discard_unsaved": true }""");
+			Assert.IsFalse(isError, text);
+			Assert.IsTrue(chimera.Asked!.DiscardUnsaved, "the window lets them go once the new project is made, not before");
+			Assert.IsTrue(movie.Changes);
+		}
+
+		[TestMethod]
+		public void MissingFirmwareIsAnAnswerOfItsOwn()
+		{
+			FakeChimera chimera = new()
+			{
+				Made = new()
+				{
+					Refusal = "Firmware the project needs was not found: Boot ROM.",
+					Missing = new JArray(new JObject { ["id"] = "bios", ["name"] = "Boot ROM" }),
+					Searched = new JArray(_folder),
+				},
+			};
+			var (isError, text) = Run(null, chimera, "create_project", """{ "core": "Synth" }""");
+			Assert.IsTrue(isError);
+			var answer = JObject.Parse(text);
+			Assert.AreEqual("missing_firmware", (string) answer["error"]!);
+			Assert.AreEqual("bios", (string) answer["missing"]![0]!["id"]!);
+			Assert.AreEqual(_folder, (string) answer["searched"]![0]!);
+
+			chimera.Made = new() { Refusal = "There is no core called 'Nope'." };
+			(isError, text) = Run(null, chimera, "create_project", """{ "core": "Nope" }""");
+			Assert.IsTrue(isError);
+			Assert.AreEqual("There is no core called 'Nope'.", text);
+		}
+
+		[TestMethod]
+		public void CreateProjectArgumentsOfTheWrongShapeAreRefused()
+		{
+			FakeChimera chimera = new();
+			foreach (var (arguments, said) in new[]
+			{
+				("{}", "Give 'core'"),
+				("""{ "core": "Synth", "files": ["game.nes"] }""", "'files' is an object"),
+				("""{ "core": "Synth", "game": 5 }""", "'game' is a path"),
+				("""{ "core": "Synth", "settings": { "region": [1] } }""", "'settings' is an object"),
+				("""{ "core": "Synth", "firmware": { "bios": 1 } }""", "'firmware' is an object"),
+				("""{ "core": "Synth", "firmware_folder": "/no/such/folder" }""", "There is no folder"),
+			})
+			{
+				var (isError, text) = Run(null, chimera, "create_project", arguments);
+				Assert.IsTrue(isError, arguments);
+				StringAssert.Contains(text, said, arguments);
+			}
+			Assert.IsNull(chimera.Asked, "nothing reached the window");
 		}
 
 		[TestMethod]

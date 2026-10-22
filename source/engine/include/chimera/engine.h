@@ -2026,6 +2026,9 @@ CE_API void ce_mcp_answer(ce_session *s, uint64_t id, const char *text, int32_t 
  * them; the pictures go with its answer. 1, or 0 with the reason (borrowed
  * until this thread's next call). */
 CE_API int32_t ce_mcp_capture(ce_session *s, uint64_t id, int64_t frame, const char **error_out);
+/* The folders the frontend finds core packages in, as a JSON array of
+ * paths: what list_cores and describe_core read in the window. */
+CE_API void ce_mcp_cores_folders(const char *folders_json);
 
 /* advance_until: play forward until a value meets a condition. The frontend
  * does the playing, because the playback position is its own; what the

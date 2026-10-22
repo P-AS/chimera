@@ -10751,3 +10751,50 @@ pictures on frames 5, 15 and 25, half a second as 30 frames, files written
 at the picture's size and not replaced, frames added past the end and taken
 back by one undo, and the commonest colour of a picture checked against
 its pixels. Each failed with its fix taken out.
+
+## An agent makes a project as the New Project window does (2026-10-22)
+
+The third part of issue 355. An agent made each project by clicking
+through the New Project window: choosing a core from a list by its place,
+removing the last project's game, finding buttons that moved with each
+core's pages. Every run it skipped was firmware it found out about only by
+reading the firmware page.
+
+`create_project` runs that window's own code, without showing the window.
+The agent's answers go in the way a reopened project's do, and the pages
+are passed as a person who changed nothing else would leave them: the
+core's suggested settings for the game are applied on the settings page,
+then the agent's own settings over them; the firmware page looks where it
+always looks (the Firmware folder, and files chosen for the core before),
+plus a folder the agent names. The project is then made by the same code
+as the window's Create, and opened as one made by hand is, and the
+firmware it found is remembered as the window remembers it. A second copy
+of the wizard's rules was the other way, and it would have drifted from
+the window the first time either changed.
+
+What the window would ask, the tool answers instead. Missing firmware makes
+no project: the answer lists each file missing, the files that would do
+(name, size, hash), and the folders looked in. A core that compiles a
+game's code before its first run is refused when that has not been done,
+since the compiling is the window's last page; the next project of that
+game finds the compiled code. A project open with unsaved changes is
+replaced only when the agent says those may go, and only once the new one
+is made.
+
+`list_cores` and `describe_core` work in the window too, over Chimera's own
+cores folders, and `list_cores` says which kinds of file each core opens.
+The windowless server keeps `open_game`, which takes firmware by path and
+asks the core for nothing.
+
+The synthetic test core's package now declares its file slot, as every
+real core's does: without one the New Project window cannot make a project
+of it.
+
+Tested: 4 tests of the window made for an agent (the project it makes, a
+missing Boot ROM listed with the folder looked in, a machine chosen by its
+name, what the core does not have named), 4 of the tool's arguments and
+answers, and the end-to-end test in the real window: the cores listed with
+their kinds of file, a project of the synthetic core made, opened on
+frame 0 with an empty movie, and closed. Each failed with its fix taken
+out. Not tried: a core that suggests settings for a game, or that compiles
+a game's code first; no test core does either.

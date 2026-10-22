@@ -638,6 +638,9 @@ namespace Chimera.Emulation.Common.Engine
 		public abstract int ce_mcp_capture(IntPtr session, ulong id, long frame, ref IntPtr errorOut);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract void ce_mcp_cores_folders(string foldersJson);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_mcp_condition_set(IntPtr session, string argumentsJson, ref IntPtr errorOut);
 
 		[ChimeraImport(CallingConvention.Cdecl)]

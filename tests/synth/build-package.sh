@@ -41,12 +41,15 @@ mbuild="$mb/build/meson-linux"
 ninja -C "$mbuild"
 sh "$here/package-box/build-box.sh"
 
-# package = core.wbx (fixed name) + waterbox.config, nothing else.
+# package = core.wbx (fixed name) + waterbox.config, and the file form a
+# project of it fills (file_slots.json), as every real core declares one:
+# without it the New Project window cannot make one (issue 355).
 staging="$here/package-box/bin/package-staging"
 rm -rf "$staging"
 mkdir -p "$staging"
 cp "$here/package-box/synth.wbx" "$staging/core.wbx"
 cp "$here/package-box/waterbox.config" "$staging"
+cp "$here/package-box/file_slots.json" "$staging"
 # the bindings the package declares for its controller (Chimera ships none of its own)
 cp "$here/package-box/default_keybinds.json" "$staging"
 

@@ -29,7 +29,7 @@ namespace Chimera.Client.GUI
 	/// IN MEMORY. Nothing is written until the work is saved, so starting a
 	/// project costs no decision about where a file goes.
 	/// </summary>
-	public sealed class NewProjectWizard : FormBase
+	public sealed partial class NewProjectWizard : FormBase
 	{
 		private readonly IReadOnlyList<DiscoveredCorePackage> _cores;
 
@@ -3223,6 +3223,21 @@ namespace Chimera.Client.GUI
 
 		private void Create()
 		{
+			if (MakeProject() is { } refused)
+			{
+				ShowPageBecause(refused.Page, refused.Why);
+				return;
+			}
+			DialogResult = DialogResult.OK;
+			Close();
+		}
+
+		/// <summary>
+		/// The project the answers make, as <see cref="CreatedProject"/>; or why not, with the page that holds
+		/// the answer to change. Shared by Create and by an agent's create_project (<see cref="CompleteForAgent"/>).
+		/// </summary>
+		private (int Page, string Why)? MakeProject()
+		{
 			var core = ChosenCore!;
 			// NOT disposed here on success: the caller takes ownership of the
 			// finished project and boots the machine from it. On any failure
@@ -3260,8 +3275,7 @@ namespace Chimera.Client.GUI
 			catch (InvalidOperationException ex)
 			{
 				project.Dispose();
-				ShowPageBecause(1, ex.Message);
-				return;
+				return (1, ex.Message);
 			}
 
 			// the project records every EXPOSED sync setting explicitly, at its
@@ -3333,15 +3347,13 @@ namespace Chimera.Client.GUI
 			if (declarationJson is not null && project.Validate(declarationJson) is { } refusal)
 			{
 				project.Dispose();
-				ShowPageBecause(1, refusal);
-				return;
+				return (1, refusal);
 			}
 
 			// nothing is written: the project lives in memory until the work is
 			// saved, which is also when the user is asked where it goes
 			CreatedProject = project;
-			DialogResult = DialogResult.OK;
-			Close();
+			return null;
 		}
 	}
 }

@@ -115,6 +115,13 @@ bool mcpTakeShot(ce_session *s, const McpShotPlan &plan, size_t n, int64_t frame
  * object, with "shots" added, then the pictures. */
 std::string mcpShotsContent(const std::string &answerJson, const std::vector<std::string> &facts, const std::vector<std::string> &pictures);
 
+/* list_cores and describe_core over these folders, and a core of them by its
+ * file or its name: the windowless server's cores folder, or the window's
+ * (mcp_local.cpp). */
+McpResult mcpListCores(const std::vector<std::string> &dirs);
+McpResult mcpDescribeCore(const std::vector<std::string> &dirs, const std::string &argumentsJson);
+bool mcpFindPackage(const std::vector<std::string> &dirs, const std::string &asked, std::string &path, std::string &why);
+
 /* Runs one tool call for the protocol. */
 using McpExecutor = std::function<McpResult(const std::string &tool, const std::string &argumentsJson)>;
 

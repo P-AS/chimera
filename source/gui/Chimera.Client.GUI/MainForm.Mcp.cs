@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using Chimera.Client.Common;
 using Chimera.Common;
@@ -104,6 +105,56 @@ namespace Chimera.Client.GUI
 				_main.CloseProject();
 				return _main.Emulator.IsNull() ? null : "something asked to keep it open";
 			}
+
+			public McpProjectMade CreateProject(McpProjectRequest request) => _main.McpCreateProject(request);
+		}
+
+		/// <summary>
+		/// create_project: the New Project wizard, never shown, given the agent's answers
+		/// (<see cref="NewProjectWizard.CompleteForAgent"/>), and the project it makes opened as one made by
+		/// hand is. The firmware it found is remembered as the wizard's always is.
+		/// </summary>
+		private McpProjectMade McpCreateProject(McpProjectRequest request)
+		{
+			ScanForCorePackages();
+			List<string> folders = [ Config.PathEntries.FirmwareAbsolutePath() ];
+			if (request.FirmwareFolder is { } extra) folders.Add(extra);
+			using var wizard = MakeNewProjectWizard(folders);
+			var outcome = wizard.CompleteForAgent(request.Core,
+				Config.DefaultCoreBuilds.TryGetValue(request.Core, out var preferred) ? preferred : null,
+				request.System, request.Files, request.Games, request.Settings, request.Firmware);
+			if (!outcome.Made || wizard.CreatedProject is not { } project)
+			{
+				return new()
+				{
+					Refusal = outcome.Refusal,
+					Missing = outcome.Missing.Count is 0 ? null : new JArray(outcome.Missing.Select(static m => new JObject
+					{
+						["id"] = m.Id,
+						["name"] = m.Name,
+						["accepted"] = new JArray(m.Accepted.Select(static d => new JObject
+						{
+							["file"] = d.Name,
+							["size"] = d.Size,
+							["sha1"] = d.Sha1,
+						})),
+					})),
+					Searched = outcome.Missing.Count is 0 ? null : new JArray(outcome.Searched),
+				};
+			}
+			// the project open now gives way, and what it had not saved the agent said may go
+			if (request.DiscardUnsaved && MovieSession.Movie is ITasMovie open) open.ClearChanges();
+			RememberWizardFirmware(wizard);
+			if (!LoadNewProject(project) || Emulator.IsNull())
+			{
+				return new() { Refusal = "The project was made, but its machine did not start." };
+			}
+			var opened = JObject.Parse(McpHostStatus());
+			opened["core"] = Emulator.Attributes().CoreName;
+			opened["system"] = Emulator.SystemId;
+			opened["frame"] = Emulator.Frame;
+			opened["movie_length"] = MovieSession.Movie.FrameCount;
+			return new() { Opened = opened };
 		}
 
 		/// <summary>server_info: this build, and the folders it reads and writes.</summary>
@@ -250,6 +301,7 @@ namespace Chimera.Client.GUI
 				active = movie.IsActive();
 				var log = active && movie.GetLogEntries() is EngineStringLog entries ? entries.Engine.Handle : IntPtr.Zero;
 				var frame = Emulator.IsNull() ? -1 : Emulator.Frame;
+				EngineMcp.SetCoresFolders(CorePackageDiscovery.SearchPaths(Config));
 				if (!EngineMcp.Service(session, log, frame, McpHostStatus(), out var id, out var tool, out var arguments)) break;
 				string? text;
 				bool isError;

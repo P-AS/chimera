@@ -75,6 +75,48 @@ namespace Chimera.Client.Common
 
 		/// <summary>Closes the open project and its machine without asking anything. Null when closed, else why not.</summary>
 		string? CloseProject();
+
+		/// <summary>create_project: a project made as the New Project wizard makes it, from these answers, and opened.</summary>
+		McpProjectMade CreateProject(McpProjectRequest request);
+	}
+
+	/// <summary>What an agent's create_project asks for (docs/mcp-server.md).</summary>
+	public sealed class McpProjectRequest
+	{
+		public string Core { get; init; } = "";
+
+		public string? System { get; init; }
+
+		/// <summary>Files by slot.</summary>
+		public IReadOnlyList<(string Slot, string Path)> Files { get; init; } = [ ];
+
+		/// <summary>Files with no slot named: each goes where its kind of file goes.</summary>
+		public IReadOnlyList<string> Games { get; init; } = [ ];
+
+		public IReadOnlyDictionary<string, object> Settings { get; init; } = new Dictionary<string, object>();
+
+		/// <summary>Firmware files by id.</summary>
+		public IReadOnlyList<(string Id, string Path)> Firmware { get; init; } = [ ];
+
+		/// <summary>A folder to look for firmware in, beside where Chimera looks.</summary>
+		public string? FirmwareFolder { get; init; }
+
+		/// <summary>The open project may lose changes that are not saved.</summary>
+		public bool DiscardUnsaved { get; init; }
+	}
+
+	/// <summary>What create_project made: the project opened, or why not.</summary>
+	public sealed class McpProjectMade
+	{
+		/// <summary>What the agent is told of the project opened; null when none was.</summary>
+		public JObject? Opened { get; init; }
+
+		public string? Refusal { get; init; }
+
+		/// <summary>When firmware was missing: each file, with the files that would do; and where it was looked for.</summary>
+		public JArray? Missing { get; init; }
+
+		public JArray? Searched { get; init; }
 	}
 
 	/// <summary>
@@ -135,6 +177,8 @@ namespace Chimera.Client.Common
 					return SaveProject(movie, chimera, arguments, out isError);
 				case "close_tastudio":
 					return CloseProject(movie, chimera, arguments, out isError);
+				case "create_project":
+					return CreateProject(movie, chimera, arguments, out isError);
 			}
 			if (movie is null) return Refuse(NoMovie, out isError);
 			try
@@ -255,6 +299,95 @@ namespace Chimera.Client.Common
 			JObject closed = new() { ["closed"] = true, ["machine_open"] = chimera.Frame >= 0 };
 			if (lost) closed["note"] = "The changes that were not saved are lost.";
 			return closed.ToString(Formatting.None);
+		}
+
+		/// <summary>
+		/// create_project: the agent's answers read and handed to the window, which makes the project as its
+		/// New Project wizard does. A project open with changes that are not saved stays, unless the agent said
+		/// they may be lost. Missing firmware is an answer of its own: what is missing, and where it was looked for.
+		/// </summary>
+		private static string CreateProject(ITasMovie? movie, IMcpChimera? chimera, JObject arguments, out bool isError)
+		{
+			isError = false;
+			if (chimera is null) return Refuse(NoChimera, out isError);
+			if (arguments["core"] is not { Type: JTokenType.String } core || ((string) core!).Trim().Length is 0)
+			{
+				return Refuse("Give 'core': a core's name or file, as list_cores gives them.", out isError);
+			}
+			var discard = arguments["discard_unsaved"] is { Type: JTokenType.Boolean } flag && (bool) flag!;
+			if (movie is { Changes: true } && !discard)
+			{
+				return Refuse("The project open now has changes that are not saved, so no other was made. Save it with "
+					+ "save_project, or give discard_unsaved: true to let them go.", out isError);
+			}
+			List<(string, string)> files = new();
+			if (arguments["files"] is { } slots)
+			{
+				if (slots is not JObject bySlot || bySlot.Properties().Any(static p => p.Value is not JArray list || list.Any(static f => f.Type is not JTokenType.String)))
+				{
+					return Refuse("'files' is an object from slots to lists of paths, such as {\"rom\": [\"game.nes\"]}.", out isError);
+				}
+				foreach (var slot in bySlot.Properties()) files.AddRange(((JArray) slot.Value).Select(f => (slot.Name, (string) f!)));
+			}
+			List<string> games = new();
+			switch (arguments["game"])
+			{
+				case null:
+					break;
+				case { Type: JTokenType.String } one:
+					games.Add((string) one!);
+					break;
+				case JArray list when list.All(static g => g.Type is JTokenType.String):
+					games.AddRange(list.Select(static g => (string) g!));
+					break;
+				default:
+					return Refuse("'game' is a path, or a list of paths.", out isError);
+			}
+			Dictionary<string, object> settings = new();
+			if (arguments["settings"] is { } given)
+			{
+				if (given is not JObject values || values.Properties().Any(static p => p.Value is not JValue { Value: not null }))
+				{
+					return Refuse("'settings' is an object from settings' names to their values.", out isError);
+				}
+				foreach (var pair in values.Properties()) settings[pair.Name] = ((JValue) pair.Value).Value!;
+			}
+			List<(string, string)> firmware = new();
+			if (arguments["firmware"] is { } byId)
+			{
+				if (byId is not JObject ids || ids.Properties().Any(static p => p.Value.Type is not JTokenType.String))
+				{
+					return Refuse("'firmware' is an object from firmware ids to paths.", out isError);
+				}
+				firmware.AddRange(ids.Properties().Select(static p => (p.Name, (string) p.Value!)));
+			}
+			var folder = arguments["firmware_folder"] is { Type: JTokenType.String } dir ? (string) dir! : null;
+			if (folder is not null && !Directory.Exists(folder)) return Refuse($"There is no folder at '{folder}'.", out isError);
+
+			var made = chimera.CreateProject(new()
+			{
+				Core = ((string) core!).Trim(),
+				System = arguments["system"] is { Type: JTokenType.String } system ? (string) system! : null,
+				Files = files,
+				Games = games,
+				Settings = settings,
+				Firmware = firmware,
+				FirmwareFolder = folder,
+				DiscardUnsaved = discard,
+			});
+			if (made.Missing is { } missing)
+			{
+				isError = true;
+				return new JObject
+				{
+					["error"] = "missing_firmware",
+					["message"] = made.Refusal,
+					["missing"] = missing,
+					["searched"] = made.Searched ?? new JArray(),
+				}.ToString(Formatting.None);
+			}
+			if (made.Opened is null) return Refuse(made.Refusal ?? "No project was made.", out isError);
+			return made.Opened.ToString(Formatting.None);
 		}
 
 		/// <summary>The answer to a seek, once the window has stopped moving: where the machine is now.</summary>

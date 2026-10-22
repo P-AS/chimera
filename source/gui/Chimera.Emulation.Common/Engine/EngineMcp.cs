@@ -80,6 +80,10 @@ namespace Chimera.Emulation.Common.Engine
 		public static void Answer(IntPtr session, ulong id, string text, bool isError)
 			=> ChimeraEngine.Instance.ce_mcp_answer(session, id, text, isError ? 1 : 0);
 
+		/// <summary>Where Chimera finds core packages, for list_cores and describe_core.</summary>
+		public static void SetCoresFolders(System.Collections.Generic.IEnumerable<string> folders)
+			=> ChimeraEngine.Instance.ce_mcp_cores_folders(Newtonsoft.Json.JsonConvert.SerializeObject(folders));
+
 		/// <summary>
 		/// capture_series: the machine is on a frame of the call's plan, and the engine takes its picture, which
 		/// goes with the call's answer. False with the engine's reason when it could not.

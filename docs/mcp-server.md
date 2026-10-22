@@ -35,6 +35,10 @@ Built so far:
 - `press_buttons`, a schedule of presses written into the input as one
   step, and `capture_series`, pictures on a schedule of the machine's own
   frames, each saying whether it is blank; `screenshot` says so too.
+- `create_project` in the window: the New Project window, never shown,
+  given the agent's answers; missing firmware is listed instead of asked
+  for. `list_cores` (with the kinds of file each core opens) and
+  `describe_core` work in the window too.
 
 - `chimera-mcp` is in the Linux and Windows release bundles, in `dll/`, where
   the dialog's set-up command points.
@@ -187,6 +191,7 @@ Looking:
 | `list_branches` / `list_markers` | The project's branches and markers. |
 | `server_info` | This build, the folder it runs from, and the folders for projects, cores, firmware and Lua scripts. Without a window: the build and the folders it was started with. |
 | `pause` | Pauses the machine and says the frame. |
+| `list_cores` / `describe_core` | The core packages in the cores folder, with the machines each is and the kinds of file it opens; and what one declares: settings, firmware, file slots. |
 | `watch` | Names up to 32 memory values or properties; `status`, `seek`, `advance_until` and `load_branch` then carry their values every time. An empty list ends it. |
 
 RAM search (the agent's own search, separate from the RAM Search window):
@@ -220,7 +225,8 @@ Changes:
 | `add_marker` | Places a marker with a text. |
 | `write_memory` / `set_property` / `set_register` | Writes to the machine. Reported as said above. |
 | `resume` | Lets the machine run, as unpausing does; past the movie's end each frame played is added to it. Window only. |
-| `save_project` | Saves the project where it was saved, or at a path (a relative one is in the Movies folder). A file already there is replaced only with `overwrite`. |
+| `save_project` | Saves the project where it was saved, or at a path (a relative one is in the Movies folder; without a window, the path must be inside the work folder). A file already there is replaced only with `overwrite`. |
+| `create_project` | Makes a project and opens it, as the New Project window does: the agent gives the core, the machine, the game's files (by slot, or each put where its kind of file goes), settings and firmware. The core's suggested settings for the game are applied first, as on that window's settings page. Firmware is looked for where that window looks and in a folder the agent names; when some is missing nothing is made, and the answer lists each file missing, the files that would do, and where it looked. A project with unsaved changes is replaced only with `discard_unsaved`. Window only; without a window, `open_game`. |
 | `close_tastudio` | Closes the project and its machine. Unsaved changes are lost only with `discard_unsaved`. Window only; without a window, `close`. |
 
 Each call that edits the input is one step in TAStudio's undo history, named
@@ -234,10 +240,9 @@ Without a window only:
 
 | Tool | What it does |
 | --- | --- |
-| `list_cores` / `describe_core` | The packages in the cores folder, and what one declares: settings, firmware, file slots. |
 | `open_game` | Starts a project from a core and game files, with an empty movie. |
 | `open_project` | Opens a `.chimeraProject`; its files must be the ones it records. |
-| `save_project` / `export_movie` | Writes the project, or the input alone as a movie file, inside the work folder. `save_project` replaces a file other than the project's own only with `overwrite`. |
+| `export_movie` | Writes the input alone as a movie file, inside the work folder. |
 | `close` | Closes the machine. |
 
 ## Where the code lives
@@ -315,6 +320,9 @@ What is different from the window:
   markers of the movie's own, no recording mode, no lag log.
 - **A branch keeps the input and the frame, not the machine's state.**
   Loading one plays its input to its frame.
+- **A project is made with `open_game`, not `create_project`**: it takes
+  the files by slot and the firmware by path, and asks the core for no
+  suggestions.
 - **Firmware is given by path**, a file for each firmware id
   (`describe_core` lists them), in `open_game` and `open_project`. It does
   not look in Chimera's Firmware folder or its settings; only the window
