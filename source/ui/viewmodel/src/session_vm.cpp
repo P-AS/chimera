@@ -21,6 +21,9 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("systemName", "the machine the core runs", systemName);
 	expose("buttonCount", "how many buttons the machine has", buttonCount);
 	expose("gamepads", "the gamepads in use, or why there are none", gamepads);
+	expose("sound", "\"Sound on\", or why there is none", sound);
+	expose("soundQueued", "sample pairs sent to the speakers", soundQueued);
+	expose("soundDropped", "sample pairs dropped because the machine ran ahead of the speakers", soundDropped);
 	picture("screen", "the machine's picture", screen, screenChanged);
 
 	command("open", "opens a core package with a game file", {"package", "game"},
@@ -161,6 +164,7 @@ void SessionViewModel::loop()
 		s_ = nullptr;
 	}
 	padsM_.reset(); /* SDL stops on the thread that started it */
+	soundM_.reset();
 }
 
 void SessionViewModel::openOnMachine(const std::string &package, const std::string &game)
@@ -219,7 +223,9 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	if (!padsM_) padsM_ = std::make_unique<Gamepads>();
 	padCount_ = 0;
 	std::string padText = padsM_->available() ? "No gamepads" : padsM_->problem();
-	later([this, padText] { gamepads.set(padText); });
+	if (!soundM_) soundM_ = std::make_unique<Sound>();
+	const std::string soundText = soundM_->available() ? "Sound on" : soundM_->problem();
+	later([this, padText, soundText] { gamepads.set(padText); sound.set(soundText); });
 
 	const int32_t num = ce_session_vsync_numerator(s), den = ce_session_vsync_denominator(s);
 	if (num > 0 && den > 0)
@@ -307,6 +313,13 @@ void SessionViewModel::advanceOnMachine()
 		later([this, why] { running.set(false); status.set("The machine stopped: " + why); });
 	}
 
+	if (soundM_)
+	{
+		int32_t pairs = 0;
+		const int16_t *samples = ce_session_audio(s_, &pairs);
+		soundM_->play(samples, pairs);
+	}
+
 	const uint32_t *px = ce_session_video(s_);
 	const int32_t w = ce_session_video_width(s_), h = ce_session_video_height(s_);
 	if (px != nullptr && w > 0 && h > 0)
@@ -335,6 +348,11 @@ void SessionViewModel::advanceOnMachine()
 		std::lock_guard<std::mutex> lock(pendingM_);
 		pendingFrame_ = frameM_;
 		if (measured >= 0) pendingFps_ = measured;
+		if (soundM_)
+		{
+			pendingQueued_ = soundM_->queued();
+			pendingDropped_ = soundM_->dropped();
+		}
 		if (changed)
 		{
 			changedFirst_ = changedFirst_ < 0 ? f : std::min(changedFirst_, f);
@@ -354,17 +372,21 @@ void SessionViewModel::tick()
 {
 	int64_t f, cf, cl, af, al;
 	double measured;
+	int64_t queued, dropped;
 	{
 		std::lock_guard<std::mutex> lock(pendingM_);
 		tickPosted_ = false;
 		f = pendingFrame_;
 		measured = pendingFps_;
 		cf = changedFirst_, cl = changedLast_, af = appendedFirst_, al = appendedLast_;
+		queued = pendingQueued_, dropped = pendingDropped_;
 		pendingFps_ = -1;
 		changedFirst_ = changedLast_ = appendedFirst_ = appendedLast_ = -1;
 	}
 	frame.set(f);
 	if (measured >= 0) fps.set(measured);
+	soundQueued.set(queued);
+	soundDropped.set(dropped);
 	if (cf >= 0) inputsChanged.emit(cf, cl);
 	if (af >= 0) inputsAppended.emit(af, al);
 	screenChanged.emit();

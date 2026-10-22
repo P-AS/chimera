@@ -290,6 +290,9 @@ bool machine(const char *package, const char *rom)
 	/* playing runs at the machine's own rate and plays what the log holds */
 	session.run("play", {}, error);
 	CHECK(d.until([&] { return session.frame.get() >= 30; }, 10));
+	/* and its sound reaches the speakers (OpenAL's null device, in the test) */
+	if (session.sound.get() == "Sound on") CHECK(session.soundQueued.get() > 0);
+	else std::printf("SKIP the sound check: %s\n", session.sound.get().c_str());
 	session.run("pause", {}, error);
 	CHECK(d.until([&] { return !session.running.get(); }, 5));
 	const int64_t stopped = session.frame.get();

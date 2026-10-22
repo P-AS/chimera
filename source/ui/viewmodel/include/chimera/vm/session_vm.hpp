@@ -13,6 +13,7 @@
 
 #include "chimera/vm/bindings.hpp"
 #include "chimera/vm/gamepads.hpp"
+#include "chimera/vm/sound.hpp"
 #include "chimera/vm/input_log.hpp"
 #include "chimera/vm/view_model.hpp"
 
@@ -37,6 +38,11 @@ public:
 	Property<int64_t> buttonCount{0};
 	/* the gamepads in use, or why there are none */
 	Property<std::string> gamepads{"No gamepads yet"};
+	/* "Sound on", or why there is none */
+	Property<std::string> sound{"No sound yet"};
+	/* sample pairs sent to the speakers, and those dropped for running ahead */
+	Property<int64_t> soundQueued{0};
+	Property<int64_t> soundDropped{0};
 
 	Picture screen;
 	Signal<> screenChanged;
@@ -93,6 +99,7 @@ private:
 	Bindings bindingsM_;
 	std::vector<std::string> padHeld_;
 	size_t padCount_ = 0;
+	std::unique_ptr<Sound> soundM_;
 
 	std::atomic<uint64_t> held_{0};
 
@@ -101,6 +108,7 @@ private:
 	bool tickPosted_ = false;
 	int64_t pendingFrame_ = 0;
 	double pendingFps_ = -1;
+	int64_t pendingQueued_ = 0, pendingDropped_ = 0;
 	int64_t changedFirst_ = -1, changedLast_ = -1;
 	int64_t appendedFirst_ = -1, appendedLast_ = -1;
 };

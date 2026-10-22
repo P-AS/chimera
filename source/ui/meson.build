@@ -15,6 +15,7 @@ vm_lib = static_library(
     'viewmodel/src/session_vm.cpp',
     'viewmodel/src/piano_roll_vm.cpp',
     'viewmodel/src/gamepads.cpp',
+    'viewmodel/src/sound.cpp',
   ],
   include_directories: [vm_inc, engine_inc],
   dependencies: [thread_dep, dl_dep],
@@ -39,6 +40,8 @@ test(
   'view models',
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom'],
+  # OpenAL's device that plays to nowhere: the sound check runs with no speakers
+  env: ['ALSOFT_DRIVERS=null'],
   timeout: 180,
 )
 
