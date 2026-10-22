@@ -364,6 +364,28 @@ bool machine(const char *package, const char *rom)
 	CHECK(inputs.at(2) == (uint64_t{1} << 7) && inputs.at(3) == (uint64_t{1} << 7) && inputs.at(4) == (uint64_t{1} << 7));
 	CHECK(changedRows >= 4);
 
+	/* the press and its drag are one edit: one undo takes them all back,
+	 * one redo does them again; an undone fill shortens the inputs again */
+	CHECK(roll.canUndo.get() && !roll.canRedo.get());
+	roll.run("undo", {}, error);
+	CHECK(inputs.at(2) == 0 && inputs.at(3) == 0 && inputs.at(4) == 0);
+	CHECK(roll.canRedo.get());
+	roll.run("redo", {}, error);
+	CHECK(inputs.at(2) == (uint64_t{1} << 7) && inputs.at(3) == (uint64_t{1} << 7) && inputs.at(4) == (uint64_t{1} << 7));
+	CHECK(!roll.canRedo.get());
+	roll.run("fill", {int64_t{25}}, error);
+	CHECK(inputs.size() == 25);
+	roll.run("undo", {}, error);
+	CHECK(inputs.size() == 10 && roll.frameCount.get() == 10);
+	roll.run("redo", {}, error);
+	CHECK(inputs.size() == 25);
+	roll.run("undo", {}, error);
+	/* a new edit after an undo forgets what could be redone */
+	roll.run("toggle", {int64_t{5}, int64_t{0}}, error);
+	CHECK(!roll.canRedo.get());
+	roll.run("undo", {}, error);
+	CHECK(inputs.at(5) == 0 && inputs.size() == 10);
+
 	/* playing runs at the machine's own rate and plays what the log holds */
 	session.run("play", {}, error);
 	CHECK(d.until([&] { return session.frame.get() >= 30; }, 10));

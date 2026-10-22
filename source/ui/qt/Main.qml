@@ -56,6 +56,9 @@ ApplicationWindow {
         }
         Menu {
             title: qsTr("Piano &Roll")
+            Action { text: qsTr("&Undo"); shortcut: StandardKey.Undo; enabled: root.pianoRoll.undoEnabled; onTriggered: root.pianoRoll.run("undo") }
+            Action { text: qsTr("&Redo"); shortcut: StandardKey.Redo; enabled: root.pianoRoll.redoEnabled; onTriggered: root.pianoRoll.run("redo") }
+            MenuSeparator {}
             Action { text: qsTr("Add &Marker Here..."); shortcut: "Ctrl+M"; enabled: root.session.isOpen; onTriggered: markerDialog.open() }
             Action { text: qsTr("Remove Marker Here"); enabled: root.session.isOpen; onTriggered: root.pianoRoll.run("removeMarker", [root.pianoRoll.currentFrame]) }
             Action {

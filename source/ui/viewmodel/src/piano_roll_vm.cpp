@@ -16,6 +16,8 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	rows("frames", "one row a frame, one column a button; a cell is true where the button is held", frames_);
 	rows("markers", "the movie's markers: frame, text, whether the frame's state is kept", markerRows_);
 	expose("markerCount", "how many markers the movie has", markerCount);
+	expose("canUndo", "an edit can be taken back", canUndo);
+	expose("canRedo", "an edit taken back can be done again", canRedo);
 
 	command("addMarker", "puts a marker on a frame (or renames the one there)", {"frame", "text"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -64,30 +66,24 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0, b = 0;
 			if (!arg(a, 0, f, error) || !arg(a, 1, b, error)) return {};
-			if (f < 0 || b < 0 || b >= std::min<int64_t>(buttonCount(), 64))
-			{
-				error = "no such frame or button";
-				return {};
-			}
-			const int64_t before = inputs_.size();
-			inputs_.set(f, inputs_.at(f) ^ (uint64_t{1} << b));
-			edited(f, f, before);
+			if (!paint(f, f, b, std::nullopt, false, error)) return {};
 			return (inputs_.at(f) >> b & 1) != 0;
 		});
 	command("press", "a press on a cell: flips it, and a drag from it gives the cells it passes the same state",
 		{"frame", "button"}, [this](const Args &a, std::string &error) -> Value {
-			std::string why;
-			const auto held = run("toggle", a, why);
-			if (!held) { error = why; return {}; }
-			fromValue(*held, dragHeld_);
-			return *held;
+			int64_t f = 0, b = 0;
+			if (!arg(a, 0, f, error) || !arg(a, 1, b, error)) return {};
+			if (!paint(f, f, b, std::nullopt, false, error)) return {};
+			dragHeld_ = (inputs_.at(f) >> b & 1) != 0;
+			/* the drag that follows is the same edit: one undo takes it all back */
+			stroke_ = true;
+			return dragHeld_;
 		});
 	command("drag", "a drag from a pressed cell reached this one: it takes the pressed cell's state",
 		{"frame", "button"}, [this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0, b = 0;
 			if (!arg(a, 0, f, error) || !arg(a, 1, b, error)) return {};
-			std::string why;
-			if (!run("paint", {f, f, b, dragHeld_}, why)) error = why;
+			paint(f, f, b, dragHeld_, stroke_, error);
 			return {};
 		});
 	command("paint", "holds (true) or releases (false) one button on frames first..last", {"first", "last", "button", "held"},
@@ -95,17 +91,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			int64_t first = 0, last = 0, b = 0;
 			bool held = false;
 			if (!arg(a, 0, first, error) || !arg(a, 1, last, error) || !arg(a, 2, b, error) || !arg(a, 3, held, error)) return {};
-			if (first > last) std::swap(first, last);
-			if (first < 0 || b < 0 || b >= std::min<int64_t>(buttonCount(), 64))
-			{
-				error = "no such frame or button";
-				return {};
-			}
-			const int64_t before = inputs_.size();
-			const uint64_t bit = uint64_t{1} << b;
-			for (int64_t f = first; f <= last; f++)
-				inputs_.set(f, held ? inputs_.at(f) | bit : inputs_.at(f) & ~bit);
-			edited(first, last, before);
+			paint(first, last, b, held, false, error);
 			return {};
 		});
 	command("fill", "makes the inputs at least this many frames long, the new frames empty", {"frames"},
@@ -120,11 +106,21 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			const int64_t before = inputs_.size();
 			if (n > before)
 			{
+				Step step{{}, before, n};
 				inputs_.resize(n);
+				keep(std::move(step), false);
 				edited(before, n - 1, before);
 			}
 			return inputs_.size();
 		});
+	command("undo", "takes the last edit back", {}, [this](const Args &, std::string &) -> Value {
+		undoOrRedo(true);
+		return {};
+	}, &canUndo);
+	command("redo", "does an edit taken back again", {}, [this](const Args &, std::string &) -> Value {
+		undoOrRedo(false);
+		return {};
+	}, &canRedo);
 
 	markersWatch_ = session_.markersLoaded.connect([this](const std::vector<Marker> &loaded) {
 		markers_.clear();
@@ -174,6 +170,84 @@ void PianoRollViewModel::clampTop()
 int32_t PianoRollViewModel::buttonCount() const
 {
 	return static_cast<int32_t>(session_.buttonNames().size());
+}
+
+bool PianoRollViewModel::paint(int64_t first, int64_t last, int64_t b, std::optional<bool> held, bool join, std::string &error)
+{
+	if (first > last) std::swap(first, last);
+	if (first < 0 || b < 0 || b >= std::min<int64_t>(buttonCount(), 64))
+	{
+		error = "no such frame or button";
+		return false;
+	}
+	const int64_t before = inputs_.size();
+	const uint64_t bit = uint64_t{1} << b;
+	Step step{{}, before, 0};
+	for (int64_t f = first; f <= last; f++)
+	{
+		const uint64_t was = inputs_.at(f);
+		const uint64_t now = held ? (*held ? was | bit : was & ~bit) : was ^ bit;
+		inputs_.set(f, now);
+		step.frames[f] = {was, now};
+	}
+	step.sizeAfter = inputs_.size();
+	keep(std::move(step), join);
+	edited(first, last, before);
+	return true;
+}
+
+void PianoRollViewModel::keep(Step step, bool join)
+{
+	if (join && !undo_.empty())
+	{
+		/* the stroke goes on: a frame it passes again keeps its first "before" */
+		Step &last = undo_.back();
+		for (const auto &[f, change] : step.frames)
+		{
+			auto it = last.frames.find(f);
+			if (it == last.frames.end()) last.frames.emplace(f, change);
+			else it->second.second = change.second;
+		}
+		last.sizeAfter = step.sizeAfter;
+	}
+	else
+	{
+		stroke_ = false;
+		undo_.push_back(std::move(step));
+		if (undo_.size() > kMostUndo) undo_.erase(undo_.begin());
+	}
+	redo_.clear();
+	canUndo.set(!undo_.empty());
+	canRedo.set(false);
+}
+
+void PianoRollViewModel::undoOrRedo(bool back)
+{
+	std::vector<Step> &from = back ? undo_ : redo_, &to = back ? redo_ : undo_;
+	if (from.empty()) return;
+	Step step = std::move(from.back());
+	from.pop_back();
+	stroke_ = false;
+	const int64_t before = inputs_.size();
+	/* the frames as they were (or were made), and the length */
+	if (!back) inputs_.resize(std::max(step.sizeAfter, before));
+	for (const auto &[f, change] : step.frames) inputs_.set(f, back ? change.first : change.second);
+	inputs_.resize(back ? step.sizeBefore : step.sizeAfter);
+	const int64_t first = step.frames.empty() ? std::min(step.sizeBefore, step.sizeAfter) : step.frames.begin()->first;
+	const int64_t last = step.frames.empty() ? std::max(step.sizeBefore, step.sizeAfter) - 1 : step.frames.rbegin()->first;
+	to.push_back(std::move(step));
+	canUndo.set(!undo_.empty());
+	canRedo.set(!redo_.empty());
+	if (inputs_.size() < before)
+	{
+		/* frames went: the list is told so as a whole */
+		frameCount.set(inputs_.size());
+		clampTop();
+		frames_.reset.emit();
+		if (first < inputs_.size()) session_.edited(first);
+		return;
+	}
+	edited(first, last, before);
 }
 
 void PianoRollViewModel::edited(int64_t first, int64_t last, int64_t oldCount)

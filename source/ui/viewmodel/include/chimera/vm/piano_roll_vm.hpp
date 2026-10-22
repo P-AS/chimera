@@ -3,6 +3,7 @@
  * the button is held. It reads and edits the same inputs the session plays. */
 
 #include <map>
+#include <optional>
 
 #include "chimera/vm/input_log.hpp"
 #include "chimera/vm/session_vm.hpp"
@@ -29,6 +30,9 @@ public:
 	Property<int64_t> topFrame{0};
 	Property<int64_t> visibleFrames{0};
 	Property<int64_t> markerCount{0};
+	/* an edit can be taken back, or one taken back done again */
+	Property<bool> canUndo{false};
+	Property<bool> canRedo{false};
 
 	/* the rows, for a view that draws its own cells (cells as bits, no Value) */
 	uint64_t frameBits(int64_t frame) const { return inputs_.at(frame); }
@@ -68,6 +72,19 @@ private:
 		PianoRollViewModel &vm_;
 	};
 
+	/* One edit, for undo: each frame it changed, as it was and as it became,
+	 * and the length before and after. */
+	struct Step
+	{
+		std::map<int64_t, std::pair<uint64_t, uint64_t>> frames;
+		int64_t sizeBefore = 0, sizeAfter = 0;
+	};
+	static constexpr size_t kMostUndo = 1000;
+
+	/* held: set to it; nullopt: flip. join: part of the stroke under way */
+	bool paint(int64_t first, int64_t last, int64_t button, std::optional<bool> held, bool join, std::string &error);
+	void keep(Step step, bool join);
+	void undoOrRedo(bool back);
 	void edited(int64_t first, int64_t last, int64_t oldCount);
 	void markersEdited(int64_t frame);
 	void follow();
@@ -82,6 +99,9 @@ private:
 	Connection frameWatch_, buttonsWatch_, changedWatch_, appendedWatch_, topWatch_, greenWatch_, resetWatch_;
 	/* what a drag paints: the state the pressed cell was given */
 	bool dragHeld_ = false;
+	/* a press began a stroke that drags extend */
+	bool stroke_ = false;
+	std::vector<Step> undo_, redo_;
 };
 
 } // namespace chimera::vm
