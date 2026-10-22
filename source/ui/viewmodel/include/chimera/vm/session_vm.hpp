@@ -110,6 +110,13 @@ public:
 	 * the two differ, and replays from there */
 	void loadMovie(std::string text, int64_t frame);
 
+	/* Where packages and firmware are found (the cores view model's), asked
+	 * on the machine's thread: a project that names no package runs the one
+	 * found for its core, and every machine gets the firmware it needs. */
+	using PackageFinder = std::function<std::string(const std::string &coreName, const std::string &sha1, std::string &note)>;
+	using FolderFinder = std::function<std::vector<std::string>()>;
+	void setFinders(PackageFinder packages, FolderFinder firmwareFolders);
+
 	/* for the window: a key went down or up, by Chimera's key names */
 	void key(const std::string &name, bool down);
 
@@ -200,6 +207,17 @@ private:
 	std::string settingsM_;
 	std::vector<int32_t> axesBuf_;
 	std::vector<Marker> markersM_;
+	PackageFinder findPackageM_;
+	FolderFinder firmwareFoldersM_;
+	struct Firmware
+	{
+		std::vector<std::string> ids;
+		std::vector<std::vector<uint8_t>> data;
+		std::string pins; /* {"id","sha1"} of what was found, as a project records it */
+	};
+	/* the firmware a machine needs, read; false with why when some is missing */
+	bool firmwareOnMachine(const std::string &package, const std::string &slots, const std::string &settings,
+		const std::string &pins, Firmware &out, std::string &why);
 	std::vector<Branch> branchesM_;
 
 	void pinMarkersOnMachine();

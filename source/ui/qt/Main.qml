@@ -15,6 +15,7 @@ ApplicationWindow {
     required property QtObject settings
     required property QtObject luaConsole
     required property QtObject branches
+    required property QtObject cores
     property url chosenPackage
 
     width: 1280
@@ -52,6 +53,7 @@ ApplicationWindow {
         }
         Menu {
             title: qsTr("&Tools")
+            Action { text: qsTr("&Cores..."); onTriggered: { coresWindow.show(); coresWindow.raise() } }
             Action { text: qsTr("RAM &Search..."); onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
             Action { text: qsTr("&Lua Console..."); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
         }
@@ -96,6 +98,7 @@ ApplicationWindow {
     Settings { id: settingsWindow; settings: root.settings; visible: false }
     LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; visible: false }
     Branches { id: branchesWindow; vm: root.branches; visible: false }
+    Cores { id: coresWindow; vm: root.cores; visible: false }
 
     FileDialog {
         id: packageDialog
@@ -108,7 +111,8 @@ ApplicationWindow {
         id: projectDialog
         title: qsTr("Choose a project")
         nameFilters: [qsTr("Chimera projects (*.chimeraProject)"), qsTr("All files (*)")]
-        onAccepted: { root.chosenProject = selectedFile; projectPackageDialog.open() }
+        // the project's core is found among the installed ones
+        onAccepted: root.session.run("openProject", [selectedFile])
     }
     FileDialog {
         id: projectPackageDialog

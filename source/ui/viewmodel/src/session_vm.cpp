@@ -2,11 +2,14 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <future>
 #include <iterator>
 
 #include "chimera/engine.h"
+#include "chimera/vm/firmware.hpp"
+#include "chimera/vm/json.hpp"
 
 namespace chimera::vm {
 
@@ -51,10 +54,11 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			});
 			return {};
 		});
-	command("openProject", "opens a Chimera project with a core package; its files are looked for beside it",
-		{"project", "package"}, [this](const Args &a, std::string &error) -> Value {
+	command("openProject", "opens a Chimera project; its files are looked for beside it, its core among the installed "
+		"ones unless a package is given", {"project", "package"}, [this](const Args &a, std::string &error) -> Value {
 			std::string project, package;
-			if (!arg(a, 0, project, error) || !arg(a, 1, package, error)) return {};
+			if (!arg(a, 0, project, error)) return {};
+			if (a.size() > 1 && !arg(a, 1, package, error)) return {};
 			status.set("Opening " + project + "...");
 			submit([this, project, package] { openProjectOnMachine(project, package, false); });
 			return {};
@@ -101,6 +105,37 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		});
 		return {};
 	}, &isOpen);
+	command("savePicture", "writes the picture now on screen as a TGA file, as chimera-run does", {"path"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string path;
+			if (!arg(a, 0, path, error)) return {};
+			Picture::Frame f;
+			if (!screen.takeIfNewer(UINT64_MAX, f) || f.width <= 0 || f.height <= 0)
+			{
+				error = "there is no picture yet";
+				return {};
+			}
+			/* uncompressed 32-bit, rows bottom-up: the engine's BGRA is what a TGA stores */
+			std::vector<uint8_t> out(18 + static_cast<size_t>(f.width) * f.height * 4, 0);
+			out[2] = 2;
+			out[12] = static_cast<uint8_t>(f.width & 0xFF);
+			out[13] = static_cast<uint8_t>((f.width >> 8) & 0xFF);
+			out[14] = static_cast<uint8_t>(f.height & 0xFF);
+			out[15] = static_cast<uint8_t>((f.height >> 8) & 0xFF);
+			out[16] = 32;
+			out[17] = 8;
+			const size_t row = static_cast<size_t>(f.width) * 4;
+			for (int32_t y = 0; y < f.height; y++)
+				std::memcpy(&out[18 + static_cast<size_t>(f.height - 1 - y) * row], &f.pixels[static_cast<size_t>(y) * f.width], row);
+			std::ofstream file(path, std::ios::binary);
+			file.write(reinterpret_cast<const char *>(out.data()), static_cast<std::streamsize>(out.size()));
+			if (!file)
+			{
+				error = "cannot write " + path;
+				return {};
+			}
+			return static_cast<int64_t>(f.serial);
+		}, &isOpen);
 	command("seek", "puts the machine on a frame, from the nearest stored state; stops it running", {"frame"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t target = 0;
@@ -233,10 +268,51 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 		return;
 	}
 	const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+	/* the firmware it needs: the game goes in the package's first slot, for
+	 * the conditions that ask about the files */
+	Firmware fw;
+	{
+		std::string slotId = "rom";
+		const char *perr = nullptr;
+		if (ce_package *pk = ce_package_open(package.c_str(), &perr))
+		{
+			uint64_t len = 0;
+			json::Json slots;
+			std::string jerr;
+			if (const uint8_t *d = ce_package_entry(pk, "file_slots.json", &len);
+				d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), slots, jerr))
+				if (const json::Json *list = slots.find("slots"); list != nullptr && !list->items.empty())
+					if (const json::Json *id = list->items[0].find("id")) slotId = id->text;
+			ce_package_free(pk);
+		}
+		const size_t slash = game.find_last_of("/\\");
+		const std::string base = slash == std::string::npos ? game : game.substr(slash + 1);
+		json::Json slotMap;
+		slotMap.kind = json::Json::Kind::Object;
+		json::Json files;
+		files.kind = json::Json::Kind::Array;
+		files.items.push_back(json::Json::string(base));
+		slotMap.members.emplace_back(slotId, files);
+		std::string why;
+		if (!firmwareOnMachine(package, json::write(slotMap), settingsM_.empty() ? "{}" : settingsM_, "", fw, why))
+		{
+			later([this, why] { status.set(why); isOpen.set(false); });
+			return;
+		}
+	}
+	std::vector<const char *> fwIds;
+	std::vector<const uint8_t *> fwData;
+	std::vector<uint64_t> fwLens;
+	for (size_t i = 0; i < fw.ids.size(); i++)
+	{
+		fwIds.push_back(fw.ids[i].c_str());
+		fwData.push_back(fw.data[i].data());
+		fwLens.push_back(fw.data[i].size());
+	}
 	const char *error = nullptr;
 	ce_session *s = ce_session_open(package.c_str(), bytes.data(), bytes.size(), game.c_str(),
-		settingsM_.empty() ? nullptr : settingsM_.c_str(),
-		nullptr, nullptr, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, &error);
+		settingsM_.empty() ? nullptr : settingsM_.c_str(), fwIds.data(), fwData.data(), fwLens.data(),
+		static_cast<int32_t>(fwIds.size()), nullptr, nullptr, nullptr, nullptr, 0, &error);
 	if (s == nullptr)
 	{
 		const std::string why = error != nullptr ? error : "no reason given";
@@ -387,6 +463,64 @@ void SessionViewModel::pinMarkersOnMachine()
 		if (m.keepState) ce_session_greenzone_pin(s_, m.frame, 1);
 }
 
+void SessionViewModel::setFinders(PackageFinder packages, FolderFinder firmwareFolders)
+{
+	submit([this, packages = std::move(packages), firmwareFolders = std::move(firmwareFolders)] {
+		findPackageM_ = packages;
+		firmwareFoldersM_ = firmwareFolders;
+	});
+}
+
+bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::string &slots, const std::string &settings,
+	const std::string &pins, Firmware &out, std::string &why)
+{
+	json::Json cfg, settingsJson, pinsJson;
+	std::string error;
+	const char *perr = nullptr;
+	if (ce_package *pk = ce_package_open(package.c_str(), &perr))
+	{
+		uint64_t len = 0;
+		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len))
+			json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, error);
+		ce_package_free(pk);
+	}
+	const json::Json *decl = cfg.find("firmware");
+	if (decl == nullptr || decl->items.empty()) return true;
+	json::Json noSettings;
+	const json::Json *settingsDecl = cfg.find("settings");
+	if (!json::parse(settings, settingsJson, error) || settingsJson.kind != json::Json::Kind::Object) settingsJson.kind = json::Json::Kind::Object;
+	if (!pins.empty()) json::parse(pins, pinsJson, error);
+	const std::vector<FirmwareFile> index = indexFirmware(firmwareFoldersM_ ? firmwareFoldersM_() : std::vector<std::string>{});
+	const std::vector<FirmwareNeed> needs = neededFirmware(*decl, settingsDecl != nullptr ? *settingsDecl : noSettings, slots,
+		settingsJson, pinsJson, index);
+	std::string missing;
+	json::Json recorded;
+	recorded.kind = json::Json::Kind::Array;
+	for (const FirmwareNeed &n : needs)
+	{
+		if (n.path.empty())
+		{
+			missing += (missing.empty() ? "" : ", ") + (n.display.empty() ? n.id : n.display + " (" + n.id + ")");
+			continue;
+		}
+		std::ifstream in(n.path, std::ios::binary);
+		out.ids.push_back(n.id);
+		out.data.emplace_back((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		json::Json pin;
+		pin.kind = json::Json::Kind::Object;
+		pin.members.emplace_back("id", json::Json::string(n.id));
+		pin.members.emplace_back("sha1", json::Json::string(n.sha1));
+		recorded.items.push_back(std::move(pin));
+	}
+	out.pins = json::write(recorded);
+	if (!missing.empty())
+	{
+		why = "Firmware missing (put it in the firmware folder): " + missing;
+		return false;
+	}
+	return true;
+}
+
 void SessionViewModel::onMachineWait(MachineJob job)
 {
 	auto done = std::make_shared<std::promise<void>>();
@@ -423,7 +557,7 @@ void SessionViewModel::freeProjectOnMachine()
 	projectPathM_.clear();
 }
 
-void SessionViewModel::openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs,
+void SessionViewModel::openProjectOnMachine(const std::string &path, const std::string &packageGiven, bool keepInputs,
 	ce_project *reuse)
 {
 	const std::string kept = keepInputs && s_ != nullptr ? movieTextOnMachine() : std::string();
@@ -461,6 +595,20 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	uint32_t flags = 0;
 	std::string note;
 	const std::string pinned = ce_project_core_sha1(p) != nullptr ? ce_project_core_sha1(p) : "";
+	std::string package = packageGiven;
+	if (package.empty())
+	{
+		const std::string coreName = ce_project_core_name(p) != nullptr ? ce_project_core_name(p) : "";
+		std::string found;
+		if (findPackageM_) package = findPackageM_(coreName, pinned, found);
+		if (package.empty())
+		{
+			if (reuse == nullptr) ce_project_free(p);
+			fail("No " + coreName + " core is installed: put its .chimeraCore in the cores folder");
+			return;
+		}
+		if (!found.empty()) note = "; " + found;
+	}
 	if (!pinned.empty())
 	{
 		const char *perr = nullptr;
@@ -475,7 +623,41 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 			ce_package_free(pk);
 		}
 	}
-	ce_session *s = ce_session_open_project(package.c_str(), p, nullptr, nullptr, nullptr, nullptr, 0, flags, &error);
+	/* the firmware it needs, by the hashes it pins */
+	Firmware fw;
+	{
+		uint64_t len = 0;
+		const char *slots = ce_project_slots_text(p, &len);
+		const std::string slotsText(slots != nullptr ? slots : "{}", slots != nullptr ? static_cast<size_t>(len) : 2);
+		const char *settings = ce_project_settings_text(p, &len);
+		const std::string settingsText(settings != nullptr ? settings : "{}", settings != nullptr ? static_cast<size_t>(len) : 2);
+		const char *pins = ce_project_firmware_text(p, &len);
+		const std::string pinsText(pins != nullptr ? pins : "", pins != nullptr ? static_cast<size_t>(len) : 0);
+		std::string why;
+		if (!firmwareOnMachine(package, slotsText, settingsText, pinsText, fw, why))
+		{
+			if (reuse == nullptr) ce_project_free(p);
+			fail(why);
+			return;
+		}
+	}
+	std::vector<const char *> fwIds;
+	std::vector<const uint8_t *> fwData;
+	std::vector<uint64_t> fwLens;
+	for (size_t i = 0; i < fw.ids.size(); i++)
+	{
+		fwIds.push_back(fw.ids[i].c_str());
+		fwData.push_back(fw.data[i].data());
+		fwLens.push_back(fw.data[i].size());
+	}
+	ce_session *s = ce_session_open_project(package.c_str(), p, nullptr, fwIds.data(), fwData.data(), fwLens.data(),
+		static_cast<int32_t>(fwIds.size()), flags, &error);
+	/* what was mounted is what the project records, as always: by the bytes */
+	if (s != nullptr && !fw.ids.empty())
+	{
+		const char *ferr = nullptr;
+		ce_project_set_firmware_text(p, fw.pins.c_str(), &ferr);
+	}
 	if (s == nullptr)
 	{
 		ce_project_free(p);

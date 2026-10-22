@@ -2,7 +2,7 @@
  * session and piano roll view models. Everything a window does here goes
  * through the view models' registries, so a script could do the same.
  *
- *   chimera-qt [<package> <game> | <project> <package>] [--fill <frames>] [--play]
+ *   chimera-qt [<package> <game> | <project> [<package>]] [--fill <frames>] [--play]
  *              [--measure <seconds>] [--scroll] [--screenshot <path>]
  *              [--lua <script>] [--describe]
  *
@@ -32,6 +32,7 @@
 #include <vector>
 
 #include "chimera/vm/branches_vm.hpp"
+#include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
@@ -157,7 +158,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark, whatever the system says"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: ram-search, settings, lua, branches"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: ram-search, settings, lua, branches, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -193,11 +194,21 @@ int main(int argc, char **argv)
 	vm::RamSearchViewModel ramSearch(dispatcher, session);
 	vm::SettingsViewModel settings(dispatcher, session);
 	vm::BranchesViewModel branches(dispatcher, inputs, session, pianoRoll);
+	/* the cores and the firmware: beside the program, as Chimera keeps them,
+	 * unless the environment names others */
+	vm::CoresViewModel cores(dispatcher);
+	if (cores.coresFolder.get().empty())
+		cores.coresFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Cores")).toStdString());
+	if (cores.firmwareFolder.get().empty())
+		cores.firmwareFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Firmware")).toStdString());
+	session.setFinders([&cores](const std::string &n, const std::string &h, std::string &note) { return cores.packageFor(n, h, note); },
+		[&cores] { return cores.firmwareFolders(); });
 	qt::QmlViewModel sessionQml(session);
 	qt::QmlViewModel pianoRollQml(pianoRoll);
 	qt::QmlViewModel ramSearchQml(ramSearch);
 	qt::QmlViewModel settingsQml(settings);
 	qt::QmlViewModel branchesQml(branches);
+	qt::QmlViewModel coresQml(cores);
 
 	/* scripts reach the same view models, by the same names */
 	vm::LuaBridge lua;
@@ -213,6 +224,7 @@ int main(int argc, char **argv)
 	lua.add(settings);
 	lua.add(luaConsole);
 	lua.add(branches);
+	lua.add(cores);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -233,6 +245,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},
+		{QStringLiteral("cores"), QVariant::fromValue<QObject *>(&coresQml)},
 	});
 	engine.load(QUrl(QStringLiteral("qrc:/chimera/Main.qml")));
 	if (engine.rootObjects().isEmpty()) return 1;
@@ -243,7 +256,8 @@ int main(int argc, char **argv)
 	const QString showName = args.value(showOpt) == QStringLiteral("ram-search") ? QStringLiteral("ramSearchWindow")
 		: args.value(showOpt) == QStringLiteral("settings") ? QStringLiteral("settingsWindow")
 		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")
-		: args.value(showOpt) == QStringLiteral("branches") ? QStringLiteral("branchesWindow") : QString();
+		: args.value(showOpt) == QStringLiteral("branches") ? QStringLiteral("branchesWindow")
+		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())
 		if (auto *tool = window->findChild<QQuickWindow *>(showName)) tool->show();
 
@@ -280,17 +294,21 @@ int main(int argc, char **argv)
 			session.run("openProject", {positional[0].toStdString(), positional[1].toStdString()}, error);
 		else
 			session.run("open", {positional[0].toStdString(), positional[1].toStdString()}, error);
-		if (args.isSet(playOpt))
-		{
-			/* play once the machine is open */
-			auto connection = std::make_shared<vm::Connection>();
-			*connection = session.isOpen.changed.connect([&session, connection] {
-				if (!session.isOpen.get()) return;
-				std::string e;
-				session.run("play", {}, e);
-				connection->disconnect();
-			});
-		}
+	}
+	else if (positional.size() == 1)
+	{
+		/* a project alone: its core is found among the installed ones */
+		session.run("openProject", {positional[0].toStdString()}, error);
+	}
+	if (!positional.isEmpty() && args.isSet(playOpt))
+	{
+		/* play once the machine is open */
+		auto connection = std::make_shared<vm::Connection>();
+		*connection = session.opens.changed.connect([&session, connection] {
+			std::string e;
+			session.run("play", {}, e);
+			connection->disconnect();
+		});
 	}
 
 	/* measuring */
@@ -305,6 +323,7 @@ int main(int argc, char **argv)
 	qint64 shownAtStart = 0;
 	QElapsedTimer runClock;
 	vm::Connection startWatch;
+	int exitCode = 0;
 	if (args.isSet(measureOpt))
 	{
 		const double seconds = args.value(measureOpt).toDouble();
@@ -347,6 +366,8 @@ int main(int argc, char **argv)
 			std::printf("machine: %lld frames in %.2f s = %.2f fps (the machine's own rate is its vsync)\n",
 				static_cast<long long>(frames), ran, ran > 0 ? frames / ran : 0.0);
 			std::printf("pictures drawn: %lld\n", static_cast<long long>(shown));
+			/* asked to play, a run that ran nothing failed (the window test) */
+			if (args.isSet(playOpt) && frames <= 0) exitCode = 2;
 			std::printf("window frames: %zu, interval ms median %.2f, 95th %.2f, worst %.2f\n",
 				intervals.size() + (swaps.empty() ? 0 : 1), w.median, w.p95, w.worst);
 			std::printf("piano roll: %lld rows, %zu paints, ms median %.3f, 95th %.3f, worst %.3f\n",
@@ -365,7 +386,7 @@ int main(int argc, char **argv)
 				}
 			}
 			std::fflush(stdout);
-			app.quit();
+			app.exit(exitCode);
 		});
 	}
 

@@ -12,6 +12,7 @@
 #include <fstream>
 #include <sstream>
 #include <cstdio>
+#include <cstring>
 #include <deque>
 #include <functional>
 #include <mutex>
@@ -23,6 +24,8 @@
 #endif
 
 #include "chimera/vm/bindings.hpp"
+#include "chimera/vm/cores_vm.hpp"
+#include "chimera/vm/firmware.hpp"
 #include "chimera/vm/branches_vm.hpp"
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/lua_bridge.hpp"
@@ -221,6 +224,54 @@ void luaConsole()
 	fs::remove(file);
 }
 
+/* Firmware is found by its hash when one is pinned (the project's first),
+ * else by its name, else by the one file its size and name hints point at;
+ * and only what the settings call for is asked for at all */
+void firmware()
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-fw-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "sub");
+	auto write = [&](const fs::path &p, const std::string &bytes) { std::ofstream(p, std::ios::binary) << bytes; };
+	write(dir / "anything.rom", "the pinned bios");
+	write(dir / "sub" / "BIOS.BIN", "named");
+	write(dir / "NDS_Bios7i.bin", std::string(16, 'a'));
+	write(dir / "custom.rom", "a custom bios");
+	char sha[41], custom[41];
+	ce_sha1_hex(reinterpret_cast<const uint8_t *>("the pinned bios"), 15, sha);
+	ce_sha1_hex(reinterpret_cast<const uint8_t *>("a custom bios"), 13, custom);
+	const auto index = indexFirmware({dir.string()});
+	CHECK(index.size() == 4);
+	auto decl = [](const std::string &text) {
+		json::Json j;
+		std::string e;
+		json::parse(text, j, e);
+		return j;
+	};
+	std::string how;
+	const FirmwareFile *f = findFirmware(decl(std::string(R"({"id":"a","sha1":")") + sha + "\"}"), "", index, how);
+	CHECK(f != nullptr && f->name == "anything.rom" && how == "by its hash");
+	f = findFirmware(decl(std::string(R"({"id":"a","sha1":")") + sha + "\"}"), custom, index, how);
+	CHECK(f != nullptr && f->name == "custom.rom" && how == "by the hash the project pins");
+	CHECK(findFirmware(decl(R"({"id":"a","sha1":"0000000000000000000000000000000000000000","name":"BIOS.BIN"})"), "", index, how) == nullptr);
+	f = findFirmware(decl(R"({"id":"b","name":"bios.bin"})"), "", index, how);
+	CHECK(f != nullptr && f->name == "BIOS.BIN" && how == "by its name");
+	f = findFirmware(decl(R"({"id":"c","size":16,"nameHints":["7i"]})"), "", index, how);
+	CHECK(f != nullptr && f->name == "NDS_Bios7i.bin" && how == "by its size and name");
+	write(dir / "other_7i.bin", std::string(16, 'b'));
+	CHECK(findFirmware(decl(R"({"id":"c","size":16,"nameHints":["7i"]})"), "", indexFirmware({dir.string()}), how) == nullptr);
+	/* the engine says what is needed: here only with Load BIOS on */
+	const json::Json fwDecl = decl(R"([{"id":"b","display":"The BIOS","name":"bios.bin","requiredWhen":{"setting":"loadBios","is":true}}])");
+	const json::Json setDecl = decl(R"([{"name":"loadBios","type":"bool","default":false}])");
+	json::Json none, on, noPins;
+	none.kind = json::Json::Kind::Object;
+	json::parse(R"({"loadBios":true})", on, how);
+	CHECK(neededFirmware(fwDecl, setDecl, "{}", none, noPins, index).empty());
+	const auto needs = neededFirmware(fwDecl, setDecl, "{}", on, noPins, index);
+	CHECK(needs.size() == 1 && needs[0].id == "b" && needs[0].path.find("BIOS.BIN") != std::string::npos && needs[0].sha1.size() == 40);
+	fs::remove_all(dir);
+}
+
 void bindings()
 {
 	const std::string json = R"({
@@ -318,6 +369,8 @@ bool gamepads()
 #endif
 }
 
+std::string readFile(const std::filesystem::path &p);
+
 bool machine(const char *package, const char *rom)
 {
 	ManualDispatcher d;
@@ -354,6 +407,20 @@ bool machine(const char *package, const char *rom)
 	/* a picture came out of it */
 	Picture::Frame f;
 	CHECK(session.screen.takeIfNewer(0, f) && f.width > 0 && f.height > 0 && f.pixels.size() == size_t(f.width) * f.height);
+	/* and it saves as chimera-run writes one: a TGA, rows bottom-up */
+	{
+		namespace fs = std::filesystem;
+		const fs::path shot = fs::temp_directory_path() / ("chimera-test-shot-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".tga");
+		CHECK(session.run("savePicture", {shot.string()}, error).has_value());
+		const std::string tga = readFile(shot);
+		CHECK(tga.size() == 18 + size_t(f.width) * f.height * 4 && tga[2] == 2 && static_cast<uint8_t>(tga[16]) == 32);
+		/* every row where a TGA keeps it: the picture's last row first */
+		std::string rows;
+		for (int32_t y = f.height - 1; y >= 0; y--)
+			rows.append(reinterpret_cast<const char *>(&f.pixels[size_t(y) * f.width]), size_t(f.width) * 4);
+		CHECK(tga.size() > 18 && tga.compare(18, std::string::npos, rows) == 0);
+		fs::remove(shot);
+	}
 
 	/* a press on the cell flips it; a drag down the column gives the next cells the same */
 	auto held = roll.run("press", {int64_t{0}, int64_t{4}}, error);
@@ -828,6 +895,31 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	d.until([] { return false; }, 0.1);
 	CHECK(session.readDomain("RAM") == std::vector<uint8_t>(ram.begin(), ram.end()));
 
+	/* opened with no package given: the installed core is found for it, and
+	 * a cores folder without it says which core is missing */
+	{
+		const fs::path cores = dir / "Cores";
+		fs::create_directories(cores);
+		fs::copy_file(package, cores / "synth-box.chimeraCore");
+		CoresViewModel installed(d);
+		installed.set("coresFolder", (cores / "none").string(), error);
+		session.setFinders([&installed](const std::string &n, const std::string &h, std::string &note) { return installed.packageFor(n, h, note); },
+			[&installed] { return installed.firmwareFolders(); });
+		session.run("openProject", {(dir / "p.chimeraProject").string()}, error);
+		CHECK(d.until([&] { return session.status.get().find("No Synth core is installed") != std::string::npos; }, 20));
+		installed.set("coresFolder", cores.string(), error);
+		CHECK(installed.count.get() == 1);
+		std::string coreName;
+		fromValue(installed.rowLists()[0].model->cell(0, 0), coreName);
+		CHECK(coreName == "Synth");
+		const int64_t was = session.opens.get();
+		session.run("openProject", {(dir / "p.chimeraProject").string()}, error);
+		CHECK(d.until([&] { return session.opens.get() > was; }, 30));
+		CHECK(session.coreName.get() == "Synth" && roll.frameCount.get() == end);
+		session.setFinders({}, {});
+		d.until([] { return false; }, 0.05);
+	}
+
 	/* and a project whose file is missing says which */
 	fs::remove(dir / "gridWalker.testrom");
 	session.run("openProject", {(dir / "p.chimeraProject").string(), std::string(package)}, error);
@@ -846,6 +938,7 @@ int main(int argc, char **argv)
 	bindings();
 	lua();
 	luaConsole();
+	firmware();
 	settingsByMachine();
 	pianoRollWithoutAMachine();
 	const bool ranPads = gamepads();
