@@ -29,7 +29,10 @@ code is in `source/ui`; how it is built and run is in
   the engine counts from there instead of replaying to it. And the rule
   for which machine a project makes (core build, settings, firmware,
   files), which decides whether kept states may be loaded, moved from the
-  C# into the engine as `ce_project_machine_id`.
+  C# into the engine as `ce_project_machine_id`, and so did rerecord
+  counting (`ce_session_rerecords`): an edit counts one when it drops a
+  stored state, a stroke counts once, a branch loaded over the movie
+  counts one, as Chimera's TAStudio counts them.
 - Slint was considered and set aside for now. It is the closest fit to
   this pattern, but it has no docking, fewer desktop controls, and its
   licence is GPLv3 or an attribution licence, against Chimera's MIT.
@@ -51,7 +54,7 @@ made from.
 | luaConsole | edit, run, open and save scripts; their output | Lua Console |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 331 checks on the
+The tests drive the view models with no window: 351 checks on the
 synthetic core. They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
 whole window off-screen and runs it for a second. Every new check was

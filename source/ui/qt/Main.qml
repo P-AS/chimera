@@ -262,6 +262,7 @@ ApplicationWindow {
             Label { text: qsTr("roll %1 ms").arg(Number(roll.lastPaintMs).toFixed(2)) }
             Label { text: qsTr("seek %1 frames, %2 ms").arg(root.session.lastSeekFrames).arg(Number(root.session.lastSeekMs).toFixed(0)) }
             Label { text: qsTr("%1 states").arg(root.session.greenzoneStates) }
+            Label { text: qsTr("%1 rerecords").arg(root.session.rerecords) }
         }
     }
 }

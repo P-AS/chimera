@@ -975,6 +975,14 @@ struct ce_session
 	 * machine last moved. */
 	mutable std::mutex movieLock;
 	int64_t editedFrom = -1;
+	/* Rerecords (ce_session_rerecords): the count, whether edits count
+	 * now, and whether one of the edits not yet taken counts (both under
+	 * movieLock: they are decided when the edit is made). */
+	uint64_t rerecords = 0;
+	bool countingRerecords = true;
+	bool countedEdit = false;
+	/* a rerecord, when this drops a stored state: before it is dropped */
+	void rerecordIfDropping(int64_t after);
 	/* the machine's thread's: the earliest edited frame the machine is past */
 	int64_t staleFrom = -1;
 	void takeEdits();
@@ -4030,6 +4038,8 @@ int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 				agree++;
 			}
 		}
+		/* a rerecord when it drops a stored state (movieLock is held here) */
+		if (s->countingRerecords && ce_session_greenzone_nearest(s, INT64_MAX) > agree) s->rerecords++;
 		s->history.invalidateAfter(agree);
 		/* and the pictures kept for frames past it, which were drawn for the
 		 * input the new log replaces (engine analysis, 2026-10-18) */
@@ -4136,6 +4146,7 @@ int32_t ce_session_movie_set(ce_session *s, int64_t frame, uint64_t buttons, con
 	else ce_movie_log_set(s->movie, frame, line.c_str());
 	const int64_t from = std::min(frame, count);
 	s->editedFrom = s->editedFrom < 0 ? from : std::min(s->editedFrom, from);
+	if (s->countingRerecords) s->countedEdit = true;
 	return 0;
 }
 
@@ -4154,7 +4165,11 @@ void ce_session_movie_resize(ce_session *s, int64_t frames)
 		for (int64_t f = count; f < frames; f++) ce_movie_log_add(s->movie, blank.c_str());
 	}
 	const int64_t from = std::min(frames, count);
-	if (frames != count) s->editedFrom = s->editedFrom < 0 ? from : std::min(s->editedFrom, from);
+	if (frames != count)
+	{
+		s->editedFrom = s->editedFrom < 0 ? from : std::min(s->editedFrom, from);
+		if (s->countingRerecords) s->countedEdit = true;
+	}
 }
 
 const char *ce_session_movie_text(ce_session *s, uint64_t *len_out)
@@ -4180,12 +4195,16 @@ const char *ce_session_movie_text(ce_session *s, uint64_t *len_out)
 void ce_session::takeEdits()
 {
 	int64_t from;
+	bool counts;
 	{
 		std::lock_guard<std::mutex> movieLocked(movieLock);
 		from = editedFrom;
 		editedFrom = -1;
+		counts = countedEdit;
+		countedEdit = false;
 	}
 	if (from < 0) return;
+	if (counts) rerecordIfDropping(from);
 	history.invalidateAfter(from);
 	pictures.dropAfter(from);
 	if (frame > from) staleFrom = staleFrom < 0 ? from : std::min(staleFrom, from);
@@ -4234,6 +4253,33 @@ bool ce_session::catchUp(int64_t to, int64_t render)
 }
 
 int64_t ce_session_frame(const ce_session *s) { return s->frame; }
+
+void ce_session::rerecordIfDropping(int64_t after)
+{
+	if (ce_session_greenzone_nearest(this, INT64_MAX) > after)
+	{
+		std::lock_guard<std::mutex> movieLocked(movieLock);
+		rerecords++;
+	}
+}
+
+uint64_t ce_session_rerecords(const ce_session *s)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	return s->rerecords;
+}
+
+void ce_session_set_rerecords(ce_session *s, uint64_t count)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	s->rerecords = count;
+}
+
+void ce_session_rerecord_counting(ce_session *s, int32_t on)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	s->countingRerecords = on != 0;
+}
 
 /* for the engine's own bookkeeping (mcp.cpp): not in engine.h */
 extern "C" uint64_t ce_session_serial(const ce_session *s) { return s != nullptr ? s->serial : 0; }

@@ -35,6 +35,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("soundDropped", "sample pairs dropped because the machine ran ahead of the speakers", soundDropped);
 	expose("greenEnd", "frames before this one were run with the inputs they have now", greenEnd);
 	expose("greenzoneStates", "machine states the greenzone holds", greenzoneStates);
+	expose("rerecords", "how many times the movie was changed over work already done (saved with the project)", rerecords);
 	expose("autoRestore", "after an edit before the current frame, run on to where the machine was", autoRestore, true);
 	expose("lastSeekMs", "how long the last seek took, in milliseconds", lastSeekMs);
 	expose("lastSeekFrames", "how many frames the last seek ran", lastSeekFrames);
@@ -324,6 +325,7 @@ void SessionViewModel::loop()
 void SessionViewModel::openOnMachine(const std::string &package, const std::string &game, bool keepMovie)
 {
 	const std::string movie = keepMovie && s_ != nullptr ? movieTextOnMachine() : std::string();
+	const uint64_t counted = keepMovie && s_ != nullptr ? ce_session_rerecords(s_) : 0;
 	freeSessionOnMachine();
 	runningM_ = false;
 
@@ -413,6 +415,7 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	later([this] { projectPath.set(""); projectTitle.set(""); });
 	/* the movie: the one it had when started again, else an empty one */
 	loadMovieOnMachine(s, movie);
+	ce_session_set_rerecords(s, counted);
 	adoptOnMachine(s, package, game, true);
 	package_ = package;
 	game_ = game;
@@ -883,6 +886,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	ce_project *reuse)
 {
 	const std::string kept = keepInputs && s_ != nullptr ? movieTextOnMachine() : std::string();
+	const uint64_t keptRerecords = keepInputs && s_ != nullptr ? ce_session_rerecords(s_) : 0;
 	freeSessionOnMachine();
 	runningM_ = false;
 	auto fail = [this](const std::string &why) {
@@ -997,6 +1001,8 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		const char *text = ce_project_log_text(p, &len);
 		loadMovieOnMachine(s, std::string(text != nullptr ? text : "", static_cast<size_t>(len)));
 	}
+	/* the count goes on from the project's, or from where a restart was */
+	ce_session_set_rerecords(s, keepInputs ? keptRerecords : ce_project_rerecords(p));
 
 	if (!keepInputs)
 	{
@@ -1163,6 +1169,7 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to)
 	const int64_t n = ce_session_movie_length(s_);
 	const std::string log = movieTextOnMachine();
 	ce_project_set_log_text(projectM_, log.data(), log.size());
+	ce_project_set_rerecords(projectM_, ce_session_rerecords(s_));
 	for (int32_t i = ce_project_marker_count(projectM_) - 1; i >= 0; i--) ce_project_marker_remove(projectM_, i);
 	for (const Marker &m : markersM_) ce_project_marker_add(projectM_, m.frame, m.text.c_str(), m.keepState ? 1 : 0);
 	for (int32_t i = ce_project_branch_count(projectM_) - 1; i >= 0; i--) ce_project_branch_remove(projectM_, i);
@@ -1465,6 +1472,7 @@ void SessionViewModel::report(int64_t cf, int64_t cl, int64_t af, int64_t al, do
 		pendingFrame_ = frameM_;
 		pendingGreenEnd_ = greenEndM_;
 		pendingStates_ = s_ != nullptr ? ce_session_greenzone_count(s_) : 0;
+		pendingRerecords_ = s_ != nullptr ? static_cast<int64_t>(ce_session_rerecords(s_)) : 0;
 		if (fpsNow >= 0) pendingFps_ = fpsNow;
 		if (soundM_)
 		{
@@ -1488,7 +1496,7 @@ void SessionViewModel::report(int64_t cf, int64_t cl, int64_t af, int64_t al, do
 
 void SessionViewModel::tick()
 {
-	int64_t f, cf, cl, af, al, green, states;
+	int64_t f, cf, cl, af, al, green, states, rr;
 	double measured;
 	int64_t queued, dropped;
 	{
@@ -1499,6 +1507,7 @@ void SessionViewModel::tick()
 		cf = changedFirst_, cl = changedLast_, af = appendedFirst_, al = appendedLast_;
 		queued = pendingQueued_, dropped = pendingDropped_;
 		green = pendingGreenEnd_, states = pendingStates_;
+		rr = pendingRerecords_;
 		pendingFps_ = -1;
 		changedFirst_ = changedLast_ = appendedFirst_ = appendedLast_ = -1;
 	}
@@ -1508,6 +1517,7 @@ void SessionViewModel::tick()
 	soundDropped.set(dropped);
 	greenEnd.set(green);
 	greenzoneStates.set(states);
+	rerecords.set(rr);
 	if (cf >= 0) inputsChanged.emit(cf, cl);
 	if (af >= 0) inputsAppended.emit(af, al);
 	screenChanged.emit();

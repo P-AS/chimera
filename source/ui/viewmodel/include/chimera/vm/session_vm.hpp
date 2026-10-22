@@ -63,6 +63,9 @@ public:
 	Property<int64_t> greenEnd{0};
 	/* machine states the greenzone holds */
 	Property<int64_t> greenzoneStates{0};
+	/* how many times the movie was changed over work already done, saved
+	 * with the project */
+	Property<int64_t> rerecords{0};
 	/* after an edit before the current frame, go back to the edit and run
 	 * forward to where the machine was, with the new inputs */
 	Property<bool> autoRestore{true};
@@ -314,7 +317,7 @@ private:
 	int64_t pendingFrame_ = 0;
 	double pendingFps_ = -1;
 	int64_t pendingQueued_ = 0, pendingDropped_ = 0;
-	int64_t pendingGreenEnd_ = 0, pendingStates_ = 0;
+	int64_t pendingGreenEnd_ = 0, pendingStates_ = 0, pendingRerecords_ = 0;
 	int64_t changedFirst_ = -1, changedLast_ = -1;
 	int64_t appendedFirst_ = -1, appendedLast_ = -1;
 };

@@ -49,6 +49,12 @@ void InputLog::resize(int64_t frames)
 	if (s_ != nullptr) ce_session_movie_resize(s_, frames);
 }
 
+void InputLog::countRerecords(bool on)
+{
+	std::shared_lock lock(m_);
+	if (s_ != nullptr) ce_session_rerecord_counting(s_, on ? 1 : 0);
+}
+
 size_t InputLog::axisCount() const
 {
 	std::shared_lock lock(m_);

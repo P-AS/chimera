@@ -83,7 +83,10 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		{"frame", "button"}, [this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0, b = 0;
 			if (!arg(a, 0, f, error) || !arg(a, 1, b, error)) return {};
+			/* the press counted the stroke's rerecord; the cells after it do not */
+			inputs_.countRerecords(!stroke_);
 			paint(f, f, b, dragHeld_, stroke_, error);
+			inputs_.countRerecords(true);
 			return {};
 		});
 	command("paint", "holds (true) or releases (false) one button on frames first..last", {"first", "last", "button", "held"},

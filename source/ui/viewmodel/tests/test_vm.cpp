@@ -1118,6 +1118,87 @@ bool newProject(const char *package, const char *rom)
 	return true;
 }
 
+/* Rerecords, counted as Chimera's TAStudio counts them: an edit over frames
+ * the machine has stored states past counts one, a stroke counts once
+ * however many cells it crosses, frames added at the end count none, a
+ * branch loaded over the movie counts one; the count is kept with the
+ * project and over a restart. */
+bool rerecordCount(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-rerecords-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	BranchesViewModel branches(d, inputs, session, roll);
+	std::string error;
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	for (int i = 0; i < 10; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 10; }, 20));
+	auto settle = [&] { d.until([] { return false; }, 0.2); };
+	settle();
+	CHECK(session.rerecords.get() == 0);
+	/* an edit over played frames */
+	roll.run("toggle", {int64_t{2}, int64_t{4}}, error);
+	CHECK(d.until([&] { return session.rerecords.get() == 1 && session.frame.get() == 10; }, 20));
+	/* a stroke: pressed on one cell, dragged over three more */
+	roll.run("press", {int64_t{3}, int64_t{5}}, error);
+	for (int64_t f = 4; f <= 6; f++)
+	{
+		settle();
+		roll.run("drag", {f, int64_t{5}}, error);
+	}
+	settle();
+	CHECK(session.rerecords.get() == 2);
+	/* frames added at the end redo nothing */
+	roll.run("fill", {int64_t{20}}, error);
+	roll.run("paint", {int64_t{15}, int64_t{18}, int64_t{1}, true}, error);
+	settle();
+	CHECK(session.rerecords.get() == 2);
+	/* undoing an edit over played frames is one */
+	roll.run("undo", {}, error);
+	roll.run("undo", {}, error);
+	roll.run("undo", {}, error);
+	settle();
+	CHECK(session.rerecords.get() == 3);
+	/* a branch loaded over the movie */
+	CHECK(branches.run("create", {std::string("b")}, error).has_value());
+	CHECK(d.until([&] { return branches.made.get() == 1; }, 20));
+	roll.run("toggle", {int64_t{1}, int64_t{0}}, error);
+	CHECK(d.until([&] { return session.rerecords.get() == 4 && session.frame.get() == 10; }, 20));
+	branches.run("load", {int64_t{0}}, error);
+	CHECK(d.until([&] { return branches.loads.get() == 1; }, 20));
+	settle();
+	CHECK(session.rerecords.get() == 5);
+	/* kept over a restart, and with the project */
+	session.run("restart", {}, error);
+	CHECK(d.until([&] { return session.opens.get() == 2; }, 60));
+	settle();
+	CHECK(session.rerecords.get() == 5);
+	const fs::path project = dir / "walker.chimeraProject";
+	session.run("saveAsProject", {project.string()}, error);
+	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	{
+		const std::string text = readFile(project);
+		const size_t at = text.find("\"rerecords\"");
+		CHECK(at != std::string::npos && std::atoi(text.c_str() + text.find(':', at) + 1) == 5);
+	}
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	session.run("openProject", {project.string(), std::string(package)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == project.string(); }, 60));
+	settle();
+	CHECK(session.rerecords.get() == 5);
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
 /* Open Game asks only for the game: the installed core that takes its kind of
  * file opens it, and when two do, both are offered */
 bool openByKind(const char *package, const char *rom, const char *again)
@@ -1217,6 +1298,7 @@ int main(int argc, char **argv)
 			ranMachine = ramSearch(argv[1], argv[2]) && ranMachine;
 			ranMachine = settings(argv[1], argv[2]) && ranMachine;
 			ranMachine = newProject(argv[1], argv[2]) && ranMachine;
+			ranMachine = rerecordCount(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;

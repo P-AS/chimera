@@ -1882,6 +1882,17 @@ CE_API int32_t ce_session_seek(ce_session *s, int64_t frame);
  * 0 done; 1 there is no movie, or the frame is past its end. */
 CE_API int32_t ce_session_movie_at(ce_session *s, int64_t frame);
 
+/* Rerecords: how many times the movie was changed over work already done. An
+ * edit counts one when, honoured, it drops at least one stored state (an edit
+ * past everything stored redoes nothing), and so does a movie loaded over this
+ * one (a branch). Whether an edit counts is decided when it is made: a
+ * frontend turns counting off for the rest of a stroke after its first cell,
+ * so painting across many frames is one rerecord (as Chimera's TAStudio
+ * counts them). _set gives the count a project was saved with. Any thread. */
+CE_API uint64_t ce_session_rerecords(const ce_session *s);
+CE_API void ce_session_set_rerecords(ce_session *s, uint64_t count);
+CE_API void ce_session_rerecord_counting(ce_session *s, int32_t on);
+
 /* The history, kept between sessions. It is written to one file, streamed a
  * segment at a time - nothing about it is ever assembled in memory, which is
  * the whole point: the greenzone this replaces serialized itself through a

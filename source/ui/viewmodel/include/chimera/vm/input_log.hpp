@@ -29,6 +29,9 @@ public:
 	 * movie. False with no machine open. */
 	bool set(int64_t frame, uint64_t mask);
 	void resize(int64_t frames);
+	/* whether the edits made from now on count as rerecords (off for the
+	 * rest of a stroke after its first cell) */
+	void countRerecords(bool on);
 
 	size_t axisCount() const;
 	/* out gets axisCount() values, neutral past the end */
