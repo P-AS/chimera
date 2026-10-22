@@ -15,6 +15,24 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	expose("shown", "settings that apply to this machine and game", shown);
 	expose("status", "what the settings last had to say", status);
 	rows("settings", "one row a setting: name, label, type, value, options, option labels, min, max, description, edited", rows_);
+	rows("presets", "the presets this machine is offered: id, label, description", presetRows_);
+	command("applyPreset", "writes a preset's values into the settings (applied by apply)", {"id"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string id, label;
+			if (!arg(a, 0, id, error)) return {};
+			std::vector<std::string> skipped;
+			if (!form_.applyPreset(id, label, skipped, error)) return {};
+			std::string note = "Preset " + label + " written below";
+			if (!skipped.empty())
+			{
+				note += "; not for this machine:";
+				for (const std::string &s : skipped) note += " " + s;
+			}
+			status.set(note);
+			pending.set(json::write(form_.values()) != json::write(applied_));
+			evaluate();
+			return {};
+		}, &session_.isOpen);
 
 	command("set", "changes a setting (applied by apply)", {"name", "value"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -82,6 +100,9 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 					for (const Json &d : extra.items) decl.push_back(d);
 				const size_t declared = decl.size();
 				form_.declare(std::move(decl), machineSetting);
+				std::vector<Json> presets;
+				if (const Json *p = cfg.find("presets")) presets = p->items;
+				form_.declarePresets(std::move(presets));
 				form_.setSlots(slots);
 				if (!json::parse(values, v, error) || v.kind != Json::Kind::Object) v = Json(), v.kind = Json::Kind::Object;
 				applied_ = v;
@@ -99,6 +120,7 @@ void SettingsViewModel::evaluate()
 	form_.evaluate();
 	shown.set(static_cast<int64_t>(form_.exposed().size()));
 	rows_.reset.emit();
+	presetRows_.reset.emit();
 }
 
 } // namespace chimera::vm

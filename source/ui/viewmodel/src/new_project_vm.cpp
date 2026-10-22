@@ -68,6 +68,22 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	form_.listMachineSetting(false);
 	rows("slots", "the kinds of file the project holds: id, title, min, max, formats, help, exposed, files, count, filter", slotRows_);
 	rows("settings", "the settings that apply, as the Settings window lists them", settingRows_);
+	rows("presets", "the presets this machine is offered: id, label, description", presetRows_);
+	command("applyPreset", "writes a preset's values into the settings", {"id"}, [this](const Args &a, std::string &error) -> Value {
+		std::string id, label;
+		if (!arg(a, 0, id, error)) return {};
+		std::vector<std::string> skipped;
+		if (!form_.applyPreset(id, label, skipped, error)) return {};
+		std::string note = "Preset " + label + " written below";
+		if (!skipped.empty())
+		{
+			note += "; not for this machine:";
+			for (const std::string &s : skipped) note += " " + s;
+		}
+		status.set(note);
+		evaluate();
+		return {};
+	});
 	rows("firmware", "the firmware the machine needs: id, name, the file, how it was found, missing", firmwareRows_);
 	expose("suggestion", "what the core suggests for the game chosen, and what of it was applied", suggestion);
 	expose("importMenu", "the movie import's menu item (\"\" when the core imports none)", importMenu);
@@ -591,6 +607,11 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	if (const Json *list = cfg_.find("settings")) settings = list->items;
 	const std::string machineSetting = cfg_.find("machineSetting") != nullptr ? cfg_.find("machineSetting")->text : "";
 	form_.declare(std::move(settings), machineSetting);
+	{
+		std::vector<Json> presets;
+		if (const Json *p = cfg_.find("presets")) presets = p->items;
+		form_.declarePresets(std::move(presets));
+	}
 	Json values;
 	values.kind = Json::Kind::Object;
 	form_.setValues(values);
@@ -942,6 +963,7 @@ void NewProjectViewModel::evaluate()
 	ready.set(lines.empty());
 	slotRows_.reset.emit();
 	settingRows_.reset.emit();
+	presetRows_.reset.emit();
 	firmwareRows_.reset.emit();
 }
 

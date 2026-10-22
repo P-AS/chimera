@@ -1,6 +1,7 @@
 #include "chimera/vm/settings_form.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 #include "chimera/engine.h"
@@ -226,6 +227,91 @@ std::vector<size_t> SettingsForm::applicable(const std::vector<Json> &decl, cons
 				if (fits) shown.push_back(static_cast<size_t>(i->number()));
 			}
 	return shown;
+}
+
+std::string SettingsForm::machineValue() const
+{
+	if (machineSetting_.empty()) return {};
+	const Json *v = values_.find(machineSetting_);
+	if (v == nullptr)
+		for (const Json &d : decl_)
+			if (const Json *n = d.find("name"); n != nullptr && n->text == machineSetting_) v = d.find("default");
+	return v != nullptr ? v->text : std::string();
+}
+
+std::vector<const Json *> SettingsForm::offered() const
+{
+	std::vector<const Json *> out;
+	const std::string machine = machineValue();
+	for (const Json &p : presets_)
+	{
+		const Json *when = p.find("when");
+		bool fits = when == nullptr || when->items.empty() || machine.empty();
+		if (!fits)
+			for (const Json &w : when->items)
+			{
+				std::string a = w.text, b = machine;
+				for (char &c : a) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+				for (char &c : b) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+				fits = fits || a == b;
+			}
+		if (fits) out.push_back(&p);
+	}
+	return out;
+}
+
+bool SettingsForm::applyPreset(const std::string &id, std::string &label, std::vector<std::string> &skipped, std::string &error)
+{
+	const Json *preset = nullptr;
+	for (const Json *p : offered())
+		if (const Json *i = p->find("id"); i != nullptr && i->text == id) preset = p;
+	if (preset == nullptr)
+	{
+		error = "no preset " + id + " for this machine";
+		return false;
+	}
+	const Json *l = preset->find("label");
+	label = l != nullptr && !l->text.empty() ? l->text : id;
+	evaluate();
+	if (const Json *values = preset->find("values"))
+		for (const auto &[name, value] : values->members)
+		{
+			if (name == machineSetting_) continue;
+			Value v;
+			switch (value.kind)
+			{
+			case Json::Kind::Bool: v = value.boolean; break;
+			case Json::Kind::Number:
+				v = std::floor(value.number()) == value.number() ? Value(static_cast<int64_t>(value.number())) : Value(value.number());
+				break;
+			default: v = value.text; break;
+			}
+			std::string why;
+			if (!set(name, v, why)) skipped.push_back(name);
+		}
+	evaluate();
+	return true;
+}
+
+std::string SettingsForm::PresetRows::columnName(int32_t column) const
+{
+	static const char *const names[] = {"id", "label", "description"};
+	return column >= 0 && column < 3 ? names[column] : "";
+}
+
+Value SettingsForm::PresetRows::cell(int64_t row, int32_t column) const
+{
+	const auto list = form_.offered();
+	if (row < 0 || row >= static_cast<int64_t>(list.size())) return {};
+	const Json &p = *list[static_cast<size_t>(row)];
+	auto text = [&](const char *k) { const Json *j = p.find(k); return j != nullptr ? j->text : std::string(); };
+	switch (column)
+	{
+	case 0: return text("id");
+	case 1: return text("label").empty() ? text("id") : text("label");
+	case 2: return text("description");
+	default: return {};
+	}
 }
 
 std::string SettingsForm::Rows::columnName(int32_t column) const

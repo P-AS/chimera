@@ -37,6 +37,14 @@ public:
 	bool set(const std::string &name, const Value &value, std::string &error);
 	/* the setting by name, when it applies */
 	const json::Json *declared(const std::string &name) const;
+	/* The package's presets: named bundles of values it suggests ("1981 IBM
+	 * PC/XT 5150"), each for the machines its "when" names. Applying one
+	 * writes its values as if typed in, and is then finished with: the
+	 * machine's own setting is not a preset's to move, and a name this
+	 * machine does not have is left out and named in `skipped`. */
+	void declarePresets(std::vector<json::Json> presets) { presets_ = std::move(presets); }
+	bool applyPreset(const std::string &id, std::string &label, std::vector<std::string> &skipped, std::string &error);
+
 	/* which apply, again (after declare, setSlots, setValues or set) */
 	void evaluate();
 	const std::vector<size_t> &exposed() const { return exposed_; }
@@ -59,6 +67,21 @@ public:
 	/* columns of the rows */
 	enum Column { kName, kLabel, kType, kValue, kOptions, kOptionLabels, kMin, kMax, kDescription, kEdited, kColumns };
 
+	/* the presets this machine is offered: id, label, description */
+	class PresetRows : public RowModel
+	{
+	public:
+		explicit PresetRows(const SettingsForm &form) : form_(form) {}
+		int64_t rowCount() const override { return static_cast<int64_t>(form_.offered().size()); }
+		int32_t columnCount() const override { return 3; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
+
+	private:
+		const SettingsForm &form_;
+	};
+	std::vector<const json::Json *> offered() const;
+
 	class Rows : public RowModel
 	{
 	public:
@@ -79,6 +102,9 @@ private:
 	const json::Json *applied_ = nullptr;
 	bool listMachine_ = true;
 	std::vector<size_t> exposed_;
+	std::vector<json::Json> presets_;
+	/* the machine the machine setting says (its value), "" without one */
+	std::string machineValue() const;
 };
 
 } // namespace chimera::vm

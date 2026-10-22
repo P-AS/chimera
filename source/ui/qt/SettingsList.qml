@@ -12,6 +12,33 @@ ListView {
     spacing: 10
     model: list.vm.rows("settings")
     ScrollBar.vertical: ScrollBar {}
+    // the presets the machine is offered: Apply writes one's values below
+    header: RowLayout {
+        width: list.width - 16
+        visible: presetBox.count > 0
+        height: visible ? implicitHeight + 8 : 0
+        Label { text: qsTr("Preset") }
+        ComboBox {
+            id: presetBox
+            model: list.vm.rows("presets")
+            textRole: "label"
+            valueRole: "id"
+            Layout.fillWidth: true
+            // the list is given again after every edit: the choice stays
+            property string chosen: ""
+            onActivated: chosen = currentValue
+            Connections {
+                target: presetBox.model
+                function onModelReset() { Qt.callLater(presetBox.keep) }
+            }
+            function keep() {
+                const at = chosen === "" ? -1 : indexOfValue(chosen)
+                currentIndex = at >= 0 ? at : (count > 0 ? 0 : -1)
+            }
+            Component.onCompleted: keep()
+        }
+        Button { text: qsTr("Apply"); enabled: presetBox.currentIndex >= 0; onClicked: list.vm.run("applyPreset", [presetBox.currentValue]) }
+    }
     delegate: ColumnLayout {
         id: row
         required property string name

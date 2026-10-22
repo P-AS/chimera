@@ -38,6 +38,7 @@ private:
 	SessionViewModel &session_;
 	SettingsForm form_;
 	SettingsForm::Rows rows_{form_};
+	SettingsForm::PresetRows presetRows_{form_};
 	Connection opensWatch_;
 	json::Json applied_;
 };

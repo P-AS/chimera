@@ -44,6 +44,13 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
             ]
             cfg["firmware"] = [{"id": "bios", "display": "Board B BIOS", "name": "boardb.bin",
                                 "requiredWhen": {"setting": "board", "is": "b"}}]
+            # presets: one for every board (with a value for no setting, and the
+            # board, which is not a preset's to move), one for board B alone
+            cfg["presets"] = [
+                {"id": "full", "label": "Full fill", "description": "fills RAM with 255",
+                 "values": {"initFillByte": 255, "board": "b", "nope": 1}},
+                {"id": "fast", "label": "Fast disks", "when": ["b"], "values": {"diskSpeed": 4}},
+            ]
             # the synthetic core suggests settings for a game (SuggestSettings)
             cfg["suggestSettings"] = True
             # the synthetic core's importer: a movie of its own lines, the game it

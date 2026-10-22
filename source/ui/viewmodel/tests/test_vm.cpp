@@ -2130,14 +2130,37 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	/* two boards: each its own kinds of file, settings and firmware */
 	CHECK(wizard.run("chooseCore", {std::string("Synth Slots")}, error).has_value());
 	CHECK(wizard.machines.get() == "Board A\nBoard B" && wizard.machine.get() == 0);
-	CHECK(wizard.problems.get() == "One of these is needed: Cartridge, Disks");
 	bool exposed = false;
+	/* presets: the ones for this board, written as typed in, the board and
+	 * a name no setting has left out and named */
+	CHECK(rowCount("presets") == 1 && text("presets", 0, 1) == "Full fill");
+	CHECK(wizard.run("applyPreset", {std::string("full")}, error).has_value());
+	CHECK(wizard.status.get() == "Preset Full fill written below; not for this machine: nope" && wizard.machine.get() == 0);
+	/* still board A: its presets, its cartridge slot */
+	CHECK(rowCount("presets") == 1);
+	fromValue(cell("slots", 0, 6), exposed);
+	CHECK(exposed);
+	{
+		int64_t v = -1;
+		for (int64_t r = 0; r < rowCount("settings"); r++)
+			if (text("settings", r, 0) == "initFillByte") fromValue(cell("settings", r, 3), v);
+		CHECK(v == 255);
+	}
+	CHECK(!wizard.run("applyPreset", {std::string("fast")}, error) && error == "no preset fast for this machine");
+	CHECK(wizard.problems.get() == "One of these is needed: Cartridge, Disks");
 	fromValue(cell("slots", 0, 6), exposed);
 	CHECK(exposed && rowCount("firmware") == 0);
 	CHECK(settingNames() == "initFillByte ");
 	CHECK(wizard.run("chooseMachine", {int64_t{1}}, error).has_value() && wizard.machine.get() == 1);
 	fromValue(cell("slots", 0, 6), exposed);
 	CHECK(!exposed && settingNames() == "initFillByte diskSpeed ");
+	CHECK(rowCount("presets") == 2 && wizard.run("applyPreset", {std::string("fast")}, error).has_value());
+	{
+		int64_t v = -1;
+		for (int64_t r = 0; r < rowCount("settings"); r++)
+			if (text("settings", r, 0) == "diskSpeed") fromValue(cell("settings", r, 3), v);
+		CHECK(v == 4);
+	}
 	CHECK(!wizard.run("addFile", {std::string("rom"), game}, error) && error == "Cartridge does not go with the files or the machine chosen");
 	CHECK(rowCount("firmware") == 1 && text("firmware", 0, 1) == "Board B BIOS");
 	CHECK(wizard.problems.get() == "One of these is needed: Disks\nBoard B BIOS: not found in the firmware folder; choose its file");

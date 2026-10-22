@@ -148,6 +148,7 @@ private:
 	SlotRows slotRows_{*this};
 	SettingsForm form_;
 	SettingsForm::Rows settingRows_{form_};
+	SettingsForm::PresetRows presetRows_{form_};
 	FirmwareRows firmwareRows_{*this};
 	ImportFileRows importFileRows_{*this};
 	ImportOptionRows importOptionRows_{*this};
