@@ -54,7 +54,10 @@ public:
 	 * machine's own setting is not a preset's to move, and a name this
 	 * machine does not have is left out and named in `skipped`. */
 	void declarePresets(std::vector<json::Json> presets) { presets_ = std::move(presets); }
-	bool applyPreset(const std::string &id, std::string &label, std::vector<std::string> &skipped, std::string &error);
+	/* applied: how many of its values were written (the machine and the
+	 * renderer, chosen apart, are not a preset's to change) */
+	bool applyPreset(const std::string &id, std::string &label, std::vector<std::string> &skipped, std::string &error,
+		int64_t *applied = nullptr);
 
 	/* which apply, again (after declare, setSlots, setValues or set) */
 	void evaluate();

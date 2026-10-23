@@ -17,6 +17,31 @@ using json::Json;
 namespace fs = std::filesystem;
 
 namespace {
+/* a slot's condition that reads only settings (no slot's files), as
+ * Chimera's ReadsOnlySettings has it */
+bool readsOnlySettings(const Json &c)
+{
+	if (c.kind != Json::Kind::Object) return false;
+	if (c.find("slot") != nullptr) return false;
+	if (c.find("setting") != nullptr) return true;
+	for (const char *key : {"all", "any"})
+		if (const Json *children = c.find(key); children != nullptr && children->kind == Json::Kind::Array)
+			return std::all_of(children->items.begin(), children->items.end(),
+				[](const Json &x) { return x.kind == Json::Kind::Object && readsOnlySettings(x); });
+	if (const Json *sub = c.find("not"); sub != nullptr && sub->kind == Json::Kind::Object) return readsOnlySettings(*sub);
+	return false;
+}
+
+/* how many files a slot takes, in Chimera's words */
+std::string cardinalityOf(int64_t min, int64_t max)
+{
+	if (min == 1 && max == 1) return "exactly one";
+	if (min == 0 && max == 1) return "at most one";
+	if (min == 0 && max == -1) return "any number";
+	if (max == -1) return "at least " + std::to_string(min);
+	return std::to_string(min) + " to " + std::to_string(max);
+}
+
 std::string lower(std::string s)
 {
 	for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -73,6 +98,25 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	expose("problems", "what keeps the project from being made, a line each; \"\" when ready", problems);
 	expose("ready", "the project can be made", ready);
 	expose("status", "what New Project last had to say", status);
+	expose("filesAsked", "the files page is asked: the package declares slots", filesAsked);
+	expose("filesComplaint", "what keeps the files page from going on, in Chimera's words (\"\" for nothing)", filesComplaint);
+	expose("firmwareAsked", "the firmware page is asked: the machine, files and settings call for firmware", firmwareAsked);
+	expose("firmwareMissing", "the firmware required and not provided, by name (\"\" for none)", firmwareMissing);
+	command("clearFirmware", "the firmware page's Clear: no file for this firmware, until the page is shown again", {"id"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string id;
+			if (!arg(a, 0, id, error)) return {};
+			chosenFirmware_.erase(id);
+			if (std::find(clearedFirmware_.begin(), clearedFirmware_.end(), id) == clearedFirmware_.end()) clearedFirmware_.push_back(id);
+			evaluate();
+			return {};
+		});
+	command("firmwarePage", "the firmware page shown: what is found is found again, the files chosen by hand kept", {},
+		[this](const Args &, std::string &) -> Value {
+			clearedFirmware_.clear();
+			evaluate();
+			return {};
+		});
 	form_.listMachineSetting(false);
 	form_.unlist("renderer");
 	rows("slots", "the kinds of file the project holds: id, title, min, max, formats, help, exposed, files, count, filter", slotRows_);
@@ -82,18 +126,24 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		std::string id, label;
 		if (!arg(a, 0, id, error)) return {};
 		std::vector<std::string> skipped;
-		if (!form_.applyPreset(id, label, skipped, error)) return {};
-		std::string note = "Preset " + label + " written below";
-		if (!skipped.empty())
+		int64_t applied = 0;
+		if (!form_.applyPreset(id, label, skipped, error, &applied)) return {};
+		/* in Chimera's words */
+		std::string note = "Applied \"" + label + "\": " + std::to_string(applied) + (applied == 1 ? " setting" : " settings");
+		if (skipped.empty())
+			note += ".";
+		else
 		{
-			note += "; not for this machine:";
-			for (const std::string &s : skipped) note += " " + s;
+			note += "; this machine has no setting named ";
+			for (size_t i = 0; i < skipped.size(); i++) note += (i == 0 ? "" : ", ") + skipped[i];
+			note += ".";
 		}
 		status.set(note);
 		evaluate();
 		return {};
 	});
-	rows("firmware", "the firmware the machine needs: id, name, the file, how it was found, missing", firmwareRows_);
+	rows("firmware", "the firmware the machine needs: id, name, the file, how it was found, missing; and as the firmware page "
+		"shows it: title, expected (the file), sha1Shown, state, satisfied, description", firmwareRows_);
 	expose("suggestion", "what the core suggests for the game chosen, and what of it was applied", suggestion);
 	expose("importMenu", "the movie import's menu item (\"\" when the core imports none)", importMenu);
 	expose("importMovieLabel", "what the movie to import is", importMovieLabel);
@@ -101,6 +151,9 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	expose("importMovie", "the movie picked to import", importMovie);
 	expose("importNotes", "the notes of the core's answer, a line each", importNotes);
 	expose("imported", "the project will take the imported movie's inputs", imported);
+	expose("importFailure", "why the last import was not taken (\"\" when it was), in Chimera's words", importFailure);
+	expose("importSummary", "what the core said of the movie taken, when it noted anything (Chimera's message)", importSummary);
+	expose("importsTaken", "goes up with each import taken", importsTaken);
 	rows("importFiles", "the files the import reads: option, label, filter, required, more than one, the files picked", importFileRows_);
 	rows("importOptions", "the import's options: name, label, ticked", importOptionRows_);
 	command("importSetMovie", "the movie to import", {"path"}, [this](const Args &a, std::string &error) -> Value {
@@ -129,6 +182,16 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			const Json *many = input->find("multiple");
 			std::vector<std::string> &list = importPicked_[option];
 			if (many == nullptr || !many->boolean) list.clear();
+			/* each file is read under its own name: two of one name cannot both be */
+			const std::string name = lower(baseName(path));
+			for (const auto &[other, picked] : importPicked_)
+				for (const std::string &p : picked)
+					if (lower(baseName(p)) == name)
+					{
+						importFileRows_.reset.emit();
+						error = "Two files named " + baseName(path) + ": each file is read under its own name, so rename one.";
+						return {};
+					}
 			list.push_back(path);
 			importFileRows_.reset.emit();
 			return {};
@@ -148,6 +211,24 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			importFileRows_.reset.emit();
 			return {};
 		});
+	command("importMoveFile", "moves a file within an import input that takes several (Up and Down)", {"option", "from", "to"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string option;
+			int64_t from = 0, to = 0;
+			if (!arg(a, 0, option, error) || !arg(a, 1, from, error) || !arg(a, 2, to, error)) return {};
+			auto it = importPicked_.find(option);
+			const int64_t n = it == importPicked_.end() ? 0 : static_cast<int64_t>(it->second.size());
+			if (from < 0 || from >= n || to < 0 || to >= n)
+			{
+				error = "no such file";
+				return {};
+			}
+			std::string moved = it->second[static_cast<size_t>(from)];
+			it->second.erase(it->second.begin() + static_cast<long>(from));
+			it->second.insert(it->second.begin() + static_cast<long>(to), moved);
+			importFileRows_.reset.emit();
+			return {};
+		});
 	command("importSetOption", "ticks an import option, or not", {"name", "on"}, [this](const Args &a, std::string &error) -> Value {
 		std::string name;
 		bool on = false;
@@ -158,9 +239,16 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	});
 	command("importRun", "asks the core what the movie amounts to, and fills the form with its answer", {},
 		[this](const Args &, std::string &error) -> Value {
-			if (import_.kind != Json::Kind::Object || importMovie.get().empty())
+			if (import_.kind != Json::Kind::Object)
 			{
-				error = import_.kind != Json::Kind::Object ? "this core imports no movies" : "pick the movie first";
+				error = "this core imports no movies";
+				return {};
+			}
+			/* what is missing, in Chimera's words */
+			if (importMovie.get().empty())
+			{
+				error = "Choose the " + lower(importMovieLabel.get().empty() ? std::string("movie") : importMovieLabel.get()) + " to import.";
+				importFailure.set(error);
 				return {};
 			}
 			/* each picked file under its own name, its input's option naming it
@@ -180,7 +268,8 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 						if (const Json *req = f.find("required"); req != nullptr && req->boolean)
 						{
 							const Json *label = f.find("label");
-							error = (label != nullptr ? label->text : option) + " is needed";
+							error = "Choose the " + (label != nullptr ? label->text : option) + ".";
+							importFailure.set(error);
 							return {};
 						}
 						continue;
@@ -198,10 +287,12 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			for (const auto &[name, on] : importOptions_)
 				if (on) setMember(settings, name, Json::boolean_(true));
 			status.set("Asking " + core.get() + " about " + baseName(importMovie.get()) + "...");
+			importFailure.set("");
 			auto done = [this](std::string answer, std::string why) {
 				if (answer.empty())
 				{
 					status.set("Not imported: " + (why.empty() ? core.get() + " gave no answer" : why));
+					importFailure.set(why.empty() ? std::string("The core did not answer.") : why);
 					return;
 				}
 				applyImport(answer);
@@ -326,13 +417,6 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		}
 		const std::string name = baseName(path), kind = kindOf(name);
 		const std::vector<std::string> formats = formatsFor(*s);
-		if (!formats.empty() && std::find(formats.begin(), formats.end(), kind) == formats.end())
-		{
-			error = name + ": " + s->title + " takes " + (formats.size() == 1 ? "a ." + formats[0] + " file" : "files of these kinds:");
-			if (formats.size() > 1)
-				for (const std::string &f : formats) error += " ." + (f.empty() ? std::string("(none)") : f);
-			return {};
-		}
 		if (!s->namePattern.empty())
 		{
 			bool matches = false;
@@ -350,12 +434,9 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				return {};
 			}
 		}
+		/* the same file in the same slot again: nothing to do, as Chimera's */
 		std::vector<Picked> &list = files_[id];
-		if (s->max >= 0 && static_cast<int64_t>(list.size()) >= s->max)
-		{
-			error = s->title + " takes " + std::to_string(s->max) + (s->max == 1 ? " file" : " files") + " at most";
-			return {};
-		}
+		if (std::any_of(list.begin(), list.end(), [&](const Picked &f) { return f.name == name; })) return {};
 		std::error_code ec;
 		if (!fs::is_regular_file(path, ec))
 		{
@@ -383,11 +464,18 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				for (const Json &t : tracks.items)
 					if (!fs::is_regular_file(fs::path(path).parent_path() / t.text, ec))
 					{
-						error = name + " names " + t.text + ", which is not beside it";
+						error = name + " references " + t.text + ", which is not next to it - a cue's files are added together";
 						return {};
 					}
 		}
 		list.push_back({name, path});
+		/* A slot that names its formats has still not been given a rule: a
+		 * file of another kind is said, not refused, as Chimera's. More files
+		 * than a slot takes are said when the files page goes on. */
+		std::string formatsText;
+		for (const std::string &f : formats) formatsText += (formatsText.empty() ? "" : ", ") + (f.empty() ? std::string("no extension") : "." + f);
+		const bool expected = formats.empty() || std::find(formats.begin(), formats.end(), kind) != formats.end();
+		status.set(expected ? std::string() : name + " is not one of the formats this slot expects (" + formatsText + ")");
 		evaluate();
 		return {};
 	});
@@ -468,6 +556,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				return {};
 			}
 			chosenFirmware_[id] = {path, sha};
+			clearedFirmware_.erase(std::remove(clearedFirmware_.begin(), clearedFirmware_.end(), id), clearedFirmware_.end());
 			status.set(custom ? baseName(path) + " is a file of your own, not the original " + id + ": the project pins its hash (" + sha + ")"
 							  : std::string());
 			evaluate();
@@ -537,8 +626,10 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			}
 			evaluate();
 			const std::string files = std::to_string(found.size()) + (found.size() == 1 ? " file" : " files");
-			status.set(filled == 0 ? "Scanned " + files + "; nothing new matched"
-								   : "Scanned " + files + "; " + std::to_string(filled) + (filled == 1 ? " requirement" : " requirements") + " resolved");
+			/* in Chimera's words */
+			status.set(filled == 0 ? "scanned " + std::to_string(found.size()) + " files; nothing new matched"
+								   : "scanned " + std::to_string(found.size()) + " files; " + std::to_string(filled) +
+										 (filled == 1 ? " requirement" : " requirements") + " resolved");
 			return filled;
 		});
 	command("forgetFirmware", "a firmware chosen by hand goes back to the one found", {"id"},
@@ -826,6 +917,7 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 				if (const Json *m = d.find("max")) s.max = static_cast<int64_t>(m->number());
 				if (const Json *f = d.find("formats"))
 					for (const Json &k : f->items) s.formats.push_back(lower(k.text));
+				if (const Json *when = d.find("exposedWhen")) s.settingGatedOnly = readsOnlySettings(*when);
 				slots_.push_back(s);
 			}
 		if (const Json *groups = decl.find("atLeastOneOf"))
@@ -1218,11 +1310,13 @@ void NewProjectViewModel::applyImport(const std::string &text)
 	if (!json::parse(text, answer, why) || answer.kind != Json::Kind::Object)
 	{
 		status.set("Not imported: the core's answer does not read (" + why + ")");
+		importFailure.set("The core did not answer.");
 		return;
 	}
 	if (const Json *refused = answer.find("error"))
 	{
 		status.set("Not imported: " + refused->text);
+		importFailure.set(refused->text);
 		return;
 	}
 	std::vector<std::string> notes;
@@ -1313,6 +1407,19 @@ void NewProjectViewModel::applyImport(const std::string &text)
 	evaluate();
 	const Json *frames = answer.find("frames");
 	status.set("Imported " + baseName(importMovie.get()) + (frames != nullptr ? " (" + frames->text + " frames)" : std::string()));
+	/* what Chimera says of it when there are notes */
+	std::string summary;
+	if (!notes.empty())
+	{
+		const Json *format = answer.find("format");
+		summary = core.get() + " read a " + (format != nullptr ? format->text : std::string()) + " movie of " +
+				  (frames != nullptr ? frames->text : std::string("0")) + " frames, and notes:\n";
+		for (const std::string &n : notes) summary += "\n- " + n + "\n";
+		while (!summary.empty() && summary.back() == '\n') summary.pop_back();
+	}
+	importSummary.set(summary);
+	importFailure.set("");
+	importsTaken.set(importsTaken.get() + 1);
 }
 
 std::string NewProjectViewModel::slotMap() const
@@ -1407,6 +1514,16 @@ void NewProjectViewModel::evaluate()
 			s.exposed = !read;
 			for (const Json &id : ids.items) s.exposed = s.exposed || id.text == s.id;
 		}
+		/* what the machine has before any file: a slot only settings open,
+		 * which this machine closes, is not on the form, as Chimera's */
+		const char *bare = ce_slots_evaluate(slotsText_.data(), slotsText_.size(), "{}", 2, settingsText.data(), settingsText.size(), &len);
+		Json bareIds;
+		const bool bareRead = bare != nullptr && json::parse(std::string_view(bare, static_cast<size_t>(len)), bareIds, jerr);
+		for (Slot &s : slots_)
+		{
+			s.machineHas = !bareRead;
+			for (const Json &id : bareIds.items) s.machineHas = s.machineHas || id.text == s.id;
+		}
 	}
 
 	/* the firmware these call for, found by the engine's rules unless chosen */
@@ -1418,11 +1535,19 @@ void NewProjectViewModel::evaluate()
 	settingsDecl.items = form_.declarations();
 	for (const FirmwareNeed &n : neededFirmware(firmwareDecl, settingsDecl, map, recorded, none, firmwareIndex_))
 	{
-		Need need{n.id, n.display, n.path, n.how, n.sha1};
+		Need need{n.id, n.display.empty() ? n.id : n.display, n.path, n.how, n.sha1};
 		std::string declared;
 		for (const Json &f : firmwareDecl.items)
 			if (const Json *i = f.find("id"); i != nullptr && i->text == n.id)
+			{
 				if (const Json *h = f.find("sha1")) declared = h->text;
+				auto text = [&f](const char *k) { const Json *j = f.find(k); return j != nullptr ? j->text : std::string(); };
+				need.name = text("name");
+				need.label = text("label");
+				need.description = text("description");
+				if (const Json *r = f.find("required")) need.required = r->boolean;
+			}
+		need.declSha1 = declared;
 		if (auto it = chosenFirmware_.find(n.id); it != chosenFirmware_.end())
 		{
 			need.path = it->second.first;
@@ -1455,6 +1580,14 @@ void NewProjectViewModel::evaluate()
 				}
 			}
 		}
+		/* Clear on the firmware page: none, until the page is shown again */
+		if (std::find(clearedFirmware_.begin(), clearedFirmware_.end(), n.id) != clearedFirmware_.end() &&
+			chosenFirmware_.find(n.id) == chosenFirmware_.end())
+		{
+			need.path.clear();
+			need.sha1.clear();
+			need.how.clear();
+		}
 		needs_.push_back(need);
 	}
 
@@ -1486,8 +1619,42 @@ void NewProjectViewModel::evaluate()
 		if (n == 0 && !titles.empty()) say("One of these is needed: " + titles);
 	}
 	for (const Need &n : needs_)
-		if (n.path.empty()) say(n.display + ": not found in the firmware folder; choose its file");
+		if (n.path.empty() && n.required) say(n.display + ": not found in the firmware folder; choose its file");
 	problems.set(lines);
+
+	/* the wizard's pages, in Chimera's words: the files page's complaint
+	 * (a slot not on the form demands nothing), the firmware required and
+	 * not provided */
+	filesAsked.set(!slots_.empty());
+	std::string complaint;
+	for (const Slot &s : slots_)
+	{
+		if (!complaint.empty()) break;
+		if (s.settingGatedOnly && !s.machineHas) continue;
+		const auto it = files_.find(s.id);
+		const int64_t n = it == files_.end() ? 0 : static_cast<int64_t>(it->second.size());
+		if (n < s.min && s.exposed) complaint = s.title + ": needs " + cardinalityOf(s.min, s.max) + ", has " + std::to_string(n);
+		else if (s.max >= 0 && n > s.max) complaint = s.title + ": takes " + cardinalityOf(s.min, s.max) + ", has " + std::to_string(n);
+	}
+	for (const std::vector<std::string> &group : atLeastOneOf_)
+	{
+		if (!complaint.empty()) break;
+		int64_t n = 0;
+		std::string titles;
+		for (const std::string &id : group)
+		{
+			if (const auto it = files_.find(id); it != files_.end()) n += static_cast<int64_t>(it->second.size());
+			const Slot *s = slot(id);
+			titles += (titles.empty() ? "" : ", ") + (s != nullptr ? s->title : id);
+		}
+		if (n == 0) complaint = "at least one file is needed across: " + titles;
+	}
+	filesComplaint.set(complaint);
+	firmwareAsked.set(!needs_.empty());
+	std::string missing;
+	for (const Need &n : needs_)
+		if (missing.empty() && n.path.empty() && n.required) missing = n.display;
+	firmwareMissing.set(missing);
 	ready.set(lines.empty());
 	slotRows_.reset.emit();
 	settingRows_.reset.emit();
@@ -1497,8 +1664,9 @@ void NewProjectViewModel::evaluate()
 
 std::string NewProjectViewModel::SlotRows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"id", "title", "min", "max", "formats", "help", "exposed", "files", "count", "filter"};
-	return column >= 0 && column < 10 ? names[column] : "";
+	static const char *const names[] = {"id", "title", "min", "max", "formats", "help", "exposed", "files", "count", "filter",
+		"cardinality", "shown"};
+	return column >= 0 && column < 12 ? names[column] : "";
 }
 
 Value NewProjectViewModel::SlotRows::cell(int64_t row, int32_t column) const
@@ -1515,7 +1683,8 @@ Value NewProjectViewModel::SlotRows::cell(int64_t row, int32_t column) const
 	case 4:
 	{
 		std::string out;
-		for (const std::string &f : vm_.formatsFor(s)) out += (out.empty() ? "" : " ") + (f.empty() ? std::string("(no extension)") : "." + f);
+		/* as Chimera says them: ".iso, .cue", a file with no extension in words */
+		for (const std::string &f : vm_.formatsFor(s)) out += (out.empty() ? "" : ", ") + (f.empty() ? std::string("no extension") : "." + f);
 		return out;
 	}
 	case 5: return s.help;
@@ -1534,6 +1703,8 @@ Value NewProjectViewModel::SlotRows::cell(int64_t row, int32_t column) const
 		for (const std::string &f : vm_.formatsFor(s)) out += (out.empty() ? "" : " ") + (f.empty() ? std::string("*") : "*." + f);
 		return out.empty() ? std::string("*") : out;
 	}
+	case 10: return cardinalityOf(s.min, s.max);
+	case 11: return !s.settingGatedOnly || s.machineHas;
 	default: return {};
 	}
 }
@@ -1614,8 +1785,9 @@ Value NewProjectViewModel::ImportOptionRows::cell(int64_t row, int32_t column) c
 
 std::string NewProjectViewModel::FirmwareRows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"id", "name", "file", "how", "missing"};
-	return column >= 0 && column < 5 ? names[column] : "";
+	static const char *const names[] = {"id", "name", "file", "how", "missing", "title", "expected", "sha1Shown", "state", "satisfied",
+		"description"};
+	return column >= 0 && column < 11 ? names[column] : "";
 }
 
 Value NewProjectViewModel::FirmwareRows::cell(int64_t row, int32_t column) const
@@ -1629,6 +1801,16 @@ Value NewProjectViewModel::FirmwareRows::cell(int64_t row, int32_t column) const
 	case 2: return n.path;
 	case 3: return n.how;
 	case 4: return n.path.empty();
+	/* the firmware page's columns, in Chimera's words */
+	case 5: return n.label.empty() ? n.display : n.display + "  (" + n.label + ")";
+	case 6: return n.name;
+	case 7: return n.declSha1.empty() ? std::string("(your own dump)") : n.declSha1;
+	case 8:
+		if (!n.path.empty())
+			return (n.how == "your own" ? "your own: " : "found: ") + fs::path(n.path).filename().string();
+		return n.required ? std::string("not found") : std::string("optional - core default used");
+	case 9: return !n.path.empty() || !n.required;
+	case 10: return n.description;
 	default: return {};
 	}
 }

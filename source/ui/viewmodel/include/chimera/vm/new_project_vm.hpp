@@ -54,6 +54,15 @@ public:
 	Property<std::string> problems{"Choose a core"};
 	Property<bool> ready{false};
 	Property<std::string> status;
+	/* Chimera's wizard, a page at a time: whether the files page and the
+	 * firmware page are asked at all (a package with no slots, a machine
+	 * needing no firmware, skips them), what keeps the files page from going
+	 * on in its words ("Disks: needs at least 1, has 0"), and the firmware
+	 * that is required and not provided ("" for none) */
+	Property<bool> filesAsked{true};
+	Property<std::string> filesComplaint;
+	Property<bool> firmwareAsked{false};
+	Property<std::string> firmwareMissing;
 
 	/* Importing a movie made elsewhere (the package's movieImport): the
 	 * menu item it asks for ("" when the core imports nothing), what the
@@ -65,6 +74,14 @@ public:
 	Property<std::string> importMovie;
 	Property<std::string> importNotes;
 	Property<bool> imported{false};
+	/* how the last import went, for Chimera's Import window: why it was not
+	 * taken ("" when it was), what the core said of it when it noted
+	 * anything (Chimera's message: "<core> read a <format> movie of <n>
+	 * frames, and notes: ..."), and a count that goes up with each import
+	 * taken, for the window to go on to the wizard */
+	Property<std::string> importFailure;
+	Property<std::string> importSummary;
+	Property<int64_t> importsTaken{0};
 	/* Asks the core what a movie amounts to, away from the machine running
 	 * (a process holds one machine): package, the movie, the files it reads
 	 * as {name, path}, the import settings; done gets the core's JSON answer
@@ -102,10 +119,18 @@ private:
 		int64_t min = 0, max = -1;
 		std::vector<std::string> formats;
 		bool exposed = true;
+		/* shown only when the machine has it: a slot that only settings
+		 * open, which the machine chosen closes, is not on the form */
+		bool settingGatedOnly = false, machineHas = true;
 	};
 	struct Need
 	{
 		std::string id, display, path, how, sha1;
+		/* the package's word on it: the file it is, its label and
+		 * description, the hash it pins ("" for the person's own dump), and
+		 * whether the machine runs without it */
+		std::string name, label, description, declSha1;
+		bool required = true;
 	};
 
 	class SlotRows : public RowModel
@@ -113,7 +138,7 @@ private:
 	public:
 		explicit SlotRows(NewProjectViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.slots_.size()); }
-		int32_t columnCount() const override { return 10; }
+		int32_t columnCount() const override { return 12; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -149,7 +174,7 @@ private:
 	public:
 		explicit FirmwareRows(NewProjectViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.needs_.size()); }
-		int32_t columnCount() const override { return 5; }
+		int32_t columnCount() const override { return 11; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -224,6 +249,8 @@ private:
 	std::vector<Need> needs_;
 	/* firmware chosen by hand: id -> {path, sha1} */
 	std::map<std::string, std::pair<std::string, std::string>> chosenFirmware_;
+	/* firmware Clear took away on the firmware page, until the page is shown again */
+	std::vector<std::string> clearedFirmware_;
 	std::vector<FirmwareFile> firmwareIndex_;
 	/* the hashes of files remembered for this core's firmware, read once */
 	std::map<std::string, std::string> rememberedSha_;

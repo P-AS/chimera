@@ -8,6 +8,8 @@ import QtQuick.Layouts
 ListView {
     id: list
     required property QtObject vm
+    // the presets row at the top; a window that places its own leaves it out
+    property bool presetsHere: true
     clip: true
     spacing: 10
     model: list.vm.rows("settings")
@@ -15,9 +17,9 @@ ListView {
     // the presets the machine is offered: Apply writes one's values below
     header: RowLayout {
         width: list.width - 16
-        visible: presetBox.count > 0
+        visible: list.presetsHere && presetBox.count > 0
         height: visible ? implicitHeight + 8 : 0
-        Label { text: qsTr("Preset") }
+        Label { text: qsTr("Preset:") }
         ComboBox {
             id: presetBox
             model: list.vm.rows("presets")

@@ -485,7 +485,8 @@ ApplicationWindow {
                 }
                 Action {
                     text: qsTr("&Import Movie..."); enabled: root.session.hasMovieImport
-                    onTriggered: { root.newProject.run("chooseCore", [root.session.coreName]); newProjectWindow.show(); newProjectWindow.raise() }
+                    // Chimera's: the core's import form first, then the wizard on its answers
+                    onTriggered: { root.newProject.run("chooseCore", [root.session.coreName]); movieImportWindow.show(); movieImportWindow.raise() }
                 }
                 MenuSeparator {}
                 // the tools the core offers, by Chimera's names, in its order
@@ -724,7 +725,27 @@ ApplicationWindow {
             hexEditorWindow.raise()
         }
     }
-    NewProject { id: newProjectWindow; vm: root.newProject; askFirst: root.leaveProject; visible: false }
+    NewProject { id: newProjectWindow; vm: root.newProject; askFirst: root.leaveProject; mainWindow: root; themeColor: root.osdColor; visible: false }
+    MovieImport {
+        id: movieImportWindow
+        vm: root.newProject
+        mainWindow: root
+        themeColor: root.osdColor
+        visible: false
+        // what the core noted, as Chimera says it, before the wizard
+        onTaken: {
+            if (root.newProject.importSummary !== "") importNotesDialog.open()
+            else { newProjectWindow.show(); newProjectWindow.raise() }
+        }
+    }
+    MessageDialog {
+        id: importNotesDialog
+        title: movieImportWindow.title
+        text: root.newProject.importSummary
+        buttons: MessageDialog.Ok
+        onAccepted: { newProjectWindow.show(); newProjectWindow.raise() }
+        onRejected: { newProjectWindow.show(); newProjectWindow.raise() }
+    }
     // the project's own window, beside this one: open exactly when a project is
     TAStudio {
         id: tastudioWindow

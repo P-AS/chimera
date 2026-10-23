@@ -5991,10 +5991,22 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(wizard.run("chooseCore", {std::string("Synth")}, error).has_value());
 	CHECK(rowCount("slots") == 1 && text("slots", 0, 0) == "rom" && text("slots", 0, 4) == ".testrom" && text("slots", 0, 9) == "*.testrom");
 	CHECK(wizard.problems.get() == "Game: a file is needed" && wizard.machines.get().empty());
+	/* the wizard's pages, in Chimera's words: the files page asked, what keeps it from going on */
+	CHECK(wizard.filesAsked.get() && wizard.filesComplaint.get() == "Game: needs exactly one, has 0" && text("slots", 0, 10) == "exactly one");
+	CHECK(!wizard.firmwareAsked.get() && wizard.firmwareMissing.get().empty());
 	std::ofstream(dir / "notes.txt") << "not a game";
-	CHECK(!wizard.run("addFile", {std::string("rom"), (dir / "notes.txt").string()}, error) && error == "notes.txt: Game takes a .testrom file");
-	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && wizard.ready.get() && wizard.problems.get().empty());
-	CHECK(!wizard.run("addFile", {std::string("rom"), game}, error) && error == "Game takes 1 file at most");
+	/* a file of another kind is said, not refused, as Chimera's; more than the slot takes is said at Next */
+	CHECK(wizard.run("addFile", {std::string("rom"), (dir / "notes.txt").string()}, error).has_value() &&
+		wizard.status.get() == "notes.txt is not one of the formats this slot expects (.testrom)");
+	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && wizard.filesComplaint.get() == "Game: takes exactly one, has 2");
+	CHECK(wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value());
+	CHECK(wizard.ready.get() && wizard.problems.get().empty() && wizard.status.get().empty());
+	CHECK(wizard.filesComplaint.get().empty());
+	/* the same file again: nothing to do */
+	{
+		int64_t n = 0;
+		CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && fromValue(cell("slots", 0, 8), n) && n == 1);
+	}
 	CHECK(text("slots", 0, 7) == "walker.testrom");
 	CHECK(settingNames() == "initFillByte ");
 	/* a core that declares no renderer draws one way */
@@ -6023,7 +6035,7 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	 * a name no setting has left out and named */
 	CHECK(rowCount("presets") == 1 && text("presets", 0, 1) == "Full fill");
 	CHECK(wizard.run("applyPreset", {std::string("full")}, error).has_value());
-	CHECK(wizard.status.get() == "Preset Full fill written below; not for this machine: nope" && wizard.machine.get() == 0);
+	CHECK(wizard.status.get() == "Applied \"Full fill\": 1 setting; this machine has no setting named nope." && wizard.machine.get() == 0);
 	/* still board A: its presets, its cartridge slot */
 	CHECK(rowCount("presets") == 1);
 	fromValue(cell("slots", 0, 6), exposed);
@@ -6036,6 +6048,7 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	}
 	CHECK(!wizard.run("applyPreset", {std::string("fast")}, error) && error == "no preset fast for this machine");
 	CHECK(wizard.problems.get() == "One of these is needed: Cartridge, Disks");
+	CHECK(wizard.filesComplaint.get() == "at least one file is needed across: Cartridge, Disks");
 	fromValue(cell("slots", 0, 6), exposed);
 	CHECK(exposed && rowCount("firmware") == 0);
 	CHECK(settingNames() == "initFillByte port ");
@@ -6057,10 +6070,11 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	/* the disk slot takes the kinds of disk this board claims */
 	CHECK(text("slots", 1, 4) == ".dsk" && text("slots", 1, 9) == "*.dsk");
 	CHECK(wizard.run("chooseMachine", {int64_t{1}}, error).has_value() && wizard.machine.get() == 1);
-	CHECK(text("slots", 1, 4) == ".cue .img");
+	CHECK(text("slots", 1, 4) == ".cue, .img");
 	std::ofstream(dir / "disk3.dsk") << "board A's kind of disk";
-	CHECK(!wizard.run("addFile", {std::string("disk"), (dir / "disk3.dsk").string()}, error) &&
-		error == "disk3.dsk: Disks takes files of these kinds: .cue .img");
+	CHECK(wizard.run("addFile", {std::string("disk"), (dir / "disk3.dsk").string()}, error).has_value() &&
+		wizard.status.get() == "disk3.dsk is not one of the formats this slot expects (.cue, .img)");
+	CHECK(wizard.run("removeFile", {std::string("disk"), int64_t{0}}, error).has_value());
 	fromValue(cell("slots", 0, 6), exposed);
 	CHECK(!exposed && settingNames() == "initFillByte diskSpeed port ");
 	CHECK(portCell(3) == "none" && portCell(4) == "pad\nnone");
@@ -6075,9 +6089,12 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(!wizard.run("addFile", {std::string("rom"), game}, error) && error == "Cartridge does not go with the files or the machine chosen");
 	CHECK(rowCount("firmware") == 1 && text("firmware", 0, 1) == "Board B BIOS");
 	CHECK(wizard.problems.get() == "One of these is needed: Disks\nBoard B BIOS: not found in the firmware folder; choose its file");
+	/* the firmware page: asked, its columns and what is missing in Chimera's words */
+	CHECK(wizard.firmwareAsked.get() && wizard.firmwareMissing.get() == "Board B BIOS");
+	CHECK(text("firmware", 0, 5) == "Board B BIOS" && text("firmware", 0, 8) == "not found");
 	/* a cue whose track is not beside it is said at once; names a slot asks for */
 	std::ofstream(dir / "disk1.cue") << "FILE \"disk1.bin\" BINARY\n  TRACK 01 MODE1/2048\n    INDEX 01 00:00:00\n";
-	CHECK(!wizard.run("addFile", {std::string("disk"), (dir / "disk1.cue").string()}, error) && error == "disk1.cue names disk1.bin, which is not beside it");
+	CHECK(!wizard.run("addFile", {std::string("disk"), (dir / "disk1.cue").string()}, error) && error == "disk1.cue references disk1.bin, which is not next to it - a cue's files are added together");
 	std::ofstream(dir / "disk1.bin") << "the first disk's track";
 	CHECK(wizard.run("addFile", {std::string("disk"), (dir / "disk1.cue").string()}, error).has_value());
 	std::ofstream(dir / "game.img") << "a disk by another name";
@@ -6099,11 +6116,16 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	std::ofstream(dir / "scan" / "deeper" / "boardb.bin") << "a board B BIOS, by its name";
 	installed.set("firmwareFolder", (dir / "nowhere").string(), error);
 	CHECK(wizard.run("scanFolder", {(dir / "scan").string(), false}, error).has_value());
-	CHECK(wizard.status.get() == "Scanned 0 files; nothing new matched" && !wizard.ready.get());
+	CHECK(wizard.status.get() == "scanned 0 files; nothing new matched" && !wizard.ready.get());
 	CHECK(wizard.run("scanFolder", {(dir / "scan").string(), true}, error).has_value());
-	CHECK(wizard.status.get() == "Scanned 1 file; 1 requirement resolved" && wizard.ready.get());
+	CHECK(wizard.status.get() == "scanned 1 files; 1 requirement resolved" && wizard.ready.get());
+	CHECK(wizard.firmwareMissing.get().empty() && text("firmware", 0, 8) == "found: boardb.bin");
 	CHECK(text("firmware", 0, 2) == (dir / "scan" / "deeper" / "boardb.bin").string() && text("firmware", 0, 3) == "chosen");
 	CHECK(installed.firmwareFolder.get() == (dir / "scan").string());
+	/* Clear takes it away until the page is shown again, when what is found is found again */
+	CHECK(wizard.run("clearFirmware", {std::string("bios")}, error).has_value() && wizard.firmwareMissing.get() == "Board B BIOS" &&
+		text("firmware", 0, 8) == "not found" && !wizard.ready.get());
+	CHECK(wizard.run("firmwarePage", {}, error).has_value() && wizard.firmwareMissing.get().empty());
 	installed.set("firmwareFolder", (dir / "Firmware").string(), error);
 	/* the folder scanned is looked in from now on, as Chimera's is: what
 	 * was chosen there, forgotten, is found there again */
@@ -6396,7 +6418,7 @@ bool customFirmware(const char *rom, const char *hashedPackage, const char *game
 	fs::copy_file(theirs, dir / "scan" / "deeper" / "renamed.bin");
 	std::ofstream(dir / "scan" / "logo.bin") << "a logo by the right name and another hash";
 	CHECK(wizard.run("scanFolder", {(dir / "scan").string()}, error).has_value());
-	CHECK(wizard.status.get() == "Scanned 2 files; 1 requirement resolved" && wizard.ready.get());
+	CHECK(wizard.status.get() == "scanned 2 files; 1 requirement resolved" && wizard.ready.get());
 	CHECK(text("firmware", 0, 2) == (dir / "scan" / "deeper" / "renamed.bin").string());
 	fs::remove_all(dir);
 	return true;
@@ -6439,10 +6461,18 @@ bool movieImport(const char *slotsPackage, const char *rom, const std::string &m
 	CHECK(t == "importRom");
 	fromValue(files->cell(0, 2), t);
 	CHECK(t == "*.testrom");
-	CHECK(!wizard.run("importRun", {}, error) && error == "pick the movie first");
+	/* what is missing, in Chimera's words */
+	CHECK(!wizard.run("importRun", {}, error) && error == "Choose the a synthetic movie to import." && wizard.importFailure.get() == error);
 	CHECK(wizard.run("importSetMovie", {(dir / "win.txt").string()}, error).has_value());
-	CHECK(!wizard.run("importRun", {}, error) && error == "The game is needed");
+	CHECK(!wizard.run("importRun", {}, error) && error == "Choose the The game.");
 	CHECK(wizard.run("importAddFile", {std::string("importRom"), (dir / "gridWalker.testrom").string()}, error).has_value());
+	/* a single input gives its file up for another of the same name, as Chimera's */
+	{
+		fs::create_directories(dir / "again");
+		fs::copy_file(dir / "gridWalker.testrom", dir / "again" / "GRIDWALKER.testrom", fs::copy_options::overwrite_existing);
+		CHECK(wizard.run("importAddFile", {std::string("importRom"), (dir / "again" / "GRIDWALKER.testrom").string()}, error).has_value());
+		CHECK(wizard.run("importAddFile", {std::string("importRom"), (dir / "gridWalker.testrom").string()}, error).has_value());
+	}
 	fromValue(files->cell(0, 5), t);
 	CHECK(t == "gridWalker.testrom");
 	wizard.run("importSetOption", {std::string("importFill"), true}, error);
@@ -6456,6 +6486,11 @@ bool movieImport(const char *slotsPackage, const char *rom, const std::string &m
 		for (std::string l; std::getline(lines, l);) frames += !l.empty() && l[0] == '|' ? 1 : 0;
 	}
 	CHECK(wizard.status.get() == "Imported win.txt (" + std::to_string(frames) + " frames)");
+	/* taken: Chimera's message of what the core noted */
+	CHECK(wizard.importsTaken.get() == 1 && wizard.importFailure.get().empty());
+	std::printf("import summary: %s\n", wizard.importSummary.get().c_str());
+	CHECK(std::regex_match(wizard.importSummary.get(), std::regex("Synth Slots read a [^\n]* movie of " + std::to_string(frames) +
+		" frames, and notes:\n\n- imported by the synth core")));
 	CHECK(wizard.imported.get() && wizard.importNotes.get() == "imported by the synth core" && wizard.title.get() == "win");
 	/* the movie's settings are the project's own: the core's note is shown,
 	 * and what it would set is not put over them */

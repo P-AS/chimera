@@ -54,6 +54,7 @@
     <file alias="themes/dark.json">../../gui/Chimera.Client.Common/Resources/themes/dark.json</file>
     <file>SettingsList.qml</file>
     <file>NewProject.qml</file>
+    <file>MovieImport.qml</file>
     <file>LuaConsole.qml</file>
     <file>WindowOptions.qml</file>
     <file>TAStudio.qml</file>

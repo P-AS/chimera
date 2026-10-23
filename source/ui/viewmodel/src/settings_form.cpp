@@ -369,7 +369,8 @@ std::vector<const Json *> SettingsForm::offered() const
 	return out;
 }
 
-bool SettingsForm::applyPreset(const std::string &id, std::string &label, std::vector<std::string> &skipped, std::string &error)
+bool SettingsForm::applyPreset(const std::string &id, std::string &label, std::vector<std::string> &skipped, std::string &error,
+	int64_t *applied)
 {
 	const Json *preset = nullptr;
 	for (const Json *p : offered())
@@ -385,7 +386,7 @@ bool SettingsForm::applyPreset(const std::string &id, std::string &label, std::v
 	if (const Json *values = preset->find("values"))
 		for (const auto &[name, value] : values->members)
 		{
-			if (name == machineSetting_) continue;
+			if (name == machineSetting_ || name == "renderer") continue;
 			Value v;
 			switch (value.kind)
 			{
@@ -397,6 +398,7 @@ bool SettingsForm::applyPreset(const std::string &id, std::string &label, std::v
 			}
 			std::string why;
 			if (!set(name, v, why)) skipped.push_back(name);
+			else if (applied != nullptr) (*applied)++;
 		}
 	evaluate();
 	return true;

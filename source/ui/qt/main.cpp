@@ -274,7 +274,7 @@ int main(int argc, char **argv)
 	QCommandLineOption mmfOpt(QStringLiteral("mmf"), QStringLiteral("the memory-mapped file Lua's comm.mmfScreenshot writes to, as Chimera's --mmf"),
 		QStringLiteral("name"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, hotkeys, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, movie-import, ram-search, ram-watch, hex, controls, hotkeys, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, userdataOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -1172,6 +1172,7 @@ int main(int argc, char **argv)
 	const QString showName = args.value(showOpt) == QStringLiteral("ram-search") ? QStringLiteral("ramSearchWindow")
 		: args.value(showOpt) == QStringLiteral("ram-watch") ? QStringLiteral("ramWatchWindow")
 		: args.value(showOpt) == QStringLiteral("new-project") ? QStringLiteral("newProjectWindow")
+		: args.value(showOpt) == QStringLiteral("movie-import") ? QStringLiteral("movieImportWindow")
 		: args.value(showOpt) == QStringLiteral("hex") ? QStringLiteral("hexEditorWindow")
 		: args.value(showOpt) == QStringLiteral("controls") ? QStringLiteral("controllerConfigWindow")
 		: args.value(showOpt) == QStringLiteral("hotkeys") ? QStringLiteral("hotkeyConfigWindow")
