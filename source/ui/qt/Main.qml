@@ -84,7 +84,14 @@ ApplicationWindow {
               | (root.display.captionWindowed ? Qt.WindowMinMaxButtonsHint : 0))
          | (root.display.stayOnTop ? Qt.WindowStaysOnTopHint : 0)
     function synchChrome() { root.menuBar.visible = root.visibility === Window.FullScreen ? root.display.menuFullscreen : root.display.menuWindowed }
-    onVisibilityChanged: root.synchChrome()
+    onVisibilityChanged: {
+        root.synchChrome()
+        // a size that waited for the window to be windowed again
+        if (root.visibility === Window.Windowed && root.resizePending) {
+            root.resizePending = false
+            root.frameBufferResized(false)
+        }
+    }
     Connections {
         target: root.display
         function onMenuWindowedChanged() { root.synchChrome() }
@@ -213,10 +220,13 @@ ApplicationWindow {
             }
             else if (action === "Encode Video") root.encodeVideo()
             else if (action === "Larger Window" || action === "Smaller Window") {
-                if (picture.pictureWidth <= 0) return
-                const n = Math.max(1, Math.min(10, root.windowScale + (action === "Larger Window" ? 1 : -1)))
-                root.sizeWindow(n)
+                // as Chimera's: the system's scale one up or down (1 to 10), said, and the window sized to it
+                if (!root.session.isOpen) return
+                const was = root.display.run("scaleFor", [root.session.systemId]) || 2
+                const n = Math.max(1, Math.min(10, was + (action === "Larger Window" ? 1 : -1)))
+                root.display.run("setScaleFor", [root.session.systemId, n])
                 root.note(qsTr("Screensize set to %1x").arg(n))
+                root.frameBufferResized(true)
             }
             else if (root.hotkeyActions[action] && root.hotkeyActions[action].enabled) root.hotkeyActions[action].trigger()
             else if (tastudioWindow.hotkeyActions[action] && tastudioWindow.hotkeyActions[action].enabled) tastudioWindow.hotkeyActions[action].trigger()
@@ -319,17 +329,37 @@ ApplicationWindow {
                     id: windowSizeMenu
                     title: qsTr("&Window Size")
                     enabled: picture.pictureWidth > 0
+                    // the sizes this screen cannot hold say so and cannot be picked; the check is on the size the window is
+                    property int fits: 10
+                    onAboutToShow: windowSizeMenu.fits = root.largestFit()
                     Instantiator {
                         model: 10
                         delegate: MenuItem {
                             required property int index
-                            text: (index + 1 >= 10 ? "1" : "") + "&" + ((index + 1) % 10) + "x"
+                            readonly property bool tooBig: index + 1 > windowSizeMenu.fits
+                            text: (index + 1 >= 10 ? "1" : "") + "&" + ((index + 1) % 10) + "x" + (tooBig ? qsTr("  (larger than this screen)") : "")
+                            enabled: !tooBig
                             checkable: true
-                            checked: root.windowScale === index + 1
-                            onTriggered: root.sizeWindow(index + 1)
+                            checked: root.windowScale === index + 1 && root.display.resizeWithPicture
+                            onTriggered: {
+                                checked = Qt.binding(() => root.windowScale === index + 1 && root.display.resizeWithPicture)
+                                root.sizeWindow(index + 1)
+                            }
                         }
                         onObjectAdded: (index, object) => windowSizeMenu.insertItem(index, object)
                         onObjectRemoved: (index, object) => windowSizeMenu.removeItem(object)
+                    }
+                    MenuSeparator {}
+                    // Chimera's: the window keeps its size when the picture's changes
+                    MenuItem {
+                        text: qsTr("&Static Size")
+                        checkable: true
+                        checked: !root.display.resizeWithPicture
+                        onTriggered: {
+                            root.display.resizeWithPicture = !checked
+                            checked = Qt.binding(() => !root.display.resizeWithPicture)
+                            root.frameBufferResized(false)
+                        }
                     }
                 }
                 Action { property string hotkey: "Full Screen"; text: qsTr("Switch to Fullscreen"); onTriggered: root.visibility = root.visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen }
@@ -1291,13 +1321,53 @@ ApplicationWindow {
     // every message the window shows, for the log window; and the ones over the picture now
     ListModel { id: messageLog }
     ListModel { id: onScreenMessages }
-    // the picture N times the machine's own, the window grown or shrunk to it
-    property int windowScale: 1
+    // View > Window Size, as Chimera's FrameBufferResized: the picture times its system's scale (2 at first,
+    // remembered), a smaller one while the window would not fit the screen; the window follows the picture's
+    // size unless Static Size is ticked, and a size asked for is taken whatever Static Size says
+    property int windowScale: 2
+    property bool resizePending: false
+    // what the window has besides the picture: its menu bar and status bar (the picture takes the rest),
+    // measured from them, as the picture's own size may not have caught up with a size just given
+    function chromeHeight() {
+        return (root.menuBar && root.menuBar.visible ? root.menuBar.height : 0) + (root.header && root.header.visible ? root.header.height : 0)
+            + (root.footer && root.footer.visible ? root.footer.height : 0)
+    }
+    // the largest scale this screen holds the window at (10 when it cannot be said)
+    function largestFit() {
+        const pw = picture.pictureWidth, ph = picture.pictureHeight
+        if (pw <= 0 || ph <= 0 || root.visibility !== Window.Windowed) return 10
+        const bw = 0, bh = root.chromeHeight()
+        let fits = 0
+        for (let z = 1; z <= 10; z++) {
+            if (pw * z + bw >= Screen.desktopAvailableWidth || ph * z + bh >= Screen.desktopAvailableHeight) break
+            fits = z
+        }
+        return fits
+    }
+    function frameBufferResized(force) {
+        if (root.visibility !== Window.Windowed) { root.resizePending = true; return }
+        if (!root.display.resizeWithPicture && !force) return
+        const pw = picture.pictureWidth, ph = picture.pictureHeight
+        if (pw <= 0 || ph <= 0) return
+        let zoom = root.display.run("scaleFor", [root.session.systemId]) || 2
+        const bw = 0, bh = root.chromeHeight()
+        for (; zoom > 1; zoom--)
+            if (pw * zoom + bw < Screen.desktopAvailableWidth && ph * zoom + bh < Screen.desktopAvailableHeight) break
+        root.windowScale = zoom
+        root.width = Math.round(pw * zoom + bw)
+        root.height = Math.round(ph * zoom + bh)
+        // too large for the screen even so: its top left kept on it
+        if (root.x + root.width > Screen.desktopAvailableWidth) root.x = Math.max(Screen.desktopAvailableWidth - root.width, 0)
+        if (root.y + root.height > Screen.desktopAvailableHeight) root.y = Math.max(Screen.desktopAvailableHeight - root.height, 0)
+    }
     function sizeWindow(n) {
-        root.windowScale = n
-        const w = picture.pictureWidth * n, h = picture.pictureHeight * n
-        root.height = Math.round(root.height - pictureArea.height + h)
-        root.width = Math.round(root.width - pictureArea.width + w)
+        root.display.run("setScaleFor", [root.session.systemId, n])
+        root.frameBufferResized(true)
+    }
+    Connections {
+        target: picture
+        function onPictureWidthChanged() { root.frameBufferResized(false) }
+        function onPictureHeightChanged() { root.frameBufferResized(false) }
     }
     // a message over the picture, for the messages' time or as long as asked (Chimera's AddOnScreenMessage duration)
     function note(text, seconds) {
@@ -1344,7 +1414,9 @@ ApplicationWindow {
         objectName: "recoveryDialog"
         title: qsTr("Recover unsaved work?")
         anchors.centerIn: parent
-        width: Math.min(parent.width - 32, 560)
+        // sized when it opens: a window resized while it is closed leaves it alone
+        width: 560
+        onAboutToShow: recoveryDialog.width = Math.min(parent.width - 32, 560)
         modal: true
         closePolicy: Popup.NoAutoClose
         standardButtons: Dialog.Yes | Dialog.No

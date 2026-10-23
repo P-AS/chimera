@@ -68,6 +68,12 @@ public:
 	/* Keep window titles static, and the words every main window title ends with ("" for "Chimera") */
 	Property<bool> staticWindowTitles{false};
 	Property<std::string> titleSuffix;
+	/* View > Window Size, as Chimera's: the picture's size times each
+	 * system's own scale (2 at first, 1 to 10, remembered per system), the
+	 * window following the picture's size unless Static Size is ticked */
+	Property<bool> resizeWithPicture{true};
+	Property<std::string> windowScales{"{}"};
+	int64_t scaleFor(const std::string &system) const;
 
 	DisplayFit fit() const;
 };

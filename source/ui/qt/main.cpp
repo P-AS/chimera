@@ -1006,7 +1006,8 @@ int main(int argc, char **argv)
 	for (const char *name : {"aspectMode", "customWidth", "customHeight", "ratioX", "ratioY", "letterbox", "integerScale", "cropLeft",
 			 "cropTop", "cropRight", "cropBottom", "finalFilter", "saveWindowPosition", "windowGeometry",
 			 "allowDoubleClickFullscreen", "menuWindowed", "captionWindowed", "frameWindowed", "menuFullscreen", "statusBarFullscreen",
-			 "autohideMouseFullscreen", "stayOnTop", "minimalDisplay", "staticWindowTitles", "titleSuffix"})
+			 "autohideMouseFullscreen", "stayOnTop", "minimalDisplay", "staticWindowTitles", "titleSuffix", "resizeWithPicture",
+			 "windowScales"})
 		config.keep(display, name);
 	qt::QmlViewModel displayQml(display);
 	qt::QmlViewModel branchesQml(branches);

@@ -766,6 +766,15 @@ void displayFit()
 	display.aspectMode.set(9);
 	display.customWidth.set(-5);
 	CHECK(display.fit().aspectMode == 3 && display.fit().customWidth == 0 && display.fit().letterbox);
+	/* Window Size, as Chimera's: each system's scale, 2 at first, 1 to 10, kept; the window follows the picture */
+	{
+		std::string error;
+		CHECK(display.resizeWithPicture.get() && display.scaleFor("NES") == 2);
+		CHECK(display.run("setScaleFor", {std::string("NES"), int64_t{3}}, error) == Value(int64_t{3}));
+		CHECK(display.run("setScaleFor", {std::string("PSX"), int64_t{14}}, error) == Value(int64_t{10}));
+		CHECK(display.scaleFor("NES") == 3 && display.scaleFor("PSX") == 10 && display.scaleFor("GB") == 2);
+		CHECK(display.run("setScaleFor", {std::string("NES"), int64_t{0}}, error) == Value(int64_t{1}) && display.scaleFor("PSX") == 10);
+	}
 	/* the window's chrome starts as Chimera's: windowed with its menu, caption and thick frame; full
 	 * screen bare, the pointer hidden when still; double click full screen; titles not static */
 	CHECK(display.menuWindowed.get() && display.captionWindowed.get() && display.frameWindowed.get() == 2 &&
