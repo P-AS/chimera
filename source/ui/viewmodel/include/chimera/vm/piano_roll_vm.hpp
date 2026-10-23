@@ -38,6 +38,13 @@ public:
 	 * hidden ones keep their inputs where they are, frames put in or taken
 	 * out moving only the shown ones, as Chimera's multitrack editing */
 	Property<bool> editHiddenColumns{true};
+	/* TAStudio's paint patterns: when painting a column follows its
+	 * pattern - "never", "autofire" (on the columns given Auto-hold) or
+	 * "always"; Alt held paints a button's pattern whatever this says -
+	 * and which pattern a column's Auto-hold plays: "hold", "autofire" or
+	 * "custom" (the column's own, kept in the project) */
+	Property<std::string> patternMode{"never"};
+	Property<std::string> patternKind{"hold"};
 	/* the most undo steps kept, as Chimera's TAStudio setting has it */
 	Property<int64_t> maxUndoSteps{1000};
 	/* TAStudio's "include frame numbers when copying input" */
@@ -97,6 +104,7 @@ private:
 		int32_t columnCount() const override { return vm_.buttonCount() + static_cast<int32_t>(vm_.session_.axes().size()); }
 		bool columnIsNumber(int32_t column) const override { return column >= vm_.buttonCount(); }
 		bool columnHidden(int32_t column) const override { return vm_.hidden_.count(columnName(column)) != 0; }
+		bool columnEmphasized(int32_t column) const override { return vm_.autoHeld_.count(columnName(column)) != 0; }
 		std::string columnName(int32_t column) const override;
 		/* the button's letter in a movie's input log */
 		std::string columnShortName(int32_t column) const override;
@@ -121,7 +129,32 @@ private:
 	public:
 		explicit ColumnRows(PianoRollViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return vm_.frames_.columnCount(); }
-		int32_t columnCount() const override { return 3; }
+		int32_t columnCount() const override { return 4; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
+
+	private:
+		PianoRollViewModel &vm_;
+	};
+
+	/* a column's own pattern, as Chimera's AutoPatternBool and
+	 * AutoPatternAxis: values in turn, back to `loop` after the last; lag
+	 * frames passed over (the value before kept) when skipLag */
+	struct Pattern
+	{
+		std::vector<int32_t> values;
+		bool skipLag = true;
+		int64_t loop = 0;
+	};
+	class PatternRows : public RowModel
+	{
+	public:
+		explicit PatternRows(PianoRollViewModel &vm) : vm_(vm) {}
+		int64_t rowCount() const override
+		{
+			return static_cast<int64_t>(vm_.buttonPatterns_.size() + vm_.axisPatterns_.size());
+		}
+		int32_t columnCount() const override { return 5; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -191,6 +224,29 @@ private:
 	void keep(Step step, bool join);
 	/* frames in and out, and rows written, as one undoable step */
 	Row readRow(int64_t frame) const;
+	/* the patterns, a button's then an analog control's, in the machine's
+	 * order; Chimera's defaults (on one frame, off one; an axis at its
+	 * most) for a machine just opened */
+	std::vector<Pattern> buttonPatterns_, axisPatterns_;
+	PatternRows patternRows_{*this};
+	void defaultPatterns();
+	void storePatterns();
+	void loadPatterns(const std::map<std::string, std::string> &members);
+	const Pattern *patternOf(int64_t column) const;
+	static std::string runsText(const Pattern &p, bool isButton);
+	/* a pattern's value for each frame first..last, counted from first */
+	std::vector<int32_t> patternValues(const Pattern &p, int64_t first, int64_t last) const;
+	/* a stroke painting a column's pattern: the frame it began on, the
+	 * column, and whether it presses (the pressed cell was not held) */
+	bool patternStroke_ = false, patternOn_ = false;
+	int64_t patternFrom_ = 0, patternColumn_ = -1;
+	bool paintPattern(int64_t first, int64_t last, bool join, std::string &error);
+	Connection patternsWatch_, projectGoneWatch_;
+	/* a project's TAStudio part, kept until its machine's controls are
+	 * known (they are told after it); and the controls the patterns are for */
+	std::optional<std::map<std::string, std::string>> pendingMembers_;
+	std::vector<std::string> patternNames_;
+	std::vector<std::string> controlNames() const;
 	/* editing hidden columns is off and some are hidden: the buttons shown
 	 * (a bit each) and the analog controls shown */
 	bool limited() const;
@@ -233,6 +289,8 @@ private:
 	Frames frames_{*this};
 	/* the columns hidden, by control name, and the list of them all */
 	std::set<std::string> hidden_;
+	/* the columns given Auto-hold (Chimera's column "emphasis"), by name */
+	std::set<std::string> autoHeld_;
 	ColumnRows columnRows_{*this};
 	void hiddenChanged();
 	Connection hiddenWatch_, maxStepsWatch_, editHiddenWatch_;

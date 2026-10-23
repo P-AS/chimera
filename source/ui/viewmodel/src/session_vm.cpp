@@ -1542,6 +1542,12 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		columnsLoadedM_ = saved;
 		if (saved) later([this, hidden] { hiddenColumnsLoaded.emit(hidden); });
 		else later([this] { loadDefaultColumns(); });
+		/* the rest of TAStudio's part, for the view models that keep it */
+		std::map<std::string, std::string> members;
+		if (const json::Json *o = tastudio.find("o"))
+			for (const auto &[k, v] : o->members) members[k] = json::write(v);
+		tastudioMembersM_.clear();
+		later([this, members] { tastudioLoaded.emit(members); });
 	}
 
 	if (!keepInputs)
@@ -1723,6 +1729,11 @@ void SessionViewModel::loadDefaultColumns()
 	for (const Axis &a : axes_)
 		if (hiddenByDefault(a.name)) hidden.push_back(a.name);
 	hiddenColumnsLoaded.emit(hidden);
+}
+
+void SessionViewModel::setTastudioMember(const std::string &name, const std::string &json)
+{
+	submit([this, name, json] { tastudioMembersM_[name] = json; });
 }
 
 void SessionViewModel::setHiddenColumns(const std::vector<std::string> &names)
@@ -1948,6 +1959,21 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
 			all.kind = json::Json::Kind::Array;
 			all.items.push_back(fresh);
 			o->members.emplace_back("Columns", all);
+		}
+		/* what the view models keep there, over what the project had */
+		for (const auto &[name, text] : tastudioMembersM_)
+		{
+			json::Json value;
+			std::string verr;
+			if (!json::parse(text, value, verr)) continue;
+			bool there = false;
+			for (auto &[k, v] : o->members)
+				if (k == name)
+				{
+					v = value;
+					there = true;
+				}
+			if (!there) o->members.emplace_back(name, value);
 		}
 		const char *err = nullptr;
 		ce_project_set_tastudio_text(projectM_, json::write(tastudio).c_str(), &err);

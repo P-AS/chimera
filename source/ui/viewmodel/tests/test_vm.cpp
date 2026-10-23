@@ -1016,10 +1016,44 @@ bool tastudioSettings(const char *package, const char *rom)
 	CHECK(session.unsaved.get());
 	session.autosaveSeconds.set(0);
 	session.autosaveAsBackup.set(false);
+	/* a control's pattern is kept in the project, as Chimera keeps it */
+	CHECK(roll.run("setPattern", {session.buttonNames()[4], std::string("On x3, Off x2"), int64_t{0}, false}, error).has_value());
+	CHECK(session.unsaved.get() && saved());
+	{
+		const char *err = nullptr;
+		ce_project *p = ce_project_open(project.string().c_str(), &err);
+		uint64_t len = 0;
+		const char *t = p != nullptr ? ce_project_tastudio_text(p, &len) : nullptr;
+		const std::string tastudio = t != nullptr ? std::string(t, static_cast<size_t>(len)) : "";
+		CHECK(tastudio.find("\"BoolPatterns\":[") != std::string::npos &&
+			tastudio.find("{\"_index\":0,\"SkipsLag\":false,\"Pattern\":[true,true,true,false,false],\"Loop\":0}") != std::string::npos);
+		if (p != nullptr) ce_project_free(p);
+	}
 	/* closed, nothing is unsaved */
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	CHECK(!session.unsaved.get());
+	/* opened again, the pattern is the project's */
+	session.run("openProject", {project.string(), std::string(package)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 60));
+	{
+		RowModel *patterns = nullptr;
+		for (const auto &r : roll.rowLists())
+			if (r.name == "patterns") patterns = r.model;
+		std::string runs;
+		bool skips = true;
+		CHECK(patterns != nullptr && d.until([&] { return fromValue(patterns->cell(4, 1), runs) && runs == "On x3, Off x2"; }, 20));
+		CHECK(patterns != nullptr && fromValue(patterns->cell(4, 3), skips) && !skips);
+		CHECK(patterns != nullptr && fromValue(patterns->cell(3, 1), runs) && runs == "On x1, Off x1");
+		/* the machine started again: still the project's */
+		const int64_t opened = session.opens.get();
+		session.run("restart", {}, error);
+		CHECK(d.until([&] { return session.opens.get() > opened && session.isOpen.get(); }, 60));
+		d.until([] { return false; }, 0.2);
+		CHECK(patterns != nullptr && fromValue(patterns->cell(4, 1), runs) && runs == "On x3, Off x2");
+	}
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);
 	return true;
 }
@@ -2475,6 +2509,79 @@ bool pianoRollEditing(const char *package, const char *rom)
 		CHECK(roll.run("clearFrames", {int64_t{2}, int64_t{2}}, error).has_value() && masks()[2] == 0);
 		CHECK(undoTo(start));
 		roll.run("showAllColumns", {}, error);
+	}
+	/* a column painted with its pattern: with Alt held, or as patternMode
+	 * says; each control's own pattern */
+	{
+		RowModel *patterns = nullptr;
+		for (const auto &r : roll.rowLists())
+			if (r.name == "patterns") patterns = r.model;
+		CHECK(patterns != nullptr && patterns->rowCount() == static_cast<int64_t>(session.buttonNames().size() + session.axes().size()));
+		if (patterns == nullptr) return false;
+		auto text = [&](int64_t row, int32_t col) {
+			std::string t;
+			fromValue(patterns->cell(row, col), t);
+			return t;
+		};
+		const std::string five = session.buttonNames()[5];
+		CHECK(text(5, 0) == five && text(5, 1) == "On x1, Off x1");
+		auto columnFive = [&](int64_t from, int64_t to) {
+			std::string bits;
+			for (int64_t f = from; f <= to; f++) bits += (masks()[static_cast<size_t>(f)] >> 5 & 1) ? '1' : '0';
+			return bits;
+		};
+		auto history = [&] {
+			for (const auto &r : roll.rowLists())
+				if (r.name == "history")
+				{
+					std::string n;
+					fromValue(r.model->cell(r.model->rowCount() - 1, 0), n);
+					return n;
+				}
+			return std::string();
+		};
+		/* Chimera's default: on a frame, off the next */
+		CHECK(roll.run("press", {int64_t{0}, int64_t{5}, true}, error).has_value());
+		roll.run("drag", {int64_t{3}, int64_t{5}}, error);
+		CHECK(columnFive(0, 3) == "1010" && history() == "Paint Bool " + five + " from frame 0");
+		CHECK(undoTo(start));
+		/* its own: on two, off one, back to the second */
+		CHECK(roll.run("setPattern", {five, std::string("On x2, Off x1"), int64_t{1}, true}, error).has_value());
+		CHECK(text(5, 1) == "On x2, Off x1");
+		roll.run("press", {int64_t{0}, int64_t{5}, true}, error);
+		roll.run("drag", {int64_t{6}, int64_t{5}}, error);
+		CHECK(columnFive(0, 6) == "1101010");
+		CHECK(undoTo(start));
+		/* begun on a held cell, it lets go */
+		roll.run("press", {int64_t{5}, int64_t{5}, true}, error);
+		roll.run("drag", {int64_t{7}, int64_t{5}}, error);
+		CHECK(columnFive(4, 8) == "00000");
+		CHECK(undoTo(start));
+		/* always: without Alt too */
+		roll.patternMode.set("always");
+		roll.run("press", {int64_t{0}, int64_t{5}}, error);
+		roll.run("drag", {int64_t{2}, int64_t{5}}, error);
+		CHECK(columnFive(0, 2) == "110");
+		CHECK(undoTo(start));
+		/* autofire: on the Auto-hold columns only */
+		roll.patternMode.set("autofire");
+		roll.run("press", {int64_t{0}, int64_t{5}}, error);
+		roll.run("drag", {int64_t{1}, int64_t{5}}, error);
+		roll.run("drag", {int64_t{2}, int64_t{5}}, error);
+		CHECK(columnFive(0, 2) == "111");
+		CHECK(undoTo(start));
+		CHECK(roll.run("toggleAutoHold", {five}, error) == Value(true));
+		roll.run("press", {int64_t{0}, int64_t{5}}, error);
+		roll.run("drag", {int64_t{2}, int64_t{5}}, error);
+		CHECK(columnFive(0, 2) == "110");
+		CHECK(undoTo(start));
+		CHECK(roll.run("toggleAutoHold", {five}, error) == Value(false));
+		roll.patternMode.set("never");
+		/* what is not a pattern */
+		CHECK(!roll.run("setPattern", {five, std::string("Maybe x2")}, error) && error == "\"Maybe\" is not On or Off");
+		CHECK(!roll.run("setPattern", {five, std::string("On"), int64_t{3}}, error));
+		CHECK(!roll.run("setPattern", {std::string("Nothing"), std::string("On")}, error));
+		CHECK(roll.run("setPattern", {five, std::string("On x1, Off x1"), int64_t{0}, true}, error).has_value());
 	}
 	/* cloned a number of times, as one edit */
 	CHECK(roll.run("cloneFrames", {int64_t{1}, int64_t{2}, int64_t{3}}, error).has_value() && roll.frameCount.get() == 16);

@@ -58,7 +58,10 @@ Q_SIGNALS:
 	void rowCountChanged();
 	void visibleRowsChanged();
 	void painted();
-	void cellPressed(qint64 row, int column);
+	/* alt: Alt was held (TAStudio paints a column's pattern then) */
+	void cellPressed(qint64 row, int column, bool alt);
+	/* the right button on a column's name: its menu */
+	void columnMenuRequested(int column, const QString &name, bool autoHeld, qreal x, qreal y);
 	void cellDragged(qint64 row, int column);
 	/* a press on a row's frame number */
 	void frameClicked(qint64 row);

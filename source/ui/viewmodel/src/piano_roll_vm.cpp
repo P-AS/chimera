@@ -1,6 +1,7 @@
 #include "chimera/vm/piano_roll_vm.hpp"
 
 #include "chimera/engine.h"
+#include "chimera/vm/json.hpp"
 
 #include <algorithm>
 
@@ -17,6 +18,120 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("wheelRows", "the frames a notch of the mouse wheel scrolls", wheelRows, true);
 	expose("editHiddenColumns", "edits of frames change the hidden columns too; off, only the columns shown",
 		editHiddenColumns, true);
+	expose("patternMode", "when painting follows a column's pattern: never, autofire (the Auto-hold columns) or always",
+		patternMode, true);
+	expose("patternKind", "the pattern a column's Auto-hold plays: hold, autofire or custom", patternKind, true);
+	command("setPattern", "a control's own pattern: runs of values (\"On x2, Off x1\" for a button, \"127 x2, 0 x1\" for "
+		"an analog control), the value it goes back to after the last, and whether lag frames are passed over",
+		{"name", "runs", "loop", "skipLag"}, [this](const Args &a, std::string &error) -> Value {
+			std::string name, runs;
+			int64_t loop = 0;
+			bool skipLag = true;
+			if (!arg(a, 0, name, error) || !arg(a, 1, runs, error)) return {};
+			if (a.size() > 2 && !arg(a, 2, loop, error)) return {};
+			if (a.size() > 3 && !arg(a, 3, skipLag, error)) return {};
+			const std::vector<std::string> &names = session_.buttonNames();
+			Pattern *p = nullptr;
+			bool isButton = false;
+			for (size_t i = 0; i < names.size() && i < buttonPatterns_.size(); i++)
+				if (names[i] == name) p = &buttonPatterns_[i], isButton = true;
+			for (size_t i = 0; i < session_.axes().size() && i < axisPatterns_.size(); i++)
+				if (session_.axes()[i].name == name) p = &axisPatterns_[i];
+			if (p == nullptr)
+			{
+				error = "no control " + name;
+				return {};
+			}
+			/* "On x2, Off x1": a value each run, and how many times */
+			Pattern made;
+			made.skipLag = skipLag;
+			size_t at = 0;
+			while (at < runs.size())
+			{
+				size_t end = runs.find(',', at);
+				std::string run = runs.substr(at, end == std::string::npos ? std::string::npos : end - at);
+				at = end == std::string::npos ? runs.size() : end + 1;
+				const size_t first = run.find_first_not_of(" \t"), last = run.find_last_not_of(" \t");
+				if (first == std::string::npos) continue;
+				run = run.substr(first, last - first + 1);
+				int64_t times = 1;
+				const size_t x = run.find_last_of("xX");
+				if (x != std::string::npos && x + 1 < run.size() && run.find_first_not_of("0123456789", x + 1) == std::string::npos &&
+					x > 0 && run[x - 1] == ' ')
+				{
+					times = std::stoll(run.substr(x + 1));
+					run = run.substr(0, run.find_last_not_of(" ", x - 1) + 1);
+				}
+				int32_t value = 0;
+				if (isButton)
+				{
+					std::string w = run;
+					for (char &c : w) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+					if (w == "on" || w == "1" || w == "true") value = 1;
+					else if (w == "off" || w == "0" || w == "false") value = 0;
+					else
+					{
+						error = "\"" + run + "\" is not On or Off";
+						return {};
+					}
+				}
+				else
+				{
+					char *stop = nullptr;
+					const long v = std::strtol(run.c_str(), &stop, 10);
+					if (run.empty() || stop == nullptr || *stop != '\0')
+					{
+						error = "\"" + run + "\" is not a number";
+						return {};
+					}
+					value = static_cast<int32_t>(v);
+				}
+				if (times < 1 || times > 100000)
+				{
+					error = "a run is 1 to 100000 frames";
+					return {};
+				}
+				made.values.insert(made.values.end(), static_cast<size_t>(times), value);
+			}
+			if (made.values.empty())
+			{
+				error = "a pattern has a value at least";
+				return {};
+			}
+			if (loop < 0 || loop >= static_cast<int64_t>(made.values.size()))
+			{
+				error = "it goes back to a value it has: 0 to " + std::to_string(made.values.size() - 1);
+				return {};
+			}
+			made.loop = loop;
+			*p = std::move(made);
+			storePatterns();
+			session_.markChanged();
+			return {};
+		});
+	command("toggleAutoHold", "a column's Auto-hold on or off (TAStudio's column menu): painting it follows its pattern "
+		"when patternMode is autofire", {"name"}, [this](const Args &a, std::string &error) -> Value {
+			std::string name;
+			if (!arg(a, 0, name, error)) return {};
+			bool known = false;
+			for (int32_t c = 0; c < frames_.columnCount(); c++) known = known || frames_.columnName(c) == name;
+			if (!known)
+			{
+				error = "no column " + name;
+				return {};
+			}
+			if (!autoHeld_.erase(name)) autoHeld_.insert(name);
+			columnRows_.reset.emit();
+			frames_.reset.emit();
+			return autoHeld_.count(name) != 0;
+		});
+	patternsWatch_ = session_.tastudioLoaded.connect([this](const std::map<std::string, std::string> &members) {
+		pendingMembers_ = members;
+	});
+	/* a game alone, or nothing open: Chimera's default patterns */
+	projectGoneWatch_ = session_.hasProject.changed.connect([this] {
+		if (!session_.hasProject.get()) defaultPatterns();
+	});
 	editHiddenWatch_ = editHiddenColumns.changed.connect([this] {
 		session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
 	});
@@ -27,6 +142,8 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	rows("markers", "the movie's markers: frame, text, whether the frame's state is kept", markerRows_);
 	rows("columns", "the piano roll's columns, a control each: name, label, shown", columnRows_);
 	rows("history", "the undo history, in order: each step's name, and whether it is done (the rest are undone)", historyRows_);
+	rows("patterns", "each control's own pattern (kept in the project): name, runs (\"On x1, Off x1\" or \"127 x2, 0 x1\"), "
+		"loop (the value it goes back to), skipLag (lag frames passed over), button", patternRows_);
 	expose("maxUndoSteps", "the most undo steps kept", maxUndoSteps, true);
 	expose("copyFrameNumbers", "Copy puts each frame's number before its line", copyFrameNumbers, true);
 	expose("clipboardText", "the frames last copied or cut, a line each, for the system's clipboard", clipboardText);
@@ -232,10 +349,34 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			return (inputs_.at(f) >> b & 1) != 0;
 		});
 	command("press", "a press on a cell: a button's flips, and a drag from it gives the cells it passes the same state; "
-		"an analog control's is picked to edit, and a drag from it gives the cells it passes its value",
-		{"frame", "column"}, [this](const Args &a, std::string &error) -> Value {
+		"an analog control's is picked to edit, and a drag from it gives the cells it passes its value. With alt (or as "
+		"patternMode says) a button's cells follow its pattern instead",
+		{"frame", "column", "alt"}, [this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0, b = 0;
+			bool alt = false;
 			if (!arg(a, 0, f, error) || !arg(a, 1, b, error)) return {};
+			if (a.size() > 2 && !arg(a, 2, alt, error)) return {};
+			patternStroke_ = false;
+			const std::string &mode = patternMode.get();
+			const bool byPattern = mode == "always" || (mode == "autofire" && autoHeld_.count(frames_.columnName(static_cast<int32_t>(b))) != 0);
+			if ((alt && b < buttonCount()) || byPattern)
+			{
+				if (f < 0 || b < 0 || b >= frames_.columnCount() || (b >= buttonCount() && f >= inputs_.size()))
+				{
+					error = "no such frame or control";
+					return {};
+				}
+				/* as Chimera: a button's pattern presses when the cell was not held, else it lets go */
+				patternColumn_ = b;
+				patternFrom_ = f;
+				patternOn_ = b < buttonCount() ? (inputs_.at(f) >> b & 1) == 0 : true;
+				if (b >= buttonCount()) pickAxis(f, b - buttonCount());
+				if (!paintPattern(f, f, false, error)) return {};
+				patternStroke_ = true;
+				stroke_ = b < buttonCount();
+				axisJoin_ = b >= buttonCount();
+				return patternOn_;
+			}
 			if (b >= buttonCount())
 			{
 				const int64_t axis = b - buttonCount();
@@ -259,6 +400,14 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		{"frame", "button"}, [this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0, b = 0;
 			if (!arg(a, 0, f, error) || !arg(a, 1, b, error)) return {};
+			/* a pattern's stroke: every frame from where it began, the pattern counted from the first */
+			if (patternStroke_ && b == patternColumn_)
+			{
+				inputs_.countRerecords(false);
+				paintPattern(std::min(patternFrom_, f), std::max(patternFrom_, f), true, error);
+				inputs_.countRerecords(true);
+				return {};
+			}
 			/* the stroke's first edit counts a rerecord; the cells after it do not */
 			if (b >= buttonCount())
 			{
@@ -541,6 +690,15 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		if (last >= first) frames_.changed.emit(first, last);
 	});
 	buttonsWatch_ = session_.buttonsChanged.connect([this] {
+		/* a project's own patterns; the ones there are when its machine
+		 * started again; else Chimera's defaults */
+		if (pendingMembers_)
+		{
+			loadPatterns(*pendingMembers_);
+			pendingMembers_.reset();
+		}
+		else if (controlNames() != patternNames_)
+			defaultPatterns();
 		session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
 		frames_.reset.emit();
 	});
@@ -886,6 +1044,177 @@ void PianoRollViewModel::overwrite(int64_t at, const std::vector<Row> &rows)
 	edited(at, at + static_cast<int64_t>(rows.size()) - 1, before);
 }
 
+std::vector<std::string> PianoRollViewModel::controlNames() const
+{
+	std::vector<std::string> names = session_.buttonNames();
+	for (const SessionViewModel::Axis &ax : session_.axes()) names.push_back(ax.name);
+	return names;
+}
+
+void PianoRollViewModel::defaultPatterns()
+{
+	/* Chimera's: a button on a frame and off the next; an axis at its most */
+	buttonPatterns_.assign(session_.buttonNames().size(), Pattern{{1, 0}, true, 0});
+	axisPatterns_.clear();
+	for (const SessionViewModel::Axis &ax : session_.axes()) axisPatterns_.push_back(Pattern{{static_cast<int32_t>(ax.max)}, true, 0});
+	patternRows_.reset.emit();
+	storePatterns();
+}
+
+void PianoRollViewModel::storePatterns()
+{
+	/* as Chimera writes them in the project's TAStudio part */
+	auto write = [](const std::vector<Pattern> &all, bool isButton) {
+		json::Json list;
+		list.kind = json::Json::Kind::Array;
+		for (const Pattern &p : all)
+		{
+			json::Json one, values;
+			one.kind = json::Json::Kind::Object;
+			values.kind = json::Json::Kind::Array;
+			for (int32_t v : p.values) values.items.push_back(isButton ? json::Json::boolean_(v != 0) : json::Json::integer(v));
+			one.members.emplace_back("_index", json::Json::integer(0));
+			one.members.emplace_back("SkipsLag", json::Json::boolean_(p.skipLag));
+			one.members.emplace_back("Pattern", values);
+			one.members.emplace_back("Loop", json::Json::integer(p.loop));
+			list.items.push_back(one);
+		}
+		return json::write(list);
+	};
+	session_.setTastudioMember("BoolPatterns", write(buttonPatterns_, true));
+	session_.setTastudioMember("AxisPatterns", write(axisPatterns_, false));
+	patternNames_ = controlNames();
+	patternRows_.reset.emit();
+}
+
+void PianoRollViewModel::loadPatterns(const std::map<std::string, std::string> &members)
+{
+	/* the project's own, when it has one a control (as Chimera checks);
+	 * else the defaults */
+	auto read = [](const std::map<std::string, std::string> &m, const char *name, size_t count, std::vector<Pattern> &out) {
+		const auto it = m.find(name);
+		json::Json list;
+		std::string err;
+		if (it == m.end() || !json::parse(it->second, list, err) || list.kind != json::Json::Kind::Array || list.items.size() != count)
+			return false;
+		std::vector<Pattern> read;
+		for (const json::Json &one : list.items)
+		{
+			Pattern p;
+			if (const json::Json *s = one.find("SkipsLag"); s != nullptr && s->kind == json::Json::Kind::Bool) p.skipLag = s->boolean;
+			if (const json::Json *l = one.find("Loop")) p.loop = static_cast<int64_t>(l->number());
+			if (const json::Json *v = one.find("Pattern"))
+				for (const json::Json &x : v->items)
+					p.values.push_back(x.kind == json::Json::Kind::Bool ? (x.boolean ? 1 : 0) : static_cast<int32_t>(x.number()));
+			if (p.values.empty()) return false;
+			if (p.loop < 0 || p.loop >= static_cast<int64_t>(p.values.size())) p.loop = 0;
+			read.push_back(std::move(p));
+		}
+		out = std::move(read);
+		return true;
+	};
+	std::vector<Pattern> buttons = buttonPatterns_, axes = axisPatterns_;
+	const bool haveButtons = read(members, "BoolPatterns", session_.buttonNames().size(), buttons);
+	const bool haveAxes = read(members, "AxisPatterns", session_.axes().size(), axes);
+	if (!haveButtons || !haveAxes)
+	{
+		defaultPatterns();
+		return;
+	}
+	buttonPatterns_ = std::move(buttons);
+	axisPatterns_ = std::move(axes);
+	storePatterns();
+}
+
+const PianoRollViewModel::Pattern *PianoRollViewModel::patternOf(int64_t column) const
+{
+	const int64_t buttons = buttonCount();
+	if (column >= 0 && column < buttons && static_cast<size_t>(column) < buttonPatterns_.size()) return &buttonPatterns_[static_cast<size_t>(column)];
+	const int64_t axis = column - buttons;
+	if (axis >= 0 && static_cast<size_t>(axis) < axisPatterns_.size()) return &axisPatterns_[static_cast<size_t>(axis)];
+	return nullptr;
+}
+
+std::vector<int32_t> PianoRollViewModel::patternValues(const Pattern &p, int64_t first, int64_t last) const
+{
+	std::vector<int32_t> out;
+	size_t at = 0;
+	for (int64_t f = first; f <= last; f++)
+	{
+		/* a lag frame takes no input: it keeps the value before, and the pattern waits */
+		if (p.skipLag && f > first && inputs_.lagAt(f))
+		{
+			out.push_back(out.back());
+			continue;
+		}
+		out.push_back(p.values[at]);
+		if (++at >= p.values.size()) at = static_cast<size_t>(p.loop);
+	}
+	return out;
+}
+
+bool PianoRollViewModel::paintPattern(int64_t first, int64_t last, bool join, std::string &error)
+{
+	const Pattern *p = patternOf(patternColumn_);
+	if (p == nullptr || p->values.empty())
+	{
+		error = "no such control";
+		return false;
+	}
+	const std::vector<int32_t> values = patternValues(*p, first, last);
+	const int64_t b = patternColumn_;
+	bool ok = true;
+	for (int64_t f = first; f <= last && ok; f++)
+	{
+		const int32_t v = values[static_cast<size_t>(f - first)];
+		const bool joined = join || f > first;
+		if (b < buttonCount()) ok = paint(f, f, b, patternOn_ && v != 0, joined, error);
+		else ok = paintAxis(f, f, b - buttonCount(), v, joined, error);
+	}
+	if (!join && b < buttonCount() && !undo_.empty())
+		undo_.back().name = "Paint Bool " + frames_.columnName(static_cast<int32_t>(b)) + " from frame " + std::to_string(first);
+	return ok;
+}
+
+std::string PianoRollViewModel::runsText(const Pattern &p, bool isButton)
+{
+	std::string out;
+	for (size_t i = 0; i < p.values.size();)
+	{
+		size_t n = 1;
+		while (i + n < p.values.size() && p.values[i + n] == p.values[i]) n++;
+		if (!out.empty()) out += ", ";
+		out += (isButton ? std::string(p.values[i] != 0 ? "On" : "Off") : std::to_string(p.values[i])) + " x" + std::to_string(n);
+		i += n;
+	}
+	return out;
+}
+
+std::string PianoRollViewModel::PatternRows::columnName(int32_t column) const
+{
+	static const char *const names[] = {"name", "runs", "loop", "skipLag", "button"};
+	return column >= 0 && column < 5 ? names[column] : "";
+}
+
+Value PianoRollViewModel::PatternRows::cell(int64_t row, int32_t column) const
+{
+	if (row < 0 || row >= rowCount()) return {};
+	const size_t buttons = vm_.buttonPatterns_.size();
+	const bool isButton = static_cast<size_t>(row) < buttons;
+	const Pattern &p = isButton ? vm_.buttonPatterns_[static_cast<size_t>(row)] : vm_.axisPatterns_[static_cast<size_t>(row) - buttons];
+	switch (column)
+	{
+	case 0:
+		return isButton ? (static_cast<size_t>(row) < vm_.session_.buttonNames().size() ? vm_.session_.buttonNames()[static_cast<size_t>(row)] : "")
+						: (static_cast<size_t>(row) - buttons < vm_.session_.axes().size() ? vm_.session_.axes()[static_cast<size_t>(row) - buttons].name : "");
+	case 1: return runsText(p, isButton);
+	case 2: return p.loop;
+	case 3: return p.skipLag;
+	case 4: return isButton;
+	default: return {};
+	}
+}
+
 bool PianoRollViewModel::limited() const
 {
 	return !editHiddenColumns.get() && !hidden_.empty();
@@ -1108,8 +1437,8 @@ void PianoRollViewModel::hiddenChanged()
 
 std::string PianoRollViewModel::ColumnRows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"name", "label", "shown"};
-	return column >= 0 && column < 3 ? names[column] : "";
+	static const char *const names[] = {"name", "label", "shown", "autoHold"};
+	return column >= 0 && column < 4 ? names[column] : "";
 }
 
 Value PianoRollViewModel::ColumnRows::cell(int64_t row, int32_t column) const
@@ -1121,6 +1450,7 @@ Value PianoRollViewModel::ColumnRows::cell(int64_t row, int32_t column) const
 	case 0: return vm_.frames_.columnName(c);
 	case 1: return vm_.frames_.columnShortName(c);
 	case 2: return !vm_.frames_.columnHidden(c);
+	case 3: return vm_.autoHeld_.count(vm_.frames_.columnName(c)) != 0;
 	default: return {};
 	}
 }

@@ -29,6 +29,8 @@ public:
 	virtual bool columnIsNumber(int32_t) const { return false; }
 	/* a column not shown (the piano roll's hidden ones): drawn nowhere */
 	virtual bool columnHidden(int32_t) const { return false; }
+	/* a column marked out (the piano roll's Auto-hold ones) */
+	virtual bool columnEmphasized(int32_t) const { return false; }
 	/* a note a row carries (the piano roll: a marker's text), "" for none */
 	virtual std::string rowNote(int64_t) const { return {}; }
 

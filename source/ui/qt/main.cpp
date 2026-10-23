@@ -572,6 +572,8 @@ int main(int argc, char **argv)
 	config.keep(pianoRoll, "followAlways");
 	config.keep(pianoRoll, "wheelRows");
 	config.keep(pianoRoll, "editHiddenColumns");
+	config.keep(pianoRoll, "patternMode");
+	config.keep(pianoRoll, "patternKind");
 	config.keep(pianoRoll, "markersKeepStates");
 	config.keep(pianoRoll, "bindMarkers");
 	config.keep(session, "pauseAtEnd");

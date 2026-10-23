@@ -9,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <map>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -179,6 +180,12 @@ public:
 	Signal<std::vector<std::string>> hiddenColumnsLoaded;
 	/* the hidden columns now, to save with the project in Chimera's shape */
 	void setHiddenColumns(const std::vector<std::string> &names);
+	/* TAStudio's other settings kept in a project (members of its TAStudio
+	 * part, as Chimera's MovieClientSettings: "BoolPatterns"...): each as
+	 * JSON text, when a project opens; and given back, to be saved with it
+	 * (a member not given is saved as the project had it) */
+	Signal<std::map<std::string, std::string>> tastudioLoaded;
+	void setTastudioMember(const std::string &name, const std::string &json);
 	/* the controls Chimera's piano roll hides until shown (the console's
 	 * power and reset, keyboard keys, disk and tape controls...) */
 	static bool hiddenByDefault(const std::string &name);
@@ -477,6 +484,7 @@ private:
 	/* the hidden columns and the piano roll's columns, in Chimera's shape
 	 * (written when the project had none of its own), for the machine's thread */
 	std::vector<std::string> hiddenColumnsM_;
+	std::map<std::string, std::string> tastudioMembersM_;
 	std::string freshColumnsM_;
 	bool columnsLoadedM_ = false;
 	/* the defaults, sent once a machine's controls are known */

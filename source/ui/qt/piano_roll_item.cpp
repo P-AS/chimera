@@ -18,7 +18,7 @@ PianoRollItem::PianoRollItem(QQuickItem *parent) : QQuickPaintedItem(parent)
 {
 	setOpaquePainting(true);
 	setAntialiasing(false);
-	setAcceptedMouseButtons(Qt::LeftButton);
+	setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
 	connect(this, &PianoRollItem::pickedChanged, this, [this] { update(); });
 }
 
@@ -199,6 +199,13 @@ void PianoRollItem::paint(QPainter *p)
 		if (QFontMetrics(p->font()).horizontalAdvance(name) > columnW(c) - 2)
 			name = QString::fromStdString(rows.columnShortName(c));
 		const QRect cell(columnX(c), 0, columnW(c), rowHeight_);
+		/* an Auto-hold column, marked out as Chimera's emphasis */
+		if (rows.columnEmphasized(c))
+		{
+			QColor mark = pal.color(QPalette::Highlight);
+			mark.setAlpha(110);
+			p->fillRect(cell, mark);
+		}
 		p->drawText(cell, Qt::AlignCenter, QFontMetrics(p->font()).elidedText(name, Qt::ElideRight, columnW(c) - 2));
 	}
 
@@ -271,6 +278,19 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 {
 	qint64 row = 0;
 	int column = 0;
+	/* the right button: a column's menu on its name, else for whoever is under the roll */
+	if (e->button() == Qt::RightButton)
+	{
+		if (rows_ != nullptr && e->position().y() < rowHeight_ && cellAt(QPointF(e->position().x(), rowHeight_), row, column))
+		{
+			Q_EMIT columnMenuRequested(column, QString::fromStdString(rows_->rows().columnName(column)), rows_->rows().columnEmphasized(column),
+				e->position().x(), e->position().y());
+			e->accept();
+			return;
+		}
+		e->ignore();
+		return;
+	}
 	if (e->position().x() < frameColumnWidth() && e->position().y() >= rowHeight_ && rows_ != nullptr)
 	{
 		row = top_ + static_cast<qint64>((e->position().y() - rowHeight_) / rowHeight_);
@@ -298,7 +318,7 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 	}
 	dragColumn_ = column;
 	dragRow_ = row;
-	Q_EMIT cellPressed(row, column);
+	Q_EMIT cellPressed(row, column, (e->modifiers() & Qt::AltModifier) != 0);
 	e->accept();
 }
 

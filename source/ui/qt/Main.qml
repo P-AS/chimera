@@ -684,6 +684,21 @@ ApplicationWindow {
         Item {
             SplitView.fillWidth: true
             SplitView.minimumWidth: 200
+            // TAStudio's column menu, on a column's name
+            Menu {
+                id: columnMenu
+                objectName: "columnMenu"
+                property string name: ""
+                property bool autoHeld: false
+                MenuItem {
+                    text: qsTr("Auto-hold")
+                    checkable: true
+                    checked: columnMenu.autoHeld
+                    onTriggered: root.pianoRoll.run("toggleAutoHold", [columnMenu.name])
+                }
+                MenuItem { text: qsTr("Hide Column"); onTriggered: root.pianoRoll.run("hideColumn", [columnMenu.name]) }
+                MenuItem { text: qsTr("Show All Columns"); onTriggered: root.pianoRoll.run("showAllColumns") }
+            }
             PianoRollItem {
                 id: roll
                 objectName: "pianoRoll"
@@ -694,7 +709,8 @@ ApplicationWindow {
                 onVisibleRowsChanged: root.pianoRoll.visibleFrames = visibleRows
                 onTopRowRequested: (row) => root.pianoRoll.topFrame = row
                 wheelRows: root.pianoRoll.wheelRows
-                onCellPressed: (row, column) => root.pianoRoll.run("press", [row, column])
+                onCellPressed: (row, column, alt) => root.pianoRoll.run("press", [row, column, alt])
+                onColumnMenuRequested: (column, name, autoHeld, x, y) => { columnMenu.name = name; columnMenu.autoHeld = autoHeld; columnMenu.popup() }
                 onCellDragged: (row, column) => root.pianoRoll.run("drag", [row, column])
                 onFrameClicked: (row) => root.session.run("seek", [row])
                 selectFirst: root.pianoRoll.selectFirst
