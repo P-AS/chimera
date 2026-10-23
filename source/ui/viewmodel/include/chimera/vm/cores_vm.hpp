@@ -24,6 +24,10 @@ public:
 	Property<std::string> chosenFirmware{"{}"};
 	Property<int64_t> count{0};
 	Property<std::string> status{"No cores folder"};
+	/* Chimera's Core Manager: which kinds of core it lists (0 all, 1 the emulators, 2 the games;
+	 * remembered), the two lines over the list, and the line under it */
+	Property<int64_t> shows{0};
+	Property<std::string> managerHeader, managerStatus;
 
 	/* any thread: the package to run for a core, "" when none is here;
 	 * `note` says when it is not the pinned one */
@@ -56,6 +60,11 @@ public:
 	/* a package's systems, by its own word for each: its machines', else
 	 * its one ("GameCube, Wii, Triforce") */
 	static std::string systemsOf(const json::Json &cfg);
+	/* the same as {id, its word} pairs */
+	static std::vector<std::pair<std::string, std::string>> systemPairs(const json::Json &cfg);
+	/* what a package says of its terms (its licenses/licenses.json), as Chimera's Core Manager says
+	 * it; "" when it states none */
+	static std::string licenceSummary(const std::string &packagePath);
 	/* any thread: where firmware is looked for - the folders, then the files
 	 * chosen by hand */
 	std::vector<std::string> firmwareFolders() const;
@@ -71,7 +80,35 @@ private:
 		std::vector<std::string> extensions;
 		bool gameCore = false, dated = false;
 		int64_t date = 0;
+		/* its systems by id and word, its file's size, and its version as Chimera writes one ("2026-09-17 08:30 CEST  (4ed35321)") */
+		std::vector<std::pair<std::string, std::string>> systemList;
+		int64_t size = 0;
+		std::string datedText;
 	};
+	/* one core as the manager lists it: its packages here, newest first */
+	struct Managed
+	{
+		std::string name;
+		bool gameCore = false;
+		std::vector<size_t> versions;
+	};
+	class ManagerRows : public RowModel
+	{
+	public:
+		explicit ManagerRows(CoresViewModel &vm) : vm_(vm) {}
+		int64_t rowCount() const override;
+		int32_t columnCount() const override { return 6; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
+
+	private:
+		CoresViewModel &vm_;
+	};
+	/* the managed cores the Show filter lets through */
+	std::vector<const Managed *> shownManaged() const;
+	void sayManager();
+	/* a package file in the cores folder itself, deleted; why not otherwise */
+	std::string removePackage(const std::string &path);
 	class Rows : public RowModel
 	{
 	public:
@@ -89,6 +126,9 @@ private:
 
 	mutable std::mutex m_;
 	std::vector<Core> cores_;
+	std::vector<Managed> managed_;
+	ManagerRows managerRows_{*this};
+	Connection showsWatch_;
 	std::string firmwareM_;
 	std::vector<std::string> chosenM_;
 	Rows rows_{*this};

@@ -6908,6 +6908,84 @@ bool firmwareWindow(const char *package, const char *slotsPackage, const char *b
 	return true;
 }
 
+/* Chimera's Core Manager: a row a core (its versions together), the
+ * emulators before the games, Show, a core's versions newest first and
+ * what each says, one version or whole cores removed (only files in the
+ * cores folder), and the systems they add up to */
+bool coreManager(const char *package, const char *slotsPackage, const char *gamePackage)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	if (fs::file_size(slotsPackage, ec) == 0 || ec || fs::file_size(gamePackage, ec) == 0 || ec)
+	{
+		std::printf("SKIP the Core Manager: no slots or game package was made\n");
+		return false;
+	}
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-coremanager-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "Cores");
+	fs::copy_file(package, dir / "Cores" / "synth-box.chimeraCore");
+	fs::copy_file(package, dir / "Cores" / "synth-box-older.chimeraCore");
+	fs::last_write_time(dir / "Cores" / "synth-box-older.chimeraCore", fs::last_write_time(dir / "Cores" / "synth-box.chimeraCore") - std::chrono::hours(1));
+	fs::copy_file(slotsPackage, dir / "Cores" / "synth-slots.chimeraCore");
+	fs::copy_file(gamePackage, dir / "Cores" / "synth-game.chimeraCore");
+	ManualDispatcher d;
+	CoresViewModel cores(d);
+	std::string error;
+	cores.set("coresFolder", (dir / "Cores").string(), error);
+	RowModel *manager = nullptr;
+	for (const auto &r : cores.rowLists())
+		if (r.name == "manager") manager = r.model;
+	CHECK(manager != nullptr);
+	if (manager == nullptr) return false;
+	auto text = [&](int64_t r, int32_t c) {
+		std::string t;
+		fromValue(manager->cell(r, c), t);
+		return t;
+	};
+	auto listed = [&] {
+		std::string out;
+		for (int64_t r = 0; r < manager->rowCount(); r++) out += text(r, 0) + "|";
+		return out;
+	};
+	/* a row a core, the emulators first, each by name; then the games */
+	CHECK(listed() == "Synth|Synth Slots|Synth Game|");
+	CHECK(text(0, 1) == "Emulator" && text(2, 1) == "Game" && text(0, 2) == "Synthetic Witness" && text(1, 2).find(", ") != std::string::npos);
+	CHECK(text(0, 3).find("  (+1 more)") != std::string::npos && text(0, 4).find(" KB") != std::string::npos);
+	CHECK(cores.managerHeader.get() == "Cores folder: " + (dir / "Cores").string() + "   (3 core(s))\n"
+		"Chimera downloads nothing. Get a core's package (.chimeraCore) from its project, or build it, and put it in this folder.");
+	/* Show: the games, or the emulators */
+	cores.shows.set(2);
+	CHECK(listed() == "Synth Game|");
+	cores.shows.set(1);
+	CHECK(listed() == "Synth|Synth Slots|");
+	cores.shows.set(0);
+	/* a core's versions, newest first, and what one says */
+	json::Json versions;
+	std::string got;
+	CHECK(fromValue(cores.run("versionsOf", {std::string("Synth")}, error).value_or(Value()), got) && json::parse(got, versions, error) &&
+		  versions.items.size() == 2 && versions.items[0].find("path")->text == (dir / "Cores" / "synth-box.chimeraCore").string());
+	CHECK(fromValue(cores.run("versionDetail", {(dir / "Cores" / "synth-box.chimeraCore").string()}, error).value_or(Value()), got) &&
+		  got.rfind((dir / "Cores" / "synth-box.chimeraCore").string(), 0) == 0 && got.find("This package states no licence.") != std::string::npos);
+	/* one version removed; one not in the cores folder is not the manager's */
+	fs::copy_file(package, dir / "elsewhere.chimeraCore");
+	cores.run("removeVersion", {(dir / "elsewhere.chimeraCore").string()}, error);
+	CHECK(cores.managerStatus.get() == "elsewhere.chimeraCore is not in the cores folder, so it is not the manager's to delete. It is at " +
+		  (dir / "elsewhere.chimeraCore").string() + "." && fs::exists(dir / "elsewhere.chimeraCore"));
+	cores.run("removeVersion", {(dir / "Cores" / "synth-box-older.chimeraCore").string()}, error);
+	CHECK(cores.managerStatus.get() == "Removed synth-box-older.chimeraCore." && !fs::exists(dir / "Cores" / "synth-box-older.chimeraCore") &&
+		  text(0, 3).find("(+") == std::string::npos);
+	/* the systems they add up to, by name, each with the cores that run it */
+	CHECK(fromValue(cores.run("supportedSystems", {}, error).value_or(Value()), got) &&
+		  got.find("{\"name\": \"Synthetic Witness\", \"id\": \"Synth\", \"cores\": \"Synth, Synth Game, Synth Slots\", \"installed\": true}") != std::string::npos);
+	/* whole cores removed */
+	CHECK(cores.run("removeCores", {std::string("[\"Synth Slots\", \"Synth Game\"]")}, error) == Value(int64_t{2}) &&
+		  cores.managerStatus.get() == "Removed 2 package(s)." && listed() == "Synth|");
+	cores.run("refreshList", {}, error);
+	CHECK(cores.managerStatus.get() == "1 core(s) in " + (dir / "Cores").string() + ".");
+	fs::remove_all(dir, ec);
+	return true;
+}
+
 int main(int argc, char **argv)
 {
 	signalsAndProperties();
@@ -6984,6 +7062,7 @@ int main(int argc, char **argv)
 			if (argc >= 11) ranMachine = coreMenu(argv[1], argv[2], argv[6], argv[10]) && ranMachine;
 			else std::printf("SKIP the Emulator menu: no packages that import movies and are games given\n");
 			if (argc >= 12) ranMachine = firmwareWindow(argv[1], argv[6], argv[11], argv[8]) && ranMachine;
+			if (argc >= 9) ranMachine = coreManager(argv[1], argv[6], argv[8]) && ranMachine;
 			else std::printf("SKIP the Firmware window: no package with many releases of one firmware given\n");
 		}
 		else

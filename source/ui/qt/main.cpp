@@ -733,6 +733,7 @@ int main(int argc, char **argv)
 	vm::ConfigStore config(configPath.toStdString());
 	if (!qEnvironmentVariableIsSet("CHIMERA_CORES_DIR")) config.keep(cores, "coresFolder");
 	config.keep(cores, "chosenFirmware");
+	config.keep(cores, "shows");
 	config.keep(newProject, "kind");
 	/* Config > Data Directory: where the window keeps things for the person,
 	 * the prototype's own place, never Chimera's; a change asked for last
