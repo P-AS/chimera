@@ -2316,11 +2316,58 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 		d.until([] { return false; }, 0.05);
 	}
 
-	/* and a project whose file is missing says which */
-	fs::remove(dir / "gridWalker.testrom");
-	session.run("openProject", {(dir / "p.chimeraProject").string(), std::string(package)}, error);
-	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	CHECK(session.status.get().find("gridWalker.testrom (not found)") != std::string::npos);
+	/* a project whose file is not beside it waits, its files listed, as
+	 * Chimera's resolution window has them: a wrong file is told apart by
+	 * its hash, a folder scanned finds the right one under another name,
+	 * and the next time it is found where it was, without asking */
+	{
+		const std::string project = (dir / "p.chimeraProject").string();
+		fs::create_directories(dir / "elsewhere");
+		fs::rename(dir / "gridWalker.testrom", dir / "elsewhere" / "renamed.bin");
+		/* another file: the game with a byte more, which the core still loads */
+		{
+			std::ofstream out(dir / "elsewhere" / "wrong.bin", std::ios::binary);
+			out << readFile(dir / "elsewhere" / "renamed.bin") << '\0';
+		}
+		session.cacheFolder.set((dir / "cache").string());
+		session.run("openProject", {project, std::string(package)}, error);
+		CHECK(d.until([&] { return session.resolvingFiles.get() && session.projectFiles().size() == 1; }, 20));
+		CHECK(!session.isOpen.get() && session.projectFiles()[0].name == "gridWalker.testrom" && session.projectFiles()[0].status == 1);
+		CHECK(!session.run("openWithFiles", {}, error) && error == "a file is still not found");
+		CHECK(session.run("locateProjectFile", {int64_t{0}, (dir / "elsewhere" / "wrong.bin").string()}, error).has_value());
+		CHECK(d.until([&] { return session.projectFiles()[0].status == 2; }, 20));
+		CHECK(session.run("scanForProjectFiles", {(dir / "elsewhere").string(), true}, error) == Value(int64_t{1}));
+		CHECK(d.until([&] { return session.projectFiles()[0].status == 0; }, 20));
+		const int64_t opened = session.opens.get();
+		CHECK(session.run("openWithFiles", {}, error).has_value() && !session.resolvingFiles.get());
+		CHECK(d.until([&] { return session.opens.get() > opened && session.isOpen.get(); }, 30));
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+		/* found where it was: no asking */
+		const int64_t again = session.opens.get();
+		session.run("openProject", {project, std::string(package)}, error);
+		CHECK(d.until([&] { return session.opens.get() > again && session.isOpen.get(); }, 30));
+		CHECK(!session.resolvingFiles.get());
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+		/* gone altogether: it waits, and is left unopened when asked */
+		fs::remove(dir / "elsewhere" / "renamed.bin");
+		session.run("openProject", {project, std::string(package)}, error);
+		CHECK(d.until([&] { return session.resolvingFiles.get(); }, 20));
+		CHECK(session.run("cancelOpen", {}, error).has_value());
+		CHECK(d.until([&] { return session.status.get() == "The project was not opened" && session.projectFiles().empty(); }, 20));
+		CHECK(!session.isOpen.get() && !session.resolvingFiles.get());
+		/* a file that is not the recorded one opens when asked to anyway (Chimera's Open Anyway) */
+		session.run("openProject", {project, std::string(package)}, error);
+		CHECK(d.until([&] { return session.resolvingFiles.get(); }, 20));
+		session.run("locateProjectFile", {int64_t{0}, (dir / "elsewhere" / "wrong.bin").string()}, error);
+		CHECK(d.until([&] { return session.projectFiles()[0].status == 2; }, 20));
+		const int64_t anyway = session.opens.get();
+		CHECK(session.run("openWithFiles", {}, error).has_value());
+		CHECK(d.until([&] { return session.opens.get() > anyway && session.isOpen.get(); }, 30));
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	}
 	fs::remove_all(dir);
 	return true;
 }

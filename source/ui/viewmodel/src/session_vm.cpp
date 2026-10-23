@@ -73,6 +73,134 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("isOpen", "whether a machine is open", isOpen);
 	expose("opens", "how many times a machine has been opened", opens);
 	expose("projectId", "the open project's id (its cache folder's name), \"\" for none", projectId);
+	expose("resolvingFiles", "a project is waiting for its files to be found (the projectFiles rows)", resolvingFiles);
+	rows("projectFiles", "the waiting project's files: name, slot, status (0 found, 1 not found, 2 not the recorded bytes), "
+		"statusText, sha1 (recorded), actualSha1", projectFileRows_);
+	command("locateProjectFile", "points a waiting project's file at a file on disk; its hash decides", {"index", "path"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t index = 0;
+			std::string path;
+			if (!arg(a, 0, index, error) || !arg(a, 1, path, error)) return {};
+			std::string why;
+			onMachineWait([&](ce_session *) {
+				ce_project *p = pendingOpenM_.project;
+				if (p == nullptr || index < 0 || index >= ce_project_file_count(p))
+				{
+					why = "no such file";
+					return;
+				}
+				const char *err = nullptr;
+				if (ce_project_file_resolve(p, static_cast<int32_t>(index), path.c_str(), &err) != 0)
+					why = "Cannot read that file: " + std::string(err != nullptr ? err : "no reason given");
+				publishProjectFilesOnMachine();
+			});
+			if (!why.empty())
+			{
+				error = why;
+				return {};
+			}
+			return {};
+		}, &resolvingFiles);
+	command("scanForProjectFiles", "looks through a folder (and its subfolders when asked) for the waiting project's files: "
+		"by their hashes, any name, then by their names; says how many it found", {"folder", "subfolders"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string folder;
+			bool recurse = true;
+			if (!arg(a, 0, folder, error)) return {};
+			if (a.size() > 1 && !arg(a, 1, recurse, error)) return {};
+			int64_t found = 0;
+			onMachineWait([&](ce_session *) {
+				namespace fs = std::filesystem;
+				ce_project *p = pendingOpenM_.project;
+				if (p == nullptr) return;
+				std::vector<int32_t> wanted;
+				for (int32_t i = 0; i < ce_project_file_count(p); i++)
+					if (ce_project_file_status(p, i) != 0) wanted.push_back(i);
+				std::error_code ec;
+				if (wanted.empty() || !fs::is_directory(folder, ec)) return;
+				/* the files there, the smallest first (as Chimera's scan), ten thousand at most */
+				std::vector<std::pair<uint64_t, std::string>> candidates;
+				auto add = [&](const fs::directory_entry &e) {
+					if (candidates.size() < 10000 && e.is_regular_file(ec)) candidates.emplace_back(e.file_size(ec), e.path().string());
+				};
+				if (recurse)
+					for (fs::recursive_directory_iterator it(folder, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) add(*it);
+				else
+					for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) add(*it);
+				std::stable_sort(candidates.begin(), candidates.end());
+				/* by hash: each file hashed once, claiming every entry it is */
+				for (const auto &[size, path] : candidates)
+				{
+					bool left = false;
+					for (int32_t i : wanted) left = left || ce_project_file_status(p, i) != 0;
+					if (!left) break;
+					char sha[41] = {};
+					uint64_t length = 0;
+					if (ce_sha1_file(path.c_str(), sha, &length) != 1) continue;
+					for (int32_t i : wanted)
+						if (ce_project_file_status(p, i) != 0 && ce_project_file_sha1(p, i) != nullptr &&
+							std::string(ce_project_file_sha1(p, i)) == sha)
+						{
+							const char *err = nullptr;
+							if (ce_project_file_resolve(p, i, path.c_str(), &err) == 0) found++;
+						}
+				}
+				/* by name, for what no hash claimed: the engine's verdict shows in the row */
+				for (int32_t i : wanted)
+				{
+					if (ce_project_file_status(p, i) == 0) continue;
+					const std::string name = fs::path(ce_project_file_name(p, i) != nullptr ? ce_project_file_name(p, i) : "").filename().string();
+					auto lower = [](std::string t) {
+						for (char &c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+						return t;
+					};
+					for (const auto &[size, path] : candidates)
+						if (lower(fs::path(path).filename().string()) == lower(name))
+						{
+							const char *err = nullptr;
+							if (ce_project_file_resolve(p, i, path.c_str(), &err) == 0) found++;
+							break;
+						}
+				}
+				publishProjectFilesOnMachine();
+			});
+			return found;
+		}, &resolvingFiles);
+	command("openWithFiles", "goes on opening the waiting project once its files are found; one that is not the recorded "
+		"file is opened anyway, as Chimera's Open Anyway", {}, [this](const Args &, std::string &error) -> Value {
+			bool missing = false;
+			for (const ProjectFile &f : projectFiles_) missing = missing || f.status == 1;
+			if (missing)
+			{
+				error = "a file is still not found";
+				return {};
+			}
+			resolvingFiles.set(false);
+			status.set("Opening...");
+			submit([this] {
+				PendingOpen o = std::move(pendingOpenM_);
+				pendingOpenM_ = PendingOpen{};
+				if (o.project == nullptr) return;
+				bool mismatch = false;
+				for (int32_t i = 0; i < ce_project_file_count(o.project); i++) mismatch = mismatch || ce_project_file_status(o.project, i) == 2;
+				bootProjectOnMachine(o.project, o.path, o.package, o.keepInputs, o.reuse, o.kept, o.keptRerecords,
+					mismatch ? CE_OPEN_ALLOW_FILE_MISMATCH : 0);
+			});
+			return {};
+		}, &resolvingFiles);
+	command("cancelOpen", "leaves the waiting project unopened", {}, [this](const Args &, std::string &) -> Value {
+		resolvingFiles.set(false);
+		submit([this] {
+			if (pendingOpenM_.project != nullptr && pendingOpenM_.reuse == nullptr) ce_project_free(pendingOpenM_.project);
+			pendingOpenM_ = PendingOpen{};
+			later([this] {
+				projectFiles_.clear();
+				projectFileRows_.reset.emit();
+				status.set("The project was not opened");
+			});
+		});
+		return {};
+	}, &resolvingFiles);
 	expose("running", "whether the machine is running on its own", running);
 	expose("frame", "the frame the machine is about to run", frame);
 	expose("fps", "frames run in the last half second, per second", fps);
@@ -1271,6 +1399,115 @@ void SessionViewModel::startProjectSessionOnMachine(bool loadHistory)
 	runningMarkM_ = mark;
 }
 
+std::filesystem::path SessionViewModel::cacheDirOf(ce_project *p) const
+{
+	if (p == nullptr || cacheFolderM_.empty()) return {};
+	const char *id = ce_project_id(p);
+	if (id == nullptr || *id == '\0') return {};
+	return std::filesystem::path(cacheFolderM_) / id;
+}
+
+void SessionViewModel::applyLocalPathsOnMachine(ce_project *p)
+{
+	const std::filesystem::path dir = cacheDirOf(p);
+	if (dir.empty()) return;
+	std::ifstream in(dir / "local-paths.json", std::ios::binary);
+	const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+	json::Json local;
+	std::string err;
+	if (!json::parse(text, local, err)) return;
+	const json::Json *files = local.find("files");
+	if (files == nullptr) return;
+	/* a hint, never authority: a file there that is not the recorded one is let go */
+	for (int32_t i = 0; i < ce_project_file_count(p); i++)
+	{
+		if (ce_project_file_status(p, i) == 0) continue;
+		const char *name = ce_project_file_name(p, i);
+		const json::Json *where = name != nullptr ? files->find(name) : nullptr;
+		if (where == nullptr || where->text.empty()) continue;
+		const char *e = nullptr;
+		if (ce_project_file_resolve(p, i, where->text.c_str(), &e) != 0 || ce_project_file_status(p, i) != 0) ce_project_file_unresolve(p, i);
+	}
+}
+
+void SessionViewModel::rememberLocalPathsOnMachine()
+{
+	const std::filesystem::path dir = cacheDirOf(projectM_);
+	if (dir.empty()) return;
+	/* what was there before (Chimera keeps its firmware's places beside them) */
+	json::Json local;
+	{
+		std::ifstream in(dir / "local-paths.json", std::ios::binary);
+		const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		std::string err;
+		if (!json::parse(text, local, err) || local.kind != json::Json::Kind::Object)
+		{
+			local = json::Json();
+			local.kind = json::Json::Kind::Object;
+		}
+	}
+	json::Json files;
+	files.kind = json::Json::Kind::Object;
+	for (int32_t i = 0; i < ce_project_file_count(projectM_); i++)
+	{
+		const char *name = ce_project_file_name(projectM_, i), *source = ce_project_file_source_path(projectM_, i);
+		if (name != nullptr && source != nullptr && *source != '\0' && ce_project_file_status(projectM_, i) == 0)
+			files.members.emplace_back(name, json::Json::string(std::filesystem::absolute(source).string()));
+	}
+	bool set = false;
+	for (auto &[k, v] : local.members)
+		if (k == "files") v = files, set = true;
+	if (!set) local.members.emplace_back("files", files);
+	std::error_code ec;
+	std::filesystem::create_directories(dir, ec);
+	std::ofstream(dir / "local-paths.json", std::ios::binary) << json::write(local);
+}
+
+void SessionViewModel::publishProjectFilesOnMachine()
+{
+	std::vector<ProjectFile> files;
+	ce_project *p = pendingOpenM_.project;
+	for (int32_t i = 0; p != nullptr && i < ce_project_file_count(p); i++)
+	{
+		ProjectFile f;
+		auto text = [](const char *t) { return std::string(t != nullptr ? t : ""); };
+		f.name = text(ce_project_file_name(p, i));
+		f.slot = text(ce_project_file_slot(p, i));
+		f.sha1 = text(ce_project_file_sha1(p, i));
+		f.actualSha1 = text(ce_project_file_actual_sha1(p, i));
+		f.status = ce_project_file_status(p, i);
+		files.push_back(std::move(f));
+	}
+	later([this, files] {
+		projectFiles_ = files;
+		projectFileRows_.reset.emit();
+	});
+}
+
+std::string SessionViewModel::ProjectFileRows::columnName(int32_t column) const
+{
+	static const char *const names[] = {"name", "slot", "status", "statusText", "sha1", "actualSha1"};
+	return column >= 0 && column < 6 ? names[column] : "";
+}
+
+Value SessionViewModel::ProjectFileRows::cell(int64_t row, int32_t column) const
+{
+	if (row < 0 || row >= rowCount()) return {};
+	const ProjectFile &f = vm_.projectFiles_[static_cast<size_t>(row)];
+	switch (column)
+	{
+	case 0: return f.name;
+	case 1: return f.slot;
+	case 2: return static_cast<int64_t>(f.status);
+	/* Chimera's words for each */
+	case 3: return f.status == 0 ? std::string("found, hash matches") : f.status == 2 ? std::string("HASH MISMATCH (not the recorded bytes)")
+																					 : std::string("not found");
+	case 4: return f.sha1;
+	case 5: return f.actualSha1;
+	default: return {};
+	}
+}
+
 void SessionViewModel::rememberAboutOnMachine(const std::string &projectPath)
 {
 	namespace fs = std::filesystem;
@@ -1627,19 +1864,42 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		const std::string dir = slash == std::string::npos ? "." : path.substr(0, slash);
 		ce_project_resolve_dir(p, dir.c_str());
 	}
+	/* then where this machine last found them, each checked by its hash */
+	applyLocalPathsOnMachine(p);
 	if (ce_project_files_ok(p) == 0)
 	{
-		std::string missing;
-		for (int32_t i = 0; i < ce_project_file_count(p); i++)
-			if (ce_project_file_status(p, i) != 0)
-				missing += std::string(missing.empty() ? "" : ", ") + ce_project_file_name(p, i) +
-					(ce_project_file_status(p, i) == 1 ? " (not found)" : " (a different file)");
-		ce_project_free(p);
-		fail("The project's files are not all beside it: " + missing);
+		/* not found beside it, nor where this machine last had them: asked
+		 * for, as Chimera's resolution window asks, the project waiting */
+		if (pendingOpenM_.project != nullptr && pendingOpenM_.reuse == nullptr) ce_project_free(pendingOpenM_.project);
+		/* the machine is closed already; the project it ran goes too, unless it is the one waiting */
+		if (reuse == nullptr) freeProjectOnMachine();
+		pendingOpenM_ = PendingOpen{p, path, packageGiven, keepInputs, reuse, kept, keptRerecords};
+		publishProjectFilesOnMachine();
+		later([this] {
+			isOpen.set(false);
+			running.set(false);
+			projectPath.set("");
+			projectTitle.set("");
+			projectId.set("");
+			hasProject.set(false);
+			projectSwitched();
+			resolvingFiles.set(true);
+			status.set("Some of the project's files were not found beside it: locate them, or scan a folder");
+		});
 		return;
 	}
+	bootProjectOnMachine(p, path, packageGiven, keepInputs, reuse, kept, keptRerecords, 0);
+}
+
+void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &path, const std::string &packageGiven, bool keepInputs,
+	ce_project *reuse, const std::string &kept, uint64_t keptRerecords, uint32_t extraFlags)
+{
+	auto fail = [this](const std::string &why) {
+		later([this, why] { status.set(why); isOpen.set(false); });
+	};
+	const char *error = nullptr;
 	/* a package other than the one the project names opens, and says so */
-	uint32_t flags = 0;
+	uint32_t flags = extraFlags;
 	std::string note;
 	const std::string pinned = ce_project_core_sha1(p) != nullptr ? ce_project_core_sha1(p) : "";
 	std::string package = packageGiven;
@@ -1820,6 +2080,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	if (projectM_ != nullptr && projectM_ != p) ce_project_free(projectM_);
 	projectM_ = p;
 	projectPathM_ = path;
+	rememberLocalPathsOnMachine();
 	package_ = package;
 	game_.clear();
 	tidyBranchStatesOnMachine();
@@ -2262,6 +2523,7 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
 	projectPathM_ = path;
 	keepHistoryOnMachine();
 	rememberAboutOnMachine(path);
+	rememberLocalPathsOnMachine();
 	later([this, path, n, first] {
 		projectPath.set(path);
 		if (first) addRecent(path);

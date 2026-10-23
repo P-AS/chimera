@@ -144,6 +144,16 @@ public:
 	Property<bool> hasProject{false};
 	/* the open project's id (its cache folder's name), "" for none */
 	Property<std::string> projectId;
+	/* a project waiting for its files to be found: its files are the
+	 * "projectFiles" rows, located one by one or by scanning a folder */
+	Property<bool> resolvingFiles{false};
+	struct ProjectFile
+	{
+		std::string name, slot, sha1, actualSha1;
+		/* 0 found and matching, 1 not found, 2 found but not the recorded bytes */
+		int32_t status = 1;
+	};
+	const std::vector<ProjectFile> &projectFiles() const { return projectFiles_; }
 	Property<std::string> projectTitle;
 	/* the game's name: its file's, without the kind (a project's first file) */
 	Property<std::string> gameName;
@@ -411,6 +421,29 @@ private:
 	static void loadMovieOnMachine(ce_session *s, const std::string &text);
 	void openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs,
 		ce_project *reuse = nullptr);
+	/* the rest of opening a project, once its files are found; extraFlags
+	 * lets a file that is not the recorded one be opened anyway */
+	void bootProjectOnMachine(ce_project *p, const std::string &path, const std::string &packageGiven, bool keepInputs,
+		ce_project *reuse, const std::string &kept, uint64_t keptRerecords, uint32_t extraFlags);
+	/* a project waiting for its files to be found (Chimera's resolution
+	 * window): what opening it was asked with */
+	struct PendingOpen
+	{
+		ce_project *project = nullptr;
+		std::string path, package;
+		bool keepInputs = false;
+		ce_project *reuse = nullptr;
+		std::string kept;
+		uint64_t keptRerecords = 0;
+	};
+	PendingOpen pendingOpenM_;
+	void publishProjectFilesOnMachine();
+	/* where this machine found a project's files, kept in its cache folder
+	 * (local-paths.json, as Chimera's ProjectLocalPaths keeps them): read
+	 * as hints, each checked by its hash; written once they are found */
+	void applyLocalPathsOnMachine(ce_project *p);
+	void rememberLocalPathsOnMachine();
+	std::filesystem::path cacheDirOf(ce_project *p) const;
 	/* the project's file, first in the recent projects */
 	void addRecent(const std::string &path);
 	/* a backup: written there, the project's own file and greenzone left as they are */
@@ -461,6 +494,20 @@ private:
 	std::vector<std::string> buttonNames_;
 	std::vector<Axis> axes_;
 	std::string controllerName_, packagePath_;
+	std::vector<ProjectFile> projectFiles_;
+	class ProjectFileRows : public RowModel
+	{
+	public:
+		explicit ProjectFileRows(SessionViewModel &vm) : vm_(vm) {}
+		int64_t rowCount() const override { return static_cast<int64_t>(vm_.projectFiles_.size()); }
+		int32_t columnCount() const override { return 6; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
+
+	private:
+		SessionViewModel &vm_;
+	};
+	ProjectFileRows projectFileRows_{*this};
 	std::vector<std::string> defaultBindings_;
 	std::string mnemonics_;
 	Bindings bindings_;

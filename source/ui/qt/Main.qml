@@ -1085,6 +1085,7 @@ ApplicationWindow {
     BatchRun { id: batchRunWindow; vm: root.batchRun; visible: false }
     MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; visible: false }
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; visible: false }
+    ProjectFiles { session: root.session }
     ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; visible: false }
     Dialog {
         id: aboutDialog
