@@ -1328,7 +1328,7 @@ bool cacheManager(const char *package, const char *rom)
 		RowModel *r = open.rowLists()[0].model;
 		bool inUse = false;
 		CHECK(r->rowCount() == 1 && fromValue(r->cell(0, 9), inUse) && inUse);
-		CHECK(!open.run("remove", {std::string("0")}, error) && error == "could not remove: Walker (open)" && fs::is_directory(dir / "cache" / id));
+		CHECK(!open.run("remove", {std::string("0")}, error) && error == "could not remove: Walker (in use)" && fs::is_directory(dir / "cache" / id));
 	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get() && session.projectId.get().empty(); }, 20));
@@ -1369,11 +1369,128 @@ bool cacheManager(const char *package, const char *rom)
 	CHECK(text(gone, 0) == "Gone" && flag(gone, 7));
 	std::string orphans;
 	CHECK(fromValue(caches.run("orphans", {}, error).value_or(Value()), orphans) && orphans == std::to_string(gone));
-	CHECK(caches.total.get().find(" in 3 projects") != std::string::npos);
+	CHECK(caches.total.get().find(" in 3 items") != std::string::npos);
 	CHECK(caches.run("remove", {orphans}, error) == Value(int64_t{1}));
 	CHECK(rows->rowCount() == 2 && !fs::exists(dir / "cache" / "00DEADBEEF"));
 	CHECK(!caches.run("remove", {std::string("7")}, error) && error == "no row 7");
 	CHECK(CacheManagerViewModel::sizeText(1536) == "1.5 KB" && CacheManagerViewModel::sizeText(12) == "12 bytes");
+
+	/* the limit that applies, as Chimera's: the setting, unless the disk is
+	 * short of its floor; then what gives the floor back, never below a gigabyte */
+	{
+		const uint64_t gb = 1024ull * 1024ull * 1024ull;
+		CHECK(CacheManagerViewModel::effectiveLimit(100 * gb, 20 * gb, 50 * gb, 30 * gb) == 100 * gb);
+		CHECK(CacheManagerViewModel::effectiveLimit(100 * gb, 20 * gb, 10 * gb, 15 * gb) == 5 * gb);
+		CHECK(CacheManagerViewModel::effectiveLimit(100 * gb, 20 * gb, 2 * gb, 10 * gb) == gb);
+		CHECK(CacheManagerViewModel::effectiveLimit(gb / 2, 20 * gb, 2 * gb, 10 * gb) == gb / 2);
+	}
+	/* locks, the limit and the auto-clean, counted in hundreds of bytes: the
+	 * oldest unlocked go first, never the newest, the spared or what is in
+	 * use; unsaved work starts locked */
+	{
+		const fs::path root = dir / "limits", cache = root / "cache", kept = root / "recovery";
+		auto entry = [&](const fs::path &folder, size_t bytes, int hoursAgo) {
+			fs::create_directories(folder);
+			std::ofstream(folder / "data.bin", std::ios::binary) << std::string(bytes, 'x');
+			fs::last_write_time(folder / "data.bin", fs::file_time_type::clock::now() - std::chrono::hours(hoursAgo));
+		};
+		entry(cache / "C1", 200, 30);
+		std::ofstream(cache / "C1" / "about.json") << R"({"title": "One"})";
+		fs::last_write_time(cache / "C1" / "about.json", fs::file_time_type::clock::now() - std::chrono::hours(30));
+		entry(cache / "C2", 150, 20);
+		std::ofstream(cache / "C2" / "about.json") << R"({"title": "Two"})";
+		fs::last_write_time(cache / "C2" / "about.json", fs::file_time_type::clock::now() - std::chrono::hours(20));
+		entry(cache / "C3", 100, 1);
+		entry(kept / "R1", 200, 40);
+		std::ofstream(kept / "R1" / "session.json") << R"({"processId": 2147483000, "processStarted": 5, "projectPath": "/no/such/gone2.chimeraProject"})";
+		fs::last_write_time(kept / "R1" / "session.json", fs::file_time_type::clock::now() - std::chrono::hours(40));
+		CacheManagerViewModel limits(d);
+		limits.unitBytes = 100;
+		limits.freeSpaceAt = [](const std::string &) { return UINT64_MAX; };
+		limits.autoClean.set(false);
+		limits.limitGb.set(6);
+		limits.floorGb.set(0);
+		limits.cacheFolder.set(cache.string());
+		limits.recoveryFolder.set(kept.string());
+		RowModel *lr = limits.rowLists()[0].model;
+		auto rowOf = [&](const std::string &title) {
+			for (int64_t i = 0; i < lr->rowCount(); i++)
+			{
+				std::string t;
+				fromValue(lr->cell(i, 0), t);
+				if (t == title) return std::to_string(i);
+			}
+			return std::string("-1");
+		};
+		auto cellText = [&](const std::string &row, int32_t col) {
+			std::string t;
+			fromValue(lr->cell(std::stoll(row), col), t);
+			return t;
+		};
+		auto cellFlag = [&](const std::string &row, int32_t col) {
+			bool b = false;
+			fromValue(lr->cell(std::stoll(row), col), b);
+			return b;
+		};
+		auto wouldGo = [&] {
+			std::string list;
+			fromValue(limits.run("wouldGo", {}, error).value_or(Value()), list);
+			return list;
+		};
+		CHECK(lr->rowCount() == 4);
+		const std::string unsaved = rowOf("Unsaved work: gone2");
+		CHECK(unsaved != "-1" && cellText(unsaved, 11) == "Unsaved work" && cellFlag(unsaved, 12) && cellFlag(unsaved, 7));
+		CHECK(cellText(rowOf("One"), 11) == "Project cache" && !cellFlag(rowOf("One"), 12));
+		/* 776 bytes (One 216, Two 166, Three 100, the work 294) against 600: the oldest unlocked
+		 * goes, One, and that is enough; the newest and the locked work stay */
+		CHECK(wouldGo() == rowOf("One"));
+		CHECK(limits.overLimit.get() == "That is 176 bytes over. Nothing is enforcing it while the auto-clean is off; Clean Now applies it once.");
+		/* One locked: only Two may go, and that is not enough */
+		CHECK(limits.run("toggleLock", {rowOf("One")}, error) == Value(true));
+		CHECK(cellFlag(rowOf("One"), 12) && readFile(cache / "cache-locks.json").find((cache / "C1").string()) != std::string::npos);
+		CHECK(wouldGo() == rowOf("Two"));
+		CHECK(limits.overLimit.get().find("cannot be met without unlocking something") != std::string::npos);
+		/* unlocked again: back to its kind's default, written down nowhere */
+		CHECK(limits.run("toggleLock", {rowOf("One")}, error) == Value(false));
+		CHECK(!cellFlag(rowOf("One"), 12) && readFile(cache / "cache-locks.json") == "{}");
+		/* the auto-clean does nothing while it is off */
+		CHECK(limits.run("runAutoClean", {std::string("C1")}, error) == Value(std::string()));
+		CHECK(lr->rowCount() == 4);
+		/* the unsaved work unlocked; on, sparing the project just closed (One): the old work goes,
+		 * the oldest there is, and then the cache is under */
+		CHECK(limits.run("toggleLock", {unsaved}, error) == Value(false));
+		limits.autoClean.set(true);
+		CHECK(limits.run("runAutoClean", {std::string("C1")}, error) == Value(std::string("Cache auto-clean freed 294 bytes")));
+		CHECK(!fs::exists(kept / "R1") && fs::exists(cache / "C1") && fs::exists(cache / "C2") && fs::exists(cache / "C3"));
+		CHECK(lr->rowCount() == 3 && limits.overLimit.get().empty());
+		/* a lock whose place is gone is dropped from the book the next time it is written */
+		CHECK(limits.run("toggleLock", {rowOf("One")}, error) == Value(true));
+		CHECK(readFile(cache / "cache-locks.json").find("R1") == std::string::npos);
+		/* the disk short of its floor sets the limit, and says so */
+		limits.floorGb.set(50);
+		limits.freeSpaceAt = [](const std::string &) { return uint64_t{4000}; };
+		limits.limitGb.set(2);
+		CHECK(limits.overLimit.get().rfind("The disk has 3.9 KB free and is to be left 50 GB free, so the cache is being held to 100 bytes "
+			"rather than to the 2 GB asked for (it is never held to less than that because of the disk)", 0) == 0);
+		/* Clean Now applies the limit whatever the auto-clean says: 482 bytes against 100, but One
+		 * and Two locked and Three the newest */
+		limits.autoClean.set(false);
+		CHECK(limits.run("toggleLock", {rowOf("One") + "," + rowOf("Two")}, error) == Value(true));
+		CHECK(limits.run("cleanNow", {}, error) == Value(int64_t{0}));
+		CHECK(limits.status.get() == "Over the limit, and nothing left may be taken: what remains is locked, in use, or the run last worked on.");
+		CHECK(limits.run("toggleLock", {rowOf("One")}, error) == Value(false));
+		CHECK(limits.run("cleanNow", {}, error) == Value(int64_t{1}));
+		CHECK(!fs::exists(cache / "C1") && fs::exists(cache / "C2") && fs::exists(cache / "C3"));
+		CHECK(limits.status.get() == "Removed 1 of the oldest unlocked item(s), freeing 216 bytes.");
+		/* unsaved work a window is still writing is in use: never removed */
+		entry(kept / "R2", 10, 1);
+		std::ofstream(kept / "R2" / "session.json") << "{\"processId\": " << currentProcessId() << ", \"processStarted\": " << processStarted(currentProcessId()) << "}";
+		limits.run("refresh", {}, error);
+		CHECK(cellFlag(rowOf("Unsaved work"), 9));
+		CHECK(!limits.run("remove", {rowOf("Unsaved work")}, error) && error == "could not remove: Unsaved work (in use)" && fs::exists(kept / "R2"));
+		std::string named;
+		CHECK(fromValue(limits.run("titles", {rowOf("Unsaved work")}, error).value_or(Value()), named) && named.rfind("- Unsaved work (", 0) == 0);
+	}
 	fs::remove_all(dir);
 	return true;
 }

@@ -41,6 +41,7 @@
 #include <map>
 #include <set>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "chimera/vm/branches_vm.hpp"
@@ -693,7 +694,26 @@ int main(int argc, char **argv)
 	/* the session's cache folder, the one it lists */
 	cacheManager.cacheFolder.set(session.cacheFolder.get());
 	vm::Connection cacheFolderFollows = session.cacheFolder.changed.connect([&] { cacheManager.cacheFolder.set(session.cacheFolder.get()); });
-	vm::Connection cacheInUseFollows = session.projectId.changed.connect([&] { cacheManager.inUse.set(session.projectId.get()); });
+	cacheManager.recoveryFolder.set(session.recoveryFolder.get());
+	vm::Connection recoveryFolderFollows = session.recoveryFolder.changed.connect([&] { cacheManager.recoveryFolder.set(session.recoveryFolder.get()); });
+	config.keep(cacheManager, "autoClean");
+	config.keep(cacheManager, "limitGb");
+	config.keep(cacheManager, "floorGb");
+	/* Chimera's auto-clean: at the start, and when a project closes - never
+	 * while one is worked on, and never the one just closed */
+	auto autoCleanSaying = [&cacheManager, &session](const std::string &spare) {
+		std::string e;
+		const auto said = cacheManager.run("runAutoClean", {spare}, e);
+		std::string text;
+		if (said && vm::fromValue(*said, text) && !text.empty()) session.status.set(text);
+	};
+	autoCleanSaying("");
+	std::string lastProjectId = session.projectId.get();
+	vm::Connection cacheInUseFollows = session.projectId.changed.connect([&] {
+		cacheManager.inUse.set(session.projectId.get());
+		const std::string closed = std::exchange(lastProjectId, session.projectId.get());
+		if (!closed.empty()) autoCleanSaying(closed);
+	});
 	qt::QmlViewModel cacheManagerQml(cacheManager);
 	qt::QmlViewModel branchesQml(branches);
 	qt::QmlViewModel projectDetailsQml(projectDetails);
