@@ -23,6 +23,10 @@ public:
 	Property<int64_t> made{0};
 	Property<int64_t> loads{0};
 	Property<bool> loadedFromState{false};
+	/* the branch picked in the list (-1: none), and what Undo would take
+	 * back, as Chimera names it ("Undo Branch Load"...; "" for nothing) */
+	Property<int64_t> selected{-1};
+	Property<std::string> undoText;
 
 private:
 	class Rows : public RowModel
@@ -30,7 +34,7 @@ private:
 	public:
 		explicit Rows(BranchesViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.branches_.size()); }
-		int32_t columnCount() const override { return 4; }
+		int32_t columnCount() const override { return 5; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -43,6 +47,17 @@ private:
 	 * over the one at `slot`; where it went */
 	int64_t keepRun(int64_t slot, std::string name);
 	void changed();
+	/* Chimera's one step of branch undo: what it puts back, and of what kind;
+	 * a branch kept for it that is in no list loses its state file when it
+	 * is no longer needed */
+	enum class Undo { None, Load, Update, Text, Remove };
+	Undo undo_ = Undo::None;
+	SessionViewModel::Branch backup_;
+	int64_t backupAt_ = -1;
+	void keepBackup(Undo kind, SessionViewModel::Branch b, int64_t at);
+	void keepLoadBackup();
+	void dropBackup();
+	bool listed(uint64_t id) const;
 
 	InputLog &inputs_;
 	SessionViewModel &session_;

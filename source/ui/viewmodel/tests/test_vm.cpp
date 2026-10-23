@@ -1453,13 +1453,25 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	CHECK(d.until([&] { return branches.made.get() == 1; }, 30));
 	CHECK(filesNamed(".state").size() == 1 && filesNamed(".note").size() == 1);
 	roll.run("addMarker", {int64_t{20}, std::string("in the branch")}, error);
+	/* removed, its state file is kept while Undo may put it back */
+	branches.run("remove", {int64_t{0}}, error);
+	CHECK(branches.count.get() == 0 && branches.undoText.get() == "Undo Branch Removal");
+	d.until([] { return false; }, 0.2);
+	CHECK(filesNamed(".state").size() == 1);
+	CHECK(branches.run("undo", {}, error).has_value() && branches.count.get() == 1 && branches.status.get() == "Branch Removal canceled");
 	branches.run("remove", {int64_t{0}}, error);
 	CHECK(branches.count.get() == 0);
-	d.until([] { return false; }, 0.2);
-	CHECK(filesNamed(".state").empty() && filesNamed(".note").empty());
 	branches.run("create", {std::string("win")}, error);
 	CHECK(d.until([&] { return branches.made.get() == 2; }, 30));
-	CHECK(filesNamed(".state").size() == 1 && branches.status.get().find("its state kept") != std::string::npos);
+	/* a branch's own state file, by the name the list gives it */
+	auto stateOf = [&](int64_t i) {
+		std::string stem;
+		fromValue(branches.rowLists()[0].model->cell(i, 4), stem);
+		return stem;
+	};
+	CHECK(!stateOf(0).empty() && !filesNamed(".state").empty());
+	const fs::path stateDir = filesNamed(".state").at(0).parent_path();
+	CHECK(fs::exists(stateDir / (stateOf(0) + ".state")) && branches.status.get().find("its state kept") != std::string::npos);
 	roll.run("removeMarker", {int64_t{20}}, error);
 	auto spoil = [&] {
 		roll.run("paint", {int64_t{0}, end - 1, int64_t{1}, false}, error);
@@ -1498,7 +1510,7 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	CHECK(!branches.run("load", {int64_t{3}}, error) && error == "no branch 3");
 	/* a state that does not fit is not loaded, and the branch is replayed
 	 * to: a note naming another machine, then a state cut short */
-	const fs::path stateFile = filesNamed(".state").at(0), noteFile = filesNamed(".note").at(0);
+	const fs::path stateFile = stateDir / (stateOf(0) + ".state"), noteFile = stateDir / (stateOf(0) + ".note");
 	const std::string note = readFile(noteFile), state = readFile(stateFile);
 	{
 		std::string other = note;
@@ -1527,7 +1539,7 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 		std::ofstream(stateFile.parent_path() / "0123456789abcdef.state") << "left behind";
 		std::ofstream(stateFile.parent_path() / "0123456789abcdef.note") << "left behind";
 	}
-	CHECK(filesNamed(".state").size() == 2);
+	CHECK(filesNamed(".state").size() >= 2);
 	CHECK(openIt(dir / "branched.chimeraProject"));
 	CHECK(branches.count.get() == 1);
 	CHECK(filesNamed(".state") == std::vector<fs::path>{stateFile} && filesNamed(".note") == std::vector<fs::path>{noteFile});
@@ -1554,7 +1566,8 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	session.run("saveProject", {std::string()}, error);
 	CHECK(d.until([&] { return session.status.get().rfind("Saved " + branched, 0) == 0; }, 20));
 	CHECK(openIt(branched));
-	CHECK(fs::exists(history) && fs::exists(projectCache / "session.running"));
+	/* the machine says it is open a moment before the project's session marks itself running */
+	CHECK(d.until([&] { return fs::exists(history) && fs::exists(projectCache / "session.running"); }, 10));
 	CHECK(d.until([&] { return session.greenEnd.get() > 0; }, 10));
 	session.run("seek", {end}, error);
 	CHECK(d.until([&] { return session.frame.get() == end; }, 30));
@@ -2406,6 +2419,48 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	fromValue(branches.rowLists()[0].model->cell(0, 0), slotName);
 	CHECK(slotFrame == later && slotName == "Branch 1");
 	CHECK(branches.run("saveSlot", {int64_t{5}}, error).has_value() && branches.count.get() == 2);
+	CHECK(d.until([&] { return branches.made.get() == 3; }, 20));
+	/* Chimera's branch undo: an update taken back puts the old one back */
+	auto branchFrame = [&](int64_t i) {
+		int64_t f = -1;
+		fromValue(branches.rowLists()[0].model->cell(i, 1), f);
+		return f;
+	};
+	auto branchName = [&](int64_t i) {
+		std::string n;
+		fromValue(branches.rowLists()[0].model->cell(i, 0), n);
+		return n;
+	};
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == later + 1; }, 20));
+	CHECK(branches.run("saveSlot", {int64_t{0}}, error).has_value() && branches.undoText.get() == "Undo Branch Update");
+	CHECK(d.until([&] { return branches.made.get() == 4 && branchFrame(0) == later + 1; }, 20));
+	CHECK(branches.run("undo", {}, error).has_value() && branchFrame(0) == later && branches.status.get() == "Branch Update canceled");
+	CHECK(!branches.run("undo", {}, error) && error == "nothing to undo");
+	/* a text edit, and a removal, taken back */
+	CHECK(branches.run("rename", {int64_t{0}, std::string("renamed")}, error).has_value() && branchName(0) == "renamed");
+	CHECK(branches.run("undo", {}, error).has_value() && branchName(0) == "Branch 1");
+	CHECK(branches.run("remove", {int64_t{1}}, error).has_value() && branches.count.get() == 1);
+	CHECK(branches.run("undo", {}, error).has_value() && branches.count.get() == 2 && branchName(1) == "Branch 2");
+	/* Jump To: the machine on the branch's frame, the movie left as it is */
+	const int64_t length = inputs.size();
+	CHECK(branches.run("jumpTo", {int64_t{0}}, error).has_value());
+	CHECK(d.until([&] { return session.frame.get() == later; }, 20) && inputs.size() == length);
+	/* a load taken back: the run as it was before it */
+	session.run("seek", {int64_t{2}}, error);
+	CHECK(d.until([&] { return session.frame.get() == 2; }, 20));
+	roll.run("paint", {int64_t{1}, int64_t{1}, int64_t{6}, true}, error);
+	const std::string beforeLoad = inputs.text();
+	const int64_t loads = branches.loads.get();
+	CHECK(branches.run("load", {int64_t{0}}, error).has_value() && branches.undoText.get() == "Undo Branch Load");
+	CHECK(d.until([&] { return branches.loads.get() == loads + 1 && session.frame.get() == later; }, 20));
+	CHECK(inputs.text() != beforeLoad);
+	CHECK(branches.run("undo", {}, error).has_value());
+	CHECK(d.until([&] { return branches.status.get() == "Branch Load canceled"; }, 20));
+	CHECK(session.frame.get() == 2 && inputs.text() == beforeLoad);
+	/* the hotkeys' Delete Branch takes the one picked */
+	branches.selected.set(1);
+	CHECK(branches.run("remove", {branches.selected.get()}, error).has_value() && branches.count.get() == 1 && branches.selected.get() == 0);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;

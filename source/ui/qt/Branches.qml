@@ -24,7 +24,11 @@ ApplicationWindow {
                 onClicked: { win.vm.run("create", [name.text]); name.text = "" }
             }
         }
-        Label { text: win.vm.status }
+        RowLayout {
+            Label { text: win.vm.status; Layout.fillWidth: true; elide: Text.ElideRight }
+            // Chimera's one step of branch undo
+            Button { text: win.vm.undoText !== "" ? win.vm.undoText : qsTr("Undo"); enabled: win.vm.undoText !== ""; onClicked: win.vm.run("undo") }
+        }
 
         ListView {
             id: list
@@ -36,6 +40,14 @@ ApplicationWindow {
             ScrollBar.vertical: ScrollBar {}
             delegate: Frame {
                 id: row
+                // the picked one: the hotkeys' Delete Branch takes it
+                background: Rectangle {
+                    color: row.index === win.vm.selected ? palette.highlight : "transparent"
+                    opacity: 0.35
+                    border.color: palette.mid
+                    radius: 3
+                }
+                TapHandler { onTapped: win.vm.selected = row.index }
                 required property int index
                 required property string name
                 required property var frame
@@ -53,6 +65,8 @@ ApplicationWindow {
                         }
                     }
                     Button { text: qsTr("Load"); onClicked: win.vm.run("load", [row.index]) }
+                    Button { text: qsTr("Update"); onClicked: win.vm.run("saveSlot", [row.index]) }
+                    Button { text: qsTr("Jump To"); onClicked: win.vm.run("jumpTo", [row.index]) }
                     Button { text: qsTr("Rename"); enabled: name.text !== ""; onClicked: win.vm.run("rename", [row.index, name.text]) }
                     Button { text: qsTr("Remove"); onClicked: win.vm.run("remove", [row.index]) }
                 }

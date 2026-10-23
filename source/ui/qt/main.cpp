@@ -364,6 +364,9 @@ int main(int argc, char **argv)
 		hotkeys.add("TAStudio", "Add Branch", "Alt+Insert", [&branches, run](bool down) {
 			if (down) run(branches, "create");
 		});
+		hotkeys.add("TAStudio", "Delete Branch", "Alt+Delete", [&branches, run](bool down) {
+			if (down && branches.selected.get() >= 0) run(branches, "remove", {branches.selected.get()});
+		});
 		for (int slot = 1; slot <= 10; slot++)
 		{
 			const std::string n = std::to_string(slot), key = "F" + n;
