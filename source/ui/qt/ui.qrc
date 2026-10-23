@@ -25,6 +25,7 @@
     <file>Customize.qml</file>
     <file>MessagesConfig.qml</file>
     <file>SoundConfig.qml</file>
+    <file>DisplayConfig.qml</file>
     <file>ProjectFiles.qml</file>
     <file>Cores.qml</file>
   </qresource>

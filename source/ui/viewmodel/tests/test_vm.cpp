@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -51,6 +52,7 @@
 #include "chimera/vm/process_stamp.hpp"
 #include "chimera/vm/customize_vm.hpp"
 #include "chimera/vm/messages_vm.hpp"
+#include "chimera/vm/display_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -406,6 +408,68 @@ void messagesConfig()
 	/* remembered before Game Time was a place: the rest kept, Game Time at Chimera's */
 	messages.positions.set(R"({"Fps": {"x": 9, "y": 9, "anchor": 1}})");
 	CHECK(at("Fps") == "9,9,1" && at("Game Time") == "0,14,1");
+}
+
+/* Chimera's Display window: the picture's shape, bars or stretched, whole
+ * steps, crop - worked out for a 128x120 picture the machine shows at 4:3 */
+void displayFit()
+{
+	auto near = [](double a, double b) { return std::fabs(a - b) < 0.01; };
+	auto same = [&](const DisplayFit::Rect &r, double x, double y, double w, double h) {
+		return near(r.x, x) && near(r.y, y) && near(r.w, w) && near(r.h, h);
+	};
+	const double four3 = 4.0 / 3.0;
+	DisplayFit f;
+	double w = 0, h = 0;
+	/* the machine's shape: 160x120 at 1x, kept with bars */
+	f.naturalSize(128, 120, four3, w, h);
+	CHECK(near(w, 160) && near(h, 120));
+	CHECK(same(f.place(128, 120, four3, 400, 300), 0, 0, 400, 300));
+	CHECK(same(f.place(128, 120, four3, 500, 300), 50, 0, 400, 300));
+	/* whole steps only: twice, not two and a half */
+	f.integerScale = true;
+	CHECK(same(f.place(128, 120, four3, 500, 300), 90, 30, 320, 240));
+	/* smaller than 1x: shrunk freely */
+	CHECK(same(f.place(128, 120, four3, 80, 60), 0, 0, 80, 60));
+	f.integerScale = false;
+	/* stretched to the area; by whole steps of each side when asked */
+	f.letterbox = false;
+	CHECK(same(f.place(128, 120, four3, 500, 300), 0, 0, 500, 300));
+	f.integerScale = true;
+	CHECK(same(f.place(128, 120, four3, 500, 300), 10, 30, 480, 240));
+	f.integerScale = false;
+	f.letterbox = true;
+	/* raw pixels, a size, a ratio */
+	f.aspectMode = 0;
+	f.naturalSize(128, 120, four3, w, h);
+	CHECK(near(w, 128) && near(h, 120));
+	f.aspectMode = 2;
+	f.customWidth = 256;
+	f.customHeight = 224;
+	f.naturalSize(128, 120, four3, w, h);
+	CHECK(near(w, 256) && near(h, 224));
+	f.aspectMode = 3;
+	f.ratioX = 16;
+	f.ratioY = 9;
+	f.naturalSize(128, 120, four3, w, h);
+	CHECK(near(w, 120 * 16.0 / 9.0) && near(h, 120));
+	/* a crop: those pixels gone, the shape of what is left */
+	f.aspectMode = 1;
+	f.cropLeft = 16;
+	f.cropTop = 16;
+	const DisplayFit::Rect from = f.source(128, 120);
+	CHECK(same(from, 16, 16, 112, 104));
+	f.naturalSize(128, 120, four3, w, h);
+	CHECK(near(w, 140) && near(h, 104));
+	/* a crop that would leave nothing leaves the picture whole */
+	f.cropRight = 120;
+	CHECK(same(f.source(128, 120), 0, 0, 128, 120));
+	/* the view model's values, kept in range */
+	ManualDispatcher d;
+	DisplayViewModel display(d);
+	display.aspectMode.set(9);
+	display.customWidth.set(-5);
+	CHECK(display.fit().aspectMode == 3 && display.fit().customWidth == 0 && display.fit().letterbox);
 }
 
 void pianoRollWithoutAMachine()
@@ -4910,6 +4974,7 @@ int main(int argc, char **argv)
 	settingsByMachine();
 	keyPriority();
 	messagesConfig();
+	displayFit();
 	pianoRollWithoutAMachine();
 	watchValues();
 	themes();

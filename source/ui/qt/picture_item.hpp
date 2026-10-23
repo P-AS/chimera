@@ -1,11 +1,14 @@
 #pragma once
-/* Draws a view model's picture, kept to the machine's shape and centred. */
+/* Draws a view model's picture, centred, fitted as the Display window says
+ * (vm::DisplayFit: its shape, bars or stretched, whole steps, crop). */
 
 #include <QPointer>
 #include <QQuickItem>
+#include <QVariantMap>
 
 #include <atomic>
 
+#include "chimera/vm/display_vm.hpp"
 #include "chimera/vm/picture.hpp"
 
 namespace chimera::qt {
@@ -17,6 +20,9 @@ class PictureItem : public QQuickItem
 	Q_OBJECT
 	Q_PROPERTY(QObject *source READ source WRITE setSource NOTIFY sourceChanged)
 	Q_PROPERTY(bool smooth READ smoothScaling WRITE setSmoothScaling NOTIFY smoothScalingChanged)
+	/* the Display window's fitting, by the display view model's names
+	 * (aspectMode, customWidth, ... cropBottom) */
+	Q_PROPERTY(QVariantMap fit READ fit WRITE setFit NOTIFY fitChanged)
 	/* the picture's size in the machine's shape (its height, and the width
 	 * its aspect gives), 0 before the first: for the window's sizes */
 	Q_PROPERTY(int pictureWidth READ pictureWidth NOTIFY pictureSizeChanged)
@@ -31,6 +37,8 @@ public:
 	int pictureWidth() const { return pictureWidth_; }
 	int pictureHeight() const { return pictureHeight_; }
 	void setSmoothScaling(bool on);
+	QVariantMap fit() const { return fitMap_; }
+	void setFit(const QVariantMap &fit);
 
 	/* pictures handed to the GPU so far, for measuring (any thread) */
 	qint64 framesShown() const { return shown_.load(); }
@@ -39,6 +47,7 @@ Q_SIGNALS:
 	void sourceChanged();
 	void smoothScalingChanged();
 	void pictureSizeChanged();
+	void fitChanged();
 
 protected:
 	QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
@@ -47,6 +56,9 @@ private:
 	QPointer<QmlPicture> source_;
 	QMetaObject::Connection watch_;
 	bool smooth_ = false;
+	QVariantMap fitMap_;
+	vm::DisplayFit fit_;
+	bool fitNew_ = false;
 	int pictureWidth_ = 0, pictureHeight_ = 0;
 	/* the GUI thread's: the size the render thread saw */
 	Q_INVOKABLE void sizeSeen(int width, int height);

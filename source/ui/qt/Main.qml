@@ -34,6 +34,7 @@ ApplicationWindow {
     required property QtObject cacheManager
     required property QtObject customize
     required property QtObject messages
+    required property QtObject display
     property url chosenPackage
 
     width: 1280
@@ -227,6 +228,7 @@ ApplicationWindow {
             Action { text: qsTr("C&ustomize..."); onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
             Action { text: qsTr("&Messages..."); onTriggered: { messagesWindow.show(); messagesWindow.raise() } }
             Action { text: qsTr("So&und..."); onTriggered: { soundWindow.show(); soundWindow.raise() } }
+            Action { text: qsTr("&Display..."); onTriggered: { displayWindow.show(); displayWindow.raise() } }
             // Chimera's Config > Key Priority: for a key that is a hotkey and a button
             Menu {
                 delegate: keyedMenuItem
@@ -951,6 +953,13 @@ ApplicationWindow {
                 objectName: "picture"
                 anchors.fill: parent
                 source: root.session.picture("screen")
+                // Config > Display: its shape, bars or stretched, whole steps, crop and filter
+                smooth: root.display.finalFilter === 1
+                fit: ({ "aspectMode": root.display.aspectMode, "customWidth": root.display.customWidth,
+                        "customHeight": root.display.customHeight, "ratioX": root.display.ratioX, "ratioY": root.display.ratioY,
+                        "letterbox": root.display.letterbox ? 1 : 0, "integerScale": root.display.integerScale ? 1 : 0,
+                        "cropLeft": root.display.cropLeft, "cropTop": root.display.cropTop,
+                        "cropRight": root.display.cropRight, "cropBottom": root.display.cropBottom })
             }
             // Display Nothing: nothing is drawn here, the counters neither, as Chimera's
             Rectangle { anchors.fill: parent; z: 100; color: "black"; visible: root.session.displayNothing }
@@ -1212,6 +1221,7 @@ ApplicationWindow {
     Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; visible: false }
     MessagesConfig { id: messagesWindow; vm: root.messages; visible: false }
     SoundConfig { id: soundWindow; session: root.session; visible: false }
+    DisplayConfig { id: displayWindow; vm: root.display; session: root.session; visible: false }
     ProjectFiles { session: root.session }
     // Work a crash left behind, offered before the project opens, as
     // Chimera's "Recover unsaved work?" asks

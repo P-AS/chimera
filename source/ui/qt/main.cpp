@@ -53,6 +53,7 @@
 #include "chimera/vm/cache_manager_vm.hpp"
 #include "chimera/vm/customize_vm.hpp"
 #include "chimera/vm/messages_vm.hpp"
+#include "chimera/vm/display_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -218,7 +219,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -780,6 +781,11 @@ int main(int argc, char **argv)
 	for (const char *name : {"positions", "messagesColor", "alertColor", "lastInputColor", "movieInputColor", "messageSeconds", "stackMessages"})
 		config.keep(messages, name);
 	qt::QmlViewModel messagesQml(messages);
+	vm::DisplayViewModel display(dispatcher);
+	for (const char *name : {"aspectMode", "customWidth", "customHeight", "ratioX", "ratioY", "letterbox", "integerScale", "cropLeft",
+			 "cropTop", "cropRight", "cropBottom", "finalFilter", "saveWindowPosition", "windowGeometry"})
+		config.keep(display, name);
+	qt::QmlViewModel displayQml(display);
 	qt::QmlViewModel branchesQml(branches);
 	qt::QmlViewModel projectDetailsQml(projectDetails);
 	qt::QmlViewModel coresQml(cores);
@@ -812,6 +818,7 @@ int main(int argc, char **argv)
 	lua.add(cacheManager);
 	lua.add(customize);
 	lua.add(messages);
+	lua.add(display);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -852,6 +859,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("cacheManager"), QVariant::fromValue<QObject *>(&cacheManagerQml)},
 		{QStringLiteral("customize"), QVariant::fromValue<QObject *>(&customizeQml)},
 		{QStringLiteral("messages"), QVariant::fromValue<QObject *>(&messagesQml)},
+		{QStringLiteral("display"), QVariant::fromValue<QObject *>(&displayQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
@@ -862,6 +870,17 @@ int main(int argc, char **argv)
 	if (engine.rootObjects().isEmpty()) return 1;
 	auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
 	mainWindow = window;
+	/* the place and size kept last time, when asked (Display) */
+	if (display.saveWindowPosition.get())
+	{
+		const QStringList g = QString::fromStdString(display.windowGeometry.get()).split(QLatin1Char(','));
+		if (g.size() == 4 && g[2].toInt() > 100 && g[3].toInt() > 100) window->setGeometry(g[0].toInt(), g[1].toInt(), g[2].toInt(), g[3].toInt());
+	}
+	QObject::connect(qApp, &QCoreApplication::aboutToQuit, [&display, window] {
+		if (!display.saveWindowPosition.get() || window->visibility() == QWindow::FullScreen) return;
+		const QRect r = window->geometry();
+		display.windowGeometry.set(QStringLiteral("%1,%2,%3,%4").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height()).toStdString());
+	});
 	if (customize.startFullscreen.get()) window->showFullScreen();
 	KeyFilter keys(session, hotkeys);
 	window->installEventFilter(&keys);
@@ -885,6 +904,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("customize") ? QStringLiteral("customizeWindow")
 		: args.value(showOpt) == QStringLiteral("messages") ? QStringLiteral("messagesWindow")
 		: args.value(showOpt) == QStringLiteral("sound") ? QStringLiteral("soundWindow")
+		: args.value(showOpt) == QStringLiteral("display") ? QStringLiteral("displayWindow")
 		: args.value(showOpt) == QStringLiteral("project-details") ? QStringLiteral("projectDetailsWindow")
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())
