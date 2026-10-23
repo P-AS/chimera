@@ -557,6 +557,62 @@ bool speedAndSound(const char *package, const char *rom)
 		CHECK(average() > 150);
 		session.showAverageFps.set(false);
 	}
+	/* Turbo held: as fast as it goes, nothing drawn, the speed marked >>>>;
+	 * let go, the frames are drawn again */
+	auto serial = [&] {
+		Picture::Frame f;
+		session.screen.takeIfNewer(UINT64_MAX, f);
+		return f.serial;
+	};
+	{
+		session.showFps.set(true);
+		session.run("play", {}, error);
+		CHECK(d.until([&] { return session.running.get(); }, 5));
+		session.holdTurbo(true);
+		d.until([] { return false; }, 0.2);
+		const uint64_t drawn = serial();
+		const int64_t from = session.frame.get();
+		d.until([] { return false; }, 0.5);
+		const int64_t ran = session.frame.get() - from;
+		std::printf("turbo: %lld frames in half a second\n", static_cast<long long>(ran));
+		CHECK(ran > 60 && serial() == drawn);
+		CHECK(session.fpsText.get().find(" >>>>") != std::string::npos);
+		session.holdTurbo(false);
+		CHECK(d.until([&] { return serial() != drawn; }, 5));
+		CHECK(d.until([&] { return session.fpsText.get().find(">>") == std::string::npos; }, 5));
+		session.run("pause", {}, error);
+		CHECK(d.until([&] { return !session.running.get(); }, 5));
+	}
+	auto advanced = [&](int64_t by) {
+		const int64_t from = session.frame.get();
+		session.run("frameAdvance", {}, error);
+		return d.until([&] { return session.frame.get() == from + by; }, 20) && (d.until([] { return false; }, 0.05), session.frame.get() == from + by);
+	};
+	/* Display Nothing: the frame runs and is not drawn */
+	{
+		session.displayNothing.set(true);
+		const uint64_t was = serial();
+		CHECK(advanced(1) && serial() == was);
+		session.displayNothing.set(false);
+		CHECK(advanced(1) && d.until([&] { return serial() != was; }, 5));
+	}
+	/* Skip Lag Frames: a frame advance stops on a frame that read the pad;
+	 * once the game is lost (walked into a hazard) no frame reads it, and the
+	 * advance runs on past them, 600 at most */
+	{
+		session.skipLagFrames.set(true);
+		CHECK(advanced(1));
+		session.key("Down", true);
+		for (int i = 0; i < 4; i++) CHECK(advanced(1));
+		session.key("Down", false);
+		session.key("Right", true);
+		for (int i = 0; i < 2; i++) CHECK(advanced(1));
+		session.key("Right", false);
+		CHECK(session.readDomain("RAM").at(0) == 2);
+		CHECK(advanced(601));
+		session.skipLagFrames.set(false);
+		CHECK(advanced(1));
+	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;

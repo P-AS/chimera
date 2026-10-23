@@ -221,6 +221,17 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	});
 	unthrottledWatch_ = unthrottled.changed.connect([this] { unthrottledM_ = unthrottled.get(); });
 	soundOnWatch_ = soundOn.changed.connect([this] { soundOnM_ = soundOn.get(); });
+	expose("skipLagFrames", "a frame advance that lands after a lag frame runs on until one that is not (Chimera's Skip Lag "
+		"Frames)", skipLagFrames, true);
+	expose("displayNothing", "the frames are run without being drawn; the speed goes to the window's title (Chimera's "
+		"Display Nothing)", displayNothing, true);
+	expose("acceptBackgroundInput", "a gamepad is heard while the window is not the one in front", acceptBackgroundInput, true);
+	expose("windowActive", "the window is the one in front (the window says)", windowActive, true);
+	skipLagWatch_ = skipLagFrames.changed.connect([this] { skipLagM_ = skipLagFrames.get(); });
+	displayNothingWatch_ = displayNothing.changed.connect([this] { displayNothingM_ = displayNothing.get(); });
+	auto heard = [this] { padsHeardM_ = acceptBackgroundInput.get() || windowActive.get(); };
+	backgroundWatch_ = acceptBackgroundInput.changed.connect(heard);
+	activeWatch_ = windowActive.changed.connect(heard);
 	volumeWatch_ = volume.changed.connect([this] { volumeM_ = std::clamp<int64_t>(volume.get(), 0, 100); });
 	/* Chimera's speeds, a step at a time */
 	auto speedStep = [this](int direction) {
@@ -778,7 +789,9 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			if (s_ == nullptr) return;
 			runningM_ = false;
 			passOnMachine(1, true, false);
-			advanceOnMachine();
+			/* Skip Lag Frames: on past lag frames, a few seconds' worth at most */
+			int32_t lag = advanceOnMachine();
+			for (int i = 0; lag > 0 && skipLagM_.load() && i < 600; i++) lag = advanceOnMachine();
 			later([this] { running.set(false); });
 		});
 		return {};
@@ -947,7 +960,9 @@ void SessionViewModel::holdFrameAdvance(bool down)
 		if (down)
 		{
 			runningM_ = false;
-			advanceOnMachine();
+			/* Skip Lag Frames: on past lag frames, a few seconds' worth at most */
+			int32_t lag = advanceOnMachine();
+			for (int i = 0; lag > 0 && skipLagM_.load() && i < 600; i++) lag = advanceOnMachine();
 			later([this] { running.set(false); });
 			holdM_ = Hold::Advance;
 			holdSince_ = Clock::now();
@@ -975,13 +990,22 @@ void SessionViewModel::holdRewind(bool down)
 		{
 			runningM_ = false;
 			later([this] { running.set(false); });
-			if (frameM_ > 0) seekOnMachine(std::max<int64_t>(0, frameM_ - (fastM_ ? rewindStepFastM_.load() : rewindStepM_.load())));
+			if (frameM_ > 0) seekOnMachine(std::max<int64_t>(0, frameM_ - (fastM_ || turboM_ ? rewindStepFastM_.load() : rewindStepM_.load())));
 			holdM_ = Hold::Rewind;
 			/* the first step back at once, the next after a moment */
 			due_ = Clock::now() + std::chrono::milliseconds(500);
 		}
 		else if (holdM_ == Hold::Rewind)
 			holdM_ = Hold::None;
+	});
+}
+
+void SessionViewModel::holdTurbo(bool down)
+{
+	turboHeld_ = down;
+	turboM_ = down;
+	submit([this, down] {
+		if (!down) due_ = Clock::now();
 	});
 }
 
@@ -1131,7 +1155,7 @@ void SessionViewModel::loop()
 		{
 			passOnMachine(0, false, true);
 			/* TAStudio's rewind step, and its fast one while fast forwarding */
-			if (frameM_ > 0) seekOnMachine(std::max<int64_t>(0, frameM_ - (fastM_ ? rewindStepFastM_.load() : rewindStepM_.load())));
+			if (frameM_ > 0) seekOnMachine(std::max<int64_t>(0, frameM_ - (fastM_ || turboM_ ? rewindStepFastM_.load() : rewindStepM_.load())));
 			due_ += period_;
 			if (Clock::now() - due_ > 4 * period_) due_ = Clock::now();
 			continue;
@@ -1143,7 +1167,7 @@ void SessionViewModel::loop()
 			/* fast forward: the next frame at once */
 			/* fast forward or unthrottled: the next frame at once; else at
 			 * the speed asked for */
-			due_ += fastM_ || unthrottledM_ ? Clock::duration::zero()
+			due_ += fastM_ || turboM_ || unthrottledM_ ? Clock::duration::zero()
 											 : std::chrono::duration_cast<Clock::duration>(period_ * (100.0 / static_cast<double>(speedM_.load())));
 			/* behind by more than a few frames (a slow frame, a busy machine):
 			 * carry on from now rather than race to catch up */
@@ -3077,11 +3101,12 @@ void SessionViewModel::closeOnMachine()
 	});
 }
 
-void SessionViewModel::advanceOnMachine()
+int32_t SessionViewModel::advanceOnMachine()
 {
 	const int64_t f = ce_session_frame(s_);
 	const int64_t size = ce_session_movie_length(s_);
-	stepOnMachine(true, true);
+	/* turbo and Display Nothing run the frame without drawing it */
+	const int32_t lag = stepOnMachine(true, !turboM_.load() && !displayNothingM_.load());
 	/* past the end the movie grew: the project has a change */
 	if (f >= size && !unsavedM_.exchange(true)) later([this] { markChanged(); });
 	/* TAStudio's "automatically pause at end of movie": the frame the movie
@@ -3108,6 +3133,7 @@ void SessionViewModel::advanceOnMachine()
 		fpsSince_ = now;
 	}
 	report(-1, -1, f >= size ? size : -1, f >= size ? f : -1, measured);
+	return lag;
 }
 
 int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
@@ -3133,6 +3159,8 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 				later([this, text] { gamepads.set(text); });
 			}
 		}
+		/* a pad is not heard while the window is behind another, unless asked */
+		if (!padsHeardM_.load()) padMask = 0;
 		held = held_.load() | padMask;
 		/* a pad's button pressed while autohold or autofire is armed changes over */
 		const uint64_t padPressed = padMask & ~padWasM_;
@@ -3229,7 +3257,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		if (h.frame) h.frame(s_);
 	if (inputs_.setLag(f, lag > 0)) changed = true;
 
-	if (live && soundM_)
+	if (live && soundM_ && !turboM_.load())
 	{
 		int32_t pairs = 0;
 		const int16_t *samples = ce_session_audio(s_, &pairs);
@@ -3472,7 +3500,7 @@ void SessionViewModel::updateOverlay(int64_t f, int64_t changedFrom)
 {
 	if (showFps.get())
 		fpsText.set(std::to_string(static_cast<int64_t>(std::llround(fps.get()))) + " fps" +
-			(rewindHeld_ ? " <<" : fastHeld_ ? " >>" : ""));
+			(rewindHeld_ ? (fastHeld_ || turboHeld_ ? " <<<<" : " <<") : turboHeld_ ? " >>>>" : fastHeld_ ? " >>" : ""));
 	lagFrame.set(f > 0 && inputs_.lagAt(f - 1));
 	const int64_t size = inputs_.size();
 	if (showFrameCounter.get())

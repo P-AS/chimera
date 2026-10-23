@@ -67,6 +67,16 @@ public:
 	Property<bool> unthrottled{false};
 	Property<bool> soundOn{true};
 	Property<int64_t> volume{100};
+	/* Chimera's Skip Lag Frames: a frame advance that lands after a lag
+	 * frame runs on until one that is not (remembered) */
+	Property<bool> skipLagFrames{false};
+	/* Chimera's Display Nothing: the frames are run without being drawn, and
+	 * the speed goes to the window's title (remembered) */
+	Property<bool> displayNothing{false};
+	/* Chimera's background input: a gamepad is heard while the window is
+	 * not the one in front (remembered); windowActive says whether it is */
+	Property<bool> acceptBackgroundInput{false};
+	Property<bool> windowActive{true};
 	/* What Chimera shows over the picture, each on or off (remembered): the
 	 * speed ("60 fps", with >> fast forwarding and << rewinding), the frame
 	 * counter (the frame, then the last frame with input, "(Finished)" past
@@ -339,6 +349,8 @@ public:
 	 * when hidden ones are not to be edited, as Chimera records */
 	void setRecordMask(uint64_t mask) { recordMaskM_.store(mask); }
 	void holdFastForward(bool down);
+	/* Chimera's Turbo, held: fast forward with nothing drawn or heard */
+	void holdTurbo(bool down);
 
 	/* the inputs of frame `first` (and maybe later ones) were edited: the
 	 * machine's states after it no longer hold */
@@ -502,7 +514,9 @@ private:
 	/* what every open shares, once the session exists */
 	void adoptOnMachine(ce_session *s, const std::string &package, const std::string &label, bool inputsReplaced);
 	void closeOnMachine();
-	void advanceOnMachine();
+	/* a frame run as the window runs it: drawn unless turbo or Display
+	 * Nothing says not; its lag (1), or not (0), or below 0 when it failed */
+	int32_t advanceOnMachine();
 	/* one frame: `live` takes the keys and pads held and plays the sound
 	 * (a replay does neither); `render` makes the picture. The lag result. */
 	/* runs one frame; grow false: a frame past the movie's end is not
@@ -598,7 +612,10 @@ private:
 	int64_t frameM_ = 0;
 	int64_t greenEndM_ = 0;
 	std::atomic<int64_t> speedM_{100}, volumeM_{100};
-	std::atomic<bool> unthrottledM_{false}, soundOnM_{true};
+	std::atomic<bool> unthrottledM_{false}, soundOnM_{true}, turboM_{false}, skipLagM_{false}, displayNothingM_{false},
+		padsHeardM_{true};
+	bool turboHeld_ = false;
+	Connection skipLagWatch_, displayNothingWatch_, backgroundWatch_, activeWatch_;
 	Connection speedWatch_, unthrottledWatch_, soundOnWatch_, volumeWatch_;
 	/* Where an edit sends the machine back to, as Chimera's TAStudio does: the
 	 * frame it was on at the first edit, kept through the edits that follow

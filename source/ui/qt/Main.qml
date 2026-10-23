@@ -37,9 +37,11 @@ ApplicationWindow {
     width: 1280
     height: 760
     visible: true
-    title: !session.isOpen ? qsTr("Chimera")
+    // Display Nothing puts the speed in the title, as Chimera's does
+    title: (session.isOpen && session.displayNothing ? qsTr("(%1 fps) - ").arg(Math.round(session.fps)) : "")
+         + (!session.isOpen ? qsTr("Chimera")
          : session.projectTitle !== "" ? qsTr("Chimera - %1%2 - %3 (%4)").arg(session.unsaved ? "*" : "").arg(session.projectTitle).arg(session.coreName).arg(session.systemName)
-         : qsTr("Chimera - %1 (%2)").arg(session.coreName).arg(session.systemName)
+         : qsTr("Chimera - %1 (%2)").arg(session.coreName).arg(session.systemName))
 
     // the theme's colours for what is drawn over the picture, as Chimera's themes give them
     readonly property var themeColorMap: JSON.parse(root.themes.colors)
@@ -123,6 +125,12 @@ ApplicationWindow {
             else if (action === "Seek To...") { if (root.session.seekEnabled) seekDialog.open() }
             else if (action === "Toggle Menu") root.menuBar.visible = !root.menuBar.visible
             else if (action === "Toggle Stay on Top") root.flags = root.flags ^ Qt.WindowStaysOnTopHint
+            else if (action === "Larger Window" || action === "Smaller Window") {
+                if (picture.pictureWidth <= 0) return
+                const n = Math.max(1, Math.min(10, root.windowScale + (action === "Larger Window" ? 1 : -1)))
+                root.sizeWindow(n)
+                root.note(qsTr("Screensize set to %1x").arg(n))
+            }
             else if (root.hotkeyActions[action] && root.hotkeyActions[action].enabled) root.hotkeyActions[action].trigger()
         }
     }
@@ -252,15 +260,7 @@ ApplicationWindow {
                     delegate: MenuItem {
                         required property int index
                         text: qsTr("&%1x").arg(index + 1)
-                        onTriggered: {
-                            const n = index + 1
-                            const w = picture.pictureWidth * n, h = picture.pictureHeight * n
-                            const others = root.width - pictureArea.width
-                            root.height = Math.round(root.height - pictureArea.height + h)
-                            root.width = Math.round(others + w)
-                            // the pane its size, not its share of the window
-                            pictureArea.SplitView.preferredWidth = w
-                        }
+                        onTriggered: root.sizeWindow(index + 1)
                     }
                     onObjectAdded: (index, object) => windowSizeMenu.insertItem(index, object)
                     onObjectRemoved: (index, object) => windowSizeMenu.removeItem(object)
@@ -876,6 +876,8 @@ ApplicationWindow {
                 anchors.fill: parent
                 source: root.session.picture("screen")
             }
+            // Display Nothing: nothing is drawn here, the counters neither, as Chimera's
+            Rectangle { anchors.fill: parent; z: 100; color: "black"; visible: root.session.displayNothing }
             // Chimera's counters over the picture, where it puts them: the
             // speed at the top, the frame counter 14 down, the input 28, the
             // lag counter 42
@@ -1088,6 +1090,17 @@ ApplicationWindow {
     // every message the window shows, for the log window; and the ones over the picture now
     ListModel { id: messageLog }
     ListModel { id: onScreenMessages }
+    // the picture N times the machine's own, the window grown or shrunk to it
+    property int windowScale: 1
+    function sizeWindow(n) {
+        root.windowScale = n
+        const w = picture.pictureWidth * n, h = picture.pictureHeight * n
+        const others = root.width - pictureArea.width
+        root.height = Math.round(root.height - pictureArea.height + h)
+        root.width = Math.round(others + w)
+        // the pane its size, not its share of the window
+        pictureArea.SplitView.preferredWidth = w
+    }
     function note(text) {
         if (text === "") return
         messageLog.append({ "time": Qt.formatTime(new Date(), "hh:mm:ss"), "message": text })

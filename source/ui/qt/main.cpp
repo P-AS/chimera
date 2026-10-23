@@ -246,6 +246,8 @@ int main(int argc, char **argv)
 			if (down) run(session, session.running.get() ? "pause" : "play");
 		});
 		hotkeys.add("General", "Fast Forward", "Tab", [&session](bool down) { session.holdFastForward(down); });
+		/* held: as fast as it goes, nothing drawn or heard */
+		hotkeys.add("General", "Turbo", "Shift+Tab", [&session](bool down) { session.holdTurbo(down); });
 		hotkeys.add("General", "Toggle Throttle", "", [&session, run](bool down) {
 			if (down) run(session, "toggleThrottle");
 		});
@@ -312,6 +314,13 @@ int main(int argc, char **argv)
 		hotkeys.add("General", "Input Display", "", [&session, flip](bool down) {
 			if (down) flip(session.showInput);
 		});
+		/* Chimera's two names for one switch: a gamepad heard behind other windows */
+		auto background = [&session, flip](bool down) {
+			if (!down) return;
+			flip(session.acceptBackgroundInput);
+			session.status.set(std::string("Background Input ") + (session.acceptBackgroundInput.get() ? "enabled" : "disabled"));
+		};
+		hotkeys.add("General", "Toggle BG Input", "", background);
 		window("General", "Open ROM", "Ctrl+O");
 		/* the window's: a project with changes is asked about first */
 		window("General", "Close ROM", "Ctrl+W");
@@ -325,6 +334,9 @@ int main(int argc, char **argv)
 		hotkeys.add("General", "Volume Down", "", [&session, run](bool down) {
 			if (down) run(session, "volumeDown");
 		});
+		/* the window a size up or down, 1x to 10x the picture */
+		window("General", "Larger Window", "Alt+Up");
+		window("General", "Smaller Window", "Alt+Down");
 		hotkeys.add("General", "Increase Speed", "Equals", [&session, run](bool down) {
 			if (down) run(session, "speedUp");
 		});
@@ -337,6 +349,22 @@ int main(int argc, char **argv)
 		hotkeys.add("General", "Toggle Sound", "", [&session, run](bool down) {
 			if (down) run(session, "toggleSound");
 		});
+		hotkeys.add("General", "Toggle Skip Lag Frame", "", [&session, flip](bool down) {
+			if (!down) return;
+			flip(session.skipLagFrames);
+			session.status.set(std::string("Skip Lag Frames toggled ") + (session.skipLagFrames.get() ? "On" : "Off"));
+		});
+		/* paused, a frame; running, a pause */
+		hotkeys.add("General", "Frame Inch", "", [&session, run](bool down) {
+			if (down) run(session, session.running.get() ? "pause" : "frameAdvance");
+		});
+		hotkeys.add("General", "Toggle Messages", "", [&session, flip](bool down) {
+			if (down) flip(session.showMessages);
+		});
+		hotkeys.add("General", "Toggle Display Nothing", "", [&session, flip](bool down) {
+			if (down) flip(session.displayNothing);
+		});
+		hotkeys.add("General", "Accept Background Input", "", background);
 		window("General", "Exit Program", "");
 		window("Tools", "RAM Watch", "");
 		window("Tools", "RAM Search", "");
@@ -613,6 +641,14 @@ int main(int argc, char **argv)
 	config.keep(session, "showAverageFps");
 	config.keep(session, "showRerecords");
 	config.keep(session, "showMessages");
+	config.keep(session, "skipLagFrames");
+	config.keep(session, "displayNothing");
+	config.keep(session, "acceptBackgroundInput");
+	/* the window in front or not: a gamepad is heard behind other windows only when asked */
+	session.windowActive.set(QGuiApplication::applicationState() == Qt::ApplicationActive);
+	QObject::connect(qApp, &QGuiApplication::applicationStateChanged, [&session](Qt::ApplicationState state) {
+		session.windowActive.set(state == Qt::ApplicationActive);
+	});
 	config.keep(session, "showStatusBar");
 	config.keep(session, "showGameTime");
 	config.keep(batchRun, "frames");
