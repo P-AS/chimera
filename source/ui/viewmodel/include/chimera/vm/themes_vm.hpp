@@ -29,6 +29,10 @@ public:
 	Property<bool> dark{true};
 	Property<int64_t> count{0};
 	Property<std::string> status;
+	/* the files that would not load, a line each with why (Chimera's "why?") */
+	Property<std::string> failures;
+	/* every theme's name, in the list's order (a JSON array) */
+	Property<std::string> names{"[]"};
 
 private:
 	struct Theme
@@ -42,7 +46,7 @@ private:
 	public:
 		explicit Rows(ThemesViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.themes_.size()); }
-		int32_t columnCount() const override { return 9; }
+		int32_t columnCount() const override { return 12; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 

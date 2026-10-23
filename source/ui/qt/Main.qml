@@ -749,7 +749,7 @@ ApplicationWindow {
         toolWindows: root.toolWindows; mainWindow: root
         showRamWatch: () => { ramWatchWindow.show(); ramWatchWindow.raise() }
     }
-    Themes { id: themesWindow; vm: root.themes; colors: root.themeColors; visible: false }
+    Themes { id: themesWindow; vm: root.themes; colors: root.themeColors; mainWindow: root; visible: false }
     // Chimera's Controller Config and Configure Hotkeys, each a window of its own
     ControllerConfig {
         id: controllerWindow; controls: root.controls; keyNamer: root.keyNamer; session: root.session

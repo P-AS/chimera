@@ -4148,7 +4148,9 @@ void themes()
 	fromValue(rows.cell(2, 0), name);
 	fromValue(rows.cell(2, 2), desc);
 	CHECK(name == "Sea" && desc == "waves and more");
-	CHECK(t.status.get().find("Broken.chimeraTheme.json (it has no name)") != std::string::npos);
+	/* Chimera's line, and why a file would not load */
+	CHECK(t.status.get() == "3 themes; files are read from " + dir.string() + ". 1 file would not load - why?" &&
+		  t.failures.get() == "Broken.chimeraTheme.json: it has no name");
 	/* Dark at first, as Chimera's default */
 	CHECK(t.current.get() == "Dark" && t.dark.get() && t.colors.get().find("#202020") != std::string::npos);
 	CHECK(t.run("choose", {std::string("Sea")}, error).has_value());
@@ -4156,6 +4158,23 @@ void themes()
 	t.run("choose", {std::string("Light")}, error);
 	CHECK(t.colors.get().find("system:Control") != std::string::npos && t.colors.get().find("#000000") != std::string::npos && !t.dark.get());
 	CHECK(!t.run("choose", {std::string("Nope")}, error) && error == "no theme called Nope");
+	/* the files after the built-ins by their themes' names, not their file names */
+	std::ofstream(dir / "zz.chimeraTheme.json") << R"({"name": "Aqua", "colors": {"WindowBackground": "#00FFFF"}})";
+	t.run("refresh", {}, error);
+	CHECK(t.names.get() == "[\"Light\", \"Dark\", \"Aqua\", \"Sea\"]");
+	/* a theme that is not on, for a preview, and what it says of itself */
+	CHECK(t.run("colorsOf", {std::string("Sea")}, error) == Value(std::string("{\"WindowBackground\": \"#102030\", \"WindowText\": \"#E0E0E0\", \"Selection\": \"#3060A0\"}")));
+	CHECK(t.run("about", {std::string("Sea")}, error) ==
+		  Value(std::string("{\"name\": \"Sea\", \"about\": \"waves / and more\", \"author\": \"A\", \"origin\": \"Sea.chimeraTheme.json\", \"builtIn\": false, \"dark\": true}")));
+	/* Write a Copy to Edit: a file of its own, never over one there, read back as a theme */
+	std::string made;
+	CHECK(fromValue(t.run("writeCopy", {std::string("Sea")}, error).value_or(Value()), made) && made == "Sea copy");
+	CHECK(fs::exists(dir / "Sea copy.chimeraTheme.json") && t.status.get().rfind("Written to ", 0) == 0);
+	CHECK(fromValue(t.run("writeCopy", {std::string("Sea")}, error).value_or(Value()), made) && made == "Sea copy 2");
+	CHECK(t.run("colorsOf", {std::string("Sea copy 2")}, error) == t.run("colorsOf", {std::string("Sea")}, error));
+	/* a built-in's, with the desktop's colours the window painted */
+	CHECK(fromValue(t.run("writeCopy", {std::string("Light"), std::string(R"({"WindowBackground": "#F0F0F0", "WindowText": "#000000"})")}, error).value_or(Value()), made) &&
+		  made == "Light copy" && t.run("colorsOf", {std::string("Light copy")}, error) == Value(std::string("{\"WindowBackground\": \"#F0F0F0\", \"WindowText\": \"#000000\"}")));
 	fs::remove_all(dir);
 }
 
