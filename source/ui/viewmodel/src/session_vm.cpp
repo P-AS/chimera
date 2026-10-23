@@ -1694,9 +1694,10 @@ void SessionViewModel::seekOnMachine(int64_t target, bool grow)
 	const int64_t ran = (stored >= 0 && (stored > from || from > want) ? want - stored : want - from) + (target > 0 ? 1 : 0);
 	if (ce_session_seek(s_, want) != 0)
 	{
-		/* the window took frames out while the machine went through them:
-		 * that edit's own turn comes next and puts the machine right */
-		if (!grow && ce_session_movie_length(s_) < length)
+		/* the window edited the movie while the machine went through it
+		 * (frames taken out, and maybe put back by an undo since): that
+		 * edit's own turn comes next and puts the machine right */
+		if (!grow && (ce_session_movie_length(s_) < length || editsSent_.load() != editRunningM_))
 		{
 			frameM_ = ce_session_frame(s_);
 			report(-1, -1, -1, -1, -1);
@@ -1728,8 +1729,10 @@ void SessionViewModel::dropStatesAfterOnMachine(int64_t frame)
 
 void SessionViewModel::edited(int64_t first)
 {
-	submit([this, first] {
+	const uint64_t sent = ++editsSent_;
+	submit([this, first, sent] {
 		if (s_ == nullptr) return;
+		editRunningM_ = sent;
 		greenEndM_ = std::min(greenEndM_, first);
 		/* moved since the last edit moved it: that edit's frame is forgotten */
 		if (movesM_ != restoredMovesM_ || frameM_ != restoredAtM_) restoreFrameM_ = -1;

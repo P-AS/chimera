@@ -343,6 +343,11 @@ private:
 	 * had been, and where it was, when the last edit had moved it. */
 	int64_t restoreFrameM_ = -1, restoredAtM_ = -1;
 	uint64_t movesM_ = 0, restoredMovesM_ = 0;
+	/* edits the window has made (counted on its thread as each is sent), and
+	 * the count the edit job now running was sent at: more since means a
+	 * later edit's job is on its way */
+	std::atomic<uint64_t> editsSent_{0};
+	uint64_t editRunningM_ = 0;
 	bool runningM_ = false;
 	/* what a held key is doing (the machine's thread) */
 	enum class Hold { None, Advance, Rewind };
