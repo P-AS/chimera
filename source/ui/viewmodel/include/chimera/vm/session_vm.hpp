@@ -144,6 +144,14 @@ public:
 	Signal<> inputsReset;
 	/* a project opened with these markers */
 	Signal<std::vector<Marker>> markersLoaded;
+	/* the piano roll's hidden columns, by control name, as the project (or
+	 * Chimera's defaults, for one without its own) has them */
+	Signal<std::vector<std::string>> hiddenColumnsLoaded;
+	/* the hidden columns now, to save with the project in Chimera's shape */
+	void setHiddenColumns(const std::vector<std::string> &names);
+	/* the controls Chimera's piano roll hides until shown (the console's
+	 * power and reset, keyboard keys, disk and tape controls...) */
+	static bool hiddenByDefault(const std::string &name);
 	/* the movie's markers, from whoever edits them: saved with the project,
 	 * and the frames of those that keep a state pinned in the greenzone */
 	void setMarkers(std::vector<Marker> markers);
@@ -406,6 +414,13 @@ private:
 	 * later edit's job is on its way */
 	std::atomic<uint64_t> editsSent_{0};
 	ProjectAnswers lastAnswers_;
+	/* the hidden columns and the piano roll's columns, in Chimera's shape
+	 * (written when the project had none of its own), for the machine's thread */
+	std::vector<std::string> hiddenColumnsM_;
+	std::string freshColumnsM_;
+	bool columnsLoadedM_ = false;
+	/* the defaults, sent once a machine's controls are known */
+	void loadDefaultColumns();
 	/* what the counters over the picture last worked out, so a frame run
 	 * costs a frame's work: the last frame with input (for a movie of this
 	 * length), and the lag frames counted up to a frame */

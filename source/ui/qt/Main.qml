@@ -296,6 +296,27 @@ ApplicationWindow {
                     onTriggered: root.session.greenzonePeriod = 0
                 }
             }
+            // the columns shown, as Chimera's Columns menu has them
+            Menu {
+                id: columnsMenu
+                title: qsTr("&Columns")
+                enabled: root.session.isOpen
+                Action { text: qsTr("Show &All"); onTriggered: root.pianoRoll.run("showAllColumns") }
+                MenuSeparator {}
+                Instantiator {
+                    model: root.pianoRoll.rows("columns")
+                    delegate: MenuItem {
+                        required property string name
+                        required property bool shown
+                        text: name
+                        checkable: true
+                        checked: shown
+                        onTriggered: root.pianoRoll.run(shown ? "hideColumn" : "showColumn", [name])
+                    }
+                    onObjectAdded: (index, object) => columnsMenu.insertItem(index + 2, object)
+                    onObjectRemoved: (index, object) => columnsMenu.removeItem(object)
+                }
+            }
             Action {
                 property string hotkey: "Toggle Follow Cursor"
                 text: qsTr("&Follow the Current Frame")

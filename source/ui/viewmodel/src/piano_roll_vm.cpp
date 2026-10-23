@@ -15,6 +15,31 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("visibleFrames", "how many frames the view shows at once (the view sets it)", visibleFrames, true);
 	rows("frames", "one row a frame, one column a button; a cell is true where the button is held", frames_);
 	rows("markers", "the movie's markers: frame, text, whether the frame's state is kept", markerRows_);
+	rows("columns", "the piano roll's columns, a control each: name, label, shown", columnRows_);
+	expose("hiddenColumns", "the columns not shown, by control name, a line each", hiddenColumns);
+	command("hideColumn", "a control's column no longer shown", {"name"}, [this](const Args &a, std::string &error) -> Value {
+		std::string name;
+		if (!arg(a, 0, name, error)) return {};
+		hidden_.insert(name);
+		hiddenChanged();
+		return {};
+	});
+	command("showColumn", "a control's column shown again", {"name"}, [this](const Args &a, std::string &error) -> Value {
+		std::string name;
+		if (!arg(a, 0, name, error)) return {};
+		hidden_.erase(name);
+		hiddenChanged();
+		return {};
+	});
+	command("showAllColumns", "every column shown", {}, [this](const Args &, std::string &) -> Value {
+		hidden_.clear();
+		hiddenChanged();
+		return {};
+	});
+	hiddenWatch_ = session_.hiddenColumnsLoaded.connect([this](const std::vector<std::string> &names) {
+		hidden_ = std::set<std::string>(names.begin(), names.end());
+		hiddenChanged();
+	});
 	expose("markerCount", "how many markers the movie has", markerCount);
 	expose("canUndo", "an edit can be taken back", canUndo);
 	expose("canRedo", "an edit taken back can be done again", canRedo);
@@ -659,6 +684,40 @@ void PianoRollViewModel::edited(int64_t first, int64_t last, int64_t oldCount)
 		session_.edited(first);
 	}
 	if (now > oldCount) frames_.appended.emit(oldCount, now - 1);
+}
+
+void PianoRollViewModel::hiddenChanged()
+{
+	std::string text;
+	std::vector<std::string> names;
+	for (const std::string &n : hidden_)
+	{
+		text += (text.empty() ? "" : "\n") + n;
+		names.push_back(n);
+	}
+	hiddenColumns.set(text);
+	session_.setHiddenColumns(names);
+	columnRows_.reset.emit();
+	frames_.reset.emit();
+}
+
+std::string PianoRollViewModel::ColumnRows::columnName(int32_t column) const
+{
+	static const char *const names[] = {"name", "label", "shown"};
+	return column >= 0 && column < 3 ? names[column] : "";
+}
+
+Value PianoRollViewModel::ColumnRows::cell(int64_t row, int32_t column) const
+{
+	if (row < 0 || row >= rowCount()) return {};
+	const int32_t c = static_cast<int32_t>(row);
+	switch (column)
+	{
+	case 0: return vm_.frames_.columnName(c);
+	case 1: return vm_.frames_.columnShortName(c);
+	case 2: return !vm_.frames_.columnHidden(c);
+	default: return {};
+	}
 }
 
 std::string PianoRollViewModel::Frames::columnName(int32_t column) const

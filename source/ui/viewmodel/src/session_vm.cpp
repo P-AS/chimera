@@ -686,7 +686,11 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	adoptOnMachine(s, package, game, true);
 	{
 		std::string stem = std::filesystem::path(game).stem().string();
-		later([this, stem] { gameName.set(stem); });
+		later([this, stem] {
+			gameName.set(stem);
+			/* a game opened by itself: the piano roll's columns as Chimera starts them */
+			loadDefaultColumns();
+		});
 	}
 	package_ = package;
 	game_ = game;
@@ -1330,6 +1334,25 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 				if (const json::Json *g = o->find("GreenzonePeriod")) period = std::max<int64_t>(0, static_cast<int64_t>(g->number()));
 		periodM_.store(period);
 		later([this, period] { greenzonePeriod.set(period); });
+		/* the piano roll's columns: the first roll's hidden ones, as
+		 * Chimera's TAStudio saved them; none saved, its defaults */
+		std::vector<std::string> hidden;
+		bool saved = false;
+		if (const json::Json *o = tastudio.find("o"))
+			if (const json::Json *rolls = o->find("Columns"); rolls != nullptr && rolls->kind == json::Json::Kind::Array && !rolls->items.empty())
+			{
+				saved = true;
+				for (const json::Json &c : rolls->items[0].items)
+				{
+					const json::Json *name = c.find("Name");
+					const json::Json *visible = c.find("Visible");
+					if (name != nullptr && visible != nullptr && visible->kind == json::Json::Kind::Bool && !visible->boolean)
+						hidden.push_back(name->text);
+				}
+			}
+		columnsLoadedM_ = saved;
+		if (saved) later([this, hidden] { hiddenColumnsLoaded.emit(hidden); });
+		else later([this] { loadDefaultColumns(); });
 	}
 
 	if (!keepInputs)
@@ -1423,6 +1446,61 @@ void SessionViewModel::catchPollOnMachine()
 		}
 	/* let go since: pressed again, it counts */
 	catchHeldM_ = held;
+}
+
+bool SessionViewModel::hiddenByDefault(const std::string &n)
+{
+	auto starts = [&n](const char *p) { return n.rfind(p, 0) == 0; };
+	auto ends = [&n](const std::string &e) { return n.size() >= e.size() && n.compare(n.size() - e.size(), e.size(), e) == 0; };
+	return n == "Power" || n == "Reset" || n == "Light Sensor" || n == "Disc Select" || n == "Disk Index" || n == "Next Drive" ||
+		n == "Next Slot" || n == "Insert Disk" || n == "Eject Disk" || starts("Tilt") || starts("Key ") || starts("Open") ||
+		starts("Close") || ends("Tape") || ends("Disk") || ends("Block") || ends("Status");
+}
+
+void SessionViewModel::loadDefaultColumns()
+{
+	std::vector<std::string> hidden;
+	for (const std::string &n : buttonNames_)
+		if (hiddenByDefault(n)) hidden.push_back(n);
+	for (const Axis &a : axes_)
+		if (hiddenByDefault(a.name)) hidden.push_back(a.name);
+	hiddenColumnsLoaded.emit(hidden);
+}
+
+void SessionViewModel::setHiddenColumns(const std::vector<std::string> &names)
+{
+	/* a roll of Chimera's shape: its cursor and frame columns, then a column
+	 * a control, named, its mnemonic for a label, as a new piano roll makes */
+	json::Json roll;
+	roll.kind = json::Json::Kind::Array;
+	auto column = [&](const std::string &name, const std::string &text, bool visible, bool rotatable) {
+		json::Json c;
+		c.kind = json::Json::Kind::Object;
+		c.members.emplace_back("VerticalWidth", json::Json::integer(10));
+		c.members.emplace_back("HorizontalHeight", json::Json::integer(10));
+		c.members.emplace_back("Left", json::Json::integer(0));
+		c.members.emplace_back("Right", json::Json::integer(0));
+		c.members.emplace_back("Name", json::Json::string(name));
+		c.members.emplace_back("Text", json::Json::string(text));
+		c.members.emplace_back("Visible", json::Json::boolean_(visible));
+		c.members.emplace_back("Emphasis", json::Json::boolean_(false));
+		c.members.emplace_back("Rotatable", json::Json::boolean_(rotatable));
+		roll.items.push_back(c);
+	};
+	auto shown = [&names](const std::string &n) { return std::find(names.begin(), names.end(), n) == names.end(); };
+	column("CursorColumn", "", true, false);
+	column("FrameColumn", "Frame#", true, true);
+	for (size_t b = 0; b < buttonNames_.size(); b++)
+	{
+		const std::string mn = b < mnemonics_.size() && mnemonics_[b] != '.' ? std::string(1, mnemonics_[b]) : buttonNames_[b];
+		column(buttonNames_[b], mn, shown(buttonNames_[b]), false);
+	}
+	for (const Axis &a : axes_) column(a.name, a.header.empty() ? a.name : a.header, shown(a.name), true);
+	const std::string fresh = json::write(roll);
+	submit([this, names, fresh] {
+		hiddenColumnsM_ = names;
+		freshColumnsM_ = fresh;
+	});
 }
 
 void SessionViewModel::openMadeProjectOnMachine(ce_project *p, const std::string &package)
@@ -1584,6 +1662,34 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to)
 				set = true;
 			}
 		if (!set) o->members.emplace_back("GreenzonePeriod", json::Json::integer(periodM_.load()));
+		/* the piano roll's columns: shown or hidden on the project's own
+		 * entries (their widths and the rest left as Chimera saved them),
+		 * else a roll of Chimera's shape */
+		json::Json *rolls = nullptr;
+		for (auto &[k, v] : o->members)
+			if (k == "Columns" && v.kind == json::Json::Kind::Array && !v.items.empty()) rolls = &v;
+		json::Json fresh;
+		std::string ferr;
+		const bool haveFresh = !freshColumnsM_.empty() && json::parse(freshColumnsM_, fresh, ferr);
+		if (rolls != nullptr && haveFresh)
+		{
+			for (json::Json &roll : rolls->items)
+				for (json::Json &c : roll.items)
+				{
+					const json::Json *name = c.find("Name");
+					if (name == nullptr || name->text == "CursorColumn" || name->text == "FrameColumn") continue;
+					const bool hide = std::find(hiddenColumnsM_.begin(), hiddenColumnsM_.end(), name->text) != hiddenColumnsM_.end();
+					for (auto &[ck, cv] : c.members)
+						if (ck == "Visible") cv = json::Json::boolean_(!hide);
+				}
+		}
+		else if (haveFresh)
+		{
+			json::Json all;
+			all.kind = json::Json::Kind::Array;
+			all.items.push_back(fresh);
+			o->members.emplace_back("Columns", all);
+		}
 		const char *err = nullptr;
 		ce_project_set_tastudio_text(projectM_, json::write(tastudio).c_str(), &err);
 	}

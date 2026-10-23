@@ -595,6 +595,125 @@ bool overlay(const char *package, const char *rom)
 
 std::string readFile(const std::filesystem::path &p);
 
+/* The piano roll's columns shown and hidden, as Chimera's TAStudio keeps
+ * them: its default-hidden controls, and the project's own list in
+ * Chimera's shape, written where the project had none and only marked
+ * shown or hidden where it had its own */
+bool pianoRollColumns(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	using json::Json;
+	CHECK(SessionViewModel::hiddenByDefault("Power") && SessionViewModel::hiddenByDefault("Reset") &&
+		SessionViewModel::hiddenByDefault("Key A") && SessionViewModel::hiddenByDefault("Eject Disk") &&
+		SessionViewModel::hiddenByDefault("Play Tape") && SessionViewModel::hiddenByDefault("Tilt X") &&
+		!SessionViewModel::hiddenByDefault("P1 Up") && !SessionViewModel::hiddenByDefault("P1 Keyboard"));
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-columns-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	const fs::path fresh = dir / "fresh.chimeraProject", own = dir / "own.chimeraProject";
+	auto tastudioOf = [](const fs::path &path) {
+		const char *err = nullptr;
+		ce_project *p = ce_project_open(path.string().c_str(), &err);
+		std::string t;
+		if (p != nullptr)
+		{
+			uint64_t len = 0;
+			const char *text = ce_project_tastudio_text(p, &len);
+			if (text != nullptr) t.assign(text, static_cast<size_t>(len));
+			ce_project_free(p);
+		}
+		return t;
+	};
+	{
+		ManualDispatcher d;
+		InputLog inputs;
+		SessionViewModel session(d, inputs);
+		PianoRollViewModel roll(d, inputs, session);
+		std::string error;
+		session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+		CHECK(d.until([&] { return session.isOpen.get() && roll.frames().columnCount() == 8; }, 60));
+		CHECK(roll.hiddenColumns.get().empty());
+		CHECK(roll.run("hideColumn", {std::string("P1 B")}, error).has_value() && roll.hiddenColumns.get() == "P1 B");
+		CHECK(roll.frames().columnHidden(5) && !roll.frames().columnHidden(4));
+		RowModel *columns = nullptr;
+		for (const auto &r : roll.rowLists())
+			if (r.name == "columns") columns = r.model;
+		bool shown = true;
+		CHECK(columns != nullptr && columns->rowCount() == 8);
+		if (columns != nullptr) fromValue(columns->cell(5, 2), shown);
+		CHECK(!shown);
+		CHECK(session.run("saveAsProject", {fresh.string()}, error).has_value());
+		CHECK(d.until([&] { return session.projectPath.get() == fresh.string(); }, 20));
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	}
+	/* written in Chimera's shape: one roll, the cursor and frame columns, then the controls */
+	{
+		Json t;
+		std::string jerr;
+		CHECK(json::parse(tastudioOf(fresh), t, jerr));
+		const Json *o = t.find("o");
+		const Json *rolls = o != nullptr ? o->find("Columns") : nullptr;
+		CHECK(rolls != nullptr && rolls->items.size() == 1 && rolls->items[0].items.size() == 10);
+		if (rolls != nullptr && rolls->items.size() == 1 && rolls->items[0].items.size() == 10)
+		{
+			const Json &cs = rolls->items[0];
+			CHECK(cs.items[0].find("Name")->text == "CursorColumn" && cs.items[1].find("Text")->text == "Frame#");
+			CHECK(cs.items[2].find("Name")->text == "P1 Up" && cs.items[2].find("Text")->text == "U" && cs.items[2].find("Visible")->boolean);
+			CHECK(cs.items[7].find("Name")->text == "P1 B" && !cs.items[7].find("Visible")->boolean);
+		}
+	}
+	/* a project with Chimera's own columns (widths and all): its hidden ones
+	 * read, and only shown or hidden changed when saved */
+	{
+		const char *err = nullptr;
+		ce_project *p = ce_project_open(fresh.string().c_str(), &err);
+		CHECK(p != nullptr);
+		if (p == nullptr) return true;
+		const std::string chimeraOwn = "{\"o\": {\"$type\": \"Chimera.Client.GUI.TAStudio+MovieClientSettings, Chimera.Client.GUI\", "
+			"\"HorizontalOrientation\": false, \"Columns\": [[{\"VerticalWidth\": 12, \"HorizontalHeight\": 12, \"Left\": 0, \"Right\": 14, "
+			"\"Name\": \"CursorColumn\", \"Text\": \"\", \"Visible\": true, \"Emphasis\": false, \"Rotatable\": false}, "
+			"{\"VerticalWidth\": 15, \"HorizontalHeight\": 10, \"Left\": 69, \"Right\": 87, \"Name\": \"P1 Up\", \"Text\": \"U\", "
+			"\"Visible\": false, \"Emphasis\": true, \"Rotatable\": false}, "
+			"{\"VerticalWidth\": 15, \"HorizontalHeight\": 10, \"Left\": 87, \"Right\": 105, \"Name\": \"P1 Down\", \"Text\": \"D\", "
+			"\"Visible\": true, \"Emphasis\": false, \"Rotatable\": false}]], \"GreenzonePeriod\": 1}}";
+		CHECK(ce_project_set_tastudio_text(p, chimeraOwn.c_str(), &err) == 0);
+		CHECK(ce_project_save(p, own.string().c_str(), &err) == 0);
+		ce_project_free(p);
+	}
+	{
+		ManualDispatcher d;
+		InputLog inputs;
+		SessionViewModel session(d, inputs);
+		PianoRollViewModel roll(d, inputs, session);
+		std::string error;
+		session.run("openProject", {own.string(), std::string(package)}, error);
+		CHECK(d.until([&] { return session.isOpen.get() && roll.hiddenColumns.get() == "P1 Up"; }, 60));
+		CHECK(roll.run("showColumn", {std::string("P1 Up")}, error).has_value());
+		CHECK(roll.run("hideColumn", {std::string("P1 Down")}, error).has_value());
+		CHECK(session.run("saveProject", {}, error).has_value());
+		CHECK(d.until([&] { return session.status.get().rfind("Saved", 0) == 0; }, 20));
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	}
+	{
+		Json t;
+		std::string jerr;
+		CHECK(json::parse(tastudioOf(own), t, jerr));
+		const Json *o = t.find("o");
+		const Json *rolls = o != nullptr ? o->find("Columns") : nullptr;
+		CHECK(rolls != nullptr && rolls->items.size() == 1 && rolls->items[0].items.size() == 3);
+		if (rolls != nullptr && rolls->items.size() == 1 && rolls->items[0].items.size() == 3)
+		{
+			const Json &up = rolls->items[0].items[1], &down = rolls->items[0].items[2];
+			CHECK(up.find("Visible")->boolean && up.find("Emphasis")->boolean && up.find("VerticalWidth")->number() == 15);
+			CHECK(!down.find("Visible")->boolean && down.find("Right")->number() == 105);
+		}
+	}
+	fs::remove_all(dir);
+	return true;
+}
+
 /* The project's details as Chimera's TAStudio edits them - its header,
  * comments and subtitles - kept with the project, and the subtitles of the
  * frame on screen worked out */
@@ -2990,6 +3109,7 @@ int main(int argc, char **argv)
 			ranMachine = speedAndSound(argv[1], argv[2]) && ranMachine;
 			ranMachine = overlay(argv[1], argv[2]) && ranMachine;
 			ranMachine = projectDetails(argv[1], argv[2]) && ranMachine;
+			ranMachine = pianoRollColumns(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;

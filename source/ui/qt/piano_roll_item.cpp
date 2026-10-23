@@ -24,7 +24,10 @@ PianoRollItem::PianoRollItem(QQuickItem *parent) : QQuickPaintedItem(parent)
 
 int PianoRollItem::columnW(int column) const
 {
-	return rows_ != nullptr && rows_->rows().columnIsNumber(column) ? numberWidth_ : columnWidth_;
+	if (rows_ == nullptr) return columnWidth_;
+	/* a hidden column takes no room */
+	if (rows_->rows().columnHidden(column)) return 0;
+	return rows_->rows().columnIsNumber(column) ? numberWidth_ : columnWidth_;
 }
 
 int PianoRollItem::columnX(int column) const
@@ -189,6 +192,7 @@ void PianoRollItem::paint(QPainter *p)
 	p->drawText(QRect(kCursorWidth + 4, 0, fx - kCursorWidth - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("Frame"));
 	for (int c = 0; c < columns; c++)
 	{
+		if (columnW(c) == 0) continue; /* hidden */
 		QString name = QString::fromStdString(rows.columnName(c));
 		const qsizetype space = name.indexOf(' ');
 		if (space > 0 && space < 4) name = name.mid(space + 1);
@@ -231,6 +235,7 @@ void PianoRollItem::paint(QPainter *p)
 		for (int c = 0; c < columns; c++)
 		{
 			const int cx = columnX(c), cw = columnW(c);
+			if (cw == 0) continue; /* hidden */
 			if (rows.columnIsNumber(c))
 			{
 				int64_t value = 0;

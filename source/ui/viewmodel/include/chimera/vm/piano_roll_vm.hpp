@@ -3,6 +3,7 @@
  * the button is held. It reads and edits the same inputs the session plays. */
 
 #include <map>
+#include <set>
 #include <optional>
 
 #include "chimera/vm/input_log.hpp"
@@ -21,6 +22,9 @@ public:
 
 	/* the frame the machine is about to run */
 	Property<int64_t> currentFrame{0};
+	/* the columns not shown, by control name, a line each (Chimera's
+	 * defaults hide the console's power and reset, keyboard keys...) */
+	Property<std::string> hiddenColumns;
 	Property<int64_t> frameCount{0};
 	/* keep the current frame in view while the machine runs */
 	Property<bool> followPlayback{true};
@@ -68,6 +72,7 @@ private:
 		int64_t rowCount() const override { return vm_.inputs_.size(); }
 		int32_t columnCount() const override { return vm_.buttonCount() + static_cast<int32_t>(vm_.session_.axes().size()); }
 		bool columnIsNumber(int32_t column) const override { return column >= vm_.buttonCount(); }
+		bool columnHidden(int32_t column) const override { return vm_.hidden_.count(columnName(column)) != 0; }
 		std::string columnName(int32_t column) const override;
 		/* the button's letter in a movie's input log */
 		std::string columnShortName(int32_t column) const override;
@@ -84,6 +89,20 @@ private:
 		mutable int64_t cachedRow_ = -1;
 		mutable uint64_t cachedBits_ = 0;
 		mutable std::vector<int32_t> cachedAxes_;
+	};
+
+	/* the columns, for a menu to show and hide them: name, label, shown */
+	class ColumnRows : public RowModel
+	{
+	public:
+		explicit ColumnRows(PianoRollViewModel &vm) : vm_(vm) {}
+		int64_t rowCount() const override { return vm_.frames_.columnCount(); }
+		int32_t columnCount() const override { return 3; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
+
+	private:
+		PianoRollViewModel &vm_;
 	};
 
 	class MarkerRows : public RowModel
@@ -154,6 +173,11 @@ private:
 	int64_t copiedFrom_ = -1;
 	SessionViewModel &session_;
 	Frames frames_{*this};
+	/* the columns hidden, by control name, and the list of them all */
+	std::set<std::string> hidden_;
+	ColumnRows columnRows_{*this};
+	void hiddenChanged();
+	Connection hiddenWatch_;
 	std::map<int64_t, Marker> markers_;
 	MarkerRows markerRows_{*this};
 	Connection markersWatch_;

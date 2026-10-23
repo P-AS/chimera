@@ -27,6 +27,8 @@ public:
 	/* a column whose cells are numbers to show as numbers (an analog
 	 * control's), not marks */
 	virtual bool columnIsNumber(int32_t) const { return false; }
+	/* a column not shown (the piano roll's hidden ones): drawn nowhere */
+	virtual bool columnHidden(int32_t) const { return false; }
 	/* a note a row carries (the piano roll: a marker's text), "" for none */
 	virtual std::string rowNote(int64_t) const { return {}; }
 
