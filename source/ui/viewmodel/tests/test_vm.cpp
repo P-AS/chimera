@@ -1563,12 +1563,14 @@ bool luaLibraries(const char *package, const char *rom)
 	SessionViewModel session(d, inputs);
 	PianoRollViewModel roll(d, inputs, session);
 	DebuggerViewModel debugger(d, session);
+	GuiOverlayViewModel guiOverlay(d);
 	LuaBridge lua;
 	LuaConsoleViewModel console(d, lua);
 	lua.add(session);
 	lua.add(roll);
 	lua.add(debugger);
 	lua.add(console);
+	lua.add(guiOverlay);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
@@ -1596,6 +1598,9 @@ console.log("tables", r[0], r[1], a[1], a[2], memory.getmemorydomainlist()[0] ==
 mainmemory.writefloat(0x40, 1.5, false)
 console.log("float", mainmemory.readfloat(0x40, false))
 joypad.set({["P1 Down"] = true})
+gui.drawRectangle(1, 2, 3, 4, 0xFFFF0000)
+gui.text(5, 6, 'say "hi"', "yellow", "topright")
+gui.addmessage("from the script")
 emu.frameadvance()
 local f = emu.framecount() - 1
 console.log("after", emu.framecount(), movie.getinput(f)["P1 Down"], movie.getinput(f, 1)["Down"], movie.getinput(f)["P1 Up"])
@@ -1613,12 +1618,22 @@ while true do emu.frameadvance() end
 	CHECK(said("tables ") == "tables 18 52 18 52 true true");
 	CHECK(said("float ") == "float 1.5");
 	CHECK(session.readDomain("RAM").at(0x10) == 0xAB);
+	/* the drawings of the frame to come, for the window to draw over the picture */
+	{
+		const std::string shapes = guiOverlay.shapes.get();
+		for (const char *part : {"\"k\":\"rect\"", "\"x\":1", "\"h\":4", "\"line\":\"#FFFF0000\"", "\"k\":\"screentext\"",
+				 "\"text\":\"say \\u0022hi\\u0022\"", "\"anchor\":\"topright\""})
+			CHECK(shapes.find(part) != std::string::npos);
+		CHECK(shapes.front() == '[' && guiOverlay.message.get() == "from the script");
+	}
 	/* waiting for a frame: nothing more yet */
 	CHECK(said("after ").empty());
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
 	console.frameDone();
 	CHECK(said("after ") == "after 1 true true false");
+	/* a new frame, nothing drawn on it */
+	CHECK(guiOverlay.shapes.get() == "[]");
 	CHECK(said("regs ") == "regs true 48 16 true");
 	CHECK(said("set ") == "set 99");
 	session.run("frameAdvance", {}, error);

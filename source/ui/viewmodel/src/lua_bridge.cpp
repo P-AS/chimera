@@ -247,6 +247,7 @@ bool LuaBridge::run(const std::string &code, const std::string &chunkName, std::
 	{
 		lua_pop(co, results);
 		lua_pop(L_, 1);
+		published();
 		return true;
 	}
 	if (status == LUA_YIELD)
@@ -256,11 +257,18 @@ bool LuaBridge::run(const std::string &code, const std::string &chunkName, std::
 		lua_insert(L_, -2);
 		lua_rawseti(L_, -2, static_cast<lua_Integer>(lua_rawlen(L_, -2)) + 1);
 		lua_pop(L_, 1);
+		published();
 		return true;
 	}
 	error = lua_tostring(co, -1) != nullptr ? lua_tostring(co, -1) : "unknown error";
 	lua_pop(L_, 1);
 	return false;
+}
+
+void LuaBridge::published()
+{
+	/* what a script drew as it started is shown at once */
+	callHook("__chimera_frame_end");
 }
 
 void LuaBridge::stopAll()
@@ -282,7 +290,30 @@ bool LuaBridge::running() const
 	return fns || scripts;
 }
 
+void LuaBridge::callHook(const char *name)
+{
+	lua_getglobal(L_, name);
+	if (lua_isfunction(L_, -1))
+	{
+		if (lua_pcall(L_, 0, 0, 0) != LUA_OK)
+		{
+			log(std::string(name) + ": " + (lua_tostring(L_, -1) ? lua_tostring(L_, -1) : "?"));
+			lua_pop(L_, 1);
+		}
+	}
+	else
+		lua_pop(L_, 1);
+}
+
 void LuaBridge::frameDone()
+{
+	/* the libraries' frame: what the gui drew last frame goes, and what is drawn now is shown at its end */
+	callHook("__chimera_frame_begin");
+	frameDoneInner();
+	callHook("__chimera_frame_end");
+}
+
+void LuaBridge::frameDoneInner()
 {
 	lua_rawgeti(L_, LUA_REGISTRYINDEX, frameFns_);
 	const lua_Integer n = static_cast<lua_Integer>(lua_rawlen(L_, -1));

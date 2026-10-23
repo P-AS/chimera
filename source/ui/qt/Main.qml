@@ -44,6 +44,7 @@ ApplicationWindow {
     // "debugger" is a word of JavaScript's own
     required property QtObject debuggerTool
     required property QtObject surfaceViewer
+    required property QtObject guiOverlay
     required property QtObject macroTool
     required property QtObject recorder
     // a Paths folder for a file dialog to open in (made when it is not there)
@@ -1056,6 +1057,103 @@ ApplicationWindow {
                         "cropLeft": root.display.cropLeft, "cropTop": root.display.cropTop,
                         "cropRight": root.display.cropRight, "cropBottom": root.display.cropBottom })
             }
+            // what scripts draw with Chimera's gui library: in the machine's
+            // pixels, over the picture where it is drawn; gui.text in the window's
+            Canvas {
+                id: luaCanvas
+                objectName: "luaCanvas"
+                anchors.fill: parent
+                readonly property var shapes: JSON.parse(root.guiOverlay.shapes)
+                onShapesChanged: requestPaint()
+                onImageLoaded: requestPaint()
+                Connections { target: picture; function onPlacementChanged() { luaCanvas.requestPaint() } }
+                // gui.clearImageCache: each read again, under a new address
+                function urlOf(file, epoch) {
+                    const path = file.replace(/\\/g, "/")
+                    return (path.startsWith("/") ? "file://" : "file:///") + encodeURI(path).replace(/#/g, "%23").replace(/\?/g, "%3F") + (epoch > 0 ? "?" + epoch : "")
+                }
+                onPaint: {
+                    const ctx = getContext("2d")
+                    ctx.reset()
+                    ctx.clearRect(0, 0, width, height)
+                    const shown = picture.shownRect, src = picture.sourceRect
+                    if (luaCanvas.shapes.length === 0) return
+                    const sx = src.width > 0 ? shown.width / src.width : 1, sy = src.height > 0 ? shown.height / src.height : 1
+                    for (const s of luaCanvas.shapes) {
+                        if (s.k === "screentext") {
+                            ctx.save()
+                            ctx.font = "12px monospace"
+                            ctx.textBaseline = "top"
+                            const w = ctx.measureText(s.text).width
+                            const right = s.anchor === "topright" || s.anchor === "bottomright" || s.anchor === "1" || s.anchor === "3"
+                            const bottom = s.anchor === "bottomleft" || s.anchor === "bottomright" || s.anchor === "2" || s.anchor === "3"
+                            ctx.fillStyle = s.color
+                            ctx.fillText(s.text, right ? width - s.x - w : s.x, bottom ? height - s.y - 12 : s.y)
+                            ctx.restore()
+                            continue
+                        }
+                        ctx.save()
+                        ctx.translate(shown.x - src.x * sx, shown.y - src.y * sy)
+                        ctx.scale(sx, sy)
+                        ctx.lineWidth = 1 / Math.min(sx, sy)
+                        if (s.k === "rect") {
+                            if (s.fill !== "") { ctx.fillStyle = s.fill; ctx.fillRect(s.x, s.y, s.w, s.h) }
+                            if (s.line !== "") { ctx.strokeStyle = s.line; ctx.strokeRect(s.x + 0.5 / sx, s.y + 0.5 / sy, s.w, s.h) }
+                        } else if (s.k === "ellipse") {
+                            ctx.beginPath()
+                            ctx.ellipse(s.x, s.y, s.w, s.h)
+                            if (s.fill !== "") { ctx.fillStyle = s.fill; ctx.fill() }
+                            if (s.line !== "") { ctx.strokeStyle = s.line; ctx.stroke() }
+                        } else if (s.k === "line") {
+                            ctx.beginPath()
+                            ctx.moveTo(s.x + 0.5, s.y + 0.5)
+                            ctx.lineTo(s.x2 + 0.5, s.y2 + 0.5)
+                            ctx.strokeStyle = s.line
+                            ctx.stroke()
+                        } else if (s.k === "path" || s.k === "bezier") {
+                            if (s.points.length === 0) { ctx.restore(); continue }
+                            ctx.beginPath()
+                            ctx.moveTo(s.points[0][0] + 0.5, s.points[0][1] + 0.5)
+                            if (s.k === "bezier")
+                                ctx.bezierCurveTo(s.points[1][0] + 0.5, s.points[1][1] + 0.5, s.points[2][0] + 0.5, s.points[2][1] + 0.5, s.points[3][0] + 0.5, s.points[3][1] + 0.5)
+                            else
+                                for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i][0] + 0.5, s.points[i][1] + 0.5)
+                            if (s.closed) ctx.closePath()
+                            if (s.fill !== undefined && s.fill !== "") { ctx.fillStyle = s.fill; ctx.fill() }
+                            if (s.line !== "") { ctx.strokeStyle = s.line; ctx.stroke() }
+                        } else if (s.k === "pie") {
+                            // an ellipse's slice: drawn on a circle, stretched to the ellipse
+                            const cx = s.x + s.w / 2, cy = s.y + s.h / 2
+                            ctx.beginPath()
+                            ctx.translate(cx, cy)
+                            ctx.scale(s.w / 2 || 1, s.h / 2 || 1)
+                            ctx.moveTo(0, 0)
+                            ctx.arc(0, 0, 1, s.start * Math.PI / 180, (s.start + s.sweep) * Math.PI / 180, s.sweep < 0)
+                            ctx.closePath()
+                            ctx.lineWidth = 2 / Math.min(sx * s.w, sy * s.h)
+                            if (s.fill !== "") { ctx.fillStyle = s.fill; ctx.fill() }
+                            if (s.line !== "") { ctx.strokeStyle = s.line; ctx.stroke() }
+                        } else if (s.k === "image") {
+                            const url = luaCanvas.urlOf(s.file, s.epoch)
+                            if (!luaCanvas.isImageLoaded(url)) { luaCanvas.loadImage(url); ctx.restore(); continue }
+                            if (s.sw !== undefined)
+                                ctx.drawImage(url, s.sx, s.sy, s.sw, s.sh, s.x, s.y, s.w, s.h)
+                            else if (s.w >= 0 && s.h >= 0)
+                                ctx.drawImage(url, s.x, s.y, s.w, s.h)
+                            else
+                                ctx.drawImage(url, s.x, s.y)
+                        } else if (s.k === "text") {
+                            ctx.font = s.size + "px monospace"
+                            ctx.textBaseline = "top"
+                            if (s.back !== "") { ctx.fillStyle = s.back; ctx.fillRect(s.x, s.y, ctx.measureText(s.text).width, s.size) }
+                            ctx.fillStyle = s.color
+                            ctx.fillText(s.text, s.x, s.y)
+                        }
+                        ctx.restore()
+                    }
+                }
+            }
+            Connections { target: root.guiOverlay; function onMessageChanged() { root.note(root.guiOverlay.message) } }
             // Display Nothing: nothing is drawn here, the counters neither, as Chimera's
             Rectangle { anchors.fill: parent; z: 100; color: "black"; visible: root.session.displayNothing }
             // Chimera's counters over the picture, each where Config > Messages

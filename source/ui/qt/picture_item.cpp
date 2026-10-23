@@ -62,6 +62,14 @@ void PictureItem::setFit(const QVariantMap &fit)
 	update();
 }
 
+void PictureItem::placedAt(QRectF shown, QRectF source)
+{
+	if (shown == shownRect_ && source == source_rect_) return;
+	shownRect_ = shown;
+	source_rect_ = source;
+	Q_EMIT placementChanged();
+}
+
 void PictureItem::sizeSeen(int width, int height)
 {
 	if (width == pictureWidth_ && height == pictureHeight_) return;
@@ -111,6 +119,14 @@ QSGNode *PictureItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
 	node->setSourceRect(QRectF(from.x, from.y, from.w, from.h));
 	const vm::DisplayFit::Rect to = fit_.place(frame_.width, frame_.height, frame_.aspect, width(), height());
 	node->setRect(QRectF(to.x, to.y, to.w, to.h));
+	/* told to the window's thread when it moves, for what is drawn over it */
+	const QRectF shown(to.x, to.y, to.w, to.h), source(from.x, from.y, from.w, from.h);
+	if (shown != saidShown_ || source != saidSource_)
+	{
+		saidShown_ = shown;
+		saidSource_ = source;
+		QMetaObject::invokeMethod(this, "placedAt", Qt::QueuedConnection, Q_ARG(QRectF, shown), Q_ARG(QRectF, source));
+	}
 	return node;
 }
 

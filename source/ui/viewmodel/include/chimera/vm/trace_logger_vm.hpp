@@ -58,6 +58,19 @@ private:
 	Connection loggingWatch_, capacityWatch_, openWatch_;
 };
 
+/* What Chimera's Lua gui library draws over the picture: the drawings of
+ * the frame, as JSON the window draws (in the machine's pixels; "screen"
+ * text in the window's), and messages for the window to show. */
+class GuiOverlayViewModel : public ViewModel
+{
+public:
+	explicit GuiOverlayViewModel(Dispatcher &dispatcher);
+	/* [{"k": "rect"|"line"|"ellipse"|"text"|"screentext", ...}] */
+	Property<std::string> shapes{"[]"};
+	/* the last message a script asked to show (said each time it is set) */
+	Property<std::string> message;
+};
+
 class DebuggerViewModel : public ViewModel
 {
 public:

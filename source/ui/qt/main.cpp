@@ -687,6 +687,8 @@ int main(int argc, char **argv)
 	qt::QmlViewModel traceLoggerQml(traceLogger);
 	vm::DebuggerViewModel debugger(dispatcher, session);
 	qt::QmlViewModel debuggerQml(debugger);
+	vm::GuiOverlayViewModel guiOverlay(dispatcher);
+	qt::QmlViewModel guiOverlayQml(guiOverlay);
 	vm::SurfaceViewerViewModel surfaceViewer(dispatcher, session);
 	qt::QmlViewModel surfaceViewerQml(surfaceViewer);
 	vm::MacroToolViewModel macroTool(dispatcher, pianoRoll, session);
@@ -913,6 +915,7 @@ int main(int argc, char **argv)
 	lua.add(precompiled);
 	lua.add(traceLogger);
 	lua.add(debugger);
+	lua.add(guiOverlay);
 	lua.add(surfaceViewer);
 	lua.add(macroTool);
 	lua.add(recorder);
@@ -964,6 +967,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("precompiled"), QVariant::fromValue<QObject *>(&precompiledQml)},
 		{QStringLiteral("traceLogger"), QVariant::fromValue<QObject *>(&traceLoggerQml)},
 		{QStringLiteral("debuggerTool"), QVariant::fromValue<QObject *>(&debuggerQml)},
+		{QStringLiteral("guiOverlay"), QVariant::fromValue<QObject *>(&guiOverlayQml)},
 		{QStringLiteral("surfaceViewer"), QVariant::fromValue<QObject *>(&surfaceViewerQml)},
 		{QStringLiteral("macroTool"), QVariant::fromValue<QObject *>(&macroToolQml)},
 		{QStringLiteral("recorder"), QVariant::fromValue<QObject *>(&recorderQml)},

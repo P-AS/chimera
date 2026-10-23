@@ -27,6 +27,11 @@ class PictureItem : public QQuickItem
 	 * its aspect gives), 0 before the first: for the window's sizes */
 	Q_PROPERTY(int pictureWidth READ pictureWidth NOTIFY pictureSizeChanged)
 	Q_PROPERTY(int pictureHeight READ pictureHeight NOTIFY pictureSizeChanged)
+	/* where the picture is drawn in the item, and the part of its pixels
+	 * shown there (the crop taken off): for what is drawn over it in the
+	 * machine's pixels */
+	Q_PROPERTY(QRectF shownRect READ shownRect NOTIFY placementChanged)
+	Q_PROPERTY(QRectF sourceRect READ sourceRect NOTIFY placementChanged)
 
 public:
 	explicit PictureItem(QQuickItem *parent = nullptr);
@@ -38,6 +43,8 @@ public:
 	int pictureHeight() const { return pictureHeight_; }
 	void setSmoothScaling(bool on);
 	QVariantMap fit() const { return fitMap_; }
+	QRectF shownRect() const { return shownRect_; }
+	QRectF sourceRect() const { return source_rect_; }
 	void setFit(const QVariantMap &fit);
 
 	/* pictures handed to the GPU so far, for measuring (any thread) */
@@ -48,6 +55,7 @@ Q_SIGNALS:
 	void smoothScalingChanged();
 	void pictureSizeChanged();
 	void fitChanged();
+	void placementChanged();
 
 protected:
 	QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
@@ -62,6 +70,10 @@ private:
 	int pictureWidth_ = 0, pictureHeight_ = 0;
 	/* the GUI thread's: the size the render thread saw */
 	Q_INVOKABLE void sizeSeen(int width, int height);
+	Q_INVOKABLE void placedAt(QRectF shown, QRectF source);
+	QRectF shownRect_, source_rect_;
+	/* the render thread's: what it last said */
+	QRectF saidShown_, saidSource_;
 	std::atomic<qint64> shown_{0};
 	/* the render thread's copy of the newest frame */
 	vm::Picture::Frame frame_;

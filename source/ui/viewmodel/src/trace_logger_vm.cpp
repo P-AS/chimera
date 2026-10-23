@@ -137,6 +137,22 @@ Value TraceLoggerViewModel::Rows::cell(int64_t row, int32_t column) const
 	return column == 0 ? Value(l.disassembly) : column == 1 ? Value(l.registers) : Value();
 }
 
+GuiOverlayViewModel::GuiOverlayViewModel(Dispatcher &dispatcher) : ViewModel("gui", dispatcher)
+{
+	expose("shapes", "what scripts drew over the picture this frame, as JSON: rect, line, ellipse and text in the "
+		"machine's pixels, screentext in the window's", shapes, true);
+	expose("message", "the last message a script asked to show", message);
+	command("addMessage", "a message shown over the picture a moment, as the window's own are", {"text"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string text;
+			if (!arg(a, 0, text, error)) return {};
+			/* said again even when it is the same as the last */
+			message.set("");
+			message.set(text);
+			return {};
+		});
+}
+
 DebuggerViewModel::DebuggerViewModel(Dispatcher &dispatcher, SessionViewModel &session) : ViewModel("debugger", dispatcher), session_(session)
 {
 	expose("cycles", "the machine's cycles run, when the core counts them", cycles);

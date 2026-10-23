@@ -61,6 +61,10 @@ private:
 	static bool read(lua_State *L, int at, Value &out);
 	void log(const std::string &line) const;
 	static const char *luaLibraries();
+	/* a global function of the libraries' called, if it is there */
+	void callHook(const char *name);
+	void frameDoneInner();
+	void published();
 
 	lua_State *L_;
 	std::vector<ViewModel *> models_;
