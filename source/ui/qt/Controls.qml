@@ -1,30 +1,24 @@
-// Chimera's Controller Config (mode "buttons") and Configure Hotkeys (mode
-// "hotkeys"), two windows from one file: layout and bindings only, over
-// the controls and hotkeys view models. A row's keys can be typed, or
-// caught: Catch, then press the key or the gamepad input.
+// Configure Hotkeys: layout and bindings only, over the hotkeys view model.
+// A row's keys can be typed, or caught: Catch, then press the key or the
+// gamepad input. (Controller Config is ControllerConfig.qml.)
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
 ApplicationWindow {
     id: win
-    objectName: win.mode === "buttons" ? "controllerConfigWindow" : "hotkeyConfigWindow"
-    property string mode: "buttons"
-    required property QtObject controls
+    objectName: "hotkeyConfigWindow"
     required property QtObject hotkeys
     required property QtObject keyNamer
     required property QtObject session
-    // the row waiting for a key: which list, and which row (-1: none)
+    // the row waiting for a key ("" for none)
     property string catching: ""
-    property int catchRow: -1
     property string catchAction: ""
-    title: win.mode === "buttons" ? qsTr("Controller Config") : qsTr("Configure Hotkeys")
+    title: qsTr("Configure Hotkeys")
     // the key or pad input caught goes to the row that asked
     function take(name) {
-        if (win.catching === "button") win.controls.run("addKey", [win.catchRow, name])
-        else if (win.catching === "hotkey") win.hotkeys.run("addKey", [win.catchAction, name])
+        if (win.catching === "hotkey") win.hotkeys.run("addKey", [win.catchAction, name])
         win.catching = ""
-        win.catchRow = -1
         win.catchAction = ""
     }
     onClosing: if (win.catching !== "") { win.catching = ""; win.session.run("stopCatchPad") }
@@ -35,45 +29,10 @@ ApplicationWindow {
         anchors.fill: parent
         anchors.margins: 8
 
-        Label {
-            visible: win.mode === "buttons"
-            text: win.controls.core === "" ? qsTr("No machine is open: its buttons are listed once one is") : win.controls.core
-            font.bold: true
-        }
-
-        StackLayout {
-            currentIndex: win.mode === "buttons" ? 0 : 1
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-
-            ListView {
-                id: buttonList
-                clip: true
-                model: win.controls.rows("buttons")
-                ScrollBar.vertical: ScrollBar {}
-                delegate: RowLayout {
-                    id: brow
-                    required property int index
-                    required property string button
-                    required property string keys
-                    required property bool changed
-                    width: buttonList.width - 16
-                    Label { text: brow.button + (brow.changed ? " *" : ""); Layout.preferredWidth: 160; elide: Text.ElideRight }
-                    TextField {
-                        text: brow.keys
-                        Layout.fillWidth: true
-                        onEditingFinished: if (text !== brow.keys) win.controls.run("bind", [brow.index, text])
-                    }
-                    Button {
-                        text: win.catching === "button" && win.catchRow === brow.index ? qsTr("Press a key or a pad input...") : qsTr("Catch")
-                        onClicked: { win.catching = "button"; win.catchRow = brow.index; catcher.forceActiveFocus(); win.session.run("catchPad") }
-                    }
-                    Button { text: qsTr("Reset"); enabled: brow.changed; onClicked: win.controls.run("reset", [brow.index]) }
-                }
-            }
-
-            ListView {
+        ListView {
                 id: hotkeyList
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 clip: true
                 model: win.hotkeys.rows("hotkeys")
                 section.property: "group"
@@ -97,7 +56,6 @@ ApplicationWindow {
                     }
                     Button { text: qsTr("Reset"); enabled: hrow.changed; onClicked: win.hotkeys.run("reset", [hrow.action]) }
                 }
-            }
         }
 
         // takes the next key pressed for the row that asked
@@ -121,11 +79,8 @@ ApplicationWindow {
         }
 
         RowLayout {
-            Label { text: win.mode === "buttons" ? win.controls.error : win.hotkeys.error; color: "#b00020"; Layout.fillWidth: true }
-            Button {
-                text: win.mode === "buttons" ? qsTr("Reset Every Button") : qsTr("Reset Every Hotkey")
-                onClicked: win.mode === "buttons" ? win.controls.run("resetAll") : win.hotkeys.run("resetAll")
-            }
+            Label { text: win.hotkeys.error; color: "#b00020"; Layout.fillWidth: true }
+            Button { text: qsTr("Reset Every Hotkey"); onClicked: win.hotkeys.run("resetAll") }
         }
     }
 }

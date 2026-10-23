@@ -27,8 +27,10 @@ public:
 	/* why not, when it is not */
 	const std::string &problem() const { return problem_; }
 
-	/* the names of every input held now; picks up pads plugged in or out */
-	void poll(std::vector<std::string> &held);
+	/* the names of every input held now; picks up pads plugged in or out.
+	 * With `axes`, each axis too, by Chimera's names ("X1 LeftThumbX Axis",
+	 * "J1 X Axis"), from -10000 to 10000 as Chimera reads them */
+	void poll(std::vector<std::string> &held, std::vector<std::pair<std::string, int>> *axes = nullptr);
 
 	/* the pads open now, by name */
 	std::vector<std::string> names() const;

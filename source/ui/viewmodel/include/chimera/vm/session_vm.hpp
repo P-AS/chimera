@@ -294,6 +294,8 @@ public:
 	/* the controller's name as the package declares it (Chimera's
 	 * ControllerDefinition name; "Waterbox Controller" when it says none) */
 	const std::string &controllerName() const { return controllerName_; }
+	/* the picture of the controller the package ships (a PNG's bytes; "" for none) */
+	const std::string &controllerPicture() const { return controllerPicture_; }
 	/* the package the machine open runs ("" for none) */
 	const std::string &packagePath() const { return packagePath_; }
 	/* an input as Chimera's input display writes it: for each player in turn
@@ -305,6 +307,15 @@ public:
 	/* each button's keys ("Down, J1 POV0D"), by index: as they are, as the
 	 * package has them, and given again (the view's thread) */
 	const std::vector<std::string> &bindingTexts() const { return bindings_.texts(); }
+	/* the autofire keys of each button (the package's, and as set), and the analog controls' bindings */
+	const std::vector<std::string> &defaultAutofireTexts() const { return defaultAutofire_; }
+	const std::vector<std::string> &autofireTexts() const { return autofireBindings_.texts(); }
+	void setAutofireTexts(std::vector<std::string> texts);
+	const std::vector<AnalogBind> &defaultAnalogBinds() const { return defaultAnalog_; }
+	const std::vector<AnalogBind> &analogBinds() const { return analogBinds_; }
+	void setAnalogBinds(std::vector<AnalogBind> binds);
+	/* each pad axis now, by Chimera's names, -10000..10000 (catching an analog binding) */
+	std::vector<std::pair<std::string, int>> padAxesNow() const;
 	const std::vector<std::string> &defaultBindingTexts() const { return defaultBindings_; }
 	void setBindingTexts(std::vector<std::string> texts);
 	const std::string &mnemonics() const { return mnemonics_; }
@@ -651,7 +662,7 @@ private:
 	InputLog &inputs_;
 	std::vector<std::string> buttonNames_;
 	std::vector<Axis> axes_;
-	std::string controllerName_, packagePath_;
+	std::string controllerName_, controllerPicture_, packagePath_;
 	std::vector<ProjectFile> projectFiles_;
 	class ProjectFileRows : public RowModel
 	{
@@ -669,6 +680,12 @@ private:
 	std::vector<std::string> defaultBindings_;
 	std::string mnemonics_;
 	Bindings bindings_;
+	Bindings autofireBindings_;
+	std::vector<std::string> defaultAutofire_;
+	std::vector<AnalogBind> analogBinds_, defaultAnalog_;
+	/* the keys held, for the machine's thread */
+	std::mutex keysHeldM_;
+	std::vector<std::string> keysHeld_;
 	std::map<std::string, bool> keysDown_;
 
 	/* the machine's thread; everything below it is that thread's alone,
@@ -829,10 +846,24 @@ private:
 	std::unique_ptr<Gamepads> padsM_;
 	/* catching a pad input: when to look next, and what was held already */
 	bool catchingM_ = false;
+	/* catching an axis: where each was, and how far each has moved since */
+	bool catchingAxisM_ = false;
+	std::vector<std::pair<std::string, int>> catchAxesFromM_;
+	std::map<std::string, int> catchMovedM_;
+	/* the pointer over the picture, -10000..10000 each way (WMouse X, WMouse Y) */
+	std::atomic<int> pointerXM_{0}, pointerYM_{0};
 	Clock::time_point catchDue_{};
 	std::vector<std::string> catchHeldM_;
 	void catchPollOnMachine();
 	Bindings bindingsM_;
+	Bindings autofireBindingsM_;
+	std::vector<AnalogBind> analogBindsM_;
+	std::vector<Axis> axesM_;
+	uint64_t autofireWasM_ = 0;
+	int64_t autofireStartM_[64] = {};
+	std::vector<std::pair<std::string, int>> padAxes_, padAxesCopy_;
+	/* the keys and pad inputs held this frame */
+	std::vector<std::string> keysThisFrameM_;
 	Connection periodWatch_;
 	std::atomic<int64_t> periodM_{1};
 	std::vector<std::string> padHeld_;

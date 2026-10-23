@@ -174,8 +174,11 @@ void Gamepads::reopen()
 	}
 }
 
-void Gamepads::poll(std::vector<std::string> &held)
+void Gamepads::poll(std::vector<std::string> &held, std::vector<std::pair<std::string, int>> *axes)
 {
+	if (axes != nullptr) axes->clear();
+	/* SDL's -32768..32767 as Chimera's -10000..10000 */
+	auto conv = [](int v) { return static_cast<int>(v / (32768 / 10000.0f)); };
 	held.clear();
 	Api &a = *api_;
 	if (!a.started) return;
@@ -215,6 +218,16 @@ void Gamepads::poll(std::vector<std::string> &held)
 			if (rx >= kStick) held.push_back(p.prefix + "RStickRight");
 			if (a.GameControllerGetAxis(p.handle, AXIS_TRIGGERLEFT) > kTrigger) held.push_back(p.prefix + "LeftTrigger");
 			if (a.GameControllerGetAxis(p.handle, AXIS_TRIGGERRIGHT) > kTrigger) held.push_back(p.prefix + "RightTrigger");
+			if (axes != nullptr)
+			{
+				/* as Chimera's SDL2 gamepad names them, the y axes as SDL gives them */
+				axes->emplace_back(p.prefix + "LeftThumbX Axis", conv(lx));
+				axes->emplace_back(p.prefix + "LeftThumbY Axis", conv(ly));
+				axes->emplace_back(p.prefix + "RightThumbX Axis", conv(rx));
+				axes->emplace_back(p.prefix + "RightThumbY Axis", conv(ry));
+				axes->emplace_back(p.prefix + "LeftTrigger Axis", conv(a.GameControllerGetAxis(p.handle, AXIS_TRIGGERLEFT)));
+				axes->emplace_back(p.prefix + "RightTrigger Axis", conv(a.GameControllerGetAxis(p.handle, AXIS_TRIGGERRIGHT)));
+			}
 		}
 		else
 		{
@@ -224,6 +237,7 @@ void Gamepads::poll(std::vector<std::string> &held)
 			{
 				const int v = a.JoystickGetAxis(p.handle, x);
 				const std::string axis = p.prefix + (x < 9 ? std::string(letters[x]) : "Axis" + std::to_string(x));
+				if (axes != nullptr) axes->emplace_back(axis + " Axis", conv(v));
 				if (v >= kStick) held.push_back(axis + "+");
 				if (v <= -kStick) held.push_back(axis + "-");
 			}

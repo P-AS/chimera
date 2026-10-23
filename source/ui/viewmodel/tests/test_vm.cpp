@@ -570,6 +570,33 @@ void bindings()
 	CHECK(b.buttonsOf("W").empty());      /* the section that names fewer buttons is not taken */
 	CHECK(b.buttonsOf("Q").empty());      /* a button the machine does not have */
 	CHECK(!b.parse("{\"a\": [1, 2", {"P1 Up"}, error) && !error.empty());
+	/* the autofire keys are their own group; the buttons are only AllTrollers' */
+	const std::string groups = R"({
+		"AllTrollers": { "Synth Controller": { "P1 A": "X" } },
+		"AllTrollersAutoFire": { "Synth Controller": { "P1 A": "Q" } },
+		"AllTrollersAnalog": { "Synth Controller": {
+			"P1 Dial": { "Value": "X1 LeftThumbX Axis", "Mult": -0.5, "Deadzone": 0.2, "ButtonBindPositive": "L", "ButtonBindNegative": null } } }
+	})";
+	Bindings fire;
+	CHECK(b.parse(groups, {"P1 A"}, error) && b.buttonsOf("X").size() == 1 && b.buttonsOf("Q").empty());
+	CHECK(fire.parse(groups, {"P1 A"}, "AllTrollersAutoFire", error) && fire.buttonsOf("Q").size() == 1 && fire.buttonsOf("X").empty());
+	/* the analog bindings, by the machine's analog controls; one the file does not name is unbound */
+	const std::vector<AnalogBind> analog = parseAnalogBinds(groups, {"P1 Dial", "P1 Wheel"}, error);
+	CHECK(analog.size() == 2 && analog[0].value == "X1 LeftThumbX Axis" && analog[0].mult == -0.5 && analog[0].deadzone == 0.2 &&
+		  analog[0].positive == "L" && analog[0].negative.empty() && analog[1].empty() && analog[1].mult == 1.0 && analog[1].deadzone == 0.1);
+	AnalogBind back;
+	CHECK(analogBindFrom(analogBindJson(analog[0]), back) && back.value == analog[0].value && back.mult == -0.5 && back.positive == "L");
+	/* Chimera's arithmetic: a key to an end, the axis past the dead zone and scaled back up, around the rest value, kept in range */
+	bool active = false;
+	AnalogBind dial;
+	dial.mult = 1.0;
+	dial.deadzone = 0.0;
+	CHECK(analogValue(dial, 0, true, false, 0, 255, 128, active) == 255 && active);
+	CHECK(analogValue(dial, 0, false, true, 0, 255, 128, active) == 0 && active);
+	CHECK(analogValue(dial, 5000, false, false, 0, 255, 128, active) == 192 && active);
+	dial.deadzone = 0.1;
+	CHECK(analogValue(dial, 900, false, false, -100, 100, 0, active) == 0 && !active);
+	CHECK(analogValue(dial, -5000, false, false, -100, 100, 0, active) == -44 && active);
 }
 
 /* Chimera's Key Priority, for a key that is a hotkey and a button: both
@@ -5028,6 +5055,7 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
 	PianoRollViewModel roll(d, inputs, session);
+	ControlsViewModel controls(d, session);
 	std::string error;
 	session.run("open", {std::string(slotsPackage), std::string(rom)}, error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
@@ -5106,6 +5134,64 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 		CHECK(recorded(1) == "-40 ");
 		roll.run("toggleAutoHold", {std::string("P1 Dial")}, error);
 	}
+	/* the dial bound in Controller Config, as Chimera's AnalogBind: a key for
+	 * either end, the sensitivity, the pointer past a dead zone */
+	{
+		auto held = [&](const std::vector<std::string> &keys) {
+			const int64_t end = inputs.size();
+			session.run("seek", {end}, error);
+			d.until([&] { return session.frame.get() == end; }, 20);
+			for (const std::string &k : keys) session.key(k, true);
+			session.run("frameAdvance", {}, error);
+			d.until([&] { return session.frame.get() == end + 1; }, 20);
+			for (const std::string &k : keys) session.key(k, false);
+			return dial(end);
+		};
+		RowModel &analog = *controls.rowLists()[2].model;
+		CHECK(analog.rowCount() == 1 && analog.columnName(0) == "axis" && controls.axisGroups.get() == "[\"Player 1\"]");
+		CHECK(controls.run("press", {std::string("positive"), int64_t{0}, std::string("L")}, error).has_value());
+		controls.run("press", {std::string("negative"), int64_t{0}, std::string("H")}, error);
+		controls.run("setAnalog", {int64_t{0}, std::string("mult"), 0.5}, error);
+		std::string positive;
+		double mult = 0;
+		fromValue(analog.cell(0, 5), positive);
+		fromValue(analog.cell(0, 3), mult);
+		CHECK(positive == "L" && mult == 0.5 && session.analogBinds()[0].positive.empty());
+		controls.run("save", {}, error);
+		CHECK(session.analogBinds()[0].positive == "L" && controls.savedAnalog.get().find("\"P1 Dial\"") != std::string::npos);
+		/* half the way to an end; both ends at once are no push, and the dial is left as the movie has it */
+		CHECK(held({"L"}) == 50 && held({"H"}) == -50 && held({"L", "H"}) == 0 && held({}) == 0);
+		/* the pointer, half way to the right, past a dead zone of a tenth: (0.5 - 0.1) / 0.9 of the way */
+		controls.run("setAnalog", {int64_t{0}, std::string("value"), std::string("WMouse X")}, error);
+		controls.run("setAnalog", {int64_t{0}, std::string("mult"), 1.0}, error);
+		controls.run("setAnalog", {int64_t{0}, std::string("deadzone"), 0.1}, error);
+		controls.run("save", {}, error);
+		session.run("pointer", {int64_t{5000}, int64_t{0}}, error);
+		CHECK(held({}) == 44);
+		/* inside the dead zone it is left alone */
+		session.run("pointer", {int64_t{800}, int64_t{0}}, error);
+		CHECK(held({}) == 0);
+		/* Flip Axis: the other way */
+		controls.run("flip", {int64_t{0}}, error);
+		controls.run("save", {}, error);
+		session.run("pointer", {int64_t{5000}, int64_t{0}}, error);
+		CHECK(held({}) == -44);
+		/* kept in the control's range */
+		controls.run("setAnalog", {int64_t{0}, std::string("mult"), -2.0}, error);
+		controls.run("save", {}, error);
+		session.run("pointer", {int64_t{10000}, int64_t{0}}, error);
+		CHECK(held({}) == -100);
+		CHECK(!controls.run("setAnalog", {int64_t{0}, std::string("speed"), 1.0}, error) && error == "no field speed: value, mult or deadzone");
+		CHECK(!controls.run("unbind", {int64_t{1}}, error) && error == "no analog control 1");
+		/* Unbind!: the pointer no longer moves it, the keys still do */
+		controls.run("unbind", {int64_t{0}}, error);
+		controls.run("save", {}, error);
+		CHECK(held({}) == 0 && held({"H"}) == 100);
+		/* the package's again: nothing remembered */
+		controls.run("loadDefaults", {}, error);
+		controls.run("save", {}, error);
+		CHECK(controls.savedAnalog.get() == "{}" && session.analogBinds()[0].positive.empty());
+	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;
@@ -5126,29 +5212,40 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	session.run("open", {std::string(package), std::string(rom)}, error);
 	CHECK(d.until([&] { return session.isOpen.get() && controls.core.get() == "Synth"; }, 60));
 	RowModel &buttons = *controls.rowLists()[0].model;
+	CHECK(buttons.columnName(3) == "keys" && buttons.columnName(4) == "packageKeys" && buttons.columnName(5) == "changed");
 	auto text = [&](int64_t row, int32_t column) {
 		std::string t;
 		fromValue(buttons.cell(row, column), t);
 		return t;
 	};
-	int64_t down = -1;
+	int64_t down = -1, a = -1;
 	for (int64_t r = 0; r < buttons.rowCount(); r++)
+	{
 		if (text(r, 0) == "P1 Down") down = r;
-	CHECK(down >= 0);
-	if (down < 0) return false;
-	const std::string packageKeys = text(down, 2);
-	CHECK(text(down, 1) == packageKeys && packageKeys.find("Down") != std::string::npos);
+		if (text(r, 0) == "P1 A") a = r;
+	}
+	CHECK(down >= 0 && a >= 0);
+	if (down < 0 || a < 0) return false;
+	/* Chimera's tabs and title: one player, so one tab */
+	CHECK(text(down, 2) == "Player 1" && controls.buttonGroups.get() == "[\"Player 1\"]");
+	CHECK(ControlsViewModel::groupOf("P2 Start") == "Player 2" && ControlsViewModel::groupOf("Power") == "Console" &&
+		  ControlsViewModel::groupOf("P1Up") == "Console");
+	CHECK(controls.title.get() == session.controllerName() + " Configuration");
+	const std::string packageKeys = text(down, 4);
+	CHECK(text(down, 3) == packageKeys && packageKeys.find("Down") != std::string::npos);
 	int64_t frame = 0;
 	auto step = [&] {
 		session.run("frameAdvance", {}, error);
 		frame++;
 		CHECK(d.until([&] { return session.frame.get() == frame; }, 20));
 	};
-	/* rebound: K holds Down, and Down holds nothing */
-	CHECK(controls.run("bind", {down, std::string("K")}, error).has_value());
+	/* rebound on the window's copy: the machine has the old keys until Save */
+	CHECK(controls.run("bind", {std::string("normal"), down, std::string("K")}, error).has_value());
 	bool changed = false;
-	fromValue(buttons.cell(down, 3), changed);
-	CHECK(text(down, 1) == "K" && changed);
+	fromValue(buttons.cell(down, 5), changed);
+	CHECK(controls.editing.get() && text(down, 3) == "K" && changed && session.bindingTexts()[static_cast<size_t>(down)] == packageKeys);
+	CHECK(controls.run("save", {}, error).has_value() && !controls.editing.get());
+	/* K holds Down, and Down holds nothing */
 	session.key("K", true);
 	step();
 	session.key("K", false);
@@ -5166,19 +5263,66 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.opens.get() == 2; }, 60));
 	CHECK(session.bindingTexts()[static_cast<size_t>(down)] == "K");
 	frame = session.frame.get();
-	/* one more key, then back to the package's */
-	controls.run("addKey", {down, std::string("J")}, error);
-	CHECK(text(down, 1) == "K, J");
-	controls.run("addKey", {down, std::string("J")}, error);
-	CHECK(text(down, 1) == "K, J");
-	controls.run("reset", {down}, error);
-	CHECK(text(down, 1) == packageKeys && controls.saved.get() == "{}");
-	controls.run("bind", {down, std::string("")}, error);
-	CHECK(text(down, 1).empty());
-	controls.run("resetAll", {}, error);
-	CHECK(text(down, 1) == packageKeys && controls.saved.get() == "{}");
-	CHECK(!controls.run("bind", {int64_t{99}, std::string("K")}, error) && error == "no button 99");
-
+	/* keys pressed in a box, as Chimera's: with Auto Tab one replaces the keys and the next box takes the next */
+	auto press = [&](const char *key) {
+		return controls.run("press", {std::string("normal"), down, std::string(key)}, error).value_or(Value());
+	};
+	CHECK(controls.autoTab.get() && press("J") == Value(true) && text(down, 3) == "J");
+	/* without it, one more each, never twice, and the box keeps the focus */
+	controls.autoTab.set(false);
+	CHECK(press("K") == Value(false) && text(down, 3) == "J,K");
+	press("K");
+	CHECK(text(down, 3) == "J,K");
+	/* never bound by a key: Alt+F4, and what only the arrow's menu gives */
+	press("Alt+F4");
+	press("WMouse L");
+	CHECK(text(down, 3) == "J,K");
+	CHECK(controls.run("special", {std::string("normal"), down, std::string("WMouse L")}, error).has_value() && text(down, 3) == "J,K,WMouse L");
+	CHECK(!controls.run("special", {std::string("normal"), down, std::string("Q")}, error) && error == "Q is not a special binding");
+	/* Escape empties the box */
+	press("Escape");
+	CHECK(text(down, 3).empty());
+	controls.autoTab.set(true);
+	/* Cancel lets the copy go */
+	controls.run("cancel", {}, error);
+	CHECK(!controls.editing.get() && text(down, 3) == "K" && session.bindingTexts()[static_cast<size_t>(down)] == "K");
+	/* Load Defaults, then Save: the package's keys, nothing remembered */
+	controls.run("loadDefaults", {}, error);
+	CHECK(text(down, 3) == packageKeys && session.bindingTexts()[static_cast<size_t>(down)] == "K");
+	controls.run("save", {}, error);
+	CHECK(session.bindingTexts()[static_cast<size_t>(down)] == packageKeys && controls.saved.get() == "{}");
+	/* Clear, then Save: no keys, remembered as none */
+	controls.run("clear", {}, error);
+	controls.run("save", {}, error);
+	CHECK(text(down, 3).empty() && session.bindingTexts()[static_cast<size_t>(down)].empty() &&
+		  controls.saved.get().find("\"P1 Down\": \"\"") != std::string::npos);
+	controls.run("loadDefaults", {}, error);
+	controls.run("save", {}, error);
+	CHECK(controls.saved.get() == "{}");
+	CHECK(!controls.run("bind", {std::string("normal"), int64_t{99}, std::string("K")}, error) && error == "no button 99");
+	CHECK(!controls.run("bind", {std::string("analog"), down, std::string("K")}, error) &&
+		  error == "no table analog: normal, autofire, positive or negative");
+	/* an autofire key: its button pressed on the frame it goes down and every other frame after (on 1, off 1) */
+	{
+		RowModel &autofire = *controls.rowLists()[1].model;
+		CHECK(controls.run("bind", {std::string("autofire"), a, std::string("Q")}, error).has_value());
+		std::string q;
+		fromValue(autofire.cell(a, 3), q);
+		CHECK(q == "Q");
+		controls.run("save", {}, error);
+		CHECK(controls.savedAutofire.get().find("\"P1 A\": \"Q\"") != std::string::npos && session.autofireTexts()[static_cast<size_t>(a)] == "Q");
+		const int64_t first = frame;
+		session.key("Q", true);
+		for (int i = 0; i < 5; i++) step();
+		session.key("Q", false);
+		step();
+		std::string pattern;
+		for (int64_t f = first; f < first + 6; f++) pattern += (inputs.at(f) >> a & 1) != 0 ? "1" : "0";
+		CHECK(pattern == "101010");
+		controls.run("loadDefaults", {}, error);
+		controls.run("save", {}, error);
+		CHECK(controls.savedAutofire.get() == "{}");
+	}
 	/* hotkeys: run, repeat ignored, let go, rebound, back */
 	int downs = 0, ups = 0;
 	hotkeys.add("General", "Frame Advance", "F", [&](bool isDown) { (isDown ? downs : ups)++; });

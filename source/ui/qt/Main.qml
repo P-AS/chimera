@@ -582,8 +582,11 @@ ApplicationWindow {
     }
     Themes { id: themesWindow; vm: root.themes; colors: root.themeColors; visible: false }
     // Chimera's Controller Config and Configure Hotkeys, each a window of its own
-    Controls { id: controllerWindow; mode: "buttons"; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
-    Controls { id: hotkeyWindow; mode: "hotkeys"; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
+    ControllerConfig {
+        id: controllerWindow; controls: root.controls; keyNamer: root.keyNamer; session: root.session
+        mainWindow: root; themeColor: root.osdColor; visible: false
+    }
+    Controls { id: hotkeyWindow; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
     LuaConsole {
         id: luaConsoleWindow; vm: root.luaConsole; folderOf: root.folderOf; visible: false
         fileUrl: (path) => root.pictureFiles.folderUrl(path); localPath: (url) => root.pictureFiles.localPath(url)
@@ -792,10 +795,19 @@ ApplicationWindow {
             if (shown.width > 0 && shown.height > 0) {
                 root.hostInput.mouseX = Math.floor(src.x + (at.x - shown.x) * src.width / shown.width)
                 root.hostInput.mouseY = Math.floor(src.y + (at.y - shown.y) * src.height / shown.height)
+                // for an analog control bound to the pointer: Chimera's -10000 at the picture's left or top to 10000 at the other side
+                root.session.run("pointer", [Math.round((at.x - shown.x) / shown.width * 20000 - 10000),
+                                             Math.round((at.y - shown.y) / shown.height * 20000 - 10000)])
             }
             if (buttons < 0) return
-            root.hostInput.mouseButtons = (buttons & Qt.LeftButton ? 1 : 0) | (buttons & Qt.MiddleButton ? 2 : 0) | (buttons & Qt.RightButton ? 4 : 0)
-                                        | (buttons & Qt.BackButton ? 8 : 0) | (buttons & Qt.ForwardButton ? 16 : 0)
+            const mask = (buttons & Qt.LeftButton ? 1 : 0) | (buttons & Qt.MiddleButton ? 2 : 0) | (buttons & Qt.RightButton ? 4 : 0)
+                       | (buttons & Qt.BackButton ? 8 : 0) | (buttons & Qt.ForwardButton ? 16 : 0)
+            // the pointer's buttons over the picture hold what they are bound to, as keys do (WMouse L, M, R, 1, 2)
+            const names = ["WMouse L", "WMouse M", "WMouse R", "WMouse 1", "WMouse 2"]
+            const was = root.hostInput.mouseButtons
+            for (let b = 0; b < 5; b++)
+                if (((mask ^ was) >> b) & 1) root.session.run("key", [names[b], ((mask >> b) & 1) === 1])
+            root.hostInput.mouseButtons = mask
         }
         // nothing open: Chimera's mark, faint, blinking now and then, its eye
         // following the pointer across the window

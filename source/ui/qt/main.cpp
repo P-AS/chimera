@@ -26,6 +26,7 @@
 #include <QQuickStyle>
 #include <QProcess>
 #include <QFileInfo>
+#include <QQuickImageProvider>
 #include <QQuickItem>
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
@@ -37,6 +38,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <mutex>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -220,6 +222,29 @@ Spread spread(std::vector<double> v)
 	s.worst = v.back();
 	return s;
 }
+
+/* the picture of the controller a package ships, for Controller Config */
+class ControllerPicture : public QQuickImageProvider
+{
+public:
+	ControllerPicture() : QQuickImageProvider(QQuickImageProvider::Image) {}
+	QImage requestImage(const QString &, QSize *size, const QSize &) override
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+		QImage image = QImage::fromData(bytes_);
+		if (size != nullptr) *size = image.size();
+		return image;
+	}
+	void set(const std::string &bytes)
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+		bytes_ = QByteArray(bytes.data(), static_cast<qsizetype>(bytes.size()));
+	}
+
+private:
+	std::mutex mutex_;
+	QByteArray bytes_;
+};
 
 } // namespace
 
@@ -854,6 +879,9 @@ int main(int argc, char **argv)
 	config.keep(session, "greenzoneEvery");
 	config.keep(ramWatch, "showOnScreen");
 	config.keep(controls, "saved");
+	config.keep(controls, "savedAutofire");
+	config.keep(controls, "savedAnalog");
+	config.keep(controls, "autoTab");
 	/* the themes: Chimera's built-in two, and the folder beside the program
 	 * (CHIMERA_THEMES_DIR for a test); --color-scheme picks Light or Dark for
 	 * this run only */
@@ -892,6 +920,13 @@ int main(int argc, char **argv)
 	qt::QmlViewModel ramWatchQml(ramWatch);
 	qt::QmlViewModel newProjectQml(newProject);
 	qt::QmlViewModel hexEditorQml(hexEditor);
+	/* the picture of the controller a package ships, for Controller Config:
+	 * "image://controller/<count>", decoded from the view model's bytes. Told
+	 * before the window is, so the window asks for the new one */
+	auto *controllerPicture = new ControllerPicture;
+	vm::Connection controllerPictureShown = controls.pictureShown.changed.connect([&controls, controllerPicture] {
+		controllerPicture->set(controls.picture());
+	});
 	qt::QmlViewModel controlsQml(controls);
 	qt::QmlViewModel themesQml(themes);
 	qt::QmlViewModel hotkeysQml(hotkeys);
@@ -1047,6 +1082,7 @@ int main(int argc, char **argv)
 	qt::PictureFiles pictureFiles(session.screen);
 	pictureFiles.say = [&session](const std::string &text) { session.status.set(text); };
 	QQmlApplicationEngine engine;
+	engine.addImageProvider(QStringLiteral("controller"), controllerPicture);
 	engine.setInitialProperties({
 		{QStringLiteral("session"), QVariant::fromValue<QObject *>(&sessionQml)},
 		{QStringLiteral("pianoRoll"), QVariant::fromValue<QObject *>(&pianoRollQml)},

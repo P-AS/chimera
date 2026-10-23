@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <fstream>
@@ -1162,16 +1163,45 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				/* what is held already is not what is pressed */
 				catchHeldM_.clear();
 				padsM_->poll(catchHeldM_);
+				catchingAxisM_ = false;
 				catchingM_ = true;
 				catchDue_ = Clock::now() + std::chrono::milliseconds(16);
 			});
 			return {};
 		});
-	command("stopCatchPad", "stops waiting for a gamepad input", {}, [this](const Args &, std::string &) -> Value {
+	command("catchAxis", "waits for a gamepad axis to be moved, as Chimera's analog binding does (a stick wiggled), "
+		"and puts its name in caughtPad", {}, [this](const Args &, std::string &) -> Value {
+			caughtPad.set("");
+			catchingPad.set(true);
+			submit([this] {
+				if (!padsM_) padsM_ = std::make_unique<Gamepads>();
+				std::vector<std::string> held;
+				catchAxesFromM_.clear();
+				padsM_->poll(held, &catchAxesFromM_);
+				catchMovedM_.clear();
+				catchingAxisM_ = true;
+				catchingM_ = true;
+				catchDue_ = Clock::now() + std::chrono::milliseconds(16);
+			});
+			return {};
+		});
+	command("stopCatchPad", "stops waiting for a gamepad input or axis", {}, [this](const Args &, std::string &) -> Value {
 		catchingPad.set(false);
-		submit([this] { catchingM_ = false; });
+		submit([this] {
+			catchingM_ = false;
+			catchingAxisM_ = false;
+		});
 		return {};
 	});
+	command("pointer", "where the pointer is over the picture, for an analog control bound to \"WMouse X\" or \"WMouse Y\": "
+		"-10000 at the picture's left or top edge to 10000 at its right or bottom", {"x", "y"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t x = 0, y = 0;
+			if (!arg(a, 0, x, error) || !arg(a, 1, y, error)) return {};
+			pointerXM_.store(static_cast<int>(std::clamp<int64_t>(x, -1000000, 1000000)));
+			pointerYM_.store(static_cast<int>(std::clamp<int64_t>(y, -1000000, 1000000)));
+			return {};
+		});
 	command("close", "closes the machine", {}, [this](const Args &, std::string &) -> Value {
 		submit([this] { closeOnMachine(); });
 		return {};
@@ -1413,11 +1443,38 @@ void SessionViewModel::key(const std::string &name, bool down)
 		stickyChanged();
 	}
 	uint64_t mask = 0;
+	std::vector<std::string> keys;
 	for (const auto &[k, isDown] : keysDown_)
 		if (isDown)
+		{
+			keys.push_back(k);
 			for (int b : bindings_.buttonsOf(k))
 				if (b < 64) mask |= uint64_t{1} << b;
+		}
 	held_.store(mask);
+	/* the keys held, for the autofire keys and the analog controls' keys, read by the machine's thread */
+	std::lock_guard<std::mutex> lock(keysHeldM_);
+	keysHeld_ = std::move(keys);
+}
+
+void SessionViewModel::setAutofireTexts(std::vector<std::string> texts)
+{
+	texts.resize(buttonNames_.size());
+	autofireBindings_.setTexts(texts);
+	submit([this, texts] { autofireBindingsM_.setTexts(texts); });
+}
+
+void SessionViewModel::setAnalogBinds(std::vector<AnalogBind> binds)
+{
+	binds.resize(axes_.size());
+	analogBinds_ = binds;
+	submit([this, binds] { analogBindsM_ = binds; });
+}
+
+std::vector<std::pair<std::string, int>> SessionViewModel::padAxesNow() const
+{
+	std::lock_guard<std::mutex> lock(padHeldCopyM_);
+	return padAxesCopy_;
 }
 
 void SessionViewModel::holdFrameAdvance(bool down)
@@ -3095,6 +3152,31 @@ void SessionViewModel::catchPollOnMachine()
 	catchDue_ = Clock::now() + std::chrono::milliseconds(16);
 	if (!padsM_) return;
 	std::vector<std::string> held;
+	/* an axis: caught once it has moved 20000 in all (Chimera's GetNextAxisEvent), a stick
+	 * wiggled, so one resting off its centre is not taken */
+	if (catchingAxisM_)
+	{
+		std::vector<std::pair<std::string, int>> axes;
+		padsM_->poll(held, &axes);
+		for (const auto &[name, v] : axes)
+		{
+			int was = v;
+			for (const auto &[n, old] : catchAxesFromM_)
+				if (n == name) was = old;
+			const int moved = (catchMovedM_[name] += std::abs(v - was));
+			if (moved >= 20000)
+			{
+				catchingM_ = catchingAxisM_ = false;
+				later([this, name] {
+					caughtPad.set(name);
+					catchingPad.set(false);
+				});
+				return;
+			}
+		}
+		catchAxesFromM_ = std::move(axes);
+		return;
+	}
 	padsM_->poll(held);
 	for (const std::string &name : held)
 		if (std::find(catchHeldM_.begin(), catchHeldM_.end(), name) == catchHeldM_.end())
@@ -3602,7 +3684,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	/* the analog controls: the engine's names, headers and rest values, the
 	 * ranges as the package declares them (its own input, or a machine's) */
 	std::vector<Axis> axes;
-	std::string controller = "Waterbox Controller";
+	std::string controller = "Waterbox Controller", picture;
 	bool gameCore = false, movieImport = false;
 	int64_t ms = 0;
 	gameTimerM_ = ce_session_game_time_ms(s, &ms) == 1;
@@ -3628,9 +3710,37 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		json::Json cfg;
 		std::string jerr;
 		const bool read = json::parse(config, cfg, jerr);
+		/* the controller is the machine's when the package is more than one (the machine whose
+		 * system this session is), else the package's: its name and the picture of it */
 		if (read)
-			if (const json::Json *input = cfg.find("input"))
+		{
+			const json::Json *input = cfg.find("input");
+			const char *sid = ce_session_system_id(s);
+			const std::string id = sid != nullptr ? sid : "";
+			auto lower = [](std::string t) {
+				for (char &c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+				return t;
+			};
+			if (const json::Json *machines = cfg.find("machines"); machines != nullptr && !id.empty())
+				for (const json::Json &m : machines->items)
+					if (const json::Json *mid = m.find("id"); mid != nullptr && lower(mid->text) == lower(id))
+					{
+						if (const json::Json *own = m.find("input")) input = own;
+						break;
+					}
+			if (input != nullptr)
+			{
 				if (const json::Json *n = input->find("name"); n != nullptr && !n->text.empty()) controller = n->text;
+				if (const json::Json *pic = input->find("picture"); pic != nullptr && !pic->text.empty())
+					if (ce_package *p = ce_package_open(package.c_str(), &perr))
+					{
+						uint64_t len = 0;
+						if (const uint8_t *d = ce_package_entry(p, pic->text.c_str(), &len))
+							picture.assign(reinterpret_cast<const char *>(d), static_cast<size_t>(len));
+						ce_package_free(p);
+					}
+			}
+		}
 		if (read)
 		{
 			if (const json::Json *k = cfg.find("kind")) gameCore = k->text == "game";
@@ -3671,6 +3781,16 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	std::string bindError;
 	bindingsM_ = Bindings();
 	if (!keybinds.empty()) bindingsM_.parse(keybinds, names, bindError);
+	/* the keys that fire a button while held, and the analog controls' bindings, as the package says */
+	autofireBindingsM_ = Bindings();
+	if (!keybinds.empty()) autofireBindingsM_.parse(keybinds, names, "AllTrollersAutoFire", bindError);
+	{
+		std::vector<std::string> axisNames;
+		for (const Axis &a : axes) axisNames.push_back(a.name);
+		analogBindsM_ = keybinds.empty() ? std::vector<AnalogBind>(axes.size()) : parseAnalogBinds(keybinds, axisNames, bindError);
+		axesM_ = axes;
+	}
+	autofireWasM_ = 0;
 	if (!padsM_) padsM_ = std::make_unique<Gamepads>();
 	padCount_ = 0;
 	std::string padText = padsM_->available() ? "No gamepads" : padsM_->problem();
@@ -3692,12 +3812,13 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	/* another game, or the same started again: another average, as Chimera's */
 	averageResetM_.store(true);
 	later([this, names, axes, mnemonics, keybinds, coreText, systemText, systemIdText, rate, label, inputsReplaced, frames, controller,
-			   gameCore, timer, saveData, movieImport, package, traces, registers, traceHead, surfaceText] {
+			   picture, gameCore, timer, saveData, movieImport, package, traces, registers, traceHead, surfaceText] {
 		surfaces.set(surfaceText);
 		hasTrace.set(traces);
 		hasRegisters.set(registers);
 		traceHeader.set(traceHead);
 		controllerName_ = controller;
+		controllerPicture_ = picture;
 		packagePath_ = package;
 		isGameCore.set(gameCore);
 		hasGameTimer.set(timer);
@@ -3712,6 +3833,17 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		const bool bound = keybinds.empty() || bindings_.parse(keybinds, buttonNames_, why);
 		defaultBindings_ = bindings_.texts();
 		defaultBindings_.resize(buttonNames_.size());
+		autofireBindings_ = Bindings();
+		if (!keybinds.empty()) autofireBindings_.parse(keybinds, buttonNames_, "AllTrollersAutoFire", why);
+		defaultAutofire_ = autofireBindings_.texts();
+		defaultAutofire_.resize(buttonNames_.size());
+		{
+			std::vector<std::string> axisNames;
+			for (const Axis &a : axes_) axisNames.push_back(a.name);
+			std::string analogWhy;
+			analogBinds_ = keybinds.empty() ? std::vector<AnalogBind>(axes_.size()) : parseAnalogBinds(keybinds, axisNames, analogWhy);
+			defaultAnalog_ = analogBinds_;
+		}
 		buttonCount.set(static_cast<int64_t>(names.size()));
 		coreName.set(coreText);
 		systemName.set(systemText);
@@ -3968,10 +4100,11 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		uint64_t padMask = 0;
 		if (padsM_)
 		{
-			padsM_->poll(padHeld_);
+			padsM_->poll(padHeld_, &padAxes_);
 			{
 				std::lock_guard<std::mutex> lock(padHeldCopyM_);
 				padHeldCopy_ = padHeld_;
+				padAxesCopy_ = padAxes_;
 			}
 			for (const std::string &name : padHeld_)
 				for (int b : bindingsM_.buttonsOf(name))
@@ -3996,6 +4129,28 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		{
 			toggleSticky(padPressed);
 			later([this] { stickyChanged(); });
+		}
+		/* the autofire keys: a button pressed on its first frame and every period after, Chimera's
+		 * AutofireController counting from the frame the key went down */
+		{
+			std::vector<std::string> keys;
+			{
+				std::lock_guard<std::mutex> lock(keysHeldM_);
+				keys = keysHeld_;
+			}
+			if (padsHeardM_.load()) keys.insert(keys.end(), padHeld_.begin(), padHeld_.end());
+			uint64_t firingKeys = 0;
+			for (const std::string &k : keys)
+				for (int b : autofireBindingsM_.buttonsOf(k))
+					if (b < 64) firingKeys |= uint64_t{1} << b;
+			const uint64_t started = firingKeys & ~autofireWasM_;
+			for (size_t b = 0; b < 64; b++)
+				if (started >> b & 1) autofireStartM_[b] = f;
+			autofireWasM_ = firingKeys;
+			const int64_t keyOn = fireOnM_.load(), keyPeriod = keyOn + fireOffM_.load();
+			for (size_t b = 0; b < 64; b++)
+				if (firingKeys >> b & 1 && keyPeriod > 0 && (f - autofireStartM_[b]) % keyPeriod < keyOn) held |= uint64_t{1} << b;
+			keysThisFrameM_ = std::move(keys);
 		}
 		/* what autohold holds, and what autofire presses this frame */
 		held |= autoholdMask_.load();
@@ -4022,8 +4177,33 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	uint64_t logged = 0;
 	const int32_t had = ce_session_movie_get(s_, f, &logged, axisCount ? axesBuf_.data() : nullptr);
 	if (had == 1 && !grow) return 0;
-	/* an Auto-hold analog column: its value goes in as a held button does */
 	bool axesHeld = false;
+	/* the analog controls' bindings: a stick off its rest, or a key pushing one, goes in as a held
+	 * button does; a control left alone keeps what the movie has */
+	if (live)
+		for (size_t i = 0; i < axisCount && i < analogBindsM_.size() && i < axesM_.size(); i++)
+		{
+			const AnalogBind &bind = analogBindsM_[i];
+			if (bind.empty()) continue;
+			int host = 0;
+			if (bind.value == "WMouse X") host = pointerXM_.load();
+			else if (bind.value == "WMouse Y") host = pointerYM_.load();
+			else if (padsHeardM_.load())
+				for (const auto &[name, v] : padAxes_)
+					if (name == bind.value) host = v;
+			auto heldNow = [this](const std::string &key) {
+				return !key.empty() && std::find(keysThisFrameM_.begin(), keysThisFrameM_.end(), key) != keysThisFrameM_.end();
+			};
+			bool active = false;
+			const int32_t v = analogValue(bind, host, heldNow(bind.positive), heldNow(bind.negative), axesM_[i].min, axesM_[i].max,
+				axesM_[i].neutral, active);
+			if (active && axesBuf_[i] != v)
+			{
+				axesBuf_[i] = v;
+				axesHeld = true;
+			}
+		}
+	/* an Auto-hold analog column: its value goes in as a held button does */
 	if (live)
 		for (size_t i = 0; i < columnPatternsM_.size(); i++)
 		{

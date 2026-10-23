@@ -4,6 +4,7 @@
     <file>Main.qml</file>
     <file alias="chimera.png">../../gui/Chimera.Client.GUI/images/chimera.png</file>
     <file alias="icons/arrow_green.png">../../gui/Chimera.Client.GUI/images/arrow_green.png</file>
+    <file alias="icons/arrow_black_down.png">../../gui/Chimera.Client.GUI/images/arrow_black_down.png</file>
     <file alias="icons/Pause.png">../../gui/Chimera.Client.GUI/images/Pause.png</file>
     <file alias="icons/Stop.png">../../gui/Chimera.Client.GUI/images/Stop.png</file>
     <file alias="icons/NewFile.png">../../gui/Chimera.Client.GUI/images/NewFile.png</file>
@@ -45,6 +46,7 @@
     <file>RamPoke.qml</file>
     <file>HexEditor.qml</file>
     <file>Controls.qml</file>
+    <file>ControllerConfig.qml</file>
     <file>Themes.qml</file>
     <file alias="themes/light.json">../../gui/Chimera.Client.Common/Resources/themes/light.json</file>
     <file alias="themes/dark.json">../../gui/Chimera.Client.Common/Resources/themes/dark.json</file>
