@@ -829,7 +829,7 @@ int main(int argc, char **argv)
 	 * the backups and the firmware follow them */
 	vm::PathsViewModel paths(dispatcher);
 	paths.programFolder.set(QCoreApplication::applicationDirPath().toStdString());
-	for (const char *name : {"base", "changed", "recentForRoms", "lastRomFolder"}) config.keep(paths, name);
+	for (const char *name : {"base", "changed", "systems", "systemChanged", "recentForRoms", "lastRomFolder"}) config.keep(paths, name);
 	auto followPaths = [&paths, &session, &cores] {
 		session.backupFolder.set(paths.resolve("Movie backups"));
 		if (!qEnvironmentVariableIsSet("CHIMERA_FIRMWARE_DIR") && cores.firmwareFolder.get() != paths.resolve("Firmware"))
@@ -843,7 +843,9 @@ int main(int argc, char **argv)
 		std::string e;
 		paths.run("setPath", {std::string("Firmware"), cores.firmwareFolder.get()}, e);
 	});
-	qt::PictureFiles::folderFor() = [&paths] { return QString::fromStdString(paths.resolve("Screenshots")); };
+	/* screenshots go to the system's own folder, as Chimera's ScreenshotAbsolutePathFor; a system opened gets its folders */
+	qt::PictureFiles::folderFor() = [&paths, &session] { return QString::fromStdString(paths.resolveFor(session.systemId.get(), "Screenshots")); };
+	vm::Connection systemFolders = session.opens.changed.connect([&paths, &session] { paths.useSystem(session.systemId.get()); });
 	qt::QmlViewModel pathsQml(paths);
 	vm::FirmwareViewModel firmware(dispatcher, cores);
 	qt::QmlViewModel firmwareQml(firmware);

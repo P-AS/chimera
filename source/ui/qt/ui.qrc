@@ -9,6 +9,7 @@
     <file alias="icons/Stop.png">../../gui/Chimera.Client.GUI/images/Stop.png</file>
     <file alias="icons/NewFile.png">../../gui/Chimera.Client.GUI/images/NewFile.png</file>
     <file alias="icons/OpenFile.png">../../gui/Chimera.Client.GUI/images/OpenFile.png</file>
+    <file alias="icons/Help.png">../../gui/Chimera.Client.GUI/images/Help.png</file>
     <file alias="icons/checkbox.png">../../gui/Chimera.Client.GUI/images/checkbox.png</file>
     <file alias="icons/Refresh.png">../../gui/Chimera.Client.GUI/images/Refresh.png</file>
     <file alias="icons/pencil.png">../../gui/Chimera.Client.GUI/images/pencil.png</file>

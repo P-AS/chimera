@@ -771,12 +771,53 @@ void pathsConfig()
 	std::string name, folder;
 	for (int64_t i = 0; i < rows->rowCount(); i++)
 	{
-		fromValue(rows->cell(i, 0), name);
+		fromValue(rows->cell(i, 1), name);
 		if (name != "Movies") continue;
-		fromValue(rows->cell(i, 2), folder);
-		fromValue(rows->cell(i, 3), isDefault);
+		fromValue(rows->cell(i, 3), folder);
+		fromValue(rows->cell(i, 4), isDefault);
 	}
 	CHECK(folder == (dir / "runs").string() && !isDefault);
+	/* Chimera's global list, in its order, the base first and temporary files last */
+	fromValue(rows->cell(0, 1), name);
+	CHECK(name == "Base" && rows->rowCount() == 14);
+	fromValue(rows->cell(13, 1), name);
+	CHECK(name == "Temp Files" && paths.resolve("Temp Files") == (dir / "program").string());
+	/* Chimera's words in a path: the program's folder, the last game's, and anything else is the program's folder */
+	CHECK(paths.run("setPath", {std::string("Lua"), std::string("%exe%/Scripts")}, error).has_value() &&
+		paths.resolve("Lua") == (dir / "program" / "Scripts").string());
+	paths.lastRomFolder.set((dir / "games").string());
+	CHECK(paths.run("setPath", {std::string("Lua"), std::string("%rom%/lua")}, error).has_value() &&
+		paths.resolve("Lua") == (dir / "games" / "lua").string());
+	CHECK(paths.run("setPath", {std::string("Lua"), std::string("Scripts")}, error).has_value() && paths.resolve("Lua") == (dir / "program").string());
+	CHECK(paths.run("setPath", {std::string("Lua"), std::string("%recent%")}, error).has_value() && !paths.resolve("Lua").empty());
+	/* "..": the folder above the base, as Chimera's Special Commands say */
+	CHECK(paths.run("setPath", {std::string("Lua"), std::string("../lua")}, error).has_value() && paths.resolve("Lua") == (dir / "lua").string());
+	paths.run("setPath", {std::string("Lua"), std::string("")}, error);
+	/* the base is a row too */
+	CHECK(paths.run("setPath", {std::string("Base"), (dir / "elsewhere").string()}, error).has_value() &&
+		paths.resolve("Movies") == (dir / "runs").string() && paths.resolve("Lua") == (dir / "elsewhere" / "Lua").string());
+	paths.run("setPath", {std::string("Base"), std::string(".")}, error);
+	CHECK(paths.base.get().empty());
+	/* a system's own folders, made when a game for it is opened: under its base, which is under the global one */
+	paths.useSystem("NES");
+	CHECK(paths.systems.get() == "[\"NES\"]" && rows->rowCount() == 18);
+	CHECK(paths.resolveFor("NES", "Screenshots") == (dir / "program" / "NES" / "Screenshots").string() &&
+		paths.resolveFor("NES", "ROM") == (dir / "program" / "NES").string() &&
+		paths.resolveFor("NES", "Savestates") == (dir / "program" / "NES" / "State").string());
+	/* a kind it has not falls back to its base */
+	CHECK(paths.resolveFor("NES", "Cheats") == (dir / "program" / "NES").string());
+	CHECK(fromValue(paths.run("setSystemPath", {std::string("NES"), std::string("Screenshots"), std::string("./Shots")}, error).value_or(Value()), got) &&
+		got == (dir / "program" / "NES" / "Shots").string());
+	CHECK(paths.run("setSystemPath", {std::string("NES"), std::string("Base"), (dir / "nes").string()}, error).has_value() &&
+		paths.resolveFor("NES", "Screenshots") == (dir / "nes" / "Shots").string());
+	CHECK(!paths.run("setSystemPath", {std::string("NES"), std::string("Movies"), std::string(".")}, error) && error == "no folder called Movies");
+	/* a folder picked, made relative to the base it is under, as Chimera's */
+	CHECK(fromValue(paths.run("makeRelative", {(dir / "nes" / "pics").string(), std::string("NES")}, error).value_or(Value()), got) && got == "./pics");
+	CHECK(fromValue(paths.run("makeRelative", {(dir / "program" / "Lua").string(), std::string("")}, error).value_or(Value()), got) && got == "./Lua");
+	CHECK(fromValue(paths.run("makeRelative", {(dir / "other").string(), std::string("")}, error).value_or(Value()), got) && got == (dir / "other").string());
+	paths.run("setSystemPath", {std::string("NES"), std::string("Base"), std::string("")}, error);
+	paths.run("setSystemPath", {std::string("NES"), std::string("Screenshots"), std::string("")}, error);
+	CHECK(paths.systemChanged.get() == "{}");
 	/* a dialog opens in the folder when it is there, else the nearest above it; nothing is made */
 	CHECK(fromValue(paths.run("dialogFolder", {std::string("Lua")}, error).value_or(Value()), got) && got == (dir / "program" / "Lua").string());
 	CHECK(fromValue(paths.run("dialogFolder", {std::string("Macros")}, error).value_or(Value()), got) && got == (dir / "program").string());
