@@ -289,6 +289,11 @@ int main(int argc, char **argv)
 		window("General", "Toggle Menu", "");
 		window("General", "Toggle Stay on Top", "");
 		window("General", "Full Screen", "Alt+Enter");
+		hotkeys.add("General", "Autofire", "", [&session](bool down) { session.armAutofire(down); });
+		hotkeys.add("General", "Autohold", "", [&session](bool down) { session.armAutohold(down); });
+		hotkeys.add("General", "Clear Autohold", "", [&session, run](bool down) {
+			if (down) run(session, "clearAutohold");
+		});
 		auto flip = [](vm::Property<bool> &p) { p.set(!p.get()); };
 		hotkeys.add("General", "Display FPS", "", [&session, flip](bool down) {
 			if (down) flip(session.showFps);
@@ -554,6 +559,9 @@ int main(int argc, char **argv)
 	config.keep(session, "showFrameCounter");
 	config.keep(session, "showLagCounter");
 	config.keep(session, "showInput");
+	config.keep(session, "autofireOn");
+	config.keep(session, "autofireOff");
+	config.keep(session, "autofireSkipsLag");
 	/* backups where Chimera puts them, beside the program, unless kept elsewhere */
 	session.backupFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Movies/backup")).toStdString());
 	config.keep(session, "backupFolder");

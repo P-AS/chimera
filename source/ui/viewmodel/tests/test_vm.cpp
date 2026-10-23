@@ -714,6 +714,65 @@ bool pianoRollColumns(const char *package, const char *rom)
 	return true;
 }
 
+/* Chimera's autohold and autofire: armed by their hotkey, a button pressed
+ * changes over; held or fired, it goes into the frames run */
+bool autoholdAndAutofire(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && session.buttonNames().size() == 8; }, 60));
+	/* the key the package gives P1 A, and Down's */
+	std::string keyA = session.defaultBindingTexts()[4];
+	keyA = keyA.substr(0, keyA.find(','));
+	auto press = [&](const std::string &k) {
+		session.key(k, true);
+		session.key(k, false);
+	};
+	auto advance = [&](int n) {
+		const int64_t to = session.frame.get() + n;
+		for (int i = 0; i < n; i++) session.run("frameAdvance", {}, error);
+		return d.until([&] { return session.frame.get() == to; }, 20);
+	};
+	/* not armed, a press is only a press */
+	press(keyA);
+	CHECK(session.autoheld.get().empty());
+	session.armAutohold(true);
+	CHECK(session.stickyArmed.get());
+	press(keyA);
+	session.armAutohold(false);
+	CHECK(session.autoheld.get() == "P1 A" && !session.stickyArmed.get() && session.stickyText.get() == "Held: P1 A ");
+	CHECK(advance(2));
+	CHECK((inputs.at(0) >> 4 & 1) && (inputs.at(1) >> 4 & 1));
+	/* autofire: on a frame, off a frame */
+	session.armAutofire(true);
+	press("Down");
+	session.armAutofire(false);
+	CHECK(session.autofired.get() == "P1 Down" && session.stickyText.get() == "Held: P1 A Auto-P1 Down ");
+	CHECK(advance(4));
+	CHECK((inputs.at(2) >> 1 & 1) && !(inputs.at(3) >> 1 & 1) && (inputs.at(4) >> 1 & 1) && !(inputs.at(5) >> 1 & 1));
+	CHECK((inputs.at(5) >> 4 & 1));
+	/* on two, off one */
+	session.autofireOn.set(2);
+	session.run("toggleAutofire", {std::string("P1 Down")}, error);
+	session.run("toggleAutofire", {std::string("P1 Down")}, error);
+	CHECK(advance(3));
+	CHECK((inputs.at(6) >> 1 & 1) && (inputs.at(7) >> 1 & 1) && !(inputs.at(8) >> 1 & 1));
+	/* armed again, the held one lets go */
+	session.armAutohold(true);
+	press(keyA);
+	session.armAutohold(false);
+	CHECK(session.autoheld.get().empty());
+	CHECK(session.run("clearAutohold", {}, error).has_value() && session.autofired.get().empty() && session.status.get() == "Autohold keys cleared");
+	CHECK(advance(1));
+	CHECK(inputs.at(9) == 0);
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	return true;
+}
+
 /* A project's backup, the greenzone cleared, and the state history check,
  * as Chimera's TAStudio has them */
 bool backupAndHistory(const char *package, const char *rom)
@@ -3179,6 +3238,7 @@ int main(int argc, char **argv)
 			ranMachine = projectDetails(argv[1], argv[2]) && ranMachine;
 			ranMachine = pianoRollColumns(argv[1], argv[2]) && ranMachine;
 			ranMachine = backupAndHistory(argv[1], argv[2]) && ranMachine;
+			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;

@@ -4,6 +4,7 @@
  * a slow frame never holds up the window; what it learns is posted to the
  * view's thread and shows up here as properties. */
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -73,6 +74,19 @@ public:
 	Property<bool> lagFrame{false};
 	/* the input of a frame as the input display writes it */
 	std::string inputDisplay(int64_t frame) const;
+	/* Chimera's autohold and autofire: while one is armed (its hotkey held),
+	 * a button newly pressed - a key's or a pad's - toggles being held, or
+	 * firing: on for autofireOn frames, off for autofireOff, lag frames not
+	 * counted unless autofireSkipsLag is off. Both last until cleared, and go
+	 * into the frames the machine runs as a press held does. */
+	Property<std::string> autoheld, autofired;
+	/* as Chimera shows them while arming: "Held: P1 A Auto-P1 B " */
+	Property<std::string> stickyText{"Held: "};
+	Property<bool> stickyArmed{false};
+	Property<int64_t> autofireOn{1}, autofireOff{1};
+	Property<bool> autofireSkipsLag{true};
+	void armAutohold(bool down);
+	void armAutofire(bool down);
 	/* A gamepad input caught for a binding (catchPad): waiting, and the
 	 * name of the input pressed ("X1 A", "J1 POV0U"; "" while waiting) */
 	Property<bool> catchingPad{false};
@@ -463,6 +477,18 @@ private:
 	std::unique_ptr<Sound> soundM_;
 
 	std::atomic<uint64_t> held_{0};
+	/* the sticky buttons, a bit each, and which arming is on (1 hold, 2 fire) */
+	std::atomic<uint64_t> autoholdMask_{0}, autofireMask_{0};
+	std::atomic<int> armed_{0};
+	std::atomic<int64_t> fireOnM_{1}, fireOffM_{1};
+	std::atomic<bool> fireSkipsLagM_{true};
+	/* each firing button's place in its pattern, and the pads' buttons held
+	 * at the last frame (a pad's press arms a toggle too) - the machine's */
+	std::array<int64_t, 64> fireAtM_{};
+	uint64_t padWasM_ = 0;
+	void toggleSticky(uint64_t pressed);
+	void stickyChanged();
+	std::vector<Connection> stickyWatches_;
 
 	/* what the next tick on the view's thread reports */
 	std::mutex pendingM_;

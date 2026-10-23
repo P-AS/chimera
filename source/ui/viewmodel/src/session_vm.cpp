@@ -117,6 +117,51 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			lagsTo_ = lags_ = 0;
 			updateOverlay(frame.get(), -1);
 		}));
+	expose("autoheld", "the buttons autohold holds, a space between", autoheld);
+	expose("autofired", "the buttons autofire fires, a space between", autofired);
+	expose("stickyArmed", "autohold or autofire is armed: a button pressed now is toggled", stickyArmed);
+	expose("stickyText", "the sticky buttons as Chimera shows them while arming: \"Held: P1 A Auto-P1 B \"", stickyText);
+	expose("autofireOn", "frames autofire presses a button for", autofireOn, true);
+	expose("autofireOff", "frames autofire lets it go for", autofireOff, true);
+	expose("autofireSkipsLag", "lag frames do not count in autofire's pattern", autofireSkipsLag, true);
+	stickyWatches_.push_back(autofireOn.changed.connect([this] { fireOnM_ = std::max<int64_t>(1, autofireOn.get()); }));
+	stickyWatches_.push_back(autofireOff.changed.connect([this] { fireOffM_ = std::max<int64_t>(1, autofireOff.get()); }));
+	stickyWatches_.push_back(autofireSkipsLag.changed.connect([this] { fireSkipsLagM_ = autofireSkipsLag.get(); }));
+	command("clearAutohold", "no button held or fired by autohold and autofire any longer", {}, [this](const Args &, std::string &) -> Value {
+		autoholdMask_ = 0;
+		autofireMask_ = 0;
+		stickyChanged();
+		status.set("Autohold keys cleared");
+		return {};
+	});
+	command("toggleAutohold", "a button held by autohold, or no longer", {"button"}, [this](const Args &a, std::string &error) -> Value {
+		std::string name;
+		if (!arg(a, 0, name, error)) return {};
+		for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
+			if (buttonNames_[b] == name)
+			{
+				autoholdMask_ ^= uint64_t{1} << b;
+				stickyChanged();
+				return {};
+			}
+		error = "no button " + name;
+		return {};
+	});
+	command("toggleAutofire", "a button fired by autofire, or no longer", {"button"}, [this](const Args &a, std::string &error) -> Value {
+		std::string name;
+		if (!arg(a, 0, name, error)) return {};
+		for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
+			if (buttonNames_[b] == name)
+			{
+				const uint64_t bit = uint64_t{1} << b;
+				autofireMask_ ^= bit;
+				submit([this, b] { fireAtM_[b] = 0; });
+				stickyChanged();
+				return {};
+			}
+		error = "no button " + name;
+		return {};
+	});
 	expose("catchingPad", "waiting for a gamepad input to be pressed (catchPad)", catchingPad);
 	expose("caughtPad", "the gamepad input caught, by Chimera's name; \"\" while waiting", caughtPad);
 	expose("sound", "\"Sound on\", or why there is none", sound);
@@ -439,11 +484,66 @@ SessionViewModel::~SessionViewModel()
 	thread_.join();
 }
 
+void SessionViewModel::armAutohold(bool down)
+{
+	armed_ = down ? 1 : (armed_ == 1 ? 0 : armed_.load());
+	stickyArmed.set(armed_ != 0);
+}
+
+void SessionViewModel::armAutofire(bool down)
+{
+	armed_ = down ? 2 : (armed_ == 2 ? 0 : armed_.load());
+	stickyArmed.set(armed_ != 0);
+}
+
+void SessionViewModel::toggleSticky(uint64_t pressed)
+{
+	/* any thread: armed, the buttons just pressed change over */
+	const int armed = armed_.load();
+	if (armed == 0 || pressed == 0) return;
+	if (armed == 1) autoholdMask_ ^= pressed;
+	else
+	{
+		autofireMask_ ^= pressed;
+		submit([this, pressed] {
+			for (int b = 0; b < 64; b++)
+				if (pressed >> b & 1) fireAtM_[static_cast<size_t>(b)] = 0;
+		});
+	}
+}
+
+void SessionViewModel::stickyChanged()
+{
+	auto names = [this](uint64_t mask) {
+		std::string out;
+		for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
+			if (mask >> b & 1) out += (out.empty() ? "" : " ") + buttonNames_[b];
+		return out;
+	};
+	autoheld.set(names(autoholdMask_.load()));
+	autofired.set(names(autofireMask_.load()));
+	std::string text = "Held: ";
+	for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
+		if (autoholdMask_.load() >> b & 1) text += buttonNames_[b] + " ";
+	for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
+		if (autofireMask_.load() >> b & 1) text += "Auto-" + buttonNames_[b] + " ";
+	stickyText.set(text);
+}
+
 void SessionViewModel::key(const std::string &name, bool down)
 {
 	bool &was = keysDown_[name];
 	if (was == down) return;
 	was = down;
+	/* armed: the buttons this key presses change over (and are pressed as well) */
+	if (down && armed_ != 0)
+	{
+		uint64_t pressed = 0;
+		for (int b : bindings_.buttonsOf(name))
+			if (b < 64) pressed |= uint64_t{1} << b;
+		toggleSticky(pressed);
+		stickyChanged();
+	}
 	uint64_t mask = 0;
 	for (const auto &[k, isDown] : keysDown_)
 		if (isDown)
@@ -2038,6 +2138,20 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 			}
 		}
 		held = held_.load() | padMask;
+		/* a pad's button pressed while autohold or autofire is armed changes over */
+		const uint64_t padPressed = padMask & ~padWasM_;
+		padWasM_ = padMask;
+		if (padPressed != 0 && armed_ != 0)
+		{
+			toggleSticky(padPressed);
+			later([this] { stickyChanged(); });
+		}
+		/* what autohold holds, and what autofire presses this frame */
+		held |= autoholdMask_.load();
+		const uint64_t firing = autofireMask_.load();
+		const int64_t on = fireOnM_.load(), period = on + fireOffM_.load();
+		for (size_t b = 0; b < 64; b++)
+			if (firing >> b & 1 && fireAtM_[b] % period < on) held |= uint64_t{1} << b;
 	}
 	/* What is held goes into the movie before the frame plays it: past the
 	 * end the movie grows, and over a frame it has, a press it lacks is an
@@ -2059,6 +2173,13 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	}
 
 	const int32_t lag = ce_session_movie_advance(s_, 0, nullptr, render ? 1 : 0);
+	/* autofire's patterns move on a frame, a lag frame not counted unless asked */
+	if (live && lag >= 0 && (lag == 0 || !fireSkipsLagM_.load()))
+	{
+		const uint64_t firing = autofireMask_.load();
+		for (size_t b = 0; b < 64; b++)
+			if (firing >> b & 1) fireAtM_[b]++;
+	}
 	if (lag < 0)
 	{
 		const char *death = ce_session_guest_death(s_);

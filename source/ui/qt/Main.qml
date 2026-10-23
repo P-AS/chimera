@@ -150,6 +150,8 @@ ApplicationWindow {
                     onTriggered: root.session.unthrottled = checked
                 }
             }
+            Action { property string hotkey: "Clear Autohold"; text: qsTr("Clear Auto&hold"); enabled: root.session.autoheld !== "" || root.session.autofired !== ""; onTriggered: root.session.run("clearAutohold") }
+            Action { text: qsTr("Auto&fire..."); onTriggered: autofireDialog.open() }
             Action {
                 property string hotkey: "Toggle Sound"
                 text: qsTr("S&ound"); checkable: true; checked: root.session.soundOn
@@ -330,6 +332,23 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: autofireDialog
+        title: qsTr("Autofire")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAboutToShow: { fireOn.value = root.session.autofireOn; fireOff.value = root.session.autofireOff; fireLag.checked = root.session.autofireSkipsLag }
+        GridLayout {
+            columns: 2
+            Label { text: qsTr("Pressed for") }
+            SpinBox { id: fireOn; from: 1; to: 512; editable: true }
+            Label { text: qsTr("Let go for") }
+            SpinBox { id: fireOff; from: 1; to: 512; editable: true }
+            CheckBox { id: fireLag; text: qsTr("Lag frames do not count"); Layout.columnSpan: 2 }
+        }
+        onAccepted: { root.session.autofireOn = fireOn.value; root.session.autofireOff = fireOff.value; root.session.autofireSkipsLag = fireLag.checked }
+    }
     Dialog {
         id: cloneDialog
         title: qsTr("Clone the frames picked how many times")
@@ -533,6 +552,15 @@ ApplicationWindow {
                 visible: root.session.isOpen && root.session.showLagCounter
                 text: root.session.lagCount
                 color: root.osdColor("OsdAlert", "#FF0000")
+            }
+            // while autohold or autofire is armed, what they hold, at the top right as Chimera has it
+            OsdText {
+                objectName: "osdSticky"
+                x: parent.width - width
+                y: 0
+                visible: root.session.isOpen && root.session.stickyArmed
+                text: root.session.stickyText
+                color: root.osdColor("OsdAutoHold", "#FFFFFF")
             }
             // the project's subtitles on this frame, where and in the colour each says
             Repeater {
