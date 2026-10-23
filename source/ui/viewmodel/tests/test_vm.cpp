@@ -13,6 +13,7 @@
 #include <fstream>
 #include <sstream>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <functional>
@@ -20,6 +21,7 @@
 #include <regex>
 #include <string>
 #include <thread>
+#include <tuple>
 
 #ifndef _WIN32
 #include <dlfcn.h>
@@ -617,6 +619,49 @@ bool speedAndSound(const char *package, const char *rom)
 		session.run("frameAdvance", {}, error);
 		return d.until([&] { return session.frame.get() == from + by; }, 20) && (d.until([] { return false; }, 0.05), session.frame.get() == from + by);
 	};
+	/* Speed/Skip: frames drawn and frames run, while running */
+	{
+		auto ran = [&](double seconds) {
+			const int64_t f0 = session.frame.get();
+			const uint64_t s0 = serial();
+			session.run("play", {}, error);
+			d.until([] { return false; }, seconds);
+			session.run("pause", {}, error);
+			d.until([&] { return !session.running.get(); }, 5);
+			d.until([] { return false; }, 0.1);
+			return std::make_pair(session.frame.get() - f0, static_cast<int64_t>(serial() - s0));
+		};
+		/* skip 2: one drawn in three */
+		session.autoMinimizeSkipping.set(false);
+		CHECK(session.run("setFrameSkip", {int64_t{2}}, error) == Value(int64_t{2}) && session.status.get() == "Frameskipping set to 2");
+		auto [frames, drawn] = ran(0.5);
+		std::printf("frame skip 2: %lld frames, %lld drawn\n", static_cast<long long>(frames), static_cast<long long>(drawn));
+		CHECK(frames > 20 && std::llabs(drawn * 3 - frames) <= 3);
+		/* auto-minimized, on time: all drawn */
+		session.autoMinimizeSkipping.set(true);
+		std::tie(frames, drawn) = ran(0.5);
+		std::printf("auto-minimized: %lld frames, %lld drawn\n", static_cast<long long>(frames), static_cast<long long>(drawn));
+		/* a late frame (a busy machine) may go undrawn to catch up */
+		CHECK(frames > 20 && drawn * 4 >= frames * 3);
+		/* unthrottled: one in four */
+		session.run("setFrameSkip", {int64_t{0}}, error);
+		session.unthrottled.set(true);
+		std::tie(frames, drawn) = ran(0.3);
+		session.unthrottled.set(false);
+		std::printf("unthrottled: %lld frames, %lld drawn\n", static_cast<long long>(frames), static_cast<long long>(drawn));
+		CHECK(frames > 200 && std::llabs(drawn * 4 - frames) <= 4);
+		/* fast forward at its own speed, 400%, not as fast as it goes */
+		session.run("play", {}, error);
+		session.holdFastForward(true);
+		const int64_t from = session.frame.get();
+		d.until([] { return false; }, 1.0);
+		const int64_t fast = session.frame.get() - from;
+		session.holdFastForward(false);
+		session.run("pause", {}, error);
+		CHECK(d.until([&] { return !session.running.get(); }, 5));
+		std::printf("fast forward: %lld frames in a second\n", static_cast<long long>(fast));
+		CHECK(fast >= 180 && fast <= 280);
+	}
 	/* Display Nothing: the frame runs and is not drawn */
 	{
 		session.displayNothing.set(true);

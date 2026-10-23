@@ -67,6 +67,13 @@ public:
 	Property<bool> unthrottled{false};
 	Property<bool> soundOn{true};
 	Property<int64_t> volume{100};
+	/* Chimera's fast forward runs at its alternate speed (400%), not as
+	 * fast as it can; and its Speed/Skip: frames not drawn while running,
+	 * 0 to 9 of every one drawn, only when behind when auto-minimized (as
+	 * Chimera's, on by default); unthrottled draws one in four. Remembered */
+	Property<int64_t> fastForwardPercent{400};
+	Property<int64_t> frameSkip{0};
+	Property<bool> autoMinimizeSkipping{true};
 	/* Chimera's Skip Lag Frames: a frame advance that lands after a lag
 	 * frame runs on until one that is not (remembered) */
 	Property<bool> skipLagFrames{false};
@@ -519,7 +526,11 @@ private:
 	void closeOnMachine();
 	/* a frame run as the window runs it: drawn unless turbo or Display
 	 * Nothing says not; its lag (1), or not (0), or below 0 when it failed */
-	int32_t advanceOnMachine();
+	int32_t advanceOnMachine(bool skipDrawing = false);
+	/* Chimera's throttle's frame skip: whether the frame about to run is
+	 * left undrawn (its Throttle.Step) */
+	bool skipNextOnMachine();
+	int64_t framesToSkip_ = 0, lastSkipRate_ = 0;
 	/* one frame: `live` takes the keys and pads held and plays the sound
 	 * (a replay does neither); `render` makes the picture. The lag result. */
 	/* runs one frame; grow false: a frame past the movie's end is not
@@ -614,7 +625,9 @@ private:
 	 * frames of a movie it plays, and this plays frames by hand */
 	int64_t frameM_ = 0;
 	int64_t greenEndM_ = 0;
-	std::atomic<int64_t> speedM_{100}, volumeM_{100};
+	std::atomic<int64_t> speedM_{100}, volumeM_{100}, fastSpeedM_{400}, frameSkipM_{0};
+	std::atomic<bool> autoMinimizeM_{true};
+	Connection fastSpeedWatch_, frameSkipWatch_, autoMinimizeWatch_;
 	std::atomic<bool> unthrottledM_{false}, soundOnM_{true}, turboM_{false}, skipLagM_{false}, displayNothingM_{false},
 		padsHeardM_{true};
 	bool turboHeld_ = false;

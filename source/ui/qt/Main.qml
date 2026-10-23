@@ -235,6 +235,25 @@ ApplicationWindow {
                     text: qsTr("&Unthrottled"); checkable: true; checked: root.session.unthrottled
                     onTriggered: root.session.unthrottled = checked
                 }
+                // Chimera's Speed/Skip: frames not drawn while running
+                MenuSeparator {}
+                Action { text: qsTr("Auto-&minimize skipping"); checkable: true; checked: root.session.autoMinimizeSkipping; onTriggered: root.session.autoMinimizeSkipping = checked }
+                Menu {
+                    id: frameSkipMenu
+                    title: qsTr("Frame Skip")
+                    Instantiator {
+                        model: 10
+                        delegate: MenuItem {
+                            required property int index
+                            text: index === 0 ? qsTr("Skip &0 (never)") : qsTr("&%1").arg(index)
+                            checkable: true
+                            checked: root.session.frameSkip === index
+                            onTriggered: root.session.run("setFrameSkip", [index])
+                        }
+                        onObjectAdded: (index, object) => frameSkipMenu.insertItem(index, object)
+                        onObjectRemoved: (index, object) => frameSkipMenu.removeItem(object)
+                    }
+                }
             }
             Action { property string hotkey: "Clear Autohold"; text: qsTr("Clear Auto&hold"); enabled: root.session.autoheld !== "" || root.session.autofired !== ""; onTriggered: root.session.run("clearAutohold") }
             Action { text: qsTr("Auto&fire..."); onTriggered: autofireDialog.open() }

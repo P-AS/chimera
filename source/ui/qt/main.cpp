@@ -655,6 +655,9 @@ int main(int argc, char **argv)
 	config.keep(session, "showRerecords");
 	config.keep(session, "showMessages");
 	config.keep(session, "skipLagFrames");
+	config.keep(session, "fastForwardPercent");
+	config.keep(session, "frameSkip");
+	config.keep(session, "autoMinimizeSkipping");
 	config.keep(session, "displayNothing");
 	config.keep(session, "acceptBackgroundInput");
 	/* the window in front or not: a gamepad is heard behind other windows only when asked */
