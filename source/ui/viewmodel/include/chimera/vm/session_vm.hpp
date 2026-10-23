@@ -61,6 +61,18 @@ public:
 	Property<bool> unthrottled{false};
 	Property<bool> soundOn{true};
 	Property<int64_t> volume{100};
+	/* What Chimera shows over the picture, each on or off (remembered): the
+	 * speed ("60 fps", with >> fast forwarding and << rewinding), the frame
+	 * counter (the frame, then the last frame with input, "(Finished)" past
+	 * it), the lag counter (lag frames so far, and whether the frame just run
+	 * was one), and the input of the frame just run, a mnemonic a button
+	 * pressed, player by player and the console's last, as Chimera writes it */
+	Property<bool> showFps{false}, showFrameCounter{false}, showLagCounter{false}, showInput{false};
+	Property<std::string> fpsText{"0 fps"}, frameCounterText, inputText;
+	Property<int64_t> lagCount{0};
+	Property<bool> lagFrame{false};
+	/* the input of a frame as the input display writes it */
+	std::string inputDisplay(int64_t frame) const;
 	/* A gamepad input caught for a binding (catchPad): waiting, and the
 	 * name of the input pressed ("X1 A", "J1 POV0U"; "" while waiting) */
 	Property<bool> catchingPad{false};
@@ -110,6 +122,12 @@ public:
 		int64_t min = -32768, max = 32767, neutral = 0;
 	};
 	const std::vector<Axis> &axes() const { return axes_; }
+	/* an input as Chimera's input display writes it: for each player in turn
+	 * (1, 2... and the console's last), its buttons - the mnemonic of one
+	 * pressed, a space for one not - then its analog controls, five places
+	 * and a comma off neutral, six spaces at it */
+	static std::string inputDisplay(const std::vector<std::string> &buttons, const std::string &mnemonics,
+		const std::vector<Axis> &axes, uint64_t mask, const std::vector<int32_t> &values);
 	/* each button's keys ("Down, J1 POV0D"), by index: as they are, as the
 	 * package has them, and given again (the view's thread) */
 	const std::vector<std::string> &bindingTexts() const { return bindings_.texts(); }
@@ -384,6 +402,13 @@ private:
 	 * later edit's job is on its way */
 	std::atomic<uint64_t> editsSent_{0};
 	ProjectAnswers lastAnswers_;
+	/* what the counters over the picture last worked out, so a frame run
+	 * costs a frame's work: the last frame with input (for a movie of this
+	 * length), and the lag frames counted up to a frame */
+	void updateOverlay(int64_t frame, int64_t changedFrom);
+	int64_t lastInputFor_ = -1, lastInput_ = 0, lagsTo_ = 0, lags_ = 0;
+	bool fastHeld_ = false, rewindHeld_ = false;
+	std::vector<Connection> overlayWatches_;
 	uint64_t editRunningM_ = 0;
 	bool runningM_ = false;
 	/* what a held key is doing (the machine's thread) */

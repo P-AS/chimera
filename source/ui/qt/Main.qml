@@ -34,6 +34,9 @@ ApplicationWindow {
          : session.projectTitle !== "" ? qsTr("Chimera - %1 - %2 (%3)").arg(session.projectTitle).arg(session.coreName).arg(session.systemName)
          : qsTr("Chimera - %1 (%2)").arg(session.coreName).arg(session.systemName)
 
+    // the theme's colours for what is drawn over the picture, as Chimera's themes give them
+    readonly property var themeColorMap: JSON.parse(root.themes.colors)
+    function osdColor(role, fallback) { return root.themeColors.resolve(root.themeColorMap[role] || fallback) }
     // the keys of every hotkey, for the menus to show beside their actions
     readonly property var hotkeyKeys: JSON.parse(root.hotkeys.bound)
     // a menu item that shows the keys of the hotkey its action names
@@ -154,6 +157,14 @@ ApplicationWindow {
                 checked: root.session.autoRestore
                 onToggled: root.session.autoRestore = checked
             }
+        }
+        Menu {
+            delegate: keyedMenuItem
+            title: qsTr("&View")
+            Action { property string hotkey: "Display FPS"; text: qsTr("Display &FPS"); checkable: true; checked: root.session.showFps; onTriggered: root.session.showFps = checked }
+            Action { property string hotkey: "Frame Counter"; text: qsTr("Display Frame &Counter"); checkable: true; checked: root.session.showFrameCounter; onTriggered: root.session.showFrameCounter = checked }
+            Action { property string hotkey: "Lag Counter"; text: qsTr("Display &Lag Counter"); checkable: true; checked: root.session.showLagCounter; onTriggered: root.session.showLagCounter = checked }
+            Action { property string hotkey: "Input Display"; text: qsTr("Display &Input"); checkable: true; checked: root.session.showInput; onTriggered: root.session.showInput = checked }
         }
         Menu {
             delegate: keyedMenuItem
@@ -435,6 +446,45 @@ ApplicationWindow {
                 objectName: "picture"
                 anchors.fill: parent
                 source: root.session.picture("screen")
+            }
+            // Chimera's counters over the picture, where it puts them: the
+            // speed at the top, the frame counter 14 down, the input 28, the
+            // lag counter 42
+            component OsdText: Text {
+                style: Text.Outline
+                styleColor: "black"
+                font.family: "monospace"
+                font.pixelSize: 12
+                x: 0
+            }
+            OsdText {
+                objectName: "osdFps"
+                y: 0
+                visible: root.session.isOpen && root.session.showFps
+                text: root.session.fpsText
+                color: root.osdColor("OsdMessage", "#FFFFFF")
+            }
+            OsdText {
+                objectName: "osdFrameCounter"
+                y: 14
+                visible: root.session.isOpen && root.session.showFrameCounter
+                text: root.session.frameCounterText
+                // a lag frame's number is the alert's colour
+                color: root.session.lagFrame ? root.osdColor("OsdAlert", "#FF0000") : root.osdColor("OsdMessage", "#FFFFFF")
+            }
+            OsdText {
+                objectName: "osdInput"
+                y: 28
+                visible: root.session.isOpen && root.session.showInput
+                text: root.session.inputText
+                color: root.osdColor("OsdMovieInput", "#808080")
+            }
+            OsdText {
+                objectName: "osdLagCounter"
+                y: 42
+                visible: root.session.isOpen && root.session.showLagCounter
+                text: root.session.lagCount
+                color: root.osdColor("OsdAlert", "#FF0000")
             }
             // RAM Watch's on-screen watches, where Chimera puts them: from
             // the top left, 70 down, a line every 14

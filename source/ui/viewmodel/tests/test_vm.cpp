@@ -525,6 +525,73 @@ bool speedAndSound(const char *package, const char *rom)
 	return true;
 }
 
+/* Chimera's counters over the picture: the frame counter, the lag counter,
+ * the input of the frame just run and the speed, worked out as Chimera
+ * writes them */
+bool overlay(const char *package, const char *rom)
+{
+	{
+		/* players in turn, the console's last; buttons, then analog controls */
+		const std::vector<std::string> buttons = {"Power", "P1 Up", "P2 A", "P1 B", "P10 C"};
+		std::vector<SessionViewModel::Axis> axes(3);
+		axes[0].name = "P2 Dial";
+		axes[1].name = "Slider";
+		axes[2].name = "P1 Paddle";
+		axes[2].neutral = 128;
+		const uint64_t mask = 1 | 4 | 8;
+		CHECK(SessionViewModel::inputDisplay(buttons, "PUABC", axes, mask, {5, 0, 128}) == " B      A    5, P      ");
+		CHECK(SessionViewModel::inputDisplay(buttons, "PUABC", axes, 0, {-1234, 7, 0}) == "      0, -1234,      7,");
+	}
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	session.showFrameCounter.set(true);
+	session.showInput.set(true);
+	session.showLagCounter.set(true);
+	session.showFps.set(true);
+	CHECK(session.frameCounterText.get() == "0/0" && session.inputText.get().empty() && session.lagCount.get() == 0);
+	/* three frames with Down held, then one with nothing */
+	session.key("Down", true);
+	for (int i = 0; i < 3; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 3; }, 20));
+	session.key("Down", false);
+	std::printf("overlay: [%s] [%s] lags %lld mnemonics [%s]\n", session.frameCounterText.get().c_str(), session.inputText.get().c_str(),
+		static_cast<long long>(session.lagCount.get()), session.mnemonics().c_str());
+	CHECK(session.frameCounterText.get() == "3/2 (Finished)");
+	CHECK(session.inputText.get() == std::string(" ") + session.mnemonics()[1] + "      ");
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 4; }, 20));
+	CHECK(session.inputText.get() == "        " && session.frameCounterText.get() == "4/2 (Finished)");
+	/* the lag frames are the machine's, counted up to the frame */
+	int64_t lags = 0;
+	for (int64_t f = 0; f < 4; f++) lags += inputs.lagAt(f) ? 1 : 0;
+	CHECK(session.lagCount.get() == lags && session.lagFrame.get() == inputs.lagAt(3));
+	/* lag frames the counter did not hear of while it was off are counted
+	 * when it is on again (this game reads its input every frame: the
+	 * flags are set here), and a frame run adds its own */
+	session.showLagCounter.set(false);
+	inputs.setLag(1, true);
+	inputs.setLag(3, true);
+	session.showLagCounter.set(true);
+	CHECK(lags == 0 && session.lagCount.get() == 2);
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 5; }, 20));
+	CHECK(session.lagCount.get() == 2 + (inputs.lagAt(0) ? 1 : 0) + (inputs.lagAt(2) ? 1 : 0) + (inputs.lagAt(4) ? 1 : 0));
+	CHECK(session.frameCounterText.get() == "5/2 (Finished)");
+	CHECK(session.fpsText.get().size() > 4 && session.fpsText.get().substr(session.fpsText.get().size() - 4) == " fps");
+	/* a frame with input past the last makes it the last; back before it, not finished */
+	session.run("seek", {int64_t{1}}, error);
+	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
+	CHECK(session.frameCounterText.get() == "1/2" && session.inputText.get() == std::string(" ") + session.mnemonics()[1] + "      ");
+	CHECK(session.lagCount.get() == (inputs.lagAt(0) ? 1 : 0));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	return true;
+}
+
 std::string readFile(const std::filesystem::path &p);
 
 bool machine(const char *package, const char *rom)
@@ -2817,6 +2884,7 @@ int main(int argc, char **argv)
 			ranMachine = controlsAndHotkeys(argv[1], argv[2]) && ranMachine;
 			ranMachine = greenzoneChoice(argv[1], argv[2]) && ranMachine;
 			ranMachine = speedAndSound(argv[1], argv[2]) && ranMachine;
+			ranMachine = overlay(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;

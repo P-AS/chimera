@@ -266,6 +266,19 @@ int main(int argc, char **argv)
 			else session.status.set("No screenshot: " + path.toStdString() + " could not be written");
 		});
 		window("General", "Full Screen", "Alt+Enter");
+		auto flip = [](vm::Property<bool> &p) { p.set(!p.get()); };
+		hotkeys.add("General", "Display FPS", "", [&session, flip](bool down) {
+			if (down) flip(session.showFps);
+		});
+		hotkeys.add("General", "Frame Counter", "", [&session, flip](bool down) {
+			if (down) flip(session.showFrameCounter);
+		});
+		hotkeys.add("General", "Lag Counter", "", [&session, flip](bool down) {
+			if (down) flip(session.showLagCounter);
+		});
+		hotkeys.add("General", "Input Display", "", [&session, flip](bool down) {
+			if (down) flip(session.showInput);
+		});
 		window("General", "Open ROM", "Ctrl+O");
 		hotkeys.add("General", "Close ROM", "Ctrl+W", [&session, run](bool down) {
 			if (down) run(session, "close");
@@ -488,6 +501,10 @@ int main(int argc, char **argv)
 	config.keep(session, "unthrottled");
 	config.keep(session, "soundOn");
 	config.keep(session, "volume");
+	config.keep(session, "showFps");
+	config.keep(session, "showFrameCounter");
+	config.keep(session, "showLagCounter");
+	config.keep(session, "showInput");
 	config.keep(session, "greenzoneEvery");
 	config.keep(ramWatch, "showOnScreen");
 	config.keep(controls, "saved");

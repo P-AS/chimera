@@ -3,6 +3,7 @@
 #include "chimera/vm/branch_state.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -98,6 +99,23 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		status.set("Volume " + std::to_string(volume.get()));
 		return {};
 	});
+	expose("showFps", "the speed is shown over the picture", showFps, true);
+	expose("showFrameCounter", "the frame counter is shown over the picture", showFrameCounter, true);
+	expose("showLagCounter", "the lag counter is shown over the picture", showLagCounter, true);
+	expose("showInput", "the input of the frame just run is shown over the picture", showInput, true);
+	expose("fpsText", "the speed as shown: \"60 fps\", with >> fast forwarding, << rewinding", fpsText);
+	expose("frameCounterText", "the frame counter as shown: the frame, the last frame with input, (Finished) past it", frameCounterText);
+	expose("inputText", "the input of the frame just run, as the input display writes it", inputText);
+	expose("lagCount", "lag frames so far", lagCount);
+	expose("lagFrame", "the frame just run was a lag frame", lagFrame);
+	/* turned on, a counter says at once what it has to say, counted afresh:
+	 * off, it heard of no change */
+	for (Property<bool> *shown : {&showFps, &showFrameCounter, &showLagCounter, &showInput})
+		overlayWatches_.push_back(shown->changed.connect([this] {
+			lastInputFor_ = -1;
+			lagsTo_ = lags_ = 0;
+			updateOverlay(frame.get(), -1);
+		}));
 	expose("catchingPad", "waiting for a gamepad input to be pressed (catchPad)", catchingPad);
 	expose("caughtPad", "the gamepad input caught, by Chimera's name; \"\" while waiting", caughtPad);
 	expose("sound", "\"Sound on\", or why there is none", sound);
@@ -405,6 +423,7 @@ void SessionViewModel::holdFrameAdvance(bool down)
 
 void SessionViewModel::holdRewind(bool down)
 {
+	rewindHeld_ = down;
 	submit([this, down] {
 		if (s_ == nullptr) return;
 		if (down)
@@ -423,6 +442,7 @@ void SessionViewModel::holdRewind(bool down)
 
 void SessionViewModel::holdFastForward(bool down)
 {
+	fastHeld_ = down;
 	submit([this, down] {
 		fastM_ = down;
 		if (!down) due_ = Clock::now();
@@ -1987,9 +2007,104 @@ void SessionViewModel::tick()
 	greenEnd.set(green);
 	greenzoneStates.set(states);
 	rerecords.set(rr);
+	updateOverlay(f, cf >= 0 ? cf : af);
 	if (cf >= 0) inputsChanged.emit(cf, cl);
 	if (af >= 0) inputsAppended.emit(af, al);
 	screenChanged.emit();
+}
+
+void SessionViewModel::updateOverlay(int64_t f, int64_t changedFrom)
+{
+	if (showFps.get())
+		fpsText.set(std::to_string(static_cast<int64_t>(std::llround(fps.get()))) + " fps" +
+			(rewindHeld_ ? " <<" : fastHeld_ ? " >>" : ""));
+	lagFrame.set(f > 0 && inputs_.lagAt(f - 1));
+	const int64_t size = inputs_.size();
+	if (showFrameCounter.get())
+	{
+		/* the last frame with input: zero for a movie with none */
+		if (changedFrom >= 0 || lastInputFor_ != size)
+		{
+			lastInput_ = 0;
+			std::vector<int32_t> axes(inputs_.axisCount()), neutral(inputs_.axisCount());
+			if (!neutral.empty()) inputs_.neutralAxes(neutral.data());
+			for (int64_t at = size - 1; at >= 0; at--)
+			{
+				bool pressed = inputs_.at(at) != 0;
+				if (!pressed && !axes.empty())
+				{
+					inputs_.axesAt(at, axes.data());
+					pressed = axes != neutral;
+				}
+				if (pressed)
+				{
+					lastInput_ = at;
+					break;
+				}
+			}
+			lastInputFor_ = size;
+		}
+		frameCounterText.set(std::to_string(f) + "/" + std::to_string(lastInput_) + (size > 0 && f > lastInput_ ? " (Finished)" : ""));
+	}
+	if (showLagCounter.get())
+	{
+		/* counted on from where it was, unless something before changed */
+		if (f < lagsTo_ || (changedFrom >= 0 && changedFrom < lagsTo_))
+		{
+			lagsTo_ = 0;
+			lags_ = 0;
+		}
+		for (; lagsTo_ < f; lagsTo_++) lags_ += inputs_.lagAt(lagsTo_) ? 1 : 0;
+		lagCount.set(lags_);
+	}
+	if (showInput.get()) inputText.set(inputDisplay(f - 1));
+}
+
+std::string SessionViewModel::inputDisplay(int64_t frame) const
+{
+	if (frame < 0 || frame >= inputs_.size()) return {};
+	std::vector<int32_t> values(inputs_.axisCount());
+	if (!values.empty()) inputs_.axesAt(frame, values.data());
+	return inputDisplay(buttonNames_, mnemonics_, axes_, inputs_.at(frame), values);
+}
+
+std::string SessionViewModel::inputDisplay(const std::vector<std::string> &buttons, const std::string &mnemonics,
+	const std::vector<Axis> &axes, uint64_t mask, const std::vector<int32_t> &values)
+{
+	/* a control's player: the number after "P" in its name, 0 for the console */
+	auto player = [](const std::string &name) {
+		if (name.size() < 3 || name[0] != 'P' || !std::isdigit(static_cast<unsigned char>(name[1]))) return 0;
+		size_t at = 1;
+		int n = 0;
+		while (at < name.size() && std::isdigit(static_cast<unsigned char>(name[at]))) n = n * 10 + (name[at++] - '0');
+		return at < name.size() && name[at] == ' ' ? n : 0;
+	};
+	int most = 0;
+	for (const std::string &n : buttons) most = std::max(most, player(n));
+	for (const Axis &a : axes) most = std::max(most, player(a.name));
+	std::string out;
+	for (int i = 1; i <= most + 1; i++)
+	{
+		const int p = i <= most ? i : 0;
+		for (size_t b = 0; b < buttons.size(); b++)
+			if (player(buttons[b]) == p)
+			{
+				const char mn = b < mnemonics.size() ? mnemonics[b] : (buttons[b].empty() ? '?' : buttons[b].back());
+				out += b < 64 && (mask >> b & 1) ? mn : ' ';
+			}
+		for (size_t x = 0; x < axes.size() && x < values.size(); x++)
+			if (player(axes[x].name) == p)
+			{
+				if (values[x] == axes[x].neutral) out += "      ";
+				else
+				{
+					std::string v = std::to_string(values[x]);
+					if (v.size() < 5) v.insert(0, 5 - v.size(), ' ');
+					out += v + ",";
+				}
+			}
+	}
+	return out;
 }
 
 } // namespace chimera::vm
