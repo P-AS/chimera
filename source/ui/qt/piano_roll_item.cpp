@@ -1,6 +1,7 @@
 #include "piano_roll_item.hpp"
 
 #include <QElapsedTimer>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QFontMetrics>
@@ -70,9 +71,27 @@ qint64 PianoRollItem::rowOnLine(qint64 line) const
 
 int PianoRollItem::columnX(int column) const
 {
+	/* the machine's columns, then the script's */
+	const int own = rows_ != nullptr ? rows_->rows().columnCount() : 0;
 	int x = frameColumnWidth();
-	for (int c = 0; c < column; c++) x += columnW(c);
+	for (int c = 0; c < column && c < own; c++) x += columnW(c);
+	for (int e = 0; e < column - own && e < static_cast<int>(extras_.size()); e++) x += extras_[static_cast<size_t>(e)].width;
 	return x;
+}
+
+void PianoRollItem::setExtraColumns(const QString &json)
+{
+	if (json == extraJson_) return;
+	extraJson_ = json;
+	extras_.clear();
+	for (const QJsonValue v : QJsonDocument::fromJson(json.toUtf8()).array())
+	{
+		const QJsonObject o = v.toObject();
+		extras_.push_back({o.value(QLatin1String("name")).toString(), o.value(QLatin1String("text")).toString(),
+			std::max(8, o.value(QLatin1String("width")).toInt(30))});
+	}
+	Q_EMIT lookChanged();
+	update();
 }
 
 QObject *PianoRollItem::rows() const { return rows_.data(); }
@@ -317,6 +336,12 @@ void PianoRollItem::paint(QPainter *p)
 		label(cell, Qt::AlignCenter, horizontal_ ? name : QFontMetrics(p->font()).elidedText(name, Qt::ElideRight, columnW(c) - 2), false);
 	}
 
+	const int extraCount = static_cast<int>(extras_.size());
+	for (int e = 0; e < extraCount; e++)
+		label(QRect(columnX(columns + e), 0, extras_[static_cast<size_t>(e)].width, hs), Qt::AlignCenter, extras_[static_cast<size_t>(e)].text, false);
+	/* what the script says of a cell, when it says anything */
+	auto ask = [&](int kind, qint64 row, const QString &column) { return queries_ && query_ ? query_(kind, row, column) : QString(); };
+
 	/* the rows shown, hidden ones (lag frames TAStudio hides) passed over */
 	qint64 next = rows.nextShown(top_ - 1);
 	for (int i = 0; i < shown; i++)
@@ -368,9 +393,11 @@ void PianoRollItem::paint(QPainter *p)
 		if (isMarker)
 		{
 			p->setPen(text);
-			label(QRect(columnX(columns) + 6, y, w - columnX(columns) - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignLeft,
-				QString::fromStdString(rows.rowNote(row)), true);
+			const int after = columnX(columns + extraCount);
+			label(QRect(after + 6, y, w - after - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignLeft, QString::fromStdString(rows.rowNote(row)), true);
 		}
+		/* the frame number's cell: the script's colour over it, when it gives one */
+		if (const QColor c(ask(0, row, QStringLiteral("FrameColumn"))); c.isValid()) p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, c);
 		/* picked frames: their numbers on the highlight */
 		const bool isPicked = selectFirst_ >= 0 && row >= selectFirst_ && row <= selectLast_;
 		if (isPicked) p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, picked);
@@ -389,6 +416,14 @@ void PianoRollItem::paint(QPainter *p)
 		{
 			const int cx = columnX(c), cw = columnW(c);
 			if (cw == 0) continue; /* hidden */
+			const QString columnName = queries_ ? QString::fromStdString(rows.columnName(c)) : QString();
+			if (const QColor b(ask(0, row, columnName)); b.isValid()) p->fillRect(cx, y, cw, rowHeight_, b);
+			if (const QString said = ask(1, row, columnName); !said.isEmpty())
+			{
+				p->setPen(text);
+				label(QRect(cx + 2, y, cw - 4, rowHeight_), Qt::AlignCenter, said, true);
+				continue;
+			}
 			if (rows.columnIsNumber(c))
 			{
 				int64_t value = 0;
@@ -410,10 +445,22 @@ void PianoRollItem::paint(QPainter *p)
 				p->drawRect(cx + 1, y + 1, cw - 2, rowHeight_ - 2);
 			}
 		}
+		/* the script's own columns: what it says, nothing else */
+		for (int e = 0; e < extraCount; e++)
+		{
+			const Extra &x = extras_[static_cast<size_t>(e)];
+			const int cx = columnX(columns + e);
+			if (const QColor b(ask(0, row, x.name)); b.isValid()) p->fillRect(cx, y, x.width, rowHeight_, b);
+			if (const QString said = ask(1, row, x.name); !said.isEmpty())
+			{
+				p->setPen(text);
+				label(QRect(cx + 2, y, x.width - 4, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, said, true);
+			}
+		}
 	}
 
 	p->setPen(grid);
-	for (int c = 0; c <= columns; c++) p->drawLine(columnX(c), 0, columnX(c), h);
+	for (int c = 0; c <= columns + static_cast<int>(extras_.size()); c++) p->drawLine(columnX(c), 0, columnX(c), h);
 	p->drawLine(0, hs, w, hs);
 
 	lastPaintMs_ = timer.nsecsElapsed() / 1.0e6;

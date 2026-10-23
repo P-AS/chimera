@@ -273,6 +273,8 @@ void LuaBridge::published()
 
 void LuaBridge::stopAll()
 {
+	/* what the scripts registered with the libraries goes with them */
+	callHook("__chimera_scripts_stopped");
 	lua_newtable(L_);
 	lua_rawseti(L_, LUA_REGISTRYINDEX, frameFns_);
 	lua_newtable(L_);
@@ -319,6 +321,33 @@ void LuaBridge::callHook(const char *name, int64_t arg)
 	}
 	else
 		lua_pop(L_, 1);
+}
+
+std::string LuaBridge::query(const char *name, int64_t row, const std::string &column)
+{
+	lua_getglobal(L_, name);
+	if (!lua_isfunction(L_, -1))
+	{
+		lua_pop(L_, 1);
+		return {};
+	}
+	lua_pushinteger(L_, static_cast<lua_Integer>(row));
+	lua_pushlstring(L_, column.data(), column.size());
+	if (lua_pcall(L_, 2, 1, 0) != LUA_OK)
+	{
+		log(std::string(name) + ": " + (lua_tostring(L_, -1) ? lua_tostring(L_, -1) : "?"));
+		lua_pop(L_, 1);
+		return {};
+	}
+	std::string out;
+	if (lua_type(L_, -1) == LUA_TSTRING || lua_type(L_, -1) == LUA_TNUMBER)
+	{
+		size_t n = 0;
+		const char *s = lua_tolstring(L_, -1, &n);
+		out.assign(s, n);
+	}
+	lua_pop(L_, 1);
+	return out;
 }
 
 void LuaBridge::frameDone()

@@ -368,6 +368,9 @@ ApplicationWindow {
                 objectName: "pianoRoll"
                 anchors { left: parent.left; top: parent.top; bottom: roll.horizontal ? across.top : axisBar.top; right: roll.horizontal ? parent.right : scroll.left }
                 horizontal: tas.pianoRoll.horizontal
+                // a script's own columns, and the colours and text it gives cells
+                extraColumns: tas.pianoRoll.scriptColumns
+                queries: tas.pianoRoll.scriptQueries
                 rows: tas.pianoRoll.rows("frames")
                 currentRow: tas.pianoRoll.currentFrame
                 topRow: tas.pianoRoll.topFrame

@@ -440,23 +440,20 @@ end
 function tastudio.removemarker(frame) if engaged() then pcall(C.pianoRoll.removeMarker, frame) end end
 function tastudio.setmarker(frame, message) if engaged() then C.pianoRoll.addMarker(frame, message ~= nil and tostring(message) or "") end end
 local function notHere(name) return function() error("tastudio." .. name .. ": not here yet") end end
-tastudio.addcolumn = notHere("addcolumn")
-tastudio.onqueryitembg = notHere("onqueryitembg")
-tastudio.onqueryitemtext = notHere("onqueryitemtext")
 tastudio.onqueryitemicon = notHere("onqueryitemicon")
 tastudio.clearIconCache = function() end
 -- functions called when the greenzone is invalidated, a branch is loaded, made
 -- or updated, removed; each its name back, as Chimera's
-local tasCallbacks = {zone = {}, load = {}, save = {}, remove = {}}
-local tasCallbackCount = 0
+__chimera_tasCallbacks = {zone = {}, load = {}, save = {}, remove = {}}
+__chimera_tasCallbackCount = 0
 local function register(kind, fn, name)
 	if not engaged() then return "" end
-	tasCallbackCount = tasCallbackCount + 1
-	local id = name or ("tastudio-callback-" .. tasCallbackCount)
-	table.insert(tasCallbacks[kind], {id = id, fn = fn})
+	__chimera_tasCallbackCount = __chimera_tasCallbackCount + 1
+	local id = name or ("tastudio-callback-" .. __chimera_tasCallbackCount)
+	table.insert(__chimera_tasCallbacks[kind], {id = id, fn = fn})
 	return id
 end
-local function callAll(kind, value) for _, c in ipairs(tasCallbacks[kind]) do c.fn(value) end end
+local function callAll(kind, value) for _, c in ipairs(__chimera_tasCallbacks[kind]) do c.fn(value) end end
 function __chimera_greenzone_invalidated(frame) callAll("zone", frame) end
 function __chimera_branch_loaded(index) callAll("load", index) end
 function __chimera_branch_saved(index) callAll("save", index) end
@@ -885,6 +882,44 @@ end
 function forms.clearImageCache() imageEpoch = imageEpoch + 1 end
 function forms.getMouseX(handle) return C.forms.mouseX(handle) end
 function forms.getMouseY(handle) return C.forms.mouseY(handle) end
+
+-- tastudio's callbacks into the roll's drawing: a cell's colour and text,
+-- the first answer of those registered winning, as Chimera's; and a
+-- script's own columns. Asked while the roll is drawn.
+local queryFns = {bg = {}, text = {}}
+local function queryRegister(kind, fn, name)
+	if not C.session.hasProject then return "" end
+	__chimera_tasCallbackCount = __chimera_tasCallbackCount + 1
+	local id = name or ("tastudio-callback-" .. __chimera_tasCallbackCount)
+	table.insert(queryFns[kind], {id = id, fn = fn})
+	C.pianoRoll.scriptQueries = true
+	return id
+end
+function __chimera_query_bg(row, column)
+	for _, c in ipairs(queryFns.bg) do
+		local v = c.fn(row, column)
+		if v ~= nil then return colour(v, "") end
+	end
+	return nil
+end
+function __chimera_query_text(row, column)
+	for _, c in ipairs(queryFns.text) do
+		local v = c.fn(row, column)
+		if v ~= nil then return tostring(v) end
+	end
+	return nil
+end
+function tastudio.onqueryitembg(fn, name) return queryRegister("bg", fn, name) end
+function tastudio.onqueryitemtext(fn, name) return queryRegister("text", fn, name) end
+function tastudio.addcolumn(name, text, width)
+	if C.session.hasProject then C.pianoRoll.addScriptColumn(tostring(name), tostring(text), width or 30) end
+end
+-- a script stopped: what it registered goes, as Chimera's do
+function __chimera_scripts_stopped()
+	queryFns = {bg = {}, text = {}}
+	__chimera_tasCallbacks = {zone = {}, load = {}, save = {}, remove = {}}
+	if C.pianoRoll then C.pianoRoll.clearScriptColumns() end
+end
 
 -- event --------------------------------------------------------------------
 event = {}

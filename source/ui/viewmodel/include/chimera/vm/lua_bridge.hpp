@@ -54,6 +54,9 @@ public:
 	/* a global function of the libraries' called with a number, if it is
 	 * there (a form's click, a form closed) */
 	void callHook(const char *name, int64_t arg);
+	/* a global function of the libraries' asked about a cell (row, column):
+	 * its answer as text, "" for none */
+	std::string query(const char *name, int64_t row, const std::string &column);
 
 private:
 	static int index(lua_State *L);

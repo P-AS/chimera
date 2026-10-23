@@ -1229,6 +1229,12 @@ int main(int argc, char **argv)
 	clock.start();
 	std::vector<double> paints;
 	auto *roll = window->findChild<qt::PianoRollItem *>(QStringLiteral("pianoRoll"));
+	/* the script asked about each cell as the roll is drawn (Lua's tastudio.onqueryitem...):
+	 * the window's thread waits while the roll is drawn, so the script is not running */
+	if (roll != nullptr)
+		roll->setQuery([&lua](int kind, qint64 row, const QString &column) {
+			return QString::fromStdString(lua.query(kind == 0 ? "__chimera_query_bg" : "__chimera_query_text", row, column.toStdString()));
+		});
 	auto *picture = window->findChild<qt::PictureItem *>(QStringLiteral("picture"));
 	int64_t framesAtStart = -1;
 	qint64 shownAtStart = 0;

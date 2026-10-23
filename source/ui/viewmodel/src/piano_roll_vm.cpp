@@ -210,6 +210,32 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	});
 	wasLagWatch_ = hideWasLagFrames.changed.connect([this] { storeLagHiding(); });
 	expose("horizontal", "TAStudio's Rotate: the frames run across and the buttons down (the project's own)", horizontal, true);
+	expose("scriptColumns", "a script's own columns after the machine's, JSON [{name, text, width}]", scriptColumns);
+	expose("scriptQueries", "a script colours or writes the roll's cells (Lua's tastudio.onqueryitem...)", scriptQueries, true);
+	command("addScriptColumn", "a script's own column: its name (what the callbacks are told), its header and width", {"name", "text", "width"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string name, text;
+			int64_t width = 30;
+			if (!arg(a, 0, name, error) || !arg(a, 1, text, error)) return {};
+			if (a.size() > 2) arg(a, 2, width, error);
+			json::Json list;
+			std::string err;
+			json::parse(scriptColumns.get(), list, err);
+			list.kind = json::Json::Kind::Array;
+			json::Json one;
+			one.kind = json::Json::Kind::Object;
+			one.members.emplace_back("name", json::Json::string(name));
+			one.members.emplace_back("text", json::Json::string(text));
+			one.members.emplace_back("width", json::Json::integer(std::clamp<int64_t>(width, 8, 1000)));
+			list.items.push_back(one);
+			scriptColumns.set(json::write(list));
+			return {};
+		});
+	command("clearScriptColumns", "a script's own columns and callbacks gone (the script stopped)", {}, [this](const Args &, std::string &) -> Value {
+		scriptColumns.set("[]");
+		scriptQueries.set(false);
+		return {};
+	});
 	horizontalWatch_ = horizontal.changed.connect([this] {
 		session_.setTastudioMember("HorizontalOrientation", horizontal.get() ? "true" : "false");
 	});

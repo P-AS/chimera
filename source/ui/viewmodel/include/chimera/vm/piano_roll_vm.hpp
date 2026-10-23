@@ -68,6 +68,10 @@ public:
 	Property<bool> hideWasLagFrames{false};
 	/* TAStudio's Rotate: the frames across, the buttons down (the project's own) */
 	Property<bool> horizontal{false};
+	/* a script's own columns (Lua's tastudio.addcolumn), after the machine's: JSON
+	 * [{"name", "text", "width"}]; and whether a script colours or writes the cells */
+	Property<std::string> scriptColumns{"[]"};
+	Property<bool> scriptQueries{false};
 	/* a frame not shown by those, and the frame `steps` shown frames on
 	 * from one (back for a negative count) */
 	bool frameHidden(int64_t frame) const;

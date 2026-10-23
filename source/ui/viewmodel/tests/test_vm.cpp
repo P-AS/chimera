@@ -5829,7 +5829,10 @@ tastudio.setlag(0, true)
 local wasLag = tastudio.islag(0)
 tastudio.setlag(0, nil)
 console.log("lag", wasLag, tastudio.islag(0))
-console.log("misc", tastudio.getrecording(), tastudio.getselection()[0] == nil, (select(2, pcall(tastudio.addcolumn, "x", "X", 10))):find("not here") ~= nil)
+console.log("misc", tastudio.getrecording(), tastudio.getselection()[0] == nil)
+tastudio.addcolumn("xp", "XP", 40)
+tastudio.onqueryitemtext(function(row, col) if col == "xp" then return row * 10 end end)
+tastudio.onqueryitembg(function(row, col) if col == "P1 A" then return 0xFF102030 end end)
 )");
 	CHECK(console.run("run", {}, error).has_value());
 	CHECK(said("alone ") == "alone false nil");
@@ -5839,7 +5842,11 @@ console.log("misc", tastudio.getrecording(), tastudio.getselection()[0] == nil, 
 	CHECK(said("branches ") == "branches first try 6 0 true false");
 	CHECK(said("renamed ") == "renamed renamed");
 	CHECK(said("lag ") == "lag true nil");
-	CHECK(said("misc ") == "misc false true true");
+	CHECK(said("misc ") == "misc false true");
+	/* the roll's drawing asks the script about cells; its own column listed */
+	CHECK(roll.scriptQueries.get() && roll.scriptColumns.get().find("\"name\": \"xp\"") != std::string::npos);
+	CHECK(lua.query("__chimera_query_text", 7, "xp") == "70" && lua.query("__chimera_query_text", 7, "P1 A").empty());
+	CHECK(lua.query("__chimera_query_bg", 3, "P1 A") == "#FF102030" && lua.query("__chimera_query_bg", 3, "xp").empty());
 	{
 		/* the callbacks: the edits, the branch made once its state is kept, loaded, removed */
 		CHECK(d.until([&] { return branches.made.get() >= 1; }, 30));
@@ -5852,6 +5859,9 @@ console.log("misc", tastudio.getrecording(), tastudio.getselection()[0] == nil, 
 		CHECK(seen.rfind("seen zone 2, zone 1", 0) == 0 && seen.find("save 0") != std::string::npos);
 		CHECK(seen.find("load 0") != std::string::npos && seen.find("remove 0") != std::string::npos);
 	}
+	/* the script stopped: what it registered goes with it */
+	lua.stopAll();
+	CHECK(!roll.scriptQueries.get() && roll.scriptColumns.get() == "[]" && lua.query("__chimera_query_text", 7, "xp").empty());
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	std::error_code ec;

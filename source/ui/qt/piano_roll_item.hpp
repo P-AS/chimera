@@ -1,4 +1,7 @@
 #pragma once
+
+#include <functional>
+#include <vector>
 /* The piano roll's grid: it draws only the rows in view, asking the rows
  * model for those cells alone, so a million frames scroll as fast as forty.
  * It edits nothing itself: a press or a drag is a signal, and the window
@@ -39,6 +42,10 @@ class PianoRollItem : public QQuickPaintedItem
 	Q_PROPERTY(QString rollFont READ rollFont WRITE setRollFont NOTIFY lookChanged)
 	/* TAStudio's Rotate: the frames run across, the buttons down */
 	Q_PROPERTY(bool horizontal READ horizontal WRITE setHorizontal NOTIFY lookChanged)
+	/* a script's own columns after the machine's, JSON [{"name", "text", "width"}] */
+	Q_PROPERTY(QString extraColumns READ extraColumns WRITE setExtraColumns NOTIFY lookChanged)
+	/* whether to ask the script for a cell's colour and text while drawing */
+	Q_PROPERTY(bool queries MEMBER queries_ NOTIFY lookChanged)
 	/* how long the last paint took, in milliseconds, for measuring */
 	Q_PROPERTY(double lastPaintMs READ lastPaintMs NOTIFY painted)
 
@@ -67,6 +74,11 @@ public:
 	QString rollFont() const { return rollFont_; }
 	void setRollFont(const QString &font);
 	bool horizontal() const { return horizontal_; }
+	QString extraColumns() const { return extraJson_; }
+	void setExtraColumns(const QString &json);
+	/* what the script says of a cell while the roll is drawn: kind 0 its colour, 1 its text; "" nothing */
+	using Query = std::function<QString(int kind, qint64 row, const QString &column)>;
+	void setQuery(Query query) { query_ = std::move(query); }
 	void setHorizontal(bool on);
 
 Q_SIGNALS:
@@ -122,6 +134,15 @@ private:
 	QFont font_;
 	int rowHeight_ = 18, columnWidth_ = 26, numberWidth_ = 48;
 	bool horizontal_ = false;
+	struct Extra
+	{
+		QString name, text;
+		int width = 30;
+	};
+	std::vector<Extra> extras_;
+	QString extraJson_ = QStringLiteral("[]");
+	bool queries_ = false;
+	Query query_;
 	/* the roll is laid out as if upright; turned, x and y change places */
 	QPointF logical(QPointF physical) const { return horizontal_ ? QPointF(physical.y(), physical.x()) : physical; }
 	int logicalWidth() const { return static_cast<int>(horizontal_ ? height() : width()); }
