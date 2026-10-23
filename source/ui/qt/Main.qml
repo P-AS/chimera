@@ -1314,7 +1314,7 @@ ApplicationWindow {
     MessagesConfig { id: messagesWindow; vm: root.messages; mainWindow: root; visible: false }
     SoundConfig { id: soundWindow; session: root.session; mainWindow: root; visible: false }
     DisplayConfig { id: displayWindow; vm: root.display; session: root.session; mainWindow: root; visible: false }
-    ProjectFiles { session: root.session }
+    ProjectFiles { session: root.session; mainWindow: root; themeColor: root.osdColor }
     // Work a crash left behind, offered before the project opens, as
     // Chimera's "Recover unsaved work?" asks
     Dialog {
