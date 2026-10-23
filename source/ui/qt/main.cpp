@@ -54,6 +54,7 @@
 #include "chimera/vm/customize_vm.hpp"
 #include "chimera/vm/messages_vm.hpp"
 #include "chimera/vm/display_vm.hpp"
+#include "chimera/vm/paths_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -219,7 +220,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -631,7 +632,6 @@ int main(int argc, char **argv)
 		: QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + QStringLiteral("/settings.json");
 	vm::ConfigStore config(configPath.toStdString());
 	if (!qEnvironmentVariableIsSet("CHIMERA_CORES_DIR")) config.keep(cores, "coresFolder");
-	if (!qEnvironmentVariableIsSet("CHIMERA_FIRMWARE_DIR")) config.keep(cores, "firmwareFolder");
 	config.keep(cores, "chosenFirmware");
 	config.keep(newProject, "kind");
 	/* what a project can make again (its branches' states): the
@@ -679,8 +679,26 @@ int main(int argc, char **argv)
 	config.keep(session, "autofireOff");
 	config.keep(session, "autofireSkipsLag");
 	/* backups where Chimera puts them, beside the program, unless kept elsewhere */
-	session.backupFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Movies/backup")).toStdString());
-	config.keep(session, "backupFolder");
+	/* Config > Paths: the folders, relative to the program's own at first;
+	 * the backups and the firmware follow them */
+	vm::PathsViewModel paths(dispatcher);
+	paths.programFolder.set(QCoreApplication::applicationDirPath().toStdString());
+	for (const char *name : {"base", "changed", "recentForRoms", "lastRomFolder"}) config.keep(paths, name);
+	auto followPaths = [&paths, &session, &cores] {
+		session.backupFolder.set(paths.resolve("Movie backups"));
+		if (!qEnvironmentVariableIsSet("CHIMERA_FIRMWARE_DIR") && cores.firmwareFolder.get() != paths.resolve("Firmware"))
+			cores.firmwareFolder.set(paths.resolve("Firmware"));
+	};
+	followPaths();
+	vm::Connection pathsFollowed = paths.moved.connect(followPaths);
+	/* the firmware folder chosen elsewhere (the Cores window) is the Paths' too */
+	vm::Connection firmwareFollowed = cores.firmwareFolder.changed.connect([&paths, &cores] {
+		if (qEnvironmentVariableIsSet("CHIMERA_FIRMWARE_DIR") || cores.firmwareFolder.get() == paths.resolve("Firmware")) return;
+		std::string e;
+		paths.run("setPath", {std::string("Firmware"), cores.firmwareFolder.get()}, e);
+	});
+	qt::PictureFiles::folderFor() = [&paths] { return QString::fromStdString(paths.resolve("Screenshots")); };
+	qt::QmlViewModel pathsQml(paths);
 	config.keep(projectDetails, "defaultAuthor");
 	config.keep(pianoRoll, "maxUndoSteps");
 	config.keep(pianoRoll, "copyFrameNumbers");
@@ -721,8 +739,13 @@ int main(int argc, char **argv)
 		std::string why;
 		if (f.open(QIODevice::ReadOnly)) themes.addBuiltIn(f.readAll().toStdString(), why);
 	}
-	themes.folder.set(qEnvironmentVariableIsSet("CHIMERA_THEMES_DIR") ? qEnvironmentVariable("CHIMERA_THEMES_DIR").toStdString()
-		: (QCoreApplication::applicationDirPath() + QStringLiteral("/Themes")).toStdString());
+	/* the Paths window's Themes folder (CHIMERA_THEMES_DIR for a test) */
+	auto themesFollow = [&themes, &paths] {
+		themes.folder.set(qEnvironmentVariableIsSet("CHIMERA_THEMES_DIR") ? qEnvironmentVariable("CHIMERA_THEMES_DIR").toStdString()
+			: paths.resolve("Themes"));
+	};
+	themesFollow();
+	vm::Connection themesFollowPaths = paths.moved.connect(themesFollow);
 	if (args.isSet(schemeOpt))
 		themes.current.set(args.value(schemeOpt) == QStringLiteral("light") ? "Light" : "Dark");
 	else
@@ -822,6 +845,7 @@ int main(int argc, char **argv)
 	lua.add(customize);
 	lua.add(messages);
 	lua.add(display);
+	lua.add(paths);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -863,6 +887,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("customize"), QVariant::fromValue<QObject *>(&customizeQml)},
 		{QStringLiteral("messages"), QVariant::fromValue<QObject *>(&messagesQml)},
 		{QStringLiteral("display"), QVariant::fromValue<QObject *>(&displayQml)},
+		{QStringLiteral("paths"), QVariant::fromValue<QObject *>(&pathsQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
@@ -909,6 +934,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("sound") ? QStringLiteral("soundWindow")
 		: args.value(showOpt) == QStringLiteral("display") ? QStringLiteral("displayWindow")
 		: args.value(showOpt) == QStringLiteral("budgets") ? QStringLiteral("greenzoneBudgetsWindow")
+		: args.value(showOpt) == QStringLiteral("paths") ? QStringLiteral("pathsWindow")
 		: args.value(showOpt) == QStringLiteral("project-details") ? QStringLiteral("projectDetailsWindow")
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())

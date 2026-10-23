@@ -53,11 +53,25 @@ public:
 		return written ? path : QString();
 	}
 	std::function<void(const std::string &)> say;
-	/* where screenshots go: CHIMERA_SCREENSHOTS, else Screenshots beside the program */
+	/* where screenshots go: CHIMERA_SCREENSHOTS, else the Paths window's
+	 * Screenshots folder (folderFor), else Screenshots beside the program */
+	static std::function<QString()> &folderFor()
+	{
+		static std::function<QString()> f;
+		return f;
+	}
 	static QString screenshotFolder()
 	{
 		const QString folder = qEnvironmentVariable("CHIMERA_SCREENSHOTS");
-		return folder.isEmpty() ? QCoreApplication::applicationDirPath() + QStringLiteral("/Screenshots") : folder;
+		if (!folder.isEmpty()) return folder;
+		if (folderFor()) return folderFor()();
+		return QCoreApplication::applicationDirPath() + QStringLiteral("/Screenshots");
+	}
+	/* a folder as a dialog's address, and the folder a chosen file is in */
+	Q_INVOKABLE QUrl folderUrl(const QString &path) const { return path.isEmpty() ? QUrl() : QUrl::fromLocalFile(path); }
+	Q_INVOKABLE QString folderOf(const QUrl &file) const
+	{
+		return QFileInfo(file.isLocalFile() ? file.toLocalFile() : file.toString()).absolutePath();
 	}
 	/* a screenshot's name as Chimera's: the game, then the date and time
 	 * ("walker.2026-10-23 11.35.46"), in the screenshot folder, no ending */

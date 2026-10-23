@@ -13,14 +13,18 @@ ApplicationWindow {
     width: 680
     height: 620
 
+    // the main window's Paths folders
+    property var folderOf: null
     FileDialog {
         id: openDialog
+        currentFolder: win.folderOf ? win.folderOf("Lua") : ""
         nameFilters: [qsTr("Lua scripts (*.lua)"), qsTr("All files (*)")]
         onAccepted: win.vm.run("load", [selectedFile])
     }
     FileDialog {
         id: saveDialog
         fileMode: FileDialog.SaveFile
+        currentFolder: win.folderOf ? win.folderOf("Lua") : ""
         nameFilters: [qsTr("Lua scripts (*.lua)")]
         onAccepted: win.vm.run("save", [selectedFile])
     }

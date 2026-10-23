@@ -53,6 +53,7 @@
 #include "chimera/vm/customize_vm.hpp"
 #include "chimera/vm/messages_vm.hpp"
 #include "chimera/vm/display_vm.hpp"
+#include "chimera/vm/paths_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -470,6 +471,62 @@ void displayFit()
 	display.aspectMode.set(9);
 	display.customWidth.set(-5);
 	CHECK(display.fit().aspectMode == 3 && display.fit().customWidth == 0 && display.fit().letterbox);
+}
+
+/* Chimera's Paths window: folders relative to the base (the program's own
+ * at first), changed ones remembered, a dialog opening in the nearest
+ * folder that is there, the last game's folder for ROMs */
+void pathsConfig()
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-paths-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "program" / "Lua");
+	ManualDispatcher d;
+	PathsViewModel paths(d);
+	std::string error;
+	int moved = 0;
+	Connection watch = paths.moved.connect([&] { moved++; });
+	paths.programFolder.set((dir / "program").string());
+	CHECK(paths.resolve("Movie backups") == (dir / "program" / "Movies" / "backup").string());
+	CHECK(paths.resolve("ROM") == (dir / "program").string());
+	CHECK(paths.resolve("Nothing").empty());
+	/* a base of the person's */
+	paths.base.set((dir / "elsewhere").string());
+	CHECK(paths.resolve("Lua") == (dir / "elsewhere" / "Lua").string());
+	paths.base.set("");
+	/* a path changed: absolute, or relative to the base; Chimera's again is no change */
+	std::string got;
+	CHECK(fromValue(paths.run("setPath", {std::string("Movies"), (dir / "runs").string()}, error).value_or(Value()), got) &&
+		got == (dir / "runs").string());
+	CHECK(paths.changed.get() == "{\"Movies\": " + json::quote((dir / "runs").string()) + "}");
+	CHECK(paths.run("setPath", {std::string("Lua"), std::string("./Scripts")}, error).has_value() &&
+		paths.resolve("Lua") == (dir / "program" / "Scripts").string());
+	CHECK(paths.run("setPath", {std::string("Lua"), std::string("./Lua")}, error).has_value() && paths.changed.get().find("Lua") == std::string::npos);
+	CHECK(!paths.run("setPath", {std::string("Saves"), std::string(".")}, error) && error == "no folder called Saves");
+	CHECK(moved >= 5);
+	/* the rows: as set, made absolute, whether Chimera's */
+	RowModel *rows = paths.rowLists()[0].model;
+	bool isDefault = true;
+	std::string name, folder;
+	for (int64_t i = 0; i < rows->rowCount(); i++)
+	{
+		fromValue(rows->cell(i, 0), name);
+		if (name != "Movies") continue;
+		fromValue(rows->cell(i, 2), folder);
+		fromValue(rows->cell(i, 3), isDefault);
+	}
+	CHECK(folder == (dir / "runs").string() && !isDefault);
+	/* a dialog opens in the folder when it is there, else the nearest above it; nothing is made */
+	CHECK(fromValue(paths.run("dialogFolder", {std::string("Lua")}, error).value_or(Value()), got) && got == (dir / "program" / "Lua").string());
+	CHECK(fromValue(paths.run("dialogFolder", {std::string("Macros")}, error).value_or(Value()), got) && got == (dir / "program").string());
+	CHECK(!fs::exists(dir / "program" / "Movies"));
+	/* ROMs: where the last game came from, while it is there and asked for */
+	paths.lastRomFolder.set((dir / "program" / "Lua").string());
+	CHECK(fromValue(paths.run("dialogFolder", {std::string("ROM")}, error).value_or(Value()), got) && got == (dir / "program" / "Lua").string());
+	paths.recentForRoms.set(false);
+	CHECK(fromValue(paths.run("dialogFolder", {std::string("ROM")}, error).value_or(Value()), got) && got == (dir / "program").string());
+	CHECK(paths.run("resetAll", {}, error).has_value() && paths.changed.get() == "{}" && paths.resolve("Movies") == (dir / "program" / "Movies").string());
+	fs::remove_all(dir);
 }
 
 void pianoRollWithoutAMachine()
@@ -5025,6 +5082,7 @@ int main(int argc, char **argv)
 	keyPriority();
 	messagesConfig();
 	displayFit();
+	pathsConfig();
 	pianoRollWithoutAMachine();
 	watchValues();
 	themes();

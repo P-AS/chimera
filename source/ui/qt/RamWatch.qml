@@ -14,9 +14,12 @@ ApplicationWindow {
     width: 820
     height: 600
 
+    // the main window's Paths folders
+    property var folderOf: null
     FileDialog {
         id: openDialog
         title: qsTr("Open a watch list")
+        currentFolder: win.folderOf ? win.folderOf("Watch (.wch)") : ""
         nameFilters: [qsTr("Watch lists (*.wch)"), qsTr("All files (*)")]
         onAccepted: win.vm.run("open", [selectedFile])
     }
@@ -24,6 +27,7 @@ ApplicationWindow {
         id: saveDialog
         title: qsTr("Save the watch list as")
         fileMode: FileDialog.SaveFile
+        currentFolder: win.folderOf ? win.folderOf("Watch (.wch)") : ""
         nameFilters: [qsTr("Watch lists (*.wch)")]
         onAccepted: win.vm.run("save", [selectedFile])
     }

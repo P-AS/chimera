@@ -52,9 +52,12 @@ ApplicationWindow {
             Button { text: qsTr("Close"); onClicked: win.close() }
         }
     }
+    // the main window's Paths folders
+    property var folderOf: null
     FileDialog {
         id: zipDialog
         title: qsTr("Save the report and its files")
+        currentFolder: win.folderOf ? win.folderOf("Bug reports") : ""
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("Zip Archives (*.zip)")]
         onAccepted: {

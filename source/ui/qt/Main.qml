@@ -35,6 +35,12 @@ ApplicationWindow {
     required property QtObject customize
     required property QtObject messages
     required property QtObject display
+    required property QtObject paths
+    // a Paths folder for a file dialog to open in (made when it is not there)
+    function folderOf(name) {
+        root.paths.changed; root.paths.base; root.paths.lastRomFolder; root.paths.recentForRoms
+        return root.pictureFiles.folderUrl(root.paths.run("dialogFolder", [name]) || "")
+    }
     property url chosenPackage
 
     width: 1280
@@ -229,6 +235,7 @@ ApplicationWindow {
             Action { text: qsTr("&Messages..."); onTriggered: { messagesWindow.show(); messagesWindow.raise() } }
             Action { text: qsTr("So&und..."); onTriggered: { soundWindow.show(); soundWindow.raise() } }
             Action { text: qsTr("&Display..."); onTriggered: { displayWindow.show(); displayWindow.raise() } }
+            Action { text: qsTr("&Paths..."); onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
             // Chimera's Config > Key Priority: for a key that is a hotkey and a button
             Menu {
                 delegate: keyedMenuItem
@@ -714,7 +721,7 @@ ApplicationWindow {
         onAccepted: root.pianoRoll.run("addMarker", [root.pianoRoll.currentFrame, markerText.text])
     }
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
-    RamWatch { id: ramWatchWindow; vm: root.ramWatch; visible: false }
+    RamWatch { id: ramWatchWindow; vm: root.ramWatch; folderOf: root.folderOf; visible: false }
     NewProject { id: newProjectWindow; vm: root.newProject; askFirst: root.leaveProject; visible: false }
     ProjectDetails { id: projectDetailsWindow; vm: root.projectDetails; visible: false }
     UndoHistory { id: undoHistoryWindow; vm: root.pianoRoll; visible: false }
@@ -735,7 +742,7 @@ ApplicationWindow {
     Themes { id: themesWindow; vm: root.themes; colors: root.themeColors; visible: false }
     Controls { id: controlsWindow; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
     Settings { id: settingsWindow; settings: root.settings; visible: false }
-    LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; visible: false }
+    LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; folderOf: root.folderOf; visible: false }
     Branches { id: branchesWindow; vm: root.branches; visible: false }
     Cores { id: coresWindow; vm: root.cores; visible: false }
 
@@ -748,12 +755,14 @@ ApplicationWindow {
     FileDialog {
         id: gameWithDialog
         title: qsTr("Choose a game")
+        currentFolder: root.folderOf("ROM")
         onAccepted: root.leaveProject(() => root.session.run("open", [root.chosenPackage, selectedFile]))
     }
     property url chosenProject
     FileDialog {
         id: projectDialog
         title: qsTr("Choose a project")
+        currentFolder: root.folderOf("Movies")
         nameFilters: [qsTr("Chimera projects (*.chimeraProject)"), qsTr("All files (*)")]
         // the project's core is found among the installed ones
         onAccepted: root.leaveProject(() => root.session.run("openProject", [selectedFile]))
@@ -774,6 +783,7 @@ ApplicationWindow {
     FileDialog {
         id: saveAsDialog
         title: qsTr("Save the project as")
+        currentFolder: root.folderOf("Movies")
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("Chimera projects (*.chimeraProject)")]
         onAccepted: root.session.run("saveProject", [selectedFile])
@@ -841,6 +851,7 @@ ApplicationWindow {
     FileDialog {
         id: saveMacroDialog
         title: qsTr("Save the frames picked as a macro")
+        currentFolder: root.folderOf("Macros")
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("Movie Macros (*.chimeraMacro)")]
         onAccepted: root.pianoRoll.run("saveMacro", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast, selectedFile])
@@ -848,6 +859,7 @@ ApplicationWindow {
     FileDialog {
         id: placeMacroDialog
         title: qsTr("Place a macro at the frames picked")
+        currentFolder: root.folderOf("Macros")
         nameFilters: [qsTr("Movie Macros (*.chimeraMacro)"), qsTr("All files (*)")]
         onAccepted: root.pianoRoll.run("placeMacro", [root.pianoRoll.selectFirst, selectedFile])
     }
@@ -903,8 +915,12 @@ ApplicationWindow {
     FileDialog {
         id: gameDialog
         title: qsTr("Choose a game")
-        // the installed core that takes this kind of file opens it
-        onAccepted: root.leaveProject(() => root.session.run("openGame", [selectedFile]))
+        currentFolder: root.folderOf("ROM")
+        // the installed core that takes this kind of file opens it; where it came from is remembered
+        onAccepted: {
+            root.paths.lastRomFolder = root.pictureFiles.folderOf(selectedFile)
+            root.leaveProject(() => root.session.run("openGame", [selectedFile]))
+        }
     }
     // several installed cores take it: the session offers them
     Dialog {
@@ -1251,7 +1267,8 @@ ApplicationWindow {
         target: root.session
         function onRecoveredCopyChanged() { if (root.session.recoveredCopy !== "") recoveryDialog.open() }
     }
-    ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; visible: false }
+    ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; folderOf: root.folderOf; visible: false }
+    PathsConfig { id: pathsWindow; vm: root.paths; visible: false }
     Dialog {
         id: aboutDialog
         objectName: "aboutDialog"

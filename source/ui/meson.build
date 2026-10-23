@@ -30,6 +30,7 @@ vm_lib = static_library(
     'viewmodel/src/customize_vm.cpp',
     'viewmodel/src/messages_vm.cpp',
     'viewmodel/src/display_vm.cpp',
+    'viewmodel/src/paths_vm.cpp',
     'viewmodel/src/project_details_vm.cpp',
     'viewmodel/src/cores_vm.cpp',
     'viewmodel/src/branch_state.cpp',
