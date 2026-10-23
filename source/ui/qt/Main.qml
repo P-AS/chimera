@@ -18,6 +18,7 @@ ApplicationWindow {
     required property QtObject controls
     required property QtObject hotkeys
     required property QtObject keyNamer
+    required property QtObject hotkeyRelay
     required property QtObject themes
     required property QtObject themeColors
     required property QtObject settings
@@ -33,15 +34,60 @@ ApplicationWindow {
          : session.projectTitle !== "" ? qsTr("Chimera - %1 - %2 (%3)").arg(session.projectTitle).arg(session.coreName).arg(session.systemName)
          : qsTr("Chimera - %1 (%2)").arg(session.coreName).arg(session.systemName)
 
+    // the keys of every hotkey, for the menus to show beside their actions
+    readonly property var hotkeyKeys: JSON.parse(root.hotkeys.bound)
+    // a menu item that shows the keys of the hotkey its action names
+    Component {
+        id: keyedMenuItem
+        MenuItem {
+            id: keyedItem
+            readonly property string keys: action && action.hotkey ? (root.hotkeyKeys[action.hotkey] || "") : ""
+            rightPadding: padding + (keys !== "" ? keyLabel.implicitWidth + 24 : 0)
+            Label {
+                id: keyLabel
+                text: keyedItem.keys
+                anchors.right: parent.right
+                anchors.rightMargin: keyedItem.padding
+                anchors.verticalCenter: parent.verticalCenter
+                color: keyedItem.highlighted ? keyedItem.palette.highlightedText : keyedItem.palette.text
+            }
+        }
+    }
+    // what a hotkey does when it is the window's: a menu's action, a dialog, a window
+    function selectBetweenMarkers() {
+        const f = root.pianoRoll.currentFrame
+        const before = root.pianoRoll.run("previousMarker", [f + 1])
+        const after = root.pianoRoll.run("nextMarker", [f])
+        root.pianoRoll.run("select", [before >= 0 ? before : 0, after >= 0 ? after - 1 : root.pianoRoll.frameCount - 1])
+    }
+    readonly property var hotkeyActions: ({
+        "RAM Search": ramSearchAction, "RAM Watch": ramWatchAction, "Hex Editor": hexEditorAction, "Lua Console": luaConsoleAction,
+        "Undo": undoAction, "Redo": redoAction, "Sel. bet. Markers": betweenMarkersAction, "Select All": selectAllAction,
+        "Clear Frames": clearFramesAction, "Delete Frames": deleteFramesAction, "Insert Frame": insertFrameAction,
+        "Insert # Frames": insertFramesAction, "Clone Frames": cloneFramesAction, "Paste Insert": pasteInsertAction
+    })
+    Connections {
+        target: root.hotkeyRelay
+        function onPressed(action) {
+            if (action === "Full Screen") root.visibility = root.visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen
+            else if (action === "Open ROM") gameDialog.open()
+            else if (action === "Exit Program") Qt.quit()
+            else if (action === "Seek To...") { if (root.session.seekEnabled) seekDialog.open() }
+            else if (root.hotkeyActions[action] && root.hotkeyActions[action].enabled) root.hotkeyActions[action].trigger()
+        }
+    }
+
     menuBar: MenuBar {
         Menu {
+            delegate: keyedMenuItem
             title: qsTr("&File")
             // opens on the last project's answers, as Chimera's does
             Action { text: qsTr("&New Project..."); shortcut: "Ctrl+N"; onTriggered: { root.newProject.run("openOnLastProject"); newProjectWindow.show(); newProjectWindow.raise() } }
-            Action { text: qsTr("&Open Game..."); shortcut: "Ctrl+O"; onTriggered: gameDialog.open() }
+            Action { property string hotkey: "Open ROM"; text: qsTr("&Open Game..."); onTriggered: gameDialog.open() }
             Action { text: qsTr("Open Game &With a Core Package..."); onTriggered: packageDialog.open() }
             Action { text: qsTr("Open &Project..."); shortcut: "Ctrl+Shift+O"; onTriggered: projectDialog.open() }
             Menu {
+                delegate: keyedMenuItem
                 id: recentMenu
                 title: qsTr("&Recent Projects")
                 enabled: root.session.recentProjects !== ""
@@ -60,21 +106,24 @@ ApplicationWindow {
             Action { text: qsTr("&Save Project"); shortcut: "Ctrl+S"; enabled: root.session.hasProject; onTriggered: root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject") }
             Action { text: qsTr("Save Project &As..."); enabled: root.session.hasProject; onTriggered: saveAsDialog.open() }
             Action { text: qsTr("Make a &Project of This Game..."); enabled: root.session.isOpen && !root.session.hasProject; onTriggered: newProjectDialog.open() }
-            Action { text: qsTr("&Restart"); enabled: root.session.restartEnabled; onTriggered: root.session.run("restart") }
-            Action { text: qsTr("&Close"); enabled: root.session.closeEnabled; onTriggered: root.session.run("close") }
+            Action { property string hotkey: "Reboot Core"; text: qsTr("&Restart"); enabled: root.session.restartEnabled; onTriggered: root.session.run("restart") }
+            Action { property string hotkey: "Close ROM"; text: qsTr("&Close"); enabled: root.session.closeEnabled; onTriggered: root.session.run("close") }
             MenuSeparator {}
-            Action { text: qsTr("E&xit"); shortcut: "Ctrl+Q"; onTriggered: Qt.quit() }
+            Action { property string hotkey: "Exit Program"; text: qsTr("E&xit"); onTriggered: Qt.quit() }
         }
         Menu {
+            delegate: keyedMenuItem
             title: qsTr("&Emulation")
             Action { text: qsTr("&Play"); shortcut: "Ctrl+P"; enabled: root.session.playEnabled && !root.session.running; onTriggered: root.session.run("play") }
             Action { text: qsTr("P&ause"); shortcut: "Ctrl+Space"; enabled: root.session.running; onTriggered: root.session.run("pause") }
             Action { text: qsTr("&Settings..."); onTriggered: { settingsWindow.show(); settingsWindow.raise() } }
             Action { text: qsTr("&Controls and Hotkeys..."); onTriggered: { controlsWindow.show(); controlsWindow.raise() } }
             Action { text: qsTr("&Themes..."); onTriggered: { themesWindow.show(); themesWindow.raise() } }
-            Action { text: qsTr("&Frame Advance"); shortcut: "Ctrl+F"; enabled: root.session.frameAdvanceEnabled; onTriggered: root.session.run("frameAdvance") }
+            Action { property string hotkey: "Frame Advance"; text: qsTr("&Frame Advance"); enabled: root.session.frameAdvanceEnabled; onTriggered: root.session.run("frameAdvance") }
             Action { text: qsTr("Go to Frame &0"); shortcut: "Ctrl+Home"; enabled: root.session.seekEnabled; onTriggered: root.session.run("seek", [0]) }
+            Action { property string hotkey: "Seek To..."; text: qsTr("&Go to Frame..."); enabled: root.session.seekEnabled; onTriggered: seekDialog.open() }
             Action {
+                property string hotkey: "Toggle Auto-Restore"
                 text: qsTr("After an Edit, &Return to Where It Was")
                 checkable: true
                 checked: root.session.autoRestore
@@ -82,34 +131,40 @@ ApplicationWindow {
             }
         }
         Menu {
+            delegate: keyedMenuItem
             title: qsTr("&Tools")
             Action { text: qsTr("&Cores..."); onTriggered: { coresWindow.show(); coresWindow.raise() } }
-            Action { text: qsTr("RAM &Search..."); onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
-            Action { text: qsTr("RAM &Watch..."); onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
-            Action { text: qsTr("&Hex Editor..."); onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
-            Action { text: qsTr("&Lua Console..."); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
+            Action { id: ramSearchAction; property string hotkey: "RAM Search"; text: qsTr("RAM &Search..."); onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
+            Action { id: ramWatchAction; property string hotkey: "RAM Watch"; text: qsTr("RAM &Watch..."); onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
+            Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor..."); onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
+            Action { id: luaConsoleAction; property string hotkey: "Lua Console"; text: qsTr("&Lua Console..."); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
         }
         Menu {
+            delegate: keyedMenuItem
             // TAStudio's editing, on the frames picked (or the current one), with its keys
             title: qsTr("E&dit")
             readonly property bool picked: root.pianoRoll.selectFirst >= 0
             readonly property int at: picked ? root.pianoRoll.selectFirst : root.pianoRoll.currentFrame
             id: editMenu
             Action {
-                text: qsTr("&Insert Frame"); shortcut: "Insert"; enabled: root.session.isOpen
+                id: insertFrameAction; property string hotkey: "Insert Frame"
+                text: qsTr("&Insert Frame"); enabled: root.session.isOpen
                 onTriggered: root.pianoRoll.run("insertFrames", [Math.min(editMenu.at, root.pianoRoll.frameCount), 1])
             }
-            Action { text: qsTr("Insert &Number of Frames..."); shortcut: "Shift+Insert"; enabled: root.session.isOpen; onTriggered: insertDialog.open() }
+            Action { id: insertFramesAction; property string hotkey: "Insert # Frames"; text: qsTr("Insert &Number of Frames..."); enabled: root.session.isOpen; onTriggered: insertDialog.open() }
             Action {
-                text: qsTr("&Delete Frames"); shortcut: "Ctrl+Delete"; enabled: editMenu.picked
+                id: deleteFramesAction; property string hotkey: "Delete Frames"
+                text: qsTr("&Delete Frames"); enabled: editMenu.picked
                 onTriggered: root.pianoRoll.run("deleteFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
             }
             Action {
-                text: qsTr("C&lone Frames"); shortcut: "Ctrl+Insert"; enabled: editMenu.picked
+                id: cloneFramesAction; property string hotkey: "Clone Frames"
+                text: qsTr("C&lone Frames"); enabled: editMenu.picked
                 onTriggered: root.pianoRoll.run("cloneFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
             }
             Action {
-                text: qsTr("Cl&ear Frames"); shortcut: "Delete"; enabled: editMenu.picked
+                id: clearFramesAction; property string hotkey: "Clear Frames"
+                text: qsTr("Cl&ear Frames"); enabled: editMenu.picked
                 onTriggered: root.pianoRoll.run("clearFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
             }
             MenuSeparator {}
@@ -126,7 +181,8 @@ ApplicationWindow {
                 onTriggered: root.pianoRoll.run("pasteFrames", [Math.min(editMenu.at, root.pianoRoll.frameCount)])
             }
             Action {
-                text: qsTr("Paste In&sert"); shortcut: "Ctrl+Shift+V"; enabled: root.pianoRoll.clipboardFrames > 0
+                id: pasteInsertAction; property string hotkey: "Paste Insert"
+                text: qsTr("Paste In&sert"); enabled: root.pianoRoll.clipboardFrames > 0
                 onTriggered: root.pianoRoll.run("pasteInsertFrames", [Math.min(editMenu.at, root.pianoRoll.frameCount)])
             }
             MenuSeparator {}
@@ -135,8 +191,14 @@ ApplicationWindow {
                 onTriggered: root.pianoRoll.run("truncate", [editMenu.at])
             }
             Action {
-                text: qsTr("Select &All"); shortcut: "Ctrl+Shift+A"; enabled: root.pianoRoll.frameCount > 0
+                id: selectAllAction; property string hotkey: "Select All"
+                text: qsTr("Select &All"); enabled: root.pianoRoll.frameCount > 0
                 onTriggered: root.pianoRoll.run("select", [0, root.pianoRoll.frameCount - 1])
+            }
+            Action {
+                id: betweenMarkersAction; property string hotkey: "Sel. bet. Markers"
+                text: qsTr("Select &Between Markers"); enabled: root.pianoRoll.frameCount > 0
+                onTriggered: root.selectBetweenMarkers()
             }
             Action { text: qsTr("Select N&othing"); enabled: editMenu.picked; onTriggered: root.pianoRoll.run("select", [-1, -1]) }
             Action {
@@ -147,24 +209,28 @@ ApplicationWindow {
             }
         }
         Menu {
+            delegate: keyedMenuItem
             title: qsTr("Piano &Roll")
-            Action { text: qsTr("&Undo"); shortcut: StandardKey.Undo; enabled: root.pianoRoll.undoEnabled; onTriggered: root.pianoRoll.run("undo") }
-            Action { text: qsTr("&Redo"); shortcut: StandardKey.Redo; enabled: root.pianoRoll.redoEnabled; onTriggered: root.pianoRoll.run("redo") }
+            Action { id: undoAction; property string hotkey: "Undo"; text: qsTr("&Undo"); enabled: root.pianoRoll.undoEnabled; onTriggered: root.pianoRoll.run("undo") }
+            Action { id: redoAction; property string hotkey: "Redo"; text: qsTr("&Redo"); enabled: root.pianoRoll.redoEnabled; onTriggered: root.pianoRoll.run("redo") }
             MenuSeparator {}
             Action { text: qsTr("&Branches..."); shortcut: "Ctrl+B"; onTriggered: { branchesWindow.show(); branchesWindow.raise() } }
             Action { text: qsTr("Add &Marker Here..."); enabled: root.session.isOpen; onTriggered: markerDialog.open() }
-            Action { text: qsTr("Remove Marker Here"); enabled: root.session.isOpen; onTriggered: root.pianoRoll.run("removeMarker", [root.pianoRoll.currentFrame]) }
+            Action { property string hotkey: "Delete Marker"; text: qsTr("Remove Marker Here"); enabled: root.session.isOpen; onTriggered: root.pianoRoll.run("removeMarker", [root.pianoRoll.currentFrame]) }
             Action {
-                text: qsTr("&Next Marker"); shortcut: "Ctrl+Down"; enabled: root.session.isOpen
+                property string hotkey: "Seek To Next Marker"
+                text: qsTr("&Next Marker"); enabled: root.session.isOpen
                 onTriggered: root.session.run("seek", [root.pianoRoll.run("nextMarker", [root.pianoRoll.currentFrame])])
             }
             Action {
-                text: qsTr("&Previous Marker"); shortcut: "Ctrl+Up"; enabled: root.session.isOpen
+                property string hotkey: "Seek To Prev Marker"
+                text: qsTr("&Previous Marker"); enabled: root.session.isOpen
                 onTriggered: root.session.run("seek", [root.pianoRoll.run("previousMarker", [root.pianoRoll.currentFrame])])
             }
             MenuSeparator {}
             Action { text: qsTr("Make the Inputs 1,000,000 Frames Long"); onTriggered: root.pianoRoll.run("fill", [1000000]) }
             Menu {
+                delegate: keyedMenuItem
                 title: qsTr("&Greenzone")
                 Action {
                     text: qsTr("Store &Every Frame"); checkable: true; checked: root.session.greenzonePeriod === 1
@@ -181,6 +247,7 @@ ApplicationWindow {
                 }
             }
             Action {
+                property string hotkey: "Toggle Follow Cursor"
                 text: qsTr("&Follow the Current Frame")
                 checkable: true
                 checked: root.pianoRoll.followPlayback
@@ -189,6 +256,16 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: seekDialog
+        title: qsTr("Go to frame")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAboutToShow: seekTo.value = root.pianoRoll.currentFrame
+        SpinBox { id: seekTo; from: 0; to: Math.max(0, root.pianoRoll.frameCount); editable: true }
+        onAccepted: root.session.run("seek", [seekTo.value])
+    }
     Dialog {
         id: everyDialog
         title: qsTr("Store every how many frames")

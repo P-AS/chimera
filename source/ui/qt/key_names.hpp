@@ -26,4 +26,17 @@ public:
 	}
 };
 
+/* Hands a hotkey whose action is the window's (a menu's, a dialog's) to the
+ * window: the key is the hotkeys' to bind, what it does is the menu's. */
+class HotkeyRelay : public QObject
+{
+	Q_OBJECT
+public:
+	using QObject::QObject;
+	void press(const std::string &action) { Q_EMIT pressed(QString::fromStdString(action)); }
+
+Q_SIGNALS:
+	void pressed(const QString &action);
+};
+
 } // namespace chimera::qt

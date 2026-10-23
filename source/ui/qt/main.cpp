@@ -208,12 +208,20 @@ int main(int argc, char **argv)
 	vm::ControlsViewModel controls(dispatcher, session);
 	vm::ThemesViewModel themes(dispatcher);
 	vm::Connection themesWatch;
-	/* Chimera's hotkeys, with its keys, for what this window has */
+	/* Chimera's hotkeys, with its keys and in its order, for what this window
+	 * has: each one the hotkeys' to bind. What a menu or a dialog does is the
+	 * window's, and the relay hands it over; the rest is done here. */
 	vm::HotkeysViewModel hotkeys(dispatcher);
+	qt::HotkeyRelay relay;
 	{
 		auto run = [](vm::ViewModel &vm, std::string command, vm::Args args = {}) {
 			std::string e;
 			vm.run(command, args, e);
+		};
+		auto window = [&hotkeys, &relay](const std::string &group, const std::string &name, const std::string &keys) {
+			hotkeys.add(group, name, keys, [&relay, name](bool down) {
+				if (down) relay.press(name);
+			});
 		};
 		hotkeys.add("General", "Frame Advance", "F", [&session](bool down) { session.holdFrameAdvance(down); });
 		hotkeys.add("General", "Rewind", "Shift+R", [&session](bool down) { session.holdRewind(down); });
@@ -221,11 +229,42 @@ int main(int argc, char **argv)
 			if (down) run(session, session.running.get() ? "pause" : "play");
 		});
 		hotkeys.add("General", "Fast Forward", "Tab", [&session](bool down) { session.holdFastForward(down); });
+		window("General", "Full Screen", "Alt+Enter");
+		window("General", "Open ROM", "Ctrl+O");
+		hotkeys.add("General", "Close ROM", "Ctrl+W", [&session, run](bool down) {
+			if (down) run(session, "close");
+		});
+		hotkeys.add("General", "Load Last ROM", "", [&session, run](bool down) {
+			const std::string recent = session.recentProjects.get();
+			if (down && !recent.empty()) run(session, "openProject", {recent.substr(0, recent.find('\n'))});
+		});
 		hotkeys.add("General", "Reboot Core", "Ctrl+R", [&session, run](bool down) {
 			if (down) run(session, "restart");
 		});
-		hotkeys.add("General", "Close ROM", "Ctrl+W", [&session, run](bool down) {
-			if (down) run(session, "close");
+		window("General", "Exit Program", "");
+		window("Tools", "RAM Watch", "");
+		window("Tools", "RAM Search", "");
+		window("Tools", "Hex Editor", "");
+		window("Tools", "Lua Console", "");
+		hotkeys.add("RAM Search", "New Search", "", [&ramSearch, run](bool down) {
+			if (down) run(ramSearch, "start");
+		});
+		hotkeys.add("RAM Search", "Do Search", "", [&ramSearch, run](bool down) {
+			if (down) run(ramSearch, "search");
+		});
+		/* what a search compares with (five ways) and how (seven), round */
+		auto cycle = [](vm::Property<int64_t> &p, int64_t by, int64_t ways) { p.set(((p.get() + by) % ways + ways) % ways); };
+		hotkeys.add("RAM Search", "Previous Compare To", "", [&ramSearch, cycle](bool down) {
+			if (down) cycle(ramSearch.compare, -1, 5);
+		});
+		hotkeys.add("RAM Search", "Next Compare To", "", [&ramSearch, cycle](bool down) {
+			if (down) cycle(ramSearch.compare, 1, 5);
+		});
+		hotkeys.add("RAM Search", "Previous Operator", "", [&ramSearch, cycle](bool down) {
+			if (down) cycle(ramSearch.op, -1, 7);
+		});
+		hotkeys.add("RAM Search", "Next Operator", "", [&ramSearch, cycle](bool down) {
+			if (down) cycle(ramSearch.op, 1, 7);
 		});
 		hotkeys.add("TAStudio", "Add Branch", "Alt+Insert", [&branches, run](bool down) {
 			if (down) run(branches, "create");
@@ -240,21 +279,18 @@ int main(int argc, char **argv)
 				if (down) run(branches, "load", {int64_t{slot - 1}});
 			});
 		}
+		window("TAStudio", "Seek To...", "Ctrl+G");
 		hotkeys.add("TAStudio", "Toggle Follow Cursor", "Shift+F", [&pianoRoll](bool down) {
 			if (down) pianoRoll.followPlayback.set(!pianoRoll.followPlayback.get());
-		});
-		hotkeys.add("TAStudio", "Cycle Greenzone", "", [&session, run](bool down) {
-			if (down) run(session, "cycleGreenzone");
 		});
 		hotkeys.add("TAStudio", "Toggle Auto-Restore", "Alt+R", [&session](bool down) {
 			if (down) session.autoRestore.set(!session.autoRestore.get());
 		});
-		hotkeys.add("TAStudio", "Set Marker", "M", [&pianoRoll, run](bool down) {
-			if (down) run(pianoRoll, "addMarker", {pianoRoll.currentFrame.get(), std::string()});
+		hotkeys.add("TAStudio", "Cycle Greenzone", "", [&session, run](bool down) {
+			if (down) run(session, "cycleGreenzone");
 		});
-		hotkeys.add("TAStudio", "Delete Marker", "Ctrl+M", [&pianoRoll, run](bool down) {
-			if (down) run(pianoRoll, "removeMarker", {pianoRoll.currentFrame.get()});
-		});
+		window("TAStudio", "Undo", "Ctrl+Z");
+		window("TAStudio", "Redo", "Ctrl+Y");
 		auto seekMarker = [&pianoRoll, &session, run](const char *which) {
 			std::string e;
 			const auto to = pianoRoll.run(which, {pianoRoll.currentFrame.get()}, e);
@@ -267,6 +303,20 @@ int main(int argc, char **argv)
 		hotkeys.add("TAStudio", "Seek To Next Marker", "Shift+PageDown", [seekMarker](bool down) {
 			if (down) seekMarker("nextMarker");
 		});
+		hotkeys.add("TAStudio", "Set Marker", "M", [&pianoRoll, run](bool down) {
+			if (down) run(pianoRoll, "addMarker", {pianoRoll.currentFrame.get(), std::string()});
+		});
+		hotkeys.add("TAStudio", "Delete Marker", "Ctrl+M", [&pianoRoll, run](bool down) {
+			if (down) run(pianoRoll, "removeMarker", {pianoRoll.currentFrame.get()});
+		});
+		window("TAStudio", "Sel. bet. Markers", "Ctrl+A");
+		window("TAStudio", "Select All", "Ctrl+Shift+A");
+		window("TAStudio", "Clear Frames", "Delete");
+		window("TAStudio", "Delete Frames", "Ctrl+Delete");
+		window("TAStudio", "Insert Frame", "Insert");
+		window("TAStudio", "Insert # Frames", "Shift+Insert");
+		window("TAStudio", "Clone Frames", "Ctrl+Insert");
+		window("TAStudio", "Paste Insert", "Ctrl+Shift+V");
 	}
 	vm::SettingsViewModel settings(dispatcher, session);
 	/* the cores and the firmware: beside the program, as Chimera keeps them,
@@ -466,6 +516,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("themeColors"), QVariant::fromValue<QObject *>(&themeColors)},
 		{QStringLiteral("hotkeys"), QVariant::fromValue<QObject *>(&hotkeysQml)},
 		{QStringLiteral("keyNamer"), QVariant::fromValue<QObject *>(&keyNamer)},
+		{QStringLiteral("hotkeyRelay"), QVariant::fromValue<QObject *>(&relay)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},

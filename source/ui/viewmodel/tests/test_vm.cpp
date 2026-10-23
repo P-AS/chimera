@@ -1813,7 +1813,10 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	CHECK(!hotkeys.key("F", true) && downs == 1);
 	CHECK(hotkeys.key("F", false) && ups == 1);
 	CHECK(!hotkeys.key("R", true) && !hotkeys.key("Shift+F", true));
+	/* every action's keys, for the menus to show */
+	CHECK(hotkeys.bound.get() == "{\"Frame Advance\": \"F\", \"Rewind\": \"Shift+R\"}");
 	CHECK(hotkeys.run("bind", {std::string("Frame Advance"), std::string("G")}, error).has_value());
+	CHECK(hotkeys.bound.get() == "{\"Frame Advance\": \"G\", \"Rewind\": \"Shift+R\"}");
 	CHECK(!hotkeys.key("F", true) && hotkeys.key("G", true) && downs == 2);
 	hotkeys.key("G", false);
 	CHECK(hotkeys.saved.get().find("\"G\"") != std::string::npos);

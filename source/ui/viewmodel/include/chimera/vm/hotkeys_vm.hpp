@@ -29,6 +29,9 @@ public:
 
 	/* the keys changed: {"action": "keys"} */
 	Property<std::string> saved{"{}"};
+	/* every action's keys as they are now, {"action": "keys"}, for a menu
+	 * to show beside the action */
+	Property<std::string> bound{"{}"};
 	Property<std::string> status;
 
 private:

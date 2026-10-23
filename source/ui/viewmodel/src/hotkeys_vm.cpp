@@ -29,6 +29,7 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 {
 	expose("saved", "the keys changed, as {\"action\": \"keys\"}", saved, true);
 	expose("status", "what Hotkeys last had to say", status);
+	expose("bound", "every action's keys as they are now, as {\"action\": \"keys\"}", bound);
 	rows("hotkeys", "one row an action: group, name, its keys, Chimera's keys for it, changed", rows_);
 
 	command("bind", "an action's keys, replaced (\"F, X1 RightShoulder\"; \"\" for none)", {"action", "keys"},
@@ -110,11 +111,15 @@ void HotkeysViewModel::apply()
 	Json all;
 	std::string error;
 	if (!json::parse(saved.get(), all, error) || all.kind != Json::Kind::Object) all.kind = Json::Kind::Object;
+	Json now;
+	now.kind = Json::Kind::Object;
 	for (Action &a : actions_)
 	{
 		const Json *mine = all.find(a.name);
 		a.keys = mine != nullptr && mine->kind == Json::Kind::String ? mine->text : a.defaults;
+		now.members.emplace_back(a.name, Json::string(a.keys));
 	}
+	bound.set(json::write(now));
 	rows_.reset.emit();
 }
 
