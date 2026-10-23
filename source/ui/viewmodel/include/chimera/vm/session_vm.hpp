@@ -72,6 +72,20 @@ public:
 	 * 0 to 9 of every one drawn, only when behind when auto-minimized (as
 	 * Chimera's, on by default); unthrottled draws one in four. Remembered */
 	Property<int64_t> fastForwardPercent{400};
+	/* Chimera's Sound window: the sound device ("" the system's), the buffer
+	 * in milliseconds, the sound at the machine's own speed on or off, while
+	 * fast forwarding on or off and its volume (a share of the volume), and
+	 * frame advance muted; and the devices there are. Remembered */
+	Property<std::string> soundDevice;
+	Property<int64_t> soundBufferMs{100};
+	Property<bool> soundNormalOn{true}, soundFastOn{true}, muteFrameAdvance{true};
+	Property<int64_t> fastVolume{50};
+	Property<std::string> soundDevices{"[]"};
+	/* the volume a frame is heard at, by Chimera's rule: the volume when the
+	 * sound is on; while fast forwarding a share of it, or none; none for a
+	 * frame advanced by hand when that is muted */
+	static int64_t frameVolume(bool soundOn, int64_t volume, bool fast, bool fastOn, int64_t fastVolume, bool advanced,
+		bool muteAdvance);
 	Property<int64_t> frameSkip{0};
 	Property<bool> autoMinimizeSkipping{true};
 	/* Chimera's Skip Lag Frames: a frame advance that lands after a lag
@@ -626,7 +640,13 @@ private:
 	int64_t frameM_ = 0;
 	int64_t greenEndM_ = 0;
 	std::atomic<int64_t> speedM_{100}, volumeM_{100}, fastSpeedM_{400}, frameSkipM_{0};
-	std::atomic<bool> autoMinimizeM_{true};
+	std::atomic<bool> autoMinimizeM_{true}, soundNormalOnM_{true}, soundFastOnM_{true}, muteAdvanceM_{true}, steppingM_{false};
+	std::atomic<int64_t> fastVolumeM_{50};
+	std::string soundDeviceM_;
+	int64_t soundBufferMsM_ = 100;
+	/* the sound opened again on the device and buffer asked for; the devices said */
+	void reopenSoundOnMachine();
+	Connection soundDeviceWatch_, soundBufferWatch_, soundNormalWatch_, soundFastWatch_, muteAdvanceWatch_, fastVolumeWatch_;
 	Connection fastSpeedWatch_, frameSkipWatch_, autoMinimizeWatch_;
 	std::atomic<bool> unthrottledM_{false}, soundOnM_{true}, turboM_{false}, skipLagM_{false}, displayNothingM_{false},
 		padsHeardM_{true};

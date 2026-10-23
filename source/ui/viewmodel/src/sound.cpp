@@ -1,5 +1,7 @@
 #include "chimera/vm/sound.hpp"
 
+#include <algorithm>
+#include <map>
 #include <vector>
 
 #ifdef _WIN32
@@ -14,10 +16,10 @@ namespace {
 /* OpenAL's stable C interface, the little of it used here */
 constexpr int AL_FORMAT_STEREO16 = 0x1103, AL_BUFFERS_PROCESSED = 0x1016, AL_BUFFERS_QUEUED = 0x1015,
 	AL_SOURCE_STATE = 0x1010, AL_PLAYING = 0x1012;
-/* buffers in flight: one a frame, so this is how many frames may wait */
-constexpr int kBuffers = 16;
-/* more than this many frames' sound waiting, and the next frame's is dropped */
-constexpr int kMostAhead = 6;
+constexpr int ALC_DEVICE_SPECIFIER = 0x1005, ALC_ALL_DEVICES_SPECIFIER = 0x1013;
+/* buffers in flight: one a frame, so at most this many frames may wait
+ * (more than a second's at 60 a second) */
+constexpr int kBuffers = 80;
 } // namespace
 
 struct Sound::Api
@@ -38,7 +40,11 @@ struct Sound::Api
 	void (*alGetSourcei)(unsigned, int, int *) = nullptr;
 	void (*alSourcePlay)(unsigned) = nullptr;
 	void (*alSourceStop)(unsigned) = nullptr;
+	const char *(*alcGetString)(void *, int) = nullptr;
+	int (*alcIsExtensionPresent)(void *, const char *) = nullptr;
 	void *device = nullptr, *context = nullptr;
+	/* the sample pairs in each buffer queued */
+	std::map<unsigned, int64_t> inFlight;
 	unsigned source = 0;
 	unsigned buffers[kBuffers] = {};
 	std::vector<unsigned> free;
@@ -56,8 +62,9 @@ struct Sound::Api
 	}
 };
 
-Sound::Sound() : api_(std::make_unique<Api>())
+Sound::Sound(const std::string &device, int32_t bufferMs) : api_(std::make_unique<Api>())
 {
+	mostAhead_ = static_cast<int64_t>(std::clamp<int32_t>(bufferMs, 10, 1000)) * kRate / 1000;
 	Api &a = *api_;
 #ifdef _WIN32
 	a.lib = LoadLibraryW(L"OpenAL32.dll");
@@ -82,10 +89,12 @@ Sound::Sound() : api_(std::make_unique<Api>())
 		problem_ = "the OpenAL found is missing a function the sound needs";
 		return;
 	}
-	a.device = a.alcOpenDevice(nullptr);
+	a.bind(a.alcGetString, "alcGetString");
+	a.bind(a.alcIsExtensionPresent, "alcIsExtensionPresent");
+	a.device = a.alcOpenDevice(device.empty() ? nullptr : device.c_str());
 	if (a.device == nullptr)
 	{
-		problem_ = "no sound device";
+		problem_ = device.empty() ? "no sound device" : "the sound device " + device + " would not open";
 		return;
 	}
 	a.context = a.alcCreateContext(a.device, nullptr);
@@ -117,6 +126,23 @@ Sound::~Sound()
 
 bool Sound::available() const { return api_->started; }
 
+std::vector<std::string> Sound::devices() const
+{
+	const Api &a = *api_;
+	std::vector<std::string> names;
+	if (a.alcGetString == nullptr) return names;
+	/* every device when OpenAL can say them all, else the ones it lists */
+	const bool all = a.alcIsExtensionPresent != nullptr && a.alcIsExtensionPresent(nullptr, "ALC_ENUMERATE_ALL_EXT") != 0;
+	const char *list = a.alcGetString(nullptr, all ? ALC_ALL_DEVICES_SPECIFIER : ALC_DEVICE_SPECIFIER);
+	/* names one after another, each ending in a zero, the list in two */
+	while (list != nullptr && *list != '\0')
+	{
+		names.emplace_back(list);
+		list += names.back().size() + 1;
+	}
+	return names;
+}
+
 void Sound::scale(const int16_t *samples, int32_t pairs, int32_t volume, std::vector<int16_t> &out)
 {
 	const int32_t v = volume < 0 ? 0 : volume > 100 ? 100 : volume;
@@ -141,10 +167,14 @@ void Sound::play(const int16_t *samples, int32_t pairs, int32_t volume)
 		unsigned b = 0;
 		a.alSourceUnqueueBuffers(a.source, 1, &b);
 		a.free.push_back(b);
+		if (const auto it = a.inFlight.find(b); it != a.inFlight.end())
+		{
+			ahead_ -= it->second;
+			a.inFlight.erase(it);
+		}
 	}
-	int waiting = 0;
-	a.alGetSourcei(a.source, AL_BUFFERS_QUEUED, &waiting);
-	if (waiting >= kMostAhead || a.free.empty())
+	/* a buffer's worth waiting already: this frame's would be heard late */
+	if ((ahead_ > 0 && ahead_ + pairs > mostAhead_) || a.free.empty())
 	{
 		dropped_ += pairs;
 		return;
@@ -153,6 +183,8 @@ void Sound::play(const int16_t *samples, int32_t pairs, int32_t volume)
 	a.free.pop_back();
 	a.alBufferData(b, AL_FORMAT_STEREO16, samples, pairs * 4, kRate);
 	a.alSourceQueueBuffers(a.source, 1, &b);
+	a.inFlight[b] = pairs;
+	ahead_ += pairs;
 	queued_ += pairs;
 	int state = 0;
 	a.alGetSourcei(a.source, AL_SOURCE_STATE, &state);

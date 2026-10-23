@@ -223,6 +223,43 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	soundOnWatch_ = soundOn.changed.connect([this] { soundOnM_ = soundOn.get(); });
 	expose("fastForwardPercent", "how fast fast forward runs, a percent of the machine's rate (Chimera's alternate speed)",
 		fastForwardPercent, true);
+	expose("soundDevice", "the sound device, by name; \"\" the system's own", soundDevice, true);
+	expose("soundBufferMs", "how far ahead the sound may be queued, in milliseconds (10 to 1000)", soundBufferMs, true);
+	expose("soundNormalOn", "the sound is heard at the machine's own speed", soundNormalOn, true);
+	expose("soundFastOn", "the sound is heard while fast forwarding", soundFastOn, true);
+	expose("fastVolume", "the volume while fast forwarding, a percent of the volume", fastVolume, true);
+	expose("muteFrameAdvance", "no sound for frames advanced one at a time", muteFrameAdvance, true);
+	expose("soundDevices", "the sound devices there are, as [\"name\", ...]", soundDevices);
+	soundDeviceWatch_ = soundDevice.changed.connect([this] {
+		submit([this, d = soundDevice.get()] {
+			soundDeviceM_ = d;
+			if (soundM_) reopenSoundOnMachine();
+		});
+	});
+	soundBufferWatch_ = soundBufferMs.changed.connect([this] {
+		if (soundBufferMs.get() < 10 || soundBufferMs.get() > 1000) soundBufferMs.set(std::clamp<int64_t>(soundBufferMs.get(), 10, 1000));
+		submit([this, ms = soundBufferMs.get()] {
+			soundBufferMsM_ = ms;
+			if (soundM_) reopenSoundOnMachine();
+		});
+	});
+	soundNormalWatch_ = soundNormalOn.changed.connect([this] { soundNormalOnM_ = soundNormalOn.get(); });
+	soundFastWatch_ = soundFastOn.changed.connect([this] { soundFastOnM_ = soundFastOn.get(); });
+	muteAdvanceWatch_ = muteFrameAdvance.changed.connect([this] { muteAdvanceM_ = muteFrameAdvance.get(); });
+	fastVolumeWatch_ = fastVolume.changed.connect([this] {
+		if (fastVolume.get() < 0 || fastVolume.get() > 100) fastVolume.set(std::clamp<int64_t>(fastVolume.get(), 0, 100));
+		fastVolumeM_ = fastVolume.get();
+	});
+	command("findSoundDevices", "looks for the sound devices again (soundDevices)", {}, [this](const Args &, std::string &) -> Value {
+		submit([this] {
+			if (!soundM_) soundM_ = std::make_unique<Sound>(soundDeviceM_, static_cast<int32_t>(soundBufferMsM_));
+			json::Json list;
+			list.kind = json::Json::Kind::Array;
+			for (const std::string &n : soundM_->devices()) list.items.push_back(json::Json::string(n));
+			later([this, text = json::write(list)] { soundDevices.set(text); });
+		});
+		return {};
+	});
 	expose("frameSkip", "frames left undrawn while running, 0 to 9 of every one drawn (Chimera's frame skip)", frameSkip, true);
 	expose("autoMinimizeSkipping", "frames are left undrawn only when the machine is behind (Chimera's auto-minimize "
 		"skipping)", autoMinimizeSkipping, true);
@@ -812,8 +849,10 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			runningM_ = false;
 			passOnMachine(1, true, false);
 			/* Skip Lag Frames: on past lag frames, a few seconds' worth at most */
+			steppingM_ = true;
 			int32_t lag = advanceOnMachine();
 			for (int i = 0; lag > 0 && skipLagM_.load() && i < 600; i++) lag = advanceOnMachine();
+			steppingM_ = false;
 			later([this] { running.set(false); });
 		});
 		return {};
@@ -983,8 +1022,10 @@ void SessionViewModel::holdFrameAdvance(bool down)
 		{
 			runningM_ = false;
 			/* Skip Lag Frames: on past lag frames, a few seconds' worth at most */
+			steppingM_ = true;
 			int32_t lag = advanceOnMachine();
 			for (int i = 0; lag > 0 && skipLagM_.load() && i < 600; i++) lag = advanceOnMachine();
+			steppingM_ = false;
 			later([this] { running.set(false); });
 			holdM_ = Hold::Advance;
 			holdSince_ = Clock::now();
@@ -3054,7 +3095,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	if (!padsM_) padsM_ = std::make_unique<Gamepads>();
 	padCount_ = 0;
 	std::string padText = padsM_->available() ? "No gamepads" : padsM_->problem();
-	if (!soundM_) soundM_ = std::make_unique<Sound>();
+	if (!soundM_) soundM_ = std::make_unique<Sound>(soundDeviceM_, static_cast<int32_t>(soundBufferMsM_));
 	const std::string soundText = soundM_->available() ? "Sound on" : soundM_->problem();
 	later([this, padText, soundText] { gamepads.set(padText); sound.set(soundText); });
 
@@ -3121,6 +3162,23 @@ void SessionViewModel::closeOnMachine()
 		projectSwitched();
 		status.set("Closed");
 	});
+}
+
+int64_t SessionViewModel::frameVolume(bool soundOn, int64_t volume, bool fast, bool fastOn, int64_t fastVolume, bool advanced,
+	bool muteAdvance)
+{
+	int64_t v = soundOn ? volume : 0;
+	if (fast) v = fastOn ? v * fastVolume / 100 : 0;
+	if (advanced && muteAdvance) v = 0;
+	return v;
+}
+
+void SessionViewModel::reopenSoundOnMachine()
+{
+	soundM_.reset();
+	soundM_ = std::make_unique<Sound>(soundDeviceM_, static_cast<int32_t>(soundBufferMsM_));
+	const std::string text = soundM_->available() ? "Sound on" : soundM_->problem();
+	later([this, text] { sound.set(text); });
 }
 
 bool SessionViewModel::skipNextOnMachine()
@@ -3321,7 +3379,9 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	{
 		int32_t pairs = 0;
 		const int16_t *samples = ce_session_audio(s_, &pairs);
-		soundM_->play(samples, pairs, soundOnM_ ? static_cast<int32_t>(volumeM_.load()) : 0);
+		const int64_t v = frameVolume(soundOnM_ && soundNormalOnM_, volumeM_.load(), fastM_, soundFastOnM_, fastVolumeM_.load(),
+			steppingM_ || holdRunning_, muteAdvanceM_);
+		soundM_->play(samples, pairs, static_cast<int32_t>(v));
 	}
 
 	if (render)

@@ -546,6 +546,35 @@ bool speedAndSound(const char *package, const char *rom)
 	Sound::scale(samples, 2, 150, out);
 	CHECK(out == std::vector<int16_t>({1000, -1000, 32767, -32768}));
 
+	/* Chimera's Sound window: the volume a frame is heard at */
+	CHECK(SessionViewModel::frameVolume(true, 80, false, true, 50, false, true) == 80);
+	CHECK(SessionViewModel::frameVolume(true, 80, true, true, 50, false, true) == 40);
+	CHECK(SessionViewModel::frameVolume(true, 80, true, false, 50, false, true) == 0);
+	CHECK(SessionViewModel::frameVolume(true, 80, false, true, 50, true, true) == 0);
+	CHECK(SessionViewModel::frameVolume(true, 80, false, true, 50, true, false) == 80);
+	CHECK(SessionViewModel::frameVolume(false, 80, false, true, 50, false, true) == 0);
+	/* the buffer: a frame's sound (735 pairs at 60 a second) dropped once a
+	 * buffer's worth waits; OpenAL's device that plays to nowhere */
+	{
+		std::vector<int16_t> frame(735 * 2, 100);
+		Sound small("", 50);
+		if (small.available())
+		{
+			for (int i = 0; i < 20; i++) small.play(frame.data(), 735);
+			std::printf("sound buffer 50 ms: %lld queued, %lld dropped\n", static_cast<long long>(small.queued()),
+				static_cast<long long>(small.dropped()));
+			CHECK(small.queued() <= 2205 && small.queued() >= 1470 && small.queued() + small.dropped() == 20 * 735);
+			Sound large("", 1000);
+			for (int i = 0; i < 20; i++) large.play(frame.data(), 735);
+			CHECK(large.queued() == 20 * 735 && large.dropped() == 0);
+			CHECK(!small.devices().empty());
+			Sound none("no such sound device");
+			CHECK(!none.available() && none.problem() == "the sound device no such sound device would not open");
+		}
+		else
+			std::printf("SKIP the sound buffer: %s\n", small.problem().c_str());
+	}
+
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);

@@ -226,6 +226,7 @@ ApplicationWindow {
             Action { text: qsTr("&Themes..."); onTriggered: { themesWindow.show(); themesWindow.raise() } }
             Action { text: qsTr("C&ustomize..."); onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
             Action { text: qsTr("&Messages..."); onTriggered: { messagesWindow.show(); messagesWindow.raise() } }
+            Action { text: qsTr("So&und..."); onTriggered: { soundWindow.show(); soundWindow.raise() } }
             // Chimera's Config > Key Priority: for a key that is a hotkey and a button
             Menu {
                 delegate: keyedMenuItem
@@ -1210,6 +1211,7 @@ ApplicationWindow {
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; visible: false }
     Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; visible: false }
     MessagesConfig { id: messagesWindow; vm: root.messages; visible: false }
+    SoundConfig { id: soundWindow; session: root.session; visible: false }
     ProjectFiles { session: root.session }
     // Work a crash left behind, offered before the project opens, as
     // Chimera's "Recover unsaved work?" asks
