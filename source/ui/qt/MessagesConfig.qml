@@ -16,6 +16,8 @@ ApplicationWindow {
     objectName: "messagesWindow"
     required property QtObject vm
     property Window mainWindow: null
+    // the theme's colour for a role (Main hands it its lookup)
+    property var themeColor: (role, fallback) => fallback
     title: qsTr("Configure On Screen Messages")
     width: 560
     height: 470
@@ -206,7 +208,7 @@ ApplicationWindow {
                     Button { text: qsTr("&OK"); onClicked: { win.keeping = true; win.close() } }
                     Button { text: qsTr("&Cancel"); onClicked: win.close() }
                 }
-                Label { text: win.vm.error; color: "#b00020"; visible: text !== ""; elide: Text.ElideRight; Layout.fillWidth: true }
+                Label { text: win.vm.error; color: win.themeColor("AccentError", "#b00020"); visible: text !== ""; elide: Text.ElideRight; Layout.fillWidth: true }
             }
         }
     }

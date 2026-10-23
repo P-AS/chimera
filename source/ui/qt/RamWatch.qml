@@ -579,7 +579,7 @@ ApplicationWindow {
             ComboBox { id: displayBox; Layout.fillWidth: true; enabled: !(editor.info.sizesDiffer === true) }
             Label { text: qsTr("Notes:"); Layout.alignment: Qt.AlignRight }
             TextField { id: notesBox; Layout.fillWidth: true; enabled: !editor.info.many; maximumLength: 256; onAccepted: editor.accept() }
-            Label { Layout.columnSpan: 2; text: win.vm.error; color: "#b00020"; visible: text !== ""; wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Label { Layout.columnSpan: 2; text: win.vm.error; color: win.themeColor("AccentError", "#b00020"); visible: text !== ""; wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 Layout.columnSpan: 2
                 Layout.alignment: Qt.AlignRight

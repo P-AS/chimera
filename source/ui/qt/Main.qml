@@ -859,6 +859,7 @@ ApplicationWindow {
         vm: root.encoder; session: root.session; pianoRoll: root.pianoRoll; paths: root.paths; files: root.pictureFiles
         picture: picture
         mainWindow: root
+        themeColor: root.osdColor
         visible: false
     }
     // Chimera's: a video is an encode of a run, so there is none without a project
@@ -1401,9 +1402,9 @@ ApplicationWindow {
             greenzoneBudgetsWindow.raise()
         }
     }
-    GreenzoneBudgets { id: greenzoneBudgetsWindow; session: root.session; caches: root.cacheManager; mainWindow: root; visible: false }
+    GreenzoneBudgets { id: greenzoneBudgetsWindow; session: root.session; caches: root.cacheManager; mainWindow: root; themeColor: root.osdColor; visible: false }
     Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; mainWindow: root; visible: false }
-    MessagesConfig { id: messagesWindow; vm: root.messages; mainWindow: root; visible: false }
+    MessagesConfig { id: messagesWindow; vm: root.messages; mainWindow: root; themeColor: root.osdColor; visible: false }
     SoundConfig { id: soundWindow; session: root.session; mainWindow: root; visible: false }
     DisplayConfig { id: displayWindow; vm: root.display; session: root.session; mainWindow: root; visible: false }
     ProjectFiles { session: root.session; mainWindow: root; themeColor: root.osdColor }
@@ -1437,17 +1438,17 @@ ApplicationWindow {
         function onRecoveredCopyChanged() { if (root.session.recoveredCopy !== "") recoveryDialog.open() }
     }
     ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; folderOf: root.folderOf; gameRunning: root.session.isOpen; mainWindow: root; visible: false }
-    PathsConfig { id: pathsWindow; vm: root.paths; session: root.session; mainWindow: root; visible: false }
+    PathsConfig { id: pathsWindow; vm: root.paths; session: root.session; mainWindow: root; themeColor: root.osdColor; visible: false }
     FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; themeColor: root.osdColor; visible: false }
     DataFolderConfig { id: dataFolderWindow; vm: root.dataFolder; themeColor: root.osdColor; mainWindow: root; visible: false }
     PrecompiledModules { id: precompiledWindow; vm: root.precompiled; themeColor: root.osdColor; visible: false }
     TraceLogger {
         id: traceLoggerWindow; vm: root.traceLogger; session: root.session; visible: false
-        folderOf: root.folderOf; customize: root.customize; toolWindows: root.toolWindows; mainWindow: root
+        folderOf: root.folderOf; customize: root.customize; toolWindows: root.toolWindows; mainWindow: root; themeColor: root.osdColor
     }
     Debugger {
         id: debuggerWindow; vm: root.debuggerTool; session: root.session; visible: false
-        customize: root.customize; toolWindows: root.toolWindows; mainWindow: root
+        customize: root.customize; toolWindows: root.toolWindows; mainWindow: root; themeColor: root.osdColor
     }
     SurfaceViewer {
         id: surfaceViewerWindow; vm: root.surfaceViewer; session: root.session; visible: false
@@ -1456,7 +1457,7 @@ ApplicationWindow {
     }
     MacroTool {
         id: macroToolWindow; vm: root.macroTool; pianoRoll: root.pianoRoll; folderOf: root.folderOf; visible: false
-        customize: root.customize; toolWindows: root.toolWindows; mainWindow: root
+        customize: root.customize; toolWindows: root.toolWindows; mainWindow: root; themeColor: root.osdColor
     }
     Dialog {
         id: aboutDialog
@@ -1486,7 +1487,7 @@ ApplicationWindow {
             Label { text: root.session.status; elide: Text.ElideRight; Layout.fillWidth: true }
             Label { text: root.session.gamepads; elide: Text.ElideRight; Layout.maximumWidth: 260 }
             Label { text: root.session.sound; elide: Text.ElideRight; Layout.maximumWidth: 200 }
-            Label { visible: root.encoder.phase === "encoding"; text: qsTr("Encoding (%1 of %2 frames)").arg(root.encoder.framesDone).arg(root.encoder.frameCount); color: "#b00020" }
+            Label { visible: root.encoder.phase === "encoding"; text: qsTr("Encoding (%1 of %2 frames)").arg(root.encoder.framesDone).arg(root.encoder.frameCount); color: root.osdColor("AccentError", "#b00020") }
             // Chimera's key priority in the status bar: a click is the next one
             Label {
                 text: [qsTr("Keys: both"), qsTr("Keys: buttons first"), qsTr("Keys: hotkeys first")][root.hotkeys.keyPriority] || ""
@@ -1496,7 +1497,7 @@ ApplicationWindow {
                                qsTr("Key priority: Hotkeys will override controller buttons")][root.hotkeys.keyPriority] || ""
                 MouseArea { id: keyPriorityArea; anchors.fill: parent; hoverEnabled: true; onClicked: root.hotkeys.run("cycleKeyPriority") }
             }
-            Label { text: root.session.error !== "" ? root.session.error : root.pianoRoll.error; color: "#b00020" }
+            Label { text: root.session.error !== "" ? root.session.error : root.pianoRoll.error; color: root.osdColor("AccentError", "#b00020") }
             Label {
                 text: qsTr("Frame %1 of %2").arg(Number(root.pianoRoll.currentFrame).toLocaleString(Qt.locale(), "f", 0))
                                             .arg(Number(root.pianoRoll.frameCount).toLocaleString(Qt.locale(), "f", 0))

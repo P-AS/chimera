@@ -20,6 +20,8 @@ ApplicationWindow {
     required property QtObject pianoRoll
     required property QtObject paths
     required property QtObject files
+    // the theme's colour for a role (Main hands it its lookup)
+    property var themeColor: (role, fallback) => fallback
     title: qsTr("Encode Video")
     width: 600
     height: 440
@@ -135,7 +137,7 @@ ApplicationWindow {
             readonly property int frames: win.vm.toFrame - win.vm.fromFrame + 1
             text: frames > 0 ? qsTr("frames %1 to %2 (%3 frames)").arg(win.vm.fromFrame).arg(win.vm.toFrame).arg(win.grouped(frames))
                              : qsTr("the end marker is before the start marker")
-            color: frames > 0 ? palette.placeholderText : "#b00020"
+            color: frames > 0 ? palette.placeholderText : win.themeColor("AccentError", "#b00020")
         }
         RowLayout {
             enabled: !win.running
@@ -162,7 +164,7 @@ ApplicationWindow {
             elide: Text.ElideRight
             objectName: "encodeStatus"
             text: win.said !== "" ? win.said : win.vm.status
-            color: win.said !== "" || win.vm.phase === "failed" ? "#b00020" : palette.windowText
+            color: win.said !== "" || win.vm.phase === "failed" ? win.themeColor("AccentError", "#b00020") : palette.windowText
         }
         // the speakers are quiet while a video is written: these say sound is going in
         RowLayout {

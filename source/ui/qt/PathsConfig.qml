@@ -16,6 +16,8 @@ ApplicationWindow {
     required property QtObject vm
     property QtObject session: null
     property Window mainWindow: null
+    // the theme's colour for a role (Main hands it its lookup)
+    property var themeColor: (role, fallback) => fallback
     title: qsTr("Path Configuration")
     width: 784
     height: 540
@@ -193,7 +195,7 @@ ApplicationWindow {
                     win.edits = now
                 }
             }
-            Label { text: win.vm.error; color: "#b00020"; elide: Text.ElideRight; Layout.fillWidth: true }
+            Label { text: win.vm.error; color: win.themeColor("AccentError", "#b00020"); elide: Text.ElideRight; Layout.fillWidth: true }
             Button { text: qsTr("&OK"); onClicked: { win.save(); win.close() } }
             Button { text: qsTr("&Cancel"); onClicked: win.close() }
         }

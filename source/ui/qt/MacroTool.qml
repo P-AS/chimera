@@ -15,6 +15,8 @@ ApplicationWindow {
     required property QtObject vm
     required property QtObject pianoRoll
     property var folderOf: null
+    // the theme's colour for a role (Main hands it its lookup)
+    property var themeColor: (role, fallback) => fallback
     property QtObject customize: null
     property QtObject toolWindows: null
     property Window mainWindow: null
@@ -132,7 +134,7 @@ ApplicationWindow {
 
     footer: Label {
         text: win.vm.error !== "" ? win.vm.error : win.vm.status
-        color: win.vm.error !== "" ? "#b00020" : palette.text
+        color: win.vm.error !== "" ? win.themeColor("AccentError", "#b00020") : palette.text
         padding: 4
         elide: Text.ElideRight
     }

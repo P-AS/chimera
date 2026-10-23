@@ -16,6 +16,8 @@ ApplicationWindow {
     required property QtObject vm
     required property QtObject session
     property QtObject customize: null
+    // the theme's colour for a role (Main hands it its lookup)
+    property var themeColor: (role, fallback) => fallback
     property QtObject toolWindows: null
     property Window mainWindow: null
     title: qsTr("Debugger")
@@ -77,7 +79,7 @@ ApplicationWindow {
         text: win.vm.error !== "" ? win.vm.error
             : !win.session.hasRegisters ? (win.session.isOpen ? qsTr("This core does not show its registers.") : qsTr("No core is running."))
             : ""
-        color: win.vm.error !== "" ? "#b00020" : palette.text
+        color: win.vm.error !== "" ? win.themeColor("AccentError", "#b00020") : palette.text
         padding: 4
         visible: text !== ""
     }

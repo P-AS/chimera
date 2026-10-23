@@ -15,6 +15,8 @@ ApplicationWindow {
     required property QtObject session
     required property QtObject caches
     property Window mainWindow: null
+    // the theme's colour for a role (Main hands it its lookup)
+    property var themeColor: (role, fallback) => fallback
     // the project the Cache Manager's row picked is ("" for none), and its name
     property string projectId: ""
     property string projectLabelAsked: ""
@@ -90,7 +92,7 @@ ApplicationWindow {
         }
         Item { Layout.fillHeight: true }
         RowLayout {
-            Label { text: win.session.error; color: "#b00020"; Layout.fillWidth: true; elide: Text.ElideRight }
+            Label { text: win.session.error; color: win.themeColor("AccentError", "#b00020"); Layout.fillWidth: true; elide: Text.ElideRight }
             Button { text: qsTr("OK"); Layout.preferredWidth: 90; onClicked: { win.keep(); win.close() } }
             Button { text: qsTr("Cancel"); Layout.preferredWidth: 90; onClicked: win.close() }
         }

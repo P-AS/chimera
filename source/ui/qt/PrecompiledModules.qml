@@ -140,7 +140,7 @@ ApplicationWindow {
                 enabled: win.picked !== ""
                 onClicked: Qt.openUrlExternally("file://" + win.picked)
             }
-            Label { text: win.vm.error !== "" ? win.vm.error : win.vm.status; color: win.vm.error !== "" ? "#b00020" : palette.text; Layout.fillWidth: true; elide: Text.ElideRight }
+            Label { text: win.vm.error !== "" ? win.vm.error : win.vm.status; color: win.vm.error !== "" ? win.themeColor("AccentError", "#b00020") : palette.text; Layout.fillWidth: true; elide: Text.ElideRight }
             Button { text: qsTr("&Close"); Layout.preferredWidth: 150; onClicked: win.close() }
         }
     }

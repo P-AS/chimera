@@ -18,6 +18,8 @@ ApplicationWindow {
     property QtObject customize: null
     property QtObject toolWindows: null
     property Window mainWindow: null
+    // the theme's colour for a role (Main hands it its lookup)
+    property var themeColor: (role, fallback) => fallback
     title: qsTr("Trace Logger")
     width: 620
     height: 520
@@ -106,7 +108,7 @@ ApplicationWindow {
         text: win.vm.error !== "" ? win.vm.error
             : !win.session.hasTrace ? (win.session.isOpen ? qsTr("This core does not trace its CPU.") : qsTr("No core is running."))
             : win.vm.status
-        color: win.vm.error !== "" ? "#b00020" : palette.text
+        color: win.vm.error !== "" ? win.themeColor("AccentError", "#b00020") : palette.text
         padding: 4
         elide: Text.ElideRight
     }
