@@ -80,6 +80,8 @@ public:
 	}
 	/* a folder as a dialog's address, and the folder a chosen file is in */
 	Q_INVOKABLE QUrl folderUrl(const QString &path) const { return path.isEmpty() ? QUrl() : QUrl::fromLocalFile(path); }
+	Q_INVOKABLE bool exists(const QString &path) const { return !path.isEmpty() && QFileInfo::exists(path); }
+	Q_INVOKABLE QString localPath(const QUrl &file) const { return file.isLocalFile() ? file.toLocalFile() : file.toString(); }
 	Q_INVOKABLE QString folderOf(const QUrl &file) const
 	{
 		return QFileInfo(file.isLocalFile() ? file.toLocalFile() : file.toString()).absolutePath();

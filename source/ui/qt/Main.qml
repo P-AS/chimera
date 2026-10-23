@@ -46,7 +46,7 @@ ApplicationWindow {
     required property QtObject guiOverlay
     required property QtObject idleEye
     required property QtObject macroTool
-    required property QtObject recorder
+    required property QtObject encoder
     // a Paths folder for a file dialog to open in (made when it is not there)
     function folderOf(name) {
         root.paths.changed; root.paths.base; root.paths.lastRomFolder; root.paths.recentForRoms
@@ -167,8 +167,7 @@ ApplicationWindow {
                 if (root.session.hasProject) root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject")
             }
             else if (action === "Encode Video") {
-                if (root.recorder.recording) root.recorder.run("stop")
-                else if (root.session.isOpen) recordDialog.open()
+                if (root.session.isOpen) { encodeWindow.show(); encodeWindow.raise() }
             }
             else if (action === "Larger Window" || action === "Smaller Window") {
                 if (picture.pictureWidth <= 0) return
@@ -226,9 +225,9 @@ ApplicationWindow {
                 MenuSeparator {}
                 Action {
                     property string hotkey: "Encode Video"
-                    text: root.recorder.recording ? qsTr("Stop &Encoding") : qsTr("&Encode Video...")
-                    enabled: root.session.isOpen || root.recorder.recording
-                    onTriggered: root.recorder.recording ? root.recorder.run("stop") : recordDialog.open()
+                    text: qsTr("&Encode Video...")
+                    enabled: root.session.hasProject
+                    onTriggered: { encodeWindow.show(); encodeWindow.raise() }
                 }
                 Menu {
                     delegate: keyedMenuItem
@@ -536,28 +535,22 @@ ApplicationWindow {
         // the project's core is found among the installed ones
         onAccepted: root.leaveProject(() => root.session.run("openProject", [selectedFile]))
     }
-    // what to record, then where
-    Dialog {
-        id: recordDialog
-        title: qsTr("Record AVI/WAV")
-        anchors.centerIn: parent
-        modal: true
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        ColumnLayout {
-            RadioButton { text: qsTr("AVI: the picture and the sound, uncompressed"); checked: root.recorder.format === "avi"; onClicked: root.recorder.format = "avi" }
-            RadioButton { text: qsTr("WAV: the sound alone"); checked: root.recorder.format === "wav"; onClicked: root.recorder.format = "wav" }
-            RadioButton { text: qsTr("Image sequence: a PNG a frame, and the sound as a WAV"); checked: root.recorder.format === "png"; onClicked: root.recorder.format = "png" }
+    // Chimera's File > Encode Video: a window of its own, modeless
+    EncodeVideo {
+        id: encodeWindow
+        vm: root.encoder; session: root.session; pianoRoll: root.pianoRoll; paths: root.paths; files: root.pictureFiles
+        picture: picture
+        visible: false
+    }
+    Connections {
+        target: root.encoder
+        function onPhaseChanged() {
+            if (root.encoder.phase === "encoding") root.note(qsTr("Encoding video"))
+            else if (root.encoder.phase === "done") root.note(qsTr("Video encoded"))
+            else if (root.encoder.phase === "stopped") root.note(qsTr("Encoding stopped"))
+            else if (root.encoder.phase === "failed") root.note(qsTr("Encoding failed"))
         }
-        onAccepted: recordFileDialog.open()
     }
-    FileDialog {
-        id: recordFileDialog
-        title: qsTr("Record to")
-        fileMode: FileDialog.SaveFile
-        nameFilters: root.recorder.format === "wav" ? [qsTr("WAV files (*.wav)")] : root.recorder.format === "png" ? [qsTr("PNG pictures (*.png)")] : [qsTr("AVI files (*.avi)")]
-        onAccepted: root.recorder.run("start", [selectedFile])
-    }
-    Connections { target: root.recorder; function onStatusChanged() { root.note(root.recorder.status) } }
     FileDialog {
         id: saveConfigDialog
         title: qsTr("Save the settings as")
@@ -1078,7 +1071,7 @@ ApplicationWindow {
             Label { text: root.session.status; elide: Text.ElideRight; Layout.fillWidth: true }
             Label { text: root.session.gamepads; elide: Text.ElideRight; Layout.maximumWidth: 260 }
             Label { text: root.session.sound; elide: Text.ElideRight; Layout.maximumWidth: 200 }
-            Label { visible: root.recorder.recording; text: qsTr("Recording (%1 frames)").arg(root.recorder.frames); color: "#b00020" }
+            Label { visible: root.encoder.phase === "encoding"; text: qsTr("Encoding (%1 of %2 frames)").arg(root.encoder.framesDone).arg(root.encoder.frameCount); color: "#b00020" }
             // Chimera's key priority in the status bar: a click is the next one
             Label {
                 text: [qsTr("Keys: both"), qsTr("Keys: buttons first"), qsTr("Keys: hotkeys first")][root.hotkeys.keyPriority] || ""

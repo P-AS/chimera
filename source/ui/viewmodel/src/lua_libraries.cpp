@@ -261,6 +261,19 @@ function client.GetSoundOn() return C.session.soundOn end
 function client.displaymessages(on) C.session.showMessages = on end
 function client.clearautohold() C.session.clearAutohold() end
 function client.exit() error("client.exit: a script does not close the window here") end
+-- Chimera's Encode Video without the window: nil when it began, else why
+-- not; the command's container is the file's (the path as given stands)
+function client.encodevideo(path, from, to, command)
+	local e = C.encoder
+	if command ~= nil then e.command = tostring(command) end
+	e.output = tostring(path)
+	e.fromFrame = from
+	e.toFrame = to
+	local ok, err = pcall(e.start)
+	if ok then return nil end
+	return tostring(err)
+end
+function client.encodingvideo() return C.encoder.phase == "encoding" end
 
 -- gameinfo -----------------------------------------------------------------
 gameinfo = {}

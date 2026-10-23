@@ -38,9 +38,11 @@ vm_lib = static_library(
     'viewmodel/src/precompiled_vm.cpp',
     'viewmodel/src/trace_logger_vm.cpp',
     'viewmodel/src/idle_eye.cpp',
+    'viewmodel/src/subprocess.cpp',
+    'viewmodel/src/nut_muxer.cpp',
+    'viewmodel/src/encoder_vm.cpp',
     'viewmodel/src/surface_viewer_vm.cpp',
     'viewmodel/src/macro_tool_vm.cpp',
-    'viewmodel/src/recorder_vm.cpp',
     'viewmodel/src/project_details_vm.cpp',
     'viewmodel/src/cores_vm.cpp',
     'viewmodel/src/branch_state.cpp',
@@ -139,8 +141,9 @@ test(
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
     repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game],
-  # OpenAL's device that plays to nowhere: the sound check runs with no speakers
-  env: ['ALSOFT_DRIVERS=null'],
+  # OpenAL's device that plays to nowhere: the sound check runs with no speakers;
+  # the ffmpeg the build ships, for the encode
+  env: ['ALSOFT_DRIVERS=null', 'CHIMERA_FFMPEG=' + (repo_root / 'build/dll/ffmpeg')],
   timeout: 180,
 )
 

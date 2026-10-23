@@ -1694,6 +1694,88 @@ void SessionViewModel::setMarkers(std::vector<Marker> markers)
 	});
 }
 
+void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame, std::function<void()> finishing,
+	std::function<void(int, std::string)> done)
+{
+	borrowStopM_.store(false);
+	borrowFramesM_.store(0);
+	submit([this, from, to, frame = std::move(frame), finishing = std::move(finishing), done = std::move(done)] {
+		namespace fs = std::filesystem;
+		auto fail = [&](const std::string &why) { later([done, why] { done(2, why); }); };
+		if (s_ == nullptr) return fail("No machine is open.");
+		if (from < 0 || to < from) return fail("The end marker is before the start marker.");
+		if (to >= ce_session_movie_length(s_)) return fail("The movie ends at frame " + std::to_string(ce_session_movie_length(s_) - 1) + ".");
+		/* where the person is, kept as a state file the engine writes: a
+		 * machine's state can be bigger than memory holds at once */
+		fs::path folder = projectCacheOnMachine();
+		std::error_code ec;
+		if (folder.empty()) folder = fs::temp_directory_path(ec);
+		fs::create_directories(folder, ec);
+		const fs::path restore = folder / ("encode-restore-" + std::to_string(++borrowCount_) + ".state");
+		if (ce_session_state_save_file(s_, branch_state::utf8(restore).c_str(), nullptr, 0) != 0)
+			return fail(std::string("The encode cannot start: the machine's state could not be kept to come back to (") +
+						ce_session_last_error(s_) + ").");
+		const int64_t was = ce_session_frame(s_);
+		const bool wasRunning = runningM_, wasRecording = recordingM_.load();
+		Picture::Frame shown;
+		screen.takeIfNewer(UINT64_MAX, shown);
+		runningM_ = false;
+		later([this] { running.set(false); });
+		/* a reproduction: nothing recorded over the movie, no state kept */
+		ce_session_greenzone_capture_period(s_, 0);
+		recordingM_ = true;
+		seekOnMachine(from, false);
+		int ended = 0;
+		std::string why;
+		while (s_ != nullptr)
+		{
+			if (borrowStopM_.load())
+			{
+				ended = 1;
+				break;
+			}
+			if (ce_session_frame(s_) > to) break;
+			const int32_t lag = stepOnMachine(false, true, false);
+			if (lag < 0 && diedM_)
+			{
+				ended = 2;
+				why = "The machine stopped.";
+				break;
+			}
+			if (!frame(s_, why))
+			{
+				ended = 2;
+				break;
+			}
+			borrowFramesM_.fetch_add(1);
+		}
+		if (finishing) finishing();
+		/* given back: the frame, its picture, the greenzone, running or not */
+		recordingM_ = wasRecording;
+		if (s_ != nullptr)
+		{
+			ce_session_greenzone_capture_period(s_, periodM_.load());
+			if (ce_session_state_load_file(s_, branch_state::utf8(restore).c_str(), nullptr, 0, nullptr) == 0 &&
+				ce_session_movie_at(s_, was) == 0)
+			{
+				frameM_ = was;
+				if (shown.width > 0 && shown.height > 0) screen.publish(shown.pixels.data(), shown.width, shown.height, shown.aspect);
+			}
+			else
+			{
+				seekOnMachine(was, false);
+				why += (why.empty() ? "" : " ") + std::string("The machine was put back by playing the movie to where it was.");
+			}
+			runningM_ = wasRunning;
+			due_ = Clock::now();
+			later([this, wasRunning] { running.set(wasRunning); });
+		}
+		fs::remove(restore, ec);
+		report(-1, -1, -1, -1, -1);
+		later([done, ended, why] { done(ended, why); });
+	});
+}
+
 void SessionViewModel::setRunMarkers(std::vector<int64_t> frames)
 {
 	submit([this, frames = std::move(frames)] {

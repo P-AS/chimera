@@ -11,14 +11,15 @@ namespace fs = std::filesystem;
 
 const std::vector<std::pair<std::string, std::string>> &PathsViewModel::defaults()
 {
-	/* Chimera's global entries (PathEntryCollection) that the prototype uses
-	 * (no A/V dumps yet: no video recording), and Screenshots, which Chimera
-	 * keeps per system */
+	/* Chimera's global entries (PathEntryCollection) that the prototype uses,
+	 * and Screenshots, which Chimera keeps per system */
 	static const std::vector<std::pair<std::string, std::string>> list = {
 		{"ROM", "."},
 		{"Firmware", "./Firmware"},
 		{"Movies", "./Movies"},
 		{"Movie backups", "./Movies/backup"},
+		/* where Encode Video suggests a video goes */
+		{"A/V Dumps", "."},
 		{"Screenshots", "./Screenshots"},
 		{"Lua", "./Lua"},
 		{"Themes", "./Themes"},

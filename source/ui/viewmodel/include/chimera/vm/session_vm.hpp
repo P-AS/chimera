@@ -473,6 +473,22 @@ public:
 	int addMachineHooks(MachineJob frame, MachineJob closing);
 	void removeMachineHooks(int id);
 
+	/* Chimera's encode borrows the machine: it is wound to frame `from` and
+	 * plays the movie read only to `to`, both included, as fast as it goes,
+	 * every frame drawn and handed to `frame` on the machine's thread (false,
+	 * with why, stops it), no state kept on the way; then `finishing` (on the
+	 * machine's thread: the file closed), and the machine given back on the
+	 * frame it was on, its picture, running or paused as it was. `done`
+	 * comes on the view's thread: 0 every frame written, 1 stopped, 2 failed,
+	 * with why. Nothing else moves the machine meanwhile. */
+	using BorrowFrame = std::function<bool(ce_session *, std::string &why)>;
+	void borrowMachine(int64_t from, int64_t to, BorrowFrame frame, std::function<void()> finishing,
+		std::function<void(int, std::string)> done);
+	/* the borrowed run ends after the frame it is on */
+	void stopBorrow() { borrowStopM_.store(true); }
+	/* frames run since the borrowed run reached `from`, for its progress */
+	int64_t borrowedFrames() const { return borrowFramesM_.load(); }
+
 	/* Settings, for the settings view model. On the machine's thread: what
 	 * the machine was opened with (a JSON object; the project's own when
 	 * a project is open), and the slot map the settings' conditions read.
@@ -659,6 +675,9 @@ private:
 	std::vector<int32_t> axesBuf_;
 	std::vector<Marker> markersM_;
 	std::vector<int64_t> runMarkersM_;
+	std::atomic<bool> borrowStopM_{false};
+	std::atomic<int64_t> borrowFramesM_{0};
+	int64_t borrowCount_ = 0;
 	PackageFinder findPackageM_;
 	ExtensionFinder byExtension_; /* the view's thread's */
 	std::vector<std::pair<std::string, std::string>> offered_;

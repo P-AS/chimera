@@ -65,7 +65,7 @@
 #include "chimera/vm/idle_eye.hpp"
 #include "chimera/vm/surface_viewer_vm.hpp"
 #include "chimera/vm/macro_tool_vm.hpp"
-#include "chimera/vm/recorder_vm.hpp"
+#include "chimera/vm/encoder_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -231,7 +231,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -732,12 +732,11 @@ int main(int argc, char **argv)
 	qt::QmlViewModel surfaceViewerQml(surfaceViewer);
 	vm::MacroToolViewModel macroTool(dispatcher, pianoRoll, session);
 	qt::QmlViewModel macroToolQml(macroTool);
-	/* a picture a frame, as Chimera's image sequence writes it: a QImage may be used off the window's thread */
-	vm::RecorderViewModel recorder(dispatcher, session, [](const std::string &path, const uint32_t *pixels, int32_t w, int32_t h) {
-		return QImage(reinterpret_cast<const uchar *>(pixels), w, h, w * 4, QImage::Format_RGB32).save(QString::fromStdString(path), "PNG");
-	});
-	config.keep(recorder, "format");
-	qt::QmlViewModel recorderQml(recorder);
+	/* Chimera's Encode Video, with the ffmpeg the bundle keeps beside the program;
+	 * its choices kept, as Chimera keeps them in its config */
+	vm::EncoderViewModel encoder(dispatcher, session, QCoreApplication::applicationDirPath().toStdString());
+	for (const char *name : {"command", "audioSync", "resize", "width", "height", "pad"}) config.keep(encoder, name);
+	qt::QmlViewModel encoderQml(encoder);
 	config.keep(session, "autoRestore");
 	config.keep(session, "speedPercent");
 	config.keep(session, "unthrottled");
@@ -958,7 +957,7 @@ int main(int argc, char **argv)
 	lua.add(guiOverlay);
 	lua.add(surfaceViewer);
 	lua.add(macroTool);
-	lua.add(recorder);
+	lua.add(encoder);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -1011,7 +1010,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("idleEye"), QVariant::fromValue<QObject *>(&idleEyeQml)},
 		{QStringLiteral("surfaceViewer"), QVariant::fromValue<QObject *>(&surfaceViewerQml)},
 		{QStringLiteral("macroTool"), QVariant::fromValue<QObject *>(&macroToolQml)},
-		{QStringLiteral("recorder"), QVariant::fromValue<QObject *>(&recorderQml)},
+		{QStringLiteral("encoder"), QVariant::fromValue<QObject *>(&encoderQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},
@@ -1066,6 +1065,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("debugger") ? QStringLiteral("debuggerWindow")
 		: args.value(showOpt) == QStringLiteral("surfaces") ? QStringLiteral("surfaceViewerWindow")
 		: args.value(showOpt) == QStringLiteral("macros") ? QStringLiteral("macroToolWindow")
+		: args.value(showOpt) == QStringLiteral("encode") ? QStringLiteral("encodeVideoWindow")
 		: args.value(showOpt) == QStringLiteral("project-details") ? QStringLiteral("projectDetailsWindow")
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())
