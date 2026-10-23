@@ -1051,6 +1051,7 @@ bool tastudioSettings(const char *package, const char *rom)
 	}
 	/* a control's pattern is kept in the project, as Chimera keeps it */
 	CHECK(roll.run("setPattern", {session.buttonNames()[4], std::string("On x3, Off x2"), int64_t{0}, false}, error).has_value());
+	roll.lagFramesToHide.set(2);
 	CHECK(session.unsaved.get() && saved());
 	{
 		const char *err = nullptr;
@@ -1058,14 +1059,15 @@ bool tastudioSettings(const char *package, const char *rom)
 		uint64_t len = 0;
 		const char *t = p != nullptr ? ce_project_tastudio_text(p, &len) : nullptr;
 		const std::string tastudio = t != nullptr ? std::string(t, static_cast<size_t>(len)) : "";
+		CHECK(tastudio.find("\"LagFramesToHide\":2") != std::string::npos && tastudio.find("\"HideWasLagFrames\":false") != std::string::npos);
 		CHECK(tastudio.find("\"BoolPatterns\":[") != std::string::npos &&
 			tastudio.find("{\"_index\":0,\"SkipsLag\":false,\"Pattern\":[true,true,true,false,false],\"Loop\":0}") != std::string::npos);
 		if (p != nullptr) ce_project_free(p);
 	}
-	/* closed, nothing is unsaved */
+	/* closed, nothing is unsaved; and a game alone hides no lag frames */
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	CHECK(!session.unsaved.get());
+	CHECK(!session.unsaved.get() && roll.lagFramesToHide.get() == 0);
 	/* opened again, the pattern is the project's */
 	session.run("openProject", {project.string(), std::string(package)}, error);
 	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 60));
@@ -1078,6 +1080,7 @@ bool tastudioSettings(const char *package, const char *rom)
 		CHECK(patterns != nullptr && d.until([&] { return fromValue(patterns->cell(4, 1), runs) && runs == "On x3, Off x2"; }, 20));
 		CHECK(patterns != nullptr && fromValue(patterns->cell(4, 3), skips) && !skips);
 		CHECK(patterns != nullptr && fromValue(patterns->cell(3, 1), runs) && runs == "On x1, Off x1");
+		CHECK(roll.lagFramesToHide.get() == 2);
 		/* and the Auto-hold column is one again */
 		RowModel *columns = nullptr;
 		for (const auto &r : roll.rowLists())
@@ -2439,6 +2442,39 @@ bool pianoRollEditing(const char *package, const char *rom)
 		session.run("seek", {int64_t{10}}, error);
 		CHECK(d.until([&] { return session.frame.get() == 10; }, 20));
 		roll.visibleFrames.set(0);
+	}
+	/* lag frames hidden, as Chimera's TAStudio hides them: of a run, the
+	 * first N; the rest of a longer run shown; with "hide was lag frames",
+	 * the ones an edit took out of the greenzone too */
+	{
+		std::vector<bool> lags;
+		for (int64_t f = 0; f < 10; f++) lags.push_back(inputs.lagAt(f));
+		for (int64_t f = 0; f < 10; f++) inputs.setLag(f, f == 2 || f == 3 || f == 4 || f == 7);
+		RowModel &rows = roll.frames();
+		CHECK(rows.nextShown(1) == 2 && rows.nextShown(-1) == 0);
+		roll.lagFramesToHide.set(2);
+		CHECK(roll.frameHidden(2) && roll.frameHidden(3) && !roll.frameHidden(4) && roll.frameHidden(7) && !roll.frameHidden(8));
+		CHECK(rows.nextShown(1) == 4 && rows.nextShown(4) == 5 && rows.nextShown(6) == 8 && rows.nextShown(-1) == 0);
+		CHECK(roll.shownFrom(8, -2) == 5 && roll.shownFrom(0, 3) == 5);
+		roll.lagFramesToHide.set(3);
+		CHECK(rows.nextShown(1) == 5);
+		/* out of the greenzone, a frame that was lag is shown unless asked */
+		session.autoRestore.set(false);
+		roll.run("toggle", {int64_t{6}, int64_t{6}}, error);
+		CHECK(d.until([&] { return session.frame.get() == 6 && session.greenEnd.get() == 6; }, 20));
+		inputs.setLag(7, true);
+		CHECK(!roll.frameHidden(7));
+		roll.hideWasLagFrames.set(true);
+		CHECK(roll.frameHidden(7));
+		roll.hideWasLagFrames.set(false);
+		roll.lagFramesToHide.set(0);
+		CHECK(!roll.frameHidden(2) && rows.nextShown(1) == 2);
+		roll.run("undo", {}, error);
+		CHECK(masks() == start);
+		session.autoRestore.set(true);
+		for (int64_t f = 0; f < 10; f++) inputs.setLag(f, lags[static_cast<size_t>(f)]);
+		session.run("seek", {int64_t{10}}, error);
+		CHECK(d.until([&] { return session.frame.get() == 10; }, 20));
 	}
 	auto undoTo = [&](const std::vector<uint64_t> &want) {
 		roll.run("undo", {}, error);

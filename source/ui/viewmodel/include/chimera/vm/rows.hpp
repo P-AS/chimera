@@ -31,6 +31,9 @@ public:
 	virtual bool columnHidden(int32_t) const { return false; }
 	/* a column marked out (the piano roll's Auto-hold ones) */
 	virtual bool columnEmphasized(int32_t) const { return false; }
+	/* the row shown after this one (the piano roll hides some lag frames);
+	 * from -1, the first */
+	virtual int64_t nextShown(int64_t row) const { return row + 1; }
 	/* a note a row carries (the piano roll: a marker's text), "" for none */
 	virtual std::string rowNote(int64_t) const { return {}; }
 

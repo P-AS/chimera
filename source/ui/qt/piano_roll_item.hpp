@@ -97,6 +97,10 @@ protected:
 private:
 	bool cellAt(QPointF p, qint64 &row, int &column) const;
 	int frameColumnWidth() const;
+	/* the row shown on a line of the roll (0 the first under the header),
+	 * hidden rows passed over; and the last one shown */
+	qint64 rowOnLine(qint64 line) const;
+	qint64 lastShown() const { return rowOnLine(visibleRows()); }
 	void rowsTouched(qint64 first, qint64 last);
 
 	QPointer<QmlRows> rows_;

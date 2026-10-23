@@ -58,6 +58,16 @@ public:
 	Property<bool> denoteMarkersColor{true}, denoteMarkersIcons{false};
 	Property<std::string> rollColors{"{}"};
 	Property<std::string> rollFont;
+	/* TAStudio's lag frames hidden (the project's own settings, as
+	 * Chimera's): of a run of lag frames, the first this many are not
+	 * shown (0 shows them all); and frames that were lag before an edit
+	 * took them out of the greenzone count as lag too */
+	Property<int64_t> lagFramesToHide{0};
+	Property<bool> hideWasLagFrames{false};
+	/* a frame not shown by those, and the frame `steps` shown frames on
+	 * from one (back for a negative count) */
+	bool frameHidden(int64_t frame) const;
+	int64_t shownFrom(int64_t frame, int64_t steps) const;
 	/* macros placed lately, newest first, a line each (eight kept) */
 	Property<std::string> recentMacros;
 	/* the most undo steps kept, as Chimera's TAStudio setting has it */
@@ -120,6 +130,7 @@ private:
 		bool columnIsNumber(int32_t column) const override { return column >= vm_.buttonCount(); }
 		bool columnHidden(int32_t column) const override { return vm_.hidden_.count(columnName(column)) != 0; }
 		bool columnEmphasized(int32_t column) const override { return vm_.autoHeld_.count(columnName(column)) != 0; }
+		int64_t nextShown(int64_t row) const override;
 		std::string columnName(int32_t column) const override;
 		/* the button's letter in a movie's input log */
 		std::string columnShortName(int32_t column) const override;
@@ -259,7 +270,10 @@ private:
 	bool patternStroke_ = false, patternOn_ = false;
 	int64_t patternFrom_ = 0, patternColumn_ = -1;
 	bool paintPattern(int64_t first, int64_t last, bool join, std::string &error);
-	Connection patternsWatch_, projectGoneWatch_, statesWatch_, viewWatch_, viewCountWatch_;
+	Connection patternsWatch_, projectGoneWatch_, statesWatch_, viewWatch_, viewCountWatch_, lagHideWatch_, wasLagWatch_;
+	/* the lag settings, to save with the project */
+	void storeLagHiding();
+	bool laggy(int64_t frame) const;
 	/* a project's TAStudio part, kept until its machine's controls are
 	 * known (they are told after it); and the controls the patterns are for */
 	std::optional<std::map<std::string, std::string>> pendingMembers_;

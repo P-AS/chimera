@@ -199,6 +199,15 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	holdWatches_.push_back(session_.autofireOff.changed.connect([this] { pushColumnHolds(); }));
 	holdWatches_.push_back(session_.autofireSkipsLag.changed.connect([this] { pushColumnHolds(); }));
 	expose("recentMacros", "macros placed lately, newest first, a line each", recentMacros, true);
+	expose("lagFramesToHide", "of a run of lag frames, the first this many are not shown (the project's own; 0 shows all)",
+		lagFramesToHide, true);
+	expose("hideWasLagFrames", "frames that were lag before an edit took them out of the greenzone count as lag "
+		"(the project's own)", hideWasLagFrames, true);
+	lagHideWatch_ = lagFramesToHide.changed.connect([this] {
+		if (lagFramesToHide.get() < 0) lagFramesToHide.set(0);
+		storeLagHiding();
+	});
+	wasLagWatch_ = hideWasLagFrames.changed.connect([this] { storeLagHiding(); });
 	command("saveMacro", "writes the frames first to last as a macro, a .chimeraMacro file as Chimera's TAStudio writes one: "
 		"the movie's columns, the controller, then a line a frame", {"first", "last", "path"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -368,6 +377,8 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		if (session_.hasProject.get()) return;
 		autoHeld_.clear();
 		axisHoldValues_.clear();
+		lagFramesToHide.set(0);
+		hideWasLagFrames.set(false);
 		defaultPatterns();
 		autoHeldChanged();
 	});
@@ -990,16 +1001,16 @@ void PianoRollViewModel::follow()
 {
 	const int64_t now = currentFrame.get(), top = topFrame.get(), shown = visibleFrames.get();
 	if (!followPlayback.get() || shown <= 0) return;
-	/* as TAStudio's InputRoll.ScrollToIndex */
-	const bool inView = now >= top && now < top + shown;
+	/* as TAStudio's InputRoll.ScrollToIndex, counting the frames shown */
+	const bool inView = now >= top && now <= shownFrom(top, shown - 1);
 	const std::string &how = followScroll.get();
 	int64_t to = top;
 	if (how != "top" && how != "bottom" && how != "center")
 	{
-		if (!inView) to = now < top ? now : now - shown + 1;
+		if (!inView) to = now < top ? now : shownFrom(now, -(shown - 1));
 	}
 	else if (!inView || followAlways.get())
-		to = how == "top" ? now : how == "bottom" ? now - shown + 1 : now - shown / 2;
+		to = how == "top" ? now : how == "bottom" ? shownFrom(now, -(shown - 1)) : shownFrom(now, -(shown / 2));
 	to = std::max<int64_t>(0, to);
 	if (to != top) topFrame.set(to);
 }
@@ -1380,6 +1391,52 @@ void PianoRollViewModel::pushColumnHolds()
 	session_.setColumnPatterns(std::move(all));
 }
 
+void PianoRollViewModel::storeLagHiding()
+{
+	session_.setTastudioMember("LagFramesToHide", std::to_string(lagFramesToHide.get()));
+	session_.setTastudioMember("HideWasLagFrames", hideWasLagFrames.get() ? "true" : "false");
+	frames_.reset.emit();
+}
+
+bool PianoRollViewModel::laggy(int64_t frame) const
+{
+	/* a lag frame of the greenzone's; one before an edit, when asked */
+	return inputs_.lagAt(frame) && (frame < greenEnd.get() || hideWasLagFrames.get());
+}
+
+bool PianoRollViewModel::frameHidden(int64_t frame) const
+{
+	/* as Chimera's InputRoll: in a run of lag frames the first N are not
+	 * shown, the rest of a longer run are */
+	const int64_t n = lagFramesToHide.get();
+	if (n <= 0 || !laggy(frame)) return false;
+	int64_t before = 0;
+	for (int64_t f = frame - 1; f >= 0 && before < n && laggy(f); f--) before++;
+	return before < n;
+}
+
+int64_t PianoRollViewModel::shownFrom(int64_t frame, int64_t steps) const
+{
+	int64_t f = frame;
+	const int64_t size = inputs_.size();
+	for (int64_t i = 0; i < steps; i++)
+	{
+		f++;
+		while (f < size && frameHidden(f)) f++;
+	}
+	for (int64_t i = 0; i > steps; i--)
+	{
+		f--;
+		while (f > 0 && frameHidden(f)) f--;
+	}
+	return std::max<int64_t>(f, 0);
+}
+
+int64_t PianoRollViewModel::Frames::nextShown(int64_t row) const
+{
+	return vm_.shownFrom(row, 1);
+}
+
 std::vector<std::string> PianoRollViewModel::columnGroups() const
 {
 	/* as Chimera's TAStudio.SetUpToolStripColumns: "P<n> ..." to Player n,
@@ -1546,6 +1603,20 @@ void PianoRollViewModel::loadPatterns(const std::map<std::string, std::string> &
 		out = std::move(read);
 		return true;
 	};
+	/* the lag frames hidden: the project's, else none */
+	{
+		int64_t hide = 0;
+		bool wasLag = false;
+		json::Json v;
+		std::string err;
+		if (const auto it = members.find("LagFramesToHide"); it != members.end() && json::parse(it->second, v, err))
+			hide = std::max<int64_t>(0, static_cast<int64_t>(v.number()));
+		if (const auto it = members.find("HideWasLagFrames"); it != members.end() && json::parse(it->second, v, err) &&
+			v.kind == json::Json::Kind::Bool)
+			wasLag = v.boolean;
+		lagFramesToHide.set(hide);
+		hideWasLagFrames.set(wasLag);
+	}
 	axisHoldValues_.clear();
 	if (const auto it = members.find("AxisHoldValues"); it != members.end())
 	{

@@ -127,6 +127,20 @@ ApplicationWindow {
                     checked: win.pianoRoll.denoteStatesIcons
                     onToggled: win.pianoRoll.denoteStatesIcons = checked
                 }
+                Label { text: qsTr("Movie settings (kept in the project):") }
+                RowLayout {
+                    Label { text: qsTr("Lag frames to hide:") }
+                    SpinBox {
+                        from: 0; to: 1000; editable: true
+                        value: win.pianoRoll.lagFramesToHide
+                        onValueModified: win.pianoRoll.lagFramesToHide = value
+                    }
+                }
+                CheckBox {
+                    text: qsTr("Hide \"was lag\" frames")
+                    checked: win.pianoRoll.hideWasLagFrames
+                    onToggled: win.pianoRoll.hideWasLagFrames = checked
+                }
                 RowLayout {
                     Button { text: qsTr("Set Colors..."); onClicked: colorsWindow.show() }
                     Button { text: qsTr("Set Font..."); onClicked: fontDialog.open() }

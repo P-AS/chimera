@@ -59,6 +59,15 @@ int PianoRollItem::columnW(int column) const
 	return rows_->rows().columnIsNumber(column) ? numberWidth_ : columnWidth_;
 }
 
+qint64 PianoRollItem::rowOnLine(qint64 line) const
+{
+	if (rows_ == nullptr) return top_ + line;
+	vm::RowModel &rows = rows_->rows();
+	qint64 row = rows.nextShown(top_ - 1);
+	for (qint64 i = 0; i < line; i++) row = rows.nextShown(row);
+	return row;
+}
+
 int PianoRollItem::columnX(int column) const
 {
 	int x = frameColumnWidth();
@@ -113,7 +122,7 @@ void PianoRollItem::setCurrentRow(qint64 row)
 	const qint64 was = current_;
 	current_ = row;
 	Q_EMIT currentRowChanged();
-	const qint64 last = top_ + visibleRows();
+	const qint64 last = lastShown();
 	if ((was >= top_ && was <= last) || (row >= top_ && row <= last)) update();
 }
 
@@ -135,7 +144,7 @@ void PianoRollItem::setSelectLast(qint64 row)
 
 void PianoRollItem::rowsTouched(qint64 first, qint64 last)
 {
-	if (last >= top_ && first <= top_ + visibleRows()) update();
+	if (last >= top_ && first <= lastShown()) update();
 }
 
 /* TAStudio's two columns before the buttons: a narrow one a press in moves
@@ -162,7 +171,7 @@ bool PianoRollItem::cellAt(QPointF p, qint64 &row, int &column) const
 	column = -1;
 	for (int c = 0, x = fx; c < columns; x += columnW(c), c++)
 		if (p.x() >= x && p.x() < x + columnW(c)) column = c;
-	row = top_ + static_cast<qint64>((p.y() - rowHeight_) / rowHeight_);
+	row = rowOnLine(static_cast<qint64>((p.y() - rowHeight_) / rowHeight_));
 	return column >= 0 && row < rows_->rows().rowCount();
 }
 
@@ -261,10 +270,13 @@ void PianoRollItem::paint(QPainter *p)
 		p->drawText(cell, Qt::AlignCenter, QFontMetrics(p->font()).elidedText(name, Qt::ElideRight, columnW(c) - 2));
 	}
 
+	/* the rows shown, hidden ones (lag frames TAStudio hides) passed over */
+	qint64 next = rows.nextShown(top_ - 1);
 	for (int i = 0; i < shown; i++)
 	{
-		const qint64 row = top_ + i;
+		const qint64 row = next;
 		if (row >= count) break;
+		next = rows.nextShown(row);
 		const int y = rowHeight_ * (i + 1);
 		const uint32_t flags = rows.rowFlags(row);
 		const bool isLag = flags & 1, inGreen = flags & 2, isMarker = flags & 4, stated = flags & 8, ran = flags & 16;
@@ -380,7 +392,7 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 	}
 	if (e->position().x() < frameColumnWidth() && e->position().y() >= rowHeight_ && rows_ != nullptr)
 	{
-		row = top_ + static_cast<qint64>((e->position().y() - rowHeight_) / rowHeight_);
+		row = rowOnLine(static_cast<qint64>((e->position().y() - rowHeight_) / rowHeight_));
 		if (row >= rowCount())
 		{
 			e->accept();
@@ -413,7 +425,7 @@ void PianoRollItem::mouseMoveEvent(QMouseEvent *e)
 {
 	if (selecting_ && rows_ != nullptr && e->position().y() >= rowHeight_)
 	{
-		const qint64 row = std::min(rowCount() - 1, top_ + static_cast<qint64>((e->position().y() - rowHeight_) / rowHeight_));
+		const qint64 row = std::min(rowCount() - 1, rowOnLine(static_cast<qint64>((e->position().y() - rowHeight_) / rowHeight_)));
 		if (row >= 0) Q_EMIT selectionRequested(std::min(selectAnchor_, row), std::max(selectAnchor_, row));
 		return;
 	}
