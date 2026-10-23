@@ -18,6 +18,7 @@
 #include <cstring>
 #include <deque>
 #include <functional>
+#include <utility>
 #include <mutex>
 #include <regex>
 #include <string>
@@ -2975,9 +2976,12 @@ bool batchRun(const char *package, const char *rom)
 	}
 	ManualDispatcher d;
 	int started = 0;
+	/* what is done while the first game runs */
+	std::function<void()> whileRunning;
 	/* the runner, waited for: its arguments quoted for the shell */
 	auto run = [&](std::vector<std::string> args, std::function<void(int, std::string, std::string)> done) {
 		started++;
+		if (whileRunning) std::exchange(whileRunning, nullptr)();
 		std::string command = "'" + runner.string() + "'";
 		for (const std::string &a : args) command += " '" + a + "'";
 		const fs::path err = dir / "err.txt";
@@ -2992,10 +2996,21 @@ bool batchRun(const char *package, const char *rom)
 	batch.workFolder.set((dir / "work").string());
 	std::string error;
 	CHECK(!batch.run("go", {}, error) && error == "No files!");
+	CHECK(!batch.run("dump", {(dir / "none.txt").string()}, error) && error == "No results to save!");
 	batch.run("addFile", {std::string(rom)}, error);
 	batch.run("addFile", {other.string()}, error);
 	batch.frames.set(30);
+	/* as Chimera's, the list clears during a run and the run goes on with the games it started with */
+	bool cleared = false;
+	whileRunning = [&] {
+		std::string e;
+		batch.run("clear", {}, e);
+		CHECK(e.empty() && batch.fileCount.get() == 0 && batch.total.get() == 2);
+		CHECK(!batch.run("go", {}, e) && e == "Old one still running!");
+		cleared = true;
+	};
 	CHECK(batch.run("go", {}, error).has_value());
+	CHECK(cleared);
 	CHECK(d.until([&] { return !batch.running.get(); }, 60));
 	CHECK(batch.status.get() == "Status: Finished!" && batch.done.get() == 2 && started == 1);
 	const auto &r = batch.results();
@@ -3011,6 +3026,14 @@ bool batchRun(const char *package, const char *rom)
 	CHECK(batch.run("dump", {dump.string()}, error) == Value(int64_t{2}));
 	const std::string text = readFile(dump);
 	CHECK(text.rfind(std::string(rom) + "\t" + rom + "\tSynth\tSuccess\t30\t", 0) == 0 && text.find("\tErrorOnLoad\t0\t0\t") != std::string::npos);
+	/* 0 frames loads the game and runs none, as Chimera's does */
+	batch.run("addFile", {std::string(rom)}, error);
+	batch.frames.set(0);
+	CHECK(batch.run("go", {}, error).has_value());
+	CHECK(d.until([&] { return !batch.running.get(); }, 60));
+	CHECK(batch.results().size() == 1 && batch.results()[0].status == "Success" && batch.results()[0].frames == 0 && started == 2);
+	batch.frames.set(-1);
+	CHECK(!batch.run("go", {}, error) && error == "frames to run cannot be below 0");
 	fs::remove_all(dir);
 	return true;
 #endif

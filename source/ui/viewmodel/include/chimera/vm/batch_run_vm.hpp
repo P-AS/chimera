@@ -73,6 +73,8 @@ private:
 	RunTool run_;
 	ExtensionFinder byExtension_;
 	std::vector<std::string> files_;
+	/* the games of the run under way, as the list was at Go! */
+	std::vector<std::string> queue_;
 	std::vector<Result> results_;
 	FileRows fileRows_{*this};
 	ResultRows resultRows_{*this};

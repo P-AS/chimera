@@ -1270,7 +1270,7 @@ ApplicationWindow {
         id: logWindow; log: messageLog; clipboard: root.clipboard; visible: false
         customize: root.customize; toolWindows: root.toolWindows; mainWindow: root
     }
-    BatchRun { id: batchRunWindow; vm: root.batchRun; visible: false }
+    BatchRun { id: batchRunWindow; vm: root.batchRun; folderOf: root.folderOf; visible: false }
     MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; visible: false }
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; themeColor: root.osdColor; visible: false; onBudgetsAsked: (projectId, projectLabel) => {
             greenzoneBudgetsWindow.projectId = projectId

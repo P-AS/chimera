@@ -31,12 +31,9 @@ BatchRunViewModel::BatchRunViewModel(Dispatcher &dispatcher, RunTool run, Extens
 		fileRows_.reset.emit();
 		return static_cast<int64_t>(files_.size());
 	});
-	command("clear", "no games to run", {}, [this](const Args &, std::string &error) -> Value {
-		if (running.get())
-		{
-			error = "a run is under way";
-			return {};
-		}
+	/* as Chimera's, the list can be cleared during a run: the run goes by
+	 * the list it was started with */
+	command("clear", "no games to run", {}, [this](const Args &, std::string &) -> Value {
 		files_.clear();
 		fileCount.set(0);
 		fileRows_.reset.emit();
@@ -53,17 +50,19 @@ BatchRunViewModel::BatchRunViewModel(Dispatcher &dispatcher, RunTool run, Extens
 			error = "No files!";
 			return {};
 		}
-		if (frames.get() < 1)
+		/* 0 frames loads each game and runs none, as Chimera's does */
+		if (frames.get() < 0)
 		{
-			error = "a game runs a frame at least";
+			error = "frames to run cannot be below 0";
 			return {};
 		}
+		queue_ = files_;
 		results_.clear();
 		resultRows_.reset.emit();
 		at_ = 0;
 		cancel_ = false;
 		done.set(0);
-		total.set(static_cast<int64_t>(files_.size()));
+		total.set(static_cast<int64_t>(queue_.size()));
 		running.set(true);
 		status.set("Status: Running...");
 		next();
@@ -79,7 +78,7 @@ BatchRunViewModel::BatchRunViewModel(Dispatcher &dispatcher, RunTool run, Extens
 			if (!arg(a, 0, path, error)) return {};
 			if (results_.empty())
 			{
-				error = "nothing has been run";
+				error = "No results to save!";
 				return {};
 			}
 			std::ofstream out(path, std::ios::binary);
@@ -97,13 +96,13 @@ BatchRunViewModel::BatchRunViewModel(Dispatcher &dispatcher, RunTool run, Extens
 
 void BatchRunViewModel::next()
 {
-	if (cancel_ || at_ >= files_.size())
+	if (cancel_ || at_ >= queue_.size())
 	{
 		running.set(false);
 		status.set(cancel_ ? "Status: Stopped" : "Status: Finished!");
 		return;
 	}
-	const std::string file = files_[at_];
+	const std::string file = queue_[at_];
 	Result r;
 	r.file = file;
 	/* its SHA-1, as Chimera's dump writes the game's hash */
