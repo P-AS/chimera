@@ -305,6 +305,22 @@ void LuaBridge::callHook(const char *name)
 		lua_pop(L_, 1);
 }
 
+void LuaBridge::callHook(const char *name, int64_t arg)
+{
+	lua_getglobal(L_, name);
+	if (lua_isfunction(L_, -1))
+	{
+		lua_pushinteger(L_, static_cast<lua_Integer>(arg));
+		if (lua_pcall(L_, 1, 0, 0) != LUA_OK)
+		{
+			log(std::string(name) + ": " + (lua_tostring(L_, -1) ? lua_tostring(L_, -1) : "?"));
+			lua_pop(L_, 1);
+		}
+	}
+	else
+		lua_pop(L_, 1);
+}
+
 void LuaBridge::frameDone()
 {
 	/* the libraries' frame: what the gui drew last frame goes, and what is drawn now is shown at its end */

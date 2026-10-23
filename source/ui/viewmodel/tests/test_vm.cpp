@@ -63,6 +63,7 @@
 #include "chimera/vm/encoder_vm.hpp"
 #include "chimera/vm/host_input_vm.hpp"
 #include "chimera/vm/game_vm.hpp"
+#include "chimera/vm/forms_vm.hpp"
 #include "chimera/vm/nut_muxer.hpp"
 #include "chimera/vm/subprocess.hpp"
 #include "chimera/vm/surface_viewer_vm.hpp"
@@ -1475,6 +1476,7 @@ bool luaLibraries(const char *package, const char *rom)
 	GuiOverlayViewModel guiOverlay(d);
 	HostInputViewModel hostInput(d, session);
 	GamePropertiesViewModel gameProperties(d, session);
+	FormsViewModel forms(d);
 	LuaBridge lua;
 	LuaConsoleViewModel console(d, lua);
 	lua.add(session);
@@ -1484,6 +1486,9 @@ bool luaLibraries(const char *package, const char *rom)
 	lua.add(guiOverlay);
 	lua.add(hostInput);
 	lua.add(gameProperties);
+	lua.add(forms);
+	Connection formClicks = forms.clicked.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_click", h); });
+	Connection formCloses = forms.closed.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_closed", h); });
 	/* the person holds Z and the left and right buttons, the pointer at 12,34 */
 	hostInput.key("Z", true);
 	hostInput.key("X", true);
@@ -1530,6 +1535,17 @@ local names = game.list()
 game.set("Steps", 0x01020304)
 console.log("game", #names, names[1], names[4], game.describe("Steps").type, game.describe("Steps").size, mainmemory.read_u8(4), mainmemory.read_u8(7), game.get("Steps"), game.get("Nope") == nil, game.describe("Nope") == nil, type(game.describe("Status").label), game.set("Nope", 1))
 game.set("Steps", 0)
+local form = forms.newform(200, 100, "Test", function() userdata.set("closed", true) end)
+local button = forms.button(form, "Go", function() userdata.set("clicked", (userdata.get("clicked") or 0) + 1) end, 1, 2)
+local box = forms.textbox(form, "abc")
+local tick = forms.checkbox(form, "Tick")
+local pick = forms.dropdown(form, {"b", "a"})
+local pic = forms.pictureBox(form, 0, 0, 50, 50)
+forms.clear(pic, "white")
+forms.drawLine(pic, 0, 0, 10, 10, "red")
+forms.refresh(pic)
+forms.setproperty(button, "Width", 90)
+console.log("forms", form > 0, forms.gettext(box), forms.gettext(pick), forms.getproperty(button, "Left"), forms.getproperty(button, "Width"), forms.ischecked(tick), forms.button(12345, "x"), forms.createcolor(1, 2, 3, 4))
 userdata.set("lives", 3)
 userdata.set("name", "walker")
 console.log("userdata", userdata.get("lives"), userdata.containskey("name"), #userdata.get_keys(), userdata.remove("lives"), userdata.get("lives"), userdata.remove("lives"), select(2, pcall(userdata.set, "t", {})):find("Invalid type for userdata") ~= nil)
@@ -1556,6 +1572,37 @@ while true do emu.frameadvance() end
 	CHECK(said("state ") == "state string 171 false no state nothing in memory");
 	CHECK(said("input ") == "input true true true true true 12 34 true false true 34");
 	CHECK(said("game ") == "game 17 Status Steps u32 4 4 1 16909060 true true string false");
+	CHECK(said("forms ") == "forms true abc a 1 90 false 0 67174915");
+	{
+		/* the window's: the button clicked twice, the check box ticked, the form closed */
+		RowModel &controls = *forms.rowLists()[1].model;
+		int64_t button = 0, tick = 0, pic = 0;
+		std::string shapes;
+		for (int64_t i = 0; i < controls.rowCount(); i++)
+		{
+			std::string kind;
+			int64_t h = 0;
+			fromValue(controls.cell(i, 2), kind);
+			fromValue(controls.cell(i, 0), h);
+			if (kind == "button") button = h;
+			if (kind == "checkbox") tick = h;
+			if (kind == "picturebox")
+			{
+				pic = h;
+				fromValue(controls.cell(i, 15), shapes);
+			}
+		}
+		CHECK(button > 0 && tick > 0 && pic > 0 && shapes.find("\"k\":\"line\"") != std::string::npos);
+		forms.run("click", {button}, error);
+		forms.run("click", {button}, error);
+		forms.run("setChecked", {tick, true}, error);
+		forms.run("closed", {forms.rowLists()[0].model->cell(0, 0)}, error);
+		CHECK(forms.rowLists()[0].model->rowCount() == 0 && controls.rowCount() == 0);
+		/* the script's functions ran: two clicks, and the form's close */
+		std::string why;
+		CHECK(lua.run("console.log('callbacks', userdata.get('clicked'), userdata.get('closed'))", "check", why));
+		CHECK(said("callbacks ") == "callbacks 2 true");
+	}
 	CHECK(said("game.set: ").find("Nope") != std::string::npos);
 	CHECK(said("userdata ") == "userdata 3 true 2 true nil false true");
 	CHECK(session.readDomain("RAM").at(0x10) == 0xAB);

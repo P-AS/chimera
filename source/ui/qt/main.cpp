@@ -68,6 +68,7 @@
 #include "chimera/vm/encoder_vm.hpp"
 #include "chimera/vm/host_input_vm.hpp"
 #include "chimera/vm/game_vm.hpp"
+#include "chimera/vm/forms_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -973,6 +974,12 @@ int main(int argc, char **argv)
 	/* a game core's properties by name, for Lua's game library */
 	vm::GamePropertiesViewModel gameProperties(dispatcher, session);
 	lua.add(gameProperties);
+	/* a script's own windows; a click or a close goes back to the script */
+	vm::FormsViewModel forms(dispatcher);
+	qt::QmlViewModel formsQml(forms);
+	lua.add(forms);
+	vm::Connection formClicks = forms.clicked.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_click", h); });
+	vm::Connection formCloses = forms.closed.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_closed", h); });
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -1027,6 +1034,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("macroTool"), QVariant::fromValue<QObject *>(&macroToolQml)},
 		{QStringLiteral("encoder"), QVariant::fromValue<QObject *>(&encoderQml)},
 		{QStringLiteral("hostInput"), QVariant::fromValue<QObject *>(&hostInputQml)},
+		{QStringLiteral("forms"), QVariant::fromValue<QObject *>(&formsQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},

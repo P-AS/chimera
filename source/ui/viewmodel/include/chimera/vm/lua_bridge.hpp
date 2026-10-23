@@ -51,6 +51,10 @@ public:
 	 * what an MCP server's tool list would be made from */
 	std::string describe() const;
 
+	/* a global function of the libraries' called with a number, if it is
+	 * there (a form's click, a form closed) */
+	void callHook(const char *name, int64_t arg);
+
 private:
 	static int index(lua_State *L);
 	static int newIndex(lua_State *L);

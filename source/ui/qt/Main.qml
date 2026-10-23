@@ -6,6 +6,7 @@ import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import Chimera
+import "Shapes.js" as Shapes
 
 ApplicationWindow {
     id: root
@@ -48,6 +49,7 @@ ApplicationWindow {
     required property QtObject macroTool
     required property QtObject encoder
     required property QtObject hostInput
+    required property QtObject forms
     // a Paths folder for a file dialog to open in (made when it is not there)
     function folderOf(name) {
         root.paths.changed; root.paths.base; root.paths.lastRomFolder; root.paths.recentForRoms
@@ -536,6 +538,8 @@ ApplicationWindow {
         // the project's core is found among the installed ones
         onAccepted: root.leaveProject(() => root.session.run("openProject", [selectedFile]))
     }
+    // the windows Lua scripts make with the forms library
+    LuaForms { vm: root.forms }
     // Chimera's File > Encode Video: a window of its own, modeless
     EncodeVideo {
         id: encodeWindow
@@ -777,11 +781,6 @@ ApplicationWindow {
             onShapesChanged: requestPaint()
             onImageLoaded: requestPaint()
             Connections { target: picture; function onPlacementChanged() { luaCanvas.requestPaint() } }
-            // gui.clearImageCache: each read again, under a new address
-            function urlOf(file, epoch) {
-                const path = file.replace(/\\/g, "/")
-                return (path.startsWith("/") ? "file://" : "file:///") + encodeURI(path).replace(/#/g, "%23").replace(/\?/g, "%3F") + (epoch > 0 ? "?" + epoch : "")
-            }
             onPaint: {
                 const ctx = getContext("2d")
                 ctx.reset()
@@ -805,60 +804,7 @@ ApplicationWindow {
                     ctx.save()
                     ctx.translate(shown.x - src.x * sx, shown.y - src.y * sy)
                     ctx.scale(sx, sy)
-                    ctx.lineWidth = 1 / Math.min(sx, sy)
-                    if (s.k === "rect") {
-                        if (s.fill !== "") { ctx.fillStyle = s.fill; ctx.fillRect(s.x, s.y, s.w, s.h) }
-                        if (s.line !== "") { ctx.strokeStyle = s.line; ctx.strokeRect(s.x + 0.5 / sx, s.y + 0.5 / sy, s.w, s.h) }
-                    } else if (s.k === "ellipse") {
-                        ctx.beginPath()
-                        ctx.ellipse(s.x, s.y, s.w, s.h)
-                        if (s.fill !== "") { ctx.fillStyle = s.fill; ctx.fill() }
-                        if (s.line !== "") { ctx.strokeStyle = s.line; ctx.stroke() }
-                    } else if (s.k === "line") {
-                        ctx.beginPath()
-                        ctx.moveTo(s.x + 0.5, s.y + 0.5)
-                        ctx.lineTo(s.x2 + 0.5, s.y2 + 0.5)
-                        ctx.strokeStyle = s.line
-                        ctx.stroke()
-                    } else if (s.k === "path" || s.k === "bezier") {
-                        if (s.points.length === 0) { ctx.restore(); continue }
-                        ctx.beginPath()
-                        ctx.moveTo(s.points[0][0] + 0.5, s.points[0][1] + 0.5)
-                        if (s.k === "bezier")
-                            ctx.bezierCurveTo(s.points[1][0] + 0.5, s.points[1][1] + 0.5, s.points[2][0] + 0.5, s.points[2][1] + 0.5, s.points[3][0] + 0.5, s.points[3][1] + 0.5)
-                        else
-                            for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i][0] + 0.5, s.points[i][1] + 0.5)
-                        if (s.closed) ctx.closePath()
-                        if (s.fill !== undefined && s.fill !== "") { ctx.fillStyle = s.fill; ctx.fill() }
-                        if (s.line !== "") { ctx.strokeStyle = s.line; ctx.stroke() }
-                    } else if (s.k === "pie") {
-                        // an ellipse's slice: drawn on a circle, stretched to the ellipse
-                        const cx = s.x + s.w / 2, cy = s.y + s.h / 2
-                        ctx.beginPath()
-                        ctx.translate(cx, cy)
-                        ctx.scale(s.w / 2 || 1, s.h / 2 || 1)
-                        ctx.moveTo(0, 0)
-                        ctx.arc(0, 0, 1, s.start * Math.PI / 180, (s.start + s.sweep) * Math.PI / 180, s.sweep < 0)
-                        ctx.closePath()
-                        ctx.lineWidth = 2 / Math.min(sx * s.w, sy * s.h)
-                        if (s.fill !== "") { ctx.fillStyle = s.fill; ctx.fill() }
-                        if (s.line !== "") { ctx.strokeStyle = s.line; ctx.stroke() }
-                    } else if (s.k === "image") {
-                        const url = luaCanvas.urlOf(s.file, s.epoch)
-                        if (!luaCanvas.isImageLoaded(url)) { luaCanvas.loadImage(url); ctx.restore(); continue }
-                        if (s.sw !== undefined)
-                            ctx.drawImage(url, s.sx, s.sy, s.sw, s.sh, s.x, s.y, s.w, s.h)
-                        else if (s.w >= 0 && s.h >= 0)
-                            ctx.drawImage(url, s.x, s.y, s.w, s.h)
-                        else
-                            ctx.drawImage(url, s.x, s.y)
-                    } else if (s.k === "text") {
-                        ctx.font = s.size + "px monospace"
-                        ctx.textBaseline = "top"
-                        if (s.back !== "") { ctx.fillStyle = s.back; ctx.fillRect(s.x, s.y, ctx.measureText(s.text).width, s.size) }
-                        ctx.fillStyle = s.color
-                        ctx.fillText(s.text, s.x, s.y)
-                    }
+                    Shapes.draw(ctx, luaCanvas, s, sx, sy, Shapes.urlOf)
                     ctx.restore()
                 }
             }

@@ -657,6 +657,137 @@ function gui.clearImageCache() imageEpoch = imageEpoch + 1 end
 function __chimera_frame_begin() shapes = {} end
 function __chimera_frame_end() if C.gui then C.gui.shapes = jsonOf(shapes) end end
 
+-- forms: a script's own small windows, as Chimera's -------------------------
+forms = {}
+local clicks, closers, boxes = {}, {}, {}
+-- the window's: a control clicked, a form closed by the person
+function __chimera_forms_click(handle)
+	for _, fn in ipairs(clicks[handle] or {}) do fn() end
+end
+function __chimera_forms_closed(handle)
+	local fn = closers[handle]
+	closers[handle] = nil
+	if fn then fn() end
+end
+local function itemsText(t)
+	local list = {}
+	for _, v in pairs(t or {}) do list[#list + 1] = tostring(v) end
+	return table.concat(list, "\n")
+end
+function forms.newform(width, height, title, onClose)
+	local f = C.forms.newForm(width, height, title ~= nil and tostring(title) or nil)
+	if onClose ~= nil then closers[f] = onClose end
+	return f
+end
+function forms.button(form, caption, onClick, x, y, width, height)
+	local b = C.forms.button(form, tostring(caption or ""), x, y, width, height)
+	if b ~= 0 and onClick ~= nil then clicks[b] = {onClick} end
+	return b
+end
+function forms.checkbox(form, caption, x, y) return C.forms.checkbox(form, tostring(caption or ""), x, y) end
+function forms.label(form, caption, x, y, width, height, fixedWidth)
+	return C.forms.label(form, tostring(caption or ""), x, y, width, height, fixedWidth == true)
+end
+function forms.textbox(form, caption, width, height, boxtype, x, y, multiline, fixedWidth, scrollbars)
+	return C.forms.textbox(form, caption ~= nil and tostring(caption) or "", width, height, boxtype, x, y, multiline == true, fixedWidth == true, scrollbars)
+end
+function forms.dropdown(form, items, x, y, width, height) return C.forms.dropdown(form, itemsText(items), x, y, width, height) end
+function forms.addclick(handle, fn)
+	clicks[handle] = clicks[handle] or {}
+	table.insert(clicks[handle], fn)
+end
+function forms.clearclicks(handle) clicks[handle] = nil end
+function forms.destroy(handle)
+	closers[handle] = nil
+	return C.forms.destroy(handle)
+end
+function forms.destroyall()
+	closers = {}
+	C.forms.destroyAll()
+end
+function forms.gettext(handle) return C.forms.getText(handle) end
+function forms.settext(handle, caption) C.forms.setText(handle, tostring(caption)) end
+function forms.ischecked(handle) return C.forms.isChecked(handle) end
+function forms.getproperty(handle, property) return C.forms.getProperty(handle, tostring(property)) end
+function forms.setproperty(handle, property, value) C.forms.setProperty(handle, tostring(property), value) end
+function forms.setlocation(handle, x, y) C.forms.setLocation(handle, x, y) end
+function forms.setsize(handle, width, height) C.forms.setSize(handle, width, height) end
+function forms.setdropdownitems(handle, items, alphabetize) C.forms.setDropdownItems(handle, itemsText(items), alphabetize ~= false) end
+function forms.createcolor(r, g, b, a) return ((a or 255) & 0xFF) << 24 | (r & 0xFF) << 16 | (g & 0xFF) << 8 | (b & 0xFF) end
+function forms.openfile() error("forms.openfile: not here yet") end
+-- a picture box: drawn on as gui draws over the picture, shown on refresh
+function forms.pictureBox(form, x, y, width, height)
+	local box = C.forms.pictureBox(form, x, y, width, height)
+	if box ~= 0 then boxes[box] = {shapes = {}, background = "", fore = "#FF000000", back = "", textBack = ""} end
+	return box
+end
+local function boxOf(handle)
+	local b = boxes[handle]
+	if b == nil then error("no picture box " .. tostring(handle)) end
+	return b
+end
+local function put(handle, shape) local b = boxOf(handle) b.shapes[#b.shapes + 1] = shape end
+function forms.clear(handle, color)
+	local b = boxOf(handle)
+	b.shapes = {}
+	b.background = colour(color, "#FFFFFFFF")
+	C.forms.draw(handle, "[]", b.background)
+end
+function forms.refresh(handle)
+	local b = boxOf(handle)
+	C.forms.draw(handle, jsonOf(b.shapes), b.background)
+end
+function forms.setDefaultForegroundColor(handle, color) boxOf(handle).fore = colour(color, "#FF000000") end
+function forms.setDefaultBackgroundColor(handle, color) boxOf(handle).back = colour(color, "") end
+function forms.setDefaultTextBackground(handle, color) boxOf(handle).textBack = colour(color, "") end
+function forms.drawRectangle(handle, x, y, w, h, line, fill)
+	local b = boxOf(handle)
+	put(handle, {k = "rect", x = x, y = y, w = w, h = h, line = colour(line, b.fore), fill = colour(fill, b.back)})
+end
+function forms.drawBox(handle, x, y, x2, y2, line, fill)
+	forms.drawRectangle(handle, math.min(x, x2), math.min(y, y2), math.abs(x2 - x), math.abs(y2 - y), line, fill)
+end
+function forms.drawEllipse(handle, x, y, w, h, line, fill)
+	local b = boxOf(handle)
+	put(handle, {k = "ellipse", x = x, y = y, w = w, h = h, line = colour(line, b.fore), fill = colour(fill, b.back)})
+end
+function forms.drawLine(handle, x1, y1, x2, y2, c) put(handle, {k = "line", x = x1, y = y1, x2 = x2, y2 = y2, line = colour(c, boxOf(handle).fore)}) end
+function forms.drawAxis(handle, x, y, size, c)
+	forms.drawLine(handle, x - size, y, x + size, y, c)
+	forms.drawLine(handle, x, y - size, x, y + size, c)
+end
+function forms.drawPixel(handle, x, y, c) put(handle, {k = "rect", x = x, y = y, w = 1, h = 1, line = "", fill = colour(c, boxOf(handle).fore)}) end
+function forms.drawPolygon(handle, points, x, y, line, fill)
+	local b = boxOf(handle)
+	put(handle, {k = "path", points = pointsOf(points, x, y), closed = true, line = colour(line, b.fore), fill = colour(fill, b.back)})
+end
+function forms.drawBezier(handle, points, c)
+	local p = pointsOf(points)
+	if #p == 4 then put(handle, {k = "bezier", points = p, line = colour(c, boxOf(handle).fore)}) end
+end
+function forms.drawPie(handle, x, y, w, h, start, sweep, line, fill)
+	local b = boxOf(handle)
+	put(handle, {k = "pie", x = x, y = y, w = w, h = h, start = start, sweep = sweep, line = colour(line, b.fore), fill = colour(fill, b.back)})
+end
+function forms.drawArc(handle, x, y, w, h, start, sweep, line)
+	put(handle, {k = "pie", arc = true, x = x, y = y, w = w, h = h, start = start, sweep = sweep, line = colour(line, boxOf(handle).fore), fill = ""})
+end
+function forms.drawString(handle, x, y, text, fore, back, size)
+	local b = boxOf(handle)
+	put(handle, {k = "text", x = x, y = y, text = tostring(text), color = colour(fore, b.fore), back = colour(back, b.textBack), size = size or 12})
+end
+forms.drawText = forms.drawString
+function forms.drawImage(handle, path, x, y, w, h)
+	put(handle, {k = "image", file = fileOf(path), x = x, y = y, w = w or -1, h = h or -1, epoch = imageEpoch})
+end
+forms.drawIcon = forms.drawImage
+function forms.drawImageRegion(handle, path, sx, sy, sw, sh, x, y, w, h)
+	put(handle, {k = "image", file = fileOf(path), sx = sx, sy = sy, sw = sw, sh = sh, x = x, y = y, w = w or sw, h = h or sh, epoch = imageEpoch})
+end
+function forms.clearImageCache() imageEpoch = imageEpoch + 1 end
+function forms.getMouseX(handle) return C.forms.mouseX(handle) end
+function forms.getMouseY(handle) return C.forms.mouseY(handle) end
+
 -- event --------------------------------------------------------------------
 event = {}
 local named = 0
