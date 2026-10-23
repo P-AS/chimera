@@ -76,6 +76,10 @@ public:
 
 	QString colors() const { return colors_; }
 	void setColors(const QString &json);
+	/* Chimera's twelve TAStudio colours as the theme has them, before the
+	 * roll's own (TAStudio's Set Colors shows them, and its Defaults goes
+	 * back to them): {"TasCurrentFrame": "#rrggbb", ...} */
+	Q_INVOKABLE QString themeColors() const;
 	QString rollFont() const { return rollFont_; }
 	void setRollFont(const QString &font);
 	bool horizontal() const { return horizontal_; }
@@ -145,6 +149,14 @@ private:
 	bool denoteStatesColor_ = true, denoteStatesIcons_ = false, denoteMarkersColor_ = true, denoteMarkersIcons_ = false;
 	QString colors_, rollFont_;
 	QFont font_;
+	/* what the roll is drawn in: the theme's, then the roll's own over them */
+	struct Look
+	{
+		QColor plain, text, header, headerText, grid, lit, now, green, lag, marker, picked, pickedText, permanent, greenStated,
+			lagStated, greenGone, lagGone, frameWash, altPlayer, greenFrame, lagFrame, analogEdit;
+		bool dark = false;
+	};
+	Look themeLook() const;
 	int rowHeight_ = 18, columnWidth_ = 26, numberWidth_ = 48;
 	bool horizontal_ = false;
 	struct Extra

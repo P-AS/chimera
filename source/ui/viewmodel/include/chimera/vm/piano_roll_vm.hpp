@@ -216,7 +216,7 @@ private:
 		{
 			return static_cast<int64_t>(vm_.buttonPatterns_.size() + vm_.axisPatterns_.size());
 		}
-		int32_t columnCount() const override { return 5; }
+		int32_t columnCount() const override { return 8; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 

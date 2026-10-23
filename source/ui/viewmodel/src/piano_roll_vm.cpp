@@ -305,7 +305,8 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	rows("columns", "the piano roll's columns, a control each: name, label, shown", columnRows_);
 	rows("history", "the undo history, in order: each step's name, and whether it is done (the rest are undone)", historyRows_);
 	rows("patterns", "each control's own pattern (kept in the project): name, runs (\"On x1, Off x1\" or \"127 x2, 0 x1\"), "
-		"loop (the value it goes back to), skipLag (lag frames passed over), button", patternRows_);
+		"loop (the value it goes back to), skipLag (lag frames passed over), button, and an analog control's min, max and neutral",
+		patternRows_);
 	expose("maxUndoSteps", "the most undo steps kept", maxUndoSteps, true);
 	expose("copyFrameNumbers", "Copy puts each frame's number before its line", copyFrameNumbers, true);
 	expose("clipboardText", "the frames last copied or cut, a line each, for the system's clipboard", clipboardText);
@@ -1898,8 +1899,8 @@ std::string PianoRollViewModel::runsText(const Pattern &p, bool isButton)
 
 std::string PianoRollViewModel::PatternRows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"name", "runs", "loop", "skipLag", "button"};
-	return column >= 0 && column < 5 ? names[column] : "";
+	static const char *const names[] = {"name", "runs", "loop", "skipLag", "button", "min", "max", "neutral"};
+	return column >= 0 && column < 8 ? names[column] : "";
 }
 
 Value PianoRollViewModel::PatternRows::cell(int64_t row, int32_t column) const
@@ -1917,6 +1918,16 @@ Value PianoRollViewModel::PatternRows::cell(int64_t row, int32_t column) const
 	case 2: return p.loop;
 	case 3: return p.skipLag;
 	case 4: return isButton;
+	/* an analog control's range and its rest, for a pattern's values (a button's: off and on) */
+	case 5:
+	case 6:
+	case 7:
+	{
+		const size_t a = static_cast<size_t>(row) - buttons;
+		if (isButton || a >= vm_.session_.axes().size()) return column == 6 ? int64_t{1} : int64_t{0};
+		const SessionViewModel::Axis &ax = vm_.session_.axes()[a];
+		return column == 5 ? ax.min : column == 6 ? ax.max : ax.neutral;
+	}
 	default: return {};
 	}
 }

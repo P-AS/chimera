@@ -917,5 +917,5 @@ ApplicationWindow {
     ProjectDetails { id: commentsWindow; part: "comments"; vm: tas.projectDetails; visible: false }
     ProjectDetails { id: subtitlesWindow; part: "subtitles"; vm: tas.projectDetails; visible: false }
     UndoHistory { id: undoHistoryWindow; vm: tas.pianoRoll; visible: false }
-    TAStudioSettings { id: tastudioSettingsWindow; session: tas.session; pianoRoll: tas.pianoRoll; branches: tas.branches; visible: false }
+    TAStudioSettings { id: tastudioSettingsWindow; session: tas.session; pianoRoll: tas.pianoRoll; branches: tas.branches; themeColorsOf: () => roll.themeColors(); ownerWindow: tas; visible: false }
 }

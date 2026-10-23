@@ -5142,6 +5142,22 @@ bool pianoRollEditing(const char *package, const char *rom)
 		};
 		const std::string five = session.buttonNames()[5];
 		CHECK(text(5, 0) == five && text(5, 1) == "On x1, Off x1");
+		/* the settings window's pattern editor: a button's values are off and on,
+		 * an analog control's its range, an inserted run at its rest */
+		{
+			auto number = [&](int64_t row, int32_t col) {
+				int64_t n = -12345;
+				fromValue(patterns->cell(row, col), n);
+				return n;
+			};
+			CHECK(number(5, 5) == 0 && number(5, 6) == 1 && number(5, 7) == 0);
+			if (!session.axes().empty())
+			{
+				const int64_t a = static_cast<int64_t>(session.buttonNames().size());
+				const SessionViewModel::Axis &ax = session.axes()[0];
+				CHECK(number(a, 5) == ax.min && number(a, 6) == ax.max && number(a, 7) == ax.neutral);
+			}
+		}
 		auto columnFive = [&](int64_t from, int64_t to) {
 			std::string bits;
 			for (int64_t f = from; f <= to; f++) bits += (masks()[static_cast<size_t>(f)] >> 5 & 1) ? '1' : '0';

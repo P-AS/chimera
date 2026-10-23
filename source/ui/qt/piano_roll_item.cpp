@@ -215,11 +215,8 @@ bool PianoRollItem::cellAt(QPointF p, qint64 &row, int &column) const
 	return column >= 0 && row < rows_->rows().rowCount();
 }
 
-void PianoRollItem::paint(QPainter *p)
+PianoRollItem::Look PianoRollItem::themeLook() const
 {
-	QElapsedTimer timer;
-	timer.start();
-
 	/* TAStudio's meanings: the current frame blue, the greenzone green, a
 	 * lag frame in it red, frames not run with their inputs plain. The
 	 * colours follow the system's light or dark theme: each meaning is a
@@ -269,16 +266,56 @@ void PianoRollItem::paint(QPainter *p)
 	themed(lagGone, "TasLagZoneInputInvalidated");
 	themed(frameWash, "TasFrameColumnWash");
 	themed(altPlayer, "TasAlternatePlayer");
-	/* the roll's own colours, over the theme's (TAStudio's Set Colors) */
+	/* the frame column's greenzone and lag colours are Chimera's to offer
+	 * (its Set Colors has them) though its roll does not draw them either;
+	 * the analog cell being edited is filled with its own */
+	QColor greenFrame = green, lagFrame = lag, analogEdit = picked;
+	analogEdit.setAlpha(90);
+	themed(greenFrame, "TasGreenZone");
+	themed(lagFrame, "TasLagZone");
+	themed(analogEdit, "TasAnalogEdit");
+	return Look{plain, text, header, headerText, grid, lit, now, green, lag, marker, picked, pickedText, permanent, greenStated, lagStated,
+		greenGone, lagGone, frameWash, altPlayer, greenFrame, lagFrame, analogEdit, dark};
+}
+
+QString PianoRollItem::themeColors() const
+{
+	const Look k = themeLook();
+	const std::pair<const char *, QColor> roles[] = {{"TasCurrentFrame", k.now}, {"TasGreenZone", k.greenFrame},
+		{"TasGreenZoneInput", k.green}, {"TasGreenZoneInputStated", k.greenStated}, {"TasGreenZoneInputInvalidated", k.greenGone},
+		{"TasLagZone", k.lagFrame}, {"TasLagZoneInput", k.lag}, {"TasLagZoneInputStated", k.lagStated},
+		{"TasLagZoneInputInvalidated", k.lagGone}, {"TasMarker", k.marker}, {"TasPermanentMarker", k.permanent},
+		{"TasAnalogEdit", k.analogEdit}};
+	QJsonObject out;
+	for (const auto &[role, color] : roles) out.insert(QLatin1String(role), color.name(color.alpha() < 255 ? QColor::HexArgb : QColor::HexRgb));
+	return QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact));
+}
+
+void PianoRollItem::paint(QPainter *p)
+{
+	QElapsedTimer timer;
+	timer.start();
+
+	/* the theme's colours, then the roll's own over them (TAStudio's Set Colors) */
+	const Look k = themeLook();
+	const QPalette pal = QGuiApplication::palette();
+	const bool dark = k.dark;
+	QColor plain = k.plain, text = k.text, header = k.header, headerText = k.headerText, grid = k.grid, lit = k.lit, now = k.now,
+		green = k.green, lag = k.lag, marker = k.marker, picked = k.picked, pickedText = k.pickedText, permanent = k.permanent,
+		greenStated = k.greenStated, lagStated = k.lagStated, greenGone = k.greenGone, lagGone = k.lagGone, frameWash = k.frameWash,
+		altPlayer = k.altPlayer, greenFrame = k.greenFrame, lagFrame = k.lagFrame, analogEdit = k.analogEdit;
 	{
 		const QJsonObject own = QJsonDocument::fromJson(colors_.toUtf8()).object();
 		const std::pair<const char *, QColor *> roles[] = {{"TasCurrentFrame", &now}, {"TasGreenZoneInput", &green},
 			{"TasGreenZoneInputStated", &greenStated}, {"TasGreenZoneInputInvalidated", &greenGone}, {"TasLagZoneInput", &lag},
 			{"TasLagZoneInputStated", &lagStated}, {"TasLagZoneInputInvalidated", &lagGone}, {"TasMarker", &marker},
+			{"TasPermanentMarker", &permanent}, {"TasGreenZone", &greenFrame}, {"TasLagZone", &lagFrame}, {"TasAnalogEdit", &analogEdit},
 			{"TasDefaultRow", &plain}, {"TasFrameColumnWash", &frameWash}, {"TasAlternatePlayer", &altPlayer}};
 		for (const auto &[role, color] : roles)
 			if (const QColor c(own.value(QLatin1String(role)).toString()); c.isValid()) *color = c;
 	}
+	Q_UNUSED(greenFrame);
+	Q_UNUSED(lagFrame);
 	p->setFont(font_);
 	p->fillRect(0, 0, static_cast<int>(width()), static_cast<int>(height()), plain);
 	if (rows_ == nullptr) return;
@@ -452,6 +489,8 @@ void PianoRollItem::paint(QPainter *p)
 			}
 			if (row == pickedRow_ && c == pickedColumn_)
 			{
+				/* Chimera's Analog Edit Mode colour */
+				p->fillRect(cx + 1, y + 1, cw - 2, rowHeight_ - 2, analogEdit);
 				p->setPen(QPen(lit, 2));
 				p->drawRect(cx + 1, y + 1, cw - 2, rowHeight_ - 2);
 			}
