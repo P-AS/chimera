@@ -186,6 +186,23 @@ public:
 	 * (a member not given is saved as the project had it) */
 	Signal<std::map<std::string, std::string>> tastudioLoaded;
 	void setTastudioMember(const std::string &name, const std::string &json);
+	/* The piano roll's Auto-hold columns (Chimera's column "emphasis"), by
+	 * name: as the project had them, and the ones now, to save with it */
+	Signal<std::vector<std::string>> autoHeldColumnsLoaded;
+	void setAutoHeldColumns(const std::vector<std::string> &names);
+	/* What each Auto-hold column presses while the game plays, on the UI's
+	 * thread: its values in turn (1 or 0 for a button, the value for an
+	 * analog control), back to `loop` after the last, a lag frame not
+	 * counted when skipLag; a button or an analog control by its index */
+	struct ColumnPattern
+	{
+		bool isAxis = false;
+		int32_t index = 0;
+		std::vector<int32_t> values;
+		bool skipLag = true;
+		int64_t loop = 0;
+	};
+	void setColumnPatterns(std::vector<ColumnPattern> patterns);
 	/* the controls Chimera's piano roll hides until shown (the console's
 	 * power and reset, keyboard keys, disk and tape controls...) */
 	static bool hiddenByDefault(const std::string &name);
@@ -485,6 +502,10 @@ private:
 	 * (written when the project had none of its own), for the machine's thread */
 	std::vector<std::string> hiddenColumnsM_;
 	std::map<std::string, std::string> tastudioMembersM_;
+	std::vector<std::string> autoHeldColumnsM_;
+	/* the Auto-hold columns' patterns, and where each is */
+	std::vector<ColumnPattern> columnPatternsM_;
+	std::vector<size_t> columnAtM_;
 	std::string freshColumnsM_;
 	bool columnsLoadedM_ = false;
 	/* the defaults, sent once a machine's controls are known */

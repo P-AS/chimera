@@ -106,13 +106,19 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			made.loop = loop;
 			*p = std::move(made);
 			storePatterns();
+			pushColumnHolds();
 			session_.markChanged();
 			return {};
 		});
-	command("toggleAutoHold", "a column's Auto-hold on or off (TAStudio's column menu): painting it follows its pattern "
-		"when patternMode is autofire", {"name"}, [this](const Args &a, std::string &error) -> Value {
+	command("toggleAutoHold", "a column's Auto-hold on or off (TAStudio's column menu): while the game plays its button "
+		"is held, fired or follows its own pattern, as patternKind says, and painting it follows its pattern when "
+		"patternMode is autofire. An analog column holds the value given (its most when none is)",
+		{"name", "value"}, [this](const Args &a, std::string &error) -> Value {
 			std::string name;
+			int64_t value = 0;
 			if (!arg(a, 0, name, error)) return {};
+			const bool valueGiven = a.size() > 1;
+			if (valueGiven && !arg(a, 1, value, error)) return {};
 			bool known = false;
 			for (int32_t c = 0; c < frames_.columnCount(); c++) known = known || frames_.columnName(c) == name;
 			if (!known)
@@ -120,20 +126,76 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				error = "no column " + name;
 				return {};
 			}
-			if (!autoHeld_.erase(name)) autoHeld_.insert(name);
-			columnRows_.reset.emit();
-			frames_.reset.emit();
-			return autoHeld_.count(name) != 0;
+			const bool on = autoHeld_.count(name) == 0;
+			if (on && valueGiven)
+				for (const SessionViewModel::Axis &ax : session_.axes())
+					if (ax.name == name)
+					{
+						if (value < ax.min || value > ax.max)
+						{
+							error = name + " goes from " + std::to_string(ax.min) + " to " + std::to_string(ax.max);
+							return {};
+						}
+						axisHoldValues_[name] = static_cast<int32_t>(value);
+						storePatterns();
+						session_.markChanged();
+					}
+			if (on) autoHeld_.insert(name);
+			else autoHeld_.erase(name);
+			autoHeldChanged();
+			return on;
 		});
+	expose("autoHoldMin", "the least value autoHoldQuestion's analog control takes", autoHoldMin);
+	expose("autoHoldMax", "the most value autoHoldQuestion's analog control takes", autoHoldMax);
+	expose("autoHoldInitial", "the value autoHoldQuestion offers: the control's on the current frame", autoHoldInitial);
+	command("autoHoldQuestion", "what to ask before turning a column's Auto-hold on, as Chimera asks (chimera issue 298): "
+		"for an analog control, unless its own pattern is played, the value to hold it at (autoHoldMin, autoHoldMax and "
+		"autoHoldInitial say the rest); \"\" when there is nothing to ask", {"name"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string name;
+			if (!arg(a, 0, name, error)) return {};
+			if (autoHeld_.count(name) != 0 || patternKind.get() == "custom") return std::string();
+			const auto &axes = session_.axes();
+			for (size_t x = 0; x < axes.size(); x++)
+				if (axes[x].name == name)
+				{
+					const int64_t f = currentFrame.get();
+					int64_t now = axes[x].neutral;
+					if (f >= 0 && f < inputs_.size())
+					{
+						std::vector<int32_t> values(inputs_.axisCount());
+						if (!values.empty()) inputs_.axesAt(f, values.data());
+						if (x < values.size()) now = values[x];
+					}
+					autoHoldMin.set(axes[x].min);
+					autoHoldMax.set(axes[x].max);
+					autoHoldInitial.set(now);
+					return "Hold " + name + " at (from " + std::to_string(axes[x].min) + " to " + std::to_string(axes[x].max) + "):";
+				}
+			return std::string();
+		});
+	holdWatches_.push_back(session_.autoHeldColumnsLoaded.connect([this](const std::vector<std::string> &names) {
+		autoHeld_ = std::set<std::string>(names.begin(), names.end());
+		autoHeldChanged();
+	}));
+	holdWatches_.push_back(patternKind.changed.connect([this] { pushColumnHolds(); }));
+	holdWatches_.push_back(session_.autofireOn.changed.connect([this] { pushColumnHolds(); }));
+	holdWatches_.push_back(session_.autofireOff.changed.connect([this] { pushColumnHolds(); }));
+	holdWatches_.push_back(session_.autofireSkipsLag.changed.connect([this] { pushColumnHolds(); }));
 	patternsWatch_ = session_.tastudioLoaded.connect([this](const std::map<std::string, std::string> &members) {
 		pendingMembers_ = members;
 	});
 	/* a game alone, or nothing open: Chimera's default patterns */
 	projectGoneWatch_ = session_.hasProject.changed.connect([this] {
-		if (!session_.hasProject.get()) defaultPatterns();
+		if (session_.hasProject.get()) return;
+		autoHeld_.clear();
+		axisHoldValues_.clear();
+		defaultPatterns();
+		autoHeldChanged();
 	});
 	editHiddenWatch_ = editHiddenColumns.changed.connect([this] {
 		session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
+		pushColumnHolds();
 	});
 	expose("greenEnd", "frames before this one were run with the inputs they have now", greenEnd);
 	expose("topFrame", "the first frame in view", topFrame, true);
@@ -699,6 +761,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		}
 		else if (controlNames() != patternNames_)
 			defaultPatterns();
+		pushColumnHolds();
 		session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
 		frames_.reset.emit();
 	});
@@ -1044,6 +1107,70 @@ void PianoRollViewModel::overwrite(int64_t at, const std::vector<Row> &rows)
 	edited(at, at + static_cast<int64_t>(rows.size()) - 1, before);
 }
 
+void PianoRollViewModel::autoHeldChanged()
+{
+	session_.setAutoHeldColumns(std::vector<std::string>(autoHeld_.begin(), autoHeld_.end()));
+	pushColumnHolds();
+	columnRows_.reset.emit();
+	frames_.reset.emit();
+}
+
+void PianoRollViewModel::pushColumnHolds()
+{
+	/* as Chimera's TAStudio.UpdateAutoFire: held every frame, fired as
+	 * autofire's counts say, or the column's own pattern */
+	const std::string &kind = patternKind.get();
+	const int64_t on = std::max<int64_t>(1, session_.autofireOn.get()), off = std::max<int64_t>(1, session_.autofireOff.get());
+	std::vector<SessionViewModel::ColumnPattern> all;
+	const std::vector<std::string> &buttons = session_.buttonNames();
+	const auto &axes = session_.axes();
+	for (const std::string &name : autoHeld_)
+	{
+		/* a hidden column records nothing when hidden ones are not edited */
+		if (limited() && hidden_.count(name) != 0) continue;
+		SessionViewModel::ColumnPattern cp;
+		const Pattern *own = nullptr;
+		int32_t pressed = 1, released = 0;
+		bool found = false;
+		for (size_t b = 0; b < buttons.size() && !found; b++)
+			if (buttons[b] == name)
+			{
+				found = true;
+				cp.index = static_cast<int32_t>(b);
+				if (b < buttonPatterns_.size()) own = &buttonPatterns_[b];
+			}
+		for (size_t x = 0; x < axes.size() && !found; x++)
+			if (axes[x].name == name)
+			{
+				found = true;
+				cp.isAxis = true;
+				cp.index = static_cast<int32_t>(x);
+				if (x < axisPatterns_.size()) own = &axisPatterns_[x];
+				const auto held = axisHoldValues_.find(name);
+				pressed = held != axisHoldValues_.end() && held->second >= axes[x].min && held->second <= axes[x].max
+							  ? held->second : static_cast<int32_t>(axes[x].max);
+				released = static_cast<int32_t>(axes[x].neutral);
+			}
+		if (!found) continue;
+		if (kind == "custom" && own != nullptr)
+		{
+			cp.values = own->values;
+			cp.skipLag = own->skipLag;
+			cp.loop = own->loop;
+		}
+		else if (kind == "autofire")
+		{
+			cp.values.assign(static_cast<size_t>(on), pressed);
+			cp.values.insert(cp.values.end(), static_cast<size_t>(off), released);
+			cp.skipLag = session_.autofireSkipsLag.get();
+		}
+		else
+			cp.values = {pressed};
+		all.push_back(std::move(cp));
+	}
+	session_.setColumnPatterns(std::move(all));
+}
+
 std::vector<std::string> PianoRollViewModel::controlNames() const
 {
 	std::vector<std::string> names = session_.buttonNames();
@@ -1083,6 +1210,10 @@ void PianoRollViewModel::storePatterns()
 	};
 	session_.setTastudioMember("BoolPatterns", write(buttonPatterns_, true));
 	session_.setTastudioMember("AxisPatterns", write(axisPatterns_, false));
+	json::Json holds;
+	holds.kind = json::Json::Kind::Object;
+	for (const auto &[name, value] : axisHoldValues_) holds.members.emplace_back(name, json::Json::integer(value));
+	session_.setTastudioMember("AxisHoldValues", json::write(holds));
 	patternNames_ = controlNames();
 	patternRows_.reset.emit();
 }
@@ -1113,6 +1244,15 @@ void PianoRollViewModel::loadPatterns(const std::map<std::string, std::string> &
 		out = std::move(read);
 		return true;
 	};
+	axisHoldValues_.clear();
+	if (const auto it = members.find("AxisHoldValues"); it != members.end())
+	{
+		json::Json holds;
+		std::string err;
+		if (json::parse(it->second, holds, err) && holds.kind == json::Json::Kind::Object)
+			for (const auto &[name, value] : holds.members)
+				if (value.kind == json::Json::Kind::Number) axisHoldValues_[name] = static_cast<int32_t>(value.number());
+	}
 	std::vector<Pattern> buttons = buttonPatterns_, axes = axisPatterns_;
 	const bool haveButtons = read(members, "BoolPatterns", session_.buttonNames().size(), buttons);
 	const bool haveAxes = read(members, "AxisPatterns", session_.axes().size(), axes);
@@ -1431,6 +1571,7 @@ void PianoRollViewModel::hiddenChanged()
 	hiddenColumns.set(text);
 	session_.setHiddenColumns(names);
 	session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
+	pushColumnHolds();
 	columnRows_.reset.emit();
 	frames_.reset.emit();
 }

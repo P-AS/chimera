@@ -45,6 +45,9 @@ public:
 	 * "custom" (the column's own, kept in the project) */
 	Property<std::string> patternMode{"never"};
 	Property<std::string> patternKind{"hold"};
+	/* what autoHoldQuestion offers: the analog control's range, and its
+	 * value on the current frame */
+	Property<int64_t> autoHoldMin{0}, autoHoldMax{0}, autoHoldInitial{0};
 	/* the most undo steps kept, as Chimera's TAStudio setting has it */
 	Property<int64_t> maxUndoSteps{1000};
 	/* TAStudio's "include frame numbers when copying input" */
@@ -289,8 +292,15 @@ private:
 	Frames frames_{*this};
 	/* the columns hidden, by control name, and the list of them all */
 	std::set<std::string> hidden_;
-	/* the columns given Auto-hold (Chimera's column "emphasis"), by name */
+	/* the columns given Auto-hold (Chimera's column "emphasis"), by name;
+	 * the value an analog one holds (chimera issue 298: asked for when its
+	 * Auto-hold is turned on; its most when none was given); and what each
+	 * presses while the game plays, handed to the session */
 	std::set<std::string> autoHeld_;
+	std::map<std::string, int32_t> axisHoldValues_;
+	void pushColumnHolds();
+	void autoHeldChanged();
+	std::vector<Connection> holdWatches_;
 	ColumnRows columnRows_{*this};
 	void hiddenChanged();
 	Connection hiddenWatch_, maxStepsWatch_, editHiddenWatch_;

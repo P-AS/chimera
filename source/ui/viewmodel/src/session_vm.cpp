@@ -1525,7 +1525,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		later([this, period] { greenzonePeriod.set(period); });
 		/* the piano roll's columns: the first roll's hidden ones, as
 		 * Chimera's TAStudio saved them; none saved, its defaults */
-		std::vector<std::string> hidden;
+		std::vector<std::string> hidden, held;
 		bool saved = false;
 		if (const json::Json *o = tastudio.find("o"))
 			if (const json::Json *rolls = o->find("Columns"); rolls != nullptr && rolls->kind == json::Json::Kind::Array && !rolls->items.empty())
@@ -1535,10 +1535,15 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 				{
 					const json::Json *name = c.find("Name");
 					const json::Json *visible = c.find("Visible");
+					const json::Json *emphasis = c.find("Emphasis");
 					if (name != nullptr && visible != nullptr && visible->kind == json::Json::Kind::Bool && !visible->boolean)
 						hidden.push_back(name->text);
+					if (name != nullptr && name->text != "CursorColumn" && name->text != "FrameColumn" && emphasis != nullptr &&
+						emphasis->kind == json::Json::Kind::Bool && emphasis->boolean)
+						held.push_back(name->text);
 				}
 			}
+		later([this, held] { autoHeldColumnsLoaded.emit(held); });
 		columnsLoadedM_ = saved;
 		if (saved) later([this, hidden] { hiddenColumnsLoaded.emit(hidden); });
 		else later([this] { loadDefaultColumns(); });
@@ -1729,6 +1734,19 @@ void SessionViewModel::loadDefaultColumns()
 	for (const Axis &a : axes_)
 		if (hiddenByDefault(a.name)) hidden.push_back(a.name);
 	hiddenColumnsLoaded.emit(hidden);
+}
+
+void SessionViewModel::setAutoHeldColumns(const std::vector<std::string> &names)
+{
+	submit([this, names] { autoHeldColumnsM_ = names; });
+}
+
+void SessionViewModel::setColumnPatterns(std::vector<ColumnPattern> patterns)
+{
+	submit([this, patterns = std::move(patterns)] {
+		columnPatternsM_ = patterns;
+		columnAtM_.assign(columnPatternsM_.size(), 0);
+	});
 }
 
 void SessionViewModel::setTastudioMember(const std::string &name, const std::string &json)
@@ -1949,12 +1967,23 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
 					const json::Json *name = c.find("Name");
 					if (name == nullptr || name->text == "CursorColumn" || name->text == "FrameColumn") continue;
 					const bool hide = std::find(hiddenColumnsM_.begin(), hiddenColumnsM_.end(), name->text) != hiddenColumnsM_.end();
+					const bool emphasis = std::find(autoHeldColumnsM_.begin(), autoHeldColumnsM_.end(), name->text) != autoHeldColumnsM_.end();
 					for (auto &[ck, cv] : c.members)
+					{
 						if (ck == "Visible") cv = json::Json::boolean_(!hide);
+						if (ck == "Emphasis") cv = json::Json::boolean_(emphasis);
+					}
 				}
 		}
 		else if (haveFresh)
 		{
+			for (json::Json &c : fresh.items)
+				if (const json::Json *name = c.find("Name"))
+				{
+					const bool emphasis = std::find(autoHeldColumnsM_.begin(), autoHeldColumnsM_.end(), name->text) != autoHeldColumnsM_.end();
+					for (auto &[ck, cv] : c.members)
+						if (ck == "Emphasis") cv = json::Json::boolean_(emphasis);
+				}
 			json::Json all;
 			all.kind = json::Json::Kind::Array;
 			all.items.push_back(fresh);
@@ -2296,6 +2325,13 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		const int64_t on = fireOnM_.load(), period = on + fireOffM_.load();
 		for (size_t b = 0; b < 64; b++)
 			if (firing >> b & 1 && fireAtM_[b] % period < on) held |= uint64_t{1} << b;
+		/* the piano roll's Auto-hold columns: a button's pattern says whether it is pressed */
+		for (size_t i = 0; i < columnPatternsM_.size(); i++)
+		{
+			const ColumnPattern &cp = columnPatternsM_[i];
+			if (!cp.isAxis && !cp.values.empty() && cp.index >= 0 && cp.index < 64 && cp.values[columnAtM_[i] % cp.values.size()] != 0)
+				held |= uint64_t{1} << cp.index;
+		}
 	}
 	/* What is held goes into the movie before the frame plays it: past the
 	 * end the movie grows, and over a frame it has, a press it lacks is an
@@ -2308,9 +2344,23 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	uint64_t logged = 0;
 	const int32_t had = ce_session_movie_get(s_, f, &logged, axisCount ? axesBuf_.data() : nullptr);
 	if (had == 1 && !grow) return 0;
+	/* an Auto-hold analog column: its value goes in as a held button does */
+	bool axesHeld = false;
+	if (live)
+		for (size_t i = 0; i < columnPatternsM_.size(); i++)
+		{
+			const ColumnPattern &cp = columnPatternsM_[i];
+			if (!cp.isAxis || cp.values.empty() || cp.index < 0 || static_cast<size_t>(cp.index) >= axisCount) continue;
+			const int32_t v = cp.values[columnAtM_[i] % cp.values.size()];
+			if (axesBuf_[static_cast<size_t>(cp.index)] != v)
+			{
+				axesBuf_[static_cast<size_t>(cp.index)] = v;
+				axesHeld = true;
+			}
+		}
 	if (had == 1)
-		ce_session_movie_set(s_, f, held, nullptr);
-	else if ((logged | held) != logged)
+		ce_session_movie_set(s_, f, held, axesHeld ? axesBuf_.data() : nullptr);
+	else if ((logged | held) != logged || axesHeld)
 	{
 		ce_session_movie_set(s_, f, logged | held, axisCount ? axesBuf_.data() : nullptr);
 		greenEndM_ = std::min(greenEndM_, f);
@@ -2325,6 +2375,14 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		for (size_t b = 0; b < 64; b++)
 			if (firing >> b & 1) fireAtM_[b]++;
 	}
+	/* and the Auto-hold columns' patterns, each by its own rule for lag frames */
+	if (live && lag >= 0)
+		for (size_t i = 0; i < columnPatternsM_.size(); i++)
+		{
+			const ColumnPattern &cp = columnPatternsM_[i];
+			if (cp.values.empty() || (lag != 0 && cp.skipLag)) continue;
+			if (++columnAtM_[i] >= cp.values.size()) columnAtM_[i] = static_cast<size_t>(std::max<int64_t>(0, cp.loop));
+		}
 	if (lag < 0)
 	{
 		const char *death = ce_session_guest_death(s_);

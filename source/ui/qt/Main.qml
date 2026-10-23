@@ -508,6 +508,21 @@ ApplicationWindow {
         onRejected: root.afterSave = null
     }
     Dialog {
+        id: holdValueDialog
+        objectName: "holdValueDialog"
+        property string name: ""
+        property string question: ""
+        title: qsTr("Auto-hold")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        ColumnLayout {
+            Label { text: holdValueDialog.question }
+            SpinBox { id: holdValueBox; editable: true }
+        }
+        onAccepted: root.pianoRoll.run("toggleAutoHold", [holdValueDialog.name, holdValueBox.value])
+    }
+    Dialog {
         id: askSaveDialog
         objectName: "askSaveDialog"
         title: qsTr("Closing with Unsaved Changes")
@@ -694,7 +709,18 @@ ApplicationWindow {
                     text: qsTr("Auto-hold")
                     checkable: true
                     checked: columnMenu.autoHeld
-                    onTriggered: root.pianoRoll.run("toggleAutoHold", [columnMenu.name])
+                    // an analog column asks what value to hold, as Chimera does
+                    onTriggered: {
+                        const question = root.pianoRoll.run("autoHoldQuestion", [columnMenu.name])
+                        if (question) {
+                            holdValueDialog.name = columnMenu.name
+                            holdValueDialog.question = question
+                            holdValueBox.from = root.pianoRoll.autoHoldMin
+                            holdValueBox.to = root.pianoRoll.autoHoldMax
+                            holdValueBox.value = root.pianoRoll.autoHoldInitial
+                            holdValueDialog.open()
+                        } else root.pianoRoll.run("toggleAutoHold", [columnMenu.name])
+                    }
                 }
                 MenuItem { text: qsTr("Hide Column"); onTriggered: root.pianoRoll.run("hideColumn", [columnMenu.name]) }
                 MenuItem { text: qsTr("Show All Columns"); onTriggered: root.pianoRoll.run("showAllColumns") }

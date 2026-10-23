@@ -1016,6 +1016,35 @@ bool tastudioSettings(const char *package, const char *rom)
 	CHECK(session.unsaved.get());
 	session.autosaveSeconds.set(0);
 	session.autosaveAsBackup.set(false);
+	/* a column's Auto-hold while the game plays: held, fired, or its own
+	 * pattern, as "Choose pattern" says; kept in the project as Chimera's
+	 * column emphasis */
+	{
+		const std::string a = session.buttonNames()[4];
+		session.autofireSkipsLag.set(false);
+		auto recorded = [&](int n) {
+			const int64_t end = inputs.size();
+			session.run("seek", {end}, error);
+			d.until([&] { return session.frame.get() == end; }, 20);
+			for (int i = 0; i < n; i++) session.run("frameAdvance", {}, error);
+			d.until([&] { return session.frame.get() == end + n; }, 20);
+			std::string bits;
+			for (int64_t f = end; f < end + n; f++) bits += (inputs.at(f) >> 4 & 1) ? '1' : '0';
+			return bits;
+		};
+		CHECK(roll.run("toggleAutoHold", {a}, error) == Value(true));
+		CHECK(recorded(4) == "1111");
+		roll.patternKind.set("autofire");
+		CHECK(recorded(4) == "1010");
+		roll.patternKind.set("custom");
+		CHECK(roll.run("setPattern", {a, std::string("On x2, Off x1"), int64_t{0}, false}, error).has_value());
+		CHECK(recorded(6) == "110110");
+		roll.patternKind.set("hold");
+		CHECK(roll.run("toggleAutoHold", {a}, error) == Value(false));
+		CHECK(recorded(3) == "000");
+		CHECK(roll.run("toggleAutoHold", {a}, error) == Value(true));
+		session.autofireSkipsLag.set(true);
+	}
 	/* a control's pattern is kept in the project, as Chimera keeps it */
 	CHECK(roll.run("setPattern", {session.buttonNames()[4], std::string("On x3, Off x2"), int64_t{0}, false}, error).has_value());
 	CHECK(session.unsaved.get() && saved());
@@ -1045,6 +1074,13 @@ bool tastudioSettings(const char *package, const char *rom)
 		CHECK(patterns != nullptr && d.until([&] { return fromValue(patterns->cell(4, 1), runs) && runs == "On x3, Off x2"; }, 20));
 		CHECK(patterns != nullptr && fromValue(patterns->cell(4, 3), skips) && !skips);
 		CHECK(patterns != nullptr && fromValue(patterns->cell(3, 1), runs) && runs == "On x1, Off x1");
+		/* and the Auto-hold column is one again */
+		RowModel *columns = nullptr;
+		for (const auto &r : roll.rowLists())
+			if (r.name == "columns") columns = r.model;
+		bool held = false;
+		CHECK(columns != nullptr && fromValue(columns->cell(4, 3), held) && held);
+		CHECK(columns != nullptr && fromValue(columns->cell(3, 3), held) && !held);
 		/* the machine started again: still the project's */
 		const int64_t opened = session.opens.get();
 		session.run("restart", {}, error);
@@ -2671,6 +2707,36 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 	CHECK(dial(2) == 50 && dial(1) == 0);
 	/* the movie carries the dial */
 	CHECK(inputs.text().find("50") != std::string::npos);
+	/* an analog column's Auto-hold holds the value given (chimera issue
+	 * 298), or its most when none was given */
+	{
+		auto recorded = [&](int n) {
+			const int64_t end = inputs.size();
+			session.run("seek", {end}, error);
+			d.until([&] { return session.frame.get() == end; }, 20);
+			for (int i = 0; i < n; i++) session.run("frameAdvance", {}, error);
+			d.until([&] { return session.frame.get() == end + n; }, 20);
+			std::string values;
+			for (int64_t f = end; f < end + n; f++) values += std::to_string(dial(f)) + " ";
+			return values;
+		};
+		/* what Chimera asks first: the value to hold, offering the frame's */
+		std::string question;
+		CHECK(fromValue(roll.run("autoHoldQuestion", {std::string("P1 Dial")}, error).value_or(Value()), question) &&
+			question == "Hold P1 Dial at (from -100 to 100):" && roll.autoHoldMin.get() == -100 && roll.autoHoldMax.get() == 100);
+		CHECK(fromValue(roll.run("autoHoldQuestion", {std::string("P1 A")}, error).value_or(Value()), question) && question.empty());
+		CHECK(!roll.run("toggleAutoHold", {std::string("P1 Dial"), int64_t{120}}, error) && error == "P1 Dial goes from -100 to 100");
+		CHECK(roll.run("toggleAutoHold", {std::string("P1 Dial"), int64_t{-40}}, error) == Value(true));
+		CHECK(recorded(2) == "-40 -40 ");
+		roll.patternKind.set("autofire");
+		CHECK(recorded(4) == "-40 0 -40 0 ");
+		roll.patternKind.set("hold");
+		CHECK(roll.run("toggleAutoHold", {std::string("P1 Dial")}, error) == Value(false));
+		CHECK(recorded(1) == "0 ");
+		CHECK(roll.run("toggleAutoHold", {std::string("P1 Dial")}, error) == Value(true));
+		CHECK(recorded(1) == "-40 ");
+		roll.run("toggleAutoHold", {std::string("P1 Dial")}, error);
+	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;
