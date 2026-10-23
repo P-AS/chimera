@@ -70,7 +70,7 @@ made from.
 | themes | Chimera's colour themes: its built-in Light (the desktop's own colours) and Dark, and every theme file in the themes folder; one chosen (Dark at first, as Chimera's default) and remembered; the window's palette and the piano roll's TAStudio colours follow it | Themes |
 | cores | the installed core packages and the files each takes, the cores and firmware folders; a project's core is found here, and its firmware by the engine's rules | Cores |
 
-The tests drive the view models with no window: 966 checks on the
+The tests drive the view models with no window: 986 checks on the
 synthetic core (and on four packages made from it at build time: one under
 another name, one of two machines with declared slots and a firmware, and
 two whose firmware declares the hash of its file, one of them a game core). They include a project whose movie ends with the machine's
@@ -220,8 +220,7 @@ A suggested order, each step usable on its own:
 Taken from Chimera's menus, dialogs and tools on 2026-10-23, and ticked off
 as each lands here. Parts that wait on a question to the owner say so.
 
-- TAStudio: columns in a menu per player (here, one list); undo history, and selection undo; clear
-  the greenzone; the state history check; a project backup; TAStudio's
+- TAStudio: columns in a menu per player (here, one list); undo history, and selection undo; TAStudio's
   settings; the analog keys; autohold and autofire; the branch list's own
   actions (delete, update, undo a load, jump to, its text); macros.
   Recording mode waits on question 6.
@@ -244,6 +243,17 @@ as each lands here. Parts that wait on a question to the owner say so.
   Where scripts run is question 4.
 - Not here by design for now: the MCP server (the New-Features
   session's work), Windows jump lists.
+
+## Found in the engine on the way
+
+- A state put back from the greenzone onto a machine far ahead of it can
+  keep pages the state does not have (seen 2026-10-23, synthetic core:
+  frame 0 put back from frame 30, then saved after a frame, carried two
+  pages more than the history's own frame 1). Put back from a machine on
+  the history's own line, it does not. Nothing desynced in that test, but
+  a state put back should arguably be the whole machine; Chimera's own
+  state history check would report it as bad data. The prototype's check
+  puts frame 0 back twice before it walks, and says so.
 
 ## Yours to decide
 

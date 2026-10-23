@@ -714,6 +714,66 @@ bool pianoRollColumns(const char *package, const char *rom)
 	return true;
 }
 
+/* A project's backup, the greenzone cleared, and the state history check,
+ * as Chimera's TAStudio has them */
+bool backupAndHistory(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-backup-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	std::string error;
+	session.backupFolder.set((dir / "backup").string());
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	CHECK(!session.run("saveBackup", {}, error));
+	const fs::path project = dir / "walker.chimeraProject";
+	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	session.key("Down", true);
+	for (int i = 0; i < 30; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 30; }, 20));
+	session.key("Down", false);
+	/* the backup: named for the project, the date and the time; the project's own file left as it is */
+	const std::string before = readFile(project);
+	const auto made = session.run("saveBackup", {}, error);
+	std::string backup;
+	CHECK(made.has_value() && fromValue(*made, backup));
+	CHECK(d.until([&] { return session.status.get() == "Backup saved: " + backup; }, 20));
+	CHECK(std::regex_match(fs::path(backup).filename().string(), std::regex("walker\\.\\d{4}-\\d\\d-\\d\\d \\d\\d\\.\\d\\d\\.\\d\\d\\.chimeraProject")));
+	CHECK(fs::exists(backup) && fs::path(backup).parent_path() == dir / "backup");
+	CHECK(readFile(project) == before && session.projectPath.get() == project.string());
+	/* the backup is the project as it stood: its 30 frames */
+	{
+		const char *err = nullptr;
+		ce_project *p = ce_project_open(backup.c_str(), &err);
+		uint64_t len = 0;
+		const char *log = p != nullptr ? ce_project_log_text(p, &len) : nullptr;
+		int64_t lines = 0;
+		for (uint64_t i = 0; log != nullptr && i < len; i++) lines += log[i] == '|' && (i == 0 || log[i - 1] == '\n') ? 1 : 0;
+		CHECK(lines == 30);
+		if (p != nullptr) ce_project_free(p);
+	}
+	/* the state history check: every state puts the machine back exactly */
+	CHECK(session.run("checkStateHistory", {(dir / "integrity").string()}, error).has_value());
+	CHECK(d.until([&] { return session.status.get().rfind("The state history check passed", 0) == 0; }, 60));
+	std::printf("history: %s\n", session.status.get().c_str());
+	CHECK(!fs::exists(dir / "integrity"));
+	/* the greenzone cleared: the first frame's state kept, the machine at frame 0 */
+	CHECK(session.greenzoneStates.get() > 1);
+	CHECK(session.run("clearGreenzone", {}, error).has_value());
+	CHECK(d.until([&] { return session.frame.get() == 0 && session.greenzoneStates.get() <= 1; }, 20));
+	CHECK(session.run("checkStateHistory", {}, error).has_value());
+	CHECK(d.until([&] { return session.status.get() == "The state history holds nothing to check yet"; }, 20));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
 /* The project's details as Chimera's TAStudio edits them - its header,
  * comments and subtitles - kept with the project, and the subtitles of the
  * frame on screen worked out */
@@ -3110,6 +3170,7 @@ int main(int argc, char **argv)
 			ranMachine = overlay(argv[1], argv[2]) && ranMachine;
 			ranMachine = projectDetails(argv[1], argv[2]) && ranMachine;
 			ranMachine = pianoRollColumns(argv[1], argv[2]) && ranMachine;
+			ranMachine = backupAndHistory(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;

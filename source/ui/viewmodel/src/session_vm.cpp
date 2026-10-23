@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <future>
 #include <iterator>
@@ -148,6 +149,52 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("hasProject", "a project is open, saved or not yet", hasProject);
 	expose("projectTitle", "the open project's title", projectTitle);
 	expose("gameName", "the game's name: its file's, without the kind", gameName);
+	expose("backupFolder", "where a project's backups go", backupFolder, true);
+	command("saveBackup", "writes the project as it stands to the backup folder, named for it and the date and time, "
+		"as Chimera's Save Project Backup does; the project's own file is left as it is", {},
+		[this](const Args &, std::string &error) -> Value {
+			if (projectPath.get().empty())
+			{
+				error = hasProject.get() ? "this project has not been saved yet" : "no project is open";
+				return {};
+			}
+			if (backupFolder.get().empty())
+			{
+				error = "no backup folder is set";
+				return {};
+			}
+			/* "walker.2026-10-23 06.26.46.chimeraProject" */
+			const std::filesystem::path own(projectPath.get());
+			const std::time_t now = std::time(nullptr);
+			char when[32];
+			std::strftime(when, sizeof when, "%Y-%m-%d %H.%M.%S", std::localtime(&now));
+			std::error_code ec;
+			std::filesystem::create_directories(backupFolder.get(), ec);
+			const std::string path =
+				(std::filesystem::path(backupFolder.get()) / (own.stem().string() + "." + when + own.extension().string())).string();
+			submit([this, path] { saveProjectOnMachine(path, true); });
+			return path;
+		}, &hasProject);
+	command("clearGreenzone", "every stored state but the first frame's thrown away, and the machine back to frame 0, "
+		"as Chimera's Clear Greenzone", {}, [this](const Args &, std::string &) -> Value {
+			submit([this] {
+				if (s_ == nullptr) return;
+				ce_session_greenzone_invalidate(s_, 0);
+				greenEndM_ = 0;
+				seekOnMachine(0, false);
+				report(-1, -1, -1, -1, -1);
+			});
+			return {};
+		}, &isOpen);
+	command("checkStateHistory", "Chimera's state history check: says in status whether every state the history holds "
+		"puts the machine back exactly; the two states of the first that does not are written to the folder given",
+		{"keepIn"}, [this](const Args &a, std::string &error) -> Value {
+			std::string keepIn;
+			if (!a.empty() && !arg(a, 0, keepIn, error)) return {};
+			status.set("Checking the state history...");
+			submit([this, keepIn] { checkHistoryOnMachine(keepIn); });
+			return {};
+		}, &isOpen);
 	expose("recentProjects", "projects opened, newest first, a line each", recentProjects, true);
 	expose("chooseFor", "a game waiting for its core to be chosen", chooseFor);
 	expose("choices", "the cores the waiting game could be opened with, a line each", choices);
@@ -1428,6 +1475,74 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	});
 }
 
+void SessionViewModel::checkHistoryOnMachine(const std::string &keepIn)
+{
+	if (s_ == nullptr) return;
+	auto say = [this](std::string text) { later([this, text] { status.set(text); }); };
+	const int64_t last = ce_session_greenzone_nearest(s_, INT64_MAX);
+	if (last <= 0)
+	{
+		say("The state history holds nothing to check yet");
+		return;
+	}
+	/* From frame 0 as the history keeps it, as Chimera's check starts - and
+	 * put there twice. Seen 2026-10-23 on the synthetic core: frame 0 put back
+	 * from a machine far ahead keeps pages its state does not have (the
+	 * machine saves two pages more from then on), while put back from a
+	 * machine already on the history's own line it does not; the first
+	 * comparison failed on that alone, with nothing desynced. The second
+	 * time it is put back from a machine the history made. */
+	movesM_++;
+	for (int i = 0; i < 2; i++)
+	{
+		if (ce_session_greenzone_restore(s_, 0) != 0)
+		{
+			say("The state history check could not start: frame 0 is not stored");
+			return;
+		}
+		if (i == 0 && stepOnMachine(false, true) < 0) return;
+	}
+	frameM_ = ce_session_frame(s_);
+	auto saved = [this] {
+		uint64_t len = 0;
+		const uint8_t *d = ce_session_save_state(s_, &len);
+		return d != nullptr ? std::vector<uint8_t>(d, d + len) : std::vector<uint8_t>();
+	};
+	int64_t lastState = 0, checked = 0;
+	while (frameM_ < last)
+	{
+		/* each frame run as Frame Advance runs it, drawn: a machine whose
+		 * picture is in its memory is not the same undrawn */
+		if (stepOnMachine(false, true) < 0) return;
+		const int64_t f = frameM_;
+		if (ce_session_greenzone_nearest(s_, f) != f) continue;
+		const std::vector<uint8_t> fresh = saved();
+		ce_session_greenzone_restore(s_, f);
+		const std::vector<uint8_t> kept = saved();
+		checked++;
+		if (fresh != kept)
+		{
+			std::string text = "The state history check failed: bad data between frames " + std::to_string(lastState) + " and " + std::to_string(f);
+			if (!keepIn.empty())
+			{
+				std::error_code ec;
+				std::filesystem::create_directories(keepIn, ec);
+				std::ofstream(std::filesystem::path(keepIn) / "integrity.fresh", std::ios::binary)
+					.write(reinterpret_cast<const char *>(fresh.data()), static_cast<std::streamsize>(fresh.size()));
+				std::ofstream(std::filesystem::path(keepIn) / "integrity.greenzoned", std::ios::binary)
+					.write(reinterpret_cast<const char *>(kept.data()), static_cast<std::streamsize>(kept.size()));
+				text += "; both states are in " + keepIn;
+			}
+			report(-1, -1, -1, -1, -1);
+			say(text);
+			return;
+		}
+		lastState = f;
+	}
+	report(-1, -1, -1, -1, -1);
+	say("The state history check passed: " + std::to_string(checked) + (checked == 1 ? " state" : " states") + " put the machine back exactly");
+}
+
 void SessionViewModel::catchPollOnMachine()
 {
 	catchDue_ = Clock::now() + std::chrono::milliseconds(16);
@@ -1612,7 +1727,7 @@ void SessionViewModel::newProjectOnMachine(const std::string &path, const std::s
 	});
 }
 
-void SessionViewModel::saveProjectOnMachine(const std::string &to)
+void SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
 {
 	if (projectM_ == nullptr || s_ == nullptr) return;
 	const std::string path = to.empty() ? projectPathM_ : to;
@@ -1707,6 +1822,11 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to)
 	{
 		const std::string why = error != nullptr ? error : "no reason given";
 		later([this, path, why] { status.set("Could not save " + path + ": " + why); });
+		return;
+	}
+	if (backup)
+	{
+		later([this, path] { status.set("Backup saved: " + path); });
 		return;
 	}
 	const bool first = projectPathM_ != path;

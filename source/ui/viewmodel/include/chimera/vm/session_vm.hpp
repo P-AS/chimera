@@ -107,6 +107,8 @@ public:
 	Property<std::string> projectTitle;
 	/* the game's name: its file's, without the kind (a project's first file) */
 	Property<std::string> gameName;
+	/* where a project's backups go (Chimera's "Movie backups" path) */
+	Property<std::string> backupFolder;
 	/* projects opened, newest first, a line each (ten kept) */
 	Property<std::string> recentProjects;
 
@@ -311,7 +313,13 @@ private:
 		ce_project *reuse = nullptr);
 	/* the project's file, first in the recent projects */
 	void addRecent(const std::string &path);
-	void saveProjectOnMachine(const std::string &path);
+	/* a backup: written there, the project's own file and greenzone left as they are */
+	void saveProjectOnMachine(const std::string &path, bool backup = false);
+	/* Chimera's state history check: from frame 0, at each frame the
+	 * history holds, the machine saved, put back from the history and saved
+	 * again, the two compared; the first that differ said, and written to
+	 * `keepIn` when one is given */
+	void checkHistoryOnMachine(const std::string &keepIn);
 	/* a game's session made a project, as the New Project window makes one */
 	void newProjectOnMachine(const std::string &path, const std::string &title);
 	void freeProjectOnMachine();

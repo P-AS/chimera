@@ -543,6 +543,9 @@ int main(int argc, char **argv)
 	config.keep(session, "showFrameCounter");
 	config.keep(session, "showLagCounter");
 	config.keep(session, "showInput");
+	/* backups where Chimera puts them, beside the program, unless kept elsewhere */
+	session.backupFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Movies/backup")).toStdString());
+	config.keep(session, "backupFolder");
 	config.keep(projectDetails, "defaultAuthor");
 	config.keep(projectDetails, "showSubtitles");
 	config.keep(session, "greenzoneEvery");

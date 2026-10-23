@@ -112,6 +112,7 @@ ApplicationWindow {
             // a project not saved yet asks where it goes
             Action { text: qsTr("&Save Project"); shortcut: "Ctrl+S"; enabled: root.session.hasProject; onTriggered: root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject") }
             Action { text: qsTr("Save Project &As..."); enabled: root.session.hasProject; onTriggered: saveAsDialog.open() }
+            Action { text: qsTr("Save Project &Backup"); enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveBackup") }
             Action { text: qsTr("Make a &Project of This Game..."); enabled: root.session.isOpen && !root.session.hasProject; onTriggered: newProjectDialog.open() }
             Action { property string hotkey: "Reboot Core"; text: qsTr("&Restart"); enabled: root.session.restartEnabled; onTriggered: root.session.run("restart") }
             Action { property string hotkey: "Close ROM"; text: qsTr("&Close"); enabled: root.session.closeEnabled; onTriggered: root.session.run("close") }
@@ -279,6 +280,8 @@ ApplicationWindow {
             }
             MenuSeparator {}
             Action { text: qsTr("Make the Inputs 1,000,000 Frames Long"); onTriggered: root.pianoRoll.run("fill", [1000000]) }
+            Action { text: qsTr("&Clear Greenzone"); enabled: root.session.isOpen; onTriggered: root.session.run("clearGreenzone") }
+            Action { text: qsTr("State &History Check"); enabled: root.session.isOpen; onTriggered: root.session.run("checkStateHistory") }
             Menu {
                 delegate: keyedMenuItem
                 title: qsTr("&Greenzone")
