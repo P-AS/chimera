@@ -4,8 +4,10 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <sstream>
+#include <tuple>
 
 #include "chimera/engine.h"
 #include "chimera/vm/json.hpp"
@@ -20,6 +22,23 @@ constexpr const char *kNewLine = "\r\n";
 constexpr const char *kNewLine = "\n";
 #endif
 constexpr const char *kOnScreen = "OnScreen\t";
+
+/* a display's name as Chimera's watch dialogs write it */
+const char *chimeraName(watch::Display d)
+{
+	switch (d)
+	{
+	case watch::Display::Unsigned: return "Unsigned";
+	case watch::Display::Signed: return "Signed";
+	case watch::Display::Hex: return "Hex";
+	case watch::Display::Binary: return "Binary";
+	case watch::Display::Fixed12_4: return "Fixed Point 12.4";
+	case watch::Display::Fixed20_12: return "Fixed Point 20.12";
+	case watch::Display::Fixed16_16: return "Fixed Point 16.16";
+	case watch::Display::Float: return "Float";
+	}
+	return "";
+}
 
 std::string trimLineEnds(std::string s)
 {
@@ -216,9 +235,8 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	command("newList", "an empty list, in no file", {}, [this](const Args &, std::string &) -> Value {
 		watches_.clear();
 		path.set("");
-		listChanged(false);
 		changed.set(false);
-		status.set("A new list");
+		listChanged(false);
 		return {};
 	});
 	command("open", "the watches of a .wch file; with append, added to these", {"path", "append"},
@@ -241,6 +259,467 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 				return {};
 			}
 			if (!save(file, error)) return {};
+			return {};
+		});
+
+
+	/* Chimera's RAM Watch works on the rows picked */
+	expose("countText", "how many watches, as Chimera counts them (\"3 watches\"; separators not)", countText);
+	expose("selectedCount", "rows picked", selectedCount);
+	expose("selectedWatches", "watches picked (not separators)", selectedWatches);
+	expose("canSplit", "every watch picked can be split (a word or double word shown in hex or binary)", canSplit);
+	expose("canPoke", "every watch picked is in memory that can be written", canPoke);
+	expose("invalidCount", "watches whose address is past their domain's end", invalidCount);
+	expose("defaultDomain", "the domain a new watch starts in (Watches > Default Domain)", defaultDomain, true);
+	expose("doubleClickToPoke", "On Double-Clicking a Watch: poke it, else edit it", doubleClickToPoke, true);
+	expose("recentFiles", ".wch files opened or saved, newest first, a line each", recentFiles, true);
+	expose("hiddenColumns", "the columns not shown, by Chimera's names (OSD, Address, Value, Prev, Changes, Diff, Type, Domain, "
+		"Notes), comma-separated", hiddenColumns, true);
+	command("select", "a row picked: mode \"only\" (a click), \"toggle\" (Ctrl), \"range\" (Shift, from the last clicked) or "
+		"\"none\" (every row let go)", {"row", "mode"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t r = 0;
+			std::string mode = "only";
+			if (!arg(a, 0, r, error)) return {};
+			if (a.size() > 1 && !arg(a, 1, mode, error)) return {};
+			const auto n = static_cast<int64_t>(watches_.size());
+			if (mode == "none")
+			{
+				for (Watch &w : watches_) w.selected = false;
+				anchor_ = -1;
+			}
+			else if (r < 0 || r >= n)
+			{
+				error = "no watch " + std::to_string(r);
+				return {};
+			}
+			else if (mode == "toggle")
+			{
+				watches_[static_cast<size_t>(r)].selected = !watches_[static_cast<size_t>(r)].selected;
+				anchor_ = r;
+			}
+			else if (mode == "range" && anchor_ >= 0 && anchor_ < n)
+			{
+				for (int64_t i = 0; i < n; i++) watches_[static_cast<size_t>(i)].selected = i >= std::min(anchor_, r) && i <= std::max(anchor_, r);
+			}
+			else
+			{
+				for (Watch &w : watches_) w.selected = false;
+				watches_[static_cast<size_t>(r)].selected = true;
+				anchor_ = r;
+			}
+			selectionChanged();
+			if (n > 0) rows_.changed.emit(0, n - 1);
+			return {};
+		});
+	command("selectAll", "every row picked, or none when every one already is (Chimera's Select All)", {}, [this](const Args &, std::string &) -> Value {
+		const bool all = std::all_of(watches_.begin(), watches_.end(), [](const Watch &w) { return w.selected; });
+		for (Watch &w : watches_) w.selected = !all;
+		selectionChanged();
+		if (!watches_.empty()) rows_.changed.emit(0, static_cast<int64_t>(watches_.size()) - 1);
+		return {};
+	});
+	command("removeSelected", "the rows picked taken off the list", {}, [this](const Args &, std::string &) -> Value {
+		const std::vector<size_t> rows = selectedRows();
+		if (rows.empty()) return {};
+		for (auto it = rows.rbegin(); it != rows.rend(); ++it) watches_.erase(watches_.begin() + static_cast<long>(*it));
+		anchor_ = -1;
+		listChanged(true);
+		return {};
+	});
+	command("moveSelected", "the rows picked moved \"up\" or \"down\" a row, or to the \"top\" or \"bottom\", kept picked", {"where"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string where;
+			if (!arg(a, 0, where, error)) return {};
+			const std::vector<size_t> rows = selectedRows();
+			if (rows.empty()) return {};
+			if (where == "up")
+			{
+				if (rows.front() == 0) return {};
+				for (const size_t i : rows) std::swap(watches_[i - 1], watches_[i]);
+			}
+			else if (where == "down")
+			{
+				if (rows.back() + 1 >= watches_.size()) return {};
+				for (auto it = rows.rbegin(); it != rows.rend(); ++it) std::swap(watches_[*it], watches_[*it + 1]);
+			}
+			else if (where == "top" || where == "bottom")
+			{
+				std::vector<Watch> picked, rest;
+				for (Watch &w : watches_) (w.selected ? picked : rest).push_back(w);
+				watches_ = where == "top" ? picked : rest;
+				watches_.insert(watches_.end(), (where == "top" ? rest : picked).begin(), (where == "top" ? rest : picked).end());
+			}
+			else
+			{
+				error = "move up, down, top or bottom";
+				return {};
+			}
+			listChanged(true);
+			return {};
+		});
+	command("insertSeparator", "a separator put before the first row picked, or at the end", {}, [this](const Args &, std::string &) -> Value {
+		const std::vector<size_t> rows = selectedRows();
+		Watch sep;
+		sep.separator = true;
+		watches_.insert(watches_.begin() + static_cast<long>(rows.empty() ? watches_.size() : rows.front()), sep);
+		listChanged(true);
+		return {};
+	});
+	command("editSeparators", "the separators picked given a text", {"text"}, [this](const Args &a, std::string &error) -> Value {
+		std::string text;
+		if (!arg(a, 0, text, error)) return {};
+		for (Watch &w : watches_)
+			if (w.selected && w.separator) w.note = text;
+		listChanged(true);
+		return {};
+	});
+	command("splitSelected", "each watch picked split in two halves, as Chimera's Split Watch: a double word into two words, a "
+		"word into two bytes, the first half the one at the lower address when big end first", {}, [this](const Args &, std::string &) -> Value {
+			if (!canSplit.get()) return false;
+			const std::vector<size_t> rows = selectedRows();
+			for (auto it = rows.rbegin(); it != rows.rend(); ++it)
+			{
+				const Watch ab = watches_[*it];
+				if (ab.separator) continue;
+				Watch lo = ab, hi = ab;
+				lo.size = hi.size = ab.size / 2;
+				hi.address = ab.address + lo.size;
+				lo.changes = hi.changes = 0;
+				lo.readable = hi.readable = lo.seen = hi.seen = false;
+				watches_[*it] = ab.bigEndian ? lo : hi;
+				watches_.insert(watches_.begin() + static_cast<long>(*it) + 1, ab.bigEndian ? hi : lo);
+			}
+			listChanged(true);
+			return true;
+		});
+	command("editInfo", "what the Watch editor starts from, as JSON: the watches picked (mode \"edit\" or \"duplicate\"), or a "
+		"new one in the default domain (\"new\"); bigEndian 2 when the watches picked differ", {"mode"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string mode = "new";
+			if (!a.empty() && !arg(a, 0, mode, error)) return {};
+			json::Json out;
+			out.kind = json::Json::Kind::Object;
+			std::vector<const Watch *> picked;
+			for (const Watch &w : watches_)
+				if (w.selected && !w.separator) picked.push_back(&w);
+			if (mode == "new" || picked.empty())
+			{
+				out.members.emplace_back("domain", json::Json::string(defaultDomain.get()));
+				out.members.emplace_back("address", json::Json::string("00000000"));
+				out.members.emplace_back("size", json::Json::integer(1));
+				out.members.emplace_back("display", json::Json::integer(0));
+				/* every machine's memory is little end first here, as in Chimera */
+				out.members.emplace_back("bigEndian", json::Json::integer(0));
+				out.members.emplace_back("note", json::Json::string(""));
+				out.members.emplace_back("many", json::Json::boolean_(false));
+				out.members.emplace_back("sizesDiffer", json::Json::boolean_(false));
+				out.members.emplace_back("property", json::Json::boolean_(false));
+				return json::write(out);
+			}
+			const Watch &first = *picked.front();
+			std::string addresses;
+			bool property = false, sizesDiffer = false, endiansDiffer = false;
+			for (const Watch *w : picked)
+			{
+				const int digits = watch::addressDigits(w->domainSize != 0 ? w->domainSize - 1 : 0xFE);
+				addresses += (addresses.empty() ? "" : ",") + watch::hex(w->address, digits);
+				property = property || !w->property.empty();
+				sizesDiffer = sizesDiffer || w->size != first.size;
+				endiansDiffer = endiansDiffer || w->bigEndian != first.bigEndian;
+			}
+			out.members.emplace_back("domain", json::Json::string(first.domain));
+			out.members.emplace_back("address", json::Json::string(addresses));
+			out.members.emplace_back("size", json::Json::integer(first.size));
+			out.members.emplace_back("display", json::Json::integer(static_cast<long long>(first.display)));
+			out.members.emplace_back("bigEndian", json::Json::integer(endiansDiffer ? 2 : first.bigEndian ? 1 : 0));
+			out.members.emplace_back("note", json::Json::string(picked.size() == 1 ? first.note : std::string()));
+			out.members.emplace_back("many", json::Json::boolean_(picked.size() > 1));
+			out.members.emplace_back("sizesDiffer", json::Json::boolean_(sizesDiffer));
+			out.members.emplace_back("property", json::Json::boolean_(property));
+			return json::write(out);
+		});
+	/* the editor's answer applied to watches, as Chimera's editor applies it */
+	auto edited = [](Watch &w, int64_t size, int64_t display, int64_t bigEndian, int64_t address, bool one, const std::string &note) {
+		w.size = static_cast<int>(size);
+		if (watch::fits(w.size, static_cast<watch::Display>(display))) w.display = static_cast<watch::Display>(display);
+		else if (!watch::fits(w.size, w.display)) w.display = watch::Display::Unsigned;
+		if (bigEndian != 2) w.bigEndian = bigEndian == 1;
+		if (one)
+		{
+			w.note = note;
+			if (address >= 0) w.address = address;
+		}
+		w.changes = 0;
+		w.readable = w.seen = false;
+	};
+	auto editorArgs = [](const Args &a, int64_t &size, int64_t &display, int64_t &bigEndian, int64_t &address, std::string &note,
+						  std::string &error) {
+		std::string at;
+		if (!arg(a, 0, size, error) || !arg(a, 1, display, error) || !arg(a, 2, bigEndian, error) || !arg(a, 3, at, error) ||
+			!arg(a, 4, note, error))
+			return false;
+		if (size != 1 && size != 2 && size != 4)
+		{
+			error = "a watch is 1, 2 or 4 bytes";
+			return false;
+		}
+		address = -1;
+		if (!at.empty() && at.find(',') == std::string::npos)
+		{
+			char *end = nullptr;
+			const long long v = std::strtoll(at.c_str(), &end, 16);
+			if (end == nullptr || *end != '\0' || v < 0)
+			{
+				error = "\"" + at + "\" is not an address in hex";
+				return false;
+			}
+			address = v;
+		}
+		return true;
+	};
+	command("displays", "the ways a value of a size can be shown, in Chimera's order, as [{\"display\", \"name\"}]", {"size"},
+		[](const Args &a, std::string &error) -> Value {
+			int64_t size = 1;
+			if (!arg(a, 0, size, error)) return {};
+			json::Json out;
+			out.kind = json::Json::Kind::Array;
+			for (const watch::Display d : watch::displaysFor(static_cast<int>(size)))
+			{
+				json::Json one;
+				one.kind = json::Json::Kind::Object;
+				one.members.emplace_back("display", json::Json::integer(static_cast<long long>(d)));
+				one.members.emplace_back("name", json::Json::string(chimeraName(d)));
+				out.items.push_back(one);
+			}
+			return json::write(out);
+		});
+	command("editSelected", "the watches picked changed as Chimera's Edit Watch changes them: size and display for all, big end "
+		"first unless 2 (the picks differed and the box was left so), and the address (hex) and note for a single one",
+		{"size", "display", "bigEndian", "address", "note"}, [this, edited, editorArgs](const Args &a, std::string &error) -> Value {
+			int64_t size = 1, display = 0, bigEndian = 2, address = -1;
+			std::string note;
+			if (!editorArgs(a, size, display, bigEndian, address, note, error)) return {};
+			if (selectedWatches.get() == 0) return {};
+			const bool one = selectedWatches.get() == 1;
+			for (Watch &w : watches_)
+				if (w.selected && !w.separator && w.property.empty()) edited(w, size, display, bigEndian, address, one, note);
+			listChanged(true);
+			return {};
+		});
+	command("duplicateSelected", "copies of the watches picked, changed as the editor says (as editSelected), put after the last "
+		"row picked", {"size", "display", "bigEndian", "address", "note"}, [this, edited, editorArgs](const Args &a, std::string &error) -> Value {
+			int64_t size = 1, display = 0, bigEndian = 2, address = -1;
+			std::string note;
+			if (!editorArgs(a, size, display, bigEndian, address, note, error)) return {};
+			const std::vector<size_t> rows = selectedRows();
+			if (rows.empty()) return {};
+			std::vector<Watch> copies;
+			for (const size_t i : rows)
+			{
+				if (watches_[i].separator || !watches_[i].property.empty()) continue;
+				Watch c = watches_[i];
+				c.selected = false;
+				c.onScreen = false;
+				edited(c, size, display, bigEndian, address, selectedWatches.get() == 1, note);
+				copies.push_back(c);
+			}
+			watches_.insert(watches_.begin() + static_cast<long>(rows.back()) + 1, copies.begin(), copies.end());
+			listChanged(true);
+			return {};
+		});
+	command("newWatch", "a watch added as Chimera's New Watch makes one: domain, address in hex, size, display, big end first, note",
+		{"domain", "address", "size", "display", "bigEndian", "note"}, [this](const Args &a, std::string &error) -> Value {
+			std::string domain, at, note;
+			int64_t size = 1, display = 0;
+			bool bigEndian = false;
+			if (!arg(a, 0, domain, error) || !arg(a, 1, at, error) || !arg(a, 2, size, error) || !arg(a, 3, display, error) ||
+				!arg(a, 4, bigEndian, error) || !arg(a, 5, note, error))
+				return {};
+			char *end = nullptr;
+			const long long address = std::strtoll(at.c_str(), &end, 16);
+			if (at.empty() || end == nullptr || *end != '\0' || address < 0)
+			{
+				error = "\"" + at + "\" is not an address in hex";
+				return {};
+			}
+			const auto added = run("add", {domain, int64_t{address}, size, display, bigEndian, note}, error);
+			return added.has_value() ? *added : Value{};
+		});
+	command("pokeInfo", "what RAM Poke shows for the watches picked, as JSON: their addresses (ten at most), domain, size, "
+		"display, byte order and value; mixed when they differ in size, display or byte order (Chimera refuses those)", {},
+		[this](const Args &, std::string &) -> Value {
+			std::vector<const Watch *> picked;
+			for (const Watch &w : watches_)
+				if (w.selected && !w.separator) picked.push_back(&w);
+			json::Json out;
+			out.kind = json::Json::Kind::Object;
+			if (picked.empty()) return json::write(out);
+			const Watch &first = *picked.front();
+			std::string addresses;
+			std::vector<std::string> seen;
+			bool mixed = false, property = false;
+			for (size_t i = 0; i < picked.size(); i++)
+			{
+				const Watch &w = *picked[i];
+				property = property || !w.property.empty();
+				mixed = mixed || w.size != first.size || w.display != first.display || w.bigEndian != first.bigEndian;
+				if (i >= 10) continue;
+				const std::string at = watch::hex(w.address, watch::addressDigits(w.domainSize != 0 ? w.domainSize - 1 : 0xFE));
+				if (std::find(seen.begin(), seen.end(), at) != seen.end()) continue;
+				seen.push_back(at);
+				addresses += (addresses.empty() ? "" : ",") + at;
+			}
+			std::string value = first.property.empty() ? (first.readable ? watch::format(first.value, first.size, first.display) : "")
+													   : first.valueText;
+			if (first.property.empty()) value.erase(std::remove(value.begin(), value.end(), ' '), value.end());
+			out.members.emplace_back("addresses", json::Json::string(addresses));
+			out.members.emplace_back("domain", json::Json::string(first.domain));
+			out.members.emplace_back("size", json::Json::string(first.size == 1 ? "Byte" : first.size == 2 ? "Word" : "DWord"));
+			out.members.emplace_back("display", json::Json::string(chimeraName(first.display)));
+			out.members.emplace_back("hex", json::Json::boolean_(first.display == watch::Display::Hex));
+			out.members.emplace_back("endian", json::Json::string(first.bigEndian ? "Big Endian" : "Little Endian"));
+			out.members.emplace_back("value", json::Json::string(value));
+			out.members.emplace_back("mixed", json::Json::boolean_(mixed && !property));
+			out.members.emplace_back("property", json::Json::boolean_(property));
+			out.members.emplace_back("name", json::Json::string(picked.size() == 1 ? first.note : std::to_string(picked.size()) + " properties"));
+			return json::write(out);
+		});
+	command("pokeSelected", "a value written into every watch picked, read as each one's display reads text (hex without 0x for "
+		"hexadecimal); a game property takes the text the engine reads. False with what went wrong", {"value"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string text;
+			if (!arg(a, 0, text, error)) return {};
+			std::string refused;
+			bool ok = true;
+			for (const Watch &w : watches_)
+			{
+				if (!w.selected || w.separator) continue;
+				if (!w.property.empty())
+				{
+					std::string why;
+					session_.onMachineWait([&](ce_session *s) {
+						uint32_t element = 0;
+						const int32_t index = s != nullptr ? ce_session_property_find(s, w.property.c_str(), &element) : -1;
+						if (index < 0) why = "the game has no property " + w.property;
+						else if (ce_session_property_set_text(s, index, element, text.c_str()) != 0) why = ce_session_last_error(s);
+					});
+					if (!why.empty()) refused += (refused.empty() ? "" : "\n") + w.property + ": " + why;
+					continue;
+				}
+				std::string why;
+				if (!poke(w, text, why)) ok = false;
+			}
+			if (!refused.empty())
+			{
+				error = refused;
+				return false;
+			}
+			if (!ok)
+			{
+				error = "An error occurred when writing Value.";
+				return false;
+			}
+			return true;
+		});
+	command("copySelected", "the rows picked as .wch lines, for the clipboard (Ctrl+C)", {}, [this](const Args &, std::string &) -> Value {
+		std::string out;
+		for (const Watch &w : watches_)
+			if (w.selected) out += lineOf(w) + kNewLine;
+		return out;
+	});
+	command("paste", "watches from .wch lines (the clipboard, Ctrl+V) added at the end", {"text"}, [this](const Args &a, std::string &error) -> Value {
+		std::string text;
+		if (!arg(a, 0, text, error)) return {};
+		std::istringstream in(text);
+		const std::vector<Watch> read = readList(in);
+		if (read.empty()) return int64_t{0};
+		watches_.insert(watches_.end(), read.begin(), read.end());
+		listChanged(true);
+		return static_cast<int64_t>(read.size());
+	});
+	command("removeInvalid", "the watches past their domain's end taken off (Chimera's warning, clicked)", {}, [this](const Args &, std::string &) -> Value {
+		watches_.erase(std::remove_if(watches_.begin(), watches_.end(), [this](const Watch &w) { return invalid(w); }), watches_.end());
+		listChanged(true);
+		return {};
+	});
+	command("purgeDuplicates", "each watch taken off whose domain, address and size an earlier one has (Chimera's Purge Duplicate "
+		"Watches; byte order and display not looked at)", {}, [this](const Args &, std::string &) -> Value {
+			std::vector<std::tuple<int, std::string, int64_t>> seen;
+			std::vector<Watch> kept;
+			for (const Watch &w : watches_)
+			{
+				if (!w.separator && w.property.empty())
+				{
+					const auto key = std::make_tuple(w.size, w.domain, w.address);
+					if (std::find(seen.begin(), seen.end(), key) != seen.end()) continue;
+					seen.push_back(key);
+				}
+				kept.push_back(w);
+			}
+			const bool removed = kept.size() != watches_.size();
+			watches_ = kept;
+			listChanged(removed);
+			return removed;
+		});
+	command("sort", "each stretch between separators sorted by a column, the other way round when sorted by it already, as "
+		"Chimera's: OSD, Address, Value, Prev, Changes, Diff, Type, Domain or Notes", {"column"}, [this](const Args &a, std::string &error) -> Value {
+			std::string column;
+			if (!arg(a, 0, column, error)) return {};
+			if (column != sortedBy_) sortReverse_ = false;
+			auto signedOf = [](const Watch &w, uint32_t v) -> int64_t {
+				if (w.display != watch::Display::Signed) return v;
+				const int bits = 8 * w.size;
+				return bits >= 32 ? static_cast<int64_t>(static_cast<int32_t>(v)) : (static_cast<int64_t>(v) ^ (int64_t{1} << (bits - 1))) - (int64_t{1} << (bits - 1));
+			};
+			auto byAddress = [](const Watch &x, const Watch &y) { return x.address != y.address ? x.address < y.address : x.size < y.size; };
+			std::function<bool(const Watch &, const Watch &)> less;
+			if (column == "Address")
+				less = [](const Watch &x, const Watch &y) {
+					if (x.address != y.address) return x.address < y.address;
+					return x.domain != y.domain ? x.domain < y.domain : x.size < y.size;
+				};
+			else if (column == "Value")
+				less = [&](const Watch &x, const Watch &y) { const int64_t a1 = signedOf(x, x.value), b1 = signedOf(y, y.value); return a1 != b1 ? a1 < b1 : byAddress(x, y); };
+			else if (column == "Prev")
+				less = [&](const Watch &x, const Watch &y) { return x.previous != y.previous ? x.previous < y.previous : byAddress(x, y); };
+			else if (column == "Changes")
+				less = [&](const Watch &x, const Watch &y) { return x.changes != y.changes ? x.changes < y.changes : byAddress(x, y); };
+			else if (column == "Diff")
+				less = [&](const Watch &x, const Watch &y) { const std::string dx = difference(x), dy = difference(y); return dx != dy ? dx < dy : byAddress(x, y); };
+			else if (column == "Type")
+				less = [](const Watch &x, const Watch &y) {
+					if (x.size != y.size) return x.size < y.size;
+					return x.display != y.display ? x.display < y.display : x.bigEndian < y.bigEndian;
+				};
+			else if (column == "Domain")
+				less = [&](const Watch &x, const Watch &y) { return x.domain != y.domain ? x.domain < y.domain : byAddress(x, y); };
+			else if (column == "Notes")
+				less = [&](const Watch &x, const Watch &y) {
+					std::string nx = x.note, ny = y.note;
+					for (char &c : nx) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+					for (char &c : ny) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+					return nx != ny ? nx < ny : byAddress(x, y);
+				};
+			else if (column == "OSD")
+				/* the ones on the screen first */
+				less = [&](const Watch &x, const Watch &y) { return x.onScreen != y.onScreen ? x.onScreen : byAddress(x, y); };
+			else
+			{
+				error = "no column " + column;
+				return {};
+			}
+			const bool reverse = sortReverse_;
+			size_t from = 0;
+			for (size_t i = 0; i <= watches_.size(); i++)
+			{
+				if (i < watches_.size() && !watches_[i].separator) continue;
+				std::stable_sort(watches_.begin() + static_cast<long>(from), watches_.begin() + static_cast<long>(i), less);
+				if (reverse) std::reverse(watches_.begin() + static_cast<long>(from), watches_.begin() + static_cast<long>(i));
+				from = i + 1;
+			}
+			sortedBy_ = column;
+			sortReverse_ = !sortReverse_;
+			listChanged(true);
 			return {};
 		});
 
@@ -272,23 +751,30 @@ void RamWatchViewModel::refreshDomains()
 	session_.onMachine([this](ce_session *s) {
 		std::string names, system;
 		std::map<std::string, int64_t> sizes;
+		std::map<std::string, bool> writable;
 		if (s != nullptr)
 		{
 			for (int32_t i = 0; i < ce_session_domain_count(s); i++)
 			{
 				const std::string n = ce_session_domain_name(s, i);
 				sizes[n] = ce_session_domain_size(s, i);
+				writable[n] = ce_session_domain_writable(s, i) != 0;
 				if (ce_session_domain_hidden(s, i) != 0) continue;
 				names += (names.empty() ? "" : ",") + n;
 			}
 			if (const char *id = ce_session_system_id(s)) system = id;
 		}
-		later([this, names, system, sizes] {
+		later([this, names, system, sizes, writable] {
 			domainSizes_ = sizes;
+			domainWritable_ = writable;
+			/* Watches > Default Domain: the first, until one is chosen that this machine has */
+			if (names.find(defaultDomain.get()) == std::string::npos || defaultDomain.get().empty())
+				defaultDomain.set(names.substr(0, names.find(',')));
 			for (Watch &w : watches_) sizeFromDomain(w);
 			domains.set(names);
 			systemId_ = system;
 			if (!watches_.empty()) rows_.changed.emit(0, static_cast<int64_t>(watches_.size()) - 1);
+			selectionChanged();
 		});
 		readOnMachine(s, true);
 	});
@@ -406,6 +892,11 @@ void RamWatchViewModel::listChanged(bool edit)
 	});
 	rows_.reset.emit();
 	refreshOnScreen();
+	int64_t n = 0;
+	for (const Watch &w : watches_) n += !w.separator;
+	countText.set(std::to_string(n) + (n == 1 ? " watch" : " watches"));
+	selectionChanged();
+	showFileState(false);
 }
 
 void RamWatchViewModel::readOnMachine(ce_session *s, bool fresh)
@@ -499,6 +990,7 @@ void RamWatchViewModel::readOnMachine(ce_session *s, bool fresh)
 			}
 			if (!watches_.empty()) rows_.changed.emit(0, static_cast<int64_t>(watches_.size()) - 1);
 			refreshOnScreen();
+			selectionChanged();
 		});
 }
 
@@ -507,14 +999,8 @@ void RamWatchViewModel::readOnMachine(ce_session *s, bool fresh)
  * and an OnScreen line naming by place the watches shown over the picture.
  * Files from other emulators have a count first, a place number before
  * each line and no domain. */
-bool RamWatchViewModel::load(const std::string &file, bool append, std::string &error)
+std::vector<RamWatchViewModel::Watch> RamWatchViewModel::readList(std::istream &in) const
 {
-	std::ifstream in(file, std::ios::binary);
-	if (!in)
-	{
-		error = "cannot read " + file;
-		return false;
-	}
 	std::vector<std::string> names;
 	{
 		std::string list = domains.get(), one;
@@ -608,12 +1094,24 @@ bool RamWatchViewModel::load(const std::string &file, bool append, std::string &
 			!read[static_cast<size_t>(placeOf[static_cast<size_t>(i)])].separator)
 			read[static_cast<size_t>(placeOf[static_cast<size_t>(i)])].onScreen = true;
 	}
+	return read;
+}
+
+bool RamWatchViewModel::load(const std::string &file, bool append, std::string &error)
+{
+	std::ifstream in(file, std::ios::binary);
+	if (!in)
+	{
+		error = "cannot read " + file;
+		return false;
+	}
+	const std::vector<Watch> read = readList(in);
 	if (!append) watches_.clear();
 	watches_.insert(watches_.end(), read.begin(), read.end());
 	path.set(file);
-	listChanged(false);
 	changed.set(append);
-	status.set("Opened " + file + " (" + std::to_string(read.size()) + (read.size() == 1 ? " watch)" : " watches)"));
+	listChanged(false);
+	addRecent(file);
 	return true;
 }
 
@@ -623,23 +1121,8 @@ bool RamWatchViewModel::save(const std::string &file, std::string &error)
 	std::string onScreen;
 	for (size_t i = 0; i < watches_.size(); i++)
 	{
-		const Watch &w = watches_[i];
-		if (!w.property.empty())
-			/* as Chimera writes one: where it is now when a machine says so,
-			 * else the line the file had */
-			text += w.domainSize != 0 || w.propertyLine.empty()
-				? watch::hex(w.address, watch::addressDigits(w.domainSize != 0 ? w.domainSize : 0xFE)) + "\tp\tu\t" +
-					  (w.bigEndian ? "1" : "0") + "\t" + w.domain + "\t" + w.property + kNewLine
-				: w.propertyLine + kNewLine;
-		else if (w.separator)
-			text += std::string("0\tS\t_\t1\t\t") + trimLineEnds(w.note) + kNewLine;
-		else
-		{
-			const int digits = watch::addressDigits(w.domainSize != 0 ? w.domainSize : 0xFE);
-			text += watch::hex(w.address, digits) + "\t" + watch::sizeLetter(w.size) + "\t" + watch::displayLetter(w.display) + "\t" +
-					(w.bigEndian ? "1" : "0") + "\t" + w.domain + "\t" + trimLineEnds(w.note) + kNewLine;
-		}
-		if (w.onScreen) onScreen += (onScreen.empty() ? "" : ",") + std::to_string(i);
+		text += lineOf(watches_[i]) + kNewLine;
+		if (watches_[i].onScreen) onScreen += (onScreen.empty() ? "" : ",") + std::to_string(i);
 	}
 	if (!onScreen.empty()) text += kOnScreen + onScreen + kNewLine;
 	text += kNewLine;
@@ -664,21 +1147,128 @@ bool RamWatchViewModel::save(const std::string &file, std::string &error)
 	}
 	path.set(file);
 	changed.set(false);
-	status.set("Saved " + file);
+	addRecent(file);
+	showFileState(true);
 	return true;
+}
+
+std::string RamWatchViewModel::lineOf(const Watch &w) const
+{
+	if (!w.property.empty())
+		/* as Chimera writes one: where it is now when a machine says so,
+		 * else the line the file had */
+		return w.domainSize != 0 || w.propertyLine.empty()
+			? watch::hex(w.address, watch::addressDigits(w.domainSize != 0 ? w.domainSize : 0xFE)) + "\tp\tu\t" +
+				  (w.bigEndian ? "1" : "0") + "\t" + w.domain + "\t" + w.property
+			: w.propertyLine;
+	if (w.separator) return std::string("0\tS\t_\t1\t\t") + trimLineEnds(w.note);
+	const int digits = watch::addressDigits(w.domainSize != 0 ? w.domainSize : 0xFE);
+	return watch::hex(w.address, digits) + "\t" + watch::sizeLetter(w.size) + "\t" + watch::displayLetter(w.display) + "\t" +
+		   (w.bigEndian ? "1" : "0") + "\t" + w.domain + "\t" + trimLineEnds(w.note);
+}
+
+std::vector<size_t> RamWatchViewModel::selectedRows() const
+{
+	std::vector<size_t> out;
+	for (size_t i = 0; i < watches_.size(); i++)
+		if (watches_[i].selected) out.push_back(i);
+	return out;
+}
+
+bool RamWatchViewModel::invalid(const Watch &w) const
+{
+	return !w.separator && w.property.empty() && w.domainSize != 0 && w.address + w.size > w.domainSize;
+}
+
+void RamWatchViewModel::selectionChanged()
+{
+	int64_t picked = 0, pickedWatches = 0, bad = 0;
+	bool split = true, writable = true;
+	for (const Watch &w : watches_)
+	{
+		bad += invalid(w);
+		if (!w.selected) continue;
+		picked++;
+		if (w.separator) continue;
+		pickedWatches++;
+		/* Chimera splits a word or double word shown in hex or binary into halves */
+		split = split && w.property.empty() && (w.size == 2 || w.size == 4) &&
+				(w.display == watch::Display::Hex || w.display == watch::Display::Binary);
+		const auto found = domainWritable_.find(w.domain);
+		writable = writable && found != domainWritable_.end() && found->second;
+	}
+	selectedCount.set(picked);
+	selectedWatches.set(pickedWatches);
+	canSplit.set(pickedWatches > 0 && split);
+	canPoke.set(pickedWatches > 0 && writable);
+	invalidCount.set(bad);
+}
+
+void RamWatchViewModel::showFileState(bool saved)
+{
+	const std::u8string u = std::filesystem::u8path(path.get()).filename().u8string();
+	const std::string name(reinterpret_cast<const char *>(u.data()), u.size());
+	if (name.empty()) status.set("");
+	else status.set(saved ? name + " saved." : name + (changed.get() ? " *" : ""));
+}
+
+void RamWatchViewModel::addRecent(const std::string &file)
+{
+	/* newest first, each once, ten at most */
+	std::string out = file;
+	std::istringstream in(recentFiles.get());
+	std::string l;
+	int kept = 1;
+	while (std::getline(in, l) && kept < 10)
+		if (!l.empty() && l != file)
+		{
+			out += "\n" + l;
+			kept++;
+		}
+	if (out != recentFiles.get()) recentFiles.set(out);
+}
+
+bool RamWatchViewModel::poke(const Watch &w, const std::string &text, std::string &error)
+{
+	uint32_t v = 0;
+	if (!watch::parse(text, w.display, v))
+	{
+		error = "\"" + text + "\" is not a " + watch::displayName(w.display) + " value";
+		return false;
+	}
+	std::string bytes(static_cast<size_t>(w.size), '\0');
+	for (int i = 0; i < w.size; i++)
+	{
+		const int shift = 8 * (w.bigEndian ? w.size - 1 - i : i);
+		bytes[static_cast<size_t>(i)] = static_cast<char>((v >> shift) & 0xFF);
+	}
+	return session_.run("writeMemory", {w.domain, w.address, bytes}, error).has_value();
 }
 
 std::string RamWatchViewModel::Rows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"address", "value", "previous", "changes", "diff", "domain", "note", "size", "shownAs", "onScreen"};
-	return column >= 0 && column < 10 ? names[column] : "";
+	static const char *const names[] = {"address", "value", "previous", "changes", "diff", "domain", "note", "size", "shownAs", "onScreen",
+		"type", "selected", "invalid", "separator"};
+	return column >= 0 && column < 14 ? names[column] : "";
 }
 
 Value RamWatchViewModel::Rows::cell(int64_t row, int32_t column) const
 {
 	if (row < 0 || row >= rowCount()) return {};
 	const Watch &w = vm_.watches_[static_cast<size_t>(row)];
+	/* picked, and past its domain's end, whatever it is */
+	if (column == 11) return w.selected;
+	if (column == 12) return vm_.invalid(w);
+	if (column == 13) return w.separator;
 	if (w.separator) return column == 6 ? Value(w.note) : column == 9 ? Value(false) : Value(std::string());
+	/* Chimera's Type column: the size, the display's letter, the byte order's (2hB: a word, hex, big end first) */
+	if (column == 10)
+	{
+		if (!w.property.empty()) return std::string("Game property");
+		static const char *const letters[] = {"u", "s", "h", "b", "F", "F2", "F6", "f"};
+		const int d = static_cast<int>(w.display);
+		return std::to_string(w.size) + (d >= 0 && d < 8 ? letters[d] : "") + (w.bigEndian ? "B" : "L");
+	}
 	if (!w.property.empty())
 		switch (column)
 		{

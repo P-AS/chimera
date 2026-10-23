@@ -4185,6 +4185,90 @@ bool ramWatch(const char *package, const char *rom)
 		CHECK(readFile(dir / "odd-saved.wch").find("OnScreen\t1" + nl) != std::string::npos);
 	}
 	CHECK(!watches.run("open", {(dir / "missing.wch").string()}, error) && error.find("cannot read") != std::string::npos);
+	/* Chimera's RAM Watch works on the rows picked: split, edit, duplicate,
+	 * poke, copy and paste, move, purge, sort; the warning for addresses past
+	 * the end; the status line */
+	{
+		auto addr = [&](int64_t n) { return watch::hex(n, watch::addressDigits(ramSize - 1)); };
+		auto picked = [&](int64_t row) { return watches.rowLists()[0].model->cell(row, 11) == Value(true); };
+#ifdef _WIN32
+		const std::string nl = "\r\n";
+#else
+		const std::string nl = "\n";
+#endif
+		watches.run("newList", {}, error);
+		CHECK(watches.status.get().empty() && watches.countText.get() == "0 watches");
+		watches.run("add", {std::string("RAM"), int64_t{0x40}, int64_t{4}, int64_t{2}, true, std::string("dword")}, error);
+		watches.run("add", {std::string("RAM"), int64_t{0x50}, int64_t{1}, int64_t{0}, false, std::string("byte")}, error);
+		watches.run("addSeparator", {std::string("sep")}, error);
+		watches.run("add", {std::string("RAM"), ramSize - 1, int64_t{2}, int64_t{0}, false, std::string("past")}, error);
+		CHECK(watches.countText.get() == "3 watches" && watches.invalidCount.get() == 1 && watches.rowLists()[0].model->cell(3, 12) == Value(true));
+		/* a double word in hex split into two words, the lower address first when big end first */
+		watches.run("select", {int64_t{0}, std::string("only")}, error);
+		CHECK(watches.selectedCount.get() == 1 && watches.canSplit.get() && watches.canPoke.get() && picked(0) && !picked(1));
+		CHECK(watches.run("splitSelected", {}, error) == Value(true));
+		CHECK(text(0, 0) == addr(0x40) && text(1, 0) == addr(0x42) && number(0, 7) == 2 && number(1, 7) == 2 && text(1, 10) == "2hB");
+		/* a byte in unsigned cannot be */
+		watches.run("select", {int64_t{2}, std::string("only")}, error);
+		CHECK(!watches.canSplit.get());
+		/* edited: a word, unsigned, at another address, with its note */
+		CHECK(watches.run("editSelected", {int64_t{2}, int64_t{0}, int64_t{0}, std::string("51"), std::string("word now")}, error).has_value());
+		CHECK(text(2, 0) == addr(0x51) && number(2, 7) == 2 && text(2, 6) == "word now" && text(2, 10) == "2uL");
+		/* duplicated, changed as the editor says, after the last row picked */
+		watches.run("duplicateSelected", {int64_t{1}, int64_t{2}, int64_t{1}, std::string(""), std::string("copy")}, error);
+		CHECK(watches.count.get() == 6 && text(3, 6) == "copy" && text(3, 10) == "1hB" && text(3, 0) == addr(0x51) && text(2, 6) == "word now");
+		/* poked into memory, as the display reads it; text it cannot read refused */
+		watches.run("select", {int64_t{3}, std::string("only")}, error);
+		const std::string info = std::get<std::string>(*watches.run("pokeInfo", {}, error));
+		CHECK(info.find("\"addresses\": \"" + addr(0x51) + "\"") != std::string::npos && info.find("\"size\": \"Byte\"") != std::string::npos &&
+			info.find("\"display\": \"Hex\"") != std::string::npos && info.find("\"mixed\": false") != std::string::npos);
+		CHECK(watches.run("pokeSelected", {std::string("A5")}, error) == Value(true) && session.readDomain("RAM")[0x51] == 0xA5);
+		CHECK(!watches.run("pokeSelected", {std::string("XYZ")}, error) && error == "An error occurred when writing Value.");
+		/* copied as .wch lines and pasted back at the end */
+		watches.run("select", {int64_t{0}, std::string("only")}, error);
+		watches.run("select", {int64_t{1}, std::string("range")}, error);
+		const std::string copied = std::get<std::string>(*watches.run("copySelected", {}, error));
+		CHECK(copied == addr(0x40) + "\tw\th\t1\tRAM\tdword" + nl + addr(0x42) + "\tw\th\t1\tRAM\tdword" + nl);
+		CHECK(watches.run("paste", {copied}, error) == Value(int64_t{2}) && watches.count.get() == 8 && text(6, 0) == addr(0x40) && text(7, 0) == addr(0x42));
+		/* moved to the top, the bottom, up a row, kept picked */
+		watches.run("select", {int64_t{5}, std::string("only")}, error);
+		watches.run("moveSelected", {std::string("top")}, error);
+		CHECK(text(0, 6) == "past" && picked(0));
+		watches.run("moveSelected", {std::string("bottom")}, error);
+		CHECK(text(7, 6) == "past" && picked(7));
+		watches.run("moveSelected", {std::string("up")}, error);
+		CHECK(text(6, 6) == "past" && picked(6));
+		/* the same domain, address and size twice: the later goes */
+		CHECK(watches.run("purgeDuplicates", {}, error) == Value(true) && watches.count.get() == 6);
+		/* the warning clicked: the ones past the end go */
+		CHECK(watches.invalidCount.get() == 1);
+		watches.run("removeInvalid", {}, error);
+		CHECK(watches.count.get() == 5 && watches.invalidCount.get() == 0);
+		/* sorted between separators by address (then size), then the other way round */
+		watches.run("sort", {std::string("Address")}, error);
+		CHECK(text(2, 6) == "copy" && text(3, 6) == "word now" && text(4, 6) == "sep");
+		watches.run("sort", {std::string("Address")}, error);
+		CHECK(text(0, 6) == "word now" && text(1, 6) == "copy" && text(3, 0) == addr(0x40));
+		/* the editor starts from what is picked: one, or several that differ */
+		watches.run("select", {int64_t{0}, std::string("only")}, error);
+		const std::string one = std::get<std::string>(*watches.run("editInfo", {std::string("edit")}, error));
+		CHECK(one.find("\"size\": 2") != std::string::npos && one.find("\"many\": false") != std::string::npos &&
+			one.find("\"note\": \"word now\"") != std::string::npos && one.find("\"bigEndian\": 0") != std::string::npos);
+		watches.run("selectAll", {}, error);
+		const std::string many = std::get<std::string>(*watches.run("editInfo", {std::string("edit")}, error));
+		CHECK(many.find("\"many\": true") != std::string::npos && many.find("\"bigEndian\": 2") != std::string::npos &&
+			many.find("\"sizesDiffer\": true") != std::string::npos);
+		/* a separator's text */
+		watches.run("select", {int64_t{4}, std::string("only")}, error);
+		watches.run("editSeparators", {std::string("renamed")}, error);
+		CHECK(text(4, 6) == "renamed" && watches.rowLists()[0].model->cell(4, 13) == Value(true));
+		/* the status line, as Chimera's: saved, then changed */
+		const std::filesystem::path pickedFile = dir / "picked.wch";
+		watches.run("save", {pickedFile.string()}, error);
+		CHECK(watches.status.get() == "picked.wch saved." && watches.recentFiles.get().rfind(pickedFile.string(), 0) == 0);
+		watches.run("insertSeparator", {}, error);
+		CHECK(watches.status.get() == "picked.wch *" && text(4, 6).empty() && text(5, 6) == "renamed");
+	}
 	/* the game's own properties, by name: read by the engine as text, named
 	 * values by their names, changes counted, saved as Chimera saves them */
 	watches.run("newList", {}, error);

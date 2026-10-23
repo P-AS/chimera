@@ -957,6 +957,7 @@ int main(int argc, char **argv)
 	/* each tool window's Save Window Position, Stay on Top and Float From Main Window, and its place */
 	vm::ToolWindowsViewModel toolWindows(dispatcher);
 	config.keep(toolWindows, "settings");
+	for (const char *name : {"doubleClickToPoke", "recentFiles", "hiddenColumns", "previousType"}) config.keep(ramWatch, name);
 	qt::QmlViewModel toolWindowsQml(toolWindows);
 	lua.add(session);
 	lua.add(pianoRoll);
@@ -995,6 +996,7 @@ int main(int argc, char **argv)
 	/* a game core's properties by name, for Lua's game library */
 	vm::GamePropertiesViewModel gameProperties(dispatcher, session);
 	lua.add(gameProperties);
+	qt::QmlViewModel gamePropertiesQml(gameProperties);
 	/* a script's own windows; a click or a close goes back to the script */
 	vm::FormsViewModel forms(dispatcher);
 	qt::QmlViewModel formsQml(forms);
@@ -1079,6 +1081,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
 		{QStringLiteral("toolWindows"), QVariant::fromValue<QObject *>(&toolWindowsQml)},
+		{QStringLiteral("gameProperties"), QVariant::fromValue<QObject *>(&gamePropertiesQml)},
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},
 		{QStringLiteral("cores"), QVariant::fromValue<QObject *>(&coresQml)},
 	});

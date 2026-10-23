@@ -25,6 +25,7 @@ ApplicationWindow {
     required property QtObject themeColors
     required property QtObject luaConsole
     required property QtObject toolWindows
+    required property QtObject gameProperties
     required property QtObject branches
     required property QtObject cores
     required property QtObject clipboard
@@ -523,7 +524,17 @@ ApplicationWindow {
         onAccepted: root.session.run("seek", [seekTo.value])
     }
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
-    RamWatch { id: ramWatchWindow; vm: root.ramWatch; folderOf: root.folderOf; visible: false }
+    RamWatch {
+        id: ramWatchWindow; vm: root.ramWatch; folderOf: root.folderOf; visible: false
+        clipboard: root.clipboard; customize: root.customize; themeColor: root.osdColor
+        toolWindows: root.toolWindows; mainWindow: root; gameProperties: root.gameProperties
+        viewInHexEditor: (domain, address) => {
+            root.hexEditor.domain = domain
+            root.hexEditor.run("goTo", [address])
+            hexEditorWindow.show()
+            hexEditorWindow.raise()
+        }
+    }
     NewProject { id: newProjectWindow; vm: root.newProject; askFirst: root.leaveProject; visible: false }
     // the project's own window, beside this one: open exactly when a project is
     TAStudio {

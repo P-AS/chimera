@@ -22,6 +22,16 @@
     <file alias="icons/Recent.png">../../gui/Chimera.Client.GUI/images/Recent.png</file>
     <file alias="icons/Close.png">../../gui/Chimera.Client.GUI/images/Close.png</file>
     <file alias="icons/Cut.png">../../gui/Chimera.Client.GUI/images/CutHS.png</file>
+    <file alias="icons/addWatch.ico">../../gui/Chimera.Client.GUI/images/addWatch.ico</file>
+    <file alias="icons/poke.png">../../gui/Chimera.Client.GUI/images/poke.png</file>
+    <file alias="icons/Freeze.png">../../gui/Chimera.Client.GUI/images/Freeze.png</file>
+    <file alias="icons/Unfreeze.png">../../gui/Chimera.Client.GUI/images/Unfreeze.png</file>
+    <file alias="icons/MoveTop.png">../../gui/Chimera.Client.GUI/images/MoveTop.png</file>
+    <file alias="icons/MoveBottom.png">../../gui/Chimera.Client.GUI/images/MoveBottom.png</file>
+    <file alias="icons/Split.png">../../gui/Chimera.Client.GUI/images/Split.png</file>
+    <file alias="icons/ExclamationRed.png">../../gui/Chimera.Client.GUI/images/ExclamationRed.png</file>
+    <file alias="icons/placeholder.png">../../gui/Chimera.Client.GUI/images/placeholder_bitmap.png</file>
+    <file alias="icons/Save.png">../../gui/Chimera.Client.GUI/images/Save.png</file>
     <file>RamSearch.qml</file>
     <file>RamWatch.qml</file>
     <file>HexEditor.qml</file>

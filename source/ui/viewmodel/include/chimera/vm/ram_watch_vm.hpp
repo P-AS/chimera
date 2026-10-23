@@ -47,6 +47,8 @@ public:
 		int64_t changes = 0;
 		bool readable = false, seen = false;
 		int64_t domainSize = 0;
+		/* picked in the list (the view's) */
+		bool selected = false;
 	};
 
 	Property<int64_t> count{0};
@@ -70,6 +72,25 @@ public:
 	Property<std::string> formDisplays;
 	Property<int64_t> formDisplay{0};
 
+	/* "3 watches", as Chimera counts them (separators not) */
+	Property<std::string> countText{"0 watches"};
+	/* rows picked, and of them the watches (not separators) */
+	Property<int64_t> selectedCount{0};
+	Property<int64_t> selectedWatches{0};
+	/* Split Watch and Poke Address can work on every watch picked */
+	Property<bool> canSplit{false};
+	Property<bool> canPoke{false};
+	/* watches whose address is past their domain's end (Chimera's warning) */
+	Property<int64_t> invalidCount{0};
+	/* the domain a new watch starts in (Watches > Default Domain) */
+	Property<std::string> defaultDomain;
+	/* On Double-Clicking a Watch: poke it (else edit it), remembered */
+	Property<bool> doubleClickToPoke{true};
+	/* .wch files opened or saved, newest first, a line each, remembered */
+	Property<std::string> recentFiles;
+	/* the columns not shown, by Chimera's names, comma-separated, remembered */
+	Property<std::string> hiddenColumns{"Prev,Diff,Type"};
+
 	/* the watches as the window shows them (the view's thread) */
 	const std::vector<Watch> &watches() const { return watches_; }
 
@@ -79,7 +100,7 @@ private:
 	public:
 		explicit Rows(RamWatchViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.watches_.size()); }
-		int32_t columnCount() const override { return 10; }
+		int32_t columnCount() const override { return 14; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -88,6 +109,19 @@ private:
 	};
 
 	bool index(const Args &a, size_t at, size_t &out, std::string &error) const;
+	std::vector<size_t> selectedRows() const;
+	/* the picks changed: the counts and what may be done with them */
+	void selectionChanged();
+	/* a watch as a line of a .wch file (and of the clipboard) */
+	std::string lineOf(const Watch &w) const;
+	/* the watches of .wch text, those marked on screen marked */
+	std::vector<Watch> readList(std::istream &in) const;
+	/* Chimera's status line: the file's name, " *" after it while changed */
+	void showFileState(bool saved);
+	void addRecent(const std::string &file);
+	bool invalid(const Watch &w) const;
+	/* a value written into a watch's memory, as its display reads text */
+	bool poke(const Watch &w, const std::string &text, std::string &error);
 	void refreshOnScreen();
 	/* the list changed: the machine gets the new one, the window is told */
 	void listChanged(bool edit);
@@ -108,6 +142,11 @@ private:
 	std::string systemId_;
 	/* each domain's size, as the machine last said (the view's thread) */
 	std::map<std::string, int64_t> domainSizes_;
+	/* and whether it can be written */
+	std::map<std::string, bool> domainWritable_;
+	int64_t anchor_ = -1;
+	std::string sortedBy_;
+	bool sortReverse_ = false;
 	void sizeFromDomain(Watch &w) const;
 
 	/* the machine's copy, and a serial so values read for an older list are
