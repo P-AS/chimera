@@ -851,15 +851,24 @@ ApplicationWindow {
         }
         onAccepted: tas.pianoRoll.run("insertFrames", [Math.min(editMenu.at, tas.pianoRoll.frameCount), insertCount.value])
     }
+    // Chimera's Go to Frame: the machine paused, a frame index typed
     Dialog {
         id: seekDialog
-        title: qsTr("Go to frame")
+        title: qsTr("Go to Frame")
         anchors.centerIn: parent
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
-        onAboutToShow: seekTo.value = tas.pianoRoll.currentFrame
-        SpinBox { id: seekTo; from: 0; to: Math.max(0, tas.pianoRoll.frameCount); editable: true }
-        onAccepted: tas.session.run("seek", [seekTo.value])
+        onAboutToShow: { tas.session.run("pause"); seekTo.text = ""; seekTo.forceActiveFocus() }
+        ColumnLayout {
+            Label { text: qsTr("Jump/Seek to frame index:") }
+            TextField {
+                id: seekTo
+                validator: IntValidator { bottom: 0 }
+                Layout.preferredWidth: 200
+                onAccepted: seekDialog.accept()
+            }
+        }
+        onAccepted: if (seekTo.text !== "") tas.session.run("seek", [parseInt(seekTo.text)])
     }
     Dialog {
         id: markerDialog

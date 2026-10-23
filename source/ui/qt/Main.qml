@@ -685,15 +685,24 @@ ApplicationWindow {
         }
         onAccepted: { root.session.autofireOn = fireOn.value; root.session.autofireOff = fireOff.value; root.session.autofireSkipsLag = fireLag.checked }
     }
+    // Chimera's Go to Frame: the machine paused, a frame index typed
     Dialog {
         id: seekDialog
-        title: qsTr("Go to frame")
+        title: qsTr("Go to Frame")
         anchors.centerIn: parent
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
-        onAboutToShow: seekTo.value = root.pianoRoll.currentFrame
-        SpinBox { id: seekTo; from: 0; to: Math.max(0, root.pianoRoll.frameCount); editable: true }
-        onAccepted: root.session.run("seek", [seekTo.value])
+        onAboutToShow: { root.session.run("pause"); seekTo.text = ""; seekTo.forceActiveFocus() }
+        ColumnLayout {
+            Label { text: qsTr("Jump/Seek to frame index:") }
+            TextField {
+                id: seekTo
+                validator: IntValidator { bottom: 0 }
+                Layout.preferredWidth: 200
+                onAccepted: seekDialog.accept()
+            }
+        }
+        onAccepted: if (seekTo.text !== "") root.session.run("seek", [parseInt(seekTo.text)])
     }
     RamSearch {
         id: ramSearchWindow; vm: root.ramSearch; folderOf: root.folderOf; visible: false
