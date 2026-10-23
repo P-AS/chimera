@@ -947,6 +947,11 @@ int main(int argc, char **argv)
 		std::fflush(stdout);
 	});
 	luaConsoleOf = &luaConsole;
+	for (const char *name : {"disableOnLoad", "toggleAllIfNoneSelected", "reloadOnChange", "duplicateToStdout", "recentSessions", "recentScripts"})
+		config.keep(luaConsole, name);
+	/* New Script's template is in the Paths' Lua folder */
+	luaConsole.luaFolder.set(paths.resolve("Lua"));
+	vm::Connection luaFolderWatch = paths.changed.changed.connect([&luaConsole, &paths] { luaConsole.luaFolder.set(paths.resolve("Lua")); });
 	qt::QmlViewModel luaConsoleQml(luaConsole);
 	lua.add(session);
 	lua.add(pianoRoll);
@@ -1005,7 +1010,7 @@ int main(int argc, char **argv)
 		QImage(reinterpret_cast<const uchar *>(f.pixels.data()), f.width, f.height, f.width * 4, QImage::Format_RGB32).save(&buffer, "PNG");
 		return std::string(png.constData(), static_cast<size_t>(png.size()));
 	});
-	if (args.isSet(mmfOpt)) comm.screenshotFile.set(args.value(mmfOpt).toStdString());
+	if (args.isSet(mmfOpt)) comm.screenshotFile.set(QFileInfo(args.value(mmfOpt)).absoluteFilePath().toStdString());
 	lua.add(comm);
 	/* a SQLite database for scripts, as Chimera's SQL library */
 	vm::SqlViewModel sql(dispatcher);
@@ -1174,16 +1179,15 @@ int main(int argc, char **argv)
 	}
 	if (args.isSet(luaOpt))
 	{
-		QFile file(args.value(luaOpt));
-		if (!file.open(QIODevice::ReadOnly))
+		/* opened in the console and started there, as Chimera's --lua does
+		 * (a .luases file is a session) */
+		const std::string script = QFileInfo(args.value(luaOpt)).absoluteFilePath().toStdString();
+		if (!QFileInfo::exists(args.value(luaOpt)))
 			std::printf("lua: could not read %s\n", qPrintable(args.value(luaOpt)));
+		else if (args.value(luaOpt).endsWith(QStringLiteral(".luases"), Qt::CaseInsensitive))
+			luaConsole.run("openSession", {script}, error);
 		else
-		{
-			/* the script goes into the console too, as if opened and run there */
-			luaConsole.path.set(args.value(luaOpt).toStdString());
-			luaConsole.script.set(file.readAll().toStdString());
-			luaConsole.run("run", {}, error);
-		}
+			luaConsole.run("openScript", {script}, error);
 	}
 	/* the movie is the machine's: it is made longer once one is open */
 	vm::Connection fillWatch;
@@ -1196,7 +1200,11 @@ int main(int argc, char **argv)
 			fillWatch.disconnect();
 		});
 	}
-	const QStringList positional = args.positionalArguments();
+	/* as full paths: a script's code runs in its own folder (Lua's working
+	 * folder is the script's, as Chimera's), and the machine reads these on
+	 * a thread of its own */
+	QStringList positional;
+	for (const QString &a : args.positionalArguments()) positional << QFileInfo(a).absoluteFilePath();
 	if (positional.size() >= 2)
 	{
 		/* a project and its package, or a package and a game */

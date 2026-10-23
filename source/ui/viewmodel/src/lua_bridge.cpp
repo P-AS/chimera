@@ -1,7 +1,11 @@
 #include "chimera/vm/lua_bridge.hpp"
 
+#include <algorithm>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <optional>
+#include <sstream>
 
 extern "C" {
 #include "lauxlib.h"
@@ -14,6 +18,12 @@ namespace chimera::vm {
 namespace {
 const char *const kBridge = "chimera.bridge";
 const char *const kModel = "chimera.viewmodel";
+
+std::string utf8(const std::filesystem::path &p)
+{
+	const std::u8string u = p.u8string();
+	return std::string(reinterpret_cast<const char *>(u.data()), u.size());
+}
 
 LuaBridge *bridgeOf(lua_State *L)
 {
@@ -56,20 +66,29 @@ LuaBridge::LuaBridge() : L_(luaL_newstate())
 	lua_setfield(L_, -2, "__newindex");
 	lua_pop(L_, 1);
 
-	lua_newtable(L_);
-	frameFns_ = luaL_ref(L_, LUA_REGISTRYINDEX);
-	lua_newtable(L_);
-	waiting_ = luaL_ref(L_, LUA_REGISTRYINDEX);
+	std::error_code ec;
+	home_ = utf8(std::filesystem::current_path(ec));
 
 	lua_newtable(L_);
-	lua_pushcfunction(L_, &LuaBridge::onFrame);
-	lua_setfield(L_, -2, "onFrame");
 	lua_setglobal(L_, "chimera");
 	lua_pushcfunction(L_, &LuaBridge::print);
 	lua_setglobal(L_, "print");
+	lua_pushcfunction(L_, &LuaBridge::write);
+	lua_setglobal(L_, "__chimera_write");
+	lua_pushcfunction(L_, &LuaBridge::enter);
+	lua_setglobal(L_, "__chimera_enter");
+	lua_pushcfunction(L_, &LuaBridge::folder);
+	lua_setglobal(L_, "__chimera_folder");
+	lua_pushinteger(L_, 0);
+	lua_setglobal(L_, "__chimera_script");
 	/* Chimera's libraries, a layer of Lua over the view models */
-	std::string error;
-	if (!run(luaLibraries(), "chimera-libraries", error)) std::fprintf(stderr, "lua: the libraries did not load: %s\n", error.c_str());
+	const char *libraries = luaLibraries();
+	if (luaL_loadbuffer(L_, libraries, std::char_traits<char>::length(libraries), "@chimera-libraries") != LUA_OK ||
+		lua_pcall(L_, 0, 0, 0) != LUA_OK)
+	{
+		std::fprintf(stderr, "lua: the libraries did not load: %s\n", lua_tostring(L_, -1) != nullptr ? lua_tostring(L_, -1) : "?");
+		lua_pop(L_, 1);
+	}
 }
 
 LuaBridge::~LuaBridge() { lua_close(L_); }
@@ -213,57 +232,154 @@ int LuaBridge::print(lua_State *L)
 	return 0;
 }
 
-int LuaBridge::onFrame(lua_State *L)
+/* text as it is written, line ends and all (console.write) */
+int LuaBridge::write(lua_State *L)
 {
-	luaL_checktype(L, 1, LUA_TFUNCTION);
-	LuaBridge *b = bridgeOf(L);
-	lua_rawgeti(L, LUA_REGISTRYINDEX, b->frameFns_);
-	lua_pushvalue(L, 1);
-	lua_rawseti(L, -2, static_cast<lua_Integer>(lua_rawlen(L, -2)) + 1);
-	lua_pop(L, 1);
+	size_t n = 0;
+	const char *s = luaL_checklstring(L, 1, &n);
+	bridgeOf(L)->writeText(std::string(s, n));
 	return 0;
 }
 
-void LuaBridge::log(const std::string &line) const
+/* __chimera_enter(script): the libraries call a script's function as that script */
+int LuaBridge::enter(lua_State *L)
 {
-	if (onLog) onLog(line);
+	const auto id = static_cast<int64_t>(luaL_checkinteger(L, 1));
+	lua_pushinteger(L, static_cast<lua_Integer>(bridgeOf(L)->enterScript(id)));
+	return 1;
 }
 
-bool LuaBridge::run(const std::string &code, const std::string &chunkName, std::string &error)
+/* __chimera_folder(): the folder of the script whose code runs, where its relative paths start */
+int LuaBridge::folder(lua_State *L)
+{
+	LuaBridge *b = bridgeOf(L);
+	const Script *s = b->find(b->current_);
+	const std::string f = s != nullptr && !s->directory.empty() ? s->directory : b->home_;
+	lua_pushlstring(L, f.data(), f.size());
+	return 1;
+}
+
+void LuaBridge::log(const std::string &line) { writeText(line + "\n"); }
+
+void LuaBridge::writeText(const std::string &text)
+{
+	written_++;
+	if (onWrite)
+	{
+		onWrite(text);
+		return;
+	}
+	partial_ += text;
+	size_t at = 0;
+	for (size_t nl = partial_.find('\n'); nl != std::string::npos; nl = partial_.find('\n', at))
+	{
+		if (onLog) onLog(partial_.substr(at, nl - at));
+		at = nl + 1;
+	}
+	partial_.erase(0, at);
+}
+
+int64_t LuaBridge::enterScript(int64_t id)
+{
+	const int64_t was = current_;
+	if (id == was) return was;
+	current_ = id;
+	lua_pushinteger(L_, static_cast<lua_Integer>(id));
+	lua_setglobal(L_, "__chimera_script");
+	/* the working folder is the script's while its code runs, as Chimera's
+	 * sandbox makes it, so that its dofile, require and io.open find files
+	 * beside it */
+	const Script *s = find(id);
+	const std::filesystem::path folder = std::filesystem::u8path(s != nullptr && !s->directory.empty() ? s->directory : home_);
+	std::error_code ec;
+	if (!folder.empty() && std::filesystem::current_path(ec) != folder) std::filesystem::current_path(folder, ec);
+	return was;
+}
+
+LuaBridge::Script *LuaBridge::find(int64_t id)
+{
+	for (Script &s : scripts_)
+		if (s.id == id) return &s;
+	return nullptr;
+}
+
+int64_t LuaBridge::start(const std::string &path, std::string &error)
+{
+	std::ifstream in(std::filesystem::u8path(path), std::ios::binary);
+	if (!in)
+	{
+		error = "Unable to access file " + path;
+		return 0;
+	}
+	std::stringstream ss;
+	ss << in.rdbuf();
+	const std::filesystem::path p = std::filesystem::absolute(std::filesystem::u8path(path));
+	return startCode(ss.str(), utf8(p.filename()), utf8(p.parent_path()), error);
+}
+
+int64_t LuaBridge::startCode(const std::string &code, const std::string &chunkName, const std::string &directory, std::string &error)
 {
 	if (luaL_loadbuffer(L_, code.data(), code.size(), ("@" + chunkName).c_str()) != LUA_OK)
 	{
 		error = lua_tostring(L_, -1) != nullptr ? lua_tostring(L_, -1) : "unknown error";
 		lua_pop(L_, 1);
-		return false;
+		return 0;
 	}
 	/* a coroutine of its own: where it yields, it waits for the next frame */
 	lua_State *co = lua_newthread(L_);
 	lua_insert(L_, -2);
 	lua_xmove(L_, co, 1);
-	int results = 0;
-	const int status = lua_resume(co, L_, 0, &results);
-	if (status == LUA_OK)
+	Script s;
+	s.id = nextId_++;
+	s.directory = directory;
+	s.thread = luaL_ref(L_, LUA_REGISTRYINDEX);
+	scripts_.push_back(s);
+	const int64_t id = s.id;
+	const bool ok = resume(id, error);
+	published();
+	if (!ok)
 	{
-		lua_pop(co, results);
-		lua_pop(L_, 1);
-		published();
-		return true;
+		stop(id);
+		return 0;
 	}
-	if (status == LUA_YIELD)
-	{
-		lua_pop(co, results);
-		lua_rawgeti(L_, LUA_REGISTRYINDEX, waiting_);
-		lua_insert(L_, -2);
-		lua_rawseti(L_, -2, static_cast<lua_Integer>(lua_rawlen(L_, -2)) + 1);
-		lua_pop(L_, 1);
-		published();
-		return true;
-	}
-	error = lua_tostring(co, -1) != nullptr ? lua_tostring(co, -1) : "unknown error";
-	lua_pop(L_, 1);
-	return false;
+	const Script *now = find(id);
+	if (now != nullptr && (now->stopAfter || (now->thread == LUA_NOREF && !keeps(id)))) stop(id);
+	return id;
 }
+
+bool LuaBridge::resume(int64_t id, std::string &error)
+{
+	Script *s = find(id);
+	if (s == nullptr || s->thread == LUA_NOREF) return true;
+	lua_rawgeti(L_, LUA_REGISTRYINDEX, s->thread);
+	lua_State *co = lua_tothread(L_, -1);
+	const int64_t was = enterScript(id);
+	const int64_t outer = resuming_;
+	resuming_ = id;
+	int results = 0;
+	const int status = co != nullptr ? lua_resume(co, L_, 0, &results) : LUA_ERRRUN;
+	resuming_ = outer;
+	enterScript(was);
+	bool ok = true;
+	if (status == LUA_YIELD || status == LUA_OK)
+		lua_pop(co, results);
+	else
+	{
+		error = co != nullptr && lua_tostring(co, -1) != nullptr ? lua_tostring(co, -1) : "unknown error";
+		ok = false;
+	}
+	lua_pop(L_, 1);
+	/* the script may have been let go while it ran (by its own call) */
+	s = find(id);
+	if (s != nullptr && status != LUA_YIELD)
+	{
+		luaL_unref(L_, LUA_REGISTRYINDEX, s->thread);
+		s->thread = LUA_NOREF;
+	}
+	return ok;
+}
+
+bool LuaBridge::keeps(int64_t id) { return ask("__chimera_script_keeps", {Value(id)}) == "true"; }
 
 void LuaBridge::published()
 {
@@ -271,25 +387,96 @@ void LuaBridge::published()
 	callHook("__chimera_frame_end");
 }
 
-void LuaBridge::stopAll()
+void LuaBridge::stop(int64_t id)
 {
-	/* what the scripts registered with the libraries goes with them */
-	callHook("__chimera_scripts_stopped");
-	lua_newtable(L_);
-	lua_rawseti(L_, LUA_REGISTRYINDEX, frameFns_);
-	lua_newtable(L_);
-	lua_rawseti(L_, LUA_REGISTRYINDEX, waiting_);
+	Script *s = find(id);
+	if (s == nullptr) return;
+	/* already being stopped (an OnExit function of its own asking again) */
+	if (s->state == State::Stopped) return;
+	if (resuming_ == id)
+	{
+		/* its own code asked: it stops once that code waits or ends */
+		s->stopAfter = true;
+		return;
+	}
+	s->state = State::Stopped;
+	/* its OnExit functions, then all it registered and its forms, as Chimera's */
+	ask("__chimera_script_stopped", {Value(id)});
+	s = find(id);
+	if (s == nullptr) return;
+	if (s->thread != LUA_NOREF) luaL_unref(L_, LUA_REGISTRYINDEX, s->thread);
+	scripts_.erase(scripts_.begin() + (s - scripts_.data()));
+	if (onStopped) onStopped(id);
 }
 
-bool LuaBridge::running() const
+void LuaBridge::setPaused(int64_t id, bool paused)
 {
-	lua_rawgeti(L_, LUA_REGISTRYINDEX, frameFns_);
-	const bool fns = lua_rawlen(L_, -1) > 0;
-	lua_pop(L_, 1);
-	lua_rawgeti(L_, LUA_REGISTRYINDEX, waiting_);
-	const bool scripts = lua_rawlen(L_, -1) > 0;
-	lua_pop(L_, 1);
-	return fns || scripts;
+	if (Script *s = find(id)) s->state = paused ? State::Paused : State::Running;
+}
+
+LuaBridge::State LuaBridge::state(int64_t id) const
+{
+	for (const Script &s : scripts_)
+		if (s.id == id) return s.state;
+	return State::Stopped;
+}
+
+void LuaBridge::stopAll()
+{
+	std::vector<int64_t> ids;
+	for (const Script &s : scripts_) ids.push_back(s.id);
+	for (const int64_t id : ids) stop(id);
+	/* what the scripts left with the libraries goes with them */
+	callHook("__chimera_scripts_stopped");
+}
+
+bool LuaBridge::running() const { return !scripts_.empty(); }
+
+void LuaBridge::consoleClosed()
+{
+	callHook("__chimera_console_closed");
+	stopAll();
+}
+
+void LuaBridge::execute(const std::string &command)
+{
+	if (command.find("emu.frameadvance(") != std::string::npos)
+	{
+		log("emu.frameadvance() can not be called from the console");
+		return;
+	}
+	const int64_t was = enterScript(0);
+	const int base = lua_gettop(L_);
+	/* an expression's values; else a statement, as Chimera's console reads it */
+	if (luaL_loadbuffer(L_, ("return " + command).data(), command.size() + 7, "=input") != LUA_OK)
+	{
+		lua_pop(L_, 1);
+		if (luaL_loadbuffer(L_, command.data(), command.size(), "=input") != LUA_OK)
+		{
+			log(lua_tostring(L_, -1) != nullptr ? lua_tostring(L_, -1) : "unknown error");
+			lua_settop(L_, base);
+			enterScript(was);
+			return;
+		}
+	}
+	const uint64_t before = written_;
+	if (lua_pcall(L_, 0, LUA_MULTRET, 0) != LUA_OK)
+		log(lua_tostring(L_, -1) != nullptr ? lua_tostring(L_, -1) : "unknown error");
+	else
+	{
+		/* what it gave back, printed as console.log prints it */
+		const int n = lua_gettop(L_) - base;
+		lua_pushboolean(L_, written_ != before);
+		lua_setglobal(L_, "__chimera_console_printed");
+		lua_getglobal(L_, "__chimera_console_result");
+		if (lua_isfunction(L_, -1))
+		{
+			lua_insert(L_, base + 1);
+			if (lua_pcall(L_, n, 0, 0) != LUA_OK) log(lua_tostring(L_, -1) != nullptr ? lua_tostring(L_, -1) : "?");
+		}
+	}
+	lua_settop(L_, base);
+	enterScript(was);
 }
 
 void LuaBridge::callHook(const char *name)
@@ -307,23 +494,9 @@ void LuaBridge::callHook(const char *name)
 		lua_pop(L_, 1);
 }
 
-void LuaBridge::callHook(const char *name, int64_t arg)
-{
-	lua_getglobal(L_, name);
-	if (lua_isfunction(L_, -1))
-	{
-		lua_pushinteger(L_, static_cast<lua_Integer>(arg));
-		if (lua_pcall(L_, 1, 0, 0) != LUA_OK)
-		{
-			log(std::string(name) + ": " + (lua_tostring(L_, -1) ? lua_tostring(L_, -1) : "?"));
-			lua_pop(L_, 1);
-		}
-	}
-	else
-		lua_pop(L_, 1);
-}
+void LuaBridge::callHook(const char *name, int64_t arg) { ask(name, {Value(arg)}); }
 
-std::string LuaBridge::query(const char *name, int64_t row, const std::string &column)
+std::string LuaBridge::ask(const char *name, const std::vector<Value> &args)
 {
 	lua_getglobal(L_, name);
 	if (!lua_isfunction(L_, -1))
@@ -331,9 +504,8 @@ std::string LuaBridge::query(const char *name, int64_t row, const std::string &c
 		lua_pop(L_, 1);
 		return {};
 	}
-	lua_pushinteger(L_, static_cast<lua_Integer>(row));
-	lua_pushlstring(L_, column.data(), column.size());
-	if (lua_pcall(L_, 2, 1, 0) != LUA_OK)
+	for (const Value &v : args) push(L_, v);
+	if (lua_pcall(L_, static_cast<int>(args.size()), 1, 0) != LUA_OK)
 	{
 		log(std::string(name) + ": " + (lua_tostring(L_, -1) ? lua_tostring(L_, -1) : "?"));
 		lua_pop(L_, 1);
@@ -346,75 +518,42 @@ std::string LuaBridge::query(const char *name, int64_t row, const std::string &c
 		const char *s = lua_tolstring(L_, -1, &n);
 		out.assign(s, n);
 	}
+	else if (lua_type(L_, -1) == LUA_TBOOLEAN && lua_toboolean(L_, -1))
+		out = "true";
 	lua_pop(L_, 1);
 	return out;
+}
+
+std::string LuaBridge::query(const char *name, int64_t row, const std::string &column)
+{
+	return ask(name, {Value(row), Value(column)});
 }
 
 void LuaBridge::frameDone()
 {
 	/* the libraries' frame: what the gui drew last frame goes, and what is drawn now is shown at its end */
 	callHook("__chimera_frame_begin");
-	frameDoneInner();
+	callHook("__chimera_frame_events");
+	/* the running scripts go on, each to its next wait (a list taken first:
+	 * one that starts or stops another does not change it under this loop) */
+	std::vector<int64_t> ids;
+	for (const Script &s : scripts_)
+		if (s.state == State::Running) ids.push_back(s.id);
+	for (const int64_t id : ids)
+	{
+		const Script *s = find(id);
+		if (s == nullptr || s->state != State::Running) continue;
+		std::string error;
+		if (!resume(id, error))
+		{
+			log("script stopped: " + error);
+			stop(id);
+			continue;
+		}
+		s = find(id);
+		if (s != nullptr && (s->stopAfter || (s->thread == LUA_NOREF && !keeps(id)))) stop(id);
+	}
 	callHook("__chimera_frame_end");
-}
-
-void LuaBridge::frameDoneInner()
-{
-	lua_rawgeti(L_, LUA_REGISTRYINDEX, frameFns_);
-	const lua_Integer n = static_cast<lua_Integer>(lua_rawlen(L_, -1));
-	std::vector<lua_Integer> failed;
-	for (lua_Integer i = 1; i <= n; i++)
-	{
-		lua_rawgeti(L_, -1, i);
-		if (lua_pcall(L_, 0, 0, 0) != LUA_OK)
-		{
-			log(std::string("onFrame function dropped: ") + (lua_tostring(L_, -1) ? lua_tostring(L_, -1) : "?"));
-			lua_pop(L_, 1);
-			failed.push_back(i);
-		}
-	}
-	/* drop the failing ones, last first so the others keep their places */
-	for (auto it = failed.rbegin(); it != failed.rend(); ++it)
-	{
-		const lua_Integer len = static_cast<lua_Integer>(lua_rawlen(L_, -1));
-		for (lua_Integer j = *it; j < len; j++)
-		{
-			lua_rawgeti(L_, -1, j + 1);
-			lua_rawseti(L_, -2, j);
-		}
-		lua_pushnil(L_);
-		lua_rawseti(L_, -2, len);
-	}
-	lua_pop(L_, 1);
-
-	/* the scripts that waited for a frame go on, each to its next yield;
-	 * the ones that finish or fail are let go (a list taken first, so one
-	 * that starts another script does not change it under this loop) */
-	lua_rawgeti(L_, LUA_REGISTRYINDEX, waiting_);
-	const lua_Integer count = static_cast<lua_Integer>(lua_rawlen(L_, -1));
-	lua_newtable(L_);
-	lua_rawseti(L_, LUA_REGISTRYINDEX, waiting_);
-	for (lua_Integer i = 1; i <= count; i++)
-	{
-		lua_rawgeti(L_, -1, i);
-		lua_State *co = lua_tothread(L_, -1);
-		int results = 0;
-		const int status = co != nullptr ? lua_resume(co, L_, 0, &results) : LUA_ERRRUN;
-		if (status == LUA_YIELD)
-		{
-			lua_pop(co, results);
-			lua_rawgeti(L_, LUA_REGISTRYINDEX, waiting_);
-			lua_pushvalue(L_, -2);
-			lua_rawseti(L_, -2, static_cast<lua_Integer>(lua_rawlen(L_, -2)) + 1);
-			lua_pop(L_, 1);
-		}
-		else if (status == LUA_OK)
-			lua_pop(co, results);
-		else if (co != nullptr)
-			log(std::string("script stopped: ") + (lua_tostring(co, -1) ? lua_tostring(co, -1) : "?"));
-		lua_pop(L_, 1);
-	}
-	lua_pop(L_, 1);
 }
 
 std::string LuaBridge::describe() const

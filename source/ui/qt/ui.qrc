@@ -3,6 +3,25 @@
   <qresource prefix="/chimera">
     <file>Main.qml</file>
     <file alias="chimera.png">../../gui/Chimera.Client.GUI/images/chimera.png</file>
+    <file alias="icons/arrow_green.png">../../gui/Chimera.Client.GUI/images/arrow_green.png</file>
+    <file alias="icons/Pause.png">../../gui/Chimera.Client.GUI/images/Pause.png</file>
+    <file alias="icons/Stop.png">../../gui/Chimera.Client.GUI/images/Stop.png</file>
+    <file alias="icons/NewFile.png">../../gui/Chimera.Client.GUI/images/NewFile.png</file>
+    <file alias="icons/OpenFile.png">../../gui/Chimera.Client.GUI/images/OpenFile.png</file>
+    <file alias="icons/checkbox.png">../../gui/Chimera.Client.GUI/images/checkbox.png</file>
+    <file alias="icons/Refresh.png">../../gui/Chimera.Client.GUI/images/Refresh.png</file>
+    <file alias="icons/pencil.png">../../gui/Chimera.Client.GUI/images/pencil.png</file>
+    <file alias="icons/Delete.png">../../gui/Chimera.Client.GUI/images/Delete.png</file>
+    <file alias="icons/Duplicate.png">../../gui/Chimera.Client.GUI/images/Duplicate.png</file>
+    <file alias="icons/clear_console.png">../../gui/Chimera.Client.GUI/images/clear_console.png</file>
+    <file alias="icons/MoveUp.png">../../gui/Chimera.Client.GUI/images/MoveUp.png</file>
+    <file alias="icons/MoveDown.png">../../gui/Chimera.Client.GUI/images/MoveDown.png</file>
+    <file alias="icons/InsertSeparator.png">../../gui/Chimera.Client.GUI/images/InsertSeparator.png</file>
+    <file alias="icons/Erase.png">../../gui/Chimera.Client.GUI/images/Erase.png</file>
+    <file alias="icons/SaveAs.png">../../gui/Chimera.Client.GUI/images/SaveAs.png</file>
+    <file alias="icons/Recent.png">../../gui/Chimera.Client.GUI/images/Recent.png</file>
+    <file alias="icons/Close.png">../../gui/Chimera.Client.GUI/images/Close.png</file>
+    <file alias="icons/Cut.png">../../gui/Chimera.Client.GUI/images/CutHS.png</file>
     <file>RamSearch.qml</file>
     <file>RamWatch.qml</file>
     <file>HexEditor.qml</file>

@@ -132,6 +132,22 @@ private:
 	std::deque<std::function<void()>> q_;
 };
 
+/* a script written to a file of its own, for the console to open, as
+ * Chimera's opens scripts; the folder goes when the tests end */
+std::filesystem::path scriptFolder()
+{
+	static const std::filesystem::path dir = std::filesystem::temp_directory_path() /
+		("chimera-test-scripts-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	std::filesystem::create_directories(dir);
+	return dir;
+}
+std::string scriptFile(const std::string &code, const std::string &name)
+{
+	const std::filesystem::path p = scriptFolder() / (name + ".lua");
+	std::ofstream(p, std::ios::binary) << code;
+	return p.string();
+}
+
 class Sample : public ViewModel
 {
 public:
@@ -222,21 +238,28 @@ void lua()
 	CHECK(!lua.run("return chimera.sample.nothing", "t5", error) && error.find("no property or command nothing") != std::string::npos);
 	CHECK(lua.run("local ok, e = pcall(chimera.sample.add); print(ok, e)", "t6", error));
 	CHECK(lines.back().rfind("false\t", 0) == 0 && lines.back().find("missing") != std::string::npos);
-	/* onFrame functions run on every frame; one that fails is dropped, the others stay */
+	/* onFrame functions run on every frame; one that fails is said each time and kept, as Chimera's */
 	CHECK(lua.run("n = 0; chimera.onFrame(function() n = n + 1 end); chimera.onFrame(function() error('boom') end)", "t7", error));
 	lua.frameDone();
 	lua.frameDone();
 	CHECK(lua.run("print(n)", "t8", error) && lines.back() == "2");
-	int dropped = 0;
-	for (const auto &l : lines) dropped += l.find("onFrame function dropped") != std::string::npos && l.find("boom") != std::string::npos;
-	CHECK(dropped == 1);
+	int failed = 0, said = 0;
+	for (const auto &l : lines)
+	{
+		failed += l.find("boom") != std::string::npos;
+		said += l == "error running function attached by the event OnFrameEnd";
+	}
+	CHECK(failed == 2 && said == 2);
 	/* what an MCP server would list: the same names, from the same registry */
 	const std::string d1 = lua.describe();
 	CHECK(d1.find("\"name\": \"sample\"") != std::string::npos && d1.find("\"name\": \"add\"") != std::string::npos &&
 		d1.find("\"params\": [\"amount\"]") != std::string::npos && d1.find("\"settable\": false") != std::string::npos);
 }
 
-/* The console: a script run there prints to its rows; a failing one says why */
+/* The console, as Chimera's: scripts opened into a list and started, each
+ * toggled, paused, moved and taken out; what they print; the line typed into;
+ * the list kept as a session file and read back; what a script registers its
+ * own, called after each frame and gone when it stops */
 void luaConsole()
 {
 	namespace fs = std::filesystem;
@@ -245,30 +268,161 @@ void luaConsole()
 	LuaBridge lua;
 	lua.add(vm);
 	LuaConsoleViewModel console(d, lua);
+	lua.add(console);
 	std::string error;
 	RowModel &out = *console.rowLists()[0].model;
-	auto lastLine = [&] {
-		std::string l;
-		fromValue(out.cell(out.rowCount() - 1, 0), l);
-		return l;
+	RowModel &list = *console.rowLists()[1].model;
+	RowModel &fns = *console.rowLists()[2].model;
+	auto cell = [](RowModel &m, int64_t r, int32_t c) {
+		std::string t;
+		fromValue(m.cell(r, c), t);
+		return t;
 	};
-	console.set("script", std::string("print(chimera.sample.add(2) * 10)"), error);
-	console.run("run", {}, error);
-	CHECK(console.lines.get() == 1 && lastLine() == "20");
-	console.set("script", std::string("chimera.sample.nothing()"), error);
-	console.run("run", {}, error);
-	CHECK(console.lines.get() == 2 && lastLine().rfind("error:", 0) == 0 && lastLine().find("no property or command nothing") != std::string::npos);
-	/* saved and read back */
-	const fs::path file = fs::temp_directory_path() / ("chimera-test-console-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".lua");
-	console.set("script", std::string("print('from the file')"), error);
-	CHECK(console.run("save", {file.string()}, error).has_value() && console.path.get() == file.string());
-	console.set("script", std::string(""), error);
-	CHECK(console.run("load", {file.string()}, error).has_value() && console.script.get() == "print('from the file')");
-	console.run("run", {}, error);
-	CHECK(lastLine() == "from the file");
-	console.run("clear", {}, error);
-	CHECK(console.lines.get() == 0 && out.rowCount() == 0);
-	fs::remove(file);
+	auto lastLine = [&] { return cell(out, out.rowCount() - 1, 0); };
+	auto lineBack = [&](int64_t n) { return cell(out, out.rowCount() - 1 - n, 0); };
+	auto run = [&](const char *name, Args args = {}) { return console.run(name, args, error); };
+
+	/* a script that ends at once with nothing registered stops at once */
+	const std::string once = scriptFile("print(chimera.sample.add(2) * 10)", "once");
+	run("openScript", {once});
+	CHECK(lastLine() == "20" && list.rowCount() == 1 && cell(list, 0, 0) == "once" && cell(list, 0, 1) == once);
+	CHECK(cell(list, 0, 2) == "stopped" && console.summary.get() == "1 script (0 active, 0 paused)" && console.changes.get());
+	/* a failing one says why */
+	run("openScript", {scriptFile("chimera.sample.nothing()", "bad")});
+	CHECK(lastLine().find("no property or command nothing") != std::string::npos && cell(list, 1, 2) == "stopped");
+	/* one waiting for frames runs on; one that registers runs on after its code ends */
+	const std::string hooks = scriptFile("seen = 0\nevent.onframeend(function() seen = seen + 1 end, 'counter')\n"
+		"event.onexit(function() print('bye', seen) end)", "hooks");
+	run("openScript", {scriptFile("n = 0\nwhile true do n = n + 1 emu.frameadvance() end", "loop")});
+	run("openScript", {hooks});
+	CHECK(cell(list, 2, 2) == "running" && cell(list, 3, 2) == "running" && console.summary.get() == "4 scripts (2 active, 0 paused)");
+	console.frameDone();
+	console.frameDone();
+	run("execute", {std::string("n, seen")});
+	CHECK(lastLine() == "3\t2" && console.running.get() && console.anyEnabled.get());
+	/* paused: its code waits; what it registered is still called, as Chimera's */
+	run("select", {int64_t{2}, std::string("only")});
+	CHECK(console.selectedCount.get() == 1 && console.selectedScripts.get() == 1 && list.cell(2, 4) == Value(true));
+	run("pause");
+	CHECK(cell(list, 2, 2) == "paused" && console.summary.get() == "4 scripts (2 active, 1 paused)");
+	console.frameDone();
+	run("execute", {std::string("n, seen")});
+	CHECK(lastLine() == "3\t3");
+	run("pause");
+	CHECK(cell(list, 2, 2) == "running");
+	/* the functions registered, by event then name, each with its id */
+	CHECK(console.functionCount.get() == 2 && fns.rowCount() == 2 && cell(fns, 0, 0) == "OnExit" && cell(fns, 0, 1) == "Anonymous");
+	CHECK(cell(fns, 1, 0) == "OnFrameEnd" && cell(fns, 1, 1) == "counter" && cell(fns, 1, 2).size() == 36 && cell(fns, 1, 2)[8] == '-');
+	CHECK(run("callFunction", {cell(fns, 1, 2)}) == Value(true));
+	run("execute", {std::string("seen")});
+	CHECK(lastLine() == "4");
+	/* toggled off: its OnExit functions called, then everything of it gone */
+	run("select", {int64_t{3}, std::string("only")});
+	run("toggle");
+	CHECK(lastLine() == "bye\t4" && cell(list, 3, 2) == "stopped" && console.functionCount.get() == 0 && console.lastScript.get() == hooks);
+	/* Toggle Last Lua Script starts it again, and stops it again */
+	CHECK(run("toggleLast") == Value(true) && console.functionCount.get() == 2);
+	CHECK(run("toggleLast") == Value(false) && console.functionCount.get() == 0);
+	/* a script's own unregistered by name and by id */
+	run("execute", {std::string("a = event.onframeend(function() end, 'one') b = event.onframestart(function() end, 'two')")});
+	CHECK(console.functionCount.get() == 2);
+	run("execute", {std::string("event.unregisterbyname('one'), event.unregisterbyname('one'), event.unregisterbyid(b)")});
+	CHECK(lastLine() == "true\tfalse\ttrue" && console.functionCount.get() == 0);
+	/* moved, a separator put before the selected row */
+	run("select", {int64_t{0}, std::string("only")});
+	run("moveDown");
+	CHECK(cell(list, 0, 0) == "bad" && cell(list, 1, 0) == "once" && list.cell(1, 4) == Value(true));
+	run("insertSeparator");
+	CHECK(list.rowCount() == 5 && list.cell(1, 3) == Value(true) && cell(list, 1, 2).empty() && cell(list, 2, 0) == "once");
+	CHECK(console.summary.get() == "4 scripts (1 active, 0 paused)");
+	/* the session written as Chimera writes it */
+	const fs::path session = scriptFolder() / "test.luases";
+	CHECK(run("saveSessionAs", {session.string()}).has_value() && !console.changes.get() && console.status.get() == "test.luases saved.");
+	{
+		std::ifstream in(session, std::ios::binary);
+		std::stringstream ss;
+		ss << in.rdbuf();
+#ifdef _WIN32
+		CHECK(ss.str() == "0 .\\bad.lua\r\n---\r\n0 .\\once.lua\r\n1 .\\loop.lua\r\n0 .\\hooks.lua\r\n");
+#else
+		CHECK(ss.str() == "0 ./bad.lua\n---\n0 ./once.lua\n1 ./loop.lua\n0 ./hooks.lua\n");
+#endif
+	}
+	/* a new session: every script stopped, the list empty */
+	run("newSession");
+	CHECK(list.rowCount() == 0 && !console.running.get() && console.lines.get() == 0 && console.sessionPath.get().empty());
+	/* read back: the scripts marked to run started, the output empty, as Chimera's */
+	run("openSession", {session.string()});
+	CHECK(list.rowCount() == 5 && cell(list, 3, 0) == "loop" && cell(list, 3, 2) == "running" && cell(list, 0, 2) == "stopped");
+	CHECK(console.lines.get() == 0 && console.status.get() == "test.luases" && !console.changes.get());
+	CHECK(console.recentSessions.get() == session.string() && console.recentScripts.get().find(hooks) != std::string::npos);
+	/* the typed line: values tab between, a table shallowly a key a line, (no return) when nothing came back */
+	run("execute", {std::string("1 + 1, 'x'")});
+	CHECK(lastLine() == "2\tx");
+	run("execute", {std::string("{10, x = 'y'}")});
+	CHECK(lineBack(2) == "1: 10" && lineBack(1) == "\"x\": \"y\"" && lastLine().empty());
+	run("execute", {std::string("local z = 1")});
+	CHECK(lastLine() == "(no return)");
+	run("execute", {std::string("print('hi')")});
+	CHECK(lastLine() == "hi");
+	run("execute", {std::string("emu.frameadvance()")});
+	CHECK(lastLine() == "emu.frameadvance() can not be called from the console");
+	run("execute", {std::string("syntax error here")});
+	CHECK(lastLine().find("input") != std::string::npos);
+	/* Up and Down through the lines typed */
+	CHECK(run("recall", {int64_t{1}}) == Value(std::string("syntax error here")));
+	CHECK(run("recall", {int64_t{1}}) == Value(std::string("emu.frameadvance()")));
+	CHECK(run("recall", {int64_t{-1}}) == Value(std::string("syntax error here")));
+	CHECK(run("recall", {int64_t{-1}}) == Value(std::string()));
+	/* console.write writes no line end */
+	run("execute", {std::string("console.write('a') console.write('b') console.log('c')")});
+	CHECK(lastLine() == "abc");
+	/* past 100 writes at once, the rest is not shown */
+	run("execute", {std::string("for i = 1, 150 do print(i) end")});
+	CHECK(lineBack(2) == "100" && lastLine() == "Flood warning! Message cap reached, suppressing output.");
+	/* the output's lines picked and copied */
+	const int64_t last = out.rowCount() - 1;
+	run("selectOutput", {last - 2, std::string("only")});
+	run("selectOutput", {last, std::string("range")});
+	CHECK(run("copyOutput") == Value(std::string("100\n\nFlood warning! Message cap reached, suppressing output.\n")));
+	CHECK(out.cell(last - 1, 1) == Value(true) && out.cell(last - 3, 1) == Value(false));
+	/* sorted by name, then the other way round */
+	run("sort", {std::string("Script")});
+	CHECK(cell(list, 1, 0) == "bad" && cell(list, 4, 0) == "once");
+	run("sort", {std::string("Script")});
+	CHECK(cell(list, 0, 0) == "once" && cell(list, 3, 0) == "bad");
+	/* a new script from the template, made in the Lua folder; a copy beside the first */
+	console.luaFolder.set((scriptFolder() / "Lua").string());
+	const fs::path fresh = scriptFolder() / "fresh.lua";
+	CHECK(run("newScript", {fresh.string()}) == Value(fresh.string()));
+	CHECK(fs::exists(scriptFolder() / "Lua" / ".template.lua") && fs::file_size(fresh) == fs::file_size(scriptFolder() / "Lua" / ".template.lua"));
+	CHECK(list.rowCount() == 6 && cell(list, 5, 0) == "fresh" && cell(list, 5, 2) == "stopped");
+	run("select", {int64_t{5}, std::string("only")});
+	CHECK(run("duplicateName") == Value((scriptFolder() / "fresh (1).lua").string()));
+	run("duplicate", {(scriptFolder() / "fresh (1).lua").string()});
+	CHECK(list.rowCount() == 7 && cell(list, 6, 0) == "fresh (1)" && fs::exists(scriptFolder() / "fresh (1).lua"));
+	/* taken out: stopped and gone */
+	int64_t loopRow = -1;
+	for (int64_t i = 0; i < list.rowCount(); i++)
+		if (cell(list, i, 0) == "loop") loopRow = i;
+	run("select", {loopRow, std::string("only")});
+	run("remove");
+	CHECK(list.rowCount() == 6 && !console.running.get() && console.changes.get());
+	/* a script's code runs in its own folder, as Chimera's: dofile and io.open find files beside it; the program's folder is back after */
+	const fs::path before = fs::current_path();
+	std::ofstream(scriptFolder() / "helper.lua", std::ios::binary) << "helped = 41 + 1";
+	run("openScript", {scriptFile("dofile('helper.lua') print('helped', helped) local f = io.open('beside.txt', 'w') f:write('here') f:close()", "folder")});
+	CHECK(lastLine() == "helped\t42" && fs::exists(scriptFolder() / "beside.txt") && fs::current_path() == before);
+	/* closed: its OnConsoleClose functions called, every script stopped, the list and output emptied */
+	run("openScript", {hooks});
+	run("execute", {std::string("closing = false event.onconsoleclose(function() closing = true end)")});
+	run("closed");
+	CHECK(list.rowCount() == 0 && console.lines.get() == 0 && !console.running.get() && console.sessionPath.get().empty());
+	run("execute", {std::string("closing")});
+	CHECK(lastLine() == "true");
+	/* Help > Lua Functions List: each library's functions with their parameters */
+	const std::string listed = std::get<std::string>(*run("functionsList"));
+	CHECK(listed.find("{\"library\": \"event\", \"name\": \"onframeend\", \"params\": \"fn, name\"}") != std::string::npos);
 }
 
 /* Firmware is found by its hash when one is pinned (the project's first),
@@ -1535,11 +1689,13 @@ bool luaLibraries(const char *package, const char *rom)
 		{
 			std::string line;
 			fromValue(out->cell(i, 0), line);
+			/* console.log puts tabs between its values, as Chimera's */
+			std::replace(line.begin(), line.end(), '\t', ' ');
 			if (line.rfind(start, 0) == 0) found = line;
 		}
 		return found;
 	};
-	console.script.set(R"LUA(
+	console.run("openScript", {scriptFile(R"LUA(
 console.log("start", emu.framecount(), emu.getsystemid() ~= "")
 mainmemory.write_u8(0x10, 0xAB)
 console.log("u8", mainmemory.read_u8(0x10), mainmemory.read_s8(0x10), mainmemory.readbyte(0x10))
@@ -1612,8 +1768,8 @@ console.log("hash", mainmemory.hash_region(0x50, 3), memory.hash_region(0x50, 0,
 emu.frameadvance()
 console.log("entry", movie.getinput(emu.framecount() - 1)["P1 Right"], movie.getinput(emu.framecount() - 1)["P1 Up"], (select(2, pcall(joypad.setaxis, "Stick", 5))):find("no analog control") ~= nil)
 while true do emu.frameadvance() end
-)LUA");
-	CHECK(console.run("run", {}, error).has_value() && console.running.get());
+)LUA", "libraries")}, error);
+	CHECK(console.running.get() && console.summary.get() == "1 script (1 active, 0 paused)");
 	CHECK(said("start ") == "start 0 true");
 	CHECK(said("u8 ") == "u8 171 -85 171");
 	CHECK(said("sized ") == "sized 4660 13330 -2 4294967294 1192960");
@@ -1710,12 +1866,11 @@ while true do emu.frameadvance() end
 	CHECK(d.until([&] { return session.frame.get() == 3; }, 20));
 	console.frameDone();
 	CHECK(said("entry ") == "entry true false true");
-	/* stopped; Toggle Last Lua Script runs it again, and stops it again */
-	CHECK(console.running.get() && console.run("stop", {}, error).has_value() && !console.running.get());
+	/* stopped (Toggle, on every script when none is selected); Toggle Last Lua Script runs it again, and stops it again */
+	CHECK(console.running.get() && console.run("toggle", {}, error).has_value() && !console.running.get());
 	CHECK(console.run("toggleLast", {}, error) == Value(true) && console.run("toggleLast", {}, error) == Value(false));
 	/* a script error is said, and the script let go */
-	console.script.set("emu.frameadvance()\nerror('on purpose')");
-	console.run("run", {}, error);
+	console.run("openScript", {scriptFile("emu.frameadvance()\nerror('on purpose')", "fails")}, error);
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 4; }, 20));
 	console.frameDone();
@@ -5792,8 +5947,7 @@ bool luaTastudio(const char *package, const char *rom)
 	session.cacheFolder.set((dir / "cache").string());
 	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
-	console.script.set("console.log('alone', tastudio.engaged(), tastudio.islag(0))");
-	console.run("run", {}, error);
+	console.run("openScript", {scriptFile("console.log('alone', tastudio.engaged(), tastudio.islag(0))", "alone")}, error);
 	for (int i = 0; i < 6; i++) session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 6; }, 30));
 	CHECK(session.run("saveAsProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
@@ -5805,11 +5959,13 @@ bool luaTastudio(const char *package, const char *rom)
 		{
 			std::string line;
 			fromValue(out->cell(i, 0), line);
+			/* console.log puts tabs between its values, as Chimera's */
+			std::replace(line.begin(), line.end(), '\t', ' ');
 			if (line.rfind(start, 0) == 0) found = line;
 		}
 		return found;
 	};
-	console.script.set(R"(
+	console.run("openScript", {scriptFile(R"(
 console.log("engaged", tastudio.engaged(), tastudio.islag(1000))
 local seen = {}
 tastudio.ongreenzoneinvalidated(function(f) seen[#seen + 1] = "zone " .. f end)
@@ -5840,8 +5996,8 @@ tastudio.onqueryitemtext(function(row, col) if col == "xp" then return row * 10 
 tastudio.onqueryitembg(function(row, col) if col == "P1 A" then return 0xFF102030 end end)
 tastudio.onqueryitemicon(function(row, col) if col == "P1 B" and row == 1 then return "/icons/b.png" end end)
 tastudio.clearIconCache()
-)");
-	CHECK(console.run("run", {}, error).has_value());
+)", "tastudio")}, error);
+	CHECK(console.running.get());
 	CHECK(said("alone ") == "alone false nil");
 	CHECK(said("engaged ") == "engaged true nil");
 	CHECK(said("edits ") == "edits true false 8");
@@ -6133,6 +6289,8 @@ int main(int argc, char **argv)
 	}
 	else
 		std::printf("SKIP the machine tests: no package and rom given\n");
+	std::error_code scriptsGone;
+	std::filesystem::remove_all(scriptFolder(), scriptsGone);
 	std::printf("%d checks, %d failed%s%s\n", checks, failures, ranMachine ? "" : " (machine tests skipped)",
 		ranPads ? "" : " (gamepad tests skipped)");
 	return failures == 0 ? 0 : 1;

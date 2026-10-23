@@ -556,7 +556,11 @@ ApplicationWindow {
     // Chimera's Controller Config and Configure Hotkeys, each a window of its own
     Controls { id: controllerWindow; mode: "buttons"; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
     Controls { id: hotkeyWindow; mode: "hotkeys"; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
-    LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; folderOf: root.folderOf; visible: false }
+    LuaConsole {
+        id: luaConsoleWindow; vm: root.luaConsole; folderOf: root.folderOf; visible: false
+        fileUrl: (path) => root.pictureFiles.folderUrl(path); localPath: (url) => root.pictureFiles.localPath(url)
+        clipboard: root.clipboard; customize: root.customize; themeColor: root.osdColor
+    }
     Cores { id: coresWindow; vm: root.cores; visible: false }
 
     FileDialog {

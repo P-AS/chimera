@@ -18,17 +18,129 @@ local function lines(text)
 	return out
 end
 
+-- functions a script registers (event.onframeend, tastudio.onbranchload,
+-- ...): each the script's that was running, with an event, a name and an id,
+-- as Chimera's; called as that script, and gone when it stops --------------
+local registered = {}
+local onRemoved = {}
+__chimera_registered_version = 0
+local function newGuid()
+	return string.format("%08x-%04x-4%03x-%04x-%012x", math.random(0, 0xFFFFFFFF), math.random(0, 0xFFFF),
+		math.random(0, 0xFFF), 0x8000 | math.random(0, 0x3FFF), math.random(0, 0xFFFFFFFFFFFF))
+end
+local function registeredChanged() __chimera_registered_version = __chimera_registered_version + 1 end
+local function registerNamed(fn, event, name)
+	if type(fn) ~= "function" then error("a function is needed, not " .. type(fn), 3) end
+	local f = {fn = fn, event = event, name = name ~= nil and tostring(name) or "Anonymous", guid = newGuid(), script = __chimera_script}
+	registered[#registered + 1] = f
+	registeredChanged()
+	return f
+end
+-- those `which` says, or only the first of them
+local function removeRegistered(which, firstOnly)
+	local kept, gone = {}, false
+	for _, f in ipairs(registered) do
+		if which(f) and not (firstOnly and gone) then gone = true else kept[#kept + 1] = f end
+	end
+	registered = kept
+	if gone then
+		registeredChanged()
+		for _, fn in ipairs(onRemoved) do fn() end
+	end
+	return gone
+end
+-- one called as its script; an error is said and the function kept, as Chimera's
+local function callNamed(f, ...)
+	local was = __chimera_enter(f.script)
+	local results = table.pack(pcall(f.fn, ...))
+	__chimera_enter(was)
+	if not results[1] then
+		print("error running function attached by the event " .. f.event .. "\nError message: " .. tostring(results[2]))
+		return nil
+	end
+	return table.unpack(results, 2, results.n)
+end
+local function callEvent(event, ...)
+	local list = {}
+	for _, f in ipairs(registered) do if f.event == event then list[#list + 1] = f end end
+	for _, f in ipairs(list) do callNamed(f, ...) end
+end
+-- the bridge's: a frame's functions; the console closing; a script stopped
+-- (its OnExit functions called, then all of its gone); whether a script whose
+-- code has ended still has something to run
+function __chimera_frame_events() callEvent("OnFrameStart") callEvent("OnFrameEnd") end
+function __chimera_console_closed() callEvent("OnConsoleClose") end
+function __chimera_script_stopped(id)
+	local exits = {}
+	for _, f in ipairs(registered) do if f.script == id and f.event == "OnExit" then exits[#exits + 1] = f end end
+	for _, f in ipairs(exits) do callNamed(f) end
+	removeRegistered(function(f) return f.script == id end)
+	if __chimera_forms_stopped then __chimera_forms_stopped(id) end
+end
+function __chimera_script_keeps(id)
+	for _, f in ipairs(registered) do if f.script == id and f.event ~= "OnExit" then return true end end
+	return __chimera_forms_open ~= nil and __chimera_forms_open(id)
+end
+-- the Registered Functions window's: a line each (event, name, id, script);
+-- one called or removed by its id; those of a script, or all, removed
+function __chimera_registered_stamp() return __chimera_registered_version end
+function __chimera_registered_list()
+	local out = {}
+	for _, f in ipairs(registered) do out[#out + 1] = f.event .. "\t" .. f.name .. "\t" .. f.guid .. "\t" .. f.script end
+	return table.concat(out, "\n")
+end
+function __chimera_registered_call(guid)
+	for _, f in ipairs(registered) do if f.guid == guid then callNamed(f) return true end end
+	return false
+end
+function __chimera_registered_remove(guid) return removeRegistered(function(f) return f.guid == guid end) end
+function __chimera_registered_clear(script) removeRegistered(function(f) return script == nil or f.script == script end) end
+-- the prototype's own: fn after every frame
+function C.onFrame(fn) return registerNamed(fn, "OnFrameEnd").guid end
+
 -- console ------------------------------------------------------------------
 console = {}
-local function joined(...)
-	local t = {}
-	for i = 1, select("#", ...) do t[#t + 1] = tostring((select(i, ...))) end
-	return table.concat(t, " ")
+-- a value as Chimera's console writes it: a table shallowly, a line a key
+-- (numbers first, then names, then the rest), names in quotes
+local function shown(v)
+	if type(v) ~= "table" then return v == nil and "nil" or tostring(v) end
+	local keys = {}
+	for k in pairs(v) do keys[#keys + 1] = k end
+	local function rank(k) return type(k) == "number" and 0 or type(k) == "string" and 1 or type(k) == "boolean" and 2 or 3 end
+	table.sort(keys, function(a, b)
+		if rank(a) ~= rank(b) then return rank(a) < rank(b) end
+		if rank(a) == 0 or rank(a) == 1 then return a < b end
+		return tostring(a) < tostring(b)
+	end)
+	local out = {}
+	for _, k in ipairs(keys) do
+		local function one(x) return type(x) == "string" and ('"' .. x .. '"') or (type(x) == "table" and "table" or tostring(x)) end
+		out[#out + 1] = one(k) .. ": " .. one(v[k]) .. "\n"
+	end
+	return table.concat(out)
 end
-function console.log(...) print(joined(...)) end
-function console.writeline(...) print(joined(...)) end
-function console.write(...) print(joined(...)) end
+local function logWith(separator, terminator, ...)
+	local n = select("#", ...)
+	if n == 0 or (n == 1 and (...) == nil) then __chimera_write("(no return)" .. terminator) return end
+	local t = {}
+	for i = 1, n do t[i] = shown((select(i, ...))) end
+	__chimera_write(table.concat(t, separator) .. terminator)
+end
+function console.log(...) logWith("\t", "\n", ...) end
+function console.writeline(...) logWith("\n", "\n", ...) end
+function console.write(...) logWith("", "", ...) end
 function console.clear() if C.luaConsole then C.luaConsole.clear() end end
+-- print is console.log, as Chimera's
+print = console.log
+-- what a line typed into the console gave back: printed unless it gave
+-- nothing and printed something itself, as Chimera's
+function __chimera_console_result(...)
+	local n = select("#", ...)
+	if n == 0 or (n == 1 and (...) == nil) then
+		if __chimera_console_printed then return end
+	end
+	console.log(...)
+end
 
 -- bit (Chimera's, over Lua's own operators) ---------------------------------
 bit = {}
@@ -441,24 +553,18 @@ function tastudio.removemarker(frame) if engaged() then pcall(C.pianoRoll.remove
 function tastudio.setmarker(frame, message) if engaged() then C.pianoRoll.addMarker(frame, message ~= nil and tostring(message) or "") end end
 -- functions called when the greenzone is invalidated, a branch is loaded, made
 -- or updated, removed; each its name back, as Chimera's
-__chimera_tasCallbacks = {zone = {}, load = {}, save = {}, remove = {}}
-__chimera_tasCallbackCount = 0
-local function register(kind, fn, name)
+local function register(event, fn, name)
 	if not engaged() then return "" end
-	__chimera_tasCallbackCount = __chimera_tasCallbackCount + 1
-	local id = name or ("tastudio-callback-" .. __chimera_tasCallbackCount)
-	table.insert(__chimera_tasCallbacks[kind], {id = id, fn = fn})
-	return id
+	return registerNamed(fn, event, name).guid
 end
-local function callAll(kind, value) for _, c in ipairs(__chimera_tasCallbacks[kind]) do c.fn(value) end end
-function __chimera_greenzone_invalidated(frame) callAll("zone", frame) end
-function __chimera_branch_loaded(index) callAll("load", index) end
-function __chimera_branch_saved(index) callAll("save", index) end
-function __chimera_branch_removed(index) callAll("remove", index) end
-function tastudio.ongreenzoneinvalidated(fn, name) return register("zone", fn, name) end
-function tastudio.onbranchload(fn, name) return register("load", fn, name) end
-function tastudio.onbranchsave(fn, name) return register("save", fn, name) end
-function tastudio.onbranchremove(fn, name) return register("remove", fn, name) end
+function __chimera_greenzone_invalidated(frame) callEvent("OnGreenzoneInvalidated", frame) end
+function __chimera_branch_loaded(index) callEvent("OnBranchLoad", index) end
+function __chimera_branch_saved(index) callEvent("OnBranchSave", index) end
+function __chimera_branch_removed(index) callEvent("OnBranchRemove", index) end
+function tastudio.ongreenzoneinvalidated(fn, name) return register("OnGreenzoneInvalidated", fn, name) end
+function tastudio.onbranchload(fn, name) return register("OnBranchLoad", fn, name) end
+function tastudio.onbranchsave(fn, name) return register("OnBranchSave", fn, name) end
+function tastudio.onbranchremove(fn, name) return register("OnBranchRemove", fn, name) end
 
 -- input: what the person's own devices hold, as Chimera's -----------------
 input = {}
@@ -651,8 +757,8 @@ end
 local function fileOf(path)
 	path = tostring(path)
 	if path:match("^[/\\]") or path:match("^%a:[/\\]") then return path end
-	local folder = (C.luaConsole and C.luaConsole.path or ""):match("^(.*)[/\\][^/\\]*$")
-	return folder and (folder .. "/" .. path) or path
+	local folder = __chimera_folder()
+	return folder ~= "" and (folder .. "/" .. path) or path
 end
 local imageEpoch = 0
 function gui.drawImage(path, x, y, w, h)
@@ -752,14 +858,37 @@ end
 -- forms: a script's own small windows, as Chimera's -------------------------
 forms = {}
 local clicks, closers, boxes = {}, {}, {}
+-- each form's script, and each control's: what they call runs as that
+-- script, and a script's forms close when it stops, as Chimera's
+local formOwner, owner = {}, {}
+local function asOwner(handle, fn)
+	local was = __chimera_enter(owner[handle] or 0)
+	local ok, e = pcall(fn)
+	__chimera_enter(was)
+	if not ok then print(e) end
+end
 -- the window's: a control clicked, a form closed by the person
 function __chimera_forms_click(handle)
-	for _, fn in ipairs(clicks[handle] or {}) do fn() end
+	asOwner(handle, function() for _, fn in ipairs(clicks[handle] or {}) do fn() end end)
 end
 function __chimera_forms_closed(handle)
 	local fn = closers[handle]
 	closers[handle] = nil
-	if fn then fn() end
+	formOwner[handle] = nil
+	if fn then asOwner(handle, fn) end
+end
+function __chimera_forms_open(script)
+	for _, s in pairs(formOwner) do if s == script then return true end end
+	return false
+end
+function __chimera_forms_stopped(script)
+	local mine = {}
+	for f, s in pairs(formOwner) do if s == script then mine[#mine + 1] = f end end
+	for _, f in ipairs(mine) do
+		closers[f] = nil
+		formOwner[f] = nil
+		pcall(C.forms.destroy, f)
+	end
 end
 local function itemsText(t)
 	local list = {}
@@ -769,11 +898,14 @@ end
 function forms.newform(width, height, title, onClose)
 	local f = C.forms.newForm(width, height, title ~= nil and tostring(title) or nil)
 	if onClose ~= nil then closers[f] = onClose end
+	formOwner[f] = __chimera_script
+	owner[f] = __chimera_script
 	return f
 end
 function forms.button(form, caption, onClick, x, y, width, height)
 	local b = C.forms.button(form, tostring(caption or ""), x, y, width, height)
 	if b ~= 0 and onClick ~= nil then clicks[b] = {onClick} end
+	owner[b] = owner[form] or __chimera_script
 	return b
 end
 function forms.checkbox(form, caption, x, y) return C.forms.checkbox(form, tostring(caption or ""), x, y) end
@@ -785,16 +917,19 @@ function forms.textbox(form, caption, width, height, boxtype, x, y, multiline, f
 end
 function forms.dropdown(form, items, x, y, width, height) return C.forms.dropdown(form, itemsText(items), x, y, width, height) end
 function forms.addclick(handle, fn)
+	owner[handle] = owner[handle] or __chimera_script
 	clicks[handle] = clicks[handle] or {}
 	table.insert(clicks[handle], fn)
 end
 function forms.clearclicks(handle) clicks[handle] = nil end
 function forms.destroy(handle)
 	closers[handle] = nil
+	formOwner[handle] = nil
 	return C.forms.destroy(handle)
 end
 function forms.destroyall()
 	closers = {}
+	formOwner = {}
 	C.forms.destroyAll()
 end
 function forms.gettext(handle) return C.forms.getText(handle) end
@@ -883,57 +1018,128 @@ function forms.getMouseY(handle) return C.forms.mouseY(handle) end
 -- tastudio's callbacks into the roll's drawing: a cell's colour and text,
 -- the first answer of those registered winning, as Chimera's; and a
 -- script's own columns. Asked while the roll is drawn.
-local queryFns = {bg = {}, text = {}, icon = {}}
-local function queryRegister(kind, fn, name)
+local function queryRegister(event, fn, name)
 	if not C.session.hasProject then return "" end
-	__chimera_tasCallbackCount = __chimera_tasCallbackCount + 1
-	local id = name or ("tastudio-callback-" .. __chimera_tasCallbackCount)
-	table.insert(queryFns[kind], {id = id, fn = fn})
+	local f = registerNamed(fn, event, name)
 	C.pianoRoll.scriptQueries = true
-	return id
+	return f.guid
 end
-function __chimera_query_bg(row, column)
-	for _, c in ipairs(queryFns.bg) do
-		local v = c.fn(row, column)
-		if v ~= nil then return colour(v, "") end
+local function firstAnswer(event, row, column)
+	for _, f in ipairs(registered) do
+		if f.event == event then
+			local v = callNamed(f, row, column)
+			if v ~= nil then return v end
+		end
 	end
 	return nil
 end
-function __chimera_query_text(row, column)
-	for _, c in ipairs(queryFns.text) do
-		local v = c.fn(row, column)
-		if v ~= nil then return tostring(v) end
+-- the roll asks no more once the last of them is gone
+onRemoved[#onRemoved + 1] = function()
+	if not C.pianoRoll then return end
+	for _, f in ipairs(registered) do
+		if f.event == "OnQueryItemBg" or f.event == "OnQueryItemText" or f.event == "OnQueryItemIcon" then return end
 	end
+	if C.pianoRoll.scriptQueries then C.pianoRoll.scriptQueries = false end
+end
+function __chimera_query_bg(row, column)
+	local v = firstAnswer("OnQueryItemBg", row, column)
+	if v ~= nil then return colour(v, "") end
+	return nil
+end
+function __chimera_query_text(row, column)
+	local v = firstAnswer("OnQueryItemText", row, column)
+	if v ~= nil then return tostring(v) end
 	return nil
 end
 -- an icon file's path for a cell, read once (clearIconCache reads them again)
 function __chimera_query_icon(row, column)
-	for _, c in ipairs(queryFns.icon) do
-		local v = c.fn(row, column)
-		if v ~= nil then return fileOf(v) end
-	end
+	local v = firstAnswer("OnQueryItemIcon", row, column)
+	if v ~= nil then return fileOf(v) end
 	return nil
 end
-function tastudio.onqueryitemicon(fn, name) return queryRegister("icon", fn, name) end
+function tastudio.onqueryitemicon(fn, name) return queryRegister("OnQueryItemIcon", fn, name) end
 function tastudio.clearIconCache() C.pianoRoll.iconEpoch = C.pianoRoll.iconEpoch + 1 end
-function tastudio.onqueryitembg(fn, name) return queryRegister("bg", fn, name) end
-function tastudio.onqueryitemtext(fn, name) return queryRegister("text", fn, name) end
+function tastudio.onqueryitembg(fn, name) return queryRegister("OnQueryItemBg", fn, name) end
+function tastudio.onqueryitemtext(fn, name) return queryRegister("OnQueryItemText", fn, name) end
 function tastudio.addcolumn(name, text, width)
 	if C.session.hasProject then C.pianoRoll.addScriptColumn(tostring(name), tostring(text), width or 30) end
 end
--- a script stopped: what it registered goes, as Chimera's do
+-- every script stopped: their own columns go too
 function __chimera_scripts_stopped()
-	queryFns = {bg = {}, text = {}, icon = {}}
-	__chimera_tasCallbacks = {zone = {}, load = {}, save = {}, remove = {}}
 	if C.pianoRoll then C.pianoRoll.clearScriptColumns() end
 end
 
 -- event --------------------------------------------------------------------
 event = {}
-local named = 0
--- after each frame, as the window learns of it
-function event.onframeend(fn, name) chimera.onFrame(fn) named = named + 1 return name or ("event" .. named) end
-event.onframestart = event.onframeend
+-- each gives back the function's id; both run after each frame, as the
+-- window learns of it (the start's first)
+function event.onframeend(fn, name) return registerNamed(fn, "OnFrameEnd", name).guid end
+function event.onframestart(fn, name) return registerNamed(fn, "OnFrameStart", name).guid end
+-- after the script that registered it stops
+function event.onexit(fn, name) return registerNamed(fn, "OnExit", name).guid end
+function event.onconsoleclose(fn, name) return registerNamed(fn, "OnConsoleClose", name).guid end
+-- the calling script's own, by id or by name, as Chimera's
+function event.unregisterbyid(guid)
+	local me = __chimera_script
+	return removeRegistered(function(f) return f.script == me and f.guid == tostring(guid) end, true)
+end
+function event.unregisterbyname(name)
+	local me = __chimera_script
+	return removeRegistered(function(f) return f.script == me and f.name == tostring(name) end, true)
+end
+-- the events part way through a frame no core in a sandbox can call: refused
+-- with Chimera's words, so that a script can guard them with pcall
+local function coreName() return C.session.coreName ~= "" and C.session.coreName or "This core" end
+local midFrame = "No Chimera core can: a core runs in a sandbox that Chimera calls once a frame, "
+	.. "and the core cannot stop part way through a frame to run a Lua function."
+function event.oninputpoll()
+	error(coreName() .. " does not report its reads of the controls, so it cannot call a Lua function when it reads them. "
+		.. "A core runs in a sandbox that Chimera calls once a frame, and only a core that reports its reads stops part way through a frame to call back. "
+		.. "Remove the registration, or guard it with pcall.", 2)
+end
+local function memoryRefused(execute, anyAddress)
+	return function(fn, address)
+		local every = anyAddress or address == nil
+		error(coreName() .. " cannot call a Lua function on " .. (every and "every " or "a ") .. "memory "
+			.. (execute and "execute" or "access") .. ". " .. midFrame .. " Remove the registration, or guard it with pcall.", 2)
+	end
+end
+event.onmemoryexecute = memoryRefused(true, false)
+event.on_bus_exec = event.onmemoryexecute
+event.onmemoryexecuteany = memoryRefused(true, true)
+event.on_bus_exec_any = event.onmemoryexecuteany
+event.onmemoryread = memoryRefused(false, false)
+event.on_bus_read = event.onmemoryread
+event.onmemorywrite = memoryRefused(false, false)
+event.on_bus_write = event.onmemorywrite
+function event.availableScopes() return {} end
+function event.can_use_callback_params(subset) return subset == "memory" end
+
+-- the Lua Functions List's: each library's functions with their parameters'
+-- names, library by library, as JSON
+function __chimera_functions_list()
+	local skip = {string = true, table = true, math = true, io = true, os = true, coroutine = true, debug = true,
+		utf8 = true, package = true, _G = true, chimera = true}
+	local libs, out = {}, {}
+	for name, lib in pairs(_G) do
+		if type(name) == "string" and type(lib) == "table" and not skip[name] and not name:find("^__") then libs[#libs + 1] = name end
+	end
+	table.sort(libs)
+	for _, lib in ipairs(libs) do
+		local names = {}
+		for k, v in pairs(_G[lib]) do if type(k) == "string" and type(v) == "function" then names[#names + 1] = k end end
+		table.sort(names, function(a, b) return a:lower() < b:lower() end)
+		for _, n in ipairs(names) do
+			local fn = _G[lib][n]
+			local info = debug.getinfo(fn, "u")
+			local params = {}
+			for i = 1, info.nparams do params[#params + 1] = debug.getlocal(fn, i) end
+			if info.isvararg then params[#params + 1] = "..." end
+			out[#out + 1] = string.format('{"library": "%s", "name": "%s", "params": "%s"}', lib, n, table.concat(params, ", "))
+		end
+	end
+	return "[" .. table.concat(out, ",") .. "]"
+end
 )LUA";
 }
 
