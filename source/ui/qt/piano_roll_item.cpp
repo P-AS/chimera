@@ -26,6 +26,11 @@ PianoRollItem::PianoRollItem(QQuickItem *parent) : QQuickPaintedItem(parent)
 	setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
 	connect(this, &PianoRollItem::pickedChanged, this, [this] { update(); });
 	connect(this, &PianoRollItem::lookChanged, this, [this] { update(); });
+	connect(this, &PianoRollItem::viewChanged, this, [this] {
+		update();
+		Q_EMIT contentExtentChanged();
+	});
+	connect(this, &PianoRollItem::lookChanged, this, &PianoRollItem::contentExtentChanged);
 }
 
 void PianoRollItem::setColors(const QString &json)
@@ -56,7 +61,7 @@ int PianoRollItem::columnW(int column) const
 {
 	if (rows_ == nullptr) return columnWidth_;
 	/* a hidden column takes no room */
-	if (rows_->rows().columnHidden(column)) return 0;
+	if (rows_->rows().columnHiddenIn(view_, column)) return 0;
 	return rows_->rows().columnIsNumber(column) ? numberWidth_ : columnWidth_;
 }
 
@@ -77,6 +82,12 @@ int PianoRollItem::columnX(int column) const
 	for (int c = 0; c < column && c < own; c++) x += columnW(c);
 	for (int e = 0; e < column - own && e < static_cast<int>(extras_.size()); e++) x += extras_[static_cast<size_t>(e)].width;
 	return x;
+}
+
+int PianoRollItem::contentExtent() const
+{
+	const int own = rows_ != nullptr ? rows_->rows().columnCount() : 0;
+	return columnX(own + static_cast<int>(extras_.size())) + 1;
 }
 
 void PianoRollItem::setExtraColumns(const QString &json)
@@ -112,10 +123,13 @@ void PianoRollItem::setRows(QObject *rows)
 		}));
 		watches_.push_back(connect(r, &QmlRows::rowsReset, this, [this] {
 			Q_EMIT rowCountChanged();
+			/* a column shown or hidden comes as a reset */
+			Q_EMIT contentExtentChanged();
 			update();
 		}));
 	}
 	Q_EMIT rowsChanged();
+	Q_EMIT contentExtentChanged();
 	Q_EMIT rowCountChanged();
 	update();
 }

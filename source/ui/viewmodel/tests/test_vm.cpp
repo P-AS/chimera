@@ -3288,7 +3288,8 @@ bool columnsMenu(const char *package, const char *rom)
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
-	CHECK(d.until([&] { return session.isOpen.get() && roll.frames().columnCount() == 47; }, 60));
+	/* the columns, and then the ones hidden at first, which come a moment after */
+	CHECK(d.until([&] { return session.isOpen.get() && roll.frames().columnCount() == 47 && !roll.hiddenColumns.get().empty(); }, 60));
 	RowModel *groups = nullptr, *columns = nullptr;
 	for (const auto &r : roll.rowLists())
 	{
@@ -3325,6 +3326,30 @@ bool columnsMenu(const char *package, const char *rom)
 	CHECK(roll.run("showGroup", {std::string("Player 2"), false}, error).has_value() && !flag(groups, 3, 2) &&
 		!flag(columns, columnRow("P2 B"), 2) && flag(columns, columnRow("P1 A"), 2));
 	CHECK(!roll.run("showGroup", {std::string("Player 7"), true}, error) && error == "no group Player 7");
+	/* input rolls, as Chimera's TAStudio has them: a new one shows the columns hidden in any roll, put where
+	 * the one used was (which moves along one); each keeps its own columns; the one used is the menus' */
+	{
+		const RowModel &frames = roll.frames();
+		auto hiddenIn = [&](int64_t view, const std::string &name) {
+			for (int32_t c = 0; c < frames.columnCount(); c++)
+				if (frames.columnName(c) == name) return frames.columnHiddenIn(view, c);
+			return false;
+		};
+		CHECK(roll.rollCount.get() == 1 && roll.activeRoll.get() == 0);
+		CHECK(roll.run("newRoll", {}, error) == Value(int64_t{0}) && roll.rollCount.get() == 2 && roll.activeRoll.get() == 1);
+		/* Player 2 and Power were hidden: the new one shows them alone */
+		CHECK(!hiddenIn(0, "P2 B") && !hiddenIn(0, "Power") && hiddenIn(0, "P1 A") && hiddenIn(0, "Key A"));
+		CHECK(hiddenIn(1, "P2 B") && !hiddenIn(1, "P1 A") && !hiddenIn(1, "Key A"));
+		/* the new one used: its columns in the menus, its own to hide */
+		CHECK(roll.run("setActiveRoll", {int64_t{0}}, error).has_value() && flag(columns, columnRow("P2 B"), 2) &&
+			!flag(columns, columnRow("P1 A"), 2));
+		CHECK(roll.run("hideColumn", {std::string("P2 B")}, error).has_value() && hiddenIn(0, "P2 B") && !hiddenIn(1, "P1 A"));
+		CHECK(!roll.run("setActiveRoll", {int64_t{2}}, error) && error == "no input roll 2");
+		/* taken away: the other is the one used */
+		CHECK(roll.run("deleteRoll", {}, error).has_value() && roll.rollCount.get() == 1 && roll.activeRoll.get() == 0);
+		CHECK(hiddenIn(0, "P2 B") && !hiddenIn(0, "P1 A") && !hiddenIn(0, "Key A") && flag(columns, columnRow("P1 A"), 2));
+		CHECK(roll.run("deleteRoll", {}, error).has_value() && roll.rollCount.get() == 1);
+	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;

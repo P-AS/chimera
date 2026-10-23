@@ -13,6 +13,8 @@ import Chimera
 ApplicationWindow {
     id: tas
     objectName: "tastudioWindow"
+    // the first input roll (the scroll bars and the measurements follow it)
+    readonly property Item mainRoll: rollRepeater.count > 0 ? rollRepeater.itemAt(0) : null
     required property QtObject session
     required property QtObject pianoRoll
     required property QtObject branches
@@ -239,6 +241,13 @@ ApplicationWindow {
                 onAboutToHide: tas.customize.run("menuClosed")
                 title: qsTr("&Columns")
                 enabled: tas.session.isOpen
+                // which input roll the menu is for, when there are several, as Chimera's says it
+                MenuItem {
+                    text: qsTr("Current roll: #%1").arg(tas.pianoRoll.activeRoll + 1)
+                    enabled: false
+                    visible: tas.pianoRoll.rollCount > 1
+                    height: visible ? implicitHeight : 0
+                }
                 Instantiator {
                     model: tas.pianoRoll.rows("columns")
                     delegate: MenuItem {
@@ -349,7 +358,7 @@ ApplicationWindow {
             elide: Text.ElideRight
         }
         // how long the roll took to draw, last time
-        Label { padding: 4; text: qsTr("roll %1 ms").arg(Number(roll.lastPaintMs).toFixed(2)) }
+        Label { padding: 4; text: qsTr("roll %1 ms").arg(Number(tas.mainRoll ? tas.mainRoll.lastPaintMs : 0).toFixed(2)) }
     }
     // the status line: what was last said here
     property string status: qsTr("TAStudio engaged")
@@ -385,42 +394,95 @@ ApplicationWindow {
                         } else tas.pianoRoll.run("toggleAutoHold", [columnMenu.name])
                     }
                 }
-                MenuItem { text: qsTr("Hide Column"); onTriggered: tas.pianoRoll.run("hideColumn", [columnMenu.name]) }
-                MenuItem { text: qsTr("Show All Columns"); onTriggered: tas.pianoRoll.run("showAllColumns") }
+                MenuItem { text: qsTr("Hide column"); onTriggered: tas.pianoRoll.run("hideColumn", [columnMenu.name]) }
+                // Chimera's Show columns: the Columns menu's own list, for the input roll used
+                Menu {
+                    id: showColumnsMenu
+                    title: qsTr("Show columns")
+                    Instantiator {
+                        model: tas.pianoRoll.rows("columns")
+                        delegate: MenuItem {
+                            required property string name
+                            required property string label
+                            required property bool shown
+                            text: qsTr("%1 (%2)").arg(label).arg(name)
+                            checkable: true
+                            checked: shown
+                            onTriggered: tas.pianoRoll.run(shown ? "hideColumn" : "showColumn", [name])
+                        }
+                        onObjectAdded: (index, object) => showColumnsMenu.insertItem(index, object)
+                        onObjectRemoved: (index, object) => showColumnsMenu.removeItem(object)
+                    }
+                }
+                MenuItem { text: qsTr("New input roll"); onTriggered: tas.pianoRoll.run("newRoll") }
+                MenuItem {
+                    text: qsTr("Delete input roll")
+                    visible: tas.pianoRoll.rollCount > 1
+                    height: visible ? implicitHeight : 0
+                    onTriggered: tas.pianoRoll.run("deleteRoll")
+                }
             }
-            PianoRollItem {
-                id: roll
-                objectName: "pianoRoll"
-                anchors { left: parent.left; top: parent.top; bottom: roll.horizontal ? across.top : axisBar.top; right: roll.horizontal ? parent.right : scroll.left }
-                horizontal: tas.pianoRoll.horizontal
-                // a script's own columns, and the colours and text it gives cells
-                extraColumns: tas.pianoRoll.scriptColumns
-                queries: tas.pianoRoll.scriptQueries
-                iconEpoch: tas.pianoRoll.iconEpoch
-                rows: tas.pianoRoll.rows("frames")
-                currentRow: tas.pianoRoll.currentFrame
-                topRow: tas.pianoRoll.topFrame
-                onVisibleRowsChanged: tas.pianoRoll.visibleFrames = visibleRows
-                onTopRowRequested: (row) => tas.pianoRoll.topFrame = row
-                wheelRows: tas.pianoRoll.wheelRows
-                denoteStatesColor: tas.pianoRoll.denoteStatesColor
-                denoteStatesIcons: tas.pianoRoll.denoteStatesIcons
-                denoteMarkersColor: tas.pianoRoll.denoteMarkersColor
-                denoteMarkersIcons: tas.pianoRoll.denoteMarkersIcons
-                colors: tas.pianoRoll.rollColors
-                rollFont: tas.pianoRoll.rollFont
-                onCellPressed: (row, column, alt) => tas.pianoRoll.run("press", [row, column, alt])
-                onColumnMenuRequested: (column, name, autoHeld, x, y) => { columnMenu.name = name; columnMenu.autoHeld = autoHeld; columnMenu.popup() }
-                // Chimera's menu for the frames picked; nothing picked, no menu
-                onRowMenuRequested: (row) => { if (tas.pianoRoll.selectFirst >= 0 && tas.pianoRoll.selectLast < tas.pianoRoll.frameCount) rowMenu.popup() }
-                onCellDragged: (row, column) => tas.pianoRoll.run("drag", [row, column])
-                onFrameClicked: (row) => tas.session.run("seek", [row])
-                selectFirst: tas.pianoRoll.selectFirst
-                selectLast: tas.pianoRoll.selectLast
-                // the analog cell being edited: its column is after the buttons
-                pickedRow: tas.pianoRoll.pickedFrame
-                pickedColumn: tas.pianoRoll.pickedAxis < 0 ? -1 : tas.session.buttonCount + tas.pianoRoll.pickedAxis
-                onSelectionRequested: (first, last) => tas.pianoRoll.run("select", [first, last])
+            // TAStudio's input rolls, as Chimera's: the first and any made with New input roll, side by side
+            // (one above another turned on its side), each with columns of its own; the one clicked is the one
+            // used, and they scroll together unless Sync scroll is off
+            GridLayout {
+                id: rollsArea
+                anchors { left: parent.left; top: parent.top; bottom: tas.pianoRoll.horizontal ? across.top : axisBar.top; right: tas.pianoRoll.horizontal ? parent.right : scroll.left }
+                flow: tas.pianoRoll.horizontal ? GridLayout.TopToBottom : GridLayout.LeftToRight
+                rows: tas.pianoRoll.horizontal ? Math.max(1, tas.pianoRoll.rollCount) : 1
+                columns: tas.pianoRoll.horizontal ? 1 : Math.max(1, tas.pianoRoll.rollCount)
+                rowSpacing: 3
+                columnSpacing: 3
+                Repeater {
+                    id: rollRepeater
+                    model: tas.pianoRoll.rollCount
+                    delegate: PianoRollItem {
+                        id: oneRoll
+                        required property int index
+                        view: index
+                        objectName: index === 0 ? "pianoRoll" : "pianoRoll" + (index + 1)
+                        // as Chimera's: each as wide as its columns (as tall, turned), the last taking the rest
+                        readonly property bool last: index === tas.pianoRoll.rollCount - 1
+                        Layout.fillWidth: tas.pianoRoll.horizontal || last
+                        Layout.fillHeight: !tas.pianoRoll.horizontal || last
+                        Layout.preferredWidth: tas.pianoRoll.horizontal || last ? -1 : contentExtent
+                        Layout.preferredHeight: !tas.pianoRoll.horizontal || last ? -1 : contentExtent
+                        // where an input roll is when it does not scroll with the first
+                        property int ownTop: 0
+                        readonly property bool synced: tas.pianoRoll.scrollSync || index === 0
+                        // the input roll clicked becomes the one used: its columns are the menus'
+                        function use() { if (tas.pianoRoll.activeRoll !== oneRoll.index) tas.pianoRoll.run("setActiveRoll", [oneRoll.index]) }
+                        horizontal: tas.pianoRoll.horizontal
+                        // a script's own columns, and the colours and text it gives cells
+                        extraColumns: tas.pianoRoll.scriptColumns
+                        queries: tas.pianoRoll.scriptQueries
+                        iconEpoch: tas.pianoRoll.iconEpoch
+                        rows: tas.pianoRoll.rows("frames")
+                        currentRow: tas.pianoRoll.currentFrame
+                        topRow: oneRoll.synced ? tas.pianoRoll.topFrame : oneRoll.ownTop
+                        onVisibleRowsChanged: if (oneRoll.index === 0) tas.pianoRoll.visibleFrames = visibleRows
+                        onTopRowRequested: (row) => { if (oneRoll.synced) tas.pianoRoll.topFrame = row; else oneRoll.ownTop = row }
+                        wheelRows: tas.pianoRoll.wheelRows
+                        denoteStatesColor: tas.pianoRoll.denoteStatesColor
+                        denoteStatesIcons: tas.pianoRoll.denoteStatesIcons
+                        denoteMarkersColor: tas.pianoRoll.denoteMarkersColor
+                        denoteMarkersIcons: tas.pianoRoll.denoteMarkersIcons
+                        colors: tas.pianoRoll.rollColors
+                        rollFont: tas.pianoRoll.rollFont
+                        onCellPressed: (row, column, alt) => { oneRoll.use(); tas.pianoRoll.run("press", [row, column, alt]) }
+                        onColumnMenuRequested: (column, name, autoHeld, x, y) => { oneRoll.use(); columnMenu.name = name; columnMenu.autoHeld = autoHeld; columnMenu.popup() }
+                        // Chimera's menu for the frames picked; nothing picked, no menu
+                        onRowMenuRequested: (row) => { oneRoll.use(); if (tas.pianoRoll.selectFirst >= 0 && tas.pianoRoll.selectLast < tas.pianoRoll.frameCount) rowMenu.popup() }
+                        onCellDragged: (row, column) => tas.pianoRoll.run("drag", [row, column])
+                        onFrameClicked: (row) => { oneRoll.use(); tas.session.run("seek", [row]) }
+                        selectFirst: tas.pianoRoll.selectFirst
+                        selectLast: tas.pianoRoll.selectLast
+                        // the analog cell being edited: its column is after the buttons
+                        pickedRow: tas.pianoRoll.pickedFrame
+                        pickedColumn: tas.pianoRoll.pickedAxis < 0 ? -1 : tas.session.buttonCount + tas.pianoRoll.pickedAxis
+                        onSelectionRequested: (first, last) => { oneRoll.use(); tas.pianoRoll.run("select", [first, last]) }
+                    }
+                }
             }
             // the analog cell picked: its value, set here
             RowLayout {
@@ -444,26 +506,26 @@ ApplicationWindow {
             // turned on its side: the frames scroll across, along the bottom
             ScrollBar {
                 id: across
-                visible: roll.horizontal
+                visible: tas.pianoRoll.horizontal
                 anchors { left: parent.left; right: parent.right; bottom: axisBar.top }
                 height: visible ? implicitHeight : 0
                 orientation: Qt.Horizontal
                 policy: ScrollBar.AlwaysOn
-                size: roll.rowCount > 0 ? Math.min(1, roll.visibleRows / roll.rowCount) : 1
-                position: roll.rowCount > 0 ? roll.topRow / roll.rowCount : 0
-                onPositionChanged: if (pressed) tas.pianoRoll.topFrame = Math.round(position * roll.rowCount)
+                size: tas.mainRoll && tas.mainRoll.rowCount > 0 ? Math.min(1, tas.mainRoll.visibleRows / tas.mainRoll.rowCount) : 1
+                position: tas.mainRoll && tas.mainRoll.rowCount > 0 ? tas.mainRoll.topRow / tas.mainRoll.rowCount : 0
+                onPositionChanged: if (pressed && tas.mainRoll) tas.pianoRoll.topFrame = Math.round(position * tas.mainRoll.rowCount)
             }
             ScrollBar {
                 id: scroll
-                visible: !roll.horizontal
+                visible: !tas.pianoRoll.horizontal
                 anchors { right: parent.right; top: parent.top; bottom: axisBar.top }
                 width: visible ? implicitWidth : 0
                 orientation: Qt.Vertical
                 policy: ScrollBar.AlwaysOn
-                size: roll.rowCount > 0 ? Math.min(1, roll.visibleRows / roll.rowCount) : 1
-                position: roll.rowCount > 0 ? roll.topRow / roll.rowCount : 0
+                size: tas.mainRoll && tas.mainRoll.rowCount > 0 ? Math.min(1, tas.mainRoll.visibleRows / tas.mainRoll.rowCount) : 1
+                position: tas.mainRoll && tas.mainRoll.rowCount > 0 ? tas.mainRoll.topRow / tas.mainRoll.rowCount : 0
                 // only a drag of the bar moves the roll; the binding above moves the bar
-                onPositionChanged: if (pressed) tas.pianoRoll.topFrame = Math.round(position * roll.rowCount)
+                onPositionChanged: if (pressed && tas.mainRoll) tas.pianoRoll.topFrame = Math.round(position * tas.mainRoll.rowCount)
             }
         }
 
@@ -922,8 +984,8 @@ ApplicationWindow {
         let own = {}, theme = {}
         try { own = JSON.parse(tas.pianoRoll.rollColors || "{}") } catch (e) {}
         if (own[role] !== undefined) return own[role]
-        try { theme = JSON.parse(roll.themeColors()) } catch (e) {}
+        try { theme = JSON.parse(tas.mainRoll.themeColors()) } catch (e) {}
         return theme[role] || ""
     }
-    TAStudioSettings { id: tastudioSettingsWindow; session: tas.session; pianoRoll: tas.pianoRoll; branches: tas.branches; themeColorsOf: () => roll.themeColors(); ownerWindow: tas; visible: false }
+    TAStudioSettings { id: tastudioSettingsWindow; session: tas.session; pianoRoll: tas.pianoRoll; branches: tas.branches; themeColorsOf: () => tas.mainRoll ? tas.mainRoll.themeColors() : "{}"; ownerWindow: tas; visible: false }
 }

@@ -482,8 +482,60 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		});
 	hiddenWatch_ = session_.hiddenColumnsLoaded.connect([this](const std::vector<std::string> &names) {
 		hidden_ = std::set<std::string>(names.begin(), names.end());
+		/* a project read has one input roll, as Chimera's TAStudio starts */
+		rolls_.assign(1, hidden_);
+		activeRoll.set(0);
+		rollCount.set(1);
 		hiddenChanged();
 	});
+	expose("rollCount", "TAStudio's input rolls: how many", rollCount);
+	expose("activeRoll", "the input roll last used, from 0: its columns are the menus' and what edits keep to", activeRoll);
+	expose("scrollSync", "the input rolls scroll together (Sync scroll across all input rolls)", scrollSync, true);
+	command("setActiveRoll", "the input roll used now (one clicked)", {"roll"}, [this](const Args &a, std::string &error) -> Value {
+		int64_t r = 0;
+		if (!arg(a, 0, r, error)) return {};
+		if (r < 0 || r >= rollCount.get())
+		{
+			error = "no input roll " + std::to_string(r);
+			return {};
+		}
+		if (r == activeRoll.get()) return {};
+		rolls_[static_cast<size_t>(activeRoll.get())] = hidden_;
+		activeRoll.set(r);
+		hidden_ = rolls_[static_cast<size_t>(r)];
+		hiddenChanged();
+		return {};
+	});
+	command("newRoll", "another input roll, beside the one used, as Chimera's New input roll: the columns hidden in "
+		"any roll, when there are some, else the used roll's columns", {}, [this](const Args &, std::string &) -> Value {
+			rolls_[static_cast<size_t>(activeRoll.get())] = hidden_;
+			std::set<std::string> hiddenAnywhere;
+			for (const std::set<std::string> &r : rolls_) hiddenAnywhere.insert(r.begin(), r.end());
+			std::set<std::string> made = hidden_;
+			if (!hiddenAnywhere.empty())
+			{
+				made.clear();
+				for (int32_t c = 0; c < frames_.columnCount(); c++)
+					if (hiddenAnywhere.count(frames_.columnName(c)) == 0) made.insert(frames_.columnName(c));
+			}
+			/* put where the used roll was, which moves along one, as Chimera's */
+			const size_t at = static_cast<size_t>(activeRoll.get());
+			rolls_.insert(rolls_.begin() + static_cast<long>(at), made);
+			rollCount.set(static_cast<int64_t>(rolls_.size()));
+			activeRoll.set(static_cast<int64_t>(at) + 1);
+			frames_.reset.emit();
+			return static_cast<int64_t>(at);
+		});
+	command("deleteRoll", "the input roll used taken away (there is always one); the first is used then", {},
+		[this](const Args &, std::string &) -> Value {
+			if (rolls_.size() <= 1) return {};
+			rolls_.erase(rolls_.begin() + static_cast<long>(activeRoll.get()));
+			rollCount.set(static_cast<int64_t>(rolls_.size()));
+			activeRoll.set(0);
+			hidden_ = rolls_.front();
+			hiddenChanged();
+			return {};
+		});
 	expose("markerCount", "how many markers people placed (the run's own three are not counted)", markerCount);
 	expose("lastInputFrame", "the run's own Last input marker: the last frame anything is pressed on (0 when none is)", lastInputFrame);
 	expose("runEndFrame", "the run's own Run end marker: the movie's last frame", runEndFrame);
@@ -1932,6 +1984,12 @@ Value PianoRollViewModel::PatternRows::cell(int64_t row, int32_t column) const
 	}
 }
 
+bool PianoRollViewModel::Frames::columnHiddenIn(int64_t view, int32_t column) const
+{
+	if (view == vm_.activeRoll.get() || view < 0 || view >= static_cast<int64_t>(vm_.rolls_.size())) return columnHidden(column);
+	return vm_.rolls_[static_cast<size_t>(view)].count(columnName(column)) != 0;
+}
+
 bool PianoRollViewModel::limited() const
 {
 	return !editHiddenColumns.get() && !hidden_.empty();
@@ -2143,14 +2201,12 @@ void PianoRollViewModel::edited(int64_t first, int64_t last, int64_t oldCount)
 void PianoRollViewModel::hiddenChanged()
 {
 	std::string text;
-	std::vector<std::string> names;
-	for (const std::string &n : hidden_)
-	{
-		text += (text.empty() ? "" : "\n") + n;
-		names.push_back(n);
-	}
+	for (const std::string &n : hidden_) text += (text.empty() ? "" : "\n") + n;
 	hiddenColumns.set(text);
-	session_.setHiddenColumns(names);
+	/* the project keeps the first roll's columns */
+	rolls_[static_cast<size_t>(activeRoll.get())] = hidden_;
+	const std::set<std::string> &first = rolls_.front();
+	session_.setHiddenColumns(std::vector<std::string>(first.begin(), first.end()));
 	session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
 	pushColumnHolds();
 	columnRows_.reset.emit();

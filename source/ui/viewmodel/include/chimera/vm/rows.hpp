@@ -29,6 +29,13 @@ public:
 	virtual bool columnIsNumber(int32_t) const { return false; }
 	/* a column not shown (the piano roll's hidden ones): drawn nowhere */
 	virtual bool columnHidden(int32_t) const { return false; }
+	/* the same in one of several views of these rows (TAStudio's input
+	 * rolls, each with columns of its own) */
+	virtual bool columnHiddenIn(int64_t view, int32_t column) const
+	{
+		(void)view;
+		return columnHidden(column);
+	}
 	/* a column marked out (the piano roll's Auto-hold ones) */
 	virtual bool columnEmphasized(int32_t) const { return false; }
 	/* the row shown after this one (the piano roll hides some lag frames);

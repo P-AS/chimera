@@ -884,6 +884,7 @@ int main(int argc, char **argv)
 	config.keep(pianoRoll, "maxUndoSteps");
 	config.keep(pianoRoll, "copyFrameNumbers");
 	config.keep(pianoRoll, "followScroll");
+	config.keep(pianoRoll, "scrollSync");
 	config.keep(pianoRoll, "followAlways");
 	config.keep(pianoRoll, "wheelRows");
 	config.keep(pianoRoll, "editHiddenColumns");

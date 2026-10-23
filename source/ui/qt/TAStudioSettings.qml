@@ -7,9 +7,6 @@
 // is Chimera's Edit TAStudio Colors (its twelve colours, OK, Cancel,
 // Defaults), whose answer Apply also writes. Layout and bindings only,
 // over the session, pianoRoll and branches view models.
-//
-// Not here: Chimera's "Sync scroll across all input rolls", as the
-// prototype's TAStudio has one input roll.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -48,6 +45,7 @@ ApplicationWindow {
     property bool followAlways
     property string followScroll
     property int wheelRows
+    property bool scrollSync
     property bool editHidden
     property bool bindMarkers
     property bool pauseAtEnd
@@ -72,7 +70,7 @@ ApplicationWindow {
         win.lagToHide = r.lagFramesToHide; win.hideWasLag = r.hideWasLagFrames; win.rotate = r.horizontal
         win.rollFont = r.rollFont; win.rollColors = r.rollColors
         win.autosaveSeconds = s.autosaveSeconds; win.autosaveAsBackup = s.autosaveAsBackup; win.backupOnSave = s.backupOnSave
-        win.followAlways = r.followAlways; win.followScroll = r.followScroll; win.wheelRows = r.wheelRows; win.editHidden = r.editHiddenColumns
+        win.followAlways = r.followAlways; win.followScroll = r.followScroll; win.wheelRows = r.wheelRows; win.scrollSync = r.scrollSync; win.editHidden = r.editHiddenColumns
         win.bindMarkers = r.bindMarkers; win.pauseAtEnd = s.pauseAtEnd; win.branchDoubleClick = b.loadOnDoubleClick
         win.branchPreviewSide = b.previewSide; win.oldBranches = b.oldControlScheme; win.copyFrameNumbers = r.copyFrameNumbers
         win.maxUndo = r.maxUndoSteps; win.rewindStep = s.rewindStep; win.rewindStepFast = s.rewindStepFast
@@ -129,7 +127,7 @@ ApplicationWindow {
         r.denoteStatesColor = win.statesColor; r.denoteStatesIcons = win.statesIcons
         r.lagFramesToHide = win.lagToHide; r.hideWasLagFrames = win.hideWasLag; r.horizontal = win.rotate
         s.autosaveSeconds = win.autosaveSeconds; s.autosaveAsBackup = win.autosaveAsBackup; s.backupOnSave = win.backupOnSave
-        r.followAlways = win.followAlways; r.wheelRows = win.wheelRows; r.followScroll = win.followScroll
+        r.followAlways = win.followAlways; r.wheelRows = win.wheelRows; r.scrollSync = win.scrollSync; r.followScroll = win.followScroll
         r.editHiddenColumns = win.editHidden; r.bindMarkers = win.bindMarkers; s.pauseAtEnd = win.pauseAtEnd
         b.loadOnDoubleClick = win.branchDoubleClick; b.previewSide = win.branchPreviewSide; b.oldControlScheme = win.oldBranches
         r.copyFrameNumbers = win.copyFrameNumbers; r.maxUndoSteps = win.maxUndo
@@ -421,11 +419,11 @@ ApplicationWindow {
                     Number { from: 0; to: 100; value: win.wheelRows; onValueModified: win.wheelRows = value }
                     Label { text: qsTr("frames per tick") }
                 }
+                Check { text: qsTr("Sync scroll across all input rolls"); checked: win.scrollSync; onToggled: win.scrollSync = checked; Layout.topMargin: 6 }
                 Check {
                     text: qsTr("Allow editing hidden columns (with clear, record, paste, etc.)")
                     checked: win.editHidden
                     onToggled: win.editHidden = checked
-                    Layout.topMargin: 20
                 }
                 Item { Layout.fillHeight: true }
             }

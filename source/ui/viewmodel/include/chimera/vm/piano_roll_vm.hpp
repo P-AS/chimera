@@ -27,6 +27,11 @@ public:
 	/* the columns not shown, by control name, a line each (Chimera's
 	 * defaults hide the console's power and reset, keyboard keys...) */
 	Property<std::string> hiddenColumns;
+	/* TAStudio's input rolls, as Chimera's: how many, the one the person
+	 * last used (its columns are the ones the menus show and edits keep
+	 * to), and whether they scroll together */
+	Property<int64_t> rollCount{1}, activeRoll{0};
+	Property<bool> scrollSync{true};
 	/* how following the current frame scrolls, as TAStudio's "scroll to
 	 * cursor method" does: "near" just enough to bring it in, "top",
 	 * "bottom" or "center" putting it there when it is out of view (or
@@ -162,6 +167,7 @@ private:
 		int32_t columnCount() const override { return vm_.buttonCount() + static_cast<int32_t>(vm_.session_.axes().size()); }
 		bool columnIsNumber(int32_t column) const override { return column >= vm_.buttonCount(); }
 		bool columnHidden(int32_t column) const override { return vm_.hidden_.count(columnName(column)) != 0; }
+		bool columnHiddenIn(int64_t view, int32_t column) const override;
 		bool columnEmphasized(int32_t column) const override { return vm_.autoHeld_.count(columnName(column)) != 0; }
 		int64_t nextShown(int64_t row) const override;
 		std::string columnName(int32_t column) const override;
@@ -388,6 +394,9 @@ private:
 	Frames frames_{*this};
 	/* the columns hidden, by control name, and the list of them all */
 	std::set<std::string> hidden_;
+	/* each input roll's hidden columns (the active one's are hidden_, kept
+	 * back here when another roll becomes active) */
+	std::vector<std::set<std::string>> rolls_{1};
 	/* the columns given Auto-hold (Chimera's column "emphasis"), by name;
 	 * the value an analog one holds (chimera issue 298: asked for when its
 	 * Auto-hold is turned on; its most when none was given); and what each

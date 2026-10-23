@@ -29,6 +29,11 @@ class PianoRollItem : public QQuickPaintedItem
 	/* the analog cell picked for editing, outlined (-1: none) */
 	Q_PROPERTY(qint64 pickedRow MEMBER pickedRow_ NOTIFY pickedChanged)
 	Q_PROPERTY(int pickedColumn MEMBER pickedColumn_ NOTIFY pickedChanged)
+	/* which of TAStudio's input rolls this is: its own columns */
+	Q_PROPERTY(int view MEMBER view_ NOTIFY viewChanged)
+	/* how wide its columns are, all told (how tall turned on its side): an
+	 * input roll beside another takes this much, as Chimera's TotalColWidth */
+	Q_PROPERTY(int contentExtent READ contentExtent NOTIFY contentExtentChanged)
 	/* the rows a notch of the wheel scrolls */
 	Q_PROPERTY(int wheelRows MEMBER wheelRows_)
 	Q_PROPERTY(qint64 rowCount READ rowCount NOTIFY rowCountChanged)
@@ -74,6 +79,7 @@ public:
 
 	void paint(QPainter *painter) override;
 
+	int contentExtent() const;
 	QString colors() const { return colors_; }
 	void setColors(const QString &json);
 	/* Chimera's twelve TAStudio colours as the theme has them, before the
@@ -100,6 +106,8 @@ public:
 
 Q_SIGNALS:
 	void lookChanged();
+	void viewChanged();
+	void contentExtentChanged();
 	void rowsChanged();
 	void topRowChanged();
 	void currentRowChanged();
@@ -145,6 +153,7 @@ private:
 	bool selecting_ = false;
 	qint64 pickedRow_ = -1;
 	int pickedColumn_ = -1;
+	int view_ = 0;
 	int wheelRows_ = 6;
 	bool denoteStatesColor_ = true, denoteStatesIcons_ = false, denoteMarkersColor_ = true, denoteMarkersIcons_ = false;
 	QString colors_, rollFont_;
