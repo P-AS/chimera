@@ -81,6 +81,17 @@ public:
 	Property<bool> soundNormalOn{true}, soundFastOn{true}, muteFrameAdvance{true};
 	Property<int64_t> fastVolume{50};
 	Property<std::string> soundDevices{"[]"};
+	/* Chimera's greenzone budgets: what the history of states may keep in
+	 * memory (MB, 64 at least), how close it stays behind the playhead (one
+	 * frame in 1 to 32) and how many frames after a load show kept pictures
+	 * (0 to 10); every project's, remembered. A project may ask for its own
+	 * memory and closeness, kept in budgets.json beside its cache (a fact
+	 * about this computer, not the project's file): projectBudgetMb and
+	 * projectNearStride, 0 when it asks for nothing. What the machine open
+	 * got: budgetMbApplied, nearStrideApplied. Each takes effect when a
+	 * machine opens */
+	Property<int64_t> greenzoneBudgetMb{4096}, greenzoneNearStride{4}, pictureSettleFrames{3};
+	Property<int64_t> projectBudgetMb{0}, projectNearStride{0}, budgetMbApplied{0}, nearStrideApplied{0};
 	/* the volume a frame is heard at, by Chimera's rule: the volume when the
 	 * sound is on; while fast forwarding a share of it, or none; none for a
 	 * frame advanced by hand when that is muted */
@@ -641,7 +652,10 @@ private:
 	int64_t greenEndM_ = 0;
 	std::atomic<int64_t> speedM_{100}, volumeM_{100}, fastSpeedM_{400}, frameSkipM_{0};
 	std::atomic<bool> autoMinimizeM_{true}, soundNormalOnM_{true}, soundFastOnM_{true}, muteAdvanceM_{true}, steppingM_{false};
-	std::atomic<int64_t> fastVolumeM_{50};
+	std::atomic<int64_t> fastVolumeM_{50}, budgetMbM_{4096}, nearStrideM_{4}, pictureSettleM_{3};
+	/* a project's own budgets, from budgets.json in its cache folder: 0 for none */
+	void readBudgetsOnMachine(ce_project *p, int64_t &memoryMb, int64_t &nearStride) const;
+	Connection budgetWatch_, strideWatch_, settleWatch_;
 	std::string soundDeviceM_;
 	int64_t soundBufferMsM_ = 100;
 	/* the sound opened again on the device and buffer asked for; the devices said */

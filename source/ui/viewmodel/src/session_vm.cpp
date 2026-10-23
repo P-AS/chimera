@@ -260,6 +260,67 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		});
 		return {};
 	});
+	expose("greenzoneBudgetMb", "what the history of states may keep in memory, in MB (64 at least), for every project",
+		greenzoneBudgetMb, true);
+	expose("greenzoneNearStride", "how close the history stays behind the playhead: one frame in this many (1 to 32)",
+		greenzoneNearStride, true);
+	expose("pictureSettleFrames", "how many frames after a load show the picture a frame had before (0 to 10)",
+		pictureSettleFrames, true);
+	expose("projectBudgetMb", "the open project's own memory budget, MB; 0 for every project's", projectBudgetMb);
+	expose("projectNearStride", "the open project's own closeness behind the playhead; 0 for every project's", projectNearStride);
+	expose("budgetMbApplied", "the memory budget the machine open was given, MB", budgetMbApplied);
+	expose("nearStrideApplied", "the closeness behind the playhead the machine open was given", nearStrideApplied);
+	budgetWatch_ = greenzoneBudgetMb.changed.connect([this] {
+		if (greenzoneBudgetMb.get() < 64) greenzoneBudgetMb.set(64);
+		budgetMbM_ = greenzoneBudgetMb.get();
+	});
+	strideWatch_ = greenzoneNearStride.changed.connect([this] {
+		if (greenzoneNearStride.get() < 1 || greenzoneNearStride.get() > 32) greenzoneNearStride.set(std::clamp<int64_t>(greenzoneNearStride.get(), 1, 32));
+		nearStrideM_ = greenzoneNearStride.get();
+	});
+	settleWatch_ = pictureSettleFrames.changed.connect([this] {
+		if (pictureSettleFrames.get() < 0 || pictureSettleFrames.get() > 10) pictureSettleFrames.set(std::clamp<int64_t>(pictureSettleFrames.get(), 0, 10));
+		pictureSettleM_ = pictureSettleFrames.get();
+	});
+	command("setProjectBudgets", "the open project's own budgets (memory in MB, 64 at least; closeness 1 to 32), or none "
+		"(0 and 0): kept beside its cache, as Chimera's; they take effect when it next opens", {"memoryMb", "nearStride"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t mb = 0, stride = 0;
+			if (!arg(a, 0, mb, error) || !arg(a, 1, stride, error)) return {};
+			if ((mb != 0 && mb < 64) || stride < 0 || stride > 32)
+			{
+				error = "a memory budget is 64 MB or more, and the closeness 1 to 32 (0 for every project's)";
+				return {};
+			}
+			bool open = false;
+			onMachineWait([&](ce_session *) {
+				namespace fs = std::filesystem;
+				const fs::path dir = cacheDirOf(projectM_);
+				if (dir.empty()) return;
+				open = true;
+				std::error_code ec;
+				/* nothing asked for leaves no file to explain later */
+				if (mb == 0 && stride == 0)
+				{
+					fs::remove(dir / "budgets.json", ec);
+					return;
+				}
+				json::Json b;
+				b.kind = json::Json::Kind::Object;
+				if (mb != 0) b.members.emplace_back("memoryMb", json::Json::integer(mb));
+				if (stride != 0) b.members.emplace_back("maxNearStride", json::Json::integer(stride));
+				fs::create_directories(dir, ec);
+				std::ofstream(dir / "budgets.json", std::ios::binary | std::ios::trunc) << json::write(b);
+			});
+			if (!open)
+			{
+				error = "no project is open";
+				return {};
+			}
+			projectBudgetMb.set(mb);
+			projectNearStride.set(stride);
+			return {};
+		}, &hasProject);
 	expose("frameSkip", "frames left undrawn while running, 0 to 9 of every one drawn (Chimera's frame skip)", frameSkip, true);
 	expose("autoMinimizeSkipping", "frames are left undrawn only when the machine is behind (Chimera's auto-minimize "
 		"skipping)", autoMinimizeSkipping, true);
@@ -1549,6 +1610,23 @@ void SessionViewModel::startProjectSessionOnMachine(bool loadHistory)
 	}
 	std::ofstream(mark) << "a session of this project is running\n";
 	runningMarkM_ = mark;
+}
+
+void SessionViewModel::readBudgetsOnMachine(ce_project *p, int64_t &memoryMb, int64_t &nearStride) const
+{
+	memoryMb = nearStride = 0;
+	const std::filesystem::path dir = cacheDirOf(p);
+	if (dir.empty()) return;
+	std::ifstream in(dir / "budgets.json", std::ios::binary);
+	const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+	json::Json b;
+	std::string err;
+	/* unreadable is the same as absent: every project's apply */
+	if (text.empty() || !json::parse(text, b, err) || b.kind != json::Json::Kind::Object) return;
+	if (const json::Json *v = b.find("memoryMb"); v != nullptr && v->kind == json::Json::Kind::Number)
+		memoryMb = std::max<int64_t>(0, static_cast<int64_t>(v->number()));
+	if (const json::Json *v = b.find("maxNearStride"); v != nullptr && v->kind == json::Json::Kind::Number)
+		nearStride = std::clamp<int64_t>(static_cast<int64_t>(v->number()), 0, 32);
 }
 
 std::filesystem::path SessionViewModel::recoveryDirOf(ce_project *p) const
@@ -3011,8 +3089,22 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	frameM_ = ce_session_frame(s);
 	greenEndM_ = 0;
 	/* a history of the machine's states, so a seek replays from the nearest
-	 * one rather than from power-on (a setting, later) */
-	ce_session_greenzone_enable(s, uint64_t{1} << 30);
+	 * one rather than from power-on: as Chimera's, every project's budgets
+	 * unless the project asks for its own; the closeness before enabling,
+	 * so the first stretch is held to it */
+	int64_t ownMb = 0, ownStride = 0;
+	readBudgetsOnMachine(projectM_, ownMb, ownStride);
+	const int64_t mb = std::max<int64_t>(ownMb != 0 ? ownMb : budgetMbM_.load(), 64);
+	const int64_t stride = std::clamp<int64_t>(ownStride != 0 ? ownStride : nearStrideM_.load(), 1, 32);
+	ce_session_greenzone_max_near_stride(s, stride);
+	ce_session_greenzone_picture_settle(s, static_cast<int32_t>(std::clamp<int64_t>(pictureSettleM_.load(), 0, 10)));
+	ce_session_greenzone_enable(s, static_cast<uint64_t>(mb) * 1024 * 1024);
+	later([this, ownMb, ownStride, mb, stride] {
+		projectBudgetMb.set(ownMb);
+		projectNearStride.set(ownStride);
+		budgetMbApplied.set(mb);
+		nearStrideApplied.set(stride);
+	});
 	ce_session_greenzone_capture_period(s, periodM_.load());
 	pinMarkersOnMachine();
 

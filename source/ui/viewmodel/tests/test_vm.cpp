@@ -1085,7 +1085,7 @@ bool backupAndHistory(const char *package, const char *rom)
 	CHECK(!session.run("saveBackup", {}, error));
 	const fs::path project = dir / "walker.chimeraProject";
 	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
-	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	session.key("Down", true);
 	for (int i = 0; i < 30; i++) session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 30; }, 20));
@@ -1121,6 +1121,55 @@ bool backupAndHistory(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.frame.get() == 0 && session.greenzoneStates.get() <= 1; }, 20));
 	CHECK(session.run("checkStateHistory", {}, error).has_value());
 	CHECK(d.until([&] { return session.status.get() == "The state history holds nothing to check yet"; }, 20));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
+/* Chimera's greenzone budgets: every project's, and a project's own kept
+ * beside its cache, each taking effect when the machine opens */
+bool greenzoneBudgets(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-budgets-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	std::string error;
+	session.cacheFolder.set((dir / "cache").string());
+	session.greenzoneBudgetMb.set(10);
+	CHECK(session.greenzoneBudgetMb.get() == 64);
+	session.greenzoneBudgetMb.set(512);
+	session.greenzoneNearStride.set(40);
+	CHECK(session.greenzoneNearStride.get() == 32);
+	session.greenzoneNearStride.set(3);
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && session.budgetMbApplied.get() == 512 && session.nearStrideApplied.get() == 3; }, 60));
+	CHECK(!session.run("setProjectBudgets", {int64_t{256}, int64_t{2}}, error));
+	const fs::path project = dir / "walker.chimeraProject";
+	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
+	const fs::path budgets = dir / "cache" / session.projectId.get() / "budgets.json";
+	CHECK(!session.run("setProjectBudgets", {int64_t{10}, int64_t{2}}, error));
+	CHECK(session.run("setProjectBudgets", {int64_t{256}, int64_t{2}}, error).has_value());
+	CHECK(session.projectBudgetMb.get() == 256 && fs::exists(budgets));
+	CHECK(readFile(budgets) == R"({"memoryMb": 256, "maxNearStride": 2})");
+	auto reopen = [&] {
+		const int64_t was = session.opens.get();
+		session.run("openProject", {project.string(), std::string(package)}, error);
+		return d.until([&] { return session.opens.get() > was && session.isOpen.get(); }, 30) && (d.until([] { return false; }, 0.1), true);
+	};
+	/* the project's own, once it opens again */
+	CHECK(reopen() && session.budgetMbApplied.get() == 256 && session.nearStrideApplied.get() == 2 && session.projectBudgetMb.get() == 256);
+	/* none: the file goes, every project's apply */
+	CHECK(session.run("setProjectBudgets", {int64_t{0}, int64_t{0}}, error).has_value() && !fs::exists(budgets));
+	CHECK(reopen() && session.budgetMbApplied.get() == 512 && session.nearStrideApplied.get() == 3 && session.projectBudgetMb.get() == 0);
+	/* the closeness alone: the memory stays every project's */
+	CHECK(session.run("setProjectBudgets", {int64_t{0}, int64_t{8}}, error).has_value());
+	CHECK(reopen() && session.budgetMbApplied.get() == 512 && session.nearStrideApplied.get() == 8);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);
@@ -1417,7 +1466,7 @@ bool tastudioSettings(const char *package, const char *rom)
 	CHECK(!session.unsaved.get());
 	const fs::path project = dir / "walker.chimeraProject";
 	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
-	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	CHECK(!session.unsaved.get());
 	/* frames run past the movie's end are a change */
 	session.key("Down", true);
@@ -1666,7 +1715,7 @@ bool cacheManager(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	const fs::path project = dir / "walker.chimeraProject";
 	CHECK(session.run("saveAsProject", {project.string(), std::string("Walker")}, error).has_value());
-	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	for (int i = 0; i < 10; i++) session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 10; }, 20));
 	session.run("saveProject", {}, error);
@@ -2008,7 +2057,8 @@ bool helpMenu(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.isOpen.get() && settings.shown.get() > 0; }, 60));
 	const fs::path project = dir / "walker.chimeraProject";
 	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
-	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	/* the path is said a moment before the project is: both, before the report */
+	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	CHECK(fromValue(help.run("versionReport", {}, error).value_or(Value()), text) &&
 		text.rfind("**Chimera build:** " + help.buildName.get() + "\n**Core and version:** Synth ", 0) == 0);
 	CHECK(settings.run("set", {std::string("initFillByte"), int64_t{7}}, error).has_value());
@@ -2185,7 +2235,7 @@ bool projectDetails(const char *package, const char *rom)
 		session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
 		CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 		CHECK(session.run("saveAsProject", {project.string(), std::string("the corridor")}, error).has_value());
-		CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+		CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 		CHECK(details.run("reload", {}, error).has_value() && details.gameName.get() == "the corridor" && details.core.get() == "Synth");
 		CHECK(details.run("setHeader", {std::string("a TASer"), std::string("1.0"), std::string("SYNTH-01"), std::string("Walker"), false}, error).has_value());
 		CHECK(details.author.get() == "a TASer" && details.gameName.get() == "Walker" && details.defaultAuthor.get() == "default user");
@@ -3025,7 +3075,7 @@ bool newProject(const char *package, const char *rom)
 	inputs.read(0, made);
 	const fs::path project = dir / "walker.chimeraProject";
 	CHECK(session.run("saveAsProject", {project.string(), std::string("down the corridor")}, error).has_value());
-	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	const std::string text = readFile(project);
 	CHECK(text.find("\"Platform\"") != std::string::npos && text.find("initFillByte") != std::string::npos &&
 		text.find("walker.testrom") != std::string::npos && text.find("Synth") != std::string::npos);
@@ -4183,7 +4233,7 @@ bool greenzoneChoice(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	const fs::path project = dir / "g.chimeraProject";
 	session.run("saveAsProject", {project.string()}, error);
-	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	/* a part made here carries the type Chimera's TAStudio reads it as, first */
@@ -4328,7 +4378,7 @@ bool rerecordCount(const char *package, const char *rom)
 	CHECK(session.rerecords.get() == 5);
 	const fs::path project = dir / "walker.chimeraProject";
 	session.run("saveAsProject", {project.string()}, error);
-	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	{
 		const std::string text = readFile(project);
 		const size_t at = text.find("\"rerecords\"");
@@ -5004,6 +5054,7 @@ int main(int argc, char **argv)
 			ranMachine = backupAndHistory(argv[1], argv[2]) && ranMachine;
 			ranMachine = crashRecovery(argv[1], argv[2]) && ranMachine;
 			ranMachine = customizeOptions(argv[1], argv[2]) && ranMachine;
+			ranMachine = greenzoneBudgets(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;

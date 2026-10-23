@@ -12,6 +12,8 @@ ApplicationWindow {
     title: qsTr("Cache Manager")
     width: 820
     height: 520
+    // Chimera's Greenzone budgets button: the window is the main window's
+    signal budgetsAsked()
     property var ticked: ({})
     property int picked: -1
     onVisibleChanged: if (visible) { win.vm.run("refresh"); win.ticked = ({}) }
@@ -82,6 +84,7 @@ ApplicationWindow {
             Button { text: qsTr("Select Orphans"); onClicked: { const t = {}; for (const i of win.vm.run("orphans").split(",").filter(s => s !== "")) t[i] = true; win.ticked = t } }
             Button { text: qsTr("Remove Ticked"); enabled: win.tickedList() !== ""; onClicked: { removeDialog.rows = win.tickedList(); removeDialog.open() } }
             Button { text: qsTr("Lock / Unlock"); enabled: win.tickedList() !== ""; onClicked: { win.vm.run("toggleLock", [win.tickedList()]); win.ticked = ({}) } }
+            Button { text: qsTr("Greenzone budgets..."); onClicked: win.budgetsAsked() }
             Button {
                 text: qsTr("Clean Now")
                 onClicked: {

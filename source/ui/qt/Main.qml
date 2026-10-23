@@ -1217,7 +1217,8 @@ ApplicationWindow {
     LogWindow { id: logWindow; log: messageLog; clipboard: root.clipboard; visible: false }
     BatchRun { id: batchRunWindow; vm: root.batchRun; visible: false }
     MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; visible: false }
-    CacheManager { id: cacheManagerWindow; vm: root.cacheManager; visible: false }
+    CacheManager { id: cacheManagerWindow; vm: root.cacheManager; visible: false; onBudgetsAsked: { greenzoneBudgetsWindow.show(); greenzoneBudgetsWindow.raise() } }
+    GreenzoneBudgets { id: greenzoneBudgetsWindow; session: root.session; visible: false }
     Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; visible: false }
     MessagesConfig { id: messagesWindow; vm: root.messages; visible: false }
     SoundConfig { id: soundWindow; session: root.session; visible: false }
