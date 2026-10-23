@@ -47,7 +47,11 @@ ApplicationWindow {
                     border.color: palette.mid
                     radius: 3
                 }
-                TapHandler { onTapped: win.vm.selected = row.index }
+                TapHandler {
+                    onTapped: win.vm.selected = row.index
+                    // TAStudio's "load branch by double clicking"
+                    onDoubleTapped: if (win.vm.loadOnDoubleClick) win.vm.run("load", [row.index])
+                }
                 required property int index
                 required property string name
                 required property var frame

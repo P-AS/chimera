@@ -833,6 +833,173 @@ bool backupAndHistory(const char *package, const char *rom)
 	return true;
 }
 
+/* TAStudio's settings for playing, saving, copying, markers and branches,
+ * and the project's changes not saved yet: marked by every kind of edit,
+ * cleared by a save, saved by the autosave when it comes round */
+bool tastudioSettings(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-tastudio-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	BranchesViewModel branches(d, inputs, session, roll);
+	ProjectDetailsViewModel details(d, session);
+	std::string error;
+	session.backupFolder.set((dir / "backup").string());
+	auto backups = [&] {
+		int64_t n = 0;
+		std::error_code ec;
+		for (fs::directory_iterator it(dir / "backup", ec), end; !ec && it != end; it.increment(ec)) n++;
+		return n;
+	};
+	auto saved = [&] {
+		session.run("saveProject", {}, error);
+		return d.until([&] { return !session.unsaved.get(); }, 20);
+	};
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* a game alone has nothing to save */
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
+	d.until([] { return false; }, 0.1);
+	CHECK(!session.unsaved.get());
+	const fs::path project = dir / "walker.chimeraProject";
+	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	CHECK(!session.unsaved.get());
+	/* frames run past the movie's end are a change */
+	session.key("Down", true);
+	for (int i = 0; i < 19; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 20; }, 20));
+	session.key("Down", false);
+	CHECK(d.until([&] { return session.unsaved.get(); }, 5));
+	CHECK(saved());
+	/* an edit; and a save by hand writes a backup as well when asked */
+	roll.run("paint", {int64_t{2}, int64_t{3}, int64_t{4}, true}, error);
+	CHECK(session.unsaved.get());
+	session.backupOnSave.set(true);
+	CHECK(saved());
+	CHECK(d.until([&] { return backups() == 1; }, 20));
+	session.backupOnSave.set(false);
+	/* a marker keeps its frame's state, or not; one named again keeps what it kept */
+	RowModel *markerRows = nullptr;
+	for (const auto &r : roll.rowLists())
+		if (r.name == "markers") markerRows = r.model;
+	CHECK(markerRows != nullptr);
+	if (markerRows == nullptr) return false;
+	auto keeps = [&](int64_t frame) {
+		for (int64_t i = 0; i < markerRows->rowCount(); i++)
+		{
+			int64_t f = -1;
+			bool k = false;
+			if (fromValue(markerRows->cell(i, 0), f) && f == frame && fromValue(markerRows->cell(i, 2), k)) return k ? 1 : 0;
+		}
+		return -1;
+	};
+	roll.markersKeepStates.set(false);
+	CHECK(roll.run("addMarker", {int64_t{5}, std::string("five")}, error).has_value() && keeps(5) == 0);
+	CHECK(session.unsaved.get());
+	roll.markersKeepStates.set(true);
+	CHECK(roll.run("addMarker", {int64_t{5}, std::string("named again")}, error).has_value() && keeps(5) == 0);
+	CHECK(roll.run("addMarker", {int64_t{6}, std::string("six")}, error).has_value() && keeps(6) == 1);
+	/* Copy: a line a frame, as the movie has them; with their numbers when asked */
+	CHECK(roll.run("copyFrames", {int64_t{2}, int64_t{3}}, error).has_value());
+	const std::string plain = roll.clipboardText.get();
+	const std::vector<std::string> lines = inputs.lines(2, 3);
+	CHECK(lines.size() == 2 && plain == lines[0] + "\n" + lines[1] + "\n" && plain[0] == '|');
+	roll.copyFrameNumbers.set(true);
+	roll.run("copyFrames", {int64_t{2}, int64_t{3}}, error);
+	const std::string numbered = roll.clipboardText.get();
+	CHECK(numbered == "00002 " + lines[0] + "\n00003 " + lines[1] + "\n");
+	roll.copyFrameNumbers.set(false);
+	/* pasted from text: a line that is not a frame's input pastes nothing */
+	const uint64_t at10 = roll.frameBits(10), at11 = roll.frameBits(11), at2 = roll.frameBits(2), at3 = roll.frameBits(3);
+	CHECK(at2 != at10);
+	CHECK(!roll.run("pasteText", {int64_t{10}, numbered, false}, error).has_value());
+	CHECK(roll.frameBits(10) == at10 && roll.frameBits(11) == at11);
+	error.clear();
+	CHECK(roll.run("pasteText", {int64_t{10}, plain, false}, error).has_value() && error.empty());
+	CHECK(roll.frameBits(10) == at2 && roll.frameBits(11) == at3 && inputs.size() == 20);
+	/* Windows line ends, put in */
+	CHECK(roll.run("pasteText", {int64_t{0}, lines[0] + "\r\n" + lines[1] + "\r\n", true}, error).has_value());
+	CHECK(inputs.size() == 22 && roll.frameBits(0) == at2 && roll.frameBits(1) == at3);
+	/* pause at the movie's end: once, and played on from there it goes on */
+	session.pauseAtEnd.set(true);
+	session.run("seek", {int64_t{15}}, error);
+	CHECK(d.until([&] { return session.frame.get() == 15; }, 20));
+	session.run("play", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 22 && !session.running.get(); }, 20));
+	d.until([] { return false; }, 0.3);
+	CHECK(session.frame.get() == 22 && !session.running.get());
+	session.run("play", {}, error);
+	CHECK(d.until([&] { return session.frame.get() > 26; }, 20));
+	session.run("pause", {}, error);
+	CHECK(d.until([&] { return !session.running.get(); }, 5));
+	session.pauseAtEnd.set(false);
+	/* rewind goes back its step, and its fast step while fast forwarding */
+	session.run("seek", {int64_t{20}}, error);
+	CHECK(d.until([&] { return session.frame.get() == 20; }, 20));
+	session.rewindStep.set(3);
+	session.holdRewind(true);
+	CHECK(d.until([&] { return session.frame.get() == 17; }, 20));
+	session.holdRewind(false);
+	session.rewindStepFast.set(5);
+	session.holdFastForward(true);
+	session.holdRewind(true);
+	CHECK(d.until([&] { return session.frame.get() == 12; }, 20));
+	session.holdRewind(false);
+	session.holdFastForward(false);
+	d.until([] { return false; }, 0.2);
+	CHECK(session.frame.get() == 12);
+	session.rewindStep.set(1);
+	session.rewindStepFast.set(4);
+	/* a branch made is a change; the old way of loading one only goes to its frame */
+	CHECK(saved());
+	CHECK(branches.run("create", {}, error).has_value());
+	CHECK(d.until([&] { return branches.made.get() == 1; }, 20));
+	CHECK(session.unsaved.get());
+	CHECK(saved());
+	roll.run("toggle", {int64_t{1}, int64_t{4}}, error);
+	const std::string edited = inputs.text();
+	session.run("seek", {int64_t{3}}, error);
+	CHECK(d.until([&] { return session.frame.get() == 3; }, 20));
+	branches.oldControlScheme.set(true);
+	CHECK(branches.run("load", {int64_t{0}}, error).has_value());
+	CHECK(d.until([&] { return session.frame.get() == 12; }, 20));
+	CHECK(inputs.text() == edited);
+	branches.oldControlScheme.set(false);
+	/* the project's details are a change */
+	CHECK(saved());
+	CHECK(details.run("setComments", {std::string("autosaved")}, error).has_value() && session.unsaved.get());
+	/* the autosave: the project saved by itself */
+	session.autosaveSeconds.set(1);
+	CHECK(d.until([&] { return !session.unsaved.get(); }, 20));
+	{
+		const char *err = nullptr;
+		ce_project *p = ce_project_open(project.string().c_str(), &err);
+		CHECK(p != nullptr && std::string(ce_project_description(p) != nullptr ? ce_project_description(p) : "") == "autosaved");
+		if (p != nullptr) ce_project_free(p);
+	}
+	/* as a backup: one written, and the project still unsaved */
+	session.autosaveAsBackup.set(true);
+	const int64_t before = backups();
+	roll.run("toggle", {int64_t{2}, int64_t{4}}, error);
+	CHECK(d.until([&] { return backups() > before; }, 20));
+	CHECK(session.unsaved.get());
+	session.autosaveSeconds.set(0);
+	session.autosaveAsBackup.set(false);
+	/* closed, nothing is unsaved */
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	CHECK(!session.unsaved.get());
+	fs::remove_all(dir);
+	return true;
+}
+
 /* The project's details as Chimera's TAStudio edits them - its header,
  * comments and subtitles - kept with the project, and the subtitles of the
  * frame on screen worked out */
@@ -3333,6 +3500,7 @@ int main(int argc, char **argv)
 			ranMachine = pianoRollColumns(argv[1], argv[2]) && ranMachine;
 			ranMachine = backupAndHistory(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
+			ranMachine = tastudioSettings(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;

@@ -48,6 +48,8 @@ public:
 
 	/* the whole movie, as text the engine reads back (a branch) */
 	std::string text() const;
+	/* frames first to last, a line each, as the movie has them */
+	std::vector<std::string> lines(int64_t first, int64_t last) const;
 
 	/* true when the frame's lag flag changed */
 	bool setLag(int64_t frame, bool lag);

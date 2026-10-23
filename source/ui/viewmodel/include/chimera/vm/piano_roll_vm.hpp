@@ -27,6 +27,15 @@ public:
 	Property<std::string> hiddenColumns;
 	/* the most undo steps kept, as Chimera's TAStudio setting has it */
 	Property<int64_t> maxUndoSteps{1000};
+	/* TAStudio's "include frame numbers when copying input" */
+	Property<bool> copyFrameNumbers{false};
+	/* the frames last copied or cut, a line each as the movie writes them
+	 * (with their numbers when asked), for the window to put on the
+	 * system's clipboard, as Chimera's Copy does */
+	Property<std::string> clipboardText;
+	/* TAStudio's "markers keep states by default": a marker put on a frame
+	 * keeps that frame's state in the greenzone */
+	Property<bool> markersKeepStates{true};
 	Property<int64_t> frameCount{0};
 	/* keep the current frame in view while the machine runs */
 	Property<bool> followPlayback{true};

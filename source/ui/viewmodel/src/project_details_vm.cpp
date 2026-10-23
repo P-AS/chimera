@@ -76,6 +76,7 @@ ProjectDetailsViewModel::ProjectDetailsViewModel(Dispatcher &dispatcher, Session
 				return {};
 			}
 			if (makeDefault) defaultAuthor.set(au);
+			session_.markChanged();
 			load();
 			status.set("The header is changed; it is kept when the project is saved");
 			return {};
@@ -106,6 +107,7 @@ ProjectDetailsViewModel::ProjectDetailsViewModel(Dispatcher &dispatcher, Session
 			error = "no project is open";
 			return {};
 		}
+		session_.markChanged();
 		load();
 		return {};
 	});
@@ -243,6 +245,7 @@ void ProjectDetailsViewModel::storeSubtitles()
 	count.set(static_cast<int64_t>(subtitles_.size()));
 	rows_.reset.emit();
 	showFrame();
+	session_.markChanged();
 	status.set(std::to_string(subtitles_.size()) + (subtitles_.size() == 1 ? " subtitle" : " subtitles") +
 		"; kept when the project is saved");
 }

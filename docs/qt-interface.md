@@ -55,9 +55,9 @@ made from.
 
 | View model | What it does | Window |
 |---|---|---|
-| session | open a game (the installed core that takes its kind of file opens it; when several do, they are offered), open, save and make projects, recent projects, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone (kept with the project in its cache folder and loaded when the project opens, unless the last session did not end; TAStudio's Greenzone box - every frame, one in N, none - saved in the project's TAStudio part as Chimera saves it), settings applied live or by restarting | main window |
-| pianoRoll | a row a frame and a column a button; press, drag, paint, fill; frames picked (on the frame numbers, as in TAStudio, with the thin column before them moving the machine), put in, taken out, cloned, cleared, copied, cut and pasted (over or in), cut off, with TAStudio's keys; analog controls a column each with their values, a cell picked to edit and a drag painting its value; markers that can move with the frames; undo and redo (a stroke is one step), and the undo history by Chimera's step names (undone or redone to a step, forgotten up to one, the most kept chosen); follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
-| branches | other versions of the movie, kept in the project, each with its state in a file in the project's cache folder and the picture it had; loading one loads that state, or replays from where the two movies differ when the state is missing or is another machine's | Branches |
+| session | open a game (the installed core that takes its kind of file opens it; when several do, they are offered), open, save and make projects, recent projects, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone (kept with the project in its cache folder and loaded when the project opens, unless the last session did not end; TAStudio's Greenzone box - every frame, one in N, none - saved in the project's TAStudio part as Chimera saves it), settings applied live or by restarting; the project's changes not saved yet (a star in the title, and Chimera's "Save Chimera Project?" before it is closed, another opened or the program quit); TAStudio's playing and saving settings (pause at the movie's end, the rewind steps, the autosave and its backups, a backup with every save by hand) | main window, TAStudio Settings |
+| pianoRoll | a row a frame and a column a button; press, drag, paint, fill; frames picked (on the frame numbers, as in TAStudio, with the thin column before them moving the machine), put in, taken out, cloned, cleared, copied, cut and pasted (over or in) through the system's clipboard as the movie's lines (with their frame numbers when asked; a line that is not a frame's input pastes nothing), cut off, with TAStudio's keys; analog controls a column each with their values, a cell picked to edit and a drag painting its value; markers that can move with the frames, and keep their frame's state or not by default; undo and redo (a stroke is one step), and the undo history by Chimera's step names (undone or redone to a step, forgotten up to one, the most kept chosen); follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
+| branches | other versions of the movie, kept in the project, each with its state in a file in the project's cache folder and the picture it had; loading one loads that state, or replays from where the two movies differ when the state is missing or is another machine's; loaded by a double click, or only gone to with the old control scheme (as Chimera does when not recording) | Branches, TAStudio Settings |
 | ramSearch | the engine's RAM Search, updated after every frame, with undo; values shown and typed every way RAM Watch shows them | RAM Search (Qt's own table) |
 | ramWatch | addresses kept an eye on, read after every frame, shown unsigned, signed, in hex, in binary, as fixed point or as a float exactly as Chimera writes them; the previous value three ways, changes counted; Chimera's .wch files both ways (other emulators' too); a game core's properties watched by name, read and written as text by the engine; the marked ones shown over the picture where Chimera shows them | RAM Watch |
 | settings | the package's declared settings, those that apply, edits applied live or by restarting; the package's presets for the machine, written in as if typed (never the machine's own setting; a name the machine lacks named) | Settings (a form generated from the declaration) |
@@ -220,9 +220,14 @@ A suggested order, each step usable on its own:
 Taken from Chimera's menus, dialogs and tools on 2026-10-23, and ticked off
 as each lands here. Parts that wait on a question to the owner say so.
 
-- TAStudio: columns in a menu per player (here, one list); selection undo; TAStudio's
-  settings; autohold on a column (the piano roll's own); macros.
-  Recording mode waits on question 6.
+- TAStudio: columns in a menu per player (here, one list); the rest of
+  TAStudio's settings (how following the cursor scrolls and the wheel's
+  speed, "was lag" frames hidden, paint patterns, how states and markers
+  are shown, colours and font, the roll turned on its side, editing
+  hidden columns or not, the branch screenshot's size); autohold on a
+  column (the piano roll's own); macros. Recording mode waits on
+  question 6. (Chimera's Selection Undo and Redo are always greyed out
+  and do nothing, so there is nothing of theirs to bring.)
 - Configuration: paths, display (size, aspect, filters), sound (device,
   buffer), messages (where the counters go, their colours),
   the greenzone's memory budgets, firmware, pre-compiled modules, the
@@ -253,6 +258,12 @@ as each lands here. Parts that wait on a question to the owner say so.
   a state put back should arguably be the whole machine; Chimera's own
   state history check would report it as bad data. The prototype's check
   puts frame 0 back twice before it walks, and says so.
+- Chimera's TAStudio, and the engine's line reader, read a pasted line by
+  place: a line copied with "include frame numbers when copying input"
+  ("00002 |..U.....|") pastes its digits as buttons held (seen
+  2026-10-23 in the engine's reader and in MovieController.SetFromMnemonic).
+  The prototype refuses a pasted line that does not start with '|', as
+  every line a movie writes does. Chimera's own paste could do the same.
 
 ## Yours to decide
 

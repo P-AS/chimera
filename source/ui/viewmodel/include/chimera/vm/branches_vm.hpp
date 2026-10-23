@@ -27,6 +27,12 @@ public:
 	 * back, as Chimera names it ("Undo Branch Load"...; "" for nothing) */
 	Property<int64_t> selected{-1};
 	Property<std::string> undoText;
+	/* TAStudio's branch settings: a double click on a branch loads it; and
+	 * the old way, where loading a branch only puts the machine on its
+	 * frame (Chimera's "old control scheme for branches", as it is when
+	 * not recording) */
+	Property<bool> loadOnDoubleClick{true};
+	Property<bool> oldControlScheme{false};
 
 private:
 	class Rows : public RowModel

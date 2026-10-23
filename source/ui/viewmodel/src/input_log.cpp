@@ -121,6 +121,18 @@ std::string InputLog::text() const
 	return std::string(t != nullptr ? t : "", static_cast<size_t>(len));
 }
 
+std::vector<std::string> InputLog::lines(int64_t first, int64_t last) const
+{
+	std::vector<std::string> out;
+	const std::string all = text();
+	ce_movie_log *log = ce_movie_log_new();
+	if (ce_movie_log_parse(log, all.data(), all.size()) == 0)
+		for (int64_t f = std::max<int64_t>(first, 0); f <= last; f++)
+			if (const char *entry = ce_movie_log_entry(log, f)) out.emplace_back(entry);
+	ce_movie_log_free(log);
+	return out;
+}
+
 bool InputLog::setLag(int64_t frame, bool lag)
 {
 	if (frame < 0) return false;

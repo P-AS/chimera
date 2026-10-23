@@ -125,6 +125,20 @@ public:
 	Property<std::string> backupFolder;
 	/* projects opened, newest first, a line each (ten kept) */
 	Property<std::string> recentProjects;
+	/* the open project was changed since it was opened or last saved: its
+	 * inputs, markers, branches or details (Chimera asks before closing it) */
+	Property<bool> unsaved{false};
+	/* TAStudio's settings for playing and saving: pause on the frame the
+	 * movie runs out; how many frames a step of rewind goes back, and
+	 * while fast forwarding; save the project by itself every so many
+	 * seconds when it has changes (0 never), as a backup instead if asked;
+	 * and a backup as well every time it is saved by hand */
+	Property<bool> pauseAtEnd{false};
+	Property<int64_t> rewindStep{1};
+	Property<int64_t> rewindStepFast{4};
+	Property<int64_t> autosaveSeconds{1800};
+	Property<bool> autosaveAsBackup{false};
+	Property<bool> backupOnSave{false};
 
 	Picture screen;
 	Signal<> screenChanged;
@@ -236,6 +250,9 @@ public:
 	 * machine can while held. */
 	void holdFrameAdvance(bool down);
 	void holdRewind(bool down);
+	/* The UI's thread: another view model changed the open project (its
+	 * markers, branches or details); it is unsaved until saved */
+	void markChanged();
 	void holdFastForward(bool down);
 
 	/* the inputs of frame `first` (and maybe later ones) were edited: the
@@ -328,7 +345,24 @@ private:
 	/* the project's file, first in the recent projects */
 	void addRecent(const std::string &path);
 	/* a backup: written there, the project's own file and greenzone left as they are */
-	void saveProjectOnMachine(const std::string &path, bool backup = false);
+	/* true when written */
+	bool saveProjectOnMachine(const std::string &path, bool backup = false);
+	/* the UI's thread: the project saved to its own file (or the one
+	 * given) and, to back it up, a backup named for it and the time */
+	void saveTo(const std::string &path);
+	std::string backupPathFor(const std::string &projectFile) const;
+	/* the changes counted since the project was opened; the count a save
+	 * covered, once it is written */
+	uint64_t changeGen_ = 0;
+	void savedAt(uint64_t gen);
+	void projectSwitched();
+	void autosave();
+	std::atomic<bool> unsavedM_{false}, pauseAtEndM_{false};
+	std::atomic<int64_t> rewindStepM_{1}, rewindStepFastM_{4}, autosaveMsM_{1800000};
+	Clock::time_point autosaveDue_{};
+	/* the last frame run was not the movie's end (pausing there is once) */
+	bool doPauseM_ = false;
+	Connection pauseWatch_, rewindWatch_, rewindFastWatch_, autosaveWatch_;
 	/* Chimera's state history check: from frame 0, at each frame the
 	 * history holds, the machine saved, put back from the history and saved
 	 * again, the two compared; the first that differ said, and written to

@@ -11,6 +11,8 @@ ApplicationWindow {
     id: win
     objectName: "newProjectWindow"
     required property QtObject vm
+    // asked before the project made replaces the one open (the window's question about unsaved changes)
+    property var askFirst: (then) => then()
     property string slotFor: ""
     property string firmwareFor: ""
     title: qsTr("New Project")
@@ -296,7 +298,7 @@ ApplicationWindow {
             Label { text: win.vm.status; Layout.fillWidth: true; elide: Text.ElideRight }
             Button { text: qsTr("Cancel"); onClicked: win.close() }
             // made and opened; the first save asks where it goes
-            Button { text: qsTr("Make the Project"); enabled: win.vm.ready; onClicked: if (win.vm.run("create") !== undefined) win.close() }
+            Button { text: qsTr("Make the Project"); enabled: win.vm.ready; onClicked: win.askFirst(() => { if (win.vm.run("create") !== undefined) win.close() }) }
         }
     }
 }

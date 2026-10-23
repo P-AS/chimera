@@ -16,6 +16,7 @@
     <file>Branches.qml</file>
     <file>ProjectDetails.qml</file>
     <file>UndoHistory.qml</file>
+    <file>TAStudioSettings.qml</file>
     <file>Cores.qml</file>
   </qresource>
 </RCC>

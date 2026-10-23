@@ -26,13 +26,14 @@ ApplicationWindow {
     required property QtObject luaConsole
     required property QtObject branches
     required property QtObject cores
+    required property QtObject clipboard
     property url chosenPackage
 
     width: 1280
     height: 760
     visible: true
     title: !session.isOpen ? qsTr("Chimera")
-         : session.projectTitle !== "" ? qsTr("Chimera - %1 - %2 (%3)").arg(session.projectTitle).arg(session.coreName).arg(session.systemName)
+         : session.projectTitle !== "" ? qsTr("Chimera - %1%2 - %3 (%4)").arg(session.unsaved ? "*" : "").arg(session.projectTitle).arg(session.coreName).arg(session.systemName)
          : qsTr("Chimera - %1 (%2)").arg(session.coreName).arg(session.systemName)
 
     // the theme's colours for what is drawn over the picture, as Chimera's themes give them
@@ -64,19 +65,56 @@ ApplicationWindow {
         const after = root.pianoRoll.run("nextMarker", [f])
         root.pianoRoll.run("select", [before >= 0 ? before : 0, after >= 0 ? after - 1 : root.pianoRoll.frameCount - 1])
     }
+    // Chimera asks before a project with changes is left - closed, another
+    // opened, the program quit - and saves it first when told to
+    property var afterAsk: null
+    property var afterSave: null
+    property bool leaving: false
+    function leaveProject(then) {
+        if (!root.session.unsaved) { then(); return }
+        root.afterAsk = then
+        askSaveDialog.open()
+    }
+    function quitProgram() { root.leaveProject(() => { root.leaving = true; Qt.quit() }) }
+    onClosing: (close) => {
+        if (root.session.unsaved && !root.leaving) {
+            close.accepted = false
+            root.quitProgram()
+        }
+    }
+    // frames copied or cut, by a menu, a script or a tool, go on the system's clipboard
+    Connections {
+        target: root.pianoRoll
+        function onClipboardTextChanged() { root.clipboard.setText(root.pianoRoll.clipboardText) }
+    }
+    Connections {
+        target: root.session
+        // what waited for the save goes on once it is written
+        function onUnsavedChanged() {
+            if (!root.session.unsaved && root.afterSave) {
+                const then = root.afterSave
+                root.afterSave = null
+                then()
+            }
+        }
+    }
     readonly property var hotkeyActions: ({
         "RAM Search": ramSearchAction, "RAM Watch": ramWatchAction, "Hex Editor": hexEditorAction, "Lua Console": luaConsoleAction,
         "Undo": undoAction, "Redo": redoAction, "Sel. bet. Markers": betweenMarkersAction, "Select All": selectAllAction,
         "Clear Frames": clearFramesAction, "Delete Frames": deleteFramesAction, "Insert Frame": insertFrameAction,
         "Insert # Frames": insertFramesAction, "Clone Frames": cloneFramesAction, "Paste Insert": pasteInsertAction,
-        "Clone # Times": cloneTimesAction
+        "Clone # Times": cloneTimesAction, "Close ROM": closeAction
     })
     Connections {
         target: root.hotkeyRelay
         function onPressed(action) {
             if (action === "Full Screen") root.visibility = root.visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen
             else if (action === "Open ROM") gameDialog.open()
-            else if (action === "Exit Program") Qt.quit()
+            else if (action === "Exit Program") root.quitProgram()
+            else if (action === "Load Last ROM") {
+                const last = root.session.recentProjects.split("\n")[0]
+                if (last !== "") root.leaveProject(() => root.session.run("openProject", [last]))
+            }
             else if (action === "Seek To...") { if (root.session.seekEnabled) seekDialog.open() }
             else if (action === "Toggle Menu") root.menuBar.visible = !root.menuBar.visible
             else if (action === "Toggle Stay on Top") root.flags = root.flags ^ Qt.WindowStaysOnTopHint
@@ -103,7 +141,7 @@ ApplicationWindow {
                     delegate: MenuItem {
                         required property string modelData
                         text: modelData
-                        onTriggered: root.session.run("openProject", [modelData])
+                        onTriggered: root.leaveProject(() => root.session.run("openProject", [modelData]))
                     }
                     onObjectAdded: (index, object) => recentMenu.insertItem(index, object)
                     onObjectRemoved: (index, object) => recentMenu.removeItem(object)
@@ -115,9 +153,9 @@ ApplicationWindow {
             Action { text: qsTr("Save Project &Backup"); enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveBackup") }
             Action { text: qsTr("Make a &Project of This Game..."); enabled: root.session.isOpen && !root.session.hasProject; onTriggered: newProjectDialog.open() }
             Action { property string hotkey: "Reboot Core"; text: qsTr("&Restart"); enabled: root.session.restartEnabled; onTriggered: root.session.run("restart") }
-            Action { property string hotkey: "Close ROM"; text: qsTr("&Close"); enabled: root.session.closeEnabled; onTriggered: root.session.run("close") }
+            Action { id: closeAction; property string hotkey: "Close ROM"; text: qsTr("&Close"); enabled: root.session.closeEnabled; onTriggered: root.leaveProject(() => root.session.run("close")) }
             MenuSeparator {}
-            Action { property string hotkey: "Exit Program"; text: qsTr("E&xit"); onTriggered: Qt.quit() }
+            Action { property string hotkey: "Exit Program"; text: qsTr("E&xit"); onTriggered: root.quitProgram() }
         }
         Menu {
             delegate: keyedMenuItem
@@ -220,20 +258,27 @@ ApplicationWindow {
             MenuSeparator {}
             Action {
                 text: qsTr("&Copy"); shortcut: StandardKey.Copy; enabled: editMenu.picked
-                onTriggered: root.pianoRoll.run("copyFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
+                onTriggered: {
+                    root.pianoRoll.run("copyFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
+                    root.clipboard.setText(root.pianoRoll.clipboardText)
+                }
             }
             Action {
                 text: qsTr("Cu&t"); shortcut: StandardKey.Cut; enabled: editMenu.picked
-                onTriggered: root.pianoRoll.run("cutFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
+                onTriggered: {
+                    root.pianoRoll.run("cutFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
+                    root.clipboard.setText(root.pianoRoll.clipboardText)
+                }
             }
             Action {
-                text: qsTr("&Paste"); shortcut: StandardKey.Paste; enabled: root.pianoRoll.clipboardFrames > 0
-                onTriggered: root.pianoRoll.run("pasteFrames", [Math.min(editMenu.at, root.pianoRoll.frameCount)])
+                // the lines on the system's clipboard, as Chimera's Paste reads them
+                text: qsTr("&Paste"); shortcut: StandardKey.Paste; enabled: root.session.isOpen && root.clipboard.hasText
+                onTriggered: root.pianoRoll.run("pasteText", [Math.min(editMenu.at, root.pianoRoll.frameCount), root.clipboard.text(), false])
             }
             Action {
                 id: pasteInsertAction; property string hotkey: "Paste Insert"
-                text: qsTr("Paste In&sert"); enabled: root.pianoRoll.clipboardFrames > 0
-                onTriggered: root.pianoRoll.run("pasteInsertFrames", [Math.min(editMenu.at, root.pianoRoll.frameCount)])
+                text: qsTr("Paste In&sert"); enabled: root.session.isOpen && root.clipboard.hasText
+                onTriggered: root.pianoRoll.run("pasteText", [Math.min(editMenu.at, root.pianoRoll.frameCount), root.clipboard.text(), true])
             }
             MenuSeparator {}
             Action {
@@ -258,6 +303,8 @@ ApplicationWindow {
                 checked: root.pianoRoll.bindMarkers
                 onToggled: root.pianoRoll.bindMarkers = checked
             }
+            MenuSeparator {}
+            Action { text: qsTr("TAStudio Se&ttings..."); onTriggered: { tastudioSettingsWindow.show(); tastudioSettingsWindow.raise() } }
         }
         Menu {
             delegate: keyedMenuItem
@@ -402,9 +449,10 @@ ApplicationWindow {
     }
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
     RamWatch { id: ramWatchWindow; vm: root.ramWatch; visible: false }
-    NewProject { id: newProjectWindow; vm: root.newProject; visible: false }
+    NewProject { id: newProjectWindow; vm: root.newProject; askFirst: root.leaveProject; visible: false }
     ProjectDetails { id: projectDetailsWindow; vm: root.projectDetails; visible: false }
     UndoHistory { id: undoHistoryWindow; vm: root.pianoRoll; visible: false }
+    TAStudioSettings { id: tastudioSettingsWindow; session: root.session; pianoRoll: root.pianoRoll; branches: root.branches; visible: false }
     // a file dropped on the window starts a project from it, as in Chimera:
     // a file on its own is not what runs, a project is
     DropArea {
@@ -434,7 +482,7 @@ ApplicationWindow {
     FileDialog {
         id: gameWithDialog
         title: qsTr("Choose a game")
-        onAccepted: root.session.run("open", [root.chosenPackage, selectedFile])
+        onAccepted: root.leaveProject(() => root.session.run("open", [root.chosenPackage, selectedFile]))
     }
     property url chosenProject
     FileDialog {
@@ -442,13 +490,13 @@ ApplicationWindow {
         title: qsTr("Choose a project")
         nameFilters: [qsTr("Chimera projects (*.chimeraProject)"), qsTr("All files (*)")]
         // the project's core is found among the installed ones
-        onAccepted: root.session.run("openProject", [selectedFile])
+        onAccepted: root.leaveProject(() => root.session.run("openProject", [selectedFile]))
     }
     FileDialog {
         id: projectPackageDialog
         title: qsTr("Choose the core package to open it with")
         nameFilters: [qsTr("Core packages (*.chimeraCore)"), qsTr("All files (*)")]
-        onAccepted: root.session.run("openProject", [root.chosenProject, selectedFile])
+        onAccepted: root.leaveProject(() => root.session.run("openProject", [root.chosenProject, selectedFile]))
     }
     FileDialog {
         id: saveAsDialog
@@ -456,6 +504,35 @@ ApplicationWindow {
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("Chimera projects (*.chimeraProject)")]
         onAccepted: root.session.run("saveProject", [selectedFile])
+        // a question that asked for this save is answered Cancel
+        onRejected: root.afterSave = null
+    }
+    Dialog {
+        id: askSaveDialog
+        objectName: "askSaveDialog"
+        title: qsTr("Closing with Unsaved Changes")
+        anchors.centerIn: parent
+        modal: true
+        Label { text: qsTr("Save Chimera Project?") }
+        footer: DialogButtonBox {
+            Button {
+                text: qsTr("Yes")
+                onClicked: {
+                    askSaveDialog.close()
+                    root.afterSave = root.afterAsk
+                    if (root.session.projectPath === "") saveAsDialog.open()
+                    else root.session.run("saveProject")
+                }
+            }
+            Button {
+                text: qsTr("No")
+                onClicked: { askSaveDialog.close(); const then = root.afterAsk; root.afterAsk = null; then() }
+            }
+            Button {
+                text: qsTr("Cancel")
+                onClicked: { askSaveDialog.close(); root.afterAsk = null }
+            }
+        }
     }
     FileDialog {
         id: newProjectDialog
@@ -468,7 +545,7 @@ ApplicationWindow {
         id: gameDialog
         title: qsTr("Choose a game")
         // the installed core that takes this kind of file opens it
-        onAccepted: root.session.run("openGame", [selectedFile])
+        onAccepted: root.leaveProject(() => root.session.run("openGame", [selectedFile]))
     }
     // several installed cores take it: the session offers them
     Dialog {

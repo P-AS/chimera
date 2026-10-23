@@ -1,5 +1,7 @@
 #include "chimera/vm/piano_roll_vm.hpp"
 
+#include "chimera/engine.h"
+
 #include <algorithm>
 
 namespace chimera::vm {
@@ -18,6 +20,81 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	rows("columns", "the piano roll's columns, a control each: name, label, shown", columnRows_);
 	rows("history", "the undo history, in order: each step's name, and whether it is done (the rest are undone)", historyRows_);
 	expose("maxUndoSteps", "the most undo steps kept", maxUndoSteps, true);
+	expose("copyFrameNumbers", "Copy puts each frame's number before its line", copyFrameNumbers, true);
+	expose("clipboardText", "the frames last copied or cut, a line each, for the system's clipboard", clipboardText);
+	expose("markersKeepStates", "a marker put on a frame keeps that frame's state", markersKeepStates, true);
+	command("pasteText", "the lines given (as Copy writes them; the system's clipboard) written over the frames from "
+		"this one, or put in at it when insert is true; nothing is pasted if a line is not a frame's input",
+		{"frame", "text", "insert"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t frame = 0;
+			std::string text;
+			bool insert = false;
+			if (!arg(a, 0, frame, error) || !arg(a, 1, text, error)) return {};
+			if (a.size() > 2 && !arg(a, 2, insert, error)) return {};
+			if (frame < 0 || frame > inputs_.size())
+			{
+				error = "no frame " + std::to_string(frame);
+				return {};
+			}
+			/* a line each; Windows line ends too, and a last empty line is not a frame */
+			std::vector<std::string> lines;
+			size_t at = 0;
+			while (at < text.size())
+			{
+				const size_t end = text.find('\n', at);
+				std::string line = text.substr(at, end == std::string::npos ? std::string::npos : end - at);
+				if (!line.empty() && line.back() == '\r') line.pop_back();
+				lines.push_back(line);
+				if (end == std::string::npos) break;
+				at = end + 1;
+			}
+			if (lines.empty())
+			{
+				error = "there is nothing to paste";
+				return {};
+			}
+			std::vector<Row> rows;
+			size_t bad = lines.size();
+			const size_t axisCount = inputs_.axisCount();
+			session_.onMachineWait([&](ce_session *s) {
+				if (s == nullptr) return;
+				for (size_t i = 0; i < lines.size(); i++)
+				{
+					Row r;
+					r.axes.resize(axisCount);
+					/* every line a movie writes starts with its '|'; the engine reads
+					 * a line by place, so one with a frame number before it (Copy
+					 * with numbers) would come in as buttons held */
+					if (lines[i].empty() || lines[i][0] != '|' ||
+						ce_session_movie_entry_decode(s, lines[i].c_str(), &r.buttons, r.axes.empty() ? nullptr : r.axes.data()) != 0)
+					{
+						bad = i;
+						return;
+					}
+					rows.push_back(std::move(r));
+				}
+			});
+			if (rows.size() != lines.size())
+			{
+				error = bad < lines.size() ? "line " + std::to_string(bad + 1) + " is not a frame's input: " + lines[bad]
+										   : "no machine is open";
+				return {};
+			}
+			clipboard_ = std::move(rows);
+			copiedFrom_ = frame;
+			clipboardFrames.set(static_cast<int64_t>(clipboard_.size()));
+			if (insert)
+			{
+				naming_ = "Paste Insert: " + std::to_string(frame);
+				putIn(frame, clipboard_);
+			}
+			else
+			{
+				naming_ = "Copy Over Input: " + std::to_string(frame);
+				overwrite(frame, clipboard_);
+			}
+			return {};
+		});
 	command("undoTo", "takes back steps until this one (by its place in the history) is the last done", {"step"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t i = 0;
@@ -104,7 +181,10 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				error = "no frame before 0";
 				return {};
 			}
-			markers_[f] = Marker{f, text, true};
+			/* a marker named again keeps what it kept */
+			const auto there = markers_.find(f);
+			const bool keep = there != markers_.end() ? there->second.keepState : markersKeepStates.get();
+			markers_[f] = Marker{f, text, keep};
 			markersEdited(f);
 			return {};
 		});
@@ -334,6 +414,24 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			for (int64_t f = first; f <= last; f++) clipboard_.push_back(readRow(f));
 			copiedFrom_ = first;
 			clipboardFrames.set(static_cast<int64_t>(clipboard_.size()));
+			/* the lines, with each frame's number before it when asked, as
+			 * many digits as the movie's longest (five at least) */
+			const std::vector<std::string> lines = inputs_.lines(first, last);
+			int digits = 1;
+			for (int64_t n = std::max<int64_t>(inputs_.size(), 1); n >= 10; n /= 10) digits++;
+			digits = std::max(digits, 5);
+			std::string text;
+			for (size_t i = 0; i < lines.size(); i++)
+			{
+				if (copyFrameNumbers.get())
+				{
+					char number[32];
+					std::snprintf(number, sizeof number, "%0*lld ", digits, static_cast<long long>(first + static_cast<int64_t>(i)));
+					text += number;
+				}
+				text += lines[i] + "\n";
+			}
+			clipboardText.set(text);
 			return clipboardFrames.get();
 		});
 	command("reselectClipboard", "picks again the frames last copied or cut, where they were", {},
@@ -356,6 +454,10 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			for (int64_t f = first; f <= last; f++) clipboard_.push_back(readRow(f));
 			copiedFrom_ = first;
 			clipboardFrames.set(static_cast<int64_t>(clipboard_.size()));
+			/* Chimera's Cut writes the lines alone */
+			std::string text;
+			for (const std::string &line : inputs_.lines(first, last)) text += line + "\n";
+			clipboardText.set(text);
 			naming_ = "Cut frames " + std::to_string(first) + "-" + std::to_string(last);
 			takeOut(first, last);
 			return clipboardFrames.get();
@@ -492,6 +594,7 @@ bool PianoRollViewModel::paint(int64_t first, int64_t last, int64_t b, std::opti
 
 void PianoRollViewModel::keep(Step step, bool join)
 {
+	session_.markChanged();
 	if (!join && step.name.empty()) step.name = naming_.empty() ? describe(step) : naming_;
 	naming_.clear();
 	if (join && !undo_.empty())
@@ -576,6 +679,7 @@ void PianoRollViewModel::undoOrRedo(bool back)
 	Step step = std::move(from.back());
 	from.pop_back();
 	stroke_ = false;
+	session_.markChanged();
 	const int64_t before = inputs_.size();
 	const bool shifted = step.shiftCount != 0;
 	/* the rows the step set, as they were or became (where frames moved,
@@ -912,6 +1016,7 @@ void PianoRollViewModel::markersEdited(int64_t frame)
 	std::vector<Marker> all;
 	for (const auto &[f, m] : markers_) all.push_back(m);
 	session_.setMarkers(std::move(all));
+	session_.markChanged();
 	markerRows_.reset.emit();
 	if (frame < inputs_.size()) frames_.changed.emit(frame, frame);
 }

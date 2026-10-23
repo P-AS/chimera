@@ -32,6 +32,9 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 	rows("branches", "one row a branch: name, frame, when it was made, how many frames it has, its state file's name (\"\" for none)", rows_);
 	expose("selected", "the branch picked in the list, -1 for none", selected, true);
 	expose("undoText", "what undo would take back (\"Undo Branch Load\"...), \"\" for nothing", undoText);
+	expose("loadOnDoubleClick", "a double click on a branch loads it", loadOnDoubleClick, true);
+	expose("oldControlScheme", "loading a branch only puts the machine on its frame, the movie left as it is",
+		oldControlScheme, true);
 	command("jumpTo", "puts the machine on a branch's frame, the movie left as it is", {"index"},
 		[this](const Args &a, std::string &error) -> Value {
 			size_t i = 0;
@@ -104,6 +107,12 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 		[this](const Args &a, std::string &error) -> Value {
 			size_t i = 0;
 			if (!index(a, i, error)) return {};
+			if (oldControlScheme.get())
+			{
+				std::string e;
+				session_.run("seek", {branches_[i].frame}, e);
+				return {};
+			}
 			const SessionViewModel::Branch &b = branches_[i];
 			/* its state when it has one, else the engine takes the branch's
 			 * movie, keeps the states before the first frame where the two
@@ -276,6 +285,7 @@ void BranchesViewModel::changed()
 {
 	count.set(static_cast<int64_t>(branches_.size()));
 	session_.setBranches(branches_);
+	session_.markChanged();
 	rows_.reset.emit();
 }
 

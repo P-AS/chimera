@@ -208,15 +208,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				error = "no backup folder is set";
 				return {};
 			}
-			/* "walker.2026-10-23 06.26.46.chimeraProject" */
-			const std::filesystem::path own(projectPath.get());
-			const std::time_t now = std::time(nullptr);
-			char when[32];
-			std::strftime(when, sizeof when, "%Y-%m-%d %H.%M.%S", std::localtime(&now));
-			std::error_code ec;
-			std::filesystem::create_directories(backupFolder.get(), ec);
-			const std::string path =
-				(std::filesystem::path(backupFolder.get()) / (own.stem().string() + "." + when + own.extension().string())).string();
+			const std::string path = backupPathFor(projectPath.get());
 			submit([this, path] { saveProjectOnMachine(path, true); });
 			return path;
 		}, &hasProject);
@@ -245,6 +237,31 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("choices", "the cores the waiting game could be opened with, a line each", choices);
 	picture("screen", "the machine's picture", screen, screenChanged);
 	autoRestoreWatch_ = autoRestore.changed.connect([this] { autoRestoreM_.store(autoRestore.get()); });
+	expose("unsaved", "the open project was changed since it was opened or last saved", unsaved);
+	expose("pauseAtEnd", "pause on the frame the movie runs out (TAStudio's \"automatically pause at end of movie\")",
+		pauseAtEnd, true);
+	expose("rewindStep", "how many frames a step of rewind goes back", rewindStep, true);
+	expose("rewindStepFast", "how many frames a step of rewind goes back while fast forwarding", rewindStepFast, true);
+	expose("autosaveSeconds", "save a project with changes by itself every so many seconds; 0 never", autosaveSeconds, true);
+	expose("autosaveAsBackup", "the autosave writes a backup (no greenzone) instead of the project's own file",
+		autosaveAsBackup, true);
+	expose("backupOnSave", "every save by hand writes a backup as well", backupOnSave, true);
+	pauseWatch_ = pauseAtEnd.changed.connect([this] { pauseAtEndM_.store(pauseAtEnd.get()); });
+	rewindWatch_ = rewindStep.changed.connect([this] {
+		if (rewindStep.get() < 1) rewindStep.set(1);
+		rewindStepM_.store(rewindStep.get());
+	});
+	rewindFastWatch_ = rewindStepFast.changed.connect([this] {
+		if (rewindStepFast.get() < 1) rewindStepFast.set(1);
+		rewindStepFastM_.store(rewindStepFast.get());
+	});
+	autosaveWatch_ = autosaveSeconds.changed.connect([this] {
+		if (autosaveSeconds.get() < 0) autosaveSeconds.set(0);
+		const int64_t ms = autosaveSeconds.get() * 1000;
+		autosaveMsM_.store(ms);
+		/* counted again from now */
+		submit([this] { autosaveDue_ = {}; });
+	});
 	expose("cacheFolder", "where what a project can make again is kept (its branches' states), a folder per project", cacheFolder, true);
 	cacheFolderWatch_ = cacheFolder.changed.connect([this] {
 		submit([this, folder = cacheFolder.get()] { cacheFolderM_ = folder; });
@@ -329,7 +346,13 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				error = "this project has not been saved yet: say where it goes";
 				return {};
 			}
-			submit([this, path] { saveProjectOnMachine(path); });
+			saveTo(path);
+			/* "When manually saving, also save .backup" */
+			if (backupOnSave.get() && !backupFolder.get().empty())
+			{
+				const std::string backup = backupPathFor(path.empty() ? projectPath.get() : path);
+				submit([this, backup] { saveProjectOnMachine(backup, true); });
+			}
 			return {};
 		}, &isOpen);
 	command("saveAsProject", "makes the open game a project, saved at the path: its core, file, settings, firmware and "
@@ -587,7 +610,7 @@ void SessionViewModel::holdRewind(bool down)
 		{
 			runningM_ = false;
 			later([this] { running.set(false); });
-			if (frameM_ > 0) seekOnMachine(frameM_ - 1);
+			if (frameM_ > 0) seekOnMachine(std::max<int64_t>(0, frameM_ - (fastM_ ? rewindStepFastM_.load() : rewindStepM_.load())));
 			holdM_ = Hold::Rewind;
 			/* the first step back at once, the next after a moment */
 			due_ = Clock::now() + std::chrono::milliseconds(500);
@@ -634,7 +657,7 @@ void SessionViewModel::loop()
 	for (;;)
 	{
 		std::function<void()> job;
-		bool advance = false, runOn = false, back = false, catchPoll = false;
+		bool advance = false, runOn = false, back = false, catchPoll = false, autosaveTick = false;
 		{
 			std::unique_lock<std::mutex> lock(m_);
 			for (;;)
@@ -646,6 +669,16 @@ void SessionViewModel::loop()
 					jobs_.pop_front();
 					break;
 				}
+				/* the autosave's clock: every so many seconds while a project is open */
+				const int64_t autoMs = autosaveMsM_.load();
+				const bool autoOn = autoMs > 0 && projectM_ != nullptr;
+				if (autoOn && autosaveDue_ == Clock::time_point{}) autosaveDue_ = Clock::now() + std::chrono::milliseconds(autoMs);
+				if (autoOn && Clock::now() >= autosaveDue_)
+				{
+					autosaveTick = true;
+					break;
+				}
+				auto waitUntil = [&](Clock::time_point t) { cv_.wait_until(lock, autoOn ? std::min(t, autosaveDue_) : t); };
 				/* a binding waiting for a gamepad input: the pads looked at
 				 * sixty times a second, a game open or not */
 				if (catchingM_ && Clock::now() >= catchDue_)
@@ -658,23 +691,25 @@ void SessionViewModel::loop()
 				{
 					const auto when = holdSince_ + std::chrono::milliseconds(500);
 					if (Clock::now() >= when) { runOn = true; break; }
-					cv_.wait_until(lock, when);
+					waitUntil(when);
 					continue;
 				}
 				/* rewind held goes back a frame a frame */
 				if (s_ != nullptr && holdM_ == Hold::Rewind)
 				{
 					if (Clock::now() >= due_) { back = true; break; }
-					cv_.wait_until(lock, due_);
+					waitUntil(due_);
 					continue;
 				}
 				if (runningM_ && s_ != nullptr)
 				{
 					if (Clock::now() >= due_) { advance = true; break; }
-					cv_.wait_until(lock, catchingM_ ? std::min(due_, catchDue_) : due_);
+					waitUntil(catchingM_ ? std::min(due_, catchDue_) : due_);
 				}
 				else if (catchingM_)
-					cv_.wait_until(lock, catchDue_);
+					waitUntil(catchDue_);
+				else if (autoOn)
+					cv_.wait_until(lock, autosaveDue_);
 				else
 					cv_.wait(lock);
 			}
@@ -690,6 +725,12 @@ void SessionViewModel::loop()
 			catchPollOnMachine();
 			continue;
 		}
+		if (autosaveTick)
+		{
+			autosaveDue_ = Clock::now() + std::chrono::milliseconds(autosaveMsM_.load());
+			later([this] { autosave(); });
+			continue;
+		}
 		if (runOn)
 		{
 			runningM_ = true;
@@ -700,7 +741,8 @@ void SessionViewModel::loop()
 		}
 		if (back)
 		{
-			if (frameM_ > 0) seekOnMachine(frameM_ - 1);
+			/* TAStudio's rewind step, and its fast one while fast forwarding */
+			if (frameM_ > 0) seekOnMachine(std::max<int64_t>(0, frameM_ - (fastM_ ? rewindStepFastM_.load() : rewindStepM_.load())));
 			due_ += period_;
 			if (Clock::now() - due_ > 4 * period_) due_ = Clock::now();
 			continue;
@@ -820,6 +862,7 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 		projectPath.set("");
 		projectTitle.set("");
 		hasProject.set(false);
+		projectSwitched();
 	});
 	/* the movie: the one it had when started again, else an empty one */
 	loadMovieOnMachine(s, movie);
@@ -1570,6 +1613,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		projectPath.set(path);
 		projectTitle.set(title);
 		hasProject.set(true);
+		projectSwitched();
 		lastAnswers_ = answers;
 		if (!path.empty()) addRecent(path);
 	});
@@ -1823,18 +1867,19 @@ void SessionViewModel::newProjectOnMachine(const std::string &path, const std::s
 		projectPath.set(path);
 		projectTitle.set(title);
 		hasProject.set(true);
+		projectSwitched();
 		addRecent(path);
 	});
 }
 
-void SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
+bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
 {
-	if (projectM_ == nullptr || s_ == nullptr) return;
+	if (projectM_ == nullptr || s_ == nullptr) return false;
 	const std::string path = to.empty() ? projectPathM_ : to;
 	if (path.empty())
 	{
 		later([this] { status.set("Not saved: this project has no file yet; say where it goes"); });
-		return;
+		return false;
 	}
 	/* the movie as the machine keeps it: the engine wrote every line */
 	const int64_t n = ce_session_movie_length(s_);
@@ -1922,12 +1967,12 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
 	{
 		const std::string why = error != nullptr ? error : "no reason given";
 		later([this, path, why] { status.set("Could not save " + path + ": " + why); });
-		return;
+		return false;
 	}
 	if (backup)
 	{
 		later([this, path] { status.set("Backup saved: " + path); });
-		return;
+		return true;
 	}
 	const bool first = projectPathM_ != path;
 	projectPathM_ = path;
@@ -1937,6 +1982,65 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
 		if (first) addRecent(path);
 		status.set("Saved " + path + " (" + std::to_string(n) + " frames)");
 	});
+	return true;
+}
+
+void SessionViewModel::saveTo(const std::string &path)
+{
+	const uint64_t gen = changeGen_;
+	submit([this, path, gen] {
+		if (saveProjectOnMachine(path)) later([this, gen] { savedAt(gen); });
+	});
+}
+
+std::string SessionViewModel::backupPathFor(const std::string &projectFile) const
+{
+	/* "walker.2026-10-23 06.26.46.chimeraProject" */
+	const std::filesystem::path own(projectFile);
+	const std::time_t now = std::time(nullptr);
+	char when[32];
+	std::strftime(when, sizeof when, "%Y-%m-%d %H.%M.%S", std::localtime(&now));
+	std::error_code ec;
+	std::filesystem::create_directories(backupFolder.get(), ec);
+	return (std::filesystem::path(backupFolder.get()) / (own.stem().string() + "." + when + own.extension().string())).string();
+}
+
+void SessionViewModel::markChanged()
+{
+	if (!hasProject.get()) return;
+	changeGen_++;
+	unsavedM_.store(true);
+	if (!unsaved.get()) unsaved.set(true);
+}
+
+void SessionViewModel::savedAt(uint64_t gen)
+{
+	/* a change made while the save was on its way is still unsaved */
+	if (gen != changeGen_) return;
+	unsavedM_.store(false);
+	unsaved.set(false);
+}
+
+void SessionViewModel::projectSwitched()
+{
+	changeGen_++;
+	unsavedM_.store(false);
+	unsaved.set(false);
+}
+
+void SessionViewModel::autosave()
+{
+	/* as Chimera's: a project with a file of its own, changed since it was
+	 * last saved; a backup leaves it unsaved, as Chimera's does */
+	if (!hasProject.get() || projectPath.get().empty() || !unsaved.get()) return;
+	if (autosaveAsBackup.get())
+	{
+		if (backupFolder.get().empty()) return;
+		const std::string path = backupPathFor(projectPath.get());
+		submit([this, path] { saveProjectOnMachine(path, true); });
+	}
+	else
+		saveTo("");
 }
 
 std::vector<uint8_t> SessionViewModel::readDomain(const std::string &name)
@@ -2091,6 +2195,7 @@ void SessionViewModel::closeOnMachine()
 		projectPath.set("");
 		projectTitle.set("");
 		hasProject.set(false);
+		projectSwitched();
 		status.set("Closed");
 	});
 }
@@ -2100,6 +2205,20 @@ void SessionViewModel::advanceOnMachine()
 	const int64_t f = ce_session_frame(s_);
 	const int64_t size = ce_session_movie_length(s_);
 	stepOnMachine(true, true);
+	/* past the end the movie grew: the project has a change */
+	if (f >= size && !unsavedM_.exchange(true)) later([this] { markChanged(); });
+	/* TAStudio's "automatically pause at end of movie": the frame the movie
+	 * runs out on pauses, once; played on from there, it records */
+	if (pauseAtEndM_.load())
+	{
+		const bool atEnd = ce_session_frame(s_) == ce_session_movie_length(s_);
+		if (doPauseM_ && atEnd)
+		{
+			runningM_ = false;
+			later([this] { running.set(false); });
+		}
+		doPauseM_ = !atEnd;
+	}
 	/* the step reports what it changed; here the frames added and the rate */
 	double measured = -1;
 	fpsFrames_++;

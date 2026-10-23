@@ -59,6 +59,7 @@
 #include "theme_palette.hpp"
 #include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
+#include "clipboard_relay.hpp"
 #include "key_names.hpp"
 #include "picture_item.hpp"
 #include "piano_roll_item.hpp"
@@ -199,7 +200,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -308,13 +309,9 @@ int main(int argc, char **argv)
 			if (down) flip(session.showInput);
 		});
 		window("General", "Open ROM", "Ctrl+O");
-		hotkeys.add("General", "Close ROM", "Ctrl+W", [&session, run](bool down) {
-			if (down) run(session, "close");
-		});
-		hotkeys.add("General", "Load Last ROM", "", [&session, run](bool down) {
-			const std::string recent = session.recentProjects.get();
-			if (down && !recent.empty()) run(session, "openProject", {recent.substr(0, recent.find('\n'))});
-		});
+		/* the window's: a project with changes is asked about first */
+		window("General", "Close ROM", "Ctrl+W");
+		window("General", "Load Last ROM", "");
 		hotkeys.add("General", "Reboot Core", "Ctrl+R", [&session, run](bool down) {
 			if (down) run(session, "restart");
 		});
@@ -570,6 +567,17 @@ int main(int argc, char **argv)
 	config.keep(session, "backupFolder");
 	config.keep(projectDetails, "defaultAuthor");
 	config.keep(pianoRoll, "maxUndoSteps");
+	config.keep(pianoRoll, "copyFrameNumbers");
+	config.keep(pianoRoll, "markersKeepStates");
+	config.keep(pianoRoll, "bindMarkers");
+	config.keep(session, "pauseAtEnd");
+	config.keep(session, "rewindStep");
+	config.keep(session, "rewindStepFast");
+	config.keep(session, "autosaveSeconds");
+	config.keep(session, "autosaveAsBackup");
+	config.keep(session, "backupOnSave");
+	config.keep(branches, "loadOnDoubleClick");
+	config.keep(branches, "oldControlScheme");
 	config.keep(projectDetails, "showSubtitles");
 	config.keep(session, "greenzoneEvery");
 	config.keep(ramWatch, "showOnScreen");
@@ -646,6 +654,7 @@ int main(int argc, char **argv)
 	qmlRegisterType<qt::PictureItem>("Chimera", 1, 0, "PictureItem");
 	qmlRegisterType<qt::PianoRollItem>("Chimera", 1, 0, "PianoRollItem");
 
+	qt::ClipboardRelay clipboard;
 	QQmlApplicationEngine engine;
 	engine.setInitialProperties({
 		{QStringLiteral("session"), QVariant::fromValue<QObject *>(&sessionQml)},
@@ -660,6 +669,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("hotkeys"), QVariant::fromValue<QObject *>(&hotkeysQml)},
 		{QStringLiteral("keyNamer"), QVariant::fromValue<QObject *>(&keyNamer)},
 		{QStringLiteral("hotkeyRelay"), QVariant::fromValue<QObject *>(&relay)},
+		{QStringLiteral("clipboard"), QVariant::fromValue<QObject *>(&clipboard)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
@@ -683,6 +693,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")
 		: args.value(showOpt) == QStringLiteral("branches") ? QStringLiteral("branchesWindow")
 		: args.value(showOpt) == QStringLiteral("undo-history") ? QStringLiteral("undoHistoryWindow")
+		: args.value(showOpt) == QStringLiteral("tastudio-settings") ? QStringLiteral("tastudioSettingsWindow")
 		: args.value(showOpt) == QStringLiteral("project-details") ? QStringLiteral("projectDetailsWindow")
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())
