@@ -301,7 +301,9 @@ Taken from Chimera's menus, dialogs and tools on 2026-10-23, and ticked off
 as each lands here. Parts that wait on a question to the owner say so.
 
 - TAStudio: Turbo seek (not needed: see the
-  hotkeys row). Recording mode waits on
+  hotkeys row). Cancel Seek (the row menu's and its hotkey): Chimera seeks
+  a frame at a time in its main loop and can stop part way; the prototype
+  asks the engine to seek in one call, which cannot be stopped. Recording mode waits on
   question 6. (Chimera's Selection Undo and Redo are always greyed out
   and do nothing, so there is nothing of theirs to bring.)
 - Tools: Encode Video's Capture OSD and Capture Lua.
