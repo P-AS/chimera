@@ -2,8 +2,10 @@
 
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QImage>
 #include <QObject>
 #include <QString>
+#include <QVariant>
 
 namespace chimera::qt {
 
@@ -22,6 +24,8 @@ public:
 	bool hasText() const { return !QGuiApplication::clipboard()->text().isEmpty(); }
 	Q_INVOKABLE QString text() const { return QGuiApplication::clipboard()->text(); }
 	Q_INVOKABLE void setText(const QString &text) { QGuiApplication::clipboard()->setText(text); }
+	/* a picture (an item grabbed) on the clipboard: the Surface Viewer's Copy to Clipboard */
+	Q_INVOKABLE void setImage(const QVariant &image) { QGuiApplication::clipboard()->setImage(image.value<QImage>()); }
 
 Q_SIGNALS:
 	void changed();

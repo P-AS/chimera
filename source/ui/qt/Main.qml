@@ -1081,7 +1081,11 @@ ApplicationWindow {
         id: debuggerWindow; vm: root.debuggerTool; session: root.session; visible: false
         customize: root.customize; toolWindows: root.toolWindows; mainWindow: root
     }
-    SurfaceViewer { id: surfaceViewerWindow; vm: root.surfaceViewer; session: root.session; visible: false }
+    SurfaceViewer {
+        id: surfaceViewerWindow; vm: root.surfaceViewer; session: root.session; visible: false
+        clipboard: root.clipboard; localPath: (url) => root.pictureFiles.localPath(url); themeColor: root.osdColor
+        customize: root.customize; toolWindows: root.toolWindows; mainWindow: root
+    }
     MacroTool {
         id: macroToolWindow; vm: root.macroTool; pianoRoll: root.pianoRoll; folderOf: root.folderOf; visible: false
         customize: root.customize; toolWindows: root.toolWindows; mainWindow: root

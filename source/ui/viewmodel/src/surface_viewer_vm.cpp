@@ -10,7 +10,7 @@ SurfaceViewerViewModel::SurfaceViewerViewModel(Dispatcher &dispatcher, SessionVi
 	: ViewModel("surfaceViewer", dispatcher), session_(session)
 {
 	expose("picked", "the surface shown, by its place in the session's list", picked, true);
-	expose("zoom", "how many times its size it is shown, 1 to 8", zoom, true);
+	expose("zoom", "how many times its size it is shown, 1 to 4, as Chimera's", zoom, true);
 	expose("watching", "drawn again as the machine moves (the window is open)", watching, true);
 	expose("status", "the surface shown and its size, or why there is none", status);
 	picture("surface", "the surface drawn last", surface, surfaceChanged);
@@ -23,7 +23,7 @@ SurfaceViewerViewModel::SurfaceViewerViewModel(Dispatcher &dispatcher, SessionVi
 	});
 	pickedWatch_ = picked.changed.connect([this] { draw(); });
 	zoomWatch_ = zoom.changed.connect([this] {
-		if (zoom.get() < 1 || zoom.get() > 8) zoom.set(std::clamp<int64_t>(zoom.get(), 1, 8));
+		if (zoom.get() < 1 || zoom.get() > 4) zoom.set(std::clamp<int64_t>(zoom.get(), 1, 4));
 	});
 	watchingWatch_ = watching.changed.connect([this] {
 		if (watching.get()) draw();
@@ -56,7 +56,8 @@ void SurfaceViewerViewModel::draw()
 		status.set(s.find("name")->text + ": the core drew nothing");
 		return;
 	}
-	status.set(s.find("name")->text + ": " + s.find("width")->text + " x " + s.find("height")->text);
+	/* as Chimera's: "Nametables - 512x480" */
+	status.set(s.find("name")->text + " - " + s.find("width")->text + "x" + s.find("height")->text);
 	surfaceChanged.emit();
 }
 

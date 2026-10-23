@@ -1581,7 +1581,7 @@ bool traceAndRegisters(const char *package, const char *rom)
 		SurfaceViewerViewModel viewer(d, session);
 		CHECK(session.surfaces.get() == R"([{"name": "RAM", "width": 64, "height": 64}])");
 		viewer.watching.set(true);
-		CHECK(viewer.status.get() == "RAM: 64 x 64");
+		CHECK(viewer.status.get() == "RAM - 64x64");
 		Picture::Frame f;
 		CHECK(viewer.surface.takeIfNewer(UINT64_MAX, f) && f.width == 64 && f.height == 64);
 		const std::vector<uint8_t> ram = session.readDomain("RAM");
