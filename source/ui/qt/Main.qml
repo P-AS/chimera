@@ -1028,7 +1028,10 @@ ApplicationWindow {
         running: onScreenMessages.count > 0
         onTriggered: { while (onScreenMessages.count > 0 && onScreenMessages.get(0).until < Date.now()) onScreenMessages.remove(0) }
     }
-    LogWindow { id: logWindow; log: messageLog; clipboard: root.clipboard; visible: false }
+    LogWindow {
+        id: logWindow; log: messageLog; clipboard: root.clipboard; visible: false
+        customize: root.customize; toolWindows: root.toolWindows; mainWindow: root
+    }
     BatchRun { id: batchRunWindow; vm: root.batchRun; visible: false }
     MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; visible: false }
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; visible: false; onBudgetsAsked: { greenzoneBudgetsWindow.show(); greenzoneBudgetsWindow.raise() } }
