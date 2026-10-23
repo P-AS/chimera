@@ -70,6 +70,18 @@ public:
 	int64_t shownFrom(int64_t frame, int64_t steps) const;
 	/* macros placed lately, newest first, a line each (eight kept) */
 	Property<std::string> recentMacros;
+	/* A macro as Chimera's .chimeraMacro has it, of frames first to last and
+	 * these columns (none named: all), Overlay and Replace as given; "" with
+	 * the reason when it cannot be. Its lines are the movie's own when it has
+	 * every column, else made as Chimera's LogEntryGenerator makes a zone's */
+	std::string macroText(int64_t first, int64_t last, const std::vector<std::string> &columns, bool overlay, bool replace,
+		std::string &error) const;
+	/* a macro's lines placed from this frame on (its own Overlay and Replace),
+	 * one step of the undo history; `name` says where it came from */
+	bool placeMacroLines(int64_t at, std::vector<std::string> lines, const std::string &name, std::string &error);
+	/* the movie's columns (its LogKey), as written and as a macro names them */
+	std::string movieKeyRaw() const;
+	std::string movieKey() const;
 	/* the most undo steps kept, as Chimera's TAStudio setting has it */
 	Property<int64_t> maxUndoSteps{1000};
 	/* TAStudio's "include frame numbers when copying input" */
@@ -296,9 +308,6 @@ private:
 	};
 	std::vector<std::string> groupNames() const;
 	GroupRows groupRows_{*this};
-	/* the movie's columns (its LogKey), as written and as a macro names them */
-	std::string movieKeyRaw() const;
-	std::string movieKey() const;
 	/* editing hidden columns is off and some are hidden: the buttons shown
 	 * (a bit each) and the analog controls shown */
 	bool limited() const;

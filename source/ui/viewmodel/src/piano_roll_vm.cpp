@@ -214,29 +214,8 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			int64_t first = 0, last = 0;
 			std::string path;
 			if (!arg(a, 0, first, error) || !arg(a, 1, last, error) || !arg(a, 2, path, error)) return {};
-			/* the frame after the last can be picked, but has no input */
-			if (last == inputs_.size()) last--;
-			if (first > last) std::swap(first, last);
-			if (first < 0 || last >= inputs_.size())
-			{
-				error = "the frames go from 0 to " + std::to_string(inputs_.size() - 1);
-				return {};
-			}
-			const std::string key = movieKey();
-			if (key.empty())
-			{
-				error = "the movie names no columns";
-				return {};
-			}
-			int64_t groups = 0;
-			for (char c : movieKeyRaw()) groups += c == '#' ? 1 : 0;
-#ifdef _WIN32
-			const char *eol = "\r\n";
-#else
-			const char *eol = "\n";
-#endif
-			std::string text = key + eol + session_.controllerName() + eol + std::to_string(groups) + eol + "False,True" + eol;
-			for (const std::string &line : inputs_.lines(first, last)) text += line + eol;
+			const std::string text = macroText(first, last, {}, false, true, error);
+			if (text.empty()) return {};
 			std::ofstream out(path, std::ios::binary);
 			out << text;
 			if (!out)
@@ -252,11 +231,6 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			int64_t at = 0;
 			std::string path;
 			if (!arg(a, 0, at, error) || !arg(a, 1, path, error)) return {};
-			if (at < 0 || at > inputs_.size())
-			{
-				error = "no frame " + std::to_string(at);
-				return {};
-			}
 			std::ifstream in(path, std::ios::binary);
 			if (!in)
 			{
@@ -269,96 +243,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				if (!line.empty() && line.back() == '\r') line.pop_back();
 				lines.push_back(line);
 			}
-			while (!lines.empty() && lines.back().empty()) lines.pop_back();
-			if (lines.size() < 4)
-			{
-				error = path + " is not a macro";
-				return {};
-			}
-			/* its columns, each one the movie has */
-			std::vector<std::string> keys;
-			for (size_t at2 = 0; at2 <= lines[0].size();)
-			{
-				const size_t bar = lines[0].find('|', at2);
-				keys.push_back(lines[0].substr(at2, bar == std::string::npos ? std::string::npos : bar - at2));
-				if (bar == std::string::npos) break;
-				at2 = bar + 1;
-			}
-			const std::string mine = movieKey();
-			std::vector<std::string> movieKeys;
-			for (size_t at2 = 0; at2 <= mine.size();)
-			{
-				const size_t bar = mine.find('|', at2);
-				movieKeys.push_back(mine.substr(at2, bar == std::string::npos ? std::string::npos : bar - at2));
-				if (bar == std::string::npos) break;
-				at2 = bar + 1;
-			}
-			for (const std::string &k : keys)
-				if (std::find(movieKeys.begin(), movieKeys.end(), k) == movieKeys.end())
-				{
-					error = "The selected macro is not compatible with the current core.\nMacro controller: " + lines[1] +
-						"\nMacro controller groups (\"players\" + 1) count: " + lines[2];
-					return {};
-				}
-			auto lower = [](std::string t) {
-				for (char &c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-				return t;
-			};
-			const size_t comma = lines[3].find(',');
-			const bool overlay = lower(lines[3].substr(0, comma)) == "true";
-			const bool replace = comma == std::string::npos || lower(lines[3].substr(comma + 1)) != "false";
-			/* each line read by its columns: a button a character, '.' let go; an analog value up to its comma */
-			const std::vector<std::string> &buttons = session_.buttonNames();
-			const auto &axes = session_.axes();
-			std::vector<Row> rows;
-			const Row blank = emptyRow();
-			for (size_t i = 4; i < lines.size(); i++)
-			{
-				const int64_t f = at + static_cast<int64_t>(i - 4);
-				Row r = replace && f < inputs_.size() ? readRow(f) : blank;
-				const std::string &entry = lines[i];
-				size_t p = 0;
-				for (const std::string &k : keys)
-				{
-					while (p < entry.size() && entry[p] == '|') p++;
-					if (p >= entry.size())
-					{
-						error = "frame " + std::to_string(i - 4) + " of the macro is shorter than its columns";
-						return {};
-					}
-					const auto axis = std::find_if(axes.begin(), axes.end(), [&k](const SessionViewModel::Axis &x) { return x.name == k; });
-					if (axis != axes.end())
-					{
-						const size_t end = entry.find(',', p);
-						if (end == std::string::npos)
-						{
-							error = "frame " + std::to_string(i - 4) + " of the macro has no value for " + k;
-							return {};
-						}
-						const int32_t v = static_cast<int32_t>(std::strtol(entry.substr(p, end - p).c_str(), nullptr, 10));
-						const size_t x = static_cast<size_t>(axis - axes.begin());
-						if (x < r.axes.size() && (!overlay || v != axis->neutral)) r.axes[x] = v;
-						p = end + 1;
-						continue;
-					}
-					const auto b = std::find(buttons.begin(), buttons.end(), k);
-					const bool pressed = entry[p] != '.';
-					p++;
-					if (b == buttons.end() || b - buttons.begin() >= 64) continue;
-					const uint64_t bit = uint64_t{1} << (b - buttons.begin());
-					if (pressed) r.buttons |= bit;
-					else if (!overlay) r.buttons &= ~bit;
-				}
-				rows.push_back(std::move(r));
-			}
-			if (rows.empty())
-			{
-				error = path + " has no frames";
-				return {};
-			}
-			naming_ = "Place Macro at " + std::to_string(at);
-			if (replace) overwrite(at, rows);
-			else putIn(at, rows);
+			if (!placeMacroLines(at, std::move(lines), path, error)) return {};
 			/* the recent ones, newest first */
 			std::vector<std::string> recent{path};
 			std::istringstream was(recentMacros.get());
@@ -1507,6 +1392,210 @@ Value PianoRollViewModel::GroupRows::cell(int64_t row, int32_t column) const
 	}
 	default: return {};
 	}
+}
+
+namespace {
+/* a control's player, as Chimera's ControllerDefinition counts them: "P2 A"
+ * is 2, past 255 or anything else 0 */
+int playerOf(const std::string &name)
+{
+	if (name.size() < 3 || name[0] != 'P' || !std::isdigit(static_cast<unsigned char>(name[1]))) return 0;
+	size_t i = 1;
+	long n = 0;
+	while (i < name.size() && std::isdigit(static_cast<unsigned char>(name[i])) && n <= 255) n = n * 10 + (name[i++] - '0');
+	return i < name.size() && name[i] == ' ' && n <= 255 ? static_cast<int>(n) : 0;
+}
+} // namespace
+
+std::string PianoRollViewModel::macroText(int64_t first, int64_t last, const std::vector<std::string> &columns, bool overlay, bool replace,
+	std::string &error) const
+{
+	/* the frame after the last can be picked, but has no input */
+	if (last == inputs_.size()) last--;
+	if (first > last) std::swap(first, last);
+	if (first < 0 || last >= inputs_.size())
+	{
+		error = "the frames go from 0 to " + std::to_string(inputs_.size() - 1);
+		return {};
+	}
+	const std::string key = movieKey();
+	if (key.empty())
+	{
+		error = "the movie names no columns";
+		return {};
+	}
+	std::vector<std::string> keys;
+	for (size_t at = 0; at <= key.size();)
+	{
+		const size_t bar = key.find('|', at);
+		keys.push_back(key.substr(at, bar == std::string::npos ? std::string::npos : bar - at));
+		if (bar == std::string::npos) break;
+		at = bar + 1;
+	}
+	/* the columns asked for, in the movie's order; none named is all of them */
+	std::vector<std::string> mine;
+	for (const std::string &k : keys)
+		if (columns.empty() || std::find(columns.begin(), columns.end(), k) != columns.end()) mine.push_back(k);
+	if (mine.empty())
+	{
+		error = "none of those columns is the movie's";
+		return {};
+	}
+	int64_t groups = 0;
+	for (char c : movieKeyRaw()) groups += c == '#' ? 1 : 0;
+#ifdef _WIN32
+	const char *eol = "\r\n";
+#else
+	const char *eol = "\n";
+#endif
+	std::string zoneKey;
+	for (const std::string &k : mine) zoneKey += (zoneKey.empty() ? "" : "|") + k;
+	std::string text = zoneKey + eol + session_.controllerName() + eol + std::to_string(groups) + eol + (overlay ? "True" : "False") + "," +
+		(replace ? "True" : "False") + eol;
+	if (mine.size() == keys.size())
+	{
+		/* the movie's own lines, as Chimera's zone keeps them when its key is the movie's */
+		for (const std::string &line : inputs_.lines(first, last)) text += line + eol;
+		return text;
+	}
+	/* a line a frame of those columns only, as Chimera's LogEntryGenerator
+	 * writes a zone's: grouped by player, each group's axes (five wide and a
+	 * comma) before its buttons (a mnemonic, '.' let go) */
+	const std::vector<std::string> &buttons = session_.buttonNames();
+	const auto &axes = session_.axes();
+	const std::string &mnemonics = session_.mnemonics();
+	int most = 0;
+	for (const std::string &k : mine) most = std::max(most, playerOf(k));
+	for (int64_t f = first; f <= last; f++)
+	{
+		const Row r = readRow(f);
+		std::string line = "|";
+		for (int g = 0; g <= most; g++)
+		{
+			for (const std::string &k : mine)
+			{
+				if (playerOf(k) != g) continue;
+				const auto ax = std::find_if(axes.begin(), axes.end(), [&k](const SessionViewModel::Axis &x) { return x.name == k; });
+				if (ax == axes.end()) continue;
+				const size_t x = static_cast<size_t>(ax - axes.begin());
+				std::string v = std::to_string(x < r.axes.size() ? r.axes[x] : ax->neutral);
+				while (v.size() < 5) v.insert(0, " ");
+				line += v + ",";
+			}
+			for (const std::string &k : mine)
+			{
+				if (playerOf(k) != g) continue;
+				const auto b = std::find(buttons.begin(), buttons.end(), k);
+				if (b == buttons.end()) continue;
+				const size_t i = static_cast<size_t>(b - buttons.begin());
+				const bool pressed = i < 64 && (r.buttons >> i & 1);
+				line += pressed ? (i < mnemonics.size() ? mnemonics[i] : k[0]) : '.';
+			}
+			line += "|";
+		}
+		text += line + eol;
+	}
+	return text;
+}
+
+bool PianoRollViewModel::placeMacroLines(int64_t at, std::vector<std::string> lines, const std::string &name, std::string &error)
+{
+	if (at < 0 || at > inputs_.size())
+	{
+		error = "no frame " + std::to_string(at);
+		return false;
+	}
+	while (!lines.empty() && lines.back().empty()) lines.pop_back();
+	if (lines.size() < 4)
+	{
+		error = name + " is not a macro";
+		return false;
+	}
+	/* its columns, each one the movie has */
+	std::vector<std::string> keys;
+	for (size_t at2 = 0; at2 <= lines[0].size();)
+	{
+		const size_t bar = lines[0].find('|', at2);
+		keys.push_back(lines[0].substr(at2, bar == std::string::npos ? std::string::npos : bar - at2));
+		if (bar == std::string::npos) break;
+		at2 = bar + 1;
+	}
+	const std::string mine = movieKey();
+	std::vector<std::string> movieKeys;
+	for (size_t at2 = 0; at2 <= mine.size();)
+	{
+		const size_t bar = mine.find('|', at2);
+		movieKeys.push_back(mine.substr(at2, bar == std::string::npos ? std::string::npos : bar - at2));
+		if (bar == std::string::npos) break;
+		at2 = bar + 1;
+	}
+	for (const std::string &k : keys)
+		if (std::find(movieKeys.begin(), movieKeys.end(), k) == movieKeys.end())
+		{
+			error = "The selected macro is not compatible with the current core.\nMacro controller: " + lines[1] +
+				"\nMacro controller groups (\"players\" + 1) count: " + lines[2];
+			return false;
+		}
+	auto lower = [](std::string t) {
+		for (char &c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		return t;
+	};
+	const size_t comma = lines[3].find(',');
+	const bool overlay = lower(lines[3].substr(0, comma)) == "true";
+	const bool replace = comma == std::string::npos || lower(lines[3].substr(comma + 1)) != "false";
+	/* each line read by its columns: a button a character, '.' let go; an analog value up to its comma */
+	const std::vector<std::string> &buttons = session_.buttonNames();
+	const auto &axes = session_.axes();
+	std::vector<Row> rows;
+	const Row blank = emptyRow();
+	for (size_t i = 4; i < lines.size(); i++)
+	{
+		const int64_t f = at + static_cast<int64_t>(i - 4);
+		Row r = replace && f < inputs_.size() ? readRow(f) : blank;
+		const std::string &entry = lines[i];
+		size_t p = 0;
+		for (const std::string &k : keys)
+		{
+			while (p < entry.size() && entry[p] == '|') p++;
+			if (p >= entry.size())
+			{
+				error = "frame " + std::to_string(i - 4) + " of the macro is shorter than its columns";
+				return false;
+			}
+			const auto axis = std::find_if(axes.begin(), axes.end(), [&k](const SessionViewModel::Axis &x) { return x.name == k; });
+			if (axis != axes.end())
+			{
+				const size_t end = entry.find(',', p);
+				if (end == std::string::npos)
+				{
+					error = "frame " + std::to_string(i - 4) + " of the macro has no value for " + k;
+					return false;
+				}
+				const int32_t v = static_cast<int32_t>(std::strtol(entry.substr(p, end - p).c_str(), nullptr, 10));
+				const size_t x = static_cast<size_t>(axis - axes.begin());
+				if (x < r.axes.size() && (!overlay || v != axis->neutral)) r.axes[x] = v;
+				p = end + 1;
+				continue;
+			}
+			const auto b = std::find(buttons.begin(), buttons.end(), k);
+			const bool pressed = entry[p] != '.';
+			p++;
+			if (b == buttons.end() || b - buttons.begin() >= 64) continue;
+			const uint64_t bit = uint64_t{1} << (b - buttons.begin());
+			if (pressed) r.buttons |= bit;
+			else if (!overlay) r.buttons &= ~bit;
+		}
+		rows.push_back(std::move(r));
+	}
+	if (rows.empty())
+	{
+		error = name + " has no frames";
+		return false;
+	}
+	naming_ = "Place Macro at " + std::to_string(at);
+	if (replace) overwrite(at, rows);
+	else putIn(at, rows);
+	return true;
 }
 
 std::string PianoRollViewModel::movieKeyRaw() const

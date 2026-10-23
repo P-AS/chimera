@@ -44,6 +44,7 @@ ApplicationWindow {
     // "debugger" is a word of JavaScript's own
     required property QtObject debuggerTool
     required property QtObject surfaceViewer
+    required property QtObject macroTool
     // a Paths folder for a file dialog to open in (made when it is not there)
     function folderOf(name) {
         root.paths.changed; root.paths.base; root.paths.lastRomFolder; root.paths.recentForRoms
@@ -364,6 +365,7 @@ ApplicationWindow {
             Action { id: traceLoggerAction; property string hotkey: "Trace Logger"; text: qsTr("&Trace Logger..."); enabled: root.session.hasTrace; onTriggered: { traceLoggerWindow.show(); traceLoggerWindow.raise() } }
             Action { text: qsTr("&Debugger..."); enabled: root.session.hasRegisters; onTriggered: { debuggerWindow.show(); debuggerWindow.raise() } }
             Action { text: qsTr("&Surface Viewer..."); enabled: root.session.surfaces !== "[]"; onTriggered: { surfaceViewerWindow.show(); surfaceViewerWindow.raise() } }
+            Action { text: qsTr("&Macro Input..."); enabled: root.session.isOpen; onTriggered: { macroToolWindow.show(); macroToolWindow.raise() } }
             Action { id: ramSearchAction; property string hotkey: "RAM Search"; text: qsTr("RAM &Search..."); onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
             Action { id: ramWatchAction; property string hotkey: "RAM Watch"; text: qsTr("RAM &Watch..."); onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
             Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor..."); onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
@@ -1308,6 +1310,7 @@ ApplicationWindow {
     TraceLogger { id: traceLoggerWindow; vm: root.traceLogger; session: root.session; visible: false }
     Debugger { id: debuggerWindow; vm: root.debuggerTool; session: root.session; visible: false }
     SurfaceViewer { id: surfaceViewerWindow; vm: root.surfaceViewer; session: root.session; visible: false }
+    MacroTool { id: macroToolWindow; vm: root.macroTool; pianoRoll: root.pianoRoll; folderOf: root.folderOf; visible: false }
     Dialog {
         id: aboutDialog
         objectName: "aboutDialog"

@@ -60,6 +60,7 @@
 #include "chimera/vm/precompiled_vm.hpp"
 #include "chimera/vm/trace_logger_vm.hpp"
 #include "chimera/vm/surface_viewer_vm.hpp"
+#include "chimera/vm/macro_tool_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -1376,6 +1377,77 @@ bool traceAndRegisters(const char *package, const char *rom)
 		viewer.picked.set(3);
 		CHECK(viewer.status.get() == "No surface 3");
 	}
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
+/* Chimera's Macro Tool: the entire movie and zones of it, a zone's own
+ * columns, Overlay and Replace, saved as Chimera's .chimeraMacro and loaded
+ * back, placed at a frame */
+bool macroTool(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-macros-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	MacroToolViewModel tool(d, roll, session);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	auto advance = [&](int64_t n) {
+		const int64_t to = session.frame.get() + n;
+		for (int64_t i = 0; i < n; i++) session.run("frameAdvance", {}, error);
+		return d.until([&] { return session.frame.get() == to && roll.frameCount.get() >= to; }, 20);
+	};
+	session.key("Down", true);
+	CHECK(advance(3));
+	session.key("Down", false);
+	CHECK(advance(3));
+	CHECK(tool.zones().size() == 1 && tool.zones()[0].name == "Entire Movie" && tool.zones()[0].length == 6);
+	/* a zone of frames 0 to 2, carrying P1 Down alone (a group for the console, none, and one for P1, as Chimera writes it) */
+	CHECK(tool.run("setZone", {int64_t{0}, int64_t{2}}, error) == Value(int64_t{1}) && tool.zones()[1].name == "Zone 1" && tool.unsavedCount.get() == 1);
+	CHECK(!tool.run("setZone", {int64_t{0}, int64_t{9}}, error) && error == "Start and end frames must be inside the movie.");
+	CHECK(!tool.run("setColumns", {int64_t{1}, std::string("Sideways")}, error) && error == "Sideways is not one of the movie's columns");
+	CHECK(tool.run("setColumns", {int64_t{1}, std::string("P1 Down")}, error).has_value());
+	const fs::path zoneFile = dir / "down.chimeraMacro";
+	CHECK(tool.run("saveAs", {int64_t{1}, zoneFile.string()}, error).has_value() && tool.unsavedCount.get() == 0);
+	std::vector<std::string> lines;
+	{
+		std::ifstream in(zoneFile);
+		for (std::string line; std::getline(in, line);) lines.push_back(line);
+	}
+	CHECK(lines.size() == 7 && lines[0] == "P1 Down" && lines[3] == "False,True" && lines[4] == "||D|" && lines[6] == "||D|");
+	/* the entire movie: the movie's own lines */
+	const fs::path wholeFile = dir / "whole.chimeraMacro";
+	CHECK(tool.run("saveAs", {int64_t{0}, wholeFile.string()}, error).has_value());
+	{
+		std::ifstream in(wholeFile);
+		std::vector<std::string> w;
+		for (std::string line; std::getline(in, line);) w.push_back(line);
+		CHECK(w.size() == 10 && w[4] == inputs.lines(0, 0)[0] && w[9] == inputs.lines(5, 5)[0]);
+	}
+	/* placed at frame 4, over the frames there: Down from 4 to 6 (the movie grows by one) */
+	CHECK(tool.run("place", {int64_t{1}, int64_t{4}}, error).has_value());
+	CHECK(d.until([&] { return roll.frameCount.get() == 7; }, 10));
+	CHECK(inputs.lines(4, 6)[0] == inputs.lines(0, 0)[0] && inputs.lines(4, 6)[2] == inputs.lines(0, 0)[0]);
+	/* loaded back, put in before frame 0 rather than over it */
+	CHECK(tool.run("load", {zoneFile.string()}, error) == Value(int64_t{2}) && tool.zones()[2].name == "down" && tool.zones()[2].length == 3);
+	CHECK(tool.run("setReplace", {int64_t{2}, false}, error).has_value());
+	CHECK(tool.run("place", {int64_t{2}, int64_t{0}}, error).has_value());
+	CHECK(d.until([&] { return roll.frameCount.get() == 10; }, 10));
+	CHECK(tool.zones()[0].length == 10);
+	/* a macro of columns the movie lacks is refused, as Chimera's says */
+	{
+		std::ofstream(dir / "other.chimeraMacro") << "P2 Turbo\nOther\n3\nFalse,True\n|T|\n";
+		CHECK(!tool.run("load", {(dir / "other.chimeraMacro").string()}, error) &&
+			error.rfind("The selected macro is not compatible with the current emulator core.", 0) == 0);
+	}
+	CHECK(!tool.run("remove", {int64_t{0}}, error) && tool.run("remove", {int64_t{2}}, error).has_value() && tool.zones().size() == 2);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);
@@ -5356,6 +5428,7 @@ int main(int argc, char **argv)
 			ranMachine = customizeOptions(argv[1], argv[2]) && ranMachine;
 			ranMachine = greenzoneBudgets(argv[1], argv[2]) && ranMachine;
 			ranMachine = traceAndRegisters(argv[1], argv[2]) && ranMachine;
+			ranMachine = macroTool(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;
