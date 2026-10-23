@@ -1272,8 +1272,14 @@ ApplicationWindow {
     }
     BatchRun { id: batchRunWindow; vm: root.batchRun; visible: false }
     MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; visible: false }
-    CacheManager { id: cacheManagerWindow; vm: root.cacheManager; themeColor: root.osdColor; visible: false; onBudgetsAsked: { greenzoneBudgetsWindow.show(); greenzoneBudgetsWindow.raise() } }
-    GreenzoneBudgets { id: greenzoneBudgetsWindow; session: root.session; visible: false }
+    CacheManager { id: cacheManagerWindow; vm: root.cacheManager; themeColor: root.osdColor; visible: false; onBudgetsAsked: (projectId, projectLabel) => {
+            greenzoneBudgetsWindow.projectId = projectId
+            greenzoneBudgetsWindow.projectLabelAsked = projectLabel
+            greenzoneBudgetsWindow.show()
+            greenzoneBudgetsWindow.raise()
+        }
+    }
+    GreenzoneBudgets { id: greenzoneBudgetsWindow; session: root.session; caches: root.cacheManager; mainWindow: root; visible: false }
     Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; mainWindow: root; visible: false }
     MessagesConfig { id: messagesWindow; vm: root.messages; mainWindow: root; visible: false }
     SoundConfig { id: soundWindow; session: root.session; mainWindow: root; visible: false }

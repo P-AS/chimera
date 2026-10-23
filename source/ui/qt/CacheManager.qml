@@ -25,7 +25,8 @@ ApplicationWindow {
     minimumWidth: 900
     minimumHeight: 380
     // Chimera's Greenzone budgets button: the window is the main window's
-    signal budgetsAsked()
+    // the project row picked, when it is one, for its own budgets: (id, name), or ("", "")
+    signal budgetsAsked(string projectId, string projectLabel)
 
     // the entries ticked and the one picked, by their place on disk (they survive a sort or a look again)
     property var ticked: ({})
@@ -233,7 +234,15 @@ ApplicationWindow {
                         : qsTr("Ticked %1 orphaned item(s), %2.").arg(orphans.length).arg(win.tickedCost ? win.tickedCost.size : "")
                 }
             }
-            Button { text: qsTr("Greenzone budgets..."); Layout.preferredWidth: 160; onClicked: win.budgetsAsked() }
+            Button {
+                text: qsTr("Greenzone budgets..."); Layout.preferredWidth: 160
+                // a project row offers that project's own budgets as well as the defaults; with none picked, the defaults alone
+                onClicked: {
+                    const place = win.picked === "" ? "" : (win.vm.run("placesOf", [JSON.stringify([win.picked])]) || "")
+                    const project = place === "" ? { id: "", title: "" } : JSON.parse(win.vm.run("projectOf", [parseInt(place)]) || "{}")
+                    win.budgetsAsked(project.id || "", project.title || "")
+                }
+            }
             Button {
                 text: qsTr("Open Folder"); Layout.preferredWidth: 160
                 enabled: win.picked !== ""

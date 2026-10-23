@@ -123,6 +123,60 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 					if (f.text == items_[i].folder) list += (list.empty() ? "" : ",") + std::to_string(i);
 			return list;
 		});
+	command("projectOf", "the project of the entry at a place in the list, for its budgets: {\"id\", \"title\"}; the id is "
+		"\"\" for what is not a project's cache", {"row"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t row = 0;
+			if (!arg(a, 0, row, error)) return {};
+			json::Json o;
+			o.kind = json::Json::Kind::Object;
+			const bool project = row >= 0 && row < static_cast<int64_t>(items_.size()) && !items_[static_cast<size_t>(row)].unsavedWork;
+			o.members.emplace_back("id", json::Json::string(project ? fs::path(items_[static_cast<size_t>(row)].folder).filename().string() : std::string()));
+			o.members.emplace_back("title", json::Json::string(project ? items_[static_cast<size_t>(row)].title : std::string()));
+			return json::write(o);
+		});
+	command("budgetsOf", "a project's own greenzone budgets, by its id (its cache folder's name), as Chimera keeps them "
+		"beside its cache: {\"memoryMb\", \"maxNearStride\"} (0 for every project's)", {"id"}, [this](const Args &a, std::string &error) -> Value {
+			std::string id;
+			if (!arg(a, 0, id, error)) return {};
+			json::Json b;
+			std::string err;
+			int64_t mb = 0, stride = 0;
+			if (json::parse(readText(fs::path(cacheFolder.get()) / id / "budgets.json"), b, err) && b.kind == json::Json::Kind::Object)
+			{
+				if (const json::Json *v = b.find("memoryMb"); v != nullptr && v->kind == json::Json::Kind::Number) mb = static_cast<int64_t>(v->number());
+				if (const json::Json *v = b.find("maxNearStride"); v != nullptr && v->kind == json::Json::Kind::Number) stride = static_cast<int64_t>(v->number());
+			}
+			json::Json o;
+			o.kind = json::Json::Kind::Object;
+			o.members.emplace_back("memoryMb", json::Json::integer(mb));
+			o.members.emplace_back("maxNearStride", json::Json::integer(stride));
+			return json::write(o);
+		});
+	command("setBudgetsOf", "a project's own greenzone budgets, by its id, kept beside its cache (0 and 0: none, every "
+		"project's apply); they take effect when it next opens", {"id", "memoryMb", "nearStride"}, [this](const Args &a, std::string &error) -> Value {
+			std::string id;
+			int64_t mb = 0, stride = 0;
+			if (!arg(a, 0, id, error) || !arg(a, 1, mb, error) || !arg(a, 2, stride, error)) return {};
+			if (id.empty() || id.find_first_of("/\\") != std::string::npos || (mb != 0 && mb < 64) || stride < 0 || stride > 32)
+			{
+				error = "a project's id, a memory budget of 64 MB or more and a closeness of 1 to 32 (0 for every project's)";
+				return {};
+			}
+			const fs::path dir = fs::path(cacheFolder.get()) / id;
+			std::error_code ec;
+			if (mb == 0 && stride == 0)
+			{
+				fs::remove(dir / "budgets.json", ec);
+				return {};
+			}
+			json::Json b;
+			b.kind = json::Json::Kind::Object;
+			if (mb != 0) b.members.emplace_back("memoryMb", json::Json::integer(mb));
+			if (stride != 0) b.members.emplace_back("maxNearStride", json::Json::integer(stride));
+			fs::create_directories(dir, ec);
+			std::ofstream(dir / "budgets.json", std::ios::binary | std::ios::trunc) << json::write(b);
+			return {};
+		});
 	command("detailOf", "what the entry at a place in the list means, in full, as Chimera says it under the list", {"row"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t row = 0;

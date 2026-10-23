@@ -2723,6 +2723,17 @@ bool cacheManager(const char *package, const char *rom)
 		CHECK(!caches.sortAscending.get() && text(0, 0) == "Walker");
 		caches.run("sortBy", {int64_t{9}}, error);
 		CHECK(caches.sortColumn.get() == 9 && !caches.sortAscending.get());
+		/* a project row's own greenzone budgets, kept beside its cache, as Chimera's Greenzone budgets... offers them */
+		int64_t goneNow = -1;
+		for (int64_t i = 0; i < rows->rowCount(); i++)
+			if (text(i, 0) == "Gone") goneNow = i;
+		CHECK(caches.run("projectOf", {goneNow}, error) == Value(std::string("{\"id\": \"00DEADBEEF\", \"title\": \"Gone\"}")));
+		CHECK(caches.run("budgetsOf", {std::string("00DEADBEEF")}, error) == Value(std::string("{\"memoryMb\": 0, \"maxNearStride\": 0}")));
+		CHECK(caches.run("setBudgetsOf", {std::string("00DEADBEEF"), int64_t{512}, int64_t{2}}, error).has_value() &&
+			  caches.run("budgetsOf", {std::string("00DEADBEEF")}, error) == Value(std::string("{\"memoryMb\": 512, \"maxNearStride\": 2}")));
+		CHECK(caches.run("setBudgetsOf", {std::string("00DEADBEEF"), int64_t{0}, int64_t{0}}, error).has_value() &&
+			  !fs::exists(dir / "cache" / "00DEADBEEF" / "budgets.json"));
+		CHECK(!caches.run("setBudgetsOf", {std::string("../x"), int64_t{512}, int64_t{2}}, error));
 		for (int64_t i = 0; i < rows->rowCount(); i++)
 		{
 			if (text(i, 0) == "Walker") walker = i;
