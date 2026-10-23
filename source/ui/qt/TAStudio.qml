@@ -363,7 +363,8 @@ ApplicationWindow {
             PianoRollItem {
                 id: roll
                 objectName: "pianoRoll"
-                anchors { left: parent.left; top: parent.top; bottom: axisBar.top; right: scroll.left }
+                anchors { left: parent.left; top: parent.top; bottom: roll.horizontal ? across.top : axisBar.top; right: roll.horizontal ? parent.right : scroll.left }
+                horizontal: tas.pianoRoll.horizontal
                 rows: tas.pianoRoll.rows("frames")
                 currentRow: tas.pianoRoll.currentFrame
                 topRow: tas.pianoRoll.topFrame
@@ -408,9 +409,23 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
                 Button { text: qsTr("Done"); onClicked: tas.pianoRoll.run("unpick") }
             }
+            // turned on its side: the frames scroll across, along the bottom
+            ScrollBar {
+                id: across
+                visible: roll.horizontal
+                anchors { left: parent.left; right: parent.right; bottom: axisBar.top }
+                height: visible ? implicitHeight : 0
+                orientation: Qt.Horizontal
+                policy: ScrollBar.AlwaysOn
+                size: roll.rowCount > 0 ? Math.min(1, roll.visibleRows / roll.rowCount) : 1
+                position: roll.rowCount > 0 ? roll.topRow / roll.rowCount : 0
+                onPositionChanged: if (pressed) tas.pianoRoll.topFrame = Math.round(position * roll.rowCount)
+            }
             ScrollBar {
                 id: scroll
+                visible: !roll.horizontal
                 anchors { right: parent.right; top: parent.top; bottom: axisBar.top }
+                width: visible ? implicitWidth : 0
                 orientation: Qt.Vertical
                 policy: ScrollBar.AlwaysOn
                 size: roll.rowCount > 0 ? Math.min(1, roll.visibleRows / roll.rowCount) : 1

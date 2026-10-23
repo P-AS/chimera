@@ -37,6 +37,8 @@ class PianoRollItem : public QQuickPaintedItem
 	Q_PROPERTY(bool denoteMarkersIcons MEMBER denoteMarkersIcons_ NOTIFY lookChanged)
 	Q_PROPERTY(QString colors READ colors WRITE setColors NOTIFY lookChanged)
 	Q_PROPERTY(QString rollFont READ rollFont WRITE setRollFont NOTIFY lookChanged)
+	/* TAStudio's Rotate: the frames run across, the buttons down */
+	Q_PROPERTY(bool horizontal READ horizontal WRITE setHorizontal NOTIFY lookChanged)
 	/* how long the last paint took, in milliseconds, for measuring */
 	Q_PROPERTY(double lastPaintMs READ lastPaintMs NOTIFY painted)
 
@@ -64,6 +66,8 @@ public:
 	void setColors(const QString &json);
 	QString rollFont() const { return rollFont_; }
 	void setRollFont(const QString &font);
+	bool horizontal() const { return horizontal_; }
+	void setHorizontal(bool on);
 
 Q_SIGNALS:
 	void lookChanged();
@@ -117,6 +121,13 @@ private:
 	QString colors_, rollFont_;
 	QFont font_;
 	int rowHeight_ = 18, columnWidth_ = 26, numberWidth_ = 48;
+	bool horizontal_ = false;
+	/* the roll is laid out as if upright; turned, x and y change places */
+	QPointF logical(QPointF physical) const { return horizontal_ ? QPointF(physical.y(), physical.x()) : physical; }
+	int logicalWidth() const { return static_cast<int>(horizontal_ ? height() : width()); }
+	int logicalHeight() const { return static_cast<int>(horizontal_ ? width() : height()); }
+	/* the header's depth: a row upright; turned, room for the longest name */
+	int headerSize() const;
 	/* where a column starts and how wide it is: an analog control's column
 	 * shows a number, and is wider */
 	int columnX(int column) const;

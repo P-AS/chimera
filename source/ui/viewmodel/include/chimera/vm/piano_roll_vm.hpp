@@ -66,6 +66,8 @@ public:
 	 * took them out of the greenzone count as lag too */
 	Property<int64_t> lagFramesToHide{0};
 	Property<bool> hideWasLagFrames{false};
+	/* TAStudio's Rotate: the frames across, the buttons down (the project's own) */
+	Property<bool> horizontal{false};
 	/* a frame not shown by those, and the frame `steps` shown frames on
 	 * from one (back for a negative count) */
 	bool frameHidden(int64_t frame) const;
@@ -293,7 +295,7 @@ private:
 	bool patternStroke_ = false, patternOn_ = false;
 	int64_t patternFrom_ = 0, patternColumn_ = -1;
 	bool paintPattern(int64_t first, int64_t last, bool join, std::string &error);
-	Connection patternsWatch_, projectGoneWatch_, statesWatch_, viewWatch_, viewCountWatch_, lagHideWatch_, wasLagWatch_;
+	Connection patternsWatch_, projectGoneWatch_, statesWatch_, viewWatch_, viewCountWatch_, lagHideWatch_, wasLagWatch_, horizontalWatch_;
 	/* the lag settings, to save with the project */
 	void storeLagHiding();
 	bool laggy(int64_t frame) const;

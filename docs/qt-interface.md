@@ -91,7 +91,11 @@ recorded (worked out as Chimera does: after an edit, walking back from
 the end no further than the edit unless it could have erased the
 answer), are never saved, cannot be moved, renamed or removed, count
 for next and previous marker, keep their states as a marker does, and
-are coloured apart from the person's in the roll and the list. A right
+are coloured apart from the person's in the roll and the list. TAStudio
+Settings' Rotate input roll turns the roll on its side as Chimera's
+does: the frames run across with their numbers turned, the buttons down
+the left by name, the scroll bar along the bottom; it is kept in the
+project, as Chimera keeps it. A right
 click on the frames picked opens Chimera's menu for
 them: set markers (more than 50 asks first), a marker with text, remove
 markers, deselect, select between markers, clear greenzone, copy, paste,
@@ -287,8 +291,7 @@ A suggested order, each step usable on its own:
 Taken from Chimera's menus, dialogs and tools on 2026-10-23, and ticked off
 as each lands here. Parts that wait on a question to the owner say so.
 
-- TAStudio: the rest of
-  TAStudio's settings (the roll turned on its side). Shift held to drag
+- TAStudio: Shift held to drag
   the main window without TAStudio, and Turbo seek (not needed: see the
   hotkeys row). Recording mode waits on
   question 6. (Chimera's Selection Undo and Redo are always greyed out

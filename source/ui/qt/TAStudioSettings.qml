@@ -141,6 +141,12 @@ ApplicationWindow {
                     checked: win.pianoRoll.hideWasLagFrames
                     onToggled: win.pianoRoll.hideWasLagFrames = checked
                 }
+                // Chimera's Rotate: the frames across, the buttons down (kept in the project)
+                CheckBox {
+                    text: qsTr("Rotate input roll")
+                    checked: win.pianoRoll.horizontal
+                    onToggled: win.pianoRoll.horizontal = checked
+                }
                 RowLayout {
                     Button { text: qsTr("Set Colors..."); onClicked: colorsWindow.show() }
                     Button { text: qsTr("Set Font..."); onClicked: fontDialog.open() }

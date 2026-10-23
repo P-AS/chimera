@@ -209,6 +209,10 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		storeLagHiding();
 	});
 	wasLagWatch_ = hideWasLagFrames.changed.connect([this] { storeLagHiding(); });
+	expose("horizontal", "TAStudio's Rotate: the frames run across and the buttons down (the project's own)", horizontal, true);
+	horizontalWatch_ = horizontal.changed.connect([this] {
+		session_.setTastudioMember("HorizontalOrientation", horizontal.get() ? "true" : "false");
+	});
 	command("saveMacro", "writes the frames first to last as a macro, a .chimeraMacro file as Chimera's TAStudio writes one: "
 		"the movie's columns, the controller, then a line a frame", {"first", "last", "path"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -265,6 +269,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		axisHoldValues_.clear();
 		lagFramesToHide.set(0);
 		hideWasLagFrames.set(false);
+		horizontal.set(false);
 		defaultPatterns();
 		autoHeldChanged();
 	});
@@ -1778,6 +1783,12 @@ void PianoRollViewModel::loadPatterns(const std::map<std::string, std::string> &
 			wasLag = v.boolean;
 		lagFramesToHide.set(hide);
 		hideWasLagFrames.set(wasLag);
+		/* turned on its side, when the project was */
+		bool across = false;
+		if (const auto it = members.find("HorizontalOrientation"); it != members.end() && json::parse(it->second, v, err) &&
+			v.kind == json::Json::Kind::Bool)
+			across = v.boolean;
+		horizontal.set(across);
 	}
 	axisHoldValues_.clear();
 	if (const auto it = members.find("AxisHoldValues"); it != members.end())

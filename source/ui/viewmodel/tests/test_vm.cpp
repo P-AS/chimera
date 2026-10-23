@@ -1172,6 +1172,9 @@ bool pianoRollColumns(const char *package, const char *rom)
 		CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get() && roll.hiddenColumns.get() == "P1 Up"; }, 60));
 		CHECK(roll.run("showColumn", {std::string("P1 Up")}, error).has_value());
 		CHECK(roll.run("hideColumn", {std::string("P1 Down")}, error).has_value());
+		/* TAStudio's Rotate, kept in the project as Chimera keeps it */
+		CHECK(!roll.horizontal.get());
+		roll.horizontal.set(true);
 		CHECK(session.run("saveProject", {}, error).has_value());
 		CHECK(d.until([&] { return session.status.get().rfind("Saved", 0) == 0; }, 20));
 		session.run("close", {}, error);
@@ -1190,6 +1193,20 @@ bool pianoRollColumns(const char *package, const char *rom)
 			CHECK(up.find("Visible")->boolean && up.find("Emphasis")->boolean && up.find("VerticalWidth")->number() == 15);
 			CHECK(!down.find("Visible")->boolean && down.find("Right")->number() == 105);
 		}
+		const Json *across = o != nullptr ? o->find("HorizontalOrientation") : nullptr;
+		CHECK(across != nullptr && across->kind == Json::Kind::Bool && across->boolean);
+	}
+	{
+		/* opened again: turned, as it was saved */
+		ManualDispatcher d;
+		InputLog inputs;
+		SessionViewModel session(d, inputs);
+		PianoRollViewModel roll(d, inputs, session);
+		std::string error;
+		session.run("openProject", {own.string(), std::string(package)}, error);
+		CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get() && roll.horizontal.get(); }, 60));
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	}
 	fs::remove_all(dir);
 	return true;
