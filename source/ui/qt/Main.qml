@@ -264,6 +264,7 @@ ApplicationWindow {
             title: qsTr("Piano &Roll")
             Action { id: undoAction; property string hotkey: "Undo"; text: qsTr("&Undo"); enabled: root.pianoRoll.undoEnabled; onTriggered: root.pianoRoll.run("undo") }
             Action { id: redoAction; property string hotkey: "Redo"; text: qsTr("&Redo"); enabled: root.pianoRoll.redoEnabled; onTriggered: root.pianoRoll.run("redo") }
+            Action { text: qsTr("Undo &History..."); onTriggered: { undoHistoryWindow.show(); undoHistoryWindow.raise() } }
             MenuSeparator {}
             Action { text: qsTr("&Branches..."); onTriggered: { branchesWindow.show(); branchesWindow.raise() } }
             // Chimera's TAStudio Metadata menu: the header, the comments, the subtitles
@@ -403,6 +404,7 @@ ApplicationWindow {
     RamWatch { id: ramWatchWindow; vm: root.ramWatch; visible: false }
     NewProject { id: newProjectWindow; vm: root.newProject; visible: false }
     ProjectDetails { id: projectDetailsWindow; vm: root.projectDetails; visible: false }
+    UndoHistory { id: undoHistoryWindow; vm: root.pianoRoll; visible: false }
     // a file dropped on the window starts a project from it, as in Chimera:
     // a file on its own is not what runs, a project is
     DropArea {

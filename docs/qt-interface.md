@@ -56,7 +56,7 @@ made from.
 | View model | What it does | Window |
 |---|---|---|
 | session | open a game (the installed core that takes its kind of file opens it; when several do, they are offered), open, save and make projects, recent projects, play, pause, frame advance, restart, seek, keys and gamepads, sound, the greenzone (kept with the project in its cache folder and loaded when the project opens, unless the last session did not end; TAStudio's Greenzone box - every frame, one in N, none - saved in the project's TAStudio part as Chimera saves it), settings applied live or by restarting | main window |
-| pianoRoll | a row a frame and a column a button; press, drag, paint, fill; frames picked (on the frame numbers, as in TAStudio, with the thin column before them moving the machine), put in, taken out, cloned, cleared, copied, cut and pasted (over or in), cut off, with TAStudio's keys; analog controls a column each with their values, a cell picked to edit and a drag painting its value; markers that can move with the frames; undo and redo (a stroke is one step); follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
+| pianoRoll | a row a frame and a column a button; press, drag, paint, fill; frames picked (on the frame numbers, as in TAStudio, with the thin column before them moving the machine), put in, taken out, cloned, cleared, copied, cut and pasted (over or in), cut off, with TAStudio's keys; analog controls a column each with their values, a cell picked to edit and a drag painting its value; markers that can move with the frames; undo and redo (a stroke is one step), and the undo history by Chimera's step names (undone or redone to a step, forgotten up to one, the most kept chosen); follows the current frame; greenzone, lag and marker colours | main window (a C++ item draws it) |
 | branches | other versions of the movie, kept in the project, each with its state in a file in the project's cache folder and the picture it had; loading one loads that state, or replays from where the two movies differ when the state is missing or is another machine's | Branches |
 | ramSearch | the engine's RAM Search, updated after every frame, with undo; values shown and typed every way RAM Watch shows them | RAM Search (Qt's own table) |
 | ramWatch | addresses kept an eye on, read after every frame, shown unsigned, signed, in hex, in binary, as fixed point or as a float exactly as Chimera writes them; the previous value three ways, changes counted; Chimera's .wch files both ways (other emulators' too); a game core's properties watched by name, read and written as text by the engine; the marked ones shown over the picture where Chimera shows them | RAM Watch |
@@ -220,7 +220,7 @@ A suggested order, each step usable on its own:
 Taken from Chimera's menus, dialogs and tools on 2026-10-23, and ticked off
 as each lands here. Parts that wait on a question to the owner say so.
 
-- TAStudio: columns in a menu per player (here, one list); undo history, and selection undo; TAStudio's
+- TAStudio: columns in a menu per player (here, one list); selection undo; TAStudio's
   settings; autohold on a column (the piano roll's own); macros.
   Recording mode waits on question 6.
 - Configuration: paths, display (size, aspect, filters), sound (device,
@@ -228,8 +228,8 @@ as each lands here. Parts that wait on a question to the owner say so.
   the greenzone's memory budgets, firmware, pre-compiled modules, the
   data folder, customize, throttle kinds and frame skipping, which of
   hotkeys and controls wins, saving and loading the configuration.
-- View: average FPS, game time, the rerecord count, subtitles over the
-  picture, messages over the picture, the status bar shown or not, the
+- View: average FPS, game time, the rerecord count, messages over the
+  picture, the status bar shown or not, the
   log window, the window's size.
 - Tools: export the core's log, the reproducible media maker, the batch
   runner, the macro tool, the trace logger, the debugger, video

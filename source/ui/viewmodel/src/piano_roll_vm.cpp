@@ -16,6 +16,55 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	rows("frames", "one row a frame, one column a button; a cell is true where the button is held", frames_);
 	rows("markers", "the movie's markers: frame, text, whether the frame's state is kept", markerRows_);
 	rows("columns", "the piano roll's columns, a control each: name, label, shown", columnRows_);
+	rows("history", "the undo history, in order: each step's name, and whether it is done (the rest are undone)", historyRows_);
+	expose("maxUndoSteps", "the most undo steps kept", maxUndoSteps, true);
+	command("undoTo", "takes back steps until this one (by its place in the history) is the last done", {"step"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t i = 0;
+			if (!arg(a, 0, i, error)) return {};
+			if (i < -1 || i >= historyRows_.rowCount())
+			{
+				error = "no step " + std::to_string(i);
+				return {};
+			}
+			while (static_cast<int64_t>(undo_.size()) - 1 > i) undoOrRedo(true);
+			return {};
+		});
+	command("redoTo", "does steps again until this one (by its place in the history) is the last done", {"step"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t i = 0;
+			if (!arg(a, 0, i, error)) return {};
+			if (i < 0 || i >= historyRows_.rowCount())
+			{
+				error = "no step " + std::to_string(i);
+				return {};
+			}
+			while (static_cast<int64_t>(undo_.size()) - 1 < i && !redo_.empty()) undoOrRedo(false);
+			return {};
+		});
+	command("clearHistory", "forgets every step, done or undone", {}, [this](const Args &, std::string &) -> Value {
+		undo_.clear();
+		redo_.clear();
+		canUndo.set(false);
+		canRedo.set(false);
+		historyChanged();
+		return {};
+	});
+	command("clearHistoryTo", "forgets the steps done up to this one (by its place in the history)", {"step"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t i = 0;
+			if (!arg(a, 0, i, error)) return {};
+			if (i < 0 || i >= static_cast<int64_t>(undo_.size()))
+			{
+				error = "only steps done can be forgotten";
+				return {};
+			}
+			undo_.erase(undo_.begin(), undo_.begin() + i + 1);
+			canUndo.set(!undo_.empty());
+			historyChanged();
+			return {};
+		});
+	maxStepsWatch_ = maxUndoSteps.changed.connect([this] { trimHistory(); });
 	expose("hiddenColumns", "the columns not shown, by control name, a line each", hiddenColumns);
 	command("hideColumn", "a control's column no longer shown", {"name"}, [this](const Args &a, std::string &error) -> Value {
 		std::string name;
@@ -238,6 +287,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			std::vector<int32_t> neutral(static_cast<size_t>(inputs_.axisCount()));
 			if (!neutral.empty()) inputs_.neutralAxes(neutral.data());
 			for (Row &r : rows) r.axes = neutral;
+			naming_ = "Insert " + std::to_string(count) + (count == 1 ? " frame: " : " frames: ") + std::to_string(frame);
 			putIn(frame, rows);
 			return {};
 		});
@@ -245,6 +295,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t first = 0, last = 0;
 			if (!range(a, first, last, error)) return {};
+			naming_ = "Delete " + std::to_string(last - first + 1) + " frames from " + std::to_string(first) + "-" + std::to_string(last);
 			takeOut(first, last);
 			return {};
 		});
@@ -261,6 +312,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			std::vector<Row> rows;
 			for (int64_t t = 0; t < times; t++)
 				for (int64_t f = first; f <= last; f++) rows.push_back(readRow(f));
+			naming_ = "Clone " + std::to_string(first) + "-" + std::to_string(last) + (times > 1 ? " x" + std::to_string(times) : std::string());
 			putIn(last + 1, rows);
 			return {};
 		});
@@ -270,6 +322,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!range(a, first, last, error)) return {};
 			std::vector<int32_t> neutral(static_cast<size_t>(inputs_.axisCount()));
 			if (!neutral.empty()) inputs_.neutralAxes(neutral.data());
+			naming_ = "Clear frames " + std::to_string(first) + "-" + std::to_string(last);
 			overwrite(first, std::vector<Row>(static_cast<size_t>(last - first + 1), Row{0, neutral}));
 			return {};
 		});
@@ -303,6 +356,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			for (int64_t f = first; f <= last; f++) clipboard_.push_back(readRow(f));
 			copiedFrom_ = first;
 			clipboardFrames.set(static_cast<int64_t>(clipboard_.size()));
+			naming_ = "Cut frames " + std::to_string(first) + "-" + std::to_string(last);
 			takeOut(first, last);
 			return clipboardFrames.get();
 		});
@@ -315,6 +369,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				error = clipboard_.empty() ? "nothing was copied" : "no frame " + std::to_string(frame);
 				return {};
 			}
+			naming_ = "Copy Over Input: " + std::to_string(frame);
 			overwrite(frame, clipboard_);
 			return {};
 		});
@@ -327,6 +382,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				error = clipboard_.empty() ? "nothing was copied" : "no frame " + std::to_string(frame);
 				return {};
 			}
+			naming_ = "Paste Insert: " + std::to_string(frame);
 			putIn(frame, clipboard_);
 			return {};
 		});
@@ -339,6 +395,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				error = "no frame " + std::to_string(frame);
 				return {};
 			}
+			naming_ = "Truncate Movie: " + std::to_string(frame);
 			takeOut(frame, inputs_.size() - 1);
 			return {};
 		});
@@ -415,6 +472,11 @@ bool PianoRollViewModel::paint(int64_t first, int64_t last, int64_t b, std::opti
 	const int64_t before = inputs_.size();
 	const uint64_t bit = uint64_t{1} << b;
 	Step step{{}, before, 0};
+	const std::string button = frames_.columnName(static_cast<int32_t>(b));
+	const std::string span = first == last ? std::to_string(first) : std::to_string(first) + "-" + std::to_string(last);
+	step.name = join ? "Paint Bool " + button + " from frame "
+		: held ? "Set " + button + "(" + (*held ? "On" : "Off") + "): " + span
+			   : "Toggle " + button + ": " + span;
 	for (int64_t f = first; f <= last; f++)
 	{
 		const uint64_t was = inputs_.at(f);
@@ -430,8 +492,13 @@ bool PianoRollViewModel::paint(int64_t first, int64_t last, int64_t b, std::opti
 
 void PianoRollViewModel::keep(Step step, bool join)
 {
+	if (!join && step.name.empty()) step.name = naming_.empty() ? describe(step) : naming_;
+	naming_.clear();
 	if (join && !undo_.empty())
 	{
+		/* a stroke is named for where it began */
+		if (!step.name.empty()) undo_.back().name = step.name + std::to_string(std::min(undo_.back().frames.empty() ? 0 : undo_.back().frames.begin()->first,
+																	 step.frames.empty() ? INT64_MAX : step.frames.begin()->first));
 		/* the stroke goes on: a frame it passes again keeps its first "before" */
 		Step &last = undo_.back();
 		for (const auto &[f, change] : step.frames)
@@ -452,11 +519,54 @@ void PianoRollViewModel::keep(Step step, bool join)
 	{
 		stroke_ = false;
 		undo_.push_back(std::move(step));
-		if (undo_.size() > kMostUndo) undo_.erase(undo_.begin());
+		trimHistory();
 	}
 	redo_.clear();
 	canUndo.set(!undo_.empty());
 	canRedo.set(false);
+	historyChanged();
+}
+
+void PianoRollViewModel::trimHistory()
+{
+	const size_t most = static_cast<size_t>(std::max<int64_t>(1, maxUndoSteps.get()));
+	if (undo_.size() > most) undo_.erase(undo_.begin(), undo_.begin() + static_cast<std::ptrdiff_t>(undo_.size() - most));
+	historyChanged();
+}
+
+void PianoRollViewModel::historyChanged()
+{
+	historyRows_.reset.emit();
+}
+
+std::string PianoRollViewModel::describe(const Step &step)
+{
+	auto range = [](int64_t a, int64_t b) { return a == b ? std::to_string(a) : std::to_string(a) + "-" + std::to_string(b); };
+	if (step.shiftCount > 0) return "Insert " + std::to_string(step.shiftCount) + (step.shiftCount == 1 ? " frame: " : " frames: ") + std::to_string(step.shiftAt);
+	if (step.shiftCount < 0) return "Delete " + std::to_string(-step.shiftCount) + " frames from " + range(step.shiftAt, step.shiftAt - step.shiftCount - 1);
+	if (step.frames.empty() && step.sizeAfter != step.sizeBefore) return "Fill to " + std::to_string(step.sizeAfter) + " frames";
+	if (!step.frames.empty()) return "Change frames " + range(step.frames.begin()->first, step.frames.rbegin()->first);
+	return "Change";
+}
+
+std::string PianoRollViewModel::HistoryRows::columnName(int32_t column) const
+{
+	static const char *const names[] = {"name", "done"};
+	return column >= 0 && column < 2 ? names[column] : "";
+}
+
+Value PianoRollViewModel::HistoryRows::cell(int64_t row, int32_t column) const
+{
+	if (row < 0 || row >= rowCount()) return {};
+	const size_t done = vm_.undo_.size();
+	const Step &s = static_cast<size_t>(row) < done ? vm_.undo_[static_cast<size_t>(row)]
+													: vm_.redo_[vm_.redo_.size() - 1 - (static_cast<size_t>(row) - done)];
+	switch (column)
+	{
+	case 0: return s.name;
+	case 1: return static_cast<size_t>(row) < done;
+	default: return {};
+	}
 }
 
 void PianoRollViewModel::undoOrRedo(bool back)
@@ -518,6 +628,7 @@ void PianoRollViewModel::undoOrRedo(bool back)
 	to.push_back(std::move(step));
 	canUndo.set(!undo_.empty());
 	canRedo.set(!redo_.empty());
+	historyChanged();
 	if (markersMoved) markersEdited(0);
 	if (shifted || inputs_.size() < before)
 	{
@@ -667,6 +778,8 @@ bool PianoRollViewModel::paintAxis(int64_t first, int64_t last, int64_t axis, in
 	const int64_t before = inputs_.size();
 	Step step;
 	step.sizeBefore = before;
+	step.name = join ? "Paint Axis " + ax.name + " from frame "
+		: "Set " + ax.name + "(" + std::to_string(value) + "): " + (first == last ? std::to_string(first) : std::to_string(first) + "-" + std::to_string(last));
 	for (int64_t f = first; f <= last; f++)
 	{
 		const Row was = readRow(f);
@@ -784,6 +897,7 @@ void PianoRollViewModel::replaceAll(const std::vector<Marker> &markers)
 	for (const Marker &m : markers) markers_[m.frame] = m;
 	undo_.clear();
 	redo_.clear();
+	historyChanged();
 	canUndo.set(false);
 	canRedo.set(false);
 	frameCount.set(inputs_.size());

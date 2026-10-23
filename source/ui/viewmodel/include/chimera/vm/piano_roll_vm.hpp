@@ -25,6 +25,8 @@ public:
 	/* the columns not shown, by control name, a line each (Chimera's
 	 * defaults hide the console's power and reset, keyboard keys...) */
 	Property<std::string> hiddenColumns;
+	/* the most undo steps kept, as Chimera's TAStudio setting has it */
+	Property<int64_t> maxUndoSteps{1000};
 	Property<int64_t> frameCount{0};
 	/* keep the current frame in view while the machine runs */
 	Property<bool> followPlayback{true};
@@ -133,13 +135,34 @@ private:
 		std::map<int64_t, std::pair<std::vector<int32_t>, std::vector<int32_t>>> axes;
 		/* the markers, when the step moved them */
 		std::optional<std::map<int64_t, Marker>> markersBefore, markersAfter;
+		/* what it was, as Chimera's undo history names it ("Set P1 A(On): 5") */
+		std::string name;
 	};
+	/* the next step's name, set by the command that makes it */
+	std::string naming_;
+	static std::string describe(const Step &step);
+	/* the undo history, in order: the steps done, then those undone */
+	class HistoryRows : public RowModel
+	{
+	public:
+		explicit HistoryRows(PianoRollViewModel &vm) : vm_(vm) {}
+		int64_t rowCount() const override { return static_cast<int64_t>(vm_.undo_.size() + vm_.redo_.size()); }
+		int32_t columnCount() const override { return 2; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
+
+	private:
+		PianoRollViewModel &vm_;
+	};
+	HistoryRows historyRows_{*this};
+	void historyChanged();
 	struct Row
 	{
 		uint64_t buttons = 0;
 		std::vector<int32_t> axes;
 	};
-	static constexpr size_t kMostUndo = 1000;
+	/* the most steps kept (Chimera's default, a setting) */
+	void trimHistory();
 
 	/* held: set to it; nullopt: flip. join: part of the stroke under way */
 	bool paint(int64_t first, int64_t last, int64_t button, std::optional<bool> held, bool join, std::string &error);
@@ -177,7 +200,7 @@ private:
 	std::set<std::string> hidden_;
 	ColumnRows columnRows_{*this};
 	void hiddenChanged();
-	Connection hiddenWatch_;
+	Connection hiddenWatch_, maxStepsWatch_;
 	std::map<int64_t, Marker> markers_;
 	MarkerRows markerRows_{*this};
 	Connection markersWatch_;

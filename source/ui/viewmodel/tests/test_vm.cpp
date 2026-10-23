@@ -2187,6 +2187,45 @@ bool pianoRollEditing(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.frame.get() == 10; }, 30) && masks() == start);
 	/* and no seek cut short by an edit said it could not go somewhere */
 	CHECK(session.status.get().find("Could not go") == std::string::npos);
+	/* the undo history, step by step, by Chimera's names */
+	{
+		RowModel *history = nullptr;
+		for (const auto &r : roll.rowLists())
+			if (r.name == "history") history = r.model;
+		CHECK(history != nullptr);
+		if (history == nullptr) return false;
+		auto stepName = [&](int64_t i) {
+			std::string n;
+			fromValue(history->cell(i, 0), n);
+			return n;
+		};
+		auto done = [&](int64_t i) {
+			bool b = false;
+			fromValue(history->cell(i, 1), b);
+			return b;
+		};
+		CHECK(roll.run("clearHistory", {}, error).has_value() && history->rowCount() == 0);
+		roll.run("paint", {int64_t{2}, int64_t{2}, int64_t{4}, true}, error);
+		roll.run("insertFrames", {int64_t{3}, int64_t{2}}, error);
+		roll.run("deleteFrames", {int64_t{3}, int64_t{4}}, error);
+		roll.run("toggle", {int64_t{2}, int64_t{4}}, error);
+		CHECK(history->rowCount() == 4);
+		CHECK(stepName(0) == "Set P1 A(On): 2" && stepName(1) == "Insert 2 frames: 3" && stepName(2) == "Delete 2 frames from 3-4" &&
+			stepName(3) == "Toggle P1 A: 2");
+		CHECK(roll.run("undoTo", {int64_t{1}}, error).has_value() && done(1) && !done(2) && !done(3) && history->rowCount() == 4);
+		CHECK(stepName(2) == "Delete 2 frames from 3-4" && stepName(3) == "Toggle P1 A: 2");
+		CHECK(roll.run("redoTo", {int64_t{2}}, error).has_value() && done(2) && !done(3));
+		CHECK(roll.run("undoTo", {int64_t{-1}}, error).has_value() && !done(0) && masks() == start);
+		CHECK(roll.run("redoTo", {int64_t{3}}, error).has_value() && done(3));
+		CHECK(roll.run("clearHistoryTo", {int64_t{1}}, error).has_value() && history->rowCount() == 2 && stepName(0) == "Delete 2 frames from 3-4");
+		roll.maxUndoSteps.set(1);
+		CHECK(history->rowCount() == 1 && stepName(0) == "Toggle P1 A: 2");
+		roll.run("undo", {}, error);
+		roll.maxUndoSteps.set(1000);
+		/* what is left done stays, the base the tests below start from */
+		roll.run("paint", {int64_t{2}, int64_t{2}, int64_t{4}, false}, error);
+		CHECK(masks() == start);
+	}
 	/* cloned a number of times, as one edit */
 	CHECK(roll.run("cloneFrames", {int64_t{1}, int64_t{2}, int64_t{3}}, error).has_value() && roll.frameCount.get() == 16);
 	want = start;
