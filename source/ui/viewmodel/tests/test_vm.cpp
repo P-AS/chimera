@@ -61,6 +61,7 @@
 #include "chimera/vm/trace_logger_vm.hpp"
 #include "chimera/vm/idle_eye.hpp"
 #include "chimera/vm/encoder_vm.hpp"
+#include "chimera/vm/host_input_vm.hpp"
 #include "chimera/vm/nut_muxer.hpp"
 #include "chimera/vm/subprocess.hpp"
 #include "chimera/vm/surface_viewer_vm.hpp"
@@ -1471,6 +1472,7 @@ bool luaLibraries(const char *package, const char *rom)
 	PianoRollViewModel roll(d, inputs, session);
 	DebuggerViewModel debugger(d, session);
 	GuiOverlayViewModel guiOverlay(d);
+	HostInputViewModel hostInput(d, session);
 	LuaBridge lua;
 	LuaConsoleViewModel console(d, lua);
 	lua.add(session);
@@ -1478,6 +1480,14 @@ bool luaLibraries(const char *package, const char *rom)
 	lua.add(debugger);
 	lua.add(console);
 	lua.add(guiOverlay);
+	lua.add(hostInput);
+	/* the person holds Z and the left and right buttons, the pointer at 12,34 */
+	hostInput.key("Z", true);
+	hostInput.key("X", true);
+	hostInput.key("X", false);
+	hostInput.mouseX.set(12);
+	hostInput.mouseY.set(34);
+	hostInput.mouseButtons.set(HostInputViewModel::kLeft | HostInputViewModel::kRight);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
@@ -1506,6 +1516,16 @@ local a = mainmemory.read_bytes_as_array(0x20, 2)
 console.log("tables", r[0], r[1], a[1], a[2], memory.getmemorydomainlist()[0] == mainmemory.getname(), memory.getmemorydomainsize() > 0)
 mainmemory.writefloat(0x40, 1.5, false)
 console.log("float", mainmemory.readfloat(0x40, false))
+local id = memorysavestate.savecorestate()
+mainmemory.write_u8(0x10, 0x55)
+memorysavestate.loadcorestate(id)
+console.log("state", type(id), mainmemory.read_u8(0x10), pcall(memorysavestate.loadcorestate, "nothing"))
+memorysavestate.removestate(id)
+local held, mouse = input.get(), input.getmouse()
+console.log("input", held["Z"], held["WMouse L"], held["WMouse R"], held["X"] == nil, held["WMouse M"] == nil, mouse.X, mouse.Y, mouse.Left, mouse.Middle, mouse.Right, input.get_pressed_axes()["WMouse Y"])
+userdata.set("lives", 3)
+userdata.set("name", "walker")
+console.log("userdata", userdata.get("lives"), userdata.containskey("name"), #userdata.get_keys(), userdata.remove("lives"), userdata.get("lives"), userdata.remove("lives"), select(2, pcall(userdata.set, "t", {})):find("Invalid type for userdata") ~= nil)
 joypad.set({["P1 Down"] = true})
 gui.drawRectangle(1, 2, 3, 4, 0xFFFF0000)
 gui.text(5, 6, 'say "hi"', "yellow", "topright")
@@ -1526,6 +1546,9 @@ while true do emu.frameadvance() end
 	CHECK(said("sized ") == "sized 4660 13330 -2 4294967294 1192960");
 	CHECK(said("tables ") == "tables 18 52 18 52 true true");
 	CHECK(said("float ") == "float 1.5");
+	CHECK(said("state ") == "state string 171 false no state nothing in memory");
+	CHECK(said("input ") == "input true true true true true 12 34 true false true 34");
+	CHECK(said("userdata ") == "userdata 3 true 2 true nil false true");
 	CHECK(session.readDomain("RAM").at(0x10) == 0xAB);
 	/* the drawings of the frame to come, for the window to draw over the picture */
 	{

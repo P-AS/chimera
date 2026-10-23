@@ -10,6 +10,7 @@
 #include <ctime>
 #include <fstream>
 #include <future>
+#include <random>
 #include <iterator>
 #include <utility>
 
@@ -1124,6 +1125,62 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			}
 			return static_cast<int64_t>(f.serial);
 		}, &isOpen);
+	/* Lua's memorysavestate, as Chimera's: the core's raw state (no movie, no picture), in memory */
+	command("saveCoreState", "keeps the core's state in memory; its id", {}, [this](const Args &, std::string &error) -> Value {
+		std::string id;
+		onMachineWait([&](ce_session *s) {
+			if (s == nullptr) return;
+			uint64_t len = 0;
+			const uint8_t *data = ce_session_save_state(s, &len);
+			if (data == nullptr)
+			{
+				error = std::string("the core could not save its state: ") + ce_session_last_error(s);
+				return;
+			}
+			char name[40];
+			std::snprintf(name, sizeof name, "%016llx-%llu", static_cast<unsigned long long>(std::random_device{}()) << 32 | std::random_device{}(),
+				static_cast<unsigned long long>(++memoryStateCount_));
+			id = name;
+			memoryStatesM_[id] = MemoryState{std::vector<uint8_t>(data, data + len), ce_session_frame(s)};
+		});
+		if (id.empty() && error.empty()) error = "no machine is open";
+		if (!error.empty()) return {};
+		return id;
+	}, &isOpen);
+	command("loadCoreState", "puts the core back in a state kept in memory, by its id", {"id"}, [this](const Args &a, std::string &error) -> Value {
+		std::string id;
+		if (!arg(a, 0, id, error)) return {};
+		onMachineWait([&](ce_session *s) {
+			const auto it = memoryStatesM_.find(id);
+			if (s == nullptr || it == memoryStatesM_.end())
+			{
+				error = "no state " + id + " in memory";
+				return;
+			}
+			runningM_ = false;
+			if (ce_session_load_state(s, it->second.bytes.data(), it->second.bytes.size()) != 0)
+			{
+				error = std::string("the core would not load it: ") + ce_session_last_error(s);
+				return;
+			}
+			/* the engine told which frame of the movie that is, as a branch's state is */
+			if (ce_session_movie_at(s, it->second.frame) == 0) frameM_ = it->second.frame;
+			report(-1, -1, -1, -1, -1);
+		});
+		if (!error.empty()) return {};
+		running.set(false);
+		return true;
+	}, &isOpen);
+	command("removeState", "forgets a state kept in memory", {"id"}, [this](const Args &a, std::string &error) -> Value {
+		std::string id;
+		if (!arg(a, 0, id, error)) return {};
+		onMachineWait([&](ce_session *) { memoryStatesM_.erase(id); });
+		return {};
+	});
+	command("clearStates", "forgets every state kept in memory", {}, [this](const Args &, std::string &) -> Value {
+		onMachineWait([&](ce_session *) { memoryStatesM_.clear(); });
+		return {};
+	});
 	command("seek", "puts the machine on a frame, from the nearest stored state; stops it running", {"frame"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t target = 0;
@@ -3771,6 +3828,10 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		if (padsM_)
 		{
 			padsM_->poll(padHeld_);
+			{
+				std::lock_guard<std::mutex> lock(padHeldCopyM_);
+				padHeldCopy_ = padHeld_;
+			}
 			for (const std::string &name : padHeld_)
 				for (int b : bindingsM_.buttonsOf(name))
 					if (b < 64) padMask |= uint64_t{1} << b;

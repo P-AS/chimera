@@ -66,6 +66,7 @@
 #include "chimera/vm/surface_viewer_vm.hpp"
 #include "chimera/vm/macro_tool_vm.hpp"
 #include "chimera/vm/encoder_vm.hpp"
+#include "chimera/vm/host_input_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -113,7 +114,8 @@ private:
 class KeyFilter : public QObject
 {
 public:
-	KeyFilter(vm::SessionViewModel &session, vm::HotkeysViewModel &hotkeys) : session_(session), hotkeys_(hotkeys) {}
+	KeyFilter(vm::SessionViewModel &session, vm::HotkeysViewModel &hotkeys, vm::HostInputViewModel &input)
+		: session_(session), hotkeys_(hotkeys), input_(input) {}
 
 protected:
 	bool eventFilter(QObject *watched, QEvent *e) override
@@ -138,12 +140,15 @@ protected:
 						const auto route = vm::HotkeysViewModel::route(hotkeys_.keyPriority.get(),
 							hotkeys_.boundTo(combo.toStdString()), session_.keyIsBound(name.toStdString()));
 						down_[name] = {combo, route.hotkey, route.control};
+						/* what is held, whatever it is bound to, for Lua's input.get */
+						input_.key(name.toStdString(), true);
 						if (route.control) session_.key(name.toStdString(), true);
 						if (route.hotkey) hotkeys_.key(combo.toStdString(), true);
 					}
 					else if (const auto it = down_.find(name); it != down_.end())
 					{
 						if (it->second.control) session_.key(name.toStdString(), false);
+						input_.key(name.toStdString(), false);
 						if (it->second.hotkey) hotkeys_.key(it->second.combo.toStdString(), false);
 						down_.erase(it);
 					}
@@ -158,6 +163,7 @@ protected:
 				if (held.hotkey) hotkeys_.key(held.combo.toStdString(), false);
 			}
 			down_.clear();
+			input_.releaseKeys();
 		}
 		return QObject::eventFilter(watched, e);
 	}
@@ -165,6 +171,7 @@ protected:
 private:
 	vm::SessionViewModel &session_;
 	vm::HotkeysViewModel &hotkeys_;
+	vm::HostInputViewModel &input_;
 	struct Held
 	{
 		QString combo;
@@ -737,6 +744,9 @@ int main(int argc, char **argv)
 	vm::EncoderViewModel encoder(dispatcher, session, QCoreApplication::applicationDirPath().toStdString());
 	for (const char *name : {"command", "audioSync", "resize", "width", "height", "pad"}) config.keep(encoder, name);
 	qt::QmlViewModel encoderQml(encoder);
+	/* the person's own keys, pads and pointer, for Lua's input library */
+	vm::HostInputViewModel hostInput(dispatcher, session);
+	qt::QmlViewModel hostInputQml(hostInput);
 	config.keep(session, "autoRestore");
 	config.keep(session, "speedPercent");
 	config.keep(session, "unthrottled");
@@ -958,6 +968,7 @@ int main(int argc, char **argv)
 	lua.add(surfaceViewer);
 	lua.add(macroTool);
 	lua.add(encoder);
+	lua.add(hostInput);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -1011,6 +1022,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("surfaceViewer"), QVariant::fromValue<QObject *>(&surfaceViewerQml)},
 		{QStringLiteral("macroTool"), QVariant::fromValue<QObject *>(&macroToolQml)},
 		{QStringLiteral("encoder"), QVariant::fromValue<QObject *>(&encoderQml)},
+		{QStringLiteral("hostInput"), QVariant::fromValue<QObject *>(&hostInputQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},
@@ -1032,7 +1044,7 @@ int main(int argc, char **argv)
 		display.windowGeometry.set(QStringLiteral("%1,%2,%3,%4").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height()).toStdString());
 	});
 	if (customize.startFullscreen.get()) window->showFullScreen();
-	KeyFilter keys(session, hotkeys);
+	KeyFilter keys(session, hotkeys, hostInput);
 	window->installEventFilter(&keys);
 	/* TAStudio passes the keys on too, as Chimera's does: the machine's and the hotkeys */
 	if (auto *tastudio = window->findChild<QQuickWindow *>(QStringLiteral("tastudioWindow"))) tastudio->installEventFilter(&keys);

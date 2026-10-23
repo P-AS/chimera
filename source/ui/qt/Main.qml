@@ -47,6 +47,7 @@ ApplicationWindow {
     required property QtObject idleEye
     required property QtObject macroTool
     required property QtObject encoder
+    required property QtObject hostInput
     // a Paths folder for a file dialog to open in (made when it is not there)
     function folderOf(name) {
         root.paths.changed; root.paths.base; root.paths.lastRomFolder; root.paths.recentForRoms
@@ -708,6 +709,28 @@ ApplicationWindow {
         objectName: "pictureArea"
         anchors.fill: parent
         color: "black"
+        // the pointer over the picture, in the machine's pixels, for Lua's input.getmouse:
+        // only watched, never taken from what is under it
+        PointHandler {
+            acceptedButtons: Qt.AllButtons
+            grabPermissions: PointerHandler.ApprovesTakeOverByAnything
+            onPointChanged: pictureArea.notePointer(point.position, point.pressedButtons)
+        }
+        HoverHandler { onPointChanged: pictureArea.notePointer(point.position, -1) }
+        WheelHandler {
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+            onWheel: (event) => root.hostInput.mouseWheel = root.hostInput.mouseWheel + event.angleDelta.y
+        }
+        function notePointer(at, buttons) {
+            const shown = picture.shownRect, src = picture.sourceRect
+            if (shown.width > 0 && shown.height > 0) {
+                root.hostInput.mouseX = Math.floor(src.x + (at.x - shown.x) * src.width / shown.width)
+                root.hostInput.mouseY = Math.floor(src.y + (at.y - shown.y) * src.height / shown.height)
+            }
+            if (buttons < 0) return
+            root.hostInput.mouseButtons = (buttons & Qt.LeftButton ? 1 : 0) | (buttons & Qt.MiddleButton ? 2 : 0) | (buttons & Qt.RightButton ? 4 : 0)
+                                        | (buttons & Qt.BackButton ? 8 : 0) | (buttons & Qt.ForwardButton ? 16 : 0)
+        }
         // nothing open: Chimera's mark, faint, blinking now and then, its eye
         // following the pointer across the window
         PictureItem {

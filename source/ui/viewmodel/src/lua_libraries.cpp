@@ -174,6 +174,53 @@ mainmemory = makeMemory(mainDomain)
 function mainmemory.getname() return mainDomain() end
 function mainmemory.getcurrentmemorydomainsize() return memory.getmemorydomainsize(mainDomain()) end
 
+-- memorysavestate: the core's own state in memory, by an id ----------------
+memorysavestate = {}
+function memorysavestate.savecorestate() return C.session.saveCoreState() end
+function memorysavestate.loadcorestate(id) C.session.loadCoreState(tostring(id)) end
+function memorysavestate.removestate(id) C.session.removeState(tostring(id)) end
+function memorysavestate.clearstatesfrommemory() C.session.clearStates() end
+
+-- userdata: values a script keeps for this session, as Chimera's (in memory,
+-- shared by every script; a boolean, a number or a string each)
+userdata = {}
+local bag = {}
+function userdata.set(name, value)
+	local t = type(value)
+	if t ~= "nil" and t ~= "boolean" and t ~= "number" and t ~= "string" then error("Invalid type for userdata", 2) end
+	bag[tostring(name)] = value
+end
+function userdata.get(key) return bag[tostring(key)] end
+function userdata.clear() bag = {} end
+function userdata.remove(key)
+	key = tostring(key)
+	if bag[key] == nil then return false end
+	bag[key] = nil
+	return true
+end
+function userdata.containskey(key) return bag[tostring(key)] ~= nil end
+function userdata.get_keys()
+	local keys = {}
+	for k in pairs(bag) do keys[#keys + 1] = k end
+	table.sort(keys)
+	return keys
+end
+
+-- input: what the person's own devices hold, as Chimera's -----------------
+input = {}
+function input.get()
+	local held = {}
+	for name in string.gmatch(C.input.held(), "[^\n]+") do held[name] = true end
+	return held
+end
+function input.getmouse()
+	local b = C.input.mouseButtons
+	return {X = C.input.mouseX, Y = C.input.mouseY, Left = b & 1 ~= 0, Middle = b & 2 ~= 0, Right = b & 4 ~= 0,
+		XButton1 = b & 8 ~= 0, XButton2 = b & 16 ~= 0, Wheel = C.input.mouseWheel}
+end
+-- the pointer's place; the gamepads' sticks are not followed here
+function input.get_pressed_axes() return {["WMouse X"] = C.input.mouseX, ["WMouse Y"] = C.input.mouseY} end
+
 -- joypad -------------------------------------------------------------------
 joypad = {}
 -- buttons by their names; with a controller's number, the names without its "P<n> "

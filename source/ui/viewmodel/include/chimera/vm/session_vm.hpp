@@ -346,6 +346,12 @@ public:
 	/* the movie's markers, from whoever edits them: saved with the project,
 	 * and the frames of those that keep a state pinned in the greenzone */
 	void setMarkers(std::vector<Marker> markers);
+	/* the gamepads' buttons held at the last frame, by Chimera's names (any thread) */
+	std::vector<std::string> padsHeld() const
+	{
+		std::lock_guard<std::mutex> lock(padHeldCopyM_);
+		return padHeldCopy_;
+	}
 	/* the run's own markers' frames: their states are kept as a marker's are, never saved */
 	void setRunMarkers(std::vector<int64_t> frames);
 
@@ -676,6 +682,15 @@ private:
 	std::vector<Marker> markersM_;
 	std::vector<int64_t> runMarkersM_;
 	std::atomic<bool> borrowStopM_{false};
+	/* Lua's memorysavestate: the core's own state, kept in memory by an id,
+	 * with the frame it was on */
+	struct MemoryState
+	{
+		std::vector<uint8_t> bytes;
+		int64_t frame = 0;
+	};
+	std::map<std::string, MemoryState> memoryStatesM_;
+	uint64_t memoryStateCount_ = 0;
 	std::atomic<int64_t> borrowFramesM_{0};
 	int64_t borrowCount_ = 0;
 	PackageFinder findPackageM_;
@@ -797,6 +812,8 @@ private:
 	Connection periodWatch_;
 	std::atomic<int64_t> periodM_{1};
 	std::vector<std::string> padHeld_;
+	mutable std::mutex padHeldCopyM_;
+	std::vector<std::string> padHeldCopy_;
 	size_t padCount_ = 0;
 	std::unique_ptr<Sound> soundM_;
 
