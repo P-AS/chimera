@@ -369,23 +369,78 @@ ApplicationWindow {
                 }
             }
             // the columns shown, as Chimera's Columns menu has them
+            // the console's columns first, then a menu a player's and the
+            // keyboard keys', then a toggle for each group, as Chimera's
             Menu {
                 id: columnsMenu
                 title: qsTr("&Columns")
                 enabled: root.session.isOpen
-                Action { text: qsTr("Show &All"); onTriggered: root.pianoRoll.run("showAllColumns") }
-                MenuSeparator {}
                 Instantiator {
                     model: root.pianoRoll.rows("columns")
                     delegate: MenuItem {
                         required property string name
+                        required property string label
                         required property bool shown
-                        text: name
+                        required property string group
+                        text: qsTr("%1 (%2)").arg(label).arg(name)
+                        visible: group === ""
+                        height: visible ? implicitHeight : 0
                         checkable: true
                         checked: shown
                         onTriggered: root.pianoRoll.run(shown ? "hideColumn" : "showColumn", [name])
                     }
-                    onObjectAdded: (index, object) => columnsMenu.insertItem(index + 2, object)
+                    onObjectAdded: (index, object) => columnsMenu.insertItem(index, object)
+                    onObjectRemoved: (index, object) => columnsMenu.removeItem(object)
+                }
+                Instantiator {
+                    id: groupMenus
+                    model: root.pianoRoll.rows("columnGroups")
+                    delegate: Menu {
+                        id: groupMenu
+                        required property string name
+                        title: name
+                        Instantiator {
+                            model: root.pianoRoll.rows("columns")
+                            delegate: MenuItem {
+                                required property string name
+                                required property string label
+                                required property bool shown
+                                required property string group
+                                text: qsTr("%1 (%2)").arg(label).arg(name)
+                                visible: group === groupMenu.name
+                                height: visible ? implicitHeight : 0
+                                checkable: true
+                                checked: shown
+                                onTriggered: root.pianoRoll.run(shown ? "hideColumn" : "showColumn", [name])
+                            }
+                            onObjectAdded: (index, object) => groupMenu.insertItem(index, object)
+                            onObjectRemoved: (index, object) => groupMenu.removeItem(object)
+                        }
+                    }
+                    // each before the separator, in the groups' order
+                    onObjectAdded: (index, object) => {
+                        let at = 0
+                        while (at < columnsMenu.count && columnsMenu.itemAt(at) !== columnsSeparator) at++
+                        columnsMenu.insertMenu(at, object)
+                    }
+                    onObjectRemoved: (index, object) => columnsMenu.removeMenu(object)
+                }
+                MenuSeparator { id: columnsSeparator }
+                Action { text: qsTr("Show &All"); onTriggered: root.pianoRoll.run("showAllColumns") }
+                Instantiator {
+                    model: root.pianoRoll.rows("columnGroups")
+                    delegate: MenuItem {
+                        required property string toggle
+                        required property bool shown
+                        required property bool firstOfToggle
+                        text: qsTr("Show %1").arg(toggle)
+                        visible: firstOfToggle
+                        height: visible ? implicitHeight : 0
+                        checkable: true
+                        checked: shown
+                        onTriggered: root.pianoRoll.run("showGroup", [toggle, !shown])
+                    }
+                    onObjectAdded: (index, object) => columnsMenu.addItem(object)
                     onObjectRemoved: (index, object) => columnsMenu.removeItem(object)
                 }
             }

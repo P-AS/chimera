@@ -9,9 +9,12 @@ import zipfile
 src, name, out = sys.argv[1:4]
 # optionally the core's kind ("game"), and firmware entries as JSON
 kind = sys.argv[4] if len(sys.argv) > 4 else ""
-firmware = json.loads(sys.argv[5]) if len(sys.argv) > 5 else None
+firmware = json.loads(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] else None
 # and the date the package says it was made
 version_date = sys.argv[6] if len(sys.argv) > 6 else ""
+# and buttons more than the synthetic core's, as JSON (a second player,
+# keyboard keys: for the piano roll's Columns menu)
+more_buttons = json.loads(sys.argv[7]) if len(sys.argv) > 7 else []
 try:
     zin = zipfile.ZipFile(src)
 except OSError:
@@ -29,5 +32,7 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
                 cfg["firmware"] = firmware
             if version_date:
                 cfg["versionDate"] = version_date
+            if more_buttons:
+                cfg["input"]["buttons"] = cfg["input"]["buttons"] + more_buttons
             data = json.dumps(cfg, indent=2).encode()
         zout.writestr(info, data)

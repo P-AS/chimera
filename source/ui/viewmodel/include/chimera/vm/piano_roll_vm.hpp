@@ -138,13 +138,16 @@ private:
 		mutable std::vector<int32_t> cachedAxes_;
 	};
 
-	/* the columns, for a menu to show and hide them: name, label, shown */
+	/* the columns, for a menu to show and hide them: name, label, shown,
+	 * autoHold, and the group Chimera's Columns menu puts it in ("" the
+	 * console's, "Player 1"..., or "Keys (A - M)" for keyboard keys, thirty
+	 * a group) */
 	class ColumnRows : public RowModel
 	{
 	public:
 		explicit ColumnRows(PianoRollViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return vm_.frames_.columnCount(); }
-		int32_t columnCount() const override { return 4; }
+		int32_t columnCount() const override { return 5; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -262,6 +265,23 @@ private:
 	std::optional<std::map<std::string, std::string>> pendingMembers_;
 	std::vector<std::string> patternNames_;
 	std::vector<std::string> controlNames() const;
+	/* each column's group in the Columns menu, by column */
+	std::vector<std::string> columnGroups() const;
+	/* the groups, in the menu's order: the players', then the keys' */
+	class GroupRows : public RowModel
+	{
+	public:
+		explicit GroupRows(PianoRollViewModel &vm) : vm_(vm) {}
+		int64_t rowCount() const override { return static_cast<int64_t>(vm_.groupNames().size()); }
+		int32_t columnCount() const override { return 4; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
+
+	private:
+		PianoRollViewModel &vm_;
+	};
+	std::vector<std::string> groupNames() const;
+	GroupRows groupRows_{*this};
 	/* the movie's columns (its LogKey), as written and as a macro names them */
 	std::string movieKeyRaw() const;
 	std::string movieKey() const;

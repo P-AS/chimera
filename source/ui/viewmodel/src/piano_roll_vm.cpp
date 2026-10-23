@@ -508,11 +508,13 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		});
 	maxStepsWatch_ = maxUndoSteps.changed.connect([this] { trimHistory(); });
 	expose("hiddenColumns", "the columns not shown, by control name, a line each", hiddenColumns);
+	/* a column shown or hidden is a change of the project's, as Chimera flags it */
 	command("hideColumn", "a control's column no longer shown", {"name"}, [this](const Args &a, std::string &error) -> Value {
 		std::string name;
 		if (!arg(a, 0, name, error)) return {};
 		hidden_.insert(name);
 		hiddenChanged();
+		session_.markChanged();
 		return {};
 	});
 	command("showColumn", "a control's column shown again", {"name"}, [this](const Args &a, std::string &error) -> Value {
@@ -520,13 +522,41 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		if (!arg(a, 0, name, error)) return {};
 		hidden_.erase(name);
 		hiddenChanged();
+		session_.markChanged();
 		return {};
 	});
 	command("showAllColumns", "every column shown", {}, [this](const Args &, std::string &) -> Value {
 		hidden_.clear();
 		hiddenChanged();
+		session_.markChanged();
 		return {};
 	});
+	rows("columnGroups", "the Columns menu's groups, in order: name (\"Player 1\", \"Keys (A - M)\"), what its own toggle "
+		"says (\"Show Player 1\", \"Show Keys\"; the same for each keys group), and whether all its columns are shown", groupRows_);
+	command("showGroup", "every column of a Columns menu group shown or hidden: a player's (\"Player 1\"), or all the "
+		"keyboard keys (\"Keys\")", {"group", "shown"}, [this](const Args &a, std::string &error) -> Value {
+			std::string group;
+			bool shown = true;
+			if (!arg(a, 0, group, error) || !arg(a, 1, shown, error)) return {};
+			const std::vector<std::string> groups = columnGroups();
+			bool any = false;
+			for (int32_t c = 0; c < frames_.columnCount(); c++)
+			{
+				const std::string &g = groups[static_cast<size_t>(c)];
+				if (g != group && !(group == "Keys" && g.rfind("Keys (", 0) == 0)) continue;
+				any = true;
+				if (shown) hidden_.erase(frames_.columnName(c));
+				else hidden_.insert(frames_.columnName(c));
+			}
+			if (!any)
+			{
+				error = "no group " + group;
+				return {};
+			}
+			hiddenChanged();
+			session_.markChanged();
+			return {};
+		});
 	hiddenWatch_ = session_.hiddenColumnsLoaded.connect([this](const std::vector<std::string> &names) {
 		hidden_ = std::set<std::string>(names.begin(), names.end());
 		hiddenChanged();
@@ -941,6 +971,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			defaultPatterns();
 		pushColumnHolds();
 		session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
+		groupRows_.reset.emit();
 		frames_.reset.emit();
 	});
 	resetWatch_ = session_.inputsReset.connect([this] {
@@ -1347,6 +1378,78 @@ void PianoRollViewModel::pushColumnHolds()
 		all.push_back(std::move(cp));
 	}
 	session_.setColumnPatterns(std::move(all));
+}
+
+std::vector<std::string> PianoRollViewModel::columnGroups() const
+{
+	/* as Chimera's TAStudio.SetUpToolStripColumns: "P<n> ..." to Player n,
+	 * "Key ..." to groups of keys, the rest at the top */
+	const int32_t count = frames_.columnCount();
+	std::vector<std::string> groups(static_cast<size_t>(count));
+	std::vector<int32_t> keys;
+	for (int32_t c = 0; c < count; c++)
+	{
+		const std::string name = frames_.columnName(c);
+		if (name.rfind("Key ", 0) == 0) keys.push_back(c);
+		else if (name.size() >= 2 && name[0] == 'P' && std::isdigit(static_cast<unsigned char>(name[1])))
+			groups[static_cast<size_t>(c)] = "Player " + std::string(1, name[1]);
+	}
+	constexpr size_t kKeysAGroup = 30;
+	for (size_t i = 0; i < keys.size(); i += kKeysAGroup)
+	{
+		const size_t last = std::min(keys.size(), i + kKeysAGroup) - 1;
+		const std::string label = "Keys (" + frames_.columnName(keys[i]).substr(4) + " - " + frames_.columnName(keys[last]).substr(4) + ")";
+		for (size_t k = i; k <= last; k++) groups[static_cast<size_t>(keys[k])] = label;
+	}
+	return groups;
+}
+
+std::vector<std::string> PianoRollViewModel::groupNames() const
+{
+	std::vector<std::string> players, keys;
+	for (const std::string &g : columnGroups())
+	{
+		if (g.empty()) continue;
+		std::vector<std::string> &into = g.rfind("Keys (", 0) == 0 ? keys : players;
+		if (std::find(into.begin(), into.end(), g) == into.end()) into.push_back(g);
+	}
+	std::sort(players.begin(), players.end());
+	/* Chimera lists the keys' groups first */
+	keys.insert(keys.end(), players.begin(), players.end());
+	return keys;
+}
+
+std::string PianoRollViewModel::GroupRows::columnName(int32_t column) const
+{
+	static const char *const names[] = {"name", "toggle", "shown", "firstOfToggle"};
+	return column >= 0 && column < 4 ? names[column] : "";
+}
+
+Value PianoRollViewModel::GroupRows::cell(int64_t row, int32_t column) const
+{
+	const std::vector<std::string> names = vm_.groupNames();
+	if (row < 0 || row >= static_cast<int64_t>(names.size())) return {};
+	const std::string &name = names[static_cast<size_t>(row)];
+	const bool isKeys = name.rfind("Keys (", 0) == 0;
+	switch (column)
+	{
+	case 0: return name;
+	case 1: return isKeys ? std::string("Keys") : name;
+	/* the keys' groups share one toggle, shown once */
+	case 3: return !isKeys || row == 0 || names[static_cast<size_t>(row) - 1].rfind("Keys (", 0) != 0;
+	case 2:
+	{
+		const std::vector<std::string> groups = vm_.columnGroups();
+		for (int32_t c = 0; c < vm_.frames_.columnCount(); c++)
+		{
+			const std::string &g = groups[static_cast<size_t>(c)];
+			const bool member = isKeys ? g.rfind("Keys (", 0) == 0 : g == name;
+			if (member && vm_.hidden_.count(vm_.frames_.columnName(c)) != 0) return false;
+		}
+		return true;
+	}
+	default: return {};
+	}
 }
 
 std::string PianoRollViewModel::movieKeyRaw() const
@@ -1772,13 +1875,14 @@ void PianoRollViewModel::hiddenChanged()
 	session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
 	pushColumnHolds();
 	columnRows_.reset.emit();
+	groupRows_.reset.emit();
 	frames_.reset.emit();
 }
 
 std::string PianoRollViewModel::ColumnRows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"name", "label", "shown", "autoHold"};
-	return column >= 0 && column < 4 ? names[column] : "";
+	static const char *const names[] = {"name", "label", "shown", "autoHold", "group"};
+	return column >= 0 && column < 5 ? names[column] : "";
 }
 
 Value PianoRollViewModel::ColumnRows::cell(int64_t row, int32_t column) const
@@ -1791,6 +1895,11 @@ Value PianoRollViewModel::ColumnRows::cell(int64_t row, int32_t column) const
 	case 1: return vm_.frames_.columnShortName(c);
 	case 2: return !vm_.frames_.columnHidden(c);
 	case 3: return vm_.autoHeld_.count(vm_.frames_.columnName(c)) != 0;
+	case 4:
+	{
+		const std::vector<std::string> groups = vm_.columnGroups();
+		return static_cast<size_t>(c) < groups.size() ? groups[static_cast<size_t>(c)] : std::string();
+	}
 	default: return {};
 	}
 }

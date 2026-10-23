@@ -996,6 +996,10 @@ bool tastudioSettings(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.frame.get() == 12; }, 20));
 	CHECK(inputs.text() == edited);
 	branches.oldControlScheme.set(false);
+	/* a column hidden is a change, as Chimera flags it */
+	CHECK(saved());
+	CHECK(roll.run("hideColumn", {session.buttonNames()[7]}, error).has_value() && session.unsaved.get());
+	roll.run("showColumn", {session.buttonNames()[7]}, error);
 	/* the project's details are a change */
 	CHECK(saved());
 	CHECK(details.run("setComments", {std::string("autosaved")}, error).has_value() && session.unsaved.get());
@@ -1091,6 +1095,59 @@ bool tastudioSettings(const char *package, const char *rom)
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);
+	return true;
+}
+
+/* The piano roll's Columns menu as Chimera's: the console's columns at the
+ * top, a group a player, the keyboard keys thirty a group (hidden until
+ * shown, as Chimera's piano roll has them); a group shown or hidden at once */
+bool columnsMenu(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && roll.frames().columnCount() == 47; }, 60));
+	RowModel *groups = nullptr, *columns = nullptr;
+	for (const auto &r : roll.rowLists())
+	{
+		if (r.name == "columnGroups") groups = r.model;
+		if (r.name == "columns") columns = r.model;
+	}
+	CHECK(groups != nullptr && columns != nullptr);
+	if (groups == nullptr || columns == nullptr) return false;
+	auto text = [](RowModel *m, int64_t row, int32_t col) {
+		std::string t;
+		fromValue(m->cell(row, col), t);
+		return t;
+	};
+	auto flag = [](RowModel *m, int64_t row, int32_t col) {
+		bool b = false;
+		fromValue(m->cell(row, col), b);
+		return b;
+	};
+	auto columnRow = [&](const std::string &name) {
+		for (int64_t i = 0; i < columns->rowCount(); i++)
+			if (text(columns, i, 0) == name) return i;
+		return int64_t{-1};
+	};
+	CHECK(groups->rowCount() == 4);
+	CHECK(text(groups, 0, 0) == "Keys (A - 3)" && text(groups, 1, 0) == "Keys (4 - 9)" && text(groups, 2, 0) == "Player 1" &&
+		text(groups, 3, 0) == "Player 2");
+	CHECK(text(groups, 0, 1) == "Keys" && text(groups, 1, 1) == "Keys" && text(groups, 3, 1) == "Player 2");
+	CHECK(text(columns, columnRow("P1 Up"), 4) == "Player 1" && text(columns, columnRow("Power"), 4).empty() &&
+		text(columns, columnRow("Key A"), 4) == "Keys (A - 3)" && text(columns, columnRow("Key 9"), 4) == "Keys (4 - 9)");
+	/* the keys and Power hidden at first, as Chimera's piano roll hides them */
+	CHECK(!flag(groups, 0, 2) && flag(groups, 2, 2) && !flag(columns, columnRow("Power"), 2));
+	CHECK(roll.run("showGroup", {std::string("Keys"), true}, error).has_value() && flag(groups, 0, 2) && flag(groups, 1, 2));
+	CHECK(flag(columns, columnRow("Key 5"), 2));
+	CHECK(roll.run("showGroup", {std::string("Player 2"), false}, error).has_value() && !flag(groups, 3, 2) &&
+		!flag(columns, columnRow("P2 B"), 2) && flag(columns, columnRow("P1 A"), 2));
+	CHECK(!roll.run("showGroup", {std::string("Player 7"), true}, error) && error == "no group Player 7");
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;
 }
 
@@ -3834,6 +3891,8 @@ int main(int argc, char **argv)
 			else std::printf("SKIP New Project: no slots package given\n");
 			if (argc >= 9) ranMachine = customFirmware(argv[2], argv[7], argv[8]) && ranMachine;
 			else std::printf("SKIP custom firmware: no packages with a hashed firmware given\n");
+			if (argc >= 10) ranMachine = columnsMenu(argv[9], argv[2]) && ranMachine;
+			else std::printf("SKIP the Columns menu: no package with players and keys given\n");
 		}
 		else
 			std::printf("SKIP the machine tests: %s or %s is missing\n", argv[1], argv[2]);

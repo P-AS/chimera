@@ -87,6 +87,16 @@ synth_hashed = custom_target(
   build_always_stale: true,
   build_by_default: true,
 )
+# a controller with a second player, keyboard keys and a console button
+more_buttons = '["P2 A", "P2 B", "Power", "Key A", "Key B", "Key C", "Key D", "Key E", "Key F", "Key G", "Key H", "Key I", "Key J", "Key K", "Key L", "Key M", "Key N", "Key O", "Key P", "Key Q", "Key R", "Key S", "Key T", "Key U", "Key V", "Key W", "Key X", "Key Y", "Key Z", "Key 0", "Key 1", "Key 2", "Key 3", "Key 4", "Key 5", "Key 6", "Key 7", "Key 8", "Key 9"]'
+synth_keys = custom_target(
+  'synth-keys',
+  output: 'synth-keys.chimeraCore',
+  command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Keys', '@OUTPUT@', '', '', '', more_buttons],
+  build_always_stale: true,
+  build_by_default: true,
+)
 synth_game = custom_target(
   'synth-game',
   output: 'synth-game.chimeraCore',
@@ -100,7 +110,7 @@ test(
   'view models',
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game],
+    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys],
   # OpenAL's device that plays to nowhere: the sound check runs with no speakers
   env: ['ALSOFT_DRIVERS=null'],
   timeout: 180,
