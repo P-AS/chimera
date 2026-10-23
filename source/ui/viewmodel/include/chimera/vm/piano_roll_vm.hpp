@@ -25,6 +25,19 @@ public:
 	/* the columns not shown, by control name, a line each (Chimera's
 	 * defaults hide the console's power and reset, keyboard keys...) */
 	Property<std::string> hiddenColumns;
+	/* how following the current frame scrolls, as TAStudio's "scroll to
+	 * cursor method" does: "near" just enough to bring it in, "top",
+	 * "bottom" or "center" putting it there when it is out of view (or
+	 * every frame, with followAlways); and the frames a wheel's notch
+	 * scrolls */
+	Property<std::string> followScroll{"near"};
+	Property<bool> followAlways{false};
+	Property<int64_t> wheelRows{6};
+	/* TAStudio's "allow editing hidden columns (with clear, record, paste,
+	 * etc.)": off, an edit of frames changes only the columns shown - the
+	 * hidden ones keep their inputs where they are, frames put in or taken
+	 * out moving only the shown ones, as Chimera's multitrack editing */
+	Property<bool> editHiddenColumns{true};
 	/* the most undo steps kept, as Chimera's TAStudio setting has it */
 	Property<int64_t> maxUndoSteps{1000};
 	/* TAStudio's "include frame numbers when copying input" */
@@ -178,6 +191,19 @@ private:
 	void keep(Step step, bool join);
 	/* frames in and out, and rows written, as one undoable step */
 	Row readRow(int64_t frame) const;
+	/* editing hidden columns is off and some are hidden: the buttons shown
+	 * (a bit each) and the analog controls shown */
+	bool limited() const;
+	uint64_t shownButtons() const;
+	std::vector<bool> shownAxes() const;
+	/* `to` with the shown columns of `from` */
+	Row mixShown(const Row &to, const Row &from) const;
+	/* a frame with nothing held */
+	Row emptyRow() const;
+	/* frames put in, taken out, or cleared to the end, the shown columns alone */
+	void putInShown(int64_t at, const std::vector<Row> &rows);
+	void takeOutShown(int64_t first, int64_t last);
+	void truncateShown(int64_t frame);
 	void writeRow(int64_t frame, const Row &row);
 	void putIn(int64_t at, const std::vector<Row> &rows);
 	void takeOut(int64_t first, int64_t last);
@@ -209,7 +235,7 @@ private:
 	std::set<std::string> hidden_;
 	ColumnRows columnRows_{*this};
 	void hiddenChanged();
-	Connection hiddenWatch_, maxStepsWatch_;
+	Connection hiddenWatch_, maxStepsWatch_, editHiddenWatch_;
 	std::map<int64_t, Marker> markers_;
 	MarkerRows markerRows_{*this};
 	Connection markersWatch_;

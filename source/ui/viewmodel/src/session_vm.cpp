@@ -236,7 +236,6 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("chooseFor", "a game waiting for its core to be chosen", chooseFor);
 	expose("choices", "the cores the waiting game could be opened with, a line each", choices);
 	picture("screen", "the machine's picture", screen, screenChanged);
-	autoRestoreWatch_ = autoRestore.changed.connect([this] { autoRestoreM_.store(autoRestore.get()); });
 	expose("unsaved", "the open project was changed since it was opened or last saved", unsaved);
 	expose("pauseAtEnd", "pause on the frame the movie runs out (TAStudio's \"automatically pause at end of movie\")",
 		pauseAtEnd, true);
@@ -2277,6 +2276,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	 * edit of that frame (the engine drops the states after it). The engine
 	 * plays the movie; the window never hands the machine input of its own. */
 	bool changed = false;
+	held &= recordMaskM_.load();
 	const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s_));
 	axesBuf_.resize(axisCount);
 	uint64_t logged = 0;
@@ -2414,7 +2414,10 @@ void SessionViewModel::dropStatesAfterOnMachine(int64_t frame)
 void SessionViewModel::edited(int64_t first)
 {
 	const uint64_t sent = ++editsSent_;
-	submit([this, first, sent] {
+	/* the setting in force when the edit was made: one changed while the
+	 * machine still has edits to get to does not change what they do */
+	const bool restore = autoRestore.get();
+	submit([this, first, sent, restore] {
 		if (s_ == nullptr) return;
 		editRunningM_ = sent;
 		greenEndM_ = std::min(greenEndM_, first);
@@ -2423,7 +2426,7 @@ void SessionViewModel::edited(int64_t first)
 		const int64_t length = ce_session_movie_length(s_);
 		/* an edit that gave a movie made shorter its frames again (an undo)
 		 * lets the machine go on to where the first edit found it */
-		const bool shortOfIt = autoRestoreM_.load() && restoreFrameM_ > frameM_ && length > frameM_;
+		const bool shortOfIt = restore && restoreFrameM_ > frameM_ && length > frameM_;
 		if (frameM_ > first || shortOfIt)
 		{
 			/* The machine is past the edit. The engine honours it before the
@@ -2432,7 +2435,7 @@ void SessionViewModel::edited(int64_t first)
 			 * inputs, else at the edit. Going back adds no frames to the
 			 * movie: one made shorter is followed to its end. */
 			if (restoreFrameM_ < 0) restoreFrameM_ = frameM_;
-			seekOnMachine(autoRestoreM_.load() ? restoreFrameM_ : first, false);
+			seekOnMachine(restore ? restoreFrameM_ : first, false);
 			restoredMovesM_ = movesM_;
 			restoredAtM_ = frameM_;
 		}

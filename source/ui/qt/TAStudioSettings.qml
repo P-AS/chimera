@@ -22,6 +22,7 @@ ApplicationWindow {
         TabBar {
             id: tabs
             Layout.fillWidth: true
+            TabButton { text: qsTr("Input Roll") }
             TabButton { text: qsTr("Editing") }
             TabButton { text: qsTr("Playback") }
             TabButton { text: qsTr("Autosave") }
@@ -34,6 +35,35 @@ ApplicationWindow {
             Layout.fillHeight: true
 
             ColumnLayout {
+                Label { text: qsTr("Scroll to cursor method:") }
+                Repeater {
+                    model: [["near", qsTr("scroll to view")], ["top", qsTr("scroll to top")],
+                            ["bottom", qsTr("scroll to bottom")], ["center", qsTr("scroll to center")]]
+                    RadioButton {
+                        required property var modelData
+                        text: modelData[1]
+                        checked: win.pianoRoll.followScroll === modelData[0]
+                        onToggled: if (checked) win.pianoRoll.followScroll = modelData[0]
+                    }
+                }
+                CheckBox {
+                    text: qsTr("When following cursor, scroll at every frame")
+                    checked: win.pianoRoll.followAlways
+                    onToggled: win.pianoRoll.followAlways = checked
+                }
+                RowLayout {
+                    Label { text: qsTr("Wheel scroll speed:") }
+                    SpinBox {
+                        from: 1; to: 1000; editable: true
+                        value: win.pianoRoll.wheelRows
+                        onValueModified: win.pianoRoll.wheelRows = value
+                    }
+                    Label { text: qsTr("frames per tick") }
+                }
+                Item { Layout.fillHeight: true }
+            }
+
+            ColumnLayout {
                 CheckBox {
                     text: qsTr("Bind markers to input")
                     checked: win.pianoRoll.bindMarkers
@@ -43,6 +73,19 @@ ApplicationWindow {
                     text: qsTr("Markers keep states by default")
                     checked: win.pianoRoll.markersKeepStates
                     onToggled: win.pianoRoll.markersKeepStates = checked
+                }
+                CheckBox {
+                    text: qsTr("Allow editing hidden columns (with clear, record, paste, etc.)")
+                    checked: win.pianoRoll.editHiddenColumns
+                    onToggled: win.pianoRoll.editHiddenColumns = checked
+                }
+                // Chimera warns of this pair when it is applied
+                Label {
+                    visible: win.pianoRoll.bindMarkers && !win.pianoRoll.editHiddenColumns
+                    text: qsTr("Binding markers to input while hidden columns are not edited is not recommended: markers may move in unexpected ways.")
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                    color: "#b00020"
                 }
                 CheckBox {
                     text: qsTr("Include frame numbers when copying input")

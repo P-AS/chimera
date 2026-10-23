@@ -334,7 +334,7 @@ void PianoRollItem::mouseReleaseEvent(QMouseEvent *)
 void PianoRollItem::wheelEvent(QWheelEvent *e)
 {
 	const int notches = e->angleDelta().y() / 120;
-	if (notches != 0) Q_EMIT topRowRequested(std::max<qint64>(0, top_ - notches * 3));
+	if (notches != 0) Q_EMIT topRowRequested(std::max<qint64>(0, top_ - notches * std::max(1, wheelRows_)));
 	e->accept();
 }
 

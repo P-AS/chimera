@@ -693,6 +693,7 @@ ApplicationWindow {
                 topRow: root.pianoRoll.topFrame
                 onVisibleRowsChanged: root.pianoRoll.visibleFrames = visibleRows
                 onTopRowRequested: (row) => root.pianoRoll.topFrame = row
+                wheelRows: root.pianoRoll.wheelRows
                 onCellPressed: (row, column) => root.pianoRoll.run("press", [row, column])
                 onCellDragged: (row, column) => root.pianoRoll.run("drag", [row, column])
                 onFrameClicked: (row) => root.session.run("seek", [row])

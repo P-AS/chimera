@@ -253,6 +253,10 @@ public:
 	/* The UI's thread: another view model changed the open project (its
 	 * markers, branches or details); it is unsaved until saved */
 	void markChanged();
+	/* The UI's thread: the buttons a key or pad held may write into the
+	 * movie (a bit each; all by default) - the piano roll's columns shown,
+	 * when hidden ones are not to be edited, as Chimera records */
+	void setRecordMask(uint64_t mask) { recordMaskM_.store(mask); }
 	void holdFastForward(bool down);
 
 	/* the inputs of frame `first` (and maybe later ones) were edited: the
@@ -358,6 +362,7 @@ private:
 	void projectSwitched();
 	void autosave();
 	std::atomic<bool> unsavedM_{false}, pauseAtEndM_{false};
+	std::atomic<uint64_t> recordMaskM_{~uint64_t{0}};
 	std::atomic<int64_t> rewindStepM_{1}, rewindStepFastM_{4}, autosaveMsM_{1800000};
 	Clock::time_point autosaveDue_{};
 	/* the last frame run was not the movie's end (pausing there is once) */
@@ -454,7 +459,6 @@ private:
 	 * frames of a movie it plays, and this plays frames by hand */
 	int64_t frameM_ = 0;
 	int64_t greenEndM_ = 0;
-	std::atomic<bool> autoRestoreM_{true};
 	std::atomic<int64_t> speedM_{100}, volumeM_{100};
 	std::atomic<bool> unthrottledM_{false}, soundOnM_{true};
 	Connection speedWatch_, unthrottledWatch_, soundOnWatch_, volumeWatch_;
@@ -504,7 +508,7 @@ private:
 	std::vector<std::string> catchHeldM_;
 	void catchPollOnMachine();
 	Bindings bindingsM_;
-	Connection autoRestoreWatch_, periodWatch_;
+	Connection periodWatch_;
 	std::atomic<int64_t> periodM_{1};
 	std::vector<std::string> padHeld_;
 	size_t padCount_ = 0;

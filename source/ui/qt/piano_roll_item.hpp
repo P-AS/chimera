@@ -23,6 +23,8 @@ class PianoRollItem : public QQuickPaintedItem
 	/* the analog cell picked for editing, outlined (-1: none) */
 	Q_PROPERTY(qint64 pickedRow MEMBER pickedRow_ NOTIFY pickedChanged)
 	Q_PROPERTY(int pickedColumn MEMBER pickedColumn_ NOTIFY pickedChanged)
+	/* the rows a notch of the wheel scrolls */
+	Q_PROPERTY(int wheelRows MEMBER wheelRows_)
 	Q_PROPERTY(qint64 rowCount READ rowCount NOTIFY rowCountChanged)
 	Q_PROPERTY(int visibleRows READ visibleRows NOTIFY visibleRowsChanged)
 	Q_PROPERTY(int rowHeight READ rowHeight CONSTANT)
@@ -86,6 +88,7 @@ private:
 	bool selecting_ = false;
 	qint64 pickedRow_ = -1;
 	int pickedColumn_ = -1;
+	int wheelRows_ = 6;
 	int rowHeight_ = 18, columnWidth_ = 26, numberWidth_ = 48;
 	/* where a column starts and how wide it is: an analog control's column
 	 * shows a number, and is wider */

@@ -927,6 +927,30 @@ bool tastudioSettings(const char *package, const char *rom)
 	/* Windows line ends, put in */
 	CHECK(roll.run("pasteText", {int64_t{0}, lines[0] + "\r\n" + lines[1] + "\r\n", true}, error).has_value());
 	CHECK(inputs.size() == 22 && roll.frameBits(0) == at2 && roll.frameBits(1) == at3);
+	/* following the current frame, the four ways TAStudio scrolls to it */
+	{
+		auto seekTo = [&](int64_t f) {
+			session.run("seek", {f}, error);
+			return d.until([&] { return session.frame.get() == f && roll.currentFrame.get() == f; }, 20);
+		};
+		roll.visibleFrames.set(5);
+		roll.topFrame.set(0);
+		CHECK(seekTo(12) && roll.topFrame.get() == 8);
+		CHECK(seekTo(3) && roll.topFrame.get() == 3);
+		CHECK(seekTo(5) && roll.topFrame.get() == 3);
+		roll.followScroll.set("top");
+		CHECK(seekTo(20) && roll.topFrame.get() == 20);
+		roll.followScroll.set("center");
+		CHECK(seekTo(10) && roll.topFrame.get() == 8);
+		CHECK(seekTo(11) && roll.topFrame.get() == 8);
+		roll.followAlways.set(true);
+		CHECK(seekTo(12) && roll.topFrame.get() == 10);
+		roll.followAlways.set(false);
+		roll.followScroll.set("bottom");
+		CHECK(seekTo(20) && roll.topFrame.get() == 16);
+		roll.followScroll.set("near");
+		roll.visibleFrames.set(0);
+	}
 	/* pause at the movie's end: once, and played on from there it goes on */
 	session.pauseAtEnd.set(true);
 	session.run("seek", {int64_t{15}}, error);
@@ -2392,6 +2416,65 @@ bool pianoRollEditing(const char *package, const char *rom)
 		/* what is left done stays, the base the tests below start from */
 		roll.run("paint", {int64_t{2}, int64_t{2}, int64_t{4}, false}, error);
 		CHECK(masks() == start);
+	}
+	/* editing the shown columns alone (TAStudio's "allow editing hidden
+	 * columns" off): the hidden column's presses stay on their frames */
+	{
+		const uint64_t h = bit(2);
+		CHECK(roll.run("hideColumn", {session.buttonNames()[2]}, error).has_value());
+		roll.editHiddenColumns.set(false);
+		CHECK(roll.run("insertFrames", {int64_t{1}, int64_t{2}}, error).has_value());
+		std::vector<uint64_t> want(12, 0);
+		for (size_t f = 0; f < 10; f++) want[f] |= start[f] & h;
+		want[0] |= start[0] & ~h;
+		for (size_t f = 1; f < 10; f++) want[f + 2] |= start[f] & ~h;
+		CHECK(masks() == want && roll.frameCount.get() == 12);
+		CHECK(undoTo(start) && roll.frameCount.get() == 10);
+		CHECK(roll.run("deleteFrames", {int64_t{3}, int64_t{4}}, error).has_value());
+		want.assign(10, 0);
+		for (size_t f = 0; f < 10; f++) want[f] = (start[f] & h) | (f < 3 ? start[f] & ~h : f + 2 < 10 ? start[f + 2] & ~h : 0);
+		CHECK(masks() == want && roll.frameCount.get() == 10);
+		CHECK(undoTo(start));
+		CHECK(roll.run("clearFrames", {int64_t{1}, int64_t{3}}, error).has_value());
+		want = start;
+		for (size_t f = 1; f <= 3; f++) want[f] &= h;
+		CHECK(masks() == want);
+		CHECK(undoTo(start));
+		/* cut off: the shown columns cleared, the empty frames at the end
+		 * taken off; a hidden press keeps its frame */
+		CHECK(roll.run("truncate", {int64_t{5}}, error).has_value());
+		CHECK(masks() == std::vector<uint64_t>(start.begin(), start.begin() + 5));
+		CHECK(undoTo(start) && roll.frameCount.get() == 10);
+		CHECK(roll.run("truncate", {int64_t{1}}, error).has_value());
+		CHECK(masks() == (std::vector<uint64_t>{start[0], 0, h}));
+		CHECK(undoTo(start));
+		/* recorded: a hidden button held does not go into the movie */
+		{
+			size_t down = 0;
+			while (down < session.buttonNames().size() && session.buttonNames()[down].find("Down") == std::string::npos) down++;
+			CHECK(down < session.buttonNames().size() && down != 2);
+			roll.run("hideColumn", {session.buttonNames()[down]}, error);
+			session.run("seek", {int64_t{10}}, error);
+			CHECK(d.until([&] { return session.frame.get() == 10; }, 20));
+			session.key("Down", true);
+			session.run("frameAdvance", {}, error);
+			CHECK(d.until([&] { return session.frame.get() == 11; }, 20));
+			session.key("Down", false);
+			CHECK(inputs.size() == 11 && masks()[10] == 0);
+			roll.run("showColumn", {session.buttonNames()[down]}, error);
+			session.key("Down", true);
+			session.run("frameAdvance", {}, error);
+			CHECK(d.until([&] { return session.frame.get() == 12; }, 20));
+			session.key("Down", false);
+			CHECK(inputs.size() == 12 && masks()[11] == bit(static_cast<int64_t>(down)));
+			roll.run("truncate", {int64_t{10}}, error);
+			CHECK(masks() == start);
+		}
+		/* hidden columns edited again when it is back on */
+		roll.editHiddenColumns.set(true);
+		CHECK(roll.run("clearFrames", {int64_t{2}, int64_t{2}}, error).has_value() && masks()[2] == 0);
+		CHECK(undoTo(start));
+		roll.run("showAllColumns", {}, error);
 	}
 	/* cloned a number of times, as one edit */
 	CHECK(roll.run("cloneFrames", {int64_t{1}, int64_t{2}, int64_t{3}}, error).has_value() && roll.frameCount.get() == 16);

@@ -12,6 +12,14 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("currentFrame", "the frame the machine is about to run", currentFrame);
 	expose("frameCount", "how many frames have inputs", frameCount);
 	expose("followPlayback", "keep the current frame in view while the machine runs", followPlayback, true);
+	expose("followScroll", "how following scrolls: near, top, bottom or center", followScroll, true);
+	expose("followAlways", "following scrolls on every frame, not only when the frame is out of view", followAlways, true);
+	expose("wheelRows", "the frames a notch of the mouse wheel scrolls", wheelRows, true);
+	expose("editHiddenColumns", "edits of frames change the hidden columns too; off, only the columns shown",
+		editHiddenColumns, true);
+	editHiddenWatch_ = editHiddenColumns.changed.connect([this] {
+		session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
+	});
 	expose("greenEnd", "frames before this one were run with the inputs they have now", greenEnd);
 	expose("topFrame", "the first frame in view", topFrame, true);
 	expose("visibleFrames", "how many frames the view shows at once (the view sets it)", visibleFrames, true);
@@ -498,7 +506,8 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				return {};
 			}
 			naming_ = "Truncate Movie: " + std::to_string(frame);
-			takeOut(frame, inputs_.size() - 1);
+			if (limited()) truncateShown(frame);
+			else takeOut(frame, inputs_.size() - 1);
 			return {};
 		});
 	command("undo", "takes the last edit back", {}, [this](const Args &, std::string &) -> Value {
@@ -531,7 +540,10 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		const int64_t first = std::min(was, now), last = std::min(std::max(was, now), inputs_.size()) - 1;
 		if (last >= first) frames_.changed.emit(first, last);
 	});
-	buttonsWatch_ = session_.buttonsChanged.connect([this] { frames_.reset.emit(); });
+	buttonsWatch_ = session_.buttonsChanged.connect([this] {
+		session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
+		frames_.reset.emit();
+	});
 	resetWatch_ = session_.inputsReset.connect([this] {
 		frameCount.set(inputs_.size());
 		clampTop();
@@ -548,7 +560,18 @@ void PianoRollViewModel::follow()
 {
 	const int64_t now = currentFrame.get(), top = topFrame.get(), shown = visibleFrames.get();
 	if (!followPlayback.get() || shown <= 0) return;
-	if (now < top || now >= top + shown) topFrame.set(std::max<int64_t>(0, now - shown / 2));
+	/* as TAStudio's InputRoll.ScrollToIndex */
+	const bool inView = now >= top && now < top + shown;
+	const std::string &how = followScroll.get();
+	int64_t to = top;
+	if (how != "top" && how != "bottom" && how != "center")
+	{
+		if (!inView) to = now < top ? now : now - shown + 1;
+	}
+	else if (!inView || followAlways.get())
+		to = how == "top" ? now : how == "bottom" ? now - shown + 1 : now - shown / 2;
+	to = std::max<int64_t>(0, to);
+	if (to != top) topFrame.set(to);
 }
 
 void PianoRollViewModel::clampTop()
@@ -782,6 +805,11 @@ void PianoRollViewModel::moveMarkers(Step &step, int64_t at, int64_t by)
 void PianoRollViewModel::putIn(int64_t at, const std::vector<Row> &rows)
 {
 	if (rows.empty()) return;
+	if (limited())
+	{
+		putInShown(at, rows);
+		return;
+	}
 	const int64_t before = inputs_.size(), n = static_cast<int64_t>(rows.size());
 	Step step;
 	step.sizeBefore = before;
@@ -808,6 +836,11 @@ void PianoRollViewModel::putIn(int64_t at, const std::vector<Row> &rows)
 
 void PianoRollViewModel::takeOut(int64_t first, int64_t last)
 {
+	if (limited())
+	{
+		takeOutShown(first, last);
+		return;
+	}
 	const int64_t before = inputs_.size(), n = last - first + 1;
 	Step step;
 	step.sizeBefore = before;
@@ -835,20 +868,151 @@ void PianoRollViewModel::overwrite(int64_t at, const std::vector<Row> &rows)
 {
 	if (rows.empty()) return;
 	const int64_t before = inputs_.size();
+	const bool shownOnly = limited();
 	Step step;
 	step.sizeBefore = before;
 	for (size_t i = 0; i < rows.size(); i++)
 	{
 		const int64_t f = at + static_cast<int64_t>(i);
 		const Row was = readRow(f);
-		writeRow(f, rows[i]);
-		step.frames[f] = {was.buttons, rows[i].buttons};
-		if (!was.axes.empty()) step.axes[f] = {was.axes, rows[i].axes};
+		const Row now = shownOnly ? mixShown(was, rows[i]) : rows[i];
+		writeRow(f, now);
+		step.frames[f] = {was.buttons, now.buttons};
+		if (!was.axes.empty()) step.axes[f] = {was.axes, now.axes};
 	}
 	step.sizeAfter = inputs_.size();
 	keep(std::move(step), false);
 	frames_.forget();
 	edited(at, at + static_cast<int64_t>(rows.size()) - 1, before);
+}
+
+bool PianoRollViewModel::limited() const
+{
+	return !editHiddenColumns.get() && !hidden_.empty();
+}
+
+uint64_t PianoRollViewModel::shownButtons() const
+{
+	uint64_t mask = 0;
+	const std::vector<std::string> &names = session_.buttonNames();
+	for (size_t b = 0; b < names.size() && b < 64; b++)
+		if (hidden_.count(names[b]) == 0) mask |= uint64_t{1} << b;
+	return mask;
+}
+
+std::vector<bool> PianoRollViewModel::shownAxes() const
+{
+	std::vector<bool> shown;
+	for (const SessionViewModel::Axis &ax : session_.axes()) shown.push_back(hidden_.count(ax.name) == 0);
+	return shown;
+}
+
+PianoRollViewModel::Row PianoRollViewModel::mixShown(const Row &to, const Row &from) const
+{
+	const uint64_t shown = shownButtons();
+	Row r = to;
+	r.buttons = (to.buttons & ~shown) | (from.buttons & shown);
+	const std::vector<bool> axes = shownAxes();
+	for (size_t i = 0; i < r.axes.size() && i < from.axes.size() && i < axes.size(); i++)
+		if (axes[i]) r.axes[i] = from.axes[i];
+	return r;
+}
+
+PianoRollViewModel::Row PianoRollViewModel::emptyRow() const
+{
+	Row r;
+	r.axes.resize(inputs_.axisCount());
+	if (!r.axes.empty()) inputs_.neutralAxes(r.axes.data());
+	return r;
+}
+
+void PianoRollViewModel::putInShown(int64_t at, const std::vector<Row> &rows)
+{
+	/* as Chimera's InsertInput with columns limited: empty frames added at
+	 * the end, the shown columns moved later by as many, the new frames'
+	 * shown columns written; the hidden ones stay on their frames */
+	const int64_t before = inputs_.size(), n = static_cast<int64_t>(rows.size());
+	if (naming_.empty()) naming_ = "Insert " + std::to_string(n) + (n == 1 ? " frame: " : " frames: ") + std::to_string(at);
+	Step step;
+	step.sizeBefore = before;
+	moveMarkers(step, at, n);
+	inputs_.resize(before + n);
+	auto set = [&](int64_t f, const Row &now) {
+		const Row was = f < before ? readRow(f) : emptyRow();
+		writeRow(f, now);
+		step.frames[f] = {was.buttons, now.buttons};
+		if (!was.axes.empty()) step.axes[f] = {was.axes, now.axes};
+	};
+	for (int64_t f = before + n - 1; f >= at + n; f--) set(f, mixShown(readRow(f), readRow(f - n)));
+	for (int64_t i = 0; i < n; i++) set(at + i, mixShown(readRow(at + i), rows[static_cast<size_t>(i)]));
+	step.sizeAfter = inputs_.size();
+	keep(std::move(step), false);
+	if (bindMarkers.get()) markersEdited(0);
+	frameCount.set(inputs_.size());
+	frames_.forget();
+	frames_.reset.emit();
+	if (at < before) session_.edited(at);
+}
+
+void PianoRollViewModel::takeOutShown(int64_t first, int64_t last)
+{
+	/* as Chimera's RemoveFrames with columns limited: the shown columns
+	 * after the frames move earlier, the last ones left empty; the movie
+	 * keeps its length and the hidden columns their frames */
+	const int64_t size = inputs_.size(), n = last - first + 1;
+	if (naming_.empty())
+		naming_ = "Delete " + std::to_string(n) + " frames from " + std::to_string(first) + "-" + std::to_string(last);
+	Step step;
+	step.sizeBefore = size;
+	moveMarkers(step, first, -n);
+	const Row blank = emptyRow();
+	for (int64_t f = first; f < size; f++)
+	{
+		const Row was = readRow(f);
+		const Row now = mixShown(was, f + n < size ? readRow(f + n) : blank);
+		writeRow(f, now);
+		step.frames[f] = {was.buttons, now.buttons};
+		if (!was.axes.empty()) step.axes[f] = {was.axes, now.axes};
+	}
+	step.sizeAfter = size;
+	keep(std::move(step), false);
+	if (bindMarkers.get()) markersEdited(0);
+	frames_.forget();
+	frames_.reset.emit();
+	session_.edited(first);
+}
+
+void PianoRollViewModel::truncateShown(int64_t frame)
+{
+	/* as Chimera's Truncate with columns limited: the shown columns cleared
+	 * from the frame on, then the empty frames at the end taken off */
+	const int64_t size = inputs_.size();
+	Step step;
+	step.sizeBefore = size;
+	const Row blank = emptyRow();
+	for (int64_t f = frame; f < size; f++)
+	{
+		const Row was = readRow(f);
+		const Row now = mixShown(was, blank);
+		writeRow(f, now);
+		step.frames[f] = {was.buttons, now.buttons};
+		if (!was.axes.empty()) step.axes[f] = {was.axes, now.axes};
+	}
+	int64_t end = size;
+	while (end > frame)
+	{
+		const Row r = readRow(end - 1);
+		if (r.buttons != 0 || r.axes != blank.axes) break;
+		end--;
+	}
+	inputs_.resize(end);
+	step.sizeAfter = end;
+	keep(std::move(step), false);
+	frameCount.set(inputs_.size());
+	clampTop();
+	frames_.forget();
+	frames_.reset.emit();
+	session_.edited(frame);
 }
 
 void PianoRollViewModel::pickAxis(int64_t frame, int64_t axis)
@@ -937,6 +1101,7 @@ void PianoRollViewModel::hiddenChanged()
 	}
 	hiddenColumns.set(text);
 	session_.setHiddenColumns(names);
+	session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
 	columnRows_.reset.emit();
 	frames_.reset.emit();
 }
