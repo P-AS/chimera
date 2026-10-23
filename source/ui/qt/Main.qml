@@ -37,6 +37,7 @@ ApplicationWindow {
     required property QtObject display
     required property QtObject paths
     required property QtObject firmware
+    required property QtObject configFiles
     // a Paths folder for a file dialog to open in (made when it is not there)
     function folderOf(name) {
         root.paths.changed; root.paths.base; root.paths.lastRomFolder; root.paths.recentForRoms
@@ -238,6 +239,12 @@ ApplicationWindow {
             Action { text: qsTr("&Display..."); onTriggered: { displayWindow.show(); displayWindow.raise() } }
             Action { text: qsTr("&Paths..."); onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
             Action { text: qsTr("Fi&rmware..."); onTriggered: { firmwareWindow.show(); firmwareWindow.raise() } }
+            // Chimera's Config menu's last four
+            MenuSeparator {}
+            Action { text: qsTr("Save Con&fig"); onTriggered: root.configFiles.run("save") }
+            Action { text: qsTr("Save Config &As..."); onTriggered: saveConfigDialog.open() }
+            Action { text: qsTr("&Load Config"); onTriggered: root.configFiles.run("load") }
+            Action { text: qsTr("Load Config Fro&m..."); onTriggered: loadConfigDialog.open() }
             // Chimera's Config > Key Priority: for a key that is a hotkey and a button
             Menu {
                 delegate: keyedMenuItem
@@ -774,6 +781,19 @@ ApplicationWindow {
         title: qsTr("Choose the core package to open it with")
         nameFilters: [qsTr("Core packages (*.chimeraCore)"), qsTr("All files (*)")]
         onAccepted: root.leaveProject(() => root.session.run("openProject", [root.chosenProject, selectedFile]))
+    }
+    FileDialog {
+        id: saveConfigDialog
+        title: qsTr("Save the settings as")
+        fileMode: FileDialog.SaveFile
+        nameFilters: [qsTr("Settings (*.json)")]
+        onAccepted: root.configFiles.run("saveAs", [selectedFile])
+    }
+    FileDialog {
+        id: loadConfigDialog
+        title: qsTr("Load the settings from")
+        nameFilters: [qsTr("Settings (*.json)"), qsTr("All files (*)")]
+        onAccepted: root.configFiles.run("loadFrom", [selectedFile])
     }
     FileDialog {
         id: screenshotAsDialog

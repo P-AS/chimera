@@ -56,6 +56,7 @@
 #include "chimera/vm/display_vm.hpp"
 #include "chimera/vm/paths_vm.hpp"
 #include "chimera/vm/firmware_vm.hpp"
+#include "chimera/vm/config_files_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -702,6 +703,9 @@ int main(int argc, char **argv)
 	qt::QmlViewModel pathsQml(paths);
 	vm::FirmwareViewModel firmware(dispatcher, cores);
 	qt::QmlViewModel firmwareQml(firmware);
+	vm::ConfigFilesViewModel configFiles(dispatcher, config);
+	qt::QmlViewModel configFilesQml(configFiles);
+	vm::Connection configFilesSay = configFiles.status.changed.connect([&] { session.status.set(configFiles.status.get()); });
 	config.keep(projectDetails, "defaultAuthor");
 	config.keep(pianoRoll, "maxUndoSteps");
 	config.keep(pianoRoll, "copyFrameNumbers");
@@ -850,6 +854,7 @@ int main(int argc, char **argv)
 	lua.add(display);
 	lua.add(paths);
 	lua.add(firmware);
+	lua.add(configFiles);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -893,6 +898,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("display"), QVariant::fromValue<QObject *>(&displayQml)},
 		{QStringLiteral("paths"), QVariant::fromValue<QObject *>(&pathsQml)},
 		{QStringLiteral("firmware"), QVariant::fromValue<QObject *>(&firmwareQml)},
+		{QStringLiteral("configFiles"), QVariant::fromValue<QObject *>(&configFilesQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},

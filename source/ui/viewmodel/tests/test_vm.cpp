@@ -55,6 +55,7 @@
 #include "chimera/vm/display_vm.hpp"
 #include "chimera/vm/paths_vm.hpp"
 #include "chimera/vm/firmware_vm.hpp"
+#include "chimera/vm/config_files_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -321,6 +322,26 @@ void configStore()
 		Sample vm(d);
 		store.keep(vm, "count");
 		CHECK(vm.count.get() == 42);
+		/* Chimera's Save Config As and Load Config From, through the config menu's view model */
+		ConfigFilesViewModel menu(d, store);
+		std::string error;
+		const std::string copy = (dir / "copies" / "mine.json").string();
+		CHECK(menu.run("saveAs", {copy}, error).has_value() && menu.status.get() == "Settings saved as " + copy);
+		vm.count.set(7);
+		CHECK(menu.run("loadFrom", {copy}, error) == Value(int64_t{1}) && vm.count.get() == 42);
+		/* and so kept as this window's own */
+		{
+			std::ifstream in(file, std::ios::binary);
+			const std::string kept((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+			CHECK(kept.find("\"sample.count\": 42") != std::string::npos);
+		}
+		/* the file changed by someone else: Load Config reads it again */
+		std::ofstream(file, std::ios::binary | std::ios::trunc) << R"({"sample.count": 5})";
+		CHECK(menu.run("load", {}, error) == Value(int64_t{1}) && vm.count.get() == 5);
+		std::ofstream(dir / "bad.json") << "[1, 2]";
+		CHECK(!menu.run("loadFrom", {(dir / "bad.json").string()}, error) && error.rfind((dir / "bad.json").string() + " is not a settings file", 0) == 0);
+		CHECK(!menu.run("loadFrom", {(dir / "none.json").string()}, error) && error == "cannot read " + (dir / "none.json").string());
+		CHECK(menu.run("save", {}, error) == Value(file) && menu.status.get() == "Settings saved in " + file);
 	}
 	std::ofstream(file, std::ios::binary | std::ios::trunc) << "{ not json";
 	{

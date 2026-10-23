@@ -64,6 +64,7 @@ void ConfigStore::keep(ViewModel &vm, const std::string &property)
 			vm.set(property, fromJson(*saved), error); /* a value the property refuses is left as it is */
 		}
 		auto get = p.get;
+		kept_.push_back({&vm, property, key});
 		watches_.push_back(p.changed->connect([this, key, get] {
 			const Json now = toJson(get());
 			bool found = false;
@@ -78,6 +79,49 @@ void ConfigStore::keep(ViewModel &vm, const std::string &property)
 		}));
 		return;
 	}
+}
+
+bool ConfigStore::saveAs(const std::string &path, std::string &error)
+{
+	std::error_code ec;
+	const std::filesystem::path p(path);
+	if (p.has_parent_path()) std::filesystem::create_directories(p.parent_path(), ec);
+	std::ofstream out(path, std::ios::binary | std::ios::trunc);
+	out << json::write(root_) << "\n";
+	if (!out)
+	{
+		error = "cannot write " + path;
+		return false;
+	}
+	return true;
+}
+
+int64_t ConfigStore::loadFrom(const std::string &path, std::string &error)
+{
+	std::ifstream in(path, std::ios::binary);
+	if (!in)
+	{
+		error = "cannot read " + path;
+		return -1;
+	}
+	std::stringstream ss;
+	ss << in.rdbuf();
+	Json read;
+	std::string why;
+	if (!json::parse(ss.str(), read, why) || read.kind != Json::Kind::Object)
+	{
+		error = path + " is not a settings file (" + (why.empty() ? std::string("not an object") : why) + ")";
+		return -1;
+	}
+	int64_t set = 0;
+	for (const Kept &k : kept_)
+		if (const Json *v = read.find(k.key))
+		{
+			std::string refused;
+			/* a value the property refuses is left as it is */
+			if (k.vm->set(k.property, fromJson(*v), refused)) set++;
+		}
+	return set;
 }
 
 void ConfigStore::save()
