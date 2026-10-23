@@ -206,9 +206,9 @@ ApplicationWindow {
                 onAboutToHide: tas.customize.run("menuClosed")
                 title: qsTr("&Metadata")
                 enabled: tas.session.hasProject
-                Action { text: qsTr("&Header..."); onTriggered: projectDetailsWindow.showTab(0) }
-                Action { text: qsTr("&Comments..."); onTriggered: projectDetailsWindow.showTab(1) }
-                Action { text: qsTr("&Subtitles..."); onTriggered: projectDetailsWindow.showTab(2) }
+                Action { text: qsTr("&Header..."); onTriggered: { headerWindow.show(); headerWindow.raise() } }
+                Action { text: qsTr("&Comments..."); onTriggered: { commentsWindow.show(); commentsWindow.raise() } }
+                Action { text: qsTr("&Subtitles..."); onTriggered: { subtitlesWindow.show(); subtitlesWindow.raise() } }
             }
             Menu {
                 onAboutToShow: tas.customize.run("menuOpened")
@@ -856,7 +856,10 @@ ApplicationWindow {
         nameFilters: [qsTr("Movie Macros (*.chimeraMacro)"), qsTr("All files (*)")]
         onAccepted: tas.pianoRoll.run("placeMacro", [tas.pianoRoll.selectFirst, selectedFile])
     }
-    ProjectDetails { id: projectDetailsWindow; vm: tas.projectDetails; visible: false }
+    // Chimera's Header Info, Edit Comments and Edit Subtitles, each a window of its own
+    ProjectDetails { id: headerWindow; part: "header"; vm: tas.projectDetails; visible: false }
+    ProjectDetails { id: commentsWindow; part: "comments"; vm: tas.projectDetails; visible: false }
+    ProjectDetails { id: subtitlesWindow; part: "subtitles"; vm: tas.projectDetails; visible: false }
     UndoHistory { id: undoHistoryWindow; vm: tas.pianoRoll; visible: false }
     TAStudioSettings { id: tastudioSettingsWindow; session: tas.session; pianoRoll: tas.pianoRoll; branches: tas.branches; visible: false }
 }

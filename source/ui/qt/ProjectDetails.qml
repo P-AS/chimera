@@ -1,39 +1,28 @@
-// The open project's details: layout and bindings only, over the
-// projectDetails view model. Chimera's TAStudio edits these from its
-// Metadata menu: the header, the comments, the subtitles.
+// The open project's details, as Chimera's TAStudio edits them from its
+// Metadata menu, each in a window of its own: Header Info (part "header"),
+// Edit Comments ("comments") and Edit Subtitles ("subtitles"), from one
+// file. Layout and bindings only, over the projectDetails view model.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
 ApplicationWindow {
     id: win
-    objectName: "projectDetailsWindow"
+    objectName: win.part === "header" ? "headerInfoWindow" : win.part === "comments" ? "editCommentsWindow" : "editSubtitlesWindow"
+    property string part: "header"
     required property QtObject vm
-    title: qsTr("Project Details")
+    title: win.part === "header" ? qsTr("Header Info") : win.part === "comments" ? qsTr("Edit Comments")
+         : qsTr("Edit Subtitles (%1)").arg(win.vm.count)
     width: 640
     height: 480
     onVisibleChanged: if (visible) win.vm.run("reload")
-    // TAStudio's Metadata menu: Header, Comments or Subtitles
-    function showTab(index) {
-        tabs.currentIndex = index
-        win.show()
-        win.raise()
-    }
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 8
 
-        TabBar {
-            id: tabs
-            Layout.fillWidth: true
-            TabButton { text: qsTr("Header") }
-            TabButton { text: qsTr("Comments") }
-            TabButton { text: qsTr("Subtitles (%1)").arg(win.vm.count) }
-        }
-
         StackLayout {
-            currentIndex: tabs.currentIndex
+            currentIndex: win.part === "header" ? 0 : win.part === "comments" ? 1 : 2
             Layout.fillWidth: true
             Layout.fillHeight: true
 

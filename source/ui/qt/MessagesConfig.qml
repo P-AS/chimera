@@ -10,7 +10,7 @@ ApplicationWindow {
     id: win
     objectName: "messagesWindow"
     required property QtObject vm
-    title: qsTr("Messages")
+    title: qsTr("Configure On Screen Messages")
     width: 620
     height: 460
     readonly property var names: ["Fps", "Frame Counter", "Lag Counter", "Input Display", "Watches", "Messages", "Rerecords", "Autohold", "Game Time"]

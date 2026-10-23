@@ -1,13 +1,15 @@
-// Controls and hotkeys: layout and bindings only, over the controls and
-// hotkeys view models. A row's keys can be typed, or caught: Catch, then
-// press the key or the gamepad input.
+// Chimera's Controller Config (mode "buttons") and Configure Hotkeys (mode
+// "hotkeys"), two windows from one file: layout and bindings only, over
+// the controls and hotkeys view models. A row's keys can be typed, or
+// caught: Catch, then press the key or the gamepad input.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
 ApplicationWindow {
     id: win
-    objectName: "controlsWindow"
+    objectName: win.mode === "buttons" ? "controllerConfigWindow" : "hotkeyConfigWindow"
+    property string mode: "buttons"
     required property QtObject controls
     required property QtObject hotkeys
     required property QtObject keyNamer
@@ -16,14 +18,8 @@ ApplicationWindow {
     property string catching: ""
     property int catchRow: -1
     property string catchAction: ""
-    title: qsTr("Controls and Hotkeys")
+    title: win.mode === "buttons" ? qsTr("Controller Config") : qsTr("Configure Hotkeys")
     // the key or pad input caught goes to the row that asked
-    // Chimera's Config > Controllers... and Hotkeys...: this window, on that tab
-    function showTab(index) {
-        tabs.currentIndex = index
-        win.show()
-        win.raise()
-    }
     function take(name) {
         if (win.catching === "button") win.controls.run("addKey", [win.catchRow, name])
         else if (win.catching === "hotkey") win.hotkeys.run("addKey", [win.catchAction, name])
@@ -39,15 +35,14 @@ ApplicationWindow {
         anchors.fill: parent
         anchors.margins: 8
 
-        TabBar {
-            id: tabs
-            Layout.fillWidth: true
-            TabButton { text: qsTr("Buttons (%1)").arg(win.controls.core === "" ? qsTr("no machine") : win.controls.core) }
-            TabButton { text: qsTr("Hotkeys") }
+        Label {
+            visible: win.mode === "buttons"
+            text: win.controls.core === "" ? qsTr("No machine is open: its buttons are listed once one is") : win.controls.core
+            font.bold: true
         }
 
         StackLayout {
-            currentIndex: tabs.currentIndex
+            currentIndex: win.mode === "buttons" ? 0 : 1
             Layout.fillWidth: true
             Layout.fillHeight: true
 
@@ -126,10 +121,10 @@ ApplicationWindow {
         }
 
         RowLayout {
-            Label { text: win.controls.error !== "" ? win.controls.error : win.hotkeys.error; color: "#b00020"; Layout.fillWidth: true }
+            Label { text: win.mode === "buttons" ? win.controls.error : win.hotkeys.error; color: "#b00020"; Layout.fillWidth: true }
             Button {
-                text: tabs.currentIndex === 0 ? qsTr("Reset Every Button") : qsTr("Reset Every Hotkey")
-                onClicked: tabs.currentIndex === 0 ? win.controls.run("resetAll") : win.hotkeys.run("resetAll")
+                text: win.mode === "buttons" ? qsTr("Reset Every Button") : qsTr("Reset Every Hotkey")
+                onClicked: win.mode === "buttons" ? win.controls.run("resetAll") : win.hotkeys.run("resetAll")
             }
         }
     }

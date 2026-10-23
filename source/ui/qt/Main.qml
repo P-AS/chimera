@@ -312,8 +312,8 @@ ApplicationWindow {
                 onAboutToHide: root.customize.run("menuClosed")
                 delegate: keyedMenuItem
                 title: qsTr("&Config")
-                Action { text: qsTr("&Controllers..."); onTriggered: controlsWindow.showTab(0) }
-                Action { text: qsTr("&Hotkeys..."); onTriggered: controlsWindow.showTab(1) }
+                Action { text: qsTr("&Controllers..."); onTriggered: { controllerWindow.show(); controllerWindow.raise() } }
+                Action { text: qsTr("&Hotkeys..."); onTriggered: { hotkeyWindow.show(); hotkeyWindow.raise() } }
                 Action { text: qsTr("Display..."); onTriggered: { displayWindow.show(); displayWindow.raise() } }
                 Action { text: qsTr("&Sound..."); onTriggered: { soundWindow.show(); soundWindow.raise() } }
                 Action { text: qsTr("Paths..."); onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
@@ -470,7 +470,7 @@ ApplicationWindow {
 
     Dialog {
         id: autofireDialog
-        title: qsTr("Autofire")
+        title: qsTr("Autofire Configuration")
         anchors.centerIn: parent
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
@@ -526,7 +526,9 @@ ApplicationWindow {
     }
     HexEditor { id: hexEditorWindow; vm: root.hexEditor; visible: false }
     Themes { id: themesWindow; vm: root.themes; colors: root.themeColors; visible: false }
-    Controls { id: controlsWindow; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
+    // Chimera's Controller Config and Configure Hotkeys, each a window of its own
+    Controls { id: controllerWindow; mode: "buttons"; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
+    Controls { id: hotkeyWindow; mode: "hotkeys"; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
     LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; folderOf: root.folderOf; visible: false }
     Cores { id: coresWindow; vm: root.cores; visible: false }
 
