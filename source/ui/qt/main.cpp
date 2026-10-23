@@ -848,6 +848,7 @@ int main(int argc, char **argv)
 	vm::Connection systemFolders = session.opens.changed.connect([&paths, &session] { paths.useSystem(session.systemId.get()); });
 	qt::QmlViewModel pathsQml(paths);
 	vm::FirmwareViewModel firmware(dispatcher, cores);
+	config.keep(firmware, "shows");
 	qt::QmlViewModel firmwareQml(firmware);
 	vm::ConfigFilesViewModel configFiles(dispatcher, config);
 	qt::QmlViewModel configFilesQml(configFiles);

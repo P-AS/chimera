@@ -6158,38 +6158,53 @@ bool customFirmware(const char *rom, const char *hashedPackage, const char *game
 		FirmwareViewModel survey(d, installed);
 		std::string e;
 		CHECK(survey.run("refresh", {}, e).has_value());
-		int64_t logoRow = -1;
-		for (size_t i = 0; i < survey.items().size(); i++)
-			if (survey.items()[i].core == "Synth Hashed" && survey.items()[i].id == "logo") logoRow = static_cast<int64_t>(i);
-		CHECK(logoRow >= 0);
-		if (logoRow >= 0)
+		RowModel &lines = *survey.rowLists()[0].model;
+		auto lineOfCore = [&](const std::string &core) {
+			for (int64_t r = 0; r < lines.rowCount(); r++)
+			{
+				std::string c, kind;
+				fromValue(lines.cell(r, 0), c);
+				fromValue(lines.cell(r, 2), kind);
+				if (c == core && kind == "row") return r;
+			}
+			return int64_t{-1};
+		};
+		auto logoItem = [&]() -> const FirmwareViewModel::Row * {
+			for (const auto &r : survey.items())
+				if (r.core == "Synth Hashed" && r.id == "logo") return &r;
+			return nullptr;
+		};
+		const int64_t logoLine = lineOfCore("Synth Hashed");
+		CHECK(logoLine >= 0 && logoItem() != nullptr);
+		if (logoLine >= 0 && logoItem() != nullptr)
 		{
-			/* the game core's file of the person's own: on hand, not the dump the core knows */
+			/* the game core's file of the person's own: on hand, a dump the core has never seen */
 			bool gameLogo = false;
-			for (const auto &r : survey.items()) gameLogo = gameLogo || (r.core == "Synth Game" && r.state == 1 && r.path == mine.string());
+			for (const auto &r : survey.items())
+				gameLogo = gameLogo || (r.core == "Synth Game" && r.state == FirmwareViewModel::Unrecognised && r.path == mine.string());
 			CHECK(gameLogo);
 			/* the emulator's: a file whose hash is another is not a dump it knows; the original is; gone is said */
-			CHECK(survey.run("setFile", {logoRow, mine.string()}, e).has_value() && survey.items()[static_cast<size_t>(logoRow)].state == 1);
-			CHECK(survey.status.get() == "mylogo.bin: not a dump the core knows");
-			CHECK(survey.run("setFile", {logoRow, theirs.string()}, e).has_value() && survey.items()[static_cast<size_t>(logoRow)].state == 0);
+			CHECK(survey.run("setFile", {logoLine, mine.string()}, e).has_value() && logoItem()->state == FirmwareViewModel::Unrecognised);
+			CHECK(survey.status.get() == "mylogo.bin: right size, a dump the core has never seen - used anyway");
+			CHECK(survey.run("setFile", {logoLine, theirs.string()}, e).has_value() && logoItem()->state == FirmwareViewModel::Good);
 			const fs::path moved = dir / "moved.bin";
 			fs::copy_file(theirs, moved);
-			CHECK(survey.run("setFile", {logoRow, moved.string()}, e).has_value());
+			CHECK(survey.run("setFile", {logoLine, moved.string()}, e).has_value());
 			fs::remove(moved);
-			CHECK(survey.run("refresh", {}, e).has_value() && survey.items()[static_cast<size_t>(logoRow)].state == 2);
+			CHECK(survey.run("refresh", {}, e).has_value() && logoItem()->state == FirmwareViewModel::Unreadable);
 			/* cleared: looked for in the firmware folder, where it is not */
-			CHECK(survey.run("clearFile", {logoRow}, e).has_value() && survey.items()[static_cast<size_t>(logoRow)].state == 3 &&
-				survey.missing.get() >= 1);
-			/* a folder scanned: the original found by its hash, under any name */
+			CHECK(survey.run("clearFile", {logoLine}, e).has_value() && logoItem()->state == FirmwareViewModel::Missing && survey.missing.get() >= 1);
+			/* a folder scanned: the original found by its hash, under any name, for every core that declares it */
 			fs::create_directories(dir / "dumps" / "deep");
 			fs::copy_file(theirs, dir / "dumps" / "deep" / "renamed.rom");
 			CHECK(survey.run("scanFolder", {(dir / "dumps").string(), false}, e) == Value(int64_t{0}));
-			CHECK(survey.run("scanFolder", {(dir / "dumps").string(), true}, e) == Value(int64_t{1}));
-			CHECK(survey.items()[static_cast<size_t>(logoRow)].state == 0 &&
-				survey.items()[static_cast<size_t>(logoRow)].path == (dir / "dumps" / "deep" / "renamed.rom").string());
-			CHECK(!survey.run("setFile", {int64_t{99}, theirs.string()}, e) && e == "no row 99");
-			/* put back as the test had it: nothing chosen for the emulator */
+			CHECK(survey.run("scanFolder", {(dir / "dumps").string(), true}, e) == Value(int64_t{2}));
+			CHECK(logoItem()->state == FirmwareViewModel::Good && logoItem()->path == (dir / "dumps" / "deep" / "renamed.rom").string());
+			CHECK(!survey.run("setFile", {int64_t{99}, theirs.string()}, e) && e == "no line 99");
+			/* put back as the test had it: nothing chosen for the emulator, nor the original for the game */
 			installed.rememberFirmware("Synth Hashed", "logo", "");
+			installed.rememberFirmware("Synth Hashed", "logo#" + original, "");
+			installed.rememberFirmware("Synth Game", "logo#" + original, "");
 		}
 	}
 	/* where it was chosen is remembered: that is how the project found it */
@@ -6736,6 +6751,129 @@ void idleEye()
 	CHECK(lowest < 0.2f);
 }
 
+/* Chimera's Firmware window: a group a core (the emulators first), a line a
+ * declaration in Chimera's words, Show, many releases of one id shown only
+ * when on hand, what a line says in full, Set File (a pinned dump kept
+ * under its own hash), Clear, and Scan Folder (a folder that answers
+ * becomes the firmware folder when the one named is not there) */
+bool firmwareWindow(const char *package, const char *slotsPackage, const char *biosPackage, const char *gamePackage)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	if (fs::file_size(slotsPackage, ec) == 0 || ec || fs::file_size(biosPackage, ec) == 0 || ec)
+	{
+		std::printf("SKIP the Firmware window: no slots or bios package was made\n");
+		return false;
+	}
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-firmware-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "Cores");
+	fs::create_directories(dir / "Firmware");
+	fs::copy_file(package, dir / "Cores" / "synth-box.chimeraCore");
+	fs::copy_file(slotsPackage, dir / "Cores" / "synth-slots.chimeraCore");
+	fs::copy_file(biosPackage, dir / "Cores" / "synth-bios.chimeraCore");
+	fs::copy_file(gamePackage, dir / "Cores" / "synth-game.chimeraCore");
+	ManualDispatcher d;
+	CoresViewModel cores(d);
+	std::string error;
+	cores.set("coresFolder", (dir / "Cores").string(), error);
+	cores.set("firmwareFolder", (dir / "Firmware").string(), error);
+	FirmwareViewModel fw(d, cores);
+	RowModel &lines = *fw.rowLists()[0].model;
+	auto text = [&](int64_t r, int32_t c) {
+		std::string t;
+		fromValue(lines.cell(r, c), t);
+		return t;
+	};
+	auto mark = [&](int64_t r) {
+		int64_t m = -1;
+		fromValue(lines.cell(r, 3), m);
+		return m;
+	};
+	auto lineOf = [&](const std::string &firmware, const std::string &release) {
+		for (int64_t r = 0; r < lines.rowCount(); r++)
+			if (text(r, 4) == firmware && (release.empty() || text(r, 5) == release)) return r;
+		return int64_t{-1};
+	};
+	auto coresListed = [&] {
+		std::string out;
+		for (int64_t r = 0; r < lines.rowCount(); r++)
+			if (out.empty() || out.substr(out.rfind('|', out.size() - 2) + 1) != text(r, 0) + "|") out += text(r, 0) + "|";
+		return out;
+	};
+	CHECK(fw.run("refresh", {}, error).has_value());
+	/* the emulators first, each by name, then the game cores */
+	CHECK(coresListed() == "Synth|Synth Bios|Synth Slots|Synth Game|");
+	CHECK(text(0, 2) == "none" && text(0, 4) == "(needs no firmware)" && text(0, 1) == "needs no firmware");
+	/* ten releases of one firmware: none on hand, so one line says so */
+	const int64_t more = lineOf("… 10 more releases of Synth BIOS not on hand; tick \"Show every release\" to see them", "");
+	CHECK(more >= 0 && text(more, 2) == "more" && text(more, 0) == "Synth Bios" &&
+		  text(more, 1) == "Synth BIOS · 0 of 10 dumps on hand · any one satisfies a project that chooses it");
+	CHECK(text(more, 11) == "Synth Bios  ·  " + text(more, 1));
+	fw.showAll.set(true);
+	CHECK(lineOf("Synth BIOS", "v01") >= 0 && lineOf("Synth BIOS", "v10") >= 0 && text(lineOf("Synth BIOS", "v03"), 6) == "AE71FDD6" &&
+		  text(lineOf("Synth BIOS", "v03"), 9) == "not found" && mark(lineOf("Synth BIOS", "v03")) == 3);
+	fw.showAll.set(false);
+	/* a release in the firmware folder: shown, found by its hash */
+	std::ofstream(dir / "Firmware" / "rel03.bin") << "bios rel 03";
+	fw.run("refresh", {}, error);
+	{
+		const int64_t v3 = lineOf("Synth BIOS", "v03");
+		CHECK(v3 >= 0 && lineOf("Synth BIOS", "v04") < 0 && text(v3, 9) == "found, hash matches" && text(v3, 8) == "Firmware folder" &&
+			  text(v3, 7) == "rel03.bin" && mark(v3) == 0 && text(v3, 1).find("1 of 10 dumps on hand") != std::string::npos);
+		CHECK(lineOf("… 9 more releases of Synth BIOS not on hand; tick \"Show every release\" to see them", "") >= 0);
+	}
+	/* a declaration with no hash, needed for one board: what it says in full */
+	const int64_t boardB = lineOf("Board B BIOS", "");
+	CHECK(boardB >= 0 && text(boardB, 5) == "when board = b" && text(boardB, 6) == "(any)" && text(boardB, 9) == "not found");
+	fw.picked.set(boardB);
+	CHECK(fw.detail.get() == "Board B BIOS, 0 bytes\na file called boardb.bin, any bytes · needed when board = b\nnothing yet" &&
+		  fw.canSet.get() && !fw.canClear.get() && fw.pickTitle.get() == "Synth Slots: Board B BIOS");
+	CHECK(!fw.run("setFile", {lineOf("Board B BIOS", ""), (dir / "none.bin").string()}, error) && error == (dir / "none.bin").string() + " is not a file");
+	CHECK(!fw.run("setFile", {int64_t{0}, (dir / "none.bin").string()}, error) && error == "line 0 is not a firmware file");
+	/* a file of the person's: chosen, found by size and name; Clear forgets it */
+	std::ofstream(dir / "mine.bin") << "my board B bios";
+	CHECK(fw.run("setFile", {lineOf("Board B BIOS", ""), (dir / "mine.bin").string()}, error).has_value());
+	{
+		const int64_t l = lineOf("Board B BIOS", "");
+		CHECK(text(l, 8) == "chosen" && text(l, 9) == "found by size and name" && fw.picked.get() == l && fw.canClear.get() &&
+			  fw.detail.get().find((dir / "mine.bin").string() + " is ") != std::string::npos);
+		CHECK(fw.run("clearFile", {l}, error).has_value() && text(lineOf("Board B BIOS", ""), 9) == "not found");
+	}
+	/* a pinned release chosen: kept under its own hash; another size, another hash, a file gone */
+	fw.showAll.set(true);
+	fs::create_directories(dir / "x");
+	std::ofstream(dir / "x" / "my05.bin") << "bios rel 05";
+	CHECK(fw.run("setFile", {lineOf("Synth BIOS", "v05"), (dir / "x" / "my05.bin").string()}, error).has_value() &&
+		  text(lineOf("Synth BIOS", "v05"), 9) == "found, hash matches" && text(lineOf("Synth BIOS", "v05"), 8) == "chosen");
+	CHECK(cores.chosenFirmwareFor("Synth Bios", "bios#10558C2BC8A1F4DBAE702864F80B790774E0C89E") == (dir / "x" / "my05.bin").string() &&
+		  cores.chosenFirmwareFor("Synth Bios", "bios").empty());
+	std::ofstream(dir / "x" / "big.bin") << "a bios of another size";
+	fw.run("setFile", {lineOf("Synth BIOS", "v06"), (dir / "x" / "big.bin").string()}, error);
+	CHECK(text(lineOf("Synth BIOS", "v06"), 9) == "not the 11 bytes the core expects - used anyway" && mark(lineOf("Synth BIOS", "v06")) == 1);
+	std::ofstream(dir / "x" / "odd.bin") << "bios rel ??";
+	fw.run("setFile", {lineOf("Synth BIOS", "v07"), (dir / "x" / "odd.bin").string()}, error);
+	CHECK(text(lineOf("Synth BIOS", "v07"), 9) == "right size, a dump the core has never seen - used anyway");
+	fs::remove(dir / "x" / "odd.bin");
+	fw.run("refresh", {}, error);
+	CHECK(text(lineOf("Synth BIOS", "v07"), 9) == "chosen file is gone" && mark(lineOf("Synth BIOS", "v07")) == 2);
+	/* Show: the game cores' files, or the emulators' */
+	fw.shows.set(2);
+	CHECK(coresListed() == "Synth Game|");
+	fw.shows.set(1);
+	CHECK(coresListed() == "Synth|Synth Bios|Synth Slots|");
+	fw.shows.set(0);
+	/* Scan Folder: what it answers is remembered; the folder becomes the firmware folder when the one named is not there */
+	fs::create_directories(dir / "scan" / "deeper");
+	std::ofstream(dir / "scan" / "deeper" / "boardb.bin") << "a board B BIOS, by its name";
+	cores.set("firmwareFolder", (dir / "nowhere").string(), error);
+	int64_t found = 0;
+	CHECK(fromValue(fw.run("scanFolder", {(dir / "scan").string(), true}, error).value_or(Value()), found) && found == 1 &&
+		  fw.status.get() == "Found 1 firmware file in " + (dir / "scan").string());
+	CHECK(text(lineOf("Board B BIOS", ""), 9) == "found by name" && cores.firmwareFolder.get() == (dir / "scan").string());
+	fs::remove_all(dir, ec);
+	return true;
+}
+
 int main(int argc, char **argv)
 {
 	signalsAndProperties();
@@ -6811,6 +6949,8 @@ int main(int argc, char **argv)
 			else std::printf("SKIP the Columns menu: no package with players and keys given\n");
 			if (argc >= 11) ranMachine = coreMenu(argv[1], argv[2], argv[6], argv[10]) && ranMachine;
 			else std::printf("SKIP the Emulator menu: no packages that import movies and are games given\n");
+			if (argc >= 12) ranMachine = firmwareWindow(argv[1], argv[6], argv[11], argv[8]) && ranMachine;
+			else std::printf("SKIP the Firmware window: no package with many releases of one firmware given\n");
 		}
 		else
 			std::printf("SKIP the machine tests: %s or %s is missing\n", argv[1], argv[2]);

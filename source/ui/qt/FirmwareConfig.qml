@@ -1,6 +1,11 @@
-// Chimera's Firmware window (Config > Firmware): every installed core's
-// declared firmware and what is on hand for it. Layout and bindings only,
-// over the firmware view model.
+// Chimera's Firmware window (Config > Firmware), laid out as Chimera's
+// FirmwareSurveyForm: what the window is for at the top, Show (All,
+// Emulators, Games) above the list, the list grouped by core (the core's
+// name and its line) with a mark and Firmware, Release, Expected SHA1,
+// Found, Where and Status columns, what the line picked says in full under
+// it, and Set File..., Clear, Scan Folder..., Rescan, Show every release
+// and Close. A double click is Set File.... Layout and bindings only, over
+// the firmware view model.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -11,75 +16,180 @@ ApplicationWindow {
     objectName: "firmwareWindow"
     required property QtObject vm
     property var folderOf: null
+    property var themeColor: (role, fallback) => fallback
     title: qsTr("Firmware")
-    width: 760
-    height: 480
-    property int picked: -1
-    onVisibleChanged: if (visible) { win.vm.run("refresh"); win.picked = -1 }
-    readonly property var marks: ["#2e7d32", "#ef6c00", "#b00020", "#9e9e9e"]
+    width: 860
+    height: 440
+    minimumWidth: 640
+    minimumHeight: 300
+    onVisibleChanged: if (visible) { win.vm.picked = -1; win.vm.run("refresh") }
 
-    ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: 8
-        Label {
-            text: win.vm.missing === 0 ? qsTr("Every installed core has what it declares.")
-                                      : qsTr("%1 declared file(s) with nothing that is right on hand.").arg(win.vm.missing)
-            font.bold: true
-        }
-        ListView {
-            id: list
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
-            model: win.vm.rows("firmware")
-            ScrollBar.vertical: ScrollBar {}
-            delegate: ItemDelegate {
-                id: row
-                required property int index
-                required property string core
-                required property string name
-                required property int state
-                required property string stateText
-                required property string path
-                required property string how
-                width: list.width - 16
-                highlighted: row.index === win.picked
-                onClicked: win.picked = row.index
-                contentItem: RowLayout {
-                    Rectangle { width: 12; height: 12; radius: 6; color: win.marks[row.state] }
-                    Label { text: row.core; Layout.preferredWidth: 140; elide: Text.ElideRight }
-                    Label { text: row.name; Layout.preferredWidth: 180; elide: Text.ElideRight }
-                    Label { text: row.stateText + (row.how !== "" ? " (" + row.how + ")" : ""); Layout.preferredWidth: 200; elide: Text.ElideRight }
-                    Label { text: row.path; Layout.fillWidth: true; elide: Text.ElideMiddle; opacity: 0.75 }
-                }
+    // the columns, as wide as Chimera's
+    readonly property var widths: [26, 200, 150, 95, 150, 110, 105]
+
+    // Chimera's marks: a tick, a warning triangle, a cross, a circle
+    component Mark: Canvas {
+        required property int mark
+        width: 16; height: 16
+        onMarkChanged: requestPaint()
+        onPaint: {
+            const g = getContext("2d")
+            g.reset()
+            g.lineCap = "round"
+            if (mark === 0) {
+                g.strokeStyle = win.themeColor("GlyphGood", "#2e7d32"); g.lineWidth = 2.4
+                g.beginPath(); g.moveTo(3, 8); g.lineTo(6, 12); g.lineTo(13, 4); g.stroke()
+            } else if (mark === 1) {
+                g.fillStyle = win.themeColor("GlyphWarning", "#f0a000")
+                g.beginPath(); g.moveTo(8, 1); g.lineTo(15, 14); g.lineTo(1, 14); g.closePath(); g.fill()
+                g.fillStyle = win.themeColor("GlyphWarningInk", "#000000")
+                g.fillRect(7, 5, 2, 5); g.fillRect(7, 11, 2, 2)
+            } else if (mark === 2) {
+                g.strokeStyle = win.themeColor("GlyphError", "#c62828"); g.lineWidth = 2.4
+                g.beginPath(); g.moveTo(4, 4); g.lineTo(12, 12); g.moveTo(12, 4); g.lineTo(4, 12); g.stroke()
+            } else {
+                g.strokeStyle = win.themeColor("GlyphNeutral", "#9e9e9e"); g.lineWidth = 1.4
+                g.beginPath(); g.ellipse(3, 3, 10, 10); g.stroke()
             }
         }
-        RowLayout {
-            Button { text: qsTr("Set..."); enabled: win.picked >= 0; onClicked: fileDialog.open() }
-            Button { text: qsTr("Clear"); enabled: win.picked >= 0; onClicked: win.vm.run("clearFile", [win.picked]) }
-            Button { text: qsTr("Scan Folder..."); onClicked: folderDialog.open() }
-            CheckBox { id: subfolders; text: qsTr("Scan sub-folders too"); checked: true }
-            Item { Layout.fillWidth: true }
-            Button { text: qsTr("Refresh"); onClicked: win.vm.run("refresh") }
-            Button { text: qsTr("Close"); onClicked: win.close() }
-        }
-        Label {
-            text: win.vm.error !== "" ? win.vm.error : win.vm.status
-            color: win.vm.error !== "" ? "#b00020" : palette.text
-            elide: Text.ElideRight
-            Layout.fillWidth: true
-        }
     }
+
     FileDialog {
         id: fileDialog
-        title: qsTr("Choose the firmware file")
         currentFolder: win.folderOf ? win.folderOf("Firmware") : ""
-        onAccepted: win.vm.run("setFile", [win.picked, selectedFile])
+        onAccepted: win.vm.run("setFile", [win.vm.picked, decodeURIComponent(String(selectedFile).replace(/^file:\/\/(?=\/[A-Za-z]:)/, "").replace(/^file:\/\//, ""))])
     }
     FolderDialog {
         id: folderDialog
         title: qsTr("Scan a folder for firmware files")
         currentFolder: win.folderOf ? win.folderOf("Firmware") : ""
-        onAccepted: win.vm.run("scanFolder", [selectedFolder, subfolders.checked])
+        onAccepted: win.vm.run("scanFolder", [decodeURIComponent(String(selectedFolder).replace(/^file:\/\/(?=\/[A-Za-z]:)/, "").replace(/^file:\/\//, "")), true])
+    }
+    function browse() {
+        if (!win.vm.canSet) return
+        fileDialog.title = win.vm.pickTitle
+        fileDialog.open()
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 8
+        spacing: 4
+        Label {
+            text: qsTr("Files your installed cores expect you to provide. A green row was found in the Firmware folder or where you last chose it; a project that needs it opens without asking.")
+            wrapMode: Text.WordWrap
+            Layout.fillWidth: true
+        }
+        RowLayout {
+            Item { Layout.fillWidth: true }
+            Label { text: qsTr("Show:") }
+            RadioButton { text: qsTr("All"); checked: win.vm.shows === 0; onClicked: win.vm.shows = 0; padding: 2 }
+            RadioButton { text: qsTr("Emulators"); checked: win.vm.shows === 1; onClicked: win.vm.shows = 1; padding: 2 }
+            RadioButton { text: qsTr("Games"); checked: win.vm.shows === 2; onClicked: win.vm.shows = 2; padding: 2 }
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            color: palette.base
+            border.color: palette.mid
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 1
+                spacing: 0
+                // the column headings
+                Row {
+                    Repeater {
+                        model: ["", qsTr("Firmware"), qsTr("Release"), qsTr("Expected SHA1"), qsTr("Found"), qsTr("Where"), qsTr("Status")]
+                        delegate: Label {
+                            required property int index
+                            required property string modelData
+                            text: modelData
+                            width: win.widths[index]
+                            leftPadding: 4
+                            topPadding: 2; bottomPadding: 2
+                            elide: Text.ElideRight
+                            background: Rectangle { color: palette.button; border.color: palette.mid }
+                        }
+                    }
+                }
+                ListView {
+                    id: list
+                    objectName: "firmwareList"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    model: win.vm.rows("lines")
+                    currentIndex: win.vm.picked
+                    ScrollBar.vertical: ScrollBar {}
+                    // a group a core: its name and its line
+                    section.property: "heading"
+                    section.delegate: Label {
+                        required property string section
+                        width: list.width
+                        text: section
+                        font.bold: true
+                        topPadding: 6
+                        leftPadding: 4
+                        color: palette.highlight
+                    }
+                    delegate: Rectangle {
+                        id: line
+                        required property int index
+                        required property string core
+                        required property string summary
+                        required property string kind
+                        required property int mark
+                        required property string firmware
+                        required property string release
+                        required property string expected
+                        required property string found
+                        required property string where
+                        required property string status
+                        required property int state
+                        width: list.width
+                        height: 20
+                        readonly property bool isPicked: line.index === win.vm.picked
+                        color: isPicked ? palette.highlight : "transparent"
+                        // Chimera's colours: right, used anyway, gone, nothing
+                        readonly property color ink: line.isPicked ? palette.highlightedText
+                            : line.kind !== "row" ? palette.mid
+                            : line.state === 0 ? win.themeColor("AccentGood", "#2e7d32")
+                            : line.state === 1 || line.state === 2 ? win.themeColor("AccentWarning", "#b26a00")
+                            : line.state === 3 ? win.themeColor("AccentError", "#c62828") : palette.mid
+                        Row {
+                            anchors.verticalCenter: parent.verticalCenter
+                            Item { width: win.widths[0]; height: 16; Mark { anchors.centerIn: parent; mark: line.mark } }
+                            Label { text: line.firmware; color: line.ink; width: line.kind === "row" ? win.widths[1] : 800; elide: Text.ElideRight; leftPadding: 4 }
+                            Label { visible: line.kind === "row"; text: line.release; color: line.ink; width: win.widths[2]; elide: Text.ElideRight; leftPadding: 4 }
+                            Label { visible: line.kind === "row"; text: line.expected; color: line.ink; width: win.widths[3]; font.family: "monospace"; leftPadding: 4 }
+                            Label { visible: line.kind === "row"; text: line.found; color: line.ink; width: win.widths[4]; elide: Text.ElideRight; leftPadding: 4 }
+                            Label { visible: line.kind === "row"; text: line.where; color: line.ink; width: win.widths[5]; elide: Text.ElideRight; leftPadding: 4 }
+                            Label { visible: line.kind === "row"; text: line.status; color: line.ink; width: win.widths[6] + 200; elide: Text.ElideRight; leftPadding: 4 }
+                        }
+                        TapHandler {
+                            onTapped: win.vm.picked = line.index
+                            onDoubleTapped: { win.vm.picked = line.index; win.browse() }
+                        }
+                    }
+                }
+            }
+        }
+        // the core's line for the group picked, and what the line picked says in full
+        Label {
+            text: win.vm.detail
+            Layout.fillWidth: true
+            Layout.preferredHeight: 46
+            elide: Text.ElideRight
+            wrapMode: Text.NoWrap
+        }
+        RowLayout {
+            Button { text: qsTr("Set File..."); enabled: win.vm.canSet; onClicked: win.browse() }
+            Button { text: qsTr("Clear"); enabled: win.vm.canClear; onClicked: win.vm.run("clearFile", [win.vm.picked]) }
+            Button { text: qsTr("Scan Folder..."); onClicked: folderDialog.open() }
+            Button { text: qsTr("Rescan"); onClicked: win.vm.run("refresh") }
+            CheckBox { text: qsTr("Show every release"); checked: win.vm.showAll; onToggled: win.vm.showAll = checked }
+            Label { text: win.vm.status; elide: Text.ElideRight; Layout.fillWidth: true; opacity: 0.8 }
+            Button { text: qsTr("Close"); onClicked: win.close() }
+        }
     }
 }

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <map>
 
 #include "chimera/engine.h"
 #include "chimera/vm/firmware.hpp"
@@ -18,53 +19,165 @@ std::string lower(std::string s)
 	return s;
 }
 
+std::string upper(std::string s)
+{
+	for (char &c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+	return s;
+}
+
 std::string field(const json::Json &j, const char *name)
 {
 	const json::Json *v = j.find(name);
-	return v != nullptr ? v->text : std::string();
+	return v != nullptr && v->kind == json::Json::Kind::String ? v->text : std::string();
 }
 
-const char *const kStateText[] = {"on hand", "not a dump the core knows", "chosen, but gone", "missing"};
+/* a condition put in brackets when it joins others */
+std::string grouped(const std::string &s)
+{
+	return s.find(" and ") != std::string::npos || s.find(" or ") != std::string::npos ? "(" + s + ")" : s;
+}
+
+std::string literal(const json::Json &v) { return v.kind == json::Json::Kind::String ? v.text : json::write(v); }
+
+bool sameFolder(const std::string &a, const std::string &b)
+{
+	if (a.empty() || b.empty()) return false;
+	std::error_code ec;
+	const fs::path x = fs::weakly_canonical(a, ec), y = fs::weakly_canonical(b, ec);
+	return lower(x.lexically_normal().string()) == lower(y.lexically_normal().string());
+}
 } // namespace
+
+std::string FirmwareViewModel::conditionText(const json::Json &when)
+{
+	if (when.kind != json::Json::Kind::Object) return {};
+	if (const json::Json *setting = when.find("setting"))
+	{
+		if (const json::Json *is = when.find("is")) return literal(*setting) + " = " + literal(*is);
+		if (const json::Json *in = when.find("in"); in != nullptr && in->kind == json::Json::Kind::Array)
+		{
+			std::string list;
+			for (const json::Json &o : in->items) list += (list.empty() ? "" : ", ") + literal(o);
+			return literal(*setting) + " in " + list;
+		}
+		return literal(*setting);
+	}
+	if (const json::Json *slot = when.find("slot"))
+	{
+		if (const json::Json *ext = when.find("extension")) return "a ." + literal(*ext) + " file in " + literal(*slot);
+		return "a file in " + literal(*slot);
+	}
+	for (const char *join : {"all", "any"})
+		if (const json::Json *list = when.find(join); list != nullptr && list->kind == json::Json::Kind::Array)
+		{
+			std::string out;
+			for (const json::Json &c : list->items)
+				if (const std::string t = conditionText(c); !t.empty()) out += (out.empty() ? "" : std::string(join[1] == 'l' ? " and " : " or ")) + grouped(t);
+			return out;
+		}
+	if (const json::Json *no = when.find("not")) return "not " + grouped(conditionText(*no));
+	return {};
+}
+
+std::string FirmwareViewModel::Row::statusText() const
+{
+	switch (state)
+	{
+	case Good:
+		if (!sha1.empty()) return "found, hash matches";
+		if (!path.empty() && !name.empty() && lower(fs::path(path).filename().string()) != lower(name)) return "found by size and name";
+		return "found by name";
+	case Unrecognised: return "right size, a dump the core has never seen - used anyway";
+	case Custom: return "not the " + std::to_string(size) + " bytes the core expects - used anyway";
+	case Unreadable: return "chosen file is gone";
+	default: return "not found";
+	}
+}
+
+std::string FirmwareViewModel::Row::whereText() const
+{
+	switch (where)
+	{
+	case FirmwareFolder: return "Firmware folder";
+	case Chosen: return path.empty() ? std::string("chosen") : "chosen: " + path;
+	default: return {};
+	}
+}
+
+std::string FirmwareViewModel::summaryOf(const Group &g) const
+{
+	if (g.rows.empty()) return "needs no firmware";
+	std::vector<std::string> ids;
+	size_t onHand = 0;
+	bool unpinned = true;
+	for (size_t i : g.rows)
+	{
+		const Row &r = rows_[i];
+		if (std::find(ids.begin(), ids.end(), r.id) == ids.end()) ids.push_back(r.id);
+		onHand += r.onHand() ? 1 : 0;
+		unpinned = unpinned && r.sha1.empty();
+	}
+	if (ids.size() == 1 && g.rows.size() > 1)
+		return rows_[g.rows[0]].display + " · " + std::to_string(onHand) + " of " + std::to_string(g.rows.size()) +
+			" dumps on hand · any one satisfies a project that chooses it";
+	size_t satisfied = 0;
+	for (const std::string &id : ids)
+		satisfied += std::any_of(g.rows.begin(), g.rows.end(), [&](size_t i) { return rows_[i].id == id && rows_[i].onHand(); }) ? 1 : 0;
+	const std::string files = ids.size() == 1 ? std::string("1 file") : std::to_string(ids.size()) + " files";
+	const std::string found = ids.size() == 1 ? (satisfied == 1 ? "on hand" : "not on hand") : std::to_string(satisfied) + " on hand";
+	return files + " · " + found + (unpinned ? " · not pinned by hash: recognised by the name the core gives them" : "");
+}
+
+std::string FirmwareViewModel::keyOf(const Row &r) { return r.sha1.empty() ? r.id : r.id + "#" + upper(r.sha1); }
 
 FirmwareViewModel::FirmwareViewModel(Dispatcher &dispatcher, CoresViewModel &cores) : ViewModel("firmware", dispatcher), cores_(cores)
 {
 	expose("status", "what the firmware window last had to say", status);
-	expose("missing", "rows with nothing on hand", missing);
-	rows("firmware", "one row a declared firmware file of an installed core: core, id, name, state (0 on hand and right, 1 "
-		"on hand but not a dump the core knows, 2 chosen but gone, 3 nothing), stateText, path, how", model_);
-	command("refresh", "asks every installed core again what firmware it declares, and looks for each", {},
+	expose("missing", "declarations with nothing on hand", missing);
+	expose("shows", "which cores' files are listed: 0 all, 1 the emulators', 2 the game cores'", shows, true);
+	expose("showAll", "every release of an id declared many times, not only the dumps on hand", showAll, true);
+	expose("picked", "the line picked in the list (-1: none)", picked, true);
+	expose("detail", "what the line picked says in full: what it is, what the core expects, what is on hand", detail);
+	expose("canSet", "a declaration is picked (Set File...)", canSet);
+	expose("canClear", "the declaration picked has a file chosen by hand (Clear)", canClear);
+	expose("pickTitle", "a file picker's title for the line picked", pickTitle);
+	rows("lines", "one line of the list: core, summary (the core's line), kind (row, none or more), mark (0 right, 1 used "
+		"anyway, 2 gone, 3 nothing), firmware, release, expected, found, where, status, state, heading (the core and its line)", model_);
+	command("refresh", "asks every installed core again what firmware it declares, and looks for each (Rescan)", {},
 		[this](const Args &, std::string &) -> Value {
 			survey();
 			return static_cast<int64_t>(rows_.size());
 		});
-	command("setFile", "a file of the person's for a row (remembered where it is, not copied); its hash decides whether it "
-		"is a dump the core knows", {"row", "path"}, [this](const Args &a, std::string &error) -> Value {
-			size_t i = 0;
+	command("setFile", "a file of the person's for a line (remembered where it is, not copied; a pinned declaration's "
+		"under its own hash); its size and hash decide what it is", {"line", "path"}, [this](const Args &a, std::string &error) -> Value {
+			const Row *r = nullptr;
 			std::string path;
-			if (!rowOf(a, i, error) || !arg(a, 1, path, error)) return {};
+			if (!lineOf(a, r, error) || !arg(a, 1, path, error)) return {};
 			if (!fs::is_regular_file(path))
 			{
 				error = path + " is not a file";
 				return {};
 			}
-			const Row r = rows_[i];
-			cores_.rememberFirmware(r.core, r.id, path);
+			const Row was = *r;
+			cores_.rememberFirmware(was.core, keyOf(was), path);
 			survey();
 			for (const Row &now : rows_)
-				if (now.core == r.core && now.id == r.id) status.set(fs::path(path).filename().string() + ": " + kStateText[now.state]);
+				if (now.core == was.core && keyOf(now) == keyOf(was)) status.set(fs::path(path).filename().string() + ": " + now.statusText());
 			return {};
 		});
-	command("clearFile", "forgets the file chosen for a row; it is looked for in the firmware folder again", {"row"},
+	command("clearFile", "forgets the file chosen for a line; it is looked for in the firmware folder again", {"line"},
 		[this](const Args &a, std::string &error) -> Value {
-			size_t i = 0;
-			if (!rowOf(a, i, error)) return {};
-			cores_.rememberFirmware(rows_[i].core, rows_[i].id, "");
+			const Row *r = nullptr;
+			if (!lineOf(a, r, error)) return {};
+			const Row was = *r;
+			cores_.rememberFirmware(was.core, keyOf(was), "");
+			if (!was.sha1.empty() && cores_.chosenFirmwareFor(was.core, was.id) == was.path) cores_.rememberFirmware(was.core, was.id, "");
 			survey();
 			return {};
 		});
-	command("scanFolder", "hashes the files in a folder (and below it when asked) and remembers each that answers a row "
-		"with nothing usable on hand (gone or missing); says how many", {"folder", "subfolders"}, [this](const Args &a, std::string &error) -> Value {
+	command("scanFolder", "hashes the files in a folder (and below it when asked) and remembers each that answers a "
+		"declaration of an installed core, as Chimera's; a folder that answered any becomes the firmware folder when the "
+		"one named is not there. Says how many", {"folder", "subfolders"}, [this](const Args &a, std::string &error) -> Value {
 			std::string folder;
 			bool recurse = true;
 			if (!arg(a, 0, folder, error)) return {};
@@ -78,109 +191,255 @@ FirmwareViewModel::FirmwareViewModel(Dispatcher &dispatcher, CoresViewModel &cor
 			int64_t found = 0;
 			for (const Row &r : std::vector<Row>(rows_))
 			{
-				/* only what has nothing usable: a file the person chose, their own dump, stays */
-				if (r.state < 2) continue;
 				json::Json decl;
-				std::string err;
+				std::string err, how;
 				json::parse(r.declJson, decl, err);
-				std::string how;
 				if (const FirmwareFile *f = findFirmware(decl, "", index, how))
 				{
-					cores_.rememberFirmware(r.core, r.id, f->path);
+					cores_.rememberFirmware(r.core, keyOf(r), f->path);
 					found++;
 				}
 			}
+			/* where the person keeps firmware, when the folder named is nowhere real (Chimera issue 293) */
+			if (found > 0 && !fs::is_directory(cores_.firmwareFolder.get())) cores_.firmwareFolder.set(folder);
 			survey();
 			status.set("Found " + std::to_string(found) + (found == 1 ? " firmware file" : " firmware files") + " in " + folder);
 			return found;
 		});
+	showsWatch_ = shows.changed.connect([this] { render(); });
+	showAllWatch_ = showAll.changed.connect([this] { render(); });
+	pickedWatch_ = picked.changed.connect([this] { describe(); });
 }
 
-bool FirmwareViewModel::rowOf(const Args &a, size_t &i, std::string &error) const
+bool FirmwareViewModel::lineOf(const Args &a, const Row *&out, std::string &error) const
 {
-	int64_t row = 0;
-	if (!arg(a, 0, row, error)) return false;
-	if (row < 0 || row >= static_cast<int64_t>(rows_.size()))
+	int64_t line = 0;
+	if (!arg(a, 0, line, error)) return false;
+	if (line < 0 || line >= static_cast<int64_t>(lines_.size()))
 	{
-		error = "no row " + std::to_string(row);
+		error = "no line " + std::to_string(line);
 		return false;
 	}
-	i = static_cast<size_t>(row);
+	if (lines_[static_cast<size_t>(line)].row < 0)
+	{
+		error = "line " + std::to_string(line) + " is not a firmware file";
+		return false;
+	}
+	out = &rows_[static_cast<size_t>(lines_[static_cast<size_t>(line)].row)];
 	return true;
 }
 
 void FirmwareViewModel::survey()
 {
 	rows_.clear();
-	/* the firmware folder's files, and those chosen by hand: names and sizes, read only when a hash is asked */
+	groups_.clear();
+	const std::string folder = cores_.firmwareFolder.get();
+	/* the firmware folder's files and those chosen by hand: names and sizes, read only when a hash is asked */
 	const std::vector<FirmwareFile> index = indexFirmware(cores_.firmwareFolders());
+	/* one group a core, its versions together */
+	std::map<std::string, std::vector<std::pair<std::string, std::string>>> byCore;
+	std::vector<std::string> order;
 	for (const auto &[core, package] : cores_.installed())
 	{
-		const char *perr = nullptr;
-		ce_package *pk = ce_package_open(package.c_str(), &perr);
-		if (pk == nullptr) continue;
-		uint64_t len = 0;
-		json::Json cfg;
-		std::string err;
-		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
-			d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, err))
-			if (const json::Json *list = cfg.find("firmware"); list != nullptr && list->kind == json::Json::Kind::Array)
-				for (const json::Json &decl : list->items)
-				{
-					Row r;
-					r.core = core;
-					r.id = field(decl, "id");
-					r.name = field(decl, "display").empty() ? (field(decl, "name").empty() ? r.id : field(decl, "name")) : field(decl, "display");
-					r.declJson = json::write(decl);
-					const std::string sha = lower(field(decl, "sha1"));
-					const std::string chosen = cores_.chosenFirmwareFor(core, r.id);
-					if (!chosen.empty())
+		if (byCore.find(lower(core)) == byCore.end()) order.push_back(lower(core));
+		byCore[lower(core)].emplace_back(core, package);
+	}
+	for (const std::string &key : order)
+	{
+		Group g;
+		g.core = byCore[key].front().first;
+		std::vector<std::string> seen;
+		for (const auto &[core, package] : byCore[key])
+		{
+			const char *perr = nullptr;
+			ce_package *pk = ce_package_open(package.c_str(), &perr);
+			if (pk == nullptr) continue;
+			uint64_t len = 0;
+			json::Json cfg;
+			std::string err;
+			if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+				d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, err))
+			{
+				if (field(cfg, "kind") == "game") g.gameCore = true;
+				if (const json::Json *list = cfg.find("firmware"); list != nullptr && list->kind == json::Json::Kind::Array)
+					for (const json::Json &decl : list->items)
 					{
-						r.path = chosen;
-						if (!fs::is_regular_file(chosen))
-							r.state = 2;
+						Row r;
+						r.core = g.core;
+						r.id = field(decl, "id");
+						r.display = field(decl, "display").empty() ? r.id : field(decl, "display");
+						r.label = field(decl, "label");
+						r.sha1 = field(decl, "sha1");
+						r.name = field(decl, "name");
+						r.description = field(decl, "description");
+						if (const json::Json *s = decl.find("size")) r.size = static_cast<int64_t>(s->number());
+						if (const json::Json *when = decl.find("requiredWhen")) r.condition = conditionText(*when);
+						r.declJson = json::write(decl);
+						if (std::find(seen.begin(), seen.end(), r.id + "#" + lower(r.sha1)) != seen.end()) continue;
+						seen.push_back(r.id + "#" + lower(r.sha1));
+						/* the dump chosen for this declaration, else for its id; one gone is looked for in the folder */
+						std::string path = r.sha1.empty() ? std::string() : cores_.chosenFirmwareFor(g.core, keyOf(r));
+						if (path.empty()) path = cores_.chosenFirmwareFor(g.core, r.id);
+						std::error_code ec;
+						if (path.empty() || !fs::is_regular_file(path, ec))
+						{
+							std::string how;
+							if (const FirmwareFile *f = findFirmware(decl, "", index, how)) path = f->path;
+						}
+						r.path = path;
+						if (path.empty())
+							r.state = Missing;
 						else
 						{
 							char hash[41] = {};
 							uint64_t size = 0;
-							r.state = sha.empty() || (ce_sha1_file(chosen.c_str(), hash, &size) == 1 && lower(hash) == sha) ? 0 : 1;
-							r.how = "chosen";
+							if (ce_sha1_file(path.c_str(), hash, &size) != 1)
+								r.state = Unreadable;
+							else
+							{
+								r.actualSha1 = upper(hash);
+								/* the verdict is the engine's: 0 wrong size, 1 a dump it has never seen, 2 a match */
+								const int32_t v = ce_firmware_state(r.size, upper(r.sha1).c_str(), static_cast<int64_t>(size), r.actualSha1.c_str());
+								r.state = v == 0 ? Custom : v == 1 ? Unrecognised : Good;
+							}
+							r.where = sameFolder(fs::path(path).parent_path().string(), folder) ? FirmwareFolder : Chosen;
 						}
+						r.gameCore = g.gameCore;
+						g.rows.push_back(rows_.size());
+						rows_.push_back(std::move(r));
 					}
-					else if (const FirmwareFile *f = findFirmware(decl, "", index, r.how))
-					{
-						r.path = f->path;
-						r.state = 0;
-					}
-					rows_.push_back(std::move(r));
-				}
-		ce_package_free(pk);
+			}
+			ce_package_free(pk);
+		}
+		groups_.push_back(std::move(g));
 	}
+	for (Row &r : rows_)
+		for (const Group &g : groups_)
+			if (g.core == r.core) r.gameCore = g.gameCore;
+	/* the emulators first and the game cores after them, each by name, as every list of cores */
+	std::stable_sort(groups_.begin(), groups_.end(), [](const Group &a, const Group &b) {
+		if (a.gameCore != b.gameCore) return !a.gameCore;
+		return lower(a.core) < lower(b.core);
+	});
 	int64_t none = 0;
-	for (const Row &r : rows_) none += r.state != 0 ? 1 : 0;
+	for (const Row &r : rows_) none += r.onHand() ? 0 : 1;
 	missing.set(none);
-	model_.reset.emit();
+	render();
 }
 
-std::string FirmwareViewModel::Rows::columnName(int32_t column) const
+void FirmwareViewModel::render()
 {
-	static const char *const names[] = {"core", "id", "name", "state", "stateText", "path", "how"};
-	return column >= 0 && column < 7 ? names[column] : "";
+	/* the line picked stays picked when it is still listed */
+	const long long pickedRow = picked.get() >= 0 && picked.get() < static_cast<int64_t>(lines_.size()) ? lines_[static_cast<size_t>(picked.get())].row : -1;
+	const Row was = pickedRow >= 0 && pickedRow < static_cast<long long>(rows_.size()) ? rows_[static_cast<size_t>(pickedRow)] : Row();
+	lines_.clear();
+	for (size_t gi = 0; gi < groups_.size(); gi++)
+	{
+		const Group &g = groups_[gi];
+		if ((shows.get() == 1 && g.gameCore) || (shows.get() == 2 && !g.gameCore)) continue;
+		if (g.rows.empty())
+		{
+			lines_.push_back({gi, -1, "(needs no firmware)"});
+			continue;
+		}
+		/* an id at a time, in the order the core declares them */
+		std::vector<std::string> ids;
+		for (size_t i : g.rows)
+			if (std::find(ids.begin(), ids.end(), rows_[i].id) == ids.end()) ids.push_back(rows_[i].id);
+		for (const std::string &id : ids)
+		{
+			std::vector<size_t> rows;
+			for (size_t i : g.rows)
+				if (rows_[i].id == id) rows.push_back(i);
+			const bool collapse = !showAll.get() && rows.size() > kCollapseAbove;
+			size_t hidden = 0;
+			for (size_t i : rows)
+			{
+				if (collapse && !rows_[i].onHand() && rows_[i].state != Unreadable)
+				{
+					hidden++;
+					continue;
+				}
+				lines_.push_back({gi, static_cast<long long>(i), {}});
+			}
+			if (hidden > 0)
+				lines_.push_back({gi, -1, "… " + std::to_string(hidden) + " more releases of " + rows_[rows[0]].display +
+					" not on hand; tick \"Show every release\" to see them"});
+		}
+	}
+	model_.reset.emit();
+	int64_t again = -1;
+	for (size_t l = 0; l < lines_.size() && pickedRow >= 0; l++)
+		if (lines_[l].row >= 0 && rows_[static_cast<size_t>(lines_[l].row)].core == was.core && keyOf(rows_[static_cast<size_t>(lines_[l].row)]) == keyOf(was) &&
+			rows_[static_cast<size_t>(lines_[l].row)].label == was.label)
+			again = static_cast<int64_t>(l);
+	if (picked.get() != again) picked.set(again);
+	else describe();
 }
 
-Value FirmwareViewModel::Rows::cell(int64_t row, int32_t column) const
+void FirmwareViewModel::describe()
+{
+	const int64_t l = picked.get();
+	if (l < 0 || l >= static_cast<int64_t>(lines_.size()) || lines_[static_cast<size_t>(l)].row < 0)
+	{
+		detail.set(groups_.empty() ? "No core package is in the cores folder." : "");
+		canSet.set(false);
+		canClear.set(false);
+		pickTitle.set("");
+		return;
+	}
+	const Row &r = rows_[static_cast<size_t>(lines_[static_cast<size_t>(l)].row)];
+	canSet.set(true);
+	canClear.set(r.where == Chosen);
+	pickTitle.set(r.core + ": " + r.display + (r.label.empty() ? std::string() : " - " + r.label));
+	const std::string what = !r.description.empty() ? r.description : r.display + ", " + std::to_string(r.size) + " bytes";
+	const std::string expected = r.sha1.empty() ? (r.name.empty() ? std::string("any file") : "a file called " + r.name + ", any bytes")
+												: "expects " + upper(r.sha1);
+	const std::string when = r.condition.empty() ? std::string() : " · needed when " + r.condition;
+	const std::string actual = r.path.empty() ? std::string("nothing yet")
+		: r.actualSha1.empty() ? r.path + " could not be read"
+							   : r.path + " is " + r.actualSha1;
+	detail.set(what + "\n" + expected + when + "\n" + actual);
+}
+
+std::string FirmwareViewModel::Lines::columnName(int32_t column) const
+{
+	static const char *const names[] = {"core", "summary", "kind", "mark", "firmware", "release", "expected", "found", "where", "status", "state",
+		"heading"};
+	return column >= 0 && column < 12 ? names[column] : "";
+}
+
+Value FirmwareViewModel::Lines::cell(int64_t row, int32_t column) const
 {
 	if (row < 0 || row >= rowCount()) return {};
-	const Row &r = vm_.rows_[static_cast<size_t>(row)];
+	const Line &line = vm_.lines_[static_cast<size_t>(row)];
+	const Group &g = vm_.groups_[line.group];
+	if (column == 0) return g.core;
+	if (column == 1) return vm_.summaryOf(g);
+	if (column == 11) return g.core + "  \u00b7  " + vm_.summaryOf(g);
+	if (line.row < 0)
+	{
+		switch (column)
+		{
+		case 2: return std::string(line.text.rfind("(", 0) == 0 ? "none" : "more");
+		case 3: return int64_t{3};
+		case 4: return line.text;
+		case 10: return int64_t{Missing};
+		default: return std::string();
+		}
+	}
+	const Row &r = vm_.rows_[static_cast<size_t>(line.row)];
 	switch (column)
 	{
-	case 0: return r.core;
-	case 1: return r.id;
-	case 2: return r.name;
-	case 3: return static_cast<int64_t>(r.state);
-	case 4: return std::string(kStateText[r.state]);
-	case 5: return r.path;
-	case 6: return r.how;
+	case 2: return std::string("row");
+	case 3: return int64_t{r.state == Good ? 0 : r.state == Unrecognised || r.state == Custom ? 1 : r.state == Unreadable ? 2 : 3};
+	case 4: return r.display;
+	case 5: return !r.label.empty() ? r.label : r.condition.empty() ? std::string() : "when " + r.condition;
+	case 6: return r.sha1.empty() ? std::string("(any)") : upper(r.sha1).substr(0, 8);
+	case 7: return r.path.empty() ? std::string() : fs::path(r.path).filename().string();
+	case 8: return r.where == Chosen ? std::string("chosen") : r.whereText();
+	case 9: return r.statusText();
+	case 10: return static_cast<int64_t>(r.state);
 	default: return {};
 	}
 }

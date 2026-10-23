@@ -1296,7 +1296,7 @@ ApplicationWindow {
     }
     ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; folderOf: root.folderOf; visible: false }
     PathsConfig { id: pathsWindow; vm: root.paths; session: root.session; mainWindow: root; visible: false }
-    FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; visible: false }
+    FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; themeColor: root.osdColor; visible: false }
     DataFolderConfig { id: dataFolderWindow; vm: root.dataFolder; visible: false }
     PrecompiledModules { id: precompiledWindow; vm: root.precompiled; visible: false }
     TraceLogger {

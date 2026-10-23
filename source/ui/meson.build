@@ -126,6 +126,17 @@ synth_keys = custom_target(
   build_by_default: true,
 )
 # a game core that needs no firmware, for the Game menu
+# ten releases of one firmware, each pinned by its hash, for the Firmware window's
+# releases shown only when on hand (a release is "bios rel NN", 11 bytes)
+bios_releases = '[{"id": "bios", "display": "Synth BIOS", "label": "v01", "size": 11, "sha1": "444D8D5C7C6427A941F9906A2D44082967BDE98E", "required": true}, {"id": "bios", "display": "Synth BIOS", "label": "v02", "size": 11, "sha1": "102BF07EB78D59FB0CC16FABEE0979DA2CD440B7", "required": true}, {"id": "bios", "display": "Synth BIOS", "label": "v03", "size": 11, "sha1": "AE71FDD67F43A8C1E74F3E70141C2B45168C3FB6", "required": true}, {"id": "bios", "display": "Synth BIOS", "label": "v04", "size": 11, "sha1": "6A2CE8F5C5383505614052D817CE6C60D3DD3E03", "required": true}, {"id": "bios", "display": "Synth BIOS", "label": "v05", "size": 11, "sha1": "10558C2BC8A1F4DBAE702864F80B790774E0C89E", "required": true}, {"id": "bios", "display": "Synth BIOS", "label": "v06", "size": 11, "sha1": "A593A76AE19439D2849DCEDCE9A1940B50F507D7", "required": true}, {"id": "bios", "display": "Synth BIOS", "label": "v07", "size": 11, "sha1": "E8ACBD4E69F007361237ED95A1F9275519EF1E78", "required": true}, {"id": "bios", "display": "Synth BIOS", "label": "v08", "size": 11, "sha1": "82B46AA791D1A44FDD3264C53538E0CB0AE977FB", "required": true}, {"id": "bios", "display": "Synth BIOS", "label": "v09", "size": 11, "sha1": "41DEFEBBB5CF7B7BCC676CD965D6C2D6E8F25BFD", "required": true}, {"id": "bios", "display": "Synth BIOS", "label": "v10", "size": 11, "sha1": "AF94B35ECFFF546BBA669623E5DAE616DC6C5401", "required": true}]'
+synth_bios = custom_target(
+  'synth-bios',
+  output: 'synth-bios.chimeraCore',
+  command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Bios', '@OUTPUT@', '', bios_releases],
+  build_always_stale: true,
+  build_by_default: true,
+)
 synth_plain_game = custom_target(
   'synth-plain-game',
   output: 'synth-plain-game.chimeraCore',
@@ -147,7 +158,7 @@ test(
   'view models',
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game],
+    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game, synth_bios],
   # OpenAL's device that plays to nowhere: the sound check runs with no speakers;
   # the ffmpeg the build ships, for the encode
   env: ['ALSOFT_DRIVERS=null', 'CHIMERA_FFMPEG=' + (repo_root / 'build/dll/ffmpeg')],
