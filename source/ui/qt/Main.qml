@@ -205,6 +205,14 @@ ApplicationWindow {
             Action { text: qsTr("&Controls and Hotkeys..."); onTriggered: { controlsWindow.show(); controlsWindow.raise() } }
             Action { text: qsTr("&Themes..."); onTriggered: { themesWindow.show(); themesWindow.raise() } }
             Action { text: qsTr("C&ustomize..."); onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
+            // Chimera's Config > Key Priority: for a key that is a hotkey and a button
+            Menu {
+                delegate: keyedMenuItem
+                title: qsTr("&Key Priority")
+                Action { text: qsTr("&Both Hotkeys and Controllers"); checkable: true; checked: root.hotkeys.keyPriority === 0; onTriggered: root.hotkeys.keyPriority = 0 }
+                Action { text: qsTr("&Input overrides Hotkeys"); checkable: true; checked: root.hotkeys.keyPriority === 1; onTriggered: root.hotkeys.keyPriority = 1 }
+                Action { text: qsTr("&Hotkeys override Input"); checkable: true; checked: root.hotkeys.keyPriority === 2; onTriggered: root.hotkeys.keyPriority = 2 }
+            }
             Action { property string hotkey: "Frame Advance"; text: qsTr("&Frame Advance"); enabled: root.session.frameAdvanceEnabled; onTriggered: root.session.run("frameAdvance") }
             Action { text: qsTr("Go to Frame &0"); shortcut: "Ctrl+Home"; enabled: root.session.seekEnabled; onTriggered: root.session.run("seek", [0]) }
             Action { property string hotkey: "Seek To..."; text: qsTr("&Go to Frame..."); enabled: root.session.seekEnabled; onTriggered: seekDialog.open() }
@@ -1137,6 +1145,7 @@ ApplicationWindow {
         if (onScreenMessages.count > 5) onScreenMessages.remove(0)
     }
     Connections { target: root.session; function onStatusChanged() { root.note(root.session.status) } }
+    Connections { target: root.hotkeys; function onStatusChanged() { root.note(root.hotkeys.status) } }
     Connections { target: root.branches; function onStatusChanged() { root.note(root.branches.status) } }
     Connections { target: root.projectDetails; function onStatusChanged() { root.note(root.projectDetails.status) } }
     Timer {
@@ -1149,7 +1158,7 @@ ApplicationWindow {
     BatchRun { id: batchRunWindow; vm: root.batchRun; visible: false }
     MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; visible: false }
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; visible: false }
-    Customize { id: customizeWindow; vm: root.customize; session: root.session; visible: false }
+    Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; visible: false }
     ProjectFiles { session: root.session }
     // Work a crash left behind, offered before the project opens, as
     // Chimera's "Recover unsaved work?" asks
@@ -1206,6 +1215,15 @@ ApplicationWindow {
             Label { text: root.session.status; elide: Text.ElideRight; Layout.fillWidth: true }
             Label { text: root.session.gamepads; elide: Text.ElideRight; Layout.maximumWidth: 260 }
             Label { text: root.session.sound; elide: Text.ElideRight; Layout.maximumWidth: 200 }
+            // Chimera's key priority in the status bar: a click is the next one
+            Label {
+                text: [qsTr("Keys: both"), qsTr("Keys: buttons first"), qsTr("Keys: hotkeys first")][root.hotkeys.keyPriority] || ""
+                ToolTip.visible: keyPriorityArea.containsMouse
+                ToolTip.text: [qsTr("Key priority: Allow both hotkeys and controller buttons"),
+                               qsTr("Key priority: Controller buttons will override hotkeys"),
+                               qsTr("Key priority: Hotkeys will override controller buttons")][root.hotkeys.keyPriority] || ""
+                MouseArea { id: keyPriorityArea; anchors.fill: parent; hoverEnabled: true; onClicked: root.hotkeys.run("cycleKeyPriority") }
+            }
             Label { text: root.session.error !== "" ? root.session.error : root.pianoRoll.error; color: "#b00020" }
             Label {
                 text: qsTr("Frame %1 of %2").arg(Number(root.pianoRoll.currentFrame).toLocaleString(Qt.locale(), "f", 0))

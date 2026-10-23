@@ -116,17 +116,21 @@ protected:
 				const QString name = qt::keyName(k->key(), k->modifiers());
 				if (!name.isEmpty())
 				{
-					session_.key(name.toStdString(), down);
 					if (down)
 					{
-						/* the combination it was pressed with is the one let go */
+						/* the combination it was pressed with is the one let go;
+						 * Key Priority says which of the two it goes to */
 						const QString combo = qt::keyCombination(k->key(), k->modifiers());
-						down_[name] = combo;
-						hotkeys_.key(combo.toStdString(), true);
+						const auto route = vm::HotkeysViewModel::route(hotkeys_.keyPriority.get(),
+							hotkeys_.boundTo(combo.toStdString()), session_.keyIsBound(name.toStdString()));
+						down_[name] = {combo, route.hotkey, route.control};
+						if (route.control) session_.key(name.toStdString(), true);
+						if (route.hotkey) hotkeys_.key(combo.toStdString(), true);
 					}
 					else if (const auto it = down_.find(name); it != down_.end())
 					{
-						hotkeys_.key(it->second.toStdString(), false);
+						if (it->second.control) session_.key(name.toStdString(), false);
+						if (it->second.hotkey) hotkeys_.key(it->second.combo.toStdString(), false);
 						down_.erase(it);
 					}
 				}
@@ -134,10 +138,10 @@ protected:
 		}
 		else if (e->type() == QEvent::FocusOut || e->type() == QEvent::WindowDeactivate)
 		{
-			for (const auto &[name, combo] : down_)
+			for (const auto &[name, held] : down_)
 			{
-				session_.key(name.toStdString(), false);
-				hotkeys_.key(combo.toStdString(), false);
+				if (held.control) session_.key(name.toStdString(), false);
+				if (held.hotkey) hotkeys_.key(held.combo.toStdString(), false);
 			}
 			down_.clear();
 		}
@@ -147,7 +151,12 @@ protected:
 private:
 	vm::SessionViewModel &session_;
 	vm::HotkeysViewModel &hotkeys_;
-	std::map<QString, QString> down_;
+	struct Held
+	{
+		QString combo;
+		bool hotkey = true, control = true;
+	};
+	std::map<QString, Held> down_;
 };
 
 #ifdef _WIN32
@@ -354,6 +363,9 @@ int main(int argc, char **argv)
 			if (!down) return;
 			flip(session.skipLagFrames);
 			session.status.set(std::string("Skip Lag Frames toggled ") + (session.skipLagFrames.get() ? "On" : "Off"));
+		});
+		hotkeys.add("General", "Toggle Key Priority", "", [&hotkeys, run](bool down) {
+			if (down) run(hotkeys, "cycleKeyPriority");
 		});
 		/* paused, a frame; running, a pause */
 		hotkeys.add("General", "Frame Inch", "", [&session, run](bool down) {
@@ -709,6 +721,8 @@ int main(int argc, char **argv)
 	themesWatch = themes.colors.changed.connect(applyTheme);
 	applyTheme();
 	config.keep(hotkeys, "saved");
+	config.keep(hotkeys, "keyPriority");
+	config.keep(hotkeys, "noMixedPriority");
 	config.keep(session, "recentProjects");
 	config.keep(pianoRoll, "followPlayback");
 	if (!config.problem().empty()) session.status.set(config.problem());

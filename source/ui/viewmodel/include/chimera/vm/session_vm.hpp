@@ -349,6 +349,8 @@ public:
 	 * when hidden ones are not to be edited, as Chimera records */
 	void setRecordMask(uint64_t mask) { recordMaskM_.store(mask); }
 	void holdFastForward(bool down);
+	/* whether a key presses any of the machine's buttons */
+	bool keyIsBound(const std::string &name) const { return !bindings_.buttonsOf(name).empty(); }
 	/* Chimera's Turbo, held: fast forward with nothing drawn or heard */
 	void holdTurbo(bool down);
 	bool turboHeld() const { return turboHeld_; }

@@ -4,7 +4,8 @@
  * Chimera names it and has Chimera's key at first; a person changes them
  * here, and the changes are remembered (`saved`). A key held runs its
  * action's "down", and its "up" when let go. Like Chimera by default, a key
- * that is both a hotkey and a machine's button does both. */
+ * that is both a hotkey and a machine's button does both; Chimera's Key
+ * Priority says otherwise when asked (keyPriority). */
 
 #include <functional>
 #include <set>
@@ -26,6 +27,22 @@ public:
 	void add(std::string group, std::string name, std::string defaultKeys, Handler handler);
 	/* a key went down or up (Chimera's key names): true when it ran any action */
 	bool key(const std::string &name, bool down);
+	/* whether any action has this key */
+	bool boundTo(const std::string &name) const;
+
+	/* Chimera's Key Priority, for a key that is a hotkey and a button: 0 both
+	 * act, 1 the button wins (controls over hotkeys), 2 the hotkey wins; and
+	 * Customize's choice to leave "both" out of the hotkey's cycle */
+	Property<int64_t> keyPriority{0};
+	Property<bool> noMixedPriority{false};
+	struct Route
+	{
+		bool hotkey = true, control = true;
+	};
+	/* where a key goes, by Chimera's rule (its InputManager): a hotkey
+	 * gives way to a button only when the key is a button, and a button to
+	 * a hotkey only when the key is a hotkey */
+	static Route route(int64_t priority, bool hotkeyBound, bool controlBound);
 
 	/* the keys changed: {"action": "keys"} */
 	Property<std::string> saved{"{}"};

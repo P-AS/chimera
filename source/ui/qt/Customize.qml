@@ -10,6 +10,7 @@ ApplicationWindow {
     objectName: "customizeWindow"
     required property QtObject vm
     required property QtObject session
+    required property QtObject hotkeys
     title: qsTr("Customization Options")
     width: 560
     height: 420
@@ -47,6 +48,8 @@ ApplicationWindow {
                 CheckBox { text: qsTr("Frame advance button skips non-input frames"); checked: win.session.skipLagFrames; onToggled: win.session.skipLagFrames = checked }
                 Note { text: qsTr("When enabled, the frame advance button will skip over frames in which no input was polled (lag frames).") }
                 CheckBox { text: qsTr("Run Lua scripts when turboing"); checked: win.vm.luaDuringTurbo; onToggled: win.vm.luaDuringTurbo = checked }
+                CheckBox { text: qsTr("Key Priority Toggle - Remove Mixed Key Priority Options"); checked: win.hotkeys.noMixedPriority; onToggled: win.hotkeys.noMixedPriority = checked }
+                Note { text: qsTr("The Toggle Key Priority hotkey goes between buttons first and hotkeys first only.") }
                 Item { Layout.fillHeight: true }
             }
         }

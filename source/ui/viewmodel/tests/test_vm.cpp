@@ -343,6 +343,34 @@ void bindings()
 	CHECK(!b.parse("{\"a\": [1, 2", {"P1 Up"}, error) && !error.empty());
 }
 
+/* Chimera's Key Priority, for a key that is a hotkey and a button: both
+ * act, the button wins, or the hotkey wins - each giving way only for a
+ * key the other side has; and its hotkey's cycle */
+void keyPriority()
+{
+	auto route = [](int64_t p, bool hotkey, bool control) {
+		const HotkeysViewModel::Route r = HotkeysViewModel::route(p, hotkey, control);
+		return std::string(r.hotkey ? "H" : "-") + (r.control ? "C" : "-");
+	};
+	/* both: each side gets it */
+	CHECK(route(0, true, true) == "HC" && route(0, true, false) == "HC" && route(0, false, true) == "HC");
+	/* buttons first: a button's key is not a hotkey's; any other key still is */
+	CHECK(route(1, true, true) == "-C" && route(1, true, false) == "HC" && route(1, false, true) == "-C");
+	/* hotkeys first: a hotkey's key is not a button's; any other key still is */
+	CHECK(route(2, true, true) == "H-" && route(2, false, true) == "HC" && route(2, true, false) == "H-");
+	ManualDispatcher d;
+	HotkeysViewModel hotkeys(d);
+	hotkeys.add("General", "Pause", "Pause", [](bool) {});
+	CHECK(hotkeys.boundTo("Pause") && !hotkeys.boundTo("X"));
+	std::string error;
+	CHECK(hotkeys.run("cycleKeyPriority", {}, error) == Value(int64_t{1}) && hotkeys.status.get() == "Key priority set to Input over Hotkey");
+	CHECK(hotkeys.run("cycleKeyPriority", {}, error) == Value(int64_t{2}) && hotkeys.status.get() == "Key priority set to Hotkey over Input");
+	CHECK(hotkeys.run("cycleKeyPriority", {}, error) == Value(int64_t{0}) && hotkeys.status.get() == "Key priority set to Both Hotkey and Input");
+	hotkeys.noMixedPriority.set(true);
+	hotkeys.keyPriority.set(2);
+	CHECK(hotkeys.run("cycleKeyPriority", {}, error) == Value(int64_t{1}));
+}
+
 void pianoRollWithoutAMachine()
 {
 	ManualDispatcher d;
@@ -4771,6 +4799,7 @@ int main(int argc, char **argv)
 	configStore();
 	firmware();
 	settingsByMachine();
+	keyPriority();
 	pianoRollWithoutAMachine();
 	watchValues();
 	themes();

@@ -30,6 +30,20 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 	expose("saved", "the keys changed, as {\"action\": \"keys\"}", saved, true);
 	expose("status", "what Hotkeys last had to say", status);
 	expose("bound", "every action's keys as they are now, as {\"action\": \"keys\"}", bound);
+	expose("keyPriority", "for a key that is a hotkey and a button: 0 both act, 1 the button wins, 2 the hotkey wins",
+		keyPriority, true);
+	expose("noMixedPriority", "the Toggle Key Priority hotkey leaves \"both\" out of its cycle", noMixedPriority, true);
+	command("cycleKeyPriority", "the next key priority, as Chimera's Toggle Key Priority: both, buttons first, hotkeys "
+		"first (\"both\" left out when noMixedPriority)", {}, [this](const Args &, std::string &) -> Value {
+			int64_t p = keyPriority.get() + 1;
+			if (p > 2) p = 0;
+			if (noMixedPriority.get() && p == 0) p = 1;
+			keyPriority.set(p);
+			status.set(p == 0 ? "Key priority set to Both Hotkey and Input"
+				: p == 1 ? "Key priority set to Input over Hotkey"
+						 : "Key priority set to Hotkey over Input");
+			return p;
+		});
 	rows("hotkeys", "one row an action: group, name, its keys, Chimera's keys for it, changed", rows_);
 
 	command("bind", "an action's keys, replaced (\"F, X1 RightShoulder\"; \"\" for none)", {"action", "keys"},
@@ -165,6 +179,26 @@ bool HotkeysViewModel::key(const std::string &name, bool down)
 		ran = true;
 	}
 	return ran;
+}
+
+bool HotkeysViewModel::boundTo(const std::string &name) const
+{
+	for (const Action &a : actions_)
+		for (const std::string &k : keyList(a.keys))
+			if (k == name) return true;
+	return false;
+}
+
+HotkeysViewModel::Route HotkeysViewModel::route(int64_t priority, bool hotkeyBound, bool controlBound)
+{
+	Route r;
+	r.hotkey = priority != 1;
+	r.control = priority != 2;
+	/* the button side wins only for a key that is a button */
+	if (r.control && !controlBound) r.hotkey = true;
+	/* and the hotkey side only for a key that is a hotkey */
+	if (!(r.hotkey && hotkeyBound)) r.control = true;
+	return r;
 }
 
 std::string HotkeysViewModel::Rows::columnName(int32_t column) const
