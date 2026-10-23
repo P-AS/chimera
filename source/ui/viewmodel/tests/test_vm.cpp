@@ -5706,6 +5706,59 @@ void europeanClock()
 	CHECK(at("2026-10-18T16:35:00.123Z") == "2026-10-18 18:35 CEST" && at("yesterday") == "unread" && at("2026-13-01T00:00Z") == "unread");
 }
 
+/* Chimera's throttles: the clock keeps the machine to its rate; with none
+ * it goes as fast as it can; the vsync throttle moves it a frame for each
+ * picture the window shows, and not at all without them */
+bool throttles(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	CHECK(session.throttle.get() == "clock");
+	session.run("play", {}, error);
+	auto ranIn = [&](double seconds) {
+		const int64_t was = session.frame.get();
+		d.until([] { return false; }, seconds);
+		return session.frame.get() - was;
+	};
+	const int64_t clock = ranIn(0.5);
+	session.throttle.set("");
+	CHECK(session.status.get() == "Throttled:(none)");
+	const int64_t none = ranIn(0.5);
+	CHECK(clock >= 20 && clock <= 40 && none > clock * 3);
+	session.throttle.set("vsync");
+	ranIn(0.1);
+	CHECK(ranIn(0.3) <= 1);
+	const int64_t was = session.frame.get();
+	for (int i = 0; i < 10; i++)
+	{
+		session.vsyncTick();
+		d.until([] { return false; }, 0.03);
+	}
+	d.until([&] { return session.frame.get() - was >= 10; }, 2);
+	CHECK(session.frame.get() - was >= 9 && session.frame.get() - was <= 11);
+	/* the audio throttle: the sound as it is heard, whatever speed the clock was asked for
+	 * (OpenAL's device that plays to nowhere still plays in time) */
+	session.speedPercent.set(400);
+	session.throttle.set("audio");
+	ranIn(0.3);
+	const int64_t heard = ranIn(0.5);
+	session.throttle.set("clock");
+	ranIn(0.1);
+	const int64_t fast = ranIn(0.5);
+	session.speedPercent.set(100);
+	CHECK(heard >= 20 && heard <= 40 && fast > heard * 2);
+	/* nothing else: a throttle by any other name is the clock */
+	session.throttle.set("sometimes");
+	CHECK(session.throttle.get() == "clock");
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	return true;
+}
+
 /* Lua's tastudio library on a project: queued edits applied together,
  * markers by text and the run's own among them, a branch's text and input,
  * the lag log, and what is not here said so */
@@ -6032,6 +6085,7 @@ int main(int argc, char **argv)
 			ranMachine = luaLibraries(argv[1], argv[2]) && ranMachine;
 			ranMachine = encodeVideo(argv[1], argv[2]) && ranMachine;
 			ranMachine = luaTastudio(argv[1], argv[2]) && ranMachine;
+			ranMachine = throttles(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;

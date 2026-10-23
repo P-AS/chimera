@@ -223,6 +223,26 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		speedM_ = std::clamp<int64_t>(speedPercent.get(), 1, 6400);
 	});
 	unthrottledWatch_ = unthrottled.changed.connect([this] { unthrottledM_ = unthrottled.get(); });
+	expose("throttle", "what keeps the machine to its speed: clock, audio, vsync, or \"\" for nothing", throttle, true);
+	expose("vsyncEnabled", "the window's pictures given to the screen at its refresh (from the next start)", vsyncEnabled, true);
+	throttleWatch_ = throttle.changed.connect([this] {
+		const std::string t = throttle.get();
+		const int mode = t == "clock" ? 0 : t == "audio" ? 1 : t == "vsync" ? 2 : t.empty() ? 3 : -1;
+		if (mode < 0)
+		{
+			throttle.set("clock");
+			return;
+		}
+		throttleM_ = mode;
+		{
+			std::lock_guard<std::mutex> lock(m_);
+			due_ = Clock::now();
+		}
+		cv_.notify_all();
+		/* as Chimera says it */
+		static const char *const types[] = {":Clock", ":Sound", ":Vsync", ":(none)"};
+		status.set(std::string(unthrottled.get() ? "Unthrottled" : "Throttled") + types[mode] + (mode == 2 ? (vsyncEnabled.get() ? "[ena]" : "[dis]") : ""));
+	});
 	soundOnWatch_ = soundOn.changed.connect([this] { soundOnM_ = soundOn.get(); });
 	expose("fastForwardPercent", "how fast fast forward runs, a percent of the machine's rate (Chimera's alternate speed)",
 		fastForwardPercent, true);
@@ -1552,6 +1572,13 @@ void SessionViewModel::loop()
 				}
 				if (runningM_ && s_ != nullptr)
 				{
+					/* the vsync throttle: a frame each picture the window has shown since the last */
+					if (throttleM_.load() == 2 && !unthrottledM_ && !turboM_ && !fastM_)
+					{
+						if (vsyncTicks_.load() != vsyncSeen_) { vsyncSeen_ = vsyncTicks_.load(); advance = true; break; }
+						waitUntil(Clock::now() + std::chrono::milliseconds(catchingM_ ? 16 : 50));
+						continue;
+					}
 					if (Clock::now() >= due_) { advance = true; break; }
 					waitUntil(catchingM_ ? std::min(due_, catchDue_) : due_);
 				}
@@ -1615,8 +1642,18 @@ void SessionViewModel::loop()
 			/* turbo or unthrottled: the next frame at once; fast forward at
 			 * its own speed; else at the speed asked for */
 			const int64_t percent = fastM_ ? fastSpeedM_.load() : speedM_.load();
-			due_ += turboM_ || unthrottledM_ ? Clock::duration::zero()
-											 : std::chrono::duration_cast<Clock::duration>(period_ * (100.0 / static_cast<double>(percent)));
+			const int mode = throttleM_.load();
+			if (turboM_ || unthrottledM_ || mode == 3)
+				due_ += Clock::duration::zero();
+			else if (mode == 1 && soundM_ && soundM_->available() && soundOnM_ && !fastM_)
+			{
+				/* the audio throttle: the next frame when the sound queued has played down to half the buffer */
+				const int64_t ahead = soundM_->ahead(), target = soundBufferMsM_ * Sound::kRate / 2000;
+				due_ = Clock::now() + std::chrono::duration_cast<Clock::duration>(
+					std::chrono::duration<double>(static_cast<double>(std::max<int64_t>(0, ahead - target)) / Sound::kRate));
+			}
+			else
+				due_ += std::chrono::duration_cast<Clock::duration>(period_ * (100.0 / static_cast<double>(percent)));
 			/* behind by more than a few frames (a slow frame, a busy machine):
 			 * carry on from now rather than race to catch up */
 			const auto now = Clock::now();
@@ -1923,6 +1960,12 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 		report(-1, -1, -1, -1, -1);
 		later([done, ended, why] { done(ended, why); });
 	});
+}
+
+void SessionViewModel::vsyncTick()
+{
+	vsyncTicks_.fetch_add(1);
+	if (throttleM_.load() == 2) cv_.notify_all();
 }
 
 void SessionViewModel::setRunMarkers(std::vector<int64_t> frames)

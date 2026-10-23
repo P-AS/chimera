@@ -150,6 +150,26 @@ void Sound::scale(const int16_t *samples, int32_t pairs, int32_t volume, std::ve
 	for (size_t i = 0; i < out.size(); i++) out[i] = static_cast<int16_t>(static_cast<int32_t>(samples[i]) * v / 100);
 }
 
+int64_t Sound::ahead()
+{
+	Api &a = *api_;
+	if (!a.started) return 0;
+	int done = 0;
+	a.alGetSourcei(a.source, AL_BUFFERS_PROCESSED, &done);
+	while (done-- > 0)
+	{
+		unsigned b = 0;
+		a.alSourceUnqueueBuffers(a.source, 1, &b);
+		a.free.push_back(b);
+		if (const auto it = a.inFlight.find(b); it != a.inFlight.end())
+		{
+			ahead_ -= it->second;
+			a.inFlight.erase(it);
+		}
+	}
+	return ahead_;
+}
+
 void Sound::play(const int16_t *samples, int32_t pairs, int32_t volume)
 {
 	Api &a = *api_;

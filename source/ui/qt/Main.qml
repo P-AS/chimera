@@ -326,8 +326,34 @@ ApplicationWindow {
                 Menu {
                     delegate: keyedMenuItem
                     title: qsTr("Speed/Skip")
-                    // only Chimera's clock throttle is here (its audio and vsync throttles are not yet)
-                    Action { text: qsTr("Clock Throttle"); checkable: true; checked: true; onTriggered: checked = true }
+                    // one of the three, or none: each ticked turns the others off, as Chimera's
+                    Action {
+                        text: qsTr("Clock Throttle"); checkable: true; checked: root.session.throttle === "clock"
+                        onTriggered: root.session.throttle = root.session.throttle === "clock" ? "" : "clock"
+                    }
+                    Action {
+                        text: qsTr("Audio Throttle"); checkable: true; checked: root.session.throttle === "audio"; enabled: root.session.soundOn
+                        onTriggered: root.session.throttle = root.session.throttle === "audio" ? "" : "audio"
+                    }
+                    Action {
+                        text: qsTr("VSync Throttle"); checkable: true; checked: root.session.throttle === "vsync"
+                        onTriggered: {
+                            root.session.throttle = root.session.throttle === "vsync" ? "" : "vsync"
+                            // the throttle needs the window at the screen's refresh
+                            if (root.session.throttle === "vsync" && !root.session.vsyncEnabled) {
+                                root.session.vsyncEnabled = true
+                                root.note(qsTr("Display Vsync is set to on (from the next start)"))
+                            }
+                        }
+                    }
+                    MenuSeparator {}
+                    Action {
+                        text: qsTr("VSync Enabled"); checkable: true; checked: root.session.vsyncEnabled
+                        onTriggered: {
+                            root.session.vsyncEnabled = checked
+                            root.note(qsTr("Display Vsync is set to %1 (from the next start)").arg(checked ? qsTr("on") : qsTr("off")))
+                        }
+                    }
                     MenuSeparator {}
                     Action {
                         property string hotkey: "Toggle Throttle"
@@ -353,12 +379,12 @@ ApplicationWindow {
                         }
                     }
                     MenuSeparator {}
-                    Action { text: qsTr("Speed 50%"); checkable: true; checked: root.session.speedPercent === 50; onTriggered: root.session.speedPercent = 50 }
-                    Action { text: qsTr("Speed 75%"); checkable: true; checked: root.session.speedPercent === 75; onTriggered: root.session.speedPercent = 75 }
-                    Action { text: qsTr("Speed 100%"); checkable: true; checked: root.session.speedPercent === 100; onTriggered: root.session.speedPercent = 100 }
-                    Action { text: qsTr("Speed 150%"); checkable: true; checked: root.session.speedPercent === 150; onTriggered: root.session.speedPercent = 150 }
-                    Action { text: qsTr("Speed 200%"); checkable: true; checked: root.session.speedPercent === 200; onTriggered: root.session.speedPercent = 200 }
-                    Action { text: qsTr("Speed 400%"); checkable: true; checked: root.session.speedPercent === 400; onTriggered: root.session.speedPercent = 400 }
+                    Action { text: qsTr("Speed 50%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 50; onTriggered: root.session.speedPercent = 50 }
+                    Action { text: qsTr("Speed 75%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 75; onTriggered: root.session.speedPercent = 75 }
+                    Action { text: qsTr("Speed 100%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 100; onTriggered: root.session.speedPercent = 100 }
+                    Action { text: qsTr("Speed 150%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 150; onTriggered: root.session.speedPercent = 150 }
+                    Action { text: qsTr("Speed 200%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 200; onTriggered: root.session.speedPercent = 200 }
+                    Action { text: qsTr("Speed 400%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 400; onTriggered: root.session.speedPercent = 400 }
                 }
                 // for a key that is a hotkey and a button
                 Menu {

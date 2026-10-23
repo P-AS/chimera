@@ -41,6 +41,8 @@ public:
 
 	/* sample pairs queued since it opened, and those dropped for running ahead */
 	int64_t queued() const { return queued_; }
+	/* sample pairs queued and not heard yet (what has been heard let go first) */
+	int64_t ahead();
 	int64_t dropped() const { return dropped_; }
 
 private:

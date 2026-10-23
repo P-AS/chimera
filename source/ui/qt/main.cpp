@@ -15,6 +15,7 @@
 #include <QElapsedTimer>
 #include <QClipboard>
 #include <QBuffer>
+#include <QSurfaceFormat>
 #include <QImage>
 #include <QDateTime>
 #include <QDir>
@@ -757,6 +758,8 @@ int main(int argc, char **argv)
 	vm::HostInputViewModel hostInput(dispatcher, session);
 	qt::QmlViewModel hostInputQml(hostInput);
 	config.keep(session, "autoRestore");
+	config.keep(session, "throttle");
+	config.keep(session, "vsyncEnabled");
 	config.keep(session, "speedPercent");
 	config.keep(session, "unthrottled");
 	config.keep(session, "soundOn");
@@ -1067,6 +1070,12 @@ int main(int argc, char **argv)
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},
 		{QStringLiteral("cores"), QVariant::fromValue<QObject *>(&coresQml)},
 	});
+	/* Chimera's VSync Enabled: the window's pictures given to the screen at its refresh */
+	{
+		QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+		format.setSwapInterval(session.vsyncEnabled.get() ? 1 : 0);
+		QSurfaceFormat::setDefaultFormat(format);
+	}
 	engine.load(QUrl(QStringLiteral("qrc:/chimera/Main.qml")));
 	if (engine.rootObjects().isEmpty()) return 1;
 	auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
@@ -1083,6 +1092,11 @@ int main(int argc, char **argv)
 		display.windowGeometry.set(QStringLiteral("%1,%2,%3,%4").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height()).toStdString());
 	});
 	if (customize.startFullscreen.get()) window->showFullScreen();
+	/* each picture shown: the vsync throttle's tick, and the next one asked for while it is on */
+	QObject::connect(window, &QQuickWindow::frameSwapped, window, [&session, window] {
+		session.vsyncTick();
+		if (session.wantsVsync()) window->update();
+	}, Qt::DirectConnection);
 	KeyFilter keys(session, hotkeys, hostInput);
 	window->installEventFilter(&keys);
 	/* TAStudio passes the keys on too, as Chimera's does: the machine's and the hotkeys */

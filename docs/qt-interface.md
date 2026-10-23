@@ -66,7 +66,13 @@ then, its eye following the pointer across the window (a view model makes
 the picture, only when it would change). A game file dropped on the window
 starts a new project from it. (The command line still opens a package and
 a game, for the tests.) Capture OSD puts the counters and messages over
-the picture into screenshots, as Chimera's does.
+the picture into screenshots, as Chimera's does. Config > Speed/Skip has
+Chimera's three throttles, one at a time or none: the clock (the
+machine's rate, at the speed asked for), the sound as it is heard (the
+machine waits while the sound queued is ahead), and vsync (a frame for
+each picture the window shows); VSync Enabled sets the window to the
+screen's refresh from the next start (Qt sets that when the window is
+made).
 
 Where Chimera has a window of its own the prototype has one too, under
 Chimera's title: Controller Config and Configure Hotkeys are two windows
@@ -296,8 +302,6 @@ as each lands here. Parts that wait on a question to the owner say so.
   hotkeys row). Recording mode waits on
   question 6. (Chimera's Selection Undo and Redo are always greyed out
   and do nothing, so there is nothing of theirs to bring.)
-- Configuration: the audio and vsync throttles (only Chimera's clock
-  throttle is here).
 - Tools: Encode Video's Capture OSD and Capture Lua.
   (The debugger has no disassembly or
   breakpoints for these cores in Chimera either: the engine has no call

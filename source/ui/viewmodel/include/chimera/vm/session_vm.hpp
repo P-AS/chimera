@@ -67,6 +67,17 @@ public:
 	 * (unthrottled); and its sound, on or off and its volume (0 to 100) */
 	Property<int64_t> speedPercent{100};
 	Property<bool> unthrottled{false};
+	/* what keeps the machine to its speed, as Chimera's Config > Speed/Skip:
+	 * "clock" (its own rate, at the speed asked for), "audio" (the sound as
+	 * it is heard), "vsync" (a frame each picture the window shows), or ""
+	 * for nothing (as fast as it goes). Remembered */
+	Property<std::string> throttle{"clock"};
+	/* the window's pictures given to the screen at its refresh (Chimera's VSync Enabled; from the next start) */
+	Property<bool> vsyncEnabled{true};
+	/* a picture shown by the window (any thread): what the vsync throttle waits for */
+	void vsyncTick();
+	/* the vsync throttle is on (any thread): the window keeps drawing for it */
+	bool wantsVsync() const { return throttleM_.load() == 2; }
 	Property<bool> soundOn{true};
 	Property<int64_t> volume{100};
 	/* Chimera's fast forward runs at its alternate speed (400%), not as
@@ -753,7 +764,11 @@ private:
 		padsHeardM_{true};
 	bool turboHeld_ = false;
 	Connection skipLagWatch_, displayNothingWatch_, backgroundWatch_, activeWatch_;
-	Connection speedWatch_, unthrottledWatch_, soundOnWatch_, volumeWatch_;
+	Connection speedWatch_, unthrottledWatch_, soundOnWatch_, volumeWatch_, throttleWatch_;
+	/* 0 clock, 1 audio, 2 vsync, 3 none */
+	std::atomic<int> throttleM_{0};
+	std::atomic<uint64_t> vsyncTicks_{0};
+	uint64_t vsyncSeen_ = 0;
 	/* Where an edit sends the machine back to, as Chimera's TAStudio does: the
 	 * frame it was on at the first edit, kept through the edits that follow
 	 * until the machine is moved some other way (-1: none). movesM_ counts
