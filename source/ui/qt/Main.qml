@@ -55,9 +55,10 @@ ApplicationWindow {
                     onObjectRemoved: (index, object) => recentMenu.removeItem(object)
                 }
             }
-            Action { text: qsTr("&Save Project"); shortcut: "Ctrl+S"; enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveProject") }
-            Action { text: qsTr("Save Project &As..."); enabled: root.session.projectPath !== ""; onTriggered: saveAsDialog.open() }
-            Action { text: qsTr("Make a &Project of This Game..."); enabled: root.session.isOpen && root.session.projectPath === ""; onTriggered: newProjectDialog.open() }
+            // a project not saved yet asks where it goes
+            Action { text: qsTr("&Save Project"); shortcut: "Ctrl+S"; enabled: root.session.hasProject; onTriggered: root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject") }
+            Action { text: qsTr("Save Project &As..."); enabled: root.session.hasProject; onTriggered: saveAsDialog.open() }
+            Action { text: qsTr("Make a &Project of This Game..."); enabled: root.session.isOpen && !root.session.hasProject; onTriggered: newProjectDialog.open() }
             Action { text: qsTr("&Restart"); enabled: root.session.restartEnabled; onTriggered: root.session.run("restart") }
             Action { text: qsTr("&Close"); enabled: root.session.closeEnabled; onTriggered: root.session.run("close") }
             MenuSeparator {}

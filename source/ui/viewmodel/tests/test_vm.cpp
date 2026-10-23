@@ -2264,13 +2264,21 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	 * asks the core again what the game needs */
 	std::ofstream(dir / "mylogo.bin") << "a game's logo";
 	CHECK(wizard.run("chooseFirmware", {std::string("gamelogo"), (dir / "mylogo.bin").string()}, error).has_value() && wizard.ready.get());
+	/* made as Chimera makes one: opened, and written nowhere until its first
+	 * save, which says where it goes */
 	const fs::path boardA = dir / "boarda.chimeraProject";
-	CHECK(wizard.run("create", {boardA.string()}, error).has_value());
-	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == boardA.string(); }, 60));
-	CHECK(session.coreName.get() == "Synth Slots");
-	CHECK(std::regex_search(readFile(boardA), std::regex("\"gameLogo\"\\s*:\\s*\"on\"")));
+	CHECK(wizard.run("create", {}, error).has_value());
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 60));
+	CHECK(session.projectPath.get().empty() && session.coreName.get() == "Synth Slots");
+	CHECK(wizard.status.get() == "Made a new project: it is written when it is first saved");
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
+	CHECK(!session.run("saveProject", {}, error) && error == "this project has not been saved yet: say where it goes");
+	CHECK(!session.run("saveAsProject", {boardA.string()}, error));
+	CHECK(session.run("saveProject", {boardA.string()}, error).has_value());
+	CHECK(d.until([&] { return session.projectPath.get() == boardA.string(); }, 20));
+	CHECK(std::regex_search(readFile(boardA), std::regex("\"gameLogo\"\\s*:\\s*\"on\"")));
+	CHECK(session.recentProjects.get().rfind(boardA.string(), 0) == 0);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	/* nothing to make until everything is there */

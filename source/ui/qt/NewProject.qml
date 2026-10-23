@@ -41,13 +41,6 @@ ApplicationWindow {
         fileMode: FileDialog.OpenFiles
         onAccepted: { for (const f of selectedFiles) win.vm.run("importAddFile", [win.importFor, f]) }
     }
-    FileDialog {
-        id: createDialog
-        title: qsTr("Save the new project as")
-        fileMode: FileDialog.SaveFile
-        nameFilters: [qsTr("Chimera projects (*.chimeraProject)")]
-        onAccepted: if (win.vm.run("create", [selectedFile]) !== undefined) win.close()
-    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -263,7 +256,8 @@ ApplicationWindow {
         RowLayout {
             Label { text: win.vm.status; Layout.fillWidth: true; elide: Text.ElideRight }
             Button { text: qsTr("Cancel"); onClicked: win.close() }
-            Button { text: qsTr("Make the Project..."); enabled: win.vm.ready; onClicked: createDialog.open() }
+            // made and opened; the first save asks where it goes
+            Button { text: qsTr("Make the Project"); enabled: win.vm.ready; onClicked: if (win.vm.run("create") !== undefined) win.close() }
         }
     }
 }

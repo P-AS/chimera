@@ -57,7 +57,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	});
 	expose("lastSeekMs", "how long the last seek took, in milliseconds", lastSeekMs);
 	expose("lastSeekFrames", "how many frames the last seek ran", lastSeekFrames);
-	expose("projectPath", "the open project's file, \"\" when a game was opened without one", projectPath);
+	expose("projectPath", "the open project's file, \"\" when a game was opened without one or the project is not saved yet", projectPath);
+	expose("hasProject", "a project is open, saved or not yet", hasProject);
 	expose("projectTitle", "the open project's title", projectTitle);
 	expose("recentProjects", "projects opened, newest first, a line each", recentProjects, true);
 	expose("chooseFor", "a game waiting for its core to be chosen", chooseFor);
@@ -138,9 +139,14 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		{"path"}, [this](const Args &a, std::string &error) -> Value {
 			std::string path;
 			if (!a.empty() && !arg(a, 0, path, error)) return {};
-			if (projectPath.get().empty())
+			if (!hasProject.get())
 			{
 				error = "no project is open";
+				return {};
+			}
+			if (path.empty() && projectPath.get().empty())
+			{
+				error = "this project has not been saved yet: say where it goes";
 				return {};
 			}
 			submit([this, path] { saveProjectOnMachine(path); });
@@ -152,7 +158,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			std::string path, title;
 			if (!arg(a, 0, path, error)) return {};
 			if (a.size() > 1 && !arg(a, 1, title, error)) return {};
-			if (!projectPath.get().empty())
+			if (hasProject.get())
 			{
 				error = "a project is open: Save Project As keeps it";
 				return {};
@@ -527,7 +533,11 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 		return;
 	}
 	freeProjectOnMachine();
-	later([this] { projectPath.set(""); projectTitle.set(""); });
+	later([this] {
+		projectPath.set("");
+		projectTitle.set("");
+		hasProject.set(false);
+	});
 	/* the movie: the one it had when started again, else an empty one */
 	loadMovieOnMachine(s, movie);
 	/* a game alone starts storing every frame, as a new project does */
@@ -1040,10 +1050,14 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		return;
 	}
 	if (reuse != nullptr) projectM_ = nullptr; /* taken over below, not freed */
-	/* the files are looked for beside the project (more places, later) */
-	const size_t slash = path.find_last_of("/\\");
-	const std::string dir = slash == std::string::npos ? "." : path.substr(0, slash);
-	ce_project_resolve_dir(p, dir.c_str());
+	/* the files are looked for beside the project (more places, later); a
+	 * project not saved yet has them where they were picked */
+	if (!path.empty())
+	{
+		const size_t slash = path.find_last_of("/\\");
+		const std::string dir = slash == std::string::npos ? "." : path.substr(0, slash);
+		ce_project_resolve_dir(p, dir.c_str());
+	}
 	if (ce_project_files_ok(p) == 0)
 	{
 		std::string missing;
@@ -1216,24 +1230,38 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	later([this, path, title] {
 		projectPath.set(path);
 		projectTitle.set(title);
-		/* newest first, each once, ten at most */
-		std::string list = path, rest = recentProjects.get();
-		int kept = 1;
-		size_t at = 0;
-		while (at <= rest.size() && kept < 10)
-		{
-			const size_t end = rest.find('\n', at);
-			const std::string line = rest.substr(at, end == std::string::npos ? std::string::npos : end - at);
-			if (!line.empty() && line != path)
-			{
-				list += "\n" + line;
-				kept++;
-			}
-			if (end == std::string::npos) break;
-			at = end + 1;
-		}
-		recentProjects.set(list);
+		hasProject.set(true);
+		if (!path.empty()) addRecent(path);
 	});
+}
+
+void SessionViewModel::openMadeProjectOnMachine(ce_project *p, const std::string &package)
+{
+	/* the project open before is done with: this one takes its place */
+	freeSessionOnMachine();
+	freeProjectOnMachine();
+	openProjectOnMachine("", package, false, p);
+}
+
+void SessionViewModel::addRecent(const std::string &path)
+{
+	/* newest first, each once, ten at most */
+	std::string list = path, rest = recentProjects.get();
+	int kept = 1;
+	size_t at = 0;
+	while (at <= rest.size() && kept < 10)
+	{
+		const size_t end = rest.find('\n', at);
+		const std::string line = rest.substr(at, end == std::string::npos ? std::string::npos : end - at);
+		if (!line.empty() && line != path)
+		{
+			list += "\n" + line;
+			kept++;
+		}
+		if (end == std::string::npos) break;
+		at = end + 1;
+	}
+	recentProjects.set(list);
 }
 
 void SessionViewModel::newProjectOnMachine(const std::string &path, const std::string &titleGiven)
@@ -1311,16 +1339,8 @@ void SessionViewModel::newProjectOnMachine(const std::string &path, const std::s
 	later([this, path, title] {
 		projectPath.set(path);
 		projectTitle.set(title);
-		std::string list = path;
-		for (size_t at = 0, n = 1; at < recentProjects.get().size() && n < 10;)
-		{
-			const size_t end = recentProjects.get().find('\n', at);
-			const std::string line = recentProjects.get().substr(at, end == std::string::npos ? std::string::npos : end - at);
-			if (!line.empty() && line != path) { list += "\n" + line; n++; }
-			if (end == std::string::npos) break;
-			at = end + 1;
-		}
-		recentProjects.set(list);
+		hasProject.set(true);
+		addRecent(path);
 	});
 }
 
@@ -1328,6 +1348,11 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to)
 {
 	if (projectM_ == nullptr || s_ == nullptr) return;
 	const std::string path = to.empty() ? projectPathM_ : to;
+	if (path.empty())
+	{
+		later([this] { status.set("Not saved: this project has no file yet; say where it goes"); });
+		return;
+	}
 	/* the movie as the machine keeps it: the engine wrote every line */
 	const int64_t n = ce_session_movie_length(s_);
 	const std::string log = movieTextOnMachine();
@@ -1388,10 +1413,12 @@ void SessionViewModel::saveProjectOnMachine(const std::string &to)
 		later([this, path, why] { status.set("Could not save " + path + ": " + why); });
 		return;
 	}
+	const bool first = projectPathM_ != path;
 	projectPathM_ = path;
 	keepHistoryOnMachine();
-	later([this, path, n] {
+	later([this, path, n, first] {
 		projectPath.set(path);
+		if (first) addRecent(path);
 		status.set("Saved " + path + " (" + std::to_string(n) + " frames)");
 	});
 }
@@ -1547,6 +1574,7 @@ void SessionViewModel::closeOnMachine()
 		fps.set(0.0);
 		projectPath.set("");
 		projectTitle.set("");
+		hasProject.set(false);
 		status.set("Closed");
 	});
 }

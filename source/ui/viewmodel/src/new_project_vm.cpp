@@ -429,12 +429,18 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			evaluate();
 			return {};
 		});
-	command("create", "writes the project to this file and opens it (unless open is false)", {"path", "open"},
+	command("create", "makes the project and opens it, as Chimera does: written nowhere until it is first saved, which "
+		"asks where it goes; given a file, written there at once (and opened unless open is false)", {"path", "open"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string path;
 			bool open = true;
-			if (!arg(a, 0, path, error)) return {};
+			if (!a.empty() && !arg(a, 0, path, error)) return {};
 			if (a.size() > 1 && !arg(a, 1, open, error)) return {};
+			if (path.empty() && !open)
+			{
+				error = "a project written nowhere has to be opened";
+				return {};
+			}
 			if (!ready.get())
 			{
 				error = "not yet: " + problems.get();
@@ -467,11 +473,11 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			const std::string settings = json::write(form_.recorded()), firmware = json::write(pins);
 			const std::string coreName = core.get(), version = version_, sha = packageSha1_, slotsText = slotsText_, package = package_;
 			const std::string input = pendingInput_;
-			/* a file chosen by hand is remembered, so the project finds it when it opens */
-			std::vector<std::pair<std::string, std::string>> chosen;
+			/* a file chosen by hand is remembered, so the project finds it
+			 * when it opens - now, before the open looks */
 			for (const Need &n : needs_)
-				if (n.how == "chosen" || n.how == "your own") chosen.emplace_back(n.id, n.path);
-			status.set("Making " + path + "...");
+				if (n.how == "chosen" || n.how == "your own") cores_.rememberFirmware(coreName, n.id, n.path);
+			status.set(path.empty() ? std::string("Making the project...") : "Making " + path + "...");
 			session_.onMachine([=, this](ce_session *) {
 				ce_project *p = ce_project_new();
 				ce_project_set_core(p, coreName.c_str(), version.c_str(), sha.c_str());
@@ -491,15 +497,22 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				if (!input.empty()) ce_project_set_log_text(p, input.data(), input.size());
 				if (why.empty() && !slotsText.empty() && ce_project_validate(p, slotsText.data(), slotsText.size(), &err) != 0)
 					why = err != nullptr ? err : "the files do not fit the package's slots";
+				if (why.empty() && path.empty())
+				{
+					/* written nowhere: it opens as it is, and its first save
+					 * asks where it goes */
+					later([this] { status.set("Made a new project: it is written when it is first saved"); });
+					session_.openMadeProjectOnMachine(p, package);
+					return;
+				}
 				if (why.empty() && ce_project_save(p, path.c_str(), &err) != 0) why = err != nullptr ? err : "it could not be written";
 				ce_project_free(p);
-				later([this, why, path, package, open, coreName, chosen] {
+				later([this, why, path, package, open] {
 					if (!why.empty())
 					{
 						status.set("Not made: " + why);
 						return;
 					}
-					for (const auto &[id, file] : chosen) cores_.rememberFirmware(coreName, id, file);
 					status.set("Made " + path);
 					std::string e;
 					if (open) session_.run("openProject", {path, package}, e);

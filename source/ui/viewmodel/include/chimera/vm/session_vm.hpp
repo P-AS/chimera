@@ -77,8 +77,10 @@ public:
 	/* how long the last seek took, in milliseconds, and how many frames it ran */
 	Property<double> lastSeekMs{0.0};
 	Property<int64_t> lastSeekFrames{0};
-	/* the open project, "" when a game was opened without one */
+	/* the open project's file, "" when a game was opened without one or the
+	 * project has not been saved yet; hasProject says which */
 	Property<std::string> projectPath;
+	Property<bool> hasProject{false};
 	Property<std::string> projectTitle;
 	/* projects opened, newest first, a line each (ten kept) */
 	Property<std::string> recentProjects;
@@ -201,6 +203,10 @@ public:
 	void onMachine(MachineJob job);
 	/* the same, and waits for it */
 	void onMachineWait(MachineJob job);
+	/* From a job on the machine's thread: opens a project made in memory
+	 * and never written (New Project's), taking it over. It has no file
+	 * until it is first saved, which is when it is asked where it goes. */
+	void openMadeProjectOnMachine(ce_project *p, const std::string &package);
 	/* frame runs after every frame (seeks' too), closing just before a
 	 * machine goes (its memory with it). removeMachineHooks waits until the
 	 * machine's thread has let go of them. */
@@ -248,6 +254,8 @@ private:
 	static void loadMovieOnMachine(ce_session *s, const std::string &text);
 	void openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs,
 		ce_project *reuse = nullptr);
+	/* the project's file, first in the recent projects */
+	void addRecent(const std::string &path);
 	void saveProjectOnMachine(const std::string &path);
 	/* a game's session made a project, as the New Project window makes one */
 	void newProjectOnMachine(const std::string &path, const std::string &title);
