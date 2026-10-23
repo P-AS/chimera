@@ -1,4 +1,5 @@
 #include "chimera/vm/session_vm.hpp"
+#include "chimera/vm/sha256.hpp"
 
 #include "chimera/vm/branch_state.hpp"
 
@@ -788,6 +789,11 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			});
 			return out;
 		});
+	command("sha256", "bytes' SHA-256, upper-case hex (Chimera's memory.hash_region)", {"bytes"}, [this](const Args &a, std::string &error) -> Value {
+		std::string bytes;
+		if (!arg(a, 0, bytes, error)) return {};
+		return sha256Hex(bytes);
+	});
 	command("readMemory", "bytes of a memory domain, as a string of them", {"domain", "address", "length"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string domain;
@@ -950,6 +956,54 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				mask |= uint64_t{1} << (it - buttonNames_.begin());
 			}
 			scriptHeld_.store(mask);
+			return {};
+		});
+	command("scriptAxis", "an analog control's value a script gives: for the next frame run, or held until let go (held; "
+		"a value of nothing lets a held one go)", {"name", "value", "held"}, [this](const Args &a, std::string &error) -> Value {
+			std::string name;
+			if (!arg(a, 0, name, error)) return {};
+			size_t axis = axes_.size();
+			for (size_t i = 0; i < axes_.size(); i++)
+				if (axes_[i].name == name) axis = i;
+			if (axis == axes_.size())
+			{
+				error = "no analog control " + name;
+				return {};
+			}
+			bool held = false;
+			if (a.size() > 2 && std::holds_alternative<bool>(a[2])) held = std::get<bool>(a[2]);
+			std::lock_guard<std::mutex> lock(scriptAxesM_);
+			if (a.size() < 2 || std::holds_alternative<std::monostate>(a[1]) ||
+				(std::holds_alternative<std::string>(a[1]) && std::get<std::string>(a[1]).empty()))
+			{
+				scriptAxesHeld_.erase(axis);
+				return {};
+			}
+			int64_t v = 0;
+			if (!arg(a, 1, v, error)) return {};
+			(held ? scriptAxesHeld_ : scriptAxesOnce_)[axis] = static_cast<int32_t>(v);
+			return {};
+		});
+	command("scriptEntry", "a movie line a script gives (Chimera's joypad.setfrommnemonicstr): its buttons and analog values "
+		"for the next frame run", {"line"}, [this](const Args &a, std::string &error) -> Value {
+			std::string line;
+			if (!arg(a, 0, line, error)) return {};
+			bool read = false;
+			uint64_t buttons = 0;
+			std::vector<int32_t> values;
+			onMachineWait([&](ce_session *s) {
+				if (s == nullptr) return;
+				values.resize(static_cast<size_t>(ce_session_axis_count(s)));
+				read = ce_session_movie_entry_decode(s, line.c_str(), &buttons, values.empty() ? nullptr : values.data()) == 0;
+			});
+			if (!read)
+			{
+				error = "not a line this machine's movie can read: " + line;
+				return {};
+			}
+			scriptHeld_.store(buttons);
+			std::lock_guard<std::mutex> lock(scriptAxesM_);
+			for (size_t i = 0; i < values.size(); i++) scriptAxesOnce_[i] = values[i];
 			return {};
 		});
 	command("stopMovie", "Chimera's Stop Movie under TAStudio: the project let go and its game opened alone, a new empty "
@@ -3933,6 +3987,19 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 				axesHeld = true;
 			}
 		}
+	/* a script's analog values go in as its buttons do: held, then this frame's own */
+	if (live)
+	{
+		std::lock_guard<std::mutex> lock(scriptAxesM_);
+		for (const std::map<size_t, int32_t> *values : {&scriptAxesHeld_, &scriptAxesOnce_})
+			for (const auto &[axis, v] : *values)
+				if (axis < axisCount && axesBuf_[axis] != v)
+				{
+					axesBuf_[axis] = v;
+					axesHeld = true;
+				}
+		scriptAxesOnce_.clear();
+	}
 	if (had == 1)
 		ce_session_movie_set(s_, f, held, axesHeld ? axesBuf_.data() : nullptr);
 	else if ((logged | held) != logged || axesHeld)

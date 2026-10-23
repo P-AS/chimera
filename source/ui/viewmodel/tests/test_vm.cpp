@@ -1163,7 +1163,8 @@ bool pianoRollColumns(const char *package, const char *rom)
 		PianoRollViewModel roll(d, inputs, session);
 		std::string error;
 		session.run("openProject", {own.string(), std::string(package)}, error);
-		CHECK(d.until([&] { return session.isOpen.get() && roll.hiddenColumns.get() == "P1 Up"; }, 60));
+		/* the project said open too: saving waits on it */
+		CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get() && roll.hiddenColumns.get() == "P1 Up"; }, 60));
 		CHECK(roll.run("showColumn", {std::string("P1 Up")}, error).has_value());
 		CHECK(roll.run("hideColumn", {std::string("P1 Down")}, error).has_value());
 		CHECK(session.run("saveProject", {}, error).has_value());
@@ -1561,6 +1562,11 @@ emu.setregister("R1", 99)
 console.log("set", emu.getregister("R1"))
 emu.frameadvance()
 console.log("again", emu.framecount())
+joypad.setfrommnemonicstr("|...R....|")
+mainmemory.write_bytes_as_array(0x50, {0x61, 0x62, 0x63})
+console.log("hash", mainmemory.hash_region(0x50, 3), memory.hash_region(0x50, 0, "RAM"), pcall(mainmemory.hash_region, -1, 2))
+emu.frameadvance()
+console.log("entry", movie.getinput(emu.framecount() - 1)["P1 Right"], movie.getinput(emu.framecount() - 1)["P1 Up"], (select(2, pcall(joypad.setaxis, "Stick", 5))):find("no analog control") ~= nil)
 while true do emu.frameadvance() end
 )");
 	CHECK(console.run("run", {}, error).has_value() && console.running.get());
@@ -1628,6 +1634,12 @@ while true do emu.frameadvance() end
 	CHECK(d.until([&] { return session.frame.get() == 2; }, 20));
 	console.frameDone();
 	CHECK(said("again ") == "again 2");
+	CHECK(said("hash ").rfind("hash BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD "
+							  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855 false", 0) == 0);
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 3; }, 20));
+	console.frameDone();
+	CHECK(said("entry ") == "entry true false true");
 	/* stopped; Toggle Last Lua Script runs it again, and stops it again */
 	CHECK(console.running.get() && console.run("stop", {}, error).has_value() && !console.running.get());
 	CHECK(console.run("toggleLast", {}, error) == Value(true) && console.run("toggleLast", {}, error) == Value(false));
@@ -1635,7 +1647,7 @@ while true do emu.frameadvance() end
 	console.script.set("emu.frameadvance()\nerror('on purpose')");
 	console.run("run", {}, error);
 	session.run("frameAdvance", {}, error);
-	CHECK(d.until([&] { return session.frame.get() == 3; }, 20));
+	CHECK(d.until([&] { return session.frame.get() == 4; }, 20));
 	console.frameDone();
 	CHECK(said("script stopped: ").find("on purpose") != std::string::npos && !console.running.get());
 	session.run("close", {}, error);

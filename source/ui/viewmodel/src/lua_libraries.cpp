@@ -115,6 +115,14 @@ local function makeMemory(domainOf)
 		return t
 	end
 	function m.read_bytes_as_binary_string(addr, length, domain) return rd(addr, length, domain) end
+	-- the SHA-256 of a stretch, upper-case hex, as Chimera's; outside the domain is an error
+	function m.hash_region(addr, count, domain)
+		local d = domain or domainOf()
+		local size = memory.getmemorydomainsize(d)
+		if addr < 0 or addr >= size then error("Address " .. addr .. " is outside the bounds of domain " .. d, 2) end
+		if addr + count > size then error("Address " .. addr .. " + count " .. count .. " is outside the bounds of domain " .. d, 2) end
+		return C.session.sha256(count == 0 and "" or rd(addr, count, d))
+	end
 	function m.writebyterange(t, domain)
 		for addr, value in pairs(t) do wr(addr, string.char(value & 0xFF), domain) end
 	end
@@ -147,7 +155,6 @@ local function makeMemory(domainOf)
 	end
 	function m.readfloat(addr, bigendian, domain) return (string.unpack(bigendian and ">f" or "<f", rd(addr, 4, domain))) end
 	function m.writefloat(addr, value, bigendian, domain) wr(addr, string.pack(bigendian and ">f" or "<f", value), domain) end
-	function m.hash_region() error("hash_region: not here yet") end
 	return m
 end
 memory = makeMemory(currentDomain)
@@ -478,9 +485,20 @@ function joypad.set(buttons, controller)
 	end
 	C.session.scriptHold(table.concat(names, "\n"))
 end
-function joypad.setanalog() error("joypad.setanalog: not here yet") end
-joypad.setaxis = joypad.setanalog
-function joypad.setfrommnemonicstr() error("joypad.setfrommnemonicstr: not here yet") end
+-- an analog control for the next frame run, as joypad.set is for buttons
+function joypad.setaxis(control, value, controller)
+	C.session.scriptAxis(controller and ("P" .. controller .. " " .. control) or control, value, false)
+end
+-- analog controls held until let go (a value of "" lets one go), as Chimera's
+function joypad.setanalog(controls, controller)
+	for name, value in pairs(controls) do
+		local n = controller and ("P" .. controller .. " " .. name) or name
+		local v = math.tointeger(tonumber(value))
+		if v == nil then C.session.scriptAxis(n, "", true) else C.session.scriptAxis(n, v, true) end
+	end
+end
+-- a movie line's buttons and analog values for the next frame run
+function joypad.setfrommnemonicstr(entry) C.session.scriptEntry(tostring(entry)) end
 
 -- movie --------------------------------------------------------------------
 movie = {}
