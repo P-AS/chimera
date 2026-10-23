@@ -47,6 +47,7 @@
 #include "chimera/vm/new_project_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/process_stamp.hpp"
+#include "chimera/vm/customize_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -922,6 +923,101 @@ bool backupAndHistory(const char *package, const char *rom)
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);
+	return true;
+}
+
+/* Chimera's Customize window: a machine opened runs unless the person
+ * paused the last one (or "start paused" holds the first); a menu open and
+ * the window going behind another pause it when asked, and run it again;
+ * scripts while turbo is held only when asked */
+bool customizeOptions(const char *package, const char *rom)
+{
+	std::string error;
+	{
+		ManualDispatcher d;
+		InputLog inputs;
+		SessionViewModel session(d, inputs);
+		CustomizeViewModel customize(d, session);
+		auto openGame = [&] {
+			const int64_t was = session.opens.get();
+			session.run("open", {std::string(package), std::string(rom)}, error);
+			return d.until([&] { return session.opens.get() > was && session.isOpen.get(); }, 60);
+		};
+		auto settled = [&](bool running) {
+			d.until([] { return false; }, 0.3);
+			return session.running.get() == running;
+		};
+		/* the first runs; paused, the next waits; played, the next runs */
+		CHECK(openGame() && settled(true));
+		session.run("pause", {}, error);
+		CHECK(settled(false));
+		CHECK(openGame() && settled(false));
+		session.run("play", {}, error);
+		CHECK(settled(true));
+		CHECK(openGame() && settled(true));
+		/* a menu pauses only when asked, and runs it again on closing */
+		CHECK(customize.run("menuOpened", {}, error).has_value() && settled(true));
+		customize.pauseWhenMenuActivated.set(true);
+		customize.run("menuOpened", {}, error);
+		CHECK(settled(false));
+		customize.run("menuClosed", {}, error);
+		CHECK(settled(true));
+		/* Frame Advance picked from the menu (Qt runs it before the menu closes): it stands */
+		customize.run("menuOpened", {}, error);
+		CHECK(settled(false));
+		const int64_t at = session.frame.get();
+		session.run("frameAdvance", {}, error);
+		customize.run("menuClosed", {}, error);
+		CHECK(settled(false) && session.frame.get() == at + 1);
+		session.run("play", {}, error);
+		CHECK(settled(true));
+		/* a menu's pause is not the person's: the next machine still runs */
+		customize.run("menuOpened", {}, error);
+		CHECK(settled(false));
+		CHECK(openGame() && settled(true));
+		/* behind another window: runs on, unless "run in background" is off */
+		session.windowActive.set(false);
+		CHECK(settled(true));
+		session.windowActive.set(true);
+		customize.runInBackground.set(false);
+		session.windowActive.set(false);
+		CHECK(settled(false));
+		session.windowActive.set(true);
+		CHECK(settled(true));
+		/* paused by the person while behind: in front again, it stays paused */
+		session.windowActive.set(false);
+		CHECK(settled(false));
+		session.run("play", {}, error);
+		CHECK(settled(true));
+		session.run("pause", {}, error);
+		CHECK(settled(false));
+		session.windowActive.set(true);
+		CHECK(settled(false));
+		/* scripts while turbo is held */
+		CHECK(customize.luaRunsNow());
+		session.holdTurbo(true);
+		CHECK(customize.luaRunsNow());
+		customize.luaDuringTurbo.set(false);
+		CHECK(!customize.luaRunsNow());
+		session.holdTurbo(false);
+		CHECK(customize.luaRunsNow());
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	}
+	/* "start paused": the first machine waits */
+	{
+		ManualDispatcher d;
+		InputLog inputs;
+		SessionViewModel session(d, inputs);
+		CustomizeViewModel customize(d, session);
+		customize.startPaused.set(true);
+		session.run("open", {std::string(package), std::string(rom)}, error);
+		CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+		d.until([] { return false; }, 0.3);
+		CHECK(!session.running.get());
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	}
 	return true;
 }
 
@@ -4703,6 +4799,7 @@ int main(int argc, char **argv)
 			ranMachine = pianoRollColumns(argv[1], argv[2]) && ranMachine;
 			ranMachine = backupAndHistory(argv[1], argv[2]) && ranMachine;
 			ranMachine = crashRecovery(argv[1], argv[2]) && ranMachine;
+			ranMachine = customizeOptions(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;

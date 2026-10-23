@@ -32,6 +32,7 @@ ApplicationWindow {
     required property QtObject batchRun
     required property QtObject mediaMaker
     required property QtObject cacheManager
+    required property QtObject customize
     property url chosenPackage
 
     width: 1280
@@ -78,13 +79,14 @@ ApplicationWindow {
     property var afterSave: null
     property bool leaving: false
     function leaveProject(then) {
-        if (!root.session.unsaved) { then(); return }
+        // Customize's "never ask to save": the changes are let go
+        if (!root.session.unsaved || root.customize.neverAskSave) { then(); return }
         root.afterAsk = then
         askSaveDialog.open()
     }
     function quitProgram() { root.leaveProject(() => { root.leaving = true; Qt.quit() }) }
     onClosing: (close) => {
-        if (root.session.unsaved && !root.leaving) {
+        if (root.session.unsaved && !root.leaving && !root.customize.neverAskSave) {
             close.accepted = false
             root.quitProgram()
         }
@@ -137,6 +139,9 @@ ApplicationWindow {
 
     menuBar: MenuBar {
         Menu {
+            // Customize's "pause when a menu is open"
+            onAboutToShow: root.customize.run("menuOpened")
+            onAboutToHide: root.customize.run("menuClosed")
             delegate: keyedMenuItem
             title: qsTr("&File")
             // opens on the last project's answers, as Chimera's does
@@ -189,6 +194,9 @@ ApplicationWindow {
             Action { property string hotkey: "Exit Program"; text: qsTr("E&xit"); onTriggered: root.quitProgram() }
         }
         Menu {
+            // Customize's "pause when a menu is open"
+            onAboutToShow: root.customize.run("menuOpened")
+            onAboutToHide: root.customize.run("menuClosed")
             delegate: keyedMenuItem
             title: qsTr("&Emulation")
             Action { text: qsTr("&Play"); shortcut: "Ctrl+P"; enabled: root.session.playEnabled && !root.session.running; onTriggered: root.session.run("play") }
@@ -196,6 +204,7 @@ ApplicationWindow {
             Action { text: qsTr("&Settings..."); onTriggered: { settingsWindow.show(); settingsWindow.raise() } }
             Action { text: qsTr("&Controls and Hotkeys..."); onTriggered: { controlsWindow.show(); controlsWindow.raise() } }
             Action { text: qsTr("&Themes..."); onTriggered: { themesWindow.show(); themesWindow.raise() } }
+            Action { text: qsTr("C&ustomize..."); onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
             Action { property string hotkey: "Frame Advance"; text: qsTr("&Frame Advance"); enabled: root.session.frameAdvanceEnabled; onTriggered: root.session.run("frameAdvance") }
             Action { text: qsTr("Go to Frame &0"); shortcut: "Ctrl+Home"; enabled: root.session.seekEnabled; onTriggered: root.session.run("seek", [0]) }
             Action { property string hotkey: "Seek To..."; text: qsTr("&Go to Frame..."); enabled: root.session.seekEnabled; onTriggered: seekDialog.open() }
@@ -235,6 +244,9 @@ ApplicationWindow {
             }
         }
         Menu {
+            // Customize's "pause when a menu is open"
+            onAboutToShow: root.customize.run("menuOpened")
+            onAboutToHide: root.customize.run("menuClosed")
             delegate: keyedMenuItem
             title: qsTr("&View")
             Action { property string hotkey: "Display FPS"; text: qsTr("Display &FPS"); checkable: true; checked: root.session.showFps; onTriggered: root.session.showFps = checked }
@@ -268,6 +280,9 @@ ApplicationWindow {
             }
         }
         Menu {
+            // Customize's "pause when a menu is open"
+            onAboutToShow: root.customize.run("menuOpened")
+            onAboutToHide: root.customize.run("menuClosed")
             delegate: keyedMenuItem
             title: qsTr("&Tools")
             Action { text: qsTr("&Cores..."); onTriggered: { coresWindow.show(); coresWindow.raise() } }
@@ -297,6 +312,9 @@ ApplicationWindow {
             }
         }
         Menu {
+            // Customize's "pause when a menu is open"
+            onAboutToShow: root.customize.run("menuOpened")
+            onAboutToHide: root.customize.run("menuClosed")
             delegate: keyedMenuItem
             title: qsTr("&Help")
             Action { text: qsTr("Open toolassisted.run in Browser"); onTriggered: Qt.openUrlExternally(root.help.siteUrl) }
@@ -309,6 +327,9 @@ ApplicationWindow {
         }
         // Chimera's Emulator menu, Game for a game core: what the core open offers
         Menu {
+            // Customize's "pause when a menu is open"
+            onAboutToShow: root.customize.run("menuOpened")
+            onAboutToHide: root.customize.run("menuClosed")
             delegate: keyedMenuItem
             title: root.session.isGameCore ? qsTr("&Game") : qsTr("E&mulator")
             enabled: root.session.isOpen && (root.session.hasGameTimer || root.session.hasSaveData || root.session.hasMovieImport)
@@ -337,6 +358,9 @@ ApplicationWindow {
             }
         }
         Menu {
+            // Customize's "pause when a menu is open"
+            onAboutToShow: root.customize.run("menuOpened")
+            onAboutToHide: root.customize.run("menuClosed")
             delegate: keyedMenuItem
             // TAStudio's editing, on the frames picked (or the current one), with its keys
             title: qsTr("E&dit")
@@ -440,6 +464,9 @@ ApplicationWindow {
             Action { text: qsTr("TAStudio Se&ttings..."); onTriggered: { tastudioSettingsWindow.show(); tastudioSettingsWindow.raise() } }
         }
         Menu {
+            // Customize's "pause when a menu is open"
+            onAboutToShow: root.customize.run("menuOpened")
+            onAboutToHide: root.customize.run("menuClosed")
             delegate: keyedMenuItem
             title: qsTr("Piano &Roll")
             Action { id: undoAction; property string hotkey: "Undo"; text: qsTr("&Undo"); enabled: root.pianoRoll.undoEnabled; onTriggered: root.pianoRoll.run("undo") }
@@ -1122,6 +1149,7 @@ ApplicationWindow {
     BatchRun { id: batchRunWindow; vm: root.batchRun; visible: false }
     MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; visible: false }
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; visible: false }
+    Customize { id: customizeWindow; vm: root.customize; session: root.session; visible: false }
     ProjectFiles { session: root.session }
     // Work a crash left behind, offered before the project opens, as
     // Chimera's "Recover unsaved work?" asks

@@ -70,6 +70,8 @@ public:
 	std::optional<Value> get(std::string_view property) const;
 	bool set(std::string_view property, const Value &v, std::string &error);
 	std::optional<Value> run(std::string_view command, const Args &args, std::string &error);
+	/* a command about to run, by its name: whoever asked for it */
+	Signal<std::string> commandRunning;
 
 protected:
 	template <class T>

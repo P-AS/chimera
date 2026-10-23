@@ -48,6 +48,7 @@ std::optional<Value> ViewModel::run(std::string_view command, const Args &args, 
 			return std::nullopt;
 		}
 		error.clear();
+		commandRunning.emit(c.name);
 		Value v = c.run(args, error);
 		if (!error.empty()) return std::nullopt;
 		return v;

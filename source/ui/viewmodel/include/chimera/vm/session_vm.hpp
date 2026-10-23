@@ -351,6 +351,7 @@ public:
 	void holdFastForward(bool down);
 	/* Chimera's Turbo, held: fast forward with nothing drawn or heard */
 	void holdTurbo(bool down);
+	bool turboHeld() const { return turboHeld_; }
 
 	/* the inputs of frame `first` (and maybe later ones) were edited: the
 	 * machine's states after it no longer hold */
