@@ -36,6 +36,14 @@ void PictureItem::setSmoothScaling(bool on)
 	update();
 }
 
+void PictureItem::sizeSeen(int width, int height)
+{
+	if (width == pictureWidth_ && height == pictureHeight_) return;
+	pictureWidth_ = width;
+	pictureHeight_ = height;
+	Q_EMIT pictureSizeChanged();
+}
+
 QSGNode *PictureItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
 {
 	auto *node = static_cast<QSGSimpleTextureNode *>(old);
@@ -44,6 +52,13 @@ QSGNode *PictureItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
 	{
 		delete node;
 		return nullptr;
+	}
+	if (fresh)
+	{
+		/* told to the GUI's thread, the picture in its shape */
+		const double shape = frame_.aspect > 0 ? frame_.aspect : static_cast<double>(frame_.width) / frame_.height;
+		QMetaObject::invokeMethod(this, "sizeSeen", Qt::QueuedConnection, Q_ARG(int, static_cast<int>(frame_.height * shape + 0.5)),
+			Q_ARG(int, frame_.height));
 	}
 	if (node == nullptr)
 	{

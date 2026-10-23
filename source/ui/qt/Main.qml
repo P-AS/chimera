@@ -212,6 +212,38 @@ ApplicationWindow {
             Action { property string hotkey: "Lag Counter"; text: qsTr("Display &Lag Counter"); checkable: true; checked: root.session.showLagCounter; onTriggered: root.session.showLagCounter = checked }
             Action { property string hotkey: "Input Display"; text: qsTr("Display &Input"); checkable: true; checked: root.session.showInput; onTriggered: root.session.showInput = checked }
             Action { text: qsTr("Display &Subtitles"); checkable: true; checked: root.projectDetails.showSubtitles; onTriggered: root.projectDetails.showSubtitles = checked }
+            Action { text: qsTr("Display &Average FPS"); checkable: true; checked: root.session.showAverageFps; onTriggered: root.session.showAverageFps = checked }
+            Action { text: qsTr("Reset Average FPS"); enabled: root.session.showAverageFps; onTriggered: root.session.run("resetAverageFps") }
+            Action { text: qsTr("Display &Rerecord Count"); checkable: true; checked: root.session.showRerecords; onTriggered: root.session.showRerecords = checked }
+            MenuSeparator {}
+            Action { text: qsTr("Display Status &Bar"); checkable: true; checked: root.session.showStatusBar; onTriggered: root.session.showStatusBar = checked }
+            Action { text: qsTr("Display &Messages"); checkable: true; checked: root.session.showMessages; onTriggered: root.session.showMessages = checked }
+            MenuSeparator {}
+            Action { text: qsTr("Open &Log Window..."); onTriggered: { logWindow.show(); logWindow.raise() } }
+            // the picture N times the machine's own, the window grown or shrunk to it
+            Menu {
+                id: windowSizeMenu
+                title: qsTr("&Window Size")
+                enabled: picture.pictureWidth > 0
+                Instantiator {
+                    model: 10
+                    delegate: MenuItem {
+                        required property int index
+                        text: qsTr("&%1x").arg(index + 1)
+                        onTriggered: {
+                            const n = index + 1
+                            const w = picture.pictureWidth * n, h = picture.pictureHeight * n
+                            const others = root.width - pictureArea.width
+                            root.height = Math.round(root.height - pictureArea.height + h)
+                            root.width = Math.round(others + w)
+                            // the pane its size, not its share of the window
+                            pictureArea.SplitView.preferredWidth = w
+                        }
+                    }
+                    onObjectAdded: (index, object) => windowSizeMenu.insertItem(index, object)
+                    onObjectRemoved: (index, object) => windowSizeMenu.removeItem(object)
+                }
+            }
         }
         Menu {
             delegate: keyedMenuItem
@@ -687,10 +719,12 @@ ApplicationWindow {
         orientation: Qt.Horizontal
 
         Rectangle {
+            id: pictureArea
             SplitView.preferredWidth: root.width * 0.58
             SplitView.minimumWidth: 200
             color: "black"
             PictureItem {
+                id: picture
                 objectName: "picture"
                 anchors.fill: parent
                 source: root.session.picture("screen")
@@ -705,12 +739,36 @@ ApplicationWindow {
                 font.pixelSize: 12
                 x: 0
             }
+            // the speed and the average speed share the speed's line, as Chimera's (issue 312)
             OsdText {
                 objectName: "osdFps"
                 y: 0
-                visible: root.session.isOpen && root.session.showFps
-                text: root.session.fpsText
+                visible: root.session.isOpen && text !== ""
+                text: [root.session.showFps ? root.session.fpsText : "",
+                       root.session.showAverageFps ? root.session.averageFpsText : ""].filter(t => t !== "").join("   ")
                 color: root.osdColor("OsdMessage", "#FFFFFF")
+            }
+            OsdText {
+                objectName: "osdRerecords"
+                y: 56
+                visible: root.session.isOpen && root.session.showRerecords
+                text: root.session.rerecords
+                color: root.osdColor("OsdMessage", "#FFFFFF")
+            }
+            // messages a moment each, newest at the bottom left, as Chimera stacks them
+            Column {
+                objectName: "osdMessages"
+                x: 0
+                anchors.bottom: parent.bottom
+                visible: root.session.showMessages
+                Repeater {
+                    model: onScreenMessages
+                    delegate: OsdText {
+                        required property string message
+                        text: message
+                        color: root.osdColor("OsdMessage", "#FFFFFF")
+                    }
+                }
             }
             OsdText {
                 objectName: "osdFrameCounter"
@@ -871,7 +929,30 @@ ApplicationWindow {
         }
     }
 
+    // every message the window shows, for the log window; and the ones over the picture now
+    ListModel { id: messageLog }
+    ListModel { id: onScreenMessages }
+    function note(text) {
+        if (text === "") return
+        messageLog.append({ "time": Qt.formatTime(new Date(), "hh:mm:ss"), "message": text })
+        if (messageLog.count > 5000) messageLog.remove(0)
+        if (!root.session.showMessages) return
+        onScreenMessages.append({ "message": text, "until": Date.now() + 2000 })
+        if (onScreenMessages.count > 5) onScreenMessages.remove(0)
+    }
+    Connections { target: root.session; function onStatusChanged() { root.note(root.session.status) } }
+    Connections { target: root.branches; function onStatusChanged() { root.note(root.branches.status) } }
+    Connections { target: root.projectDetails; function onStatusChanged() { root.note(root.projectDetails.status) } }
+    Timer {
+        interval: 250
+        repeat: true
+        running: onScreenMessages.count > 0
+        onTriggered: { while (onScreenMessages.count > 0 && onScreenMessages.get(0).until < Date.now()) onScreenMessages.remove(0) }
+    }
+    LogWindow { id: logWindow; log: messageLog; clipboard: root.clipboard; visible: false }
+
     footer: ToolBar {
+        visible: root.session.showStatusBar
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 8

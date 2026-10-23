@@ -521,6 +521,34 @@ bool speedAndSound(const char *package, const char *rom)
 	CHECK(quarter >= 8 && quarter <= 25);
 	CHECK(four >= 120 && four <= 260);
 	CHECK(free > 260);
+	/* the average speed: frames run freely over their time, counted from
+	 * when it is turned on; time paused and frames advanced by hand are not */
+	{
+		auto average = [&] {
+			double v = -1;
+			std::sscanf(session.averageFpsText.get().c_str(), "avg %lf fps", &v);
+			return v;
+		};
+		session.showAverageFps.set(true);
+		CHECK(session.averageFpsText.get().empty());
+		for (int i = 0; i < 10; i++) session.run("frameAdvance", {}, error);
+		d.until([] { return false; }, 0.3);
+		CHECK(session.averageFpsText.get().empty());
+		framesIn(1.0);
+		const double first = average();
+		d.until([] { return false; }, 1.0);
+		framesIn(0.5);
+		const double second = average();
+		std::printf("average: %.1f fps, %.1f after a second paused\n", first, second);
+		CHECK(first > 50 && first < 70 && second > 50 && second < 70);
+		session.run("resetAverageFps", {}, error);
+		CHECK(session.averageFpsText.get().empty());
+		session.speedPercent.set(400);
+		framesIn(0.5);
+		session.speedPercent.set(100);
+		CHECK(average() > 150);
+		session.showAverageFps.set(false);
+	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;

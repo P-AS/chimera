@@ -23,6 +23,7 @@
 
 struct ce_session;
 struct ce_project;
+struct ce_average_fps;
 
 namespace chimera::vm {
 
@@ -73,6 +74,13 @@ public:
 	Property<std::string> fpsText{"0 fps"}, frameCounterText, inputText;
 	Property<int64_t> lagCount{0};
 	Property<bool> lagFrame{false};
+	/* Chimera's View menu, the rest: the average speed since it was turned
+	 * on or reset (counted by the engine: frames run freely over the time
+	 * they took; "avg 59.9 fps", "" until something counted), shown on the
+	 * speed's line; the rerecord count, 56 down; messages over the picture
+	 * (the window shows each status a moment), and the status bar */
+	Property<bool> showAverageFps{false}, showRerecords{false}, showMessages{true}, showStatusBar{true};
+	Property<std::string> averageFpsText;
 	/* the input of a frame as the input display writes it */
 	std::string inputDisplay(int64_t frame) const;
 	/* Chimera's autohold and autofire: while one is armed (its hotkey held),
@@ -580,6 +588,13 @@ private:
 	bool tickPosted_ = false;
 	int64_t pendingFrame_ = 0;
 	double pendingFps_ = -1;
+	/* the average speed: the engine's count, what the loop's last pass did */
+	ce_average_fps *averageM_ = nullptr;
+	Clock::time_point passAt_{};
+	bool pausedSincePassM_ = true;
+	void passOnMachine(int64_t frames, bool stepping, bool goingBack);
+	double pendingAverage_ = 0;
+	std::atomic<bool> averageResetM_{false};
 	int64_t pendingQueued_ = 0, pendingDropped_ = 0;
 	int64_t pendingGreenEnd_ = 0, pendingStates_ = 0, pendingRerecords_ = 0;
 	int64_t changedFirst_ = -1, changedLast_ = -1;

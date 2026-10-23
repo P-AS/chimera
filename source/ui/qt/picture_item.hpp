@@ -17,6 +17,10 @@ class PictureItem : public QQuickItem
 	Q_OBJECT
 	Q_PROPERTY(QObject *source READ source WRITE setSource NOTIFY sourceChanged)
 	Q_PROPERTY(bool smooth READ smoothScaling WRITE setSmoothScaling NOTIFY smoothScalingChanged)
+	/* the picture's size in the machine's shape (its height, and the width
+	 * its aspect gives), 0 before the first: for the window's sizes */
+	Q_PROPERTY(int pictureWidth READ pictureWidth NOTIFY pictureSizeChanged)
+	Q_PROPERTY(int pictureHeight READ pictureHeight NOTIFY pictureSizeChanged)
 
 public:
 	explicit PictureItem(QQuickItem *parent = nullptr);
@@ -24,6 +28,8 @@ public:
 	QObject *source() const;
 	void setSource(QObject *source);
 	bool smoothScaling() const { return smooth_; }
+	int pictureWidth() const { return pictureWidth_; }
+	int pictureHeight() const { return pictureHeight_; }
 	void setSmoothScaling(bool on);
 
 	/* pictures handed to the GPU so far, for measuring (any thread) */
@@ -32,6 +38,7 @@ public:
 Q_SIGNALS:
 	void sourceChanged();
 	void smoothScalingChanged();
+	void pictureSizeChanged();
 
 protected:
 	QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
@@ -40,6 +47,9 @@ private:
 	QPointer<QmlPicture> source_;
 	QMetaObject::Connection watch_;
 	bool smooth_ = false;
+	int pictureWidth_ = 0, pictureHeight_ = 0;
+	/* the GUI thread's: the size the render thread saw */
+	Q_INVOKABLE void sizeSeen(int width, int height);
 	std::atomic<qint64> shown_{0};
 	/* the render thread's copy of the newest frame */
 	vm::Picture::Frame frame_;

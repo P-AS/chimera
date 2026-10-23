@@ -109,6 +109,22 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("inputText", "the input of the frame just run, as the input display writes it", inputText);
 	expose("lagCount", "lag frames so far", lagCount);
 	expose("lagFrame", "the frame just run was a lag frame", lagFrame);
+	expose("showAverageFps", "the average speed since it was turned on or reset is shown on the speed's line", showAverageFps, true);
+	expose("averageFpsText", "the average speed as shown: \"avg 59.9 fps\", \"\" until something counted", averageFpsText);
+	expose("showRerecords", "the rerecord count is shown over the picture", showRerecords, true);
+	expose("showMessages", "messages are shown over the picture a moment", showMessages, true);
+	expose("showStatusBar", "the status bar is shown", showStatusBar, true);
+	command("resetAverageFps", "the average speed counted afresh from now", {}, [this](const Args &, std::string &) -> Value {
+		averageResetM_.store(true);
+		averageFpsText.set("");
+		return {};
+	});
+	/* turned on, it counts from then: what ran while nobody looked is not part of it */
+	overlayWatches_.push_back(showAverageFps.changed.connect([this] {
+		if (!showAverageFps.get()) return;
+		averageResetM_.store(true);
+		averageFpsText.set("");
+	}));
 	/* turned on, a counter says at once what it has to say, counted afresh:
 	 * off, it heard of no change */
 	for (Property<bool> *shown : {&showFps, &showFrameCounter, &showLagCounter, &showInput})
@@ -412,6 +428,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		submit([this] {
 			if (s_ == nullptr) return;
 			runningM_ = false;
+			passOnMachine(1, true, false);
 			advanceOnMachine();
 			later([this] { running.set(false); });
 		});
@@ -705,12 +722,17 @@ void SessionViewModel::loop()
 					if (Clock::now() >= due_) { advance = true; break; }
 					waitUntil(catchingM_ ? std::min(due_, catchDue_) : due_);
 				}
-				else if (catchingM_)
-					waitUntil(catchDue_);
-				else if (autoOn)
-					cv_.wait_until(lock, autosaveDue_);
 				else
-					cv_.wait(lock);
+				{
+					/* not running: the time until it runs again is not run time */
+					pausedSincePassM_ = true;
+					if (catchingM_)
+						waitUntil(catchDue_);
+					else if (autoOn)
+						cv_.wait_until(lock, autosaveDue_);
+					else
+						cv_.wait(lock);
+				}
 			}
 			if (quit_) break;
 		}
@@ -740,6 +762,7 @@ void SessionViewModel::loop()
 		}
 		if (back)
 		{
+			passOnMachine(0, false, true);
 			/* TAStudio's rewind step, and its fast one while fast forwarding */
 			if (frameM_ > 0) seekOnMachine(std::max<int64_t>(0, frameM_ - (fastM_ ? rewindStepFastM_.load() : rewindStepM_.load())));
 			due_ += period_;
@@ -748,6 +771,7 @@ void SessionViewModel::loop()
 		}
 		if (advance)
 		{
+			passOnMachine(1, false, false);
 			advanceOnMachine();
 			/* fast forward: the next frame at once */
 			/* fast forward or unthrottled: the next frame at once; else at
@@ -764,6 +788,8 @@ void SessionViewModel::loop()
 	if (projectM_ != nullptr) ce_project_free(projectM_);
 	projectM_ = nullptr;
 	padsM_.reset(); /* SDL stops on the thread that started it */
+	if (averageM_ != nullptr) ce_average_fps_destroy(averageM_);
+	averageM_ = nullptr;
 	soundM_.reset();
 }
 
@@ -2039,6 +2065,31 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
 	return true;
 }
 
+void SessionViewModel::passOnMachine(int64_t frames, bool stepping, bool goingBack)
+{
+	/* as Chimera's AverageFpsPassBegins: the engine is told of each pass,
+	 * and decides what counts; time spent paused never does */
+	if (averageM_ == nullptr) averageM_ = ce_average_fps_create();
+	if (averageM_ == nullptr) return;
+	if (averageResetM_.exchange(false))
+	{
+		ce_average_fps_reset(averageM_);
+		pausedSincePassM_ = true;
+	}
+	const auto now = Clock::now();
+	if (passAt_ != Clock::time_point{})
+	{
+		const int64_t ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now - passAt_).count();
+		ce_average_fps_pass(averageM_, frames, ns, pausedSincePassM_ ? 1 : 0, stepping ? 1 : 0, goingBack ? 1 : 0);
+	}
+	passAt_ = now;
+	/* a pass not made running leaves the next one paused (what it waited is not run time) */
+	pausedSincePassM_ = stepping || goingBack;
+	const double average = ce_average_fps_value(averageM_);
+	std::lock_guard<std::mutex> lock(pendingM_);
+	pendingAverage_ = average;
+}
+
 void SessionViewModel::saveTo(const std::string &path)
 {
 	const uint64_t gen = changeGen_;
@@ -2214,8 +2265,11 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	const double rate = num > 0 && den > 0 ? static_cast<double>(num) / den : 0;
 
 	const int64_t frames = inputs_.size();
+	/* another game, or the same started again: another average, as Chimera's */
+	averageResetM_.store(true);
 	later([this, names, axes, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames, controller] {
 		controllerName_ = controller;
+		averageFpsText.set("");
 		buttonNames_ = names;
 		axes_ = axes;
 		mnemonics_ = mnemonics;
@@ -2576,7 +2630,7 @@ void SessionViewModel::report(int64_t cf, int64_t cl, int64_t af, int64_t al, do
 void SessionViewModel::tick()
 {
 	int64_t f, cf, cl, af, al, green, states, rr;
-	double measured;
+	double measured, average;
 	int64_t queued, dropped;
 	bool statedNow = false;
 	{
@@ -2595,11 +2649,18 @@ void SessionViewModel::tick()
 		queued = pendingQueued_, dropped = pendingDropped_;
 		green = pendingGreenEnd_, states = pendingStates_;
 		rr = pendingRerecords_;
+		average = pendingAverage_;
 		pendingFps_ = -1;
 		changedFirst_ = changedLast_ = appendedFirst_ = appendedLast_ = -1;
 	}
 	frame.set(f);
 	if (measured >= 0) fps.set(measured);
+	if (showAverageFps.get() && average > 0)
+	{
+		char text[48];
+		std::snprintf(text, sizeof text, "avg %.1f fps", average);
+		averageFpsText.set(text);
+	}
 	soundQueued.set(queued);
 	soundDropped.set(dropped);
 	greenEnd.set(green);
