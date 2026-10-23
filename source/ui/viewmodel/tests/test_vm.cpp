@@ -59,6 +59,7 @@
 #include "chimera/vm/data_folder_vm.hpp"
 #include "chimera/vm/precompiled_vm.hpp"
 #include "chimera/vm/trace_logger_vm.hpp"
+#include "chimera/vm/idle_eye.hpp"
 #include "chimera/vm/surface_viewer_vm.hpp"
 #include "chimera/vm/macro_tool_vm.hpp"
 #include "chimera/vm/recorder_vm.hpp"
@@ -5600,6 +5601,58 @@ void europeanClock()
 	CHECK(at("2026-10-18T16:35:00.123Z") == "2026-10-18 18:35 CEST" && at("yesterday") == "unread" && at("2026-13-01T00:00Z") == "unread");
 }
 
+/* Chimera's idle eye: nothing drawn without the mark; with it, the faint
+ * mark, its eye sliding towards the pointer, a blink now and then, and no
+ * new picture while nothing changes */
+void idleEye()
+{
+	ManualDispatcher d;
+	IdleEyeViewModel eye(d);
+	CHECK(!eye.tick(0) && eye.drawn.get() == 0);
+	/* a slab left of the eye's box, and a block inside it */
+	std::vector<uint32_t> art(160 * 160, 0);
+	for (int y = 70; y < 90; y++)
+		for (int x = 0; x < 160; x++)
+			if ((x >= 10 && x < 30) || (x >= 70 && x < 90)) art[static_cast<size_t>(y) * 160 + x] = 0xFFFFFFFFu;
+	eye.setMark(160, art);
+	CHECK(eye.tick(0) && eye.drawn.get() == 1);
+	/* where the eye's block is lit, across the screen */
+	auto eyeAt = [&] {
+		Picture::Frame f;
+		eye.eye.takeIfNewer(0, f);
+		double sum = 0, weight = 0;
+		for (int y = 0; y < f.height; y++)
+			for (int x = 200; x < 300 && x < f.width; x++)
+			{
+				const double level = f.pixels[static_cast<size_t>(y) * f.width + x] & 0xFF;
+				sum += level * x;
+				weight += level;
+			}
+		return weight > 0 ? sum / weight : -1.0;
+	};
+	Picture::Frame first;
+	CHECK(eye.eye.takeIfNewer(0, first) && first.width == 480 && first.height == 360);
+	/* faint: no pixel brighter than a tenth and a bit */
+	uint32_t brightest = 0;
+	for (uint32_t p : first.pixels) brightest = std::max(brightest, p & 0xFF);
+	CHECK(brightest > 0 && brightest <= 30);
+	const double looking = eyeAt();
+	for (int i = 0; i < 40; i++) eye.tick(1);
+	CHECK(looking > 0 && eyeAt() > looking + 10);
+	/* settled and still: far fewer pictures than ticks */
+	const int64_t before = eye.drawn.get();
+	for (int i = 0; i < 60; i++) eye.tick(1);
+	CHECK(eye.drawn.get() - before < 30);
+	/* a blink within the first seconds */
+	float lowest = 1.0f;
+	for (int i = 0; i < 600; i++)
+	{
+		eye.tick(1);
+		lowest = std::min(lowest, eye.lid());
+	}
+	CHECK(lowest < 0.2f);
+}
+
 int main(int argc, char **argv)
 {
 	signalsAndProperties();
@@ -5620,6 +5673,7 @@ int main(int argc, char **argv)
 	watchValues();
 	themes();
 	europeanClock();
+	idleEye();
 	const bool ranPads = gamepads();
 	if (ranPads) padCatch();
 	bool ranMachine = false;

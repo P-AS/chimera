@@ -44,6 +44,7 @@ ApplicationWindow {
     required property QtObject debuggerTool
     required property QtObject surfaceViewer
     required property QtObject guiOverlay
+    required property QtObject idleEye
     required property QtObject macroTool
     required property QtObject recorder
     // a Paths folder for a file dialog to open in (made when it is not there)
@@ -714,6 +715,29 @@ ApplicationWindow {
         objectName: "pictureArea"
         anchors.fill: parent
         color: "black"
+        // nothing open: Chimera's mark, faint, blinking now and then, its eye
+        // following the pointer across the window
+        PictureItem {
+            id: idleEyePicture
+            objectName: "idleEye"
+            anchors.fill: parent
+            z: 1
+            visible: !root.session.isOpen
+            source: root.idleEye.picture("eye")
+            smooth: true
+            HoverHandler { id: idlePointer }
+            Timer {
+                interval: 16
+                repeat: true
+                running: idleEyePicture.visible
+                property real gaze: 0
+                onTriggered: {
+                    // where the pointer is across the picture; gone off it, the last place holds
+                    if (idlePointer.hovered && idleEyePicture.width > 0) gaze = idlePointer.point.position.x / idleEyePicture.width * 2 - 1
+                    root.idleEye.run("tick", [gaze])
+                }
+            }
+        }
         PictureItem {
             id: picture
             objectName: "picture"

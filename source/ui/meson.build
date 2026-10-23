@@ -37,6 +37,7 @@ vm_lib = static_library(
     'viewmodel/src/data_folder_vm.cpp',
     'viewmodel/src/precompiled_vm.cpp',
     'viewmodel/src/trace_logger_vm.cpp',
+    'viewmodel/src/idle_eye.cpp',
     'viewmodel/src/surface_viewer_vm.cpp',
     'viewmodel/src/macro_tool_vm.cpp',
     'viewmodel/src/recorder_vm.cpp',

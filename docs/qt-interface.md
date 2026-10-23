@@ -60,7 +60,10 @@ debugger, surface viewer and trace logger in the Emulator menu, as tools
 the core offers. As in Chimera, the way in is a project: File has New
 Chimera Project and Open Project, and no way to open a game alone, and
 there is no window to change a machine's settings once it runs (they are
-chosen when the project is made). A game file dropped on the window
+chosen when the project is made). With nothing open the window shows
+Chimera's idle eye: its mark, very faint and colourless, blinking now and
+then, its eye following the pointer across the window (a view model makes
+the picture, only when it would change). A game file dropped on the window
 starts a new project from it. (The command line still opens a package and
 a game, for the tests.) Capture OSD puts the counters and messages over
 the picture into screenshots, as Chimera's does.

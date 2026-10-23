@@ -2,6 +2,7 @@
 <RCC version="1.0">
   <qresource prefix="/chimera">
     <file>Main.qml</file>
+    <file alias="chimera.png">../../gui/Chimera.Client.GUI/images/chimera.png</file>
     <file>RamSearch.qml</file>
     <file>RamWatch.qml</file>
     <file>HexEditor.qml</file>

@@ -62,6 +62,7 @@
 #include "chimera/vm/data_folder_vm.hpp"
 #include "chimera/vm/precompiled_vm.hpp"
 #include "chimera/vm/trace_logger_vm.hpp"
+#include "chimera/vm/idle_eye.hpp"
 #include "chimera/vm/surface_viewer_vm.hpp"
 #include "chimera/vm/macro_tool_vm.hpp"
 #include "chimera/vm/recorder_vm.hpp"
@@ -716,6 +717,17 @@ int main(int argc, char **argv)
 	qt::QmlViewModel debuggerQml(debugger);
 	vm::GuiOverlayViewModel guiOverlay(dispatcher);
 	qt::QmlViewModel guiOverlayQml(guiOverlay);
+	/* the picture while nothing is open: Chimera's mark, read here and handed in */
+	vm::IdleEyeViewModel idleEye(dispatcher);
+	{
+		const QImage mark = QImage(QStringLiteral(":/chimera/chimera.png")).convertToFormat(QImage::Format_ARGB32);
+		const int side = std::min(mark.width(), mark.height());
+		std::vector<uint32_t> argb(static_cast<size_t>(side) * side);
+		for (int y = 0; y < side; y++)
+			for (int x = 0; x < side; x++) argb[static_cast<size_t>(y) * side + x] = mark.pixel(x, y);
+		idleEye.setMark(side, argb);
+	}
+	qt::QmlViewModel idleEyeQml(idleEye);
 	vm::SurfaceViewerViewModel surfaceViewer(dispatcher, session);
 	qt::QmlViewModel surfaceViewerQml(surfaceViewer);
 	vm::MacroToolViewModel macroTool(dispatcher, pianoRoll, session);
@@ -996,6 +1008,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("traceLogger"), QVariant::fromValue<QObject *>(&traceLoggerQml)},
 		{QStringLiteral("debuggerTool"), QVariant::fromValue<QObject *>(&debuggerQml)},
 		{QStringLiteral("guiOverlay"), QVariant::fromValue<QObject *>(&guiOverlayQml)},
+		{QStringLiteral("idleEye"), QVariant::fromValue<QObject *>(&idleEyeQml)},
 		{QStringLiteral("surfaceViewer"), QVariant::fromValue<QObject *>(&surfaceViewerQml)},
 		{QStringLiteral("macroTool"), QVariant::fromValue<QObject *>(&macroToolQml)},
 		{QStringLiteral("recorder"), QVariant::fromValue<QObject *>(&recorderQml)},
