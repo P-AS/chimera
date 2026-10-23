@@ -50,6 +50,7 @@
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/process_stamp.hpp"
 #include "chimera/vm/customize_vm.hpp"
+#include "chimera/vm/messages_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -371,6 +372,40 @@ void keyPriority()
 	hotkeys.noMixedPriority.set(true);
 	hotkeys.keyPriority.set(2);
 	CHECK(hotkeys.run("cycleKeyPriority", {}, error) == Value(int64_t{1}));
+}
+
+/* Chimera's Messages window: each thing over the picture at a corner and a
+ * distance, Chimera's places at first; the four colours; how long a
+ * message stays; a remembered value missing a place gains it */
+void messagesConfig()
+{
+	ManualDispatcher d;
+	MessagesViewModel messages(d);
+	std::string error;
+	auto at = [&](const std::string &name) {
+		json::Json all;
+		std::string e;
+		json::parse(messages.positions.get(), all, e);
+		const json::Json *p = all.find(name);
+		if (p == nullptr) return std::string("none");
+		return p->find("x")->text + "," + p->find("y")->text + "," + p->find("anchor")->text;
+	};
+	CHECK(at("Fps") == "0,0,0" && at("Lag Counter") == "0,42,0" && at("Messages") == "0,0,2" && at("Autohold") == "0,0,1" &&
+		at("Game Time") == "0,14,1" && at("Watches") == "0,70,0");
+	CHECK(messages.run("setPosition", {std::string("Fps"), int64_t{4}, int64_t{6}, int64_t{3}}, error).has_value() && at("Fps") == "4,6,3");
+	CHECK(!messages.run("setPosition", {std::string("Clock"), int64_t{0}, int64_t{0}, int64_t{0}}, error) &&
+		error == "nothing called Clock is drawn over the picture");
+	CHECK(!messages.run("setPosition", {std::string("Fps"), int64_t{0}, int64_t{0}, int64_t{4}}, error));
+	CHECK(messages.run("setColor", {std::string("alert"), std::string("#00ff00")}, error).has_value() && messages.alertColor.get() == "#FF00FF00");
+	CHECK(!messages.run("setColor", {std::string("alert"), std::string("green")}, error) && error == "GREEN is not a colour: #AARRGGBB or #RRGGBB");
+	CHECK(!messages.run("setColor", {std::string("border"), std::string("#FF000000")}, error));
+	messages.messageSeconds.set(30);
+	CHECK(messages.messageSeconds.get() == 10);
+	CHECK(messages.run("resetDefaults", {}, error).has_value() && at("Fps") == "0,0,0" && messages.alertColor.get() == "#FFFF0000" &&
+		messages.messageSeconds.get() == 2);
+	/* remembered before Game Time was a place: the rest kept, Game Time at Chimera's */
+	messages.positions.set(R"({"Fps": {"x": 9, "y": 9, "anchor": 1}})");
+	CHECK(at("Fps") == "9,9,1" && at("Game Time") == "0,14,1");
 }
 
 void pianoRollWithoutAMachine()
@@ -4845,6 +4880,7 @@ int main(int argc, char **argv)
 	firmware();
 	settingsByMachine();
 	keyPriority();
+	messagesConfig();
 	pianoRollWithoutAMachine();
 	watchValues();
 	themes();

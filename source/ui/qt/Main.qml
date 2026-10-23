@@ -33,6 +33,7 @@ ApplicationWindow {
     required property QtObject mediaMaker
     required property QtObject cacheManager
     required property QtObject customize
+    required property QtObject messages
     property url chosenPackage
 
     width: 1280
@@ -47,6 +48,25 @@ ApplicationWindow {
     // the theme's colours for what is drawn over the picture, as Chimera's themes give them
     readonly property var themeColorMap: JSON.parse(root.themes.colors)
     function osdColor(role, fallback) { return root.themeColors.resolve(root.themeColorMap[role] || fallback) }
+    // Config > Messages: a colour left at Chimera's default is the theme's, one chosen there wins
+    function messageColor(chosen, chimeraDefault, role) {
+        return chosen.toUpperCase() === chimeraDefault ? root.osdColor(role, "#" + chimeraDefault.substring(3)) : chosen
+    }
+    readonly property color osdMessageColor: root.messageColor(root.messages.messagesColor, "#FFFFFFFF", "OsdMessage")
+    readonly property color osdAlertColor: root.messageColor(root.messages.alertColor, "#FFFF0000", "OsdAlert")
+    readonly property color osdMovieInputColor: root.messageColor(root.messages.movieInputColor, "#FF808080", "OsdMovieInput")
+    // where each thing over the picture goes: a corner and a distance from it, as Chimera's MessagePosition
+    readonly property var osdPositions: JSON.parse(root.messages.positions)
+    function osdX(name, w) {
+        const p = root.osdPositions[name]
+        if (!p) return 0
+        return p.anchor === 0 || p.anchor === 2 ? p.x : pictureArea.width - p.x - w
+    }
+    function osdY(name, h) {
+        const p = root.osdPositions[name]
+        if (!p) return 0
+        return p.anchor < 2 ? p.y : pictureArea.height - p.y - h
+    }
     // the keys of every hotkey, for the menus to show beside their actions
     readonly property var hotkeyKeys: JSON.parse(root.hotkeys.bound)
     // a menu item that shows the keys of the hotkey its action names
@@ -205,6 +225,7 @@ ApplicationWindow {
             Action { text: qsTr("&Controls and Hotkeys..."); onTriggered: { controlsWindow.show(); controlsWindow.raise() } }
             Action { text: qsTr("&Themes..."); onTriggered: { themesWindow.show(); themesWindow.raise() } }
             Action { text: qsTr("C&ustomize..."); onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
+            Action { text: qsTr("&Messages..."); onTriggered: { messagesWindow.show(); messagesWindow.raise() } }
             // Chimera's Config > Key Priority: for a key that is a hotkey and a button
             Menu {
                 delegate: keyedMenuItem
@@ -932,83 +953,93 @@ ApplicationWindow {
             }
             // Display Nothing: nothing is drawn here, the counters neither, as Chimera's
             Rectangle { anchors.fill: parent; z: 100; color: "black"; visible: root.session.displayNothing }
-            // Chimera's counters over the picture, where it puts them: the
-            // speed at the top, the frame counter 14 down, the input 28, the
-            // lag counter 42
+            // Chimera's counters over the picture, each where Config > Messages
+            // puts it (at first Chimera's places: the speed at the top, the
+            // frame counter 14 down, the input 28, the lag counter 42)
             component OsdText: Text {
+                property string place: ""
                 style: Text.Outline
                 styleColor: "black"
                 font.family: "monospace"
                 font.pixelSize: 12
-                x: 0
+                x: place === "" ? 0 : root.osdX(place, width)
+                y: place === "" ? 0 : root.osdY(place, height)
             }
             // the speed and the average speed share the speed's line, as Chimera's (issue 312)
             OsdText {
                 objectName: "osdFps"
-                y: 0
+                place: "Fps"
                 visible: root.session.isOpen && text !== ""
                 text: [root.session.showFps ? root.session.fpsText : "",
                        root.session.showAverageFps ? root.session.averageFpsText : ""].filter(t => t !== "").join("   ")
-                color: root.osdColor("OsdMessage", "#FFFFFF")
+                color: root.osdMessageColor
             }
             // a game's own timer, at the top right 14 down, as Chimera places it
             OsdText {
                 objectName: "osdGameTime"
-                x: parent.width - width
-                y: 14
+                place: "Game Time"
                 visible: root.session.isOpen && root.session.showGameTime && text !== ""
                 text: root.session.gameTimeText
-                color: root.osdColor("OsdMessage", "#FFFFFF")
+                color: root.osdMessageColor
             }
             OsdText {
                 objectName: "osdRerecords"
-                y: 56
+                place: "Rerecords"
                 visible: root.session.isOpen && root.session.showRerecords
                 text: root.session.rerecords
-                color: root.osdColor("OsdMessage", "#FFFFFF")
+                color: root.osdMessageColor
             }
-            // messages a moment each, newest at the bottom left, as Chimera stacks them
+            // messages a moment each, the newest at their corner and the older
+            // ones away from it, as Chimera stacks them (or only the newest)
             Column {
                 objectName: "osdMessages"
-                x: 0
-                anchors.bottom: parent.bottom
+                x: root.osdX("Messages", width)
+                y: root.osdY("Messages", height)
                 visible: root.session.showMessages
                 Repeater {
-                    model: onScreenMessages
+                    model: {
+                        const n = onScreenMessages.count
+                        const all = []
+                        for (let i = 0; i < n; i++) all.push(onScreenMessages.get(i).message)
+                        const shown = root.messages.stackMessages ? all : all.slice(-1)
+                        const p = root.osdPositions["Messages"]
+                        return p && p.anchor < 2 ? shown.reverse() : shown
+                    }
                     delegate: OsdText {
-                        required property string message
-                        text: message
-                        color: root.osdColor("OsdMessage", "#FFFFFF")
+                        required property string modelData
+                        x: 0
+                        y: 0
+                        text: modelData
+                        color: root.osdMessageColor
                     }
                 }
             }
             OsdText {
                 objectName: "osdFrameCounter"
-                y: 14
+                place: "Frame Counter"
                 visible: root.session.isOpen && root.session.showFrameCounter
                 text: root.session.frameCounterText
                 // a lag frame's number is the alert's colour
-                color: root.session.lagFrame ? root.osdColor("OsdAlert", "#FF0000") : root.osdColor("OsdMessage", "#FFFFFF")
+                color: root.session.lagFrame ? root.osdAlertColor : root.osdMessageColor
             }
             OsdText {
                 objectName: "osdInput"
-                y: 28
+                place: "Input Display"
                 visible: root.session.isOpen && root.session.showInput
                 text: root.session.inputText
-                color: root.osdColor("OsdMovieInput", "#808080")
+                color: root.osdMovieInputColor
             }
             OsdText {
                 objectName: "osdLagCounter"
-                y: 42
+                place: "Lag Counter"
                 visible: root.session.isOpen && root.session.showLagCounter
                 text: root.session.lagCount
-                color: root.osdColor("OsdAlert", "#FF0000")
+                color: root.osdAlertColor
             }
             // while autohold or autofire is armed, what they hold, at the top right as Chimera has it
             OsdText {
                 objectName: "osdSticky"
-                x: parent.width - width
-                y: 0
+                place: "Autohold"
                 visible: root.session.isOpen && root.session.stickyArmed
                 text: root.session.stickyText
                 color: root.osdColor("OsdAutoHold", "#FFFFFF")
@@ -1024,12 +1055,12 @@ ApplicationWindow {
                     color: modelData.color
                 }
             }
-            // RAM Watch's on-screen watches, where Chimera puts them: from
-            // the top left, 70 down, a line every 14
+            // RAM Watch's on-screen watches, a line every 14, where Config >
+            // Messages puts them (Chimera's place: the top left, 70 down)
             Column {
                 objectName: "onScreenWatches"
-                x: 0
-                y: 70
+                x: root.osdX("Watches", width)
+                y: root.osdY("Watches", height)
                 visible: root.session.isOpen
                 Repeater {
                     model: root.ramWatch.onScreenText === "" ? [] : root.ramWatch.onScreenText.split("\n")
@@ -1160,7 +1191,7 @@ ApplicationWindow {
         messageLog.append({ "time": Qt.formatTime(new Date(), "hh:mm:ss"), "message": text })
         if (messageLog.count > 5000) messageLog.remove(0)
         if (!root.session.showMessages) return
-        onScreenMessages.append({ "message": text, "until": Date.now() + 2000 })
+        onScreenMessages.append({ "message": text, "until": Date.now() + root.messages.messageSeconds * 1000 })
         if (onScreenMessages.count > 5) onScreenMessages.remove(0)
     }
     Connections { target: root.session; function onStatusChanged() { root.note(root.session.status) } }
@@ -1178,6 +1209,7 @@ ApplicationWindow {
     MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; visible: false }
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; visible: false }
     Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; visible: false }
+    MessagesConfig { id: messagesWindow; vm: root.messages; visible: false }
     ProjectFiles { session: root.session }
     // Work a crash left behind, offered before the project opens, as
     // Chimera's "Recover unsaved work?" asks

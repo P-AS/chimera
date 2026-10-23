@@ -28,6 +28,7 @@ vm_lib = static_library(
     'viewmodel/src/european_clock.cpp',
     'viewmodel/src/process_stamp.cpp',
     'viewmodel/src/customize_vm.cpp',
+    'viewmodel/src/messages_vm.cpp',
     'viewmodel/src/project_details_vm.cpp',
     'viewmodel/src/cores_vm.cpp',
     'viewmodel/src/branch_state.cpp',
