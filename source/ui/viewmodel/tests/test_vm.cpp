@@ -3106,6 +3106,10 @@ bool projectDetails(const char *package, const char *rom)
 		CHECK(!details.run("addSubtitle", {int64_t{0}, int64_t{1}, int64_t{2}, int64_t{0}, std::string("#FFFFFF"), std::string("never")}, error));
 		CHECK(!details.run("addSubtitle", {int64_t{0}, int64_t{1}, int64_t{2}, int64_t{5}, std::string("red"), std::string("x")}, error) &&
 			error == "red is not a colour: #RRGGBB or #AARRGGBB");
+		/* the one on a frame, for the main window's Add Subtitle to edit */
+		CHECK(details.run("subtitleOn", {int64_t{30}}, error) ==
+			  Value(std::string("{\"index\": 1, \"x\": 4, \"y\": 8, \"duration\": 60, \"color\": \"#FFFF0000\", \"message\": \"later\"}")));
+		CHECK(details.run("subtitleOn", {int64_t{31}}, error) == Value(std::string()));
 		/* kept by frame */
 		RowModel &subs = *details.rowLists()[0].model;
 		auto cellText = [&](int64_t r, int32_t c) {
@@ -5253,6 +5257,9 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	step();
 	session.key("Down", false);
 	CHECK(inputs.at(0) == (uint64_t{1} << down) && inputs.at(1) == 0);
+	/* what a key holds now, for the right click and the double click on the picture */
+	CHECK(controls.run("hasBinding", {std::string("K")}, error) == Value(true) &&
+		  controls.run("hasBinding", {std::string("WMouse R")}, error) == Value(false));
 	{
 		json::Json all;
 		CHECK(json::parse(controls.saved.get(), all, error) && all.find("Synth") != nullptr &&

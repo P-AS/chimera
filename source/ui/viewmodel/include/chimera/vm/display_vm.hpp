@@ -54,6 +54,8 @@ public:
 	/* the window's place and size kept for the next start, and what was kept ("x,y,w,h") */
 	Property<bool> saveWindowPosition{false};
 	Property<std::string> windowGeometry;
+	/* a double click on the picture goes full screen and back (Allow Double-Click Fullscreen) */
+	Property<bool> allowDoubleClickFullscreen{true};
 
 	DisplayFit fit() const;
 };

@@ -152,6 +152,27 @@ ProjectDetailsViewModel::ProjectDetailsViewModel(Dispatcher &dispatcher, Session
 		return {};
 	});
 
+	command("subtitleOn", "the first subtitle that starts on a frame, as Chimera's Add Subtitle edits it: "
+		"{\"index\", \"x\", \"y\", \"duration\", \"color\", \"message\"}; \"\" for none", {"frame"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t frame = 0;
+			if (!arg(a, 0, frame, error)) return {};
+			for (size_t i = 0; i < subtitles_.size(); i++)
+				if (subtitles_[i].frame == frame)
+				{
+					json::Json o;
+					o.kind = json::Json::Kind::Object;
+					o.members.emplace_back("index", json::Json::integer(static_cast<long long>(i)));
+					o.members.emplace_back("x", json::Json::integer(subtitles_[i].x));
+					o.members.emplace_back("y", json::Json::integer(subtitles_[i].y));
+					o.members.emplace_back("duration", json::Json::integer(subtitles_[i].duration));
+					o.members.emplace_back("color", json::Json::string(writeColor(subtitles_[i].color)));
+					o.members.emplace_back("message", json::Json::string(subtitles_[i].message));
+					return json::write(o);
+				}
+			return std::string();
+		});
+
 	opensWatch_ = session_.opens.changed.connect([this] { load(); });
 	/* the session says a project is open after the machine is */
 	projectWatch_ = session_.hasProject.changed.connect([this] { load(); });

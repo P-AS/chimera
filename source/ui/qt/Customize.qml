@@ -1,6 +1,15 @@
-// Chimera's Customize window (Config > Customize): layout and bindings
-// only, over the customize view model and the session's two switches.
-// Each box is kept the moment it is ticked.
+// Chimera's Customize window (Config > Customize), laid out as Chimera's
+// GuiOptions: General (the menu and context menu, the save prompts,
+// running and listening in the background, Startup Options) and Advanced
+// (lag frames, Lua when turboing, Key Priority). The boxes are a copy: OK
+// keeps them, Cancel lets them go. Layout and bindings only, over the
+// customize view model and the session's and hotkeys' switches.
+//
+// Not here, as the prototype has no such thing: Chimera's alternate
+// keyboard layouts and merged modifier keys (Qt names keys by the layout,
+// and Shift, Ctrl and Alt always arrive merged), the GameCube adapter,
+// single instance mode, and Skip waterbox integrity checks (a flag no part
+// of Chimera reads).
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -11,51 +20,119 @@ ApplicationWindow {
     required property QtObject vm
     required property QtObject session
     required property QtObject hotkeys
+    property Window mainWindow: null
     title: qsTr("Customization Options")
-    width: 560
-    height: 420
+    // Chimera's is 418 wide for its 8-point font; wide enough here for the longest line
+    width: 520
+    height: 424
+    modality: Qt.ApplicationModal
+    transientParent: win.mainWindow
 
-    component Note: Label { wrapMode: Text.WordWrap; Layout.fillWidth: true; Layout.leftMargin: 28; opacity: 0.75 }
+    // the copy, read when the window opens
+    property var picked: ({})
+    onVisibleChanged: if (visible) {
+        tabs.currentIndex = 0
+        win.picked = {
+            pauseWhenMenuActivated: win.vm.pauseWhenMenuActivated, showContextMenu: win.vm.showContextMenu,
+            neverAskSave: win.vm.neverAskSave, runInBackground: win.vm.runInBackground,
+            acceptBackgroundInput: win.session.acceptBackgroundInput, startPaused: win.vm.startPaused,
+            startFullscreen: win.vm.startFullscreen, skipLagFrames: win.session.skipLagFrames,
+            luaDuringTurbo: win.vm.luaDuringTurbo, noMixedPriority: win.hotkeys.noMixedPriority
+        }
+    }
+    function pick(name, value) {
+        const now = Object.assign({}, win.picked)
+        now[name] = value
+        win.picked = now
+    }
+    function keep() {
+        const p = win.picked
+        win.vm.pauseWhenMenuActivated = p.pauseWhenMenuActivated
+        win.vm.showContextMenu = p.showContextMenu
+        win.vm.neverAskSave = p.neverAskSave
+        win.vm.runInBackground = p.runInBackground
+        win.session.acceptBackgroundInput = p.acceptBackgroundInput
+        win.vm.startPaused = p.startPaused
+        win.vm.startFullscreen = p.startFullscreen
+        win.session.skipLagFrames = p.skipLagFrames
+        win.vm.luaDuringTurbo = p.luaDuringTurbo
+        win.hotkeys.noMixedPriority = p.noMixedPriority
+    }
+
+    component Box: CheckBox {
+        required property string setting
+        checked: win.picked[setting] === true
+        onToggled: win.pick(setting, checked)
+        padding: 2
+    }
+    component Note: Label { Layout.leftMargin: 20; wrapMode: Text.WordWrap; Layout.fillWidth: true }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 8
+        anchors.margins: 9
+        spacing: 6
         TabBar {
             id: tabs
             Layout.fillWidth: true
-            TabButton { text: qsTr("General") }
-            TabButton { text: qsTr("Advanced") }
+            TabButton { text: qsTr("General"); width: implicitWidth }
+            TabButton { text: qsTr("Advanced"); width: implicitWidth }
         }
-        StackLayout {
-            currentIndex: tabs.currentIndex
+        Frame {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            ColumnLayout {
-                CheckBox { text: qsTr("Start paused"); checked: win.vm.startPaused; onToggled: win.vm.startPaused = checked }
-                Note { text: qsTr("The first game or project opened waits paused. After that, one opened runs when the last was running.") }
-                CheckBox { text: qsTr("Start in full screen"); checked: win.vm.startFullscreen; onToggled: win.vm.startFullscreen = checked }
-                Note { text: qsTr("Takes effect the next time Chimera starts.") }
-                CheckBox { text: qsTr("Pause when a menu is open"); checked: win.vm.pauseWhenMenuActivated; onToggled: win.vm.pauseWhenMenuActivated = checked }
-                CheckBox { text: qsTr("Run in background"); checked: win.vm.runInBackground; onToggled: win.vm.runInBackground = checked }
-                Note { text: qsTr("When this is set, the game keeps running while the window is behind another.") }
-                CheckBox { text: qsTr("Accept background input"); checked: win.session.acceptBackgroundInput; onToggled: win.session.acceptBackgroundInput = checked }
-                Note { text: qsTr("Gamepads are heard while other programs are in front. The keyboard is only ever heard by the window in front.") }
-                CheckBox { text: qsTr("Never ask to save: changes not saved are let go"); checked: win.vm.neverAskSave; onToggled: win.vm.neverAskSave = checked }
-                Note { text: qsTr("When a project is closed, another opened or Chimera closed.") }
-                Item { Layout.fillHeight: true }
-            }
-            ColumnLayout {
-                CheckBox { text: qsTr("Frame advance button skips non-input frames"); checked: win.session.skipLagFrames; onToggled: win.session.skipLagFrames = checked }
-                Note { text: qsTr("When enabled, the frame advance button will skip over frames in which no input was polled (lag frames).") }
-                CheckBox { text: qsTr("Run Lua scripts when turboing"); checked: win.vm.luaDuringTurbo; onToggled: win.vm.luaDuringTurbo = checked }
-                CheckBox { text: qsTr("Key Priority Toggle - Remove Mixed Key Priority Options"); checked: win.hotkeys.noMixedPriority; onToggled: win.hotkeys.noMixedPriority = checked }
-                Note { text: qsTr("The Toggle Key Priority hotkey goes between buttons first and hotkeys first only.") }
-                Item { Layout.fillHeight: true }
+            StackLayout {
+                anchors.fill: parent
+                currentIndex: tabs.currentIndex
+                ColumnLayout {
+                    spacing: 2
+                    RowLayout {
+                        spacing: 16
+                        Box { setting: "pauseWhenMenuActivated"; text: qsTr("Pause when menu activated") }
+                        Box { setting: "showContextMenu"; text: qsTr("Enable Context Menu") }
+                    }
+                    Box { setting: "neverAskSave"; text: qsTr("When Chimera is closing, skip \"unsaved changes\" prompts and discard all.") }
+                    Box { setting: "runInBackground"; text: qsTr("Run in background") }
+                    Note { text: qsTr("When this is set, the client will continue to run when it loses focus.") }
+                    RowLayout {
+                        spacing: 16
+                        Box { setting: "acceptBackgroundInput"; text: qsTr("Accept background input") }
+                        // the keyboard is only ever heard by the window in front here: background input is the controllers'
+                        CheckBox {
+                            text: qsTr("From controller only")
+                            checked: true
+                            enabled: false
+                            padding: 2
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("The keyboard is only ever heard by the window in front.")
+                        }
+                    }
+                    Note { text: qsTr("\"Eavesdrops\" on keyboard and gamepad input while other programs are focused.") }
+                    GroupBox {
+                        title: qsTr("Startup Options")
+                        Layout.fillWidth: true
+                        Layout.topMargin: 8
+                        ColumnLayout {
+                            spacing: 2
+                            Box { setting: "startPaused"; text: qsTr("Start paused") }
+                            Box { setting: "startFullscreen"; text: qsTr("Start in Fullscreen") }
+                        }
+                    }
+                    Item { Layout.fillHeight: true }
+                }
+                ColumnLayout {
+                    spacing: 2
+                    Box { setting: "skipLagFrames"; text: qsTr("Frame advance button skips non-input frames") }
+                    Note { text: qsTr("When enabled, the frame advance button will skip over\nframes in which no input was polled (lag frames)") }
+                    Box { setting: "luaDuringTurbo"; text: qsTr("Run lua scripts when turboing"); Layout.topMargin: 8 }
+                    Box { setting: "noMixedPriority"; text: qsTr("Key Priority Toggle - Remove Mixed Key Priority Options"); Layout.topMargin: 8 }
+                    Item { Layout.fillHeight: true }
+                }
             }
         }
         RowLayout {
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("Close"); onClicked: win.close() }
+            Button { text: qsTr("&OK"); onClicked: { win.keep(); win.close() } }
+            Button { text: qsTr("&Cancel"); onClicked: win.close() }
         }
     }
 }

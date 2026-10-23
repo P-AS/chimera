@@ -497,6 +497,149 @@ ApplicationWindow {
         }
     }
 
+    // Chimera's context menu on the picture (MainFormContextMenu): the project's items while one is
+    // open, Config while full screen, the screenshot and closing while a game runs, and the menu
+    // bar back while it is hidden. Its Restart, Stop and Save items do here what their hotkeys do.
+    readonly property bool fullScreen: root.visibility === Window.FullScreen
+    Shortcut {
+        // the keyboard's menu key opens it too
+        sequence: "Menu"
+        enabled: root.customize.showContextMenu
+        onActivated: pictureMenu.popup(pictureArea, 0, 0)
+    }
+    Menu {
+        id: pictureMenu
+        objectName: "pictureMenu"
+        // Config, after the project's items, only while full screen
+        property bool configIn: false
+        onAboutToShow: {
+            root.customize.run("menuOpened")
+            if (root.fullScreen !== pictureMenu.configIn) {
+                if (root.fullScreen) pictureMenu.insertMenu(10, pictureConfigMenu)
+                else pictureMenu.removeMenu(pictureConfigMenu)
+                pictureMenu.configIn = root.fullScreen
+            }
+        }
+        onAboutToHide: root.customize.run("menuClosed")
+        component Shown: MenuItem { height: visible ? implicitHeight : 0 }
+        component ShownSeparator: MenuSeparator { height: visible ? implicitHeight : 0 }
+        Shown {
+            text: qsTr("Restart Movie"); icon.source: "qrc:/chimera/icons/restart.png"; visible: root.session.hasProject
+            onTriggered: root.hotkeys.run("run", ["Play from beginning"])
+        }
+        Shown {
+            text: qsTr("Stop Movie"); icon.source: "qrc:/chimera/icons/Stop.png"; visible: root.session.hasProject
+            onTriggered: root.hotkeys.run("run", ["Stop Movie"])
+        }
+        Shown {
+            text: qsTr("Backup Movie"); visible: root.session.hasProject
+            onTriggered: { root.session.run("saveBackup"); root.note(qsTr("Backup movie saved.")) }
+        }
+        Shown {
+            text: qsTr("Stop Movie without Saving"); icon.source: "qrc:/chimera/icons/Stop.png"
+            visible: root.session.hasProject && root.session.unsaved
+            onTriggered: root.session.run("stopMovie")
+        }
+        // the prototype has no read-only mode: the project is always edited, so Edit, as Chimera's says then
+        Shown { text: qsTr("Edit Subtitles"); visible: root.session.hasProject; onTriggered: tastudioWindow.showDetails("subtitles") }
+        Shown { text: qsTr("Add Subtitle"); visible: root.session.isOpen && root.session.hasProject; onTriggered: subtitleMaker.openOn(root.session.frame) }
+        Shown { text: qsTr("Edit Comments"); visible: root.session.hasProject; onTriggered: tastudioWindow.showDetails("comments") }
+        Shown {
+            text: qsTr("Save Movie"); icon.source: "qrc:/chimera/icons/SaveAs.png"; visible: root.session.hasProject
+            onTriggered: root.hotkeys.run("run", ["Save Movie"])
+        }
+        Shown {
+            text: qsTr("Save Movie As..."); icon.source: "qrc:/chimera/icons/SaveAs.png"; visible: root.session.hasProject
+            onTriggered: saveAsDialog.open()
+        }
+        ShownSeparator { visible: root.session.isOpen }
+        Shown { text: qsTr("Screenshot"); visible: root.session.isOpen; onTriggered: root.hotkeys.run("run", ["Screenshot"]) }
+        Shown { text: qsTr("Close ROM"); visible: root.session.isOpen; onTriggered: closeAction.trigger() }
+        ShownSeparator { visible: root.fullScreen || !root.menuBar.visible }
+        Shown {
+            text: root.menuBar.visible ? qsTr("Hide Menu") : qsTr("Show Menu")
+            visible: root.fullScreen || !root.menuBar.visible
+            onTriggered: root.menuBar.visible = !root.menuBar.visible
+        }
+    }
+    Menu {
+        id: pictureConfigMenu
+        title: qsTr("Config")
+        // Chimera shows it only full screen, where the menu bar is gone
+        Action { text: qsTr("&Controllers..."); onTriggered: { controllerWindow.show(); controllerWindow.raise() } }
+        Action { text: qsTr("&Hotkeys..."); onTriggered: { hotkeyWindow.show(); hotkeyWindow.raise() } }
+        Action { text: qsTr("Display..."); onTriggered: { displayWindow.show(); displayWindow.raise() } }
+        Action { text: qsTr("&Sound..."); onTriggered: { soundWindow.show(); soundWindow.raise() } }
+        Action { text: qsTr("Paths..."); onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
+        Action { text: qsTr("&Messages..."); onTriggered: { messagesWindow.show(); messagesWindow.raise() } }
+        Action { text: qsTr("&Autofire..."); onTriggered: autofireDialog.open() }
+        Action { text: qsTr("Customize..."); onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
+        MenuSeparator {}
+        Action { text: qsTr("Save Config"); onTriggered: root.configFiles.run("save") }
+        Action { text: qsTr("Load Config"); onTriggered: root.configFiles.run("load") }
+    }
+
+    // Chimera's Subtitle Maker, for Add Subtitle: the frame the machine is on, or the subtitle already on it
+    Dialog {
+        id: subtitleMaker
+        title: qsTr("Subtitle Maker")
+        anchors.centerIn: parent
+        modal: true
+        width: 435
+        property int frame: 0
+        property int index: -1
+        property string color: "#FFFFFFFF"
+        function openOn(f) {
+            subtitleMaker.frame = f
+            const found = root.projectDetails.run("subtitleOn", [f])
+            const sub = found ? JSON.parse(found) : { index: -1, x: 0, y: 0, duration: 120, color: "#FFFFFFFF", message: "" }
+            subtitleMaker.index = sub.index
+            subX.value = sub.x
+            subY.value = sub.y
+            subDuration.value = sub.duration
+            subtitleMaker.color = sub.color
+            subMessage.text = sub.message
+            open()
+            subMessage.forceActiveFocus()
+        }
+        onAccepted: {
+            // as Chimera's: the one on this frame is replaced
+            if (subtitleMaker.index >= 0) root.projectDetails.run("removeSubtitle", [subtitleMaker.index])
+            root.projectDetails.run("addSubtitle", [subtitleMaker.frame, subX.value, subY.value, subDuration.value, subtitleMaker.color, subMessage.text])
+        }
+        ColorDialog {
+            id: subColorDialog
+            selectedColor: "#" + subtitleMaker.color.substring(3)
+            onAccepted: subtitleMaker.color = "#FF" + selectedColor.toString().substring(1).toUpperCase()
+        }
+        GridLayout {
+            anchors.fill: parent
+            columns: 4
+            Label { text: qsTr("Frame") }
+            SpinBox { from: 0; to: 2147483647; value: subtitleMaker.frame; enabled: false; Layout.columnSpan: 3; Layout.preferredWidth: 120 }
+            Label { text: qsTr("Message"); Layout.columnSpan: 4 }
+            TextField { id: subMessage; Layout.columnSpan: 4; Layout.fillWidth: true }
+            SpinBox { id: subX; from: 0; to: 320; editable: true; Layout.preferredWidth: 90 }
+            Label { text: qsTr("X position") }
+            SpinBox { id: subDuration; from: 0; to: 9999; editable: true; Layout.preferredWidth: 90 }
+            Label { text: qsTr("Duration") }
+            SpinBox { id: subY; from: 0; to: 240; editable: true; Layout.preferredWidth: 90 }
+            Label { text: qsTr("Y position") }
+            Rectangle {
+                Layout.preferredWidth: 56
+                Layout.preferredHeight: 19
+                color: "#" + subtitleMaker.color.substring(3)
+                border.color: palette.mid
+                TapHandler { onDoubleTapped: subColorDialog.open() }
+            }
+            Label { text: qsTr("Color") }
+        }
+        footer: DialogButtonBox {
+            Button { text: qsTr("&Save"); DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
+            Button { text: qsTr("&Cancel"); DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+        }
+    }
+
     Dialog {
         id: autofireDialog
         title: qsTr("Autofire Configuration")
@@ -794,6 +937,29 @@ ApplicationWindow {
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             onWheel: (event) => root.hostInput.mouseWheel = root.hostInput.mouseWheel + event.angleDelta.y
         }
+        // a right click: the window's menu, as Chimera's, unless the right button holds one of the
+        // machine's buttons (Shift held opens it anyway)
+        TapHandler {
+            acceptedButtons: Qt.RightButton
+            grabPermissions: PointerHandler.ApprovesTakeOverByAnything
+            onTapped: (eventPoint) => {
+                if (!root.customize.showContextMenu) return
+                if (!root.keyNamer.shiftHeld() && root.controls.run("hasBinding", ["WMouse R"]) === true) return
+                pictureMenu.popup()
+            }
+        }
+        // a double click: full screen and back, as Chimera's, when the display settings allow it and the
+        // left button holds none of the machine's buttons (Shift held does it anyway)
+        TapHandler {
+            acceptedButtons: Qt.LeftButton
+            grabPermissions: PointerHandler.ApprovesTakeOverByAnything
+            onDoubleTapped: {
+                const shift = root.keyNamer.shiftHeld()
+                if (!root.display.allowDoubleClickFullscreen && !shift) return
+                if (!shift && root.controls.run("hasBinding", ["WMouse L"]) === true) return
+                root.visibility = root.visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen
+            }
+        }
         function notePointer(at, buttons) {
             const shown = picture.shownRect, src = picture.sourceRect
             if (shown.width > 0 && shown.height > 0) {
@@ -1052,7 +1218,7 @@ ApplicationWindow {
     MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; visible: false }
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; visible: false; onBudgetsAsked: { greenzoneBudgetsWindow.show(); greenzoneBudgetsWindow.raise() } }
     GreenzoneBudgets { id: greenzoneBudgetsWindow; session: root.session; visible: false }
-    Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; visible: false }
+    Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; mainWindow: root; visible: false }
     MessagesConfig { id: messagesWindow; vm: root.messages; visible: false }
     SoundConfig { id: soundWindow; session: root.session; visible: false }
     DisplayConfig { id: displayWindow; vm: root.display; session: root.session; visible: false }

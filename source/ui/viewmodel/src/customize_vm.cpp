@@ -14,6 +14,7 @@ CustomizeViewModel::CustomizeViewModel(Dispatcher &dispatcher, SessionViewModel 
 	expose("neverAskSave", "changes not saved are let go without asking when a project is closed, another opened or "
 		"the program quit", neverAskSave, true);
 	expose("luaDuringTurbo", "scripts are run while turbo is held", luaDuringTurbo, true);
+	expose("showContextMenu", "a right click on the picture opens the window's menu (Enable Context Menu)", showContextMenu, true);
 	command("menuOpened", "a menu was opened: the machine pauses when asked to (pauseWhenMenuActivated)", {},
 		[this](const Args &, std::string &) -> Value {
 			if (pauseWhenMenuActivated.get() && session_.running.get() && !pausedByMenu_)

@@ -313,6 +313,15 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			status.set("Saved the controls of " + core.get());
 			return {};
 		});
+	command("hasBinding", "whether a key holds one of the machine's buttons now (Chimera's HasBinding: a right click "
+		"bound to a button does not open the window's menu, a double click with the left one does not go full screen)",
+		{"key"}, [this](const Args &a, std::string &error) -> Value {
+			std::string key;
+			if (!arg(a, 0, key, error)) return {};
+			for (const std::string &keys : session_.bindingTexts())
+				if (hasKey(pieces(keys), key)) return true;
+			return false;
+		});
 	command("cancel", "the copy let go: the machine keeps its controls", {}, [this](const Args &, std::string &) -> Value {
 		editing.set(false);
 		changed();

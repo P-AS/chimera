@@ -78,6 +78,7 @@ DisplayViewModel::DisplayViewModel(Dispatcher &dispatcher) : ViewModel("display"
 	expose("cropBottom", "pixels cut off the picture's bottom edge", cropBottom, true);
 	expose("finalFilter", "the picture drawn sharp (0) or smoothed (1)", finalFilter, true);
 	expose("saveWindowPosition", "the window's place and size kept for the next start", saveWindowPosition, true);
+	expose("allowDoubleClickFullscreen", "a double click on the picture goes full screen and back", allowDoubleClickFullscreen, true);
 	expose("windowGeometry", "the window's place and size kept, \"x,y,w,h\"", windowGeometry, true);
 }
 

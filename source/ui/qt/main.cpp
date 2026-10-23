@@ -964,7 +964,8 @@ int main(int argc, char **argv)
 	});
 	qt::QmlViewModel cacheManagerQml(cacheManager);
 	vm::CustomizeViewModel customize(dispatcher, session);
-	for (const char *name : {"startPaused", "startFullscreen", "pauseWhenMenuActivated", "runInBackground", "neverAskSave", "luaDuringTurbo"})
+	for (const char *name : {"startPaused", "startFullscreen", "pauseWhenMenuActivated", "runInBackground", "neverAskSave", "luaDuringTurbo",
+			 "showContextMenu"})
 		config.keep(customize, name);
 	qt::QmlViewModel customizeQml(customize);
 	vm::MessagesViewModel messages(dispatcher);
@@ -973,7 +974,8 @@ int main(int argc, char **argv)
 	qt::QmlViewModel messagesQml(messages);
 	vm::DisplayViewModel display(dispatcher);
 	for (const char *name : {"aspectMode", "customWidth", "customHeight", "ratioX", "ratioY", "letterbox", "integerScale", "cropLeft",
-			 "cropTop", "cropRight", "cropBottom", "finalFilter", "saveWindowPosition", "windowGeometry"})
+			 "cropTop", "cropRight", "cropBottom", "finalFilter", "saveWindowPosition", "windowGeometry",
+			 "allowDoubleClickFullscreen"})
 		config.keep(display, name);
 	qt::QmlViewModel displayQml(display);
 	qt::QmlViewModel branchesQml(branches);

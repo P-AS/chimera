@@ -51,6 +51,12 @@ ApplicationWindow {
         tas.x = x
         tas.y = Math.max(main.screen.virtualY, Math.min(main.y, bottom - tas.height))
     }
+    // Header Info, Edit Comments or Edit Subtitles, for the main window's right-click menu
+    function showDetails(part) {
+        const w = part === "comments" ? commentsWindow : part === "subtitles" ? subtitlesWindow : headerWindow
+        w.show()
+        w.raise()
+    }
     function engage() {
         tas.hiddenByPerson = false
         if (!tas.visible) {

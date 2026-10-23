@@ -18,6 +18,8 @@
  * - neverAskSave: changes not saved are let go without asking when a
  *   project is closed, another opened or the program quit.
  * - luaDuringTurbo: scripts are run while turbo is held.
+ * - showContextMenu: a right click on the picture opens the window's menu
+ *   (Chimera's Enable Context Menu).
  * The frame advance skipping lag frames and background input are the
  * session's (skipLagFrames, acceptBackgroundInput). */
 
@@ -35,7 +37,7 @@ public:
 	CustomizeViewModel(Dispatcher &dispatcher, SessionViewModel &session);
 
 	Property<bool> startPaused{false}, startFullscreen{false}, pauseWhenMenuActivated{false}, runInBackground{true},
-		neverAskSave{false}, luaDuringTurbo{true};
+		neverAskSave{false}, luaDuringTurbo{true}, showContextMenu{true};
 
 	/* whether a script is to be run for the frame now: not while turbo is
 	 * held, unless asked */
