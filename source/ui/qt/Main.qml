@@ -1264,7 +1264,7 @@ ApplicationWindow {
     GreenzoneBudgets { id: greenzoneBudgetsWindow; session: root.session; visible: false }
     Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; mainWindow: root; visible: false }
     MessagesConfig { id: messagesWindow; vm: root.messages; visible: false }
-    SoundConfig { id: soundWindow; session: root.session; visible: false }
+    SoundConfig { id: soundWindow; session: root.session; mainWindow: root; visible: false }
     DisplayConfig { id: displayWindow; vm: root.display; session: root.session; mainWindow: root; visible: false }
     ProjectFiles { session: root.session }
     // Work a crash left behind, offered before the project opens, as
