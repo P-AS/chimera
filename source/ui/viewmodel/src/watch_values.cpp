@@ -278,7 +278,7 @@ const char *displayName(Display display)
 	{
 	case Display::Unsigned: return "Unsigned";
 	case Display::Signed: return "Signed";
-	case Display::Hex: return "Hexadecimal";
+	case Display::Hex: return "Hex";
 	case Display::Binary: return "Binary";
 	case Display::Fixed12_4: return "Fixed Point 12.4";
 	case Display::Fixed20_12: return "Fixed Point 20.12";

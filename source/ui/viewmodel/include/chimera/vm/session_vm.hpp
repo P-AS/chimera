@@ -491,6 +491,8 @@ public:
 	 * machine goes (its memory with it). removeMachineHooks waits until the
 	 * machine's thread has let go of them. */
 	int addMachineHooks(MachineJob frame, MachineJob closing);
+	/* the machine's thread, in a frame hook: whether the frame just run was a lag frame */
+	bool lastFrameLagOnMachine() const { return lastLagM_; }
 	void removeMachineHooks(int id);
 
 	/* Chimera's encode borrows the machine: it is wound to frame `from` and
@@ -739,6 +741,8 @@ private:
 	 * frames of a movie it plays, and this plays frames by hand */
 	int64_t frameM_ = 0;
 	int64_t greenEndM_ = 0;
+	/* the frame just run was a lag frame (the machine's thread) */
+	bool lastLagM_ = false;
 	std::atomic<int64_t> speedM_{100}, volumeM_{100}, fastSpeedM_{400}, frameSkipM_{0};
 	std::atomic<bool> autoMinimizeM_{true}, soundNormalOnM_{true}, soundFastOnM_{true}, muteAdvanceM_{true}, steppingM_{false};
 	std::atomic<bool> recordingM_{false};

@@ -47,7 +47,7 @@ char sizeLetter(int size);
 int sizeFromLetter(char c); /* 0: a separator, -1: a property or not one */
 char displayLetter(Display display);
 bool displayFromLetter(char c, Display &out);
-/* the names the window shows */
+/* the names the window shows, as Chimera writes them ("Hex", "Fixed Point 12.4") */
 const char *displayName(Display display);
 
 } // namespace chimera::vm::watch

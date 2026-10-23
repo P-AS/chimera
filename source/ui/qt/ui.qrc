@@ -32,8 +32,16 @@
     <file alias="icons/ExclamationRed.png">../../gui/Chimera.Client.GUI/images/ExclamationRed.png</file>
     <file alias="icons/placeholder.png">../../gui/Chimera.Client.GUI/images/placeholder_bitmap.png</file>
     <file alias="icons/Save.png">../../gui/Chimera.Client.GUI/images/Save.png</file>
+    <file alias="icons/search.png">../../gui/Chimera.Client.GUI/images/search.png</file>
+    <file alias="icons/restart.png">../../gui/Chimera.Client.GUI/images/restart.png</file>
+    <file alias="icons/Previous.png">../../gui/Chimera.Client.GUI/images/Previous.png</file>
+    <file alias="icons/Find.png">../../gui/Chimera.Client.GUI/images/FindHS.png</file>
+    <file alias="icons/undo.png">../../gui/Chimera.Client.GUI/images/undo.png</file>
+    <file alias="icons/redo.png">../../gui/Chimera.Client.GUI/images/redo.png</file>
+    <file alias="icons/reboot.png">../../gui/Chimera.Client.GUI/images/reboot.png</file>
     <file>RamSearch.qml</file>
     <file>RamWatch.qml</file>
+    <file>RamPoke.qml</file>
     <file>HexEditor.qml</file>
     <file>Controls.qml</file>
     <file>Themes.qml</file>

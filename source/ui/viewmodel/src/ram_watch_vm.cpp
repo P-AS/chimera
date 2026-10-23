@@ -23,23 +23,6 @@ constexpr const char *kNewLine = "\n";
 #endif
 constexpr const char *kOnScreen = "OnScreen\t";
 
-/* a display's name as Chimera's watch dialogs write it */
-const char *chimeraName(watch::Display d)
-{
-	switch (d)
-	{
-	case watch::Display::Unsigned: return "Unsigned";
-	case watch::Display::Signed: return "Signed";
-	case watch::Display::Hex: return "Hex";
-	case watch::Display::Binary: return "Binary";
-	case watch::Display::Fixed12_4: return "Fixed Point 12.4";
-	case watch::Display::Fixed20_12: return "Fixed Point 20.12";
-	case watch::Display::Fixed16_16: return "Fixed Point 16.16";
-	case watch::Display::Float: return "Float";
-	}
-	return "";
-}
-
 std::string trimLineEnds(std::string s)
 {
 	while (!s.empty() && (s.back() == '\r' || s.back() == '\n')) s.pop_back();
@@ -488,7 +471,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 				json::Json one;
 				one.kind = json::Json::Kind::Object;
 				one.members.emplace_back("display", json::Json::integer(static_cast<long long>(d)));
-				one.members.emplace_back("name", json::Json::string(chimeraName(d)));
+				one.members.emplace_back("name", json::Json::string(watch::displayName(d)));
 				out.items.push_back(one);
 			}
 			return json::write(out);
@@ -575,7 +558,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			out.members.emplace_back("addresses", json::Json::string(addresses));
 			out.members.emplace_back("domain", json::Json::string(first.domain));
 			out.members.emplace_back("size", json::Json::string(first.size == 1 ? "Byte" : first.size == 2 ? "Word" : "DWord"));
-			out.members.emplace_back("display", json::Json::string(chimeraName(first.display)));
+			out.members.emplace_back("display", json::Json::string(watch::displayName(first.display)));
 			out.members.emplace_back("hex", json::Json::boolean_(first.display == watch::Display::Hex));
 			out.members.emplace_back("endian", json::Json::string(first.bigEndian ? "Big Endian" : "Little Endian"));
 			out.members.emplace_back("value", json::Json::string(value));
@@ -1177,7 +1160,8 @@ std::vector<size_t> RamWatchViewModel::selectedRows() const
 
 bool RamWatchViewModel::invalid(const Watch &w) const
 {
-	return !w.separator && w.property.empty() && w.domainSize != 0 && w.address + w.size > w.domainSize;
+	/* Chimera's rule: the address is past the domain's end */
+	return !w.separator && w.property.empty() && w.domainSize != 0 && w.address >= w.domainSize;
 }
 
 void RamWatchViewModel::selectionChanged()

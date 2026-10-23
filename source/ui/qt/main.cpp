@@ -259,6 +259,7 @@ int main(int argc, char **argv)
 	vm::PianoRollViewModel pianoRoll(dispatcher, inputs, session);
 	vm::RamSearchViewModel ramSearch(dispatcher, session);
 	vm::RamWatchViewModel ramWatch(dispatcher, session);
+	ramSearch.setRamWatch(&ramWatch);
 	vm::HexEditorViewModel hexEditor(dispatcher, session);
 	vm::BranchesViewModel branches(dispatcher, inputs, session, pianoRoll);
 	vm::ProjectDetailsViewModel projectDetails(dispatcher, session);
@@ -958,6 +959,8 @@ int main(int argc, char **argv)
 	vm::ToolWindowsViewModel toolWindows(dispatcher);
 	config.keep(toolWindows, "settings");
 	for (const char *name : {"doubleClickToPoke", "recentFiles", "hiddenColumns", "previousType"}) config.keep(ramWatch, name);
+	for (const char *name : {"previewMode", "autoSearchAccountForLag", "alwaysExcludeRamWatch", "useUndoHistory", "recentFiles", "hiddenColumns"})
+		config.keep(ramSearch, name);
 	qt::QmlViewModel toolWindowsQml(toolWindows);
 	lua.add(session);
 	lua.add(pianoRoll);

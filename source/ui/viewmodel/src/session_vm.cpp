@@ -4087,6 +4087,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	}
 	frameM_ = ce_session_frame(s_);
 	greenEndM_ = std::max(greenEndM_, frameM_);
+	lastLagM_ = lag > 0;
 	for (const Hooks &h : hooksM_)
 		if (h.frame) h.frame(s_);
 	if (inputs_.setLag(f, lag > 0)) changed = true;

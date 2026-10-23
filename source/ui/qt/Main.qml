@@ -523,7 +523,18 @@ ApplicationWindow {
         SpinBox { id: seekTo; from: 0; to: Math.max(0, root.pianoRoll.frameCount); editable: true }
         onAccepted: root.session.run("seek", [seekTo.value])
     }
-    RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
+    RamSearch {
+        id: ramSearchWindow; vm: root.ramSearch; folderOf: root.folderOf; visible: false
+        clipboard: root.clipboard; customize: root.customize; themeColor: root.osdColor
+        toolWindows: root.toolWindows; mainWindow: root
+        showRamWatch: () => { ramWatchWindow.show(); ramWatchWindow.raise() }
+        viewInHexEditor: (domain, address) => {
+            root.hexEditor.domain = domain
+            root.hexEditor.run("goTo", [address])
+            hexEditorWindow.show()
+            hexEditorWindow.raise()
+        }
+    }
     RamWatch {
         id: ramWatchWindow; vm: root.ramWatch; folderOf: root.folderOf; visible: false
         clipboard: root.clipboard; customize: root.customize; themeColor: root.osdColor

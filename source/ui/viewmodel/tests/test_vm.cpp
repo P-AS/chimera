@@ -3323,6 +3323,8 @@ bool ramSearch(const char *package, const char *rom)
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
 	RamSearchViewModel search(d, session);
+	RamWatchViewModel watches(d, session);
+	search.setRamWatch(&watches);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
 	CHECK(d.until([&] { return session.isOpen.get() && search.domains.get().find("RAM") != std::string::npos; }, 60));
@@ -3332,8 +3334,15 @@ bool ramSearch(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.frame.get() == 1; }, 10));
 	const std::vector<uint8_t> before = session.readDomain("RAM");
 	CHECK(!before.empty());
-	CHECK(search.run("start", {}, error).has_value());
+	CHECK(search.run("newSearch", {}, error).has_value());
 	CHECK(d.until([&] { return search.searching.get() && search.count.get() == static_cast<int64_t>(before.size()); }, 20));
+	CHECK(search.searchedDomain.get() == "RAM" && search.status.get().empty() && !search.rebootNeeded.get());
+	{
+		/* as Chimera writes the count */
+		std::string expect = std::to_string(before.size());
+		for (int at = static_cast<int>(expect.size()) - 3; at > 0; at -= 3) expect.insert(static_cast<size_t>(at), ",");
+		CHECK(search.totalText.get() == expect + " addresses");
+	}
 
 	/* the walker walks down for ten frames */
 	session.key("Down", true);
@@ -3348,10 +3357,16 @@ bool ramSearch(const char *package, const char *rom)
 	CHECK(!changed.empty());
 	search.set("compare", int64_t{0}, error); /* the previous value */
 	search.set("op", int64_t{5}, error);      /* not equal */
+	RowModel &rows = *search.rowLists()[0].model;
+	/* the preview: the rows the search would remove are marked before it is made */
+	d.until([] { return false; }, 0.1);
+	int64_t marked = 0;
+	for (int64_t r = 0; r < rows.rowCount(); r++) marked += rows.cell(r, 6) == Value(true);
+	CHECK(marked == static_cast<int64_t>(before.size() - changed.size()));
 	search.run("search", {}, error);
 	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(changed.size()); }, 20));
+	CHECK(search.status.get() == std::to_string(before.size() - changed.size()) + " addresses removed");
 	std::vector<std::string> listed;
-	RowModel &rows = *search.rowLists()[0].model;
 	for (int64_t r = 0; r < rows.rowCount(); r++)
 	{
 		std::string a;
@@ -3360,8 +3375,8 @@ bool ramSearch(const char *package, const char *rom)
 	}
 	std::sort(listed.begin(), listed.end());
 	CHECK(listed == changed);
-	/* the value column is the byte now, shown each way a byte can be */
-	CHECK(search.displays.get() == "Unsigned\nSigned\nHexadecimal\nBinary");
+	/* the value column is the byte now, shown each way a byte can be, as Chimera names them */
+	CHECK(search.displays.get() == "Unsigned\nSigned\nHex\nBinary");
 	std::string address, shownValue;
 	fromValue(rows.cell(0, 0), address);
 	const uint8_t byte = after[std::stoul(address, nullptr, 16)];
@@ -3370,40 +3385,104 @@ bool ramSearch(const char *package, const char *rom)
 	search.set("display", int64_t{2}, error);
 	fromValue(rows.cell(0, 1), shownValue);
 	CHECK(shownValue == watch::format(byte, 1, watch::Display::Hex));
-	/* a value typed as shown: in hex, the candidates holding it are kept */
+	/* a specific value typed as shown: in hex, the candidates holding it are kept */
 	const int64_t before2 = search.count.get();
 	search.set("compare", int64_t{1}, error);
 	search.set("op", int64_t{0}, error);
-	search.set("value", watch::format(byte, 1, watch::Display::Hex), error);
+	search.set("specificValue", watch::format(byte, 1, watch::Display::Hex), error);
 	CHECK(search.run("search", {}, error).has_value());
-	CHECK(d.until([&] { return search.count.get() < before2 || search.status.get().find("0 removed") != std::string::npos; }, 20));
+	CHECK(d.until([&] { return search.count.get() < before2 || search.status.get() == "0 addresses removed"; }, 20));
 	d.until([] { return false; }, 0.1);
 	for (int64_t r = 0; r < rows.rowCount(); r++)
 	{
 		fromValue(rows.cell(r, 1), shownValue);
 		CHECK(shownValue == watch::format(byte, 1, watch::Display::Hex));
 	}
-	search.set("value", std::string("0x10"), error);
-	CHECK(!search.run("search", {}, error) && error == "\"0x10\" is not a value shown as Hexadecimal");
-	/* four bytes: seven ways, and a way that no longer fits goes back to the first */
+	search.set("specificValue", std::string("0x10"), error);
+	CHECK(!search.run("search", {}, error) && error == "\"0x10\" is not a value shown as Hex");
+	search.set("specificValue", std::string(""), error);
+	CHECK(!search.run("search", {}, error) && error == "Type a value to compare with");
+	/* taken back, and done again */
+	search.set("compare", int64_t{0}, error);
+	search.set("op", int64_t{5}, error);
+	CHECK(search.canUndo.get());
+	search.run("undo", {}, error);
+	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(changed.size()); }, 20));
+	search.run("undo", {}, error);
+	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(before.size()); }, 20));
+	CHECK(search.status.get() == std::to_string(before.size() - changed.size()) + " addresses restored");
+	CHECK(search.canRedo.get());
+	search.run("redo", {}, error);
+	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(changed.size()); }, 20));
+	/* picked, a range of them; the first removed */
+	search.run("select", {int64_t{0}, std::string("only")}, error);
+	CHECK(search.selectedCount.get() == 1 && rows.cell(0, 5) == Value(true) && search.canPoke.get());
+	if (rows.rowCount() > 2)
+	{
+		search.run("select", {int64_t{2}, std::string("range")}, error);
+		CHECK(search.selectedCount.get() == 3 && rows.cell(1, 5) == Value(true));
+		search.run("select", {int64_t{1}, std::string("toggle")}, error);
+		CHECK(search.selectedCount.get() == 2 && rows.cell(1, 5) == Value(false));
+	}
+	search.run("selectAll", {}, error);
+	CHECK(search.selectedCount.get() == search.count.get());
+	search.run("selectAll", {}, error);
+	CHECK(search.selectedCount.get() == 0);
+	/* Go to Address picks its row */
+	std::string second;
+	fromValue(rows.cell(1, 0), second);
+	CHECK(search.run("goTo", {second}, error) == Value(int64_t{1}) && search.selectedCount.get() == 1 && rows.cell(1, 5) == Value(true));
+	CHECK(search.run("goTo", {std::string("FFFFFF")}, error) == Value(int64_t{-1}));
+	/* added to RAM Watch at the search's size and display */
+	CHECK(search.run("addToRamWatch", {}, error) == Value(int64_t{1}) && watches.count.get() == 1);
+	CHECK(watches.watches()[0].address == std::stoll(second, nullptr, 16) && watches.watches()[0].display == watch::Display::Hex);
+	/* poked: the byte written */
+	CHECK(search.run("pokeSelected", {std::string("7E")}, error) == Value(true) &&
+		session.readDomain("RAM")[static_cast<size_t>(std::stoll(second, nullptr, 16))] == 0x7E);
+	/* removed: taken out, and taken back */
+	const int64_t left = search.count.get();
+	search.run("removeSelected", {}, error);
+	CHECK(d.until([&] { return search.count.get() == left - 1; }, 20) && search.status.get() == "1 address removed" && search.selectedCount.get() == 0);
+	search.run("undo", {}, error);
+	CHECK(d.until([&] { return search.count.get() == left; }, 20));
+	/* sorted by address, then the other way round */
+	search.run("sort", {std::string("Address")}, error);
+	d.until([] { return false; }, 0.1);
+	std::string first, last;
+	fromValue(rows.cell(0, 0), first);
+	fromValue(rows.cell(rows.rowCount() - 1, 0), last);
+	CHECK(first <= last);
+	search.run("sort", {std::string("Address")}, error);
+	d.until([] { return false; }, 0.1);
+	fromValue(rows.cell(0, 0), first);
+	CHECK(first == last);
+	/* saved as a .wch file and read back: the same candidates */
+	const std::filesystem::path file = std::filesystem::temp_directory_path() /
+		("chimera-test-search-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".wch");
+	CHECK(search.run("save", {file.string()}, error).has_value() && search.status.get() == file.filename().string() + " saved");
+	search.run("newSearch", {}, error);
+	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(before.size()); }, 20));
+	CHECK(search.run("open", {file.string(), std::string("open")}, error) == Value(left));
+	CHECK(d.until([&] { return search.count.get() == left; }, 20) && search.status.get() == file.filename().string() + " loaded");
+	/* truncated by the same file: nothing left */
+	search.run("open", {file.string(), std::string("truncate")}, error);
+	CHECK(d.until([&] { return search.count.get() == 0; }, 20));
+	CHECK(search.recentFiles.get() == file.string());
+	std::error_code ec;
+	std::filesystem::remove(file, ec);
+	/* four bytes: seven ways, the same way kept where it fits, else the first */
 	search.set("display", int64_t{3}, error);
 	search.set("size", int64_t{4}, error);
 	CHECK(search.displays.get().find("Float") != std::string::npos && search.display.get() == 3);
 	search.set("display", int64_t{6}, error);
 	search.set("size", int64_t{2}, error);
 	CHECK(search.display.get() == 0);
-	search.set("size", int64_t{1}, error);
-	search.set("compare", int64_t{0}, error);
-	search.set("op", int64_t{5}, error);
-	search.run("undo", {}, error);
-	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(changed.size()); }, 20));
-	/* taken back, and done again */
-	CHECK(search.canUndo.get());
-	search.run("undo", {}, error);
-	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(before.size()); }, 20));
-	CHECK(search.canRedo.get());
-	search.run("redo", {}, error);
-	CHECK(d.until([&] { return search.count.get() == static_cast<int64_t>(changed.size()); }, 20));
+	/* Fast mode: no change counts (the column goes), and a new search is needed */
+	search.set("previousType", int64_t{2}, error);
+	search.set("fast", true, error);
+	CHECK(search.rebootNeeded.get() && search.previousType.get() == 1 && search.hiddenColumns.get() == "Diff,Changes");
+	search.set("fast", false, error);
+	CHECK(search.hiddenColumns.get() == "Diff");
 	/* the machine closing ends the search: its memory goes with it */
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !search.searching.get() && search.count.get() == 0; }, 20));
@@ -4081,7 +4160,7 @@ bool ramWatch(const char *package, const char *rom)
 	};
 	CHECK(d.until([&] { return shownAs(now); }, 10));
 	CHECK(text(5, 1) == "-" && text(5, 4) == "-" && text(4, 6) == "below" && text(4, 1).empty());
-	CHECK(text(0, 0) == watch::hex(at, watch::addressDigits(ramSize - 1)) && text(0, 5) == "RAM" && text(1, 8) == "Hexadecimal");
+	CHECK(text(0, 0) == watch::hex(at, watch::addressDigits(ramSize - 1)) && text(0, 5) == "RAM" && text(1, 8) == "Hex");
 	CHECK(text(0, 2) == text(0, 1) && number(0, 3) == 0);
 	/* the last frame's value as the previous one: every frame that moves it is a change */
 	int64_t changes = 0;
@@ -4158,7 +4237,7 @@ bool ramWatch(const char *package, const char *rom)
 	CHECK(watches.count.get() == 0 && watches.path.get().empty());
 	CHECK(watches.run("open", {file.string()}, error).has_value());
 	CHECK(watches.count.get() == 7 && !watches.changed.get());
-	CHECK(text(0, 6) == "changing byte" && number(0, 7) == 1 && text(2, 8) == "Hexadecimal" && text(4, 6) == "below");
+	CHECK(text(0, 6) == "changing byte" && number(0, 7) == 1 && text(2, 8) == "Hex" && text(4, 6) == "below");
 	bool on0 = false, on1 = true, on6 = false;
 	fromValue(watches.rowLists()[0].model->cell(0, 9), on0);
 	fromValue(watches.rowLists()[0].model->cell(1, 9), on1);
@@ -4174,7 +4253,7 @@ bool ramWatch(const char *package, const char *rom)
 		std::ofstream(dir / "other.wch", std::ios::binary) << "2\r\n00001\t0010\tw\th\t1\tfrom elsewhere\r\n00002\t0020\tb\tu\t0\tsecond\r\n";
 		CHECK(watches.run("open", {(dir / "other.wch").string()}, error).has_value() && watches.count.get() == 2);
 		CHECK(text(0, 0) == watch::hex(0x10, watch::addressDigits(ramSize - 1)) && text(0, 5) == firstDomain && text(0, 6) == "from elsewhere");
-		CHECK(number(0, 7) == 2 && text(0, 8) == "Hexadecimal" && text(1, 6) == "second");
+		CHECK(number(0, 7) == 2 && text(0, 8) == "Hex" && text(1, 6) == "second");
 		std::ofstream(dir / "odd.wch", std::ios::binary)
 			<< "SystemID Synth\n0010\tb\tu\t0\tNowhere\tlost domain\n0\tp\t_\t0\t\tplayer x\nOnScreen\t1\n";
 		CHECK(watches.run("open", {(dir / "odd.wch").string()}, error).has_value() && watches.count.get() == 2);
@@ -4201,7 +4280,7 @@ bool ramWatch(const char *package, const char *rom)
 		watches.run("add", {std::string("RAM"), int64_t{0x40}, int64_t{4}, int64_t{2}, true, std::string("dword")}, error);
 		watches.run("add", {std::string("RAM"), int64_t{0x50}, int64_t{1}, int64_t{0}, false, std::string("byte")}, error);
 		watches.run("addSeparator", {std::string("sep")}, error);
-		watches.run("add", {std::string("RAM"), ramSize - 1, int64_t{2}, int64_t{0}, false, std::string("past")}, error);
+		watches.run("add", {std::string("RAM"), ramSize + 4, int64_t{2}, int64_t{0}, false, std::string("past")}, error);
 		CHECK(watches.countText.get() == "3 watches" && watches.invalidCount.get() == 1 && watches.rowLists()[0].model->cell(3, 12) == Value(true));
 		/* a double word in hex split into two words, the lower address first when big end first */
 		watches.run("select", {int64_t{0}, std::string("only")}, error);
