@@ -267,6 +267,8 @@ void lua()
  * toggled, paused, moved and taken out; what they print; the line typed into;
  * the list kept as a session file and read back; what a script registers its
  * own, called after each frame and gone when it stops */
+std::string readFile(const std::filesystem::path &p);
+
 void luaConsole()
 {
 	namespace fs = std::filesystem;
@@ -459,6 +461,19 @@ void luaConsole()
 		const bool own = mixed.find(R"x("library":"extra","name":"thing","params":"(a, b)")x") != std::string::npos ||
 						 mixed.find(R"x("library": "extra", "name": "thing", "params": "(a, b)")x") != std::string::npos;
 		CHECK(own);
+		/* Register To Text Editors: Chimera's completions for Sublime Text 2, written into its Lua package */
+		const std::string sublime = LuaConsoleViewModel::sublimeCompletions();
+		CHECK(sublime.rfind(R"x({"scope":"source.lua - string","completions":[{"trigger":")x", 0) == 0);
+		CHECK(sublime.find(R"x({"trigger":"joypad.setanalog","contents":"joypad.setanalog(${1:controls},${2:[controller]})"})x") != std::string::npos);
+		namespace fs = std::filesystem;
+		const fs::path appdata = fs::temp_directory_path() / ("chimera-test-sublime-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+		console.appDataFolder.set(appdata.string());
+		std::string error;
+		CHECK(!console.run("registerSublime", {}, error) && error.rfind("Sublime Text 2's Lua package is not there: ", 0) == 0);
+		fs::create_directories(appdata / "Sublime Text 2" / "Packages" / "Lua");
+		CHECK(console.run("registerSublime", {}, error).has_value());
+		CHECK(readFile(appdata / "Sublime Text 2" / "Packages" / "Lua" / "chimera.lua.sublime-completions") == sublime);
+		fs::remove_all(appdata);
 	}
 }
 

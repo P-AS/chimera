@@ -157,6 +157,19 @@ def split_top(text, sep=","):
     return parts
 
 
+def parameter_names(params):
+    """each parameter's name as written and whether it may be left out (Sublime Text's completions use them)"""
+    out = []
+    for p in split_top(re.sub(r"/\*.*?\*/", "", params)):
+        p = re.sub(r"\[[^\]]*\]\s*", "", p.strip()).strip()
+        optional = "=" in p
+        p = re.sub(r"^(params|ref|out|in|this)\s+", "", p.split("=", 1)[0].strip())
+        m = re.fullmatch(r"(.+?)\s+([A-Za-z_][A-Za-z0-9_]*)", p)
+        if m:
+            out.append({"name": m.group(2), "optional": optional})
+    return out
+
+
 def parameter_list(params):
     out = []
     for p in split_top(re.sub(r"/\*.*?\*/", "", params)):
@@ -224,6 +237,7 @@ def functions(path):
             returns = returns.replace("nluatable", "nluatable0Indexed")
         out.append({
             "library": library, "name": name, "returns": returns, "params": parameter_list(text[i:j]),
+            "args": parameter_names(text[i:j]),
             "description": description, "example": example,
             "deprecated": "LuaDeprecatedMethod" in attrs, "unavailable": "LuaUnavailableMethod" in attrs,
         })

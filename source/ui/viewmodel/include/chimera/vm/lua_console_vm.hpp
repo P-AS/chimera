@@ -46,6 +46,14 @@ public:
 	Property<int64_t> functionCount{0};
 	/* the script Toggle Last Lua Script toggles: the last one toggled */
 	Property<std::string> lastScript;
+	/* Settings > Register To Text Editors (Sublime Text 2): where Sublime's
+	 * Lua package keeps completions (under the user's application data: on
+	 * Windows %APPDATA%, else the configuration folder), and how the menu
+	 * says it ("" Sublime not found, "detected", "installed") */
+	Property<std::string> appDataFolder;
+	Property<std::string> sublimeState;
+	/* Chimera's completions for Sublime Text 2 (its ToSublime2CompletionList) */
+	static std::string sublimeCompletions();
 	/* the output lines selected (for Copy), first..last; -1 for none */
 	Property<int64_t> outputFirst{-1};
 	Property<int64_t> outputLast{-1};

@@ -250,6 +250,23 @@ ApplicationWindow {
             MenuItem { text: qsTr("Reload When Script File Changes"); checkable: true; checked: win.vm.reloadOnChange; onTriggered: win.vm.reloadOnChange = checked }
             MenuItem { text: qsTr("Duplicate to Stdout"); checkable: true; checked: win.vm.duplicateToStdout; onTriggered: win.vm.duplicateToStdout = checked }
             MenuSeparator {}
+            // Chimera's: Sublime Text 2's Lua completions written for it; said as found ("detected") or written ("installed")
+            Menu {
+                title: qsTr("Register To Text Editors")
+                onAboutToShow: win.vm.run("textEditors")
+                MenuItem {
+                    text: win.vm.sublimeState === "installed" ? qsTr("Sublime Text 2 (installed)")
+                        : win.vm.sublimeState === "detected" ? qsTr("Sublime Text 2 (detected)") : qsTr("&Sublime Text 2")
+                    font.italic: win.vm.sublimeState === "detected"
+                    checkable: true
+                    checked: win.vm.sublimeState === "installed"
+                    onTriggered: {
+                        win.vm.run("registerSublime")
+                        checked = Qt.binding(() => win.vm.sublimeState === "installed")
+                    }
+                }
+            }
+            MenuSeparator {}
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
                 text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
