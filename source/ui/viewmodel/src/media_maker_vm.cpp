@@ -128,7 +128,10 @@ MediaMakerViewModel::MediaMakerViewModel(Dispatcher &dispatcher, RecipeFinder re
 					if (ok == 1)
 					{
 						progress.set(1.0);
-						result.set("Written: " + to + "\nSHA1 " + sha + "  (" + std::to_string(size) + " bytes)");
+						/* the size as Chimera's N0 writes it: 1,474,560 */
+						std::string grouped = std::to_string(size);
+						for (int at = static_cast<int>(grouped.size()) - 3; at > 0; at -= 3) grouped.insert(static_cast<size_t>(at), ",");
+						result.set("Written: " + to + "\nSHA1 " + sha + "  (" + grouped + " bytes)");
 					}
 					else
 						result.set(error == "cancelled" ? "Cancelled; nothing was written." : error);
@@ -138,6 +141,7 @@ MediaMakerViewModel::MediaMakerViewModel(Dispatcher &dispatcher, RecipeFinder re
 		});
 	command("cancel", "stops the pack; what it had written is removed", {}, [this](const Args &, std::string &) -> Value {
 		cancel_.store(true);
+		if (running.get()) current.set("Stopping...");
 		return {};
 	});
 }

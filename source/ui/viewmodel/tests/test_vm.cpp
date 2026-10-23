@@ -2933,6 +2933,8 @@ bool mediaMaker()
 	maker.run("setFolder", {game.string()}, error);
 	CHECK(maker.recognised.get() == "This folder is a test disc: the image is written the way Synth reads it.");
 	CHECK(make(dir / "disc.iso") && maker.result.get().rfind("Written: ", 0) == 0 && maker.sha1.get().size() == 40);
+	/* the size as Chimera's writes it, its thousands marked */
+	CHECK(std::regex_search(maker.result.get(), std::regex(R"(  \([0-9]{1,3}(,[0-9]{3})+ bytes\)$)")));
 	/* the recipe's own bytes: the same folder packed with no core's recipe differs */
 	{
 		MediaMakerViewModel plain(d, {});

@@ -1271,7 +1271,7 @@ ApplicationWindow {
         customize: root.customize; toolWindows: root.toolWindows; mainWindow: root
     }
     BatchRun { id: batchRunWindow; vm: root.batchRun; folderOf: root.folderOf; visible: false }
-    MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; visible: false }
+    MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; mainWindow: root; visible: false }
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; themeColor: root.osdColor; visible: false; onBudgetsAsked: (projectId, projectLabel) => {
             greenzoneBudgetsWindow.projectId = projectId
             greenzoneBudgetsWindow.projectLabelAsked = projectLabel
