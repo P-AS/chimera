@@ -201,13 +201,14 @@ namespace Chimera.Client.GUI
 		/// The ENGINE writes it: it used to be cloned into a byte array, which cannot be more than
 		/// 2 GiB, and a PS3's state is - creating a branch threw an overflow (issue #84).
 		/// </summary>
-		private string SaveBranchState()
+		/// <param name="title">what the window says while it lasts: a branch made, or the machine kept for an undo</param>
+		private string SaveBranchState(string title)
 		{
 			try
 			{
 				var path = Movie.NewBranchStatePath(out var stateFile);
 				// a window only if it lasts: milliseconds on a small machine, half a minute on a PS3
-				using (ProgressDialog.Begin(Tastudio, "Saving the branch", showAfterMs: 400))
+				using (ProgressDialog.Begin(Tastudio, title, showAfterMs: 400))
 				{
 					Tastudio.Emulator.AsStatable().SaveStateToFile(path);
 				}
@@ -224,12 +225,21 @@ namespace Chimera.Client.GUI
 		/// <summary>State files no branch names any more - and not the undo's either - are removed: they can be gigabytes each.</summary>
 		private void TidyBranchStates() => Movie.RemoveUnusedBranchStates(_backupBranch?.StateFile);
 
-		private TasBranch CreateBranch(bool withState = true)
+		/// <summary>The window's words while a branch's state is written.</summary>
+		public const string SavingTitle = "Saving the branch";
+
+		/// <summary>
+		/// The window's words while the machine is kept for Undo Branch Load, before a branch
+		/// loads: it said "Saving the branch", which no branch was (issue 360).
+		/// </summary>
+		public const string KeepingForUndoTitle = "Keeping the machine as it is, for Undo Branch Load";
+
+		private TasBranch CreateBranch(bool withState = true, string title = SavingTitle)
 		{
 			return new()
 			{
 				Frame = Tastudio.Emulator.Frame,
-				StateFile = withState ? SaveBranchState() : null,
+				StateFile = withState ? SaveBranchState(title) : null,
 				InputLog = Movie.GetLogEntries().Clone(),
 				CoreFrameBuffer = MainForm.MakeScreenshotImage(),
 				OSDFrameBuffer = MainForm.CaptureOSD(),
@@ -281,7 +291,7 @@ namespace Chimera.Client.GUI
 			// What "Undo Branch Load" goes back to. For a machine whose state is hundreds of
 			// megabytes that is a second state written on EVERY load, to serve an undo that is
 			// rarely used; such a backup keeps its input alone and the undo replays to it.
-			_backupBranch = CreateBranch(withState: _lastStateBytes < UndoKeepsStateBelow);
+			_backupBranch = CreateBranch(withState: _lastStateBytes < UndoKeepsStateBelow, title: KeepingForUndoTitle);
 
 			var currentHashes = Branches.Select(b => b.Uuid.GetHashCode()).ToList();
 			do
