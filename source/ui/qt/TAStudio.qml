@@ -725,13 +725,23 @@ ApplicationWindow {
                             width: markerList.width - 12
                             padding: 2
                             highlighted: ListView.isCurrentItem
-                            // the run's own (start, last input, end) told apart from the person's, as Chimera's
-                            background: Rectangle {
-                                color: markerRow.highlighted ? markerRow.palette.highlight
-                                     : markerRow.model.permanent ? (Qt.styleHints.colorScheme === Qt.ColorScheme.Dark ? "#1F3350" : "#C9E4FF")
-                                     : "transparent"
+                            // as Chimera colours its list: the run's own (start, last input, end), else
+                            // the marker the machine is at or past, else its frame's greenzone or lag
+                            // colour, the frame's column in the roll's frame-column shade
+                            function shade(frameColumn) {
+                                if (markerRow.highlighted) return markerRow.palette.highlight
+                                if (markerRow.model.permanent) return tas.rollColor("TasPermanentMarker") || "transparent"
+                                if (markerRow.model.frame === tas.pianoRoll.currentMarker) return tas.rollColor("TasCurrentFrame") || "transparent"
+                                if (markerRow.model.zone === "") return "transparent"
+                                const lag = markerRow.model.zone === "lag"
+                                return tas.rollColor(frameColumn ? (lag ? "TasLagZone" : "TasGreenZone") : (lag ? "TasLagZoneInput" : "TasGreenZoneInput")) || "transparent"
+                            }
+                            background: Row {
+                                Rectangle { width: markerRow.leftPadding + 58; height: markerRow.height; color: markerRow.shade(true) }
+                                Rectangle { width: markerRow.width - markerRow.leftPadding - 58; height: markerRow.height; color: markerRow.shade(false) }
                             }
                             contentItem: RowLayout {
+                                spacing: 4
                                 Label { text: markerRow.model.frame; Layout.preferredWidth: 56 }
                                 Label { text: markerRow.model.text; Layout.fillWidth: true; elide: Text.ElideRight; font.italic: markerRow.model.permanent }
                             }

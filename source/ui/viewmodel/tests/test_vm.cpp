@@ -2544,6 +2544,47 @@ bool tastudioSettings(const char *package, const char *rom)
 		roll.followScroll.set("near");
 		roll.visibleFrames.set(0);
 	}
+	/* Chimera's marker list colours: the marker the machine is at or past,
+	 * and a marker's frame in the greenzone's or the lag's colour once run */
+	{
+		auto zone = [&](int64_t frame) {
+			for (int64_t i = 0; i < markerRows->rowCount(); i++)
+			{
+				int64_t f = -1;
+				bool permanent = true;
+				std::string z;
+				if (fromValue(markerRows->cell(i, 0), f) && f == frame && fromValue(markerRows->cell(i, 3), permanent) && !permanent &&
+					fromValue(markerRows->cell(i, 4), z))
+					return z;
+			}
+			return std::string("?");
+		};
+		auto seekTo = [&](int64_t f) {
+			session.run("seek", {f}, error);
+			return d.until([&] { return session.frame.get() == f && roll.currentFrame.get() == f; }, 20);
+		};
+		CHECK(roll.lastInputFrame.get() > 8 && roll.markerCount.get() == 2);
+		/* an edit before them, the machine left where it is: their frames are not run as they stand */
+		session.autoRestore.set(false);
+		roll.run("toggle", {int64_t{3}, int64_t{0}}, error);
+		CHECK(d.until([&] { return roll.greenEnd.get() <= 4; }, 20));
+		CHECK(zone(5) == "" && zone(6) == "");
+		int markerChanges = 0;
+		Connection markerWatch = markerRows->changed.connect([&](int64_t, int64_t) { markerChanges++; });
+		CHECK(seekTo(8) && roll.greenEnd.get() >= 8 && markerChanges > 0);
+		CHECK(zone(5) == "green" && zone(6) == "green");
+		CHECK(roll.currentMarker.get() == 6);
+		CHECK(seekTo(5) && roll.currentMarker.get() == 5);
+		CHECK(seekTo(4) && roll.currentMarker.get() == 0);
+		/* a lag frame's marker, in the lag's colour (this game reads its
+		 * input every frame: the flag is set here) */
+		inputs.setLag(6, true);
+		CHECK(zone(6) == "lag" && zone(5) == "green");
+		inputs.setLag(6, false);
+		roll.run("toggle", {int64_t{3}, int64_t{0}}, error);
+		session.autoRestore.set(true);
+		CHECK(roll.markerCount.get() == 2);
+	}
 	/* pause at the movie's end: once, and played on from there it goes on */
 	session.pauseAtEnd.set(true);
 	session.run("seek", {int64_t{15}}, error);

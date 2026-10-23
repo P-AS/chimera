@@ -4,6 +4,7 @@
 #include "chimera/vm/json.hpp"
 
 #include <algorithm>
+#include <iterator>
 #include <fstream>
 #include <sstream>
 
@@ -13,6 +14,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	: ViewModel("pianoRoll", dispatcher), inputs_(inputs), session_(session)
 {
 	expose("currentFrame", "the frame the machine is about to run", currentFrame);
+	expose("currentMarker", "the frame of the marker the machine is at or past, -1 before the first", currentMarker);
 	expose("frameCount", "how many frames have inputs", frameCount);
 	expose("followPlayback", "keep the current frame in view while the machine runs", followPlayback, true);
 	expose("moveWithMainWindow", "TAStudio's window moves with the main window, keeping its place beside it", moveWithMainWindow, true);
@@ -301,7 +303,8 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("topFrame", "the first frame in view", topFrame, true);
 	expose("visibleFrames", "how many frames the view shows at once (the view sets it)", visibleFrames, true);
 	rows("frames", "one row a frame, one column a button; a cell is true where the button is held", frames_);
-	rows("markers", "the movie's markers: frame, text, whether the frame's state is kept", markerRows_);
+	rows("markers", "the movie's markers: frame, text, whether the frame's state is kept, whether it is one of the run's "
+		"own, and its frame's zone: \"green\" (run as it stands), \"lag\" (run, and lag) or \"\" (not run yet)", markerRows_);
 	rows("columns", "the piano roll's columns, a control each: name, label, shown", columnRows_);
 	rows("history", "the undo history, in order: each step's name, and whether it is done (the rest are undone)", historyRows_);
 	rows("patterns", "each control's own pattern (kept in the project): name, runs (\"On x1, Off x1\" or \"127 x2, 0 x1\"), "
@@ -987,6 +990,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	});
 	frameWatch_ = session_.frame.changed.connect([this] {
 		currentFrame.set(session_.frame.get());
+		pickCurrentMarker();
 		follow();
 	});
 	topWatch_ = topFrame.changed.connect([this] { clampTop(); });
@@ -995,6 +999,15 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		greenEnd.set(now);
 		const int64_t first = std::min(was, now), last = std::min(std::max(was, now), inputs_.size()) - 1;
 		if (last >= first) frames_.changed.emit(first, last);
+		/* the markers whose frames came into the greenzone or left it */
+		int64_t rowFirst = -1, rowLast = -1;
+		for (size_t i = 0; i < markerList_.size(); i++)
+			if (markerList_[i].frame >= std::min(was, now) && markerList_[i].frame < std::max(was, now))
+			{
+				if (rowFirst < 0) rowFirst = static_cast<int64_t>(i);
+				rowLast = static_cast<int64_t>(i);
+			}
+		if (rowFirst >= 0) markerRows_.changed.emit(rowFirst, rowLast);
 	});
 	buttonsWatch_ = session_.buttonsChanged.connect([this] {
 		/* a project's own patterns; the ones there are when its machine
@@ -2357,13 +2370,23 @@ void PianoRollViewModel::listMarkers()
 		if (a.frame != b.frame) return a.frame < b.frame;
 		return a.permanent && !b.permanent;
 	});
+	pickCurrentMarker();
 	markerRows_.reset.emit();
+}
+
+void PianoRollViewModel::pickCurrentMarker()
+{
+	/* Chimera's PreviousOrCurrent: the last marker at or before the frame */
+	const int64_t frame = currentFrame.get();
+	const auto after = std::upper_bound(markerList_.begin(), markerList_.end(), frame,
+		[](int64_t f, const ListedMarker &m) { return f < m.frame; });
+	currentMarker.set(after == markerList_.begin() ? -1 : std::prev(after)->frame);
 }
 
 std::string PianoRollViewModel::MarkerRows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"frame", "text", "keepState", "permanent"};
-	return column >= 0 && column < 4 ? names[column] : "";
+	static const char *const names[] = {"frame", "text", "keepState", "permanent", "zone"};
+	return column >= 0 && column < 5 ? names[column] : "";
 }
 
 Value PianoRollViewModel::MarkerRows::cell(int64_t row, int32_t column) const
@@ -2376,6 +2399,8 @@ Value PianoRollViewModel::MarkerRows::cell(int64_t row, int32_t column) const
 	case 1: return m.text;
 	case 2: return m.keepState;
 	case 3: return m.permanent;
+	/* as Chimera's lag log: known for a frame the greenzone holds */
+	case 4: return m.frame < vm_.greenEnd.get() ? std::string(vm_.inputs_.lagAt(m.frame) ? "lag" : "green") : std::string();
 	default: return {};
 	}
 }

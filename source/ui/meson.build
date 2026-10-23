@@ -232,4 +232,13 @@ if qt_dep.found()
       'CHIMERA_QT_RECOVERY=' + meson.current_build_dir() / 'window-test-recovery'],
     timeout: 60,
   )
+  # a theme reaches Qt Quick's controls, which take the platform's colours
+  # and not the application's unless each window is given the theme
+  test_theme = executable(
+    'test-theme',
+    ['qt/tests/test_theme.cpp', 'qt/theme_palette.cpp', qt6.compile_moc(headers: ['qt/theme_palette.hpp'], dependencies: [qt_dep])],
+    dependencies: [qt_dep],
+    override_options: ['cpp_std=c++20'],
+  )
+  test('theme', test_theme, env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software'], timeout: 60)
 endif

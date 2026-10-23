@@ -24,6 +24,9 @@ public:
 
 	/* the frame the machine is about to run */
 	Property<int64_t> currentFrame{0};
+	/* the frame of the marker the machine is at or past (Chimera's marker
+	 * list colours it), -1 before the first */
+	Property<int64_t> currentMarker{-1};
 	/* the columns not shown, by control name, a line each (Chimera's
 	 * defaults hide the console's power and reset, keyboard keys...) */
 	Property<std::string> hiddenColumns;
@@ -235,7 +238,7 @@ private:
 	public:
 		explicit MarkerRows(PianoRollViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.markerList_.size()); }
-		int32_t columnCount() const override { return 4; }
+		int32_t columnCount() const override { return 5; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -374,6 +377,7 @@ private:
 	bool frameEmpty(int64_t frame) const;
 	bool permanentAt(int64_t frame) const { return frame == 0 || frame == lastInputFrame.get() || frame == runEndFrame.get(); }
 	void listMarkers();
+	void pickCurrentMarker();
 	/* the marker list as shown: the run's own first on a shared frame, in run order */
 	struct ListedMarker
 	{

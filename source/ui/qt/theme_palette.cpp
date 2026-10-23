@@ -6,7 +6,10 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPalette>
+#include <QQuickWindow>
 #include <QWindow>
+
+#include <iterator>
 
 namespace chimera::qt {
 
@@ -23,6 +26,53 @@ const QPalette &platform()
 	static const QPalette p = QGuiApplication::palette();
 	return p;
 }
+
+/* Qt Quick's controls take their colours from the platform's palette, not
+ * from the application's: a window hands its controls only the colours set
+ * on its own palette. So each window is given the theme's colours as its
+ * own - all of them, in each of the three states - and every control in it,
+ * its menus and its dialogs inherit them. A window that sets its own
+ * colours ("unthemed": the Lua forms, in the platform's) is left alone. */
+void paintWindow(QQuickWindow *window)
+{
+	if (window->property("unthemed").toBool()) return;
+	QObject *palette = window->property("palette").value<QObject *>();
+	if (!palette) return;
+	static const char *const names[] = {"window", "windowText", "base", "alternateBase", "text", "button", "buttonText",
+		"brightText", "light", "midlight", "mid", "dark", "shadow", "highlight", "highlightedText", "link", "linkVisited",
+		"toolTipBase", "toolTipText", "placeholderText", "accent"};
+	static const QPalette::ColorRole roles[] = {QPalette::Window, QPalette::WindowText, QPalette::Base, QPalette::AlternateBase,
+		QPalette::Text, QPalette::Button, QPalette::ButtonText, QPalette::BrightText, QPalette::Light, QPalette::Midlight,
+		QPalette::Mid, QPalette::Dark, QPalette::Shadow, QPalette::Highlight, QPalette::HighlightedText, QPalette::Link,
+		QPalette::LinkVisited, QPalette::ToolTipBase, QPalette::ToolTipText, QPalette::PlaceholderText, QPalette::Accent};
+	static_assert(std::size(names) == std::size(roles));
+	const QPalette app = QGuiApplication::palette();
+	const struct
+	{
+		const char *name;
+		QPalette::ColorGroup group;
+	} groups[] = {{"active", QPalette::Active}, {"inactive", QPalette::Inactive}, {"disabled", QPalette::Disabled}};
+	for (const auto &g : groups)
+		if (QObject *colours = palette->property(g.name).value<QObject *>())
+			for (size_t i = 0; i < std::size(names); i++)
+			{
+				const bool known = colours->setProperty(names[i], app.color(g.group, roles[i]));
+				Q_ASSERT(known);
+			}
+}
+
+/* each Qt Quick window, as it is first shown */
+class WindowPainter : public QObject
+{
+public:
+	using QObject::QObject;
+	bool eventFilter(QObject *watched, QEvent *event) override
+	{
+		if (event->type() == QEvent::Show)
+			if (auto *window = qobject_cast<QQuickWindow *>(watched)) paintWindow(window);
+		return false;
+	}
+};
 } // namespace
 
 const QPalette &platformPalette()
@@ -116,8 +166,18 @@ void applyTheme(const QString &colorsJson)
 	for (QPalette::ColorRole r : {QPalette::Base, QPalette::Button})
 		p.setColor(QPalette::Disabled, r, c("DisabledBackground", window));
 	QGuiApplication::setPalette(p);
-	/* windows drawn by the scene graph repaint with it */
-	for (QWindow *w : QGuiApplication::allWindows()) w->requestUpdate();
+	static WindowPainter *painter = nullptr;
+	if (!painter)
+	{
+		painter = new WindowPainter(qApp);
+		qApp->installEventFilter(painter);
+	}
+	/* the windows open now take it, and repaint */
+	for (QWindow *w : QGuiApplication::allWindows())
+	{
+		if (auto *quick = qobject_cast<QQuickWindow *>(w)) paintWindow(quick);
+		w->requestUpdate();
+	}
 }
 
 } // namespace chimera::qt

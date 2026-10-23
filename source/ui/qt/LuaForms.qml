@@ -33,6 +33,7 @@ Item {
             transientParent: lua.mainWindow
             visible: true
             // not themed, as Chimera's Lua forms are not
+            readonly property bool unthemed: true
             palette.window: lua.platform("window", "#efefef")
             palette.windowText: lua.platform("windowText", "black")
             palette.base: lua.platform("base", "white")
