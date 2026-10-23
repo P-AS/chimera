@@ -47,16 +47,25 @@ ApplicationWindow {
         anchors.margins: 8
         spacing: 6
 
+        // emulators or game cores, then every package of that kind
         RowLayout {
+            ComboBox {
+                model: [qsTr("Emulators"), qsTr("Games")]
+                currentIndex: win.vm.kind === "games" ? 1 : 0
+                onActivated: (i) => win.vm.run("chooseKind", [i === 1 ? "games" : "emulators"])
+            }
             Label { text: qsTr("Core") }
             ComboBox {
                 id: coreBox
-                model: win.vm.coreNames === "" ? [] : win.vm.coreNames.split("\n")
-                currentIndex: model.indexOf(win.vm.core)
-                onActivated: win.vm.run("chooseCore", [currentText])
-                Layout.preferredWidth: 220
+                model: win.vm.coreLines === "" ? [] : win.vm.coreLines.split("\n")
+                currentIndex: win.vm.coreLine
+                displayText: currentIndex < 0 ? qsTr("Choose a core") : currentText
+                onActivated: (i) => win.vm.run("chooseCoreLine", [i])
+                Layout.fillWidth: true
             }
-            Label { text: qsTr("Machine"); visible: win.vm.machines !== "" }
+        }
+        RowLayout {
+            Label { text: qsTr("Machine"); visible: win.vm.core !== "" }
             ComboBox {
                 visible: win.vm.machines !== ""
                 model: win.vm.machines === "" ? [] : win.vm.machines.split("\n")
@@ -64,6 +73,8 @@ ApplicationWindow {
                 onActivated: (i) => win.vm.run("chooseMachine", [i])
                 Layout.preferredWidth: 220
             }
+            // a package of one machine still says which it is
+            Label { visible: win.vm.core !== "" && win.vm.machines === ""; text: win.vm.systems }
             Item { Layout.fillWidth: true }
         }
 

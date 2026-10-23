@@ -25,6 +25,7 @@ vm_lib = static_library(
     'viewmodel/src/branches_vm.cpp',
     'viewmodel/src/firmware.cpp',
     'viewmodel/src/suggestion.cpp',
+    'viewmodel/src/european_clock.cpp',
     'viewmodel/src/cores_vm.cpp',
     'viewmodel/src/branch_state.cpp',
     'viewmodel/src/watch_values.cpp',
@@ -89,7 +90,8 @@ synth_game = custom_target(
   'synth-game',
   output: 'synth-game.chimeraCore',
   command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
-    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Game', '@OUTPUT@', 'game', logo_firmware],
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Game', '@OUTPUT@', 'game', logo_firmware,
+    '2026-10-18T16:35:00Z'],
   build_always_stale: true,
   build_by_default: true,
 )

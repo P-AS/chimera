@@ -41,6 +41,7 @@
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
+#include "chimera/vm/european_clock.hpp"
 #include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/themes_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
@@ -2111,6 +2112,13 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 		return out;
 	};
 	CHECK(wizard.coreNames.get() == "Synth\nSynth Slots");
+	/* Chimera's list: a line a package, its version, its systems; only
+	 * emulators here, so asking for games lists them still */
+	CHECK(std::regex_match(wizard.coreLines.get(),
+		std::regex("Synth  [0-9a-f]{8}( local)?  -  Synthetic Witness\nSynth Slots  [0-9a-f]{8}( local)?  -  Synthetic Witness, SynthB")));
+	CHECK(wizard.coreLine.get() == -1 && wizard.kind.get() == "emulators");
+	CHECK(wizard.run("chooseKind", {std::string("games")}, error).has_value() && wizard.coreLines.get().find("Synth Slots") != std::string::npos);
+	CHECK(wizard.run("chooseKind", {std::string("emulators")}, error).has_value());
 	CHECK(wizard.problems.get() == "Choose a core" && !wizard.ready.get());
 	CHECK(!wizard.run("addFile", {std::string("rom"), game}, error) && error == "choose a core first");
 
@@ -2342,6 +2350,7 @@ bool customFirmware(const char *rom, const char *hashedPackage, const char *game
 	fs::create_directories(dir / "Firmware");
 	fs::copy_file(hashedPackage, dir / "Cores" / "synth-hashed.chimeraCore");
 	fs::copy_file(gamePackage, dir / "Cores" / "synth-game.chimeraCore");
+	fs::copy_file(gamePackage, dir / "Cores" / "synth-game-again.chimeraCore");
 	const std::string game = (dir / "walker.testrom").string();
 	fs::copy_file(rom, game);
 	ManualDispatcher d;
@@ -2370,6 +2379,16 @@ bool customFirmware(const char *rom, const char *hashedPackage, const char *game
 	const std::string mySha = sha;
 	CHECK(ce_sha1_file(theirs.string().c_str(), sha, &len) == 1 && lower(sha) == lower(original));
 	CHECK(wizard.coreNames.get() == "Synth Game\nSynth Hashed");
+	/* game cores and emulators apart; two packages of one core told apart
+	 * by the package's hash; the date in Chimera's clock */
+	CHECK(std::regex_match(wizard.coreLines.get(), std::regex("Synth Hashed  [0-9a-f]{8}( local)?  -  Synthetic Witness")));
+	CHECK(wizard.run("chooseKind", {std::string("games")}, error).has_value());
+	CHECK(std::regex_match(wizard.coreLines.get(), std::regex("(Synth Game  2026-10-18 18:35 CEST  \\([0-9a-f]{8}( local)?\\)  \\[package [0-9A-F]{8}\\]  -  Synthetic Witness\n?){2}")));
+	CHECK(wizard.run("chooseCoreLine", {int64_t{1}}, error).has_value() && wizard.core.get() == "Synth Game" && wizard.coreLine.get() == 1);
+	/* a core chosen by name shows its kind */
+	CHECK(wizard.run("chooseCore", {std::string("Synth Hashed")}, error).has_value() && wizard.kind.get() == "emulators" && wizard.coreLine.get() == 0);
+	CHECK(wizard.run("chooseCore", {std::string("Synth Game")}, error).has_value() && wizard.kind.get() == "games" && wizard.coreLine.get() >= 0);
+	CHECK(wizard.systems.get() == "Synthetic Witness");
 
 	/* not a game: only the file the package names */
 	CHECK(wizard.run("chooseCore", {std::string("Synth Hashed")}, error).has_value());
@@ -2570,6 +2589,23 @@ bool openByKind(const char *package, const char *rom, const char *again)
 
 } // namespace
 
+/* Chimera's clock for a core's date (chimera issue 331): the cases of its
+ * own test, EuropeanClockTests */
+void europeanClock()
+{
+	auto at = [](const char *iso) {
+		int64_t t = 0;
+		return parseIsoTime(iso, t) ? europeanTime(t) : std::string("unread");
+	};
+	CHECK(at("2026-10-18T16:35:00Z") == "2026-10-18 18:35 CEST");
+	CHECK(at("2026-01-15T12:00:00Z") == "2026-01-15 13:00 CET");
+	CHECK(at("2026-03-29T00:59:00Z") == "2026-03-29 01:59 CET" && at("2026-03-29T01:00:00Z") == "2026-03-29 03:00 CEST");
+	CHECK(at("2026-10-25T00:59:00Z") == "2026-10-25 02:59 CEST" && at("2026-10-25T01:00:00Z") == "2026-10-25 02:00 CET");
+	CHECK(at("2026-11-30T23:30:00Z") == "2026-12-01 00:30 CET");
+	CHECK(at("2026-10-18T12:35:00-04:00") == "2026-10-18 18:35 CEST" && at("2026-10-18 16:35") == "2026-10-18 18:35 CEST");
+	CHECK(at("2026-10-18T16:35:00.123Z") == "2026-10-18 18:35 CEST" && at("yesterday") == "unread" && at("2026-13-01T00:00Z") == "unread");
+}
+
 int main(int argc, char **argv)
 {
 	signalsAndProperties();
@@ -2583,6 +2619,7 @@ int main(int argc, char **argv)
 	pianoRollWithoutAMachine();
 	watchValues();
 	themes();
+	europeanClock();
 	const bool ranPads = gamepads();
 	bool ranMachine = false;
 	if (argc >= 3)

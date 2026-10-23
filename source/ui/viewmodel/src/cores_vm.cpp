@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "chimera/engine.h"
+#include "chimera/vm/european_clock.hpp"
 #include "chimera/vm/json.hpp"
 
 namespace chimera::vm {
@@ -86,6 +87,14 @@ void CoresViewModel::scan()
 				if (const json::Json *n = cfg.find("coreName")) c.coreName = n->text;
 				if (const json::Json *v = cfg.find("version")) c.version = v->text;
 				if (const json::Json *m = cfg.find("versionDate")) c.made = m->text;
+				c.dated = !c.made.empty() && parseIsoTime(c.made, c.date);
+				if (const json::Json *k = cfg.find("kind"))
+				{
+					std::string kind = k->text;
+					for (char &ch : kind) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+					c.gameCore = kind == "game";
+				}
+				c.systems = systemsOf(cfg);
 				c.path = path;
 				c.modified = static_cast<long long>(fs::last_write_time(entry.path(), ec).time_since_epoch().count());
 				/* the files it takes, as Chimera reads them: the package's
@@ -107,9 +116,48 @@ void CoresViewModel::scan()
 			}
 			ce_package_free(p);
 		}
-	std::sort(found.begin(), found.end(), [](const Core &a, const Core &b) {
-		return a.coreName != b.coreName ? a.coreName < b.coreName : a.modified > b.modified;
+	/* by core, then newest first by the date the package says it was made
+	 * (one that says none after those that do), as Chimera orders them */
+	auto folded = [](std::string s) {
+		for (char &ch : s) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+		return s;
+	};
+	std::sort(found.begin(), found.end(), [&](const Core &a, const Core &b) {
+		const std::string fa = folded(a.coreName), fb = folded(b.coreName);
+		if (fa != fb) return fa < fb;
+		if (a.coreName != b.coreName) return a.coreName < b.coreName;
+		if (a.dated != b.dated) return a.dated;
+		if (a.dated && a.date != b.date) return a.date > b.date;
+		return a.modified > b.modified;
 	});
+	/* each one's line; the package's hash only where two are of one core */
+	for (size_t i = 0; i < found.size(); i++)
+	{
+		Core &c = found[i];
+		const bool shared = (i > 0 && found[i - 1].coreName == c.coreName) || (i + 1 < found.size() && found[i + 1].coreName == c.coreName);
+		std::string version = c.version;
+		const bool local = version.find("+local") != std::string::npos;
+		if (const size_t plus = version.find('+'); plus != std::string::npos) version.erase(plus);
+		const bool dirty = version.size() >= 6 && version.compare(version.size() - 6, 6, "-dirty") == 0;
+		if (dirty) version.erase(version.size() - 6);
+		if (version.size() > 8) version.erase(8);
+		if (!version.empty() && (local || dirty)) version += " local";
+		std::string dated = c.dated ? europeanTime(c.date) : std::string();
+		if (!dated.empty() && !version.empty()) dated += "  (" + version + ")";
+		else if (dated.empty()) dated = version;
+		std::string build;
+		if (shared)
+		{
+			const char *perr = nullptr;
+			if (ce_package *p = ce_package_open(c.path.c_str(), &perr))
+			{
+				const char *sha = ce_package_sha1(p);
+				if (sha != nullptr && std::string(sha).size() >= 8) build = "  [package " + std::string(sha).substr(0, 8) + "]";
+				ce_package_free(p);
+			}
+		}
+		c.line = c.coreName + (dated.empty() ? "" : "  " + dated) + build + "  -  " + c.systems;
+	}
 	const int64_t n = static_cast<int64_t>(found.size());
 	{
 		std::lock_guard<std::mutex> lock(m_);
@@ -169,6 +217,34 @@ std::vector<std::pair<std::string, std::string>> CoresViewModel::installed() con
 	return out;
 }
 
+std::string CoresViewModel::systemsOf(const json::Json &cfg)
+{
+	std::vector<std::string> ids;
+	if (const json::Json *machines = cfg.find("machines"))
+		for (const json::Json &m : machines->items)
+			if (const json::Json *id = m.find("id"); id != nullptr && !id->text.empty() && std::find(ids.begin(), ids.end(), id->text) == ids.end())
+				ids.push_back(id->text);
+	if (ids.empty())
+		if (const json::Json *one = cfg.find("systemId"); one != nullptr && !one->text.empty()) ids.push_back(one->text);
+	const json::Json *names = cfg.find("systemNames");
+	std::string out;
+	for (const std::string &id : ids)
+	{
+		const json::Json *word = names != nullptr ? names->find(id) : nullptr;
+		const bool said = word != nullptr && word->text.find_first_not_of(" \t") != std::string::npos;
+		out += (out.empty() ? "" : ", ") + (said ? word->text : id);
+	}
+	return out;
+}
+
+std::vector<CoresViewModel::Package> CoresViewModel::packages() const
+{
+	std::vector<Package> out;
+	std::lock_guard<std::mutex> lock(m_);
+	for (const Core &c : cores_) out.push_back({c.coreName, c.line, c.path, c.gameCore});
+	return out;
+}
+
 std::string CoresViewModel::chosenFirmwareFor(const std::string &coreName, const std::string &id) const
 {
 	json::Json all;
@@ -209,7 +285,7 @@ Value CoresViewModel::Rows::cell(int64_t row, int32_t column) const
 	{
 	case 0: return c.coreName;
 	case 1: return c.version.substr(0, 12);
-	case 2: return c.made;
+	case 2: return c.dated ? europeanTime(c.date) : c.made;
 	case 3:
 	{
 		std::string takes;

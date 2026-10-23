@@ -59,6 +59,10 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	: ViewModel("newProject", dispatcher), session_(session), cores_(cores)
 {
 	expose("coreNames", "the installed cores, a line each", coreNames);
+	expose("kind", "which cores are listed: \"emulators\" or \"games\"", kind, true);
+	expose("coreLines", "the packages of that kind, a line each: the core, its version dated, its systems", coreLines);
+	expose("coreLine", "the line chosen, -1 for none", coreLine);
+	expose("systems", "the chosen package's systems", systems);
 	expose("core", "the core chosen", core);
 	expose("machines", "the chosen package's machines, a line each (\"\" for a package of one)", machines);
 	expose("machine", "the machine chosen, by its place in machines", machine);
@@ -227,11 +231,34 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	});
 
 	command("refresh", "lists the installed cores again", {}, [this](const Args &, std::string &) -> Value {
-		std::string names;
-		for (const auto &[name, path] : cores_.installed()) names += (names.empty() ? "" : "\n") + name;
-		coreNames.set(names);
+		listCores();
 		return {};
 	});
+	command("chooseKind", "lists emulators (\"emulators\") or game cores (\"games\")", {"kind"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string k;
+			if (!arg(a, 0, k, error)) return {};
+			if (k != "emulators" && k != "games")
+			{
+				error = "a kind is \"emulators\" or \"games\"";
+				return {};
+			}
+			kind.set(k);
+			return {};
+		});
+	command("chooseCoreLine", "starts the project over with the package on this line of coreLines", {"line"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t i = 0;
+			if (!arg(a, 0, i, error)) return {};
+			if (i < 0 || i >= static_cast<int64_t>(shown_.size()))
+			{
+				error = "no line " + std::to_string(i);
+				return {};
+			}
+			const CoresViewModel::Package chosen = shown_[static_cast<size_t>(i)];
+			chooseCore(chosen.name, error, chosen.path);
+			return {};
+		});
 	command("chooseCore", "starts the project over with this installed core", {"name"}, [this](const Args &a, std::string &error) -> Value {
 		std::string name;
 		if (!arg(a, 0, name, error)) return {};
@@ -564,13 +591,33 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			return {};
 		});
 
-	auto listCores = [this] {
-		std::string names;
-		for (const auto &[name, path] : cores_.installed()) names += (names.empty() ? "" : "\n") + name;
-		coreNames.set(names);
-	};
 	listCores();
-	coresWatch_ = cores_.count.changed.connect(listCores);
+	coresWatch_ = cores_.count.changed.connect([this] { listCores(); });
+	kindWatch_ = kind.changed.connect([this] { listCores(); });
+}
+
+void NewProjectViewModel::listCores()
+{
+	std::string names;
+	for (const auto &[name, path] : cores_.installed()) names += (names.empty() ? "" : "\n") + name;
+	coreNames.set(names);
+	/* a kind with nothing installed lists the other, as Chimera's does */
+	const std::vector<CoresViewModel::Package> all = cores_.packages();
+	const bool anyGame = std::any_of(all.begin(), all.end(), [](const auto &p) { return p.gameCore; });
+	const bool anyEmulator = std::any_of(all.begin(), all.end(), [](const auto &p) { return !p.gameCore; });
+	const bool games = (kind.get() == "games" && anyGame) || !anyEmulator;
+	shown_.clear();
+	std::string lines;
+	int64_t at = -1;
+	for (const auto &p : all)
+	{
+		if (p.gameCore != games) continue;
+		if (p.path == package_) at = static_cast<int64_t>(shown_.size());
+		lines += (lines.empty() ? "" : "\n") + p.line;
+		shown_.push_back(p);
+	}
+	coreLines.set(lines);
+	coreLine.set(at);
 }
 
 bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error, const std::string &preferred)
@@ -616,6 +663,15 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	}
 	package_ = package;
 	version_ = cfg_.find("version") != nullptr ? cfg_.find("version")->text : "";
+	systems.set(CoresViewModel::systemsOf(cfg_));
+	/* the list shows this package's kind (a project's answers or a file can
+	 * name a core of either), and its line */
+	{
+		const Json *k = cfg_.find("kind");
+		const bool game = k != nullptr && lower(k->text) == "game";
+		if (kind.get() != (game ? "games" : "emulators")) kind.set(game ? "games" : "emulators");
+		else listCores();
+	}
 
 	/* the slots it declares; a package without the file is one game file of
 	 * the kinds it says it takes */

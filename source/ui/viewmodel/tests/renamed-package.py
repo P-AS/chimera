@@ -10,6 +10,8 @@ src, name, out = sys.argv[1:4]
 # optionally the core's kind ("game"), and firmware entries as JSON
 kind = sys.argv[4] if len(sys.argv) > 4 else ""
 firmware = json.loads(sys.argv[5]) if len(sys.argv) > 5 else None
+# and the date the package says it was made
+version_date = sys.argv[6] if len(sys.argv) > 6 else ""
 try:
     zin = zipfile.ZipFile(src)
 except OSError:
@@ -25,5 +27,7 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
                 cfg["kind"] = kind
             if firmware is not None:
                 cfg["firmware"] = firmware
+            if version_date:
+                cfg["versionDate"] = version_date
             data = json.dumps(cfg, indent=2).encode()
         zout.writestr(info, data)

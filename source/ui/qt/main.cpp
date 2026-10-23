@@ -373,6 +373,7 @@ int main(int argc, char **argv)
 	if (!qEnvironmentVariableIsSet("CHIMERA_CORES_DIR")) config.keep(cores, "coresFolder");
 	if (!qEnvironmentVariableIsSet("CHIMERA_FIRMWARE_DIR")) config.keep(cores, "firmwareFolder");
 	config.keep(cores, "chosenFirmware");
+	config.keep(newProject, "kind");
 	/* what a project can make again (its branches' states): the
 	 * prototype's own cache, never Chimera's (CHIMERA_QT_CACHE for a test) */
 	session.cacheFolder.set(qEnvironmentVariableIsSet("CHIMERA_QT_CACHE")

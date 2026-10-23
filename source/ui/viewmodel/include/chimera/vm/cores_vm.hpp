@@ -7,6 +7,7 @@
 
 #include <mutex>
 
+#include "chimera/vm/json.hpp"
 #include "chimera/vm/view_model.hpp"
 
 namespace chimera::vm {
@@ -33,6 +34,20 @@ public:
 	/* any thread: the newest package of each installed core, by name, as
 	 * {core name, package} */
 	std::vector<std::pair<std::string, std::string>> installed() const;
+	/* Any thread: every package, as Chimera's New Project lists them - by
+	 * core, newest first - each with its line: the core, its version dated
+	 * in Chimera's clock, the package's hash when two packages are of one
+	 * core, and its systems ("Dolphin  2026-10-21 18:11 CEST  (285b6a8f
+	 * local)  -  GameCube, Wii, Triforce"). */
+	struct Package
+	{
+		std::string name, line, path;
+		bool gameCore = false;
+	};
+	std::vector<Package> packages() const;
+	/* a package's systems, by its own word for each: its machines', else
+	 * its one ("GameCube, Wii, Triforce") */
+	static std::string systemsOf(const json::Json &cfg);
 	/* any thread: where firmware is looked for - the folders, then the files
 	 * chosen by hand */
 	std::vector<std::string> firmwareFolders() const;
@@ -43,9 +58,11 @@ public:
 private:
 	struct Core
 	{
-		std::string coreName, version, made, path;
+		std::string coreName, version, made, path, systems, line;
 		long long modified = 0;
 		std::vector<std::string> extensions;
+		bool gameCore = false, dated = false;
+		int64_t date = 0;
 	};
 	class Rows : public RowModel
 	{

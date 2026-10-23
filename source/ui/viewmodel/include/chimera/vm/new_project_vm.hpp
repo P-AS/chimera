@@ -30,6 +30,14 @@ public:
 	/* the installed cores, a line each, and the one chosen */
 	Property<std::string> coreNames;
 	Property<std::string> core;
+	/* Chimera's core list: emulators or game cores ("emulators", "games",
+	 * remembered), every package of that kind a line (its version dated, its
+	 * systems), and the line chosen (-1: none) */
+	Property<std::string> kind{"emulators"};
+	Property<std::string> coreLines;
+	Property<int64_t> coreLine{-1};
+	/* the chosen package's systems, for a package of one machine */
+	Property<std::string> systems;
 	/* the chosen package's machines, a line each ("" for a package of one),
 	 * and the one chosen, by place */
 	Property<std::string> machines;
@@ -212,7 +220,10 @@ private:
 	std::vector<FirmwareFile> firmwareIndex_;
 	/* the hashes of files remembered for this core's firmware, read once */
 	std::map<std::string, std::string> rememberedSha_;
-	Connection coresWatch_;
+	Connection coresWatch_, kindWatch_;
+	/* the packages the list shows, in its order */
+	std::vector<CoresViewModel::Package> shown_;
+	void listCores();
 };
 
 } // namespace chimera::vm
