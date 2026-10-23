@@ -38,6 +38,9 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
             cfg["settings"].append({"name": "diskSpeed", "display": "Disk Speed", "type": "int",
                                     "min": 1, "max": 4, "default": 1, "sync": True, "when": ["b"],
                                     "description": "Board B's alone."})
+            cfg["settings"].append({"name": "renderer", "display": "Renderer", "type": "enum",
+                                    "options": ["software", "opengl-hw"], "default": "software", "sync": True,
+                                    "description": "Where the picture is drawn."})
             cfg["settings"].append({"name": "port", "display": "Port", "type": "enum",
                                     "options": ["pad", "mouse", "none"], "default": "pad", "sync": True,
                                     "description": "What is plugged in; each board narrows it."})

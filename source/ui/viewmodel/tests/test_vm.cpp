@@ -2132,6 +2132,8 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(!wizard.run("addFile", {std::string("rom"), game}, error) && error == "Game takes 1 file at most");
 	CHECK(text("slots", 0, 7) == "walker.testrom");
 	CHECK(settingNames() == "initFillByte ");
+	/* a core that declares no renderer draws one way */
+	CHECK(wizard.renderers.get() == "Software (Native)" && wizard.renderer.get() == 0);
 	CHECK(!wizard.run("set", {std::string("initFillByte"), int64_t{300}}, error) && error == "initFillByte goes from 0 to 255");
 	CHECK(wizard.run("set", {std::string("initFillByte"), int64_t{7}}, error).has_value());
 	wizard.set("title", std::string("down the corridor"), error);
@@ -2172,6 +2174,13 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	fromValue(cell("slots", 0, 6), exposed);
 	CHECK(exposed && rowCount("firmware") == 0);
 	CHECK(settingNames() == "initFillByte port ");
+	/* the renderer is asked beside the machine, named for what it is; a
+	 * hardware one says what it costs */
+	CHECK(wizard.renderers.get() == "Software (Native)\nHardware (OpenGL)" && wizard.renderer.get() == 0 && wizard.rendererCaveat.get().empty());
+	CHECK(wizard.run("chooseRenderer", {int64_t{1}}, error).has_value() && wizard.renderer.get() == 1);
+	CHECK(wizard.rendererCaveat.get().rfind("Hardware renderers use your PC's GPU: fast, but the picture is drawn outside the savestate", 0) == 0);
+	CHECK(!wizard.run("chooseRenderer", {int64_t{2}}, error) && error == "no renderer 2");
+	CHECK(wizard.run("chooseRenderer", {int64_t{0}}, error).has_value() && wizard.rendererCaveat.get().empty());
 	/* a board narrows what a setting offers and starts it on (board A: the
 	 * mouse by default; board B: no mouse, and nothing by default) */
 	auto portCell = [&](int32_t column) {
@@ -2302,6 +2311,8 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(session.run("saveProject", {boardA.string()}, error).has_value());
 	CHECK(d.until([&] { return session.projectPath.get() == boardA.string(); }, 20));
 	CHECK(std::regex_search(readFile(boardA), std::regex("\"gameLogo\"\\s*:\\s*\"on\"")));
+	/* the renderer, asked apart, is recorded like any setting */
+	CHECK(std::regex_search(readFile(boardA), std::regex("\"renderer\"\\s*:\\s*\"software\"")));
 	CHECK(session.recentProjects.get().rfind(boardA.string(), 0) == 0);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));

@@ -35,8 +35,14 @@ public:
 	 * edited) */
 	void setApplied(const json::Json *applied) { applied_ = applied; }
 	/* the machine's chooser left out of the rows, for a window that offers
-	 * the machine on its own (it is still recorded) */
+	 * the machine on its own (it is still recorded); and any other setting
+	 * such a window offers on its own (the renderer) */
 	void listMachineSetting(bool listed) { listMachine_ = listed; }
+	void unlist(std::string name) { unlisted_.push_back(std::move(name)); }
+	/* a declaration as the chosen machine has it, whether it applies or not;
+	 * and whether it applies (listed or not) */
+	const json::Json *declaration(const std::string &name) const;
+	bool applies(const std::string &name) const;
 
 	/* a setting that applies, set to a value of its type and range */
 	bool set(const std::string &name, const Value &value, std::string &error);
@@ -108,6 +114,7 @@ private:
 	json::Json values_;
 	const json::Json *applied_ = nullptr;
 	bool listMachine_ = true;
+	std::vector<std::string> unlisted_;
 	std::vector<size_t> exposed_;
 	std::vector<json::Json> presets_;
 	/* the machine the machine setting says (its value), "" without one */

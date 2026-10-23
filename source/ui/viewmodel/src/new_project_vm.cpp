@@ -63,6 +63,9 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	expose("coreLines", "the packages of that kind, a line each: the core, its version dated, its systems", coreLines);
 	expose("coreLine", "the line chosen, -1 for none", coreLine);
 	expose("systems", "the chosen package's systems", systems);
+	expose("renderers", "the machine's renderers, a line each, by what they are", renderers);
+	expose("renderer", "the renderer chosen, by line", renderer);
+	expose("rendererCaveat", "what the renderer chosen costs (\"\" for a software one)", rendererCaveat);
 	expose("core", "the core chosen", core);
 	expose("machines", "the chosen package's machines, a line each (\"\" for a package of one)", machines);
 	expose("machine", "the machine chosen, by its place in machines", machine);
@@ -71,6 +74,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	expose("ready", "the project can be made", ready);
 	expose("status", "what New Project last had to say", status);
 	form_.listMachineSetting(false);
+	form_.unlist("renderer");
 	rows("slots", "the kinds of file the project holds: id, title, min, max, formats, help, exposed, files, count, filter", slotRows_);
 	rows("settings", "the settings that apply, as the Settings window lists them", settingRows_);
 	rows("presets", "the presets this machine is offered: id, label, description", presetRows_);
@@ -246,6 +250,26 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			kind.set(k);
 			return {};
 		});
+	command("chooseRenderer", "the renderer, by its line in renderers", {"line"}, [this](const Args &a, std::string &error) -> Value {
+		int64_t i = 0;
+		if (!arg(a, 0, i, error)) return {};
+		const Json *decl = form_.applies("renderer") ? form_.declaration("renderer") : nullptr;
+		const Json *options = decl != nullptr ? decl->find("options") : nullptr;
+		const int64_t count = options != nullptr && !options->items.empty() ? static_cast<int64_t>(options->items.size()) : 1;
+		if (i < 0 || i >= count)
+		{
+			error = "no renderer " + std::to_string(i);
+			return {};
+		}
+		if (options != nullptr && !options->items.empty())
+		{
+			Json values = form_.values();
+			setMember(values, "renderer", Json::string(options->items[static_cast<size_t>(i)].text));
+			form_.setValues(values);
+		}
+		evaluate();
+		return {};
+	});
 	command("chooseCoreLine", "starts the project over with the package on this line of coreLines", {"line"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t i = 0;
@@ -940,6 +964,66 @@ void NewProjectViewModel::takeBackSeeded(const std::string &text)
 	form_.evaluate();
 }
 
+void NewProjectViewModel::refreshRenderers()
+{
+	/* named for what they are: where the drawing happens, and how */
+	auto spelled = [](const std::string &v) -> std::string {
+		if (v == "software" || v == "default") return "Software (Native)";
+		if (v == "opengl") return "Software (OpenGL)";
+		if (v == "opengl-hw") return "Hardware (OpenGL)";
+		if (v == "vulkan-hw") return "Hardware (Vulkan)";
+		return v;
+	};
+	const Json *decl = core.get().empty() || !form_.applies("renderer") ? nullptr : form_.declaration("renderer");
+	const Json *options = decl != nullptr ? decl->find("options") : nullptr;
+	if (core.get().empty())
+	{
+		renderers.set("");
+		renderer.set(-1);
+		rendererCaveat.set("");
+		return;
+	}
+	if (options == nullptr || options->items.empty())
+	{
+		/* nothing declared: the core draws one way and does not name it */
+		renderers.set(spelled("default"));
+		renderer.set(0);
+		rendererCaveat.set("");
+		return;
+	}
+	std::string lines;
+	for (const Json &o : options->items) lines += (lines.empty() ? "" : "\n") + spelled(o.text);
+	renderers.set(lines);
+	/* the one chosen, if this machine has it, else the machine's default,
+	 * else the first - written into the settings, where it is a setting
+	 * like any other */
+	auto at = [&](const std::string &v) {
+		for (size_t i = 0; i < options->items.size(); i++)
+			if (options->items[i].text == v) return static_cast<int64_t>(i);
+		return int64_t{-1};
+	};
+	int64_t chosen = -1;
+	if (const Json *v = form_.values().find("renderer")) chosen = at(v->text);
+	if (chosen < 0)
+		if (const Json *d = decl->find("default")) chosen = at(d->text);
+	if (chosen < 0) chosen = 0;
+	const std::string value = options->items[static_cast<size_t>(chosen)].text;
+	if (const Json *v = form_.values().find("renderer"); v == nullptr || v->text != value)
+	{
+		Json values = form_.values();
+		setMember(values, "renderer", Json::string(value));
+		form_.setValues(values);
+		form_.evaluate();
+	}
+	renderer.set(chosen);
+	/* said where the choice is made, and only for a hardware one, as Chimera says it */
+	rendererCaveat.set(value.size() > 3 && value.compare(value.size() - 3, 3, "-hw") == 0
+			? "Hardware renderers use your PC's GPU: fast, but the picture is drawn outside the savestate, so video "
+			  "can differ on another PC. The greenzone is kept between sessions, unless Chimera closed unexpectedly - "
+			  "then it replays."
+			: "");
+}
+
 void NewProjectViewModel::declareSettings()
 {
 	std::vector<Json> decl;
@@ -1174,6 +1258,7 @@ void NewProjectViewModel::evaluate()
 	const std::string map = slotMap();
 	form_.setSlots(map);
 	form_.evaluate();
+	refreshRenderers();
 
 	/* the core's suggestion for the game, once a game: first, since what the
 	 * game has of its own is part of what applies */

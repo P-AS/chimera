@@ -75,7 +75,23 @@ ApplicationWindow {
             }
             // a package of one machine still says which it is
             Label { visible: win.vm.core !== "" && win.vm.machines === ""; text: win.vm.systems }
+            Label { text: qsTr("Renderer"); visible: win.vm.renderers !== "" }
+            ComboBox {
+                visible: win.vm.renderers !== ""
+                // one renderer is not a choice
+                enabled: win.vm.renderers.indexOf("\n") >= 0
+                model: win.vm.renderers === "" ? [] : win.vm.renderers.split("\n")
+                currentIndex: win.vm.renderer
+                onActivated: (i) => win.vm.run("chooseRenderer", [i])
+                Layout.preferredWidth: 180
+            }
             Item { Layout.fillWidth: true }
+        }
+        Label {
+            visible: win.vm.rendererCaveat !== ""
+            text: win.vm.rendererCaveat
+            wrapMode: Text.Wrap
+            Layout.fillWidth: true
         }
 
         // a movie made elsewhere, when the core reads them: the core's answer fills the rest

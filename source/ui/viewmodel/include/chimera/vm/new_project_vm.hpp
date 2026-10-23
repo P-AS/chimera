@@ -38,6 +38,13 @@ public:
 	Property<int64_t> coreLine{-1};
 	/* the chosen package's systems, for a package of one machine */
 	Property<std::string> systems;
+	/* The renderer, asked beside the machine as Chimera asks it: the
+	 * machine's renderers a line each, named for what they are ("Software
+	 * (Native)", "Hardware (OpenGL)"...; one, unnamed, for a core that
+	 * declares none), the one chosen, and what a hardware one costs. */
+	Property<std::string> renderers;
+	Property<int64_t> renderer{-1};
+	Property<std::string> rendererCaveat;
 	/* the chosen package's machines, a line each ("" for a package of one),
 	 * and the one chosen, by place */
 	Property<std::string> machines;
@@ -224,6 +231,8 @@ private:
 	/* the packages the list shows, in its order */
 	std::vector<CoresViewModel::Package> shown_;
 	void listCores();
+	/* the renderer choice, as the machine has it, written into the settings */
+	void refreshRenderers();
 };
 
 } // namespace chimera::vm

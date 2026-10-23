@@ -203,6 +203,24 @@ void SettingsForm::evaluate()
 			const Json *n = decl_[i].find("name");
 			return n != nullptr && n->text == machineSetting_;
 		}), exposed_.end());
+	exposed_.erase(std::remove_if(exposed_.begin(), exposed_.end(), [this](size_t i) {
+		const Json *n = decl_[i].find("name");
+		return n != nullptr && std::find(unlisted_.begin(), unlisted_.end(), n->text) != unlisted_.end();
+	}), exposed_.end());
+}
+
+const Json *SettingsForm::declaration(const std::string &name) const
+{
+	for (const Json &d : decl_)
+		if (const Json *n = d.find("name"); n != nullptr && n->text == name) return &d;
+	return nullptr;
+}
+
+bool SettingsForm::applies(const std::string &name) const
+{
+	for (size_t i : applicable(decl_, slots_, values_, machineSetting_))
+		if (const Json *n = decl_[i].find("name"); n != nullptr && n->text == name) return true;
+	return false;
 }
 
 Json SettingsForm::recorded() const
@@ -218,10 +236,12 @@ Json SettingsForm::recorded() const
 	};
 	for (size_t i : exposed_) record(decl_[i]);
 	/* the machine's chooser is a setting like any other: the slot gates and
-	 * the engine's checks read it */
+	 * the engine's checks read it; and so is one offered on its own */
 	if (!machineSetting_.empty())
 		for (const Json &d : decl_)
 			if (const Json *n = d.find("name"); n != nullptr && n->text == machineSetting_) record(d);
+	for (const std::string &name : unlisted_)
+		if (const Json *d = declaration(name); d != nullptr && out.find(name) == nullptr && applies(name)) record(*d);
 	return out;
 }
 
