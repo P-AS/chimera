@@ -56,6 +56,18 @@ public:
 	Property<std::string> windowGeometry;
 	/* a double click on the picture goes full screen and back (Allow Double-Click Fullscreen) */
 	Property<bool> allowDoubleClickFullscreen{true};
+	/* the window's chrome, as Chimera's: windowed, the menu, the caption's buttons and the frame
+	 * (0 none, 1 thin, 2 thick); full screen, the menu, the status bar, and the pointer hidden
+	 * while it is still; the window kept over others */
+	Property<bool> menuWindowed{true}, captionWindowed{true};
+	Property<int64_t> frameWindowed{2};
+	Property<bool> menuFullscreen{false}, statusBarFullscreen{false}, autohideMouseFullscreen{true};
+	Property<bool> stayOnTop{false};
+	/* Display Features' Minimal picked (Chimera draws everything for it, as for Full) */
+	Property<bool> minimalDisplay{false};
+	/* Keep window titles static, and the words every main window title ends with ("" for "Chimera") */
+	Property<bool> staticWindowTitles{false};
+	Property<std::string> titleSuffix;
 
 	DisplayFit fit() const;
 };

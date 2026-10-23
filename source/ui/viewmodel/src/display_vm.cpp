@@ -79,6 +79,16 @@ DisplayViewModel::DisplayViewModel(Dispatcher &dispatcher) : ViewModel("display"
 	expose("finalFilter", "the picture drawn sharp (0) or smoothed (1)", finalFilter, true);
 	expose("saveWindowPosition", "the window's place and size kept for the next start", saveWindowPosition, true);
 	expose("allowDoubleClickFullscreen", "a double click on the picture goes full screen and back", allowDoubleClickFullscreen, true);
+	expose("menuWindowed", "the menu bar shown in a window", menuWindowed, true);
+	expose("captionWindowed", "the title bar's buttons shown in a window", captionWindowed, true);
+	expose("frameWindowed", "the window's frame: 0 none, 1 thin, 2 thick", frameWindowed, true);
+	expose("menuFullscreen", "the menu bar shown full screen", menuFullscreen, true);
+	expose("statusBarFullscreen", "the status bar shown full screen", statusBarFullscreen, true);
+	expose("autohideMouseFullscreen", "full screen, the pointer hidden while it is still", autohideMouseFullscreen, true);
+	expose("stayOnTop", "the main window kept over others", stayOnTop, true);
+	expose("minimalDisplay", "Display Features' Minimal picked (drawn as Full, as Chimera's)", minimalDisplay, true);
+	expose("staticWindowTitles", "the main window's title keeps to its last words", staticWindowTitles, true);
+	expose("titleSuffix", "the words every main window title ends with (\"\" for \"Chimera\")", titleSuffix, true);
 	expose("windowGeometry", "the window's place and size kept, \"x,y,w,h\"", windowGeometry, true);
 }
 

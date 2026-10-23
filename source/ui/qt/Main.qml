@@ -62,11 +62,31 @@ ApplicationWindow {
     width: 800
     height: 680
     visible: true
-    // Display Nothing puts the speed in the title, as Chimera's does
-    title: (session.isOpen && session.displayNothing ? qsTr("(%1 fps) - ").arg(Math.round(session.fps)) : "")
-         + (!session.isOpen ? qsTr("Chimera")
-         : session.projectTitle !== "" ? qsTr("Chimera - %1%2 - %3 (%4)").arg(session.unsaved ? "*" : "").arg(session.projectTitle).arg(session.coreName).arg(session.systemName)
-         : qsTr("Chimera - %1 (%2)").arg(session.coreName).arg(session.systemName))
+    // Chimera's title: the speed while nothing is drawn, the game and its system, the project's file
+    // (marked when it has changes), then "Chimera" or the words Display's Misc gives; only those
+    // last words when titles are kept static
+    readonly property string titleSuffix: root.display.titleSuffix.trim() !== "" ? root.display.titleSuffix : qsTr("Chimera")
+    title: root.display.staticWindowTitles ? root.titleSuffix
+         : (session.displayNothing ? qsTr("(%1 fps) - ").arg(Math.round(session.fps)) : "")
+         + (session.isOpen ? qsTr("%1 [%2] - ").arg(session.gameName).arg(session.systemName) : "")
+         + (session.isOpen && session.hasProject
+            ? (session.unsaved ? "*" : "") + session.projectPath.replace(/^.*[\\/]/, "") + " - " : "")
+         + root.titleSuffix
+    // Display's window chrome, as Chimera's SynchChrome: windowed, the caption's buttons, the frame and
+    // the menu; full screen, the menu; kept over other windows when asked
+    flags: Qt.Window
+         | (root.visibility !== Window.FullScreen && root.display.frameWindowed === 0 ? Qt.FramelessWindowHint
+            : Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint
+              | (root.display.captionWindowed ? Qt.WindowMinMaxButtonsHint : 0))
+         | (root.display.stayOnTop ? Qt.WindowStaysOnTopHint : 0)
+    function synchChrome() { root.menuBar.visible = root.visibility === Window.FullScreen ? root.display.menuFullscreen : root.display.menuWindowed }
+    onVisibilityChanged: root.synchChrome()
+    Connections {
+        target: root.display
+        function onMenuWindowedChanged() { root.synchChrome() }
+        function onMenuFullscreenChanged() { root.synchChrome() }
+    }
+    Component.onCompleted: root.synchChrome()
 
     // the theme's colours for what is drawn over the picture, as Chimera's themes give them
     readonly property var themeColorMap: JSON.parse(root.themes.colors)
@@ -161,7 +181,10 @@ ApplicationWindow {
             else if (action === "Seek To...") { if (root.session.seekEnabled) seekDialog.open() }
             else if (action === "Toggle Menu") root.menuBar.visible = !root.menuBar.visible
             else if (action === "TAStudio") { if (root.session.hasProject) tastudioWindow.engage() }
-            else if (action === "Toggle Stay on Top") root.flags = root.flags ^ Qt.WindowStaysOnTopHint
+            else if (action === "Toggle Stay on Top") {
+                root.display.stayOnTop = !root.display.stayOnTop
+                root.note(root.display.stayOnTop ? qsTr("Stay on Top enabled") : qsTr("Stay on Top disabled"))
+            }
             else if (action === "Play Movie") root.leaveProject(() => projectDialog.open())
             else if (action === "Record Movie") { root.newProject.run("openOnLastProject"); newProjectWindow.show(); newProjectWindow.raise() }
             else if (action === "Stop Movie") { if (root.session.hasProject) root.leaveProject(() => root.session.run("stopMovie")) }
@@ -501,6 +524,8 @@ ApplicationWindow {
     // open, Config while full screen, the screenshot and closing while a game runs, and the menu
     // bar back while it is hidden. Its Restart, Stop and Save items do here what their hotkeys do.
     readonly property bool fullScreen: root.visibility === Window.FullScreen
+    property bool cursorHidden: false
+    property point cursorAt: Qt.point(-100, -100)
     Shortcut {
         // the keyboard's menu key opens it too
         sequence: "Menu"
@@ -932,7 +957,26 @@ ApplicationWindow {
             grabPermissions: PointerHandler.ApprovesTakeOverByAnything
             onPointChanged: pictureArea.notePointer(point.position, point.pressedButtons)
         }
-        HoverHandler { onPointChanged: pictureArea.notePointer(point.position, -1) }
+        HoverHandler {
+            // full screen, the pointer hidden after two seconds still, as Chimera's (moving it more than 5 pixels shows it)
+            cursorShape: root.cursorHidden ? Qt.BlankCursor : Qt.ArrowCursor
+            onPointChanged: {
+                pictureArea.notePointer(point.position, -1)
+                const p = point.position
+                if (Math.abs(p.x - root.cursorAt.x) > 5 || Math.abs(p.y - root.cursorAt.y) > 5) {
+                    root.cursorAt = p
+                    root.cursorHidden = false
+                    mouseIdle.restart()
+                }
+            }
+        }
+        Timer {
+            id: mouseIdle
+            interval: 2000
+            running: true
+            repeat: true
+            onTriggered: if (root.visibility === Window.FullScreen && root.display.autohideMouseFullscreen) root.cursorHidden = true
+        }
         WheelHandler {
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             onWheel: (event) => root.hostInput.mouseWheel = root.hostInput.mouseWheel + event.angleDelta.y
@@ -1221,7 +1265,7 @@ ApplicationWindow {
     Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; mainWindow: root; visible: false }
     MessagesConfig { id: messagesWindow; vm: root.messages; visible: false }
     SoundConfig { id: soundWindow; session: root.session; visible: false }
-    DisplayConfig { id: displayWindow; vm: root.display; session: root.session; visible: false }
+    DisplayConfig { id: displayWindow; vm: root.display; session: root.session; mainWindow: root; visible: false }
     ProjectFiles { session: root.session }
     // Work a crash left behind, offered before the project opens, as
     // Chimera's "Recover unsaved work?" asks
@@ -1292,7 +1336,7 @@ ApplicationWindow {
 
     // only while a machine runs: everything in it is about the machine, as Chimera's
     footer: ToolBar {
-        visible: root.session.showStatusBar && root.session.isOpen
+        visible: (root.visibility === Window.FullScreen ? root.display.statusBarFullscreen : root.session.showStatusBar) && root.session.isOpen
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 8

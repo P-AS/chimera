@@ -721,6 +721,14 @@ void displayFit()
 	display.aspectMode.set(9);
 	display.customWidth.set(-5);
 	CHECK(display.fit().aspectMode == 3 && display.fit().customWidth == 0 && display.fit().letterbox);
+	/* the window's chrome starts as Chimera's: windowed with its menu, caption and thick frame; full
+	 * screen bare, the pointer hidden when still; double click full screen; titles not static */
+	CHECK(display.menuWindowed.get() && display.captionWindowed.get() && display.frameWindowed.get() == 2 &&
+		  !display.menuFullscreen.get() && !display.statusBarFullscreen.get() && display.autohideMouseFullscreen.get() &&
+		  display.allowDoubleClickFullscreen.get() && !display.stayOnTop.get() && !display.staticWindowTitles.get() &&
+		  display.titleSuffix.get().empty());
+	std::string error;
+	CHECK(display.set("frameWindowed", Value(int64_t{0}), error) && display.frameWindowed.get() == 0);
 }
 
 /* Chimera's Paths window: folders relative to the base (the program's own
