@@ -96,6 +96,8 @@ public:
 	Property<int64_t> frameCount{0};
 	/* keep the current frame in view while the machine runs */
 	Property<bool> followPlayback{true};
+	/* TAStudio's window comes along when the main one is moved, as Chimera's does at first */
+	Property<bool> moveWithMainWindow{true};
 	/* frames before this one were run with the inputs they have now: the greenzone */
 	Property<int64_t> greenEnd{0};
 	/* the first frame in view, and how many fit: the view says how many */

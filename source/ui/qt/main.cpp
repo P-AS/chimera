@@ -818,6 +818,7 @@ int main(int argc, char **argv)
 	config.keep(hotkeys, "noMixedPriority");
 	config.keep(session, "recentProjects");
 	config.keep(pianoRoll, "followPlayback");
+	config.keep(pianoRoll, "moveWithMainWindow");
 	if (!config.problem().empty()) session.status.set(config.problem());
 	/* what the start did with a data folder change asked for */
 	if (!dataFolder.status.get().empty()) session.status.set(dataFolder.status.get());
@@ -995,6 +996,8 @@ int main(int argc, char **argv)
 	if (customize.startFullscreen.get()) window->showFullScreen();
 	KeyFilter keys(session, hotkeys);
 	window->installEventFilter(&keys);
+	/* TAStudio passes the keys on too, as Chimera's does: the machine's and the hotkeys */
+	if (auto *tastudio = window->findChild<QQuickWindow *>(QStringLiteral("tastudioWindow"))) tastudio->installEventFilter(&keys);
 	/* --show ram-search or settings: the tool windows by name */
 	const QString showName = args.value(showOpt) == QStringLiteral("ram-search") ? QStringLiteral("ramSearchWindow")
 		: args.value(showOpt) == QStringLiteral("ram-watch") ? QStringLiteral("ramWatchWindow")
@@ -1004,7 +1007,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("themes") ? QStringLiteral("themesWindow")
 		: args.value(showOpt) == QStringLiteral("settings") ? QStringLiteral("settingsWindow")
 		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")
-		: args.value(showOpt) == QStringLiteral("branches") ? QStringLiteral("branchesWindow")
+		: args.value(showOpt) == QStringLiteral("tastudio") ? QStringLiteral("tastudioWindow")
 		: args.value(showOpt) == QStringLiteral("undo-history") ? QStringLiteral("undoHistoryWindow")
 		: args.value(showOpt) == QStringLiteral("tastudio-settings") ? QStringLiteral("tastudioSettingsWindow")
 		: args.value(showOpt) == QStringLiteral("log") ? QStringLiteral("logWindow")
@@ -1152,7 +1155,10 @@ int main(int argc, char **argv)
 					if (q == nullptr || q == window || !q->isVisible()) continue;
 					QString path = args.value(shotOpt);
 					path.insert(path.lastIndexOf('.'), QStringLiteral("-") + q->objectName());
-					std::printf("screenshot: %s %s\n", qPrintable(q->objectName()), q->grabWindow().save(path) ? "saved" : "FAILED");
+					/* where it is, beside the main window's place */
+					std::printf("screenshot: %s %s, at %d,%d %dx%d (the main window at %d,%d %dx%d)\n", qPrintable(q->objectName()),
+						q->grabWindow().save(path) ? "saved" : "FAILED", q->x(), q->y(), q->width(), q->height(),
+						window->x(), window->y(), window->width(), window->height());
 				}
 			}
 			std::fflush(stdout);

@@ -13,6 +13,12 @@ ApplicationWindow {
     width: 640
     height: 480
     onVisibleChanged: if (visible) win.vm.run("reload")
+    // TAStudio's Metadata menu: Header, Comments or Subtitles
+    function showTab(index) {
+        tabs.currentIndex = index
+        win.show()
+        win.raise()
+    }
 
     ColumnLayout {
         anchors.fill: parent

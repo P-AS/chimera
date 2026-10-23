@@ -13,7 +13,7 @@
     <file>SettingsList.qml</file>
     <file>NewProject.qml</file>
     <file>LuaConsole.qml</file>
-    <file>Branches.qml</file>
+    <file>TAStudio.qml</file>
     <file>ProjectDetails.qml</file>
     <file>UndoHistory.qml</file>
     <file>TAStudioSettings.qml</file>

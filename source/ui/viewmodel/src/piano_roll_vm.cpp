@@ -15,6 +15,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("currentFrame", "the frame the machine is about to run", currentFrame);
 	expose("frameCount", "how many frames have inputs", frameCount);
 	expose("followPlayback", "keep the current frame in view while the machine runs", followPlayback, true);
+	expose("moveWithMainWindow", "TAStudio's window moves with the main window, keeping its place beside it", moveWithMainWindow, true);
 	expose("followScroll", "how following scrolls: near, top, bottom or center", followScroll, true);
 	expose("followAlways", "following scrolls on every frame, not only when the frame is out of view", followAlways, true);
 	expose("wheelRows", "the frames a notch of the mouse wheel scrolls", wheelRows, true);
