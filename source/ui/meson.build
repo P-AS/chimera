@@ -38,6 +38,7 @@ vm_lib = static_library(
     'viewmodel/src/themes_vm.cpp',
     'viewmodel/src/ram_watch_vm.cpp',
     'viewmodel/src/config_store.cpp',
+    'viewmodel/src/help_vm.cpp',
   ],
   include_directories: [vm_inc, engine_inc, include_directories('../../extern/lua')],
   dependencies: [thread_dep, dl_dep],
@@ -129,7 +130,7 @@ qt6 = import('qt6')
 qt_dep = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'QuickControls2'], required: get_option('qt_ui'))
 if qt_dep.found()
   qt_moc = qt6.compile_moc(
-    headers: ['qt/qml_view_model.hpp', 'qt/picture_item.hpp', 'qt/piano_roll_item.hpp', 'qt/key_names.hpp', 'qt/theme_palette.hpp', 'qt/clipboard_relay.hpp'],
+    headers: ['qt/qml_view_model.hpp', 'qt/picture_item.hpp', 'qt/piano_roll_item.hpp', 'qt/key_names.hpp', 'qt/theme_palette.hpp', 'qt/clipboard_relay.hpp', 'qt/picture_files.hpp'],
     include_directories: [vm_inc, engine_inc],
     dependencies: [qt_dep],
   )

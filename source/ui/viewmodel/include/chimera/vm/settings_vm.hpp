@@ -16,6 +16,8 @@ class SettingsViewModel : public ViewModel
 {
 public:
 	SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &session);
+	/* the machine's settings not at their default, for a bug report */
+	std::vector<SettingsForm::Changed> changedSettings() const { return form_.changed(); }
 
 	/* edits not applied yet */
 	Property<bool> pending{false};

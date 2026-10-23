@@ -2415,8 +2415,9 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	/* another game, or the same started again: another average, as Chimera's */
 	averageResetM_.store(true);
 	later([this, names, axes, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames, controller,
-			   gameCore, timer, saveData, movieImport] {
+			   gameCore, timer, saveData, movieImport, package] {
 		controllerName_ = controller;
+		packagePath_ = package;
 		isGameCore.set(gameCore);
 		hasGameTimer.set(timer);
 		hasSaveData.set(saveData);

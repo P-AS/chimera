@@ -245,6 +245,39 @@ Json SettingsForm::recorded() const
 	return out;
 }
 
+std::vector<SettingsForm::Changed> SettingsForm::changed() const
+{
+	/* as Chimera words them: true or false, (empty) for nothing, numbers as they are */
+	auto shown = [](const Value &v) -> std::string {
+		if (const bool *b = std::get_if<bool>(&v)) return *b ? "true" : "false";
+		if (const int64_t *i = std::get_if<int64_t>(&v)) return std::to_string(*i);
+		if (const double *d = std::get_if<double>(&v))
+		{
+			char text[32];
+			std::snprintf(text, sizeof text, "%g", *d);
+			return text;
+		}
+		if (const std::string *s = std::get_if<std::string>(&v)) return s->empty() ? "(empty)" : *s;
+		return "";
+	};
+	std::vector<Changed> out;
+	const Json none = [] {
+		Json j;
+		j.kind = Json::Kind::Object;
+		return j;
+	}();
+	for (size_t i : exposed_)
+	{
+		const Json &d = decl_[i];
+		const std::string value = shown(valueOf(d, values_)), standard = shown(valueOf(d, none));
+		if (value == standard) continue;
+		const Json *label = d.find("display");
+		const Json *name = d.find("name");
+		out.push_back({label != nullptr && !label->text.empty() ? label->text : name != nullptr ? name->text : "", value, standard});
+	}
+	return out;
+}
+
 Value SettingsForm::valueOf(const Json &decl, const Json &values)
 {
 	const Json *n = decl.find("name");

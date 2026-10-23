@@ -27,6 +27,8 @@ ApplicationWindow {
     required property QtObject branches
     required property QtObject cores
     required property QtObject clipboard
+    required property QtObject pictureFiles
+    required property QtObject help
     property url chosenPackage
 
     width: 1280
@@ -254,6 +256,17 @@ ApplicationWindow {
             Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor..."); onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
             Action { id: luaConsoleAction; property string hotkey: "Lua Console"; text: qsTr("&Lua Console..."); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
         }
+        Menu {
+            delegate: keyedMenuItem
+            title: qsTr("&Help")
+            Action { text: qsTr("Open toolassisted.run in Browser"); onTriggered: Qt.openUrlExternally(root.help.siteUrl) }
+            Action {
+                text: qsTr("&Copy Version Info")
+                onTriggered: { root.clipboard.setText(root.help.run("versionReport")); root.note(qsTr("Version info copied")) }
+            }
+            Action { text: qsTr("&Report an Issue..."); onTriggered: { reportIssueWindow.show(); reportIssueWindow.raise() } }
+            Action { text: qsTr("&About..."); onTriggered: aboutDialog.open() }
+        }
         // Chimera's Emulator menu, Game for a game core: what the core open offers
         Menu {
             delegate: keyedMenuItem
@@ -273,7 +286,7 @@ ApplicationWindow {
                     const list = names.split("\n")
                     saveDataDialog.files = list.length
                     // one file under its own name; more in a zip named for the game
-                    saveDataDialog.currentFile = "file:///" + (list.length === 1 ? list[0].replace(/^.*\//, "")
+                    saveDataDialog.selectedFile = "file:///" + (list.length === 1 ? list[0].replace(/^.*\//, "")
                                                                                    : root.session.gameName + " (save data).zip")
                     saveDataDialog.open()
                 }
@@ -996,6 +1009,24 @@ ApplicationWindow {
         onTriggered: { while (onScreenMessages.count > 0 && onScreenMessages.get(0).until < Date.now()) onScreenMessages.remove(0) }
     }
     LogWindow { id: logWindow; log: messageLog; clipboard: root.clipboard; visible: false }
+    ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; visible: false }
+    Dialog {
+        id: aboutDialog
+        objectName: "aboutDialog"
+        title: qsTr("About Chimera")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok
+        ColumnLayout {
+            Label { text: qsTr("Chimera"); font.bold: true; font.pointSize: 14 }
+            Label { text: qsTr("A frontend for tool-assisted speedruns: the Qt window, a prototype.") }
+            Label { text: root.help.buildName }
+            Label {
+                text: "<a href=\"" + root.help.siteUrl + "\">" + root.help.siteUrl + "</a>"
+                onLinkActivated: (link) => Qt.openUrlExternally(link)
+            }
+        }
+    }
 
     footer: ToolBar {
         visible: root.session.showStatusBar

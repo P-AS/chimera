@@ -10,6 +10,7 @@
  * frames the machine ran, pictures drawn, the window's frame intervals and,
  * with --scroll, how long each piano roll paint took while it scrolled. */
 
+#include <QSysInfo>
 #include <QCommandLineParser>
 #include <QElapsedTimer>
 #include <QClipboard>
@@ -45,6 +46,7 @@
 #include "chimera/vm/branches_vm.hpp"
 #include "chimera/vm/project_details_vm.hpp"
 #include "chimera/vm/config_store.hpp"
+#include "chimera/vm/help_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -60,6 +62,7 @@
 #include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "clipboard_relay.hpp"
+#include "picture_files.hpp"
 #include "key_names.hpp"
 #include "picture_item.hpp"
 #include "piano_roll_item.hpp"
@@ -200,7 +203,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -443,6 +446,9 @@ int main(int argc, char **argv)
 		}
 	}
 	vm::SettingsViewModel settings(dispatcher, session);
+	vm::HelpViewModel help(dispatcher, session, settings);
+	/* the system, for a bug report: as Qt names it */
+	help.osName.set((QSysInfo::prettyProductName() + QStringLiteral(" (") + QSysInfo::currentCpuArchitecture() + QStringLiteral(")")).toStdString());
 	/* the cores and the firmware: beside the program, as Chimera keeps them,
 	 * unless the environment names others */
 	vm::CoresViewModel cores(dispatcher);
@@ -638,6 +644,7 @@ int main(int argc, char **argv)
 	qt::KeyNamer keyNamer;
 	qt::ThemeColors themeColors;
 	qt::QmlViewModel settingsQml(settings);
+	qt::QmlViewModel helpQml(help);
 	qt::QmlViewModel branchesQml(branches);
 	qt::QmlViewModel projectDetailsQml(projectDetails);
 	qt::QmlViewModel coresQml(cores);
@@ -677,6 +684,7 @@ int main(int argc, char **argv)
 	qmlRegisterType<qt::PianoRollItem>("Chimera", 1, 0, "PianoRollItem");
 
 	qt::ClipboardRelay clipboard;
+	qt::PictureFiles pictureFiles(session.screen);
 	QQmlApplicationEngine engine;
 	engine.setInitialProperties({
 		{QStringLiteral("session"), QVariant::fromValue<QObject *>(&sessionQml)},
@@ -692,6 +700,8 @@ int main(int argc, char **argv)
 		{QStringLiteral("keyNamer"), QVariant::fromValue<QObject *>(&keyNamer)},
 		{QStringLiteral("hotkeyRelay"), QVariant::fromValue<QObject *>(&relay)},
 		{QStringLiteral("clipboard"), QVariant::fromValue<QObject *>(&clipboard)},
+		{QStringLiteral("pictureFiles"), QVariant::fromValue<QObject *>(&pictureFiles)},
+		{QStringLiteral("help"), QVariant::fromValue<QObject *>(&helpQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
@@ -717,6 +727,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("undo-history") ? QStringLiteral("undoHistoryWindow")
 		: args.value(showOpt) == QStringLiteral("tastudio-settings") ? QStringLiteral("tastudioSettingsWindow")
 		: args.value(showOpt) == QStringLiteral("log") ? QStringLiteral("logWindow")
+		: args.value(showOpt) == QStringLiteral("report") ? QStringLiteral("reportIssueWindow")
 		: args.value(showOpt) == QStringLiteral("project-details") ? QStringLiteral("projectDetailsWindow")
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())

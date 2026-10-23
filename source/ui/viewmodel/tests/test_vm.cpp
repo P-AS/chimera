@@ -35,6 +35,7 @@
 #include "chimera/vm/branches_vm.hpp"
 #include "chimera/vm/project_details_vm.hpp"
 #include "chimera/vm/gamepads.hpp"
+#include "chimera/vm/help_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
 #include "chimera/vm/new_project_vm.hpp"
@@ -1123,6 +1124,64 @@ bool tastudioSettings(const char *package, const char *rom)
 		d.until([] { return false; }, 0.2);
 		CHECK(patterns != nullptr && fromValue(patterns->cell(4, 1), runs) && runs == "On x3, Off x2");
 	}
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
+/* Chimera's Help menu: the build and the core in a bug report's words, a
+ * report's first lines filled in from the session, and a zip of it all */
+bool helpMenu(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-help-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	SettingsViewModel settings(d, session);
+	HelpViewModel help(d, session, settings);
+	std::string error, text;
+	CHECK(help.buildName.get().rfind("Qt prototype, commit ", 0) == 0 && help.buildName.get().size() > 25);
+	/* nothing open: the build alone, and the report says what was not running */
+	CHECK(fromValue(help.run("versionReport", {}, error).value_or(Value()), text) && text == "**Chimera build:** " + help.buildName.get());
+	CHECK(fromValue(help.run("makeReport", {}, error).value_or(Value()), text));
+	CHECK(text.find("**Core and version:** <!-- no core was running -->") != std::string::npos &&
+		text.find("**Game:** <!-- no project was open -->") != std::string::npos &&
+		text.find("**Renderer and non-default settings:** <!-- no core was running -->") != std::string::npos &&
+		text.find("**OS and GPU:** <!-- type your operating system here -->") != std::string::npos);
+	CHECK(text.find("**CPU and memory:** ") != std::string::npos && text.find(" threads)") != std::string::npos &&
+		text.find(" GB of memory") != std::string::npos);
+	/* a project open: its core, its game, its settings off their defaults */
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && settings.shown.get() > 0; }, 60));
+	const fs::path project = dir / "walker.chimeraProject";
+	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	CHECK(fromValue(help.run("versionReport", {}, error).value_or(Value()), text) &&
+		text.rfind("**Chimera build:** " + help.buildName.get() + "\n**Core and version:** Synth ", 0) == 0);
+	CHECK(settings.run("set", {std::string("initFillByte"), int64_t{7}}, error).has_value());
+	help.osName.set("Some System (x86_64)");
+	CHECK(fromValue(help.run("makeReport", {}, error).value_or(Value()), text));
+	std::printf("report:\n%s\n", text.c_str());
+	CHECK(text.find("**Game:** rom: walker.testrom") != std::string::npos);
+	CHECK(text.find("\n- Initial RAM Fill: 7 (default: 0)") != std::string::npos);
+	CHECK(text.find("**OS and GPU:** Some System (x86_64), ") != std::string::npos);
+	CHECK(help.reportFiles.get().rfind(project.string(), 0) == 0);
+	/* in one zip: the report, the picture given, the files */
+	const fs::path picture = dir / "shot.png";
+	{
+		std::ofstream out(picture, std::ios::binary);
+		out << "\x89PNG not really";
+	}
+	const fs::path zip = dir / "report.zip";
+	CHECK(help.run("saveReport", {zip.string(), picture.string()}, error).has_value());
+	const std::string bytes = readFile(zip);
+	CHECK(bytes.find("report.md") != std::string::npos && bytes.find("game.png") != std::string::npos &&
+		bytes.find("walker.chimeraProject") != std::string::npos && bytes.find("**Game:** rom: walker.testrom") != std::string::npos);
+	CHECK(help.status.get() == "Saved " + zip.string());
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);
@@ -4015,6 +4074,7 @@ int main(int argc, char **argv)
 			ranMachine = pianoRollColumns(argv[1], argv[2]) && ranMachine;
 			ranMachine = backupAndHistory(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
+			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = tastudioSettings(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");

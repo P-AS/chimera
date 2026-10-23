@@ -18,6 +18,7 @@
     <file>UndoHistory.qml</file>
     <file>TAStudioSettings.qml</file>
     <file>LogWindow.qml</file>
+    <file>ReportIssue.qml</file>
     <file>Cores.qml</file>
   </qresource>
 </RCC>

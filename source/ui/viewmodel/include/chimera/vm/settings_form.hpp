@@ -65,6 +65,14 @@ public:
 	/* every setting that applies at its value, the machine's chooser too:
 	 * what a project records (its settings are exactly the knobs offered) */
 	json::Json recorded() const;
+	/* the settings shown whose value is not their default, as a bug report
+	 * lists them (Chimera's IssueReport.ChangedSettings): label, value,
+	 * default, each as it reads */
+	struct Changed
+	{
+		std::string label, value, standard;
+	};
+	std::vector<Changed> changed() const;
 
 	/* the value a declaration has among these values, else its default */
 	static Value valueOf(const json::Json &decl, const json::Json &values);
