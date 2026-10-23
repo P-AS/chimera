@@ -20,6 +20,10 @@ public:
 	explicit PrecompiledViewModel(Dispatcher &dispatcher);
 
 	Property<std::string> root, inUse, total, status;
+	/* what Chimera's window says over the list */
+	Property<std::string> header;
+	/* a size as Chimera's Pre-Compiled Modules writes one ("1.25 GB", "12.0 MB", "40 KB") */
+	static std::string sizeText(uint64_t bytes);
 
 	struct Game
 	{
@@ -36,7 +40,7 @@ private:
 	public:
 		explicit Rows(PrecompiledViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.games_.size()); }
-		int32_t columnCount() const override { return 10; }
+		int32_t columnCount() const override { return 15; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 

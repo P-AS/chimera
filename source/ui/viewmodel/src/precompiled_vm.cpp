@@ -1,20 +1,50 @@
 #include "chimera/vm/precompiled_vm.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <sstream>
 
 #include "chimera/vm/cache_manager_vm.hpp"
+#include "chimera/vm/european_clock.hpp"
 #include "chimera/vm/json.hpp"
 
 namespace chimera::vm {
 
 namespace fs = std::filesystem;
 
+std::string PrecompiledViewModel::sizeText(uint64_t bytes)
+{
+	const double gb = static_cast<double>(bytes) / (1024.0 * 1024 * 1024);
+	char buf[32];
+	if (gb >= 1.0) std::snprintf(buf, sizeof buf, "%.2f GB", gb);
+	else if (static_cast<double>(bytes) / (1024.0 * 1024) >= 1.0) std::snprintf(buf, sizeof buf, "%.1f MB", static_cast<double>(bytes) / (1024.0 * 1024));
+	else std::snprintf(buf, sizeof buf, "%.0f KB", std::floor(static_cast<double>(bytes) / 1024.0 + 0.5));
+	return buf;
+}
+
 PrecompiledViewModel::PrecompiledViewModel(Dispatcher &dispatcher) : ViewModel("precompiled", dispatcher)
 {
+	expose("header", "what the window says over the list: how many games, how much, and what removing costs", header);
+	command("sizeOf", "how much the games at these places in the list (\"0,2\") weigh, as Chimera writes it", {"rows"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string list;
+			if (!arg(a, 0, list, error)) return {};
+			uint64_t bytes = 0;
+			std::stringstream in(list);
+			for (std::string one; std::getline(in, one, ',');)
+				if (!one.empty())
+				{
+					const long i = std::strtol(one.c_str(), nullptr, 10);
+					if (i >= 0 && static_cast<size_t>(i) < games_.size()) bytes += games_[static_cast<size_t>(i)].bytes;
+				}
+			return sizeText(bytes);
+		});
 	expose("root", "where the compiled code is, a folder a game", root, true);
 	expose("inUse", "the open machine's folder, \"\" for none: it stays", inUse, true);
 	expose("total", "all of it together, as it reads", total);
@@ -118,13 +148,17 @@ void PrecompiledViewModel::survey()
 	/* newest first; what nothing dates goes last */
 	std::stable_sort(games_.begin(), games_.end(), [](const Game &a, const Game &b) { return a.compiled > b.compiled; });
 	total.set(CacheManagerViewModel::sizeText(all) + " in " + std::to_string(games_.size()) + (games_.size() == 1 ? " game" : " games"));
+	header.set(games_.empty() ? "No game has compiled code yet. A core that translates its game's code fills this when a project is created."
+		: std::to_string(games_.size()) + (games_.size() == 1 ? " game, " : " games, ") + sizeText(all) +
+			". Removing one means its game is compiled again the next time a project needs it, which costs minutes and never work.");
 	rows_.reset.emit();
 }
 
 std::string PrecompiledViewModel::Rows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"name", "sha1", "core", "version", "compiled", "modules", "size", "sizeText", "note", "folder"};
-	return column >= 0 && column < 10 ? names[column] : "";
+	static const char *const names[] = {"name", "sha1", "core", "version", "compiled", "modules", "size", "sizeText", "note", "folder",
+		"by", "when", "modulesText", "sizeShown", "look"};
+	return column >= 0 && column < 15 ? names[column] : "";
 }
 
 Value PrecompiledViewModel::Rows::cell(int64_t row, int32_t column) const
@@ -147,6 +181,29 @@ Value PrecompiledViewModel::Rows::cell(int64_t row, int32_t column) const
 			   : g.complete ? std::string()
 							: std::string("Some of the objects this game needs are missing; it will be compiled again when a project needs it.");
 	case 9: return g.folder;
+	/* Chimera's columns: who compiled it, when (local time), the modules, the size, and how it reads */
+	case 10:
+		if (g.core.empty()) return std::string("not recorded");
+		return g.version.empty() ? g.core : g.core + " " + g.version.substr(0, 12);
+	case 11:
+	{
+		int64_t t = 0;
+		if (g.compiled.empty() || !parseIsoTime(g.compiled, t)) return std::string();
+		const std::time_t tt = static_cast<std::time_t>(t);
+		std::tm local{};
+#ifdef _WIN32
+		localtime_s(&local, &tt);
+#else
+		localtime_r(&tt, &local);
+#endif
+		char buf[32];
+		std::strftime(buf, sizeof buf, "%Y-%m-%d %H:%M", &local);
+		return std::string(buf);
+	}
+	case 12: return g.modules == 0 ? std::string() : std::to_string(g.modules);
+	case 13: return sizeText(g.bytes);
+	/* nothing can name it: greyed; pieces missing: the error colour */
+	case 14: return std::string(g.unknown ? "grey" : g.complete ? "normal" : "error");
 	default: return {};
 	}
 }

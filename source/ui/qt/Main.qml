@@ -1316,7 +1316,7 @@ ApplicationWindow {
     PathsConfig { id: pathsWindow; vm: root.paths; session: root.session; mainWindow: root; visible: false }
     FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; themeColor: root.osdColor; visible: false }
     DataFolderConfig { id: dataFolderWindow; vm: root.dataFolder; themeColor: root.osdColor; mainWindow: root; visible: false }
-    PrecompiledModules { id: precompiledWindow; vm: root.precompiled; visible: false }
+    PrecompiledModules { id: precompiledWindow; vm: root.precompiled; themeColor: root.osdColor; visible: false }
     TraceLogger {
         id: traceLoggerWindow; vm: root.traceLogger; session: root.session; visible: false
         folderOf: root.folderOf; customize: root.customize; toolWindows: root.toolWindows; mainWindow: root

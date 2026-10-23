@@ -929,6 +929,23 @@ void precompiledModules()
 	CHECK(code.games()[0].name == "other.iso" && code.games()[0].complete && code.games()[0].open);
 	CHECK(code.games()[1].name == "game.iso" && code.games()[1].modules == 2 && !code.games()[1].complete && code.games()[1].bytes > 100);
 	CHECK(code.games()[2].name == "BBBB" && code.games()[2].unknown);
+	/* Chimera's columns and words */
+	{
+		RowModel &rows = *code.rowLists()[0].model;
+		auto text = [&](int64_t r, int32_t c) {
+			std::string t;
+			fromValue(rows.cell(r, c), t);
+			return t;
+		};
+		CHECK(text(1, 10) == "RPCS3 0123456789ab" && text(2, 10) == "not recorded" && text(1, 11).size() == 16 && text(2, 11).empty());
+		CHECK(text(1, 12) == "2" && text(2, 12).empty() && text(1, 14) == "error" && text(2, 14) == "grey" && text(0, 14) == "normal");
+		CHECK(code.header.get().rfind("3 games, ", 0) == 0 &&
+			  code.header.get().find(". Removing one means its game is compiled again the next time a project needs it, which costs minutes and never work.") != std::string::npos);
+		CHECK(PrecompiledViewModel::sizeText(1536) == "2 KB" && PrecompiledViewModel::sizeText(3ull << 30) == "3.00 GB" &&
+			  PrecompiledViewModel::sizeText(5ull << 20) == "5.0 MB");
+		std::string error;
+		CHECK(code.run("sizeOf", {std::string("1,2")}, error) == Value(PrecompiledViewModel::sizeText(code.games()[1].bytes + code.games()[2].bytes)));
+	}
 	std::string error;
 	CHECK(!code.run("remove", {std::string("0,2")}, error) && error == "could not remove: other.iso (in use)");
 	CHECK(!fs::exists(dir / "BBBB") && fs::exists(dir / "CCCC") && code.games().size() == 2);
