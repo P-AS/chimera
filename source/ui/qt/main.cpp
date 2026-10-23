@@ -14,6 +14,7 @@
 #include <QCommandLineParser>
 #include <QElapsedTimer>
 #include <QClipboard>
+#include <QBuffer>
 #include <QImage>
 #include <QDateTime>
 #include <QDir>
@@ -69,6 +70,7 @@
 #include "chimera/vm/host_input_vm.hpp"
 #include "chimera/vm/game_vm.hpp"
 #include "chimera/vm/forms_vm.hpp"
+#include "chimera/vm/comm_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -239,10 +241,12 @@ int main(int argc, char **argv)
 	QCommandLineOption scrollOpt(QStringLiteral("scroll"), QStringLiteral("while measuring, scroll the piano roll all the time"));
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
+	QCommandLineOption mmfOpt(QStringLiteral("mmf"), QStringLiteral("the memory-mapped file Lua's comm.mmfScreenshot writes to, as Chimera's --mmf"),
+		QStringLiteral("name"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
 	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
-	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
+	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
 	QtDispatcher dispatcher(&app);
 	vm::InputLog inputs;
@@ -980,6 +984,18 @@ int main(int argc, char **argv)
 	lua.add(forms);
 	vm::Connection formClicks = forms.clicked.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_click", h); });
 	vm::Connection formCloses = forms.closed.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_closed", h); });
+	/* memory-mapped files shared with other programs; the screenshot is a PNG, as Chimera's */
+	vm::CommViewModel comm(dispatcher, [&session] {
+		vm::Picture::Frame f;
+		if (!session.screen.takeIfNewer(UINT64_MAX, f) || f.width <= 0 || f.height <= 0) return std::string();
+		QByteArray png;
+		QBuffer buffer(&png);
+		buffer.open(QIODevice::WriteOnly);
+		QImage(reinterpret_cast<const uchar *>(f.pixels.data()), f.width, f.height, f.width * 4, QImage::Format_RGB32).save(&buffer, "PNG");
+		return std::string(png.constData(), static_cast<size_t>(png.size()));
+	});
+	if (args.isSet(mmfOpt)) comm.screenshotFile.set(args.value(mmfOpt).toStdString());
+	lua.add(comm);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());

@@ -675,6 +675,40 @@ function gui.clearImageCache() imageEpoch = imageEpoch + 1 end
 function __chimera_frame_begin() shapes = {} end
 function __chimera_frame_end() if C.gui then C.gui.shapes = jsonOf(shapes) end end
 
+-- comm: data shared with other programs through memory-mapped files, as
+-- Chimera's (it has no network functions) ------------------------------------
+comm = {}
+function comm.getluafunctionslist()
+	local names = {}
+	for name in pairs(comm) do names[#names + 1] = name end
+	table.sort(names)
+	return table.concat(names, "\n")
+end
+function comm.mmfSetFilename(name) C.comm.screenshotFile = tostring(name) end
+function comm.mmfGetFilename() return C.comm.screenshotFile end
+function comm.mmfScreenshot() return C.comm.mmfScreenshot() end
+function comm.mmfWrite(name, text) return C.comm.mmfWrite(tostring(name), tostring(text)) end
+function comm.mmfWriteBytes(name, bytes)
+	local keys, parts = {}, {}
+	for k in pairs(bytes) do keys[#keys + 1] = k end
+	table.sort(keys)
+	for i, k in ipairs(keys) do parts[i] = string.char(bytes[k] & 0xFF) end
+	return C.comm.mmfWrite(tostring(name), table.concat(parts))
+end
+function comm.mmfCopyFromMemory(name, addr, length, domain)
+	return C.comm.mmfWrite(tostring(name), C.session.readMemory(domain or currentDomain(), addr, length))
+end
+function comm.mmfCopyToMemory(name, addr, length, domain)
+	C.session.writeMemory(domain or currentDomain(), addr, C.comm.mmfRead(tostring(name), length))
+end
+function comm.mmfRead(name, size) return C.comm.mmfRead(tostring(name), size) end
+-- from 0, as Chimera's
+function comm.mmfReadBytes(name, size)
+	local s, t = C.comm.mmfRead(tostring(name), size), {}
+	for i = 1, #s do t[i - 1] = string.byte(s, i) end
+	return t
+end
+
 -- forms: a script's own small windows, as Chimera's -------------------------
 forms = {}
 local clicks, closers, boxes = {}, {}, {}

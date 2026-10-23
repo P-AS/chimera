@@ -64,6 +64,10 @@
 #include "chimera/vm/host_input_vm.hpp"
 #include "chimera/vm/game_vm.hpp"
 #include "chimera/vm/forms_vm.hpp"
+#include "chimera/vm/comm_vm.hpp"
+#ifndef _WIN32
+#include <sys/mman.h>
+#endif
 #include "chimera/vm/nut_muxer.hpp"
 #include "chimera/vm/subprocess.hpp"
 #include "chimera/vm/surface_viewer_vm.hpp"
@@ -1478,6 +1482,7 @@ bool luaLibraries(const char *package, const char *rom)
 	HostInputViewModel hostInput(d, session);
 	GamePropertiesViewModel gameProperties(d, session);
 	FormsViewModel forms(d);
+	CommViewModel comm(d, [] { return std::string("PNG bytes"); });
 	LuaBridge lua;
 	LuaConsoleViewModel console(d, lua);
 	lua.add(session);
@@ -1488,6 +1493,7 @@ bool luaLibraries(const char *package, const char *rom)
 	lua.add(hostInput);
 	lua.add(gameProperties);
 	lua.add(forms);
+	lua.add(comm);
 	Connection formClicks = forms.clicked.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_click", h); });
 	Connection formCloses = forms.closed.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_closed", h); });
 	/* the person holds Z and the left and right buttons, the pointer at 12,34 */
@@ -1547,6 +1553,15 @@ forms.drawLine(pic, 0, 0, 10, 10, "red")
 forms.refresh(pic)
 forms.setproperty(button, "Width", 90)
 console.log("forms", form > 0, forms.gettext(box), forms.gettext(pick), forms.getproperty(button, "Left"), forms.getproperty(button, "Width"), forms.ischecked(tick), forms.button(12345, "x"), forms.createcolor(1, 2, 3, 4))
+local shared = "chimera-test-" .. tostring(os.time()) .. "-" .. tostring(math.random(1, 1000000))
+comm.mmfSetFilename(shared .. "-shot")
+mainmemory.write_bytes_as_array(0x60, {9, 8, 7})
+comm.mmfCopyFromMemory(shared .. "-ram", 0x60, 3)
+mainmemory.write_bytes_as_array(0x70, {0, 0, 0})
+comm.mmfCopyToMemory(shared .. "-ram", 0x70, 3)
+console.log("comm", comm.mmfWrite(shared, "hello"), comm.mmfRead(shared, 5), comm.mmfWriteBytes(shared .. "-b", {1, 2, 3}), comm.mmfReadBytes(shared .. "-b", 3)[2],
+	mainmemory.read_u8(0x71), comm.mmfScreenshot(), comm.mmfRead(comm.mmfGetFilename(), 9), pcall(comm.mmfRead, shared .. "-none", 4))
+console.log("sharedname", shared)
 userdata.set("lives", 3)
 userdata.set("name", "walker")
 console.log("userdata", userdata.get("lives"), userdata.containskey("name"), #userdata.get_keys(), userdata.remove("lives"), userdata.get("lives"), userdata.remove("lives"), select(2, pcall(userdata.set, "t", {})):find("Invalid type for userdata") ~= nil)
@@ -1579,6 +1594,21 @@ while true do emu.frameadvance() end
 	CHECK(said("input ") == "input true true true true true 12 34 true false true 34");
 	CHECK(said("game ") == "game 17 Status Steps u32 4 4 1 16909060 true true string false");
 	CHECK(said("forms ") == "forms true abc a 1 90 false 0 67174915");
+	CHECK(said("comm ").rfind("comm 5 hello 3 3 8 9 PNG bytes false ", 0) == 0 && said("comm ").find("there is no memory-mapped file") != std::string::npos);
+	/* the shared memory made, let go (the script runs again below: that run's too, at the end) */
+	auto unshare = [&] {
+		if (const std::string name = said("sharedname "); name.size() > 11)
+			for (const char *suffix : {"", "-b", "-ram", "-shot"})
+			{
+#ifndef _WIN32
+				shm_unlink(("/" + name.substr(11) + suffix).c_str());
+#else
+				/* Windows lets a mapping go with its last handle */
+				(void)suffix;
+#endif
+			}
+	};
+	unshare();
 	{
 		/* the window's: the button clicked twice, the check box ticked, the form closed */
 		RowModel &controls = *forms.rowLists()[1].model;
@@ -1650,6 +1680,7 @@ while true do emu.frameadvance() end
 	CHECK(d.until([&] { return session.frame.get() == 4; }, 20));
 	console.frameDone();
 	CHECK(said("script stopped: ").find("on purpose") != std::string::npos && !console.running.get());
+	unshare();
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;
