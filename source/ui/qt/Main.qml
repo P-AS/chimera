@@ -24,6 +24,7 @@ ApplicationWindow {
     required property QtObject themes
     required property QtObject themeColors
     required property QtObject luaConsole
+    required property QtObject toolWindows
     required property QtObject branches
     required property QtObject cores
     required property QtObject clipboard
@@ -529,7 +530,7 @@ ApplicationWindow {
         id: tastudioWindow
         session: root.session; pianoRoll: root.pianoRoll; branches: root.branches; projectDetails: root.projectDetails
         clipboard: root.clipboard; customize: root.customize; keyedItem: keyedMenuItem; folderOf: root.folderOf; mainWindow: root
-        keyNamer: root.keyNamer
+        keyNamer: root.keyNamer; toolWindows: root.toolWindows
         visible: false
     }
     Connections {
@@ -560,6 +561,7 @@ ApplicationWindow {
         id: luaConsoleWindow; vm: root.luaConsole; folderOf: root.folderOf; visible: false
         fileUrl: (path) => root.pictureFiles.folderUrl(path); localPath: (url) => root.pictureFiles.localPath(url)
         clipboard: root.clipboard; customize: root.customize; themeColor: root.osdColor
+        toolWindows: root.toolWindows; mainWindow: root
     }
     Cores { id: coresWindow; vm: root.cores; visible: false }
 

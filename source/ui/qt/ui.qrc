@@ -32,6 +32,7 @@
     <file>SettingsList.qml</file>
     <file>NewProject.qml</file>
     <file>LuaConsole.qml</file>
+    <file>WindowOptions.qml</file>
     <file>TAStudio.qml</file>
     <file>EncodeVideo.qml</file>
     <file>LuaForms.qml</file>

@@ -23,6 +23,7 @@ vm_lib = static_library(
     'viewmodel/src/ram_search_vm.cpp',
     'viewmodel/src/settings_vm.cpp',
     'viewmodel/src/lua_console_vm.cpp',
+    'viewmodel/src/tool_windows_vm.cpp',
     'viewmodel/src/branches_vm.cpp',
     'viewmodel/src/firmware.cpp',
     'viewmodel/src/suggestion.cpp',

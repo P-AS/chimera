@@ -19,6 +19,8 @@ ApplicationWindow {
     property QtObject clipboard: null
     property var themeColor: (role, fallback) => fallback
     property QtObject customize: null
+    property QtObject toolWindows: null
+    property Window mainWindow: null
     title: qsTr("Lua Console")
     width: 760
     height: 460
@@ -34,6 +36,10 @@ ApplicationWindow {
         duplicateDialog.selectedFile = win.fileUrl(name)
         duplicateDialog.open()
     }
+    // Save Window Position, Stay on Top, Float From Main Window
+    WindowOptions { id: windowOptions; window: win; tool: "luaConsole"; vm: win.toolWindows; mainWindow: win.mainWindow }
+    onVisibleChanged: if (visible) windowOptions.placeBack(false)
+
     function menuOpened() { if (win.customize) win.customize.run("menuOpened") }
     function menuClosed() { if (win.customize) win.customize.run("menuClosed") }
 
@@ -209,6 +215,8 @@ ApplicationWindow {
                     onObjectRemoved: (index, object) => recentScriptsMenu.removeItem(object)
                 }
             }
+            MenuSeparator {}
+            Action { property string keysShown: "Alt+F4"; text: qsTr("&Close"); onTriggered: win.close() }
         }
         Menu {
             title: qsTr("&Script")
@@ -241,6 +249,15 @@ ApplicationWindow {
             MenuItem { text: qsTr("Toggle All if None Selected"); checkable: true; checked: win.vm.toggleAllIfNoneSelected; onTriggered: win.vm.toggleAllIfNoneSelected = checked }
             MenuItem { text: qsTr("Reload When Script File Changes"); checkable: true; checked: win.vm.reloadOnChange; onTriggered: win.vm.reloadOnChange = checked }
             MenuItem { text: qsTr("Duplicate to Stdout"); checkable: true; checked: win.vm.duplicateToStdout; onTriggered: win.vm.duplicateToStdout = checked }
+            MenuSeparator {}
+            MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
+            MenuItem {
+                text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
+                visible: windowOptions.canStayOnTop; height: visible ? implicitHeight : 0
+                onTriggered: windowOptions.set("top", checked)
+            }
+            MenuItem { text: qsTr("&Float From Main Window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
+            MenuItem { text: qsTr("Restore &Defaults"); onTriggered: { win.vm.run("restoreDefaults"); windowOptions.restore() } }
         }
         Menu {
             title: qsTr("&Help")

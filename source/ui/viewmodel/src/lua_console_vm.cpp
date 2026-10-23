@@ -497,6 +497,19 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 		return out;
 	});
 
+	command("restoreDefaults", "the console's settings back to Chimera's: scripts start on load, Toggle works on every "
+		"script when none is selected, files are not watched, and Duplicate to Stdout as the platform has it", {},
+		[this](const Args &, std::string &) -> Value {
+			disableOnLoad.set(false);
+			toggleAllIfNoneSelected.set(true);
+			reloadOnChange.set(false);
+#ifdef _WIN32
+			duplicateToStdout.set(false);
+#else
+			duplicateToStdout.set(true);
+#endif
+			return {};
+		});
 	command("functionsList", "Help > Lua Functions List: each library's functions with their parameters, as "
 		"[{\"library\", \"name\", \"params\"}]", {}, [this](const Args &, std::string &) -> Value {
 			return lua_.ask("__chimera_functions_list");

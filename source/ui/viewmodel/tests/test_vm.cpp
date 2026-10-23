@@ -47,6 +47,7 @@
 #include "chimera/vm/cache_manager_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
+#include "chimera/vm/tool_windows_vm.hpp"
 #include "chimera/vm/new_project_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/process_stamp.hpp"
@@ -420,9 +421,38 @@ void luaConsole()
 	CHECK(list.rowCount() == 0 && console.lines.get() == 0 && !console.running.get() && console.sessionPath.get().empty());
 	run("execute", {std::string("closing")});
 	CHECK(lastLine() == "true");
+	/* Restore Defaults: Chimera's settings back */
+	console.disableOnLoad.set(true);
+	console.toggleAllIfNoneSelected.set(false);
+	console.reloadOnChange.set(true);
+	run("restoreDefaults");
+	CHECK(!console.disableOnLoad.get() && console.toggleAllIfNoneSelected.get() && !console.reloadOnChange.get());
 	/* Help > Lua Functions List: each library's functions with their parameters */
 	const std::string listed = std::get<std::string>(*run("functionsList"));
 	CHECK(listed.find("{\"library\": \"event\", \"name\": \"onframeend\", \"params\": \"fn, name\"}") != std::string::npos);
+}
+
+/* Every tool window's Settings items, as Chimera's: Save Window Position on
+ * and the others off at first; the place kept only while Save Window
+ * Position is on; Restore Defaults forgets the tool's own */
+void toolWindows()
+{
+	ManualDispatcher d;
+	ToolWindowsViewModel tw(d);
+	std::string error;
+	CHECK(tw.option("luaConsole", "save") && !tw.option("luaConsole", "top") && !tw.option("luaConsole", "float"));
+	CHECK(tw.run("place", {std::string("luaConsole"), int64_t{10}, int64_t{20}, int64_t{700}, int64_t{400}}, error) == Value(true));
+	CHECK(tw.settings.get() == "{\"luaConsole\": {\"x\": 10, \"y\": 20, \"w\": 700, \"h\": 400}}");
+	CHECK(tw.run("setOption", {std::string("luaConsole"), std::string("top"), true}, error).has_value() && tw.option("luaConsole", "top"));
+	CHECK(tw.run("setOption", {std::string("tastudio"), std::string("float"), true}, error).has_value() && tw.option("tastudio", "float"));
+	/* Save Window Position off: the place is forgotten, and no longer kept */
+	tw.run("setOption", {std::string("luaConsole"), std::string("save"), false}, error);
+	CHECK(tw.settings.get() == "{\"luaConsole\": {\"top\": true, \"save\": false}, \"tastudio\": {\"float\": true}}");
+	CHECK(tw.run("place", {std::string("luaConsole"), int64_t{1}, int64_t{2}, int64_t{3}, int64_t{4}}, error) == Value(false));
+	CHECK(!tw.run("setOption", {std::string("luaConsole"), std::string("wide"), true}, error) && error.find("no option wide") != std::string::npos);
+	/* Restore Defaults: the tool's own options and place gone, the others' kept */
+	tw.run("restoreDefaults", {std::string("luaConsole")}, error);
+	CHECK(tw.settings.get() == "{\"tastudio\": {\"float\": true}}" && tw.option("luaConsole", "save") && !tw.option("luaConsole", "top"));
 }
 
 /* Firmware is found by its hash when one is pinned (the project's first),
@@ -6214,6 +6244,7 @@ int main(int argc, char **argv)
 	bindings();
 	lua();
 	luaConsole();
+	toolWindows();
 	configStore();
 	firmware();
 	settingsByMachine();

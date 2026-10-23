@@ -27,6 +27,9 @@ ApplicationWindow {
     required property var mainWindow
     // whether Shift is held (the main window dragged alone)
     required property QtObject keyNamer
+    property QtObject toolWindows: null
+    // Save Window Position (its size: it opens beside the main window), Stay on Top, Float From Main Window
+    WindowOptions { id: windowOptions; window: tas; tool: "tastudio"; vm: tas.toolWindows; mainWindow: tas.mainWindow }
     // "<< Hide": the main window offers it back
     property bool hiddenByPerson: false
     title: !tas.session.hasProject ? qsTr("TAStudio")
@@ -50,7 +53,10 @@ ApplicationWindow {
     }
     function engage() {
         tas.hiddenByPerson = false
-        if (!tas.visible) tas.placeBesideMain()
+        if (!tas.visible) {
+            windowOptions.placeBack(true)
+            tas.placeBesideMain()
+        }
         tas.show()
         tas.raise()
     }
@@ -304,6 +310,19 @@ ApplicationWindow {
                     checkable: true
                     checked: tas.pianoRoll.moveWithMainWindow
                     onToggled: tas.pianoRoll.moveWithMainWindow = checked
+                }
+                // a Window menu takes the window's options, with no line before them, as Chimera's
+                MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
+                MenuItem {
+                    text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
+                    visible: windowOptions.canStayOnTop; height: visible ? implicitHeight : 0
+                    onTriggered: windowOptions.set("top", checked)
+                }
+                MenuItem { text: qsTr("&Float From Main Window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
+                MenuItem {
+                    text: qsTr("Restore &Defaults")
+                    // TAStudio's own: every column shown again
+                    onTriggered: { tas.pianoRoll.run("showAllColumns"); windowOptions.restore() }
                 }
             }
         }

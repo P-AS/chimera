@@ -76,6 +76,7 @@
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
+#include "chimera/vm/tool_windows_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
@@ -953,6 +954,10 @@ int main(int argc, char **argv)
 	luaConsole.luaFolder.set(paths.resolve("Lua"));
 	vm::Connection luaFolderWatch = paths.changed.changed.connect([&luaConsole, &paths] { luaConsole.luaFolder.set(paths.resolve("Lua")); });
 	qt::QmlViewModel luaConsoleQml(luaConsole);
+	/* each tool window's Save Window Position, Stay on Top and Float From Main Window, and its place */
+	vm::ToolWindowsViewModel toolWindows(dispatcher);
+	config.keep(toolWindows, "settings");
+	qt::QmlViewModel toolWindowsQml(toolWindows);
 	lua.add(session);
 	lua.add(pianoRoll);
 	lua.add(ramSearch);
@@ -964,6 +969,7 @@ int main(int argc, char **argv)
 	lua.add(hotkeys);
 	lua.add(settings);
 	lua.add(luaConsole);
+	lua.add(toolWindows);
 	lua.add(branches);
 	lua.add(projectDetails);
 	lua.add(cores);
@@ -1072,6 +1078,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("forms"), QVariant::fromValue<QObject *>(&formsQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
+		{QStringLiteral("toolWindows"), QVariant::fromValue<QObject *>(&toolWindowsQml)},
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},
 		{QStringLiteral("cores"), QVariant::fromValue<QObject *>(&coresQml)},
 	});
