@@ -36,8 +36,9 @@ public:
 	/* any thread: where firmware is looked for - the folders, then the files
 	 * chosen by hand */
 	std::vector<std::string> firmwareFolders() const;
-	/* the file chosen for a core's firmware, remembered */
+	/* the file chosen for a core's firmware, remembered; and read back ("" for none) */
 	void rememberFirmware(const std::string &coreName, const std::string &id, const std::string &path);
+	std::string chosenFirmwareFor(const std::string &coreName, const std::string &id) const;
 
 private:
 	struct Core

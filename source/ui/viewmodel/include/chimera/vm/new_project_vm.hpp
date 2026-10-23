@@ -142,7 +142,8 @@ private:
 		NewProjectViewModel &vm_;
 	};
 
-	bool chooseCore(const std::string &name, std::string &error);
+	/* the core, by name; the package `preferred` when it is that core's */
+	bool chooseCore(const std::string &name, std::string &error, const std::string &preferred = {});
 	/* the files as the engine reads a slot map: {"slot": ["name", ...]} */
 	std::string slotMap() const;
 	const Slot *slot(const std::string &id) const;
@@ -173,8 +174,12 @@ private:
 	void declareSettings();
 	/* the package's firmware declarations, then the game's */
 	json::Json firmwareDecls() const;
-	/* an import is filling the form: its settings are the project's own */
+	/* an import or the last project's answers are filling the form: its
+	 * settings are the project's own. The core is still asked about that
+	 * game - for what the game has of its own, and its note - but what it
+	 * would set is not put over them (keptFor_: the game asked so). */
 	bool seeding_ = false;
+	std::string keptFor_;
 	/* asks for the game's suggestion when the game is another than last time */
 	void suggestFor(const std::string &game);
 	void applySuggestion(const std::string &answer, const std::string &why);
@@ -192,6 +197,8 @@ private:
 	/* firmware chosen by hand: id -> {path, sha1} */
 	std::map<std::string, std::pair<std::string, std::string>> chosenFirmware_;
 	std::vector<FirmwareFile> firmwareIndex_;
+	/* the hashes of files remembered for this core's firmware, read once */
+	std::map<std::string, std::string> rememberedSha_;
 	Connection coresWatch_;
 };
 

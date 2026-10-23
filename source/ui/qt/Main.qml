@@ -36,7 +36,8 @@ ApplicationWindow {
     menuBar: MenuBar {
         Menu {
             title: qsTr("&File")
-            Action { text: qsTr("&New Project..."); shortcut: "Ctrl+N"; onTriggered: { newProjectWindow.show(); newProjectWindow.raise() } }
+            // opens on the last project's answers, as Chimera's does
+            Action { text: qsTr("&New Project..."); shortcut: "Ctrl+N"; onTriggered: { root.newProject.run("openOnLastProject"); newProjectWindow.show(); newProjectWindow.raise() } }
             Action { text: qsTr("&Open Game..."); shortcut: "Ctrl+O"; onTriggered: gameDialog.open() }
             Action { text: qsTr("Open Game &With a Core Package..."); onTriggered: packageDialog.open() }
             Action { text: qsTr("Open &Project..."); shortcut: "Ctrl+Shift+O"; onTriggered: projectDialog.open() }

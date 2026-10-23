@@ -429,6 +429,48 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			evaluate();
 			return {};
 		});
+	command("openOnLastProject", "fills the form with the last project's answers, as Chimera's New Project opens: its core, "
+		"its settings, and its files that are still where they were found; its settings are its own, so what the core "
+		"would suggest is not put over them. False when no project was opened, or its core is not installed",
+		{}, [this](const Args &, std::string &error) -> Value {
+			const SessionViewModel::ProjectAnswers &last = session_.lastAnswers();
+			if (last.coreName.empty())
+			{
+				error = "no project has been opened";
+				return false;
+			}
+			if (!chooseCore(last.coreName, error, last.package)) return false;
+			Json values;
+			std::string jerr;
+			if (!json::parse(last.settings, values, jerr) || values.kind != Json::Kind::Object) values = Json(), values.kind = Json::Kind::Object;
+			seeding_ = true;
+			/* the machine its settings name, then the settings */
+			if (const Json *chosen = values.find(form_.machineSetting()); chosen != nullptr && !form_.machineSetting().empty())
+				if (const Json *list = cfg_.find("machines"))
+					for (size_t i = 0; i < list->items.size(); i++)
+						if (const Json *when = list->items[i].find("when"))
+							for (const Json &w : when->items)
+								if (w.text == chosen->text)
+								{
+									std::string e;
+									run("chooseMachine", {static_cast<int64_t>(i)}, e);
+								}
+			form_.setValues(values);
+			std::error_code ec;
+			for (const auto &[slotId, path] : last.files)
+			{
+				if (!fs::is_regular_file(path, ec)) continue;
+				/* a project made of a game opened by itself may name no slot
+				 * this package declares: its game goes in the first */
+				const std::string into = slot(slotId) != nullptr || slots_.empty() ? slotId : slots_.front().id;
+				std::string e;
+				run("addFile", {into, path}, e);
+			}
+			seeding_ = false;
+			evaluate();
+			status.set("The last project's answers: change what is to change");
+			return true;
+		});
 	command("create", "makes the project and opens it, as Chimera does: written nowhere until it is first saved, which "
 		"asks where it goes; given a file, written there at once (and opened unless open is false)", {"path", "open"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -530,11 +572,24 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	coresWatch_ = cores_.count.changed.connect(listCores);
 }
 
-bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error)
+bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error, const std::string &preferred)
 {
 	std::string package;
 	for (const auto &[n, p] : cores_.installed())
 		if (n == name) package = p;
+	std::error_code ec;
+	if (!package.empty() && !preferred.empty() && preferred != package && fs::is_regular_file(preferred, ec))
+	{
+		const char *perr = nullptr;
+		if (ce_package *p = ce_package_open(preferred.c_str(), &perr))
+		{
+			Json c;
+			std::string jerr;
+			if (json::parse(entryText(p, "waterbox.config"), c, jerr))
+				if (const Json *n = c.find("coreName"); n != nullptr && n->text == name) package = preferred;
+			ce_package_free(p);
+		}
+	}
 	if (package.empty())
 	{
 		error = "no " + name + " core is installed";
@@ -677,6 +732,7 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	gameSettings_.clear();
 	gameFirmware_ = Json();
 	firmwareIndex_ = indexFirmware(cores_.firmwareFolders());
+	rememberedSha_.clear();
 	core.set(name);
 	title.set("");
 	status.set("A new " + name + " project");
@@ -775,7 +831,8 @@ void NewProjectViewModel::applySuggestion(const std::string &text, const std::st
 	gameFirmware_ = gameFirmware != nullptr && gameFirmware->boolean ? gameFirmwareOf(answer, cfg_.find("firmware")) : Json();
 	declareSettings();
 	std::string applied;
-	if (const Json *values = answer.find("values"))
+	const bool kept = !keptFor_.empty() && keptFor_ == suggestedFor_;
+	if (const Json *values = answer.find("values"); values != nullptr && !kept)
 	{
 		form_.evaluate();
 		for (const auto &[name, value] : values->members)
@@ -806,6 +863,7 @@ void NewProjectViewModel::applySuggestion(const std::string &text, const std::st
 	const Json *note = answer.find("note");
 	std::string out = note != nullptr ? note->text : std::string();
 	if (!applied.empty()) out += (out.empty() ? "" : "\n") + std::string("Applied below: ") + applied + ".";
+	else if (kept) out += (out.empty() ? "" : "\n") + std::string("This project's own settings are kept.");
 	suggestion.set(out);
 	evaluate();
 }
@@ -959,15 +1017,11 @@ void NewProjectViewModel::evaluate()
 			if (auto it = files_.find(s.id); game.empty() && it != files_.end() && !it->second.empty()) game = it->second.front().path;
 		if (game != suggestedFor_)
 		{
-			if (seeding_)
-			{
-				/* a movie's settings are kept: no suggestion over them */
-				suggestedFor_ = game;
-				suggestedKeys_.clear();
-				suggestion.set(game.empty() ? "" : "This project's own settings are kept.");
-			}
-			else
-				suggestFor(game);
+			/* a seeded project's settings are kept: nothing of this game's
+			 * suggestion was put in, so nothing is taken back */
+			if (seeding_) suggestedKeys_.clear();
+			keptFor_ = seeding_ ? game : std::string();
+			suggestFor(game);
 		}
 	}
 
@@ -1000,14 +1054,41 @@ void NewProjectViewModel::evaluate()
 	for (const FirmwareNeed &n : neededFirmware(firmwareDecl, settingsDecl, map, recorded, none, firmwareIndex_))
 	{
 		Need need{n.id, n.display, n.path, n.how, n.sha1};
+		std::string declared;
+		for (const Json &f : firmwareDecl.items)
+			if (const Json *i = f.find("id"); i != nullptr && i->text == n.id)
+				if (const Json *h = f.find("sha1")) declared = h->text;
 		if (auto it = chosenFirmware_.find(n.id); it != chosenFirmware_.end())
 		{
 			need.path = it->second.first;
 			need.sha1 = it->second.second;
-			need.how = "chosen";
-			for (const Json &f : firmwareDecl.items)
-				if (const Json *i = f.find("id"); i != nullptr && i->text == n.id)
-					if (const Json *h = f.find("sha1"); h != nullptr && lower(h->text) != lower(need.sha1)) need.how = "your own";
+			need.how = !declared.empty() && lower(declared) != lower(need.sha1) ? "your own" : "chosen";
+		}
+		else if (need.path.empty())
+		{
+			/* where this core last had it, as Chimera remembers: a file of
+			 * another hash only for a game core */
+			const std::string remembered = cores_.chosenFirmwareFor(core.get(), n.id);
+			std::error_code ec;
+			if (!remembered.empty() && fs::is_regular_file(remembered, ec))
+			{
+				auto known = rememberedSha_.find(remembered);
+				if (known == rememberedSha_.end())
+				{
+					char sha[41];
+					uint64_t len = 0;
+					known = rememberedSha_.emplace(remembered, ce_sha1_file(remembered.c_str(), sha, &len) == 1 ? std::string(sha) : std::string()).first;
+				}
+				const Json *kind = cfg_.find("kind");
+				const bool gameCore = kind != nullptr && lower(kind->text) == "game";
+				const bool other = !declared.empty() && lower(declared) != lower(known->second);
+				if (!known->second.empty() && (!other || gameCore))
+				{
+					need.path = remembered;
+					need.sha1 = known->second;
+					need.how = other ? "your own" : "remembered";
+				}
+			}
 		}
 		needs_.push_back(need);
 	}

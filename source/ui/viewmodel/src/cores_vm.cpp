@@ -169,6 +169,16 @@ std::vector<std::pair<std::string, std::string>> CoresViewModel::installed() con
 	return out;
 }
 
+std::string CoresViewModel::chosenFirmwareFor(const std::string &coreName, const std::string &id) const
+{
+	json::Json all;
+	std::string error;
+	if (!json::parse(chosenFirmware.get(), all, error)) return {};
+	const json::Json *mine = all.find(coreName);
+	const json::Json *file = mine != nullptr ? mine->find(id) : nullptr;
+	return file != nullptr && file->kind == json::Json::Kind::String ? file->text : std::string();
+}
+
 std::vector<std::string> CoresViewModel::firmwareFolders() const
 {
 	std::lock_guard<std::mutex> lock(m_);

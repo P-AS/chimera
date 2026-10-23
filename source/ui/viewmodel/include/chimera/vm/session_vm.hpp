@@ -203,6 +203,18 @@ public:
 	void onMachine(MachineJob job);
 	/* the same, and waits for it */
 	void onMachineWait(MachineJob job);
+	/* What made the project last opened, kept after it closes, for New
+	 * Project to open on as Chimera's does (closing a project is most often
+	 * the step before changing one setting and going again): its core and
+	 * the package it ran with, its settings, and where each of its files was
+	 * found, as {slot, path}. Paths are this session's knowledge: a project
+	 * carries names and hashes only. The window's thread. */
+	struct ProjectAnswers
+	{
+		std::string coreName, package, settings;
+		std::vector<std::pair<std::string, std::string>> files;
+	};
+	const ProjectAnswers &lastAnswers() const { return lastAnswers_; }
 	/* From a job on the machine's thread: opens a project made in memory
 	 * and never written (New Project's), taking it over. It has no file
 	 * until it is first saved, which is when it is asked where it goes. */
@@ -355,6 +367,7 @@ private:
 	 * the count the edit job now running was sent at: more since means a
 	 * later edit's job is on its way */
 	std::atomic<uint64_t> editsSent_{0};
+	ProjectAnswers lastAnswers_;
 	uint64_t editRunningM_ = 0;
 	bool runningM_ = false;
 	/* what a held key is doing (the machine's thread) */

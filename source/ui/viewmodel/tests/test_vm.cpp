@@ -2281,6 +2281,16 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(session.recentProjects.get().rfind(boardA.string(), 0) == 0);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* opened again on that project's answers, whatever the form held since:
+	 * its core, machine, files and settings - its own, so the suggestion is
+	 * not put over them - and its firmware found where it was chosen */
+	CHECK(wizard.run("chooseCore", {std::string("Synth")}, error).has_value());
+	CHECK(wizard.run("openOnLastProject", {}, error).has_value());
+	CHECK(wizard.core.get() == "Synth Slots" && wizard.machine.get() == 0 && rowCount("slots") >= 1);
+	CHECK(text("slots", 0, 7) == "walker.testrom" && fillNow() == 9);
+	CHECK(settingRow("gameLogo") >= 0 && text("settings", settingRow("gameLogo"), 3) == "on");
+	CHECK(wizard.suggestion.get() == "The synthetic core suggests a fill of 9.\nThis project's own settings are kept.");
+	CHECK(firmwareRow("gamelogo") >= 0 && text("firmware", firmwareRow("gamelogo"), 2) == (dir / "mylogo.bin").string() && wizard.ready.get());
 	/* nothing to make until everything is there */
 	CHECK(wizard.run("chooseCore", {std::string("Synth")}, error).has_value());
 	CHECK(!wizard.run("create", {(dir / "never.chimeraProject").string()}, error) && error == "not yet: Game: a file is needed");
@@ -2421,8 +2431,9 @@ bool movieImport(const char *slotsPackage, const char *rom, const std::string &m
 	}
 	CHECK(wizard.status.get() == "Imported win.txt (" + std::to_string(frames) + " frames)");
 	CHECK(wizard.imported.get() && wizard.importNotes.get() == "imported by the synth core" && wizard.title.get() == "win");
-	/* the movie's settings are the project's own: no suggestion over them */
-	CHECK(wizard.suggestion.get() == "This project's own settings are kept.");
+	/* the movie's settings are the project's own: the core's note is shown,
+	 * and what it would set is not put over them */
+	CHECK(wizard.suggestion.get() == "The synthetic core suggests a fill of 9.\nThis project's own settings are kept.");
 	RowModel *slots = nullptr, *settings = nullptr;
 	for (const auto &r : wizard.rowLists())
 	{

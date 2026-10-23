@@ -1227,10 +1227,24 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
 	adoptOnMachine(s, package, (title.empty() ? path : title) + note, true);
 	startProjectSessionOnMachine(!keepInputs);
-	later([this, path, title] {
+	ProjectAnswers answers;
+	answers.coreName = ce_project_core_name(p) != nullptr ? ce_project_core_name(p) : "";
+	answers.package = package;
+	{
+		uint64_t len = 0;
+		const char *settings = ce_project_settings_text(p, &len);
+		answers.settings = settings != nullptr ? std::string(settings, static_cast<size_t>(len)) : "{}";
+	}
+	for (int32_t i = 0; i < ce_project_file_count(p); i++)
+	{
+		const char *slot = ce_project_file_slot(p, i), *source = ce_project_file_source_path(p, i);
+		if (source != nullptr && *source != '\0') answers.files.emplace_back(slot != nullptr ? slot : "", source);
+	}
+	later([this, path, title, answers] {
 		projectPath.set(path);
 		projectTitle.set(title);
 		hasProject.set(true);
+		lastAnswers_ = answers;
 		if (!path.empty()) addRecent(path);
 	});
 }
