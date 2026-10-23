@@ -164,6 +164,16 @@ ApplicationWindow {
             else if (action === "Seek To...") { if (root.session.seekEnabled) seekDialog.open() }
             else if (action === "Toggle Menu") root.menuBar.visible = !root.menuBar.visible
             else if (action === "Toggle Stay on Top") root.flags = root.flags ^ Qt.WindowStaysOnTopHint
+            else if (action === "Play Movie") root.leaveProject(() => projectDialog.open())
+            else if (action === "Record Movie") { root.newProject.run("openOnLastProject"); newProjectWindow.show(); newProjectWindow.raise() }
+            else if (action === "Stop Movie") { if (root.session.hasProject) root.leaveProject(() => root.session.run("stopMovie")) }
+            else if (action === "Play from beginning") {
+                // as TAStudio's: the project as its file has it, from frame 0
+                if (root.session.projectPath !== "") root.leaveProject(() => root.session.run("openProject", [root.session.projectPath]))
+            }
+            else if (action === "Save Movie") {
+                if (root.session.hasProject) root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject")
+            }
             else if (action === "Encode Video") {
                 if (root.recorder.recording) root.recorder.run("stop")
                 else if (root.session.isOpen) recordDialog.open()

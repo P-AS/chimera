@@ -398,6 +398,14 @@ int main(int argc, char **argv)
 		window("Tools", "Hex Editor", "");
 		window("Tools", "Lua Console", "");
 		window("Tools", "Trace Logger", "");
+		/* Chimera's Movie group, as TAStudio answers it: open a project, make
+		 * one, a new empty movie for the game, the project read again from
+		 * its file, the project saved */
+		window("Movie", "Play Movie", "");
+		window("Movie", "Record Movie", "");
+		window("Movie", "Stop Movie", "");
+		window("Movie", "Play from beginning", "");
+		window("Movie", "Save Movie", "");
 		hotkeys.add("RAM Search", "New Search", "", [&ramSearch, run](bool down) {
 			if (down) run(ramSearch, "start");
 		});

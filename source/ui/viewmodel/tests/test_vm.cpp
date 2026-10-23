@@ -1597,6 +1597,16 @@ bool greenzoneBudgets(const char *package, const char *rom)
 	/* the closeness alone: the memory stays every project's */
 	CHECK(session.run("setProjectBudgets", {int64_t{0}, int64_t{8}}, error).has_value());
 	CHECK(reopen() && session.budgetMbApplied.get() == 512 && session.nearStrideApplied.get() == 8);
+	/* Chimera's Stop Movie under TAStudio: the project let go, its game open alone with an empty movie */
+	{
+		for (int i = 0; i < 4; i++) session.run("frameAdvance", {}, error);
+		CHECK(d.until([&] { return inputs.size() >= 4; }, 20));
+		const int64_t was = session.opens.get();
+		CHECK(session.run("stopMovie", {}, error).has_value());
+		CHECK(d.until([&] { return session.opens.get() > was && session.isOpen.get() && !session.hasProject.get(); }, 30));
+		CHECK(session.projectPath.get().empty() && inputs.size() == 0 && session.gameName.get() == "walker");
+		CHECK(!session.run("stopMovie", {}, error));
+	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);

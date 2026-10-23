@@ -769,6 +769,30 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		submit([this, folder = cacheFolder.get()] { cacheFolderM_ = folder; });
 	});
 
+	command("stopMovie", "Chimera's Stop Movie under TAStudio: the project let go and its game opened alone, a new empty "
+		"movie (the window asks about changes not saved first)", {}, [this](const Args &, std::string &error) -> Value {
+			std::string game, package;
+			onMachineWait([&](ce_session *) {
+				if (projectM_ == nullptr || ce_project_file_count(projectM_) == 0) return;
+				const char *source = ce_project_file_source_path(projectM_, 0);
+				if (source != nullptr) game = source;
+				package = package_;
+			});
+			if (game.empty() || package.empty())
+			{
+				error = "no project's game to open alone";
+				return {};
+			}
+			status.set("Opening " + game + "...");
+			submit([this, package, game] {
+				settingsM_.clear();
+				markersM_.clear();
+				branchesM_.clear();
+				later([this] { markersLoaded.emit({}); branchesLoaded.emit({}); });
+				openOnMachine(package, game, false);
+			});
+			return {};
+		}, &hasProject);
 	command("open", "opens a core package with a game file", {"package", "game"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string package, game;
