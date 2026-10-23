@@ -65,6 +65,34 @@ namespace Chimera.Tests.Client.Common
 				firmwareFolder, index);
 		}
 
+		/// <summary>
+		/// The Firmware folder is searched with its sub-folders, as Scan Folder
+		/// searches one: firmware sorted into a folder a company and a system was
+		/// found by Scan Folder and not when the window opened (issue 359). A file
+		/// found below it is said to be in the Firmware folder.
+		/// </summary>
+		[TestMethod]
+		public void TheFirmwareFolderIsSearchedWithItsSubFolders()
+		{
+			var deep = Path.Combine(_firmware, "Sony", "PlayStation", "SCPH-1001");
+			Directory.CreateDirectory(deep);
+			var file = FileOf(deep, "scph1001.bin", 512, 7);
+			var sha1 = CoreFirmwareStore.Sha1Of(File.ReadAllBytes(file));
+			var named = FileOf(Path.Combine(_firmware, "Sony"), "Complex_4627.bin", 64, 3);
+			var package = Package("ps1");
+			var declared = new Dictionary<string, (IReadOnlyList<CoreFirmwareDecl>, JArray)>
+			{
+				["ps1"] = (new[] { Pinned("bios", "scph1001", 512, sha1), Unpinned("flash", "complex_4627.bin", 64) }, new JArray()),
+			};
+			var rows = Survey(new Config(), [ package ], declared, _firmware).Single().Rows;
+			var bios = rows.Single(static r => r.Decl.Id == "bios");
+			Assert.AreEqual(file, bios.Path, "the file in a sub-folder of the Firmware folder was not found");
+			Assert.AreEqual(FirmwareWhere.FirmwareFolder, bios.Where, "a file below the Firmware folder is in it");
+			var flash = rows.Single(static r => r.Decl.Id == "flash");
+			Assert.AreEqual(named, flash.Path, "a file found by its name below the Firmware folder");
+			Assert.AreEqual(FirmwareWhere.FirmwareFolder, flash.Where);
+		}
+
 		[TestMethod]
 		public void TwoVersionsOfACoreAreOneGroup()
 		{

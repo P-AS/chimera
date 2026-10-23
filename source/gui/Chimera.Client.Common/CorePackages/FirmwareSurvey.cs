@@ -209,14 +209,18 @@ namespace Chimera.Client.Common
 			return groups;
 		}
 
+		/// <summary>the file is in the folder or one of its sub-folders, which the Firmware folder's search walks too</summary>
 		private static bool IsUnder(string? folder, string path)
 		{
 			if (string.IsNullOrEmpty(folder)) return false;
 			try
 			{
 				var dir = System.IO.Path.GetFullPath(folder!).TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
-				var file = System.IO.Path.GetFullPath(path);
-				return string.Equals(System.IO.Path.GetDirectoryName(file), dir, StringComparison.OrdinalIgnoreCase);
+				for (var at = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path)); !string.IsNullOrEmpty(at); at = System.IO.Path.GetDirectoryName(at))
+				{
+					if (string.Equals(at, dir, StringComparison.OrdinalIgnoreCase)) return true;
+				}
+				return false;
 			}
 			catch (Exception ex) when (ex is IOException or ArgumentException)
 			{

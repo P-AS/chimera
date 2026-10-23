@@ -97,9 +97,12 @@ namespace Chimera.Client.Common
 		public const long MaxBytes = int.MaxValue;
 
 		/// <summary>
-		/// Hashes every plausible file in the given directories (and any extra
-		/// paths), once - the same index then answers for every requirement.
-		/// Unreadable files and directories are simply not in the index.
+		/// Hashes every plausible file in the given directories and their
+		/// sub-folders (and any extra paths), once - the same index then answers
+		/// for every requirement. A folder is walked as Scan Folder walks one,
+		/// to the same number of files at most: a Firmware folder sorted into
+		/// a folder a company or a system was searched only at its top (issue
+		/// 359). Unreadable files and directories are simply not in the index.
 		/// </summary>
 		public static IReadOnlyList<IndexedFile> BuildIndex(
 			IEnumerable<string> searchDirs, IEnumerable<string>? extraPaths = null)
@@ -108,7 +111,7 @@ namespace Chimera.Client.Common
 			HashSet<string> seen = new();
 			IEnumerable<string> files = searchDirs
 				.Where(Directory.Exists)
-				.SelectMany(static dir => Directory.EnumerateFiles(dir, "*", SearchOption.TopDirectoryOnly));
+				.SelectMany(static dir => ProjectFolderScan.Enumerate(dir, recurse: true).Take(ProjectFolderScan.MaxFiles));
 			if (extraPaths is not null) files = files.Concat(extraPaths);
 			foreach (var path in files)
 			{

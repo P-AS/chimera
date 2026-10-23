@@ -8058,9 +8058,10 @@ its requirements asks for, chosen already or not. Tests:
 `AScannedFolderBecomesTheFirmwareFolderOnlyWhileThatIsNotThere` (fails with
 the "folder exists" check removed) and
 `AScanThatFindsFirmwareSaysWhereAndOneThatDoesNotSaysNothing` (fails with
-the wizard's report removed). The Firmware folder is still read without
-its sub-folders; a file a scan found below it is remembered by its own
-path, as before.
+the wizard's report removed). A file a scan found below the Firmware
+folder is remembered by its own path, as before. (The Firmware folder
+itself was then read without its sub-folders; since issue 359 it is read
+with them.)
 
 ## A choice's values have labels, and the wizard lists the Boot ROMs on hand first (user-decided, 2026-10-16)
 
@@ -10845,3 +10846,19 @@ returned and printed, a statement and then a call that reads what it set,
 an error and emu.frameadvance refused with Chimera running on, and a
 script file started and stopped. Each failed with its fix taken
 out.
+
+## The Firmware folder is searched with its sub-folders (2026-10-24)
+
+The Firmware folder named in Config > Paths was searched only at its top,
+while Scan Folder searched a folder and its sub-folders. Firmware sorted into
+folders a company and a system (Firmware > Sony > PlayStation) was found by
+Scan Folder and not by the window opening on the same folder (issue 359).
+Every search of the Firmware folder now walks its sub-folders as Scan Folder
+does, to the same 10,000 files at most: the index the Firmware window, the
+New Project wizard and a project's opening answer from
+(`FirmwareLocator.BuildIndex`), the lookup by a declared name
+(`CoreFirmwareStore.InFirmwareFolder`), and the window's "in the Firmware
+folder" for a file found below it. Test:
+`TheFirmwareFolderIsSearchedWithItsSubFolders` (fails with the walk kept to
+the top). How deep a search goes, as a setting, is one of issue 368's
+requests, put to the owner.

@@ -268,7 +268,8 @@ namespace Chimera.Client.Common
 				if (string.IsNullOrEmpty(decl.Name)) return null;
 				try
 				{
-					return Directory.EnumerateFiles(dir, "*", SearchOption.TopDirectoryOnly)
+					// the folder and its sub-folders, as every search of it walks them (issue 359)
+					return ProjectFolderScan.Enumerate(dir, recurse: true).Take(ProjectFolderScan.MaxFiles)
 						.FirstOrDefault(f => Path.GetFileName(f).Equals(decl.Name, StringComparison.OrdinalIgnoreCase));
 				}
 				catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
