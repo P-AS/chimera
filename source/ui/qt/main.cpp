@@ -259,14 +259,8 @@ int main(int argc, char **argv)
 				return;
 			}
 			const QImage picture(reinterpret_cast<const uchar *>(f.pixels.data()), f.width, f.height, f.width * 4, QImage::Format_RGB32);
-			QString folder = qEnvironmentVariable("CHIMERA_SCREENSHOTS");
-			if (folder.isEmpty()) folder = QCoreApplication::applicationDirPath() + QStringLiteral("/Screenshots");
-			QDir().mkpath(folder);
-			QString name = QString::fromStdString(session.gameName.get());
-			for (const QChar c : QStringLiteral("<>:\"/\\|?*")) name.replace(c, QLatin1Char('_'));
-			if (name.isEmpty()) name = QStringLiteral("screenshot");
-			const QString base = folder + QLatin1Char('/') + name + QLatin1Char('.') +
-				QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH.mm.ss"));
+			QDir().mkpath(qt::PictureFiles::screenshotFolder());
+			const QString base = qt::PictureFiles::screenshotBase(QString::fromStdString(session.gameName.get()));
 			/* the bare name, unless a (0) is there; a bare one already there becomes (0) */
 			QString path = base + QStringLiteral(" (0).png");
 			if (!QFileInfo::exists(path))
@@ -745,6 +739,7 @@ int main(int argc, char **argv)
 
 	qt::ClipboardRelay clipboard;
 	qt::PictureFiles pictureFiles(session.screen);
+	pictureFiles.say = [&session](const std::string &text) { session.status.set(text); };
 	QQmlApplicationEngine engine;
 	engine.setInitialProperties({
 		{QStringLiteral("session"), QVariant::fromValue<QObject *>(&sessionQml)},

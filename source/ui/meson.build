@@ -170,7 +170,8 @@ if qt_dep.found()
       '--play', '--measure', '1', '--show', 'lua'],
     env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software', 'ALSOFT_DRIVERS=null',
       'CHIMERA_QT_CONFIG=' + meson.current_build_dir() / 'window-test-settings.json',
-      'CHIMERA_QT_CACHE=' + meson.current_build_dir() / 'window-test-cache'],
+      'CHIMERA_QT_CACHE=' + meson.current_build_dir() / 'window-test-cache',
+      'CHIMERA_QT_RECOVERY=' + meson.current_build_dir() / 'window-test-recovery'],
     timeout: 60,
   )
 endif

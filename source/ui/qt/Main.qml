@@ -157,6 +157,24 @@ ApplicationWindow {
             Action { text: qsTr("Save Project &As..."); enabled: root.session.hasProject; onTriggered: saveAsDialog.open() }
             Action { text: qsTr("Save Project &Backup"); enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveBackup") }
             Action { text: qsTr("Make a &Project of This Game..."); enabled: root.session.isOpen && !root.session.hasProject; onTriggered: newProjectDialog.open() }
+            // Chimera's File > Screenshot
+            Menu {
+                delegate: keyedMenuItem
+                title: qsTr("Scree&nshot")
+                enabled: root.session.isOpen
+                Action { property string hotkey: "Screenshot"; text: qsTr("&Screenshot"); onTriggered: root.hotkeys.run("run", ["Screenshot"]) }
+                Action {
+                    text: qsTr("Screenshot &As...")
+                    onTriggered: {
+                        const suggested = root.pictureFiles.screenshotSuggestion(root.session.gameName)
+                        screenshotAsDialog.currentFolder = suggested.toString().substring(0, suggested.toString().lastIndexOf("/"))
+                        screenshotAsDialog.selectedFile = suggested
+                        screenshotAsDialog.open()
+                    }
+                }
+                Action { property string hotkey: "Screen Raw to Clipboard"; text: qsTr("&To Clipboard"); onTriggered: root.hotkeys.run("run", ["Screen Raw to Clipboard"]) }
+                Action { property string hotkey: "Screen Client to Clipboard"; text: qsTr("&Client to Clipboard"); onTriggered: root.hotkeys.run("run", ["Screen Client to Clipboard"]) }
+            }
             Action { property string hotkey: "Reboot Core"; text: qsTr("&Restart"); enabled: root.session.restartEnabled; onTriggered: root.session.run("restart") }
             Action { id: closeAction; property string hotkey: "Close ROM"; text: qsTr("&Close"); enabled: root.session.closeEnabled; onTriggered: root.leaveProject(() => root.session.run("close")) }
             MenuSeparator {}
@@ -200,7 +218,6 @@ ApplicationWindow {
                 text: qsTr("S&ound"); checkable: true; checked: root.session.soundOn
                 onTriggered: root.session.soundOn = checked
             }
-            Action { property string hotkey: "Screenshot"; text: qsTr("Scree&nshot"); enabled: root.session.isOpen; onTriggered: root.hotkeys.run("run", ["Screenshot"]) }
             Action {
                 property string hotkey: "Toggle Auto-Restore"
                 text: qsTr("After an Edit, &Return to Where It Was")
@@ -668,6 +685,13 @@ ApplicationWindow {
         title: qsTr("Choose the core package to open it with")
         nameFilters: [qsTr("Core packages (*.chimeraCore)"), qsTr("All files (*)")]
         onAccepted: root.leaveProject(() => root.session.run("openProject", [root.chosenProject, selectedFile]))
+    }
+    FileDialog {
+        id: screenshotAsDialog
+        title: qsTr("Save the picture as")
+        fileMode: FileDialog.SaveFile
+        nameFilters: [qsTr("PNG pictures (*.png)"), qsTr("JPEG pictures (*.jpg)")]
+        onAccepted: root.pictureFiles.save(selectedFile)
     }
     FileDialog {
         id: saveAsDialog
