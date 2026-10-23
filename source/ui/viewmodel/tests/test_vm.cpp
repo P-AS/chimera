@@ -2360,6 +2360,29 @@ bool pianoRollEditing(const char *package, const char *rom)
 	auto bit = [](int64_t b) { return uint64_t{1} << b; };
 	const std::vector<uint64_t> start = masks();
 	CHECK(start.size() == 10 && start[3] == bit(3) && start[9] == bit(1));
+	/* the frames in view whose state the greenzone holds; those an edit
+	 * took out of it, still known as run; a frame put in, never run */
+	{
+		using P = PianoRollViewModel;
+		auto flags = [&](int64_t f) { return roll.frames().rowFlags(f); };
+		roll.visibleFrames.set(12);
+		roll.topFrame.set(0);
+		CHECK(d.until([&] { return session.hasState(9); }, 20));
+		CHECK((flags(5) & P::kGreen) && (flags(5) & P::kStated) && (flags(5) & P::kRan));
+		session.autoRestore.set(false);
+		roll.run("toggle", {int64_t{3}, int64_t{6}}, error);
+		CHECK(d.until([&] { return session.frame.get() == 3 && !session.hasState(5); }, 20));
+		CHECK(!(flags(5) & P::kGreen) && !(flags(5) & P::kStated) && (flags(5) & P::kRan));
+		roll.run("insertFrames", {int64_t{4}, int64_t{1}}, error);
+		CHECK(!(flags(4) & P::kRan) && (flags(6) & P::kRan));
+		roll.run("undo", {}, error);
+		roll.run("undo", {}, error);
+		CHECK(masks() == start);
+		session.autoRestore.set(true);
+		session.run("seek", {int64_t{10}}, error);
+		CHECK(d.until([&] { return session.frame.get() == 10; }, 20));
+		roll.visibleFrames.set(0);
+	}
 	auto undoTo = [&](const std::vector<uint64_t> &want) {
 		roll.run("undo", {}, error);
 		return masks() == want;

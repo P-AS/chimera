@@ -1,6 +1,8 @@
 #include "piano_roll_item.hpp"
 
 #include <QElapsedTimer>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QFontMetrics>
 #include <QGuiApplication>
 #include <QPalette>
@@ -8,6 +10,8 @@
 #include <QPen>
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 
 #include "qml_view_model.hpp"
 #include "theme_palette.hpp"
@@ -20,6 +24,31 @@ PianoRollItem::PianoRollItem(QQuickItem *parent) : QQuickPaintedItem(parent)
 	setAntialiasing(false);
 	setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
 	connect(this, &PianoRollItem::pickedChanged, this, [this] { update(); });
+	connect(this, &PianoRollItem::lookChanged, this, [this] { update(); });
+}
+
+void PianoRollItem::setColors(const QString &json)
+{
+	if (json == colors_) return;
+	colors_ = json;
+	Q_EMIT lookChanged();
+}
+
+void PianoRollItem::setRollFont(const QString &font)
+{
+	if (font == rollFont_) return;
+	rollFont_ = font;
+	font_ = QFont();
+	/* {"family": "Arial", "pointSize": 8.25, "bold": true, "italic": false} */
+	const QJsonObject f = QJsonDocument::fromJson(font.toUtf8()).object();
+	if (f.contains(QLatin1String("family"))) font_.setFamily(f.value(QLatin1String("family")).toString());
+	if (f.value(QLatin1String("pointSize")).toDouble() > 0) font_.setPointSizeF(f.value(QLatin1String("pointSize")).toDouble());
+	font_.setBold(f.value(QLatin1String("bold")).toBool());
+	font_.setItalic(f.value(QLatin1String("italic")).toBool());
+	/* the rows as tall as the font needs */
+	rowHeight_ = std::max(18, QFontMetrics(font_).height() + 4);
+	Q_EMIT lookChanged();
+	Q_EMIT visibleRowsChanged();
 }
 
 int PianoRollItem::columnW(int column) const
@@ -115,7 +144,7 @@ static constexpr int kCursorWidth = 14;
 
 int PianoRollItem::frameColumnWidth() const
 {
-	return kCursorWidth + QFontMetrics(QFont()).horizontalAdvance(QStringLiteral("00000000")) + 8;
+	return kCursorWidth + QFontMetrics(font_).horizontalAdvance(QStringLiteral("00000000")) + 8;
 }
 
 void PianoRollItem::geometryChange(const QRectF &now, const QRectF &before)
@@ -175,6 +204,29 @@ void PianoRollItem::paint(QPainter *p)
 	themed(marker, "TasMarker");
 	themed(picked, "RollSelection");
 	themed(pickedText, "RollSelectionText");
+	/* the greenzone's frames with a state held, and those an edit sent the
+	 * greenzone back past (Chimera's "invalidated"); the frame column's
+	 * wash; every second player's columns */
+	QColor greenStated = tint(QColor(0x3c, 0xc0, 0x3c), a + 0.08), lagStated = tint(QColor(0xe0, 0x40, 0x30), a + 0.08),
+		greenGone = tint(QColor(0x3c, 0xc0, 0x3c), a * 0.4), lagGone = tint(QColor(0xe0, 0x40, 0x30), a * 0.4),
+		frameWash, altPlayer = QColor(text.red(), text.green(), text.blue(), 14);
+	themed(greenStated, "TasGreenZoneInputStated");
+	themed(lagStated, "TasLagZoneInputStated");
+	themed(greenGone, "TasGreenZoneInputInvalidated");
+	themed(lagGone, "TasLagZoneInputInvalidated");
+	themed(frameWash, "TasFrameColumnWash");
+	themed(altPlayer, "TasAlternatePlayer");
+	/* the roll's own colours, over the theme's (TAStudio's Set Colors) */
+	{
+		const QJsonObject own = QJsonDocument::fromJson(colors_.toUtf8()).object();
+		const std::pair<const char *, QColor *> roles[] = {{"TasCurrentFrame", &now}, {"TasGreenZoneInput", &green},
+			{"TasGreenZoneInputStated", &greenStated}, {"TasGreenZoneInputInvalidated", &greenGone}, {"TasLagZoneInput", &lag},
+			{"TasLagZoneInputStated", &lagStated}, {"TasLagZoneInputInvalidated", &lagGone}, {"TasMarker", &marker},
+			{"TasDefaultRow", &plain}, {"TasFrameColumnWash", &frameWash}, {"TasAlternatePlayer", &altPlayer}};
+		for (const auto &[role, color] : roles)
+			if (const QColor c(own.value(QLatin1String(role)).toString()); c.isValid()) *color = c;
+	}
+	p->setFont(font_);
 	const int w = static_cast<int>(width()), h = static_cast<int>(height());
 	p->fillRect(0, 0, w, h, plain);
 	if (rows_ == nullptr) return;
@@ -215,12 +267,47 @@ void PianoRollItem::paint(QPainter *p)
 		if (row >= count) break;
 		const int y = rowHeight_ * (i + 1);
 		const uint32_t flags = rows.rowFlags(row);
-		const QColor back = row == current_ ? now : (flags & 2) ? ((flags & 1) ? lag : green) : plain;
+		const bool isLag = flags & 1, inGreen = flags & 2, isMarker = flags & 4, stated = flags & 8, ran = flags & 16;
+		/* as Chimera's TAStudio colours a row: the current frame; the
+		 * greenzone's, apart where a state is held; those an edit took out
+		 * of it; the rest */
+		QColor back = plain;
+		if (row == current_) back = now;
+		else if (inGreen) back = !stated && denoteStatesColor_ ? (isLag ? lag : green) : (isLag ? lagStated : greenStated);
+		else if (ran) back = isLag ? lagGone : greenGone;
 		p->fillRect(0, y, w, rowHeight_, (row % 2 && row != current_) ? (dark ? back.lighter(112) : back.darker(103)) : back);
-		/* a marker: its frame number on the accent, its text after the buttons */
-		if (flags & 4)
+		/* every second player's columns, striped */
+		for (int c = 0; c < columns; c++)
 		{
-			p->fillRect(0, y, fx, rowHeight_, marker);
+			const int cw = columnW(c);
+			if (cw == 0) continue;
+			const std::string name = rows.columnName(c);
+			if (name.size() > 2 && name[0] == 'P' && std::isdigit(static_cast<unsigned char>(name[1])) && (std::atoi(name.c_str() + 1) % 2) == 0)
+				p->fillRect(columnX(c), y, cw, rowHeight_, altPlayer);
+		}
+		if (frameWash.isValid()) p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, frameWash);
+		/* a marker: its frame number on the accent (when markers are told by
+		 * colour), its text after the buttons */
+		if (isMarker && denoteMarkersColor_ && row != current_) p->fillRect(0, y, fx, rowHeight_, marker);
+		/* the icons: a marker's flag, else a held state's anchor */
+		if (isMarker && denoteMarkersIcons_)
+		{
+			p->setPen(Qt::NoPen);
+			p->setBrush(marker.darker(dark ? 80 : 160));
+			const QPointF flag[3] = {QPointF(kCursorWidth + 3, y + 3), QPointF(kCursorWidth + 11, y + rowHeight_ / 2.0 - 1),
+				QPointF(kCursorWidth + 3, y + rowHeight_ - 5)};
+			p->drawPolygon(flag, 3);
+			p->setBrush(Qt::NoBrush);
+		}
+		else if (stated && denoteStatesIcons_)
+		{
+			p->setPen(Qt::NoPen);
+			p->setBrush((isLag ? lagStated : greenStated).darker(dark ? 60 : 170));
+			p->drawEllipse(QRectF(kCursorWidth + 3, y + rowHeight_ / 2.0 - 4, 8, 8));
+			p->setBrush(Qt::NoBrush);
+		}
+		if (isMarker)
+		{
 			p->setPen(text);
 			p->drawText(QRect(columnX(columns) + 6, y, w - columnX(columns) - 8, rowHeight_),
 				Qt::AlignVCenter | Qt::AlignLeft, QString::fromStdString(rows.rowNote(row)));

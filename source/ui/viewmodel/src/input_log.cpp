@@ -66,7 +66,7 @@ void InputLog::insert(int64_t frame, int64_t count)
 	std::unique_lock lock(m_);
 	if (s_ == nullptr || frame < 0 || count <= 0) return;
 	ce_session_movie_insert(s_, frame, count);
-	if (frame < static_cast<int64_t>(lags_.size())) lags_.insert(lags_.begin() + frame, static_cast<size_t>(count), 0);
+	if (frame < static_cast<int64_t>(lags_.size())) lags_.insert(lags_.begin() + frame, static_cast<size_t>(count), kNotRun);
 }
 
 void InputLog::remove(int64_t frame, int64_t count)
@@ -133,11 +133,17 @@ std::vector<std::string> InputLog::lines(int64_t first, int64_t last) const
 	return out;
 }
 
+bool InputLog::ranAt(int64_t frame) const
+{
+	std::shared_lock lock(m_);
+	return frame >= 0 && frame < static_cast<int64_t>(lags_.size()) && lags_[static_cast<size_t>(frame)] != kNotRun;
+}
+
 bool InputLog::setLag(int64_t frame, bool lag)
 {
 	if (frame < 0) return false;
 	std::unique_lock lock(m_);
-	if (frame >= static_cast<int64_t>(lags_.size())) lags_.resize(static_cast<size_t>(frame) + 1, 0);
+	if (frame >= static_cast<int64_t>(lags_.size())) lags_.resize(static_cast<size_t>(frame) + 1, kNotRun);
 	const uint8_t now = lag ? 1 : 0;
 	if (lags_[static_cast<size_t>(frame)] == now) return false;
 	lags_[static_cast<size_t>(frame)] = now;
@@ -147,7 +153,7 @@ bool InputLog::setLag(int64_t frame, bool lag)
 bool InputLog::lagAt(int64_t frame) const
 {
 	std::shared_lock lock(m_);
-	return frame >= 0 && frame < static_cast<int64_t>(lags_.size()) && lags_[static_cast<size_t>(frame)] != 0;
+	return frame >= 0 && frame < static_cast<int64_t>(lags_.size()) && lags_[static_cast<size_t>(frame)] == 1;
 }
 
 void InputLog::clearLags()

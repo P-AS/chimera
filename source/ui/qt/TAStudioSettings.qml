@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 
 ApplicationWindow {
     id: win
@@ -24,6 +25,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             TabButton { text: qsTr("Input Roll") }
             TabButton { text: qsTr("Editing") }
+            TabButton { text: qsTr("Appearance") }
             TabButton { text: qsTr("Playback") }
             TabButton { text: qsTr("Autosave") }
             TabButton { text: qsTr("Branches") }
@@ -100,6 +102,35 @@ ApplicationWindow {
                         value: win.pianoRoll.maxUndoSteps
                         onValueModified: win.pianoRoll.maxUndoSteps = value
                     }
+                }
+                Item { Layout.fillHeight: true }
+            }
+
+            ColumnLayout {
+                CheckBox {
+                    text: qsTr("Denote markers with color on frame column")
+                    checked: win.pianoRoll.denoteMarkersColor
+                    onToggled: win.pianoRoll.denoteMarkersColor = checked
+                }
+                CheckBox {
+                    text: qsTr("Denote markers with icons")
+                    checked: win.pianoRoll.denoteMarkersIcons
+                    onToggled: win.pianoRoll.denoteMarkersIcons = checked
+                }
+                CheckBox {
+                    text: qsTr("Denote states with background color")
+                    checked: win.pianoRoll.denoteStatesColor
+                    onToggled: win.pianoRoll.denoteStatesColor = checked
+                }
+                CheckBox {
+                    text: qsTr("Denote states with icons")
+                    checked: win.pianoRoll.denoteStatesIcons
+                    onToggled: win.pianoRoll.denoteStatesIcons = checked
+                }
+                RowLayout {
+                    Button { text: qsTr("Set Colors..."); onClicked: colorsWindow.show() }
+                    Button { text: qsTr("Set Font..."); onClicked: fontDialog.open() }
+                    Button { text: qsTr("Window's Font"); enabled: win.pianoRoll.rollFont !== ""; onClicked: win.pianoRoll.rollFont = "" }
                 }
                 Item { Layout.fillHeight: true }
             }
@@ -244,6 +275,65 @@ ApplicationWindow {
                 }
                 Item { Layout.fillHeight: true }
             }
+        }
+    }
+
+    FontDialog {
+        id: fontDialog
+        title: qsTr("The piano roll's font")
+        onAccepted: win.pianoRoll.rollFont = JSON.stringify({ family: selectedFont.family, pointSize: selectedFont.pointSize,
+                                                               bold: selectedFont.bold, italic: selectedFont.italic })
+    }
+
+    // TAStudio's Set Colors: the roll's colours, each the theme's until one is picked
+    ApplicationWindow {
+        id: colorsWindow
+        objectName: "tastudioColorsWindow"
+        title: qsTr("TAStudio Colors")
+        width: 420
+        height: 440
+        readonly property var own: { try { return JSON.parse(win.pianoRoll.rollColors) } catch (e) { return {} } }
+        function setRole(role, value) {
+            const all = Object.assign({}, colorsWindow.own)
+            if (value === "") delete all[role]
+            else all[role] = value
+            win.pianoRoll.rollColors = JSON.stringify(all)
+        }
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 8
+            Repeater {
+                model: [["TasCurrentFrame", qsTr("Current frame")], ["TasGreenZoneInput", qsTr("Greenzone")],
+                        ["TasGreenZoneInputStated", qsTr("Greenzone, state held")], ["TasGreenZoneInputInvalidated", qsTr("Greenzone, invalidated")],
+                        ["TasLagZoneInput", qsTr("Lag")], ["TasLagZoneInputStated", qsTr("Lag, state held")],
+                        ["TasLagZoneInputInvalidated", qsTr("Lag, invalidated")], ["TasMarker", qsTr("Marker")],
+                        ["TasDefaultRow", qsTr("Other frames")], ["TasAlternatePlayer", qsTr("Every second player")]]
+                RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Label { text: modelData[1]; Layout.fillWidth: true }
+                    Rectangle {
+                        width: 40; height: 18; border.color: palette.mid
+                        color: colorsWindow.own[modelData[0]] || "transparent"
+                    }
+                    Button {
+                        text: qsTr("Pick...")
+                        onClicked: { colorDialog.role = modelData[0]; colorDialog.selectedColor = colorsWindow.own[modelData[0]] || "white"; colorDialog.open() }
+                    }
+                    Button {
+                        text: qsTr("Theme's")
+                        enabled: colorsWindow.own[modelData[0]] !== undefined
+                        onClicked: colorsWindow.setRole(modelData[0], "")
+                    }
+                }
+            }
+            Item { Layout.fillHeight: true }
+            Button { text: qsTr("All the Theme's"); onClicked: win.pianoRoll.rollColors = "{}" }
+        }
+        ColorDialog {
+            id: colorDialog
+            property string role: ""
+            onAccepted: colorsWindow.setRole(role, selectedColor.toString())
         }
     }
 }

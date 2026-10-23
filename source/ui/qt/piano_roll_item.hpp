@@ -27,7 +27,16 @@ class PianoRollItem : public QQuickPaintedItem
 	Q_PROPERTY(int wheelRows MEMBER wheelRows_)
 	Q_PROPERTY(qint64 rowCount READ rowCount NOTIFY rowCountChanged)
 	Q_PROPERTY(int visibleRows READ visibleRows NOTIFY visibleRowsChanged)
-	Q_PROPERTY(int rowHeight READ rowHeight CONSTANT)
+	Q_PROPERTY(int rowHeight READ rowHeight NOTIFY visibleRowsChanged)
+	/* TAStudio's appearance: states and markers by colour and by icon, the
+	 * roll's own colours over the theme's (JSON: a theme role each), and
+	 * its font ({"family", "pointSize", "bold", "italic"}; "" the window's) */
+	Q_PROPERTY(bool denoteStatesColor MEMBER denoteStatesColor_ NOTIFY lookChanged)
+	Q_PROPERTY(bool denoteStatesIcons MEMBER denoteStatesIcons_ NOTIFY lookChanged)
+	Q_PROPERTY(bool denoteMarkersColor MEMBER denoteMarkersColor_ NOTIFY lookChanged)
+	Q_PROPERTY(bool denoteMarkersIcons MEMBER denoteMarkersIcons_ NOTIFY lookChanged)
+	Q_PROPERTY(QString colors READ colors WRITE setColors NOTIFY lookChanged)
+	Q_PROPERTY(QString rollFont READ rollFont WRITE setRollFont NOTIFY lookChanged)
 	/* how long the last paint took, in milliseconds, for measuring */
 	Q_PROPERTY(double lastPaintMs READ lastPaintMs NOTIFY painted)
 
@@ -51,7 +60,13 @@ public:
 
 	void paint(QPainter *painter) override;
 
+	QString colors() const { return colors_; }
+	void setColors(const QString &json);
+	QString rollFont() const { return rollFont_; }
+	void setRollFont(const QString &font);
+
 Q_SIGNALS:
+	void lookChanged();
 	void rowsChanged();
 	void topRowChanged();
 	void currentRowChanged();
@@ -92,6 +107,9 @@ private:
 	qint64 pickedRow_ = -1;
 	int pickedColumn_ = -1;
 	int wheelRows_ = 6;
+	bool denoteStatesColor_ = true, denoteStatesIcons_ = false, denoteMarkersColor_ = true, denoteMarkersIcons_ = false;
+	QString colors_, rollFont_;
+	QFont font_;
 	int rowHeight_ = 18, columnWidth_ = 26, numberWidth_ = 48;
 	/* where a column starts and how wide it is: an analog control's column
 	 * shows a number, and is wider */

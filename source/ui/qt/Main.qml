@@ -735,6 +735,12 @@ ApplicationWindow {
                 onVisibleRowsChanged: root.pianoRoll.visibleFrames = visibleRows
                 onTopRowRequested: (row) => root.pianoRoll.topFrame = row
                 wheelRows: root.pianoRoll.wheelRows
+                denoteStatesColor: root.pianoRoll.denoteStatesColor
+                denoteStatesIcons: root.pianoRoll.denoteStatesIcons
+                denoteMarkersColor: root.pianoRoll.denoteMarkersColor
+                denoteMarkersIcons: root.pianoRoll.denoteMarkersIcons
+                colors: root.pianoRoll.rollColors
+                rollFont: root.pianoRoll.rollFont
                 onCellPressed: (row, column, alt) => root.pianoRoll.run("press", [row, column, alt])
                 onColumnMenuRequested: (column, name, autoHeld, x, y) => { columnMenu.name = name; columnMenu.autoHeld = autoHeld; columnMenu.popup() }
                 onCellDragged: (row, column) => root.pianoRoll.run("drag", [row, column])

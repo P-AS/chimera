@@ -2530,8 +2530,19 @@ void SessionViewModel::edited(int64_t first)
 void SessionViewModel::report(int64_t cf, int64_t cl, int64_t af, int64_t al, double fpsNow)
 {
 	bool post = false;
+	/* the states among the frames shown: a few dozen lookups a report */
+	const int64_t first = watchFirstM_.load(), count = std::min<int64_t>(watchCountM_.load(), 512);
+	std::vector<uint8_t> stated(static_cast<size_t>(std::max<int64_t>(count, 0)), 0);
+	if (s_ != nullptr)
+		for (int64_t i = 0; i < count; i++) stated[static_cast<size_t>(i)] = ce_session_greenzone_nearest(s_, first + i) == first + i ? 1 : 0;
 	{
 		std::lock_guard<std::mutex> lock(pendingM_);
+		if (pendingStatedFrom_ != first || pendingStated_ != stated)
+		{
+			pendingStatedFrom_ = first;
+			pendingStated_ = std::move(stated);
+			statedFresh_ = true;
+		}
 		pendingFrame_ = frameM_;
 		pendingGreenEnd_ = greenEndM_;
 		pendingStates_ = s_ != nullptr ? ce_session_greenzone_count(s_) : 0;
@@ -2562,9 +2573,17 @@ void SessionViewModel::tick()
 	int64_t f, cf, cl, af, al, green, states, rr;
 	double measured;
 	int64_t queued, dropped;
+	bool statedNow = false;
 	{
 		std::lock_guard<std::mutex> lock(pendingM_);
 		tickPosted_ = false;
+		if (statedFresh_)
+		{
+			statedFrom_ = pendingStatedFrom_;
+			stated_ = pendingStated_;
+			statedFresh_ = false;
+			statedNow = true;
+		}
 		f = pendingFrame_;
 		measured = pendingFps_;
 		cf = changedFirst_, cl = changedLast_, af = appendedFirst_, al = appendedLast_;
@@ -2584,7 +2603,23 @@ void SessionViewModel::tick()
 	updateOverlay(f, cf >= 0 ? cf : af);
 	if (cf >= 0) inputsChanged.emit(cf, cl);
 	if (af >= 0) inputsAppended.emit(af, al);
+	if (statedNow) statesShown.emit();
 	screenChanged.emit();
+}
+
+void SessionViewModel::watchStates(int64_t first, int64_t count)
+{
+	if (first == watchFirstM_.load() && count == watchCountM_.load()) return;
+	watchFirstM_.store(std::max<int64_t>(first, 0));
+	watchCountM_.store(std::max<int64_t>(count, 0));
+	/* answered now, not at the next frame run */
+	submit([this] { report(-1, -1, -1, -1, -1); });
+}
+
+bool SessionViewModel::hasState(int64_t frame) const
+{
+	const int64_t i = frame - statedFrom_;
+	return i >= 0 && i < static_cast<int64_t>(stated_.size()) && stated_[static_cast<size_t>(i)] != 0;
 }
 
 void SessionViewModel::updateOverlay(int64_t f, int64_t changedFrom)

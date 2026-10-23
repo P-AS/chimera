@@ -16,7 +16,7 @@ class PianoRollViewModel : public ViewModel
 {
 public:
 	/* Frames::rowFlags */
-	static constexpr uint32_t kLag = 1, kGreen = 2, kMarker = 4;
+	static constexpr uint32_t kLag = 1, kGreen = 2, kMarker = 4, kStated = 8, kRan = 16;
 
 	PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs, SessionViewModel &session);
 
@@ -48,6 +48,16 @@ public:
 	/* what autoHoldQuestion offers: the analog control's range, and its
 	 * value on the current frame */
 	Property<int64_t> autoHoldMin{0}, autoHoldMax{0}, autoHoldInitial{0};
+	/* TAStudio's appearance settings: a frame whose state the greenzone
+	 * holds, and a marker's frame, told by colour and by an icon in the
+	 * frame column; colours of the roll's own over the theme's (a JSON
+	 * object, a theme role each: {"TasGreenZoneInput": "#c0f0c0"}); and
+	 * the roll's font ({"family", "pointSize", "bold", "italic"}; "" the
+	 * window's) */
+	Property<bool> denoteStatesColor{true}, denoteStatesIcons{false};
+	Property<bool> denoteMarkersColor{true}, denoteMarkersIcons{false};
+	Property<std::string> rollColors{"{}"};
+	Property<std::string> rollFont;
 	/* the most undo steps kept, as Chimera's TAStudio setting has it */
 	Property<int64_t> maxUndoSteps{1000};
 	/* TAStudio's "include frame numbers when copying input" */
@@ -244,7 +254,7 @@ private:
 	bool patternStroke_ = false, patternOn_ = false;
 	int64_t patternFrom_ = 0, patternColumn_ = -1;
 	bool paintPattern(int64_t first, int64_t last, bool join, std::string &error);
-	Connection patternsWatch_, projectGoneWatch_;
+	Connection patternsWatch_, projectGoneWatch_, statesWatch_, viewWatch_, viewCountWatch_;
 	/* a project's TAStudio part, kept until its machine's controls are
 	 * known (they are told after it); and the controls the patterns are for */
 	std::optional<std::map<std::string, std::string>> pendingMembers_;

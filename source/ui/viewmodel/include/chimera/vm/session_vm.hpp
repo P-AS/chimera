@@ -203,6 +203,13 @@ public:
 		int64_t loop = 0;
 	};
 	void setColumnPatterns(std::vector<ColumnPattern> patterns);
+	/* Which frames the greenzone holds a state for, of those the piano
+	 * roll shows: the UI's thread says which it shows, the machine answers
+	 * with every report; hasState reads the last answer (false for a frame
+	 * outside it), and statesShown says when it changed */
+	void watchStates(int64_t first, int64_t count);
+	bool hasState(int64_t frame) const;
+	Signal<> statesShown;
 	/* the controls Chimera's piano roll hides until shown (the console's
 	 * power and reset, keyboard keys, disk and tape controls...) */
 	static bool hiddenByDefault(const std::string &name);
@@ -505,6 +512,13 @@ private:
 	std::vector<std::string> autoHeldColumnsM_;
 	/* the Auto-hold columns' patterns, and where each is */
 	std::vector<ColumnPattern> columnPatternsM_;
+	/* the frames the piano roll shows, and the states among them */
+	std::atomic<int64_t> watchFirstM_{0}, watchCountM_{0};
+	int64_t pendingStatedFrom_ = 0;
+	std::vector<uint8_t> pendingStated_;
+	bool statedFresh_ = false;
+	int64_t statedFrom_ = 0;
+	std::vector<uint8_t> stated_;
 	std::vector<size_t> columnAtM_;
 	std::string freshColumnsM_;
 	bool columnsLoadedM_ = false;

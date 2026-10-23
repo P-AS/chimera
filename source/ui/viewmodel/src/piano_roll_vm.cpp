@@ -18,6 +18,20 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("wheelRows", "the frames a notch of the mouse wheel scrolls", wheelRows, true);
 	expose("editHiddenColumns", "edits of frames change the hidden columns too; off, only the columns shown",
 		editHiddenColumns, true);
+	expose("denoteStatesColor", "a frame whose state the greenzone holds has a colour of its own", denoteStatesColor, true);
+	expose("denoteStatesIcons", "a frame whose state the greenzone holds has an icon in the frame column", denoteStatesIcons, true);
+	expose("denoteMarkersColor", "a marker's frame number has the marker colour", denoteMarkersColor, true);
+	expose("denoteMarkersIcons", "a marker's frame has an icon in the frame column", denoteMarkersIcons, true);
+	expose("rollColors", "the roll's own colours over the theme's: a JSON object, a theme role each", rollColors, true);
+	expose("rollFont", "the roll's font: {\"family\", \"pointSize\", \"bold\", \"italic\"}; \"\" for the window's", rollFont, true);
+	/* the machine says which frames in view hold states */
+	auto watch = [this] { session_.watchStates(topFrame.get(), visibleFrames.get() + 1); };
+	viewWatch_ = topFrame.changed.connect(watch);
+	viewCountWatch_ = visibleFrames.changed.connect(watch);
+	statesWatch_ = session_.statesShown.connect([this] {
+		const int64_t top = topFrame.get(), last = std::min(top + visibleFrames.get(), inputs_.size() - 1);
+		if (last >= top) frames_.changed.emit(top, last);
+	});
 	expose("patternMode", "when painting follows a column's pattern: never, autofire (the Auto-hold columns) or always",
 		patternMode, true);
 	expose("patternKind", "the pattern a column's Auto-hold plays: hold, autofire or custom", patternKind, true);
@@ -1622,7 +1636,7 @@ std::string PianoRollViewModel::Frames::columnShortName(int32_t column) const
 uint32_t PianoRollViewModel::Frames::rowFlags(int64_t row) const
 {
 	return (vm_.inputs_.lagAt(row) ? kLag : 0) | (row < vm_.greenEnd.get() ? kGreen : 0) |
-		(vm_.markers_.count(row) ? kMarker : 0);
+		(vm_.markers_.count(row) ? kMarker : 0) | (vm_.session_.hasState(row) ? kStated : 0) | (vm_.inputs_.ranAt(row) ? kRan : 0);
 }
 
 std::string PianoRollViewModel::Frames::rowNote(int64_t row) const

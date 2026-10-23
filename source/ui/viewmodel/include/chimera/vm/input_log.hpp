@@ -54,6 +54,9 @@ public:
 	/* true when the frame's lag flag changed */
 	bool setLag(int64_t frame, bool lag);
 	bool lagAt(int64_t frame) const;
+	/* the machine has run the frame (its lag flag is known), now or before
+	 * an edit sent the greenzone back past it */
+	bool ranAt(int64_t frame) const;
 	void clearLags();
 
 	/* the machine's thread: the machine whose movie this is, nullptr for
@@ -63,6 +66,8 @@ public:
 private:
 	mutable std::shared_mutex m_;
 	ce_session *s_ = nullptr;
+	/* a frame each: 1 lag, 0 not, kNotRun never run (put in since) */
+	static constexpr uint8_t kNotRun = 2;
 	std::vector<uint8_t> lags_;
 };
 
