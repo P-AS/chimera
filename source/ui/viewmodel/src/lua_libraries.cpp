@@ -206,6 +206,85 @@ function userdata.get_keys()
 	return keys
 end
 
+-- game: a game core's properties by name (docs/game-cores.md) -------------
+game = {}
+local function describeOf(name)
+	local text = C.game.describe(tostring(name))
+	if text == "" then return nil end
+	local d = {}
+	for k, v in string.gmatch(text, "([^\t\n]+)\t([^\n]*)") do d[k] = v end
+	return d
+end
+local function bytesTable(s)
+	local t = {}
+	for i = 1, #s do t[i] = string.byte(s, i) end
+	return t
+end
+local function getOne(name)
+	local kind = C.game.kind(name)
+	local v = C.game.get(name)
+	if C.game.lastError ~= "" then console.log("game.get: " .. C.game.lastError) return nil end
+	if kind == "bytes" then return bytesTable(v) end
+	return v
+end
+-- an array by its own name: its elements, from 1 as Lua counts
+local function arrayOf(name)
+	if string.find(name, "%]%s*$") then return nil end
+	local d = describeOf(name)
+	if d == nil or tonumber(d.count) == nil or tonumber(d.count) <= 1 then return nil end
+	return tonumber(d.first), tonumber(d.count)
+end
+function game.list()
+	local names = {}
+	for n in string.gmatch(C.game.list(), "[^\n]+") do names[#names + 1] = n end
+	return names
+end
+function game.get(name)
+	name = tostring(name)
+	local first, count = arrayOf(name)
+	if first ~= nil then
+		local t = {}
+		for i = 0, count - 1 do t[i + 1] = getOne(name .. "[" .. (first + i) .. "]") end
+		return t
+	end
+	return getOne(name)
+end
+local function setOne(name, value)
+	local ok
+	if type(value) == "table" then
+		local parts = {}
+		for i = 1, #value do parts[i] = string.char(value[i] & 0xFF) end
+		ok = C.game.set(name, table.concat(parts), true)
+	else
+		ok = C.game.set(name, value, false)
+	end
+	if not ok then console.log("game.set: " .. C.game.lastError) end
+	return ok
+end
+function game.set(name, value)
+	name = tostring(name)
+	local first, count = arrayOf(name)
+	if first ~= nil and C.game.kind(name) ~= "bytes" then
+		if type(value) ~= "table" then
+			console.log("game.set: \"" .. name .. "\" is an array of " .. count .. ", so it takes a table of them")
+			return false
+		end
+		local all = true
+		for i = 0, count - 1 do
+			if value[i + 1] ~= nil then all = setOne(name .. "[" .. (first + i) .. "]", value[i + 1]) and all end
+		end
+		return all
+	end
+	return setOne(name, value)
+end
+function game.describe(name)
+	local d = describeOf(name)
+	if d == nil then return nil end
+	for _, k in ipairs({"offset", "size", "count", "first", "stride", "bit", "bits"}) do d[k] = tonumber(d[k]) end
+	d.writable = d.writable == "true"
+	return d
+end
+
 -- input: what the person's own devices hold, as Chimera's -----------------
 input = {}
 function input.get()

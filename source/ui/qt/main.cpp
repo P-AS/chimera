@@ -67,6 +67,7 @@
 #include "chimera/vm/macro_tool_vm.hpp"
 #include "chimera/vm/encoder_vm.hpp"
 #include "chimera/vm/host_input_vm.hpp"
+#include "chimera/vm/game_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -969,6 +970,9 @@ int main(int argc, char **argv)
 	lua.add(macroTool);
 	lua.add(encoder);
 	lua.add(hostInput);
+	/* a game core's properties by name, for Lua's game library */
+	vm::GamePropertiesViewModel gameProperties(dispatcher, session);
+	lua.add(gameProperties);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());

@@ -42,6 +42,7 @@ vm_lib = static_library(
     'viewmodel/src/nut_muxer.cpp',
     'viewmodel/src/encoder_vm.cpp',
     'viewmodel/src/host_input_vm.cpp',
+    'viewmodel/src/game_vm.cpp',
     'viewmodel/src/surface_viewer_vm.cpp',
     'viewmodel/src/macro_tool_vm.cpp',
     'viewmodel/src/project_details_vm.cpp',
