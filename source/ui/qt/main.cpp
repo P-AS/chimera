@@ -12,6 +12,9 @@
 
 #include <QCommandLineParser>
 #include <QElapsedTimer>
+#include <QImage>
+#include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -229,6 +232,39 @@ int main(int argc, char **argv)
 			if (down) run(session, session.running.get() ? "pause" : "play");
 		});
 		hotkeys.add("General", "Fast Forward", "Tab", [&session](bool down) { session.holdFastForward(down); });
+		hotkeys.add("General", "Toggle Throttle", "", [&session, run](bool down) {
+			if (down) run(session, "toggleThrottle");
+		});
+		/* the picture on screen as a PNG, named as Chimera names one: the
+		 * game, the date and time, and a number when that is taken */
+		hotkeys.add("General", "Screenshot", "F12", [&session](bool down) {
+			if (!down) return;
+			vm::Picture::Frame f;
+			if (!session.screen.takeIfNewer(UINT64_MAX, f) || f.width <= 0 || f.height <= 0)
+			{
+				session.status.set("No screenshot: there is no picture yet");
+				return;
+			}
+			const QImage picture(reinterpret_cast<const uchar *>(f.pixels.data()), f.width, f.height, f.width * 4, QImage::Format_RGB32);
+			QString folder = qEnvironmentVariable("CHIMERA_SCREENSHOTS");
+			if (folder.isEmpty()) folder = QCoreApplication::applicationDirPath() + QStringLiteral("/Screenshots");
+			QDir().mkpath(folder);
+			QString name = QString::fromStdString(session.gameName.get());
+			for (const QChar c : QStringLiteral("<>:\"/\\|?*")) name.replace(c, QLatin1Char('_'));
+			if (name.isEmpty()) name = QStringLiteral("screenshot");
+			const QString base = folder + QLatin1Char('/') + name + QLatin1Char('.') +
+				QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH.mm.ss"));
+			/* the bare name, unless a (0) is there; a bare one already there becomes (0) */
+			QString path = base + QStringLiteral(" (0).png");
+			if (!QFileInfo::exists(path))
+			{
+				if (QFileInfo::exists(base + QStringLiteral(".png"))) QFile::rename(base + QStringLiteral(".png"), path);
+				else path = base + QStringLiteral(".png");
+			}
+			for (int n = 0; QFileInfo::exists(path); n++) path = base + QStringLiteral(" (%1).png").arg(n);
+			if (picture.save(path, "PNG")) session.status.set(QFileInfo(path).fileName().toStdString() + " saved.");
+			else session.status.set("No screenshot: " + path.toStdString() + " could not be written");
+		});
 		window("General", "Full Screen", "Alt+Enter");
 		window("General", "Open ROM", "Ctrl+O");
 		hotkeys.add("General", "Close ROM", "Ctrl+W", [&session, run](bool down) {
@@ -240,6 +276,24 @@ int main(int argc, char **argv)
 		});
 		hotkeys.add("General", "Reboot Core", "Ctrl+R", [&session, run](bool down) {
 			if (down) run(session, "restart");
+		});
+		hotkeys.add("General", "Volume Up", "", [&session, run](bool down) {
+			if (down) run(session, "volumeUp");
+		});
+		hotkeys.add("General", "Volume Down", "", [&session, run](bool down) {
+			if (down) run(session, "volumeDown");
+		});
+		hotkeys.add("General", "Increase Speed", "Equals", [&session, run](bool down) {
+			if (down) run(session, "speedUp");
+		});
+		hotkeys.add("General", "Decrease Speed", "Minus", [&session, run](bool down) {
+			if (down) run(session, "speedDown");
+		});
+		hotkeys.add("General", "Reset Speed", "Shift+Equals", [&session, run](bool down) {
+			if (down) run(session, "speedReset");
+		});
+		hotkeys.add("General", "Toggle Sound", "", [&session, run](bool down) {
+			if (down) run(session, "toggleSound");
 		});
 		window("General", "Exit Program", "");
 		window("Tools", "RAM Watch", "");
@@ -430,6 +484,10 @@ int main(int argc, char **argv)
 			? qEnvironmentVariable("CHIMERA_QT_CACHE").toStdString()
 			: (QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/projects")).toStdString());
 	config.keep(session, "autoRestore");
+	config.keep(session, "speedPercent");
+	config.keep(session, "unthrottled");
+	config.keep(session, "soundOn");
+	config.keep(session, "volume");
 	config.keep(session, "greenzoneEvery");
 	config.keep(ramWatch, "showOnScreen");
 	config.keep(controls, "saved");

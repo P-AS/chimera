@@ -117,10 +117,22 @@ Sound::~Sound()
 
 bool Sound::available() const { return api_->started; }
 
-void Sound::play(const int16_t *samples, int32_t pairs)
+void Sound::scale(const int16_t *samples, int32_t pairs, int32_t volume, std::vector<int16_t> &out)
+{
+	const int32_t v = volume < 0 ? 0 : volume > 100 ? 100 : volume;
+	out.resize(static_cast<size_t>(pairs) * 2);
+	for (size_t i = 0; i < out.size(); i++) out[i] = static_cast<int16_t>(static_cast<int32_t>(samples[i]) * v / 100);
+}
+
+void Sound::play(const int16_t *samples, int32_t pairs, int32_t volume)
 {
 	Api &a = *api_;
-	if (!a.started || samples == nullptr || pairs <= 0) return;
+	if (!a.started || samples == nullptr || pairs <= 0 || volume <= 0) return;
+	if (volume < 100)
+	{
+		scale(samples, pairs, volume, scaled_);
+		samples = scaled_.data();
+	}
 
 	int done = 0;
 	a.alGetSourcei(a.source, AL_BUFFERS_PROCESSED, &done);

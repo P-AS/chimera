@@ -54,6 +54,13 @@ public:
 	Property<int64_t> buttonCount{0};
 	/* the gamepads in use, or why there are none */
 	Property<std::string> gamepads{"No gamepads yet"};
+	/* How fast the machine runs, as Chimera has it: a percent of its own
+	 * rate (1 to 6400, in Chimera's steps), or as fast as it can
+	 * (unthrottled); and its sound, on or off and its volume (0 to 100) */
+	Property<int64_t> speedPercent{100};
+	Property<bool> unthrottled{false};
+	Property<bool> soundOn{true};
+	Property<int64_t> volume{100};
 	/* A gamepad input caught for a binding (catchPad): waiting, and the
 	 * name of the input pressed ("X1 A", "J1 POV0U"; "" while waiting) */
 	Property<bool> catchingPad{false};
@@ -86,6 +93,8 @@ public:
 	Property<std::string> projectPath;
 	Property<bool> hasProject{false};
 	Property<std::string> projectTitle;
+	/* the game's name: its file's, without the kind (a project's first file) */
+	Property<std::string> gameName;
 	/* projects opened, newest first, a line each (ten kept) */
 	Property<std::string> recentProjects;
 
@@ -360,6 +369,9 @@ private:
 	int64_t frameM_ = 0;
 	int64_t greenEndM_ = 0;
 	std::atomic<bool> autoRestoreM_{true};
+	std::atomic<int64_t> speedM_{100}, volumeM_{100};
+	std::atomic<bool> unthrottledM_{false}, soundOnM_{true};
+	Connection speedWatch_, unthrottledWatch_, soundOnWatch_, volumeWatch_;
 	/* Where an edit sends the machine back to, as Chimera's TAStudio does: the
 	 * frame it was on at the first edit, kept through the edits that follow
 	 * until the machine is moved some other way (-1: none). movesM_ counts

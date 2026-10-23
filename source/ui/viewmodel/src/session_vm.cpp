@@ -31,6 +31,73 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("systemName", "the machine the core runs", systemName);
 	expose("buttonCount", "how many buttons the machine has", buttonCount);
 	expose("gamepads", "the gamepads in use, or why there are none", gamepads);
+	expose("speedPercent", "how fast the machine runs, a percent of its own rate (1 to 6400)", speedPercent, true);
+	expose("unthrottled", "the machine runs as fast as it can", unthrottled, true);
+	expose("soundOn", "the machine's sound is played", soundOn, true);
+	expose("volume", "the sound's volume, 0 to 100", volume, true);
+	speedWatch_ = speedPercent.changed.connect([this] {
+		speedM_ = std::clamp<int64_t>(speedPercent.get(), 1, 6400);
+	});
+	unthrottledWatch_ = unthrottled.changed.connect([this] { unthrottledM_ = unthrottled.get(); });
+	soundOnWatch_ = soundOn.changed.connect([this] { soundOnM_ = soundOn.get(); });
+	volumeWatch_ = volume.changed.connect([this] { volumeM_ = std::clamp<int64_t>(volume.get(), 0, 100); });
+	/* Chimera's speeds, a step at a time */
+	auto speedStep = [this](int direction) {
+		static const int64_t steps[] = {1, 3, 6, 12, 25, 50, 75, 100, 150, 200, 300, 400, 800, 1600, 3200, 6400};
+		const int64_t now = speedPercent.get();
+		int64_t next = now;
+		if (direction > 0)
+		{
+			for (int64_t s : steps)
+				if (s > now)
+				{
+					next = s;
+					break;
+				}
+		}
+		else
+			for (int i = static_cast<int>(std::size(steps)) - 1; i >= 0; i--)
+				if (steps[i] < now)
+				{
+					next = steps[i];
+					break;
+				}
+		speedPercent.set(next);
+		status.set("Speed: " + std::to_string(next) + "%");
+	};
+	command("speedUp", "the next of Chimera's speeds up", {}, [speedStep](const Args &, std::string &) -> Value {
+		speedStep(1);
+		return {};
+	});
+	command("speedDown", "the next of Chimera's speeds down", {}, [speedStep](const Args &, std::string &) -> Value {
+		speedStep(-1);
+		return {};
+	});
+	command("speedReset", "the machine's own speed, 100%", {}, [this](const Args &, std::string &) -> Value {
+		speedPercent.set(100);
+		status.set("Speed: 100%");
+		return {};
+	});
+	command("toggleThrottle", "as fast as it can, or at its speed again", {}, [this](const Args &, std::string &) -> Value {
+		unthrottled.set(!unthrottled.get());
+		status.set(unthrottled.get() ? "Unthrottled" : "Throttled");
+		return {};
+	});
+	command("toggleSound", "the sound on or off", {}, [this](const Args &, std::string &) -> Value {
+		soundOn.set(!soundOn.get());
+		status.set(soundOn.get() ? "Sound on" : "Sound off");
+		return {};
+	});
+	command("volumeUp", "the volume up by ten", {}, [this](const Args &, std::string &) -> Value {
+		volume.set(std::min<int64_t>(100, volume.get() + 10));
+		status.set("Volume " + std::to_string(volume.get()));
+		return {};
+	});
+	command("volumeDown", "the volume down by ten", {}, [this](const Args &, std::string &) -> Value {
+		volume.set(std::max<int64_t>(0, volume.get() - 10));
+		status.set("Volume " + std::to_string(volume.get()));
+		return {};
+	});
 	expose("catchingPad", "waiting for a gamepad input to be pressed (catchPad)", catchingPad);
 	expose("caughtPad", "the gamepad input caught, by Chimera's name; \"\" while waiting", caughtPad);
 	expose("sound", "\"Sound on\", or why there is none", sound);
@@ -62,6 +129,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("projectPath", "the open project's file, \"\" when a game was opened without one or the project is not saved yet", projectPath);
 	expose("hasProject", "a project is open, saved or not yet", hasProject);
 	expose("projectTitle", "the open project's title", projectTitle);
+	expose("gameName", "the game's name: its file's, without the kind", gameName);
 	expose("recentProjects", "projects opened, newest first, a line each", recentProjects, true);
 	expose("chooseFor", "a game waiting for its core to be chosen", chooseFor);
 	expose("choices", "the cores the waiting game could be opened with, a line each", choices);
@@ -464,7 +532,10 @@ void SessionViewModel::loop()
 		{
 			advanceOnMachine();
 			/* fast forward: the next frame at once */
-			due_ += fastM_ ? Clock::duration::zero() : period_;
+			/* fast forward or unthrottled: the next frame at once; else at
+			 * the speed asked for */
+			due_ += fastM_ || unthrottledM_ ? Clock::duration::zero()
+											 : std::chrono::duration_cast<Clock::duration>(period_ * (100.0 / static_cast<double>(speedM_.load())));
 			/* behind by more than a few frames (a slow frame, a busy machine):
 			 * carry on from now rather than race to catch up */
 			const auto now = Clock::now();
@@ -583,6 +654,10 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	}
 	ce_session_set_rerecords(s, counted);
 	adoptOnMachine(s, package, game, true);
+	{
+		std::string stem = std::filesystem::path(game).stem().string();
+		later([this, stem] { gameName.set(stem); });
+	}
 	package_ = package;
 	game_ = game;
 }
@@ -1261,6 +1336,11 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	tidyBranchStatesOnMachine();
 	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
 	adoptOnMachine(s, package, (title.empty() ? path : title) + note, true);
+	{
+		const char *first = ce_project_file_count(p) > 0 ? ce_project_file_name(p, 0) : nullptr;
+		std::string stem = first != nullptr ? std::filesystem::path(first).stem().string() : title;
+		later([this, stem] { gameName.set(stem); });
+	}
 	startProjectSessionOnMachine(!keepInputs);
 	ProjectAnswers answers;
 	answers.coreName = ce_project_core_name(p) != nullptr ? ce_project_core_name(p) : "";
@@ -1739,7 +1819,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	{
 		int32_t pairs = 0;
 		const int16_t *samples = ce_session_audio(s_, &pairs);
-		soundM_->play(samples, pairs);
+		soundM_->play(samples, pairs, soundOnM_ ? static_cast<int32_t>(volumeM_.load()) : 0);
 	}
 
 	if (render)

@@ -122,6 +122,31 @@ ApplicationWindow {
             Action { property string hotkey: "Frame Advance"; text: qsTr("&Frame Advance"); enabled: root.session.frameAdvanceEnabled; onTriggered: root.session.run("frameAdvance") }
             Action { text: qsTr("Go to Frame &0"); shortcut: "Ctrl+Home"; enabled: root.session.seekEnabled; onTriggered: root.session.run("seek", [0]) }
             Action { property string hotkey: "Seek To..."; text: qsTr("&Go to Frame..."); enabled: root.session.seekEnabled; onTriggered: seekDialog.open() }
+            Menu {
+                delegate: keyedMenuItem
+                title: qsTr("&Speed")
+                Action { text: "50%"; checkable: true; checked: root.session.speedPercent === 50; onTriggered: root.session.speedPercent = 50 }
+                Action { text: "75%"; checkable: true; checked: root.session.speedPercent === 75; onTriggered: root.session.speedPercent = 75 }
+                Action { text: "100%"; checkable: true; checked: root.session.speedPercent === 100; onTriggered: root.session.speedPercent = 100 }
+                Action { text: "150%"; checkable: true; checked: root.session.speedPercent === 150; onTriggered: root.session.speedPercent = 150 }
+                Action { text: "200%"; checkable: true; checked: root.session.speedPercent === 200; onTriggered: root.session.speedPercent = 200 }
+                Action { text: "400%"; checkable: true; checked: root.session.speedPercent === 400; onTriggered: root.session.speedPercent = 400 }
+                MenuSeparator {}
+                Action { property string hotkey: "Increase Speed"; text: qsTr("&Faster"); onTriggered: root.session.run("speedUp") }
+                Action { property string hotkey: "Decrease Speed"; text: qsTr("&Slower"); onTriggered: root.session.run("speedDown") }
+                Action { property string hotkey: "Reset Speed"; text: qsTr("&Its Own Speed"); onTriggered: root.session.run("speedReset") }
+                Action {
+                    property string hotkey: "Toggle Throttle"
+                    text: qsTr("&Unthrottled"); checkable: true; checked: root.session.unthrottled
+                    onTriggered: root.session.unthrottled = checked
+                }
+            }
+            Action {
+                property string hotkey: "Toggle Sound"
+                text: qsTr("S&ound"); checkable: true; checked: root.session.soundOn
+                onTriggered: root.session.soundOn = checked
+            }
+            Action { property string hotkey: "Screenshot"; text: qsTr("Scree&nshot"); enabled: root.session.isOpen; onTriggered: root.hotkeys.run("run", ["Screenshot"]) }
             Action {
                 property string hotkey: "Toggle Auto-Restore"
                 text: qsTr("After an Edit, &Return to Where It Was")

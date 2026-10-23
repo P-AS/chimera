@@ -41,6 +41,7 @@
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
+#include "chimera/vm/sound.hpp"
 #include "chimera/vm/european_clock.hpp"
 #include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/themes_vm.hpp"
@@ -454,6 +455,74 @@ bool padCatch()
 	setButton(joy, 2, 0);
 	return true;
 #endif
+}
+
+/* How fast the machine runs, and its sound, as Chimera has them: its
+ * speeds a step at a time, the volume in tens; then the machine itself at a
+ * quarter of its speed, at four times it, and as fast as it can */
+bool speedAndSound(const char *package, const char *rom)
+{
+	std::vector<int16_t> out;
+	const int16_t samples[] = {1000, -1000, 32767, -32768};
+	Sound::scale(samples, 2, 50, out);
+	CHECK(out == std::vector<int16_t>({500, -500, 16383, -16384}));
+	Sound::scale(samples, 2, 0, out);
+	CHECK(out == std::vector<int16_t>({0, 0, 0, 0}));
+	Sound::scale(samples, 2, 150, out);
+	CHECK(out == std::vector<int16_t>({1000, -1000, 32767, -32768}));
+
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	std::string error;
+	auto step = [&](const char *command) {
+		session.run(command, {}, error);
+		return session.speedPercent.get();
+	};
+	CHECK(step("speedUp") == 150 && step("speedUp") == 200 && step("speedDown") == 150 && step("speedReset") == 100);
+	CHECK(session.status.get() == "Speed: 100%");
+	session.speedPercent.set(1);
+	CHECK(step("speedDown") == 1 && step("speedUp") == 3);
+	session.speedPercent.set(6400);
+	CHECK(step("speedUp") == 6400 && step("speedDown") == 3200);
+	session.volume.set(95);
+	session.run("volumeUp", {}, error);
+	CHECK(session.volume.get() == 100 && session.status.get() == "Volume 100");
+	for (int i = 0; i < 12; i++) session.run("volumeDown", {}, error);
+	CHECK(session.volume.get() == 0);
+	session.run("toggleSound", {}, error);
+	CHECK(!session.soundOn.get() && session.status.get() == "Sound off");
+	session.run("toggleThrottle", {}, error);
+	CHECK(session.unthrottled.get() && session.status.get() == "Unthrottled");
+	session.run("toggleThrottle", {}, error);
+
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* frames run in a stretch of time, at a speed (the machine runs at 60 a second) */
+	auto framesIn = [&](double seconds) {
+		const int64_t from = session.frame.get();
+		session.run("play", {}, error);
+		d.until([] { return false; }, seconds);
+		session.run("pause", {}, error);
+		d.until([&] { return !session.running.get(); }, 5);
+		return session.frame.get() - from;
+	};
+	session.speedPercent.set(25);
+	const int64_t quarter = framesIn(1.0);
+	session.speedPercent.set(400);
+	const int64_t four = framesIn(1.0);
+	session.speedPercent.set(100);
+	session.unthrottled.set(true);
+	const int64_t free = framesIn(0.5);
+	session.unthrottled.set(false);
+	std::printf("speed: %lld frames a second at 25%%, %lld at 400%%, %lld in half a second unthrottled\n",
+		static_cast<long long>(quarter), static_cast<long long>(four), static_cast<long long>(free));
+	CHECK(quarter >= 8 && quarter <= 25);
+	CHECK(four >= 120 && four <= 260);
+	CHECK(free > 260);
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	return true;
 }
 
 std::string readFile(const std::filesystem::path &p);
@@ -2747,6 +2816,7 @@ int main(int argc, char **argv)
 			ranMachine = pianoRollEditing(argv[1], argv[2]) && ranMachine;
 			ranMachine = controlsAndHotkeys(argv[1], argv[2]) && ranMachine;
 			ranMachine = greenzoneChoice(argv[1], argv[2]) && ranMachine;
+			ranMachine = speedAndSound(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;
