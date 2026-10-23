@@ -80,6 +80,8 @@ public:
 	int64_t shownFrom(int64_t frame, int64_t steps) const;
 	/* macros placed lately, newest first, a line each (eight kept) */
 	Property<std::string> recentMacros;
+	/* a macro file used, first in the recent ones */
+	void addRecentMacro(const std::string &path);
 	/* A macro as Chimera's .chimeraMacro has it, of frames first to last and
 	 * these columns (none named: all), Overlay and Replace as given; "" with
 	 * the reason when it cannot be. Its lines are the movie's own when it has

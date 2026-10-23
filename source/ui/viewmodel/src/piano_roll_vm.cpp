@@ -276,14 +276,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				lines.push_back(line);
 			}
 			if (!placeMacroLines(at, std::move(lines), path, error)) return {};
-			/* the recent ones, newest first */
-			std::vector<std::string> recent{path};
-			std::istringstream was(recentMacros.get());
-			for (std::string line; std::getline(was, line);)
-				if (!line.empty() && line != path && recent.size() < 8) recent.push_back(line);
-			std::string text;
-			for (const std::string &r : recent) text += (text.empty() ? "" : "\n") + r;
-			recentMacros.set(text);
+			addRecentMacro(path);
 			return {};
 		}, &session_.isOpen);
 	patternsWatch_ = session_.tastudioLoaded.connect([this](const std::map<std::string, std::string> &members) {
@@ -2338,6 +2331,18 @@ Value PianoRollViewModel::Frames::cell(int64_t row, int32_t column) const
 	}
 	if (column >= 64) return false;
 	return (cachedBits_ >> column & 1) != 0;
+}
+
+void PianoRollViewModel::addRecentMacro(const std::string &path)
+{
+	/* newest first, eight at most: Chimera's recent macros, TAStudio's and Macro Input's */
+	std::vector<std::string> recent{path};
+	std::istringstream was(recentMacros.get());
+	for (std::string line; std::getline(was, line);)
+		if (!line.empty() && line != path && recent.size() < 8) recent.push_back(line);
+	std::string text;
+	for (const std::string &r : recent) text += (text.empty() ? "" : "\n") + r;
+	recentMacros.set(text);
 }
 
 } // namespace chimera::vm

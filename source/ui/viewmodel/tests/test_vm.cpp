@@ -1655,6 +1655,8 @@ bool macroTool(const char *package, const char *rom)
 	CHECK(tool.run("place", {int64_t{2}, int64_t{0}}, error).has_value());
 	CHECK(d.until([&] { return roll.frameCount.get() == 10; }, 10));
 	CHECK(tool.zones()[0].length == 10);
+	/* saved and loaded macros are Chimera's recent ones, shared with TAStudio's Recent Macros */
+	CHECK(roll.recentMacros.get() == zoneFile.string() + "\n" + wholeFile.string());
 	/* a macro of columns the movie lacks is refused, as Chimera's says */
 	{
 		std::ofstream(dir / "other.chimeraMacro") << "P2 Turbo\nOther\n3\nFalse,True\n|T|\n";

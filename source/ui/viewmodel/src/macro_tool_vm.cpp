@@ -132,6 +132,7 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 			}
 			zones_[i].saved = true;
 			changed();
+			roll_.addRecentMacro(path);
 			status.set("Saved " + zones_[i].name + " as " + path);
 			return {};
 		});
@@ -182,6 +183,7 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 			zones_.push_back(std::move(z));
 			picked.set(static_cast<int64_t>(zones_.size()) - 1);
 			changed();
+			roll_.addRecentMacro(path);
 			return picked.get();
 		});
 	command("remove", "a zone let go (the entire movie stays)", {"zone"}, [this](const Args &a, std::string &error) -> Value {
