@@ -1,6 +1,9 @@
 // Lua's forms: each form a script makes, a window of its own with its
-// controls where the script put them. Layout and bindings only, over the
-// forms view model; what the person does goes back to it.
+// controls where the script put them ("Lua Dialog" when it names none),
+// over the main window as Chimera's are, and in the platform's own colours
+// whatever the theme, as Chimera leaves its Lua forms unthemed. Layout and
+// bindings only, over the forms view model; what the person does goes back
+// to it.
 import QtQuick
 import QtQuick.Controls
 import "Shapes.js" as Shapes
@@ -8,6 +11,10 @@ import "Shapes.js" as Shapes
 Item {
     id: lua
     required property QtObject vm
+    property Window mainWindow: null
+    // the platform's colours, before any theme
+    property QtObject themeColors: null
+    function platform(role, fallback) { return lua.themeColors ? lua.themeColors.platform(role) : fallback }
 
     Instantiator {
         model: lua.vm.rows("forms")
@@ -23,7 +30,20 @@ Item {
             height: form.model.height
             minimumWidth: 40
             minimumHeight: 30
+            transientParent: lua.mainWindow
             visible: true
+            // not themed, as Chimera's Lua forms are not
+            palette.window: lua.platform("window", "#efefef")
+            palette.windowText: lua.platform("windowText", "black")
+            palette.base: lua.platform("base", "white")
+            palette.text: lua.platform("text", "black")
+            palette.button: lua.platform("button", "#efefef")
+            palette.buttonText: lua.platform("buttonText", "black")
+            palette.highlight: lua.platform("highlight", "#308cc6")
+            palette.highlightedText: lua.platform("highlightedText", "white")
+            palette.mid: lua.platform("mid", "#a0a0a0")
+            palette.dark: lua.platform("dark", "#9f9f9f")
+            palette.placeholderText: lua.platform("placeholderText", "#80000000")
             // closed by the person: the script's close function, then it goes
             onClosing: lua.vm.run("closed", [form.formHandle])
 

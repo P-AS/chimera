@@ -25,6 +25,11 @@ const QPalette &platform()
 }
 } // namespace
 
+const QPalette &platformPalette()
+{
+	return platform();
+}
+
 QColor resolveColor(const QString &value)
 {
 	if (!value.startsWith(QStringLiteral("system:"))) return QColor(value);
@@ -55,6 +60,18 @@ QColor resolveColor(const QString &value)
 	if (name == QStringLiteral("infotext")) return p.color(QPalette::ToolTipText);
 	if (name == QStringLiteral("buttonface")) return p.color(QPalette::Button);
 	return QColor();
+}
+
+QColor ThemeColors::platform(const QString &role) const
+{
+	static const QHash<QString, QPalette::ColorRole> roles{{QStringLiteral("window"), QPalette::Window},
+		{QStringLiteral("windowText"), QPalette::WindowText}, {QStringLiteral("base"), QPalette::Base},
+		{QStringLiteral("text"), QPalette::Text}, {QStringLiteral("button"), QPalette::Button},
+		{QStringLiteral("buttonText"), QPalette::ButtonText}, {QStringLiteral("highlight"), QPalette::Highlight},
+		{QStringLiteral("highlightedText"), QPalette::HighlightedText}, {QStringLiteral("mid"), QPalette::Mid},
+		{QStringLiteral("dark"), QPalette::Dark}, {QStringLiteral("placeholderText"), QPalette::PlaceholderText}};
+	const auto it = roles.find(role);
+	return it == roles.end() ? QColor() : platformPalette().color(it.value());
 }
 
 QColor themeColor(const char *role)

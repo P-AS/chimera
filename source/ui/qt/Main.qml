@@ -806,7 +806,7 @@ ApplicationWindow {
         onAccepted: root.leaveProject(() => root.session.run("openProject", [selectedFile]))
     }
     // the windows Lua scripts make with the forms library
-    LuaForms { vm: root.forms }
+    LuaForms { vm: root.forms; mainWindow: root; themeColors: root.themeColors }
     // Chimera's File > Encode Video: a window of its own, modeless
     EncodeVideo {
         id: encodeWindow
