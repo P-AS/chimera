@@ -274,7 +274,7 @@ int main(int argc, char **argv)
 	QCommandLineOption mmfOpt(QStringLiteral("mmf"), QStringLiteral("the memory-mapped file Lua's comm.mmfScreenshot writes to, as Chimera's --mmf"),
 		QStringLiteral("name"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, hotkeys, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, userdataOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -470,8 +470,10 @@ int main(int argc, char **argv)
 		window("Tools", "RAM Watch", "");
 		window("Tools", "RAM Search", "");
 		window("Tools", "Hex Editor", "");
-		window("Tools", "Lua Console", "");
 		window("Tools", "Trace Logger", "");
+		window("Tools", "Lua Console", "");
+		/* TAStudio shown again when it was hidden */
+		window("Tools", "TAStudio", "");
 		/* the console is made below; the key reaches it once it is */
 		hotkeys.add("Tools", "Toggle Last Lua Script", "", [&luaConsoleOf, run](bool down) {
 			if (down && luaConsoleOf != nullptr) run(*luaConsoleOf, "toggleLast");
@@ -908,6 +910,7 @@ int main(int argc, char **argv)
 	config.keep(hotkeys, "saved");
 	config.keep(hotkeys, "keyPriority");
 	config.keep(hotkeys, "noMixedPriority");
+	config.keep(hotkeys, "autoTab");
 	config.keep(session, "recentProjects");
 	config.keep(pianoRoll, "followPlayback");
 	config.keep(pianoRoll, "moveWithMainWindow");
@@ -1163,6 +1166,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("new-project") ? QStringLiteral("newProjectWindow")
 		: args.value(showOpt) == QStringLiteral("hex") ? QStringLiteral("hexEditorWindow")
 		: args.value(showOpt) == QStringLiteral("controls") ? QStringLiteral("controllerConfigWindow")
+		: args.value(showOpt) == QStringLiteral("hotkeys") ? QStringLiteral("hotkeyConfigWindow")
 		: args.value(showOpt) == QStringLiteral("hotkeys") ? QStringLiteral("hotkeyConfigWindow")
 		: args.value(showOpt) == QStringLiteral("themes") ? QStringLiteral("themesWindow")
 		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")

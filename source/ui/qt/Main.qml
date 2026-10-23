@@ -160,6 +160,7 @@ ApplicationWindow {
             }
             else if (action === "Seek To...") { if (root.session.seekEnabled) seekDialog.open() }
             else if (action === "Toggle Menu") root.menuBar.visible = !root.menuBar.visible
+            else if (action === "TAStudio") { if (root.session.hasProject) tastudioWindow.engage() }
             else if (action === "Toggle Stay on Top") root.flags = root.flags ^ Qt.WindowStaysOnTopHint
             else if (action === "Play Movie") root.leaveProject(() => projectDialog.open())
             else if (action === "Record Movie") { root.newProject.run("openOnLastProject"); newProjectWindow.show(); newProjectWindow.raise() }
@@ -586,7 +587,10 @@ ApplicationWindow {
         id: controllerWindow; controls: root.controls; keyNamer: root.keyNamer; session: root.session
         mainWindow: root; themeColor: root.osdColor; visible: false
     }
-    Controls { id: hotkeyWindow; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
+    HotkeyConfig {
+        id: hotkeyWindow; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session
+        mainWindow: root; themeColor: root.osdColor; visible: false
+    }
     LuaConsole {
         id: luaConsoleWindow; vm: root.luaConsole; folderOf: root.folderOf; visible: false
         fileUrl: (path) => root.pictureFiles.folderUrl(path); localPath: (url) => root.pictureFiles.localPath(url)

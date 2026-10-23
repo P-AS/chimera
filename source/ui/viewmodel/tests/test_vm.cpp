@@ -5333,18 +5333,65 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	CHECK(!hotkeys.key("R", true) && !hotkeys.key("Shift+F", true));
 	/* every action's keys, for the menus to show */
 	CHECK(hotkeys.bound.get() == "{\"Frame Advance\": \"F\", \"Rewind\": \"Shift+R\"}");
+	/* Configure Hotkeys works on a copy: the keys change when it is saved */
 	CHECK(hotkeys.run("bind", {std::string("Frame Advance"), std::string("G")}, error).has_value());
+	CHECK(hotkeys.editing.get() && hotkeys.bound.get() == "{\"Frame Advance\": \"F\", \"Rewind\": \"Shift+R\"}");
+	CHECK(hotkeys.run("save", {}, error).has_value() && !hotkeys.editing.get());
 	CHECK(hotkeys.bound.get() == "{\"Frame Advance\": \"G\", \"Rewind\": \"Shift+R\"}");
+	/* the window opened again starts from the keys as they are, not Chimera's */
+	{
+		hotkeys.run("edit", {}, error);
+		std::string k;
+		fromValue(hotkeys.rowLists()[0].model->cell(0, 2), k);
+		CHECK(k == "G");
+		hotkeys.run("cancel", {}, error);
+	}
 	CHECK(!hotkeys.key("F", true) && hotkeys.key("G", true) && downs == 2);
 	hotkeys.key("G", false);
 	CHECK(hotkeys.saved.get().find("\"G\"") != std::string::npos);
 	/* a key let go after its action was rebound still lets the action go */
 	hotkeys.key("G", true);
-	hotkeys.run("reset", {std::string("Frame Advance")}, error);
+	hotkeys.run("defaults", {std::string("General")}, error);
+	hotkeys.run("save", {}, error);
 	CHECK(hotkeys.key("G", false) && ups == 3);
 	CHECK(hotkeys.saved.get() == "{}" && hotkeys.key("F", true));
 	hotkeys.key("F", false);
 	CHECK(!hotkeys.run("bind", {std::string("Fly"), std::string("Z")}, error) && error == "no action Fly");
+	/* listed in Chimera's order, whatever the order they were added in; the tabs as Chimera's */
+	hotkeys.add("TAStudio", "Add Branch", "Alt+Insert", [](bool) {});
+	hotkeys.add("General", "Pause", "Pause", [](bool) {});
+	{
+		RowModel &list = *hotkeys.rowLists()[0].model;
+		std::string names;
+		for (int64_t r = 0; r < list.rowCount(); r++)
+		{
+			std::string n;
+			fromValue(list.cell(r, 1), n);
+			names += n + "|";
+		}
+		CHECK(names == "Frame Advance|Rewind|Pause|Add Branch|" && hotkeys.groups.get() == "[\"General\", \"TAStudio\"]");
+		auto keysOf = [&](int64_t r) {
+			std::string k;
+			fromValue(list.cell(r, 2), k);
+			return k;
+		};
+		/* keys pressed in a box: with Auto Tab one replaces the keys and the next box takes the next */
+		CHECK(hotkeys.run("press", {std::string("Pause"), std::string("Ctrl+K")}, error) == Value(true) && keysOf(2) == "Ctrl+K");
+		hotkeys.autoTab.set(false);
+		CHECK(hotkeys.run("press", {std::string("Pause"), std::string("J")}, error) == Value(false) && keysOf(2) == "Ctrl+K,J");
+		hotkeys.run("press", {std::string("Pause"), std::string("Escape")}, error);
+		CHECK(keysOf(2).empty());
+		hotkeys.autoTab.set(true);
+		/* a tab cleared, then the copy let go */
+		hotkeys.run("clear", {std::string("General")}, error);
+		CHECK(keysOf(0).empty() && keysOf(1).empty() && keysOf(3) == "Alt+Insert");
+		hotkeys.run("cancel", {}, error);
+		CHECK(keysOf(0) == "F" && keysOf(2) == "Pause" && hotkeys.saved.get() == "{}");
+		/* Find: a name in any case, its tab; and what is typed so far suggests names */
+		CHECK(hotkeys.run("find", {std::string("add BRANCH ")}, error) == Value(std::string("{\"action\": \"Add Branch\", \"group\": \"TAStudio\"}")));
+		CHECK(hotkeys.run("find", {std::string("Fly")}, error) == Value(std::string()));
+		CHECK(hotkeys.run("suggest", {std::string("r")}, error) == Value(std::string("[\"Rewind\"]")));
+	}
 	const int before = downs;
 	hotkeys.run("run", {std::string("Frame Advance")}, error);
 	CHECK(downs == before + 1);

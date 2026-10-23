@@ -45,7 +45,8 @@
     <file>RamWatch.qml</file>
     <file>RamPoke.qml</file>
     <file>HexEditor.qml</file>
-    <file>Controls.qml</file>
+    <file>HotkeyConfig.qml</file>
+    <file>BindingBox.qml</file>
     <file>ControllerConfig.qml</file>
     <file>Themes.qml</file>
     <file alias="themes/light.json">../../gui/Chimera.Client.Common/Resources/themes/light.json</file>

@@ -29,10 +29,8 @@ ApplicationWindow {
 
     readonly property var buttonGroups: JSON.parse(win.controls.buttonGroups)
     readonly property var axisGroups: JSON.parse(win.controls.axisGroups)
-    // the box with the focus, which a gamepad input pressed goes to; the analog control catching an axis
-    property Item focusBox: null
+    // the analog control catching an axis (-1: none)
     property int axisCatch: -1
-    readonly property string tips: qsTr("* Escape clears a key mapping\n* Disable Auto Tab to multiply bind")
 
     onVisibleChanged: {
         if (visible) {
@@ -52,18 +50,14 @@ ApplicationWindow {
         win.close()
     }
 
-    // a gamepad input: to the analog control catching an axis, else to the box with the focus
+    // a gamepad axis moved, for the analog control catching one
     Connections {
         target: win.session
+        enabled: win.axisCatch >= 0
         function onCaughtPadChanged() {
-            const name = win.session.caughtPad
-            if (name === "") return
-            if (win.axisCatch >= 0) {
-                win.controls.run("setAnalog", [win.axisCatch, "value", name])
-                win.axisCatch = -1
-            } else if (win.focusBox !== null) {
-                win.focusBox.take(name)
-            }
+            if (win.session.caughtPad === "") return
+            win.controls.run("setAnalog", [win.axisCatch, "value", win.session.caughtPad])
+            win.axisCatch = -1
         }
     }
     // the pointer moved far enough over the window while an axis is caught: the pointer's axis, as Chimera's
@@ -86,96 +80,6 @@ ApplicationWindow {
         }
     }
     onAxisCatchChanged: { win.pointerMovedX = 0; win.pointerMovedY = 0 }
-
-    // a box: the keys bound, and an arrow for the bindings a key cannot give
-    component InputBox: RowLayout {
-        id: box
-        required property string table
-        required property int row
-        required property string keys
-        // the next box, for Auto Tab (null: none)
-        property var next: null
-        spacing: 0
-        implicitWidth: 170
-        function focusField() { field.forceActiveFocus() }
-        function take(name) {
-            const moveOn = win.controls.run("press", [box.table, box.row, name])
-            if (moveOn === true && box.next) box.next()
-            // the box keeps the focus: it waits for the next input
-            else if (field.activeFocus) win.session.run("catchPad")
-        }
-        TextField {
-            id: field
-            objectName: "bindingBox"
-            Layout.fillWidth: true
-            Layout.preferredHeight: 23
-            readOnly: true
-            text: box.keys
-            padding: 2
-            // the start of the keys shown, as a text box shows them
-            onTextChanged: cursorPosition = 0
-            Component.onCompleted: cursorPosition = 0
-            background: Rectangle {
-                color: field.activeFocus ? win.themeColor("InputAwaitingBackground", "#e0ffff") : win.themeColor("InputBackground", palette.base)
-                border.color: field.activeFocus ? palette.highlight : palette.mid
-            }
-            ToolTip.visible: hovered
-            ToolTip.delay: 500
-            ToolTip.text: qsTr("Current Binding: %1").arg(box.keys) + "\n---\n" + win.tips
-            onActiveFocusChanged: {
-                if (activeFocus) {
-                    win.focusBox = box
-                    win.session.run("catchPad")
-                } else if (win.focusBox === box) {
-                    win.focusBox = null
-                    win.session.run("stopCatchPad")
-                }
-            }
-            Keys.priority: Keys.BeforeItem
-            Keys.onPressed: (event) => {
-                // Alt+F4 still closes the window; nothing else gets past the box
-                if (event.key === Qt.Key_F4 && (event.modifiers & Qt.AltModifier)) return
-                event.accepted = true
-                const name = win.keyNamer.name(event.key, event.modifiers, false)
-                if (name === "" || name === "Shift" || name === "Ctrl" || name === "Alt") return
-                box.take(name)
-            }
-            TapHandler { onTapped: field.forceActiveFocus() }
-        }
-        ToolButton {
-            focusPolicy: Qt.NoFocus
-            Layout.preferredWidth: 18
-            Layout.preferredHeight: 23
-            icon.source: "qrc:/chimera/icons/arrow_black_down.png"
-            ToolTip.visible: hovered
-            ToolTip.delay: 500
-            ToolTip.text: qsTr("Click here for special tricky bindings")
-            onClicked: specialMenu.popup()
-            Menu {
-                id: specialMenu
-                Repeater {
-                    model: [
-                        { name: "Escape", tip: qsTr("Binds the Escape key") },
-                        { name: "WMouse L", tip: qsTr("Binds the left mouse button") },
-                        { name: "WMouse M", tip: qsTr("Binds the middle mouse button") },
-                        { name: "WMouse R", tip: qsTr("Binds the right mouse button") },
-                        { name: "WMouse 1", tip: qsTr("Binds the mouse auxiliary button 1") },
-                        { name: "WMouse 2", tip: qsTr("Binds the mouse auxiliary button 2") }
-                    ]
-                    delegate: MenuItem {
-                        required property var modelData
-                        text: modelData.name
-                        ToolTip.visible: hovered
-                        ToolTip.text: modelData.tip
-                        onTriggered: {
-                            const moveOn = win.controls.run("special", [box.table, box.row, modelData.name])
-                            if (moveOn === true && box.next) box.next()
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // one player's buttons (or every button): boxes down a column, a label to the right of each, more columns as needed
     component KeyPanel: ScrollView {
@@ -215,12 +119,15 @@ ApplicationWindow {
                     spacing: 5
                     function focusField() { entryBox.focusField() }
                     Component.onCompleted: if (visible) panel.labelWidth = Math.max(panel.labelWidth, entry.shown.length * 9)
-                    InputBox {
+                    BindingBox {
                         id: entryBox
                         width: 170
-                        table: panel.table
-                        row: entry.index
                         keys: entry.keys
+                        session: win.session
+                        keyNamer: win.keyNamer
+                        themeColor: win.themeColor
+                        press: (name) => win.controls.run("press", [panel.table, entry.index, name])
+                        special: (name) => win.controls.run("special", [panel.table, entry.index, name])
                         next: () => panel.focusAfter(entry.index)
                     }
                     Label {
@@ -280,7 +187,12 @@ ApplicationWindow {
                     Button { text: qsTr("Unbind!"); Layout.preferredWidth: 75; onClicked: win.controls.run("unbind", [bind.index]) }
                     Button { text: qsTr("Flip Axis"); Layout.preferredWidth: 75; onClicked: win.controls.run("flip", [bind.index]) }
                     // the key pushing it up, and the sensitivity
-                    InputBox { table: "positive"; row: bind.index; keys: bind.positive; Layout.preferredWidth: 100 }
+                    BindingBox {
+                        keys: bind.positive; session: win.session; keyNamer: win.keyNamer; themeColor: win.themeColor
+                        press: (name) => win.controls.run("press", ["positive", bind.index, name])
+                        special: (name) => win.controls.run("special", ["positive", bind.index, name])
+                        Layout.preferredWidth: 100
+                    }
                     Label { text: bind.axis + "+"; Layout.preferredWidth: 92 }
                     Label { text: qsTr("Sensitivity: %1%").arg(Math.round(bind.mult * 100)); Layout.preferredWidth: 110 }
                     Slider {
@@ -291,7 +203,12 @@ ApplicationWindow {
                         onMoved: win.controls.run("setAnalog", [bind.index, "mult", value / 20])
                     }
                     // the key pushing it down, and the dead zone
-                    InputBox { table: "negative"; row: bind.index; keys: bind.negative; Layout.preferredWidth: 100 }
+                    BindingBox {
+                        keys: bind.negative; session: win.session; keyNamer: win.keyNamer; themeColor: win.themeColor
+                        press: (name) => win.controls.run("press", ["negative", bind.index, name])
+                        special: (name) => win.controls.run("special", ["negative", bind.index, name])
+                        Layout.preferredWidth: 100
+                    }
                     Label { text: bind.axis + "-"; Layout.preferredWidth: 92 }
                     Label { text: qsTr("Deadzone: %1%").arg(Math.round(bind.deadzone * 100)); Layout.preferredWidth: 110 }
                     Slider {

@@ -1,11 +1,12 @@
 #pragma once
 /* Hotkeys: keys that run the window's actions (frame advance, rewind, the
  * branch slots...), as Chimera's do. Each action is named and grouped as
- * Chimera names it and has Chimera's key at first; a person changes them
- * here, and the changes are remembered (`saved`). A key held runs its
- * action's "down", and its "up" when let go. Like Chimera by default, a key
- * that is both a hotkey and a machine's button does both; Chimera's Key
- * Priority says otherwise when asked (keyPriority). */
+ * Chimera names it and has Chimera's key at first; they are listed in
+ * Chimera's order. Configure Hotkeys changes them on a copy (edit) that
+ * Save keeps, and what differs from Chimera's is remembered (`saved`). A key
+ * held runs its action's "down", and its "up" when let go. Like Chimera by
+ * default, a key that is both a hotkey and a machine's button does both;
+ * Chimera's Key Priority says otherwise when asked (keyPriority). */
 
 #include <functional>
 #include <set>
@@ -46,6 +47,13 @@ public:
 
 	/* the keys changed: {"action": "keys"} */
 	Property<std::string> saved{"{}"};
+	/* Chimera's Auto Tab: a key pressed in a box replaces its keys and the
+	 * next box takes the next key; off, a key pressed is one more for the box */
+	Property<bool> autoTab{true};
+	/* the tabs, in Chimera's order (a JSON array) */
+	Property<std::string> groups{"[]"};
+	/* the window's copy is open: changes wait for save */
+	Property<bool> editing{false};
 	/* every action's keys as they are now, {"action": "keys"}, for a menu
 	 * to show beside the action */
 	Property<std::string> bound{"{}"};
@@ -54,7 +62,7 @@ public:
 private:
 	struct Action
 	{
-		std::string group, name, defaults, keys;
+		std::string group, name, defaults, keys, draft;
 		Handler handler;
 	};
 	class Rows : public RowModel
@@ -71,10 +79,14 @@ private:
 	};
 
 	Action *find(const std::string &name);
+	bool action(const Args &a, Action *&out, std::string &error);
+	/* the copy, from the keys as they are, unless it is open */
+	void begin();
 	void apply();
-	void change(Action &a, const std::string &keys);
 
 	std::vector<Action> actions_;
+	/* the actions in Chimera's order, by place in actions_ */
+	std::vector<size_t> order_;
 	Rows rows_{*this};
 	/* the actions down now, by the key that put them down */
 	std::set<std::pair<std::string, std::string>> down_;
