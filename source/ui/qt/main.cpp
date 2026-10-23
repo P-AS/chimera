@@ -24,6 +24,7 @@
 #include <QPalette>
 #include <QStandardPaths>
 #include <QStyleHints>
+#include <QTemporaryFile>
 #include <QTimer>
 
 #include <algorithm>
@@ -278,7 +279,8 @@ int main(int argc, char **argv)
 	vm::NewProjectViewModel newProject(dispatcher, session, cores);
 	/* the core's suggested settings for a game, asked as an import is */
 	newProject.setSuggestRunner([&app](const std::string &package, const std::string &game,
-									std::function<void(std::string, std::string)> done) {
+									const std::vector<std::pair<std::string, std::string>> &files, const std::string &slots,
+									const std::string &settings, std::function<void(std::string, std::string)> done) {
 #ifdef _WIN32
 		const QString exe = QStringLiteral("chimera-run.exe");
 #else
@@ -293,6 +295,18 @@ int main(int argc, char **argv)
 			return;
 		}
 		auto *proc = new QProcess(&app);
+		/* the slot map is mounted as a file: one that lives as long as the process */
+		auto *slotMap = new QTemporaryFile(proc);
+		QStringList args{QString::fromStdString(package), QString::fromStdString(game), QStringLiteral("--suggest"),
+			QStringLiteral("--settings"), QString::fromStdString(settings)};
+		if (slotMap->open())
+		{
+			slotMap->write(QByteArray::fromStdString(slots));
+			slotMap->flush();
+			args << QStringLiteral("--mount") << QStringLiteral("slots=") + slotMap->fileName();
+		}
+		for (const auto &[name, path] : files)
+			args << QStringLiteral("--mount") << QString::fromStdString(name + "=" + path);
 		QObject::connect(proc, &QProcess::finished, proc, [proc, done](int code, QProcess::ExitStatus) {
 			QByteArray answer;
 			for (const QByteArray &l : proc->readAllStandardOutput().split('\n'))
@@ -302,7 +316,7 @@ int main(int argc, char **argv)
 			if (code == 0 && !answer.isEmpty()) done(answer.toStdString(), {});
 			else done({}, err.isEmpty() ? std::string("the core gave none") : err.split('\n').last().toStdString());
 		});
-		proc->start(runner, {QString::fromStdString(package), QString::fromStdString(game), QStringLiteral("--suggest")});
+		proc->start(runner, args);
 	});
 	/* a movie import asks the core in a process of its own (one machine to a
 	 * process), as Chimera does: chimera-run, beside the program or, in the

@@ -611,7 +611,7 @@ int main(int argc, char **argv)
 	{
 		std::fprintf(stderr, "usage: chimera-run <package> <rom> <movie.txt> [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--record-key <LogKey>] [--settings <json>] [--dump <domain>=<path>]... [--firmware <id>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--ram-search-bench <domain>] [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame] [--cache-dir <folder>]\n"
 			"       chimera-run --project <p.chimeraProject> <package> [--files <dir>]... [--allow-core-mismatch] [the same run flags]\n"
-			"       chimera-run <package> <rom> --suggest [--settings <json>] [--firmware <id>=<path>]...\n"
+			"       chimera-run <package> <rom> --suggest [--mount <name>=<path>]... [--settings <json>] [--firmware <id>=<path>]...\n"
 			"       chimera-run <package> <movie> --import-movie [--mount <name>=<path>]... [--settings <json>]\n");
 		return 1;
 	}
@@ -804,9 +804,18 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	/* --suggest: what the core would choose for this game, printed as its
-	 * JSON, and nothing is started (ce_suggest_settings) */
+	 * JSON, and nothing is started (ce_suggest_settings). The --mount files
+	 * are the other files picked so far, the slot map among them ("slots"),
+	 * as a frontend's new-project form asks. */
 	if (suggest)
 	{
+		for (const auto &m : mounts)
+		{
+			extraNames.push_back(m.first.c_str());
+			extraData.push_back(nullptr);
+			extraLens.push_back(0);
+			extraPaths.push_back(m.second.c_str());
+		}
 		uint64_t len = 0;
 		const char *answer = ce_suggest_settings(
 			packagePath, rom.data(), rom.size(), romPathStore.empty() ? nullptr : romPathStore.c_str(),

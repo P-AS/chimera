@@ -14,6 +14,7 @@
 #include "chimera/vm/firmware.hpp"
 #include "chimera/vm/json.hpp"
 #include "chimera/vm/settings_vm.hpp"
+#include "chimera/vm/suggestion.hpp"
 
 namespace chimera::vm {
 
@@ -499,7 +500,7 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 		files.items.push_back(json::Json::string(base));
 		slotMap.members.emplace_back(slotId, files);
 		std::string why;
-		if (!firmwareOnMachine(package, json::write(slotMap), settingsM_.empty() ? "{}" : settingsM_, "", fw, why))
+		if (!firmwareOnMachine(package, json::write(slotMap), settingsM_.empty() ? "{}" : settingsM_, "", game, {}, fw, why))
 		{
 			later([this, why] { status.set(why); isOpen.set(false); });
 			return;
@@ -917,7 +918,8 @@ void SessionViewModel::setFinders(PackageFinder packages, FolderFinder firmwareF
 }
 
 bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::string &slots, const std::string &settings,
-	const std::string &pins, Firmware &out, std::string &why)
+	const std::string &pins, const std::string &game, const std::vector<std::pair<std::string, std::string>> &files,
+	Firmware &out, std::string &why)
 {
 	json::Json cfg, settingsJson, pinsJson;
 	std::string error;
@@ -929,15 +931,31 @@ bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::
 			json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, error);
 		ce_package_free(pk);
 	}
-	const json::Json *decl = cfg.find("firmware");
-	if (decl == nullptr || decl->items.empty()) return true;
-	json::Json noSettings;
-	const json::Json *settingsDecl = cfg.find("settings");
+	json::Json decl, settingsDecl;
+	decl.kind = settingsDecl.kind = json::Json::Kind::Array;
+	if (const json::Json *list = cfg.find("firmware")) decl.items = list->items;
+	if (const json::Json *list = cfg.find("settings")) settingsDecl.items = list->items;
+	/* what this game needs beyond the package's: only the core can say, and
+	 * it is asked now rather than read from the project, so a game opened
+	 * with no project is completed the same way. No machine is open while
+	 * it is asked. A core that cannot answer needs nothing more here. */
+	if (const json::Json *own = cfg.find("gameFirmware"); own != nullptr && own->boolean && !game.empty())
+	{
+		std::string unanswered;
+		const std::string text = askForSuggestion(package, game, withCueTracks(game, files), slots, settings, unanswered);
+		json::Json answer;
+		if (!text.empty() && json::parse(text, answer, error) && answer.kind == json::Json::Kind::Object)
+		{
+			const json::Json theirs = gameFirmwareOf(answer, cfg.find("firmware"));
+			decl.items.insert(decl.items.end(), theirs.items.begin(), theirs.items.end());
+			for (json::Json &d : gameSettingsOf(answer, cfg.find("settings"))) settingsDecl.items.push_back(std::move(d));
+		}
+	}
+	if (decl.items.empty()) return true;
 	if (!json::parse(settings, settingsJson, error) || settingsJson.kind != json::Json::Kind::Object) settingsJson.kind = json::Json::Kind::Object;
 	if (!pins.empty()) json::parse(pins, pinsJson, error);
 	const std::vector<FirmwareFile> index = indexFirmware(firmwareFoldersM_ ? firmwareFoldersM_() : std::vector<std::string>{});
-	const std::vector<FirmwareNeed> needs = neededFirmware(*decl, settingsDecl != nullptr ? *settingsDecl : noSettings, slots,
-		settingsJson, pinsJson, index);
+	const std::vector<FirmwareNeed> needs = neededFirmware(decl, settingsDecl, slots, settingsJson, pinsJson, index);
 	std::string missing;
 	json::Json recorded;
 	recorded.kind = json::Json::Kind::Array;
@@ -1079,8 +1097,19 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		const std::string settingsText(settings != nullptr ? settings : "{}", settings != nullptr ? static_cast<size_t>(len) : 2);
 		const char *pins = ce_project_firmware_text(p, &len);
 		const std::string pinsText(pins != nullptr ? pins : "", pins != nullptr ? static_cast<size_t>(len) : 0);
+		/* the game is the project's first file; every file is mounted
+		 * under its name */
+		std::string game;
+		std::vector<std::pair<std::string, std::string>> files;
+		for (int32_t i = 0; i < ce_project_file_count(p); i++)
+		{
+			const char *name = ce_project_file_name(p, i), *source = ce_project_file_source_path(p, i);
+			if (name == nullptr || source == nullptr || *source == '\0') continue;
+			if (game.empty()) game = source;
+			files.emplace_back(name, source);
+		}
 		std::string why;
-		if (!firmwareOnMachine(package, slotsText, settingsText, pinsText, fw, why))
+		if (!firmwareOnMachine(package, slotsText, settingsText, pinsText, game, files, fw, why))
 		{
 			if (reuse == nullptr) ce_project_free(p);
 			fail(why);

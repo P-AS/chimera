@@ -63,10 +63,16 @@ public:
 	/* What the core suggests for the game chosen, for a core that says it
 	 * suggests (its "suggestSettings"): where the values come from, and which
 	 * were applied ("" when nothing was asked). Asked once a game, away from
-	 * the machine running, as an import is; the values a game's suggestion
-	 * set go back when another game is chosen. */
+	 * the machine running, as an import is, with the files and settings
+	 * chosen so far; the values a game's suggestion set go back when another
+	 * game is chosen. The game's own settings come after the package's, and
+	 * its own firmware (a package that says "gameFirmware") after the
+	 * package's; another game takes them away. */
 	Property<std::string> suggestion;
+	/* asks the core in a process of its own: the package, the game, the
+	 * other files {name, path}, the slot map and the settings so far */
 	using SuggestRunner = std::function<void(const std::string &package, const std::string &game,
+		const std::vector<std::pair<std::string, std::string>> &files, const std::string &slots, const std::string &settings,
 		std::function<void(std::string answer, std::string error)> done)>;
 	void setSuggestRunner(SuggestRunner runner) { suggestRunner_ = std::move(runner); }
 
@@ -160,6 +166,13 @@ private:
 	bool suggests_ = false;
 	std::string suggestedFor_;
 	std::vector<std::string> suggestedKeys_;
+	/* what the game's suggestion declared of the game's own */
+	std::vector<json::Json> gameSettings_;
+	json::Json gameFirmware_;
+	/* the package's settings, then the game's, into the form */
+	void declareSettings();
+	/* the package's firmware declarations, then the game's */
+	json::Json firmwareDecls() const;
 	/* an import is filling the form: its settings are the project's own */
 	bool seeding_ = false;
 	/* asks for the game's suggestion when the game is another than last time */

@@ -2189,6 +2189,11 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(wizard.run("moveFile", {std::string("disk"), int64_t{1}, int64_t{0}}, error).has_value() && text("slots", 1, 7) == "disk2.img\ndisk1.cue");
 	CHECK(wizard.run("set", {std::string("diskSpeed"), int64_t{3}}, error).has_value());
 	CHECK(!wizard.run("set", {std::string("board"), std::string("a")}, error));
+	/* the core is asked about the game with what is chosen so far: the slot
+	 * map, the other files and a cue's tracks, the settings */
+	CHECK(wizard.run("moveFile", {std::string("disk"), int64_t{1}, int64_t{0}}, error).has_value());
+	CHECK(wizard.suggestion.get().find(" It sees 2 disks and the track of disk1.cue, at disk speed 3.") != std::string::npos);
+	CHECK(wizard.run("moveFile", {std::string("disk"), int64_t{1}, int64_t{0}}, error).has_value() && text("slots", 1, 7) == "disk2.img\ndisk1.cue");
 	/* the firmware: chosen by hand, forgotten, then found in the folder */
 	std::ofstream(dir / "mybios.bin") << "a board B BIOS";
 	CHECK(wizard.run("chooseFirmware", {std::string("bios"), (dir / "mybios.bin").string()}, error).has_value());
@@ -2227,13 +2232,43 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(wizard.suggestion.get().empty());
 	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && wizard.ready.get());
 	CHECK(wizard.suggestion.get() == "The synthetic core suggests a fill of 9.\nApplied below: Initial RAM Fill." && fillNow() == 9);
+	/* the game's own setting comes after the package's; one by a package
+	 * setting's name is not the game's to declare */
+	auto settingRow = [&](const std::string &name) {
+		for (int64_t r = 0; r < rowCount("settings"); r++)
+			if (text("settings", r, 0) == name) return r;
+		return int64_t{-1};
+	};
+	auto firmwareRow = [&](const std::string &id) {
+		for (int64_t r = 0; r < rowCount("firmware"); r++)
+			if (text("firmware", r, 0) == id) return r;
+		return int64_t{-1};
+	};
+	CHECK(settingRow("gameLogo") == rowCount("settings") - 1 && text("settings", settingRow("gameLogo"), 1) == "Game Logo");
+	CHECK(settingNames().find("initFillByte") == settingNames().rfind("initFillByte") && text("settings", settingRow("initFillByte"), 1) == "Initial RAM Fill");
+	CHECK(fillNow() == 9);
+	/* its own firmware, needed with its setting on; one by a package
+	 * firmware's id is not the game's */
+	CHECK(firmwareRow("gamelogo") < 0 && firmwareRow("bios") < 0);
+	CHECK(wizard.run("set", {std::string("gameLogo"), std::string("on")}, error).has_value());
+	CHECK(firmwareRow("gamelogo") >= 0 && text("firmware", firmwareRow("gamelogo"), 1) == "Game logo" && firmwareRow("bios") < 0);
+	CHECK(!wizard.ready.get() && wizard.problems.get().find("Game logo") != std::string::npos);
+	/* another game takes them away */
 	CHECK(wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value());
 	CHECK(wizard.suggestion.get().empty() && fillNow() == 0);
+	CHECK(settingRow("gameLogo") < 0 && firmwareRow("gamelogo") < 0);
+	/* the same game again: its setting as it was left */
 	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && fillNow() == 9);
+	CHECK(settingRow("gameLogo") >= 0 && firmwareRow("gamelogo") >= 0 && !wizard.ready.get());
+	/* with its logo on, the game starts only with the logo given: the open
+	 * asks the core again what the game needs */
+	std::ofstream(dir / "mylogo.bin") << "a game's logo";
+	CHECK(wizard.run("chooseFirmware", {std::string("gamelogo"), (dir / "mylogo.bin").string()}, error).has_value() && wizard.ready.get());
 	const fs::path boardA = dir / "boarda.chimeraProject";
 	CHECK(wizard.run("create", {boardA.string()}, error).has_value());
 	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == boardA.string(); }, 60));
 	CHECK(session.coreName.get() == "Synth Slots");
+	CHECK(std::regex_search(readFile(boardA), std::regex("\"gameLogo\"\\s*:\\s*\"on\"")));
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
 	session.run("close", {}, error);

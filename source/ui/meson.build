@@ -24,6 +24,7 @@ vm_lib = static_library(
     'viewmodel/src/lua_console_vm.cpp',
     'viewmodel/src/branches_vm.cpp',
     'viewmodel/src/firmware.cpp',
+    'viewmodel/src/suggestion.cpp',
     'viewmodel/src/cores_vm.cpp',
     'viewmodel/src/branch_state.cpp',
     'viewmodel/src/watch_values.cpp',

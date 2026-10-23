@@ -43,6 +43,8 @@ void SettingsForm::declare(std::vector<Json> decl, std::string machineSetting)
 {
 	decl_ = std::move(decl);
 	machineSetting_ = std::move(machineSetting);
+	/* which applied were places in the old declarations: none until evaluated */
+	exposed_.clear();
 	if (values_.kind != Json::Kind::Object) values_.kind = Json::Kind::Object;
 }
 

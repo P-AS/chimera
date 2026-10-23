@@ -136,6 +136,18 @@ static void cache_work(void) {
 
 static int moving(void); /* the movingProperties setting, read once here */
 ECL_EXPORT int Init(void) {
+	/* A game's own firmware (SuggestSettings answers it, with the game's own
+	 * setting that calls for it): with that setting on, the game does not
+	 * start unless the file is mounted under its id. */
+	char logo[8];
+	if (wbx_setting_str("gameLogo", logo, (int)sizeof logo) > 0 && strcmp(logo, "on") == 0) {
+		FILE *l = fopen("gamelogo", "rb");
+		if (!l) {
+			fprintf(stderr, "synth: the game logo is not mounted\n");
+			return 0;
+		}
+		fclose(l);
+	}
 	uint32_t len = 0;
 	uint8_t *rom = read_rom(&len);
 	if (!rom) return 0;
@@ -589,10 +601,44 @@ ECL_EXPORT const char *ImportMovie(void)
 /* What this core would choose for a game before a project exists
  * (ce_suggest_settings): called INSTEAD of Init, for a package that declares
  * "suggestSettings". The synth suggests one value, with a note saying where
- * it comes from, so a frontend's suggestion step can be tested. */
+ * it comes from, so a frontend's suggestion step can be tested. The note
+ * also says what it was shown - the disks in the slot map, a cue's track,
+ * the disk speed chosen so far - since a core is asked with the files and
+ * settings picked so far. And the game has a setting of its own and, with
+ * that setting on, a firmware file of its own; each answer also repeats a
+ * package setting and a package firmware, which a frontend drops. */
+static char g_suggestion[2048];
 ECL_EXPORT const char *SuggestSettings(void)
 {
-	return "{\"values\": {\"initFillByte\": 9}, \"note\": \"The synthetic core suggests a fill of 9.\"}";
+	char slots[512] = "";
+	FILE *f = fopen("slots", "rb");
+	if (f) {
+		size_t n = fread(slots, 1, sizeof slots - 1, f);
+		slots[n] = 0;
+		fclose(f);
+	}
+	char seen[160] = "";
+	const char *disks = strstr(slots, "\"disk\"");
+	if (disks) {
+		int count = 0;
+		for (const char *p = strchr(disks, '['); p && *p && *p != ']'; p++)
+			if (*p == '.') count++;
+		FILE *track = fopen("disk1.bin", "rb");
+		if (track) fclose(track);
+		snprintf(seen, sizeof seen, " It sees %d disk%s%s, at disk speed %ld.", count, count == 1 ? "" : "s",
+			track ? " and the track of disk1.cue" : "", wbx_setting_long("diskSpeed", 1));
+	}
+	snprintf(g_suggestion, sizeof g_suggestion,
+		"{\"values\": {\"initFillByte\": 9}, \"note\": \"The synthetic core suggests a fill of 9.%s\","
+		" \"settings\": [{\"name\": \"gameLogo\", \"display\": \"Game Logo\", \"type\": \"enum\","
+		" \"options\": [\"off\", \"on\"], \"default\": \"off\", \"sync\": true,"
+		" \"description\": \"This game's own: shows its logo, from a file of its own.\"},"
+		" {\"name\": \"initFillByte\", \"display\": \"Not the package's\", \"type\": \"int\", \"default\": 1}],"
+		" \"firmware\": [{\"id\": \"gamelogo\", \"display\": \"Game logo\", \"name\": \"gamelogo.bin\","
+		" \"requiredWhen\": {\"setting\": \"gameLogo\", \"is\": \"on\"}},"
+		" {\"id\": \"bios\", \"display\": \"Not the package's\", \"name\": \"other.bin\", \"required\": true}]}",
+		seen);
+	return g_suggestion;
 }
 
 int main(void) { return 0; }

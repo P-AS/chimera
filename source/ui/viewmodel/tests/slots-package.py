@@ -51,8 +51,10 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
                  "values": {"initFillByte": 255, "board": "b", "nope": 1}},
                 {"id": "fast", "label": "Fast disks", "when": ["b"], "values": {"diskSpeed": 4}},
             ]
-            # the synthetic core suggests settings for a game (SuggestSettings)
+            # the synthetic core suggests settings for a game (SuggestSettings),
+            # and its games have settings and firmware of their own
             cfg["suggestSettings"] = True
+            cfg["gameFirmware"] = True
             # the synthetic core's importer: a movie of its own lines, the game it
             # was made on, and a setting the movie dictates
             cfg["movieImport"] = {

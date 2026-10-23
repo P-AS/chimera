@@ -25,8 +25,8 @@ struct FirmwareFile
 	const std::string &hash() const;
 };
 
-/* every file under the folders: names and sizes, nothing read */
-/* every file in these folders (and below); a path that is a file is that file */
+/* every file in these folders (and below), names and sizes, nothing read; a
+ * path that is a file is that file */
 std::vector<FirmwareFile> indexFirmware(const std::vector<std::string> &folders);
 
 /* the file that answers one declared entry, or nullptr; `how` says by what.

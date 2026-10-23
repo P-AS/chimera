@@ -9,6 +9,7 @@
 #include <regex>
 
 #include "chimera/engine.h"
+#include "chimera/vm/suggestion.hpp"
 
 namespace chimera::vm {
 
@@ -403,10 +404,9 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			 * file of the person's own instead and the project pins its hash,
 			 * as Chimera's New Project does */
 			std::string declared;
-			if (const Json *list = cfg_.find("firmware"))
-				for (const Json &f : list->items)
-					if (const Json *i = f.find("id"); i != nullptr && i->text == id)
-						if (const Json *h = f.find("sha1")) declared = h->text;
+			for (const Json &f : firmwareDecls().items)
+				if (const Json *i = f.find("id"); i != nullptr && i->text == id)
+					if (const Json *h = f.find("sha1")) declared = h->text;
 			const bool custom = !declared.empty() && lower(declared) != lower(sha);
 			const Json *kind = cfg_.find("kind");
 			const bool gameCore = kind != nullptr && lower(kind->text) == "game";
@@ -661,6 +661,8 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	machine.set(chosen);
 	files_.clear();
 	chosenFirmware_.clear();
+	gameSettings_.clear();
+	gameFirmware_ = Json();
 	firmwareIndex_ = indexFirmware(cores_.firmwareFolders());
 	core.set(name);
 	title.set("");
@@ -691,6 +693,13 @@ void NewProjectViewModel::suggestFor(const std::string &game)
 		form_.setValues(values);
 		suggestedKeys_.clear();
 	}
+	/* and what the last game had of its own goes */
+	if (!gameSettings_.empty() || !gameFirmware_.items.empty())
+	{
+		gameSettings_.clear();
+		gameFirmware_ = Json();
+		declareSettings();
+	}
 	suggestedFor_ = game;
 	suggestion.set(game.empty() ? "" : "Looking this game up...");
 	if (game.empty()) return;
@@ -700,19 +709,41 @@ void NewProjectViewModel::suggestFor(const std::string &game)
 		if (asked != suggestedFor_) return;
 		applySuggestion(answer, why);
 	};
+	/* what a run would have: every file picked, under its name, a cue's
+	 * tracks, the slot map and the settings so far */
+	Mounts files;
+	for (const Slot &sl : slots_)
+		if (auto it = files_.find(sl.id); it != files_.end())
+			for (const Picked &f : it->second) files.emplace_back(f.name, f.path);
+	files = withCueTracks(game, std::move(files));
+	const std::string slots = slotMap(), settings = json::write(form_.recorded());
 	if (suggestRunner_)
 	{
-		suggestRunner_(package_, game, done);
+		suggestRunner_(package_, game, files, slots, settings, done);
 		return;
 	}
 	/* here, with no machine open */
-	std::ifstream in(game, std::ios::binary);
-	const std::string rom((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-	uint64_t len = 0;
-	const char *err = nullptr;
-	const char *answer = ce_suggest_settings(package_.c_str(), reinterpret_cast<const uint8_t *>(rom.data()), rom.size(), game.c_str(), "{}",
-		nullptr, nullptr, nullptr, 0, nullptr, nullptr, nullptr, nullptr, 0, &len, &err);
-	done(answer != nullptr ? std::string(answer, static_cast<size_t>(len)) : std::string(), err != nullptr ? err : "");
+	std::string why;
+	const std::string answer = askForSuggestion(package_, game, files, slots, settings, why);
+	done(answer, why);
+}
+
+void NewProjectViewModel::declareSettings()
+{
+	std::vector<Json> decl;
+	if (const Json *list = cfg_.find("settings")) decl = list->items;
+	decl.insert(decl.end(), gameSettings_.begin(), gameSettings_.end());
+	form_.declare(std::move(decl), form_.machineSetting());
+	form_.evaluate();
+}
+
+Json NewProjectViewModel::firmwareDecls() const
+{
+	Json all;
+	all.kind = Json::Kind::Array;
+	if (const Json *list = cfg_.find("firmware")) all.items = list->items;
+	all.items.insert(all.items.end(), gameFirmware_.items.begin(), gameFirmware_.items.end());
+	return all;
 }
 
 void NewProjectViewModel::applySuggestion(const std::string &text, const std::string &why)
@@ -724,14 +755,24 @@ void NewProjectViewModel::applySuggestion(const std::string &text, const std::st
 		suggestion.set("No suggested settings: " + (!why.empty() ? why : text.empty() ? std::string("the core gave none") : "its answer does not read"));
 		return;
 	}
+	/* what the game has of its own: settings after the package's, and, for
+	 * a package that says its games have them, firmware after the package's */
+	gameSettings_ = gameSettingsOf(answer, cfg_.find("settings"));
+	const Json *gameFirmware = cfg_.find("gameFirmware");
+	gameFirmware_ = gameFirmware != nullptr && gameFirmware->boolean ? gameFirmwareOf(answer, cfg_.find("firmware")) : Json();
+	declareSettings();
 	std::string applied;
 	if (const Json *values = answer.find("values"))
 	{
 		form_.evaluate();
 		for (const auto &[name, value] : values->members)
 		{
-			/* never the machine: that is the person's choice */
+			/* never the machine: that is the person's choice; and the
+			 * package's settings only */
 			if (name == form_.machineSetting()) continue;
+			const bool packages = std::any_of(form_.declarations().begin(), form_.declarations().end() - static_cast<std::ptrdiff_t>(gameSettings_.size()),
+				[&](const Json &d) { const Json *n = d.find("name"); return n != nullptr && n->text == name; });
+			if (!packages) continue;
 			Value v;
 			switch (value.kind)
 			{
@@ -895,6 +936,28 @@ void NewProjectViewModel::evaluate()
 	const std::string map = slotMap();
 	form_.setSlots(map);
 	form_.evaluate();
+
+	/* the core's suggestion for the game, once a game: first, since what the
+	 * game has of its own is part of what applies */
+	if (suggests_)
+	{
+		std::string game;
+		for (const Slot &s : slots_)
+			if (auto it = files_.find(s.id); game.empty() && it != files_.end() && !it->second.empty()) game = it->second.front().path;
+		if (game != suggestedFor_)
+		{
+			if (seeding_)
+			{
+				/* a movie's settings are kept: no suggestion over them */
+				suggestedFor_ = game;
+				suggestedKeys_.clear();
+				suggestion.set(game.empty() ? "" : "This project's own settings are kept.");
+			}
+			else
+				suggestFor(game);
+		}
+	}
+
 	const Json recorded = form_.recorded();
 	const std::string settingsText = json::write(recorded);
 
@@ -918,7 +981,7 @@ void NewProjectViewModel::evaluate()
 	needs_.clear();
 	Json none, firmwareDecl, settingsDecl;
 	none.kind = Json::Kind::Array;
-	firmwareDecl = cfg_.find("firmware") != nullptr ? *cfg_.find("firmware") : none;
+	firmwareDecl = firmwareDecls();
 	settingsDecl.kind = Json::Kind::Array;
 	settingsDecl.items = form_.declarations();
 	for (const FirmwareNeed &n : neededFirmware(firmwareDecl, settingsDecl, map, recorded, none, firmwareIndex_))
@@ -929,32 +992,11 @@ void NewProjectViewModel::evaluate()
 			need.path = it->second.first;
 			need.sha1 = it->second.second;
 			need.how = "chosen";
-			if (const Json *list = cfg_.find("firmware"))
-				for (const Json &f : list->items)
-					if (const Json *i = f.find("id"); i != nullptr && i->text == n.id)
-						if (const Json *h = f.find("sha1"); h != nullptr && lower(h->text) != lower(need.sha1)) need.how = "your own";
+			for (const Json &f : firmwareDecl.items)
+				if (const Json *i = f.find("id"); i != nullptr && i->text == n.id)
+					if (const Json *h = f.find("sha1"); h != nullptr && lower(h->text) != lower(need.sha1)) need.how = "your own";
 		}
 		needs_.push_back(need);
-	}
-
-	/* the core's suggestion for the game, once a game */
-	if (suggests_)
-	{
-		std::string game;
-		for (const Slot &s : slots_)
-			if (auto it = files_.find(s.id); game.empty() && it != files_.end() && !it->second.empty()) game = it->second.front().path;
-		if (game != suggestedFor_)
-		{
-			if (seeding_)
-			{
-				/* a movie's settings are kept: no suggestion over them */
-				suggestedFor_ = game;
-				suggestedKeys_.clear();
-				suggestion.set(game.empty() ? "" : "This project's own settings are kept.");
-			}
-			else
-				suggestFor(game);
-		}
 	}
 
 	/* what is missing */

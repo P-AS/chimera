@@ -314,8 +314,13 @@ private:
 		std::string pins; /* {"id","sha1"} of what was found, as a project records it */
 	};
 	/* the firmware a machine needs, read; false with why when some is missing */
+	/* the firmware a machine needs, found: the package's and, for a package
+	 * whose games have their own ("gameFirmware"), what the core says this
+	 * game needs - asked again at every open, with the game (`game`, a path)
+	 * and its other files ({name, path}), as Chimera asks */
 	bool firmwareOnMachine(const std::string &package, const std::string &slots, const std::string &settings,
-		const std::string &pins, Firmware &out, std::string &why);
+		const std::string &pins, const std::string &game, const std::vector<std::pair<std::string, std::string>> &files,
+		Firmware &out, std::string &why);
 	std::vector<Branch> branchesM_;
 	std::string cacheFolderM_;
 	Connection cacheFolderWatch_;
