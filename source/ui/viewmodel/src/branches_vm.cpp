@@ -186,11 +186,12 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			status.set("Loading " + b.name + "...");
 			/* the run as it is now, kept so Undo can put it back */
 			keepLoadBackup();
-			session_.loadBranch(b, [this, name = b.name](bool fromState, const std::string &why) {
+			session_.loadBranch(b, [this, name = b.name, i](bool fromState, const std::string &why) {
 				status.set("Loaded " + name + (fromState ? " from its state" : ", replayed to") +
 					(why.empty() ? "" : " (its state could not be loaded: " + why + ")"));
 				loadedFromState.set(fromState);
 				loads.set(loads.get() + 1);
+				branchLoaded.emit(static_cast<int64_t>(i));
 			});
 			roll_.replaceAll(b.markers);
 			return {};
@@ -205,6 +206,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 		keepBackup(Undo::Remove, gone, static_cast<int64_t>(i));
 		if (selected.get() >= static_cast<int64_t>(branches_.size())) selected.set(static_cast<int64_t>(branches_.size()) - 1);
 		changed();
+		branchRemoved.emit(static_cast<int64_t>(i));
 		return {};
 	});
 	command("rename", "names a branch again", {"index", "name"}, [this](const Args &a, std::string &error) -> Value {
@@ -272,6 +274,7 @@ int64_t BranchesViewModel::keepRun(int64_t slot, std::string name)
 				status.set("Made " + x.name + " at frame " + std::to_string(x.frame) +
 					(!why.empty() ? "; its state could not be kept (" + why + "), so loading it replays"
 					 : x.state.empty() ? "" : ", its state kept"));
+				branchSaved.emit(static_cast<int64_t>(&x - branches_.data()));
 				break;
 			}
 		made.set(made.get() + 1);

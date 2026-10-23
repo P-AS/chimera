@@ -987,6 +987,11 @@ int main(int argc, char **argv)
 	lua.add(forms);
 	vm::Connection formClicks = forms.clicked.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_click", h); });
 	vm::Connection formCloses = forms.closed.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_closed", h); });
+	/* tastudio's callbacks: the greenzone invalidated, a branch loaded, made or updated, removed */
+	vm::Connection zoneCalls = session.greenzoneInvalidated.connect([&lua](int64_t f) { lua.callHook("__chimera_greenzone_invalidated", f); });
+	vm::Connection branchLoads = branches.branchLoaded.connect([&lua](int64_t i) { lua.callHook("__chimera_branch_loaded", i); });
+	vm::Connection branchSaves = branches.branchSaved.connect([&lua](int64_t i) { lua.callHook("__chimera_branch_saved", i); });
+	vm::Connection branchRemoves = branches.branchRemoved.connect([&lua](int64_t i) { lua.callHook("__chimera_branch_removed", i); });
 	/* memory-mapped files shared with other programs; the screenshot is a PNG, as Chimera's */
 	vm::CommViewModel comm(dispatcher, [&session] {
 		vm::Picture::Frame f;

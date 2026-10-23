@@ -5706,6 +5706,10 @@ bool luaTastudio(const char *package, const char *rom)
 	lua.add(roll);
 	lua.add(branches);
 	lua.add(console);
+	Connection zoneCalls = session.greenzoneInvalidated.connect([&lua](int64_t f) { lua.callHook("__chimera_greenzone_invalidated", f); });
+	Connection branchLoads = branches.branchLoaded.connect([&lua](int64_t i) { lua.callHook("__chimera_branch_loaded", i); });
+	Connection branchSaves = branches.branchSaved.connect([&lua](int64_t i) { lua.callHook("__chimera_branch_saved", i); });
+	Connection branchRemoves = branches.branchRemoved.connect([&lua](int64_t i) { lua.callHook("__chimera_branch_removed", i); });
 	const fs::path dir = fs::temp_directory_path() / ("chimera-test-tastudio-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
 	fs::create_directories(dir);
 	fs::copy_file(rom, dir / "walker.testrom");
@@ -5732,6 +5736,12 @@ bool luaTastudio(const char *package, const char *rom)
 	};
 	console.script.set(R"(
 console.log("engaged", tastudio.engaged(), tastudio.islag(1000))
+local seen = {}
+tastudio.ongreenzoneinvalidated(function(f) seen[#seen + 1] = "zone " .. f end)
+tastudio.onbranchsave(function(i) seen[#seen + 1] = "save " .. i end)
+tastudio.onbranchload(function(i) seen[#seen + 1] = "load " .. i end)
+tastudio.onbranchremove(function(i) seen[#seen + 1] = "remove " .. i end)
+function seenSoFar() return table.concat(seen, ", ") end
 tastudio.submitinputchange(2, "P1 A", true)
 tastudio.submitinsertframes(1, 2)
 tastudio.submitinsertframes(100, 2)
@@ -5760,6 +5770,18 @@ console.log("misc", tastudio.getrecording(), tastudio.getselection()[0] == nil, 
 	CHECK(said("renamed ") == "renamed renamed");
 	CHECK(said("lag ") == "lag true nil");
 	CHECK(said("misc ") == "misc false true true");
+	{
+		/* the callbacks: the edits, the branch made once its state is kept, loaded, removed */
+		CHECK(d.until([&] { return branches.made.get() >= 1; }, 30));
+		std::string why;
+		branches.run("load", {int64_t{0}}, error);
+		CHECK(d.until([&] { return branches.loads.get() >= 1; }, 30));
+		branches.run("remove", {int64_t{0}}, error);
+		CHECK(lua.run("console.log('seen', seenSoFar())", "seen", why));
+		const std::string seen = said("seen ");
+		CHECK(seen.rfind("seen zone 2, zone 1", 0) == 0 && seen.find("save 0") != std::string::npos);
+		CHECK(seen.find("load 0") != std::string::npos && seen.find("remove 0") != std::string::npos);
+	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	std::error_code ec;

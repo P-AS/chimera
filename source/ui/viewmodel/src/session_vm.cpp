@@ -4142,6 +4142,7 @@ void SessionViewModel::dropStatesAfterOnMachine(int64_t frame)
 
 void SessionViewModel::edited(int64_t first)
 {
+	greenzoneInvalidated.emit(first);
 	const uint64_t sent = ++editsSent_;
 	/* the setting in force when the edit was made: one changed while the
 	 * machine still has edits to get to does not change what they do */
@@ -4271,6 +4272,7 @@ void SessionViewModel::tick()
 	updateOverlay(f, cf >= 0 ? cf : af);
 	if (cf >= 0) inputsChanged.emit(cf, cl);
 	if (af >= 0) inputsAppended.emit(af, al);
+	if (cf >= 0 || af >= 0) greenzoneInvalidated.emit(cf >= 0 ? cf : af);
 	if (statedNow) statesShown.emit();
 	screenChanged.emit();
 }

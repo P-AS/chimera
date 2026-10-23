@@ -301,6 +301,9 @@ public:
 	 * at the end, by the machine (recording what was held) */
 	Signal<int64_t, int64_t> inputsChanged;
 	Signal<int64_t, int64_t> inputsAppended;
+	/* the movie changed from this frame on, so states after it may no longer hold (Lua's
+	 * tastudio.ongreenzoneinvalidated): every edit, and every frame recorded */
+	Signal<int64_t> greenzoneInvalidated;
 	/* every frame's inputs were replaced (a project opened) */
 	Signal<> inputsReset;
 	/* a project opened with these markers */

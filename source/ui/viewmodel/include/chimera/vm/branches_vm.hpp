@@ -45,6 +45,8 @@ public:
 	Property<int64_t> previewWidth{0}, previewHeight{0};
 	Picture preview;
 	Signal<> previewChanged;
+	/* a branch loaded, made or updated, removed: its place in the list (Lua's tastudio callbacks) */
+	Signal<int64_t> branchLoaded, branchSaved, branchRemoved;
 
 private:
 	Connection previewSideWatch_;

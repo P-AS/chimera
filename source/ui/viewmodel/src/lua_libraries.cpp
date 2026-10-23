@@ -445,8 +445,26 @@ tastudio.onqueryitembg = notHere("onqueryitembg")
 tastudio.onqueryitemtext = notHere("onqueryitemtext")
 tastudio.onqueryitemicon = notHere("onqueryitemicon")
 tastudio.clearIconCache = function() end
-tastudio.ongreenzoneinvalidated = notHere("ongreenzoneinvalidated")
-tastudio.onbranchload = notHere("onbranchload")
+-- functions called when the greenzone is invalidated, a branch is loaded, made
+-- or updated, removed; each its name back, as Chimera's
+local tasCallbacks = {zone = {}, load = {}, save = {}, remove = {}}
+local tasCallbackCount = 0
+local function register(kind, fn, name)
+	if not engaged() then return "" end
+	tasCallbackCount = tasCallbackCount + 1
+	local id = name or ("tastudio-callback-" .. tasCallbackCount)
+	table.insert(tasCallbacks[kind], {id = id, fn = fn})
+	return id
+end
+local function callAll(kind, value) for _, c in ipairs(tasCallbacks[kind]) do c.fn(value) end end
+function __chimera_greenzone_invalidated(frame) callAll("zone", frame) end
+function __chimera_branch_loaded(index) callAll("load", index) end
+function __chimera_branch_saved(index) callAll("save", index) end
+function __chimera_branch_removed(index) callAll("remove", index) end
+function tastudio.ongreenzoneinvalidated(fn, name) return register("zone", fn, name) end
+function tastudio.onbranchload(fn, name) return register("load", fn, name) end
+function tastudio.onbranchsave(fn, name) return register("save", fn, name) end
+function tastudio.onbranchremove(fn, name) return register("remove", fn, name) end
 
 -- input: what the person's own devices hold, as Chimera's -----------------
 input = {}
