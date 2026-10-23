@@ -2227,12 +2227,30 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(wizard.run("moveFile", {std::string("disk"), int64_t{1}, int64_t{0}}, error).has_value());
 	CHECK(wizard.suggestion.get().find(" It sees 2 disks and the track of disk1.cue, at disk speed 3.") != std::string::npos);
 	CHECK(wizard.run("moveFile", {std::string("disk"), int64_t{1}, int64_t{0}}, error).has_value() && text("slots", 1, 7) == "disk2.img\ndisk1.cue");
+	/* the firmware found by scanning a folder: by the name it declares,
+	 * below the folder only when asked; a folder that has it becomes the
+	 * firmware folder when the one set is not there */
+	fs::create_directories(dir / "scan" / "deeper");
+	std::ofstream(dir / "scan" / "deeper" / "boardb.bin") << "a board B BIOS, by its name";
+	installed.set("firmwareFolder", (dir / "nowhere").string(), error);
+	CHECK(wizard.run("scanFolder", {(dir / "scan").string(), false}, error).has_value());
+	CHECK(wizard.status.get() == "Scanned 0 files; nothing new matched" && !wizard.ready.get());
+	CHECK(wizard.run("scanFolder", {(dir / "scan").string(), true}, error).has_value());
+	CHECK(wizard.status.get() == "Scanned 1 file; 1 requirement resolved" && wizard.ready.get());
+	CHECK(text("firmware", 0, 2) == (dir / "scan" / "deeper" / "boardb.bin").string() && text("firmware", 0, 3) == "chosen");
+	CHECK(installed.firmwareFolder.get() == (dir / "scan").string());
+	installed.set("firmwareFolder", (dir / "Firmware").string(), error);
+	/* the folder scanned is looked in from now on, as Chimera's is: what
+	 * was chosen there, forgotten, is found there again */
+	const std::string scanned = (dir / "scan" / "deeper" / "boardb.bin").string();
+	wizard.run("forgetFirmware", {std::string("bios")}, error);
+	CHECK(wizard.ready.get() && text("firmware", 0, 2) == scanned && text("firmware", 0, 3) != "chosen");
 	/* the firmware: chosen by hand, forgotten, then found in the folder */
 	std::ofstream(dir / "mybios.bin") << "a board B BIOS";
 	CHECK(wizard.run("chooseFirmware", {std::string("bios"), (dir / "mybios.bin").string()}, error).has_value());
 	CHECK(text("firmware", 0, 2) == (dir / "mybios.bin").string() && text("firmware", 0, 3) == "chosen" && wizard.ready.get());
 	wizard.run("forgetFirmware", {std::string("bios")}, error);
-	CHECK(!wizard.ready.get());
+	CHECK(text("firmware", 0, 2) == scanned);
 	wizard.run("chooseFirmware", {std::string("bios"), (dir / "mybios.bin").string()}, error);
 	const fs::path boardB = dir / "boardb.chimeraProject";
 	CHECK(wizard.run("create", {boardB.string(), false}, error).has_value());
@@ -2449,6 +2467,16 @@ bool customFirmware(const char *rom, const char *hashedPackage, const char *game
 		installed.chosenFirmware.get().find("mylogo.bin") != std::string::npos);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* a folder scanned finds a file by the hash the package gives, whatever
+	 * it is called */
+	CHECK(wizard.run("chooseCore", {std::string("Synth Hashed")}, error).has_value());
+	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && !wizard.ready.get());
+	fs::create_directories(dir / "scan" / "deeper");
+	fs::copy_file(theirs, dir / "scan" / "deeper" / "renamed.bin");
+	std::ofstream(dir / "scan" / "logo.bin") << "a logo by the right name and another hash";
+	CHECK(wizard.run("scanFolder", {(dir / "scan").string()}, error).has_value());
+	CHECK(wizard.status.get() == "Scanned 2 files; 1 requirement resolved" && wizard.ready.get());
+	CHECK(text("firmware", 0, 2) == (dir / "scan" / "deeper" / "renamed.bin").string());
 	fs::remove_all(dir);
 	return true;
 }

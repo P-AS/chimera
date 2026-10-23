@@ -26,7 +26,7 @@ std::string text(const Json &j, const char *key)
 constexpr int64_t kMostBytes = 0x7fffffff;
 } // namespace
 
-std::vector<FirmwareFile> indexFirmware(const std::vector<std::string> &folders)
+std::vector<FirmwareFile> indexFirmware(const std::vector<std::string> &folders, bool recurse, size_t most)
 {
 	namespace fs = std::filesystem;
 	std::vector<FirmwareFile> index;
@@ -43,16 +43,29 @@ std::vector<FirmwareFile> indexFirmware(const std::vector<std::string> &folders)
 			continue;
 		}
 		if (folder.empty() || !fs::is_directory(folder, ec)) continue;
-		for (fs::recursive_directory_iterator it(folder, fs::directory_options::skip_permission_denied, ec), end; it != end;
-			it.increment(ec))
+		auto take = [&](const fs::directory_entry &e) {
+			if (!e.is_regular_file(ec)) return;
+			const std::string path = e.path().string();
+			const auto size = static_cast<int64_t>(e.file_size(ec));
+			if (ec || size <= 0 || size >= kMostBytes || !seen.insert(path).second) return;
+			index.push_back({path, e.path().filename().string(), size, {}});
+		};
+		if (recurse)
 		{
-			if (ec) break;
-			if (!it->is_regular_file(ec)) continue;
-			const std::string path = it->path().string();
-			const auto size = static_cast<int64_t>(it->file_size(ec));
-			if (ec || size <= 0 || size >= kMostBytes || !seen.insert(path).second) continue;
-			index.push_back({path, it->path().filename().string(), size, {}});
+			for (fs::recursive_directory_iterator it(folder, fs::directory_options::skip_permission_denied, ec), end;
+				 it != end && index.size() < most; it.increment(ec))
+			{
+				if (ec) break;
+				take(*it);
+			}
 		}
+		else
+			for (fs::directory_iterator it(folder, fs::directory_options::skip_permission_denied, ec), end; it != end && index.size() < most;
+				 it.increment(ec))
+			{
+				if (ec) break;
+				take(*it);
+			}
 	}
 	return index;
 }

@@ -7,6 +7,7 @@
  * package gives it, and failing that by the one file whose size and name the
  * package's hints point at - never one of several (chimera issue 349). */
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -25,9 +26,10 @@ struct FirmwareFile
 	const std::string &hash() const;
 };
 
-/* every file in these folders (and below), names and sizes, nothing read; a
- * path that is a file is that file */
-std::vector<FirmwareFile> indexFirmware(const std::vector<std::string> &folders);
+/* every file in these folders (and below, unless recurse is false), names
+ * and sizes, nothing read, at most `most` of them; a path that is a file is
+ * that file */
+std::vector<FirmwareFile> indexFirmware(const std::vector<std::string> &folders, bool recurse = true, size_t most = SIZE_MAX);
 
 /* the file that answers one declared entry, or nullptr; `how` says by what.
  * A declared size rules out every file of another size before any is read. */

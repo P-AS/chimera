@@ -28,6 +28,11 @@ ApplicationWindow {
         title: qsTr("Choose the firmware file")
         onAccepted: win.vm.run("chooseFirmware", [win.firmwareFor, selectedFile])
     }
+    FolderDialog {
+        id: scanDialog
+        title: qsTr("Scan a folder for firmware")
+        onAccepted: win.vm.run("scanFolder", [selectedFolder, scanSubfolders.checked])
+    }
     FileDialog {
         id: importMovieDialog
         title: win.vm.importMovieLabel
@@ -235,7 +240,14 @@ ApplicationWindow {
             Layout.fillHeight: true
         }
 
-        Label { text: qsTr("Firmware"); font.bold: true; visible: firmwareList.count > 0 }
+        RowLayout {
+            visible: firmwareList.count > 0
+            Label { text: qsTr("Firmware"); font.bold: true }
+            Item { Layout.fillWidth: true }
+            // looks through a folder for what is still missing
+            CheckBox { id: scanSubfolders; text: qsTr("With subfolders"); checked: true }
+            Button { text: qsTr("Scan Folder..."); onClicked: scanDialog.open() }
+        }
         ListView {
             id: firmwareList
             Layout.fillWidth: true
@@ -259,7 +271,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                 }
                 Button { text: qsTr("Choose..."); onClicked: { win.firmwareFor = need.id; firmwareDialog.open() } }
-                Button { text: qsTr("Forget"); visible: need.how === "chosen"; onClicked: win.vm.run("forgetFirmware", [need.id]) }
+                Button { text: qsTr("Forget"); visible: need.how === "chosen" || need.how === "your own"; onClicked: win.vm.run("forgetFirmware", [need.id]) }
             }
         }
 

@@ -473,6 +473,74 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			evaluate();
 			return {};
 		});
+	command("scanFolder", "looks through a folder (and its subfolders, unless recurse is false; ten thousand files at most) "
+		"for the firmware still missing: by hash where the package gives one, else by the name it declares, as Chimera's "
+		"Scan Folder does. A folder that has some becomes the firmware folder when the one set is not there.",
+		{"folder", "recurse"}, [this](const Args &a, std::string &error) -> Value {
+			std::string folder;
+			bool recurse = true;
+			if (!arg(a, 0, folder, error)) return {};
+			if (a.size() > 1 && !arg(a, 1, recurse, error)) return {};
+			std::error_code ec;
+			if (!fs::is_directory(folder, ec))
+			{
+				error = folder + " is not a folder";
+				return {};
+			}
+			const std::vector<FirmwareFile> found = indexFirmware({folder}, recurse, 10000);
+			firmwareIndex_.insert(firmwareIndex_.end(), found.begin(), found.end());
+			const Json decls = firmwareDecls();
+			auto declOf = [&](const std::string &id) -> const Json * {
+				for (const Json &f : decls.items)
+					if (const Json *i = f.find("id"); i != nullptr && i->text == id) return &f;
+				return nullptr;
+			};
+			auto named = [&](const Json &d) -> const FirmwareFile * {
+				const Json *n = d.find("name");
+				if (n == nullptr || n->text.empty()) return nullptr;
+				for (const FirmwareFile &f : found)
+					if (lower(f.name) == lower(n->text)) return &f;
+				return nullptr;
+			};
+			/* a file this page asks for is in that folder: it is where the
+			 * person keeps firmware, if the folder set is not there (#293) */
+			bool any = false;
+			for (const Need &n : needs_)
+				if (const Json *d = declOf(n.id))
+				{
+					std::string how;
+					any = any || findFirmware(*d, "", found, how) != nullptr || named(*d) != nullptr;
+				}
+			if (any && !fs::is_directory(cores_.firmwareFolder.get(), ec)) cores_.firmwareFolder.set(fs::absolute(folder, ec).string());
+			int64_t filled = 0;
+			const std::vector<Need> needs = needs_;
+			for (const Need &n : needs)
+			{
+				const Json *d = declOf(n.id);
+				if (!n.path.empty() || d == nullptr) continue;
+				if (const Json *sha = d->find("sha1"); sha != nullptr && !sha->text.empty())
+				{
+					std::string how;
+					if (const FirmwareFile *f = findFirmware(*d, "", found, how))
+					{
+						chosenFirmware_[n.id] = {f->path, f->hash()};
+						filled++;
+					}
+					continue;
+				}
+				/* no hash: the declared name is the only lead */
+				if (const FirmwareFile *f = named(*d))
+				{
+					std::string e;
+					if (run("chooseFirmware", {n.id, f->path}, e)) filled++;
+				}
+			}
+			evaluate();
+			const std::string files = std::to_string(found.size()) + (found.size() == 1 ? " file" : " files");
+			status.set(filled == 0 ? "Scanned " + files + "; nothing new matched"
+								   : "Scanned " + files + "; " + std::to_string(filled) + (filled == 1 ? " requirement" : " requirements") + " resolved");
+			return filled;
+		});
 	command("forgetFirmware", "a firmware chosen by hand goes back to the one found", {"id"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string id;
