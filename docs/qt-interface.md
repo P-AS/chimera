@@ -308,9 +308,8 @@ as each lands here. Parts that wait on a question to the owner say so.
   (The debugger has no disassembly or
   breakpoints for these cores in Chimera either: the engine has no call
   for them.) Cheats (frozen addresses) wait on question 5.
-- Projects: the compile step (RPCS3's). The Cache Manager's greenzone
-  budgets button and the unpacked cores and compiled code Chimera's
-  lists (the prototype keeps neither). Recovery after a crash is done from
+- Projects: the compile step (RPCS3's). The unpacked cores and compiled
+  code Chimera's Cache Manager lists (the prototype keeps neither). Recovery after a crash is done from
   snapshots alone: Chimera also writes every input to a journal file the
   moment it is made, through the engine, so its recovered work is never
   more than the last input old, where the prototype's can be five
