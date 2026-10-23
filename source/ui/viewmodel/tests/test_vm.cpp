@@ -23,6 +23,9 @@
 
 #ifndef _WIN32
 #include <dlfcn.h>
+#ifndef _WIN32
+#include <sys/wait.h>
+#endif
 #endif
 
 #include "chimera/vm/bindings.hpp"
@@ -36,6 +39,7 @@
 #include "chimera/vm/project_details_vm.hpp"
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/help_vm.hpp"
+#include "chimera/vm/batch_run_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
 #include "chimera/vm/new_project_vm.hpp"
@@ -1128,6 +1132,73 @@ bool tastudioSettings(const char *package, const char *rom)
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);
 	return true;
+}
+
+/* Chimera's Batch Runner: games run in turn in the headless runner, each
+ * with the core that takes its kind of file; what came of each, and dumped */
+bool batchRun(const char *package, const char *rom)
+{
+#ifdef _WIN32
+	(void)package;
+	(void)rom;
+	std::printf("SKIP the Batch Runner: its test starts chimera-run through a POSIX shell\n");
+	return true;
+#else
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	const fs::path runner = fs::canonical("/proc/self/exe", ec).parent_path() / ".." / ".." / "chimera-run";
+	if (!fs::exists(runner, ec))
+	{
+		std::printf("SKIP the Batch Runner: no chimera-run at %s\n", runner.string().c_str());
+		return true;
+	}
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-batch-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	const fs::path other = dir / "letter.xyz";
+	{
+		std::ofstream(other) << "not a game";
+	}
+	ManualDispatcher d;
+	int started = 0;
+	/* the runner, waited for: its arguments quoted for the shell */
+	auto run = [&](std::vector<std::string> args, std::function<void(int, std::string, std::string)> done) {
+		started++;
+		std::string command = "'" + runner.string() + "'";
+		for (const std::string &a : args) command += " '" + a + "'";
+		const fs::path err = dir / "err.txt";
+		command += " > /dev/null 2> '" + err.string() + "'";
+		const int code = std::system(command.c_str());
+		done(WIFEXITED(code) ? WEXITSTATUS(code) : -1, {}, readFile(err));
+	};
+	BatchRunViewModel batch(d, run, [&](const std::string &ext) {
+		return ext == "testrom" ? std::vector<std::pair<std::string, std::string>>{{"Synth", package}}
+								: std::vector<std::pair<std::string, std::string>>{};
+	});
+	batch.workFolder.set((dir / "work").string());
+	std::string error;
+	CHECK(!batch.run("go", {}, error) && error == "No files!");
+	batch.run("addFile", {std::string(rom)}, error);
+	batch.run("addFile", {other.string()}, error);
+	batch.frames.set(30);
+	CHECK(batch.run("go", {}, error).has_value());
+	CHECK(d.until([&] { return !batch.running.get(); }, 60));
+	CHECK(batch.status.get() == "Status: Finished!" && batch.done.get() == 2 && started == 1);
+	const auto &r = batch.results();
+	CHECK(r.size() == 2);
+	if (r.size() != 2) return false;
+	std::printf("batch: %s %s %lld frames %lld lag, %s %s\n", r[0].status.c_str(), r[0].sha1.c_str(), static_cast<long long>(r[0].frames),
+		static_cast<long long>(r[0].lagFrames), r[1].status.c_str(), r[1].detail.c_str());
+	CHECK(r[0].status == "Success" && r[0].core == "Synth" && r[0].frames == 30 && r[0].lagFrames >= 0 && r[0].sha1.size() == 40);
+	CHECK(r[1].status == "ErrorOnLoad" && r[1].detail == "no installed core takes .xyz files" && r[1].frames == 0);
+	/* the runner's files are not left behind */
+	CHECK(fs::is_empty(dir / "work", ec));
+	const fs::path dump = dir / "results.txt";
+	CHECK(batch.run("dump", {dump.string()}, error) == Value(int64_t{2}));
+	const std::string text = readFile(dump);
+	CHECK(text.rfind(std::string(rom) + "\t" + rom + "\tSynth\tSuccess\t30\t", 0) == 0 && text.find("\tErrorOnLoad\t0\t0\t") != std::string::npos);
+	fs::remove_all(dir);
+	return true;
+#endif
 }
 
 /* Chimera's Help menu: the build and the core in a bug report's words, a
@@ -2591,6 +2662,10 @@ bool pianoRollEditing(const char *package, const char *rom)
 		roll.topFrame.set(0);
 		CHECK(d.until([&] { return session.hasState(9); }, 20));
 		CHECK((flags(5) & P::kGreen) && (flags(5) & P::kStated) && (flags(5) & P::kRan));
+		/* the machine done with the edits before (each ran it back to frame
+		 * 10): an edit it has not got to yet would be run past by them, and
+		 * the states after it made again */
+		session.onMachineWait([](ce_session *) {});
 		session.autoRestore.set(false);
 		roll.run("toggle", {int64_t{3}, int64_t{6}}, error);
 		CHECK(d.until([&] { return session.frame.get() == 3 && !session.hasState(5); }, 20));
@@ -4096,6 +4171,7 @@ int main(int argc, char **argv)
 			ranMachine = backupAndHistory(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
+			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;
 			ranMachine = tastudioSettings(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");

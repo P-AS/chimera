@@ -29,6 +29,7 @@ ApplicationWindow {
     required property QtObject clipboard
     required property QtObject pictureFiles
     required property QtObject help
+    required property QtObject batchRun
     property url chosenPackage
 
     width: 1280
@@ -255,6 +256,7 @@ ApplicationWindow {
             Action { id: ramWatchAction; property string hotkey: "RAM Watch"; text: qsTr("RAM &Watch..."); onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
             Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor..."); onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
             Action { id: luaConsoleAction; property string hotkey: "Lua Console"; text: qsTr("&Lua Console..."); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
+            Action { text: qsTr("&Batch Runner..."); onTriggered: { batchRunWindow.show(); batchRunWindow.raise() } }
             MenuSeparator {}
             // Chimera's: ticked while the core log is kept; off until asked, every run
             Action {
@@ -1076,6 +1078,7 @@ ApplicationWindow {
         onTriggered: { while (onScreenMessages.count > 0 && onScreenMessages.get(0).until < Date.now()) onScreenMessages.remove(0) }
     }
     LogWindow { id: logWindow; log: messageLog; clipboard: root.clipboard; visible: false }
+    BatchRun { id: batchRunWindow; vm: root.batchRun; visible: false }
     ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; visible: false }
     Dialog {
         id: aboutDialog

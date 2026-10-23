@@ -47,6 +47,7 @@
 #include "chimera/vm/project_details_vm.hpp"
 #include "chimera/vm/config_store.hpp"
 #include "chimera/vm/help_vm.hpp"
+#include "chimera/vm/batch_run_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -203,7 +204,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -498,6 +499,40 @@ int main(int argc, char **argv)
 		});
 		proc->start(runner, args);
 	});
+	/* the headless runner, for what runs a machine in a process of its own:
+	 * chimera-run, beside the program or, in the build tree, where it is
+	 * built (CHIMERA_RUN names another) */
+	auto startRunner = [&app](std::vector<std::string> args, std::function<void(int, std::string, std::string)> done) {
+#ifdef _WIN32
+		const QString exe = QStringLiteral("chimera-run.exe");
+#else
+		const QString exe = QStringLiteral("chimera-run");
+#endif
+		QString runner = qEnvironmentVariable("CHIMERA_RUN");
+		for (const QString &dir : {QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
+			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
+		if (runner.isEmpty())
+		{
+			done(-1, {}, "chimera-run is not beside the program");
+			return;
+		}
+		QStringList list;
+		for (const std::string &a : args) list << QString::fromStdString(a);
+		auto *proc = new QProcess(&app);
+		QObject::connect(proc, &QProcess::finished, proc, [proc, done](int code, QProcess::ExitStatus) {
+			const std::string out = proc->readAllStandardOutput().toStdString(), err = proc->readAllStandardError().toStdString();
+			proc->deleteLater();
+			done(code, out, err);
+		});
+		QObject::connect(proc, &QProcess::errorOccurred, proc, [proc, done](QProcess::ProcessError e) {
+			if (e != QProcess::FailedToStart) return;
+			proc->deleteLater();
+			done(-1, {}, "chimera-run could not be started");
+		});
+		proc->start(runner, list);
+	};
+	vm::BatchRunViewModel batchRun(dispatcher, startRunner, [&cores](const std::string &extension) { return cores.coresFor(extension); });
+	batchRun.workFolder.set(QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)).filePath(QStringLiteral("chimera-batch")).toStdString());
 	/* a movie import asks the core in a process of its own (one machine to a
 	 * process), as Chimera does: chimera-run, beside the program or, in the
 	 * build tree, where it is built (CHIMERA_RUN names another) */
@@ -573,6 +608,7 @@ int main(int argc, char **argv)
 	config.keep(session, "showMessages");
 	config.keep(session, "showStatusBar");
 	config.keep(session, "showGameTime");
+	config.keep(batchRun, "frames");
 	config.keep(session, "autofireOn");
 	config.keep(session, "autofireOff");
 	config.keep(session, "autofireSkipsLag");
@@ -645,6 +681,7 @@ int main(int argc, char **argv)
 	qt::ThemeColors themeColors;
 	qt::QmlViewModel settingsQml(settings);
 	qt::QmlViewModel helpQml(help);
+	qt::QmlViewModel batchRunQml(batchRun);
 	qt::QmlViewModel branchesQml(branches);
 	qt::QmlViewModel projectDetailsQml(projectDetails);
 	qt::QmlViewModel coresQml(cores);
@@ -671,6 +708,8 @@ int main(int argc, char **argv)
 	lua.add(branches);
 	lua.add(projectDetails);
 	lua.add(cores);
+	lua.add(help);
+	lua.add(batchRun);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -702,6 +741,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("clipboard"), QVariant::fromValue<QObject *>(&clipboard)},
 		{QStringLiteral("pictureFiles"), QVariant::fromValue<QObject *>(&pictureFiles)},
 		{QStringLiteral("help"), QVariant::fromValue<QObject *>(&helpQml)},
+		{QStringLiteral("batchRun"), QVariant::fromValue<QObject *>(&batchRunQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
@@ -728,6 +768,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("tastudio-settings") ? QStringLiteral("tastudioSettingsWindow")
 		: args.value(showOpt) == QStringLiteral("log") ? QStringLiteral("logWindow")
 		: args.value(showOpt) == QStringLiteral("report") ? QStringLiteral("reportIssueWindow")
+		: args.value(showOpt) == QStringLiteral("batch") ? QStringLiteral("batchRunWindow")
 		: args.value(showOpt) == QStringLiteral("project-details") ? QStringLiteral("projectDetailsWindow")
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())

@@ -39,6 +39,7 @@ vm_lib = static_library(
     'viewmodel/src/ram_watch_vm.cpp',
     'viewmodel/src/config_store.cpp',
     'viewmodel/src/help_vm.cpp',
+    'viewmodel/src/batch_run_vm.cpp',
   ],
   include_directories: [vm_inc, engine_inc, include_directories('../../extern/lua')],
   dependencies: [thread_dep, dl_dep],
