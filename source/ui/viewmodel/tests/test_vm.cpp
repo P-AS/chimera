@@ -3293,10 +3293,15 @@ bool settings(const char *package, const char *rom)
 	CHECK(!settings.pending.get());
 	settings.run("set", {std::string("initFillByte"), int64_t{171}}, error);
 	const int64_t opensBefore = session.opens.get();
+	/* the answer comes after the machine has opened again, and the reload's own
+	 * word may follow it at once: heard as it is said, not looked for after */
+	bool startedAgain = false;
+	Connection said = settings.status.changed.connect([&] {
+		if (settings.status.get().find("started again") != std::string::npos) startedAgain = true;
+	});
 	settings.run("apply", {}, error);
-	/* the answer comes after the machine has opened again: waited for too */
-	CHECK(d.until([&] { return session.opens.get() > opensBefore && !settings.pending.get() &&
-								 settings.status.get().find("started again") != std::string::npos; }, 60));
+	CHECK(d.until([&] { return session.opens.get() > opensBefore && !settings.pending.get() && startedAgain; }, 60));
+	said.disconnect();
 	CHECK(filled(0xAB) >= zeros); /* the machine started with its RAM filled with 171 */
 	fromValue(rows.cell(0, SettingsViewModel::kValue), value);
 	CHECK(value == 171);
