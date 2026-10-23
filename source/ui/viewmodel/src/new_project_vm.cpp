@@ -274,11 +274,12 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			return {};
 		}
 		const std::string name = baseName(path), kind = kindOf(name);
-		if (!s->formats.empty() && std::find(s->formats.begin(), s->formats.end(), kind) == s->formats.end())
+		const std::vector<std::string> formats = formatsFor(*s);
+		if (!formats.empty() && std::find(formats.begin(), formats.end(), kind) == formats.end())
 		{
-			error = name + ": " + s->title + " takes " + (s->formats.size() == 1 ? "a ." + s->formats[0] + " file" : "files of these kinds:");
-			if (s->formats.size() > 1)
-				for (const std::string &f : s->formats) error += " ." + (f.empty() ? std::string("(none)") : f);
+			error = name + ": " + s->title + " takes " + (formats.size() == 1 ? "a ." + formats[0] + " file" : "files of these kinds:");
+			if (formats.size() > 1)
+				for (const std::string &f : formats) error += " ." + (f.empty() ? std::string("(none)") : f);
 			return {};
 		}
 		if (!s->namePattern.empty())
@@ -1076,6 +1077,30 @@ std::string NewProjectViewModel::slotMap() const
 	return json::write(map);
 }
 
+std::vector<std::string> NewProjectViewModel::formatsFor(const Slot &s) const
+{
+	const Json *machines = cfg_.find("machines");
+	if (machines == nullptr || s.formats.empty() || machine.get() < 0 || machine.get() >= static_cast<int64_t>(machines->items.size()))
+		return s.formats;
+	auto kinds = [](const Json &m) {
+		std::vector<std::string> out;
+		if (const Json *e = m.find("extensions"))
+			for (const auto &[ext, system] : e->members) out.push_back(lower(ext.size() > 1 && ext[0] == '.' ? ext.substr(1) : ext));
+		return out;
+	};
+	const std::vector<std::string> mine = kinds(machines->items[static_cast<size_t>(machine.get())]);
+	auto in = [](const std::vector<std::string> &list, const std::string &k) { return std::find(list.begin(), list.end(), k) != list.end(); };
+	if (mine.empty() || std::none_of(s.formats.begin(), s.formats.end(), [&](const std::string &f) { return in(mine, f); }))
+		return s.formats;
+	std::vector<std::string> anyMachine;
+	for (const Json &m : machines->items)
+		for (const std::string &k : kinds(m)) anyMachine.push_back(k);
+	std::vector<std::string> claimed;
+	for (const std::string &f : s.formats)
+		if (in(mine, f) || !in(anyMachine, f)) claimed.push_back(f);
+	return claimed.empty() ? s.formats : claimed;
+}
+
 const NewProjectViewModel::Slot *NewProjectViewModel::slot(const std::string &id) const
 {
 	for (const Slot &s : slots_)
@@ -1236,7 +1261,7 @@ Value NewProjectViewModel::SlotRows::cell(int64_t row, int32_t column) const
 	case 4:
 	{
 		std::string out;
-		for (const std::string &f : s.formats) out += (out.empty() ? "" : " ") + (f.empty() ? std::string("(no extension)") : "." + f);
+		for (const std::string &f : vm_.formatsFor(s)) out += (out.empty() ? "" : " ") + (f.empty() ? std::string("(no extension)") : "." + f);
 		return out;
 	}
 	case 5: return s.help;
@@ -1252,7 +1277,7 @@ Value NewProjectViewModel::SlotRows::cell(int64_t row, int32_t column) const
 	case 9:
 	{
 		std::string out;
-		for (const std::string &f : s.formats) out += (out.empty() ? "" : " ") + (f.empty() ? std::string("*") : "*." + f);
+		for (const std::string &f : vm_.formatsFor(s)) out += (out.empty() ? "" : " ") + (f.empty() ? std::string("*") : "*." + f);
 		return out.empty() ? std::string("*") : out;
 	}
 	default: return {};

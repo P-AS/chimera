@@ -147,6 +147,10 @@ private:
 	/* the files as the engine reads a slot map: {"slot": ["name", ...]} */
 	std::string slotMap() const;
 	const Slot *slot(const std::string &id) const;
+	/* the kinds of file a slot takes on the machine chosen: of those a
+	 * machine of the package claims, only this machine's (a slot this
+	 * machine claims none of is left as declared), as Chimera narrows them */
+	std::vector<std::string> formatsFor(const Slot &s) const;
 	/* which slots, settings and firmware apply now, and what is missing */
 	void evaluate();
 

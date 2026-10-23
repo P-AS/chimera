@@ -2164,7 +2164,13 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	fromValue(cell("slots", 0, 6), exposed);
 	CHECK(exposed && rowCount("firmware") == 0);
 	CHECK(settingNames() == "initFillByte ");
+	/* the disk slot takes the kinds of disk this board claims */
+	CHECK(text("slots", 1, 4) == ".dsk" && text("slots", 1, 9) == "*.dsk");
 	CHECK(wizard.run("chooseMachine", {int64_t{1}}, error).has_value() && wizard.machine.get() == 1);
+	CHECK(text("slots", 1, 4) == ".cue .img");
+	std::ofstream(dir / "disk3.dsk") << "board A's kind of disk";
+	CHECK(!wizard.run("addFile", {std::string("disk"), (dir / "disk3.dsk").string()}, error) &&
+		error == "disk3.dsk: Disks takes files of these kinds: .cue .img");
 	fromValue(cell("slots", 0, 6), exposed);
 	CHECK(!exposed && settingNames() == "initFillByte diskSpeed ");
 	CHECK(rowCount("presets") == 2 && wizard.run("applyPreset", {std::string("fast")}, error).has_value());
@@ -2183,7 +2189,7 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	std::ofstream(dir / "disk1.bin") << "the first disk's track";
 	CHECK(wizard.run("addFile", {std::string("disk"), (dir / "disk1.cue").string()}, error).has_value());
 	std::ofstream(dir / "game.img") << "a disk by another name";
-	CHECK(!wizard.run("addFile", {std::string("disk"), (dir / "game.img").string()}, error) && error == "game.img: A disk is called disk, a number and .cue or .img.");
+	CHECK(!wizard.run("addFile", {std::string("disk"), (dir / "game.img").string()}, error) && error == "game.img: A disk is called disk, a number and .cue, .img or .dsk.");
 	std::ofstream(dir / "disk2.img") << "the second disk";
 	CHECK(wizard.run("addFile", {std::string("disk"), (dir / "disk2.img").string()}, error).has_value());
 	CHECK(wizard.run("moveFile", {std::string("disk"), int64_t{1}, int64_t{0}}, error).has_value() && text("slots", 1, 7) == "disk2.img\ndisk1.cue");

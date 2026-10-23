@@ -19,9 +19,9 @@ slots = {
     "slots": [
         {"id": "rom", "title": "Cartridge", "min": 0, "max": 1, "formats": ["testrom"],
          "help": "The synthetic game.", "exposedWhen": {"setting": "board", "is": "a"}},
-        {"id": "disk", "title": "Disks", "min": 0, "max": -1, "formats": ["cue", "img"],
-         "help": "Disks, in the order they are swapped.", "namePattern": "^disk[0-9]*\\.(cue|img)$",
-         "nameHelp": "A disk is called disk, a number and .cue or .img."},
+        {"id": "disk", "title": "Disks", "min": 0, "max": -1, "formats": ["cue", "img", "dsk"],
+         "help": "Disks, in the order they are swapped.", "namePattern": "^disk[0-9]*\\.(cue|img|dsk)$",
+         "nameHelp": "A disk is called disk, a number and .cue, .img or .dsk."},
     ],
     "atLeastOneOf": [["rom", "disk"]],
 }
@@ -38,9 +38,13 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
             cfg["settings"].append({"name": "diskSpeed", "display": "Disk Speed", "type": "int",
                                     "min": 1, "max": 4, "default": 1, "sync": True, "when": ["b"],
                                     "description": "Board B's alone."})
+            # each board claims kinds of file of its own: the disk slot takes
+            # board A's .dsk on board A and board B's .cue and .img on board B
             cfg["machines"] = [
-                {"id": "Synth", "label": "Board A", "when": ["a"]},
-                {"id": "SynthB", "label": "Board B", "when": ["b"]},
+                {"id": "Synth", "label": "Board A", "when": ["a"],
+                 "extensions": {".testrom": "Synth", ".dsk": "Synth"}},
+                {"id": "SynthB", "label": "Board B", "when": ["b"],
+                 "extensions": {".cue": "SynthB", ".img": "SynthB"}},
             ]
             cfg["firmware"] = [{"id": "bios", "display": "Board B BIOS", "name": "boardb.bin",
                                 "requiredWhen": {"setting": "board", "is": "b"}}]
