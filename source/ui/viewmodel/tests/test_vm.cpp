@@ -2697,10 +2697,45 @@ bool cacheManager(const char *package, const char *rom)
 	std::string orphans;
 	CHECK(fromValue(caches.run("orphans", {}, error).value_or(Value()), orphans) && orphans == std::to_string(gone));
 	CHECK(caches.total.get().find(" in 3 items") != std::string::npos);
+	/* what Chimera's window says over the list */
+	CHECK(caches.header.get().rfind("3 cached item(s), ", 0) == 0 &&
+		  caches.header.get().find("Everything here can be removed: what it costs is time, never work.\n1 belong to projects that are no longer where they were (") != std::string::npos);
+	/* Chimera's columns: what, the project's id, its file (not found), and what the row means in full */
+	CHECK(text(gone, 14) == "Project" && text(gone, 15) == "00DEADBEEF" && text(gone, 16) == "/no/such/gone.chimeraProject   (not found)" &&
+		  text(unnamed, 16) == "(never recorded)" && text(gone, 17).size() == 16);
+	{
+		std::string detail;
+		CHECK(fromValue(caches.run("detailOf", {gone}, error).value_or(Value()), detail) &&
+			  detail == "The run replays instead of resuming, and its files are asked for once more.\nThe project this belongs to is not where it was last seen.\n"
+						"Unlocked: the auto-clean may take this one, oldest first, when the cache is over its limit.\nProject file: /no/such/gone.chimeraProject\nCache: " +
+							(dir / "cache" / "00DEADBEEF").string());
+		/* ticked by their places on disk, which survive a sort */
+		std::string folders, places, costs;
+		CHECK(fromValue(caches.run("folders", {std::string("orphans")}, error).value_or(Value()), folders) &&
+			  folders == "[" + json::quote((dir / "cache" / "00DEADBEEF").string()) + "]");
+		CHECK(fromValue(caches.run("placesOf", {folders}, error).value_or(Value()), places) && places == std::to_string(gone));
+		CHECK(fromValue(caches.run("costs", {places}, error).value_or(Value()), costs) &&
+			  costs == "{\"count\": 1, \"size\": \"0 KB\", \"costs\": \"The run replays instead of resuming, and its files are asked for once more.\"}");
+		/* sorted by a heading: by name least first, again the other way; size and date start largest */
+		caches.run("sortBy", {int64_t{2}}, error);
+		CHECK(caches.sortColumn.get() == 2 && caches.sortAscending.get() && text(0, 0) == "(a project that never said its name)");
+		caches.run("sortBy", {int64_t{2}}, error);
+		CHECK(!caches.sortAscending.get() && text(0, 0) == "Walker");
+		caches.run("sortBy", {int64_t{9}}, error);
+		CHECK(caches.sortColumn.get() == 9 && !caches.sortAscending.get());
+		for (int64_t i = 0; i < rows->rowCount(); i++)
+		{
+			if (text(i, 0) == "Walker") walker = i;
+			if (text(i, 0) == "Gone") gone = i;
+			if (text(i, 0) == "(a project that never said its name)") unnamed = i;
+		}
+	}
 	CHECK(caches.run("remove", {orphans}, error) == Value(int64_t{1}));
 	CHECK(rows->rowCount() == 2 && !fs::exists(dir / "cache" / "00DEADBEEF"));
 	CHECK(!caches.run("remove", {std::string("7")}, error) && error == "no row 7");
-	CHECK(CacheManagerViewModel::sizeText(1536) == "1.5 KB" && CacheManagerViewModel::sizeText(12) == "12 bytes");
+	/* sizes as Chimera writes them */
+	CHECK(CacheManagerViewModel::sizeText(1536) == "2 KB" && CacheManagerViewModel::sizeText(12) == "0 KB" && CacheManagerViewModel::sizeText(0).empty() &&
+		  CacheManagerViewModel::sizeText(3 * 1024 * 1024 / 2) == "1.5 MB" && CacheManagerViewModel::sizeText(5ull << 30) == "5.0 GB");
 
 	/* the limit that applies, as Chimera's: the setting, unless the disk is
 	 * short of its floor; then what gives the floor back, never below a gigabyte */
@@ -2771,7 +2806,7 @@ bool cacheManager(const char *package, const char *rom)
 		/* 776 bytes (One 216, Two 166, Three 100, the work 294) against 600: the oldest unlocked
 		 * goes, One, and that is enough; the newest and the locked work stay */
 		CHECK(wouldGo() == rowOf("One"));
-		CHECK(limits.overLimit.get() == "That is 176 bytes over. Nothing is enforcing it while the auto-clean is off; Clean Now applies it once.");
+		CHECK(limits.overLimit.get() == "That is 0 KB over. Nothing is enforcing it while the auto-clean is off; Clean Now applies it once.");
 		/* One locked: only Two may go, and that is not enough */
 		CHECK(limits.run("toggleLock", {rowOf("One")}, error) == Value(true));
 		CHECK(cellFlag(rowOf("One"), 12) && readFile(cache / "cache-locks.json").find((cache / "C1").string()) != std::string::npos);
@@ -2787,7 +2822,7 @@ bool cacheManager(const char *package, const char *rom)
 		 * the oldest there is, and then the cache is under */
 		CHECK(limits.run("toggleLock", {unsaved}, error) == Value(false));
 		limits.autoClean.set(true);
-		CHECK(limits.run("runAutoClean", {std::string("C1")}, error) == Value(std::string("Cache auto-clean freed 294 bytes")));
+		CHECK(limits.run("runAutoClean", {std::string("C1")}, error) == Value(std::string("Cache auto-clean freed 0 KB")));
 		CHECK(!fs::exists(kept / "R1") && fs::exists(cache / "C1") && fs::exists(cache / "C2") && fs::exists(cache / "C3"));
 		CHECK(lr->rowCount() == 3 && limits.overLimit.get().empty());
 		/* a lock whose place is gone is dropped from the book the next time it is written */
@@ -2797,7 +2832,7 @@ bool cacheManager(const char *package, const char *rom)
 		limits.floorGb.set(50);
 		limits.freeSpaceAt = [](const std::string &) { return uint64_t{4000}; };
 		limits.limitGb.set(2);
-		CHECK(limits.overLimit.get().rfind("The disk has 3.9 KB free and is to be left 50 GB free, so the cache is being held to 100 bytes "
+		CHECK(limits.overLimit.get().rfind("The disk has 4 KB free and is to be left 50 GB free, so the cache is being held to 0 KB "
 			"rather than to the 2 GB asked for (it is never held to less than that because of the disk)", 0) == 0);
 		/* Clean Now applies the limit whatever the auto-clean says: 482 bytes against 100, but One
 		 * and Two locked and Three the newest */
@@ -2808,7 +2843,7 @@ bool cacheManager(const char *package, const char *rom)
 		CHECK(limits.run("toggleLock", {rowOf("One")}, error) == Value(false));
 		CHECK(limits.run("cleanNow", {}, error) == Value(int64_t{1}));
 		CHECK(!fs::exists(cache / "C1") && fs::exists(cache / "C2") && fs::exists(cache / "C3"));
-		CHECK(limits.status.get() == "Removed 1 of the oldest unlocked item(s), freeing 216 bytes.");
+		CHECK(limits.status.get() == "Removed 1 of the oldest unlocked item(s), freeing 0 KB.");
 		/* unsaved work a window is still writing is in use: never removed */
 		entry(kept / "R2", 10, 1);
 		std::ofstream(kept / "R2" / "session.json") << "{\"processId\": " << currentProcessId() << ", \"processStarted\": " << processStarted(currentProcessId()) << "}";

@@ -44,6 +44,12 @@ public:
 	Property<int64_t> limitGb{100}, floorGb{20};
 	/* the line saying the cache is over its limit and what that means, "" when it is not */
 	Property<std::string> overLimit;
+	/* what the window says over the list, as Chimera's: how many, how much, the orphans, and the line above */
+	Property<std::string> header;
+	/* the column the list is sorted by (Chimera's: 0 the lock, 1 what, 2 name, 3 system, 4 core, 5 game, 6 project id,
+	 * 7 project file, 8 cache location, 9 size, 10 last modified) and which way */
+	Property<int64_t> sortColumn{9};
+	Property<bool> sortAscending{false};
 	Property<std::string> status;
 
 	struct Item
@@ -82,7 +88,7 @@ private:
 	public:
 		explicit Rows(CacheManagerViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.items_.size()); }
-		int32_t columnCount() const override { return 14; }
+		int32_t columnCount() const override { return 20; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -90,6 +96,8 @@ private:
 		CacheManagerViewModel &vm_;
 	};
 	void survey();
+	void sortItems();
+	std::string headerText() const;
 	uint64_t limitNow() const;
 	void sayOverLimit();
 	/* the rows named "0,2", or false with the reason */

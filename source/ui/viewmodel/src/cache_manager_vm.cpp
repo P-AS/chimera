@@ -1,6 +1,11 @@
 #include "chimera/vm/cache_manager_vm.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <cmath>
+#include <ctime>
+#include <tuple>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -79,6 +84,74 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 		survey();
 		return static_cast<int64_t>(items_.size());
 	});
+	expose("header", "what the window says over the list: how many, how much, the orphans, and whether it is over its limit", header);
+	expose("sortColumn", "the column the list is sorted by, as Chimera's (9 the size, 10 when last modified...)", sortColumn);
+	expose("sortAscending", "the list sorted from the least up", sortAscending);
+	command("sortBy", "sorts by a column, the other way round when it is the one sorted by already; size and date start "
+		"largest and newest, as Chimera's", {"column"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t column = 0;
+			if (!arg(a, 0, column, error)) return {};
+			if (column == sortColumn.get()) sortAscending.set(!sortAscending.get());
+			else
+			{
+				sortColumn.set(column);
+				sortAscending.set(column != 9 && column != 10);
+			}
+			sortItems();
+			rows_.reset.emit();
+			return {};
+		});
+	command("folders", "the entries' places on disk, as a JSON array: \"free\" every one not in use (Select all), \"orphans\" "
+		"those whose project is gone and not in use (Select all orphans)", {"which"}, [this](const Args &a, std::string &error) -> Value {
+			std::string which;
+			if (!arg(a, 0, which, error)) return {};
+			json::Json list;
+			list.kind = json::Json::Kind::Array;
+			for (const Item &i : items_)
+				if (!i.open && (which != "orphans" || i.orphan)) list.items.push_back(json::Json::string(i.folder));
+			return json::write(list);
+		});
+	command("placesOf", "the places in the list (\"0,2\") of entries named by their places on disk (a JSON array)", {"folders"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string text;
+			if (!arg(a, 0, text, error)) return {};
+			json::Json folders;
+			if (!json::parse(text, folders, error)) return {};
+			std::string list;
+			for (size_t i = 0; i < items_.size(); i++)
+				for (const json::Json &f : folders.items)
+					if (f.text == items_[i].folder) list += (list.empty() ? "" : ",") + std::to_string(i);
+			return list;
+		});
+	command("detailOf", "what the entry at a place in the list means, in full, as Chimera says it under the list", {"row"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t row = 0;
+			if (!arg(a, 0, row, error)) return {};
+			return rows_.cell(row, 18);
+		});
+	command("costs", "what removing the entries at these places (\"0,2\") costs, each different cost a line, and how much "
+		"they free, for Chimera's question: {\"count\", \"size\", \"costs\"}", {"rows"}, [this](const Args &a, std::string &error) -> Value {
+			std::vector<size_t> picked;
+			if (!rowsOf(a, picked, error)) return {};
+			uint64_t bytes = 0;
+			std::vector<std::string> costs;
+			for (size_t i : picked)
+			{
+				bytes += items_[i].bytes;
+				const std::string c = items_[i].unsavedWork
+					? "Unsaved work - inputs, markers and branches a session never saved. Removing it loses that work for good."
+					: "The run replays instead of resuming, and its files are asked for once more.";
+				if (std::find(costs.begin(), costs.end(), c) == costs.end()) costs.push_back(c);
+			}
+			std::string lines;
+			for (const std::string &c : costs) lines += (lines.empty() ? "" : "\n") + c;
+			json::Json o;
+			o.kind = json::Json::Kind::Object;
+			o.members.emplace_back("count", json::Json::integer(static_cast<long long>(picked.size())));
+			o.members.emplace_back("size", json::Json::string(sizeText(bytes)));
+			o.members.emplace_back("costs", json::Json::string(lines));
+			return json::write(o);
+		});
 	command("remove", "removes the entries at these places in the list (\"0,2\"), locked or not: a project cache's run "
 		"replays instead of resuming; unsaved work is gone", {"rows"}, [this](const Args &a, std::string &error) -> Value {
 			std::vector<size_t> picked;
@@ -86,6 +159,7 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 			std::string failed;
 			const int64_t removed = removeAll(picked, failed);
 			survey();
+			status.set(failed.empty() ? "Removed " + std::to_string(removed) + " item(s)." : "Removed " + std::to_string(removed) + "; left " + failed + ".");
 			if (!failed.empty()) error = "could not remove: " + failed;
 			return removed;
 		});
@@ -194,13 +268,13 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 
 std::string CacheManagerViewModel::sizeText(uint64_t bytes)
 {
-	const char *units[] = {"bytes", "KB", "MB", "GB", "TB"};
-	double v = static_cast<double>(bytes);
-	int u = 0;
-	while (v >= 1024 && u < 4) v /= 1024, u++;
+	/* as Chimera's CacheSurvey.Size: nothing for nothing, gigabytes and megabytes to a tenth, else whole kilobytes */
+	if (bytes == 0) return {};
+	const double mb = static_cast<double>(bytes) / 1024.0 / 1024.0;
 	char text[32];
-	if (u == 0) std::snprintf(text, sizeof text, "%llu bytes", static_cast<unsigned long long>(bytes));
-	else std::snprintf(text, sizeof text, "%.1f %s", v, units[u]);
+	if (mb >= 1024.0) std::snprintf(text, sizeof text, "%.1f GB", mb / 1024.0);
+	else if (mb >= 1.0) std::snprintf(text, sizeof text, "%.1f MB", mb);
+	else std::snprintf(text, sizeof text, "%.0f KB", std::floor(static_cast<double>(bytes) / 1024.0 + 0.5));
 	return text;
 }
 
@@ -270,6 +344,7 @@ void CacheManagerViewModel::sayOverLimit()
 	if (all <= limit)
 	{
 		overLimit.set("");
+		header.set(headerText());
 		return;
 	}
 	std::string line;
@@ -289,6 +364,7 @@ void CacheManagerViewModel::sayOverLimit()
 			: autoClean.get()   ? "The oldest unlocked items go when a project closes or at the next start, or now with Clean Now."
 								: "Nothing is enforcing it while the auto-clean is off; Clean Now applies it once.";
 	overLimit.set(line);
+	header.set(headerText());
 }
 
 bool CacheManagerViewModel::rowsOf(const Args &a, std::vector<size_t> &picked, std::string &error) const
@@ -333,6 +409,53 @@ int64_t CacheManagerViewModel::removeAll(const std::vector<size_t> &picked, std:
 		else removed++;
 	}
 	return removed;
+}
+
+void CacheManagerViewModel::sortItems()
+{
+	/* built least-first and turned round when it should not be, as Chimera's; the lock: unlocked first */
+	auto lower = [](std::string s) {
+		for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		return s;
+	};
+	const int64_t c = sortColumn.get();
+	std::stable_sort(items_.begin(), items_.end(), [&](const Item &a, const Item &b) {
+		switch (c)
+		{
+		case 0: return std::make_tuple(a.locked, a.unsavedWork, a.bytes) < std::make_tuple(b.locked, b.unsavedWork, b.bytes);
+		case 1: return std::make_tuple(a.unsavedWork, a.bytes) < std::make_tuple(b.unsavedWork, b.bytes);
+		case 2: return lower(a.title) < lower(b.title);
+		case 3: return lower(a.system) < lower(b.system);
+		case 4: return lower(a.core) < lower(b.core);
+		case 5: return lower(a.games) < lower(b.games);
+		case 6: return lower(fs::path(a.folder).filename().string()) < lower(fs::path(b.folder).filename().string());
+		case 7: return lower(a.projectPath) < lower(b.projectPath);
+		case 8: return lower(a.folder) < lower(b.folder);
+		case 10: return a.lastUsed < b.lastUsed;
+		default: return a.bytes < b.bytes;
+		}
+	});
+	if (!sortAscending.get()) std::reverse(items_.begin(), items_.end());
+}
+
+std::string CacheManagerViewModel::headerText() const
+{
+	if (items_.empty()) return "Nothing is cached. Everything here is rebuilt as it is needed.";
+	uint64_t all = 0, orphaned = 0;
+	size_t orphans = 0;
+	for (const Item &i : items_)
+	{
+		all += i.bytes;
+		if (i.orphan)
+		{
+			orphans++;
+			orphaned += i.bytes;
+		}
+	}
+	return std::to_string(items_.size()) + " cached item(s), " + sizeText(all) + " in all. Everything here can be removed: what it "
+		"costs is time, never work." + (orphans == 0 ? std::string() : "\n" + std::to_string(orphans) +
+		" belong to projects that are no longer where they were (" + sizeText(orphaned) + ").") +
+		(overLimit.get().empty() ? std::string() : "\n" + overLimit.get());
 }
 
 void CacheManagerViewModel::survey()
@@ -411,8 +534,7 @@ void CacheManagerViewModel::survey()
 			measure(item, it->path());
 			items_.push_back(std::move(item));
 		}
-	/* the largest first: what is worth reclaiming is at the top */
-	std::stable_sort(items_.begin(), items_.end(), [](const Item &a, const Item &b) { return a.bytes > b.bytes; });
+	sortItems();
 	uint64_t all = 0;
 	for (const Item &i : items_) all += i.bytes;
 	total.set(sizeText(all) + " in " + std::to_string(items_.size()) + (items_.size() == 1 ? " item" : " items"));
@@ -423,8 +545,8 @@ void CacheManagerViewModel::survey()
 std::string CacheManagerViewModel::Rows::columnName(int32_t column) const
 {
 	static const char *const names[] = {"title", "project", "core", "system", "games", "size", "sizeText", "orphan", "folder",
-		"open", "note", "kind", "locked", "lastUsed"};
-	return column >= 0 && column < 14 ? names[column] : "";
+		"open", "note", "kind", "locked", "lastUsed", "what", "projectId", "projectFile", "modified", "detail", "lockTip"};
+	return column >= 0 && column < 20 ? names[column] : "";
 }
 
 Value CacheManagerViewModel::Rows::cell(int64_t row, int32_t column) const
@@ -454,6 +576,45 @@ Value CacheManagerViewModel::Rows::cell(int64_t row, int32_t column) const
 	case 11: return i.kind;
 	case 12: return i.locked;
 	case 13: return i.lastUsed;
+	/* Chimera's columns and the line under the list */
+	case 14: return std::string(i.unsavedWork ? "Unsaved work" : "Project");
+	case 15: return i.unsavedWork ? std::string() : fs::path(i.folder).filename().string();
+	case 16: return !i.projectPath.empty() ? i.projectPath + (i.orphan ? "   (not found)" : "") : i.unsavedWork ? std::string() : std::string("(never recorded)");
+	case 17:
+	{
+		if (i.lastUsed == 0) return std::string();
+		const auto sys = std::chrono::file_clock::to_sys(fs::file_time_type(fs::file_time_type::duration(i.lastUsed)));
+		const std::time_t t = std::chrono::system_clock::to_time_t(std::chrono::time_point_cast<std::chrono::system_clock::duration>(sys));
+		std::tm local{};
+#ifdef _WIN32
+		localtime_s(&local, &t);
+#else
+		localtime_r(&t, &local);
+#endif
+		char buf[32];
+		std::strftime(buf, sizeof buf, "%Y-%m-%d %H:%M", &local);
+		return std::string(buf);
+	}
+	case 18:
+	{
+		std::vector<std::string> lines;
+		lines.push_back(i.unsavedWork ? "Unsaved work - inputs, markers and branches a session never saved. Removing it loses that work for good."
+									  : "The run replays instead of resuming, and its files are asked for once more.");
+		std::string note;
+		fromValue(cell(row, 10), note);
+		if (i.open) lines.push_back("In use right now, so it cannot be removed while it is open.");
+		else if (!note.empty()) lines.push_back(note);
+		lines.push_back(i.locked ? "Locked: the auto-clean will not take this one. Remove still will."
+								 : "Unlocked: the auto-clean may take this one, oldest first, when the cache is over its limit.");
+		if (i.games.find(", ") != std::string::npos) lines.push_back("Game files: " + i.games);
+		if (!i.projectPath.empty()) lines.push_back("Project file: " + i.projectPath);
+		lines.push_back("Cache: " + i.folder);
+		std::string out;
+		for (const std::string &l : lines) out += (out.empty() ? "" : "\n") + l;
+		return out;
+	}
+	case 19: return std::string(i.locked ? "Locked: the auto-clean leaves this one alone. Remove still takes it."
+										 : "Unlocked: the auto-clean may take this one when the cache is over its limit.");
 	default: return {};
 	}
 }
