@@ -57,6 +57,7 @@
 #include "chimera/vm/firmware_vm.hpp"
 #include "chimera/vm/config_files_vm.hpp"
 #include "chimera/vm/data_folder_vm.hpp"
+#include "chimera/vm/precompiled_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -604,6 +605,41 @@ void dataFolder()
 	/* the system's place */
 	CHECK(fromValue(data.run("request", {std::string(), false}, error).value_or(Value()), said) && data.pending.get() == (dir / "standard").string());
 	CHECK(data.applyPending().empty() && data.current.get().empty() && data.inUse() == (dir / "standard").string());
+	fs::remove_all(dir);
+}
+
+/* Chimera's compile cache: a folder a game, by its SHA1, for a core that
+ * compiles; the Pre-Compiled Modules window lists them, named by their
+ * manifest when there is one, and removes them but the open machine's */
+void precompiledModules()
+{
+	namespace fs = std::filesystem;
+	CHECK(SessionViewModel::compileDirFor("/data/code", true, "ab12cd") == (fs::path("/data/code") / "AB12CD").string());
+	CHECK(SessionViewModel::compileDirFor("/data/code", false, "ab12cd").empty());
+	CHECK(SessionViewModel::compileDirFor("/data/code", true, "").empty() && SessionViewModel::compileDirFor("", true, "ab").empty());
+	CHECK(SessionViewModel::compileDirFor("/data/code", true, "../x") == (fs::path("/data/code") / "___X").string());
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-code-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "AAAA" / "obj");
+	fs::create_directories(dir / "BBBB");
+	fs::create_directories(dir / "CCCC");
+	std::ofstream(dir / "AAAA" / "obj" / "one.o") << std::string(100, 'o');
+	std::ofstream(dir / "AAAA" / "manifest.json") << R"({"rom": "game.iso", "core": "RPCS3", "coreVersion": "0123456789abcdef", "compiled": "2026-10-20T10:00:00Z", "files": [{"name": "obj/one.o"}, {"name": "obj/two.o"}]})";
+	std::ofstream(dir / "BBBB" / "partial.o") << "half";
+	std::ofstream(dir / "CCCC" / "manifest.json") << R"({"rom": "other.iso", "core": "RPCS3", "compiled": "2026-10-22T10:00:00Z", "files": [{"name": "x.o"}]})";
+	std::ofstream(dir / "CCCC" / "x.o") << "x";
+	ManualDispatcher d;
+	PrecompiledViewModel code(d);
+	code.root.set(dir.string());
+	code.inUse.set((dir / "CCCC").string());
+	CHECK(code.games().size() == 3);
+	/* newest first; a folder nothing names last, under its hash */
+	CHECK(code.games()[0].name == "other.iso" && code.games()[0].complete && code.games()[0].open);
+	CHECK(code.games()[1].name == "game.iso" && code.games()[1].modules == 2 && !code.games()[1].complete && code.games()[1].bytes > 100);
+	CHECK(code.games()[2].name == "BBBB" && code.games()[2].unknown);
+	std::string error;
+	CHECK(!code.run("remove", {std::string("0,2")}, error) && error == "could not remove: other.iso (in use)");
+	CHECK(!fs::exists(dir / "BBBB") && fs::exists(dir / "CCCC") && code.games().size() == 2);
+	CHECK(code.total.get().find(" in 2 games") != std::string::npos);
 	fs::remove_all(dir);
 }
 
@@ -1281,8 +1317,11 @@ bool greenzoneBudgets(const char *package, const char *rom)
 	session.greenzoneNearStride.set(40);
 	CHECK(session.greenzoneNearStride.get() == 32);
 	session.greenzoneNearStride.set(3);
+	session.compileCacheRoot.set((dir / "code").string());
 	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
 	CHECK(d.until([&] { return session.isOpen.get() && session.budgetMbApplied.get() == 512 && session.nearStrideApplied.get() == 3; }, 60));
+	/* a core that compiles nothing keeps no compiled code */
+	CHECK(session.compileCacheDir.get().empty() && (ce_cache_dir_get() == nullptr || *ce_cache_dir_get() == '\0') && !fs::exists(dir / "code"));
 	CHECK(!session.run("setProjectBudgets", {int64_t{256}, int64_t{2}}, error));
 	const fs::path project = dir / "walker.chimeraProject";
 	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
@@ -5201,6 +5240,7 @@ int main(int argc, char **argv)
 	displayFit();
 	pathsConfig();
 	dataFolder();
+	precompiledModules();
 	pianoRollWithoutAMachine();
 	watchValues();
 	themes();

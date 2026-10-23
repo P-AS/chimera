@@ -321,6 +321,9 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			projectNearStride.set(stride);
 			return {};
 		}, &hasProject);
+	expose("compileCacheRoot", "where cores that compile their machine's code keep it, a folder a game", compileCacheRoot, true);
+	expose("compileCacheDir", "the open machine's compile cache folder, \"\" for none", compileCacheDir);
+	compileRootWatch_ = compileCacheRoot.changed.connect([this] { submit([this, r = compileCacheRoot.get()] { compileRootM_ = r; }); });
 	expose("frameSkip", "frames left undrawn while running, 0 to 9 of every one drawn (Chimera's frame skip)", frameSkip, true);
 	expose("autoMinimizeSkipping", "frames are left undrawn only when the machine is behind (Chimera's auto-minimize "
 		"skipping)", autoMinimizeSkipping, true);
@@ -1387,6 +1390,7 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	}
 	firmwarePinsM_ = fw.pins;
 	const char *error = nullptr;
+	compileCacheOnMachine(package, game, "");
 	ce_session *s = ce_session_open(package.c_str(), bytes.data(), bytes.size(), game.c_str(),
 		settingsM_.empty() ? nullptr : settingsM_.c_str(), fwIds.data(), fwData.data(), fwLens.data(),
 		static_cast<int32_t>(fwIds.size()), nullptr, nullptr, nullptr, nullptr, 0, &error);
@@ -2390,6 +2394,9 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		fwData.push_back(fw.data[i].data());
 		fwLens.push_back(fw.data[i].size());
 	}
+	/* the game is the project's first file, and its hash is the one the project records */
+	compileCacheOnMachine(package, ce_project_file_count(p) > 0 && ce_project_file_source_path(p, 0) != nullptr ? ce_project_file_source_path(p, 0) : "",
+		ce_project_file_count(p) > 0 && ce_project_file_sha1(p, 0) != nullptr ? ce_project_file_sha1(p, 0) : "");
 	ce_session *s = ce_session_open_project(package.c_str(), p, nullptr, fwIds.data(), fwData.data(), fwLens.data(),
 		static_cast<int32_t>(fwIds.size()), flags, &error);
 	/* what was mounted is what the project records, as always: by the bytes */
@@ -3263,6 +3270,42 @@ int64_t SessionViewModel::frameVolume(bool soundOn, int64_t volume, bool fast, b
 	if (fast) v = fastOn ? v * fastVolume / 100 : 0;
 	if (advanced && muteAdvance) v = 0;
 	return v;
+}
+
+std::string SessionViewModel::compileDirFor(const std::string &root, bool compiles, const std::string &gameSha1)
+{
+	if (!compiles || root.empty() || gameSha1.empty()) return {};
+	/* the hash, upper case, and nothing that could make a path of it */
+	std::string name;
+	for (char c : gameSha1) name += std::isalnum(static_cast<unsigned char>(c)) ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : '_';
+	return (std::filesystem::path(root) / name).string();
+}
+
+void SessionViewModel::compileCacheOnMachine(const std::string &package, const std::string &gamePath, const std::string &knownSha1)
+{
+	bool compiles = false;
+	const char *perr = nullptr;
+	if (ce_package *pk = ce_package_open(package.c_str(), &perr))
+	{
+		uint64_t len = 0;
+		json::Json cfg;
+		std::string err;
+		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+			d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, err))
+			if (const json::Json *v = cfg.find("precompile")) compiles = v->kind == json::Json::Kind::Bool && v->boolean;
+		ce_package_free(pk);
+	}
+	std::string sha = knownSha1;
+	/* a game alone is hashed (the engine keeps the answer for the file) */
+	if (compiles && sha.empty() && !gamePath.empty())
+	{
+		char hash[41] = {};
+		uint64_t size = 0;
+		if (ce_sha1_file(gamePath.c_str(), hash, &size) == 1) sha = hash;
+	}
+	const std::string dir = compileDirFor(compileRootM_, compiles, sha);
+	ce_cache_dir(dir.empty() ? nullptr : dir.c_str());
+	later([this, dir] { compileCacheDir.set(dir); });
 }
 
 void SessionViewModel::reopenSoundOnMachine()

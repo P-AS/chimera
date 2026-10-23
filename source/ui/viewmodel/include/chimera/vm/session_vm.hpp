@@ -92,6 +92,13 @@ public:
 	 * machine opens */
 	Property<int64_t> greenzoneBudgetMb{4096}, greenzoneNearStride{4}, pictureSettleFrames{3};
 	Property<int64_t> projectBudgetMb{0}, projectNearStride{0}, budgetMbApplied{0}, nearStrideApplied{0};
+	/* Chimera's compile cache (docs/compile-cache.md): for a core that
+	 * translates its machine's code (its package says "precompile"), what
+	 * it compiled is kept between sessions in a folder for the game, named
+	 * by the game's own SHA1 under compileCacheRoot; compileCacheDir is the
+	 * open machine's, "" for none */
+	Property<std::string> compileCacheRoot, compileCacheDir;
+	static std::string compileDirFor(const std::string &root, bool compiles, const std::string &gameSha1);
 	/* the volume a frame is heard at, by Chimera's rule: the volume when the
 	 * sound is on; while fast forwarding a share of it, or none; none for a
 	 * frame advanced by hand when that is muted */
@@ -656,7 +663,11 @@ private:
 	/* a project's own budgets, from budgets.json in its cache folder: 0 for none */
 	void readBudgetsOnMachine(ce_project *p, int64_t &memoryMb, int64_t &nearStride) const;
 	Connection budgetWatch_, strideWatch_, settleWatch_;
-	std::string soundDeviceM_;
+	std::string soundDeviceM_, compileRootM_;
+	/* the compile cache folder for the session about to open: the engine's
+	 * (ce_cache_dir) is the whole process's, so it is set before each open */
+	void compileCacheOnMachine(const std::string &package, const std::string &gamePath, const std::string &knownSha1);
+	Connection compileRootWatch_;
 	int64_t soundBufferMsM_ = 100;
 	/* the sound opened again on the device and buffer asked for; the devices said */
 	void reopenSoundOnMachine();

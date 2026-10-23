@@ -39,6 +39,7 @@ ApplicationWindow {
     required property QtObject firmware
     required property QtObject configFiles
     required property QtObject dataFolder
+    required property QtObject precompiled
     // a Paths folder for a file dialog to open in (made when it is not there)
     function folderOf(name) {
         root.paths.changed; root.paths.base; root.paths.lastRomFolder; root.paths.recentForRoms
@@ -355,6 +356,7 @@ ApplicationWindow {
             delegate: keyedMenuItem
             title: qsTr("&Tools")
             Action { text: qsTr("&Cores..."); onTriggered: { coresWindow.show(); coresWindow.raise() } }
+            Action { text: qsTr("&Pre-Compiled Modules..."); onTriggered: { precompiledWindow.show(); precompiledWindow.raise() } }
             Action { id: ramSearchAction; property string hotkey: "RAM Search"; text: qsTr("RAM &Search..."); onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
             Action { id: ramWatchAction; property string hotkey: "RAM Watch"; text: qsTr("RAM &Watch..."); onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
             Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor..."); onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
@@ -1295,6 +1297,7 @@ ApplicationWindow {
     PathsConfig { id: pathsWindow; vm: root.paths; visible: false }
     FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; visible: false }
     DataFolderConfig { id: dataFolderWindow; vm: root.dataFolder; visible: false }
+    PrecompiledModules { id: precompiledWindow; vm: root.precompiled; visible: false }
     Dialog {
         id: aboutDialog
         objectName: "aboutDialog"

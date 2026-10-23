@@ -1,0 +1,52 @@
+#pragma once
+/* Chimera's Pre-Compiled Modules window (Tools): the games a core has
+ * translated code for, a folder each named by the game's SHA1, and the only
+ * place that code is taken away. A row is a folder, manifest or not: a
+ * compile cut short leaves code and no manifest, and is the row most worth
+ * removing. Named, dated and counted by its manifest.json when there is
+ * one (Chimera's: rom, core, coreVersion, compiled, files). The open
+ * machine's folder is in use and stays. */
+
+#include <string>
+#include <vector>
+
+#include "chimera/vm/view_model.hpp"
+
+namespace chimera::vm {
+
+class PrecompiledViewModel : public ViewModel
+{
+public:
+	explicit PrecompiledViewModel(Dispatcher &dispatcher);
+
+	Property<std::string> root, inUse, total, status;
+
+	struct Game
+	{
+		std::string sha1, name, core, version, compiled, folder;
+		uint64_t bytes = 0;
+		int64_t modules = 0;
+		bool complete = false, unknown = true, open = false;
+	};
+	const std::vector<Game> &games() const { return games_; }
+
+private:
+	class Rows : public RowModel
+	{
+	public:
+		explicit Rows(PrecompiledViewModel &vm) : vm_(vm) {}
+		int64_t rowCount() const override { return static_cast<int64_t>(vm_.games_.size()); }
+		int32_t columnCount() const override { return 10; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
+
+	private:
+		PrecompiledViewModel &vm_;
+	};
+	void survey();
+	std::vector<Game> games_;
+	Rows rows_{*this};
+	Connection rootWatch_, inUseWatch_;
+};
+
+} // namespace chimera::vm

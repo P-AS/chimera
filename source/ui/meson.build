@@ -34,6 +34,7 @@ vm_lib = static_library(
     'viewmodel/src/firmware_vm.cpp',
     'viewmodel/src/config_files_vm.cpp',
     'viewmodel/src/data_folder_vm.cpp',
+    'viewmodel/src/precompiled_vm.cpp',
     'viewmodel/src/project_details_vm.cpp',
     'viewmodel/src/cores_vm.cpp',
     'viewmodel/src/branch_state.cpp',
