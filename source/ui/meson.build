@@ -41,6 +41,7 @@ vm_lib = static_library(
     'viewmodel/src/help_vm.cpp',
     'viewmodel/src/batch_run_vm.cpp',
     'viewmodel/src/media_maker_vm.cpp',
+    'viewmodel/src/cache_manager_vm.cpp',
   ],
   include_directories: [vm_inc, engine_inc, include_directories('../../extern/lua')],
   dependencies: [thread_dep, dl_dep],

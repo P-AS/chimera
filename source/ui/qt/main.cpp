@@ -49,6 +49,7 @@
 #include "chimera/vm/help_vm.hpp"
 #include "chimera/vm/batch_run_vm.hpp"
 #include "chimera/vm/media_maker_vm.hpp"
+#include "chimera/vm/cache_manager_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -205,7 +206,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -689,6 +690,12 @@ int main(int argc, char **argv)
 	qt::QmlViewModel helpQml(help);
 	qt::QmlViewModel batchRunQml(batchRun);
 	qt::QmlViewModel mediaMakerQml(mediaMaker);
+	vm::CacheManagerViewModel cacheManager(dispatcher);
+	/* the session's cache folder, the one it lists */
+	cacheManager.cacheFolder.set(session.cacheFolder.get());
+	vm::Connection cacheFolderFollows = session.cacheFolder.changed.connect([&] { cacheManager.cacheFolder.set(session.cacheFolder.get()); });
+	vm::Connection cacheInUseFollows = session.projectId.changed.connect([&] { cacheManager.inUse.set(session.projectId.get()); });
+	qt::QmlViewModel cacheManagerQml(cacheManager);
 	qt::QmlViewModel branchesQml(branches);
 	qt::QmlViewModel projectDetailsQml(projectDetails);
 	qt::QmlViewModel coresQml(cores);
@@ -718,6 +725,7 @@ int main(int argc, char **argv)
 	lua.add(help);
 	lua.add(batchRun);
 	lua.add(mediaMaker);
+	lua.add(cacheManager);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -751,6 +759,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("help"), QVariant::fromValue<QObject *>(&helpQml)},
 		{QStringLiteral("batchRun"), QVariant::fromValue<QObject *>(&batchRunQml)},
 		{QStringLiteral("mediaMaker"), QVariant::fromValue<QObject *>(&mediaMakerQml)},
+		{QStringLiteral("cacheManager"), QVariant::fromValue<QObject *>(&cacheManagerQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
@@ -779,6 +788,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("report") ? QStringLiteral("reportIssueWindow")
 		: args.value(showOpt) == QStringLiteral("batch") ? QStringLiteral("batchRunWindow")
 		: args.value(showOpt) == QStringLiteral("media") ? QStringLiteral("mediaMakerWindow")
+		: args.value(showOpt) == QStringLiteral("cache") ? QStringLiteral("cacheManagerWindow")
 		: args.value(showOpt) == QStringLiteral("project-details") ? QStringLiteral("projectDetailsWindow")
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())

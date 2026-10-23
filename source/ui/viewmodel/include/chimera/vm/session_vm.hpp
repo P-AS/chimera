@@ -142,6 +142,8 @@ public:
 	 * project has not been saved yet; hasProject says which */
 	Property<std::string> projectPath;
 	Property<bool> hasProject{false};
+	/* the open project's id (its cache folder's name), "" for none */
+	Property<std::string> projectId;
 	Property<std::string> projectTitle;
 	/* the game's name: its file's, without the kind (a project's first file) */
 	Property<std::string> gameName;
@@ -398,6 +400,10 @@ private:
 	/* the greenzone kept with the project as it is saved, when it may
 	 * outlive the session: written in the background */
 	void keepHistoryOnMachine();
+	/* who the project's cache belongs to, beside it ("about.json", as
+	 * Chimera's ProjectCache writes it: title, the project's path, core,
+	 * system, games), so the Cache Manager can name it */
+	void rememberAboutOnMachine(const std::string &projectPath);
 	/* which machine this is, as a state of it needs: core, settings, files */
 	std::string machineIdOnMachine();
 	/* the state files no branch of the project has any more go */

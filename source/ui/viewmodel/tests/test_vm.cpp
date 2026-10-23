@@ -41,6 +41,7 @@
 #include "chimera/vm/help_vm.hpp"
 #include "chimera/vm/batch_run_vm.hpp"
 #include "chimera/vm/media_maker_vm.hpp"
+#include "chimera/vm/cache_manager_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
 #include "chimera/vm/new_project_vm.hpp"
@@ -1131,6 +1132,88 @@ bool tastudioSettings(const char *package, const char *rom)
 	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
+/* Chimera's Cache Manager, for the project caches: each named by its
+ * about.json, its size, a project gone picked out, and removed */
+bool cacheManager(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-cache-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "cache");
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	session.cacheFolder.set((dir / "cache").string());
+	std::string error;
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	const fs::path project = dir / "walker.chimeraProject";
+	CHECK(session.run("saveAsProject", {project.string(), std::string("Walker")}, error).has_value());
+	CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+	for (int i = 0; i < 10; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 10; }, 20));
+	session.run("saveProject", {}, error);
+	CHECK(d.until([&] { return session.status.get().rfind("Saved", 0) == 0; }, 20));
+	/* while it is open, its cache is in use and stays */
+	{
+		const std::string id = session.projectId.get();
+		CHECK(id.size() >= 8 && fs::is_directory(dir / "cache" / id));
+		CacheManagerViewModel open(d);
+		open.inUse.set(id);
+		open.cacheFolder.set((dir / "cache").string());
+		RowModel *r = open.rowLists()[0].model;
+		bool inUse = false;
+		CHECK(r->rowCount() == 1 && fromValue(r->cell(0, 9), inUse) && inUse);
+		CHECK(!open.run("remove", {std::string("0")}, error) && error == "could not remove: Walker (open)" && fs::is_directory(dir / "cache" / id));
+	}
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get() && session.projectId.get().empty(); }, 20));
+	/* a cache that never said whose it is: named so, and not an orphan */
+	fs::create_directories(dir / "cache" / "00UNNAMED");
+	/* another project's cache, its project gone */
+	fs::create_directories(dir / "cache" / "00DEADBEEF");
+	{
+		std::ofstream(dir / "cache" / "00DEADBEEF" / "about.json") << R"({"title": "Gone", "projectPath": "/no/such/gone.chimeraProject", "core": "Synth"})";
+		std::ofstream(dir / "cache" / "00DEADBEEF" / "history.bin") << std::string(100, 'z');
+	}
+	CacheManagerViewModel caches(d);
+	caches.cacheFolder.set((dir / "cache").string());
+	RowModel *rows = caches.rowLists()[0].model;
+	auto text = [&](int64_t row, int32_t col) {
+		std::string t;
+		fromValue(rows->cell(row, col), t);
+		return t;
+	};
+	auto flag = [&](int64_t row, int32_t col) {
+		bool b = false;
+		fromValue(rows->cell(row, col), b);
+		return b;
+	};
+	CHECK(rows->rowCount() == 3);
+	int64_t walker = -1, gone = -1, unnamed = -1;
+	for (int64_t i = 0; i < rows->rowCount(); i++)
+	{
+		if (text(i, 0) == "Walker") walker = i;
+		if (text(i, 0) == "Gone") gone = i;
+		if (text(i, 0) == "(a project that never said its name)") unnamed = i;
+	}
+	CHECK(walker >= 0 && gone >= 0 && unnamed >= 0);
+	if (walker < 0 || gone < 0 || unnamed < 0) return false;
+	CHECK(!flag(unnamed, 7) && text(gone, 10) == "The project this belongs to is not where it was last seen.");
+	CHECK(text(walker, 0) == "Walker" && text(walker, 1) == fs::absolute(project).string() && text(walker, 2) == "Synth" &&
+		text(walker, 4) == "walker.testrom" && !flag(walker, 7));
+	CHECK(text(gone, 0) == "Gone" && flag(gone, 7));
+	std::string orphans;
+	CHECK(fromValue(caches.run("orphans", {}, error).value_or(Value()), orphans) && orphans == std::to_string(gone));
+	CHECK(caches.total.get().find(" in 3 projects") != std::string::npos);
+	CHECK(caches.run("remove", {orphans}, error) == Value(int64_t{1}));
+	CHECK(rows->rowCount() == 2 && !fs::exists(dir / "cache" / "00DEADBEEF"));
+	CHECK(!caches.run("remove", {std::string("7")}, error) && error == "no row 7");
+	CHECK(CacheManagerViewModel::sizeText(1536) == "1.5 KB" && CacheManagerViewModel::sizeText(12) == "12 bytes");
 	fs::remove_all(dir);
 	return true;
 }
@@ -4243,6 +4326,7 @@ int main(int argc, char **argv)
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;
 			ranMachine = mediaMaker() && ranMachine;
+			ranMachine = cacheManager(argv[1], argv[2]) && ranMachine;
 			ranMachine = tastudioSettings(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");

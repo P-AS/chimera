@@ -72,6 +72,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 {
 	expose("isOpen", "whether a machine is open", isOpen);
 	expose("opens", "how many times a machine has been opened", opens);
+	expose("projectId", "the open project's id (its cache folder's name), \"\" for none", projectId);
 	expose("running", "whether the machine is running on its own", running);
 	expose("frame", "the frame the machine is about to run", frame);
 	expose("fps", "frames run in the last half second, per second", fps);
@@ -1058,6 +1059,7 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	later([this] {
 		projectPath.set("");
 		projectTitle.set("");
+		projectId.set("");
 		hasProject.set(false);
 		projectSwitched();
 	});
@@ -1267,6 +1269,31 @@ void SessionViewModel::startProjectSessionOnMachine(bool loadHistory)
 	}
 	std::ofstream(mark) << "a session of this project is running\n";
 	runningMarkM_ = mark;
+}
+
+void SessionViewModel::rememberAboutOnMachine(const std::string &projectPath)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = projectCacheOnMachine();
+	if (dir.empty() || projectM_ == nullptr) return;
+	json::Json about;
+	about.kind = json::Json::Kind::Object;
+	const char *title = ce_project_title(projectM_);
+	const char *core = ce_project_core_name(projectM_);
+	std::error_code ec;
+	const fs::path full = projectPath.empty() ? fs::path() : fs::absolute(projectPath, ec);
+	about.members.emplace_back("title", json::Json::string(title != nullptr ? title : ""));
+	about.members.emplace_back("projectPath", json::Json::string(full.string()));
+	about.members.emplace_back("core", json::Json::string(core != nullptr ? core : ""));
+	const char *system = s_ != nullptr ? ce_session_system_name(s_) : nullptr;
+	about.members.emplace_back("system", json::Json::string(system != nullptr ? system : ""));
+	json::Json games;
+	games.kind = json::Json::Kind::Array;
+	for (int32_t i = 0; i < ce_project_file_count(projectM_); i++)
+		if (const char *name = ce_project_file_name(projectM_, i)) games.items.push_back(json::Json::string(name));
+	about.members.emplace_back("games", games);
+	fs::create_directories(dir, ec);
+	std::ofstream(dir / "about.json", std::ios::binary) << json::write(about);
 }
 
 void SessionViewModel::keepHistoryOnMachine()
@@ -1796,6 +1823,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	package_ = package;
 	game_.clear();
 	tidyBranchStatesOnMachine();
+	rememberAboutOnMachine(path);
 	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
 	adoptOnMachine(s, package, (title.empty() ? path : title) + note, true);
 	{
@@ -1817,9 +1845,11 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		const char *slot = ce_project_file_slot(p, i), *source = ce_project_file_source_path(p, i);
 		if (source != nullptr && *source != '\0') answers.files.emplace_back(slot != nullptr ? slot : "", source);
 	}
-	later([this, path, title, answers] {
+	const std::string id = ce_project_id(p) != nullptr ? ce_project_id(p) : "";
+	later([this, path, title, answers, id] {
 		projectPath.set(path);
 		projectTitle.set(title);
+		projectId.set(id);
 		hasProject.set(true);
 		projectSwitched();
 		lastAnswers_ = answers;
@@ -2089,9 +2119,11 @@ void SessionViewModel::newProjectOnMachine(const std::string &path, const std::s
 	game_.clear();
 	startProjectSessionOnMachine(false);
 	saveProjectOnMachine(path);
-	later([this, path, title] {
+	const std::string id = ce_project_id(p) != nullptr ? ce_project_id(p) : "";
+	later([this, path, title, id] {
 		projectPath.set(path);
 		projectTitle.set(title);
+		projectId.set(id);
 		hasProject.set(true);
 		projectSwitched();
 		addRecent(path);
@@ -2229,6 +2261,7 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
 	const bool first = projectPathM_ != path;
 	projectPathM_ = path;
 	keepHistoryOnMachine();
+	rememberAboutOnMachine(path);
 	later([this, path, n, first] {
 		projectPath.set(path);
 		if (first) addRecent(path);
@@ -2495,6 +2528,7 @@ void SessionViewModel::closeOnMachine()
 		fps.set(0.0);
 		projectPath.set("");
 		projectTitle.set("");
+		projectId.set("");
 		hasProject.set(false);
 		projectSwitched();
 		status.set("Closed");
