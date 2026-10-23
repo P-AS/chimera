@@ -45,6 +45,7 @@ ApplicationWindow {
     required property QtObject debuggerTool
     required property QtObject surfaceViewer
     required property QtObject macroTool
+    required property QtObject recorder
     // a Paths folder for a file dialog to open in (made when it is not there)
     function folderOf(name) {
         root.paths.changed; root.paths.base; root.paths.lastRomFolder; root.paths.recentForRoms
@@ -163,6 +164,10 @@ ApplicationWindow {
             else if (action === "Seek To...") { if (root.session.seekEnabled) seekDialog.open() }
             else if (action === "Toggle Menu") root.menuBar.visible = !root.menuBar.visible
             else if (action === "Toggle Stay on Top") root.flags = root.flags ^ Qt.WindowStaysOnTopHint
+            else if (action === "Encode Video") {
+                if (root.recorder.recording) root.recorder.run("stop")
+                else if (root.session.isOpen) recordDialog.open()
+            }
             else if (action === "Larger Window" || action === "Smaller Window") {
                 if (picture.pictureWidth <= 0) return
                 const n = Math.max(1, Math.min(10, root.windowScale + (action === "Larger Window" ? 1 : -1)))
@@ -206,6 +211,13 @@ ApplicationWindow {
             Action { text: qsTr("Save Project &As..."); enabled: root.session.hasProject; onTriggered: saveAsDialog.open() }
             Action { text: qsTr("Save Project &Backup"); enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveBackup") }
             Action { text: qsTr("Make a &Project of This Game..."); enabled: root.session.isOpen && !root.session.hasProject; onTriggered: newProjectDialog.open() }
+            // Chimera's File > AVI/WAV: every frame run written as it runs
+            Menu {
+                delegate: keyedMenuItem
+                title: qsTr("&AVI/WAV")
+                Action { property string hotkey: "Encode Video"; text: qsTr("&Record AVI/WAV..."); enabled: root.session.isOpen && !root.recorder.recording; onTriggered: recordDialog.open() }
+                Action { text: qsTr("&Stop AVI/WAV"); enabled: root.recorder.recording; onTriggered: root.recorder.run("stop") }
+            }
             // Chimera's File > Screenshot
             Menu {
                 delegate: keyedMenuItem
@@ -795,6 +807,28 @@ ApplicationWindow {
         nameFilters: [qsTr("Core packages (*.chimeraCore)"), qsTr("All files (*)")]
         onAccepted: root.leaveProject(() => root.session.run("openProject", [root.chosenProject, selectedFile]))
     }
+    // what to record, then where
+    Dialog {
+        id: recordDialog
+        title: qsTr("Record AVI/WAV")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        ColumnLayout {
+            RadioButton { text: qsTr("AVI: the picture and the sound, uncompressed"); checked: root.recorder.format === "avi"; onClicked: root.recorder.format = "avi" }
+            RadioButton { text: qsTr("WAV: the sound alone"); checked: root.recorder.format === "wav"; onClicked: root.recorder.format = "wav" }
+            RadioButton { text: qsTr("Image sequence: a PNG a frame, and the sound as a WAV"); checked: root.recorder.format === "png"; onClicked: root.recorder.format = "png" }
+        }
+        onAccepted: recordFileDialog.open()
+    }
+    FileDialog {
+        id: recordFileDialog
+        title: qsTr("Record to")
+        fileMode: FileDialog.SaveFile
+        nameFilters: root.recorder.format === "wav" ? [qsTr("WAV files (*.wav)")] : root.recorder.format === "png" ? [qsTr("PNG pictures (*.png)")] : [qsTr("AVI files (*.avi)")]
+        onAccepted: root.recorder.run("start", [selectedFile])
+    }
+    Connections { target: root.recorder; function onStatusChanged() { root.note(root.recorder.status) } }
     FileDialog {
         id: saveConfigDialog
         title: qsTr("Save the settings as")
@@ -1338,6 +1372,7 @@ ApplicationWindow {
             Label { text: root.session.status; elide: Text.ElideRight; Layout.fillWidth: true }
             Label { text: root.session.gamepads; elide: Text.ElideRight; Layout.maximumWidth: 260 }
             Label { text: root.session.sound; elide: Text.ElideRight; Layout.maximumWidth: 200 }
+            Label { visible: root.recorder.recording; text: qsTr("Recording (%1 frames)").arg(root.recorder.frames); color: "#b00020" }
             // Chimera's key priority in the status bar: a click is the next one
             Label {
                 text: [qsTr("Keys: both"), qsTr("Keys: buttons first"), qsTr("Keys: hotkeys first")][root.hotkeys.keyPriority] || ""

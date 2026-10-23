@@ -63,6 +63,7 @@
 #include "chimera/vm/trace_logger_vm.hpp"
 #include "chimera/vm/surface_viewer_vm.hpp"
 #include "chimera/vm/macro_tool_vm.hpp"
+#include "chimera/vm/recorder_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -355,6 +356,8 @@ int main(int argc, char **argv)
 		hotkeys.add("General", "Volume Down", "", [&session, run](bool down) {
 			if (down) run(session, "volumeDown");
 		});
+		/* Chimera's Encode Video: recording started (asking where) or stopped */
+		window("General", "Encode Video", "");
 		/* the window a size up or down, 1x to 10x the picture */
 		window("General", "Larger Window", "Alt+Up");
 		window("General", "Smaller Window", "Alt+Down");
@@ -675,6 +678,12 @@ int main(int argc, char **argv)
 	qt::QmlViewModel surfaceViewerQml(surfaceViewer);
 	vm::MacroToolViewModel macroTool(dispatcher, pianoRoll, session);
 	qt::QmlViewModel macroToolQml(macroTool);
+	/* a picture a frame, as Chimera's image sequence writes it: a QImage may be used off the window's thread */
+	vm::RecorderViewModel recorder(dispatcher, session, [](const std::string &path, const uint32_t *pixels, int32_t w, int32_t h) {
+		return QImage(reinterpret_cast<const uchar *>(pixels), w, h, w * 4, QImage::Format_RGB32).save(QString::fromStdString(path), "PNG");
+	});
+	config.keep(recorder, "format");
+	qt::QmlViewModel recorderQml(recorder);
 	config.keep(session, "autoRestore");
 	config.keep(session, "speedPercent");
 	config.keep(session, "unthrottled");
@@ -892,6 +901,7 @@ int main(int argc, char **argv)
 	lua.add(debugger);
 	lua.add(surfaceViewer);
 	lua.add(macroTool);
+	lua.add(recorder);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -942,6 +952,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("debuggerTool"), QVariant::fromValue<QObject *>(&debuggerQml)},
 		{QStringLiteral("surfaceViewer"), QVariant::fromValue<QObject *>(&surfaceViewerQml)},
 		{QStringLiteral("macroTool"), QVariant::fromValue<QObject *>(&macroToolQml)},
+		{QStringLiteral("recorder"), QVariant::fromValue<QObject *>(&recorderQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},

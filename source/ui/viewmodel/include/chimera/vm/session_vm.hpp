@@ -163,6 +163,8 @@ public:
 	 * into a picture; false when there is none */
 	Property<std::string> surfaces{"[]"};
 	bool renderSurface(int32_t index, Picture &into);
+	/* while recording, every frame is drawn, whatever turbo, frame skip and Display Nothing say */
+	void setRecording(bool on) { recordingM_ = on; }
 	Property<bool> showGameTime{false};
 	Property<std::string> gameTimeText;
 	/* Chimera's Tools > Export Core Log: what the cores write, kept in a
@@ -684,6 +686,7 @@ private:
 	int64_t greenEndM_ = 0;
 	std::atomic<int64_t> speedM_{100}, volumeM_{100}, fastSpeedM_{400}, frameSkipM_{0};
 	std::atomic<bool> autoMinimizeM_{true}, soundNormalOnM_{true}, soundFastOnM_{true}, muteAdvanceM_{true}, steppingM_{false};
+	std::atomic<bool> recordingM_{false};
 	std::atomic<int64_t> fastVolumeM_{50}, budgetMbM_{4096}, nearStrideM_{4}, pictureSettleM_{3};
 	/* a project's own budgets, from budgets.json in its cache folder: 0 for none */
 	void readBudgetsOnMachine(ce_project *p, int64_t &memoryMb, int64_t &nearStride) const;

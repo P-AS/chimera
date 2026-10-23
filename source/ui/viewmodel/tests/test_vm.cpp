@@ -61,6 +61,7 @@
 #include "chimera/vm/trace_logger_vm.hpp"
 #include "chimera/vm/surface_viewer_vm.hpp"
 #include "chimera/vm/macro_tool_vm.hpp"
+#include "chimera/vm/recorder_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -1450,6 +1451,102 @@ bool macroTool(const char *package, const char *rom)
 	CHECK(!tool.run("remove", {int64_t{0}}, error) && tool.run("remove", {int64_t{2}}, error).has_value() && tool.zones().size() == 2);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
+/* Chimera's AVI/WAV recording: every frame run written as it runs - an
+ * uncompressed AVI read back by its own headers and index, split by size;
+ * a WAV; a picture a frame and a WAV - and drawn while recording even under
+ * turbo */
+bool recording(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-record-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	int64_t pictures = 0;
+	RecorderViewModel recorder(d, session, [&pictures](const std::string &path, const uint32_t *, int32_t w, int32_t h) {
+		pictures++;
+		std::ofstream(path) << w << "x" << h;
+		return true;
+	});
+	std::string error;
+	CHECK(!recorder.run("start", {(dir / "early.avi").string()}, error));
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	auto advance = [&](int64_t n) {
+		const int64_t to = session.frame.get() + n;
+		for (int64_t i = 0; i < n; i++) session.run("frameAdvance", {}, error);
+		return d.until([&] { return session.frame.get() == to; }, 30);
+	};
+	auto u32 = [](const std::string &b, size_t at) {
+		return static_cast<uint32_t>(static_cast<uint8_t>(b[at])) | static_cast<uint32_t>(static_cast<uint8_t>(b[at + 1])) << 8 |
+			static_cast<uint32_t>(static_cast<uint8_t>(b[at + 2])) << 16 | static_cast<uint32_t>(static_cast<uint8_t>(b[at + 3])) << 24;
+	};
+	/* an AVI of 30 frames, split at a little over 10 frames' worth */
+	recorder.segmentBytes = 128 * 120 * 3 * 10;
+	CHECK(recorder.run("start", {(dir / "run.avi").string()}, error).has_value() && recorder.recording.get());
+	CHECK(advance(30));
+	CHECK(recorder.run("stop", {}, error).has_value() && !recorder.recording.get() && recorder.frames.get() == 30);
+	std::printf("recorder: %s\n", recorder.status.get().c_str());
+	CHECK(fs::exists(dir / "run.avi") && fs::exists(dir / "run_1.avi") && fs::exists(dir / "run_2.avi") && !fs::exists(dir / "run_3.avi"));
+	uint32_t framesIn = 0, pairsIn = 0;
+	for (const char *name : {"run.avi", "run_1.avi", "run_2.avi"})
+	{
+		const std::string b = readFile(dir / name);
+		CHECK(b.substr(0, 4) == "RIFF" && b.substr(8, 4) == "AVI " && u32(b, 4) == b.size() - 8);
+		/* avih: its frames, two streams, 128 x 120 */
+		const size_t avih = b.find("avih");
+		CHECK(avih != std::string::npos && u32(b, avih + 8) == 16667 && u32(b, avih + 32) == 2 && u32(b, avih + 40) == 128 && u32(b, avih + 44) == 120);
+		const uint32_t frames = u32(b, avih + 24);
+		/* the video stream's length is its frames; the sound's, its pairs */
+		const size_t vids = b.find("vids"), auds = b.find("auds");
+		CHECK(vids != std::string::npos && u32(b, vids + 32) == frames && auds != std::string::npos);
+		const uint32_t pairs = u32(b, auds + 32);
+		/* the index: a picture and a sound chunk a frame */
+		const size_t idx = b.rfind("idx1");
+		CHECK(idx != std::string::npos && u32(b, idx + 4) == frames * 2 * 16);
+		const size_t movi = b.find("movi");
+		CHECK(movi != std::string::npos && b.substr(movi + u32(b, idx + 8 + 8), 4) == "00dc");
+		framesIn += frames;
+		pairsIn += pairs;
+	}
+	CHECK(framesIn == 30 && pairsIn == 30 * 735);
+	/* a WAV: the sound of 10 frames */
+	recorder.format.set("wav");
+	CHECK(recorder.run("start", {(dir / "sound.wav").string()}, error).has_value() && advance(10));
+	recorder.run("stop", {}, error);
+	{
+		const std::string b = readFile(dir / "sound.wav");
+		CHECK(b.substr(0, 4) == "RIFF" && b.substr(8, 4) == "WAVE" && u32(b, 40) == 10 * 735 * 4 && b.size() == 44 + 10 * 735 * 4);
+	}
+	/* pictures a frame, and the sound beside them; drawn under turbo too */
+	recorder.format.set("png");
+	auto serial = [&] {
+		Picture::Frame f;
+		session.screen.takeIfNewer(UINT64_MAX, f);
+		return f.serial;
+	};
+	session.holdTurbo(true);
+	const uint64_t drawnBefore = serial();
+	CHECK(recorder.run("start", {(dir / "shot.png").string()}, error).has_value() && advance(5));
+	recorder.run("stop", {}, error);
+	CHECK(serial() >= drawnBefore + 5);
+	/* not recording, turbo draws nothing */
+	const uint64_t drawnAfter = serial();
+	CHECK(advance(3) && serial() == drawnAfter);
+	session.holdTurbo(false);
+	CHECK(pictures == 5 && fs::exists(dir / "shot_000000.png") && fs::exists(dir / "shot_000004.png") && fs::exists(dir / "shot.wav"));
+	CHECK(readFile(dir / "shot_000004.png") == "128x120");
+	/* the machine closed: the recording stops and is kept */
+	recorder.format.set("avi");
+	CHECK(recorder.run("start", {(dir / "cut.avi").string()}, error).has_value() && advance(3));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !recorder.recording.get(); }, 20));
+	CHECK(recorder.status.get().rfind("Recording stopped: the machine closed", 0) == 0 && fs::exists(dir / "cut.avi"));
 	fs::remove_all(dir);
 	return true;
 }
@@ -5429,6 +5526,7 @@ int main(int argc, char **argv)
 			ranMachine = greenzoneBudgets(argv[1], argv[2]) && ranMachine;
 			ranMachine = traceAndRegisters(argv[1], argv[2]) && ranMachine;
 			ranMachine = macroTool(argv[1], argv[2]) && ranMachine;
+			ranMachine = recording(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;

@@ -3464,8 +3464,9 @@ int32_t SessionViewModel::advanceOnMachine(bool skipDrawing)
 {
 	const int64_t f = ce_session_frame(s_);
 	const int64_t size = ce_session_movie_length(s_);
-	/* turbo, Display Nothing and the frame skip run the frame without drawing it */
-	const int32_t lag = stepOnMachine(true, !turboM_.load() && !displayNothingM_.load() && !skipDrawing);
+	/* turbo, Display Nothing and the frame skip run the frame without drawing
+	 * it - unless it is being recorded */
+	const int32_t lag = stepOnMachine(true, recordingM_.load() || (!turboM_.load() && !displayNothingM_.load() && !skipDrawing));
 	/* past the end the movie grew: the project has a change */
 	if (f >= size && !unsavedM_.exchange(true)) later([this] { markChanged(); });
 	/* TAStudio's "automatically pause at end of movie": the frame the movie

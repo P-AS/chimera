@@ -38,6 +38,7 @@ vm_lib = static_library(
     'viewmodel/src/trace_logger_vm.cpp',
     'viewmodel/src/surface_viewer_vm.cpp',
     'viewmodel/src/macro_tool_vm.cpp',
+    'viewmodel/src/recorder_vm.cpp',
     'viewmodel/src/project_details_vm.cpp',
     'viewmodel/src/cores_vm.cpp',
     'viewmodel/src/branch_state.cpp',
