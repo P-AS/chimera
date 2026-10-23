@@ -39,6 +39,7 @@
     <file alias="icons/undo.png">../../gui/Chimera.Client.GUI/images/undo.png</file>
     <file alias="icons/redo.png">../../gui/Chimera.Client.GUI/images/redo.png</file>
     <file alias="icons/reboot.png">../../gui/Chimera.Client.GUI/images/reboot.png</file>
+    <file alias="icons/Paste.png">../../gui/Chimera.Client.GUI/images/Paste.png</file>
     <file>RamSearch.qml</file>
     <file>RamWatch.qml</file>
     <file>RamPoke.qml</file>

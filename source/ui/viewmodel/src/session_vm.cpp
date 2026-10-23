@@ -676,6 +676,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("hasProject", "a project is open, saved or not yet", hasProject);
 	expose("projectTitle", "the open project's title", projectTitle);
 	expose("gameName", "the game's name: its file's, without the kind", gameName);
+	expose("gamePath", "the game's file when a game was opened by itself, else \"\"", gamePath);
 	expose("backupFolder", "where a project's backups go", backupFolder, true);
 	backupWatch_ = backupFolder.changed.connect([this] { submit([this, f = backupFolder.get()] { backupFolderM_ = f; }); });
 	expose("recoveryFolder", "where a project's unsaved work is kept against a crash, a folder per project; \"\" keeps none",
@@ -1778,8 +1779,9 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	adoptOnMachine(s, package, game, true);
 	{
 		std::string stem = std::filesystem::path(game).stem().string();
-		later([this, stem] {
+		later([this, stem, game] {
 			gameName.set(stem);
+			gamePath.set(game);
 			/* a game opened by itself: the piano roll's columns as Chimera starts them */
 			loadDefaultColumns();
 		});
@@ -1793,6 +1795,7 @@ void SessionViewModel::freeSessionOnMachine()
 	if (s_ == nullptr) return;
 	for (const Hooks &h : hooksM_)
 		if (h.closing) h.closing(s_);
+	later([this] { gamePath.set(""); });
 	inputs_.bind(nullptr);
 	/* a greenzone being written is finished before its session goes */
 	ce_session_history_save_wait(s_);
@@ -2980,7 +2983,10 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 	{
 		const char *first = ce_project_file_count(p) > 0 ? ce_project_file_name(p, 0) : nullptr;
 		std::string stem = first != nullptr ? std::filesystem::path(first).stem().string() : title;
-		later([this, stem] { gameName.set(stem); });
+		later([this, stem] {
+			gameName.set(stem);
+			gamePath.set("");
+		});
 	}
 	startProjectSessionOnMachine(!keepInputs);
 	ProjectAnswers answers;

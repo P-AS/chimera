@@ -4507,6 +4507,90 @@ bool hexEditor(const char *package, const char *rom)
 		CHECK(hex.picked.get() == expected && hex.picked.get() / 16 >= hex.topLine.get() && hex.picked.get() / 16 < hex.topLine.get() + 8);
 	}
 	CHECK(!hex.run("find", {std::string("1")}, error) && !hex.run("find", {std::string("xy")}, error));
+	/* as Chimera's: a click highlights an address, Shift every value to another, the title and the box say so */
+	auto kind = [&](int64_t address) {
+		int64_t k = -1;
+		const int64_t row = address / 16 - hex.topLine.get();
+		fromValue(lines.cell(row, 34 + static_cast<int32_t>(address % 16)), k);
+		return k;
+	};
+	hex.run("goTo", {int64_t{0x20}}, error);
+	hex.run("click", {int64_t{0x22}, std::string("only")}, error);
+	hex.run("click", {int64_t{0x25}, std::string("range")}, error);
+	CHECK(hex.picked.get() == 0x22 && hex.secondaryCount.get() == 3 && kind(0x22) == 1 && kind(0x24) == 2 && kind(0x26) == 0);
+	CHECK(hex.title.get() == "Hex Editor - Editing Address 0x" + watch::hex(0x22, digits == 4 ? 4 : digits) + " (Selected 0x4)");
+	CHECK(hex.boxTitle.get().find(" RAM  -  0x") != std::string::npos && hex.header.get().rfind("0  1  2", 0) == 0);
+	/* Ctrl toggles one beside it; Escape lets them all go */
+	hex.run("click", {int64_t{0x24}, std::string("toggle")}, error);
+	CHECK(hex.secondaryCount.get() == 2 && kind(0x24) == 0);
+	hex.run("key", {std::string("Escape")}, error);
+	CHECK(hex.picked.get() == -1 && hex.secondaryCount.get() == 0 && hex.title.get() == "Hex Editor");
+	/* typed: two digits write a byte and move on, as Chimera's */
+	hex.run("click", {int64_t{0x30}, std::string("only")}, error);
+	hex.run("type", {std::string("c")}, error);
+	CHECK(hex.nibbles.get() == "C" && hex.boxTitle.get().find("Typing: (C)") != std::string::npos);
+	hex.run("type", {std::string("5")}, error);
+	CHECK(session.readDomain("RAM")[0x30] == 0xC5 && hex.picked.get() == 0x31 && hex.nibbles.get().empty());
+	/* the keys move as Chimera's: Right a value, Down a line, Shift-Right takes the one left */
+	hex.run("key", {std::string("Down")}, error);
+	CHECK(hex.picked.get() == 0x41);
+	hex.run("key", {std::string("Right"), true}, error);
+	CHECK(hex.picked.get() == 0x42 && hex.secondaryCount.get() == 1 && kind(0x41) == 2);
+	hex.run("key", {std::string("Home")}, error);
+	CHECK(hex.picked.get() == 0 && hex.secondaryCount.get() == 0);
+	/* increment and decrement */
+	hex.run("click", {int64_t{0x30}, std::string("only")}, error);
+	hex.run("increment", {}, error);
+	CHECK(session.readDomain("RAM")[0x30] == 0xC6);
+	hex.run("decrement", {}, error);
+	hex.run("decrement", {}, error);
+	CHECK(session.readDomain("RAM")[0x30] == 0xC4);
+	/* copied as bytes run together, exported as values with a space, pasted from the address highlighted */
+	hex.run("click", {int64_t{0x31}, std::string("range")}, error);
+	CHECK(hex.run("copyText", {}, error) == Value(std::string("C4") + watch::format(session.readDomain("RAM")[0x31], 1, watch::Display::Hex)));
+	CHECK(hex.run("exportText", {}, error) == Value(std::string("C4 ") + watch::format(session.readDomain("RAM")[0x31], 1, watch::Display::Hex)));
+	hex.run("click", {int64_t{0x50}, std::string("only")}, error);
+	hex.run("paste", {std::string("de ad-be:ef")}, error);
+	ram = session.readDomain("RAM");
+	CHECK(ram[0x50] == 0xDE && ram[0x51] == 0xAD && ram[0x52] == 0xBE && ram[0x53] == 0xEF);
+	/* found again: "DE AD" from the start; before it there is none, so none is found, as Chimera's */
+	hex.run("key", {std::string("Home")}, error);
+	CHECK(hex.run("findNext", {std::string("DEAD")}, error) == Value(int64_t{0x50}) && hex.findString.get() == "DEAD" && hex.secondaryCount.get() == 1);
+	CHECK(hex.run("findPrev", {}, error) == Value(int64_t{-1}) && hex.status.get() == "Not found");
+	CHECK(hex.run("textBytes", {std::string("AZ")}, error) == Value(std::string("415A")));
+	/* a .tbl file: its characters shown, and looked for */
+	const std::filesystem::path dir = std::filesystem::temp_directory_path() /
+		("chimera-test-hex-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	std::filesystem::create_directories(dir);
+	std::ofstream(dir / "game.tbl", std::ios::binary) << "DE=X\nAD=Y\n";
+	CHECK(hex.run("loadTable", {(dir / "game.tbl").string()}, error) == Value(int64_t{2}) && hex.recentTables.get() == (dir / "game.tbl").string());
+	CHECK(hex.run("textBytes", {std::string("XY")}, error) == Value(std::string("DEAD")));
+	hex.run("goTo", {int64_t{0x50}}, error);
+	CHECK(d.until([&] { return text(0x50 / 16 - hex.topLine.get(), 50) == "X" && text(0x50 / 16 - hex.topLine.get(), 52) == "?"; }, 10));
+	hex.run("closeTable", {}, error);
+	CHECK(hex.tableFile.get().empty() && d.until([&] { return text(0x50 / 16 - hex.topLine.get(), 50) == "."; }, 10));
+	/* saved as binary and as text; a file imported over the domain's start */
+	CHECK(hex.run("saveBinary", {(dir / "ram.bin").string()}, error).has_value());
+	CHECK(std::filesystem::file_size(dir / "ram.bin") == static_cast<uintmax_t>(size));
+	CHECK(hex.run("saveText", {(dir / "ram.txt").string()}, error).has_value());
+	{
+		std::ifstream in(dir / "ram.txt", std::ios::binary);
+		std::string first;
+		std::getline(in, first);
+		CHECK(first.rfind(watch::format(ram[0], 1, watch::Display::Hex) + " ", 0) == 0 && first.size() >= 48);
+	}
+	std::ofstream(dir / "in.bin", std::ios::binary) << std::string("\x11\x22\x33", 3);
+	CHECK(hex.run("importBinary", {(dir / "in.bin").string()}, error) == Value(int64_t{3}));
+	ram = session.readDomain("RAM");
+	CHECK(ram[0] == 0x11 && ram[1] == 0x22 && ram[2] == 0x33);
+	/* Custom Colors kept as JSON; Reset to Default */
+	hex.run("setColor", {std::string("Highlight"), std::string("#112233")}, error);
+	CHECK(hex.colors.get() == "{\"Highlight\": \"#112233\"}");
+	CHECK(!hex.run("setColor", {std::string("Nope"), std::string("#000000")}, error));
+	hex.run("resetColors", {}, error);
+	CHECK(hex.colors.get() == "{}");
+	std::error_code ec;
+	std::filesystem::remove_all(dir, ec);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;

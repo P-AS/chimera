@@ -261,6 +261,7 @@ int main(int argc, char **argv)
 	vm::RamWatchViewModel ramWatch(dispatcher, session);
 	ramSearch.setRamWatch(&ramWatch);
 	vm::HexEditorViewModel hexEditor(dispatcher, session);
+	hexEditor.setRamWatch(&ramWatch);
 	vm::BranchesViewModel branches(dispatcher, inputs, session, pianoRoll);
 	vm::ProjectDetailsViewModel projectDetails(dispatcher, session);
 	vm::ControlsViewModel controls(dispatcher, session);
@@ -961,6 +962,7 @@ int main(int argc, char **argv)
 	for (const char *name : {"doubleClickToPoke", "recentFiles", "hiddenColumns", "previousType"}) config.keep(ramWatch, name);
 	for (const char *name : {"previewMode", "autoSearchAccountForLag", "alwaysExcludeRamWatch", "useUndoHistory", "recentFiles", "hiddenColumns"})
 		config.keep(ramSearch, name);
+	for (const char *name : {"domain", "size", "bigEndian", "recentTables", "colors"}) config.keep(hexEditor, name);
 	qt::QmlViewModel toolWindowsQml(toolWindows);
 	lua.add(session);
 	lua.add(pianoRoll);

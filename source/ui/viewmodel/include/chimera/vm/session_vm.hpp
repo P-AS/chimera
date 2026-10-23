@@ -258,6 +258,8 @@ public:
 	Property<std::string> projectTitle;
 	/* the game's name: its file's, without the kind (a project's first file) */
 	Property<std::string> gameName;
+	/* the game's file when a game was opened by itself, else "" (the Hex Editor's "File on Disk") */
+	Property<std::string> gamePath;
 	/* where a project's backups go (Chimera's "Movie backups" path) */
 	Property<std::string> backupFolder;
 	/* projects opened, newest first, a line each (ten kept) */

@@ -1,65 +1,306 @@
-// The hex editor: layout and bindings only, over the hexEditor view model.
-// Only the lines on screen exist; the scroll bar and the wheel move the
-// first line shown.
+// The Hex Editor, as Chimera's: its menus (File, Edit, Options, Settings);
+// a box titled with the system, the domain and its addresses holding the
+// column numbers, the addresses, the values and the text they spell; the
+// address highlighted and those beside it drawn in the highlight colour.
+// Keys and the mouse work as Chimera's do. Find and Colors are windows of
+// their own. Only the lines on screen exist; the scroll bar and the wheel
+// move the first line shown. Layout and bindings only, over the hexEditor
+// view model.
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 
 ApplicationWindow {
     id: win
     objectName: "hexEditorWindow"
     required property QtObject vm
-    readonly property int lineHeight: 18
-    title: qsTr("Hex Editor")
-    width: 820
-    height: 640
+    // the main window's: Paths folders, the clipboard, theme colours, the windows it opens
+    property var folderOf: null
+    property QtObject clipboard: null
+    property var themeColor: (role, fallback) => fallback
+    property QtObject customize: null
+    property QtObject toolWindows: null
+    property Window mainWindow: null
+    property var showRamWatch: null
+    title: win.vm.title
+    width: 720
+    height: 420
 
-    ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: 8
-        spacing: 6
+    WindowOptions { id: windowOptions; window: win; tool: "hexEditor"; vm: win.toolWindows; mainWindow: win.mainWindow }
+    onVisibleChanged: if (visible) windowOptions.placeBack(false)
+    function menuOpened() { if (win.customize) win.customize.run("menuOpened") }
+    function menuClosed() { if (win.customize) win.customize.run("menuClosed") }
 
-        RowLayout {
-            ComboBox {
-                model: win.vm.domains === "" ? [] : win.vm.domains.split(",")
-                currentIndex: model.indexOf(win.vm.domain)
-                onActivated: win.vm.domain = currentText
-                Layout.preferredWidth: 130
-            }
-            ComboBox {
-                // the view model's sizes are 1, 2 and 4 bytes, in that order here
-                model: [qsTr("1 byte"), qsTr("2 bytes"), qsTr("4 bytes")]
-                currentIndex: win.vm.size === 4 ? 2 : win.vm.size - 1
-                onActivated: (i) => win.vm.size = [1, 2, 4][i]
-            }
-            CheckBox { text: qsTr("Big endian"); checked: win.vm.bigEndian; onToggled: win.vm.bigEndian = checked }
-            Item { Layout.fillWidth: true }
-            TextField { id: goTo; placeholderText: qsTr("Address (hex)"); Layout.preferredWidth: 110; onAccepted: go.clicked() }
-            Button { id: go; text: qsTr("Go To"); onClicked: win.vm.run("goTo", [parseInt(goTo.text, 16)]) }
-        }
+    // the colours: Custom Colors where set, else the theme's
+    readonly property var custom: JSON.parse(win.vm.colors || "{}")
+    function colour(role, themeRole, fallback) { return win.custom[role] || win.themeColor(themeRole, fallback) }
+    readonly property color backColour: win.colour("Background", "HexBackground", palette.window)
+    readonly property color textColour: win.colour("Foreground", "HexText", palette.text)
+    readonly property color menuBarColour: win.colour("MenuBar", "HexMenuBar", palette.window)
+    readonly property color highlightColour: win.colour("Highlight", "HexHighlight", "#FFC0CB")
+    readonly property color secondaryColour: Qt.rgba(win.highlightColour.r, win.highlightColour.g, win.highlightColour.b, 0x44 / 255)
 
-        RowLayout {
-            TextField { id: findText; placeholderText: qsTr("Bytes to find (hex)"); Layout.preferredWidth: 180; onAccepted: findNext.clicked() }
-            Button { id: findNext; text: qsTr("Find Next"); onClicked: win.vm.run("find", [findText.text]) }
-            Item { Layout.fillWidth: true }
+    readonly property bool anyHighlighted: win.vm.picked >= 0 || win.vm.secondaryCount > 0
+    readonly property bool fileOnDisk: win.vm.domain === "File on Disk"
+
+    FontMetrics { id: fm; font.family: "monospace" }
+    readonly property real charWidth: fm.advanceWidth("0")
+    readonly property int lineHeight: Math.ceil(fm.height) + 2
+    readonly property int digits: win.vm.lineCount * 16 <= 0x10000 ? 4 : win.vm.lineCount * 16 <= 0x1000000 ? 6 : 8
+    readonly property real addressWidth: win.charWidth * (win.digits + 3)
+    readonly property real cellWidth: win.charWidth * (win.vm.size * 2 + 1)
+    readonly property real valuesWidth: win.cellWidth * (16 / win.vm.size)
+
+    MessageDialog { id: notice; buttons: MessageDialog.Ok }
+    function tell(title, text) { notice.title = title; notice.text = text; notice.open() }
+
+    FileDialog {
+        id: binaryDialog
+        title: win.fileOnDisk ? qsTr("Save as ROM") : qsTr("Save as binary")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "bin"
+        nameFilters: [qsTr("Binary files (*.bin)"), qsTr("All files (*)")]
+        onAccepted: win.vm.run("saveBinary", [selectedFile])
+    }
+    FileDialog {
+        id: textDialog
+        title: qsTr("Save as text")
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "txt"
+        nameFilters: [qsTr("Text files (*.txt)"), qsTr("All files (*)")]
+        onAccepted: win.vm.run("saveText", [selectedFile])
+    }
+    FileDialog {
+        id: importDialog
+        title: qsTr("Import as binary")
+        currentFolder: win.folderOf ? win.folderOf("Tools") : ""
+        nameFilters: [qsTr("Binary files (*.bin *.dat)"), qsTr("All files (*)")]
+        onAccepted: { const r = win.vm.run("importBinary", [selectedFile]); if (r === undefined && win.vm.error !== "") win.tell(qsTr("Hex Editor"), win.vm.error) }
+    }
+    FileDialog {
+        id: tableDialog
+        title: qsTr("Load .tbl file")
+        currentFolder: win.folderOf ? win.folderOf("Tools") : ""
+        nameFilters: [qsTr("Text Table files (*.tbl)"), qsTr("All files (*)")]
+        onAccepted: win.vm.run("loadTable", [selectedFile])
+    }
+
+    // a menu item showing its own shortcut, as Chimera's menus do
+    Component {
+        id: shortcutItem
+        MenuItem {
+            id: item
+            readonly property string keys: action && typeof action.shortcut === "string" ? action.shortcut
+                : action && action.keysShown ? action.keysShown : ""
+            rightPadding: padding + (keys !== "" ? keyLabel.implicitWidth + 24 : 0)
             Label {
-                text: win.vm.picked < 0 ? qsTr("Nothing picked") : qsTr("Picked %1").arg(win.vm.picked.toString(16).toUpperCase())
+                id: keyLabel
+                text: item.keys
+                anchors.right: parent.right
+                anchors.rightMargin: item.padding
+                anchors.verticalCenter: parent.verticalCenter
+                color: item.highlighted ? item.palette.highlightedText : item.palette.text
             }
-            TextField { id: pokeText; placeholderText: qsTr("Value (hex)"); enabled: win.vm.writable && win.vm.picked >= 0; Layout.preferredWidth: 100; onAccepted: write.clicked() }
-            Button { id: write; text: qsTr("Write"); enabled: pokeText.enabled; onClicked: win.vm.run("poke", [win.vm.picked, pokeText.text]) }
+        }
+    }
+
+    Action { id: copyAction; text: qsTr("&Copy"); icon.source: "qrc:/chimera/icons/Duplicate.png"; shortcut: "Ctrl+C"; enabled: win.anyHighlighted; onTriggered: if (win.clipboard) win.clipboard.setText(win.vm.run("copyText")) }
+    Action { id: exportAction; text: qsTr("&Export"); shortcut: "Ctrl+E"; enabled: win.anyHighlighted; onTriggered: if (win.clipboard) win.clipboard.setText(win.vm.run("exportText")) }
+    Action {
+        id: pasteAction; text: qsTr("&Paste"); icon.source: "qrc:/chimera/icons/Paste.png"; shortcut: "Ctrl+V"
+        enabled: win.vm.writable && win.anyHighlighted
+        onTriggered: if (win.clipboard) win.vm.run("paste", [win.clipboard.text()])
+    }
+    Action { id: findAction; text: qsTr("&Find..."); shortcut: "Ctrl+F"; onTriggered: find.start() }
+    Action { id: findNextAction; text: qsTr("Find Next"); shortcut: "F3"; enabled: win.vm.findString !== ""; onTriggered: win.vm.run("findNext") }
+    Action { id: findPrevAction; text: qsTr("Find Prev"); shortcut: "F2"; enabled: win.vm.findString !== ""; onTriggered: win.vm.run("findPrev") }
+    Action { id: goToAction; text: qsTr("&Go to Address..."); shortcut: "Ctrl+G"; onTriggered: goTo.open() }
+    Action {
+        id: watchAction; property string keysShown: "Ctrl+W"; text: qsTr("Add to RAM Watch"); icon.source: "qrc:/chimera/icons/Find.png"
+        enabled: win.anyHighlighted && !win.fileOnDisk
+        onTriggered: { if (win.vm.run("addToRamWatch") > 0 && win.showRamWatch) win.showRamWatch() }
+    }
+    // frozen addresses are cheats, which wait on the owner (question 5)
+    Action { id: freezeAction; property string keysShown: "Space"; text: qsTr("&Freeze Address"); icon.source: "qrc:/chimera/icons/Freeze.png"; enabled: false }
+    Action { id: unfreezeAllAction; text: qsTr("Unfreeze All"); icon.source: "qrc:/chimera/icons/Unfreeze.png"; shortcut: "Shift+Del"; enabled: false }
+    Action {
+        id: pokeAction; text: qsTr("&Poke Address"); icon.source: "qrc:/chimera/icons/poke.png"; shortcut: "Ctrl+P"
+        enabled: win.vm.writable && win.anyHighlighted
+        onTriggered: poke.start(JSON.parse(win.vm.run("pokeInfo")))
+    }
+
+    menuBar: MenuBar {
+        background: Rectangle { color: win.menuBarColour }
+        Menu {
+            title: qsTr("&File")
+            delegate: shortcutItem
+            onAboutToShow: win.menuOpened()
+            onAboutToHide: win.menuClosed()
+            Action { text: qsTr("Save"); icon.source: "qrc:/chimera/icons/SaveAs.png"; shortcut: "Ctrl+S"; enabled: win.fileOnDisk; onTriggered: win.vm.run("save") }
+            Action { text: win.fileOnDisk ? qsTr("Save as ROM...") : qsTr("Save as binary..."); shortcut: "Ctrl+Shift+S"; onTriggered: binaryDialog.open() }
+            Action { text: qsTr("Save as text..."); onTriggered: textDialog.open() }
+            Action { text: qsTr("Import as binary..."); shortcut: "Ctrl+I"; onTriggered: importDialog.open() }
+            MenuSeparator {}
+            Action { text: qsTr("&Load .tbl file"); onTriggered: tableDialog.open() }
+            Action { text: qsTr("Close .tbl file"); enabled: win.vm.tableFile !== ""; onTriggered: win.vm.run("closeTable") }
+            Menu {
+                id: recentMenu
+                title: qsTr("Recent")
+                MenuItem { text: qsTr("None"); enabled: false; visible: win.vm.recentTables === ""; height: visible ? implicitHeight : 0 }
+                Instantiator {
+                    model: win.vm.recentTables === "" ? [] : win.vm.recentTables.split("\n")
+                    delegate: MenuItem {
+                        required property string modelData
+                        text: modelData
+                        onTriggered: win.vm.run("loadTable", [modelData])
+                    }
+                    onObjectAdded: (index, object) => recentMenu.insertItem(index, object)
+                    onObjectRemoved: (index, object) => recentMenu.removeItem(object)
+                }
+            }
+            MenuSeparator {}
+            Action { property string keysShown: "Alt+F4"; text: qsTr("&Close"); onTriggered: win.close() }
+        }
+        Menu {
+            title: qsTr("&Edit")
+            delegate: shortcutItem
+            onAboutToShow: win.menuOpened()
+            onAboutToHide: win.menuClosed()
+            MenuItem { action: copyAction }
+            MenuItem { action: exportAction }
+            MenuItem { action: pasteAction }
+            MenuSeparator {}
+            MenuItem { action: findAction }
+            MenuItem { action: findNextAction }
+            MenuItem { action: findPrevAction }
+        }
+        Menu {
+            title: qsTr("&Options")
+            delegate: shortcutItem
+            onAboutToShow: win.menuOpened()
+            onAboutToHide: win.menuClosed()
+            Menu {
+                id: domainMenu
+                title: qsTr("&Memory Domains")
+                Instantiator {
+                    model: win.vm.domains === "" ? [] : win.vm.domains.split(",")
+                    delegate: MenuItem {
+                        required property string modelData
+                        text: modelData
+                        checkable: true
+                        checked: win.vm.domain === modelData
+                        onTriggered: win.vm.domain = modelData
+                    }
+                    onObjectAdded: (index, object) => domainMenu.insertItem(index, object)
+                    onObjectRemoved: (index, object) => domainMenu.removeItem(object)
+                }
+            }
+            Menu {
+                title: qsTr("Data Size")
+                MenuItem { text: qsTr("1 Byte"); checkable: true; checked: win.vm.size === 1; onTriggered: win.vm.size = 1 }
+                MenuItem { text: qsTr("2 Byte"); checkable: true; checked: win.vm.size === 2; onTriggered: win.vm.size = 2 }
+                MenuItem { text: qsTr("4 Byte"); checkable: true; checked: win.vm.size === 4; onTriggered: win.vm.size = 4 }
+            }
+            MenuItem { text: qsTr("Big Endian"); checkable: true; checked: win.vm.bigEndian; onTriggered: win.vm.bigEndian = checked }
+            MenuSeparator {}
+            MenuItem { action: goToAction }
+            MenuItem { action: watchAction }
+            MenuItem { action: freezeAction }
+            MenuItem { action: unfreezeAllAction }
+            MenuItem { action: pokeAction }
+        }
+        Menu {
+            title: qsTr("&Settings")
+            onAboutToShow: win.menuOpened()
+            onAboutToHide: win.menuClosed()
+            Menu {
+                title: qsTr("Custom Colors")
+                MenuItem { text: qsTr("Set Colors"); onTriggered: { colorsWindow.show(); colorsWindow.raise() } }
+                MenuSeparator {}
+                MenuItem { text: qsTr("Reset to Default"); onTriggered: win.vm.run("resetColors") }
+            }
+            MenuSeparator {}
+            MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
+            MenuItem {
+                text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
+                visible: windowOptions.canStayOnTop; height: visible ? implicitHeight : 0
+                onTriggered: windowOptions.set("top", checked)
+            }
+            MenuItem { text: qsTr("&Float From Main Window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
+            MenuItem { text: qsTr("Restore &Defaults"); onTriggered: { win.vm.run("resetColors"); win.vm.size = 1; windowOptions.restore() } }
+        }
+    }
+
+    // the values' right-click menu
+    Menu {
+        id: viewerMenu
+        delegate: shortcutItem
+        onAboutToShow: win.menuOpened()
+        onAboutToHide: win.menuClosed()
+        MenuItem { action: copyAction; visible: win.anyHighlighted; height: visible ? implicitHeight : 0 }
+        MenuItem { action: exportAction }
+        MenuItem { action: pasteAction; visible: win.vm.writable; height: visible ? implicitHeight : 0 }
+        MenuItem { action: freezeAction; visible: win.anyHighlighted && win.vm.writable; height: visible ? implicitHeight : 0 }
+        Action { property string keysShown: "Ctrl+W"; text: qsTr("&Add to RAM Watch"); icon.source: "qrc:/chimera/icons/Find.png"; enabled: watchAction.enabled; onTriggered: watchAction.trigger() }
+        Action { property string keysShown: "Ctrl+P"; text: qsTr("&Poke Address"); icon.source: "qrc:/chimera/icons/poke.png"; enabled: pokeAction.enabled; onTriggered: pokeAction.trigger() }
+        MenuSeparator {}
+        Action { property string keysShown: "+"; text: qsTr("&Increment"); enabled: win.anyHighlighted && win.vm.writable; onTriggered: win.vm.run("increment") }
+        Action { property string keysShown: "-"; text: qsTr("&Decrement"); enabled: win.anyHighlighted && win.vm.writable; onTriggered: win.vm.run("decrement") }
+        MenuSeparator {}
+        Action { property string keysShown: "Ctrl+G"; text: qsTr("&Go to Address..."); onTriggered: goTo.open() }
+    }
+
+    GroupBox {
+        id: box
+        objectName: "hexBox"
+        anchors.fill: parent
+        anchors.margins: 4
+        title: win.vm.boxTitle
+        background: Rectangle {
+            y: box.topPadding - box.bottomPadding
+            width: parent.width
+            height: parent.height - box.topPadding + box.bottomPadding
+            color: win.backColour
+            border.color: palette.mid
         }
 
-        Rectangle {
-            id: area
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            color: palette.base
+        Item {
+            id: view
+            anchors.fill: parent
+            focus: true
             clip: true
-            onHeightChanged: win.vm.visibleLines = Math.max(1, Math.floor(height / win.lineHeight))
-            Component.onCompleted: win.vm.visibleLines = Math.max(1, Math.floor(height / win.lineHeight))
+            onHeightChanged: win.vm.visibleLines = Math.max(1, Math.floor((height - win.lineHeight) / win.lineHeight))
+            Component.onCompleted: win.vm.visibleLines = Math.max(1, Math.floor((height - win.lineHeight) / win.lineHeight))
+
+            Keys.onPressed: (event) => {
+                const shift = (event.modifiers & Qt.ShiftModifier) !== 0
+                const ctrl = (event.modifiers & Qt.ControlModifier) !== 0
+                const keys = {[Qt.Key_Up]: "Up", [Qt.Key_Down]: "Down", [Qt.Key_Left]: "Left", [Qt.Key_Right]: "Right",
+                              [Qt.Key_PageUp]: "PageUp", [Qt.Key_PageDown]: "PageDown", [Qt.Key_Home]: "Home", [Qt.Key_End]: "End",
+                              [Qt.Key_Tab]: "Tab", [Qt.Key_Backtab]: "Tab", [Qt.Key_Escape]: "Escape"}
+                if (keys[event.key] !== undefined) {
+                    win.vm.run("key", [keys[event.key], shift || event.key === Qt.Key_Backtab])
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Plus) { win.vm.run("increment"); event.accepted = true }
+                else if (event.key === Qt.Key_Minus) { win.vm.run("decrement"); event.accepted = true }
+                else if (ctrl && event.key === Qt.Key_W) { watchAction.trigger(); event.accepted = true }
+                else if (!ctrl && !(event.modifiers & Qt.AltModifier) && /^[0-9a-fA-F]$/.test(event.text)) {
+                    win.vm.run("type", [event.text])
+                    event.accepted = true
+                }
+            }
+
+            // the column numbers over the values
+            Text {
+                x: win.addressWidth
+                text: win.vm.header
+                color: win.textColour
+                font.family: "monospace"
+            }
 
             Column {
-                x: 4
+                y: win.lineHeight
                 Repeater {
                     model: win.vm.rows("lines")
                     delegate: Row {
@@ -67,28 +308,75 @@ ApplicationWindow {
                         required property var model
                         required property int index
                         height: win.lineHeight
-                        spacing: 6
-                        Text { text: line.model.address; color: palette.placeholderText; font.family: "monospace"; width: 90 }
+                        Text {
+                            width: win.addressWidth
+                            text: line.model.address + " |"
+                            color: win.textColour
+                            font.family: "monospace"
+                        }
                         Repeater {
                             model: 16 / win.vm.size
-                            delegate: Text {
+                            delegate: Rectangle {
                                 required property int index
-                                readonly property int address: (win.vm.topLine + line.index) * 16 + index * win.vm.size
-                                text: line.model["v" + index]
-                                color: line.model["c" + index] ? "#d02020" : palette.text
-                                font.family: "monospace"
-                                font.bold: address === win.vm.picked
-                                width: win.vm.size * 2 * 9 + (win.vm.size === 1 ? 2 : 6)
-                                TapHandler { onTapped: win.vm.picked = parent.address }
+                                readonly property int kind: line.model["h" + index] || 0
+                                width: win.cellWidth
+                                height: win.lineHeight
+                                color: kind === 1 ? win.highlightColour : kind === 2 ? win.secondaryColour : "transparent"
+                                border.color: kind !== 0 ? win.textColour : "transparent"
+                                border.width: kind !== 0 ? 1 : 0
+                                Text {
+                                    x: 1
+                                    text: line.model["v" + parent.index]
+                                    color: win.vm.writable ? win.textColour : win.themeColor("MutedText", "gray")
+                                    font.family: "monospace"
+                                }
                             }
                         }
-                        Text { text: line.model.text; font.family: "monospace"; color: palette.text; leftPadding: 10 }
+                        Text { text: "| "; color: win.textColour; font.family: "monospace" }
+                        Repeater {
+                            model: 16
+                            delegate: Rectangle {
+                                required property int index
+                                readonly property int kind: line.model["th" + index] || 0
+                                width: win.charWidth
+                                height: win.lineHeight
+                                color: kind === 1 ? win.highlightColour : kind === 2 ? win.secondaryColour : "transparent"
+                                Text { text: line.model["t" + parent.index] || ""; color: win.textColour; font.family: "monospace" }
+                            }
+                        }
                     }
+                }
+            }
+
+            // a click picks a value (Ctrl another beside it, Shift every one to it); a drag picks them all
+            MouseArea {
+                x: win.addressWidth
+                y: win.lineHeight
+                width: win.valuesWidth
+                height: parent.height - y
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                function addressAt(mx, my) {
+                    const row = Math.floor(my / win.lineHeight)
+                    const col = Math.floor(mx / win.cellWidth)
+                    if (row < 0 || col < 0 || col >= 16 / win.vm.size) return -1
+                    return (win.vm.topLine + row) * 16 + col * win.vm.size
+                }
+                onPressed: (mouse) => {
+                    view.forceActiveFocus()
+                    if (mouse.button === Qt.RightButton) { viewerMenu.popup(); return }
+                    const at = addressAt(mouse.x, mouse.y)
+                    if (at < 0) return
+                    win.vm.run("click", [at, (mouse.modifiers & Qt.ControlModifier) ? "toggle" : (mouse.modifiers & Qt.ShiftModifier) ? "range" : "only"])
+                }
+                onPositionChanged: (mouse) => {
+                    if (!(mouse.buttons & Qt.LeftButton)) return
+                    const at = addressAt(mouse.x, mouse.y)
+                    if (at >= 0) win.vm.run("click", [at, "range"])
                 }
             }
             WheelHandler {
                 onWheel: (event) => {
-                    const step = event.angleDelta.y > 0 ? -3 : 3
+                    const step = event.angleDelta.y > 0 ? -1 : 1
                     win.vm.topLine = Math.max(0, Math.min(win.vm.lineCount - win.vm.visibleLines, win.vm.topLine + step))
                 }
             }
@@ -102,8 +390,112 @@ ApplicationWindow {
                 onPositionChanged: if (pressed) win.vm.topLine = Math.round(position * win.vm.lineCount)
             }
         }
+    }
 
-        Label { text: win.vm.status }
-        Label { text: win.vm.error; color: "#b00020"; visible: text !== "" }
+    RamPoke { id: poke; vm: win.vm; tell: win.tell }
+
+    // Go to Address: a hexadecimal value
+    ApplicationWindow {
+        id: goTo
+        title: qsTr("Go to Address")
+        width: 280
+        height: 120
+        modality: Qt.ApplicationModal
+        function open() { goToText.text = ""; goTo.show(); goTo.raise(); goToText.forceActiveFocus() }
+        function accept() {
+            if (/^[0-9a-fA-F]+$/.test(goToText.text)) win.vm.run("goTo", [parseInt(goToText.text, 16)])
+            goTo.close()
+        }
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 10
+            Label { text: qsTr("Enter a hexadecimal value") }
+            TextField { id: goToText; Layout.fillWidth: true; font.family: "monospace"; onAccepted: goTo.accept() }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                Button { text: qsTr("OK"); onClicked: goTo.accept() }
+                Button { text: qsTr("Cancel"); onClicked: goTo.close() }
+            }
+        }
+    }
+
+    // Find: bytes in hex, or text, looked for after or before the address highlighted
+    ApplicationWindow {
+        id: find
+        objectName: "hexFindWindow"
+        title: qsTr("Find")
+        width: 260
+        height: 130
+        function start() {
+            findBox.text = win.vm.run("findValues")
+            find.show()
+            find.raise()
+            findBox.forceActiveFocus()
+        }
+        function bytes() { return textRadio.checked ? win.vm.run("textBytes", [findBox.text]) : findBox.text }
+        function next() { win.vm.run("findNext", [find.bytes()]); find.close() }
+        function prev() { win.vm.run("findPrev", [find.bytes()]); find.close() }
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 8
+            TextField {
+                id: findBox
+                Layout.fillWidth: true
+                font.family: "monospace"
+                font.capitalization: hexRadio.checked ? Font.AllUppercase : Font.MixedCase
+                onAccepted: find.next()
+                Keys.onEscapePressed: find.close()
+            }
+            RowLayout {
+                RadioButton { id: hexRadio; text: qsTr("Hex"); checked: !win.vm.findText; onToggled: if (checked) win.vm.findText = false }
+                RadioButton { id: textRadio; text: qsTr("Text"); checked: win.vm.findText; onToggled: if (checked) win.vm.findText = true }
+            }
+            RowLayout {
+                Button { text: qsTr("Find Prev"); onClicked: find.prev() }
+                Button { text: qsTr("Find Next"); highlighted: true; onClicked: find.next() }
+            }
+        }
+    }
+
+    // Colors: Chimera's six, each picked from a colour dialog
+    ApplicationWindow {
+        id: colorsWindow
+        title: qsTr("Colors")
+        width: 280
+        height: 260
+        modality: Qt.ApplicationModal
+        property string role: ""
+        ColorDialog {
+            id: colorDialog
+            onAccepted: win.vm.run("setColor", [colorsWindow.role, selectedColor.toString().toUpperCase()])
+        }
+        GridLayout {
+            anchors.fill: parent
+            anchors.margins: 10
+            columns: 2
+            Repeater {
+                model: [{role: "Background", label: qsTr("Background Color"), shown: win.backColour},
+                        {role: "MenuBar", label: qsTr("Menubar Color"), shown: win.menuBarColour},
+                        {role: "Foreground", label: qsTr("Font Color"), shown: win.textColour},
+                        {role: "Highlight", label: qsTr("Highlight Color"), shown: win.highlightColour},
+                        {role: "Freeze", label: qsTr("Freeze Color"), shown: win.colour("Freeze", "HexFreeze", "#ADD8E6")},
+                        {role: "HighlightFreeze", label: qsTr("Freeze Highlight Color"), shown: win.colour("HighlightFreeze", "HexHighlightFreeze", "#EE82EE")}]
+                delegate: RowLayout {
+                    required property var modelData
+                    Layout.columnSpan: 2
+                    Rectangle {
+                        width: 40; height: 20
+                        color: modelData.shown
+                        border.color: palette.mid
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: { colorsWindow.role = modelData.role; colorDialog.selectedColor = modelData.shown; colorDialog.open() }
+                        }
+                    }
+                    Label { text: modelData.label }
+                }
+            }
+            Button { text: qsTr("OK"); Layout.columnSpan: 2; Layout.alignment: Qt.AlignRight; onClicked: colorsWindow.close() }
+        }
     }
 }

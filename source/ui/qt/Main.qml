@@ -574,7 +574,12 @@ ApplicationWindow {
             drop.accept()
         }
     }
-    HexEditor { id: hexEditorWindow; vm: root.hexEditor; visible: false }
+    HexEditor {
+        id: hexEditorWindow; vm: root.hexEditor; folderOf: root.folderOf; visible: false
+        clipboard: root.clipboard; customize: root.customize; themeColor: root.osdColor
+        toolWindows: root.toolWindows; mainWindow: root
+        showRamWatch: () => { ramWatchWindow.show(); ramWatchWindow.raise() }
+    }
     Themes { id: themesWindow; vm: root.themes; colors: root.themeColors; visible: false }
     // Chimera's Controller Config and Configure Hotkeys, each a window of its own
     Controls { id: controllerWindow; mode: "buttons"; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
