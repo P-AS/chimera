@@ -3030,6 +3030,23 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	/* branch slots: saved into, over, and a new one past the last */
 	CHECK(branches.run("saveSlot", {int64_t{0}}, error).has_value() && branches.count.get() == 1);
 	CHECK(d.until([&] { return branches.made.get() == 1; }, 20));
+	/* its picture, shown at no side longer than the setting, never grown */
+	{
+		Picture::Frame shown;
+		CHECK(branches.run("preview", {int64_t{0}}, error) == Value(true) && branches.previewing.get() == 0);
+		CHECK(branches.preview.takeIfNewer(0, shown) && shown.width > 0);
+		const double h = shown.height, w = shown.height * shown.aspect;
+		const int64_t most = std::max(branches.previewWidth.get(), branches.previewHeight.get());
+		CHECK(most == std::min<int64_t>(320, static_cast<int64_t>(std::max(w, h) + 0.5)));
+		branches.previewSide.set(100);
+		branches.run("preview", {int64_t{0}}, error);
+		CHECK(std::max(branches.previewWidth.get(), branches.previewHeight.get()) == 100);
+		CHECK(std::abs(static_cast<double>(branches.previewWidth.get()) / branches.previewHeight.get() - w / h) < 0.02);
+		branches.previewSide.set(10);
+		CHECK(branches.previewSide.get() == 64);
+		branches.previewSide.set(320);
+		CHECK(branches.run("preview", {int64_t{-1}}, error) == Value(false) && branches.previewing.get() == -1);
+	}
 	session.run("frameAdvance", {}, error);
 	const int64_t later = session.frame.get() + 1;
 	CHECK(d.until([&] { return session.frame.get() == later; }, 20));

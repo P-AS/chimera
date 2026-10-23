@@ -1,5 +1,7 @@
 #include "chimera/vm/branches_vm.hpp"
 
+#include <algorithm>
+
 #include <chrono>
 #include <ctime>
 
@@ -33,6 +35,37 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 	expose("selected", "the branch picked in the list, -1 for none", selected, true);
 	expose("undoText", "what undo would take back (\"Undo Branch Load\"...), \"\" for nothing", undoText);
 	expose("loadOnDoubleClick", "a double click on a branch loads it", loadOnDoubleClick, true);
+	expose("previewSide", "the longest side a branch's picture is shown at, 64 to 4096", previewSide, true);
+	expose("previewing", "the branch whose picture is shown, -1 for none", previewing);
+	expose("previewWidth", "the width to show the branch's picture at", previewWidth);
+	expose("previewHeight", "the height to show the branch's picture at", previewHeight);
+	picture("preview", "the picture of the branch the pointer is over", preview, previewChanged);
+	command("preview", "shows a branch's picture (-1: none), at no side longer than previewSide", {"index"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t i = -1;
+			if (!arg(a, 0, i, error)) return {};
+			if (i < 0 || i >= static_cast<int64_t>(branches_.size()) || !branches_[static_cast<size_t>(i)].picture ||
+				branches_[static_cast<size_t>(i)].picture->width <= 0)
+			{
+				previewing.set(-1);
+				return false;
+			}
+			const Picture::Frame &f = *branches_[static_cast<size_t>(i)].picture;
+			/* its shape as shown, then shrunk to fit, never grown */
+			const double height = f.height, width = f.aspect > 0 ? f.height * f.aspect : f.width;
+			const double side = static_cast<double>(std::clamp<int64_t>(previewSide.get(), 64, 4096));
+			const double scale = std::min(1.0, side / std::max(width, height));
+			previewWidth.set(static_cast<int64_t>(width * scale + 0.5));
+			previewHeight.set(static_cast<int64_t>(height * scale + 0.5));
+			preview.publish(f.pixels.data(), f.width, f.height, f.aspect);
+			previewing.set(i);
+			previewChanged.emit();
+			return true;
+		});
+	previewSideWatch_ = previewSide.changed.connect([this] {
+		if (previewSide.get() < 64) previewSide.set(64);
+		else if (previewSide.get() > 4096) previewSide.set(4096);
+	});
 	expose("oldControlScheme", "loading a branch only puts the machine on its frame, the movie left as it is",
 		oldControlScheme, true);
 	command("jumpTo", "puts the machine on a branch's frame, the movie left as it is", {"index"},

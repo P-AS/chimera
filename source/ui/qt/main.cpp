@@ -591,6 +591,7 @@ int main(int argc, char **argv)
 	config.keep(session, "backupOnSave");
 	config.keep(branches, "loadOnDoubleClick");
 	config.keep(branches, "oldControlScheme");
+	config.keep(branches, "previewSide");
 	config.keep(projectDetails, "showSubtitles");
 	config.keep(session, "greenzoneEvery");
 	config.keep(ramWatch, "showOnScreen");

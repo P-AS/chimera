@@ -3,6 +3,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Chimera
 
 ApplicationWindow {
     id: win
@@ -52,6 +53,18 @@ ApplicationWindow {
                     // TAStudio's "load branch by double clicking"
                     onDoubleTapped: if (win.vm.loadOnDoubleClick) win.vm.run("load", [row.index])
                 }
+                // the branch's picture while the pointer is over it, as Chimera shows it
+                HoverHandler {
+                    onHoveredChanged: {
+                        if (hovered && win.vm.run("preview", [row.index])) {
+                            preview.y = row.mapToItem(win.contentItem, 0, row.height).y
+                            preview.open()
+                        } else if (!hovered && win.vm.previewing === row.index) {
+                            preview.close()
+                            win.vm.run("preview", [-1])
+                        }
+                    }
+                }
                 required property int index
                 required property string name
                 required property var frame
@@ -77,5 +90,17 @@ ApplicationWindow {
             }
         }
         Label { text: win.vm.error; color: "#b00020"; visible: text !== "" }
+    }
+    Popup {
+        id: preview
+        objectName: "branchPreview"
+        x: 12
+        padding: 2
+        closePolicy: Popup.NoAutoClose
+        PictureItem {
+            width: win.vm.previewWidth
+            height: win.vm.previewHeight
+            source: win.vm.picture("preview")
+        }
     }
 }

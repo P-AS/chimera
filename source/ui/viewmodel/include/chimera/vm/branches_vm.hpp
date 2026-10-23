@@ -33,8 +33,19 @@ public:
 	 * not recording) */
 	Property<bool> loadOnDoubleClick{true};
 	Property<bool> oldControlScheme{false};
+	/* a branch's picture, shown while the pointer is over it, as Chimera
+	 * shows it: no side longer than previewSide (TAStudio's "branch
+	 * screenshot size", 64 to 4096, 320 at first); a smaller one as it is.
+	 * previewing is the branch shown (-1 none), previewWidth and
+	 * previewHeight the size to show it at */
+	Property<int64_t> previewSide{320};
+	Property<int64_t> previewing{-1};
+	Property<int64_t> previewWidth{0}, previewHeight{0};
+	Picture preview;
+	Signal<> previewChanged;
 
 private:
+	Connection previewSideWatch_;
 	class Rows : public RowModel
 	{
 	public:

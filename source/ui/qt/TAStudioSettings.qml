@@ -209,6 +209,20 @@ ApplicationWindow {
                     checked: win.branches.oldControlScheme
                     onToggled: win.branches.oldControlScheme = checked
                 }
+                RowLayout {
+                    Label { text: qsTr("Branch screenshot size (pixels):") }
+                    SpinBox {
+                        from: 64; to: 4096; editable: true
+                        value: win.branches.previewSide
+                        onValueModified: win.branches.previewSide = value
+                    }
+                }
+                Label {
+                    text: qsTr("The longest side of the picture shown when the pointer is over a branch. A larger screenshot is shrunk to this size; a smaller one is shown as it is.")
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                    opacity: 0.75
+                }
                 Item { Layout.fillHeight: true }
             }
 
