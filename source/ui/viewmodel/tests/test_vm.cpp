@@ -1856,6 +1856,27 @@ bool pianoRollEditing(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.frame.get() == 10; }, 30) && masks() == start);
 	/* and no seek cut short by an edit said it could not go somewhere */
 	CHECK(session.status.get().find("Could not go") == std::string::npos);
+	/* cloned a number of times, as one edit */
+	CHECK(roll.run("cloneFrames", {int64_t{1}, int64_t{2}, int64_t{3}}, error).has_value() && roll.frameCount.get() == 16);
+	want = start;
+	for (int i = 0; i < 3; i++) want.insert(want.begin() + 3, {start[1], start[2]});
+	CHECK(masks() == want);
+	CHECK(undoTo(start));
+	CHECK(!roll.run("cloneFrames", {int64_t{1}, int64_t{2}, int64_t{0}}, error) && error == "a number of times from 1 to 100000");
+	/* the frames copied picked again, where they were */
+	CHECK(roll.run("copyFrames", {int64_t{4}, int64_t{6}}, error).has_value());
+	roll.run("select", {int64_t{-1}, int64_t{-1}}, error);
+	CHECK(roll.run("reselectClipboard", {}, error).has_value() && roll.selectFirst.get() == 4 && roll.selectLast.get() == 6);
+	/* with the machine left at an edit, back to where the edits began
+	 * (Chimera's green arrow) */
+	CHECK(d.until([&] { return session.frame.get() == 10; }, 30));
+	session.autoRestore.set(false);
+	CHECK(roll.run("clearFrames", {int64_t{2}, int64_t{2}}, error).has_value());
+	CHECK(d.until([&] { return session.frame.get() == 2; }, 30));
+	CHECK(session.run("seekToRestore", {}, error).has_value());
+	CHECK(d.until([&] { return session.frame.get() == 10; }, 30));
+	CHECK(undoTo(start));
+	session.autoRestore.set(true);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;

@@ -150,6 +150,8 @@ private:
 
 	InputLog &inputs_;
 	std::vector<Row> clipboard_;
+	/* where the frames copied came from, to pick them again */
+	int64_t copiedFrom_ = -1;
 	SessionViewModel &session_;
 	Frames frames_{*this};
 	std::map<int64_t, Marker> markers_;

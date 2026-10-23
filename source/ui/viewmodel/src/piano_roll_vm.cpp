@@ -200,12 +200,19 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			takeOut(first, last);
 			return {};
 		});
-	command("cloneFrames", "puts a copy of the frames first to last in after them", {"first", "last"},
-		[this](const Args &a, std::string &error) -> Value {
-			int64_t first = 0, last = 0;
+	command("cloneFrames", "puts a copy of the frames first to last in after them, as many times as asked (once if not)",
+		{"first", "last", "times"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t first = 0, last = 0, times = 1;
 			if (!range(a, first, last, error)) return {};
+			if (a.size() > 2 && !arg(a, 2, times, error)) return {};
+			if (times < 1 || times > 100000)
+			{
+				error = "a number of times from 1 to 100000";
+				return {};
+			}
 			std::vector<Row> rows;
-			for (int64_t f = first; f <= last; f++) rows.push_back(readRow(f));
+			for (int64_t t = 0; t < times; t++)
+				for (int64_t f = first; f <= last; f++) rows.push_back(readRow(f));
 			putIn(last + 1, rows);
 			return {};
 		});
@@ -224,8 +231,21 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!range(a, first, last, error)) return {};
 			clipboard_.clear();
 			for (int64_t f = first; f <= last; f++) clipboard_.push_back(readRow(f));
+			copiedFrom_ = first;
 			clipboardFrames.set(static_cast<int64_t>(clipboard_.size()));
 			return clipboardFrames.get();
+		});
+	command("reselectClipboard", "picks again the frames last copied or cut, where they were", {},
+		[this](const Args &, std::string &error) -> Value {
+			if (clipboard_.empty() || inputs_.size() == 0)
+			{
+				error = "no frames were copied";
+				return {};
+			}
+			const int64_t last = std::min<int64_t>(copiedFrom_ + static_cast<int64_t>(clipboard_.size()) - 1, inputs_.size() - 1);
+			std::string e;
+			run("select", {std::min(copiedFrom_, last), last}, e);
+			return {};
 		});
 	command("cutFrames", "keeps the frames first to last to paste, and takes them out", {"first", "last"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -233,6 +253,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!range(a, first, last, error)) return {};
 			clipboard_.clear();
 			for (int64_t f = first; f <= last; f++) clipboard_.push_back(readRow(f));
+			copiedFrom_ = first;
 			clipboardFrames.set(static_cast<int64_t>(clipboard_.size()));
 			takeOut(first, last);
 			return clipboardFrames.get();

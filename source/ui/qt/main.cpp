@@ -12,6 +12,7 @@
 
 #include <QCommandLineParser>
 #include <QElapsedTimer>
+#include <QClipboard>
 #include <QImage>
 #include <QDateTime>
 #include <QDir>
@@ -216,6 +217,8 @@ int main(int argc, char **argv)
 	 * window's, and the relay hands it over; the rest is done here. */
 	vm::HotkeysViewModel hotkeys(dispatcher);
 	qt::HotkeyRelay relay;
+	/* the main window, once it is made: the screen copied from it */
+	QQuickWindow *mainWindow = nullptr;
 	{
 		auto run = [](vm::ViewModel &vm, std::string command, vm::Args args = {}) {
 			std::string e;
@@ -265,6 +268,23 @@ int main(int argc, char **argv)
 			if (picture.save(path, "PNG")) session.status.set(QFileInfo(path).fileName().toStdString() + " saved.");
 			else session.status.set("No screenshot: " + path.toStdString() + " could not be written");
 		});
+		/* the picture as the machine made it, or the window as it is, to the
+		 * clipboard; Chimera's Ctrl+C for the first is the piano roll's Copy
+		 * here, so it has no key until one is given */
+		hotkeys.add("General", "Screen Raw to Clipboard", "", [&session](bool down) {
+			vm::Picture::Frame f;
+			if (!down || !session.screen.takeIfNewer(UINT64_MAX, f) || f.width <= 0 || f.height <= 0) return;
+			QGuiApplication::clipboard()->setImage(
+				QImage(reinterpret_cast<const uchar *>(f.pixels.data()), f.width, f.height, f.width * 4, QImage::Format_RGB32).copy());
+			session.status.set("The picture is on the clipboard");
+		});
+		hotkeys.add("General", "Screen Client to Clipboard", "Ctrl+Shift+C", [&session, &mainWindow](bool down) {
+			if (!down || mainWindow == nullptr) return;
+			QGuiApplication::clipboard()->setImage(mainWindow->grabWindow());
+			session.status.set("The window is on the clipboard");
+		});
+		window("General", "Toggle Menu", "");
+		window("General", "Toggle Stay on Top", "");
 		window("General", "Full Screen", "Alt+Enter");
 		auto flip = [](vm::Property<bool> &p) { p.set(!p.get()); };
 		hotkeys.add("General", "Display FPS", "", [&session, flip](bool down) {
@@ -346,12 +366,24 @@ int main(int argc, char **argv)
 				if (down) run(branches, "load", {int64_t{slot - 1}});
 			});
 		}
+		hotkeys.add("TAStudio", "Show Cursor", "", [&pianoRoll](bool down) {
+			if (down) pianoRoll.topFrame.set(std::max<int64_t>(0, pianoRoll.currentFrame.get() - pianoRoll.visibleFrames.get() / 2));
+		});
+		hotkeys.add("TAStudio", "Select Current Frame", "", [&pianoRoll, run](bool down) {
+			if (down) run(pianoRoll, "select", {pianoRoll.currentFrame.get(), pianoRoll.currentFrame.get()});
+		});
+		hotkeys.add("TAStudio", "Seek To Selected Frame", "", [&pianoRoll, &session, run](bool down) {
+			if (down && pianoRoll.selectFirst.get() >= 0) run(session, "seek", {pianoRoll.selectFirst.get()});
+		});
 		window("TAStudio", "Seek To...", "Ctrl+G");
 		hotkeys.add("TAStudio", "Toggle Follow Cursor", "Shift+F", [&pianoRoll](bool down) {
 			if (down) pianoRoll.followPlayback.set(!pianoRoll.followPlayback.get());
 		});
 		hotkeys.add("TAStudio", "Toggle Auto-Restore", "Alt+R", [&session](bool down) {
 			if (down) session.autoRestore.set(!session.autoRestore.get());
+		});
+		hotkeys.add("TAStudio", "Seek To Green Arrow", "R", [&session, run](bool down) {
+			if (down) run(session, "seekToRestore");
 		});
 		hotkeys.add("TAStudio", "Cycle Greenzone", "", [&session, run](bool down) {
 			if (down) run(session, "cycleGreenzone");
@@ -378,11 +410,15 @@ int main(int argc, char **argv)
 		});
 		window("TAStudio", "Sel. bet. Markers", "Ctrl+A");
 		window("TAStudio", "Select All", "Ctrl+Shift+A");
+		hotkeys.add("TAStudio", "Reselect Clip.", "Ctrl+B", [&pianoRoll, run](bool down) {
+			if (down) run(pianoRoll, "reselectClipboard");
+		});
 		window("TAStudio", "Clear Frames", "Delete");
 		window("TAStudio", "Delete Frames", "Ctrl+Delete");
 		window("TAStudio", "Insert Frame", "Insert");
 		window("TAStudio", "Insert # Frames", "Shift+Insert");
 		window("TAStudio", "Clone Frames", "Ctrl+Insert");
+		window("TAStudio", "Clone # Times", "Ctrl+Shift+Insert");
 		window("TAStudio", "Paste Insert", "Ctrl+Shift+V");
 	}
 	vm::SettingsViewModel settings(dispatcher, session);
@@ -600,6 +636,7 @@ int main(int argc, char **argv)
 	engine.load(QUrl(QStringLiteral("qrc:/chimera/Main.qml")));
 	if (engine.rootObjects().isEmpty()) return 1;
 	auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+	mainWindow = window;
 	KeyFilter keys(session, hotkeys);
 	window->installEventFilter(&keys);
 	/* --show ram-search or settings: the tool windows by name */

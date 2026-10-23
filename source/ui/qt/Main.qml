@@ -67,7 +67,8 @@ ApplicationWindow {
         "RAM Search": ramSearchAction, "RAM Watch": ramWatchAction, "Hex Editor": hexEditorAction, "Lua Console": luaConsoleAction,
         "Undo": undoAction, "Redo": redoAction, "Sel. bet. Markers": betweenMarkersAction, "Select All": selectAllAction,
         "Clear Frames": clearFramesAction, "Delete Frames": deleteFramesAction, "Insert Frame": insertFrameAction,
-        "Insert # Frames": insertFramesAction, "Clone Frames": cloneFramesAction, "Paste Insert": pasteInsertAction
+        "Insert # Frames": insertFramesAction, "Clone Frames": cloneFramesAction, "Paste Insert": pasteInsertAction,
+        "Clone # Times": cloneTimesAction
     })
     Connections {
         target: root.hotkeyRelay
@@ -76,6 +77,8 @@ ApplicationWindow {
             else if (action === "Open ROM") gameDialog.open()
             else if (action === "Exit Program") Qt.quit()
             else if (action === "Seek To...") { if (root.session.seekEnabled) seekDialog.open() }
+            else if (action === "Toggle Menu") root.menuBar.visible = !root.menuBar.visible
+            else if (action === "Toggle Stay on Top") root.flags = root.flags ^ Qt.WindowStaysOnTopHint
             else if (root.hotkeyActions[action] && root.hotkeyActions[action].enabled) root.hotkeyActions[action].trigger()
         }
     }
@@ -125,6 +128,7 @@ ApplicationWindow {
             Action { property string hotkey: "Frame Advance"; text: qsTr("&Frame Advance"); enabled: root.session.frameAdvanceEnabled; onTriggered: root.session.run("frameAdvance") }
             Action { text: qsTr("Go to Frame &0"); shortcut: "Ctrl+Home"; enabled: root.session.seekEnabled; onTriggered: root.session.run("seek", [0]) }
             Action { property string hotkey: "Seek To..."; text: qsTr("&Go to Frame..."); enabled: root.session.seekEnabled; onTriggered: seekDialog.open() }
+            Action { property string hotkey: "Seek To Green Arrow"; text: qsTr("&Back to Where the Edits Began"); enabled: root.session.seekEnabled; onTriggered: root.session.run("seekToRestore") }
             Menu {
                 delegate: keyedMenuItem
                 title: qsTr("&Speed")
@@ -199,6 +203,11 @@ ApplicationWindow {
                 onTriggered: root.pianoRoll.run("cloneFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
             }
             Action {
+                id: cloneTimesAction; property string hotkey: "Clone # Times"
+                text: qsTr("Clone a Nu&mber of Times..."); enabled: editMenu.picked
+                onTriggered: cloneDialog.open()
+            }
+            Action {
                 id: clearFramesAction; property string hotkey: "Clear Frames"
                 text: qsTr("Cl&ear Frames"); enabled: editMenu.picked
                 onTriggered: root.pianoRoll.run("clearFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast])
@@ -237,6 +246,7 @@ ApplicationWindow {
                 onTriggered: root.selectBetweenMarkers()
             }
             Action { text: qsTr("Select N&othing"); enabled: editMenu.picked; onTriggered: root.pianoRoll.run("select", [-1, -1]) }
+            Action { property string hotkey: "Reselect Clip."; text: qsTr("Pick the Cop&ied Frames Again"); enabled: root.pianoRoll.clipboardFrames > 0; onTriggered: root.pianoRoll.run("reselectClipboard") }
             Action {
                 text: qsTr("&Markers Move With the Frames")
                 checkable: true
@@ -250,7 +260,7 @@ ApplicationWindow {
             Action { id: undoAction; property string hotkey: "Undo"; text: qsTr("&Undo"); enabled: root.pianoRoll.undoEnabled; onTriggered: root.pianoRoll.run("undo") }
             Action { id: redoAction; property string hotkey: "Redo"; text: qsTr("&Redo"); enabled: root.pianoRoll.redoEnabled; onTriggered: root.pianoRoll.run("redo") }
             MenuSeparator {}
-            Action { text: qsTr("&Branches..."); shortcut: "Ctrl+B"; onTriggered: { branchesWindow.show(); branchesWindow.raise() } }
+            Action { text: qsTr("&Branches..."); onTriggered: { branchesWindow.show(); branchesWindow.raise() } }
             Action { text: qsTr("Add &Marker Here..."); enabled: root.session.isOpen; onTriggered: markerDialog.open() }
             Action { property string hotkey: "Delete Marker"; text: qsTr("Remove Marker Here"); enabled: root.session.isOpen; onTriggered: root.pianoRoll.run("removeMarker", [root.pianoRoll.currentFrame]) }
             Action {
@@ -292,6 +302,15 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: cloneDialog
+        title: qsTr("Clone the frames picked how many times")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        SpinBox { id: cloneTimes; from: 1; to: 100000; value: 1; editable: true }
+        onAccepted: root.pianoRoll.run("cloneFrames", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast, cloneTimes.value])
+    }
     Dialog {
         id: seekDialog
         title: qsTr("Go to frame")

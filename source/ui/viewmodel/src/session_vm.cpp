@@ -350,6 +350,16 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			});
 			return {};
 		}, &isOpen);
+	command("seekToRestore", "goes back to the frame the first of a run of edits found the machine on (Chimera's green arrow)",
+		{}, [this](const Args &, std::string &) -> Value {
+			submit([this] {
+				if (s_ == nullptr || restoreFrameM_ < 0) return;
+				seekOnMachine(restoreFrameM_, false);
+				restoredMovesM_ = movesM_;
+				restoredAtM_ = frameM_;
+			});
+			return {};
+		}, &isOpen);
 	command("restart", "opens the same core and game again at frame 0; the inputs stay", {},
 		[this](const Args &, std::string &) -> Value {
 			submit([this] {
