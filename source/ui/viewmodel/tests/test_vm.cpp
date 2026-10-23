@@ -409,6 +409,53 @@ bool gamepads()
 #endif
 }
 
+/* A gamepad input caught for a binding: the next one pressed, a game open
+ * or not, and not one held already */
+bool padCatch()
+{
+#ifdef _WIN32
+	return false;
+#else
+	void *sdl = dlopen("libSDL2.so", RTLD_NOW | RTLD_NOLOAD);
+	if (sdl == nullptr) sdl = dlopen("libSDL2-2.0.so.0", RTLD_NOW | RTLD_NOLOAD);
+	using Attach = int (*)(int, int, int, int);
+	using SetButton = int (*)(void *, int, uint8_t);
+	using Open = void *(*)(int);
+	auto attach = sdl ? reinterpret_cast<Attach>(dlsym(sdl, "SDL_JoystickAttachVirtual")) : nullptr;
+	auto setButton = sdl ? reinterpret_cast<SetButton>(dlsym(sdl, "SDL_JoystickSetVirtualButton")) : nullptr;
+	auto open = sdl ? reinterpret_cast<Open>(dlsym(sdl, "SDL_JoystickOpen")) : nullptr;
+	if (!attach || !setButton || !open)
+	{
+		std::printf("SKIP catching a gamepad input: no SDL2 with virtual joysticks\n");
+		return false;
+	}
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	std::string error;
+	const int index = attach(0, 0, 4, 0);
+	void *joy = index >= 0 ? open(index) : nullptr;
+	CHECK(joy != nullptr);
+	if (joy == nullptr) return true;
+	const std::string j = "J" + std::to_string(index + 1) + " ";
+	/* a button held when the catch starts is not the one pressed */
+	setButton(joy, 0, 1);
+	CHECK(session.run("catchPad", {}, error).has_value() && session.catchingPad.get() && session.caughtPad.get().empty());
+	CHECK(!d.until([&] { return !session.caughtPad.get().empty(); }, 1));
+	setButton(joy, 3, 1);
+	CHECK(d.until([&] { return !session.caughtPad.get().empty(); }, 10));
+	CHECK(session.caughtPad.get() == j + "B4" && !session.catchingPad.get());
+	setButton(joy, 3, 0);
+	/* stopped, nothing is caught */
+	CHECK(session.run("catchPad", {}, error).has_value() && session.run("stopCatchPad", {}, error).has_value());
+	setButton(joy, 2, 1);
+	CHECK(!d.until([&] { return !session.caughtPad.get().empty(); }, 1) && !session.catchingPad.get());
+	setButton(joy, 0, 0);
+	setButton(joy, 2, 0);
+	return true;
+#endif
+}
+
 std::string readFile(const std::filesystem::path &p);
 
 bool machine(const char *package, const char *rom)
@@ -2683,6 +2730,7 @@ int main(int argc, char **argv)
 	themes();
 	europeanClock();
 	const bool ranPads = gamepads();
+	if (ranPads) padCatch();
 	bool ranMachine = false;
 	if (argc >= 3)
 	{

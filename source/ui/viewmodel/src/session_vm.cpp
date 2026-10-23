@@ -31,6 +31,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("systemName", "the machine the core runs", systemName);
 	expose("buttonCount", "how many buttons the machine has", buttonCount);
 	expose("gamepads", "the gamepads in use, or why there are none", gamepads);
+	expose("catchingPad", "waiting for a gamepad input to be pressed (catchPad)", catchingPad);
+	expose("caughtPad", "the gamepad input caught, by Chimera's name; \"\" while waiting", caughtPad);
 	expose("sound", "\"Sound on\", or why there is none", sound);
 	expose("soundQueued", "sample pairs sent to the speakers", soundQueued);
 	expose("soundDropped", "sample pairs dropped because the machine ran ahead of the speakers", soundDropped);
@@ -166,6 +168,25 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			submit([this, path, title] { newProjectOnMachine(path, title); });
 			return {};
 		}, &isOpen);
+	command("catchPad", "waits for the next gamepad input pressed, a game open or not, and puts its name in caughtPad",
+		{}, [this](const Args &, std::string &) -> Value {
+			caughtPad.set("");
+			catchingPad.set(true);
+			submit([this] {
+				if (!padsM_) padsM_ = std::make_unique<Gamepads>();
+				/* what is held already is not what is pressed */
+				catchHeldM_.clear();
+				padsM_->poll(catchHeldM_);
+				catchingM_ = true;
+				catchDue_ = Clock::now() + std::chrono::milliseconds(16);
+			});
+			return {};
+		});
+	command("stopCatchPad", "stops waiting for a gamepad input", {}, [this](const Args &, std::string &) -> Value {
+		catchingPad.set(false);
+		submit([this] { catchingM_ = false; });
+		return {};
+	});
 	command("close", "closes the machine", {}, [this](const Args &, std::string &) -> Value {
 		submit([this] { closeOnMachine(); });
 		return {};
@@ -368,7 +389,7 @@ void SessionViewModel::loop()
 	for (;;)
 	{
 		std::function<void()> job;
-		bool advance = false, runOn = false, back = false;
+		bool advance = false, runOn = false, back = false, catchPoll = false;
 		{
 			std::unique_lock<std::mutex> lock(m_);
 			for (;;)
@@ -378,6 +399,13 @@ void SessionViewModel::loop()
 				{
 					job = std::move(jobs_.front());
 					jobs_.pop_front();
+					break;
+				}
+				/* a binding waiting for a gamepad input: the pads looked at
+				 * sixty times a second, a game open or not */
+				if (catchingM_ && Clock::now() >= catchDue_)
+				{
+					catchPoll = true;
 					break;
 				}
 				/* frame advance held half a second runs on */
@@ -398,8 +426,10 @@ void SessionViewModel::loop()
 				if (runningM_ && s_ != nullptr)
 				{
 					if (Clock::now() >= due_) { advance = true; break; }
-					cv_.wait_until(lock, due_);
+					cv_.wait_until(lock, catchingM_ ? std::min(due_, catchDue_) : due_);
 				}
+				else if (catchingM_)
+					cv_.wait_until(lock, catchDue_);
 				else
 					cv_.wait(lock);
 			}
@@ -408,6 +438,11 @@ void SessionViewModel::loop()
 		if (job)
 		{
 			job();
+			continue;
+		}
+		if (catchPoll)
+		{
+			catchPollOnMachine();
 			continue;
 		}
 		if (runOn)
@@ -1247,6 +1282,26 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		lastAnswers_ = answers;
 		if (!path.empty()) addRecent(path);
 	});
+}
+
+void SessionViewModel::catchPollOnMachine()
+{
+	catchDue_ = Clock::now() + std::chrono::milliseconds(16);
+	if (!padsM_) return;
+	std::vector<std::string> held;
+	padsM_->poll(held);
+	for (const std::string &name : held)
+		if (std::find(catchHeldM_.begin(), catchHeldM_.end(), name) == catchHeldM_.end())
+		{
+			catchingM_ = false;
+			later([this, name] {
+				caughtPad.set(name);
+				catchingPad.set(false);
+			});
+			return;
+		}
+	/* let go since: pressed again, it counts */
+	catchHeldM_ = held;
 }
 
 void SessionViewModel::openMadeProjectOnMachine(ce_project *p, const std::string &package)

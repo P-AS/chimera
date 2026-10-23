@@ -314,7 +314,7 @@ ApplicationWindow {
     }
     HexEditor { id: hexEditorWindow; vm: root.hexEditor; visible: false }
     Themes { id: themesWindow; vm: root.themes; colors: root.themeColors; visible: false }
-    Controls { id: controlsWindow; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; visible: false }
+    Controls { id: controlsWindow; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; session: root.session; visible: false }
     Settings { id: settingsWindow; settings: root.settings; visible: false }
     LuaConsole { id: luaConsoleWindow; vm: root.luaConsole; visible: false }
     Branches { id: branchesWindow; vm: root.branches; visible: false }

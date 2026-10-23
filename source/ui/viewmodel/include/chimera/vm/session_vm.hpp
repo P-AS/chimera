@@ -54,6 +54,10 @@ public:
 	Property<int64_t> buttonCount{0};
 	/* the gamepads in use, or why there are none */
 	Property<std::string> gamepads{"No gamepads yet"};
+	/* A gamepad input caught for a binding (catchPad): waiting, and the
+	 * name of the input pressed ("X1 A", "J1 POV0U"; "" while waiting) */
+	Property<bool> catchingPad{false};
+	Property<std::string> caughtPad;
 	/* "Sound on", or why there is none */
 	Property<std::string> sound{"No sound yet"};
 	/* sample pairs sent to the speakers, and those dropped for running ahead */
@@ -382,6 +386,11 @@ private:
 	std::string package_, game_;
 	/* gamepads are read on this thread, just before each frame */
 	std::unique_ptr<Gamepads> padsM_;
+	/* catching a pad input: when to look next, and what was held already */
+	bool catchingM_ = false;
+	Clock::time_point catchDue_{};
+	std::vector<std::string> catchHeldM_;
+	void catchPollOnMachine();
 	Bindings bindingsM_;
 	Connection autoRestoreWatch_, periodWatch_;
 	std::atomic<int64_t> periodM_{1};

@@ -1,6 +1,6 @@
 // Controls and hotkeys: layout and bindings only, over the controls and
 // hotkeys view models. A row's keys can be typed, or caught: Catch, then
-// press the key.
+// press the key or the gamepad input.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -11,11 +11,21 @@ ApplicationWindow {
     required property QtObject controls
     required property QtObject hotkeys
     required property QtObject keyNamer
+    required property QtObject session
     // the row waiting for a key: which list, and which row (-1: none)
     property string catching: ""
     property int catchRow: -1
     property string catchAction: ""
     title: qsTr("Controls and Hotkeys")
+    // the key or pad input caught goes to the row that asked
+    function take(name) {
+        if (win.catching === "button") win.controls.run("addKey", [win.catchRow, name])
+        else if (win.catching === "hotkey") win.hotkeys.run("addKey", [win.catchAction, name])
+        win.catching = ""
+        win.catchRow = -1
+        win.catchAction = ""
+    }
+    onClosing: if (win.catching !== "") { win.catching = ""; win.session.run("stopCatchPad") }
     width: 640
     height: 600
 
@@ -54,8 +64,8 @@ ApplicationWindow {
                         onEditingFinished: if (text !== brow.keys) win.controls.run("bind", [brow.index, text])
                     }
                     Button {
-                        text: win.catching === "button" && win.catchRow === brow.index ? qsTr("Press a key...") : qsTr("Catch")
-                        onClicked: { win.catching = "button"; win.catchRow = brow.index; catcher.forceActiveFocus() }
+                        text: win.catching === "button" && win.catchRow === brow.index ? qsTr("Press a key or a pad input...") : qsTr("Catch")
+                        onClicked: { win.catching = "button"; win.catchRow = brow.index; catcher.forceActiveFocus(); win.session.run("catchPad") }
                     }
                     Button { text: qsTr("Reset"); enabled: brow.changed; onClicked: win.controls.run("reset", [brow.index]) }
                 }
@@ -81,8 +91,8 @@ ApplicationWindow {
                         onEditingFinished: if (text !== hrow.keys) win.hotkeys.run("bind", [hrow.action, text])
                     }
                     Button {
-                        text: win.catching === "hotkey" && win.catchAction === hrow.action ? qsTr("Press a key...") : qsTr("Catch")
-                        onClicked: { win.catching = "hotkey"; win.catchAction = hrow.action; catcher.forceActiveFocus() }
+                        text: win.catching === "hotkey" && win.catchAction === hrow.action ? qsTr("Press a key or a pad input...") : qsTr("Catch")
+                        onClicked: { win.catching = "hotkey"; win.catchAction = hrow.action; catcher.forceActiveFocus(); win.session.run("catchPad") }
                     }
                     Button { text: qsTr("Reset"); enabled: hrow.changed; onClicked: win.hotkeys.run("reset", [hrow.action]) }
                 }
@@ -98,13 +108,15 @@ ApplicationWindow {
                 const name = win.keyNamer.name(event.key, event.modifiers, asHotkey)
                 // a modifier alone is part of a combination still being pressed
                 if (name === "" || (asHotkey && (name === "Shift" || name === "Ctrl" || name === "Alt"))) return
-                if (win.catching === "button") win.controls.run("addKey", [win.catchRow, name])
-                else if (win.catching === "hotkey") win.hotkeys.run("addKey", [win.catchAction, name])
-                win.catching = ""
-                win.catchRow = -1
-                win.catchAction = ""
+                win.take(name)
+                win.session.run("stopCatchPad")
                 event.accepted = true
             }
+        }
+        // or the gamepad input pressed first
+        Connections {
+            target: win.session
+            function onCaughtPadChanged() { if (win.session.caughtPad !== "") win.take(win.session.caughtPad) }
         }
 
         RowLayout {
