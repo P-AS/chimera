@@ -53,6 +53,8 @@ public:
 
 	/* true when the frame's lag flag changed */
 	bool setLag(int64_t frame, bool lag);
+	/* the frame's lag flag not known again (as if never run) */
+	bool forgetLag(int64_t frame);
 	bool lagAt(int64_t frame) const;
 	/* the machine has run the frame (its lag flag is known), now or before
 	 * an edit sent the greenzone back past it */

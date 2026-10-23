@@ -150,6 +150,14 @@ bool InputLog::setLag(int64_t frame, bool lag)
 	return true;
 }
 
+bool InputLog::forgetLag(int64_t frame)
+{
+	std::unique_lock lock(m_);
+	if (frame < 0 || frame >= static_cast<int64_t>(lags_.size()) || lags_[static_cast<size_t>(frame)] == kNotRun) return false;
+	lags_[static_cast<size_t>(frame)] = kNotRun;
+	return true;
+}
+
 bool InputLog::lagAt(int64_t frame) const
 {
 	std::shared_lock lock(m_);

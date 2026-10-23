@@ -118,10 +118,43 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 		return {};
 	});
 
+	expose("newBranchText", "the text the next branch made is given when none is", newBranchText, true);
+	command("list", "every branch, a line each: its id, frame and text, tab apart", {}, [this](const Args &, std::string &) -> Value {
+		std::string out;
+		for (const SessionViewModel::Branch &b : branches_)
+			out += std::to_string(b.id) + "\t" + std::to_string(b.frame) + "\t" + b.name + "\n";
+		return out;
+	});
+	command("inputLine", "a branch's movie line for a frame; \"\" past its end", {"index", "frame"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t i = 0, f = 0;
+			if (!arg(a, 0, i, error) || !arg(a, 1, f, error)) return {};
+			if (i < 0 || i >= static_cast<int64_t>(branches_.size()) || f < 0) return std::string();
+			/* the frames' lines are those starting with |, in order */
+			int64_t at = 0;
+			size_t pos = 0;
+			const std::string &text = branches_[static_cast<size_t>(i)].text;
+			while (pos < text.size())
+			{
+				size_t end = text.find('\n', pos);
+				if (end == std::string::npos) end = text.size();
+				std::string line = text.substr(pos, end - pos);
+				if (!line.empty() && line.back() == '\r') line.pop_back();
+				if (!line.empty() && line[0] == '|' && at++ == f) return line;
+				pos = end + 1;
+			}
+			return std::string();
+		});
 	command("create", "keeps the movie as it is now, and the frame the machine is on, as a branch", {"name"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string name;
 			if (!a.empty() && !arg(a, 0, name, error)) return {};
+			/* a script's text for the next one, used once */
+			if (name.empty() && !newBranchText.get().empty())
+			{
+				name = newBranchText.get();
+				newBranchText.set("");
+			}
 			return keepRun(-1, name);
 		}, &session_.isOpen);
 	command("saveSlot", "puts the run as it stands into the branch at this place, over what it held (a new branch "

@@ -882,6 +882,44 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			});
 			return out;
 		});
+	command("axisList", "the machine's analog controls, a line each", {}, [this](const Args &, std::string &) -> Value {
+		std::string out;
+		for (const auto &x : axes_) out += x.name + "\n";
+		return out;
+	});
+	command("hasState", "whether the greenzone holds a state for a frame", {"frame"}, [this](const Args &a, std::string &error) -> Value {
+		int64_t f = 0;
+		if (!arg(a, 0, f, error)) return {};
+		return hasState(f);
+	});
+	command("lagAt", "whether a frame was a lag frame: 1, 0, or -1 when not known (not run)", {"frame"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t f = 0;
+			if (!arg(a, 0, f, error)) return {};
+			return !inputs_.ranAt(f) ? int64_t{-1} : inputs_.lagAt(f) ? int64_t{1} : int64_t{0};
+		});
+	command("setLag", "a frame's lag flag: 1, 0, or -1 for not known", {"frame", "lag"}, [this](const Args &a, std::string &error) -> Value {
+		int64_t f = 0, lag = 0;
+		if (!arg(a, 0, f, error) || !arg(a, 1, lag, error)) return {};
+		const bool changed = lag < 0 ? inputs_.forgetLag(f) : inputs_.setLag(f, lag > 0);
+		if (changed && f < inputs_.size()) inputsChanged.emit(f, f);
+		return {};
+	});
+	command("decodeEntry", "a movie line read against this machine's controller, as movieInput says a frame", {"line"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string line, out;
+			if (!arg(a, 0, line, error)) return {};
+			onMachineWait([&](ce_session *s) {
+				if (s == nullptr) return;
+				std::vector<int32_t> axes(static_cast<size_t>(ce_session_axis_count(s)));
+				uint64_t buttons = 0;
+				if (ce_session_movie_entry_decode(s, line.c_str(), &buttons, axes.empty() ? nullptr : axes.data()) != 0) return;
+				for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
+					if (buttons >> b & 1) out += buttonNames_[b] + "\n";
+				for (size_t x = 0; x < axes.size() && x < axes_.size(); x++) out += axes_[x].name + "=" + std::to_string(axes[x]) + "\n";
+			});
+			return out;
+		});
 	command("buttonList", "the machine's buttons, a line each", {}, [this](const Args &, std::string &) -> Value {
 		std::string out;
 		for (const std::string &b : buttonNames_) out += b + "\n";

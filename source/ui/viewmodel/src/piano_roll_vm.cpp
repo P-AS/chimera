@@ -531,6 +531,21 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			}
 			return removed;
 		});
+	command("markerAt", "the text of the marker on a frame (the person's, else the run's own name); nothing for none", {"frame"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t f = 0;
+			if (!arg(a, 0, f, error)) return {};
+			if (const auto it = markers_.find(f); it != markers_.end()) return it->second.text;
+			for (const ListedMarker &m : markerList_)
+				if (m.frame == f) return m.text;
+			return {};
+		});
+	command("markerFrames", "the frames with markers, a line each, a marker each (the run's own too)", {},
+		[this](const Args &, std::string &) -> Value {
+			std::string out;
+			for (const ListedMarker &m : markerList_) out += std::to_string(m.frame) + "\n";
+			return out;
+		});
 	command("nextMarker", "the first marker after a frame, or -1", {"frame"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0;

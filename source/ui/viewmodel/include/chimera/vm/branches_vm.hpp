@@ -27,6 +27,8 @@ public:
 	 * back, as Chimera names it ("Undo Branch Load"...; "" for nothing) */
 	Property<int64_t> selected{-1};
 	Property<std::string> undoText;
+	/* the text the next branch made is given when none is (Lua's tastudio.setbranchtext) */
+	Property<std::string> newBranchText;
 	/* TAStudio's branch settings: a double click on a branch loads it; and
 	 * the old way, where loading a branch only puts the machine on its
 	 * frame (Chimera's "old control scheme for branches", as it is when

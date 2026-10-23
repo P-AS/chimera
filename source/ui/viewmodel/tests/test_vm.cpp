@@ -5576,6 +5576,84 @@ void europeanClock()
 	CHECK(at("2026-10-18T16:35:00.123Z") == "2026-10-18 18:35 CEST" && at("yesterday") == "unread" && at("2026-13-01T00:00Z") == "unread");
 }
 
+/* Lua's tastudio library on a project: queued edits applied together,
+ * markers by text and the run's own among them, a branch's text and input,
+ * the lag log, and what is not here said so */
+bool luaTastudio(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	BranchesViewModel branches(d, inputs, session, roll);
+	LuaBridge lua;
+	LuaConsoleViewModel console(d, lua);
+	lua.add(session);
+	lua.add(roll);
+	lua.add(branches);
+	lua.add(console);
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-tastudio-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	std::string error;
+	session.cacheFolder.set((dir / "cache").string());
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	console.script.set("console.log('alone', tastudio.engaged(), tastudio.islag(0))");
+	console.run("run", {}, error);
+	for (int i = 0; i < 6; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 6; }, 30));
+	CHECK(session.run("saveAsProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
+	CHECK(d.until([&] { return session.hasProject.get() && !session.projectPath.get().empty(); }, 20));
+	auto said = [&](const std::string &start) {
+		std::string found;
+		RowModel *out = console.rowLists()[0].model;
+		for (int64_t i = 0; i < out->rowCount(); i++)
+		{
+			std::string line;
+			fromValue(out->cell(i, 0), line);
+			if (line.rfind(start, 0) == 0) found = line;
+		}
+		return found;
+	};
+	console.script.set(R"(
+console.log("engaged", tastudio.engaged(), tastudio.islag(1000))
+tastudio.submitinputchange(2, "P1 A", true)
+tastudio.submitinsertframes(1, 2)
+tastudio.submitinsertframes(100, 2)
+tastudio.applyinputchanges()
+console.log("edits", movie.getinput(4)["P1 A"], movie.getinput(2)["P1 A"], movie.length())
+tastudio.setmarker(3, "here")
+console.log("markers", tastudio.getmarker(3), tastudio.getmarker(0), tastudio.getmarker(5), tastudio.find_marker_on_or_before(5), #tastudio.get_frames_with_markers())
+tastudio.setbranchtext("first try")
+chimera.branches.create()
+local b = tastudio.getbranches()
+console.log("branches", b[0].Text, b[0].Frame, tastudio.get_branch_index_by_id(b[0].Id), tastudio.getbranchinput(b[0].Id, 4)["P1 A"], tastudio.getbranchinput(b[0].Id, 3)["P1 A"])
+tastudio.setbranchtext("renamed", 0)
+console.log("renamed", tastudio.getbranches()[0].Text)
+tastudio.setlag(0, true)
+local wasLag = tastudio.islag(0)
+tastudio.setlag(0, nil)
+console.log("lag", wasLag, tastudio.islag(0))
+console.log("misc", tastudio.getrecording(), tastudio.getselection()[0] == nil, (select(2, pcall(tastudio.addcolumn, "x", "X", 10))):find("not here") ~= nil)
+)");
+	CHECK(console.run("run", {}, error).has_value());
+	CHECK(said("alone ") == "alone false nil");
+	CHECK(said("engaged ") == "engaged true nil");
+	CHECK(said("edits ") == "edits true false 8");
+	CHECK(said("markers ") == "markers here Run start nil 4 4");
+	CHECK(said("branches ") == "branches first try 6 0 true false");
+	CHECK(said("renamed ") == "renamed renamed");
+	CHECK(said("lag ") == "lag true nil");
+	CHECK(said("misc ") == "misc false true true");
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	std::error_code ec;
+	fs::remove_all(dir, ec);
+	return true;
+}
+
 /* Chimera's Encode Video: frames 5 to 14 of a project's run, both
  * included, written by the ffmpeg the build ships; the file holds exactly
  * those, counted by that ffmpeg; the machine is handed back on the frame it
@@ -5801,6 +5879,7 @@ int main(int argc, char **argv)
 			ranMachine = macroTool(argv[1], argv[2]) && ranMachine;
 			ranMachine = luaLibraries(argv[1], argv[2]) && ranMachine;
 			ranMachine = encodeVideo(argv[1], argv[2]) && ranMachine;
+			ranMachine = luaTastudio(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;

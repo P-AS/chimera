@@ -285,6 +285,152 @@ function game.describe(name)
 	return d
 end
 
+-- tastudio: the project's TAStudio, as Chimera's library has it -----------
+tastudio = {}
+local function engaged() return C.session.hasProject end
+function tastudio.engaged() return engaged() end
+-- recording mode is not here yet (an owner's question): TAStudio plays
+function tastudio.getrecording() return false end
+function tastudio.setrecording() end
+function tastudio.togglerecording() end
+function tastudio.islag(frame)
+	if not engaged() then return nil end
+	local v = C.session.lagAt(frame)
+	if v < 0 then return nil end
+	return v == 1
+end
+function tastudio.setlag(frame, value)
+	if engaged() then C.session.setLag(frame, value == nil and -1 or (value and 1 or 0)) end
+end
+function tastudio.hasstate(frame) return engaged() and C.session.hasState(frame) or false end
+function tastudio.cleargreenzone() if engaged() then C.session.clearGreenzone() end end
+-- a frame, or a marker by its text
+function tastudio.setplayback(where)
+	if not engaged() then return end
+	local frame = where
+	if type(where) == "string" then
+		frame = nil
+		for _, f in ipairs(tastudio.get_frames_with_markers()) do
+			if C.pianoRoll.markerAt(f) == where then frame = f break end
+		end
+		if frame == nil then return end
+	end
+	frame = math.tointeger(frame) or math.floor(frame)
+	if frame >= 0 then C.session.seek(frame) end
+end
+-- a seek here is the engine's, done before the call returns
+function tastudio.getseekframe() return engaged() and C.session.frame or 0 end
+-- the frames picked, from 0
+function tastudio.getselection()
+	local t, first, last = {}, C.pianoRoll.selectFirst, C.pianoRoll.selectLast
+	if engaged() and first >= 0 then for f = first, last do t[f - first] = f end end
+	return t
+end
+-- the edits a script queues, applied together (shared by every script, as Chimera's)
+local queued = {}
+local function indexIn(list, name)
+	for i, n in ipairs(lines(list)) do if n == name then return i - 1 end end
+	return nil
+end
+function tastudio.submitinputchange(frame, button, value)
+	if engaged() and frame >= 0 then queued[#queued + 1] = {k = "button", frame = frame, name = button, value = value == true} end
+end
+function tastudio.submitanalogchange(frame, axis, value)
+	if engaged() and frame >= 0 then queued[#queued + 1] = {k = "axis", frame = frame, name = axis, value = math.floor(value)} end
+end
+local function inMovie(frame, n) return engaged() and frame >= 0 and frame < C.pianoRoll.frameCount and n > 0 end
+function tastudio.submitinsertframes(frame, n) if inMovie(frame, n) then queued[#queued + 1] = {k = "insert", frame = frame, n = n} end end
+function tastudio.submitdeleteframes(frame, n) if inMovie(frame, n) then queued[#queued + 1] = {k = "delete", frame = frame, n = n} end end
+function tastudio.submitclearframes(frame, n) if inMovie(frame, n) then queued[#queued + 1] = {k = "clear", frame = frame, n = n} end end
+function tastudio.applyinputchanges()
+	if #queued == 0 or not engaged() then return end
+	local changes = queued
+	queued = {}
+	for _, c in ipairs(changes) do
+		if c.k == "button" then
+			local b = indexIn(C.session.buttonList(), c.name)
+			if b ~= nil then C.pianoRoll.paint(c.frame, c.frame, b, c.value) end
+		elseif c.k == "axis" then
+			local x = indexIn(C.session.axisList(), c.name)
+			if x ~= nil then C.pianoRoll.setAxis(c.frame, x, c.value) end
+		elseif c.k == "insert" then
+			C.pianoRoll.insertFrames(c.frame, c.n)
+		else
+			local last = math.min(C.pianoRoll.frameCount, c.frame + c.n) - 1
+			if last >= c.frame then
+				if c.k == "delete" then C.pianoRoll.deleteFrames(c.frame, last) else C.pianoRoll.clearFrames(c.frame, last) end
+			end
+		end
+	end
+end
+function tastudio.clearinputchanges() queued = {} end
+function tastudio.setbranchtext(text, index)
+	if not engaged() then return end
+	if index ~= nil then C.branches.rename(index, tostring(text)) else C.branches.newBranchText = tostring(text) end
+end
+local function branchList()
+	local list = {}
+	for _, line in ipairs(lines(C.branches.list())) do
+		local id, frame, text = string.match(line, "^([^\t]*)\t([^\t]*)\t(.*)$")
+		if id then list[#list + 1] = {Id = id, Frame = math.tointeger(tonumber(frame)), Text = text} end
+	end
+	return list
+end
+-- from 0, as Chimera's
+function tastudio.getbranches()
+	local t = {}
+	if engaged() then for i, b in ipairs(branchList()) do t[i - 1] = b end end
+	return t
+end
+function tastudio.get_branch_index_by_id(id)
+	if not engaged() then return nil end
+	for i, b in ipairs(branchList()) do if b.Id == tostring(id) then return i - 1 end end
+	console.log("not a branch's id: " .. tostring(id))
+	return nil
+end
+function tastudio.getbranchinput(id, frame)
+	local t = {}
+	local index = engaged() and tastudio.get_branch_index_by_id(id) or nil
+	if index == nil then return t end
+	local line = C.branches.inputLine(index, frame)
+	if line == "" then return t end
+	for _, name in ipairs(lines(C.session.buttonList())) do t[name] = false end
+	for _, entry in ipairs(lines(C.session.decodeEntry(line))) do
+		local name, value = string.match(entry, "^(.-)=(%-?%d+)$")
+		if name then t[name] = math.tointeger(tonumber(value)) else t[entry] = true end
+	end
+	return t
+end
+function tastudio.loadbranch(index) if engaged() then C.branches.load(index) end end
+-- the main movie's markers (a branch's are not asked for here)
+function tastudio.getmarker(frame, branch)
+	if not engaged() or branch ~= nil then return nil end
+	return C.pianoRoll.markerAt(frame)
+end
+function tastudio.find_marker_on_or_before(frame, branch)
+	if not engaged() or branch ~= nil then return nil end
+	local f = C.pianoRoll.previousMarker(frame + 1)
+	if f < 0 then return nil end
+	return f
+end
+function tastudio.get_frames_with_markers(branch)
+	local t = {}
+	if engaged() and branch == nil then
+		for _, f in ipairs(lines(C.pianoRoll.markerFrames())) do t[#t + 1] = math.tointeger(tonumber(f)) end
+	end
+	return t
+end
+function tastudio.removemarker(frame) if engaged() then pcall(C.pianoRoll.removeMarker, frame) end end
+function tastudio.setmarker(frame, message) if engaged() then C.pianoRoll.addMarker(frame, message ~= nil and tostring(message) or "") end end
+local function notHere(name) return function() error("tastudio." .. name .. ": not here yet") end end
+tastudio.addcolumn = notHere("addcolumn")
+tastudio.onqueryitembg = notHere("onqueryitembg")
+tastudio.onqueryitemtext = notHere("onqueryitemtext")
+tastudio.onqueryitemicon = notHere("onqueryitemicon")
+tastudio.clearIconCache = function() end
+tastudio.ongreenzoneinvalidated = notHere("ongreenzoneinvalidated")
+tastudio.onbranchload = notHere("onbranchload")
+
 -- input: what the person's own devices hold, as Chimera's -----------------
 input = {}
 function input.get()
