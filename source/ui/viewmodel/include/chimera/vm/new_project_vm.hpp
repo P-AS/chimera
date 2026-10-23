@@ -180,6 +180,15 @@ private:
 	 * would set is not put over them (keptFor_: the game asked so). */
 	bool seeding_ = false;
 	std::string keptFor_;
+	/* The game (and package) the form was seeded with, while what the core
+	 * suggests for it may still sit in the settings: another game takes back
+	 * every setting that still holds exactly that (Chimera issue 214). */
+	std::string seededGame_, seededPackage_;
+	void takeBackSeeded(const std::string &answer);
+	/* the last game's own settings, by name, and that game: another game
+	 * takes their values away, the same game back keeps them */
+	std::vector<std::string> ownNames_;
+	std::string ownFor_;
 	/* asks for the game's suggestion when the game is another than last time */
 	void suggestFor(const std::string &game);
 	void applySuggestion(const std::string &answer, const std::string &why);

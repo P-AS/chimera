@@ -731,6 +731,10 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	chosenFirmware_.clear();
 	gameSettings_.clear();
 	gameFirmware_ = Json();
+	keptFor_.clear();
+	seededGame_.clear();
+	ownNames_.clear();
+	ownFor_.clear();
 	firmwareIndex_ = indexFirmware(cores_.firmwareFolders());
 	rememberedSha_.clear();
 	core.set(name);
@@ -762,39 +766,116 @@ void NewProjectViewModel::suggestFor(const std::string &game)
 		form_.setValues(values);
 		suggestedKeys_.clear();
 	}
-	/* and what the last game had of its own goes */
+	/* and what the last game had of its own goes: its declarations now,
+	 * their values when another game comes (the same game back keeps them,
+	 * and a seeded project's game has them as its own) */
 	if (!gameSettings_.empty() || !gameFirmware_.items.empty())
 	{
+		ownNames_.clear();
+		for (const Json &d : gameSettings_)
+			if (const Json *n = d.find("name")) ownNames_.push_back(n->text);
+		ownFor_ = suggestedFor_;
 		gameSettings_.clear();
 		gameFirmware_ = Json();
 		declareSettings();
 	}
+	if (!game.empty() && game != ownFor_ && game != keptFor_ && !ownNames_.empty())
+	{
+		Json values = form_.values();
+		for (const std::string &k : ownNames_)
+			for (auto it = values.members.begin(); it != values.members.end(); ++it)
+				if (it->first == k)
+				{
+					values.members.erase(it);
+					break;
+				}
+		form_.setValues(values);
+		ownNames_.clear();
+	}
 	suggestedFor_ = game;
 	suggestion.set(game.empty() ? "" : "Looking this game up...");
 	if (game.empty()) return;
-	const std::string asked = game;
-	auto done = [this, asked](std::string answer, std::string why) {
-		/* an answer for a game no longer chosen is no answer */
-		if (asked != suggestedFor_) return;
-		applySuggestion(answer, why);
+	auto ask = [this, game] {
+		auto done = [this, game](std::string answer, std::string why) {
+			/* an answer for a game no longer chosen is no answer */
+			if (game != suggestedFor_) return;
+			applySuggestion(answer, why);
+		};
+		/* what a run would have: every file picked, under its name, a cue's
+		 * tracks, the slot map and the settings so far */
+		Mounts files;
+		for (const Slot &sl : slots_)
+			if (auto it = files_.find(sl.id); it != files_.end())
+				for (const Picked &f : it->second) files.emplace_back(f.name, f.path);
+		files = withCueTracks(game, std::move(files));
+		const std::string slots = slotMap(), settings = json::write(form_.recorded());
+		if (suggestRunner_)
+		{
+			suggestRunner_(package_, game, files, slots, settings, done);
+			return;
+		}
+		/* here, with no machine open */
+		std::string why;
+		const std::string answer = askForSuggestion(package_, game, files, slots, settings, why);
+		done(answer, why);
 	};
-	/* what a run would have: every file picked, under its name, a cue's
-	 * tracks, the slot map and the settings so far */
-	Mounts files;
-	for (const Slot &sl : slots_)
-		if (auto it = files_.find(sl.id); it != files_.end())
-			for (const Picked &f : it->second) files.emplace_back(f.name, f.path);
-	files = withCueTracks(game, std::move(files));
-	const std::string slots = slotMap(), settings = json::write(form_.recorded());
-	if (suggestRunner_)
+	/* another game than a seeded project's: what the core would suggest for
+	 * that project's game comes out first, where it still sits */
+	if (!seededGame_.empty() && game != seededGame_)
 	{
-		suggestRunner_(package_, game, files, slots, settings, done);
-		return;
+		const std::string seeded = seededGame_;
+		seededGame_.clear();
+		if (package_ == seededPackage_)
+		{
+			auto then = [this, game, ask](std::string answer, std::string) {
+				if (game != suggestedFor_) return;
+				takeBackSeeded(answer);
+				ask();
+			};
+			if (suggestRunner_)
+				suggestRunner_(package_, seeded, {}, "{}", "{}", then);
+			else
+			{
+				std::string why;
+				then(askForSuggestion(package_, seeded, {}, "{}", "{}", why), why);
+			}
+			return;
+		}
 	}
-	/* here, with no machine open */
-	std::string why;
-	const std::string answer = askForSuggestion(package_, game, files, slots, settings, why);
-	done(answer, why);
+	ask();
+}
+
+void NewProjectViewModel::takeBackSeeded(const std::string &text)
+{
+	Json answer;
+	std::string error;
+	if (text.empty() || !json::parse(text, answer, error)) return;
+	const Json *suggested = answer.find("values");
+	if (suggested == nullptr) return;
+	auto same = [](const Json &a, const Json &b) {
+		if (a.kind == Json::Kind::Number && b.kind == Json::Kind::Number) return a.number() == b.number();
+		if (a.kind == Json::Kind::Bool && b.kind == Json::Kind::Bool) return a.boolean == b.boolean;
+		return a.kind == b.kind && a.text == b.text;
+	};
+	Json values = form_.values();
+	const Json *package = cfg_.find("settings");
+	for (const auto &[name, value] : suggested->members)
+	{
+		/* never the machine; the package's settings only */
+		if (name == form_.machineSetting() || package == nullptr) continue;
+		const bool declared = std::any_of(package->items.begin(), package->items.end(),
+			[&](const Json &d) { const Json *n = d.find("name"); return n != nullptr && n->text == name; });
+		if (!declared) continue;
+		/* a value moved away from the suggestion is the person's, and stays */
+		for (auto it = values.members.begin(); it != values.members.end(); ++it)
+			if (it->first == name)
+			{
+				if (same(it->second, value)) values.members.erase(it);
+				break;
+			}
+	}
+	form_.setValues(values);
+	form_.evaluate();
 }
 
 void NewProjectViewModel::declareSettings()
@@ -1021,6 +1102,11 @@ void NewProjectViewModel::evaluate()
 			 * suggestion was put in, so nothing is taken back */
 			if (seeding_) suggestedKeys_.clear();
 			keptFor_ = seeding_ ? game : std::string();
+			if (seeding_ && !game.empty())
+			{
+				seededGame_ = game;
+				seededPackage_ = package_;
+			}
 			suggestFor(game);
 		}
 	}

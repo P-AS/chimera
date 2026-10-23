@@ -2291,6 +2291,27 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(settingRow("gameLogo") >= 0 && text("settings", settingRow("gameLogo"), 3) == "on");
 	CHECK(wizard.suggestion.get() == "The synthetic core suggests a fill of 9.\nThis project's own settings are kept.");
 	CHECK(firmwareRow("gamelogo") >= 0 && text("firmware", firmwareRow("gamelogo"), 2) == (dir / "mylogo.bin").string() && wizard.ready.get());
+	/* another game: what the core suggested for the project's game comes out
+	 * where it still sits - not where the person moved it - and that game's
+	 * own setting goes with it (Chimera issue 214) */
+	const std::string nofill = (dir / "nofill.testrom").string();
+	fs::copy_file(game, nofill);
+	std::ofstream(nofill, std::ios::binary | std::ios::app) << "NOFILL";
+	auto otherGame = [&] {
+		return wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value() &&
+			wizard.run("addFile", {std::string("rom"), nofill}, error).has_value();
+	};
+	CHECK(wizard.run("set", {std::string("initFillByte"), int64_t{5}}, error).has_value());
+	CHECK(otherGame() && fillNow() == 5);
+	CHECK(wizard.run("openOnLastProject", {}, error).has_value() && fillNow() == 9);
+	CHECK(otherGame() && fillNow() == 0);
+	CHECK(wizard.suggestion.get() == "The synthetic core suggests nothing for this game.");
+	CHECK(settingRow("gameLogo") < 0 && firmwareRow("gamelogo") < 0);
+	/* the project's game back is a game like any other now: its suggestion
+	 * is applied, and its own setting starts from its default */
+	CHECK(wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value());
+	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && fillNow() == 9);
+	CHECK(settingRow("gameLogo") >= 0 && text("settings", settingRow("gameLogo"), 3) == "off");
 	/* nothing to make until everything is there */
 	CHECK(wizard.run("chooseCore", {std::string("Synth")}, error).has_value());
 	CHECK(!wizard.run("create", {(dir / "never.chimeraProject").string()}, error) && error == "not yet: Game: a file is needed");

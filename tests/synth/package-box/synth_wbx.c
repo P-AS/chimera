@@ -606,10 +606,17 @@ ECL_EXPORT const char *ImportMovie(void)
  * the disk speed chosen so far - since a core is asked with the files and
  * settings picked so far. And the game has a setting of its own and, with
  * that setting on, a firmware file of its own; each answer also repeats a
- * package setting and a package firmware, which a frontend drops. */
+ * package setting and a package firmware, which a frontend drops. A game
+ * whose file ends in NOFILL gets none of it: nothing suggested, nothing of
+ * its own - so a frontend can be seen taking back another game's. */
 static char g_suggestion[2048];
 ECL_EXPORT const char *SuggestSettings(void)
 {
+	uint32_t romLen = 0;
+	uint8_t *rom = read_rom(&romLen);
+	const int nofill = rom && romLen >= 6 && memcmp(rom + romLen - 6, "NOFILL", 6) == 0;
+	free(rom);
+	if (nofill) return "{\"values\": {}, \"note\": \"The synthetic core suggests nothing for this game.\"}";
 	char slots[512] = "";
 	FILE *f = fopen("slots", "rb");
 	if (f) {
