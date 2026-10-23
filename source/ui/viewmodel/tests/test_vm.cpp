@@ -2175,6 +2175,14 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 	/* set, and refused out of range */
 	CHECK(roll.run("setAxis", {int64_t{2}, int64_t{0}, int64_t{50}}, error).has_value() && dial(2) == 50 && roll.axisValue.get() == 50);
 	CHECK(!roll.run("setAxis", {int64_t{2}, int64_t{0}, int64_t{101}}, error) && error == "P1 Dial goes from -100 to 100");
+	/* Chimera's analog keys on the picked cell: by one, by ten, to the ends, kept in range */
+	auto nudge = [&](const char *how) {
+		roll.run("nudgeAxis", {std::string(how)}, error);
+		return dial(2);
+	};
+	CHECK(nudge("up") == 51 && nudge("down10") == 41 && nudge("up10") == 51 && nudge("down") == 50);
+	CHECK(nudge("max") == 100 && nudge("up") == 100 && nudge("min") == -100 && nudge("down10") == -100);
+	CHECK(roll.run("setAxis", {int64_t{2}, int64_t{0}, int64_t{50}}, error).has_value() && dial(2) == 50);
 	/* a drag paints the pressed cell's value, one step */
 	roll.run("setAxis", {int64_t{3}, int64_t{0}, int64_t{77}}, error);
 	roll.run("press", {int64_t{3}, int64_t{8}}, error);

@@ -178,6 +178,29 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		pickedAxis.set(-1);
 		return {};
 	});
+	command("nudgeAxis", "the picked analog cell's value moved as Chimera's analog keys move it: \"up\", \"down\" (by "
+		"one), \"up10\", \"down10\" (by ten), \"max\", \"min\"; nothing when no cell is picked",
+		{"how"}, [this](const Args &a, std::string &error) -> Value {
+			std::string how;
+			if (!arg(a, 0, how, error)) return {};
+			if (pickedFrame.get() < 0 || pickedAxis.get() < 0) return false;
+			const int64_t lo = axisMin.get(), hi = axisMax.get(), now = axisValue.get();
+			int64_t to = now;
+			if (how == "up") to = now + 1;
+			else if (how == "down") to = now - 1;
+			else if (how == "up10") to = now + 10;
+			else if (how == "down10") to = now - 10;
+			else if (how == "max") to = hi;
+			else if (how == "min") to = lo;
+			else
+			{
+				error = "no such move: " + how;
+				return {};
+			}
+			to = std::clamp(to, lo, hi);
+			if (to != now) paintAxis(pickedFrame.get(), pickedFrame.get(), pickedAxis.get(), to, false, error);
+			return true;
+		});
 	command("setAxis", "an analog control's value on a frame", {"frame", "axis", "value"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0, axis = 0, value = 0;

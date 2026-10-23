@@ -39,6 +39,7 @@
 #include <mutex>
 #include <map>
 #include <set>
+#include <tuple>
 #include <vector>
 
 #include "chimera/vm/branches_vm.hpp"
@@ -422,6 +423,16 @@ int main(int argc, char **argv)
 		window("TAStudio", "Clone Frames", "Ctrl+Insert");
 		window("TAStudio", "Clone # Times", "Ctrl+Shift+Insert");
 		window("TAStudio", "Paste Insert", "Ctrl+Shift+V");
+		/* the picked analog cell's value; nothing when none is picked */
+		for (const auto &[name, keys, how] : std::initializer_list<std::tuple<const char *, const char *, const char *>>{
+				 {"Analog Increment", "Up", "up"}, {"Analog Decrement", "Down", "down"}, {"Analog Incr. by 10", "Shift+Up", "up10"},
+				 {"Analog Decr. by 10", "Shift+Down", "down10"}, {"Analog Maximum", "Right", "max"}, {"Analog Minimum", "Left", "min"}})
+		{
+			const std::string move = how;
+			hotkeys.add("TAStudio", name, keys, [&pianoRoll, run, move](bool down) {
+				if (down) run(pianoRoll, "nudgeAxis", {move});
+			});
+		}
 	}
 	vm::SettingsViewModel settings(dispatcher, session);
 	/* the cores and the firmware: beside the program, as Chimera keeps them,
