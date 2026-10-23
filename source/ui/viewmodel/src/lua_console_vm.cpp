@@ -4,6 +4,12 @@
 #include <fstream>
 #include <sstream>
 
+#include "chimera/vm/json.hpp"
+
+/* Chimera's own Lua documentation, read from its C# libraries when the
+ * prototype is built (lua_docs_from_csharp.py) */
+#include "lua_docs.inc"
+
 namespace chimera::vm {
 
 namespace fs = std::filesystem;
@@ -510,9 +516,12 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 #endif
 			return {};
 		});
-	command("functionsList", "Help > Lua Functions List: each library's functions with their parameters, as "
-		"[{\"library\", \"name\", \"params\"}]", {}, [this](const Args &, std::string &) -> Value {
-			return lua_.ask("__chimera_functions_list");
+	command("functionsList", "Help > Lua Functions List, as Chimera's: every function Chimera documents, in its words "
+		"(return type, library, name, parameters, description, example; deprecated or not), each marked unavailable "
+		"when the prototype has no such function, and the prototype's own besides, as [{\"returns\", \"library\", "
+		"\"name\", \"params\", \"description\", \"example\", \"deprecated\", \"unavailable\"}]",
+		{}, [this](const Args &, std::string &) -> Value {
+			return functionsList(lua_.ask("__chimera_functions_list"));
 		});
 
 	/* Registered Functions */
@@ -537,6 +546,58 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 		refresh();
 		return {};
 	});
+}
+
+std::string LuaConsoleViewModel::functionsList(const std::string &prototypeList)
+{
+	json::Json docs, ours;
+	std::string why;
+	if (!json::parse(std::string_view(kChimeraLuaDocs), docs, why)) docs.kind = json::Json::Kind::Array;
+	if (!json::parse(prototypeList, ours, why)) ours.kind = json::Json::Kind::Array;
+	auto text = [](const json::Json &o, const char *k) {
+		const json::Json *j = o.find(k);
+		return j != nullptr ? j->text : std::string();
+	};
+	auto flag = [](const json::Json &o, const char *k) {
+		const json::Json *j = o.find(k);
+		return j != nullptr && j->boolean;
+	};
+	/* what the prototype's libraries have, by library.name */
+	std::vector<std::string> have;
+	for (const json::Json &f : ours.items) have.push_back(text(f, "library") + "." + text(f, "name"));
+	std::vector<std::string> documented;
+	json::Json out;
+	out.kind = json::Json::Kind::Array;
+	auto entry = [&](const std::string &returns, const std::string &library, const std::string &name, const std::string &params,
+					 const std::string &description, const std::string &example, bool deprecated, bool unavailable) {
+		json::Json e;
+		e.kind = json::Json::Kind::Object;
+		e.members.emplace_back("returns", json::Json::string(returns));
+		e.members.emplace_back("library", json::Json::string(library));
+		e.members.emplace_back("name", json::Json::string(name));
+		e.members.emplace_back("params", json::Json::string(params));
+		e.members.emplace_back("description", json::Json::string(description));
+		e.members.emplace_back("example", json::Json::string(example));
+		e.members.emplace_back("deprecated", json::Json::boolean_(deprecated));
+		e.members.emplace_back("unavailable", json::Json::boolean_(unavailable));
+		out.items.push_back(std::move(e));
+	};
+	for (const json::Json &d : docs.items)
+	{
+		const std::string key = text(d, "library") + "." + text(d, "name");
+		documented.push_back(key);
+		const bool here = std::find(have.begin(), have.end(), key) != have.end();
+		entry(text(d, "returns"), text(d, "library"), text(d, "name"), text(d, "params"), text(d, "description"), text(d, "example"),
+			flag(d, "deprecated"), flag(d, "unavailable") || !here);
+	}
+	/* the prototype's own, which Chimera does not document */
+	for (const json::Json &f : ours.items)
+	{
+		const std::string key = text(f, "library") + "." + text(f, "name");
+		if (std::find(documented.begin(), documented.end(), key) != documented.end()) continue;
+		entry("", text(f, "library"), text(f, "name"), "(" + text(f, "params") + ")", "", "", false, false);
+	}
+	return json::write(out);
 }
 
 LuaConsoleViewModel::~LuaConsoleViewModel()

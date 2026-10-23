@@ -17,9 +17,21 @@ vm_miniz = static_library(
   gnu_symbol_visibility: 'hidden',
   pic: true,
 )
+# Chimera's Lua documentation (its Lua Functions List's words), read from the
+# C# libraries in this tree, again whenever one of them changes
+lua_docs_script = files('viewmodel/lua_docs_from_csharp.py')
+lua_docs_sources = run_command(find_program('python3'), lua_docs_script, '--list', repo_root / 'source/gui', check: true).stdout().strip().split('\n')
+lua_docs = custom_target(
+  'lua-docs',
+  input: lua_docs_sources,
+  output: 'lua_docs.inc',
+  command: [find_program('python3'), lua_docs_script, repo_root / 'source/gui', '@OUTPUT@'],
+  depend_files: lua_docs_script,
+)
 vm_lib = static_library(
   'chimera-vm',
   [
+    lua_docs,
     'viewmodel/src/view_model.cpp',
     'viewmodel/src/input_log.cpp',
     'viewmodel/src/bindings.cpp',

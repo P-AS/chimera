@@ -433,9 +433,33 @@ void luaConsole()
 	console.reloadOnChange.set(true);
 	run("restoreDefaults");
 	CHECK(!console.disableOnLoad.get() && console.toggleAllIfNoneSelected.get() && !console.reloadOnChange.get());
-	/* Help > Lua Functions List: each library's functions with their parameters */
-	const std::string listed = std::get<std::string>(*run("functionsList"));
-	CHECK(listed.find("{\"library\": \"event\", \"name\": \"onframeend\", \"params\": \"fn, name\"}") != std::string::npos);
+	/* Help > Lua Functions List, as Chimera's: its documentation's words, the
+	 * prototype's functions found in it, Chimera's the prototype lacks marked
+	 * unavailable, deprecated ones marked, the prototype's own besides */
+	{
+		json::Json listed;
+		std::string why;
+		CHECK(json::parse(std::get<std::string>(*run("functionsList")), listed, why));
+		auto find = [&](const std::string &library, const std::string &name) -> const json::Json * {
+			for (const json::Json &e : listed.items)
+				if (e.find("library")->text == library && e.find("name")->text == name) return &e;
+			return nullptr;
+		};
+		const json::Json *onframeend = find("event", "onframeend");
+		CHECK(onframeend != nullptr && onframeend->find("returns")->text == "string" &&
+			onframeend->find("params")->text == "(nluafunc luaf, [string name = nil])" &&
+			onframeend->find("description")->text.rfind("Calls the given lua function at the end of each frame", 0) == 0 &&
+			!onframeend->find("unavailable")->boolean);
+		const json::Json *range = find("memory", "readbyterange");
+		CHECK(range != nullptr && range->find("deprecated")->boolean && range->find("returns")->text == "nluatable0Indexed");
+		const json::Json *canvas = find("LuaCanvas", "DrawText");
+		CHECK(canvas != nullptr && canvas->find("unavailable")->boolean);
+		/* one Chimera does not document is the prototype's own */
+		const std::string mixed = LuaConsoleViewModel::functionsList(R"x([{"library": "extra", "name": "thing", "params": "a, b"}])x");
+		const bool own = mixed.find(R"x("library":"extra","name":"thing","params":"(a, b)")x") != std::string::npos ||
+						 mixed.find(R"x("library": "extra", "name": "thing", "params": "(a, b)")x") != std::string::npos;
+		CHECK(own);
+	}
 }
 
 /* Every tool window's Settings items, as Chimera's: Save Window Position on

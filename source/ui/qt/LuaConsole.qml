@@ -585,40 +585,135 @@ ApplicationWindow {
         }
     }
 
-    // Lua Functions List: what the libraries offer, library by library, with
-    // each function's parameters
+    // Chimera's Lua Functions: every function Chimera documents, in its words
+    // (Return, Library, Name, Parameters, Description), those the prototype
+    // lacks marked [Not available] and deprecated ones [Deprecated]; a column's
+    // name sorts by it (again: the other way), Filter finds a name or a word of
+    // the description, Copy (the right button or Ctrl+C) puts the call and its
+    // example on the clipboard, OK closes
     ApplicationWindow {
         id: functionsListWindow
         objectName: "luaFunctionsListWindow"
         title: qsTr("Lua Functions")
-        width: 640
-        height: 480
+        width: 760
+        height: 360
+        minimumWidth: 200
+        minimumHeight: 80
         property var entries: []
-        onVisibleChanged: if (visible) entries = JSON.parse(win.vm.run("functionsList") || "[]")
+        // Chimera's sort: by library, then name, at first; a column's name sorts by it
+        property int sortColumn: 1
+        property bool descending: false
+        property int picked: -1
+        readonly property var keys: ["returns", "library", "name", "params", "description"]
+        readonly property var widths: [64, 72, 160, 200, 300]
+        onVisibleChanged: if (visible) {
+            const all = JSON.parse(win.vm.run("functionsList") || "[]")
+            all.sort((a, b) => a.library.localeCompare(b.library) || a.name.localeCompare(b.name))
+            functionsListWindow.entries = all
+            functionsListWindow.sortColumn = 1
+            functionsListWindow.descending = false
+            functionsListWindow.picked = -1
+            filter.text = ""
+            filter.forceActiveFocus()
+        }
+        function sortBy(column) {
+            if (column === functionsListWindow.sortColumn) functionsListWindow.descending = !functionsListWindow.descending
+            functionsListWindow.sortColumn = column
+            const key = functionsListWindow.keys[column], down = functionsListWindow.descending
+            const all = functionsListWindow.entries.slice()
+            all.sort((a, b) => down ? b[key].localeCompare(a[key]) : a[key].localeCompare(b[key]))
+            functionsListWindow.entries = all
+        }
+        readonly property var shown: functionsListWindow.entries.filter((e) => filter.text === ""
+            || (e.library + "." + e.name).toLowerCase().indexOf(filter.text.toLowerCase()) >= 0
+            || e.description.toLowerCase().indexOf(filter.text.toLowerCase()) >= 0)
+        // Chimera's copy: "--library.name(parameters)", then the example
+        function copyPicked() {
+            const e = functionsListWindow.shown[functionsListWindow.picked]
+            if (!e || !win.clipboard) return
+            win.clipboard.setText("--" + e.library + "." + e.name + e.params + "\n" + (e.example !== "" ? e.example + "\n" : ""))
+        }
+        Shortcut { sequences: [StandardKey.Copy]; enabled: functionsListWindow.active && !filter.activeFocus; onActivated: functionsListWindow.copyPicked() }
+        Menu {
+            id: copyMenu
+            MenuItem { text: qsTr("&Copy"); onTriggered: functionsListWindow.copyPicked() }
+        }
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: 8
-            RowLayout {
-                Label { text: qsTr("Filter:") }
-                TextField { id: filter; Layout.fillWidth: true }
-            }
-            ListView {
-                id: docList
+            Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                clip: true
-                ScrollBar.vertical: ScrollBar {}
-                model: functionsListWindow.entries.filter((e) => filter.text === ""
-                    || (e.library + "." + e.name).toLowerCase().indexOf(filter.text.toLowerCase()) >= 0)
-                delegate: Label {
-                    required property var modelData
-                    width: docList.width
-                    text: modelData.library + "." + modelData.name + "(" + modelData.params + ")"
-                    font.family: "monospace"
-                    padding: 2
+                color: palette.base
+                border.color: palette.mid
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    spacing: 0
+                    Row {
+                        Repeater {
+                            model: [qsTr("Return"), qsTr("Library"), qsTr("Name"), qsTr("Parameters"), qsTr("Description")]
+                            delegate: Label {
+                                required property int index
+                                required property string modelData
+                                text: modelData
+                                width: functionsListWindow.widths[index]
+                                leftPadding: 4; topPadding: 2; bottomPadding: 2
+                                elide: Text.ElideRight
+                                background: Rectangle { color: palette.button; border.color: palette.mid }
+                                TapHandler { onTapped: functionsListWindow.sortBy(parent.index) }
+                            }
+                        }
+                    }
+                    ListView {
+                        id: docList
+                        objectName: "luaFunctionsList"
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        ScrollBar.vertical: ScrollBar {}
+                        model: functionsListWindow.shown
+                        delegate: Rectangle {
+                            id: doc
+                            required property var modelData
+                            required property int index
+                            width: docList.width
+                            height: 20
+                            readonly property bool isPicked: doc.index === functionsListWindow.picked
+                            color: doc.isPicked ? palette.highlight : "transparent"
+                            readonly property color ink: doc.isPicked ? palette.highlightedText : palette.text
+                            ToolTip.visible: docHover.hovered && doc.modelData.description !== ""
+                            ToolTip.delay: 800
+                            ToolTip.text: doc.modelData.description
+                            HoverHandler { id: docHover }
+                            Row {
+                                anchors.verticalCenter: parent.verticalCenter
+                                Label { text: doc.modelData.returns; width: functionsListWindow.widths[0]; leftPadding: 4; elide: Text.ElideRight; color: doc.ink }
+                                Label { text: doc.modelData.library; width: functionsListWindow.widths[1]; leftPadding: 4; elide: Text.ElideRight; color: doc.ink }
+                                Label {
+                                    text: (doc.modelData.unavailable ? qsTr("[Not available] ") : "") + (doc.modelData.deprecated ? qsTr("[Deprecated] ") : "") + doc.modelData.name
+                                    width: functionsListWindow.widths[2]; leftPadding: 4; elide: Text.ElideRight; color: doc.ink
+                                }
+                                Label { text: doc.modelData.params; width: functionsListWindow.widths[3]; leftPadding: 4; elide: Text.ElideRight; color: doc.ink }
+                                Label { text: doc.modelData.description; width: functionsListWindow.widths[4]; leftPadding: 4; elide: Text.ElideRight; color: doc.ink }
+                            }
+                            TapHandler {
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                onTapped: (point, button) => {
+                                    functionsListWindow.picked = doc.index
+                                    if (button === Qt.RightButton) copyMenu.popup()
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            Label { text: qsTr("%1 functions").arg(docList.count) }
+            RowLayout {
+                TextField { id: filter; Layout.preferredWidth: 180; onTextChanged: functionsListWindow.picked = -1 }
+                Label { text: qsTr("Filter") }
+                Item { Layout.fillWidth: true }
+                Button { text: qsTr("&OK"); Layout.preferredWidth: 80; onClicked: functionsListWindow.close() }
+            }
         }
     }
 }

@@ -21,6 +21,9 @@ public:
 	/* takes over the bridge's output: everything it prints comes here (and to
 	 * `echo` a line at a time, when given and Duplicate to Stdout is on) */
 	LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua, std::function<void(const std::string &)> echo = {});
+	/* Chimera's Lua Functions List made from its documentation and the
+	 * prototype's own list ([{"library", "name", "params"}]), as JSON */
+	static std::string functionsList(const std::string &prototypeList);
 	~LuaConsoleViewModel() override;
 
 	/* the session's file, "" until one is opened or saved */
