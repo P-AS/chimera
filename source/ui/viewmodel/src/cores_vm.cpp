@@ -237,6 +237,30 @@ std::string CoresViewModel::systemsOf(const json::Json &cfg)
 	return out;
 }
 
+std::vector<CoresViewModel::MediaRecipe> CoresViewModel::mediaRecipes() const
+{
+	std::vector<MediaRecipe> out;
+	for (const Package &p : packages())
+	{
+		const char *perr = nullptr;
+		ce_package *pk = ce_package_open(p.path.c_str(), &perr);
+		if (pk == nullptr) continue;
+		uint64_t len = 0;
+		json::Json cfg;
+		std::string err;
+		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+			d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, err))
+			if (const json::Json *media = cfg.find("media"); media != nullptr && media->kind == json::Json::Kind::Array)
+				for (const json::Json &r : media->items)
+				{
+					const json::Json *label = r.find("label");
+					out.push_back({p.name, label != nullptr ? label->text : "disc", json::write(r)});
+				}
+		ce_package_free(pk);
+	}
+	return out;
+}
+
 std::vector<CoresViewModel::Package> CoresViewModel::packages() const
 {
 	std::vector<Package> out;

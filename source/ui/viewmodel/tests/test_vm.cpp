@@ -40,6 +40,7 @@
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/help_vm.hpp"
 #include "chimera/vm/batch_run_vm.hpp"
+#include "chimera/vm/media_maker_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
 #include "chimera/vm/new_project_vm.hpp"
@@ -1130,6 +1131,70 @@ bool tastudioSettings(const char *package, const char *rom)
 	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
+/* Chimera's Reproducible Media Maker: a folder packed into one file whose
+ * SHA-1 is the same however the folder's files were copied; a core's
+ * recipe used for a folder it was written for */
+bool mediaMaker()
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-media-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	const fs::path game = dir / "My Game";
+	fs::create_directories(game / "data");
+	{
+		std::ofstream(game / "readme.txt") << "hello";
+		std::ofstream(game / "data" / "level.bin") << std::string(3000, 'x');
+	}
+	ManualDispatcher d;
+	const std::string discRecipe = R"({"id": "disc", "label": "test disc", "format": "iso9660", "when": {"rootFile": "BOOT.BIN"},
+		"systemArea": [{"at": 0, "u32be": 1}, {"at": 12, "u32be": "lastSector"}]})";
+	MediaMakerViewModel maker(d, [&] { return std::vector<MediaMakerViewModel::Recipe>{{"Synth", "test disc", discRecipe}}; });
+	std::string error;
+	/* the file beside the folder, named after it, in step with the shape */
+	CHECK(maker.run("setFolder", {game.string() + "/"}, error).has_value() && maker.folder.get() == game.string());
+	CHECK(maker.output.get() == (dir / "My Game.zip").string());
+	maker.format.set(2);
+	CHECK(maker.output.get() == (dir / "My Game.img").string() && maker.formatHelp.get().rfind("A 1.44 MB floppy", 0) == 0);
+	maker.format.set(0);
+	auto make = [&](const fs::path &to) {
+		maker.output.set(to.string());
+		if (!maker.run("make", {}, error)) return false;
+		return d.until([&] { return !maker.running.get(); }, 60);
+	};
+	CHECK(make(dir / "one.zip") && maker.result.get().rfind("Written: " + (dir / "one.zip").string() + "\nSHA1 ", 0) == 0);
+	const std::string first = maker.sha1.get();
+	char sha[41] = {};
+	uint64_t length = 0;
+	CHECK(first.size() == 40 && ce_sha1_file((dir / "one.zip").string().c_str(), sha, &length) == 1 && first == sha);
+	CHECK(maker.progress.get() == 1.0);
+	/* the files' times are not part of it */
+	fs::last_write_time(game / "readme.txt", fs::file_time_type::clock::now() - std::chrono::hours(48));
+	CHECK(make(dir / "two.zip") && maker.sha1.get() == first);
+	/* a disc: no core's recipe for this folder; one once it has the file the recipe looks for */
+	maker.format.set(1);
+	CHECK(maker.recognised.get().empty());
+	{
+		std::ofstream(game / "BOOT.BIN") << "boot";
+	}
+	maker.run("setFolder", {game.string()}, error);
+	CHECK(maker.recognised.get() == "This folder is a test disc: the image is written the way Synth reads it.");
+	CHECK(make(dir / "disc.iso") && maker.result.get().rfind("Written: ", 0) == 0 && maker.sha1.get().size() == 40);
+	/* the recipe's own bytes: the same folder packed with no core's recipe differs */
+	{
+		MediaMakerViewModel plain(d, {});
+		plain.run("setFolder", {game.string()}, error);
+		plain.format.set(1);
+		plain.output.set((dir / "plain.iso").string());
+		CHECK(plain.recognised.get().empty() && plain.run("make", {}, error).has_value());
+		CHECK(d.until([&] { return !plain.running.get(); }, 60) && plain.sha1.get().size() == 40 && plain.sha1.get() != maker.sha1.get());
+	}
+	/* a zip is not what the recipe writes */
+	maker.format.set(0);
+	CHECK(maker.recognised.get().empty());
+	CHECK(!maker.run("setFolder", {}, error));
 	fs::remove_all(dir);
 	return true;
 }
@@ -3554,6 +3619,11 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	installed.set("firmwareFolder", (dir / "Firmware").string(), error);
 	session.setFinders([&installed](const std::string &n, const std::string &h, std::string &note) { return installed.packageFor(n, h, note); },
 		[&installed] { return installed.firmwareFolders(); });
+	/* the installed cores' media recipes, as the Media Maker is given them */
+	{
+		const auto recipes = installed.mediaRecipes();
+		CHECK(recipes.size() == 1 && recipes[0].label == "synthetic disc" && recipes[0].json.find("\"SYNTH.BIN\"") != std::string::npos);
+	}
 	NewProjectViewModel wizard(d, session, installed);
 	ProjectDetailsViewModel details(d, session);
 	auto cell = [&](const char *rowsName, int64_t row, int32_t column) {
@@ -4172,6 +4242,7 @@ int main(int argc, char **argv)
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;
+			ranMachine = mediaMaker() && ranMachine;
 			ranMachine = tastudioSettings(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");

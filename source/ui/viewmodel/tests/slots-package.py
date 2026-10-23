@@ -76,6 +76,9 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
                            "slot": "rom", "required": True}],
                 "options": [{"name": "importFill", "display": "Fill RAM", "type": "bool"}],
             }
+            # a disc recipe (the Media Maker hands it to the engine for a folder it is for)
+            cfg["media"] = [{"id": "disc", "label": "synthetic disc", "format": "iso9660",
+                             "when": {"rootFile": "SYNTH.BIN"}, "systemArea": [{"at": 0, "u32be": 7}]}]
             # an analog control, for the piano roll's analog columns
             cfg["input"]["axes"] = [{"name": "P1 Dial", "min": -100, "max": 100, "neutral": 0, "header": "Dl"}]
             data = json.dumps(cfg, indent=2).encode()

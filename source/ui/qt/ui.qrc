@@ -20,6 +20,7 @@
     <file>LogWindow.qml</file>
     <file>ReportIssue.qml</file>
     <file>BatchRun.qml</file>
+    <file>MediaMaker.qml</file>
     <file>Cores.qml</file>
   </qresource>
 </RCC>

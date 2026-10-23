@@ -45,6 +45,14 @@ public:
 		bool gameCore = false;
 	};
 	std::vector<Package> packages() const;
+	/* what the installed cores say their media needs (each package's
+	 * "media" recipes): the core, what it calls such a folder, the recipe
+	 * as the package wrote it */
+	struct MediaRecipe
+	{
+		std::string core, label, json;
+	};
+	std::vector<MediaRecipe> mediaRecipes() const;
 	/* a package's systems, by its own word for each: its machines', else
 	 * its one ("GameCube, Wii, Triforce") */
 	static std::string systemsOf(const json::Json &cfg);
