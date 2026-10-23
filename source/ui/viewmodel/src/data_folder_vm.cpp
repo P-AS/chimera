@@ -1,9 +1,12 @@
 #include "chimera/vm/data_folder_vm.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <vector>
+
+#include "chimera/vm/json.hpp"
 
 namespace chimera::vm {
 
@@ -140,6 +143,38 @@ std::string move(const std::string &from, const std::string &to)
 	}
 }
 
+int64_t sizeOf(const std::string &dir)
+{
+	std::error_code ec;
+	int64_t total = 0;
+	if (!fs::is_directory(dir, ec)) return 0;
+	for (fs::recursive_directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec), end; it != end; it.increment(ec))
+	{
+		if (ec) break;
+		if (it->is_regular_file(ec)) total += static_cast<int64_t>(it->file_size(ec));
+	}
+	return total;
+}
+
+int64_t freeAt(const std::string &dir)
+{
+	std::error_code ec;
+	fs::path at(dir);
+	/* a folder not made yet is on the drive of the nearest one above it that is */
+	while (!at.empty() && !fs::exists(at, ec) && at.has_parent_path() && at.parent_path() != at) at = at.parent_path();
+	const fs::space_info s = fs::space(at, ec);
+	return ec ? 0 : static_cast<int64_t>(s.available);
+}
+
+std::string bytesText(int64_t bytes)
+{
+	char buf[64];
+	if (bytes >= (int64_t{1} << 30)) std::snprintf(buf, sizeof buf, "%.1f GB", static_cast<double>(bytes) / static_cast<double>(int64_t{1} << 30));
+	else if (bytes >= (int64_t{1} << 20)) std::snprintf(buf, sizeof buf, "%.1f MB", static_cast<double>(bytes) / static_cast<double>(int64_t{1} << 20));
+	else std::snprintf(buf, sizeof buf, "%.0f KB", static_cast<double>(bytes) / 1024.0);
+	return buf;
+}
+
 } // namespace data_folder
 
 DataFolderViewModel::DataFolderViewModel(Dispatcher &dispatcher) : ViewModel("dataFolder", dispatcher)
@@ -149,6 +184,32 @@ DataFolderViewModel::DataFolderViewModel(Dispatcher &dispatcher) : ViewModel("da
 	expose("pendingMove", "what is in the data folder moves with the change", pendingMove, true);
 	expose("standard", "the system's place for the data folder", standard);
 	expose("status", "what the data folder last had to say", status);
+	expose("figures", "how much is in the folder in use and how much its drive has free (refresh)", figures);
+	command("refresh", "says again how much is in the folder in use and how much its drive has free", {},
+		[this](const Args &, std::string &) -> Value {
+			figures.set(data_folder::bytesText(data_folder::sizeOf(inUse())) + " in use here, " + data_folder::bytesText(data_folder::freeAt(inUse())) +
+				" free on its drive");
+			return {};
+		});
+	command("inspect", "what a folder picked would be, before anything is asked: {\"target\", \"choice\" (same, nested, "
+		"unwritable, holds data, empty), \"size\" and \"free\" (bytes to move and free there, as Chimera writes them)}",
+		{"folder"}, [this](const Args &a, std::string &error) -> Value {
+			std::string folder;
+			if (!arg(a, 0, folder, error)) return {};
+			const std::string target = folder.empty() ? standard.get() : data_folder::targetFor(folder);
+			const data_folder::Choice c = data_folder::inspect(inUse(), target);
+			const char *word = c == data_folder::Choice::Same ? "same" : c == data_folder::Choice::Nested ? "nested"
+				: c == data_folder::Choice::Unwritable ? "unwritable" : c == data_folder::Choice::HoldsData ? "holds data" : "empty";
+			const int64_t size = data_folder::sizeOf(inUse()), free = data_folder::freeAt(target);
+			json::Json o;
+			o.kind = json::Json::Kind::Object;
+			o.members.emplace_back("target", json::Json::string(target));
+			o.members.emplace_back("choice", json::Json::string(word));
+			o.members.emplace_back("size", json::Json::string(data_folder::bytesText(size)));
+			o.members.emplace_back("free", json::Json::string(data_folder::bytesText(free)));
+			o.members.emplace_back("tight", json::Json::boolean_(free > 0 && free < size));
+			return json::write(o);
+		});
 	command("inUse", "the data folder in use, made absolute", {}, [this](const Args &, std::string &) -> Value { return inUse(); });
 	command("request", "asks for the data folder to become this one at the next start (\"\" the system's place), moving "
 		"what is there when asked; says what the folder is", {"folder", "move"}, [this](const Args &a, std::string &error) -> Value {

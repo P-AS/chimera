@@ -853,6 +853,21 @@ void dataFolder()
 	CHECK(data_folder::holdsData((dir / "data").string()) && !data_folder::holdsData((dir / "docs").string()));
 	CHECK(data_folder::targetFor((dir / "docs").string()) == (dir / "docs" / "Chimera").string());
 	CHECK(data_folder::targetFor((dir / "fresh").string()) == (dir / "fresh").string());
+	/* what the window says of it, as Chimera writes sizes, and what a folder picked would be before anything is asked */
+	CHECK(data_folder::bytesText(1000) == "1 KB" && data_folder::bytesText(3 * (int64_t{1} << 20)) == "3.0 MB" &&
+		  data_folder::bytesText(int64_t{3} << 29) == "1.5 GB");
+	CHECK(data.run("refresh", {}, error).has_value() && data.figures.get().rfind("1 KB in use here, ", 0) == 0 &&
+		  data.figures.get().find(" free on its drive") != std::string::npos);
+	{
+		json::Json what;
+		std::string text;
+		CHECK(fromValue(data.run("inspect", {(dir / "docs").string()}, error).value_or(Value()), text) && json::parse(text, what, error) &&
+			  what.find("target")->text == (dir / "docs" / "Chimera").string() && what.find("choice")->text == "empty" && what.find("size")->text == "1 KB");
+		CHECK(fromValue(data.run("inspect", {(dir / "data").string()}, error).value_or(Value()), text) && text.find("\"choice\": \"same\"") != std::string::npos);
+		fs::create_directories(dir / "other" / "Projects");
+		CHECK(fromValue(data.run("inspect", {(dir / "other").string()}, error).value_or(Value()), text) && text.find("\"choice\": \"holds data\"") != std::string::npos);
+		CHECK(fromValue(data.run("inspect", {(dir / "data" / "inner").string()}, error).value_or(Value()), text) && text.find("\"choice\": \"nested\"") != std::string::npos);
+	}
 	/* into or out of itself, and where it already is */
 	CHECK(!data.run("request", {(dir / "data" / "inner").string(), true}, error) && error.find("cannot move into or out of itself") != std::string::npos);
 	CHECK(fromValue(data.run("request", {(dir / "data").string(), true}, error).value_or(Value()), said) && said == "same" && data.pending.get().empty());

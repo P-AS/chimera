@@ -8,6 +8,7 @@
  * it can be, else a copy that is checked and only then a delete; a failure
  * leaves the old place whole and removes what was copied. */
 
+#include <cstdint>
 #include <string>
 
 #include "chimera/vm/view_model.hpp"
@@ -25,6 +26,11 @@ Choice inspect(const std::string &current, const std::string &target);
 /* everything in `from` into `to`: "" when done, else why not (and then
  * `from` is as it was and nothing of it is left in `to`) */
 std::string move(const std::string &from, const std::string &to);
+/* every file's bytes under a folder, and the bytes free on the drive a folder is (or would be) on */
+int64_t sizeOf(const std::string &dir);
+int64_t freeAt(const std::string &dir);
+/* bytes as Chimera writes them: "1.5 GB", "12.0 MB", "40 KB" */
+std::string bytesText(int64_t bytes);
 } // namespace data_folder
 
 class DataFolderViewModel : public ViewModel
@@ -40,6 +46,8 @@ public:
 	/* the system's place, said by the window */
 	Property<std::string> standard;
 	Property<std::string> status;
+	/* how much is in the folder in use and how much its drive has free, as Chimera says it (refresh) */
+	Property<std::string> figures;
 
 	/* the folder in use, made absolute */
 	std::string inUse() const;
