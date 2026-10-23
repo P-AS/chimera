@@ -17,6 +17,10 @@ public:
 	Property<std::string> script;
 	Property<std::string> path;
 	Property<int64_t> lines{0};
+	/* something of a script still runs (a frame function, or a script waiting for a frame) */
+	Property<bool> running{false};
+	/* said again after each frame (the window calls it with the bridge's frameDone) */
+	void frameDone();
 
 	void append(const std::string &line);
 

@@ -38,6 +38,8 @@ ApplicationWindow {
             Button { text: qsTr("Save As..."); onClicked: saveDialog.open() }
             Item { Layout.fillWidth: true }
             Button { text: qsTr("Run"); highlighted: true; onClicked: win.vm.run("run") }
+            // a script waiting for frames, or frame functions, go on until stopped
+            Button { text: qsTr("Stop"); enabled: win.vm.running; onClicked: win.vm.run("stop") }
         }
         SplitView {
             orientation: Qt.Vertical

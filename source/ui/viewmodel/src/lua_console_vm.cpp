@@ -19,13 +19,27 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 	rows("output", "what scripts printed and what failed, a row a line", rows_);
 	lua_.onLog = [this](const std::string &line) { append(line); };
 
-	command("run", "runs the script; what it gives chimera.onFrame keeps running after every frame", {},
-		[this](const Args &, std::string &) -> Value {
+	expose("running", "something of a script still runs (a frame function, or a script waiting for a frame)", running);
+	command("run", "runs the script; what it gives chimera.onFrame keeps running after every frame, and where it waits "
+		"for a frame (emu.frameadvance) it goes on after the next", {}, [this](const Args &, std::string &) -> Value {
 			std::string error;
 			const std::string name = path.get().empty() ? std::string("console") : path.get();
 			if (!lua_.run(script.get(), name, error)) append("error: " + error);
+			running.set(lua_.running());
 			return {};
 		});
+	command("stop", "every script stopped: its frame functions and what waits for a frame", {}, [this](const Args &, std::string &) -> Value {
+		lua_.stopAll();
+		running.set(false);
+		append("stopped");
+		return {};
+	});
+	command("toggleLast", "Chimera's Toggle Last Lua Script: stopped when running, else run again", {}, [this](const Args &, std::string &) -> Value {
+		std::string error;
+		if (lua_.running()) run("stop", {}, error);
+		else run("run", {}, error);
+		return running.get();
+	});
 	command("clear", "empties the output", {}, [this](const Args &, std::string &) -> Value {
 		output_.clear();
 		lines.set(0);
@@ -65,6 +79,13 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 		path.set(p);
 		return {};
 	});
+}
+
+void LuaConsoleViewModel::frameDone()
+{
+	lua_.frameDone();
+	const bool now = lua_.running();
+	if (now != running.get()) running.set(now);
 }
 
 void LuaConsoleViewModel::append(const std::string &line)

@@ -58,6 +58,8 @@ LuaBridge::LuaBridge() : L_(luaL_newstate())
 
 	lua_newtable(L_);
 	frameFns_ = luaL_ref(L_, LUA_REGISTRYINDEX);
+	lua_newtable(L_);
+	waiting_ = luaL_ref(L_, LUA_REGISTRYINDEX);
 
 	lua_newtable(L_);
 	lua_pushcfunction(L_, &LuaBridge::onFrame);
@@ -65,6 +67,9 @@ LuaBridge::LuaBridge() : L_(luaL_newstate())
 	lua_setglobal(L_, "chimera");
 	lua_pushcfunction(L_, &LuaBridge::print);
 	lua_setglobal(L_, "print");
+	/* Chimera's libraries, a layer of Lua over the view models */
+	std::string error;
+	if (!run(luaLibraries(), "chimera-libraries", error)) std::fprintf(stderr, "lua: the libraries did not load: %s\n", error.c_str());
 }
 
 LuaBridge::~LuaBridge() { lua_close(L_); }
@@ -226,14 +231,55 @@ void LuaBridge::log(const std::string &line) const
 
 bool LuaBridge::run(const std::string &code, const std::string &chunkName, std::string &error)
 {
-	if (luaL_loadbuffer(L_, code.data(), code.size(), ("@" + chunkName).c_str()) != LUA_OK ||
-		lua_pcall(L_, 0, 0, 0) != LUA_OK)
+	if (luaL_loadbuffer(L_, code.data(), code.size(), ("@" + chunkName).c_str()) != LUA_OK)
 	{
 		error = lua_tostring(L_, -1) != nullptr ? lua_tostring(L_, -1) : "unknown error";
 		lua_pop(L_, 1);
 		return false;
 	}
-	return true;
+	/* a coroutine of its own: where it yields, it waits for the next frame */
+	lua_State *co = lua_newthread(L_);
+	lua_insert(L_, -2);
+	lua_xmove(L_, co, 1);
+	int results = 0;
+	const int status = lua_resume(co, L_, 0, &results);
+	if (status == LUA_OK)
+	{
+		lua_pop(co, results);
+		lua_pop(L_, 1);
+		return true;
+	}
+	if (status == LUA_YIELD)
+	{
+		lua_pop(co, results);
+		lua_rawgeti(L_, LUA_REGISTRYINDEX, waiting_);
+		lua_insert(L_, -2);
+		lua_rawseti(L_, -2, static_cast<lua_Integer>(lua_rawlen(L_, -2)) + 1);
+		lua_pop(L_, 1);
+		return true;
+	}
+	error = lua_tostring(co, -1) != nullptr ? lua_tostring(co, -1) : "unknown error";
+	lua_pop(L_, 1);
+	return false;
+}
+
+void LuaBridge::stopAll()
+{
+	lua_newtable(L_);
+	lua_rawseti(L_, LUA_REGISTRYINDEX, frameFns_);
+	lua_newtable(L_);
+	lua_rawseti(L_, LUA_REGISTRYINDEX, waiting_);
+}
+
+bool LuaBridge::running() const
+{
+	lua_rawgeti(L_, LUA_REGISTRYINDEX, frameFns_);
+	const bool fns = lua_rawlen(L_, -1) > 0;
+	lua_pop(L_, 1);
+	lua_rawgeti(L_, LUA_REGISTRYINDEX, waiting_);
+	const bool scripts = lua_rawlen(L_, -1) > 0;
+	lua_pop(L_, 1);
+	return fns || scripts;
 }
 
 void LuaBridge::frameDone()
@@ -262,6 +308,35 @@ void LuaBridge::frameDone()
 		}
 		lua_pushnil(L_);
 		lua_rawseti(L_, -2, len);
+	}
+	lua_pop(L_, 1);
+
+	/* the scripts that waited for a frame go on, each to its next yield;
+	 * the ones that finish or fail are let go (a list taken first, so one
+	 * that starts another script does not change it under this loop) */
+	lua_rawgeti(L_, LUA_REGISTRYINDEX, waiting_);
+	const lua_Integer count = static_cast<lua_Integer>(lua_rawlen(L_, -1));
+	lua_newtable(L_);
+	lua_rawseti(L_, LUA_REGISTRYINDEX, waiting_);
+	for (lua_Integer i = 1; i <= count; i++)
+	{
+		lua_rawgeti(L_, -1, i);
+		lua_State *co = lua_tothread(L_, -1);
+		int results = 0;
+		const int status = co != nullptr ? lua_resume(co, L_, 0, &results) : LUA_ERRRUN;
+		if (status == LUA_YIELD)
+		{
+			lua_pop(co, results);
+			lua_rawgeti(L_, LUA_REGISTRYINDEX, waiting_);
+			lua_pushvalue(L_, -2);
+			lua_rawseti(L_, -2, static_cast<lua_Integer>(lua_rawlen(L_, -2)) + 1);
+			lua_pop(L_, 1);
+		}
+		else if (status == LUA_OK)
+			lua_pop(co, results);
+		else if (co != nullptr)
+			log(std::string("script stopped: ") + (lua_tostring(co, -1) ? lua_tostring(co, -1) : "?"));
+		lua_pop(L_, 1);
 	}
 	lua_pop(L_, 1);
 }

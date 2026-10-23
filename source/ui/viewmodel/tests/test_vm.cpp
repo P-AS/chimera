@@ -1551,6 +1551,95 @@ bool recording(const char *package, const char *rom)
 	return true;
 }
 
+/* Chimera's Lua libraries over the view models: a script as Chimera would
+ * write it - memory read and written in each size and order, the domains,
+ * joypad.set held for the next frame, emu.frameadvance waiting for a frame
+ * and going on after it, movie.getinput by full and by controller names,
+ * registers, bit - and stopped, and Toggle Last Lua Script */
+bool luaLibraries(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	DebuggerViewModel debugger(d, session);
+	LuaBridge lua;
+	LuaConsoleViewModel console(d, lua);
+	lua.add(session);
+	lua.add(roll);
+	lua.add(debugger);
+	lua.add(console);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	auto said = [&](const std::string &start) {
+		std::string found;
+		RowModel *out = console.rowLists()[0].model;
+		for (int64_t i = 0; i < out->rowCount(); i++)
+		{
+			std::string line;
+			fromValue(out->cell(i, 0), line);
+			if (line.rfind(start, 0) == 0) found = line;
+		}
+		return found;
+	};
+	console.script.set(R"(
+console.log("start", emu.framecount(), emu.getsystemid() ~= "")
+mainmemory.write_u8(0x10, 0xAB)
+console.log("u8", mainmemory.read_u8(0x10), mainmemory.read_s8(0x10), mainmemory.readbyte(0x10))
+mainmemory.write_u16_be(0x20, 0x1234)
+mainmemory.write_s32_le(0x30, -2)
+console.log("sized", mainmemory.read_u16_be(0x20), mainmemory.read_u16_le(0x20), mainmemory.read_s32_le(0x30), mainmemory.read_u32_le(0x30), mainmemory.read_u24_be(0x20))
+local r = mainmemory.readbyterange(0x20, 2)
+local a = mainmemory.read_bytes_as_array(0x20, 2)
+console.log("tables", r[0], r[1], a[1], a[2], memory.getmemorydomainlist()[0] == mainmemory.getname(), memory.getmemorydomainsize() > 0)
+mainmemory.writefloat(0x40, 1.5, false)
+console.log("float", mainmemory.readfloat(0x40, false))
+joypad.set({["P1 Down"] = true})
+emu.frameadvance()
+local f = emu.framecount() - 1
+console.log("after", emu.framecount(), movie.getinput(f)["P1 Down"], movie.getinput(f, 1)["Down"], movie.getinput(f)["P1 Up"])
+console.log("regs", emu.getregister("Frame") == emu.framecount(), bit.band(0xF0, 0x3C), bit.lshift(1, 4), bit.check(5, 2))
+emu.setregister("R1", 99)
+console.log("set", emu.getregister("R1"))
+emu.frameadvance()
+console.log("again", emu.framecount())
+while true do emu.frameadvance() end
+)");
+	CHECK(console.run("run", {}, error).has_value() && console.running.get());
+	CHECK(said("start ") == "start 0 true");
+	CHECK(said("u8 ") == "u8 171 -85 171");
+	CHECK(said("sized ") == "sized 4660 13330 -2 4294967294 1192960");
+	CHECK(said("tables ") == "tables 18 52 18 52 true true");
+	CHECK(said("float ") == "float 1.5");
+	CHECK(session.readDomain("RAM").at(0x10) == 0xAB);
+	/* waiting for a frame: nothing more yet */
+	CHECK(said("after ").empty());
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
+	console.frameDone();
+	CHECK(said("after ") == "after 1 true true false");
+	CHECK(said("regs ") == "regs true 48 16 true");
+	CHECK(said("set ") == "set 99");
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 2; }, 20));
+	console.frameDone();
+	CHECK(said("again ") == "again 2");
+	/* stopped; Toggle Last Lua Script runs it again, and stops it again */
+	CHECK(console.running.get() && console.run("stop", {}, error).has_value() && !console.running.get());
+	CHECK(console.run("toggleLast", {}, error) == Value(true) && console.run("toggleLast", {}, error) == Value(false));
+	/* a script error is said, and the script let go */
+	console.script.set("emu.frameadvance()\nerror('on purpose')");
+	console.run("run", {}, error);
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 3; }, 20));
+	console.frameDone();
+	CHECK(said("script stopped: ").find("on purpose") != std::string::npos && !console.running.get());
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	return true;
+}
+
 /* Chimera's greenzone budgets: every project's, and a project's own kept
  * beside its cache, each taking effect when the machine opens */
 bool greenzoneBudgets(const char *package, const char *rom)
@@ -5537,6 +5626,7 @@ int main(int argc, char **argv)
 			ranMachine = traceAndRegisters(argv[1], argv[2]) && ranMachine;
 			ranMachine = macroTool(argv[1], argv[2]) && ranMachine;
 			ranMachine = recording(argv[1], argv[2]) && ranMachine;
+			ranMachine = luaLibraries(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;

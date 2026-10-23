@@ -147,6 +147,31 @@ DebuggerViewModel::DebuggerViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		refresh();
 		return static_cast<int64_t>(registers_.size());
 	});
+	command("registerList", "the registers now, a line each: name=value", {}, [this](const Args &, std::string &) -> Value {
+		refresh();
+		std::string out;
+		for (const SessionViewModel::Register &r : registers_) out += r.name + "=" + std::to_string(r.value) + "\n";
+		return out;
+	});
+	command("setRegisterNamed", "a register set by its name", {"name", "value"}, [this](const Args &a, std::string &error) -> Value {
+		std::string name;
+		int64_t value = 0;
+		if (!arg(a, 0, name, error) || !arg(a, 1, value, error)) return {};
+		refresh();
+		for (size_t i = 0; i < registers_.size(); i++)
+			if (registers_[i].name == name)
+			{
+				if (!session_.writeRegister(static_cast<int32_t>(i), value))
+				{
+					error = "this core does not take " + name;
+					return {};
+				}
+				refresh();
+				return {};
+			}
+		error = "no register " + name;
+		return {};
+	});
 	command("setRegister", "a register set, by its place in the list: a number, or hex with 0x", {"index", "value"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t index = 0;

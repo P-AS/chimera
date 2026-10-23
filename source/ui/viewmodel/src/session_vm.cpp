@@ -769,6 +769,148 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		submit([this, folder = cacheFolder.get()] { cacheFolderM_ = folder; });
 	});
 
+	/* for scripts (Chimera's Lua memory and joypad libraries) */
+	command("memoryDomains", "the machine's memory domains, a line each: name, size and whether it can be written, between "
+		"tabs (the first is the main one)", {}, [this](const Args &, std::string &) -> Value {
+			std::string out;
+			onMachineWait([&](ce_session *s) {
+				if (s == nullptr) return;
+				for (int32_t i = 0; i < ce_session_domain_count(s); i++)
+				{
+					if (ce_session_domain_hidden(s, i) != 0) continue;
+					const char *n = ce_session_domain_name(s, i);
+					out += std::string(n != nullptr ? n : "") + "\t" + std::to_string(ce_session_domain_size(s, i)) + "\t" +
+						(ce_session_domain_writable(s, i) != 0 ? "1" : "0") + "\n";
+				}
+			});
+			return out;
+		});
+	command("readMemory", "bytes of a memory domain, as a string of them", {"domain", "address", "length"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string domain;
+			int64_t address = 0, length = 0;
+			if (!arg(a, 0, domain, error) || !arg(a, 1, address, error) || !arg(a, 2, length, error)) return {};
+			std::string bytes;
+			std::string why;
+			onMachineWait([&](ce_session *s) {
+				if (s == nullptr)
+				{
+					why = "no machine is running";
+					return;
+				}
+				for (int32_t i = 0; i < ce_session_domain_count(s); i++)
+				{
+					const char *n = ce_session_domain_name(s, i);
+					if (n == nullptr || domain != n) continue;
+					const int64_t size = ce_session_domain_size(s, i);
+					if (address < 0 || length < 0 || address + length > size)
+					{
+						why = domain + " has no address " + std::to_string(address + length - 1);
+						return;
+					}
+					bytes.resize(static_cast<size_t>(length));
+					ce_session_domain_read(s, i, address, reinterpret_cast<uint8_t *>(bytes.data()), length);
+					return;
+				}
+				why = "no memory domain " + domain;
+			});
+			if (!why.empty())
+			{
+				error = why;
+				return {};
+			}
+			return bytes;
+		});
+	command("writeMemory", "bytes written into a memory domain (the states after this frame no longer hold)",
+		{"domain", "address", "bytes"}, [this](const Args &a, std::string &error) -> Value {
+			std::string domain, bytes;
+			int64_t address = 0;
+			if (!arg(a, 0, domain, error) || !arg(a, 1, address, error) || !arg(a, 2, bytes, error)) return {};
+			std::string why;
+			onMachineWait([&](ce_session *s) {
+				if (s == nullptr)
+				{
+					why = "no machine is running";
+					return;
+				}
+				for (int32_t i = 0; i < ce_session_domain_count(s); i++)
+				{
+					const char *n = ce_session_domain_name(s, i);
+					if (n == nullptr || domain != n) continue;
+					const int64_t size = ce_session_domain_size(s, i);
+					const uint64_t ptr = ce_session_domain_writable(s, i) != 0 ? ce_session_domain_ptr(s, i) : 0;
+					if (ptr == 0)
+					{
+						why = domain + " cannot be written";
+						return;
+					}
+					if (address < 0 || address + static_cast<int64_t>(bytes.size()) > size)
+					{
+						why = domain + " has no address " + std::to_string(address + static_cast<int64_t>(bytes.size()) - 1);
+						return;
+					}
+					std::memcpy(reinterpret_cast<uint8_t *>(ptr) + address, bytes.data(), bytes.size());
+					dropStatesAfterOnMachine(frameM_);
+					return;
+				}
+				why = "no memory domain " + domain;
+			});
+			if (!why.empty())
+			{
+				error = why;
+				return {};
+			}
+			return {};
+		});
+	command("movieInput", "a frame's input in the movie, a line each: a button pressed by its name, an analog control as "
+		"name=value; \"\" past the movie's end", {"frame"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t frame = 0;
+			if (!arg(a, 0, frame, error)) return {};
+			std::string out;
+			onMachineWait([&](ce_session *s) {
+				if (s == nullptr || frame < 0 || frame >= ce_session_movie_length(s)) return;
+				std::vector<int32_t> axes(static_cast<size_t>(ce_session_axis_count(s)));
+				uint64_t buttons = 0;
+				/* 0 read; 1 past the end; -1 a line that cannot be read */
+				if (ce_session_movie_get(s, frame, &buttons, axes.empty() ? nullptr : axes.data()) != 0) return;
+				for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
+					if (buttons >> b & 1) out += buttonNames_[b] + "\n";
+				for (size_t x = 0; x < axes.size() && x < axes_.size(); x++) out += axes_[x].name + "=" + std::to_string(axes[x]) + "\n";
+			});
+			return out;
+		});
+	command("buttonList", "the machine's buttons, a line each", {}, [this](const Args &, std::string &) -> Value {
+		std::string out;
+		for (const std::string &b : buttonNames_) out += b + "\n";
+		return out;
+	});
+	command("heldButtons", "the buttons held now (by keys, gamepads and autohold), a line each", {}, [this](const Args &, std::string &) -> Value {
+		const uint64_t mask = held_.load() | autoholdMask_.load() | scriptHeld_.load();
+		std::string out;
+		for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
+			if (mask >> b & 1) out += buttonNames_[b] + "\n";
+		return out;
+	});
+	command("scriptHold", "buttons a script holds for the next frame run, a line each (Chimera's joypad.set)", {"buttons"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string list;
+			if (!arg(a, 0, list, error)) return {};
+			uint64_t mask = 0;
+			std::istringstream in(list);
+			for (std::string name; std::getline(in, name);)
+			{
+				if (name.empty()) continue;
+				const auto it = std::find(buttonNames_.begin(), buttonNames_.end(), name);
+				if (it == buttonNames_.end() || it - buttonNames_.begin() >= 64)
+				{
+					error = "no button " + name;
+					return {};
+				}
+				mask |= uint64_t{1} << (it - buttonNames_.begin());
+			}
+			scriptHeld_.store(mask);
+			return {};
+		});
 	command("stopMovie", "Chimera's Stop Movie under TAStudio: the project let go and its game opened alone, a new empty "
 		"movie (the window asks about changes not saved first)", {}, [this](const Args &, std::string &error) -> Value {
 			std::string game, package;
@@ -3545,7 +3687,8 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		}
 		/* a pad is not heard while the window is behind another, unless asked */
 		if (!padsHeardM_.load()) padMask = 0;
-		held = held_.load() | padMask;
+		/* a script's buttons hold for one frame */
+		held = held_.load() | padMask | scriptHeld_.exchange(0);
 		/* a pad's button pressed while autohold or autofire is armed changes over */
 		const uint64_t padPressed = padMask & ~padWasM_;
 		padWasM_ = padMask;

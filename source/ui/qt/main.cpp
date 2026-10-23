@@ -249,6 +249,7 @@ int main(int argc, char **argv)
 	 * has: each one the hotkeys' to bind. What a menu or a dialog does is the
 	 * window's, and the relay hands it over; the rest is done here. */
 	vm::HotkeysViewModel hotkeys(dispatcher);
+	vm::LuaConsoleViewModel *luaConsoleOf = nullptr;
 	qt::HotkeyRelay relay;
 	/* the main window, once it is made: the screen copied from it */
 	QQuickWindow *mainWindow = nullptr;
@@ -398,6 +399,10 @@ int main(int argc, char **argv)
 		window("Tools", "Hex Editor", "");
 		window("Tools", "Lua Console", "");
 		window("Tools", "Trace Logger", "");
+		/* the console is made below; the key reaches it once it is */
+		hotkeys.add("Tools", "Toggle Last Lua Script", "", [&luaConsoleOf, run](bool down) {
+			if (down && luaConsoleOf != nullptr) run(*luaConsoleOf, "toggleLast");
+		});
 		/* Chimera's Movie group, as TAStudio answers it: open a project, make
 		 * one, a new empty movie for the game, the project read again from
 		 * its file, the project saved */
@@ -878,6 +883,7 @@ int main(int argc, char **argv)
 		std::printf("lua: %s\n", line.c_str());
 		std::fflush(stdout);
 	});
+	luaConsoleOf = &luaConsole;
 	qt::QmlViewModel luaConsoleQml(luaConsole);
 	lua.add(session);
 	lua.add(pianoRoll);
@@ -918,8 +924,8 @@ int main(int argc, char **argv)
 	/* after each report from the machine, every property updated - not on a
 	 * change of frame number, which a seek away and back again never makes */
 	/* scripts while turbo is held only when asked (Customize) */
-	vm::Connection luaFrames = session.screenChanged.connect([&lua, &customize] {
-		if (customize.luaRunsNow()) lua.frameDone();
+	vm::Connection luaFrames = session.screenChanged.connect([&luaConsole, &customize] {
+		if (customize.luaRunsNow()) luaConsole.frameDone();
 	});
 
 	qmlRegisterType<qt::PictureItem>("Chimera", 1, 0, "PictureItem");

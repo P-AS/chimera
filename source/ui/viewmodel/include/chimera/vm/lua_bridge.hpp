@@ -7,7 +7,11 @@
  * the MCP server would list the same names (describe()).
  *
  * chimera.onFrame(fn) runs fn after every frame the window learns of, and
- * print() writes to the bridge's log. One thread: the view's. */
+ * print() writes to the bridge's log. A script runs as a coroutine: where it
+ * yields (Chimera's emu.frameadvance()) it goes on after the next frame.
+ * Chimera's Lua libraries (emu, memory, mainmemory, joypad, movie, client,
+ * console, gameinfo, event, bit) are a layer of Lua over the view models,
+ * defined at the start (lua_libraries.cpp). One thread: the view's. */
 
 #include <functional>
 #include <string>
@@ -32,8 +36,13 @@ public:
 	/* runs a chunk; false with the message in `error` when it fails */
 	bool run(const std::string &code, const std::string &chunkName, std::string &error);
 
-	/* calls every chimera.onFrame function; a failing one is dropped and its error logged */
+	/* calls every chimera.onFrame function, then goes on with every script
+	 * waiting for a frame; a failing one is dropped and its error logged */
 	void frameDone();
+	/* every script let go: its frame functions and what waits for a frame */
+	void stopAll();
+	/* whether anything of a script is still running (frame functions, or a script waiting) */
+	bool running() const;
 
 	/* what print() wrote and what failed, a line each */
 	std::function<void(const std::string &)> onLog;
@@ -51,10 +60,12 @@ private:
 	static void push(lua_State *L, const Value &v);
 	static bool read(lua_State *L, int at, Value &out);
 	void log(const std::string &line) const;
+	static const char *luaLibraries();
 
 	lua_State *L_;
 	std::vector<ViewModel *> models_;
 	int frameFns_ = 0; /* a registry reference to the table of onFrame functions */
+	int waiting_ = 0;  /* a registry reference to the table of scripts waiting for a frame */
 };
 
 } // namespace chimera::vm

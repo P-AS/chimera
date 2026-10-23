@@ -775,6 +775,8 @@ private:
 	std::unique_ptr<Sound> soundM_;
 
 	std::atomic<uint64_t> held_{0};
+	/* buttons a script holds for the next frame run (Lua's joypad.set), let go after it */
+	std::atomic<uint64_t> scriptHeld_{0};
 	/* the sticky buttons, a bit each, and which arming is on (1 hold, 2 fire) */
 	std::atomic<uint64_t> autoholdMask_{0}, autofireMask_{0};
 	std::atomic<int> armed_{0};
