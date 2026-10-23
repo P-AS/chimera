@@ -675,6 +675,24 @@ function gui.clearImageCache() imageEpoch = imageEpoch + 1 end
 function __chimera_frame_begin() shapes = {} end
 function __chimera_frame_end() if C.gui then C.gui.shapes = jsonOf(shapes) end end
 
+-- SQL: a SQLite database, as Chimera's -----------------------------------
+SQL = {}
+function SQL.createdatabase(name) return C.sql.createDatabase(tostring(name)) end
+function SQL.opendatabase(name) return C.sql.openDatabase(tostring(name)) end
+function SQL.writecommand(query) return C.sql.writeCommand(tostring(query or "")) end
+-- every value keyed "column row", as Chimera's; else what happened
+function SQL.readcommand(query)
+	local answer = C.sql.readCommand(tostring(query or ""))
+	if string.sub(answer, 1, 1) ~= "\30" then return answer end
+	local t = {}
+	for key, kind, value in string.gmatch(answer, "([^\30\31]*)\31(%a)\31([^\30]*)\30") do
+		if kind == "i" then t[key] = math.tointeger(tonumber(value))
+		elseif kind == "f" then t[key] = tonumber(value)
+		elseif kind ~= "n" then t[key] = value end
+	end
+	return t
+end
+
 -- comm: data shared with other programs through memory-mapped files, as
 -- Chimera's (it has no network functions) ------------------------------------
 comm = {}

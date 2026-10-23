@@ -71,6 +71,7 @@
 #include "chimera/vm/game_vm.hpp"
 #include "chimera/vm/forms_vm.hpp"
 #include "chimera/vm/comm_vm.hpp"
+#include "chimera/vm/sql_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -996,6 +997,9 @@ int main(int argc, char **argv)
 	});
 	if (args.isSet(mmfOpt)) comm.screenshotFile.set(args.value(mmfOpt).toStdString());
 	lua.add(comm);
+	/* a SQLite database for scripts, as Chimera's SQL library */
+	vm::SqlViewModel sql(dispatcher);
+	lua.add(sql);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());

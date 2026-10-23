@@ -65,6 +65,7 @@
 #include "chimera/vm/game_vm.hpp"
 #include "chimera/vm/forms_vm.hpp"
 #include "chimera/vm/comm_vm.hpp"
+#include "chimera/vm/sql_vm.hpp"
 #ifndef _WIN32
 #include <sys/mman.h>
 #endif
@@ -1483,6 +1484,7 @@ bool luaLibraries(const char *package, const char *rom)
 	GamePropertiesViewModel gameProperties(d, session);
 	FormsViewModel forms(d);
 	CommViewModel comm(d, [] { return std::string("PNG bytes"); });
+	SqlViewModel sql(d);
 	LuaBridge lua;
 	LuaConsoleViewModel console(d, lua);
 	lua.add(session);
@@ -1494,6 +1496,7 @@ bool luaLibraries(const char *package, const char *rom)
 	lua.add(gameProperties);
 	lua.add(forms);
 	lua.add(comm);
+	lua.add(sql);
 	Connection formClicks = forms.clicked.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_click", h); });
 	Connection formCloses = forms.closed.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_closed", h); });
 	/* the person holds Z and the left and right buttons, the pointer at 12,34 */
@@ -1519,7 +1522,7 @@ bool luaLibraries(const char *package, const char *rom)
 		}
 		return found;
 	};
-	console.script.set(R"(
+	console.script.set(R"LUA(
 console.log("start", emu.framecount(), emu.getsystemid() ~= "")
 mainmemory.write_u8(0x10, 0xAB)
 console.log("u8", mainmemory.read_u8(0x10), mainmemory.read_s8(0x10), mainmemory.readbyte(0x10))
@@ -1562,6 +1565,15 @@ comm.mmfCopyToMemory(shared .. "-ram", 0x70, 3)
 console.log("comm", comm.mmfWrite(shared, "hello"), comm.mmfRead(shared, 5), comm.mmfWriteBytes(shared .. "-b", {1, 2, 3}), comm.mmfReadBytes(shared .. "-b", 3)[2],
 	mainmemory.read_u8(0x71), comm.mmfScreenshot(), comm.mmfRead(comm.mmfGetFilename(), 9), pcall(comm.mmfRead, shared .. "-none", 4))
 console.log("sharedname", shared)
+local db = os.tmpname()
+console.log("sqlbefore", SQL.writecommand("create table t (x integer)"), SQL.readcommand("select 1"))
+local created, opened = SQL.createdatabase(db), SQL.opendatabase(db)
+local made = SQL.writecommand("create table rewards (ID integer primary key, action varchar(20), score real)")
+SQL.writecommand("insert into rewards (action, score) values ('jump', 1.5)")
+SQL.writecommand("insert into rewards (action, score) values ('run', null)")
+local rows = SQL.readcommand("select * from rewards")
+console.log("sql", created, opened, made, rows["ID 0"], rows["action 1"], rows["score 0"], rows["score 1"], SQL.readcommand("select * from rewards where ID = 9"), SQL.writecommand("nonsense"))
+os.remove(db) os.remove(db .. "-wal") os.remove(db .. "-shm")
 userdata.set("lives", 3)
 userdata.set("name", "walker")
 console.log("userdata", userdata.get("lives"), userdata.containskey("name"), #userdata.get_keys(), userdata.remove("lives"), userdata.get("lives"), userdata.remove("lives"), select(2, pcall(userdata.set, "t", {})):find("Invalid type for userdata") ~= nil)
@@ -1583,7 +1595,7 @@ console.log("hash", mainmemory.hash_region(0x50, 3), memory.hash_region(0x50, 0,
 emu.frameadvance()
 console.log("entry", movie.getinput(emu.framecount() - 1)["P1 Right"], movie.getinput(emu.framecount() - 1)["P1 Up"], (select(2, pcall(joypad.setaxis, "Stick", 5))):find("no analog control") ~= nil)
 while true do emu.frameadvance() end
-)");
+)LUA");
 	CHECK(console.run("run", {}, error).has_value() && console.running.get());
 	CHECK(said("start ") == "start 0 true");
 	CHECK(said("u8 ") == "u8 171 -85 171");
@@ -1594,6 +1606,8 @@ while true do emu.frameadvance() end
 	CHECK(said("input ") == "input true true true true true 12 34 true false true 34");
 	CHECK(said("game ") == "game 17 Status Steps u32 4 4 1 16909060 true true string false");
 	CHECK(said("forms ") == "forms true abc a 1 90 false 0 67174915");
+	CHECK(said("sqlbefore ") == "sqlbefore Database not open. Database not open.");
+	CHECK(said("sql ") == "sql Database Created Successfully Database Opened Successfully Command ran successfully 1 run 1.5 nil No rows found near \"nonsense\": syntax error");
 	CHECK(said("comm ").rfind("comm 5 hello 3 3 8 9 PNG bytes false ", 0) == 0 && said("comm ").find("there is no memory-mapped file") != std::string::npos);
 	/* the shared memory made, let go (the script runs again below: that run's too, at the end) */
 	auto unshare = [&] {

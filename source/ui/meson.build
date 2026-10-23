@@ -46,6 +46,7 @@ vm_lib = static_library(
     'viewmodel/src/forms_vm.cpp',
     'viewmodel/src/sha256.cpp',
     'viewmodel/src/comm_vm.cpp',
+    'viewmodel/src/sql_vm.cpp',
     'viewmodel/src/surface_viewer_vm.cpp',
     'viewmodel/src/macro_tool_vm.cpp',
     'viewmodel/src/project_details_vm.cpp',
@@ -65,13 +66,13 @@ vm_lib = static_library(
     'viewmodel/src/media_maker_vm.cpp',
     'viewmodel/src/cache_manager_vm.cpp',
   ],
-  include_directories: [vm_inc, engine_inc, include_directories('../../extern/lua')],
+  include_directories: [vm_inc, engine_inc, include_directories('../../extern/lua'), include_directories('../../extern/sqlite3/sqlite3')],
   dependencies: [thread_dep, dl_dep],
   override_options: ['cpp_std=c++20'],
   pic: true,
 )
 vm_dep = declare_dependency(
-  link_with: [vm_lib, chimera_shared, lua54],
+  link_with: [vm_lib, chimera_shared, lua54, e_sqlite3_lib],
   include_directories: [vm_inc, engine_inc],
   dependencies: [thread_dep],
 )

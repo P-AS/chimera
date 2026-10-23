@@ -112,7 +112,7 @@ sqlite_args = [
 if host_windows
   sqlite_args += '-DSQLITE_API=__declspec(dllexport)'
 endif
-shared_library(
+e_sqlite3_lib = shared_library(
   'e_sqlite3',
   files('extern/sqlite3/sqlite3/sqlite3.c'),
   name_prefix: host_windows ? '' : 'lib',
