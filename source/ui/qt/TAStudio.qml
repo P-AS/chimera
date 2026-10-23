@@ -378,6 +378,8 @@ ApplicationWindow {
                 rollFont: tas.pianoRoll.rollFont
                 onCellPressed: (row, column, alt) => tas.pianoRoll.run("press", [row, column, alt])
                 onColumnMenuRequested: (column, name, autoHeld, x, y) => { columnMenu.name = name; columnMenu.autoHeld = autoHeld; columnMenu.popup() }
+                // Chimera's menu for the frames picked; nothing picked, no menu
+                onRowMenuRequested: (row) => { if (tas.pianoRoll.selectFirst >= 0 && tas.pianoRoll.selectLast < tas.pianoRoll.frameCount) rowMenu.popup() }
                 onCellDragged: (row, column) => tas.pianoRoll.run("drag", [row, column])
                 onFrameClicked: (row) => tas.session.run("seek", [row])
                 selectFirst: tas.pianoRoll.selectFirst
@@ -652,6 +654,66 @@ ApplicationWindow {
         ToolTip.text: tip
         ToolTip.visible: hovered && tip !== ""
         ToolTip.delay: 500
+    }
+    // the roll's menu on the frames picked, in Chimera's order
+    Menu {
+        id: rowMenu
+        objectName: "rowMenu"
+        delegate: tas.keyedItem
+        Action {
+            text: qsTr("Set Markers")
+            onTriggered: {
+                const count = tas.pianoRoll.selectLast - tas.pianoRoll.selectFirst + 1
+                if (count > 50) manyMarkersDialog.open()
+                else tas.setMarkers()
+            }
+        }
+        Action { text: qsTr("Set Marker with Text"); onTriggered: markerDialog.openFor(tas.pianoRoll.selectFirst, "") }
+        Action { text: qsTr("Remove Markers"); onTriggered: tas.removeMarkers() }
+        MenuSeparator {}
+        Action { text: qsTr("Deselect"); onTriggered: tas.pianoRoll.run("select", [-1, -1]) }
+        Action { property string hotkey: "Sel. bet. Markers"; text: qsTr("Select between Markers"); onTriggered: tas.selectBetweenMarkers() }
+        MenuSeparator {}
+        Action { text: qsTr("Clear Greenzone"); onTriggered: tas.session.run("clearGreenzone") }
+        MenuSeparator {}
+        Action {
+            text: qsTr("Copy")
+            onTriggered: {
+                tas.pianoRoll.run("copyFrames", [tas.pianoRoll.selectFirst, tas.pianoRoll.selectLast])
+                tas.clipboard.setText(tas.pianoRoll.clipboardText)
+            }
+        }
+        Action { text: qsTr("Paste"); enabled: tas.clipboard.hasText; onTriggered: tas.pianoRoll.run("pasteText", [tas.pianoRoll.selectFirst, tas.clipboard.text(), false]) }
+        Action { property string hotkey: "Paste Insert"; text: qsTr("Paste Insert"); enabled: tas.clipboard.hasText; onTriggered: tas.pianoRoll.run("pasteText", [tas.pianoRoll.selectFirst, tas.clipboard.text(), true]) }
+        Action {
+            text: qsTr("Cut")
+            onTriggered: {
+                tas.pianoRoll.run("cutFrames", [tas.pianoRoll.selectFirst, tas.pianoRoll.selectLast])
+                tas.clipboard.setText(tas.pianoRoll.clipboardText)
+            }
+        }
+        MenuSeparator {}
+        Action { property string hotkey: "Clear Frames"; text: qsTr("Clear"); onTriggered: clearFramesAction.trigger() }
+        Action { property string hotkey: "Delete Frames"; text: qsTr("Delete"); onTriggered: deleteFramesAction.trigger() }
+        Action { property string hotkey: "Insert Frame"; text: qsTr("Insert"); onTriggered: insertFrameAction.trigger() }
+        Action { property string hotkey: "Insert # Frames"; text: qsTr("Insert # of Frames"); onTriggered: insertDialog.open() }
+        Action { property string hotkey: "Clone Frames"; text: qsTr("Clone"); onTriggered: cloneFramesAction.trigger() }
+        Action { property string hotkey: "Clone # Times"; text: qsTr("Clone # Times"); onTriggered: cloneDialog.open() }
+        MenuSeparator {}
+        Action { text: qsTr("Truncate Movie"); onTriggered: tas.pianoRoll.run("truncate", [tas.pianoRoll.selectFirst]) }
+        Action { text: qsTr("&Branch"); enabled: tas.branches.createEnabled; onTriggered: tas.branches.run("create", [""]) }
+    }
+    // a marker on each frame picked; more than 50 asks first, as Chimera does
+    function setMarkers() { tas.pianoRoll.run("addMarkers", [tas.pianoRoll.selectFirst, tas.pianoRoll.selectLast]) }
+    function removeMarkers() { tas.pianoRoll.run("removeMarkers", [tas.pianoRoll.selectFirst, tas.pianoRoll.selectLast]) }
+    Dialog {
+        id: manyMarkersDialog
+        title: qsTr("Add markers")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        Label { text: qsTr("Are you sure you want to add more than 50 markers?") }
+        onAccepted: tas.setMarkers()
     }
     // Chimera's branch menu, on the branch picked
     Menu {

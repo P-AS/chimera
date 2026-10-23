@@ -2044,6 +2044,12 @@ bool tastudioSettings(const char *package, const char *rom)
 	roll.markersKeepStates.set(true);
 	CHECK(roll.run("addMarker", {int64_t{5}, std::string("named again")}, error).has_value() && keeps(5) == 0);
 	CHECK(roll.run("addMarker", {int64_t{6}, std::string("six")}, error).has_value() && keeps(6) == 1);
+	/* TAStudio's Set Markers and Remove Markers, on the frames picked */
+	CHECK(roll.run("addMarkers", {int64_t{6}, int64_t{8}}, error) == Value(int64_t{3}) && roll.markerCount.get() == 4 && keeps(7) == 1 && keeps(8) == 1);
+	CHECK(roll.run("removeMarkers", {int64_t{6}, int64_t{7}}, error) == Value(int64_t{2}) && keeps(6) == -1 && keeps(7) == -1);
+	CHECK(keeps(5) == 0 && keeps(8) == 1 && roll.run("removeMarkers", {int64_t{8}, int64_t{9}}, error) == Value(int64_t{1}) && roll.markerCount.get() == 1);
+	CHECK(!roll.run("addMarkers", {int64_t{3}, int64_t{2}}, error).has_value());
+	roll.run("addMarker", {int64_t{6}, std::string("six")}, error);
 	/* Copy: a line a frame, as the movie has them; with their numbers when asked */
 	CHECK(roll.run("copyFrames", {int64_t{2}, int64_t{3}}, error).has_value());
 	const std::string plain = roll.clipboardText.get();

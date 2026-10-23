@@ -63,7 +63,10 @@ its menus. Beside the roll are Chimera's boxes: Playback (previous
 marker, a frame back, pause or run, a frame on, next marker, follow
 cursor, auto-restore), Greenzone (every frame, every N frames, off),
 Branches and Markers, each with a few buttons and a right-click menu for
-the rest. Keys pressed in TAStudio reach the machine and the hotkeys, as
+the rest. A right click on the frames picked opens Chimera's menu for
+them: set markers (more than 50 asks first), a marker with text, remove
+markers, deselect, select between markers, clear greenzone, copy, paste,
+paste insert, cut, clear, delete, insert, clone, truncate, and branch. Keys pressed in TAStudio reach the machine and the hotkeys, as
 Chimera's TAStudio passes them on. Move with Main Window (on at first, as
 in Chimera) brings TAStudio along when the main window is dragged.
 Tools > TAStudio opens it for a game opened without a project too.
@@ -257,10 +260,9 @@ Taken from Chimera's menus, dialogs and tools on 2026-10-23, and ticked off
 as each lands here. Parts that wait on a question to the owner say so.
 
 - TAStudio: the rest of
-  TAStudio's settings (the roll turned on its side). The roll's own
-  right-click menu on frames (set and remove markers, make a branch, the
-  frame edits), Shift held to drag the main window without TAStudio, and
-  Turbo seek (not needed: see the hotkeys row). Recording mode waits on
+  TAStudio's settings (the roll turned on its side). Shift held to drag
+  the main window without TAStudio, and Turbo seek (not needed: see the
+  hotkeys row). Recording mode waits on
   question 6. (Chimera's Selection Undo and Redo are always greyed out
   and do nothing, so there is nothing of theirs to bring.)
 - Configuration: the audio and vsync throttles (only Chimera's clock

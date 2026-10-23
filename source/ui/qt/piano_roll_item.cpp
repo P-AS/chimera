@@ -387,6 +387,12 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 			e->accept();
 			return;
 		}
+		if (rows_ != nullptr && e->position().y() >= rowHeight_)
+		{
+			Q_EMIT rowMenuRequested(rowOnLine(static_cast<qint64>((e->position().y() - rowHeight_) / rowHeight_)));
+			e->accept();
+			return;
+		}
 		e->ignore();
 		return;
 	}

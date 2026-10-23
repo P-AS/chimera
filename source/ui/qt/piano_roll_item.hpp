@@ -77,6 +77,8 @@ Q_SIGNALS:
 	void cellPressed(qint64 row, int column, bool alt);
 	/* the right button on a column's name: its menu */
 	void columnMenuRequested(int column, const QString &name, bool autoHeld, qreal x, qreal y);
+	/* the right button on the rows: TAStudio's menu for the frames picked */
+	void rowMenuRequested(qint64 row);
 	void cellDragged(qint64 row, int column);
 	/* a press on a row's frame number */
 	void frameClicked(qint64 row);

@@ -492,6 +492,40 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			markersEdited(f);
 			return {};
 		});
+	command("addMarkers", "TAStudio's Set Markers: an unnamed marker on every frame from first to last (one there "
+		"already is named again, empty); how many", {"first", "last"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t first = 0, last = 0;
+			if (!arg(a, 0, first, error) || !arg(a, 1, last, error)) return {};
+			if (first < 0 || last < first)
+			{
+				error = "frames " + std::to_string(first) + " to " + std::to_string(last) + " are not a range";
+				return {};
+			}
+			for (int64_t f = first; f <= last; f++)
+			{
+				const auto there = markers_.find(f);
+				const bool keep = there != markers_.end() ? there->second.keepState : markersKeepStates.get();
+				markers_[f] = Marker{f, "", keep};
+			}
+			markersEdited(first);
+			if (last != first && last < inputs_.size()) frames_.changed.emit(first, last);
+			return last - first + 1;
+		});
+	command("removeMarkers", "TAStudio's Remove Markers: every marker from first to last taken off; how many",
+		{"first", "last"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t first = 0, last = 0;
+			if (!arg(a, 0, first, error) || !arg(a, 1, last, error)) return {};
+			int64_t removed = 0;
+			for (auto it = markers_.lower_bound(first); it != markers_.end() && it->first <= last; removed++)
+				it = markers_.erase(it);
+			if (removed > 0)
+			{
+				markersEdited(first);
+				if (last != first) frames_.changed.emit(first, std::min<int64_t>(last, std::max<int64_t>(first, inputs_.size() - 1)));
+			}
+			return removed;
+		});
 	command("nextMarker", "the first marker after a frame, or -1", {"frame"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0;
