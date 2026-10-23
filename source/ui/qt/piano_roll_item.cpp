@@ -211,6 +211,10 @@ void PianoRollItem::paint(QPainter *p)
 	themed(green, "TasGreenZoneInput");
 	themed(lag, "TasLagZoneInput");
 	themed(marker, "TasMarker");
+	/* the run's own markers (start, last input, end) are not the person's and
+	 * do not look like them: Chimera's light and dark themes' colour */
+	QColor permanent = dark ? QColor(0x1F, 0x33, 0x50) : QColor(0xC9, 0xE4, 0xFF);
+	themed(permanent, "TasPermanentMarker");
 	themed(picked, "RollSelection");
 	themed(pickedText, "RollSelectionText");
 	/* the greenzone's frames with a state held, and those an edit sent the
@@ -279,7 +283,7 @@ void PianoRollItem::paint(QPainter *p)
 		next = rows.nextShown(row);
 		const int y = rowHeight_ * (i + 1);
 		const uint32_t flags = rows.rowFlags(row);
-		const bool isLag = flags & 1, inGreen = flags & 2, isMarker = flags & 4, stated = flags & 8, ran = flags & 16;
+		const bool isLag = flags & 1, inGreen = flags & 2, isMarker = flags & 4, stated = flags & 8, ran = flags & 16, isPermanent = flags & 32;
 		/* as Chimera's TAStudio colours a row: the current frame; the
 		 * greenzone's, apart where a state is held; those an edit took out
 		 * of it; the rest */
@@ -300,7 +304,7 @@ void PianoRollItem::paint(QPainter *p)
 		if (frameWash.isValid()) p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, frameWash);
 		/* a marker: its frame number on the accent (when markers are told by
 		 * colour), its text after the buttons */
-		if (isMarker && denoteMarkersColor_ && row != current_) p->fillRect(0, y, fx, rowHeight_, marker);
+		if (isMarker && denoteMarkersColor_ && row != current_) p->fillRect(0, y, fx, rowHeight_, isPermanent ? permanent : marker);
 		/* the icons: a marker's flag, else a held state's anchor */
 		if (isMarker && denoteMarkersIcons_)
 		{

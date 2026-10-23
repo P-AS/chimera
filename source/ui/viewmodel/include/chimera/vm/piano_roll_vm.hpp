@@ -17,6 +17,8 @@ class PianoRollViewModel : public ViewModel
 public:
 	/* Frames::rowFlags */
 	static constexpr uint32_t kLag = 1, kGreen = 2, kMarker = 4, kStated = 8, kRan = 16;
+	/* one of the run's own markers is on the frame */
+	static constexpr uint32_t kPermanent = 32;
 
 	PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs, SessionViewModel &session);
 
@@ -103,7 +105,14 @@ public:
 	/* the first frame in view, and how many fit: the view says how many */
 	Property<int64_t> topFrame{0};
 	Property<int64_t> visibleFrames{0};
+	/* the markers people placed (the run's own three not counted) */
 	Property<int64_t> markerCount{0};
+	/* the run's own markers, as Chimera gives every movie: Run start on frame
+	 * 0, Last input on the last frame anything is pressed on (0 when none
+	 * is), Run end on the movie's last frame. They follow every edit, are
+	 * never saved, and cannot be moved, renamed or removed */
+	Property<int64_t> lastInputFrame{0};
+	Property<int64_t> runEndFrame{0};
 	/* an edit can be taken back, or one taken back done again */
 	Property<bool> canUndo{false};
 	Property<bool> canRedo{false};
@@ -209,8 +218,8 @@ private:
 	{
 	public:
 		explicit MarkerRows(PianoRollViewModel &vm) : vm_(vm) {}
-		int64_t rowCount() const override { return static_cast<int64_t>(vm_.markers_.size()); }
-		int32_t columnCount() const override { return 3; }
+		int64_t rowCount() const override { return static_cast<int64_t>(vm_.markerList_.size()); }
+		int32_t columnCount() const override { return 4; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -341,6 +350,23 @@ private:
 	void undoOrRedo(bool back);
 	void edited(int64_t first, int64_t last, int64_t oldCount);
 	void markersEdited(int64_t frame);
+	/* Chimera's RefreshLastNonEmptyInput: after an edit at a frame, the last
+	 * frame with anything pressed, walking back from the end no further than
+	 * the edit unless the edit could have erased it; then the run's own
+	 * markers moved where the movie says, and the marker list made again */
+	void refreshRun(int64_t frame);
+	bool frameEmpty(int64_t frame) const;
+	bool permanentAt(int64_t frame) const { return frame == 0 || frame == lastInputFrame.get() || frame == runEndFrame.get(); }
+	void listMarkers();
+	/* the marker list as shown: the run's own first on a shared frame, in run order */
+	struct ListedMarker
+	{
+		int64_t frame;
+		std::string text;
+		bool keepState, permanent;
+	};
+	std::vector<ListedMarker> markerList_;
+	Connection runOpensWatch_;
 	void follow();
 	void clampTop();
 

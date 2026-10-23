@@ -346,6 +346,8 @@ public:
 	/* the movie's markers, from whoever edits them: saved with the project,
 	 * and the frames of those that keep a state pinned in the greenzone */
 	void setMarkers(std::vector<Marker> markers);
+	/* the run's own markers' frames: their states are kept as a marker's are, never saved */
+	void setRunMarkers(std::vector<int64_t> frames);
 
 	/* A branch: another version of the movie, kept to come back to. */
 	struct Branch
@@ -656,6 +658,7 @@ private:
 	std::string gameSlotM_;
 	std::vector<int32_t> axesBuf_;
 	std::vector<Marker> markersM_;
+	std::vector<int64_t> runMarkersM_;
 	PackageFinder findPackageM_;
 	ExtensionFinder byExtension_; /* the view's thread's */
 	std::vector<std::pair<std::string, std::string>> offered_;

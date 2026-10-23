@@ -2053,6 +2053,32 @@ bool tastudioSettings(const char *package, const char *rom)
 	CHECK(keeps(5) == 0 && keeps(8) == 1 && roll.run("removeMarkers", {int64_t{8}, int64_t{9}}, error) == Value(int64_t{1}) && roll.markerCount.get() == 1);
 	CHECK(!roll.run("addMarkers", {int64_t{3}, int64_t{2}}, error).has_value());
 	roll.run("addMarker", {int64_t{6}, std::string("six")}, error);
+	/* the run's own markers, as Chimera's: Run end on the last frame, Last
+	 * input on the last press, following each edit; not removable */
+	{
+		const int64_t end = inputs.size() - 1, was = roll.lastInputFrame.get();
+		RowModel &frames = *roll.rowLists()[0].model;
+		CHECK(roll.runEndFrame.get() == end && was <= end && !frames.rowNote(0).size());
+		CHECK((frames.rowFlags(end) & PianoRollViewModel::kPermanent) != 0 && (frames.rowFlags(0) & PianoRollViewModel::kPermanent) != 0);
+		/* two empty frames put in after the end: the run ends there, its input does not */
+		roll.run("insertFrames", {end + 1, int64_t{2}}, error);
+		CHECK(roll.runEndFrame.get() == end + 2 && roll.lastInputFrame.get() == was);
+		roll.run("toggle", {end + 2, int64_t{0}}, error);
+		CHECK(roll.lastInputFrame.get() == end + 2);
+		roll.run("toggle", {end + 2, int64_t{0}}, error);
+		CHECK(roll.lastInputFrame.get() == was);
+		roll.run("undo", {}, error);
+		roll.run("undo", {}, error);
+		roll.run("undo", {}, error);
+		CHECK(roll.runEndFrame.get() == end && inputs.size() == end + 1);
+		CHECK(!roll.run("removeMarker", {end}, error) && error.find("the run's own") != std::string::npos);
+		CHECK(!roll.run("removeMarker", {int64_t{0}}, error));
+		CHECK(std::get<int64_t>(*roll.run("nextMarker", {end - 1}, error)) == end);
+		/* a marker of the person's may share their frame, beside them */
+		roll.run("addMarker", {end, std::string("mine")}, error);
+		CHECK(roll.markerCount.get() == 3 && frames.rowNote(end) == "mine");
+		CHECK(roll.run("removeMarker", {end}, error).has_value() && roll.markerCount.get() == 2);
+	}
 	/* Copy: a line a frame, as the movie has them; with their numbers when asked */
 	CHECK(roll.run("copyFrames", {int64_t{2}, int64_t{3}}, error).has_value());
 	const std::string plain = roll.clipboardText.get();
@@ -3200,8 +3226,9 @@ bool settings(const char *package, const char *rom)
 	settings.run("set", {std::string("initFillByte"), int64_t{171}}, error);
 	const int64_t opensBefore = session.opens.get();
 	settings.run("apply", {}, error);
-	CHECK(d.until([&] { return session.opens.get() > opensBefore && !settings.pending.get(); }, 60));
-	CHECK(settings.status.get().find("started again") != std::string::npos);
+	/* the answer comes after the machine has opened again: waited for too */
+	CHECK(d.until([&] { return session.opens.get() > opensBefore && !settings.pending.get() &&
+								 settings.status.get().find("started again") != std::string::npos; }, 60));
 	CHECK(filled(0xAB) >= zeros); /* the machine started with its RAM filled with 171 */
 	fromValue(rows.cell(0, SettingsViewModel::kValue), value);
 	CHECK(value == 171);
@@ -3330,8 +3357,11 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	CHECK(roll.markerCount.get() == 2);
 	CHECK((roll.rowLists()[0].model->rowFlags(12) & PianoRollViewModel::kMarker) != 0);
 	CHECK(roll.rowLists()[0].model->rowNote(30) == "the corner");
-	CHECK(std::get<int64_t>(*roll.run("nextMarker", {int64_t{12}}, error)) == 30);
-	CHECK(std::get<int64_t>(*roll.run("previousMarker", {int64_t{12}}, error)) == -1);
+	/* the run's own markers count too: Last input when it comes between, Run start before */
+	const int64_t lastIn = roll.lastInputFrame.get();
+	CHECK(roll.runEndFrame.get() == inputs.size() - 1);
+	CHECK(std::get<int64_t>(*roll.run("nextMarker", {int64_t{12}}, error)) == (lastIn > 12 && lastIn < 30 ? lastIn : 30));
+	CHECK(std::get<int64_t>(*roll.run("previousMarker", {int64_t{12}}, error)) == (lastIn > 0 && lastIn < 12 ? lastIn : 0));
 	CHECK(!roll.run("removeMarker", {int64_t{13}}, error) && error == "no marker on frame 13");
 	const std::string beforeMarkers = readFile(dir / "saved.chimeraProject");
 	session.run("saveProject", {std::string()}, error);
@@ -3345,7 +3375,14 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	RowModel &marks = *roll.rowLists()[1].model;
 	int64_t firstFrame = -1;
 	fromValue(marks.cell(0, 0), firstFrame);
-	CHECK(marks.rowCount() == 2 && firstFrame == 12);
+	/* the run's own three first, then the person's; and none of the three written in the project */
+	std::string firstText;
+	fromValue(marks.cell(0, 1), firstText);
+	CHECK(marks.rowCount() == 5 && firstFrame == 0 && firstText == "Run start");
+	{
+		const std::string saved = readFile(dir / "saved.chimeraProject");
+		CHECK(saved.find("Run start") == std::string::npos && saved.find("Last input") == std::string::npos && saved.find("Run end") == std::string::npos);
+	}
 	roll.run("removeMarker", {int64_t{12}}, error);
 	CHECK(roll.markerCount.get() == 1);
 

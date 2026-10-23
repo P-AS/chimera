@@ -604,7 +604,10 @@ ApplicationWindow {
                         ScrollBar.vertical: ScrollBar {}
                         property var pickedFrame: -1
                         property string pickedText: ""
-                        onCountChanged: { currentIndex = -1; pickedFrame = -1 }
+                        // the run's own: nothing to rename, move or remove
+                        property bool pickedPermanent: false
+                        readonly property bool pickedEditable: pickedFrame > 0 && !pickedPermanent
+                        onCountChanged: { currentIndex = -1; pickedFrame = -1; pickedPermanent = false }
                         delegate: ItemDelegate {
                             id: markerRow
                             required property int index
@@ -613,14 +616,21 @@ ApplicationWindow {
                             width: markerList.width - 12
                             padding: 2
                             highlighted: ListView.isCurrentItem
+                            // the run's own (start, last input, end) told apart from the person's, as Chimera's
+                            background: Rectangle {
+                                color: markerRow.highlighted ? markerRow.palette.highlight
+                                     : markerRow.model.permanent ? (Qt.styleHints.colorScheme === Qt.ColorScheme.Dark ? "#1F3350" : "#C9E4FF")
+                                     : "transparent"
+                            }
                             contentItem: RowLayout {
                                 Label { text: markerRow.model.frame; Layout.preferredWidth: 56 }
-                                Label { text: markerRow.model.text; Layout.fillWidth: true; elide: Text.ElideRight }
+                                Label { text: markerRow.model.text; Layout.fillWidth: true; elide: Text.ElideRight; font.italic: markerRow.model.permanent }
                             }
                             function pick() {
                                 markerList.currentIndex = markerRow.index
                                 markerList.pickedFrame = markerRow.model.frame
                                 markerList.pickedText = markerRow.model.text
+                                markerList.pickedPermanent = markerRow.model.permanent
                             }
                             onClicked: markerRow.pick()
                             // Jump To, as a double click in Chimera's list
@@ -634,9 +644,9 @@ ApplicationWindow {
                     RowLayout {
                         spacing: 2
                         SmallButton { text: qsTr("Add"); enabled: tas.session.isOpen; onClicked: markerDialog.openFor(tas.pianoRoll.currentFrame, "") }
-                        SmallButton { text: qsTr("Remove"); enabled: markerList.pickedFrame >= 0; onClicked: tas.pianoRoll.run("removeMarker", [markerList.pickedFrame]) }
+                        SmallButton { text: qsTr("Remove"); enabled: markerList.pickedEditable; onClicked: tas.pianoRoll.run("removeMarker", [markerList.pickedFrame]) }
                         SmallButton { text: qsTr("Jump To"); enabled: markerList.pickedFrame >= 0; onClicked: tas.session.run("seek", [markerList.pickedFrame]) }
-                        SmallButton { text: qsTr("Edit"); enabled: markerList.pickedFrame >= 0; onClicked: markerDialog.openFor(markerList.pickedFrame, markerList.pickedText) }
+                        SmallButton { text: qsTr("Edit"); enabled: markerList.pickedEditable; onClicked: markerDialog.openFor(markerList.pickedFrame, markerList.pickedText) }
                     }
                 }
             }
@@ -758,9 +768,9 @@ ApplicationWindow {
         id: markerMenu
         Action { text: qsTr("Jump To"); onTriggered: tas.session.run("seek", [markerList.pickedFrame]) }
         Action { text: qsTr("Scroll To"); onTriggered: tas.pianoRoll.topFrame = Math.max(0, markerList.pickedFrame - 2) }
-        Action { text: qsTr("Edit Text"); onTriggered: markerDialog.openFor(markerList.pickedFrame, markerList.pickedText) }
+        Action { text: qsTr("Edit Text"); enabled: markerList.pickedEditable; onTriggered: markerDialog.openFor(markerList.pickedFrame, markerList.pickedText) }
         Action { text: qsTr("Add"); enabled: tas.session.isOpen; onTriggered: markerDialog.openFor(tas.pianoRoll.currentFrame, "") }
-        Action { text: qsTr("Remove"); onTriggered: tas.pianoRoll.run("removeMarker", [markerList.pickedFrame]) }
+        Action { text: qsTr("Remove"); enabled: markerList.pickedEditable; onTriggered: tas.pianoRoll.run("removeMarker", [markerList.pickedFrame]) }
     }
     Popup {
         id: preview

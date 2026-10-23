@@ -1694,6 +1694,15 @@ void SessionViewModel::setMarkers(std::vector<Marker> markers)
 	});
 }
 
+void SessionViewModel::setRunMarkers(std::vector<int64_t> frames)
+{
+	submit([this, frames = std::move(frames)] {
+		if (frames == runMarkersM_) return;
+		runMarkersM_ = frames;
+		pinMarkersOnMachine();
+	});
+}
+
 void SessionViewModel::setBranches(std::vector<Branch> branches)
 {
 	submit([this, branches = std::move(branches)] { branchesM_ = branches; });
@@ -2269,6 +2278,8 @@ void SessionViewModel::pinMarkersOnMachine()
 	ce_session_greenzone_unpin_all(s_);
 	for (const Marker &m : markersM_)
 		if (m.keepState) ce_session_greenzone_pin(s_, m.frame, 1);
+	/* the run's own want their states, as Chimera's markers do unless told not to */
+	for (int64_t f : runMarkersM_) ce_session_greenzone_pin(s_, f, 1);
 }
 
 void SessionViewModel::setFinders(PackageFinder packages, FolderFinder firmwareFolders, ExtensionFinder byExtension)

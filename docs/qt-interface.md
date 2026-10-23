@@ -78,7 +78,15 @@ its menus. Beside the roll are Chimera's boxes: Playback (previous
 marker, a frame back, pause or run, a frame on, next marker, follow
 cursor, auto-restore), Greenzone (every frame, every N frames, off),
 Branches and Markers, each with a few buttons and a right-click menu for
-the rest. A right click on the frames picked opens Chimera's menu for
+the rest. Every movie has Chimera's three markers of its own: Run start
+on frame 0, Last input on the last frame anything is pressed on, Run end
+on the movie's last frame. They follow every edit and every frame
+recorded (worked out as Chimera does: after an edit, walking back from
+the end no further than the edit unless it could have erased the
+answer), are never saved, cannot be moved, renamed or removed, count
+for next and previous marker, keep their states as a marker does, and
+are coloured apart from the person's in the roll and the list. A right
+click on the frames picked opens Chimera's menu for
 them: set markers (more than 50 asks first), a marker with text, remove
 markers, deselect, select between markers, clear greenzone, copy, paste,
 paste insert, cut, clear, delete, insert, clone, truncate, and branch. Keys pressed in TAStudio reach the machine and the hotkeys, as

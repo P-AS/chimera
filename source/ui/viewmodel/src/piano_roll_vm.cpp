@@ -458,7 +458,9 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		hidden_ = std::set<std::string>(names.begin(), names.end());
 		hiddenChanged();
 	});
-	expose("markerCount", "how many markers the movie has", markerCount);
+	expose("markerCount", "how many markers people placed (the run's own three are not counted)", markerCount);
+	expose("lastInputFrame", "the run's own Last input marker: the last frame anything is pressed on (0 when none is)", lastInputFrame);
+	expose("runEndFrame", "the run's own Run end marker: the movie's last frame", runEndFrame);
 	expose("canUndo", "an edit can be taken back", canUndo);
 	expose("canRedo", "an edit taken back can be done again", canRedo);
 
@@ -484,11 +486,14 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0;
 			if (!arg(a, 0, f, error)) return {};
-			if (markers_.erase(f) == 0)
+			/* the run's own are the movie speaking, and so is a marker on frame 0, as in Chimera */
+			if (f == 0 || markers_.count(f) == 0)
 			{
-				error = "no marker on frame " + std::to_string(f);
+				error = permanentAt(f) ? "frame " + std::to_string(f) + "'s marker is the run's own: it cannot be removed"
+									   : "no marker on frame " + std::to_string(f);
 				return {};
 			}
+			markers_.erase(f);
 			markersEdited(f);
 			return {};
 		});
@@ -517,7 +522,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			int64_t first = 0, last = 0;
 			if (!arg(a, 0, first, error) || !arg(a, 1, last, error)) return {};
 			int64_t removed = 0;
-			for (auto it = markers_.lower_bound(first); it != markers_.end() && it->first <= last; removed++)
+			for (auto it = markers_.lower_bound(std::max<int64_t>(first, 1)); it != markers_.end() && it->first <= last; removed++)
 				it = markers_.erase(it);
 			if (removed > 0)
 			{
@@ -530,16 +535,18 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0;
 			if (!arg(a, 0, f, error)) return {};
-			const auto it = markers_.upper_bound(f);
-			return it == markers_.end() ? int64_t{-1} : it->first;
+			/* the run's own count: the next is at the latest the run's end */
+			for (const ListedMarker &m : markerList_)
+				if (m.frame > f) return m.frame;
+			return int64_t{-1};
 		});
 	command("previousMarker", "the last marker before a frame, or -1", {"frame"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t f = 0;
 			if (!arg(a, 0, f, error)) return {};
-			auto it = markers_.lower_bound(f);
-			if (it == markers_.begin()) return int64_t{-1};
-			return (--it)->first;
+			for (auto it = markerList_.rbegin(); it != markerList_.rend(); ++it)
+				if (it->frame < f) return it->frame;
+			return int64_t{-1};
 		});
 
 	command("toggle", "flips one button on one frame", {"frame", "button"},
@@ -876,8 +883,14 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		markers_.clear();
 		for (const Marker &m : loaded) markers_[m.frame] = m;
 		markerCount.set(static_cast<int64_t>(markers_.size()));
-		markerRows_.reset.emit();
+		refreshRun(0);
+		listMarkers();
 		frames_.reset.emit();
+	});
+	/* another machine's movie: worked out again from nothing */
+	runOpensWatch_ = session_.opens.changed.connect([this] {
+		lastInputFrame.set(-1);
+		refreshRun(0);
 	});
 	frameWatch_ = session_.frame.changed.connect([this] {
 		currentFrame.set(session_.frame.get());
@@ -908,13 +921,20 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	resetWatch_ = session_.inputsReset.connect([this] {
 		frameCount.set(inputs_.size());
 		clampTop();
+		refreshRun(0);
 		frames_.reset.emit();
 	});
-	changedWatch_ = session_.inputsChanged.connect([this](int64_t a, int64_t b) { frames_.changed.emit(a, b); });
+	/* what the machine recorded, or another movie in its place: the run's own markers follow */
+	changedWatch_ = session_.inputsChanged.connect([this](int64_t a, int64_t b) {
+		frames_.changed.emit(a, b);
+		refreshRun(a);
+	});
 	appendedWatch_ = session_.inputsAppended.connect([this](int64_t a, int64_t b) {
 		frameCount.set(inputs_.size());
 		frames_.appended.emit(a, b);
+		refreshRun(a);
 	});
+	listMarkers();
 }
 
 void PianoRollViewModel::follow()
@@ -1127,6 +1147,7 @@ void PianoRollViewModel::undoOrRedo(bool back)
 		frames_.forget();
 		frames_.reset.emit();
 		if (from < std::max(before, inputs_.size())) session_.edited(from);
+		refreshRun(from);
 		return;
 	}
 	edited(first, last, before);
@@ -1193,6 +1214,7 @@ void PianoRollViewModel::putIn(int64_t at, const std::vector<Row> &rows)
 	frames_.forget();
 	frames_.reset.emit();
 	if (at < before) session_.edited(at);
+	refreshRun(at);
 }
 
 void PianoRollViewModel::takeOut(int64_t first, int64_t last)
@@ -1223,6 +1245,7 @@ void PianoRollViewModel::takeOut(int64_t first, int64_t last)
 	frames_.forget();
 	frames_.reset.emit();
 	session_.edited(first);
+	refreshRun(first);
 }
 
 void PianoRollViewModel::overwrite(int64_t at, const std::vector<Row> &rows)
@@ -1918,6 +1941,7 @@ void PianoRollViewModel::putInShown(int64_t at, const std::vector<Row> &rows)
 	frames_.forget();
 	frames_.reset.emit();
 	if (at < before) session_.edited(at);
+	refreshRun(at);
 }
 
 void PianoRollViewModel::takeOutShown(int64_t first, int64_t last)
@@ -1946,6 +1970,7 @@ void PianoRollViewModel::takeOutShown(int64_t first, int64_t last)
 	frames_.forget();
 	frames_.reset.emit();
 	session_.edited(first);
+	refreshRun(first);
 }
 
 void PianoRollViewModel::truncateShown(int64_t frame)
@@ -1979,6 +2004,7 @@ void PianoRollViewModel::truncateShown(int64_t frame)
 	frames_.forget();
 	frames_.reset.emit();
 	session_.edited(frame);
+	refreshRun(frame);
 }
 
 void PianoRollViewModel::pickAxis(int64_t frame, int64_t axis)
@@ -2054,6 +2080,7 @@ void PianoRollViewModel::edited(int64_t first, int64_t last, int64_t oldCount)
 		session_.edited(first);
 	}
 	if (now > oldCount) frames_.appended.emit(oldCount, now - 1);
+	refreshRun(std::min(first, oldCount));
 }
 
 void PianoRollViewModel::hiddenChanged()
@@ -2124,8 +2151,10 @@ std::string PianoRollViewModel::Frames::columnShortName(int32_t column) const
 
 uint32_t PianoRollViewModel::Frames::rowFlags(int64_t row) const
 {
+	const bool permanent = vm_.permanentAt(row);
 	return (vm_.inputs_.lagAt(row) ? kLag : 0) | (row < vm_.greenEnd.get() ? kGreen : 0) |
-		(vm_.markers_.count(row) ? kMarker : 0) | (vm_.session_.hasState(row) ? kStated : 0) | (vm_.inputs_.ranAt(row) ? kRan : 0);
+		(vm_.markers_.count(row) || permanent ? kMarker : 0) | (permanent ? kPermanent : 0) |
+		(vm_.session_.hasState(row) ? kStated : 0) | (vm_.inputs_.ranAt(row) ? kRan : 0);
 }
 
 std::string PianoRollViewModel::Frames::rowNote(int64_t row) const
@@ -2146,6 +2175,7 @@ void PianoRollViewModel::replaceAll(const std::vector<Marker> &markers)
 	frameCount.set(inputs_.size());
 	clampTop();
 	markersEdited(0);
+	refreshRun(0);
 	frames_.reset.emit();
 }
 
@@ -2156,26 +2186,83 @@ void PianoRollViewModel::markersEdited(int64_t frame)
 	for (const auto &[f, m] : markers_) all.push_back(m);
 	session_.setMarkers(std::move(all));
 	session_.markChanged();
-	markerRows_.reset.emit();
+	listMarkers();
 	if (frame < inputs_.size()) frames_.changed.emit(frame, frame);
+}
+
+bool PianoRollViewModel::frameEmpty(int64_t frame) const
+{
+	if (inputs_.at(frame) != 0) return false;
+	const size_t n = inputs_.axisCount();
+	if (n == 0) return true;
+	std::vector<int32_t> axes(n), neutral(n);
+	inputs_.axesAt(frame, axes.data());
+	inputs_.neutralAxes(neutral.data());
+	return axes == neutral;
+}
+
+void PianoRollViewModel::refreshRun(int64_t frame)
+{
+	const int64_t size = inputs_.size();
+	const int64_t wasLast = lastInputFrame.get(), wasEnd = runEndFrame.get();
+	int64_t last = wasLast;
+	if (size == 0)
+		last = 0;
+	else
+	{
+		/* an edit after the answer cannot have erased it: the walk back stops there */
+		const int64_t floor = wasLast < frame ? frame : 0;
+		bool found = false;
+		for (int64_t i = size - 1; i >= floor; i--)
+			if (!frameEmpty(i))
+			{
+				last = i;
+				found = true;
+				break;
+			}
+		if (!found && floor == 0) last = 0;
+	}
+	const int64_t end = std::max<int64_t>(0, size - 1);
+	if (last == wasLast && end == wasEnd) return;
+	lastInputFrame.set(last);
+	runEndFrame.set(end);
+	session_.setRunMarkers({0, last, end});
+	listMarkers();
+	for (int64_t f : {wasLast, wasEnd, last, end})
+		if (f < size) frames_.changed.emit(f, f);
+}
+
+void PianoRollViewModel::listMarkers()
+{
+	markerList_.clear();
+	markerList_.push_back({0, "Run start", true, true});
+	markerList_.push_back({lastInputFrame.get(), "Last input", true, true});
+	markerList_.push_back({runEndFrame.get(), "Run end", true, true});
+	for (const auto &[f, m] : markers_) markerList_.push_back({f, m.text, m.keepState, false});
+	/* by frame; on a shared frame the run's own first, in run order, then the person's */
+	std::stable_sort(markerList_.begin(), markerList_.end(), [](const ListedMarker &a, const ListedMarker &b) {
+		if (a.frame != b.frame) return a.frame < b.frame;
+		return a.permanent && !b.permanent;
+	});
+	markerRows_.reset.emit();
 }
 
 std::string PianoRollViewModel::MarkerRows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"frame", "text", "keepState"};
-	return column >= 0 && column < 3 ? names[column] : "";
+	static const char *const names[] = {"frame", "text", "keepState", "permanent"};
+	return column >= 0 && column < 4 ? names[column] : "";
 }
 
 Value PianoRollViewModel::MarkerRows::cell(int64_t row, int32_t column) const
 {
 	if (row < 0 || row >= rowCount()) return {};
-	auto it = vm_.markers_.begin();
-	std::advance(it, row);
+	const ListedMarker &m = vm_.markerList_[static_cast<size_t>(row)];
 	switch (column)
 	{
-	case 0: return it->first;
-	case 1: return it->second.text;
-	case 2: return it->second.keepState;
+	case 0: return m.frame;
+	case 1: return m.text;
+	case 2: return m.keepState;
+	case 3: return m.permanent;
 	default: return {};
 	}
 }
