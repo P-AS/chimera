@@ -55,6 +55,7 @@
 #include "chimera/vm/messages_vm.hpp"
 #include "chimera/vm/display_vm.hpp"
 #include "chimera/vm/paths_vm.hpp"
+#include "chimera/vm/firmware_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -220,7 +221,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -699,6 +700,8 @@ int main(int argc, char **argv)
 	});
 	qt::PictureFiles::folderFor() = [&paths] { return QString::fromStdString(paths.resolve("Screenshots")); };
 	qt::QmlViewModel pathsQml(paths);
+	vm::FirmwareViewModel firmware(dispatcher, cores);
+	qt::QmlViewModel firmwareQml(firmware);
 	config.keep(projectDetails, "defaultAuthor");
 	config.keep(pianoRoll, "maxUndoSteps");
 	config.keep(pianoRoll, "copyFrameNumbers");
@@ -846,6 +849,7 @@ int main(int argc, char **argv)
 	lua.add(messages);
 	lua.add(display);
 	lua.add(paths);
+	lua.add(firmware);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -888,6 +892,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("messages"), QVariant::fromValue<QObject *>(&messagesQml)},
 		{QStringLiteral("display"), QVariant::fromValue<QObject *>(&displayQml)},
 		{QStringLiteral("paths"), QVariant::fromValue<QObject *>(&pathsQml)},
+		{QStringLiteral("firmware"), QVariant::fromValue<QObject *>(&firmwareQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
@@ -935,6 +940,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("display") ? QStringLiteral("displayWindow")
 		: args.value(showOpt) == QStringLiteral("budgets") ? QStringLiteral("greenzoneBudgetsWindow")
 		: args.value(showOpt) == QStringLiteral("paths") ? QStringLiteral("pathsWindow")
+		: args.value(showOpt) == QStringLiteral("firmware") ? QStringLiteral("firmwareWindow")
 		: args.value(showOpt) == QStringLiteral("project-details") ? QStringLiteral("projectDetailsWindow")
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())

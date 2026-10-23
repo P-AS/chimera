@@ -28,6 +28,7 @@
     <file>DisplayConfig.qml</file>
     <file>GreenzoneBudgets.qml</file>
     <file>PathsConfig.qml</file>
+    <file>FirmwareConfig.qml</file>
     <file>ProjectFiles.qml</file>
     <file>Cores.qml</file>
   </qresource>

@@ -36,6 +36,7 @@ ApplicationWindow {
     required property QtObject messages
     required property QtObject display
     required property QtObject paths
+    required property QtObject firmware
     // a Paths folder for a file dialog to open in (made when it is not there)
     function folderOf(name) {
         root.paths.changed; root.paths.base; root.paths.lastRomFolder; root.paths.recentForRoms
@@ -236,6 +237,7 @@ ApplicationWindow {
             Action { text: qsTr("So&und..."); onTriggered: { soundWindow.show(); soundWindow.raise() } }
             Action { text: qsTr("&Display..."); onTriggered: { displayWindow.show(); displayWindow.raise() } }
             Action { text: qsTr("&Paths..."); onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
+            Action { text: qsTr("Fi&rmware..."); onTriggered: { firmwareWindow.show(); firmwareWindow.raise() } }
             // Chimera's Config > Key Priority: for a key that is a hotkey and a button
             Menu {
                 delegate: keyedMenuItem
@@ -1269,6 +1271,7 @@ ApplicationWindow {
     }
     ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; folderOf: root.folderOf; visible: false }
     PathsConfig { id: pathsWindow; vm: root.paths; visible: false }
+    FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; visible: false }
     Dialog {
         id: aboutDialog
         objectName: "aboutDialog"

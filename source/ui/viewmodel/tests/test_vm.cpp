@@ -54,6 +54,7 @@
 #include "chimera/vm/messages_vm.hpp"
 #include "chimera/vm/display_vm.hpp"
 #include "chimera/vm/paths_vm.hpp"
+#include "chimera/vm/firmware_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -4865,6 +4866,45 @@ bool customFirmware(const char *rom, const char *hashedPackage, const char *game
 		const std::string project = readFile(made);
 		CHECK(project.find(mySha) != std::string::npos || project.find(lower(mySha)) != std::string::npos);
 		CHECK(project.find(original) == std::string::npos && project.find(lower(original)) == std::string::npos);
+	}
+	/* Config > Firmware: each installed core's declared firmware, and what is on hand */
+	{
+		FirmwareViewModel survey(d, installed);
+		std::string e;
+		CHECK(survey.run("refresh", {}, e).has_value());
+		int64_t logoRow = -1;
+		for (size_t i = 0; i < survey.items().size(); i++)
+			if (survey.items()[i].core == "Synth Hashed" && survey.items()[i].id == "logo") logoRow = static_cast<int64_t>(i);
+		CHECK(logoRow >= 0);
+		if (logoRow >= 0)
+		{
+			/* the game core's file of the person's own: on hand, not the dump the core knows */
+			bool gameLogo = false;
+			for (const auto &r : survey.items()) gameLogo = gameLogo || (r.core == "Synth Game" && r.state == 1 && r.path == mine.string());
+			CHECK(gameLogo);
+			/* the emulator's: a file whose hash is another is not a dump it knows; the original is; gone is said */
+			CHECK(survey.run("setFile", {logoRow, mine.string()}, e).has_value() && survey.items()[static_cast<size_t>(logoRow)].state == 1);
+			CHECK(survey.status.get() == "mylogo.bin: not a dump the core knows");
+			CHECK(survey.run("setFile", {logoRow, theirs.string()}, e).has_value() && survey.items()[static_cast<size_t>(logoRow)].state == 0);
+			const fs::path moved = dir / "moved.bin";
+			fs::copy_file(theirs, moved);
+			CHECK(survey.run("setFile", {logoRow, moved.string()}, e).has_value());
+			fs::remove(moved);
+			CHECK(survey.run("refresh", {}, e).has_value() && survey.items()[static_cast<size_t>(logoRow)].state == 2);
+			/* cleared: looked for in the firmware folder, where it is not */
+			CHECK(survey.run("clearFile", {logoRow}, e).has_value() && survey.items()[static_cast<size_t>(logoRow)].state == 3 &&
+				survey.missing.get() >= 1);
+			/* a folder scanned: the original found by its hash, under any name */
+			fs::create_directories(dir / "dumps" / "deep");
+			fs::copy_file(theirs, dir / "dumps" / "deep" / "renamed.rom");
+			CHECK(survey.run("scanFolder", {(dir / "dumps").string(), false}, e) == Value(int64_t{0}));
+			CHECK(survey.run("scanFolder", {(dir / "dumps").string(), true}, e) == Value(int64_t{1}));
+			CHECK(survey.items()[static_cast<size_t>(logoRow)].state == 0 &&
+				survey.items()[static_cast<size_t>(logoRow)].path == (dir / "dumps" / "deep" / "renamed.rom").string());
+			CHECK(!survey.run("setFile", {int64_t{99}, theirs.string()}, e) && e == "no row 99");
+			/* put back as the test had it: nothing chosen for the emulator */
+			installed.rememberFirmware("Synth Hashed", "logo", "");
+		}
 	}
 	/* where it was chosen is remembered: that is how the project found it */
 	CHECK(installed.chosenFirmware.get().find("\"Synth Game\"") != std::string::npos &&
