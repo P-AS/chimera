@@ -433,6 +433,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("hasTrace", "the core traces what its CPU runs (the Trace Logger)", hasTrace);
 	expose("hasRegisters", "the core shows its registers (the Debugger)", hasRegisters);
 	expose("traceHeader", "the core's words for its trace lines' columns", traceHeader);
+	expose("surfaces", "the pictures the core draws for itself, as [{\"name\", \"width\", \"height\"}]", surfaces);
 	expose("hasMovieImport", "the core open imports movies made elsewhere", hasMovieImport);
 	expose("showGameTime", "a game's own timer is shown over the picture", showGameTime, true);
 	expose("gameTimeText", "the game's timer as shown: \"IGT 01:02.345\"", gameTimeText);
@@ -3148,6 +3149,19 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	gameTimerM_ = ce_session_game_time_ms(s, &ms) == 1;
 	const bool timer = gameTimerM_, saveData = ce_session_savedata_available(s) != 0;
 	const bool traces = ce_session_trace_available(s) != 0, registers = ce_session_register_count(s) > 0;
+	json::Json surfaceList;
+	surfaceList.kind = json::Json::Kind::Array;
+	for (int32_t i = 0; i < ce_session_surface_count(s); i++)
+	{
+		json::Json one;
+		one.kind = json::Json::Kind::Object;
+		const char *n = ce_session_surface_name(s, i);
+		one.members.emplace_back("name", json::Json::string(n != nullptr ? n : ""));
+		one.members.emplace_back("width", json::Json::integer(ce_session_surface_width(s, i)));
+		one.members.emplace_back("height", json::Json::integer(ce_session_surface_height(s, i)));
+		surfaceList.items.push_back(one);
+	}
+	const std::string surfaceText = json::write(surfaceList);
 	const std::string traceHead = traces && ce_session_trace_header(s) != nullptr ? ce_session_trace_header(s) : "";
 	/* a trace asked for goes on with the next machine */
 	if (traces && traceOnM_) ce_session_trace_enable(s, 1);
@@ -3217,7 +3231,8 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	/* another game, or the same started again: another average, as Chimera's */
 	averageResetM_.store(true);
 	later([this, names, axes, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames, controller,
-			   gameCore, timer, saveData, movieImport, package, traces, registers, traceHead] {
+			   gameCore, timer, saveData, movieImport, package, traces, registers, traceHead, surfaceText] {
+		surfaces.set(surfaceText);
 		hasTrace.set(traces);
 		hasRegisters.set(registers);
 		traceHeader.set(traceHead);
@@ -3373,6 +3388,20 @@ std::vector<SessionViewModel::Register> SessionViewModel::readRegisters(int64_t 
 		if (hasCycles) cycles = ce_session_executed_cycles(s);
 	});
 	return out;
+}
+
+bool SessionViewModel::renderSurface(int32_t index, Picture &into)
+{
+	bool drawn = false;
+	onMachineWait([&](ce_session *s) {
+		if (s == nullptr || index < 0 || index >= ce_session_surface_count(s)) return;
+		const int32_t w = ce_session_surface_width(s, index), h = ce_session_surface_height(s, index);
+		const uint32_t *px = w > 0 && h > 0 ? ce_session_surface_render(s, index) : nullptr;
+		if (px == nullptr) return;
+		into.publish(px, w, h, static_cast<double>(w) / h);
+		drawn = true;
+	});
+	return drawn;
 }
 
 bool SessionViewModel::writeRegister(int32_t index, int64_t value)

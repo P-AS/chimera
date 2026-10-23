@@ -33,6 +33,7 @@
     <file>PrecompiledModules.qml</file>
     <file>TraceLogger.qml</file>
     <file>Debugger.qml</file>
+    <file>SurfaceViewer.qml</file>
     <file>ProjectFiles.qml</file>
     <file>Cores.qml</file>
   </qresource>

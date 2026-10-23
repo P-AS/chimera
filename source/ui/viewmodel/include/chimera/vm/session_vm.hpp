@@ -158,6 +158,11 @@ public:
 	std::vector<Register> readRegisters(int64_t &cycles, bool &hasCycles);
 	/* a register set, by its place; false when the core does not take it */
 	bool writeRegister(int32_t index, int64_t value);
+	/* the pictures the core draws for itself (the Surface Viewer): their
+	 * names and sizes, as [{"name", "width", "height"}], and one drawn now
+	 * into a picture; false when there is none */
+	Property<std::string> surfaces{"[]"};
+	bool renderSurface(int32_t index, Picture &into);
 	Property<bool> showGameTime{false};
 	Property<std::string> gameTimeText;
 	/* Chimera's Tools > Export Core Log: what the cores write, kept in a

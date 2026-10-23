@@ -59,6 +59,7 @@
 #include "chimera/vm/data_folder_vm.hpp"
 #include "chimera/vm/precompiled_vm.hpp"
 #include "chimera/vm/trace_logger_vm.hpp"
+#include "chimera/vm/surface_viewer_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -1357,6 +1358,24 @@ bool traceAndRegisters(const char *package, const char *rom)
 	CHECK(fromValue(debugger.rowLists()[0].model->cell(0, 2), hex) && hex == "00000007");
 	CHECK(!debugger.run("setRegister", {int64_t{0}, std::string("seven")}, error) && error == "seven is not a number");
 	CHECK(!debugger.run("setRegister", {int64_t{20}, int64_t{1}}, error));
+	/* the Surface Viewer: the synthetic core's RAM drawn as 64x64 greys */
+	{
+		SurfaceViewerViewModel viewer(d, session);
+		CHECK(session.surfaces.get() == R"([{"name": "RAM", "width": 64, "height": 64}])");
+		viewer.watching.set(true);
+		CHECK(viewer.status.get() == "RAM: 64 x 64");
+		Picture::Frame f;
+		CHECK(viewer.surface.takeIfNewer(UINT64_MAX, f) && f.width == 64 && f.height == 64);
+		const std::vector<uint8_t> ram = session.readDomain("RAM");
+		bool same = ram.size() >= 4096 && f.pixels.size() == 4096;
+		for (size_t i = 0; same && i < 4096; i++) same = f.pixels[i] == (0xFF000000u | ram[i] * 0x010101u);
+		CHECK(same);
+		/* drawn again as the machine moves */
+		const uint64_t was = f.serial;
+		CHECK(advance(1) && viewer.surface.takeIfNewer(was, f));
+		viewer.picked.set(3);
+		CHECK(viewer.status.get() == "No surface 3");
+	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);

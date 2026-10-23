@@ -61,6 +61,7 @@
 #include "chimera/vm/data_folder_vm.hpp"
 #include "chimera/vm/precompiled_vm.hpp"
 #include "chimera/vm/trace_logger_vm.hpp"
+#include "chimera/vm/surface_viewer_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -226,7 +227,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -669,6 +670,8 @@ int main(int argc, char **argv)
 	qt::QmlViewModel traceLoggerQml(traceLogger);
 	vm::DebuggerViewModel debugger(dispatcher, session);
 	qt::QmlViewModel debuggerQml(debugger);
+	vm::SurfaceViewerViewModel surfaceViewer(dispatcher, session);
+	qt::QmlViewModel surfaceViewerQml(surfaceViewer);
 	config.keep(session, "autoRestore");
 	config.keep(session, "speedPercent");
 	config.keep(session, "unthrottled");
@@ -884,6 +887,7 @@ int main(int argc, char **argv)
 	lua.add(precompiled);
 	lua.add(traceLogger);
 	lua.add(debugger);
+	lua.add(surfaceViewer);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -932,6 +936,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("precompiled"), QVariant::fromValue<QObject *>(&precompiledQml)},
 		{QStringLiteral("traceLogger"), QVariant::fromValue<QObject *>(&traceLoggerQml)},
 		{QStringLiteral("debuggerTool"), QVariant::fromValue<QObject *>(&debuggerQml)},
+		{QStringLiteral("surfaceViewer"), QVariant::fromValue<QObject *>(&surfaceViewerQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
@@ -984,6 +989,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("precompiled") ? QStringLiteral("precompiledWindow")
 		: args.value(showOpt) == QStringLiteral("trace") ? QStringLiteral("traceLoggerWindow")
 		: args.value(showOpt) == QStringLiteral("debugger") ? QStringLiteral("debuggerWindow")
+		: args.value(showOpt) == QStringLiteral("surfaces") ? QStringLiteral("surfaceViewerWindow")
 		: args.value(showOpt) == QStringLiteral("project-details") ? QStringLiteral("projectDetailsWindow")
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())

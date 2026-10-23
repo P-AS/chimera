@@ -371,6 +371,22 @@ ECL_EXPORT void SetRegisterValue(int32_t i, int64_t v)
 	if (g_synth && i >= 0 && i < 8) synth_get_registers(g_synth)[i] = (int32_t)v;
 }
 
+/* The surfaces group (the Surface Viewer): RAM drawn as a 64x64 picture, a
+ * byte a pixel in grey, so a frontend's viewer has something to show. Drawn
+ * when asked; the buffer is in no state. */
+ECL_INVISIBLE static uint32_t g_ramPicture[64 * 64];
+ECL_EXPORT int32_t GetSurfaceCount(void) { return g_synth ? 1 : 0; }
+ECL_EXPORT const char *GetSurfaceName(int32_t i) { return i == 0 ? "RAM" : 0; }
+ECL_EXPORT int32_t GetSurfaceWidth(int32_t i) { return i == 0 ? 64 : 0; }
+ECL_EXPORT int32_t GetSurfaceHeight(int32_t i) { return i == 0 ? 64 : 0; }
+ECL_EXPORT uint32_t *RenderSurface(int32_t i)
+{
+	if (i != 0 || !g_synth) return 0;
+	const uint8_t *ram = synth_get_ram(g_synth);
+	for (int p = 0; p < 64 * 64; p++) g_ramPicture[p] = 0xFF000000u | (uint32_t)ram[p] * 0x010101u;
+	return g_ramPicture;
+}
+
 /* Guest-memory pointers the host reads while active (RAM/VRAM/audio domains). */
 ECL_EXPORT uint8_t *GetRam(void)         { return synth_get_ram(g_synth); }
 ECL_EXPORT uint8_t *GetFramebuffer(void) { return (uint8_t *)synth_get_framebuffer(g_synth); }
