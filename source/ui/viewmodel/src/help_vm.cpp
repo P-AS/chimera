@@ -109,6 +109,9 @@ HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, 
 			if (session_.hasProject.get() && std::filesystem::is_regular_file(session_.projectPath.get(), ec)) list = session_.projectPath.get();
 			const std::filesystem::path log = std::filesystem::current_path(ec) / "minibox-diag.log";
 			if (std::filesystem::is_regular_file(log, ec)) list += (list.empty() ? "" : "\n") + log.string();
+			/* the core's log, while Export Core Log is on */
+			if (const char *core = ce_core_log_path(); core != nullptr && *core != '\0' && std::filesystem::is_regular_file(core, ec))
+				list += (list.empty() ? "" : "\n") + std::string(core);
 			reportFiles.set(list);
 			return text;
 		});

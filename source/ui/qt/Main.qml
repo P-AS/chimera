@@ -255,6 +255,23 @@ ApplicationWindow {
             Action { id: ramWatchAction; property string hotkey: "RAM Watch"; text: qsTr("RAM &Watch..."); onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
             Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor..."); onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
             Action { id: luaConsoleAction; property string hotkey: "Lua Console"; text: qsTr("&Lua Console..."); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
+            MenuSeparator {}
+            // Chimera's: ticked while the core log is kept; off until asked, every run
+            Action {
+                text: qsTr("Export Core &Log...")
+                checkable: true
+                checked: root.session.coreLogPath !== ""
+                onTriggered: {
+                    checked = Qt.binding(() => root.session.coreLogPath !== "")
+                    if (root.session.coreLogPath !== "") {
+                        coreLogOffDialog.size = root.session.run("coreLogSize")
+                        coreLogOffDialog.open()
+                    } else {
+                        coreLogFileDialog.selectedFile = "file:///" + root.session.run("coreLogName")
+                        coreLogFileDialog.open()
+                    }
+                }
+            }
         }
         Menu {
             delegate: keyedMenuItem
@@ -654,6 +671,56 @@ ApplicationWindow {
         onAccepted: root.session.run("saveProject", [selectedFile])
         // a question that asked for this save is answered Cancel
         onRejected: root.afterSave = null
+    }
+    FileDialog {
+        id: coreLogFileDialog
+        title: qsTr("Export Core Log")
+        fileMode: FileDialog.SaveFile
+        nameFilters: [qsTr("Text files (*.txt)")]
+        onAccepted: {
+            if (root.session.run("startCoreLog", [selectedFile]) === undefined) return
+            if (root.session.isOpen) coreLogRebootDialog.open()
+            else coreLogInfoDialog.open()
+        }
+    }
+    Dialog {
+        id: coreLogRebootDialog
+        title: qsTr("Export Core Log")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Yes | Dialog.No
+        Label {
+            text: qsTr("The core log is on. Reboot the core now, so the log covers it from the start? Some cores keep their full log only from boot.\n\nThen do what shows the problem, and come back to Tools > Export Core Log... to turn it off.")
+            wrapMode: Text.WordWrap
+            width: 420
+        }
+        onAccepted: root.session.run("restart")
+    }
+    Dialog {
+        id: coreLogInfoDialog
+        title: qsTr("Export Core Log")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok
+        Label {
+            text: qsTr("The core log is on. Load the game and do what shows the problem, then come back to Tools > Export Core Log... to turn it off.")
+            wrapMode: Text.WordWrap
+            width: 420
+        }
+    }
+    Dialog {
+        id: coreLogOffDialog
+        property var size: 0
+        title: qsTr("Export Core Log")
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Yes | Dialog.No
+        Label {
+            text: qsTr("The core log is on, and is being written to\n\n%1\n\n(%2 KB so far). Turn it off?").arg(root.session.coreLogPath).arg(Math.round(coreLogOffDialog.size / 1024))
+            wrapMode: Text.WordWrap
+            width: 420
+        }
+        onAccepted: root.session.run("stopCoreLog")
     }
     FileDialog {
         id: saveDataDialog

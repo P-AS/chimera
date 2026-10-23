@@ -167,6 +167,40 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("hasMovieImport", "the core open imports movies made elsewhere", hasMovieImport);
 	expose("showGameTime", "a game's own timer is shown over the picture", showGameTime, true);
 	expose("gameTimeText", "the game's timer as shown: \"IGT 01:02.345\"", gameTimeText);
+	expose("coreLogPath", "the file the core log goes to, \"\" while it is off", coreLogPath);
+	command("coreLogName", "the name Chimera suggests for a core log: the core, \"core log\", the date and time", {},
+		[this](const Args &, std::string &) -> Value {
+			const std::time_t now = std::time(nullptr);
+			char when[32];
+			std::strftime(when, sizeof when, "%Y-%m-%d %H.%M.%S", std::localtime(&now));
+			const std::string core = isOpen.get() && !coreName.get().empty() ? coreName.get() : "Chimera";
+			return core + " core log " + when + ".txt";
+		});
+	command("startCoreLog", "keeps what the cores write in this file from now on (a session opened from now notes its core)",
+		{"path"}, [this](const Args &a, std::string &error) -> Value {
+			std::string path;
+			if (!arg(a, 0, path, error)) return {};
+			if (ce_core_log(path.c_str()) != 1)
+			{
+				const char *why = ce_core_log_error();
+				error = "The core log could not be started: " + std::string(why != nullptr ? why : "no reason given");
+				return {};
+			}
+			coreLogPath.set(path);
+			return true;
+		});
+	command("stopCoreLog", "stops keeping the core log; the file stays", {}, [this](const Args &, std::string &) -> Value {
+		const std::string was = coreLogPath.get();
+		ce_core_log(nullptr);
+		coreLogPath.set("");
+		if (!was.empty()) status.set("The core log is off. It is in " + was + ": attach that file to your issue.");
+		return was;
+	});
+	command("coreLogSize", "how many bytes the core log has so far", {}, [this](const Args &, std::string &) -> Value {
+		std::error_code ec;
+		const auto size = std::filesystem::file_size(coreLogPath.get(), ec);
+		return ec ? int64_t{0} : static_cast<int64_t>(size);
+	});
 	overlayWatches_.push_back(showGameTime.changed.connect([this] {
 		showGameTimeM_.store(showGameTime.get());
 		submit([this] { report(-1, -1, -1, -1, -1); });

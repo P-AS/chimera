@@ -1182,6 +1182,27 @@ bool helpMenu(const char *package, const char *rom)
 	CHECK(bytes.find("report.md") != std::string::npos && bytes.find("game.png") != std::string::npos &&
 		bytes.find("walker.chimeraProject") != std::string::npos && bytes.find("**Game:** rom: walker.testrom") != std::string::npos);
 	CHECK(help.status.get() == "Saved " + zip.string());
+	/* Export Core Log: kept from a restart on, listed with a report's files, off with the file kept */
+	{
+		const fs::path log = dir / "core.log";
+		std::string name;
+		CHECK(fromValue(session.run("coreLogName", {}, error).value_or(Value()), name) && name.rfind("Synth core log ", 0) == 0 &&
+			name.size() > 4 && name.compare(name.size() - 4, 4, ".txt") == 0);
+		CHECK(session.run("startCoreLog", {log.string()}, error).has_value() && session.coreLogPath.get() == log.string());
+		const int64_t opened = session.opens.get();
+		session.run("restart", {}, error);
+		CHECK(d.until([&] { return session.opens.get() > opened && session.isOpen.get(); }, 60));
+		int64_t size = 0;
+		CHECK(fromValue(session.run("coreLogSize", {}, error).value_or(Value()), size) && size > 0);
+		CHECK(readFile(log).find("session: core package") != std::string::npos);
+		help.run("makeReport", {}, error);
+		CHECK(help.reportFiles.get().find(log.string()) != std::string::npos);
+		CHECK(session.run("stopCoreLog", {}, error).has_value() && session.coreLogPath.get().empty());
+		CHECK(std::string(ce_core_log_path()).empty() && fs::exists(log));
+		CHECK(session.status.get() == "The core log is off. It is in " + log.string() + ": attach that file to your issue.");
+		CHECK(!session.run("startCoreLog", {(dir / "no such folder" / "x.log").string()}, error) &&
+			error.rfind("The core log could not be started: ", 0) == 0);
+	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);

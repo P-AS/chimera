@@ -91,6 +91,11 @@ public:
 	Property<bool> isGameCore{false}, hasGameTimer{false}, hasSaveData{false}, hasMovieImport{false};
 	Property<bool> showGameTime{false};
 	Property<std::string> gameTimeText;
+	/* Chimera's Tools > Export Core Log: what the cores write, kept in a
+	 * file only when asked and never remembered (each run starts with it
+	 * off; the engine keeps it, ce_core_log). The file while it is on, ""
+	 * while it is off */
+	Property<std::string> coreLogPath;
 	/* the input of a frame as the input display writes it */
 	std::string inputDisplay(int64_t frame) const;
 	/* Chimera's autohold and autofire: while one is armed (its hotkey held),
