@@ -1,6 +1,11 @@
-// Chimera's Messages window (Config > Messages): layout and bindings only,
-// over the messages view model. A thing drawn over the picture is picked
-// on the left; where it goes is set on the right. Kept the moment changed.
+// Chimera's Configure On Screen Messages (Config > Messages), laid out as
+// Chimera's MessageConfig: Message Type (a row each, with where it is) and
+// Message Colors (a swatch to click and its hex) down the left; Position on
+// the right (a small screen to click or drag the mark on, a corner each to
+// count from, x and y); how long messages stay, Stack Messages, Restore
+// Defaults, OK and Cancel. Changes show at once; Cancel, or closing the
+// window, puts back what was there when it opened. Layout and bindings
+// only, over the messages view model.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -10,34 +15,111 @@ ApplicationWindow {
     id: win
     objectName: "messagesWindow"
     required property QtObject vm
+    property Window mainWindow: null
     title: qsTr("Configure On Screen Messages")
-    width: 620
-    height: 460
+    width: 560
+    height: 470
+    modality: Qt.ApplicationModal
+    transientParent: win.mainWindow
     readonly property var names: ["Fps", "Frame Counter", "Lag Counter", "Input Display", "Watches", "Messages", "Rerecords", "Autohold", "Game Time"]
-    readonly property var corners: [qsTr("Top left"), qsTr("Top right"), qsTr("Bottom left"), qsTr("Bottom right")]
     readonly property var places: JSON.parse(win.vm.positions)
     property string picked: "Fps"
     readonly property var place: win.places[win.picked] || ({ "x": 0, "y": 0, "anchor": 0 })
     function setPlace(x, y, anchor) { win.vm.run("setPosition", [win.picked, x, y, anchor]) }
+    // the editor's small screen, as Chimera's: x from 0 to 244, y from 0 to 180
+    readonly property int maxX: 244
+    readonly property int maxY: 180
+
+    // what was there when the window opened, put back unless OK is pressed
+    property var before: null
+    property bool keeping: false
+    readonly property var colorProps: ["messagesColor", "alertColor", "lastInputColor", "movieInputColor"]
+    readonly property var colorWhich: ["messages", "alert", "lastInput", "movieInput"]
+    onVisibleChanged: {
+        if (visible) {
+            win.keeping = false
+            win.picked = "Fps"
+            win.before = {
+                positions: JSON.parse(win.vm.positions), seconds: win.vm.messageSeconds, stack: win.vm.stackMessages,
+                colors: win.colorProps.map(p => win.vm[p])
+            }
+        } else if (!win.keeping && win.before) {
+            for (const n of Object.keys(win.before.positions)) {
+                const p = win.before.positions[n]
+                win.vm.run("setPosition", [n, p.x, p.y, p.anchor])
+            }
+            win.colorProps.forEach((p, i) => win.vm.run("setColor", [win.colorWhich[i], win.before.colors[i]]))
+            win.vm.messageSeconds = win.before.seconds
+            win.vm.stackMessages = win.before.stack
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 8
+        anchors.margins: 12
+        spacing: 6
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            GroupBox {
-                title: qsTr("Message type")
+            spacing: 6
+            ColumnLayout {
+                Layout.preferredWidth: 190
                 Layout.fillHeight: true
-                ColumnLayout {
-                    Repeater {
-                        model: win.names
-                        delegate: RadioButton {
-                            required property string modelData
-                            readonly property var p: win.places[modelData] || ({ "x": 0, "y": 0, "anchor": 0 })
-                            text: qsTr("%1  (%2, %3)").arg(modelData).arg(p.x).arg(p.y)
-                            checked: win.picked === modelData
-                            onClicked: win.picked = modelData
+                GroupBox {
+                    title: qsTr("Message Type")
+                    Layout.fillWidth: true
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 0
+                        Repeater {
+                            model: win.names
+                            delegate: RowLayout {
+                                required property string modelData
+                                readonly property var p: win.places[modelData] || ({ "x": 0, "y": 0, "anchor": 0 })
+                                RadioButton {
+                                    text: modelData
+                                    checked: win.picked === modelData
+                                    onClicked: win.picked = modelData
+                                    padding: 1
+                                    Layout.fillWidth: true
+                                }
+                                Label { text: p.x + ", " + p.y }
+                            }
+                        }
+                    }
+                }
+                GroupBox {
+                    title: qsTr("Message Colors")
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    ColumnLayout {
+                        spacing: 2
+                        Repeater {
+                            model: [qsTr("Main Messages"), qsTr("Alert Messages"), qsTr("Previous Frame Input"), qsTr("Movie Input")]
+                            delegate: ColumnLayout {
+                                required property int index
+                                required property string modelData
+                                spacing: 1
+                                Label { text: modelData }
+                                RowLayout {
+                                    // a click on the swatch picks another colour, as Chimera's
+                                    Rectangle {
+                                        width: 46; height: 20
+                                        color: win.vm[win.colorProps[index]]
+                                        border.color: palette.mid
+                                        TapHandler { onTapped: { colorDialog.which = win.colorWhich[index]; colorDialog.selectedColor = win.vm[win.colorProps[index]]; colorDialog.open() } }
+                                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                    }
+                                    Label { text: "0x" }
+                                    TextField {
+                                        readOnly: true
+                                        text: win.vm[win.colorProps[index]].replace("#", "")
+                                        font.family: "monospace"
+                                        Layout.preferredWidth: 80
+                                        padding: 2
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -46,61 +128,86 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 GroupBox {
-                    title: qsTr("%1: where it goes").arg(win.picked)
-                    Layout.fillWidth: true
-                    GridLayout {
-                        columns: 2
-                        Label { text: qsTr("Corner") }
-                        ComboBox {
-                            model: win.corners
-                            currentIndex: win.place.anchor
-                            onActivated: (i) => win.setPlace(win.place.x, win.place.y, i)
-                        }
-                        Label { text: qsTr("Across, from that side") }
-                        SpinBox { from: 0; to: 4000; editable: true; value: win.place.x; onValueModified: win.setPlace(value, win.place.y, win.place.anchor) }
-                        Label { text: qsTr("Down or up, from that edge") }
-                        SpinBox { from: 0; to: 4000; editable: true; value: win.place.y; onValueModified: win.setPlace(win.place.x, value, win.place.anchor) }
-                    }
-                }
-                GroupBox {
-                    title: qsTr("Colours (left at their first colour, the theme's)")
-                    Layout.fillWidth: true
+                    title: qsTr("Position")
+                    Layout.alignment: Qt.AlignTop
+                    // the corners at the screen's corners, the screen between them, x and y under it
                     GridLayout {
                         columns: 3
-                        Repeater {
-                            model: [
-                                { "label": qsTr("Main Messages"), "which": "messages", "prop": "messagesColor" },
-                                { "label": qsTr("Alert Messages"), "which": "alert", "prop": "alertColor" },
-                                { "label": qsTr("Previous Frame Input"), "which": "lastInput", "prop": "lastInputColor" },
-                                { "label": qsTr("Movie Input"), "which": "movieInput", "prop": "movieInputColor" }
-                            ]
-                            delegate: RowLayout {
-                                required property var modelData
-                                Layout.columnSpan: 3
-                                Rectangle { width: 18; height: 18; color: win.vm[modelData.prop]; border.color: "gray" }
-                                Label { text: modelData.label; Layout.fillWidth: true }
-                                Label { text: win.vm[modelData.prop]; font.family: "monospace" }
-                                Button {
-                                    text: qsTr("Change...")
-                                    onClicked: { colorDialog.which = modelData.which; colorDialog.selectedColor = win.vm[modelData.prop]; colorDialog.open() }
+                        columnSpacing: 2
+                        rowSpacing: 2
+                        RadioButton { checked: win.place.anchor === 0; onClicked: win.setPlace(win.place.x, win.place.y, 0); padding: 0; Layout.alignment: Qt.AlignTop }
+                        Rectangle {
+                            id: screen
+                            Layout.rowSpan: 2
+                            width: 256; height: 192
+                            color: palette.base
+                            border.color: palette.mid
+                            // the mark where the message goes, counted from its corner
+                            readonly property int markX: (win.place.anchor === 1 || win.place.anchor === 3) ? win.maxX - win.place.x : win.place.x
+                            readonly property int markY: (win.place.anchor === 2 || win.place.anchor === 3) ? win.maxY - win.place.y : win.place.y
+                            Canvas {
+                                anchors.fill: parent
+                                property int mx: screen.markX
+                                property int my: screen.markY
+                                onMxChanged: requestPaint()
+                                onMyChanged: requestPaint()
+                                onPaint: {
+                                    const g = getContext("2d")
+                                    g.reset()
+                                    g.strokeStyle = palette.windowText
+                                    g.lineWidth = 1
+                                    g.strokeRect(mx + 0.5, my + 0.5, 8, 8)
+                                    g.beginPath()
+                                    g.moveTo(mx, my); g.lineTo(mx + 8, my + 8)
+                                    g.moveTo(mx + 8, my); g.lineTo(mx, my + 8)
+                                    g.stroke()
                                 }
                             }
+                            // a press or a drag puts it there, counted from the corner picked
+                            function placeAt(px, py) {
+                                let x = Math.max(0, Math.min(win.maxX, Math.round(px)))
+                                let y = Math.max(0, Math.min(win.maxY, Math.round(py)))
+                                const a = win.place.anchor
+                                if (a === 1 || a === 3) x = win.maxX - x
+                                if (a === 2 || a === 3) y = win.maxY - y
+                                win.setPlace(x, y, a)
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: pressed ? Qt.ArrowCursor : Qt.PointingHandCursor
+                                onPressed: (mouse) => screen.placeAt(mouse.x, mouse.y)
+                                onPositionChanged: (mouse) => { if (pressed) screen.placeAt(mouse.x, mouse.y) }
+                            }
+                        }
+                        RadioButton { checked: win.place.anchor === 1; onClicked: win.setPlace(win.place.x, win.place.y, 1); padding: 0; Layout.alignment: Qt.AlignTop }
+                        RadioButton { checked: win.place.anchor === 2; onClicked: win.setPlace(win.place.x, win.place.y, 2); padding: 0; Layout.alignment: Qt.AlignBottom }
+                        RadioButton { checked: win.place.anchor === 3; onClicked: win.setPlace(win.place.x, win.place.y, 3); padding: 0; Layout.alignment: Qt.AlignBottom }
+                        RowLayout {
+                            Layout.row: 2
+                            Layout.column: 1
+                            Layout.columnSpan: 2
+                            Label { text: "x" }
+                            SpinBox { from: 0; to: win.maxX; editable: true; value: win.place.x; onValueModified: win.setPlace(value, win.place.y, win.place.anchor); Layout.preferredWidth: 90 }
+                            Label { text: "y" }
+                            SpinBox { from: 0; to: win.maxY; editable: true; value: win.place.y; onValueModified: win.setPlace(win.place.x, value, win.place.anchor); Layout.preferredWidth: 90 }
                         }
                     }
                 }
+                Item { Layout.fillHeight: true }
                 RowLayout {
                     Label { text: qsTr("Messages fade after") }
-                    SpinBox { from: 1; to: 10; editable: true; value: win.vm.messageSeconds; onValueModified: win.vm.messageSeconds = value }
+                    SpinBox { from: 1; to: 10; editable: true; value: win.vm.messageSeconds; onValueModified: win.vm.messageSeconds = value; Layout.preferredWidth: 80 }
                     Label { text: qsTr("seconds") }
                 }
-                CheckBox { text: qsTr("Stack messages"); checked: win.vm.stackMessages; onToggled: win.vm.stackMessages = checked }
-                Item { Layout.fillHeight: true }
+                CheckBox { text: qsTr("Stack Messages"); checked: win.vm.stackMessages; onToggled: win.vm.stackMessages = checked; padding: 2 }
+                RowLayout {
+                    Button { text: qsTr("Restore Defaults"); onClicked: win.vm.run("resetDefaults") }
+                    Item { Layout.fillWidth: true }
+                    Button { text: qsTr("&OK"); onClicked: { win.keeping = true; win.close() } }
+                    Button { text: qsTr("&Cancel"); onClicked: win.close() }
+                }
+                Label { text: win.vm.error; color: "#b00020"; visible: text !== ""; elide: Text.ElideRight; Layout.fillWidth: true }
             }
-        }
-        RowLayout {
-            Button { text: qsTr("Default"); onClicked: win.vm.run("resetDefaults") }
-            Label { text: win.vm.error; color: "#b00020"; Layout.fillWidth: true; elide: Text.ElideRight }
-            Button { text: qsTr("Close"); onClicked: win.close() }
         }
     }
     ColorDialog {

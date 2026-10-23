@@ -1263,7 +1263,7 @@ ApplicationWindow {
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; visible: false; onBudgetsAsked: { greenzoneBudgetsWindow.show(); greenzoneBudgetsWindow.raise() } }
     GreenzoneBudgets { id: greenzoneBudgetsWindow; session: root.session; visible: false }
     Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; mainWindow: root; visible: false }
-    MessagesConfig { id: messagesWindow; vm: root.messages; visible: false }
+    MessagesConfig { id: messagesWindow; vm: root.messages; mainWindow: root; visible: false }
     SoundConfig { id: soundWindow; session: root.session; mainWindow: root; visible: false }
     DisplayConfig { id: displayWindow; vm: root.display; session: root.session; mainWindow: root; visible: false }
     ProjectFiles { session: root.session }
