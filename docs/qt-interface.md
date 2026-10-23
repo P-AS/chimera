@@ -53,6 +53,18 @@ none of them. Lua scripts reach the same view models by the same names;
 the list of names (`--describe`) is what an MCP server's tools would be
 made from.
 
+The main window is Chimera's: its menus are Chimera's, in its order
+(File, System, View, Config, Tools, Emulator, Help), with System,
+Emulator and the status bar there only while a machine runs, and the
+debugger, surface viewer and trace logger in the Emulator menu, as tools
+the core offers. As in Chimera, the way in is a project: File has New
+Chimera Project and Open Project, and no way to open a game alone, and
+there is no window to change a machine's settings once it runs (they are
+chosen when the project is made). A game file dropped on the window
+starts a new project from it. (The command line still opens a package and
+a game, for the tests.) Capture OSD puts the counters and messages over
+the picture into screenshots, as Chimera's does.
+
 The main window shows the picture alone. TAStudio is a window of its own,
 as in Chimera: it opens when a project opens, at the main window's right
 side with their tops level (moved left as far as needed to stay on the
@@ -69,7 +81,6 @@ markers, deselect, select between markers, clear greenzone, copy, paste,
 paste insert, cut, clear, delete, insert, clone, truncate, and branch. Keys pressed in TAStudio reach the machine and the hotkeys, as
 Chimera's TAStudio passes them on. Move with Main Window (on at first, as
 in Chimera) brings TAStudio along when the main window is dragged.
-Tools > TAStudio opens it for a game opened without a project too.
 
 | View model | What it does | Window |
 |---|---|---|
@@ -78,7 +89,7 @@ Tools > TAStudio opens it for a game opened without a project too.
 | branches | other versions of the movie, kept in the project, each with its state in a file in the project's cache folder and the picture it had; loading one loads that state, or replays from where the two movies differ when the state is missing or is another machine's; loaded by a double click, or only gone to with the old control scheme (as Chimera does when not recording); a branch's picture shown while the pointer is over it, no side longer than the branch screenshot size | TAStudio's Branches box, TAStudio Settings |
 | ramSearch | the engine's RAM Search, updated after every frame, with undo; values shown and typed every way RAM Watch shows them | RAM Search (Qt's own table) |
 | ramWatch | addresses kept an eye on, read after every frame, shown unsigned, signed, in hex, in binary, as fixed point or as a float exactly as Chimera writes them; the previous value three ways, changes counted; Chimera's .wch files both ways (other emulators' too); a game core's properties watched by name, read and written as text by the engine; the marked ones shown over the picture where Chimera shows them | RAM Watch |
-| settings | the package's declared settings, those that apply, edits applied live or by restarting; the package's presets for the machine, written in as if typed (never the machine's own setting; a name the machine lacks named) | Settings (a form generated from the declaration) |
+| settings | the package's declared settings, those that apply, edits applied live or by restarting; the package's presets for the machine, written in as if typed (never the machine's own setting; a name the machine lacks named) | none: Chimera has no window for a machine's settings once it runs (they are chosen in the New Project window); scripts reach this one |
 | luaConsole | edit, run, open and save scripts; their output | Lua Console |
 | newProject | a project made before any machine runs, as Chimera's New Project window makes one: the core among the installed packages - emulators or game cores (remembered), a line a package with its version dated in Chimera's clock (issue 331), the package's hash where two are of one core, and its systems -, its machine, its renderer (asked beside the machine and named for what it is, with what a hardware one costs, as Chimera asks it), files in the slots its package declares (kinds - narrowed to those the chosen machine claims, as Chimera does -, how many, the ones a choice rules out, at least one of a group, names a slot asks for, a cue's tracks checked at once), the settings that apply (with the options and default the chosen machine narrows a setting to, its `settingOverrides`, as Chimera has them), the firmware found by the engine's rules or chosen by hand (a file whose hash is not the declared one is refused, except by a game core, whose project then pins that file's own hash; a file chosen by hand is remembered, as Chimera remembers it, so the project finds it when it opens; Scan Folder looks through a folder, with its subfolders or not, for what is still missing - by hash where the package gives one, else by the declared name - and that folder becomes the firmware folder when the one set is not there, as in Chimera (issue 293)); a movie made elsewhere imported (the core's movieImport: its answer, asked in a process of its own through chimera-run, fills the form, and the project takes the movie's inputs); the settings a core suggests for the game (asked the same way, once a game, with the files, slot map and settings chosen so far, taken back for another game, never over an import's), and what the game has of its own: settings after the package's and, for a package that says `gameFirmware`, firmware after the package's (one by a package setting's name or a package firmware's id is dropped); a project's open asks the core again what its game needs, as Chimera does; what is missing said a line at a time; made and opened, written nowhere until its first save, which asks where it goes (as Chimera does); opened on the last project's answers - its core, machine, settings and the files still where they were found, the firmware where this core last had it - with the core still asked about the game but its values not put over the project's own (an import is treated the same); another game then takes back the settings that still hold what the core suggested for the project's game (Chimera issue 214), and a game's own setting values go when another game comes; a file dropped on the main window starts it, as in Chimera: the first core that takes its kind (on the last project's answers when they are that core's), the file in the slot that takes it - in place of what a full slot held, where Chimera adds it beside and complains | New Project |
 | hexEditor | a memory domain sixteen bytes a line, by 1, 2 or 4 bytes either end first, with its text; only the lines on screen held and read after every frame, the bytes that changed marked; a value written into the machine (the states after the frame dropped); bytes found | Hex Editor |

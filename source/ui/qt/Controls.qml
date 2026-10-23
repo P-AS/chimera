@@ -18,6 +18,12 @@ ApplicationWindow {
     property string catchAction: ""
     title: qsTr("Controls and Hotkeys")
     // the key or pad input caught goes to the row that asked
+    // Chimera's Config > Controllers... and Hotkeys...: this window, on that tab
+    function showTab(index) {
+        tabs.currentIndex = index
+        win.show()
+        win.raise()
+    }
     function take(name) {
         if (win.catching === "button") win.controls.run("addKey", [win.catchRow, name])
         else if (win.catching === "hotkey") win.hotkeys.run("addKey", [win.catchAction, name])

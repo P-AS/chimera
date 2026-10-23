@@ -210,6 +210,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("status", "what the session last had to say", status);
 	expose("coreName", "the open core", coreName);
 	expose("systemName", "the machine the core runs", systemName);
+	expose("systemId", "the machine's id, as the core names it", systemId);
 	expose("buttonCount", "how many buttons the machine has", buttonCount);
 	expose("gamepads", "the gamepads in use, or why there are none", gamepads);
 	expose("speedPercent", "how fast the machine runs, a percent of its own rate (1 to 6400)", speedPercent, true);
@@ -427,6 +428,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("showRerecords", "the rerecord count is shown over the picture", showRerecords, true);
 	expose("showMessages", "messages are shown over the picture a moment", showMessages, true);
 	expose("showStatusBar", "the status bar is shown", showStatusBar, true);
+	expose("captureOsd", "a screenshot has the counters and messages over the picture too", captureOsd, true);
 	expose("isGameCore", "the core open is a game (its menu is Game, not Emulator)", isGameCore);
 	expose("hasGameTimer", "the game open has a timer of its own", hasGameTimer);
 	expose("hasSaveData", "the core open writes out the user's save data", hasSaveData);
@@ -3391,12 +3393,14 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	const char *core = ce_session_core_name(s);
 	const char *system = ce_session_system_name(s);
 	const std::string coreText = core != nullptr ? core : "", systemText = system != nullptr ? system : "";
+	const char *sysId = ce_session_system_id(s);
+	const std::string systemIdText = sysId != nullptr ? sysId : "";
 	const double rate = num > 0 && den > 0 ? static_cast<double>(num) / den : 0;
 
 	const int64_t frames = inputs_.size();
 	/* another game, or the same started again: another average, as Chimera's */
 	averageResetM_.store(true);
-	later([this, names, axes, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames, controller,
+	later([this, names, axes, mnemonics, keybinds, coreText, systemText, systemIdText, rate, label, inputsReplaced, frames, controller,
 			   gameCore, timer, saveData, movieImport, package, traces, registers, traceHead, surfaceText] {
 		surfaces.set(surfaceText);
 		hasTrace.set(traces);
@@ -3420,6 +3424,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		buttonCount.set(static_cast<int64_t>(names.size()));
 		coreName.set(coreText);
 		systemName.set(systemText);
+		systemId.set(systemIdText);
 		frame.set(0);
 		greenEnd.set(0);
 		running.set(false);

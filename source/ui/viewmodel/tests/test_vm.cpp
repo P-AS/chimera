@@ -1574,6 +1574,8 @@ bool luaLibraries(const char *package, const char *rom)
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* System > "Loaded core: name (id)": the machine's id as the core names it */
+	CHECK(session.systemId.get() == "Synth" && session.systemName.get() == "Synthetic Witness");
 	auto said = [&](const std::string &start) {
 		std::string found;
 		RowModel *out = console.rowLists()[0].model;

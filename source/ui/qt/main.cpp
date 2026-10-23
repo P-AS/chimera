@@ -25,6 +25,7 @@
 #include <QProcess>
 #include <QFileInfo>
 #include <QQuickItem>
+#include <QQuickItemGrabResult>
 #include <QQuickWindow>
 #include <QPalette>
 #include <QStandardPaths>
@@ -229,7 +230,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -274,17 +275,21 @@ int main(int argc, char **argv)
 		hotkeys.add("General", "Toggle Throttle", "", [&session, run](bool down) {
 			if (down) run(session, "toggleThrottle");
 		});
+		/* what is on screen, through the window: the picture area as drawn,
+		 * with the counters and messages over it (Capture OSD), or the picture
+		 * alone; the grab comes back later */
+		auto grabShown = [&mainWindow](bool withOsd, std::function<void(const QImage &)> then) {
+			if (mainWindow == nullptr) return false;
+			auto *item = mainWindow->findChild<QQuickItem *>(withOsd ? QStringLiteral("pictureArea") : QStringLiteral("picture"));
+			if (item == nullptr || item->width() <= 0 || item->height() <= 0) return false;
+			const QSharedPointer<QQuickItemGrabResult> grab = item->grabToImage();
+			if (grab.isNull()) return false;
+			QObject::connect(grab.data(), &QQuickItemGrabResult::ready, grab.data(), [grab, then] { then(grab->image().convertToFormat(QImage::Format_RGB32)); });
+			return true;
+		};
 		/* the picture on screen as a PNG, named as Chimera names one: the
 		 * game, the date and time, and a number when that is taken */
-		hotkeys.add("General", "Screenshot", "F12", [&session](bool down) {
-			if (!down) return;
-			vm::Picture::Frame f;
-			if (!session.screen.takeIfNewer(UINT64_MAX, f) || f.width <= 0 || f.height <= 0)
-			{
-				session.status.set("No screenshot: there is no picture yet");
-				return;
-			}
-			const QImage picture(reinterpret_cast<const uchar *>(f.pixels.data()), f.width, f.height, f.width * 4, QImage::Format_RGB32);
+		auto saveScreenshot = [&session](const QImage &picture) {
 			QDir().mkpath(qt::PictureFiles::screenshotFolder());
 			const QString base = qt::PictureFiles::screenshotBase(QString::fromStdString(session.gameName.get()));
 			/* the bare name, unless a (0) is there; a bare one already there becomes (0) */
@@ -297,21 +302,43 @@ int main(int argc, char **argv)
 			for (int n = 0; QFileInfo::exists(path); n++) path = base + QStringLiteral(" (%1).png").arg(n);
 			if (picture.save(path, "PNG")) session.status.set(QFileInfo(path).fileName().toStdString() + " saved.");
 			else session.status.set("No screenshot: " + path.toStdString() + " could not be written");
-		});
-		/* the picture as the machine made it, or the window as it is, to the
-		 * clipboard; Chimera's Ctrl+C for the first is the piano roll's Copy
-		 * here, so it has no key until one is given */
-		hotkeys.add("General", "Screen Raw to Clipboard", "", [&session](bool down) {
+		};
+		auto rawPicture = [&session](QImage &out) {
 			vm::Picture::Frame f;
-			if (!down || !session.screen.takeIfNewer(UINT64_MAX, f) || f.width <= 0 || f.height <= 0) return;
-			QGuiApplication::clipboard()->setImage(
-				QImage(reinterpret_cast<const uchar *>(f.pixels.data()), f.width, f.height, f.width * 4, QImage::Format_RGB32).copy());
-			session.status.set("The picture is on the clipboard");
+			if (!session.screen.takeIfNewer(UINT64_MAX, f) || f.width <= 0 || f.height <= 0) return false;
+			out = QImage(reinterpret_cast<const uchar *>(f.pixels.data()), f.width, f.height, f.width * 4, QImage::Format_RGB32).copy();
+			return true;
+		};
+		hotkeys.add("General", "Screenshot", "F12", [&session, grabShown, saveScreenshot, rawPicture](bool down) {
+			if (!down) return;
+			QImage picture;
+			if (session.captureOsd.get() && grabShown(true, saveScreenshot)) return;
+			if (!rawPicture(picture))
+			{
+				session.status.set("No screenshot: there is no picture yet");
+				return;
+			}
+			saveScreenshot(picture);
 		});
-		hotkeys.add("General", "Screen Client to Clipboard", "Ctrl+Shift+C", [&session, &mainWindow](bool down) {
-			if (!down || mainWindow == nullptr) return;
-			QGuiApplication::clipboard()->setImage(mainWindow->grabWindow());
-			session.status.set("The window is on the clipboard");
+		/* the picture as the machine made it (with what is over it, at the
+		 * window's size, when Capture OSD is on), or the picture area as the
+		 * window shows it, to the clipboard, as Chimera's */
+		hotkeys.add("General", "Screen Raw to Clipboard", "", [&session, grabShown, rawPicture](bool down) {
+			if (!down) return;
+			auto done = [&session](const QImage &image) {
+				QGuiApplication::clipboard()->setImage(image);
+				session.status.set("Screenshot (raw) saved to clipboard.");
+			};
+			QImage picture;
+			if (session.captureOsd.get() && grabShown(true, done)) return;
+			if (rawPicture(picture)) done(picture);
+		});
+		hotkeys.add("General", "Screen Client to Clipboard", "Ctrl+Shift+C", [&session, grabShown](bool down) {
+			if (!down) return;
+			grabShown(session.captureOsd.get(), [&session](const QImage &image) {
+				QGuiApplication::clipboard()->setImage(image);
+				session.status.set("Screenshot (client) saved to clipboard.");
+			});
 		});
 		window("General", "Toggle Menu", "");
 		window("General", "Toggle Stay on Top", "");
@@ -728,6 +755,7 @@ int main(int argc, char **argv)
 		session.windowActive.set(state == Qt::ApplicationActive);
 	});
 	config.keep(session, "showStatusBar");
+	config.keep(session, "captureOsd");
 	config.keep(session, "showGameTime");
 	config.keep(batchRun, "frames");
 	config.keep(session, "autofireOn");
@@ -833,7 +861,6 @@ int main(int argc, char **argv)
 	qt::QmlViewModel hotkeysQml(hotkeys);
 	qt::KeyNamer keyNamer;
 	qt::ThemeColors themeColors;
-	qt::QmlViewModel settingsQml(settings);
 	qt::QmlViewModel helpQml(help);
 	qt::QmlViewModel batchRunQml(batchRun);
 	qt::QmlViewModel mediaMakerQml(mediaMaker);
@@ -973,7 +1000,6 @@ int main(int argc, char **argv)
 		{QStringLiteral("macroTool"), QVariant::fromValue<QObject *>(&macroToolQml)},
 		{QStringLiteral("recorder"), QVariant::fromValue<QObject *>(&recorderQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
-		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},
 		{QStringLiteral("cores"), QVariant::fromValue<QObject *>(&coresQml)},
@@ -1005,7 +1031,6 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("hex") ? QStringLiteral("hexEditorWindow")
 		: args.value(showOpt) == QStringLiteral("controls") ? QStringLiteral("controlsWindow")
 		: args.value(showOpt) == QStringLiteral("themes") ? QStringLiteral("themesWindow")
-		: args.value(showOpt) == QStringLiteral("settings") ? QStringLiteral("settingsWindow")
 		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")
 		: args.value(showOpt) == QStringLiteral("tastudio") ? QStringLiteral("tastudioWindow")
 		: args.value(showOpt) == QStringLiteral("undo-history") ? QStringLiteral("undoHistoryWindow")

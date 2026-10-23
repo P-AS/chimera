@@ -57,6 +57,8 @@ public:
 	Property<std::string> status{"Nothing open"};
 	Property<std::string> coreName;
 	Property<std::string> systemName;
+	/* the machine's id, as the core names it (Chimera's "Loaded core: name (id)") */
+	Property<std::string> systemId;
 	Property<int64_t> buttonCount{0};
 	/* the gamepads in use, or why there are none */
 	Property<std::string> gamepads{"No gamepads yet"};
@@ -132,6 +134,8 @@ public:
 	 * speed's line; the rerecord count, 56 down; messages over the picture
 	 * (the window shows each status a moment), and the status bar */
 	Property<bool> showAverageFps{false}, showRerecords{false}, showMessages{true}, showStatusBar{true};
+	/* Chimera's File > Screenshot > Capture OSD: a screenshot has what is drawn over the picture too */
+	Property<bool> captureOsd{false};
 	Property<std::string> averageFpsText;
 	/* Chimera's Emulator menu ("Game" for a game core) and what it offers
 	 * for the core open: a game core's own timer, shown at the top right 14

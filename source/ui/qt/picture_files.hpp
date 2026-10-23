@@ -52,6 +52,17 @@ public:
 		if (say) say(written ? QFileInfo(path).fileName().toStdString() + " saved." : "No screenshot: " + path.toStdString() + " could not be written");
 		return written ? path : QString();
 	}
+	/* a picture the window grabbed (the picture area with what is over it) */
+	Q_INVOKABLE QString saveGrab(const QUrl &file, const QVariant &grabbed) const
+	{
+		const QString path = file.isLocalFile() ? file.toLocalFile() : file.toString();
+		const QImage image = grabbed.value<QImage>().convertToFormat(QImage::Format_RGB32);
+		if (path.isEmpty() || image.isNull()) return {};
+		QDir().mkpath(QFileInfo(path).absolutePath());
+		const bool written = image.save(path, path.endsWith(QStringLiteral(".jpg"), Qt::CaseInsensitive) ? "JPG" : "PNG");
+		if (say) say(written ? QFileInfo(path).fileName().toStdString() + " saved." : "No screenshot: " + path.toStdString() + " could not be written");
+		return written ? path : QString();
+	}
 	std::function<void(const std::string &)> say;
 	/* where screenshots go: CHIMERA_SCREENSHOTS, else the Paths window's
 	 * Screenshots folder (folderFor), else Screenshots beside the program */
