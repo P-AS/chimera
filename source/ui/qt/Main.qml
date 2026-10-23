@@ -38,6 +38,7 @@ ApplicationWindow {
     required property QtObject paths
     required property QtObject firmware
     required property QtObject configFiles
+    required property QtObject dataFolder
     // a Paths folder for a file dialog to open in (made when it is not there)
     function folderOf(name) {
         root.paths.changed; root.paths.base; root.paths.lastRomFolder; root.paths.recentForRoms
@@ -239,6 +240,7 @@ ApplicationWindow {
             Action { text: qsTr("&Display..."); onTriggered: { displayWindow.show(); displayWindow.raise() } }
             Action { text: qsTr("&Paths..."); onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
             Action { text: qsTr("Fi&rmware..."); onTriggered: { firmwareWindow.show(); firmwareWindow.raise() } }
+            Action { text: qsTr("Data Director&y..."); onTriggered: { dataFolderWindow.show(); dataFolderWindow.raise() } }
             // Chimera's Config menu's last four
             MenuSeparator {}
             Action { text: qsTr("Save Con&fig"); onTriggered: root.configFiles.run("save") }
@@ -1292,6 +1294,7 @@ ApplicationWindow {
     ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; folderOf: root.folderOf; visible: false }
     PathsConfig { id: pathsWindow; vm: root.paths; visible: false }
     FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; visible: false }
+    DataFolderConfig { id: dataFolderWindow; vm: root.dataFolder; visible: false }
     Dialog {
         id: aboutDialog
         objectName: "aboutDialog"

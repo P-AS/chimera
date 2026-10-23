@@ -39,6 +39,7 @@
 #endif
 #include <mutex>
 #include <map>
+#include <filesystem>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -57,6 +58,7 @@
 #include "chimera/vm/paths_vm.hpp"
 #include "chimera/vm/firmware_vm.hpp"
 #include "chimera/vm/config_files_vm.hpp"
+#include "chimera/vm/data_folder_vm.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -222,7 +224,7 @@ int main(int argc, char **argv)
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, settings, lua, branches, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
@@ -636,16 +638,23 @@ int main(int argc, char **argv)
 	if (!qEnvironmentVariableIsSet("CHIMERA_CORES_DIR")) config.keep(cores, "coresFolder");
 	config.keep(cores, "chosenFirmware");
 	config.keep(newProject, "kind");
-	/* what a project can make again (its branches' states): the
-	 * prototype's own cache, never Chimera's (CHIMERA_QT_CACHE for a test) */
-	session.cacheFolder.set(qEnvironmentVariableIsSet("CHIMERA_QT_CACHE")
-			? qEnvironmentVariable("CHIMERA_QT_CACHE").toStdString()
-			: (QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/projects")).toStdString());
+	/* Config > Data Directory: where the window keeps things for the person,
+	 * the prototype's own place, never Chimera's; a change asked for last
+	 * time is carried out now, before anything in it is open */
+	vm::DataFolderViewModel dataFolder(dispatcher);
+	dataFolder.standard.set(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation).toStdString());
+	for (const char *name : {"current", "pending", "pendingMove"}) config.keep(dataFolder, name);
+	if (const std::string said = dataFolder.applyPending(); !said.empty()) dataFolder.status.set(said);
+	const std::string dataHome = dataFolder.inUse();
+	/* what a project can make again (its branches' states), a folder a
+	 * project (CHIMERA_QT_CACHE for a test) */
+	session.cacheFolder.set(qEnvironmentVariableIsSet("CHIMERA_QT_CACHE") ? qEnvironmentVariable("CHIMERA_QT_CACHE").toStdString()
+																		  : (std::filesystem::path(dataHome) / "Projects").string());
 	/* unsaved work kept against a crash: beside the caches, never in one, so
 	 * removing a cache cannot take it (CHIMERA_QT_RECOVERY for a test) */
-	session.recoveryFolder.set(qEnvironmentVariableIsSet("CHIMERA_QT_RECOVERY")
-			? qEnvironmentVariable("CHIMERA_QT_RECOVERY").toStdString()
-			: (QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QStringLiteral("/Recovery")).toStdString());
+	session.recoveryFolder.set(qEnvironmentVariableIsSet("CHIMERA_QT_RECOVERY") ? qEnvironmentVariable("CHIMERA_QT_RECOVERY").toStdString()
+																				: (std::filesystem::path(dataHome) / "Recovery").string());
+	qt::QmlViewModel dataFolderQml(dataFolder);
 	config.keep(session, "autoRestore");
 	config.keep(session, "speedPercent");
 	config.keep(session, "unthrottled");
@@ -766,6 +775,8 @@ int main(int argc, char **argv)
 	config.keep(session, "recentProjects");
 	config.keep(pianoRoll, "followPlayback");
 	if (!config.problem().empty()) session.status.set(config.problem());
+	/* what the start did with a data folder change asked for */
+	if (!dataFolder.status.get().empty()) session.status.set(dataFolder.status.get());
 	qt::QmlViewModel sessionQml(session);
 	qt::QmlViewModel pianoRollQml(pianoRoll);
 	qt::QmlViewModel ramSearchQml(ramSearch);
@@ -855,6 +866,7 @@ int main(int argc, char **argv)
 	lua.add(paths);
 	lua.add(firmware);
 	lua.add(configFiles);
+	lua.add(dataFolder);
 	if (args.isSet(describeOpt))
 	{
 		std::printf("%s", lua.describe().c_str());
@@ -899,6 +911,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("paths"), QVariant::fromValue<QObject *>(&pathsQml)},
 		{QStringLiteral("firmware"), QVariant::fromValue<QObject *>(&firmwareQml)},
 		{QStringLiteral("configFiles"), QVariant::fromValue<QObject *>(&configFilesQml)},
+		{QStringLiteral("dataFolder"), QVariant::fromValue<QObject *>(&dataFolderQml)},
 		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
@@ -947,6 +960,7 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("budgets") ? QStringLiteral("greenzoneBudgetsWindow")
 		: args.value(showOpt) == QStringLiteral("paths") ? QStringLiteral("pathsWindow")
 		: args.value(showOpt) == QStringLiteral("firmware") ? QStringLiteral("firmwareWindow")
+		: args.value(showOpt) == QStringLiteral("data") ? QStringLiteral("dataFolderWindow")
 		: args.value(showOpt) == QStringLiteral("project-details") ? QStringLiteral("projectDetailsWindow")
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())

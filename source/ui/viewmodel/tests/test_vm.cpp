@@ -56,6 +56,7 @@
 #include "chimera/vm/paths_vm.hpp"
 #include "chimera/vm/firmware_vm.hpp"
 #include "chimera/vm/config_files_vm.hpp"
+#include "chimera/vm/data_folder_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -548,6 +549,61 @@ void pathsConfig()
 	paths.recentForRoms.set(false);
 	CHECK(fromValue(paths.run("dialogFolder", {std::string("ROM")}, error).value_or(Value()), got) && got == (dir / "program").string());
 	CHECK(paths.run("resetAll", {}, error).has_value() && paths.changed.get() == "{}" && paths.resolve("Movies") == (dir / "program" / "Movies").string());
+	fs::remove_all(dir);
+}
+
+/* Chimera's Data Directory: a change recorded, carried out at the next
+ * start, the data moved with it when asked; a folder holding other things
+ * gets a Chimera folder of its own; into or out of itself is refused; a
+ * name already in the new place stops the move and leaves the old whole */
+void dataFolder()
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-data-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "data" / "Projects" / "AB12");
+	fs::create_directories(dir / "data" / "Recovery" / "CD34");
+	std::ofstream(dir / "data" / "Projects" / "AB12" / "history.bin") << std::string(1000, 'h');
+	std::ofstream(dir / "data" / "Recovery" / "CD34" / "session.json") << "{}";
+	fs::create_directories(dir / "docs");
+	std::ofstream(dir / "docs" / "letter.txt") << "not Chimera's";
+	ManualDispatcher d;
+	DataFolderViewModel data(d);
+	std::string error, said;
+	data.standard.set((dir / "standard").string());
+	data.current.set((dir / "data").string());
+	CHECK(data_folder::holdsData((dir / "data").string()) && !data_folder::holdsData((dir / "docs").string()));
+	CHECK(data_folder::targetFor((dir / "docs").string()) == (dir / "docs" / "Chimera").string());
+	CHECK(data_folder::targetFor((dir / "fresh").string()) == (dir / "fresh").string());
+	/* into or out of itself, and where it already is */
+	CHECK(!data.run("request", {(dir / "data" / "inner").string(), true}, error) && error.find("cannot move into or out of itself") != std::string::npos);
+	CHECK(fromValue(data.run("request", {(dir / "data").string(), true}, error).value_or(Value()), said) && said == "same" && data.pending.get().empty());
+	/* recorded only: nothing moves until the next start */
+	CHECK(fromValue(data.run("request", {(dir / "fresh").string(), true}, error).value_or(Value()), said) && said == "empty");
+	CHECK(data.pending.get() == (dir / "fresh").string() && data.pendingMove.get() && fs::exists(dir / "data" / "Projects" / "AB12" / "history.bin"));
+	CHECK(data.run("withdraw", {}, error).has_value() && data.pending.get().empty());
+	CHECK(data.applyPending().empty() && data.inUse() == (dir / "data").string());
+	/* asked again, and the start carries it out */
+	data.run("request", {(dir / "fresh").string(), true}, error);
+	CHECK(data.applyPending().empty() && data.inUse() == (dir / "fresh").string() && data.pending.get().empty());
+	CHECK(fs::file_size(dir / "fresh" / "Projects" / "AB12" / "history.bin") == 1000 && fs::exists(dir / "fresh" / "Recovery" / "CD34" / "session.json"));
+	CHECK(!fs::exists(dir / "data"));
+	/* a folder holding other things: a Chimera folder inside it, without moving the data */
+	CHECK(fromValue(data.run("request", {(dir / "docs").string(), false}, error).value_or(Value()), said) && said == "empty");
+	CHECK(data.pending.get() == (dir / "docs" / "Chimera").string() && !data.pendingMove.get());
+	CHECK(data.applyPending().empty() && data.inUse() == (dir / "docs" / "Chimera").string() && fs::exists(dir / "fresh" / "Projects"));
+	/* back, moving: a name already there stops it, and the old is whole */
+	fs::create_directories(dir / "docs" / "Chimera" / "Projects");
+	data.run("request", {(dir / "fresh").string(), true}, error);
+	data.current.set((dir / "fresh").string());
+	data.pending.set((dir / "docs" / "Chimera").string());
+	data.pendingMove.set(true);
+	said = data.applyPending();
+	CHECK(said.rfind("The data folder was not moved (", 0) == 0 && said.find("is already there") != std::string::npos);
+	CHECK(data.inUse() == (dir / "fresh").string() && fs::file_size(dir / "fresh" / "Projects" / "AB12" / "history.bin") == 1000 &&
+		fs::exists(dir / "fresh" / "Recovery" / "CD34"));
+	/* the system's place */
+	CHECK(fromValue(data.run("request", {std::string(), false}, error).value_or(Value()), said) && data.pending.get() == (dir / "standard").string());
+	CHECK(data.applyPending().empty() && data.current.get().empty() && data.inUse() == (dir / "standard").string());
 	fs::remove_all(dir);
 }
 
@@ -5144,6 +5200,7 @@ int main(int argc, char **argv)
 	messagesConfig();
 	displayFit();
 	pathsConfig();
+	dataFolder();
 	pianoRollWithoutAMachine();
 	watchValues();
 	themes();
