@@ -242,12 +242,14 @@ int main(int argc, char **argv)
 	QCommandLineOption scrollOpt(QStringLiteral("scroll"), QStringLiteral("while measuring, scroll the piano roll all the time"));
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
+	QCommandLineOption userdataOpt(QStringLiteral("userdata"), QStringLiteral("Lua's userdata to start with, as Chimera's: k1:v1;k2:v2 "
+		"(true/false a boolean, a whole number or a number as one, else text)"), QStringLiteral("pairs"));
 	QCommandLineOption mmfOpt(QStringLiteral("mmf"), QStringLiteral("the memory-mapped file Lua's comm.mmfScreenshot writes to, as Chimera's --mmf"),
 		QStringLiteral("name"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
 	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, ram-search, ram-watch, hex, controls, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
-	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, describeOpt, schemeOpt, showOpt});
+	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, userdataOpt, describeOpt, schemeOpt, showOpt});
 	args.process(app);
 	QtDispatcher dispatcher(&app);
 	vm::InputLog inputs;
@@ -1116,6 +1118,38 @@ int main(int argc, char **argv)
 		if (auto *tool = window->findChild<QQuickWindow *>(showName)) tool->show();
 
 	std::string error;
+	/* Chimera's --userdata pairs, in the scripts' userdata before any script runs */
+	if (args.isSet(userdataOpt))
+	{
+		auto quoted = [](const QString &text) {
+			std::string out = "\"";
+			for (const unsigned char c : text.toStdString())
+			{
+				if (c == '\\' || c == '"') out += '\\', out += static_cast<char>(c);
+				else if (c < 32 || c == 127)
+				{
+					char digits[8];
+					std::snprintf(digits, sizeof digits, "\\%03d", c);
+					out += digits;
+				}
+				else out += static_cast<char>(c);
+			}
+			return out + "\"";
+		};
+		std::string code;
+		for (const QString &pair : args.value(userdataOpt).split(QLatin1Char(';')))
+		{
+			const qsizetype colon = pair.indexOf(QLatin1Char(':'));
+			if (colon < 0)
+			{
+				std::printf("userdata: malformed (';' without ':')\n");
+				code.clear();
+				break;
+			}
+			code += "__chimera_userdata_pair(" + quoted(pair.left(colon)) + ", " + quoted(pair.mid(colon + 1)) + ")\n";
+		}
+		if (!code.empty() && !lua.run(code, "userdata", error)) std::printf("userdata: %s\n", error.c_str());
+	}
 	if (args.isSet(luaOpt))
 	{
 		QFile file(args.value(luaOpt));

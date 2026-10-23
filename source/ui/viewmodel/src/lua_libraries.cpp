@@ -206,6 +206,16 @@ function userdata.remove(key)
 	return true
 end
 function userdata.containskey(key) return bag[tostring(key)] ~= nil end
+-- a --userdata pair from the command line: true/false a boolean, a 32-bit
+-- whole number or a number as one, else the text, as Chimera reads them
+function __chimera_userdata_pair(k, v)
+	local n = tonumber(v)
+	if v == "true" then bag[k] = true
+	elseif v == "false" then bag[k] = false
+	elseif math.tointeger(n) and n >= -2147483648 and n <= 2147483647 then bag[k] = math.tointeger(n)
+	elseif n ~= nil then bag[k] = n + 0.0
+	else bag[k] = v end
+end
 function userdata.get_keys()
 	local keys = {}
 	for k in pairs(bag) do keys[#keys + 1] = k end

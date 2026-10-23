@@ -1648,6 +1648,15 @@ while true do emu.frameadvance() end
 		forms.run("setChecked", {tick, true}, error);
 		forms.run("closed", {forms.rowLists()[0].model->cell(0, 0)}, error);
 		CHECK(forms.rowLists()[0].model->rowCount() == 0 && controls.rowCount() == 0);
+		/* Chimera's --userdata pairs, read as Chimera reads them */
+		{
+			std::string why2;
+			CHECK(lua.run("__chimera_userdata_pair('n', '-1234') __chimera_userdata_pair('f', '12.5') __chimera_userdata_pair('b', 'true') "
+						  "__chimera_userdata_pair('big', '9999999999') __chimera_userdata_pair('s', 'walker') "
+						  "console.log('pairs', math.type(userdata.get('n')), userdata.get('n'), userdata.get('f'), type(userdata.get('b')), "
+						  "math.type(userdata.get('big')), userdata.get('s'))", "pairs", why2));
+			CHECK(said("pairs ") == "pairs integer -1234 12.5 boolean float walker");
+		}
 		/* the script's functions ran: two clicks, and the form's close */
 		std::string why;
 		CHECK(lua.run("console.log('callbacks', userdata.get('clicked'), userdata.get('closed'))", "check", why));
