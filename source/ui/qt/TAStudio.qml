@@ -916,6 +916,14 @@ ApplicationWindow {
     ProjectDetails { id: headerWindow; part: "header"; vm: tas.projectDetails; visible: false }
     ProjectDetails { id: commentsWindow; part: "comments"; vm: tas.projectDetails; visible: false }
     ProjectDetails { id: subtitlesWindow; part: "subtitles"; vm: tas.projectDetails; visible: false }
-    UndoHistory { id: undoHistoryWindow; vm: tas.pianoRoll; visible: false }
+    UndoHistory { id: undoHistoryWindow; vm: tas.pianoRoll; rollColor: tas.rollColor; visible: false }
+    // a TAStudio colour as the roll draws it: its own (Set Colors), else the theme's
+    function rollColor(role) {
+        let own = {}, theme = {}
+        try { own = JSON.parse(tas.pianoRoll.rollColors || "{}") } catch (e) {}
+        if (own[role] !== undefined) return own[role]
+        try { theme = JSON.parse(roll.themeColors()) } catch (e) {}
+        return theme[role] || ""
+    }
     TAStudioSettings { id: tastudioSettingsWindow; session: tas.session; pianoRoll: tas.pianoRoll; branches: tas.branches; themeColorsOf: () => roll.themeColors(); ownerWindow: tas; visible: false }
 }
