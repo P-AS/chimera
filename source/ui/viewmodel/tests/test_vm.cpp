@@ -2347,6 +2347,16 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value());
 	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && fillNow() == 9);
 	CHECK(settingRow("gameLogo") >= 0 && text("settings", settingRow("gameLogo"), 3) == "off");
+	/* started from a file, as a file dropped on Chimera's window: the first
+	 * core that takes its kind, the file in its slot - in place of the one
+	 * there when the slot holds no more */
+	CHECK(wizard.run("startFrom", {game}, error).has_value() && wizard.core.get() == "Synth" && text("slots", 0, 7) == "walker.testrom");
+	CHECK(wizard.run("startFrom", {nofill}, error).has_value() && wizard.core.get() == "Synth" && text("slots", 0, 7) == "nofill.testrom");
+	CHECK(!wizard.run("startFrom", {(dir / "notes.txt").string()}, error) && error == "no installed core takes .txt files");
+	/* a core the last project was made with opens on its answers first */
+	CHECK(wizard.run("startFrom", {(dir / "disk3.dsk").string()}, error).has_value());
+	CHECK(wizard.core.get() == "Synth Slots" && wizard.machine.get() == 0 && text("slots", 0, 7) == "walker.testrom" && text("slots", 1, 7) == "disk3.dsk");
+	CHECK(wizard.suggestion.get() == "The synthetic core suggests a fill of 9.\nThis project's own settings are kept.");
 	/* nothing to make until everything is there */
 	CHECK(wizard.run("chooseCore", {std::string("Synth")}, error).has_value());
 	CHECK(!wizard.run("create", {(dir / "never.chimeraProject").string()}, error) && error == "not yet: Game: a file is needed");

@@ -481,6 +481,46 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			evaluate();
 			return {};
 		});
+	command("startFrom", "starts the form from a game file, as Chimera does with a file dropped on its window: the core "
+		"that takes its kind of file (on the last project's answers when they are for that core), and the file in the slot "
+		"that takes it, in place of what that slot held when it holds no more", {"path"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string path;
+			if (!arg(a, 0, path, error)) return {};
+			const std::string kind = kindOf(baseName(path));
+			const auto cores = cores_.coresFor(kind);
+			if (cores.empty())
+			{
+				error = "no installed core takes ." + kind + " files";
+				return false;
+			}
+			const auto &[name, package] = cores.front();
+			std::string e;
+			/* the last project's answers are worth having only for the same core */
+			if (session_.lastAnswers().coreName == name) run("openOnLastProject", {}, e);
+			if (package_ != package && !chooseCore(name, error, package)) return false;
+			/* the first slot that takes the kind, else the first */
+			const Slot *into = nullptr;
+			for (const Slot &s : slots_)
+			{
+				const std::vector<std::string> formats = formatsFor(s);
+				if (into == nullptr && std::find(formats.begin(), formats.end(), kind) != formats.end()) into = &s;
+			}
+			if (into == nullptr && !slots_.empty()) into = &slots_.front();
+			if (into == nullptr)
+			{
+				error = core.get() + " declares no slot for a file";
+				return false;
+			}
+			const std::string slotId = into->id;
+			if (auto it = files_.find(slotId); it != files_.end() && into->max >= 0 && static_cast<int64_t>(it->second.size()) >= into->max)
+			{
+				it->second.clear();
+				evaluate();
+			}
+			if (!run("addFile", {slotId, path}, error)) return false;
+			return true;
+		});
 	command("openOnLastProject", "fills the form with the last project's answers, as Chimera's New Project opens: its core, "
 		"its settings, and its files that are still where they were found; its settings are its own, so what the core "
 		"would suggest is not put over them. False when no project was opened, or its core is not installed",

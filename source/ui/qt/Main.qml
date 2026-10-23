@@ -223,6 +223,18 @@ ApplicationWindow {
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
     RamWatch { id: ramWatchWindow; vm: root.ramWatch; visible: false }
     NewProject { id: newProjectWindow; vm: root.newProject; visible: false }
+    // a file dropped on the window starts a project from it, as in Chimera:
+    // a file on its own is not what runs, a project is
+    DropArea {
+        anchors.fill: parent
+        onDropped: (drop) => {
+            if (!drop.hasUrls) return
+            root.newProject.run("startFrom", [drop.urls[0]])
+            newProjectWindow.show()
+            newProjectWindow.raise()
+            drop.accept()
+        }
+    }
     HexEditor { id: hexEditorWindow; vm: root.hexEditor; visible: false }
     Themes { id: themesWindow; vm: root.themes; colors: root.themeColors; visible: false }
     Controls { id: controlsWindow; controls: root.controls; hotkeys: root.hotkeys; keyNamer: root.keyNamer; visible: false }
