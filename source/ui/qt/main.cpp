@@ -601,6 +601,11 @@ int main(int argc, char **argv)
 	session.cacheFolder.set(qEnvironmentVariableIsSet("CHIMERA_QT_CACHE")
 			? qEnvironmentVariable("CHIMERA_QT_CACHE").toStdString()
 			: (QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/projects")).toStdString());
+	/* unsaved work kept against a crash: beside the caches, never in one, so
+	 * removing a cache cannot take it (CHIMERA_QT_RECOVERY for a test) */
+	session.recoveryFolder.set(qEnvironmentVariableIsSet("CHIMERA_QT_RECOVERY")
+			? qEnvironmentVariable("CHIMERA_QT_RECOVERY").toStdString()
+			: (QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QStringLiteral("/Recovery")).toStdString());
 	config.keep(session, "autoRestore");
 	config.keep(session, "speedPercent");
 	config.keep(session, "unthrottled");

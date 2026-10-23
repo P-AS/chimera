@@ -46,6 +46,7 @@
 #include "chimera/vm/lua_console_vm.hpp"
 #include "chimera/vm/new_project_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
+#include "chimera/vm/process_stamp.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -862,6 +863,165 @@ bool backupAndHistory(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.frame.get() == 0 && session.greenzoneStates.get() <= 1; }, 20));
 	CHECK(session.run("checkStateHistory", {}, error).has_value());
 	CHECK(d.until([&] { return session.status.get() == "The state history holds nothing to check yet"; }, 20));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
+/* Work a crash left behind, as Chimera's ProjectRecovery keeps it: a
+ * snapshot every five seconds while there are unsaved changes, gone when
+ * the project is saved or let go; one whose writer no longer runs is
+ * rebuilt as a copy among the backups and offered when the project opens
+ * again, its answer opening that work unsaved or the project as saved */
+bool crashRecovery(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-recovery-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	std::string error;
+	session.backupFolder.set((dir / "backup").string());
+	session.recoveryFolder.set((dir / "recovery").string());
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* a game alone keeps nothing: it has no project */
+	session.key("Down", true);
+	for (int i = 0; i < 5; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 5; }, 20));
+	d.until([] { return false; }, 0.3);
+	CHECK(!fs::exists(dir / "recovery"));
+	const fs::path project = dir / "walker.chimeraProject";
+	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(d.until([&] { return session.projectPath.get() == project.string() && !session.unsaved.get(); }, 20));
+	const fs::path kept = dir / "recovery" / session.projectId.get();
+	CHECK(!session.projectId.get().empty());
+	auto advance = [&](int64_t to) {
+		while (session.frame.get() < to)
+		{
+			session.run("frameAdvance", {}, error);
+			const int64_t was = session.frame.get();
+			d.until([&] { return session.frame.get() > was; }, 20);
+		}
+		return session.frame.get() == to;
+	};
+	auto lines = [](const fs::path &file) {
+		const char *err = nullptr;
+		ce_project *p = ce_project_open(file.string().c_str(), &err);
+		uint64_t len = 0;
+		const char *log = p != nullptr ? ce_project_log_text(p, &len) : nullptr;
+		int64_t n = 0;
+		for (uint64_t i = 0; log != nullptr && i < len; i++) n += log[i] == '|' && (i == 0 || log[i - 1] == '\n') ? 1 : 0;
+		if (p != nullptr) ce_project_free(p);
+		return n;
+	};
+	/* changes not saved: kept at once, and who kept them said */
+	CHECK(advance(20) && session.unsaved.get());
+	CHECK(d.until([&] { return fs::exists(kept / "snapshot.chimeraProject") && fs::exists(kept / "session.json"); }, 10));
+	CHECK(readFile(kept / "session.json").find("\"processId\": " + std::to_string(currentProcessId())) != std::string::npos);
+	/* the first at the first change, then every five seconds with what came since */
+	CHECK(d.until([&] { return lines(kept / "snapshot.chimeraProject") == 20; }, 10));
+	CHECK(advance(25));
+	CHECK(d.until([&] { return lines(kept / "snapshot.chimeraProject") == 25; }, 10));
+	/* saved: let go */
+	session.run("saveProject", {}, error);
+	CHECK(d.until([&] { return !session.unsaved.get(); }, 20));
+	CHECK(d.until([&] { return !fs::exists(kept); }, 10));
+	/* more work, and a crash: the folder as it stood, put back after a clean
+	 * close took it, its writer a process that has ended */
+	CHECK(advance(30));
+	CHECK(d.until([&] { return lines(kept / "snapshot.chimeraProject") == 30; }, 10));
+	auto crashed = [&](const fs::path &aside) {
+		fs::remove_all(aside);
+		fs::copy(kept, aside, fs::copy_options::recursive);
+		session.run("close", {}, error);
+		const bool closed = d.until([&] { return !session.isOpen.get(); }, 20);
+		const bool letGo = !fs::exists(kept);
+		fs::copy(aside, kept, fs::copy_options::recursive);
+		std::string record = readFile(kept / "session.json");
+		const std::string own = "\"processId\": " + std::to_string(currentProcessId());
+		const size_t at = record.find(own);
+		if (at == std::string::npos) return false;
+		record.replace(at, own.size(), "\"processId\": 2147483000");
+		std::ofstream(kept / "session.json", std::ios::binary | std::ios::trunc) << record;
+		return closed && letGo;
+	};
+	CHECK(crashed(dir / "aside"));
+	/* the project opened again: the work rebuilt among the backups, offered, the open waiting */
+	session.run("openProject", {project.string(), std::string(package)}, error);
+	CHECK(d.until([&] { return !session.recoveredCopy.get().empty(); }, 20));
+	const fs::path copy = session.recoveredCopy.get();
+	CHECK(!session.isOpen.get() && !session.hasProject.get() && !fs::exists(kept));
+	CHECK(copy.parent_path() == dir / "backup" && fs::exists(copy) && lines(copy) == 30);
+	CHECK(std::regex_match(copy.filename().string(), std::regex("walker\\.recovered \\d{4}-\\d\\d-\\d\\d \\d\\d\\.\\d\\d\\.\\d\\d\\.chimeraProject")));
+	CHECK(std::regex_match(session.recoveredUpTo.get(), std::regex("\\d\\d:\\d\\d:\\d\\d")));
+	{
+		/* the copy is named for that time */
+		std::string dotted = session.recoveredUpTo.get();
+		std::replace(dotted.begin(), dotted.end(), ':', '.');
+		CHECK(copy.filename().string().find(" " + dotted + ".chimeraProject") != std::string::npos);
+	}
+	CHECK(lines(project) == 25);
+	/* yes: that work, under the project's own name, unsaved; saving writes it there */
+	CHECK(session.run("recoverWork", {true}, error).has_value());
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 30));
+	CHECK(session.recoveredCopy.get().empty() && session.projectPath.get() == project.string());
+	CHECK(d.until([&] { return roll.frameCount.get() == 30 && session.unsaved.get(); }, 20));
+	CHECK(session.status.get() == "The recovered work is open, not saved yet: saving writes it to " + project.string());
+	/* it is kept against the next crash at once */
+	CHECK(d.until([&] { return fs::exists(kept / "snapshot.chimeraProject"); }, 10));
+	session.run("saveProject", {}, error);
+	CHECK(d.until([&] { return !session.unsaved.get() && !fs::exists(kept); }, 20));
+	CHECK(lines(project) == 30 && fs::exists(copy));
+	CHECK(!session.run("recoverWork", {true}, error) && error == "no recovered work is waiting");
+	/* no: the project as it was saved, the copy left where it is */
+	session.run("seek", {int64_t{30}}, error);
+	CHECK(d.until([&] { return session.frame.get() == 30; }, 20));
+	CHECK(advance(35));
+	CHECK(d.until([&] { return lines(kept / "snapshot.chimeraProject") == 35; }, 10));
+	CHECK(crashed(dir / "aside"));
+	session.run("openProject", {project.string(), std::string(package)}, error);
+	CHECK(d.until([&] { return !session.recoveredCopy.get().empty(); }, 20));
+	const fs::path second = session.recoveredCopy.get();
+	CHECK(second != copy && fs::exists(second) && lines(second) == 35);
+	CHECK(session.run("recoverWork", {false}, error).has_value());
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 30));
+	CHECK(d.until([&] { return roll.frameCount.get() == 30; }, 20));
+	CHECK(!session.unsaved.get() && fs::exists(second) && !fs::exists(kept));
+	/* a folder whose writer still runs is another window's work: not offered, not taken */
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::copy(dir / "aside", kept, fs::copy_options::recursive);
+	session.run("openProject", {project.string(), std::string(package)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 30));
+	CHECK(session.recoveredCopy.get().empty() && fs::exists(kept / "snapshot.chimeraProject"));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* kept before the project was last saved: nothing in it the project lacks, so it goes */
+	fs::remove_all(kept);
+	fs::copy(dir / "aside", kept, fs::copy_options::recursive);
+	{
+		std::string record = readFile(kept / "session.json");
+		const std::string own = "\"processId\": " + std::to_string(currentProcessId());
+		record.replace(record.find(own), own.size(), "\"processId\": 2147483000");
+		std::ofstream(kept / "session.json", std::ios::binary | std::ios::trunc) << record;
+	}
+	fs::last_write_time(kept / "snapshot.chimeraProject", fs::last_write_time(project) - std::chrono::hours(1));
+	session.run("openProject", {project.string(), std::string(package)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 30));
+	CHECK(session.recoveredCopy.get().empty() && !fs::exists(kept));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* a folder with no snapshot is the remains of a clean end: it goes */
+	fs::create_directories(kept);
+	std::ofstream(kept / "session.json") << "{}";
+	session.run("openProject", {project.string(), std::string(package)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 30));
+	CHECK(session.recoveredCopy.get().empty() && !fs::exists(kept));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);
@@ -4369,6 +4529,7 @@ int main(int argc, char **argv)
 			ranMachine = projectDetails(argv[1], argv[2]) && ranMachine;
 			ranMachine = pianoRollColumns(argv[1], argv[2]) && ranMachine;
 			ranMachine = backupAndHistory(argv[1], argv[2]) && ranMachine;
+			ranMachine = crashRecovery(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;

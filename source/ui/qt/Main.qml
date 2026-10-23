@@ -1086,6 +1086,33 @@ ApplicationWindow {
     MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; visible: false }
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; visible: false }
     ProjectFiles { session: root.session }
+    // Work a crash left behind, offered before the project opens, as
+    // Chimera's "Recover unsaved work?" asks
+    Dialog {
+        id: recoveryDialog
+        objectName: "recoveryDialog"
+        title: qsTr("Recover unsaved work?")
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 32, 560)
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        standardButtons: Dialog.Yes | Dialog.No
+        Label {
+            width: recoveryDialog.availableWidth
+            wrapMode: Text.Wrap
+            text: qsTr("Chimera did not close normally the last time this project was open.\n\n"
+                + "The work in progress up to %1 has been kept as:\n%2\n\n"
+                + "Open that work now? It opens unsaved, and saving writes it to this project.\n\n"
+                + "No opens the project as it was last saved; the recovered copy stays where it is.")
+                .arg(root.session.recoveredUpTo).arg(root.session.recoveredCopy)
+        }
+        onAccepted: root.session.run("recoverWork", [true])
+        onRejected: root.session.run("recoverWork", [false])
+    }
+    Connections {
+        target: root.session
+        function onRecoveredCopyChanged() { if (root.session.recoveredCopy !== "") recoveryDialog.open() }
+    }
     ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; visible: false }
     Dialog {
         id: aboutDialog

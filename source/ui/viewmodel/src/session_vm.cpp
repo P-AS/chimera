@@ -11,10 +11,12 @@
 #include <fstream>
 #include <future>
 #include <iterator>
+#include <utility>
 
 #include "chimera/engine.h"
 #include "chimera/vm/firmware.hpp"
 #include "chimera/vm/json.hpp"
+#include "chimera/vm/process_stamp.hpp"
 #include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/suggestion.hpp"
 
@@ -183,6 +185,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				if (o.project == nullptr) return;
 				bool mismatch = false;
 				for (int32_t i = 0; i < ce_project_file_count(o.project); i++) mismatch = mismatch || ce_project_file_status(o.project, i) == 2;
+				recoveredM_ = o.recovered;
 				bootProjectOnMachine(o.project, o.path, o.package, o.keepInputs, o.reuse, o.kept, o.keptRerecords,
 					mismatch ? CE_OPEN_ALLOW_FILE_MISMATCH : 0);
 			});
@@ -512,6 +515,51 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("projectTitle", "the open project's title", projectTitle);
 	expose("gameName", "the game's name: its file's, without the kind", gameName);
 	expose("backupFolder", "where a project's backups go", backupFolder, true);
+	backupWatch_ = backupFolder.changed.connect([this] { submit([this, f = backupFolder.get()] { backupFolderM_ = f; }); });
+	expose("recoveryFolder", "where a project's unsaved work is kept against a crash, a folder per project; \"\" keeps none",
+		recoveryFolder);
+	recoveryWatch_ = recoveryFolder.changed.connect([this] { submit([this, f = recoveryFolder.get()] { recoveryFolderM_ = f; }); });
+	expose("recoveredCopy", "the copy among the backups a crash's unsaved work was rebuilt into, while the project's open "
+		"waits for recoverWork; \"\" when nothing is offered", recoveredCopy);
+	expose("recoveredUpTo", "when the recovered work was last kept, as the clock here reads (HH:MM:SS)", recoveredUpTo);
+	command("recoverWork", "answers the offer of a crash's unsaved work: true opens that work, unsaved, and saving writes "
+		"it to the project; false opens the project as it was last saved. The recovered copy stays among the backups "
+		"either way", {"open"}, [this](const Args &a, std::string &error) -> Value {
+			bool open = false;
+			if (!arg(a, 0, open, error)) return {};
+			const std::string copy = recoveredCopy.get();
+			if (copy.empty())
+			{
+				error = "no recovered work is waiting";
+				return {};
+			}
+			recoveredCopy.set("");
+			recoveredUpTo.set("");
+			status.set("Opening...");
+			submit([this, open, copy] {
+				PendingOpen o = std::move(pendingOpenM_);
+				pendingOpenM_ = PendingOpen{};
+				if (o.project == nullptr) return;
+				if (open)
+				{
+					const char *err = nullptr;
+					if (ce_project *q = ce_project_open(copy.c_str(), &err))
+					{
+						ce_project_free(o.project);
+						o.project = q;
+						o.recovered = true;
+					}
+					else
+					{
+						/* the project as it was saved, then; the copy is still there */
+						const std::string why = err != nullptr ? err : "no reason given";
+						later([this, why, copy] { status.set("The recovered work could not be opened (" + why + "); it is kept as " + copy); });
+					}
+				}
+				findFilesAndBootOnMachine(std::move(o));
+			});
+			return {};
+		});
 	command("saveBackup", "writes the project as it stands to the backup folder, named for it and the date and time, "
 		"as Chimera's Save Project Backup does; the project's own file is left as it is", {},
 		[this](const Args &, std::string &error) -> Value {
@@ -974,7 +1022,7 @@ void SessionViewModel::loop()
 	for (;;)
 	{
 		std::function<void()> job;
-		bool advance = false, runOn = false, back = false, catchPoll = false, autosaveTick = false;
+		bool advance = false, runOn = false, back = false, catchPoll = false, autosaveTick = false, keepTick = false;
 		{
 			std::unique_lock<std::mutex> lock(m_);
 			for (;;)
@@ -995,7 +1043,19 @@ void SessionViewModel::loop()
 					autosaveTick = true;
 					break;
 				}
-				auto waitUntil = [&](Clock::time_point t) { cv_.wait_until(lock, autoOn ? std::min(t, autosaveDue_) : t); };
+				/* the work kept against a crash: every five seconds while the
+				 * project has changes not saved, the first at once */
+				const bool keepOn = projectM_ != nullptr && unsavedM_.load() && !recoveryFolderM_.empty() && !projectPathM_.empty();
+				if (!keepOn) recoveryDue_ = {};
+				if (keepOn && recoveryDue_ == Clock::time_point{}) recoveryDue_ = Clock::now();
+				if (keepOn && Clock::now() >= recoveryDue_)
+				{
+					keepTick = true;
+					break;
+				}
+				const bool timed = autoOn || keepOn;
+				const Clock::time_point wake = autoOn && keepOn ? std::min(autosaveDue_, recoveryDue_) : autoOn ? autosaveDue_ : recoveryDue_;
+				auto waitUntil = [&](Clock::time_point t) { cv_.wait_until(lock, timed ? std::min(t, wake) : t); };
 				/* a binding waiting for a gamepad input: the pads looked at
 				 * sixty times a second, a game open or not */
 				if (catchingM_ && Clock::now() >= catchDue_)
@@ -1029,8 +1089,8 @@ void SessionViewModel::loop()
 					pausedSincePassM_ = true;
 					if (catchingM_)
 						waitUntil(catchDue_);
-					else if (autoOn)
-						cv_.wait_until(lock, autosaveDue_);
+					else if (timed)
+						cv_.wait_until(lock, wake);
 					else
 						cv_.wait(lock);
 				}
@@ -1045,6 +1105,12 @@ void SessionViewModel::loop()
 		if (catchPoll)
 		{
 			catchPollOnMachine();
+			continue;
+		}
+		if (keepTick)
+		{
+			keepRecoveryOnMachine();
+			recoveryDue_ = Clock::now() + std::chrono::seconds(5);
 			continue;
 		}
 		if (autosaveTick)
@@ -1086,8 +1152,7 @@ void SessionViewModel::loop()
 		}
 	}
 	freeSessionOnMachine();
-	if (projectM_ != nullptr) ce_project_free(projectM_);
-	projectM_ = nullptr;
+	freeProjectOnMachine();
 	padsM_.reset(); /* SDL stops on the thread that started it */
 	if (averageM_ != nullptr) ce_average_fps_destroy(averageM_);
 	averageM_ = nullptr;
@@ -1397,6 +1462,158 @@ void SessionViewModel::startProjectSessionOnMachine(bool loadHistory)
 	}
 	std::ofstream(mark) << "a session of this project is running\n";
 	runningMarkM_ = mark;
+}
+
+std::filesystem::path SessionViewModel::recoveryDirOf(ce_project *p) const
+{
+	/* its own folder per project, beside the caches and never in one: removing
+	 * a project's cache must not take its unsaved work with it */
+	if (p == nullptr || recoveryFolderM_.empty()) return {};
+	const char *id = ce_project_id(p);
+	if (id == nullptr || *id == '\0') return {};
+	return std::filesystem::path(recoveryFolderM_) / id;
+}
+
+namespace {
+/* who wrote a recovery folder: enough to tell a crash from another window
+ * that has the project open now */
+struct RecoveryRecord
+{
+	int64_t processId = 0, processStarted = -1, lastWork = 0;
+	std::string projectPath;
+};
+
+bool readRecoveryRecord(const std::filesystem::path &dir, RecoveryRecord &r)
+{
+	std::ifstream in(dir / "session.json", std::ios::binary);
+	const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+	json::Json j;
+	std::string err;
+	if (text.empty() || !json::parse(text, j, err) || j.kind != json::Json::Kind::Object) return false;
+	/* read as written: a start time does not fit a double */
+	auto whole = [](const json::Json *v, int64_t otherwise) -> int64_t {
+		if (v == nullptr || v->kind != json::Json::Kind::Number) return otherwise;
+		try
+		{
+			return static_cast<int64_t>(std::stoll(v->text));
+		}
+		catch (...)
+		{
+			return otherwise;
+		}
+	};
+	r.processId = whole(j.find("processId"), 0);
+	r.processStarted = whole(j.find("processStarted"), -1);
+	r.lastWork = whole(j.find("lastWork"), 0);
+	if (const json::Json *v = j.find("projectPath")) r.projectPath = v->text;
+	return true;
+}
+
+bool writtenByThisProcess(const RecoveryRecord &r)
+{
+	return r.processId == currentProcessId() && r.processStarted == processStarted(currentProcessId());
+}
+
+bool writerRunning(const RecoveryRecord &r)
+{
+	return r.processId > 0 && r.processStarted >= 0 && processStarted(r.processId) == r.processStarted;
+}
+
+std::string localTime(int64_t utc, const char *format)
+{
+	const std::time_t t = static_cast<std::time_t>(utc);
+	char out[48] = {};
+	if (const std::tm *tm = std::localtime(&t)) std::strftime(out, sizeof out, format, tm);
+	return out;
+}
+} // namespace
+
+void SessionViewModel::keepRecoveryOnMachine()
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = recoveryDirOf(projectM_);
+	if (dir.empty() || s_ == nullptr) return;
+	std::error_code ec;
+	/* another window working on this project keeps its own work here */
+	RecoveryRecord was;
+	if (readRecoveryRecord(dir, was) && !writtenByThisProcess(was) && writerRunning(was)) return;
+	fs::create_directories(dir, ec);
+	/* written beside, then put in place: a crash while it is written leaves the last whole one */
+	const fs::path snapshot = dir / "snapshot.chimeraProject", fresh = dir / "snapshot.chimeraProject.new";
+	if (!saveProjectOnMachine(fresh.string(), true, true)) return;
+	fs::rename(fresh, snapshot, ec);
+	if (ec) return;
+	json::Json r;
+	r.kind = json::Json::Kind::Object;
+	r.members.emplace_back("processId", json::Json::integer(currentProcessId()));
+	r.members.emplace_back("processStarted", json::Json::integer(processStarted(currentProcessId())));
+	r.members.emplace_back("projectPath", json::Json::string(projectPathM_));
+	r.members.emplace_back("lastWork", json::Json::integer(static_cast<int64_t>(std::time(nullptr))));
+	std::ofstream out(dir / "session.json", std::ios::binary | std::ios::trunc);
+	out << json::write(r);
+}
+
+void SessionViewModel::dropRecoveryOnMachine(ce_project *p)
+{
+	namespace fs = std::filesystem;
+	recoveryDue_ = {};
+	const fs::path dir = recoveryDirOf(p);
+	std::error_code ec;
+	if (dir.empty() || !fs::is_directory(dir, ec)) return;
+	/* only this window's own: another's work in progress, or a crash's not offered yet, stays */
+	RecoveryRecord r;
+	if (readRecoveryRecord(dir, r) && !writtenByThisProcess(r)) return;
+	fs::remove_all(dir, ec);
+}
+
+bool SessionViewModel::recoveredCopyOnMachine(ce_project *p, const std::string &projectPath, std::string &copy, std::string &upTo)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = recoveryDirOf(p);
+	std::error_code ec;
+	if (dir.empty() || !fs::is_directory(dir, ec)) return false;
+	RecoveryRecord r;
+	const bool hasRecord = readRecoveryRecord(dir, r);
+	/* its writer still runs: another window has this project open (or this
+	 * one, the project opened again over itself) - not a crash */
+	if (hasRecord && writerRunning(r)) return false;
+	const fs::path snapshot = dir / "snapshot.chimeraProject";
+	if (!fs::is_regular_file(snapshot, ec))
+	{
+		/* the remains of a clean end whose removal did not land */
+		fs::remove_all(dir, ec);
+		return false;
+	}
+	/* the project saved after the work was last kept holds that work already */
+	if (!projectPath.empty() && fs::is_regular_file(projectPath, ec) && fs::last_write_time(projectPath, ec) > fs::last_write_time(snapshot, ec))
+	{
+		fs::remove_all(dir, ec);
+		return false;
+	}
+	/* rebuilt as a project of its own among the backups, so whatever is
+	 * answered nothing is lost, and never over the project unasked */
+	const int64_t when = hasRecord && r.lastWork > 0 ? r.lastWork : static_cast<int64_t>(std::time(nullptr));
+	const fs::path folder = !backupFolderM_.empty() ? fs::path(backupFolderM_) : fs::path(recoveryFolderM_) / "recovered";
+	fs::create_directories(folder, ec);
+	const std::string stem = projectPath.empty() ? std::string("project") : fs::path(projectPath).stem().string();
+	const std::string name = stem + ".recovered " + localTime(when, "%Y-%m-%d %H.%M.%S");
+	fs::path target = folder / (name + ".chimeraProject");
+	for (int n = 2; fs::exists(target, ec) && n < 100; n++) target = folder / (name + " (" + std::to_string(n) + ").chimeraProject");
+	fs::copy_file(snapshot, target, ec);
+	if (ec)
+	{
+		const std::string why = ec.message(), kept = dir.string();
+		later([this, why, kept] {
+			status.set("Chimera did not close normally the last time this project was open, but its unsaved work could not be "
+				"rebuilt (" + why + "). The recovery files are kept in: " + kept);
+		});
+		return false;
+	}
+	/* the copy holds the work now, and this session keeps its own */
+	fs::remove_all(dir, ec);
+	copy = target.string();
+	upTo = localTime(when, "%H:%M:%S");
+	return true;
 }
 
 std::filesystem::path SessionViewModel::cacheDirOf(ce_project *p) const
@@ -1831,6 +2048,8 @@ void SessionViewModel::removeMachineHooks(int id)
 
 void SessionViewModel::freeProjectOnMachine()
 {
+	/* let go cleanly: what was kept against a crash goes too */
+	dropRecoveryOnMachine(projectM_);
 	if (projectM_ != nullptr) ce_project_free(projectM_);
 	projectM_ = nullptr;
 	projectPathM_.clear();
@@ -1856,8 +2075,42 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		return;
 	}
 	if (reuse != nullptr) projectM_ = nullptr; /* taken over below, not freed */
-	/* the files are looked for beside the project (more places, later); a
-	 * project not saved yet has them where they were picked */
+	/* work a crash left behind comes back before anything else, as
+	 * Chimera's OfferRecovery: kept as a copy among the backups, and
+	 * offered; the open waits for the answer */
+	if (!keepInputs && reuse == nullptr)
+	{
+		std::string copy, upTo;
+		if (recoveredCopyOnMachine(p, path, copy, upTo))
+		{
+			if (pendingOpenM_.project != nullptr && pendingOpenM_.reuse == nullptr) ce_project_free(pendingOpenM_.project);
+			freeProjectOnMachine();
+			pendingOpenM_ = PendingOpen{p, path, packageGiven, keepInputs, reuse, kept, keptRerecords};
+			later([this, copy, upTo] {
+				isOpen.set(false);
+				running.set(false);
+				projectPath.set("");
+				projectTitle.set("");
+				projectId.set("");
+				hasProject.set(false);
+				projectSwitched();
+				resolvingFiles.set(false);
+				recoveredUpTo.set(upTo);
+				recoveredCopy.set(copy);
+				status.set("Chimera did not close normally the last time this project was open: its unsaved work was kept");
+			});
+			return;
+		}
+	}
+	findFilesAndBootOnMachine(PendingOpen{p, path, packageGiven, keepInputs, reuse, kept, keptRerecords});
+}
+
+void SessionViewModel::findFilesAndBootOnMachine(PendingOpen open)
+{
+	ce_project *p = open.project;
+	const std::string &path = open.path;
+	/* the files are looked for beside the project; a project not saved yet
+	 * has them where they were picked */
 	if (!path.empty())
 	{
 		const size_t slash = path.find_last_of("/\\");
@@ -1870,10 +2123,10 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	{
 		/* not found beside it, nor where this machine last had them: asked
 		 * for, as Chimera's resolution window asks, the project waiting */
-		if (pendingOpenM_.project != nullptr && pendingOpenM_.reuse == nullptr) ce_project_free(pendingOpenM_.project);
+		if (pendingOpenM_.project != nullptr && pendingOpenM_.project != p && pendingOpenM_.reuse == nullptr) ce_project_free(pendingOpenM_.project);
 		/* the machine is closed already; the project it ran goes too, unless it is the one waiting */
-		if (reuse == nullptr) freeProjectOnMachine();
-		pendingOpenM_ = PendingOpen{p, path, packageGiven, keepInputs, reuse, kept, keptRerecords};
+		if (open.reuse == nullptr) freeProjectOnMachine();
+		pendingOpenM_ = std::move(open);
 		publishProjectFilesOnMachine();
 		later([this] {
 			isOpen.set(false);
@@ -1883,17 +2136,21 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 			projectId.set("");
 			hasProject.set(false);
 			projectSwitched();
+			recoveredCopy.set("");
+			recoveredUpTo.set("");
 			resolvingFiles.set(true);
 			status.set("Some of the project's files were not found beside it: locate them, or scan a folder");
 		});
 		return;
 	}
-	bootProjectOnMachine(p, path, packageGiven, keepInputs, reuse, kept, keptRerecords, 0);
+	recoveredM_ = open.recovered;
+	bootProjectOnMachine(p, path, open.package, open.keepInputs, open.reuse, open.kept, open.keptRerecords, 0);
 }
 
 void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &path, const std::string &packageGiven, bool keepInputs,
 	ce_project *reuse, const std::string &kept, uint64_t keptRerecords, uint32_t extraFlags)
 {
+	const bool recovered = std::exchange(recoveredM_, false);
 	auto fail = [this](const std::string &why) {
 		later([this, why] { status.set(why); isOpen.set(false); });
 	};
@@ -2077,7 +2334,11 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		branchesM_ = branches;
 		later([this, branches] { branchesLoaded.emit(branches); });
 	}
-	if (projectM_ != nullptr && projectM_ != p) ce_project_free(projectM_);
+	if (projectM_ != nullptr && projectM_ != p)
+	{
+		dropRecoveryOnMachine(projectM_);
+		ce_project_free(projectM_);
+	}
 	projectM_ = p;
 	projectPathM_ = path;
 	rememberLocalPathsOnMachine();
@@ -2107,7 +2368,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		if (source != nullptr && *source != '\0') answers.files.emplace_back(slot != nullptr ? slot : "", source);
 	}
 	const std::string id = ce_project_id(p) != nullptr ? ce_project_id(p) : "";
-	later([this, path, title, answers, id] {
+	later([this, path, title, answers, id, recovered] {
 		projectPath.set(path);
 		projectTitle.set(title);
 		projectId.set(id);
@@ -2115,6 +2376,14 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		projectSwitched();
 		lastAnswers_ = answers;
 		if (!path.empty()) addRecent(path);
+		recoveredCopy.set("");
+		recoveredUpTo.set("");
+		/* the recovered work is not in the project's file until it is saved */
+		if (recovered)
+		{
+			markChanged();
+			status.set("The recovered work is open, not saved yet: saving writes it to " + path);
+		}
 	});
 }
 
@@ -2374,6 +2643,7 @@ void SessionViewModel::newProjectOnMachine(const std::string &path, const std::s
 	const std::string title = !titleGiven.empty() ? titleGiven : base.substr(0, base.find_last_of('.'));
 	ce_project_set_title(p, title.c_str());
 	/* it becomes the open project; saving writes its movie, markers and branches */
+	dropRecoveryOnMachine(projectM_);
 	if (projectM_ != nullptr) ce_project_free(projectM_);
 	projectM_ = p;
 	projectPathM_ = path;
@@ -2391,7 +2661,7 @@ void SessionViewModel::newProjectOnMachine(const std::string &path, const std::s
 	});
 }
 
-bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
+bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup, bool quiet)
 {
 	if (projectM_ == nullptr || s_ == nullptr) return false;
 	const std::string path = to.empty() ? projectPathM_ : to;
@@ -2511,12 +2781,12 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup)
 	if (ce_project_save(projectM_, path.c_str(), &error) != 0)
 	{
 		const std::string why = error != nullptr ? error : "no reason given";
-		later([this, path, why] { status.set("Could not save " + path + ": " + why); });
+		if (!quiet) later([this, path, why] { status.set("Could not save " + path + ": " + why); });
 		return false;
 	}
 	if (backup)
 	{
-		later([this, path] { status.set("Backup saved: " + path); });
+		if (!quiet) later([this, path] { status.set("Backup saved: " + path); });
 		return true;
 	}
 	const bool first = projectPathM_ != path;
@@ -2583,6 +2853,11 @@ void SessionViewModel::markChanged()
 	changeGen_++;
 	unsavedM_.store(true);
 	if (!unsaved.get()) unsaved.set(true);
+	/* the machine keeps the work against a crash from now: a paused one is woken to */
+	{
+		std::lock_guard<std::mutex> lock(m_);
+	}
+	cv_.notify_all();
 }
 
 void SessionViewModel::savedAt(uint64_t gen)
@@ -2591,6 +2866,11 @@ void SessionViewModel::savedAt(uint64_t gen)
 	if (gen != changeGen_) return;
 	unsavedM_.store(false);
 	unsaved.set(false);
+	/* the work kept against a crash is in the project now; one kept between
+	 * the save and this goes too, and a change since is kept again at once */
+	submit([this] {
+		if (!unsavedM_.load()) dropRecoveryOnMachine(projectM_);
+	});
 }
 
 void SessionViewModel::projectSwitched()

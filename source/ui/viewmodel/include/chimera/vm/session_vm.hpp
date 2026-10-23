@@ -147,6 +147,16 @@ public:
 	/* a project waiting for its files to be found: its files are the
 	 * "projectFiles" rows, located one by one or by scanning a folder */
 	Property<bool> resolvingFiles{false};
+	/* Work a crash left behind (Chimera's ProjectRecovery): while a project
+	 * has unsaved changes it is kept every five seconds in recoveryFolder,
+	 * a folder per project, and let go when it is saved or closed cleanly.
+	 * A project with no file yet has nowhere to be offered back, and is not
+	 * kept.
+	 * Found when the project opens again, it is rebuilt as a copy among the
+	 * backups and offered: recoveredCopy names it ("" when nothing is
+	 * offered), recoveredUpTo says when its last work was, and the open
+	 * waits for the answer (recoverWork) */
+	Property<std::string> recoveryFolder, recoveredCopy, recoveredUpTo;
 	struct ProjectFile
 	{
 		std::string name, slot, sha1, actualSha1;
@@ -435,7 +445,22 @@ private:
 		ce_project *reuse = nullptr;
 		std::string kept;
 		uint64_t keptRerecords = 0;
+		/* the work a crash left, opened instead: unsaved once open */
+		bool recovered = false;
 	};
+	/* the files looked for, then the rest of opening (or the project waits for its files) */
+	void findFilesAndBootOnMachine(PendingOpen open);
+	bool recoveredM_ = false;
+	std::string recoveryFolderM_, backupFolderM_;
+	std::filesystem::path recoveryDirOf(ce_project *p) const;
+	/* the work kept for a crash, written now (quietly) or let go */
+	void keepRecoveryOnMachine();
+	void dropRecoveryOnMachine(ce_project *p);
+	/* a crash's work for this project, rebuilt as a copy among the backups;
+	 * the copy's path and the time of its last work, or false for none */
+	bool recoveredCopyOnMachine(ce_project *p, const std::string &projectPath, std::string &copy, std::string &upTo);
+	Clock::time_point recoveryDue_{};
+	Connection recoveryWatch_, backupWatch_;
 	PendingOpen pendingOpenM_;
 	void publishProjectFilesOnMachine();
 	/* where this machine found a project's files, kept in its cache folder
@@ -448,7 +473,7 @@ private:
 	void addRecent(const std::string &path);
 	/* a backup: written there, the project's own file and greenzone left as they are */
 	/* true when written */
-	bool saveProjectOnMachine(const std::string &path, bool backup = false);
+	bool saveProjectOnMachine(const std::string &path, bool backup = false, bool quiet = false);
 	/* the UI's thread: the project saved to its own file (or the one
 	 * given) and, to back it up, a backup named for it and the time */
 	void saveTo(const std::string &path);
