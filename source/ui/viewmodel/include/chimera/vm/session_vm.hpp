@@ -138,6 +138,26 @@ public:
 	 * down ("IGT 01:02.345"); the user's save data, written out; a movie
 	 * made elsewhere, imported */
 	Property<bool> isGameCore{false}, hasGameTimer{false}, hasSaveData{false}, hasMovieImport{false};
+	/* the core's tooling groups (the engine's): a trace of what its CPU runs,
+	 * and registers a debugger shows; the trace's own header */
+	Property<bool> hasTrace{false}, hasRegisters{false};
+	Property<std::string> traceHeader;
+	/* Tracing, as Chimera's trace logger asks it: on, the core's lines of
+	 * each frame run are handed to `sink` on the window's thread ("[core:
+	 * trace buffer full, lines dropped]" when it overflowed); off, the core
+	 * traces nothing. Kept across machines and state loads */
+	using TraceSink = std::function<void(std::vector<std::string> lines)>;
+	void setTracing(bool on, TraceSink sink);
+	/* the registers now, by the machine (the debugger's box): name, value, bits */
+	struct Register
+	{
+		std::string name;
+		int64_t value = 0;
+		int32_t bits = 32;
+	};
+	std::vector<Register> readRegisters(int64_t &cycles, bool &hasCycles);
+	/* a register set, by its place; false when the core does not take it */
+	bool writeRegister(int32_t index, int64_t value);
 	Property<bool> showGameTime{false};
 	Property<std::string> gameTimeText;
 	/* Chimera's Tools > Export Core Log: what the cores write, kept in a
@@ -664,6 +684,10 @@ private:
 	void readBudgetsOnMachine(ce_project *p, int64_t &memoryMb, int64_t &nearStride) const;
 	Connection budgetWatch_, strideWatch_, settleWatch_;
 	std::string soundDeviceM_, compileRootM_;
+	bool traceOnM_ = false;
+	TraceSink traceSink_;
+	/* the lines the core traced since the last drain, to the sink */
+	void drainTraceOnMachine();
 	/* the compile cache folder for the session about to open: the engine's
 	 * (ce_cache_dir) is the whole process's, so it is set before each open */
 	void compileCacheOnMachine(const std::string &package, const std::string &gamePath, const std::string &knownSha1);

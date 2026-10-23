@@ -430,6 +430,9 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("isGameCore", "the core open is a game (its menu is Game, not Emulator)", isGameCore);
 	expose("hasGameTimer", "the game open has a timer of its own", hasGameTimer);
 	expose("hasSaveData", "the core open writes out the user's save data", hasSaveData);
+	expose("hasTrace", "the core traces what its CPU runs (the Trace Logger)", hasTrace);
+	expose("hasRegisters", "the core shows its registers (the Debugger)", hasRegisters);
+	expose("traceHeader", "the core's words for its trace lines' columns", traceHeader);
 	expose("hasMovieImport", "the core open imports movies made elsewhere", hasMovieImport);
 	expose("showGameTime", "a game's own timer is shown over the picture", showGameTime, true);
 	expose("gameTimeText", "the game's timer as shown: \"IGT 01:02.345\"", gameTimeText);
@@ -3144,6 +3147,10 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	int64_t ms = 0;
 	gameTimerM_ = ce_session_game_time_ms(s, &ms) == 1;
 	const bool timer = gameTimerM_, saveData = ce_session_savedata_available(s) != 0;
+	const bool traces = ce_session_trace_available(s) != 0, registers = ce_session_register_count(s) > 0;
+	const std::string traceHead = traces && ce_session_trace_header(s) != nullptr ? ce_session_trace_header(s) : "";
+	/* a trace asked for goes on with the next machine */
+	if (traces && traceOnM_) ce_session_trace_enable(s, 1);
 	{
 		json::Json cfg;
 		std::string jerr;
@@ -3210,7 +3217,10 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	/* another game, or the same started again: another average, as Chimera's */
 	averageResetM_.store(true);
 	later([this, names, axes, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames, controller,
-			   gameCore, timer, saveData, movieImport, package] {
+			   gameCore, timer, saveData, movieImport, package, traces, registers, traceHead] {
+		hasTrace.set(traces);
+		hasRegisters.set(registers);
+		traceHeader.set(traceHead);
 		controllerName_ = controller;
 		packagePath_ = package;
 		isGameCore.set(gameCore);
@@ -3306,6 +3316,73 @@ void SessionViewModel::compileCacheOnMachine(const std::string &package, const s
 	const std::string dir = compileDirFor(compileRootM_, compiles, sha);
 	ce_cache_dir(dir.empty() ? nullptr : dir.c_str());
 	later([this, dir] { compileCacheDir.set(dir); });
+}
+
+void SessionViewModel::setTracing(bool on, TraceSink sink)
+{
+	traceSink_ = std::move(sink);
+	submit([this, on] {
+		traceOnM_ = on;
+		if (s_ == nullptr || ce_session_trace_available(s_) == 0) return;
+		/* what was traced before is let go with the switch */
+		if (!on) drainTraceOnMachine();
+		ce_session_trace_enable(s_, on ? 1 : 0);
+	});
+}
+
+void SessionViewModel::drainTraceOnMachine()
+{
+	if (s_ == nullptr || ce_session_trace_available(s_) == 0) return;
+	uint64_t len = 0;
+	int32_t count = 0, overflow = 0;
+	const uint8_t *bytes = ce_session_trace_drain(s_, &len, &count, &overflow);
+	if (!traceOnM_ || (count == 0 && overflow == 0)) return;
+	std::vector<std::string> lines;
+	lines.reserve(static_cast<size_t>(count) + 1);
+	for (uint64_t at = 0; bytes != nullptr && at < len;)
+	{
+		const char *line = reinterpret_cast<const char *>(bytes + at);
+		const size_t n = strnlen(line, static_cast<size_t>(len - at));
+		lines.emplace_back(line, n);
+		at += n + 1;
+	}
+	/* as Chimera's: a full buffer is said where the lines stop */
+	if (overflow != 0)
+	{
+		const char *core = ce_session_core_name(s_);
+		lines.push_back(std::string("[") + (core != nullptr ? core : "core") + ": trace buffer full, lines dropped]");
+	}
+	later([this, lines = std::move(lines)]() mutable {
+		if (traceSink_) traceSink_(std::move(lines));
+	});
+}
+
+std::vector<SessionViewModel::Register> SessionViewModel::readRegisters(int64_t &cycles, bool &hasCycles)
+{
+	std::vector<Register> out;
+	cycles = 0;
+	hasCycles = false;
+	onMachineWait([&](ce_session *s) {
+		if (s == nullptr) return;
+		for (int32_t i = 0; i < ce_session_register_count(s); i++)
+		{
+			const char *name = ce_session_register_name(s, i);
+			out.push_back({name != nullptr ? name : "", ce_session_register_value(s, i), ce_session_register_bits(s, i)});
+		}
+		hasCycles = ce_session_has_executed_cycles(s) != 0;
+		if (hasCycles) cycles = ce_session_executed_cycles(s);
+	});
+	return out;
+}
+
+bool SessionViewModel::writeRegister(int32_t index, int64_t value)
+{
+	bool written = false;
+	onMachineWait([&](ce_session *s) {
+		if (s == nullptr || index < 0 || index >= ce_session_register_count(s)) return;
+		written = ce_session_register_set(s, index, value) == 0;
+	});
+	return written;
 }
 
 void SessionViewModel::reopenSoundOnMachine()
@@ -3509,6 +3586,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	for (const Hooks &h : hooksM_)
 		if (h.frame) h.frame(s_);
 	if (inputs_.setLag(f, lag > 0)) changed = true;
+	if (traceOnM_) drainTraceOnMachine();
 
 	if (live && soundM_ && !turboM_.load())
 	{

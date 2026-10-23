@@ -58,6 +58,7 @@
 #include "chimera/vm/config_files_vm.hpp"
 #include "chimera/vm/data_folder_vm.hpp"
 #include "chimera/vm/precompiled_vm.hpp"
+#include "chimera/vm/trace_logger_vm.hpp"
 #include "chimera/vm/ram_search_vm.hpp"
 #include "chimera/vm/ram_watch_vm.hpp"
 #include "chimera/vm/watch_values.hpp"
@@ -1292,6 +1293,70 @@ bool backupAndHistory(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.frame.get() == 0 && session.greenzoneStates.get() <= 1; }, 20));
 	CHECK(session.run("checkStateHistory", {}, error).has_value());
 	CHECK(d.until([&] { return session.status.get() == "The state history holds nothing to check yet"; }, 20));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
+/* Chimera's Trace Logger and the Debugger's registers, with the synthetic
+ * core's trace (a line an instruction: what ran, a tab, the registers) and
+ * its eight registers and frame counter */
+bool traceAndRegisters(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-trace-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	TraceLoggerViewModel trace(d, session);
+	DebuggerViewModel debugger(d, session);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasTrace.get() && session.hasRegisters.get(); }, 60));
+	CHECK(session.traceHeader.get() == "Where: opcode a b c immediate\tthe registers");
+	auto advance = [&](int64_t n) {
+		const int64_t to = session.frame.get() + n;
+		for (int64_t i = 0; i < n; i++) session.run("frameAdvance", {}, error);
+		return d.until([&] { return session.frame.get() == to; }, 20) && (d.until([] { return false; }, 0.1), true);
+	};
+	/* nothing traced while nobody logs */
+	CHECK(advance(2) && trace.lines().empty());
+	trace.logging.set(true);
+	CHECK(trace.run("logToFile", {(dir / "trace.log").string()}, error).has_value());
+	CHECK(advance(1));
+	CHECK(d.until([&] { return !trace.lines().empty(); }, 10));
+	const size_t oneFrame = trace.lines().size();
+	std::printf("trace: %zu lines a frame; first: %s | %s\n", oneFrame, trace.lines().front().disassembly.c_str(),
+		trace.lines().front().registers.c_str());
+	CHECK(oneFrame > 10 && std::regex_match(trace.lines().front().disassembly, std::regex("[0-9A-F]{4}: [0-9A-F]{2} \\d \\d \\d [0-9A-F]{8}")));
+	CHECK(trace.lines().front().registers.rfind("R0:", 0) == 0 && trace.lines().front().registers.find("R7:") != std::string::npos);
+	CHECK(trace.linesToFile.get() == static_cast<int64_t>(oneFrame));
+	/* a bounded tail: the latest kept */
+	trace.capacity.set(100);
+	CHECK(advance(1) && d.until([&] { return trace.lines().size() == 100; }, 10));
+	CHECK(trace.linesToFile.get() > 100);
+	CHECK(trace.run("stopFile", {}, error).has_value() && trace.file.get().empty());
+	{
+		std::ifstream in(dir / "trace.log");
+		int64_t n = 0;
+		for (std::string line; std::getline(in, line);) n++;
+		CHECK(n == trace.linesToFile.get());
+	}
+	/* stopped: the core traces no more */
+	trace.logging.set(false);
+	CHECK(trace.run("clear", {}, error).has_value() && trace.lines().empty());
+	CHECK(advance(2) && trace.lines().empty());
+	/* the registers: read, and R0 set by hand (hex as text, or a number) */
+	CHECK(debugger.run("refresh", {}, error) == Value(int64_t{9}));
+	CHECK(debugger.registers()[0].name == "R0" && debugger.registers()[8].name == "Frame" && debugger.registers()[8].value == session.frame.get());
+	CHECK(debugger.run("setRegister", {int64_t{0}, std::string("0x1F")}, error).has_value() && debugger.registers()[0].value == 31);
+	CHECK(debugger.run("setRegister", {int64_t{0}, int64_t{7}}, error).has_value() && debugger.registers()[0].value == 7);
+	std::string hex;
+	CHECK(fromValue(debugger.rowLists()[0].model->cell(0, 2), hex) && hex == "00000007");
+	CHECK(!debugger.run("setRegister", {int64_t{0}, std::string("seven")}, error) && error == "seven is not a number");
+	CHECK(!debugger.run("setRegister", {int64_t{20}, int64_t{1}}, error));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);
@@ -5271,6 +5336,7 @@ int main(int argc, char **argv)
 			ranMachine = crashRecovery(argv[1], argv[2]) && ranMachine;
 			ranMachine = customizeOptions(argv[1], argv[2]) && ranMachine;
 			ranMachine = greenzoneBudgets(argv[1], argv[2]) && ranMachine;
+			ranMachine = traceAndRegisters(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
 			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;

@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sched.h>
 
@@ -29,6 +30,9 @@ extern const uint8_t *synth_get_framebuffer(synth_t *s);
 extern const int16_t *synth_get_audio(synth_t *s);
 extern uint8_t synth_input_was_read(synth_t *s);
 extern void synth_get_video_bgra(synth_t *s, uint32_t *out);  /* palette-resolved 128x120 BGRA */
+extern int32_t *synth_get_registers(synth_t *s);
+extern uint32_t synth_get_frame_counter(synth_t *s);
+extern void (*synth_on_step)(uint32_t pc, const uint8_t *insn, const int32_t *r);
 
 #define FB_W 128
 #define FB_H 120
@@ -135,6 +139,39 @@ static void cache_work(void) {
 }
 
 static int moving(void); /* the movingProperties setting, read once here */
+/* The trace group (a trace logger): a line for each instruction run while
+ * tracing is on - where, its bytes, then the registers after a tab - kept in
+ * a buffer the host drains each frame. Invisible: the buffer and the flag are
+ * in no state, and the engine says again after a load whether to trace. */
+#define TRACE_BYTES (1 << 20)
+ECL_INVISIBLE static char g_trace[TRACE_BYTES];
+ECL_INVISIBLE static int32_t g_traceUsed, g_traceLines, g_traceOverflow, g_traceOn;
+static void traced(uint32_t pc, const uint8_t *insn, const int32_t *r)
+{
+	if (!g_traceOn) return;
+	char line[192];
+	const uint32_t imm = (uint32_t)insn[4] | ((uint32_t)insn[5] << 8) | ((uint32_t)insn[6] << 16) | ((uint32_t)insn[7] << 24);
+	int n = snprintf(line, sizeof line, "%04X: %02X %d %d %d %08X\tR0:%08X R1:%08X R2:%08X R3:%08X R4:%08X R5:%08X R6:%08X R7:%08X",
+		(unsigned)pc, insn[0], insn[1] & 7, insn[2] & 7, insn[3] & 7, (unsigned)imm, (unsigned)r[0], (unsigned)r[1], (unsigned)r[2],
+		(unsigned)r[3], (unsigned)r[4], (unsigned)r[5], (unsigned)r[6], (unsigned)r[7]);
+	if (n < 0 || n >= (int)sizeof line) return;
+	if (g_traceUsed + n + 1 > TRACE_BYTES)
+	{
+		g_traceOverflow = 1;
+		return;
+	}
+	memcpy(g_trace + g_traceUsed, line, (size_t)n + 1);
+	g_traceUsed += n + 1;
+	g_traceLines++;
+}
+ECL_EXPORT void TraceSetEnabled(int32_t on) { g_traceOn = on != 0; }
+ECL_EXPORT int32_t TraceGetLineCount(void) { return g_traceLines; }
+ECL_EXPORT const char *TraceGetBuffer(void) { return g_trace; }
+ECL_EXPORT int32_t TraceGetOverflow(void) { return g_traceOverflow; }
+ECL_EXPORT int32_t TraceGetUsedBytes(void) { return g_traceUsed; }
+ECL_EXPORT void TraceClear(void) { g_traceUsed = g_traceLines = g_traceOverflow = 0; }
+ECL_EXPORT const char *TraceGetHeader(void) { return "Where: opcode a b c immediate\tthe registers"; }
+
 ECL_EXPORT int Init(void) {
 	/* A game's own firmware (SuggestSettings answers it, with the game's own
 	 * setting that calls for it): with that setting on, the game does not
@@ -169,6 +206,9 @@ ECL_EXPORT int Init(void) {
 	if (len >= 9 && memcmp(rom + len - 9, "SLOWFIRST", 9) == 0) g_slowFirst = g_slowNext = 1;
 	if (len >= 8 && memcmp(rom + len - 8, "STOPONCE", 8) == 0) g_stopOnce = 1;
 	g_synth = synth_create(rom, len);   /* copies the rom internally */
+	/* the trace hook is always in place, so a state is the same traced or
+	 * not; whether it writes anything is the invisible flag below */
+	synth_on_step = traced;
 	free(rom);
 	if (!g_synth) return 0;
 	synth_reset(g_synth);
@@ -313,6 +353,22 @@ ECL_INVISIBLE static int32_t g_axes[8];
 ECL_EXPORT void SetAxis(int32_t index, int32_t value)
 {
 	if (index >= 0 && index < 8) g_axes[index] = value;
+}
+
+/* The registers group (the debugger's register box): R0-R7, which a debugger
+ * may set, and the frame counter, which it may only read. */
+static const char *const g_registerNames[9] = {"R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "Frame"};
+ECL_EXPORT int32_t GetRegisterCount(void) { return g_synth ? 9 : 0; }
+ECL_EXPORT const char *GetRegisterName(int32_t i) { return i >= 0 && i < 9 ? g_registerNames[i] : 0; }
+ECL_EXPORT int32_t GetRegisterBits(int32_t i) { (void)i; return 32; }
+ECL_EXPORT int64_t GetRegisterValue(int32_t i)
+{
+	if (!g_synth || i < 0 || i > 8) return 0;
+	return i == 8 ? (int64_t)synth_get_frame_counter(g_synth) : (int64_t)(uint32_t)synth_get_registers(g_synth)[i];
+}
+ECL_EXPORT void SetRegisterValue(int32_t i, int64_t v)
+{
+	if (g_synth && i >= 0 && i < 8) synth_get_registers(g_synth)[i] = (int32_t)v;
 }
 
 /* Guest-memory pointers the host reads while active (RAM/VRAM/audio domains). */

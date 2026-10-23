@@ -40,6 +40,9 @@ ApplicationWindow {
     required property QtObject configFiles
     required property QtObject dataFolder
     required property QtObject precompiled
+    required property QtObject traceLogger
+    // "debugger" is a word of JavaScript's own
+    required property QtObject debuggerTool
     // a Paths folder for a file dialog to open in (made when it is not there)
     function folderOf(name) {
         root.paths.changed; root.paths.base; root.paths.lastRomFolder; root.paths.recentForRoms
@@ -143,7 +146,7 @@ ApplicationWindow {
         "Undo": undoAction, "Redo": redoAction, "Sel. bet. Markers": betweenMarkersAction, "Select All": selectAllAction,
         "Clear Frames": clearFramesAction, "Delete Frames": deleteFramesAction, "Insert Frame": insertFrameAction,
         "Insert # Frames": insertFramesAction, "Clone Frames": cloneFramesAction, "Paste Insert": pasteInsertAction,
-        "Clone # Times": cloneTimesAction, "Close ROM": closeAction
+        "Clone # Times": cloneTimesAction, "Close ROM": closeAction, "Trace Logger": traceLoggerAction
     })
     Connections {
         target: root.hotkeyRelay
@@ -357,6 +360,8 @@ ApplicationWindow {
             title: qsTr("&Tools")
             Action { text: qsTr("&Cores..."); onTriggered: { coresWindow.show(); coresWindow.raise() } }
             Action { text: qsTr("&Pre-Compiled Modules..."); onTriggered: { precompiledWindow.show(); precompiledWindow.raise() } }
+            Action { id: traceLoggerAction; property string hotkey: "Trace Logger"; text: qsTr("&Trace Logger..."); enabled: root.session.hasTrace; onTriggered: { traceLoggerWindow.show(); traceLoggerWindow.raise() } }
+            Action { text: qsTr("&Debugger..."); enabled: root.session.hasRegisters; onTriggered: { debuggerWindow.show(); debuggerWindow.raise() } }
             Action { id: ramSearchAction; property string hotkey: "RAM Search"; text: qsTr("RAM &Search..."); onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
             Action { id: ramWatchAction; property string hotkey: "RAM Watch"; text: qsTr("RAM &Watch..."); onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
             Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor..."); onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
@@ -1298,6 +1303,8 @@ ApplicationWindow {
     FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; visible: false }
     DataFolderConfig { id: dataFolderWindow; vm: root.dataFolder; visible: false }
     PrecompiledModules { id: precompiledWindow; vm: root.precompiled; visible: false }
+    TraceLogger { id: traceLoggerWindow; vm: root.traceLogger; session: root.session; visible: false }
+    Debugger { id: debuggerWindow; vm: root.debuggerTool; session: root.session; visible: false }
     Dialog {
         id: aboutDialog
         objectName: "aboutDialog"

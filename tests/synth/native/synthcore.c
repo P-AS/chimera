@@ -57,6 +57,12 @@ typedef struct
  * machine state; the native builds leave it unset. */
 SYNTH_EXPORT void (*synth_on_input)(void) = 0;
 
+/* Called before each instruction the machine executes, when set: a host that
+ * traces it (a trace logger) hears where it is, its eight bytes and the
+ * registers. Not machine state, and it changes none; the native builds leave
+ * it unset. */
+SYNTH_EXPORT void (*synth_on_step)(uint32_t pc, const uint8_t* insn, const int32_t* r) = 0;
+
 static uint16_t rd16(const uint8_t* p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 static uint32_t rd32(const uint8_t* p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
 static void wr32(uint8_t* p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24); }
@@ -154,6 +160,7 @@ static void run_frame_code(synth_t* s, uint8_t pad)
 		int32_t* Rc = &s->r[insn[3] & 7];
 		int32_t imm = (int32_t)rd32(insn + 4);
 		int taken = 0;
+		if (synth_on_step) synth_on_step(pc, insn, s->r);
 		pc += 8;
 		executed++;
 		switch (op)
@@ -308,6 +315,9 @@ SYNTH_EXPORT void synth_frame(synth_t* s, uint8_t pad)
 SYNTH_EXPORT uint8_t synth_input_was_read(synth_t* s) { return s->inputRead; }
 
 SYNTH_EXPORT uint8_t* synth_get_ram(synth_t* s) { return s->ram; }
+/* the eight registers, for a debugger to read and set, and the frame counter */
+SYNTH_EXPORT int32_t* synth_get_registers(synth_t* s) { return s->r; }
+SYNTH_EXPORT uint32_t synth_get_frame_counter(synth_t* s) { return s->frameCounter; }
 SYNTH_EXPORT const uint8_t* synth_get_framebuffer(synth_t* s) { return s->fb; }
 SYNTH_EXPORT const int16_t* synth_get_audio(synth_t* s) { return s->audioOut; }
 SYNTH_EXPORT uint32_t synth_state_size(void) { return STATE_SIZE; }
