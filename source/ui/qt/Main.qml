@@ -672,13 +672,16 @@ ApplicationWindow {
         modal: true
         standardButtons: Dialog.Ok | Dialog.Cancel
         onAboutToShow: { fireOn.value = root.session.autofireOn; fireOff.value = root.session.autofireOff; fireLag.checked = root.session.autofireSkipsLag }
-        GridLayout {
-            columns: 2
-            Label { text: qsTr("Pressed for") }
-            SpinBox { id: fireOn; from: 1; to: 512; editable: true }
-            Label { text: qsTr("Let go for") }
-            SpinBox { id: fireOff; from: 1; to: 512; editable: true }
-            CheckBox { id: fireLag; text: qsTr("Lag frames do not count"); Layout.columnSpan: 2 }
+        // as Chimera's: "Pattern: N on, N off", and whether lag frames are taken into account (they do not move the pattern)
+        ColumnLayout {
+            RowLayout {
+                Label { text: qsTr("Pattern:") }
+                SpinBox { id: fireOn; from: 1; to: 512; editable: true; Layout.preferredWidth: 90 }
+                Label { text: qsTr("on,") }
+                SpinBox { id: fireOff; from: 1; to: 512; editable: true; Layout.preferredWidth: 90 }
+                Label { text: qsTr("off") }
+            }
+            CheckBox { id: fireLag; text: qsTr("Take lag frames into account") }
         }
         onAccepted: { root.session.autofireOn = fireOn.value; root.session.autofireOff = fireOff.value; root.session.autofireSkipsLag = fireLag.checked }
     }
