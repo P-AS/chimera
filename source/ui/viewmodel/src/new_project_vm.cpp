@@ -756,6 +756,11 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	const std::string machineSetting = cfg_.find("machineSetting") != nullptr ? cfg_.find("machineSetting")->text : "";
 	form_.declare(std::move(settings), machineSetting);
 	{
+		std::vector<Json> machineDecls;
+		if (const Json *m = cfg_.find("machines")) machineDecls = m->items;
+		form_.declareMachines(std::move(machineDecls));
+	}
+	{
 		std::vector<Json> presets;
 		if (const Json *p = cfg_.find("presets")) presets = p->items;
 		form_.declarePresets(std::move(presets));

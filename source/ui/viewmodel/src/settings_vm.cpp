@@ -100,6 +100,9 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 					for (const Json &d : extra.items) decl.push_back(d);
 				const size_t declared = decl.size();
 				form_.declare(std::move(decl), machineSetting);
+				std::vector<Json> machineDecls;
+				if (const Json *m = cfg.find("machines")) machineDecls = m->items;
+				form_.declareMachines(std::move(machineDecls));
 				std::vector<Json> presets;
 				if (const Json *p = cfg.find("presets")) presets = p->items;
 				form_.declarePresets(std::move(presets));

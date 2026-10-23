@@ -2171,7 +2171,15 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(wizard.problems.get() == "One of these is needed: Cartridge, Disks");
 	fromValue(cell("slots", 0, 6), exposed);
 	CHECK(exposed && rowCount("firmware") == 0);
-	CHECK(settingNames() == "initFillByte ");
+	CHECK(settingNames() == "initFillByte port ");
+	/* a board narrows what a setting offers and starts it on (board A: the
+	 * mouse by default; board B: no mouse, and nothing by default) */
+	auto portCell = [&](int32_t column) {
+		for (int64_t r = 0; r < rowCount("settings"); r++)
+			if (text("settings", r, 0) == "port") return text("settings", r, column);
+		return std::string("no port");
+	};
+	CHECK(portCell(3) == "mouse" && portCell(4) == "pad\nmouse\nnone");
 	/* the disk slot takes the kinds of disk this board claims */
 	CHECK(text("slots", 1, 4) == ".dsk" && text("slots", 1, 9) == "*.dsk");
 	CHECK(wizard.run("chooseMachine", {int64_t{1}}, error).has_value() && wizard.machine.get() == 1);
@@ -2180,7 +2188,9 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(!wizard.run("addFile", {std::string("disk"), (dir / "disk3.dsk").string()}, error) &&
 		error == "disk3.dsk: Disks takes files of these kinds: .cue .img");
 	fromValue(cell("slots", 0, 6), exposed);
-	CHECK(!exposed && settingNames() == "initFillByte diskSpeed ");
+	CHECK(!exposed && settingNames() == "initFillByte diskSpeed port ");
+	CHECK(portCell(3) == "none" && portCell(4) == "pad\nnone");
+	CHECK(!wizard.run("set", {std::string("port"), std::string("mouse")}, error) && error == "mouse is not one of port's options");
 	CHECK(rowCount("presets") == 2 && wizard.run("applyPreset", {std::string("fast")}, error).has_value());
 	{
 		int64_t v = -1;

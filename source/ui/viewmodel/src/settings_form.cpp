@@ -41,11 +41,63 @@ std::string joined(const Json *list, const Json *labels)
 
 void SettingsForm::declare(std::vector<Json> decl, std::string machineSetting)
 {
-	decl_ = std::move(decl);
+	base_ = std::move(decl);
 	machineSetting_ = std::move(machineSetting);
+	narrow();
 	/* which applied were places in the old declarations: none until evaluated */
 	exposed_.clear();
 	if (values_.kind != Json::Kind::Object) values_.kind = Json::Kind::Object;
+}
+
+void SettingsForm::declareMachines(std::vector<Json> machines)
+{
+	machines_ = std::move(machines);
+	exposed_.clear();
+	narrow();
+}
+
+void SettingsForm::narrow()
+{
+	decl_ = base_;
+	if (machineSetting_.empty() || machines_.empty()) return;
+	/* the machine the machine setting chooses (its "when", else its id, in
+	 * any case), else the first */
+	std::string value;
+	if (const Json *v = values_.find(machineSetting_)) value = v->text;
+	else
+		for (const Json &d : base_)
+			if (const Json *n = d.find("name"); n != nullptr && n->text == machineSetting_)
+				if (const Json *def = d.find("default")) value = def->text;
+	auto folded = [](std::string s) {
+		for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		return s;
+	};
+	const Json *machine = &machines_.front();
+	for (const Json &m : machines_)
+	{
+		bool selects = false;
+		if (const Json *when = m.find("when"); when != nullptr && !when->items.empty())
+		{
+			for (const Json &w : when->items) selects = selects || folded(w.text) == folded(value);
+		}
+		else if (const Json *id = m.find("id"))
+			selects = folded(id->text) == folded(value);
+		if (selects)
+		{
+			machine = &m;
+			break;
+		}
+	}
+	const Json *overrides = machine->find("settingOverrides");
+	if (overrides == nullptr) return;
+	for (Json &d : decl_)
+	{
+		const Json *n = d.find("name");
+		const Json *over = n != nullptr ? overrides->find(n->text) : nullptr;
+		if (over == nullptr) continue;
+		if (const Json *o = over->find("options")) setMember(d, "options", *o);
+		if (const Json *def = over->find("default")) setMember(d, "default", *def);
+	}
 }
 
 void SettingsForm::setSlots(std::string slotsJson)
@@ -143,6 +195,8 @@ const Json *SettingsForm::declared(const std::string &name) const
 
 void SettingsForm::evaluate()
 {
+	/* the machine may have changed, and with it what a setting offers */
+	narrow();
 	exposed_ = applicable(decl_, slots_, values_, machineSetting_);
 	if (!listMachine_ && !machineSetting_.empty())
 		exposed_.erase(std::remove_if(exposed_.begin(), exposed_.end(), [this](size_t i) {

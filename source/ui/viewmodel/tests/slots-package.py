@@ -38,13 +38,18 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
             cfg["settings"].append({"name": "diskSpeed", "display": "Disk Speed", "type": "int",
                                     "min": 1, "max": 4, "default": 1, "sync": True, "when": ["b"],
                                     "description": "Board B's alone."})
+            cfg["settings"].append({"name": "port", "display": "Port", "type": "enum",
+                                    "options": ["pad", "mouse", "none"], "default": "pad", "sync": True,
+                                    "description": "What is plugged in; each board narrows it."})
             # each board claims kinds of file of its own: the disk slot takes
             # board A's .dsk on board A and board B's .cue and .img on board B
             cfg["machines"] = [
                 {"id": "Synth", "label": "Board A", "when": ["a"],
-                 "extensions": {".testrom": "Synth", ".dsk": "Synth"}},
+                 "extensions": {".testrom": "Synth", ".dsk": "Synth"},
+                 "settingOverrides": {"port": {"default": "mouse"}}},
                 {"id": "SynthB", "label": "Board B", "when": ["b"],
-                 "extensions": {".cue": "SynthB", ".img": "SynthB"}},
+                 "extensions": {".cue": "SynthB", ".img": "SynthB"},
+                 "settingOverrides": {"port": {"options": ["pad", "none"], "default": "none"}}},
             ]
             cfg["firmware"] = [{"id": "bios", "display": "Board B BIOS", "name": "boardb.bin",
                                 "requiredWhen": {"setting": "board", "is": "b"}}]

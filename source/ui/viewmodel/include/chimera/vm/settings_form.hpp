@@ -22,6 +22,11 @@ public:
 	/* the package's "settings" (and a game's own, after them) and the
 	 * setting that chooses the machine, when the package has several */
 	void declare(std::vector<json::Json> decl, std::string machineSetting);
+	/* the package's machines: a machine may narrow a setting's options and
+	 * default ("settingOverrides"), as Chimera has them for the machine the
+	 * machine setting chooses (a Master System's port takes a pad or
+	 * nothing); a value already chosen is kept as it is */
+	void declareMachines(std::vector<json::Json> machines);
 	/* the game files, as {"slot": ["name", ...]} */
 	void setSlots(std::string slotsJson);
 	void setValues(json::Json values);
@@ -96,7 +101,9 @@ public:
 	};
 
 private:
-	std::vector<json::Json> decl_;
+	/* as declared, and as the chosen machine has them */
+	std::vector<json::Json> base_, decl_, machines_;
+	void narrow();
 	std::string machineSetting_, slots_{"{}"};
 	json::Json values_;
 	const json::Json *applied_ = nullptr;
