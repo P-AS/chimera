@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QGuiApplication>
 #include <QObject>
 #include <QString>
 
@@ -24,6 +25,8 @@ public:
 		const auto mods = Qt::KeyboardModifiers(modifiers);
 		return combination ? keyCombination(key, mods) : keyName(key, mods);
 	}
+	/* Shift held now, whichever window has the keyboard */
+	Q_INVOKABLE bool shiftHeld() const { return QGuiApplication::queryKeyboardModifiers().testFlag(Qt::ShiftModifier); }
 };
 
 /* Hands a hotkey whose action is the window's (a menu's, a dialog's) to the

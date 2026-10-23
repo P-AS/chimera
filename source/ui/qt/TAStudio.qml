@@ -25,6 +25,8 @@ ApplicationWindow {
     required property var folderOf
     // the window it sits beside
     required property var mainWindow
+    // whether Shift is held (the main window dragged alone)
+    required property QtObject keyNamer
     // "<< Hide": the main window offers it back
     property bool hiddenByPerson: false
     title: !tas.session.hasProject ? qsTr("TAStudio")
@@ -53,7 +55,8 @@ ApplicationWindow {
         tas.raise()
     }
     // Move with Main Window: the main window dragged brings this one along,
-    // keeping its place beside it; this one dragged moves alone
+    // keeping its place beside it; this one dragged moves alone, and so does
+    // the main window dragged with Shift held, as Chimera's
     property real mainX: 0
     property real mainY: 0
     Connections {
@@ -66,7 +69,7 @@ ApplicationWindow {
         const dx = main.x - tas.mainX, dy = main.y - tas.mainY
         tas.mainX = main.x
         tas.mainY = main.y
-        if (!tas.visible || !tas.pianoRoll.moveWithMainWindow) return
+        if (!tas.visible || !tas.pianoRoll.moveWithMainWindow || tas.keyNamer.shiftHeld()) return
         if (main.visibility !== Window.Windowed || tas.visibility !== Window.Windowed) return
         tas.x += dx
         tas.y += dy

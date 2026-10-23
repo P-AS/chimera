@@ -107,7 +107,8 @@ them: set markers (more than 50 asks first), a marker with text, remove
 markers, deselect, select between markers, clear greenzone, copy, paste,
 paste insert, cut, clear, delete, insert, clone, truncate, and branch. Keys pressed in TAStudio reach the machine and the hotkeys, as
 Chimera's TAStudio passes them on. Move with Main Window (on at first, as
-in Chimera) brings TAStudio along when the main window is dragged.
+in Chimera) brings TAStudio along when the main window is dragged (not with Shift
+held, as Chimera's).
 
 | View model | What it does | Window |
 |---|---|---|
@@ -297,8 +298,7 @@ A suggested order, each step usable on its own:
 Taken from Chimera's menus, dialogs and tools on 2026-10-23, and ticked off
 as each lands here. Parts that wait on a question to the owner say so.
 
-- TAStudio: Shift held to drag
-  the main window without TAStudio, and Turbo seek (not needed: see the
+- TAStudio: Turbo seek (not needed: see the
   hotkeys row). Recording mode waits on
   question 6. (Chimera's Selection Undo and Redo are always greyed out
   and do nothing, so there is nothing of theirs to bring.)

@@ -529,6 +529,7 @@ ApplicationWindow {
         id: tastudioWindow
         session: root.session; pianoRoll: root.pianoRoll; branches: root.branches; projectDetails: root.projectDetails
         clipboard: root.clipboard; customize: root.customize; keyedItem: keyedMenuItem; folderOf: root.folderOf; mainWindow: root
+        keyNamer: root.keyNamer
         visible: false
     }
     Connections {
