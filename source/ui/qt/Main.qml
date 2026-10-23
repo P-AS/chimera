@@ -304,6 +304,25 @@ ApplicationWindow {
                 onToggled: root.pianoRoll.bindMarkers = checked
             }
             MenuSeparator {}
+            // TAStudio's macros, on the frames picked
+            Action { text: qsTr("Save Selection to &Macro..."); enabled: editMenu.picked; onTriggered: saveMacroDialog.open() }
+            Action { text: qsTr("Place Macro at Se&lection..."); enabled: editMenu.picked; onTriggered: placeMacroDialog.open() }
+            Menu {
+                id: recentMacrosMenu
+                title: qsTr("Recent Macros")
+                enabled: editMenu.picked && root.pianoRoll.recentMacros !== ""
+                Instantiator {
+                    model: root.pianoRoll.recentMacros === "" ? [] : root.pianoRoll.recentMacros.split("\n")
+                    delegate: MenuItem {
+                        required property string modelData
+                        text: modelData
+                        onTriggered: root.pianoRoll.run("placeMacro", [root.pianoRoll.selectFirst, modelData])
+                    }
+                    onObjectAdded: (index, object) => recentMacrosMenu.insertItem(index, object)
+                    onObjectRemoved: (index, object) => recentMacrosMenu.removeItem(object)
+                }
+            }
+            MenuSeparator {}
             Action { text: qsTr("TAStudio Se&ttings..."); onTriggered: { tastudioSettingsWindow.show(); tastudioSettingsWindow.raise() } }
         }
         Menu {
@@ -506,6 +525,19 @@ ApplicationWindow {
         onAccepted: root.session.run("saveProject", [selectedFile])
         // a question that asked for this save is answered Cancel
         onRejected: root.afterSave = null
+    }
+    FileDialog {
+        id: saveMacroDialog
+        title: qsTr("Save the frames picked as a macro")
+        fileMode: FileDialog.SaveFile
+        nameFilters: [qsTr("Movie Macros (*.chimeraMacro)")]
+        onAccepted: root.pianoRoll.run("saveMacro", [root.pianoRoll.selectFirst, root.pianoRoll.selectLast, selectedFile])
+    }
+    FileDialog {
+        id: placeMacroDialog
+        title: qsTr("Place a macro at the frames picked")
+        nameFilters: [qsTr("Movie Macros (*.chimeraMacro)"), qsTr("All files (*)")]
+        onAccepted: root.pianoRoll.run("placeMacro", [root.pianoRoll.selectFirst, selectedFile])
     }
     Dialog {
         id: holdValueDialog

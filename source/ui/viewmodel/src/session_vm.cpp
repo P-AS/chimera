@@ -2155,10 +2155,14 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	/* the analog controls: the engine's names, headers and rest values, the
 	 * ranges as the package declares them (its own input, or a machine's) */
 	std::vector<Axis> axes;
+	std::string controller = "Waterbox Controller";
 	{
 		json::Json cfg;
 		std::string jerr;
 		const bool read = json::parse(config, cfg, jerr);
+		if (read)
+			if (const json::Json *input = cfg.find("input"))
+				if (const json::Json *n = input->find("name"); n != nullptr && !n->text.empty()) controller = n->text;
 		auto declared = [&](const std::string &name) -> const json::Json * {
 			if (!read) return nullptr;
 			auto look = [&](const json::Json *input) -> const json::Json * {
@@ -2210,7 +2214,8 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	const double rate = num > 0 && den > 0 ? static_cast<double>(num) / den : 0;
 
 	const int64_t frames = inputs_.size();
-	later([this, names, axes, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames] {
+	later([this, names, axes, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames, controller] {
+		controllerName_ = controller;
 		buttonNames_ = names;
 		axes_ = axes;
 		mnemonics_ = mnemonics;

@@ -580,6 +580,7 @@ int main(int argc, char **argv)
 	config.keep(pianoRoll, "denoteMarkersIcons");
 	config.keep(pianoRoll, "rollColors");
 	config.keep(pianoRoll, "rollFont");
+	config.keep(pianoRoll, "recentMacros");
 	config.keep(pianoRoll, "markersKeepStates");
 	config.keep(pianoRoll, "bindMarkers");
 	config.keep(session, "pauseAtEnd");

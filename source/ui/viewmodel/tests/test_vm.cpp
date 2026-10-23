@@ -2642,6 +2642,50 @@ bool pianoRollEditing(const char *package, const char *rom)
 		CHECK(!roll.run("setPattern", {std::string("Nothing"), std::string("On")}, error));
 		CHECK(roll.run("setPattern", {five, std::string("On x1, Off x1"), int64_t{0}, true}, error).has_value());
 	}
+	/* macros: frames saved as Chimera's TAStudio saves them, and placed */
+	{
+		namespace fs = std::filesystem;
+		const fs::path dir = fs::temp_directory_path() / ("chimera-test-macro-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+		fs::create_directories(dir);
+		const std::string file = (dir / "three.chimeraMacro").string();
+		CHECK(roll.run("saveMacro", {int64_t{2}, int64_t{4}, file}, error).has_value());
+		std::vector<std::string> lines;
+		{
+			std::ifstream in(file);
+			for (std::string line; std::getline(in, line);) lines.push_back(line);
+		}
+		const std::vector<std::string> movieLines = inputs.lines(2, 4);
+		CHECK(lines.size() == 7 && lines[0].rfind(session.buttonNames()[0] + "|", 0) == 0 && lines[0].find('#') == std::string::npos &&
+			lines[0].back() != '|' && lines[1] == session.controllerName() && lines[3] == "False,True");
+		CHECK(lines.size() == 7 && lines[4] == movieLines[0] && lines[6] == movieLines[2]);
+		CHECK(roll.run("placeMacro", {int64_t{6}, file}, error).has_value());
+		want = start;
+		for (size_t i = 0; i < 3; i++) want[6 + i] = start[2 + i];
+		CHECK(masks() == want && roll.recentMacros.get() == file);
+		CHECK(undoTo(start));
+		/* one column, pressed over what is there, put in before the frames */
+		const std::string one = (dir / "one.chimeraMacro").string();
+		{
+			std::ofstream out(one, std::ios::binary);
+			out << session.buttonNames()[4] << "\r\nSome Pad\r\n2\r\nTrue,False\r\n|A|\r\n|.|\r\n";
+		}
+		CHECK(roll.run("placeMacro", {int64_t{3}, one}, error).has_value());
+		want = start;
+		want.insert(want.begin() + 3, {bit(4), 0});
+		CHECK(masks() == want);
+		CHECK(undoTo(start));
+		CHECK(roll.recentMacros.get() == one + "\n" + file);
+		/* a column the movie does not have */
+		const std::string other = (dir / "other.chimeraMacro").string();
+		{
+			std::ofstream out(other, std::ios::binary);
+			out << "P9 Laser\nLaser Gun\n10\nFalse,True\n|L|\n";
+		}
+		CHECK(!roll.run("placeMacro", {int64_t{0}, other}, error) &&
+			error == "The selected macro is not compatible with the current core.\nMacro controller: Laser Gun\nMacro controller groups (\"players\" + 1) count: 10");
+		CHECK(masks() == start);
+		fs::remove_all(dir);
+	}
 	/* cloned a number of times, as one edit */
 	CHECK(roll.run("cloneFrames", {int64_t{1}, int64_t{2}, int64_t{3}}, error).has_value() && roll.frameCount.get() == 16);
 	want = start;

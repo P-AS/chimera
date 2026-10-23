@@ -153,6 +153,9 @@ public:
 		int64_t min = -32768, max = 32767, neutral = 0;
 	};
 	const std::vector<Axis> &axes() const { return axes_; }
+	/* the controller's name as the package declares it (Chimera's
+	 * ControllerDefinition name; "Waterbox Controller" when it says none) */
+	const std::string &controllerName() const { return controllerName_; }
 	/* an input as Chimera's input display writes it: for each player in turn
 	 * (1, 2... and the console's last), its buttons - the mnemonic of one
 	 * pressed, a space for one not - then its analog controls, five places
@@ -426,6 +429,7 @@ private:
 	InputLog &inputs_;
 	std::vector<std::string> buttonNames_;
 	std::vector<Axis> axes_;
+	std::string controllerName_;
 	std::vector<std::string> defaultBindings_;
 	std::string mnemonics_;
 	Bindings bindings_;

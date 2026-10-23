@@ -58,6 +58,8 @@ public:
 	Property<bool> denoteMarkersColor{true}, denoteMarkersIcons{false};
 	Property<std::string> rollColors{"{}"};
 	Property<std::string> rollFont;
+	/* macros placed lately, newest first, a line each (eight kept) */
+	Property<std::string> recentMacros;
 	/* the most undo steps kept, as Chimera's TAStudio setting has it */
 	Property<int64_t> maxUndoSteps{1000};
 	/* TAStudio's "include frame numbers when copying input" */
@@ -260,6 +262,9 @@ private:
 	std::optional<std::map<std::string, std::string>> pendingMembers_;
 	std::vector<std::string> patternNames_;
 	std::vector<std::string> controlNames() const;
+	/* the movie's columns (its LogKey), as written and as a macro names them */
+	std::string movieKeyRaw() const;
+	std::string movieKey() const;
 	/* editing hidden columns is off and some are hidden: the buttons shown
 	 * (a bit each) and the analog controls shown */
 	bool limited() const;
