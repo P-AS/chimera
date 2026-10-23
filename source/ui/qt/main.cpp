@@ -92,6 +92,8 @@
 #include "chimera/vm/session_vm.hpp"
 #include "clipboard_relay.hpp"
 #include "picture_files.hpp"
+#include "pointer_capture.hpp"
+#include "button_router.hpp"
 #include "key_names.hpp"
 #include "picture_item.hpp"
 #include "piano_roll_item.hpp"
@@ -125,6 +127,26 @@ class KeyFilter : public QObject
 public:
 	KeyFilter(vm::SessionViewModel &session, vm::HotkeysViewModel &hotkeys, vm::HostInputViewModel &input)
 		: session_(session), hotkeys_(hotkeys), input_(input) {}
+
+	/* a pointer button over the picture, routed as a key is (no modifiers) */
+	void button(const QString &name, bool down)
+	{
+		if (down)
+		{
+			if (down_.count(name) != 0) return;
+			const auto route = vm::HotkeysViewModel::route(hotkeys_.keyPriority.get(), hotkeys_.boundTo(name.toStdString()),
+				session_.keyIsBound(name.toStdString()));
+			down_[name] = {name, route.hotkey, route.control};
+			if (route.control) session_.key(name.toStdString(), true);
+			if (route.hotkey) hotkeys_.key(name.toStdString(), true);
+		}
+		else if (const auto it = down_.find(name); it != down_.end())
+		{
+			if (it->second.control) session_.key(name.toStdString(), false);
+			if (it->second.hotkey) hotkeys_.key(name.toStdString(), false);
+			down_.erase(it);
+		}
+	}
 
 protected:
 	bool eventFilter(QObject *watched, QEvent *e) override
@@ -466,6 +488,8 @@ int main(int argc, char **argv)
 			if (down) flip(session.displayNothing);
 		});
 		hotkeys.add("General", "Accept Background Input", "", background);
+		/* Chimera's: the middle button over the picture, by default */
+		window("General", "Capture Mouse", "WMouse M");
 		window("General", "Exit Program", "");
 		window("Tools", "RAM Watch", "");
 		window("Tools", "RAM Search", "");
@@ -821,6 +845,7 @@ int main(int argc, char **argv)
 	});
 	config.keep(session, "showStatusBar");
 	config.keep(session, "captureOsd");
+	config.keep(session, "captureMouse");
 	config.keep(session, "showGameTime");
 	config.keep(batchRun, "frames");
 	config.keep(session, "autofireOn");
@@ -1091,6 +1116,10 @@ int main(int argc, char **argv)
 
 	qt::ClipboardRelay clipboard;
 	qt::PictureFiles pictureFiles(session.screen);
+	/* Capture Mouse: the pointer kept over the picture */
+	qt::PointerCapture pointerCapture;
+	/* the pointer's buttons, routed as keys once the key routing is made */
+	qt::ButtonRouter buttonRouter;
 	pictureFiles.say = [&session](const std::string &text) { session.status.set(text); };
 	QQmlApplicationEngine engine;
 	engine.addImageProvider(QStringLiteral("controller"), controllerPicture);
@@ -1109,6 +1138,8 @@ int main(int argc, char **argv)
 		{QStringLiteral("hotkeyRelay"), QVariant::fromValue<QObject *>(&relay)},
 		{QStringLiteral("clipboard"), QVariant::fromValue<QObject *>(&clipboard)},
 		{QStringLiteral("pictureFiles"), QVariant::fromValue<QObject *>(&pictureFiles)},
+		{QStringLiteral("pointerCapture"), QVariant::fromValue<QObject *>(&pointerCapture)},
+		{QStringLiteral("buttonRouter"), QVariant::fromValue<QObject *>(&buttonRouter)},
 		{QStringLiteral("help"), QVariant::fromValue<QObject *>(&helpQml)},
 		{QStringLiteral("batchRun"), QVariant::fromValue<QObject *>(&batchRunQml)},
 		{QStringLiteral("mediaMaker"), QVariant::fromValue<QObject *>(&mediaMakerQml)},
@@ -1165,6 +1196,7 @@ int main(int argc, char **argv)
 		if (session.wantsVsync()) window->update();
 	}, Qt::DirectConnection);
 	KeyFilter keys(session, hotkeys, hostInput);
+	buttonRouter.route = [&keys](const QString &name, bool down) { keys.button(name, down); };
 	window->installEventFilter(&keys);
 	/* TAStudio passes the keys on too, as Chimera's does: the machine's and the hotkeys */
 	if (auto *tastudio = window->findChild<QQuickWindow *>(QStringLiteral("tastudioWindow"))) tastudio->installEventFilter(&keys);

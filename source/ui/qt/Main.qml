@@ -30,6 +30,10 @@ ApplicationWindow {
     required property QtObject cores
     required property QtObject clipboard
     required property QtObject pictureFiles
+    // Capture Mouse: keeps the pointer over the picture
+    required property QtObject pointerCapture
+    // the pointer's buttons, routed as keys (to the machine, a hotkey, or both)
+    required property QtObject buttonRouter
     required property QtObject help
     required property QtObject batchRun
     required property QtObject mediaMaker
@@ -112,6 +116,9 @@ ApplicationWindow {
     }
     // the keys of every hotkey, for the menus to show beside their actions
     readonly property var hotkeyKeys: JSON.parse(root.hotkeys.bound)
+    // Chimera's Capture Mouse: while the window is active the pointer is hidden and kept over the picture
+    readonly property bool capturing: root.session.captureMouse && root.active
+    onCapturingChanged: root.capturing ? root.pointerCapture.confine(pictureArea) : root.pointerCapture.release()
     // a menu item that shows the keys of the hotkey its action names
     Component {
         id: keyedMenuItem
@@ -181,6 +188,15 @@ ApplicationWindow {
             else if (action === "Seek To...") { if (root.session.seekEnabled) seekDialog.open() }
             else if (action === "Toggle Menu") root.menuBar.visible = !root.menuBar.visible
             else if (action === "TAStudio") { if (root.session.hasProject) tastudioWindow.engage() }
+            // Chimera's Capture Mouse: only with something bound to the pointer, and said
+            else if (action === "Capture Mouse") {
+                if (!root.session.mouseBound) root.note(qsTr("Nothing bound to mouse, not capturing cursor"))
+                else {
+                    root.session.captureMouse = !root.session.captureMouse
+                    if (root.session.captureMouse) root.note(qsTr("Mouse cursor captured, press %1 to uncapture").arg(root.hotkeyKeys["Capture Mouse"] || ""), 7)
+                    else root.note(qsTr("Mouse cursor uncaptured"))
+                }
+            }
             else if (action === "Toggle Stay on Top") {
                 root.display.stayOnTop = !root.display.stayOnTop
                 root.note(root.display.stayOnTop ? qsTr("Stay on Top enabled") : qsTr("Stay on Top disabled"))
@@ -1001,7 +1017,7 @@ ApplicationWindow {
         }
         HoverHandler {
             // full screen, the pointer hidden after two seconds still, as Chimera's (moving it more than 5 pixels shows it)
-            cursorShape: root.cursorHidden ? Qt.BlankCursor : Qt.ArrowCursor
+            cursorShape: root.cursorHidden || root.capturing ? Qt.BlankCursor : Qt.ArrowCursor
             onPointChanged: {
                 pictureArea.notePointer(point.position, -1)
                 const p = point.position
@@ -1046,7 +1062,12 @@ ApplicationWindow {
                 root.visibility = root.visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen
             }
         }
+        // where the pointer last was, for how far it moved (an analog control bound to RMouse X or Y)
+        property point lastAt: Qt.point(NaN, NaN)
         function notePointer(at, buttons) {
+            if (root.session.mouseBound && !isNaN(pictureArea.lastAt.x) && (at.x !== pictureArea.lastAt.x || at.y !== pictureArea.lastAt.y))
+                root.session.run("pointerMoved", [Math.round(at.x - pictureArea.lastAt.x), Math.round(at.y - pictureArea.lastAt.y)])
+            pictureArea.lastAt = at
             const shown = picture.shownRect, src = picture.sourceRect
             if (shown.width > 0 && shown.height > 0) {
                 root.hostInput.mouseX = Math.floor(src.x + (at.x - shown.x) * src.width / shown.width)
@@ -1062,7 +1083,7 @@ ApplicationWindow {
             const names = ["WMouse L", "WMouse M", "WMouse R", "WMouse 1", "WMouse 2"]
             const was = root.hostInput.mouseButtons
             for (let b = 0; b < 5; b++)
-                if (((mask ^ was) >> b) & 1) root.session.run("key", [names[b], ((mask >> b) & 1) === 1])
+                if (((mask ^ was) >> b) & 1) root.buttonRouter.press(names[b], ((mask >> b) & 1) === 1)
             root.hostInput.mouseButtons = mask
         }
         // nothing open: Chimera's mark, faint, blinking now and then, its eye
@@ -1278,12 +1299,13 @@ ApplicationWindow {
         root.height = Math.round(root.height - pictureArea.height + h)
         root.width = Math.round(root.width - pictureArea.width + w)
     }
-    function note(text) {
+    // a message over the picture, for the messages' time or as long as asked (Chimera's AddOnScreenMessage duration)
+    function note(text, seconds) {
         if (text === "") return
         messageLog.append({ "time": Qt.formatTime(new Date(), "hh:mm:ss"), "message": text })
         if (messageLog.count > 5000) messageLog.remove(0)
         if (!root.session.showMessages) return
-        onScreenMessages.append({ "message": text, "until": Date.now() + root.messages.messageSeconds * 1000 })
+        onScreenMessages.append({ "message": text, "until": Date.now() + (seconds || root.messages.messageSeconds) * 1000 })
         if (onScreenMessages.count > 5) onScreenMessages.remove(0)
     }
     Connections { target: root.session; function onStatusChanged() { root.note(root.session.status) } }

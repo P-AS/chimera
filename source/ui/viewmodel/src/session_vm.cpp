@@ -452,6 +452,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("showMessages", "messages are shown over the picture a moment", showMessages, true);
 	expose("showStatusBar", "the status bar is shown", showStatusBar, true);
 	expose("captureOsd", "a screenshot has the counters and messages over the picture too", captureOsd, true);
+	expose("captureMouse", "Chimera's Capture Mouse: the pointer kept over the picture and hidden (remembered)", captureMouse, true);
+	expose("mouseBound", "an analog control is bound to the pointer (WMouse or RMouse X or Y), as Capture Mouse asks", mouseBound);
 	expose("isGameCore", "the core open is a game (its menu is Game, not Emulator)", isGameCore);
 	expose("hasGameTimer", "the game open has a timer of its own", hasGameTimer);
 	expose("hasSaveData", "the core open writes out the user's save data", hasSaveData);
@@ -1202,6 +1204,15 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			pointerYM_.store(static_cast<int>(std::clamp<int64_t>(y, -1000000, 1000000)));
 			return {};
 		});
+	command("pointerMoved", "how far the pointer moved, for an analog control bound to \"RMouse X\" or \"RMouse Y\" "
+		"(Chimera's relative mouse): added up until the next frame reads it", {"dx", "dy"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t dx = 0, dy = 0;
+			if (!arg(a, 0, dx, error) || !arg(a, 1, dy, error)) return {};
+			movedXM_.fetch_add(static_cast<int>(std::clamp<int64_t>(dx, -100000, 100000)));
+			movedYM_.fetch_add(static_cast<int>(std::clamp<int64_t>(dy, -100000, 100000)));
+			return {};
+		});
 	command("close", "closes the machine", {}, [this](const Args &, std::string &) -> Value {
 		submit([this] { closeOnMachine(); });
 		return {};
@@ -1468,6 +1479,9 @@ void SessionViewModel::setAnalogBinds(std::vector<AnalogBind> binds)
 {
 	binds.resize(axes_.size());
 	analogBinds_ = binds;
+	mouseBound.set(std::any_of(binds.begin(), binds.end(), [](const AnalogBind &b) {
+		return b.value == "WMouse X" || b.value == "WMouse Y" || b.value == "RMouse X" || b.value == "RMouse Y";
+	}));
 	submit([this, binds] { analogBindsM_ = binds; });
 }
 
@@ -4178,6 +4192,9 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	const int32_t had = ce_session_movie_get(s_, f, &logged, axisCount ? axesBuf_.data() : nullptr);
 	if (had == 1 && !grow) return 0;
 	bool axesHeld = false;
+	/* how far the pointer moved since the last frame played with the person's input: read once
+	 * such a frame, as Chimera's are; a frame replayed leaves it */
+	const int movedX = live ? movedXM_.exchange(0) : 0, movedY = live ? movedYM_.exchange(0) : 0;
 	/* the analog controls' bindings: a stick off its rest, or a key pushing one, goes in as a held
 	 * button does; a control left alone keeps what the movie has */
 	if (live)
@@ -4188,6 +4205,8 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 			int host = 0;
 			if (bind.value == "WMouse X") host = pointerXM_.load();
 			else if (bind.value == "WMouse Y") host = pointerYM_.load();
+			else if (bind.value == "RMouse X") host = movedX;
+			else if (bind.value == "RMouse Y") host = movedY;
 			else if (padsHeardM_.load())
 				for (const auto &[name, v] : padAxes_)
 					if (name == bind.value) host = v;

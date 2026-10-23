@@ -5465,6 +5465,31 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 		controls.run("save", {}, error);
 		session.run("pointer", {int64_t{10000}, int64_t{0}}, error);
 		CHECK(held({}) == -100);
+		/* bound to the pointer: Capture Mouse has something to capture for */
+		CHECK(session.mouseBound.get());
+		/* the pointer's axis caught again: how far it moves (RMouse), then where it is again, as Chimera's */
+		CHECK(controls.run("caught", {int64_t{0}, std::string("WMouse X")}, error) == Value(std::string("RMouse X")));
+		CHECK(controls.run("caught", {int64_t{0}, std::string("WMouse X")}, error) == Value(std::string("WMouse X")));
+		CHECK(controls.run("caught", {int64_t{0}, std::string("WMouse X")}, error) == Value(std::string("RMouse X")));
+		controls.run("setAnalog", {int64_t{0}, std::string("mult"), 1.0}, error);
+		controls.run("setAnalog", {int64_t{0}, std::string("deadzone"), 0.0}, error);
+		controls.run("save", {}, error);
+		/* how far it moved since the last frame, read once: the next frame has moved nothing */
+		{
+			const int64_t end = inputs.size();
+			session.run("seek", {end}, error);
+			d.until([&] { return session.frame.get() == end; }, 20);
+			session.run("pointerMoved", {int64_t{3000}, int64_t{0}}, error);
+			session.run("pointerMoved", {int64_t{2000}, int64_t{0}}, error);
+			session.run("frameAdvance", {}, error);
+			d.until([&] { return session.frame.get() == end + 1; }, 20);
+			CHECK(dial(end) == 50);
+		}
+		CHECK(held({}) == 0);
+		controls.run("caught", {int64_t{0}, std::string("WMouse X")}, error);
+		controls.run("setAnalog", {int64_t{0}, std::string("mult"), -2.0}, error);
+		controls.run("setAnalog", {int64_t{0}, std::string("deadzone"), 0.1}, error);
+		controls.run("save", {}, error);
 		CHECK(!controls.run("setAnalog", {int64_t{0}, std::string("speed"), 1.0}, error) && error == "no field speed: value, mult or deadzone");
 		CHECK(!controls.run("unbind", {int64_t{1}}, error) && error == "no analog control 1");
 		/* Unbind!: the pointer no longer moves it, the keys still do */

@@ -56,7 +56,7 @@ ApplicationWindow {
         enabled: win.axisCatch >= 0
         function onCaughtPadChanged() {
             if (win.session.caughtPad === "") return
-            win.controls.run("setAnalog", [win.axisCatch, "value", win.session.caughtPad])
+            win.controls.run("caught", [win.axisCatch, win.session.caughtPad])
             win.axisCatch = -1
         }
     }
@@ -72,7 +72,8 @@ ApplicationWindow {
                 win.pointerMovedY += 50 * Math.abs(p.y - win.lastPointer.y)
                 const caught = win.pointerMovedX >= 20000 ? "WMouse X" : win.pointerMovedY >= 20000 ? "WMouse Y" : ""
                 if (caught !== "") {
-                    win.controls.run("setAnalog", [win.axisCatch, "value", caught])
+                    // the pointer's axis again: where it is, or how far it moves, as Chimera's toggles them
+                    win.controls.run("caught", [win.axisCatch, caught])
                     win.stopCatching()
                 }
             }

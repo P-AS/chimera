@@ -147,6 +147,12 @@ public:
 	Property<bool> showAverageFps{false}, showRerecords{false}, showMessages{true}, showStatusBar{true};
 	/* Chimera's File > Screenshot > Capture OSD: a screenshot has what is drawn over the picture too */
 	Property<bool> captureOsd{false};
+	/* Chimera's Capture Mouse (remembered) and whether anything is bound to
+	 * the pointer to capture it for: an analog control bound to WMouse X or
+	 * Y (where it is) or RMouse X or Y (how far it moved), as Chimera's
+	 * Controller.IsMouseBound */
+	Property<bool> captureMouse{false};
+	Property<bool> mouseBound{false};
 	Property<std::string> averageFpsText;
 	/* Chimera's Emulator menu ("Game" for a game core) and what it offers
 	 * for the core open: a game core's own timer, shown at the top right 14
@@ -852,6 +858,8 @@ private:
 	std::map<std::string, int> catchMovedM_;
 	/* the pointer over the picture, -10000..10000 each way (WMouse X, WMouse Y) */
 	std::atomic<int> pointerXM_{0}, pointerYM_{0};
+	/* how far the pointer moved since the last frame read it (Chimera's RMouse X and Y) */
+	std::atomic<int> movedXM_{0}, movedYM_{0};
 	Clock::time_point catchDue_{};
 	std::vector<std::string> catchHeldM_;
 	void catchPollOnMachine();

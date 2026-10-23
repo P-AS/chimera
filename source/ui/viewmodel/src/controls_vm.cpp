@@ -224,6 +224,25 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			changed();
 			return {};
 		});
+	command("caught", "the axis an analog control's Bind! caught, as Chimera takes it: the pointer's axis caught again "
+		"where it is already bound goes from where the pointer is (WMouse) to how far it moves (RMouse), and back",
+		{"index", "axis"}, [this](const Args &a, std::string &error) -> Value {
+			size_t i = 0;
+			std::string axis;
+			if (!index(a, 0, Positive, i, error) || !arg(a, 1, axis, error)) return {};
+			begin();
+			AnalogBind &b = analogDraft_[i];
+			for (const char *xy : {"X", "Y"})
+			{
+				const std::string absolute = std::string("WMouse ") + xy, relative = std::string("RMouse ") + xy;
+				if (axis != absolute) continue;
+				if (b.value == absolute) axis = relative;
+				else if (b.value == relative) axis = absolute;
+			}
+			b.value = axis;
+			changed();
+			return axis;
+		});
 	command("flip", "an analog control's sensitivity turned the other way (Flip Axis)", {"index"},
 		[this](const Args &a, std::string &error) -> Value {
 			size_t i = 0;
