@@ -713,6 +713,9 @@ void pathsConfig()
 	CHECK(paths.resolve("Movie backups") == (dir / "program" / "Movies" / "backup").string());
 	CHECK(paths.resolve("ROM") == (dir / "program").string());
 	CHECK(paths.resolve("Nothing").empty());
+	/* Watch and Debug Logs under Tools, as Chimera resolves them */
+	CHECK(paths.resolve("Tools") == (dir / "program" / "Tools").string() && paths.resolve("Watch (.wch)") == (dir / "program" / "Tools").string() &&
+		paths.resolve("Debug Logs") == (dir / "program" / "Tools").string());
 	/* a base of the person's */
 	paths.base.set((dir / "elsewhere").string());
 	CHECK(paths.resolve("Lua") == (dir / "elsewhere" / "Lua").string());

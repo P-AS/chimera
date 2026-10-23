@@ -47,6 +47,8 @@ char sizeLetter(int size);
 int sizeFromLetter(char c); /* 0: a separator, -1: a property or not one */
 char displayLetter(Display display);
 bool displayFromLetter(char c, Display &out);
+/* a count as Chimera writes one with .NET's N0: "1,024" */
+std::string thousands(int64_t n);
 /* the names the window shows, as Chimera writes them ("Hex", "Fixed Point 12.4") */
 const char *displayName(Display display);
 

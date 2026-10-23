@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <fstream>
 
+#include "chimera/vm/watch_values.hpp"
+
 namespace chimera::vm {
 
 TraceLoggerViewModel::TraceLoggerViewModel(Dispatcher &dispatcher, SessionViewModel &session)
@@ -67,7 +69,9 @@ TraceLoggerViewModel::TraceLoggerViewModel(Dispatcher &dispatcher, SessionViewMo
 		trim();
 		rows_.reset.emit();
 		lineCount.set(static_cast<int64_t>(lines_.size()));
+		sayStatus();
 	});
+	openWatch_ = session_.traceHeader.changed.connect([this] { sayStatus(); });
 	sayStatus();
 }
 
@@ -124,9 +128,9 @@ void TraceLoggerViewModel::closeFile()
 
 void TraceLoggerViewModel::sayStatus()
 {
-	std::string s = logging.get() ? "Logging" : "Not logging";
-	s += "; " + std::to_string(lines_.size()) + " lines kept";
-	if (out_ != nullptr) s += "; " + std::to_string(linesToFile.get()) + " lines to " + file.get();
+	/* Chimera's: the core's header, the lines buffered, and those written to the file */
+	std::string s = session_.traceHeader.get() + " - " + watch::thousands(static_cast<int64_t>(lines_.size())) + " lines buffered";
+	if (out_ != nullptr) s += " - " + watch::thousands(linesToFile.get()) + " written to file";
 	status.set(s);
 }
 

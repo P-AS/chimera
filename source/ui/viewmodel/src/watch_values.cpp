@@ -272,6 +272,17 @@ bool displayFromLetter(char c, Display &out)
 	}
 }
 
+std::string thousands(int64_t n)
+{
+	std::string digits = std::to_string(n < 0 ? -n : n), out;
+	for (size_t i = 0; i < digits.size(); i++)
+	{
+		if (i != 0 && (digits.size() - i) % 3 == 0) out += ',';
+		out += digits[i];
+	}
+	return n < 0 ? "-" + out : out;
+}
+
 const char *displayName(Display display)
 {
 	switch (display)

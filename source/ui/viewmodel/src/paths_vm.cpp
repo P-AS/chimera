@@ -20,10 +20,13 @@ const std::vector<std::pair<std::string, std::string>> &PathsViewModel::defaults
 		{"Movie backups", "./Movies/backup"},
 		/* where Encode Video suggests a video goes */
 		{"A/V Dumps", "."},
+		{"Tools", "./Tools"},
 		{"Screenshots", "./Screenshots"},
 		{"Lua", "./Lua"},
 		{"Themes", "./Themes"},
+		/* Watch and Debug Logs are under Tools when relative, as Chimera resolves them */
 		{"Watch (.wch)", "."},
+		{"Debug Logs", "."},
 		{"Bug reports", "./Reports"},
 		{"Macros", "./Movies/Macros"},
 	};
@@ -118,6 +121,14 @@ std::string PathsViewModel::resolve(const std::string &name) const
 	if (path.empty()) return {};
 	const fs::path p(path);
 	if (p.is_absolute()) return p.lexically_normal().string();
+	/* Chimera's ResolveToolsPath: a relative Watch or Debug Logs folder is under Tools ("Tools" alone being Tools) */
+	if (name == "Watch (.wch)" || name == "Debug Logs")
+	{
+		const std::string tools = resolve("Tools");
+		std::string out = path == "Tools" ? tools : (fs::path(tools) / p).lexically_normal().string();
+		while (out.size() > 1 && (out.back() == '/' || out.back() == '\\') && !(out.size() == 3 && out[1] == ':')) out.pop_back();
+		return out;
+	}
 	const fs::path from = !base.get().empty() ? fs::path(base.get()) : fs::path(programFolder.get());
 	std::string out = (from / p).lexically_normal().string();
 	/* "." alone leaves a separator at the end */

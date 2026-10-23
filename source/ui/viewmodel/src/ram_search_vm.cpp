@@ -38,18 +38,6 @@ constexpr const char *kNewLine = "\r\n";
 constexpr const char *kNewLine = "\n";
 #endif
 
-/* "1,024 addresses", as Chimera writes a count */
-std::string thousands(int64_t n)
-{
-	std::string digits = std::to_string(n < 0 ? -n : n), out;
-	for (size_t i = 0; i < digits.size(); i++)
-	{
-		if (i != 0 && (digits.size() - i) % 3 == 0) out += ',';
-		out += digits[i];
-	}
-	return n < 0 ? "-" + out : out;
-}
-
 std::string addresses(int64_t n) { return std::to_string(n) + (n == 1 ? " address" : " addresses"); }
 
 std::string utf8(const std::filesystem::path &p)
@@ -884,7 +872,7 @@ void RamSearchViewModel::reportOnMachine(const std::string &text, bool keepPicks
 		const bool sameRows = n == rows_;
 		rows_ = n;
 		count.set(n);
-		totalText.set(thousands(n) + (n == 1 ? " address" : " addresses"));
+		totalText.set(watch::thousands(n) + (n == 1 ? " address" : " addresses"));
 		canUndo.set(u);
 		canRedo.set(r);
 		outOfRange.set(bad);

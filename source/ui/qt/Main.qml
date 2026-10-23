@@ -1070,7 +1070,10 @@ ApplicationWindow {
     FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; visible: false }
     DataFolderConfig { id: dataFolderWindow; vm: root.dataFolder; visible: false }
     PrecompiledModules { id: precompiledWindow; vm: root.precompiled; visible: false }
-    TraceLogger { id: traceLoggerWindow; vm: root.traceLogger; session: root.session; visible: false }
+    TraceLogger {
+        id: traceLoggerWindow; vm: root.traceLogger; session: root.session; visible: false
+        folderOf: root.folderOf; customize: root.customize; toolWindows: root.toolWindows; mainWindow: root
+    }
     Debugger { id: debuggerWindow; vm: root.debuggerTool; session: root.session; visible: false }
     SurfaceViewer { id: surfaceViewerWindow; vm: root.surfaceViewer; session: root.session; visible: false }
     MacroTool {
