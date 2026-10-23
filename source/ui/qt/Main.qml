@@ -254,6 +254,35 @@ ApplicationWindow {
             Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor..."); onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
             Action { id: luaConsoleAction; property string hotkey: "Lua Console"; text: qsTr("&Lua Console..."); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
         }
+        // Chimera's Emulator menu, Game for a game core: what the core open offers
+        Menu {
+            delegate: keyedMenuItem
+            title: root.session.isGameCore ? qsTr("&Game") : qsTr("E&mulator")
+            enabled: root.session.isOpen && (root.session.hasGameTimer || root.session.hasSaveData || root.session.hasMovieImport)
+            Action {
+                property string hotkey: "Game Time"
+                text: qsTr("Display Game &Time"); enabled: root.session.hasGameTimer
+                checkable: true; checked: root.session.showGameTime; onTriggered: root.session.showGameTime = checked
+            }
+            Action {
+                text: qsTr("Export Save &Data..."); enabled: root.session.hasSaveData
+                onTriggered: {
+                    const names = root.session.run("saveDataFiles")
+                    if (names === undefined) return
+                    if (names === "") { root.note(qsTr("This machine holds no save data yet.")); return }
+                    const list = names.split("\n")
+                    saveDataDialog.files = list.length
+                    // one file under its own name; more in a zip named for the game
+                    saveDataDialog.currentFile = "file:///" + (list.length === 1 ? list[0].replace(/^.*\//, "")
+                                                                                   : root.session.gameName + " (save data).zip")
+                    saveDataDialog.open()
+                }
+            }
+            Action {
+                text: qsTr("&Import Movie..."); enabled: root.session.hasMovieImport
+                onTriggered: { root.newProject.run("chooseCore", [root.session.coreName]); newProjectWindow.show(); newProjectWindow.raise() }
+            }
+        }
         Menu {
             delegate: keyedMenuItem
             // TAStudio's editing, on the frames picked (or the current one), with its keys
@@ -614,6 +643,14 @@ ApplicationWindow {
         onRejected: root.afterSave = null
     }
     FileDialog {
+        id: saveDataDialog
+        property int files: 1
+        title: qsTr("Export Save Data")
+        fileMode: FileDialog.SaveFile
+        nameFilters: files === 1 ? [qsTr("All files (*)")] : [qsTr("Zip Archives (*.zip)")]
+        onAccepted: root.session.run("exportSaveData", [selectedFile])
+    }
+    FileDialog {
         id: saveMacroDialog
         title: qsTr("Save the frames picked as a macro")
         fileMode: FileDialog.SaveFile
@@ -746,6 +783,15 @@ ApplicationWindow {
                 visible: root.session.isOpen && text !== ""
                 text: [root.session.showFps ? root.session.fpsText : "",
                        root.session.showAverageFps ? root.session.averageFpsText : ""].filter(t => t !== "").join("   ")
+                color: root.osdColor("OsdMessage", "#FFFFFF")
+            }
+            // a game's own timer, at the top right 14 down, as Chimera places it
+            OsdText {
+                objectName: "osdGameTime"
+                x: parent.width - width
+                y: 14
+                visible: root.session.isOpen && root.session.showGameTime && text !== ""
+                text: root.session.gameTimeText
                 color: root.osdColor("OsdMessage", "#FFFFFF")
             }
             OsdText {

@@ -321,6 +321,18 @@ ECL_EXPORT uint8_t *GetFramebuffer(void) { return (uint8_t *)synth_get_framebuff
 ECL_EXPORT int16_t *GetAudio(void)       { return (int16_t *)synth_get_audio(g_synth); }
 ECL_EXPORT int      InputWasRead(void)   { die_if_armed(3, "InputWasRead"); return synth_input_was_read(g_synth); }
 
+/* Save data (docs/save-data.md, the savedata group): two files the window's
+ * Export Save Data writes out - the first 16 bytes of RAM as a card's slot,
+ * and a note - so a frontend can take the whole export path. */
+static const char g_saveNote[] = "gridWalker was here\n";
+ECL_EXPORT int32_t GetSaveDataFileCount(void) { return g_synth ? 2 : 0; }
+ECL_EXPORT const char *GetSaveDataFileName(int32_t i) { return i == 0 ? "card/slot1.sav" : i == 1 ? "notes.txt" : 0; }
+ECL_EXPORT int64_t GetSaveDataFileSize(int32_t i) { return i == 0 ? 16 : i == 1 ? (int64_t)(sizeof g_saveNote - 1) : 0; }
+ECL_EXPORT const uint8_t *GetSaveDataFileBuffer(int32_t i)
+{
+	return i == 0 ? synth_get_ram(g_synth) : i == 1 ? (const uint8_t *)g_saveNote : 0;
+}
+
 /* Turbo (optional guest ABI group): the host says nobody will look at the next
  * frames. The synth machine's picture IS its VRAM domain, which the witness
  * hashes, so the DRAWING is machine state and is never skipped; what this core
@@ -518,7 +530,8 @@ ECL_EXPORT const char *GetGameProperties(void)
 		snprintf(g_propsNow + at, sizeof g_propsNow - at, "] }");
 		return g_propsNow;
 	}
-	return "{ \"properties\": ["
+	/* the steps taken stand in for a game's own timer (docs/game-cores.md, "gameTimer") */
+	return "{ \"gameTimer\": \"Steps\", \"properties\": ["
 		"{ \"name\": \"Status\", \"domain\": \"RAM\", \"offset\": 0, \"type\": \"u8\", \"group\": \"Game\","
 		" \"values\": { \"0\": \"Playing\", \"1\": \"Won\", \"2\": \"Lost\" },"
 		" \"description\": \"Every test rom's result byte\" },"

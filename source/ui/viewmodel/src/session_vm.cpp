@@ -20,6 +20,53 @@
 
 namespace chimera::vm {
 
+namespace {
+/* A zip of the files given, each stored as it is (the savedata export's,
+ * for more than one file; a zip any unzipper opens) */
+uint32_t crc32Of(const std::vector<uint8_t> &bytes)
+{
+	static uint32_t table[256];
+	static bool made = false;
+	if (!made)
+	{
+		for (uint32_t i = 0; i < 256; i++)
+		{
+			uint32_t c = i;
+			for (int k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+			table[i] = c;
+		}
+		made = true;
+	}
+	uint32_t c = 0xFFFFFFFFu;
+	for (uint8_t b : bytes) c = table[(c ^ b) & 0xFF] ^ (c >> 8);
+	return c ^ 0xFFFFFFFFu;
+}
+} // namespace
+
+std::vector<uint8_t> storedZip(const std::vector<std::pair<std::string, std::vector<uint8_t>>> &files)
+{
+	std::vector<uint8_t> out, central;
+	auto u16 = [](std::vector<uint8_t> &v, uint32_t x) { v.push_back(x & 0xFF), v.push_back((x >> 8) & 0xFF); };
+	auto u32 = [&](std::vector<uint8_t> &v, uint32_t x) { u16(v, x & 0xFFFF), u16(v, x >> 16); };
+	for (const auto &[name, bytes] : files)
+	{
+		const uint32_t crc = crc32Of(bytes), size = static_cast<uint32_t>(bytes.size()), at = static_cast<uint32_t>(out.size());
+		u32(out, 0x04034b50), u16(out, 20), u16(out, 0x0800), u16(out, 0), u16(out, 0), u16(out, 0x21);
+		u32(out, crc), u32(out, size), u32(out, size), u16(out, static_cast<uint32_t>(name.size())), u16(out, 0);
+		out.insert(out.end(), name.begin(), name.end());
+		out.insert(out.end(), bytes.begin(), bytes.end());
+		u32(central, 0x02014b50), u16(central, 20), u16(central, 20), u16(central, 0x0800), u16(central, 0), u16(central, 0);
+		u16(central, 0x21), u32(central, crc), u32(central, size), u32(central, size), u16(central, static_cast<uint32_t>(name.size()));
+		u16(central, 0), u16(central, 0), u16(central, 0), u16(central, 0), u32(central, 0), u32(central, at);
+		central.insert(central.end(), name.begin(), name.end());
+	}
+	const uint32_t centralAt = static_cast<uint32_t>(out.size()), centralSize = static_cast<uint32_t>(central.size());
+	out.insert(out.end(), central.begin(), central.end());
+	u32(out, 0x06054b50), u16(out, 0), u16(out, 0), u16(out, static_cast<uint32_t>(files.size()));
+	u16(out, static_cast<uint32_t>(files.size())), u32(out, centralSize), u32(out, centralAt), u16(out, 0);
+	return out;
+}
+
 SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	: ViewModel("session", dispatcher), inputs_(inputs)
 {
@@ -114,6 +161,97 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("showRerecords", "the rerecord count is shown over the picture", showRerecords, true);
 	expose("showMessages", "messages are shown over the picture a moment", showMessages, true);
 	expose("showStatusBar", "the status bar is shown", showStatusBar, true);
+	expose("isGameCore", "the core open is a game (its menu is Game, not Emulator)", isGameCore);
+	expose("hasGameTimer", "the game open has a timer of its own", hasGameTimer);
+	expose("hasSaveData", "the core open writes out the user's save data", hasSaveData);
+	expose("hasMovieImport", "the core open imports movies made elsewhere", hasMovieImport);
+	expose("showGameTime", "a game's own timer is shown over the picture", showGameTime, true);
+	expose("gameTimeText", "the game's timer as shown: \"IGT 01:02.345\"", gameTimeText);
+	overlayWatches_.push_back(showGameTime.changed.connect([this] {
+		showGameTimeM_.store(showGameTime.get());
+		submit([this] { report(-1, -1, -1, -1, -1); });
+	}));
+	command("saveDataFiles", "the save files the machine holds now, a line each", {}, [this](const Args &, std::string &error) -> Value {
+		std::string names;
+		bool open = false;
+		onMachineWait([&](ce_session *s) {
+			if (s == nullptr || !ce_session_savedata_available(s)) return;
+			open = true;
+			const int32_t n = ce_session_savedata_count(s);
+			for (int32_t i = 0; i < n; i++)
+				if (const char *name = ce_session_savedata_name(s, i)) names += (names.empty() ? "" : "\n") + std::string(name);
+		});
+		if (!open)
+		{
+			error = "the core open keeps no save data";
+			return {};
+		}
+		return names;
+	}, &hasSaveData);
+	command("exportSaveData", "writes the save data out, as Chimera's Export Save Data: one file as it is, more in a zip; "
+		"says how many files", {"path"}, [this](const Args &a, std::string &error) -> Value {
+			std::string path;
+			if (!arg(a, 0, path, error)) return {};
+			std::string why;
+			int64_t written = -1;
+			onMachineWait([&](ce_session *s) {
+				if (s == nullptr || !ce_session_savedata_available(s))
+				{
+					why = "the core open keeps no save data";
+					return;
+				}
+				const int32_t n = ce_session_savedata_count(s);
+				if (n == 0)
+				{
+					why = "This machine holds no save data yet.";
+					return;
+				}
+				/* each file read in pieces, as the engine streams it */
+				auto contents = [&](int32_t i) {
+					std::vector<uint8_t> bytes(static_cast<size_t>(std::max<int64_t>(0, ce_session_savedata_size(s, i))));
+					int64_t at = 0;
+					while (at < static_cast<int64_t>(bytes.size()))
+					{
+						const int64_t got = ce_session_savedata_read(s, i, at, bytes.data() + at,
+							std::min<int64_t>(1 << 20, static_cast<int64_t>(bytes.size()) - at));
+						if (got <= 0) break;
+						at += got;
+					}
+					bytes.resize(static_cast<size_t>(at));
+					return bytes;
+				};
+				std::ofstream out(path, std::ios::binary);
+				if (n == 1)
+				{
+					const std::vector<uint8_t> one = contents(0);
+					out.write(reinterpret_cast<const char *>(one.data()), static_cast<std::streamsize>(one.size()));
+				}
+				else
+				{
+					std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
+					for (int32_t i = 0; i < n; i++)
+					{
+						const char *name = ce_session_savedata_name(s, i);
+						files.emplace_back(name != nullptr ? name : "file" + std::to_string(i), contents(i));
+					}
+					const std::vector<uint8_t> zip = storedZip(files);
+					out.write(reinterpret_cast<const char *>(zip.data()), static_cast<std::streamsize>(zip.size()));
+				}
+				if (!out)
+				{
+					why = "could not write " + path;
+					return;
+				}
+				written = n;
+			});
+			if (written < 0)
+			{
+				error = why;
+				return {};
+			}
+			status.set("Save data written: " + path);
+			return written;
+		}, &hasSaveData);
 	command("resetAverageFps", "the average speed counted afresh from now", {}, [this](const Args &, std::string &) -> Value {
 		averageResetM_.store(true);
 		averageFpsText.set("");
@@ -2207,6 +2345,10 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	 * ranges as the package declares them (its own input, or a machine's) */
 	std::vector<Axis> axes;
 	std::string controller = "Waterbox Controller";
+	bool gameCore = false, movieImport = false;
+	int64_t ms = 0;
+	gameTimerM_ = ce_session_game_time_ms(s, &ms) == 1;
+	const bool timer = gameTimerM_, saveData = ce_session_savedata_available(s) != 0;
 	{
 		json::Json cfg;
 		std::string jerr;
@@ -2214,6 +2356,11 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		if (read)
 			if (const json::Json *input = cfg.find("input"))
 				if (const json::Json *n = input->find("name"); n != nullptr && !n->text.empty()) controller = n->text;
+		if (read)
+		{
+			if (const json::Json *k = cfg.find("kind")) gameCore = k->text == "game";
+			movieImport = cfg.find("movieImport") != nullptr;
+		}
 		auto declared = [&](const std::string &name) -> const json::Json * {
 			if (!read) return nullptr;
 			auto look = [&](const json::Json *input) -> const json::Json * {
@@ -2267,8 +2414,14 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	const int64_t frames = inputs_.size();
 	/* another game, or the same started again: another average, as Chimera's */
 	averageResetM_.store(true);
-	later([this, names, axes, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames, controller] {
+	later([this, names, axes, mnemonics, keybinds, coreText, systemText, rate, label, inputsReplaced, frames, controller,
+			   gameCore, timer, saveData, movieImport] {
 		controllerName_ = controller;
+		isGameCore.set(gameCore);
+		hasGameTimer.set(timer);
+		hasSaveData.set(saveData);
+		hasMovieImport.set(movieImport);
+		gameTimeText.set("");
 		averageFpsText.set("");
 		buttonNames_ = names;
 		axes_ = axes;
@@ -2589,6 +2742,13 @@ void SessionViewModel::edited(int64_t first)
 void SessionViewModel::report(int64_t cf, int64_t cl, int64_t af, int64_t al, double fpsNow)
 {
 	bool post = false;
+	/* the game's own timer, when shown */
+	int64_t gameMs = -1;
+	if (s_ != nullptr && gameTimerM_ && showGameTimeM_.load())
+	{
+		int64_t ms = 0;
+		if (ce_session_game_time_ms(s_, &ms) == 1) gameMs = ms;
+	}
 	/* the states among the frames shown: a few dozen lookups a report */
 	const int64_t first = watchFirstM_.load(), count = std::min<int64_t>(watchCountM_.load(), 512);
 	std::vector<uint8_t> stated(static_cast<size_t>(std::max<int64_t>(count, 0)), 0);
@@ -2596,6 +2756,7 @@ void SessionViewModel::report(int64_t cf, int64_t cl, int64_t af, int64_t al, do
 		for (int64_t i = 0; i < count; i++) stated[static_cast<size_t>(i)] = ce_session_greenzone_nearest(s_, first + i) == first + i ? 1 : 0;
 	{
 		std::lock_guard<std::mutex> lock(pendingM_);
+		pendingGameMs_ = gameMs;
 		if (pendingStatedFrom_ != first || pendingStated_ != stated)
 		{
 			pendingStatedFrom_ = first;
@@ -2631,6 +2792,7 @@ void SessionViewModel::tick()
 {
 	int64_t f, cf, cl, af, al, green, states, rr;
 	double measured, average;
+	int64_t gameMs;
 	int64_t queued, dropped;
 	bool statedNow = false;
 	{
@@ -2650,11 +2812,18 @@ void SessionViewModel::tick()
 		green = pendingGreenEnd_, states = pendingStates_;
 		rr = pendingRerecords_;
 		average = pendingAverage_;
+		gameMs = pendingGameMs_;
 		pendingFps_ = -1;
 		changedFirst_ = changedLast_ = appendedFirst_ = appendedLast_ = -1;
 	}
 	frame.set(f);
 	if (measured >= 0) fps.set(measured);
+	if (gameMs >= 0)
+	{
+		char text[48];
+		ce_game_time_text(gameMs, text, sizeof text);
+		gameTimeText.set(std::string("IGT ") + text);
+	}
 	if (showAverageFps.get() && average > 0)
 	{
 		char text[48];

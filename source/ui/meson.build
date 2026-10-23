@@ -97,6 +97,15 @@ synth_keys = custom_target(
   build_always_stale: true,
   build_by_default: true,
 )
+# a game core that needs no firmware, for the Game menu
+synth_plain_game = custom_target(
+  'synth-plain-game',
+  output: 'synth-plain-game.chimeraCore',
+  command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Plain Game', '@OUTPUT@', 'game'],
+  build_always_stale: true,
+  build_by_default: true,
+)
 synth_game = custom_target(
   'synth-game',
   output: 'synth-game.chimeraCore',
@@ -110,7 +119,7 @@ test(
   'view models',
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys],
+    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game],
   # OpenAL's device that plays to nowhere: the sound check runs with no speakers
   env: ['ALSOFT_DRIVERS=null'],
   timeout: 180,

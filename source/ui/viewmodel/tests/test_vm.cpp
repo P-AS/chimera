@@ -1129,6 +1129,60 @@ bool tastudioSettings(const char *package, const char *rom)
 	return true;
 }
 
+/* Chimera's Emulator menu (Game for a game core) and what it offers for the
+ * core open: a game's own timer over the picture, the save data written out
+ * (one file as it is, more in a zip), a movie import */
+bool coreMenu(const char *package, const char *rom, const char *slotsPackage, const char *gamePackage)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-coremenu-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	CHECK(session.hasSaveData.get() && session.hasGameTimer.get() && !session.isGameCore.get() && !session.hasMovieImport.get());
+	/* the save files, and written out */
+	std::string names;
+	CHECK(fromValue(session.run("saveDataFiles", {}, error).value_or(Value()), names) && names == "card/slot1.sav\nnotes.txt");
+	const fs::path zip = dir / "save.zip";
+	CHECK(session.run("exportSaveData", {zip.string()}, error) == Value(int64_t{2}));
+	const std::string bytes = readFile(zip);
+	CHECK(bytes.size() > 22 && bytes.compare(0, 4, std::string("PK\x03\x04", 4)) == 0);
+	CHECK(bytes.find("card/slot1.sav") != std::string::npos && bytes.find("gridWalker was here\n") != std::string::npos);
+	/* the end record says two files */
+	CHECK(bytes.size() > 22 && static_cast<uint8_t>(bytes[bytes.size() - 22 + 8]) == 2 && static_cast<uint8_t>(bytes[bytes.size() - 22 + 10]) == 2 &&
+		bytes.compare(bytes.size() - 22, 4, std::string("PK\x05\x06", 4)) == 0);
+	CHECK(session.status.get() == "Save data written: " + zip.string());
+	/* the game's own timer, when shown */
+	CHECK(session.gameTimeText.get().empty());
+	session.showGameTime.set(true);
+	session.key("Down", true);
+	for (int i = 0; i < 20; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 20; }, 20));
+	session.key("Down", false);
+	d.until([] { return false; }, 0.2);
+	std::printf("game time: %s\n", session.gameTimeText.get().c_str());
+	CHECK(std::regex_match(session.gameTimeText.get(), std::regex("IGT \\d\\d:\\d\\d\\.\\d\\d\\d")));
+	session.showGameTime.set(false);
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* a core that imports movies; a game core */
+	session.run("open", {std::string(slotsPackage), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	CHECK(session.hasMovieImport.get() && !session.isGameCore.get());
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	session.run("open", {std::string(gamePackage), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60) && session.isGameCore.get());
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
 /* The piano roll's Columns menu as Chimera's: the console's columns at the
  * top, a group a player, the keyboard keys thirty a group (hidden until
  * shown, as Chimera's piano roll has them); a group shown or hidden at once */
@@ -3974,6 +4028,8 @@ int main(int argc, char **argv)
 			else std::printf("SKIP custom firmware: no packages with a hashed firmware given\n");
 			if (argc >= 10) ranMachine = columnsMenu(argv[9], argv[2]) && ranMachine;
 			else std::printf("SKIP the Columns menu: no package with players and keys given\n");
+			if (argc >= 11) ranMachine = coreMenu(argv[1], argv[2], argv[6], argv[10]) && ranMachine;
+			else std::printf("SKIP the Emulator menu: no packages that import movies and are games given\n");
 		}
 		else
 			std::printf("SKIP the machine tests: %s or %s is missing\n", argv[1], argv[2]);

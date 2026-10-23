@@ -305,6 +305,9 @@ int main(int argc, char **argv)
 		hotkeys.add("General", "Lag Counter", "", [&session, flip](bool down) {
 			if (down) flip(session.showLagCounter);
 		});
+		hotkeys.add("General", "Game Time", "", [&session, flip](bool down) {
+			if (down && session.hasGameTimer.get()) flip(session.showGameTime);
+		});
 		hotkeys.add("General", "Input Display", "", [&session, flip](bool down) {
 			if (down) flip(session.showInput);
 		});
@@ -563,6 +566,7 @@ int main(int argc, char **argv)
 	config.keep(session, "showRerecords");
 	config.keep(session, "showMessages");
 	config.keep(session, "showStatusBar");
+	config.keep(session, "showGameTime");
 	config.keep(session, "autofireOn");
 	config.keep(session, "autofireOff");
 	config.keep(session, "autofireSkipsLag");

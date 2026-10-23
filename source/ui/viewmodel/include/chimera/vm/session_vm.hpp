@@ -27,6 +27,9 @@ struct ce_average_fps;
 
 namespace chimera::vm {
 
+/* the files given in a zip, each stored as it is */
+std::vector<uint8_t> storedZip(const std::vector<std::pair<std::string, std::vector<uint8_t>>> &files);
+
 /* A named frame of the movie: a place to come back to. keepState asks the
  * greenzone to keep that frame's state whatever it thins. */
 struct Marker
@@ -81,6 +84,13 @@ public:
 	 * (the window shows each status a moment), and the status bar */
 	Property<bool> showAverageFps{false}, showRerecords{false}, showMessages{true}, showStatusBar{true};
 	Property<std::string> averageFpsText;
+	/* Chimera's Emulator menu ("Game" for a game core) and what it offers
+	 * for the core open: a game core's own timer, shown at the top right 14
+	 * down ("IGT 01:02.345"); the user's save data, written out; a movie
+	 * made elsewhere, imported */
+	Property<bool> isGameCore{false}, hasGameTimer{false}, hasSaveData{false}, hasMovieImport{false};
+	Property<bool> showGameTime{false};
+	Property<std::string> gameTimeText;
 	/* the input of a frame as the input display writes it */
 	std::string inputDisplay(int64_t frame) const;
 	/* Chimera's autohold and autofire: while one is armed (its hotkey held),
@@ -595,6 +605,10 @@ private:
 	void passOnMachine(int64_t frames, bool stepping, bool goingBack);
 	double pendingAverage_ = 0;
 	std::atomic<bool> averageResetM_{false};
+	/* the game's timer, read with each report when shown */
+	std::atomic<bool> showGameTimeM_{false};
+	bool gameTimerM_ = false;
+	int64_t pendingGameMs_ = -1;
 	int64_t pendingQueued_ = 0, pendingDropped_ = 0;
 	int64_t pendingGreenEnd_ = 0, pendingStates_ = 0, pendingRerecords_ = 0;
 	int64_t changedFirst_ = -1, changedLast_ = -1;
