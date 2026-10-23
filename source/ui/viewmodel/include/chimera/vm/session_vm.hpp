@@ -234,6 +234,10 @@ public:
 	void onMachine(MachineJob job);
 	/* the same, and waits for it */
 	void onMachineWait(MachineJob job);
+	/* the open project, on the machine's thread (nullptr for none), waited
+	 * for: what is changed in it is saved with it */
+	using ProjectJob = std::function<void(ce_project *)>;
+	void onProjectWait(ProjectJob job);
 	/* What made the project last opened, kept after it closes, for New
 	 * Project to open on as Chimera's does (closing a project is most often
 	 * the step before changing one setting and going again): its core and

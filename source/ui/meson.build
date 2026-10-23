@@ -26,6 +26,7 @@ vm_lib = static_library(
     'viewmodel/src/firmware.cpp',
     'viewmodel/src/suggestion.cpp',
     'viewmodel/src/european_clock.cpp',
+    'viewmodel/src/project_details_vm.cpp',
     'viewmodel/src/cores_vm.cpp',
     'viewmodel/src/branch_state.cpp',
     'viewmodel/src/watch_values.cpp',

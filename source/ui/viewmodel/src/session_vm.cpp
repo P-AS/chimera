@@ -1145,6 +1145,17 @@ void SessionViewModel::onMachineWait(MachineJob job)
 	ran.wait();
 }
 
+void SessionViewModel::onProjectWait(ProjectJob job)
+{
+	auto done = std::make_shared<std::promise<void>>();
+	std::future<void> ran = done->get_future();
+	submit([this, job = std::move(job), done] {
+		job(projectM_);
+		done->set_value();
+	});
+	ran.wait();
+}
+
 int SessionViewModel::addMachineHooks(MachineJob frame, MachineJob closing)
 {
 	const int id = nextHook_++;

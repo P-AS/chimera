@@ -19,6 +19,7 @@ ApplicationWindow {
     required property QtObject hotkeys
     required property QtObject keyNamer
     required property QtObject hotkeyRelay
+    required property QtObject projectDetails
     required property QtObject themes
     required property QtObject themeColors
     required property QtObject settings
@@ -169,6 +170,7 @@ ApplicationWindow {
             Action { property string hotkey: "Frame Counter"; text: qsTr("Display Frame &Counter"); checkable: true; checked: root.session.showFrameCounter; onTriggered: root.session.showFrameCounter = checked }
             Action { property string hotkey: "Lag Counter"; text: qsTr("Display &Lag Counter"); checkable: true; checked: root.session.showLagCounter; onTriggered: root.session.showLagCounter = checked }
             Action { property string hotkey: "Input Display"; text: qsTr("Display &Input"); checkable: true; checked: root.session.showInput; onTriggered: root.session.showInput = checked }
+            Action { text: qsTr("Display &Subtitles"); checkable: true; checked: root.projectDetails.showSubtitles; onTriggered: root.projectDetails.showSubtitles = checked }
         }
         Menu {
             delegate: keyedMenuItem
@@ -261,6 +263,8 @@ ApplicationWindow {
             Action { id: redoAction; property string hotkey: "Redo"; text: qsTr("&Redo"); enabled: root.pianoRoll.redoEnabled; onTriggered: root.pianoRoll.run("redo") }
             MenuSeparator {}
             Action { text: qsTr("&Branches..."); onTriggered: { branchesWindow.show(); branchesWindow.raise() } }
+            // Chimera's TAStudio Metadata menu: the header, the comments, the subtitles
+            Action { text: qsTr("Project &Details..."); enabled: root.session.hasProject; onTriggered: { projectDetailsWindow.show(); projectDetailsWindow.raise() } }
             Action { text: qsTr("Add &Marker Here..."); enabled: root.session.isOpen; onTriggered: markerDialog.open() }
             Action { property string hotkey: "Delete Marker"; text: qsTr("Remove Marker Here"); enabled: root.session.isOpen; onTriggered: root.pianoRoll.run("removeMarker", [root.pianoRoll.currentFrame]) }
             Action {
@@ -355,6 +359,7 @@ ApplicationWindow {
     RamSearch { id: ramSearchWindow; search: root.ramSearch; visible: false }
     RamWatch { id: ramWatchWindow; vm: root.ramWatch; visible: false }
     NewProject { id: newProjectWindow; vm: root.newProject; visible: false }
+    ProjectDetails { id: projectDetailsWindow; vm: root.projectDetails; visible: false }
     // a file dropped on the window starts a project from it, as in Chimera:
     // a file on its own is not what runs, a project is
     DropArea {
@@ -504,6 +509,17 @@ ApplicationWindow {
                 visible: root.session.isOpen && root.session.showLagCounter
                 text: root.session.lagCount
                 color: root.osdColor("OsdAlert", "#FF0000")
+            }
+            // the project's subtitles on this frame, where and in the colour each says
+            Repeater {
+                model: root.session.isOpen ? JSON.parse(root.projectDetails.onScreen) : []
+                delegate: OsdText {
+                    required property var modelData
+                    x: modelData.x
+                    y: modelData.y
+                    text: modelData.text
+                    color: modelData.color
+                }
             }
             // RAM Watch's on-screen watches, where Chimera puts them: from
             // the top left, 70 down, a line every 14

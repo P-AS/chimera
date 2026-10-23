@@ -42,6 +42,7 @@
 #include <vector>
 
 #include "chimera/vm/branches_vm.hpp"
+#include "chimera/vm/project_details_vm.hpp"
 #include "chimera/vm/config_store.hpp"
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
@@ -209,6 +210,7 @@ int main(int argc, char **argv)
 	vm::RamWatchViewModel ramWatch(dispatcher, session);
 	vm::HexEditorViewModel hexEditor(dispatcher, session);
 	vm::BranchesViewModel branches(dispatcher, inputs, session, pianoRoll);
+	vm::ProjectDetailsViewModel projectDetails(dispatcher, session);
 	vm::ControlsViewModel controls(dispatcher, session);
 	vm::ThemesViewModel themes(dispatcher);
 	vm::Connection themesWatch;
@@ -541,6 +543,8 @@ int main(int argc, char **argv)
 	config.keep(session, "showFrameCounter");
 	config.keep(session, "showLagCounter");
 	config.keep(session, "showInput");
+	config.keep(projectDetails, "defaultAuthor");
+	config.keep(projectDetails, "showSubtitles");
 	config.keep(session, "greenzoneEvery");
 	config.keep(ramWatch, "showOnScreen");
 	config.keep(controls, "saved");
@@ -579,6 +583,7 @@ int main(int argc, char **argv)
 	qt::ThemeColors themeColors;
 	qt::QmlViewModel settingsQml(settings);
 	qt::QmlViewModel branchesQml(branches);
+	qt::QmlViewModel projectDetailsQml(projectDetails);
 	qt::QmlViewModel coresQml(cores);
 
 	/* scripts reach the same view models, by the same names */
@@ -601,6 +606,7 @@ int main(int argc, char **argv)
 	lua.add(settings);
 	lua.add(luaConsole);
 	lua.add(branches);
+	lua.add(projectDetails);
 	lua.add(cores);
 	if (args.isSet(describeOpt))
 	{
@@ -628,6 +634,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("hotkeys"), QVariant::fromValue<QObject *>(&hotkeysQml)},
 		{QStringLiteral("keyNamer"), QVariant::fromValue<QObject *>(&keyNamer)},
 		{QStringLiteral("hotkeyRelay"), QVariant::fromValue<QObject *>(&relay)},
+		{QStringLiteral("projectDetails"), QVariant::fromValue<QObject *>(&projectDetailsQml)},
 		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("luaConsole"), QVariant::fromValue<QObject *>(&luaConsoleQml)},
 		{QStringLiteral("branches"), QVariant::fromValue<QObject *>(&branchesQml)},

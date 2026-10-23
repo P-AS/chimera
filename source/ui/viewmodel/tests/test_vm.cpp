@@ -33,6 +33,7 @@
 #include "chimera/vm/firmware.hpp"
 #include "chimera/vm/hex_editor_vm.hpp"
 #include "chimera/vm/branches_vm.hpp"
+#include "chimera/vm/project_details_vm.hpp"
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/lua_bridge.hpp"
 #include "chimera/vm/lua_console_vm.hpp"
@@ -589,6 +590,85 @@ bool overlay(const char *package, const char *rom)
 	CHECK(session.lagCount.get() == (inputs.lagAt(0) ? 1 : 0));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	return true;
+}
+
+std::string readFile(const std::filesystem::path &p);
+
+/* The project's details as Chimera's TAStudio edits them - its header,
+ * comments and subtitles - kept with the project, and the subtitles of the
+ * frame on screen worked out */
+bool projectDetails(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-details-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	const fs::path project = dir / "walker.chimeraProject";
+	{
+		ManualDispatcher d;
+		InputLog inputs;
+		SessionViewModel session(d, inputs);
+		ProjectDetailsViewModel details(d, session);
+		std::string error;
+		CHECK(!details.run("setComments", {std::string("none")}, error) && error == "no project is open");
+		session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+		CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+		CHECK(session.run("saveAsProject", {project.string(), std::string("the corridor")}, error).has_value());
+		CHECK(d.until([&] { return session.projectPath.get() == project.string(); }, 20));
+		CHECK(details.run("reload", {}, error).has_value() && details.gameName.get() == "the corridor" && details.core.get() == "Synth");
+		CHECK(details.run("setHeader", {std::string("a TASer"), std::string("1.0"), std::string("SYNTH-01"), std::string("Walker"), false}, error).has_value());
+		CHECK(details.author.get() == "a TASer" && details.gameName.get() == "Walker" && details.defaultAuthor.get() == "default user");
+		CHECK(details.run("setComments", {std::string("first\n\n  \nsecond\r\n")}, error).has_value() && details.comments.get() == "first\nsecond");
+		CHECK(details.run("addSubtitle", {int64_t{30}, int64_t{4}, int64_t{8}, int64_t{60}, std::string("#FF0000"), std::string("later")}, error).has_value());
+		CHECK(details.run("addSubtitle", {int64_t{0}, int64_t{1}, int64_t{2}, int64_t{10}, std::string("#80FFFFFF"), std::string("at once")}, error).has_value());
+		CHECK(!details.run("addSubtitle", {int64_t{0}, int64_t{1}, int64_t{2}, int64_t{0}, std::string("#FFFFFF"), std::string("never")}, error));
+		CHECK(!details.run("addSubtitle", {int64_t{0}, int64_t{1}, int64_t{2}, int64_t{5}, std::string("red"), std::string("x")}, error) &&
+			error == "red is not a colour: #RRGGBB or #AARRGGBB");
+		/* kept by frame */
+		RowModel &subs = *details.rowLists()[0].model;
+		auto cellText = [&](int64_t r, int32_t c) {
+			std::string t;
+			const Value v = subs.cell(r, c);
+			if (!fromValue(v, t))
+			{
+				int64_t n = 0;
+				fromValue(v, n);
+				t = std::to_string(n);
+			}
+			return t;
+		};
+		CHECK(details.count.get() == 2 && cellText(0, 5) == "at once" && cellText(1, 5) == "later" && cellText(0, 4) == "#80FFFFFF" && cellText(1, 4) == "#FFFF0000");
+		/* on screen at frame 0: the first, in its colour (shown opaque) */
+		CHECK(details.onScreen.get() == "[{\"text\": \"at once\", \"x\": 1, \"y\": 2, \"color\": \"#FFFFFFFF\"}]");
+		CHECK(details.run("editSubtitle", {int64_t{1}, int64_t{0}, int64_t{4}, int64_t{8}, int64_t{60}, std::string("#00FF00"), std::string("now too")}, error).has_value());
+		CHECK(details.onScreen.get().find("now too") != std::string::npos);
+		details.showSubtitles.set(false);
+		CHECK(details.onScreen.get() == "[]");
+		details.showSubtitles.set(true);
+		CHECK(details.run("removeSubtitle", {int64_t{0}}, error).has_value() && details.count.get() == 1);
+		CHECK(session.run("saveProject", {}, error).has_value());
+		CHECK(d.until([&] { return session.status.get().rfind("Saved", 0) == 0; }, 20));
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	}
+	const std::string text = readFile(project);
+	CHECK(text.find("a TASer") != std::string::npos && text.find("SYNTH-01") != std::string::npos && text.find("second") != std::string::npos);
+	{
+		ManualDispatcher d;
+		InputLog inputs;
+		SessionViewModel session(d, inputs);
+		ProjectDetailsViewModel details(d, session);
+		std::string error;
+		session.run("openProject", {project.string(), std::string(package)}, error);
+		CHECK(d.until([&] { return session.isOpen.get() && details.core.get() == "Synth"; }, 60));
+		CHECK(details.author.get() == "a TASer" && details.emulatorVersion.get() == "1.0" && details.boardName.get() == "SYNTH-01");
+		CHECK(details.gameName.get() == "Walker" && details.comments.get() == "first\nsecond" && details.count.get() == 1);
+		CHECK(details.subtitles()[0].message == "now too" && details.subtitles()[0].color == 0xFF00FF00u && details.subtitles()[0].frame == 0);
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	}
+	fs::remove_all(dir);
 	return true;
 }
 
@@ -2298,6 +2378,7 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	session.setFinders([&installed](const std::string &n, const std::string &h, std::string &note) { return installed.packageFor(n, h, note); },
 		[&installed] { return installed.firmwareFolders(); });
 	NewProjectViewModel wizard(d, session, installed);
+	ProjectDetailsViewModel details(d, session);
 	auto cell = [&](const char *rowsName, int64_t row, int32_t column) {
 		for (const auto &r : wizard.rowLists())
 			if (r.name == rowsName) return r.model->cell(row, column);
@@ -2529,6 +2610,8 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 60));
 	CHECK(session.projectPath.get().empty() && session.coreName.get() == "Synth Slots");
 	CHECK(wizard.status.get() == "Made a new project: it is written when it is first saved");
+	/* a new project starts with the default author, as Chimera's do */
+	CHECK(d.until([&] { return details.author.get() == "default user"; }, 20));
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
 	CHECK(!session.run("saveProject", {}, error) && error == "this project has not been saved yet: say where it goes");
@@ -2906,6 +2989,7 @@ int main(int argc, char **argv)
 			ranMachine = greenzoneChoice(argv[1], argv[2]) && ranMachine;
 			ranMachine = speedAndSound(argv[1], argv[2]) && ranMachine;
 			ranMachine = overlay(argv[1], argv[2]) && ranMachine;
+			ranMachine = projectDetails(argv[1], argv[2]) && ranMachine;
 			if (argc >= 5) ranMachine = project(argv[1], argv[2], argv[3], argv[4]) && ranMachine;
 			else std::printf("SKIP the project tests: no movies and goldens folders given\n");
 			if (argc >= 6) ranMachine = openByKind(argv[1], argv[2], argv[5]) && ranMachine;
