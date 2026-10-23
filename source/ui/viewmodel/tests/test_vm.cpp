@@ -18,6 +18,7 @@
 #include <cstring>
 #include <deque>
 #include <functional>
+#include <map>
 #include <utility>
 #include <mutex>
 #include <regex>
@@ -44,6 +45,10 @@
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/help_vm.hpp"
 #include "chimera/vm/batch_run_vm.hpp"
+
+/* the engine's miniz, to read a report's zip back */
+#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+#include "../../../../extern/miniz/miniz.h"
 #include "chimera/vm/media_maker_vm.hpp"
 #include "chimera/vm/cache_manager_vm.hpp"
 #include "chimera/vm/lua_bridge.hpp"
@@ -3065,6 +3070,9 @@ bool helpMenu(const char *package, const char *rom)
 		text.find("**OS and GPU:** <!-- type your operating system here -->") != std::string::npos);
 	CHECK(text.find("**CPU and memory:** ") != std::string::npos && text.find(" threads)") != std::string::npos &&
 		text.find(" GB of memory") != std::string::npos);
+	/* nothing to attach: said, as Chimera's window says it */
+	if (help.reportFiles.get().empty())
+		CHECK(help.status.get() == "No saved project, crash note or log was found. The zip will hold the text.");
 	/* a project open: its core, its game, its settings off their defaults */
 	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
 	CHECK(d.until([&] { return session.isOpen.get() && settings.shown.get() > 0; }, 60));
@@ -3089,11 +3097,57 @@ bool helpMenu(const char *package, const char *rom)
 		out << "\x89PNG not really";
 	}
 	const fs::path zip = dir / "report.zip";
+	/* the entries of a zip, and one's text */
+	auto entries = [](const fs::path &path) {
+		std::map<std::string, std::string> out;
+		mz_zip_archive z{};
+		if (!mz_zip_reader_init_file(&z, path.string().c_str(), 0)) return out;
+		for (mz_uint i = 0; i < mz_zip_reader_get_num_files(&z); i++)
+		{
+			char name[512];
+			mz_zip_reader_get_filename(&z, i, name, sizeof name);
+			size_t size = 0;
+			void *data = mz_zip_reader_extract_to_heap(&z, i, &size, 0);
+			out[name] = data != nullptr ? std::string(static_cast<const char *>(data), size) : std::string();
+			mz_free(data);
+		}
+		mz_zip_reader_end(&z);
+		return out;
+	};
 	CHECK(help.run("saveReport", {zip.string(), picture.string()}, error).has_value());
-	const std::string bytes = readFile(zip);
-	CHECK(bytes.find("report.md") != std::string::npos && bytes.find("game.png") != std::string::npos &&
-		bytes.find("walker.chimeraProject") != std::string::npos && bytes.find("**Game:** rom: walker.testrom") != std::string::npos);
-	CHECK(help.status.get() == "Saved " + zip.string());
+	{
+		const auto in = entries(zip);
+		CHECK(in.count("report.md") == 1 && in.at("report.md") == text + "\n" && in.count("game.png") == 1 && in.at("game.png") == "\x89PNG not really");
+		CHECK(in.count("walker.chimeraProject") == 1 && in.at("walker.chimeraProject") == readFile(project));
+	}
+	/* as Chimera says it: the name and the size */
+	CHECK(std::regex_match(help.status.get(), std::regex(R"(Saved report\.zip \([0-9]+\.[0-9] MB\)\.)")));
+	/* the text and the files deflated, as Chimera's; the picture stored */
+	{
+		mz_zip_archive z{};
+		CHECK(mz_zip_reader_init_file(&z, zip.string().c_str(), 0));
+		auto method = [&](const char *name) {
+			const int i = mz_zip_reader_locate_file(&z, name, nullptr, 0);
+			mz_zip_archive_file_stat st{};
+			return i >= 0 && mz_zip_reader_file_stat(&z, static_cast<mz_uint>(i), &st) ? static_cast<int>(st.m_method) : -1;
+		};
+		CHECK(method("report.md") == MZ_DEFLATED && method("walker.chimeraProject") == MZ_DEFLATED && method("game.png") == 0);
+		mz_zip_reader_end(&z);
+	}
+	/* only the files ticked; one that cannot be read said by name */
+	{
+		const fs::path some = dir / "some.zip";
+		const std::string list = help.reportFiles.get();
+		help.reportFiles.set(list + "\n" + (dir / "gone.dmp").string());
+		CHECK(help.run("saveReport", {some.string(), std::string(), (dir / "gone.dmp").string()}, error).has_value());
+		const auto in = entries(some);
+		CHECK(in.size() == 1 && in.count("report.md") == 1);
+		CHECK(help.status.get().find(" Could not read: gone.dmp.") != std::string::npos);
+		help.reportFiles.set(list);
+		/* a zip that cannot be written: said, and nothing left behind */
+		CHECK(!help.run("saveReport", {(dir / "no such folder" / "x.zip").string(), std::string()}, error) &&
+			help.status.get().rfind("The zip was not saved: ", 0) == 0 && error == help.status.get());
+	}
 	/* Export Core Log: kept from a restart on, listed with a report's files, off with the file kept */
 	{
 		const fs::path log = dir / "core.log";

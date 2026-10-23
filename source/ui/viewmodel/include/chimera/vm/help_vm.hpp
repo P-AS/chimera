@@ -30,6 +30,8 @@ public:
 	/* the report made last: its text, and the files to attach, a line each */
 	Property<std::string> reportText, reportFiles;
 	Property<std::string> status;
+	/* where the program is: the sandbox's log is looked for there first */
+	Property<std::string> exeFolder;
 
 	/* the core open and its version, as the Cores window words it ("" for none) */
 	std::string coreAndVersion() const;

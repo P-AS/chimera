@@ -1,7 +1,10 @@
-// Chimera's Report an Issue: layout and bindings only, over the help view
-// model. The report's first lines are filled in from this session; the
-// person copies them into the form in their browser, and saves the files
-// worth attaching in one zip. Nothing is sent from here.
+// Chimera's Report an Issue (Help), laid out as its form, a dialog of the
+// main window: 1. the report form's address with Open in Browser and Copy
+// Link; 2. the report's first lines, filled in from this session, with
+// Copy Text; 3. the files worth attaching, each with a box ticked (the game
+// as it is now first, while a game runs), Save as Zip... and what it last
+// said, and Close (Enter or Escape). Nothing is sent from here. Layout and
+// bindings only, over the help view model.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -13,57 +16,118 @@ ApplicationWindow {
     required property QtObject vm
     required property QtObject clipboard
     required property QtObject pictureFiles
+    // the main window's Paths folders
+    property var folderOf: null
+    property bool gameRunning: false
+    property Window mainWindow: null
     title: qsTr("Report an Issue")
-    width: 640
+    width: 680
     height: 560
-    onVisibleChanged: if (visible) win.vm.run("makeReport")
+    minimumWidth: 520
+    minimumHeight: 460
+    modality: Qt.ApplicationModal
+    transientParent: win.mainWindow
+    flags: Qt.Dialog | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint
+
+    readonly property string pictureRow: qsTr("A picture of the game as it is now (game.png)")
+    // the game as it was when the window opened, "" for none
+    property string picturePath: ""
+    // the rows not ticked, by their text
+    property var unticked: ({})
+    readonly property var rows: (win.picturePath !== "" ? [win.pictureRow] : []).concat(win.vm.reportFiles.split("\n").filter(s => s !== ""))
+    onVisibleChanged: if (visible) {
+        win.unticked = {}
+        win.picturePath = win.gameRunning ? win.pictureFiles.savePng(win.pictureFiles.temporaryFile("chimera-report-game.png")) : ""
+        win.vm.run("makeReport")
+    }
+    function saveZip(url) {
+        const files = win.rows.filter(r => r !== win.pictureRow && !win.unticked[r])
+        const picture = win.picturePath !== "" && !win.unticked[win.pictureRow] ? win.picturePath : ""
+        win.vm.run("saveReport", [url, picture, files.join("\n")])
+    }
+    // the name Chimera suggests: chimera-report-yyyy-MM-dd-HHmm.zip
+    function zipName() { return "chimera-report-" + Qt.formatDateTime(new Date(), "yyyy-MM-dd-HHmm") + ".zip" }
+
+    Shortcut { sequences: ["Escape", "Return", "Enter"]; onActivated: win.close() }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 8
-        Label {
-            text: qsTr("Copy this into the issue form, then say what happened, what you expected, and how to make it happen again.")
-            wrapMode: Text.WordWrap
+        anchors.margins: 10
+        spacing: 4
+        Label { text: qsTr("1. Open the report form. It asks you to sign in to GitHub."); Layout.fillWidth: true; elide: Text.ElideRight }
+        RowLayout {
             Layout.fillWidth: true
+            spacing: 10
+            TextField { text: win.vm.formUrl; readOnly: true; activeFocusOnTab: false; Layout.fillWidth: true }
+            Button { text: qsTr("Open in Browser"); Layout.preferredWidth: 120; onClicked: Qt.openUrlExternally(win.vm.formUrl) }
+            Button {
+                text: qsTr("Copy Link")
+                Layout.preferredWidth: 120
+                onClicked: { win.clipboard.setText(win.vm.formUrl); win.vm.status = qsTr("The link is on the clipboard.") }
+            }
+        }
+        Label {
+            text: qsTr("2. Choose \"Bug report\" there and paste this over the first lines of the form.")
+            Layout.fillWidth: true
+            Layout.topMargin: 10
+            elide: Text.ElideRight
         }
         ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            TextArea { text: win.vm.reportText; readOnly: true; wrapMode: TextEdit.Wrap; font.family: "monospace" }
+            TextArea { objectName: "reportText"; text: win.vm.reportText; readOnly: true; activeFocusOnTab: false; wrapMode: TextEdit.Wrap }
         }
-        RowLayout {
-            Button { text: qsTr("&Copy the Text"); onClicked: { win.clipboard.setText(win.vm.reportText); win.vm.status = "" } }
-            Button { text: qsTr("&Open the Form in the Browser"); onClicked: Qt.openUrlExternally(win.vm.formUrl) }
+        Button {
+            text: qsTr("Copy Text")
+            Layout.preferredWidth: 120
+            Layout.topMargin: 2
+            onClicked: { win.clipboard.setText(win.vm.reportText); win.vm.status = qsTr("The text is on the clipboard.") }
         }
-        Label { text: qsTr("Files worth attaching:"); visible: win.vm.reportFiles !== "" }
         Label {
-            text: win.vm.reportFiles
-            visible: text !== ""
-            font.family: "monospace"
-            elide: Text.ElideMiddle
+            text: qsTr("3. Tick what belongs to the problem. Save it as one zip and attach that, or attach the files one by one.")
             Layout.fillWidth: true
+            Layout.topMargin: 4
+            elide: Text.ElideRight
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 100
+            color: palette.base
+            border.color: palette.mid
+            ListView {
+                id: files
+                objectName: "reportFiles"
+                anchors.fill: parent
+                anchors.margins: 1
+                clip: true
+                model: win.rows
+                ScrollBar.vertical: ScrollBar {}
+                delegate: CheckBox {
+                    required property string modelData
+                    text: modelData
+                    width: ListView.view.width
+                    padding: 1
+                    checked: !win.unticked[modelData]
+                    onClicked: { const now = Object.assign({}, win.unticked); if (checked) delete now[modelData]; else now[modelData] = true; win.unticked = now }
+                }
+            }
         }
         RowLayout {
-            Button {
-                text: qsTr("&Save Everything as a Zip...")
-                onClicked: { zipDialog.selectedFile = "file:///report.zip"; zipDialog.open() }
-            }
-            Label { text: win.vm.error !== "" ? win.vm.error : win.vm.status; Layout.fillWidth: true; elide: Text.ElideRight }
-            Button { text: qsTr("Close"); onClicked: win.close() }
+            Layout.fillWidth: true
+            Layout.topMargin: 6
+            spacing: 10
+            Button { text: qsTr("Save as Zip..."); Layout.preferredWidth: 120; onClicked: { zipDialog.selectedFile = zipDialog.currentFolder + "/" + win.zipName(); zipDialog.open() } }
+            Label { objectName: "reportStatus"; text: win.vm.status; Layout.fillWidth: true; elide: Text.ElideRight }
+            Button { text: qsTr("Close"); Layout.preferredWidth: 90; onClicked: win.close() }
         }
     }
-    // the main window's Paths folders
-    property var folderOf: null
     FileDialog {
         id: zipDialog
-        title: qsTr("Save the report and its files")
+        title: qsTr("Save the report's files as one zip")
         currentFolder: win.folderOf ? win.folderOf("Bug reports") : ""
         fileMode: FileDialog.SaveFile
-        nameFilters: [qsTr("Zip Archives (*.zip)")]
-        onAccepted: {
-            // the game as it is now goes in too
-            const picture = win.pictureFiles.savePng(win.pictureFiles.temporaryFile("chimera-report-game.png"))
-            win.vm.run("saveReport", [selectedFile, picture])
-        }
+        defaultSuffix: "zip"
+        nameFilters: [qsTr("Zip archive (*.zip)")]
+        onAccepted: win.saveZip(selectedFile)
     }
 }

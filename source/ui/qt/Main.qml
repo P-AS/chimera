@@ -1312,7 +1312,7 @@ ApplicationWindow {
         target: root.session
         function onRecoveredCopyChanged() { if (root.session.recoveredCopy !== "") recoveryDialog.open() }
     }
-    ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; folderOf: root.folderOf; visible: false }
+    ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; folderOf: root.folderOf; gameRunning: root.session.isOpen; mainWindow: root; visible: false }
     PathsConfig { id: pathsWindow; vm: root.paths; session: root.session; mainWindow: root; visible: false }
     FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; themeColor: root.osdColor; visible: false }
     DataFolderConfig { id: dataFolderWindow; vm: root.dataFolder; themeColor: root.osdColor; mainWindow: root; visible: false }

@@ -7,6 +7,16 @@
 #               the picture and the piano roll.
 
 vm_inc = include_directories('viewmodel/include')
+# the engine's miniz, a copy of the view models' own: a bug report's zip is
+# deflated, as Chimera's is. Hidden, so the copy never stands in for the
+# engine's own in a program that has both.
+vm_miniz = static_library(
+  'vm_miniz',
+  '../../extern/miniz/miniz.c',
+  c_args: ['-DMINIZ_NO_ZLIB_COMPATIBLE_NAMES'],
+  gnu_symbol_visibility: 'hidden',
+  pic: true,
+)
 vm_lib = static_library(
   'chimera-vm',
   [
@@ -73,7 +83,7 @@ vm_lib = static_library(
   pic: true,
 )
 vm_dep = declare_dependency(
-  link_with: [vm_lib, chimera_shared, lua54, e_sqlite3_lib],
+  link_with: [vm_lib, vm_miniz, chimera_shared, lua54, e_sqlite3_lib],
   include_directories: [vm_inc, engine_inc],
   dependencies: [thread_dep],
 )

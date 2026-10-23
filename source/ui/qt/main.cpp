@@ -591,6 +591,7 @@ int main(int argc, char **argv)
 	vm::HelpViewModel help(dispatcher, session, settings);
 	/* the system, for a bug report: as Qt names it */
 	help.osName.set((QSysInfo::prettyProductName() + QStringLiteral(" (") + QSysInfo::currentCpuArchitecture() + QStringLiteral(")")).toStdString());
+	help.exeFolder.set(QCoreApplication::applicationDirPath().toStdString());
 	/* the cores and the firmware: beside the program, as Chimera keeps them,
 	 * unless the environment names others */
 	vm::CoresViewModel cores(dispatcher);

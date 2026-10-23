@@ -1,6 +1,7 @@
 #include "chimera/vm/help_vm.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -11,6 +12,11 @@
 #include "chimera/vm/european_clock.hpp"
 #include "chimera/vm/json.hpp"
 
+/* a copy of the engine's miniz, kept to this library: a report's zip is
+ * deflated, as Chimera's is */
+#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+#include "../../../../extern/miniz/miniz.h"
+
 namespace chimera::vm {
 
 namespace {
@@ -18,6 +24,26 @@ std::string readAll(const std::filesystem::path &path)
 {
 	std::ifstream in(path, std::ios::binary);
 	return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+std::vector<std::string> linesOf(const std::string &text)
+{
+	std::vector<std::string> out;
+	size_t at = 0;
+	while (at < text.size())
+	{
+		const size_t end = text.find('\n', at);
+		std::string line = text.substr(at, end == std::string::npos ? std::string::npos : end - at);
+		at = end == std::string::npos ? text.size() : end + 1;
+		if (!line.empty()) out.push_back(std::move(line));
+	}
+	return out;
+}
+
+std::string lowered(std::string s)
+{
+	for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	return s;
 }
 } // namespace
 
@@ -39,7 +65,8 @@ HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, 
 	expose("osName", "the computer's system, as the window's toolkit names it", osName, true);
 	expose("reportText", "the report made last, its first lines filled in", reportText);
 	expose("reportFiles", "the files worth attaching to it, a line each", reportFiles);
-	expose("status", "what Help last had to say", status);
+	expose("status", "what Help last had to say (the window says here what it copied)", status, true);
+	expose("exeFolder", "where the program is: the sandbox's log is looked for there first", exeFolder, true);
 
 	command("versionReport", "the build and the core open, in the words a bug report asks for them (Chimera's Copy Version Info)",
 		{}, [this](const Args &, std::string &) -> Value {
@@ -103,42 +130,64 @@ HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, 
 			std::string text;
 			for (const std::string &f : fields) text += (text.empty() ? "" : "\n\n") + f;
 			reportText.set(text);
-			/* the files: the project, and the sandbox's log where the program runs */
+			/* the files: the project, and the sandbox's log, beside the program
+			 * first and then where it runs, as Chimera looks */
 			std::string list;
 			std::error_code ec;
 			if (session_.hasProject.get() && std::filesystem::is_regular_file(session_.projectPath.get(), ec)) list = session_.projectPath.get();
-			const std::filesystem::path log = std::filesystem::current_path(ec) / "minibox-diag.log";
-			if (std::filesystem::is_regular_file(log, ec)) list += (list.empty() ? "" : "\n") + log.string();
+			for (const std::filesystem::path &folder : {std::filesystem::path(exeFolder.get()), std::filesystem::current_path(ec)})
+			{
+				if (folder.empty()) continue;
+				const std::filesystem::path log = folder / "minibox-diag.log";
+				if (!std::filesystem::is_regular_file(log, ec) || list.find(log.string()) != std::string::npos) continue;
+				list += (list.empty() ? "" : "\n") + log.string();
+				break;
+			}
 			/* the core's log, while Export Core Log is on */
 			if (const char *core = ce_core_log_path(); core != nullptr && *core != '\0' && std::filesystem::is_regular_file(core, ec))
 				list += (list.empty() ? "" : "\n") + std::string(core);
 			reportFiles.set(list);
+			status.set(list.empty() ? "No saved project, crash note or log was found. The zip will hold the text." : "");
 			return text;
 		});
-	command("saveReport", "the report, the game's picture (a PNG file, \"\" for none) and the files to attach, in one zip",
-		{"zip", "picture"}, [this](const Args &a, std::string &error) -> Value {
-			std::string zip, picture;
+	command("saveReport", "the report, the game's picture (a PNG file, \"\" for none) and the files to attach (a line each, of "
+		"the report's; all of them when left out) in one zip, deflated as Chimera's; what came of it is said in status",
+		{"zip", "picture", "files"}, [this](const Args &a, std::string &error) -> Value {
+			std::string zip, picture, ticked;
 			if (!arg(a, 0, zip, error)) return {};
 			if (a.size() > 1 && !arg(a, 1, picture, error)) return {};
-			std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
-			std::string text = reportText.get();
-			text += "\n";
-			files.emplace_back("report.md", std::vector<uint8_t>(text.begin(), text.end()));
+			const bool some = a.size() > 2;
+			if (some && !arg(a, 2, ticked, error)) return {};
+			const std::vector<std::string> wanted = linesOf(ticked);
+			std::vector<std::string> paths;
+			for (const std::string &path : linesOf(reportFiles.get()))
+				if (!some || std::find(wanted.begin(), wanted.end(), path) != wanted.end()) paths.push_back(path);
+			auto refuse = [&](const std::string &why) -> Value {
+				std::error_code ec;
+				std::filesystem::remove(zip, ec);
+				status.set("The zip was not saved: " + why);
+				error = status.get();
+				return {};
+			};
+			mz_zip_archive out{};
+			if (!mz_zip_writer_init_heap(&out, 0, 0)) return refuse("no memory for it");
+			bool ok = true;
+			/* the text with plain line ends, and one more */
+			std::string text;
+			for (const char c : reportText.get())
+				if (c != '\r') text += c;
+			text += '\n';
+			ok = ok && mz_zip_writer_add_mem(&out, "report.md", text.data(), text.size(), MZ_DEFAULT_LEVEL);
 			std::error_code ec;
 			if (!picture.empty() && std::filesystem::is_regular_file(picture, ec))
 			{
+				/* a picture is stored: it is compressed already */
 				const std::string png = readAll(picture);
-				files.emplace_back("game.png", std::vector<uint8_t>(png.begin(), png.end()));
+				if (!png.empty()) ok = ok && mz_zip_writer_add_mem(&out, "game.png", png.data(), png.size(), MZ_NO_COMPRESSION);
 			}
-			std::vector<std::string> unread;
-			size_t at = 0;
-			const std::string list = reportFiles.get();
-			while (at < list.size())
+			std::vector<std::string> taken{"report.md", "game.png"}, unread;
+			for (const std::string &path : paths)
 			{
-				const size_t end = list.find('\n', at);
-				const std::string path = list.substr(at, end == std::string::npos ? std::string::npos : end - at);
-				at = end == std::string::npos ? list.size() : end + 1;
-				if (path.empty()) continue;
 				std::ifstream in(path, std::ios::binary);
 				if (!in)
 				{
@@ -146,27 +195,43 @@ HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, 
 					continue;
 				}
 				const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-				std::string name = std::filesystem::path(path).filename().string();
-				/* two files of one name both go in */
-				for (int n = 2; std::any_of(files.begin(), files.end(), [&](const auto &f) { return f.first == name; }); n++)
-					name = std::filesystem::path(path).stem().string() + " (" + std::to_string(n) + ")" + std::filesystem::path(path).extension().string();
-				files.emplace_back(name, std::vector<uint8_t>(bytes.begin(), bytes.end()));
+				const std::filesystem::path p(path);
+				std::string name = p.filename().string();
+				/* two files of one name both go in, whatever their case */
+				for (int n = 2; std::find(taken.begin(), taken.end(), lowered(name)) != taken.end(); n++)
+					name = p.stem().string() + " (" + std::to_string(n) + ")" + p.extension().string();
+				taken.push_back(lowered(name));
+				ok = ok && mz_zip_writer_add_mem(&out, name.c_str(), bytes.data(), bytes.size(), MZ_DEFAULT_LEVEL);
 			}
-			const std::vector<uint8_t> bytes = storedZip(files);
-			std::ofstream out(zip, std::ios::binary);
-			out.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-			if (!out)
+			void *buffer = nullptr;
+			size_t size = 0;
+			ok = ok && mz_zip_writer_finalize_heap_archive(&out, &buffer, &size);
+			mz_zip_writer_end(&out);
+			if (!ok)
 			{
-				error = "could not write " + zip;
-				return {};
+				mz_free(buffer);
+				return refuse("it could not be put together");
 			}
-			/* past what an issue takes, as Chimera warns */
+			{
+				std::ofstream file(zip, std::ios::binary);
+				file.write(static_cast<const char *>(buffer), static_cast<std::streamsize>(size));
+				mz_free(buffer);
+				if (!file) return refuse("could not write " + zip);
+			}
+			/* as Chimera says it: the name, the size, what could not be read, past what an issue takes */
+			char megabytes[32];
+			std::snprintf(megabytes, sizeof megabytes, "%.1f", static_cast<double>(size) / (1024.0 * 1024.0));
+			std::string said = "Saved " + std::filesystem::path(zip).filename().string() + " (" + megabytes + " MB).";
+			if (!unread.empty())
+			{
+				said += " Could not read: ";
+				for (size_t i = 0; i < unread.size(); i++) said += (i == 0 ? "" : ", ") + std::filesystem::path(unread[i]).filename().string();
+				said += ".";
+			}
 			constexpr uint64_t kLimit = 25ull * 1024 * 1024;
-			std::string said = "Saved " + zip;
-			if (bytes.size() > kLimit) said += "; it is larger than the 25 MB an issue takes";
-			for (const std::string &u : unread) said += "; could not read " + u;
+			if (size > kLimit) said += " GitHub takes up to 25 MB: save again without the largest file.";
 			status.set(said);
-			return static_cast<int64_t>(bytes.size());
+			return static_cast<int64_t>(size);
 		});
 }
 
