@@ -437,10 +437,7 @@ void EncoderViewModel::poll()
 	const double fps = secs > 0 ? n / secs : 0;
 	framesPerSecond.set(fps);
 	secondsLeft.set(fps > 0 ? (frameCount.get() - n) / fps : 0);
-	if (n > 0)
-		status.set("Frame " + std::to_string(job_->from + n - 1) + ": " + std::to_string(n) + " of " + std::to_string(frameCount.get()) +
-				   " written, " + std::to_string(static_cast<int64_t>(std::lround(fps))) + " a second, about " +
-				   std::to_string(static_cast<int64_t>(std::lround(secondsLeft.get()))) + " s left");
+	if (n > 0) status.set(progressText(n, frameCount.get(), fps));
 	double l = 0, r = 0;
 	{
 		std::lock_guard<std::mutex> lock(job_->levelsM);
@@ -451,6 +448,26 @@ void EncoderViewModel::poll()
 	/* the meters fall back slowly, as meters do */
 	levelLeft.set(std::max(l, levelLeft.get() * 0.6));
 	levelRight.set(std::max(r, levelRight.get() * 0.6));
+}
+
+std::string EncoderViewModel::progressText(int64_t done, int64_t total, double framesPerSecond)
+{
+	/* a count as Chimera's N0 writes it: 1,234 */
+	auto grouped = [](int64_t n) {
+		std::string text = std::to_string(n < 0 ? -n : n);
+		for (int at = static_cast<int>(text.size()) - 3; at > 0; at -= 3) text.insert(static_cast<size_t>(at), ",");
+		return n < 0 ? "-" + text : text;
+	};
+	std::string text = "frame " + grouped(done) + " / " + grouped(total) + "   " + grouped(std::llround(framesPerSecond)) + " fps";
+	if (framesPerSecond > 0)
+	{
+		const int64_t left = static_cast<int64_t>(static_cast<double>(std::max<int64_t>(0, total - done)) / framesPerSecond);
+		const int64_t h = left / 3600, m = left / 60 % 60, sec = left % 60;
+		text += "   about " + (h >= 1 ? std::to_string(h) + "h " + std::to_string(m) + "m"
+								 : left >= 60 ? std::to_string(left / 60) + "m " + std::to_string(sec) + "s" : std::to_string(sec) + "s") +
+				" remaining";
+	}
+	return text;
 }
 
 std::string EncoderViewModel::ffmpegPath() const

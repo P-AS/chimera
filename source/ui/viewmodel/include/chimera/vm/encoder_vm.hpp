@@ -35,6 +35,10 @@ public:
 	static const std::vector<Preset> &presets();
 	/* the container the command names (-f), as the file's extension; "" for none */
 	static std::string extensionOf(const std::string &command);
+	/* how far an encode is, as Chimera's window says it:
+	 * "frame 1,234 / 5,000   60 fps   about 1m 4s remaining" (no time left
+	 * said until a speed is known) */
+	static std::string progressText(int64_t done, int64_t total, double framesPerSecond);
 	/* the ffmpeg the encode runs: CHIMERA_FFMPEG, else beside the program,
 	 * else the build's; "" when there is none */
 	std::string ffmpegPath() const;

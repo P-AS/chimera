@@ -195,9 +195,7 @@ ApplicationWindow {
             else if (action === "Save Movie") {
                 if (root.session.hasProject) root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject")
             }
-            else if (action === "Encode Video") {
-                if (root.session.isOpen) { encodeWindow.show(); encodeWindow.raise() }
-            }
+            else if (action === "Encode Video") root.encodeVideo()
             else if (action === "Larger Window" || action === "Smaller Window") {
                 if (picture.pictureWidth <= 0) return
                 const n = Math.max(1, Math.min(10, root.windowScale + (action === "Larger Window" ? 1 : -1)))
@@ -255,8 +253,7 @@ ApplicationWindow {
                 Action {
                     property string hotkey: "Encode Video"
                     text: qsTr("&Encode Video...")
-                    enabled: root.session.hasProject
-                    onTriggered: { encodeWindow.show(); encodeWindow.raise() }
+                    onTriggered: root.encodeVideo()
                 }
                 Menu {
                     delegate: keyedMenuItem
@@ -794,7 +791,19 @@ ApplicationWindow {
         id: encodeWindow
         vm: root.encoder; session: root.session; pianoRoll: root.pianoRoll; paths: root.paths; files: root.pictureFiles
         picture: picture
+        mainWindow: root
         visible: false
+    }
+    // Chimera's: a video is an encode of a run, so there is none without a project
+    function encodeVideo() {
+        if (!root.session.hasProject) { encodeRefused.open(); return }
+        encodeWindow.show()
+        encodeWindow.raise()
+    }
+    MessageDialog {
+        id: encodeRefused
+        text: qsTr("Open a project first: a video is an encode of a run.")
+        buttons: MessageDialog.Ok
     }
     Connections {
         target: root.encoder

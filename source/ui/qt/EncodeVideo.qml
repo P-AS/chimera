@@ -1,8 +1,12 @@
 // Chimera's File > Encode Video: everything asked at once - the file, the
 // ffmpeg command or a preset's, the two markers to encode between, the size
 // and the sound's sync - then Start Encode winds the run there, encodes it
-// and gives the machine back. Closing the window stops it. Layout and
+// and gives the machine back. Closing the window stops it. What it refuses
+// is said in the status line in the error colour, as Chimera's. Layout and
 // bindings only, over the encoder view model.
+//
+// Not here: Chimera's Capture OSD and Capture Lua, as the prototype draws
+// those over the picture in the window and not into the frames written.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -19,7 +23,22 @@ ApplicationWindow {
     title: qsTr("Encode Video")
     width: 600
     height: 440
+    minimumWidth: 600
+    minimumHeight: 420
+    flags: Qt.Window | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
+    property Window mainWindow: null
+    transientParent: win.mainWindow
     readonly property bool running: win.vm.phase === "encoding"
+    // what the window itself last refused, said over the encode's status until that changes
+    property string said: ""
+    Connections {
+        target: win.vm
+        function onValueChanged(key) { if (key === "status") win.said = "" }
+    }
+    // a count as Chimera's N0 writes it: 1,234
+    function grouped(n) { return Number(n).toLocaleString(Qt.locale("en_US"), "f", 0) }
+    function fileName(path) { return path.replace(/^.*[\\/]/, "") }
+    readonly property string outputFolder: win.vm.output.trim().replace(/[\\/][^\\/]*$/, "")
 
     // the window opens on the whole run, a file named for the project in the A/V folder
     onVisibleChanged: {
@@ -47,7 +66,12 @@ ApplicationWindow {
 
     function start() {
         if (win.files.exists(win.vm.output)) replaceDialog.open()
-        else win.vm.run("start")
+        else win.begin()
+    }
+    function begin() {
+        win.said = ""
+        win.vm.run("start")
+        if (win.vm.error !== "") win.said = win.vm.error
     }
 
     ColumnLayout {
@@ -109,16 +133,16 @@ ApplicationWindow {
         }
         Label {
             readonly property int frames: win.vm.toFrame - win.vm.fromFrame + 1
-            text: frames > 0 ? qsTr("frames %1 to %2 (%3 frames)").arg(win.vm.fromFrame).arg(win.vm.toFrame).arg(frames)
+            text: frames > 0 ? qsTr("frames %1 to %2 (%3 frames)").arg(win.vm.fromFrame).arg(win.vm.toFrame).arg(win.grouped(frames))
                              : qsTr("the end marker is before the start marker")
             color: frames > 0 ? palette.placeholderText : "#b00020"
         }
         RowLayout {
             enabled: !win.running
             CheckBox { text: qsTr("Resize to"); checked: win.vm.resize; onToggled: win.vm.resize = checked }
-            SpinBox { from: 2; to: 7680; editable: true; value: win.vm.width; enabled: win.vm.resize; onValueModified: win.vm.width = value }
+            SpinBox { from: 1; to: 8192; editable: true; value: win.vm.width; enabled: win.vm.resize; onValueModified: win.vm.width = value; Layout.preferredWidth: 100 }
             Label { text: "x" }
-            SpinBox { from: 2; to: 4320; editable: true; value: win.vm.height; enabled: win.vm.resize; onValueModified: win.vm.height = value }
+            SpinBox { from: 1; to: 8192; editable: true; value: win.vm.height; enabled: win.vm.resize; onValueModified: win.vm.height = value; Layout.preferredWidth: 100 }
             Button { text: qsTr("Current size"); enabled: win.vm.resize; onClicked: win.useCurrentSize() }
             Label { text: win.picture && win.picture.pictureWidth > 0 ? qsTr("now %1x%2").arg(win.picture.pictureWidth).arg(win.picture.pictureHeight) : "" }
             CheckBox { text: qsTr("Pad"); checked: win.vm.pad; enabled: win.vm.resize; onToggled: win.vm.pad = checked }
@@ -136,8 +160,9 @@ ApplicationWindow {
             Layout.preferredHeight: 40
             wrapMode: Text.Wrap
             elide: Text.ElideRight
-            text: win.vm.status
-            color: win.vm.phase === "failed" ? "#b00020" : palette.windowText
+            objectName: "encodeStatus"
+            text: win.said !== "" ? win.said : win.vm.status
+            color: win.said !== "" || win.vm.phase === "failed" ? "#b00020" : palette.windowText
         }
         // the speakers are quiet while a video is written: these say sound is going in
         RowLayout {
@@ -151,11 +176,26 @@ ApplicationWindow {
         }
         Item { Layout.fillHeight: true }
         RowLayout {
-            Button { text: qsTr("Open Video"); enabled: !win.running && win.vm.written !== "" && win.files.exists(win.vm.written); onClicked: Qt.openUrlExternally(win.files.folderUrl(win.vm.written)) }
-            Button { text: qsTr("Open Folder"); enabled: win.vm.output !== ""; onClicked: Qt.openUrlExternally(win.files.folderUrl(win.vm.output.replace(/[\\/][^\\/]*$/, ""))) }
+            Button {
+                text: qsTr("Open Video")
+                // what the last encode wrote, done or stopped; nothing while another is being written
+                enabled: !win.running && win.vm.written !== "" && (win.vm.phase === "done" || win.vm.phase === "stopped")
+                onClicked: {
+                    if (!win.files.exists(win.vm.written)) win.said = qsTr("%1 is no longer there.").arg(win.fileName(win.vm.written))
+                    else Qt.openUrlExternally(win.files.folderUrl(win.vm.written))
+                }
+            }
+            Button {
+                text: qsTr("Open Folder")
+                enabled: win.outputFolder !== "" && win.files.exists(win.outputFolder)
+                onClicked: {
+                    if (!win.files.exists(win.outputFolder)) win.said = qsTr("The output file's folder does not exist.")
+                    else Qt.openUrlExternally(win.files.folderUrl(win.outputFolder))
+                }
+            }
             Button { text: qsTr("Restore Defaults"); enabled: !win.running; onClicked: win.vm.run("restoreDefaults") }
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("Start Encode"); enabled: !win.running && win.vm.toFrame >= win.vm.fromFrame && win.session.hasProject; onClicked: win.start() }
+            Button { text: qsTr("Start Encode"); enabled: !win.running && win.vm.toFrame >= win.vm.fromFrame; onClicked: win.start() }
             Button { text: qsTr("Stop"); enabled: win.running; onClicked: win.vm.run("stop") }
             Button { text: qsTr("Close"); onClicked: win.close() }
         }
@@ -165,7 +205,10 @@ ApplicationWindow {
         id: saveDialog
         title: qsTr("Write the video to")
         fileMode: FileDialog.SaveFile
-        nameFilters: [qsTr("Videos (*.mp4 *.mkv *.webm *.mov *.avi)"), qsTr("All files (*)")]
+        // where the file is now, and its name, as Chimera's opens
+        currentFolder: win.outputFolder !== "" ? win.files.folderUrl(win.outputFolder) : ""
+        selectedFile: win.vm.output !== "" ? win.files.folderUrl(win.vm.output) : ""
+        nameFilters: [qsTr("MP4 Files (*.mp4)"), qsTr("AVI Files (*.avi)"), qsTr("Matroska Files (*.mkv)"), qsTr("All Files (*)")]
         onAccepted: win.vm.output = win.files.localPath(selectedFile)
     }
     // a video already at that name is not replaced without asking, as Chimera's
@@ -181,6 +224,7 @@ ApplicationWindow {
             wrapMode: Text.Wrap
             text: qsTr("%1 already exists. Replace it with this encode?").arg(win.vm.output.replace(/^.*[\\/]/, ""))
         }
-        onAccepted: win.vm.run("start")
+        onAccepted: win.begin()
+        onRejected: win.said = qsTr("%1 was kept; pick another name to encode.").arg(win.fileName(win.vm.output))
     }
 }

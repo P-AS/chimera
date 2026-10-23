@@ -6873,6 +6873,11 @@ void nutMuxer()
 	CHECK(syncpoints == 5);
 	CHECK(splitCommandLine("-vf \"scale=1:2\" -f  mp4") == std::vector<std::string>({"-vf", "scale=1:2", "-f", "mp4"}));
 	CHECK(EncoderViewModel::extensionOf("-c:v ffv1 -f matroska") == "mkv" && EncoderViewModel::extensionOf("-f mp4") == "mp4");
+	/* how far it is, in Chimera's words: counts with their thousands marked, the time left once a speed is known */
+	CHECK(EncoderViewModel::progressText(1234, 5000, 59.6) == "frame 1,234 / 5,000   60 fps   about 1m 3s remaining");
+	CHECK(EncoderViewModel::progressText(5, 10, 0) == "frame 5 / 10   0 fps");
+	CHECK(EncoderViewModel::progressText(100, 222100, 60) == "frame 100 / 222,100   60 fps   about 1h 1m remaining");
+	CHECK(EncoderViewModel::progressText(9, 10, 2) == "frame 9 / 10   2 fps   about 0s remaining");
 }
 
 /* Chimera's idle eye: nothing drawn without the mark; with it, the faint
