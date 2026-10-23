@@ -212,6 +212,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("horizontal", "TAStudio's Rotate: the frames run across and the buttons down (the project's own)", horizontal, true);
 	expose("scriptColumns", "a script's own columns after the machine's, JSON [{name, text, width}]", scriptColumns);
 	expose("scriptQueries", "a script colours or writes the roll's cells (Lua's tastudio.onqueryitem...)", scriptQueries, true);
+	expose("iconEpoch", "the icons a script names are read again when this moves", iconEpoch, true);
 	command("addScriptColumn", "a script's own column: its name (what the callbacks are told), its header and width", {"name", "text", "width"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string name, text;

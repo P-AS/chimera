@@ -72,6 +72,8 @@ public:
 	 * [{"name", "text", "width"}]; and whether a script colours or writes the cells */
 	Property<std::string> scriptColumns{"[]"};
 	Property<bool> scriptQueries{false};
+	/* the icons a script names read again when this moves (tastudio.clearIconCache) */
+	Property<int64_t> iconEpoch{0};
 	/* a frame not shown by those, and the frame `steps` shown frames on
 	 * from one (back for a negative count) */
 	bool frameHidden(int64_t frame) const;

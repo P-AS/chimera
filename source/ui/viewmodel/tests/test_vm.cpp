@@ -5833,6 +5833,8 @@ console.log("misc", tastudio.getrecording(), tastudio.getselection()[0] == nil)
 tastudio.addcolumn("xp", "XP", 40)
 tastudio.onqueryitemtext(function(row, col) if col == "xp" then return row * 10 end end)
 tastudio.onqueryitembg(function(row, col) if col == "P1 A" then return 0xFF102030 end end)
+tastudio.onqueryitemicon(function(row, col) if col == "P1 B" and row == 1 then return "/icons/b.png" end end)
+tastudio.clearIconCache()
 )");
 	CHECK(console.run("run", {}, error).has_value());
 	CHECK(said("alone ") == "alone false nil");
@@ -5847,6 +5849,8 @@ tastudio.onqueryitembg(function(row, col) if col == "P1 A" then return 0xFF10203
 	CHECK(roll.scriptQueries.get() && roll.scriptColumns.get().find("\"name\": \"xp\"") != std::string::npos);
 	CHECK(lua.query("__chimera_query_text", 7, "xp") == "70" && lua.query("__chimera_query_text", 7, "P1 A").empty());
 	CHECK(lua.query("__chimera_query_bg", 3, "P1 A") == "#FF102030" && lua.query("__chimera_query_bg", 3, "xp").empty());
+	CHECK(lua.query("__chimera_query_icon", 1, "P1 B") == "/icons/b.png" && lua.query("__chimera_query_icon", 2, "P1 B").empty());
+	CHECK(roll.iconEpoch.get() == 1);
 	{
 		/* the callbacks: the edits, the branch made once its state is kept, loaded, removed */
 		CHECK(d.until([&] { return branches.made.get() >= 1; }, 30));

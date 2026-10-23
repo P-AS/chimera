@@ -439,9 +439,6 @@ function tastudio.get_frames_with_markers(branch)
 end
 function tastudio.removemarker(frame) if engaged() then pcall(C.pianoRoll.removeMarker, frame) end end
 function tastudio.setmarker(frame, message) if engaged() then C.pianoRoll.addMarker(frame, message ~= nil and tostring(message) or "") end end
-local function notHere(name) return function() error("tastudio." .. name .. ": not here yet") end end
-tastudio.onqueryitemicon = notHere("onqueryitemicon")
-tastudio.clearIconCache = function() end
 -- functions called when the greenzone is invalidated, a branch is loaded, made
 -- or updated, removed; each its name back, as Chimera's
 __chimera_tasCallbacks = {zone = {}, load = {}, save = {}, remove = {}}
@@ -886,7 +883,7 @@ function forms.getMouseY(handle) return C.forms.mouseY(handle) end
 -- tastudio's callbacks into the roll's drawing: a cell's colour and text,
 -- the first answer of those registered winning, as Chimera's; and a
 -- script's own columns. Asked while the roll is drawn.
-local queryFns = {bg = {}, text = {}}
+local queryFns = {bg = {}, text = {}, icon = {}}
 local function queryRegister(kind, fn, name)
 	if not C.session.hasProject then return "" end
 	__chimera_tasCallbackCount = __chimera_tasCallbackCount + 1
@@ -909,6 +906,16 @@ function __chimera_query_text(row, column)
 	end
 	return nil
 end
+-- an icon file's path for a cell, read once (clearIconCache reads them again)
+function __chimera_query_icon(row, column)
+	for _, c in ipairs(queryFns.icon) do
+		local v = c.fn(row, column)
+		if v ~= nil then return fileOf(v) end
+	end
+	return nil
+end
+function tastudio.onqueryitemicon(fn, name) return queryRegister("icon", fn, name) end
+function tastudio.clearIconCache() C.pianoRoll.iconEpoch = C.pianoRoll.iconEpoch + 1 end
 function tastudio.onqueryitembg(fn, name) return queryRegister("bg", fn, name) end
 function tastudio.onqueryitemtext(fn, name) return queryRegister("text", fn, name) end
 function tastudio.addcolumn(name, text, width)
@@ -916,7 +923,7 @@ function tastudio.addcolumn(name, text, width)
 end
 -- a script stopped: what it registered goes, as Chimera's do
 function __chimera_scripts_stopped()
-	queryFns = {bg = {}, text = {}}
+	queryFns = {bg = {}, text = {}, icon = {}}
 	__chimera_tasCallbacks = {zone = {}, load = {}, save = {}, remove = {}}
 	if C.pianoRoll then C.pianoRoll.clearScriptColumns() end
 end

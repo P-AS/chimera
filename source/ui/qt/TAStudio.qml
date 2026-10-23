@@ -371,6 +371,7 @@ ApplicationWindow {
                 // a script's own columns, and the colours and text it gives cells
                 extraColumns: tas.pianoRoll.scriptColumns
                 queries: tas.pianoRoll.scriptQueries
+                iconEpoch: tas.pianoRoll.iconEpoch
                 rows: tas.pianoRoll.rows("frames")
                 currentRow: tas.pianoRoll.currentFrame
                 topRow: tas.pianoRoll.topFrame

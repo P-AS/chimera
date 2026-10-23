@@ -1233,7 +1233,8 @@ int main(int argc, char **argv)
 	 * the window's thread waits while the roll is drawn, so the script is not running */
 	if (roll != nullptr)
 		roll->setQuery([&lua](int kind, qint64 row, const QString &column) {
-			return QString::fromStdString(lua.query(kind == 0 ? "__chimera_query_bg" : "__chimera_query_text", row, column.toStdString()));
+			static const char *const hooks[] = {"__chimera_query_bg", "__chimera_query_text", "__chimera_query_icon"};
+			return QString::fromStdString(lua.query(hooks[std::clamp(kind, 0, 2)], row, column.toStdString()));
 		});
 	auto *picture = window->findChild<qt::PictureItem *>(QStringLiteral("picture"));
 	int64_t framesAtStart = -1;

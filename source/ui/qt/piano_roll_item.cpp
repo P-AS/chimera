@@ -341,6 +341,16 @@ void PianoRollItem::paint(QPainter *p)
 		label(QRect(columnX(columns + e), 0, extras_[static_cast<size_t>(e)].width, hs), Qt::AlignCenter, extras_[static_cast<size_t>(e)].text, false);
 	/* what the script says of a cell, when it says anything */
 	auto ask = [&](int kind, qint64 row, const QString &column) { return queries_ && query_ ? query_(kind, row, column) : QString(); };
+	/* an icon the script names for a cell, drawn in it */
+	auto icon = [&](qint64 row, const QString &column, const QRect &cell) {
+		const QString path = ask(2, row, column);
+		if (path.isEmpty()) return;
+		auto it = icons_.find(path);
+		if (it == icons_.end()) it = icons_.insert(path, QImage(path));
+		if (it->isNull()) return;
+		const int side = std::min(cell.width(), cell.height()) - 2;
+		p->drawImage(QRect(cell.x() + (cell.width() - side) / 2, cell.y() + (cell.height() - side) / 2, side, side), *it);
+	};
 
 	/* the rows shown, hidden ones (lag frames TAStudio hides) passed over */
 	qint64 next = rows.nextShown(top_ - 1);
@@ -418,6 +428,7 @@ void PianoRollItem::paint(QPainter *p)
 			if (cw == 0) continue; /* hidden */
 			const QString columnName = queries_ ? QString::fromStdString(rows.columnName(c)) : QString();
 			if (const QColor b(ask(0, row, columnName)); b.isValid()) p->fillRect(cx, y, cw, rowHeight_, b);
+			icon(row, columnName, QRect(cx, y, cw, rowHeight_));
 			if (const QString said = ask(1, row, columnName); !said.isEmpty())
 			{
 				p->setPen(text);
@@ -451,6 +462,7 @@ void PianoRollItem::paint(QPainter *p)
 			const Extra &x = extras_[static_cast<size_t>(e)];
 			const int cx = columnX(columns + e);
 			if (const QColor b(ask(0, row, x.name)); b.isValid()) p->fillRect(cx, y, x.width, rowHeight_, b);
+			icon(row, x.name, QRect(cx, y, x.width, rowHeight_));
 			if (const QString said = ask(1, row, x.name); !said.isEmpty())
 			{
 				p->setPen(text);
