@@ -1021,7 +1021,7 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	seededGame_.clear();
 	ownNames_.clear();
 	ownFor_.clear();
-	firmwareIndex_ = indexFirmware(cores_.firmwareFolders());
+	firmwareIndex_ = indexFirmware(cores_.firmwareFolders(), true, 10000);
 	rememberedSha_.clear();
 	core.set(name);
 	title.set("");

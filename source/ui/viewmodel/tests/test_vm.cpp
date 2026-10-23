@@ -7152,6 +7152,16 @@ bool firmwareWindow(const char *package, const char *slotsPackage, const char *b
 			  text(v3, 7) == "rel03.bin" && mark(v3) == 0 && text(v3, 1).find("1 of 10 dumps on hand") != std::string::npos);
 		CHECK(lineOf("… 9 more releases of Synth BIOS not on hand; tick \"Show every release\" to see them", "") >= 0);
 	}
+	/* one in a sub-folder of the firmware folder: found, and in the Firmware folder, as Chimera's (chimera#359) */
+	fs::create_directories(dir / "Firmware" / "Synth" / "Bios");
+	std::ofstream(dir / "Firmware" / "Synth" / "Bios" / "rel05.bin") << "bios rel 05";
+	fw.run("refresh", {}, error);
+	{
+		const int64_t v5 = lineOf("Synth BIOS", "v05");
+		CHECK(v5 >= 0 && text(v5, 9) == "found, hash matches" && text(v5, 8) == "Firmware folder" && text(v5, 7) == "rel05.bin");
+	}
+	fs::remove_all(dir / "Firmware" / "Synth");
+	fw.run("refresh", {}, error);
 	/* a declaration with no hash, needed for one board: what it says in full */
 	const int64_t boardB = lineOf("Board B BIOS", "");
 	CHECK(boardB >= 0 && text(boardB, 5) == "when board = b" && text(boardB, 6) == "(any)" && text(boardB, 9) == "not found");

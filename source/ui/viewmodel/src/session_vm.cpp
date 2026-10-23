@@ -2676,7 +2676,7 @@ bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::
 	if (decl.items.empty()) return true;
 	if (!json::parse(settings, settingsJson, error) || settingsJson.kind != json::Json::Kind::Object) settingsJson.kind = json::Json::Kind::Object;
 	if (!pins.empty()) json::parse(pins, pinsJson, error);
-	const std::vector<FirmwareFile> index = indexFirmware(firmwareFoldersM_ ? firmwareFoldersM_() : std::vector<std::string>{});
+	const std::vector<FirmwareFile> index = indexFirmware(firmwareFoldersM_ ? firmwareFoldersM_() : std::vector<std::string>{}, true, 10000);
 	const std::vector<FirmwareNeed> needs = neededFirmware(decl, settingsDecl, slots, settingsJson, pinsJson, index);
 	std::string missing;
 	json::Json recorded;

@@ -46,6 +46,20 @@ bool sameFolder(const std::string &a, const std::string &b)
 	const fs::path x = fs::weakly_canonical(a, ec), y = fs::weakly_canonical(b, ec);
 	return lower(x.lexically_normal().string()) == lower(y.lexically_normal().string());
 }
+
+/* the file is in the folder or one of its sub-folders, which the Firmware
+ * folder's search walks too, as Chimera's (chimera#359) */
+bool underFolder(const std::string &file, const std::string &folder)
+{
+	if (file.empty() || folder.empty()) return false;
+	std::error_code ec;
+	for (fs::path at = fs::weakly_canonical(file, ec).parent_path(); !at.empty(); at = at.parent_path())
+	{
+		if (sameFolder(at.string(), folder)) return true;
+		if (at == at.parent_path()) break;
+	}
+	return false;
+}
 } // namespace
 
 std::string FirmwareViewModel::conditionText(const json::Json &when)
@@ -235,7 +249,8 @@ void FirmwareViewModel::survey()
 	groups_.clear();
 	const std::string folder = cores_.firmwareFolder.get();
 	/* the firmware folder's files and those chosen by hand: names and sizes, read only when a hash is asked */
-	const std::vector<FirmwareFile> index = indexFirmware(cores_.firmwareFolders());
+	/* the folder and its sub-folders, to as many files as a scan reads, as Chimera's */
+	const std::vector<FirmwareFile> index = indexFirmware(cores_.firmwareFolders(), true, 10000);
 	/* one group a core, its versions together */
 	std::map<std::string, std::vector<std::pair<std::string, std::string>>> byCore;
 	std::vector<std::string> order;
@@ -302,7 +317,7 @@ void FirmwareViewModel::survey()
 								const int32_t v = ce_firmware_state(r.size, upper(r.sha1).c_str(), static_cast<int64_t>(size), r.actualSha1.c_str());
 								r.state = v == 0 ? Custom : v == 1 ? Unrecognised : Good;
 							}
-							r.where = sameFolder(fs::path(path).parent_path().string(), folder) ? FirmwareFolder : Chosen;
+							r.where = underFolder(path, folder) ? FirmwareFolder : Chosen;
 						}
 						r.gameCore = g.gameCore;
 						g.rows.push_back(rows_.size());
