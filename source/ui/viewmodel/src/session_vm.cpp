@@ -2225,7 +2225,7 @@ std::filesystem::path SessionViewModel::projectCacheOnMachine() const
 std::filesystem::path SessionViewModel::branchDirOnMachine() const
 {
 	const std::filesystem::path dir = projectCacheOnMachine();
-	return dir.empty() ? dir : dir / "Branches";
+	return dir.empty() ? dir : dir / "branches";
 }
 
 std::string SessionViewModel::machineIdOnMachine()

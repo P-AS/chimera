@@ -41,7 +41,7 @@ os.makedirs(f"{lib}/platforms")
 shutil.copy2(f"{qt}/plugins/platforms/qwindows.dll", f"{lib}/platforms")
 # the themes Chimera ships, in the place Chimera keeps them: beside the program
 here = os.path.dirname(os.path.abspath(__file__))
-shutil.copytree(os.path.join(here, "..", "Themes"), f"{out}/Themes")
+shutil.copytree(os.path.join(here, "..", "Themes"), f"{out}/themes")
 
 # QML: QtQml, QtCore and the QtQuick modules the window imports. Of the
 # control styles only Fusion (the one used) and Basic (every style's fallback).

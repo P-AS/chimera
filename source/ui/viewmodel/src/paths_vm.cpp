@@ -63,23 +63,24 @@ json::Json objectOf(const std::string &text)
 
 const std::vector<std::pair<std::string, std::string>> &PathsViewModel::defaults()
 {
-	/* Chimera's global entries (PathEntryCollection.Defaults), in its order */
+	/* Chimera's global entries (PathEntryCollection.Defaults), in its order; the
+	 * folders named in lower case (owner, 2026-10-24) */
 	static const std::vector<std::pair<std::string, std::string>> list = {
 		{"Base", "."},
 		{"ROM", "."},
-		{"Firmware", "./Firmware"},
-		{"Movies", "./Movies"},
-		{"Movie backups", "./Movies/backup"},
+		{"Firmware", "./firmware"},
+		{"Movies", "./movies"},
+		{"Movie backups", "./movies/backup"},
 		/* where Encode Video suggests a video goes */
 		{"A/V Dumps", "."},
-		{"Tools", "./Tools"},
-		{"Lua", "./Lua"},
-		{"Themes", "./Themes"},
+		{"Tools", "./tools"},
+		{"Lua", "./lua"},
+		{"Themes", "./themes"},
 		/* Watch and Debug Logs are under Tools when relative, as Chimera resolves them */
 		{"Watch (.wch)", "."},
 		{"Debug Logs", "."},
-		{"Bug reports", "./Reports"},
-		{"Macros", "./Movies/Macros"},
+		{"Bug reports", "./reports"},
+		{"Macros", "./movies/macros"},
 		{"Temp Files", ""},
 	};
 	return list;
@@ -88,7 +89,9 @@ const std::vector<std::pair<std::string, std::string>> &PathsViewModel::defaults
 std::vector<std::pair<std::string, std::string>> PathsViewModel::systemDefaults(const std::string &system)
 {
 	/* Chimera's CommonEntriesFor: made for a system the first time something of it is asked for */
-	return {{"Base", "./" + folderName(system)}, {"ROM", "."}, {"Savestates", "./State"}, {"Screenshots", "./Screenshots"}};
+	std::string folder = folderName(system);
+	for (char &c : folder) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	return {{"Base", "./" + folder}, {"ROM", "."}, {"Savestates", "./state"}, {"Screenshots", "./screenshots"}};
 }
 
 PathsViewModel::PathsViewModel(Dispatcher &dispatcher) : ViewModel("paths", dispatcher)

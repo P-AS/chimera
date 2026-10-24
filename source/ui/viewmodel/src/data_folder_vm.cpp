@@ -16,7 +16,7 @@ namespace data_folder {
 
 namespace {
 /* what the window's data folder is recognised by: the names at its top */
-const char *const kMarks[] = {"Projects", "Recovery"};
+const char *const kMarks[] = {"projects", "recovery"};
 
 std::string withSeparator(const fs::path &p)
 {
@@ -71,7 +71,7 @@ std::string targetFor(const std::string &picked)
 	std::error_code ec;
 	const fs::path full = fs::absolute(picked, ec).lexically_normal();
 	if (!fs::is_directory(full, ec) || holdsData(full.string())) return full.string();
-	return fs::directory_iterator(full, ec) != fs::directory_iterator() ? (full / "Chimera").string() : full.string();
+	return fs::directory_iterator(full, ec) != fs::directory_iterator() ? (full / "chimera").string() : full.string();
 }
 
 Choice inspect(const std::string &current, const std::string &target)

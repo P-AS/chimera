@@ -128,6 +128,12 @@ code is in `source/ui`; how it is built and run is in
   loads the window from lib\chimera-qt-app.dll. A qt.conf built into that
   DLL sends Qt to lib\ for its plugins and QML, and a program in bin\ finds
   miniBox's DLLs in ..\lib. tools/stage-qt-windows.py lays the folder out.
+- **Folders are named in lower case** (owner, 2026-10-24): every folder the
+  window makes or suggests by default - cores, firmware, themes, movies
+  (with backup and macros), tools, lua, reports, each system's own folder
+  with its state and screenshots, and in the data folder projects,
+  recovery and cache/precompiled (a project's branches in branches).
+  Chimera's own window keeps its capitalised names.
 - **Qt is patched where it faults** (owner, 2026-10-24): fixes to Qt go in
   tools/qt-patches and tools/build-qt-windows.sh applies them as it unpacks
   the source. The first: a Qt thread that ended after its data was let go

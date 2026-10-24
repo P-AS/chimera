@@ -792,22 +792,22 @@ void pathsConfig()
 {
 	namespace fs = std::filesystem;
 	const fs::path dir = fs::temp_directory_path() / ("chimera-test-paths-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-	fs::create_directories(dir / "program" / "Lua");
+	fs::create_directories(dir / "program" / "lua");
 	ManualDispatcher d;
 	PathsViewModel paths(d);
 	std::string error;
 	int moved = 0;
 	Connection watch = paths.moved.connect([&] { moved++; });
 	paths.programFolder.set((dir / "program").string());
-	CHECK(paths.resolve("Movie backups") == (dir / "program" / "Movies" / "backup").string());
+	CHECK(paths.resolve("Movie backups") == (dir / "program" / "movies" / "backup").string());
 	CHECK(paths.resolve("ROM") == (dir / "program").string());
 	CHECK(paths.resolve("Nothing").empty());
 	/* Watch and Debug Logs under Tools, as Chimera resolves them */
-	CHECK(paths.resolve("Tools") == (dir / "program" / "Tools").string() && paths.resolve("Watch (.wch)") == (dir / "program" / "Tools").string() &&
-		paths.resolve("Debug Logs") == (dir / "program" / "Tools").string());
+	CHECK(paths.resolve("Tools") == (dir / "program" / "tools").string() && paths.resolve("Watch (.wch)") == (dir / "program" / "tools").string() &&
+		paths.resolve("Debug Logs") == (dir / "program" / "tools").string());
 	/* a base of the person's */
 	paths.base.set((dir / "elsewhere").string());
-	CHECK(paths.resolve("Lua") == (dir / "elsewhere" / "Lua").string());
+	CHECK(paths.resolve("Lua") == (dir / "elsewhere" / "lua").string());
 	paths.base.set("");
 	/* a path changed: absolute, or relative to the base; Chimera's again is no change */
 	std::string got;
@@ -816,7 +816,7 @@ void pathsConfig()
 	CHECK(paths.changed.get() == "{\"Movies\": " + json::quote((dir / "runs").string()) + "}");
 	CHECK(paths.run("setPath", {std::string("Lua"), std::string("./Scripts")}, error).has_value() &&
 		paths.resolve("Lua") == (dir / "program" / "Scripts").string());
-	CHECK(paths.run("setPath", {std::string("Lua"), std::string("./Lua")}, error).has_value() && paths.changed.get().find("Lua") == std::string::npos);
+	CHECK(paths.run("setPath", {std::string("Lua"), std::string("./lua")}, error).has_value() && paths.changed.get().find("Lua") == std::string::npos);
 	CHECK(!paths.run("setPath", {std::string("Saves"), std::string(".")}, error) && error == "no folder called Saves");
 	CHECK(moved >= 5);
 	/* the rows: as set, made absolute, whether Chimera's */
@@ -849,19 +849,19 @@ void pathsConfig()
 	paths.run("setPath", {std::string("Lua"), std::string("")}, error);
 	/* the base is a row too */
 	CHECK(paths.run("setPath", {std::string("Base"), (dir / "elsewhere").string()}, error).has_value() &&
-		paths.resolve("Movies") == (dir / "runs").string() && paths.resolve("Lua") == (dir / "elsewhere" / "Lua").string());
+		paths.resolve("Movies") == (dir / "runs").string() && paths.resolve("Lua") == (dir / "elsewhere" / "lua").string());
 	paths.run("setPath", {std::string("Base"), std::string(".")}, error);
 	CHECK(paths.base.get().empty());
 	/* a system's own folders, made when a game for it is opened: under its base, which is under the global one */
 	paths.useSystem("NES");
 	CHECK(paths.systems.get() == "[\"NES\"]" && rows->rowCount() == 18);
-	CHECK(paths.resolveFor("NES", "Screenshots") == (dir / "program" / "NES" / "Screenshots").string() &&
-		paths.resolveFor("NES", "ROM") == (dir / "program" / "NES").string() &&
-		paths.resolveFor("NES", "Savestates") == (dir / "program" / "NES" / "State").string());
+	CHECK(paths.resolveFor("NES", "Screenshots") == (dir / "program" / "nes" / "screenshots").string() &&
+		paths.resolveFor("NES", "ROM") == (dir / "program" / "nes").string() &&
+		paths.resolveFor("NES", "Savestates") == (dir / "program" / "nes" / "state").string());
 	/* a kind it has not falls back to its base */
-	CHECK(paths.resolveFor("NES", "Cheats") == (dir / "program" / "NES").string());
+	CHECK(paths.resolveFor("NES", "Cheats") == (dir / "program" / "nes").string());
 	CHECK(fromValue(paths.run("setSystemPath", {std::string("NES"), std::string("Screenshots"), std::string("./Shots")}, error).value_or(Value()), got) &&
-		got == (dir / "program" / "NES" / "Shots").string());
+		got == (dir / "program" / "nes" / "Shots").string());
 	CHECK(paths.run("setSystemPath", {std::string("NES"), std::string("Base"), (dir / "nes").string()}, error).has_value() &&
 		paths.resolveFor("NES", "Screenshots") == (dir / "nes" / "Shots").string());
 	CHECK(!paths.run("setSystemPath", {std::string("NES"), std::string("Movies"), std::string(".")}, error) && error == "no folder called Movies");
@@ -873,15 +873,15 @@ void pathsConfig()
 	paths.run("setSystemPath", {std::string("NES"), std::string("Screenshots"), std::string("")}, error);
 	CHECK(paths.systemChanged.get() == "{}");
 	/* a dialog opens in the folder when it is there, else the nearest above it; nothing is made */
-	CHECK(fromValue(paths.run("dialogFolder", {std::string("Lua")}, error).value_or(Value()), got) && got == (dir / "program" / "Lua").string());
+	CHECK(fromValue(paths.run("dialogFolder", {std::string("Lua")}, error).value_or(Value()), got) && got == (dir / "program" / "lua").string());
 	CHECK(fromValue(paths.run("dialogFolder", {std::string("Macros")}, error).value_or(Value()), got) && got == (dir / "program").string());
-	CHECK(!fs::exists(dir / "program" / "Movies"));
+	CHECK(!fs::exists(dir / "program" / "movies"));
 	/* ROMs: where the last game came from, while it is there and asked for */
-	paths.lastRomFolder.set((dir / "program" / "Lua").string());
-	CHECK(fromValue(paths.run("dialogFolder", {std::string("ROM")}, error).value_or(Value()), got) && got == (dir / "program" / "Lua").string());
+	paths.lastRomFolder.set((dir / "program" / "lua").string());
+	CHECK(fromValue(paths.run("dialogFolder", {std::string("ROM")}, error).value_or(Value()), got) && got == (dir / "program" / "lua").string());
 	paths.recentForRoms.set(false);
 	CHECK(fromValue(paths.run("dialogFolder", {std::string("ROM")}, error).value_or(Value()), got) && got == (dir / "program").string());
-	CHECK(paths.run("resetAll", {}, error).has_value() && paths.changed.get() == "{}" && paths.resolve("Movies") == (dir / "program" / "Movies").string());
+	CHECK(paths.run("resetAll", {}, error).has_value() && paths.changed.get() == "{}" && paths.resolve("Movies") == (dir / "program" / "movies").string());
 	fs::remove_all(dir);
 }
 
@@ -893,10 +893,10 @@ void dataFolder()
 {
 	namespace fs = std::filesystem;
 	const fs::path dir = fs::temp_directory_path() / ("chimera-test-data-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-	fs::create_directories(dir / "data" / "Projects" / "AB12");
-	fs::create_directories(dir / "data" / "Recovery" / "CD34");
-	std::ofstream(dir / "data" / "Projects" / "AB12" / "history.bin") << std::string(1000, 'h');
-	std::ofstream(dir / "data" / "Recovery" / "CD34" / "session.json") << "{}";
+	fs::create_directories(dir / "data" / "projects" / "AB12");
+	fs::create_directories(dir / "data" / "recovery" / "CD34");
+	std::ofstream(dir / "data" / "projects" / "AB12" / "history.bin") << std::string(1000, 'h');
+	std::ofstream(dir / "data" / "recovery" / "CD34" / "session.json") << "{}";
 	fs::create_directories(dir / "docs");
 	std::ofstream(dir / "docs" / "letter.txt") << "not Chimera's";
 	ManualDispatcher d;
@@ -905,7 +905,7 @@ void dataFolder()
 	data.standard.set((dir / "standard").string());
 	data.current.set((dir / "data").string());
 	CHECK(data_folder::holdsData((dir / "data").string()) && !data_folder::holdsData((dir / "docs").string()));
-	CHECK(data_folder::targetFor((dir / "docs").string()) == (dir / "docs" / "Chimera").string());
+	CHECK(data_folder::targetFor((dir / "docs").string()) == (dir / "docs" / "chimera").string());
 	CHECK(data_folder::targetFor((dir / "fresh").string()) == (dir / "fresh").string());
 	/* what the window says of it, as Chimera writes sizes, and what a folder picked would be before anything is asked */
 	CHECK(data_folder::bytesText(1000) == "1 KB" && data_folder::bytesText(3 * (int64_t{1} << 20)) == "3.0 MB" &&
@@ -916,9 +916,9 @@ void dataFolder()
 		json::Json what;
 		std::string text;
 		CHECK(fromValue(data.run("inspect", {(dir / "docs").string()}, error).value_or(Value()), text) && json::parse(text, what, error) &&
-			  what.find("target")->text == (dir / "docs" / "Chimera").string() && what.find("choice")->text == "empty" && what.find("size")->text == "1 KB");
+			  what.find("target")->text == (dir / "docs" / "chimera").string() && what.find("choice")->text == "empty" && what.find("size")->text == "1 KB");
 		CHECK(fromValue(data.run("inspect", {(dir / "data").string()}, error).value_or(Value()), text) && text.find("\"choice\": \"same\"") != std::string::npos);
-		fs::create_directories(dir / "other" / "Projects");
+		fs::create_directories(dir / "other" / "projects");
 		CHECK(fromValue(data.run("inspect", {(dir / "other").string()}, error).value_or(Value()), text) && text.find("\"choice\": \"holds data\"") != std::string::npos);
 		CHECK(fromValue(data.run("inspect", {(dir / "data" / "inner").string()}, error).value_or(Value()), text) && text.find("\"choice\": \"nested\"") != std::string::npos);
 	}
@@ -927,28 +927,28 @@ void dataFolder()
 	CHECK(fromValue(data.run("request", {(dir / "data").string(), true}, error).value_or(Value()), said) && said == "same" && data.pending.get().empty());
 	/* recorded only: nothing moves until the next start */
 	CHECK(fromValue(data.run("request", {(dir / "fresh").string(), true}, error).value_or(Value()), said) && said == "empty");
-	CHECK(data.pending.get() == (dir / "fresh").string() && data.pendingMove.get() && fs::exists(dir / "data" / "Projects" / "AB12" / "history.bin"));
+	CHECK(data.pending.get() == (dir / "fresh").string() && data.pendingMove.get() && fs::exists(dir / "data" / "projects" / "AB12" / "history.bin"));
 	CHECK(data.run("withdraw", {}, error).has_value() && data.pending.get().empty());
 	CHECK(data.applyPending().empty() && data.inUse() == (dir / "data").string());
 	/* asked again, and the start carries it out */
 	data.run("request", {(dir / "fresh").string(), true}, error);
 	CHECK(data.applyPending().empty() && data.inUse() == (dir / "fresh").string() && data.pending.get().empty());
-	CHECK(fs::file_size(dir / "fresh" / "Projects" / "AB12" / "history.bin") == 1000 && fs::exists(dir / "fresh" / "Recovery" / "CD34" / "session.json"));
+	CHECK(fs::file_size(dir / "fresh" / "projects" / "AB12" / "history.bin") == 1000 && fs::exists(dir / "fresh" / "recovery" / "CD34" / "session.json"));
 	CHECK(!fs::exists(dir / "data"));
 	/* a folder holding other things: a Chimera folder inside it, without moving the data */
 	CHECK(fromValue(data.run("request", {(dir / "docs").string(), false}, error).value_or(Value()), said) && said == "empty");
-	CHECK(data.pending.get() == (dir / "docs" / "Chimera").string() && !data.pendingMove.get());
-	CHECK(data.applyPending().empty() && data.inUse() == (dir / "docs" / "Chimera").string() && fs::exists(dir / "fresh" / "Projects"));
+	CHECK(data.pending.get() == (dir / "docs" / "chimera").string() && !data.pendingMove.get());
+	CHECK(data.applyPending().empty() && data.inUse() == (dir / "docs" / "chimera").string() && fs::exists(dir / "fresh" / "projects"));
 	/* back, moving: a name already there stops it, and the old is whole */
-	fs::create_directories(dir / "docs" / "Chimera" / "Projects");
+	fs::create_directories(dir / "docs" / "chimera" / "projects");
 	data.run("request", {(dir / "fresh").string(), true}, error);
 	data.current.set((dir / "fresh").string());
-	data.pending.set((dir / "docs" / "Chimera").string());
+	data.pending.set((dir / "docs" / "chimera").string());
 	data.pendingMove.set(true);
 	said = data.applyPending();
 	CHECK(said.rfind("The data folder was not moved (", 0) == 0 && said.find("is already there") != std::string::npos);
-	CHECK(data.inUse() == (dir / "fresh").string() && fs::file_size(dir / "fresh" / "Projects" / "AB12" / "history.bin") == 1000 &&
-		fs::exists(dir / "fresh" / "Recovery" / "CD34"));
+	CHECK(data.inUse() == (dir / "fresh").string() && fs::file_size(dir / "fresh" / "projects" / "AB12" / "history.bin") == 1000 &&
+		fs::exists(dir / "fresh" / "recovery" / "CD34"));
 	/* the system's place */
 	CHECK(fromValue(data.run("request", {std::string(), false}, error).value_or(Value()), said) && data.pending.get() == (dir / "standard").string());
 	CHECK(data.applyPending().empty() && data.current.get().empty() && data.inUse() == (dir / "standard").string());

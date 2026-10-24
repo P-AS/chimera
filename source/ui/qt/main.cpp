@@ -644,9 +644,9 @@ int main(int argc, char **argv)
 	 * unless the environment names others */
 	vm::CoresViewModel cores(dispatcher);
 	if (cores.coresFolder.get().empty())
-		cores.coresFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Cores")).toStdString());
+		cores.coresFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/cores")).toStdString());
 	if (cores.firmwareFolder.get().empty())
-		cores.firmwareFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Firmware")).toStdString());
+		cores.firmwareFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/firmware")).toStdString());
 	vm::NewProjectViewModel newProject(dispatcher, session, cores);
 	/* the core's suggested settings for a game, asked as an import is */
 	/* Chimera's compile step: its sessions are the headless runner, and what
@@ -810,11 +810,11 @@ int main(int argc, char **argv)
 	/* what a project can make again (its branches' states), a folder a
 	 * project (CHIMERA_QT_CACHE for a test) */
 	session.cacheFolder.set(qEnvironmentVariableIsSet("CHIMERA_QT_CACHE") ? qEnvironmentVariable("CHIMERA_QT_CACHE").toStdString()
-																		  : (std::filesystem::path(dataHome) / "Projects").string());
+																		  : (std::filesystem::path(dataHome) / "projects").string());
 	/* unsaved work kept against a crash: beside the caches, never in one, so
 	 * removing a cache cannot take it (CHIMERA_QT_RECOVERY for a test) */
 	session.recoveryFolder.set(qEnvironmentVariableIsSet("CHIMERA_QT_RECOVERY") ? qEnvironmentVariable("CHIMERA_QT_RECOVERY").toStdString()
-																				: (std::filesystem::path(dataHome) / "Recovery").string());
+																				: (std::filesystem::path(dataHome) / "recovery").string());
 	/* the hashes of the files read (firmware, discs) outlive the session, so the first rescan or
 	 * opening of each session does not read every disc image again, as Chimera's (issue 368;
 	 * CHIMERA_QT_HASHES for a test) */
@@ -829,7 +829,7 @@ int main(int argc, char **argv)
 	qt::QmlViewModel dataFolderQml(dataFolder);
 	/* what cores compiled for a game, kept between sessions (CHIMERA_QT_COMPILE_CACHE for a test) */
 	session.compileCacheRoot.set(qEnvironmentVariableIsSet("CHIMERA_QT_COMPILE_CACHE") ? qEnvironmentVariable("CHIMERA_QT_COMPILE_CACHE").toStdString()
-																						  : (std::filesystem::path(dataHome) / "Cache" / "PrecompiledCode").string());
+																						  : (std::filesystem::path(dataHome) / "cache" / "precompiled").string());
 	vm::PrecompiledViewModel precompiled(dispatcher);
 	precompiled.root.set(session.compileCacheRoot.get());
 	vm::Connection precompiledInUse = session.compileCacheDir.changed.connect([&] { precompiled.inUse.set(session.compileCacheDir.get()); });
