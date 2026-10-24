@@ -92,6 +92,101 @@ void testProgressOfAFileHash()
 	printf("progress: a file hash reports its way to the end\n");
 }
 
+/* The hashes kept between sessions (owner, 2026-10-24, issue 368). A hash
+ * taken after ce_sha1_keep_in is read back by the next process, which then
+ * does not read the file; a file written since is read again; a line that is
+ * not one costs only itself; a kept file of many more lines than files is
+ * written again with the newest of each. "The next process" is this one with
+ * its own hashes forgotten. */
+void writeFill(const char *path, uint8_t fill)
+{
+	FILE *f = fopen(path, "wb");
+	assert(f != nullptr);
+	std::vector<uint8_t> block(1 << 20, fill);
+	for (int i = 0; i < 9; i++) assert(fwrite(block.data(), 1, block.size(), f) == block.size());
+	fclose(f);
+}
+
+int linesOf(const char *path)
+{
+	FILE *f = fopen(path, "rb");
+	if (f == nullptr) return -1;
+	int n = 0;
+	for (int c; (c = fgetc(f)) != EOF;)
+		if (c == '\n') n++;
+	fclose(f);
+	return n;
+}
+
+void testKeptBetweenSessions()
+{
+	const char *kept = "test_sha1_kept.txt";
+	const char *path = "test_sha1_kept.bin";
+	remove(kept);
+	remove(path);
+	writeFill(path, 0x5A);
+	char hex[41];
+	uint64_t len = 0;
+	ce_progress_set(&onProgress, nullptr);
+
+	assert(ce_sha1_keep_in(kept) == 0);
+	g_reports = 0;
+	assert(ce_sha1_file(path, hex, &len) == 1 && g_reports > 0);
+	const std::string first = hex;
+	assert(linesOf(kept) == 1);
+
+	/* the next process: the file is not read, the answer is the same */
+	chimera::sha1ForgetForTests();
+	assert(ce_sha1_keep_in(kept) == 1);
+	g_reports = 0;
+	len = 0;
+	assert(ce_sha1_file(path, hex, &len) == 1);
+	assert(first == hex && len == 9u << 20);
+	assert(g_reports == 0);
+
+	/* written since: read again */
+	writeFill(path, 0x5B);
+	chimera::sha1ForgetForTests();
+	assert(ce_sha1_keep_in(kept) == 1);
+	g_reports = 0;
+	assert(ce_sha1_file(path, hex, &len) == 1 && first != hex && g_reports > 0);
+	const std::string second = hex;
+
+	/* broken lines: passed over */
+	{
+		FILE *f = fopen(kept, "ab");
+		assert(f != nullptr);
+		fputs("not a hash at all\n", f);
+		fputs("0123 5 6 7 8 9 10 /short/hash\n", f);
+		fputs(first.c_str(), f); /* a last line cut short */
+		fclose(f);
+	}
+	chimera::sha1ForgetForTests();
+	assert(ce_sha1_keep_in(kept) == 1);
+	g_reports = 0;
+	assert(ce_sha1_file(path, hex, &len) == 1 && second == hex && g_reports == 0);
+
+	/* many lines of one file: written again with the newest alone */
+	for (int i = 0; i < 70; i++)
+	{
+		writeFill(path, static_cast<uint8_t>(i));
+		assert(ce_sha1_file(path, hex, &len) == 1);
+	}
+	const std::string last = hex;
+	assert(linesOf(kept) > 70);
+	chimera::sha1ForgetForTests();
+	assert(ce_sha1_keep_in(kept) == 1);
+	assert(linesOf(kept) == 1);
+	g_reports = 0;
+	assert(ce_sha1_file(path, hex, &len) == 1 && last == hex && g_reports == 0);
+
+	assert(ce_sha1_keep_in(nullptr) == 0);
+	ce_progress_set(nullptr, nullptr);
+	remove(kept);
+	remove(path);
+	printf("kept: hashes come back in the next session, a changed file is hashed again\n");
+}
+
 #ifndef _WIN32
 /* A file replaced by one of the same size that keeps the old one's date - an
  * unzip, cp -p, rsync -t, Explorer's copy and replace - is another file, and
@@ -135,6 +230,7 @@ void testSameSizeSameDateIsHashedAgain()
 int main(void)
 {
 	testProgressOfAFileHash();
+	testKeptBetweenSessions();
 #ifndef _WIN32
 	testSameSizeSameDateIsHashedAgain();
 #endif

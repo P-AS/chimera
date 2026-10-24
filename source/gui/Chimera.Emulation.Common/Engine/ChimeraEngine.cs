@@ -218,6 +218,9 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_sha1_file(string utf8Path, byte[] out41, ref ulong lenOut);
 
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_sha1_keep_in([MarshalAs(UnmanagedType.LPUTF8Str)] string? utf8Path);
+
 
 
 
@@ -1297,6 +1300,14 @@ namespace Chimera.Emulation.Common.Engine
 		/// it: firmware can be a disk image, and one that does not fit in memory
 		/// still has an identity. Null when the file cannot be read.
 		/// </summary>
+		/// <summary>
+		/// Keeps the hashes <see cref="Sha1OfFile"/> takes between sessions, in this file
+		/// (null: for this process only). Answers how many came back. A file edited or
+		/// replaced since is hashed again: the engine keys a hash on the file's whole
+		/// identity (owner, 2026-10-24, issue 368).
+		/// </summary>
+		public static int KeepFileHashesIn(string? path) => Instance.ce_sha1_keep_in(path);
+
 		public static (string Sha1, long Length)? Sha1OfFile(string path)
 		{
 			var buf = new byte[41];

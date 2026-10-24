@@ -10911,3 +10911,24 @@ Tests: `TasMovieDiffersFromBranchTests` (two fail with the answer always "no
 change") and `BranchLoadAsksTests` (fails when loading the current branch
 again asks too). The question itself, and the update it makes, are not
 driven by a test.
+
+## File hashes are kept between sessions (user-decided, 2026-10-24)
+
+Chimera knows a file by its SHA-1, so every Firmware folder rescan, New
+Project wizard and project opening hashes the files it looks at. The engine
+kept those hashes only until Chimera closed, on purpose ("a stale entry
+surviving a restart is a bug nobody could see"), so the first rescan of each
+session read every disc image in the Firmware folder again, which is what
+made Rescan slow (issue 368). The owner chose to keep them on disk.
+`ce_sha1_keep_in` names the file (Chimera's is `file-hashes.txt` in its data
+directory) and reads its hashes back; every hash taken after it is appended,
+a line a hash. The key is the one the session cache already used, the path
+and the file's whole identity: size, modified and changed times to the
+system's resolution, volume and file index. A file edited, replaced, copied
+over or moved in is another file and is hashed again. A file whose system
+gives no change time or no file index (some network and FAT volumes) is kept
+for the session only. A line that does not read as one is passed over; a
+file of many more lines than files is written again with the newest of each.
+Test: test_sha1's kept-between-sessions part (fails when the kept hashes are
+not read back). Not measured: how much faster a real Firmware folder's first
+rescan is.

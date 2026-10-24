@@ -355,9 +355,17 @@ CE_API void ce_sha1_hex(const uint8_t *data, uint64_t len, char *out41);
  * firmware may be a disk image, and one that does not fit in memory still has
  * an identity. Writes 40 uppercase hex characters plus a NUL into out41, and
  * the length hashed into lenOut when it is given. Answers repeat calls from a
- * cache keyed by path, size and mtime, so hashing the same file twice in a
- * session costs one read. Returns 1 when the file was read, 0 when it was not. */
+ * cache keyed by the path and the file's whole identity (size, modified and
+ * changed times, volume, file index), so hashing the same file twice costs one
+ * read. Returns 1 when the file was read, 0 when it was not. */
 CE_API int ce_sha1_file(const char *utf8Path, char *out41, uint64_t *lenOut);
+/* Keeps that cache between sessions in the file named (UTF-8; NULL keeps it
+ * for this process only, as before the first call): the hashes the file holds
+ * are read back now, and every hash taken from now on of a file whose
+ * identity the system gives in full is added to it. A file edited, replaced
+ * or copied over has another identity and is hashed again. Returns how many
+ * hashes were read back. */
+CE_API int32_t ce_sha1_keep_in(const char *utf8Path);
 
 /* ---- reproducible media ----
  *

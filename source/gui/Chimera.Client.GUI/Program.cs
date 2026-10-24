@@ -61,6 +61,9 @@ namespace Chimera.Client.GUI
 			}
 			ProjectCache.CustomDataHome = custom;
 			if (CrashCapture.Repoint() is { } why) Console.WriteLine($"[crash] notes stay where they were: {why}");
+			// the hashes of the files Chimera reads (firmware, discs) outlive the session, so the
+			// first rescan or opening of each session does not read every disc image again (issue 368)
+			Chimera.Emulation.Common.Engine.ChimeraEngine.KeepFileHashesIn(Path.Combine(ProjectCache.DataHome, ProjectCache.FileHashesName));
 		}
 
 		public static void EnsureWinFormsInitialized()
