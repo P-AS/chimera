@@ -80,6 +80,8 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 	expose("outOfRange", "candidates past the domain's end", outOfRange);
 	expose("selectedCount", "rows picked", selectedCount);
 	expose("canPoke", "rows are picked and the domain can be written", canPoke);
+	expose("selectionFrozen", "every row picked is frozen (Freeze Address reads Unfreeze Address)", selectionFrozen);
+	expose("anyFrozen", "any address is frozen (Unfreeze All is offered)", anyFrozen);
 	expose("currentFile", "the .wch file last opened or saved", currentFile);
 	expose("previewMode", "Preview Mode: the rows the next search would remove are coloured", previewMode, true);
 	expose("autoSearch", "Auto-Search: the search is made after every frame", autoSearch, true);

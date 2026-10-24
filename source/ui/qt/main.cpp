@@ -22,6 +22,7 @@
 #include <QFile>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QQmlError>
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QProcess>
@@ -1156,6 +1157,11 @@ int main(int argc, char **argv)
 	qt::ButtonRouter buttonRouter;
 	pictureFiles.say = [&session](const std::string &text) { session.status.set(text); };
 	QQmlApplicationEngine engine;
+	/* every QML warning counted: CHIMERA_QT_STRICT_QML makes any of them a
+	 * failure at the end (the window test), since a binding to a name no
+	 * view model has reads as nothing and only warns */
+	int qmlWarnings = 0;
+	QObject::connect(&engine, &QQmlEngine::warnings, [&qmlWarnings](const QList<QQmlError> &list) { qmlWarnings += list.size(); });
 	engine.addImageProvider(QStringLiteral("controller"), controllerPicture);
 	engine.setInitialProperties({
 		{QStringLiteral("session"), QVariant::fromValue<QObject *>(&sessionQml)},
@@ -1449,5 +1455,11 @@ int main(int argc, char **argv)
 		});
 	}
 
-	return app.exec();
+	const int rc = app.exec();
+	if (rc == 0 && qmlWarnings > 0 && qEnvironmentVariableIsSet("CHIMERA_QT_STRICT_QML"))
+	{
+		std::fprintf(stderr, "%d QML warning(s), and CHIMERA_QT_STRICT_QML is set\n", qmlWarnings);
+		return 1;
+	}
+	return rc;
 }

@@ -252,6 +252,8 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	expose("selectedWatches", "watches picked (not separators)", selectedWatches);
 	expose("canSplit", "every watch picked can be split (a word or double word shown in hex or binary)", canSplit);
 	expose("canPoke", "every watch picked is in memory that can be written", canPoke);
+	expose("selectionFrozen", "every watch picked is frozen (Freeze Address reads Unfreeze Address)", selectionFrozen);
+	expose("anyFrozen", "any address is frozen (Unfreeze All is offered)", anyFrozen);
 	expose("invalidCount", "watches whose address is past their domain's end", invalidCount);
 	expose("defaultDomain", "the domain a new watch starts in (Watches > Default Domain)", defaultDomain, true);
 	expose("doubleClickToPoke", "On Double-Clicking a Watch: poke it, else edit it", doubleClickToPoke, true);

@@ -223,7 +223,10 @@ synthetic core (and on four packages made from it at build time: one under
 another name, one of two machines with declared slots and a firmware, and
 two whose firmware declares the hash of its file, one of them a game core). They include a project whose movie ends with the machine's
 memory byte for byte as the witness recorded it. One more test loads the
-whole window off-screen and runs it for a second. Every new check was
+whole window off-screen and runs it for a second, and fails on any QML
+warning (a binding to a name no view model has reads as nothing and only
+warns: Unfreeze All was never shown in RAM Search, RAM Watch and the Hex
+Editor for that reason until 2026-10-24). Every new check was
 broken on purpose once and seen to fail.
 
 ## What was measured

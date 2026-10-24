@@ -226,7 +226,7 @@ if qt_dep.found()
     chimera_qt,
     args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
       '--play', '--measure', '1', '--show', 'lua'],
-    env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software', 'ALSOFT_DRIVERS=null',
+    env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software', 'ALSOFT_DRIVERS=null', 'CHIMERA_QT_STRICT_QML=1',
       'CHIMERA_QT_CONFIG=' + meson.current_build_dir() / 'window-test-settings.json',
       'CHIMERA_QT_CACHE=' + meson.current_build_dir() / 'window-test-cache',
       'CHIMERA_QT_RECOVERY=' + meson.current_build_dir() / 'window-test-recovery'],

@@ -6300,6 +6300,9 @@ bool freezes(const char *package, const char *rom)
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
 	PianoRollViewModel roll(d, inputs, session);
+	RamWatchViewModel watches(d, session);
+	RamSearchViewModel search(d, session);
+	HexEditorViewModel hex(d, session);
 	std::string error;
 	auto advance = [&](int n) {
 		const int64_t to = session.frame.get() + n;
@@ -6330,6 +6333,10 @@ bool freezes(const char *package, const char *rom)
 	CHECK(!session.run("freeze", {std::string("NoSuchDomain"), at, int64_t{1}, false, int64_t{1}}, error).has_value());
 	CHECK(error == "no memory domain NoSuchDomain");
 	CHECK(session.freezes().size() == 1);
+	/* the tool windows bind to whether anything is frozen (Unfreeze All shown) by name */
+	CHECK(d.until([&] { return watches.get("anyFrozen") == Value(true) && search.get("anyFrozen") == Value(true) &&
+		hex.get("anyFrozen") == Value(true); }, 5));
+	CHECK(watches.get("selectionFrozen").has_value() && search.get("selectionFrozen").has_value() && hex.get("pickedFrozen").has_value());
 	/* the same game run again keeps it: written from its first frame */
 	session.run("restart", {}, error);
 	CHECK(d.until([&] { return session.opens.get() == 2 && session.frame.get() == 0; }, 60));

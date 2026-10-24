@@ -58,6 +58,8 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 	expose("domain", "the domain shown", domain, true);
 	expose("size", "bytes a value takes: 1, 2 or 4", size, true);
 	expose("bigEndian", "values are stored most significant byte first", bigEndian, true);
+	expose("pickedFrozen", "the address highlighted is frozen (Freeze Address reads Unfreeze Address)", pickedFrozen);
+	expose("anyFrozen", "any address is frozen (Unfreeze All is offered)", anyFrozen);
 	expose("lineCount", "lines of 16 bytes the domain has", lineCount);
 	expose("topLine", "the first line shown", topLine, true);
 	expose("visibleLines", "how many lines are shown", visibleLines, true);
