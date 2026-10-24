@@ -73,4 +73,10 @@ private:
 	std::vector<uint8_t> lags_;
 };
 
+/* a movie line read from its first '|', as Chimera's MovieController reads
+ * one (chimera 10b9668): whitespace and the digits 0-9 before it dropped - the
+ * frame number Copy puts there when asked ("00002 |..U.....|"), an indent, a
+ * tab; any other line as it is, for its reader to refuse */
+std::string movieLineFromBar(const std::string &line);
+
 } // namespace chimera::vm

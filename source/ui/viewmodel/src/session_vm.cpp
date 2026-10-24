@@ -1063,6 +1063,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		"for the next frame run", {"line"}, [this](const Args &a, std::string &error) -> Value {
 			std::string line;
 			if (!arg(a, 0, line, error)) return {};
+			/* read from its first '|', as Chimera's (a copied frame number, an indent) */
+			line = movieLineFromBar(line);
 			bool read = false;
 			uint64_t buttons = 0;
 			std::vector<int32_t> values;

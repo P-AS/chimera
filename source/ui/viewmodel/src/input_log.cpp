@@ -1,11 +1,26 @@
 #include "chimera/vm/input_log.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <mutex>
 
 #include "chimera/engine.h"
 
 namespace chimera::vm {
+
+std::string movieLineFromBar(const std::string &line)
+{
+	/* as Chimera's MovieController reads a line: from its first '|', only
+	 * whitespace and the digits 0-9 before it dropped (an editor's indent or
+	 * tab, a copied frame number); anything else is left to be refused */
+	if (line.empty() || line[0] == '|') return line;
+	size_t i = 0;
+	while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i]))) i++;
+	while (i < line.size() && line[i] >= '0' && line[i] <= '9') i++;
+	while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i]))) i++;
+	return i < line.size() && line[i] == '|' ? line.substr(i) : line;
+}
+
 
 /* The shared lock guards only which machine this is: the movie's own lock is
  * the engine's. */

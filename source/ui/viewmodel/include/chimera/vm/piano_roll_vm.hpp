@@ -15,9 +15,10 @@ namespace chimera::vm {
 class PianoRollViewModel : public ViewModel
 {
 public:
-	/* a pasted line without the frame number Copy puts before it when asked
-	 * ("00002 |..U.....|" is "|..U.....|"), as Chimera's paste reads it
-	 * (owner, 2026-10-24); any other line as it is */
+	/* a line read from its first '|', as Chimera's MovieController reads one
+	 * (chimera 10b9668): whitespace and the digits 0-9 before it dropped -
+	 * the frame number Copy puts there when asked ("00002 |..U.....|"), an
+	 * indent, a tab; any other line as it is */
 	static std::string withoutFrameNumber(const std::string &line);
 	/* Frames::rowFlags */
 	static constexpr uint32_t kLag = 1, kGreen = 2, kMarker = 4, kStated = 8, kRan = 16;

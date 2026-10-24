@@ -1962,7 +1962,7 @@ emu.setregister("R1", 99)
 console.log("set", emu.getregister("R1"))
 emu.frameadvance()
 console.log("again", emu.framecount())
-joypad.setfrommnemonicstr("|...R....|")
+joypad.setfrommnemonicstr("00007\t|...R....|")
 mainmemory.write_bytes_as_array(0x50, {0x61, 0x62, 0x63})
 console.log("hash", mainmemory.hash_region(0x50, 3), memory.hash_region(0x50, 0, "RAM"), pcall(mainmemory.hash_region, -1, 2))
 emu.frameadvance()
@@ -2515,8 +2515,9 @@ bool tastudioSettings(const char *package, const char *rom)
 	CHECK(roll.frameBits(10) == at10 && roll.frameBits(11) == at11);
 	/* lines copied with their frame numbers paste as the frames they were, as Chimera's now does */
 	CHECK(PianoRollViewModel::withoutFrameNumber("00002 |..U.....|") == "|..U.....|" &&
-		PianoRollViewModel::withoutFrameNumber("  17   |A|") == "|A|" && PianoRollViewModel::withoutFrameNumber("17|A|") == "17|A|" &&
-		PianoRollViewModel::withoutFrameNumber("|..U.....|") == "|..U.....|");
+		PianoRollViewModel::withoutFrameNumber("  17   |A|") == "|A|" && PianoRollViewModel::withoutFrameNumber("17|A|") == "|A|" &&
+		PianoRollViewModel::withoutFrameNumber("00002\t|A|") == "|A|" && PianoRollViewModel::withoutFrameNumber("    |A|") == "|A|" &&
+		PianoRollViewModel::withoutFrameNumber("x 2 |A|") == "x 2 |A|" && PianoRollViewModel::withoutFrameNumber("|..U.....|") == "|..U.....|");
 	error.clear();
 	CHECK(roll.run("pasteText", {int64_t{10}, numbered, false}, error).has_value() && error.empty());
 	CHECK(roll.frameBits(10) == at2 && roll.frameBits(11) == at3);

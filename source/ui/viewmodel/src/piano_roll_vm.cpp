@@ -2480,16 +2480,6 @@ void PianoRollViewModel::addRecentMacro(const std::string &path)
 	recentMacros.set(text);
 }
 
-std::string PianoRollViewModel::withoutFrameNumber(const std::string &line)
-{
-	size_t i = 0;
-	while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i]))) i++;
-	const size_t digits = i;
-	while (i < line.size() && std::isdigit(static_cast<unsigned char>(line[i]))) i++;
-	if (i == digits) return line;
-	const size_t afterDigits = i;
-	while (i < line.size() && line[i] == ' ') i++;
-	return i > afterDigits && i < line.size() && line[i] == '|' ? line.substr(i) : line;
-}
+std::string PianoRollViewModel::withoutFrameNumber(const std::string &line) { return movieLineFromBar(line); }
 
 } // namespace chimera::vm
