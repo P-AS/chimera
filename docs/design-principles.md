@@ -10932,3 +10932,28 @@ file of many more lines than files is written again with the newest of each.
 Test: test_sha1's kept-between-sessions part (fails when the kept hashes are
 not read back). Not measured: how much faster a real Firmware folder's first
 rescan is.
+
+## The Firmware window finds, folds and opens folders (user-decided, 2026-10-24)
+
+Config > Firmware lists every file every installed core asks for, and the
+list is long (issue 368). Of the five requests, the owner chose three for
+the window, and keeping file hashes between sessions (above) for Rescan's
+speed. The window now has:
+- a Find box above the list. A row stays when its core, the firmware's name,
+  id or release, the file name a core asks for, or the file found for it
+  contains what is typed, in any case; a core with nothing that matches is
+  not listed;
+- folding a core's files to one line, "+ PCSX2: 3 files", which names the
+  core because not every toolkit draws the group headings (Mono does not).
+  A double click or the + key opens it, the - key folds it, and the
+  right-click menu folds or opens one core or all of them. Folding lasts
+  while the window is open;
+- Open Folder on the right-click menu of a row with a file found: the
+  file's folder, the file selected where the system can (Explorer), as
+  Encode Video's Open Folder does.
+Not done, by the owner's choice: a sub-folder depth setting (the Firmware
+folder is searched at any depth since issue 359) and rescanning one system.
+Tests: `FindNarrowsTheListToWhatMatches`, `ACoreFoldsToOneLineAndOpensAgain`,
+`OpenFolderShowsTheFoundFileInItsFolder` (each fails with its feature taken
+out), and `TheWindowInEveryTheme`, the window's first picture test, which
+caught the Find box drawn over its own label.

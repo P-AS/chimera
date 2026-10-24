@@ -1,12 +1,14 @@
 #nullable enable
 
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 
 using Chimera.Client.Common;
+using Chimera.Common;
 
 namespace Chimera.Client.GUI
 {
@@ -38,6 +40,7 @@ namespace Chimera.Client.GUI
 		public const int CollapseAbove = 8;
 
 		private readonly ListView _list;
+		private readonly TextBox _find;
 		private readonly Label _detail;
 		private readonly Label _header;
 		private readonly CheckBox _showAll;
@@ -58,8 +61,14 @@ namespace Chimera.Client.GUI
 		/// </summary>
 		private bool _scanSubfolders = true;
 
+		private readonly Action<string, string?> _openFolder;
+
+		/// <summary>The cores whose files are folded to one line (issue 368), for as long as the window is open.</summary>
+		private readonly HashSet<string> _collapsed = new(StringComparer.Ordinal);
+
 		private List<FirmwareSurveyGroup> _groups = new();
-		private List<FirmwareSurveyRow?> _rowOf = new(); // list index -> row, null for a "more" line
+		private List<FirmwareSurveyRow?> _rowOf = new(); // list index -> row, null for a "more" or folded line
+		private List<string> _coreOf = new(); // list index -> the core the line belongs to
 
 		protected override string WindowTitleStatic => "Firmware";
 
@@ -68,6 +77,7 @@ namespace Chimera.Client.GUI
 		/// <param name="pickFile">shows a file picker titled for one row; the dialog belongs to the owner</param>
 		/// <param name="pickFolder">shows a folder picker for Scan Folder, carrying the sub-folders choice; null hides the button</param>
 		/// <param name="scanFolder">hashes a folder (below it too, when told to) and remembers what it matched</param>
+		/// <param name="openFolder">shows a folder on the desktop, the file named selected when there is one; a test gives its own</param>
 		public FirmwareSurveyForm(
 			Func<IReadOnlyList<FirmwareSurveyGroup>> survey,
 			Action<FirmwareSurveyRow, string?> remember,
@@ -75,8 +85,10 @@ namespace Chimera.Client.GUI
 			PickScanFolder? pickFolder = null,
 			Action<string, bool>? scanFolder = null,
 			CoreKindFilter shows = CoreKindFilter.All,
-			Action<CoreKindFilter>? rememberShows = null)
+			Action<CoreKindFilter>? rememberShows = null,
+			Action<string, string?>? openFolder = null)
 		{
+			_openFolder = openFolder ?? OpenOnDesktop;
 			_survey = survey;
 			_remember = remember;
 			_pickFile = pickFile;
@@ -131,7 +143,36 @@ namespace Chimera.Client.GUI
 				rememberShows?.Invoke(_shows.Value);
 				Render();
 			};
-			_list.DoubleClick += (_, _) => Browse();
+			_list.DoubleClick += (_, _) =>
+			{
+				// a folded core's line opens it; any other line chooses a file, as before
+				if (SelectedRow is null && SelectedCore is { } core && _collapsed.Contains(core)) Expand(core);
+				else Browse();
+			};
+			_list.KeyDown += (_, e) =>
+			{
+				if (SelectedCore is not { } core) return;
+				if (e.KeyCode is Keys.Add or Keys.Oemplus) Expand(core);
+				else if (e.KeyCode is Keys.Subtract or Keys.OemMinus) Collapse(core);
+				else return;
+				e.Handled = true;
+			};
+			_list.ContextMenuStrip = BuildMenu();
+
+			// the list narrowed to what matches, left above the list (issue 368)
+			Label findLabel = new()
+			{
+				AutoSize = true,
+				Location = new(UIHelper.ScaleX(8), UIHelper.ScaleY(47)),
+				Text = "Find:",
+			};
+			_find = new TextBox
+			{
+				// beside the label's text: an AutoSize label has no width of its own yet
+				Location = new(findLabel.Left + findLabel.PreferredSize.Width + UIHelper.ScaleX(4), UIHelper.ScaleY(44)),
+				Size = new(UIHelper.ScaleX(220), UIHelper.ScaleY(20)),
+			};
+			_find.TextChanged += (_, _) => Render();
 
 			_detail = new Label
 			{
@@ -158,7 +199,7 @@ namespace Chimera.Client.GUI
 			closeButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
 			CancelButton = closeButton;
 
-			Controls.AddRange([ _header, _shows, _list, _detail, _setButton, _clearButton, scanButton, rescanButton, _showAll, closeButton ]);
+			Controls.AddRange([ _header, findLabel, _find, _shows, _list, _detail, _setButton, _clearButton, scanButton, rescanButton, _showAll, closeButton ]);
 			ResumeLayout();
 			Populate();
 		}
@@ -238,14 +279,19 @@ namespace Chimera.Client.GUI
 			// a row in view and where it is drawn, so a rescan keeps the reader's place (issue 348)
 			var anchor = ScrollAnchor();
 			var anchorRow = anchor is { } a && a.Index < _rowOf.Count ? _rowOf[a.Index] : null;
+			var selectedCore = SelectedCore;
+			var find = _find.Text.Trim();
 			_list.BeginUpdate();
 			_list.Items.Clear();
 			_list.Groups.Clear();
 			_rowOf.Clear();
+			_coreOf.Clear();
 			// the emulators' files, then the game cores' (docs/game-cores.md), as the survey orders
-			// them, through the Show filter
+			// them, through the Show filter and the Find box
 			foreach (var group in _groups.Where(g => _shows.Value.Shows(g.IsGameCore)))
 			{
+				var shown = group.Rows.Where(r => Matches(group, r, find)).ToList();
+				if (find.Length is not 0 && shown.Count is 0 && !Contains(group.CoreName, find)) continue;
 				ListViewGroup lvg = new($"{group.CoreName}  ·  {group.Summary}");
 				_list.Groups.Add(lvg);
 				if (group.Rows.Count is 0)
@@ -254,9 +300,22 @@ namespace Chimera.Client.GUI
 					none.SubItems.Add("(needs no firmware)");
 					_list.Items.Add(none);
 					_rowOf.Add(null);
+					_coreOf.Add(group.CoreName);
 					continue;
 				}
-				foreach (var byId in group.Rows.GroupBy(static r => r.Decl.Id))
+				if (_collapsed.Contains(group.CoreName))
+				{
+					ListViewItem folded = new("", 3) { Group = lvg, ForeColor = ThemeEngine.Color(ThemeColorRole.DisabledText) };
+					// the core named here too: not every toolkit draws the group's heading
+					folded.SubItems.Add($"+ {group.CoreName}: {shown.Count} {(shown.Count is 1 ? "file" : "files")}");
+					folded.SubItems.Add("double-click or + to show");
+					folded.Selected = selectedCore == group.CoreName;
+					_list.Items.Add(folded);
+					_rowOf.Add(null);
+					_coreOf.Add(group.CoreName);
+					continue;
+				}
+				foreach (var byId in shown.GroupBy(static r => r.Decl.Id))
 				{
 					var rows = byId.ToList();
 					var collapse = !_showAll.Checked && rows.Count > CollapseAbove;
@@ -285,6 +344,7 @@ namespace Chimera.Client.GUI
 						if (ReferenceEquals(selected, row) || (selected is not null && SameRow(selected, row))) item.Selected = true;
 						_list.Items.Add(item);
 						_rowOf.Add(row);
+						_coreOf.Add(group.CoreName);
 					}
 					if (hidden > 0)
 					{
@@ -292,6 +352,7 @@ namespace Chimera.Client.GUI
 						more.SubItems.Add($"… {hidden} more releases of {rows[0].Decl.DisplayName} not on hand; tick \"Show every release\" to see them");
 						_list.Items.Add(more);
 						_rowOf.Add(null);
+						_coreOf.Add(group.CoreName);
 					}
 				}
 			}
@@ -350,6 +411,123 @@ namespace Chimera.Client.GUI
 
 		public FirmwareSurveyRow? SelectedRow
 			=> _list.SelectedIndices.Count is 0 || _list.SelectedIndices[0] >= _rowOf.Count ? null : _rowOf[_list.SelectedIndices[0]];
+
+		/// <summary>The core of the selected line, a folded one's included.</summary>
+		public string? SelectedCore
+			=> _list.SelectedIndices.Count is 0 || _list.SelectedIndices[0] >= _coreOf.Count ? null : _coreOf[_list.SelectedIndices[0]];
+
+		/// <summary>What the Find box holds. Public so a test can drive it.</summary>
+		public string FindText
+		{
+			get => _find.Text;
+			set => _find.Text = value;
+		}
+
+		private static bool Contains(string? text, string find)
+			=> text is not null && text.IndexOf(find, StringComparison.OrdinalIgnoreCase) >= 0;
+
+		/// <summary>
+		/// Whether a row answers the Find box: its core, the firmware's name, id or
+		/// release, the name a core asks for, or the file found for it (issue 368).
+		/// </summary>
+		public static bool Matches(FirmwareSurveyGroup group, FirmwareSurveyRow row, string find)
+			=> find.Length is 0
+				|| Contains(group.CoreName, find)
+				|| Contains(row.Decl.DisplayName, find)
+				|| Contains(row.Decl.Id, find)
+				|| Contains(row.Decl.Label, find)
+				|| Contains(row.Decl.Name, find)
+				|| (row.Path is { Length: > 0 } path && Contains(Path.GetFileName(path), find));
+
+		/// <summary>Folds a core's files to one line, until it is opened again or the window closes.</summary>
+		public void Collapse(string core)
+		{
+			if (_groups.Any(g => g.CoreName == core && g.Rows.Count is not 0) && _collapsed.Add(core)) Render();
+		}
+
+		public void Expand(string core)
+		{
+			if (_collapsed.Remove(core)) Render();
+		}
+
+		public void CollapseAll()
+		{
+			foreach (var g in _groups.Where(static g => g.Rows.Count is not 0)) _collapsed.Add(g.CoreName);
+			Render();
+		}
+
+		public void ExpandAll()
+		{
+			_collapsed.Clear();
+			Render();
+		}
+
+		/// <summary>
+		/// Where Open Folder goes for a row: the folder of the file found for it, with the
+		/// file to select when it is still there; null when the row names no file or its
+		/// folder is gone.
+		/// </summary>
+		public static (string Folder, string? File)? OpenFolderTarget(FirmwareSurveyRow row)
+		{
+			if (row.Path is not { Length: > 0 } path) return null;
+			string full;
+			try
+			{
+				full = Path.GetFullPath(path);
+			}
+			catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
+			{
+				return null;
+			}
+			var folder = Path.GetDirectoryName(full);
+			if (folder is null || !Directory.Exists(folder)) return null;
+			return (folder, File.Exists(full) ? full : null);
+		}
+
+		/// <summary>Open Folder on the selected row. Public so a test can drive it.</summary>
+		public void OpenSelectedFolder()
+		{
+			if (SelectedRow is not { } row || OpenFolderTarget(row) is not { } target) return;
+			try
+			{
+				_openFolder(target.Folder, target.File);
+			}
+			catch (Exception e)
+			{
+				_detail.Text = $"{target.Folder} could not be opened: {e.Message}";
+			}
+		}
+
+		private static void OpenOnDesktop(string folder, string? file)
+		{
+			if (!OSTailoredCode.IsUnixHost && file is not null) Process.Start("explorer.exe", $"/select,\"{file}\"");
+			else Util.OpenFolderExternal(folder);
+		}
+
+		private ContextMenuStrip BuildMenu()
+		{
+			ContextMenuStrip menu = new();
+			ToolStripMenuItem openFolder = new("Open Folder", null, (_, _) => OpenSelectedFolder());
+			ToolStripMenuItem fold = new("", null, (_, _) =>
+			{
+				if (SelectedCore is not { } core) return;
+				if (_collapsed.Contains(core)) Expand(core);
+				else Collapse(core);
+			});
+			ToolStripMenuItem collapseAll = new("Collapse All", null, (_, _) => CollapseAll());
+			ToolStripMenuItem expandAll = new("Expand All", null, (_, _) => ExpandAll());
+			menu.Items.AddRange([ openFolder, new ToolStripSeparator(), fold, collapseAll, expandAll ]);
+			menu.Opening += (_, _) =>
+			{
+				openFolder.Enabled = SelectedRow is { } row && OpenFolderTarget(row) is not null;
+				var core = SelectedCore;
+				fold.Visible = core is not null && _groups.Any(g => g.CoreName == core && g.Rows.Count is not 0);
+				fold.Text = core is null ? "" : _collapsed.Contains(core) ? $"Expand {core}" : $"Collapse {core}";
+				collapseAll.Enabled = _groups.Any(g => g.Rows.Count is not 0 && !_collapsed.Contains(g.CoreName));
+				expandAll.Enabled = _collapsed.Count is not 0;
+			};
+			return menu;
+		}
 
 		/// <summary>The rows as displayed, top to bottom, for tests ("more" lines excluded).</summary>
 		public IReadOnlyList<FirmwareSurveyRow> DisplayedRows => _rowOf.Where(static r => r is not null).Select(static r => r!).ToList();
