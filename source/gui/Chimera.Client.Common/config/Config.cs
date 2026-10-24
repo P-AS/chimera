@@ -161,7 +161,6 @@ namespace Chimera.Client.Common
 		/// </summary>
 		public int CacheFreeSpaceFloorMb { get; set; } = CacheCleanPolicy.DefaultFreeSpaceFloorMb;
 
-		public bool PauseWhenMenuActivated { get; set; } = true;
 		public bool SaveWindowPosition { get; set; } = true;
 		public bool MainFormStayOnTop { get; set; }
 		public bool StartPaused { get; set; }
@@ -169,7 +168,6 @@ namespace Chimera.Client.Common
 		public Point? MainWindowPosition { get; set; }
 		public Size? MainWindowSize { get; set; }
 		public bool MainWindowMaximized { get; set; }
-		public bool RunInBackground { get; set; } = true;
 		public bool AcceptBackgroundInput { get; set; }
 		public bool AcceptBackgroundInputControllerOnly { get; set; }
 		public bool HandleAlternateKeyboardLayouts { get; set; }
@@ -177,7 +175,6 @@ namespace Chimera.Client.Common
 		public bool ShowContextMenu { get; set; } = true;
 		public bool HotkeyConfigAutoTab { get; set; } = true;
 		public bool InputConfigAutoTab { get; set; } = true;
-		public bool SkipWaterboxIntegrityChecks { get; set; } = false;
 		public int AutofireOn { get; set; } = 1;
 		public int AutofireOff { get; set; } = 1;
 		public bool AutofireLagFrames { get; set; } = true;

@@ -91,12 +91,6 @@ namespace Chimera.Client.Common
 		/// <remarks>only referenced from BookmarksBranchesBox</remarks>
 		BitmapBuffer MakeScreenshotImage();
 
-		/// <remarks>referenced from ToolFormBase</remarks>
-		void MaybePauseFromMenuOpened();
-
-		/// <remarks>referenced from ToolFormBase</remarks>
-		void MaybeUnpauseFromMenuClosed();
-
 		/// <remarks>referenced by 3 or more tools</remarks>
 		void PauseEmulator();
 

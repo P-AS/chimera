@@ -137,15 +137,10 @@ namespace Chimera.Client.GUI
 
 		public CoreComm CreateCoreComm()
 		{
-			var prefs = CoreComm.CorePreferencesFlags.None;
-			if (Config.SkipWaterboxIntegrityChecks)
-				prefs = CoreComm.CorePreferencesFlags.WaterboxMemoryConsistencyCheck;
-
 			// can't pass self as IDialogParent :(
 			return new CoreComm(
 				message => this.ModalMessageBox(message, "Warning", EMsgBoxIcon.Warning),
 				AddOnScreenMessage,
-				prefs,
 				new OpenGLProvider());
 		}
 
@@ -1078,7 +1073,6 @@ namespace Chimera.Client.GUI
 
 			private set
 			{
-				_didMenuPause = false; // overwritten where relevant
 				if (_emulatorPaused == value) return;
 				if (_emulatorPaused && !value) // Unpausing
 				{
@@ -1695,10 +1689,6 @@ namespace Chimera.Client.GUI
 		public int GetApproxFramerate() => _lastFpsRounded;
 
 		private readonly Throttle _throttle;
-
-		// For handling automatic pausing when entering the menu
-		private bool _wasPaused;
-		private bool _didMenuPause;
 
 		private bool _cursorHidden;
 		private bool _inFullscreen;

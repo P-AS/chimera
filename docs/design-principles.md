@@ -11008,3 +11008,19 @@ the second its clock reads; the project naming 2030-01-02T03:04:05Z reads
 miniBox's conformance-v3 (the guest reads the start it was given) and
 WizardClockStartTests (the wizard's box writes the project's start and
 refuses a time it cannot read). Each failed once with its part taken out.
+
+## Three options removed from Customize (user-decided, 2026-10-24)
+
+Config > Customize lost three options that came from BizHawk. "Skip waterbox
+integrity checks" set a flag that nothing in Chimera read, so ticking it did
+nothing; it went, with its note and an older note on the same tab ("Will
+prevent many Out Of Memory crashes...") whose checkbox was already gone. "Run
+in background" and "Pause when menu activated" went together, by the owner's
+choice ("we'll re add them if a user needs them"). Asked what Chimera then
+does, the owner chose that nothing pauses the game: not opening a menu of the
+main window, its right-click menu or a tool window, and not the window losing
+focus. Before, a menu paused the game by default, and unticking "Run in
+background" alone did nothing unless "Pause when menu activated" was ticked
+too. Tests: GuiOptionsTests (the three are not in the window; no checkbox on a
+tab lands on another control; the window in every theme), each failed once
+with a checkbox put back.

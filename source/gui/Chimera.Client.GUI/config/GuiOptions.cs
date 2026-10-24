@@ -25,9 +25,7 @@ namespace Chimera.Client.GUI
 		{
 			StartFullScreenCheckbox.Checked = _config.StartFullscreen;
 			StartPausedCheckbox.Checked = _config.StartPaused;
-			PauseWhenMenuActivatedCheckbox.Checked = _config.PauseWhenMenuActivated;
 			EnableContextMenuCheckbox.Checked = _config.ShowContextMenu;
-			RunInBackgroundCheckbox.Checked = _config.RunInBackground;
 			AcceptBackgroundInputCheckbox.Checked = _config.AcceptBackgroundInput;
 			AcceptBackgroundInputControllerOnlyCheckBox.Checked = _config.AcceptBackgroundInputControllerOnly;
 			HandleAlternateKeyboardLayoutsCheckBox.Checked = _config.HandleAlternateKeyboardLayouts;
@@ -38,7 +36,6 @@ namespace Chimera.Client.GUI
 
 			FrameAdvSkipLagCheckbox.Checked = _config.SkipLagFrame;
 			LuaDuringTurboCheckbox.Checked = _config.RunLuaDuringTurbo;
-			cbSkipWaterboxIntegrityChecks.Checked = _config.SkipWaterboxIntegrityChecks;
 			NoMixedKeyPriorityCheckBox.Checked = _config.NoMixedInputHokeyOverride;
 			cbEnableGCAdapterSupport.Checked = _config.GCAdapterSupportEnabled;
 		}
@@ -64,9 +61,7 @@ namespace Chimera.Client.GUI
 
 			_config.StartFullscreen = StartFullScreenCheckbox.Checked;
 			_config.StartPaused = StartPausedCheckbox.Checked;
-			_config.PauseWhenMenuActivated = PauseWhenMenuActivatedCheckbox.Checked;
 			_config.ShowContextMenu = EnableContextMenuCheckbox.Checked;
-			_config.RunInBackground = RunInBackgroundCheckbox.Checked;
 			_config.AcceptBackgroundInput = AcceptBackgroundInputCheckbox.Checked;
 			_config.AcceptBackgroundInputControllerOnly = AcceptBackgroundInputControllerOnlyCheckBox.Checked;
 			_config.HandleAlternateKeyboardLayouts = HandleAlternateKeyboardLayoutsCheckBox.Checked;
@@ -76,7 +71,6 @@ namespace Chimera.Client.GUI
 
 			_config.SkipLagFrame = FrameAdvSkipLagCheckbox.Checked;
 			_config.RunLuaDuringTurbo = LuaDuringTurboCheckbox.Checked;
-			_config.SkipWaterboxIntegrityChecks = cbSkipWaterboxIntegrityChecks.Checked;
 			_config.NoMixedInputHokeyOverride = NoMixedKeyPriorityCheckBox.Checked;
 			_config.GCAdapterSupportEnabled = cbEnableGCAdapterSupport.Checked;
 

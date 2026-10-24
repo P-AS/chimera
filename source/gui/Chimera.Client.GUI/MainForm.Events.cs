@@ -177,7 +177,7 @@ namespace Chimera.Client.GUI
 
 		private void SystemMenuItem_DropDownOpened(object sender, EventArgs e)
 		{
-			PauseMenuItem.Checked = _didMenuPause ? _wasPaused : EmulatorPaused;
+			PauseMenuItem.Checked = EmulatorPaused;
 
 			PauseMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Pause"];
 			RebootCoreMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Reboot Core"];
@@ -190,16 +190,7 @@ namespace Chimera.Client.GUI
 				movieLength.Days == 0 ? @"hh\:mm\:ss\.fff" : @"dd\:hh\:mm\:ss\.fff",
 				System.Globalization.DateTimeFormatInfo.InvariantInfo);
 
-		private void PauseMenuItem_Click(object sender, EventArgs e)
-		{
-			if (Config.PauseWhenMenuActivated && sender == PauseMenuItem)
-			{
-				const string ERR_MSG = nameof(PauseMenuItem_Click) + " ran before " + nameof(MaybeUnpauseFromMenuClosed) + "?";
-				Debug.Assert(EmulatorPaused == _wasPaused, ERR_MSG);
-				// fall through
-			}
-			TogglePause();
-		}
+		private void PauseMenuItem_Click(object sender, EventArgs e) => TogglePause();
 
 		private void PowerMenuItem_Click(object sender, EventArgs e)
 		{
@@ -1150,8 +1141,6 @@ namespace Chimera.Client.GUI
 
 		private void MainFormContextMenu_Opening(object sender, System.ComponentModel.CancelEventArgs e)
 		{
-			MaybePauseFromMenuOpened();
-
 
 			bool showMenuVisible = _inFullscreen || !MainMenuStrip.Visible; // need to always be able to restore this as an emergency measure
 
@@ -1210,9 +1199,6 @@ namespace Chimera.Client.GUI
 
 			ShowMenuContextMenuItem.Text = MainMenuStrip.Visible ? "Hide Menu" : "Show Menu";
 		}
-
-		private void MainFormContextMenu_Closing(object sender, ToolStripDropDownClosingEventArgs e)
-			=> MaybeUnpauseFromMenuClosed();
 
 		private void DisplayConfigMenuItem_Click(object sender, EventArgs e)
 		{
@@ -1306,16 +1292,6 @@ namespace Chimera.Client.GUI
 			}
 		}
 
-		private void MainForm_Activated(object sender, EventArgs e)
-		{
-			if (!Config.RunInBackground) MaybeUnpauseFromMenuClosed();
-		}
-
-		private void MainForm_Deactivate(object sender, EventArgs e)
-		{
-			if (!Config.RunInBackground) MaybePauseFromMenuOpened();
-		}
-
 		private void TimerMouseIdle_Tick(object sender, EventArgs e)
 		{
 			if (_inFullscreen && Config.DispChromeFullscreenAutohideMouse)
@@ -1373,27 +1349,7 @@ namespace Chimera.Client.GUI
 			base.OnClosed(e);
 		}
 
-		private void MainformMenu_MenuActivate(object sender, EventArgs e)
-		{
-			HandlePlatformMenus();
-			MaybePauseFromMenuOpened();
-		}
-
-		public void MaybePauseFromMenuOpened()
-		{
-			if (!Config.PauseWhenMenuActivated) return;
-			_wasPaused = EmulatorPaused;
-			PauseEmulator();
-			_didMenuPause = true; // overwrites value set during PauseEmulator call
-		}
-
-		private void MainformMenu_MenuDeactivate(object sender, EventArgs e) => MaybeUnpauseFromMenuClosed();
-
-		public void MaybeUnpauseFromMenuClosed()
-		{
-			if (_wasPaused || !Config.PauseWhenMenuActivated) return;
-			UnpauseEmulator();
-		}
+		private void MainformMenu_MenuActivate(object sender, EventArgs e) => HandlePlatformMenus();
 
 		private static void FormDragEnter(object sender, DragEventArgs e)
 		{
