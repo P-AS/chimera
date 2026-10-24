@@ -116,6 +116,14 @@ code is in `source/ui`; how it is built and run is in
   with the snapshot alone. The journal is written again from the start
   once it has grown past three times its last start (16 MB at least), as
   Chimera's is.
+- **Qt for Windows is built from source** (owner, 2026-10-24) with
+  Chimera's own mingw (posix threading), without the network module, as
+  it is now; Qt's prebuilt Windows libraries were set aside.
+- **The work stays private** (owner, 2026-10-24): no public branch, CI or
+  preview build until the owner says otherwise.
+- **macOS is a target** (owner, 2026-10-24): the code is kept portable to
+  it, and a macOS CI runner is added when the branch goes public (there
+  is no Mac here; cores also need miniBox on macOS).
 - Slint was considered and set aside for now. It is the closest fit to
   this pattern, but it has no docking, fewer desktop controls, and its
   licence is GPLv3 or an attribution licence, against Chimera's MIT.
@@ -406,11 +414,4 @@ as each lands here. Parts that wait on a question to the owner say so.
 
 ## Yours to decide
 
-1. **How Qt is obtained for Windows.** Here it is built from source with
-   Ubuntu's mingw (posix threading), in 12 minutes, without the network
-   module. The other way is Qt's own prebuilt Windows libraries, built
-   with a different compiler.
-2. **When this leaves the private branch:** a public branch, CI, a
-   preview build beside the C# window.
-3. **macOS:** there is no Mac here; CI runners are the only way to check
-   it.
+Nothing open: the three questions below were answered on 2026-10-24.
