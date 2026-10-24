@@ -47,6 +47,14 @@ public:
 	Property<int64_t> fromFrame{0}, toFrame{0};
 	Property<bool> resize{false}, pad{false}, audioSync{true};
 	Property<int64_t> width{0}, height{0};
+	/* Chimera's Capture OSD and Capture Lua: what is drawn over the picture
+	 * is in the video too - the counters and messages with what scripts draw
+	 * (OSD), or what scripts draw alone (Lua) */
+	Property<bool> captureOsd{false}, captureLua{false};
+	/* puts that over a picture, at the picture's own size: the window draws
+	 * it, so the window sets this and it runs on the window's thread; `osd`
+	 * the counters and messages too. Unset, nothing is put over the picture */
+	std::function<void(std::vector<uint32_t> &pixels, int32_t width, int32_t height, bool osd)> compose;
 	/* idle, encoding, done, stopped, failed */
 	Property<std::string> phase{"idle"}, status;
 	Property<int64_t> framesDone{0}, frameCount{0};
@@ -57,6 +65,8 @@ public:
 	Property<std::string> written;
 
 private:
+	/* the OSD is drawn over what scripts draw, so it is not had without it (Chimera's two boxes) */
+	Connection osdTakesLua_, luaOffTakesOsd_;
 	class PresetRows : public RowModel
 	{
 	public:

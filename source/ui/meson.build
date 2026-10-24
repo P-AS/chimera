@@ -208,6 +208,7 @@ if qt_dep.found()
       'qt/key_names.cpp',
       'qt/theme_palette.cpp',
       'qt/pointer_capture.cpp',
+      'qt/overlay_painter.cpp',
       qt_moc,
       qt_rcc,
     ],

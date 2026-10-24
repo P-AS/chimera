@@ -73,6 +73,11 @@ struct EncoderViewModel::Job
 	std::string ffmpeg, base, ext, command;
 	int32_t outW = 0, outH = 0;
 	bool resize = false, pad = false, audioSync = true;
+	/* what is drawn over the picture, put in by the window (Capture OSD, Capture Lua) */
+	bool osd = false, lua = false;
+	std::function<void(std::vector<uint32_t> &, int32_t, int32_t, bool)> compose;
+	SessionViewModel *session = nullptr;
+	std::vector<uint32_t> composed;
 	int64_t from = 0, to = 0;
 	std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
 
@@ -164,6 +169,19 @@ struct EncoderViewModel::Job
 			why = "The machine drew no picture.";
 			return false;
 		}
+		/* what is drawn over it, at its own size, by the window: then made
+		 * the size asked for, as Chimera captures the OSD before it scales */
+		if ((osd || lua) && compose && session != nullptr)
+		{
+			composed.assign(px, px + static_cast<size_t>(sw) * sh);
+			for (uint32_t &p : composed) p |= 0xFF000000u;
+			if (!session->onWindowWait([&] { compose(composed, sw, sh, osd); }))
+			{
+				why = "The window is closing.";
+				return false;
+			}
+			px = composed.data();
+		}
 		/* the picture at the size asked for */
 		const uint32_t *pic = px;
 		int32_t pw = sw, ph = sh;
@@ -253,6 +271,14 @@ EncoderViewModel::EncoderViewModel(Dispatcher &dispatcher, SessionViewModel &ses
 	expose("height", "that size's height", height, true);
 	expose("pad", "kept in shape with black bars, not stretched", pad, true);
 	expose("audioSync", "the sound kept whole, the picture's frames dropped or doubled to match it", audioSync, true);
+	expose("captureOsd", "the counters, messages and what scripts draw are in the video (Chimera's Capture OSD)", captureOsd, true);
+	expose("captureLua", "what scripts draw is in the video (Chimera's Capture Lua)", captureLua, true);
+	osdTakesLua_ = captureOsd.changed.connect([this] {
+		if (captureOsd.get()) captureLua.set(true);
+	});
+	luaOffTakesOsd_ = captureLua.changed.connect([this] {
+		if (!captureLua.get()) captureOsd.set(false);
+	});
 	expose("phase", "idle, encoding, done, stopped or failed", phase);
 	expose("status", "how it is going, or how it went", status);
 	expose("framesDone", "frames written", framesDone);
@@ -364,6 +390,11 @@ EncoderViewModel::EncoderViewModel(Dispatcher &dispatcher, SessionViewModel &ses
 			job->outH = static_cast<int32_t>(height.get());
 			job->pad = pad.get();
 			job->audioSync = audioSync.get();
+			/* as Chimera's: the OSD takes what scripts draw with it */
+			job->osd = captureOsd.get();
+			job->lua = captureLua.get() || job->osd;
+			job->compose = compose;
+			job->session = &session_;
 			job->from = fromFrame.get();
 			job->to = toFrame.get();
 			if (job->resize && (job->outW < 2 || job->outH < 2))

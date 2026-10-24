@@ -2093,6 +2093,10 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 				break;
 			}
 			if (ce_session_frame(s_) > to) break;
+			/* the scripts have their turns, as each frame Chimera encodes is a frame it plays */
+			ce_session *const machine = s_;
+			scriptTurnOnMachine(scriptsBeforeM_);
+			if (s_ == nullptr || s_ != machine) break;
 			const int32_t lag = stepOnMachine(false, true, false);
 			if (lag < 0 && diedM_)
 			{
@@ -2100,6 +2104,9 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 				why = "The machine stopped.";
 				break;
 			}
+			/* the window's counters follow, as what it draws over the picture may be in the video */
+			report(-1, -1, -1, -1, -1);
+			scriptTurnOnMachine(scriptsAfterM_);
 			if (!frame(s_, why))
 			{
 				ended = 2;

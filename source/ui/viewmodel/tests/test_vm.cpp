@@ -7326,6 +7326,64 @@ bool encodeVideo(const char *package, const char *rom)
 	CHECK(encoder.run("start", {}, error).has_value());
 	CHECK(d.until([&] { return encoder.phase.get() != "encoding"; }, 120));
 	CHECK(encoder.phase.get() == "done" && framesIn(dir / "sized.mkv") == 30);
+	/* Capture OSD takes Capture Lua with it, and Capture Lua off takes the OSD, as Chimera's boxes */
+	encoder.resize.set(false);
+	encoder.captureOsd.set(true);
+	CHECK(encoder.captureLua.get());
+	encoder.captureLua.set(false);
+	CHECK(!encoder.captureOsd.get());
+	/* Capture Lua: each frame is handed to the window, at its own size, to have
+	 * what is drawn over it put in; scripts have their turns as it plays */
+	{
+		LuaBridge lua;
+		lua.add(session);
+		lua.toScripts = [&session](const std::function<void()> &job) { return session.onMachineThreadWait(job); };
+		lua.toWindow = [&session](const std::function<void()> &job) { return session.onWindowWait(job); };
+		session.setScriptTurns([&lua] { lua.frameStart(); }, [&lua] { lua.frameDone(); });
+		CHECK(lua.run("ended = 0 event.onframeend(function() ended = ended + 1 end)", "count", error));
+		int composed = 0, withOsd = 0, elsewhere = 0, w = 0, h = 0;
+		const auto window = std::this_thread::get_id();
+		encoder.compose = [&](std::vector<uint32_t> &pixels, int32_t pw, int32_t ph, bool osd) {
+			composed++;
+			withOsd += osd;
+			elsewhere += std::this_thread::get_id() != window;
+			w = pw;
+			h = ph;
+			pixels[0] = 0xFF123456u;
+		};
+		encoder.captureLua.set(true);
+		encoder.audioSync.set(false);
+		encoder.commandLine.set("-an -f rawvideo -pix_fmt bgra");
+		encoder.output.set((dir / "lua.raw").string());
+		encoder.fromFrame.set(0);
+		encoder.toFrame.set(9);
+		CHECK(encoder.run("start", {}, error).has_value());
+		CHECK(d.until([&] { return encoder.phase.get() != "encoding"; }, 120));
+		CHECK(encoder.phase.get() == "done" && composed == 10 && withOsd == 0 && elsewhere == 0 && w > 0 && h > 0);
+		/* in every frame of the file */
+		const std::string raw = readFile(dir / "lua.raw");
+		bool marked = raw.size() == static_cast<size_t>(w) * h * 4 * 10;
+		for (size_t f = 0; marked && f < 10; f++)
+			marked = std::memcmp(raw.data() + f * static_cast<size_t>(w) * h * 4, "\x56\x34\x12\xFF", 4) == 0;
+		CHECK(marked);
+		std::vector<std::string> said;
+		lua.onLog = [&](const std::string &l) { said.push_back(l); };
+		/* the wind to the first marker lands (a seek's landing is a frame's end), then ten frames */
+		CHECK(lua.run("print(ended)", "ended", error) && !said.empty() && said.back() == "11");
+		/* Capture OSD: the counters and messages too */
+		encoder.captureOsd.set(true);
+		encoder.output.set((dir / "osd.raw").string());
+		CHECK(encoder.run("start", {}, error).has_value());
+		CHECK(d.until([&] { return encoder.phase.get() != "encoding"; }, 120));
+		CHECK(encoder.phase.get() == "done" && composed == 20 && withOsd == 10);
+		session.setScriptTurns({}, {});
+		encoder.compose = nullptr;
+		encoder.captureLua.set(false);
+		encoder.commandLine.set("-c:v ffv1 -c:a pcm_s16le -f matroska");
+		encoder.audioSync.set(true);
+		encoder.fromFrame.set(0);
+		encoder.toFrame.set(29);
+	}
 	/* stopped before its first frame: given back, and no file (one opens with its first frame) */
 	encoder.resize.set(false);
 	encoder.output.set((dir / "stopped.mkv").string());

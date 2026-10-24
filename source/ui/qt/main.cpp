@@ -94,6 +94,7 @@
 #include "chimera/vm/session_vm.hpp"
 #include "clipboard_relay.hpp"
 #include "picture_files.hpp"
+#include "overlay_painter.hpp"
 #include "pointer_capture.hpp"
 #include "button_router.hpp"
 #include "key_names.hpp"
@@ -820,7 +821,7 @@ int main(int argc, char **argv)
 	/* Chimera's Encode Video, with the ffmpeg the bundle keeps beside the program;
 	 * its choices kept, as Chimera keeps them in its config */
 	vm::EncoderViewModel encoder(dispatcher, session, QCoreApplication::applicationDirPath().toStdString());
-	for (const char *name : {"command", "audioSync", "resize", "width", "height", "pad"}) config.keep(encoder, name);
+	for (const char *name : {"command", "audioSync", "resize", "width", "height", "pad", "captureOsd", "captureLua"}) config.keep(encoder, name);
 	qt::QmlViewModel encoderQml(encoder);
 	/* the person's own keys, pads and pointer, for Lua's input library */
 	vm::HostInputViewModel hostInput(dispatcher, session);
@@ -1218,6 +1219,25 @@ int main(int argc, char **argv)
 	if (engine.rootObjects().isEmpty()) return 1;
 	auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
 	mainWindow = window;
+	/* Encode Video's Capture Lua and Capture OSD: what the window draws over
+	 * the picture, painted into each frame at the machine's own size - the
+	 * shapes scripts draw, and the counters and messages as the window lays
+	 * them out for that size (Main.qml's osdLayer) */
+	encoder.compose = [window, &guiOverlay](std::vector<uint32_t> &pixels, int32_t w, int32_t h, bool osd) {
+		QImage image(reinterpret_cast<uchar *>(pixels.data()), w, h, w * 4, QImage::Format_RGB32);
+		qt::paintShapes(image, QString::fromStdString(guiOverlay.shapes.get()));
+		if (!osd) return;
+		QVariant layer;
+		QMetaObject::invokeMethod(window, "osdLayer", Q_RETURN_ARG(QVariant, layer), Q_ARG(QVariant, w), Q_ARG(QVariant, h));
+		std::vector<qt::OverlayText> texts;
+		for (const QVariant &v : layer.toList())
+		{
+			const QVariantMap m = v.toMap();
+			texts.push_back({m.value(QStringLiteral("text")).toString(), m.value(QStringLiteral("x")).toInt(), m.value(QStringLiteral("y")).toInt(),
+				QColor::fromString(m.value(QStringLiteral("color")).toString())});
+		}
+		qt::paintTexts(image, texts);
+	};
 	/* the place and size kept last time, when asked (Display) */
 	if (display.saveWindowPosition.get())
 	{

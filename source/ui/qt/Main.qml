@@ -121,6 +121,44 @@ ApplicationWindow {
         if (!p) return 0
         return p.anchor < 2 ? p.y : pictureArea.height - p.y - h
     }
+    // Encode Video's Capture OSD: what is over the picture now, as lines of
+    // text placed for an area w by h (the encoder paints them over each frame
+    // at the machine's own size): {text, x, y, color} each, a line 14 high
+    TextMetrics { id: osdMetrics; font.family: "monospace"; font.pixelSize: 12 }
+    function osdLayer(w, h) {
+        const out = []
+        if (!root.session.isOpen || root.session.displayNothing) return out
+        function widthOf(t) { osdMetrics.text = t; return osdMetrics.advanceWidth }
+        function place(name, lines, color) {
+            const p = root.osdPositions[name]
+            lines = lines.filter(t => t !== "")
+            if (!p || lines.length === 0) return
+            const bw = Math.max(...lines.map(widthOf)), bh = lines.length * 14
+            const x = p.anchor === 0 || p.anchor === 2 ? p.x : w - p.x - bw
+            const y = p.anchor < 2 ? p.y : h - p.y - bh
+            lines.forEach((t, i) => out.push({text: t, x: Math.round(x), y: Math.round(y + i * 14), color: String(color)}))
+        }
+        place("Fps", [[root.session.showFps ? root.session.fpsText : "",
+                       root.session.showAverageFps ? root.session.averageFpsText : ""].filter(t => t !== "").join("   ")], root.osdMessageColor)
+        if (root.session.showGameTime) place("Game Time", [root.session.gameTimeText], root.osdMessageColor)
+        if (root.session.showRerecords) place("Rerecords", [String(root.session.rerecords)], root.osdMessageColor)
+        if (root.session.showMessages) {
+            const all = []
+            for (let i = 0; i < onScreenMessages.count; i++) all.push(onScreenMessages.get(i).message)
+            const shown = root.messages.stackMessages ? all : all.slice(-1)
+            const p = root.osdPositions["Messages"]
+            place("Messages", p && p.anchor < 2 ? shown.reverse() : shown, root.osdMessageColor)
+        }
+        if (root.session.showFrameCounter)
+            place("Frame Counter", [root.session.frameCounterText], root.session.lagFrame ? root.osdAlertColor : root.osdMessageColor)
+        if (root.session.showInput) place("Input Display", [root.session.inputText], root.osdMovieInputColor)
+        if (root.session.showLagCounter) place("Lag Counter", [String(root.session.lagCount)], root.osdAlertColor)
+        if (root.session.stickyArmed) place("Autohold", [root.session.stickyText], root.osdColor("OsdAutoHold", "#FFFFFF"))
+        for (const s of JSON.parse(root.projectDetails.onScreen))
+            out.push({text: s.text, x: Math.round(s.x), y: Math.round(s.y), color: String(s.color)})
+        if (root.ramWatch.onScreenText !== "") place("Watches", root.ramWatch.onScreenText.split("\n"), "white")
+        return out
+    }
     // the keys of every hotkey, for the menus to show beside their actions
     readonly property var hotkeyKeys: JSON.parse(root.hotkeys.bound)
     // Chimera's Capture Mouse: while the window is active the pointer is hidden and kept over the picture

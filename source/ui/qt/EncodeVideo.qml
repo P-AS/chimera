@@ -2,11 +2,10 @@
 // ffmpeg command or a preset's, the two markers to encode between, the size
 // and the sound's sync - then Start Encode winds the run there, encodes it
 // and gives the machine back. Closing the window stops it. What it refuses
-// is said in the status line in the error colour, as Chimera's. Layout and
-// bindings only, over the encoder view model.
-//
-// Not here: Chimera's Capture OSD and Capture Lua, as the prototype draws
-// those over the picture in the window and not into the frames written.
+// is said in the status line in the error colour, as Chimera's. Capture OSD
+// and Capture Lua put what the window draws over the picture into the video,
+// at the machine's own size. Layout and bindings only, over the encoder view
+// model.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -149,7 +148,11 @@ ApplicationWindow {
             Label { text: win.picture && win.picture.pictureWidth > 0 ? qsTr("now %1x%2").arg(win.picture.pictureWidth).arg(win.picture.pictureHeight) : "" }
             CheckBox { text: qsTr("Pad"); checked: win.vm.pad; enabled: win.vm.resize; onToggled: win.vm.pad = checked }
         }
-        CheckBox { text: qsTr("Sync to audio"); enabled: !win.running; checked: win.vm.audioSync; onToggled: win.vm.audioSync = checked }
+        RowLayout {
+            CheckBox { text: qsTr("Sync to audio"); enabled: !win.running; checked: win.vm.audioSync; onToggled: win.vm.audioSync = checked }
+            CheckBox { text: qsTr("Capture OSD"); enabled: !win.running; checked: win.vm.captureOsd; onToggled: win.vm.captureOsd = checked }
+            CheckBox { text: qsTr("Capture Lua"); enabled: !win.running; checked: win.vm.captureLua; onToggled: win.vm.captureLua = checked }
+        }
 
         ProgressBar {
             Layout.fillWidth: true
