@@ -17,6 +17,15 @@ class PianoRollViewModel : public ViewModel
 public:
 	/* Frames::rowFlags */
 	static constexpr uint32_t kLag = 1, kGreen = 2, kMarker = 4, kStated = 8, kRan = 16;
+	/* the theme role a row's frame number is drawn on, when it is not a
+	 * marker's: a frame the greenzone holds takes Set Colors' "Frame# Column"
+	 * colours, lag or not (TasGreenZone, TasLagZone), as Chimera's roll now
+	 * does (owner, 2026-10-24); the current frame and a frame not run as it
+	 * stands keep their row's, washed (TasFrameColumnWash) */
+	static const char *frameColumnRole(bool current, bool inGreen, bool lagged)
+	{
+		return current || !inGreen ? "TasFrameColumnWash" : lagged ? "TasLagZone" : "TasGreenZone";
+	}
 	/* one of the run's own markers is on the frame */
 	static constexpr uint32_t kPermanent = 32;
 

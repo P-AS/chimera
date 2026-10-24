@@ -6195,6 +6195,17 @@ bool recordingMode(const char *package, const char *rom)
  * included, for this session only; they stay for the same game run again,
  * go for another game and when the game is closed, and are switched off
  * (not removed) when the machine stops */
+/* The frame numbers' colour (owner, 2026-10-24): Set Colors' Frame# Column on
+ * a frame the greenzone holds, lag or not; the wash on the current frame and on
+ * a frame not run as it stands */
+void frameColumnColours()
+{
+	CHECK(std::string(PianoRollViewModel::frameColumnRole(false, true, false)) == "TasGreenZone");
+	CHECK(std::string(PianoRollViewModel::frameColumnRole(false, true, true)) == "TasLagZone");
+	CHECK(std::string(PianoRollViewModel::frameColumnRole(true, true, false)) == "TasFrameColumnWash");
+	CHECK(std::string(PianoRollViewModel::frameColumnRole(false, false, true)) == "TasFrameColumnWash");
+}
+
 /* Scripts run on the machine's thread, before and after every frame, as
  * Chimera's do, and reach the view models by waiting on the window (owner,
  * 2026-10-24): with the machine running as fast as it goes, a script's
@@ -7724,6 +7735,7 @@ int main(int argc, char **argv)
 	registry();
 	bindings();
 	lua();
+	frameColumnColours();
 	luaConsole();
 	toolWindows();
 	configStore();

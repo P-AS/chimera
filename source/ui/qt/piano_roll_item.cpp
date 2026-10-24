@@ -14,6 +14,7 @@
 #include <cctype>
 #include <cstdlib>
 
+#include "chimera/vm/piano_roll_vm.hpp"
 #include "qml_view_model.hpp"
 #include "theme_palette.hpp"
 
@@ -328,8 +329,6 @@ void PianoRollItem::paint(QPainter *p)
 		for (const auto &[role, color] : roles)
 			if (const QColor c(own.value(QLatin1String(role)).toString()); c.isValid()) *color = c;
 	}
-	Q_UNUSED(greenFrame);
-	Q_UNUSED(lagFrame);
 	p->setFont(font_);
 	p->fillRect(0, 0, static_cast<int>(width()), static_cast<int>(height()), plain);
 	if (rows_ == nullptr) return;
@@ -430,7 +429,13 @@ void PianoRollItem::paint(QPainter *p)
 			if (name.size() > 2 && name[0] == 'P' && std::isdigit(static_cast<unsigned char>(name[1])) && (std::atoi(name.c_str() + 1) % 2) == 0)
 				p->fillRect(columnX(c), y, cw, rowHeight_, altPlayer);
 		}
-		if (frameWash.isValid()) p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, frameWash);
+		/* the frame number's own colour: Set Colors' Frame# Column on a frame the greenzone holds (above the row's
+		 * grid line), else the wash over the row */
+		const std::string frameRole = vm::PianoRollViewModel::frameColumnRole(row == current_, inGreen, isLag);
+		if (frameRole == "TasGreenZone" || frameRole == "TasLagZone")
+			p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_ - 1, frameRole == "TasGreenZone" ? greenFrame : lagFrame);
+		else if (frameWash.isValid())
+			p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, frameWash);
 		/* a marker: its frame number on the accent (when markers are told by
 		 * colour), its text after the buttons */
 		if (isMarker && denoteMarkersColor_ && row != current_) p->fillRect(0, y, fx, rowHeight_, isPermanent ? permanent : marker);
