@@ -355,9 +355,17 @@ CE_API void ce_sha1_hex(const uint8_t *data, uint64_t len, char *out41);
  * firmware may be a disk image, and one that does not fit in memory still has
  * an identity. Writes 40 uppercase hex characters plus a NUL into out41, and
  * the length hashed into lenOut when it is given. Answers repeat calls from a
- * cache keyed by path, size and mtime, so hashing the same file twice in a
- * session costs one read. Returns 1 when the file was read, 0 when it was not. */
+ * cache keyed by the path and the file's whole identity (size, modified and
+ * changed times, volume, file index), so hashing the same file twice costs one
+ * read. Returns 1 when the file was read, 0 when it was not. */
 CE_API int ce_sha1_file(const char *utf8Path, char *out41, uint64_t *lenOut);
+/* Keeps that cache between sessions in the file named (UTF-8; NULL keeps it
+ * for this process only, as before the first call): the hashes the file holds
+ * are read back now, and every hash taken from now on of a file whose
+ * identity the system gives in full is added to it. A file edited, replaced
+ * or copied over has another identity and is hashed again. Returns how many
+ * hashes were read back. */
+CE_API int32_t ce_sha1_keep_in(const char *utf8Path);
 
 /* ---- reproducible media ----
  *
@@ -610,6 +618,18 @@ CE_API void ce_project_set_core(ce_project *p, const char *name, const char *ver
 
 CE_API uint64_t ce_project_rerecords(const ce_project *p);
 CE_API void ce_project_set_rerecords(ce_project *p, uint64_t count);
+
+/* The second (since 1970, UTC) the machine's clock starts at (owner,
+ * 2026-10-24, issue 366). Every run of a project starts the clock at the same
+ * second, so a movie replays; a game that takes its luck from the date deals
+ * the same each time. A project may choose another second to give the game
+ * other luck. -1 when the project names none, and the machine starts at the
+ * sandbox's own, CE_CLOCK_START_DEFAULT; the file says "clockStart" only for
+ * another start, so a project at the default opens in an older Chimera.
+ * Setting -1 or the default clears it; 1 for a start later than 2200-01-01. */
+#define CE_CLOCK_START_DEFAULT 1495889068
+CE_API int64_t ce_project_clock_start(const ce_project *p);
+CE_API int32_t ce_project_set_clock_start(ce_project *p, int64_t unix_seconds);
 
 /* The sync settings, as the JSON object the session's settings channel
  * takes. Borrowed; invalidated by the next settings call on p. The setter
@@ -2135,6 +2155,16 @@ CE_API int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t fr
  * load_branch) has the values the agent asked to watch read from it and
  * added. */
 CE_API void ce_mcp_answer(ce_session *s, uint64_t id, const char *text, int32_t is_error);
+
+/* capture_series (issue 355): the frontend plays the movie to each frame of
+ * the plan it was handed (its arguments' "frames") and, on each, has the
+ * engine take the picture with this, saying the frame it is on as it counts
+ * them; the pictures go with its answer. 1, or 0 with the reason (borrowed
+ * until this thread's next call). */
+CE_API int32_t ce_mcp_capture(ce_session *s, uint64_t id, int64_t frame, const char **error_out);
+/* The folders the frontend finds core packages in, as a JSON array of
+ * paths: what list_cores and describe_core read in the window. */
+CE_API void ce_mcp_cores_folders(const char *folders_json);
 
 /* advance_until: play forward until a value meets a condition. The frontend
  * does the playing, because the playback position is its own; what the

@@ -308,6 +308,49 @@ namespace Chimera.Tests.Client.Common.CorePackages
 		}
 
 		/// <summary>
+		/// A default binding to a joystick's hat names its first hat. Chimera numbers a joystick's hats from 0
+		/// (SDL2Gamepad: "POV0U"), so "POV1U" is a second hat, which a stick with one does not have. 33 cores bound
+		/// their directions to POV1 and none to POV0, so a joystick that is not a game controller moved nothing
+		/// until bound by hand (found with chimera#336). A package that binds a later hat binds the first too.
+		/// </summary>
+		[TestMethod]
+		public void KeybindsNameAJoysticksFirstHat()
+		{
+			List<string> wrong = new();
+			Packages();
+			foreach (var path in InstalledPackages.Newest)
+			{
+				var dir = Extracted(path);
+				if (dir is null) continue;
+				try
+				{
+					var keybinds = PackageKeybinds.Read(dir);
+					if (keybinds is null) continue;
+					var hats = keybinds.AllTrollers
+						.SelectMany(static c => c.Value.Values)
+						.SelectMany(static v => (v ?? "").Split(',', '+').Select(static p => p.Trim()))
+						.Select(static p => Regex.Match(p, @"^J\d+ POV(\d+)[UDLR]$"))
+						.Where(static m => m.Success)
+						.Select(static m => int.Parse(m.Groups[1].Value))
+						.ToHashSet();
+					if (hats.Count is not 0 && !hats.Contains(0))
+					{
+						wrong.Add($"{InstalledPackages.NameOf(path)} binds POV{string.Join("/POV", hats.OrderBy(static h => h))} and not POV0");
+					}
+				}
+				catch (Exception ex)
+				{
+					wrong.Add($"{InstalledPackages.NameOf(path)}: {ex.Message}");
+				}
+				finally
+				{
+					TryDelete(dir);
+				}
+			}
+			Assert.AreEqual(0, wrong.Count, "joystick hats past the first, with the first unbound: " + string.Join("; ", wrong));
+		}
+
+		/// <summary>
 		/// The names the keyboard and the mouse arrive by: each key as Input hands it to the bindings
 		/// (<see cref="DistinctKeyNameOverrides.GetName"/>), Shift, Ctrl and Alt for either key of each (the
 		/// default, Config.MergeLAndRModifierKeys), and the mouse's buttons.
@@ -589,6 +632,61 @@ namespace Chimera.Tests.Client.Common.CorePackages
 			CollectionAssert.AreEqual(new[] { "'bios' labels 'c-rom', which is not one of its values" }, LabelsOfNoValue(config).ToArray());
 			Assert.AreEqual("USA", config.Settings![0].LabelFor("a-rom"));
 			Assert.AreEqual("b-rom", config.Settings![0].LabelFor("b-rom"), "a value with no label is shown as it is");
+		}
+
+		/// <summary>
+		/// A setting's type is one Chimera knows (issue 358). Any other word was taken for text, so a
+		/// misspelt "unit" or "date" turned a number into a string the core then could not read.
+		/// </summary>
+		[TestMethod]
+		public void EverySettingTypeIsOneChimeraKnows()
+		{
+			List<string> unknown = new();
+			foreach (var path in Packages())
+			{
+				var dir = Extracted(path);
+				if (dir is null) continue;
+				try
+				{
+					var config = WaterboxConfig.FromJson(File.ReadAllText(Path.Combine(dir, WaterboxCoreFactory.ConfigFileName)));
+					if (config is null) continue;
+					unknown.AddRange(UnknownSettingTypes(config).Select(found => $"{InstalledPackages.NameOf(path)}: {found}"));
+				}
+				catch (Exception ex)
+				{
+					unknown.Add($"{InstalledPackages.NameOf(path)}: {ex.Message}");
+				}
+				finally
+				{
+					TryDelete(dir);
+				}
+			}
+			Assert.AreEqual(0, unknown.Count, string.Join("; ", unknown));
+		}
+
+		[TestMethod]
+		public void ASettingTypeChimeraDoesNotKnowIsFound()
+		{
+			var config = WaterboxConfig.FromJson("""
+				{ "settings": [
+				    { "name": "seed", "type": "unit", "default": 1 },
+				    { "name": "clock", "type": "datetime", "default": 946684800 },
+				    { "name": "wide", "type": "ULong", "default": 1 },
+				    { "name": "guessed", "default": 3 } ] }
+				""")!;
+			CollectionAssert.AreEqual(new[] { "'seed' is of type 'unit', which Chimera does not know" }, UnknownSettingTypes(config).ToArray());
+		}
+
+		/// <summary>Each declaration, in the package and in its machines, whose type Chimera does not know.</summary>
+		private static IEnumerable<string> UnknownSettingTypes(WaterboxConfig config)
+		{
+			var machines = config.Machines is { Count: > 0 } several
+				? several.Cast<WaterboxConfig.MachineConfig?>()
+				: new WaterboxConfig.MachineConfig?[] { null };
+			return machines.SelectMany(config.SettingsFor).Concat(config.Settings ?? [ ])
+				.Where(static d => !WaterboxConfig.SettingDecl.KnownTypes.Contains(d.EffectiveType))
+				.Select(static d => $"'{d.Name}' is of type '{d.Type}', which Chimera does not know")
+				.Distinct();
 		}
 
 		/// <summary>Each label, in every declaration, that names no value of its setting.</summary>

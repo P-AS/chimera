@@ -26,23 +26,28 @@ end
 -- where the server's tools make their changes; a run nobody clicks in has to
 -- open it itself. It owns the playback position, so it is asked to play to
 -- the movie's end.
-if not tastudio.engaged() then
-	client.opentasstudio()
-end
-pcall(function() client.speedmode(6400) end)
-local length = movie.length()
-pcall(function() tastudio.setplayback(length) end)
-local spins = 0
-while emu.framecount() < length and spins < 20000 do
-	client.unpause()
-	emu.yield()
-	spins = spins + 1
-end
-client.pause()
+--
+-- Once the agent has closed the project (close_tastudio), Chimera starts this
+-- script again with nothing open: then it only waits to end Chimera.
+if not exists(job.ready) then
+	if not tastudio.engaged() then
+		client.opentasstudio()
+	end
+	pcall(function() client.speedmode(6400) end)
+	local length = movie.length()
+	pcall(function() tastudio.setplayback(length) end)
+	local spins = 0
+	while emu.framecount() < length and spins < 20000 do
+		client.unpause()
+		emu.yield()
+		spins = spins + 1
+	end
+	client.pause()
 
-local f = assert(io.open(job.ready, "wb"))
-f:write("frames=" .. emu.framecount() .. "\n")
-f:close()
+	local f = assert(io.open(job.ready, "wb"))
+	f:write("frames=" .. emu.framecount() .. "\n")
+	f:close()
+end
 
 local started = os.time()
 while not exists(job.done) and os.time() - started < 120 do

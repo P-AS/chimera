@@ -292,6 +292,39 @@ PROJPY
 		else
 			report "E:project:settings" FAIL "rc=$jrc, or RAM matches the default dump: initFillByte never reached the machine"
 		fi
+		# The second the machine's clock starts at (issue 366): a project may
+		# name another than the sandbox's own, and the machine reads it. A rom
+		# ending in CLOCKTEST keeps the second its clock reads in the last eight
+		# bytes of RAM; one project names 2030-01-02T03:04:05Z (1893553445), the
+		# other names none and must read the sandbox's 2017-05-27 (1495889068).
+		mkdir -p "$jdir/clock"
+		{ cat "$here/roms/gridWalker.testrom"; printf 'CLOCKTEST'; } > "$jdir/clock/clock.testrom"
+		python3 - "$jdir/clock/clock.testrom" "$jdir/clock" <<'CLOCKPY'
+import hashlib, json, sys
+sha1 = hashlib.sha1(open(sys.argv[1], "rb").read()).hexdigest().upper()
+def write(path, start=None):
+    doc = {
+        "title": "clock",
+        "core": {"name": "Synth", "version": "", "sha1": ""},
+        "files": [{"name": "clock.testrom", "sha1": sha1, "slot": "rom"}],
+        "input": "[Input]\nLogKey:#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|\n"
+                 + "|........|\n" * 3 + "[/Input]\n",
+    }
+    if start is not None: doc["clockStart"] = start
+    json.dump(doc, open(path, "w"))
+write(sys.argv[2] + "/start.chimeraProject", "2030-01-02T03:04:05Z")
+write(sys.argv[2] + "/default.chimeraProject")
+CLOCKPY
+		jsecond() { python3 -c 'import struct,sys; print(struct.unpack("<Q", open(sys.argv[1],"rb").read()[4088:4096])[0])' "$jdir/$1.ram.bin" 2>/dev/null; }
+		jrun clock-start --project "$jdir/clock/start.chimeraProject" "$epkg"
+		cstart="$(jsecond clock-start)"; crc=$jrc
+		jrun clock-default --project "$jdir/clock/default.chimeraProject" "$epkg"
+		cdefault="$(jsecond clock-default)"
+		if [ "$crc" -eq 0 ] && [ "$jrc" -eq 0 ] && [ "$cstart" = "1893553445" ] && [ "$cdefault" = "1495889068" ]; then
+			report "E:project:clock-start" PASS "the machine's clock starts at the second the project names, and at the sandbox's own when it names none"
+		else
+			report "E:project:clock-start" FAIL "the machine read ${cstart:-nothing} for 1893553445 (rc=$crc) and ${cdefault:-nothing} for 1495889068 (rc=$jrc) (see work/engine-project/clock-*.log)"
+		fi
 
 		jbad=""
 		jrun missing --project "$jdir/missing/p.chimeraProject" "$epkg"

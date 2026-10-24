@@ -125,15 +125,6 @@ namespace Chimera.Client.GUI
 			e.Set(DragDropEffects.Copy);
 		}
 
-		protected override void OnLoad(EventArgs e)
-		{
-			if (MainMenuStrip != null)
-			{
-				MainMenuStrip.MenuActivate += (sender, args) => MainForm.MaybePauseFromMenuOpened();
-				MainMenuStrip.MenuDeactivate += (sender, args) => MainForm.MaybeUnpauseFromMenuClosed();
-			}
-			base.OnLoad(e);
-		}
 
 		public virtual void HandleHotkeyUpdate() { }
 

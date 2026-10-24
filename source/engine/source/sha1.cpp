@@ -7,8 +7,11 @@
 
 #include "chimera/engine.h"
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
+#include <new>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -256,9 +259,23 @@ struct Sha1
  * answer here would be a movie pinned to the wrong bytes, so it only ever skips
  * work that would have produced the same forty characters.
  *
- * It lives as long as the process. Nothing is written to disk: a stale entry
- * surviving a restart is a bug nobody could see, and one hash of a disc image
- * per session is no longer a wait worth risking that for. */
+ * It lived as long as the process, and nothing was written to disk: a stale
+ * entry surviving a restart is a bug nobody could see. The owner chose to keep
+ * it between sessions (2026-10-24, issue 368): the first rescan of a Firmware
+ * folder in every session read every disc image in it again. The frontend
+ * names a file (ce_sha1_keep_in); every hash taken of a file whose identity
+ * the system gives in full is appended to it, and the next session reads it
+ * back. The key is the same whole identity, so a file edited, replaced, copied
+ * over or moved in is another file and is hashed again. A file whose system
+ * gives no change time or no file index (some network and FAT volumes) is
+ * kept for the session only: without them two different files can look the
+ * same.
+ *
+ * The file is text, a line a hash, appended as hashes are taken:
+ *   <sha1> <length> <size> <modified> <changed> <volume> <index> <path>
+ * A line that does not read as one is passed over, so a write cut short costs
+ * that entry and nothing else. Only the newest line of a path is taken, and a
+ * file holding many more lines than paths is written again with those alone. */
 struct CacheKey
 {
 	std::string path;
@@ -272,6 +289,70 @@ struct CacheKey
 
 std::mutex g_cacheLock;
 std::map<CacheKey, std::pair<std::string, uint64_t>> g_cache;
+
+static std::mutex g_keepLock; /* the file the hashes are kept in, and writes to it */
+static std::string g_keepPath;
+
+static bool keepable(const FileIdentity &id) { return id.changed != 0 && id.index != 0; }
+
+static std::string keepLine(const CacheKey &key, const std::string &hex, uint64_t len)
+{
+	if (key.path.empty() || key.path.find_first_of("\r\n") != std::string::npos) return {};
+	char head[200];
+	std::snprintf(head, sizeof head, "%s %llu %llu %lld %lld %llu %llu ", hex.c_str(),
+		(unsigned long long)len, (unsigned long long)key.id.size, (long long)key.id.modified,
+		(long long)key.id.changed, (unsigned long long)key.id.volume, (unsigned long long)key.id.index);
+	return head + key.path + "\n";
+}
+
+/* one line of the kept file; false for anything that is not a whole one */
+static bool readKeepLine(const std::string &line, CacheKey &key, std::string &hex, uint64_t &len)
+{
+	size_t at = 0;
+	std::string fields[7];
+	for (std::string &f : fields)
+	{
+		const size_t sp = line.find(' ', at);
+		if (sp == std::string::npos || sp == at) return false;
+		f = line.substr(at, sp - at);
+		at = sp + 1;
+	}
+	if (at >= line.size()) return false;
+	if (fields[0].size() != 40 || fields[0].find_first_not_of("0123456789ABCDEF") != std::string::npos) return false;
+	auto number = [](const std::string &s, bool sign, uint64_t &out) {
+		if (s.empty()) return false;
+		size_t i = sign && s[0] == '-' ? 1 : 0;
+		if (i == s.size() || s.find_first_not_of("0123456789", i) != std::string::npos || s.size() > 20) return false;
+		out = std::strtoull(s.c_str() + i, nullptr, 10);
+		if (i == 1) out = (uint64_t)(-(int64_t)out);
+		return true;
+	};
+	uint64_t v[6];
+	for (int i = 0; i < 6; i++)
+		if (!number(fields[i + 1], i == 2 || i == 3, v[i])) return false;
+	hex = fields[0];
+	len = v[0];
+	key.id.size = v[1];
+	key.id.modified = (int64_t)v[2];
+	key.id.changed = (int64_t)v[3];
+	key.id.volume = v[4];
+	key.id.index = v[5];
+	key.path = line.substr(at);
+	return keepable(key.id);
+}
+
+static void keepHash(const CacheKey &key, const std::string &hex, uint64_t len)
+{
+	if (!keepable(key.id)) return;
+	const std::string line = keepLine(key, hex, len);
+	if (line.empty()) return;
+	std::lock_guard<std::mutex> keep(g_keepLock);
+	if (g_keepPath.empty()) return;
+	FILE *f = openFile(g_keepPath.c_str(), "ab");
+	if (f == nullptr) return;
+	std::fwrite(line.data(), 1, line.size(), f);
+	std::fclose(f);
+}
 
 bool sha1HexOfFile(const char *utf8Path, uint64_t *lenOut, std::string &out)
 {
@@ -339,10 +420,58 @@ bool sha1HexOfFile(const char *utf8Path, uint64_t *lenOut, std::string &out)
 	FileIdentity after;
 	if (stamped && fileIdentity(utf8Path, after) && after == key.id)
 	{
-		std::lock_guard<std::mutex> lock(g_cacheLock);
-		g_cache[key] = { out, total };
+		{
+			std::lock_guard<std::mutex> lock(g_cacheLock);
+			g_cache[key] = { out, total };
+		}
+		keepHash(key, out, total);
 	}
 	return true;
+}
+
+int32_t sha1KeepIn(const char *utf8Path)
+{
+	std::lock_guard<std::mutex> keep(g_keepLock);
+	g_keepPath = utf8Path != nullptr ? utf8Path : "";
+	if (g_keepPath.empty()) return 0;
+	std::vector<uint8_t> data;
+	if (!readFile(g_keepPath.c_str(), data)) return 0; /* none yet */
+	/* the newest line of each path */
+	std::map<std::string, std::pair<CacheKey, std::pair<std::string, uint64_t>>> newest;
+	size_t lines = 0, start = 0;
+	const std::string text(data.begin(), data.end());
+	while (start < text.size())
+	{
+		size_t end = text.find('\n', start);
+		if (end == std::string::npos) end = text.size(); /* a last line cut short reads as no line */
+		CacheKey key;
+		std::string hex;
+		uint64_t len = 0;
+		if (end < text.size() && readKeepLine(text.substr(start, end - start), key, hex, len))
+		{
+			lines++;
+			const std::string path = key.path;
+			newest[path] = { std::move(key), { std::move(hex), len } };
+		}
+		start = end + 1;
+	}
+	{
+		std::lock_guard<std::mutex> lock(g_cacheLock);
+		for (const auto &[path, entry] : newest) g_cache[entry.first] = entry.second;
+	}
+	if (lines > 2 * newest.size() + 64)
+	{
+		std::string again;
+		for (const auto &[path, entry] : newest) again += keepLine(entry.first, entry.second.first, entry.second.second);
+		writeFile(g_keepPath.c_str(), reinterpret_cast<const uint8_t *>(again.data()), again.size());
+	}
+	return static_cast<int32_t>(newest.size());
+}
+
+void sha1ForgetForTests()
+{
+	std::lock_guard<std::mutex> lock(g_cacheLock);
+	g_cache.clear();
 }
 
 Sha1Stream::Sha1Stream() : impl(new Sha1()) {}
@@ -392,6 +521,18 @@ extern "C" void ce_sha1_hex(const uint8_t *data, uint64_t len, char *out41)
 	std::string hex = chimera::sha1Hex(data, len);
 	std::memcpy(out41, hex.data(), 40);
 	out41[40] = '\0';
+}
+
+extern "C" int32_t ce_sha1_keep_in(const char *utf8Path)
+{
+	try
+	{
+		return chimera::sha1KeepIn(utf8Path);
+	}
+	catch (const std::bad_alloc &)
+	{
+		return 0;
+	}
 }
 
 extern "C" int ce_sha1_file(const char *utf8Path, char *out41, uint64_t *lenOut)

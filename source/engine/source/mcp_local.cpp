@@ -10,6 +10,7 @@
 #include "../../extern/cjson/cJSON.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -146,43 +147,52 @@ bool McpLocal::mayWrite(const std::string &path, std::string &resolved, std::str
 	return true;
 }
 
-/* A core package of the cores folder: by its file name, or by the name the
+/* A core package of the cores folders: by its file name, or by the name the
  * core gives itself. */
-bool McpLocal::findPackage(const std::string &asked, std::string &path, std::string &why) const
+bool mcpFindPackage(const std::vector<std::string> &dirs, const std::string &asked, std::string &path, std::string &why)
 {
 	/* By file name first, which opens nothing: every package opened here is
 	 * read whole and hashed, and that was done for every file in the folder
 	 * on every lookup (engine analysis, 2026-10-18). */
 	std::error_code failed;
-	for (const fs::directory_entry &entry : fs::directory_iterator(fs::u8path(options.coresDir), failed))
+	for (const std::string &dir : dirs)
 	{
-		if (entry.path().filename().u8string() != asked && entry.path().stem().u8string() != asked) continue;
-		const char *ignored = nullptr;
-		ce_package *package = ce_package_open(entry.path().u8string().c_str(), &ignored);
-		if (package == nullptr) continue;
-		ce_package_free(package);
-		path = entry.path().u8string();
-		return true;
+		for (const fs::directory_entry &entry : fs::directory_iterator(fs::u8path(dir), failed))
+		{
+			if (entry.path().filename().u8string() != asked && entry.path().stem().u8string() != asked) continue;
+			const char *ignored = nullptr;
+			ce_package *package = ce_package_open(entry.path().u8string().c_str(), &ignored);
+			if (package == nullptr) continue;
+			ce_package_free(package);
+			path = entry.path().u8string();
+			return true;
+		}
 	}
-	std::string byName;
-	for (const fs::directory_entry &entry : fs::directory_iterator(fs::u8path(options.coresDir), failed))
+	for (const std::string &dir : dirs)
 	{
-		const char *ignored = nullptr;
-		ce_package *package = ce_package_open(entry.path().u8string().c_str(), &ignored);
-		if (package == nullptr) continue;
-		cJSON *config = configOf(package);
-		const std::string name = textOf(config, "coreName");
-		cJSON_Delete(config);
-		ce_package_free(package);
-		if (name == asked && byName.empty()) byName = entry.path().u8string();
-	}
-	if (!byName.empty())
-	{
-		path = byName;
-		return true;
+		for (const fs::directory_entry &entry : fs::directory_iterator(fs::u8path(dir), failed))
+		{
+			const char *ignored = nullptr;
+			ce_package *package = ce_package_open(entry.path().u8string().c_str(), &ignored);
+			if (package == nullptr) continue;
+			cJSON *config = configOf(package);
+			const std::string name = textOf(config, "coreName");
+			cJSON_Delete(config);
+			ce_package_free(package);
+			if (name == asked)
+			{
+				path = entry.path().u8string();
+				return true;
+			}
+		}
 	}
 	why = "There is no core called '" + asked + "' in the cores folder. list_cores names them.";
 	return false;
+}
+
+bool McpLocal::findPackage(const std::string &asked, std::string &path, std::string &why) const
+{
+	return mcpFindPackage({ options.coresDir }, asked, path, why);
 }
 
 /* ---- the machine ---- */
@@ -416,13 +426,18 @@ std::string McpLocal::hostStatus() const
 
 /* ---- the tools that exist only without a window ---- */
 
-McpResult McpLocal::listCores()
+McpResult mcpListCores(const std::vector<std::string> &dirs)
 {
 	cJSON *cores = cJSON_CreateArray();
 	std::error_code failed;
 	std::vector<fs::path> entries;
-	for (const fs::directory_entry &entry : fs::directory_iterator(fs::u8path(options.coresDir), failed)) entries.push_back(entry.path());
-	std::sort(entries.begin(), entries.end());
+	for (const std::string &dir : dirs)
+	{
+		std::vector<fs::path> here;
+		for (const fs::directory_entry &entry : fs::directory_iterator(fs::u8path(dir), failed)) here.push_back(entry.path());
+		std::sort(here.begin(), here.end());
+		entries.insert(entries.end(), here.begin(), here.end());
+	}
 	for (const fs::path &path : entries)
 	{
 		const char *ignored = nullptr;
@@ -443,6 +458,32 @@ McpResult McpLocal::listCores()
 		if (cJSON_GetArraySize(machines) == 0 && !textOf(config, "systemName").empty())
 			cJSON_AddItemToArray(machines, cJSON_CreateString(textOf(config, "systemName").c_str()));
 		cJSON_AddItemToObject(core, "machines", machines);
+		/* the kinds of file it opens: what its slots take, and the extensions it
+		 * claims (issue 355: a ColecoVision core takes .col and .cv only) */
+		std::vector<std::string> kinds;
+		const cJSON *claimed = nullptr;
+		cJSON_ArrayForEach(claimed, cJSON_GetObjectItemCaseSensitive(config, "extensions"))
+		{
+			std::string kind = claimed->string != nullptr ? claimed->string : "";
+			if (!kind.empty() && kind[0] == '.') kind.erase(0, 1);
+			if (!kind.empty()) kinds.push_back(kind);
+		}
+		uint64_t length = 0;
+		const uint8_t *slots = ce_package_entry(package, "file_slots.json", &length);
+		cJSON *slotsJson = slots != nullptr ? cJSON_ParseWithLength(reinterpret_cast<const char *>(slots), length) : nullptr;
+		const cJSON *slot = nullptr;
+		cJSON_ArrayForEach(slot, cJSON_GetObjectItemCaseSensitive(slotsJson, "slots"))
+		{
+			const cJSON *format = nullptr;
+			cJSON_ArrayForEach(format, cJSON_GetObjectItemCaseSensitive(slot, "formats"))
+				if (cJSON_IsString(format)) kinds.push_back(format->valuestring);
+		}
+		cJSON_Delete(slotsJson);
+		for (std::string &kind : kinds) std::transform(kind.begin(), kind.end(), kind.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		std::sort(kinds.begin(), kinds.end());
+		kinds.erase(std::unique(kinds.begin(), kinds.end()), kinds.end());
+		cJSON *extensions = cJSON_AddArrayToObject(core, "extensions");
+		for (const std::string &kind : kinds) cJSON_AddItemToArray(extensions, cJSON_CreateString(kind.c_str()));
 		cJSON_AddItemToArray(cores, core);
 		cJSON_Delete(config);
 		ce_package_free(package);
@@ -452,13 +493,13 @@ McpResult McpLocal::listCores()
 	return answered(out);
 }
 
-McpResult McpLocal::describeCore(const std::string &argumentsJson)
+McpResult mcpDescribeCore(const std::vector<std::string> &dirs, const std::string &argumentsJson)
 {
 	cJSON *arguments = cJSON_Parse(argumentsJson.c_str());
 	const std::string asked = textOf(arguments, "core");
 	cJSON_Delete(arguments);
 	std::string path, why;
-	if (!findPackage(asked, path, why)) return mcpError(why);
+	if (!mcpFindPackage(dirs, asked, path, why)) return mcpError(why);
 	const char *ignored = nullptr;
 	ce_package *package = ce_package_open(path.c_str(), &ignored);
 	if (package == nullptr) return mcpError("The package of '" + asked + "' cannot be read.");
@@ -484,6 +525,16 @@ McpResult McpLocal::describeCore(const std::string &argumentsJson)
 	cJSON_Delete(config);
 	ce_package_free(package);
 	return answered(out);
+}
+
+McpResult McpLocal::listCores()
+{
+	return mcpListCores({ options.coresDir });
+}
+
+McpResult McpLocal::describeCore(const std::string &argumentsJson)
+{
+	return mcpDescribeCore({ options.coresDir }, argumentsJson);
 }
 
 McpResult McpLocal::openGame(const std::string &argumentsJson)
@@ -628,11 +679,17 @@ McpResult McpLocal::saveProject(const std::string &argumentsJson)
 	if (project == nullptr) return mcpError(kNothingOpen);
 	cJSON *arguments = cJSON_Parse(argumentsJson.c_str());
 	std::string asked = textOf(arguments, "path");
+	const bool overwrite = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(arguments, "overwrite"));
 	cJSON_Delete(arguments);
 	if (asked.empty()) asked = projectPath;
 	if (asked.empty()) return mcpError("Give 'path': this project has not been saved yet.");
 	std::string path, why;
 	if (!mayWrite(asked, path, why)) return mcpError(why);
+	/* nothing asks before a file is replaced, so a file that is there and is
+	 * not this project's own is kept unless the agent said to replace it */
+	std::error_code failed;
+	if (!overwrite && path != projectPath && fs::exists(fs::u8path(path), failed))
+		return mcpError("A file is already at '" + asked + "', so the project was not saved. Give overwrite: true to replace it.");
 	const std::string text = movieText();
 	ce_project_set_log_text(project, text.data(), text.size());
 	const char *error = nullptr;
@@ -643,6 +700,30 @@ McpResult McpLocal::saveProject(const std::string &argumentsJson)
 	cJSON *out = cJSON_CreateObject();
 	cJSON_AddStringToObject(out, "saved", path.c_str());
 	cJSON_AddNumberToObject(out, "movie_length", static_cast<double>(ce_movie_log_count(movie)));
+	cJSON_AddBoolToObject(out, "unsaved_changes", false);
+	return answered(out);
+}
+
+McpResult McpLocal::serverInfo() const
+{
+	cJSON *out = cJSON_CreateObject();
+	cJSON *build = cJSON_Parse(ce_build_info());
+	cJSON_AddItemToObject(out, "build", build != nullptr ? build : cJSON_CreateString(ce_build_info()));
+	cJSON_AddBoolToObject(out, "window", false);
+	cJSON_AddStringToObject(out, "cores_folder", options.coresDir.c_str());
+	cJSON_AddStringToObject(out, "work_folder", options.workDir.c_str());
+	cJSON *files = cJSON_AddArrayToObject(out, "file_folders");
+	for (const std::string &dir : options.fileDirs) cJSON_AddItemToArray(files, cJSON_CreateString(dir.c_str()));
+	return answered(out);
+}
+
+McpResult McpLocal::pause() const
+{
+	if (project == nullptr) return mcpError(kNothingOpen);
+	cJSON *out = cJSON_CreateObject();
+	cJSON_AddBoolToObject(out, "paused", true);
+	cJSON_AddNumberToObject(out, "frame", static_cast<double>(ce_session_frame(session)));
+	cJSON_AddStringToObject(out, "note", "Without a window the machine is always paused: it moves only when a tool moves it.");
 	return answered(out);
 }
 
@@ -883,6 +964,43 @@ McpResult McpLocal::runHost(const std::string &tool, const std::string &argument
 			}
 		}
 	}
+	else if (tool == "capture_series")
+	{
+		/* the plan the engine made: past the movie's end empty frames are
+		 * added first, then each frame is played to and its picture taken */
+		McpShotPlan plan;
+		std::string folder;
+		const cJSON *blank = cJSON_GetObjectItemCaseSensitive(arguments, "blank");
+		if (!mcpReadShotPlan(argumentsJson, plan) || !cJSON_IsString(blank)) why = "The step to apply is not one the engine makes.";
+		else if (!plan.folder.empty() && mayWrite(plan.folder, folder, why)) plan.folder = folder;
+		std::vector<std::string> facts, pictures;
+		if (why.empty() && plan.frames.back() > length)
+		{
+			rememberForUndo();
+			while (ce_movie_log_count(movie) < plan.frames.back()) ce_movie_log_add(movie, blank->valuestring);
+			movieChanged(length, why);
+		}
+		for (size_t n = 1; why.empty() && n <= plan.frames.size(); n++)
+		{
+			std::string fact, picture;
+			if (landOn(plan.frames[n - 1], why) && mcpTakeShot(session, plan, n, ce_session_frame(session), fact, picture, why))
+			{
+				facts.push_back(std::move(fact));
+				pictures.push_back(std::move(picture));
+			}
+		}
+		if (why.empty())
+		{
+			cJSON_AddNumberToObject(out, "frame", static_cast<double>(ce_session_frame(session)));
+			cJSON_AddNumberToObject(out, "movie_length", static_cast<double>(ce_movie_log_count(movie)));
+			const std::string answer = printed(out);
+			cJSON_Delete(out);
+			cJSON_Delete(arguments);
+			McpResult result;
+			result.content = mcpShotsContent(answer, facts, pictures);
+			return result;
+		}
+	}
 	else
 	{
 		why = "This server does not run the tool '" + tool + "'.";
@@ -903,6 +1021,8 @@ McpResult McpLocal::call(const std::string &tool, const std::string &argumentsJs
 	if (tool == "open_game") return openGame(argumentsJson);
 	if (tool == "open_project") return openProject(argumentsJson);
 	if (tool == "save_project") return saveProject(argumentsJson);
+	if (tool == "server_info") return serverInfo();
+	if (tool == "pause") return pause();
 	if (tool == "export_movie") return exportMovie(argumentsJson);
 	if (tool == "close") return closeMachine();
 	/* every other tool is one a window offers too: the engine's own, or one

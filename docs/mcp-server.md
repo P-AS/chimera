@@ -27,6 +27,21 @@ Built so far:
   later had nothing kept).
 - Two command-line flags for runs nobody clicks in: `--mcp-server` and
   `--mcp-allow-changes`.
+- For an agent's whole run with no clicking (issue 355): `pause`,
+  `resume`, `save_project` and `close_tastudio` in the window,
+  `server_info`, and `status` with the controls' names, the project's
+  files, the firmware files in use and where each was found, and the speed
+  measured. The tick box is remembered.
+- `press_buttons`, a schedule of presses written into the input as one
+  step, and `capture_series`, pictures on a schedule of the machine's own
+  frames, each saying whether it is blank; `screenshot` says so too.
+- Every Lua function, in the window: `lua_functions` lists them as the Lua
+  Console documents them, `run_lua` runs Lua there and answers what it
+  returned and printed, and `lua_script` starts or stops a script file.
+- `create_project` in the window: the New Project window, never shown,
+  given the agent's answers; missing firmware is listed instead of asked
+  for. `list_cores` (with the kinds of file each core opens) and
+  `describe_core` work in the window too.
 
 - `chimera-mcp` is in the Linux and Windows release bundles, in `dll/`, where
   the dialog's set-up command points.
@@ -111,9 +126,12 @@ One dialog, usable at any time while Chimera runs:
   error to the agent.
 - **State.** Stopped, waiting for an agent, or connected, with the name and
   version the agent's program gives.
-- **Allow the agent to make changes.** A tick box, off at first every time.
-  Unticked, the agent can only look. Ticked, it may edit input, move the
-  playback position and write memory.
+- **Allow the agent to make changes.** A tick box, remembered and applied
+  every time the server is started (user-decided, 2026-10-22, issue 355; it
+  was off at every start, and an agent's run stopped at its first change
+  until someone ticked it again). Unticked, the agent can only look. Ticked,
+  it may edit input, move the playback position, write memory, and save and
+  close the project.
 - **The log.** One line per call: time, tool, arguments (shortened), result
   or error, how long it took. It can be saved to a file.
 - **The set-up line** to paste into the agent, with a button to copy it.
@@ -124,9 +142,10 @@ on unnoticed.
 Closing the dialog does not stop the server; closing Chimera does.
 
 Chimera started with `--mcp-server` starts the server at launch, as pressing
-Start does, and `--mcp-allow-changes` beside it ticks the box. They exist for
-runs nobody clicks in (the tests use them); nothing else starts the server or
-allows changes, and no setting in a configuration file can.
+Start does, and `--mcp-allow-changes` beside it ticks the box for that run
+without remembering it. They exist for runs nobody clicks in (the tests use
+them). Nothing else starts the server, and only the person's own tick is
+remembered.
 
 ## What protects the person's work
 
@@ -139,8 +158,12 @@ allows changes, and no setting in a configuration file can.
   branch cannot be saved, nothing is changed: every change is refused until
   the server is stopped and started again. The engine holds this rule, not
   the window, so no path around the window's code skips it.
-- The agent cannot save, close or open a project in the window, and has no
-  access to files there. Saving stays the person's act.
+- With changes allowed, the agent can save the project to a file it names
+  and close it (issue 355). Nothing asks: a file that is already there is
+  not replaced unless the agent says `overwrite`, and changes that are not
+  saved are lost only when it says `discard_unsaved`. No branch is saved
+  before these two, since they change no input: one would itself have been
+  an unsaved change.
 - A memory write is not input: a movie cannot reproduce it. It is reported in
   the log and in `status` from the first write on, with the frame.
 - What the agent was told about one machine stays with that machine: when a
@@ -160,15 +183,19 @@ Looking:
 
 | Tool | What it does |
 | --- | --- |
-| `status` | Core, game, frame, movie length, picture size, frame rate, whether changes are allowed, whether the core has stopped. |
+| `status` | Core, game, frame, movie length, picture size, frame rate, whether changes are allowed, whether the core has stopped, and the names of the controls plugged in. In the window also: the project's file and whether it is saved, whether the machine is paused, the speed measured, the project's files with their paths, and each firmware file in use with its path and where it was found (the project's own, a file chosen for the core before, or the Firmware folder). |
 | `controls` | The machine's buttons and axes by name, with each axis's rest value. |
 | `get_input` | The movie's input over a range of frames. |
-| `screenshot` | The picture of the current frame as a PNG, optionally scaled down. |
+| `screenshot` | The picture of the current frame as a PNG, optionally scaled down, with whether it is blank: its commonest colour and how much of it that colour covers (one colour over 99% or more is blank). |
 | `list_memory` | The memory domains and address buses, with sizes. |
 | `read_memory` | Bytes or typed values at an address. |
 | `registers` | The CPU registers, where the core gives them. |
 | `list_properties` / `get_property` | A game core's named values (docs/game-cores.md). |
 | `list_branches` / `list_markers` | The project's branches and markers. |
+| `server_info` | This build, the folder it runs from, and the folders for projects, cores, firmware and Lua scripts. Without a window: the build and the folders it was started with. |
+| `pause` | Pauses the machine and says the frame. |
+| `lua_functions` | Chimera's Lua functions as the Lua Console documents them: name, parameters, what each returns and does. By library, or by words. Window only. |
+| `list_cores` / `describe_core` | The core packages in the cores folder, with the machines each is and the kinds of file it opens; and what one declares: settings, firmware, file slots. |
 | `watch` | Names up to 32 memory values or properties; `status`, `seek`, `advance_until` and `load_branch` then carry their values every time. An empty list ends it. |
 
 RAM search (the agent's own search, separate from the RAM Search window):
@@ -194,11 +221,19 @@ Changes:
 | `advance_until` | Plays the movie forward until a memory value or a property meets a condition (equal, greater, changed, ...) and stops on that frame. It stops at the movie's end or after `max_frames` otherwise, and says which. |
 | `set_input` | Replaces the input from a frame on, one line a frame as `get_input` returns them, in printable ASCII. Past the movie's end it adds frames, starting at most 100000 frames past it. |
 | `set_buttons` | Presses or releases buttons, and sets axes, by name over a range of frames. Controls not named keep what they had. Like `set_input` it starts at most 100000 frames past the movie's end. A movie made with an older package may not have a column for a control (its LogKey does not name it): without a window the control is added to the movie, a column on every line; with the window the call is refused and says which control. |
+| `press_buttons` | Presses buttons on a schedule: each press its buttons, its frame (or so many frames from the frame the machine is on) and how long it is held. All of it is written into the input as one step; buttons not named keep what they had. |
+| `capture_series` | Plays the movie and takes a picture on each of `count` frames, `every` frames (or seconds of the machine's own time) apart. Past the movie's end empty frames are added first, one step. Each picture says whether it is blank; with `folder` each is also written there as a PNG at its own size, and a file already there stops the series before it starts. |
 | `insert_frames` / `delete_frames` | Changes the movie's length at a frame. |
 | `undo` | Undoes the last step of the undo history, the same as Edit > Undo. |
 | `save_branch` / `load_branch` | Keeps or restores a branch. |
 | `add_marker` | Places a marker with a text. |
 | `write_memory` / `set_property` / `set_register` | Writes to the machine. Reported as said above. |
+| `resume` | Lets the machine run, as unpausing does; past the movie's end each frame played is added to it. Window only. |
+| `save_project` | Saves the project where it was saved, or at a path (a relative one is in the Movies folder; without a window, the path must be inside the work folder). A file already there is replaced only with `overwrite`. |
+| `create_project` | Makes a project and opens it, as the New Project window does: the agent gives the core, the machine, the game's files (by slot, or each put where its kind of file goes), settings and firmware. The core's suggested settings for the game are applied first, as on that window's settings page. Firmware is looked for where that window looks and in a folder the agent names; when some is missing nothing is made, and the answer lists each file missing, the files that would do, and where it looked. A project with unsaved changes is replaced only with `discard_unsaved`. Window only; without a window, `open_game`. |
+| `run_lua` | Runs Lua in the Lua Console, where the person sees it, and answers what it returned (a table as a list or an object) and what it printed. Every Lua function is there. It runs as a script does, in a coroutine of its own; the functions that wait for a frame are refused, as on the console's input line. Window only. |
+| `lua_script` | Starts a script file in the Lua Console, as File > Open Script does, or stops it; answers whether it runs and what the console printed since the agent last asked. Window only. |
+| `close_tastudio` | Closes the project and its machine. Unsaved changes are lost only with `discard_unsaved`. Window only; without a window, `close`. |
 
 Each call that edits the input is one step in TAStudio's undo history, named
 "Agent: ...", so a person can undo an agent's edit as they undo their own.
@@ -211,10 +246,9 @@ Without a window only:
 
 | Tool | What it does |
 | --- | --- |
-| `list_cores` / `describe_core` | The packages in the cores folder, and what one declares: settings, firmware, file slots. |
 | `open_game` | Starts a project from a core and game files, with an empty movie. |
 | `open_project` | Opens a `.chimeraProject`; its files must be the ones it records. |
-| `save_project` / `export_movie` | Writes the project, or the input alone as a movie file, inside the work folder. |
+| `export_movie` | Writes the input alone as a movie file, inside the work folder. |
 | `close` | Closes the machine. |
 
 ## Where the code lives
@@ -292,6 +326,9 @@ What is different from the window:
   markers of the movie's own, no recording mode, no lag log.
 - **A branch keeps the input and the frame, not the machine's state.**
   Loading one plays its input to its frame.
+- **A project is made with `open_game`, not `create_project`**: it takes
+  the files by slot and the firmware by path, and asks the core for no
+  suggestions.
 - **Firmware is given by path**, a file for each firmware id
   (`describe_core` lists them), in `open_game` and `open_project`. It does
   not look in Chimera's Firmware folder or its settings; only the window
@@ -360,7 +397,7 @@ and the convenience tools and the windowless mode follow.
 
 ## Not planned
 
-- Sound, video encoding, running Lua scripts through the server, CPU traces.
+- Sound, video encoding, CPU traces.
 - More than one agent connected at once, or one agent on several Chimera
   windows.
 - Any connection that is not local to the machine and the user.
@@ -380,3 +417,10 @@ and the convenience tools and the windowless mode follow.
 7. The window comes first; the windowless mode follows.
 8. In the window, changes are behind a tick box that is off at first.
 9. The server always starts stopped; its state is not remembered.
+
+## What was decided (owner, 2026-10-22, issue 355)
+
+The six requests of issue 355 are all built, and every Lua function is
+offered through the server too (in the window, where Lua runs; the
+windowless server has no Lua). Decision 8 changed: the tick box is
+remembered between starts. The server itself still starts stopped (9).

@@ -76,6 +76,10 @@ int main(void)
 		"[{\"id\":\"a\",\"requiredWhen\":{\"all\":[{\"setting\":\"n\",\"is\":3},{\"not\":{\"setting\":\"f\",\"is\":false}}]}}]";
 	assert(eval(typed, "{}", "{\"n\":3,\"f\":true}") == "[{\"id\":\"a\",\"index\":0}]");
 	assert(eval(typed, "{}", "{\"n\":\"3\",\"f\":true}") == "[]");
+	// 64-bit whole numbers a double cannot tell apart are told apart (issue 358)
+	const char *wide = "[{\"id\":\"w\",\"requiredWhen\":{\"setting\":\"seed\",\"is\":9007199254740993}}]";
+	assert(eval(wide, "{}", "{\"seed\":9007199254740993}") == "[{\"id\":\"w\",\"index\":0}]");
+	assert(eval(wide, "{}", "{\"seed\":9007199254740992}") == "[]");
 
 	// a malformed condition asks for nothing rather than for everything
 	const char *broken =

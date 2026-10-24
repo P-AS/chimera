@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 
@@ -60,6 +61,101 @@ namespace Chimera.Tests.Client.GUI
 		}
 
 		private static ListView ListOf(Form form) => form.Controls.OfType<ListView>().Single();
+
+		private static FirmwareSurveyGroup Xemu(string? mcpxPath = "/fw/mcpx_1.0.bin")
+			=> new() { CoreName = "xemu", Rows = [ Row("xemu", "mcpx", null, CoreFirmwareState.Good, path: mcpxPath), Row("xemu", "hdd", null, CoreFirmwareState.Missing) ] };
+
+		/// <summary>Issue 368: a long list narrowed by a Find box, on a found file's name or a core's.</summary>
+		[TestMethod]
+		public void FindNarrowsTheListToWhatMatches()
+		{
+			using Harness h = new(Xemu(), new FirmwareSurveyGroup { CoreName = "Stella", Rows = [ ] });
+
+			h.Form.FindText = "mcpx_1.0";
+			Assert.AreEqual(1, h.Form.DisplayedRows.Count);
+			Assert.AreEqual("mcpx", h.Form.DisplayedRows[0].Decl.Id);
+			Assert.AreEqual(1, ListOf(h.Form).Groups.Count, "a core with nothing that matches is not listed");
+
+			h.Form.FindText = "STELLA";
+			Assert.AreEqual(1, ListOf(h.Form).Groups.Count, "a core's name, in any case");
+			StringAssert.StartsWith(ListOf(h.Form).Groups[0].Header, "Stella");
+
+			h.Form.FindText = "";
+			Assert.AreEqual(2, h.Form.DisplayedRows.Count);
+			Assert.AreEqual(2, ListOf(h.Form).Groups.Count);
+		}
+
+		/// <summary>Issue 368: a core's files fold to one line and open again; all of them at once too.</summary>
+		[TestMethod]
+		public void ACoreFoldsToOneLineAndOpensAgain()
+		{
+			using Harness h = new(Xemu(), Ps2(releases: 3, onHand: 1));
+			var list = ListOf(h.Form);
+
+			h.Form.Collapse("xemu");
+			Assert.IsFalse(h.Form.DisplayedRows.Any(static r => r.CoreName == "xemu"));
+			var xemuLines = list.Items.Cast<ListViewItem>().Where(i => i.Group == list.Groups[0]).ToList();
+			Assert.AreEqual(1, xemuLines.Count, "one line for the folded core");
+			StringAssert.Contains(xemuLines[0].SubItems[1].Text, "xemu: 2 files");
+			Assert.AreEqual(3, h.Form.DisplayedRows.Count, "the other core is still open");
+
+			h.Form.Expand("xemu");
+			Assert.AreEqual(2, h.Form.DisplayedRows.Count(static r => r.CoreName == "xemu"));
+
+			h.Form.CollapseAll();
+			Assert.AreEqual(0, h.Form.DisplayedRows.Count);
+			h.Form.ExpandAll();
+			Assert.AreEqual(5, h.Form.DisplayedRows.Count);
+		}
+
+		/// <summary>
+		/// The window photographed in every theme, one core folded (the line a folded
+		/// core leaves), so its new Find box and folded line are looked at too.
+		/// </summary>
+		[TestMethod]
+		public void TheWindowInEveryTheme()
+		{
+			using Harness h = new(Xemu(), Ps2(releases: 3, onHand: 1), new FirmwareSurveyGroup { CoreName = "Stella", Rows = [ ] });
+			h.Form.Collapse("PCSX2");
+			UiShots.Shoot(h.Form, "firmware-survey");
+		}
+
+		/// <summary>Issue 368: Open Folder shows where a found file is, the file selected.</summary>
+		[TestMethod]
+		public void OpenFolderShowsTheFoundFileInItsFolder()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "chimera-fw-open-" + Guid.NewGuid().ToString("N"));
+			Directory.CreateDirectory(dir);
+			try
+			{
+				var file = Path.Combine(dir, "mcpx_1.0.bin");
+				File.WriteAllText(file, "x");
+				List<(string Folder, string? File)> opened = new();
+				using FirmwareSurveyForm form = new(() => [ Xemu(file) ], (_, _) => { }, _ => null, openFolder: (folder, f) => opened.Add((folder, f)));
+				form.Show();
+				var list = ListOf(form);
+
+				list.Items[0].Selected = true;
+				form.OpenSelectedFolder();
+				Assert.AreEqual(1, opened.Count);
+				Assert.AreEqual(Path.GetFullPath(dir), opened[0].Folder);
+				Assert.AreEqual(Path.GetFullPath(file), opened[0].File);
+
+				list.Items[1].Selected = true;
+				form.OpenSelectedFolder();
+				Assert.AreEqual(1, opened.Count, "a row with no file found opens nothing");
+
+				File.Delete(file);
+				var gone = FirmwareSurveyForm.OpenFolderTarget(Row("xemu", "mcpx", null, CoreFirmwareState.Unreadable, path: file));
+				Assert.AreEqual(Path.GetFullPath(dir), gone?.Folder, "a file gone still has its folder");
+				Assert.IsNull(gone?.File);
+				Assert.IsNull(FirmwareSurveyForm.OpenFolderTarget(Row("xemu", "mcpx", null, CoreFirmwareState.Unreadable, path: Path.Combine(dir, "gone", "x.bin"))));
+			}
+			finally
+			{
+				Directory.Delete(dir, recursive: true);
+			}
+		}
 
 		[TestMethod]
 		public void EveryCoreIsAGroupAndEveryDeclarationARow()

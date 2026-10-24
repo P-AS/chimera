@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 struct ce_session;
 struct ce_movie_log;
@@ -64,7 +65,12 @@ struct McpTool
 	bool changes;        /* it changes the movie or the machine: refused unless the person allowed changes */
 	bool host;           /* the frontend runs it, not the engine */
 	bool local;          /* it exists only where there is no window (mcp_local.hpp) */
+	bool window = false; /* it exists only where there is a window */
 };
+
+/* Whether a tool is offered by this program: a tool of one kind of server is
+ * not listed, or run, by the other. */
+bool mcpOffered(const McpTool &tool);
 
 /* Whether this program serves a machine of its own, with no window. It
  * decides which tools are listed and what the introduction says. */
@@ -84,6 +90,37 @@ struct McpResult
 /* [{"type":"text","text":<text>}] */
 std::string mcpTextContent(const std::string &text);
 McpResult mcpError(const std::string &sentence);
+
+/* capture_series (issue 355), the same for the window's server and the
+ * windowless one. The engine reads the agent's arguments into a plan - the
+ * frames to take pictures of, how to scale them, where to write them - and
+ * hands it, as the call's prepared arguments, to whoever moves the machine;
+ * it takes each picture when the machine is on one of those frames. */
+struct McpShotPlan
+{
+	std::vector<int64_t> frames;
+	int64_t maxWidth = 320;
+	std::string folder;              /* "" for no files */
+	std::string name = "shot-{n}.png";
+	bool images = true;              /* the pictures are in the answer */
+	double framesPerSecond = 0;      /* the machine's own, for the seconds a shot is at */
+};
+bool mcpReadShotPlan(const std::string &preparedJson, McpShotPlan &plan);
+/* A picture of the frame the machine is on - `frame`, as whoever moved it
+ * counts - as shot n (from 1) of the plan: its facts as a JSON object, and
+ * the PNG (base64) for the answer when the plan wants them. The file, when
+ * the plan has a folder, is written. */
+bool mcpTakeShot(ce_session *s, const McpShotPlan &plan, size_t n, int64_t frame, std::string &factsJson, std::string &pictureBase64, std::string &why);
+/* The answer to capture_series: the frontend's text, which is a JSON
+ * object, with "shots" added, then the pictures. */
+std::string mcpShotsContent(const std::string &answerJson, const std::vector<std::string> &facts, const std::vector<std::string> &pictures);
+
+/* list_cores and describe_core over these folders, and a core of them by its
+ * file or its name: the windowless server's cores folder, or the window's
+ * (mcp_local.cpp). */
+McpResult mcpListCores(const std::vector<std::string> &dirs);
+McpResult mcpDescribeCore(const std::vector<std::string> &dirs, const std::string &argumentsJson);
+bool mcpFindPackage(const std::vector<std::string> &dirs, const std::string &asked, std::string &path, std::string &why);
 
 /* Runs one tool call for the protocol. */
 using McpExecutor = std::function<McpResult(const std::string &tool, const std::string &argumentsJson)>;

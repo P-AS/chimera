@@ -376,6 +376,34 @@ loop_end:
 
     item->type = cJSON_Number;
 
+    /* Chimera: a whole number of 10^15 or more keeps its digits as written,
+     * and print_number writes them back unchanged. A double holds a whole
+     * number exactly only up to 2^53, and printed one of 10^15 or more as
+     * 1e+15, so a 64-bit setting (issue 358) came back rounded or as a
+     * number a core read as 1. */
+    {
+        size_t length = (size_t)(after_end - number_c_string);
+        size_t digit = (number_c_string[0] == '-') ? 1 : 0;
+        cJSON_bool whole = (length > digit) ? true : false;
+        for (; digit < length; digit++)
+        {
+            if ((number_c_string[digit] < '0') || (number_c_string[digit] > '9'))
+            {
+                whole = false;
+            }
+        }
+        if (whole && (fabs(number) >= 1e15))
+        {
+            item->valuestring = (char*)input_buffer->hooks.allocate(length + 1);
+            if (item->valuestring == NULL)
+            {
+                return false;
+            }
+            memcpy(item->valuestring, number_c_string, length);
+            item->valuestring[length] = '\0';
+        }
+    }
+
     input_buffer->offset += (size_t)(after_end - number_c_string);
     return true;
 }
@@ -394,6 +422,13 @@ CJSON_PUBLIC(double) cJSON_SetNumberHelper(cJSON *object, double number)
     else
     {
         object->valueint = (int)number;
+    }
+
+    /* Chimera: a number given a new value no longer has the digits it was read with */
+    if ((object->valuestring != NULL) && !(object->type & cJSON_IsReference))
+    {
+        global_hooks.deallocate(object->valuestring);
+        object->valuestring = NULL;
     }
 
     return object->valuedouble = number;
@@ -563,6 +598,20 @@ static cJSON_bool print_number(const cJSON * const item, printbuffer * const out
     if (output_buffer == NULL)
     {
         return false;
+    }
+
+    /* Chimera: a whole number read with its digits kept (parse_number) */
+    if (item->valuestring != NULL)
+    {
+        size_t kept = strlen(item->valuestring);
+        output_pointer = ensure(output_buffer, kept + sizeof(""));
+        if (output_pointer == NULL)
+        {
+            return false;
+        }
+        memcpy(output_pointer, item->valuestring, kept + sizeof(""));
+        output_buffer->offset += kept;
+        return true;
     }
 
     /* This checks for NaN and Infinity */

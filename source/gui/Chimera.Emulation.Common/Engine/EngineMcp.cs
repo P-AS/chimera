@@ -80,6 +80,22 @@ namespace Chimera.Emulation.Common.Engine
 		public static void Answer(IntPtr session, ulong id, string text, bool isError)
 			=> ChimeraEngine.Instance.ce_mcp_answer(session, id, text, isError ? 1 : 0);
 
+		/// <summary>Where Chimera finds core packages, for list_cores and describe_core.</summary>
+		public static void SetCoresFolders(System.Collections.Generic.IEnumerable<string> folders)
+			=> ChimeraEngine.Instance.ce_mcp_cores_folders(Newtonsoft.Json.JsonConvert.SerializeObject(folders));
+
+		/// <summary>
+		/// capture_series: the machine is on a frame of the call's plan, and the engine takes its picture, which
+		/// goes with the call's answer. False with the engine's reason when it could not.
+		/// </summary>
+		public static bool Capture(IntPtr session, ulong id, long frame, out string error)
+		{
+			var reason = IntPtr.Zero;
+			var ok = ChimeraEngine.Instance.ce_mcp_capture(session, id, frame, ref reason) is not 0;
+			error = ok ? "" : ChimeraEngine.PtrToStringUtf8(reason) ?? "the picture could not be taken";
+			return ok;
+		}
+
 		/// <summary>
 		/// advance_until: gives the engine the tool's arguments, which say what to read and what to compare it
 		/// with. False with the engine's reason when it cannot be understood or read.

@@ -112,6 +112,42 @@ namespace Chimera.Tests.Client.Common.Movie
 			public bool ConditionMet { get; set; }
 
 			public void PlayUntil(int frame) => PlayingTo = frame;
+
+			public System.Collections.Generic.IReadOnlyList<int>? Pictures;
+
+			public void TakePictures(System.Collections.Generic.IReadOnlyList<int> frames) => Pictures = frames;
+		}
+
+		/// <summary>
+		/// capture_series (issue 355): the engine plans the frames, and the window plays to them. Frames past the
+		/// movie's end are added first, empty, as one step that undo takes back; the answer comes later.
+		/// </summary>
+		[TestMethod]
+		public void CaptureSeriesAddsTheFramesItNeedsAndPlaysToThem()
+		{
+			var movie = Fresh(10);
+			FakeWindow window = new() { Frame = 4 };
+			var answer = McpHostTools.Run(movie, window, "capture_series",
+				"""{ "frames": [6, 12, 18], "label": "Agent: add frames for capture_series at 10", "blank": "|..|" }""", out var isError);
+			Assert.IsNull(answer, "answered once the last picture is taken");
+			Assert.IsFalse(isError);
+			CollectionAssert.AreEqual(new[] { 6, 12, 18 }, window.Pictures!.ToArray());
+			Assert.AreEqual(18, movie.InputLogLength, "the movie reaches the last frame");
+			Assert.AreEqual(1, movie.ChangeLog.UndoIndex + 1, "in one step");
+			movie.ChangeLog.Undo();
+			Assert.AreEqual(10, movie.InputLogLength, "which undo takes back");
+
+			// frames the movie has need nothing added
+			window.Pictures = null;
+			McpHostTools.Run(movie, window, "capture_series", """{ "frames": [5], "label": "x" }""", out isError);
+			Assert.IsFalse(isError);
+			Assert.AreEqual(10, movie.InputLogLength);
+			CollectionAssert.AreEqual(new[] { 5 }, window.Pictures!.ToArray());
+
+			var refused = McpHostTools.Run(movie, window, "capture_series", """{ "frames": [] }""", out isError);
+			Assert.IsTrue(isError);
+			StringAssert.Contains(refused, "not one the engine makes");
+			Assert.AreEqual("""{"frame":4,"movie_length":10}""", McpHostTools.PicturesAnswer(window, movie));
 		}
 
 		/// <summary>A movie of that many empty frames with nothing in its undo history (making it is a step, otherwise).</summary>

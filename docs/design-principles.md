@@ -8058,9 +8058,10 @@ its requirements asks for, chosen already or not. Tests:
 `AScannedFolderBecomesTheFirmwareFolderOnlyWhileThatIsNotThere` (fails with
 the "folder exists" check removed) and
 `AScanThatFindsFirmwareSaysWhereAndOneThatDoesNotSaysNothing` (fails with
-the wizard's report removed). The Firmware folder is still read without
-its sub-folders; a file a scan found below it is remembered by its own
-path, as before.
+the wizard's report removed). A file a scan found below the Firmware
+folder is remembered by its own path, as before. (The Firmware folder
+itself was then read without its sub-folders; since issue 359 it is read
+with them.)
 
 ## A choice's values have labels, and the wizard lists the Boot ROMs on hand first (user-decided, 2026-10-16)
 
@@ -10584,11 +10585,10 @@ POV0. The console cores that had no game controller defaults got them, by
 place: the bottom face button is where a Super NES's B is. Computers, phones
 and touch screens keep the keyboard and the mouse. Only bindings changed:
 nothing a movie records did. A package test, KeybindsNameAJoysticksFirstHat,
-fails on a package that binds a later hat without the first. It passes on
-every core's published development build, but Chimera's own tests run against
-the cores' nightly builds, and 33 of those still bind POV1 until each core's
-next nightly; so the test waits until they are all published, and goes in
-then.
+fails on a package that binds a later hat without the first. Chimera's own
+tests run against the cores' nightly builds, and 33 of those bound POV1 until
+each core's next nightly, so the test waited until they were all published
+(2026-10-22: none of the 56 nightlies binds a later hat) and went in then.
 
 The owner also decided how controls are listed (issue 337). A pad's controls
 of one kind sit together: Dolphin's Triforce and Flycast's arcade boards list
@@ -10621,3 +10621,406 @@ A file found this way says "found by size and name". An entry with a hash is
 still found by its hash and nothing else. The hints sit in the package, so a
 core decides what marks its files; melonDS declares them for its unpinned
 entries.
+
+## A core's release page says what changed since its last nightly (2026-10-22)
+
+Every nightly's page said the same thing but its hashes, so finding what a
+nightly changed meant reading the core's history by hand (issue 357). Now each
+release, nightly and development build alike, lists the commits since the
+core's last nightly, each linked to the commit. The cores' commit subjects
+name Chimera's issues as `chimera#352`, which GitHub does not link on another
+repository's page, and a bare `#352` there would be the core's own issue 352;
+so those are linked to Chimera's issues and a bare `#N` is left for GitHub.
+Long lists stop at 50 with a link to the rest. It is written by
+`tools/release-changes.py`, called from `tools/publish-core.sh`, which every
+core's publishing job runs, so all cores have it from their next release
+without a change of their own. Measured: on the X68000 core's history it lists
+the two commits since nightly-2026-10-15, with chimera#352, #351 and #336
+linked; outside a checkout it adds nothing.
+
+## Settings may be wider whole numbers, and a date and time (2026-10-22)
+
+A setting could be a `bool`, an `int`, a `float`, a `string` or an `enum`.
+A core that wanted a number from 1 to 4294967295 had no type for it (issue
+358), and the owner asked for that and more. Four types were added, each
+because cores need it:
+
+- `uint`, `long` and `ulong`, the ranges of their C types. Seeds are the
+  common case: nine cores stop a random seed at 2147483647 because an `int`
+  does.
+- `datetime`, a date and time in UTC. Sixteen cores declare a clock's start
+  as an `int` of seconds since 1970, which ends in 2038, and four more as
+  text in the form 2000-01-01 00:00:00 that each core parses itself. A
+  `datetime` is kept, recorded and handed to the core as those seconds, a
+  64-bit number. The grid shows and takes the text. So a core whose `int`
+  is seconds changes only its declaration, and its projects keep their
+  values.
+
+Numbers past 2^53 needed a change in the engine. Its JSON library (cJSON,
+vendored in `extern/cjson`) keeps every number as a double, which holds a
+whole number exactly only up to 2^53. It also printed one of 10^15 or more
+as `1e+15`, which a core's `strtol` reads as 1. Settings pass through it on
+their way to the core and to the project file, so a `ulong` came back
+rounded. Now a whole number of 10^15 or more keeps the digits it was read
+with, and they are written back as they came. Copies keep them, and a new
+value replaces them. A condition on a setting (`"is"`) compares those digits,
+so two values one apart past 2^53 are told apart. Below 10^15 nothing
+changed. miniBox's guest kit gained `wbx_setting_ulong`, because
+`wbx_setting_long` stops at the top of a long.
+
+The settings grid edits each type as itself: a `uint` row refuses -1, and a
+`datetime` row opens a calendar. A value from a file is clamped to its
+type's range and then to `min` and `max`, which are now decimals so that a
+`ulong`'s bounds are exact. A type Chimera does not know used to be taken
+for text without a word. Now a package test, EverySettingTypeIsOneChimeraKnows,
+refuses it.
+
+Tested: the engine's tests (a 64-bit number, -2^63, 2^53+1 and 10^15 come
+back as written; a project keeps 18446744073709551615; a condition tells
+9007199254740993 from 9007199254740992), miniBox's settings test, seven
+tests of the types in the settings grid, and the package tests. Each new
+test failed with its fix taken out. No core uses the new types yet, so none
+has been tried with a game.
+
+## An agent's whole run without clicking: save, close, pause, run (user-decided, 2026-10-22)
+
+An agent making projects and screenshots for many games drove everything
+around the MCP server by clicking through the interface: the New Project
+wizard, System > Pause, the Save As dialog, the question on closing
+TAStudio. Those clicks were where its runs broke (issue 355). The owner
+decided that all six requests are built, and that every Lua function is
+offered through the server as well. This is the first part.
+
+- `pause` and `resume`, as System > Pause and unpausing. `resume` is a
+  change: TAStudio adds every frame played past the movie's end.
+- `save_project` and `close_tastudio`. Nothing asks: a file that is
+  already there is kept unless the agent gives `overwrite`, and unsaved
+  changes are lost only with `discard_unsaved`. The windowless server's
+  `save_project` follows the same rule. No branch is saved before either:
+  they change no input, and a branch saved first was itself an unsaved
+  change, so a project closed first thing could never close.
+- `server_info`: the build, and the folders for projects, cores, firmware
+  and Lua. The agent ran several nightly builds side by side and could not
+  tell which folder a project would be saved in.
+- `status` also gives the controls' names, the project's files with their
+  paths, the speed measured, and each firmware file in use with its path
+  and where it was found. A file chosen once for a core comes before the
+  Firmware folder, which is how the agent's Saturn ran a BIOS from an old
+  folder unseen.
+- The tick box "Allow the agent to make changes" is remembered, which
+  reverses the decision of 2026-10-12 that it is off at every start. The
+  server itself still starts stopped.
+
+A tool now belongs to the window, to the windowless server, or to both,
+and is listed only where it exists. Tested: engine tests 30 of 30 (the
+lists of both kinds of server), 8 tests of the new tools in the window, 2
+of the remembered tick, the firmware store's tests saying where each file
+was found, and the end-to-end test: in the real window an agent saves,
+refuses to replace another file and then replaces it, runs and pauses the
+machine, and is refused a close with unsaved changes before closing with
+`discard_unsaved`. Each test failed with its fix taken out.
+
+## Buttons and pictures on the machine's own schedule (2026-10-22)
+
+The second part of issue 355. An agent pressed Start with `set_buttons`
+and took pictures with `screenshot`, one call at a time, so its schedule
+ran on its own clock: presses meant for 10 s and 20 s landed at 14 s and
+23 s, and games never left their title screens. Four runs saved only black
+or one-colour pictures, which nobody saw until afterwards.
+
+- `press_buttons` takes the whole schedule in one call. The engine writes
+  it into the movie's input as one step of the undo history: each press on
+  its frames, buttons not named as they were. It is the input, so it plays
+  the same way every time. Its lines are built by the same code as
+  `set_buttons`' now.
+- `capture_series` plays to each frame of a schedule, counted in frames or
+  in seconds of the machine's own time, and takes a picture there. The
+  engine plans the frames and takes the pictures; the window only plays to
+  each frame, one seek at a time, so each picture is of a frame that was
+  drawn. Past the movie's end empty frames are added first, as one step.
+  Pictures can also be written to a folder at their own size. A file that
+  is already there stops the series before anything is played, since
+  nothing asks.
+- Every picture, and `screenshot`'s, says whether it is blank: its
+  commonest colour and how much of it that colour covers, blank at 99% or
+  more.
+
+Tested: 1 host test (frames added past the end, in one step), and the
+end-to-end test in the window and without one: presses on their frames
+and nothing else, `after` counted from the frame the machine is on, three
+pictures on frames 5, 15 and 25, half a second as 30 frames, files written
+at the picture's size and not replaced, frames added past the end and taken
+back by one undo, and the commonest colour of a picture checked against
+its pixels. Each failed with its fix taken out.
+
+## An agent makes a project as the New Project window does (2026-10-22)
+
+The third part of issue 355. An agent made each project by clicking
+through the New Project window: choosing a core from a list by its place,
+removing the last project's game, finding buttons that moved with each
+core's pages. Every run it skipped was firmware it found out about only by
+reading the firmware page.
+
+`create_project` runs that window's own code, without showing the window.
+The agent's answers go in the way a reopened project's do, and the pages
+are passed as a person who changed nothing else would leave them: the
+core's suggested settings for the game are applied on the settings page,
+then the agent's own settings over them; the firmware page looks where it
+always looks (the Firmware folder, and files chosen for the core before),
+plus a folder the agent names. The project is then made by the same code
+as the window's Create, and opened as one made by hand is, and the
+firmware it found is remembered as the window remembers it. A second copy
+of the wizard's rules was the other way, and it would have drifted from
+the window the first time either changed.
+
+What the window would ask, the tool answers instead. Missing firmware makes
+no project: the answer lists each file missing, the files that would do
+(name, size, hash), and the folders looked in. A core that compiles a
+game's code before its first run is refused when that has not been done,
+since the compiling is the window's last page; the next project of that
+game finds the compiled code. A project open with unsaved changes is
+replaced only when the agent says those may go, and only once the new one
+is made.
+
+`list_cores` and `describe_core` work in the window too, over Chimera's own
+cores folders, and `list_cores` says which kinds of file each core opens.
+The windowless server keeps `open_game`, which takes firmware by path and
+asks the core for nothing.
+
+The synthetic test core's package now declares its file slot, as every
+real core's does: without one the New Project window cannot make a project
+of it.
+
+Tested: 4 tests of the window made for an agent (the project it makes, a
+missing Boot ROM listed with the folder looked in, a machine chosen by its
+name, what the core does not have named), 4 of the tool's arguments and
+answers, and the end-to-end test in the real window: the cores listed with
+their kinds of file, a project of the synthetic core made, opened on
+frame 0 with an empty movie, and closed. Each failed with its fix taken
+out. Not tried: a core that suggests settings for a game, or that compiles
+a game's code first; no test core does either.
+
+## Every Lua function through the MCP server (user-decided, 2026-10-22)
+
+The owner asked, with issue 355, that every Lua function be available
+through the MCP server. Three tools do it, in the window, where Lua runs:
+`lua_functions` lists the functions as the Lua Console documents them,
+`run_lua` runs Lua there and answers what it returned and printed, and
+`lua_script` starts or stops a script file as File > Open Script does. A
+list of functions kept by hand beside the libraries would have drifted
+from them; these read the libraries themselves, so a function added
+tomorrow is offered with nothing changed here.
+
+`run_lua` was first run as the Lua Console's input line runs a line: a
+pcall on the main Lua state, in the console's own context. Under Mono that
+crashed Chimera. The context had lost its Lua thread after the first frame
+(ResumeScripts stops it as an ended script), and a line run in it then
+crashed. Given a thread, an error raised from C# (emu.frameadvance
+refused, say) still crashed it. The same errors inside a script's
+coroutine are survived, which the witness exercises, so the agent's Lua
+runs as a script runs: in a coroutine of its own, with the functions that
+wait for a frame refused, and what it returned read back. A third crash
+came then, only with Chimera's bundled Lua library (the witness loads it,
+as a release does; by hand the system's Lua had been loaded, which did not
+crash): the coroutine's code was first compiled through NLua as
+`return <the code>` to learn whether it was an expression, and when that
+failed (any statement, `x = 1`) the next call crashed, every time. Neither
+half alone crashed - the failed compile, or the chunk that followed it -
+and why the two together do was not found. Lua's own `load`, called inside
+the coroutine, now decides whether the text is an expression; it answers a
+failure instead of raising one, and nothing of the agent's is compiled
+through NLua. The person's input line is unchanged. It compiles each line
+through NLua the same way first, so it may crash the same way under Mono on
+a line that is a statement; that was not tried.
+
+`run_lua` can do anything a script can, so it is refused until changes are
+allowed; `lua_functions` only reads. The code the agent runs is shown in
+the Lua Console's output as `[agent] ...`. The windowless server has no
+Lua: its machine runs in chimera-mcp's own process, which has no Lua
+Console.
+
+Tested: 3 tests of the tools (the list by library and by words, results
+and prints and errors, a script started and stopped), and the end-to-end
+test in the real window with the bundled Lua: the functions listed, values
+returned and printed, a statement and then a call that reads what it set,
+an error and emu.frameadvance refused with Chimera running on, and a
+script file started and stopped. Each failed with its fix taken
+out.
+
+## The Firmware folder is searched with its sub-folders (2026-10-24)
+
+The Firmware folder named in Config > Paths was searched only at its top,
+while Scan Folder searched a folder and its sub-folders. Firmware sorted into
+folders a company and a system (Firmware > Sony > PlayStation) was found by
+Scan Folder and not by the window opening on the same folder (issue 359).
+Every search of the Firmware folder now walks its sub-folders as Scan Folder
+does, to the same 10,000 files at most: the index the Firmware window, the
+New Project wizard and a project's opening answer from
+(`FirmwareLocator.BuildIndex`), the lookup by a declared name
+(`CoreFirmwareStore.InFirmwareFolder`), and the window's "in the Firmware
+folder" for a file found below it. Test:
+`TheFirmwareFolderIsSearchedWithItsSubFolders` (fails with the walk kept to
+the top). How deep a search goes, as a setting, is one of issue 368's
+requests, put to the owner.
+
+## Sublime Text registration writes Chimera's own file (user-decided, 2026-10-24)
+
+Lua Console > Settings > Register To Text Editors > Sublime Text 2 wrote
+Chimera's Lua functions into Sublime's Lua package folder without making the
+folder. Sublime makes that folder only when the package is first changed, so
+on a fresh install the click failed with an unhandled error. The file was
+also still named `bizhawk.lua.sublime-completions`. The owner chose to fix it
+rather than remove the menu: the folder is made when it is missing, the file
+is now `chimera.lua.sublime-completions`, and a write that still fails (no
+permission) says so in a message. A file of the old name is left alone: it
+may be BizHawk's own. Tests: `LuaAutocompleteInstallerTests` (the first fails
+with the folder no longer made).
+
+## The piano roll's frame numbers take the "Frame# Column" colours (user-decided, 2026-10-24)
+
+TAStudio's Set Colors has "Frame# Column" and "Frame# Column (Lag)". They
+coloured only the Markers list's frame column; the piano roll's frame column
+laid a light wash over each row's colour, so the two colours seemed to do
+nothing there. The owner chose to have the piano roll use them too: a frame
+the greenzone holds shows its frame number in the "Frame# Column" colour, or
+"Frame# Column (Lag)" for a lag frame. The current frame, a marker's frame
+and a frame not run as it stands keep what they had: the marker colours, and
+the wash over the row's colour. The theme preview draws its sample piano roll
+the same way. Tests: `TAStudioFrameColumnColourTests` (the first fails with
+the wash kept everywhere).
+
+## Loading a branch offers to update the current one first (user-decided, 2026-10-24)
+
+A branch changes only on Add or Update; Save Project saves the movie and the
+branches as they are, and loading another branch replaces the movie. A person
+who drew inputs after loading a branch, saved the project and loaded another
+branch found the inputs in neither (issue 360), having expected Save Project
+to update the branch they were on. The owner chose to leave Save Project as
+it is and ask at the load instead: when another branch is loaded by a person
+(the Load button, the menus, a double click, a hotkey) and the movie holds
+inputs or markers of the person's that the current branch does not, TAStudio
+asks whether to update the current branch first: Yes updates it and loads, No
+loads without updating (Undo Branch Load still brings the changes back),
+Cancel loads nothing. Loading the current branch again does not ask: that is
+how a person goes back to it. A Lua script's or an MCP agent's load does not
+ask either. Whether the movie differs is the movie's question
+(`TasMovie.DiffersFrom`: the input log through the engine's
+`ce_movie_log_divergent_point`, then the person's markers; where the machine
+is does not count). When to ask is `BookmarksBranchesBox.AsksBeforeLoading`.
+Tests: `TasMovieDiffersFromBranchTests` (two fail with the answer always "no
+change") and `BranchLoadAsksTests` (fails when loading the current branch
+again asks too). The question itself, and the update it makes, are not
+driven by a test.
+
+## File hashes are kept between sessions (user-decided, 2026-10-24)
+
+Chimera knows a file by its SHA-1, so every Firmware folder rescan, New
+Project wizard and project opening hashes the files it looks at. The engine
+kept those hashes only until Chimera closed, on purpose ("a stale entry
+surviving a restart is a bug nobody could see"), so the first rescan of each
+session read every disc image in the Firmware folder again, which is what
+made Rescan slow (issue 368). The owner chose to keep them on disk.
+`ce_sha1_keep_in` names the file (Chimera's is `file-hashes.txt` in its data
+directory) and reads its hashes back; every hash taken after it is appended,
+a line a hash. The key is the one the session cache already used, the path
+and the file's whole identity: size, modified and changed times to the
+system's resolution, volume and file index. A file edited, replaced, copied
+over or moved in is another file and is hashed again. A file whose system
+gives no change time or no file index (some network and FAT volumes) is kept
+for the session only. A line that does not read as one is passed over; a
+file of many more lines than files is written again with the newest of each.
+Test: test_sha1's kept-between-sessions part (fails when the kept hashes are
+not read back). Not measured: how much faster a real Firmware folder's first
+rescan is.
+
+## The Firmware window finds, folds and opens folders (user-decided, 2026-10-24)
+
+Config > Firmware lists every file every installed core asks for, and the
+list is long (issue 368). Of the five requests, the owner chose three for
+the window, and keeping file hashes between sessions (above) for Rescan's
+speed. The window now has:
+- a Find box above the list. A row stays when its core, the firmware's name,
+  id or release, the file name a core asks for, or the file found for it
+  contains what is typed, in any case; a core with nothing that matches is
+  not listed;
+- folding a core's files to one line, "+ PCSX2: 3 files", which names the
+  core because not every toolkit draws the group headings (Mono does not).
+  A double click or the + key opens it, the - key folds it, and the
+  right-click menu folds or opens one core or all of them. Folding lasts
+  while the window is open;
+- Open Folder on the right-click menu of a row with a file found: the
+  file's folder, the file selected where the system can (Explorer), as
+  Encode Video's Open Folder does.
+Not done, by the owner's choice: a sub-folder depth setting (the Firmware
+folder is searched at any depth since issue 359) and rescanning one system.
+Tests: `FindNarrowsTheListToWhatMatches`, `ACoreFoldsToOneLineAndOpensAgain`,
+`OpenFolderShowsTheFoundFileInItsFolder` (each fails with its feature taken
+out), and `TheWindowInEveryTheme`, the window's first picture test, which
+caught the Find box drawn over its own label.
+
+## A state carries the GL names its machine holds (user-decided, 2026-10-24)
+
+After a load the GPU bridge gives the guest a fresh context and takes every
+GL name the guest still holds again, empty, before the guest runs, so no new
+object can get a number an old call could still reach. The engine knew those
+names only by watching the guest make them in this process. A state taken by
+another process, which is what opening a project again loads, held names the
+new process never saw: Dolphin's rebuild deleted a vertex array by its old
+number, the array another vertex format had just been given, and Mario Kart
+Arcade GP's grey screen drew black (issue 367, fixed in Dolphin by patch 0032).
+Any GL core whose rebuild deletes by old numbers could meet the same. The
+owner chose the general fix in miniBox: the generated GL wrappers of the calls
+that hand out names keep the highest name of each kind in the guest's own
+memory, so every state carries it, and tell the engine where it is
+(`GL_OP_NAME_MARKS`, miniBox 96762cf). After a load the engine keeps every
+number up to those marks from new objects (`reserveNames`, gl_bridge.cpp),
+besides the names it saw made. A core gets this when it is built again against
+miniBox 96762cf or later. Tests: test_gl_session's "state another process
+took" part (a new texture is 21 and new vertex arrays 7 and 8 when the state
+held up to 20 and 6; fails with the marks ignored), and a Dolphin core built
+with the new generator and the old stale delete put back passes the
+gl:load-in-new-process leg.
+
+
+## A project chooses when the machine's clock starts (user-decided, 2026-10-24)
+
+Every machine's clock started at the same second, 2017-05-27 12:44:28 UTC,
+whatever the core: miniBox answers the time from a constant, so a movie
+replays exactly. A game that takes its luck from the date and time then
+deals the same luck every time; Bubble Suite in FreeJ2ME-Plus always lays
+out the same board (issue 366). The owner chose one setting for every core,
+kept by the sandbox, over a FreeJ2ME setting. A project may now name the
+second the clock starts at: the New Project wizard asks for it under the
+settings ("The machine's clock starts at", UTC, the sandbox's own unless
+changed), the project keeps it as `clockStart` only when it is not the
+default (so a project at the default still opens in an older Chimera, and
+one with another start is refused there rather than run at the wrong time),
+and the engine tells the sandbox before the core first runs
+(`wbx_set_clock_start`, miniBox; `ce_project_clock_start`). It is part of
+the machine: cached states of one start are not used for another. Absolute
+times a guest sleeps or waits until are on the same scale. A core whose
+clock is its own rather than the sandbox's does not follow it yet (Ruffle's
+virtual date, an emulated real-time clock set from elsewhere). Tests: the
+witness's E:project:clock-start (a synthetic rom ending in CLOCKTEST keeps
+the second its clock reads; the project naming 2030-01-02T03:04:05Z reads
+1893553445 and one naming none reads 1495889068), test_project's clock part
+(the text read and written, the default left out, a bad time refused),
+miniBox's conformance-v3 (the guest reads the start it was given) and
+WizardClockStartTests (the wizard's box writes the project's start and
+refuses a time it cannot read). Each failed once with its part taken out.
+
+## Three options removed from Customize (user-decided, 2026-10-24)
+
+Config > Customize lost three options that came from BizHawk. "Skip waterbox
+integrity checks" set a flag that nothing in Chimera read, so ticking it did
+nothing; it went, with its note and an older note on the same tab ("Will
+prevent many Out Of Memory crashes...") whose checkbox was already gone. "Run
+in background" and "Pause when menu activated" went together, by the owner's
+choice ("we'll re add them if a user needs them"). Asked what Chimera then
+does, the owner chose that nothing pauses the game: not opening a menu of the
+main window, its right-click menu or a tool window, and not the window losing
+focus. Before, a menu paused the game by default, and unticking "Run in
+background" alone did nothing unless "Pause when menu activated" was ticked
+too. Tests: GuiOptionsTests (the three are not in the window; no checkbox on a
+tab lands on another control; the window in every theme), each failed once
+with a checkbox put back.

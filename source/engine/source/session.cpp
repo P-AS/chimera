@@ -1913,6 +1913,11 @@ static ce_session *openRefused(std::string message, const char **error_out)
 	return nullptr;
 }
 
+/* The second the clock of the next machine opened on this thread starts at:
+ * the project's, set by openProjectSession around its ce_session_open, and -1
+ * (the sandbox's own) for everything else. */
+static thread_local int64_t t_clockStart = -1;
+
 static ce_session *openSession(
 	const char *package_path,
 	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
@@ -2007,6 +2012,14 @@ static ce_session *openSession(
 	doneWith(s->streams.back());
 	if (!r.ok()) return abort(r.errorMessage);
 	s->obj = reinterpret_cast<void *>(r.data);
+	/* before the core first runs: a game may read the clock as it starts */
+	if (t_clockStart >= 0)
+	{
+		if (host->wbx_set_clock_start == nullptr)
+			return abort("this project starts the machine's clock at another time, and this Chimera's sandbox cannot");
+		host->wbx_set_clock_start(s->obj, static_cast<uint64_t>(t_clockStart), &r);
+		if (!r.ok()) return abort(r.errorMessage);
+	}
 
 	/* The core's own files travel in the package and are mounted with the
 	 * "assets" prefix dropped: assets/sys/... becomes /sys/... in the guest.
@@ -2702,6 +2715,12 @@ static ce_session *openProjectSession(
 		}
 	}
 
+	/* the project's clock start, for this one session */
+	struct ClockFor
+	{
+		explicit ClockFor(int64_t start) { t_clockStart = start; }
+		~ClockFor() { t_clockStart = -1; }
+	} clock(ce_project_clock_start(project));
 	return ce_session_open(
 		package_path, nullptr, 0, romPath, settings_overrides_json,
 		firmware_ids, firmware_data, firmware_lens, firmware_count,

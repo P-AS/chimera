@@ -93,6 +93,23 @@ staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
 cp "$package" "$staging/$asset"
 
+# What changed since the last nightly (issue 357): the commits after that
+# nightly's tag up to this build's, from the core's own history, which the
+# workflow checks out whole. Today's nightly tag is passed over - this may be
+# the run finishing it. Nothing is said when the history cannot be read.
+repo_slug="${GITHUB_REPOSITORY:-}"
+[ -n "$repo_slug" ] || repo_slug="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
+previous=""
+for t in $(git tag -l 'nightly-*' --sort=-creatordate 2>/dev/null); do
+	[ "$t" = "nightly-$date" ] && continue
+	previous="$t"
+	break
+done
+changes=""
+if [ -n "$repo_slug" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+	changes="$(python3 "$(dirname "$0")/release-changes.py" --repo "$repo_slug" --since "$previous" --to "$sha" --kind "$kind" 2>/dev/null || true)"
+fi
+
 if [ -z "$notes" ]; then
 	notes="$staging/NOTES.md"
 	{
@@ -117,6 +134,10 @@ if [ -z "$notes" ]; then
 			echo "This is a **nightly**: it is never deleted. A movie recorded on this"
 			echo "package can be replayed against it for as long as this repository"
 			echo "exists."
+		fi
+		if [ -n "$changes" ]; then
+			echo
+			printf '%s\n' "$changes"
 		fi
 	} > "$notes"
 fi

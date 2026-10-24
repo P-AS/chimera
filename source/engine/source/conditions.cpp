@@ -20,6 +20,12 @@ bool valueMatches(const cJSON *want, const cJSON *have)
 	}
 	if (cJSON_IsNumber(want) && cJSON_IsNumber(have))
 	{
+		/* two 64-bit whole numbers a double cannot tell apart are told apart
+		 * by the digits they were written with (cJSON keeps those) */
+		if (want->valuestring != nullptr && have->valuestring != nullptr)
+		{
+			return std::string(want->valuestring) == have->valuestring;
+		}
 		return want->valuedouble == have->valuedouble;
 	}
 	if (cJSON_IsBool(want) && cJSON_IsBool(have))

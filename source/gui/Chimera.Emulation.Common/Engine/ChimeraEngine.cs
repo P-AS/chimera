@@ -218,6 +218,9 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_sha1_file(string utf8Path, byte[] out41, ref ulong lenOut);
 
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_sha1_keep_in([MarshalAs(UnmanagedType.LPUTF8Str)] string? utf8Path);
+
 
 
 
@@ -333,6 +336,12 @@ namespace Chimera.Emulation.Common.Engine
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract void ce_project_set_rerecords(IntPtr project, ulong count);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract long ce_project_clock_start(IntPtr project);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_project_set_clock_start(IntPtr project, long unixSeconds);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_project_settings_text(IntPtr project, ref ulong lenOut);
@@ -633,6 +642,12 @@ namespace Chimera.Emulation.Common.Engine
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract void ce_mcp_answer(IntPtr session, ulong id, string text, int isError);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_mcp_capture(IntPtr session, ulong id, long frame, ref IntPtr errorOut);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract void ce_mcp_cores_folders(string foldersJson);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract int ce_mcp_condition_set(IntPtr session, string argumentsJson, ref IntPtr errorOut);
@@ -1291,6 +1306,14 @@ namespace Chimera.Emulation.Common.Engine
 		/// it: firmware can be a disk image, and one that does not fit in memory
 		/// still has an identity. Null when the file cannot be read.
 		/// </summary>
+		/// <summary>
+		/// Keeps the hashes <see cref="Sha1OfFile"/> takes between sessions, in this file
+		/// (null: for this process only). Answers how many came back. A file edited or
+		/// replaced since is hashed again: the engine keys a hash on the file's whole
+		/// identity (owner, 2026-10-24, issue 368).
+		/// </summary>
+		public static int KeepFileHashesIn(string? path) => Instance.ce_sha1_keep_in(path);
+
 		public static (string Sha1, long Length)? Sha1OfFile(string path)
 		{
 			var buf = new byte[41];
@@ -1881,6 +1904,24 @@ namespace Chimera.Emulation.Common.Engine
 			get => ChimeraEngine.Instance.ce_project_rerecords(_project);
 			set => ChimeraEngine.Instance.ce_project_set_rerecords(_project, value);
 		}
+
+		/// <summary>
+		/// The second (since 1970, UTC) the sandbox starts the machine's clock at, the same
+		/// on every run: <see cref="ClockStartDefault"/> unless the project chose another
+		/// (owner, 2026-10-24, issue 366). A game that takes its luck from the date deals
+		/// other luck from another start.
+		/// </summary>
+		public long ClockStart => ChimeraEngine.Instance.ce_project_clock_start(_project) is var s and >= 0 ? s : ClockStartDefault;
+
+		/// <summary>The sandbox's own start: 2017-05-27 12:44:28 UTC (engine.h, CE_CLOCK_START_DEFAULT).</summary>
+		public const long ClockStartDefault = 1495889068;
+
+		/// <summary>The latest start the sandbox takes: 2200-01-01 00:00:00 UTC.</summary>
+		public const long ClockStartLast = 7258118400;
+
+		/// <summary>Sets the clock's start; false for one later than <see cref="ClockStartLast"/> or before 1970.</summary>
+		public bool SetClockStart(long unixSeconds)
+			=> unixSeconds >= 0 && ChimeraEngine.Instance.ce_project_set_clock_start(_project, unixSeconds) is 0;
 
 		/// <summary>The sync settings as the JSON object the session's settings channel takes.</summary>
 		public string SettingsJson

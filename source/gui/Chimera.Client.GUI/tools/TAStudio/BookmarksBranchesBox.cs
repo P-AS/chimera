@@ -201,13 +201,14 @@ namespace Chimera.Client.GUI
 		/// The ENGINE writes it: it used to be cloned into a byte array, which cannot be more than
 		/// 2 GiB, and a PS3's state is - creating a branch threw an overflow (issue #84).
 		/// </summary>
-		private string SaveBranchState()
+		/// <param name="title">what the window says while it lasts: a branch made, or the machine kept for an undo</param>
+		private string SaveBranchState(string title)
 		{
 			try
 			{
 				var path = Movie.NewBranchStatePath(out var stateFile);
 				// a window only if it lasts: milliseconds on a small machine, half a minute on a PS3
-				using (ProgressDialog.Begin(Tastudio, "Saving the branch", showAfterMs: 400))
+				using (ProgressDialog.Begin(Tastudio, title, showAfterMs: 400))
 				{
 					Tastudio.Emulator.AsStatable().SaveStateToFile(path);
 				}
@@ -224,12 +225,21 @@ namespace Chimera.Client.GUI
 		/// <summary>State files no branch names any more - and not the undo's either - are removed: they can be gigabytes each.</summary>
 		private void TidyBranchStates() => Movie.RemoveUnusedBranchStates(_backupBranch?.StateFile);
 
-		private TasBranch CreateBranch(bool withState = true)
+		/// <summary>The window's words while a branch's state is written.</summary>
+		public const string SavingTitle = "Saving the branch";
+
+		/// <summary>
+		/// The window's words while the machine is kept for Undo Branch Load, before a branch
+		/// loads: it said "Saving the branch", which no branch was (issue 360).
+		/// </summary>
+		public const string KeepingForUndoTitle = "Keeping the machine as it is, for Undo Branch Load";
+
+		private TasBranch CreateBranch(bool withState = true, string title = SavingTitle)
 		{
 			return new()
 			{
 				Frame = Tastudio.Emulator.Frame,
-				StateFile = withState ? SaveBranchState() : null,
+				StateFile = withState ? SaveBranchState(title) : null,
 				InputLog = Movie.GetLogEntries().Clone(),
 				CoreFrameBuffer = MainForm.MakeScreenshotImage(),
 				OSDFrameBuffer = MainForm.CaptureOSD(),
@@ -276,12 +286,48 @@ namespace Chimera.Client.GUI
 			Tastudio.MainForm.AddOnScreenMessage($"Added branch {Branches.Current + 1}");
 		}
 
-		private bool PrepareHistoryAndLoadSelectedBranch()
+		/// <summary>
+		/// Before another branch is loaded over changes the current branch does not
+		/// hold, the person is offered to keep them in it first (owner, 2026-10-24,
+		/// issue 360): a branch changes only on Add or Update, and a load replaces
+		/// the movie. False when they chose to load nothing.
+		/// </summary>
+		private bool OfferToUpdateCurrentBranch()
 		{
+			var current = Branches.Current;
+			var target = BranchView.FirstSelectedRowIndex;
+			if (!AsksBeforeLoading(current, target, Branches.Count, () => Movie.DiffersFrom(Branches[current]))) return true;
+			var answer = Tastudio.ModalMessageBox3(
+				$"Branch {current + 1} does not hold the inputs or markers changed since it was loaded or updated.\n\n"
+					+ $"Update branch {current + 1} with them before loading branch {target + 1}?\n\n"
+					+ "Yes: update it, then load.\n"
+					+ "No: load without updating it (Undo Branch Load brings the changes back).\n"
+					+ "Cancel: load nothing.",
+				"Update the current branch?",
+				EMsgBoxIcon.Question);
+			if (answer is null) return false;
+			if (answer.Value) UpdateBranchAt(current);
+			return true;
+		}
+
+		/// <summary>
+		/// Whether loading branch <paramref name="target"/> first asks about the
+		/// current branch: only when there is one, it is another branch (loading the
+		/// current one again is how a person goes back to it), and the movie holds
+		/// what it does not (<paramref name="differs"/>, asked last: it compares the
+		/// whole input log).
+		/// </summary>
+		public static bool AsksBeforeLoading(int current, int target, int branchCount, Func<bool> differs)
+			=> current >= 0 && current < branchCount && current != target && differs();
+
+		private bool PrepareHistoryAndLoadSelectedBranch(bool ask = false)
+		{
+			if (ask && BranchView.AnyRowsSelected && !OfferToUpdateCurrentBranch()) return false;
+
 			// What "Undo Branch Load" goes back to. For a machine whose state is hundreds of
 			// megabytes that is a second state written on EVERY load, to serve an undo that is
 			// rarely used; such a backup keeps its input alone and the undo replays to it.
-			_backupBranch = CreateBranch(withState: _lastStateBytes < UndoKeepsStateBelow);
+			_backupBranch = CreateBranch(withState: _lastStateBytes < UndoKeepsStateBelow, title: KeepingForUndoTitle);
 
 			var currentHashes = Branches.Select(b => b.Uuid.GetHashCode()).ToList();
 			do
@@ -304,7 +350,7 @@ namespace Chimera.Client.GUI
 		}
 
 		private void LoadBranchToolStripMenuItem_Click(object sender, EventArgs e)
-			=> PrepareHistoryAndLoadSelectedBranch();
+			=> PrepareHistoryAndLoadSelectedBranch(ask: true);
 
 		private void UpdateSelectedBranch()
 		{
@@ -313,9 +359,15 @@ namespace Chimera.Client.GUI
 				return;
 			}
 
-			Branches.Current = BranchView.FirstSelectedRowIndex;
+			UpdateBranchAt(BranchView.FirstSelectedRowIndex);
+		}
 
-			_backupBranch = SelectedBranch.Clone();
+		private void UpdateBranchAt(int index)
+		{
+			var updated = Branches[index];
+			Branches.Current = index;
+
+			_backupBranch = updated.Clone();
 			UndoBranchToolStripMenuItem.Enabled = UndoBranchButton.Enabled = true;
 			UndoBranchToolStripMenuItem.Text = "Undo Branch Update";
 			toolTip1.SetToolTip(UndoBranchButton, "Undo Branch Update");
@@ -323,7 +375,7 @@ namespace Chimera.Client.GUI
 
 			BranchView.ScrollToIndex(Branches.Current);
 			var branch = CreateBranch();
-			Branches.Replace(SelectedBranch, branch);
+			Branches.Replace(updated, branch);
 			Movie.States.Capture(Tastudio.Emulator.Frame);
 			Movie.RefreshPins();
 			TidyBranchStates();
@@ -452,7 +504,8 @@ namespace Chimera.Client.GUI
 		public void AddBranchExternal()
 			=> AddBranchToolStripMenuItem_Click(null, EventArgs.Empty);
 
-		public bool LoadBranchExternal(int slot = -1)
+		/// <param name="ask">a person's own load (a hotkey): offered to update the current branch first; a script's or an agent's is not asked</param>
+		public bool LoadBranchExternal(int slot = -1, bool ask = false)
 		{
 			if (slot != -1)
 			{
@@ -468,7 +521,7 @@ namespace Chimera.Client.GUI
 				}
 			}
 
-			return PrepareHistoryAndLoadSelectedBranch();
+			return PrepareHistoryAndLoadSelectedBranch(ask);
 		}
 
 		public void UpdateBranchExternal(int slot = -1)
@@ -641,7 +694,7 @@ namespace Chimera.Client.GUI
 		{
 			if (Tastudio.Settings.LoadBranchOnDoubleClick)
 			{
-				PrepareHistoryAndLoadSelectedBranch();
+				PrepareHistoryAndLoadSelectedBranch(ask: true);
 			}
 		}
 

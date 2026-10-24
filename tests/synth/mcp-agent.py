@@ -38,9 +38,12 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import struct
 import subprocess
 import sys
+import tempfile
+import time
 import zlib
 
 mcp, ram_path, vram_path, movie_path, tga_path = sys.argv[1:6]
@@ -157,13 +160,21 @@ vram = open(vram_path, "rb").read()
 if local:
     # no window: list what there is, start a project from a game, and write and play the movie
     rom, work = os.environ["MCP_TEST_ROM"], os.environ["MCP_TEST_WORK"]
-    for needed in ("list_cores", "describe_core", "open_game", "open_project", "save_project", "export_movie", "close"):
+    for needed in ("list_cores", "describe_core", "open_game", "open_project", "save_project", "export_movie", "close",
+                   "server_info", "pause"):
         check("the tool %s is listed where there is no window" % needed, needed in tools)
+    for absent in ("resume", "close_tastudio"):
+        check("the tool %s, for a window, is not listed where there is none" % absent, absent not in tools)
+    info = facts("server_info")
+    check("server_info says there is no window and gives the folders it was started with",
+          info.get("window") is False and os.path.realpath(info.get("work_folder", "")) == os.path.realpath(work)
+          and "commit" in info.get("build", {}))
     check("before anything is opened, status says no machine is open", facts("status").get("machine_open") is False)
     error, text, _ = call("seek", frame=0)
     check("and a tool that needs a project says how to open one", error and "open_game" in text)
     cores = facts("list_cores").get("cores", [])
     check("list_cores names the synthetic core", [c["name"] for c in cores] == ["Synth"] and cores[0]["file"].endswith(".chimeraCore"))
+    check("and the kinds of file it opens", cores[0].get("extensions") == ["testrom"])
     described = facts("describe_core", core="Synth")
     check("describe_core gives what the core declares", described.get("name") == "Synth" and isinstance(described.get("settings"), list))
     error, text, _ = call("describe_core", core="No Such Core")
@@ -186,6 +197,31 @@ check("status gives the movie's length", status.get("movie_length") == len(movie
 check("status says whether changes are allowed", status.get("changes_allowed") is changes)
 check("status says the core has not stopped", status.get("core_stopped") is False)
 check("status gives the picture's size", status.get("picture", {}).get("width", 0) > 0)
+check("status names the buttons a press takes", status.get("buttons", [])[:4] == ["P1 Up", "P1 Down", "P1 Left", "P1 Right"])
+check("and the axes", isinstance(status.get("axes"), list))
+if window:
+    # what only the window knows: the files the machine runs, the firmware it was given, how fast it runs
+    files = status.get("files", [])
+    check("status gives the project's files with their paths",
+          [f.get("name") for f in files] == ["gridWalker.testrom"] and os.path.isfile(files[0].get("path", "")))
+    check("status gives the firmware in use, of which the synthetic core has none", status.get("firmware") == [])
+    check("status gives the speed measured", isinstance(status.get("measured_frames_per_second"), (int, float)))
+    for needed in ("server_info", "pause", "resume", "save_project", "close_tastudio"):
+        check("the tool %s is listed in the window" % needed, needed in tools)
+    check("the tool close, for no window, is not listed in one", "close" not in tools)
+    # what the cores folder holds, as in the window's own New Project window (issue 355)
+    synth = [c for c in facts("list_cores").get("cores", []) if c.get("name") == "Synth"]
+    check("list_cores in the window names the synthetic core and the files it opens", len(synth) >= 1 and "testrom" in synth[0].get("extensions", []))
+    check("describe_core in the window says what it declares", facts("describe_core", core="Synth").get("name") == "Synth")
+    # every Lua function is offered (issue 355), as the Lua Console documents them
+    lua = facts("lua_functions", search="framecount")
+    check("lua_functions lists the Lua functions by words", "emu.framecount" in [f.get("name") for f in lua.get("functions", [])]
+          and "memory" in lua.get("libraries", []))
+    info = facts("server_info")
+    check("server_info says it is the window and where projects go",
+          info.get("window") is True and info.get("folders", {}).get("projects") and info.get("commit"))
+    check("pause answers that the machine is paused, on its frame",
+          facts("pause") == {"paused": True, "frame": len(movie)})
 if holder:
     check("status names the project", status.get("project") == "gridWalker.win")
     check("status says the machine is paused", status.get("paused") is True)
@@ -245,6 +281,14 @@ if images:
         check("screenshot is the last frame's picture", (width, height, pixels) == tga_pixels(tga_path))
     half = facts("screenshot", max_width=width // 2)
     check("screenshot scales a picture down to max_width", half.get("width") == width // 2 and half.get("picture_width") == width)
+    # whether the picture is blank, by its commonest colour (issue 355)
+    colours = {}
+    for i in range(0, len(pixels), 3):
+        colours[pixels[i:i + 3]] = colours.get(pixels[i:i + 3], 0) + 1
+    commonest = max(colours, key=colours.get)
+    check("screenshot says the picture is not blank, and its commonest colour",
+          half.get("blank") is False and half.get("dominant_colour") == "#%02X%02X%02X" % tuple(commonest)
+          and abs(half.get("coverage", -1) - colours[commonest] / (width * height)) < 0.002)
 
 if holder:
     # the tools the movie's holder runs
@@ -310,7 +354,7 @@ if not changes:
     # nobody allowed changes: each tool that changes something says how they are allowed
     for tool, arguments in (("add_marker", {"frame": 1, "text": "x"}), ("set_buttons", {"frame": 0, "buttons": {"P1 A": True}}),
                             ("seek", {"frame": 0}), ("write_memory", {"domain": "RAM", "address": 0, "values": [1]}),
-                            ("advance_until", {"property": "Steps", "op": "changed"})):
+                            ("advance_until", {"property": "Steps", "op": "changed"})) + ((("run_lua", {"code": "return 1"}),) if window else ()):
         error, text, _ = call(tool, **arguments)
         check("%s is refused while changes are not allowed" % tool, error and "Allow the agent to make changes" in text)
     check("refused changes changed nothing", facts("get_input", count=1000)["entries"] == movie
@@ -345,6 +389,35 @@ if holder and changes:
     check("status says the project has unsaved changes", facts("status").get("unsaved_changes") is True)
     facts("undo")
     check("undo takes the whole edit back", all_input() == movie)
+    # buttons pressed on a schedule (issue 355): one step, the buttons not named kept
+    pressed = facts("press_buttons", presses=[{"frame": 5, "buttons": ["P1 A"], "hold": 3},
+                                              {"frame": 7, "buttons": ["P1 B", "P1 Start"]}])
+    edited = all_input()
+
+    def with_pressed(line, letters):
+        flat = list(line.replace("|", ""))
+        for column, letter in letters:
+            flat[column] = letter
+        return flat
+
+    expected = [with_pressed(movie[i], ([(4, "A")] if 5 <= i < 8 else []) + ([(5, "B"), (7, "S")] if 7 <= i < 13 else []))
+                for i in range(last)]
+    check("press_buttons presses each button on its frames and leaves the rest as it was",
+          [list(line.replace("|", "")) for line in edited] == expected)
+    check("and answers with the frames it wrote", pressed.get("frame") == 5 and pressed.get("count") == 8)
+    facts("undo")
+    check("one undo takes all the presses back", all_input() == movie)
+    facts("seek", frame=10)
+    facts("press_buttons", presses=[{"after": 2, "buttons": ["P1 A"], "hold": 1}])
+    check("a press 'after' frames counts from the frame the machine is on",
+          [list(line.replace("|", "")) for line in all_input()]
+          == [with_pressed(movie[i], [(4, "A")] if i == 12 else []) for i in range(last)])
+    facts("undo")
+    error, text, _ = call("press_buttons", presses=[{"frame": 1, "after": 1, "buttons": ["P1 A"]}])
+    check("a press with both 'frame' and 'after' is refused", error and "one of them" in text)
+    error, text, _ = call("press_buttons", presses=[{"frame": 1, "buttons": ["P1 A"]}, {"frame": 2, "buttons": ["No Such Button"]}])
+    check("a press of a button that does not exist is refused, and names it", error and "Press 2" in text and "No Such Button" in text)
+    check("the refused presses changed nothing", all_input() == movie)
     error, text, _ = call("set_buttons", frame=0, buttons={"No Such Button": True})
     check("set_buttons names a button that does not exist", error and "No Such Button" in text)
     # a list of names where names to values belong once ended the program serving the call
@@ -418,6 +491,55 @@ if holder and changes:
     facts("watch", watches=[])
     check("with watching ended, a seek's answer carries no watches", "watches" not in facts("seek", frame=3))
 
+    # pictures taken on a schedule of the machine's own frames (issue 355)
+    facts("seek", frame=0)
+    error, text, content = call("capture_series", every=10, count=3, first=5)
+    answer = json.loads(text) if not error else {}
+    shots = answer.get("shots", [])
+    check("capture_series takes a picture on each frame of the schedule",
+          not error and [shot.get("frame") for shot in shots] == [5, 15, 25] and [shot.get("n") for shot in shots] == [1, 2, 3]
+          and len([c for c in content if c["type"] == "image"]) == 3)
+    check("each says whether it is blank", all(shot.get("blank") is False and 0 < shot.get("coverage", 0) <= 1 for shot in shots))
+    check("and it stops on the last", answer.get("frame") == 25 and facts("status").get("frame") == 25)
+    pictures = [c for c in content if c["type"] == "image"]
+    _, _, now_content = call("screenshot", max_width=320)
+    now_pictures = [c for c in now_content if c["type"] == "image"]
+    check("each picture is the frame's own: the last is what screenshot shows on that frame",
+          pictures and now_pictures and png_pixels(base64.b64decode(pictures[-1]["data"])) == png_pixels(base64.b64decode(now_pictures[0]["data"])))
+    check("frames the movie has are played, not added", all_input() == movie)
+    fps = facts("status").get("frames_per_second", 60)
+    facts("seek", frame=0)
+    half_second = facts("capture_series", every=0.5, unit="seconds", count=1, images=False)
+    check("in seconds, the frame nearest is the machine's own time",
+          [shot.get("frame") for shot in half_second.get("shots", [])] == [round(0.5 * fps)])
+    # without a window, pictures are written only inside the work folder, like everything else
+    folder = os.path.join(os.environ["MCP_TEST_WORK"], "shots") if local else tempfile.mkdtemp(prefix="chimera-mcp-shots-")
+    os.makedirs(folder, exist_ok=True)
+    if local:
+        outside = tempfile.mkdtemp(prefix="chimera-mcp-outside-")
+        error, text, _ = call("capture_series", every=1, count=1, folder=outside)
+        check("without a window, pictures are written nowhere but the work folder", error and "work folder" in text and os.listdir(outside) == [])
+        os.rmdir(outside)
+    written = facts("capture_series", every=1, count=2, first=0, folder=folder, name="walk-{n}-{frame}.png", images=False)
+    files = sorted(os.listdir(folder))
+    frame0 = written.get("shots", [{}])[0].get("frame", -1)
+    check("with a folder, each picture is written there at its own size",
+          files == ["walk-01-%d.png" % frame0, "walk-02-%d.png" % (frame0 + 1)]
+          and png_pixels(open(os.path.join(folder, files[0]), "rb").read())[:2] == (status["picture"]["width"], status["picture"]["height"]))
+    facts("seek", frame=frame0)
+    error, text, _ = call("capture_series", every=1, count=2, first=0, folder=folder, name="walk-{n}-{frame}.png")
+    check("a file that is already there is not replaced, and no picture is taken", error and "already" in text)
+    shutil.rmtree(folder)
+    facts("seek", frame=last)
+    beyond = facts("capture_series", every=2, count=2)
+    check("past the movie's end, empty frames are added first",
+          [shot.get("frame") for shot in beyond.get("shots", [])] == [last + 2, last + 4] and len(all_input()) == last + 4
+          and all_input()[:last] == movie)
+    facts("undo")
+    check("which one undo takes back", all_input() == movie)
+    error, text, _ = call("capture_series", every=10, count=51)
+    check("capture_series takes at most 50 pictures", error and "50" in text)
+
     # the playback position: back, then to the end again - and after all of the above the
     # machine at the movie's last frame holds the reference memory
     check("seek goes back to a frame", facts("seek", frame=10).get("frame") == 10 and facts("status").get("frame") == 10)
@@ -469,11 +591,86 @@ if changes:
         error, text, _ = call("advance_until", property="Steps", op="changed")
         check("advance_until needs the window too", error and "window" in text)
 
+if window and changes:
+    # the end of an agent's run, with nothing asked (issue 355): save, play, pause, close
+    folder = tempfile.mkdtemp(prefix="chimera-mcp-save-")
+    path = os.path.join(folder, "agent.chimeraProject")
+    saved = facts("save_project", path=path)
+    check("save_project saves where it is told, and nothing is unsaved after",
+          saved.get("saved") == path and os.path.isfile(path) and saved.get("unsaved_changes") is False
+          and facts("status").get("unsaved_changes") is False)
+    check("saving it again where it is needs no 'overwrite'", facts("save_project").get("saved") == path)
+    other = os.path.join(folder, "someone else's.chimeraProject")
+    open(other, "w").write("theirs")
+    error, text, _ = call("save_project", path=other)
+    check("a file that is there is not replaced", error and "overwrite: true" in text and open(other).read() == "theirs")
+    check("unless overwrite is given", facts("save_project", path=other, overwrite=True).get("saved") == other
+          and open(other).read() != "theirs")
+    facts("seek", frame=10)
+    check("resume lets the machine run", facts("resume") == {"paused": False, "frame": 10})
+    ran = 10
+    for _ in range(100):
+        ran = facts("status").get("frame", 10)
+        if ran > 12:
+            break
+        time.sleep(0.05)
+    check("it plays on by itself", ran > 12)
+    stopped = facts("pause")
+    check("pause stops it", stopped.get("paused") is True and stopped.get("frame", 0) >= ran)
+    # Lua, as the Lua Console's input line runs it (issue 355)
+    frame_now = facts("status").get("frame")
+    ran = facts("run_lua", code="return emu.framecount(), movie.length()")
+    check("run_lua answers what the Lua returned", ran.get("results") == [frame_now, 0] or ran.get("results", [None])[0] == frame_now)
+    ran = facts("run_lua", code="print('hello from the agent') return {1, 2, x = nil}, 1 + 1")
+    check("and what it printed", ran.get("results") == [[1, 2], 2] and "hello from the agent" in ran.get("output", ""))
+    facts("run_lua", code="agent_said = 41")
+    check("a statement runs, and what it set is there for the next call", facts("run_lua", code="agent_said + 1").get("results") == [42])
+    error, text, _ = call("run_lua", code="error('on purpose')")
+    check("an error Lua raises is the answer", error and "on purpose" in text)
+    error, text, _ = call("run_lua", code="emu.frameadvance()")
+    check("a function that waits for a frame is for scripts", error)
+    script = os.path.join(folder, "agent.lua")
+    open(script, "w").write("print('the script started')\nwhile true do emu.frameadvance() end\n")
+    started = facts("lua_script", path=script)
+    facts("status")
+    stopped = facts("lua_script", path=script, stop=True)
+    check("lua_script starts a script, and stops it",
+          started.get("running") is True and stopped.get("running") is False
+          and "the script started" in started.get("output", "") + stopped.get("output", ""))
+    facts("add_marker", frame=3, text="added after saving")
+    error, text, _ = call("close_tastudio")
+    check("a project with unsaved changes is not closed", error and "discard_unsaved" in text and facts("status").get("machine_open") is True)
+    closed = facts("close_tastudio", discard_unsaved=True)
+    check("discard_unsaved closes it without asking", closed.get("closed") is True and closed.get("machine_open") is False
+          and facts("status").get("machine_open") is False)
+    error, text, _ = call("pause")
+    check("with nothing open there is nothing to pause", error)
+    check("the project saved before is as it was saved", "added after saving" not in open(path).read())
+    # a new project, as the New Project window would make it, opened with nothing asked (issue 355)
+    error, text, _ = call("create_project", core="No Such Core", game=status["files"][0]["path"])
+    check("create_project names a core that is not there", error and "list_cores" in text)
+    made = facts("create_project", core="Synth", game=status["files"][0]["path"])
+    check("create_project makes the project and opens it on frame 0",
+          made.get("core") == "Synth" and made.get("frame") == 0 and [f.get("name") for f in made.get("files", [])] == ["gridWalker.testrom"])
+    now = facts("status")
+    check("and it is what is open", now.get("machine_open") is True and now.get("core") == "Synth" and now.get("frame") == 0)
+    check("with an empty movie", made.get("movie_length") == 0 and now.get("movie_length") == 0)
+    facts("close_tastudio", discard_unsaved=True)
+
 if local:
     # save, export, close, open again: the project made here plays to the reference memory
     saved = facts("save_project", path="made.chimeraProject").get("saved", "")
     check("save_project writes the project into the work folder", saved == os.path.join(os.path.realpath(work), "made.chimeraProject") and os.path.isfile(saved))
     check("after saving nothing is unsaved", facts("status").get("unsaved_changes") is False)
+    check("saving it again where it is needs no 'overwrite'", facts("save_project", path="made.chimeraProject").get("saved") == saved)
+    open(os.path.join(work, "theirs.chimeraProject"), "w").write("theirs")
+    error, text, _ = call("save_project", path="theirs.chimeraProject")
+    check("a file that is there is not replaced without 'overwrite'", error and "overwrite: true" in text
+          and open(os.path.join(work, "theirs.chimeraProject")).read() == "theirs")
+    check("and is with it", facts("save_project", path="theirs.chimeraProject", overwrite=True).get("saved", "").endswith("theirs.chimeraProject"))
+    os.remove(os.path.join(work, "theirs.chimeraProject"))
+    facts("save_project", path="made.chimeraProject", overwrite=True)
+    check("pause says the machine is paused", facts("pause").get("paused") is True)
     error, text, _ = call("save_project", path="/tmp/chimera-mcp-outside.chimeraProject")
     check("save_project writes nowhere but the work folder", error and "work folder" in text and not os.path.exists("/tmp/chimera-mcp-outside.chimeraProject"))
     error, text, _ = call("export_movie", path="../outside.txt")

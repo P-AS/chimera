@@ -42,6 +42,13 @@ private:
  * ways and compared. The two paths agreeing is not something to assume. */
 void sha1ForceSoftwareForTests(bool on);
 
+/* ce_sha1_keep_in; the number of hashes read back */
+int32_t sha1KeepIn(const char *utf8Path);
+
+/* the hashes this process holds forgotten, as a new process starts: what the
+ * kept file brings back is then all there is */
+void sha1ForgetForTests();
+
 } // namespace chimera
 
 #endif

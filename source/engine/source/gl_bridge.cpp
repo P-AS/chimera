@@ -1889,6 +1889,29 @@ static void noteNames(uintptr_t op, uintptr_t a, uintptr_t r)
 #undef CE_NAMES
 }
 
+/* The guest's own record of the highest name of each kind it was handed
+ * (miniBox gl-bridge.h, GL_OP_NAME_MARKS), in guest memory: a state carries
+ * it, so after a load it is the restored machine's, whichever process took
+ * the state. Null for a guest that does not keep one, and once its session
+ * has ended. */
+static const ChimeraGlNameMarks *g_nameMarks;
+static_assert(int(CHIMERA_GL_NAME_TEXTURE) == int(kNameTexture) && int(CHIMERA_GL_NAME_BUFFER) == int(kNameBuffer)
+	&& int(CHIMERA_GL_NAME_FRAMEBUFFER) == int(kNameFramebuffer) && int(CHIMERA_GL_NAME_RENDERBUFFER) == int(kNameRenderbuffer)
+	&& int(CHIMERA_GL_NAME_SAMPLER) == int(kNameSampler) && int(CHIMERA_GL_NAME_QUERY) == int(kNameQuery)
+	&& int(CHIMERA_GL_NAME_VERTEX_ARRAY) == int(kNameVertexArray) && int(CHIMERA_GL_NAME_PIPELINE) == int(kNamePipeline)
+	&& int(CHIMERA_GL_NAME_TRANSFORM_FEEDBACK) == int(kNameTransformFeedback) && int(CHIMERA_GL_NAME_PROGRAM) == int(kNameProgram)
+	&& int(CHIMERA_GL_NAME_KINDS) == int(kNameKinds), "the guest's kinds of name are the host's");
+
+/* the restored machine's highest name of a kind, 0 when its guest keeps no marks */
+static uint32_t nameMark(int kind)
+{
+	const ChimeraGlNameMarks *m = g_nameMarks;
+	if (m == nullptr || m->magic != CHIMERA_GL_NAME_MARKS_MAGIC || kind < 0 || (uint32_t)kind >= m->kinds
+		|| kind >= (int)(sizeof m->high / sizeof m->high[0]))
+		return 0;
+	return m->high[kind];
+}
+
 /* In a fresh context (renewContext), every name the core held is taken
  * again, empty, before the core runs: names are handed out from 1 in a new
  * context, so a new object could otherwise get a number a stale call in the
@@ -1901,7 +1924,13 @@ static size_t reserveNames()
 	size_t kept = 0, missed = 0;
 	for (int k = 0; k < kNameKinds; k++)
 	{
-		const uint32_t top = glNames().highest(k);
+		/* and every name up to the restored machine's own marks: the names
+		 * seen made are only this process's, and a state another process
+		 * took holds names this one never saw (chimera#367). A name below a
+		 * mark that the machine had let go is kept too, empty: a number held
+		 * back costs nothing */
+		const uint32_t mark = nameMark(k);
+		const uint32_t top = std::max(glNames().highest(k), mark);
 		if (top == 0) continue;
 		std::vector<GLuint> got;
 		if (k == kNameProgram)
@@ -1937,7 +1966,7 @@ static size_t reserveNames()
 		for (GLuint g : got)
 		{
 			if (g == 0) continue;
-			if (g <= top && glNames().isLive(k, g)) taken[g] = true;
+			if (g <= top && (glNames().isLive(k, g) || g <= mark)) taken[g] = true;
 			else back.push_back(g);
 		}
 		for (uint32_t n = 1; n <= top; n++)
@@ -2543,6 +2572,11 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 				glGetBufferParameteri64v((GLenum)a, GL_BUFFER_SIZE, &size);
 			return size > 0 ? (uintptr_t)size : 0;
 		}
+		case GL_OP_NAME_MARKS:
+			/* where the guest keeps its marks; see g_nameMarks */
+			g_nameMarks = a != 0 && b >= sizeof(ChimeraGlNameMarks) ? reinterpret_cast<const ChimeraGlNameMarks *>(a) : nullptr;
+			return g_nameMarks != nullptr ? 1 : 0;
+
 		case GL_OP_LIST_LENGTH:
 			/* How many entry points this host knows. The guest compares it with
 			 * what it was built against and declines us if we are behind; the
@@ -2571,7 +2605,9 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			return 1;
 		}
 
-		/* the generated cases: one per GL entry point in the master list */
+		/* the generated cases: one per GL entry point in the master list
+		 * (GL_OP_NAME_MARKS is answered above, so its generated case is left out) */
+#define CHIMERA_GL_HOST_NAME_MARKS 1
 #include "gl-bridge-host.inc"
 
 		default:
@@ -2834,6 +2870,7 @@ extern "C" void ce_gl_session_end(void)
 	end_context();
 	forgetContext();
 	glNames().clear();
+	g_nameMarks = nullptr;   /* the guest's memory goes with its session */
 	g_ready = false;
 	g_context_id = 0;
 	g_description[0] = 0;

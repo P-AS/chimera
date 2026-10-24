@@ -137,6 +137,13 @@ namespace Chimera.Client.Common
 
 		void LoadBranch(TasBranch branch);
 
+		/// <summary>
+		/// Whether the movie holds what the branch does not: an input, or a marker
+		/// of the person's. Where the machine is does not count, nor the run's own
+		/// markers, which follow the input.
+		/// </summary>
+		bool DiffersFrom(TasBranch branch);
+
 		void CopyVerificationLog(IEnumerable<string> log);
 
 		bool IsReserved(int frame);

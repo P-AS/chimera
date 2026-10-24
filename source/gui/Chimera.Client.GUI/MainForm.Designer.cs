@@ -201,7 +201,6 @@ namespace Chimera.Client.GUI
             this.ShowTAStudioMenuItem});
 			this.MainformMenu.LayoutStyle = System.Windows.Forms.ToolStripLayoutStyle.Flow;
 			this.MainformMenu.MenuActivate += new System.EventHandler(this.MainformMenu_MenuActivate);
-			this.MainformMenu.MenuDeactivate += new System.EventHandler(this.MainformMenu_MenuDeactivate);
 			// 
 			// FileSubMenu
 			// 
@@ -1069,7 +1068,6 @@ namespace Chimera.Client.GUI
             this.ShowMenuContextMenuItem});
 			this.MainFormContextMenu.Name = "contextMenuStrip1";
 			this.MainFormContextMenu.Size = new System.Drawing.Size(217, 490);
-			this.MainFormContextMenu.Closing += new System.Windows.Forms.ToolStripDropDownClosingEventHandler(this.MainFormContextMenu_Closing);
 			this.MainFormContextMenu.Opening += new System.ComponentModel.CancelEventHandler(this.MainFormContextMenu_Opening);
 			// 
 			// RecordMovieContextMenuItem
@@ -1215,8 +1213,6 @@ namespace Chimera.Client.GUI
 			this.Font = new System.Drawing.Font("Arial", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
 			this.MainMenuStrip = this.MainformMenu;
 			this.Name = "MainForm";
-			this.Activated += new System.EventHandler(this.MainForm_Activated);
-			this.Deactivate += new System.EventHandler(this.MainForm_Deactivate);
 			this.Load += new System.EventHandler(this.MainForm_Load);
 			this.Shown += new System.EventHandler(this.MainForm_Shown);
 			this.Enter += new System.EventHandler(this.MainForm_Enter);

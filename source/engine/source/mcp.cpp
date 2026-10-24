@@ -7,6 +7,7 @@
 #include "mcp.hpp"
 
 #include "chimera/engine.h"
+#include "file_io.hpp"
 #include "thread_string.hpp"
 
 #include "../../extern/cjson/cJSON.h"
@@ -15,13 +16,16 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <deque>
+#include <filesystem>
 #include <map>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 /* session.cpp: which session this is, never reused within the process */
@@ -145,6 +149,34 @@ const McpTool kTools[] = {
 	  "The project's markers: for each, its frame, its text, and whether a person placed it "
 	  "(every movie has three of its own: the run's start, its last input and its end).",
 	  kNoArguments, false, true },
+	{ "server_info",
+	  "Which Chimera this is and where it keeps things: its build, the folder it runs from, and the folders it saves "
+	  "projects (Movies), reads cores from and looks for firmware in. Without a window: the build, and the folders this "
+	  "server was started with.",
+	  kNoArguments, false, true },
+	{ "list_cores",
+	  "The core packages in the cores folder: for each, its file, the name the core gives itself, its version, the machines it "
+	  "is and the kinds of file (extensions) it opens.",
+	  kNoArguments, false, false },
+	{ "describe_core",
+	  "What one core declares: its settings, the firmware it may ask for, and the slots a project of it holds files in.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"core\":{\"type\":\"string\",\"description\":\"A file or a name from list_cores.\"}"
+	  "},\"required\":[\"core\"],\"additionalProperties\":false}",
+	  false, false },
+	{ "lua_functions",
+	  "Chimera's Lua functions, as the Lua Console documents them: for each, its name, parameters, what it returns and "
+	  "what it does. Every one of them can be called with run_lua. 'library' keeps one library, 'search' the functions "
+	  "whose name or description holds those words.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"library\":{\"type\":\"string\",\"description\":\"Such as emu, memory, joypad, movie, tastudio, gui.\"},"
+	  "\"search\":{\"type\":\"string\"},"
+	  "\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":1000,\"description\":\"200 when left out.\"}"
+	  "},\"additionalProperties\":false}",
+	  false, true, false, true },
+	{ "pause",
+	  "Pauses the machine, as System > Pause does, and answers the frame it is on. A machine that is already paused stays so.",
+	  kNoArguments, false, true },
 
 	/* The tools that change something. They are refused until the person
 	 * using Chimera allows changes, and before the first of them a branch of
@@ -190,6 +222,38 @@ const McpTool kTools[] = {
 	  "\"axes\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"integer\"},\"description\":\"Axis name to value.\"}"
 	  "},\"required\":[\"frame\"],\"additionalProperties\":false}",
 	  true, true },
+	{ "press_buttons",
+	  "Presses buttons on a schedule, written into the movie's input as one step in the undo history: each press names "
+	  "its buttons, the frame it starts on ('frame', or 'after' this many frames from the frame the machine is on) and "
+	  "how many frames it is held. Past the movie's end frames are added. Buttons not named keep what they had. "
+	  "'resume', 'seek' or 'capture_series' then plays them. 'status' and 'controls' give the buttons' names.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"presses\":{\"type\":\"array\",\"minItems\":1,\"maxItems\":1000,\"items\":{\"type\":\"object\",\"properties\":{"
+	  "\"buttons\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"minItems\":1},"
+	  "\"frame\":{\"type\":\"integer\",\"minimum\":0,\"description\":\"The frame the press starts on.\"},"
+	  "\"after\":{\"type\":\"integer\",\"minimum\":0,\"description\":\"Or: this many frames after the frame the machine is on.\"},"
+	  "\"hold\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":10000,\"description\":\"Frames the buttons are held. 6 when left out.\"}"
+	  "},\"required\":[\"buttons\"],\"additionalProperties\":false}}"
+	  "},\"required\":[\"presses\"],\"additionalProperties\":false}",
+	  true, true },
+	{ "capture_series",
+	  "Plays the movie and takes a picture on each of 'count' frames: the first 'first' from the frame the machine is on "
+	  "(one interval when left out), then one every 'every'. Both count frames, or seconds of the machine's own time "
+	  "when 'unit' is 'seconds', so the timing does not depend on how fast anything runs. Past the movie's end empty "
+	  "frames are added first, one step in the undo history. Each picture says whether it is blank (one colour covers "
+	  "99% of it or more), its commonest colour and how much it covers. With 'folder', each picture is also written there "
+	  "as a PNG at its own size; a file that is already there is not replaced. Answers when the last is taken.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"every\":{\"type\":\"number\",\"exclusiveMinimum\":0,\"description\":\"Frames (or seconds) between pictures.\"},"
+	  "\"count\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":50},"
+	  "\"first\":{\"type\":\"number\",\"minimum\":0,\"description\":\"Frames (or seconds) before the first picture. 'every' when left out; 0 takes the frame the machine is on.\"},"
+	  "\"unit\":{\"type\":\"string\",\"enum\":[\"frames\",\"seconds\"],\"description\":\"frames when left out.\"},"
+	  "\"max_width\":{\"type\":\"integer\",\"minimum\":32,\"maximum\":4096,\"description\":\"The widest picture in the answer. 320 when left out.\"},"
+	  "\"folder\":{\"type\":\"string\",\"description\":\"A folder that exists, to write the pictures to as PNG files.\"},"
+	  "\"name\":{\"type\":\"string\",\"description\":\"The files' names: {n} is the picture's number, {frame} its frame. shot-{n}.png when left out.\"},"
+	  "\"images\":{\"type\":\"boolean\",\"description\":\"Put the pictures in the answer. true when left out.\"}"
+	  "},\"required\":[\"every\",\"count\"],\"additionalProperties\":false}",
+	  true, true },
 	{ "insert_frames",
 	  "Inserts empty frames before a frame; the input from there on moves later.",
 	  "{\"type\":\"object\",\"properties\":{"
@@ -226,6 +290,62 @@ const McpTool kTools[] = {
 	  "\"text\":{\"type\":\"string\"}"
 	  "},\"required\":[\"frame\"],\"additionalProperties\":false}",
 	  true, true },
+	{ "resume",
+	  "Lets the machine run, as unpausing does: TAStudio plays the movie, and past its end every frame played is added to "
+	  "it, as when a person plays on. Answers at once with the frame it started from; 'pause' stops it, and 'status' says "
+	  "where it is.",
+	  kNoArguments, true, true, false, true },
+	{ "save_project",
+	  "Saves the open project: where it was last saved or opened when no path is given, else at 'path'. A file that is "
+	  "already at 'path' is not replaced unless 'overwrite' is true; nothing asks. Without a window the path must be inside "
+	  "the work folder.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"path\":{\"type\":\"string\",\"description\":\"Where to save it, a .chimeraProject file. Where it was last saved or opened when left out.\"},"
+	  "\"overwrite\":{\"type\":\"boolean\",\"description\":\"Replace a file that is already at 'path'. false when left out.\"}"
+	  "},\"additionalProperties\":false}",
+	  true, true },
+	{ "create_project",
+	  "Makes a new project and opens it, as finishing the New Chimera Project window does - with the core's suggested "
+	  "settings for the game, then the settings given - and asks nothing. Firmware is looked for where that window looks "
+	  "(the Firmware folder, files chosen for the core before) and in 'firmware_folder'; when some is missing nothing is "
+	  "made, and the answer lists each missing file with the files that would do. A project already open is closed first, "
+	  "and one with changes that are not saved only with 'discard_unsaved'. list_cores and describe_core say what to give.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"core\":{\"type\":\"string\",\"description\":\"A core's name or file, from list_cores.\"},"
+	  "\"system\":{\"type\":\"string\",\"description\":\"The machine, for a core that is several: its id or what it is called.\"},"
+	  "\"game\":{\"type\":[\"string\",\"array\"],\"items\":{\"type\":\"string\"},\"description\":\"The game's file (or files), each put in the slot that takes its kind of file.\"},"
+	  "\"files\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"description\":\"Files by slot, as describe_core names the slots.\"},"
+	  "\"settings\":{\"type\":\"object\",\"description\":\"Settings by name, as describe_core names them.\"},"
+	  "\"firmware\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Firmware id to the path of its file.\"},"
+	  "\"firmware_folder\":{\"type\":\"string\",\"description\":\"A folder to look for firmware in as well.\"},"
+	  "\"discard_unsaved\":{\"type\":\"boolean\",\"description\":\"Close an open project even with changes that are not saved. false when left out.\"}"
+	  "},\"required\":[\"core\"],\"additionalProperties\":false}",
+	  true, true, false, true },
+	{ "run_lua",
+	  "Runs Lua as a line typed into the Lua Console runs, where the person sees it: every Lua function is there "
+	  "(lua_functions lists them), and what it returns and prints comes back. A function that waits for a frame "
+	  "(emu.frameadvance, emu.yield) is for scripts, as in the Lua Console: lua_script runs one. It can do anything a "
+	  "script can, so it is refused until changes are allowed.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"code\":{\"type\":\"string\",\"description\":\"Lua, such as \\\"return emu.framecount()\\\".\"}"
+	  "},\"required\":[\"code\"],\"additionalProperties\":false}",
+	  true, true, false, true },
+	{ "lua_script",
+	  "Starts a Lua script file in the Lua Console, as File > Open Script does; it then runs frame after frame. With "
+	  "'stop' it is stopped and taken out. Answers whether it runs, and what the console printed since the agent last "
+	  "asked.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"path\":{\"type\":\"string\",\"description\":\"The .lua file.\"},"
+	  "\"stop\":{\"type\":\"boolean\",\"description\":\"Stop it instead. false when left out.\"}"
+	  "},\"required\":[\"path\"],\"additionalProperties\":false}",
+	  true, true, false, true },
+	{ "close_tastudio",
+	  "Closes the open project: TAStudio and the machine, as closing TAStudio does. A project with changes that are not "
+	  "saved is not closed unless 'discard_unsaved' is true; nothing asks. Without a window, 'close' does this.",
+	  "{\"type\":\"object\",\"properties\":{"
+	  "\"discard_unsaved\":{\"type\":\"boolean\",\"description\":\"Close even with changes that are not saved, which are then lost. false when left out.\"}"
+	  "},\"additionalProperties\":false}",
+	  true, true, false, true },
 	{ "write_memory",
 	  "Writes values to a memory domain or a bus at the frame the machine is on. A movie cannot reproduce a memory write: "
 	  "it is for testing a guess, and 'status' says from then on that memory was written. At most 4096 bytes a call.",
@@ -255,15 +375,6 @@ const McpTool kTools[] = {
 
 	/* The tools that exist only where there is no window: there the agent
 	 * opens a machine of its own, and saves what it made. */
-	{ "list_cores",
-	  "The core packages in the cores folder: for each, its file, the name the core gives itself, its version and the machines it is.",
-	  kNoArguments, false, false, true },
-	{ "describe_core",
-	  "What one core declares: its settings, the firmware it may ask for, and the slots a project of it holds files in.",
-	  "{\"type\":\"object\",\"properties\":{"
-	  "\"core\":{\"type\":\"string\",\"description\":\"A file or a name from list_cores.\"}"
-	  "},\"required\":[\"core\"],\"additionalProperties\":false}",
-	  false, false, true },
 	{ "open_game",
 	  "Starts a new project from a core and game files, with an empty movie, and opens its machine. "
 	  "A project open before is closed without being saved.",
@@ -284,12 +395,6 @@ const McpTool kTools[] = {
 	  "\"firmware\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Firmware id to the path of its file.\"},"
 	  "\"allow_other_core_build\":{\"type\":\"boolean\",\"description\":\"Run it on the build in the cores folder when that is not the one the project names.\"}"
 	  "},\"required\":[\"path\"],\"additionalProperties\":false}",
-	  false, false, true },
-	{ "save_project",
-	  "Saves the open project, with its input, branches and markers, inside the work folder.",
-	  "{\"type\":\"object\",\"properties\":{"
-	  "\"path\":{\"type\":\"string\",\"description\":\"Where to save it. Where it was last saved or opened when left out.\"}"
-	  "},\"additionalProperties\":false}",
 	  false, false, true },
 	{ "export_movie",
 	  "Writes the movie's input alone to a file inside the work folder, as chimera-run plays it.",
@@ -358,6 +463,11 @@ const McpTool *mcpTools(size_t &count)
 {
 	count = sizeof(kTools) / sizeof(kTools[0]);
 	return kTools;
+}
+
+bool mcpOffered(const McpTool &tool)
+{
+	return g_local ? !tool.window : !tool.local;
 }
 
 const McpTool *mcpFindTool(const std::string &name)
@@ -532,8 +642,8 @@ std::string mcpHandleLine(const std::string &line, const McpExecutor &execute, s
 		cJSON *list = cJSON_CreateArray();
 		for (const McpTool &tool : kTools)
 		{
-			/* a tool for where there is no window is not offered where there is one */
-			if (tool.local && !g_local) continue;
+			/* a tool for where there is no window is not offered where there is one, and the other way round */
+			if (!mcpOffered(tool)) continue;
 			cJSON *item = cJSON_CreateObject();
 			cJSON_AddStringToObject(item, "name", tool.name);
 			cJSON_AddStringToObject(item, "description", tool.description);
@@ -555,7 +665,7 @@ std::string mcpHandleLine(const std::string &line, const McpExecutor &execute, s
 		{
 			out = rpcError(id, -32602, "tools/call needs the tool's name");
 		}
-		else if (mcpFindTool(name->valuestring) == nullptr || (mcpFindTool(name->valuestring)->local && !g_local))
+		else if (mcpFindTool(name->valuestring) == nullptr || !mcpOffered(*mcpFindTool(name->valuestring)))
 		{
 			out = rpcError(id, -32602, std::string("there is no tool called '") + name->valuestring + "'");
 		}
@@ -715,7 +825,15 @@ struct WaitingCall
 	uint64_t connection = 0;
 	std::string tool;
 	std::string arguments;
+	std::string prepared;  /* the arguments as the frontend was handed them, for a call it runs */
 	std::chrono::steady_clock::time_point at;
+};
+
+/* The pictures of a capture_series the frontend is playing, taken so far. */
+struct ShotsTaken
+{
+	McpShotPlan plan;
+	std::vector<std::string> facts, pictures;
 };
 
 /* The server in a running Chimera. One for the process, made on first use and
@@ -736,6 +854,8 @@ struct Service
 	std::atomic<int> pending{ 0 };
 	std::atomic<bool> allowChanges{ false };
 	std::map<uint64_t, WaitingCall> withHost; /* calls the frontend is running */
+	std::map<uint64_t, ShotsTaken> shots;     /* by the call: capture_series' pictures so far */
+	std::vector<std::string> coresFolders;    /* where the frontend finds core packages, for list_cores */
 	uint64_t connection = 0;           /* moved on by every connect and disconnect */
 	std::deque<std::string> log;
 	uint64_t logTotal = 0;
@@ -867,6 +987,7 @@ void pipeThread(Service *sv)
 				sv->outgoing.clear();
 				/* a call the frontend is still running has nobody to answer to */
 				sv->withHost.clear();
+				sv->shots.clear();
 				addLog(*sv, sv->client + " disconnected");
 				sv->client.clear();
 			}
@@ -888,6 +1009,7 @@ void pipeThread(Service *sv)
 					sv->waiting.clear();
 					sv->outgoing.clear();
 					sv->withHost.clear();
+				sv->shots.clear();
 					sv->client = hello->valuestring;
 					addLog(*sv, "the agent's program is " + sv->client);
 					sv->outgoing.push_back("{\"hello\":\"chimera\"}");
@@ -947,6 +1069,14 @@ McpResult toolStatus(ce_session *s, const ce_movie_log *log, int64_t frame, cons
 		cJSON_AddNumberToObject(picture, "width", ce_session_video_width(s));
 		cJSON_AddNumberToObject(picture, "height", ce_session_video_height(s));
 		cJSON_AddItemToObject(out, "picture", picture);
+		/* the names set_buttons and press_buttons take, for the controls this
+		 * machine has plugged in; 'controls' says more of each */
+		cJSON *buttons = cJSON_AddArrayToObject(out, "buttons");
+		for (int64_t i = 0; i < ce_session_button_count(s); i++)
+			if (ce_session_button_active(s, i) != 0) cJSON_AddItemToArray(buttons, cJSON_CreateString(ce_session_button_name(s, i)));
+		cJSON *axes = cJSON_AddArrayToObject(out, "axes");
+		for (int64_t i = 0; i < ce_session_axis_count(s); i++)
+			if (ce_session_axis_active(s, i) != 0) cJSON_AddItemToArray(axes, cJSON_CreateString(ce_session_axis_name(s, i)));
 		const int32_t numerator = ce_session_vsync_numerator(s);
 		const int32_t denominator = ce_session_vsync_denominator(s);
 		if (denominator > 0) cJSON_AddNumberToObject(out, "frames_per_second", static_cast<double>(numerator) / denominator);
@@ -1011,21 +1141,15 @@ McpResult toolGetInput(const ce_movie_log *log, const cJSON *arguments)
 	return textResult(out);
 }
 
-McpResult toolScreenshot(ce_session *s, int64_t frame, const cJSON *arguments)
+/* The picture as a PNG, made smaller by a whole number until it is no wider
+ * than maxWidth: every pixel of the result is the average of a square of the
+ * picture's. */
+bool pngOf(const uint32_t *bgra, int32_t width, int32_t height, int64_t maxWidth, std::string &png, int32_t &outWidth, int32_t &outHeight)
 {
-	int64_t maxWidth = 0;
-	if (!integerArgument(arguments, "max_width", 32, 4096, 800, maxWidth)) return mcpError("'max_width' must be between 32 and 4096.");
-	const uint32_t *bgra = ce_session_video(s);
-	const int32_t width = ce_session_video_width(s);
-	const int32_t height = ce_session_video_height(s);
-	if (bgra == nullptr || width <= 0 || height <= 0) return mcpError("The machine has not drawn a picture yet.");
-
-	/* a whole-number reduction: every pixel of the result is the average of
-	 * a square of the picture's */
 	int32_t step = 1;
 	while (width / step > maxWidth) step++;
-	const int32_t outWidth = width / step;
-	const int32_t outHeight = std::max(1, height / step);
+	outWidth = width / step;
+	outHeight = std::max(1, height / step);
 	std::vector<uint8_t> rgb(static_cast<size_t>(outWidth) * outHeight * 3);
 	for (int32_t y = 0; y < outHeight; y++)
 	{
@@ -1049,10 +1173,70 @@ McpResult toolScreenshot(ce_session *s, int64_t frame, const cJSON *arguments)
 		}
 	}
 	size_t pngLen = 0;
-	void *png = tdefl_write_image_to_png_file_in_memory_ex(rgb.data(), outWidth, outHeight, 3, &pngLen, 6, MZ_FALSE);
-	if (png == nullptr) return mcpError("The picture could not be made into a PNG.");
-	const std::string encoded = base64(static_cast<const uint8_t *>(png), pngLen);
-	mz_free(png);
+	void *made = tdefl_write_image_to_png_file_in_memory_ex(rgb.data(), outWidth, outHeight, 3, &pngLen, 6, MZ_FALSE);
+	if (made == nullptr) return false;
+	png.assign(static_cast<const char *>(made), pngLen);
+	mz_free(made);
+	return true;
+}
+
+/* A picture one colour covers this much of, or more, is blank: a black
+ * screen, or one solid colour where a game should be (issue 355). */
+const double kBlankCoverage = 0.99;
+
+/* What a picture looks like as a whole: its commonest colour, as #RRGGBB,
+ * how much of the picture it covers, and so whether the picture is blank. */
+void addLook(cJSON *facts, const uint32_t *bgra, int32_t width, int32_t height)
+{
+	std::unordered_map<uint32_t, uint32_t> counts;
+	const size_t total = static_cast<size_t>(width) * height;
+	uint32_t commonest = 0, most = 0;
+	for (size_t i = 0; i < total; i++)
+	{
+		const uint32_t colour = bgra[i] & 0xFFFFFF;
+		const uint32_t seen = ++counts[colour];
+		if (seen > most)
+		{
+			most = seen;
+			commonest = colour;
+		}
+	}
+	const double coverage = total != 0 ? static_cast<double>(most) / static_cast<double>(total) : 0.0;
+	char hex[8];
+	std::snprintf(hex, sizeof hex, "#%06X", static_cast<unsigned>(commonest));
+	cJSON_AddBoolToObject(facts, "blank", coverage >= kBlankCoverage);
+	cJSON_AddStringToObject(facts, "dominant_colour", hex);
+	cJSON_AddNumberToObject(facts, "coverage", std::floor(coverage * 1000.0) / 1000.0);
+}
+
+/* The file a shot of a plan is written to: {n} is its number, as wide as the
+ * plan's last (two figures at least), and {frame} its frame. */
+std::string shotName(const McpShotPlan &plan, size_t n)
+{
+	const std::string figures = std::to_string(plan.frames.size());
+	std::string number = std::to_string(n);
+	while (number.size() < std::max<size_t>(2, figures.size())) number.insert(number.begin(), '0');
+	std::string name = plan.name;
+	for (size_t at = name.find("{n}"); at != std::string::npos; at = name.find("{n}", at + number.size()))
+		name.replace(at, 3, number);
+	const std::string frame = n >= 1 && n <= plan.frames.size() ? std::to_string(plan.frames[n - 1]) : "";
+	for (size_t at = name.find("{frame}"); at != std::string::npos; at = name.find("{frame}", at + frame.size()))
+		name.replace(at, 7, frame);
+	return name;
+}
+
+McpResult toolScreenshot(ce_session *s, int64_t frame, const cJSON *arguments)
+{
+	int64_t maxWidth = 0;
+	if (!integerArgument(arguments, "max_width", 32, 4096, 800, maxWidth)) return mcpError("'max_width' must be between 32 and 4096.");
+	const uint32_t *bgra = ce_session_video(s);
+	const int32_t width = ce_session_video_width(s);
+	const int32_t height = ce_session_video_height(s);
+	if (bgra == nullptr || width <= 0 || height <= 0) return mcpError("The machine has not drawn a picture yet.");
+	std::string png;
+	int32_t outWidth = 0, outHeight = 0;
+	if (!pngOf(bgra, width, height, maxWidth, png, outWidth, outHeight)) return mcpError("The picture could not be made into a PNG.");
+	const std::string encoded = base64(reinterpret_cast<const uint8_t *>(png.data()), png.size());
 
 	cJSON *content = cJSON_CreateArray();
 	cJSON *image = cJSON_CreateObject();
@@ -1066,6 +1250,7 @@ McpResult toolScreenshot(ce_session *s, int64_t frame, const cJSON *arguments)
 	cJSON_AddNumberToObject(facts, "height", outHeight);
 	cJSON_AddNumberToObject(facts, "picture_width", width);
 	cJSON_AddNumberToObject(facts, "picture_height", height);
+	addLook(facts, bgra, width, height);
 	cJSON *text = cJSON_CreateObject();
 	cJSON_AddStringToObject(text, "type", "text");
 	const std::string factsText = printJson(facts);
@@ -1615,7 +1800,78 @@ std::string pastEndRefusal(int64_t length)
  * error. `tool` comes in as the agent's and goes out as the holder's.
  * `engineHolds` says the movie is the engine's own (no window), which takes a
  * step that widens its LogKey. */
-bool prepareEdit(ce_session *s, const ce_movie_log *log, bool engineHolds, std::string &tool, std::string &argumentsJson, McpResult &refusal)
+/* The lines of `count` frames from `frame`: each the line the frame has now
+ * (or the empty one past the movie's end) as `change` alters its buttons and
+ * axes, written in the held movie's columns. A control `pressed` or `moved`
+ * names that the movie's LogKey does not joins it, as a group of its own at
+ * the end, rather than being left out of the lines (user-decided,
+ * 2026-10-18): the step says so ("key", and the "columns" every line gains).
+ * The engine's own movie (no window) takes that; the window's movie keeps its
+ * columns in TAStudio, so there it is refused, said. Fills the step's
+ * "entries". */
+bool changedLines(ce_session *s, const ce_movie_log *log, bool engineHolds, int64_t frame, int64_t count,
+	const std::vector<uint8_t> &pressed, const std::vector<int32_t> &moved,
+	const std::function<void(int64_t, uint8_t *, int32_t *)> &change, cJSON *step, std::string &why)
+{
+	const size_t buttonCount = static_cast<size_t>(ce_session_button_count(s));
+	const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s));
+	const int64_t length = ce_movie_log_count(log);
+	const EntryLayout held = sessionLayoutOf(s, log);
+	const std::string blank = sessionEntryIn(s, held, nullptr, nullptr);
+	EntryLayout wider;
+	std::string newKey, columns;
+	const bool widened = sessionWidenLayout(s, held, ce_movie_log_key(log), pressed.data(), moved.data(), wider, newKey, columns);
+	if (widened && !engineHolds)
+	{
+		const char *was = ce_movie_log_key(log);
+		const std::string names = EntryLayout::namesIn(newKey.substr(was != nullptr ? std::strlen(was) : 0));
+		why = "This movie's columns (its LogKey) do not include " + names + ", so its input cannot hold them. Nothing was changed.";
+		return false;
+	}
+	cJSON *entries = cJSON_CreateArray();
+	std::vector<uint8_t> states(buttonCount);
+	std::vector<int32_t> values(axisCount);
+	for (int64_t i = 0; i < count; i++)
+	{
+		const char *now = frame + i < length ? ce_movie_log_entry(log, frame + i) : nullptr;
+		std::fill(states.begin(), states.end(), 0);
+		for (size_t a = 0; a < axisCount; a++) values[a] = ce_session_axis_neutral(s, static_cast<int64_t>(a));
+		if (!sessionDecodeIn(s, held, now != nullptr ? now : blank.c_str(), states.data(), values.data()))
+		{
+			why = "The movie's input on frame " + std::to_string(frame + i) + " cannot be read.";
+			cJSON_Delete(entries);
+			return false;
+		}
+		change(frame + i, states.data(), values.data());
+		cJSON_AddItemToArray(entries, cJSON_CreateString(sessionEntryIn(s, widened ? wider : held, states.data(), values.data()).c_str()));
+	}
+	if (widened)
+	{
+		cJSON_AddStringToObject(step, "key", newKey.c_str());
+		cJSON_AddStringToObject(step, "columns", columns.c_str());
+	}
+	cJSON_AddNumberToObject(step, "frame", static_cast<double>(frame));
+	cJSON_AddItemToObject(step, "entries", entries);
+	return true;
+}
+
+/* A button of this machine by its name, among those plugged in; the count of
+ * buttons when there is none. */
+size_t buttonNamed(ce_session *s, const char *name)
+{
+	const size_t buttonCount = static_cast<size_t>(ce_session_button_count(s));
+	for (size_t i = 0; i < buttonCount; i++)
+	{
+		if (std::strcmp(name, ce_session_button_name(s, static_cast<int64_t>(i))) == 0)
+			return ce_session_button_active(s, static_cast<int64_t>(i)) != 0 ? i : buttonCount;
+	}
+	return buttonCount;
+}
+
+/* The most frames press_buttons writes in one step. */
+const int64_t kMostPressFrames = 100000;
+
+bool prepareEdit(ce_session *s, const ce_movie_log *log, bool engineHolds, int64_t frameNow, std::string &tool, std::string &argumentsJson, McpResult &refusal)
 {
 	auto refuse = [&](const std::string &why)
 	{
@@ -1674,6 +1930,82 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, bool engineHolds, std::
 				cJSON_AddItemToObject(step, "entries", cJSON_Duplicate(entries, 1));
 				cJSON_AddStringToObject(step, "label", labelled("set input", frame, count).c_str());
 			}
+		}
+	}
+	else if (tool == "press_buttons")
+	{
+		/* Each press: its buttons, the frame it starts on (given, or counted
+		 * from the frame the machine is on) and how long it is held. They
+		 * become the lines from the first press's frame to the end of the
+		 * last, one step; a button not named keeps what it had. */
+		const size_t buttonCount = static_cast<size_t>(ce_session_button_count(s));
+		const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s));
+		/* the frame the frontend says the machine is on: in the window that is
+		 * TAStudio's, which the session's own count need not be */
+		const int64_t now = frameNow >= 0 ? frameNow : ce_session_frame(s);
+		struct Press { int64_t from, until; std::vector<size_t> buttons; };
+		std::vector<Press> presses;
+		const cJSON *list = cJSON_GetObjectItemCaseSensitive(arguments, "presses");
+		if (!cJSON_IsArray(list) || cJSON_GetArraySize(list) < 1 || cJSON_GetArraySize(list) > 1000)
+			why = "'presses' must be a list of 1 to 1000 presses, such as [{\"after\": 60, \"buttons\": [\"P1 Start\"]}].";
+		const cJSON *item = nullptr;
+		int64_t number = 0;
+		cJSON_ArrayForEach(item, (why.empty() ? list : nullptr))
+		{
+			number++;
+			const std::string which = "Press " + std::to_string(number);
+			Press press;
+			int64_t at = -1, after = -1, hold = 0;
+			const bool hasFrame = cJSON_GetObjectItemCaseSensitive(item, "frame") != nullptr;
+			const bool hasAfter = cJSON_GetObjectItemCaseSensitive(item, "after") != nullptr;
+			const cJSON *buttons = cJSON_GetObjectItemCaseSensitive(item, "buttons");
+			if (!cJSON_IsObject(item)) why = which + " is not an object.";
+			else if (hasFrame == hasAfter) why = which + " needs 'frame' or 'after', one of them.";
+			else if (hasFrame && (!integerArgument(item, "frame", 0, INT32_MAX - 20000, -1, at) || at < 0)) why = which + ": 'frame' must be a frame number, 0 or more.";
+			else if (hasAfter && (!integerArgument(item, "after", 0, INT32_MAX - 20000, -1, after) || after < 0)) why = which + ": 'after' must be a number of frames, 0 or more.";
+			else if (!integerArgument(item, "hold", 1, 10000, 6, hold)) why = which + ": 'hold' must be between 1 and 10000 frames.";
+			else if (!cJSON_IsArray(buttons) || cJSON_GetArraySize(buttons) < 1) why = which + ": 'buttons' must be a list of button names, such as [\"P1 Start\"].";
+			if (!why.empty()) break;
+			press.from = hasFrame ? at : now + after;
+			press.until = press.from + hold;
+			const cJSON *name = nullptr;
+			cJSON_ArrayForEach(name, buttons)
+			{
+				const size_t index = cJSON_IsString(name) ? buttonNamed(s, name->valuestring) : buttonCount;
+				if (index == buttonCount)
+				{
+					why = which + ": there is no button called '" + (cJSON_IsString(name) ? name->valuestring : "?") + "'. 'controls' names them.";
+					break;
+				}
+				press.buttons.push_back(index);
+			}
+			if (!why.empty()) break;
+			presses.push_back(press);
+		}
+		int64_t first = INT64_MAX, last = 0;
+		for (const Press &press : presses)
+		{
+			first = std::min(first, press.from);
+			last = std::max(last, press.until);
+		}
+		if (!why.empty()) {}
+		else if (first > length + kMostPastEnd) why = pastEndRefusal(length);
+		else if (last - first > kMostPressFrames)
+			why = "The presses span " + std::to_string(last - first) + " frames; one call writes at most " + std::to_string(kMostPressFrames) + ".";
+		else
+		{
+			std::vector<uint8_t> pressed(buttonCount, 0);
+			std::vector<int32_t> moved(axisCount, 0);
+			for (const Press &press : presses) for (size_t b : press.buttons) pressed[b] = 1;
+			for (size_t a = 0; a < axisCount; a++) moved[a] = ce_session_axis_neutral(s, static_cast<int64_t>(a));
+			changedLines(s, log, engineHolds, first, last - first, pressed, moved,
+				[&](int64_t at, uint8_t *states, int32_t *)
+				{
+					for (const Press &press : presses)
+						if (at >= press.from && at < press.until) for (size_t b : press.buttons) states[b] = 1;
+				}, step, why);
+			cJSON_AddStringToObject(step, "label", labelled("press buttons", first, last - first).c_str());
+			tool = "set_input";
 		}
 	}
 	else /* set_buttons: the lines it amounts to */
@@ -1735,52 +2067,17 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, bool engineHolds, std::
 		else if (!any) why = "Name at least one button in 'buttons' or one axis in 'axes'.";
 		else
 		{
-			/* A control the movie's LogKey does not name joins it, as a group
-			 * of its own at the end, rather than being left out of the lines
-			 * (user-decided, 2026-10-18). The step says so ("key", and the
-			 * "columns" every line gains) and its lines are written with it.
-			 * The engine's own movie (no window) takes it; the window's movie
-			 * keeps its columns in TAStudio, so there it is refused, said. */
 			std::vector<uint8_t> pressed(buttonCount, 0);
 			std::vector<int32_t> moved(axisCount, 0);
 			for (size_t b = 0; b < buttonCount; b++) pressed[b] = buttonAsked[b] == 1 ? 1 : 0;
 			for (size_t a = 0; a < axisCount; a++)
 				moved[a] = axisAsked[a] ? axisValue[a] : ce_session_axis_neutral(s, static_cast<int64_t>(a));
-			EntryLayout wider;
-			std::string newKey, columns;
-			const bool widened = sessionWidenLayout(s, held, ce_movie_log_key(log), pressed.data(), moved.data(), wider, newKey, columns);
-			if (widened && !engineHolds)
-			{
-				const char *was = ce_movie_log_key(log);
-				const std::string names = EntryLayout::namesIn(newKey.substr(was != nullptr ? std::strlen(was) : 0));
-				why = "This movie's columns (its LogKey) do not include " + names
-					+ ", so its input cannot hold them. Nothing was changed.";
-			}
-			cJSON *entries = cJSON_CreateArray();
-			std::vector<uint8_t> states(buttonCount);
-			std::vector<int32_t> values(axisCount);
-			for (int64_t i = 0; i < count && why.empty(); i++)
-			{
-				/* the line the frame has now, or the empty one past the movie's end */
-				const char *now = frame + i < length ? ce_movie_log_entry(log, frame + i) : nullptr;
-				std::fill(states.begin(), states.end(), 0);
-				for (size_t a = 0; a < axisCount; a++) values[a] = ce_session_axis_neutral(s, static_cast<int64_t>(a));
-				if (!sessionDecodeIn(s, held, now != nullptr ? now : blank.c_str(), states.data(), values.data()))
+			changedLines(s, log, engineHolds, frame, count, pressed, moved,
+				[&](int64_t, uint8_t *states, int32_t *values)
 				{
-					why = "The movie's input on frame " + std::to_string(frame + i) + " cannot be read.";
-					break;
-				}
-				for (size_t b = 0; b < buttonCount; b++) if (buttonAsked[b] >= 0) states[b] = static_cast<uint8_t>(buttonAsked[b]);
-				for (size_t a = 0; a < axisCount; a++) if (axisAsked[a]) values[a] = axisValue[a];
-				cJSON_AddItemToArray(entries, cJSON_CreateString(sessionEntryIn(s, widened ? wider : held, states.data(), values.data()).c_str()));
-			}
-			if (widened)
-			{
-				cJSON_AddStringToObject(step, "key", newKey.c_str());
-				cJSON_AddStringToObject(step, "columns", columns.c_str());
-			}
-			cJSON_AddNumberToObject(step, "frame", static_cast<double>(frame));
-			cJSON_AddItemToObject(step, "entries", entries);
+					for (size_t b = 0; b < buttonCount; b++) if (buttonAsked[b] >= 0) states[b] = static_cast<uint8_t>(buttonAsked[b]);
+					for (size_t a = 0; a < axisCount; a++) if (axisAsked[a]) values[a] = axisValue[a];
+				}, step, why);
 			cJSON_AddStringToObject(step, "label", labelled("set controls", frame, count).c_str());
 			tool = "set_input";
 		}
@@ -1796,9 +2093,106 @@ bool prepareEdit(ce_session *s, const ce_movie_log *log, bool engineHolds, std::
 	return true;
 }
 
+/* capture_series: the frames to take pictures of, and what to make of them,
+ * as the step the movie's holder plays. Frames past the movie's end are
+ * added as empty ones first ("blank" is such a line), so every frame is one
+ * the movie reaches. */
+bool prepareCapture(ce_session *s, const ce_movie_log *log, int64_t frameNow, std::string &argumentsJson, McpResult &refusal)
+{
+	if (s == nullptr || log == nullptr)
+	{
+		refusal = mcpError(kNoMovie);
+		return false;
+	}
+	cJSON *arguments = cJSON_Parse(argumentsJson.c_str());
+	std::string why;
+	const cJSON *every = cJSON_GetObjectItemCaseSensitive(arguments, "every");
+	const cJSON *first = cJSON_GetObjectItemCaseSensitive(arguments, "first");
+	const cJSON *unit = cJSON_GetObjectItemCaseSensitive(arguments, "unit");
+	const cJSON *folder = cJSON_GetObjectItemCaseSensitive(arguments, "folder");
+	const cJSON *name = cJSON_GetObjectItemCaseSensitive(arguments, "name");
+	const cJSON *images = cJSON_GetObjectItemCaseSensitive(arguments, "images");
+	const int32_t numerator = ce_session_vsync_numerator(s), denominator = ce_session_vsync_denominator(s);
+	const double framesPerSecond = denominator > 0 ? static_cast<double>(numerator) / denominator : 60.0;
+	const bool seconds = cJSON_IsString(unit) && std::strcmp(unit->valuestring, "seconds") == 0;
+	int64_t count = 0, maxWidth = 0;
+	McpShotPlan plan;
+	if (unit != nullptr && !seconds && !(cJSON_IsString(unit) && std::strcmp(unit->valuestring, "frames") == 0)) why = "'unit' is 'frames' or 'seconds'.";
+	else if (!cJSON_IsNumber(every) || !(every->valuedouble > 0)) why = "'every' must be a number more than 0.";
+	else if (first != nullptr && (!cJSON_IsNumber(first) || first->valuedouble < 0)) why = "'first' must be a number, 0 or more.";
+	else if (!integerArgument(arguments, "count", 1, 50, -1, count) || count < 1) why = "'count' must be between 1 and 50.";
+	else if (!integerArgument(arguments, "max_width", 32, 4096, 320, maxWidth)) why = "'max_width' must be between 32 and 4096.";
+	else if (images != nullptr && !cJSON_IsBool(images)) why = "'images' is true or false.";
+	else if (name != nullptr && (!cJSON_IsString(name) || std::strpbrk(name->valuestring, "/\\") != nullptr || name->valuestring[0] == '\0'))
+		why = "'name' is a file's name, without a folder.";
+	else if (folder != nullptr && !cJSON_IsString(folder)) why = "'folder' is the path of a folder.";
+	if (why.empty())
+	{
+		/* frames are whole: a time in seconds is the frame nearest it */
+		auto frames = [&](double amount) { return static_cast<int64_t>(std::llround(seconds ? amount * framesPerSecond : amount)); };
+		const int64_t step = std::max<int64_t>(1, frames(every->valuedouble));
+		const int64_t now = frameNow >= 0 ? frameNow : ce_session_frame(s);
+		const int64_t start = now + (first != nullptr ? frames(first->valuedouble) : step);
+		for (int64_t k = 0; k < count; k++) plan.frames.push_back(start + k * step);
+		plan.maxWidth = maxWidth;
+		plan.images = images == nullptr || cJSON_IsTrue(images);
+		plan.framesPerSecond = framesPerSecond;
+		if (cJSON_IsString(name)) plan.name = name->valuestring;
+		if (cJSON_IsString(folder)) plan.folder = folder->valuestring;
+		const int64_t length = ce_movie_log_count(log);
+		std::error_code failed;
+		if (plan.frames.back() > length + kMostPastEnd)
+			why = "The last picture would be on frame " + std::to_string(plan.frames.back()) + ", more than "
+				+ std::to_string(kMostPastEnd) + " frames past the movie's end, which is frame " + std::to_string(length) + ".";
+		else if (!plan.folder.empty() && !std::filesystem::is_directory(std::filesystem::u8path(plan.folder), failed))
+			why = "The folder '" + plan.folder + "' does not exist.";
+		else if (!plan.folder.empty() && count > 1 && plan.name.find("{n}") == std::string::npos && plan.name.find("{frame}") == std::string::npos)
+			why = "With more than one picture, 'name' must hold {n} or {frame}, or every file would have one name.";
+	}
+	if (why.empty() && !plan.folder.empty())
+	{
+		/* nothing is replaced: a series whose files are already there is not begun */
+		for (size_t n = 1; n <= plan.frames.size() && why.empty(); n++)
+		{
+			const std::filesystem::path file = std::filesystem::u8path(plan.folder) / std::filesystem::u8path(shotName(plan, n));
+			std::error_code failed;
+			if (std::filesystem::exists(file, failed)) why = "A file is already at '" + file.u8string() + "', so no picture was taken.";
+		}
+	}
+	cJSON_Delete(arguments);
+	if (!why.empty())
+	{
+		refusal = mcpError(why);
+		return false;
+	}
+	cJSON *step = cJSON_CreateObject();
+	cJSON *list = cJSON_AddArrayToObject(step, "frames");
+	for (int64_t f : plan.frames) cJSON_AddItemToArray(list, cJSON_CreateNumber(static_cast<double>(f)));
+	cJSON_AddStringToObject(step, "blank", sessionEntryIn(s, sessionLayoutOf(s, log), nullptr, nullptr).c_str());
+	cJSON_AddStringToObject(step, "label", labelled("add frames for capture_series", ce_movie_log_count(log),
+		std::max<int64_t>(0, plan.frames.back() - ce_movie_log_count(log))).c_str());
+	cJSON_AddNumberToObject(step, "max_width", static_cast<double>(plan.maxWidth));
+	cJSON_AddStringToObject(step, "folder", plan.folder.c_str());
+	cJSON_AddStringToObject(step, "name", plan.name.c_str());
+	cJSON_AddBoolToObject(step, "images", plan.images);
+	cJSON_AddNumberToObject(step, "frames_per_second", plan.framesPerSecond);
+	argumentsJson = printJson(step);
+	cJSON_Delete(step);
+	return true;
+}
+
+/* A tool the tick box governs that does not change the movie or the machine:
+ * it saves, or closes, the work as it is. No branch is saved before it, which
+ * would itself be a change to the work: a project closed first thing would
+ * have had unsaved changes the agent had not made. */
+bool leavesTheWorkAsItIs(const std::string &tool)
+{
+	return tool == "save_project" || tool == "close_tastudio" || tool == "create_project";
+}
+
 bool isEdit(const std::string &tool)
 {
-	return tool == "set_input" || tool == "set_buttons" || tool == "insert_frames" || tool == "delete_frames";
+	return tool == "set_input" || tool == "set_buttons" || tool == "press_buttons" || tool == "insert_frames" || tool == "delete_frames";
 }
 
 /* ---- RAM search ---- */
@@ -2000,6 +2394,18 @@ McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, con
 		return result;
 	}
 	if (tool == "get_input") return toolGetInput(log, arguments);
+	if (tool == "list_cores" || tool == "describe_core")
+	{
+		std::vector<std::string> folders;
+		{
+			std::lock_guard<std::mutex> hold(sv.lock);
+			folders = sv.coresFolders;
+		}
+		cJSON *copy = cJSON_Duplicate(arguments, 1);
+		const std::string argumentsJson = copy != nullptr ? printJson(copy) : "{}";
+		cJSON_Delete(copy);
+		return tool == "list_cores" ? mcpListCores(folders) : mcpDescribeCore(folders, argumentsJson);
+	}
 	/* a search whose memory is gone is dropped before anything else runs */
 	searchStands(sv, s);
 	if (s == nullptr) return mcpError(kNoMachine);
@@ -2021,6 +2427,111 @@ McpResult runEngineTool(Service &sv, const std::string &tool, ce_session *s, con
 
 } // namespace
 
+bool mcpReadShotPlan(const std::string &preparedJson, McpShotPlan &plan)
+{
+	cJSON *step = cJSON_Parse(preparedJson.c_str());
+	const cJSON *frames = cJSON_GetObjectItemCaseSensitive(step, "frames");
+	const bool ok = cJSON_IsArray(frames) && cJSON_GetArraySize(frames) > 0;
+	plan.frames.clear();
+	const cJSON *frame = nullptr;
+	cJSON_ArrayForEach(frame, (ok ? frames : nullptr)) plan.frames.push_back(static_cast<int64_t>(frame->valuedouble));
+	const cJSON *item = cJSON_GetObjectItemCaseSensitive(step, "max_width");
+	if (cJSON_IsNumber(item)) plan.maxWidth = static_cast<int64_t>(item->valuedouble);
+	item = cJSON_GetObjectItemCaseSensitive(step, "folder");
+	if (cJSON_IsString(item)) plan.folder = item->valuestring;
+	item = cJSON_GetObjectItemCaseSensitive(step, "name");
+	if (cJSON_IsString(item)) plan.name = item->valuestring;
+	plan.images = !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(step, "images"));
+	item = cJSON_GetObjectItemCaseSensitive(step, "frames_per_second");
+	if (cJSON_IsNumber(item)) plan.framesPerSecond = item->valuedouble;
+	cJSON_Delete(step);
+	return ok;
+}
+
+bool mcpTakeShot(ce_session *s, const McpShotPlan &plan, size_t n, int64_t frame, std::string &factsJson, std::string &pictureBase64, std::string &why)
+{
+	const uint32_t *bgra = ce_session_video(s);
+	const int32_t width = ce_session_video_width(s);
+	const int32_t height = ce_session_video_height(s);
+	if (bgra == nullptr || width <= 0 || height <= 0)
+	{
+		why = "The machine has not drawn a picture yet.";
+		return false;
+	}
+	cJSON *facts = cJSON_CreateObject();
+	cJSON_AddNumberToObject(facts, "n", static_cast<double>(n));
+	cJSON_AddNumberToObject(facts, "frame", static_cast<double>(frame));
+	if (plan.framesPerSecond > 0)
+		cJSON_AddNumberToObject(facts, "seconds", std::round(static_cast<double>(frame) / plan.framesPerSecond * 1000.0) / 1000.0);
+	addLook(facts, bgra, width, height);
+	std::string png;
+	int32_t outWidth = 0, outHeight = 0;
+	if (!plan.folder.empty())
+	{
+		/* the file is the picture at its own size */
+		const std::filesystem::path file = std::filesystem::u8path(plan.folder) / std::filesystem::u8path(shotName(plan, n));
+		std::error_code failed;
+		FileWriter out;
+		if (std::filesystem::exists(file, failed)) cJSON_AddStringToObject(facts, "file_error", "a file is already there, so it was not replaced");
+		else if (!pngOf(bgra, width, height, width, png, outWidth, outHeight) || !out.open(file.u8string().c_str())
+			|| !out.write(png.data(), png.size()) || !out.commit())
+			cJSON_AddStringToObject(facts, "file_error", "the file could not be written");
+		else cJSON_AddStringToObject(facts, "file", file.u8string().c_str());
+	}
+	if (plan.images)
+	{
+		if (!pngOf(bgra, width, height, plan.maxWidth, png, outWidth, outHeight))
+		{
+			cJSON_Delete(facts);
+			why = "The picture could not be made into a PNG.";
+			return false;
+		}
+		pictureBase64 = base64(reinterpret_cast<const uint8_t *>(png.data()), png.size());
+	}
+	else
+	{
+		pictureBase64.clear();
+	}
+	factsJson = printJson(facts);
+	cJSON_Delete(facts);
+	return true;
+}
+
+std::string mcpShotsContent(const std::string &answerJson, const std::vector<std::string> &facts, const std::vector<std::string> &pictures)
+{
+	cJSON *answer = cJSON_Parse(answerJson.c_str());
+	if (!cJSON_IsObject(answer))
+	{
+		cJSON_Delete(answer);
+		answer = cJSON_CreateObject();
+	}
+	cJSON *shots = cJSON_AddArrayToObject(answer, "shots");
+	for (const std::string &fact : facts)
+	{
+		cJSON *item = cJSON_Parse(fact.c_str());
+		if (item != nullptr) cJSON_AddItemToArray(shots, item);
+	}
+	cJSON *content = cJSON_CreateArray();
+	cJSON *text = cJSON_CreateObject();
+	cJSON_AddStringToObject(text, "type", "text");
+	const std::string answerText = printJson(answer);
+	cJSON_Delete(answer);
+	cJSON_AddStringToObject(text, "text", answerText.c_str());
+	cJSON_AddItemToArray(content, text);
+	for (const std::string &picture : pictures)
+	{
+		if (picture.empty()) continue;
+		cJSON *image = cJSON_CreateObject();
+		cJSON_AddStringToObject(image, "type", "image");
+		cJSON_AddStringToObject(image, "data", picture.c_str());
+		cJSON_AddStringToObject(image, "mimeType", "image/png");
+		cJSON_AddItemToArray(content, image);
+	}
+	const std::string out = printJson(content);
+	cJSON_Delete(content);
+	return out;
+}
+
 McpResult mcpRunDirect(const std::string &tool, const std::string &argumentsJson, ce_session *s, const ce_movie_log *log,
 	const std::string &hostStatusJson, const McpHostRunner &host)
 {
@@ -2037,7 +2548,8 @@ McpResult mcpRunDirect(const std::string &tool, const std::string &argumentsJson
 	}
 	std::string hostTool = tool, hostArguments = argumentsJson;
 	McpResult refusal;
-	if (isEdit(tool) && !prepareEdit(s, log, true, hostTool, hostArguments, refusal)) return refusal;
+	if (isEdit(tool) && !prepareEdit(s, log, true, -1, hostTool, hostArguments, refusal)) return refusal;
+	if (tool == "capture_series" && !prepareCapture(s, log, -1, hostArguments, refusal)) return refusal;
 	McpResult result = host(hostTool, hostArguments);
 	if (!result.isError && carriesWatches(tool) && s != nullptr && !sv.watches.empty())
 	{
@@ -2076,6 +2588,7 @@ int32_t ce_mcp_start(const char **error_out)
 		sv.waiting.clear();
 		sv.outgoing.clear();
 		sv.withHost.clear();
+		sv.shots.clear();
 		sv.pending = 0;
 		/* every start begins with changes not allowed */
 		sv.allowChanges = false;
@@ -2101,6 +2614,7 @@ void ce_mcp_stop(void)
 	sv.waiting.clear();
 	sv.outgoing.clear();
 	sv.withHost.clear();
+	sv.shots.clear();
 	sv.pending = 0;
 	sv.allowChanges = false;
 	/* the agent's search ends with the server (this is the thread that runs
@@ -2194,7 +2708,7 @@ int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t frame, co
 					"Allow the agent to make changes."));
 				continue;
 			}
-			if (tool->changes && sv.kept == 0)
+			if (tool->changes && sv.kept == 0 && !chimera::leavesTheWorkAsItIs(call.tool))
 			{
 				/* The first change since the server was started. The call goes
 				 * back to the head of the line, and the frontend is asked first
@@ -2234,11 +2748,17 @@ int32_t ce_mcp_service(ce_session *s, const ce_movie_log *log, int64_t frame, co
 				/* an edit is checked, and worked out into the step it amounts
 				 * to, before the movie's holder is asked to make it */
 				chimera::McpResult refusal;
-				if (chimera::isEdit(call.tool) && !chimera::prepareEdit(s, log, false, *heldTool, *heldArguments, refusal))
+				if (chimera::isEdit(call.tool) && !chimera::prepareEdit(s, log, false, frame, *heldTool, *heldArguments, refusal))
 				{
 					chimera::finish(sv, call, refusal);
 					continue;
 				}
+				if (call.tool == "capture_series" && !chimera::prepareCapture(s, log, frame, *heldArguments, refusal))
+				{
+					chimera::finish(sv, call, refusal);
+					continue;
+				}
+				call.prepared = *heldArguments;
 				if (id_out != nullptr) *id_out = call.id;
 				if (tool_out != nullptr) *tool_out = heldTool->c_str();
 				if (arguments_out != nullptr) *arguments_out = heldArguments->c_str();
@@ -2279,8 +2799,56 @@ void ce_mcp_answer(ce_session *s, uint64_t id, const char *text, int32_t is_erro
 	if (is_error == 0 && chimera::carriesWatches(found->second.tool)) answer = chimera::withWatches(sv, s, answer);
 	result.content = chimera::mcpTextContent(answer);
 	result.isError = is_error != 0;
+	/* capture_series: the pictures taken go with the answer */
+	const auto taken = sv.shots.find(id);
+	if (taken != sv.shots.end())
+	{
+		if (is_error == 0) result.content = chimera::mcpShotsContent(answer, taken->second.facts, taken->second.pictures);
+		sv.shots.erase(taken);
+	}
 	chimera::finish(sv, found->second, result);
 	sv.withHost.erase(found);
+}
+
+void ce_mcp_cores_folders(const char *folders_json)
+{
+	Service &sv = service();
+	std::vector<std::string> folders;
+	cJSON *list = folders_json != nullptr ? cJSON_Parse(folders_json) : nullptr;
+	const cJSON *folder = nullptr;
+	cJSON_ArrayForEach(folder, list)
+		if (cJSON_IsString(folder)) folders.push_back(folder->valuestring);
+	cJSON_Delete(list);
+	std::lock_guard<std::mutex> hold(sv.lock);
+	sv.coresFolders = std::move(folders);
+}
+
+int32_t ce_mcp_capture(ce_session *s, uint64_t id, int64_t frame, const char **error_out)
+{
+	static thread_local chimera::ThreadString error;   /* never destroyed: see thread_string.hpp */
+	Service &sv = service();
+	std::lock_guard<std::mutex> hold(sv.lock);
+	const auto found = sv.withHost.find(id);
+	*error = "";
+	if (found == sv.withHost.end() || found->second.tool != "capture_series") *error = "No capture_series is waiting for a picture.";
+	else if (s == nullptr) *error = "No project is open in Chimera.";
+	if (!error->empty())
+	{
+		if (error_out != nullptr) *error_out = error->c_str();
+		return 0;
+	}
+	chimera::ShotsTaken &taken = sv.shots[id];
+	if (taken.facts.empty() && !chimera::mcpReadShotPlan(found->second.prepared, taken.plan)) *error = "The pictures' plan cannot be read.";
+	std::string facts, picture, why;
+	if (error->empty() && !chimera::mcpTakeShot(s, taken.plan, taken.facts.size() + 1, frame, facts, picture, why)) *error = why;
+	if (!error->empty())
+	{
+		if (error_out != nullptr) *error_out = error->c_str();
+		return 0;
+	}
+	taken.facts.push_back(std::move(facts));
+	taken.pictures.push_back(std::move(picture));
+	return 1;
 }
 
 int32_t ce_mcp_condition_set(ce_session *s, const char *arguments_json, const char **error_out)

@@ -40,10 +40,7 @@
 			this.label2 = new Chimera.WinForms.Controls.LocLabelEx();
 			this.AcceptBackgroundInputCheckbox = new System.Windows.Forms.CheckBox();
 			this.AcceptBackgroundInputControllerOnlyCheckBox = new System.Windows.Forms.CheckBox();
-			this.label1 = new Chimera.WinForms.Controls.LocLabelEx();
-			this.RunInBackgroundCheckbox = new System.Windows.Forms.CheckBox();
 			this.EnableContextMenuCheckbox = new System.Windows.Forms.CheckBox();
-			this.PauseWhenMenuActivatedCheckbox = new System.Windows.Forms.CheckBox();
 			this.groupBox1 = new System.Windows.Forms.GroupBox();
 			this.locLabelEx1 = new Chimera.WinForms.Controls.LocLabelEx();
 			this.StartPausedCheckbox = new System.Windows.Forms.CheckBox();
@@ -53,9 +50,6 @@
 			this.SingleInstanceModeCheckbox = new System.Windows.Forms.CheckBox();
 			this.tabPage3 = new System.Windows.Forms.TabPage();
 			this.NoMixedKeyPriorityCheckBox = new System.Windows.Forms.CheckBox();
-			this.label6 = new Chimera.WinForms.Controls.LocLabelEx();
-			this.cbSkipWaterboxIntegrityChecks = new System.Windows.Forms.CheckBox();
-			this.label5 = new Chimera.WinForms.Controls.LocLabelEx();
 			this.LuaDuringTurboCheckbox = new System.Windows.Forms.CheckBox();
 			this.label12 = new Chimera.WinForms.Controls.LocLabelEx();
 			this.label13 = new Chimera.WinForms.Controls.LocLabelEx();
@@ -112,10 +106,7 @@
 			this.tabPage1.Controls.Add(this.label2);
 			this.tabPage1.Controls.Add(this.AcceptBackgroundInputCheckbox);
 			this.tabPage1.Controls.Add(this.AcceptBackgroundInputControllerOnlyCheckBox);
-			this.tabPage1.Controls.Add(this.label1);
-			this.tabPage1.Controls.Add(this.RunInBackgroundCheckbox);
 			this.tabPage1.Controls.Add(this.EnableContextMenuCheckbox);
-			this.tabPage1.Controls.Add(this.PauseWhenMenuActivatedCheckbox);
 			this.tabPage1.Controls.Add(this.groupBox1);
 			this.tabPage1.Location = new System.Drawing.Point(4, 22);
 			this.tabPage1.Name = "tabPage1";
@@ -128,7 +119,7 @@
 			// cbEnableGCAdapterSupport
 			// 
 			this.cbEnableGCAdapterSupport.AutoSize = true;
-			this.cbEnableGCAdapterSupport.Location = new System.Drawing.Point(7, 191);
+			this.cbEnableGCAdapterSupport.Location = new System.Drawing.Point(7, 151);
 			this.cbEnableGCAdapterSupport.Name = "cbEnableGCAdapterSupport";
 			this.cbEnableGCAdapterSupport.Size = new System.Drawing.Size(320, 17);
 			this.cbEnableGCAdapterSupport.TabIndex = 29;
@@ -138,7 +129,7 @@
 			// cbMergeLAndRModifierKeys
 			// 
 			this.cbMergeLAndRModifierKeys.AutoSize = true;
-			this.cbMergeLAndRModifierKeys.Location = new System.Drawing.Point(7, 168);
+			this.cbMergeLAndRModifierKeys.Location = new System.Drawing.Point(7, 128);
 			this.cbMergeLAndRModifierKeys.Name = "cbMergeLAndRModifierKeys";
 			this.cbMergeLAndRModifierKeys.Size = new System.Drawing.Size(320, 17);
 			this.cbMergeLAndRModifierKeys.TabIndex = 29;
@@ -148,7 +139,7 @@
 			// HandleAlternateKeyboardLayoutsCheckBox
 			// 
 			this.HandleAlternateKeyboardLayoutsCheckBox.AutoSize = true;
-			this.HandleAlternateKeyboardLayoutsCheckBox.Location = new System.Drawing.Point(7, 145);
+			this.HandleAlternateKeyboardLayoutsCheckBox.Location = new System.Drawing.Point(7, 105);
 			this.HandleAlternateKeyboardLayoutsCheckBox.Name = "HandleAlternateKeyboardLayoutsCheckBox";
 			this.HandleAlternateKeyboardLayoutsCheckBox.Size = new System.Drawing.Size(320, 17);
 			this.HandleAlternateKeyboardLayoutsCheckBox.TabIndex = 26;
@@ -167,7 +158,7 @@
 			// 
 			// label2
 			// 
-			this.label2.Location = new System.Drawing.Point(26, 112);
+			this.label2.Location = new System.Drawing.Point(26, 72);
 			this.label2.MaximumSize = new System.Drawing.Size(380, 0);
 			this.label2.Name = "label2";
 			this.label2.Text = "\"Eavesdrops\" on keyboard and gamepad input while other programs are focused.";
@@ -175,7 +166,7 @@
 			// AcceptBackgroundInputCheckbox
 			// 
 			this.AcceptBackgroundInputCheckbox.AutoSize = true;
-			this.AcceptBackgroundInputCheckbox.Location = new System.Drawing.Point(6, 92);
+			this.AcceptBackgroundInputCheckbox.Location = new System.Drawing.Point(6, 52);
 			this.AcceptBackgroundInputCheckbox.Name = "AcceptBackgroundInputCheckbox";
 			this.AcceptBackgroundInputCheckbox.Size = new System.Drawing.Size(146, 17);
 			this.AcceptBackgroundInputCheckbox.TabIndex = 23;
@@ -187,48 +178,22 @@
 			// 
 			this.AcceptBackgroundInputControllerOnlyCheckBox.AutoSize = true;
 			this.AcceptBackgroundInputControllerOnlyCheckBox.Enabled = false;
-			this.AcceptBackgroundInputControllerOnlyCheckBox.Location = new System.Drawing.Point(156, 92);
+			this.AcceptBackgroundInputControllerOnlyCheckBox.Location = new System.Drawing.Point(156, 52);
 			this.AcceptBackgroundInputControllerOnlyCheckBox.Name = "AcceptBackgroundInputControllerOnlyCheckBox";
 			this.AcceptBackgroundInputControllerOnlyCheckBox.Size = new System.Drawing.Size(117, 17);
 			this.AcceptBackgroundInputControllerOnlyCheckBox.TabIndex = 24;
 			this.AcceptBackgroundInputControllerOnlyCheckBox.Text = "From controller only";
 			this.AcceptBackgroundInputControllerOnlyCheckBox.UseVisualStyleBackColor = true;
 			// 
-			// label1
-			// 
-			this.label1.Location = new System.Drawing.Point(26, 72);
-			this.label1.Name = "label1";
-			this.label1.Text = "When this is set, the client will continue to run when it loses focus.";
-			// 
-			// RunInBackgroundCheckbox
-			// 
-			this.RunInBackgroundCheckbox.AutoSize = true;
-			this.RunInBackgroundCheckbox.Location = new System.Drawing.Point(6, 52);
-			this.RunInBackgroundCheckbox.Name = "RunInBackgroundCheckbox";
-			this.RunInBackgroundCheckbox.Size = new System.Drawing.Size(117, 17);
-			this.RunInBackgroundCheckbox.TabIndex = 21;
-			this.RunInBackgroundCheckbox.Text = "Run in background";
-			this.RunInBackgroundCheckbox.UseVisualStyleBackColor = true;
-			// 
 			// EnableContextMenuCheckbox
 			// 
 			this.EnableContextMenuCheckbox.AutoSize = true;
-			this.EnableContextMenuCheckbox.Location = new System.Drawing.Point(196, 6);
+			this.EnableContextMenuCheckbox.Location = new System.Drawing.Point(6, 6);
 			this.EnableContextMenuCheckbox.Name = "EnableContextMenuCheckbox";
 			this.EnableContextMenuCheckbox.Size = new System.Drawing.Size(128, 17);
 			this.EnableContextMenuCheckbox.TabIndex = 18;
 			this.EnableContextMenuCheckbox.Text = "Enable Context Menu";
 			this.EnableContextMenuCheckbox.UseVisualStyleBackColor = true;
-			// 
-			// PauseWhenMenuActivatedCheckbox
-			// 
-			this.PauseWhenMenuActivatedCheckbox.AutoSize = true;
-			this.PauseWhenMenuActivatedCheckbox.Location = new System.Drawing.Point(6, 6);
-			this.PauseWhenMenuActivatedCheckbox.Name = "PauseWhenMenuActivatedCheckbox";
-			this.PauseWhenMenuActivatedCheckbox.Size = new System.Drawing.Size(161, 17);
-			this.PauseWhenMenuActivatedCheckbox.TabIndex = 17;
-			this.PauseWhenMenuActivatedCheckbox.Text = "Pause when menu activated";
-			this.PauseWhenMenuActivatedCheckbox.UseVisualStyleBackColor = true;
 			// 
 			// groupBox1
 			// 
@@ -238,7 +203,7 @@
 			this.groupBox1.Controls.Add(this.StartFullScreenCheckbox);
 			this.groupBox1.Controls.Add(this.label3);
 			this.groupBox1.Controls.Add(this.SingleInstanceModeCheckbox);
-			this.groupBox1.Location = new System.Drawing.Point(6, 214);
+			this.groupBox1.Location = new System.Drawing.Point(6, 174);
 			this.groupBox1.Name = "groupBox1";
 			this.groupBox1.Size = new System.Drawing.Size(369, 133);
 			this.groupBox1.TabIndex = 15;
@@ -296,9 +261,6 @@
 			// tabPage3
 			// 
 			this.tabPage3.Controls.Add(this.NoMixedKeyPriorityCheckBox);
-			this.tabPage3.Controls.Add(this.label6);
-			this.tabPage3.Controls.Add(this.cbSkipWaterboxIntegrityChecks);
-			this.tabPage3.Controls.Add(this.label5);
 			this.tabPage3.Controls.Add(this.LuaDuringTurboCheckbox);
 			this.tabPage3.Controls.Add(this.label12);
 			this.tabPage3.Controls.Add(this.label13);
@@ -313,36 +275,12 @@
 			// NoMixedKeyPriorityCheckBox
 			// 
 			this.NoMixedKeyPriorityCheckBox.AutoSize = true;
-			this.NoMixedKeyPriorityCheckBox.Location = new System.Drawing.Point(6, 294);
+			this.NoMixedKeyPriorityCheckBox.Location = new System.Drawing.Point(6, 180);
 			this.NoMixedKeyPriorityCheckBox.Name = "NoMixedKeyPriorityCheckBox";
 			this.NoMixedKeyPriorityCheckBox.Size = new System.Drawing.Size(288, 17);
 			this.NoMixedKeyPriorityCheckBox.TabIndex = 25;
 			this.NoMixedKeyPriorityCheckBox.Text = "Key Priority Toggle - Remove Mixed Key Priority Options";
 			this.NoMixedKeyPriorityCheckBox.UseVisualStyleBackColor = true;
-			// 
-			// label6
-			// 
-			this.label6.Location = new System.Drawing.Point(27, 243);
-			this.label6.Name = "label6";
-			this.label6.Text = "Skips some integrity check exceptions in waterbox cores.\r\nUseful for romhackers. " +
-    "Reboot core after changing.\r\nDon\'t bother reporting bugs if checked.\r\n";
-			// 
-			// cbSkipWaterboxIntegrityChecks
-			// 
-			this.cbSkipWaterboxIntegrityChecks.AutoSize = true;
-			this.cbSkipWaterboxIntegrityChecks.Location = new System.Drawing.Point(6, 223);
-			this.cbSkipWaterboxIntegrityChecks.Name = "cbSkipWaterboxIntegrityChecks";
-			this.cbSkipWaterboxIntegrityChecks.Size = new System.Drawing.Size(170, 17);
-			this.cbSkipWaterboxIntegrityChecks.TabIndex = 18;
-			this.cbSkipWaterboxIntegrityChecks.Text = "Skip waterbox integrity checks";
-			this.cbSkipWaterboxIntegrityChecks.UseVisualStyleBackColor = true;
-			// 
-			// label5
-			// 
-			this.label5.Location = new System.Drawing.Point(27, 194);
-			this.label5.Name = "label5";
-			this.label5.Text = "Will prevent many Out Of Memory crashes during long movies.\r\nYou must restart the" +
-    " program after changing this.";
 			// 
 			// LuaDuringTurboCheckbox
 			// 
@@ -414,18 +352,12 @@
 		private Chimera.WinForms.Controls.LocLabelEx label12;
 		private Chimera.WinForms.Controls.LocLabelEx label13;
 		private System.Windows.Forms.CheckBox LuaDuringTurboCheckbox;
-		private Chimera.WinForms.Controls.LocLabelEx label5;
-		private Chimera.WinForms.Controls.LocLabelEx label6;
-		private System.Windows.Forms.CheckBox cbSkipWaterboxIntegrityChecks;
 		private System.Windows.Forms.CheckBox HandleAlternateKeyboardLayoutsCheckBox;
 		private System.Windows.Forms.CheckBox NeverAskSaveCheckbox;
 		private Chimera.WinForms.Controls.LocLabelEx label2;
 		private System.Windows.Forms.CheckBox AcceptBackgroundInputCheckbox;
 		private System.Windows.Forms.CheckBox AcceptBackgroundInputControllerOnlyCheckBox;
-		private Chimera.WinForms.Controls.LocLabelEx label1;
-		private System.Windows.Forms.CheckBox RunInBackgroundCheckbox;
 		private System.Windows.Forms.CheckBox EnableContextMenuCheckbox;
-		private System.Windows.Forms.CheckBox PauseWhenMenuActivatedCheckbox;
 		private System.Windows.Forms.GroupBox groupBox1;
 		private System.Windows.Forms.CheckBox StartPausedCheckbox;
 		private Chimera.WinForms.Controls.LocLabelEx label14;

@@ -562,6 +562,14 @@ namespace Chimera.Client.Common
 			InvalidateAfter(divergentPoint ?? branch.InputLog.Count);
 		}
 
+		public bool DiffersFrom(TasBranch branch)
+		{
+			if (Log.DivergentPoint(branch.InputLog) is not null) return true;
+			static IEnumerable<(int Frame, string Message)> Own(IEnumerable<TasMovieMarker> markers)
+				=> markers.Where(static m => !m.IsPermanent).Select(static m => (m.Frame, m.Message)).OrderBy(static m => m.Frame).ThenBy(static m => m.Message, StringComparer.Ordinal);
+			return !Own(Markers).SequenceEqual(Own(branch.Markers));
+		}
+
 		private void Markers_CollectionChanged(object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
 		{
 			Changes = true;

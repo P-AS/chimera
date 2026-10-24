@@ -62,6 +62,12 @@ namespace Chimera.Client.Common
 		private const string DirName = "Projects";
 
 		/// <summary>
+		/// The file in <see cref="DataHome"/> where the engine keeps the hashes of the
+		/// files Chimera has read, between sessions (issue 368).
+		/// </summary>
+		public const string FileHashesName = "file-hashes.txt";
+
+		/// <summary>
 		/// Where the user asked for it to be instead (Config &gt; Data Directory, issue #52): the
 		/// config's <c>DataDirectory</c>, set once at startup and empty for "where it always was".
 		/// <c>CHIMERA_DATA_HOME</c> still wins - a portable install or a test that sets it means it.

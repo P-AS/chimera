@@ -1023,6 +1023,23 @@ reads them is told before a state is taken, through the optional
 docs/design-principles.md, "A core is told before a state is taken of it").
 xemu does, and its first frame after a load is the frame's own picture.
 
+## A state taken by another process (user-decided, 2026-10-24)
+
+After a load the bridge gives the guest a fresh context and, before the guest
+runs, takes every GL name the guest still holds again, empty, so that no new
+object gets a number an old call could still reach. It used to know those
+names only by watching them being made in its own process. A state taken by
+another process, which is what opening a project again loads, held names the
+new process had never seen; Dolphin's rebuild deleted a vertex array by its
+old number, the array another format had just been given, and a screen drew
+black (chimera#367). A guest built from miniBox's generator now keeps the
+highest name of each kind it has been given in its own memory
+(`GL_OP_NAME_MARKS`, miniBox's source/gl/README.md), so every state carries
+it, and after a load the bridge keeps every number up to those marks from new
+objects. A core gets this when it is built again; until then it has only the
+names seen in the process, as before. The core gate test for it is Dolphin's
+gl:load-in-new-process.
+
 ## The Vulkan bridge (user-decided, 2026-10-10)
 
 For a core whose renderer has no OpenGL. The owner, on a request for an

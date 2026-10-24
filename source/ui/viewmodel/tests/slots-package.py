@@ -27,6 +27,9 @@ slots = {
 }
 with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
     for info in zin.infolist():
+        # the base package's own slots (one game) give way to these
+        if info.filename == "file_slots.json":
+            continue
         data = zin.read(info)
         if info.filename == "waterbox.config":
             cfg = json.loads(data)

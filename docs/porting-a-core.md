@@ -321,6 +321,25 @@ Advice earned the hard way:
   source link, and its licence text travel with the package; the bundle's
   LICENSES.md is computed from them, and a package that declares nothing stops
   the build. If you compile someone's code in - a whole Mesa, say - declare it.
+- **A setting's `type`** decides what the settings grid lets a person enter
+  and what the core reads from the `settings` file (issue 358):
+  - `bool`, `string`, `float`, and `enum` (one of its `options`).
+  - The whole numbers hold what their C types hold: `int` from -2147483648
+    to 2147483647, `uint` from 0 to 4294967295, `long` and `ulong` 64 bits
+    with and without a sign. `min` and `max` narrow any of them. Every
+    digit reaches the core, past the 2^53 a JSON reader that turns numbers
+    into doubles keeps. Read them with `wbx_setting_long`, and a `ulong`
+    with `wbx_setting_ulong`.
+  - `datetime` is a date and time in UTC. The grid shows it, and takes it
+    typed, as `2000-01-01 00:00:00`. The core reads the number of seconds
+    since 1970-01-01 00:00:00, a 64-bit whole number, so 2038 is no limit.
+    Its `default`, `min` and `max` are written as that number. A core that
+    already reads a clock as seconds in an `int` setting can change the
+    type to `datetime` and nothing else: the values stay the same.
+  - With no `type`, it is inferred: `enum` when there are `options`,
+    otherwise from the default (a whole number past an `int` is a `long`).
+    The package tests refuse a type Chimera does not know, which used to be
+    taken for text.
 - Settings that shape the machine are part of the reproduction contract. There
   is no such thing as a cosmetic setting here.
 - Two places to keep in step: the vsync rate in `waterbox.config` and whatever

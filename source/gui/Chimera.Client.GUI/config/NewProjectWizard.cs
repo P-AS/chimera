@@ -29,7 +29,7 @@ namespace Chimera.Client.GUI
 	/// IN MEMORY. Nothing is written until the work is saved, so starting a
 	/// project costs no decision about where a file goes.
 	/// </summary>
-	public sealed class NewProjectWizard : FormBase
+	public sealed partial class NewProjectWizard : FormBase
 	{
 		private readonly IReadOnlyList<DiscoveredCorePackage> _cores;
 
@@ -114,6 +114,9 @@ namespace Chimera.Client.GUI
 
 		// page 3
 		private readonly PropertyGrid _settingsGrid;
+
+		/// <summary>The second the machine's clock starts at, as typed (issue 366).</summary>
+		private readonly TextBox _clockStart;
 		private readonly Panel _presetRow;
 		private bool _presetRowShown;
 
@@ -476,7 +479,8 @@ namespace Chimera.Client.GUI
 			{
 				Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
 				Location = Pt(8, 48),
-				Size = new(UIHelper.ScaleX(544), UIHelper.ScaleY(324)),
+				// a row shorter than the page: the clock's start is under it
+				Size = new(UIHelper.ScaleX(544), UIHelper.ScaleY(294)),
 				ToolbarVisible = false,
 				PropertySort = PropertySort.Alphabetical,
 			};
@@ -488,6 +492,40 @@ namespace Chimera.Client.GUI
 				UpdateNavLabels();
 			};
 			p3.Controls.Add(_settingsGrid);
+			// The second the machine's clock starts at (owner, 2026-10-24, issue 366): the
+			// same on every run, so a movie replays, and the sandbox's own unless another is
+			// typed. It is the machine's for every core, not a core's setting, so it sits
+			// under the grid rather than in it.
+			var clockRow = new Panel
+			{
+				Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+				Location = Pt(8, 348),
+				Size = new(UIHelper.ScaleX(544), UIHelper.ScaleY(26)),
+			};
+			var clockLabel = new Label
+			{
+				AutoSize = true,
+				Location = Pt(0, 5),
+				Text = "The machine's clock starts at:",
+			};
+			_clockStart = new TextBox
+			{
+				Location = new(clockLabel.Left + clockLabel.PreferredSize.Width + UIHelper.ScaleX(6), UIHelper.ScaleY(1)),
+				Size = new(UIHelper.ScaleX(140), UIHelper.ScaleY(23)),
+				Text = ClockText(EngineProject.ClockStartDefault),
+			};
+			var clockUtc = new Label
+			{
+				AutoSize = true,
+				Location = new(_clockStart.Right + UIHelper.ScaleX(6), UIHelper.ScaleY(5)),
+				Text = "UTC",
+			};
+			new ToolTip().SetToolTip(_clockStart,
+				"Every run of this project starts the machine's clock at this moment, so a movie plays back the same.\n"
+				+ "A game that takes its luck from the date and time deals other luck from another start.\n"
+				+ "Written as year-month-day hours:minutes:seconds, between 1970 and 2200.");
+			clockRow.Controls.AddRange([ clockLabel, _clockStart, clockUtc ]);
+			p3.Controls.Add(clockRow);
 			// AFTER the page owns it: the box goes in beside the grid, and a grid
 			// with no parent has nowhere to put one. A core describes its settings
 			// in paragraphs (waterbox.config) and the grid's own pane holds two
@@ -3223,7 +3261,52 @@ namespace Chimera.Client.GUI
 
 		private void Create()
 		{
+			if (MakeProject() is { } refused)
+			{
+				ShowPageBecause(refused.Page, refused.Why);
+				return;
+			}
+			DialogResult = DialogResult.OK;
+			Close();
+		}
+
+		/// <summary>
+		/// The project the answers make, as <see cref="CreatedProject"/>; or why not, with the page that holds
+		/// the answer to change. Shared by Create and by an agent's create_project (<see cref="CompleteForAgent"/>).
+		/// </summary>
+		/// <summary>A second as the clock row shows it: 2017-05-27 12:44:28.</summary>
+		public static string ClockText(long unixSeconds)
+			=> DateTimeOffset.FromUnixTimeSeconds(unixSeconds).UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+
+		/// <summary>
+		/// The second typed in the clock row, or null when it is not a time written as
+		/// 2017-05-27 12:44:28 between 1970 and 2200 (UTC).
+		/// </summary>
+		public static long? ParseClockText(string text)
+		{
+			if (!DateTime.TryParseExact(text.Trim(), "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture,
+				System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var when))
+			{
+				return null;
+			}
+			var seconds = new DateTimeOffset(when, TimeSpan.Zero).ToUnixTimeSeconds();
+			return seconds is >= 0 and <= EngineProject.ClockStartLast ? seconds : null;
+		}
+
+		/// <summary>What the clock row holds. Public so a test can drive it.</summary>
+		public string ClockStartText
+		{
+			get => _clockStart.Text;
+			set => _clockStart.Text = value;
+		}
+
+		private (int Page, string Why)? MakeProject()
+		{
 			var core = ChosenCore!;
+			if (ParseClockText(_clockStart.Text) is not { } clockStart)
+			{
+				return (2, "the machine's clock start is not a time written as 2017-05-27 12:44:28, between 1970 and 2200 (UTC)");
+			}
 			// NOT disposed here on success: the caller takes ownership of the
 			// finished project and boots the machine from it. On any failure
 			// below we dispose it ourselves and stay on the page.
@@ -3233,6 +3316,7 @@ namespace Chimera.Client.GUI
 			progress.Step("hashing the project's files");
 			var project = EngineProject.New();
 			project.SetCore(core.Name, core.Version ?? "", core.Sha1 ?? "");
+			project.SetClockStart(clockStart);
 			// The platform, stamped at creation: reopening forces the pinned core
 			// through the movie queue, and that check wants to know the system. A
 			// package that is several machines says which one through its settings,
@@ -3260,8 +3344,7 @@ namespace Chimera.Client.GUI
 			catch (InvalidOperationException ex)
 			{
 				project.Dispose();
-				ShowPageBecause(1, ex.Message);
-				return;
+				return (1, ex.Message);
 			}
 
 			// the project records every EXPOSED sync setting explicitly, at its
@@ -3333,15 +3416,13 @@ namespace Chimera.Client.GUI
 			if (declarationJson is not null && project.Validate(declarationJson) is { } refusal)
 			{
 				project.Dispose();
-				ShowPageBecause(1, refusal);
-				return;
+				return (1, refusal);
 			}
 
 			// nothing is written: the project lives in memory until the work is
 			// saved, which is also when the user is asked where it goes
 			CreatedProject = project;
-			DialogResult = DialogResult.OK;
-			Close();
+			return null;
 		}
 	}
 }

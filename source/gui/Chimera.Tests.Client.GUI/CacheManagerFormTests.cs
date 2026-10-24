@@ -36,6 +36,61 @@ namespace Chimera.Tests.Client.GUI
 				form.Rows.ToArray());
 		}
 
+		/// <summary>
+		/// Greenzone budgets... works on the project picked in the list. With none
+		/// picked by hand, that is the project open now, else the one used last -
+		/// not the largest, which is the first row (issue 369).
+		/// </summary>
+		[TestMethod]
+		public void BudgetsAreTheOpenProjectsOrTheLastUsed()
+		{
+			CacheItem asked = null;
+			using (CacheManagerForm form = new(() => Three(), editBudgets: p => asked = p))
+			{
+				form.Show();
+				form.PressBudgets();
+				Assert.AreEqual("the open one", asked?.Label);
+			}
+			var now = DateTime.UtcNow;
+			List<CacheItem> closed = new()
+			{
+				new() { Kind = CacheKind.Project, Label = "big and old", Detail = "aa", Path = Idle, Bytes = 1 << 30, LastUsed = now.AddDays(-9) },
+				new() { Kind = CacheKind.Project, Label = "worked on last", Detail = "bb", Path = Open, Bytes = 2048, LastUsed = now.AddHours(-1) },
+				new() { Kind = CacheKind.Project, Label = "small and older", Detail = "cc", Path = Gone, Bytes = 4096, LastUsed = now.AddDays(-2) },
+			};
+			using (CacheManagerForm form = new(() => closed, editBudgets: p => asked = p))
+			{
+				form.Show();
+				form.PressBudgets();
+				Assert.AreEqual("worked on last", asked?.Label);
+			}
+		}
+
+		/// <summary>
+		/// Every button can be seen and pressed, at the window's first size and at
+		/// its smallest: Open Folder once sat under Greenzone budgets....
+		/// </summary>
+		[TestMethod]
+		public void NoButtonCoversAnother()
+		{
+			using CacheManagerForm form = new(() => Three());
+			form.Show();
+			void Check()
+			{
+				var buttons = form.Controls.OfType<System.Windows.Forms.Button>().Where(static b => b.Visible).ToList();
+				for (var i = 0; i < buttons.Count; i++)
+				{
+					for (var j = i + 1; j < buttons.Count; j++)
+					{
+						Assert.IsFalse(buttons[i].Bounds.IntersectsWith(buttons[j].Bounds), $"{buttons[i].Text} and {buttons[j].Text} overlap");
+					}
+				}
+			}
+			Check();
+			form.Size = form.MinimumSize;
+			Check();
+		}
+
 		[TestMethod]
 		public void SelectAllTicksEveryRowThatCanGo()
 		{

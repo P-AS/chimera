@@ -83,6 +83,51 @@ void json()
 	cJSON_free(printed);
 	cJSON_Delete(root);
 }
+
+/* A setting may be a 64-bit whole number (issue 358). A double holds one
+ * exactly only up to 2^53 and printed 10^15 as 1e+15, which a core reading
+ * a whole number took for 1; so cJSON keeps the digits of a whole number of
+ * 10^15 or more and writes them back as they came. */
+void wholeNumbers()
+{
+	const char *text = "{\"ulong\":18446744073709551615,\"long\":-9223372036854775808,\"near\":9007199254740993,"
+		"\"round\":1000000000000000,\"uint\":4294967295,\"small\":-12,\"big\":1.5e300,\"fraction\":1234567890123456.5}";
+	cJSON *root = cJSON_Parse(text);
+	assert(root != nullptr);
+	char *printed = cJSON_PrintUnformatted(root);
+	assert(printed != nullptr);
+	assert(std::strstr(printed, "\"ulong\":18446744073709551615,") != nullptr);
+	assert(std::strstr(printed, "\"long\":-9223372036854775808,") != nullptr);
+	assert(std::strstr(printed, "\"near\":9007199254740993,") != nullptr);   // 2^53 + 1: no double is this
+	assert(std::strstr(printed, "\"round\":1000000000000000,") != nullptr);  // not 1e+15
+	assert(std::strstr(printed, "\"uint\":4294967295,") != nullptr);
+	assert(std::strstr(printed, "\"small\":-12,") != nullptr);
+	assert(std::strstr(printed, "\"big\":1.5e+300,") != nullptr);           // not whole as written: a double as before
+	assert(std::strstr(printed, "\"fraction\":1234567890123456.5}") != nullptr);
+	// the value is still a number, and still reads as one
+	const cJSON *ulong = cJSON_GetObjectItemCaseSensitive(root, "ulong");
+	assert(cJSON_IsNumber(ulong) && !cJSON_IsString(ulong) && ulong->valuedouble == 18446744073709551615.0);
+	// a copy keeps the digits, and the copy prints them too
+	cJSON *copy = cJSON_Duplicate(root, 1);
+	char *copied = cJSON_PrintUnformatted(copy);
+	assert(copied != nullptr && std::strcmp(copied, printed) == 0);
+	cJSON_free(copied);
+	// a number given a new value is that value, not the old digits
+	cJSON *round = cJSON_GetObjectItemCaseSensitive(copy, "round");
+	cJSON_SetNumberValue(round, 7);
+	copied = cJSON_PrintUnformatted(copy);
+	assert(copied != nullptr && std::strstr(copied, "\"round\":7,") != nullptr);
+	cJSON_free(copied);
+	cJSON_Delete(copy);
+	// and what was printed reads back to the same text
+	cJSON *again = cJSON_Parse(printed);
+	char *twice = cJSON_PrintUnformatted(again);
+	assert(twice != nullptr && std::strcmp(twice, printed) == 0);
+	cJSON_free(twice);
+	cJSON_Delete(again);
+	cJSON_free(printed);
+	cJSON_Delete(root);
+}
 } // namespace
 
 int main()
@@ -90,6 +135,7 @@ int main()
 	// in the C locale, where every program starts
 	plainNumbers();
 	json();
+	wholeNumbers();
 
 	// and in the user's, as under a runtime that adopts it
 	std::setlocale(LC_ALL, "");
@@ -113,6 +159,7 @@ int main()
 	assert(std::strcmp(probe, "0,5") == 0);
 	plainNumbers();
 	json();
+	wholeNumbers();
 	std::printf("test_plain_numbers: ok, in the C locale and with a decimal comma\n");
 	return 0;
 }
