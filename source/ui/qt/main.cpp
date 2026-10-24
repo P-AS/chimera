@@ -37,6 +37,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <mutex>
 #ifdef _WIN32
@@ -1089,13 +1090,13 @@ int main(int argc, char **argv)
 	vm::FormsViewModel forms(dispatcher);
 	qt::QmlViewModel formsQml(forms);
 	lua.add(forms);
-	vm::Connection formClicks = forms.clicked.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_click", h); });
-	vm::Connection formCloses = forms.closed.connect([&lua](int64_t h) { lua.callHook("__chimera_forms_closed", h); });
+	vm::Connection formClicks = forms.clicked.connect([&lua](int64_t h) { lua.notify("__chimera_forms_click", h); });
+	vm::Connection formCloses = forms.closed.connect([&lua](int64_t h) { lua.notify("__chimera_forms_closed", h); });
 	/* tastudio's callbacks: the greenzone invalidated, a branch loaded, made or updated, removed */
-	vm::Connection zoneCalls = session.greenzoneInvalidated.connect([&lua](int64_t f) { lua.callHook("__chimera_greenzone_invalidated", f); });
-	vm::Connection branchLoads = branches.branchLoaded.connect([&lua](int64_t i) { lua.callHook("__chimera_branch_loaded", i); });
-	vm::Connection branchSaves = branches.branchSaved.connect([&lua](int64_t i) { lua.callHook("__chimera_branch_saved", i); });
-	vm::Connection branchRemoves = branches.branchRemoved.connect([&lua](int64_t i) { lua.callHook("__chimera_branch_removed", i); });
+	vm::Connection zoneCalls = session.greenzoneInvalidated.connect([&lua](int64_t f) { lua.notify("__chimera_greenzone_invalidated", f); });
+	vm::Connection branchLoads = branches.branchLoaded.connect([&lua](int64_t i) { lua.notify("__chimera_branch_loaded", i); });
+	vm::Connection branchSaves = branches.branchSaved.connect([&lua](int64_t i) { lua.notify("__chimera_branch_saved", i); });
+	vm::Connection branchRemoves = branches.branchRemoved.connect([&lua](int64_t i) { lua.notify("__chimera_branch_removed", i); });
 	/* memory-mapped files shared with other programs; the screenshot is a PNG, as Chimera's */
 	vm::CommViewModel comm(dispatcher, [&session] {
 		vm::Picture::Frame f;
@@ -1116,12 +1117,33 @@ int main(int argc, char **argv)
 		std::printf("%s", lua.describe().c_str());
 		return 0;
 	}
-	/* after each report from the machine, every property updated - not on a
-	 * change of frame number, which a seek away and back again never makes */
+	/* Scripts run on the machine's thread, before and after every frame, as
+	 * Chimera's do, and reach the view models by waiting on the window
+	 * (owner, 2026-10-24) */
+	lua.toScripts = [&session](const std::function<void()> &job) { return session.onMachineThreadWait(job); };
+	lua.toWindow = [&session](const std::function<void()> &job) { return session.onWindowWait(job); };
+	lua.toScriptsLater = [&session](std::function<void()> job) { session.onMachine([job = std::move(job)](ce_session *) { job(); }); };
+	std::atomic<bool> consoleSaid{false};
+	session.setScriptTurns([&lua] { lua.frameStart(); },
+		[&lua, &luaConsole, &dispatcher, &consoleSaid] {
+			lua.frameDone();
+			/* the console's list and functions said again, once a pass of the window */
+			if (!consoleSaid.exchange(true))
+				dispatcher.post([&luaConsole, &consoleSaid] {
+					consoleSaid = false;
+					luaConsole.afterFrame();
+				});
+		});
 	/* scripts while turbo is held only when asked (Customize) */
-	vm::Connection luaFrames = session.screenChanged.connect([&luaConsole, &customize] {
-		if (customize.luaRunsNow()) luaConsole.frameDone();
-	});
+	session.scriptsDuringTurbo(customize.luaDuringTurbo.get());
+	vm::Connection turboScripts = customize.luaDuringTurbo.changed.connect(
+		[&session, &customize] { session.scriptsDuringTurbo(customize.luaDuringTurbo.get()); });
+	/* the machine lets go of the scripts before they go */
+	struct LetGo
+	{
+		vm::SessionViewModel &session;
+		~LetGo() { session.setScriptTurns({}, {}); }
+	} letGo{session};
 
 	qmlRegisterType<qt::PictureItem>("Chimera", 1, 0, "PictureItem");
 	qmlRegisterType<qt::PianoRollItem>("Chimera", 1, 0, "PianoRollItem");

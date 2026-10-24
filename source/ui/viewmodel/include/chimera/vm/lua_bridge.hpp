@@ -15,7 +15,11 @@
  * a script's code runs the working folder is the script's, as Chimera's.
  * Chimera's Lua libraries (emu, memory, mainmemory, joypad, movie, client,
  * console, gameinfo, event, bit, ...) are a layer of Lua over the view models,
- * defined at the start (lua_libraries.cpp). One thread: the view's. */
+ * defined at the start (lua_libraries.cpp).
+ *
+ * Scripts run on the machine's thread, before and after every frame, as
+ * Chimera's do (owner, 2026-10-24), and reach the window's view models by
+ * waiting on the window: see toScripts and toWindow. */
 
 #include <functional>
 #include <string>
@@ -36,6 +40,21 @@ public:
 	LuaBridge &operator=(const LuaBridge &) = delete;
 
 	void add(ViewModel &vm);
+
+	/* Where scripts run. toScripts runs a job on the scripts' thread (the
+	 * machine's) and waits for it, at once when called there; toWindow runs
+	 * one on the window's thread and waits, at once when called there; each
+	 * says false when the job could not be run (the program is closing).
+	 * Every call below runs on the scripts' thread, and what a script reads,
+	 * sets or calls on a view model runs on the window's, unless the view
+	 * model answers it on the machine's (scriptSide). What the bridge tells
+	 * (onLog, onWrite, onStopped) is told on the window's thread. Unset,
+	 * everything runs on the thread that calls, as the bridge's own tests
+	 * use it. */
+	std::function<bool(const std::function<void()> &)> toScripts, toWindow;
+	/* a job for the scripts' thread, not waited for (a notice no one needs
+	 * an answer to); unset, notices are called as callHook */
+	std::function<void(std::function<void()>)> toScriptsLater;
 
 	enum class State { Stopped, Running, Paused };
 
@@ -66,9 +85,15 @@ public:
 	 * console's own (script 0); what it gives back is printed, as Chimera's */
 	void execute(const std::string &command);
 
-	/* called after every frame: the frame's registered functions, then every
-	 * running script that waits for a frame goes on, each to its next wait;
-	 * one that ends with nothing registered, or fails, is stopped */
+	/* called before every frame: what the scripts drew for the last frame
+	 * goes, and the OnFrameStart functions are called (a joypad.set there is
+	 * this frame's) */
+	void frameStart();
+	/* called after every frame: the OnFrameEnd functions (and the
+	 * OnFrameStart ones, when frameStart was not called: the machine moved
+	 * another way), then every running script that waits for a frame goes
+	 * on, each to its next wait; one that ends with nothing registered, or
+	 * fails, is stopped */
 	void frameDone();
 	/* the console closing: its OnConsoleClose functions, then every script stopped */
 	void consoleClosed();
@@ -86,6 +111,9 @@ public:
 	/* a global function of the libraries' called with a number, if it is
 	 * there (a form's click, a form closed) */
 	void callHook(const char *name, int64_t arg);
+	/* the same, as a notice: on the scripts' thread when it gets to it, the
+	 * caller not waiting (an edit, a branch saved, a form clicked) */
+	void notify(const char *name, int64_t arg);
 	/* a global function of the libraries' asked about a cell (row, column):
 	 * its answer as text, "" for none */
 	std::string query(const char *name, int64_t row, const std::string &column);
@@ -117,6 +145,19 @@ private:
 	void log(const std::string &line);
 	void writeText(const std::string &text);
 	static const char *luaLibraries();
+	/* fn on the scripts' thread, waited for, with its answer (T{} when it could not run) */
+	template <class F>
+	auto onScripts(F &&fn) const -> decltype(fn());
+	/* fn on the window's thread, waited for; false when it could not run */
+	bool atWindow(const std::function<void()> &fn) const;
+	/* the bodies of the calls above, on the scripts' thread */
+	int64_t startHere(const std::string &path, std::string &error);
+	int64_t startCodeHere(const std::string &code, const std::string &chunkName, const std::string &directory, std::string &error);
+	void stopHere(int64_t script);
+	void stopAllHere();
+	void executeHere(const std::string &command);
+	void frameDoneHere();
+	std::string askHere(const char *name, const std::vector<Value> &args);
 	/* a global function of the libraries' called, if it is there */
 	void callHook(const char *name);
 	/* the script whose code runs now: the global __chimera_script and the
@@ -141,6 +182,8 @@ private:
 	std::string partial_;
 	/* how many times anything was written: whether the console's line printed something itself */
 	uint64_t written_ = 0;
+	/* frameStart was called for the frame frameDone ends */
+	bool begun_ = false;
 };
 
 } // namespace chimera::vm

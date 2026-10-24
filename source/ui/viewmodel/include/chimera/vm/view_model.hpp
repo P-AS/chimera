@@ -32,6 +32,9 @@ public:
 		/* empty for a property only the view model changes */
 		std::function<bool(const Value &)> set;
 		Signal<> *changed;
+		/* its value read on the machine's thread, where scripts run, without
+		 * waiting on the window; empty for one only the window can read */
+		std::function<Value()> scriptSide = {};
 	};
 	struct CommandInfo
 	{
@@ -41,6 +44,9 @@ public:
 		std::function<Value(const Args &, std::string &error)> run;
 		/* null for a command that can always run */
 		Property<bool> *enabled;
+		/* it does only the machine's work, so a script runs it on the
+		 * machine's thread, where scripts run, without waiting on the window */
+		bool scriptSide = false;
 	};
 	struct RowsInfo
 	{
@@ -89,6 +95,13 @@ protected:
 	}
 	void command(std::string name, std::string help, std::vector<std::string> params,
 		std::function<Value(const Args &, std::string &)> run, Property<bool> *enabled = nullptr);
+	/* Scripts run on the machine's thread (owner, 2026-10-24) and reach the
+	 * window's view models by waiting on the window. What only the machine
+	 * answers is marked here, so that a script asks the machine directly: a
+	 * property read from what the machine's thread keeps, and a command whose
+	 * whole work is the machine's (it takes nothing of the window's). */
+	void scriptSideProperty(std::string_view name, std::function<Value()> get);
+	void scriptSideCommand(std::string_view name);
 	void rows(std::string name, std::string help, RowModel &model);
 	void picture(std::string name, std::string help, Picture &picture, Signal<> &changed);
 

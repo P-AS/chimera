@@ -6,6 +6,7 @@
 #include <fstream>
 #include <optional>
 #include <sstream>
+#include <type_traits>
 
 extern "C" {
 #include "lauxlib.h"
@@ -51,6 +52,33 @@ std::string json(const std::string &s)
 	return out + "\"";
 }
 } // namespace
+
+template <class F>
+auto LuaBridge::onScripts(F &&fn) const -> decltype(fn())
+{
+	using R = decltype(fn());
+	if (!toScripts) return fn();
+	if constexpr (std::is_void_v<R>)
+	{
+		toScripts([&] { fn(); });
+	}
+	else
+	{
+		std::optional<R> answer;
+		toScripts([&] { answer.emplace(fn()); });
+		return answer ? std::move(*answer) : R{};
+	}
+}
+
+bool LuaBridge::atWindow(const std::function<void()> &fn) const
+{
+	if (!toWindow)
+	{
+		fn();
+		return true;
+	}
+	return toWindow(fn);
+}
 
 LuaBridge::LuaBridge() : L_(luaL_newstate())
 {
@@ -145,8 +173,23 @@ int LuaBridge::index(lua_State *L)
 	bool failed = false;
 	{
 		const std::string key = k;
-		if (const auto v = vm->get(key))
-			push(L, *v);
+		const LuaBridge *b = bridgeOf(L);
+		const ViewModel::PropertyInfo *property = nullptr;
+		for (const auto &p : vm->properties())
+			if (p.name == key) property = &p;
+		if (property != nullptr)
+		{
+			/* the machine's own answer where it has one, else the window's */
+			Value v;
+			if (property->scriptSide && b->toWindow)
+				v = property->scriptSide();
+			else if (!b->atWindow([&] { v = property->get(); }))
+			{
+				lua_pushstring(L, (vm->name() + "." + key + ": the window is closing").c_str());
+				failed = true;
+			}
+			if (!failed) push(L, v);
+		}
 		else
 		{
 			bool command = false;
@@ -178,7 +221,7 @@ int LuaBridge::newIndex(lua_State *L)
 		Value v;
 		std::string error;
 		if (!read(L, 3, v)) error = vm->name() + "." + key + " cannot be a " + luaL_typename(L, 3);
-		else vm->set(key, v, error);
+		else if (!bridgeOf(L)->atWindow([&] { vm->set(key, v, error); })) error = vm->name() + "." + key + ": the window is closing";
 		if (!error.empty())
 		{
 			lua_pushstring(L, error.c_str());
@@ -205,7 +248,21 @@ int LuaBridge::call(lua_State *L)
 			args.push_back(std::move(v));
 		}
 		std::optional<Value> result;
-		if (error.empty()) result = vm->run(name, args, error);
+		const LuaBridge *b = bridgeOf(L);
+		const ViewModel::CommandInfo *command = nullptr;
+		for (const auto &c : vm->commands())
+			if (c.name == name) command = &c;
+		if (!error.empty())
+		{
+		}
+		else if (command != nullptr && command->scriptSide && b->toWindow)
+		{
+			/* the machine's own work, done here on its thread */
+			Value v = command->run(args, error);
+			if (error.empty()) result = std::move(v);
+		}
+		else if (!b->atWindow([&] { result = vm->run(name, args, error); }))
+			error = vm->name() + "." + name + ": the window is closing";
 		if (result) push(L, *result);
 		else
 		{
@@ -266,17 +323,22 @@ void LuaBridge::writeText(const std::string &text)
 	written_++;
 	if (onWrite)
 	{
-		onWrite(text);
+		atWindow([&] { onWrite(text); });
 		return;
 	}
 	partial_ += text;
 	size_t at = 0;
+	std::vector<std::string> lines;
 	for (size_t nl = partial_.find('\n'); nl != std::string::npos; nl = partial_.find('\n', at))
 	{
-		if (onLog) onLog(partial_.substr(at, nl - at));
+		lines.push_back(partial_.substr(at, nl - at));
 		at = nl + 1;
 	}
 	partial_.erase(0, at);
+	if (onLog && !lines.empty())
+		atWindow([&] {
+			for (const std::string &line : lines) onLog(line);
+		});
 }
 
 int64_t LuaBridge::enterScript(int64_t id)
@@ -305,6 +367,11 @@ LuaBridge::Script *LuaBridge::find(int64_t id)
 
 int64_t LuaBridge::start(const std::string &path, std::string &error)
 {
+	return onScripts([&] { return startHere(path, error); });
+}
+
+int64_t LuaBridge::startHere(const std::string &path, std::string &error)
+{
 	std::ifstream in(std::filesystem::u8path(path), std::ios::binary);
 	if (!in)
 	{
@@ -314,10 +381,15 @@ int64_t LuaBridge::start(const std::string &path, std::string &error)
 	std::stringstream ss;
 	ss << in.rdbuf();
 	const std::filesystem::path p = std::filesystem::absolute(std::filesystem::u8path(path));
-	return startCode(ss.str(), utf8(p.filename()), utf8(p.parent_path()), error);
+	return startCodeHere(ss.str(), utf8(p.filename()), utf8(p.parent_path()), error);
 }
 
 int64_t LuaBridge::startCode(const std::string &code, const std::string &chunkName, const std::string &directory, std::string &error)
+{
+	return onScripts([&] { return startCodeHere(code, chunkName, directory, error); });
+}
+
+int64_t LuaBridge::startCodeHere(const std::string &code, const std::string &chunkName, const std::string &directory, std::string &error)
 {
 	if (luaL_loadbuffer(L_, code.data(), code.size(), ("@" + chunkName).c_str()) != LUA_OK)
 	{
@@ -339,11 +411,11 @@ int64_t LuaBridge::startCode(const std::string &code, const std::string &chunkNa
 	published();
 	if (!ok)
 	{
-		stop(id);
+		stopHere(id);
 		return 0;
 	}
 	const Script *now = find(id);
-	if (now != nullptr && (now->stopAfter || (now->thread == LUA_NOREF && !keeps(id)))) stop(id);
+	if (now != nullptr && (now->stopAfter || (now->thread == LUA_NOREF && !keeps(id)))) stopHere(id);
 	return id;
 }
 
@@ -379,7 +451,7 @@ bool LuaBridge::resume(int64_t id, std::string &error)
 	return ok;
 }
 
-bool LuaBridge::keeps(int64_t id) { return ask("__chimera_script_keeps", {Value(id)}) == "true"; }
+bool LuaBridge::keeps(int64_t id) { return askHere("__chimera_script_keeps", {Value(id)}) == "true"; }
 
 void LuaBridge::published()
 {
@@ -388,6 +460,11 @@ void LuaBridge::published()
 }
 
 void LuaBridge::stop(int64_t id)
+{
+	onScripts([&] { stopHere(id); });
+}
+
+void LuaBridge::stopHere(int64_t id)
 {
 	Script *s = find(id);
 	if (s == nullptr) return;
@@ -401,44 +478,63 @@ void LuaBridge::stop(int64_t id)
 	}
 	s->state = State::Stopped;
 	/* its OnExit functions, then all it registered and its forms, as Chimera's */
-	ask("__chimera_script_stopped", {Value(id)});
+	askHere("__chimera_script_stopped", {Value(id)});
 	s = find(id);
 	if (s == nullptr) return;
 	if (s->thread != LUA_NOREF) luaL_unref(L_, LUA_REGISTRYINDEX, s->thread);
 	scripts_.erase(scripts_.begin() + (s - scripts_.data()));
-	if (onStopped) onStopped(id);
+	if (onStopped) atWindow([&] { onStopped(id); });
 }
 
 void LuaBridge::setPaused(int64_t id, bool paused)
 {
-	if (Script *s = find(id)) s->state = paused ? State::Paused : State::Running;
+	onScripts([&] {
+		if (Script *s = find(id)) s->state = paused ? State::Paused : State::Running;
+	});
 }
 
 LuaBridge::State LuaBridge::state(int64_t id) const
 {
-	for (const Script &s : scripts_)
-		if (s.id == id) return s.state;
-	return State::Stopped;
+	return onScripts([&] {
+		for (const Script &s : scripts_)
+			if (s.id == id) return s.state;
+		return State::Stopped;
+	});
 }
 
 void LuaBridge::stopAll()
 {
+	onScripts([&] { stopAllHere(); });
+}
+
+void LuaBridge::stopAllHere()
+{
 	std::vector<int64_t> ids;
 	for (const Script &s : scripts_) ids.push_back(s.id);
-	for (const int64_t id : ids) stop(id);
+	for (const int64_t id : ids) stopHere(id);
 	/* what the scripts left with the libraries goes with them */
 	callHook("__chimera_scripts_stopped");
 }
 
-bool LuaBridge::running() const { return !scripts_.empty(); }
+bool LuaBridge::running() const
+{
+	return onScripts([&] { return !scripts_.empty(); });
+}
 
 void LuaBridge::consoleClosed()
 {
-	callHook("__chimera_console_closed");
-	stopAll();
+	onScripts([&] {
+		callHook("__chimera_console_closed");
+		stopAllHere();
+	});
 }
 
 void LuaBridge::execute(const std::string &command)
+{
+	onScripts([&] { executeHere(command); });
+}
+
+void LuaBridge::executeHere(const std::string &command)
 {
 	if (command.find("emu.frameadvance(") != std::string::npos)
 	{
@@ -494,9 +590,27 @@ void LuaBridge::callHook(const char *name)
 		lua_pop(L_, 1);
 }
 
-void LuaBridge::callHook(const char *name, int64_t arg) { ask(name, {Value(arg)}); }
+void LuaBridge::callHook(const char *name, int64_t arg)
+{
+	onScripts([&] { askHere(name, {Value(arg)}); });
+}
+
+void LuaBridge::notify(const char *name, int64_t arg)
+{
+	if (!toScriptsLater)
+	{
+		callHook(name, arg);
+		return;
+	}
+	toScriptsLater([this, name, arg] { askHere(name, {Value(arg)}); });
+}
 
 std::string LuaBridge::ask(const char *name, const std::vector<Value> &args)
+{
+	return onScripts([&] { return askHere(name, args); });
+}
+
+std::string LuaBridge::askHere(const char *name, const std::vector<Value> &args)
 {
 	lua_getglobal(L_, name);
 	if (!lua_isfunction(L_, -1))
@@ -526,14 +640,35 @@ std::string LuaBridge::ask(const char *name, const std::vector<Value> &args)
 
 std::string LuaBridge::query(const char *name, int64_t row, const std::string &column)
 {
-	return ask(name, {Value(row), Value(column)});
+	return onScripts([&] { return askHere(name, {Value(row), Value(column)}); });
+}
+
+void LuaBridge::frameStart()
+{
+	onScripts([&] {
+		/* the libraries' frame: what the gui drew last frame goes, and what is drawn now is shown at its end */
+		callHook("__chimera_frame_begin");
+		begun_ = true;
+		callHook("__chimera_frame_start_events");
+	});
 }
 
 void LuaBridge::frameDone()
 {
-	/* the libraries' frame: what the gui drew last frame goes, and what is drawn now is shown at its end */
-	callHook("__chimera_frame_begin");
-	callHook("__chimera_frame_events");
+	onScripts([&] { frameDoneHere(); });
+}
+
+void LuaBridge::frameDoneHere()
+{
+	/* the machine moved without a frame of its own (or the caller has no
+	 * before): the frame's start too, as it always was */
+	if (!begun_)
+	{
+		callHook("__chimera_frame_begin");
+		callHook("__chimera_frame_start_events");
+	}
+	begun_ = false;
+	callHook("__chimera_frame_end_events");
 	/* the running scripts go on, each to its next wait (a list taken first:
 	 * one that starts or stops another does not change it under this loop) */
 	std::vector<int64_t> ids;
@@ -547,11 +682,11 @@ void LuaBridge::frameDone()
 		if (!resume(id, error))
 		{
 			log("script stopped: " + error);
-			stop(id);
+			stopHere(id);
 			continue;
 		}
 		s = find(id);
-		if (s != nullptr && (s->stopAfter || (s->thread == LUA_NOREF && !keeps(id)))) stop(id);
+		if (s != nullptr && (s->stopAfter || (s->thread == LUA_NOREF && !keeps(id)))) stopHere(id);
 	}
 	callHook("__chimera_frame_end");
 }

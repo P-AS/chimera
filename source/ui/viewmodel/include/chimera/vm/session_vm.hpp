@@ -545,6 +545,30 @@ public:
 	 * for: what is changed in it is saved with it */
 	using ProjectJob = std::function<void(ce_project *)>;
 	void onProjectWait(ProjectJob job);
+
+	/* Scripts run on the machine's thread, before and after every frame, as
+	 * Chimera's do, and reach the window's view models by waiting on the
+	 * window (owner, 2026-10-24). These are the two waits. Each thread, while
+	 * it waits on the other, does what the other waits on it for, so that
+	 * neither waits for ever: the machine's thread does the jobs a thread
+	 * waits on (onMachineWait and the rest), the window's thread the jobs the
+	 * machine's thread waits on.
+	 * onMachineThreadWait: job on the machine's thread, waited for (at once
+	 * when called there). onWindowWait: from the machine's thread, job on the
+	 * window's thread, waited for (at once when called there); false, and
+	 * the job not run, when the program is closing. */
+	bool onMachineThread() const { return std::this_thread::get_id() == machineThread_; }
+	bool onMachineThreadWait(const std::function<void()> &job);
+	bool onWindowWait(const std::function<void()> &job);
+	/* the scripts' turns, on the machine's thread: `before` before every
+	 * frame played with the person's input (what a script holds there is that
+	 * frame's), `after` after it and after the machine was moved another way
+	 * (a seek lands, a state is loaded). Waits until the machine's thread has
+	 * them; empty functions let go of the old ones. While turbo is held they
+	 * are left out unless scriptsDuringTurbo (Customize's Run Lua scripts
+	 * when turbo is held). */
+	void setScriptTurns(std::function<void()> before, std::function<void()> after);
+	void scriptsDuringTurbo(bool on) { scriptsDuringTurboM_.store(on); }
 	/* What made the project last opened, kept after it closes, for New
 	 * Project to open on as Chimera's does (closing a project is most often
 	 * the step before changing one setting and going again): its core and
@@ -769,7 +793,34 @@ private:
 	std::thread thread_;
 	std::mutex m_;
 	std::condition_variable cv_;
-	std::deque<std::function<void()>> jobs_;
+	/* the machine's jobs in order; `waited` for one a thread waits on, which
+	 * the machine's thread also does while it waits on the window */
+	struct Job
+	{
+		bool waited;
+		std::function<void()> run;
+	};
+	std::deque<Job> jobs_;
+	/* behind m_ too: the jobs the machine's thread waits on the window for */
+	struct WindowJob
+	{
+		std::shared_ptr<bool> done;
+		std::function<void()> run;
+	};
+	std::deque<WindowJob> windowJobs_;
+	std::thread::id windowThread_ = std::this_thread::get_id(), machineThread_;
+	/* the window's jobs, done on its thread (from the dispatcher, or while it waits) */
+	void serveWindowJobs();
+	/* job on the machine's thread, waited for */
+	void waitOnMachine(const std::function<void()> &job);
+	std::function<void()> scriptsBeforeM_, scriptsAfterM_;
+	std::atomic<bool> scriptsDuringTurboM_{true};
+	bool scriptsNowOnMachine() const { return !turboM_.load() || scriptsDuringTurboM_.load(); }
+	/* a turn of the scripts' runs now (one is not started inside another:
+	 * a script's own call can move the machine) */
+	bool inScriptTurnM_ = false;
+	void scriptTurnOnMachine(const std::function<void()> &turn);
+
 	bool quit_ = false;
 
 	ce_session *s_ = nullptr;
@@ -937,6 +988,7 @@ private:
 	Bindings autofireBindingsM_;
 	std::vector<AnalogBind> analogBindsM_;
 	std::vector<Axis> axesM_;
+	std::vector<std::string> buttonNamesM_;
 	uint64_t autofireWasM_ = 0;
 	int64_t autofireStartM_[64] = {};
 	std::vector<std::pair<std::string, int>> padAxes_, padAxesCopy_;

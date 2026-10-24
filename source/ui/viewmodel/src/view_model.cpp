@@ -63,6 +63,18 @@ void ViewModel::command(std::string name, std::string help, std::vector<std::str
 	commands_.push_back({std::move(name), std::move(help), std::move(params), std::move(run), enabled});
 }
 
+void ViewModel::scriptSideProperty(std::string_view name, std::function<Value()> get)
+{
+	for (auto &p : properties_)
+		if (p.name == name) p.scriptSide = std::move(get);
+}
+
+void ViewModel::scriptSideCommand(std::string_view name)
+{
+	for (auto &c : commands_)
+		if (c.name == name) c.scriptSide = true;
+}
+
 void ViewModel::rows(std::string name, std::string help, RowModel &model)
 {
 	rows_.push_back({std::move(name), std::move(help), &model});

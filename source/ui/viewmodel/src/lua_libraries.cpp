@@ -68,7 +68,8 @@ end
 -- the bridge's: a frame's functions; the console closing; a script stopped
 -- (its OnExit functions called, then all of its gone); whether a script whose
 -- code has ended still has something to run
-function __chimera_frame_events() callEvent("OnFrameStart") callEvent("OnFrameEnd") end
+function __chimera_frame_start_events() callEvent("OnFrameStart") end
+function __chimera_frame_end_events() callEvent("OnFrameEnd") end
 function __chimera_console_closed() callEvent("OnConsoleClose") end
 function __chimera_script_stopped(id)
 	local exits = {}

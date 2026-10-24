@@ -962,8 +962,13 @@ void LuaConsoleViewModel::addRecent(Property<std::string> &list, const std::stri
 
 void LuaConsoleViewModel::frameDone()
 {
-	messages_ = 0;
 	lua_.frameDone();
+	afterFrame();
+}
+
+void LuaConsoleViewModel::afterFrame()
+{
+	messages_ = 0;
 	refresh();
 	refreshFunctions(false);
 }

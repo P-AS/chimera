@@ -6206,6 +6206,89 @@ bool recordingMode(const char *package, const char *rom)
  * included, for this session only; they stay for the same game run again,
  * go for another game and when the game is closed, and are switched off
  * (not removed) when the machine stops */
+/* Scripts run on the machine's thread, before and after every frame, as
+ * Chimera's do, and reach the view models by waiting on the window (owner,
+ * 2026-10-24): with the machine running as fast as it goes, a script's
+ * OnFrameEnd function sees every frame, one after another, and what it holds
+ * in OnFrameStart is that frame's input; its reads of memory and of the
+ * window's view models answer on the way */
+bool scriptsOnMachine(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	LuaBridge lua;
+	lua.add(session);
+	std::vector<std::string> lines;
+	lua.onLog = [&](const std::string &l) { lines.push_back(l); };
+	lua.toScripts = [&session](const std::function<void()> &job) { return session.onMachineThreadWait(job); };
+	lua.toWindow = [&session](const std::function<void()> &job) { return session.onWindowWait(job); };
+	session.setScriptTurns([&lua] { lua.frameStart(); }, [&lua] { lua.frameDone(); });
+	std::string error;
+	session.run("open", {std::string(package), std::string(rom)}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	CHECK(lua.run(R"(
+seen, gaps, bytes, system = {}, 0, 0, ""
+event.onframestart(function() joypad.set({["P1 A"] = emu.framecount() % 3 == 0}) end)
+event.onframeend(function()
+	local f = emu.framecount()
+	if #seen > 0 and f ~= seen[#seen] + 1 then gaps = gaps + 1 end
+	seen[#seen + 1] = f
+	bytes = bytes + memory.readbyte(f % 64, "RAM")
+	system = emu.getsystemid()
+end)
+)", "every-frame", error));
+	session.unthrottled.set(true);
+	const int64_t from = session.frame.get();
+	session.run("play", {}, error);
+	CHECK(d.until([&] { return session.frame.get() >= from + 600; }, 60));
+	session.run("pause", {}, error);
+	CHECK(d.until([&] { return !session.running.get(); }, 5));
+	d.until([] { return false; }, 0.2);
+	const int64_t to = session.frame.get();
+	CHECK(to - from >= 600);
+	/* every frame, in order */
+	CHECK(lua.run("print(#seen, seen[1], seen[#seen], gaps, system ~= '', bytes >= 0)", "count", error));
+	CHECK(!lines.empty() && lines.back() == std::to_string(to - from) + "\t" + std::to_string(from + 1) + "\t" + std::to_string(to) +
+		"\t0\ttrue\ttrue");
+	/* and each frame's input what the script held for it */
+	int64_t wrong = 0;
+	for (int64_t f = from; f < to; f++)
+	{
+		const auto input = session.run("movieInput", {f}, error);
+		std::string text;
+		if (input) fromValue(*input, text);
+		const bool pressed = text.find("P1 A\n") != std::string::npos;
+		wrong += pressed != (f % 3 == 0);
+	}
+	CHECK(wrong == 0);
+	/* turbo held: the scripts are left out, unless Customize says to run them then */
+	auto seen = [&] {
+		lines.clear();
+		lua.run("print(#seen)", "n", error);
+		return lines.empty() ? int64_t{-1} : static_cast<int64_t>(std::stoll(lines.back()));
+	};
+	auto run = [&](int64_t frames) {
+		const int64_t until = session.frame.get() + frames;
+		session.run("play", {}, error);
+		const bool ran = d.until([&] { return session.frame.get() >= until; }, 60);
+		session.run("pause", {}, error);
+		return ran && d.until([&] { return !session.running.get(); }, 5);
+	};
+	const int64_t had = seen();
+	session.scriptsDuringTurbo(false);
+	session.holdTurbo(true);
+	CHECK(run(100));
+	CHECK(seen() == had);
+	session.scriptsDuringTurbo(true);
+	const int64_t at = session.frame.get();
+	CHECK(run(100));
+	CHECK(seen() == had + session.frame.get() - at);
+	session.holdTurbo(false);
+	session.setScriptTurns({}, {});
+	return true;
+}
+
 bool freezes(const char *package, const char *rom)
 {
 	namespace fs = std::filesystem;
@@ -7585,6 +7668,7 @@ int main(int argc, char **argv)
 			ranMachine = rerecordCount(argv[1], argv[2]) && ranMachine;
 			ranMachine = recordingMode(argv[1], argv[2]) && ranMachine;
 			ranMachine = freezes(argv[1], argv[2]) && ranMachine;
+			ranMachine = scriptsOnMachine(argv[1], argv[2]) && ranMachine;
 			ranMachine = ramWatch(argv[1], argv[2]) && ranMachine;
 			ranMachine = hexEditor(argv[1], argv[2]) && ranMachine;
 			ranMachine = pianoRollEditing(argv[1], argv[2]) && ranMachine;

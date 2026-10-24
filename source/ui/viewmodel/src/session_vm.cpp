@@ -950,6 +950,10 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			}
 			return {};
 		});
+	/* what a script reads and writes of the machine's memory, and the frame
+	 * it is on, the machine answers on its own thread, where scripts run */
+	for (const char *name : {"memoryDomains", "readMemory", "writeMemory", "sha256"}) scriptSideCommand(name);
+	scriptSideProperty("frame", [this] { return Value(int64_t{frameM_}); });
 	command("movieInput", "a frame's input in the movie, a line each: a button pressed by its name, an analog control as "
 		"name=value; \"\" past the movie's end", {"frame"}, [this](const Args &a, std::string &error) -> Value {
 			int64_t frame = 0;
@@ -1023,16 +1027,18 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			if (!arg(a, 0, list, error)) return {};
 			uint64_t mask = 0;
 			std::istringstream in(list);
+			/* the machine's own names where a script asks on its thread */
+			const std::vector<std::string> &names = onMachineThread() ? buttonNamesM_ : buttonNames_;
 			for (std::string name; std::getline(in, name);)
 			{
 				if (name.empty()) continue;
-				const auto it = std::find(buttonNames_.begin(), buttonNames_.end(), name);
-				if (it == buttonNames_.end() || it - buttonNames_.begin() >= 64)
+				const auto it = std::find(names.begin(), names.end(), name);
+				if (it == names.end() || it - names.begin() >= 64)
 				{
 					error = "no button " + name;
 					return {};
 				}
-				mask |= uint64_t{1} << (it - buttonNames_.begin());
+				mask |= uint64_t{1} << (it - names.begin());
 			}
 			scriptHeld_.store(mask);
 			return {};
@@ -1041,10 +1047,11 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		"a value of nothing lets a held one go)", {"name", "value", "held"}, [this](const Args &a, std::string &error) -> Value {
 			std::string name;
 			if (!arg(a, 0, name, error)) return {};
-			size_t axis = axes_.size();
-			for (size_t i = 0; i < axes_.size(); i++)
-				if (axes_[i].name == name) axis = i;
-			if (axis == axes_.size())
+			const std::vector<Axis> &axes = onMachineThread() ? axesM_ : axes_;
+			size_t axis = axes.size();
+			for (size_t i = 0; i < axes.size(); i++)
+				if (axes[i].name == name) axis = i;
+			if (axis == axes.size())
 			{
 				error = "no analog control " + name;
 				return {};
@@ -1085,6 +1092,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			for (size_t i = 0; i < values.size(); i++) scriptAxesOnce_[i] = values[i];
 			return {};
 		});
+	/* and what a script holds for the next frame (joypad.set and its kin), as bots do every frame */
+	for (const char *name : {"scriptHold", "scriptAxis", "scriptEntry"}) scriptSideCommand(name);
 	command("stopMovie", "Chimera's Stop Movie under TAStudio: the project let go and its game opened alone, a new empty "
 		"movie (the window asks about changes not saved first)", {}, [this](const Args &, std::string &error) -> Value {
 			std::string game, package;
@@ -1446,6 +1455,10 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		});
 
 	thread_ = std::thread([this] { loop(); });
+	{
+		std::lock_guard<std::mutex> lock(m_);
+		machineThread_ = thread_.get_id();
+	}
 }
 
 SessionViewModel::~SessionViewModel()
@@ -1641,7 +1654,7 @@ void SessionViewModel::submit(std::function<void()> job)
 {
 	{
 		std::lock_guard<std::mutex> lock(m_);
-		jobs_.push_back(std::move(job));
+		jobs_.push_back({false, std::move(job)});
 	}
 	cv_.notify_all();
 }
@@ -1660,7 +1673,7 @@ void SessionViewModel::loop()
 				if (quit_) break;
 				if (!jobs_.empty())
 				{
-					job = std::move(jobs_.front());
+					job = std::move(jobs_.front().run);
 					jobs_.pop_front();
 					break;
 				}
@@ -2531,9 +2544,12 @@ void SessionViewModel::keepRecoveryOnMachine()
 	RecoveryRecord was;
 	if (readRecoveryRecord(dir, was) && !writtenByThisProcess(was) && writerRunning(was)) return;
 	fs::create_directories(dir, ec);
-	/* the journal written again from the start once it has grown well past
-	 * its last start, as Chimera's keeps it short */
-	if (ce_session_movie_journaling(s_) != 0 && journalImageBytes_ > 0)
+	/* the journal first, so that no snapshot is without one; written again
+	 * from the start once it has grown well past its last start, as
+	 * Chimera's keeps it short */
+	if (ce_session_movie_journaling(s_) == 0)
+		journalOnMachine();
+	else if (journalImageBytes_ > 0)
 	{
 		const uintmax_t now = fs::file_size(dir / "work.journal", ec);
 		if (!ec && now > std::max<uintmax_t>(uintmax_t{16} << 20, 3 * journalImageBytes_)) journalOnMachine();
@@ -2556,8 +2572,10 @@ void SessionViewModel::dropRecoveryOnMachine(ce_project *p)
 	/* only this window's own: another's work in progress, or a crash's not offered yet, stays */
 	RecoveryRecord r;
 	if (readRecoveryRecord(dir, r) && !writtenByThisProcess(r)) return;
-	/* the journal let go of before its folder goes (Windows will not delete a file being written) */
+	/* the journal let go of before its folder goes (Windows will not delete a
+	 * file being written), and the next one opened as soon as there is work */
 	if (s_ != nullptr && p == projectM_) ce_session_movie_journal_close(s_, 1);
+	journalRetryDue_ = {};
 	fs::remove_all(dir, ec);
 }
 
@@ -3046,24 +3064,125 @@ bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::
 
 void SessionViewModel::onMachineWait(MachineJob job)
 {
-	auto done = std::make_shared<std::promise<void>>();
-	std::future<void> ran = done->get_future();
-	submit([this, job = std::move(job), done] {
-		job(s_);
-		done->set_value();
-	});
-	ran.wait();
+	waitOnMachine([&] { job(s_); });
 }
 
 void SessionViewModel::onProjectWait(ProjectJob job)
 {
-	auto done = std::make_shared<std::promise<void>>();
-	std::future<void> ran = done->get_future();
-	submit([this, job = std::move(job), done] {
-		job(projectM_);
-		done->set_value();
+	waitOnMachine([&] { job(projectM_); });
+}
+
+void SessionViewModel::waitOnMachine(const std::function<void()> &job)
+{
+	if (onMachineThread())
+	{
+		job();
+		return;
+	}
+	/* while it waits, the window's thread does what the machine's thread
+	 * waits on it for: a script's call into a view model */
+	const bool window = std::this_thread::get_id() == windowThread_;
+	auto done = std::make_shared<bool>(false);
+	std::unique_lock<std::mutex> lock(m_);
+	jobs_.push_back({true, [this, &job, done] {
+		job();
+		{
+			std::lock_guard<std::mutex> finished(m_);
+			*done = true;
+		}
+		cv_.notify_all();
+	}});
+	cv_.notify_all();
+	for (;;)
+	{
+		cv_.wait(lock, [&] { return *done || (window && !windowJobs_.empty()); });
+		if (*done) return;
+		WindowJob w = std::move(windowJobs_.front());
+		windowJobs_.pop_front();
+		lock.unlock();
+		w.run();
+		lock.lock();
+	}
+}
+
+bool SessionViewModel::onMachineThreadWait(const std::function<void()> &job)
+{
+	waitOnMachine(job);
+	return true;
+}
+
+bool SessionViewModel::onWindowWait(const std::function<void()> &job)
+{
+	if (std::this_thread::get_id() == windowThread_)
+	{
+		job();
+		return true;
+	}
+	auto done = std::make_shared<bool>(false);
+	std::unique_lock<std::mutex> lock(m_);
+	if (quit_) return false;
+	windowJobs_.push_back({done, [this, &job, done] {
+		job();
+		{
+			std::lock_guard<std::mutex> finished(m_);
+			*done = true;
+		}
+		cv_.notify_all();
+	}});
+	lock.unlock();
+	cv_.notify_all();
+	later([this] { serveWindowJobs(); });
+	lock.lock();
+	/* while it waits, the machine's thread does the jobs a thread waits on
+	 * it for: what the window does for the script may ask the machine. Only
+	 * those: the rest (a frame, a seek) wait until the script's turn is over */
+	auto waited = [this] { return std::find_if(jobs_.begin(), jobs_.end(), [](const Job &j) { return j.waited; }); };
+	for (;;)
+	{
+		cv_.wait(lock, [&] { return *done || waited() != jobs_.end() || quit_; });
+		if (*done) return true;
+		if (quit_)
+		{
+			/* the window is closing and will not do it: taken back */
+			std::erase_if(windowJobs_, [&](const WindowJob &w) { return w.done == done; });
+			return false;
+		}
+		const auto at = waited();
+		std::function<void()> w = std::move(at->run);
+		jobs_.erase(at);
+		lock.unlock();
+		w();
+		lock.lock();
+	}
+}
+
+void SessionViewModel::serveWindowJobs()
+{
+	std::unique_lock<std::mutex> lock(m_);
+	while (!windowJobs_.empty())
+	{
+		WindowJob w = std::move(windowJobs_.front());
+		windowJobs_.pop_front();
+		lock.unlock();
+		w.run();
+		lock.lock();
+	}
+}
+
+void SessionViewModel::setScriptTurns(std::function<void()> before, std::function<void()> after)
+{
+	waitOnMachine([&] {
+		scriptsBeforeM_ = std::move(before);
+		scriptsAfterM_ = std::move(after);
 	});
-	ran.wait();
+}
+
+void SessionViewModel::scriptTurnOnMachine(const std::function<void()> &turn)
+{
+	if (!turn || inScriptTurnM_ || !scriptsNowOnMachine()) return;
+	inScriptTurnM_ = true;
+	turn();
+	inScriptTurnM_ = false;
 }
 
 int SessionViewModel::addMachineHooks(MachineJob frame, MachineJob closing)
@@ -3075,13 +3194,7 @@ int SessionViewModel::addMachineHooks(MachineJob frame, MachineJob closing)
 
 void SessionViewModel::removeMachineHooks(int id)
 {
-	auto done = std::make_shared<std::promise<void>>();
-	std::future<void> gone = done->get_future();
-	submit([this, id, done] {
-		std::erase_if(hooksM_, [id](const Hooks &h) { return h.id == id; });
-		done->set_value();
-	});
-	gone.wait();
+	waitOnMachine([&] { std::erase_if(hooksM_, [id](const Hooks &h) { return h.id == id; }); });
 }
 
 void SessionViewModel::freeProjectOnMachine()
@@ -3976,10 +4089,8 @@ void SessionViewModel::autosave()
 
 std::vector<uint8_t> SessionViewModel::readDomain(const std::string &name)
 {
-	auto done = std::make_shared<std::promise<std::vector<uint8_t>>>();
-	std::future<std::vector<uint8_t>> result = done->get_future();
-	submit([this, name, done] {
-		std::vector<uint8_t> bytes;
+	std::vector<uint8_t> bytes;
+	waitOnMachine([&] {
 		if (s_ != nullptr)
 			for (int32_t i = 0; i < ce_session_domain_count(s_); i++)
 				if (name == ce_session_domain_name(s_, i))
@@ -3988,9 +4099,8 @@ std::vector<uint8_t> SessionViewModel::readDomain(const std::string &name)
 					ce_session_domain_read(s_, i, 0, bytes.data(), static_cast<int64_t>(bytes.size()));
 					break;
 				}
-		done->set_value(std::move(bytes));
 	});
-	return result.get();
+	return bytes;
 }
 
 void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package, const std::string &label, bool inputsReplaced)
@@ -4151,6 +4261,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		for (const Axis &a : axes) axisNames.push_back(a.name);
 		analogBindsM_ = keybinds.empty() ? std::vector<AnalogBind>(axes.size()) : parseAnalogBinds(keybinds, axisNames, bindError);
 		axesM_ = axes;
+		buttonNamesM_ = names;
 	}
 	autofireWasM_ = 0;
 	if (!padsM_) padsM_ = std::make_unique<Gamepads>();
@@ -4418,6 +4529,11 @@ bool SessionViewModel::skipNextOnMachine()
 
 int32_t SessionViewModel::advanceOnMachine(bool skipDrawing)
 {
+	/* the scripts' turn before the frame: what they hold now is this frame's.
+	 * A script's call may close the machine; then there is no frame */
+	ce_session *const was = s_;
+	scriptTurnOnMachine(scriptsBeforeM_);
+	if (s_ == nullptr || s_ != was) return -1;
 	const int64_t f = ce_session_frame(s_);
 	const int64_t size = ce_session_movie_length(s_);
 	/* turbo, Display Nothing and the frame skip run the frame without drawing
@@ -4449,6 +4565,8 @@ int32_t SessionViewModel::advanceOnMachine(bool skipDrawing)
 		fpsSince_ = now;
 	}
 	report(-1, -1, f >= size ? size : -1, f >= size ? f : -1, measured);
+	/* and after it */
+	if (lag >= 0) scriptTurnOnMachine(scriptsAfterM_);
 	return lag;
 }
 
@@ -4751,6 +4869,8 @@ void SessionViewModel::seekOnMachine(int64_t target, bool grow)
 		lastSeekFrames.set(ran);
 	});
 	report(-1, -1, -1, -1, -1);
+	/* the scripts' turn on the frame the machine landed on */
+	scriptTurnOnMachine(scriptsAfterM_);
 }
 
 void SessionViewModel::dropStatesAfterOnMachine(int64_t frame)

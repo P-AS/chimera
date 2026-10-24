@@ -73,8 +73,13 @@ public:
 	/* the Paths' Lua folder: where New Script's template is kept */
 	Property<std::string> luaFolder;
 
-	/* said again after each frame (the window calls it with the frame) */
+	/* a frame done: the scripts' turn after it, then the window's part
+	 * (the tests call it; the program gives the scripts their turns on the
+	 * machine's thread and the window its part with afterFrame) */
 	void frameDone();
+	/* the window's part of a frame done: the write count for the frame
+	 * begins again, and the list and functions are said again */
+	void afterFrame();
 	/* text the scripts wrote, line ends and all */
 	void append(const std::string &text);
 
