@@ -28,8 +28,6 @@ ApplicationWindow {
     }
 
     WindowOptions { id: windowOptions; window: win; tool: "debugger"; vm: win.toolWindows; mainWindow: win.mainWindow }
-    function menuOpened() { if (win.customize) win.customize.run("menuOpened") }
-    function menuClosed() { if (win.customize) win.customize.run("menuClosed") }
 
     // read again as the machine moves, while the window is open, at most ten times a second
     Connections {
@@ -45,14 +43,10 @@ ApplicationWindow {
     menuBar: MenuBar {
         Menu {
             title: qsTr("&File")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { text: qsTr("&Close"); onTriggered: win.close() }
         }
         Menu {
             title: qsTr("&Debug")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { text: qsTr("Step &Into"); enabled: false }
             MenuItem { text: qsTr("Step O&ver"); enabled: false }
             MenuItem { text: qsTr("Step Ou&t"); enabled: false }
@@ -62,8 +56,6 @@ ApplicationWindow {
         // Chimera adds a Settings menu for the window's items to a tool that has none
         Menu {
             title: qsTr("&Settings")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
                 text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop

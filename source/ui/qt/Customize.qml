@@ -1,6 +1,6 @@
 // Chimera's Customize window (Config > Customize), laid out as Chimera's
-// GuiOptions: General (the menu and context menu, the save prompts,
-// running and listening in the background, Startup Options) and Advanced
+// GuiOptions: General (the context menu, the save prompts, listening in
+// the background, Startup Options) and Advanced
 // (lag frames, Lua when turboing, Key Priority). The boxes are a copy: OK
 // keeps them, Cancel lets them go. Layout and bindings only, over the
 // customize view model and the session's and hotkeys' switches.
@@ -8,8 +8,9 @@
 // Not here, as the prototype has no such thing: Chimera's alternate
 // keyboard layouts and merged modifier keys (Qt names keys by the layout,
 // and Shift, Ctrl and Alt always arrive merged), the GameCube adapter,
-// single instance mode, and Skip waterbox integrity checks (a flag no part
-// of Chimera reads).
+// and single instance mode. Run in background and Pause when menu
+// activated are gone, as from Chimera (owner, 2026-10-24): nothing pauses
+// the machine but the person, whatever window is in front or menu open.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -33,8 +34,7 @@ ApplicationWindow {
     onVisibleChanged: if (visible) {
         tabs.currentIndex = 0
         win.picked = {
-            pauseWhenMenuActivated: win.vm.pauseWhenMenuActivated, showContextMenu: win.vm.showContextMenu,
-            neverAskSave: win.vm.neverAskSave, runInBackground: win.vm.runInBackground,
+            showContextMenu: win.vm.showContextMenu, neverAskSave: win.vm.neverAskSave,
             acceptBackgroundInput: win.session.acceptBackgroundInput, startPaused: win.vm.startPaused,
             startFullscreen: win.vm.startFullscreen, skipLagFrames: win.session.skipLagFrames,
             luaDuringTurbo: win.vm.luaDuringTurbo, noMixedPriority: win.hotkeys.noMixedPriority
@@ -47,10 +47,8 @@ ApplicationWindow {
     }
     function keep() {
         const p = win.picked
-        win.vm.pauseWhenMenuActivated = p.pauseWhenMenuActivated
         win.vm.showContextMenu = p.showContextMenu
         win.vm.neverAskSave = p.neverAskSave
-        win.vm.runInBackground = p.runInBackground
         win.session.acceptBackgroundInput = p.acceptBackgroundInput
         win.vm.startPaused = p.startPaused
         win.vm.startFullscreen = p.startFullscreen
@@ -85,14 +83,8 @@ ApplicationWindow {
                 currentIndex: tabs.currentIndex
                 ColumnLayout {
                     spacing: 2
-                    RowLayout {
-                        spacing: 16
-                        Box { setting: "pauseWhenMenuActivated"; text: qsTr("Pause when menu activated") }
-                        Box { setting: "showContextMenu"; text: qsTr("Enable Context Menu") }
-                    }
+                    Box { setting: "showContextMenu"; text: qsTr("Enable Context Menu") }
                     Box { setting: "neverAskSave"; text: qsTr("When Chimera is closing, skip \"unsaved changes\" prompts and discard all.") }
-                    Box { setting: "runInBackground"; text: qsTr("Run in background") }
-                    Note { text: qsTr("When this is set, the client will continue to run when it loses focus.") }
                     RowLayout {
                         spacing: 16
                         Box { setting: "acceptBackgroundInput"; text: qsTr("Accept background input") }

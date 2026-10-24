@@ -30,8 +30,6 @@ ApplicationWindow {
     readonly property var shown: win.list[win.vm.picked] || null
 
     WindowOptions { id: windowOptions; window: win; tool: "surfaceViewer"; vm: win.toolWindows; mainWindow: win.mainWindow }
-    function menuOpened() { if (win.customize) win.customize.run("menuOpened") }
-    function menuClosed() { if (win.customize) win.customize.run("menuClosed") }
 
     // the surface at its own size, for the clipboard or a file
     function grabbed(then) {
@@ -50,8 +48,6 @@ ApplicationWindow {
     menuBar: MenuBar {
         Menu {
             title: qsTr("&File")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { text: qsTr("&Copy to Clipboard"); enabled: win.shown !== null; onTriggered: win.grabbed((r) => { if (win.clipboard) win.clipboard.setImage(r.image) }) }
             MenuItem { text: qsTr("&Save as PNG..."); enabled: win.shown !== null; onTriggered: pngDialog.open() }
             MenuSeparator {}
@@ -60,8 +56,6 @@ ApplicationWindow {
         // Chimera adds a Settings menu for the window's items to a tool that has none
         Menu {
             title: qsTr("&Settings")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
                 text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop

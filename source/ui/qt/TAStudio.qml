@@ -111,8 +111,6 @@ ApplicationWindow {
             Menu {
                 id: editMenu
                 // Customize's "pause when a menu is open"
-                onAboutToShow: tas.customize.run("menuOpened")
-                onAboutToHide: tas.customize.run("menuClosed")
                 delegate: tas.keyedItem
                 // on the frames picked, or the current one
                 title: qsTr("&Edit")
@@ -219,8 +217,6 @@ ApplicationWindow {
                 Action { text: qsTr("Make the Inputs 1,000,000 Frames Long"); onTriggered: tas.pianoRoll.run("fill", [1000000]) }
             }
             Menu {
-                onAboutToShow: tas.customize.run("menuOpened")
-                onAboutToHide: tas.customize.run("menuClosed")
                 title: qsTr("&Metadata")
                 enabled: tas.session.hasProject
                 Action { text: qsTr("&Header..."); onTriggered: { headerWindow.show(); headerWindow.raise() } }
@@ -228,8 +224,6 @@ ApplicationWindow {
                 Action { text: qsTr("&Subtitles..."); onTriggered: { subtitlesWindow.show(); subtitlesWindow.raise() } }
             }
             Menu {
-                onAboutToShow: tas.customize.run("menuOpened")
-                onAboutToHide: tas.customize.run("menuClosed")
                 title: qsTr("&Settings")
                 Action { text: qsTr("Open settings..."); onTriggered: { tastudioSettingsWindow.show(); tastudioSettingsWindow.raise() } }
             }
@@ -237,8 +231,6 @@ ApplicationWindow {
             // and the keyboard keys', then a toggle for each group, as Chimera's
             Menu {
                 id: columnsMenu
-                onAboutToShow: tas.customize.run("menuOpened")
-                onAboutToHide: tas.customize.run("menuClosed")
                 title: qsTr("&Columns")
                 enabled: tas.session.isOpen
                 // which input roll the menu is for, when there are several, as Chimera's says it
@@ -317,8 +309,6 @@ ApplicationWindow {
                 }
             }
             Menu {
-                onAboutToShow: tas.customize.run("menuOpened")
-                onAboutToHide: tas.customize.run("menuClosed")
                 title: qsTr("&Window")
                 Action {
                     text: qsTr("&Move with Main Window")

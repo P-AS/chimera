@@ -2169,40 +2169,17 @@ bool customizeOptions(const char *package, const char *rom)
 		session.run("play", {}, error);
 		CHECK(settled(true));
 		CHECK(openGame() && settled(true));
-		/* a menu pauses only when asked, and runs it again on closing */
-		CHECK(customize.run("menuOpened", {}, error).has_value() && settled(true));
-		customize.pauseWhenMenuActivated.set(true);
-		customize.run("menuOpened", {}, error);
-		CHECK(settled(false));
-		customize.run("menuClosed", {}, error);
-		CHECK(settled(true));
-		/* Frame Advance picked from the menu (Qt runs it before the menu closes): it stands */
-		customize.run("menuOpened", {}, error);
-		CHECK(settled(false));
-		const int64_t at = session.frame.get();
-		session.run("frameAdvance", {}, error);
-		customize.run("menuClosed", {}, error);
-		CHECK(settled(false) && session.frame.get() == at + 1);
-		session.run("play", {}, error);
-		CHECK(settled(true));
-		/* a menu's pause is not the person's: the next machine still runs */
-		customize.run("menuOpened", {}, error);
-		CHECK(settled(false));
-		CHECK(openGame() && settled(true));
-		/* behind another window: runs on, unless "run in background" is off */
+		/* nothing pauses it but the person: no menu (the window has no such
+		 * call any more) and not the window going behind another (owner,
+		 * 2026-10-24) */
+		CHECK(!customize.run("menuOpened", {}, error).has_value() && !customize.get("runInBackground").has_value() &&
+			!customize.get("pauseWhenMenuActivated").has_value());
 		session.windowActive.set(false);
 		CHECK(settled(true));
-		session.windowActive.set(true);
-		customize.runInBackground.set(false);
-		session.windowActive.set(false);
-		CHECK(settled(false));
 		session.windowActive.set(true);
 		CHECK(settled(true));
 		/* paused by the person while behind: in front again, it stays paused */
 		session.windowActive.set(false);
-		CHECK(settled(false));
-		session.run("play", {}, error);
-		CHECK(settled(true));
 		session.run("pause", {}, error);
 		CHECK(settled(false));
 		session.windowActive.set(true);

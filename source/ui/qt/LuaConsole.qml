@@ -40,8 +40,6 @@ ApplicationWindow {
     WindowOptions { id: windowOptions; window: win; tool: "luaConsole"; vm: win.toolWindows; mainWindow: win.mainWindow }
     onVisibleChanged: if (visible) windowOptions.placeBack(false)
 
-    function menuOpened() { if (win.customize) win.customize.run("menuOpened") }
-    function menuClosed() { if (win.customize) win.customize.run("menuClosed") }
 
     // Chimera asks before a saved session with changes is let go
     property var afterAsk: null
@@ -167,8 +165,6 @@ ApplicationWindow {
         Menu {
             title: qsTr("&File")
             delegate: shortcutItem
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             Action {
                 text: qsTr("&New Session"); shortcut: "Ctrl+Shift+N"; icon.source: "qrc:/chimera/icons/NewFile.png"
                 onTriggered: win.leaveSession(() => win.vm.run("newSession"))
@@ -221,8 +217,6 @@ ApplicationWindow {
         Menu {
             title: qsTr("&Script")
             delegate: shortcutItem
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { action: newScriptAction }
             MenuItem { action: openScriptAction }
             MenuItem { action: refreshAction }
@@ -243,8 +237,6 @@ ApplicationWindow {
         }
         Menu {
             title: qsTr("&Settings")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { text: qsTr("Disable Scripts on Load"); checkable: true; checked: win.vm.disableOnLoad; onTriggered: win.vm.disableOnLoad = checked }
             MenuItem { text: qsTr("Toggle All if None Selected"); checkable: true; checked: win.vm.toggleAllIfNoneSelected; onTriggered: win.vm.toggleAllIfNoneSelected = checked }
             MenuItem { text: qsTr("Reload When Script File Changes"); checkable: true; checked: win.vm.reloadOnChange; onTriggered: win.vm.reloadOnChange = checked }
@@ -279,8 +271,6 @@ ApplicationWindow {
         Menu {
             title: qsTr("&Help")
             delegate: shortcutItem
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             Action { text: qsTr("&Lua Functions List"); shortcut: "F1"; onTriggered: { functionsListWindow.show(); functionsListWindow.raise() } }
         }
     }
@@ -323,8 +313,6 @@ ApplicationWindow {
     // the list's right-click menu
     Menu {
         id: scriptMenu
-        onAboutToShow: win.menuOpened()
-        onAboutToHide: win.menuClosed()
         MenuItem { text: qsTr("&Toggle"); icon.source: "qrc:/chimera/icons/Refresh.png"; enabled: win.anyFile; onTriggered: win.vm.run("toggle") }
         MenuItem { text: qsTr("Pause or Resume"); icon.source: "qrc:/chimera/icons/Pause.png"; enabled: win.anyFile; onTriggered: win.vm.run("pause") }
         MenuItem { text: qsTr("&Edit"); icon.source: "qrc:/chimera/icons/Cut.png"; enabled: win.anyFile; onTriggered: win.editFiles(win.vm.run("editPaths")) }
@@ -337,8 +325,6 @@ ApplicationWindow {
     // the output's right-click menu
     Menu {
         id: outputMenu
-        onAboutToShow: win.menuOpened()
-        onAboutToHide: win.menuClosed()
         MenuItem {
             text: qsTr("Copy"); enabled: win.vm.outputFirst >= 0
             onTriggered: if (win.clipboard) win.clipboard.setText(win.vm.run("copyOutput"))

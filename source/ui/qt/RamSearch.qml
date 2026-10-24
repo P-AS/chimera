@@ -29,8 +29,6 @@ ApplicationWindow {
 
     WindowOptions { id: windowOptions; window: win; tool: "ramSearch"; vm: win.toolWindows; mainWindow: win.mainWindow }
     onVisibleChanged: if (visible) windowOptions.placeBack(false)
-    function menuOpened() { if (win.customize) win.customize.run("menuOpened") }
-    function menuClosed() { if (win.customize) win.customize.run("menuClosed") }
 
     MessageDialog { id: notice; buttons: MessageDialog.Ok }
     function tell(title, text) { notice.title = title; notice.text = text; notice.open() }
@@ -119,8 +117,6 @@ ApplicationWindow {
         Menu {
             title: qsTr("&File")
             delegate: shortcutItem
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             Action { text: qsTr("&Open..."); shortcut: "Ctrl+O"; enabled: win.vm.searching; onTriggered: { openDialog.how = "open"; openDialog.open() } }
             Action { text: qsTr("&Save"); shortcut: "Ctrl+S"; enabled: win.vm.currentFile !== ""; onTriggered: win.vm.run("save") }
             Action { text: qsTr("Save As..."); shortcut: "Ctrl+Shift+S"; enabled: win.vm.searching; onTriggered: saveDialog.open() }
@@ -148,8 +144,6 @@ ApplicationWindow {
         }
         Menu {
             title: qsTr("&Options")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             Menu {
                 title: qsTr("&Mode")
                 MenuItem { text: qsTr("&Detailed"); checkable: true; checked: !win.vm.fast; onTriggered: win.vm.fast = false }
@@ -208,8 +202,6 @@ ApplicationWindow {
         Menu {
             title: qsTr("&Search")
             delegate: shortcutItem
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { action: newSearchAction }
             MenuSeparator {}
             MenuItem { action: searchAction }
@@ -229,8 +221,6 @@ ApplicationWindow {
         }
         Menu {
             title: qsTr("&Settings")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { text: qsTr("&Preview Mode"); checkable: true; checked: win.vm.previewMode; onTriggered: win.vm.previewMode = checked }
             MenuItem { text: qsTr("&Auto-Search"); checkable: true; checked: win.vm.autoSearch; onTriggered: win.vm.autoSearch = checked }
             MenuItem { text: qsTr("&Auto-Search Account for Lag"); checkable: true; checked: win.vm.autoSearchAccountForLag; onTriggered: win.vm.autoSearchAccountForLag = checked }
@@ -342,8 +332,6 @@ ApplicationWindow {
     Menu {
         id: listMenu
         delegate: shortcutItem
-        onAboutToShow: win.menuOpened()
-        onAboutToHide: win.menuClosed()
         MenuItem { action: searchAction }
         Action { text: qsTr("&Start New Search"); onTriggered: win.vm.run("newSearch") }
         MenuSeparator {}

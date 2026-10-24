@@ -45,8 +45,6 @@ ApplicationWindow {
     menuBar: MenuBar {
         Menu {
             title: qsTr("&Settings")
-            onAboutToShow: if (win.customize) win.customize.run("menuOpened")
-            onAboutToHide: if (win.customize) win.customize.run("menuClosed")
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
                 text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop

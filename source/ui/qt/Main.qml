@@ -285,8 +285,6 @@ ApplicationWindow {
             }
             Menu {
                 // Customize's "pause when a menu is open"
-                onAboutToShow: root.customize.run("menuOpened")
-                onAboutToHide: root.customize.run("menuClosed")
                 delegate: keyedMenuItem
                 title: qsTr("&File")
                 // opens on the last project's answers, as Chimera's does
@@ -343,8 +341,6 @@ ApplicationWindow {
             }
             Menu {
                 readonly property bool shown: root.session.isOpen
-                onAboutToShow: root.customize.run("menuOpened")
-                onAboutToHide: root.customize.run("menuClosed")
                 delegate: keyedMenuItem
                 title: qsTr("&System")
                 Action {
@@ -358,8 +354,6 @@ ApplicationWindow {
                 Action { text: qsTr("Loaded core: %1 (%2)").arg(root.session.coreName).arg(root.session.systemId); enabled: false }
             }
             Menu {
-                onAboutToShow: root.customize.run("menuOpened")
-                onAboutToHide: root.customize.run("menuClosed")
                 delegate: keyedMenuItem
                 title: qsTr("&View")
                 // the picture N times the machine's own, the window grown or shrunk to it
@@ -415,8 +409,6 @@ ApplicationWindow {
                 Action { text: qsTr("Open &Log Window..."); onTriggered: { logWindow.show(); logWindow.raise() } }
             }
             Menu {
-                onAboutToShow: root.customize.run("menuOpened")
-                onAboutToHide: root.customize.run("menuClosed")
                 delegate: keyedMenuItem
                 title: qsTr("&Config")
                 Action { text: qsTr("&Controllers..."); onTriggered: { controllerWindow.show(); controllerWindow.raise() } }
@@ -508,8 +500,6 @@ ApplicationWindow {
                 Action { text: qsTr("Load Config From..."); onTriggered: loadConfigDialog.open() }
             }
             Menu {
-                onAboutToShow: root.customize.run("menuOpened")
-                onAboutToHide: root.customize.run("menuClosed")
                 delegate: keyedMenuItem
                 title: qsTr("&Tools")
                 Action { text: qsTr("&Core Manager..."); onTriggered: { coresWindow.show(); coresWindow.raise() } }
@@ -544,8 +534,6 @@ ApplicationWindow {
             Menu {
                 readonly property bool shown: root.session.isOpen && (root.session.hasGameTimer || root.session.hasSaveData
                     || root.session.hasMovieImport || root.session.hasTrace || root.session.hasRegisters || root.session.surfaces !== "[]")
-                onAboutToShow: root.customize.run("menuOpened")
-                onAboutToHide: root.customize.run("menuClosed")
                 delegate: keyedMenuItem
                 title: root.session.isGameCore ? qsTr("&Game") : qsTr("E&mulator")
                 Action {
@@ -579,8 +567,6 @@ ApplicationWindow {
                 Action { id: traceLoggerAction; property string hotkey: "Trace Logger"; text: qsTr("&Trace Logger"); enabled: root.session.hasTrace; onTriggered: { traceLoggerWindow.show(); traceLoggerWindow.raise() } }
             }
             Menu {
-                onAboutToShow: root.customize.run("menuOpened")
-                onAboutToHide: root.customize.run("menuClosed")
                 delegate: keyedMenuItem
                 title: qsTr("&Help")
                 Action { text: qsTr("Open toolAssisted.run in Browser"); onTriggered: Qt.openUrlExternally(root.help.siteUrl) }
@@ -620,14 +606,12 @@ ApplicationWindow {
         // Config, after the project's items, only while full screen
         property bool configIn: false
         onAboutToShow: {
-            root.customize.run("menuOpened")
             if (root.fullScreen !== pictureMenu.configIn) {
                 if (root.fullScreen) pictureMenu.insertMenu(10, pictureConfigMenu)
                 else pictureMenu.removeMenu(pictureConfigMenu)
                 pictureMenu.configIn = root.fullScreen
             }
         }
-        onAboutToHide: root.customize.run("menuClosed")
         component Shown: MenuItem { height: visible ? implicitHeight : 0 }
         component ShownSeparator: MenuSeparator { height: visible ? implicitHeight : 0 }
         Shown {

@@ -29,8 +29,6 @@ ApplicationWindow {
 
     WindowOptions { id: windowOptions; window: win; tool: "hexEditor"; vm: win.toolWindows; mainWindow: win.mainWindow }
     onVisibleChanged: if (visible) windowOptions.placeBack(false)
-    function menuOpened() { if (win.customize) win.customize.run("menuOpened") }
-    function menuClosed() { if (win.customize) win.customize.run("menuClosed") }
 
     // the colours: Custom Colors where set, else the theme's
     readonly property var custom: JSON.parse(win.vm.colors || "{}")
@@ -141,8 +139,6 @@ ApplicationWindow {
         Menu {
             title: qsTr("&File")
             delegate: shortcutItem
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             Action { text: qsTr("Save"); icon.source: "qrc:/chimera/icons/SaveAs.png"; shortcut: "Ctrl+S"; enabled: win.fileOnDisk; onTriggered: win.vm.run("save") }
             Action { text: win.fileOnDisk ? qsTr("Save as ROM...") : qsTr("Save as binary..."); shortcut: "Ctrl+Shift+S"; onTriggered: binaryDialog.open() }
             Action { text: qsTr("Save as text..."); onTriggered: textDialog.open() }
@@ -171,8 +167,6 @@ ApplicationWindow {
         Menu {
             title: qsTr("&Edit")
             delegate: shortcutItem
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { action: copyAction }
             MenuItem { action: exportAction }
             MenuItem { action: pasteAction }
@@ -184,8 +178,6 @@ ApplicationWindow {
         Menu {
             title: qsTr("&Options")
             delegate: shortcutItem
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             Menu {
                 id: domainMenu
                 title: qsTr("&Memory Domains")
@@ -218,8 +210,6 @@ ApplicationWindow {
         }
         Menu {
             title: qsTr("&Settings")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             Menu {
                 title: qsTr("Custom Colors")
                 MenuItem { text: qsTr("Set Colors"); onTriggered: { colorsWindow.show(); colorsWindow.raise() } }
@@ -242,8 +232,6 @@ ApplicationWindow {
     Menu {
         id: viewerMenu
         delegate: shortcutItem
-        onAboutToShow: win.menuOpened()
-        onAboutToHide: win.menuClosed()
         MenuItem { action: copyAction; visible: win.anyHighlighted; height: visible ? implicitHeight : 0 }
         MenuItem { action: exportAction }
         MenuItem { action: pasteAction; visible: win.vm.writable; height: visible ? implicitHeight : 0 }

@@ -26,8 +26,6 @@ ApplicationWindow {
 
     WindowOptions { id: windowOptions; window: win; tool: "macroInput"; vm: win.toolWindows; mainWindow: win.mainWindow }
     onVisibleChanged: if (visible) windowOptions.placeBack(false)
-    function menuOpened() { if (win.customize) win.customize.run("menuOpened") }
-    function menuClosed() { if (win.customize) win.customize.run("menuClosed") }
 
     readonly property var zoneList: win.vm.rows("zones")
     readonly property var movieColumns: JSON.parse(win.vm.movieColumns)
@@ -87,8 +85,6 @@ ApplicationWindow {
     menuBar: MenuBar {
         Menu {
             title: qsTr("&File")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem {
                 text: qsTr("Save Selected As...")
                 onTriggered: {
@@ -119,8 +115,6 @@ ApplicationWindow {
         // Chimera adds a Settings menu for the window's items to a tool that has none
         Menu {
             title: qsTr("&Settings")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
                 text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop

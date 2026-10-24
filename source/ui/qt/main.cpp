@@ -1008,7 +1008,7 @@ int main(int argc, char **argv)
 	});
 	qt::QmlViewModel cacheManagerQml(cacheManager);
 	vm::CustomizeViewModel customize(dispatcher, session);
-	for (const char *name : {"startPaused", "startFullscreen", "pauseWhenMenuActivated", "runInBackground", "neverAskSave", "luaDuringTurbo",
+	for (const char *name : {"startPaused", "startFullscreen", "neverAskSave", "luaDuringTurbo",
 			 "showContextMenu"})
 		config.keep(customize, name);
 	qt::QmlViewModel customizeQml(customize);

@@ -28,8 +28,6 @@ ApplicationWindow {
 
     WindowOptions { id: windowOptions; window: win; tool: "ramWatch"; vm: win.toolWindows; mainWindow: win.mainWindow }
     onVisibleChanged: if (visible) windowOptions.placeBack(false)
-    function menuOpened() { if (win.customize) win.customize.run("menuOpened") }
-    function menuClosed() { if (win.customize) win.customize.run("menuClosed") }
 
     // Chimera asks before a list with changes is let go
     property var afterAsk: null
@@ -172,8 +170,6 @@ ApplicationWindow {
         Menu {
             title: qsTr("&Files")
             delegate: shortcutItem
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { action: newListAction }
             MenuItem { action: openAction }
             MenuItem { action: saveAction; enabled: win.vm.changed }
@@ -201,8 +197,6 @@ ApplicationWindow {
         Menu {
             title: qsTr("&Watches")
             delegate: shortcutItem
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             Menu {
                 id: domainMenu
                 title: qsTr("Default Domain")
@@ -245,8 +239,6 @@ ApplicationWindow {
         }
         Menu {
             title: qsTr("&Settings")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             Menu {
                 title: qsTr("Define Previous Value")
                 MenuItem { text: qsTr("Previous Frame"); checkable: true; checked: win.vm.previousType === 2; onTriggered: win.vm.previousType = 2 }
@@ -373,8 +365,6 @@ ApplicationWindow {
     Menu {
         id: listMenu
         delegate: shortcutItem
-        onAboutToShow: win.menuOpened()
-        onAboutToHide: win.menuClosed()
         MenuItem { action: newWatchAction; visible: !win.anyRow; height: visible ? implicitHeight : 0 }
         Action { property string keysShown: "Ctrl+E"; text: qsTr("&Edit"); icon.source: "qrc:/chimera/icons/Cut.png"; enabled: win.anyRow; onTriggered: win.editWatch(false) }
         Action { property string keysShown: "Ctrl+R"; text: qsTr("&Remove"); icon.source: "qrc:/chimera/icons/Delete.png"; enabled: win.anyRow; onTriggered: win.vm.run("removeSelected") }

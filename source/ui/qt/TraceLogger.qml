@@ -29,8 +29,6 @@ ApplicationWindow {
     }
 
     WindowOptions { id: windowOptions; window: win; tool: "traceLogger"; vm: win.toolWindows; mainWindow: win.mainWindow }
-    function menuOpened() { if (win.customize) win.customize.run("menuOpened") }
-    function menuClosed() { if (win.customize) win.customize.run("menuClosed") }
 
     FileDialog {
         id: fileDialog
@@ -56,8 +54,6 @@ ApplicationWindow {
     menuBar: MenuBar {
         Menu {
             title: qsTr("&File")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { text: qsTr("&Save Visible Lines..."); onTriggered: saveDialog.open() }
             MenuSeparator {}
             MenuItem { text: qsTr("&Close"); onTriggered: win.close() }
@@ -65,8 +61,6 @@ ApplicationWindow {
         // Chimera adds a Settings menu for the window's items to a tool that has none
         Menu {
             title: qsTr("&Settings")
-            onAboutToShow: win.menuOpened()
-            onAboutToHide: win.menuClosed()
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
                 text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
