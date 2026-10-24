@@ -414,4 +414,5 @@ as each lands here. Parts that wait on a question to the owner say so.
 
 ## Yours to decide
 
-Nothing open: the three questions below were answered on 2026-10-24.
+Nothing open: the last three questions were answered on 2026-10-24 (see
+"What was decided").
