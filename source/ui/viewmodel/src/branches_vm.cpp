@@ -4,6 +4,9 @@
 
 #include <chrono>
 #include <ctime>
+#include <utility>
+
+#include "chimera/engine.h"
 
 namespace chimera::vm {
 
@@ -180,6 +183,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 				return {};
 			}
 			const SessionViewModel::Branch &b = branches_[i];
+			current.set(static_cast<int64_t>(i));
 			/* its state when it has one, else the engine takes the branch's
 			 * movie, keeps the states before the first frame where the two
 			 * differ, and replays from there */
@@ -196,12 +200,50 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			roll_.replaceAll(b.markers);
 			return {};
 		}, &session_.isOpen);
+	expose("current", "the current branch: the one last loaded, made or updated (-1 none)", current);
+	expose("loadQuestion", "Chimera's question before loading another branch over changes the current one does not hold; "
+		"\"\" when none is asked", loadQuestion);
+	command("askToLoad", "a person loads a branch: when the current branch is another and the movie holds inputs or "
+		"markers it does not, Chimera's question is asked first (loadQuestion, answered by answerLoad) and \"asked\" "
+		"said; else the branch is loaded and \"loaded\" said. A script's load does not ask", {"index"},
+		[this](const Args &a, std::string &error) -> Value {
+			size_t i = 0;
+			if (!index(a, i, error)) return {};
+			const int64_t was = current.get();
+			if (was < 0 || was >= static_cast<int64_t>(branches_.size()) || was == static_cast<int64_t>(i) ||
+				!differsFrom(static_cast<size_t>(was)))
+			{
+				run("load", {static_cast<int64_t>(i)}, error);
+				return std::string("loaded");
+			}
+			askedFor_ = static_cast<int64_t>(i);
+			const std::string c = std::to_string(was + 1), t = std::to_string(i + 1);
+			loadQuestion.set("Branch " + c + " does not hold the inputs or markers changed since it was loaded or updated.\n\n"
+				"Update branch " + c + " with them before loading branch " + t + "?\n\n"
+				"Yes: update it, then load.\n"
+				"No: load without updating it (Undo Branch Load brings the changes back).\n"
+				"Cancel: load nothing.");
+			return std::string("asked");
+		}, &session_.isOpen);
+	command("answerLoad", "answers loadQuestion: \"yes\" updates the current branch, then loads; \"no\" loads without "
+		"updating it; \"cancel\" loads nothing", {"answer"}, [this](const Args &a, std::string &error) -> Value {
+			std::string answer;
+			if (!arg(a, 0, answer, error)) return {};
+			const int64_t target = std::exchange(askedFor_, -1);
+			loadQuestion.set("");
+			if (target < 0 || target >= static_cast<int64_t>(branches_.size()) || answer == "cancel") return {};
+			if (answer == "yes" && current.get() >= 0 && current.get() < static_cast<int64_t>(branches_.size())) keepRun(current.get(), "");
+			run("load", {target}, error);
+			return {};
+		});
 	command("remove", "forgets a branch", {"index"}, [this](const Args &a, std::string &error) -> Value {
 		size_t i = 0;
 		if (!index(a, i, error)) return {};
 		status.set("Removed " + branches_[i].name);
 		const SessionViewModel::Branch gone = branches_[i];
 		branches_.erase(branches_.begin() + static_cast<long>(i));
+		if (current.get() == static_cast<int64_t>(i)) current.set(-1);
+		else if (current.get() > static_cast<int64_t>(i)) current.set(current.get() - 1);
 		/* kept, its state file too, for Undo */
 		keepBackup(Undo::Remove, gone, static_cast<int64_t>(i));
 		if (selected.get() >= static_cast<int64_t>(branches_.size())) selected.set(static_cast<int64_t>(branches_.size()) - 1);
@@ -224,6 +266,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 		dropBackup();
 		selected.set(-1);
 		branches_ = loaded;
+		current.set(-1);
 		for (SessionViewModel::Branch &b : branches_) b.id = ++lastId_;
 		count.set(static_cast<int64_t>(branches_.size()));
 		rows_.reset.emit();
@@ -260,6 +303,7 @@ int64_t BranchesViewModel::keepRun(int64_t slot, std::string name)
 		at = static_cast<int64_t>(branches_.size()) - 1;
 		changed();
 	}
+	current.set(at);
 	status.set("Making " + b.name + "...");
 	session_.makeBranch(b.name, b.time, [this, id = b.id](SessionViewModel::Branch done, const std::string &why) {
 		for (SessionViewModel::Branch &x : branches_)
@@ -280,6 +324,27 @@ int64_t BranchesViewModel::keepRun(int64_t slot, std::string name)
 		made.set(made.get() + 1);
 	});
 	return at;
+}
+
+bool BranchesViewModel::differsFrom(size_t branch) const
+{
+	/* the input log, as the engine compares two: identical is -1 */
+	ce_movie_log *now = ce_movie_log_new(), *kept = ce_movie_log_new();
+	const std::string text = inputs_.text();
+	const std::string &theirs = branches_[branch].text;
+	ce_movie_log_parse(now, text.data(), text.size());
+	ce_movie_log_parse(kept, theirs.data(), theirs.size());
+	const bool inputs = ce_movie_log_divergent_point(now, kept) >= 0;
+	ce_movie_log_free(now);
+	ce_movie_log_free(kept);
+	if (inputs) return true;
+	/* then the person's markers, by frame and text */
+	std::vector<std::pair<int64_t, std::string>> mine, its;
+	for (const auto &[frame, m] : roll_.markers()) mine.emplace_back(frame, m.text);
+	for (const Marker &m : branches_[branch].markers) its.emplace_back(m.frame, m.text);
+	std::sort(mine.begin(), mine.end());
+	std::sort(its.begin(), its.end());
+	return mine != its;
 }
 
 bool BranchesViewModel::listed(uint64_t id) const

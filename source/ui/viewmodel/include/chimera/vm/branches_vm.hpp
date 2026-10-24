@@ -45,10 +45,22 @@ public:
 	Property<int64_t> previewWidth{0}, previewHeight{0};
 	Picture preview;
 	Signal<> previewChanged;
+	/* the current branch: the one last loaded, made or updated (-1 none) */
+	Property<int64_t> current{-1};
+	/* Chimera's question before a person loads another branch over what the
+	 * current one does not hold (owner, 2026-10-24, issue 360): "" when none
+	 * is asked; answered with answerLoad */
+	Property<std::string> loadQuestion;
+	/* whether the movie holds what the branch does not: an input, or a
+	 * marker of the person's (where the machine is does not count, nor the
+	 * run's own markers, which follow the input) */
+	bool differsFrom(size_t branch) const;
 	/* a branch loaded, made or updated, removed: its place in the list (Lua's tastudio callbacks) */
 	Signal<int64_t> branchLoaded, branchSaved, branchRemoved;
 
 private:
+	/* the branch loadQuestion is about loading */
+	int64_t askedFor_ = -1;
 	Connection previewSideWatch_;
 	class Rows : public RowModel
 	{

@@ -659,7 +659,7 @@ ApplicationWindow {
                             }
                             onClicked: tas.branches.selected = branchRow.index
                             // TAStudio's "load branch by double clicking"
-                            onDoubleClicked: if (tas.branches.loadOnDoubleClick) tas.branches.run("load", [branchRow.index])
+                            onDoubleClicked: if (tas.branches.loadOnDoubleClick) tas.branches.run("askToLoad", [branchRow.index])
                             TapHandler {
                                 acceptedButtons: Qt.RightButton
                                 onTapped: { tas.branches.selected = branchRow.index; branchMenu.popup() }
@@ -685,7 +685,7 @@ ApplicationWindow {
                     RowLayout {
                         spacing: 2
                         SmallButton { text: qsTr("Add"); enabled: tas.branches.createEnabled; onClicked: tas.branches.run("create", [""]) }
-                        SmallButton { text: qsTr("Load"); enabled: parent.parent.picked; onClicked: tas.branches.run("load", [tas.branches.selected]) }
+                        SmallButton { text: qsTr("Load"); enabled: parent.parent.picked; onClicked: tas.branches.run("askToLoad", [tas.branches.selected]) }
                         SmallButton { text: qsTr("Update"); enabled: parent.parent.picked; onClicked: tas.branches.run("saveSlot", [tas.branches.selected]) }
                         // Chimera's one step of branch undo
                         SmallButton { text: qsTr("Undo"); tip: tas.branches.undoText; enabled: tas.branches.undoText !== ""; onClicked: tas.branches.run("undo") }
@@ -843,13 +843,32 @@ ApplicationWindow {
         Label { text: qsTr("Are you sure you want to add more than 50 markers?") }
         onAccepted: tas.setMarkers()
     }
+    // Chimera's question before another branch is loaded over changes the current one does not hold (issue 360)
+    Dialog {
+        id: updateBranchDialog
+        objectName: "updateBranchDialog"
+        title: qsTr("Update the current branch?")
+        anchors.centerIn: parent
+        modal: true
+        visible: tas.branches.loadQuestion !== ""
+        closePolicy: Popup.CloseOnEscape
+        Label { text: tas.branches.loadQuestion }
+        footer: DialogButtonBox {
+            id: updateBranchButtons
+            standardButtons: DialogButtonBox.Yes | DialogButtonBox.No | DialogButtonBox.Cancel
+            onClicked: button => tas.branches.run("answerLoad", [button === updateBranchButtons.standardButton(DialogButtonBox.Yes) ? "yes"
+                : button === updateBranchButtons.standardButton(DialogButtonBox.No) ? "no" : "cancel"])
+        }
+        // Escape: nothing loaded
+        onClosed: if (tas.branches.loadQuestion !== "") tas.branches.run("answerLoad", ["cancel"])
+    }
     // Chimera's branch menu, on the branch picked
     Menu {
         id: branchMenu
         readonly property bool picked: tas.branches.selected >= 0 && tas.branches.selected < tas.branches.count
         Action { text: qsTr("Add"); enabled: tas.branches.createEnabled; onTriggered: tas.branches.run("create", [""]) }
         Action { text: qsTr("Add with Text"); enabled: tas.branches.createEnabled; onTriggered: branchTextDialog.openFor("add") }
-        Action { text: qsTr("Load"); enabled: branchMenu.picked; onTriggered: tas.branches.run("load", [tas.branches.selected]) }
+        Action { text: qsTr("Load"); enabled: branchMenu.picked; onTriggered: tas.branches.run("askToLoad", [tas.branches.selected]) }
         Action { text: qsTr("&Update"); enabled: branchMenu.picked; onTriggered: tas.branches.run("saveSlot", [tas.branches.selected]) }
         Action { text: qsTr("Update with Text"); enabled: branchMenu.picked; onTriggered: branchTextDialog.openFor("update") }
         Action { text: qsTr("Edit Text"); enabled: branchMenu.picked; onTriggered: branchTextDialog.openFor("rename") }
