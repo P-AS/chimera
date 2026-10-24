@@ -10888,3 +10888,26 @@ and a frame not run as it stands keep what they had: the marker colours, and
 the wash over the row's colour. The theme preview draws its sample piano roll
 the same way. Tests: `TAStudioFrameColumnColourTests` (the first fails with
 the wash kept everywhere).
+
+## Loading a branch offers to update the current one first (user-decided, 2026-10-24)
+
+A branch changes only on Add or Update; Save Project saves the movie and the
+branches as they are, and loading another branch replaces the movie. A person
+who drew inputs after loading a branch, saved the project and loaded another
+branch found the inputs in neither (issue 360), having expected Save Project
+to update the branch they were on. The owner chose to leave Save Project as
+it is and ask at the load instead: when another branch is loaded by a person
+(the Load button, the menus, a double click, a hotkey) and the movie holds
+inputs or markers of the person's that the current branch does not, TAStudio
+asks whether to update the current branch first: Yes updates it and loads, No
+loads without updating (Undo Branch Load still brings the changes back),
+Cancel loads nothing. Loading the current branch again does not ask: that is
+how a person goes back to it. A Lua script's or an MCP agent's load does not
+ask either. Whether the movie differs is the movie's question
+(`TasMovie.DiffersFrom`: the input log through the engine's
+`ce_movie_log_divergent_point`, then the person's markers; where the machine
+is does not count). When to ask is `BookmarksBranchesBox.AsksBeforeLoading`.
+Tests: `TasMovieDiffersFromBranchTests` (two fail with the answer always "no
+change") and `BranchLoadAsksTests` (fails when loading the current branch
+again asks too). The question itself, and the update it makes, are not
+driven by a test.

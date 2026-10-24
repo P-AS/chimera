@@ -400,7 +400,7 @@ namespace Chimera.Client.GUI
 		private bool LoadBranchSlot(int slot)
 		{
 			if (!Tools.IsLoaded<TAStudio>()) return false;
-			Tools.TAStudio.LoadBranchByIndex(slot);
+			Tools.TAStudio.LoadBranchByIndex(slot, ask: true);
 			return true;
 		}
 	}

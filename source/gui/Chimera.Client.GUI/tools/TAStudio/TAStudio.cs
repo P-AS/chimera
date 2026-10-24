@@ -835,7 +835,8 @@ namespace Chimera.Client.GUI
 			SetUpToolStripColumns();
 		}
 
-		public void LoadBranchByIndex(int index) => BookMarkControl.LoadBranchExternal(index);
+		/// <param name="ask">true for a person's own load (a hotkey), which offers to update the current branch first</param>
+		public void LoadBranchByIndex(int index, bool ask = false) => BookMarkControl.LoadBranchExternal(index, ask);
 
 		public void ClearFramesExternal()
 			=> ClearFramesMenuItem_Click(null, EventArgs.Empty);
