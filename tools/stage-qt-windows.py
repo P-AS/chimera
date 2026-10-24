@@ -24,7 +24,7 @@ for exe in ("chimera-qt.exe", "test_vm.exe"):
 # a movie import asks the core in a process of its own: chimera-run
 shutil.copy2(f"{build}/chimera-run.exe", out)
 for d in ("libchimera.dll", "libminiboxhost.dll", "libzstd.dll", "lua54.dll", "SDL2.dll", "OpenAL32.dll",
-          "libchimerahash.dll", "chimera_crash.dll"):
+          "libchimerahash.dll", "chimera_crash.dll", "e_sqlite3.dll"):
     shutil.copy2(f"{dlls}/{d}", out)
 os.makedirs(f"{out}/platforms")
 shutil.copy2(f"{qt}/plugins/platforms/qwindows.dll", f"{out}/platforms")
