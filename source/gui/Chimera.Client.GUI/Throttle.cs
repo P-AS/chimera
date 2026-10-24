@@ -10,10 +10,6 @@ namespace Chimera.Client.GUI
 {
 	public class Throttle
 	{
-		private int lastSkipRate;
-		private int framesToSkip;
-		public bool skipNextFrame;
-
 		//if the emulator is paused then we don't need to behave as if unthrottled
 		public bool signal_paused;
 		public bool signal_frameAdvance;
@@ -21,88 +17,48 @@ namespace Chimera.Client.GUI
 		public bool signal_continuousFrameAdvancing;
 		public bool signal_overrideSecondaryThrottle;
 
-		public void Step(Config config, Sound sound, bool allowSleep, int forceFrameSkip)
-		{
-			//TODO - figure out what allowSleep is supposed to be used for
-			//TODO - figure out what forceFrameSkip is supposed to be used for
+		/// <summary>
+		/// Whether the frame about to run is drawn. Every frame is, except while
+		/// running unthrottled (Turbo held, or Toggle Throttle), which draws one
+		/// in Config.UnthrottledDrawOneIn. The frame skip setting this throttle
+		/// once had is gone (user-decided, 2026-10-24): the machines Chimera runs
+		/// cannot draw less to work less.
+		/// </summary>
+		public bool DrawNextFrame { get; private set; } = true;
 
-			//if we're paused, none of this should happen. just clean out our state and don't skip
-			//notably, if we're frame-advancing, we should be paused.
+		/// <summary>Frames run unthrottled since the last one drawn.</summary>
+		private int _sinceDrawn;
+
+		/// <summary>Says whether the next frame is drawn, and waits until it is due.</summary>
+		public void Step(Config config, Sound sound, bool allowSleep)
+		{
+			//if we're paused, none of this should happen. notably, if we're
+			//frame-advancing, we should be paused.
 			if (signal_paused && !signal_continuousFrameAdvancing)
 			{
-				//Console.WriteLine($"THE THING: {signal_paused} {signal_continuousFrameAdvancing}");
-				skipNextFrame = false;
-				framesToSkip = 0;
-
+				DrawNextFrame = true;
+				_sinceDrawn = 0;
 				//keep from burning CPU
 				Thread.Sleep(15);
 				return;
 			}
 
-#if false
-			//here's some ideas for how to begin cleaning this up
-			////at this point, its assumed that we're running.
-			////this could be a free run, an unthrottled run, or a 'continuous frame advance' (aka continuous) run
-			////free run: affected by frameskips and throttles
-			////unthrottled run: affected by frameskips only
-			////continuous run: affected by frameskips and throttles
-			////so continuous and free are the same?
-
-			bool continuous_run = signal_continuousFrameAdvancing;
-			bool unthrottled_run = signal_unthrottle;
-			bool free_run = !continuous_run && !unthrottled_run;
-
-			bool do_throttle, do_skip;
-			if (continuous_run || free_run) do_throttle = do_skip = true;
-			else if (unthrottled_run) do_skip = true;
-			else throw new InvalidOperationException();
-#endif
-
-			int skipRate = (forceFrameSkip < 0) ? config.FrameSkip : forceFrameSkip;
-			if (signal_unthrottle) skipRate = 3;
-
-			if (lastSkipRate != skipRate)
+			var oneIn = Math.Max(1, Math.Min(10, config.UnthrottledDrawOneIn));
+			if (signal_unthrottle && oneIn > 1)
 			{
-				lastSkipRate = skipRate;
-				framesToSkip = 0; // otherwise switches to lower frameskip rates will lag behind
-			}
-
-			//don't ever skip frames when continuous frame advancing. it's meant for precision work.
-			if (signal_continuousFrameAdvancing && !signal_unthrottle)
-			{
-				skipNextFrame = false;
+				DrawNextFrame = _sinceDrawn == 0;
+				_sinceDrawn = (_sinceDrawn + 1) % oneIn;
 			}
 			else
 			{
-				skipNextFrame = framesToSkip > 0;
+				DrawNextFrame = true;
+				_sinceDrawn = 0;
 			}
 
 			if ((signal_paused || config.ClockThrottle || signal_overrideSecondaryThrottle) && allowSleep)
 			{
 				SpeedThrottle(sound, signal_paused);
 			}
-
-			// The auto frame skip's controller only at a frame skip that can skip
-			// (issue 346). At Never skip it can skip nothing, and its one effect was
-			// the credit it gives the timetable after a slow frame (ltime, below):
-			// on top of the timetable's own catch-up that ran the core faster than
-			// its rate - 24.4 frames a second for a 24 one.
-			if (signal_unthrottle || !config.AutoMinimizeSkipping || skipRate == 0)
-			{
-				if (framesToSkip < 1)
-					framesToSkip += skipRate;
-			}
-			else
-			{
-				if (!signal_continuousFrameAdvancing)
-				{
-					AutoFrameSkip_NextFrame();
-					if (framesToSkip < 1)
-						framesToSkip += AutoFrameSkip_GetSkipAmount(0, skipRate);
-				}
-			}
-
-			framesToSkip--;
 		}
 
 		private static ulong GetCurTime()
@@ -140,10 +96,7 @@ namespace Chimera.Client.GUI
 
 		public void SetCoreFps(double desired_fps)
 		{
-			// Called on every pass of the loop. Only a rate that changed resets
-			// the speed (and with it the frame skip's measurement): resetting it
-			// every pass started each frame's timer just before the frame, so
-			// auto frame skip always measured nothing and never skipped.
+			// Called on every pass of the loop; only a rate that changed resets the speed.
 			var fps = (ulong)(65536 * desired_fps);
 			if (fps == core_desiredfps) return;
 			core_desiredfps = fps;
@@ -161,137 +114,15 @@ namespace Chimera.Client.GUI
 			float fraction = percent / 100.0f;
 			desiredfps = (ulong)(core_desiredfps * fraction);
 			//Console.WriteLine($"throttle set desiredfps {desiredfps}");
-			desiredspf = 65536.0f / desiredfps;
-			AutoFrameSkip_IgnorePreviousDelay();
 		}
 
 		private ulong core_desiredfps;
 		private ulong desiredfps;
-		private float desiredspf;
 
 		private ulong ltime;
-		private ulong beginticks, endticks, preThrottleEndticks;
-		private float fSkipFrames;
-		private float fSkipFramesError;
-		private int lastSkip;
-		private float lastError;
-		private float integral;
-
-		public void AutoFrameSkip_IgnorePreviousDelay()
-		{
-			beginticks = GetCurTime();
-
-			// this seems to be a stable way of allowing the skip frames to
-			// quickly adjust to a faster environment (e.g. after a loadstate)
-			// without causing oscillation or a sudden change in skip rate
-			fSkipFrames *= 0.5f;
-		}
-
-		private void AutoFrameSkip_BeforeThrottle()
-		{
-			preThrottleEndticks = GetCurTime();
-		}
-
-		private void AutoFrameSkip_NextFrame()
-		{
-			endticks = GetCurTime();
-
-			// calculate time since last frame
-			ulong diffticks = Math.Max(endticks - beginticks, 1);
-			float diff = (float)diffticks / afsfreq;
-
-			// calculate time since last frame not including throttle sleep time
-			if (preThrottleEndticks == 0) // if we didn't throttle, use the non-throttle time
-				preThrottleEndticks = endticks;
-			ulong diffticksUnthrottled = preThrottleEndticks - beginticks;
-			float diffUnthrottled = (float)diffticksUnthrottled / afsfreq;
-
-
-			float error = diffUnthrottled - desiredspf;
-
-
-			// reset way-out-of-range values
-			if (diff > 1.0f)
-				diff = 1.0f;
-			if (!(-1.0f).RangeTo(1.0f).Contains(error))
-				error = 0.0f;
-			if (diffUnthrottled > 1.0f)
-				diffUnthrottled = desiredspf;
-
-			float derivative = (error - lastError) / diff;
-			lastError = error;
-
-			integral += error * diff;
-			integral *= 0.99f; // since our integral isn't reliable, reduce it to 0 over time.
-
-			// "PID controller" constants
-			// this stuff is probably being done all wrong, but these seem to work ok
-			const float Kp = 40.0f;
-			const float Ki = 0.55f;
-			const float Kd = 0.04f;
-
-			float errorTerm = error * Kp;
-			float derivativeTerm = derivative * Kd;
-			float integralTerm = integral * Ki;
-			float adjustment = errorTerm + derivativeTerm + integralTerm;
-
-			// apply the output adjustment
-			fSkipFrames += adjustment;
-
-			// if we're running too slowly, prevent the throttle from kicking in
-			if (adjustment > 0 && fSkipFrames > 0)
-				ltime -= tfreq / desiredfps;
-
-			preThrottleEndticks = 0;
-			beginticks = GetCurTime();
-		}
-
-		private int AutoFrameSkip_GetSkipAmount(int min, int max)
-		{
-			int rv = (int)fSkipFrames;
-			fSkipFramesError += fSkipFrames - rv;
-
-			// resolve accumulated fractional error
-			// where doing so doesn't push us out of range
-			while (fSkipFramesError >= 1.0f && rv <= lastSkip && rv < max)
-			{
-				fSkipFramesError -= 1.0f;
-				rv++;
-			}
-			while (fSkipFramesError <= -1.0f && rv >= lastSkip && rv > min)
-			{
-				fSkipFramesError += 1.0f;
-				rv--;
-			}
-
-			// restrict skip amount to requested range
-			if (rv < min)
-				rv = min;
-			if (rv > max)
-				rv = max;
-
-			// limit maximum error accumulation (it's mainly only for fractional components)
-			if (fSkipFramesError >= 4.0f)
-				fSkipFramesError = 4.0f;
-			if (fSkipFramesError <= -4.0f)
-				fSkipFramesError = -4.0f;
-
-			// limit ongoing skipframes to requested range + 1 on each side
-			if (fSkipFrames < min - 1)
-				fSkipFrames = (float)min - 1;
-			if (fSkipFrames > max + 1)
-				fSkipFrames = (float)max + 1;
-
-			//	printf("%d", rv);
-
-			lastSkip = rv;
-			return rv;
-		}
 
 		private void SpeedThrottle(Sound sound, bool paused)
 		{
-			AutoFrameSkip_BeforeThrottle();
-
 			ulong timePerFrame = tfreq / desiredfps;
 
 			while (true)

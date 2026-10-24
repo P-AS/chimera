@@ -11024,3 +11024,26 @@ background" alone did nothing unless "Pause when menu activated" was ticked
 too. Tests: GuiOptionsTests (the three are not in the window; no checkbox on a
 tab lands on another control; the window in every theme), each failed once
 with a checkbox put back.
+
+## Frame skip is gone; Turbo's drawing rate is a setting (user-decided, 2026-10-24)
+
+Chimera's Frame Skip (Config > Speed/Skip: Skip 0, Skip 1..9 and
+Auto-minimize skipping, from BizHawk) is gone, with Lua's client.frameskip and
+emu.minimizeframeskip. The owner's words: "a legacy configuration that used to
+make sense for old NES games. The systems we handle no longer can separate
+their rendering from their work." The throttle's automatic skip controller went
+with it; it was also what moved the throttle's timetable after a slow frame
+(issue 346), and nothing moves it now.
+
+One part stays, as a setting. Running unthrottled - Turbo held, or Toggle
+Throttle - drew one frame in three, by the frame skip's own counter. A frame not
+drawn still saves copying the picture back from the graphics card on GPU cores,
+so the owner chose to keep it and make it configurable, one setting for both:
+Config > Speed/Skip > Turbo/Unthrottled Draws, Every Frame or 1 in 2 to 1 in 10,
+1 in 3 at first (Config.UnthrottledDrawOneIn). Fast Forward was never part of
+this: it runs at the alternate speed on the clock and draws every frame. (The
+first question put to the owner said otherwise, and was asked again.)
+
+Tests: ThrottleTests (unthrottled draws one frame in the number chosen, throttled
+running draws every frame, a slow frame leaves the timetable alone); the first
+failed with the unthrottled rule taken out.

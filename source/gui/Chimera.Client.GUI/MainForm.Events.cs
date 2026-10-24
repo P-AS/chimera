@@ -345,25 +345,22 @@ namespace Chimera.Client.GUI
 			ControllersMenuItem.Enabled = Emulator.ControllerDefinition.Any();
 		}
 
-		private void FrameSkipMenuItem_DropDownOpened(object sender, EventArgs e)
+		private void SpeedSkipSubMenu_DropDownOpened(object sender, EventArgs e)
 		{
-			MinimizeSkippingMenuItem.Checked = Config.AutoMinimizeSkipping;
 			ClockThrottleMenuItem.Checked = Config.ClockThrottle;
 			VsyncThrottleMenuItem.Checked = Config.VSyncThrottle;
-			NeverSkipMenuItem.Checked = Config.FrameSkip == 0;
-			Frameskip1MenuItem.Checked = Config.FrameSkip == 1;
-			Frameskip2MenuItem.Checked = Config.FrameSkip == 2;
-			Frameskip3MenuItem.Checked = Config.FrameSkip == 3;
-			Frameskip4MenuItem.Checked = Config.FrameSkip == 4;
-			Frameskip5MenuItem.Checked = Config.FrameSkip == 5;
-			Frameskip6MenuItem.Checked = Config.FrameSkip == 6;
-			Frameskip7MenuItem.Checked = Config.FrameSkip == 7;
-			Frameskip8MenuItem.Checked = Config.FrameSkip == 8;
-			Frameskip9MenuItem.Checked = Config.FrameSkip == 9;
-			// greyed out at Never skip, where it has no effect (the throttle leaves its
-			// controller off there, issue 346), and showing the real setting: it used
-			// to show a tick whatever the setting was (issue 347)
-			MinimizeSkippingMenuItem.Enabled = !NeverSkipMenuItem.Checked;
+			// one in 1 (every frame) to one in 10, made once
+			if (UnthrottledDrawSubMenu.DropDownItems.Count is 0)
+			{
+				for (var n = 1; n <= 10; n++)
+				{
+					var oneIn = n;
+					ToolStripMenuItemEx item = new() { Text = n is 1 ? "Every Frame" : $"1 in {n}", Tag = n };
+					item.Click += (_, _) => Config.UnthrottledDrawOneIn = oneIn;
+					UnthrottledDrawSubMenu.DropDownItems.Add(item);
+				}
+			}
+			foreach (ToolStripMenuItem item in UnthrottledDrawSubMenu.DropDownItems) item.Checked = item.Tag is int n && n == Config.UnthrottledDrawOneIn;
 
 			AudioThrottleMenuItem.Enabled = Config.SoundEnabled;
 			AudioThrottleMenuItem.Checked = Config.SoundThrottle;
@@ -875,19 +872,6 @@ namespace Chimera.Client.GUI
 			ThrottleMessage();
 		}
 
-		private void MinimizeSkippingMenuItem_Click(object sender, EventArgs e)
-			=> Config.AutoMinimizeSkipping = !Config.AutoMinimizeSkipping;
-
-		private void NeverSkipMenuItem_Click(object sender, EventArgs e) { Config.FrameSkip = 0; FrameSkipMessage(); }
-		private void Frameskip1MenuItem_Click(object sender, EventArgs e) { Config.FrameSkip = 1; FrameSkipMessage(); }
-		private void Frameskip2MenuItem_Click(object sender, EventArgs e) { Config.FrameSkip = 2; FrameSkipMessage(); }
-		private void Frameskip3MenuItem_Click(object sender, EventArgs e) { Config.FrameSkip = 3; FrameSkipMessage(); }
-		private void Frameskip4MenuItem_Click(object sender, EventArgs e) { Config.FrameSkip = 4; FrameSkipMessage(); }
-		private void Frameskip5MenuItem_Click(object sender, EventArgs e) { Config.FrameSkip = 5; FrameSkipMessage(); }
-		private void Frameskip6MenuItem_Click(object sender, EventArgs e) { Config.FrameSkip = 6; FrameSkipMessage(); }
-		private void Frameskip7MenuItem_Click(object sender, EventArgs e) { Config.FrameSkip = 7; FrameSkipMessage(); }
-		private void Frameskip8MenuItem_Click(object sender, EventArgs e) { Config.FrameSkip = 8; FrameSkipMessage(); }
-		private void Frameskip9MenuItem_Click(object sender, EventArgs e) { Config.FrameSkip = 9; FrameSkipMessage(); }
 
 		private void Speed50MenuItem_Click(object sender, EventArgs e) => ClickSpeedItem(50);
 		private void Speed75MenuItem_Click(object sender, EventArgs e) => ClickSpeedItem(75);

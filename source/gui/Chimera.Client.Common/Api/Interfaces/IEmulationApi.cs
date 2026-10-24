@@ -30,7 +30,6 @@ namespace Chimera.Client.Common
 		int LagCount();
 		void SetLagCount(int count);
 		void LimitFramerate(bool enabled);
-		void MinimizeFrameskip(bool enabled);
 		string GetDisplayType();
 		string GetBoardName();
 

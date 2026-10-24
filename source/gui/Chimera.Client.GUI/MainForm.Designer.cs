@@ -95,18 +95,7 @@ namespace Chimera.Client.GUI
 			this.VsyncEnabledMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.toolStripMenuItem3 = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
 			this.miUnthrottled = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.MinimizeSkippingMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.NeverSkipMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.toolStripMenuItem17 = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.Frameskip1MenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.Frameskip2MenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.Frameskip3MenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.Frameskip4MenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.Frameskip5MenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.Frameskip6MenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.Frameskip7MenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.Frameskip8MenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
-			this.Frameskip9MenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
+			this.UnthrottledDrawSubMenu = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.toolStripMenuItem5 = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
 			this.Speed50MenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.Speed75MenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
@@ -657,9 +646,7 @@ namespace Chimera.Client.GUI
             this.VsyncEnabledMenuItem,
             this.toolStripMenuItem3,
             this.miUnthrottled,
-            this.MinimizeSkippingMenuItem,
-            this.NeverSkipMenuItem,
-            this.toolStripMenuItem17,
+            this.UnthrottledDrawSubMenu,
             this.toolStripMenuItem5,
             this.Speed50MenuItem,
             this.Speed75MenuItem,
@@ -668,7 +655,7 @@ namespace Chimera.Client.GUI
             this.Speed200MenuItem,
             this.Speed400MenuItem});
 			this.SpeedSkipSubMenu.Text = "Speed/Skip";
-			this.SpeedSkipSubMenu.DropDownOpened += new System.EventHandler(this.FrameSkipMenuItem_DropDownOpened);
+			this.SpeedSkipSubMenu.DropDownOpened += new System.EventHandler(this.SpeedSkipSubMenu_DropDownOpened);
 			// 
 			// ClockThrottleMenuItem
 			// 
@@ -695,74 +682,9 @@ namespace Chimera.Client.GUI
 			this.miUnthrottled.Text = "Unthrottled";
 			this.miUnthrottled.Click += new System.EventHandler(this.UnthrottledMenuItem_Click);
 			// 
-			// MinimizeSkippingMenuItem
+			// UnthrottledDrawSubMenu
 			// 
-			this.MinimizeSkippingMenuItem.Text = "Auto-minimize skipping";
-			this.MinimizeSkippingMenuItem.Click += new System.EventHandler(this.MinimizeSkippingMenuItem_Click);
-			// 
-			// NeverSkipMenuItem
-			// 
-			this.NeverSkipMenuItem.Text = "Skip 0 (never)";
-			this.NeverSkipMenuItem.Click += new System.EventHandler(this.NeverSkipMenuItem_Click);
-			// 
-			// toolStripMenuItem17
-			// 
-			this.toolStripMenuItem17.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.Frameskip1MenuItem,
-            this.Frameskip2MenuItem,
-            this.Frameskip3MenuItem,
-            this.Frameskip4MenuItem,
-            this.Frameskip5MenuItem,
-            this.Frameskip6MenuItem,
-            this.Frameskip7MenuItem,
-            this.Frameskip8MenuItem,
-            this.Frameskip9MenuItem});
-			this.toolStripMenuItem17.Text = "Skip 1..9";
-			// 
-			// Frameskip1MenuItem
-			// 
-			this.Frameskip1MenuItem.Text = "1";
-			this.Frameskip1MenuItem.Click += new System.EventHandler(this.Frameskip1MenuItem_Click);
-			// 
-			// Frameskip2MenuItem
-			// 
-			this.Frameskip2MenuItem.Text = "2";
-			this.Frameskip2MenuItem.Click += new System.EventHandler(this.Frameskip2MenuItem_Click);
-			// 
-			// Frameskip3MenuItem
-			// 
-			this.Frameskip3MenuItem.Text = "3";
-			this.Frameskip3MenuItem.Click += new System.EventHandler(this.Frameskip3MenuItem_Click);
-			// 
-			// Frameskip4MenuItem
-			// 
-			this.Frameskip4MenuItem.Text = "4";
-			this.Frameskip4MenuItem.Click += new System.EventHandler(this.Frameskip4MenuItem_Click);
-			// 
-			// Frameskip5MenuItem
-			// 
-			this.Frameskip5MenuItem.Text = "5";
-			this.Frameskip5MenuItem.Click += new System.EventHandler(this.Frameskip5MenuItem_Click);
-			// 
-			// Frameskip6MenuItem
-			// 
-			this.Frameskip6MenuItem.Text = "6";
-			this.Frameskip6MenuItem.Click += new System.EventHandler(this.Frameskip6MenuItem_Click);
-			// 
-			// Frameskip7MenuItem
-			// 
-			this.Frameskip7MenuItem.Text = "7";
-			this.Frameskip7MenuItem.Click += new System.EventHandler(this.Frameskip7MenuItem_Click);
-			// 
-			// Frameskip8MenuItem
-			// 
-			this.Frameskip8MenuItem.Text = "8";
-			this.Frameskip8MenuItem.Click += new System.EventHandler(this.Frameskip8MenuItem_Click);
-			// 
-			// Frameskip9MenuItem
-			// 
-			this.Frameskip9MenuItem.Text = "9";
-			this.Frameskip9MenuItem.Click += new System.EventHandler(this.Frameskip9MenuItem_Click);
+			this.UnthrottledDrawSubMenu.Text = "Turbo/Unthrottled Draws";
 			// 
 			// Speed50MenuItem
 			// 
@@ -1277,8 +1199,6 @@ namespace Chimera.Client.GUI
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx SpeedSkipSubMenu;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx VsyncThrottleMenuItem;
 		private Chimera.WinForms.Controls.ToolStripSeparatorEx toolStripMenuItem3;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx MinimizeSkippingMenuItem;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx NeverSkipMenuItem;
 		private Chimera.WinForms.Controls.ToolStripSeparatorEx toolStripMenuItem5;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx Speed50MenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx Speed75MenuItem;
@@ -1377,16 +1297,7 @@ namespace Chimera.Client.GUI
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx MacroToolMenuItem;
 		private System.Windows.Forms.Timer timerMouseIdle;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx miUnthrottled;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx toolStripMenuItem17;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx Frameskip1MenuItem;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx Frameskip2MenuItem;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx Frameskip3MenuItem;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx Frameskip4MenuItem;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx Frameskip5MenuItem;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx Frameskip6MenuItem;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx Frameskip7MenuItem;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx Frameskip9MenuItem;
-		private Chimera.WinForms.Controls.ToolStripMenuItemEx Frameskip8MenuItem;
+		private Chimera.WinForms.Controls.ToolStripMenuItemEx UnthrottledDrawSubMenu;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx Speed400MenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx DisplayMessagesMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx SaveConfigAsMenuItem;

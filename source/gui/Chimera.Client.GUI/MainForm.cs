@@ -1593,11 +1593,6 @@ namespace Chimera.Client.GUI
 			AddOnScreenMessage(msg);
 		}
 
-		public void FrameSkipMessage()
-		{
-			AddOnScreenMessage($"Frameskipping set to {Config.FrameSkip}");
-		}
-
 		public void UpdateCheatStatus()
 		{
 			if (CheatList.AnyActive)
@@ -2681,7 +2676,7 @@ namespace Chimera.Client.GUI
 			_throttle.signal_frameAdvance = _runloopFrameAdvance;
 			_throttle.signal_continuousFrameAdvancing = _runloopFrameProgress;
 
-			_throttle.Step(Config, Sound, allowSleep: true, forceFrameSkip: -1);
+			_throttle.Step(Config, Sound, allowSleep: true);
 		}
 
 		public void FrameAdvance(bool discardApiSurfaces)
@@ -2882,7 +2877,7 @@ namespace Chimera.Client.GUI
 				// does not draw even those. A held Turbo key is a different thing -
 				// the person is watching to see where they are, and the throttle's
 				// one-in-four is what they are watching.
-				bool render = (!_throttle.skipNextFrame && !(IsTurboSeeking && !atTurboSeekEnd) && !(IsSeeking && _seekQuiet))
+				bool render = (_throttle.DrawNextFrame && !(IsTurboSeeking && !atTurboSeekEnd) && !(IsSeeking && _seekQuiet))
 					|| _currAviWriter?.UsesVideo is true
 					|| atSeekEnd;
 				long advanceStarted = LoopTrace.Enabled ? Stopwatch.GetTimestamp() : 0;
