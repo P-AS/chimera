@@ -352,6 +352,23 @@ namespace Chimera.Client.GUI
 			MaybePasteFromClipboard(overwriteSelection: true);
 		}
 
+		/// <summary>
+		/// A pasted line without the frame number Copy puts in front of it when
+		/// "Include frame numbers when copying input" is on ("00002 |..U.....|").
+		/// Read with it, the digits were taken for buttons held.
+		/// </summary>
+		public static string WithoutFrameNumber(string line)
+		{
+			var i = 0;
+			while (i < line.Length && char.IsWhiteSpace(line[i])) i++;
+			var digits = i;
+			while (i < line.Length && char.IsDigit(line[i])) i++;
+			if (i == digits) return line;
+			var afterDigits = i;
+			while (i < line.Length && line[i] == ' ') i++;
+			return i > afterDigits && i < line.Length && line[i] == '|' ? line.Substring(i) : line;
+		}
+
 		private void PasteInsertMenuItem_Click(object sender, EventArgs e)
 			=> MaybePasteFromClipboard(overwriteSelection: false);
 
@@ -371,7 +388,7 @@ namespace Chimera.Client.GUI
 			if (lines[lines.Length - 1].Length is 0) linesToPaste--;
 			for (int i = 0; i < linesToPaste; i++)
 			{
-				var line = ControllerFromMnemonicStr(lines[i]);
+				var line = ControllerFromMnemonicStr(WithoutFrameNumber(lines[i]));
 				if (line == null)
 				{
 					return;
