@@ -1513,6 +1513,10 @@ extern "C" void ce_project_machine_id(ce_project *p, const char *running_core_sh
 	std::string id = "core=" + upperHex(running_core_sha1 != nullptr && *running_core_sha1 != '\0' ? running_core_sha1 : ce_project_core_sha1(p)) + "\n";
 	id += "settings=" + canonicalJsonText(ce_project_settings_text(p, nullptr)) + "\n";
 	id += "firmware=" + canonicalJsonText(ce_project_firmware_text(p, nullptr)) + "\n";
+	/* another start for the machine's clock is another machine (issue 366); the
+	 * sandbox's own adds nothing, so a cache made before the choice still matches */
+	if (const int64_t clock = ce_project_clock_start(p); clock >= 0 && clock != CE_CLOCK_START_DEFAULT)
+		id += "clock=" + std::to_string(clock) + "\n";
 	for (int32_t i = 0; i < ce_project_file_count(p); i++)
 	{
 		const char *slot = ce_project_file_slot(p, i);

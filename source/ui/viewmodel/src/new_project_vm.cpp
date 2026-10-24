@@ -95,6 +95,8 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	expose("machines", "the chosen package's machines, a line each (\"\" for a package of one)", machines);
 	expose("machine", "the machine chosen, by its place in machines", machine);
 	expose("title", "the project's title (the first game file's name when empty)", title, true);
+	clockStart.set(clockText(CE_CLOCK_START_DEFAULT));
+	expose("clockStart", "when the machine's clock starts, UTC, written as 2017-05-27 12:44:28 (from 1970 to 2200)", clockStart, true);
 	expose("problems", "what keeps the project from being made, a line each; \"\" when ready", problems);
 	expose("ready", "the project can be made", ready);
 	expose("status", "what New Project last had to say", status);
@@ -739,6 +741,12 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				error = "not yet: " + problems.get();
 				return {};
 			}
+			const std::optional<int64_t> clock = parseClockText(clockStart.get());
+			if (!clock)
+			{
+				error = "the machine's clock start is not a time written as 2017-05-27 12:44:28, between 1970 and 2200 (UTC)";
+				return {};
+			}
 			/* everything the project is, taken now: making it runs on the
 			 * machine's thread, since it reads and hashes every file */
 			std::string platform;
@@ -786,6 +794,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				if (why.empty() && ce_project_set_settings_text(p, settings.c_str(), &err) != 0) why = err != nullptr ? err : "settings";
 				if (why.empty() && firmware != "[]" && ce_project_set_firmware_text(p, firmware.c_str(), &err) != 0) why = err != nullptr ? err : "firmware";
 				ce_project_set_title(p, name.c_str());
+				ce_project_set_clock_start(p, *clock);
 				/* an imported movie's inputs are the project's */
 				if (!input.empty()) ce_project_set_log_text(p, input.data(), input.size());
 				if (why.empty() && !slotsText.empty() && ce_project_validate(p, slotsText.data(), slotsText.size(), &err) != 0)
@@ -841,6 +850,43 @@ void NewProjectViewModel::listCores()
 	}
 	coreLines.set(lines);
 	coreLine.set(at);
+}
+
+std::string NewProjectViewModel::clockText(int64_t unixSeconds)
+{
+	/* the civil date of a day count (Howard Hinnant's days_from_civil, backwards) */
+	const int64_t days = unixSeconds / 86400, secs = unixSeconds % 86400;
+	const int64_t z = days + 719468, era = z / 146097, doe = z - era * 146097;
+	const int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+	const int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100), mp = (5 * doy + 2) / 153;
+	const int64_t d = doy - (153 * mp + 2) / 5 + 1, m = mp < 10 ? mp + 3 : mp - 9, y = yoe + era * 400 + (m <= 2);
+	char out[32];
+	std::snprintf(out, sizeof out, "%04lld-%02lld-%02lld %02lld:%02lld:%02lld", static_cast<long long>(y), static_cast<long long>(m),
+		static_cast<long long>(d), static_cast<long long>(secs / 3600), static_cast<long long>(secs / 60 % 60), static_cast<long long>(secs % 60));
+	return out;
+}
+
+std::optional<int64_t> NewProjectViewModel::parseClockText(const std::string &text)
+{
+	const size_t a = text.find_first_not_of(" \t"), b = text.find_last_not_of(" \t");
+	if (a == std::string::npos) return std::nullopt;
+	const std::string t = text.substr(a, b - a + 1);
+	/* exactly yyyy-MM-dd HH:mm:ss */
+	if (t.size() != 19 || t[4] != '-' || t[7] != '-' || t[10] != ' ' || t[13] != ':' || t[16] != ':') return std::nullopt;
+	for (size_t i : {0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18})
+		if (t[i] < '0' || t[i] > '9') return std::nullopt;
+	auto num = [&t](size_t at, size_t n) { return static_cast<int64_t>(std::stoll(t.substr(at, n))); };
+	const int64_t y = num(0, 4), m = num(5, 2), d = num(8, 2), h = num(11, 2), mi = num(14, 2), s = num(17, 2);
+	const bool leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+	static const int kDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+	if (m < 1 || m > 12 || d < 1 || d > kDays[m - 1] + (m == 2 && leap) || h > 23 || mi > 59 || s > 59) return std::nullopt;
+	/* days_from_civil */
+	const int64_t yy = y - (m <= 2), era = yy / 400, yoe = yy - era * 400;
+	const int64_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1, doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+	const int64_t seconds = (era * 146097 + doe - 719468) * 86400 + h * 3600 + mi * 60 + s;
+	/* from 1970 to the first second of 2200, as the project keeps it */
+	if (seconds < 0 || seconds > 7258118400) return std::nullopt;
+	return seconds;
 }
 
 bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error, const std::string &preferred)

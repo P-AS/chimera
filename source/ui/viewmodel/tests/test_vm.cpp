@@ -6474,6 +6474,40 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(session.projectTitle.get() == "down the corridor" && session.coreName.get() == "Synth");
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* when the machine's clock starts (issue 366): the sandbox's own at first, written as Chimera's
+	 * row writes it; a time that is not one refused at Create; another reaching the machine */
+	CHECK(wizard.clockStart.get() == "2017-05-27 12:44:28" && NewProjectViewModel::parseClockText("2017-05-27 12:44:28") == 1495889068);
+	CHECK(NewProjectViewModel::parseClockText(" 2030-01-02 03:04:05 ") == 1893553445 && NewProjectViewModel::clockText(1893553445) == "2030-01-02 03:04:05");
+	CHECK(NewProjectViewModel::parseClockText("2200-01-01 00:00:00") == 7258118400 && !NewProjectViewModel::parseClockText("2200-01-01 00:00:01"));
+	CHECK(!NewProjectViewModel::parseClockText("2023-02-29 00:00:00") && NewProjectViewModel::parseClockText("2024-02-29 23:59:59") == 1709251199);
+	CHECK(!NewProjectViewModel::parseClockText("1969-12-31 23:59:59") && !NewProjectViewModel::parseClockText("2030-01-02T03:04:05"));
+	{
+		const std::string bytes = readFile(game);
+		std::ofstream(dir / "clock.testrom", std::ios::binary) << bytes << "CLOCKTEST";
+		CHECK(wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value());
+		CHECK(wizard.run("addFile", {std::string("rom"), (dir / "clock.testrom").string()}, error).has_value());
+		wizard.clockStart.set("tomorrow");
+		const fs::path clocked = dir / "clock.chimeraProject";
+		CHECK(!wizard.run("create", {clocked.string()}, error) &&
+			error == "the machine's clock start is not a time written as 2017-05-27 12:44:28, between 1970 and 2200 (UTC)");
+		wizard.clockStart.set("2030-01-02 03:04:05");
+		CHECK(wizard.run("create", {clocked.string()}, error).has_value());
+		CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == clocked.string(); }, 60));
+		CHECK(std::regex_search(readFile(clocked), std::regex("\"clockStart\"\\s*:\\s*\"2030-01-02T03:04:05Z\"")));
+		session.run("frameAdvance", {}, error);
+		CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
+		const std::vector<uint8_t> ram = session.readDomain("RAM");
+		uint64_t seconds = 0;
+		if (ram.size() >= 4096) std::memcpy(&seconds, ram.data() + 4088, 8);
+		/* the clock has gone on a frame's worth at most from where it started */
+		CHECK(seconds >= 1893553445 && seconds <= 1893553446);
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+		wizard.clockStart.set("2017-05-27 12:44:28");
+		CHECK(wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value());
+		CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value());
+	}
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 
 	/* two boards: each its own kinds of file, settings and firmware */
 	CHECK(wizard.run("chooseCore", {std::string("Synth Slots")}, error).has_value());

@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,15 @@ public:
 	Property<std::string> machines;
 	Property<int64_t> machine{-1};
 	Property<std::string> title;
+	/* when the machine's clock starts, UTC, as Chimera's wizard writes it
+	 * (2017-05-27 12:44:28, the sandbox's own, at first): the same on every
+	 * run, so a movie replays; another gives a game that takes its luck from
+	 * the date other luck (owner, 2026-10-24, issue 366) */
+	Property<std::string> clockStart;
+	/* a second as that row shows it, and the second typed there (none when
+	 * it is not a time written so, from 1970 to 2200) */
+	static std::string clockText(int64_t unixSeconds);
+	static std::optional<int64_t> parseClockText(const std::string &text);
 	/* what keeps the project from being made, a line each; "" when ready */
 	Property<std::string> problems{"Choose a core"};
 	Property<bool> ready{false};

@@ -517,6 +517,10 @@ int main(int argc, char **argv)
 		assert(idOf(b, nullptr) != id);
 		ce_project *d = make("{\"cpuCycles\":3000,\"machinePreset\":\"x\",\"deep\":{\"b\":1,\"a\":2}}", "save.hdd");
 		assert(idOf(d, nullptr) != id);
+		// the clock's start (issue 366): the sandbox's own is no change, another is another machine
+		assert(ce_project_set_clock_start(a, CE_CLOCK_START_DEFAULT) == 0 && idOf(a, nullptr) == id);
+		assert(ce_project_set_clock_start(a, 1893553445) == 0 && idOf(a, nullptr) != id);
+		assert(ce_project_set_clock_start(a, -1) == 0 && idOf(a, nullptr) == id);
 		ce_project_free(a);
 		ce_project_free(b);
 		ce_project_free(c);
