@@ -2605,7 +2605,9 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			return 1;
 		}
 
-		/* the generated cases: one per GL entry point in the master list */
+		/* the generated cases: one per GL entry point in the master list
+		 * (GL_OP_NAME_MARKS is answered above, so its generated case is left out) */
+#define CHIMERA_GL_HOST_NAME_MARKS 1
 #include "gl-bridge-host.inc"
 
 		default:
