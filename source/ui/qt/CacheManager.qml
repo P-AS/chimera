@@ -35,12 +35,11 @@ ApplicationWindow {
     readonly property string tickedPlaces: win.tickedFolders.length === 0 ? "" : (win.vm.run("placesOf", [JSON.stringify(win.tickedFolders)]) || "")
     readonly property var tickedCost: win.tickedPlaces === "" ? null : JSON.parse(win.vm.run("costs", [win.tickedPlaces]) || "null")
     readonly property var widths: [30, 100, 180, 70, 90, 200, 120, 230, 230, 70, 110]
-    // the first row picked, as Chimera's
+    // a row picked at once, as Chimera's: the project open now, else the one used last
     onVisibleChanged: if (visible) {
         win.vm.run("refresh")
         win.ticked = {}
-        const all = JSON.parse(win.vm.run("folders", ["all"]) || "[]")
-        win.picked = all.length > 0 ? all[0] : ""
+        win.picked = win.vm.run("firstPick") || ""
     }
     function setTicks(folders) {
         const now = {}

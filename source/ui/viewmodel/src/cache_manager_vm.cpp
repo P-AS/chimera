@@ -111,6 +111,20 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 				if (!i.open && (which != "orphans" || i.orphan)) list.items.push_back(json::Json::string(i.folder));
 			return json::write(list);
 		});
+	command("firstPick", "the row picked when none is, by its place on disk: the project open now, else the project used most "
+		"recently, else the first row (\"\" for none); Greenzone budgets... works on it, and the first row - the largest, "
+		"as the list starts sorted - named a project nobody was working on (Chimera issue 369)", {},
+		[this](const Args &, std::string &) -> Value {
+			const Item *newest = nullptr;
+			for (const Item &i : items_)
+			{
+				if (i.kind != kProjectCache) continue;
+				if (i.open) return i.folder;
+				if (newest == nullptr || i.lastUsed > newest->lastUsed) newest = &i;
+			}
+			if (newest != nullptr) return newest->folder;
+			return items_.empty() ? std::string() : items_.front().folder;
+		});
 	command("placesOf", "the places in the list (\"0,2\") of entries named by their places on disk (a JSON array)", {"folders"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string text;

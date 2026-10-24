@@ -2799,6 +2799,23 @@ bool cacheManager(const char *package, const char *rom)
 	CHECK(text(gone, 0) == "Gone" && flag(gone, 7));
 	std::string orphans;
 	CHECK(fromValue(caches.run("orphans", {}, error).value_or(Value()), orphans) && orphans == std::to_string(gone));
+	/* the row picked at first: the project used last, not the largest (Chimera issue 369); the open one when one is */
+	{
+		const auto old = fs::file_time_type::clock::now() - std::chrono::hours(48);
+		for (const char *name : {"00DEADBEEF", "00UNNAMED"})
+			for (const auto &e : fs::recursive_directory_iterator(dir / "cache" / name)) fs::last_write_time(e.path(), old);
+		fs::last_write_time(dir / "cache" / "00DEADBEEF", old);
+		fs::last_write_time(dir / "cache" / "00UNNAMED", old);
+		caches.run("refresh", {}, error);
+		std::string first;
+		CHECK(fromValue(caches.run("firstPick", {}, error).value_or(Value()), first) && fs::path(first).filename().string() != "00DEADBEEF" &&
+			fs::path(first).filename().string() != "00UNNAMED" && !first.empty());
+		caches.inUse.set("00DEADBEEF");
+		caches.run("refresh", {}, error);
+		CHECK(fromValue(caches.run("firstPick", {}, error).value_or(Value()), first) && fs::path(first).filename().string() == "00DEADBEEF");
+		caches.inUse.set("");
+		caches.run("refresh", {}, error);
+	}
 	CHECK(caches.total.get().find(" in 3 items") != std::string::npos);
 	/* what Chimera's window says over the list */
 	CHECK(caches.header.get().rfind("3 cached item(s), ", 0) == 0 &&
