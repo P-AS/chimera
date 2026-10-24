@@ -52,7 +52,7 @@ ApplicationWindow {
         function onValueChanged(key, value) { if (key === "status") win.said = value }
     }
     // a path as a file dialog takes it
-    function urlOf(path) { return path === "" ? "" : path.startsWith("/") ? "file://" + path : "file:///" + path.replace(/\\/g, "/") }
+    function urlOf(path) { return localFiles.folderUrl(path) }
     // a command whose refusal is said on the wizard's line
     function run(command, args) {
         win.vm.run(command, args || [])

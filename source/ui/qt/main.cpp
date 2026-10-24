@@ -1241,6 +1241,9 @@ int main(int argc, char **argv)
 		format.setSwapInterval(session.vsyncEnabled.get() ? 1 : 0);
 		QSurfaceFormat::setDefaultFormat(format);
 	}
+	/* a path as a file URL and back, for every window, as Qt makes them (a
+	 * Windows path written into "file://" by hand came back as "/C:/...") */
+	engine.rootContext()->setContextProperty(QStringLiteral("localFiles"), &pictureFiles);
 	engine.load(QUrl(QStringLiteral("qrc:/chimera/Main.qml")));
 	if (engine.rootObjects().isEmpty()) return 1;
 	auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());

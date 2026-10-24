@@ -57,13 +57,13 @@ ApplicationWindow {
     FileDialog {
         id: fileDialog
         currentFolder: win.folderOf ? win.folderOf("Firmware") : ""
-        onAccepted: win.vm.run("setFile", [win.vm.picked, decodeURIComponent(String(selectedFile).replace(/^file:\/\/(?=\/[A-Za-z]:)/, "").replace(/^file:\/\//, ""))])
+        onAccepted: win.vm.run("setFile", [win.vm.picked, localFiles.localPath(selectedFile)])
     }
     FolderDialog {
         id: folderDialog
         title: qsTr("Scan a folder for firmware files")
         currentFolder: win.folderOf ? win.folderOf("Firmware") : ""
-        onAccepted: win.vm.run("scanFolder", [decodeURIComponent(String(selectedFolder).replace(/^file:\/\/(?=\/[A-Za-z]:)/, "").replace(/^file:\/\//, "")), true])
+        onAccepted: win.vm.run("scanFolder", [localFiles.localPath(selectedFolder), true])
     }
     function browse() {
         if (!win.vm.canSet) return
@@ -217,7 +217,7 @@ ApplicationWindow {
                 enabled: win.vm.canSet
                 onClicked: {
                     const folder = win.vm.run("folderOf", [win.vm.picked]) || ""
-                    if (folder !== "") Qt.openUrlExternally("file://" + folder)
+                    if (folder !== "") Qt.openUrlExternally(localFiles.folderUrl(folder))
                 }
             }
             CheckBox { text: qsTr("Show every release"); checked: win.vm.showAll; onToggled: win.vm.showAll = checked }

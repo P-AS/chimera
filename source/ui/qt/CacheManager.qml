@@ -245,7 +245,7 @@ ApplicationWindow {
             Button {
                 text: qsTr("Open Folder"); Layout.preferredWidth: 160
                 enabled: win.picked !== ""
-                onClicked: win.vm.status = Qt.openUrlExternally("file://" + win.picked) ? qsTr("Opened %1").arg(win.picked) : qsTr("Could not open %1").arg(win.picked)
+                onClicked: win.vm.status = Qt.openUrlExternally(localFiles.folderUrl(win.picked)) ? qsTr("Opened %1").arg(win.picked) : qsTr("Could not open %1").arg(win.picked)
             }
             Button {
                 text: qsTr("Clean Now"); Layout.preferredWidth: 160; Layout.leftMargin: 8

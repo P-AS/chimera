@@ -353,7 +353,7 @@ ApplicationWindow {
         RowLayout {
             Button {
                 text: qsTr("Open Themes Folder"); Layout.preferredWidth: 140
-                onClicked: Qt.openUrlExternally("file://" + win.vm.folder)
+                onClicked: Qt.openUrlExternally(localFiles.folderUrl(win.vm.folder))
             }
             Button {
                 text: qsTr("Write a Copy to Edit"); Layout.preferredWidth: 150

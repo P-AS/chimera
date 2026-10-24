@@ -129,7 +129,7 @@ ApplicationWindow {
                             folderDialog.name = row.name
                             folderDialog.forSystem = forSystem
                             folderDialog.title = qsTr("Set the directory for %1").arg(row.name)
-                            folderDialog.currentFolder = "file://" + win.vm.run("absolute", [box.text, forSystem])
+                            folderDialog.currentFolder = localFiles.folderUrl(win.vm.run("absolute", [box.text, forSystem]))
                             folderDialog.open()
                         }
                     }
@@ -206,7 +206,7 @@ ApplicationWindow {
         property string name: ""
         property string forSystem: ""
         onAccepted: {
-            const local = decodeURIComponent(String(selectedFolder).replace(/^file:\/\/(?=\/[A-Za-z]:)/, "").replace(/^file:\/\//, ""))
+            const local = localFiles.localPath(selectedFolder)
             win.edit(folderDialog.system, folderDialog.name, win.vm.run("makeRelative", [local, folderDialog.forSystem]))
         }
     }

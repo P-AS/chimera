@@ -28,7 +28,7 @@ ApplicationWindow {
     flags: Qt.Dialog
     onClosing: if (win.vm.running) win.vm.run("cancel")
     // a path as a file dialog takes it
-    function urlOf(path) { return path === "" ? "" : path.startsWith("/") ? "file://" + path : "file:///" + path.replace(/\\/g, "/") }
+    function urlOf(path) { return localFiles.folderUrl(path) }
     readonly property var extensions: [".zip", ".iso", ".img"]
 
     Shortcut { sequence: "Escape"; onActivated: win.close() }

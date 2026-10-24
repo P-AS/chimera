@@ -7673,6 +7673,16 @@ bool firmwareWindow(const char *package, const char *slotsPackage, const char *b
 	std::string error;
 	cores.set("coresFolder", (dir / "Cores").string(), error);
 	cores.set("firmwareFolder", (dir / "Firmware").string(), error);
+	/* a Windows folder that came through a file URL with its slash kept, as
+	 * the folder dialogs once wrote one and a setting may still hold */
+	{
+		CoresViewModel fromUrl(d);
+		fromUrl.set("coresFolder", std::string("/C:/Users/someone/chimera/Cores"), error);
+		fromUrl.set("firmwareFolder", std::string("/D:\\Firmware"), error);
+		CHECK(fromUrl.coresFolder.get() == "C:/Users/someone/chimera/Cores" && fromUrl.firmwareFolder.get() == "D:\\Firmware");
+		fromUrl.set("coresFolder", std::string("/home/someone/Cores"), error);
+		CHECK(fromUrl.coresFolder.get() == "/home/someone/Cores");
+	}
 	FirmwareViewModel fw(d, cores);
 	RowModel &lines = *fw.rowLists()[0].model;
 	auto text = [&](int64_t r, int32_t c) {

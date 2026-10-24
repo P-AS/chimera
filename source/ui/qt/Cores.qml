@@ -42,9 +42,9 @@ ApplicationWindow {
     FolderDialog {
         id: folderDialog
         title: qsTr("The cores folder")
-        currentFolder: "file://" + win.vm.coresFolder
+        currentFolder: localFiles.folderUrl(win.vm.coresFolder)
         onAccepted: {
-            win.vm.coresFolder = decodeURIComponent(String(selectedFolder).replace(/^file:\/\/(?=\/[A-Za-z]:)/, "").replace(/^file:\/\//, ""))
+            win.vm.coresFolder = localFiles.localPath(selectedFolder)
             win.vm.managerStatus = qsTr("The cores folder is now %1: %2 core(s). A core already loaded stays loaded until Chimera is restarted.").arg(win.vm.coresFolder).arg(list.count)
             win.picked = ""
             Qt.callLater(win.pickFirst)
@@ -196,7 +196,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Button {
                 text: qsTr("Open cores folder"); Layout.preferredWidth: 140
-                onClicked: if (!Qt.openUrlExternally("file://" + win.vm.coresFolder)) win.vm.managerStatus = qsTr("%1 could not be opened").arg(win.vm.coresFolder)
+                onClicked: if (!Qt.openUrlExternally(localFiles.folderUrl(win.vm.coresFolder))) win.vm.managerStatus = qsTr("%1 could not be opened").arg(win.vm.coresFolder)
             }
             Button { text: qsTr("Change folder..."); Layout.preferredWidth: 140; onClicked: folderDialog.open() }
             Button { text: qsTr("Refresh List"); Layout.preferredWidth: 140; onClicked: win.vm.run("refreshList") }

@@ -175,8 +175,23 @@ CoresViewModel::CoresViewModel(Dispatcher &dispatcher) : ViewModel("cores", disp
 	/* the environment names them where a test or a portable install means it */
 	if (const char *env = std::getenv("CHIMERA_CORES_DIR")) coresFolder.set(env);
 	if (const char *env = std::getenv("CHIMERA_FIRMWARE_DIR")) firmwareFolder.set(env);
-	folderWatch_ = coresFolder.changed.connect([this] { scan(); });
-	firmwareWatch_ = firmwareFolder.changed.connect([this] {
+	/* a Windows folder that came through a file URL with its slash kept
+	 * ("/C:/Users/..."), as the window's folder dialogs once wrote them and a
+	 * remembered setting may still hold, is the folder without it */
+	auto driveFolder = [](Property<std::string> &folder) {
+		const std::string &f = folder.get();
+		if (f.size() >= 3 && f[0] == '/' && std::isalpha(static_cast<unsigned char>(f[1])) && f[2] == ':' &&
+			(f.size() == 3 || f[3] == '/' || f[3] == '\\'))
+			folder.set(f.substr(1));
+	};
+	driveFolder(coresFolder);
+	driveFolder(firmwareFolder);
+	folderWatch_ = coresFolder.changed.connect([this, driveFolder] {
+		driveFolder(coresFolder);
+		scan();
+	});
+	firmwareWatch_ = firmwareFolder.changed.connect([this, driveFolder] {
+		driveFolder(firmwareFolder);
 		std::lock_guard<std::mutex> lock(m_);
 		firmwareM_ = firmwareFolder.get();
 	});

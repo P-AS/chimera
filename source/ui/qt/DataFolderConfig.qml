@@ -68,7 +68,7 @@ ApplicationWindow {
     FolderDialog {
         id: folderDialog
         title: qsTr("Where Chimera should keep its data. A folder that already has other things in it gets a Chimera folder of its own inside.")
-        onAccepted: win.request(decodeURIComponent(String(selectedFolder).replace(/^file:\/\/(?=\/[A-Za-z]:)/, "").replace(/^file:\/\//, "")))
+        onAccepted: win.request(localFiles.localPath(selectedFolder))
     }
 
     ColumnLayout {
@@ -109,7 +109,7 @@ ApplicationWindow {
                 text: qsTr("Open Folder"); Layout.preferredWidth: 100
                 onClicked: {
                     const at = win.vm.run("inUse")
-                    if (!Qt.openUrlExternally("file://" + at)) win.said = qsTr("Could not open %1").arg(at)
+                    if (!Qt.openUrlExternally(localFiles.folderUrl(at))) win.said = qsTr("Could not open %1").arg(at)
                 }
             }
             Item { Layout.fillWidth: true }

@@ -14,7 +14,7 @@ ApplicationWindow {
     required property QtObject vm
     // the main window's: Paths folders, file URLs, the clipboard, theme colours
     property var folderOf: null
-    property var fileUrl: (path) => "file://" + path
+    property var fileUrl: (path) => localFiles.folderUrl(path)
     property var localPath: (url) => url.toString()
     property QtObject clipboard: null
     property var themeColor: (role, fallback) => fallback
