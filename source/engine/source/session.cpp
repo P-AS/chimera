@@ -4236,6 +4236,34 @@ const char *ce_session_movie_text(ce_session *s, uint64_t *len_out)
 	return text.c_str();
 }
 
+/* The session's movie journaled (engine.h): the log's own journal, under the
+ * movie's lock, as every change to the log is made under it. */
+int32_t ce_session_movie_journal_open(ce_session *s, const char *path, const char *frontend_image)
+{
+	if (path == nullptr) return 1;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr) s->movie = ce_movie_log_new();
+	return ce_movie_log_journal_open_with(s->movie, path, frontend_image);
+}
+
+void ce_session_movie_journal_note(ce_session *s, const char *record)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie != nullptr) ce_movie_log_journal_note(s->movie, record);
+}
+
+void ce_session_movie_journal_close(ce_session *s, int32_t remove)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie != nullptr) ce_movie_log_journal_close(s->movie, remove);
+}
+
+int32_t ce_session_movie_journaling(const ce_session *s)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	return ce_movie_log_journaling(s->movie);
+}
+
 /* What was edited since the machine last moved: the states past it go, and
  * a machine already past it is behind its movie (machine's thread). */
 void ce_session::takeEdits()

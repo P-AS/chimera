@@ -659,6 +659,17 @@ private:
 	 * the copy's path and the time of its last work, or false for none */
 	bool recoveredCopyOnMachine(ce_project *p, const std::string &projectPath, std::string &copy, std::string &upTo);
 	Clock::time_point recoveryDue_{};
+	/* the journal beside the snapshot (work.journal, as Chimera's): the
+	 * engine writes every change to the movie into it as it is made, and the
+	 * markers and branches follow as records of their own (Chimera's M, B
+	 * and O). Opened, or written again from the start, by journalOnMachine;
+	 * what the records last said, so that only a change is written. */
+	void journalOnMachine();
+	void journalMarksOnMachine();
+	Clock::time_point journalRetryDue_{};
+	uintmax_t journalImageBytes_ = 0;
+	std::string journaledMarkers_, journaledOrder_;
+	std::map<std::string, std::string> journaledBranches_;
 	Connection recoveryWatch_, backupWatch_;
 	PendingOpen pendingOpenM_;
 	void publishProjectFilesOnMachine();

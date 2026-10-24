@@ -14,6 +14,7 @@
 #include <future>
 #include <random>
 #include <iterator>
+#include <optional>
 #include <utility>
 
 #include "chimera/engine.h"
@@ -1650,7 +1651,8 @@ void SessionViewModel::loop()
 	for (;;)
 	{
 		std::function<void()> job;
-		bool advance = false, runOn = false, back = false, catchPoll = false, autosaveTick = false, keepTick = false;
+		bool advance = false, runOn = false, back = false, catchPoll = false, autosaveTick = false, keepTick = false,
+			journalTick = false;
 		{
 			std::unique_lock<std::mutex> lock(m_);
 			for (;;)
@@ -1679,6 +1681,14 @@ void SessionViewModel::loop()
 				if (keepOn && Clock::now() >= recoveryDue_)
 				{
 					keepTick = true;
+					break;
+				}
+				/* and its journal, from the moment it is kept: again at once for a
+				 * machine started afresh (its movie is a new one), and a second
+				 * after a journal that could not be written */
+				if (keepOn && s_ != nullptr && Clock::now() >= journalRetryDue_ && ce_session_movie_journaling(s_) == 0)
+				{
+					journalTick = true;
 					break;
 				}
 				const bool timed = autoOn || keepOn;
@@ -1746,6 +1756,11 @@ void SessionViewModel::loop()
 		{
 			keepRecoveryOnMachine();
 			recoveryDue_ = Clock::now() + std::chrono::seconds(5);
+			continue;
+		}
+		if (journalTick)
+		{
+			journalOnMachine();
 			continue;
 		}
 		if (autosaveTick)
@@ -2020,6 +2035,7 @@ void SessionViewModel::setMarkers(std::vector<Marker> markers)
 	submit([this, markers = std::move(markers)] {
 		markersM_ = markers;
 		pinMarkersOnMachine();
+		journalMarksOnMachine();
 	});
 }
 
@@ -2122,7 +2138,10 @@ void SessionViewModel::setRunMarkers(std::vector<int64_t> frames)
 
 void SessionViewModel::setBranches(std::vector<Branch> branches)
 {
-	submit([this, branches = std::move(branches)] { branchesM_ = branches; });
+	submit([this, branches = std::move(branches)] {
+		branchesM_ = branches;
+		journalMarksOnMachine();
+	});
 }
 
 void SessionViewModel::loadMovie(std::string text, int64_t target)
@@ -2297,6 +2316,211 @@ std::string localTime(int64_t utc, const char *format)
 }
 } // namespace
 
+namespace {
+/* Chimera's records for the markers and branches in the journal
+ * (ProjectRecovery.cs): "M [[frame, keepsState, "message"], ...]" every
+ * marker a person placed, "B {...}" one branch whole, "O [ids]" the
+ * branches in order - the list is these */
+json::Json markersJson(const std::vector<Marker> &markers)
+{
+	json::Json a;
+	a.kind = json::Json::Kind::Array;
+	for (const Marker &m : markers)
+	{
+		json::Json one;
+		one.kind = json::Json::Kind::Array;
+		one.items = {json::Json::integer(m.frame), json::Json::boolean_(m.keepState), json::Json::string(m.text)};
+		a.items.push_back(std::move(one));
+	}
+	return a;
+}
+
+std::string markersRecord(const std::vector<Marker> &markers)
+{
+	return "M " + json::write(markersJson(markers));
+}
+
+/* a branch's id in the records: the window's own for it, or, for the
+ * branches a project opened with until the window has given them theirs, its
+ * place in that list */
+std::string recordIdOf(const SessionViewModel::Branch &b, size_t at)
+{
+	return b.id != 0 ? std::to_string(b.id) : "p" + std::to_string(at);
+}
+
+std::string branchRecord(const SessionViewModel::Branch &b, const std::string &id)
+{
+	json::Json r;
+	r.kind = json::Json::Kind::Object;
+	r.members.emplace_back("id", json::Json::string(id));
+	r.members.emplace_back("text", json::Json::string(b.name));
+	r.members.emplace_back("frame", json::Json::integer(b.frame));
+	r.members.emplace_back("time", json::Json::string(b.time));
+	r.members.emplace_back("log", json::Json::string(b.text));
+	r.members.emplace_back("markers", markersJson(b.markers));
+	return "B " + json::write(r);
+}
+
+std::string orderRecord(const std::vector<SessionViewModel::Branch> &branches)
+{
+	json::Json a;
+	a.kind = json::Json::Kind::Array;
+	for (size_t i = 0; i < branches.size(); i++) a.items.push_back(json::Json::string(recordIdOf(branches[i], i)));
+	return "O " + json::write(a);
+}
+
+int64_t wholeOf(const json::Json &v)
+{
+	if (v.kind != json::Json::Kind::Number) return 0;
+	try
+	{
+		return static_cast<int64_t>(std::stoll(v.text));
+	}
+	catch (...)
+	{
+		return 0;
+	}
+}
+
+/* the markers and branches a journal's records end on, written into the
+ * project, as Chimera's ApplyMarkersAndBranches does: a journal with no
+ * marker record, or no order record, leaves the project's own, and a record
+ * that does not read ends the reading, as the engine's replay ends at a line
+ * it cannot read */
+void applyMarkRecords(ce_project *p, const ce_movie_log *log)
+{
+	std::optional<json::Json> markers, order;
+	std::map<std::string, json::Json> branches;
+	const int64_t n = ce_movie_log_journal_note_count(log);
+	for (int64_t i = 0; i < n; i++)
+	{
+		const char *note = ce_movie_log_journal_note_at(log, i);
+		if (note == nullptr || note[0] == '\0' || note[1] != ' ') continue;
+		json::Json j;
+		std::string err;
+		if (!json::parse(note + 2, j, err)) break;
+		if (note[0] == 'M' && j.kind == json::Json::Kind::Array) markers = std::move(j);
+		else if (note[0] == 'O' && j.kind == json::Json::Kind::Array) order = std::move(j);
+		else if (note[0] == 'B' && j.kind == json::Json::Kind::Object)
+		{
+			const json::Json *id = j.find("id");
+			if (id != nullptr && id->kind == json::Json::Kind::String) branches[id->text] = std::move(j);
+		}
+	}
+	auto marker = [](const json::Json &m, auto add) {
+		if (m.kind == json::Json::Kind::Array && m.items.size() >= 3) add(wholeOf(m.items[0]), m.items[2].text, m.items[1].boolean);
+	};
+	if (markers)
+	{
+		for (int32_t i = ce_project_marker_count(p) - 1; i >= 0; i--) ce_project_marker_remove(p, i);
+		for (const json::Json &m : markers->items)
+			marker(m, [p](int64_t frame, const std::string &text, bool keep) { ce_project_marker_add(p, frame, text.c_str(), keep ? 1 : 0); });
+	}
+	if (!order) return;
+	for (int32_t i = ce_project_branch_count(p) - 1; i >= 0; i--) ce_project_branch_remove(p, i);
+	for (const json::Json &id : order->items)
+	{
+		const auto it = branches.find(id.text);
+		if (it == branches.end()) continue;
+		const json::Json &b = it->second;
+		auto text = [&b](const char *name) {
+			const json::Json *v = b.find(name);
+			return v != nullptr ? v->text : std::string();
+		};
+		const json::Json *frame = b.find("frame");
+		const std::string movie = text("log");
+		ce_project_branch_add(p, text("text").c_str(), frame != nullptr ? wholeOf(*frame) : 0, text("time").c_str(), movie.data(), movie.size());
+		const int32_t at = ce_project_branch_count(p) - 1;
+		if (const json::Json *ms = b.find("markers"); ms != nullptr && ms->kind == json::Json::Kind::Array)
+			for (const json::Json &m : ms->items)
+				marker(m, [p, at](int64_t f, const std::string &t, bool keep) { ce_project_branch_marker_add(p, at, f, t.c_str(), keep ? 1 : 0); });
+	}
+}
+
+void writeRecoveryRecord(const std::filesystem::path &dir, const std::string &projectPath)
+{
+	json::Json r;
+	r.kind = json::Json::Kind::Object;
+	r.members.emplace_back("processId", json::Json::integer(currentProcessId()));
+	r.members.emplace_back("processStarted", json::Json::integer(processStarted(currentProcessId())));
+	r.members.emplace_back("projectPath", json::Json::string(projectPath));
+	r.members.emplace_back("lastWork", json::Json::integer(static_cast<int64_t>(std::time(nullptr))));
+	std::ofstream out(dir / "session.json", std::ios::binary | std::ios::trunc);
+	out << json::write(r);
+}
+
+/* when a file was last written, as the clock here reads it; 0 when it is not there */
+int64_t writtenAt(const std::filesystem::path &file)
+{
+	std::error_code ec;
+	const auto t = std::filesystem::last_write_time(file, ec);
+	if (ec) return 0;
+	return static_cast<int64_t>(std::chrono::system_clock::to_time_t(std::chrono::clock_cast<std::chrono::system_clock>(t)));
+}
+} // namespace
+
+void SessionViewModel::journalOnMachine()
+{
+	namespace fs = std::filesystem;
+	journalRetryDue_ = Clock::now() + std::chrono::seconds(1);
+	const fs::path dir = recoveryDirOf(projectM_);
+	if (dir.empty() || s_ == nullptr) return;
+	std::error_code ec;
+	/* another window working on this project keeps its own work here */
+	RecoveryRecord was;
+	if (readRecoveryRecord(dir, was) && !writtenByThisProcess(was) && writerRunning(was)) return;
+	fs::create_directories(dir, ec);
+	/* the markers and branches go into the same fresh file as the movie, so
+	 * that no rewrite can part them */
+	journaledMarkers_ = markersRecord(markersM_);
+	journaledOrder_ = orderRecord(branchesM_);
+	journaledBranches_.clear();
+	std::string image = journaledMarkers_ + "\n";
+	for (size_t i = 0; i < branchesM_.size(); i++)
+	{
+		const std::string id = recordIdOf(branchesM_[i], i);
+		std::string record = branchRecord(branchesM_[i], id);
+		image += record + "\n";
+		journaledBranches_[id] = std::move(record);
+	}
+	image += journaledOrder_ + "\n";
+	const fs::path journal = dir / "work.journal";
+	if (ce_session_movie_journal_open(s_, journal.string().c_str(), image.c_str()) != 0) return;
+	journalImageBytes_ = fs::file_size(journal, ec);
+	if (ec) journalImageBytes_ = 0;
+	if (!readRecoveryRecord(dir, was)) writeRecoveryRecord(dir, projectPathM_);
+}
+
+void SessionViewModel::journalMarksOnMachine()
+{
+	if (s_ == nullptr || ce_session_movie_journaling(s_) == 0) return;
+	if (std::string m = markersRecord(markersM_); m != journaledMarkers_)
+	{
+		ce_session_movie_journal_note(s_, m.c_str());
+		journaledMarkers_ = std::move(m);
+	}
+	std::vector<std::string> ids;
+	for (size_t i = 0; i < branchesM_.size(); i++)
+	{
+		ids.push_back(recordIdOf(branchesM_[i], i));
+		std::string record = branchRecord(branchesM_[i], ids.back());
+		const auto it = journaledBranches_.find(ids.back());
+		if (it != journaledBranches_.end() && it->second == record) continue;
+		ce_session_movie_journal_note(s_, record.c_str());
+		journaledBranches_[ids.back()] = std::move(record);
+	}
+	if (std::string o = orderRecord(branchesM_); o != journaledOrder_)
+	{
+		ce_session_movie_journal_note(s_, o.c_str());
+		journaledOrder_ = std::move(o);
+		for (auto it = journaledBranches_.begin(); it != journaledBranches_.end();)
+		{
+			const bool kept = std::find(ids.begin(), ids.end(), it->first) != ids.end();
+			it = kept ? std::next(it) : journaledBranches_.erase(it);
+		}
+	}
+}
+
 void SessionViewModel::keepRecoveryOnMachine()
 {
 	namespace fs = std::filesystem;
@@ -2307,19 +2531,19 @@ void SessionViewModel::keepRecoveryOnMachine()
 	RecoveryRecord was;
 	if (readRecoveryRecord(dir, was) && !writtenByThisProcess(was) && writerRunning(was)) return;
 	fs::create_directories(dir, ec);
+	/* the journal written again from the start once it has grown well past
+	 * its last start, as Chimera's keeps it short */
+	if (ce_session_movie_journaling(s_) != 0 && journalImageBytes_ > 0)
+	{
+		const uintmax_t now = fs::file_size(dir / "work.journal", ec);
+		if (!ec && now > std::max<uintmax_t>(uintmax_t{16} << 20, 3 * journalImageBytes_)) journalOnMachine();
+	}
 	/* written beside, then put in place: a crash while it is written leaves the last whole one */
 	const fs::path snapshot = dir / "snapshot.chimeraProject", fresh = dir / "snapshot.chimeraProject.new";
 	if (!saveProjectOnMachine(fresh.string(), true, true)) return;
 	fs::rename(fresh, snapshot, ec);
 	if (ec) return;
-	json::Json r;
-	r.kind = json::Json::Kind::Object;
-	r.members.emplace_back("processId", json::Json::integer(currentProcessId()));
-	r.members.emplace_back("processStarted", json::Json::integer(processStarted(currentProcessId())));
-	r.members.emplace_back("projectPath", json::Json::string(projectPathM_));
-	r.members.emplace_back("lastWork", json::Json::integer(static_cast<int64_t>(std::time(nullptr))));
-	std::ofstream out(dir / "session.json", std::ios::binary | std::ios::trunc);
-	out << json::write(r);
+	writeRecoveryRecord(dir, projectPathM_);
 }
 
 void SessionViewModel::dropRecoveryOnMachine(ce_project *p)
@@ -2332,6 +2556,8 @@ void SessionViewModel::dropRecoveryOnMachine(ce_project *p)
 	/* only this window's own: another's work in progress, or a crash's not offered yet, stays */
 	RecoveryRecord r;
 	if (readRecoveryRecord(dir, r) && !writtenByThisProcess(r)) return;
+	/* the journal let go of before its folder goes (Windows will not delete a file being written) */
+	if (s_ != nullptr && p == projectM_) ce_session_movie_journal_close(s_, 1);
 	fs::remove_all(dir, ec);
 }
 
@@ -2346,38 +2572,79 @@ bool SessionViewModel::recoveredCopyOnMachine(ce_project *p, const std::string &
 	/* its writer still runs: another window has this project open (or this
 	 * one, the project opened again over itself) - not a crash */
 	if (hasRecord && writerRunning(r)) return false;
-	const fs::path snapshot = dir / "snapshot.chimeraProject";
-	if (!fs::is_regular_file(snapshot, ec))
+	const fs::path snapshot = dir / "snapshot.chimeraProject", journal = dir / "work.journal";
+	const bool hasSnapshot = fs::is_regular_file(snapshot, ec);
+	/* the engine reads a journal from its ".new" when a rewrite was cut short */
+	const fs::path journalOnDisk = fs::is_regular_file(journal, ec) ? journal : fs::path(journal.string() + ".new");
+	const bool hasJournal = fs::is_regular_file(journalOnDisk, ec);
+	if (!hasSnapshot && !hasJournal)
 	{
 		/* the remains of a clean end whose removal did not land */
 		fs::remove_all(dir, ec);
 		return false;
 	}
 	/* the project saved after the work was last kept holds that work already */
-	if (!projectPath.empty() && fs::is_regular_file(projectPath, ec) && fs::last_write_time(projectPath, ec) > fs::last_write_time(snapshot, ec))
+	const int64_t when = std::max(hasSnapshot ? writtenAt(snapshot) : 0, hasJournal ? writtenAt(journalOnDisk) : 0);
+	const bool hasProject = !projectPath.empty() && fs::is_regular_file(projectPath, ec);
+	if (hasProject && writtenAt(projectPath) > when)
 	{
 		fs::remove_all(dir, ec);
 		return false;
 	}
+	auto kept = [this, dir](const std::string &why) {
+		later([this, why, kept = dir.string()] {
+			status.set("Chimera did not close normally the last time this project was open, but its unsaved work could not be "
+				"rebuilt (" + why + "). The recovery files are kept in: " + kept);
+		});
+		return false;
+	};
+	/* rebuilt on whichever is newer, the last snapshot or the project as last
+	 * saved, with the movie, markers and branches the journal ends on, which
+	 * is never older than either */
+	const fs::path base = hasSnapshot && !(hasProject && writtenAt(projectPath) > writtenAt(snapshot)) ? snapshot
+		: hasProject ? fs::path(projectPath) : fs::path();
+	if (base.empty()) return kept("there is no copy of the project to rebuild the work on");
+	const char *err = nullptr;
+	ce_project *rebuilt = ce_project_open(base.string().c_str(), &err);
+	if (rebuilt == nullptr) return kept(err != nullptr ? err : "the project would not open");
+	if (hasJournal)
+	{
+		ce_movie_log *log = ce_movie_log_new();
+		if (ce_movie_log_journal_replay(log, journal.string().c_str()) >= 0)
+		{
+			/* a journal that never saw the movie's columns keeps the project's */
+			if (ce_movie_log_key(log) == nullptr)
+			{
+				uint64_t len = 0;
+				const char *text = ce_project_log_text(rebuilt, &len);
+				ce_movie_log *saved = ce_movie_log_new();
+				if (text != nullptr && ce_movie_log_parse(saved, text, len) == 0 && ce_movie_log_key(saved) != nullptr)
+					ce_movie_log_set_key(log, ce_movie_log_key(saved));
+				ce_movie_log_free(saved);
+			}
+			uint64_t len = 0;
+			const char *text = ce_movie_log_serialize(log, 0, &len);
+			ce_project_set_log_text(rebuilt, text, len);
+			applyMarkRecords(rebuilt, log);
+		}
+		else
+		{
+			std::fprintf(stderr, "[recovery] the journal could not be read (%s); the snapshot's work is used\n", ce_movie_log_last_error(log));
+		}
+		ce_movie_log_free(log);
+	}
 	/* rebuilt as a project of its own among the backups, so whatever is
 	 * answered nothing is lost, and never over the project unasked */
-	const int64_t when = hasRecord && r.lastWork > 0 ? r.lastWork : static_cast<int64_t>(std::time(nullptr));
 	const fs::path folder = !backupFolderM_.empty() ? fs::path(backupFolderM_) : fs::path(recoveryFolderM_) / "recovered";
 	fs::create_directories(folder, ec);
 	const std::string stem = projectPath.empty() ? std::string("project") : fs::path(projectPath).stem().string();
 	const std::string name = stem + ".recovered " + localTime(when, "%Y-%m-%d %H.%M.%S");
 	fs::path target = folder / (name + ".chimeraProject");
 	for (int n = 2; fs::exists(target, ec) && n < 100; n++) target = folder / (name + " (" + std::to_string(n) + ").chimeraProject");
-	fs::copy_file(snapshot, target, ec);
-	if (ec)
-	{
-		const std::string why = ec.message(), kept = dir.string();
-		later([this, why, kept] {
-			status.set("Chimera did not close normally the last time this project was open, but its unsaved work could not be "
-				"rebuilt (" + why + "). The recovery files are kept in: " + kept);
-		});
-		return false;
-	}
+	const bool saved = ce_project_save(rebuilt, target.string().c_str(), &err) == 0;
+	const std::string why = saved ? std::string() : err != nullptr ? err : "it could not be written";
+	ce_project_free(rebuilt);
+	if (!saved) return kept(why);
 	/* the copy holds the work now, and this session keeps its own */
 	fs::remove_all(dir, ec);
 	copy = target.string();

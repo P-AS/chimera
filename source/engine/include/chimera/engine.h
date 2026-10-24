@@ -1663,6 +1663,23 @@ CE_API void ce_session_movie_remove(ce_session *s, int64_t frame, int64_t count)
  * the calling thread until its next call of this. */
 CE_API const char *ce_session_movie_text(ce_session *s, uint64_t *len_out);
 
+/* The input journal of the session's own movie (owner, 2026-10-24): what
+ * ce_movie_log_journal_open_with does for a log a frontend holds, done on the
+ * movie the session keeps, so that every change to it - an edit from any
+ * thread, a frame recorded, a movie loaded over it - is on its way to the disk
+ * the moment it is made. _journal_open writes the whole movie and the
+ * frontend's records (`frontend_image`, may be NULL) to `path` and appends
+ * from then on; a session with no movie yet gets an empty one. 0 on success.
+ * _journal_note appends one of the frontend's records; _journal_close stops
+ * appending and, with `remove` nonzero, deletes the journal; _journaling says
+ * whether one is being written. Freeing the session closes the journal and
+ * keeps the file. Any thread: they take the movie's lock. A journal is read
+ * back with ce_movie_log_journal_replay. */
+CE_API int32_t ce_session_movie_journal_open(ce_session *s, const char *path, const char *frontend_image);
+CE_API void ce_session_movie_journal_note(ce_session *s, const char *record);
+CE_API void ce_session_movie_journal_close(ce_session *s, int32_t remove);
+CE_API int32_t ce_session_movie_journaling(const ce_session *s);
+
 /* One frame under the movie. In play mode the input comes from the log
  * (buttons/axes are ignored) until the log runs out, which flips the mode to
  * finished; in record and finished modes the input is the caller's - the

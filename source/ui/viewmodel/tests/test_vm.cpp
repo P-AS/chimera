@@ -2236,10 +2236,12 @@ bool customizeOptions(const char *package, const char *rom)
 }
 
 /* Work a crash left behind, as Chimera's ProjectRecovery keeps it: a
- * snapshot every five seconds while there are unsaved changes, gone when
- * the project is saved or let go; one whose writer no longer runs is
- * rebuilt as a copy among the backups and offered when the project opens
- * again, its answer opening that work unsaved or the project as saved */
+ * snapshot every five seconds while there are unsaved changes and a journal
+ * the engine writes every change to the movie into as it is made, the
+ * markers and branches beside it, all gone when the project is saved or let
+ * go; one whose writer no longer runs is rebuilt as a copy among the backups
+ * and offered when the project opens again, its answer opening that work
+ * unsaved or the project as saved */
 bool crashRecovery(const char *package, const char *rom)
 {
 	namespace fs = std::filesystem;
@@ -2285,9 +2287,19 @@ bool crashRecovery(const char *package, const char *rom)
 		if (p != nullptr) ce_project_free(p);
 		return n;
 	};
+	auto markers = [](const fs::path &file) {
+		const char *err = nullptr;
+		ce_project *p = ce_project_open(file.string().c_str(), &err);
+		std::string all;
+		for (int32_t i = 0; p != nullptr && i < ce_project_marker_count(p); i++)
+			all += std::to_string(ce_project_marker_frame(p, i)) + ":" + ce_project_marker_text(p, i) + ";";
+		if (p != nullptr) ce_project_free(p);
+		return all;
+	};
 	/* changes not saved: kept at once, and who kept them said */
 	CHECK(advance(20) && session.unsaved.get());
-	CHECK(d.until([&] { return fs::exists(kept / "snapshot.chimeraProject") && fs::exists(kept / "session.json"); }, 10));
+	CHECK(d.until([&] { return fs::exists(kept / "snapshot.chimeraProject") && fs::exists(kept / "session.json") &&
+		fs::exists(kept / "work.journal"); }, 10));
 	CHECK(readFile(kept / "session.json").find("\"processId\": " + std::to_string(currentProcessId())) != std::string::npos);
 	/* the first at the first change, then every five seconds with what came since */
 	CHECK(d.until([&] { return lines(kept / "snapshot.chimeraProject") == 20; }, 10));
@@ -2298,9 +2310,13 @@ bool crashRecovery(const char *package, const char *rom)
 	CHECK(d.until([&] { return !session.unsaved.get(); }, 20));
 	CHECK(d.until([&] { return !fs::exists(kept); }, 10));
 	/* more work, and a crash: the folder as it stood, put back after a clean
-	 * close took it, its writer a process that has ended */
+	 * close took it, its writer a process that has ended. What was done after
+	 * the last snapshot - two frames and a marker - is in the journal */
 	CHECK(advance(30));
 	CHECK(d.until([&] { return lines(kept / "snapshot.chimeraProject") == 30; }, 10));
+	CHECK(advance(32) && roll.run("addMarker", {int64_t{31}, std::string("late")}, error).has_value());
+	d.until([] { return false; }, 0.2);
+	CHECK(lines(kept / "snapshot.chimeraProject") == 30);
 	auto crashed = [&](const fs::path &aside) {
 		fs::remove_all(aside);
 		fs::copy(kept, aside, fs::copy_options::recursive);
@@ -2322,7 +2338,8 @@ bool crashRecovery(const char *package, const char *rom)
 	CHECK(d.until([&] { return !session.recoveredCopy.get().empty(); }, 20));
 	const fs::path copy = session.recoveredCopy.get();
 	CHECK(!session.isOpen.get() && !session.hasProject.get() && !fs::exists(kept));
-	CHECK(copy.parent_path() == dir / "backup" && fs::exists(copy) && lines(copy) == 30);
+	CHECK(copy.parent_path() == dir / "backup" && fs::exists(copy) && lines(copy) == 32);
+	CHECK(markers(copy) == "31:late;");
 	CHECK(std::regex_match(copy.filename().string(), std::regex("walker\\.recovered \\d{4}-\\d\\d-\\d\\d \\d\\d\\.\\d\\d\\.\\d\\d\\.chimeraProject")));
 	CHECK(std::regex_match(session.recoveredUpTo.get(), std::regex("\\d\\d:\\d\\d:\\d\\d")));
 	{
@@ -2336,17 +2353,18 @@ bool crashRecovery(const char *package, const char *rom)
 	CHECK(session.run("recoverWork", {true}, error).has_value());
 	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 30));
 	CHECK(session.recoveredCopy.get().empty() && session.projectPath.get() == project.string());
-	CHECK(d.until([&] { return roll.frameCount.get() == 30 && session.unsaved.get(); }, 20));
+	CHECK(d.until([&] { return roll.frameCount.get() == 32 && session.unsaved.get(); }, 20));
+	CHECK(roll.markerCount.get() == 1);
 	CHECK(session.status.get() == "The recovered work is open, not saved yet: saving writes it to " + project.string());
 	/* it is kept against the next crash at once */
 	CHECK(d.until([&] { return fs::exists(kept / "snapshot.chimeraProject"); }, 10));
 	session.run("saveProject", {}, error);
 	CHECK(d.until([&] { return !session.unsaved.get() && !fs::exists(kept); }, 20));
-	CHECK(lines(project) == 30 && fs::exists(copy));
+	CHECK(lines(project) == 32 && markers(project) == "31:late;" && fs::exists(copy));
 	CHECK(!session.run("recoverWork", {true}, error) && error == "no recovered work is waiting");
 	/* no: the project as it was saved, the copy left where it is */
-	session.run("seek", {int64_t{30}}, error);
-	CHECK(d.until([&] { return session.frame.get() == 30; }, 20));
+	session.run("seek", {int64_t{32}}, error);
+	CHECK(d.until([&] { return session.frame.get() == 32; }, 20));
 	CHECK(advance(35));
 	CHECK(d.until([&] { return lines(kept / "snapshot.chimeraProject") == 35; }, 10));
 	CHECK(crashed(dir / "aside"));
@@ -2356,7 +2374,7 @@ bool crashRecovery(const char *package, const char *rom)
 	CHECK(second != copy && fs::exists(second) && lines(second) == 35);
 	CHECK(session.run("recoverWork", {false}, error).has_value());
 	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 30));
-	CHECK(d.until([&] { return roll.frameCount.get() == 30; }, 20));
+	CHECK(d.until([&] { return roll.frameCount.get() == 32; }, 20));
 	CHECK(!session.unsaved.get() && fs::exists(second) && !fs::exists(kept));
 	/* a folder whose writer still runs is another window's work: not offered, not taken */
 	session.run("close", {}, error);
@@ -2377,6 +2395,7 @@ bool crashRecovery(const char *package, const char *rom)
 		std::ofstream(kept / "session.json", std::ios::binary | std::ios::trunc) << record;
 	}
 	fs::last_write_time(kept / "snapshot.chimeraProject", fs::last_write_time(project) - std::chrono::hours(1));
+	fs::last_write_time(kept / "work.journal", fs::last_write_time(project) - std::chrono::hours(1));
 	session.run("openProject", {project.string(), std::string(package)}, error);
 	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 30));
 	CHECK(session.recoveredCopy.get().empty() && !fs::exists(kept));
