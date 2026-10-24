@@ -222,28 +222,52 @@ if qt_dep.found()
   qt_rcc = qt6.compile_resources(sources: ['qt/ui.qrc'], extra_args: ['--no-zstd'])
   # Chimera's icon on the program and its windows on Windows
   qt_icon = host_machine.system() == 'windows' ? import('windows').compile_resources('qt/chimera-qt.rc') : []
-  chimera_qt = executable(
-    'chimera-qt',
-    [
-      'qt/main.cpp',
-      'qt/qml_view_model.cpp',
-      'qt/picture_item.cpp',
-      'qt/piano_roll_item.cpp',
-      'qt/key_names.cpp',
-      'qt/theme_palette.cpp',
-      'qt/pointer_capture.cpp',
-      'qt/overlay_painter.cpp',
-      qt_moc,
-      qt_rcc,
-      qt_icon,
-    ],
-    dependencies: [vm_dep, qt_dep],
-    # the view models have a Signal::emit; Qt's "emit" keyword would eat it
-    cpp_args: ['-DQT_NO_KEYWORDS'],
-    override_options: ['cpp_std=c++20'],
-    install: true,
-    install_dir: 'dll',
-  )
+  qt_sources = [
+    'qt/main.cpp',
+    'qt/qml_view_model.cpp',
+    'qt/picture_item.cpp',
+    'qt/piano_roll_item.cpp',
+    'qt/key_names.cpp',
+    'qt/theme_palette.cpp',
+    'qt/pointer_capture.cpp',
+    'qt/overlay_painter.cpp',
+    qt_moc,
+    qt_rcc,
+  ]
+  if host_machine.system() == 'windows'
+    # the window is a DLL in lib\ with everything it needs, and chimera-qt.exe
+    # a launcher that loads it from there (qt/launcher.c); qt.conf, built in,
+    # sends Qt to lib\ for its plugins and QML
+    qt_conf = qt6.compile_resources(name: 'windows_conf', sources: ['qt/windows.qrc'], extra_args: ['--no-zstd'])
+    shared_library(
+      'chimera-qt-app',
+      qt_sources + [qt_conf],
+      name_prefix: '',
+      dependencies: [vm_dep, qt_dep],
+      # the view models have a Signal::emit; Qt's "emit" keyword would eat it
+      cpp_args: ['-DQT_NO_KEYWORDS', '-DCHIMERA_QT_LIBRARY'],
+      override_options: ['cpp_std=c++20'],
+      install: true,
+      install_dir: 'dll',
+    )
+    chimera_qt = executable(
+      'chimera-qt',
+      ['qt/launcher.c', qt_icon],
+      install: true,
+      install_dir: 'dll',
+    )
+  else
+    chimera_qt = executable(
+      'chimera-qt',
+      qt_sources,
+      dependencies: [vm_dep, qt_dep],
+      # the view models have a Signal::emit; Qt's "emit" keyword would eat it
+      cpp_args: ['-DQT_NO_KEYWORDS'],
+      override_options: ['cpp_std=c++20'],
+      install: true,
+      install_dir: 'dll',
+    )
+  endif
   # the whole window loads (every QML file, every view model bound), runs a
   # game for a second and quits cleanly: a QML mistake fails here, not at
   # someone's desk

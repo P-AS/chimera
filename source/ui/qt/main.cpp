@@ -275,7 +275,12 @@ private:
 
 } // namespace
 
+/* on Windows the window is a DLL in lib\, started by launcher.c */
+#ifdef CHIMERA_QT_LIBRARY
+extern "C" __declspec(dllexport) int chimera_qt_main(int argc, char **argv)
+#else
 int main(int argc, char **argv)
+#endif
 {
 #ifdef _WIN32
 	SetUnhandledExceptionFilter(crashNote);
@@ -653,7 +658,7 @@ int main(int argc, char **argv)
 		const QString exe = QStringLiteral("chimera-run");
 #endif
 		QString runner = qEnvironmentVariable("CHIMERA_RUN");
-		for (const QString &dir : {QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
+		for (const QString &dir : {QCoreApplication::applicationDirPath() + QStringLiteral("/bin"), QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
 			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
 		newProject.compileRunner.set(runner.toStdString());
 		newProject.compileRoot.set(session.compileCacheRoot.get());
@@ -668,11 +673,11 @@ int main(int argc, char **argv)
 		const QString exe = QStringLiteral("chimera-run");
 #endif
 		QString runner = qEnvironmentVariable("CHIMERA_RUN");
-		for (const QString &dir : {QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
+		for (const QString &dir : {QCoreApplication::applicationDirPath() + QStringLiteral("/bin"), QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
 			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
 		if (runner.isEmpty())
 		{
-			done({}, "chimera-run is not beside the program");
+			done({}, "chimera-run is not in the program's bin folder");
 			return;
 		}
 		auto *proc = new QProcess(&app);
@@ -709,11 +714,11 @@ int main(int argc, char **argv)
 		const QString exe = QStringLiteral("chimera-run");
 #endif
 		QString runner = qEnvironmentVariable("CHIMERA_RUN");
-		for (const QString &dir : {QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
+		for (const QString &dir : {QCoreApplication::applicationDirPath() + QStringLiteral("/bin"), QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
 			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
 		if (runner.isEmpty())
 		{
-			done(-1, {}, "chimera-run is not beside the program");
+			done(-1, {}, "chimera-run is not in the program's bin folder");
 			return;
 		}
 		QStringList list;
@@ -750,11 +755,11 @@ int main(int argc, char **argv)
 		const QString exe = QStringLiteral("chimera-run");
 #endif
 		QString runner = qEnvironmentVariable("CHIMERA_RUN");
-		for (const QString &dir : {QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
+		for (const QString &dir : {QCoreApplication::applicationDirPath() + QStringLiteral("/bin"), QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
 			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
 		if (runner.isEmpty())
 		{
-			done({}, "chimera-run is not beside the program");
+			done({}, "chimera-run is not in the program's bin folder");
 			return;
 		}
 		QStringList args{QString::fromStdString(package), QString::fromStdString(movie), QStringLiteral("--import-movie"),

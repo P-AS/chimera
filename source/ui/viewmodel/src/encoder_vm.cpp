@@ -512,8 +512,8 @@ std::string EncoderViewModel::ffmpegPath() const
 	const char *name = "ffmpeg";
 #endif
 	const fs::path dir(appDir_);
-	/* the bundle keeps it beside the program, in dll/; a build keeps it in build/dll */
-	for (const fs::path &p : {dir / name, dir / "dll" / name, dir / ".." / ".." / ".." / "dll" / name})
+	/* the Qt bundle keeps it in bin/, Chimera's beside the program or in dll/; a build in build/dll */
+	for (const fs::path &p : {dir / "bin" / name, dir / name, dir / "dll" / name, dir / ".." / ".." / ".." / "dll" / name})
 		if (fs::is_regular_file(p, ec)) return fs::weakly_canonical(p, ec).string();
 	return {};
 }

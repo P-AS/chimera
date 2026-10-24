@@ -167,6 +167,15 @@ void *openLibraryBesideUs(const char *name, bool deepBind, std::string &why)
 				why = std::string(name) + " is beside libchimera but would not load: " + lastErrorText(code);
 				return nullptr;
 			}
+			/* a tool in a bundle's bin\ folder: the DLLs are in lib\ beside it */
+			std::wstring inLib = dir.substr(0, slash + 1) + L"..\\lib\\";
+			for (const char *c = name; *c != '\0'; c++) inLib.push_back(static_cast<wchar_t>(*c));
+			if (GetFileAttributesW(inLib.c_str()) != INVALID_FILE_ATTRIBUTES)
+			{
+				if (HMODULE h = LoadLibraryW(inLib.c_str())) return h;
+				why = std::string(name) + " is in ..\\lib but would not load: " + lastErrorText(GetLastError());
+				return nullptr;
+			}
 		}
 	}
 	if (HMODULE h = LoadLibraryExA(name, nullptr, LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32)) return h;
