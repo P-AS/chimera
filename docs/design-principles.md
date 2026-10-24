@@ -10957,3 +10957,26 @@ Tests: `FindNarrowsTheListToWhatMatches`, `ACoreFoldsToOneLineAndOpensAgain`,
 `OpenFolderShowsTheFoundFileInItsFolder` (each fails with its feature taken
 out), and `TheWindowInEveryTheme`, the window's first picture test, which
 caught the Find box drawn over its own label.
+
+## A state carries the GL names its machine holds (user-decided, 2026-10-24)
+
+After a load the GPU bridge gives the guest a fresh context and takes every
+GL name the guest still holds again, empty, before the guest runs, so no new
+object can get a number an old call could still reach. The engine knew those
+names only by watching the guest make them in this process. A state taken by
+another process, which is what opening a project again loads, held names the
+new process never saw: Dolphin's rebuild deleted a vertex array by its old
+number, the array another vertex format had just been given, and Mario Kart
+Arcade GP's grey screen drew black (issue 367, fixed in Dolphin by patch 0032).
+Any GL core whose rebuild deletes by old numbers could meet the same. The
+owner chose the general fix in miniBox: the generated GL wrappers of the calls
+that hand out names keep the highest name of each kind in the guest's own
+memory, so every state carries it, and tell the engine where it is
+(`GL_OP_NAME_MARKS`, miniBox 96762cf). After a load the engine keeps every
+number up to those marks from new objects (`reserveNames`, gl_bridge.cpp),
+besides the names it saw made. A core gets this when it is built again against
+miniBox 96762cf or later. Tests: test_gl_session's "state another process
+took" part (a new texture is 21 and new vertex arrays 7 and 8 when the state
+held up to 20 and 6; fails with the marks ignored), and a Dolphin core built
+with the new generator and the old stale delete put back passes the
+gl:load-in-new-process leg.

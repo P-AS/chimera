@@ -92,6 +92,14 @@ static GLuint texture()
 	return name;
 }
 
+static bool isVertexArray(GLuint name)
+{
+	ChimeraGlArgs_glIsVertexArray a{ name };
+	const bool is = call(CHIMERA_GL_OP_glIsVertexArray, &a) != 0;
+	ce_gl_release();
+	return is;
+}
+
 static bool isBuffer(GLuint name)
 {
 	ChimeraGlArgs_glIsBuffer a{ name };
@@ -182,6 +190,40 @@ int main()
 		call(CHIMERA_GL_OP_glDeleteTextures, &stale);
 		ce_gl_release();
 		for (GLuint f : fresh) assert(isTexture(f));
+	}
+	ce_gl_session_end();
+
+	/* ---- a state another process took (chimera#367): its names were never
+	 * seen made in this process, so only the guest's own marks, which the
+	 * state carries, can say which numbers to keep from new objects ---- */
+	assert(ce_gl_start(err, (int32_t)sizeof err) != 0);
+	{
+		static ChimeraGlNameMarks marks = { CHIMERA_GL_NAME_MARKS_MAGIC, CHIMERA_GL_NAME_KINDS, { 0 } };
+		assert(ce_gl_dispatch(GL_OP_NAME_MARKS, reinterpret_cast<uintptr_t>(&marks), sizeof marks, 0, 0, 0) == 1);
+		ce_gl_release();
+		/* the restored machine held textures up to 20 and vertex arrays up to 6 */
+		marks.high[CHIMERA_GL_NAME_TEXTURE] = 20;
+		marks.high[CHIMERA_GL_NAME_VERTEX_ARRAY] = 6;
+		ce_gl_state_loaded(-1);
+		const GLuint fresh = texture();
+		GLuint arrays[2] = { 0, 0 };
+		ChimeraGlArgs_glGenVertexArrays gv{ 2, arrays };
+		call(CHIMERA_GL_OP_glGenVertexArrays, &gv);
+		for (GLuint arr : arrays)
+		{
+			ChimeraGlArgs_glBindVertexArray bv{ arr };   /* a name is an array once bound */
+			call(CHIMERA_GL_OP_glBindVertexArray, &bv);
+		}
+		std::printf("test_gl_session: after loading another process's state, a new texture is %u and new arrays %u and %u\n",
+			(unsigned)fresh, (unsigned)arrays[0], (unsigned)arrays[1]);
+		assert(fresh > 20 && arrays[0] > 6 && arrays[1] > 6);
+		/* deleting arrays by the old machine's numbers, as a rebuild does,
+		 * leaves the new ones alone */
+		GLuint old[2] = { 5, 6 };
+		ChimeraGlArgs_glDeleteVertexArrays dv{ 2, old };
+		call(CHIMERA_GL_OP_glDeleteVertexArrays, &dv);
+		ce_gl_release();
+		assert(isTexture(fresh) && isVertexArray(arrays[0]) && isVertexArray(arrays[1]));
 	}
 	ce_gl_session_end();
 	/* two sessions holding the context: a load keeps it, with the other's objects */
