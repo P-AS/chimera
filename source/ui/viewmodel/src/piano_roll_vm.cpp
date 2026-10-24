@@ -356,8 +356,9 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 					Row r;
 					r.axes.resize(axisCount);
 					/* every line a movie writes starts with its '|'; the engine reads
-					 * a line by place, so one with a frame number before it (Copy
-					 * with numbers) would come in as buttons held */
+					 * a line by place, so the frame number Copy can put before it
+					 * goes first, or it would come in as buttons held */
+					lines[i] = withoutFrameNumber(lines[i]);
 					if (lines[i].empty() || lines[i][0] != '|' ||
 						ce_session_movie_entry_decode(s, lines[i].c_str(), &r.buttons, r.axes.empty() ? nullptr : r.axes.data()) != 0)
 					{
@@ -2477,6 +2478,18 @@ void PianoRollViewModel::addRecentMacro(const std::string &path)
 	std::string text;
 	for (const std::string &r : recent) text += (text.empty() ? "" : "\n") + r;
 	recentMacros.set(text);
+}
+
+std::string PianoRollViewModel::withoutFrameNumber(const std::string &line)
+{
+	size_t i = 0;
+	while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i]))) i++;
+	const size_t digits = i;
+	while (i < line.size() && std::isdigit(static_cast<unsigned char>(line[i]))) i++;
+	if (i == digits) return line;
+	const size_t afterDigits = i;
+	while (i < line.size() && line[i] == ' ') i++;
+	return i > afterDigits && i < line.size() && line[i] == '|' ? line.substr(i) : line;
 }
 
 } // namespace chimera::vm

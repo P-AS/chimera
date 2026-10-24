@@ -2511,7 +2511,16 @@ bool tastudioSettings(const char *package, const char *rom)
 	/* pasted from text: a line that is not a frame's input pastes nothing */
 	const uint64_t at10 = roll.frameBits(10), at11 = roll.frameBits(11), at2 = roll.frameBits(2), at3 = roll.frameBits(3);
 	CHECK(at2 != at10);
-	CHECK(!roll.run("pasteText", {int64_t{10}, numbered, false}, error).has_value());
+	CHECK(!roll.run("pasteText", {int64_t{10}, std::string("12 nothing\n"), false}, error).has_value());
+	CHECK(roll.frameBits(10) == at10 && roll.frameBits(11) == at11);
+	/* lines copied with their frame numbers paste as the frames they were, as Chimera's now does */
+	CHECK(PianoRollViewModel::withoutFrameNumber("00002 |..U.....|") == "|..U.....|" &&
+		PianoRollViewModel::withoutFrameNumber("  17   |A|") == "|A|" && PianoRollViewModel::withoutFrameNumber("17|A|") == "17|A|" &&
+		PianoRollViewModel::withoutFrameNumber("|..U.....|") == "|..U.....|");
+	error.clear();
+	CHECK(roll.run("pasteText", {int64_t{10}, numbered, false}, error).has_value() && error.empty());
+	CHECK(roll.frameBits(10) == at2 && roll.frameBits(11) == at3);
+	roll.run("undo", {}, error);
 	CHECK(roll.frameBits(10) == at10 && roll.frameBits(11) == at11);
 	error.clear();
 	CHECK(roll.run("pasteText", {int64_t{10}, plain, false}, error).has_value() && error.empty());

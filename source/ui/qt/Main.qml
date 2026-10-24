@@ -462,12 +462,12 @@ ApplicationWindow {
                     // the frame skip's one setting left (owner, 2026-10-24)
                     Menu {
                         id: fastDrawMenu
-                        title: qsTr("Turbo and unthrottled draw")
+                        title: qsTr("Turbo/Unthrottled Draws")
                         Instantiator {
                             model: 10
                             delegate: MenuItem {
                                 required property int index
-                                text: index === 0 ? qsTr("Every frame") : qsTr("1 in %1").arg(index + 1)
+                                text: index === 0 ? qsTr("Every Frame") : qsTr("1 in %1").arg(index + 1)
                                 checkable: true
                                 checked: root.session.fastDrawOneIn === index + 1
                                 onTriggered: root.session.fastDrawOneIn = index + 1

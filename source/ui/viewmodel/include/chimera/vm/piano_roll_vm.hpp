@@ -15,6 +15,10 @@ namespace chimera::vm {
 class PianoRollViewModel : public ViewModel
 {
 public:
+	/* a pasted line without the frame number Copy puts before it when asked
+	 * ("00002 |..U.....|" is "|..U.....|"), as Chimera's paste reads it
+	 * (owner, 2026-10-24); any other line as it is */
+	static std::string withoutFrameNumber(const std::string &line);
 	/* Frames::rowFlags */
 	static constexpr uint32_t kLag = 1, kGreen = 2, kMarker = 4, kStated = 8, kRan = 16;
 	/* the theme role a row's frame number is drawn on, when it is not a
