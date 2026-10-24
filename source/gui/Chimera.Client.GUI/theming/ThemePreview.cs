@@ -489,10 +489,10 @@ namespace Chimera.Client.GUI
 
 				(int Frame, ThemeColorRole Row, string Pressed, ThemeColorRole Fore)[] rows =
 				[
-					(100, ThemeColorRole.TasGreenZone, "", ThemeColorRole.RollText),
+					(100, ThemeColorRole.TasGreenZoneInput, "", ThemeColorRole.RollText),
 					(101, ThemeColorRole.TasGreenZoneInput, "A", ThemeColorRole.RollText),
 					(102, ThemeColorRole.TasGreenZoneInputStated, "A B", ThemeColorRole.RollText),
-					(103, ThemeColorRole.TasLagZone, "", ThemeColorRole.RollText),
+					(103, ThemeColorRole.TasLagZoneInput, "", ThemeColorRole.RollText),
 					(104, ThemeColorRole.TasLagZoneInput, "B", ThemeColorRole.RollText),
 					(105, ThemeColorRole.TasMarker, "Up", ThemeColorRole.RollText),
 					(106, ThemeColorRole.TasCurrentFrame, "A", ThemeColorRole.RollText),
@@ -527,8 +527,24 @@ namespace Chimera.Client.GUI
 					Line(ThemeColorRole.RollGridLines, columns[i], top + 18, columns[i], top + height);
 				}
 
-				// washes laid over the rows, as the roll lays them: the frame numbers' and every other player's
-				Fill(ThemeColorRole.TasFrameColumnWash, left, top + 18, frameColumn, height - 18);
+				// the frame numbers as the roll colours them: a frame the greenzone holds
+				// in its own colour, the rest washed over the row; and every other
+				// player's wash
+				var rowTop = top + 18;
+				foreach (var row in rows)
+				{
+					var frameRole = row.Row switch
+					{
+						ThemeColorRole.TasGreenZoneInput or ThemeColorRole.TasGreenZoneInputStated => ThemeColorRole.TasGreenZone,
+						ThemeColorRole.TasLagZoneInput or ThemeColorRole.TasLagZoneInputStated => ThemeColorRole.TasLagZone,
+						_ => ThemeColorRole.TasFrameColumnWash,
+					};
+					// above the row's grid line, which stays
+					Fill(frameRole, left, rowTop, frameColumn, frameRole is ThemeColorRole.TasFrameColumnWash ? rowHeight : rowHeight - 1);
+					if (frameRole is not ThemeColorRole.TasFrameColumnWash) Write(row.Fore, row.Frame.ToString(), left + 18, rowTop + 1);
+					rowTop += rowHeight;
+				}
+				Fill(ThemeColorRole.TasFrameColumnWash, left, rowTop, frameColumn, top + height - rowTop);
 				Fill(ThemeColorRole.TasAlternatePlayer, columns[2], top + 18, 80, height - 18);
 				Outline(ThemeColorRole.RollColumnBorder, left, top, width, height);
 			}

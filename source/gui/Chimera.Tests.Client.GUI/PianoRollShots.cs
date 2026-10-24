@@ -106,7 +106,8 @@ namespace Chimera.Tests.Client.GUI
 					color = KindOf(index) switch
 					{
 						RowKind.Marker => index % 48 is 8 ? p.PermanentMarker_FrameCol : p.Marker_FrameCol,
-						RowKind.LagZone or RowKind.LagZoneStated or RowKind.LagZoneInvalidated => p.LagZone_FrameCol,
+						RowKind.GreenZone or RowKind.GreenZoneStated => p.GreenZone_FrameCol,
+						RowKind.LagZone or RowKind.LagZoneStated => p.LagZone_FrameCol,
 						_ => ThemeEngine.Color(ThemeColorRole.TasFrameColumnWash),
 					};
 					return;

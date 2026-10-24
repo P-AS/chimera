@@ -471,6 +471,15 @@ namespace Chimera.Client.GUI
 			}
 		}
 
+		/// <summary>
+		/// The frame column's colour on a row that is not a marker's. A frame the
+		/// greenzone holds takes Set Colors' "Frame# Column" colours, lag or not, as
+		/// the Markers list's frame column does (owner, 2026-10-24); the current
+		/// frame and a frame not run as it stands keep their row's colour, washed.
+		/// </summary>
+		public static Color FrameColumnColor(bool current, bool? lagged, TAStudioPalette palette, Color wash)
+			=> current || lagged is null ? wash : lagged.Value ? palette.LagZone_FrameCol : palette.GreenZone_FrameCol;
+
 		private void TasView_QueryItemBkColor(InputRoll sender, int index, RollColumn column, ref Color color)
 		{
 			if (!_engaged || _initializing)
@@ -505,7 +514,9 @@ namespace Chimera.Client.GUI
 				}
 				else
 				{
-					color = ThemeEngine.Color(ThemeColorRole.TasFrameColumnWash);
+					var current = SeekingTo == index || (SeekingTo == -1 && Emulator.Frame == index);
+					color = FrameColumnColor(current, current ? null : CurrentTasMovie[index].Lagged, Palette,
+						ThemeEngine.Color(ThemeColorRole.TasFrameColumnWash));
 				}
 			}
 			else if (columnName == AxisEditColumn && sender.IsRowSelected(index))

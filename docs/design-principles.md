@@ -10875,3 +10875,16 @@ is now `chimera.lua.sublime-completions`, and a write that still fails (no
 permission) says so in a message. A file of the old name is left alone: it
 may be BizHawk's own. Tests: `LuaAutocompleteInstallerTests` (the first fails
 with the folder no longer made).
+
+## The piano roll's frame numbers take the "Frame# Column" colours (user-decided, 2026-10-24)
+
+TAStudio's Set Colors has "Frame# Column" and "Frame# Column (Lag)". They
+coloured only the Markers list's frame column; the piano roll's frame column
+laid a light wash over each row's colour, so the two colours seemed to do
+nothing there. The owner chose to have the piano roll use them too: a frame
+the greenzone holds shows its frame number in the "Frame# Column" colour, or
+"Frame# Column (Lag)" for a lag frame. The current frame, a marker's frame
+and a frame not run as it stands keep what they had: the marker colours, and
+the wash over the row's colour. The theme preview draws its sample piano roll
+the same way. Tests: `TAStudioFrameColumnColourTests` (the first fails with
+the wash kept everywhere).
