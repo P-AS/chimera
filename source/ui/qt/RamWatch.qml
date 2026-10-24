@@ -158,8 +158,8 @@ ApplicationWindow {
     Action { id: duplicateAction; text: qsTr("&Duplicate Watch"); icon.source: "qrc:/chimera/icons/Duplicate.png"; shortcut: "Ctrl+D"; enabled: win.anyWatch; onTriggered: win.editWatch(true) }
     Action { id: splitAction; text: qsTr("Sp&lit Watch"); icon.source: "qrc:/chimera/icons/Split.png"; shortcut: "Ctrl+L"; enabled: win.vm.canSplit; onTriggered: win.vm.run("splitSelected") }
     Action { id: pokeAction; text: qsTr("Poke Address"); icon.source: "qrc:/chimera/icons/poke.png"; shortcut: "Ctrl+P"; enabled: win.vm.canPoke; onTriggered: win.pokeWatch() }
-    // frozen addresses are cheats, which wait on the owner (question 5)
-    Action { id: freezeAction; text: qsTr("Freeze Address"); icon.source: "qrc:/chimera/icons/Freeze.png"; shortcut: "Ctrl+F"; enabled: false }
+    // frozen addresses: written before every frame, for this session only
+    Action { id: freezeAction; text: qsTr("Freeze Address"); icon.source: "qrc:/chimera/icons/Freeze.png"; shortcut: "Ctrl+F"; enabled: win.vm.canPoke || win.vm.selectionFrozen; onTriggered: win.vm.run("toggleFreeze") }
     Action { id: separatorAction; text: qsTr("Insert Separator"); icon.source: "qrc:/chimera/icons/InsertSeparator.png"; shortcut: "Ctrl+I"; onTriggered: win.vm.run("insertSeparator") }
     Action { id: clearCountsAction; text: qsTr("&Clear Change Counts"); shortcut: "Alt+C"; onTriggered: win.vm.run("clearChangeCounts") }
     Action { id: upAction; text: qsTr("Move &Up"); icon.source: "qrc:/chimera/icons/MoveUp.png"; shortcut: "Ctrl+Up"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["up"]) }
@@ -382,6 +382,20 @@ ApplicationWindow {
         Action { property string keysShown: "Ctrl+L"; text: qsTr("Sp&lit"); icon.source: "qrc:/chimera/icons/Split.png"; enabled: win.vm.canSplit; onTriggered: win.vm.run("splitSelected") }
         Action { property string keysShown: "Ctrl+P"; text: qsTr("&Poke"); icon.source: "qrc:/chimera/icons/poke.png"; enabled: win.vm.canPoke; onTriggered: win.pokeWatch() }
         MenuItem {
+            action: Action {
+                property string keysShown: "Ctrl+F"
+                text: win.vm.selectionFrozen ? qsTr("&Unfreeze Address") : qsTr("&Freeze Address")
+                icon.source: win.vm.selectionFrozen ? "qrc:/chimera/icons/Unfreeze.png" : "qrc:/chimera/icons/Freeze.png"
+                onTriggered: win.vm.run("toggleFreeze")
+            }
+            visible: win.vm.canPoke || win.vm.selectionFrozen; height: visible ? implicitHeight : 0
+        }
+        MenuItem {
+            text: qsTr("Unfreeze &All"); icon.source: "qrc:/chimera/icons/Unfreeze.png"
+            visible: win.vm.anyFrozen; height: visible ? implicitHeight : 0
+            onTriggered: win.vm.run("unfreezeAll")
+        }
+        MenuItem {
             text: qsTr("View in Hex Editor")
             visible: win.vm.selectedWatches === 1 && win.viewInHexEditor !== null; height: visible ? implicitHeight : 0
             onTriggered: {
@@ -442,6 +456,7 @@ ApplicationWindow {
                 color: row.model.selected ? palette.highlight
                      : row.separator ? palette.window
                      : row.model.invalid ? win.themeColor("RowInvalid", "#FFDAB9")
+                     : row.model.frozen ? win.themeColor("RowActive", "#E0FFFF")
                      : win.themeColor("RowDefault", palette.base)
                 Row {
                     anchors.fill: parent

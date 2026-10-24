@@ -663,6 +663,53 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		recordingMode.set(!recordingMode.get());
 		return recordingMode.get();
 	}, &hasProject);
+	expose("frozenCount", "how many frozen addresses are on (Chimera's freezes)", frozenCount);
+	command("freeze", "a domain's 1, 2 or 4 bytes at an address written with this value before every frame, for this "
+		"session only", {"domain", "address", "size", "bigEndian", "value"}, [this](const Args &a, std::string &error) -> Value {
+			Freeze f;
+			int64_t size = 1, value = 0;
+			if (!arg(a, 0, f.domain, error) || !arg(a, 1, f.address, error) || !arg(a, 2, size, error) || !arg(a, 3, f.bigEndian, error) ||
+				!arg(a, 4, value, error))
+				return {};
+			f.size = static_cast<int32_t>(size);
+			f.value = static_cast<uint64_t>(value);
+			if (!freeze(f, error)) return {};
+			return true;
+		}, &isOpen);
+	command("freezeProperty", "a game property set from this text before every frame, for this session only", {"name", "text"},
+		[this](const Args &a, std::string &error) -> Value {
+			Freeze f;
+			if (!arg(a, 0, f.property, error) || !arg(a, 1, f.text, error)) return {};
+			if (!freeze(f, error)) return {};
+			return true;
+		}, &isOpen);
+	command("unfreeze", "the freezes writing this address of a domain go", {"domain", "address"}, [this](const Args &a, std::string &error) -> Value {
+		std::string domain;
+		int64_t address = 0;
+		if (!arg(a, 0, domain, error) || !arg(a, 1, address, error)) return {};
+		unfreeze(domain, address);
+		return {};
+	});
+	command("unfreezeProperty", "a game property's freeze goes", {"name"}, [this](const Args &a, std::string &error) -> Value {
+		std::string name;
+		if (!arg(a, 0, name, error)) return {};
+		unfreezeProperty(name);
+		return {};
+	});
+	command("unfreezeAll", "every freeze goes (Chimera's Unfreeze All)", {}, [this](const Args &, std::string &) -> Value {
+		unfreezeAll();
+		return {};
+	});
+	command("toggleAllFreezes", "every freeze switched on or off (Chimera's Toggle All Freezes)", {}, [this](const Args &, std::string &) -> Value {
+		if (freezes_.empty()) return {};
+		/* as Chimera's: each one turned over, and said as the first one went unless they differed */
+		const bool first = freezes_.front().enabled;
+		const bool same = std::all_of(freezes_.begin(), freezes_.end(), [first](const Freeze &f) { return f.enabled == first; });
+		for (Freeze &f : freezes_) f.enabled = !f.enabled;
+		syncFreezes();
+		status.set(std::string("Freezes toggled (") + (same ? (first ? "off" : "on") : "mixed") + ")");
+		return {};
+	});
 	expose("greenzonePeriod", "which frames the greenzone stores: 1 every frame, N one in N, 0 none (saved with the project)",
 		greenzonePeriod, true);
 	expose("greenzoneEvery", "the N of storing every N frames, 2 to 999", greenzoneEvery, true);
@@ -1221,7 +1268,17 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			return {};
 		});
 	command("close", "closes the machine", {}, [this](const Args &, std::string &) -> Value {
-		submit([this] { closeOnMachine(); });
+		/* the freezes go with the game, as Chimera's */
+		if (!freezes_.empty())
+		{
+			freezes_.clear();
+			freezesUpdated();
+		}
+		submit([this] {
+			freezesM_.clear();
+			freezeGameM_.clear();
+			closeOnMachine();
+		});
 		return {};
 	}, &isOpen);
 	command("play", "runs the machine at its own speed", {}, [this](const Args &, std::string &) -> Value {
@@ -1855,6 +1912,11 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	}
 	ce_session_set_rerecords(s, counted);
 	adoptOnMachine(s, package, game, true);
+	{
+		std::error_code ec;
+		const std::filesystem::path where = std::filesystem::weakly_canonical(game, ec);
+		carryFreezesOnMachine(package + "\n" + (ec ? game : where.string()));
+	}
 	{
 		std::string stem = std::filesystem::path(game).stem().string();
 		later([this, stem, game] {
@@ -3060,6 +3122,14 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 	rememberAboutOnMachine(path);
 	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
 	adoptOnMachine(s, package, (title.empty() ? path : title) + note, true);
+	{
+		/* the game a project plays: its first file, where it was found */
+		const char *source = ce_project_file_count(p) > 0 ? ce_project_file_source_path(p, 0) : nullptr;
+		const std::string game = source != nullptr && *source != '\0' ? source : path;
+		std::error_code ec;
+		const std::filesystem::path where = std::filesystem::weakly_canonical(game, ec);
+		carryFreezesOnMachine(package + "\n" + (ec ? game : where.string()));
+	}
 	{
 		const char *first = ce_project_file_count(p) > 0 ? ce_project_file_name(p, 0) : nullptr;
 		std::string stem = first != nullptr ? std::filesystem::path(first).stem().string() : title;
@@ -4309,6 +4379,17 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		}
 		runningM_ = false;
 		diedM_ = true;
+		/* as Chimera's: a frozen address may be what stopped the core, and it would be written again on
+		 * the first frame after going back; the freezes are switched off, not removed */
+		if (std::any_of(freezesM_.begin(), freezesM_.end(), [](const Freeze &z) { return z.enabled; }))
+		{
+			for (Freeze &z : freezesM_) z.enabled = false;
+			for (int32_t i = 0; i < ce_session_freeze_count(s_); i++) ce_session_freeze_enable(s_, i, 0);
+			later([this, list = freezesM_] {
+				freezes_ = list;
+				freezesUpdated();
+			});
+		}
 		const std::string why = death != nullptr && *death != '\0' ? std::string("The machine stopped: ") + death
 																	 : std::string("The movie could not be played: ") + ce_session_last_error(s_);
 		later([this, why] { running.set(false); status.set(why); });
@@ -4666,6 +4747,146 @@ void SessionViewModel::setRecordMask(uint64_t mask, std::vector<bool> axes)
 {
 	recordMaskM_.store(mask);
 	submit([this, axes = std::move(axes)] { recordAxesM_ = axes; });
+}
+
+bool SessionViewModel::frozen(const std::string &domain, int64_t address) const
+{
+	for (const Freeze &f : freezes_)
+		if (f.enabled && f.property.empty() && f.domain == domain && address >= f.address && address < f.address + f.size) return true;
+	return false;
+}
+
+bool SessionViewModel::propertyFrozen(const std::string &name) const
+{
+	for (const Freeze &f : freezes_)
+		if (f.enabled && f.property == name) return true;
+	return false;
+}
+
+int32_t SessionViewModel::addFreezeOnMachine(const Freeze &f)
+{
+	if (s_ == nullptr) return -1;
+	int32_t i = -1;
+	if (!f.property.empty())
+	{
+		uint32_t element = 0;
+		const int32_t index = ce_session_property_find(s_, f.property.c_str(), &element);
+		if (index < 0) return -1;
+		i = ce_session_freeze_property(s_, index, element, f.text.c_str());
+	}
+	else
+		for (int32_t d = 0; d < ce_session_domain_count(s_); d++)
+		{
+			const char *n = ce_session_domain_name(s_, d);
+			if (n != nullptr && f.domain == n)
+			{
+				i = ce_session_freeze(s_, d, f.address, f.size, f.bigEndian ? 1 : 0, f.value, 0, 0);
+				break;
+			}
+		}
+	if (i >= 0) ce_session_freeze_enable(s_, i, f.enabled ? 1 : 0);
+	return i;
+}
+
+std::vector<SessionViewModel::Freeze> SessionViewModel::syncFreezesOnMachine(const std::vector<Freeze> &list)
+{
+	std::vector<Freeze> kept;
+	if (s_ == nullptr) return kept;
+	ce_session_unfreeze_all(s_);
+	for (const Freeze &f : list)
+		if (addFreezeOnMachine(f) >= 0) kept.push_back(f);
+	return kept;
+}
+
+void SessionViewModel::carryFreezesOnMachine(const std::string &game)
+{
+	if (game != freezeGameM_) freezesM_.clear();
+	freezeGameM_ = game;
+	const size_t had = freezesM_.size();
+	freezesM_ = syncFreezesOnMachine(freezesM_);
+	if (had == 0 && freezesM_.empty()) return;
+	later([this, list = freezesM_] {
+		freezes_ = list;
+		freezesUpdated();
+	});
+}
+
+void SessionViewModel::freezesUpdated()
+{
+	frozenCount.set(std::count_if(freezes_.begin(), freezes_.end(), [](const Freeze &f) { return f.enabled; }));
+	freezesChanged.emit();
+}
+
+void SessionViewModel::syncFreezes()
+{
+	freezesUpdated();
+	submit([this, list = freezes_] {
+		freezesM_ = list;
+		if (s_ == nullptr) return;
+		std::vector<Freeze> kept = syncFreezesOnMachine(list);
+		if (kept.size() == list.size()) return;
+		freezesM_ = kept;
+		later([this, kept] {
+			freezes_ = kept;
+			freezesUpdated();
+		});
+	});
+}
+
+bool SessionViewModel::freeze(const Freeze &f, std::string &error)
+{
+	std::vector<Freeze> list = freezes_;
+	const auto same = [&f](const Freeze &g) {
+		return f.property.empty() ? g.property.empty() && g.domain == f.domain && g.address == f.address : g.property == f.property;
+	};
+	if (auto it = std::find_if(list.begin(), list.end(), same); it != list.end()) *it = f;
+	else list.push_back(f);
+	std::string why;
+	onMachineWait([&](ce_session *s) {
+		if (s == nullptr)
+		{
+			why = "no machine is running";
+			return;
+		}
+		if (addFreezeOnMachine(f) < 0)
+		{
+			const char *e = ce_session_last_error(s);
+			why = e != nullptr && *e != '\0' ? e : (f.property.empty() ? "no memory domain " + f.domain : "no game property " + f.property);
+			return;
+		}
+		freezesM_ = list;
+	});
+	if (!why.empty())
+	{
+		error = why;
+		return false;
+	}
+	freezes_ = std::move(list);
+	freezesUpdated();
+	return true;
+}
+
+void SessionViewModel::unfreeze(const std::string &domain, int64_t address)
+{
+	const size_t had = freezes_.size();
+	std::erase_if(freezes_, [&](const Freeze &f) {
+		return f.property.empty() && f.domain == domain && address >= f.address && address < f.address + f.size;
+	});
+	if (freezes_.size() != had) syncFreezes();
+}
+
+void SessionViewModel::unfreezeProperty(const std::string &name)
+{
+	const size_t had = freezes_.size();
+	std::erase_if(freezes_, [&](const Freeze &f) { return f.property == name; });
+	if (freezes_.size() != had) syncFreezes();
+}
+
+void SessionViewModel::unfreezeAll()
+{
+	if (freezes_.empty()) return;
+	freezes_.clear();
+	syncFreezes();
 }
 
 } // namespace chimera::vm

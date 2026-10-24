@@ -49,6 +49,10 @@ public:
 	Property<int64_t> picked{-1};
 	Property<int64_t> secondaryCount{0};
 	Property<bool> writable{false};
+	/* the address highlighted is frozen (Freeze Address reads Unfreeze
+	 * Address), and any address is frozen at all */
+	Property<bool> pickedFrozen{false};
+	Property<bool> anyFrozen{false};
 	Property<std::string> status;
 	/* hex digits typed into the highlighted address so far */
 	Property<std::string> nibbles;
@@ -81,8 +85,8 @@ private:
 		/* address; a value and whether it changed for each of the 16 / size
 		 * places (v0, c0, v1, c1, ...); the text; each place's highlight
 		 * (h0.., 0 none, 1 the address, 2 one beside it); each byte's
-		 * character (t0..) and its highlight (th0..) */
-		int32_t columnCount() const override { return 82; }
+		 * character (t0..) and its highlight (th0..); each place frozen (f0..) */
+		int32_t columnCount() const override { return 98; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -119,7 +123,10 @@ private:
 	RamWatchViewModel *ramWatch_ = nullptr;
 	Lines lines_{*this};
 	int hooks_ = 0;
-	Connection opensWatch_, domainWatch_, topWatch_, visibleWatch_, sizeWatch_, pickedWatch_, gameWatch_, endianWatch_;
+	Connection opensWatch_, domainWatch_, topWatch_, visibleWatch_, sizeWatch_, pickedWatch_, gameWatch_, endianWatch_, freezesWatch_, pickedFrozenWatch_;
+	/* any byte of the place at address frozen, in the domain shown */
+	bool placeFrozen(int64_t address) const;
+	void freezesShown();
 	/* the addresses highlighted beside the first */
 	std::set<int64_t> secondary_;
 	std::map<int, char> table_;

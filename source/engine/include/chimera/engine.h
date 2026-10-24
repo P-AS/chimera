@@ -1898,6 +1898,34 @@ CE_API uint64_t ce_session_rerecords(const ce_session *s);
 CE_API void ce_session_set_rerecords(ce_session *s, uint64_t count);
 CE_API void ce_session_rerecord_counting(ce_session *s, int32_t on);
 
+/* Frozen addresses (cheats): values the engine writes into the machine before
+ * every frame it runs - a frame advance, a movie advance, a seek's replay -
+ * for this session only. They are never saved, and never go into a movie, a
+ * project or a state: frozen values are for looking into a game, not for
+ * making a movie (the owner, 2026-10-24). A freeze changes the machine, so
+ * the states kept while one is on are of the machine with it.
+ * _freeze: bytes of a writable memory domain with linear backing - size 1, 2
+ * or 4 at address, value in the byte order asked (big_endian 1 or 0). With
+ * compare_kind other than 0 the value is written only when `compare OP now`
+ * holds, OP by kind: 1 ==, 2 !=, 3 >, 4 >=, 5 <, 6 <= (Chimera's conditional
+ * cheats). A freeze already at that domain and address is replaced. Returns
+ * its index, or -1 (ce_session_last_error says why).
+ * _freeze_property: a game property's element, set from its text by the
+ * engine's rules before every frame; one already on that element is replaced.
+ * _unfreeze: by index (the later ones move down). _freeze_enable: a freeze
+ * switched off stays in the list and writes nothing; _freeze_enabled is 1 on,
+ * 0 off, -1 no such freeze. _frozen: the index of a freeze that is on and
+ * writes `address` of `domain`, else -1. The machine's thread. */
+CE_API int32_t ce_session_freeze(ce_session *s, int32_t domain, int64_t address, int32_t size, int32_t big_endian, uint64_t value,
+	int32_t compare_kind, uint64_t compare);
+CE_API int32_t ce_session_freeze_property(ce_session *s, int32_t index, uint32_t element, const char *text);
+CE_API int32_t ce_session_freeze_count(const ce_session *s);
+CE_API void ce_session_unfreeze(ce_session *s, int32_t index);
+CE_API void ce_session_unfreeze_all(ce_session *s);
+CE_API void ce_session_freeze_enable(ce_session *s, int32_t index, int32_t on);
+CE_API int32_t ce_session_freeze_enabled(const ce_session *s, int32_t index);
+CE_API int32_t ce_session_frozen(const ce_session *s, int32_t domain, int64_t address);
+
 /* The history, kept between sessions. It is written to one file, streamed a
  * segment at a time - nothing about it is ever assembled in memory, which is
  * the whole point: the greenzone this replaces serialized itself through a

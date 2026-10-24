@@ -234,6 +234,41 @@ public:
 	 * becomes what is held. Off whenever a project opens, as Chimera's
 	 * TAStudio starts read only. */
 	Property<bool> recordingMode{false};
+
+	/* Frozen addresses, Chimera's freezes: values the engine writes before
+	 * every frame, its replays included, for this session only - never
+	 * saved, never in a movie (the owner, 2026-10-24: they are for looking
+	 * into a game, not for making a movie). A domain's bytes, or a game
+	 * property's element by name. As Chimera's, they stay while the same
+	 * game runs again (a restart, a project of it) and go for another game,
+	 * and they are switched off when the machine stops. */
+	struct Freeze
+	{
+		std::string domain;
+		int64_t address = 0;
+		int32_t size = 1;
+		bool bigEndian = false;
+		uint64_t value = 0;
+		/* a game property instead, by its name as a watch has it (an
+		 * element's included), set from text */
+		std::string property;
+		std::string text;
+		bool enabled = true;
+	};
+	const std::vector<Freeze> &freezes() const { return freezes_; }
+	/* an enabled freeze writes this address of the domain */
+	bool frozen(const std::string &domain, int64_t address) const;
+	bool propertyFrozen(const std::string &name) const;
+	/* added, or put in place of the one at the same address or element; this
+	 * waits for the machine, and says why when it refuses */
+	bool freeze(const Freeze &f, std::string &error);
+	/* every freeze writing this address, or on this element, goes */
+	void unfreeze(const std::string &domain, int64_t address);
+	void unfreezeProperty(const std::string &name);
+	void unfreezeAll();
+	/* the freezes on: Chimera's status bar shows its icon then */
+	Property<int64_t> frozenCount{0};
+	Signal<> freezesChanged;
 	/* which frames the greenzone stores: 1 every frame, N one in N, 0 none
 	 * (TAStudio's Greenzone box; saved with the project, 1 for one saved
 	 * before it was), and the N the "every N frames" choice uses */
@@ -945,6 +980,16 @@ private:
 	int64_t changedFirst_ = -1, changedLast_ = -1;
 	int64_t appendedFirst_ = -1, appendedLast_ = -1;
 	std::vector<RecordedFrame> recordedM_;
+	/* the freezes: the window's list, and the machine's copy with the game they belong to */
+	std::vector<Freeze> freezes_, freezesM_;
+	std::string freezeGameM_;
+	void freezesUpdated();
+	void syncFreezes();
+	/* the engine given the list again; those it refuses are left out */
+	std::vector<Freeze> syncFreezesOnMachine(const std::vector<Freeze> &list);
+	int32_t addFreezeOnMachine(const Freeze &f);
+	/* a new machine: the freezes stay for the same game, else go */
+	void carryFreezesOnMachine(const std::string &game);
 };
 
 } // namespace chimera::vm

@@ -121,9 +121,15 @@ ApplicationWindow {
         enabled: win.anyHighlighted && !win.fileOnDisk
         onTriggered: { if (win.vm.run("addToRamWatch") > 0 && win.showRamWatch) win.showRamWatch() }
     }
-    // frozen addresses are cheats, which wait on the owner (question 5)
-    Action { id: freezeAction; property string keysShown: "Space"; text: qsTr("&Freeze Address"); icon.source: "qrc:/chimera/icons/Freeze.png"; enabled: false }
-    Action { id: unfreezeAllAction; text: qsTr("Unfreeze All"); icon.source: "qrc:/chimera/icons/Unfreeze.png"; shortcut: "Shift+Del"; enabled: false }
+    // frozen addresses: written before every frame, for this session only
+    Action {
+        id: freezeAction; property string keysShown: "Space"
+        text: win.vm.pickedFrozen ? qsTr("Un&freeze Address") : qsTr("&Freeze Address")
+        icon.source: win.vm.pickedFrozen ? "qrc:/chimera/icons/Unfreeze.png" : "qrc:/chimera/icons/Freeze.png"
+        enabled: win.anyHighlighted && win.vm.writable && !win.fileOnDisk
+        onTriggered: win.vm.run("toggleFreeze")
+    }
+    Action { id: unfreezeAllAction; text: qsTr("Unfreeze All"); icon.source: "qrc:/chimera/icons/Unfreeze.png"; shortcut: "Shift+Del"; enabled: win.vm.anyFrozen; onTriggered: win.vm.run("unfreezeAll") }
     Action {
         id: pokeAction; text: qsTr("&Poke Address"); icon.source: "qrc:/chimera/icons/poke.png"; shortcut: "Ctrl+P"
         enabled: win.vm.writable && win.anyHighlighted
@@ -242,6 +248,7 @@ ApplicationWindow {
         MenuItem { action: exportAction }
         MenuItem { action: pasteAction; visible: win.vm.writable; height: visible ? implicitHeight : 0 }
         MenuItem { action: freezeAction; visible: win.anyHighlighted && win.vm.writable; height: visible ? implicitHeight : 0 }
+        MenuItem { action: unfreezeAllAction; visible: win.vm.anyFrozen; height: visible ? implicitHeight : 0 }
         Action { property string keysShown: "Ctrl+W"; text: qsTr("&Add to RAM Watch"); icon.source: "qrc:/chimera/icons/Find.png"; enabled: watchAction.enabled; onTriggered: watchAction.trigger() }
         Action { property string keysShown: "Ctrl+P"; text: qsTr("&Poke Address"); icon.source: "qrc:/chimera/icons/poke.png"; enabled: pokeAction.enabled; onTriggered: pokeAction.trigger() }
         MenuSeparator {}
@@ -283,6 +290,8 @@ ApplicationWindow {
                     win.vm.run("key", [keys[event.key], shift || event.key === Qt.Key_Backtab])
                     event.accepted = true
                 } else if (event.key === Qt.Key_Plus) { win.vm.run("increment"); event.accepted = true }
+                else if (event.key === Qt.Key_Space) { freezeAction.trigger(); event.accepted = true }
+                else if (event.key === Qt.Key_Delete) { win.vm.run(shift ? "unfreezeAll" : "unfreezeHighlighted"); event.accepted = true }
                 else if (event.key === Qt.Key_Minus) { win.vm.run("decrement"); event.accepted = true }
                 else if (ctrl && event.key === Qt.Key_W) { watchAction.trigger(); event.accepted = true }
                 else if (!ctrl && !(event.modifiers & Qt.AltModifier) && /^[0-9a-fA-F]$/.test(event.text)) {
@@ -319,11 +328,14 @@ ApplicationWindow {
                             delegate: Rectangle {
                                 required property int index
                                 readonly property int kind: line.model["h" + index] || 0
+                                readonly property bool frozen: line.model["f" + index] === true
                                 width: win.cellWidth
                                 height: win.lineHeight
-                                color: kind === 1 ? win.highlightColour : kind === 2 ? win.secondaryColour : "transparent"
-                                border.color: kind !== 0 ? win.textColour : "transparent"
-                                border.width: kind !== 0 ? 1 : 0
+                                // as Chimera's: a frozen value in the Freeze colour, boxed; highlighted too, the Freeze Highlight colour
+                                color: frozen ? (kind === 1 ? win.colour("HighlightFreeze", "HexHighlightFreeze", "#EE82EE") : win.colour("Freeze", "HexFreeze", "#ADD8E6"))
+                                     : kind === 1 ? win.highlightColour : kind === 2 ? win.secondaryColour : "transparent"
+                                border.color: kind !== 0 || frozen ? win.textColour : "transparent"
+                                border.width: kind !== 0 || frozen ? 1 : 0
                                 Text {
                                     x: 1
                                     text: line.model["v" + parent.index]

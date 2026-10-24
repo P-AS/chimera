@@ -1497,6 +1497,15 @@ ApplicationWindow {
                                qsTr("Key priority: Hotkeys will override controller buttons")][root.hotkeys.keyPriority] || ""
                 MouseArea { id: keyPriorityArea; anchors.fill: parent; hoverEnabled: true; onClicked: root.hotkeys.run("cycleKeyPriority") }
             }
+            // Chimera's freeze icon: some address is frozen
+            Image {
+                source: "qrc:/chimera/icons/Freeze.png"
+                visible: root.session.frozenCount > 0
+                Layout.preferredWidth: 16; Layout.preferredHeight: 16
+                HoverHandler { id: frozenHover }
+                ToolTip.visible: frozenHover.hovered
+                ToolTip.text: qsTr("Addresses are currently frozen")
+            }
             Label { text: root.session.error !== "" ? root.session.error : root.pianoRoll.error; color: root.osdColor("AccentError", "#b00020") }
             Label {
                 text: qsTr("Frame %1 of %2").arg(Number(root.pianoRoll.currentFrame).toLocaleString(Qt.locale(), "f", 0))

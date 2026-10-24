@@ -80,6 +80,10 @@ public:
 	/* Split Watch and Poke Address can work on every watch picked */
 	Property<bool> canSplit{false};
 	Property<bool> canPoke{false};
+	/* every watch picked is frozen (Freeze Address reads Unfreeze Address),
+	 * and any address is frozen at all (Unfreeze All is offered) */
+	Property<bool> selectionFrozen{false};
+	Property<bool> anyFrozen{false};
 	/* watches whose address is past their domain's end (Chimera's warning) */
 	Property<int64_t> invalidCount{0};
 	/* the domain a new watch starts in (Watches > Default Domain) */
@@ -100,7 +104,7 @@ private:
 	public:
 		explicit Rows(RamWatchViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.watches_.size()); }
-		int32_t columnCount() const override { return 14; }
+		int32_t columnCount() const override { return 15; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -138,7 +142,8 @@ private:
 	std::vector<Watch> watches_;
 	Rows rows_{*this};
 	int hooks_ = 0;
-	Connection opensWatch_, previousTypeWatch_, formSizeWatch_, showWatch_;
+	Connection opensWatch_, previousTypeWatch_, formSizeWatch_, showWatch_, freezesWatch_;
+	bool frozen(const Watch &w) const;
 	std::string systemId_;
 	/* each domain's size, as the machine last said (the view's thread) */
 	std::map<std::string, int64_t> domainSizes_;

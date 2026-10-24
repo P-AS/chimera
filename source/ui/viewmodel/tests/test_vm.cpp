@@ -6182,6 +6182,90 @@ bool recordingMode(const char *package, const char *rom)
 	return true;
 }
 
+/* Frozen addresses, as Chimera's freezes and as the owner decided
+ * (2026-10-24): the engine writes them before every frame, its replays
+ * included, for this session only; they stay for the same game run again,
+ * go for another game and when the game is closed, and are switched off
+ * (not removed) when the machine stops */
+bool freezes(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-freezes-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	fs::copy_file(rom, dir / "other.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	std::string error;
+	auto advance = [&](int n) {
+		const int64_t to = session.frame.get() + n;
+		for (int i = 0; i < n; i++) session.run("frameAdvance", {}, error);
+		return d.until([&] { return session.frame.get() == to; }, 20);
+	};
+	auto settle = [&] { d.until([] { return false; }, 0.2); };
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* a byte the game never writes */
+	const int64_t at = 4000;
+	session.key("Down", true);
+	CHECK(advance(10));
+	const uint8_t untouched = session.readDomain("RAM").at(at);
+	CHECK(untouched != 0x5A);
+	CHECK(session.run("freeze", {std::string("RAM"), at, int64_t{1}, false, int64_t{0x5A}}, error).has_value());
+	CHECK(session.frozenCount.get() == 1 && session.frozen("RAM", at) && !session.frozen("RAM", at + 1));
+	CHECK(advance(3));
+	CHECK(session.readDomain("RAM").at(at) == 0x5A);
+	/* a replay inside the engine writes it too: an edit before the frame the machine is on */
+	CHECK(session.run("writeMemory", {std::string("RAM"), at, std::string(1, static_cast<char>(untouched))}, error).has_value());
+	CHECK(session.readDomain("RAM").at(at) == untouched);
+	roll.run("toggle", {int64_t{2}, int64_t{4}}, error);
+	settle();
+	CHECK(d.until([&] { return session.frame.get() == 13; }, 20));
+	CHECK(session.readDomain("RAM").at(at) == 0x5A);
+	/* refused where the machine cannot write */
+	CHECK(!session.run("freeze", {std::string("NoSuchDomain"), at, int64_t{1}, false, int64_t{1}}, error).has_value());
+	CHECK(error == "no memory domain NoSuchDomain");
+	CHECK(session.freezes().size() == 1);
+	/* the same game run again keeps it: written from its first frame */
+	session.run("restart", {}, error);
+	CHECK(d.until([&] { return session.opens.get() == 2 && session.frame.get() == 0; }, 60));
+	settle();
+	CHECK(session.frozenCount.get() == 1);
+	CHECK(advance(1));
+	CHECK(session.readDomain("RAM").at(at) == 0x5A);
+	/* Toggle All Freezes: off and said so, the game's own byte back on a fresh start */
+	session.run("toggleAllFreezes", {}, error);
+	CHECK(session.frozenCount.get() == 0 && session.freezes().size() == 1 && session.status.get() == "Freezes toggled (off)");
+	session.run("restart", {}, error);
+	CHECK(d.until([&] { return session.opens.get() == 3 && session.frame.get() == 0; }, 60));
+	CHECK(advance(1));
+	CHECK(session.readDomain("RAM").at(at) == untouched);
+	session.run("toggleAllFreezes", {}, error);
+	CHECK(session.frozenCount.get() == 1 && session.status.get() == "Freezes toggled (on)");
+	/* the machine stops: the freeze is switched off, not removed */
+	session.key("Down", false);
+	session.run("scriptHold", {std::string("P1 Up\nP1 Down\nP1 Left\nP1 Right\nP1 A\nP1 B\nP1 Start\nP1 Select")}, error);
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.status.get().find("The machine stopped") == 0; }, 20));
+	settle();
+	CHECK(session.frozenCount.get() == 0 && session.freezes().size() == 1 && !session.freezes().front().enabled);
+	/* another game: gone */
+	session.run("toggleAllFreezes", {}, error);
+	CHECK(session.frozenCount.get() == 1);
+	session.run("open", {std::string(package), (dir / "other.testrom").string()}, error);
+	CHECK(d.until([&] { return session.opens.get() == 4 && session.isOpen.get(); }, 60));
+	CHECK(d.until([&] { return session.freezes().empty() && session.frozenCount.get() == 0; }, 20));
+	/* and closing the game lets them go */
+	CHECK(session.run("freeze", {std::string("RAM"), at, int64_t{1}, false, int64_t{0x11}}, error).has_value());
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	CHECK(session.freezes().empty() && session.frozenCount.get() == 0);
+	fs::remove_all(dir);
+	return true;
+}
+
 /* New Project, as Chimera's window makes one: a core, its machine, files
  * in the slots it declares, its settings, its firmware; made, then opened */
 std::string lower(std::string s)
@@ -7481,6 +7565,7 @@ int main(int argc, char **argv)
 			ranMachine = newProject(argv[1], argv[2]) && ranMachine;
 			ranMachine = rerecordCount(argv[1], argv[2]) && ranMachine;
 			ranMachine = recordingMode(argv[1], argv[2]) && ranMachine;
+			ranMachine = freezes(argv[1], argv[2]) && ranMachine;
 			ranMachine = ramWatch(argv[1], argv[2]) && ranMachine;
 			ranMachine = hexEditor(argv[1], argv[2]) && ranMachine;
 			ranMachine = pianoRollEditing(argv[1], argv[2]) && ranMachine;

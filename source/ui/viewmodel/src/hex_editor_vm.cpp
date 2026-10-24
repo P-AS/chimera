@@ -297,10 +297,53 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			const int sz = static_cast<int>(size.get());
 			const uint32_t mask = sz == 4 ? 0xFFFFFFFFu : (1u << (8 * sz)) - 1;
 			for (const int64_t at : highlightedAll())
-				if (!writeValue(at, (valueAt(at) + static_cast<uint32_t>(delta)) & mask, error)) return {};
+			{
+				const uint32_t v = (valueAt(at) + static_cast<uint32_t>(delta)) & mask;
+				if (!writeValue(at, v, error)) return {};
+				/* as Chimera's: a frozen value is the one stepped */
+				for (const SessionViewModel::Freeze &z : session_.freezes())
+					if (z.enabled && z.property.empty() && z.domain == domain.get() && z.address == at)
+					{
+						SessionViewModel::Freeze f = z;
+						f.value = v;
+						session_.freeze(f, error);
+						break;
+					}
+			}
 			return {};
 		};
 	};
+	command("toggleFreeze", "the values highlighted frozen at what they are now, or, when the address highlighted is, every "
+		"freeze on them gone (Chimera's Freeze Address, Space); false with what the machine refused", {},
+		[this](const Args &, std::string &error) -> Value {
+			if (!writable.get() || picked.get() < 0 || fileDomain()) return {};
+			const bool thaw = placeFrozen(picked.get());
+			for (const int64_t at : highlightedAll())
+			{
+				if (thaw)
+				{
+					session_.unfreeze(domain.get(), at);
+					continue;
+				}
+				SessionViewModel::Freeze f;
+				f.domain = domain.get();
+				f.address = at;
+				f.size = static_cast<int32_t>(size.get());
+				f.bigEndian = bigEndian.get();
+				f.value = valueAt(at);
+				if (!session_.freeze(f, error)) return false;
+			}
+			return true;
+		});
+	command("unfreezeHighlighted", "the freezes on the values highlighted go (Delete)", {}, [this](const Args &, std::string &) -> Value {
+		if (fileDomain()) return {};
+		for (const int64_t at : highlightedAll()) session_.unfreeze(domain.get(), at);
+		return {};
+	});
+	command("unfreezeAll", "no address frozen any longer (Chimera's Unfreeze All, Shift+Delete)", {}, [this](const Args &, std::string &) -> Value {
+		session_.unfreezeAll();
+		return {};
+	});
 	command("increment", "each value highlighted made one more (+)", {}, stepper(1));
 	command("decrement", "each value highlighted made one less (-)", {}, stepper(-1));
 	command("copyText", "Copy: the bytes highlighted, in hex, run together", {}, [this](const Args &, std::string &) -> Value {
@@ -591,6 +634,8 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 		refreshDomains();
 	});
 	opensWatch_ = session_.opens.changed.connect([this] { refreshDomains(); });
+	freezesWatch_ = session_.freezesChanged.connect([this] { freezesShown(); });
+	pickedFrozenWatch_ = picked.changed.connect([this] { pickedFrozen.set(picked.get() >= 0 && placeFrozen(picked.get())); });
 	refreshDomains();
 	titles();
 }
@@ -799,6 +844,22 @@ bool HexEditorViewModel::writeValue(int64_t address, uint32_t value, std::string
 	return writeNow(address, bytes, error);
 }
 
+bool HexEditorViewModel::placeFrozen(int64_t address) const
+{
+	if (fileDomain()) return false;
+	const int sz = static_cast<int>(size.get());
+	for (int k = 0; k < sz; k++)
+		if (session_.frozen(domain.get(), address + k)) return true;
+	return false;
+}
+
+void HexEditorViewModel::freezesShown()
+{
+	anyFrozen.set(session_.frozenCount.get() > 0);
+	pickedFrozen.set(picked.get() >= 0 && placeFrozen(picked.get()));
+	lines_.reset.emit();
+}
+
 std::vector<int64_t> HexEditorViewModel::highlightedAll() const
 {
 	std::vector<int64_t> out;
@@ -941,6 +1002,7 @@ std::string HexEditorViewModel::Lines::columnName(int32_t column) const
 	if (column >= 34 && column < 50) return "h" + std::to_string(column - 34);
 	if (column >= 50 && column < 66) return "t" + std::to_string(column - 50);
 	if (column >= 66 && column < 82) return "th" + std::to_string(column - 66);
+	if (column >= 82 && column < 98) return "f" + std::to_string(column - 82);
 	if (column < 0 || column > 33) return "";
 	const int k = (column - 1) / 2;
 	return ((column - 1) % 2 == 0 ? "v" : "c") + std::to_string(k);
@@ -984,6 +1046,11 @@ Value HexEditorViewModel::Lines::cell(int64_t row, int32_t column) const
 	{
 		const int k = column - 66;
 		return static_cast<int64_t>(vm_.highlightKind(address + (k / sz) * sz));
+	}
+	if (column >= 82 && column < 98)
+	{
+		const int place = column - 82;
+		return place < 16 / sz && vm_.placeFrozen(address + place * sz);
 	}
 	if (column < 1 || column > 32) return {};
 	const int place = (column - 1) / 2;

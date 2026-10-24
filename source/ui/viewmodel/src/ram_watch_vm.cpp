@@ -587,6 +587,14 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 						else if (ce_session_property_set_text(s, index, element, text.c_str()) != 0) why = ce_session_last_error(s);
 					});
 					if (!why.empty()) refused += (refused.empty() ? "" : "\n") + w.property + ": " + why;
+					/* a frozen property is frozen at what was poked, as Chimera's RAM Poke does */
+					else if (session_.propertyFrozen(w.property))
+					{
+						SessionViewModel::Freeze f;
+						f.property = w.property;
+						f.text = text;
+						session_.freeze(f, why);
+					}
 					continue;
 				}
 				std::string why;
@@ -604,6 +612,48 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			}
 			return true;
 		});
+	command("toggleFreeze", "the watches picked frozen at the values they have now, or, when all of them are, no longer "
+		"(Chimera's Freeze Address); false with what the machine refused", {}, [this](const Args &, std::string &error) -> Value {
+			const bool thaw = selectionFrozen.get();
+			std::string refused;
+			for (const Watch &w : watches_)
+			{
+				if (!w.selected || w.separator) continue;
+				if (thaw)
+				{
+					if (!w.property.empty()) session_.unfreezeProperty(w.property);
+					else session_.unfreeze(w.domain, w.address);
+					continue;
+				}
+				if (!w.readable) continue;
+				SessionViewModel::Freeze f;
+				if (!w.property.empty())
+				{
+					f.property = w.property;
+					f.text = w.valueText;
+				}
+				else
+				{
+					f.domain = w.domain;
+					f.address = w.address;
+					f.size = w.size;
+					f.bigEndian = w.bigEndian;
+					f.value = w.value;
+				}
+				std::string why;
+				if (!session_.freeze(f, why)) refused += (refused.empty() ? "" : "\n") + why;
+			}
+			if (!refused.empty())
+			{
+				error = refused;
+				return false;
+			}
+			return true;
+		});
+	command("unfreezeAll", "no address frozen any longer (Chimera's Unfreeze All)", {}, [this](const Args &, std::string &) -> Value {
+		session_.unfreezeAll();
+		return {};
+	});
 	command("copySelected", "the rows picked as .wch lines, for the clipboard (Ctrl+C)", {}, [this](const Args &, std::string &) -> Value {
 		std::string out;
 		for (const Watch &w : watches_)
@@ -722,6 +772,11 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	showWatch_ = showOnScreen.changed.connect([this] { refreshOnScreen(); });
 	showWays();
 	opensWatch_ = session_.opens.changed.connect([this] { refreshDomains(); });
+	freezesWatch_ = session_.freezesChanged.connect([this] {
+		anyFrozen.set(session_.frozenCount.get() > 0);
+		selectionChanged();
+		if (!watches_.empty()) rows_.changed.emit(0, static_cast<int64_t>(watches_.size()) - 1);
+	});
 	refreshDomains();
 	previousTypeWatch_ = previousType.changed.connect([this] {
 		const int t = static_cast<int>(previousType.get());
@@ -1185,6 +1240,9 @@ void RamWatchViewModel::selectionChanged()
 	selectedWatches.set(pickedWatches);
 	canSplit.set(pickedWatches > 0 && split);
 	canPoke.set(pickedWatches > 0 && writable);
+	selectionFrozen.set(pickedWatches > 0 && std::all_of(watches_.begin(), watches_.end(), [this](const Watch &w) {
+		return !w.selected || w.separator || frozen(w);
+	}));
 	invalidCount.set(bad);
 }
 
@@ -1226,14 +1284,33 @@ bool RamWatchViewModel::poke(const Watch &w, const std::string &text, std::strin
 		const int shift = 8 * (w.bigEndian ? w.size - 1 - i : i);
 		bytes[static_cast<size_t>(i)] = static_cast<char>((v >> shift) & 0xFF);
 	}
-	return session_.run("writeMemory", {w.domain, w.address, bytes}, error).has_value();
+	if (!session_.run("writeMemory", {w.domain, w.address, bytes}, error).has_value()) return false;
+	/* a frozen address is frozen at what was poked, as Chimera's RAM Poke does */
+	if (session_.frozen(w.domain, w.address))
+		for (const SessionViewModel::Freeze &z : session_.freezes())
+			if (z.enabled && z.property.empty() && z.domain == w.domain && z.address == w.address && z.size == w.size)
+			{
+				SessionViewModel::Freeze f = z;
+				f.value = v;
+				f.bigEndian = w.bigEndian;
+				std::string ignored;
+				session_.freeze(f, ignored);
+				break;
+			}
+	return true;
+}
+
+bool RamWatchViewModel::frozen(const Watch &w) const
+{
+	if (w.separator) return false;
+	return !w.property.empty() ? session_.propertyFrozen(w.property) : session_.frozen(w.domain, w.address);
 }
 
 std::string RamWatchViewModel::Rows::columnName(int32_t column) const
 {
 	static const char *const names[] = {"address", "value", "previous", "changes", "diff", "domain", "note", "size", "shownAs", "onScreen",
-		"type", "selected", "invalid", "separator"};
-	return column >= 0 && column < 14 ? names[column] : "";
+		"type", "selected", "invalid", "separator", "frozen"};
+	return column >= 0 && column < 15 ? names[column] : "";
 }
 
 Value RamWatchViewModel::Rows::cell(int64_t row, int32_t column) const
@@ -1244,6 +1321,7 @@ Value RamWatchViewModel::Rows::cell(int64_t row, int32_t column) const
 	if (column == 11) return w.selected;
 	if (column == 12) return vm_.invalid(w);
 	if (column == 13) return w.separator;
+	if (column == 14) return vm_.frozen(w);
 	if (w.separator) return column == 6 ? Value(w.note) : column == 9 ? Value(false) : Value(std::string());
 	/* Chimera's Type column: the size, the display's letter, the byte order's (2hB: a word, hex, big end first) */
 	if (column == 10)

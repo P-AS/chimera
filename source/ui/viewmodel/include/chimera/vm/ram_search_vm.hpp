@@ -76,6 +76,10 @@ public:
 	/* rows picked, and whether they can be poked */
 	Property<int64_t> selectedCount{0};
 	Property<bool> canPoke{false};
+	/* every row picked is frozen (Freeze Address reads Unfreeze Address; not
+	 * asked past a thousand rows, as Chimera's), and any address is frozen */
+	Property<bool> selectionFrozen{false};
+	Property<bool> anyFrozen{false};
 	/* the .wch file last opened or saved */
 	Property<std::string> currentFile;
 
@@ -95,7 +99,7 @@ private:
 	public:
 		explicit Results(RamSearchViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return vm_.rows_; }
-		int32_t columnCount() const override { return 8; }
+		int32_t columnCount() const override { return 9; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -147,6 +151,8 @@ private:
 	RamWatchViewModel *ramWatch_ = nullptr;
 	Results results_{*this};
 	int hooks_ = 0;
+	Connection freezesWatch_;
+	void freezesShown();
 	Connection opensWatch_, sizeWatch_, bigEndianWatch_, displayWatch_, previousWatch_, domainWatch_, fastWatch_, misalignedWatch_,
 		undoWatch_, autoWatch_, lagWatch_, excludeWatch_;
 	std::vector<Connection> paramWatches_;

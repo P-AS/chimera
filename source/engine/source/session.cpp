@@ -746,6 +746,24 @@ struct ce_session
 	void (*frameAdvance)(uint64_t) = nullptr;
 	/* frameAdvance under the watchdog (GuestWatchdog) */
 	void runFrame(uint64_t pad);
+	/* frozen addresses (ce_session_freeze): written before every frame */
+	struct Freeze
+	{
+		bool enabled = true;
+		int32_t domain = -1;
+		int64_t address = 0;
+		int32_t size = 1;
+		bool bigEndian = false;
+		uint64_t value = 0;
+		int32_t compareKind = 0;
+		uint64_t compare = 0;
+		/* a game property's element instead, set from text */
+		int32_t property = -1;
+		uint32_t element = 0;
+		std::string text;
+	};
+	std::vector<Freeze> freezes;
+	void applyFreezes();
 	std::unique_ptr<struct GuestWatchdog> watchdog;
 	/* the next frame is the first after starting or a state load: it has the
 	 * start's time (GuestWatchdog) */
@@ -1641,6 +1659,7 @@ void ce_session::runFrame(uint64_t pad)
 		}
 	}
 	firstFrame = false;
+	applyFreezes();
 	t_framing = this;
 	frameAdvance(pad);
 	t_framing = nullptr;
@@ -4909,4 +4928,144 @@ void ce_session_set_input_poll_callback(ce_session *s, ce_input_poll_fn fn, void
 	if (s == nullptr) return;
 	s->inputPollFn = fn;
 	s->inputPollCtx = ctx;
+}
+
+/* ---- frozen addresses ---- */
+
+static uint64_t freezeRead(const ce_session::Freeze &f, const uint8_t *at)
+{
+	uint64_t v = 0;
+	for (int32_t i = 0; i < f.size; i++) v |= uint64_t{at[f.bigEndian ? f.size - 1 - i : i]} << (8 * i);
+	return v;
+}
+
+void ce_session::applyFreezes()
+{
+	for (const Freeze &f : freezes)
+	{
+		if (!f.enabled) continue;
+		if (f.property >= 0)
+		{
+			std::string ignored;
+			placeProperty(f.property);
+			properties.writeText(f.property, f.element, f.text, ignored);
+			continue;
+		}
+		if (f.domain < 0 || f.domain >= mdCount() || mdPtr == nullptr || f.address < 0 || f.address + f.size > mdSize(f.domain)) continue;
+		const uintptr_t base = mdPtr(f.domain);
+		if (base == 0) continue;
+		if (f.compareKind != 0)
+		{
+			const uint8_t *seen = domainReadView(this, f.domain, f.address, f.size);
+			if (seen == nullptr) continue;
+			const uint64_t now = freezeRead(f, seen);
+			bool write = true;
+			switch (f.compareKind)
+			{
+			case 1: write = f.compare == now; break;
+			case 2: write = f.compare != now; break;
+			case 3: write = f.compare > now; break;
+			case 4: write = f.compare >= now; break;
+			case 5: write = f.compare < now; break;
+			case 6: write = f.compare <= now; break;
+			default: break;
+			}
+			if (!write) continue;
+		}
+		uint8_t *at = reinterpret_cast<uint8_t *>(base) + f.address;
+		for (int32_t i = 0; i < f.size; i++) at[f.bigEndian ? f.size - 1 - i : i] = static_cast<uint8_t>(f.value >> (8 * i));
+	}
+}
+
+int32_t ce_session_freeze(ce_session *s, int32_t domain, int64_t address, int32_t size, int32_t big_endian, uint64_t value,
+	int32_t compare_kind, uint64_t compare)
+{
+	s->error.clear();
+	if (!domainIndexOk(s, domain))
+	{
+		s->error = "no memory domain " + std::to_string(domain);
+		return -1;
+	}
+	const char *name = reinterpret_cast<const char *>(s->mdName(domain));
+	if (s->mdWritable(domain) == 0 || s->mdPtr == nullptr || s->mdPtr(domain) == 0)
+	{
+		s->error = std::string(name != nullptr ? name : "the domain") + " cannot be written";
+		return -1;
+	}
+	if ((size != 1 && size != 2 && size != 4) || address < 0 || address + size > s->mdSize(domain))
+	{
+		s->error = std::string(name != nullptr ? name : "the domain") + " has no " + std::to_string(size) + " bytes at " + std::to_string(address);
+		return -1;
+	}
+	if (compare_kind < 0 || compare_kind > 6)
+	{
+		s->error = "no compare kind " + std::to_string(compare_kind);
+		return -1;
+	}
+	ce_session::Freeze f;
+	f.domain = domain;
+	f.address = address;
+	f.size = size;
+	f.bigEndian = big_endian != 0;
+	f.value = value & ((uint64_t{1} << (8 * size)) - 1);
+	f.compareKind = compare_kind;
+	f.compare = compare;
+	for (size_t i = 0; i < s->freezes.size(); i++)
+		if (s->freezes[i].property < 0 && s->freezes[i].domain == domain && s->freezes[i].address == address)
+		{
+			s->freezes[i] = f;
+			return static_cast<int32_t>(i);
+		}
+	s->freezes.push_back(f);
+	return static_cast<int32_t>(s->freezes.size() - 1);
+}
+
+int32_t ce_session_freeze_property(ce_session *s, int32_t index, uint32_t element, const char *text)
+{
+	s->error.clear();
+	/* the text is checked once, by writing it now */
+	if (ce_session_property_set_text(s, index, element, text) != 0) return -1;
+	ce_session::Freeze f;
+	f.property = index;
+	f.element = element;
+	f.text = text != nullptr ? text : "";
+	for (size_t i = 0; i < s->freezes.size(); i++)
+		if (s->freezes[i].property == index && s->freezes[i].element == element)
+		{
+			s->freezes[i] = f;
+			return static_cast<int32_t>(i);
+		}
+	s->freezes.push_back(f);
+	return static_cast<int32_t>(s->freezes.size() - 1);
+}
+
+int32_t ce_session_freeze_count(const ce_session *s) { return static_cast<int32_t>(s->freezes.size()); }
+
+void ce_session_unfreeze(ce_session *s, int32_t index)
+{
+	if (index >= 0 && static_cast<size_t>(index) < s->freezes.size()) s->freezes.erase(s->freezes.begin() + index);
+}
+
+void ce_session_unfreeze_all(ce_session *s) { s->freezes.clear(); }
+
+void ce_session_freeze_enable(ce_session *s, int32_t index, int32_t on)
+{
+	if (index >= 0 && static_cast<size_t>(index) < s->freezes.size()) s->freezes[static_cast<size_t>(index)].enabled = on != 0;
+}
+
+int32_t ce_session_freeze_enabled(const ce_session *s, int32_t index)
+{
+	if (index < 0 || static_cast<size_t>(index) >= s->freezes.size()) return -1;
+	return s->freezes[static_cast<size_t>(index)].enabled ? 1 : 0;
+}
+
+int32_t ce_session_frozen(const ce_session *s, int32_t domain, int64_t address)
+{
+	for (size_t i = 0; i < s->freezes.size(); i++)
+	{
+		const ce_session::Freeze &f = s->freezes[i];
+		if (f.enabled && f.property < 0 && f.domain == domain && address >= f.address && address < f.address + f.size)
+			return static_cast<int32_t>(i);
+	}
+	return -1;
 }

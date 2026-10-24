@@ -340,6 +340,48 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 			out.members.emplace_back("property", json::Json::boolean_(false));
 			return json::write(out);
 		});
+	command("toggleFreeze", "the rows picked frozen at the values they have now, or, when all of them are, no longer "
+		"(Chimera's Freeze Address); false with what the machine refused", {}, [this](const Args &, std::string &error) -> Value {
+			const bool thaw = selectionFrozen.get();
+			const int s = static_cast<int>(size.get());
+			std::string refused;
+			for (const int64_t row : pickedRows())
+			{
+				uint64_t at = 0;
+				uint32_t cur = 0, prev = 0, changes = 0;
+				{
+					std::lock_guard<std::mutex> lock(rsM_);
+					if (rs_ == nullptr || ce_ramsearch_row(rs_, row, &at, &cur, &prev, &changes) == 0) continue;
+				}
+				if (thaw)
+				{
+					session_.unfreeze(searchedDomain.get(), static_cast<int64_t>(at));
+					continue;
+				}
+				SessionViewModel::Freeze f;
+				f.domain = searchedDomain.get();
+				f.address = static_cast<int64_t>(at);
+				f.size = s;
+				f.bigEndian = bigEndian.get();
+				f.value = cur;
+				std::string why;
+				if (!session_.freeze(f, why))
+				{
+					refused = why;
+					break;
+				}
+			}
+			if (!refused.empty())
+			{
+				error = refused;
+				return false;
+			}
+			return true;
+		});
+	command("unfreezeAll", "no address frozen any longer (Chimera's Unfreeze All)", {}, [this](const Args &, std::string &) -> Value {
+		session_.unfreezeAll();
+		return {};
+	});
 	command("pokeSelected", "a value written at every row picked, read as values are shown. False with what went wrong", {"value"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string text;
@@ -367,6 +409,17 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 				{
 					error = "An error occurred when writing Value.";
 					return false;
+				}
+				/* a frozen address is frozen at what was poked, as Chimera's RAM Poke does */
+				if (session_.frozen(searchedDomain.get(), static_cast<int64_t>(at)))
+				{
+					SessionViewModel::Freeze f;
+					f.domain = searchedDomain.get();
+					f.address = static_cast<int64_t>(at);
+					f.size = s;
+					f.bigEndian = bigEndian.get();
+					f.value = v;
+					session_.freeze(f, why);
 				}
 			}
 			if (rows_ > 0) results_.changed.emit(0, rows_ - 1);
@@ -589,6 +642,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 	hooks_ = session_.addMachineHooks([this](ce_session *s) { afterFrameOnMachine(s); }, [this](ce_session *) { dropOnMachine(); });
 	/* each machine opened: its domains */
 	opensWatch_ = session_.opens.changed.connect([this] {
+	freezesWatch_ = session_.freezesChanged.connect([this] { freezesShown(); });
 		session_.onMachine([this](ce_session *s) {
 			std::string names, first;
 			if (s != nullptr)
@@ -715,6 +769,29 @@ void RamSearchViewModel::pickedChanged()
 	for (const auto &r : picked_) n += r.second - r.first + 1;
 	selectedCount.set(n);
 	canPoke.set(n > 0 && domainWritable_);
+	freezesShown();
+}
+
+void RamSearchViewModel::freezesShown()
+{
+	anyFrozen.set(session_.frozenCount.get() > 0);
+	bool all = selectedCount.get() > 0 && selectedCount.get() <= 1000;
+	if (all)
+		for (const int64_t row : pickedRows())
+		{
+			uint64_t at = 0;
+			uint32_t cur = 0, prev = 0, changes = 0;
+			{
+				std::lock_guard<std::mutex> lock(rsM_);
+				if (rs_ == nullptr || ce_ramsearch_row(rs_, row, &at, &cur, &prev, &changes) == 0) continue;
+			}
+			if (!session_.frozen(searchedDomain.get(), static_cast<int64_t>(at)))
+			{
+				all = false;
+				break;
+			}
+		}
+	selectionFrozen.set(all);
 	if (rows_ > 0) results_.changed.emit(0, rows_ - 1);
 }
 
@@ -927,8 +1004,8 @@ std::string RamSearchViewModel::addressText(uint64_t address) const
 
 std::string RamSearchViewModel::Results::columnName(int32_t column) const
 {
-	static const char *const names[] = {"Address", "Value", "Previous", "Changes", "Diff", "selected", "preview", "invalid"};
-	return column >= 0 && column < 8 ? names[column] : "";
+	static const char *const names[] = {"Address", "Value", "Previous", "Changes", "Diff", "selected", "preview", "invalid", "frozen"};
+	return column >= 0 && column < 9 ? names[column] : "";
 }
 
 Value RamSearchViewModel::Results::cell(int64_t row, int32_t column) const
@@ -960,6 +1037,7 @@ Value RamSearchViewModel::Results::cell(int64_t row, int32_t column) const
 	case 6: return removed;
 	/* Chimera's rule: the address past the domain's end */
 	case 7: return vm_.domainSize_ > 0 && static_cast<int64_t>(address) >= vm_.domainSize_;
+	case 8: return vm_.session_.frozen(vm_.searchedDomain.get(), static_cast<int64_t>(address));
 	default: return {};
 	}
 }

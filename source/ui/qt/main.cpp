@@ -499,6 +499,10 @@ int main(int argc, char **argv)
 		/* TAStudio shown again when it was hidden */
 		window("Tools", "TAStudio", "");
 		/* the console is made below; the key reaches it once it is */
+		/* every freeze switched on or off, said as Chimera says it */
+		hotkeys.add("Tools", "Toggle All Freezes", "", [&session, run](bool down) {
+			if (down) run(session, "toggleAllFreezes");
+		});
 		hotkeys.add("Tools", "Toggle Last Lua Script", "", [&luaConsoleOf, run](bool down) {
 			if (down && luaConsoleOf != nullptr) run(*luaConsoleOf, "toggleLast");
 		});
