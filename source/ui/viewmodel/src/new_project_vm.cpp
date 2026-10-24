@@ -7,11 +7,24 @@
 #include <fstream>
 #include <iterator>
 #include <regex>
+#include <thread>
+#include <atomic>
+#include <ctime>
+#include <mutex>
 
 #include "chimera/engine.h"
+#include "chimera/vm/subprocess.hpp"
 #include "chimera/vm/suggestion.hpp"
 
 namespace chimera::vm {
+
+namespace {
+std::string upper(std::string s)
+{
+	for (char &c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+	return s;
+}
+} // namespace
 
 using json::Json;
 namespace fs = std::filesystem;
@@ -80,6 +93,122 @@ void setMember(Json &obj, const std::string &name, Json v)
 }
 } // namespace
 
+/* compile sessions of the headless runner, side by side, each a share of the
+ * game's code (Chimera's PrecompileOrchestrator): what each stores ("[cache]
+ * stored <name> <sha1>", or fetched, already there) is a module the game
+ * needs, and their progress lines add up; when all end well, the modules are
+ * the game's manifest.json */
+struct NewProjectViewModel::CompileJob
+{
+	std::string runner, dir, romName, romSha1, core, version, slotsFile;
+	std::vector<std::string> args;
+	int workers = 1;
+	/* stop: asked to stop; ended: the thread has done all it does (the view
+	 * model waits for it before it goes) */
+	std::atomic<bool> stop{false}, ended{false};
+
+	using Post = std::function<void(std::function<void()>)>;
+	void run(const Post &post, std::function<void(const std::string &, const std::string &)> stored,
+		std::function<void(uint32_t, uint32_t)> progress, std::function<void(const std::string &)> finished)
+	{
+		static const std::regex cacheLine(R"(^\[cache\] (stored|fetched) (\S+) ([0-9A-Fa-f]{40})\s*$)");
+		static const std::regex progressLine(R"(^Precompiled (\d+)/(\d+) modules)");
+		std::mutex m;
+		std::map<std::string, std::string> found;
+		std::vector<uint32_t> done(static_cast<size_t>(workers), 0), total(static_cast<size_t>(workers), 0);
+		std::vector<std::unique_ptr<Subprocess>> sessions;
+		std::string failure;
+		for (int i = 0; i < workers; i++)
+		{
+			auto p = std::make_unique<Subprocess>();
+			p->onLine = [&, i](const std::string &line) {
+				std::smatch g;
+				if (std::regex_match(line, g, cacheLine))
+				{
+					const std::string name = g[2], sha = upper(g[3]);
+					std::lock_guard<std::mutex> lock(m);
+					if (found.emplace(name, sha).second) post([stored, name, sha] { stored(name, sha); });
+				}
+				else if (std::regex_search(line, g, progressLine))
+				{
+					std::lock_guard<std::mutex> lock(m);
+					done[static_cast<size_t>(i)] = static_cast<uint32_t>(std::stoul(g[1]));
+					total[static_cast<size_t>(i)] = static_cast<uint32_t>(std::stoul(g[2]));
+					uint32_t d = 0, t = 0;
+					for (size_t k = 0; k < done.size(); k++) d += done[k], t = std::max(t, total[k]);
+					post([progress, d, t] { progress(d, t); });
+				}
+			};
+			std::vector<std::string> a = args;
+			a.insert(a.begin() + 2, {"--precompile", std::to_string(i) + "/" + std::to_string(workers)});
+			std::string why;
+			if (!p->start(runner, a, why))
+			{
+				failure = "The compile could not start: " + why;
+				break;
+			}
+			sessions.push_back(std::move(p));
+		}
+		/* waited for, or stopped */
+		bool stopped = false;
+		for (;;)
+		{
+			bool running = false;
+			for (auto &p : sessions) running = running || p->wait(0) < 0;
+			if (!running) break;
+			if (stop && !stopped)
+			{
+				stopped = true;
+				for (auto &p : sessions) p->kill();
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		}
+		if (failure.empty() && stopped) failure = "Stopped: what was compiled stays, and Compile goes on from there.";
+		for (auto &p : sessions)
+		{
+			const int code = p->wait(-1);
+			if (failure.empty() && code != 0)
+			{
+				std::string tail = p->errorTail();
+				while (!tail.empty() && tail.back() == '\n') tail.pop_back();
+				const size_t nl = tail.rfind('\n');
+				failure = "A compile session failed (exit code " + std::to_string(code) + ")" +
+					(tail.empty() ? std::string(".") : ": " + tail.substr(nl == std::string::npos ? 0 : nl + 1));
+			}
+		}
+		std::error_code ec;
+		fs::remove(slotsFile, ec);
+		if (failure.empty())
+		{
+			/* what the sessions compiled is what this game needs, with who compiled it */
+			json::Json manifest;
+			manifest.kind = json::Json::Kind::Object;
+			manifest.members.emplace_back("rom", json::Json::string(romName));
+			manifest.members.emplace_back("romSha1", json::Json::string(romSha1));
+			manifest.members.emplace_back("core", json::Json::string(core));
+			manifest.members.emplace_back("coreVersion", json::Json::string(version));
+			const std::time_t now = std::time(nullptr);
+			char when[32] = {};
+			if (const std::tm *t = std::gmtime(&now)) std::strftime(when, sizeof when, "%Y-%m-%dT%H:%M:%SZ", t);
+			manifest.members.emplace_back("compiled", json::Json::string(when));
+			json::Json files;
+			files.kind = json::Json::Kind::Array;
+			for (const auto &[name, sha] : found)
+			{
+				json::Json f;
+				f.kind = json::Json::Kind::Object;
+				f.members.emplace_back("name", json::Json::string(name));
+				f.members.emplace_back("sha1", json::Json::string(sha));
+				files.items.push_back(std::move(f));
+			}
+			manifest.members.emplace_back("files", std::move(files));
+			std::ofstream(fs::path(dir) / "manifest.json", std::ios::binary) << json::write(manifest);
+			if (found.empty()) failure = "The compile sessions stored nothing.";
+		}
+		post([finished, failure] { finished(failure); });
+	}
+};
+
 NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewModel &session, CoresViewModel &cores)
 	: ViewModel("newProject", dispatcher), session_(session), cores_(cores)
 {
@@ -144,6 +273,102 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		evaluate();
 		return {};
 	});
+	expose("compileAsked", "Chimera's compile step applies: the package says precompile and a game is chosen", compileAsked);
+	expose("compiling", "compile sessions are running", compiling);
+	expose("compileReady", "the game's code is compiled: every module its manifest lists is there", compileReady);
+	expose("compileStatus", "what the compile step says, in Chimera's words", compileStatus);
+	expose("compileDone", "modules compiled, all sessions together", compileDone);
+	expose("compileTotal", "modules the game has (0 until a session says)", compileTotal);
+	expose("compileRunner", "the headless runner the compile sessions are (chimera-run)", compileRunner, true);
+	expose("compileRoot", "where compiled code is kept, a folder a game by its SHA1", compileRoot, true);
+	rows("compiled", "the game's compiled modules: name, sha1, present", moduleRows_);
+	command("compile", "compiles the game's code in compile sessions side by side, as Chimera's Compile button does", {},
+		[this](const Args &, std::string &error) -> Value {
+			if (!compileAsked.get())
+			{
+				error = "this core compiles nothing before a project is made";
+				return {};
+			}
+			if (compiling.get())
+			{
+				error = "already compiling";
+				return {};
+			}
+			const std::string game = compileGame(), dir = compileDirOf(game);
+			if (dir.empty() || compileRunner.get().empty())
+			{
+				error = dir.empty() ? "there is no folder for compiled code" : "there is no runner for compile sessions";
+				return {};
+			}
+			std::error_code ec;
+			fs::create_directories(dir, ec);
+			char sha[41] = {};
+			ce_sha1_file(game.c_str(), sha, nullptr);
+			/* everything a session boots with: the settings, the firmware, the other files and the slot map */
+			auto job = std::make_shared<CompileJob>();
+			job->runner = compileRunner.get();
+			job->dir = dir;
+			job->romName = fs::path(game).filename().string();
+			job->romSha1 = sha;
+			job->core = core.get();
+			job->version = version_;
+			job->workers = std::max(1, ce_compile_sessions(static_cast<int32_t>(std::max(1u, std::thread::hardware_concurrency())),
+				ce_compile_memory_to_spare(), 0));
+			std::vector<std::string> common = {package_, game, "--cache-dir", dir, "--settings", json::write(form_.recorded())};
+			for (const Need &n : needs_)
+				if (!n.path.empty()) common.insert(common.end(), {"--firmware", n.id + "=" + n.path});
+			bool first = true;
+			for (const Slot &sl : slots_)
+				if (const auto it = files_.find(sl.id); it != files_.end())
+					for (const Picked &f : it->second)
+					{
+						if (first && f.path == game)
+						{
+							first = false;
+							continue;
+						}
+						common.insert(common.end(), {"--mount", f.name + "=" + f.path});
+					}
+			job->slotsFile = (fs::path(dir) / "slots.json").string();
+			std::ofstream(job->slotsFile, std::ios::binary) << slotMap();
+			common.insert(common.end(), {"--mount", "slots=" + job->slotsFile});
+			job->args = common;
+			compileJob_ = job;
+			modules_.clear();
+			moduleRows_.reset.emit();
+			compiling.set(true);
+			compileReady.set(false);
+			compileDone.set(0);
+			compileTotal.set(0);
+			compileStatus.set("Compiling...");
+			std::thread([this, job] {
+				job->run([this](std::function<void()> fn) { later(std::move(fn)); }, [this](const std::string &name, const std::string &sha1) {
+					modules_.push_back({name, sha1, true});
+					moduleRows_.reset.emit();
+				}, [this](uint32_t done, uint32_t total) {
+					compileDone.set(done);
+					compileTotal.set(total);
+					compileStatus.set("Compiling " + std::to_string(done) + " of " + std::to_string(total) + " modules...");
+				}, [this](const std::string &failure) {
+					compiling.set(false);
+					compileJob_.reset();
+					if (!failure.empty())
+					{
+						compileStatus.set(failure);
+						return;
+					}
+					compileSeen_.clear();
+					refreshCompile();
+				});
+				job->ended = true;
+			}).detach();
+			return {};
+		}, &compileAsked);
+	command("stopCompile", "stops the compile sessions; what they stored stays, and Compile goes on from there", {},
+		[this](const Args &, std::string &) -> Value {
+			if (compileJob_) compileJob_->stop = true;
+			return {};
+		});
 	rows("firmware", "the firmware the machine needs: id, name, the file, how it was found, missing; and as the firmware page "
 		"shows it: title, expected (the file), sha1Shown, state, satisfied, description", firmwareRows_);
 	expose("suggestion", "what the core suggests for the game chosen, and what of it was applied", suggestion);
@@ -741,6 +966,11 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				error = "not yet: " + problems.get();
 				return {};
 			}
+			if (compileAsked.get() && !compileReady.get())
+			{
+				error = "Compile this game's code first.";
+				return {};
+			}
 			const std::optional<int64_t> clock = parseClockText(clockStart.get());
 			if (!clock)
 			{
@@ -850,6 +1080,84 @@ void NewProjectViewModel::listCores()
 	}
 	coreLines.set(lines);
 	coreLine.set(at);
+}
+
+NewProjectViewModel::~NewProjectViewModel()
+{
+	if (compileJob_)
+	{
+		compileJob_->stop = true;
+		while (!compileJob_->ended) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+}
+
+std::string NewProjectViewModel::ModuleRows::columnName(int32_t column) const
+{
+	static const char *const names[] = {"name", "sha1", "present"};
+	return column >= 0 && column < 3 ? names[column] : "";
+}
+
+Value NewProjectViewModel::ModuleRows::cell(int64_t row, int32_t column) const
+{
+	if (row < 0 || row >= rowCount()) return {};
+	const Module &m = vm_.modules_[static_cast<size_t>(row)];
+	if (column == 0) return m.name;
+	if (column == 1) return m.sha1;
+	if (column == 2) return m.present;
+	return {};
+}
+
+std::string NewProjectViewModel::compileGame() const
+{
+	for (const Slot &sl : slots_)
+		if (const auto it = files_.find(sl.id); it != files_.end() && !it->second.empty()) return it->second.front().path;
+	return {};
+}
+
+std::string NewProjectViewModel::compileDirOf(const std::string &game) const
+{
+	if (game.empty() || compileRoot.get().empty()) return {};
+	char sha[41] = {};
+	if (ce_sha1_file(game.c_str(), sha, nullptr) != 1) return {};
+	return (fs::path(compileRoot.get()) / sha).string();
+}
+
+void NewProjectViewModel::refreshCompile()
+{
+	if (compiling.get()) return;
+	const std::string game = compileAsked.get() ? compileGame() : std::string();
+	if (game == compileSeen_ && !game.empty()) return;
+	compileSeen_ = game;
+	modules_.clear();
+	bool ready = false;
+	if (!game.empty())
+	{
+		/* the manifest a compile left, each module looked at */
+		const std::string dir = compileDirOf(game);
+		std::ifstream in(fs::path(dir) / "manifest.json", std::ios::binary);
+		const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		json::Json m;
+		std::string err;
+		if (!dir.empty() && !text.empty() && json::parse(text, m, err))
+			if (const json::Json *files = m.find("files"); files != nullptr && files->kind == json::Json::Kind::Array)
+				for (const json::Json &f : files->items)
+				{
+					Module mod;
+					if (const json::Json *v = f.find("name")) mod.name = v->text;
+					if (const json::Json *v = f.find("sha1")) mod.sha1 = upper(v->text);
+					char sha[41] = {};
+					mod.present = ce_sha1_file((fs::path(dir) / mod.name).string().c_str(), sha, nullptr) == 1 && upper(sha) == mod.sha1;
+					modules_.push_back(std::move(mod));
+				}
+		ready = !modules_.empty() && std::all_of(modules_.begin(), modules_.end(), [](const Module &mod) { return mod.present; });
+	}
+	moduleRows_.reset.emit();
+	compileReady.set(ready);
+	const size_t there = static_cast<size_t>(std::count_if(modules_.begin(), modules_.end(), [](const Module &mod) { return mod.present; }));
+	compileStatus.set(game.empty() ? std::string()
+		: ready ? "All " + std::to_string(modules_.size()) + " modules are compiled."
+		: modules_.empty() ? std::string("This game's code is not compiled yet: Compile does it.")
+						   : std::to_string(there) + " of " + std::to_string(modules_.size()) + " modules are there: Compile does the rest.");
 }
 
 std::string NewProjectViewModel::clockText(int64_t unixSeconds)
@@ -1702,6 +2010,10 @@ void NewProjectViewModel::evaluate()
 		if (missing.empty() && n.path.empty() && n.required) missing = n.display;
 	firmwareMissing.set(missing);
 	ready.set(lines.empty());
+	/* Chimera's compile step: a package that compiles, and a game to compile */
+	const json::Json *pre = cfg_.find("precompile");
+	compileAsked.set(pre != nullptr && pre->kind == json::Json::Kind::Bool && pre->boolean && !compileGame().empty());
+	refreshCompile();
 	slotRows_.reset.emit();
 	settingRows_.reset.emit();
 	presetRows_.reset.emit();

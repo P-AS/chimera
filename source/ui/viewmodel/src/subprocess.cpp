@@ -140,6 +140,7 @@ void Subprocess::readErrors()
 			{
 				if (!line.empty())
 				{
+					if (onLine) onLine(line);
 					std::lock_guard<std::mutex> lock(m_);
 					tail_.push_back(line);
 					if (tail_.size() > kTailLines) tail_.pop_front();
@@ -152,6 +153,7 @@ void Subprocess::readErrors()
 	}
 	if (!line.empty())
 	{
+		if (onLine) onLine(line);
 		std::lock_guard<std::mutex> lock(m_);
 		tail_.push_back(line);
 		if (tail_.size() > kTailLines) tail_.pop_front();
@@ -179,7 +181,7 @@ bool Subprocess::start(const std::string &program, const std::vector<std::string
 	si.cb = sizeof si;
 	si.dwFlags = STARTF_USESTDHANDLES;
 	si.hStdInput = inRead;
-	si.hStdOutput = nul;
+	si.hStdOutput = onLine ? errWrite : nul;
 	si.hStdError = errWrite;
 	PROCESS_INFORMATION pi{};
 	const BOOL made = CreateProcessW(wide(program).c_str(), line.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
@@ -256,7 +258,10 @@ bool Subprocess::start(const std::string &program, const std::vector<std::string
 	posix_spawn_file_actions_init(&fa);
 	posix_spawn_file_actions_adddup2(&fa, in[0], 0);
 	posix_spawn_file_actions_adddup2(&fa, err[1], 2);
-	posix_spawn_file_actions_addopen(&fa, 1, "/dev/null", O_WRONLY, 0);
+	if (onLine)
+		posix_spawn_file_actions_adddup2(&fa, err[1], 1);
+	else
+		posix_spawn_file_actions_addopen(&fa, 1, "/dev/null", O_WRONLY, 0);
 	posix_spawn_file_actions_addclose(&fa, in[1]);
 	posix_spawn_file_actions_addclose(&fa, err[0]);
 	std::vector<char *> argv;

@@ -639,6 +639,21 @@ int main(int argc, char **argv)
 		cores.firmwareFolder.set((QCoreApplication::applicationDirPath() + QStringLiteral("/Firmware")).toStdString());
 	vm::NewProjectViewModel newProject(dispatcher, session, cores);
 	/* the core's suggested settings for a game, asked as an import is */
+	/* Chimera's compile step: its sessions are the headless runner, and what
+	 * they compile is kept where the machine's compiled code is */
+	{
+#ifdef _WIN32
+		const QString exe = QStringLiteral("chimera-run.exe");
+#else
+		const QString exe = QStringLiteral("chimera-run");
+#endif
+		QString runner = qEnvironmentVariable("CHIMERA_RUN");
+		for (const QString &dir : {QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
+			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
+		newProject.compileRunner.set(runner.toStdString());
+		newProject.compileRoot.set(session.compileCacheRoot.get());
+	}
+	vm::Connection compileRootWatch = session.compileCacheRoot.changed.connect([&] { newProject.compileRoot.set(session.compileCacheRoot.get()); });
 	newProject.setSuggestRunner([&app](const std::string &package, const std::string &game,
 									const std::vector<std::pair<std::string, std::string>> &files, const std::string &slots,
 									const std::string &settings, std::function<void(std::string, std::string)> done) {

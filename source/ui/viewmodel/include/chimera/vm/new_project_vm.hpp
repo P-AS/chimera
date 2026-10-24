@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -27,6 +28,7 @@ class NewProjectViewModel : public ViewModel
 {
 public:
 	NewProjectViewModel(Dispatcher &dispatcher, SessionViewModel &session, CoresViewModel &cores);
+	~NewProjectViewModel() override;
 
 	/* the installed cores, a line each, and the one chosen */
 	Property<std::string> coreNames;
@@ -113,6 +115,17 @@ public:
 	Property<std::string> suggestion;
 	/* asks the core in a process of its own: the package, the game, the
 	 * other files {name, path}, the slot map and the settings so far */
+	/* Chimera's compile step (its wizard's last page), for a package that
+	 * says "precompile" (RPCS3): the game's code compiled before the project
+	 * is made, by compile sessions of the headless runner side by side
+	 * (compileRunner: chimera-run), each a share; what they store is the
+	 * game's manifest.json in its folder under compileRoot, named by the
+	 * game's SHA1, and Create waits until every module it lists is there.
+	 * compileAsked: the page applies (such a package, a game chosen);
+	 * compileReady: the game's code is all there. */
+	Property<bool> compileAsked{false}, compiling{false}, compileReady{false};
+	Property<std::string> compileStatus, compileRunner, compileRoot;
+	Property<int64_t> compileDone{0}, compileTotal{0};
 	using SuggestRunner = std::function<void(const std::string &package, const std::string &game,
 		const std::vector<std::pair<std::string, std::string>> &files, const std::string &slots, const std::string &settings,
 		std::function<void(std::string answer, std::string error)> done)>;
@@ -253,6 +266,36 @@ private:
 
 	std::string package_, packageSha1_, version_, slotsText_;
 	json::Json cfg_;
+	/* the compile step: the modules the game's manifest lists (or the
+	 * sessions stored so far), whether each is there, and the run going on */
+	struct Module
+	{
+		std::string name, sha1;
+		bool present = false;
+	};
+	std::vector<Module> modules_;
+	class ModuleRows : public RowModel
+	{
+	public:
+		explicit ModuleRows(NewProjectViewModel &vm) : vm_(vm) {}
+		int64_t rowCount() const override { return static_cast<int64_t>(vm_.modules_.size()); }
+		int32_t columnCount() const override { return 3; }
+		std::string columnName(int32_t column) const override;
+		Value cell(int64_t row, int32_t column) const override;
+
+	private:
+		NewProjectViewModel &vm_;
+	};
+	ModuleRows moduleRows_{*this};
+	struct CompileJob;
+	std::shared_ptr<CompileJob> compileJob_;
+	/* the game a compile session compiles: the first file picked */
+	std::string compileGame() const;
+	/* the game's folder of compiled code, "" without a game or a root */
+	std::string compileDirOf(const std::string &game) const;
+	/* the game's manifest read again, and whether its modules are there */
+	void refreshCompile();
+	std::string compileSeen_;
 	std::vector<Slot> slots_;
 	std::vector<std::vector<std::string>> atLeastOneOf_;
 	std::map<std::string, std::vector<Picked>> files_;

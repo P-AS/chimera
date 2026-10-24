@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -21,6 +22,10 @@ public:
 	/* still running: stopped */
 	~Subprocess();
 
+	/* set before start: the program's standard output joins its standard
+	 * error, and each line of either is told here, on a thread of its own
+	 * (a compile session's progress) */
+	std::function<void(const std::string &)> onLine;
 	/* program by its path, with these arguments; false with the reason */
 	bool start(const std::string &program, const std::vector<std::string> &args, std::string &error);
 	/* false once the program has stopped reading (it ended) */

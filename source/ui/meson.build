@@ -176,14 +176,26 @@ synth_game = custom_target(
   build_always_stale: true,
   build_by_default: true,
 )
+# a core that compiles a game's code before a project is made, as RPCS3's (the
+# synthetic core's compile session: six modules, a share a session)
+synth_compile = custom_target(
+  'synth-compile',
+  output: 'synth-compile.chimeraCore',
+  command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Compile', '@OUTPUT@', '', '', '', '', 'precompile'],
+  build_always_stale: true,
+  build_by_default: true,
+)
 test(
   'view models',
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game, synth_bios],
+    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game, synth_bios, synth_compile],
   # OpenAL's device that plays to nowhere: the sound check runs with no speakers;
   # the ffmpeg the build ships, for the encode
-  env: ['ALSOFT_DRIVERS=null', 'CHIMERA_FFMPEG=' + (repo_root / 'build/dll/ffmpeg')],
+  # and the headless runner, which compile sessions are
+  env: ['ALSOFT_DRIVERS=null', 'CHIMERA_FFMPEG=' + (repo_root / 'build/dll/ffmpeg'),
+    'CHIMERA_RUN=' + (meson.project_build_root() / 'chimera-run')],
   timeout: 180,
 )
 

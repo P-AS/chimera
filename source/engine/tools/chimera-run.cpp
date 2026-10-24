@@ -355,6 +355,9 @@ int main(int argc, char **argv)
 	bool wantGpu = false;
 	std::string cacheDir;
 	bool suggest = false;
+	/* --precompile I/N[/game]: a compile session's share, -1 for none */
+	int32_t precompileIndex = -1, precompileCount = 0;
+	bool precompileFirmware = true;
 	/* --import-movie: the positional "rom" is a movie made elsewhere (a Doom
 	 * demo), mounted as "movie", and the core's ImportMovie is asked what it
 	 * amounts to (ce_import_movie); --mount name=path adds the files it needs,
@@ -453,6 +456,14 @@ int main(int argc, char **argv)
 		else if (arg == "--record-key" && i + 1 < argc) recordKey = argv[++i];
 		else if (arg == "--settings" && i + 1 < argc) settings = argv[++i];
 		else if (arg == "--suggest") suggest = true;
+		else if (arg == "--precompile" && i + 1 < argc)
+		{
+			const std::string spec = argv[++i];
+			if (std::sscanf(spec.c_str(), "%d/%d", &precompileIndex, &precompileCount) != 2 || precompileIndex < 0 || precompileCount < 1 ||
+				precompileIndex >= precompileCount)
+				return fail(metaPath, "bad --precompile " + spec + " (want INDEX/COUNT[/game])");
+			precompileFirmware = spec.find("/game") == std::string::npos;
+		}
 		else if (arg == "--import-movie") importMovie = true;
 		else if (arg == "--mount" && i + 1 < argc)
 		{
@@ -607,11 +618,12 @@ int main(int argc, char **argv)
 	if (greenzoneCheck && seekFrame >= 0 && rewindTo >= 0 && seekFrame != rewindTo)
 		return fail(metaPath, "--greenzone-check checks one frame: give --seek and --rewind-loop the same frame, or only one of them");
 	bool projectMode = !projectPath.empty();
-	if (projectMode ? packagePath == nullptr : (suggest || importMovie ? romPath == nullptr : moviePath == nullptr))
+	if (projectMode ? packagePath == nullptr : (suggest || importMovie || precompileCount > 0 ? romPath == nullptr : moviePath == nullptr))
 	{
 		std::fprintf(stderr, "usage: chimera-run <package> <rom> <movie.txt> [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--record-key <LogKey>] [--settings <json>] [--dump <domain>=<path>]... [--firmware <id>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--ram-search-bench <domain>] [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame] [--cache-dir <folder>]\n"
 			"       chimera-run --project <p.chimeraProject> <package> [--files <dir>]... [--allow-core-mismatch] [the same run flags]\n"
 			"       chimera-run <package> <rom> --suggest [--mount <name>=<path>]... [--settings <json>] [--firmware <id>=<path>]...\n"
+			"       chimera-run <package> <rom> --precompile <i>/<n>[/game] --cache-dir <folder> [--mount <name>=<path>]... [--settings <json>] [--firmware <id>=<path>]...\n"
 			"       chimera-run <package> <movie> --import-movie [--mount <name>=<path>]... [--settings <json>]\n");
 		return 1;
 	}
@@ -625,7 +637,7 @@ int main(int argc, char **argv)
 	}
 
 	std::vector<uint8_t> rom, movieText;
-	if (!projectMode && !suggest && !importMovie && !readWholeFile(moviePath, movieText)) return fail(metaPath, std::string("could not read movie ") + moviePath);
+	if (!projectMode && !suggest && !importMovie && precompileCount == 0 && !readWholeFile(moviePath, movieText)) return fail(metaPath, std::string("could not read movie ") + moviePath);
 
 	/* A .chimeraMultiFile rom is a multi-file game: the first image mounts as
 	 * the rom (rom.name carrying its real name), further images as rom2..N,
@@ -824,6 +836,59 @@ int main(int argc, char **argv)
 			static_cast<int32_t>(extraNames.size()), &len, &error);
 		if (answer == nullptr) return fail(metaPath, error != nullptr ? error : "could not open the core");
 		std::printf("%.*s\n", static_cast<int>(len), answer);
+		return 0;
+	}
+	/* --precompile: a compile session, as Chimera's headless frontend runs one
+	 * for its New Project wizard. The machine boots and never runs; it
+	 * compiles the share of the game's code whose names hash to I of N, and
+	 * the engine says how far it is a line at a time ("Precompiled 3/21
+	 * modules", each time the progress is read) and each object it stores
+	 * ("[cache] stored <name> <sha1>").
+	 * Several side by side, in their own processes, compile the whole game. */
+	if (precompileCount > 0)
+	{
+		for (const auto &m : mounts)
+		{
+			extraNames.push_back(m.first.c_str());
+			extraData.push_back(nullptr);
+			extraLens.push_back(0);
+			extraPaths.push_back(m.second.c_str());
+		}
+		/* whoever started this session reads these lines as they come */
+		std::setvbuf(stdout, nullptr, _IOLBF, 0);
+		ce_precompile_request(precompileIndex, precompileCount, precompileFirmware ? 1 : 0);
+		ce_session *pre = ce_session_open(
+			packagePath, rom.data(), rom.size(), romPathStore.empty() ? nullptr : romPathStore.c_str(),
+			settings, fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
+			extraNames.data(), extraData.data(), extraLens.data(), extraPaths.data(),
+			static_cast<int32_t>(extraNames.size()), &error);
+		ce_precompile_request(0, 0, 0);
+		if (pre == nullptr) return fail(metaPath, error != nullptr ? error : "session open failed");
+		if (ce_session_precompile_done(pre) < 0)
+		{
+			std::fprintf(stderr, "%s has no precompile session\n", ce_session_core_name(pre));
+			ce_session_free(pre);
+			return 3;
+		}
+		std::fprintf(stderr, "precompile session %d of %d: cache %s\n", precompileIndex, precompileCount,
+			ce_cache_dir_get() != nullptr ? ce_cache_dir_get() : "(none)");
+		uint32_t done = 0, total = 0;
+		while (ce_session_precompile_done(pre) == 0)
+		{
+			if (ce_session_frame_advance(pre, 0, 0) < 0)
+			{
+				const char *death = ce_session_guest_death(pre);
+				std::fprintf(stderr, "precompile session %d of %d: the core stopped: %s\n", precompileIndex, precompileCount,
+					death != nullptr && *death != '\0' ? death : ce_session_last_error(pre));
+				ce_session_free(pre);
+				return 4;
+			}
+			ce_session_precompile_progress(pre, &done, &total);
+		}
+		ce_session_precompile_progress(pre, &done, &total);
+		std::printf("precompile session %d of %d: %llu objects stored, %llu fetched\n", precompileIndex, precompileCount,
+			static_cast<unsigned long long>(ce_session_cache_stored(pre)), static_cast<unsigned long long>(ce_session_cache_fetched(pre)));
+		ce_session_free(pre);
 		return 0;
 	}
 	if (!coreLogPath.empty() && ce_core_log(coreLogPath.c_str()) == 0)

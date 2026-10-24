@@ -60,9 +60,9 @@ ApplicationWindow {
     }
 
     // the pages asked: the files when the package takes any, the firmware when the choices call for some
-    function applies(p) { return p === 1 ? win.vm.filesAsked : p === 3 ? win.vm.firmwareAsked : true }
+    function applies(p) { return p === 1 ? win.vm.filesAsked : p === 3 ? win.vm.firmwareAsked : p === 4 ? win.vm.compileAsked : true }
     function nextFrom(p) {
-        for (let i = p + 1; i <= 3; i++) if (win.applies(i)) return i
+        for (let i = p + 1; i <= 4; i++) if (win.applies(i)) return i
         return -1
     }
     readonly property bool lastPage: win.nextFrom(win.page) < 0
@@ -90,6 +90,10 @@ ApplicationWindow {
         }
         if (win.page === 3 && win.vm.firmwareMissing !== "") {
             win.said = qsTr("%1 is required and not provided").arg(win.vm.firmwareMissing)
+            return
+        }
+        if (win.page === 4 && !win.vm.compileReady) {
+            win.said = qsTr("Compile this game's code first.")
             return
         }
         const next = win.nextFrom(win.page)
@@ -527,6 +531,72 @@ ApplicationWindow {
                     Button { text: qsTr("Scan Folder..."); onClicked: scanDialog.open() }
                     CheckBox { id: scanSubfolders; text: qsTr("Include sub-folders"); checked: true }
                     Item { Layout.fillWidth: true }
+                }
+            }
+
+            // ---- page 5: the code the core compiles for this game (Chimera's, for RPCS3) ----
+            ColumnLayout {
+                Heading { text: qsTr("This game's code must be recompiled before it can be played.") }
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    text: qsTr("This core translates the console's code into your machine's before running it. "
+                        + "Doing it once now, in parallel, is what makes the game fast enough to work on; "
+                        + "otherwise every session pays for it again. It can take several minutes. The result "
+                        + "depends only on the game and this core, so it is the same on every machine and is "
+                        + "not part of the run.")
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    color: palette.base
+                    border.color: palette.mid
+                    ListView {
+                        id: moduleList
+                        objectName: "compiledModules"
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        clip: true
+                        model: win.vm.rows("compiled")
+                        ScrollBar.vertical: ScrollBar {}
+                        header: Row {
+                            Repeater {
+                                model: [qsTr("Compiled Module"), qsTr("SHA1"), qsTr("State")]
+                                delegate: Label {
+                                    required property int index
+                                    required property string modelData
+                                    text: modelData
+                                    width: [300, 180, 72][index]
+                                    leftPadding: 4
+                                    background: Rectangle { color: palette.button; border.color: palette.mid }
+                                }
+                            }
+                        }
+                        delegate: Row {
+                            required property string name
+                            required property string sha1
+                            required property bool present
+                            Label { text: parent.name; width: 300; elide: Text.ElideMiddle; leftPadding: 4 }
+                            Label { text: parent.sha1.substring(0, 16); width: 180; font.family: "monospace"; leftPadding: 4 }
+                            Label { text: parent.present ? qsTr("ready") : qsTr("missing"); width: 72; leftPadding: 4 }
+                        }
+                    }
+                }
+                ProgressBar {
+                    Layout.fillWidth: true
+                    from: 0
+                    to: Math.max(1, win.vm.compileTotal)
+                    value: win.vm.compileDone
+                    indeterminate: win.vm.compiling && win.vm.compileTotal === 0
+                    visible: win.vm.compiling || win.vm.compileTotal > 0
+                }
+                RowLayout {
+                    Button {
+                        text: win.vm.compiling ? qsTr("Stop") : qsTr("Compile")
+                        enabled: win.vm.compiling || !win.vm.compileReady
+                        onClicked: win.run(win.vm.compiling ? "stopCompile" : "compile")
+                    }
+                    Label { text: win.vm.compileStatus; Layout.fillWidth: true; elide: Text.ElideRight }
                 }
             }
         }

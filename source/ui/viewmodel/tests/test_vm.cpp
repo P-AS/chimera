@@ -6444,6 +6444,74 @@ std::string lower(std::string s)
 	return s;
 }
 
+/* Chimera's compile step (its wizard's last page), for a core that compiles
+ * a game's code before a project is made, as RPCS3's: the synthetic core's
+ * compile session (six modules, a share a session) run by the headless
+ * runner, side by side; the modules the game's manifest lists, Create
+ * refused until they are all there, a module gone said */
+bool compileStep(const char *compilePackage, const char *rom)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	const char *runner = std::getenv("CHIMERA_RUN");
+	if (runner == nullptr || !fs::exists(runner, ec) || fs::file_size(compilePackage, ec) == 0)
+	{
+		std::printf("SKIP the compile step: no runner (CHIMERA_RUN) or no compiling package\n");
+		return true;
+	}
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-compile-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "Cores");
+	fs::copy_file(compilePackage, dir / "Cores" / "synth-compile.chimeraCore");
+	const std::string game = (dir / "walker.testrom").string();
+	fs::copy_file(rom, game);
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	CoresViewModel installed(d);
+	std::string error;
+	installed.set("coresFolder", (dir / "Cores").string(), error);
+	session.setFinders([&installed](const std::string &n, const std::string &h, std::string &note) { return installed.packageFor(n, h, note); },
+		[&installed] { return installed.firmwareFolders(); });
+	NewProjectViewModel wizard(d, session, installed);
+	wizard.compileRunner.set(runner);
+	wizard.compileRoot.set((dir / "compiled").string());
+	CHECK(wizard.run("chooseCore", {std::string("Synth Compile")}, error).has_value());
+	CHECK(!wizard.compileAsked.get());
+	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value());
+	CHECK(wizard.compileAsked.get() && !wizard.compileReady.get() &&
+		wizard.compileStatus.get() == "This game's code is not compiled yet: Compile does it.");
+	const fs::path made = dir / "compiled.chimeraProject";
+	CHECK(!wizard.run("create", {made.string()}, error) && error == "Compile this game's code first.");
+	/* compiled: every session's share, the game's manifest */
+	CHECK(wizard.run("compile", {}, error).has_value() && wizard.compiling.get());
+	CHECK(d.until([&] { return !wizard.compiling.get(); }, 60));
+	RowModel *modules = nullptr;
+	for (const auto &r : wizard.rowLists())
+		if (r.name == "compiled") modules = r.model;
+	CHECK(modules != nullptr && modules->rowCount() == 6);
+	CHECK(wizard.compileReady.get() && wizard.compileStatus.get() == "All 6 modules are compiled." && wizard.compileDone.get() == 6 &&
+		wizard.compileTotal.get() == 6);
+	char sha[41] = {};
+	ce_sha1_file(game.c_str(), sha, nullptr);
+	const fs::path folder = dir / "compiled" / sha;
+	const std::string manifest = readFile(folder / "manifest.json");
+	CHECK(manifest.find("\"rom\": \"walker.testrom\"") != std::string::npos && manifest.find("synth/module5.bin") != std::string::npos &&
+		manifest.find("\"core\": \"Synth Compile\"") != std::string::npos);
+	/* a module gone: said, and Create waits again */
+	fs::remove(folder / "synth" / "module3.bin");
+	CHECK(wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value());
+	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value());
+	CHECK(!wizard.compileReady.get() && wizard.compileStatus.get() == "5 of 6 modules are there: Compile does the rest.");
+	CHECK(wizard.run("compile", {}, error).has_value());
+	CHECK(d.until([&] { return !wizard.compiling.get(); }, 60) && wizard.compileReady.get());
+	CHECK(wizard.run("create", {made.string()}, error).has_value());
+	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == made.string(); }, 60));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir, ec);
+	return true;
+}
+
 bool newProjectWizard(const char *package, const char *rom, const char *slotsPackage)
 {
 	namespace fs = std::filesystem;
@@ -7900,6 +7968,8 @@ int main(int argc, char **argv)
 			if (argc >= 11) ranMachine = coreMenu(argv[1], argv[2], argv[6], argv[10]) && ranMachine;
 			else std::printf("SKIP the Emulator menu: no packages that import movies and are games given\n");
 			if (argc >= 12) ranMachine = firmwareWindow(argv[1], argv[6], argv[11], argv[8]) && ranMachine;
+			if (argc >= 13) ranMachine = compileStep(argv[12], argv[2]) && ranMachine;
+			else std::printf("SKIP the compile step: no compiling package given\n");
 			if (argc >= 9) ranMachine = coreManager(argv[1], argv[6], argv[8]) && ranMachine;
 			else std::printf("SKIP the Firmware window: no package with many releases of one firmware given\n");
 		}

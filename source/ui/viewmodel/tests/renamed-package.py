@@ -14,7 +14,9 @@ firmware = json.loads(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] else Non
 version_date = sys.argv[6] if len(sys.argv) > 6 else ""
 # and buttons more than the synthetic core's, as JSON (a second player,
 # keyboard keys: for the piano roll's Columns menu)
-more_buttons = json.loads(sys.argv[7]) if len(sys.argv) > 7 else []
+more_buttons = json.loads(sys.argv[7]) if len(sys.argv) > 7 and sys.argv[7] else []
+# and a core that compiles a game's code before a project is made ("precompile")
+precompile = len(sys.argv) > 8 and sys.argv[8] == "precompile"
 try:
     zin = zipfile.ZipFile(src)
 except OSError:
@@ -34,5 +36,7 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
                 cfg["versionDate"] = version_date
             if more_buttons:
                 cfg["input"]["buttons"] = cfg["input"]["buttons"] + more_buttons
+            if precompile:
+                cfg["precompile"] = True
             data = json.dumps(cfg, indent=2).encode()
         zout.writestr(info, data)
