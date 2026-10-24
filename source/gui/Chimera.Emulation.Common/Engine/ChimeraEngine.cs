@@ -338,6 +338,12 @@ namespace Chimera.Emulation.Common.Engine
 		public abstract void ce_project_set_rerecords(IntPtr project, ulong count);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract long ce_project_clock_start(IntPtr project);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
+		public abstract int ce_project_set_clock_start(IntPtr project, long unixSeconds);
+
+		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_project_settings_text(IntPtr project, ref ulong lenOut);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -1898,6 +1904,24 @@ namespace Chimera.Emulation.Common.Engine
 			get => ChimeraEngine.Instance.ce_project_rerecords(_project);
 			set => ChimeraEngine.Instance.ce_project_set_rerecords(_project, value);
 		}
+
+		/// <summary>
+		/// The second (since 1970, UTC) the sandbox starts the machine's clock at, the same
+		/// on every run: <see cref="ClockStartDefault"/> unless the project chose another
+		/// (owner, 2026-10-24, issue 366). A game that takes its luck from the date deals
+		/// other luck from another start.
+		/// </summary>
+		public long ClockStart => ChimeraEngine.Instance.ce_project_clock_start(_project) is var s and >= 0 ? s : ClockStartDefault;
+
+		/// <summary>The sandbox's own start: 2017-05-27 12:44:28 UTC (engine.h, CE_CLOCK_START_DEFAULT).</summary>
+		public const long ClockStartDefault = 1495889068;
+
+		/// <summary>The latest start the sandbox takes: 2200-01-01 00:00:00 UTC.</summary>
+		public const long ClockStartLast = 7258118400;
+
+		/// <summary>Sets the clock's start; false for one later than <see cref="ClockStartLast"/> or before 1970.</summary>
+		public bool SetClockStart(long unixSeconds)
+			=> unixSeconds >= 0 && ChimeraEngine.Instance.ce_project_set_clock_start(_project, unixSeconds) is 0;
 
 		/// <summary>The sync settings as the JSON object the session's settings channel takes.</summary>
 		public string SettingsJson

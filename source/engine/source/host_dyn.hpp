@@ -129,6 +129,8 @@ struct HostApi
 	 * file, or stopped with nullptr. Process-wide. Optional: an older host
 	 * has no way to keep a core's log, and says so through ce_core_log. */
 	void (*wbx_set_output_file)(const char *path, WbxReturn *ret);
+	/* optional: a host older than the clock's start (issue 366) has none */
+	void (*wbx_set_clock_start)(void *obj, uint64_t unix_seconds, WbxReturn *ret);
 };
 
 /* The loaded host, or nullptr with *error set. Loads once, then cached. */

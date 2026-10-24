@@ -619,6 +619,18 @@ CE_API void ce_project_set_core(ce_project *p, const char *name, const char *ver
 CE_API uint64_t ce_project_rerecords(const ce_project *p);
 CE_API void ce_project_set_rerecords(ce_project *p, uint64_t count);
 
+/* The second (since 1970, UTC) the machine's clock starts at (owner,
+ * 2026-10-24, issue 366). Every run of a project starts the clock at the same
+ * second, so a movie replays; a game that takes its luck from the date deals
+ * the same each time. A project may choose another second to give the game
+ * other luck. -1 when the project names none, and the machine starts at the
+ * sandbox's own, CE_CLOCK_START_DEFAULT; the file says "clockStart" only for
+ * another start, so a project at the default opens in an older Chimera.
+ * Setting -1 or the default clears it; 1 for a start later than 2200-01-01. */
+#define CE_CLOCK_START_DEFAULT 1495889068
+CE_API int64_t ce_project_clock_start(const ce_project *p);
+CE_API int32_t ce_project_set_clock_start(ce_project *p, int64_t unix_seconds);
+
 /* The sync settings, as the JSON object the session's settings channel
  * takes. Borrowed; invalidated by the next settings call on p. The setter
  * rejects anything that does not parse as a JSON object. */

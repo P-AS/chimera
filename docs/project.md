@@ -51,6 +51,18 @@ themselves, which are named by their SHA1:
   SHA1s, never the files, which regenerate from the game and the package
   (docs/compile-cache.md). The wizard will not create a project until they
   all exist.
+- **The clock's start** (user-decided, 2026-10-24, issue #366): the second
+  the machine's clock starts at, the same on every run, so a movie replays.
+  It is the sandbox's own, 2017-05-27 12:44:28 UTC, unless the creation
+  wizard was given another ("The machine's clock starts at", under the
+  settings); a game that takes its luck from the date and time then deals
+  other luck. The file says `clockStart` (`2030-01-02T03:04:05Z`) only for
+  another start, so a project at the default still opens in an older
+  Chimera, and one with another start is refused there rather than run at
+  the wrong time. It is part of the machine: the cached states of one start
+  are not used for another. A core whose clock is its own and not the
+  sandbox's (an emulated real-time clock set some other way, Ruffle's own
+  virtual date) does not follow it yet.
 - **Settings**: defined once, in the creation wizard. There is ONE kind
   of setting: every setting shapes the machine, so all of them are part
   of the reproduction contract. (The BizHawk lineage's "settings"

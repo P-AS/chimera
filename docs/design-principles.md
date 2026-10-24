@@ -10980,3 +10980,31 @@ took" part (a new texture is 21 and new vertex arrays 7 and 8 when the state
 held up to 20 and 6; fails with the marks ignored), and a Dolphin core built
 with the new generator and the old stale delete put back passes the
 gl:load-in-new-process leg.
+
+
+## A project chooses when the machine's clock starts (user-decided, 2026-10-24)
+
+Every machine's clock started at the same second, 2017-05-27 12:44:28 UTC,
+whatever the core: miniBox answers the time from a constant, so a movie
+replays exactly. A game that takes its luck from the date and time then
+deals the same luck every time; Bubble Suite in FreeJ2ME-Plus always lays
+out the same board (issue 366). The owner chose one setting for every core,
+kept by the sandbox, over a FreeJ2ME setting. A project may now name the
+second the clock starts at: the New Project wizard asks for it under the
+settings ("The machine's clock starts at", UTC, the sandbox's own unless
+changed), the project keeps it as `clockStart` only when it is not the
+default (so a project at the default still opens in an older Chimera, and
+one with another start is refused there rather than run at the wrong time),
+and the engine tells the sandbox before the core first runs
+(`wbx_set_clock_start`, miniBox; `ce_project_clock_start`). It is part of
+the machine: cached states of one start are not used for another. Absolute
+times a guest sleeps or waits until are on the same scale. A core whose
+clock is its own rather than the sandbox's does not follow it yet (Ruffle's
+virtual date, an emulated real-time clock set from elsewhere). Tests: the
+witness's E:project:clock-start (a synthetic rom ending in CLOCKTEST keeps
+the second its clock reads; the project naming 2030-01-02T03:04:05Z reads
+1893553445 and one naming none reads 1495889068), test_project's clock part
+(the text read and written, the default left out, a bad time refused),
+miniBox's conformance-v3 (the guest reads the start it was given) and
+WizardClockStartTests (the wizard's box writes the project's start and
+refuses a time it cannot read). Each failed once with its part taken out.

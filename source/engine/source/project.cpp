@@ -118,6 +118,55 @@ std::string lowerExt(const std::string &name)
 
 } // namespace
 
+/* "clockStart": a second written as UTC, 2017-05-27T12:44:28Z (issue 366) */
+static constexpr int64_t kClockStartLast = 7258118400; /* 2200-01-01, miniBox's latest */
+
+static int64_t daysFromCivil(int64_t y, unsigned m, unsigned d)
+{
+	y -= m <= 2;
+	const int64_t era = (y >= 0 ? y : y - 399) / 400;
+	const unsigned yoe = static_cast<unsigned>(y - era * 400);
+	const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+	const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+	return era * 146097 + static_cast<int64_t>(doe) - 719468;
+}
+
+static bool parseUtcSecond(const char *text, int64_t &out)
+{
+	int y = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+	char z = 0, tail = 0;
+	if (text == nullptr || std::strlen(text) != 20
+		|| std::sscanf(text, "%4d-%2d-%2dT%2d:%2d:%2d%c%c", &y, &mo, &d, &h, &mi, &se, &z, &tail) != 7 || z != 'Z')
+		return false;
+	static const int monthDays[] = { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+	if (y < 1970 || mo < 1 || mo > 12 || d < 1 || d > monthDays[mo - 1] || h > 23 || mi > 59 || se > 59) return false;
+	const bool leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+	if (mo == 2 && d == 29 && !leap) return false;
+	const int64_t seconds = daysFromCivil(y, static_cast<unsigned>(mo), static_cast<unsigned>(d)) * 86400 + h * 3600 + mi * 60 + se;
+	if (seconds < 0 || seconds > kClockStartLast) return false;
+	out = seconds == CE_CLOCK_START_DEFAULT ? -1 : seconds;
+	return true;
+}
+
+static std::string utcSecondText(int64_t seconds)
+{
+	int64_t days = seconds / 86400, rest = seconds % 86400;
+	/* civil from days (Howard Hinnant's algorithm) */
+	days += 719468;
+	const int64_t era = (days >= 0 ? days : days - 146096) / 146097;
+	const unsigned doe = static_cast<unsigned>(days - era * 146097);
+	const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+	const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+	const unsigned mp = (5 * doy + 2) / 153;
+	const unsigned d = doy - (153 * mp + 2) / 5 + 1;
+	const unsigned m = mp < 10 ? mp + 3 : mp - 9;
+	const int64_t y = static_cast<int64_t>(yoe) + era * 400 + (m <= 2);
+	char buf[32];
+	std::snprintf(buf, sizeof buf, "%04lld-%02u-%02uT%02lld:%02lld:%02lldZ", (long long)y, m, d,
+		(long long)(rest / 3600), (long long)(rest / 60 % 60), (long long)(rest % 60));
+	return buf;
+}
+
 struct ce_project
 {
 	/* This project, and no other. The frontend keeps everything regenerable -
@@ -133,6 +182,7 @@ struct ce_project
 	std::string description;
 	std::string coreName, coreVersion, coreSha1;
 	uint64_t rerecords = 0;
+	int64_t clockStart = -1;   // the second the machine's clock starts at; -1: the sandbox's own
 	cJSON *settings = nullptr; // always an object
 	cJSON *firmware = nullptr; // always an array
 	cJSON *coreCache = nullptr; // always an array: {name, sha1} per compiled object
@@ -260,7 +310,7 @@ static ce_project *openProject(const char *path, const char **error_out)
 
 	/* the format is strict: a key this build does not know is an error, not
 	 * something to drop silently on the next save */
-	static const char *known[] = { "id", "title", "description", "core", "rerecords",
+	static const char *known[] = { "id", "title", "description", "core", "rerecords", "clockStart",
 		"files", "settings", "firmware", "coreCache", "input", "markers", "branches", "subtitles",
 		"headers", "tastudio" };
 	for (cJSON *item = root->child; item != nullptr; item = item->next)
@@ -333,6 +383,11 @@ static ce_project *openProject(const char *path, const char **error_out)
 	{
 		if (!cJSON_IsNumber(j) || j->valuedouble < 0) return rejectP("\"rerecords\" is not a count");
 		p->rerecords = static_cast<uint64_t>(j->valuedouble);
+	}
+	if ((j = cJSON_GetObjectItemCaseSensitive(root, "clockStart")) != nullptr)
+	{
+		if (!cJSON_IsString(j) || !parseUtcSecond(j->valuestring, p->clockStart))
+			return rejectP("\"clockStart\" is not a time written as 2017-05-27T12:44:28Z between 1970 and 2200");
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "files")) != nullptr)
 	{
@@ -549,6 +604,7 @@ int32_t ce_project_save(ce_project *p, const char *path, const char **error_out)
 	cJSON_AddStringToObject(core, "version", p->coreVersion.c_str());
 	cJSON_AddStringToObject(core, "sha1", p->coreSha1.c_str());
 	cJSON_AddNumberToObject(root, "rerecords", static_cast<double>(p->rerecords));
+	if (p->clockStart >= 0) cJSON_AddStringToObject(root, "clockStart", utcSecondText(p->clockStart).c_str());
 	cJSON *files = cJSON_AddArrayToObject(root, "files");
 	for (const FileEntry &e : p->files)
 	{
@@ -652,6 +708,15 @@ void ce_project_set_core(ce_project *p, const char *name, const char *version, c
 
 uint64_t ce_project_rerecords(const ce_project *p) { return p->rerecords; }
 void ce_project_set_rerecords(ce_project *p, uint64_t count) { p->rerecords = count; }
+
+int64_t ce_project_clock_start(const ce_project *p) { return p->clockStart; }
+
+int32_t ce_project_set_clock_start(ce_project *p, int64_t unix_seconds)
+{
+	if (unix_seconds > kClockStartLast) return 1;
+	p->clockStart = unix_seconds < 0 || unix_seconds == CE_CLOCK_START_DEFAULT ? -1 : unix_seconds;
+	return 0;
+}
 
 /* ---- lumps ---- */
 

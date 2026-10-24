@@ -14,6 +14,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
 #include <sys/mman.h>
 #include <sched.h>
 
@@ -107,6 +109,18 @@ static void slow_first(void) {
  * of the dead frame's writes: played on, it ends on the goldens. */
 static uint32_t g_framesRun;           /* defined with StateSaving, below */
 static int g_stopOnce;
+/* CLOCKTEST: the second the machine's clock reads is kept in the last eight
+ * bytes of RAM, at start-up and after every frame, for the witness to read: a
+ * project's start for the clock reaches the machine (issue 366) */
+static int g_clockTest;
+static void clock_test(void)
+{
+	if (!g_clockTest) return;
+	struct timespec ts;
+	timespec_get(&ts, TIME_UTC);   /* C11's: this file is built -std=c11, which hides clock_gettime */
+	uint64_t seconds = (uint64_t)ts.tv_sec;
+	memcpy(synth_get_ram(g_synth) + 4088, &seconds, 8);
+}
 ECL_INVISIBLE static int g_stoppedOnce;
 static void *g_leftBehind;
 static void heap_churn(void) {
@@ -156,6 +170,7 @@ ECL_EXPORT int Init(void) {
 	if (len >= 9 && memcmp(rom + len - 9, "CACHEWORK", 9) == 0) g_cacheWorkFrame = 3;
 	if (len >= 9 && memcmp(rom + len - 9, "SLOWFIRST", 9) == 0) g_slowFirst = g_slowNext = 1;
 	if (len >= 8 && memcmp(rom + len - 8, "STOPONCE", 8) == 0) g_stopOnce = 1;
+	if (len >= 9 && memcmp(rom + len - 9, "CLOCKTEST", 9) == 0) g_clockTest = 1;
 	g_synth = synth_create(rom, len);   /* copies the rom internally */
 	free(rom);
 	if (!g_synth) return 0;
@@ -169,6 +184,7 @@ ECL_EXPORT int Init(void) {
 		uint8_t *ram = synth_get_ram(g_synth);
 		for (int i = 0; i < 4096; i++) ram[i] = (uint8_t)fill;
 	}
+	clock_test();
 	moving();
 	g_watchedPage = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (g_watchedPage == MAP_FAILED) return 0;
@@ -279,6 +295,7 @@ ECL_EXPORT void FrameAdvance(uint64_t pad) {
 	if ((uint8_t)pad == 0xFB) g_dieIn = 2;
 	if ((uint8_t)pad == 0xF7) g_dieIn = 3;
 	synth_frame(g_synth, (uint8_t)pad);
+	clock_test();
 }
 
 /* Calls during a frame (issue 344): the host's function, in a callback slot,

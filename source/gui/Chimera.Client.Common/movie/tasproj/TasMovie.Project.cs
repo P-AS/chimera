@@ -151,6 +151,9 @@ namespace Chimera.Client.Common
 			sb.Append("core=").Append((running ?? p.CoreSha1).ToUpperInvariant()).Append('\n');
 			sb.Append("settings=").Append(CanonicalJson(p.SettingsJson)).Append('\n');
 			sb.Append("firmware=").Append(CanonicalJson(p.FirmwareJson)).Append('\n');
+			// another start for the machine's clock is another machine (issue 366); the
+			// sandbox's own adds nothing, so a cache made before the choice still matches
+			if (p.ClockStart != EngineProject.ClockStartDefault) sb.Append("clock=").Append(p.ClockStart).Append('\n');
 			for (var i = 0; i < p.FileCount; i++)
 			{
 				// the hash is the file's identity; its name on disk is not

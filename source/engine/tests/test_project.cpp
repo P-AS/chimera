@@ -486,6 +486,49 @@ int main(int argc, char **argv)
 		std::remove(ipath.c_str());
 	}
 
+	// ---- the clock's start (issue 366): kept, written only when it is not the
+	// sandbox's own, and refused when it is not a time ----
+	{
+		auto text = [](const std::string &file) {
+			std::string out;
+			FILE *f = std::fopen(file.c_str(), "rb");
+			assert(f != nullptr);
+			for (int c; (c = std::fgetc(f)) != EOF;) out.push_back(static_cast<char>(c));
+			std::fclose(f);
+			return out;
+		};
+		const std::string cpath = g_dir + "/clock.chimeraProject";
+		ce_project *p = ce_project_new();
+		assert(ce_project_clock_start(p) == -1);
+		assert(ce_project_set_clock_start(p, 7258118401) == 1 && ce_project_clock_start(p) == -1);
+		assert(ce_project_set_clock_start(p, CE_CLOCK_START_DEFAULT) == 0 && ce_project_clock_start(p) == -1);
+		assert(ce_project_save(p, cpath.c_str(), &err) == 0);
+		assert(text(cpath).find("clockStart") == std::string::npos);   /* the default says nothing */
+		assert(ce_project_set_clock_start(p, 1893553445) == 0 && ce_project_clock_start(p) == 1893553445);
+		assert(ce_project_save(p, cpath.c_str(), &err) == 0);
+		assert(text(cpath).find("2030-01-02T03:04:05Z") != std::string::npos);
+		ce_project_free(p);
+		p = ce_project_open(cpath.c_str(), &err);
+		assert(p != nullptr && ce_project_clock_start(p) == 1893553445);
+		/* the last second there is, and a leap day */
+		assert(ce_project_set_clock_start(p, 7258118400) == 0 && ce_project_save(p, cpath.c_str(), &err) == 0);
+		assert(text(cpath).find("2200-01-01T00:00:00Z") != std::string::npos);
+		ce_project_free(p);
+		writeFile("clock-leap.chimeraProject", "{\"clockStart\": \"2024-02-29T23:59:59Z\"}");
+		p = ce_project_open((g_dir + "/clock-leap.chimeraProject").c_str(), &err);
+		assert(p != nullptr && ce_project_clock_start(p) == 1709251199);
+		ce_project_free(p);
+		for (const char *bad : { "2023-02-29T00:00:00Z", "1969-12-31T23:59:59Z", "2200-01-01T00:00:01Z",
+			"2030-01-02 03:04:05", "2030-01-02T03:04:05", "tomorrow" })
+		{
+			writeFile("clock-bad.chimeraProject", std::string("{\"clockStart\": \"") + bad + "\"}");
+			err = nullptr;
+			assert(ce_project_open((g_dir + "/clock-bad.chimeraProject").c_str(), &err) == nullptr);
+			assert(err != nullptr && std::strstr(err, "clockStart") != nullptr);
+		}
+		std::remove(cpath.c_str());
+	}
+
 	std::printf("project: all assertions passed\n");
 	return 0;
 }
