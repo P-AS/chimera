@@ -47,6 +47,36 @@ uint32_t crc32Of(const std::vector<uint8_t> &bytes)
 	for (uint8_t b : bytes) c = table[(c ^ b) & 0xFF] ^ (c >> 8);
 	return c ^ 0xFFFFFFFFu;
 }
+
+/* Chimera asks for the GPU bridge when the core's renderer setting, as given
+ * or the package's default, is a hardware one ("opengl-hw", "vulkan-hw"); the
+ * request is for every session opened after it, so it is made every time */
+void requestGpu(const std::string &package, const std::string &settings)
+{
+	std::string renderer;
+	json::Json given;
+	std::string error;
+	if (json::parse(settings.empty() ? "{}" : settings, given, error))
+		if (const json::Json *v = given.find("renderer"); v != nullptr && v->kind == json::Json::Kind::String) renderer = v->text;
+	if (renderer.empty())
+	{
+		const char *perr = nullptr;
+		if (ce_package *pk = ce_package_open(package.c_str(), &perr))
+		{
+			uint64_t len = 0;
+			json::Json cfg;
+			if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len))
+				json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, error);
+			ce_package_free(pk);
+			if (const json::Json *list = cfg.find("settings"))
+				for (const json::Json &item : list->items)
+					if (const json::Json *name = item.find("name"); name != nullptr && name->text == "renderer")
+						if (const json::Json *d = item.find("default"); d != nullptr && d->kind == json::Json::Kind::String) renderer = d->text;
+		}
+	}
+	ce_gl_request(renderer.size() >= 3 && renderer.compare(renderer.size() - 3, 3, "-hw") == 0 ? 1 : 0);
+}
+
 } // namespace
 
 std::vector<uint8_t> storedZip(const std::vector<std::pair<std::string, std::vector<uint8_t>>> &files)
@@ -1904,6 +1934,7 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	firmwarePinsM_ = fw.pins;
 	const char *error = nullptr;
 	compileCacheOnMachine(package, game, "");
+	requestGpu(package, settingsM_);
 	ce_session *s = ce_session_open(package.c_str(), bytes.data(), bytes.size(), game.c_str(),
 		settingsM_.empty() ? nullptr : settingsM_.c_str(), fwIds.data(), fwData.data(), fwLens.data(),
 		static_cast<int32_t>(fwIds.size()), nullptr, nullptr, nullptr, nullptr, 0, &error);
@@ -3377,6 +3408,11 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 	/* the game is the project's first file, and its hash is the one the project records */
 	compileCacheOnMachine(package, ce_project_file_count(p) > 0 && ce_project_file_source_path(p, 0) != nullptr ? ce_project_file_source_path(p, 0) : "",
 		ce_project_file_count(p) > 0 && ce_project_file_sha1(p, 0) != nullptr ? ce_project_file_sha1(p, 0) : "");
+	{
+		uint64_t len = 0;
+		const char *settings = ce_project_settings_text(p, &len);
+		requestGpu(package, settings != nullptr ? std::string(settings, static_cast<size_t>(len)) : std::string());
+	}
 	ce_session *s = ce_session_open_project(package.c_str(), p, nullptr, fwIds.data(), fwData.data(), fwLens.data(),
 		static_cast<int32_t>(fwIds.size()), flags, &error);
 	/* what was mounted is what the project records, as always: by the bytes */

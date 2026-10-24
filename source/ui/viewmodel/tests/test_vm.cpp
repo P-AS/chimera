@@ -6846,6 +6846,17 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(session.recentProjects.get().rfind(boardA.string(), 0) == 0);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* a software renderer asks the engine for no GPU, and a hardware one for
+	 * the GPU bridge, as Chimera asks (a Ruffle project failed without it) */
+	CHECK(ce_gl_requested() == 0);
+	const fs::path boardHw = dir / "boardhw.chimeraProject";
+	std::ofstream(boardHw, std::ios::binary) << std::regex_replace(readFile(boardA), std::regex("\"renderer\"(\\s*:\\s*)\"software\""), "\"renderer\"$1\"opengl-hw\"");
+	CHECK(session.run("openProject", {boardHw.string()}, error).has_value());
+	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == boardHw.string(); }, 60));
+	CHECK(ce_gl_requested() == 1);
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	ce_gl_request(0);
 	/* opened again on that project's answers, whatever the form held since:
 	 * its core, machine, files and settings - its own, so the suggestion is
 	 * not put over them - and its firmware found where it was chosen */

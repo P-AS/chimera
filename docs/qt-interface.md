@@ -355,7 +355,9 @@ A suggested order, each step usable on its own:
    each, so loading one is a state load), undo and the greenzone kept with
    the project are done. Still to do: saving everything else a project
    holds (subtitles, headers, the piano roll's layout), and the rules for
-   a machine a GPU drew once the window has the GPU bridge. This is what a
+   a machine a GPU drew. The window asks the engine for the GPU bridge as
+   Chimera does, when the core's renderer setting is a hardware one ("-hw");
+   a Ruffle project would not open without it (2026-10-24). This is what a
    TAS author lives in.
 2. **New project wizard, firmware and Core Manager.** Opening anything
    without the C# window first. Done: the Cores window, firmware found by

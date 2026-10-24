@@ -57,6 +57,5 @@ LD_LIBRARY_PATH=$HOME/qt/6.12.0/gcc_64/lib build/meson-linux/source/ui/chimera-q
 
 ## Not done yet
 
-Projects, movies and states (the engine has them; no view model uses them
-yet), the greenzone and seeking, settings, firmware, every other tool
-window, and the GPU bridge for cores that draw on the real GPU.
+What is still to do is listed in docs/qt-interface.md, under "The rest
+of the move, by size".
