@@ -230,7 +230,8 @@ if qt_dep.found()
     env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software', 'ALSOFT_DRIVERS=null', 'CHIMERA_QT_STRICT_QML=1',
       'CHIMERA_QT_CONFIG=' + meson.current_build_dir() / 'window-test-settings.json',
       'CHIMERA_QT_CACHE=' + meson.current_build_dir() / 'window-test-cache',
-      'CHIMERA_QT_RECOVERY=' + meson.current_build_dir() / 'window-test-recovery'],
+      'CHIMERA_QT_RECOVERY=' + meson.current_build_dir() / 'window-test-recovery',
+      'CHIMERA_QT_HASHES=' + meson.current_build_dir() / 'window-test-file-hashes.txt'],
     timeout: 60,
   )
   # a theme reaches Qt Quick's controls, which take the platform's colours

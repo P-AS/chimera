@@ -13,6 +13,7 @@
  * gone, nothing - where it was found, and Chimera's words for all of it.
  * Scan Folder hashes a folder and remembers every declaration it answers. */
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,10 @@ public:
 	Property<int64_t> shows{0};
 	/* every release of an id declared many times, not only the dumps on hand */
 	Property<bool> showAll{false};
+	/* Chimera's Find box (issue 368): a line stays when its core, the
+	 * firmware's name, id or release, the file name asked for or the file
+	 * found holds the text, any case */
+	Property<std::string> find;
 	/* the line picked in the list (-1: none), and what it says in full */
 	Property<int64_t> picked{-1};
 	Property<std::string> detail;
@@ -90,7 +95,12 @@ private:
 		size_t group = 0;
 		long long row = -1;
 		std::string text;
+		/* a core's files folded to this one line */
+		bool folded = false;
 	};
+	/* the cores whose files are folded to one line, while the window is open (issue 368) */
+	std::set<std::string> collapsed_;
+	bool matches(const Group &g, const Row &r, const std::string &text) const;
 	class Lines : public RowModel
 	{
 	public:
@@ -114,7 +124,7 @@ private:
 	std::vector<Group> groups_;
 	std::vector<Line> lines_;
 	Lines model_{*this};
-	Connection showsWatch_, showAllWatch_, pickedWatch_;
+	Connection showsWatch_, showAllWatch_, pickedWatch_, findWatch_;
 };
 
 } // namespace chimera::vm

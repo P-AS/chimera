@@ -157,6 +157,61 @@ FirmwareViewModel::FirmwareViewModel(Dispatcher &dispatcher, CoresViewModel &cor
 	expose("pickTitle", "a file picker's title for the line picked", pickTitle);
 	rows("lines", "one line of the list: core, summary (the core's line), kind (row, none or more), mark (0 right, 1 used "
 		"anyway, 2 gone, 3 nothing), firmware, release, expected, found, where, status, state, heading (the core and its line)", model_);
+	expose("find", "Chimera's Find box: lines whose core, firmware name, id or release, file name asked for or file found "
+		"holds this, any case", find, true);
+	/* a core's files folded to one line ("+ PCSX2: 3 files") and opened again, as Chimera's (issue 368) */
+	auto coreOf = [this](const Args &a, std::string &core, std::string &error) {
+		if (a.empty()) return false;
+		if (std::holds_alternative<std::string>(a[0])) return arg(a, 0, core, error);
+		int64_t l = -1;
+		if (!arg(a, 0, l, error)) return false;
+		if (l < 0 || l >= static_cast<int64_t>(lines_.size()))
+		{
+			error = "no line " + std::to_string(l);
+			return false;
+		}
+		core = groups_[lines_[static_cast<size_t>(l)].group].core;
+		return true;
+	};
+	command("collapse", "folds a core's files to one line (a core's name, or a line of it)", {"core"},
+		[this, coreOf](const Args &a, std::string &error) -> Value {
+			std::string core;
+			if (!coreOf(a, core, error)) return {};
+			for (const Group &g : groups_)
+				if (g.core == core && !g.rows.empty() && collapsed_.insert(core).second) render();
+			return {};
+		});
+	command("expand", "opens a folded core's files again (a core's name, or a line of it)", {"core"},
+		[this, coreOf](const Args &a, std::string &error) -> Value {
+			std::string core;
+			if (!coreOf(a, core, error)) return {};
+			if (collapsed_.erase(core) > 0) render();
+			return {};
+		});
+	command("collapseAll", "folds every core's files", {}, [this](const Args &, std::string &) -> Value {
+		for (const Group &g : groups_)
+			if (!g.rows.empty()) collapsed_.insert(g.core);
+		render();
+		return {};
+	});
+	command("expandAll", "opens every core's files", {}, [this](const Args &, std::string &) -> Value {
+		collapsed_.clear();
+		render();
+		return {};
+	});
+	command("folderOf", "where Open Folder goes for a line: the folder of the file found for it; \"\" when the line "
+		"names no file or its folder is gone", {"line"}, [this](const Args &a, std::string &error) -> Value {
+			const Row *r = nullptr;
+			if (!lineOf(a, r, error)) return {};
+			std::error_code ec;
+			const fs::path folder = r->path.empty() ? fs::path() : fs::path(r->path).parent_path();
+			if (folder.empty() || !fs::is_directory(folder, ec))
+			{
+				status.set(r->path.empty() ? "No file was found for " + r->display + "." : "The folder of " + r->path + " is gone.");
+				return std::string();
+			}
+			return folder.string();
+		});
 	command("refresh", "asks every installed core again what firmware it declares, and looks for each (Rescan)", {},
 		[this](const Args &, std::string &) -> Value {
 			survey();
@@ -222,6 +277,7 @@ FirmwareViewModel::FirmwareViewModel(Dispatcher &dispatcher, CoresViewModel &cor
 		});
 	showsWatch_ = shows.changed.connect([this] { render(); });
 	showAllWatch_ = showAll.changed.connect([this] { render(); });
+	findWatch_ = find.changed.connect([this] { render(); });
 	pickedWatch_ = picked.changed.connect([this] { describe(); });
 }
 
@@ -352,19 +408,29 @@ void FirmwareViewModel::render()
 	{
 		const Group &g = groups_[gi];
 		if ((shows.get() == 1 && g.gameCore) || (shows.get() == 2 && !g.gameCore)) continue;
+		/* through the Find box: a core that matches nothing is not listed */
+		std::vector<size_t> shown;
+		for (size_t i : g.rows)
+			if (matches(g, rows_[i], find.get())) shown.push_back(i);
+		if (!find.get().empty() && shown.empty() && !matches(g, Row(), find.get())) continue;
 		if (g.rows.empty())
 		{
 			lines_.push_back({gi, -1, "(needs no firmware)"});
 			continue;
 		}
+		if (collapsed_.count(g.core) > 0)
+		{
+			lines_.push_back({gi, -1, "+ " + g.core + ": " + std::to_string(shown.size()) + (shown.size() == 1 ? " file" : " files"), true});
+			continue;
+		}
 		/* an id at a time, in the order the core declares them */
 		std::vector<std::string> ids;
-		for (size_t i : g.rows)
+		for (size_t i : shown)
 			if (std::find(ids.begin(), ids.end(), rows_[i].id) == ids.end()) ids.push_back(rows_[i].id);
 		for (const std::string &id : ids)
 		{
 			std::vector<size_t> rows;
-			for (size_t i : g.rows)
+			for (size_t i : shown)
 				if (rows_[i].id == id) rows.push_back(i);
 			const bool collapse = !showAll.get() && rows.size() > kCollapseAbove;
 			size_t hidden = 0;
@@ -390,6 +456,20 @@ void FirmwareViewModel::render()
 			again = static_cast<int64_t>(l);
 	if (picked.get() != again) picked.set(again);
 	else describe();
+}
+
+bool FirmwareViewModel::matches(const Group &g, const Row &r, const std::string &text) const
+{
+	const size_t a = text.find_first_not_of(' '), b = text.find_last_not_of(' ');
+	if (a == std::string::npos) return true;
+	auto lower = [](std::string s) {
+		for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		return s;
+	};
+	const std::string want = lower(text.substr(a, b - a + 1));
+	auto has = [&](const std::string &s) { return !s.empty() && lower(s).find(want) != std::string::npos; };
+	return has(g.core) || has(r.display) || has(r.id) || has(r.label) || has(r.name) ||
+		(!r.path.empty() && has(fs::path(r.path).filename().string()));
 }
 
 void FirmwareViewModel::describe()
@@ -436,9 +516,10 @@ Value FirmwareViewModel::Lines::cell(int64_t row, int32_t column) const
 	{
 		switch (column)
 		{
-		case 2: return std::string(line.text.rfind("(", 0) == 0 ? "none" : "more");
+		case 2: return std::string(line.folded ? "folded" : line.text.rfind("(", 0) == 0 ? "none" : "more");
 		case 3: return int64_t{3};
 		case 4: return line.text;
+		case 5: return std::string(line.folded ? "double-click or + to show" : "");
 		case 10: return int64_t{Missing};
 		default: return std::string();
 		}

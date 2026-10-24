@@ -81,6 +81,14 @@ ApplicationWindow {
             Layout.fillWidth: true
         }
         RowLayout {
+            // Chimera's Find box (issue 368): the lines whose core, firmware, release, file asked for or file found holds it
+            Label { text: qsTr("Find:") }
+            TextField {
+                objectName: "firmwareFind"
+                text: win.vm.find
+                Layout.preferredWidth: 220
+                onTextEdited: win.vm.find = text
+            }
             Item { Layout.fillWidth: true }
             Label { text: qsTr("Show:") }
             RadioButton { text: qsTr("All"); checked: win.vm.shows === 0; onClicked: win.vm.shows = 0; padding: 2 }
@@ -120,6 +128,13 @@ ApplicationWindow {
                     clip: true
                     model: win.vm.rows("lines")
                     currentIndex: win.vm.picked
+                    focus: true
+                    // + opens a folded core, - folds the picked line's core, as Chimera's list
+                    Keys.onPressed: event => {
+                        if (win.vm.picked < 0) return
+                        if (event.key === Qt.Key_Plus) { win.vm.run("expand", [win.vm.picked]); event.accepted = true }
+                        else if (event.key === Qt.Key_Minus) { win.vm.run("collapse", [win.vm.picked]); event.accepted = true }
+                    }
                     ScrollBar.vertical: ScrollBar {}
                     // a group a core: its name and its line
                     section.property: "heading"
@@ -159,7 +174,7 @@ ApplicationWindow {
                         Row {
                             anchors.verticalCenter: parent.verticalCenter
                             Item { width: win.widths[0]; height: 16; Mark { anchors.centerIn: parent; mark: line.mark } }
-                            Label { text: line.firmware; color: line.ink; width: line.kind === "row" ? win.widths[1] : 800; elide: Text.ElideRight; leftPadding: 4 }
+                            Label { text: line.kind === "folded" ? line.firmware + "    " + line.release : line.firmware; color: line.ink; width: line.kind === "row" ? win.widths[1] : 800; elide: Text.ElideRight; leftPadding: 4 }
                             Label { visible: line.kind === "row"; text: line.release; color: line.ink; width: win.widths[2]; elide: Text.ElideRight; leftPadding: 4 }
                             Label { visible: line.kind === "row"; text: line.expected; color: line.ink; width: win.widths[3]; font.family: "monospace"; leftPadding: 4 }
                             Label { visible: line.kind === "row"; text: line.found; color: line.ink; width: win.widths[4]; elide: Text.ElideRight; leftPadding: 4 }
@@ -167,8 +182,17 @@ ApplicationWindow {
                             Label { visible: line.kind === "row"; text: line.status; color: line.ink; width: win.widths[6] + 200; elide: Text.ElideRight; leftPadding: 4 }
                         }
                         TapHandler {
-                            onTapped: win.vm.picked = line.index
-                            onDoubleTapped: { win.vm.picked = line.index; win.browse() }
+                            onTapped: { win.vm.picked = line.index; list.forceActiveFocus() }
+                            // a folded core's line opens it; any other line chooses a file
+                            onDoubleTapped: {
+                                win.vm.picked = line.index
+                                if (line.kind === "folded") win.vm.run("expand", [line.index])
+                                else win.browse()
+                            }
+                        }
+                        TapHandler {
+                            acceptedButtons: Qt.RightButton
+                            onTapped: { win.vm.picked = line.index; foldMenu.popup() }
                         }
                     }
                 }
@@ -187,9 +211,26 @@ ApplicationWindow {
             Button { text: qsTr("Clear"); enabled: win.vm.canClear; onClicked: win.vm.run("clearFile", [win.vm.picked]) }
             Button { text: qsTr("Scan Folder..."); onClicked: folderDialog.open() }
             Button { text: qsTr("Rescan"); onClicked: win.vm.run("refresh") }
+            // the file found for the line picked, in its folder
+            Button {
+                text: qsTr("Open Folder")
+                enabled: win.vm.canSet
+                onClicked: {
+                    const folder = win.vm.run("folderOf", [win.vm.picked]) || ""
+                    if (folder !== "") Qt.openUrlExternally("file://" + folder)
+                }
+            }
             CheckBox { text: qsTr("Show every release"); checked: win.vm.showAll; onToggled: win.vm.showAll = checked }
             Label { text: win.vm.status; elide: Text.ElideRight; Layout.fillWidth: true; opacity: 0.8 }
             Button { text: qsTr("Close"); onClicked: win.close() }
         }
+    }
+    // a core's files folded or opened, one core or all, as Chimera's right-click menu
+    Menu {
+        id: foldMenu
+        Action { text: qsTr("Collapse"); onTriggered: win.vm.run("collapse", [win.vm.picked]) }
+        Action { text: qsTr("Expand"); onTriggered: win.vm.run("expand", [win.vm.picked]) }
+        Action { text: qsTr("Collapse All"); onTriggered: win.vm.run("collapseAll") }
+        Action { text: qsTr("Expand All"); onTriggered: win.vm.run("expandAll") }
     }
 }

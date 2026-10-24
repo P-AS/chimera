@@ -52,6 +52,7 @@
 #include <utility>
 #include <vector>
 
+#include "chimera/engine.h"
 #include "chimera/vm/branches_vm.hpp"
 #include "chimera/vm/project_details_vm.hpp"
 #include "chimera/vm/config_store.hpp"
@@ -789,6 +790,17 @@ int main(int argc, char **argv)
 	 * removing a cache cannot take it (CHIMERA_QT_RECOVERY for a test) */
 	session.recoveryFolder.set(qEnvironmentVariableIsSet("CHIMERA_QT_RECOVERY") ? qEnvironmentVariable("CHIMERA_QT_RECOVERY").toStdString()
 																				: (std::filesystem::path(dataHome) / "Recovery").string());
+	/* the hashes of the files read (firmware, discs) outlive the session, so the first rescan or
+	 * opening of each session does not read every disc image again, as Chimera's (issue 368;
+	 * CHIMERA_QT_HASHES for a test) */
+	{
+		const std::filesystem::path hashes = qEnvironmentVariableIsSet("CHIMERA_QT_HASHES")
+			? std::filesystem::path(qEnvironmentVariable("CHIMERA_QT_HASHES").toStdString())
+			: std::filesystem::path(dataHome) / "file-hashes.txt";
+		std::error_code ec;
+		std::filesystem::create_directories(hashes.parent_path(), ec);
+		ce_sha1_keep_in(hashes.string().c_str());
+	}
 	qt::QmlViewModel dataFolderQml(dataFolder);
 	/* what cores compiled for a game, kept between sessions (CHIMERA_QT_COMPILE_CACHE for a test) */
 	session.compileCacheRoot.set(qEnvironmentVariableIsSet("CHIMERA_QT_COMPILE_CACHE") ? qEnvironmentVariable("CHIMERA_QT_COMPILE_CACHE").toStdString()

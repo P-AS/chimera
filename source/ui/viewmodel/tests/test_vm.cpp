@@ -7633,6 +7633,36 @@ bool firmwareWindow(const char *package, const char *slotsPackage, const char *b
 			  text(v3, 7) == "rel03.bin" && mark(v3) == 0 && text(v3, 1).find("1 of 10 dumps on hand") != std::string::npos);
 		CHECK(lineOf("… 9 more releases of Synth BIOS not on hand; tick \"Show every release\" to see them", "") >= 0);
 	}
+	/* Chimera's Find box, folding and Open Folder (issue 368) */
+	{
+		fw.set("find", std::string("REL03"), error);
+		CHECK(coresListed() == "Synth Bios|" && lineOf("Synth BIOS", "v03") >= 0 && lines.rowCount() == 1);
+		fw.set("find", std::string("board b"), error);
+		CHECK(coresListed() == "Synth Slots|" && lineOf("Board B BIOS", "") >= 0);
+		fw.set("find", std::string("nothing like this"), error);
+		CHECK(lines.rowCount() == 0);
+		fw.set("find", std::string(""), error);
+		CHECK(coresListed() == "Synth|Synth Bios|Synth Slots|Synth Game|");
+		/* a core folded to one line, and opened again by a line of it */
+		CHECK(fw.run("collapse", {std::string("Synth Bios")}, error).has_value());
+		const int64_t folded = lineOf("+ Synth Bios: 10 files", "double-click or + to show");
+		CHECK(folded >= 0 && text(folded, 2) == "folded" && lineOf("Synth BIOS", "v03") < 0);
+		CHECK(fw.run("expand", {folded}, error).has_value() && lineOf("Synth BIOS", "v03") >= 0);
+		/* all of them, a core with no firmware left as it is */
+		CHECK(fw.run("collapseAll", {}, error).has_value());
+		{
+			std::string folds;
+			for (int64_t r = 0; r < lines.rowCount(); r++) folds += text(r, 4) + "|";
+			CHECK(folds == "(needs no firmware)|+ Synth Bios: 10 files|+ Synth Slots: 1 file|+ Synth Game: 1 file|");
+		}
+		CHECK(fw.run("expandAll", {}, error).has_value() && lineOf("Board B BIOS", "") >= 0);
+		/* Open Folder: the folder of the file found; none for a line with no file */
+		std::string folder;
+		CHECK(fromValue(fw.run("folderOf", {lineOf("Synth BIOS", "v03")}, error).value_or(Value()), folder) &&
+			fs::equivalent(folder, dir / "Firmware"));
+		CHECK(fromValue(fw.run("folderOf", {lineOf("Board B BIOS", "")}, error).value_or(Value()), folder) && folder.empty() &&
+			fw.status.get() == "No file was found for Board B BIOS.");
+	}
 	/* one in a sub-folder of the firmware folder: found, and in the Firmware folder, as Chimera's (chimera#359) */
 	fs::create_directories(dir / "Firmware" / "Synth" / "Bios");
 	std::ofstream(dir / "Firmware" / "Synth" / "Bios" / "rel05.bin") << "bios rel 05";
