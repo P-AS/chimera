@@ -1265,7 +1265,14 @@ namespace Chimera.Client.GUI
 
 		private void RegisterSublimeText2MenuItem_Click(object sender, EventArgs e)
 		{
-			_luaAutoInstaller.InstallChimeraLua(LuaAutocompleteInstaller.TextEditors.Sublime2, LuaImp.Docs);
+			try
+			{
+				_luaAutoInstaller.InstallChimeraLua(LuaAutocompleteInstaller.TextEditors.Sublime2, LuaImp.Docs);
+			}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+			{
+				DialogController.ShowMessageBox($"Chimera's Lua functions could not be written to Sublime Text's Lua package: {ex.Message}");
+			}
 		}
 
 		private void RegisterNotePadMenuItem_Click(object sender, EventArgs e)

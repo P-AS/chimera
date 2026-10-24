@@ -10862,3 +10862,16 @@ folder" for a file found below it. Test:
 `TheFirmwareFolderIsSearchedWithItsSubFolders` (fails with the walk kept to
 the top). How deep a search goes, as a setting, is one of issue 368's
 requests, put to the owner.
+
+## Sublime Text registration writes Chimera's own file (user-decided, 2026-10-24)
+
+Lua Console > Settings > Register To Text Editors > Sublime Text 2 wrote
+Chimera's Lua functions into Sublime's Lua package folder without making the
+folder. Sublime makes that folder only when the package is first changed, so
+on a fresh install the click failed with an unhandled error. The file was
+also still named `bizhawk.lua.sublime-completions`. The owner chose to fix it
+rather than remove the menu: the folder is made when it is missing, the file
+is now `chimera.lua.sublime-completions`, and a write that still fails (no
+permission) says so in a message. A file of the old name is left alone: it
+may be BizHawk's own. Tests: `LuaAutocompleteInstallerTests` (the first fails
+with the folder no longer made).

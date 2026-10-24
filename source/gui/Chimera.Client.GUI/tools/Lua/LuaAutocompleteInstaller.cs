@@ -5,6 +5,14 @@ namespace Chimera.Client.GUI
 {
 	public class LuaAutocompleteInstaller
 	{
+		/// <param name="appDataFolder">where the editors keep their packages; the user's roaming AppData when not given (a test gives a folder of its own)</param>
+		public LuaAutocompleteInstaller(string appDataFolder = null)
+		{
+			_appDataFolder = appDataFolder;
+		}
+
+		private readonly string _appDataFolder;
+
 		public enum TextEditors
 		{
 			Sublime2,
@@ -44,7 +52,7 @@ namespace Chimera.Client.GUI
 			}
 		}
 
-		private string AppDataFolder => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+		private string AppDataFolder => _appDataFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
 
 		private bool IsSublimeInstalled()
 		{
@@ -60,13 +68,17 @@ namespace Chimera.Client.GUI
 			return File.Exists(exePath);
 		}
 
-		private readonly string SublimeLuaPath = @"Sublime Text 2\Packages\Lua";
-		private readonly string SublimeCompletionsFilename = "bizhawk.lua.sublime-completions";
+		private static readonly string SublimeLuaPath = Path.Combine("Sublime Text 2", "Packages", "Lua");
+
+		/// <summary>
+		/// Chimera's own name. A file of the old name may be BizHawk's, written by
+		/// BizHawk for itself, so it is left where it is.
+		/// </summary>
+		public const string SublimeCompletionsFilename = "chimera.lua.sublime-completions";
 
 		private bool IsChimeraLuaSublimeInstalled()
 		{
-			var bizCompletions = Path.Combine(AppDataFolder, SublimeLuaPath, SublimeCompletionsFilename);
-			return File.Exists(bizCompletions);
+			return File.Exists(Path.Combine(AppDataFolder, SublimeLuaPath, SublimeCompletionsFilename));
 		}
 
 		private readonly string NotepadPath = "TODO";
@@ -74,26 +86,27 @@ namespace Chimera.Client.GUI
 
 		private bool IsChimeraLuaNotepadInstalled()
 		{
-			var bizCompletions = Path.Combine(AppDataFolder, NotepadPath, NotepadAutoCompleteFileName);
-			return File.Exists(bizCompletions);
+			var completions = Path.Combine(AppDataFolder, NotepadPath, NotepadAutoCompleteFileName);
+			return File.Exists(completions);
 		}
 
 		private void InstallChimeraLuaToSublime2(LuaDocumentation docs)
 		{
-			var bizCompletions = Path.Combine(AppDataFolder, SublimeLuaPath, SublimeCompletionsFilename);
-
-			var text = docs.ToSublime2CompletionList();
-			File.WriteAllText(bizCompletions, text);
+			// Sublime Text makes its Lua package folder only when the package is
+			// first changed, so a fresh install has none: it is made here
+			var folder = Path.Combine(AppDataFolder, SublimeLuaPath);
+			Directory.CreateDirectory(folder);
+			File.WriteAllText(Path.Combine(folder, SublimeCompletionsFilename), docs.ToSublime2CompletionList());
 		}
 
 		private void InstallChimeraLuaToNotepad(LuaDocumentation docs)
 		{
-			var bizAutocomplete = Path.Combine(AppDataFolder, NotepadPath, NotepadAutoCompleteFileName);
+			var autocomplete = Path.Combine(AppDataFolder, NotepadPath, NotepadAutoCompleteFileName);
 
 			var text = docs.ToNotepadPlusPlusAutoComplete();
 
 			// TODO
-			//File.WriteAllText(bizCompletions, text);
+			//File.WriteAllText(completions, text);
 		}
 	}
 }
