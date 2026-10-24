@@ -89,6 +89,7 @@ RowLayout {
         ToolTip.text: qsTr("Click here for special tricky bindings")
         onClicked: specialMenu.popup()
         Menu {
+            delegate: MenuEntry {}
             id: specialMenu
             Repeater {
                 model: [

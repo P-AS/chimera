@@ -119,7 +119,7 @@ ApplicationWindow {
                 Action { id: undoAction; property string hotkey: "Undo"; text: qsTr("&Undo"); enabled: tas.pianoRoll.undoEnabled; onTriggered: tas.pianoRoll.run("undo") }
                 Action { id: redoAction; property string hotkey: "Redo"; text: qsTr("&Redo"); enabled: tas.pianoRoll.redoEnabled; onTriggered: tas.pianoRoll.run("redo") }
                 Action { text: qsTr("Show Undo History"); onTriggered: { undoHistoryWindow.show(); undoHistoryWindow.raise() } }
-                MenuSeparator {}
+                MenuDivider {}
                 Action { text: qsTr("Deselect"); enabled: editMenu.picked; onTriggered: tas.pianoRoll.run("select", [-1, -1]) }
                 Action {
                     id: betweenMarkersAction; property string hotkey: "Sel. bet. Markers"
@@ -133,7 +133,7 @@ ApplicationWindow {
                 }
                 Action { id: reselectAction; property string hotkey: "Reselect Clip."; text: qsTr("Reselect Clipboard"); enabled: tas.pianoRoll.clipboardFrames > 0; onTriggered: tas.pianoRoll.run("reselectClipboard") }
                 Action { property string hotkey: "Seek To..."; text: qsTr("Go to Frame..."); enabled: tas.session.seekEnabled; onTriggered: seekDialog.open() }
-                MenuSeparator {}
+                MenuDivider {}
                 Action {
                     text: qsTr("Copy"); shortcut: StandardKey.Copy; enabled: editMenu.picked
                     onTriggered: {
@@ -158,7 +158,7 @@ ApplicationWindow {
                         tas.clipboard.setText(tas.pianoRoll.clipboardText)
                     }
                 }
-                MenuSeparator {}
+                MenuDivider {}
                 Action {
                     id: clearFramesAction; property string hotkey: "Clear Frames"
                     text: qsTr("Clear"); enabled: editMenu.picked
@@ -181,20 +181,21 @@ ApplicationWindow {
                     onTriggered: tas.pianoRoll.run("cloneFrames", [tas.pianoRoll.selectFirst, tas.pianoRoll.selectLast])
                 }
                 Action { id: cloneTimesAction; property string hotkey: "Clone # Times"; text: qsTr("Clone # Times"); enabled: editMenu.picked; onTriggered: cloneDialog.open() }
-                MenuSeparator {}
+                MenuDivider {}
                 Action {
                     text: qsTr("&Truncate Movie"); enabled: tas.session.isOpen && editMenu.at < tas.pianoRoll.frameCount
                     onTriggered: tas.pianoRoll.run("truncate", [editMenu.at])
                 }
                 Action { text: qsTr("&Clear Greenzone"); enabled: tas.session.isOpen; onTriggered: tas.session.run("clearGreenzone") }
-                MenuSeparator {}
+                MenuDivider {}
                 Action { text: qsTr("State History Integrity Check"); enabled: tas.session.isOpen; onTriggered: tas.session.run("checkStateHistory") }
-                MenuSeparator {}
+                MenuDivider {}
                 Action { text: qsTr("Save Selection to Macro"); enabled: editMenu.picked; onTriggered: saveMacroDialog.open() }
                 Action { text: qsTr("Place Macro at Selection"); enabled: editMenu.picked; onTriggered: placeMacroDialog.open() }
                 Menu {
+                    delegate: MenuEntry {}
                     id: recentMacrosMenu
-                    title: qsTr("Recent Macros")
+                    title: qsTr("Recent Macros"); icon.source: "qrc:/chimera/icons/Recent.png"
                     enabled: editMenu.picked && tas.pianoRoll.recentMacros !== ""
                     Instantiator {
                         model: tas.pianoRoll.recentMacros === "" ? [] : tas.pianoRoll.recentMacros.split("\n")
@@ -207,7 +208,7 @@ ApplicationWindow {
                         onObjectRemoved: (index, object) => recentMacrosMenu.removeItem(object)
                     }
                 }
-                MenuSeparator {}
+                MenuDivider {}
                 Action {
                     text: qsTr("&Markers Move With the Frames")
                     checkable: true
@@ -217,6 +218,7 @@ ApplicationWindow {
                 Action { text: qsTr("Make the Inputs 1,000,000 Frames Long"); onTriggered: tas.pianoRoll.run("fill", [1000000]) }
             }
             Menu {
+                delegate: MenuEntry {}
                 title: qsTr("&Metadata")
                 enabled: tas.session.hasProject
                 Action { text: qsTr("&Header..."); onTriggered: { headerWindow.show(); headerWindow.raise() } }
@@ -224,12 +226,14 @@ ApplicationWindow {
                 Action { text: qsTr("&Subtitles..."); onTriggered: { subtitlesWindow.show(); subtitlesWindow.raise() } }
             }
             Menu {
+                delegate: MenuEntry {}
                 title: qsTr("&Settings")
                 Action { text: qsTr("Open settings..."); onTriggered: { tastudioSettingsWindow.show(); tastudioSettingsWindow.raise() } }
             }
             // the columns shown: the console's first, then a menu a player's
             // and the keyboard keys', then a toggle for each group, as Chimera's
             Menu {
+                delegate: MenuEntry {}
                 id: columnsMenu
                 title: qsTr("&Columns")
                 enabled: tas.session.isOpen
@@ -289,7 +293,7 @@ ApplicationWindow {
                     }
                     onObjectRemoved: (index, object) => columnsMenu.removeMenu(object)
                 }
-                MenuSeparator { id: columnsSeparator }
+                MenuDivider { id: columnsSeparator }
                 Action { text: qsTr("Show &All"); onTriggered: tas.pianoRoll.run("showAllColumns") }
                 Instantiator {
                     model: tas.pianoRoll.rows("columnGroups")
@@ -309,6 +313,7 @@ ApplicationWindow {
                 }
             }
             Menu {
+                delegate: MenuEntry {}
                 title: qsTr("&Window")
                 Action {
                     text: qsTr("&Move with Main Window")
@@ -363,6 +368,7 @@ ApplicationWindow {
             SplitView.minimumWidth: 120
             // TAStudio's column menu, on a column's name
             Menu {
+                delegate: MenuEntry {}
                 id: columnMenu
                 objectName: "columnMenu"
                 property string name: ""
@@ -387,6 +393,7 @@ ApplicationWindow {
                 MenuItem { text: qsTr("Hide column"); onTriggered: tas.pianoRoll.run("hideColumn", [columnMenu.name]) }
                 // Chimera's Show columns: the Columns menu's own list, for the input roll used
                 Menu {
+                    delegate: MenuEntry {}
                     id: showColumnsMenu
                     title: qsTr("Show columns")
                     Instantiator {
@@ -798,12 +805,12 @@ ApplicationWindow {
         }
         Action { text: qsTr("Set Marker with Text"); onTriggered: markerDialog.openFor(tas.pianoRoll.selectFirst, "") }
         Action { text: qsTr("Remove Markers"); onTriggered: tas.removeMarkers() }
-        MenuSeparator {}
+        MenuDivider {}
         Action { text: qsTr("Deselect"); onTriggered: tas.pianoRoll.run("select", [-1, -1]) }
         Action { property string hotkey: "Sel. bet. Markers"; text: qsTr("Select between Markers"); onTriggered: tas.selectBetweenMarkers() }
-        MenuSeparator {}
+        MenuDivider {}
         Action { text: qsTr("Clear Greenzone"); onTriggered: tas.session.run("clearGreenzone") }
-        MenuSeparator {}
+        MenuDivider {}
         Action {
             text: qsTr("Copy")
             onTriggered: {
@@ -820,14 +827,14 @@ ApplicationWindow {
                 tas.clipboard.setText(tas.pianoRoll.clipboardText)
             }
         }
-        MenuSeparator {}
+        MenuDivider {}
         Action { property string hotkey: "Clear Frames"; text: qsTr("Clear"); onTriggered: clearFramesAction.trigger() }
         Action { property string hotkey: "Delete Frames"; text: qsTr("Delete"); onTriggered: deleteFramesAction.trigger() }
         Action { property string hotkey: "Insert Frame"; text: qsTr("Insert"); onTriggered: insertFrameAction.trigger() }
         Action { property string hotkey: "Insert # Frames"; text: qsTr("Insert # of Frames"); onTriggered: insertDialog.open() }
         Action { property string hotkey: "Clone Frames"; text: qsTr("Clone"); onTriggered: cloneFramesAction.trigger() }
         Action { property string hotkey: "Clone # Times"; text: qsTr("Clone # Times"); onTriggered: cloneDialog.open() }
-        MenuSeparator {}
+        MenuDivider {}
         Action { text: qsTr("Truncate Movie"); onTriggered: tas.pianoRoll.run("truncate", [tas.pianoRoll.selectFirst]) }
         Action { text: qsTr("&Branch"); enabled: tas.branches.createEnabled; onTriggered: tas.branches.run("create", [""]) }
     }
@@ -864,18 +871,19 @@ ApplicationWindow {
     }
     // Chimera's branch menu, on the branch picked
     Menu {
+        delegate: MenuEntry {}
         id: branchMenu
         readonly property bool picked: tas.branches.selected >= 0 && tas.branches.selected < tas.branches.count
         Action { text: qsTr("Add"); enabled: tas.branches.createEnabled; onTriggered: tas.branches.run("create", [""]) }
-        Action { text: qsTr("Add with Text"); enabled: tas.branches.createEnabled; onTriggered: branchTextDialog.openFor("add") }
-        Action { text: qsTr("Load"); enabled: branchMenu.picked; onTriggered: tas.branches.run("askToLoad", [tas.branches.selected]) }
-        Action { text: qsTr("&Update"); enabled: branchMenu.picked; onTriggered: tas.branches.run("saveSlot", [tas.branches.selected]) }
-        Action { text: qsTr("Update with Text"); enabled: branchMenu.picked; onTriggered: branchTextDialog.openFor("update") }
-        Action { text: qsTr("Edit Text"); enabled: branchMenu.picked; onTriggered: branchTextDialog.openFor("rename") }
-        Action { text: qsTr("Jump To"); enabled: branchMenu.picked; onTriggered: tas.branches.run("jumpTo", [tas.branches.selected]) }
-        Action { text: tas.branches.undoText !== "" ? tas.branches.undoText : qsTr("Undo"); enabled: tas.branches.undoText !== ""; onTriggered: tas.branches.run("undo") }
-        MenuSeparator {}
-        Action { text: qsTr("Remove"); enabled: branchMenu.picked; onTriggered: tas.branches.run("remove", [tas.branches.selected]) }
+        Action { text: qsTr("Add with Text"); icon.source: "qrc:/chimera/icons/AddEdit.png"; enabled: tas.branches.createEnabled; onTriggered: branchTextDialog.openFor("add") }
+        Action { text: qsTr("Load"); icon.source: "qrc:/chimera/icons/Debugger.png"; enabled: branchMenu.picked; onTriggered: tas.branches.run("askToLoad", [tas.branches.selected]) }
+        Action { text: qsTr("&Update"); icon.source: "qrc:/chimera/icons/updateBranch.png"; enabled: branchMenu.picked; onTriggered: tas.branches.run("saveSlot", [tas.branches.selected]) }
+        Action { text: qsTr("Update with Text"); icon.source: "qrc:/chimera/icons/updateWithText.png"; enabled: branchMenu.picked; onTriggered: branchTextDialog.openFor("update") }
+        Action { text: qsTr("Edit Text"); icon.source: "qrc:/chimera/icons/pencil.png"; enabled: branchMenu.picked; onTriggered: branchTextDialog.openFor("rename") }
+        Action { text: qsTr("Jump To"); icon.source: "qrc:/chimera/icons/JumpTo.png"; enabled: branchMenu.picked; onTriggered: tas.branches.run("jumpTo", [tas.branches.selected]) }
+        Action { text: tas.branches.undoText !== "" ? tas.branches.undoText : qsTr("Undo"); icon.source: "qrc:/chimera/icons/undo.png"; enabled: tas.branches.undoText !== ""; onTriggered: tas.branches.run("undo") }
+        MenuDivider {}
+        Action { text: qsTr("Remove"); icon.source: "qrc:/chimera/icons/Delete.png"; enabled: branchMenu.picked; onTriggered: tas.branches.run("remove", [tas.branches.selected]) }
     }
     Dialog {
         id: branchTextDialog
@@ -902,12 +910,13 @@ ApplicationWindow {
     }
     // Chimera's marker menu, on the marker picked
     Menu {
+        delegate: MenuEntry {}
         id: markerMenu
-        Action { text: qsTr("Jump To"); onTriggered: tas.session.run("seek", [markerList.pickedFrame]) }
-        Action { text: qsTr("Scroll To"); onTriggered: tas.pianoRoll.topFrame = Math.max(0, markerList.pickedFrame - 2) }
-        Action { text: qsTr("Edit Text"); enabled: markerList.pickedEditable; onTriggered: markerDialog.openFor(markerList.pickedFrame, markerList.pickedText) }
-        Action { text: qsTr("Add"); enabled: tas.session.isOpen; onTriggered: markerDialog.openFor(tas.pianoRoll.currentFrame, "") }
-        Action { text: qsTr("Remove"); enabled: markerList.pickedEditable; onTriggered: tas.pianoRoll.run("removeMarker", [markerList.pickedFrame]) }
+        Action { text: qsTr("Jump To"); icon.source: "qrc:/chimera/icons/JumpTo.png"; onTriggered: tas.session.run("seek", [markerList.pickedFrame]) }
+        Action { text: qsTr("Scroll To"); icon.source: "qrc:/chimera/icons/ScrollTo.png"; onTriggered: tas.pianoRoll.topFrame = Math.max(0, markerList.pickedFrame - 2) }
+        Action { text: qsTr("Edit Text"); icon.source: "qrc:/chimera/icons/pencil.png"; enabled: markerList.pickedEditable; onTriggered: markerDialog.openFor(markerList.pickedFrame, markerList.pickedText) }
+        Action { text: qsTr("Add"); icon.source: "qrc:/chimera/icons/add.png"; enabled: tas.session.isOpen; onTriggered: markerDialog.openFor(tas.pianoRoll.currentFrame, "") }
+        Action { text: qsTr("Remove"); icon.source: "qrc:/chimera/icons/Delete.png"; enabled: markerList.pickedEditable; onTriggered: tas.pianoRoll.run("removeMarker", [markerList.pickedFrame]) }
     }
     Popup {
         id: preview

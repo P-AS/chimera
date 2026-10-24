@@ -176,6 +176,7 @@ ApplicationWindow {
             Action { text: qsTr("Save &As..."); shortcut: "Ctrl+Shift+S"; onTriggered: saveDialog.open() }
             Action { text: qsTr("A&ppend File..."); onTriggered: { openDialog.append = true; openDialog.open() } }
             Menu {
+                delegate: MenuEntry {}
                 id: recentMenu
                 title: qsTr("Recent")
                 icon.source: "qrc:/chimera/icons/Recent.png"
@@ -191,13 +192,14 @@ ApplicationWindow {
                     onObjectRemoved: (index, object) => recentMenu.removeItem(object)
                 }
             }
-            MenuSeparator {}
+            MenuDivider {}
             Action { property string keysShown: "Alt+F4"; text: qsTr("&Close"); onTriggered: win.close() }
         }
         Menu {
             title: qsTr("&Watches")
             delegate: shortcutItem
             Menu {
+                delegate: MenuEntry {}
                 id: domainMenu
                 title: qsTr("Default Domain")
                 Instantiator {
@@ -213,7 +215,7 @@ ApplicationWindow {
                     onObjectRemoved: (index, object) => domainMenu.removeItem(object)
                 }
             }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { action: newWatchAction }
             // only a game core has properties to offer
             MenuItem {
@@ -230,7 +232,7 @@ ApplicationWindow {
             MenuItem { action: separatorAction }
             MenuItem { action: clearCountsAction }
             MenuItem { text: qsTr("Purge Duplicate Watches"); onTriggered: purgeAsk.open() }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { action: upAction }
             MenuItem { action: downAction }
             MenuItem { action: topAction }
@@ -238,8 +240,10 @@ ApplicationWindow {
             MenuItem { action: selectAllAction }
         }
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&Settings")
             Menu {
+                delegate: MenuEntry {}
                 title: qsTr("Define Previous Value")
                 MenuItem { text: qsTr("Previous Frame"); checkable: true; checked: win.vm.previousType === 2; onTriggered: win.vm.previousType = 2 }
                 MenuItem { text: qsTr("Last Change"); checkable: true; checked: win.vm.previousType === 3; onTriggered: win.vm.previousType = 3 }
@@ -247,11 +251,12 @@ ApplicationWindow {
             }
             MenuItem { text: qsTr("Display Watches On Screen"); checkable: true; checked: win.vm.showOnScreen; onTriggered: win.vm.showOnScreen = checked }
             Menu {
+                delegate: MenuEntry {}
                 title: qsTr("On Double-Clicking a Watch")
                 MenuItem { text: qsTr("Edit Watch"); checkable: true; checked: !win.vm.doubleClickToPoke; onTriggered: win.vm.doubleClickToPoke = false }
                 MenuItem { text: qsTr("Poke Address"); checkable: true; checked: win.vm.doubleClickToPoke; onTriggered: win.vm.doubleClickToPoke = true }
             }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
                 text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
@@ -271,6 +276,7 @@ ApplicationWindow {
             }
         }
         Menu {
+            delegate: MenuEntry {}
             id: columnsMenu
             title: qsTr("Columns")
             Instantiator {
@@ -393,7 +399,7 @@ ApplicationWindow {
                 win.viewInHexEditor(info.domain, parseInt(info.address, 16))
             }
         }
-        MenuSeparator {}
+        MenuDivider {}
         Action { property string keysShown: "Ctrl+I"; text: qsTr("&Insert Separator"); icon.source: "qrc:/chimera/icons/InsertSeparator.png"; onTriggered: win.vm.run("insertSeparator") }
         Action { property string keysShown: "Ctrl+Up"; text: qsTr("Move &Up"); icon.source: "qrc:/chimera/icons/MoveUp.png"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["up"]) }
         Action { property string keysShown: "Ctrl+Down"; text: qsTr("Move &Down"); icon.source: "qrc:/chimera/icons/MoveDown.png"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["down"]) }

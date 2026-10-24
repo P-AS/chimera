@@ -227,6 +227,7 @@ ApplicationWindow {
     }
     // a core's files folded or opened, one core or all, as Chimera's right-click menu
     Menu {
+        delegate: MenuEntry {}
         id: foldMenu
         Action { text: qsTr("Collapse"); onTriggered: win.vm.run("collapse", [win.vm.picked]) }
         Action { text: qsTr("Expand"); onTriggered: win.vm.run("expand", [win.vm.picked]) }

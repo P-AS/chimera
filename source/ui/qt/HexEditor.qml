@@ -143,10 +143,11 @@ ApplicationWindow {
             Action { text: win.fileOnDisk ? qsTr("Save as ROM...") : qsTr("Save as binary..."); shortcut: "Ctrl+Shift+S"; onTriggered: binaryDialog.open() }
             Action { text: qsTr("Save as text..."); onTriggered: textDialog.open() }
             Action { text: qsTr("Import as binary..."); shortcut: "Ctrl+I"; onTriggered: importDialog.open() }
-            MenuSeparator {}
+            MenuDivider {}
             Action { text: qsTr("&Load .tbl file"); onTriggered: tableDialog.open() }
             Action { text: qsTr("Close .tbl file"); enabled: win.vm.tableFile !== ""; onTriggered: win.vm.run("closeTable") }
             Menu {
+                delegate: MenuEntry {}
                 id: recentMenu
                 title: qsTr("Recent")
                 MenuItem { text: qsTr("None"); enabled: false; visible: win.vm.recentTables === ""; height: visible ? implicitHeight : 0 }
@@ -161,7 +162,7 @@ ApplicationWindow {
                     onObjectRemoved: (index, object) => recentMenu.removeItem(object)
                 }
             }
-            MenuSeparator {}
+            MenuDivider {}
             Action { property string keysShown: "Alt+F4"; text: qsTr("&Close"); onTriggered: win.close() }
         }
         Menu {
@@ -170,7 +171,7 @@ ApplicationWindow {
             MenuItem { action: copyAction }
             MenuItem { action: exportAction }
             MenuItem { action: pasteAction }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { action: findAction }
             MenuItem { action: findNextAction }
             MenuItem { action: findPrevAction }
@@ -179,6 +180,7 @@ ApplicationWindow {
             title: qsTr("&Options")
             delegate: shortcutItem
             Menu {
+                delegate: MenuEntry {}
                 id: domainMenu
                 title: qsTr("&Memory Domains")
                 Instantiator {
@@ -195,13 +197,14 @@ ApplicationWindow {
                 }
             }
             Menu {
+                delegate: MenuEntry {}
                 title: qsTr("Data Size")
                 MenuItem { text: qsTr("1 Byte"); checkable: true; checked: win.vm.size === 1; onTriggered: win.vm.size = 1 }
                 MenuItem { text: qsTr("2 Byte"); checkable: true; checked: win.vm.size === 2; onTriggered: win.vm.size = 2 }
                 MenuItem { text: qsTr("4 Byte"); checkable: true; checked: win.vm.size === 4; onTriggered: win.vm.size = 4 }
             }
             MenuItem { text: qsTr("Big Endian"); checkable: true; checked: win.vm.bigEndian; onTriggered: win.vm.bigEndian = checked }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { action: goToAction }
             MenuItem { action: watchAction }
             MenuItem { action: freezeAction }
@@ -209,14 +212,16 @@ ApplicationWindow {
             MenuItem { action: pokeAction }
         }
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&Settings")
             Menu {
+                delegate: MenuEntry {}
                 title: qsTr("Custom Colors")
                 MenuItem { text: qsTr("Set Colors"); onTriggered: { colorsWindow.show(); colorsWindow.raise() } }
-                MenuSeparator {}
+                MenuDivider {}
                 MenuItem { text: qsTr("Reset to Default"); onTriggered: win.vm.run("resetColors") }
             }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
                 text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
@@ -239,10 +244,10 @@ ApplicationWindow {
         MenuItem { action: unfreezeAllAction; visible: win.vm.anyFrozen; height: visible ? implicitHeight : 0 }
         Action { property string keysShown: "Ctrl+W"; text: qsTr("&Add to RAM Watch"); icon.source: "qrc:/chimera/icons/Find.png"; enabled: watchAction.enabled; onTriggered: watchAction.trigger() }
         Action { property string keysShown: "Ctrl+P"; text: qsTr("&Poke Address"); icon.source: "qrc:/chimera/icons/poke.png"; enabled: pokeAction.enabled; onTriggered: pokeAction.trigger() }
-        MenuSeparator {}
+        MenuDivider {}
         Action { property string keysShown: "+"; text: qsTr("&Increment"); enabled: win.anyHighlighted && win.vm.writable; onTriggered: win.vm.run("increment") }
         Action { property string keysShown: "-"; text: qsTr("&Decrement"); enabled: win.anyHighlighted && win.vm.writable; onTriggered: win.vm.run("decrement") }
-        MenuSeparator {}
+        MenuDivider {}
         Action { property string keysShown: "Ctrl+G"; text: qsTr("&Go to Address..."); onTriggered: goTo.open() }
     }
 

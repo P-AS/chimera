@@ -179,8 +179,9 @@ ApplicationWindow {
                 onTriggered: win.vm.sessionPath === "" ? saveSessionDialog.open() : win.vm.run("saveSession")
             }
             Action { text: qsTr("Save Session &As..."); shortcut: "Ctrl+Shift+S"; onTriggered: saveSessionDialog.open() }
-            MenuSeparator {}
+            MenuDivider {}
             Menu {
+                delegate: MenuEntry {}
                 id: recentSessionsMenu
                 title: qsTr("Recent Sessions")
                 enabled: win.vm.recentSessions !== ""
@@ -196,6 +197,7 @@ ApplicationWindow {
                 }
             }
             Menu {
+                delegate: MenuEntry {}
                 id: recentScriptsMenu
                 title: qsTr("Recent Scripts")
                 icon.source: "qrc:/chimera/icons/Recent.png"
@@ -211,7 +213,7 @@ ApplicationWindow {
                     onObjectRemoved: (index, object) => recentScriptsMenu.removeItem(object)
                 }
             }
-            MenuSeparator {}
+            MenuDivider {}
             Action { property string keysShown: "Alt+F4"; text: qsTr("&Close"); onTriggered: win.close() }
         }
         Menu {
@@ -226,24 +228,26 @@ ApplicationWindow {
             MenuItem { action: removeAction }
             MenuItem { action: duplicateAction }
             MenuItem { action: clearAction }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { action: separatorAction }
             MenuItem { action: upAction }
             MenuItem { action: downAction }
             MenuItem { action: selectAllAction }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { action: stopAllAction }
             MenuItem { action: functionsAction }
         }
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&Settings")
             MenuItem { text: qsTr("Disable Scripts on Load"); checkable: true; checked: win.vm.disableOnLoad; onTriggered: win.vm.disableOnLoad = checked }
             MenuItem { text: qsTr("Toggle All if None Selected"); checkable: true; checked: win.vm.toggleAllIfNoneSelected; onTriggered: win.vm.toggleAllIfNoneSelected = checked }
             MenuItem { text: qsTr("Reload When Script File Changes"); checkable: true; checked: win.vm.reloadOnChange; onTriggered: win.vm.reloadOnChange = checked }
             MenuItem { text: qsTr("Duplicate to Stdout"); checkable: true; checked: win.vm.duplicateToStdout; onTriggered: win.vm.duplicateToStdout = checked }
-            MenuSeparator {}
+            MenuDivider {}
             // Chimera's: Sublime Text 2's Lua completions written for it; said as found ("detected") or written ("installed")
             Menu {
+                delegate: MenuEntry {}
                 title: qsTr("Register To Text Editors")
                 onAboutToShow: win.vm.run("textEditors")
                 MenuItem {
@@ -258,7 +262,7 @@ ApplicationWindow {
                     }
                 }
             }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
                 text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
@@ -312,18 +316,20 @@ ApplicationWindow {
 
     // the list's right-click menu
     Menu {
+        delegate: MenuEntry {}
         id: scriptMenu
         MenuItem { text: qsTr("&Toggle"); icon.source: "qrc:/chimera/icons/Refresh.png"; enabled: win.anyFile; onTriggered: win.vm.run("toggle") }
         MenuItem { text: qsTr("Pause or Resume"); icon.source: "qrc:/chimera/icons/Pause.png"; enabled: win.anyFile; onTriggered: win.vm.run("pause") }
         MenuItem { text: qsTr("&Edit"); icon.source: "qrc:/chimera/icons/Cut.png"; enabled: win.anyFile; onTriggered: win.editFiles(win.vm.run("editPaths")) }
         MenuItem { text: qsTr("&Remove"); icon.source: "qrc:/chimera/icons/Close.png"; enabled: win.anyRow; onTriggered: win.vm.run("remove") }
         MenuItem { text: qsTr("Insert Seperator"); icon.source: "qrc:/chimera/icons/InsertSeparator.png"; onTriggered: win.vm.run("insertSeparator") }
-        MenuSeparator { visible: win.vm.anyEnabled; height: visible ? implicitHeight : 0 }
+        MenuDivider { visible: win.vm.anyEnabled; height: visible ? implicitHeight : 0 }
         MenuItem { action: stopAllAction; visible: win.vm.anyEnabled; height: visible ? implicitHeight : 0 }
         MenuItem { action: clearFunctionsAction }
     }
     // the output's right-click menu
     Menu {
+        delegate: MenuEntry {}
         id: outputMenu
         MenuItem {
             text: qsTr("Copy"); enabled: win.vm.outputFirst >= 0
@@ -331,7 +337,7 @@ ApplicationWindow {
         }
         MenuItem { text: qsTr("Select &All"); enabled: win.vm.lines > 0; onTriggered: win.vm.run("selectAllOutput") }
         MenuItem { text: qsTr("&Clear"); enabled: win.vm.lines > 0; onTriggered: win.vm.run("clear") }
-        MenuSeparator {}
+        MenuDivider {}
         MenuItem { text: qsTr("&Registered Functions"); enabled: win.vm.functionCount > 0; onTriggered: functionsAction.trigger() }
         MenuItem { action: clearFunctionsAction }
     }
@@ -638,6 +644,7 @@ ApplicationWindow {
         }
         Shortcut { sequences: [StandardKey.Copy]; enabled: functionsListWindow.active && !filter.activeFocus; onActivated: functionsListWindow.copyPicked() }
         Menu {
+            delegate: MenuEntry {}
             id: copyMenu
             MenuItem { text: qsTr("&Copy"); onTriggered: functionsListWindow.copyPicked() }
         }

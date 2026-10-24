@@ -42,19 +42,22 @@ ApplicationWindow {
 
     menuBar: MenuBar {
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&File")
             MenuItem { text: qsTr("&Close"); onTriggered: win.close() }
         }
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&Debug")
             MenuItem { text: qsTr("Step &Into"); enabled: false }
             MenuItem { text: qsTr("Step O&ver"); enabled: false }
             MenuItem { text: qsTr("Step Ou&t"); enabled: false }
-            MenuSeparator {}
+            MenuDivider {}
             Action { text: qsTr("Refresh"); shortcut: "F5"; onTriggered: win.vm.run("refresh") }
         }
         // Chimera adds a Settings menu for the window's items to a tool that has none
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&Settings")
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {

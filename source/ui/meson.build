@@ -253,6 +253,7 @@ if qt_dep.found()
     ['qt/tests/test_theme.cpp', 'qt/theme_palette.cpp', qt6.compile_moc(headers: ['qt/theme_palette.hpp'], dependencies: [qt_dep])],
     dependencies: [qt_dep],
     override_options: ['cpp_std=c++20'],
+    cpp_args: ['-DCHIMERA_QT_QML_DIR="' + meson.current_source_dir() / 'qt' + '"'],
   )
   test('theme', test_theme, env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software'], timeout: 60)
 endif

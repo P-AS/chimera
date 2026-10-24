@@ -47,14 +47,16 @@ ApplicationWindow {
 
     menuBar: MenuBar {
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&File")
             MenuItem { text: qsTr("&Copy to Clipboard"); enabled: win.shown !== null; onTriggered: win.grabbed((r) => { if (win.clipboard) win.clipboard.setImage(r.image) }) }
             MenuItem { text: qsTr("&Save as PNG..."); enabled: win.shown !== null; onTriggered: pngDialog.open() }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { text: qsTr("&Close"); onTriggered: win.close() }
         }
         // Chimera adds a Settings menu for the window's items to a tool that has none
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&Settings")
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {

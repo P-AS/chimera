@@ -160,6 +160,8 @@ void applyTheme(const QString &colorsJson)
 	p.setColor(QPalette::Link, c("LinkText", text));
 	p.setColor(QPalette::Mid, c("Border", window));
 	p.setColor(QPalette::Dark, c("ButtonBorder", window));
+	/* the menus' dividers (MenuDivider.qml); Fusion draws only a split handle under the pointer in midlight */
+	p.setColor(QPalette::Midlight, c("MenuSeparator", QPalette().color(QPalette::Mid)));
 	p.setColor(QPalette::Shadow, c("GlyphShadow", Qt::black));
 	for (QPalette::ColorRole r : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText})
 		p.setColor(QPalette::Disabled, r, c("DisabledText", text));

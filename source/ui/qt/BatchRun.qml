@@ -78,6 +78,7 @@ ApplicationWindow {
                 onTapped: listMenu.popup()
             }
             Menu {
+                delegate: MenuEntry {}
                 id: listMenu
                 MenuItem { text: qsTr("Add Files..."); onTriggered: addDialog.open() }
             }

@@ -42,11 +42,12 @@ ApplicationWindow {
     readonly property color buttonColour: button.palette.button
     readonly property color fieldColour: field.palette.base
     readonly property color menuColour: menu.palette.window
+    readonly property color dividerColour: divider.contentItem.color
     Column {
         Button { id: button; text: "B" }
         TextField { id: field; text: "F" }
     }
-    Menu { id: menu; MenuItem { text: "M" } }
+    Menu { id: menu; MenuItem { text: "M" } MenuDivider { id: divider } }
 }
 )";
 
@@ -66,7 +67,8 @@ ApplicationWindow {
 std::unique_ptr<QObject> make(QQmlEngine &engine, const char *qml)
 {
 	QQmlComponent component(&engine);
-	component.setData(qml, QUrl());
+	/* beside the window's own files, for their types (MenuDivider) */
+	component.setData(qml, QUrl::fromLocalFile(QStringLiteral(CHIMERA_QT_QML_DIR "/test.qml")));
 	std::unique_ptr<QObject> o(component.create());
 	if (!o) std::printf("%s\n", qPrintable(component.errorString()));
 	for (int i = 0; i < 5; i++) QCoreApplication::processEvents();
@@ -87,7 +89,8 @@ int main(int argc, char **argv)
 	const QColor window(0x2B, 0x2B, 0x2B), button(0x3C, 0x3F, 0x41), field(0x1E, 0x1E, 0x1E);
 	CHECK(platformButton != button);
 	chimera::qt::applyTheme(QStringLiteral(
-		R"({"WindowBackground": "#2B2B2B", "WindowText": "#E0E0E0", "ButtonBackground": "#3C3F41", "InputBackground": "#1E1E1E"})"));
+		R"({"WindowBackground": "#2B2B2B", "WindowText": "#E0E0E0", "ButtonBackground": "#3C3F41", "InputBackground": "#1E1E1E",
+		   "MenuSeparator": "#5A5A5A"})"));
 
 	QQmlEngine engine;
 	/* a window opened with the theme chosen: its controls and its menu */
@@ -97,6 +100,8 @@ int main(int argc, char **argv)
 	CHECK(colour(first, "buttonColour") == button);
 	CHECK(colour(first, "fieldColour") == field);
 	CHECK(colour(first, "menuColour") == window);
+	/* the menu's divider in the theme's colour, not Fusion's near black */
+	CHECK(colour(first, "dividerColour") == QColor(0x5A, 0x5A, 0x5A));
 	/* a window opened later, the same */
 	auto second = make(engine, kWindow);
 	CHECK(colour(second, "buttonColour") == button);
@@ -110,6 +115,9 @@ int main(int argc, char **argv)
 	CHECK(colour(first, "buttonColour") == QColor(0xDD, 0xEE, 0xFF));
 	CHECK(colour(second, "fieldColour") == QColor(Qt::white));
 	CHECK(colour(first, "menuColour") == QColor(0xF0, 0xF0, 0xF0));
+	/* a theme without a divider colour still draws one that can be seen */
+	CHECK(colour(first, "dividerColour") != QColor(0xF0, 0xF0, 0xF0));
+	CHECK(colour(first, "dividerColour").alpha() == 255);
 	CHECK(colour(form, "buttonColour") == QColor(0x12, 0x34, 0x56));
 
 	std::printf("%d checks, %d failed\n", checks, failed);

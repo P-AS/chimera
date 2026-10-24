@@ -51,6 +51,7 @@ ApplicationWindow {
     }
 
     Menu {
+        delegate: MenuEntry {}
         id: stepMenu
         MenuItem { text: qsTr("Undo To Selection"); enabled: win.picked >= 0; onTriggered: win.vm.run("undoTo", [win.picked]) }
         MenuItem { text: qsTr("Redo To Selection"); enabled: win.picked >= 0; onTriggered: win.vm.run("redoTo", [win.picked]) }

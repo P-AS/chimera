@@ -199,6 +199,7 @@ ApplicationWindow {
                 Layout.preferredWidth: 60
                 onClicked: miscMenu.popup()
                 Menu {
+                    delegate: MenuEntry {}
                     id: miscMenu
                     MenuItem { text: qsTr("Restore Defaults"); onTriggered: win.hotkeys.run("defaults") }
                     MenuItem { text: qsTr("Restore Current Tab Defaults"); onTriggered: win.hotkeys.run("defaults", [win.groups[tabs.currentIndex]]) }

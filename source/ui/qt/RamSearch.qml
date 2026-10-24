@@ -123,6 +123,7 @@ ApplicationWindow {
             Action { text: qsTr("&Append File..."); enabled: win.vm.searching; onTriggered: { openDialog.how = "append"; openDialog.open() } }
             Action { text: qsTr("&Truncate from File..."); enabled: win.vm.searching; onTriggered: { openDialog.how = "truncate"; openDialog.open() } }
             Menu {
+                delegate: MenuEntry {}
                 id: recentMenu
                 title: qsTr("Recent")
                 icon.source: "qrc:/chimera/icons/Recent.png"
@@ -139,17 +140,20 @@ ApplicationWindow {
                     onObjectRemoved: (index, object) => recentMenu.removeItem(object)
                 }
             }
-            MenuSeparator {}
+            MenuDivider {}
             Action { property string keysShown: "Alt+F4"; text: qsTr("&Close"); onTriggered: win.close() }
         }
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&Options")
             Menu {
+                delegate: MenuEntry {}
                 title: qsTr("&Mode")
                 MenuItem { text: qsTr("&Detailed"); checkable: true; checked: !win.vm.fast; onTriggered: win.vm.fast = false }
                 MenuItem { text: qsTr("&Fast"); checkable: true; checked: win.vm.fast; onTriggered: win.vm.fast = true }
             }
             Menu {
+                delegate: MenuEntry {}
                 id: domainMenu
                 title: qsTr("&Memory Domains")
                 Instantiator {
@@ -166,15 +170,17 @@ ApplicationWindow {
                 }
             }
             Menu {
+                delegate: MenuEntry {}
                 title: qsTr("&Size")
                 MenuItem { text: qsTr("&1 Byte"); checkable: true; checked: win.vm.size === 1; onTriggered: win.vm.size = 1 }
                 MenuItem { text: qsTr("&2 Byte"); checkable: true; checked: win.vm.size === 2; onTriggered: win.vm.size = 2 }
                 MenuItem { text: qsTr("&4 Byte"); checkable: true; checked: win.vm.size === 4; onTriggered: win.vm.size = 4 }
             }
             MenuItem { text: qsTr("Check Mis-aligned"); checkable: true; checked: win.vm.checkMisaligned; onTriggered: win.vm.checkMisaligned = checked }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { text: qsTr("&Big Endian"); checkable: true; checked: win.vm.bigEndian; onTriggered: win.vm.bigEndian = checked }
             Menu {
+                delegate: MenuEntry {}
                 id: displayMenu
                 title: qsTr("&Display Type")
                 Instantiator {
@@ -192,6 +198,7 @@ ApplicationWindow {
                 }
             }
             Menu {
+                delegate: MenuEntry {}
                 title: qsTr("Define Previous Value")
                 MenuItem { text: qsTr("Last &Search"); checkable: true; checked: win.vm.previousType === 1; onTriggered: win.vm.previousType = 1 }
                 MenuItem { text: qsTr("&Previous Frame"); checkable: true; checked: win.vm.previousType === 2; enabled: !win.vm.fast; onTriggered: win.vm.previousType = 2 }
@@ -203,31 +210,32 @@ ApplicationWindow {
             title: qsTr("&Search")
             delegate: shortcutItem
             MenuItem { action: newSearchAction }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { action: searchAction }
             MenuItem { action: undoAction }
             MenuItem { action: redoAction }
             MenuItem { action: copyPrevAction }
             MenuItem { action: clearCountsAction }
             MenuItem { action: removeAction }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { action: goToAction }
             MenuItem { action: watchAction }
             MenuItem { action: pokeAction }
             MenuItem { action: freezeAction }
             MenuItem { action: selectAllAction }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { text: qsTr("Clear Undo History"); enabled: win.vm.canUndo; onTriggered: win.vm.run("clearUndo") }
         }
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&Settings")
             MenuItem { text: qsTr("&Preview Mode"); checkable: true; checked: win.vm.previewMode; onTriggered: win.vm.previewMode = checked }
             MenuItem { text: qsTr("&Auto-Search"); checkable: true; checked: win.vm.autoSearch; onTriggered: win.vm.autoSearch = checked }
             MenuItem { text: qsTr("&Auto-Search Account for Lag"); checkable: true; checked: win.vm.autoSearchAccountForLag; onTriggered: win.vm.autoSearchAccountForLag = checked }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { text: qsTr("Always E&xclude RAM Watch List"); checkable: true; checked: win.vm.alwaysExcludeRamWatch; onTriggered: win.vm.alwaysExcludeRamWatch = checked }
             MenuItem { text: qsTr("&Use Undo History"); checkable: true; checked: win.vm.useUndoHistory; onTriggered: win.vm.useUndoHistory = checked }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
                 text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
@@ -238,6 +246,7 @@ ApplicationWindow {
             MenuItem { text: qsTr("Restore &Defaults"); onTriggered: { win.vm.run("restoreDefaults"); windowOptions.restore() } }
         }
         Menu {
+            delegate: MenuEntry {}
             id: columnsMenu
             title: qsTr("Columns")
             Instantiator {
@@ -334,7 +343,7 @@ ApplicationWindow {
         delegate: shortcutItem
         MenuItem { action: searchAction }
         Action { text: qsTr("&Start New Search"); onTriggered: win.vm.run("newSearch") }
-        MenuSeparator {}
+        MenuDivider {}
         Action { property string keysShown: "Del"; text: qsTr("Remove Selected"); enabled: win.anyRow; onTriggered: win.vm.run("removeSelected") }
         Action { property string keysShown: "Ctrl+W"; text: qsTr("Add to RAM Watch"); enabled: win.anyRow; onTriggered: win.addToRamWatch() }
         Action { property string keysShown: "Ctrl+P"; text: qsTr("Poke Address"); enabled: win.vm.canPoke; onTriggered: win.pokeAddress() }
@@ -352,7 +361,7 @@ ApplicationWindow {
             visible: win.vm.anyFrozen; height: visible ? implicitHeight : 0
             onTriggered: win.vm.run("unfreezeAll")
         }
-        MenuSeparator {}
+        MenuDivider {}
         MenuItem {
             text: qsTr("View in Hex Editor")
             visible: win.anyRow && win.viewInHexEditor !== null; height: visible ? implicitHeight : 0
@@ -361,7 +370,7 @@ ApplicationWindow {
                 win.viewInHexEditor(info.domain, parseInt(info.addresses.split(",")[0], 16))
             })
         }
-        MenuSeparator {}
+        MenuDivider {}
         Action { text: qsTr("&Clear Preview"); onTriggered: win.vm.run("clearPreview") }
     }
 

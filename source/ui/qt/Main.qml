@@ -167,7 +167,7 @@ ApplicationWindow {
     // a menu item that shows the keys of the hotkey its action names
     Component {
         id: keyedMenuItem
-        MenuItem {
+        MenuEntry {
             id: keyedItem
             readonly property string keys: action && action.hotkey ? (root.hotkeyKeys[action.hotkey] || "") : ""
             rightPadding: padding + (keys !== "" ? keyLabel.implicitWidth + 24 : 0)
@@ -288,12 +288,12 @@ ApplicationWindow {
                 delegate: keyedMenuItem
                 title: qsTr("&File")
                 // opens on the last project's answers, as Chimera's does
-                Action { text: qsTr("&New Chimera Project..."); onTriggered: { root.newProject.run("openOnLastProject"); newProjectWindow.show(); newProjectWindow.raise() } }
-                Action { text: qsTr("&Open Project..."); onTriggered: root.leaveProject(() => projectDialog.open()) }
+                Action { text: qsTr("&New Chimera Project..."); icon.source: "qrc:/chimera/menu/NewProject.png"; onTriggered: { root.newProject.run("openOnLastProject"); newProjectWindow.show(); newProjectWindow.raise() } }
+                Action { text: qsTr("&Open Project..."); icon.source: "qrc:/chimera/menu/OpenProject.png"; onTriggered: root.leaveProject(() => projectDialog.open()) }
                 Menu {
                     delegate: keyedMenuItem
                     id: recentMenu
-                    title: qsTr("&Recent Projects")
+                    title: qsTr("&Recent Projects"); icon.source: "qrc:/chimera/menu/RecentProjects.png"
                     enabled: root.session.recentProjects !== ""
                     Instantiator {
                         model: root.session.recentProjects === "" ? [] : root.session.recentProjects.split("\n")
@@ -307,23 +307,23 @@ ApplicationWindow {
                     }
                 }
                 // a project not saved yet asks where it goes
-                Action { text: qsTr("&Save Project"); shortcut: "Ctrl+S"; enabled: root.session.hasProject; onTriggered: root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject") }
-                Action { text: qsTr("Save Project &As..."); shortcut: "Ctrl+Shift+S"; enabled: root.session.hasProject; onTriggered: saveAsDialog.open() }
-                Action { text: qsTr("Save Project &Backup"); enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveBackup") }
-                Action { id: closeAction; property string hotkey: "Close ROM"; text: qsTr("&Close Project"); enabled: root.session.closeEnabled; onTriggered: root.leaveProject(() => root.session.run("close")) }
-                MenuSeparator {}
+                Action { text: qsTr("&Save Project"); icon.source: "qrc:/chimera/menu/SaveProject.png"; shortcut: "Ctrl+S"; enabled: root.session.hasProject; onTriggered: root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject") }
+                Action { text: qsTr("Save Project &As..."); icon.source: "qrc:/chimera/menu/SaveProjectAs.png"; shortcut: "Ctrl+Shift+S"; enabled: root.session.hasProject; onTriggered: saveAsDialog.open() }
+                Action { text: qsTr("Save Project &Backup"); icon.source: "qrc:/chimera/menu/SaveProjectBackup.png"; enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveBackup") }
+                Action { id: closeAction; property string hotkey: "Close ROM"; text: qsTr("&Close Project"); icon.source: "qrc:/chimera/menu/CloseProject.png"; enabled: root.session.closeEnabled; onTriggered: root.leaveProject(() => root.session.run("close")) }
+                MenuDivider {}
                 Action {
                     property string hotkey: "Encode Video"
-                    text: qsTr("&Encode Video...")
+                    text: qsTr("&Encode Video..."); icon.source: "qrc:/chimera/menu/EncodeVideo.png"
                     onTriggered: root.encodeVideo()
                 }
                 Menu {
                     delegate: keyedMenuItem
-                    title: qsTr("Scree&nshot")
+                    title: qsTr("Scree&nshot"); icon.source: "qrc:/chimera/menu/Screenshot.png"
                     enabled: root.session.isOpen
-                    Action { property string hotkey: "Screenshot"; text: qsTr("Screenshot"); onTriggered: root.hotkeys.run("run", ["Screenshot"]) }
+                    Action { property string hotkey: "Screenshot"; text: qsTr("Screenshot"); icon.source: "qrc:/chimera/menu/Screenshot.png"; onTriggered: root.hotkeys.run("run", ["Screenshot"]) }
                     Action {
-                        text: qsTr("Screenshot As...")
+                        text: qsTr("Screenshot As..."); icon.source: "qrc:/chimera/menu/ScreenshotAs.png"
                         onTriggered: {
                             const suggested = root.pictureFiles.screenshotSuggestion(root.session.gameName)
                             screenshotAsDialog.currentFolder = suggested.toString().substring(0, suggested.toString().lastIndexOf("/"))
@@ -333,7 +333,7 @@ ApplicationWindow {
                     }
                     Action { property string hotkey: "Screen Raw to Clipboard"; text: qsTr("Screenshot (raw) -> Clipboard"); onTriggered: root.hotkeys.run("run", ["Screen Raw to Clipboard"]) }
                     Action { property string hotkey: "Screen Client to Clipboard"; text: qsTr("Screenshot (client) -> Clipboard"); onTriggered: root.hotkeys.run("run", ["Screen Client to Clipboard"]) }
-                    MenuSeparator {}
+                    MenuDivider {}
                     // the counters and messages over the picture in the screenshot too
                     Action { text: qsTr("Capture OSD"); checkable: true; checked: root.session.captureOsd; onTriggered: root.session.captureOsd = checked }
                 }
@@ -345,12 +345,12 @@ ApplicationWindow {
                 title: qsTr("&System")
                 Action {
                     property string hotkey: "Pause"
-                    text: qsTr("&Pause"); checkable: true; checked: !root.session.running
+                    text: qsTr("&Pause"); icon.source: "qrc:/chimera/menu/Pause.png"; checkable: true; checked: !root.session.running
                     onTriggered: root.session.run(root.session.running ? "pause" : "play")
                 }
-                MenuSeparator {}
-                Action { property string hotkey: "Reboot Core"; text: qsTr("&Reboot Core"); enabled: root.session.restartEnabled; onTriggered: root.session.run("restart") }
-                MenuSeparator {}
+                MenuDivider {}
+                Action { property string hotkey: "Reboot Core"; text: qsTr("&Reboot Core"); icon.source: "qrc:/chimera/menu/RebootCore.png"; enabled: root.session.restartEnabled; onTriggered: root.session.run("restart") }
+                MenuDivider {}
                 Action { text: qsTr("Loaded core: %1 (%2)").arg(root.session.coreName).arg(root.session.systemId); enabled: false }
             }
             Menu {
@@ -358,8 +358,9 @@ ApplicationWindow {
                 title: qsTr("&View")
                 // the picture N times the machine's own, the window grown or shrunk to it
                 Menu {
+                    delegate: MenuEntry {}
                     id: windowSizeMenu
-                    title: qsTr("&Window Size")
+                    title: qsTr("&Window Size"); icon.source: "qrc:/chimera/menu/WindowSize.png"
                     enabled: picture.pictureWidth > 0
                     // the sizes this screen cannot hold say so and cannot be picked; the check is on the size the window is
                     property int fits: 10
@@ -381,7 +382,7 @@ ApplicationWindow {
                         onObjectAdded: (index, object) => windowSizeMenu.insertItem(index, object)
                         onObjectRemoved: (index, object) => windowSizeMenu.removeItem(object)
                     }
-                    MenuSeparator {}
+                    MenuDivider {}
                     // Chimera's: the window keeps its size when the picture's changes
                     MenuItem {
                         text: qsTr("&Static Size")
@@ -394,7 +395,7 @@ ApplicationWindow {
                         }
                     }
                 }
-                Action { property string hotkey: "Full Screen"; text: qsTr("Switch to Fullscreen"); onTriggered: root.visibility = root.visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen }
+                Action { property string hotkey: "Full Screen"; text: qsTr("Switch to Fullscreen"); icon.source: "qrc:/chimera/menu/Fullscreen.png"; onTriggered: root.visibility = root.visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen }
                 Action { property string hotkey: "Display FPS"; text: qsTr("Display FPS"); checkable: true; checked: root.session.showFps; onTriggered: root.session.showFps = checked }
                 Action { text: qsTr("Display Average FPS"); checkable: true; checked: root.session.showAverageFps; onTriggered: root.session.showAverageFps = checked }
                 Action { text: qsTr("Reset Average FPS"); enabled: root.session.showAverageFps; onTriggered: root.session.run("resetAverageFps") }
@@ -403,28 +404,29 @@ ApplicationWindow {
                 Action { property string hotkey: "Input Display"; text: qsTr("Display Input"); checkable: true; checked: root.session.showInput; onTriggered: root.session.showInput = checked }
                 Action { text: qsTr("Display Rerecord Count"); checkable: true; checked: root.session.showRerecords; onTriggered: root.session.showRerecords = checked }
                 Action { text: qsTr("Display Subtitles"); checkable: true; checked: root.projectDetails.showSubtitles; onTriggered: root.projectDetails.showSubtitles = checked }
-                MenuSeparator {}
+                MenuDivider {}
                 Action { text: qsTr("Display Status Bar"); checkable: true; checked: root.session.showStatusBar; onTriggered: root.session.showStatusBar = checked }
                 Action { text: qsTr("Display Messages"); checkable: true; checked: root.session.showMessages; onTriggered: root.session.showMessages = checked }
-                Action { text: qsTr("Open &Log Window..."); onTriggered: { logWindow.show(); logWindow.raise() } }
+                Action { text: qsTr("Open &Log Window..."); icon.source: "qrc:/chimera/menu/LogWindow.png"; onTriggered: { logWindow.show(); logWindow.raise() } }
             }
             Menu {
                 delegate: keyedMenuItem
                 title: qsTr("&Config")
-                Action { text: qsTr("&Controllers..."); onTriggered: { controllerWindow.show(); controllerWindow.raise() } }
-                Action { text: qsTr("&Hotkeys..."); onTriggered: { hotkeyWindow.show(); hotkeyWindow.raise() } }
-                Action { text: qsTr("Display..."); onTriggered: { displayWindow.show(); displayWindow.raise() } }
-                Action { text: qsTr("&Sound..."); onTriggered: { soundWindow.show(); soundWindow.raise() } }
-                Action { text: qsTr("Paths..."); onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
-                Action { text: qsTr("Firmware..."); onTriggered: { firmwareWindow.show(); firmwareWindow.raise() } }
-                Action { text: qsTr("Data Directory..."); onTriggered: { dataFolderWindow.show(); dataFolderWindow.raise() } }
-                Action { text: qsTr("&Messages..."); onTriggered: { messagesWindow.show(); messagesWindow.raise() } }
-                Action { text: qsTr("&Theme..."); onTriggered: { themesWindow.show(); themesWindow.raise() } }
-                Action { text: qsTr("&Autofire..."); onTriggered: autofireDialog.open() }
-                Action { text: qsTr("&Customize..."); onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
+                Action { text: qsTr("&Controllers..."); icon.source: "qrc:/chimera/menu/Controllers.png"; onTriggered: { controllerWindow.show(); controllerWindow.raise() } }
+                Action { text: qsTr("&Hotkeys..."); icon.source: "qrc:/chimera/menu/Hotkeys.png"; onTriggered: { hotkeyWindow.show(); hotkeyWindow.raise() } }
+                Action { text: qsTr("Display..."); icon.source: "qrc:/chimera/menu/Display.png"; onTriggered: { displayWindow.show(); displayWindow.raise() } }
+                Action { text: qsTr("&Sound..."); icon.source: "qrc:/chimera/menu/Sound.png"; onTriggered: { soundWindow.show(); soundWindow.raise() } }
+                Action { text: qsTr("Paths..."); icon.source: "qrc:/chimera/menu/Paths.png"; onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
+                Action { text: qsTr("Firmware..."); icon.source: "qrc:/chimera/menu/Firmware.png"; onTriggered: { firmwareWindow.show(); firmwareWindow.raise() } }
+                Action { text: qsTr("Data Directory..."); icon.source: "qrc:/chimera/menu/DataDirectory.png"; onTriggered: { dataFolderWindow.show(); dataFolderWindow.raise() } }
+                Action { text: qsTr("&Messages..."); icon.source: "qrc:/chimera/menu/Messages.png"; onTriggered: { messagesWindow.show(); messagesWindow.raise() } }
+                Action { text: qsTr("&Theme..."); icon.source: "qrc:/chimera/menu/ThemePalette.png"; onTriggered: { themesWindow.show(); themesWindow.raise() } }
+                Action { text: qsTr("&Autofire..."); icon.source: "qrc:/chimera/menu/Autofire.png"; onTriggered: autofireDialog.open() }
+                Action { text: qsTr("&Customize..."); icon.source: "qrc:/chimera/menu/Customize.png"; onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
+                MenuDivider {}
                 Menu {
                     delegate: keyedMenuItem
-                    title: qsTr("Speed/Skip")
+                    title: qsTr("Speed/Skip"); icon.source: "qrc:/chimera/menu/SpeedSkip.png"
                     // one of the three, or none: each ticked turns the others off, as Chimera's
                     Action {
                         text: qsTr("Clock Throttle"); checkable: true; checked: root.session.throttle === "clock"
@@ -445,7 +447,7 @@ ApplicationWindow {
                             }
                         }
                     }
-                    MenuSeparator {}
+                    MenuDivider {}
                     Action {
                         text: qsTr("VSync Enabled"); checkable: true; checked: root.session.vsyncEnabled
                         onTriggered: {
@@ -453,7 +455,7 @@ ApplicationWindow {
                             root.note(qsTr("Display Vsync is set to %1 (from the next start)").arg(checked ? qsTr("on") : qsTr("off")))
                         }
                     }
-                    MenuSeparator {}
+                    MenuDivider {}
                     Action {
                         property string hotkey: "Toggle Throttle"
                         text: qsTr("Unthrottled"); checkable: true; checked: root.session.unthrottled
@@ -461,6 +463,7 @@ ApplicationWindow {
                     }
                     // the frame skip's one setting left (owner, 2026-10-24)
                     Menu {
+                        delegate: MenuEntry {}
                         id: fastDrawMenu
                         title: qsTr("Turbo/Unthrottled Draws")
                         Instantiator {
@@ -476,7 +479,7 @@ ApplicationWindow {
                             onObjectRemoved: (index, object) => fastDrawMenu.removeItem(object)
                         }
                     }
-                    MenuSeparator {}
+                    MenuDivider {}
                     Action { text: qsTr("Speed 50%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 50; onTriggered: root.session.speedPercent = 50 }
                     Action { text: qsTr("Speed 75%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 75; onTriggered: root.session.speedPercent = 75 }
                     Action { text: qsTr("Speed 100%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 100; onTriggered: root.session.speedPercent = 100 }
@@ -487,30 +490,32 @@ ApplicationWindow {
                 // for a key that is a hotkey and a button
                 Menu {
                     delegate: keyedMenuItem
-                    title: qsTr("Key Priority")
+                    title: qsTr("Key Priority"); icon.source: "qrc:/chimera/menu/KeyPriority.png"
                     Action { text: qsTr("Both Hotkeys and Controllers"); checkable: true; checked: root.hotkeys.keyPriority === 0; onTriggered: root.hotkeys.keyPriority = 0 }
                     Action { text: qsTr("Input overrides Hotkeys"); checkable: true; checked: root.hotkeys.keyPriority === 1; onTriggered: root.hotkeys.keyPriority = 1 }
                     Action { text: qsTr("Hotkeys override Input"); checkable: true; checked: root.hotkeys.keyPriority === 2; onTriggered: root.hotkeys.keyPriority = 2 }
                 }
-                MenuSeparator {}
-                Action { text: qsTr("Save Config"); onTriggered: root.configFiles.run("save") }
-                Action { text: qsTr("Save Config As..."); onTriggered: saveConfigDialog.open() }
-                Action { text: qsTr("Load Config"); onTriggered: root.configFiles.run("load") }
-                Action { text: qsTr("Load Config From..."); onTriggered: loadConfigDialog.open() }
+                MenuDivider {}
+                Action { text: qsTr("Save Config"); icon.source: "qrc:/chimera/menu/SaveConfig.png"; onTriggered: root.configFiles.run("save") }
+                Action { text: qsTr("Save Config As..."); icon.source: "qrc:/chimera/menu/SaveConfigAs.png"; onTriggered: saveConfigDialog.open() }
+                Action { text: qsTr("Load Config"); icon.source: "qrc:/chimera/menu/LoadConfig.png"; onTriggered: root.configFiles.run("load") }
+                Action { text: qsTr("Load Config From..."); icon.source: "qrc:/chimera/menu/LoadConfigFrom.png"; onTriggered: loadConfigDialog.open() }
             }
             Menu {
                 delegate: keyedMenuItem
                 title: qsTr("&Tools")
-                Action { text: qsTr("&Core Manager..."); onTriggered: { coresWindow.show(); coresWindow.raise() } }
-                Action { text: qsTr("Cac&he Manager..."); onTriggered: { cacheManagerWindow.show(); cacheManagerWindow.raise() } }
-                Action { text: qsTr("Reproducible Media Maker..."); onTriggered: { mediaMakerWindow.show(); mediaMakerWindow.raise() } }
-                Action { text: qsTr("Pre-Compiled Modules..."); onTriggered: { precompiledWindow.show(); precompiledWindow.raise() } }
-                Action { id: ramWatchAction; property string hotkey: "RAM Watch"; text: qsTr("RAM &Watch"); onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
-                Action { id: ramSearchAction; property string hotkey: "RAM Search"; text: qsTr("RAM &Search"); onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
-                Action { id: luaConsoleAction; property string hotkey: "Lua Console"; text: qsTr("Lua Console"); onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
-                Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor"); onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
-                Action { text: qsTr("&Macro Tool"); enabled: root.session.isOpen; onTriggered: { macroToolWindow.show(); macroToolWindow.raise() } }
-                Action { text: qsTr("Batch Runner..."); onTriggered: { batchRunWindow.show(); batchRunWindow.raise() } }
+                Action { text: qsTr("&Core Manager..."); icon.source: "qrc:/chimera/menu/CoreManager.png"; onTriggered: { coresWindow.show(); coresWindow.raise() } }
+                Action { text: qsTr("Cac&he Manager..."); icon.source: "qrc:/chimera/menu/CacheManager.png"; onTriggered: { cacheManagerWindow.show(); cacheManagerWindow.raise() } }
+                Action { text: qsTr("Reproducible Media Maker..."); icon.source: "qrc:/chimera/menu/MediaMaker.png"; onTriggered: { mediaMakerWindow.show(); mediaMakerWindow.raise() } }
+                Action { text: qsTr("Pre-Compiled Modules..."); icon.source: "qrc:/chimera/menu/PrecompiledModules.png"; onTriggered: { precompiledWindow.show(); precompiledWindow.raise() } }
+                MenuDivider {}
+                Action { id: ramWatchAction; property string hotkey: "RAM Watch"; text: qsTr("RAM &Watch"); icon.source: "qrc:/chimera/menu/RamWatch.png"; onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
+                Action { id: ramSearchAction; property string hotkey: "RAM Search"; text: qsTr("RAM &Search"); icon.source: "qrc:/chimera/menu/RamSearch.png"; onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
+                Action { id: luaConsoleAction; property string hotkey: "Lua Console"; text: qsTr("Lua Console"); icon.source: "qrc:/chimera/menu/LuaConsole.png"; onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
+                Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor"); icon.source: "qrc:/chimera/menu/HexEditor.png"; onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
+                Action { text: qsTr("&Macro Tool"); icon.source: "qrc:/chimera/menu/MacroTool.png"; enabled: root.session.isOpen; onTriggered: { macroToolWindow.show(); macroToolWindow.raise() } }
+                Action { text: qsTr("Batch Runner..."); icon.source: "qrc:/chimera/menu/BatchRunner.png"; onTriggered: { batchRunWindow.show(); batchRunWindow.raise() } }
+                MenuDivider {}
                 // ticked while the core log is kept; off until asked, every run
                 Action {
                     text: qsTr("Export Core &Log...")
@@ -559,22 +564,22 @@ ApplicationWindow {
                     // Chimera's: the core's import form first, then the wizard on its answers
                     onTriggered: { root.newProject.run("chooseCore", [root.session.coreName]); movieImportWindow.show(); movieImportWindow.raise() }
                 }
-                MenuSeparator {}
+                MenuDivider {}
                 // the tools the core offers, by Chimera's names, in its order
-                Action { text: qsTr("&Debugger"); enabled: root.session.hasRegisters; onTriggered: { debuggerWindow.show(); debuggerWindow.raise() } }
+                Action { text: qsTr("&Debugger"); icon.source: "qrc:/chimera/menu/Debugger.png"; enabled: root.session.hasRegisters; onTriggered: { debuggerWindow.show(); debuggerWindow.raise() } }
                 Action { text: qsTr("&Surface Viewer"); enabled: root.session.surfaces !== "[]"; onTriggered: { surfaceViewerWindow.show(); surfaceViewerWindow.raise() } }
                 Action { id: traceLoggerAction; property string hotkey: "Trace Logger"; text: qsTr("&Trace Logger"); enabled: root.session.hasTrace; onTriggered: { traceLoggerWindow.show(); traceLoggerWindow.raise() } }
             }
             Menu {
                 delegate: keyedMenuItem
                 title: qsTr("&Help")
-                Action { text: qsTr("Open toolAssisted.run in Browser"); onTriggered: Qt.openUrlExternally(root.help.siteUrl) }
+                Action { text: qsTr("Open toolAssisted.run in Browser"); icon.source: "qrc:/chimera/menu/OnlineHelp.png"; onTriggered: Qt.openUrlExternally(root.help.siteUrl) }
                 Action {
-                    text: qsTr("&Copy Version Info")
+                    text: qsTr("&Copy Version Info"); icon.source: "qrc:/chimera/menu/CopyVersionInfo.png"
                     onTriggered: { root.clipboard.setText(root.help.run("versionReport")); root.note(qsTr("Version info copied")) }
                 }
-                Action { text: qsTr("&Report an Issue..."); onTriggered: { reportIssueWindow.show(); reportIssueWindow.raise() } }
-                Action { text: qsTr("&About..."); onTriggered: aboutDialog.open() }
+                Action { text: qsTr("&Report an Issue..."); icon.source: "qrc:/chimera/menu/ReportIssue.png"; onTriggered: { reportIssueWindow.show(); reportIssueWindow.raise() } }
+                Action { text: qsTr("&About..."); icon.source: "qrc:/chimera/menu/About.png"; onTriggered: aboutDialog.open() }
             }
         }
         // at the right of the menus while TAStudio is hidden, as Chimera's
@@ -600,6 +605,7 @@ ApplicationWindow {
         onActivated: pictureMenu.popup(pictureArea, 0, 0)
     }
     Menu {
+        delegate: MenuEntry {}
         id: pictureMenu
         objectName: "pictureMenu"
         // Config, after the project's items, only while full screen
@@ -612,13 +618,13 @@ ApplicationWindow {
             }
         }
         component Shown: MenuItem { height: visible ? implicitHeight : 0 }
-        component ShownSeparator: MenuSeparator { height: visible ? implicitHeight : 0 }
+        component ShownSeparator: MenuDivider { height: visible ? implicitHeight : 0 }
         Shown {
-            text: qsTr("Restart Movie"); icon.source: "qrc:/chimera/icons/restart.png"; visible: root.session.hasProject
+            text: qsTr("Restart Movie"); icon.source: "qrc:/chimera/menu/RestartMovie.png"; visible: root.session.hasProject
             onTriggered: root.hotkeys.run("run", ["Play from beginning"])
         }
         Shown {
-            text: qsTr("Stop Movie"); icon.source: "qrc:/chimera/icons/Stop.png"; visible: root.session.hasProject
+            text: qsTr("Stop Movie"); icon.source: "qrc:/chimera/menu/StopMovie.png"; visible: root.session.hasProject
             onTriggered: root.hotkeys.run("run", ["Stop Movie"])
         }
         Shown {
@@ -626,7 +632,7 @@ ApplicationWindow {
             onTriggered: { root.session.run("saveBackup"); root.note(qsTr("Backup movie saved.")) }
         }
         Shown {
-            text: qsTr("Stop Movie without Saving"); icon.source: "qrc:/chimera/icons/Stop.png"
+            text: qsTr("Stop Movie without Saving"); icon.source: "qrc:/chimera/menu/StopMovie.png"
             visible: root.session.hasProject && root.session.unsaved
             onTriggered: root.session.run("stopMovie")
         }
@@ -635,16 +641,16 @@ ApplicationWindow {
         Shown { text: qsTr("Add Subtitle"); visible: root.session.isOpen && root.session.hasProject; onTriggered: subtitleMaker.openOn(root.session.frame) }
         Shown { text: qsTr("Edit Comments"); visible: root.session.hasProject; onTriggered: tastudioWindow.showDetails("comments") }
         Shown {
-            text: qsTr("Save Movie"); icon.source: "qrc:/chimera/icons/SaveAs.png"; visible: root.session.hasProject
+            text: qsTr("Save Movie"); icon.source: "qrc:/chimera/menu/SaveMovie.png"; visible: root.session.hasProject
             onTriggered: root.hotkeys.run("run", ["Save Movie"])
         }
         Shown {
-            text: qsTr("Save Movie As..."); icon.source: "qrc:/chimera/icons/SaveAs.png"; visible: root.session.hasProject
+            text: qsTr("Save Movie As..."); icon.source: "qrc:/chimera/menu/SaveMovie.png"; visible: root.session.hasProject
             onTriggered: saveAsDialog.open()
         }
         ShownSeparator { visible: root.session.isOpen }
-        Shown { text: qsTr("Screenshot"); visible: root.session.isOpen; onTriggered: root.hotkeys.run("run", ["Screenshot"]) }
-        Shown { text: qsTr("Close ROM"); visible: root.session.isOpen; onTriggered: closeAction.trigger() }
+        Shown { text: qsTr("Screenshot"); icon.source: "qrc:/chimera/menu/Screenshot.png"; visible: root.session.isOpen; onTriggered: root.hotkeys.run("run", ["Screenshot"]) }
+        Shown { text: qsTr("Close ROM"); icon.source: "qrc:/chimera/menu/CloseProject.png"; visible: root.session.isOpen; onTriggered: closeAction.trigger() }
         ShownSeparator { visible: root.fullScreen || !root.menuBar.visible }
         Shown {
             text: root.menuBar.visible ? qsTr("Hide Menu") : qsTr("Show Menu")
@@ -653,20 +659,21 @@ ApplicationWindow {
         }
     }
     Menu {
+        delegate: MenuEntry {}
         id: pictureConfigMenu
         title: qsTr("Config")
         // Chimera shows it only full screen, where the menu bar is gone
-        Action { text: qsTr("&Controllers..."); onTriggered: { controllerWindow.show(); controllerWindow.raise() } }
-        Action { text: qsTr("&Hotkeys..."); onTriggered: { hotkeyWindow.show(); hotkeyWindow.raise() } }
-        Action { text: qsTr("Display..."); onTriggered: { displayWindow.show(); displayWindow.raise() } }
-        Action { text: qsTr("&Sound..."); onTriggered: { soundWindow.show(); soundWindow.raise() } }
-        Action { text: qsTr("Paths..."); onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
-        Action { text: qsTr("&Messages..."); onTriggered: { messagesWindow.show(); messagesWindow.raise() } }
-        Action { text: qsTr("&Autofire..."); onTriggered: autofireDialog.open() }
-        Action { text: qsTr("Customize..."); onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
-        MenuSeparator {}
-        Action { text: qsTr("Save Config"); onTriggered: root.configFiles.run("save") }
-        Action { text: qsTr("Load Config"); onTriggered: root.configFiles.run("load") }
+        Action { text: qsTr("&Controllers..."); icon.source: "qrc:/chimera/menu/Controllers.png"; onTriggered: { controllerWindow.show(); controllerWindow.raise() } }
+        Action { text: qsTr("&Hotkeys..."); icon.source: "qrc:/chimera/menu/Hotkeys.png"; onTriggered: { hotkeyWindow.show(); hotkeyWindow.raise() } }
+        Action { text: qsTr("Display..."); icon.source: "qrc:/chimera/menu/Display.png"; onTriggered: { displayWindow.show(); displayWindow.raise() } }
+        Action { text: qsTr("&Sound..."); icon.source: "qrc:/chimera/menu/Sound.png"; onTriggered: { soundWindow.show(); soundWindow.raise() } }
+        Action { text: qsTr("Paths..."); icon.source: "qrc:/chimera/menu/Paths.png"; onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
+        Action { text: qsTr("&Messages..."); icon.source: "qrc:/chimera/menu/Messages.png"; onTriggered: { messagesWindow.show(); messagesWindow.raise() } }
+        Action { text: qsTr("&Autofire..."); icon.source: "qrc:/chimera/menu/Autofire.png"; onTriggered: autofireDialog.open() }
+        Action { text: qsTr("Customize..."); icon.source: "qrc:/chimera/menu/Customize.png"; onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
+        MenuDivider {}
+        Action { text: qsTr("Save Config"); icon.source: "qrc:/chimera/menu/SaveConfig.png"; onTriggered: root.configFiles.run("save") }
+        Action { text: qsTr("Load Config"); icon.source: "qrc:/chimera/menu/LoadConfig.png"; onTriggered: root.configFiles.run("load") }
     }
 
     // Chimera's Subtitle Maker, for Add Subtitle: the frame the machine is on, or the subtitle already on it

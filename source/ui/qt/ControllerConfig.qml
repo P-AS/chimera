@@ -317,6 +317,7 @@ ApplicationWindow {
                 Layout.preferredWidth: 75
                 onClicked: miscMenu.popup()
                 Menu {
+                    delegate: MenuEntry {}
                     id: miscMenu
                     MenuItem { text: qsTr("Load Defaults"); onTriggered: win.controls.run("loadDefaults") }
                     MenuItem { text: qsTr("Clear"); onTriggered: win.controls.run("clear") }

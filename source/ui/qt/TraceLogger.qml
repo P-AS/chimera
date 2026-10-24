@@ -53,13 +53,15 @@ ApplicationWindow {
 
     menuBar: MenuBar {
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&File")
             MenuItem { text: qsTr("&Save Visible Lines..."); onTriggered: saveDialog.open() }
-            MenuSeparator {}
+            MenuDivider {}
             MenuItem { text: qsTr("&Close"); onTriggered: win.close() }
         }
         // Chimera adds a Settings menu for the window's items to a tool that has none
         Menu {
+            delegate: MenuEntry {}
             title: qsTr("&Settings")
             MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
