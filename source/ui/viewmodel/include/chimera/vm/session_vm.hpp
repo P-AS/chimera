@@ -67,6 +67,11 @@ public:
 	 * (unthrottled); and its sound, on or off and its volume (0 to 100) */
 	Property<int64_t> speedPercent{100};
 	Property<bool> unthrottled{false};
+	/* how often a frame is drawn while Turbo is held or the machine is
+	 * unthrottled: 1 every frame, else one in N (2 to 10); one in three at
+	 * first, as Chimera's (owner, 2026-10-24: the frame skip goes, and this
+	 * is its one setting left) */
+	Property<int64_t> fastDrawOneIn{3};
 	/* what keeps the machine to its speed, as Chimera's Config > Speed/Skip:
 	 * "clock" (its own rate, at the speed asked for), "audio" (the sound as
 	 * it is heard), "vsync" (a frame each picture the window shows), or ""
@@ -883,7 +888,7 @@ private:
 	int64_t greenEndM_ = 0;
 	/* the frame just run was a lag frame (the machine's thread) */
 	bool lastLagM_ = false;
-	std::atomic<int64_t> speedM_{100}, volumeM_{100}, fastSpeedM_{400};
+	std::atomic<int64_t> speedM_{100}, volumeM_{100}, fastSpeedM_{400}, fastDrawM_{3};
 	std::atomic<bool> soundNormalOnM_{true}, soundFastOnM_{true}, muteAdvanceM_{true}, steppingM_{false};
 	std::atomic<bool> recordingM_{false};
 	std::atomic<int64_t> fastVolumeM_{50}, budgetMbM_{4096}, nearStrideM_{4}, pictureSettleM_{3};
@@ -903,7 +908,9 @@ private:
 	/* the sound opened again on the device and buffer asked for; the devices said */
 	void reopenSoundOnMachine();
 	Connection soundDeviceWatch_, soundBufferWatch_, soundNormalWatch_, soundFastWatch_, muteAdvanceWatch_, fastVolumeWatch_;
-	Connection fastSpeedWatch_;
+	Connection fastSpeedWatch_, fastDrawWatch_;
+	/* frames run fast since the last one drawn (fastDrawOneIn) */
+	int64_t fastUndrawn_ = 0;
 	std::atomic<bool> unthrottledM_{false}, soundOnM_{true}, turboM_{false}, skipLagM_{false}, displayNothingM_{false},
 		padsHeardM_{true};
 	bool turboHeld_ = false;

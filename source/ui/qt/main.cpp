@@ -843,6 +843,7 @@ int main(int argc, char **argv)
 	config.keep(session, "vsyncEnabled");
 	config.keep(session, "speedPercent");
 	config.keep(session, "unthrottled");
+	config.keep(session, "fastDrawOneIn");
 	config.keep(session, "soundOn");
 	config.keep(session, "volume");
 	config.keep(session, "showFps");

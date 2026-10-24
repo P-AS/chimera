@@ -1251,8 +1251,8 @@ bool speedAndSound(const char *package, const char *rom)
 		CHECK(average() > 150);
 		session.showAverageFps.set(false);
 	}
-	/* Turbo held: as fast as it goes, nothing drawn, the speed marked >>>>;
-	 * let go, the frames are drawn again */
+	/* Turbo held: as fast as it goes, one frame in three drawn (fastDrawOneIn),
+	 * the speed marked >>>>; let go, every frame is drawn again */
 	auto serial = [&] {
 		Picture::Frame f;
 		session.screen.takeIfNewer(UINT64_MAX, f);
@@ -1268,8 +1268,9 @@ bool speedAndSound(const char *package, const char *rom)
 		const int64_t from = session.frame.get();
 		d.until([] { return false; }, 0.5);
 		const int64_t ran = session.frame.get() - from;
-		std::printf("turbo: %lld frames in half a second\n", static_cast<long long>(ran));
-		CHECK(ran > 60 && serial() == drawn);
+		const int64_t shown = static_cast<int64_t>(serial() - drawn);
+		std::printf("turbo: %lld frames in half a second, %lld drawn\n", static_cast<long long>(ran), static_cast<long long>(shown));
+		CHECK(ran > 60 && std::llabs(shown * 3 - ran) <= 6);
 		CHECK(session.fpsText.get().find(" >>>>") != std::string::npos);
 		session.holdTurbo(false);
 		CHECK(d.until([&] { return serial() != drawn; }, 5));
@@ -1300,11 +1301,18 @@ bool speedAndSound(const char *package, const char *rom)
 		auto [frames, drawn] = ran(0.5);
 		std::printf("running: %lld frames, %lld drawn\n", static_cast<long long>(frames), static_cast<long long>(drawn));
 		CHECK(frames > 20 && drawn == frames);
+		/* unthrottled: one in three, as Turbo; every frame when asked */
 		session.unthrottled.set(true);
 		std::tie(frames, drawn) = ran(0.3);
-		session.unthrottled.set(false);
 		std::printf("unthrottled: %lld frames, %lld drawn\n", static_cast<long long>(frames), static_cast<long long>(drawn));
+		CHECK(frames > 200 && std::llabs(drawn * 3 - frames) <= 6);
+		session.fastDrawOneIn.set(1);
+		std::tie(frames, drawn) = ran(0.3);
 		CHECK(frames > 200 && drawn == frames);
+		session.fastDrawOneIn.set(30);
+		CHECK(session.fastDrawOneIn.get() == 10);
+		session.fastDrawOneIn.set(3);
+		session.unthrottled.set(false);
 		/* fast forward at its own speed, 400%, not as fast as it goes, every frame drawn */
 		session.run("play", {}, error);
 		const uint64_t drawnBefore = serial();

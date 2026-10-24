@@ -219,6 +219,11 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("gamepads", "the gamepads in use, or why there are none", gamepads);
 	expose("speedPercent", "how fast the machine runs, a percent of its own rate (1 to 6400)", speedPercent, true);
 	expose("unthrottled", "the machine runs as fast as it can", unthrottled, true);
+	expose("fastDrawOneIn", "Turbo and unthrottled draw every frame (1), or one in 2 to 10 (3 at first, as Chimera's)", fastDrawOneIn, true);
+	fastDrawWatch_ = fastDrawOneIn.changed.connect([this] {
+		if (fastDrawOneIn.get() < 1 || fastDrawOneIn.get() > 10) fastDrawOneIn.set(std::clamp<int64_t>(fastDrawOneIn.get(), 1, 10));
+		fastDrawM_ = fastDrawOneIn.get();
+	});
 	expose("soundOn", "the machine's sound is played", soundOn, true);
 	expose("volume", "the sound's volume, 0 to 100", volume, true);
 	speedWatch_ = speedPercent.changed.connect([this] {
@@ -4489,10 +4494,19 @@ int32_t SessionViewModel::advanceOnMachine()
 	if (s_ == nullptr || s_ != was) return -1;
 	const int64_t f = ce_session_frame(s_);
 	const int64_t size = ce_session_movie_length(s_);
-	/* turbo and Display Nothing run the frame without drawing (there is no
-	 * frame skip: owner, 2026-10-24, as Chimera's is gone)
+	/* Display Nothing runs the frame without drawing, and Turbo and
+	 * unthrottled draw one frame in fastDrawOneIn (the frame skip's one
+	 * setting left: owner, 2026-10-24)
 	 * it - unless it is being recorded */
-	const int32_t lag = stepOnMachine(true, recordingM_.load() || (!turboM_.load() && !displayNothingM_.load()));
+	bool draw = !displayNothingM_.load();
+	if (turboM_.load() || unthrottledM_.load())
+	{
+		draw = draw && ++fastUndrawn_ >= fastDrawM_.load();
+		if (draw) fastUndrawn_ = 0;
+	}
+	else
+		fastUndrawn_ = 0;
+	const int32_t lag = stepOnMachine(true, recordingM_.load() || draw);
 	/* past the end the movie grew: the project has a change */
 	if (f >= size && !unsavedM_.exchange(true)) later([this] { markChanged(); });
 	/* TAStudio's "automatically pause at end of movie": the frame the movie

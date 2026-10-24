@@ -459,6 +459,23 @@ ApplicationWindow {
                         text: qsTr("Unthrottled"); checkable: true; checked: root.session.unthrottled
                         onTriggered: root.session.unthrottled = checked
                     }
+                    // the frame skip's one setting left (owner, 2026-10-24)
+                    Menu {
+                        id: fastDrawMenu
+                        title: qsTr("Turbo and unthrottled draw")
+                        Instantiator {
+                            model: 10
+                            delegate: MenuItem {
+                                required property int index
+                                text: index === 0 ? qsTr("Every frame") : qsTr("1 in %1").arg(index + 1)
+                                checkable: true
+                                checked: root.session.fastDrawOneIn === index + 1
+                                onTriggered: root.session.fastDrawOneIn = index + 1
+                            }
+                            onObjectAdded: (index, object) => fastDrawMenu.insertItem(index, object)
+                            onObjectRemoved: (index, object) => fastDrawMenu.removeItem(object)
+                        }
+                    }
                     MenuSeparator {}
                     Action { text: qsTr("Speed 50%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 50; onTriggered: root.session.speedPercent = 50 }
                     Action { text: qsTr("Speed 75%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 75; onTriggered: root.session.speedPercent = 75 }
