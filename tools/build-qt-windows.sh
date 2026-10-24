@@ -38,6 +38,10 @@ for m in qtbase qtshadertools qtdeclarative qtsvg; do
 	if [ ! -d "$work/$m-src" ]; then
 		mkdir -p "$work/$m-src"
 		tar -xJf "$src/$m.tar.xz" -C "$work/$m-src" --strip-components=1
+		# Chimera's fixes to Qt, applied once as the source is unpacked
+		for p in "$(dirname "$0")"/qt-patches/"$m"-*.patch; do
+			[ -e "$p" ] && patch -d "$work/$m-src" -p1 < "$p"
+		done
 	fi
 done
 

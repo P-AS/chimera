@@ -1,0 +1,16 @@
+A Qt thread that ends after its data was already let go read through a
+null pointer in this clean-up, a fault Windows swallows at thread exit.
+
+--- a/src/corelib/thread/qthread_win.cpp	2026-10-24 16:57:48.508522881 +0200
++++ b/src/corelib/thread/qthread_win.cpp	2026-10-24 16:57:48.544721770 +0200
+@@ -95,7 +95,9 @@
+     if (data) {
+         struct Cleanup {
+             Cleanup() { QThreadStoragePrivate::init(); }
+-            ~Cleanup() { destroy_current_thread_data(currentThreadData); }
++            // the thread's data may have been let go already (a QThread that
++            // finished clears it); then there is nothing left to destroy
++            ~Cleanup() { if (currentThreadData) destroy_current_thread_data(currentThreadData); }
+         };
+         static thread_local Cleanup currentThreadCleanup;
+     }

@@ -119,6 +119,12 @@ code is in `source/ui`; how it is built and run is in
 - **Qt for Windows is built from source** (owner, 2026-10-24) with
   Chimera's own mingw (posix threading), without the network module, as
   it is now; Qt's prebuilt Windows libraries were set aside.
+- **Qt is patched where it faults** (owner, 2026-10-24): fixes to Qt go in
+  tools/qt-patches and tools/build-qt-windows.sh applies them as it unpacks
+  the source. The first: a Qt thread that ended after its data was let go
+  read through a null pointer in Qt's clean-up (qthread_win.cpp). Windows
+  swallows a fault at thread exit, so nothing broke, but miniBox's fault
+  log said "a fault in host code" every time an idle Qt thread ended.
 - **The work stays private** (owner, 2026-10-24): no public branch, CI or
   preview build until the owner says otherwise.
 - **macOS is a target** (owner, 2026-10-24): the code is kept portable to
