@@ -656,6 +656,13 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("greenzoneStates", "machine states the greenzone holds", greenzoneStates);
 	expose("rerecords", "how many times the movie was changed over work already done (saved with the project)", rerecords);
 	expose("autoRestore", "after an edit before the current frame, run on to where the machine was", autoRestore, true);
+	expose("recordingMode", "TAStudio's recording mode: each frame played with the person's input becomes what is held; "
+		"off, the movie is played as it is", recordingMode, true);
+	recordingWatch_ = recordingMode.changed.connect([this] { recordingModeM_ = recordingMode.get(); });
+	command("toggleRecording", "recording mode on or off (Chimera's Toggle read-only)", {}, [this](const Args &, std::string &) -> Value {
+		recordingMode.set(!recordingMode.get());
+		return recordingMode.get();
+	}, &hasProject);
 	expose("greenzonePeriod", "which frames the greenzone stores: 1 every frame, N one in N, 0 none (saved with the project)",
 		greenzonePeriod, true);
 	expose("greenzoneEvery", "the N of storing every N frames, 2 to 999", greenzoneEvery, true);
@@ -2122,6 +2129,8 @@ std::string SessionViewModel::machineIdOnMachine()
 
 void SessionViewModel::startProjectSessionOnMachine(bool loadHistory)
 {
+	/* read only until the window says otherwise, from this project's first frame */
+	recordingModeM_ = false;
 	namespace fs = std::filesystem;
 	const fs::path dir = projectCacheOnMachine();
 	if (dir.empty() || s_ == nullptr) return;
@@ -3606,6 +3615,8 @@ void SessionViewModel::savedAt(uint64_t gen)
 
 void SessionViewModel::projectSwitched()
 {
+	/* a project opens read only, as Chimera's TAStudio does */
+	recordingMode.set(false);
 	changeGen_++;
 	unsavedM_.store(false);
 	unsaved.set(false);
@@ -4108,7 +4119,9 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 {
 	movesM_++;
 	const int64_t f = ce_session_frame(s_);
-	uint64_t held = 0;
+	/* held: all the person's input this frame; sticky: the part of it autohold, autofire and the
+	 * Auto-hold columns give, Chimera's StickySource, which alone extends the movie when not recording */
+	uint64_t held = 0, sticky = 0;
 	if (live)
 	{
 		uint64_t padMask = 0;
@@ -4167,41 +4180,56 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 			keysThisFrameM_ = std::move(keys);
 		}
 		/* what autohold holds, and what autofire presses this frame */
-		held |= autoholdMask_.load();
+		sticky |= autoholdMask_.load();
 		const uint64_t firing = autofireMask_.load();
 		const int64_t on = fireOnM_.load(), period = on + fireOffM_.load();
 		for (size_t b = 0; b < 64; b++)
-			if (firing >> b & 1 && fireAtM_[b] % period < on) held |= uint64_t{1} << b;
+			if (firing >> b & 1 && fireAtM_[b] % period < on) sticky |= uint64_t{1} << b;
 		/* the piano roll's Auto-hold columns: a button's pattern says whether it is pressed */
 		for (size_t i = 0; i < columnPatternsM_.size(); i++)
 		{
 			const ColumnPattern &cp = columnPatternsM_[i];
 			if (!cp.isAxis && !cp.values.empty() && cp.index >= 0 && cp.index < 64 && cp.values[columnAtM_[i] % cp.values.size()] != 0)
-				held |= uint64_t{1} << cp.index;
+				sticky |= uint64_t{1} << cp.index;
 		}
+		held |= sticky;
 	}
-	/* What is held goes into the movie before the frame plays it: past the
-	 * end the movie grows, and over a frame it has, a press it lacks is an
-	 * edit of that frame (the engine drops the states after it). The engine
-	 * plays the movie; the window never hands the machine input of its own. */
+	/* What is held goes into the movie before the frame plays it, as
+	 * Chimera's TAStudio puts it there (MovieSession.HandleFrameBefore,
+	 * TAStudio.UpdateBefore). Recording, the frame becomes what is held, an
+	 * analog control left alone at rest, and a column hidden while hidden
+	 * columns are not edited keeps what it had. Not recording, a frame the
+	 * movie has is played as it is, and past the end the movie grows by the
+	 * sticky part alone: autohold, autofire and the Auto-hold columns. A
+	 * frame changed is an edit (the engine drops the states after it). The
+	 * engine plays the movie; the window never hands the machine input of
+	 * its own. */
+	/* a game opened without a project has no TAStudio to be read only: what is held is added
+	 * to its frames, as it always was here */
+	const bool recording = live && projectM_ != nullptr && recordingModeM_.load();
+	const bool adding = live && projectM_ == nullptr;
 	bool changed = false;
-	held &= recordMaskM_.load();
+	const uint64_t mask = recordMaskM_.load();
 	const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s_));
 	axesBuf_.resize(axisCount);
 	uint64_t logged = 0;
 	const int32_t had = ce_session_movie_get(s_, f, &logged, axisCount ? axesBuf_.data() : nullptr);
 	if (had == 1 && !grow) return 0;
-	bool axesHeld = false;
+	loggedAxes_ = axesBuf_;
+	if (live && !recording && !adding) held = sticky;
+	auto axisShown = [this](size_t i) { return recordAxesM_.empty() || (i < recordAxesM_.size() && recordAxesM_[i]); };
+	if (recording)
+		for (size_t i = 0; i < axisCount && i < axesM_.size(); i++)
+			if (axisShown(i)) axesBuf_[i] = axesM_[i].neutral;
 	/* how far the pointer moved since the last frame played with the person's input: read once
 	 * such a frame, as Chimera's are; a frame replayed leaves it */
 	const int movedX = live ? movedXM_.exchange(0) : 0, movedY = live ? movedYM_.exchange(0) : 0;
-	/* the analog controls' bindings: a stick off its rest, or a key pushing one, goes in as a held
-	 * button does; a control left alone keeps what the movie has */
-	if (live)
+	/* the analog controls' bindings, when recording: a stick off its rest, or a key pushing one */
+	if (recording || adding)
 		for (size_t i = 0; i < axisCount && i < analogBindsM_.size() && i < axesM_.size(); i++)
 		{
 			const AnalogBind &bind = analogBindsM_[i];
-			if (bind.empty()) continue;
+			if (bind.empty() || !axisShown(i)) continue;
 			int host = 0;
 			if (bind.value == "WMouse X") host = pointerXM_.load();
 			else if (bind.value == "WMouse Y") host = pointerYM_.load();
@@ -4216,45 +4244,41 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 			bool active = false;
 			const int32_t v = analogValue(bind, host, heldNow(bind.positive), heldNow(bind.negative), axesM_[i].min, axesM_[i].max,
 				axesM_[i].neutral, active);
-			if (active && axesBuf_[i] != v)
-			{
-				axesBuf_[i] = v;
-				axesHeld = true;
-			}
+			if (active) axesBuf_[i] = v;
 		}
-	/* an Auto-hold analog column: its value goes in as a held button does */
-	if (live)
+	/* an Auto-hold analog column: its value goes in as a held button does, recording or past the end */
+	if (recording || adding || (live && had == 1))
 		for (size_t i = 0; i < columnPatternsM_.size(); i++)
 		{
 			const ColumnPattern &cp = columnPatternsM_[i];
 			if (!cp.isAxis || cp.values.empty() || cp.index < 0 || static_cast<size_t>(cp.index) >= axisCount) continue;
-			const int32_t v = cp.values[columnAtM_[i] % cp.values.size()];
-			if (axesBuf_[static_cast<size_t>(cp.index)] != v)
-			{
-				axesBuf_[static_cast<size_t>(cp.index)] = v;
-				axesHeld = true;
-			}
+			if (axisShown(static_cast<size_t>(cp.index))) axesBuf_[static_cast<size_t>(cp.index)] = cp.values[columnAtM_[i] % cp.values.size()];
 		}
-	/* a script's analog values go in as its buttons do: held, then this frame's own */
+	/* a script's analog values go in as its buttons do, when recording: held, then this frame's own */
 	if (live)
 	{
 		std::lock_guard<std::mutex> lock(scriptAxesM_);
-		for (const std::map<size_t, int32_t> *values : {&scriptAxesHeld_, &scriptAxesOnce_})
-			for (const auto &[axis, v] : *values)
-				if (axis < axisCount && axesBuf_[axis] != v)
-				{
-					axesBuf_[axis] = v;
-					axesHeld = true;
-				}
+		if (recording || adding)
+			for (const std::map<size_t, int32_t> *values : {&scriptAxesHeld_, &scriptAxesOnce_})
+				for (const auto &[axis, v] : *values)
+					if (axis < axisCount && axisShown(axis)) axesBuf_[axis] = v;
 		scriptAxesOnce_.clear();
 	}
+	const uint64_t buttons = recording || had == 1 ? (logged & ~mask) | (held & mask) : adding ? logged | (held & mask) : logged;
+	const bool axesChanged = axesBuf_ != loggedAxes_;
 	if (had == 1)
-		ce_session_movie_set(s_, f, held, axesHeld ? axesBuf_.data() : nullptr);
-	else if ((logged | held) != logged || axesHeld)
+		ce_session_movie_set(s_, f, buttons, axesChanged ? axesBuf_.data() : nullptr);
+	else if (buttons != logged || axesChanged)
 	{
-		ce_session_movie_set(s_, f, logged | held, axisCount ? axesBuf_.data() : nullptr);
+		ce_session_movie_set(s_, f, buttons, axisCount ? axesBuf_.data() : nullptr);
 		greenEndM_ = std::min(greenEndM_, f);
 		changed = true;
+	}
+	/* a frame the person's input wrote: a step of the undo history, as Chimera's Record Frame */
+	if (live && projectM_ != nullptr && (had == 1 || changed))
+	{
+		std::lock_guard<std::mutex> lock(pendingM_);
+		recordedM_.push_back({f, ce_session_movie_length(s_), had == 1, runningM_, logged, buttons, loggedAxes_, axesBuf_});
 	}
 
 	const int32_t lag = ce_session_movie_advance(s_, 0, nullptr, render ? 1 : 0);
@@ -4478,6 +4502,7 @@ void SessionViewModel::tick()
 	int64_t gameMs;
 	int64_t queued, dropped;
 	bool statedNow = false;
+	std::vector<RecordedFrame> recorded;
 	{
 		std::lock_guard<std::mutex> lock(pendingM_);
 		tickPosted_ = false;
@@ -4498,6 +4523,7 @@ void SessionViewModel::tick()
 		gameMs = pendingGameMs_;
 		pendingFps_ = -1;
 		changedFirst_ = changedLast_ = appendedFirst_ = appendedLast_ = -1;
+		recorded.swap(recordedM_);
 	}
 	frame.set(f);
 	if (measured >= 0) fps.set(measured);
@@ -4519,6 +4545,7 @@ void SessionViewModel::tick()
 	greenzoneStates.set(states);
 	rerecords.set(rr);
 	updateOverlay(f, cf >= 0 ? cf : af);
+	if (!recorded.empty()) framesRecorded.emit(recorded);
 	if (cf >= 0) inputsChanged.emit(cf, cl);
 	if (af >= 0) inputsAppended.emit(af, al);
 	if (cf >= 0 || af >= 0) greenzoneInvalidated.emit(cf >= 0 ? cf : af);
@@ -4633,6 +4660,12 @@ std::string SessionViewModel::inputDisplay(const std::vector<std::string> &butto
 			}
 	}
 	return out;
+}
+
+void SessionViewModel::setRecordMask(uint64_t mask, std::vector<bool> axes)
+{
+	recordMaskM_.store(mask);
+	submit([this, axes = std::move(axes)] { recordAxesM_ = axes; });
 }
 
 } // namespace chimera::vm

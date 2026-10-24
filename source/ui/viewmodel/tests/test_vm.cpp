@@ -6071,6 +6071,117 @@ bool rerecordCount(const char *package, const char *rom)
 	return true;
 }
 
+/* TAStudio's recording mode, as Chimera's: a project opens read only; the
+ * keys held then reach the movie only past its end, and only through
+ * autohold; recording replaces each frame played with what is held, a
+ * Record Frame step of the undo history each, the frames of a run one
+ * step; undo or an edit by hand ends recording, a script's edit does not */
+bool recordingMode(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-recording-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	std::string error;
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get() && session.buttonNames().size() == 8; }, 60));
+	const fs::path project = dir / "walker.chimeraProject";
+	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
+	CHECK(!session.recordingMode.get());
+	const std::vector<std::string> &names = session.buttonNames();
+	const auto downAt = std::find(names.begin(), names.end(), "P1 Down");
+	CHECK(downAt != names.end() && names[4] == "P1 A");
+	if (downAt == names.end()) return false;
+	const uint64_t down = uint64_t{1} << (downAt - names.begin()), a = uint64_t{1} << 4;
+	auto settle = [&] { d.until([] { return false; }, 0.2); };
+	auto advance = [&](int n) {
+		const int64_t to = session.frame.get() + n;
+		for (int i = 0; i < n; i++) session.run("frameAdvance", {}, error);
+		return d.until([&] { return session.frame.get() == to; }, 20);
+	};
+	auto seek = [&](int64_t f) {
+		session.run("seek", {f}, error);
+		return d.until([&] { return session.frame.get() == f && !session.running.get(); }, 20);
+	};
+	RowModel *history = nullptr;
+	for (const auto &r : roll.rowLists())
+		if (r.name == "history") history = r.model;
+	CHECK(history != nullptr);
+	if (history == nullptr) return false;
+	auto stepName = [&](int64_t i) {
+		std::string n;
+		fromValue(history->cell(i, 0), n);
+		return n;
+	};
+	/* read only: Down held, the movie grows by empty frames */
+	session.key("Down", true);
+	CHECK(advance(5));
+	settle();
+	CHECK(inputs.size() == 5);
+	for (int64_t f = 0; f < 5; f++) CHECK(inputs.at(f) == 0);
+	/* past the end autohold still reaches it */
+	session.run("toggleAutohold", {std::string("P1 A")}, error);
+	CHECK(advance(2));
+	settle();
+	CHECK(inputs.size() == 7 && inputs.at(5) == a && inputs.at(6) == a);
+	session.run("toggleAutohold", {std::string("P1 A")}, error);
+	/* within the movie the frames are played as they are */
+	roll.run("toggle", {int64_t{2}, int64_t{4}}, error);
+	CHECK(seek(0));
+	CHECK(advance(4));
+	settle();
+	CHECK(inputs.at(1) == 0 && inputs.at(2) == a && inputs.at(3) == 0);
+	/* recording: a frame played becomes what is held, Down; frame 2's A goes */
+	CHECK(seek(2));
+	CHECK(roll.run("clearHistory", {}, error).has_value() && history->rowCount() == 0);
+	session.run("toggleRecording", {}, error);
+	CHECK(session.recordingMode.get());
+	CHECK(advance(2));
+	settle();
+	CHECK(inputs.at(2) == down && inputs.at(3) == down);
+	CHECK(history->rowCount() == 2 && stepName(0) == "Record Frame: 2" && stepName(1) == "Record Frame: 3");
+	/* the frames a run records are one step, over the movie and past its end */
+	session.run("play", {}, error);
+	CHECK(d.until([&] { return session.frame.get() >= 12; }, 10));
+	session.run("pause", {}, error);
+	CHECK(d.until([&] { return !session.running.get(); }, 5));
+	settle();
+	CHECK(inputs.size() >= 12 && inputs.at(5) == down && inputs.at(11) == down);
+	CHECK(history->rowCount() == 3 && stepName(2) == "Record Frame: 4");
+	/* undone at once: frames 4 to 6 as they were, the movie its 7 frames; and recording is over */
+	roll.run("undo", {}, error);
+	settle();
+	CHECK(inputs.size() == 7 && inputs.at(4) == 0 && inputs.at(5) == a && inputs.at(6) == a && inputs.at(3) == down);
+	CHECK(!session.recordingMode.get());
+	/* a script's edit leaves recording on, an edit by hand ends it */
+	session.run("toggleRecording", {}, error);
+	roll.scriptEditing.set(true);
+	roll.run("toggle", {int64_t{1}, int64_t{4}}, error);
+	roll.scriptEditing.set(false);
+	CHECK(session.recordingMode.get() && inputs.at(1) == a);
+	roll.run("toggle", {int64_t{1}, int64_t{4}}, error);
+	CHECK(!session.recordingMode.get() && inputs.at(1) == 0);
+	/* a project opened is read only */
+	session.run("toggleRecording", {}, error);
+	session.key("Down", false);
+	session.run("saveProject", {}, error);
+	CHECK(d.until([&] { return !session.unsaved.get(); }, 20));
+	CHECK(session.recordingMode.get());
+	const int64_t opens = session.opens.get();
+	session.run("openProject", {project.string(), std::string(package)}, error);
+	CHECK(d.until([&] { return session.opens.get() > opens && session.isOpen.get() && session.projectPath.get() == project.string(); }, 60));
+	CHECK(d.until([&] { return !session.recordingMode.get(); }, 20));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir);
+	return true;
+}
+
 /* New Project, as Chimera's window makes one: a core, its machine, files
  * in the slots it declares, its settings, its firmware; made, then opened */
 std::string lower(std::string s)
@@ -7369,6 +7480,7 @@ int main(int argc, char **argv)
 			ranMachine = settings(argv[1], argv[2]) && ranMachine;
 			ranMachine = newProject(argv[1], argv[2]) && ranMachine;
 			ranMachine = rerecordCount(argv[1], argv[2]) && ranMachine;
+			ranMachine = recordingMode(argv[1], argv[2]) && ranMachine;
 			ranMachine = ramWatch(argv[1], argv[2]) && ranMachine;
 			ranMachine = hexEditor(argv[1], argv[2]) && ranMachine;
 			ranMachine = pianoRollEditing(argv[1], argv[2]) && ranMachine;

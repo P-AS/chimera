@@ -23,6 +23,8 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("wheelRows", "the frames a notch of the mouse wheel scrolls", wheelRows, true);
 	expose("editHiddenColumns", "edits of frames change the hidden columns too; off, only the columns shown",
 		editHiddenColumns, true);
+	expose("scriptEditing", "the edits made now are a script's: they leave recording mode on, where an edit by hand turns it off",
+		scriptEditing, true);
 	expose("denoteStatesColor", "a frame whose state the greenzone holds has a colour of its own", denoteStatesColor, true);
 	expose("denoteStatesIcons", "a frame whose state the greenzone holds has an icon in the frame column", denoteStatesIcons, true);
 	expose("denoteMarkersColor", "a marker's frame number has the marker colour", denoteMarkersColor, true);
@@ -296,7 +298,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		autoHeldChanged();
 	});
 	editHiddenWatch_ = editHiddenColumns.changed.connect([this] {
-		session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
+		pushRecordMask();
 		pushColumnHolds();
 	});
 	expose("greenEnd", "frames before this one were run with the inputs they have now", greenEnd);
@@ -1020,7 +1022,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		else if (controlNames() != patternNames_)
 			defaultPatterns();
 		pushColumnHolds();
-		session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
+		pushRecordMask();
 		groupRows_.reset.emit();
 		frames_.reset.emit();
 	});
@@ -1034,6 +1036,9 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	changedWatch_ = session_.inputsChanged.connect([this](int64_t a, int64_t b) {
 		frames_.changed.emit(a, b);
 		refreshRun(a);
+	});
+	recordedWatch_ = session_.framesRecorded.connect([this](const std::vector<SessionViewModel::RecordedFrame> &frames) {
+		framesRecorded(frames);
 	});
 	appendedWatch_ = session_.inputsAppended.connect([this](int64_t a, int64_t b) {
 		frameCount.set(inputs_.size());
@@ -1105,6 +1110,15 @@ bool PianoRollViewModel::paint(int64_t first, int64_t last, int64_t b, std::opti
 void PianoRollViewModel::keep(Step step, bool join)
 {
 	session_.markChanged();
+	/* an edit of frames by hand ends recording, as Chimera's TAStudio does on
+	 * the next edit (StopRecordingOnNextEdit); a script's and the machine's
+	 * own recording leave it on */
+	const bool framesEdited = !step.frames.empty() || !step.axes.empty() || step.shiftCount != 0 || step.sizeBefore != step.sizeAfter;
+	if (!recordingStep_ && framesEdited)
+	{
+		lastWasRecord_ = false;
+		if (!scriptEditing.get()) session_.recordingMode.set(false);
+	}
 	if (!join && step.name.empty()) step.name = naming_.empty() ? describe(step) : naming_;
 	naming_.clear();
 	if (join && !undo_.empty())
@@ -1189,6 +1203,8 @@ void PianoRollViewModel::undoOrRedo(bool back)
 	Step step = std::move(from.back());
 	from.pop_back();
 	stroke_ = false;
+	lastWasRecord_ = false;
+	if (!scriptEditing.get()) session_.recordingMode.set(false);
 	session_.markChanged();
 	const int64_t before = inputs_.size();
 	const bool shifted = step.shiftCount != 0;
@@ -2211,6 +2227,32 @@ void PianoRollViewModel::edited(int64_t first, int64_t last, int64_t oldCount)
 	refreshRun(std::min(first, oldCount));
 }
 
+void PianoRollViewModel::pushRecordMask()
+{
+	if (limited()) session_.setRecordMask(shownButtons(), shownAxes());
+	else session_.setRecordMask(~uint64_t{0});
+}
+
+void PianoRollViewModel::framesRecorded(const std::vector<SessionViewModel::RecordedFrame> &frames)
+{
+	recordingStep_ = true;
+	for (const SessionViewModel::RecordedFrame &r : frames)
+	{
+		Step step;
+		step.frames[r.frame] = {r.before, r.after};
+		if (r.axesBefore != r.axesAfter) step.axes[r.frame] = {r.axesBefore, r.axesAfter};
+		step.sizeAfter = r.length;
+		step.sizeBefore = r.appended ? r.frame : r.length;
+		/* frames recorded while the machine runs are one step, named for the first */
+		const bool join = r.running && lastWasRecord_ && !undo_.empty();
+		step.name = join ? "Record Frame: " : "Record Frame: " + std::to_string(r.frame);
+		keep(std::move(step), join);
+		/* a frame recorded while paused stands alone; the next run starts a step of its own */
+		lastWasRecord_ = r.running;
+	}
+	recordingStep_ = false;
+}
+
 void PianoRollViewModel::hiddenChanged()
 {
 	std::string text;
@@ -2220,7 +2262,7 @@ void PianoRollViewModel::hiddenChanged()
 	rolls_[static_cast<size_t>(activeRoll.get())] = hidden_;
 	const std::set<std::string> &first = rolls_.front();
 	session_.setHiddenColumns(std::vector<std::string>(first.begin(), first.end()));
-	session_.setRecordMask(limited() ? shownButtons() : ~uint64_t{0});
+	pushRecordMask();
 	pushColumnHolds();
 	columnRows_.reset.emit();
 	groupRows_.reset.emit();

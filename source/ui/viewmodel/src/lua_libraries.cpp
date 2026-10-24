@@ -418,10 +418,11 @@ end
 tastudio = {}
 local function engaged() return C.session.hasProject end
 function tastudio.engaged() return engaged() end
--- recording mode is not here yet (an owner's question): TAStudio plays
-function tastudio.getrecording() return false end
-function tastudio.setrecording() end
-function tastudio.togglerecording() end
+function tastudio.getrecording() return engaged() and C.session.recordingMode end
+function tastudio.setrecording(on)
+	if engaged() and C.session.recordingMode ~= (on == true) then C.session.toggleRecording() end
+end
+function tastudio.togglerecording() if engaged() then C.session.toggleRecording() end end
 function tastudio.islag(frame)
 	if not engaged() then return nil end
 	local v = C.session.lagAt(frame)
@@ -475,22 +476,28 @@ function tastudio.applyinputchanges()
 	if #queued == 0 or not engaged() then return end
 	local changes = queued
 	queued = {}
-	for _, c in ipairs(changes) do
-		if c.k == "button" then
-			local b = indexIn(C.session.buttonList(), c.name)
-			if b ~= nil then C.pianoRoll.paint(c.frame, c.frame, b, c.value) end
-		elseif c.k == "axis" then
-			local x = indexIn(C.session.axisList(), c.name)
-			if x ~= nil then C.pianoRoll.setAxis(c.frame, x, c.value) end
-		elseif c.k == "insert" then
-			C.pianoRoll.insertFrames(c.frame, c.n)
-		else
-			local last = math.min(C.pianoRoll.frameCount, c.frame + c.n) - 1
-			if last >= c.frame then
-				if c.k == "delete" then C.pianoRoll.deleteFrames(c.frame, last) else C.pianoRoll.clearFrames(c.frame, last) end
+	-- a script's edits leave recording mode on, as Chimera's
+	C.pianoRoll.scriptEditing = true
+	local ok, err = pcall(function()
+		for _, c in ipairs(changes) do
+			if c.k == "button" then
+				local b = indexIn(C.session.buttonList(), c.name)
+				if b ~= nil then C.pianoRoll.paint(c.frame, c.frame, b, c.value) end
+			elseif c.k == "axis" then
+				local x = indexIn(C.session.axisList(), c.name)
+				if x ~= nil then C.pianoRoll.setAxis(c.frame, x, c.value) end
+			elseif c.k == "insert" then
+				C.pianoRoll.insertFrames(c.frame, c.n)
+			else
+				local last = math.min(C.pianoRoll.frameCount, c.frame + c.n) - 1
+				if last >= c.frame then
+					if c.k == "delete" then C.pianoRoll.deleteFrames(c.frame, last) else C.pianoRoll.clearFrames(c.frame, last) end
+				end
 			end
 		end
-	end
+	end)
+	C.pianoRoll.scriptEditing = false
+	if not ok then error(err, 0) end
 end
 function tastudio.clearinputchanges() queued = {} end
 function tastudio.setbranchtext(text, index)
@@ -635,10 +642,13 @@ function movie.filename() return C.session.projectPath end
 function movie.length() return C.pianoRoll.frameCount end
 function movie.mode()
 	if not C.session.hasProject then return "INACTIVE" end
-	return C.session.frame < C.pianoRoll.frameCount and "PLAY" or "RECORD"
+	return C.session.recordingMode and "RECORD" or "PLAY"
 end
 function movie.getrerecordcount() return C.session.rerecords end
-function movie.getreadonly() return false end
+function movie.getreadonly() return not C.session.recordingMode end
+function movie.setreadonly(on)
+	if C.session.hasProject and C.session.recordingMode ~= (on ~= true) then C.session.toggleRecording() end
+end
 function movie.getfps() return C.session.fps end
 function movie.save(path) if path and path ~= "" then C.session.saveProject(path) else C.session.saveProject() end end
 function movie.play_from_start() if C.session.projectPath ~= "" then C.session.openProject(C.session.projectPath) end end

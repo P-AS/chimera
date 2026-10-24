@@ -227,6 +227,13 @@ public:
 	/* after an edit before the current frame, go back to the edit and run
 	 * forward to where the machine was, with the new inputs */
 	Property<bool> autoRestore{true};
+	/* TAStudio's recording mode (Chimera's "Recording mode" box and its
+	 * "Toggle read-only" hotkey). Off, the machine plays the movie as it
+	 * is, and past its end only autohold, autofire and the Auto-hold columns
+	 * extend it; on, each frame the machine plays with the person's input
+	 * becomes what is held. Off whenever a project opens, as Chimera's
+	 * TAStudio starts read only. */
+	Property<bool> recordingMode{false};
 	/* which frames the greenzone stores: 1 every frame, N one in N, 0 none
 	 * (TAStudio's Greenzone box; saved with the project, 1 for one saved
 	 * before it was), and the N the "every N frames" choice uses */
@@ -331,6 +338,17 @@ public:
 	 * at the end, by the machine (recording what was held) */
 	Signal<int64_t, int64_t> inputsChanged;
 	Signal<int64_t, int64_t> inputsAppended;
+	/* frames the person's input wrote, in order: as each was and as it
+	 * became (appended: past the end), and whether the machine was running
+	 * then (Chimera's undo history keeps a run's frames as one step) */
+	struct RecordedFrame
+	{
+		int64_t frame = 0, length = 0;
+		bool appended = false, running = false;
+		uint64_t before = 0, after = 0;
+		std::vector<int32_t> axesBefore, axesAfter;
+	};
+	Signal<std::vector<RecordedFrame>> framesRecorded;
 	/* the movie changed from this frame on, so states after it may no longer hold (Lua's
 	 * tastudio.ongreenzoneinvalidated): every edit, and every frame recorded */
 	Signal<int64_t> greenzoneInvalidated;
@@ -458,7 +476,9 @@ public:
 	/* The UI's thread: the buttons a key or pad held may write into the
 	 * movie (a bit each; all by default) - the piano roll's columns shown,
 	 * when hidden ones are not to be edited, as Chimera records */
-	void setRecordMask(uint64_t mask) { recordMaskM_.store(mask); }
+	/* the buttons and analog controls recording may change (the columns shown,
+	 * when hidden columns are not edited; axes empty: all) */
+	void setRecordMask(uint64_t mask, std::vector<bool> axes = {});
 	void holdFastForward(bool down);
 	/* whether a key presses any of the machine's buttons */
 	bool keyIsBound(const std::string &name) const { return !bindings_.buttonsOf(name).empty(); }
@@ -630,6 +650,10 @@ private:
 	void autosave();
 	std::atomic<bool> unsavedM_{false}, pauseAtEndM_{false};
 	std::atomic<uint64_t> recordMaskM_{~uint64_t{0}};
+	std::vector<bool> recordAxesM_;
+	std::atomic<bool> recordingModeM_{false};
+	std::vector<int32_t> loggedAxes_;
+	Connection recordingWatch_;
 	std::atomic<int64_t> rewindStepM_{1}, rewindStepFastM_{4}, autosaveMsM_{1800000};
 	Clock::time_point autosaveDue_{};
 	/* the last frame run was not the movie's end (pausing there is once) */
@@ -920,6 +944,7 @@ private:
 	int64_t pendingGreenEnd_ = 0, pendingStates_ = 0, pendingRerecords_ = 0;
 	int64_t changedFirst_ = -1, changedLast_ = -1;
 	int64_t appendedFirst_ = -1, appendedLast_ = -1;
+	std::vector<RecordedFrame> recordedM_;
 };
 
 } // namespace chimera::vm

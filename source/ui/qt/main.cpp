@@ -505,6 +505,12 @@ int main(int argc, char **argv)
 		/* Chimera's Movie group, as TAStudio answers it: open a project, make
 		 * one, a new empty movie for the game, the project read again from
 		 * its file, the project saved */
+		/* TAStudio's recording mode, as Chimera's TAStudio takes the hotkey; with no project, Chimera's words */
+		hotkeys.add("Movie", "Toggle read-only", "Q", [&session, run](bool down) {
+			if (!down) return;
+			if (session.hasProject.get()) run(session, "toggleRecording");
+			else session.status.set("No movie active");
+		});
 		window("Movie", "Play Movie", "");
 		window("Movie", "Record Movie", "");
 		window("Movie", "Stop Movie", "");

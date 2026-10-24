@@ -585,6 +585,15 @@ ApplicationWindow {
                         checked: tas.session.autoRestore
                         onToggled: tas.session.autoRestore = checked
                     }
+                    CheckBox {
+                        objectName: "recordingMode"
+                        text: qsTr("Recording mode")
+                        checked: tas.session.recordingMode
+                        enabled: tas.session.hasProject
+                        onToggled: tas.session.recordingMode = checked
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("When enabled, you can record inputs while unpaused or when frame advancing.")
+                    }
                 }
             }
 

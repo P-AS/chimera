@@ -48,6 +48,10 @@ public:
 	 * hidden ones keep their inputs where they are, frames put in or taken
 	 * out moving only the shown ones, as Chimera's multitrack editing */
 	Property<bool> editHiddenColumns{true};
+	/* the edits made now are a script's (Lua's tastudio.applyinputchanges):
+	 * they leave recording mode on, where an edit by hand turns it off, as
+	 * Chimera's StopRecordingOnNextEdit */
+	Property<bool> scriptEditing{false};
 	/* TAStudio's paint patterns: when painting a column follows its
 	 * pattern - "never", "autofire" (on the columns given Auto-hold) or
 	 * "always"; Alt held paints a button's pattern whatever this says -
@@ -343,6 +347,12 @@ private:
 	bool limited() const;
 	uint64_t shownButtons() const;
 	std::vector<bool> shownAxes() const;
+	/* the session told which columns recording may change */
+	void pushRecordMask();
+	/* frames the machine recorded: Record Frame steps, a run's frames one
+	 * step while the machine runs on, as Chimera merges them */
+	void framesRecorded(const std::vector<SessionViewModel::RecordedFrame> &frames);
+	bool recordingStep_ = false, lastWasRecord_ = false;
 	/* `to` with the shown columns of `from` */
 	Row mixShown(const Row &to, const Row &from) const;
 	/* a frame with nothing held */
@@ -417,7 +427,7 @@ private:
 	MarkerRows markerRows_{*this};
 	Connection markersWatch_;
 	std::vector<Connection> forgetWatches_;
-	Connection frameWatch_, buttonsWatch_, changedWatch_, appendedWatch_, topWatch_, greenWatch_, resetWatch_;
+	Connection frameWatch_, buttonsWatch_, changedWatch_, appendedWatch_, topWatch_, greenWatch_, resetWatch_, recordedWatch_;
 	/* what a drag paints: the state the pressed cell was given */
 	bool dragHeld_ = false;
 	/* a press began a stroke that drags extend */
