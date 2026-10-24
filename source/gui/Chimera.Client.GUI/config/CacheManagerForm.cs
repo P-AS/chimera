@@ -135,7 +135,8 @@ namespace Chimera.Client.GUI
 
 			SuspendLayout();
 			ClientSize = new(UIHelper.ScaleX(1460), UIHelper.ScaleY(500));
-			MinimumSize = new(UIHelper.ScaleX(900), UIHelper.ScaleY(380));
+			// wide enough for the row of buttons and Close beside them
+			MinimumSize = new(UIHelper.ScaleX(1160), UIHelper.ScaleY(380));
 			StartPosition = FormStartPosition.CenterParent;
 			ShowIcon = false;
 
@@ -363,10 +364,11 @@ namespace Chimera.Client.GUI
 			// defaults alone.
 			_budgets.Click += (_, _) => _editBudgets(SelectedProject());
 
+			// its own place: it once shared Greenzone budgets..., which covered it
 			_openFolder = new Button
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-				Location = new(margin + (3 * (bw + gap)), buttonRow),
+				Location = new(margin + (4 * (bw + gap)), buttonRow),
 				Size = new(bw, UIHelper.ScaleY(26)),
 				Text = "Open Folder",
 			};
@@ -377,7 +379,7 @@ namespace Chimera.Client.GUI
 			_cleanNow = new Button
 			{
 				Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
-				Location = new(margin + (4 * (bw + gap)) + gap, buttonRow),
+				Location = new(margin + (5 * (bw + gap)) + gap, buttonRow),
 				Size = new(bw, UIHelper.ScaleY(26)),
 				Text = "Clean Now",
 			};

@@ -66,6 +66,31 @@ namespace Chimera.Tests.Client.GUI
 			}
 		}
 
+		/// <summary>
+		/// Every button can be seen and pressed, at the window's first size and at
+		/// its smallest: Open Folder once sat under Greenzone budgets....
+		/// </summary>
+		[TestMethod]
+		public void NoButtonCoversAnother()
+		{
+			using CacheManagerForm form = new(() => Three());
+			form.Show();
+			void Check()
+			{
+				var buttons = form.Controls.OfType<System.Windows.Forms.Button>().Where(static b => b.Visible).ToList();
+				for (var i = 0; i < buttons.Count; i++)
+				{
+					for (var j = i + 1; j < buttons.Count; j++)
+					{
+						Assert.IsFalse(buttons[i].Bounds.IntersectsWith(buttons[j].Bounds), $"{buttons[i].Text} and {buttons[j].Text} overlap");
+					}
+				}
+			}
+			Check();
+			form.Size = form.MinimumSize;
+			Check();
+		}
+
 		[TestMethod]
 		public void SelectAllTicksEveryRowThatCanGo()
 		{
