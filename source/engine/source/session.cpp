@@ -101,6 +101,8 @@ struct SessionConfig
 	std::string coreName, systemId, romFile;
 	uint64_t layoutMiB[5] = { 0, 0, 0, 0, 0 };
 	int32_t width = 0, height = 0, virtualWidth = 0, virtualHeight = 0;
+	/* whether the package or its machine gave a virtual size: without one the pixels are square */
+	bool virtualDeclared = false;
 	int32_t vsyncNum = 0, vsyncDen = 0;
 	std::string getBgra, getAudio;
 	int32_t samplesPerFrame = 0, channels = 1;
@@ -265,8 +267,10 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	cfg.height = intOf(video, "height");
 	cfg.virtualWidth = intOf(video, "virtualWidth", cfg.width);
 	cfg.virtualHeight = intOf(video, "virtualHeight", cfg.height);
+	cfg.virtualDeclared = cJSON_GetObjectItemCaseSensitive(video, "virtualWidth") != nullptr;
 	if (machine != nullptr)
 	{
+		if (cJSON_GetObjectItemCaseSensitive(machine, "virtualWidth") != nullptr) cfg.virtualDeclared = true;
 		cfg.virtualWidth = intOf(machine, "virtualWidth", cfg.virtualWidth);
 		cfg.virtualHeight = intOf(machine, "virtualHeight", cfg.virtualHeight);
 	}
@@ -2784,8 +2788,11 @@ const char *ce_session_core_name(const ce_session *s) { return s->cfg.coreName.c
 const char *ce_session_system_id(const ce_session *s) { return s->cfg.systemId.c_str(); }
 int32_t ce_session_width(const ce_session *s) { return s->cfg.width; }
 int32_t ce_session_height(const ce_session *s) { return s->cfg.height; }
-int32_t ce_session_virtual_width(const ce_session *s) { return s->cfg.virtualWidth; }
-int32_t ce_session_virtual_height(const ce_session *s) { return s->cfg.virtualHeight; }
+/* a machine that declares no virtual size has square pixels, so its picture
+ * as it is now is its own shape (a Flash movie's stage), as Chimera's window
+ * has it; the declared buffer is only the largest picture */
+int32_t ce_session_virtual_width(const ce_session *s) { return s->cfg.virtualDeclared || s->vidW <= 0 ? s->cfg.virtualWidth : s->vidW; }
+int32_t ce_session_virtual_height(const ce_session *s) { return s->cfg.virtualDeclared || s->vidH <= 0 ? s->cfg.virtualHeight : s->vidH; }
 
 int32_t ce_session_display_aspect(const ce_session *s, int32_t *x_out, int32_t *y_out)
 {

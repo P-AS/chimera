@@ -21,6 +21,7 @@
 #include <QDir>
 #include <QFile>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlError>
 #include <QQmlContext>
@@ -284,6 +285,10 @@ int main(int argc, char **argv)
 	 * the prototype must not write into Chimera's own folder */
 	QGuiApplication::setApplicationName(QStringLiteral("chimera-qt-prototype"));
 	QQuickStyle::setStyle(QStringLiteral("Fusion"));
+#ifndef _WIN32
+	/* Chimera's icon on every window; on Windows it is the program's own (chimera-qt.rc), at every size */
+	QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/chimera/chimera.png")));
+#endif
 
 	QCommandLineParser args;
 	args.addHelpOption();

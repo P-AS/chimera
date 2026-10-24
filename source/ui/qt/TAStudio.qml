@@ -34,6 +34,8 @@ ApplicationWindow {
     WindowOptions { id: windowOptions; window: tas; tool: "tastudio"; vm: tas.toolWindows; mainWindow: tas.mainWindow }
     // "<< Hide": the main window offers it back
     property bool hiddenByPerson: false
+    // where the last wheel seek with the right button held was going (Chimera's SeekingTo)
+    property int wheelTarget: -1
     title: !tas.session.hasProject ? qsTr("TAStudio")
          : qsTr("TAStudio - %1%2").arg(tas.session.projectTitle).arg(tas.session.unsaved ? "*" : "")
     width: 720
@@ -472,6 +474,13 @@ ApplicationWindow {
                         onRowMenuRequested: (row) => { oneRoll.use(); if (tas.pianoRoll.selectFirst >= 0 && tas.pianoRoll.selectLast < tas.pianoRoll.frameCount) rowMenu.popup() }
                         onCellDragged: (row, column) => tas.pianoRoll.run("drag", [row, column])
                         onFrameClicked: (row) => { oneRoll.use(); tas.session.run("seek", [row]) }
+                        // Chimera's right button held and the wheel turned: a frame back a notch up, on from
+                        // where a seek still under way is going
+                        onWheelSeekRequested: (notches) => {
+                            const from = tas.wheelTarget >= 0 && tas.session.frame !== tas.wheelTarget ? tas.wheelTarget : tas.session.frame
+                            tas.wheelTarget = Math.max(0, from - notches)
+                            tas.session.run("seek", [tas.wheelTarget])
+                        }
                         selectFirst: tas.pianoRoll.selectFirst
                         selectLast: tas.pianoRoll.selectLast
                         // the analog cell being edited: its column is after the buttons

@@ -17,6 +17,9 @@ version_date = sys.argv[6] if len(sys.argv) > 6 else ""
 more_buttons = json.loads(sys.argv[7]) if len(sys.argv) > 7 and sys.argv[7] else []
 # and a core that compiles a game's code before a project is made ("precompile")
 precompile = len(sys.argv) > 8 and sys.argv[8] == "precompile"
+# and a core that declares no virtual size, with room for a wider picture than
+# it draws ("square": its pixels are square, as Ruffle's)
+square = len(sys.argv) > 9 and sys.argv[9] == "square"
 try:
     zin = zipfile.ZipFile(src)
 except OSError:
@@ -38,5 +41,9 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
                 cfg["input"]["buttons"] = cfg["input"]["buttons"] + more_buttons
             if precompile:
                 cfg["precompile"] = True
+            if square:
+                cfg["video"].pop("virtualWidth", None)
+                cfg["video"].pop("virtualHeight", None)
+                cfg["video"]["width"] = 320
             data = json.dumps(cfg, indent=2).encode()
         zout.writestr(info, data)

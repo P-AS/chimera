@@ -1,0 +1,3 @@
+// Chimera's icon, for the program's file and its windows: Qt gives every
+// window the icon named IDI_ICON1 when the program sets none of its own
+IDI_ICON1 ICON "../../gui/Chimera.Client.GUI/images/logo.ico"

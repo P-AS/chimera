@@ -943,6 +943,9 @@ CE_API const char *ce_session_core_name(const ce_session *s);
 CE_API const char *ce_session_system_id(const ce_session *s);
 CE_API int32_t ce_session_width(const ce_session *s);
 CE_API int32_t ce_session_height(const ce_session *s);
+/* The shape the picture is shown at, as a size: the package's or its machine's
+ * declared virtual size, else the picture's own size as it is now (square
+ * pixels; the declared width and height are only the largest picture). */
 CE_API int32_t ce_session_virtual_width(const ce_session *s);
 CE_API int32_t ce_session_virtual_height(const ce_session *s);
 /* The display aspect the machine reports for what it shows NOW, x:y, from the

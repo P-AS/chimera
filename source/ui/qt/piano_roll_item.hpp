@@ -123,6 +123,8 @@ Q_SIGNALS:
 	void cellDragged(qint64 row, int column);
 	/* a press on a row's frame number */
 	void frameClicked(qint64 row);
+	/* the wheel turned with the right button held on a row: Chimera's seek by a frame a notch */
+	void wheelSeekRequested(int notches);
 	/* the frame numbers pressed or dragged over, or Shift-pressed */
 	void selectionRequested(qint64 first, qint64 last);
 	void selectionChanged();
@@ -151,6 +153,10 @@ private:
 	qint64 top_ = 0, current_ = 0;
 	qint64 selectFirst_ = -1, selectLast_ = -1, selectAnchor_ = -1;
 	bool selecting_ = false;
+	/* the right button held on a row: its menu opens when it is let go, unless the wheel turned meanwhile */
+	bool rightHeld_ = false;
+	bool rightWheeled_ = false;
+	qint64 rightRow_ = -1;
 	qint64 pickedRow_ = -1;
 	int pickedColumn_ = -1;
 	int view_ = 0;

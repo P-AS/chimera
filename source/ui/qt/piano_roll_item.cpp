@@ -556,7 +556,9 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 		}
 		if (rows_ != nullptr && at.y() >= hs)
 		{
-			Q_EMIT rowMenuRequested(rowOnLine(static_cast<qint64>((at.y() - hs) / rowHeight_)));
+			rightHeld_ = true;
+			rightWheeled_ = false;
+			rightRow_ = rowOnLine(static_cast<qint64>((at.y() - hs) / rowHeight_));
 			e->accept();
 			return;
 		}
@@ -618,8 +620,15 @@ void PianoRollItem::mouseMoveEvent(QMouseEvent *e)
 	}
 }
 
-void PianoRollItem::mouseReleaseEvent(QMouseEvent *)
+void PianoRollItem::mouseReleaseEvent(QMouseEvent *e)
 {
+	if (e->button() == Qt::RightButton)
+	{
+		/* Chimera's row menu opens on the release, and not after a wheel seek */
+		if (rightHeld_ && !rightWheeled_) Q_EMIT rowMenuRequested(rightRow_);
+		rightHeld_ = false;
+		return;
+	}
 	selecting_ = false;
 	dragColumn_ = -1;
 	dragRow_ = -1;
@@ -628,6 +637,13 @@ void PianoRollItem::mouseReleaseEvent(QMouseEvent *)
 void PianoRollItem::wheelEvent(QWheelEvent *e)
 {
 	const int notches = e->angleDelta().y() / 120;
+	if (rightHeld_)
+	{
+		rightWheeled_ = true;
+		if (notches != 0) Q_EMIT wheelSeekRequested(notches);
+		e->accept();
+		return;
+	}
 	if (notches != 0) Q_EMIT topRowRequested(std::max<qint64>(0, top_ - notches * std::max(1, wheelRows_)));
 	e->accept();
 }

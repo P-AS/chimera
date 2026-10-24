@@ -7910,6 +7910,43 @@ bool coreManager(const char *package, const char *slotsPackage, const char *game
 	return true;
 }
 
+/* a core that declares no virtual size has square pixels: its picture is shown
+ * at its own shape, not at the shape of the largest picture it has room for
+ * (a Flash game was drawn too wide); one that declares one is shown at that */
+bool squarePixels(const char *declared, const char *square, const char *rom)
+{
+	const int before = failures;
+	std::FILE *f = std::fopen(square, "rb");
+	if (f == nullptr || std::fgetc(f) == EOF)
+	{
+		if (f != nullptr) std::fclose(f);
+		std::printf("square pixels: SKIPPED (no package)\n");
+		return true;
+	}
+	std::fclose(f);
+	auto shapeOf = [&](const char *package) {
+		ManualDispatcher d;
+		InputLog inputs;
+		SessionViewModel session(d, inputs);
+		std::string error;
+		session.run("open", {std::string(package), std::string(rom)}, error);
+		d.until([&] { return session.isOpen.get(); }, 60);
+		session.run("frameAdvance", {}, error);
+		Picture::Frame frame;
+		d.until([&] { return session.screen.takeIfNewer(0, frame) && frame.width > 0; }, 20);
+		session.run("close", {}, error);
+		d.until([&] { return !session.isOpen.get(); }, 20);
+		return std::pair<double, int>(frame.aspect, frame.width);
+	};
+	const auto [squareAspect, squareWidth] = shapeOf(square);
+	const auto [declaredAspect, declaredWidth] = shapeOf(declared);
+	std::printf("square pixels: %d wide at %.3f; declared 256x240: %d wide at %.3f\n", squareWidth, squareAspect, declaredWidth, declaredAspect);
+	/* drawn 128x120 in room for 320x120: shown 128:120, not 320:120 */
+	CHECK(squareWidth == 128 && std::abs(squareAspect - 128.0 / 120.0) < 1e-6);
+	CHECK(std::abs(declaredAspect - 256.0 / 240.0) < 1e-6);
+	return failures == before;
+}
+
 int main(int argc, char **argv)
 {
 	signalsAndProperties();
@@ -7991,6 +8028,7 @@ int main(int argc, char **argv)
 			else std::printf("SKIP the Emulator menu: no packages that import movies and are games given\n");
 			if (argc >= 12) ranMachine = firmwareWindow(argv[1], argv[6], argv[11], argv[8]) && ranMachine;
 			if (argc >= 13) ranMachine = compileStep(argv[12], argv[2]) && ranMachine;
+			if (argc >= 14) ranMachine = squarePixels(argv[1], argv[13], argv[2]) && ranMachine;
 			else std::printf("SKIP the compile step: no compiling package given\n");
 			if (argc >= 9) ranMachine = coreManager(argv[1], argv[6], argv[8]) && ranMachine;
 			else std::printf("SKIP the Firmware window: no package with many releases of one firmware given\n");

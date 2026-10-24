@@ -186,11 +186,21 @@ synth_compile = custom_target(
   build_always_stale: true,
   build_by_default: true,
 )
+# a core that declares no virtual size and has room for a wider picture than it
+# draws, as Ruffle's: its picture is shown at its own shape
+synth_square = custom_target(
+  'synth-square',
+  output: 'synth-square.chimeraCore',
+  command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Square', '@OUTPUT@', '', '', '', '', '', 'square'],
+  build_always_stale: true,
+  build_by_default: true,
+)
 test(
   'view models',
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game, synth_bios, synth_compile],
+    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game, synth_bios, synth_compile, synth_square],
   # OpenAL's device that plays to nowhere: the sound check runs with no speakers;
   # the ffmpeg the build ships, for the encode
   # and the headless runner, which compile sessions are
@@ -210,6 +220,8 @@ if qt_dep.found()
   # the resource compiler runs on the build machine; its Qt may pack with
   # zstd, which a Qt built without zstd (the Windows one) cannot unpack
   qt_rcc = qt6.compile_resources(sources: ['qt/ui.qrc'], extra_args: ['--no-zstd'])
+  # Chimera's icon on the program and its windows on Windows
+  qt_icon = host_machine.system() == 'windows' ? import('windows').compile_resources('qt/chimera-qt.rc') : []
   chimera_qt = executable(
     'chimera-qt',
     [
@@ -223,6 +235,7 @@ if qt_dep.found()
       'qt/overlay_painter.cpp',
       qt_moc,
       qt_rcc,
+      qt_icon,
     ],
     dependencies: [vm_dep, qt_dep],
     # the view models have a Signal::emit; Qt's "emit" keyword would eat it

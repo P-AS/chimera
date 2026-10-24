@@ -397,6 +397,11 @@ as each lands here. Parts that wait on a question to the owner say so.
 
 ## Found in the engine on the way
 
+- **A picture's shape when a core declares none** (2026-10-24). The engine
+  answered the largest picture's size as the virtual size, so a Flash game
+  (Ruffle declares none: its pixels are square) was shown too wide. Chimera's
+  window uses the picture as it is now; ce_session_virtual_width and
+  ce_session_virtual_height now say that too. Only the Qt window reads them.
 - A state put back from the greenzone onto a machine far ahead of it can
   keep pages the state does not have (seen 2026-10-23, synthetic core:
   frame 0 put back from frame 30, then saved after a frame, carried two
