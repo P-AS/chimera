@@ -1294,32 +1294,27 @@ bool speedAndSound(const char *package, const char *rom)
 			d.until([] { return false; }, 0.1);
 			return std::make_pair(session.frame.get() - f0, static_cast<int64_t>(serial() - s0));
 		};
-		/* skip 2: one drawn in three */
-		session.autoMinimizeSkipping.set(false);
-		CHECK(session.run("setFrameSkip", {int64_t{2}}, error) == Value(int64_t{2}) && session.status.get() == "Frameskipping set to 2");
+		/* no frame skip (owner, 2026-10-24, as Chimera's is gone): every frame
+		 * run is drawn, at the machine's speed and unthrottled alike */
+		CHECK(!session.run("setFrameSkip", {int64_t{2}}, error).has_value() && !session.get("frameSkip").has_value());
 		auto [frames, drawn] = ran(0.5);
-		std::printf("frame skip 2: %lld frames, %lld drawn\n", static_cast<long long>(frames), static_cast<long long>(drawn));
-		CHECK(frames > 20 && std::llabs(drawn * 3 - frames) <= 3);
-		/* auto-minimized, on time: all drawn */
-		session.autoMinimizeSkipping.set(true);
-		std::tie(frames, drawn) = ran(0.5);
-		std::printf("auto-minimized: %lld frames, %lld drawn\n", static_cast<long long>(frames), static_cast<long long>(drawn));
-		/* a late frame (a busy machine) may go undrawn to catch up */
-		CHECK(frames > 20 && drawn * 4 >= frames * 3);
-		/* unthrottled: one in four */
-		session.run("setFrameSkip", {int64_t{0}}, error);
+		std::printf("running: %lld frames, %lld drawn\n", static_cast<long long>(frames), static_cast<long long>(drawn));
+		CHECK(frames > 20 && drawn == frames);
 		session.unthrottled.set(true);
 		std::tie(frames, drawn) = ran(0.3);
 		session.unthrottled.set(false);
 		std::printf("unthrottled: %lld frames, %lld drawn\n", static_cast<long long>(frames), static_cast<long long>(drawn));
-		CHECK(frames > 200 && std::llabs(drawn * 4 - frames) <= 4);
-		/* fast forward at its own speed, 400%, not as fast as it goes */
+		CHECK(frames > 200 && drawn == frames);
+		/* fast forward at its own speed, 400%, not as fast as it goes, every frame drawn */
 		session.run("play", {}, error);
+		const uint64_t drawnBefore = serial();
 		session.holdFastForward(true);
 		const int64_t from = session.frame.get();
 		d.until([] { return false; }, 1.0);
 		const int64_t fast = session.frame.get() - from;
 		session.holdFastForward(false);
+		const int64_t fastDrawn = static_cast<int64_t>(serial() - drawnBefore);
+		CHECK(fastDrawn >= fast);
 		session.run("pause", {}, error);
 		CHECK(d.until([&] { return !session.running.get(); }, 5));
 		std::printf("fast forward: %lld frames in a second\n", static_cast<long long>(fast));

@@ -847,8 +847,6 @@ int main(int argc, char **argv)
 	config.keep(session, "pictureSettleFrames");
 	for (const char *name : {"soundDevice", "soundBufferMs", "soundNormalOn", "soundFastOn", "fastVolume", "muteFrameAdvance"})
 		config.keep(session, name);
-	config.keep(session, "frameSkip");
-	config.keep(session, "autoMinimizeSkipping");
 	config.keep(session, "displayNothing");
 	config.keep(session, "acceptBackgroundInput");
 	/* the window in front or not: a gamepad is heard behind other windows only when asked */

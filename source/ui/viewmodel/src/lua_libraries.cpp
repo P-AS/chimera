@@ -184,7 +184,6 @@ function emu.getregister(name) return emu.getregisters()[name] end
 function emu.setregister(name, value) C.debugger.setRegisterNamed(name, value) end
 function emu.totalexecutedcycles() C.debugger.refresh() return C.debugger.cycles end
 function emu.limitframerate(on) C.session.unthrottled = not on end
-function emu.minimizeframeskip(on) C.session.autoMinimizeSkipping = on end
 function emu.displayvsync() end
 function emu.setrenderplanes() end
 function emu.disassemble() error("emu.disassemble: the cores here offer no disassembly") end
@@ -678,7 +677,6 @@ function client.ispaused() return not C.session.running end
 function client.isturbo() return false end
 function client.isseeking() return false end
 function client.speedmode(percent) C.session.speedPercent = percent end
-function client.frameskip(n) C.session.setFrameSkip(n) end
 function client.reboot_core() C.session.restart() end
 function client.closerom() C.session.close() end
 function client.openrom(path) C.session.openGame(path) end

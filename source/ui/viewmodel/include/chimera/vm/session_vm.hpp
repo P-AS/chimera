@@ -117,8 +117,6 @@ public:
 	 * frame advanced by hand when that is muted */
 	static int64_t frameVolume(bool soundOn, int64_t volume, bool fast, bool fastOn, int64_t fastVolume, bool advanced,
 		bool muteAdvance);
-	Property<int64_t> frameSkip{0};
-	Property<bool> autoMinimizeSkipping{true};
 	/* Chimera's Skip Lag Frames: a frame advance that lands after a lag
 	 * frame runs on until one that is not (remembered) */
 	Property<bool> skipLagFrames{false};
@@ -184,7 +182,7 @@ public:
 	 * into a picture; false when there is none */
 	Property<std::string> surfaces{"[]"};
 	bool renderSurface(int32_t index, Picture &into);
-	/* while recording, every frame is drawn, whatever turbo, frame skip and Display Nothing say */
+	/* while recording, every frame is drawn, whatever turbo and Display Nothing say */
 	void setRecording(bool on) { recordingM_ = on; }
 	Property<bool> showGameTime{false};
 	Property<std::string> gameTimeText;
@@ -742,11 +740,7 @@ private:
 	void closeOnMachine();
 	/* a frame run as the window runs it: drawn unless turbo or Display
 	 * Nothing says not; its lag (1), or not (0), or below 0 when it failed */
-	int32_t advanceOnMachine(bool skipDrawing = false);
-	/* Chimera's throttle's frame skip: whether the frame about to run is
-	 * left undrawn (its Throttle.Step) */
-	bool skipNextOnMachine();
-	int64_t framesToSkip_ = 0, lastSkipRate_ = 0;
+	int32_t advanceOnMachine();
 	/* one frame: `live` takes the keys and pads held and plays the sound
 	 * (a replay does neither); `render` makes the picture. The lag result. */
 	/* runs one frame; grow false: a frame past the movie's end is not
@@ -889,8 +883,8 @@ private:
 	int64_t greenEndM_ = 0;
 	/* the frame just run was a lag frame (the machine's thread) */
 	bool lastLagM_ = false;
-	std::atomic<int64_t> speedM_{100}, volumeM_{100}, fastSpeedM_{400}, frameSkipM_{0};
-	std::atomic<bool> autoMinimizeM_{true}, soundNormalOnM_{true}, soundFastOnM_{true}, muteAdvanceM_{true}, steppingM_{false};
+	std::atomic<int64_t> speedM_{100}, volumeM_{100}, fastSpeedM_{400};
+	std::atomic<bool> soundNormalOnM_{true}, soundFastOnM_{true}, muteAdvanceM_{true}, steppingM_{false};
 	std::atomic<bool> recordingM_{false};
 	std::atomic<int64_t> fastVolumeM_{50}, budgetMbM_{4096}, nearStrideM_{4}, pictureSettleM_{3};
 	/* a project's own budgets, from budgets.json in its cache folder: 0 for none */
@@ -909,7 +903,7 @@ private:
 	/* the sound opened again on the device and buffer asked for; the devices said */
 	void reopenSoundOnMachine();
 	Connection soundDeviceWatch_, soundBufferWatch_, soundNormalWatch_, soundFastWatch_, muteAdvanceWatch_, fastVolumeWatch_;
-	Connection fastSpeedWatch_, frameSkipWatch_, autoMinimizeWatch_;
+	Connection fastSpeedWatch_;
 	std::atomic<bool> unthrottledM_{false}, soundOnM_{true}, turboM_{false}, skipLagM_{false}, displayNothingM_{false},
 		padsHeardM_{true};
 	bool turboHeld_ = false;

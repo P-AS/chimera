@@ -349,26 +349,10 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("compileCacheRoot", "where cores that compile their machine's code keep it, a folder a game", compileCacheRoot, true);
 	expose("compileCacheDir", "the open machine's compile cache folder, \"\" for none", compileCacheDir);
 	compileRootWatch_ = compileCacheRoot.changed.connect([this] { submit([this, r = compileCacheRoot.get()] { compileRootM_ = r; }); });
-	expose("frameSkip", "frames left undrawn while running, 0 to 9 of every one drawn (Chimera's frame skip)", frameSkip, true);
-	expose("autoMinimizeSkipping", "frames are left undrawn only when the machine is behind (Chimera's auto-minimize "
-		"skipping)", autoMinimizeSkipping, true);
 	fastSpeedWatch_ = fastForwardPercent.changed.connect([this] {
 		if (fastForwardPercent.get() < 1 || fastForwardPercent.get() > 6400) fastForwardPercent.set(std::clamp<int64_t>(fastForwardPercent.get(), 1, 6400));
 		fastSpeedM_ = fastForwardPercent.get();
 	});
-	frameSkipWatch_ = frameSkip.changed.connect([this] {
-		if (frameSkip.get() < 0 || frameSkip.get() > 9) frameSkip.set(std::clamp<int64_t>(frameSkip.get(), 0, 9));
-		frameSkipM_ = frameSkip.get();
-	});
-	autoMinimizeWatch_ = autoMinimizeSkipping.changed.connect([this] { autoMinimizeM_ = autoMinimizeSkipping.get(); });
-	command("setFrameSkip", "frames left undrawn while running, 0 to 9 of every one drawn; says so", {"frames"},
-		[this](const Args &a, std::string &error) -> Value {
-			int64_t n = 0;
-			if (!arg(a, 0, n, error)) return {};
-			frameSkip.set(n);
-			status.set("Frameskipping set to " + std::to_string(frameSkip.get()));
-			return frameSkip.get();
-		});
 	expose("skipLagFrames", "a frame advance that lands after a lag frame runs on until one that is not (Chimera's Skip Lag "
 		"Frames)", skipLagFrames, true);
 	expose("displayNothing", "the frames are run without being drawn; the speed goes to the window's title (Chimera's "
@@ -1802,7 +1786,7 @@ void SessionViewModel::loop()
 		if (advance)
 		{
 			passOnMachine(1, false, false);
-			advanceOnMachine(skipNextOnMachine());
+			advanceOnMachine();
 			/* turbo or unthrottled: the next frame at once; fast forward at
 			 * its own speed; else at the speed asked for */
 			const int64_t percent = fastM_ ? fastSpeedM_.load() : speedM_.load();
@@ -4496,45 +4480,7 @@ void SessionViewModel::reopenSoundOnMachine()
 	later([this, text] { sound.set(text); });
 }
 
-bool SessionViewModel::skipNextOnMachine()
-{
-	/* Chimera's Throttle.Step, as its menu says it: a frame drawn, then
-	 * "skip N" frames undrawn; unthrottled, three. (Chimera's own counter
-	 * leaves N-1 of every N undrawn, and auto-minimized it runs below zero
-	 * while on time and then skips nothing until a pause.) */
-	const bool free = unthrottledM_.load() || turboM_.load();
-	const int64_t rate = free ? 3 : frameSkipM_.load();
-	if (rate != lastSkipRate_)
-	{
-		lastSkipRate_ = rate;
-		framesToSkip_ = 0;
-	}
-	/* never while frame advance runs on (precision work), unless unthrottled */
-	if (holdRunning_ && !free)
-	{
-		framesToSkip_ = 0;
-		return false;
-	}
-	if (framesToSkip_ > 0)
-	{
-		framesToSkip_--;
-		return true;
-	}
-	/* this one is drawn; then how many go undrawn */
-	if (free || !autoMinimizeM_.load())
-		framesToSkip_ = rate;
-	else
-	{
-		/* auto-minimized: only to catch up, as many as the machine is
-		 * behind, the frame skip at most */
-		const auto late = Clock::now() - due_;
-		const int64_t behind = late > period_ ? static_cast<int64_t>(late / period_) : 0;
-		framesToSkip_ = std::min(behind, rate);
-	}
-	return false;
-}
-
-int32_t SessionViewModel::advanceOnMachine(bool skipDrawing)
+int32_t SessionViewModel::advanceOnMachine()
 {
 	/* the scripts' turn before the frame: what they hold now is this frame's.
 	 * A script's call may close the machine; then there is no frame */
@@ -4543,9 +4489,10 @@ int32_t SessionViewModel::advanceOnMachine(bool skipDrawing)
 	if (s_ == nullptr || s_ != was) return -1;
 	const int64_t f = ce_session_frame(s_);
 	const int64_t size = ce_session_movie_length(s_);
-	/* turbo, Display Nothing and the frame skip run the frame without drawing
+	/* turbo and Display Nothing run the frame without drawing (there is no
+	 * frame skip: owner, 2026-10-24, as Chimera's is gone)
 	 * it - unless it is being recorded */
-	const int32_t lag = stepOnMachine(true, recordingM_.load() || (!turboM_.load() && !displayNothingM_.load() && !skipDrawing));
+	const int32_t lag = stepOnMachine(true, recordingM_.load() || (!turboM_.load() && !displayNothingM_.load()));
 	/* past the end the movie grew: the project has a change */
 	if (f >= size && !unsavedM_.exchange(true)) later([this] { markChanged(); });
 	/* TAStudio's "automatically pause at end of movie": the frame the movie

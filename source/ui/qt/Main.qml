@@ -459,24 +459,6 @@ ApplicationWindow {
                         text: qsTr("Unthrottled"); checkable: true; checked: root.session.unthrottled
                         onTriggered: root.session.unthrottled = checked
                     }
-                    Action { text: qsTr("Auto-minimize skipping"); checkable: true; checked: root.session.autoMinimizeSkipping; onTriggered: root.session.autoMinimizeSkipping = checked }
-                    Action { text: qsTr("Skip 0 (never)"); checkable: true; checked: root.session.frameSkip === 0; onTriggered: root.session.run("setFrameSkip", [0]) }
-                    Menu {
-                        id: frameSkipMenu
-                        title: qsTr("Skip 1..9")
-                        Instantiator {
-                            model: 9
-                            delegate: MenuItem {
-                                required property int index
-                                text: String(index + 1)
-                                checkable: true
-                                checked: root.session.frameSkip === index + 1
-                                onTriggered: root.session.run("setFrameSkip", [index + 1])
-                            }
-                            onObjectAdded: (index, object) => frameSkipMenu.insertItem(index, object)
-                            onObjectRemoved: (index, object) => frameSkipMenu.removeItem(object)
-                        }
-                    }
                     MenuSeparator {}
                     Action { text: qsTr("Speed 50%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 50; onTriggered: root.session.speedPercent = 50 }
                     Action { text: qsTr("Speed 75%"); enabled: root.session.throttle === "clock"; checkable: true; checked: root.session.speedPercent === 75; onTriggered: root.session.speedPercent = 75 }
