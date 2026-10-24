@@ -455,7 +455,7 @@ namespace Chimera.Client.GUI
 					if (row.Tag is CacheItem item && item.Path == wasSelected) { row.Selected = true; break; }
 				}
 			}
-			if (_list.SelectedItems.Count is 0 && _list.Items.Count > 0) _list.Items[0].Selected = true;
+			if (_list.SelectedItems.Count is 0 && _list.Items.Count > 0) (FirstPick() ?? _list.Items[0]).Selected = true;
 			ShowSelected();
 			UpdateButtons();
 		}
@@ -577,6 +577,24 @@ namespace Chimera.Client.GUI
 
 		private CacheItem? Selected()
 			=> _list.SelectedItems.Count is 0 ? null : _list.SelectedItems[0].Tag as CacheItem;
+
+		/// <summary>
+		/// The row picked when none is: the project open now, else the project used
+		/// most recently. Greenzone budgets... works on the picked project, and the
+		/// first row - the largest, as the list is sorted at first - named a project
+		/// nobody was working on (issue 369).
+		/// </summary>
+		private ListViewItem? FirstPick()
+		{
+			ListViewItem? newest = null;
+			foreach (ListViewItem row in _list.Items)
+			{
+				if (row.Tag is not CacheItem { Kind: CacheKind.Project } item) continue;
+				if (item.InUse) return row;
+				if (newest is null || item.LastUsed > ((CacheItem) newest.Tag).LastUsed) newest = row;
+			}
+			return newest;
+		}
 
 		/// <summary>The selected row when it is a project, which is the only kind that has budgets.</summary>
 		private CacheItem? SelectedProject()
@@ -849,6 +867,9 @@ namespace Chimera.Client.GUI
 
 		/// <summary>Ticks or clears "Select all", as a person would. For tests.</summary>
 		public void SelectAllForTest(bool ticked) => _selectAll.Checked = ticked;
+
+		/// <summary>Presses Greenzone budgets..., as a person would. For tests.</summary>
+		public void PressBudgets() => _budgets.PerformClick();
 
 		/// <summary>Ticks every orphaned row, as the button does. For tests and screenshots.</summary>
 		public void TickOrphans() => SelectOrphans();

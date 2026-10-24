@@ -160,6 +160,12 @@ project's greenzone rather than in its `.chimeraProject`, because a budget is a
 fact about the machine the work is being done on and the project file is the one
 thing that gets handed to somebody else.
 
+The "Greenzone budgets..." button sets the budget of the project picked in the
+list (its name is in the window's title), besides the default. When the window
+opens, the project picked is the one open now, or else the one used most
+recently - not the first row, which is the largest, and which once named a
+project nobody was working on (issue 369).
+
 It is not a reservation, and it is not a promise the machine has to keep:
 running out halves it and carries on (docs/state-manager.md).
 
