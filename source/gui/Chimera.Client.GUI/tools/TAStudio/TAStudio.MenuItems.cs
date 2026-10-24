@@ -319,28 +319,39 @@ namespace Chimera.Client.GUI
 			if (this.ShowDialogWithTempMute(dialog).IsOk()) GoToFrame(int.Parse(dialog.PromptText));
 		}
 
+		/// <summary>
+		/// The frames picked, put on the clipboard as their lines (each after its
+		/// frame number when "Include frame numbers when copying input" is on) and
+		/// recorded for Reselect Clipboard. Copy and Cut both; returns the frames.
+		/// </summary>
+		private int[] CopySelection()
+		{
+			_tasClipboard.Clear();
+			var list = GetSelection().ToArray();
+			var sb = new StringBuilder();
+
+			foreach (var index in list)
+			{
+				var input = CurrentTasMovie.GetInputState(index);
+				if (input == null)
+				{
+					break;
+				}
+
+				_tasClipboard.Add(new TasClipboardEntry(index, input));
+				var logEntry = LogEntryGenerator.GenerateLogEntry(input);
+				sb.AppendLine(Settings.CopyIncludesFrameNo ? $"{FrameToStringPadded(index)} {logEntry}" : logEntry);
+			}
+
+			Clipboard.SetDataObject(sb.ToString());
+			return list;
+		}
+
 		private void CopyMenuItem_Click(object sender, EventArgs e)
 		{
 			if (AnyRowsSelected)
 			{
-				_tasClipboard.Clear();
-				var list = GetSelection().ToArray();
-				var sb = new StringBuilder();
-
-				foreach (var index in list)
-				{
-					var input = CurrentTasMovie.GetInputState(index);
-					if (input == null)
-					{
-						break;
-					}
-
-					_tasClipboard.Add(new TasClipboardEntry(index, input));
-					var logEntry = LogEntryGenerator.GenerateLogEntry(input);
-					sb.AppendLine(Settings.CopyIncludesFrameNo ? $"{FrameToStringPadded(index)} {logEntry}" : logEntry);
-				}
-
-				Clipboard.SetDataObject(sb.ToString());
+				CopySelection();
 				SetSplicer();
 			}
 		}
@@ -350,23 +361,6 @@ namespace Chimera.Client.GUI
 			// TODO: if highlighting 2 rows and pasting 3, only paste 2 of them
 			// FCEUX Taseditor doesn't do this, but I think it is the expected behavior in editor programs
 			MaybePasteFromClipboard(overwriteSelection: true);
-		}
-
-		/// <summary>
-		/// A pasted line without the frame number Copy puts in front of it when
-		/// "Include frame numbers when copying input" is on ("00002 |..U.....|").
-		/// Read with it, the digits were taken for buttons held.
-		/// </summary>
-		public static string WithoutFrameNumber(string line)
-		{
-			var i = 0;
-			while (i < line.Length && char.IsWhiteSpace(line[i])) i++;
-			var digits = i;
-			while (i < line.Length && char.IsDigit(line[i])) i++;
-			if (i == digits) return line;
-			var afterDigits = i;
-			while (i < line.Length && line[i] == ' ') i++;
-			return i > afterDigits && i < line.Length && line[i] == '|' ? line.Substring(i) : line;
 		}
 
 		private void PasteInsertMenuItem_Click(object sender, EventArgs e)
@@ -383,12 +377,18 @@ namespace Chimera.Client.GUI
 			if (lines.Length is 0) return;
 
 			var selectionStart = FirstSelectedRowIndex;
-			_tasClipboard.Clear();
+			// Every line is read before anything changes: a line that cannot be read
+			// stops the paste, and leaves the last Copy's record for Reselect Clipboard
+			// as it was. A frame number in front of a line (Copy with "Include frame
+			// numbers when copying input") is dropped by the reader; the lines are
+			// pasted one after another from the first frame picked, whatever the
+			// numbers say.
+			List<TasClipboardEntry> pasted = new();
 			int linesToPaste = lines.Length;
 			if (lines[lines.Length - 1].Length is 0) linesToPaste--;
 			for (int i = 0; i < linesToPaste; i++)
 			{
-				var line = ControllerFromMnemonicStr(WithoutFrameNumber(lines[i]));
+				var line = ControllerFromMnemonicStr(lines[i]);
 				if (line == null)
 				{
 					return;
@@ -396,8 +396,10 @@ namespace Chimera.Client.GUI
 
 				// remove inputs not in _visibleDefintion
 				// the frame it lands on, as Copy records it: Reselect Clipboard selects these
-				_tasClipboard.Add(new TasClipboardEntry(selectionStart + i, line));
+				pasted.Add(new TasClipboardEntry(selectionStart + i, line));
 			}
+			_tasClipboard.Clear();
+			_tasClipboard.AddRange(pasted);
 
 			var inputStates = _tasClipboard.Select(static x => x.ControllerState);
 			if (overwriteSelection) CurrentTasMovie.CopyOverInput(selectionStart, inputStates);
@@ -408,23 +410,7 @@ namespace Chimera.Client.GUI
 		{
 			if (AnyRowsSelected)
 			{
-				_tasClipboard.Clear();
-				var list = GetSelection().ToArray();
-				var sb = new StringBuilder();
-
-				foreach (var index in list) // copy of CopyMenuItem_Click()
-				{
-					var input = CurrentTasMovie.GetInputState(index);
-					if (input == null)
-					{
-						break;
-					}
-
-					_tasClipboard.Add(new TasClipboardEntry(index, input));
-					sb.AppendLine(LogEntryGenerator.GenerateLogEntry(input));
-				}
-
-				Clipboard.SetDataObject(sb.ToString());
+				var list = CopySelection();
 				CurrentTasMovie.RemoveFrames(list);
 				SetSplicer();
 			}

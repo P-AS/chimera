@@ -53,9 +53,28 @@ namespace Chimera.Client.Common
 			}
 		}
 
+		/// <summary>
+		/// A line as it is read: from its first '|'. TAStudio's Copy writes the frame
+		/// number in front when "Include frame numbers when copying input" is on
+		/// ("00002 |..U.....|"), and an editor may indent a line or turn the gap into
+		/// a tab; read with them, the digits and spaces were taken for buttons held.
+		/// Only whitespace and the digits 0-9 before the first '|' are dropped:
+		/// anything else is left for the reader to refuse.
+		/// </summary>
+		internal static string WithoutFrameNumber(string line)
+		{
+			if (line.Length is 0 || line[0] == '|') return line;
+			var i = 0;
+			while (i < line.Length && char.IsWhiteSpace(line[i])) i++;
+			while (i < line.Length && line[i] is >= '0' and <= '9') i++;
+			while (i < line.Length && char.IsWhiteSpace(line[i])) i++;
+			return i < line.Length && line[i] == '|' ? line.Substring(i) : line;
+		}
+
 		public void SetFromMnemonic(string mnemonic)
 		{
 			if (string.IsNullOrWhiteSpace(mnemonic)) return;
+			mnemonic = WithoutFrameNumber(mnemonic);
 			var iterator = 0;
 
 			foreach (var playerControls in Definition.ControlsOrdered)

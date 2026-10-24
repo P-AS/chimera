@@ -11047,3 +11047,19 @@ first question put to the owner said otherwise, and was asked again.)
 Tests: ThrottleTests (unthrottled draws one frame in the number chosen, throttled
 running draws every frame, a slow frame leaves the timetable alone); the first
 failed with the unthrottled rule taken out.
+
+## An input line is read from its first bar (2026-10-24)
+
+TAStudio's Copy writes each frame's line after its frame number when "Include
+frame numbers when copying input" is on ("00002 |..U.....|"), and Paste read
+the digits as buttons held. Every reader of a line now reads it from its first
+'|' (MovieController.SetFromMnemonic): whitespace and the digits 0-9 in front
+are dropped, and anything else in front is left for the reader to refuse. So a
+numbered line, one whose number is followed by a tab or by nothing, and an
+indented one paste as the line - and so does such a line given to Lua's
+joypad.setfrommnemonicstr. Paste puts the lines one after another from the
+first frame picked, whatever the numbers say; a line that cannot be read stops
+the paste and leaves the last Copy's record (Reselect Clipboard) as it was. Cut
+writes the frame numbers as Copy does. Found in review of the first fix
+(630186d), which only handled a number followed by spaces, in TAStudio alone.
+Test: MnemonicLineTests (failed with the reader's change taken out).
