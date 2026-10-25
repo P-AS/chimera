@@ -687,6 +687,53 @@ void keyPriority()
 	CHECK(hotkeys.run("cycleKeyPriority", {}, error) == Value(int64_t{1}));
 }
 
+/* Customize's Merge L+R modifier keys: when it changes, Chimera's rewrite
+ * of the keys bound turns each side's name into the kind's, or the kind's
+ * into the left's, in every key of a list and part of a combination, for
+ * the hotkeys and every core's controls remembered */
+void modifierRewrite()
+{
+	const auto merge = CustomizeViewModel::modifierKeys(true), separate = CustomizeViewModel::modifierKeys(false);
+	CHECK(replaceKeyNames("LeftShift", merge) == "Shift");
+	/* both sides one: once; the spaces as they were */
+	CHECK(replaceKeyNames("Shift, LeftShift, RightShift, Z", merge) == "Shift, Z");
+	CHECK(replaceKeyNames("LeftCtrl+S,RightAlt+X1 A", merge) == "Ctrl+S,Alt+X1 A");
+	CHECK(replaceKeyNames("Shift+F1", separate) == "LeftShift+F1");
+	CHECK(replaceKeyNames("Ctrl+Alt+Shift+X, Z", separate) == "LeftCtrl+LeftAlt+LeftShift+X, Z");
+	CHECK(replaceKeyNames("LeftWin, J1 B1", merge) == "LeftWin, J1 B1");
+	CHECK(replaceKeyNames("", merge).empty());
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	CustomizeViewModel customize(d, session);
+	CHECK(customize.mergeModifiers.get() && !customize.alternateLayouts.get());
+	std::string error;
+	const Value names = customize.run("modifierKeys", {Value(false)}, error).value_or(Value());
+	CHECK(error.empty() && names == Value(std::string(R"({"Alt": "LeftAlt", "Ctrl": "LeftCtrl", "Shift": "LeftShift"})")));
+	/* the hotkeys: what differs from Chimera's is remembered */
+	HotkeysViewModel hotkeys(d);
+	hotkeys.add("Save States", "Save State 1", "Shift+F1", [](bool) {});
+	hotkeys.add("General", "Pause", "Pause", [](bool) {});
+	hotkeys.run("replaceKeys", {names}, error);
+	CHECK(error.empty() && hotkeys.saved.get() == R"({"Save State 1": "LeftShift+F1"})");
+	CHECK(hotkeys.boundTo("LeftShift+F1") && !hotkeys.boundTo("Shift+F1"));
+	const Value merging = customize.run("modifierKeys", {Value(true)}, error).value_or(Value());
+	hotkeys.run("replaceKeys", {merging}, error);
+	CHECK(error.empty() && hotkeys.saved.get() == "{}" && hotkeys.boundTo("Shift+F1"));
+	/* every core's controls remembered, with no machine open */
+	ControlsViewModel controls(d, session);
+	controls.saved.set(R"({"Synth":{"P1 A":"LeftShift, Z"},"Other":{"P1 B":"RightCtrl+X"}})");
+	controls.savedAutofire.set(R"({"Synth":{"P1 A":"RightShift"}})");
+	controls.savedAnalog.set(R"({"Synth":{"P1 Stick X":{"Value":"","Mult":1.0,"Deadzone":0.1,"ButtonBindPositive":"RightAlt","ButtonBindNegative":"Left"}}})");
+	controls.run("replaceKeys", {merging}, error);
+	CHECK(error.empty());
+	CHECK(controls.saved.get() == R"({"Synth": {"P1 A": "Shift, Z"}, "Other": {"P1 B": "Ctrl+X"}})");
+	CHECK(controls.savedAutofire.get() == R"({"Synth": {"P1 A": "Shift"}})");
+	CHECK(controls.savedAnalog.get().find(R"("ButtonBindPositive": "Alt", "ButtonBindNegative": "Left")") != std::string::npos);
+	controls.run("replaceKeys", {Value(std::string("[1]"))}, error);
+	CHECK(!error.empty());
+}
+
 /* Chimera's Messages window: each thing over the picture at a corner and a
  * distance, Chimera's places at first; the four colours; how long a
  * message stays; a remembered value missing a place gains it */
@@ -8829,6 +8876,7 @@ int main(int argc, char **argv)
 	settingTypes();
 	luaForAgent();
 	keyPriority();
+	modifierRewrite();
 	messagesConfig();
 	displayFit();
 	pathsConfig();

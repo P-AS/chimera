@@ -14,11 +14,19 @@
  * - luaDuringTurbo: scripts are run while turbo is held.
  * - showContextMenu: a right click on the picture opens the window's menu
  *   (Chimera's Enable Context Menu).
+ * - alternateLayouts: a key is named by what the keyboard's layout makes it
+ *   rather than by its place, on Windows (Chimera's Handle alternate
+ *   keyboard layouts); keys are named by place on the others, as Chimera's.
+ * - mergeModifiers: both Shift keys are "Shift", rather than "LeftShift"
+ *   and "RightShift", likewise Ctrl and Alt (Chimera's Merge L+R modifier
+ *   keys). Changing it can rewrite the keys bound (modifierKeys).
  * The frame advance skipping lag frames and background input are the
  * session's (skipLagFrames, acceptBackgroundInput). */
 
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <string>
 
 #include "chimera/vm/session_vm.hpp"
 #include "chimera/vm/view_model.hpp"
@@ -31,6 +39,14 @@ public:
 	CustomizeViewModel(Dispatcher &dispatcher, SessionViewModel &session);
 
 	Property<bool> startPaused{false}, startFullscreen{false}, neverAskSave{false}, luaDuringTurbo{true}, showContextMenu{true};
+	Property<bool> alternateLayouts{false}, mergeModifiers{true};
+
+	/* Chimera's rewrite of the keys bound when mergeModifiers changes
+	 * (ConfigExtensions.ReplaceKeysInBindings with Input.ModifierKeyPreMap or
+	 * ModifierKeyInvPreMap): merging, each side's name becomes the kind's
+	 * ("LeftShift" and "RightShift" "Shift"); separating, the kind's becomes
+	 * the left's. Super's are left out: no key is named so. */
+	static std::map<std::string, std::string> modifierKeys(bool merging);
 
 	/* whether a script is to be run for the frame now: not while turbo is
 	 * held, unless asked */

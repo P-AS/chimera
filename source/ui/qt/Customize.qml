@@ -1,18 +1,17 @@
 // Chimera's Customize window (Config > Customize), laid out as Chimera's
 // GuiOptions: General (the context menu, the save prompts, listening in
-// the background, Startup Options) and Advanced
+// the background, Startup Options, how keys are named) and Advanced
 // (lag frames, Lua when turboing, Key Priority). The boxes are a copy: OK
 // keeps them, Cancel lets them go. Layout and bindings only, over the
 // customize view model and the session's and hotkeys' switches.
 //
-// Not here, as the prototype has no such thing: Chimera's alternate
-// keyboard layouts and merged modifier keys (Qt names keys by the layout,
-// and Shift, Ctrl and Alt always arrive merged), the GameCube adapter,
-// and single instance mode. Run in background and Pause when menu
+// Not here, as the prototype has no such thing: the GameCube adapter and
+// single instance mode. Run in background and Pause when menu
 // activated are gone, as from Chimera (owner, 2026-10-24): nothing pauses
 // the machine but the person, whatever window is in front or menu open.
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 
 ApplicationWindow {
@@ -21,6 +20,7 @@ ApplicationWindow {
     required property QtObject vm
     required property QtObject session
     required property QtObject hotkeys
+    required property QtObject controls
     property Window mainWindow: null
     title: qsTr("Customization Options")
     // Chimera's is 418 wide for its 8-point font; wide enough here for the longest line
@@ -37,7 +37,8 @@ ApplicationWindow {
             showContextMenu: win.vm.showContextMenu, neverAskSave: win.vm.neverAskSave,
             acceptBackgroundInput: win.session.acceptBackgroundInput, startPaused: win.vm.startPaused,
             startFullscreen: win.vm.startFullscreen, skipLagFrames: win.session.skipLagFrames,
-            luaDuringTurbo: win.vm.luaDuringTurbo, noMixedPriority: win.hotkeys.noMixedPriority
+            luaDuringTurbo: win.vm.luaDuringTurbo, noMixedPriority: win.hotkeys.noMixedPriority,
+            alternateLayouts: win.vm.alternateLayouts, mergeModifiers: win.vm.mergeModifiers
         }
     }
     function pick(name, value) {
@@ -55,6 +56,33 @@ ApplicationWindow {
         win.session.skipLagFrames = p.skipLagFrames
         win.vm.luaDuringTurbo = p.luaDuringTurbo
         win.hotkeys.noMixedPriority = p.noMixedPriority
+        win.vm.alternateLayouts = p.alternateLayouts
+        win.vm.mergeModifiers = p.mergeModifiers
+    }
+    // OK, as Chimera's: a change to merging the modifier keys first asks
+    // whether the keys bound are rewritten for it (Cancel keeps the window open)
+    function ok() {
+        if (win.picked.mergeModifiers !== win.vm.mergeModifiers) { rewriteAsk.open(); return }
+        win.keep()
+        win.close()
+    }
+    MessageDialog {
+        id: rewriteAsk
+        title: qsTr("Rewrite keybinds now?")
+        text: qsTr("Would you like to replace %1,\nand the same for the other modifier keys,\nin existing keybinds for hotkeys and all systems' gamepads?")
+            .arg(win.picked.mergeModifiers ? qsTr("LShift and RShift with Shift") : qsTr("Shift with LShift"))
+        buttons: MessageDialog.Yes | MessageDialog.No | MessageDialog.Cancel
+        onButtonClicked: (button, role) => {
+            if (button === MessageDialog.Cancel) return
+            const merging = win.picked.mergeModifiers
+            win.keep()
+            if (button === MessageDialog.Yes) {
+                const names = win.vm.run("modifierKeys", [merging])
+                win.hotkeys.run("replaceKeys", [names])
+                win.controls.run("replaceKeys", [names])
+            }
+            win.close()
+        }
     }
 
     component Box: CheckBox {
@@ -99,6 +127,8 @@ ApplicationWindow {
                         }
                     }
                     Note { text: qsTr("\"Eavesdrops\" on keyboard and gamepad input while other programs are focused.") }
+                    Box { setting: "alternateLayouts"; text: qsTr("Handle alternate keyboard layouts (e.g. Dvorak) [experimental]"); Layout.topMargin: 8 }
+                    Box { setting: "mergeModifiers"; text: qsTr("Merge L+R modifier keys e.g. Shift instead of LShift and RShift") }
                     GroupBox {
                         title: qsTr("Startup Options")
                         Layout.fillWidth: true
@@ -123,7 +153,7 @@ ApplicationWindow {
         }
         RowLayout {
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("&OK"); onClicked: { win.keep(); win.close() } }
+            Button { text: qsTr("&OK"); onClicked: win.ok() }
             Button { text: qsTr("&Cancel"); onClicked: win.close() }
         }
     }

@@ -1,5 +1,7 @@
 #include "chimera/vm/controls_vm.hpp"
 
+#include <map>
+
 #include <algorithm>
 #include <cmath>
 #include <regex>
@@ -287,49 +289,46 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		});
 	command("save", "the copy given to the machine, and what differs from the package remembered for this core", {},
 		[this](const Args &, std::string &) -> Value {
-			if (!editing.get()) return {};
-			const std::vector<std::string> &names = session_.buttonNames();
-			auto keep = [&](Property<std::string> &prop, const std::vector<std::string> &now, const std::vector<std::string> &theirs) {
+			if (editing.get()) keep();
+			return {};
+		});
+	command("replaceKeys", "Chimera's rewrite of the keys bound when Merge L+R modifier keys changes: the key names the "
+		"object names replaced ({\"LeftShift\": \"Shift\"}) in every core's controls remembered and the machine's now "
+		"(kept), or in the copy when it is open (kept by Save)", {"names"}, [this](const Args &a, std::string &error) -> Value {
+			std::string text;
+			std::map<std::string, std::string> names;
+			if (!arg(a, 0, text, error) || !keyNamesFrom(text, names, error)) return {};
+			/* every core's remembered keys */
+			auto rewrite = [&](Property<std::string> &prop, bool analog) {
 				Json all = parsedObject(prop.get());
-				Json mine = all.find(core.get()) != nullptr ? *all.find(core.get()) : Json();
-				if (mine.kind != Json::Kind::Object) mine = parsedObject("{}");
-				for (size_t b = 0; b < names.size(); b++)
-				{
-					const std::string &k = b < now.size() ? now[b] : std::string(), &p = b < theirs.size() ? theirs[b] : std::string();
-					if (k == p) removeMember(mine, names[b]);
-					else setMember(mine, names[b], Json::string(k));
-				}
-				if (mine.members.empty()) removeMember(all, core.get());
-				else setMember(all, core.get(), mine);
+				for (auto &[name, mine] : all.members)
+					for (auto &[control, keys] : mine.members)
+					{
+						if (!analog && keys.kind == Json::Kind::String) keys.text = replaceKeyNames(keys.text, names);
+						if (analog)
+							for (auto &[field, value] : keys.members)
+								if ((field == "ButtonBindPositive" || field == "ButtonBindNegative") && value.kind == Json::Kind::String)
+									value.text = replaceKeyNames(value.text, names);
+					}
 				prop.set(json::write(all));
 			};
-			keep(saved, draft_[Normal], session_.defaultBindingTexts());
-			keep(savedAutofire, draft_[Autofire], session_.defaultAutofireTexts());
+			rewrite(saved, false);
+			rewrite(savedAutofire, false);
+			rewrite(savedAnalog, true);
+			/* and the machine's now, the package's keys among them, as Chimera's
+			 * settings hold every system's */
+			if (core.get().empty()) return {};
+			const bool open = editing.get();
+			begin();
+			for (auto &table : draft_)
+				for (std::string &keys : table) keys = replaceKeyNames(keys, names);
+			for (AnalogBind &bind : analogDraft_)
 			{
-				Json all = parsedObject(savedAnalog.get());
-				Json mine = all.find(core.get()) != nullptr ? *all.find(core.get()) : Json();
-				if (mine.kind != Json::Kind::Object) mine = parsedObject("{}");
-				const std::vector<SessionViewModel::Axis> &axes = session_.axes();
-				const std::vector<AnalogBind> &theirs = session_.defaultAnalogBinds();
-				for (size_t i = 0; i < axes.size() && i < analogDraft_.size(); i++)
-				{
-					if (i < theirs.size() && sameBind(analogDraft_[i], theirs[i]))
-					{
-						removeMember(mine, axes[i].name);
-						continue;
-					}
-					Json bind;
-					std::string why;
-					json::parse(analogBindJson(analogDraft_[i]), bind, why);
-					setMember(mine, axes[i].name, bind);
-				}
-				if (mine.members.empty()) removeMember(all, core.get());
-				else setMember(all, core.get(), mine);
-				savedAnalog.set(json::write(all));
+				bind.positive = replaceKeyNames(bind.positive, names);
+				bind.negative = replaceKeyNames(bind.negative, names);
 			}
-			editing.set(false);
-			apply();
-			status.set("Saved the controls of " + core.get());
+			if (!open) keep();
+			else changed();
 			return {};
 		});
 	command("hasBinding", "whether a key holds one of the machine's buttons now (Chimera's HasBinding: a right click "
@@ -421,6 +420,52 @@ void ControlsViewModel::begin()
 	analogDraft_.resize(session_.axes().size());
 	editing.set(true);
 	changed();
+}
+
+void ControlsViewModel::keep()
+{
+	const std::vector<std::string> &names = session_.buttonNames();
+	auto remember = [&](Property<std::string> &prop, const std::vector<std::string> &now, const std::vector<std::string> &theirs) {
+		Json all = parsedObject(prop.get());
+		Json mine = all.find(core.get()) != nullptr ? *all.find(core.get()) : Json();
+		if (mine.kind != Json::Kind::Object) mine = parsedObject("{}");
+		for (size_t b = 0; b < names.size(); b++)
+		{
+			const std::string &k = b < now.size() ? now[b] : std::string(), &p = b < theirs.size() ? theirs[b] : std::string();
+			if (k == p) removeMember(mine, names[b]);
+			else setMember(mine, names[b], Json::string(k));
+		}
+		if (mine.members.empty()) removeMember(all, core.get());
+		else setMember(all, core.get(), mine);
+		prop.set(json::write(all));
+	};
+	remember(saved, draft_[Normal], session_.defaultBindingTexts());
+	remember(savedAutofire, draft_[Autofire], session_.defaultAutofireTexts());
+	{
+		Json all = parsedObject(savedAnalog.get());
+		Json mine = all.find(core.get()) != nullptr ? *all.find(core.get()) : Json();
+		if (mine.kind != Json::Kind::Object) mine = parsedObject("{}");
+		const std::vector<SessionViewModel::Axis> &axes = session_.axes();
+		const std::vector<AnalogBind> &theirs = session_.defaultAnalogBinds();
+		for (size_t i = 0; i < axes.size() && i < analogDraft_.size(); i++)
+		{
+			if (i < theirs.size() && sameBind(analogDraft_[i], theirs[i]))
+			{
+				removeMember(mine, axes[i].name);
+				continue;
+			}
+			Json bind;
+			std::string why;
+			json::parse(analogBindJson(analogDraft_[i]), bind, why);
+			setMember(mine, axes[i].name, bind);
+		}
+		if (mine.members.empty()) removeMember(all, core.get());
+		else setMember(all, core.get(), mine);
+		savedAnalog.set(json::write(all));
+	}
+	editing.set(false);
+	apply();
+	status.set("Saved the controls of " + core.get());
 }
 
 void ControlsViewModel::apply()

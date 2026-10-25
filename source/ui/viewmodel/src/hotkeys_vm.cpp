@@ -1,5 +1,7 @@
 #include "chimera/vm/hotkeys_vm.hpp"
 
+#include "chimera/vm/bindings.hpp"
+
 #include "chimera/vm/json.hpp"
 
 #include <algorithm>
@@ -213,6 +215,24 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 		status.set("Saved the hotkeys");
 		return {};
 	});
+	command("replaceKeys", "Chimera's rewrite of the keys bound when Merge L+R modifier keys changes: the key names the "
+		"object names replaced ({\"LeftShift\": \"Shift\"}) in every action's keys, kept, and in the copy if it is open",
+		{"names"}, [this](const Args &a, std::string &error) -> Value {
+			std::string text;
+			std::map<std::string, std::string> names;
+			if (!arg(a, 0, text, error) || !keyNamesFrom(text, names, error)) return {};
+			Json all;
+			all.kind = Json::Kind::Object;
+			for (Action &act : actions_)
+			{
+				const std::string keys = replaceKeyNames(act.keys, names);
+				if (keys != act.defaults) all.members.emplace_back(act.name, Json::string(keys));
+				if (editing.get()) act.draft = replaceKeyNames(act.draft, names);
+			}
+			saved.set(json::write(all));
+			apply();
+			return {};
+		});
 	command("cancel", "the copy let go", {}, [this](const Args &, std::string &) -> Value {
 		editing.set(false);
 		rows_.reset.emit();

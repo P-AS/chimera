@@ -174,4 +174,60 @@ int32_t analogValue(const AnalogBind &b, int hostValue, bool positiveHeld, bool 
 	return static_cast<int32_t>(std::clamp<double>(rounded, static_cast<double>(std::min(min, max)), static_cast<double>(std::max(min, max))));
 }
 
+std::string replaceKeyNames(const std::string &keys, const std::map<std::string, std::string> &names)
+{
+	auto fields = [](const std::string &text, char by) {
+		std::vector<std::string> out;
+		size_t at = 0;
+		for (size_t sep = text.find(by);; sep = text.find(by, at))
+		{
+			out.push_back(text.substr(at, sep == std::string::npos ? std::string::npos : sep - at));
+			if (sep == std::string::npos) break;
+			at = sep + 1;
+		}
+		return out;
+	};
+	auto trimmed = [](const std::string &t) {
+		const size_t a = t.find_first_not_of(' '), b = t.find_last_not_of(' ');
+		return a == std::string::npos ? std::string() : t.substr(a, b - a + 1);
+	};
+	/* each key with the spaces around it as they were: Chimera's matched
+	 * none but the first of "Shift, LeftShift" for the space */
+	std::vector<std::string> seen;
+	std::string out;
+	for (const std::string &bind : fields(keys, ','))
+	{
+		std::string parts;
+		for (const std::string &part : fields(bind, '+'))
+		{
+			const std::string word = trimmed(part);
+			const auto it = names.find(word);
+			std::string now = part;
+			if (it != names.end()) now.replace(part.find(word), word.size(), it->second);
+			parts += now + "+";
+		}
+		parts.pop_back();
+		const std::string key = trimmed(parts);
+		if (!key.empty() && std::find(seen.begin(), seen.end(), key) != seen.end()) continue;
+		seen.push_back(key);
+		out += (out.empty() ? "" : ",") + parts;
+	}
+	return out;
+}
+
+bool keyNamesFrom(std::string_view json, std::map<std::string, std::string> &out, std::string &error)
+{
+	Json all;
+	if (!json::parse(json, all, error)) return false;
+	if (all.kind != Json::Kind::Object)
+	{
+		error = "the names to replace are not a JSON object";
+		return false;
+	}
+	out.clear();
+	for (const auto &[from, to] : all.members)
+		if (to.kind == Json::Kind::String) out[from] = to.text;
+	return true;
+}
+
 } // namespace chimera::vm

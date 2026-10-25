@@ -93,6 +93,8 @@ private:
 	std::string &keysOf(Table table, size_t i);
 	/* the copy, from what the machine has now, unless it is open */
 	void begin();
+	/* the copy given to the machine, and what differs from the package remembered (save) */
+	void keep();
 	/* the machine's controls: the package's, with this core's changes over them */
 	void apply();
 	void changed();

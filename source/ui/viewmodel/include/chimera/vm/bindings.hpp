@@ -39,6 +39,14 @@ private:
 	std::vector<std::string> texts_;
 };
 
+/* keys as a binding writes them ("Shift, LeftShift", "Ctrl+X") with key
+ * names replaced, as Chimera's rewrite of the keys bound: each key of the
+ * list and each part of a combination; a key there twice is kept once */
+std::string replaceKeyNames(const std::string &keys, const std::map<std::string, std::string> &names);
+/* the names to replace from a JSON object ({"LeftShift": "Shift"}); false
+ * with the reason when it is not one */
+bool keyNamesFrom(std::string_view json, std::map<std::string, std::string> &out, std::string &error);
+
 /* An analog control's binding, as Chimera's AnalogBind: a host axis
  * ("X1 LeftThumbX Axis", "J1 X Axis") read from -10000 to 10000, a dead
  * zone (a fraction of it), a multiplier (-2 to 2), and two keys that push

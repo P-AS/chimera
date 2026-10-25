@@ -169,14 +169,14 @@ protected:
 				return QObject::eventFilter(watched, e);
 			if (!k->isAutoRepeat())
 			{
-				const QString name = qt::keyName(k->key(), k->modifiers());
+				const QString name = qt::keyName(*k);
 				if (!name.isEmpty())
 				{
 					if (down)
 					{
 						/* the combination it was pressed with is the one let go;
 						 * Key Priority says which of the two it goes to */
-						const QString combo = qt::keyCombination(k->key(), k->modifiers());
+						const QString combo = qt::keyCombination(name, k->modifiers());
 						const auto route = vm::HotkeysViewModel::route(hotkeys_.keyPriority.get(),
 							hotkeys_.boundTo(combo.toStdString()), session_.keyIsBound(name.toStdString()));
 						down_[name] = {combo, route.hotkey, route.control};
@@ -1073,6 +1073,7 @@ int main(int argc, char **argv)
 	qt::QmlViewModel themesQml(themes);
 	qt::QmlViewModel hotkeysQml(hotkeys);
 	qt::KeyNamer keyNamer;
+	app.installEventFilter(&keyNamer);
 	qt::ThemeColors themeColors;
 	qt::QmlViewModel helpQml(help);
 	/* Tools > MCP Server...: an AI agent working on the open project (docs/mcp-server.md) */
@@ -1159,8 +1160,12 @@ int main(int argc, char **argv)
 	qt::QmlViewModel cacheManagerQml(cacheManager);
 	vm::CustomizeViewModel customize(dispatcher, session);
 	for (const char *name : {"startPaused", "startFullscreen", "neverAskSave", "luaDuringTurbo",
-			 "showContextMenu"})
+			 "showContextMenu", "alternateLayouts", "mergeModifiers"})
 		config.keep(customize, name);
+	auto keyNaming = [&customize] { qt::setKeyNaming(customize.alternateLayouts.get(), customize.mergeModifiers.get()); };
+	keyNaming();
+	vm::Connection alternateLayoutsWatch = customize.alternateLayouts.changed.connect(keyNaming);
+	vm::Connection mergeModifiersWatch = customize.mergeModifiers.changed.connect(keyNaming);
 	qt::QmlViewModel customizeQml(customize);
 	vm::MessagesViewModel messages(dispatcher);
 	for (const char *name : {"positions", "messagesColor", "alertColor", "lastInputColor", "movieInputColor", "messageSeconds", "stackMessages"})

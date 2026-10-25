@@ -298,6 +298,15 @@ if qt_dep.found()
     cpp_args: ['-DCHIMERA_QT_QML_DIR="' + meson.current_source_dir() / 'qt' + '"'],
   )
   test('theme', test_theme, env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software'], timeout: 60)
+  # keys are named by their place, as Chimera's, whatever the layout, with
+  # the modifier keys merged or each side its own
+  test_key_names = executable(
+    'test-key-names',
+    ['qt/tests/test_key_names.cpp', 'qt/key_names.cpp', qt6.compile_moc(headers: ['qt/key_names.hpp'], dependencies: [qt_dep])],
+    dependencies: [qt_dep],
+    override_options: ['cpp_std=c++20'],
+  )
+  test('key names', test_key_names, env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
   # the MCP server in the window: the witness's agent, reading and then
   # changing the open project through chimera-mcp; the window quits by itself
   if host_machine.system() != 'windows'
