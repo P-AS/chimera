@@ -7829,6 +7829,12 @@ bool luaParity(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	session.run("setLag", {int64_t{0}, int64_t{0}}, error);
 	CHECK(lua1("gameinfo.getstatus(), gameinfo.isstatusbad()") == "[\"NotInDatabase\", false]");
+	/* the game as Chimera names and hashes it */
+	{
+		char hex[41] = {};
+		ce_sha1_file((dir / "walker.testrom").string().c_str(), hex, nullptr);
+		CHECK(lua1("gameinfo.getromname(), gameinfo.getromhash(), gameinfo.indatabase()") == "[\"walker\", \"" + std::string(hex, 40) + "\", false]");
+	}
 	const std::string size = lua1("client.bufferwidth(), client.bufferheight()");
 	CHECK(size != "[256, 192]" && size.rfind("[", 0) == 0 && size.find("error") == std::string::npos);
 	CHECK(lua1("client.getwindowsize()") == "[2]");
@@ -7906,7 +7912,7 @@ bool luaParity(const char *package, const char *rom)
 	CHECK(std::chrono::steady_clock::now() - before >= std::chrono::milliseconds(50));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	CHECK(lua1("gameinfo.getstatus()") == "[\"GoodDump\"]");
+	CHECK(lua1("gameinfo.getstatus(), gameinfo.getromname(), gameinfo.getromhash(), gameinfo.indatabase()") == "[\"GoodDump\", \"Null\", \"\", true]");
 	fs::remove_all(dir, ec);
 	return true;
 }

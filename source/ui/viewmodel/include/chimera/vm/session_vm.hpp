@@ -921,6 +921,8 @@ private:
 	int64_t turboSeekToM_ = -1, turboPiece_ = kTurboPieceFrames;
 	/* where it started from and when, for what the seek is said to have run */
 	int64_t turboFrom_ = 0;
+	/* the game's file (a project's first), and its SHA-1 once asked */
+	std::string romFileM_, romSha1_, romSha1For_;
 	Clock::time_point turboBegan_{};
 	void turboSeekPieceOnMachine();
 	void endTurboSeekOnMachine();

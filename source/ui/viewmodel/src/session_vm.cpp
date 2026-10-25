@@ -997,7 +997,23 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			});
 			return std::to_string(w) + " " + std::to_string(h);
 		});
-	for (const char *name : {"memoryDomains", "readMemory", "writeMemory", "sha256", "videoSize"}) scriptSideCommand(name);
+	command("gameSha1", "the SHA-1 of the game's file (a project's first), as Chimera's game hash: \"\" with none; read "
+		"when first asked", {}, [this](const Args &, std::string &) -> Value {
+			std::string out;
+			onMachineWait([&](ce_session *s) {
+				if (s == nullptr || romFileM_.empty()) return;
+				if (romSha1For_ != romFileM_)
+				{
+					char hex[41] = {};
+					uint64_t len = 0;
+					romSha1_ = ce_sha1_file(romFileM_.c_str(), hex, &len) == 1 ? std::string(hex, 40) : std::string();
+					romSha1For_ = romFileM_;
+				}
+				out = romSha1_;
+			});
+			return out;
+		});
+	for (const char *name : {"memoryDomains", "readMemory", "writeMemory", "sha256", "videoSize", "gameSha1"}) scriptSideCommand(name);
 	scriptSideProperty("frame", [this] { return Value(int64_t{frameM_}); });
 	command("movieInput", "a frame's input in the movie, a line each: a button pressed by its name, an analog control as "
 		"name=value; \"\" past the movie's end", {"frame"}, [this](const Args &a, std::string &error) -> Value {
@@ -2101,6 +2117,7 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 	}
 	ce_session_set_rerecords(s, counted);
 	adoptOnMachine(s, package, game, true);
+	romFileM_ = game;
 	{
 		std::error_code ec;
 		const std::filesystem::path where = std::filesystem::weakly_canonical(game, ec);
@@ -4125,6 +4142,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		/* the game a project plays: its first file, where it was found */
 		const char *source = ce_project_file_count(p) > 0 ? ce_project_file_source_path(p, 0) : nullptr;
 		const std::string game = source != nullptr && *source != '\0' ? source : path;
+		romFileM_ = source != nullptr ? source : "";
 		std::error_code ec;
 		const std::filesystem::path where = std::filesystem::weakly_canonical(game, ec);
 		carryFreezesOnMachine(package + "\n" + (ec ? game : where.string()));

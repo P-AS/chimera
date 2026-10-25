@@ -226,7 +226,7 @@ function emu.setregister(name, value) C.debugger.setRegisterNamed(name, value) e
 function emu.totalexecutedcycles() C.debugger.refresh() return C.debugger.cycles end
 function emu.limitframerate(on) C.session.unthrottled = not on end
 function emu.displayvsync() end
-function emu.setrenderplanes() end
+function emu.setrenderplanes() print("SetRenderPlanes is not supported by this build (no core-specific handling available)") end
 function emu.disassemble() error("emu.disassemble: the cores here offer no disassembly") end
 
 -- memory and mainmemory ----------------------------------------------------
@@ -870,9 +870,15 @@ function client.exactsleep(ms) __chimera_sleep(math.tointeger(tonumber(ms)) or 0
 
 -- gameinfo -----------------------------------------------------------------
 gameinfo = {}
-function gameinfo.getromname() return C.session.gameName end
-function gameinfo.getromhash() return "" end
-function gameinfo.indatabase() return false end
+-- the game as Chimera names it: its file's name without the extension, "_"
+-- read as a space; "Null" with nothing open, Chimera's empty machine's
+function gameinfo.getromname()
+	if not C.session.isOpen then return "Null" end
+	return (string.gsub(C.session.gameName, "_", " "))
+end
+function gameinfo.getromhash() return C.session.gameSha1() end
+-- Chimera has no game database: a game is not in it, its empty machine is
+function gameinfo.indatabase() return not C.session.isOpen end
 function gameinfo.getboardtype() return "" end
 function gameinfo.getoptions() return {} end
 -- Chimera has no game database: a game is "NotInDatabase", and with none
