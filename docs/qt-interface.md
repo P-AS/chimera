@@ -469,10 +469,11 @@ A suggested order, each step usable on its own:
 Taken from Chimera's menus, dialogs and tools on 2026-10-23, and ticked off
 as each lands here. Parts that wait on a question to the owner say so.
 
-- TAStudio: Cancel Seek stops a seek that plays (Turbo seek off), but a
-  turbo seek is one call to the engine and cannot be stopped part way,
-  where Chimera's can. (Chimera's Selection Undo and Redo are always greyed
-  out and do nothing, so there is nothing of theirs to bring.)
+- TAStudio: nothing. Cancel Seek stops any seek part way: one that plays
+  (Turbo seek off) between frames, a turbo seek between the pieces it goes
+  in (about a tenth of a second each). (Chimera's Selection Undo and Redo
+  are always greyed out and do nothing, so there is nothing of theirs to
+  bring.)
 - Tools: (the debugger has no disassembly or
   breakpoints for these cores in Chimera either: the engine has no call
   for them.)

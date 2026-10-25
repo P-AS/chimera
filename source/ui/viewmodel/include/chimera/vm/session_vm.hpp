@@ -916,6 +916,14 @@ private:
 	std::function<void()> scriptsBeforeM_, scriptsAfterM_;
 	std::function<bool()> scriptsWantedM_;
 	std::function<bool(int64_t)> futureTurnM_;
+	/* a turbo seek going in pieces: where to (-1 none), and the next piece's size in frames */
+	static constexpr int64_t kTurboPieceFrames = 60;
+	int64_t turboSeekToM_ = -1, turboPiece_ = kTurboPieceFrames;
+	/* where it started from and when, for what the seek is said to have run */
+	int64_t turboFrom_ = 0;
+	Clock::time_point turboBegan_{};
+	void turboSeekPieceOnMachine();
+	void endTurboSeekOnMachine();
 	std::atomic<int64_t> futureMaxM_{0};
 	void showFutureOnMachine();
 	/* the machine's last picture, to the window */

@@ -1405,6 +1405,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	command("play", "runs the machine at its own speed", {}, [this](const Args &, std::string &) -> Value {
 		submit([this] {
 			if (s_ == nullptr) return;
+			endTurboSeekOnMachine();
 			runningM_ = true;
 			/* played on, a seek that plays is over: the machine runs on past it */
 			pauseOnFrameM_ = -1;
@@ -1414,8 +1415,10 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		});
 		return {};
 	}, &isOpen);
-	command("pause", "stops the machine after the frame it is on", {}, [this](const Args &, std::string &) -> Value {
+	command("pause", "stops the machine after the frame it is on; a seek under way stops where it is (Cancel Seek)", {},
+		[this](const Args &, std::string &) -> Value {
 		submit([this] {
+			endTurboSeekOnMachine();
 			runningM_ = false;
 			pauseOnFrameM_ = -1;
 			later([this] { running.set(false); fps.set(0.0); seekingTo.set(-1); });
@@ -1425,6 +1428,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	command("frameAdvance", "runs one frame and stops", {}, [this](const Args &, std::string &) -> Value {
 		submit([this] {
 			if (s_ == nullptr) return;
+			endTurboSeekOnMachine();
 			runningM_ = false;
 			passOnMachine(1, true, false);
 			/* Skip Lag Frames: on past lag frames, a few seconds' worth at most */
@@ -1685,6 +1689,7 @@ void SessionViewModel::holdFrameAdvance(bool down)
 		if (s_ == nullptr) return;
 		if (down)
 		{
+			endTurboSeekOnMachine();
 			runningM_ = false;
 			/* Skip Lag Frames: on past lag frames, a few seconds' worth at most */
 			steppingM_ = true;
@@ -1717,6 +1722,7 @@ void SessionViewModel::holdRewind(bool down)
 		if (s_ == nullptr) return;
 		if (down)
 		{
+			endTurboSeekOnMachine();
 			runningM_ = false;
 			later([this] { running.set(false); });
 			if (frameM_ > 0) seekOnMachine(std::max<int64_t>(0, frameM_ - (fastM_ || turboM_ ? rewindStepFastM_.load() : rewindStepM_.load())));
@@ -1779,7 +1785,7 @@ void SessionViewModel::loop()
 		mcpOnMachine();
 		std::function<void()> job;
 		bool advance = false, runOn = false, back = false, catchPoll = false, autosaveTick = false, keepTick = false,
-			journalTick = false, idleTick = false;
+			journalTick = false, idleTick = false, turboPiece = false;
 		/* the scripts' turns when no frame is run, while there are scripts */
 		const bool idleScripts = (s_ == nullptr || !runningM_) && scriptsIdleM_ && scriptsWantedM_ && scriptsWantedM_();
 		if (!idleScripts) idleDue_ = {};
@@ -1835,7 +1841,13 @@ void SessionViewModel::loop()
 				if (mcpOn) wake = (autoOn || keepOn) ? std::min(wake, Clock::now() + std::chrono::milliseconds(16)) : Clock::now() + std::chrono::milliseconds(16);
 				if (idleScripts) wake = (autoOn || keepOn || mcpOn) ? std::min(wake, idleDue_) : idleDue_;
 				/* a call waiting (not one the window is answering), or a move of the agent's that has stopped */
-				if (mcpOn && !mcpBusyM_ && (ce_mcp_pending() != 0 || (mcpMoveM_ && !(runningM_ && pauseOnFrameM_ >= 0)))) break;
+				if (mcpOn && !mcpBusyM_ && (ce_mcp_pending() != 0 || (mcpMoveM_ && !(runningM_ && pauseOnFrameM_ >= 0) && turboSeekToM_ < 0))) break;
+				/* a turbo seek going in pieces: the next piece, once any job waiting has run */
+				if (turboSeekToM_ >= 0 && s_ != nullptr)
+				{
+					turboPiece = true;
+					break;
+				}
 				auto waitUntil = [&](Clock::time_point t) { cv_.wait_until(lock, timed ? std::min(t, wake) : t); };
 				/* a binding waiting for a gamepad input: the pads looked at
 				 * sixty times a second, a game open or not */
@@ -1893,6 +1905,11 @@ void SessionViewModel::loop()
 		if (catchPoll)
 		{
 			catchPollOnMachine();
+			continue;
+		}
+		if (turboPiece)
+		{
+			turboSeekPieceOnMachine();
 			continue;
 		}
 		if (idleTick)
@@ -2105,6 +2122,8 @@ void SessionViewModel::openOnMachine(const std::string &package, const std::stri
 void SessionViewModel::freeSessionOnMachine()
 {
 	if (s_ == nullptr) return;
+	/* a turbo seek under way was this machine's */
+	turboSeekToM_ = -1;
 	for (const Hooks &h : hooksM_)
 		if (h.closing) h.closing(s_);
 	later([this] { gamePath.set(""); });
@@ -2225,6 +2244,7 @@ int64_t SessionViewModel::clockOnMachine() const
 
 void SessionViewModel::seekAsAskedOnMachine(int64_t target)
 {
+	turboSeekToM_ = -1;
 	runningM_ = false;
 	pauseOnFrameM_ = -1;
 	mcpFastM_ = false;
@@ -2252,7 +2272,70 @@ void SessionViewModel::seekAsAskedOnMachine(int64_t target)
 			}
 		}
 	}
+	/* Turbo seek on: a long way to go is gone in pieces, between which the
+	 * machine's thread does what it is asked - Cancel Seek stops it where it
+	 * is, as Chimera's turbo seek can be stopped part way */
+	if (turboSeekM_.load() && s_ != nullptr && target > 0 && target <= ce_session_movie_length(s_))
+	{
+		const int64_t from = ce_session_frame(s_);
+		const int64_t stored = ce_session_greenzone_nearest(s_, target - 1);
+		const int64_t start = stored >= 0 && (stored > from || from > target - 1) ? stored : from;
+		if (target - 1 - start > kTurboPieceFrames)
+		{
+			turboSeekToM_ = target;
+			turboPiece_ = kTurboPieceFrames;
+			turboFrom_ = start;
+			turboBegan_ = Clock::now();
+			later([this, from, target] { seekFrom.set(from); seekingTo.set(target); });
+			return;
+		}
+	}
 	seekOnMachine(target);
+}
+
+void SessionViewModel::turboSeekPieceOnMachine()
+{
+	const int64_t target = turboSeekToM_;
+	const int64_t at = ce_session_frame(s_);
+	const int64_t next = std::min(target - 1, std::max<int64_t>(at, 0) + turboPiece_);
+	if (next <= at || at >= target - 1)
+	{
+		/* there: the last frame run with its picture, the scripts' turn, as any seek lands;
+		 * what it ran and how long it took, the whole seek's */
+		turboSeekToM_ = -1;
+		seekOnMachine(target);
+		const int64_t ran = target - turboFrom_;
+		const double ms = std::chrono::duration<double, std::milli>(Clock::now() - turboBegan_).count();
+		later([this, ran, ms] {
+			seekingTo.set(-1);
+			lastSeekFrames.set(ran);
+			lastSeekMs.set(ms);
+		});
+		return;
+	}
+	const auto began = Clock::now();
+	if (ce_session_seek(s_, next) != 0)
+	{
+		/* the window edited the movie under it, or it cannot go on: it lands where it is */
+		turboSeekToM_ = -1;
+		seekOnMachine(std::min<int64_t>(target, ce_session_frame(s_)));
+		later([this] { seekingTo.set(-1); });
+		return;
+	}
+	/* pieces of about a tenth of a second: more frames while they are quick, fewer while slow */
+	const double ms = std::chrono::duration<double, std::milli>(Clock::now() - began).count();
+	if (ms < 50) turboPiece_ = std::min<int64_t>(turboPiece_ * 2, 1 << 16);
+	else if (ms > 200) turboPiece_ = std::max<int64_t>(turboPiece_ / 2, 1);
+	frameM_ = ce_session_frame(s_);
+	report(-1, -1, -1, -1, -1);
+}
+
+void SessionViewModel::endTurboSeekOnMachine()
+{
+	if (turboSeekToM_ < 0 || s_ == nullptr) return;
+	/* stopped part way: on the frame it reached, with its picture */
+	turboSeekToM_ = -1;
+	seekOnMachine(ce_session_frame(s_));
 }
 
 void SessionViewModel::mcpServing(bool on)
@@ -2385,7 +2468,7 @@ bool SessionViewModel::mcpMoveOnMachine()
 {
 	if (!mcpMoveM_) return true;
 	/* still on its way */
-	if (runningM_ && pauseOnFrameM_ >= 0) return false;
+	if ((runningM_ && pauseOnFrameM_ >= 0) || turboSeekToM_ >= 0) return false;
 	McpMove &move = *mcpMoveM_;
 	const int64_t at = s_ != nullptr ? ce_session_frame(s_) : -1;
 	const int64_t length = s_ != nullptr ? ce_session_movie_length(s_) : 0;

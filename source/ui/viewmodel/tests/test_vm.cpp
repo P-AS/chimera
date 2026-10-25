@@ -7892,6 +7892,51 @@ bool luaParity(const char *package, const char *rom)
 	return true;
 }
 
+/* Turbo seek, as Chimera's: a long way gone in pieces, so Cancel Seek (a
+ * pause) stops it part way on the frame it reached; left alone it lands on
+ * its frame */
+bool turboSeekCancel(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-turbo-seek-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	std::string error;
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	CHECK(session.run("saveAsProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
+	CHECK(d.until([&] { return session.hasProject.get(); }, 20));
+	/* a movie long enough to take a while, and nothing kept to go back to but the start */
+	const int64_t length = 400000;
+	CHECK(roll.run("fill", {length}, error).has_value());
+	CHECK(d.until([&] { return roll.frameCount.get() >= length; }, 20));
+	session.greenzonePeriod.set(0);
+	session.turboSeek.set(true);
+	/* left alone: on its frame */
+	CHECK(session.run("seek", {int64_t{5000}}, error).has_value());
+	CHECK(d.until([&] { return session.frame.get() == 5000 && session.seekingTo.get() == -1; }, 60));
+	/* stopped part way: where it reached, the seek over */
+	CHECK(session.run("seek", {length - 1}, error).has_value());
+	CHECK(d.until([&] { return session.seekingTo.get() == length - 1 && session.frame.get() > 5000; }, 20));
+	CHECK(session.run("pause", {}, error).has_value());
+	CHECK(d.until([&] { return session.seekingTo.get() == -1; }, 20));
+	d.until([] { return false; }, 0.5);
+	const int64_t stoppedAt = session.frame.get();
+	std::printf("turbo seek stopped at frame %lld of %lld\n", static_cast<long long>(stoppedAt), static_cast<long long>(length - 1));
+	CHECK(stoppedAt > 5000 && stoppedAt < length - 1);
+	d.until([] { return false; }, 0.5);
+	CHECK(session.frame.get() == stoppedAt);
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir, ec);
+	return true;
+}
+
 bool luaTastudio(const char *package, const char *rom)
 {
 	namespace fs = std::filesystem;
@@ -8772,6 +8817,7 @@ int main(int argc, char **argv)
 			ranMachine = macroTool(argv[1], argv[2]) && ranMachine;
 			ranMachine = luaLibraries(argv[1], argv[2]) && ranMachine;
 			ranMachine = luaParity(argv[1], argv[2]) && ranMachine;
+			ranMachine = turboSeekCancel(argv[1], argv[2]) && ranMachine;
 			ranMachine = encodeVideo(argv[1], argv[2]) && ranMachine;
 			ranMachine = luaTastudio(argv[1], argv[2]) && ranMachine;
 			ranMachine = throttles(argv[1], argv[2]) && ranMachine;
