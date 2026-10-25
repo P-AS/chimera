@@ -27,6 +27,24 @@ namespace {
 /* __chimera_sleep(milliseconds, exact): the scripts' thread waits, as
  * Chimera's client.sleep makes its own wait; exact waits the last of it
  * out by the clock, as its exactsleep does */
+/* __chimera_file_stamp(path): a number that changes when the file does (its
+ * time and size), 0 when there is none: an image drawn with cache false is
+ * read again once it changed */
+int fileStamp(lua_State *L)
+{
+	std::error_code ec;
+	const std::filesystem::path p = std::filesystem::u8path(luaL_checkstring(L, 1));
+	const auto size = std::filesystem::file_size(p, ec);
+	if (ec)
+	{
+		lua_pushinteger(L, 0);
+		return 1;
+	}
+	const auto when = std::filesystem::last_write_time(p, ec).time_since_epoch().count();
+	lua_pushinteger(L, static_cast<lua_Integer>((static_cast<uint64_t>(when) * 31 + size) & 0x3FFFFFFF) + 1);
+	return 1;
+}
+
 int sleepFor(lua_State *L)
 {
 	const auto ms = static_cast<int64_t>(luaL_checknumber(L, 1));
@@ -140,6 +158,8 @@ LuaBridge::LuaBridge() : L_(luaL_newstate())
 	lua_setglobal(L_, "__chimera_string");
 	lua_pushcfunction(L_, &sleepFor);
 	lua_setglobal(L_, "__chimera_sleep");
+	lua_pushcfunction(L_, &fileStamp);
+	lua_setglobal(L_, "__chimera_file_stamp");
 	lua_pushinteger(L_, 0);
 	lua_setglobal(L_, "__chimera_script");
 	/* Chimera's libraries, a layer of Lua over the view models */

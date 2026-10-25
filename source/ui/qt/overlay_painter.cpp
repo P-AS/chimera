@@ -29,8 +29,10 @@ QColor colorOf(const QJsonValue &v)
 }
 
 /* an image file read once, again for a new epoch (clearImageCache), as the canvas loads them */
-const QImage &imageOf(const QString &file, int epoch)
+QImage imageOf(const QString &file, int epoch)
 {
+	/* drawn with cache false: read for this drawing alone */
+	if (epoch < 0) return QImage(file);
 	static QMap<QString, QImage> cache;
 	const QString key = file + QLatin1Char('\n') + QString::number(epoch);
 	auto it = cache.find(key);
@@ -56,6 +58,8 @@ void paintShapes(QImage &image, const QString &shapes)
 	{
 		const QJsonObject s = value.toObject();
 		const QString k = s.value(QStringLiteral("k")).toString();
+		/* the client surface is the window's, not the machine's picture's */
+		if (s.value(QStringLiteral("surface")).toString() == QLatin1String("client")) continue;
 		auto num = [&s](const char *name) { return s.value(QLatin1String(name)).toDouble(); };
 		const double x = num("x"), y = num("y"), w = num("w"), h = num("h");
 		p.save();

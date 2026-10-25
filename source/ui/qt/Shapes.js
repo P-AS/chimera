@@ -85,5 +85,5 @@ function draw(ctx, canvas, s, sx, sy, urlOf) {
 // a file as an address the canvas loads; a new epoch reads it again (clearImageCache)
 function urlOf(file, epoch) {
     const path = file.replace(/\\/g, "/")
-    return (path.startsWith("/") ? "file://" : "file:///") + encodeURI(path).replace(/#/g, "%23").replace(/\?/g, "%3F") + (epoch > 0 ? "?" + epoch : "")
+    return (path.startsWith("/") ? "file://" : "file:///") + encodeURI(path).replace(/#/g, "%23").replace(/\?/g, "%3F") + (epoch !== 0 ? "?" + epoch : "")
 }

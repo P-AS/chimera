@@ -1271,6 +1271,13 @@ ApplicationWindow {
                         ctx.restore()
                         continue
                     }
+                    // the client surface: the picture area's own pixels
+                    if (s.surface === "client") {
+                        ctx.save()
+                        Shapes.draw(ctx, luaCanvas, s, 1, 1, Shapes.urlOf)
+                        ctx.restore()
+                        continue
+                    }
                     // the surface's pixels, from its top left: the picture's, cropped and padded, as Chimera's
                     const surface = picture.surfaceRect
                     ctx.save()

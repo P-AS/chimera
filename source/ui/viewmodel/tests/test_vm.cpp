@@ -7781,6 +7781,25 @@ bool luaParity(const char *package, const char *rom)
 	CHECK(lua1("client.xpos(), client.ypos(), client.getavailabletools()[0], client.getavailabletools()[1]") == "[-7, 42, \"tastudio\", \"luaconsole\"]");
 	CHECK(lua1("client.screenshot('x.png') client.screenshot()") == "[]" && shot.empty());
 	CHECK(lua1("client.bufferwidth(), client.bufferheight()") == "[256, 192]");
+	/* gui's two surfaces, as Chimera's: named last, else use_surface's; cleared one at a time */
+	{
+		auto count = [](const std::string &text, const std::string &what) {
+			size_t n = 0;
+			for (size_t at = text.find(what); at != std::string::npos; at = text.find(what, at + 1)) n++;
+			return n;
+		};
+		CHECK(lua1("gui.drawBox(1, 2, 3, 4, nil, nil, 'client') gui.use_surface('native') gui.drawPixel(5, 6) "
+			"gui.use_surface('emu') gui.drawLine(0, 0, 1, 1)") == "[]");
+		CHECK(count(overlay.shapes.get(), "\"surface\":\"client\"") == 2 && count(overlay.shapes.get(), "\"k\":\"line\"") == 1);
+		CHECK(lua1("gui.clearGraphics('client')") == "[]");
+		CHECK(count(overlay.shapes.get(), "client") == 0 && count(overlay.shapes.get(), "\"k\":\"line\"") == 1);
+		CHECK(lua1("gui.drawPixel(1, 1, nil, 'screen')").find("screen is not the name of a display surface") != std::string::npos);
+		CHECK(lua1("gui.DrawNew('client') gui.drawPixel(7, 7) gui.DrawNew('emucore', false) gui.drawPixel(8, 8)") == "[]");
+		CHECK(count(overlay.shapes.get(), "\"surface\":\"client\"") == 1 && count(overlay.shapes.get(), "\"k\":\"line\"") == 1);
+		console.takeOutputForAgent();
+		CHECK(lua1("gui.use_surface()") == "[]" && console.takeOutputForAgent().find("Surface name cannot be nil") != std::string::npos);
+		CHECK(lua1("gui.clearGraphics() gui.clearGraphics('client')") == "[]" && overlay.shapes.get() == "[]");
+	}
 	/* gui.createcanvas: a form of its own, "LuaCanvas", with one picture box the size asked for */
 	CHECK(lua1("canvas = gui.createcanvas(120, 60) canvas.Clear(0xFF102030) canvas.DrawText(5, 6, 'hi', nil, nil, 10, 'Arial', 'bold', 'center', 'bottom') "
 		"canvas.Refresh() return canvas.GetMouseX(), canvas.GetMouseY()") == "[0, 0]");

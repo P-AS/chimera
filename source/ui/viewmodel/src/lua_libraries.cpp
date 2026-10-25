@@ -906,30 +906,48 @@ local function jsonOf(v)
 	end
 	return '"' .. string.gsub(tostring(v), '[%c"\\]', function(c) return string.format("\\u%04x", string.byte(c)) end) .. '"'
 end
-local function add(t) shapes[#shapes + 1] = t end
-function gui.drawRectangle(x, y, w, h, line, fill) add({k = "rect", x = x, y = y, w = w, h = h, line = colour(line, foreground), fill = colour(fill, background)}) end
-function gui.drawBox(x, y, x2, y2, line, fill)
-	gui.drawRectangle(math.min(x, x2), math.min(y, y2), math.abs(x2 - x), math.abs(y2 - y), line, fill)
+-- Chimera's two surfaces: "emucore" (the machine's picture with its crop and
+-- padding, in its pixels) and "client" (the window's picture area, in its own
+-- pixels); a function's surface named last, else gui.use_surface's
+local usedSurface = "emucore"
+local function surfaceOf(name)
+	if name == nil then return usedSurface end
+	local n = string.lower(tostring(name))
+	if n == "client" or n == "native" then return "client" end
+	if n == "emu" or n == "emucore" then return "emucore" end
+	error(tostring(name) .. " is not the name of a display surface", 3)
 end
-function gui.drawEllipse(x, y, w, h, line, fill) add({k = "ellipse", x = x, y = y, w = w, h = h, line = colour(line, foreground), fill = colour(fill, background)}) end
-function gui.drawLine(x1, y1, x2, y2, c) add({k = "line", x = x1, y = y1, x2 = x2, y2 = y2, line = colour(c, foreground)}) end
-function gui.drawAxis(x, y, size, c) gui.drawLine(x - size, y, x + size, y, c) gui.drawLine(x, y - size, x, y + size, c) end
+local function add(t, surface)
+	if surfaceOf(surface) == "client" then t.surface = "client" end
+	shapes[#shapes + 1] = t
+end
+function gui.drawRectangle(x, y, w, h, line, fill, surface)
+	add({k = "rect", x = x, y = y, w = w, h = h, line = colour(line, foreground), fill = colour(fill, background)}, surface)
+end
+function gui.drawBox(x, y, x2, y2, line, fill, surface)
+	gui.drawRectangle(math.min(x, x2), math.min(y, y2), math.abs(x2 - x), math.abs(y2 - y), line, fill, surface)
+end
+function gui.drawEllipse(x, y, w, h, line, fill, surface)
+	add({k = "ellipse", x = x, y = y, w = w, h = h, line = colour(line, foreground), fill = colour(fill, background)}, surface)
+end
+function gui.drawLine(x1, y1, x2, y2, c, surface) add({k = "line", x = x1, y = y1, x2 = x2, y2 = y2, line = colour(c, foreground)}, surface) end
+function gui.drawAxis(x, y, size, c, surface) gui.drawLine(x - size, y, x + size, y, c, surface) gui.drawLine(x, y - size, x, y + size, c, surface) end
 local function pointsOf(t, dx, dy)
 	local out = {}
 	for _, pt in ipairs(t) do out[#out + 1] = {pt[1] + (dx or 0), pt[2] + (dy or 0)} end
 	return out
 end
-function gui.drawPolygon(points, x, y, line, fill)
-	add({k = "path", points = pointsOf(points, x, y), closed = true, line = colour(line, foreground), fill = colour(fill, background)})
+function gui.drawPolygon(points, x, y, line, fill, surface)
+	add({k = "path", points = pointsOf(points, x, y), closed = true, line = colour(line, foreground), fill = colour(fill, background)}, surface)
 end
 -- four points: the start, two control points, the end
-function gui.drawBezier(points, c)
+function gui.drawBezier(points, c, surface)
 	local p = pointsOf(points)
-	if #p == 4 then add({k = "bezier", points = p, line = colour(c, foreground)}) end
+	if #p == 4 then add({k = "bezier", points = p, line = colour(c, foreground)}, surface) end
 end
 -- angles in degrees, clockwise from the right, as Chimera's
-function gui.drawPie(x, y, w, h, start, sweep, line, fill)
-	add({k = "pie", x = x, y = y, w = w, h = h, start = start, sweep = sweep, line = colour(line, foreground), fill = colour(fill, background)})
+function gui.drawPie(x, y, w, h, start, sweep, line, fill, surface)
+	add({k = "pie", x = x, y = y, w = w, h = h, start = start, sweep = sweep, line = colour(line, foreground), fill = colour(fill, background)}, surface)
 end
 -- a file's path, a relative one from the script's folder, as Chimera runs a
 -- script in its own folder
@@ -940,31 +958,41 @@ local function fileOf(path)
 	return folder ~= "" and (folder .. "/" .. path) or path
 end
 local imageEpoch = 0
-function gui.drawImage(path, x, y, w, h)
-	add({k = "image", file = fileOf(path), x = x, y = y, w = w or -1, h = h or -1, epoch = imageEpoch})
+-- cache false: the file read again as it is now, once it has changed
+local function epochFor(file, cache)
+	if cache == false then return -__chimera_file_stamp(file) end
+	return imageEpoch
 end
-function gui.drawIcon(path, x, y, w, h) gui.drawImage(path, x, y, w, h) end
-function gui.drawImageRegion(path, sx, sy, sw, sh, x, y, w, h)
-	add({k = "image", file = fileOf(path), sx = sx, sy = sy, sw = sw, sh = sh, x = x, y = y, w = w or sw, h = h or sh, epoch = imageEpoch})
+function gui.drawImage(path, x, y, w, h, cache, surface)
+	local file = fileOf(path)
+	add({k = "image", file = file, x = x, y = y, w = w or -1, h = h or -1, epoch = epochFor(file, cache)}, surface)
 end
-function gui.drawPixel(x, y, c) add({k = "rect", x = x, y = y, w = 1, h = 1, line = "", fill = colour(c, foreground)}) end
+function gui.drawIcon(path, x, y, w, h, surface) gui.drawImage(path, x, y, w, h, true, surface) end
+function gui.drawImageRegion(path, sx, sy, sw, sh, x, y, w, h, surface)
+	add({k = "image", file = fileOf(path), sx = sx, sy = sy, sw = sw, sh = sh, x = x, y = y, w = w or sw, h = h or sh, epoch = imageEpoch}, surface)
+end
+function gui.drawPixel(x, y, c, surface) add({k = "rect", x = x, y = y, w = 1, h = 1, line = "", fill = colour(c, foreground)}, surface) end
 -- Chimera's: its font (monospace unless named) and style, which end of the
 -- text is at x and y, and a background drawn as an outline around the letters
-function gui.drawString(x, y, text, fore, back, size, family, style, halign, valign)
+function gui.drawString(x, y, text, fore, back, size, family, style, halign, valign, surface)
 	add({k = "text", x = x, y = y, text = tostring(text), color = colour(fore, foreground), back = colour(back, background), size = size or 12,
-		family = family, style = style, halign = halign, valign = valign, outline = true})
+		family = family, style = style, halign = halign, valign = valign, outline = true}, surface)
 end
 gui.drawText = gui.drawString
-function gui.pixelText(x, y, text, fore, back)
-	add({k = "text", x = x, y = y, text = tostring(text), color = colour(fore, "#FFFFFFFF"), back = colour(back, "#FF000000"), size = 8})
+function gui.pixelText(x, y, text, fore, back, family, surface)
+	add({k = "text", x = x, y = y, text = tostring(text), color = colour(fore, "#FFFFFFFF"), back = colour(back, "#FF000000"), size = 8}, surface)
 end
 -- in the window's own pixels, from a corner
 function gui.text(x, y, text, fore, anchor)
 	add({k = "screentext", x = x, y = y, text = tostring(text), color = colour(fore, foreground), anchor = anchor or "topleft"})
 end
-function gui.clearGraphics()
+-- what was drawn on a surface (the one in use unless named); gui.text's stays
+function gui.clearGraphics(surface)
+	local which = surfaceOf(surface)
 	local kept = {}
-	for _, s in ipairs(shapes) do if s.k == "screentext" then kept[#kept + 1] = s end end
+	for _, s in ipairs(shapes) do
+		if s.k == "screentext" or (s.surface or "emucore") ~= which then kept[#kept + 1] = s end
+	end
 	shapes = kept
 end
 function gui.cleartext()
@@ -977,8 +1005,18 @@ function gui.defaultForeground(c) foreground = colour(c, "#FFFFFFFF") end
 function gui.defaultBackground(c) background = colour(c, "") end
 function gui.defaultTextBackground(c) textBackground = colour(c, "") end
 function gui.defaultPixelFont() end
-function gui.use_surface() end
-function gui.DrawNew() end
+function gui.use_surface(name)
+	if name == nil then
+		print("Surface name cannot be nil. Pass \"emucore\" to `gui.use_surface` to restore the default.")
+		return
+	end
+	usedSurface = surfaceOf(name)
+end
+-- deprecated, as Chimera's: the surface drawn on from now, cleared unless asked not to
+function gui.DrawNew(name, clear)
+	usedSurface = surfaceOf(name)
+	if clear ~= false then gui.clearGraphics(name) end
+end
 function gui.DrawFinish() end
 -- the images are read again the next time they are drawn
 function gui.clearImageCache() imageEpoch = imageEpoch + 1 end
