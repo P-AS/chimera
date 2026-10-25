@@ -44,6 +44,8 @@ namespace Chimera.Client.GUI
 			SaveProjectMenuItem.Enabled = tastudio?.HasUnsavedChanges is true;
 			SaveProjectAsMenuItem.Enabled = tastudio is not null;
 			SaveProjectBackupMenuItem.Enabled = tastudio?.CanSaveBackup is true;
+			// the settings of the machine the project runs (issue #370)
+			ProjectSettingsMenuItem.Enabled = CanChangeProjectSettings;
 
 			// nothing is running, so there is nothing to shoot or record
 			ScreenshotSubMenu.Enabled = !Emulator.IsNull();
@@ -83,6 +85,9 @@ namespace Chimera.Client.GUI
 		{
 			if (Tools.IsLoaded<TAStudio>()) Tools.TAStudio.SaveProjectBackup();
 		}
+
+		private void ProjectSettingsMenuItem_Click(object sender, EventArgs e)
+			=> ProjectSettingsDialog();
 
 		/// <summary>
 		/// The saving keys, answered here as well as in TAStudio - the same work

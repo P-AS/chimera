@@ -28,6 +28,7 @@ namespace Chimera.Client.GUI
 			this.SaveProjectMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.SaveProjectAsMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.SaveProjectBackupMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
+			this.ProjectSettingsMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.toolStripMenuItem1 = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
 			this.toolStripSeparator6 = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
 			this.toolStripSeparator24 = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
@@ -200,6 +201,7 @@ namespace Chimera.Client.GUI
             this.SaveProjectMenuItem,
             this.SaveProjectAsMenuItem,
             this.SaveProjectBackupMenuItem,
+            this.ProjectSettingsMenuItem,
             this.CloseRomMenuItem,
             this.toolStripMenuItem1,
             this.EncodeVideoMenuItem,
@@ -243,6 +245,11 @@ namespace Chimera.Client.GUI
 			// 
 			this.SaveProjectBackupMenuItem.Text = "Save Project &Backup";
 			this.SaveProjectBackupMenuItem.Click += new System.EventHandler(this.SaveProjectBackupMenuItem_Click);
+			//
+			// ProjectSettingsMenuItem
+			//
+			this.ProjectSettingsMenuItem.Text = "Project Se&ttings...";
+			this.ProjectSettingsMenuItem.Click += new System.EventHandler(this.ProjectSettingsMenuItem_Click);
 			// 
 			// CloseRomMenuItem
 			// 
@@ -1191,6 +1198,7 @@ namespace Chimera.Client.GUI
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx SaveProjectMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx SaveProjectAsMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx SaveProjectBackupMenuItem;
+		private Chimera.WinForms.Controls.ToolStripMenuItemEx ProjectSettingsMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx CloseRomMenuItem;
 		private Chimera.WinForms.Controls.ToolStripSeparatorEx toolStripSeparator6;
 		private Chimera.WinForms.Controls.ToolStripSeparatorEx toolStripSeparator7;

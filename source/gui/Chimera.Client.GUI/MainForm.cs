@@ -158,6 +158,7 @@ namespace Chimera.Client.GUI
 			SaveProjectMenuItem.Image = MenuIcons.SaveProject;
 			SaveProjectAsMenuItem.Image = MenuIcons.SaveProjectAs;
 			SaveProjectBackupMenuItem.Image = MenuIcons.SaveProjectBackup;
+			ProjectSettingsMenuItem.Image = MenuIcons.Customize;
 			CloseRomMenuItem.Image = MenuIcons.CloseProject;
 			EncodeVideoMenuItem.Image = MenuIcons.EncodeVideo;
 			ScreenshotSubMenu.Image = MenuIcons.Screenshot;

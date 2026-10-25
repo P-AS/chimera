@@ -291,6 +291,21 @@ namespace Chimera.Client.Common
 		/// <summary>The movie holds work the project file does not: it was opened from recovered work.</summary>
 		public void MarkRecovered() => Changes = true;
 
+		/// <summary>
+		/// The project's own settings are what a boot reads (RomLoader), the movie's what a save
+		/// writes (above), so both change. So does the machine's identity, which a cache of states
+		/// is checked against (MachineIdentityOf): the greenzone of the old settings is not this
+		/// machine's.
+		/// </summary>
+		public void ChangeSettings(string flatSettingsJson, long clockStart)
+		{
+			var flat = string.IsNullOrWhiteSpace(flatSettingsJson) ? "{}" : flatSettingsJson;
+			Project.SetSettingsJson(flat);
+			Project.SetClockStart(clockStart);
+			SettingsJson = WrapSettings(flat);
+			Changes = true;
+		}
+
 		protected override FileWriteResult Write(string fn, bool isBackup = false)
 		{
 			if (StartsFromSavestate)

@@ -455,6 +455,16 @@ frame selector returns to frame 0. The input log is kept (it may no
 longer sync; that is the user's informed call). Non-structural changes
 (title, description, markers, ...) apply freely.
 
+The settings are changed in File > Project Settings (issue 370,
+user-decided 2026-10-25). The window shows the settings the New Project
+wizard shows for the project's files, plus the renderer, and the start
+of the machine's clock. The machine (the System box of a core with
+several) is not there: it decides which files the project takes. After
+the question above, the new settings are the project's and the movie's,
+and the machine restarts with them; a save writes them. When the
+machine does not start with the new settings, the old ones are put back
+and it starts with those again.
+
 ## Opening
 
 Opening a project resolves its files in three steps, and only asks for

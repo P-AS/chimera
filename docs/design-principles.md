@@ -11087,3 +11087,32 @@ fault handler, stopped from another thread twice, then run again after a
 state load) failed on Windows with the previous miniBox ("not stopped after
 200 asks") and passes with this one; it passes on Linux. miniBox's CI runs
 it on its Windows runner from now on.
+
+## An open project's settings can be changed (user-decided, 2026-10-25)
+
+Issue 370: trying a renderer or an anti-aliasing mode on an existing run
+meant a new project for each, because Chimera refused every change of
+settings once a project was open. docs/project.md already described the
+change ("Editing"); nothing offered it.
+
+File > Project Settings opens a window of the machine's settings: the ones
+the New Project wizard shows for the project's files, plus the renderer
+(the wizard asks it on its first page) and the start of the machine's clock.
+The machine itself (the System box of a core with several) is not there,
+because it decides which files the project takes. Restart with these asks
+once more, then the new settings become the project's (what a boot reads)
+and the movie's (what a save writes), and the machine restarts at frame 0
+through the same path as Reboot Core. The inputs are kept; the greenzone
+goes with the old machine, and a greenzone saved with the old settings is
+not used for the new ones (the settings are part of the machine's identity
+the cache is checked against). When the machine does not start with the
+new settings, the old ones are put back and it starts with those again.
+
+Not done: a setting changed at a chosen frame, kept in the movie. That needs
+every core to apply settings while it runs, a declaration no core has.
+
+Tests: ProjectSettingsFormTests (the renderer is shown and the machine is
+not; the project's files decide what is shown; the game's own settings are
+last; a restart is offered only for a change, the clock's start included)
+and TasMovieProjectFormatTests.ChangedSettingsAreTheNextBootsAndTheNextSaves.
+Each failed with its change taken out.

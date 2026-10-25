@@ -154,6 +154,41 @@ namespace Chimera.Tests.Client.Common.Movie
 			return movie;
 		}
 
+		/// <summary>
+		/// Issue 370: settings changed in an open project are the next boot's (the project's own,
+		/// which RomLoader reads) and the next save's (the movie's), the machine they make is
+		/// another machine for the cache of states, and the inputs are left as they were.
+		/// </summary>
+		[TestMethod]
+		public void ChangedSettingsAreTheNextBootsAndTheNextSaves()
+		{
+			var path = Path.Combine(_dir, "change-settings.chimeraProject");
+			var movie = MakeWorkedMovie(path);   // region ntsc, A on frame 3 of 6
+			movie.Save();
+			movie.ClearChanges();
+			var machineBefore = TasMovie.MachineIdentityOf(movie.Project);
+			const long clock = 1700000000;
+
+			movie.ChangeSettings(PalSettings, clock);
+
+			Assert.IsTrue(movie.Changes, "the change is work to save");
+			Assert.AreEqual("pal", Newtonsoft.Json.Linq.JObject.Parse(movie.Project.SettingsJson).Value<string>("region"),
+				"the project's settings, which the next boot reads");
+			Assert.AreEqual(clock, movie.Project.ClockStart);
+			Assert.AreNotEqual(machineBefore, TasMovie.MachineIdentityOf(movie.Project),
+				"another machine: the old settings' states are not its states");
+			Assert.AreEqual(6, movie.InputLogLength, "the inputs are kept");
+			Assert.IsTrue(movie.BoolIsPressed(3, "A"));
+
+			movie.Save();
+			var reloaded = LoadFresh(path);
+			Assert.AreEqual("pal", Newtonsoft.Json.Linq.JObject.Parse(reloaded.Project.SettingsJson).Value<string>("region"),
+				"and the save wrote them");
+			Assert.AreEqual(clock, reloaded.Project.ClockStart);
+			Assert.AreEqual(6, reloaded.InputLogLength);
+			Assert.IsTrue(reloaded.BoolIsPressed(3, "A"));
+		}
+
 		[TestMethod]
 		public void ItWritesDownWhereTheRunsInputStops()
 		{

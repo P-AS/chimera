@@ -41,6 +41,12 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// <summary>One game rather than a machine (<c>"kind": "game"</c>; docs/game-cores.md).</summary>
 		public bool IsGameCore => _cfg.IsGameCore;
 
+		/// <summary>The package's declaration this instance runs: its settings, for the Project Settings window.</summary>
+		public WaterboxConfig Config => _cfg;
+
+		/// <summary>The loaded game's own settings (GetGameSettings), which only the running core can name.</summary>
+		public IReadOnlyList<WaterboxConfig.SettingDecl> GameSettings => _gameDecls;
+
 		/// <summary>Builds a core's identity from its package declaration.</summary>
 		internal static CoreAttribute IdentityOf(WaterboxConfig cfg)
 			=> new PortedCoreAttribute(
