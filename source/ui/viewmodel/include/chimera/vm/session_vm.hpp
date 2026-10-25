@@ -603,6 +603,12 @@ public:
 	 * frames' (before and after), as Chimera's empty machine still runs
 	 * frames. Both are called on the machine's thread. */
 	void setScriptIdle(std::function<bool()> wanted, std::function<void()> idle);
+	/* Chimera's client.show_future: after each frame played, frames are
+	 * played ahead - the movie's input, none past its end - while `turn`,
+	 * asked with how many were played so far, says false (setFutureFrames'
+	 * most at the most); the last one's picture is shown and the machine is
+	 * put back as it was. On the machine's thread. */
+	void setFutureTurn(std::function<bool(int64_t played)> turn);
 	void scriptsDuringTurbo(bool on) { scriptsDuringTurboM_.store(on); }
 	/* What made the project last opened, kept after it closes, for New
 	 * Project to open on as Chimera's does (closing a project is most often
@@ -909,6 +915,11 @@ private:
 	void waitOnMachine(const std::function<void()> &job);
 	std::function<void()> scriptsBeforeM_, scriptsAfterM_;
 	std::function<bool()> scriptsWantedM_;
+	std::function<bool(int64_t)> futureTurnM_;
+	std::atomic<int64_t> futureMaxM_{0};
+	void showFutureOnMachine();
+	/* the machine's last picture, to the window */
+	void publishPictureOnMachine();
 	std::function<void()> scriptsIdleM_;
 	Clock::time_point idleDue_{};
 	std::atomic<bool> scriptsDuringTurboM_{true};

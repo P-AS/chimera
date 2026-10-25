@@ -38,12 +38,27 @@ void DisplayFit::naturalSize(int width, int height, double machineAspect, double
 	w = height * shape * s.w / width;
 }
 
-DisplayFit::Rect DisplayFit::place(int width, int height, double machineAspect, double areaW, double areaH) const
+void DisplayFit::surfaceSize(int width, int height, double machineAspect, double &w, double &h) const
+{
+	naturalSize(width, height, machineAspect, w, h);
+	const Rect s = source(width, height);
+	if (s.w <= 0 || s.h <= 0) return;
+	/* the padding in the picture's own pixels, each as wide as one shown */
+	w += std::max(0, padLeft + padRight) * w / s.w;
+	h += std::max(0, padTop + padBottom) * h / s.h;
+}
+
+DisplayFit::Rect DisplayFit::surface(int width, int height, double machineAspect, double areaW, double areaH) const
 {
 	Rect r;
-	if (width <= 0 || height <= 0 || areaW <= 0 || areaH <= 0) return r;
+	if (width <= 0 || height <= 0) return r;
+	/* the client padding is the window's own: what is left is the area */
+	const double cl = std::max(0, clientLeft), ct = std::max(0, clientTop);
+	areaW -= cl + std::max(0, clientRight);
+	areaH -= ct + std::max(0, clientBottom);
+	if (areaW <= 0 || areaH <= 0) return r;
 	double nw = 0, nh = 0;
-	naturalSize(width, height, machineAspect, nw, nh);
+	surfaceSize(width, height, machineAspect, nw, nh);
 	if (nw <= 0 || nh <= 0) return r;
 	if (!letterbox)
 	{
@@ -59,8 +74,23 @@ DisplayFit::Rect DisplayFit::place(int width, int height, double machineAspect, 
 		r.w = nw * scale;
 		r.h = nh * scale;
 	}
-	r.x = (areaW - r.w) / 2;
-	r.y = (areaH - r.h) / 2;
+	r.x = cl + (areaW - r.w) / 2;
+	r.y = ct + (areaH - r.h) / 2;
+	return r;
+}
+
+DisplayFit::Rect DisplayFit::place(int width, int height, double machineAspect, double areaW, double areaH) const
+{
+	const Rect all = surface(width, height, machineAspect, areaW, areaH);
+	const Rect s = source(width, height);
+	if (all.w <= 0 || all.h <= 0 || s.w <= 0 || s.h <= 0) return all;
+	/* the picture inside its padding: the surface's pixels are the picture's */
+	const double across = s.w + std::max(0, padLeft + padRight), down = s.h + std::max(0, padTop + padBottom);
+	Rect r;
+	r.w = all.w * s.w / across;
+	r.h = all.h * s.h / down;
+	r.x = all.x + all.w * std::max(0, padLeft) / across;
+	r.y = all.y + all.h * std::max(0, padTop) / down;
 	return r;
 }
 
@@ -79,6 +109,30 @@ DisplayViewModel::DisplayViewModel(Dispatcher &dispatcher) : ViewModel("display"
 	expose("cropRight", "pixels cut off the picture's right edge", cropRight, true);
 	expose("cropBottom", "pixels cut off the picture's bottom edge", cropBottom, true);
 	expose("finalFilter", "the picture drawn sharp (0) or smoothed (1)", finalFilter, true);
+	for (auto &[name, p] : std::initializer_list<std::pair<const char *, Property<int64_t> *>>{{"padLeft", &padLeft}, {"padTop", &padTop},
+			 {"padRight", &padRight}, {"padBottom", &padBottom}, {"clientLeft", &clientLeft}, {"clientTop", &clientTop},
+			 {"clientRight", &clientRight}, {"clientBottom", &clientBottom}})
+		expose(name, "an extra padding a script set: the game's in its pixels, the client's in the window's", *p);
+	command("setPadding", "Chimera's SetGameExtraPadding (\"game\") or SetClientExtraPadding (\"client\"): the sides' "
+		"padding, left, top, right and bottom", {"which", "left", "top", "right", "bottom"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string which;
+			int64_t l = 0, t = 0, r = 0, b = 0;
+			if (!arg(a, 0, which, error) || !arg(a, 1, l, error) || !arg(a, 2, t, error) || !arg(a, 3, r, error) || !arg(a, 4, b, error)) return {};
+			if (which != "game" && which != "client")
+			{
+				error = "the padding is the game's or the client's";
+				return {};
+			}
+			const bool game = which == "game";
+			(game ? padLeft : clientLeft).set(l);
+			(game ? padTop : clientTop).set(t);
+			(game ? padRight : clientRight).set(r);
+			(game ? padBottom : clientBottom).set(b);
+			return {};
+		});
+	expose("placement", "where the window shows the picture, told by the window: the area's width and height, the "
+		"picture's x, y, width and height in it, and the part of the machine's picture shown (x, y, width, height)", placement, true);
 	expose("saveWindowPosition", "the window's place and size kept for the next start", saveWindowPosition, true);
 	expose("allowDoubleClickFullscreen", "a double click on the picture goes full screen and back", allowDoubleClickFullscreen, true);
 	expose("menuWindowed", "the menu bar shown in a window", menuWindowed, true);
@@ -149,6 +203,14 @@ DisplayFit DisplayViewModel::fit() const
 	f.cropTop = static_cast<int>(cropTop.get());
 	f.cropRight = static_cast<int>(cropRight.get());
 	f.cropBottom = static_cast<int>(cropBottom.get());
+	f.padLeft = static_cast<int>(padLeft.get());
+	f.padTop = static_cast<int>(padTop.get());
+	f.padRight = static_cast<int>(padRight.get());
+	f.padBottom = static_cast<int>(padBottom.get());
+	f.clientLeft = static_cast<int>(clientLeft.get());
+	f.clientTop = static_cast<int>(clientTop.get());
+	f.clientRight = static_cast<int>(clientRight.get());
+	f.clientBottom = static_cast<int>(clientBottom.get());
 	return f;
 }
 

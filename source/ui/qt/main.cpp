@@ -1283,6 +1283,8 @@ int main(int argc, char **argv)
 					luaConsole.afterFrame();
 				});
 		});
+	/* a script's show_future: asked before each frame played ahead */
+	session.setFutureTurn([&lua](int64_t played) { return lua.ask("__chimera_future", {vm::Value(played)}) == "true"; });
 	/* a machine opened or closed: the running scripts start again, as Chimera's
 	 * Lua Console restarts on a core change (once the window has the new one) */
 	auto restartScripts = [&dispatcher, &luaConsole] { dispatcher.post([&luaConsole] { luaConsole.restartScripts(); }); };
@@ -1302,6 +1304,7 @@ int main(int argc, char **argv)
 		{
 			session.setScriptTurns({}, {});
 			session.setScriptIdle({}, {});
+			session.setFutureTurn({});
 		}
 	} letGo{session};
 

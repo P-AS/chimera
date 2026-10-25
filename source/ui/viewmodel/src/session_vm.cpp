@@ -1042,6 +1042,13 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			rerecords.set(count);
 			return {};
 		});
+	command("setFutureFrames", "the most frames played ahead after each frame for a script's show_future (0: none)",
+		{"most"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t most = 0;
+			if (!arg(a, 0, most, error)) return {};
+			futureMaxM_.store(std::clamp<int64_t>(most, 0, 32767));
+			return {};
+		});
 	command("setLagCount", "the lag count, made this from the frame the machine is on; the lag frames after it add to it, "
 		"as Chimera's emu.setlagcount; the machine going back before that frame counts afresh", {"count"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -3639,6 +3646,54 @@ void SessionViewModel::setScriptTurns(std::function<void()> before, std::functio
 	});
 }
 
+void SessionViewModel::setFutureTurn(std::function<bool(int64_t played)> turn)
+{
+	waitOnMachine([&] { futureTurnM_ = std::move(turn); });
+}
+
+void SessionViewModel::showFutureOnMachine()
+{
+	/* the machine as it is, kept to be put back */
+	uint64_t len = 0;
+	const uint8_t *saved = ce_session_save_state(s_, &len);
+	if (saved == nullptr || len == 0) return;
+	const std::vector<uint8_t> state(saved, saved + len);
+	const int64_t first = ce_session_frame(s_), most = futureMaxM_.load();
+	const auto axisCount = static_cast<size_t>(ce_session_axis_count(s_));
+	std::vector<int32_t> axes(axisCount);
+	int64_t played = 0;
+	bool drawn = false;
+	/* asked before each frame, as Chimera's (asked once more when the most is reached): true is enough */
+	while (!futureTurnM_(played) && played < most)
+	{
+		uint64_t buttons = 0;
+		if (ce_session_movie_get(s_, first + played, &buttons, axisCount != 0 ? axes.data() : nullptr) != 0)
+		{
+			buttons = 0;
+			for (size_t i = 0; i < axisCount; i++) axes[i] = ce_session_axis_neutral(s_, static_cast<int64_t>(i));
+		}
+		for (size_t i = 0; i < axisCount; i++) ce_session_set_axis(s_, static_cast<int32_t>(i), axes[i]);
+		played++;
+		if (ce_session_frame_advance(s_, buttons, 1) < 0) break;
+		drawn = true;
+	}
+	/* the machine back where it was, the future's picture kept on screen */
+	ce_session_load_state(s_, state.data(), state.size());
+	if (drawn) publishPictureOnMachine();
+}
+
+void SessionViewModel::publishPictureOnMachine()
+{
+	const uint32_t *px = ce_session_video(s_);
+	const int32_t w = ce_session_video_width(s_), h = ce_session_video_height(s_);
+	if (px == nullptr || w <= 0 || h <= 0) return;
+	/* the machine's own answer, else its declared virtual size */
+	int32_t ax = 0, ay = 0;
+	if (ce_session_display_aspect(s_, &ax, &ay) == 0 || ax <= 0 || ay <= 0) ax = ce_session_virtual_width(s_), ay = ce_session_virtual_height(s_);
+	const double aspect = ax > 0 && ay > 0 ? static_cast<double>(ax) / ay : static_cast<double>(w) / h;
+	screen.publish(px, w, h, aspect);
+}
+
 void SessionViewModel::setScriptIdle(std::function<bool()> wanted, std::function<void()> idle)
 {
 	waitOnMachine([&] {
@@ -5042,6 +5097,8 @@ int32_t SessionViewModel::advanceOnMachine()
 	report(-1, -1, f >= size ? size : -1, f >= size ? f : -1, measured);
 	/* and after it */
 	if (lag >= 0) scriptTurnOnMachine(scriptsAfterM_);
+	/* a script's show_future: frames ahead, their picture shown, the machine put back */
+	if (lag >= 0 && s_ != nullptr && futureMaxM_.load() > 0 && futureTurnM_) showFutureOnMachine();
 	return lag;
 }
 
@@ -5272,20 +5329,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		soundM_->play(samples, pairs, static_cast<int32_t>(v));
 	}
 
-	if (render)
-	{
-		const uint32_t *px = ce_session_video(s_);
-		const int32_t w = ce_session_video_width(s_), h = ce_session_video_height(s_);
-		if (px != nullptr && w > 0 && h > 0)
-		{
-			/* the machine's own answer, else its declared virtual size */
-			int32_t ax = 0, ay = 0;
-			if (ce_session_display_aspect(s_, &ax, &ay) == 0 || ax <= 0 || ay <= 0)
-				ax = ce_session_virtual_width(s_), ay = ce_session_virtual_height(s_);
-			const double aspect = ax > 0 && ay > 0 ? static_cast<double>(ax) / ay : static_cast<double>(w) / h;
-			screen.publish(px, w, h, aspect);
-		}
-	}
+	if (render) publishPictureOnMachine();
 	if (changed)
 	{
 		std::lock_guard<std::mutex> lock(pendingM_);

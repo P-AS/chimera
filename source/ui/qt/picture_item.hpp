@@ -32,6 +32,8 @@ class PictureItem : public QQuickItem
 	 * machine's pixels */
 	Q_PROPERTY(QRectF shownRect READ shownRect NOTIFY placementChanged)
 	Q_PROPERTY(QRectF sourceRect READ sourceRect NOTIFY placementChanged)
+	/* where the surface scripts draw on is: the picture with its game padding (Chimera's "emu" surface) */
+	Q_PROPERTY(QRectF surfaceRect READ surfaceRect NOTIFY placementChanged)
 
 public:
 	explicit PictureItem(QQuickItem *parent = nullptr);
@@ -45,6 +47,7 @@ public:
 	QVariantMap fit() const { return fitMap_; }
 	QRectF shownRect() const { return shownRect_; }
 	QRectF sourceRect() const { return source_rect_; }
+	QRectF surfaceRect() const { return surfaceRect_; }
 	void setFit(const QVariantMap &fit);
 
 	/* pictures handed to the GPU so far, for measuring (any thread) */
@@ -70,10 +73,10 @@ private:
 	int pictureWidth_ = 0, pictureHeight_ = 0;
 	/* the GUI thread's: the size the render thread saw */
 	Q_INVOKABLE void sizeSeen(int width, int height);
-	Q_INVOKABLE void placedAt(QRectF shown, QRectF source);
-	QRectF shownRect_, source_rect_;
+	Q_INVOKABLE void placedAt(QRectF shown, QRectF source, QRectF surface);
+	QRectF shownRect_, source_rect_, surfaceRect_;
 	/* the render thread's: what it last said */
-	QRectF saidShown_, saidSource_;
+	QRectF saidShown_, saidSource_, saidSurface_;
 	std::atomic<qint64> shown_{0};
 	/* the render thread's copy of the newest frame */
 	vm::Picture::Frame frame_;

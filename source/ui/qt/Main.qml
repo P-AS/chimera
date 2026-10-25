@@ -1201,7 +1201,17 @@ ApplicationWindow {
                     "customHeight": root.display.customHeight, "ratioX": root.display.ratioX, "ratioY": root.display.ratioY,
                     "letterbox": root.display.letterbox ? 1 : 0, "integerScale": root.display.integerScale ? 1 : 0,
                     "cropLeft": root.display.cropLeft, "cropTop": root.display.cropTop,
-                    "cropRight": root.display.cropRight, "cropBottom": root.display.cropBottom })
+                    "cropRight": root.display.cropRight, "cropBottom": root.display.cropBottom,
+                    // a script's extra paddings (client.SetGameExtraPadding, SetClientExtraPadding)
+                    "padLeft": root.display.padLeft, "padTop": root.display.padTop, "padRight": root.display.padRight,
+                    "padBottom": root.display.padBottom, "clientLeft": root.display.clientLeft, "clientTop": root.display.clientTop,
+                    "clientRight": root.display.clientRight, "clientBottom": root.display.clientBottom })
+            // told to the display for scripts: the area, the picture in it, the part of the machine's shown
+            onPlacementChanged: root.display.placement = [Math.round(width), Math.round(height), Math.round(shownRect.x),
+                Math.round(shownRect.y), Math.round(shownRect.width), Math.round(shownRect.height), Math.round(sourceRect.x),
+                Math.round(sourceRect.y), Math.round(sourceRect.width), Math.round(sourceRect.height)].join(" ")
+            onWidthChanged: placementChanged()
+            onHeightChanged: placementChanged()
         }
         // what scripts draw with Chimera's gui library: in the machine's
         // pixels, over the picture where it is drawn; gui.text in the window's
@@ -1233,8 +1243,10 @@ ApplicationWindow {
                         ctx.restore()
                         continue
                     }
+                    // the surface's pixels, from its top left: the picture's, cropped and padded, as Chimera's
+                    const surface = picture.surfaceRect
                     ctx.save()
-                    ctx.translate(shown.x - src.x * sx, shown.y - src.y * sy)
+                    ctx.translate(surface.x, surface.y)
                     ctx.scale(sx, sy)
                     Shapes.draw(ctx, luaCanvas, s, sx, sy, Shapes.urlOf)
                     ctx.restore()
@@ -1387,7 +1399,7 @@ ApplicationWindow {
     function largestFit() {
         const pw = picture.pictureWidth, ph = picture.pictureHeight
         if (pw <= 0 || ph <= 0 || root.visibility !== Window.Windowed) return 10
-        const bw = 0, bh = root.chromeHeight()
+        const bw = root.display.clientLeft + root.display.clientRight, bh = root.chromeHeight() + root.display.clientTop + root.display.clientBottom
         let fits = 0
         for (let z = 1; z <= 10; z++) {
             if (pw * z + bw >= Screen.desktopAvailableWidth || ph * z + bh >= Screen.desktopAvailableHeight) break
@@ -1401,7 +1413,7 @@ ApplicationWindow {
         const pw = picture.pictureWidth, ph = picture.pictureHeight
         if (pw <= 0 || ph <= 0) return
         let zoom = root.display.run("scaleFor", [root.session.systemId]) || 2
-        const bw = 0, bh = root.chromeHeight()
+        const bw = root.display.clientLeft + root.display.clientRight, bh = root.chromeHeight() + root.display.clientTop + root.display.clientBottom
         for (; zoom > 1; zoom--)
             if (pw * zoom + bw < Screen.desktopAvailableWidth && ph * zoom + bh < Screen.desktopAvailableHeight) break
         root.windowScale = zoom
@@ -1419,6 +1431,14 @@ ApplicationWindow {
         target: picture
         function onPictureWidthChanged() { root.frameBufferResized(false) }
         function onPictureHeightChanged() { root.frameBufferResized(false) }
+    }
+    // a script's client padding takes room of its own, as Chimera's window grows by it
+    Connections {
+        target: root.display
+        function onClientLeftChanged() { root.frameBufferResized(false) }
+        function onClientTopChanged() { root.frameBufferResized(false) }
+        function onClientRightChanged() { root.frameBufferResized(false) }
+        function onClientBottomChanged() { root.frameBufferResized(false) }
     }
     // a message over the picture, for the messages' time or as long as asked (Chimera's AddOnScreenMessage duration)
     function note(text, seconds) {

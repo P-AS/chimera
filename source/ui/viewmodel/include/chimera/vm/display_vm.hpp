@@ -26,6 +26,12 @@ struct DisplayFit
 	/* grown by whole steps of its size only */
 	bool integerScale = false;
 	int cropLeft = 0, cropTop = 0, cropRight = 0, cropBottom = 0;
+	/* Chimera's extra paddings, a script's (client.SetGameExtraPadding and
+	 * SetClientExtraPadding): the game's, black around the picture in its
+	 * own pixels, making the surface scripts draw on larger; the client's,
+	 * window pixels left free around everything */
+	int padLeft = 0, padTop = 0, padRight = 0, padBottom = 0;
+	int clientLeft = 0, clientTop = 0, clientRight = 0, clientBottom = 0;
 
 	/* the part of the picture shown, in its pixels (the crop taken off) */
 	struct Rect
@@ -36,7 +42,11 @@ struct DisplayFit
 	/* its size shown at 1x: the height kept, the width its shape gives (a
 	 * custom size is that size) */
 	void naturalSize(int width, int height, double machineAspect, double &w, double &h) const;
-	/* where it goes in an area of areaW x areaH */
+	/* the surface at 1x: the picture shown with the game padding around it */
+	void surfaceSize(int width, int height, double machineAspect, double &w, double &h) const;
+	/* where the surface goes in an area of areaW x areaH (inside the client
+	 * padding), and where the picture goes, inside its padding */
+	Rect surface(int width, int height, double machineAspect, double areaW, double areaH) const;
 	Rect place(int width, int height, double machineAspect, double areaW, double areaH) const;
 };
 
@@ -49,6 +59,14 @@ public:
 	Property<double> ratioX{4}, ratioY{3};
 	Property<bool> letterbox{true}, integerScale{false};
 	Property<int64_t> cropLeft{0}, cropTop{0}, cropRight{0}, cropBottom{0};
+	/* the extra paddings a script set (not remembered, as Chimera's) */
+	Property<int64_t> padLeft{0}, padTop{0}, padRight{0}, padBottom{0};
+	Property<int64_t> clientLeft{0}, clientTop{0}, clientRight{0}, clientBottom{0};
+	/* where the window shows the picture, told by the window for scripts:
+	 * the picture area's size, the picture's place in it, and the part of
+	 * the machine's picture shown ("w h x y w h x y w h", window pixels then
+	 * the machine's) */
+	Property<std::string> placement;
 	/* 0 sharp (nearest), 1 smoothed (bilinear) */
 	Property<int64_t> finalFilter{0};
 	/* the window's place and size kept for the next start, and what was kept ("x,y,w,h") */

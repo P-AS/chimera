@@ -806,6 +806,53 @@ function client.setwindowsize(size)
 	C.toolWindows.resizeWindow()
 	C.gui.addMessage("Window size set to " .. n .. "x")
 end
+-- Chimera's show_future: after each frame, frames played ahead (the movie's
+-- input) until the function, asked with how many were played, returns true,
+-- or maxFrames are; their picture shown and the machine put back. One at a
+-- time; unregistered, or its script stopped, none
+local futureFn = nil
+function __chimera_future(played)
+	if futureFn == nil then return true end
+	return callNamed(futureFn, played) == true
+end
+function client.show_future(fn, maxFrames, name)
+	local most = math.tointeger(tonumber(maxFrames))
+	if most == nil or most < 1 or most > 32767 then
+		print("Invalid number of future frames for timeout (" .. tostring(maxFrames) .. "); number must be in 1..=32767.")
+		return "00000000-0000-0000-0000-000000000000"
+	end
+	futureFn = registerNamed(fn, "BeforeFutureFrame", name)
+	C.session.setFutureFrames(most)
+	return futureFn.guid
+end
+onRemoved[#onRemoved + 1] = function()
+	if futureFn == nil then return end
+	for _, f in ipairs(registered) do if f == futureFn then return end end
+	futureFn = nil
+	C.session.setFutureFrames(0)
+end
+-- where the window shows the picture, as it last said: the area's size, the
+-- picture's place in it, and the part of the machine's picture shown
+local function placement()
+	local t = {}
+	for n in string.gmatch(C.display.placement, "%-?%d+") do t[#t + 1] = math.tointeger(tonumber(n)) end
+	return t
+end
+function client.screenwidth() return placement()[1] or 0 end
+function client.screenheight() return placement()[2] or 0 end
+-- a point of the machine's picture, where the window shows it
+function client.transformPoint(x, y)
+	local p = placement()
+	if #p < 10 or p[9] == 0 or p[10] == 0 then return {x = x, y = y} end
+	return {x = math.floor(p[3] + (x - p[7]) * p[5] / p[9]), y = math.floor(p[4] + (y - p[8]) * p[6] / p[10])}
+end
+-- the bars beside and above the picture (its game padding among them)
+function client.borderwidth() return client.transformPoint(0, 0).x end
+function client.borderheight() return client.transformPoint(0, 0).y end
+-- black around the picture in its pixels, the surface scripts draw on grown
+-- with it; and room left free around everything in the window's
+function client.SetGameExtraPadding(left, top, right, bottom) C.display.setPadding("game", left or 0, top or 0, right or 0, bottom or 0) end
+function client.SetClientExtraPadding(left, top, right, bottom) C.display.setPadding("client", left or 0, top or 0, right or 0, bottom or 0) end
 function client.xpos() return math.tointeger(tonumber(string.match(C.toolWindows.windowPosition(), "^(%-?%d+)"))) end
 function client.ypos() return math.tointeger(tonumber(string.match(C.toolWindows.windowPosition(), " (%-?%d+)$"))) end
 function client.openhexeditor() C.toolWindows.show("hex") end

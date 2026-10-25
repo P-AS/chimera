@@ -56,17 +56,26 @@ void PictureItem::setFit(const QVariantMap &fit)
 	f.cropTop = static_cast<int>(number("cropTop", 0));
 	f.cropRight = static_cast<int>(number("cropRight", 0));
 	f.cropBottom = static_cast<int>(number("cropBottom", 0));
+	f.padLeft = static_cast<int>(number("padLeft", 0));
+	f.padTop = static_cast<int>(number("padTop", 0));
+	f.padRight = static_cast<int>(number("padRight", 0));
+	f.padBottom = static_cast<int>(number("padBottom", 0));
+	f.clientLeft = static_cast<int>(number("clientLeft", 0));
+	f.clientTop = static_cast<int>(number("clientTop", 0));
+	f.clientRight = static_cast<int>(number("clientRight", 0));
+	f.clientBottom = static_cast<int>(number("clientBottom", 0));
 	fit_ = f;
 	fitNew_ = true;
 	Q_EMIT fitChanged();
 	update();
 }
 
-void PictureItem::placedAt(QRectF shown, QRectF source)
+void PictureItem::placedAt(QRectF shown, QRectF source, QRectF surface)
 {
-	if (shown == shownRect_ && source == source_rect_) return;
+	if (shown == shownRect_ && source == source_rect_ && surface == surfaceRect_) return;
 	shownRect_ = shown;
 	source_rect_ = source;
+	surfaceRect_ = surface;
 	Q_EMIT placementChanged();
 }
 
@@ -90,9 +99,9 @@ QSGNode *PictureItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
 	/* the GUI's thread waits while this runs: its fit can be read */
 	if (fresh || fitNew_)
 	{
-		/* told to the GUI's thread, the picture's size at 1x as it is fitted */
+		/* told to the GUI's thread, the picture's size at 1x as it is fitted, its game padding with it */
 		double nw = 0, nh = 0;
-		fit_.naturalSize(frame_.width, frame_.height, frame_.aspect, nw, nh);
+		fit_.surfaceSize(frame_.width, frame_.height, frame_.aspect, nw, nh);
 		QMetaObject::invokeMethod(this, "sizeSeen", Qt::QueuedConnection, Q_ARG(int, static_cast<int>(nw + 0.5)),
 			Q_ARG(int, static_cast<int>(nh + 0.5)));
 		fitNew_ = false;
@@ -120,12 +129,14 @@ QSGNode *PictureItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
 	const vm::DisplayFit::Rect to = fit_.place(frame_.width, frame_.height, frame_.aspect, width(), height());
 	node->setRect(QRectF(to.x, to.y, to.w, to.h));
 	/* told to the window's thread when it moves, for what is drawn over it */
-	const QRectF shown(to.x, to.y, to.w, to.h), source(from.x, from.y, from.w, from.h);
-	if (shown != saidShown_ || source != saidSource_)
+	const vm::DisplayFit::Rect all = fit_.surface(frame_.width, frame_.height, frame_.aspect, width(), height());
+	const QRectF shown(to.x, to.y, to.w, to.h), source(from.x, from.y, from.w, from.h), surface(all.x, all.y, all.w, all.h);
+	if (shown != saidShown_ || source != saidSource_ || surface != saidSurface_)
 	{
 		saidShown_ = shown;
 		saidSource_ = source;
-		QMetaObject::invokeMethod(this, "placedAt", Qt::QueuedConnection, Q_ARG(QRectF, shown), Q_ARG(QRectF, source));
+		saidSurface_ = surface;
+		QMetaObject::invokeMethod(this, "placedAt", Qt::QueuedConnection, Q_ARG(QRectF, shown), Q_ARG(QRectF, source), Q_ARG(QRectF, surface));
 	}
 	return node;
 }

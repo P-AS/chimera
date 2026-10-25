@@ -764,12 +764,43 @@ void displayFit()
 	/* a crop that would leave nothing leaves the picture whole */
 	f.cropRight = 120;
 	CHECK(same(f.source(128, 120), 0, 0, 128, 120));
+	/* Chimera's extra paddings: the game's around the picture in its pixels,
+	 * the surface scripts draw on that much larger; the client's free room in
+	 * the window's pixels around it all */
+	{
+		DisplayFit p;
+		p.aspectMode = 0;
+		p.padLeft = 40;
+		p.padRight = 60;
+		p.padBottom = 20;
+		p.surfaceSize(128, 120, four3, w, h);
+		CHECK(near(w, 228) && near(h, 140));
+		CHECK(same(p.surface(128, 120, four3, 456, 280), 0, 0, 456, 280));
+		CHECK(same(p.place(128, 120, four3, 456, 280), 80, 0, 256, 240));
+		p.clientLeft = 10;
+		p.clientTop = 6;
+		p.clientRight = 10;
+		p.clientBottom = 14;
+		CHECK(same(p.surface(128, 120, four3, 476, 300), 10, 6, 456, 280));
+		CHECK(same(p.place(128, 120, four3, 476, 300), 90, 6, 256, 240));
+		/* a crop with them: the surface starts where the crop does */
+		p.cropLeft = 8;
+		p.surfaceSize(128, 120, four3, w, h);
+		CHECK(near(w, 220) && near(h, 140));
+	}
 	/* the view model's values, kept in range */
 	ManualDispatcher d;
 	DisplayViewModel display(d);
 	display.aspectMode.set(9);
 	display.customWidth.set(-5);
 	CHECK(display.fit().aspectMode == 3 && display.fit().customWidth == 0 && display.fit().letterbox);
+	{
+		std::string error;
+		CHECK(display.run("setPadding", {std::string("game"), int64_t{1}, int64_t{2}, int64_t{3}, int64_t{4}}, error).has_value());
+		CHECK(display.run("setPadding", {std::string("client"), int64_t{5}, int64_t{6}, int64_t{7}, int64_t{8}}, error).has_value());
+		CHECK(display.fit().padLeft == 1 && display.fit().padBottom == 4 && display.fit().clientLeft == 5 && display.fit().clientBottom == 8);
+		CHECK(!display.run("setPadding", {std::string("emu"), int64_t{1}, int64_t{2}, int64_t{3}, int64_t{4}}, error));
+	}
 	/* Window Size, as Chimera's: each system's scale, 2 at first, 1 to 10, kept; the window follows the picture */
 	{
 		std::string error;
@@ -7644,10 +7675,11 @@ bool luaParity(const char *package, const char *rom)
 	GuiOverlayViewModel overlay(d);
 	FormsViewModel forms(d);
 	PathsViewModel paths(d);
+	DebuggerViewModel debugger(d, session);
 	paths.programFolder.set(dir.string());
 	LuaBridge lua;
 	LuaConsoleViewModel console(d, lua);
-	for (ViewModel *vm : std::initializer_list<ViewModel *>{&session, &roll, &details, &display, &tools, &overlay, &forms, &paths, &console}) lua.add(*vm);
+	for (ViewModel *vm : std::initializer_list<ViewModel *>{&session, &roll, &details, &display, &tools, &overlay, &forms, &paths, &debugger, &console}) lua.add(*vm);
 	std::string shot = "(none)";
 	tools.screenshot = [&shot](const std::string &path) { shot = path; };
 	tools.windowPosition = [] { return std::pair<int64_t, int64_t>{-7, 42}; };
@@ -7760,6 +7792,33 @@ bool luaParity(const char *package, const char *rom)
 	CHECK(lua1("movie.setrerecordcounting(true)") == "[]");
 	editOverWorkDone();
 	CHECK(lua1("movie.getrerecordcount()") == "[78]");
+	/* show_future: after a frame, frames played ahead until the function says enough, the machine put back */
+	session.setFutureTurn([&lua](int64_t played) { return lua.ask("__chimera_future", {Value(played)}) == "true"; });
+	CHECK(lua1("seen = {} future = client.show_future(function(n) seen[#seen + 1] = n return n == 3 end, 10) return #future") == "[36]");
+	{
+		const int64_t at = session.frame.get();
+		session.run("frameAdvance", {}, error);
+		CHECK(d.until([&] { return session.frame.get() == at + 1; }, 20));
+		CHECK(lua1("emu.framecount(), table.concat(seen, ',')") == "[" + std::to_string(at + 1) + ", \"0,1,2,3\"]");
+		/* the machine's own frame counter: put back, not three ahead */
+		const std::string machineFrame = lua1("emu.getregister('Frame')");
+		const std::string ahead = lua1("memory.hash_region(0, 256)");
+		/* the same frame played without it: the same machine (each run_lua is a
+		 * script of its own, so its function goes as the console's Remove All takes it) */
+		CHECK(console.run("removeAllFunctions", {}, error).has_value() && lua1("seen = {} return #seen") == "[0]");
+		session.run("seek", {at}, error);
+		CHECK(d.until([&] { return session.frame.get() == at; }, 20));
+		session.run("frameAdvance", {}, error);
+		CHECK(d.until([&] { return session.frame.get() == at + 1; }, 20));
+		CHECK(lua1("memory.hash_region(0, 256)") == ahead && lua1("#seen") == "[0]");
+		CHECK(lua1("emu.getregister('Frame')") == machineFrame && machineFrame.find("error") == std::string::npos);
+		/* the most: the function asked once more when it is reached, as Chimera's */
+		CHECK(lua1("seen = {} future = client.show_future(function(n) seen[#seen + 1] = n return false end, 2)") == "[]");
+		session.run("frameAdvance", {}, error);
+		CHECK(d.until([&] { return session.frame.get() == at + 2; }, 20));
+		CHECK(lua1("table.concat(seen, ','), client.show_future(print, 0)") == "[\"0,1,2\", \"00000000-0000-0000-0000-000000000000\"]");
+		CHECK(console.run("removeAllFunctions", {}, error).has_value());
+	}
 	/* sleep: the scripts' thread waits */
 	const auto before = std::chrono::steady_clock::now();
 	CHECK(lua1("client.sleep(30) client.exactsleep(20)") == "[]");
