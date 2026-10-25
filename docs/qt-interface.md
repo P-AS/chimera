@@ -160,6 +160,13 @@ code is in `source/ui`; how it is built and run is in
   and the frame edits go back to), a marker's or a held state's corner,
   branch numbers before the frame numbers, the title under the pointer lit
   and an empty cell under it naming its column.
+  The menus are Chimera's: Edit has its Selection Undo and Selection Redo
+  (never enabled, as in Chimera) and nothing more (markers moving with the
+  frames is in TAStudio Settings, as Chimera's; making the inputs long is
+  the command line's --fill), Columns has no Show All (Restore Defaults
+  shows every column), and the menu on the frames picked has Cancel Seek,
+  Remove Markers only when a marker is among them, and Branch only on the
+  machine's own frame.
 - **Qt is patched where it faults** (owner, 2026-10-24): fixes to Qt go in
   tools/qt-patches and tools/build-qt-windows.sh applies them as it unpacks
   the source. The first: a Qt thread that ended after its data was let go

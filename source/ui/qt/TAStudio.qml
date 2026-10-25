@@ -153,6 +153,9 @@ ApplicationWindow {
                 Action { id: undoAction; property string hotkey: "Undo"; text: qsTr("&Undo"); enabled: tas.pianoRoll.undoEnabled; onTriggered: tas.pianoRoll.run("undo") }
                 Action { id: redoAction; property string hotkey: "Redo"; text: qsTr("&Redo"); enabled: tas.pianoRoll.redoEnabled; onTriggered: tas.pianoRoll.run("redo") }
                 Action { text: qsTr("Show Undo History"); onTriggered: { undoHistoryWindow.show(); undoHistoryWindow.raise() } }
+                // Chimera has these, never enabled
+                Action { text: qsTr("Selection Undo"); enabled: false }
+                Action { text: qsTr("Selection Redo"); enabled: false }
                 MenuDivider {}
                 Action { text: qsTr("Deselect"); enabled: editMenu.picked; onTriggered: tas.pianoRoll.run("select", [-1, -1]) }
                 Action {
@@ -242,14 +245,6 @@ ApplicationWindow {
                         onObjectRemoved: (index, object) => recentMacrosMenu.removeItem(object)
                     }
                 }
-                MenuDivider {}
-                Action {
-                    text: qsTr("&Markers Move With the Frames")
-                    checkable: true
-                    checked: tas.pianoRoll.bindMarkers
-                    onToggled: tas.pianoRoll.bindMarkers = checked
-                }
-                Action { text: qsTr("Make the Inputs 1,000,000 Frames Long"); onTriggered: tas.pianoRoll.run("fill", [1000000]) }
             }
             Menu {
                 delegate: MenuEntry {}
@@ -328,7 +323,6 @@ ApplicationWindow {
                     onObjectRemoved: (index, object) => columnsMenu.removeMenu(object)
                 }
                 MenuDivider { id: columnsSeparator }
-                Action { text: qsTr("Show &All"); onTriggered: tas.pianoRoll.run("showAllColumns") }
                 Instantiator {
                     model: tas.pianoRoll.rows("columnGroups")
                     delegate: MenuItem {
@@ -522,7 +516,7 @@ ApplicationWindow {
                         onCellPressed: (row, column, alt) => { oneRoll.use(); tas.pianoRoll.run("press", [row, column, alt]) }
                         onColumnMenuRequested: (column, name, autoHeld, x, y) => { oneRoll.use(); columnMenu.name = name; columnMenu.autoHeld = autoHeld; columnMenu.popup() }
                         // Chimera's menu for the frames picked; nothing picked, no menu
-                        onRowMenuRequested: (row) => { oneRoll.use(); if (tas.pianoRoll.selectFirst >= 0 && tas.pianoRoll.selectLast < tas.pianoRoll.frameCount) rowMenu.popup() }
+                        onRowMenuRequested: (row) => { oneRoll.use(); if (tas.pianoRoll.selectFirst >= 0 && tas.pianoRoll.selectLast < tas.pianoRoll.frameCount) { rowMenu.row = row; rowMenu.popup() } }
                         onCellDragged: (row, column) => tas.pianoRoll.run("drag", [row, column])
                         onFrameClicked: (row) => { oneRoll.use(); tas.session.run("seek", [row]) }
                         // Chimera's right button held and the wheel turned: a frame back a notch up, on from
@@ -972,6 +966,8 @@ ApplicationWindow {
     Menu {
         id: rowMenu
         objectName: "rowMenu"
+        // the row it was opened on
+        property var row: -1
         delegate: tas.keyedItem
         Action {
             text: qsTr("Set Markers")
@@ -982,12 +978,19 @@ ApplicationWindow {
             }
         }
         Action { text: qsTr("Set Marker with Text"); onTriggered: markerDialog.openFor(tas.pianoRoll.selectFirst, "") }
-        Action { text: qsTr("Remove Markers"); onTriggered: tas.removeMarkers() }
+        // only when a marker is among the frames picked, as Chimera's
+        Action {
+            text: qsTr("Remove Markers")
+            enabled: { const next = tas.pianoRoll.run("nextMarker", [tas.pianoRoll.selectFirst - 1]); return next >= 0 && next <= tas.pianoRoll.selectLast }
+            onTriggered: tas.removeMarkers()
+        }
         MenuDivider {}
         Action { text: qsTr("Deselect"); onTriggered: tas.pianoRoll.run("select", [-1, -1]) }
         Action { property string hotkey: "Sel. bet. Markers"; text: qsTr("Select between Markers"); onTriggered: tas.selectBetweenMarkers() }
         MenuDivider {}
         Action { text: qsTr("Clear Greenzone"); onTriggered: tas.session.run("clearGreenzone") }
+        // a seek that plays (Turbo seek off) stopped where it is
+        Action { text: qsTr("Cancel Seek"); enabled: tas.session.seekingTo >= 0; onTriggered: tas.session.run("pause") }
         MenuDivider {}
         Action {
             text: qsTr("Copy")
@@ -1014,7 +1017,14 @@ ApplicationWindow {
         Action { property string hotkey: "Clone # Times"; text: qsTr("Clone # Times"); onTriggered: cloneDialog.open() }
         MenuDivider {}
         Action { text: qsTr("Truncate Movie"); onTriggered: tas.pianoRoll.run("truncate", [tas.pianoRoll.selectFirst]) }
-        Action { text: qsTr("&Branch"); enabled: tas.branches.createEnabled; onTriggered: tas.branches.run("create", [""]) }
+        // on the machine's own frame only, as Chimera's
+        MenuItem {
+            text: qsTr("&Branch")
+            enabled: tas.branches.createEnabled
+            visible: rowMenu.row === tas.pianoRoll.currentFrame
+            height: visible ? implicitHeight : 0
+            onTriggered: tas.branches.run("create", [""])
+        }
     }
     // a marker on each frame picked; more than 50 asks first, as Chimera does
     function setMarkers() { tas.pianoRoll.run("addMarkers", [tas.pianoRoll.selectFirst, tas.pianoRoll.selectLast]) }
