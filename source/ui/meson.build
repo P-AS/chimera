@@ -33,6 +33,7 @@ vm_lib = static_library(
   [
     lua_docs,
     'viewmodel/src/view_model.cpp',
+    'viewmodel/src/mcp_vm.cpp',
     'viewmodel/src/input_log.cpp',
     'viewmodel/src/bindings.cpp',
     'viewmodel/src/json.cpp',
@@ -293,4 +294,18 @@ if qt_dep.found()
     cpp_args: ['-DCHIMERA_QT_QML_DIR="' + meson.current_source_dir() / 'qt' + '"'],
   )
   test('theme', test_theme, env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software'], timeout: 60)
+  # the MCP server in the window: the witness's agent, reading and then
+  # changing the open project through chimera-mcp; the window quits by itself
+  if host_machine.system() != 'windows'
+    foreach mode : ['', 'changes']
+      test(
+        mode == '' ? 'mcp window' : 'mcp window changes',
+        find_program('bash'),
+        args: [files('qt/tests/mcp-window.sh'), chimera_qt, meson.project_build_root() / 'chimera-mcp', repo_root,
+          meson.current_build_dir() / 'mcp-window-test', mode],
+        is_parallel: false,
+        timeout: 360,
+      )
+    endforeach
+  endif
 endif

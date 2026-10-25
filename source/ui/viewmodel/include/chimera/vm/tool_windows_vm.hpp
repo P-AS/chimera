@@ -19,6 +19,10 @@ public:
 	explicit ToolWindowsViewModel(Dispatcher &dispatcher);
 
 	Property<std::string> settings{"{}"};
+	/* a tool window asked to be shown (by a script: Chimera's client.opentasstudio), by --show's names; the
+	 * window shows it and the request goes; and the program asked to close with an exit code (client.exit) */
+	Property<std::string> showAsked;
+	Property<int64_t> exitAsked{-1};
 
 	/* a tool's option ("save", "top", "float"), as it is or by default */
 	bool option(const std::string &tool, const std::string &name) const;

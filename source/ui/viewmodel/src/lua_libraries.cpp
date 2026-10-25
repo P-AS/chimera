@@ -162,9 +162,18 @@ function bit.byteswap_32(a) return string.unpack("<I4", string.pack(">I4", a & 0
 
 -- emu ----------------------------------------------------------------------
 emu = {}
--- the script waits here and goes on after the next frame
-function emu.frameadvance() if coroutine.isyieldable() then coroutine.yield() end end
-function emu.yield() if coroutine.isyieldable() then coroutine.yield() end end
+-- frameadvance: the script waits here and goes on after the next frame;
+-- yield: it goes on at the window's next turn, a frame run or not, as
+-- Chimera's. The MCP server's run_lua code may not wait (__chimera_no_waits),
+-- as Chimera's refuses it
+function emu.frameadvance()
+	if __chimera_no_waits then error("emu.frameadvance() is not allowed during any callbacks", 2) end
+	if coroutine.isyieldable() then coroutine.yield("frame") end
+end
+function emu.yield()
+	if __chimera_no_waits then error("emu.yield() is not allowed during any callbacks", 2) end
+	if coroutine.isyieldable() then coroutine.yield() end
+end
 function emu.framecount() return C.session.frame end
 function emu.lagcount() return C.session.lagCount end
 function emu.islagged() return C.session.lagFrame end
@@ -687,7 +696,10 @@ function client.SetSoundOn(on) C.session.soundOn = on end
 function client.GetSoundOn() return C.session.soundOn end
 function client.displaymessages(on) C.session.showMessages = on end
 function client.clearautohold() C.session.clearAutohold() end
-function client.exit() error("client.exit: a script does not close the window here") end
+-- Chimera's: the program closes (a project with changes asks first, as closing does)
+function client.exit() C.toolWindows.exit(0) end
+function client.exitCode(code) C.toolWindows.exit(code) end
+function client.opentasstudio() C.toolWindows.show("tastudio") end
 -- Chimera's Encode Video without the window: nil when it began, else why
 -- not; the command's container is the file's (the path as given stands)
 function client.encodevideo(path, from, to, command)

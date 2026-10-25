@@ -83,6 +83,21 @@ public:
 	/* text the scripts wrote, line ends and all */
 	void append(const std::string &text);
 
+	/* a machine opened or closed: every script stopped, and those that ran
+	 * started again from their beginning, as Chimera's Lua Console restarts
+	 * on a core change */
+	void restartScripts();
+
+	/* The MCP server's Lua tools (issue 355), where the person sees them: */
+	/* what this console printed since the agent last asked, scripts' prints among it */
+	std::string takeOutputForAgent();
+	/* run_lua: the agent's code shown, then run (LuaBridge::runForAgent);
+	 * what it returned as a JSON array, or false with what it raised */
+	bool runForAgent(const std::string &code, std::string &results, std::string &error);
+	/* lua_script: a script file started, as Open Script starts one, or
+	 * stopped and taken out of the list; whether it runs now */
+	bool scriptForAgent(const std::string &path, bool stop);
+
 private:
 	struct Entry
 	{
@@ -161,6 +176,8 @@ private:
 	std::vector<Function> functions_;
 	std::vector<std::string> history_;
 	int64_t historyAt_ = -1;
+	/* what was printed since the agent last asked, its end kept */
+	std::string forAgent_;
 	/* the last line has no line end yet (console.write) */
 	bool open_ = false;
 	/* what was written since the last frame: past 100 the rest is not shown, as Chimera's */

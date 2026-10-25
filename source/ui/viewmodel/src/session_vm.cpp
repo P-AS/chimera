@@ -1450,35 +1450,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				error = "no frame before 0";
 				return {};
 			}
-			submit([this, target] {
-				runningM_ = false;
-				pauseOnFrameM_ = -1;
-				later([this] { running.set(false); fps.set(0.0); seekingTo.set(-1); });
-				/* Turbo seek off, as Chimera's: what the greenzone holds is gone to
-				 * at once (from its state at or before the frame), and the rest is
-				 * played at the machine's own speed, every frame drawn */
-				if (!turboSeekM_.load() && s_ != nullptr)
-				{
-					const int64_t from = ce_session_frame(s_);
-					const int64_t stored = target > 0 ? ce_session_greenzone_nearest(s_, target - 1) : 0;
-					if (stored < target - 1)
-					{
-						if (target < from || stored > from) seekOnMachine(std::max<int64_t>(stored, 0));
-						const int64_t at = ce_session_frame(s_);
-						if (at == target) return;
-						if (at < target)
-						{
-							pauseOnFrameM_ = target;
-							runningM_ = true;
-							due_ = fpsSince_ = Clock::now();
-							fpsFrames_ = 0;
-							later([this, at, target] { seekFrom.set(at); seekingTo.set(target); running.set(true); });
-							return;
-						}
-					}
-				}
-				seekOnMachine(target);
-			});
+			submit([this, target] { seekAsAskedOnMachine(target); });
 			return {};
 		}, &isOpen);
 	command("seekToRestore", "goes back to the frame the first of a run of edits found the machine on (Chimera's green arrow)",
@@ -1719,9 +1691,16 @@ void SessionViewModel::loop()
 {
 	for (;;)
 	{
+		/* the MCP server's calls, between frames */
+		mcpOnMachine();
 		std::function<void()> job;
 		bool advance = false, runOn = false, back = false, catchPoll = false, autosaveTick = false, keepTick = false,
-			journalTick = false;
+			journalTick = false, idleTick = false;
+		/* the scripts' turns when no frame is run, while there are scripts */
+		const bool idleScripts = (s_ == nullptr || !runningM_) && scriptsIdleM_ && scriptsWantedM_ && scriptsWantedM_();
+		if (!idleScripts) idleDue_ = {};
+		else if (idleDue_ == Clock::time_point{})
+			idleDue_ = Clock::now() + std::chrono::microseconds(16667);
 		{
 			std::unique_lock<std::mutex> lock(m_);
 			for (;;)
@@ -1760,8 +1739,19 @@ void SessionViewModel::loop()
 					journalTick = true;
 					break;
 				}
-				const bool timed = autoOn || keepOn;
-				const Clock::time_point wake = autoOn && keepOn ? std::min(autosaveDue_, recoveryDue_) : autoOn ? autosaveDue_ : recoveryDue_;
+				if (idleScripts && Clock::now() >= idleDue_)
+				{
+					idleTick = true;
+					break;
+				}
+				/* a started MCP server is looked at sixty times a second */
+				const bool mcpOn = mcpOnM_.load();
+				const bool timed = autoOn || keepOn || mcpOn || idleScripts;
+				Clock::time_point wake = autoOn && keepOn ? std::min(autosaveDue_, recoveryDue_) : autoOn ? autosaveDue_ : recoveryDue_;
+				if (mcpOn) wake = (autoOn || keepOn) ? std::min(wake, Clock::now() + std::chrono::milliseconds(16)) : Clock::now() + std::chrono::milliseconds(16);
+				if (idleScripts) wake = (autoOn || keepOn || mcpOn) ? std::min(wake, idleDue_) : idleDue_;
+				/* a call waiting (not one the window is answering), or a move of the agent's that has stopped */
+				if (mcpOn && !mcpBusyM_ && (ce_mcp_pending() != 0 || (mcpMoveM_ && !(runningM_ && pauseOnFrameM_ >= 0)))) break;
 				auto waitUntil = [&](Clock::time_point t) { cv_.wait_until(lock, timed ? std::min(t, wake) : t); };
 				/* a binding waiting for a gamepad input: the pads looked at
 				 * sixty times a second, a game open or not */
@@ -1788,7 +1778,7 @@ void SessionViewModel::loop()
 				if (runningM_ && s_ != nullptr)
 				{
 					/* the vsync throttle: a frame each picture the window has shown since the last */
-					if (throttleM_.load() == 2 && !unthrottledM_ && !turboM_ && !fastM_)
+					if (throttleM_.load() == 2 && !unthrottledM_ && !turboM_ && !fastM_ && !mcpFastM_)
 					{
 						if (vsyncTicks_.load() != vsyncSeen_) { vsyncSeen_ = vsyncTicks_.load(); advance = true; break; }
 						waitUntil(Clock::now() + std::chrono::milliseconds(catchingM_ ? 16 : 50));
@@ -1819,6 +1809,19 @@ void SessionViewModel::loop()
 		if (catchPoll)
 		{
 			catchPollOnMachine();
+			continue;
+		}
+		if (idleTick)
+		{
+			/* about sixty a second, not more to catch up after a long job */
+			idleDue_ = std::max(idleDue_ + std::chrono::microseconds(16667), Clock::now());
+			if (s_ == nullptr && runningM_)
+			{
+				scriptTurnOnMachine(scriptsBeforeM_);
+				scriptTurnOnMachine(scriptsAfterM_);
+			}
+			else if (scriptsNowOnMachine())
+				scriptsIdleM_();
 			continue;
 		}
 		if (keepTick)
@@ -1863,7 +1866,7 @@ void SessionViewModel::loop()
 			 * its own speed; else at the speed asked for */
 			const int64_t percent = fastM_ ? fastSpeedM_.load() : speedM_.load();
 			const int mode = throttleM_.load();
-			if (turboM_ || unthrottledM_ || mode == 3)
+			if (turboM_ || unthrottledM_ || mode == 3 || mcpFastM_)
 				due_ += Clock::duration::zero();
 			else if (mode == 1 && soundM_ && soundM_->available() && soundOnM_ && !fastM_)
 			{
@@ -2134,6 +2137,294 @@ int64_t SessionViewModel::clockOnMachine() const
 {
 	const int64_t clock = projectM_ != nullptr ? ce_project_clock_start(projectM_) : -1;
 	return clock < 0 ? CE_CLOCK_START_DEFAULT : clock;
+}
+
+void SessionViewModel::seekAsAskedOnMachine(int64_t target)
+{
+	runningM_ = false;
+	pauseOnFrameM_ = -1;
+	mcpFastM_ = false;
+	later([this] { running.set(false); fps.set(0.0); seekingTo.set(-1); });
+	/* Turbo seek off, as Chimera's: what the greenzone holds is gone to at
+	 * once (from its state at or before the frame), and the rest is played at
+	 * the machine's own speed, every frame drawn */
+	if (!turboSeekM_.load() && s_ != nullptr)
+	{
+		const int64_t from = ce_session_frame(s_);
+		const int64_t stored = target > 0 ? ce_session_greenzone_nearest(s_, target - 1) : 0;
+		if (stored < target - 1)
+		{
+			if (target < from || stored > from) seekOnMachine(std::max<int64_t>(stored, 0));
+			const int64_t at = ce_session_frame(s_);
+			if (at == target) return;
+			if (at < target)
+			{
+				pauseOnFrameM_ = target;
+				runningM_ = true;
+				due_ = fpsSince_ = Clock::now();
+				fpsFrames_ = 0;
+				later([this, at, target] { seekFrom.set(at); seekingTo.set(target); running.set(true); });
+				return;
+			}
+		}
+	}
+	seekOnMachine(target);
+}
+
+void SessionViewModel::mcpServing(bool on)
+{
+	mcpOnM_.store(on);
+	/* the machine's thread looks for calls from now (or stops looking) */
+	submit([this, on] {
+		if (on) return;
+		mcpBusyM_ = false;
+		mcpMoveM_.reset();
+		mcpFastM_ = false;
+	});
+}
+
+void SessionViewModel::mcpAnswerOnMachine(uint64_t id, const std::string &text, bool isError)
+{
+	ce_mcp_answer(s_, id, text.c_str(), isError ? 1 : 0);
+	mcpBusyM_ = false;
+}
+
+void SessionViewModel::mcpAnswer(uint64_t id, std::string text, bool isError)
+{
+	submit([this, id, text, isError] { mcpAnswerOnMachine(id, text, isError); });
+}
+
+void SessionViewModel::mcpAnswerRunState(uint64_t id)
+{
+	submit([this, id] {
+		const std::string text = std::string("{\"paused\": ") + (runningM_ ? "false" : "true") +
+			", \"frame\": " + std::to_string(s_ != nullptr ? ce_session_frame(s_) : -1) + "}";
+		mcpAnswerOnMachine(id, text, false);
+	});
+}
+
+void SessionViewModel::mcpAnswerOpened(uint64_t id)
+{
+	submit([this, id] {
+		if (s_ == nullptr)
+		{
+			mcpAnswerOnMachine(id, "The project was made, but its machine did not start.", true);
+			return;
+		}
+		json::Json opened;
+		std::string why;
+		if (!json::parse(mcpStatusOnMachine(), opened, why) || opened.kind != json::Json::Kind::Object)
+		{
+			opened = json::Json();
+			opened.kind = json::Json::Kind::Object;
+		}
+		auto text = [](const char *t) { return json::Json::string(t != nullptr ? t : ""); };
+		opened.members.emplace_back("core", text(ce_session_core_name(s_)));
+		opened.members.emplace_back("system", text(ce_session_system_id(s_)));
+		opened.members.emplace_back("frame", json::Json::integer(ce_session_frame(s_)));
+		opened.members.emplace_back("movie_length", json::Json::integer(ce_session_movie_length(s_)));
+		mcpAnswerOnMachine(id, json::write(opened), false);
+	});
+}
+
+void SessionViewModel::mcpSeek(uint64_t id, int64_t frame)
+{
+	submit([this, id, frame] {
+		if (s_ == nullptr)
+		{
+			mcpAnswerOnMachine(id, "No project is open in Chimera.", true);
+			return;
+		}
+		const int64_t start = ce_session_frame(s_);
+		seekAsAskedOnMachine(frame);
+		mcpMoveM_ = McpMove{id, start, frame, McpMove::Seek, {}};
+	});
+}
+
+void SessionViewModel::mcpPlayUntil(uint64_t id, std::string arguments, int64_t most)
+{
+	submit([this, id, arguments, most] {
+		if (s_ == nullptr)
+		{
+			mcpAnswerOnMachine(id, "No project is open in Chimera.", true);
+			return;
+		}
+		/* what the condition means is the engine's: it reads the arguments itself */
+		const char *why = nullptr;
+		if (ce_mcp_condition_set(s_, arguments.c_str(), &why) != 1)
+		{
+			mcpAnswerOnMachine(id, why != nullptr ? why : "The condition is not one Chimera understands.", true);
+			return;
+		}
+		const int64_t start = ce_session_frame(s_), length = ce_session_movie_length(s_);
+		if (ce_mcp_condition_met(s_) == 1)
+		{
+			mcpMoveM_ = McpMove{id, start, start, McpMove::Until, {}};
+			mcpMoveOnMachine();
+			return;
+		}
+		if (start >= length)
+		{
+			mcpAnswerOnMachine(id, "The playback position is at the movie's end, frame " + std::to_string(length) +
+				", so there is nothing left to play.", true);
+			return;
+		}
+		/* played a frame at a time, the condition asked after each; with Turbo
+		 * seek as fast as it goes, as Chimera's seek is */
+		const int64_t target = std::min(length, start + most);
+		pauseOnFrameM_ = target;
+		mcpFastM_ = turboSeekM_.load();
+		runningM_ = true;
+		due_ = fpsSince_ = Clock::now();
+		fpsFrames_ = 0;
+		later([this, start, target] { seekFrom.set(start); seekingTo.set(target); running.set(true); });
+		mcpMoveM_ = McpMove{id, start, target, McpMove::Until, {}};
+	});
+}
+
+void SessionViewModel::mcpPictures(uint64_t id, std::vector<int64_t> frames)
+{
+	submit([this, id, frames] {
+		if (s_ == nullptr || frames.empty())
+		{
+			mcpAnswerOnMachine(id, "No project is open in Chimera.", true);
+			return;
+		}
+		McpMove move{id, ce_session_frame(s_), frames.front(), McpMove::Pictures, {}};
+		move.pictures.assign(frames.begin(), frames.end());
+		seekAsAskedOnMachine(frames.front());
+		mcpMoveM_ = std::move(move);
+	});
+}
+
+bool SessionViewModel::mcpMoveOnMachine()
+{
+	if (!mcpMoveM_) return true;
+	/* still on its way */
+	if (runningM_ && pauseOnFrameM_ >= 0) return false;
+	McpMove &move = *mcpMoveM_;
+	const int64_t at = s_ != nullptr ? ce_session_frame(s_) : -1;
+	const int64_t length = s_ != nullptr ? ce_session_movie_length(s_) : 0;
+	std::string text;
+	bool failed = false;
+	if (s_ == nullptr)
+	{
+		text = "The project was closed while the playback position was moving.";
+		failed = true;
+	}
+	else if (move.kind == McpMove::Pictures)
+	{
+		/* on a frame of the series: its picture, then on to the next */
+		const char *why = nullptr;
+		if (at != move.pictures.front())
+		{
+			text = "The playback position stopped on frame " + std::to_string(at) + ", not on frame " + std::to_string(move.pictures.front()) +
+				": the pictures were interrupted.";
+			failed = true;
+		}
+		else if (ce_mcp_capture(s_, move.id, at, &why) != 1)
+		{
+			text = "The picture of frame " + std::to_string(at) + " was not taken: " + (why != nullptr ? why : "no reason given");
+			failed = true;
+		}
+		else
+		{
+			move.pictures.pop_front();
+			if (!move.pictures.empty())
+			{
+				move.target = move.pictures.front();
+				seekAsAskedOnMachine(move.target);
+				return false;
+			}
+			text = "{\"frame\": " + std::to_string(at) + ", \"movie_length\": " + std::to_string(length) + "}";
+		}
+	}
+	else if (move.kind == McpMove::Until)
+	{
+		const bool met = ce_mcp_condition_met(s_) == 1;
+		const char *stopped = met ? "condition" : at >= length ? "movie_end" : at >= move.target ? "max_frames" : "interrupted";
+		text = std::string("{\"frame\": ") + std::to_string(at) + ", \"met\": " + (met ? "true" : "false") + ", \"frames_played\": " +
+			std::to_string(at - move.start) + ", \"stopped_at\": \"" + stopped + "\"}";
+	}
+	else if (at != move.target)
+	{
+		text = "The playback position stopped on frame " + std::to_string(at) + ", not on frame " + std::to_string(move.target) +
+			": the seek was interrupted.";
+		failed = true;
+	}
+	else
+		text = "{\"frame\": " + std::to_string(at) + "}";
+	const uint64_t id = move.id;
+	mcpMoveM_.reset();
+	mcpFastM_ = false;
+	mcpAnswerOnMachine(id, text, failed);
+	return true;
+}
+
+std::string SessionViewModel::mcpStatusOnMachine() const
+{
+	/* what only the window knows; the engine adds the machine's facts */
+	json::Json status;
+	status.kind = json::Json::Kind::Object;
+	if (s_ == nullptr) return "{}";
+	auto add = [&](const char *name, json::Json v) { status.members.emplace_back(name, std::move(v)); };
+	std::string project = projectM_ != nullptr && ce_project_title(projectM_) != nullptr ? ce_project_title(projectM_) : "";
+	if (project.empty())
+	{
+		const size_t slash = game_.find_last_of("/\\\\");
+		project = slash == std::string::npos ? game_ : game_.substr(slash + 1);
+	}
+	add("project", json::Json::string(project));
+	if (projectM_ != nullptr)
+	{
+		add("project_file", json::Json::string(projectPathM_));
+		add("unsaved_changes", json::Json::boolean_(unsavedM_.load()));
+	}
+	add("paused", json::Json::boolean_(!runningM_));
+	add("measured_frames_per_second", json::Json::number(std::round(lastFpsM_ * 100) / 100));
+	add("speed_percent", json::Json::integer(speedM_.load()));
+	if (projectM_ != nullptr)
+	{
+		json::Json files;
+		files.kind = json::Json::Kind::Array;
+		for (int32_t i = 0; i < ce_project_file_count(projectM_); i++)
+		{
+			json::Json f;
+			f.kind = json::Json::Kind::Object;
+			auto text = [](const char *t) { return json::Json::string(t != nullptr ? t : ""); };
+			f.members.emplace_back("slot", text(ce_project_file_slot(projectM_, i)));
+			f.members.emplace_back("name", text(ce_project_file_name(projectM_, i)));
+			f.members.emplace_back("path", text(ce_project_file_source_path(projectM_, i)));
+			files.items.push_back(std::move(f));
+		}
+		add("files", std::move(files));
+	}
+	/* the firmware the machine was started with, as the project pins it */
+	json::Json pins;
+	std::string error;
+	if (firmwarePinsM_.empty() || !json::parse(firmwarePinsM_, pins, error) || pins.kind != json::Json::Kind::Array)
+	{
+		pins = json::Json();
+		pins.kind = json::Json::Kind::Array;
+	}
+	add("firmware", std::move(pins));
+	return json::write(status);
+}
+
+void SessionViewModel::mcpOnMachine()
+{
+	if (!mcpOnM_.load()) return;
+	if (!mcpMoveOnMachine() || mcpBusyM_ || ce_mcp_pending() == 0) return;
+	const std::string status = mcpStatusOnMachine();
+	uint64_t id = 0;
+	const char *tool = nullptr, *arguments = nullptr;
+	if (ce_mcp_service(s_, s_ != nullptr ? ce_session_movie_log(s_) : nullptr, -1, status.c_str(), &id, &tool, &arguments) != 1) return;
+	/* a call only the window can answer: nothing else runs until it does */
+	mcpBusyM_ = true;
+	later([this, id, t = std::string(tool != nullptr ? tool : ""), a = std::string(arguments != nullptr ? arguments : "{}")] {
+		if (mcpHost_) mcpHost_(id, t, a);
+		else mcpAnswer(id, "Chimera's window cannot be asked.", true);
+	});
 }
 
 void SessionViewModel::setMarkers(std::vector<Marker> markers)
@@ -3274,6 +3565,14 @@ void SessionViewModel::setScriptTurns(std::function<void()> before, std::functio
 	waitOnMachine([&] {
 		scriptsBeforeM_ = std::move(before);
 		scriptsAfterM_ = std::move(after);
+	});
+}
+
+void SessionViewModel::setScriptIdle(std::function<bool()> wanted, std::function<void()> idle)
+{
+	waitOnMachine([&] {
+		scriptsWantedM_ = std::move(wanted);
+		scriptsIdleM_ = std::move(idle);
 	});
 }
 
@@ -4640,6 +4939,13 @@ int32_t SessionViewModel::advanceOnMachine()
 		}
 		doPauseM_ = !atEnd;
 	}
+	/* advance_until: stopped where the condition is met */
+	if (mcpMoveM_ && mcpMoveM_->kind == McpMove::Until && pauseOnFrameM_ >= 0 && ce_mcp_condition_met(s_) == 1)
+	{
+		pauseOnFrameM_ = -1;
+		runningM_ = false;
+		later([this] { running.set(false); seekingTo.set(-1); });
+	}
 	/* a seek that plays (Turbo seek off) stops on its frame */
 	if (pauseOnFrameM_ >= 0 && ce_session_frame(s_) >= pauseOnFrameM_)
 	{
@@ -4655,6 +4961,7 @@ int32_t SessionViewModel::advanceOnMachine()
 	if (secs >= 0.5)
 	{
 		measured = fpsFrames_ / secs;
+		lastFpsM_ = measured;
 		fpsFrames_ = 0;
 		fpsSince_ = now;
 	}

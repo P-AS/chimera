@@ -84,6 +84,13 @@ public:
 	/* the console's line: an expression's values, or a statement run, as the
 	 * console's own (script 0); what it gives back is printed, as Chimera's */
 	void execute(const std::string &command);
+	/* the MCP server's run_lua: the agent's code run to its end as a script
+	 * of its own, its working folder `directory`; an expression gives its
+	 * value, as on the console's line. What it returned, as a JSON array
+	 * (a table an object, or a list when its keys are 1 to n), or false with
+	 * what it raised in `error`. A function it registers keeps it, as a
+	 * script's do; waiting for a frame is refused, as Chimera's refuses it */
+	bool runForAgent(const std::string &code, const std::string &directory, std::string &results, std::string &error);
 
 	/* called before every frame: what the scripts drew for the last frame
 	 * goes, and the OnFrameStart functions are called (a joypad.set there is
@@ -95,6 +102,11 @@ public:
 	 * on, each to its next wait; one that ends with nothing registered, or
 	 * fails, is stopped */
 	void frameDone();
+	/* the window's turn when no frame is run (paused, or nothing open): the
+	 * running scripts that wait in emu.yield go on, each to its next wait, as
+	 * Chimera resumes them every pass of its loop; those waiting for a frame
+	 * (emu.frameadvance) wait on. True when any of them stopped */
+	bool yieldTurn();
 	/* the console closing: its OnConsoleClose functions, then every script stopped */
 	void consoleClosed();
 
@@ -131,6 +143,8 @@ private:
 		int thread = -2;
 		/* stop() was asked while its code ran: stopped when it next waits */
 		bool stopAfter = false;
+		/* where it waits, it waits for a frame (emu.frameadvance), not for the window's next turn */
+		bool frameWait = false;
 	};
 
 	static int index(lua_State *L);
@@ -156,7 +170,10 @@ private:
 	void stopHere(int64_t script);
 	void stopAllHere();
 	void executeHere(const std::string &command);
+	bool runForAgentHere(const std::string &code, const std::string &directory, std::string &results, std::string &error);
 	void frameDoneHere();
+	/* the running scripts go on, those waiting for a frame only when `frames` */
+	bool resumeRunning(bool frames);
 	std::string askHere(const char *name, const std::vector<Value> &args);
 	/* a global function of the libraries' called, if it is there */
 	void callHook(const char *name);

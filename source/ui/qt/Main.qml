@@ -35,6 +35,8 @@ ApplicationWindow {
     // the pointer's buttons, routed as keys (to the machine, a hotkey, or both)
     required property QtObject buttonRouter
     required property QtObject help
+    // Tools > MCP Server...: an AI agent working on the open project
+    required property QtObject mcp
     required property QtObject batchRun
     required property QtObject mediaMaker
     required property QtObject cacheManager
@@ -77,6 +79,8 @@ ApplicationWindow {
          + (session.isOpen ? qsTr("%1 [%2] - ").arg(session.gameName).arg(session.systemName) : "")
          + (session.isOpen && session.hasProject
             ? (session.unsaved ? "*" : "") + session.projectPath.replace(/^.*[\\/]/, "") + " - " : "")
+         // said in the title for as long as it is so, so it is not left on unnoticed
+         + (root.mcp.started ? qsTr("MCP server started - ") : "")
          + root.titleSuffix
     // Display's window chrome, as Chimera's SynchChrome: windowed, the caption's buttons, the frame and
     // the menu; full screen, the menu; kept over other windows when asked
@@ -195,6 +199,14 @@ ApplicationWindow {
         askSaveDialog.open()
     }
     function quitProgram() { root.leaveProject(() => { root.leaving = true; Qt.quit() }) }
+    // a script's client.exit, as Chimera's: closing as the window closes, with the code asked for
+    Connections {
+        target: root.toolWindows
+        function onExitAskedChanged() {
+            const code = root.toolWindows.exitAsked
+            if (code >= 0) root.leaveProject(() => { root.leaving = true; Qt.exit(code) })
+        }
+    }
     onClosing: (close) => {
         if (root.session.unsaved && !root.leaving && !root.customize.neverAskSave) {
             close.accepted = false
@@ -512,6 +524,12 @@ ApplicationWindow {
                 Action { text: qsTr("Cac&he Manager..."); icon.source: "qrc:/chimera/menu/CacheManager.png"; onTriggered: { cacheManagerWindow.show(); cacheManagerWindow.raise() } }
                 Action { text: qsTr("Reproducible Media Maker..."); icon.source: "qrc:/chimera/menu/MediaMaker.png"; onTriggered: { mediaMakerWindow.show(); mediaMakerWindow.raise() } }
                 Action { text: qsTr("Pre-Compiled Modules..."); icon.source: "qrc:/chimera/menu/PrecompiledModules.png"; onTriggered: { precompiledWindow.show(); precompiledWindow.raise() } }
+                // the server's sparkles, with a green dot while it is started: the item is not ticked, as Chimera's
+                Action {
+                    text: qsTr("MCP Server...")
+                    icon.source: root.mcp.started ? "qrc:/chimera/menu/McpServerStarted.png" : "qrc:/chimera/menu/McpServer.png"
+                    onTriggered: { mcpServerWindow.show(); mcpServerWindow.raise() }
+                }
                 MenuDivider {}
                 Action { id: ramWatchAction; property string hotkey: "RAM Watch"; text: qsTr("RAM &Watch"); icon.source: "qrc:/chimera/menu/RamWatch.png"; onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
                 Action { id: ramSearchAction; property string hotkey: "RAM Search"; text: qsTr("RAM &Search"); icon.source: "qrc:/chimera/menu/RamSearch.png"; onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
@@ -1472,6 +1490,7 @@ ApplicationWindow {
     ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; folderOf: root.folderOf; gameRunning: root.session.isOpen; mainWindow: root; visible: false }
     PathsConfig { id: pathsWindow; vm: root.paths; session: root.session; mainWindow: root; themeColor: root.osdColor; visible: false }
     FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; themeColor: root.osdColor; visible: false }
+    McpServer { id: mcpServerWindow; vm: root.mcp; clipboard: root.clipboard; mainWindow: root; visible: false }
     ProjectSettings { id: projectSettingsWindow; vm: root.settings; themeColor: root.osdColor; mainWindow: root; visible: false }
     DataFolderConfig { id: dataFolderWindow; vm: root.dataFolder; themeColor: root.osdColor; mainWindow: root; visible: false }
     PrecompiledModules { id: precompiledWindow; vm: root.precompiled; themeColor: root.osdColor; visible: false }

@@ -7,7 +7,7 @@ Everything is stripped of debug information, as it would ship.
 
 The folder holds the program (chimera-qt.exe, a launcher) and the themes;
 every DLL, Qt's plugins and QML are in lib/, and the other programs
-(chimera-run, ffmpeg, the tests) in bin/.
+(chimera-run, chimera-mcp, ffmpeg, the tests) in bin/.
 
     tools/stage-qt-windows.py <meson build dir> <installed dll dir> <windows qt> <out> [ffmpeg.exe]
 
@@ -31,6 +31,9 @@ shutil.copy2(f"{build}/source/ui/chimera-qt-app.dll", lib)
 shutil.copy2(f"{build}/source/ui/test_vm.exe", bin)
 # a movie import asks the core in a process of its own: chimera-run
 shutil.copy2(f"{build}/chimera-run.exe", bin)
+# the program an AI agent's program starts to reach the window's MCP server
+# (Tools > MCP Server...); it needs no DLL of the folder's
+shutil.copy2(f"{build}/chimera-mcp.exe", bin)
 # Encode Video's
 if ffmpeg:
     shutil.copy2(ffmpeg, bin)

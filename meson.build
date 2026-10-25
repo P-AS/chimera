@@ -480,6 +480,9 @@ executable(
   cpp_args: engine_build_args,
   c_args: engine_build_args,
   dependencies: [engine_dep],
+  # on Windows the compiler's runtime is linked in: the agent's program starts
+  # it from wherever it is, with no folder of Chimera's DLLs on its PATH
+  link_args: host_machine.system() == 'windows' ? ['-static'] : [],
   install: true,
   install_dir: 'dll',
 )

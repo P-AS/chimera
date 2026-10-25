@@ -146,7 +146,8 @@ std::string SettingsForm::dateText(int64_t seconds)
 	const int64_t rest = seconds - days * 86400;
 	int64_t y = 0, m = 0, d = 0;
 	civilFromDays(days, y, m, d);
-	char text[40];
+	/* room for any six numbers, which the compiler cannot tell are small */
+	char text[128];
 	std::snprintf(text, sizeof text, "%04lld-%02lld-%02lld %02lld:%02lld:%02lld", static_cast<long long>(y), static_cast<long long>(m),
 		static_cast<long long>(d), static_cast<long long>(rest / 3600), static_cast<long long>(rest / 60 % 60), static_cast<long long>(rest % 60));
 	return text;

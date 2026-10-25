@@ -978,8 +978,78 @@ void LuaConsoleViewModel::afterFrame()
 
 void LuaConsoleViewModel::line(const std::string &text) { append(text + "\n"); }
 
+void LuaConsoleViewModel::restartScripts()
+{
+	std::vector<std::string> ran;
+	for (const Entry &e : entries_)
+		if (!e.separator && e.script != 0) ran.push_back(e.path);
+	if (ran.empty() && !lua_.running()) return;
+	/* the agent's code and the console's own go too, as Chimera's start again empty */
+	lua_.stopAll();
+	for (const std::string &path : ran)
+		for (Entry &e : entries_)
+			if (!e.separator && e.path == path && e.script == 0)
+			{
+				enable(e);
+				break;
+			}
+	refresh();
+}
+
+std::string LuaConsoleViewModel::takeOutputForAgent()
+{
+	std::string out;
+	out.swap(forAgent_);
+	return out;
+}
+
+bool LuaConsoleViewModel::runForAgent(const std::string &code, std::string &results, std::string &error)
+{
+	line("[agent] " + code);
+	const bool ran = lua_.runForAgent(code, luaFolder.get(), results, error);
+	if (!ran) line(error);
+	messages_ = 0;
+	refresh();
+	return ran;
+}
+
+bool LuaConsoleViewModel::scriptForAgent(const std::string &path, bool stop)
+{
+	std::error_code ec;
+	const std::string abs = text(fs::absolute(pathOf(path), ec).lexically_normal());
+	if (!stop)
+		openScript(abs, true);
+	else
+	{
+		for (size_t i = 0; i < entries_.size(); i++)
+			if (!entries_[i].separator && entries_[i].path == abs)
+			{
+				if (entries_[i].script != 0) lua_.stop(entries_[i].script);
+				/* found again: stopping it may have changed the list */
+				for (size_t j = 0; j < entries_.size(); j++)
+					if (!entries_[j].separator && entries_[j].path == abs)
+					{
+						entries_.erase(entries_.begin() + static_cast<long>(j));
+						break;
+					}
+				anchor_ = -1;
+				markChanged();
+				listChanged();
+				refresh();
+				break;
+			}
+	}
+	for (const Entry &e : entries_)
+		if (!e.separator && e.path == abs) return e.script != 0;
+	return false;
+}
+
 void LuaConsoleViewModel::append(const std::string &written)
 {
+	/* the agent's copy, before the window's cap */
+	constexpr size_t kMostForAgent = 64 * 1024;
+	forAgent_ += written;
+	if (forAgent_.size() > kMostForAgent) forAgent_.erase(0, forAgent_.size() - kMostForAgent);
 	if (++messages_ > kMostMessages) return;
 	std::string t = written;
 	if (messages_ == kMostMessages) t += "\nFlood warning! Message cap reached, suppressing output.\n";

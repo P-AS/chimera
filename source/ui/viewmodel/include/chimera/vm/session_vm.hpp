@@ -9,6 +9,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <functional>
+#include <optional>
 #include <map>
 #include <filesystem>
 #include <memory>
@@ -592,6 +594,13 @@ public:
 	 * are left out unless scriptsDuringTurbo (Customize's Run Lua scripts
 	 * when turbo is held). */
 	void setScriptTurns(std::function<void()> before, std::function<void()> after);
+	/* The scripts' turns when no frame is run - paused, or nothing open -
+	 * about sixty times a second while `wanted` says any script is there, as
+	 * Chimera's loop resumes scripts every pass: `idle` (those that wait in
+	 * emu.yield go on). With nothing open and not paused the turns are whole
+	 * frames' (before and after), as Chimera's empty machine still runs
+	 * frames. Both are called on the machine's thread. */
+	void setScriptIdle(std::function<bool()> wanted, std::function<void()> idle);
 	void scriptsDuringTurbo(bool on) { scriptsDuringTurboM_.store(on); }
 	/* What made the project last opened, kept after it closes, for New
 	 * Project to open on as Chimera's does (closing a project is most often
@@ -650,6 +659,28 @@ public:
 	 * greenzone kept with the old ones is not used. When it does not start, the
 	 * old ones are put back and it starts with those; done(false) then. */
 	void changeProjectSettings(std::string json, int64_t clockStart, std::function<void(bool)> done);
+	/* The MCP server (Tools > MCP Server..., docs/mcp-server.md). While it is
+	 * started the machine's thread runs the agent's calls between frames; the
+	 * engine answers what needs only the machine and hands the rest to `host`,
+	 * on the window's thread, whose answer comes back through mcpAnswer.
+	 * Nothing else of the agent's runs until a call is answered. */
+	using McpHost = std::function<void(uint64_t id, std::string tool, std::string arguments)>;
+	void setMcpHost(McpHost host) { mcpHost_ = std::move(host); }
+	void mcpServing(bool on);
+	void mcpAnswer(uint64_t id, std::string text, bool isError);
+	/* answers with whether the machine is paused and its frame, once the jobs before are done */
+	void mcpAnswerRunState(uint64_t id);
+	/* create_project's answer, once the project made before it has opened:
+	 * what get_status says of the window, with the core, the system, the
+	 * frame and the movie's length; or that its machine did not start */
+	void mcpAnswerOpened(uint64_t id);
+	/* seek: the machine goes to the frame as TAStudio sends it; answered when it stops */
+	void mcpSeek(uint64_t id, int64_t frame);
+	/* advance_until: the condition the engine reads from the arguments; played
+	 * forward until it is met, or for at most this many frames, or to the movie's end */
+	void mcpPlayUntil(uint64_t id, std::string arguments, int64_t most);
+	/* capture_series: each frame gone to in turn and its picture taken */
+	void mcpPictures(uint64_t id, std::vector<int64_t> frames);
 	/* the machine's thread: the start of the open project's clock */
 	int64_t clockOnMachine() const;
 
@@ -777,6 +808,30 @@ private:
 	int32_t advanceOnMachine();
 	/* the frame a seek that plays stops on, -1 for none */
 	int64_t pauseOnFrameM_ = -1;
+	/* the MCP server: started, a call handed to the window and not answered,
+	 * and the machine moving for one (where it set off, where it goes, how) */
+	std::atomic<bool> mcpOnM_{false};
+	bool mcpBusyM_ = false;
+	McpHost mcpHost_;
+	struct McpMove
+	{
+		uint64_t id = 0;
+		int64_t start = 0, target = 0;
+		enum Kind { Seek, Until, Pictures } kind = Seek;
+		std::deque<int64_t> pictures;
+	};
+	std::optional<McpMove> mcpMoveM_;
+	/* playing for advance_until with Turbo seek on: as fast as it goes */
+	bool mcpFastM_ = false;
+	/* the frames a second last measured, for the status tool */
+	double lastFpsM_ = 0;
+	void mcpOnMachine();
+	/* the moving call's state: true when it is answered (or there is none) */
+	bool mcpMoveOnMachine();
+	void mcpAnswerOnMachine(uint64_t id, const std::string &text, bool isError);
+	std::string mcpStatusOnMachine() const;
+	/* TAStudio's seek: what greenzone holds at once, the rest played unless Turbo seek */
+	void seekAsAskedOnMachine(int64_t target);
 	/* the drives as last told to the window */
 	std::string drivesSaidM_ = "[]";
 	int64_t restoreSaidM_ = -1;
@@ -851,6 +906,9 @@ private:
 	/* job on the machine's thread, waited for */
 	void waitOnMachine(const std::function<void()> &job);
 	std::function<void()> scriptsBeforeM_, scriptsAfterM_;
+	std::function<bool()> scriptsWantedM_;
+	std::function<void()> scriptsIdleM_;
+	Clock::time_point idleDue_{};
 	std::atomic<bool> scriptsDuringTurboM_{true};
 	bool scriptsNowOnMachine() const { return !turboM_.load() || scriptsDuringTurboM_.load(); }
 	/* a turn of the scripts' runs now (one is not started inside another:

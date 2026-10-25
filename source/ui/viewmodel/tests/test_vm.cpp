@@ -6549,6 +6549,163 @@ std::string lower(std::string s)
  * compile session (six modules, a share a session) run by the headless
  * runner, side by side; the modules the game's manifest lists, Create
  * refused until they are all there, a module gone said */
+/* The MCP server's Lua tools (issue 355), as Chimera's: run_lua's code runs to
+ * its end, what it returned given back as JSON and what it printed with it,
+ * waiting for a frame refused; lua_script starts a file as Open Script does,
+ * and stops it out of the list. And the turns scripts are given as Chimera's:
+ * emu.yield goes on at the window's turn with no frame run, emu.frameadvance
+ * only after a frame; a machine opened or closed starts the running scripts
+ * again from their beginning. */
+void luaForAgent()
+{
+	ManualDispatcher d;
+	Sample vm(d);
+	LuaBridge lua;
+	lua.add(vm);
+	LuaConsoleViewModel console(d, lua);
+	lua.add(console);
+	console.luaFolder.set(scriptFolder().string());
+	std::string results, error;
+	/* an expression gives its values, as on the console's line, and the code is shown */
+	CHECK(console.runForAgent("1 + 1, 'x'", results, error) && results == "[2, \"x\"]");
+	CHECK(console.takeOutputForAgent() == "[agent] 1 + 1, 'x'\n" && console.takeOutputForAgent().empty());
+	/* statements give what they return; a table with keys 1 to n is a list, what it printed comes with it */
+	CHECK(console.runForAgent("print('hello from the agent') return {1, 2, x = nil}, 1 + 1", results, error) && results == "[[1, 2], 2]");
+	CHECK(console.takeOutputForAgent() == "[agent] print('hello from the agent') return {1, 2, x = nil}, 1 + 1\nhello from the agent\n");
+	/* else an object by its keys' names; a whole number said as one, a function as such */
+	CHECK(console.runForAgent("return {b = 2.0, a = {[3] = true, z = 2.5}}, print, nil", results, error) &&
+		results == "[{\"a\": {\"3\": true, \"z\": 2.5}, \"b\": 2}, \"(a function)\", null]");
+	/* tables within tables followed eight deep */
+	CHECK(console.runForAgent("local t = {} local c = t for i = 1, 10 do c.n = {} c = c.n end return t", results, error) &&
+		results == "[{\"n\": {\"n\": {\"n\": {\"n\": {\"n\": {\"n\": {\"n\": {\"n\": \"(a table, too deep to show)\"}}}}}}}}]");
+	/* an error is the agent's, and shown */
+	console.takeOutputForAgent();
+	CHECK(!console.runForAgent("emu.nope()", results, error) && error.find("nope") != std::string::npos);
+	CHECK(console.takeOutputForAgent() == "[agent] emu.nope()\n" + error + "\n");
+	CHECK(!console.runForAgent("syntax error here", results, error) && error.find("input:1:") != std::string::npos);
+	/* waiting for a frame is refused, as Chimera's refuses it, and nothing is left waiting */
+	CHECK(!console.runForAgent("emu.frameadvance()", results, error) && error.find("emu.frameadvance() is not allowed during any callbacks") != std::string::npos);
+	CHECK(!console.runForAgent("emu.yield()", results, error) && error.find("emu.yield() is not allowed") != std::string::npos);
+	CHECK(!console.runForAgent("coroutine.yield()", results, error) && error.find("lua_script") != std::string::npos && !lua.running());
+	/* a function it registers keeps it, and runs on each frame */
+	CHECK(console.runForAgent("agentSeen = 0 event.onframeend(function() agentSeen = agentSeen + 1 end)", results, error) && results == "[]");
+	CHECK(lua.running());
+	console.frameDone();
+	CHECK(console.runForAgent("agentSeen", results, error) && results == "[1]");
+	/* lua_script: a file started as Open Script starts it, in the list; stopped, taken out */
+	const std::string waits = scriptFile("frames = 0\nprint('the script started')\n"
+		"event.onframeend(function() end)\n"
+		"while true do frames = frames + 1 emu.frameadvance() end", "agent-frames");
+	const std::string yields = scriptFile("yielded = 0\nwhile true do yielded = yielded + 1 emu.yield() end", "agent-yields");
+	console.takeOutputForAgent();
+	CHECK(console.scriptForAgent(waits, false) && console.takeOutputForAgent() == "the script started\n");
+	CHECK(console.scriptForAgent(yields, false));
+	RowModel &list = *console.rowLists()[1].model;
+	CHECK(list.rowCount() == 2);
+	/* the window's turn with no frame: the one in emu.yield goes on, the one waiting for a frame does not */
+	CHECK(console.runForAgent("frames, yielded", results, error) && results == "[1, 1]");
+	lua.yieldTurn();
+	lua.yieldTurn();
+	CHECK(console.runForAgent("frames, yielded", results, error) && results == "[1, 3]");
+	/* a frame: both */
+	console.frameDone();
+	CHECK(console.runForAgent("frames, yielded, agentSeen", results, error) && results == "[2, 4, 2]");
+	/* a machine opened or closed: every script stopped, those that ran started again; the agent's code goes */
+	console.restartScripts();
+	CHECK(console.runForAgent("frames, yielded, agentSeen", results, error) && results == "[1, 1, 2]");
+	console.frameDone();
+	CHECK(console.runForAgent("frames, agentSeen", results, error) && results == "[2, 2]");
+	CHECK(list.rowCount() == 2 && console.scriptForAgent(waits, false));
+	CHECK(!console.scriptForAgent(waits, true) && list.rowCount() == 1);
+	CHECK(!console.scriptForAgent(scriptFile("print('done at once')", "agent-once"), false) && list.rowCount() == 2);
+	CHECK(console.takeOutputForAgent().find("done at once") != std::string::npos);
+	console.scriptForAgent(yields, true);
+	console.scriptForAgent((scriptFolder() / "agent-once.lua").string(), true);
+	CHECK(list.rowCount() == 0 && !lua.running());
+}
+
+/* The MCP server's create_project (issue 355): the agent's answers taken
+ * through the New Project form as Chimera's wizard takes them, the project
+ * made and opened; what keeps it from being made said in Chimera's words,
+ * firmware not found listed with the files that would do */
+bool createForAgent(const char *package, const char *rom, const char *hashedPackage)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	if (fs::file_size(hashedPackage, ec) == 0 || ec)
+	{
+		std::printf("SKIP create_project: no package with a hashed firmware was made\n");
+		return false;
+	}
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-agent-project-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir / "Cores");
+	fs::create_directories(dir / "Firmware");
+	fs::create_directories(dir / "Elsewhere");
+	fs::copy_file(package, dir / "Cores" / "synth-box.chimeraCore");
+	fs::copy_file(hashedPackage, dir / "Cores" / "synth-hashed.chimeraCore");
+	const std::string game = (dir / "walker.testrom").string();
+	fs::copy_file(rom, game);
+	/* the file the hashed package's firmware pins, under another name */
+	std::ofstream(dir / "Elsewhere" / "the-logo.bin", std::ios::binary) << "the original logo";
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	CoresViewModel installed(d);
+	std::string error;
+	installed.set("coresFolder", (dir / "Cores").string(), error);
+	installed.set("firmwareFolder", (dir / "Firmware").string(), error);
+	session.setFinders([&installed](const std::string &n, const std::string &h, std::string &note) { return installed.packageFor(n, h, note); },
+		[&installed] { return installed.firmwareFolders(); });
+	NewProjectViewModel agent(d, session, installed);
+	auto ask = [&](NewProjectViewModel::AgentRequest request) {
+		std::optional<NewProjectViewModel::AgentOutcome> got;
+		agent.completeForAgent(request, [&](NewProjectViewModel::AgentOutcome o) { got = std::move(o); });
+		d.until([&] { return got.has_value(); }, 20);
+		return got.value_or(NewProjectViewModel::AgentOutcome{false, "no answer", {}, {}});
+	};
+	NewProjectViewModel::AgentRequest r;
+	r.core = "No Such Core";
+	r.games = {game};
+	CHECK(ask(r).refusal == "There is no core called 'No Such Core' in the cores folder. list_cores names them.");
+	r.core = "Synth";
+	r.system = "Nope";
+	const auto notThat = ask(r);
+	CHECK(!notThat.made && notThat.refusal.rfind("Synth is a ", 0) == 0 && notThat.refusal.find(", not a 'Nope'.") != std::string::npos);
+	r.system.clear();
+	r.games = {(dir / "nothing.testrom").string()};
+	CHECK(ask(r).refusal == "There is no file at '" + (dir / "nothing.testrom").string() + "'.");
+	r.games.clear();
+	r.files = {{"nope", game}};
+	CHECK(ask(r).refusal.rfind("Synth has no slot 'nope'. Its slots: ", 0) == 0);
+	r.files.clear();
+	r.games = {game};
+	json::parse("{\"NoSuchSetting\": 1}", r.settings, error);
+	CHECK(ask(r).refusal == "Synth has no setting called 'NoSuchSetting'. describe_core lists its settings.");
+	r.settings = json::Json();
+	/* by its package's file name; the firmware it pins found nowhere: listed, with where it was looked for */
+	r.core = "synth-hashed.chimeraCore";
+	const auto missing = ask(r);
+	CHECK(!missing.made && missing.refusal == "Firmware the project needs was not found: The logo.");
+	CHECK(json::write(missing.missing) ==
+		"[{\"id\": \"logo\", \"name\": \"The logo\", \"accepted\": [{\"file\": \"logo.bin\", \"size\": null, \"sha1\": \"CE31CFD83A86A850B5B110A3AC05B634F186C1F1\"}]}]");
+	CHECK(json::write(missing.searched).find(json::quote((dir / "Firmware").string())) != std::string::npos);
+	/* found in the folder the agent names: made and opened */
+	r.firmwareFolder = (dir / "Elsewhere").string();
+	const auto made = ask(r);
+	CHECK(made.made && made.refusal.empty());
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get() && session.coreName.get() == "Synth Hashed"; }, 30));
+	/* another, over it */
+	r = {};
+	r.core = "synth";
+	r.games = {game};
+	CHECK(ask(r).made);
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get() && session.coreName.get() == "Synth"; }, 30));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir, ec);
+	return true;
+}
+
 bool compileStep(const char *compilePackage, const char *rom)
 {
 	namespace fs = std::filesystem;
@@ -8296,6 +8453,7 @@ int main(int argc, char **argv)
 	firmware();
 	settingsByMachine();
 	settingTypes();
+	luaForAgent();
 	keyPriority();
 	messagesConfig();
 	displayFit();
@@ -8365,6 +8523,7 @@ int main(int argc, char **argv)
 			if (argc >= 11) ranMachine = coreMenu(argv[1], argv[2], argv[6], argv[10]) && ranMachine;
 			else std::printf("SKIP the Emulator menu: no packages that import movies and are games given\n");
 			if (argc >= 12) ranMachine = firmwareWindow(argv[1], argv[6], argv[11], argv[8]) && ranMachine;
+			if (argc >= 9) ranMachine = createForAgent(argv[1], argv[2], argv[7]) && ranMachine;
 			if (argc >= 13) ranMachine = compileStep(argv[12], argv[2]) && ranMachine;
 			if (argc >= 14) ranMachine = squarePixels(argv[1], argv[13], argv[2]) && ranMachine;
 			else std::printf("SKIP the compile step: no compiling package given\n");

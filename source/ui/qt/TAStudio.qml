@@ -995,7 +995,7 @@ ApplicationWindow {
         MenuDivider {}
         Action { text: qsTr("Clear Greenzone"); onTriggered: tas.session.run("clearGreenzone") }
         // a seek that plays (Turbo seek off) stopped where it is
-        Action { text: qsTr("Cancel Seek"); enabled: tas.session.seekingTo >= 0; onTriggered: tas.session.run("pause") }
+        Action { property string hotkey: "Cancel Seek"; text: qsTr("Cancel Seek"); enabled: tas.session.seekingTo >= 0; onTriggered: tas.session.run("pause") }
         MenuDivider {}
         Action {
             text: qsTr("Copy")

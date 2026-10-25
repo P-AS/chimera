@@ -1058,6 +1058,256 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	kindWatch_ = kind.changed.connect([this] { listCores(); });
 }
 
+namespace {
+/* a JSON value as a setting's value is given to the form */
+Value valueOfJson(const Json &j)
+{
+	switch (j.kind)
+	{
+	case Json::Kind::Bool:
+		return j.boolean;
+	case Json::Kind::Number:
+		if (j.text.find_first_of(".eE") == std::string::npos)
+		{
+			try
+			{
+				return static_cast<int64_t>(std::stoll(j.text));
+			}
+			catch (const std::exception &)
+			{
+				return j.text; /* past a long: the form reads it from its digits */
+			}
+		}
+		return j.number();
+	case Json::Kind::String:
+		return j.text;
+	default:
+		return json::write(j);
+	}
+}
+} // namespace
+
+void NewProjectViewModel::completeForAgent(const AgentRequest &request, std::function<void(AgentOutcome)> done)
+{
+	agentWait_.disconnect();
+	auto refused = [&done](std::string why) {
+		AgentOutcome o;
+		o.refusal = std::move(why);
+		done(std::move(o));
+	};
+	/* the core, by the name it gives itself or its package's file name, in the cores folder as it is now */
+	std::string looked;
+	cores_.run("refresh", {}, looked);
+	const std::vector<CoresViewModel::Package> all = cores_.packages();
+	const auto named = std::find_if(all.begin(), all.end(), [&](const CoresViewModel::Package &p) {
+		const fs::path file(p.path);
+		return lower(p.name) == lower(request.core) || lower(file.filename().string()) == lower(request.core) ||
+			lower(file.stem().string()) == lower(request.core);
+	});
+	std::string error;
+	if (named == all.end() || !chooseCore(named->name, error, named->path))
+		return refused("There is no core called '" + request.core + "' in the cores folder. list_cores names them.");
+	const std::string coreName = core.get();
+
+	/* the machine the agent named: its id, its label, or a value of its setting */
+	Json values = request.settings.kind == Json::Kind::Object ? request.settings : Json();
+	values.kind = Json::Kind::Object;
+	int64_t machineAt = -1;
+	if (!request.system.empty())
+	{
+		const Json *list = cfg_.find("machines");
+		if (list != nullptr && !list->items.empty() && !form_.machineSetting().empty())
+		{
+			std::string names;
+			for (size_t i = 0; i < list->items.size() && machineAt < 0; i++)
+			{
+				const Json &m = list->items[i];
+				std::vector<std::string> words;
+				for (const char *k : {"id", "label"})
+					if (const Json *w = m.find(k)) words.push_back(w->text);
+				if (const Json *when = m.find("when"))
+					for (const Json &w : when->items) words.push_back(w.text);
+				for (const std::string &w : words)
+					if (!w.empty() && lower(w) == lower(request.system)) machineAt = static_cast<int64_t>(i);
+			}
+			if (machineAt < 0)
+			{
+				for (const Json &m : list->items)
+				{
+					const Json *label = m.find("label");
+					const Json *id = m.find("id");
+					names += (names.empty() ? "" : ", ") + (label != nullptr ? label->text : id != nullptr ? id->text : std::string());
+				}
+				return refused(coreName + " has no machine called '" + request.system + "'. It has: " + names + ".");
+			}
+		}
+		else
+		{
+			bool known = false;
+			for (const auto &[id, word] : CoresViewModel::systemPairs(cfg_))
+				known = known || lower(id) == lower(request.system) || lower(word) == lower(request.system);
+			if (!known) return refused(coreName + " is a " + CoresViewModel::systemsOf(cfg_) + ", not a '" + request.system + "'.");
+		}
+	}
+
+	/* what is asked for must exist before anything is put anywhere */
+	std::error_code ec;
+	std::vector<std::string> paths;
+	for (const auto &[slotId, path] : request.files) paths.push_back(path);
+	paths.insert(paths.end(), request.games.begin(), request.games.end());
+	for (const auto &[id, path] : request.firmware) paths.push_back(path);
+	for (const std::string &path : paths)
+		if (!fs::is_regular_file(path, ec)) return refused("There is no file at '" + path + "'.");
+
+	/* the machine, then the agent's settings as a reopened project's go in,
+	 * which decide which slots the files can go in */
+	if (machineAt >= 0 && !run("chooseMachine", {machineAt}, error)) return refused(error);
+	{
+		Json seeded = form_.values();
+		for (const auto &[name, value] : values.members)
+		{
+			bool replaced = false;
+			for (auto &[n, v] : seeded.members)
+				if (n == name) v = value, replaced = true;
+			if (!replaced) seeded.members.emplace_back(name, value);
+		}
+		form_.setValues(seeded);
+	}
+	if (!request.firmwareFolder.empty())
+	{
+		const std::vector<FirmwareFile> found = indexFirmware({request.firmwareFolder}, true, 10000);
+		firmwareIndex_.insert(firmwareIndex_.end(), found.begin(), found.end());
+	}
+	evaluate();
+
+	/* the files, each in its slot; a file with no slot named in the slot that takes its kind */
+	std::vector<std::pair<std::string, std::string>> files = request.files;
+	for (const std::string &game : request.games)
+	{
+		const std::string kind = kindOf(baseName(game));
+		std::string into;
+		for (const Slot &sl : slots_)
+		{
+			const std::vector<std::string> formats = formatsFor(sl);
+			if (into.empty() && std::find(formats.begin(), formats.end(), kind) != formats.end()) into = sl.id;
+		}
+		if (into.empty() && !slots_.empty()) into = slots_.front().id;
+		files.emplace_back(into, game);
+	}
+	for (const auto &[slotId, path] : files)
+	{
+		if (slot(slotId) == nullptr)
+		{
+			std::string ids;
+			for (const Slot &sl : slots_) ids += (ids.empty() ? "" : ", ") + sl.id;
+			return refused(coreName + " has no slot '" + slotId + "'. Its slots: " + ids + ".");
+		}
+		if (!run("addFile", {slotId, path}, error))
+			return refused(!error.empty() ? error : "'" + path + "' was not taken into the slot '" + slotId + "'.");
+	}
+	if (!filesComplaint.get().empty()) return refused(filesComplaint.get());
+
+	/* the core's suggestions for the game, as on arriving at the settings
+	 * page: asked when the game came in, waited for when not yet answered */
+	if (suggestion.get() == "Looking this game up...")
+	{
+		auto waited = std::make_shared<bool>(false);
+		agentWait_ = suggestion.changed.connect([this, request, done, waited] {
+			if (*waited) return;
+			*waited = true;
+			later([this, request, done] {
+				agentWait_.disconnect();
+				finishForAgent(request, done);
+			});
+		});
+		return;
+	}
+	finishForAgent(request, done);
+}
+
+void NewProjectViewModel::finishForAgent(const AgentRequest &request, const std::function<void(AgentOutcome)> &done)
+{
+	auto refused = [&done](std::string why) {
+		AgentOutcome o;
+		o.refusal = std::move(why);
+		done(std::move(o));
+	};
+	const std::string coreName = core.get();
+	std::string error;
+	/* the agent's own settings over the suggestions */
+	if (request.settings.kind == Json::Kind::Object)
+		for (const auto &[name, value] : request.settings.members)
+		{
+			const bool declared = std::any_of(form_.declarations().begin(), form_.declarations().end(), [&](const Json &d) {
+				const Json *n = d.find("name");
+				return n != nullptr && n->text == name;
+			});
+			if (!declared) return refused(coreName + " has no setting called '" + name + "'. describe_core lists its settings.");
+			if (!form_.set(name, valueOfJson(value), error)) return refused(error);
+		}
+	evaluate();
+
+	/* firmware the agent picked, as if picked on the firmware page */
+	for (const auto &[id, path] : request.firmware)
+	{
+		const bool needed = std::any_of(needs_.begin(), needs_.end(), [&](const Need &n) { return n.id == id; });
+		if (needed && !run("chooseFirmware", {id, path}, error)) return refused(error);
+	}
+	/* what is still missing is said, not asked for */
+	std::vector<const Need *> missing;
+	for (const Need &n : needs_)
+		if (n.path.empty() && n.required) missing.push_back(&n);
+	if (!missing.empty())
+	{
+		AgentOutcome o;
+		std::string names;
+		o.missing.kind = Json::Kind::Array;
+		const Json decls = firmwareDecls();
+		for (const Need *n : missing)
+		{
+			names += (names.empty() ? "" : ", ") + n->display;
+			Json item;
+			setMember(item, "id", Json::string(n->id));
+			setMember(item, "name", Json::string(n->display));
+			Json accepted;
+			accepted.kind = Json::Kind::Array;
+			for (const Json &d : decls.items)
+				if (const Json *i = d.find("id"); i != nullptr && i->text == n->id)
+				{
+					Json file;
+					const Json *name = d.find("name");
+					const Json *size = d.find("size");
+					const Json *sha = d.find("sha1");
+					setMember(file, "file", Json::string(name != nullptr ? name->text : ""));
+					setMember(file, "size", size != nullptr ? *size : Json());
+					setMember(file, "sha1", Json::string(sha != nullptr ? sha->text : ""));
+					accepted.items.push_back(file);
+				}
+			setMember(item, "accepted", accepted);
+			o.missing.items.push_back(item);
+		}
+		o.searched.kind = Json::Kind::Array;
+		for (const std::string &folder : cores_.firmwareFolders()) o.searched.items.push_back(Json::string(folder));
+		if (!request.firmwareFolder.empty()) o.searched.items.push_back(Json::string(request.firmwareFolder));
+		o.refusal = "Firmware the project needs was not found: " + names + ".";
+		done(std::move(o));
+		return;
+	}
+	if (compileAsked.get() && !compileReady.get())
+		return refused(coreName + " compiles a game's code before the game's first run, which the New Project window does on its "
+			"last page, and this game's has not been compiled yet. Make this game's first project there; the compiled code "
+			"is kept for the next.");
+	if (!ready.get()) return refused(problems.get());
+	/* the firmware found is remembered, as Chimera's wizard remembers it: one
+	 * in the agent's own folder is then found when the project opens */
+	for (const Need &n : needs_)
+		if (!n.path.empty() && n.how != "remembered") cores_.rememberFirmware(coreName, n.id, n.path);
+	if (!run("create", {}, error)) return refused(error);
+	AgentOutcome o;
+	o.made = true;
+	done(std::move(o));
+}
+
 void NewProjectViewModel::listCores()
 {
 	std::string names;

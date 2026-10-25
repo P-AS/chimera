@@ -450,6 +450,8 @@ private:
 	bool dragHeld_ = false;
 	/* a press began a stroke that drags extend */
 	bool stroke_ = false;
+	/* an MCP agent's edit: every column, hidden or not (Chimera's agent writes whole frames) */
+	bool agentEditing_ = false;
 	/* Chimera's right-button drags on the frame numbers: the input taken up
 	 * (the frames picked, or the frame pressed), where it came from, the keys
 	 * held, the rows the drag reached, and whether its one undo step is made */

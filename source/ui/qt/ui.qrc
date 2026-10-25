@@ -6,6 +6,7 @@
     <file>MenuEntry.qml</file>
     <file>ProjectSettings.qml</file>
     <file>RollTable.qml</file>
+    <file>McpServer.qml</file>
     <file alias="chimera.png">../../gui/Chimera.Client.GUI/images/chimera.png</file>
     <file alias="icons/arrow_green.png">../../gui/Chimera.Client.GUI/images/arrow_green.png</file>
     <file alias="icons/arrow_black_down.png">../../gui/Chimera.Client.GUI/images/arrow_black_down.png</file>
@@ -164,6 +165,8 @@
     <file alias="menu/StopMovie.png">../../gui/Chimera.Client.GUI/images/Stop.png</file>
     <file alias="menu/SaveMovie.png">../../gui/Chimera.Client.GUI/images/SaveAs.png</file>
     <file alias="menu/RamWatch.png">menu-icons/Watch.png</file>
+    <file alias="menu/McpServer.png">menu-icons/McpServer.png</file>
+    <file alias="menu/McpServerStarted.png">menu-icons/McpServerStarted.png</file>
   </qresource>
   <!-- Chimera's style: Fusion, with the system's check boxes and radio buttons, as Chimera's -->
   <qresource prefix="/qt/qml/ChimeraStyle">

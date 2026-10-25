@@ -131,7 +131,45 @@ public:
 		std::function<void(std::string answer, std::string error)> done)>;
 	void setSuggestRunner(SuggestRunner runner) { suggestRunner_ = std::move(runner); }
 
+	/* The MCP server's create_project (issue 355), as Chimera's wizard does
+	 * it for an agent (CompleteForAgent): the agent's answers taken through
+	 * this form as a person would leave it having changed nothing else, and
+	 * the project made and opened. The core's suggestions for the game come
+	 * in as they would, then the agent's own settings over them; firmware is
+	 * looked for where the form looks, and what is missing is listed rather
+	 * than asked for. A core that compiles a game's code first is refused
+	 * until that game's code is compiled. */
+	struct AgentRequest
+	{
+		/* the core, by its name or its package's file name */
+		std::string core;
+		/* the machine, by its id or what it is called; "" for the package's own */
+		std::string system;
+		/* files by slot, and files with no slot named (each goes in the slot that takes its kind) */
+		std::vector<std::pair<std::string, std::string>> files;
+		std::vector<std::string> games;
+		/* settings by name (a JSON object), over the defaults and suggestions */
+		json::Json settings;
+		/* firmware files by id, and a folder to look for firmware in besides */
+		std::vector<std::pair<std::string, std::string>> firmware;
+		std::string firmwareFolder;
+	};
+	struct AgentOutcome
+	{
+		/* the project was made and is being opened */
+		bool made = false;
+		std::string refusal;
+		/* when firmware stood in the way: [{id, name, accepted: [{file, size, sha1}]}],
+		 * and the folders looked in */
+		json::Json missing, searched;
+	};
+	/* done is told on the view's thread, once */
+	void completeForAgent(const AgentRequest &request, std::function<void(AgentOutcome)> done);
+
 private:
+	/* completeForAgent after the core's suggestion for the game came in */
+	void finishForAgent(const AgentRequest &request, const std::function<void(AgentOutcome)> &done);
+	Connection agentWait_;
 	struct Picked
 	{
 		std::string name, path;

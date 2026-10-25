@@ -46,6 +46,23 @@ bool known(const std::string &name) { return name == "save" || name == "top" || 
 
 ToolWindowsViewModel::ToolWindowsViewModel(Dispatcher &dispatcher) : ViewModel("toolWindows", dispatcher)
 {
+	expose("showAsked", "a tool window asked to be shown, by the names --show takes (\"tastudio\"); \"\" when none is", showAsked, true);
+	expose("exitAsked", "the program asked to close, with this exit code; -1 when it is not", exitAsked);
+	command("show", "asks the window to show a tool window, by the names --show takes (Chimera's client.opentasstudio)", {"tool"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string tool;
+			if (!arg(a, 0, tool, error)) return {};
+			showAsked.set("");
+			showAsked.set(tool);
+			return {};
+		});
+	command("exit", "asks the program to close, as Chimera's client.exit, with this exit code; a project with changes asks first",
+		{"code"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t code = 0;
+			if (!a.empty() && !arg(a, 0, code, error)) return {};
+			exitAsked.set(std::max<int64_t>(0, code));
+			return {};
+		});
 	expose("settings", "each tool window's options and place, by tool: save (Save Window Position), top (Stay on Top), "
 		"float (Float From Main Window), x, y, w, h", settings, true);
 	command("setOption", "a tool window's option set: \"save\" (Save Window Position), \"top\" (Stay on Top) or \"float\" "

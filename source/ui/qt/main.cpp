@@ -58,6 +58,7 @@
 #include "chimera/vm/project_details_vm.hpp"
 #include "chimera/vm/config_store.hpp"
 #include "chimera/vm/help_vm.hpp"
+#include "chimera/vm/mcp_vm.hpp"
 #include "chimera/vm/batch_run_vm.hpp"
 #include "chimera/vm/media_maker_vm.hpp"
 #include "chimera/vm/cache_manager_vm.hpp"
@@ -313,7 +314,10 @@ int main(int argc, char **argv)
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
 	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, movie-import, ram-search, ram-watch, hex, controls, hotkeys, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
-	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, userdataOpt, describeOpt, schemeOpt, showOpt});
+	/* Chimera's --mcp-server and --mcp-allow-changes: the server started for a run nobody clicks in */
+	QCommandLineOption mcpServerOpt(QStringLiteral("mcp-server"), QStringLiteral("start the MCP server (Tools > MCP Server...) at once"));
+	QCommandLineOption mcpChangesOpt(QStringLiteral("mcp-allow-changes"), QStringLiteral("with --mcp-server: the agent may make changes, for this run"));
+	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, userdataOpt, describeOpt, schemeOpt, showOpt, mcpServerOpt, mcpChangesOpt});
 	args.process(app);
 	QtDispatcher dispatcher(&app);
 	vm::InputLog inputs;
@@ -590,6 +594,9 @@ int main(int argc, char **argv)
 		hotkeys.add("TAStudio", "Seek To Green Arrow", "R", [&session, run](bool down) {
 			if (down) run(session, "seekToRestore");
 		});
+		hotkeys.add("TAStudio", "Toggle Turbo Seek", "Shift+S", [&session](bool down) {
+			if (down) session.turboSeek.set(!session.turboSeek.get());
+		});
 		hotkeys.add("TAStudio", "Cycle Greenzone", "", [&session, run](bool down) {
 			if (down) run(session, "cycleGreenzone");
 		});
@@ -606,6 +613,10 @@ int main(int argc, char **argv)
 		});
 		hotkeys.add("TAStudio", "Seek To Next Marker", "Shift+PageDown", [seekMarker](bool down) {
 			if (down) seekMarker("nextMarker");
+		});
+		/* a seek that plays (Turbo seek off) stopped where it is, as the row menu's */
+		hotkeys.add("TAStudio", "Cancel Seek", "", [&session, run](bool down) {
+			if (down && session.seekingTo.get() >= 0) run(session, "pause");
 		});
 		hotkeys.add("TAStudio", "Set Marker", "M", [&pianoRoll, run](bool down) {
 			if (down) run(pianoRoll, "addMarker", {pianoRoll.currentFrame.get(), std::string()});
@@ -665,7 +676,7 @@ int main(int argc, char **argv)
 		newProject.compileRoot.set(session.compileCacheRoot.get());
 	}
 	vm::Connection compileRootWatch = session.compileCacheRoot.changed.connect([&] { newProject.compileRoot.set(session.compileCacheRoot.get()); });
-	newProject.setSuggestRunner([&app](const std::string &package, const std::string &game,
+	const vm::NewProjectViewModel::SuggestRunner suggestRunner = [&app](const std::string &package, const std::string &game,
 									const std::vector<std::pair<std::string, std::string>> &files, const std::string &slots,
 									const std::string &settings, std::function<void(std::string, std::string)> done) {
 #ifdef _WIN32
@@ -704,7 +715,8 @@ int main(int argc, char **argv)
 			else done({}, err.isEmpty() ? std::string("the core gave none") : err.split('\n').last().toStdString());
 		});
 		proc->start(runner, args);
-	});
+	};
+	newProject.setSuggestRunner(suggestRunner);
 	/* the headless runner, for what runs a machine in a process of its own:
 	 * chimera-run, beside the program or, in the build tree, where it is
 	 * built (CHIMERA_RUN names another) */
@@ -747,7 +759,7 @@ int main(int argc, char **argv)
 	/* a movie import asks the core in a process of its own (one machine to a
 	 * process), as Chimera does: chimera-run, beside the program or, in the
 	 * build tree, where it is built (CHIMERA_RUN names another) */
-	newProject.setImportRunner([&app](const std::string &package, const std::string &movie,
+	const vm::NewProjectViewModel::ImportRunner importRunner = [&app](const std::string &package, const std::string &movie,
 								   const std::vector<std::pair<std::string, std::string>> &mounts, const std::string &settings,
 								   std::function<void(std::string, std::string)> done) {
 #ifdef _WIN32
@@ -784,7 +796,16 @@ int main(int argc, char **argv)
 			done({}, "chimera-run could not be started");
 		});
 		proc->start(runner, args);
-	});
+	};
+	newProject.setImportRunner(importRunner);
+	/* the MCP server's create_project: a New Project form of its own, never
+	 * shown, which the agent's answers fill as Chimera's wizard is filled */
+	vm::NewProjectViewModel agentProject(dispatcher, session, cores);
+	agentProject.setSuggestRunner(suggestRunner);
+	agentProject.setImportRunner(importRunner);
+	agentProject.compileRunner.set(newProject.compileRunner.get());
+	agentProject.compileRoot.set(newProject.compileRoot.get());
+	vm::Connection agentCompileRootWatch = session.compileCacheRoot.changed.connect([&] { agentProject.compileRoot.set(session.compileCacheRoot.get()); });
 	session.setFinders([&cores](const std::string &n, const std::string &h, std::string &note) { return cores.packageFor(n, h, note); },
 		[&cores] { return cores.firmwareFolders(); },
 		[&cores](const std::string &extension) { return cores.coresFor(extension); });
@@ -1021,6 +1042,61 @@ int main(int argc, char **argv)
 	qt::KeyNamer keyNamer;
 	qt::ThemeColors themeColors;
 	qt::QmlViewModel helpQml(help);
+	/* Tools > MCP Server...: an AI agent working on the open project (docs/mcp-server.md) */
+	vm::McpViewModel mcp(dispatcher, session, pianoRoll, branches);
+	config.keep(mcp, "allowChanges");
+	{
+		/* the program an agent's program starts, in the bundle's bin folder or, in a build, beside chimera-run */
+#ifdef _WIN32
+		const QString exe = QStringLiteral("chimera-mcp.exe");
+#else
+		const QString exe = QStringLiteral("chimera-mcp");
+#endif
+		QString program = QCoreApplication::applicationDirPath() + QStringLiteral("/bin/") + exe;
+		for (const QString &dir : {QCoreApplication::applicationDirPath() + QStringLiteral("/bin"), QCoreApplication::applicationDirPath(),
+				 QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
+			if (QFileInfo::exists(dir + QStringLiteral("/") + exe))
+			{
+				program = QFileInfo(dir + QStringLiteral("/") + exe).absoluteFilePath();
+				break;
+			}
+		mcp.setupCommand.set(("claude mcp add chimera -- \"" + QDir::toNativeSeparators(program) + "\"").toStdString());
+	}
+	mcp.projectsFolder = [&paths] { return paths.resolve("Movies"); };
+	mcp.serverInfo = [&paths, &cores, &help, configPath] {
+		vm::json::Json info;
+		info.kind = vm::json::Json::Kind::Object;
+		auto add = [&](const char *name, vm::json::Json v) { info.members.emplace_back(name, std::move(v)); };
+		auto text = [](const std::string &t) { return vm::json::Json::string(t); };
+		add("chimera", text(help.buildName.get()));
+		vm::json::Json engine;
+		std::string error;
+		const char *built = ce_build_info();
+		if (!vm::json::parse(built != nullptr ? built : "{}", engine, error)) engine = text(built != nullptr ? built : "");
+		if (const vm::json::Json *c = engine.find("commit")) add("commit", *c);
+		add("engine", engine);
+		add("window", vm::json::Json::boolean_(true));
+		add("program_folder", text(QCoreApplication::applicationDirPath().toStdString()));
+		add("config_file", text(configPath.toStdString()));
+		vm::json::Json folders;
+		folders.kind = vm::json::Json::Kind::Object;
+		folders.members.emplace_back("projects", text(paths.resolve("Movies")));
+		vm::json::Json coreFolders;
+		coreFolders.kind = vm::json::Json::Kind::Array;
+		coreFolders.items.push_back(text(cores.coresFolder.get()));
+		folders.members.emplace_back("cores", coreFolders);
+		folders.members.emplace_back("firmware", text(paths.resolve("Firmware")));
+		folders.members.emplace_back("lua", text(paths.resolve("Lua")));
+		add("folders", folders);
+		const char *endpoint = ce_mcp_endpoint();
+		add("mcp_name", text(endpoint != nullptr ? endpoint : ""));
+		return vm::json::write(info);
+	};
+	/* list_cores and describe_core read the cores folder */
+	auto mcpCores = [&cores] { ce_mcp_cores_folders(("[" + vm::json::quote(cores.coresFolder.get()) + "]").c_str()); };
+	mcpCores();
+	vm::Connection mcpCoresFollow = cores.coresFolder.changed.connect(mcpCores);
+	qt::QmlViewModel mcpQml(mcp);
 	qt::QmlViewModel batchRunQml(batchRun);
 	qt::QmlViewModel mediaMakerQml(mediaMaker);
 	vm::CacheManagerViewModel cacheManager(dispatcher);
@@ -1077,6 +1153,8 @@ int main(int argc, char **argv)
 		std::fflush(stdout);
 	});
 	luaConsoleOf = &luaConsole;
+	mcp.lua = &luaConsole;
+	mcp.newProject = &agentProject;
 	for (const char *name : {"disableOnLoad", "toggleAllIfNoneSelected", "reloadOnChange", "duplicateToStdout", "recentSessions", "recentScripts"})
 		config.keep(luaConsole, name);
 	/* New Script's template is in the Paths' Lua folder */
@@ -1177,6 +1255,23 @@ int main(int argc, char **argv)
 					luaConsole.afterFrame();
 				});
 		});
+	/* when no frame is run, the scripts that wait in emu.yield go on, as Chimera's loop resumes them */
+	session.setScriptIdle([&lua] { return lua.running(); },
+		[&lua, &luaConsole, &dispatcher, &consoleSaid] {
+			lua.yieldTurn();
+			if (!consoleSaid.exchange(true))
+				dispatcher.post([&luaConsole, &consoleSaid] {
+					consoleSaid = false;
+					luaConsole.afterFrame();
+				});
+		});
+	/* a machine opened or closed: the running scripts start again, as Chimera's
+	 * Lua Console restarts on a core change (once the window has the new one) */
+	auto restartScripts = [&dispatcher, &luaConsole] { dispatcher.post([&luaConsole] { luaConsole.restartScripts(); }); };
+	vm::Connection scriptsOnOpen = session.opens.changed.connect(restartScripts);
+	vm::Connection scriptsOnClose = session.isOpen.changed.connect([&session, restartScripts] {
+		if (!session.isOpen.get()) restartScripts();
+	});
 	/* scripts while turbo is held only when asked (Customize) */
 	session.scriptsDuringTurbo(customize.luaDuringTurbo.get());
 	vm::Connection turboScripts = customize.luaDuringTurbo.changed.connect(
@@ -1185,7 +1280,11 @@ int main(int argc, char **argv)
 	struct LetGo
 	{
 		vm::SessionViewModel &session;
-		~LetGo() { session.setScriptTurns({}, {}); }
+		~LetGo()
+		{
+			session.setScriptTurns({}, {});
+			session.setScriptIdle({}, {});
+		}
 	} letGo{session};
 
 	qmlRegisterType<qt::PictureItem>("Chimera", 1, 0, "PictureItem");
@@ -1223,6 +1322,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("pointerCapture"), QVariant::fromValue<QObject *>(&pointerCapture)},
 		{QStringLiteral("buttonRouter"), QVariant::fromValue<QObject *>(&buttonRouter)},
 		{QStringLiteral("help"), QVariant::fromValue<QObject *>(&helpQml)},
+		{QStringLiteral("mcp"), QVariant::fromValue<QObject *>(&mcpQml)},
 		{QStringLiteral("batchRun"), QVariant::fromValue<QObject *>(&batchRunQml)},
 		{QStringLiteral("mediaMaker"), QVariant::fromValue<QObject *>(&mediaMakerQml)},
 		{QStringLiteral("cacheManager"), QVariant::fromValue<QObject *>(&cacheManagerQml)},
@@ -1344,6 +1444,25 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())
 		if (auto *tool = window->findChild<QQuickWindow *>(showName)) tool->show();
+	/* the agent's Lua runs where the person sees it: the Lua Console opened, as a person opens it */
+	mcp.showLuaConsole = [window] {
+		if (auto *tool = window->findChild<QQuickWindow *>(QStringLiteral("luaConsoleWindow")); tool != nullptr && !tool->isVisible()) tool->show();
+	};
+	/* a tool window a script asks for (Chimera's client.opentasstudio), by the same names */
+	vm::Connection showAskedWatch = toolWindows.showAsked.changed.connect([&toolWindows, window] {
+		const QString asked = QString::fromStdString(toolWindows.showAsked.get());
+		if (asked.isEmpty()) return;
+		const QString name = asked == QStringLiteral("tastudio") ? QStringLiteral("tastudioWindow")
+			: asked == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")
+			: asked == QStringLiteral("ram-watch") ? QStringLiteral("ramWatchWindow")
+			: asked == QStringLiteral("ram-search") ? QStringLiteral("ramSearchWindow")
+			: asked == QStringLiteral("hex") ? QStringLiteral("hexEditorWindow") : asked;
+		if (auto *tool = window->findChild<QQuickWindow *>(name))
+		{
+			tool->show();
+			tool->raise();
+		}
+	});
 
 	std::string error;
 	/* Chimera's --userdata pairs, in the scripts' userdata before any script runs */
@@ -1378,17 +1497,47 @@ int main(int argc, char **argv)
 		}
 		if (!code.empty() && !lua.run(code, "userdata", error)) std::printf("userdata: %s\n", error.c_str());
 	}
-	if (args.isSet(luaOpt))
-	{
-		/* opened in the console and started there, as Chimera's --lua does
-		 * (a .luases file is a session) */
+	/* opened in the console and started there, as Chimera's --lua does (a
+	 * .luases file is a session); after the game or project the command line
+	 * opens is open, as Chimera starts it after --project, or at once when
+	 * nothing is opened (or the opening never finishes) */
+	auto startScript = [&args, &luaOpt, &luaConsole] {
+		std::string e;
 		const std::string script = QFileInfo(args.value(luaOpt)).absoluteFilePath().toStdString();
 		if (!QFileInfo::exists(args.value(luaOpt)))
 			std::printf("lua: could not read %s\n", qPrintable(args.value(luaOpt)));
 		else if (args.value(luaOpt).endsWith(QStringLiteral(".luases"), Qt::CaseInsensitive))
-			luaConsole.run("openSession", {script}, error);
+			luaConsole.run("openSession", {script}, e);
 		else
-			luaConsole.run("openScript", {script}, error);
+			luaConsole.run("openScript", {script}, e);
+	};
+	vm::Connection scriptAfterOpen, scriptAfterProject;
+	bool scriptStarted = false;
+	if (args.isSet(luaOpt))
+	{
+		if (args.positionalArguments().isEmpty())
+		{
+			scriptStarted = true;
+			startScript();
+		}
+		else
+		{
+			/* a project is open once TAStudio has it (its movie, markers and branches); a game once its machine is */
+			const bool project = args.positionalArguments().first().endsWith(QStringLiteral(".chimeraProject"), Qt::CaseInsensitive);
+			auto ready = [&, project] {
+				if (scriptStarted || !session.isOpen.get() || (project && !session.hasProject.get())) return;
+				scriptStarted = true;
+				/* after the restart the machine's opening asked for, so it is not started twice */
+				dispatcher.post(startScript);
+			};
+			scriptAfterOpen = session.opens.changed.connect(ready);
+			scriptAfterProject = session.hasProject.changed.connect(ready);
+			QTimer::singleShot(60000, &app, [&] {
+				if (scriptStarted) return;
+				scriptStarted = true;
+				startScript();
+			});
+		}
 	}
 	/* the movie is the machine's: it is made longer once one is open */
 	vm::Connection fillWatch;
@@ -1418,6 +1567,19 @@ int main(int argc, char **argv)
 	{
 		/* a project alone: its core is found among the installed ones */
 		session.run("openProject", {positional[0].toStdString()}, error);
+	}
+	if (args.isSet(mcpServerOpt))
+	{
+		std::string why;
+		if (const std::optional<vm::Value> at = mcp.run("startForRun", {args.isSet(mcpChangesOpt)}, why))
+		{
+			std::string endpoint;
+			vm::fromValue(*at, endpoint);
+			std::printf("[mcp] the server is started at %s\n", endpoint.c_str());
+		}
+		else
+			std::fprintf(stderr, "[mcp] --mcp-server: the server could not be started: %s\n", why.c_str());
+		std::fflush(stdout);
 	}
 	if (args.isSet(playOpt))
 	{

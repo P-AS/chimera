@@ -1,11 +1,14 @@
 #include "chimera/vm/lua_bridge.hpp"
+#include "chimera/vm/json.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <type_traits>
 
 extern "C" {
@@ -34,7 +37,7 @@ LuaBridge *bridgeOf(lua_State *L)
 	return b;
 }
 
-std::string json(const std::string &s)
+std::string quoted(const std::string &s)
 {
 	std::string out = "\"";
 	for (const char c : s)
@@ -433,6 +436,9 @@ bool LuaBridge::resume(int64_t id, std::string &error)
 	resuming_ = outer;
 	enterScript(was);
 	bool ok = true;
+	/* what it waits for: emu.frameadvance yields "frame" */
+	const bool frameWait = status == LUA_YIELD && results > 0 && lua_type(co, -results) == LUA_TSTRING &&
+		std::string_view(lua_tostring(co, -results)) == "frame";
 	if (status == LUA_YIELD || status == LUA_OK)
 		lua_pop(co, results);
 	else
@@ -443,6 +449,7 @@ bool LuaBridge::resume(int64_t id, std::string &error)
 	lua_pop(L_, 1);
 	/* the script may have been let go while it ran (by its own call) */
 	s = find(id);
+	if (s != nullptr) s->frameWait = frameWait;
 	if (s != nullptr && status != LUA_YIELD)
 	{
 		luaL_unref(L_, LUA_REGISTRYINDEX, s->thread);
@@ -575,6 +582,162 @@ void LuaBridge::executeHere(const std::string &command)
 	enterScript(was);
 }
 
+namespace {
+/* the most tables within tables a value is followed into, as Chimera's */
+constexpr int kLuaDepth = 8;
+
+/* the value at `at` as JSON, as Chimera's run_lua says it (McpHostTools.LuaValue) */
+json::Json luaValue(lua_State *L, int at, int depth)
+{
+	at = lua_absindex(L, at);
+	switch (lua_type(L, at))
+	{
+	case LUA_TNIL:
+		return {};
+	case LUA_TBOOLEAN:
+		return json::Json::boolean_(lua_toboolean(L, at) != 0);
+	case LUA_TNUMBER:
+	{
+		if (lua_isinteger(L, at)) return json::Json::integer(static_cast<long long>(lua_tointeger(L, at)));
+		const double d = lua_tonumber(L, at);
+		/* a whole one is said as one */
+		if (std::isfinite(d) && d == std::floor(d) && std::fabs(d) < 9e15) return json::Json::integer(static_cast<long long>(d));
+		if (!std::isfinite(d)) return json::Json::string(lua_tostring(L, at));
+		return json::Json::number(d);
+	}
+	case LUA_TSTRING:
+	{
+		size_t n = 0;
+		const char *s = lua_tolstring(L, at, &n);
+		return json::Json::string(std::string(s, n));
+	}
+	case LUA_TFUNCTION:
+		return json::Json::string("(a function)");
+	case LUA_TTABLE:
+	{
+		if (depth >= kLuaDepth) return json::Json::string("(a table, too deep to show)");
+		/* every key, by its text: Lua keeps a table's keys in no order, and an answer should read the same each time */
+		std::vector<std::pair<std::string, json::Json>> fields;
+		std::vector<long long> whole;
+		bool list = true;
+		lua_pushnil(L);
+		while (lua_next(L, at) != 0)
+		{
+			long long k = 0;
+			if (lua_type(L, -2) == LUA_TNUMBER)
+			{
+				if (lua_isinteger(L, -2))
+					k = static_cast<long long>(lua_tointeger(L, -2));
+				else if (const double d = lua_tonumber(L, -2); d == std::floor(d) && std::fabs(d) < 9e15)
+					k = static_cast<long long>(d);
+			}
+			if (k < 1) list = false;
+			whole.push_back(k);
+			std::string name;
+			if (lua_type(L, -2) == LUA_TNUMBER || lua_type(L, -2) == LUA_TSTRING)
+			{
+				lua_pushvalue(L, -2);
+				size_t n = 0;
+				const char *s = lua_tolstring(L, -1, &n);
+				name.assign(s, n);
+				lua_pop(L, 1);
+			}
+			else if (lua_type(L, -2) == LUA_TBOOLEAN)
+				name = lua_toboolean(L, -2) != 0 ? "true" : "false";
+			else
+				name = luaL_typename(L, -2);
+			fields.emplace_back(std::move(name), luaValue(L, -1, depth + 1));
+			lua_pop(L, 1);
+		}
+		json::Json out;
+		if (list && !fields.empty())
+		{
+			std::vector<size_t> order(fields.size());
+			for (size_t i = 0; i < order.size(); i++) order[i] = i;
+			std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return whole[a] < whole[b]; });
+			for (size_t i = 0; i < order.size() && list; i++) list = whole[order[i]] == static_cast<long long>(i + 1);
+			if (list)
+			{
+				out.kind = json::Json::Kind::Array;
+				for (size_t i : order) out.items.push_back(std::move(fields[i].second));
+				return out;
+			}
+		}
+		std::stable_sort(fields.begin(), fields.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+		out.kind = json::Json::Kind::Object;
+		out.members = std::move(fields);
+		return out;
+	}
+	default:
+	{
+		size_t n = 0;
+		const char *s = luaL_tolstring(L, at, &n);
+		json::Json out = json::Json::string(std::string(s, n));
+		lua_pop(L, 1);
+		return out;
+	}
+	}
+}
+} // namespace
+
+bool LuaBridge::runForAgent(const std::string &code, const std::string &directory, std::string &results, std::string &error)
+{
+	return onScripts([&] { return runForAgentHere(code, directory, results, error); });
+}
+
+bool LuaBridge::runForAgentHere(const std::string &code, const std::string &directory, std::string &results, std::string &error)
+{
+	/* the code as a Lua long string, whose brackets it does not contain; whether it is
+	 * an expression is asked of Lua's own load, as Chimera's RunText asks */
+	std::string level;
+	while (code.find("]" + level + "]") != std::string::npos) level += '=';
+	const std::string chunk = "local code = [" + level + "[\n" + code + "]" + level + "]\n"
+		"local run, failed = load('return ' .. code, '=input')\n"
+		"if not run then run, failed = load(code, '=input') end\n"
+		"if not run then error(failed, 0) end\n"
+		"__chimera_run_results = table.pack(run())\n";
+	lua_pushboolean(L_, 1);
+	lua_setglobal(L_, "__chimera_no_waits");
+	const int64_t id = startCodeHere(chunk, "run_lua", directory, error);
+	lua_pushnil(L_);
+	lua_setglobal(L_, "__chimera_no_waits");
+	/* waited all the same (coroutine.yield): nothing would go on with it */
+	if (const Script *s = id != 0 ? find(id) : nullptr; s != nullptr && s->thread != LUA_NOREF)
+	{
+		stopHere(id);
+		lua_pushnil(L_);
+		lua_setglobal(L_, "__chimera_run_results");
+		error = "the code waited for a frame, which nothing here goes on with: a script that waits for frames is started with lua_script";
+		return false;
+	}
+	json::Json out;
+	out.kind = json::Json::Kind::Array;
+	const int base = lua_gettop(L_);
+	lua_getglobal(L_, "__chimera_run_results");
+	if (id != 0 && lua_istable(L_, -1))
+	{
+		lua_getfield(L_, -1, "n");
+		const auto n = static_cast<int64_t>(lua_tointeger(L_, -1));
+		lua_pop(L_, 1);
+		for (int64_t i = 1; i <= n; i++)
+		{
+			lua_rawgeti(L_, -1, static_cast<lua_Integer>(i));
+			out.items.push_back(luaValue(L_, -1, 0));
+			lua_pop(L_, 1);
+		}
+	}
+	lua_settop(L_, base);
+	lua_pushnil(L_);
+	lua_setglobal(L_, "__chimera_run_results");
+	if (id == 0)
+	{
+		if (error.empty()) error = "unknown error";
+		return false;
+	}
+	results = json::write(out);
+	return true;
+}
+
 void LuaBridge::callHook(const char *name)
 {
 	lua_getglobal(L_, name);
@@ -669,11 +832,23 @@ void LuaBridge::frameDoneHere()
 	}
 	begun_ = false;
 	callHook("__chimera_frame_end_events");
+	resumeRunning(true);
+	callHook("__chimera_frame_end");
+}
+
+bool LuaBridge::yieldTurn()
+{
+	return onScripts([&] { return resumeRunning(false); });
+}
+
+bool LuaBridge::resumeRunning(bool frames)
+{
 	/* the running scripts go on, each to its next wait (a list taken first:
 	 * one that starts or stops another does not change it under this loop) */
 	std::vector<int64_t> ids;
 	for (const Script &s : scripts_)
-		if (s.state == State::Running) ids.push_back(s.id);
+		if (s.state == State::Running && (frames || (s.thread != LUA_NOREF && !s.frameWait))) ids.push_back(s.id);
+	bool stopped = false;
 	for (const int64_t id : ids)
 	{
 		const Script *s = find(id);
@@ -683,12 +858,17 @@ void LuaBridge::frameDoneHere()
 		{
 			log("script stopped: " + error);
 			stopHere(id);
+			stopped = true;
 			continue;
 		}
 		s = find(id);
-		if (s != nullptr && (s->stopAfter || (s->thread == LUA_NOREF && !keeps(id)))) stopHere(id);
+		if (s != nullptr && (s->stopAfter || (s->thread == LUA_NOREF && !keeps(id))))
+		{
+			stopHere(id);
+			stopped = true;
+		}
 	}
-	callHook("__chimera_frame_end");
+	return stopped;
 }
 
 std::string LuaBridge::describe() const
@@ -698,19 +878,19 @@ std::string LuaBridge::describe() const
 	{
 		const ViewModel &vm = *models_[m];
 		out += m ? ",\n" : "\n";
-		out += " {\"name\": " + json(vm.name()) + ", \"properties\": [";
+		out += " {\"name\": " + quoted(vm.name()) + ", \"properties\": [";
 		for (size_t i = 0; i < vm.properties().size(); i++)
 		{
 			const auto &p = vm.properties()[i];
-			out += (i ? ", " : "") + std::string("{\"name\": ") + json(p.name) + ", \"help\": " + json(p.help) +
+			out += (i ? ", " : "") + std::string("{\"name\": ") + quoted(p.name) + ", \"help\": " + quoted(p.help) +
 				", \"settable\": " + (p.set ? "true" : "false") + "}";
 		}
 		out += "], \"commands\": [";
 		for (size_t i = 0; i < vm.commands().size(); i++)
 		{
 			const auto &c = vm.commands()[i];
-			out += (i ? ", " : "") + std::string("{\"name\": ") + json(c.name) + ", \"help\": " + json(c.help) + ", \"params\": [";
-			for (size_t k = 0; k < c.params.size(); k++) out += (k ? ", " : "") + json(c.params[k]);
+			out += (i ? ", " : "") + std::string("{\"name\": ") + quoted(c.name) + ", \"help\": " + quoted(c.help) + ", \"params\": [";
+			for (size_t k = 0; k < c.params.size(); k++) out += (k ? ", " : "") + quoted(c.params[k]);
 			out += "]}";
 		}
 		out += "]}";

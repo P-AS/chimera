@@ -763,6 +763,99 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			inputs_.countRerecords(true);
 			return {};
 		});
+	command("agentLines", "the MCP server's set_input, as the engine checked it: lines of input written from a frame on, "
+		"past the movie's end too, one undo step with the engine's name for it", {"frame", "lines", "label"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t frame = 0;
+			std::string text, label;
+			if (!arg(a, 0, frame, error) || !arg(a, 1, text, error) || !arg(a, 2, label, error)) return {};
+			std::vector<std::string> lines;
+			for (size_t at = 0; at <= text.size();)
+			{
+				const size_t end = text.find('\n', at);
+				lines.push_back(text.substr(at, end == std::string::npos ? std::string::npos : end - at));
+				if (end == std::string::npos) break;
+				at = end + 1;
+			}
+			if (frame < 0 || lines.empty())
+			{
+				error = "The step to apply is not one the engine makes.";
+				return {};
+			}
+			std::vector<Row> rows;
+			const size_t axisCount = inputs_.axisCount();
+			session_.onMachineWait([&](ce_session *s) {
+				if (s == nullptr) return;
+				for (const std::string &line : lines)
+				{
+					Row r;
+					r.axes.resize(axisCount);
+					if (ce_session_movie_entry_decode(s, line.c_str(), &r.buttons, r.axes.empty() ? nullptr : r.axes.data()) != 0) return;
+					rows.push_back(std::move(r));
+				}
+			});
+			if (rows.size() != lines.size())
+			{
+				error = "The step to apply is not one the engine makes.";
+				return {};
+			}
+			/* past the end, the movie grows to take them, in the same step */
+			const int64_t before = inputs_.size(), n = static_cast<int64_t>(rows.size());
+			Step step;
+			step.sizeBefore = before;
+			if (frame + n > before) inputs_.resize(frame + n);
+			for (int64_t i = 0; i < n; i++)
+			{
+				const Row was = readRow(frame + i);
+				writeRow(frame + i, rows[static_cast<size_t>(i)]);
+				step.frames[frame + i] = {was.buttons, rows[static_cast<size_t>(i)].buttons};
+				if (!was.axes.empty()) step.axes[frame + i] = {was.axes, rows[static_cast<size_t>(i)].axes};
+			}
+			step.sizeAfter = inputs_.size();
+			step.name = label;
+			keep(std::move(step), false);
+			frameCount.set(inputs_.size());
+			frames_.forget();
+			edited(frame, frame + n - 1, before);
+			return inputs_.size();
+		});
+	command("agentInsert", "the MCP server's insert_frames: empty frames put in, one undo step with the engine's name",
+		{"frame", "count", "label"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t frame = 0, count = 0;
+			std::string label;
+			if (!arg(a, 0, frame, error) || !arg(a, 1, count, error) || !arg(a, 2, label, error)) return {};
+			if (frame < 0 || frame > inputs_.size() || count < 1)
+			{
+				error = "The step to apply is not one the engine makes.";
+				return {};
+			}
+			Row empty;
+			empty.axes.resize(inputs_.axisCount());
+			if (!empty.axes.empty()) inputs_.neutralAxes(empty.axes.data());
+			agentEditing_ = true;
+			naming_ = label;
+			putIn(frame, std::vector<Row>(static_cast<size_t>(count), empty));
+			naming_.clear();
+			agentEditing_ = false;
+			return inputs_.size();
+		});
+	command("agentDelete", "the MCP server's delete_frames: frames taken out, one undo step with the engine's name",
+		{"frame", "count", "label"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t frame = 0, count = 0;
+			std::string label;
+			if (!arg(a, 0, frame, error) || !arg(a, 1, count, error) || !arg(a, 2, label, error)) return {};
+			if (frame < 0 || count < 1 || frame + count > inputs_.size())
+			{
+				error = "The step to apply is not one the engine makes.";
+				return {};
+			}
+			agentEditing_ = true;
+			naming_ = label;
+			takeOut(frame, frame + count - 1);
+			naming_.clear();
+			agentEditing_ = false;
+			return inputs_.size();
+		});
 	command("rightDragStart", "Chimera's right button pressed on a frame number with Shift, Ctrl or Alt held: the frames "
 		"picked (or the frame pressed) are taken up for the drag; true when a drag edits", {"frame", "ctrl", "shift", "alt"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -2178,7 +2271,7 @@ bool PianoRollViewModel::Frames::columnHiddenIn(int64_t view, int32_t column) co
 
 bool PianoRollViewModel::limited() const
 {
-	return !editHiddenColumns.get() && !hidden_.empty();
+	return !agentEditing_ && !editHiddenColumns.get() && !hidden_.empty();
 }
 
 uint64_t PianoRollViewModel::shownButtons() const
