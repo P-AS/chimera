@@ -11063,3 +11063,27 @@ the paste and leaves the last Copy's record (Reselect Clipboard) as it was. Cut
 writes the frame numbers as Copy does. Found in review of the first fix
 (630186d), which only handled a number followed by spaces, in TAStudio alone.
 Test: MnemonicLineTests (failed with the reader's change taken out).
+
+## A core stuck in its own fault handler is stopped on Windows too (2026-10-24)
+
+On Windows the frame watchdog (the session's timer that stops a core whose
+frame runs past 20 seconds) never stopped Vanquish on RPCS3's Vulkan
+renderer: Chimera hung for 40 minutes, where Linux stopped the same run
+after 20 seconds (issue 363). The core was not working. It looped inside
+its own fault handler, the function a core gives miniBox to hear about
+writes to memory it watches. On Windows miniBox calls that function from
+inside its own exception handler, and a stop from another thread was
+refused while any fault was being handled. Linux runs the core's handler
+after its own has returned, so the stop landed there.
+
+miniBox 7216594 counts the calls into the core's handler, and stops a
+thread that is running the core's code in there: it sends it to a trap that
+leaves every handler at once, as a crash inside the handler already did. A
+death inside the handler also left the count of faults being handled one
+too high, which kept every later stop from landing; it is put back now.
+
+Test: a new check in miniBox's threads test (a guest looping in its own
+fault handler, stopped from another thread twice, then run again after a
+state load) failed on Windows with the previous miniBox ("not stopped after
+200 asks") and passes with this one; it passes on Linux. miniBox's CI runs
+it on its Windows runner from now on.
