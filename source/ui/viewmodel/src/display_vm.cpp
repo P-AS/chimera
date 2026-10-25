@@ -142,6 +142,8 @@ DisplayViewModel::DisplayViewModel(Dispatcher &dispatcher) : ViewModel("display"
 	expose("statusBarFullscreen", "the status bar shown full screen", statusBarFullscreen, true);
 	expose("autohideMouseFullscreen", "full screen, the pointer hidden while it is still", autohideMouseFullscreen, true);
 	expose("stayOnTop", "the main window kept over others", stayOnTop, true);
+	expose("mouseCaptureForcesTop", "the main window kept over others while the pointer is captured (Chimera's Mouse "
+		"Capture Forces Stay on Top)", mouseCaptureForcesTop, true);
 	expose("minimalDisplay", "Display Features' Minimal picked (drawn as Full, as Chimera's)", minimalDisplay, true);
 	expose("staticWindowTitles", "the main window's title keeps to its last words", staticWindowTitles, true);
 	expose("titleSuffix", "the words every main window title ends with (\"\" for \"Chimera\")", titleSuffix, true);

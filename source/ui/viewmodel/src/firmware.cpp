@@ -109,11 +109,21 @@ const FirmwareFile *findFirmware(const Json &decl, const std::string &pinnedSha1
 				how = "by its name";
 				return &f;
 			}
-	/* the one file the size and the name hints point at; one dump in two
-	 * places is one candidate */
-	const Json *hints = decl.find("nameHints");
-	if (hints == nullptr || hints->kind != Json::Kind::Array || hints->items.empty()) return nullptr;
+	/* the one file the size and the name hints point at */
+	const std::vector<const FirmwareFile *> candidates = hintCandidates(decl, index);
+	if (candidates.size() != 1) return nullptr;
+	how = "by its size and name";
+	return candidates[0];
+}
+
+std::vector<const FirmwareFile *> hintCandidates(const Json &decl, const std::vector<FirmwareFile> &index)
+{
 	std::vector<const FirmwareFile *> candidates;
+	const Json *hints = decl.find("nameHints");
+	if (!text(decl, "sha1").empty() || hints == nullptr || hints->kind != Json::Kind::Array || hints->items.empty()) return candidates;
+	const Json *sizeDecl = decl.find("size");
+	const int64_t size = sizeDecl != nullptr ? static_cast<int64_t>(sizeDecl->number()) : 0;
+	/* one dump in two places is one candidate */
 	std::set<std::string> hashes;
 	for (const FirmwareFile &f : index)
 	{
@@ -123,9 +133,7 @@ const FirmwareFile *findFirmware(const Json &decl, const std::string &pinnedSha1
 			hinted = hinted || (!h.text.empty() && lower(f.name).find(lower(h.text)) != std::string::npos);
 		if (hinted && hashes.insert(lower(f.hash())).second) candidates.push_back(&f);
 	}
-	if (candidates.size() != 1) return nullptr;
-	how = "by its size and name";
-	return candidates[0];
+	return candidates;
 }
 
 std::vector<FirmwareNeed> neededFirmware(const Json &firmwareDecl, const Json &settingsDecl, const std::string &slotsJson,

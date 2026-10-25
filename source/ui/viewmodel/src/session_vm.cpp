@@ -730,6 +730,12 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		unfreezeAll();
 		return {};
 	});
+	command("disableAllFreezes", "every freeze switched off, kept to switch on again (Chimera's CheatList.DisableAll)", {},
+		[this](const Args &, std::string &) -> Value {
+			for (Freeze &f : freezes_) f.enabled = false;
+			syncFreezes();
+			return {};
+		});
 	command("toggleAllFreezes", "every freeze switched on or off (Chimera's Toggle All Freezes)", {}, [this](const Args &, std::string &) -> Value {
 		if (freezes_.empty()) return {};
 		/* as Chimera's: each one turned over, and said as the first one went unless they differed */

@@ -88,7 +88,7 @@ ApplicationWindow {
          | (root.visibility !== Window.FullScreen && root.display.frameWindowed === 0 ? Qt.FramelessWindowHint
             : Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint
               | (root.display.captionWindowed ? Qt.WindowMinMaxButtonsHint : 0))
-         | (root.display.stayOnTop ? Qt.WindowStaysOnTopHint : 0)
+         | (root.display.stayOnTop || (root.capturing && root.display.mouseCaptureForcesTop) ? Qt.WindowStaysOnTopHint : 0)
     function synchChrome() { root.menuBar.visible = root.visibility === Window.FullScreen ? root.display.menuFullscreen : root.display.menuWindowed }
     onVisibilityChanged: {
         root.synchChrome()
@@ -199,6 +199,18 @@ ApplicationWindow {
         askSaveDialog.open()
     }
     function quitProgram() { root.leaveProject(() => { root.leaving = true; Qt.quit() }) }
+    // a project started: the open one's changes asked about, then Chimera's
+    // question when freezes are on (Yes keeps them, No switches them off,
+    // Cancel opens nothing), then the project
+    property var afterCheats: null
+    function openProject(path) {
+        root.leaveProject(() => {
+            const open = () => root.session.run("openProject", [path])
+            if (root.session.frozenCount === 0) { open(); return }
+            root.afterCheats = open
+            cheatsDialog.open()
+        })
+    }
     // a script's client.exit, as Chimera's: closing as the window closes, with the code asked for
     Connections {
         target: root.toolWindows
@@ -242,7 +254,7 @@ ApplicationWindow {
             else if (action === "Exit Program") root.quitProgram()
             else if (action === "Load Last ROM") {
                 const last = root.session.recentProjects.split("\n")[0]
-                if (last !== "") root.leaveProject(() => root.session.run("openProject", [last]))
+                if (last !== "") root.openProject(last)
             }
             else if (action === "Seek To...") { if (root.session.seekEnabled) seekDialog.open() }
             else if (action === "Toggle Menu") root.menuBar.visible = !root.menuBar.visible
@@ -265,7 +277,7 @@ ApplicationWindow {
             else if (action === "Stop Movie") { if (root.session.hasProject) root.leaveProject(() => root.session.run("stopMovie")) }
             else if (action === "Play from beginning") {
                 // as TAStudio's: the project as its file has it, from frame 0
-                if (root.session.projectPath !== "") root.leaveProject(() => root.session.run("openProject", [root.session.projectPath]))
+                if (root.session.projectPath !== "") root.openProject(root.session.projectPath)
             }
             else if (action === "Save Movie") {
                 if (root.session.hasProject) root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject")
@@ -314,7 +326,7 @@ ApplicationWindow {
                         delegate: MenuItem {
                             required property string modelData
                             text: modelData
-                            onTriggered: root.leaveProject(() => root.session.run("openProject", [modelData]))
+                            onTriggered: root.openProject(modelData)
                         }
                         onObjectAdded: (index, object) => recentMenu.insertItem(index, object)
                         onObjectRemoved: (index, object) => recentMenu.removeItem(object)
@@ -899,7 +911,7 @@ ApplicationWindow {
         currentFolder: root.folderOf("Movies")
         nameFilters: [qsTr("Chimera projects (*.chimeraProject)"), qsTr("All files (*)")]
         // the project's core is found among the installed ones
-        onAccepted: root.leaveProject(() => root.session.run("openProject", [selectedFile]))
+        onAccepted: root.openProject(selectedFile)
     }
     // the windows Lua scripts make with the forms library
     LuaForms { vm: root.forms; mainWindow: root; themeColors: root.themeColors }
@@ -1049,6 +1061,22 @@ ApplicationWindow {
                 text: qsTr("Cancel")
                 onClicked: { askSaveDialog.close(); root.afterAsk = null }
             }
+        }
+    }
+    Dialog {
+        id: cheatsDialog
+        objectName: "cheatsDialog"
+        title: qsTr("Cheats warning")
+        anchors.centerIn: parent
+        modal: true
+        Label { text: qsTr("Continue playback with cheats enabled?\nChoosing \"No\" will disable cheats but not remove them.") }
+        footer: DialogButtonBox {
+            Button { text: qsTr("Yes"); onClicked: { cheatsDialog.close(); const then = root.afterCheats; root.afterCheats = null; then() } }
+            Button {
+                text: qsTr("No")
+                onClicked: { cheatsDialog.close(); root.session.run("disableAllFreezes"); const then = root.afterCheats; root.afterCheats = null; then() }
+            }
+            Button { text: qsTr("Cancel"); onClicked: { cheatsDialog.close(); root.afterCheats = null } }
         }
     }
     // several installed cores take it: the session offers them

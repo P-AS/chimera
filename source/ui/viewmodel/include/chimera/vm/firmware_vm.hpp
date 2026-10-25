@@ -66,6 +66,9 @@ public:
 	{
 		std::string core, id, display, label, sha1, name, description, condition, path, actualSha1;
 		int64_t size = 0;
+		/* for one with no file: how many different files its size and name
+		 * hints point at; two or more, and the person chooses one */
+		int64_t candidates = 0;
 		bool gameCore = false;
 		State state = Missing;
 		Where where = Nowhere;

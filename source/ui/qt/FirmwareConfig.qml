@@ -23,6 +23,12 @@ ApplicationWindow {
     minimumWidth: 640
     minimumHeight: 300
     onVisibleChanged: if (visible) { win.vm.picked = -1; win.vm.run("refresh") }
+    // a command that fills the list again, the list left where it was scrolled to, as Chimera's
+    function keepingPlace(command, args) {
+        const y = list.contentY
+        win.vm.run(command, args || [])
+        Qt.callLater(() => { list.contentY = Math.max(0, Math.min(y, list.contentHeight - list.height)) })
+    }
 
     // the columns, as wide as Chimera's
     readonly property var widths: [26, 200, 150, 95, 150, 110, 105]
@@ -57,13 +63,13 @@ ApplicationWindow {
     FileDialog {
         id: fileDialog
         currentFolder: win.folderOf ? win.folderOf("Firmware") : ""
-        onAccepted: win.vm.run("setFile", [win.vm.picked, localFiles.localPath(selectedFile)])
+        onAccepted: win.keepingPlace("setFile", [win.vm.picked, localFiles.localPath(selectedFile)])
     }
     FolderDialog {
         id: folderDialog
         title: qsTr("Scan a folder for firmware files")
         currentFolder: win.folderOf ? win.folderOf("Firmware") : ""
-        onAccepted: win.vm.run("scanFolder", [localFiles.localPath(selectedFolder), true])
+        onAccepted: win.keepingPlace("scanFolder", [localFiles.localPath(selectedFolder), true])
     }
     function browse() {
         if (!win.vm.canSet) return
@@ -208,9 +214,9 @@ ApplicationWindow {
         }
         RowLayout {
             Button { text: qsTr("Set File..."); enabled: win.vm.canSet; onClicked: win.browse() }
-            Button { text: qsTr("Clear"); enabled: win.vm.canClear; onClicked: win.vm.run("clearFile", [win.vm.picked]) }
+            Button { text: qsTr("Clear"); enabled: win.vm.canClear; onClicked: win.keepingPlace("clearFile", [win.vm.picked]) }
             Button { text: qsTr("Scan Folder..."); onClicked: folderDialog.open() }
-            Button { text: qsTr("Rescan"); onClicked: win.vm.run("refresh") }
+            Button { text: qsTr("Rescan"); onClicked: win.keepingPlace("refresh") }
             // the file found for the line picked, in its folder
             Button {
                 text: qsTr("Open Folder")

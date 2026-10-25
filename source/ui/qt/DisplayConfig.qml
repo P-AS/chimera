@@ -7,9 +7,7 @@
 //
 // Not here: prescaling and Auto Prescale, Scale OSD text with system scale
 // (Qt scales the whole window with the screen), the snowy null core (the
-// prototype shows Chimera's mark instead), Windows fullscreen hacks, and
-// Mouse Capture Forces Stay on Top (the prototype does not capture the
-// pointer).
+// prototype shows Chimera's mark instead), and Windows fullscreen hacks.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -29,7 +27,7 @@ ApplicationWindow {
     // the display view model's settings the window shows, and the session's two
     readonly property var vmNames: ["finalFilter", "letterbox", "integerScale", "aspectMode", "customWidth", "customHeight", "ratioX",
         "ratioY", "cropLeft", "cropTop", "cropRight", "cropBottom", "minimalDisplay", "staticWindowTitles", "titleSuffix", "captionWindowed",
-        "menuWindowed", "frameWindowed", "saveWindowPosition", "stayOnTop", "menuFullscreen", "statusBarFullscreen",
+        "menuWindowed", "frameWindowed", "saveWindowPosition", "stayOnTop", "mouseCaptureForcesTop", "menuFullscreen", "statusBarFullscreen",
         "autohideMouseFullscreen", "allowDoubleClickFullscreen"]
     property var picked: ({})
     onVisibleChanged: if (visible) {
@@ -229,6 +227,10 @@ ApplicationWindow {
                                 // Chimera hides it where it does not work: everywhere but Windows
                                 Box {
                                     setting: "stayOnTop"; text: qsTr("Stay on Top")
+                                    visible: Qt.platform.os === "windows"; height: visible ? implicitHeight : 0
+                                }
+                                Box {
+                                    setting: "mouseCaptureForcesTop"; text: qsTr("Mouse Capture Forces Stay on Top")
                                     visible: Qt.platform.os === "windows"; height: visible ? implicitHeight : 0
                                 }
                             }

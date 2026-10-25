@@ -104,7 +104,7 @@ std::string FirmwareViewModel::Row::statusText() const
 	case Unrecognised: return "right size, a dump the core has never seen - used anyway";
 	case Custom: return "not the " + std::to_string(size) + " bytes the core expects - used anyway";
 	case Unreadable: return "chosen file is gone";
-	default: return "not found";
+	default: return candidates >= 2 ? std::to_string(candidates) + " candidates - choose one with Set..." : "not found";
 	}
 }
 
@@ -359,7 +359,10 @@ void FirmwareViewModel::survey()
 						}
 						r.path = path;
 						if (path.empty())
+						{
 							r.state = Missing;
+							r.candidates = static_cast<int64_t>(hintCandidates(decl, index).size());
+						}
 						else
 						{
 							char hash[41] = {};

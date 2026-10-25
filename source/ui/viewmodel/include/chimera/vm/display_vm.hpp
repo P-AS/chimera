@@ -81,6 +81,8 @@ public:
 	Property<int64_t> frameWindowed{2};
 	Property<bool> menuFullscreen{false}, statusBarFullscreen{false}, autohideMouseFullscreen{true};
 	Property<bool> stayOnTop{false};
+	/* Chimera's Mouse Capture Forces Stay on Top: while the pointer is captured the window is kept over others */
+	Property<bool> mouseCaptureForcesTop{false};
 	/* Display Features' Minimal picked (Chimera draws everything for it, as for Full) */
 	Property<bool> minimalDisplay{false};
 	/* Keep window titles static, and the words every main window title ends with ("" for "Chimera") */

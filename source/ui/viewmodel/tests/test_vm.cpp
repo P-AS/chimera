@@ -540,6 +540,17 @@ void firmware()
 	CHECK(f != nullptr && f->name == "NDS_Bios7i.bin" && how == "by its size and name");
 	write(dir / "other_7i.bin", std::string(16, 'b'));
 	CHECK(findFirmware(decl(R"({"id":"c","size":16,"nameHints":["7i"]})"), "", indexFirmware({dir.string()}), how) == nullptr);
+	/* two different dumps the hints point at: both candidates, for the person to choose (issue 349) */
+	CHECK(hintCandidates(decl(R"({"id":"c","size":16,"nameHints":["7i"]})"), indexFirmware({dir.string()})).size() == 2);
+	CHECK(hintCandidates(decl(R"({"id":"c","size":16,"nameHints":["7i"],"sha1":"00"})"), indexFirmware({dir.string()})).empty());
+	{
+		/* said in the Firmware window as Chimera says it */
+		FirmwareViewModel::Row row;
+		row.candidates = 3;
+		CHECK(row.statusText() == "3 candidates - choose one with Set...");
+		row.candidates = 1;
+		CHECK(row.statusText() == "not found");
+	}
 	/* the engine says what is needed: here only with Load BIOS on */
 	const json::Json fwDecl = decl(R"([{"id":"b","display":"The BIOS","name":"bios.bin","requiredWhen":{"setting":"loadBios","is":true}}])");
 	const json::Json setDecl = decl(R"([{"name":"loadBios","type":"bool","default":false}])");
