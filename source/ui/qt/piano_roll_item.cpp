@@ -25,6 +25,10 @@ PianoRollItem::PianoRollItem(QQuickItem *parent) : QQuickPaintedItem(parent)
 	setOpaquePainting(true);
 	setAntialiasing(false);
 	setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
+	/* Chimera's roll: the title under the pointer lit, an empty cell under it naming its column */
+	setAcceptHoverEvents(true);
+	connect(this, &PianoRollItem::lookChanged, this, [this] { widthsDirty_ = true; });
+	connect(this, &PianoRollItem::viewChanged, this, [this] { widthsDirty_ = true; });
 	connect(this, &PianoRollItem::pickedChanged, this, [this] { update(); });
 	connect(this, &PianoRollItem::lookChanged, this, [this] { update(); });
 	connect(this, &PianoRollItem::viewChanged, this, [this] {
@@ -45,15 +49,21 @@ void PianoRollItem::setRollFont(const QString &font)
 {
 	if (font == rollFont_) return;
 	rollFont_ = font;
-	font_ = QFont();
-	/* {"family": "Arial", "pointSize": 8.25, "bold": true, "italic": false} */
+	/* {"family": "Arial", "pointSize": 8.25, "bold": true, "italic": false}; none, Chimera's own: Arial 8.25 bold */
 	const QJsonObject f = QJsonDocument::fromJson(font.toUtf8()).object();
-	if (f.contains(QLatin1String("family"))) font_.setFamily(f.value(QLatin1String("family")).toString());
-	if (f.value(QLatin1String("pointSize")).toDouble() > 0) font_.setPointSizeF(f.value(QLatin1String("pointSize")).toDouble());
-	font_.setBold(f.value(QLatin1String("bold")).toBool());
-	font_.setItalic(f.value(QLatin1String("italic")).toBool());
-	/* the rows as tall as the font needs */
-	rowHeight_ = std::max(18, QFontMetrics(font_).height() + 4);
+	font_ = QFont(QStringLiteral("Arial"));
+	font_.setPointSizeF(8.25);
+	font_.setBold(true);
+	if (!f.isEmpty())
+	{
+		if (f.contains(QLatin1String("family"))) font_.setFamily(f.value(QLatin1String("family")).toString());
+		if (f.value(QLatin1String("pointSize")).toDouble() > 0) font_.setPointSizeF(f.value(QLatin1String("pointSize")).toDouble());
+		font_.setBold(f.value(QLatin1String("bold")).toBool());
+		font_.setItalic(f.value(QLatin1String("italic")).toBool());
+	}
+	/* the rows as tall as the font, as Chimera's roll (no padding above or below) */
+	rowHeight_ = std::max(10, QFontMetrics(font_).height());
+	widthsDirty_ = true;
 	Q_EMIT lookChanged();
 	Q_EMIT visibleRowsChanged();
 }
@@ -61,9 +71,25 @@ void PianoRollItem::setRollFont(const QString &font)
 int PianoRollItem::columnW(int column) const
 {
 	if (rows_ == nullptr) return columnWidth_;
-	/* a hidden column takes no room */
-	if (rows_->rows().columnHiddenIn(view_, column)) return 0;
-	return rows_->rows().columnIsNumber(column) ? numberWidth_ : columnWidth_;
+	const int columns = rows_->rows().columnCount();
+	if (widthsDirty_ || static_cast<int>(widths_.size()) != columns)
+	{
+		/* as Chimera's UpdateColumnWidths: a one-letter title as wide as a W, a
+		 * longer one as itself, an analog value as five digits, with three
+		 * pixels each side; a hidden column takes no room */
+		const QFontMetrics fm(font_);
+		widths_.assign(static_cast<size_t>(columns), 0);
+		for (int c = 0; c < columns; c++)
+		{
+			if (rows_->rows().columnHiddenIn(view_, c)) continue;
+			const QString title = QString::fromStdString(rows_->rows().columnShortName(c));
+			int w = title.size() > 1 ? fm.horizontalAdvance(title) : fm.horizontalAdvance(QLatin1Char('W'));
+			if (rows_->rows().columnIsNumber(c)) w = std::max(w, fm.horizontalAdvance(QStringLiteral("88888")));
+			widths_[static_cast<size_t>(c)] = w + 6;
+		}
+		widthsDirty_ = false;
+	}
+	return column >= 0 && column < columns ? widths_[static_cast<size_t>(column)] : columnWidth_;
 }
 
 qint64 PianoRollItem::rowOnLine(qint64 line) const
@@ -115,6 +141,7 @@ void PianoRollItem::setRows(QObject *rows)
 	for (auto &c : watches_) disconnect(c);
 	watches_.clear();
 	rows_ = r;
+	widthsDirty_ = true;
 	if (r != nullptr)
 	{
 		watches_.push_back(connect(r, &QmlRows::rowsEdited, this, &PianoRollItem::rowsTouched));
@@ -123,6 +150,7 @@ void PianoRollItem::setRows(QObject *rows)
 			update();
 		}));
 		watches_.push_back(connect(r, &QmlRows::rowsReset, this, [this] {
+			widthsDirty_ = true;
 			Q_EMIT rowCountChanged();
 			/* a column shown or hidden comes as a reset */
 			Q_EMIT contentExtentChanged();
@@ -155,10 +183,10 @@ int PianoRollItem::headerSize() const
 {
 	if (!horizontal_) return rowHeight_;
 	const QFontMetrics fm(font_);
-	int widest = fm.horizontalAdvance(QStringLiteral("Frame"));
+	int widest = fm.horizontalAdvance(QStringLiteral("Frame#"));
 	if (rows_ != nullptr)
 		for (int c = 0; c < rows_->rows().columnCount(); c++)
-			widest = std::max(widest, fm.horizontalAdvance(QString::fromStdString(rows_->rows().columnName(c))));
+			widest = std::max(widest, fm.horizontalAdvance(QString::fromStdString(rows_->rows().columnShortName(c))));
 	return widest + 12;
 }
 
@@ -202,12 +230,26 @@ void PianoRollItem::rowsTouched(qint64 first, qint64 last)
 }
 
 /* TAStudio's two columns before the buttons: a narrow one a press in moves
- * the machine to its frame, then the frame numbers, which pick frames */
-static constexpr int kCursorWidth = 14;
+ * the machine to its frame, then the frame numbers, which pick frames; as
+ * wide as Chimera's ("10" less four, and "0000000" and seven, each with three
+ * pixels a side) */
+int PianoRollItem::cursorWidth() const
+{
+	return QFontMetrics(font_).horizontalAdvance(QStringLiteral("10")) - 4 + 6;
+}
 
 int PianoRollItem::frameColumnWidth() const
 {
-	return kCursorWidth + QFontMetrics(font_).horizontalAdvance(QStringLiteral("00000000")) + 8;
+	return cursorWidth() + QFontMetrics(font_).horizontalAdvance(QStringLiteral("0000000")) + 7 + 6;
+}
+
+void PianoRollItem::setBranchFrames(const QVariantList &frames)
+{
+	if (frames == branchFramesList_) return;
+	branchFramesList_ = frames;
+	branchFrames_.clear();
+	for (const QVariant &v : frames) branchFrames_.push_back(v.toLongLong());
+	Q_EMIT lookChanged();
 }
 
 void PianoRollItem::geometryChange(const QRectF &now, const QRectF &before)
@@ -290,13 +332,24 @@ PianoRollItem::Look PianoRollItem::themeLook() const
 	/* the frame column's greenzone and lag colours are Chimera's to offer
 	 * (its Set Colors has them) though its roll does not draw them either;
 	 * the analog cell being edited is filled with its own */
+	/* the cursor column, a row nothing coloured, and the roll's icons */
+	QColor cursorColumn, defaultRow = plain, iconPlayback(0x53, 0xD9, 0xFF), iconRecording(0x00, 0xC2, 0x40), iconMarker(0xFC, 0xD1, 0x37),
+		iconAnchor(0x00, 0xDE, 0x62), iconLagAnchor(0xFF, 0x60, 0x64);
+	themed(cursorColumn, "TasCursorColumn");
+	themed(defaultRow, "TasDefaultRow");
+	themed(iconPlayback, "TasIconPlayback");
+	themed(iconRecording, "TasIconRecording");
+	themed(iconMarker, "TasIconMarker");
+	themed(iconAnchor, "TasIconAnchor");
+	themed(iconLagAnchor, "TasIconLagAnchor");
 	QColor greenFrame = green, lagFrame = lag, analogEdit = picked;
 	analogEdit.setAlpha(90);
 	themed(greenFrame, "TasGreenZone");
 	themed(lagFrame, "TasLagZone");
 	themed(analogEdit, "TasAnalogEdit");
 	return Look{plain, text, header, headerText, grid, lit, now, green, lag, marker, picked, pickedText, permanent, greenStated, lagStated,
-		greenGone, lagGone, frameWash, altPlayer, greenFrame, lagFrame, analogEdit, columnBorder, hint, emphasis, dark};
+		greenGone, lagGone, frameWash, altPlayer, greenFrame, lagFrame, analogEdit, columnBorder, hint, emphasis, cursorColumn, defaultRow,
+		iconPlayback, iconRecording, iconMarker, iconAnchor, iconLagAnchor, dark};
 }
 
 QString PianoRollItem::themeColors() const
@@ -323,19 +376,17 @@ void PianoRollItem::paint(QPainter *p)
 
 	/* the theme's colours, then the roll's own over them (TAStudio's Set Colors) */
 	const Look k = themeLook();
-	const QPalette pal = QGuiApplication::palette();
-	const bool dark = k.dark;
-	QColor plain = k.plain, text = k.text, header = k.header, headerText = k.headerText, grid = k.grid, lit = k.lit, now = k.now,
+	QColor plain = k.plain, text = k.text, header = k.header, headerText = k.headerText, grid = k.grid, now = k.now,
 		green = k.green, lag = k.lag, marker = k.marker, picked = k.picked, pickedText = k.pickedText, permanent = k.permanent,
 		greenStated = k.greenStated, lagStated = k.lagStated, greenGone = k.greenGone, lagGone = k.lagGone, frameWash = k.frameWash,
-		altPlayer = k.altPlayer, greenFrame = k.greenFrame, lagFrame = k.lagFrame, analogEdit = k.analogEdit;
+		altPlayer = k.altPlayer, greenFrame = k.greenFrame, lagFrame = k.lagFrame, analogEdit = k.analogEdit, defaultRow = k.defaultRow;
 	{
 		const QJsonObject own = QJsonDocument::fromJson(colors_.toUtf8()).object();
 		const std::pair<const char *, QColor *> roles[] = {{"TasCurrentFrame", &now}, {"TasGreenZoneInput", &green},
 			{"TasGreenZoneInputStated", &greenStated}, {"TasGreenZoneInputInvalidated", &greenGone}, {"TasLagZoneInput", &lag},
 			{"TasLagZoneInputStated", &lagStated}, {"TasLagZoneInputInvalidated", &lagGone}, {"TasMarker", &marker},
 			{"TasPermanentMarker", &permanent}, {"TasGreenZone", &greenFrame}, {"TasLagZone", &lagFrame}, {"TasAnalogEdit", &analogEdit},
-			{"TasDefaultRow", &plain}, {"TasFrameColumnWash", &frameWash}, {"TasAlternatePlayer", &altPlayer}};
+			{"TasDefaultRow", &defaultRow}, {"TasFrameColumnWash", &frameWash}, {"TasAlternatePlayer", &altPlayer}};
 		for (const auto &[role, color] : roles)
 			if (const QColor c(own.value(QLatin1String(role)).toString()); c.isValid()) *color = c;
 	}
@@ -367,38 +418,45 @@ void PianoRollItem::paint(QPainter *p)
 	};
 
 	vm::RowModel &rows = rows_->rows();
-	const int fx = frameColumnWidth();
+	const int fx = frameColumnWidth(), cx0 = cursorWidth();
 	const int columns = rows.columnCount();
+	const int extraCount = static_cast<int>(extras_.size());
+	const int right = columnX(columns + extraCount);
 	const qint64 count = rows.rowCount();
 	const int shown = visibleRows() + 1;
+	const QFontMetrics fm(font_);
+	/* Chimera's icons are drawn to its text's height (13 pixels at its font) */
+	const double scale = fm.height() / 13.0;
+	const int left = static_cast<int>(Qt::AlignVCenter | Qt::AlignLeft);
+	auto title = [&](int c) { return QString::fromStdString(rows.columnShortName(c)); };
 
-	/* the header: each button's name without the "P1 " a player's buttons
-	 * share, or its letter in a movie when the name does not fit */
+	/* the column titles, as Chimera's InputRoll draws them: on the column
+	 * colour, an Auto-hold column's in the emphasis colour, the one under the
+	 * pointer lit; the frame numbers' headed Frame# */
 	p->fillRect(0, 0, w, hs, header);
-	p->setPen(headerText);
-	label(QRect(kCursorWidth + 4, 0, fx - kCursorWidth - 8, hs), Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("Frame"), false);
+	for (int c = 0; c < columns; c++)
+		if (columnW(c) > 0 && rows.columnEmphasized(c)) p->fillRect(columnX(c) + 1, 1, columnW(c) - 1, hs - 1, k.emphasis);
+	const bool titleLit = hoverTitles_ && hoverColumn_ >= -1 && hoverColumn_ < columns && (hoverColumn_ < 0 || columnW(hoverColumn_) > 0);
+	if (titleLit)
+		p->fillRect(hoverColumn_ < 0 ? QRect(cx0 + 1, 1, fx - cx0 - 1, hs - 1) : QRect(columnX(hoverColumn_) + 1, 1, columnW(hoverColumn_) - 1, hs - 1), picked);
+	p->setPen(titleLit && hoverColumn_ == -1 ? pickedText : headerText);
+	label(QRect(cx0 + 4, 0, fx - cx0 - 4, hs), left, QStringLiteral("Frame#"), false);
 	for (int c = 0; c < columns; c++)
 	{
 		if (columnW(c) == 0) continue; /* hidden */
-		QString name = QString::fromStdString(rows.columnName(c));
-		const qsizetype space = name.indexOf(' ');
-		if (space > 0 && space < 4) name = name.mid(space + 1);
-		if (!horizontal_ && QFontMetrics(p->font()).horizontalAdvance(name) > columnW(c) - 2)
-			name = QString::fromStdString(rows.columnShortName(c));
-		const QRect cell(columnX(c), 0, columnW(c), hs);
-		/* an Auto-hold column, marked out as Chimera's emphasis */
-		if (rows.columnEmphasized(c))
-		{
-			QColor mark = pal.color(QPalette::Highlight);
-			mark.setAlpha(110);
-			p->fillRect(cell, mark);
-		}
-		label(cell, Qt::AlignCenter, horizontal_ ? name : QFontMetrics(p->font()).elidedText(name, Qt::ElideRight, columnW(c) - 2), false);
+		p->setPen(titleLit && hoverColumn_ == c ? pickedText : headerText);
+		label(QRect(columnX(c) + 4, 0, columnW(c) - 4, hs), left, horizontal_ ? title(c) : fm.elidedText(title(c), Qt::ElideRight, columnW(c) - 4), false);
 	}
-
-	const int extraCount = static_cast<int>(extras_.size());
+	p->setPen(headerText);
 	for (int e = 0; e < extraCount; e++)
-		label(QRect(columnX(columns + e), 0, extras_[static_cast<size_t>(e)].width, hs), Qt::AlignCenter, extras_[static_cast<size_t>(e)].text, false);
+		label(QRect(columnX(columns + e) + 4, 0, extras_[static_cast<size_t>(e)].width - 4, hs), left, extras_[static_cast<size_t>(e)].text, false);
+	p->setPen(k.columnBorder);
+	p->drawLine(0, 0, w, 0);
+	p->drawLine(0, hs, w, hs);
+	p->drawLine(cx0, 0, cx0, hs);
+	for (int c = 0; c <= columns + extraCount; c++)
+		if (c == columns + extraCount || c >= columns || columnW(c) > 0) p->drawLine(columnX(c), 0, columnX(c), hs);
+
 	/* what the script says of a cell, when it says anything */
 	auto ask = [&](int kind, qint64 row, const QString &column) { return queries_ && query_ ? query_(kind, row, column) : QString(); };
 	/* an icon the script names for a cell, drawn in it */
@@ -411,6 +469,30 @@ void PianoRollItem::paint(QPainter *p)
 		const int side = std::min(cell.width(), cell.height()) - 2;
 		p->drawImage(QRect(cell.x() + (cell.width() - side) / 2, cell.y() + (cell.height() - side) / 2, side, side), *it);
 	};
+	/* Chimera's arrow in the cursor column and its corner icons in the frame column */
+	auto arrow = [&](int y, const QColor &ink) {
+		const double a = std::max(3.0, std::floor(5 * scale));
+		const double x0 = cx0 - 3 - a - std::floor(2 * scale), y0 = y + std::floor(1.5 * scale);
+		const QPointF points[3] = {QPointF(x0, y0), QPointF(x0 + a, y0 + a), QPointF(x0, y0 + 2 * a)};
+		p->setPen(Qt::NoPen);
+		p->setBrush(ink);
+		p->drawPolygon(points, 3);
+		p->setBrush(Qt::NoBrush);
+	};
+	auto corner = [&](int y, const QColor &ink) {
+		const double a = std::max(4.0, std::floor(6 * scale));
+		const QPointF points[3] = {QPointF(cx0 + 1, y + 1), QPointF(cx0 + 1, y + 1 + a), QPointF(cx0 + 1 + a, y + 1)};
+		p->setPen(Qt::NoPen);
+		p->setBrush(ink);
+		p->drawPolygon(points, 3);
+		p->setBrush(Qt::NoBrush);
+	};
+	/* the frame numbers all as long, as Chimera pads them: five digits at least */
+	int digits = 1;
+	for (qint64 n = std::max<qint64>(count, 1); n >= 10; n /= 10) digits++;
+	digits = std::max(4, digits - 1) + 1;
+	QFont hintFont = font_;
+	hintFont.setBold(false);
 
 	/* the rows shown, hidden ones (lag frames TAStudio hides) passed over */
 	qint64 next = rows.nextShown(top_ - 1);
@@ -422,15 +504,17 @@ void PianoRollItem::paint(QPainter *p)
 		const int y = hs + rowHeight_ * i;
 		const uint32_t flags = rows.rowFlags(row);
 		const bool isLag = flags & 1, inGreen = flags & 2, isMarker = flags & 4, stated = flags & 8, ran = flags & 16, isPermanent = flags & 32;
-		/* as Chimera's TAStudio colours a row: the current frame; the
-		 * greenzone's, apart where a state is held; those an edit took out
-		 * of it; the rest */
-		QColor back = plain;
-		if (row == current_) back = now;
+		/* as Chimera's TAStudio colours a row: the frame a seek is going to, else
+		 * the machine's; the greenzone's, apart where a state is held; those an
+		 * edit took out of it; the rest */
+		const bool current = seekRow_ >= 0 ? row == seekRow_ : row == current_;
+		QColor back = defaultRow;
+		if (current) back = now;
 		else if (inGreen) back = !stated && denoteStatesColor_ ? (isLag ? lag : green) : (isLag ? lagStated : greenStated);
 		else if (ran) back = isLag ? lagGone : greenGone;
-		p->fillRect(0, y, w, rowHeight_, (row % 2 && row != current_) ? (dark ? back.lighter(112) : back.darker(103)) : back);
-		/* every second player's columns, striped */
+		p->fillRect(0, y, right, rowHeight_, back);
+		if (k.cursorColumn.isValid()) p->fillRect(0, y, cx0, rowHeight_, k.cursorColumn);
+		/* every second player's columns */
 		for (int c = 0; c < columns; c++)
 		{
 			const int cw = columnW(c);
@@ -439,88 +523,86 @@ void PianoRollItem::paint(QPainter *p)
 			if (name.size() > 2 && name[0] == 'P' && std::isdigit(static_cast<unsigned char>(name[1])) && (std::atoi(name.c_str() + 1) % 2) == 0)
 				p->fillRect(columnX(c), y, cw, rowHeight_, altPlayer);
 		}
-		/* the frame number's own colour: Set Colors' Frame# Column on a frame the greenzone holds (above the row's
-		 * grid line), else the wash over the row */
-		const std::string frameRole = vm::PianoRollViewModel::frameColumnRole(row == current_, inGreen, isLag);
-		if (frameRole == "TasGreenZone" || frameRole == "TasLagZone")
-			p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_ - 1, frameRole == "TasGreenZone" ? greenFrame : lagFrame);
-		else if (frameWash.isValid())
-			p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, frameWash);
-		/* a marker: its frame number on the accent (when markers are told by
-		 * colour), its text after the buttons */
-		if (isMarker && denoteMarkersColor_ && row != current_) p->fillRect(0, y, fx, rowHeight_, isPermanent ? permanent : marker);
-		/* the icons: a marker's flag, else a held state's anchor */
-		if (isMarker && denoteMarkersIcons_)
+		/* the frame number's own colour: a marker's (when markers are told by colour), else Set Colors' Frame#
+		 * Column on a frame the greenzone holds, else the wash over the row */
+		if (isMarker && denoteMarkersColor_ && row != current_)
+			p->fillRect(cx0, y, fx - cx0, rowHeight_, isPermanent ? permanent : marker);
+		else
 		{
-			p->setPen(Qt::NoPen);
-			p->setBrush(marker.darker(dark ? 80 : 160));
-			const QPointF flag[3] = {QPointF(kCursorWidth + 3, y + 3), QPointF(kCursorWidth + 11, y + rowHeight_ / 2.0 - 1),
-				QPointF(kCursorWidth + 3, y + rowHeight_ - 5)};
-			p->drawPolygon(flag, 3);
-			p->setBrush(Qt::NoBrush);
-		}
-		else if (stated && denoteStatesIcons_)
-		{
-			p->setPen(Qt::NoPen);
-			p->setBrush((isLag ? lagStated : greenStated).darker(dark ? 60 : 170));
-			p->drawEllipse(QRectF(kCursorWidth + 3, y + rowHeight_ / 2.0 - 4, 8, 8));
-			p->setBrush(Qt::NoBrush);
-		}
-		if (isMarker)
-		{
-			p->setPen(text);
-			const int after = columnX(columns + extraCount);
-			label(QRect(after + 6, y, w - after - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignLeft, QString::fromStdString(rows.rowNote(row)), true);
+			const std::string frameRole = vm::PianoRollViewModel::frameColumnRole(current, inGreen, isLag);
+			if (frameRole == "TasGreenZone" || frameRole == "TasLagZone")
+				p->fillRect(cx0, y, fx - cx0, rowHeight_, frameRole == "TasGreenZone" ? greenFrame : lagFrame);
+			else if (frameWash.isValid())
+				p->fillRect(cx0, y, fx - cx0, rowHeight_, frameWash);
 		}
 		/* the frame number's cell: the script's colour over it, when it gives one */
-		if (const QColor c(ask(0, row, QStringLiteral("FrameColumn"))); c.isValid()) p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, c);
-		/* picked frames: their numbers on the highlight */
-		const bool isPicked = selectFirst_ >= 0 && row >= selectFirst_ && row <= selectLast_;
-		if (isPicked) p->fillRect(kCursorWidth, y, fx - kCursorWidth, rowHeight_, picked);
-		/* the frame the machine is on: an arrow in the cursor column */
-		if (row == current_)
+		if (const QColor c(ask(0, row, QStringLiteral("FrameColumn"))); c.isValid()) p->fillRect(cx0, y, fx - cx0, rowHeight_, c);
+		for (int c = 0; c < columns; c++)
 		{
-			p->setPen(Qt::NoPen);
-			p->setBrush(text);
-			const QPointF arrow[3] = {QPointF(3, y + 3), QPointF(kCursorWidth - 3, y + rowHeight_ / 2.0), QPointF(3, y + rowHeight_ - 3)};
-			p->drawPolygon(arrow, 3);
-			p->setBrush(Qt::NoBrush);
+			const int cw = columnW(c);
+			if (cw == 0) continue;
+			if (row == pickedRow_ && c == pickedColumn_) p->fillRect(columnX(c), y, cw, rowHeight_, analogEdit);
+			if (queries_)
+				if (const QColor b(ask(0, row, QString::fromStdString(rows.columnName(c)))); b.isValid()) p->fillRect(columnX(c), y, cw, rowHeight_, b);
 		}
-		p->setPen(isPicked ? pickedText : text);
-		label(QRect(kCursorWidth + 4, y, fx - kCursorWidth - 8, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, QString::number(row), true);
+		for (int e = 0; e < extraCount; e++)
+			if (const QColor b(ask(0, row, extras_[static_cast<size_t>(e)].name)); b.isValid())
+				p->fillRect(columnX(columns + e), y, extras_[static_cast<size_t>(e)].width, rowHeight_, b);
+		/* the frames picked, the whole row a third of the way to the selection colour, as Chimera's */
+		const bool isPicked = selectFirst_ >= 0 && row >= selectFirst_ && row <= selectLast_;
+		if (isPicked) p->fillRect(0, y, right, rowHeight_, QColor(picked.red(), picked.green(), picked.blue(), 84));
+
+		/* the icons: the machine's frame and the one edits go back to, as arrows; a marker's corner, else a held state's */
+		if (row == current_) arrow(y, k.iconPlayback);
+		else if (row == restoreRow_) arrow(y, k.iconRecording);
+		if (isMarker && denoteMarkersIcons_) corner(y, k.iconMarker);
+		else if (stated && denoteStatesIcons_) corner(y, isLag ? k.iconLagAnchor : k.iconAnchor);
+
+		const QColor ink = isPicked ? pickedText : text;
+		p->setPen(ink);
+		/* a branch's number on the frame it was made on */
+		if (const auto at = std::find(branchFrames_.begin(), branchFrames_.end(), row); at != branchFrames_.end())
+			label(QRect(1, y, cx0 + 6, rowHeight_), left, QString::number(at - branchFrames_.begin() + 1), true);
+		label(QRect(cx0 + 4 + 7, y, fx - cx0 - 11, rowHeight_), left, QString::number(row).rightJustified(digits, QLatin1Char('0')), true);
 		for (int c = 0; c < columns; c++)
 		{
 			const int cx = columnX(c), cw = columnW(c);
 			if (cw == 0) continue; /* hidden */
 			const QString columnName = queries_ ? QString::fromStdString(rows.columnName(c)) : QString();
-			if (const QColor b(ask(0, row, columnName)); b.isValid()) p->fillRect(cx, y, cw, rowHeight_, b);
 			icon(row, columnName, QRect(cx, y, cw, rowHeight_));
-			if (const QString said = ask(1, row, columnName); !said.isEmpty())
+			QString said = ask(1, row, columnName);
+			bool numberRight = false;
+			if (said.isEmpty())
 			{
-				p->setPen(text);
-				label(QRect(cx + 2, y, cw - 4, rowHeight_), Qt::AlignCenter, said, true);
-				continue;
-			}
-			if (rows.columnIsNumber(c))
-			{
-				int64_t value = 0;
-				if (vm::fromValue(rows.cell(row, c), value))
+				if (rows.columnIsNumber(c))
 				{
-					p->setPen(text);
-					label(QRect(cx + 2, y, cw - 6, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, QString::number(value), true);
+					int64_t value = 0;
+					if (vm::fromValue(rows.cell(row, c), value)) said = QString::number(value), numberRight = true;
+				}
+				else
+				{
+					/* a pressed button's cell reads as its column's title (chimera#225) */
+					bool held = false;
+					vm::fromValue(rows.cell(row, c), held);
+					if (held) said = title(c);
 				}
 			}
-			else
+			if (!said.isEmpty())
 			{
-				bool held = false;
-				vm::fromValue(rows.cell(row, c), held);
-				if (held) p->fillRect(cx + 2, y + 2, cw - 4, rowHeight_ - 4, lit);
+				p->setPen(ink);
+				label(QRect(cx + 4, y, cw - 6, rowHeight_), numberRight ? int(Qt::AlignVCenter | Qt::AlignRight) : left, said, true);
+			}
+			else if (row == hoverRow_ && c == hoverColumn_ && dragColumn_ < 0 && !selecting_)
+			{
+				/* an empty cell under the pointer names its column, as Chimera's */
+				p->setFont(hintFont);
+				p->setPen(k.hint);
+				label(QRect(cx + 4, y, cw - 4, rowHeight_), left, title(c), true);
+				p->setFont(font_);
 			}
 			if (row == pickedRow_ && c == pickedColumn_)
 			{
-				/* Chimera's Analog Edit Mode colour */
-				p->fillRect(cx + 1, y + 1, cw - 2, rowHeight_ - 2, analogEdit);
-				p->setPen(QPen(lit, 2));
+				p->setPen(QPen(k.lit, 2));
 				p->drawRect(cx + 1, y + 1, cw - 2, rowHeight_ - 2);
 			}
 		}
@@ -529,22 +611,52 @@ void PianoRollItem::paint(QPainter *p)
 		{
 			const Extra &x = extras_[static_cast<size_t>(e)];
 			const int cx = columnX(columns + e);
-			if (const QColor b(ask(0, row, x.name)); b.isValid()) p->fillRect(cx, y, x.width, rowHeight_, b);
 			icon(row, x.name, QRect(cx, y, x.width, rowHeight_));
 			if (const QString said = ask(1, row, x.name); !said.isEmpty())
 			{
-				p->setPen(text);
-				label(QRect(cx + 2, y, x.width - 4, rowHeight_), Qt::AlignVCenter | Qt::AlignRight, said, true);
+				p->setPen(ink);
+				label(QRect(cx + 4, y, x.width - 6, rowHeight_), left, said, true);
 			}
 		}
 	}
 
+	/* the grid: a line at every column's left and the last's right, and between the rows */
 	p->setPen(grid);
-	for (int c = 0; c <= columns + static_cast<int>(extras_.size()); c++) p->drawLine(columnX(c), 0, columnX(c), h);
-	p->drawLine(0, hs, w, hs);
+	const int bottom = std::min(h, hs + rowHeight_ * shown);
+	p->drawLine(cx0, hs + 1, cx0, bottom);
+	for (int c = 0; c <= columns + extraCount; c++)
+		if (c >= columns || columnW(c) > 0) p->drawLine(columnX(c), hs + 1, columnX(c), bottom);
+	for (int i = 1; i < shown; i++) p->drawLine(0, hs + rowHeight_ * i, w, hs + rowHeight_ * i);
 
 	lastPaintMs_ = timer.nsecsElapsed() / 1.0e6;
 	Q_EMIT painted();
+}
+
+void PianoRollItem::hoverMoveEvent(QHoverEvent *e)
+{
+	const QPointF at = logical(e->position());
+	const int hs = headerSize();
+	int column = -3;
+	if (at.x() < cursorWidth()) column = -2;
+	else if (at.x() < frameColumnWidth()) column = -1;
+	else if (rows_ != nullptr)
+		for (int c = 0; c < rows_->rows().columnCount(); c++)
+			if (columnW(c) > 0 && at.x() >= columnX(c) && at.x() < columnX(c) + columnW(c)) column = c;
+	const bool titles = at.y() < hs;
+	const qint64 row = titles || rows_ == nullptr ? -1 : rowOnLine(static_cast<qint64>((at.y() - hs) / rowHeight_));
+	if (row == hoverRow_ && column == hoverColumn_ && titles == hoverTitles_) return;
+	hoverRow_ = row;
+	hoverColumn_ = column;
+	hoverTitles_ = titles;
+	update();
+}
+
+void PianoRollItem::hoverLeaveEvent(QHoverEvent *)
+{
+	hoverRow_ = -1;
+	hoverColumn_ = -3;
+	hoverTitles_ = false;
+	update();
 }
 
 void PianoRollItem::mousePressEvent(QMouseEvent *e)
@@ -583,7 +695,7 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 			e->accept();
 			return;
 		}
-		if (at.x() < kCursorWidth)
+		if (at.x() < cursorWidth())
 			Q_EMIT frameClicked(row);
 		else
 		{

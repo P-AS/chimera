@@ -2346,9 +2346,9 @@ std::string PianoRollViewModel::Frames::columnShortName(int32_t column) const
 		const auto &axes = vm_.session_.axes();
 		return axis < axes.size() ? axes[axis].header : std::string();
 	}
-	const std::string &mn = vm_.session_.mnemonics();
-	if (column >= 0 && column < static_cast<int32_t>(mn.size()) && mn[static_cast<size_t>(column)] != '.')
-		return std::string(1, mn[static_cast<size_t>(column)]);
+	/* as Chimera heads it: the package's header, else the button's letter */
+	const std::vector<std::string> &headers = vm_.session_.buttonHeaders();
+	if (column >= 0 && column < static_cast<int32_t>(headers.size())) return headers[static_cast<size_t>(column)];
 	return columnName(column);
 }
 

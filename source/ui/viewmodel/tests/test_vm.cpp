@@ -8094,6 +8094,17 @@ bool tastudioPanel(const char *package, const char *rom)
 	std::printf("panel: a seek of 60 frames played in %.2f s, one inside the greenzone %.2f s, 80 frames with Turbo seek %.2f s\n",
 		played, inside, turbo);
 	CHECK(played > 0.6 && inside < 0.5 && turbo < 0.5);
+	/* the columns headed as Chimera's: the package's header for a button, else its letter */
+	RowModel *frames = nullptr;
+	for (const auto &r : roll.rowLists())
+		if (r.name == "frames") frames = r.model;
+	CHECK(frames != nullptr);
+	auto headerOf = [&](const std::string &button) {
+		for (int32_t c = 0; frames != nullptr && c < frames->columnCount(); c++)
+			if (frames->columnName(c) == button) return frames->columnShortName(c);
+		return std::string("?");
+	};
+	CHECK(headerOf("P1 Up") == "U" && headerOf("P1 Select") == "SEL" && headerOf("P1 Start") == "S");
 	/* a frame's zone: run (green or lag) or not yet */
 	std::string zone;
 	CHECK(fromValue(roll.run("zoneOf", {int64_t{10}}, error).value_or(Value()), zone) && (zone == "green" || zone == "lag"));

@@ -151,6 +151,15 @@ code is in `source/ui`; how it is built and run is in
   in the middle, as Chimera's), frozen addresses, the sound and the key
   priority (each a click to change), then the core's name; what the session
   says, errors too, goes over the picture as Chimera's messages.
+  The piano roll is drawn as Chimera's: its font (Arial 8.25 bold) and its
+  cell sizes, the titles on the roll's column colour (Frame#, and each
+  button by the package's header or its letter: U, SEL), a pressed button's
+  cell showing its title, the frame numbers zero-padded, grid lines between
+  every row, the whole row of a frame picked tinted, the row a seek is
+  going to in the current frame's colour, the arrows (the machine's frame,
+  and the frame edits go back to), a marker's or a held state's corner,
+  branch numbers before the frame numbers, the title under the pointer lit
+  and an empty cell under it naming its column.
 - **Qt is patched where it faults** (owner, 2026-10-24): fixes to Qt go in
   tools/qt-patches and tools/build-qt-windows.sh applies them as it unpacks
   the source. The first: a Qt thread that ended after its data was let go

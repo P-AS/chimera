@@ -680,6 +680,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		"plays there at the machine's own speed", turboSeek, true);
 	expose("seekingTo", "the frame a seek that plays is going to, -1 when none is", seekingTo);
 	expose("seekFrom", "the frame a seek that plays set off from", seekFrom);
+	expose("restoreFrame", "the frame the machine goes back to after edits (Chimera's green arrow), -1 for none", restoreFrame);
 	expose("drives", "the machine's drives for the status bar's lights: [{name, on, short, long}], what is in each and "
 		"what its selector is on", drives);
 	turboSeekWatch_ = turboSeek.changed.connect([this] { turboSeekM_.store(turboSeek.get()); });
@@ -4245,6 +4246,15 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	}
 	const char *mn = ce_session_button_mnemonics(s);
 	const std::string mnemonics = mn != nullptr ? mn : "";
+	/* what heads each button's column in TAStudio, as Chimera's: the package's
+	 * header for it, else its letter */
+	std::vector<std::string> headers;
+	for (size_t i = 0; i < names.size(); i++)
+	{
+		const char *h = ce_session_button_header_of(s, names[i].c_str());
+		headers.emplace_back(h != nullptr && *h != '\0' ? std::string(h)
+			: i < mnemonics.size() && mnemonics[i] != '.' ? std::string(1, mnemonics[i]) : names[i]);
+	}
 
 	std::string keybinds, config;
 	const char *perr = nullptr;
@@ -4388,7 +4398,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	const int64_t frames = inputs_.size();
 	/* another game, or the same started again: another average, as Chimera's */
 	averageResetM_.store(true);
-	later([this, names, axes, mnemonics, keybinds, coreText, systemText, systemIdText, rate, label, inputsReplaced, frames, controller,
+	later([this, names, headers, axes, mnemonics, keybinds, coreText, systemText, systemIdText, rate, label, inputsReplaced, frames, controller,
 			   picture, gameCore, timer, saveData, movieImport, package, traces, registers, traceHead, surfaceText] {
 		surfaces.set(surfaceText);
 		hasTrace.set(traces);
@@ -4406,6 +4416,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		buttonNames_ = names;
 		axes_ = axes;
 		mnemonics_ = mnemonics;
+		buttonHeaders_ = headers;
 		std::string why;
 		const bool bound = keybinds.empty() || bindings_.parse(keybinds, buttonNames_, why);
 		defaultBindings_ = bindings_.texts();
@@ -5067,6 +5078,11 @@ void SessionViewModel::report(int64_t cf, int64_t cl, int64_t af, int64_t al, do
 {
 	bool post = false;
 	drivesOnMachine();
+	if (restoreFrameM_ != restoreSaidM_)
+	{
+		restoreSaidM_ = restoreFrameM_;
+		later([this, at = restoreFrameM_] { restoreFrame.set(at); });
+	}
 	/* the game's own timer, when shown */
 	int64_t gameMs = -1;
 	if (s_ != nullptr && gameTimerM_ && showGameTimeM_.load())

@@ -4,6 +4,7 @@
 
 #include <QHash>
 #include <QImage>
+#include <QVariantList>
 #include <vector>
 /* The piano roll's grid: it draws only the rows in view, asking the rows
  * model for those cells alone, so a million frames scroll as fast as forty.
@@ -56,6 +57,13 @@ class PianoRollItem : public QQuickPaintedItem
 	Q_PROPERTY(bool queries MEMBER queries_ NOTIFY lookChanged)
 	/* moved: the icons a script names are read again */
 	Q_PROPERTY(qint64 iconEpoch READ iconEpoch WRITE setIconEpoch NOTIFY lookChanged)
+	/* the frames branches were made on: Chimera numbers them in the column
+	 * before the frame numbers */
+	Q_PROPERTY(QVariantList branchFrames READ branchFrames WRITE setBranchFrames NOTIFY lookChanged)
+	/* the frame the machine goes back to after edits (Chimera's green arrow),
+	 * and the one a seek is playing to (its row is the current one's colour); -1 for none */
+	Q_PROPERTY(qint64 restoreRow MEMBER restoreRow_ NOTIFY lookChanged)
+	Q_PROPERTY(qint64 seekRow MEMBER seekRow_ NOTIFY lookChanged)
 	/* how long the last paint took, in milliseconds, for measuring */
 	Q_PROPERTY(double lastPaintMs READ lastPaintMs NOTIFY painted)
 
@@ -103,6 +111,8 @@ public:
 		update();
 	}
 	void setHorizontal(bool on);
+	QVariantList branchFrames() const { return branchFramesList_; }
+	void setBranchFrames(const QVariantList &frames);
 
 Q_SIGNALS:
 	void lookChanged();
@@ -137,11 +147,15 @@ protected:
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void wheelEvent(QWheelEvent *e) override;
+	void hoverMoveEvent(QHoverEvent *e) override;
+	void hoverLeaveEvent(QHoverEvent *e) override;
 	void geometryChange(const QRectF &now, const QRectF &before) override;
 
 private:
 	bool cellAt(QPointF p, qint64 &row, int &column) const;
 	int frameColumnWidth() const;
+	/* the narrow column before the frame numbers, as wide as Chimera's (a "10" and its padding) */
+	int cursorWidth() const;
 	/* the row shown on a line of the roll (0 the first under the header),
 	 * hidden rows passed over; and the last one shown */
 	qint64 rowOnLine(qint64 line) const;
@@ -168,11 +182,22 @@ private:
 	struct Look
 	{
 		QColor plain, text, header, headerText, grid, lit, now, green, lag, marker, picked, pickedText, permanent, greenStated,
-			lagStated, greenGone, lagGone, frameWash, altPlayer, greenFrame, lagFrame, analogEdit, columnBorder, hint, emphasis;
+			lagStated, greenGone, lagGone, frameWash, altPlayer, greenFrame, lagFrame, analogEdit, columnBorder, hint, emphasis,
+			cursorColumn, defaultRow, iconPlayback, iconRecording, iconMarker, iconAnchor, iconLagAnchor;
 		bool dark = false;
 	};
 	Look themeLook() const;
-	int rowHeight_ = 18, columnWidth_ = 26, numberWidth_ = 48;
+	int rowHeight_ = 14, columnWidth_ = 17;
+	/* each column's width, worked out once for a font and a set of columns */
+	mutable std::vector<int> widths_;
+	mutable bool widthsDirty_ = true;
+	/* where the pointer is: a row and a column (-2 the cursor's, -1 the frame numbers'), and over the titles */
+	qint64 hoverRow_ = -1;
+	int hoverColumn_ = -3;
+	bool hoverTitles_ = false;
+	QVariantList branchFramesList_;
+	std::vector<qint64> branchFrames_;
+	qint64 restoreRow_ = -1, seekRow_ = -1;
 	bool horizontal_ = false;
 	struct Extra
 	{

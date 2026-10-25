@@ -239,6 +239,8 @@ public:
 	 * of {name, on, short, long}, the image in each drive and the one its
 	 * selector is on said shortly (short) and in full (long); [] for none */
 	Property<std::string> drives{"[]"};
+	/* the frame the machine goes back to after edits (Chimera's green arrow), -1 for none */
+	Property<int64_t> restoreFrame{-1};
 	/* what the status bar says of a drive that swaps, by Chimera's DriveMediaText:
 	 * shortly ("1/2 Disc 1.iso | selected 2/2 Disc 2.iso"), and in full, led by the
 	 * drive's name, for its tooltip; inserted -1 is an empty drive */
@@ -387,6 +389,8 @@ public:
 	const std::vector<std::string> &defaultBindingTexts() const { return defaultBindings_; }
 	void setBindingTexts(std::vector<std::string> texts);
 	const std::string &mnemonics() const { return mnemonics_; }
+	/* what heads each button's column in TAStudio: the package's header, else its letter */
+	const std::vector<std::string> &buttonHeaders() const { return buttonHeaders_; }
 	Signal<> buttonsChanged;
 
 	/* the inputs of frames first..last were changed, or frames were added
@@ -775,6 +779,7 @@ private:
 	int64_t pauseOnFrameM_ = -1;
 	/* the drives as last told to the window */
 	std::string drivesSaidM_ = "[]";
+	int64_t restoreSaidM_ = -1;
 	void drivesOnMachine();
 	std::atomic<bool> turboSeekM_{false};
 	Connection turboSeekWatch_;
@@ -810,6 +815,7 @@ private:
 	ProjectFileRows projectFileRows_{*this};
 	std::vector<std::string> defaultBindings_;
 	std::string mnemonics_;
+	std::vector<std::string> buttonHeaders_;
 	Bindings bindings_;
 	Bindings autofireBindings_;
 	std::vector<std::string> defaultAutofire_;

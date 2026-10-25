@@ -40,6 +40,18 @@ ApplicationWindow {
         if (raw === "") return qsTr("Hotkey: %1").arg(mouse || qsTr("unbound"))
         return mouse ? qsTr("Hotkey: %1 or %2").arg(mouse).arg(raw) : qsTr("Hotkey: %1").arg(raw)
     }
+    // the frame each branch was made on, in the list's order (the roll numbers them)
+    property var branchFrames: []
+    function readBranchFrames() {
+        tas.branchFrames = (tas.branches.run("list") || "").split("\n").filter(l => l !== "").map(l => parseInt(l.split("\t")[1]))
+    }
+    Connections {
+        target: tas.branches.rows("branches")
+        function onModelReset() { tas.readBranchFrames() }
+        function onDataChanged() { tas.readBranchFrames() }
+        function onRowsInserted() { tas.readBranchFrames() }
+        function onRowsRemoved() { tas.readBranchFrames() }
+    }
     // a marker's roles by its row in the list
     function markerRoles(row) { return markerList.rolesAt(row) }
     // a branch's text by its place
@@ -522,6 +534,10 @@ ApplicationWindow {
                         }
                         selectFirst: tas.pianoRoll.selectFirst
                         selectLast: tas.pianoRoll.selectLast
+                        // Chimera's numbers for the branches, its green arrow, and the row a seek is going to
+                        branchFrames: tas.branchFrames
+                        restoreRow: tas.session.restoreFrame
+                        seekRow: tas.session.seekingTo
                         // the analog cell being edited: its column is after the buttons
                         pickedRow: tas.pianoRoll.pickedFrame
                         pickedColumn: tas.pianoRoll.pickedAxis < 0 ? -1 : tas.session.buttonCount + tas.pianoRoll.pickedAxis
