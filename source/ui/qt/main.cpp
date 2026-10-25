@@ -921,6 +921,8 @@ int main(int argc, char **argv)
 			for (int x = 0; x < side; x++) argb[static_cast<size_t>(y) * side + x] = mark.pixel(x, y);
 		idleEye.setMark(side, argb);
 	}
+	for (const char *name : {"snowWhen", "snowIntensity", "snowBias", "snowFramerate"})
+		config.keep(idleEye, name);
 	qt::QmlViewModel idleEyeQml(idleEye);
 	vm::SurfaceViewerViewModel surfaceViewer(dispatcher, session);
 	qt::QmlViewModel surfaceViewerQml(surfaceViewer);

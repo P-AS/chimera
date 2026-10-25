@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 
 namespace chimera::vm {
 
@@ -27,6 +28,21 @@ IdleEyeViewModel::IdleEyeViewModel(Dispatcher &dispatcher) : ViewModel("idleEye"
 {
 	expose("drawn", "pictures made so far (a still eye makes none)", drawn);
 	picture("eye", "the faint Chimera mark shown while nothing is open", eye, eyeChanged);
+	expose("snowWhen", "Chimera's Snowy null core: snow while nothing is open 0 never, 1 always, 2 the week of Christmas "
+		"(December 20th to 26th)", snowWhen, true);
+	expose("snowIntensity", "the snow's brightness, 0.1 to 1", snowIntensity, true);
+	expose("snowBias", "the snow's bias, -2 to 2: each grey a random byte raised to 10^-bias", snowBias, true);
+	expose("snowFramerate", "the snow is new 60 / this times a second (1 to 20)", snowFramerate, true);
+	dayOfYear = [] {
+		const std::time_t now = std::time(nullptr);
+		std::tm local{};
+#ifdef _WIN32
+		localtime_s(&local, &now);
+#else
+		localtime_r(&now, &local);
+#endif
+		return local.tm_yday + 1;
+	};
 	command("tick", "a sixtieth of a second on; gaze is the pointer's place, -1 hard left to +1 hard right",
 		{"gaze"}, [this](const Args &a, std::string &error) -> Value {
 			double g = 0;
@@ -66,8 +82,52 @@ void IdleEyeViewModel::setMark(int32_t size, const std::vector<uint32_t> &argb)
 	drawnKey_ = -1;
 }
 
+bool IdleEyeViewModel::snowing() const
+{
+	if (snowWhen.get() == 1) return true;
+	if (snowWhen.get() != 2 || !dayOfYear) return false;
+	/* Chimera's days, December 20th to 26th in a year of 365 */
+	const int day = dayOfYear();
+	return day >= 354 && day <= 360;
+}
+
+/* Chimera's SnowyNullVideo: a random byte each pixel, raised and brightened, grey */
+void IdleEyeViewModel::snow()
+{
+	const float power = std::pow(10.0f, static_cast<float>(-std::clamp(snowBias.get(), -2.0, 2.0)));
+	const float intensity = static_cast<float>(std::clamp(snowIntensity.get(), 0.1, 1.0));
+	std::uniform_int_distribution<int> byte(0, 255);
+	for (uint32_t &px : snow_)
+	{
+		const float f = std::pow(byte(snowRng_) / 255.0f, power) * intensity;
+		const uint32_t g = static_cast<uint32_t>(static_cast<uint8_t>(f * 255.0f));
+		px = 0xFF000000u | g << 16 | g << 8 | g;
+	}
+}
+
 bool IdleEyeViewModel::tick(double gaze)
 {
+	if (snowing())
+	{
+		/* new snow every snowFramerate turns, the first at once */
+		const int64_t every = std::clamp<int64_t>(snowFramerate.get(), 1, 20);
+		const bool now = !wasSnowing_ || snowTurn_ % every == 0;
+		wasSnowing_ = true;
+		snowTurn_++;
+		if (!now) return false;
+		snow();
+		eye.publish(snow_.data(), kSnowWidth, kSnowHeight, static_cast<double>(kSnowWidth) / kSnowHeight);
+		drawn.set(drawn.get() + 1);
+		eyeChanged.emit();
+		return true;
+	}
+	/* the snow over: the eye drawn again */
+	if (wasSnowing_)
+	{
+		wasSnowing_ = false;
+		snowTurn_ = 0;
+		drawnKey_ = -1;
+	}
 	gazeTarget_ = static_cast<float>(std::clamp(gaze, -1.0, 1.0));
 	animate();
 	/* a still eye is the same picture: drawn again only when it would change */

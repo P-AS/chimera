@@ -8392,6 +8392,9 @@ void idleEye()
 {
 	ManualDispatcher d;
 	IdleEyeViewModel eye(d);
+	/* a day of the year with no snow, whatever today is */
+	int day = 100;
+	eye.dayOfYear = [&day] { return day; };
 	CHECK(!eye.tick(0) && eye.drawn.get() == 0);
 	/* a slab left of the eye's box, and a block inside it */
 	std::vector<uint32_t> art(160 * 160, 0);
@@ -8435,6 +8438,50 @@ void idleEye()
 		lowest = std::min(lowest, eye.lid());
 	}
 	CHECK(lowest < 0.2f);
+	/* Chimera's Snowy null core: the week of Christmas at first, days 354 to 360 */
+	CHECK(eye.snowWhen.get() == 2 && !eye.snowing());
+	day = 354;
+	CHECK(eye.snowing());
+	day = 361;
+	CHECK(!eye.snowing());
+	eye.snowWhen.set(1);
+	/* 256 x 192, grey, at once and then every tenth turn */
+	const int64_t drawnBefore = eye.drawn.get();
+	CHECK(eye.tick(0));
+	Picture::Frame snow;
+	CHECK(eye.eye.takeIfNewer(0, snow) && snow.width == 256 && snow.height == 192);
+	int news = 0;
+	for (int i = 0; i < 30; i++) news += eye.tick(0) ? 1 : 0;
+	CHECK(news == 3 && eye.drawn.get() == drawnBefore + 4);
+	auto stats = [&] {
+		Picture::Frame f;
+		eye.eye.takeIfNewer(0, f);
+		bool grey = true;
+		double sum = 0;
+		uint32_t top = 0;
+		for (uint32_t p : f.pixels)
+		{
+			const uint32_t r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+			grey = grey && r == g && g == b;
+			sum += b;
+			top = std::max(top, b);
+		}
+		return std::make_tuple(grey, f.pixels.empty() ? 0.0 : sum / f.pixels.size(), top);
+	};
+	const auto [grey, mean, top] = stats();
+	/* bias -2: each byte raised to 100, nearly all black */
+	CHECK(grey && mean < 5 && top > 0);
+	/* bias 0 and half the brightness: an even spread up to half white */
+	eye.snowBias.set(0.0);
+	eye.snowIntensity.set(0.5);
+	for (int i = 0; i < 10; i++) eye.tick(0);
+	const auto [grey2, mean2, top2] = stats();
+	CHECK(grey2 && mean2 > 55 && mean2 < 72 && top2 <= 128 && top2 >= 120);
+	/* never: the eye again */
+	eye.snowWhen.set(0);
+	CHECK(eye.tick(0));
+	Picture::Frame back;
+	CHECK(eye.eye.takeIfNewer(0, back) && back.width == 480);
 }
 
 /* Chimera's Firmware window: a group a core (the emulators first), a line a

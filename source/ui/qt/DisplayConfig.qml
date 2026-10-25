@@ -1,13 +1,12 @@
 // Chimera's Display Configuration (Config > Display), laid out as Chimera's
 // DisplayConfig: Scaling & Filtering (User Prescale and Auto Prescale, the
 // final filter, the aspect ratio, cropping, Defaults), Misc (Display
-// Features, static window titles) and
+// Features, static window titles, the snowy null core) and
 // Window (the chrome windowed and full screen, double-click full screen).
 // Its boxes are a copy: OK keeps them, Cancel lets them go. Layout and
 // bindings only, over the display view model and the session's switches.
 //
-// Not here: the snowy null core (the prototype shows Chimera's mark
-// instead), and Windows fullscreen hacks.
+// Not here: Windows fullscreen hacks.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -17,6 +16,7 @@ ApplicationWindow {
     objectName: "displayWindow"
     required property QtObject vm
     required property QtObject session
+    required property QtObject idleEye
     property Window mainWindow: null
     title: qsTr("Display Configuration")
     width: 690
@@ -25,6 +25,8 @@ ApplicationWindow {
     transientParent: win.mainWindow
 
     // the display view model's settings the window shows, and the session's two
+    // the idle picture's: Chimera's Snowy null core
+    readonly property var eyeNames: ["snowWhen", "snowIntensity", "snowBias", "snowFramerate"]
     readonly property var vmNames: ["finalFilter", "prescale", "autoPrescale", "scaleOsd", "letterbox", "integerScale", "aspectMode", "customWidth", "customHeight", "ratioX",
         "ratioY", "cropLeft", "cropTop", "cropRight", "cropBottom", "minimalDisplay", "staticWindowTitles", "titleSuffix", "captionWindowed",
         "menuWindowed", "frameWindowed", "saveWindowPosition", "stayOnTop", "mouseCaptureForcesTop", "menuFullscreen", "statusBarFullscreen",
@@ -34,6 +36,7 @@ ApplicationWindow {
         tabs.currentIndex = 0
         const p = {}
         for (const n of win.vmNames) p[n] = win.vm[n]
+        for (const n of win.eyeNames) p[n] = win.idleEye[n]
         p.displayNothing = win.session.displayNothing
         p.showStatusBar = win.session.showStatusBar
         win.picked = p
@@ -45,6 +48,7 @@ ApplicationWindow {
     }
     function keep() {
         for (const n of win.vmNames) win.vm[n] = win.picked[n]
+        for (const n of win.eyeNames) win.idleEye[n] = win.picked[n]
         win.session.displayNothing = win.picked.displayNothing
         win.session.showStatusBar = win.picked.showStatusBar
     }
@@ -54,6 +58,20 @@ ApplicationWindow {
         checked: win.picked[setting] === true
         onToggled: win.pick(setting, checked)
         padding: 2
+    }
+    // a number with decimals, as Chimera's boxes: counted in units (a tenth, a quarter)
+    component Tenths: SpinBox {
+        id: tenths
+        required property string setting
+        property int places: 1
+        property real unit: Math.pow(10, -places)
+        editable: true
+        value: Math.round((win.picked[setting] || 0) / unit)
+        onValueModified: win.pick(setting, value * unit)
+        textFromValue: (v, locale) => Number(v * tenths.unit).toFixed(tenths.places)
+        valueFromText: (text, locale) => Math.round(Number(text) / tenths.unit)
+        validator: DoubleValidator { decimals: tenths.places }
+        Layout.preferredWidth: 90
     }
     component Number: SpinBox {
         required property string setting
@@ -205,6 +223,34 @@ ApplicationWindow {
                     Label {
                         text: qsTr("Some tools put filenames, status, etc. in their window titles.\nChecking this disables those features.")
                         Layout.leftMargin: 20
+                    }
+                    // Chimera's Snowy null core: the picture with nothing open
+                    GroupBox {
+                        title: qsTr("Snowy null core")
+                        ColumnLayout {
+                            spacing: 2
+                            Label { text: qsTr("When no rom loaded, draw \"snow\" (white noise):") }
+                            RowLayout {
+                                RadioButton { text: qsTr("Always"); checked: win.picked.snowWhen === 1; onClicked: win.pick("snowWhen", 1); padding: 2 }
+                                RadioButton { text: qsTr("Never"); checked: win.picked.snowWhen === 0; onClicked: win.pick("snowWhen", 0); padding: 2 }
+                            }
+                            RadioButton { text: qsTr("During Christmas (Dec. 20th through 26th)"); checked: win.picked.snowWhen === 2; onClicked: win.pick("snowWhen", 2); padding: 2 }
+                            RowLayout {
+                                Label { text: qsTr("Brightness multiplier:") }
+                                Tenths { setting: "snowIntensity"; from: 1; to: 10; places: 1 }
+                                Label { text: qsTr("RNG bias:") }
+                                Tenths { setting: "snowBias"; from: -8; to: 8; places: 2; unit: 0.25 }
+                            }
+                            RowLayout {
+                                Label { text: qsTr("Framerate: %1 Hz").arg((60 / (win.picked.snowFramerate || 10)).toFixed(1)) }
+                                Slider {
+                                    from: 1; to: 20; stepSize: 1; snapMode: Slider.SnapAlways
+                                    value: win.picked.snowFramerate || 10
+                                    onMoved: win.pick("snowFramerate", Math.round(value))
+                                    Layout.preferredWidth: 160
+                                }
+                            }
+                        }
                     }
                     Item { Layout.fillHeight: true }
                 }

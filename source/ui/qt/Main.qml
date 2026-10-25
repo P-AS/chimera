@@ -1522,7 +1522,7 @@ ApplicationWindow {
     Customize { id: customizeWindow; vm: root.customize; session: root.session; hotkeys: root.hotkeys; controls: root.controls; mainWindow: root; visible: false }
     MessagesConfig { id: messagesWindow; vm: root.messages; mainWindow: root; themeColor: root.osdColor; visible: false }
     SoundConfig { id: soundWindow; session: root.session; mainWindow: root; visible: false }
-    DisplayConfig { id: displayWindow; vm: root.display; session: root.session; mainWindow: root; visible: false }
+    DisplayConfig { id: displayWindow; vm: root.display; session: root.session; idleEye: root.idleEye; mainWindow: root; visible: false }
     ProjectFiles { session: root.session; mainWindow: root; themeColor: root.osdColor }
     // Work a crash left behind, offered before the project opens, as
     // Chimera's "Recover unsaved work?" asks
