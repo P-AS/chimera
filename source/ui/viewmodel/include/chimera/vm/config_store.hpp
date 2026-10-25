@@ -32,6 +32,10 @@ public:
 	int64_t loadFrom(const std::string &path, std::string &error);
 	/* "" when all is well, else what went wrong reading or writing */
 	const std::string &problem() const { return problem_; }
+	/* a switch the file keeps ("customize.singleInstance"), read before
+	 * anything is made (what the program does at its start); `otherwise`
+	 * when the file, or the switch in it, is missing */
+	static bool switchIn(const std::string &path, const std::string &key, bool otherwise);
 
 private:
 	void save();

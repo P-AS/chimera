@@ -2,12 +2,10 @@
 
 #include <QByteArray>
 #include <QCoreApplication>
-#include <QFile>
 #include <QMetaObject>
 
 #include <cstdio>
 
-#include "chimera/vm/json.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -33,23 +31,6 @@ bool waitFor(HANDLE pipe, OVERLAPPED &ov, HANDLE stop)
 }
 } // namespace
 #endif
-
-bool SingleInstance::wanted(const std::string &settingsPath)
-{
-#ifdef _WIN32
-	QFile in(QString::fromStdString(settingsPath));
-	if (!in.open(QIODevice::ReadOnly)) return false;
-	vm::json::Json all;
-	std::string error;
-	if (!vm::json::parse(in.readAll().toStdString(), all, error)) return false;
-	const vm::json::Json *on = all.find("customize.singleInstance");
-	return on != nullptr && on->kind == vm::json::Json::Kind::Bool && on->boolean;
-#else
-	/* Windows only, as Chimera's (a named pipe with Windows' security) */
-	(void)settingsPath;
-	return false;
-#endif
-}
 
 std::string SingleInstance::payload(const QStringList &arguments)
 {

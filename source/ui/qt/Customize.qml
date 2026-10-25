@@ -1,14 +1,14 @@
 // Chimera's Customize window (Config > Customize), laid out as Chimera's
 // GuiOptions: General (the context menu, the save prompts, listening in
-// the background, Startup Options, how keys are named) and Advanced
-// (lag frames, Lua when turboing, Key Priority). The boxes are a copy: OK
-// keeps them, Cancel lets them go. Layout and bindings only, over the
-// customize view model and the session's and hotkeys' switches.
+// the background, single instance, how keys are named, the GameCube
+// adapter, Startup Options) and Advanced (lag frames, Lua when turboing,
+// Key Priority). The boxes are a copy: OK keeps them, Cancel lets them go.
+// Layout and bindings only, over the customize view model and the
+// session's and hotkeys' switches.
 //
-// Not here, as the prototype has no such thing: the GameCube adapter.
-// Run in background and Pause when menu
-// activated are gone, as from Chimera (owner, 2026-10-24): nothing pauses
-// the machine but the person, whatever window is in front or menu open.
+// Run in background and Pause when menu activated are gone, as from
+// Chimera (owner, 2026-10-24): nothing pauses the machine but the person,
+// whatever window is in front or menu open.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -25,7 +25,7 @@ ApplicationWindow {
     title: qsTr("Customization Options")
     // Chimera's is 418 wide for its 8-point font; wide enough here for the longest line
     width: 520
-    height: 424
+    height: 520
     modality: Qt.ApplicationModal
     transientParent: win.mainWindow
 
@@ -39,7 +39,7 @@ ApplicationWindow {
             startFullscreen: win.vm.startFullscreen, skipLagFrames: win.session.skipLagFrames,
             luaDuringTurbo: win.vm.luaDuringTurbo, noMixedPriority: win.hotkeys.noMixedPriority,
             alternateLayouts: win.vm.alternateLayouts, mergeModifiers: win.vm.mergeModifiers,
-            singleInstance: win.vm.singleInstance
+            singleInstance: win.vm.singleInstance, gameCubeAdapter: win.vm.gameCubeAdapter
         }
     }
     function pick(name, value) {
@@ -60,6 +60,7 @@ ApplicationWindow {
         win.vm.alternateLayouts = p.alternateLayouts
         win.vm.mergeModifiers = p.mergeModifiers
         win.vm.singleInstance = p.singleInstance
+        win.vm.gameCubeAdapter = p.gameCubeAdapter
     }
     // OK, as Chimera's: a change to merging the modifier keys first asks
     // whether the keys bound are rewritten for it (Cancel keeps the window open)
@@ -133,6 +134,8 @@ ApplicationWindow {
                     Box { setting: "singleInstance"; text: qsTr("Single instance mode"); enabled: Qt.platform.os === "windows"; Layout.topMargin: 8 }
                     Box { setting: "alternateLayouts"; text: qsTr("Handle alternate keyboard layouts (e.g. Dvorak) [experimental]"); Layout.topMargin: 8 }
                     Box { setting: "mergeModifiers"; text: qsTr("Merge L+R modifier keys e.g. Shift instead of LShift and RShift") }
+                    // read when the program starts: SDL is told before it starts
+                    Box { setting: "gameCubeAdapter"; text: qsTr("Enable Wii U/Switch GameCube Adapter Support") }
                     GroupBox {
                         title: qsTr("Startup Options")
                         Layout.fillWidth: true

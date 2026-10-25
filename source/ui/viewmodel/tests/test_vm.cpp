@@ -571,12 +571,21 @@ void configStore()
 	const fs::path dir = fs::temp_directory_path() / ("chimera-test-config-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
 	const std::string file = (dir / "settings.json").string();
 	ManualDispatcher d;
+	/* a switch read before anything is made: what the file says, else the default */
+	CHECK(ConfigStore::switchIn(file, "customize.singleInstance", true) && !ConfigStore::switchIn(file, "customize.singleInstance", false));
 	{
 		ConfigStore store(file);
 		Sample vm(d);
 		store.keep(vm, "count");
 		vm.count.set(42);
 		CHECK(store.problem().empty() && fs::exists(file));
+	}
+	{
+		std::ofstream(file + ".switches") << R"({"customize.singleInstance": true, "customize.gameCubeAdapter": false, "count": 3})";
+		CHECK(ConfigStore::switchIn(file + ".switches", "customize.singleInstance", false));
+		CHECK(!ConfigStore::switchIn(file + ".switches", "customize.gameCubeAdapter", true));
+		/* not a switch: the default */
+		CHECK(ConfigStore::switchIn(file + ".switches", "count", true) && !ConfigStore::switchIn(file + ".switches", "missing", false));
 	}
 	{
 		ConfigStore store(file);

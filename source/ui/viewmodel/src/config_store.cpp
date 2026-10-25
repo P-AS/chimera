@@ -52,6 +52,19 @@ ConfigStore::ConfigStore(std::string path) : path_(std::move(path))
 	problem_ = "the settings file did not read (" + error + "); it was set aside as " + path_ + ".unreadable";
 }
 
+bool ConfigStore::switchIn(const std::string &path, const std::string &key, bool otherwise)
+{
+	std::ifstream in(path, std::ios::binary);
+	if (!in) return otherwise;
+	std::stringstream ss;
+	ss << in.rdbuf();
+	Json all;
+	std::string error;
+	if (!json::parse(ss.str(), all, error)) return otherwise;
+	const Json *on = all.find(key);
+	return on != nullptr && on->kind == Json::Kind::Bool ? on->boolean : otherwise;
+}
+
 void ConfigStore::keep(ViewModel &vm, const std::string &property)
 {
 	const std::string key = vm.name() + "." + property;

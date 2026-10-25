@@ -22,6 +22,8 @@ CustomizeViewModel::CustomizeViewModel(Dispatcher &dispatcher, SessionViewModel 
 		"(Merge L+R modifier keys)", mergeModifiers, true);
 	expose("singleInstance", "a second start of the program hands its files to the window already running and ends, on "
 		"Windows (Single instance mode; read when the program starts)", singleInstance, true);
+	expose("gameCubeAdapter", "Wii U and Switch GameCube adapters are read, through SDL's USB reading (Enable Wii U/Switch "
+		"GameCube Adapter Support; read when the program starts)", gameCubeAdapter, true);
 	command("modifierKeys", "the names Chimera's rewrite replaces when the modifier keys are merged (true) or separated "
 		"(false), as {\"LeftShift\": \"Shift\"}", {"merging"}, [](const Args &a, std::string &error) -> Value {
 			bool merging = true;

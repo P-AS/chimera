@@ -25,11 +25,8 @@ public:
 	SingleInstance &operator=(const SingleInstance &) = delete;
 	~SingleInstance() { stop(); }
 
-	/* whether the settings file asks for it (customize.singleInstance), read
-	 * before anything else is made; always false off Windows */
-	static bool wanted(const std::string &settingsPath);
 	/* takes the mutex; when another window holds it, `arguments` are handed
-	 * to it and true is returned: this one ends */
+	 * to it and true is returned: this one ends (always false off Windows) */
 	bool forwardIfRunning(const QStringList &arguments);
 	/* the first window listens: each set of arguments handed over is given
 	 * to `take` on the window's thread */

@@ -20,6 +20,9 @@
  * - singleInstance: a second start of the program hands the files it is
  *   given to the window already running and ends, on Windows (Chimera's
  *   Single instance mode; read when the program starts).
+ * - gameCubeAdapter: Wii U and Switch GameCube adapters are read, through
+ *   SDL's own USB reading (Chimera's Enable Wii U/Switch GameCube Adapter
+ *   Support; read when the program starts).
  * - mergeModifiers: both Shift keys are "Shift", rather than "LeftShift"
  *   and "RightShift", likewise Ctrl and Alt (Chimera's Merge L+R modifier
  *   keys). Changing it can rewrite the keys bound (modifierKeys).
@@ -42,7 +45,7 @@ public:
 	CustomizeViewModel(Dispatcher &dispatcher, SessionViewModel &session);
 
 	Property<bool> startPaused{false}, startFullscreen{false}, neverAskSave{false}, luaDuringTurbo{true}, showContextMenu{true};
-	Property<bool> alternateLayouts{false}, mergeModifiers{true}, singleInstance{false};
+	Property<bool> alternateLayouts{false}, mergeModifiers{true}, singleInstance{false}, gameCubeAdapter{false};
 
 	/* Chimera's rewrite of the keys bound when mergeModifiers changes
 	 * (ConfigExtensions.ReplaceKeysInBindings with Input.ModifierKeyPreMap or

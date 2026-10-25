@@ -334,8 +334,13 @@ int main(int argc, char **argv)
 	{
 		QStringList handing;
 		for (const QString &a : args.positionalArguments()) handing << QFileInfo(a).absoluteFilePath();
-		if (qt::SingleInstance::wanted(configPath.toStdString()) && single.forwardIfRunning(handing)) return 0;
+		if (vm::ConfigStore::switchIn(configPath.toStdString(), "customize.singleInstance", false) && single.forwardIfRunning(handing))
+			return 0;
 	}
+	/* Chimera's GameCube adapter support: off, SDL is told before it starts
+	 * to leave USB devices alone (SDL2 reads it only from the environment) */
+	if (!vm::ConfigStore::switchIn(configPath.toStdString(), "customize.gameCubeAdapter", false))
+		qputenv("SDL_HIDAPI_DISABLE_LIBUSB", "1");
 	QtDispatcher dispatcher(&app);
 	vm::InputLog inputs;
 	vm::SessionViewModel session(dispatcher, inputs);
@@ -1170,7 +1175,7 @@ int main(int argc, char **argv)
 	qt::QmlViewModel cacheManagerQml(cacheManager);
 	vm::CustomizeViewModel customize(dispatcher, session);
 	for (const char *name : {"startPaused", "startFullscreen", "neverAskSave", "luaDuringTurbo",
-			 "showContextMenu", "alternateLayouts", "mergeModifiers", "singleInstance"})
+			 "showContextMenu", "alternateLayouts", "mergeModifiers", "singleInstance", "gameCubeAdapter"})
 		config.keep(customize, name);
 	auto keyNaming = [&customize] { qt::setKeyNaming(customize.alternateLayouts.get(), customize.mergeModifiers.get()); };
 	keyNaming();
