@@ -165,4 +165,10 @@
     <file alias="menu/SaveMovie.png">../../gui/Chimera.Client.GUI/images/SaveAs.png</file>
     <file alias="menu/RamWatch.png">menu-icons/Watch.png</file>
   </qresource>
+  <!-- Chimera's style: Fusion, with the system's check boxes and radio buttons, as Chimera's -->
+  <qresource prefix="/qt/qml/ChimeraStyle">
+    <file alias="qmldir">style/qmldir</file>
+    <file alias="CheckBox.qml">style/CheckBox.qml</file>
+    <file alias="RadioButton.qml">style/RadioButton.qml</file>
+  </qresource>
 </RCC>

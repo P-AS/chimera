@@ -1,0 +1,4 @@
+module ChimeraStyle
+CheckBox 6.0 CheckBox.qml
+RadioButton 6.0 RadioButton.qml
+import QtQuick.Controls.Fusion auto

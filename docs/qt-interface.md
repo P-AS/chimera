@@ -175,6 +175,10 @@ code is in `source/ui`; how it is built and run is in
   a marker's frame number drags the marker to another frame; and the left
   button held in the column before the frame numbers takes the machine
   along with the pointer.
+  Check boxes and radio buttons are drawn as Chimera's, which leaves them to
+  the system: a light box or circle with a dark edge whatever the theme
+  (Fusion's own went dark with a dark theme and could not be seen). This is
+  a small style of the window's own (source/ui/qt/style) over Fusion.
 - **Qt is patched where it faults** (owner, 2026-10-24): fixes to Qt go in
   tools/qt-patches and tools/build-qt-windows.sh applies them as it unpacks
   the source. The first: a Qt thread that ended after its data was let go

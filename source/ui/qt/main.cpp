@@ -289,7 +289,8 @@ int main(int argc, char **argv)
 	/* not "Chimera": Qt keeps its caches under the application's name, and
 	 * the prototype must not write into Chimera's own folder */
 	QGuiApplication::setApplicationName(QStringLiteral("chimera-qt-prototype"));
-	QQuickStyle::setStyle(QStringLiteral("Fusion"));
+	/* Fusion, with Chimera's check boxes and radio buttons (style/, built in) */
+	QQuickStyle::setStyle(QStringLiteral("ChimeraStyle"));
 #ifndef _WIN32
 	/* Chimera's icon on every window; on Windows it is the program's own (chimera-qt.rc), at every size */
 	QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/chimera/chimera.png")));
