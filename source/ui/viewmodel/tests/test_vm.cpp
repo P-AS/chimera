@@ -7829,6 +7829,11 @@ bool luaParity(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	session.run("setLag", {int64_t{0}, int64_t{0}}, error);
 	CHECK(lua1("gameinfo.getstatus(), gameinfo.isstatusbad()") == "[\"NotInDatabase\", false]");
+	/* what the game calls its controls, beside their declared names (the roll's title tooltip) */
+	{
+		std::string labels;
+		CHECK(fromValue(session.run("controlLabels", {}, error).value_or(Value()), labels) && labels == "P1 A\tJump\n");
+	}
 	/* the game as Chimera names and hashes it */
 	{
 		char hex[41] = {};

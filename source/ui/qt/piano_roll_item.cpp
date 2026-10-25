@@ -645,6 +645,12 @@ void PianoRollItem::hoverMoveEvent(QHoverEvent *e)
 	const bool titles = at.y() < hs;
 	const qint64 row = titles || rows_ == nullptr ? -1 : rowOnLine(static_cast<qint64>((at.y() - hs) / rowHeight_));
 	if (row == hoverRow_ && column == hoverColumn_ && titles == hoverTitles_) return;
+	/* a control's title come onto, or left */
+	const bool wasTitle = hoverTitles_ && hoverColumn_ >= 0, isTitle = titles && column >= 0 && rows_ != nullptr;
+	if (isTitle && (!wasTitle || column != hoverColumn_))
+		Q_EMIT titleHovered(QString::fromStdString(rows_->rows().columnName(column)), at.x(), at.y());
+	else if (wasTitle && !isTitle)
+		Q_EMIT titleHovered(QString(), 0, 0);
 	hoverRow_ = row;
 	hoverColumn_ = column;
 	hoverTitles_ = titles;
@@ -653,6 +659,7 @@ void PianoRollItem::hoverMoveEvent(QHoverEvent *e)
 
 void PianoRollItem::hoverLeaveEvent(QHoverEvent *)
 {
+	if (hoverTitles_ && hoverColumn_ >= 0) Q_EMIT titleHovered(QString(), 0, 0);
 	hoverRow_ = -1;
 	hoverColumn_ = -3;
 	hoverTitles_ = false;

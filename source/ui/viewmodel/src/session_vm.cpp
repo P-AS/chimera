@@ -997,6 +997,18 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			});
 			return std::to_string(w) + " " + std::to_string(h);
 		});
+	command("controlLabels", "what this game calls its controls, where it names them (Chimera's labels, beside the declared "
+		"names): a line each, the declared name, a tab, the game's", {}, [this](const Args &, std::string &) -> Value {
+			std::string out;
+			onMachineWait([&](ce_session *s) {
+				if (s == nullptr) return;
+				for (size_t b = 0; b < buttonNames_.size(); b++)
+					if (const char *l = ce_session_button_label(s, static_cast<int64_t>(b)); l != nullptr && *l != '\0') out += buttonNames_[b] + "\t" + l + "\n";
+				for (size_t x = 0; x < axes_.size(); x++)
+					if (const char *l = ce_session_axis_label(s, static_cast<int64_t>(x)); l != nullptr && *l != '\0') out += axes_[x].name + "\t" + l + "\n";
+			});
+			return out;
+		});
 	command("gameSha1", "the SHA-1 of the game's file (a project's first), as Chimera's game hash: \"\" with none; read "
 		"when first asked", {}, [this](const Args &, std::string &) -> Value {
 			std::string out;

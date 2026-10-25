@@ -42,6 +42,18 @@ ApplicationWindow {
     }
     // the frame each branch was made on, in the list's order (the roll numbers them)
     property var branchFrames: []
+    // what this game calls its controls, by their declared names (the session's, read as a machine opens)
+    property var controlLabels: ({})
+    function readControlLabels() {
+        const out = {}
+        for (const line of String(tas.session.run("controlLabels") || "").split("\n")) {
+            const tab = line.indexOf("\t")
+            if (tab > 0) out[line.substring(0, tab)] = line.substring(tab + 1)
+        }
+        tas.controlLabels = out
+    }
+    Connections { target: tas.session; function onOpensChanged() { tas.readControlLabels() } }
+    ToolTip { id: titleTip; delay: 400 }
     function readBranchFrames() {
         tas.branchFrames = (tas.branches.run("list") || "").split("\n").filter(l => l !== "").map(l => parseInt(l.split("\t")[1]))
     }
@@ -122,7 +134,7 @@ ApplicationWindow {
         tas.x += dx
         tas.y += dy
     }
-    Component.onCompleted: { tas.mainX = tas.mainWindow.x; tas.mainY = tas.mainWindow.y }
+    Component.onCompleted: { tas.mainX = tas.mainWindow.x; tas.mainY = tas.mainWindow.y; tas.readControlLabels() }
 
     function selectBetweenMarkers() {
         const f = tas.pianoRoll.currentFrame
@@ -515,6 +527,16 @@ ApplicationWindow {
                         rollFont: tas.pianoRoll.rollFont
                         onCellPressed: (row, column, alt) => { oneRoll.use(); tas.pianoRoll.run("press", [row, column, alt]) }
                         onColumnMenuRequested: (column, name, autoHeld, x, y) => { oneRoll.use(); columnMenu.name = name; columnMenu.autoHeld = autoHeld; columnMenu.popup() }
+                        // a control's title: its name, and beside it what this game calls it, as Chimera's tooltip
+                        onTitleHovered: (name, x, y) => {
+                            if (name === "") { titleTip.close(); return }
+                            const label = tas.controlLabels[name]
+                            titleTip.text = label ? name + " (" + label + ")" : name
+                            titleTip.x = x + 12
+                            titleTip.y = y + 18
+                            titleTip.parent = oneRoll
+                            titleTip.open()
+                        }
                         // Chimera's menu for the frames picked; nothing picked, no menu
                         onRowMenuRequested: (row) => { oneRoll.use(); if (tas.pianoRoll.selectFirst >= 0 && tas.pianoRoll.selectLast < tas.pianoRoll.frameCount) { rowMenu.row = row; rowMenu.popup() } }
                         onCellDragged: (row, column) => tas.pianoRoll.run("drag", [row, column])

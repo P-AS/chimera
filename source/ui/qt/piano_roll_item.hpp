@@ -140,6 +140,8 @@ Q_SIGNALS:
 	void rightDragEnded();
 	/* a marker dragged by its frame number with Alt held, dropped on another frame */
 	void markerDropped(qint64 from, qint64 to);
+	/* the pointer on a column's title (its name), or off every title (""), for the window's tooltip */
+	void titleHovered(const QString &name, qreal x, qreal y);
 	/* the wheel turned with the right button held on a row: Chimera's seek by a frame a notch */
 	void wheelSeekRequested(int notches);
 	/* the frame numbers pressed or dragged over, or Shift-pressed */
