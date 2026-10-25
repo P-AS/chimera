@@ -134,6 +134,9 @@ Item {
                                 ctx.restore()
                             }
                         }
+                        // asked to be saved (LuaCanvas.save_image_to_disk): once what is asked is drawn
+                        readonly property int saves: control.kind === "picturebox" ? control.model.saves : 0
+                        onSavesChanged: if (box.saves > 0) Qt.callLater(() => { box.requestPaint(); Qt.callLater(() => box.save(control.model.saveTo)) })
                         HoverHandler { onPointChanged: lua.vm.run("pointer", [control.handle, Math.floor(point.position.x), Math.floor(point.position.y)]) }
                         TapHandler { onTapped: lua.vm.run("click", [control.handle]) }
                     }

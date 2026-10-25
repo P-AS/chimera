@@ -676,6 +676,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("greenzoneStates", "machine states the greenzone holds", greenzoneStates);
 	expose("rerecords", "how many times the movie was changed over work already done (saved with the project)", rerecords);
 	expose("autoRestore", "after an edit before the current frame, run on to where the machine was", autoRestore, true);
+	expose("rewinding", "rewind is held: the machine goes back (Chimera's client.is_rewinding)", rewinding);
+	expose("turbo", "turbo is held (Chimera's client.isturbo)", turbo);
 	expose("turboSeek", "TAStudio's Turbo seek: a seek goes to its frame at once; off, past what the greenzone holds it "
 		"plays there at the machine's own speed", turboSeek, true);
 	expose("seekingTo", "the frame a seek that plays is going to, -1 when none is", seekingTo);
@@ -979,7 +981,17 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		});
 	/* what a script reads and writes of the machine's memory, and the frame
 	 * it is on, the machine answers on its own thread, where scripts run */
-	for (const char *name : {"memoryDomains", "readMemory", "writeMemory", "sha256"}) scriptSideCommand(name);
+	command("videoSize", "the picture the machine draws: its width, a space, its height (Chimera's client.bufferwidth "
+		"and bufferheight); with nothing open, Chimera's empty machine's, 256 by 192", {}, [this](const Args &, std::string &) -> Value {
+			int64_t w = 256, h = 192;
+			onMachineWait([&](ce_session *s) {
+				if (s == nullptr) return;
+				w = ce_session_video_width(s);
+				h = ce_session_video_height(s);
+			});
+			return std::to_string(w) + " " + std::to_string(h);
+		});
+	for (const char *name : {"memoryDomains", "readMemory", "writeMemory", "sha256", "videoSize"}) scriptSideCommand(name);
 	scriptSideProperty("frame", [this] { return Value(int64_t{frameM_}); });
 	command("movieInput", "a frame's input in the movie, a line each: a button pressed by its name, an analog control as "
 		"name=value; \"\" past the movie's end", {"frame"}, [this](const Args &a, std::string &error) -> Value {
@@ -997,6 +1009,50 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				for (size_t x = 0; x < axes.size() && x < axes_.size(); x++) out += axes_[x].name + "=" + std::to_string(axes[x]) + "\n";
 			});
 			return out;
+		});
+	command("movieLine", "a frame's line in the movie, as the movie writes it (Chimera's input log mnemonic); \"\" past the "
+		"movie's end", {"frame"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t frame = 0;
+			if (!arg(a, 0, frame, error)) return {};
+			if (frame < 0 || frame >= inputs_.size()) return std::string();
+			const std::vector<std::string> one = inputs_.lines(frame, frame);
+			return one.empty() ? std::string() : one.front();
+		});
+	command("countingRerecords", "whether the movie counts rerecords (Chimera's movie.getrerecordcounting)", {},
+		[this](const Args &, std::string &) -> Value { return inputs_.countingRerecords(); });
+	command("setCountingRerecords", "whether the movie counts rerecords from now on, until another machine is opened "
+		"(Chimera's movie.setrerecordcounting)", {"on"}, [this](const Args &a, std::string &error) -> Value {
+			bool on = true;
+			if (!arg(a, 0, on, error)) return {};
+			inputs_.setCountingRerecords(on);
+			return {};
+		});
+	command("setRerecords", "the movie's rerecord count, made this (Chimera's movie.setrerecordcount)", {"count"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t count = 0;
+			if (!arg(a, 0, count, error)) return {};
+			if (count < 0)
+			{
+				error = "a rerecord count is not negative";
+				return {};
+			}
+			onMachineWait([&](ce_session *s) {
+				if (s != nullptr) ce_session_set_rerecords(s, static_cast<uint64_t>(count));
+			});
+			rerecords.set(count);
+			return {};
+		});
+	command("setLagCount", "the lag count, made this from the frame the machine is on; the lag frames after it add to it, "
+		"as Chimera's emu.setlagcount; the machine going back before that frame counts afresh", {"count"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t count = 0;
+			if (!arg(a, 0, count, error)) return {};
+			const int64_t f = frame.get();
+			updateOverlay(f, -1);
+			lagOffset_ = count - lags_;
+			lagOffsetFrom_ = f;
+			lagCount.set(count);
+			return {};
 		});
 	command("axisList", "the machine's analog controls, a line each", {}, [this](const Args &, std::string &) -> Value {
 		std::string out;
@@ -1021,6 +1077,19 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		if (changed && f < inputs_.size()) inputsChanged.emit(f, f);
 		return {};
 	});
+	command("setIsLagged", "the frame just run made a lag frame or not, as Chimera's emu.setislagged: its row and the "
+		"counters say so at once", {"lag"}, [this](const Args &a, std::string &error) -> Value {
+			bool lag = true;
+			if (!a.empty() && !arg(a, 0, lag, error)) return {};
+			const int64_t f = frame.get();
+			if (f <= 0) return {};
+			if (inputs_.setLag(f - 1, lag))
+			{
+				if (f - 1 < inputs_.size()) inputsChanged.emit(f - 1, f - 1);
+				updateOverlay(f, f - 1);
+			}
+			return {};
+		});
 	command("decodeEntry", "a movie line read against this machine's controller, as movieInput says a frame", {"line"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string line, out;
@@ -1630,6 +1699,7 @@ void SessionViewModel::holdFrameAdvance(bool down)
 void SessionViewModel::holdRewind(bool down)
 {
 	rewindHeld_ = down;
+	rewinding.set(down);
 	submit([this, down] {
 		if (s_ == nullptr) return;
 		if (down)
@@ -1649,6 +1719,7 @@ void SessionViewModel::holdRewind(bool down)
 void SessionViewModel::holdTurbo(bool down)
 {
 	turboHeld_ = down;
+	turbo.set(down);
 	turboM_ = down;
 	submit([this, down] {
 		if (!down) due_ = Clock::now();
@@ -4739,6 +4810,9 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		greenEnd.set(0);
 		running.set(false);
 		isOpen.set(true);
+		/* a lag count a script set was the last machine's */
+		lagOffset_ = 0;
+		lagOffsetFrom_ = INT64_MAX;
 		opens.set(opens.get() + 1);
 		char hz[32];
 		std::snprintf(hz, sizeof hz, "%.3f", rate);
@@ -5542,17 +5616,17 @@ void SessionViewModel::updateOverlay(int64_t f, int64_t changedFrom)
 		}
 		frameCounterText.set(std::to_string(f) + "/" + std::to_string(lastInput_) + (size > 0 && f > lastInput_ ? " (Finished)" : ""));
 	}
-	if (showLagCounter.get())
+	/* counted on from where it was, unless something before changed; counted
+	 * whether it is shown or not, as scripts read it (emu.lagcount) */
+	if (f < lagsTo_ || (changedFrom >= 0 && changedFrom < lagsTo_))
 	{
-		/* counted on from where it was, unless something before changed */
-		if (f < lagsTo_ || (changedFrom >= 0 && changedFrom < lagsTo_))
-		{
-			lagsTo_ = 0;
-			lags_ = 0;
-		}
-		for (; lagsTo_ < f; lagsTo_++) lags_ += inputs_.lagAt(lagsTo_) ? 1 : 0;
-		lagCount.set(lags_);
+		lagsTo_ = 0;
+		lags_ = 0;
 	}
+	for (; lagsTo_ < f; lagsTo_++) lags_ += inputs_.lagAt(lagsTo_) ? 1 : 0;
+	/* a count a script set holds from its frame on */
+	if (f < lagOffsetFrom_) lagOffset_ = 0, lagOffsetFrom_ = INT64_MAX;
+	lagCount.set(lags_ + lagOffset_);
 	if (showInput.get()) inputText.set(inputDisplay(f - 1));
 }
 

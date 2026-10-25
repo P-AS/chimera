@@ -113,7 +113,7 @@ void paintShapes(QImage &image, const QString &shapes)
 		}
 		else if (k == QLatin1String("image"))
 		{
-			const QImage &img = imageOf(s.value(QStringLiteral("file")).toString(), s.value(QStringLiteral("epoch")).toInt());
+			const QImage img = imageOf(s.value(QStringLiteral("file")).toString(), s.value(QStringLiteral("epoch")).toInt());
 			if (!img.isNull())
 			{
 				if (s.contains(QStringLiteral("sw")))
@@ -128,11 +128,28 @@ void paintShapes(QImage &image, const QString &shapes)
 		{
 			const bool screen = k == QLatin1String("screentext");
 			const int size = screen ? 12 : static_cast<int>(num("size"));
-			const QFont font = monospace(size);
+			/* the font and style the script named, as Shapes.js draws them */
+			QFont font = monospace(size);
+			const QString family = s.value(QStringLiteral("family")).toString();
+			if (!screen && !family.isEmpty()) font.setFamily(family);
+			const QString style = s.value(QStringLiteral("style")).toString().toLower();
+			font.setBold(style == QLatin1String("bold"));
+			font.setItalic(style == QLatin1String("italic"));
+			font.setUnderline(style == QLatin1String("underline"));
+			font.setStrikeOut(style == QLatin1String("strikethrough"));
 			const QString text = s.value(QStringLiteral("text")).toString();
 			const QFontMetrics metrics(font);
 			const int tw = metrics.horizontalAdvance(text);
+			const int th = static_cast<int>(std::ceil(size * 1.15));
 			double tx = x, ty = y;
+			if (!screen)
+			{
+				const QString ha = s.value(QStringLiteral("halign")).toString().toLower(), va = s.value(QStringLiteral("valign")).toString().toLower();
+				if (ha == QLatin1String("center") || ha == QLatin1String("middle")) tx -= tw / 2;
+				else if (ha == QLatin1String("right")) tx -= tw;
+				if (va == QLatin1String("center") || va == QLatin1String("middle")) ty -= th / 2;
+				else if (va == QLatin1String("bottom")) ty -= th;
+			}
 			if (screen)
 			{
 				/* from a corner of the picture, as the window places it in its own */
@@ -143,8 +160,19 @@ void paintShapes(QImage &image, const QString &shapes)
 				if (bottom) ty = image.height() - y - 12;
 			}
 			const QColor back = colorOf(s.value(QStringLiteral("back")));
-			if (!screen && back.isValid()) p.fillRect(QRectF(tx, ty, tw, size), back);
 			p.setFont(font);
+			if (!screen && back.isValid())
+			{
+				/* a picture box's background is a box; the picture's an outline around the letters */
+				if (s.value(QStringLiteral("outline")).toBool())
+				{
+					p.setPen(back);
+					for (int dx = -1; dx <= 1; dx++)
+						for (int dy = -1; dy <= 1; dy++) p.drawText(QPointF(tx + dx, ty + dy + metrics.ascent()), text);
+				}
+				else
+					p.fillRect(QRectF(tx, ty, tw, th), back);
+			}
 			p.setPen(colorOf(s.value(QStringLiteral("color"))));
 			p.drawText(QPointF(tx, ty + metrics.ascent()), text);
 		}

@@ -43,6 +43,7 @@ vm_lib = static_library(
     'viewmodel/src/sound.cpp',
     'viewmodel/src/lua_bridge.cpp',
     'viewmodel/src/lua_libraries.cpp',
+    'viewmodel/src/lua_strings.cpp',
     'viewmodel/src/ram_search_vm.cpp',
     'viewmodel/src/settings_vm.cpp',
     'viewmodel/src/lua_console_vm.cpp',

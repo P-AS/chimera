@@ -49,6 +49,25 @@ ProjectDetailsViewModel::ProjectDetailsViewModel(Dispatcher &dispatcher, Session
 	expose("status", "what the project's details last had to say", status);
 	rows("subtitles", "one row a subtitle, by frame: frame, fromLeft and fromTop (where, in pixels), duration, color (#AARRGGBB), message", rows_);
 
+	command("headerEntries", "the open project's header, every entry, a line each: its key, a tab, its value (Chimera's "
+		"movie.getheader); \"\" with no project", {}, [this](const Args &, std::string &) -> Value {
+			std::string out;
+			session_.onProjectWait([&](ce_project *p) {
+				if (p == nullptr) return;
+				for (int32_t i = 0; i < ce_project_header_count(p); i++)
+					out += text(ce_project_header_key_at(p, i)) + "\t" + text(ce_project_header_value_at(p, i)) + "\n";
+			});
+			return out;
+		});
+	command("subtitleLines", "the open project's subtitles, a line each as the project writes it (Chimera's "
+		"movie.getsubtitles)", {}, [this](const Args &, std::string &) -> Value {
+			std::string out;
+			session_.onProjectWait([&](ce_project *p) {
+				if (p == nullptr) return;
+				for (int32_t i = 0; i < ce_project_subtitle_count(p); i++) out += text(ce_project_subtitle_at(p, i)) + "\n";
+			});
+			return out;
+		});
 	command("reload", "reads the open project's details again", {}, [this](const Args &, std::string &) -> Value {
 		load();
 		return {};

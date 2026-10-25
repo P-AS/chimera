@@ -1,6 +1,7 @@
 #include "chimera/vm/encoder_vm.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -94,6 +95,8 @@ struct EncoderViewModel::Job
 	std::mutex levelsM;
 	double peakL = 0, peakR = 0;
 	std::string error;
+	/* a script's client.pause_av: the frames run meanwhile are not written */
+	std::shared_ptr<std::atomic<bool>> paused;
 
 	std::string fileName() const { return base + (segment == 0 ? "" : "_" + std::to_string(segment)) + ext; }
 
@@ -160,6 +163,7 @@ struct EncoderViewModel::Job
 
 	bool frame(ce_session *s, std::string &why)
 	{
+		if (paused && paused->load()) return true;
 		const uint32_t *px = ce_session_video(s);
 		int32_t sw = ce_session_video_width(s), sh = ce_session_video_height(s);
 		int32_t pairs = 0;
@@ -396,6 +400,7 @@ EncoderViewModel::EncoderViewModel(Dispatcher &dispatcher, SessionViewModel &ses
 			job->compose = compose;
 			job->session = &session_;
 			job->from = fromFrame.get();
+			job->paused = avPaused_;
 			job->to = toFrame.get();
 			if (job->resize && (job->outW < 2 || job->outH < 2))
 			{
@@ -440,6 +445,13 @@ EncoderViewModel::EncoderViewModel(Dispatcher &dispatcher, SessionViewModel &ses
 					levelRight.set(0);
 					job_.reset();
 				});
+			return {};
+		});
+	command("pauseAv", "the frames run from now on are not written, or are again (Chimera's client.pause_av and unpause_av)",
+		{"paused"}, [this](const Args &a, std::string &error) -> Value {
+			bool on = true;
+			if (!arg(a, 0, on, error)) return {};
+			avPaused_->store(on);
 			return {};
 		});
 	command("stop", "ends the encode after the frame it is on; what was written stays, and plays", {},

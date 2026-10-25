@@ -86,6 +86,8 @@ private:
 	SessionViewModel &session_;
 	std::string appDir_;
 	std::shared_ptr<Job> job_;
+	/* a script paused writing (client.pause_av), shared with the encode under way */
+	std::shared_ptr<std::atomic<bool>> avPaused_ = std::make_shared<std::atomic<bool>>(false);
 	Connection commandWatch_;
 };
 

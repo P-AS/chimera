@@ -2,6 +2,7 @@
 #include "chimera/vm/json.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -9,6 +10,7 @@
 #include <optional>
 #include <sstream>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 
 extern "C" {
@@ -18,6 +20,29 @@ extern "C" {
 }
 
 namespace chimera::vm {
+
+int luaChimeraString(lua_State *L);
+
+namespace {
+/* __chimera_sleep(milliseconds, exact): the scripts' thread waits, as
+ * Chimera's client.sleep makes its own wait; exact waits the last of it
+ * out by the clock, as its exactsleep does */
+int sleepFor(lua_State *L)
+{
+	const auto ms = static_cast<int64_t>(luaL_checknumber(L, 1));
+	const bool exact = lua_toboolean(L, 2) != 0;
+	if (ms <= 0) return 0;
+	const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+	if (!exact)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+		return 0;
+	}
+	while (until - std::chrono::steady_clock::now() > std::chrono::milliseconds(100)) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	while (std::chrono::steady_clock::now() < until) std::this_thread::yield();
+	return 0;
+}
+} // namespace
 
 namespace {
 const char *const kBridge = "chimera.bridge";
@@ -110,6 +135,11 @@ LuaBridge::LuaBridge() : L_(luaL_newstate())
 	lua_setglobal(L_, "__chimera_enter");
 	lua_pushcfunction(L_, &LuaBridge::folder);
 	lua_setglobal(L_, "__chimera_folder");
+	/* bizstring's work, on .NET's terms (lua_strings.cpp) */
+	lua_pushcfunction(L_, &luaChimeraString);
+	lua_setglobal(L_, "__chimera_string");
+	lua_pushcfunction(L_, &sleepFor);
+	lua_setglobal(L_, "__chimera_sleep");
 	lua_pushinteger(L_, 0);
 	lua_setglobal(L_, "__chimera_script");
 	/* Chimera's libraries, a layer of Lua over the view models */
@@ -691,7 +721,8 @@ bool LuaBridge::runForAgentHere(const std::string &code, const std::string &dire
 	 * an expression is asked of Lua's own load, as Chimera's RunText asks */
 	std::string level;
 	while (code.find("]" + level + "]") != std::string::npos) level += '=';
-	const std::string chunk = "local code = [" + level + "[\n" + code + "]" + level + "]\n"
+	/* a line end before the closing brackets: code ending in ']' would close them early */
+	const std::string chunk = "local code = [" + level + "[\n" + code + "\n]" + level + "]\n"
 		"local run, failed = load('return ' .. code, '=input')\n"
 		"if not run then run, failed = load(code, '=input') end\n"
 		"if not run then error(failed, 0) end\n"

@@ -574,6 +574,32 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 			return functionsList(lua_.ask("__chimera_functions_list"));
 		});
 
+	command("functionNames", "every Lua function's name, a line each, as Chimera's client.getluafunctionslist gives them: "
+		"those Chimera documents that are here (and those it documents that raise an error in every core), then the "
+		"prototype's own", {}, [this](const Args &, std::string &) -> Value {
+			json::Json docs, ours;
+			std::string why, out;
+			if (!json::parse(std::string_view(kChimeraLuaDocs), docs, why)) docs.kind = json::Json::Kind::Array;
+			if (!json::parse(lua_.ask("__chimera_functions_list"), ours, why)) ours.kind = json::Json::Kind::Array;
+			auto field = [](const json::Json &o, const char *k) {
+				const json::Json *j = o.find(k);
+				return j != nullptr ? j->text : std::string();
+			};
+			std::vector<std::string> have, documented;
+			for (const json::Json &f : ours.items) have.push_back(field(f, "library") + "." + field(f, "name"));
+			for (const json::Json &d : docs.items)
+			{
+				const std::string key = field(d, "library") + "." + field(d, "name");
+				documented.push_back(key);
+				const json::Json *gone = d.find("unavailable");
+				if (std::find(have.begin(), have.end(), key) != have.end() || (gone != nullptr && gone->boolean)) out += field(d, "name") + "\n";
+			}
+			for (const json::Json &f : ours.items)
+				if (std::find(documented.begin(), documented.end(), field(f, "library") + "." + field(f, "name")) == documented.end())
+					out += field(f, "name") + "\n";
+			return out;
+		});
+
 	/* Registered Functions */
 	command("callFunction", "a registered function called, by its id", {"guid"}, [this](const Args &a, std::string &error) -> Value {
 		std::string g;

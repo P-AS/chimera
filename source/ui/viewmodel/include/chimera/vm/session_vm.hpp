@@ -237,6 +237,8 @@ public:
 	 * holds is gone to at once and the rest is played at the machine's own
 	 * speed, every frame drawn, stopping on the frame */
 	Property<bool> turboSeek{false};
+	/* rewind or turbo held */
+	Property<bool> rewinding{false}, turbo{false};
 	/* the machine's drives, for the status bar's lights, as Chimera's: a JSON array
 	 * of {name, on, short, long}, the image in each drive and the one its
 	 * selector is on said shortly (short) and in full (long); [] for none */
@@ -1052,6 +1054,8 @@ private:
 	 * length), and the lag frames counted up to a frame */
 	void updateOverlay(int64_t frame, int64_t changedFrom);
 	int64_t lastInputFor_ = -1, lastInput_ = 0, lagsTo_ = 0, lags_ = 0;
+	/* what a script's emu.setlagcount added to the count, from which frame */
+	int64_t lagOffset_ = 0, lagOffsetFrom_ = INT64_MAX;
 	bool fastHeld_ = false, rewindHeld_ = false;
 	std::vector<Connection> overlayWatches_;
 	uint64_t editRunningM_ = 0;

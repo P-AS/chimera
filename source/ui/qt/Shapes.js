@@ -48,11 +48,37 @@ function draw(ctx, canvas, s, sx, sy, urlOf) {
         else if (s.w >= 0 && s.h >= 0) ctx.drawImage(url, s.x, s.y, s.w, s.h)
         else ctx.drawImage(url, s.x, s.y)
     } else if (s.k === "text") {
-        ctx.font = s.size + "px monospace"
+        // Chimera's text: a font (monospace unless named) and style, the size in
+        // pixels, the point it is put at being its left, centre or right end and its
+        // top, middle or bottom; a background as a box (a picture box's) or as an
+        // outline around the letters (the picture's, gui's)
+        const style = (s.style || "").toLowerCase()
+        // a family the system lacks falls back to monospace, as the canvas refuses a font it cannot find
+        ctx.font = (style === "italic" ? "italic " : "") + (style === "bold" ? "bold " : "") + s.size + "px "
+            + (s.family ? "\"" + s.family + "\", monospace" : "monospace")
         ctx.textBaseline = "top"
-        if (s.back !== "") { ctx.fillStyle = s.back; ctx.fillRect(s.x, s.y, ctx.measureText(s.text).width, s.size) }
+        const w = ctx.measureText(s.text).width, h = Math.ceil(s.size * 1.15)
+        const ha = (s.halign || "").toLowerCase(), va = (s.valign || "").toLowerCase()
+        const x = s.x - (ha === "center" || ha === "middle" ? Math.floor(w / 2) : ha === "right" ? w : 0)
+        const y = s.y - (va === "center" || va === "middle" ? Math.floor(h / 2) : va === "bottom" ? h : 0)
+        if (s.back !== "") {
+            ctx.fillStyle = s.back
+            if (s.outline) {
+                for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) ctx.fillText(s.text, x + dx, y + dy)
+            } else {
+                ctx.fillRect(x, y, w, h)
+            }
+        }
         ctx.fillStyle = s.color
-        ctx.fillText(s.text, s.x, s.y)
+        ctx.fillText(s.text, x, y)
+        if (style === "underline" || style === "strikethrough") {
+            const ly = Math.round(y + (style === "underline" ? s.size : s.size * 0.55)) + 0.5
+            ctx.beginPath()
+            ctx.moveTo(x, ly)
+            ctx.lineTo(x + w, ly)
+            ctx.strokeStyle = s.color
+            ctx.stroke()
+        }
     }
 }
 

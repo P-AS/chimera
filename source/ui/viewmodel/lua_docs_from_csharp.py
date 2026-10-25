@@ -35,7 +35,20 @@ def sources(root):
 
 
 def read_string(text, i):
-    """A C# string literal at text[i] (regular or verbatim): its value and where it ends."""
+    """A C# string literal at text[i] (regular, verbatim or raw): its value and where it ends."""
+    if text.startswith('"""', i):
+        # a raw string: its lines between the quotes, without the line breaks
+        # after the opening quotes and before the closing ones, and each line
+        # without the closing line's indentation, as C# reads one
+        j = text.index('"""', i + 3)
+        lines = text[i + 3:j].replace("\r", "").split("\n")
+        if len(lines) > 1 and lines[0].strip() == "":
+            lines = lines[1:]
+        indent = ""
+        if len(lines) > 1 and lines[-1].strip() == "":
+            indent = lines[-1]
+            lines = lines[:-1]
+        return "\n".join(l[len(indent):] if l.startswith(indent) else l.lstrip() for l in lines), j + 3
     if text.startswith('@"', i):
         j, out = i + 2, []
         while j < len(text):
@@ -194,23 +207,80 @@ def parameter_list(params):
     return "(" + ", ".join(out) + ")"
 
 
+def without_comments(text):
+    """The C# text without its comments and its # lines, its string literals
+    untouched: a comment inside an attribute or before a signature hid the
+    function from this reader (client.setwindowsize, gui.createcanvas,
+    forms.textbox, tastudio.getmarker, mainmemory.getname)."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if text.startswith('"""', i):
+            j = text.find('"""', i + 3)
+            j = n if j < 0 else j + 3
+            out.append(text[i:j])
+            i = j
+            continue
+        if text.startswith('@"', i) or text.startswith('$@"', i) or text.startswith('@$"', i):
+            k = text.index('"', i) + 1
+            while k < n:
+                if text[k] == '"':
+                    if text.startswith('""', k):
+                        k += 2
+                        continue
+                    k += 1
+                    break
+                k += 1
+            out.append(text[i:k])
+            i = k
+            continue
+        if c in "\"'":
+            k = i + 1
+            while k < n and text[k] != c:
+                k += 2 if text[k] == "\\" else 1
+            out.append(text[i:k + 1])
+            i = k + 1
+            continue
+        if text.startswith("//", i):
+            k = text.find("\n", i)
+            i = n if k < 0 else k
+            continue
+        if text.startswith("/*", i):
+            k = text.find("*/", i + 2)
+            out.append(" ")
+            i = n if k < 0 else k + 2
+            continue
+        if c == "#" and text[text.rfind("\n", 0, i) + 1:i].strip() == "":
+            k = text.find("\n", i)
+            i = n if k < 0 else k
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def functions(path):
     with open(path, encoding="utf-8-sig") as f:
-        text = f.read()
+        text = without_comments(f.read())
     m = re.search(r'public\s+override\s+string\s+Name\s*=>\s*"([^"]*)"', text)
     cls = re.search(r"(?:public|internal)\s+(?:sealed\s+|static\s+|partial\s+)*class\s+([A-Za-z0-9_]+)", text)
     library = m.group(1) if m else (cls.group(1) if cls else os.path.basename(path)[:-3])
     out = []
+    # where the last function's signature ended: the attributes of the next are after it
+    previous = 0
     for at in [x.start() for x in re.finditer(r"\[LuaMethod\(", text)]:
         name, description = (attribute_strings(text, text.index("(", at))[0] + ["", ""])[:2]
-        # the attributes above it, back to the previous member
-        before = text[max(0, text.rfind(";", 0, at), text.rfind("}", 0, at)):at]
+        # the attributes above it, back to the previous function's signature
+        # (an example holds ';' and '}' of its own, so those cannot say where
+        # they begin; that function's body has no attributes)
+        before = text[previous:at]
         after_start = text.index("]", attribute_strings(text, text.index("(", at))[1]) + 1
         # the attributes after it, and the method's signature
         sig = re.compile(r"\s*(?:\[[^\]]*\]\s*)*public\s+(?:static\s+|virtual\s+|override\s+|new\s+)*([A-Za-z0-9_<>\[\]?.,\s]+?)\s+([A-Za-z0-9_]+)\s*\(")
         s = sig.match(text, after_start)
         if not s:
             continue
+        previous = s.end()
         between = text[after_start:s.start(1)]
         attrs = before + between
         example = ""

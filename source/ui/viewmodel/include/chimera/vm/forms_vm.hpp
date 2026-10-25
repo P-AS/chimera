@@ -30,6 +30,10 @@ public:
 		/* a picture box: what is drawn on it (the gui library's shapes, JSON) and its colour behind them */
 		std::string shapes = "[]", background = "#FFFFFFFF";
 		int64_t mouseX = 0, mouseY = 0;
+		/* a picture box asked to be saved as a picture: the file, and a count
+		 * that goes up with each ask (the window saves what it drew) */
+		std::string saveTo;
+		int64_t saves = 0;
 	};
 
 	/* a button clicked (any control the script gave a click to), a form closed */
@@ -41,7 +45,7 @@ private:
 	public:
 		Rows(FormsViewModel &vm, bool forms) : vm_(vm), forms_(forms) {}
 		int64_t rowCount() const override;
-		int32_t columnCount() const override { return 19; }
+		int32_t columnCount() const override { return 21; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 

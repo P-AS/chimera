@@ -7,7 +7,11 @@
  * {"luaConsole": {"save": true, "top": false, "float": false, "x": 10,
  * "y": 20, "w": 760, "h": 460}}. */
 
+#include <cstdint>
+#include <functional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "chimera/vm/view_model.hpp"
 
@@ -26,6 +30,16 @@ public:
 
 	/* a tool's option ("save", "top", "float"), as it is or by default */
 	bool option(const std::string &tool, const std::string &name) const;
+
+	/* What only the window can do or say, for scripts (Chimera's client
+	 * library), given by the program: a screenshot to a file ("" for the
+	 * usual name and folder), the picture to the clipboard, the window sized
+	 * again to its scale, the main window's place on the screen, and the tool
+	 * windows open, by Chimera's names for its tools (luaconsole, tastudio) */
+	std::function<void(const std::string &path)> screenshot;
+	std::function<void()> screenshotToClipboard, resizeWindow;
+	std::function<std::pair<int64_t, int64_t>()> windowPosition;
+	std::function<std::vector<std::string>()> openTools;
 };
 
 } // namespace chimera::vm

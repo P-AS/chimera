@@ -40,6 +40,11 @@ public:
 	/* whether the edits made from now on count as rerecords (off for the
 	 * rest of a stroke after its first cell) */
 	void countRerecords(bool on);
+	/* whether the movie counts rerecords at all (Chimera's movie
+	 * IsCountingRerecords, a script's movie.setrerecordcounting): on for each
+	 * machine bound */
+	void setCountingRerecords(bool on);
+	bool countingRerecords() const;
 
 	size_t axisCount() const;
 	/* out gets axisCount() values, neutral past the end */
@@ -68,6 +73,8 @@ public:
 private:
 	mutable std::shared_mutex m_;
 	ce_session *s_ = nullptr;
+	/* what countRerecords last asked, and the movie's own switch over it */
+	bool strokeCounts_ = true, movieCounts_ = true;
 	/* a frame each: 1 lag, 0 not, kNotRun never run (put in since) */
 	static constexpr uint8_t kNotRun = 2;
 	std::vector<uint8_t> lags_;

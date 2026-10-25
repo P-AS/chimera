@@ -457,8 +457,9 @@ void luaConsole()
 			!onframeend->find("unavailable")->boolean);
 		const json::Json *range = find("memory", "readbyterange");
 		CHECK(range != nullptr && range->find("deprecated")->boolean && range->find("returns")->text == "nluatable0Indexed");
+		/* a canvas's functions, which no global table holds, are listed as here */
 		const json::Json *canvas = find("LuaCanvas", "DrawText");
-		CHECK(canvas != nullptr && canvas->find("unavailable")->boolean);
+		CHECK(canvas != nullptr && !canvas->find("unavailable")->boolean);
 		/* one Chimera does not document is the prototype's own */
 		const std::string mixed = LuaConsoleViewModel::functionsList(R"x([{"library": "extra", "name": "thing", "params": "a, b"}])x");
 		const bool own = mixed.find(R"x("library":"extra","name":"thing","params":"(a, b)")x") != std::string::npos ||
@@ -7620,6 +7621,156 @@ bool throttles(const char *package, const char *rom)
 /* Lua's tastudio library on a project: queued edits applied together,
  * markers by text and the run's own among them, a branch's text and input,
  * the lag log, and what is not here said so */
+/* The Lua functions Chimera has that the prototype lacked: bizstring on
+ * .NET's terms (UTF-16 positions, encodings by .NET's names), bit's 64-bit
+ * swap, the lag counter and flag set, the movie's header, comments,
+ * subtitles, lines and rerecord counting, the game's database status, and
+ * the client's window and tool calls */
+bool luaParity(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-lua-parity-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
+	PianoRollViewModel roll(d, inputs, session);
+	ProjectDetailsViewModel details(d, session);
+	DisplayViewModel display(d);
+	ToolWindowsViewModel tools(d);
+	GuiOverlayViewModel overlay(d);
+	FormsViewModel forms(d);
+	PathsViewModel paths(d);
+	paths.programFolder.set(dir.string());
+	LuaBridge lua;
+	LuaConsoleViewModel console(d, lua);
+	for (ViewModel *vm : std::initializer_list<ViewModel *>{&session, &roll, &details, &display, &tools, &overlay, &forms, &paths, &console}) lua.add(*vm);
+	std::string shot = "(none)";
+	tools.screenshot = [&shot](const std::string &path) { shot = path; };
+	tools.windowPosition = [] { return std::pair<int64_t, int64_t>{-7, 42}; };
+	tools.openTools = [] { return std::vector<std::string>{"tastudio", "luaconsole"}; };
+	int resized = 0;
+	tools.resizeWindow = [&resized] { resized++; };
+	std::string results, error;
+	auto lua1 = [&](const std::string &code) {
+		results.clear();
+		if (!console.runForAgent(code, results, error)) return "error: " + error;
+		return results;
+	};
+	/* bizstring, before any machine */
+	CHECK(lua1("bizstring.hex(10), bizstring.hex(255), bizstring.hex(-1)") == "[\"0A\", \"FF\", \"FFFFFFFFFFFFFFFF\"]");
+	CHECK(lua1("bizstring.binary(5), bizstring.binary(0), bizstring.octal(8), bizstring.octal(7)") == "[\"101\", \"\", \"10\", \"07\"]");
+	CHECK(lua1("bizstring.pad_start('7', 3, '0'), bizstring.pad_end('ab', 4, ''), bizstring.trim('  x y \\t'), bizstring.trim('')") ==
+		"[\"007\", \"ab  \", \"x y\", null]");
+	CHECK(lua1("bizstring.replace('a.b.c', '.', '-'), bizstring.toupper('abc\u{e9}'), bizstring.tolower('\u{c0}B')") ==
+		"[\"a-b-c\", \"ABC\u00C9\", \"\u00E0b\"]" || lua1("bizstring.toupper('abc\u{e9}')") == "[\"ABC\xC3\x89\"]");
+	/* positions in UTF-16 units: こんにちは is five */
+	CHECK(lua1("bizstring.substring('\u{3053}\u{3093}\u{306B}\u{3061}\u{306F}', 1, 2), bizstring.remove('hello', 1, 3)") ==
+		"[\"\xE3\x82\x93\xE3\x81\xAB\", \"ho\"]");
+	CHECK(lua1("bizstring.contains('hello', 'ell'), bizstring.startswith('hello', 'he'), bizstring.endswith('hello', 'lo'), bizstring.endswith('', '')") ==
+		"[true, true, true, false]");
+	CHECK(lua1("bizstring.split('a,,b,c', ','), bizstring.split('a b', '  '), bizstring.fold('abcdefg', 3, '|')") ==
+		"[[\"a\", \"b\", \"c\"], [\"a b\"], \"abc|def|g\"]");
+	CHECK(lua1("bizstring.encode('\u{e9}'), bizstring.encode('A', 'utf-16'), bizstring.encode('\u{3042}', 'shift_jis')") == "[[195, 169], [65, 0], [130, 160]]");
+	CHECK(lua1("bizstring.decode({0x82, 0xA0}, 'shift_jis') == '\u{3042}', bizstring.decode({104, 105})") == "[true, \"hi\"]");
+	CHECK(lua1("bizstring.substring('abc', 2, 5)").rfind("error: ", 0) == 0);
+	CHECK(lua1("bizstring.encode('x', 'no-such-encoding')").find("not a supported encoding") != std::string::npos);
+	CHECK(lua1("bit.byteswap_64(0x0102030405060708) == 0x0807060504030201") == "[true]");
+	/* code ending in a bracket (the closing brackets around it once closed early) */
+	CHECK(lua1("({5, 6})[2]") == "[6]");
+	/* the client's: the engine's name, the functions, the window */
+	CHECK(lua1("client.get_lua_engine(), client.gettargetscanlineintensity()") == "[\"NLua+Lua\", 0]");
+	CHECK(lua1("string.find(client.getluafunctionslist(), '\\ngetluafunctionslist\\n') ~= nil") == "[true]");
+	CHECK(lua1("client.xpos(), client.ypos(), client.getavailabletools()[0], client.getavailabletools()[1]") == "[-7, 42, \"tastudio\", \"luaconsole\"]");
+	CHECK(lua1("client.screenshot('x.png') client.screenshot()") == "[]" && shot.empty());
+	CHECK(lua1("client.bufferwidth(), client.bufferheight()") == "[256, 192]");
+	/* gui.createcanvas: a form of its own, "LuaCanvas", with one picture box the size asked for */
+	CHECK(lua1("canvas = gui.createcanvas(120, 60) canvas.Clear(0xFF102030) canvas.DrawText(5, 6, 'hi', nil, nil, 10, 'Arial', 'bold', 'center', 'bottom') "
+		"canvas.Refresh() return canvas.GetMouseX(), canvas.GetMouseY()") == "[0, 0]");
+	{
+		RowModel &formRows = *forms.rowLists()[0].model;
+		RowModel &controls = *forms.rowLists()[1].model;
+		std::string title, kind, shapes;
+		int64_t w = 0, h = 0;
+		fromValue(formRows.cell(formRows.rowCount() - 1, 3), title);
+		fromValue(controls.cell(controls.rowCount() - 1, 2), kind);
+		fromValue(controls.cell(controls.rowCount() - 1, 6), w);
+		fromValue(controls.cell(controls.rowCount() - 1, 7), h);
+		fromValue(controls.cell(controls.rowCount() - 1, 15), shapes);
+		CHECK(title == "LuaCanvas" && kind == "picturebox" && w == 120 && h == 60);
+		/* its text as Chimera's picture box writes it: black, on the half-black box, the font and alignment named */
+		CHECK(shapes.find("\"text\":\"hi\"") != std::string::npos && shapes.find("\"color\":\"#FF000000\"") != std::string::npos &&
+			shapes.find("\"back\":\"#80000000\"") != std::string::npos && shapes.find("\"family\":\"Arial\"") != std::string::npos &&
+			shapes.find("\"halign\":\"center\"") != std::string::npos && shapes.find("outline") == std::string::npos);
+		CHECK(lua1("canvas.SetTitle('Mine') canvas.save_image_to_disk('canvas.png')") == "[]");
+		std::string saveTo;
+		fromValue(formRows.cell(formRows.rowCount() - 1, 3), title);
+		fromValue(controls.cell(controls.rowCount() - 1, 19), saveTo);
+		CHECK(title == "Mine" && saveTo.size() > 11 && saveTo.substr(saveTo.size() - 11) == "/canvas.png" && saveTo.find("screenshots") != std::string::npos);
+	}
+	/* a game open */
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	session.run("setLag", {int64_t{0}, int64_t{0}}, error);
+	CHECK(lua1("gameinfo.getstatus(), gameinfo.isstatusbad()") == "[\"NotInDatabase\", false]");
+	const std::string size = lua1("client.bufferwidth(), client.bufferheight()");
+	CHECK(size != "[256, 192]" && size.rfind("[", 0) == 0 && size.find("error") == std::string::npos);
+	CHECK(lua1("client.getwindowsize()") == "[2]");
+	CHECK(lua1("client.setwindowsize(3) return client.getwindowsize()") == "[3]" && resized == 1);
+	CHECK(lua1("client.setwindowsize(11) return client.getwindowsize()") == "[3]" && resized == 1);
+	session.holdTurbo(true);
+	CHECK(lua1("client.isturbo(), client.is_rewinding(), client.isseeking()") == "[true, false, false]");
+	session.holdTurbo(false);
+	/* a few frames, then the game as a project */
+	for (int i = 0; i < 6; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 6; }, 20));
+	CHECK(session.run("saveAsProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
+	CHECK(d.until([&] { return session.hasProject.get() && !session.projectPath.get().empty(); }, 20));
+	details.run("reload", {}, error);
+	details.run("setComments", {std::string("first\n\nthird")}, error);
+	details.run("addSubtitle", {int64_t{2}, int64_t{10}, int64_t{20}, int64_t{30}, std::string("#FFFFFFFF"), std::string("hello")}, error);
+	/* the lag count: set, and the frames after add to it */
+	CHECK(lua1("emu.setlagcount(50) return emu.lagcount()") == "[50]");
+	CHECK(lua1("emu.setislagged(true) return emu.islagged(), emu.lagcount()") == "[true, 51]");
+	CHECK(lua1("emu.setislagged(false) return emu.islagged(), emu.lagcount()") == "[false, 50]");
+	/* the movie */
+	CHECK(lua1("movie.startsfromsavestate(), movie.getheader().Platform ~= nil") == "[false, true]");
+	/* a blank line is no comment, as Chimera reads them */
+	CHECK(lua1("local c = movie.getcomments() return c[0], c[1], c[2]") == "[\"first\", \"third\", null]");
+	CHECK(lua1("local s = movie.getsubtitles() return s[0] ~= nil and string.find(s[0], 'hello') ~= nil, s[1]") == "[true, null]");
+	CHECK(lua1("movie.getinputasmnemonic(0), movie.getinputasmnemonic(100000)").rfind("[\"|", 0) == 0);
+	CHECK(lua1("movie.getinputasmnemonic(100000)") == "[\"\"]");
+	CHECK(lua1("movie.getrerecordcounting()") == "[true]");
+	CHECK(lua1("movie.setrerecordcount(77) return movie.getrerecordcount()") == "[77]");
+	CHECK(lua1("movie.setrerecordcounting(false) return movie.getrerecordcounting()") == "[false]");
+	/* not counting: an edit over work done adds none once the machine takes it (it goes back and on) */
+	auto editOverWorkDone = [&] {
+		const int64_t at = session.frame.get();
+		roll.run("toggle", {int64_t{1}, int64_t{0}}, error);
+		session.run("frameAdvance", {}, error);
+		d.until([&] { return session.frame.get() == at + 1; }, 20);
+		d.until([] { return false; }, 0.3);
+	};
+	editOverWorkDone();
+	CHECK(lua1("movie.getrerecordcount()") == "[77]");
+	/* counting again: it adds one */
+	CHECK(lua1("movie.setrerecordcounting(true)") == "[]");
+	editOverWorkDone();
+	CHECK(lua1("movie.getrerecordcount()") == "[78]");
+	/* sleep: the scripts' thread waits */
+	const auto before = std::chrono::steady_clock::now();
+	CHECK(lua1("client.sleep(30) client.exactsleep(20)") == "[]");
+	CHECK(std::chrono::steady_clock::now() - before >= std::chrono::milliseconds(50));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	CHECK(lua1("gameinfo.getstatus()") == "[\"GoodDump\"]");
+	fs::remove_all(dir, ec);
+	return true;
+}
+
 bool luaTastudio(const char *package, const char *rom)
 {
 	namespace fs = std::filesystem;
@@ -8499,6 +8650,7 @@ int main(int argc, char **argv)
 			ranMachine = traceAndRegisters(argv[1], argv[2]) && ranMachine;
 			ranMachine = macroTool(argv[1], argv[2]) && ranMachine;
 			ranMachine = luaLibraries(argv[1], argv[2]) && ranMachine;
+			ranMachine = luaParity(argv[1], argv[2]) && ranMachine;
 			ranMachine = encodeVideo(argv[1], argv[2]) && ranMachine;
 			ranMachine = luaTastudio(argv[1], argv[2]) && ranMachine;
 			ranMachine = throttles(argv[1], argv[2]) && ranMachine;

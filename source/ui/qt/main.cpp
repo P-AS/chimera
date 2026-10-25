@@ -341,6 +341,10 @@ int main(int argc, char **argv)
 	qt::HotkeyRelay relay;
 	/* the main window, once it is made: the screen copied from it */
 	QQuickWindow *mainWindow = nullptr;
+	/* a screenshot to a file ("" for the usual name), and the picture to the
+	 * clipboard: the hotkeys' and the scripts' (client.screenshot) */
+	std::function<void(const QString &)> takeScreenshot;
+	std::function<void()> rawToClipboard;
 	{
 		auto run = [](vm::ViewModel &vm, std::string command, vm::Args args = {}) {
 			std::string e;
@@ -396,22 +400,33 @@ int main(int argc, char **argv)
 			out = QImage(reinterpret_cast<const uchar *>(f.pixels.data()), f.width, f.height, f.width * 4, QImage::Format_RGB32).copy();
 			return true;
 		};
-		hotkeys.add("General", "Screenshot", "F12", [&session, grabShown, saveScreenshot, rawPicture](bool down) {
-			if (!down) return;
+		/* to a file named, as Chimera's TakeScreenshot(path): its folder made,
+		 * a JPEG when it is named .jpg, else a PNG */
+		takeScreenshot = [&session, grabShown, saveScreenshot, rawPicture](const QString &path) {
+			std::function<void(const QImage &)> save = saveScreenshot;
+			if (!path.isEmpty())
+				save = [&session, path](const QImage &picture) {
+					QDir().mkpath(QFileInfo(path).absolutePath());
+					const bool jpeg = QFileInfo(path).suffix().compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0;
+					if (picture.save(path, jpeg ? "JPG" : "PNG")) session.status.set(QFileInfo(path).fileName().toStdString() + " saved.");
+					else session.status.set("No screenshot: " + path.toStdString() + " could not be written");
+				};
 			QImage picture;
-			if (session.captureOsd.get() && grabShown(true, saveScreenshot)) return;
+			if (session.captureOsd.get() && grabShown(true, save)) return;
 			if (!rawPicture(picture))
 			{
 				session.status.set("No screenshot: there is no picture yet");
 				return;
 			}
-			saveScreenshot(picture);
+			save(picture);
+		};
+		hotkeys.add("General", "Screenshot", "F12", [&takeScreenshot](bool down) {
+			if (down) takeScreenshot(QString());
 		});
 		/* the picture as the machine made it (with what is over it, at the
 		 * window's size, when Capture OSD is on), or the picture area as the
 		 * window shows it, to the clipboard, as Chimera's */
-		hotkeys.add("General", "Screen Raw to Clipboard", "", [&session, grabShown, rawPicture](bool down) {
-			if (!down) return;
+		rawToClipboard = [&session, grabShown, rawPicture] {
 			auto done = [&session](const QImage &image) {
 				QGuiApplication::clipboard()->setImage(image);
 				session.status.set("Screenshot (raw) saved to clipboard.");
@@ -419,6 +434,9 @@ int main(int argc, char **argv)
 			QImage picture;
 			if (session.captureOsd.get() && grabShown(true, done)) return;
 			if (rawPicture(picture)) done(picture);
+		};
+		hotkeys.add("General", "Screen Raw to Clipboard", "", [&rawToClipboard](bool down) {
+			if (down) rawToClipboard();
 		});
 		hotkeys.add("General", "Screen Client to Clipboard", "Ctrl+Shift+C", [&session, grabShown](bool down) {
 			if (!down) return;
@@ -1444,6 +1462,22 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())
 		if (auto *tool = window->findChild<QQuickWindow *>(showName)) tool->show();
+	/* what scripts ask of the window (Chimera's client library) */
+	toolWindows.screenshot = [&takeScreenshot](const std::string &path) { takeScreenshot(QString::fromStdString(path)); };
+	toolWindows.screenshotToClipboard = [&rawToClipboard] { rawToClipboard(); };
+	toolWindows.resizeWindow = [window] { QMetaObject::invokeMethod(window, "frameBufferResized", Q_ARG(QVariant, QVariant(true))); };
+	toolWindows.windowPosition = [window] { return std::pair<int64_t, int64_t>{window->x(), window->y()}; };
+	toolWindows.openTools = [window] {
+		/* Chimera's tools, by the names its getavailabletools gives them */
+		static const std::pair<const char *, const char *> tools[] = {{"tastudioWindow", "tastudio"}, {"luaConsoleWindow", "luaconsole"},
+			{"ramWatchWindow", "ramwatch"}, {"ramSearchWindow", "ramsearch"}, {"hexEditorWindow", "hexeditor"},
+			{"traceLoggerWindow", "tracelogger"}, {"debuggerWindow", "genericdebugger"}, {"macroToolWindow", "macroinputtool"},
+			{"surfaceViewerWindow", "surfaceviewer"}, {"logWindow", "logwindow"}};
+		std::vector<std::string> open;
+		for (const auto &[object, name] : tools)
+			if (auto *tool = window->findChild<QQuickWindow *>(QString::fromLatin1(object)); tool != nullptr && tool->isVisible()) open.emplace_back(name);
+		return open;
+	};
 	/* the agent's Lua runs where the person sees it: the Lua Console opened, as a person opens it */
 	mcp.showLuaConsole = [window] {
 		if (auto *tool = window->findChild<QQuickWindow *>(QStringLiteral("luaConsoleWindow")); tool != nullptr && !tool->isVisible()) tool->show();

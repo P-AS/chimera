@@ -1418,7 +1418,8 @@ std::string NewProjectViewModel::clockText(int64_t unixSeconds)
 	const int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
 	const int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100), mp = (5 * doy + 2) / 153;
 	const int64_t d = doy - (153 * mp + 2) / 5 + 1, m = mp < 10 ? mp + 3 : mp - 9, y = yoe + era * 400 + (m <= 2);
-	char out[32];
+	/* room for any six numbers, which the compiler cannot tell are small */
+	char out[128];
 	std::snprintf(out, sizeof out, "%04lld-%02lld-%02lld %02lld:%02lld:%02lld", static_cast<long long>(y), static_cast<long long>(m),
 		static_cast<long long>(d), static_cast<long long>(secs / 3600), static_cast<long long>(secs / 60 % 60), static_cast<long long>(secs % 60));
 	return out;

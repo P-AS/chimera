@@ -102,8 +102,22 @@ void InputLog::neutralAxes(int32_t *out) const
 
 void InputLog::countRerecords(bool on)
 {
+	std::unique_lock lock(m_);
+	strokeCounts_ = on;
+	if (s_ != nullptr) ce_session_rerecord_counting(s_, strokeCounts_ && movieCounts_ ? 1 : 0);
+}
+
+void InputLog::setCountingRerecords(bool on)
+{
+	std::unique_lock lock(m_);
+	movieCounts_ = on;
+	if (s_ != nullptr) ce_session_rerecord_counting(s_, strokeCounts_ && movieCounts_ ? 1 : 0);
+}
+
+bool InputLog::countingRerecords() const
+{
 	std::shared_lock lock(m_);
-	if (s_ != nullptr) ce_session_rerecord_counting(s_, on ? 1 : 0);
+	return movieCounts_;
 }
 
 size_t InputLog::axisCount() const
@@ -189,6 +203,8 @@ void InputLog::bind(ce_session *s)
 {
 	std::unique_lock lock(m_);
 	s_ = s;
+	/* a new movie counts its rerecords, as each of Chimera's does */
+	strokeCounts_ = movieCounts_ = true;
 }
 
 } // namespace chimera::vm

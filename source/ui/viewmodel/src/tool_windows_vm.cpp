@@ -63,6 +63,34 @@ ToolWindowsViewModel::ToolWindowsViewModel(Dispatcher &dispatcher) : ViewModel("
 			exitAsked.set(std::max<int64_t>(0, code));
 			return {};
 		});
+	command("screenshot", "the picture saved as Chimera's Screenshot saves it: to this file, or (\"\") named and placed as "
+		"usual (Chimera's client.screenshot)", {"path"}, [this](const Args &a, std::string &error) -> Value {
+			std::string path;
+			if (!a.empty() && !arg(a, 0, path, error)) return {};
+			if (screenshot) screenshot(path);
+			return {};
+		});
+	command("screenshotToClipboard", "the picture to the clipboard, as Chimera's Screenshot To Clipboard", {},
+		[this](const Args &, std::string &) -> Value {
+			if (screenshotToClipboard) screenshotToClipboard();
+			return {};
+		});
+	command("resizeWindow", "the main window sized again to its system's scale, as a size asked for is (Chimera's "
+		"FrameBufferResized with the resize forced)", {}, [this](const Args &, std::string &) -> Value {
+			if (resizeWindow) resizeWindow();
+			return {};
+		});
+	command("windowPosition", "where the main window sits on the screen: x, a space, y", {}, [this](const Args &, std::string &) -> Value {
+		const auto at = windowPosition ? windowPosition() : std::pair<int64_t, int64_t>{0, 0};
+		return std::to_string(at.first) + " " + std::to_string(at.second);
+	});
+	command("openTools", "the tool windows open, by Chimera's names for its tools (luaconsole, tastudio, ramwatch...), a line each",
+		{}, [this](const Args &, std::string &) -> Value {
+			std::string out;
+			if (openTools)
+				for (const std::string &t : openTools()) out += t + "\n";
+			return out;
+		});
 	expose("settings", "each tool window's options and place, by tool: save (Save Window Position), top (Stay on Top), "
 		"float (Float From Main Window), x, y, w, h", settings, true);
 	command("setOption", "a tool window's option set: \"save\" (Save Window Position), \"top\" (Stay on Top) or \"float\" "

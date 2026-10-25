@@ -286,6 +286,22 @@ FormsViewModel::FormsViewModel(Dispatcher &dispatcher) : ViewModel("forms", disp
 			changed(*item);
 			return {};
 		});
+	command("saveImage", "a picture box's picture saved to a PNG file by the window, as Chimera's LuaCanvas.save_image_to_disk",
+		{"handle", "path"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t h = 0;
+			std::string path;
+			if (!arg(a, 0, h, error) || !arg(a, 1, path, error)) return {};
+			Item *item = find(h);
+			if (item == nullptr || item->kind != "picturebox")
+			{
+				error = "no picture box " + std::to_string(h);
+				return {};
+			}
+			item->saveTo = path;
+			item->saves++;
+			changed(*item);
+			return {};
+		});
 	command("draw", "what a picture box shows (the gui library's shapes, JSON) and its colour behind them", {"handle", "shapes", "background"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t h = 0;
@@ -395,8 +411,8 @@ const FormsViewModel::Item &FormsViewModel::Rows::at(int64_t row) const
 std::string FormsViewModel::Rows::columnName(int32_t column) const
 {
 	static const char *const names[] = {"handle", "form", "kind", "text", "x", "y", "width", "height", "checked", "items", "selected",
-		"multiline", "fixedWidth", "visible", "enabled", "shapes", "background", "boxType", "scrollBars"};
-	return column >= 0 && column < 19 ? names[column] : "";
+		"multiline", "fixedWidth", "visible", "enabled", "shapes", "background", "boxType", "scrollBars", "saveTo", "saves"};
+	return column >= 0 && column < 21 ? names[column] : "";
 }
 
 Value FormsViewModel::Rows::cell(int64_t row, int32_t column) const
@@ -424,6 +440,8 @@ Value FormsViewModel::Rows::cell(int64_t row, int32_t column) const
 	case 16: return i.background;
 	case 17: return i.boxType;
 	case 18: return i.scrollBars;
+	case 19: return i.saveTo;
+	case 20: return i.saves;
 	default: return {};
 	}
 }

@@ -159,6 +159,35 @@ function bit.set(a, pos) return a | (1 << pos) end
 function bit.clear(a, pos) return a & ~(1 << pos) end
 function bit.byteswap_16(a) return ((a & 0xFF) << 8) | ((a >> 8) & 0xFF) end
 function bit.byteswap_32(a) return string.unpack("<I4", string.pack(">I4", a & 0xFFFFFFFF)) end
+function bit.byteswap_64(a) return string.unpack("<i8", string.pack(">i8", math.tointeger(a) or 0)) end
+
+-- bizstring: Chimera's string methods, on .NET's terms: positions, lengths
+-- and widths in UTF-16 units, encodings by .NET's names (lua_strings.cpp)
+bizstring = {}
+local function wholeNumber(n) return math.tointeger(n) or math.floor(tonumber(n) + 0.5) end
+function bizstring.decode(bytes, encoding) return __chimera_string("decode", bytes, encoding or "utf-8") end
+function bizstring.encode(str, encoding) return __chimera_string("encode", str, encoding or "utf-8") end
+-- at least two digits, as Chimera's
+function bizstring.hex(num)
+	local h = string.format("%X", wholeNumber(num))
+	if #h == 1 then h = "0" .. h end
+	return h
+end
+-- no leading zeros: "" for 0, as Chimera's
+function bizstring.binary(num)
+	local n, bits = wholeNumber(num), {}
+	for i = 63, 0, -1 do bits[#bits + 1] = (n >> i) & 1 == 1 and "1" or "0" end
+	return (string.gsub(table.concat(bits), "^0+", ""))
+end
+function bizstring.octal(num)
+	local o = string.format("%o", wholeNumber(num))
+	if #o == 1 then o = "0" .. o end
+	return o
+end
+for _, name in ipairs({"fold", "pad_end", "pad_start", "trim", "replace", "toupper", "tolower", "substring", "remove",
+		"contains", "startswith", "endswith", "split"}) do
+	bizstring[name] = function(...) return __chimera_string(name, ...) end
+end
 
 -- emu ----------------------------------------------------------------------
 emu = {}
@@ -177,6 +206,9 @@ end
 function emu.framecount() return C.session.frame end
 function emu.lagcount() return C.session.lagCount end
 function emu.islagged() return C.session.lagFrame end
+-- the frame just run was a lag frame or not (true when not said), as its row in TAStudio says
+function emu.setislagged(value) C.session.setIsLagged(value == nil or value and true or false) end
+function emu.setlagcount(count) C.session.setLagCount(wholeNumber(count)) end
 function emu.getsystemid() return C.session.systemName end
 function emu.getcorename() return C.session.coreName end
 function emu.getboardname() return "" end
@@ -662,6 +694,41 @@ function movie.getfps() return C.session.fps end
 function movie.save(path) if path and path ~= "" then C.session.saveProject(path) else C.session.saveProject() end end
 function movie.play_from_start() if C.session.projectPath ~= "" then C.session.openProject(C.session.projectPath) end end
 function movie.stop() C.session.stopMovie() end
+-- a project of Chimera's starts from the machine switched on, unless its header says otherwise
+function movie.startsfromsavestate()
+	if not C.session.hasProject then return false end
+	local value = movie.getheader().StartsFromSavestate
+	return value ~= nil and (value == "1" or string.lower(value) == "true")
+end
+function movie.getinputasmnemonic(frame) return C.session.movieLine(math.tointeger(frame) or 0) end
+function movie.getrerecordcounting() return C.session.countingRerecords() end
+function movie.setrerecordcounting(counting) C.session.setCountingRerecords(counting and true or false) end
+function movie.setrerecordcount(count) if C.session.hasProject then C.session.setRerecords(wholeNumber(count)) end end
+function movie.getheader()
+	local out = {}
+	for _, line in ipairs(lines(C.projectDetails.headerEntries())) do
+		local key, value = string.match(line, "^([^\t]*)\t(.*)$")
+		if key then out[key] = value end
+	end
+	return out
+end
+-- numbered from 0, as Chimera's
+local function zeroBased(list)
+	local out = {}
+	for i, v in ipairs(list) do out[i - 1] = v end
+	return out
+end
+function movie.getcomments()
+	if not C.session.hasProject then return {} end
+	local list = {}
+	for line in string.gmatch(C.projectDetails.comments .. "\n", "(.-)\n") do list[#list + 1] = line end
+	if list[#list] == "" then list[#list] = nil end
+	return zeroBased(list)
+end
+function movie.getsubtitles()
+	if not C.session.hasProject then return {} end
+	return zeroBased(lines(C.projectDetails.subtitleLines()))
+end
 function movie.getinput(frame, controller)
 	local pressed, values, out = {}, {}, {}
 	for _, line in ipairs(lines(C.session.movieInput(frame))) do
@@ -683,8 +750,10 @@ function client.pause() C.session.pause() end
 function client.unpause() C.session.play() end
 function client.togglepause() if C.session.running then C.session.pause() else C.session.play() end end
 function client.ispaused() return not C.session.running end
-function client.isturbo() return false end
-function client.isseeking() return false end
+function client.isturbo() return C.session.turbo end
+-- TAStudio playing to a frame
+function client.isseeking() return C.session.seekingTo >= 0 end
+function client.is_rewinding() return C.session.rewinding end
 function client.speedmode(percent) C.session.speedPercent = percent end
 function client.reboot_core() C.session.restart() end
 function client.closerom() C.session.close() end
@@ -713,6 +782,44 @@ function client.encodevideo(path, from, to, command)
 	return tostring(err)
 end
 function client.encodingvideo() return C.encoder.phase == "encoding" end
+function client.pause_av() C.encoder.pauseAv(true) end
+function client.unpause_av() C.encoder.pauseAv(false) end
+-- the name Chimera's Lua gives its engine, kept as it is: scripts tell Chimera's Lua apart by it
+function client.get_lua_engine() return "NLua+Lua" end
+function client.getluafunctionslist() return C.luaConsole.functionNames() end
+-- Chimera's scanline filter is gone: 0, and setting it says so where Chimera says it (its standard output)
+function client.gettargetscanlineintensity() return 0 end
+function client.settargetscanlineintensity(value)
+	io.stdout:write("SetTargetScanlineIntensity is a no-op: the scanline display filter was removed from Chimera\n")
+	io.stdout:flush()
+end
+-- the picture the machine draws
+local function videoSize() local w, h = string.match(C.session.videoSize(), "^(%d+) (%d+)$") return math.tointeger(tonumber(w)), math.tointeger(tonumber(h)) end
+function client.bufferwidth() local w = videoSize() return w end
+function client.bufferheight() local _, h = videoSize() return h end
+-- the window: its scale for the system open, and where it sits
+function client.getwindowsize() return C.display.scaleFor(C.session.systemId) end
+function client.setwindowsize(size)
+	local n = math.tointeger(tonumber(size))
+	if n == nil or n < 1 or n > 10 then print("Invalid window size") return end
+	C.display.setScaleFor(C.session.systemId, n)
+	C.toolWindows.resizeWindow()
+	C.gui.addMessage("Window size set to " .. n .. "x")
+end
+function client.xpos() return math.tointeger(tonumber(string.match(C.toolWindows.windowPosition(), "^(%-?%d+)"))) end
+function client.ypos() return math.tointeger(tonumber(string.match(C.toolWindows.windowPosition(), " (%-?%d+)$"))) end
+function client.openhexeditor() C.toolWindows.show("hex") end
+function client.openramwatch() C.toolWindows.show("ram-watch") end
+function client.openramsearch() C.toolWindows.show("ram-search") end
+-- the tool windows open, by Chimera's names for its tools, numbered from 0
+function client.getavailabletools() return zeroBased(lines(C.toolWindows.openTools())) end
+-- Screenshot (to a file when one is named) and Screenshot To Clipboard, with Capture OSD as it is set
+function client.screenshot(path) C.toolWindows.screenshot(path == nil and "" or tostring(path)) end
+function client.screenshottoclipboard() C.toolWindows.screenshotToClipboard() end
+function client.setscreenshotosd(value) C.session.captureOsd = value and true or false end
+-- the scripts' thread waits (and the machine with it), as Chimera's
+function client.sleep(ms) __chimera_sleep(math.tointeger(tonumber(ms)) or 0, false) end
+function client.exactsleep(ms) __chimera_sleep(math.tointeger(tonumber(ms)) or 0, true) end
 
 -- gameinfo -----------------------------------------------------------------
 gameinfo = {}
@@ -721,6 +828,10 @@ function gameinfo.getromhash() return "" end
 function gameinfo.indatabase() return false end
 function gameinfo.getboardtype() return "" end
 function gameinfo.getoptions() return {} end
+-- Chimera has no game database: a game is "NotInDatabase", and with none
+-- open its empty machine's is a good dump
+function gameinfo.getstatus() return C.session.isOpen and "NotInDatabase" or "GoodDump" end
+function gameinfo.isstatusbad() return false end
 
 -- gui: drawn over the picture, in the machine's pixels; a frame's drawings
 -- go when the next frame begins, so a script draws each frame, as Chimera's
@@ -790,8 +901,11 @@ function gui.drawImageRegion(path, sx, sy, sw, sh, x, y, w, h)
 	add({k = "image", file = fileOf(path), sx = sx, sy = sy, sw = sw, sh = sh, x = x, y = y, w = w or sw, h = h or sh, epoch = imageEpoch})
 end
 function gui.drawPixel(x, y, c) add({k = "rect", x = x, y = y, w = 1, h = 1, line = "", fill = colour(c, foreground)}) end
-function gui.drawString(x, y, text, fore, back, size)
-	add({k = "text", x = x, y = y, text = tostring(text), color = colour(fore, foreground), back = colour(back, textBackground), size = size or 12})
+-- Chimera's: its font (monospace unless named) and style, which end of the
+-- text is at x and y, and a background drawn as an outline around the letters
+function gui.drawString(x, y, text, fore, back, size, family, style, halign, valign)
+	add({k = "text", x = x, y = y, text = tostring(text), color = colour(fore, foreground), back = colour(back, background), size = size or 12,
+		family = family, style = style, halign = halign, valign = valign, outline = true})
 end
 gui.drawText = gui.drawString
 function gui.pixelText(x, y, text, fore, back)
@@ -966,7 +1080,8 @@ function forms.openfile() error("forms.openfile: not here yet") end
 -- a picture box: drawn on as gui draws over the picture, shown on refresh
 function forms.pictureBox(form, x, y, width, height)
 	local box = C.forms.pictureBox(form, x, y, width, height)
-	if box ~= 0 then boxes[box] = {shapes = {}, background = "", fore = "#FF000000", back = "", textBack = ""} end
+	-- Chimera's picture box: black lines, no fill, text on a half-black box
+	if box ~= 0 then boxes[box] = {shapes = {}, background = "", fore = "#FF000000", back = "", textBack = "#80000000"} end
 	return box
 end
 local function boxOf(handle)
@@ -1020,9 +1135,12 @@ end
 function forms.drawArc(handle, x, y, w, h, start, sweep, line)
 	put(handle, {k = "pie", arc = true, x = x, y = y, w = w, h = h, start = start, sweep = sweep, line = colour(line, boxOf(handle).fore), fill = ""})
 end
-function forms.drawString(handle, x, y, text, fore, back, size)
+-- as Chimera's picture box draws text: black unless a colour is given, on a
+-- box of the text background; its font, style and alignment as gui's
+function forms.drawString(handle, x, y, text, fore, back, size, family, style, halign, valign)
 	local b = boxOf(handle)
-	put(handle, {k = "text", x = x, y = y, text = tostring(text), color = colour(fore, b.fore), back = colour(back, b.textBack), size = size or 12})
+	put(handle, {k = "text", x = x, y = y, text = tostring(text), color = colour(fore, "#FF000000"), back = colour(back, b.textBack), size = size or 12,
+		family = family, style = style, halign = halign, valign = valign})
 end
 forms.drawText = forms.drawString
 function forms.drawImage(handle, path, x, y, w, h)
@@ -1035,6 +1153,58 @@ end
 function forms.clearImageCache() imageEpoch = imageEpoch + 1 end
 function forms.getMouseX(handle) return C.forms.mouseX(handle) end
 function forms.getMouseY(handle) return C.forms.mouseY(handle) end
+
+-- gui.createcanvas: Chimera's LuaCanvas, a window of the script's own holding
+-- one picture box the size asked for, "LuaCanvas" until it is named; its
+-- functions are called with a dot (canvas.DrawText(...)), as Chimera's are
+local function canvasOf(form, box)
+	local c = {}
+	function c.SetTitle(title) forms.settext(form, title) end
+	function c.SetLocation(left, top) forms.setlocation(form, left, top) end
+	function c.Clear(color) forms.clear(box, color) end
+	function c.Refresh() forms.refresh(box) end
+	function c.SetDefaultForegroundColor(color) forms.setDefaultForegroundColor(box, color) end
+	function c.SetDefaultBackgroundColor(color) forms.setDefaultBackgroundColor(box, color) end
+	function c.SetDefaultTextBackground(color) forms.setDefaultTextBackground(box, color) end
+	function c.DrawBezier(points, color) forms.drawBezier(box, points, color) end
+	function c.DrawBox(x1, y1, x2, y2, line, background) forms.drawBox(box, x1, y1, x2, y2, line, background) end
+	function c.DrawEllipse(ex, ey, w, h, line, background) forms.drawEllipse(box, ex, ey, w, h, line, background) end
+	function c.DrawIcon(path, ix, iy, w, h) forms.drawIcon(box, path, ix, iy, w, h) end
+	function c.DrawImage(path, ix, iy, w, h, cache) forms.drawImage(box, path, ix, iy, w, h, cache) end
+	function c.ClearImageCache() forms.clearImageCache(box) end
+	function c.DrawImageRegion(path, sx, sy, sw, sh, dx, dy, dw, dh) forms.drawImageRegion(box, path, sx, sy, sw, sh, dx, dy, dw, dh) end
+	function c.DrawLine(x1, y1, x2, y2, color) forms.drawLine(box, x1, y1, x2, y2, color) end
+	function c.DrawAxis(ax, ay, size, color) forms.drawAxis(box, ax, ay, size, color) end
+	function c.DrawArc(ax, ay, w, h, start, sweep, line) forms.drawArc(box, ax, ay, w, h, start, sweep, line) end
+	function c.DrawPie(px, py, w, h, start, sweep, line, background) forms.drawPie(box, px, py, w, h, start, sweep, line, background) end
+	function c.DrawPixel(px, py, color) forms.drawPixel(box, px, py, color) end
+	function c.DrawPolygon(points, px, py, line, background) forms.drawPolygon(box, points, px, py, line, background) end
+	function c.DrawRectangle(rx, ry, w, h, line, background) forms.drawRectangle(box, rx, ry, w, h, line, background) end
+	function c.DrawText(tx, ty, message, fore, back, size, family, style, halign, valign)
+		forms.drawText(box, tx, ty, message, fore, back, size, family, style, halign, valign)
+	end
+	c.DrawString = c.DrawText
+	function c.GetMouseX() return forms.getMouseX(box) end
+	function c.GetMouseY() return forms.getMouseY(box) end
+	-- a relative path is in the system's Screenshots folder, as Chimera's
+	function c.save_image_to_disk(path)
+		path = tostring(path)
+		if not (string.match(path, "^/") or string.match(path, "^%a:[/\\]") or string.match(path, "^\\\\")) then
+			local folder = C.paths.resolveFor(C.session.systemId, "Screenshots")
+			-- no system open: a system's own default, under the base
+			if folder == "" then folder = C.paths.absolute("./screenshots", "") end
+			path = folder .. "/" .. path
+		end
+		C.forms.saveImage(box, path)
+	end
+	return c
+end
+function gui.createcanvas(width, height, x, y)
+	local form = forms.newform(width, height, "LuaCanvas")
+	local box = forms.pictureBox(form, 0, 0, width, height)
+	if x ~= nil then forms.setlocation(form, x, y or 0) end
+	return canvasOf(form, box)
+end
 
 -- tastudio's callbacks into the roll's drawing: a cell's colour and text,
 -- the first answer of those registered winning, as Chimera's; and a
@@ -1146,12 +1316,16 @@ function __chimera_functions_list()
 		if type(name) == "string" and type(lib) == "table" and not skip[name] and not name:find("^__") then libs[#libs + 1] = name end
 	end
 	table.sort(libs)
+	-- a canvas's functions, as Chimera documents them: the library LuaCanvas
+	local tables = {LuaCanvas = canvasOf(0, 0)}
+	libs[#libs + 1] = "LuaCanvas"
 	for _, lib in ipairs(libs) do
 		local names = {}
-		for k, v in pairs(_G[lib]) do if type(k) == "string" and type(v) == "function" then names[#names + 1] = k end end
+		local t = tables[lib] or _G[lib]
+		for k, v in pairs(t) do if type(k) == "string" and type(v) == "function" then names[#names + 1] = k end end
 		table.sort(names, function(a, b) return a:lower() < b:lower() end)
 		for _, n in ipairs(names) do
-			local fn = _G[lib][n]
+			local fn = t[n]
 			local info = debug.getinfo(fn, "u")
 			local params = {}
 			for i = 1, info.nparams do params[#params + 1] = debug.getlocal(fn, i) end
