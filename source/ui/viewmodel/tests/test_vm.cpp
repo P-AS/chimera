@@ -6857,6 +6857,53 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	ce_gl_request(0);
+	/* File > Project Settings (Chimera issue 370): the open project's settings
+	 * and clock changed; the machine starts again with them at frame 0, and
+	 * the project, unsaved, writes them */
+	{
+		SettingsViewModel projectSettings(d, session);
+		CHECK(session.run("openProject", {boardA.string()}, error).has_value());
+		CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == boardA.string() && projectSettings.shown.get() > 0; }, 60));
+		RowModel *rows = nullptr;
+		for (const auto &r : projectSettings.rowLists())
+			if (r.name == "settings") rows = r.model;
+		CHECK(rows != nullptr);
+		auto rowOf = [&](const std::string &name) {
+			for (int64_t i = 0; rows != nullptr && i < rows->rowCount(); i++)
+			{
+				const Value cell = rows->cell(i, SettingsViewModel::kName);
+				if (const std::string *n = std::get_if<std::string>(&cell); n != nullptr && *n == name) return i;
+			}
+			return int64_t{-1};
+		};
+		/* the renderer is there; the machine, which goes with the files, is not */
+		CHECK(rowOf("renderer") >= 0 && rowOf("initFillByte") >= 0 && rowOf("board") < 0);
+		CHECK(!projectSettings.changed.get() && !projectSettings.canRestart.get() && projectSettings.restartNote.get() == "Nothing is changed yet.");
+		/* the value it has, typed back, is no change */
+		const Value fill = rows->cell(rowOf("initFillByte"), SettingsViewModel::kValue);
+		CHECK(projectSettings.run("set", {std::string("initFillByte"), fill}, error).has_value() && !projectSettings.changed.get());
+		CHECK(projectSettings.run("set", {std::string("initFillByte"), int64_t{3}}, error).has_value() && projectSettings.canRestart.get());
+		projectSettings.clockStart.set("not a date");
+		CHECK(!projectSettings.canRestart.get() && projectSettings.restartNote.get().rfind("The clock's start reads", 0) == 0);
+		projectSettings.clockStart.set("2001-02-03 04:05:06");
+		CHECK(projectSettings.canRestart.get());
+		for (int i = 0; i < 3; i++) session.run("frameAdvance", {}, error);
+		CHECK(d.until([&] { return session.frame.get() == 3; }, 20));
+		CHECK(projectSettings.run("restartWith", {}, error).has_value());
+		CHECK(d.until([&] { return session.isOpen.get() && session.frame.get() == 0 && !projectSettings.changed.get() &&
+			projectSettings.clockStart.get() == "2001-02-03 04:05:06"; }, 60));
+		CHECK(session.unsaved.get() && std::get<int64_t>(rows->cell(rowOf("initFillByte"), SettingsViewModel::kValue)) == 3);
+		const fs::path boardSet = dir / "boardset.chimeraProject";
+		CHECK(session.run("saveProject", {boardSet.string()}, error).has_value());
+		CHECK(d.until([&] { return session.projectPath.get() == boardSet.string() && !session.unsaved.get(); }, 20));
+		CHECK(std::regex_search(readFile(boardSet), std::regex("\"initFillByte\"\\s*:\\s*3")));
+		CHECK(std::regex_search(readFile(boardSet), std::regex("\"clockStart\"\\s*:\\s*\"2001-02-03T04:05:06Z\"")));
+		/* board A the last project opened again, for what follows */
+		CHECK(session.run("openProject", {boardA.string()}, error).has_value());
+		CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == boardA.string(); }, 60));
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	}
 	/* opened again on that project's answers, whatever the form held since:
 	 * its core, machine, files and settings - its own, so the suggestion is
 	 * not put over them - and its firmware found where it was chosen */

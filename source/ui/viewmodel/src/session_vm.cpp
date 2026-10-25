@@ -2065,6 +2065,42 @@ void SessionViewModel::changeSettings(std::string json, std::function<void(bool,
 	});
 }
 
+void SessionViewModel::changeProjectSettings(std::string json, int64_t clockStart, std::function<void(bool)> done)
+{
+	submit([this, json, clockStart, done] {
+		if (projectM_ == nullptr || s_ == nullptr)
+		{
+			later([done] { done(false); });
+			return;
+		}
+		const std::string before = settingsOnMachine();
+		const int64_t clockBefore = clockOnMachine();
+		auto boot = [this](const std::string &settings, int64_t clock) {
+			const char *error = nullptr;
+			if (ce_project_set_settings_text(projectM_, settings.c_str(), &error) != 0 || ce_project_set_clock_start(projectM_, clock) != 0)
+				return false;
+			/* as Reboot Core in a project: opened again as it is in memory */
+			runningM_ = false;
+			later([this] { running.set(false); });
+			openProjectOnMachine(projectPathM_, package_, true, projectM_);
+			return s_ != nullptr && projectM_ != nullptr;
+		};
+		const bool ok = boot(json, clockStart);
+		if (!ok && projectM_ != nullptr) boot(before, clockBefore);
+		/* changed, the project is unsaved: a save writes what it now boots with */
+		later([this, done, ok] {
+			if (ok) markChanged();
+			done(ok);
+		});
+	});
+}
+
+int64_t SessionViewModel::clockOnMachine() const
+{
+	const int64_t clock = projectM_ != nullptr ? ce_project_clock_start(projectM_) : -1;
+	return clock < 0 ? CE_CLOCK_START_DEFAULT : clock;
+}
+
 void SessionViewModel::setMarkers(std::vector<Marker> markers)
 {
 	submit([this, markers = std::move(markers)] {

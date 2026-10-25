@@ -623,6 +623,14 @@ public:
 	std::string packageOnMachine() const { return package_; }
 	std::string slotsOnMachine() const;
 	void changeSettings(std::string json, std::function<void(bool, std::string)> done);
+	/* The open project's settings and the start of its machine's clock, changed
+	 * (Chimera's File > Project Settings, issue 370): they become the project's,
+	 * and the machine starts again with them at frame 0, the inputs kept; a
+	 * greenzone kept with the old ones is not used. When it does not start, the
+	 * old ones are put back and it starts with those; done(false) then. */
+	void changeProjectSettings(std::string json, int64_t clockStart, std::function<void(bool)> done);
+	/* the machine's thread: the start of the open project's clock */
+	int64_t clockOnMachine() const;
 
 private:
 	using Clock = std::chrono::steady_clock;

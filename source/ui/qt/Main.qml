@@ -45,6 +45,8 @@ ApplicationWindow {
     required property QtObject firmware
     required property QtObject configFiles
     required property QtObject dataFolder
+    // the machine's settings, for File > Project Settings
+    required property QtObject settings
     required property QtObject precompiled
     required property QtObject traceLogger
     // "debugger" is a word of JavaScript's own
@@ -310,6 +312,8 @@ ApplicationWindow {
                 Action { text: qsTr("&Save Project"); icon.source: "qrc:/chimera/menu/SaveProject.png"; shortcut: "Ctrl+S"; enabled: root.session.hasProject; onTriggered: root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject") }
                 Action { text: qsTr("Save Project &As..."); icon.source: "qrc:/chimera/menu/SaveProjectAs.png"; shortcut: "Ctrl+Shift+S"; enabled: root.session.hasProject; onTriggered: saveAsDialog.open() }
                 Action { text: qsTr("Save Project &Backup"); icon.source: "qrc:/chimera/menu/SaveProjectBackup.png"; enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveBackup") }
+                // the open project's settings, changed: its machine starts again with them (issue 370)
+                Action { text: qsTr("Project Se&ttings..."); icon.source: "qrc:/chimera/menu/Customize.png"; enabled: root.session.hasProject && root.session.isOpen; onTriggered: { projectSettingsWindow.show(); projectSettingsWindow.raise() } }
                 Action { id: closeAction; property string hotkey: "Close ROM"; text: qsTr("&Close Project"); icon.source: "qrc:/chimera/menu/CloseProject.png"; enabled: root.session.closeEnabled; onTriggered: root.leaveProject(() => root.session.run("close")) }
                 MenuDivider {}
                 Action {
@@ -1468,6 +1472,7 @@ ApplicationWindow {
     ReportIssue { id: reportIssueWindow; vm: root.help; clipboard: root.clipboard; pictureFiles: root.pictureFiles; folderOf: root.folderOf; gameRunning: root.session.isOpen; mainWindow: root; visible: false }
     PathsConfig { id: pathsWindow; vm: root.paths; session: root.session; mainWindow: root; themeColor: root.osdColor; visible: false }
     FirmwareConfig { id: firmwareWindow; vm: root.firmware; folderOf: root.folderOf; themeColor: root.osdColor; visible: false }
+    ProjectSettings { id: projectSettingsWindow; vm: root.settings; themeColor: root.osdColor; mainWindow: root; visible: false }
     DataFolderConfig { id: dataFolderWindow; vm: root.dataFolder; themeColor: root.osdColor; mainWindow: root; visible: false }
     PrecompiledModules { id: precompiledWindow; vm: root.precompiled; themeColor: root.osdColor; visible: false }
     TraceLogger {

@@ -827,6 +827,7 @@ int main(int argc, char **argv)
 		ce_sha1_keep_in(hashes.string().c_str());
 	}
 	qt::QmlViewModel dataFolderQml(dataFolder);
+	qt::QmlViewModel settingsQml(settings);
 	/* what cores compiled for a game, kept between sessions (CHIMERA_QT_COMPILE_CACHE for a test) */
 	session.compileCacheRoot.set(qEnvironmentVariableIsSet("CHIMERA_QT_COMPILE_CACHE") ? qEnvironmentVariable("CHIMERA_QT_COMPILE_CACHE").toStdString()
 																						  : (std::filesystem::path(dataHome) / "cache" / "precompiled").string());
@@ -1228,6 +1229,7 @@ int main(int argc, char **argv)
 		{QStringLiteral("firmware"), QVariant::fromValue<QObject *>(&firmwareQml)},
 		{QStringLiteral("configFiles"), QVariant::fromValue<QObject *>(&configFilesQml)},
 		{QStringLiteral("dataFolder"), QVariant::fromValue<QObject *>(&dataFolderQml)},
+		{QStringLiteral("settings"), QVariant::fromValue<QObject *>(&settingsQml)},
 		{QStringLiteral("precompiled"), QVariant::fromValue<QObject *>(&precompiledQml)},
 		{QStringLiteral("traceLogger"), QVariant::fromValue<QObject *>(&traceLoggerQml)},
 		{QStringLiteral("debuggerTool"), QVariant::fromValue<QObject *>(&debuggerQml)},
