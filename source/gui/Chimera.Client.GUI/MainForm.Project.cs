@@ -109,6 +109,73 @@ namespace Chimera.Client.GUI
 			return true;
 		}
 
+		/// <summary>Whether the open project's settings can be changed now (issue #370): a project, its window and its machine.</summary>
+		private bool CanChangeProjectSettings
+			=> _openProject is not null && Tools.IsLoaded<TAStudio>() && Emulator is WaterboxCore
+				&& MovieSession.Movie is ITasMovie tasMovie && tasMovie.IsActive();
+
+		/// <summary>
+		/// The open project's settings, changed after it was made (issue #370, user-decided
+		/// 2026-10-25). The window collects them; a change is structural (docs/project.md,
+		/// Editing), so it is asked about once more and then restarts the machine.
+		/// </summary>
+		private void ProjectSettingsDialog()
+		{
+			if (!CanChangeProjectSettings) return;
+			var core = (WaterboxCore) Emulator;
+			var tasMovie = (ITasMovie) MovieSession.Movie;
+			using ProjectSettingsForm form = new(core.Config, core.GetSettings(), core.GameSettings,
+				ProjectSlotsJson(_openProject), _openProject.ClockStart);
+			if (!this.ShowDialogWithTempMute(form).IsOk() || !form.Changed) return;
+			if (!this.ModalMessageBox2(
+				"Restart the machine with the new settings?\n\n"
+					+ "The greenzone is cleared and the project goes back to frame 0. The inputs are kept"
+					+ " and play again, but with other settings they may not do what they did before.",
+				"Project Settings",
+				EMsgBoxIcon.Question))
+			{
+				return;
+			}
+			if (!ApplyProjectSettings(tasMovie, form.Settings, form.ClockStart))
+			{
+				ShowMessageBox(
+					owner: null,
+					"The machine did not start with the new settings, so the project keeps the settings it had.",
+					"Project Settings");
+			}
+		}
+
+		/// <summary>
+		/// Gives the open project these settings and restarts its machine with them, at frame 0
+		/// with the inputs kept (TasMovie.ChangeSettings). A machine replaced by a reboot takes
+		/// no greenzone with it (TasMovie.MachineIsGoing). When the new settings do not boot,
+		/// the old ones are put back and booted again, and false is answered.
+		/// </summary>
+		private bool ApplyProjectSettings(ITasMovie tasMovie, WaterboxCoreSettings settings, long clockStart)
+		{
+			var settingsBefore = _openProject.SettingsJson;
+			var clockBefore = _openProject.ClockStart;
+			tasMovie.ChangeSettings(Newtonsoft.Json.JsonConvert.SerializeObject(settings.Values ?? new()), clockStart);
+			if (RebootProject(tasMovie)) return true;
+			tasMovie.ChangeSettings(settingsBefore, clockBefore);
+			RebootProject(tasMovie);
+			return false;
+		}
+
+		/// <summary>The project's files by slot, as the engine's settings gate takes them.</summary>
+		private static string ProjectSlotsJson(EngineProject project)
+		{
+			Newtonsoft.Json.Linq.JObject slots = new();
+			for (var i = 0; i < project.FileCount; i++)
+			{
+				var slot = project.FileSlot(i);
+				if (slot is not { Length: > 0 }) continue;
+				if (slots[slot] is not Newtonsoft.Json.Linq.JArray names) slots[slot] = names = new();
+				names.Add(project.FileName(i));
+			}
+			return slots.ToString(Newtonsoft.Json.Formatting.None);
+		}
+
 		/// <summary>
 		/// A project and TAStudio are one thing: the window IS the session, so one is
 		/// open exactly when the other is. This is the single place that ends both,

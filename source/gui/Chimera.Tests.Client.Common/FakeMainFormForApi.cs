@@ -49,7 +49,6 @@ namespace Chimera.Tests.Client.Common
 		public void EnableRewind(bool enabled) => throw new NotImplementedException();
 		public void FrameAdvance(bool discardApiSurfaces = true) => throw new NotImplementedException();
 		public void FrameBufferResized(bool forceWindowResize = false) => throw new NotImplementedException();
-		public void FrameSkipMessage() => throw new NotImplementedException();
 		public int GetApproxFramerate() => throw new NotImplementedException();
 		public bool LoadMovie(string filename, string? archive = null) => throw new NotImplementedException();
 		public void LoadNullRom() => throw new NotImplementedException();

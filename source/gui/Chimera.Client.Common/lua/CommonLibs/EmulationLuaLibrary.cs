@@ -102,11 +102,6 @@ namespace Chimera.Client.Common
 		public void LimitFramerate(bool enabled)
 			=> APIs.Emulation.LimitFramerate(enabled);
 
-		[LuaMethodExample("emu.minimizeframeskip( true );")]
-		[LuaMethod("minimizeframeskip", "Sets the autominimizeframeskip value of the emulator")]
-		public void MinimizeFrameskip(bool enabled)
-			=> APIs.Emulation.MinimizeFrameskip(enabled);
-
 		[LuaMethodExample("emu.setrenderplanes( true, false );")]
 		[LuaMethod("setrenderplanes", "Toggles the drawing of sprites and background planes. Set to false or nil to disable a pane, anything else will draw them")]
 		public void SetRenderPlanes(params bool[] luaParam)

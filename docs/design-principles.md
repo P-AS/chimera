@@ -11024,3 +11024,95 @@ background" alone did nothing unless "Pause when menu activated" was ticked
 too. Tests: GuiOptionsTests (the three are not in the window; no checkbox on a
 tab lands on another control; the window in every theme), each failed once
 with a checkbox put back.
+
+## Frame skip is gone; Turbo's drawing rate is a setting (user-decided, 2026-10-24)
+
+Chimera's Frame Skip (Config > Speed/Skip: Skip 0, Skip 1..9 and
+Auto-minimize skipping, from BizHawk) is gone, with Lua's client.frameskip and
+emu.minimizeframeskip. The owner's words: "a legacy configuration that used to
+make sense for old NES games. The systems we handle no longer can separate
+their rendering from their work." The throttle's automatic skip controller went
+with it; it was also what moved the throttle's timetable after a slow frame
+(issue 346), and nothing moves it now.
+
+One part stays, as a setting. Running unthrottled - Turbo held, or Toggle
+Throttle - drew one frame in three, by the frame skip's own counter. A frame not
+drawn still saves copying the picture back from the graphics card on GPU cores,
+so the owner chose to keep it and make it configurable, one setting for both:
+Config > Speed/Skip > Turbo/Unthrottled Draws, Every Frame or 1 in 2 to 1 in 10,
+1 in 3 at first (Config.UnthrottledDrawOneIn). Fast Forward was never part of
+this: it runs at the alternate speed on the clock and draws every frame. (The
+first question put to the owner said otherwise, and was asked again.)
+
+Tests: ThrottleTests (unthrottled draws one frame in the number chosen, throttled
+running draws every frame, a slow frame leaves the timetable alone); the first
+failed with the unthrottled rule taken out.
+
+## An input line is read from its first bar (2026-10-24)
+
+TAStudio's Copy writes each frame's line after its frame number when "Include
+frame numbers when copying input" is on ("00002 |..U.....|"), and Paste read
+the digits as buttons held. Every reader of a line now reads it from its first
+'|' (MovieController.SetFromMnemonic): whitespace and the digits 0-9 in front
+are dropped, and anything else in front is left for the reader to refuse. So a
+numbered line, one whose number is followed by a tab or by nothing, and an
+indented one paste as the line - and so does such a line given to Lua's
+joypad.setfrommnemonicstr. Paste puts the lines one after another from the
+first frame picked, whatever the numbers say; a line that cannot be read stops
+the paste and leaves the last Copy's record (Reselect Clipboard) as it was. Cut
+writes the frame numbers as Copy does. Found in review of the first fix
+(630186d), which only handled a number followed by spaces, in TAStudio alone.
+Test: MnemonicLineTests (failed with the reader's change taken out).
+
+## A core stuck in its own fault handler is stopped on Windows too (2026-10-24)
+
+On Windows the frame watchdog (the session's timer that stops a core whose
+frame runs past 20 seconds) never stopped Vanquish on RPCS3's Vulkan
+renderer: Chimera hung for 40 minutes, where Linux stopped the same run
+after 20 seconds (issue 363). The core was not working. It looped inside
+its own fault handler, the function a core gives miniBox to hear about
+writes to memory it watches. On Windows miniBox calls that function from
+inside its own exception handler, and a stop from another thread was
+refused while any fault was being handled. Linux runs the core's handler
+after its own has returned, so the stop landed there.
+
+miniBox 7216594 counts the calls into the core's handler, and stops a
+thread that is running the core's code in there: it sends it to a trap that
+leaves every handler at once, as a crash inside the handler already did. A
+death inside the handler also left the count of faults being handled one
+too high, which kept every later stop from landing; it is put back now.
+
+Test: a new check in miniBox's threads test (a guest looping in its own
+fault handler, stopped from another thread twice, then run again after a
+state load) failed on Windows with the previous miniBox ("not stopped after
+200 asks") and passes with this one; it passes on Linux. miniBox's CI runs
+it on its Windows runner from now on.
+
+## An open project's settings can be changed (user-decided, 2026-10-25)
+
+Issue 370: trying a renderer or an anti-aliasing mode on an existing run
+meant a new project for each, because Chimera refused every change of
+settings once a project was open. docs/project.md already described the
+change ("Editing"); nothing offered it.
+
+File > Project Settings opens a window of the machine's settings: the ones
+the New Project wizard shows for the project's files, plus the renderer
+(the wizard asks it on its first page) and the start of the machine's clock.
+The machine itself (the System box of a core with several) is not there,
+because it decides which files the project takes. Restart with these asks
+once more, then the new settings become the project's (what a boot reads)
+and the movie's (what a save writes), and the machine restarts at frame 0
+through the same path as Reboot Core. The inputs are kept; the greenzone
+goes with the old machine, and a greenzone saved with the old settings is
+not used for the new ones (the settings are part of the machine's identity
+the cache is checked against). When the machine does not start with the
+new settings, the old ones are put back and it starts with those again.
+
+Not done: a setting changed at a chosen frame, kept in the movie. That needs
+every core to apply settings while it runs, a declaration no core has.
+
+Tests: ProjectSettingsFormTests (the renderer is shown and the machine is
+not; the project's files decide what is shown; the game's own settings are
+last; a restart is offered only for a change, the clock's start included)
+and TasMovieProjectFormatTests.ChangedSettingsAreTheNextBootsAndTheNextSaves.
+Each failed with its change taken out.

@@ -83,11 +83,6 @@ namespace Chimera.Client.Common
 			_luaLibsImpl.IsRebootingCore = false;
 		}
 
-		[LuaMethodExample("client.frameskip( 8 );")]
-		[LuaMethod("frameskip", "Sets the frame skip value of the client UI (use 0 to disable)")]
-		public void FrameSkip(int numFrames)
-			=> APIs.EmuClient.FrameSkip(numFrames);
-
 		[LuaMethod("get_lua_engine", "returns the name of the Lua engine currently in use")]
 		public string GetLuaEngine()
 			=> "NLua+Lua";

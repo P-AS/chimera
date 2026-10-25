@@ -36,8 +36,6 @@ namespace Chimera.Client.Common
 		/// </summary>
 		void DoFrameAdvanceAndUnpause();
 
-		void FrameSkip(int numFrames);
-
 		/// <returns>the (host) framerate, approximated from frame durations</returns>
 		int GetApproxFramerate();
 

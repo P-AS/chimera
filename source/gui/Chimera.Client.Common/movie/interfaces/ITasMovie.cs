@@ -99,6 +99,13 @@ namespace Chimera.Client.Common
 
 		/// <summary>The movie holds work its project file does not: it was opened from recovered work (ProjectRecovery).</summary>
 		void MarkRecovered();
+
+		/// <summary>
+		/// The machine's settings changed in an open project (issue #370): <paramref name="flatSettingsJson"/>
+		/// is the name-to-value map, <paramref name="clockStart"/> the second the clock starts at. The next
+		/// boot runs with them and the next save writes them; the inputs are untouched.
+		/// </summary>
+		void ChangeSettings(string flatSettingsJson, long clockStart);
 		/// <summary>
 		/// Saves inputs, markers, branches and settings with no state history - and removes the one an
 		/// earlier save left - for a greenzone nobody should trust (a machine that died mid-frame).

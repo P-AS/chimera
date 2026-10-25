@@ -78,9 +78,6 @@ namespace Chimera.Client.Common
 		void FrameBufferResized(bool forceWindowResize = false);
 
 		/// <remarks>only referenced from <see cref="EmuClientApi"/></remarks>
-		void FrameSkipMessage();
-
-		/// <remarks>only referenced from <see cref="EmuClientApi"/></remarks>
 		int GetApproxFramerate();
 
 		/// <summary>

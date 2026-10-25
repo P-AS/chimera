@@ -87,18 +87,6 @@ namespace Chimera.Client.Common
 			Unpause();
 		}
 
-		public void FrameSkip(int numFrames)
-		{
-			if (numFrames < 0)
-			{
-				_logCallback("Invalid frame skip value");
-				return;
-			}
-
-			_config.FrameSkip = numFrames;
-			_mainForm.FrameSkipMessage();
-		}
-
 		public int GetApproxFramerate() => _mainForm.GetApproxFramerate();
 
 		public bool GetSoundOn() => _config.SoundEnabled;

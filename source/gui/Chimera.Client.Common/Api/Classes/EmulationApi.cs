@@ -171,8 +171,6 @@ namespace Chimera.Client.Common
 
 		public void LimitFramerate(bool enabled) => _config.ClockThrottle = enabled;
 
-		public void MinimizeFrameskip(bool enabled) => _config.AutoMinimizeSkipping = enabled;
-
 		public string GetDisplayType() => (RegionableCore?.Region)?.ToString() ?? "";
 
 		public string GetBoardName() => BoardInfo?.BoardName ?? "";
