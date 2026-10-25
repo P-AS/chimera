@@ -84,6 +84,9 @@ public:
 	/* Chimera's User Prescale (1 to 16) and Auto Prescale (DisplayFit) */
 	Property<int64_t> prescale{1};
 	Property<bool> autoPrescale{false};
+	/* Chimera's Scale OSD text with system scale: off, what is drawn over the
+	 * picture keeps its size at 100% on a scaled screen */
+	Property<bool> scaleOsd{true};
 	/* the window's place and size kept for the next start, and what was kept ("x,y,w,h") */
 	Property<bool> saveWindowPosition{false};
 	Property<std::string> windowGeometry;

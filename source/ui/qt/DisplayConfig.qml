@@ -6,9 +6,8 @@
 // Its boxes are a copy: OK keeps them, Cancel lets them go. Layout and
 // bindings only, over the display view model and the session's switches.
 //
-// Not here: Scale OSD text with system scale
-// (Qt scales the whole window with the screen), the snowy null core (the
-// prototype shows Chimera's mark instead), and Windows fullscreen hacks.
+// Not here: the snowy null core (the prototype shows Chimera's mark
+// instead), and Windows fullscreen hacks.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -26,7 +25,7 @@ ApplicationWindow {
     transientParent: win.mainWindow
 
     // the display view model's settings the window shows, and the session's two
-    readonly property var vmNames: ["finalFilter", "prescale", "autoPrescale", "letterbox", "integerScale", "aspectMode", "customWidth", "customHeight", "ratioX",
+    readonly property var vmNames: ["finalFilter", "prescale", "autoPrescale", "scaleOsd", "letterbox", "integerScale", "aspectMode", "customWidth", "customHeight", "ratioX",
         "ratioY", "cropLeft", "cropTop", "cropRight", "cropBottom", "minimalDisplay", "staticWindowTitles", "titleSuffix", "captionWindowed",
         "menuWindowed", "frameWindowed", "saveWindowPosition", "stayOnTop", "mouseCaptureForcesTop", "menuFullscreen", "statusBarFullscreen",
         "autohideMouseFullscreen", "allowDoubleClickFullscreen"]
@@ -166,6 +165,7 @@ ApplicationWindow {
                                 }
                             }
                         }
+                        Box { setting: "scaleOsd"; text: qsTr("Scale OSD text with system scale") }
                     }
                 }
                 // Misc

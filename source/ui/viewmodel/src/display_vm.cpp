@@ -134,6 +134,8 @@ DisplayViewModel::DisplayViewModel(Dispatcher &dispatcher) : ViewModel("display"
 		"is drawn", prescale, true);
 	expose("autoPrescale", "Chimera's Auto Prescale: with smoothing, the picture first grown by the largest whole steps "
 		"that fit where it is drawn", autoPrescale, true);
+	expose("scaleOsd", "Chimera's Scale OSD text with system scale: off, what is drawn over the picture keeps its size at "
+		"100% on a scaled screen", scaleOsd, true);
 	for (auto &[name, p] : std::initializer_list<std::pair<const char *, Property<int64_t> *>>{{"padLeft", &padLeft}, {"padTop", &padTop},
 			 {"padRight", &padRight}, {"padBottom", &padBottom}, {"clientLeft", &clientLeft}, {"clientTop", &clientTop},
 			 {"clientRight", &clientRight}, {"clientBottom", &clientBottom}})

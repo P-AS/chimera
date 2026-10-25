@@ -117,15 +117,18 @@ ApplicationWindow {
     readonly property color osdMovieInputColor: root.messageColor(root.messages.movieInputColor, "#FF808080", "OsdMovieInput")
     // where each thing over the picture goes: a corner and a distance from it, as Chimera's MessagePosition
     readonly property var osdPositions: JSON.parse(root.messages.positions)
+    // Config > Display's Scale OSD text with system scale: off, what is over
+    // the picture keeps its size at 100% (the screen's pixels), as Chimera's
+    readonly property real osdScale: root.display.scaleOsd || root.Screen.devicePixelRatio <= 0 ? 1 : 1 / root.Screen.devicePixelRatio
     function osdX(name, w) {
         const p = root.osdPositions[name]
         if (!p) return 0
-        return p.anchor === 0 || p.anchor === 2 ? p.x : pictureArea.width - p.x - w
+        return p.anchor === 0 || p.anchor === 2 ? p.x * root.osdScale : pictureArea.width - p.x * root.osdScale - w
     }
     function osdY(name, h) {
         const p = root.osdPositions[name]
         if (!p) return 0
-        return p.anchor < 2 ? p.y : pictureArea.height - p.y - h
+        return p.anchor < 2 ? p.y * root.osdScale : pictureArea.height - p.y * root.osdScale - h
     }
     // Encode Video's Capture OSD: what is over the picture now, as lines of
     // text placed for an area w by h (the encoder paints them over each frame
@@ -1307,7 +1310,7 @@ ApplicationWindow {
             style: Text.Outline
             styleColor: "black"
             font.family: "monospace"
-            font.pixelSize: 12
+            font.pixelSize: 12 * root.osdScale
             x: place === "" ? 0 : root.osdX(place, width)
             y: place === "" ? 0 : root.osdY(place, height)
         }
@@ -1413,12 +1416,12 @@ ApplicationWindow {
                 delegate: Text {
                     required property string modelData
                     text: modelData
-                    height: 14
+                    height: 14 * root.osdScale
                     color: "white"
                     style: Text.Outline
                     styleColor: "black"
                     font.family: "monospace"
-                    font.pixelSize: 12
+                    font.pixelSize: 12 * root.osdScale
                 }
             }
         }
