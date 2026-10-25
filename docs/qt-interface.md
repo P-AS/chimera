@@ -145,7 +145,12 @@ code is in `source/ui`; how it is built and run is in
   into another's place, Edit Marker Frame, Turbo seek (off at first: a seek
   past the greenzone plays there at the machine's own speed, as Chimera's),
   and the status line (what was said, a seek's progress, the frames picked,
-  states held and frames copied).
+  states held and frames copied). The main window's status bar is Chimera's:
+  icons for the movie (played back or recorded), paused or playing to a
+  frame, a video being made, each drive's light with the image in it (cut
+  in the middle, as Chimera's), frozen addresses, the sound and the key
+  priority (each a click to change), then the core's name; what the session
+  says, errors too, goes over the picture as Chimera's messages.
 - **Qt is patched where it faults** (owner, 2026-10-24): fixes to Qt go in
   tools/qt-patches and tools/build-qt-windows.sh applies them as it unpacks
   the source. The first: a Qt thread that ended after its data was let go

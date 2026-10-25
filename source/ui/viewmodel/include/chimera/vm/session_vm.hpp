@@ -235,6 +235,15 @@ public:
 	 * holds is gone to at once and the rest is played at the machine's own
 	 * speed, every frame drawn, stopping on the frame */
 	Property<bool> turboSeek{false};
+	/* the machine's drives, for the status bar's lights, as Chimera's: a JSON array
+	 * of {name, on, short, long}, the image in each drive and the one its
+	 * selector is on said shortly (short) and in full (long); [] for none */
+	Property<std::string> drives{"[]"};
+	/* what the status bar says of a drive that swaps, by Chimera's DriveMediaText:
+	 * shortly ("1/2 Disc 1.iso | selected 2/2 Disc 2.iso"), and in full, led by the
+	 * drive's name, for its tooltip; inserted -1 is an empty drive */
+	static std::string driveMediaShort(const std::vector<std::string> &names, int32_t selected, int32_t inserted);
+	static std::string driveMediaLong(const std::string &drive, const std::vector<std::string> &names, int32_t selected, int32_t inserted);
 	/* a seek that plays: the frame it goes to (-1 when none is) and where it set off */
 	Property<int64_t> seekingTo{-1};
 	Property<int64_t> seekFrom{-1};
@@ -764,6 +773,9 @@ private:
 	int32_t advanceOnMachine();
 	/* the frame a seek that plays stops on, -1 for none */
 	int64_t pauseOnFrameM_ = -1;
+	/* the drives as last told to the window */
+	std::string drivesSaidM_ = "[]";
+	void drivesOnMachine();
 	std::atomic<bool> turboSeekM_{false};
 	Connection turboSeekWatch_;
 	/* one frame: `live` takes the keys and pads held and plays the sound

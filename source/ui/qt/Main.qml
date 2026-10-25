@@ -1510,44 +1510,100 @@ ApplicationWindow {
         }
     }
 
-    // only while a machine runs: everything in it is about the machine, as Chimera's
-    footer: ToolBar {
-        visible: (root.visibility === Window.FullScreen ? root.display.statusBarFullscreen : root.session.showStatusBar) && root.session.isOpen
+    // Chimera's status bar: icons for what the machine is doing, then the core's name; what is said
+    // goes over the picture as Chimera's messages do. Shown whenever Display Status Bar says so.
+    footer: Rectangle {
+        id: statusBar
+        objectName: "statusBar"
+        visible: root.visibility === Window.FullScreen ? root.display.statusBarFullscreen : root.session.showStatusBar
+        implicitHeight: 22
+        color: palette.window
+        Rectangle { width: parent.width; height: 1; color: palette.mid }
+        component StatusIcon: Image {
+            property string tip: ""
+            signal clicked()
+            Layout.preferredWidth: 16
+            Layout.preferredHeight: 16
+            fillMode: Image.PreserveAspectFit
+            HoverHandler { id: iconHover }
+            TapHandler { onTapped: parent.clicked() }
+            ToolTip.visible: iconHover.hovered && tip !== ""
+            ToolTip.text: tip
+            ToolTip.delay: 500
+        }
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
-            Label { text: root.session.status; elide: Text.ElideRight; Layout.fillWidth: true }
-            Label { text: root.session.gamepads; elide: Text.ElideRight; Layout.maximumWidth: 260 }
-            Label { text: root.session.sound; elide: Text.ElideRight; Layout.maximumWidth: 200 }
-            Label { visible: root.encoder.phase === "encoding"; text: qsTr("Encoding (%1 of %2 frames)").arg(root.encoder.framesDone).arg(root.encoder.frameCount); color: root.osdColor("AccentError", "#b00020") }
-            // Chimera's key priority in the status bar: a click is the next one
-            Label {
-                text: [qsTr("Keys: both"), qsTr("Keys: buttons first"), qsTr("Keys: hotkeys first")][root.hotkeys.keyPriority] || ""
-                ToolTip.visible: keyPriorityArea.containsMouse
-                ToolTip.text: [qsTr("Key priority: Allow both hotkeys and controller buttons"),
-                               qsTr("Key priority: Controller buttons will override hotkeys"),
-                               qsTr("Key priority: Hotkeys will override controller buttons")][root.hotkeys.keyPriority] || ""
-                MouseArea { id: keyPriorityArea; anchors.fill: parent; hoverEnabled: true; onClicked: root.hotkeys.run("cycleKeyPriority") }
+            anchors.leftMargin: 6
+            anchors.rightMargin: 6
+            spacing: 4
+            // the movie: played back, or recorded
+            StatusIcon {
+                objectName: "movieStatus"
+                visible: root.session.hasProject && root.session.isOpen
+                source: root.session.recordingMode ? "qrc:/chimera/status/Record.png" : "qrc:/chimera/status/Play.png"
+                tip: root.session.recordingMode ? qsTr("Movie is in record mode") : qsTr("Movie is in playback mode")
             }
-            // Chimera's freeze icon: some address is frozen
-            Image {
-                source: "qrc:/chimera/icons/Freeze.png"
+            // paused, or playing to a frame; a click pauses or plays
+            StatusIcon {
+                objectName: "pauseStatus"
+                readonly property bool seeking: root.session.seekingTo >= 0
+                visible: root.session.isOpen && (!root.session.running || seeking)
+                source: seeking ? "qrc:/chimera/status/Seeking.png" : "qrc:/chimera/status/Pause.png"
+                tip: seeking ? qsTr("Emulator is playing to frame %1 click to stop seek").arg(root.session.seekingTo) : qsTr("Emulator Paused")
+                onClicked: root.session.run(root.session.running ? "pause" : "play")
+            }
+            // a video being made
+            StatusIcon {
+                visible: root.encoder.phase === "encoding"
+                source: "qrc:/chimera/status/Capture.png"
+                tip: qsTr("A/V capture in progress")
+            }
+            // a light for each drive, with what is in it
+            Repeater {
+                model: root.session.isOpen ? JSON.parse(root.session.drives) : []
+                delegate: RowLayout {
+                    required property var modelData
+                    spacing: 2
+                    StatusIcon { source: modelData.on ? "qrc:/chimera/status/LightOn.png" : "qrc:/chimera/status/LightOff.png"; tip: modelData.long }
+                    Label { visible: modelData.short !== ""; text: modelData.short }
+                }
+            }
+            // some address is frozen
+            StatusIcon {
                 visible: root.session.frozenCount > 0
-                Layout.preferredWidth: 16; Layout.preferredHeight: 16
-                HoverHandler { id: frozenHover }
-                ToolTip.visible: frozenHover.hovered
-                ToolTip.text: qsTr("Addresses are currently frozen")
+                source: "qrc:/chimera/status/Frozen.png"
+                tip: qsTr("Addresses are currently frozen")
             }
-            Label { text: root.session.error !== "" ? root.session.error : root.pianoRoll.error; color: root.osdColor("AccentError", "#b00020") }
+            // the sound: a click turns it on or off
+            StatusIcon {
+                objectName: "soundStatus"
+                source: root.session.soundOn ? "qrc:/chimera/status/Sound.png" : "qrc:/chimera/status/Muted.png"
+                tip: root.session.soundOn ? qsTr("Core is producing audio, live playback at %1% volume").arg(root.session.volume) : qsTr("Core is not producing audio")
+                onClicked: root.session.soundOn = !root.session.soundOn
+            }
+            // the key priority: a click is the next one
+            StatusIcon {
+                objectName: "keyPriorityStatus"
+                source: ["qrc:/chimera/status/KeysBoth.png", "qrc:/chimera/status/KeysButtons.png", "qrc:/chimera/status/KeysHotkeys.png"][root.hotkeys.keyPriority] || ""
+                tip: [qsTr("Key priority: Allow both hotkeys and controller buttons"),
+                      qsTr("Key priority: Controller buttons will override hotkeys"),
+                      qsTr("Key priority: Hotkeys will override controller buttons")][root.hotkeys.keyPriority] || ""
+                onClicked: root.hotkeys.run("cycleKeyPriority")
+            }
+            // the core running
             Label {
-                text: qsTr("Frame %1 of %2").arg(Number(root.pianoRoll.currentFrame).toLocaleString(Qt.locale(), "f", 0))
-                                            .arg(Number(root.pianoRoll.frameCount).toLocaleString(Qt.locale(), "f", 0))
+                objectName: "coreNameStatus"
+                visible: root.session.isOpen
+                text: root.session.coreName
+                HoverHandler { id: coreHover }
+                ToolTip.visible: coreHover.hovered
+                ToolTip.text: qsTr("(ported) ")
+                ToolTip.delay: 500
             }
-            Label { text: qsTr("%1 fps").arg(Number(root.session.fps).toFixed(1)) }
-            Label { text: qsTr("seek %1 frames, %2 ms").arg(root.session.lastSeekFrames).arg(Number(root.session.lastSeekMs).toFixed(0)) }
-            Label { text: qsTr("%1 states").arg(root.session.greenzoneStates) }
-            Label { text: qsTr("%1 rerecords").arg(root.session.rerecords) }
+            Item { Layout.fillWidth: true }
         }
     }
+    // what went wrong is said over the picture, as Chimera's messages say it
+    Connections { target: root.session; function onErrorChanged() { if (root.session.error !== "") root.note(root.session.error) } }
+    Connections { target: root.pianoRoll; function onErrorChanged() { if (root.pianoRoll.error !== "") root.note(root.pianoRoll.error) } }
 }

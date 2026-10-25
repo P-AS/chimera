@@ -680,6 +680,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		"plays there at the machine's own speed", turboSeek, true);
 	expose("seekingTo", "the frame a seek that plays is going to, -1 when none is", seekingTo);
 	expose("seekFrom", "the frame a seek that plays set off from", seekFrom);
+	expose("drives", "the machine's drives for the status bar's lights: [{name, on, short, long}], what is in each and "
+		"what its selector is on", drives);
 	turboSeekWatch_ = turboSeek.changed.connect([this] { turboSeekM_.store(turboSeek.get()); });
 	expose("recordingMode", "TAStudio's recording mode: each frame played with the person's input becomes what is held; "
 		"off, the movie is played as it is", recordingMode, true);
@@ -4995,9 +4997,76 @@ void SessionViewModel::edited(int64_t first)
 	});
 }
 
+/* Chimera's DriveMediaText: an image's name cut in the middle, keeping its end
+ * (the disks of one game differ at the end), the image in a drive and the one
+ * its selector is on said once when they are the same */
+static std::string driveFit(std::string name, size_t room)
+{
+	const size_t slash = name.find_last_of("/\\");
+	if (slash != std::string::npos && slash + 1 < name.size()) name = name.substr(slash + 1);
+	if (name.size() <= room || room < 8) return name;
+	const size_t tail = room * 2 / 3;
+	return name.substr(0, room - tail - 2) + ".." + name.substr(name.size() - tail);
+}
+
+static std::string driveEntry(const std::vector<std::string> &names, int32_t index, size_t room)
+{
+	if (index < 0 || index >= static_cast<int32_t>(names.size())) return "?";
+	return std::to_string(index + 1) + "/" + std::to_string(names.size()) + " " + driveFit(names[static_cast<size_t>(index)], room);
+}
+
+std::string SessionViewModel::driveMediaShort(const std::vector<std::string> &names, int32_t selected, int32_t inserted)
+{
+	const std::string in = inserted >= 0 ? driveEntry(names, inserted, 28) : "empty";
+	return inserted == selected ? in : in + " | selected " + driveEntry(names, selected, 28);
+}
+
+std::string SessionViewModel::driveMediaLong(const std::string &drive, const std::vector<std::string> &names, int32_t selected, int32_t inserted)
+{
+	const std::string in = inserted >= 0 ? "in the drive: " + driveEntry(names, inserted, std::string::npos) : "the drive is empty";
+	return inserted == selected ? drive + " - " + in : drive + " - " + in + "; selected, not inserted: " + driveEntry(names, selected, std::string::npos);
+}
+
+void SessionViewModel::drivesOnMachine()
+{
+	json::Json out;
+	out.kind = json::Json::Kind::Array;
+	const int32_t count = s_ != nullptr ? ce_session_drive_count(s_) : 0;
+	for (int32_t i = 0; i < count; i++)
+	{
+		const char *n = ce_session_drive_name(s_, i);
+		const std::string name = n != nullptr ? n : "";
+		std::string shortText, longText = name;
+		if (const int32_t media = ce_session_drive_media_count(s_, i); media > 0)
+		{
+			std::vector<std::string> names;
+			for (int32_t m = 0; m < media; m++)
+			{
+				const char *mn = ce_session_drive_media_name(s_, i, m);
+				names.emplace_back(mn != nullptr ? mn : "");
+			}
+			const int32_t selected = ce_session_drive_media_selected(s_, i), inserted = ce_session_drive_media_inserted(s_, i);
+			shortText = driveMediaShort(names, selected, inserted);
+			longText = driveMediaLong(name, names, selected, inserted);
+		}
+		json::Json d;
+		d.kind = json::Json::Kind::Object;
+		d.members.emplace_back("name", json::Json::string(name));
+		d.members.emplace_back("on", json::Json::boolean_(ce_session_drive_light(s_, i) != 0));
+		d.members.emplace_back("short", json::Json::string(shortText));
+		d.members.emplace_back("long", json::Json::string(longText));
+		out.items.push_back(std::move(d));
+	}
+	std::string text = json::write(out);
+	if (text == drivesSaidM_) return;
+	drivesSaidM_ = text;
+	later([this, text] { drives.set(text); });
+}
+
 void SessionViewModel::report(int64_t cf, int64_t cl, int64_t af, int64_t al, double fpsNow)
 {
 	bool post = false;
+	drivesOnMachine();
 	/* the game's own timer, when shown */
 	int64_t gameMs = -1;
 	if (s_ != nullptr && gameTimerM_ && showGameTimeM_.load())

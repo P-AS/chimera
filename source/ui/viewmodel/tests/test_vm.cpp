@@ -22,6 +22,7 @@
 #include <utility>
 #include <mutex>
 #include <regex>
+#include <set>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -8131,6 +8132,35 @@ bool tastudioPanel(const char *package, const char *rom)
 	return failures == before;
 }
 
+/* what the status bar says beside a drive that swaps, as Chimera's
+ * DriveMediaTextTests have it */
+void driveMediaText()
+{
+	const std::vector<std::string> two{"Disc 1.iso", "Disc 2.iso"};
+	CHECK(SessionViewModel::driveMediaShort(two, 0, 0) == "1/2 Disc 1.iso");
+	CHECK(SessionViewModel::driveMediaShort(two, 1, 0) == "1/2 Disc 1.iso | selected 2/2 Disc 2.iso");
+	CHECK(SessionViewModel::driveMediaLong("CD-ROM", two, 1, 0) == "CD-ROM - in the drive: 1/2 Disc 1.iso; selected, not inserted: 2/2 Disc 2.iso");
+	CHECK(SessionViewModel::driveMediaShort(two, 1, -1) == "empty | selected 2/2 Disc 2.iso");
+	CHECK(SessionViewModel::driveMediaLong("CD", two, 1, -1).rfind("CD - the drive is empty", 0) == 0);
+	/* long names cut in the middle: four disks of one game still read as four */
+	const std::vector<std::string> hayate{"Zikusousakan Hayate (1994)(Altacia)(Disk 1 of 4)(Disk A).fdi",
+		"Zikusousakan Hayate (1994)(Altacia)(Disk 2 of 4)(Disk B).fdi", "Zikusousakan Hayate (1994)(Altacia)(Disk 3 of 4)(Disk C).fdi",
+		"Zikusousakan Hayate (1994)(Altacia)(Disk 4 of 4)(Disk D).fdi"};
+	std::set<std::string> shown;
+	for (int32_t i = 0; i < 4; i++)
+	{
+		const std::string text = SessionViewModel::driveMediaShort(hayate, i, i);
+		CHECK(text.size() <= 28 + 4);
+		CHECK(text.size() >= 12 && text.compare(text.size() - 12, 12, std::string("(Disk ") + static_cast<char>('A' + i) + ").fdi") == 0);
+		shown.insert(text);
+	}
+	CHECK(shown.size() == 4);
+	CHECK(SessionViewModel::driveMediaLong("Floppy Disk", hayate, 1, 1).find(hayate[1]) != std::string::npos);
+	/* a path is its file's name, and an index outside the list is not a name */
+	CHECK(SessionViewModel::driveMediaShort({"/mnt/discs/game.iso"}, 0, 0) == "1/1 game.iso");
+	CHECK(SessionViewModel::driveMediaShort({"a"}, 7, 7) == "?");
+}
+
 int main(int argc, char **argv)
 {
 	signalsAndProperties();
@@ -8138,6 +8168,7 @@ int main(int argc, char **argv)
 	bindings();
 	lua();
 	frameColumnColours();
+	driveMediaText();
 	luaConsole();
 	toolWindows();
 	configStore();

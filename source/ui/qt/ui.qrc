@@ -96,6 +96,22 @@
     <file alias="icons/ScrollTo.png">../../gui/Chimera.Client.GUI/images/ScrollTo.png</file>
     <file alias="icons/Clock.png">../../gui/Chimera.Client.GUI/images/Clock.png</file>
     <file alias="icons/add.png">../../gui/Chimera.Client.GUI/images/add.png</file>
+    <!-- the main window's status bar, as Chimera's -->
+    <file alias="status/Play.png">../../gui/Chimera.Client.GUI/images/Play.png</file>
+    <file alias="status/Record.png">../../gui/Chimera.Client.GUI/images/RecordHS.png</file>
+    <file alias="status/Pause.png">../../gui/Chimera.Client.GUI/images/Pause.png</file>
+    <file alias="status/Seeking.png">../../gui/Chimera.Client.GUI/images/YellowRight.png</file>
+    <file alias="status/TurboSeeking.png">../../gui/Chimera.Client.GUI/images/Lightning.png</file>
+    <file alias="status/Capture.png">../../gui/Chimera.Client.GUI/images/AVI.png</file>
+    <file alias="status/LightOn.png">../../gui/Chimera.Client.GUI/images/LightOn.png</file>
+    <file alias="status/LightOff.png">../../gui/Chimera.Client.GUI/images/LightOff.png</file>
+    <file alias="status/Frozen.png">../../gui/Chimera.Client.GUI/images/Freeze.png</file>
+    <file alias="status/Sound.png">../../gui/Chimera.Client.GUI/images/AudioHS.png</file>
+    <file alias="status/Muted.png">../../gui/Chimera.Client.GUI/images/AudioMuted.png</file>
+    <file alias="status/KeysBoth.png">../../gui/Chimera.Client.GUI/images/Both.png</file>
+    <file alias="status/KeysButtons.png">../../gui/Chimera.Client.GUI/images/GameController.png</file>
+    <file alias="status/KeysHotkeys.png">../../gui/Chimera.Client.GUI/images/HotKeys.png</file>
+    <file alias="status/Reboot.png">../../gui/Chimera.Client.GUI/images/reboot.png</file>
     <!-- the menus' icons, by the names Chimera's MenuIcons.cs gives them -->
     <file alias="menu/NewProject.png">../../gui/Chimera.Client.GUI/images/NewFile.png</file>
     <file alias="menu/OpenProject.png">../../gui/Chimera.Client.GUI/images/OpenFile.png</file>
