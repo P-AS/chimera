@@ -183,6 +183,7 @@ DataFolderViewModel::DataFolderViewModel(Dispatcher &dispatcher) : ViewModel("da
 	expose("pending", "the data folder asked for, for the next start; \"\" none", pending, true);
 	expose("pendingMove", "what is in the data folder moves with the change", pendingMove, true);
 	expose("standard", "the system's place for the data folder", standard);
+	expose("environment", "CHIMERA_DATA_HOME when it is set: it decides the data folder, and the window changes nothing", environment);
 	expose("status", "what the data folder last had to say", status);
 	expose("figures", "how much is in the folder in use and how much its drive has free (refresh)", figures);
 	command("refresh", "says again how much is in the folder in use and how much its drive has free", {},
@@ -217,6 +218,11 @@ DataFolderViewModel::DataFolderViewModel(Dispatcher &dispatcher) : ViewModel("da
 			bool carry = true;
 			if (!arg(a, 0, folder, error)) return {};
 			if (a.size() > 1 && !arg(a, 1, carry, error)) return {};
+			if (!environment.get().empty())
+			{
+				error = "CHIMERA_DATA_HOME is set, and it decides: unset it to choose here";
+				return {};
+			}
 			const std::string target = folder.empty() ? standard.get() : data_folder::targetFor(folder);
 			switch (data_folder::inspect(inUse(), target))
 			{
@@ -249,11 +255,14 @@ DataFolderViewModel::DataFolderViewModel(Dispatcher &dispatcher) : ViewModel("da
 
 std::string DataFolderViewModel::inUse() const
 {
+	if (!environment.get().empty()) return environment.get();
 	return current.get().empty() ? standard.get() : current.get();
 }
 
 std::string DataFolderViewModel::applyPending()
 {
+	/* the environment decides: a change asked for waits until it does not */
+	if (!environment.get().empty()) return {};
 	const std::string to = pending.get();
 	if (to.empty()) return {};
 	const bool carry = pendingMove.get();

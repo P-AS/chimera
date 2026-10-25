@@ -844,6 +844,9 @@ int main(int argc, char **argv)
 	 * time is carried out now, before anything in it is open */
 	vm::DataFolderViewModel dataFolder(dispatcher);
 	dataFolder.standard.set(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation).toStdString());
+	/* Chimera's CHIMERA_DATA_HOME: when it is set, it decides */
+	if (const QString env = qEnvironmentVariable("CHIMERA_DATA_HOME"); !env.trimmed().isEmpty())
+		dataFolder.environment.set(QFileInfo(env).absoluteFilePath().toStdString());
 	for (const char *name : {"current", "pending", "pendingMove"}) config.keep(dataFolder, name);
 	if (const std::string said = dataFolder.applyPending(); !said.empty()) dataFolder.status.set(said);
 	const std::string dataHome = dataFolder.inUse();
@@ -872,6 +875,15 @@ int main(int argc, char **argv)
 	session.compileCacheRoot.set(qEnvironmentVariableIsSet("CHIMERA_QT_COMPILE_CACHE") ? qEnvironmentVariable("CHIMERA_QT_COMPILE_CACHE").toStdString()
 																						  : (std::filesystem::path(dataHome) / "cache" / "precompiled").string());
 	vm::PrecompiledViewModel precompiled(dispatcher);
+	config.keep(precompiled, "sessionGigabytes");
+	/* the compile step counts a session at what the setting says */
+	auto sessionMemory = [&precompiled, &newProject, &agentProject] {
+		const int64_t gb = std::clamp<int64_t>(precompiled.sessionGigabytes.get(), 1, 256);
+		newProject.compileSessionGigabytes.set(gb);
+		agentProject.compileSessionGigabytes.set(gb);
+	};
+	sessionMemory();
+	vm::Connection sessionMemoryWatch = precompiled.sessionGigabytes.changed.connect(sessionMemory);
 	precompiled.root.set(session.compileCacheRoot.get());
 	vm::Connection precompiledInUse = session.compileCacheDir.changed.connect([&] { precompiled.inUse.set(session.compileCacheDir.get()); });
 	qt::QmlViewModel precompiledQml(precompiled);

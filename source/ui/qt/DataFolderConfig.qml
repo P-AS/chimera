@@ -80,10 +80,11 @@ ApplicationWindow {
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
         }
-        Label { text: (win.vm.current, win.vm.standard, win.vm.run("inUse") || ""); font.bold: true; elide: Text.ElideMiddle; Layout.fillWidth: true; Layout.topMargin: 6 }
+        Label { text: (win.vm.current, win.vm.standard, win.vm.environment, win.vm.run("inUse") || ""); font.bold: true; elide: Text.ElideMiddle; Layout.fillWidth: true; Layout.topMargin: 6 }
         Label { text: win.vm.figures; Layout.fillWidth: true }
         Label {
-            text: win.vm.pending === "" ? ""
+            text: win.vm.environment !== "" ? qsTr("CHIMERA_DATA_HOME is set, and it decides: this is a portable install, or somebody meant it. Unset it to choose here.")
+                : win.vm.pending === "" ? ""
                 : qsTr("At the next start this becomes %1").arg(win.vm.pending) + (win.vm.pendingMove ? qsTr(", and everything here is moved there.") : qsTr(". What is here stays here."))
             color: win.themeColor("AccentWarning", "#b26a00")
             wrapMode: Text.WrapAnywhere
@@ -93,11 +94,11 @@ ApplicationWindow {
         Label { text: win.said; wrapMode: Text.WordWrap; Layout.fillWidth: true; Layout.preferredHeight: 56 }
         Item { Layout.fillHeight: true }
         RowLayout {
-            Button { text: qsTr("Change..."); Layout.preferredWidth: 100; onClicked: folderDialog.open() }
+            Button { text: qsTr("Change..."); Layout.preferredWidth: 100; enabled: win.vm.environment === ""; onClicked: folderDialog.open() }
             Button {
                 text: qsTr("Use Default"); Layout.preferredWidth: 100
-                // only when the directory is, or is to become, one of the person's
-                enabled: (win.vm.pending !== "" ? win.vm.pending : win.vm.current) !== ""
+                // only when the directory is, or is to become, one of the person's, and the environment does not decide
+                enabled: win.vm.environment === "" && (win.vm.pending !== "" ? win.vm.pending : win.vm.current) !== ""
                 onClicked: win.request("")
             }
             Button {

@@ -20,6 +20,9 @@ public:
 	explicit PrecompiledViewModel(Dispatcher &dispatcher);
 
 	Property<std::string> root, inUse, total, status;
+	/* Chimera's "Memory per compile session (GB)": how much memory one compile
+	 * session is counted at, 1 to 256, 8 at first (remembered) */
+	Property<int64_t> sessionGigabytes{8};
 	/* what Chimera's window says over the list */
 	Property<std::string> header;
 	/* a size as Chimera's Pre-Compiled Modules writes one ("1.25 GB", "12.0 MB", "40 KB") */

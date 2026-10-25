@@ -140,6 +140,17 @@ ApplicationWindow {
                 enabled: win.picked !== ""
                 onClicked: Qt.openUrlExternally(localFiles.folderUrl(win.picked))
             }
+            // Chimera's: how much memory one compile session is counted at
+            Label { text: qsTr("&Memory per compile session (GB):"); Layout.leftMargin: 12 }
+            SpinBox {
+                from: 1; to: 256
+                value: win.vm.sessionGigabytes
+                onValueModified: win.vm.sessionGigabytes = value
+                Layout.preferredWidth: 90
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: qsTr("How much memory one compile session is counted at. Chimera runs as many sessions side by side as the computer can give this much each: a smaller figure runs more at once, a larger one fewer. 8 is what one RPCS3 session was measured to need.")
+            }
             Label { text: win.vm.error !== "" ? win.vm.error : win.vm.status; color: win.vm.error !== "" ? win.themeColor("AccentError", "#b00020") : palette.text; Layout.fillWidth: true; elide: Text.ElideRight }
             Button { text: qsTr("&Close"); Layout.preferredWidth: 150; onClicked: win.close() }
         }

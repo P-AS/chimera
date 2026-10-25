@@ -998,6 +998,11 @@ void dataFolder()
 	/* the system's place */
 	CHECK(fromValue(data.run("request", {std::string(), false}, error).value_or(Value()), said) && data.pending.get() == (dir / "standard").string());
 	CHECK(data.applyPending().empty() && data.current.get().empty() && data.inUse() == (dir / "standard").string());
+	/* CHIMERA_DATA_HOME decides, as Chimera's: in use, nothing asked for here, a change waiting not carried out */
+	data.pending.set((dir / "fresh").string());
+	data.environment.set((dir / "portable").string());
+	CHECK(data.inUse() == (dir / "portable").string() && data.applyPending().empty() && data.pending.get() == (dir / "fresh").string());
+	CHECK(!data.run("request", {(dir / "elsewhere").string(), true}, error) && error.find("CHIMERA_DATA_HOME") != std::string::npos);
 	fs::remove_all(dir);
 }
 
@@ -6809,6 +6814,52 @@ bool compileStep(const char *compilePackage, const char *rom)
 	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == made.string(); }, 60));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+#ifndef _WIN32
+	/* Sessions killed for want of memory: half as many, and again, until they
+	 * get through, as Chimera's; one alone killed says so in Chimera's words.
+	 * A stand-in session: killed (137) unless it runs alone, or always. */
+	{
+		const fs::path log = dir / "sessions.log", script = dir / "session.sh";
+		std::ofstream(script) << "#!/bin/sh\n"
+			"spec=; out=; while [ $# -gt 0 ]; do case \"$1\" in --precompile) spec=$2; shift;; --cache-dir) out=$2; shift;; esac; shift; done\n"
+			"echo \"$spec\" >> '" << log.string() << "'\n"
+			"[ -n \"$ALWAYS\" ] && exit 137\n"
+			"[ \"${spec#*/}\" != 1 ] && exit 137\n"
+			"mkdir -p \"$out/synth\"\n"
+			"for i in 0 1 2 3 4 5; do printf 'm%s' $i > \"$out/synth/module$i.bin\"; "
+			"echo \"[cache] stored synth/module$i.bin $(sha1sum \"$out/synth/module$i.bin\" | cut -d' ' -f1)\"; done\n";
+		fs::permissions(script, fs::perms::owner_all);
+		const fs::path other = dir / "other.testrom";
+		{
+			std::ifstream in(rom, std::ios::binary);
+			std::ofstream out(other, std::ios::binary);
+			out << in.rdbuf() << "another game";
+		}
+		wizard.compileRunner.set(script.string());
+		/* counted at 1 GB a session, so a machine of any size runs more than one at first */
+		wizard.compileSessionGigabytes.set(1);
+		CHECK(wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value());
+		CHECK(wizard.run("addFile", {std::string("rom"), other.string()}, error).has_value());
+		CHECK(wizard.compileAsked.get() && !wizard.compileReady.get());
+		CHECK(wizard.run("compile", {}, error).has_value());
+		CHECK(d.until([&] { return !wizard.compiling.get(); }, 60));
+		const std::string specs = readFile(log);
+		CHECK(wizard.compileReady.get() && specs.find("0/1\n") != std::string::npos);
+		const int firstCount = std::atoi(specs.substr(specs.find('/') + 1).c_str());
+		CHECK(firstCount == 1 || specs.find("0/" + std::to_string(std::max(1, firstCount / 2)) + "\n") != std::string::npos);
+		std::printf("compile sessions tried: %s\n", std::regex_replace(specs, std::regex("\n"), " ").c_str());
+		/* killed even alone: the person told what ran out */
+		setenv("ALWAYS", "1", 1);
+		fs::remove_all(dir / "compiled", ec);
+		CHECK(wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value());
+		CHECK(wizard.run("addFile", {std::string("rom"), other.string()}, error).has_value());
+		CHECK(wizard.run("compile", {}, error).has_value());
+		CHECK(d.until([&] { return !wizard.compiling.get(); }, 60));
+		unsetenv("ALWAYS");
+		CHECK(!wizard.compileReady.get() && wizard.compileStatus.get().rfind("The computer ran out of memory while compiling. A compile session "
+			"needs about 1 GB", 0) == 0);
+	}
+#endif
 	fs::remove_all(dir, ec);
 	return true;
 }

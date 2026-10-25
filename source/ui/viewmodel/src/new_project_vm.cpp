@@ -103,9 +103,49 @@ struct NewProjectViewModel::CompileJob
 	std::string runner, dir, romName, romSha1, core, version, slotsFile;
 	std::vector<std::string> args;
 	int workers = 1;
+	/* what one session is counted at (the setting, in bytes; 0 the engine's own figure) */
+	uint64_t sessionBytes = 0;
 	/* stop: asked to stop; ended: the thread has done all it does (the view
 	 * model waits for it before it goes) */
 	std::atomic<bool> stop{false}, ended{false};
+
+	/* what an exit code says of how a session ended, as Chimera's WhyItDied */
+	static std::string whyItDied(int code)
+	{
+		switch (code)
+		{
+		case 137: return "killed by the system (out of memory)";
+		case 139: return "crashed (segmentation fault)";
+		case 134: return "aborted";
+		case 132: return "crashed (illegal instruction)";
+		case -1073741819: return "crashed (access violation)";
+		case -1073741801: return "out of memory";
+		case -1073740791: return "crashed (stack buffer overrun)";
+		case -1073741571: return "crashed (ran out of stack)";
+		case -1073741795: return "crashed (illegal instruction)";
+		case -529697949: return "crashed (an error raised and never caught, as a graphics driver can)";
+		default: return "exit code " + std::to_string(code);
+		}
+	}
+	/* the codes the system gives for running out of memory */
+	static bool diedForWantOfMemory(int code) { return code == 137 || code == -1073741801; }
+	/* Chimera's words when memory ran out: where the disk space went (issue 259) */
+	std::string outOfMemoryMessage(int sessions) const
+	{
+		const double each = static_cast<double>(sessionBytes != 0 ? sessionBytes : ce_compile_session_bytes()) / (1024.0 * 1024 * 1024);
+		char gb[32];
+		std::snprintf(gb, sizeof gb, "%.0f", each);
+		const std::string what = std::string("The computer ran out of memory while compiling. A compile session needs about ") + gb + " GB" +
+			(sessions > 1 ? ", and " + std::to_string(sessions) + " ran at once." : std::string("."));
+#ifdef _WIN32
+		return what + " When Windows runs short of memory it makes its page file bigger, and that file is on the system drive"
+			" (usually C:) wherever Chimera keeps its data, so free space there falls while a compile runs."
+			" Close other programs, or free some space on the system drive, and compile again."
+			" Tools > Pre-Compiled Modules sets how much memory a session is counted at.";
+#else
+		return what + " Close other programs and compile again. Tools > Pre-Compiled Modules sets how much memory a session is counted at.";
+#endif
+	}
 
 	using Post = std::function<void(std::function<void()>)>;
 	void run(const Post &post, std::function<void(const std::string &, const std::string &)> stored,
@@ -115,66 +155,112 @@ struct NewProjectViewModel::CompileJob
 		static const std::regex progressLine(R"(^Precompiled (\d+)/(\d+) modules)");
 		std::mutex m;
 		std::map<std::string, std::string> found;
-		std::vector<uint32_t> done(static_cast<size_t>(workers), 0), total(static_cast<size_t>(workers), 0);
-		std::vector<std::unique_ptr<Subprocess>> sessions;
 		std::string failure;
-		for (int i = 0; i < workers; i++)
-		{
-			auto p = std::make_unique<Subprocess>();
-			p->onLine = [&, i](const std::string &line) {
-				std::smatch g;
-				if (std::regex_match(line, g, cacheLine))
-				{
-					const std::string name = g[2], sha = upper(g[3]);
-					std::lock_guard<std::mutex> lock(m);
-					if (found.emplace(name, sha).second) post([stored, name, sha] { stored(name, sha); });
-				}
-				else if (std::regex_search(line, g, progressLine))
-				{
-					std::lock_guard<std::mutex> lock(m);
-					done[static_cast<size_t>(i)] = static_cast<uint32_t>(std::stoul(g[1]));
-					total[static_cast<size_t>(i)] = static_cast<uint32_t>(std::stoul(g[2]));
-					uint32_t d = 0, t = 0;
-					for (size_t k = 0; k < done.size(); k++) d += done[k], t = std::max(t, total[k]);
-					post([progress, d, t] { progress(d, t); });
-				}
-			};
-			std::vector<std::string> a = args;
-			a.insert(a.begin() + 2, {"--precompile", std::to_string(i) + "/" + std::to_string(workers)});
-			std::string why;
-			if (!p->start(runner, a, why))
-			{
-				failure = "The compile could not start: " + why;
-				break;
-			}
-			sessions.push_back(std::move(p));
-		}
-		/* waited for, or stopped */
-		bool stopped = false;
+		/* A session the system killed took its share of the work with it, and a
+		 * manifest written from what the others managed would have holes in it:
+		 * as Chimera's, the answer is to want less at once - half the sessions,
+		 * and again - until one alone runs out */
 		for (;;)
 		{
-			bool running = false;
-			for (auto &p : sessions) running = running || p->wait(0) < 0;
-			if (!running) break;
-			if (stop && !stopped)
+			std::vector<uint32_t> done(static_cast<size_t>(workers), 0), total(static_cast<size_t>(workers), 0);
+			std::vector<std::unique_ptr<Subprocess>> sessions;
+			for (int i = 0; i < workers; i++)
 			{
-				stopped = true;
-				for (auto &p : sessions) p->kill();
+				auto p = std::make_unique<Subprocess>();
+				p->onLine = [&, i](const std::string &line) {
+					std::smatch g;
+					if (std::regex_match(line, g, cacheLine))
+					{
+						const std::string name = g[2], sha = upper(g[3]);
+						std::lock_guard<std::mutex> lock(m);
+						if (found.emplace(name, sha).second) post([stored, name, sha] { stored(name, sha); });
+					}
+					else if (std::regex_search(line, g, progressLine))
+					{
+						std::lock_guard<std::mutex> lock(m);
+						done[static_cast<size_t>(i)] = static_cast<uint32_t>(std::stoul(g[1]));
+						total[static_cast<size_t>(i)] = static_cast<uint32_t>(std::stoul(g[2]));
+						uint32_t d = 0, t = 0;
+						for (size_t k = 0; k < done.size(); k++) d += done[k], t = std::max(t, total[k]);
+						post([progress, d, t] { progress(d, t); });
+					}
+				};
+				std::vector<std::string> a = args;
+				a.insert(a.begin() + 2, {"--precompile", std::to_string(i) + "/" + std::to_string(workers)});
+				std::string why;
+				if (!p->start(runner, a, why))
+				{
+					failure = "The compile could not start: " + why;
+					break;
+				}
+				sessions.push_back(std::move(p));
 			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(50));
-		}
-		if (failure.empty() && stopped) failure = "Stopped: what was compiled stays, and Compile goes on from there.";
-		for (auto &p : sessions)
-		{
-			const int code = p->wait(-1);
-			if (failure.empty() && code != 0)
+			/* waited for, or stopped; the least the machine could spare while
+			 * they ran, looked at every couple of seconds */
+			bool stopped = false;
+			uint64_t leastToSpare = 0;
+			for (int looks = 0;; looks++)
 			{
-				std::string tail = p->errorTail();
-				while (!tail.empty() && tail.back() == '\n') tail.pop_back();
-				const size_t nl = tail.rfind('\n');
-				failure = "A compile session failed (exit code " + std::to_string(code) + ")" +
-					(tail.empty() ? std::string(".") : ": " + tail.substr(nl == std::string::npos ? 0 : nl + 1));
+				bool running = false;
+				for (auto &p : sessions) running = running || p->wait(0) < 0;
+				if (!running) break;
+				if (looks % 40 == 0)
+				{
+					const uint64_t now = ce_compile_memory_to_spare();
+					if (now != 0 && (leastToSpare == 0 || now < leastToSpare)) leastToSpare = now;
+				}
+				if (stop && !stopped)
+				{
+					stopped = true;
+					for (auto &p : sessions) p->kill();
+				}
+				std::this_thread::sleep_for(std::chrono::milliseconds(50));
 			}
+			if (!failure.empty()) break;
+			if (stopped)
+			{
+				failure = "Stopped: what was compiled stays, and Compile goes on from there.";
+				break;
+			}
+			/* the sessions that died, and in what words; one's own last line is worth more than its code */
+			std::vector<int> dead;
+			std::string said, why;
+			for (auto &p : sessions)
+			{
+				const int code = p->wait(-1);
+				if (code == 0) continue;
+				dead.push_back(code);
+				if (said.empty())
+				{
+					std::string tail = p->errorTail();
+					while (!tail.empty() && tail.back() == '\n') tail.pop_back();
+					const size_t nl = tail.rfind('\n');
+					said = tail.substr(nl == std::string::npos ? 0 : nl + 1);
+				}
+				const std::string w = whyItDied(code);
+				if (why.find(w) == std::string::npos) why += (why.empty() ? "" : ", ") + w;
+			}
+			if (dead.empty()) break;
+			const bool allForMemory = std::all_of(dead.begin(), dead.end(), diedForWantOfMemory);
+			/* memory is what ran out when the system says so, when a session said the
+			 * sandbox could not get its memory, or when the machine had next to
+			 * nothing left while they ran */
+			const bool wantOfMemory = ce_compile_memory_ran_short(leastToSpare, sessionBytes) != 0 || allForMemory ||
+				said.find("memory block") != std::string::npos;
+			if (wantOfMemory && workers > 1)
+			{
+				workers = std::max(1, workers / 2);
+				std::fprintf(stderr, "precompile: memory ran out; retrying with %d session(s)\n", workers);
+				continue;
+			}
+			if (wantOfMemory)
+				failure = outOfMemoryMessage(static_cast<int>(sessions.size())) + (allForMemory ? "" : " The sessions ended: " + why + ".");
+			else
+				failure = std::to_string(dead.size()) + " of " + std::to_string(sessions.size()) + " compile sessions failed: " + why +
+					(said.empty() ? std::string() : " (" + said + ")") + "." +
+					(workers > 1 ? " Closing other programs, or a machine with more memory, would let it run fewer at once."
+								 : " This ran one session at a time already, so memory is unlikely to be the reason.");
+			break;
 		}
 		std::error_code ec;
 		fs::remove(slotsFile, ec);
@@ -227,6 +313,8 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	clockStart.set(clockText(CE_CLOCK_START_DEFAULT));
 	expose("clockStart", "when the machine's clock starts, UTC, written as 2017-05-27 12:44:28 (from 1970 to 2200)", clockStart, true);
 	expose("problems", "what keeps the project from being made, a line each; \"\" when ready", problems);
+	expose("compileSessionGigabytes", "how much memory one compile session is counted at, in GB (1 to 256; Tools > "
+		"Pre-Compiled Modules' setting)", compileSessionGigabytes, true);
 	expose("ready", "the project can be made", ready);
 	expose("status", "what New Project last had to say", status);
 	expose("filesAsked", "the files page is asked: the package declares slots", filesAsked);
@@ -312,8 +400,10 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			job->romSha1 = sha;
 			job->core = core.get();
 			job->version = version_;
+			/* as many side by side as the machine can give each what the setting counts it at */
+			job->sessionBytes = static_cast<uint64_t>(std::clamp<int64_t>(compileSessionGigabytes.get(), 1, 256)) << 30;
 			job->workers = std::max(1, ce_compile_sessions(static_cast<int32_t>(std::max(1u, std::thread::hardware_concurrency())),
-				ce_compile_memory_to_spare(), 0));
+				ce_compile_memory_to_spare(), job->sessionBytes));
 			std::vector<std::string> common = {package_, game, "--cache-dir", dir, "--settings", json::write(form_.recorded())};
 			for (const Need &n : needs_)
 				if (!n.path.empty()) common.insert(common.end(), {"--firmware", n.id + "=" + n.path});

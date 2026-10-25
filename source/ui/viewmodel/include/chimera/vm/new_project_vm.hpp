@@ -126,6 +126,10 @@ public:
 	Property<bool> compileAsked{false}, compiling{false}, compileReady{false};
 	Property<std::string> compileStatus, compileRunner, compileRoot;
 	Property<int64_t> compileDone{0}, compileTotal{0};
+	/* how much memory one compile session is counted at, in GB: as many run
+	 * side by side as the machine can give that much each (Chimera's
+	 * CompileSessionGigabytes, issue 259; 8 is what an RPCS3 session needs) */
+	Property<int64_t> compileSessionGigabytes{8};
 	using SuggestRunner = std::function<void(const std::string &package, const std::string &game,
 		const std::vector<std::pair<std::string, std::string>> &files, const std::string &slots, const std::string &settings,
 		std::function<void(std::string answer, std::string error)> done)>;

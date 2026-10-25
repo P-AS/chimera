@@ -45,6 +45,9 @@ public:
 	Property<bool> pendingMove{false};
 	/* the system's place, said by the window */
 	Property<std::string> standard;
+	/* CHIMERA_DATA_HOME, when it is set: it decides, as Chimera's does (a
+	 * portable install, or somebody meant it), and nothing is changed here */
+	Property<std::string> environment;
 	Property<std::string> status;
 	/* how much is in the folder in use and how much its drive has free, as Chimera says it (refresh) */
 	Property<std::string> figures;

@@ -46,6 +46,8 @@ PrecompiledViewModel::PrecompiledViewModel(Dispatcher &dispatcher) : ViewModel("
 			return sizeText(bytes);
 		});
 	expose("root", "where the compiled code is, a folder a game", root, true);
+	expose("sessionGigabytes", "how much memory one compile session is counted at, in GB (1 to 256): as many run side by "
+		"side as the computer can give this much each", sessionGigabytes, true);
 	expose("inUse", "the open machine's folder, \"\" for none: it stays", inUse, true);
 	expose("total", "all of it together, as it reads", total);
 	expose("status", "what the window last did", status);
