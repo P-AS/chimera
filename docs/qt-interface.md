@@ -463,8 +463,9 @@ A suggested order, each step usable on its own:
 4. **Lua's libraries** (memory, joypad, gui drawing, forms) as view model
    commands. Done, and Chimera's MCP server is here too (2026-10-25).
 5. **Movie import, video recording, the debugger and trace logger.**
-6. **Hotkeys and their configuration,** themes, recent files. All done
-   but the hotkeys of what is not here yet: capturing the mouse, and the tools still missing. Then the Qt window is the default, and the C# one goes.
+6. **Hotkeys and their configuration,** themes, recent files. All done:
+   every one of Chimera's 96 hotkeys is here (2026-10-25). Then the Qt
+   window is the default, and the C# one goes.
 
 ## What Chimera has that the prototype does not yet
 
@@ -476,9 +477,13 @@ as each lands here. Parts that wait on a question to the owner say so.
   in (about a tenth of a second each). (Chimera's Selection Undo and Redo
   are always greyed out and do nothing, so there is nothing of theirs to
   bring.)
-- Tools: (the debugger has no disassembly or
-  breakpoints for these cores in Chimera either: the engine has no call
-  for them.)
+- Tools: nothing. (The debugger has no disassembly or breakpoints for
+  these cores in Chimera either: the engine has no call for them.)
+- Customize and Display: nothing (2026-10-25: keys named by place and
+  the two key options, single instance mode, the GameCube adapter,
+  prescaling, OSD scaling, the snowy null core, the fullscreen hacks).
+- Lua: client.getconfig, gettool and createinstance, which hand a script
+  Chimera's own C# objects; what they become here is the owner's to say.
 - Projects: nothing. Chimera's Cache Manager also lists unpacked cores;
   the Qt window opens a core's package without unpacking it, so it has
   none to list. Compiled code is in Pre-Compiled Modules in both.
