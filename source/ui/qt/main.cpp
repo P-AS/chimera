@@ -45,6 +45,7 @@
 #include <cstdio>
 #include <mutex>
 #ifdef _WIN32
+#include <QtGui/qpa/qplatformwindow_p.h>
 #include <windows.h>
 #endif
 #include <mutex>
@@ -1192,7 +1193,7 @@ int main(int argc, char **argv)
 	for (const char *name : {"aspectMode", "customWidth", "customHeight", "ratioX", "ratioY", "letterbox", "integerScale", "cropLeft",
 			 "cropTop", "cropRight", "cropBottom", "finalFilter", "prescale", "autoPrescale", "scaleOsd", "saveWindowPosition", "windowGeometry",
 			 "allowDoubleClickFullscreen", "menuWindowed", "captionWindowed", "frameWindowed", "menuFullscreen", "statusBarFullscreen",
-			 "autohideMouseFullscreen", "stayOnTop", "mouseCaptureForcesTop", "minimalDisplay", "staticWindowTitles", "titleSuffix", "resizeWithPicture",
+			 "autohideMouseFullscreen", "fullscreenHacks", "stayOnTop", "mouseCaptureForcesTop", "minimalDisplay", "staticWindowTitles", "titleSuffix", "resizeWithPicture",
 			 "windowScales"})
 		config.keep(display, name);
 	qt::QmlViewModel displayQml(display);
@@ -1452,6 +1453,18 @@ int main(int argc, char **argv)
 		const QRect r = window->geometry();
 		display.windowGeometry.set(QStringLiteral("%1,%2,%3,%4").arg(r.x()).arg(r.y()).arg(r.width()).arg(r.height()).toStdString());
 	});
+#ifdef _WIN32
+	/* Chimera's Windows Fullscreen Hacks: a border kept round the window in
+	 * full screen (Qt's own way of keeping Windows from taking the screen
+	 * for the window alone), set now and whenever it changes */
+	auto fullscreenBorder = [&display, window] {
+		window->create();
+		if (auto *native = window->nativeInterface<QNativeInterface::Private::QWindowsWindow>())
+			native->setHasBorderInFullScreen(display.fullscreenHacks.get());
+	};
+	fullscreenBorder();
+	vm::Connection fullscreenHacksWatch = display.fullscreenHacks.changed.connect(fullscreenBorder);
+#endif
 	if (customize.startFullscreen.get()) window->showFullScreen();
 	/* each picture shown: the vsync throttle's tick, and the next one asked for while it is on */
 	QObject::connect(window, &QQuickWindow::frameSwapped, window, [&session, window] {

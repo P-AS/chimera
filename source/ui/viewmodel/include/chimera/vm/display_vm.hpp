@@ -98,6 +98,10 @@ public:
 	Property<bool> menuWindowed{true}, captionWindowed{true};
 	Property<int64_t> frameWindowed{2};
 	Property<bool> menuFullscreen{false}, statusBarFullscreen{false}, autohideMouseFullscreen{true};
+	/* Chimera's Windows Fullscreen Hacks: a border kept round the window in
+	 * full screen, so that Windows does not take the screen for the window's
+	 * alone (some cards then flicker the other monitors) */
+	Property<bool> fullscreenHacks{false};
 	Property<bool> stayOnTop{false};
 	/* Chimera's Mouse Capture Forces Stay on Top: while the pointer is captured the window is kept over others */
 	Property<bool> mouseCaptureForcesTop{false};

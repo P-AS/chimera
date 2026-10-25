@@ -247,7 +247,8 @@ if qt_dep.found()
       'chimera-qt-app',
       qt_sources + [qt_conf],
       name_prefix: '',
-      dependencies: [vm_dep, qt_dep],
+      # Gui's private headers for its Windows window's interface (the border in full screen)
+      dependencies: [vm_dep, qt_dep, dependency('qt6', modules: ['Core', 'Gui'], private_headers: true)],
       # the view models have a Signal::emit; Qt's "emit" keyword would eat it
       cpp_args: ['-DQT_NO_KEYWORDS', '-DCHIMERA_QT_LIBRARY'],
       # the jump list's COM and shell calls

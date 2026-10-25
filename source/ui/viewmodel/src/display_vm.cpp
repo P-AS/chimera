@@ -134,6 +134,9 @@ DisplayViewModel::DisplayViewModel(Dispatcher &dispatcher) : ViewModel("display"
 		"is drawn", prescale, true);
 	expose("autoPrescale", "Chimera's Auto Prescale: with smoothing, the picture first grown by the largest whole steps "
 		"that fit where it is drawn", autoPrescale, true);
+	expose("fullscreenHacks", "Chimera's Windows Fullscreen Hacks: a border kept round the window in full screen, so that "
+		"Windows does not take the screen for the window alone (some cards then flicker other monitors); Windows only",
+		fullscreenHacks, true);
 	expose("scaleOsd", "Chimera's Scale OSD text with system scale: off, what is drawn over the picture keeps its size at "
 		"100% on a scaled screen", scaleOsd, true);
 	for (auto &[name, p] : std::initializer_list<std::pair<const char *, Property<int64_t> *>>{{"padLeft", &padLeft}, {"padTop", &padTop},

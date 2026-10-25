@@ -6,7 +6,6 @@
 // Its boxes are a copy: OK keeps them, Cancel lets them go. Layout and
 // bindings only, over the display view model and the session's switches.
 //
-// Not here: Windows fullscreen hacks.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -30,7 +29,7 @@ ApplicationWindow {
     readonly property var vmNames: ["finalFilter", "prescale", "autoPrescale", "scaleOsd", "letterbox", "integerScale", "aspectMode", "customWidth", "customHeight", "ratioX",
         "ratioY", "cropLeft", "cropTop", "cropRight", "cropBottom", "minimalDisplay", "staticWindowTitles", "titleSuffix", "captionWindowed",
         "menuWindowed", "frameWindowed", "saveWindowPosition", "stayOnTop", "mouseCaptureForcesTop", "menuFullscreen", "statusBarFullscreen",
-        "autohideMouseFullscreen", "allowDoubleClickFullscreen"]
+        "autohideMouseFullscreen", "fullscreenHacks", "allowDoubleClickFullscreen"]
     property var picked: ({})
     onVisibleChanged: if (visible) {
         tabs.currentIndex = 0
@@ -297,6 +296,13 @@ ApplicationWindow {
                                 Box { setting: "menuFullscreen"; text: qsTr("Menu") }
                                 Box { setting: "statusBarFullscreen"; text: qsTr("Status Bar") }
                                 Box { setting: "autohideMouseFullscreen"; text: qsTr("Auto-Hide Mouse Cursor") }
+                                // Windows only, as Chimera's: a border kept round the window in full screen
+                                Box { setting: "fullscreenHacks"; text: qsTr("Enable Windows Fullscreen Hacks"); enabled: Qt.platform.os === "windows" }
+                                Label {
+                                    text: qsTr("For Windows operating systems >= Vista, with\nsome video cards, the monitors may flicker when\ngoing 'windowed fullscreen' while the system\ndisobeys us and goes actual fullscreen instead.\nThis hack prevents that, but may increase frame\nlatency (since in Microsoft's new and disimproved\noperating systems, windowed mode things may\nhave higher latency)")
+                                    enabled: Qt.platform.os === "windows"
+                                    topPadding: 4
+                                }
                             }
                         }
                     }
