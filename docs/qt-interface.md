@@ -167,6 +167,14 @@ code is in `source/ui`; how it is built and run is in
   shows every column), and the menu on the frames picked has Cancel Seek,
   Remove Markers only when a marker is among them, and Branch only on the
   machine's own frame.
+  The roll's drags are Chimera's too: on the frame numbers with the right
+  button, Shift extends the input pressed on (or the frames picked) over
+  the frames passed, Ctrl and Shift put copies of it in, Ctrl puts a copy
+  where the pointer is and Alt moves it there, each drag one undo step
+  named as Chimera's ("Right-Click Edit: Move"); Alt and the left button on
+  a marker's frame number drags the marker to another frame; and the left
+  button held in the column before the frame numbers takes the machine
+  along with the pointer.
 - **Qt is patched where it faults** (owner, 2026-10-24): fixes to Qt go in
   tools/qt-patches and tools/build-qt-windows.sh applies them as it unpacks
   the source. The first: a Qt thread that ended after its data was let go

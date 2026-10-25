@@ -763,6 +763,48 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			inputs_.countRerecords(true);
 			return {};
 		});
+	command("rightDragStart", "Chimera's right button pressed on a frame number with Shift, Ctrl or Alt held: the frames "
+		"picked (or the frame pressed) are taken up for the drag; true when a drag edits", {"frame", "ctrl", "shift", "alt"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t f = 0;
+			bool ctrl = false, shift = false, alt = false;
+			if (!arg(a, 0, f, error) || !arg(a, 1, ctrl, error) || !arg(a, 2, shift, error) || !arg(a, 3, alt, error)) return {};
+			rightInput_.clear();
+			rightStepMade_ = false;
+			if (f < 0 || f >= inputs_.size() || !(ctrl || shift || alt)) return false;
+			rightCtrl_ = ctrl;
+			rightShift_ = shift;
+			rightAlt_ = alt;
+			const int64_t first = selectFirst.get(), last = std::min(selectLast.get(), inputs_.size() - 1);
+			if (first >= 0 && f >= first && f <= last)
+			{
+				/* the frames picked: their own inputs */
+				for (int64_t r = first; r <= last; r++) rightInput_.push_back(readRow(r));
+				rightFrame_ = first + (ctrl && shift ? last - first + 1 : 0);
+			}
+			else
+			{
+				rightInput_.push_back(readRow(f));
+				rightFrame_ = f;
+			}
+			rightStart_ = rightLow_ = rightHigh_ = f;
+			return true;
+		});
+	command("rightDragTo", "the right-button drag reached a frame: Shift extends the input taken up over the frames passed, "
+		"Ctrl with Shift puts copies of it in, Ctrl puts a copy of it there, Alt moves it there; one undo step for the drag",
+		{"frame"}, [this](const Args &a, std::string &error) -> Value {
+			int64_t f = 0;
+			if (!arg(a, 0, f, error)) return {};
+			if (rightInput_.empty()) return {};
+			rightDragOnTo(f);
+			return {};
+		});
+	command("rightDragEnd", "the right button let go: the drag's edit is done", {}, [this](const Args &, std::string &) -> Value {
+		const bool edited = rightStepMade_;
+		rightInput_.clear();
+		rightStepMade_ = false;
+		return edited;
+	});
 	command("paint", "holds (true) or releases (false) one button on frames first..last", {"first", "last", "button", "held"},
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t first = 0, last = 0, b = 0;
@@ -1308,6 +1350,86 @@ void PianoRollViewModel::undoOrRedo(bool back)
 		return;
 	}
 	edited(first, last, before);
+}
+
+void PianoRollViewModel::rightDragOnTo(int64_t frame)
+{
+	/* the drag's last effect taken back, so the whole drag is worked out from
+	 * where it began and kept as one step */
+	if (rightStepMade_)
+	{
+		undoOrRedo(true);
+		if (!redo_.empty()) redo_.pop_back();
+		canRedo.set(!redo_.empty());
+		historyChanged();
+		rightStepMade_ = false;
+	}
+	const int64_t n = static_cast<int64_t>(rightInput_.size()), size = inputs_.size();
+	auto taken = [&](int64_t at) {
+		const int64_t i = ((at - rightFrame_) % n + n) % n;
+		return rightInput_[static_cast<size_t>(i)];
+	};
+	/* as Chimera's FramePaint: not past where the input taken up still fits */
+	frame = std::max<int64_t>(0, std::min(frame, size - n));
+	rightLow_ = std::min(rightLow_, frame);
+	rightHigh_ = std::max(rightHigh_, frame);
+	std::string name = "Right-Click Edit:";
+	if (rightShift_ && rightCtrl_)
+	{
+		/* copies put in after where it came from, as many as frames dragged past it */
+		name += " Extend Input, Insert";
+		const int64_t at = rightStart_ < rightFrame_ ? rightFrame_ : rightFrame_ + 1;
+		const int64_t count = frame - at + 1;
+		if (count <= 0) return;
+		std::vector<Row> rows;
+		for (int64_t i = 0; i < count; i++) rows.push_back(taken(at + i));
+		naming_ = name;
+		putIn(at, rows);
+	}
+	else if (rightShift_)
+	{
+		/* every frame the drag passed over takes the input, repeated */
+		name += " Extend Input";
+		std::vector<Row> rows;
+		for (int64_t f = rightLow_; f <= std::min(rightHigh_, size - 1); f++) rows.push_back(taken(f));
+		naming_ = name;
+		overwrite(rightLow_, rows);
+	}
+	else if (rightCtrl_)
+	{
+		/* a copy where the pointer is, the original kept */
+		name += " Copy";
+		if (frame == rightFrame_) return;
+		naming_ = name;
+		overwrite(frame, rightInput_);
+	}
+	else
+	{
+		/* moved where the pointer is, the frames between taking its place */
+		name += " Move";
+		if (frame == rightFrame_) return;
+		const int64_t low = std::min(frame, rightFrame_);
+		std::vector<Row> between;
+		if (frame < rightFrame_)
+			for (int64_t f = frame; f < rightFrame_; f++) between.push_back(readRow(f));
+		else
+			for (int64_t f = rightFrame_ + n; f < frame + n; f++) between.push_back(readRow(f));
+		std::vector<Row> rows;
+		if (frame < rightFrame_)
+		{
+			rows = rightInput_;
+			rows.insert(rows.end(), between.begin(), between.end());
+		}
+		else
+		{
+			rows = between;
+			rows.insert(rows.end(), rightInput_.begin(), rightInput_.end());
+		}
+		naming_ = name;
+		overwrite(low, rows);
+	}
+	naming_.clear();
+	rightStepMade_ = true;
 }
 
 PianoRollViewModel::Row PianoRollViewModel::readRow(int64_t frame) const

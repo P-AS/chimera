@@ -450,6 +450,14 @@ private:
 	bool dragHeld_ = false;
 	/* a press began a stroke that drags extend */
 	bool stroke_ = false;
+	/* Chimera's right-button drags on the frame numbers: the input taken up
+	 * (the frames picked, or the frame pressed), where it came from, the keys
+	 * held, the rows the drag reached, and whether its one undo step is made */
+	std::vector<Row> rightInput_;
+	int64_t rightFrame_ = -1, rightStart_ = -1, rightLow_ = -1, rightHigh_ = -1;
+	bool rightCtrl_ = false, rightShift_ = false, rightAlt_ = false, rightStepMade_ = false;
+	/* the drag gone to a frame: its whole effect from where it began, one undo step */
+	void rightDragOnTo(int64_t frame);
 	std::vector<Step> undo_, redo_;
 };
 

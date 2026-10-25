@@ -681,6 +681,14 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 			rightHeld_ = true;
 			rightWheeled_ = false;
 			rightRow_ = rowOnLine(static_cast<qint64>((at.y() - hs) / rowHeight_));
+			/* on a frame number: Chimera's drags with Shift, Ctrl or Alt */
+			rightDragging_ = at.x() >= cursorWidth() && at.x() < frameColumnWidth() && rightRow_ < rowCount();
+			rightMoved_ = false;
+			rightDragRow_ = rightRow_;
+			const Qt::KeyboardModifiers keys = e->modifiers();
+			rightEditing_ = rightDragging_ && (keys & (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier));
+			if (rightDragging_)
+				Q_EMIT rightDragStarted(rightRow_, (keys & Qt::ControlModifier) != 0, (keys & Qt::ShiftModifier) != 0, (keys & Qt::AltModifier) != 0);
 			e->accept();
 			return;
 		}
@@ -696,7 +704,17 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 			return;
 		}
 		if (at.x() < cursorWidth())
+		{
+			/* the machine goes to the frame, and follows the pointer while it is held */
+			cursorDragging_ = true;
+			cursorDragRow_ = row;
 			Q_EMIT frameClicked(row);
+		}
+		else if ((e->modifiers() & Qt::AltModifier) && (rows_->rows().rowFlags(row) & 4))
+		{
+			/* a marker taken up by its frame number, to drop on another (Chimera's Alt + Drag) */
+			markerDrag_ = row;
+		}
 		else
 		{
 			/* Shift extends from where picking began; a drag picks what it passes */
@@ -722,6 +740,31 @@ void PianoRollItem::mouseMoveEvent(QMouseEvent *e)
 {
 	const QPointF where = logical(e->position());
 	const int hs = headerSize();
+	auto rowUnder = [&] {
+		return std::min(rowCount() - 1, rowOnLine(static_cast<qint64>(std::max(0.0, where.y() - hs) / rowHeight_)));
+	};
+	if (rightDragging_ && rows_ != nullptr)
+	{
+		const qint64 row = rowUnder();
+		if (row >= 0 && row != rightDragRow_)
+		{
+			rightDragRow_ = row;
+			rightMoved_ = true;
+			Q_EMIT rightDraggedTo(row);
+		}
+		return;
+	}
+	if (cursorDragging_ && rows_ != nullptr)
+	{
+		const qint64 row = rowUnder();
+		if (row >= 0 && row != cursorDragRow_)
+		{
+			cursorDragRow_ = row;
+			Q_EMIT frameClicked(row);
+		}
+		return;
+	}
+	if (markerDrag_ >= 0) return;
 	if (selecting_ && rows_ != nullptr && where.y() >= hs)
 	{
 		const qint64 row = std::min(rowCount() - 1, rowOnLine(static_cast<qint64>((where.y() - hs) / rowHeight_)));
@@ -746,9 +789,20 @@ void PianoRollItem::mouseReleaseEvent(QMouseEvent *e)
 {
 	if (e->button() == Qt::RightButton)
 	{
-		/* Chimera's row menu opens on the release, and not after a wheel seek */
-		if (rightHeld_ && !rightWheeled_) Q_EMIT rowMenuRequested(rightRow_);
+		/* Chimera's row menu opens on the release, and not after a wheel seek or a drag that edited */
+		if (rightDragging_) Q_EMIT rightDragEnded();
+		if (rightHeld_ && !rightWheeled_ && !(rightEditing_ && rightMoved_)) Q_EMIT rowMenuRequested(rightRow_);
 		rightHeld_ = false;
+		rightDragging_ = rightEditing_ = rightMoved_ = false;
+		return;
+	}
+	cursorDragging_ = false;
+	if (markerDrag_ >= 0)
+	{
+		const QPointF where = logical(e->position());
+		const qint64 to = rows_ != nullptr ? std::min(rowCount() - 1, rowOnLine(static_cast<qint64>(std::max(0.0, where.y() - headerSize()) / rowHeight_))) : -1;
+		if (to >= 0 && to != markerDrag_) Q_EMIT markerDropped(markerDrag_, to);
+		markerDrag_ = -1;
 		return;
 	}
 	selecting_ = false;

@@ -8127,6 +8127,58 @@ bool tastudioPanel(const char *package, const char *rom)
 	CHECK(roll.run("moveMarker", {int64_t{5}, int64_t{7}}, error).has_value() && markerAt(7) && !markerAt(5));
 	CHECK(!roll.run("moveMarker", {int64_t{7}, int64_t{9}}, error) && error == "frame 9 has a marker already" && markerAt(7));
 	CHECK(!roll.run("moveMarker", {int64_t{0}, int64_t{3}}, error) && error == "frame 0's marker is the run's own: it cannot be moved");
+	/* Chimera's right-button drags on the frame numbers, each one undo step: frames
+	 * 30, 31, 32 hold buttons 0, 1, 2, and 33 and on nothing */
+	CHECK(frames != nullptr);
+	auto held = [&](int64_t frame) {
+		int mask = 0;
+		for (int32_t b = 0; b < 3; b++)
+		{
+			bool on = false;
+			if (frames != nullptr && fromValue(frames->cell(frame, b), on) && on) mask |= 1 << b;
+		}
+		return mask;
+	};
+	for (int64_t b = 0; b < 3; b++) CHECK(roll.run("paint", {30 + b, 30 + b, b, true}, error).has_value());
+	CHECK(held(30) == 1 && held(31) == 2 && held(32) == 4 && held(33) == 0);
+	RowModel *history = nullptr;
+	for (const auto &r : roll.rowLists())
+		if (r.name == "history") history = r.model;
+	CHECK(history != nullptr);
+	const int64_t steps = history != nullptr ? history->rowCount() : 0;
+	auto lastStep = [&] {
+		std::string name;
+		if (history != nullptr && history->rowCount() > 0) fromValue(history->cell(history->rowCount() - 1, 0), name);
+		return name;
+	};
+	auto drag = [&](int64_t from, bool ctrl, bool shift, bool alt, std::vector<int64_t> to) {
+		bool on = false;
+		fromValue(roll.run("rightDragStart", {from, ctrl, shift, alt}, error).value_or(Value()), on);
+		for (int64_t t : to) roll.run("rightDragTo", {t}, error);
+		roll.run("rightDragEnd", {}, error);
+		return on;
+	};
+	/* Shift: the input pressed on extended over the frames passed */
+	CHECK(drag(30, false, true, false, {31, 32, 33}));
+	CHECK(held(30) == 1 && held(31) == 1 && held(32) == 1 && held(33) == 1 && held(34) == 0);
+	CHECK(history->rowCount() == steps + 1 && lastStep() == "Right-Click Edit: Extend Input");
+	CHECK(roll.run("undo", {}, error).has_value() && held(31) == 2 && held(32) == 4 && held(33) == 0);
+	/* Ctrl: a copy where the pointer is, the copy before it taken back as the drag goes on */
+	CHECK(drag(30, true, false, false, {40, 41}));
+	CHECK(held(30) == 1 && held(40) == 0 && held(41) == 1 && lastStep() == "Right-Click Edit: Copy");
+	CHECK(roll.run("undo", {}, error).has_value() && held(41) == 0);
+	/* Alt: moved, the frames between taking its place */
+	CHECK(drag(32, false, false, true, {31, 30}));
+	CHECK(held(30) == 4 && held(31) == 1 && held(32) == 2 && lastStep() == "Right-Click Edit: Move");
+	CHECK(roll.run("undo", {}, error).has_value() && held(30) == 1 && held(31) == 2 && held(32) == 4);
+	/* Ctrl and Shift: copies put in after it, as many as frames passed, fewer when the drag comes back */
+	const int64_t length = roll.frameCount.get();
+	CHECK(drag(30, true, true, false, {31, 32, 31}));
+	CHECK(roll.frameCount.get() == length + 1 && held(30) == 1 && held(31) == 1 && held(32) == 2 && held(33) == 4);
+	CHECK(lastStep() == "Right-Click Edit: Extend Input, Insert");
+	CHECK(roll.run("undo", {}, error).has_value() && roll.frameCount.get() == length && held(31) == 2);
+	/* no key held: no edit, and the menu opens instead */
+	CHECK(!drag(30, false, false, false, {31}) && held(31) == 2);
 	/* branches: dragged by the number into another's place */
 	CHECK(branches.run("create", {std::string("first")}, error).has_value());
 	CHECK(branches.run("create", {std::string("second")}, error).has_value());

@@ -133,6 +133,13 @@ Q_SIGNALS:
 	void cellDragged(qint64 row, int column);
 	/* a press on a row's frame number */
 	void frameClicked(qint64 row);
+	/* Chimera's right-button drags on the frame numbers (Shift, Ctrl, Alt held): begun on a row,
+	 * gone on to another, let go */
+	void rightDragStarted(qint64 row, bool ctrl, bool shift, bool alt);
+	void rightDraggedTo(qint64 row);
+	void rightDragEnded();
+	/* a marker dragged by its frame number with Alt held, dropped on another frame */
+	void markerDropped(qint64 from, qint64 to);
 	/* the wheel turned with the right button held on a row: Chimera's seek by a frame a notch */
 	void wheelSeekRequested(int notches);
 	/* the frame numbers pressed or dragged over, or Shift-pressed */
@@ -171,6 +178,12 @@ private:
 	bool rightHeld_ = false;
 	bool rightWheeled_ = false;
 	qint64 rightRow_ = -1;
+	/* a right-button drag on the frame numbers: where it is, and whether keys made it an edit */
+	bool rightDragging_ = false, rightEditing_ = false, rightMoved_ = false;
+	qint64 rightDragRow_ = -1;
+	/* a left-button drag in the cursor column (the machine follows it), and a marker dragged with Alt */
+	bool cursorDragging_ = false;
+	qint64 cursorDragRow_ = -1, markerDrag_ = -1;
 	qint64 pickedRow_ = -1;
 	int pickedColumn_ = -1;
 	int view_ = 0;

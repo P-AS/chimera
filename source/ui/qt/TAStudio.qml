@@ -519,6 +519,11 @@ ApplicationWindow {
                         onRowMenuRequested: (row) => { oneRoll.use(); if (tas.pianoRoll.selectFirst >= 0 && tas.pianoRoll.selectLast < tas.pianoRoll.frameCount) { rowMenu.row = row; rowMenu.popup() } }
                         onCellDragged: (row, column) => tas.pianoRoll.run("drag", [row, column])
                         onFrameClicked: (row) => { oneRoll.use(); tas.session.run("seek", [row]) }
+                        // Chimera's right-button drags on the frame numbers, and a marker moved with Alt
+                        onRightDragStarted: (row, ctrl, shift, alt) => { oneRoll.use(); tas.pianoRoll.run("rightDragStart", [row, ctrl, shift, alt]) }
+                        onRightDraggedTo: (row) => tas.pianoRoll.run("rightDragTo", [row])
+                        onRightDragEnded: tas.pianoRoll.run("rightDragEnd")
+                        onMarkerDropped: (from, to) => tas.pianoRoll.run("moveMarker", [from, to])
                         // Chimera's right button held and the wheel turned: a frame back a notch up, on from
                         // where a seek still under way is going
                         onWheelSeekRequested: (notches) => {
