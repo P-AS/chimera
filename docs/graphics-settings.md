@@ -402,7 +402,11 @@ core's `virtualWidth`/`virtualHeight` are 640x448, so "use system's
 recommendation" is 10:7 - square pixels, which PCSX2 also offers by that name -
 where PCSX2's own default is "Auto 4:3/3:2". A person who wants the TV's 4:3
 sets a custom ratio today; changing the declaration is a decision, not made
-here.
+here. A real widescreen picture is another thing: PCSX2's widescreen patches
+change the game's code, and since chimera#371 (user-decided 2026-10-25) every
+patch in PCSX2's patch collection is a setting of its game ("Use Custom Patch:
+Enable ..."), and a widescreen one tells Chimera the picture is 16:9 through
+the core's display aspect (the PCSX2 core's docs/PLAN.md).
 
 **A core-implemented post-process is a core setting, by necessity, and the
 deinterlacer set the precedent.** PCSX2's FXAA cannot change the machine
