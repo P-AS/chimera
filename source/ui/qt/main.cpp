@@ -100,6 +100,7 @@
 #include "overlay_painter.hpp"
 #include "pointer_capture.hpp"
 #include "button_router.hpp"
+#include "jump_list.hpp"
 #include "key_names.hpp"
 #include "picture_item.hpp"
 #include "piano_roll_item.hpp"
@@ -1614,9 +1615,20 @@ int main(int argc, char **argv)
 	}
 	else if (positional.size() == 1)
 	{
-		/* a project alone: its core is found among the installed ones */
-		session.run("openProject", {positional[0].toStdString()}, error);
+		/* a project alone: its core is found among the installed ones; a game
+		 * alone opens with the core that takes its kind of file, as Chimera's
+		 * does (a jump list's entry is one or the other) */
+		if (positional[0].endsWith(QStringLiteral(".chimeraProject"), Qt::CaseInsensitive))
+			session.run("openProject", {positional[0].toStdString()}, error);
+		else
+			session.run("openGame", {positional[0].toStdString()}, error);
 	}
+	/* Chimera's jump list: the taskbar's Recent list, and each project or game opened on it */
+	qt::JumpList::showRecent();
+	vm::Connection jumpListWatch = session.opens.changed.connect([&session] {
+		const std::string path = session.hasProject.get() ? session.projectPath.get() : session.gamePath.get();
+		if (!path.empty()) qt::JumpList::addRecent(path, std::filesystem::path(path).filename().string());
+	});
 	if (args.isSet(mcpServerOpt))
 	{
 		std::string why;

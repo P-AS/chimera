@@ -233,6 +233,7 @@ if qt_dep.found()
     'qt/theme_palette.cpp',
     'qt/pointer_capture.cpp',
     'qt/overlay_painter.cpp',
+    'qt/jump_list.cpp',
     qt_moc,
     qt_rcc,
   ]
@@ -248,6 +249,8 @@ if qt_dep.found()
       dependencies: [vm_dep, qt_dep],
       # the view models have a Signal::emit; Qt's "emit" keyword would eat it
       cpp_args: ['-DQT_NO_KEYWORDS', '-DCHIMERA_QT_LIBRARY'],
+      # the jump list's COM and shell calls
+      link_args: ['-lole32', '-lshell32', '-lshlwapi', '-luuid', '-lpropsys'],
       override_options: ['cpp_std=c++20'],
       install: true,
       install_dir: 'dll',

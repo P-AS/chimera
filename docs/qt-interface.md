@@ -477,9 +477,12 @@ as each lands here. Parts that wait on a question to the owner say so.
 - Tools: (the debugger has no disassembly or
   breakpoints for these cores in Chimera either: the engine has no call
   for them.)
-- Projects: the unpacked cores and compiled code Chimera's Cache Manager
-  lists (the prototype keeps neither).
-- Windows jump lists.
+- Projects: nothing. Chimera's Cache Manager also lists unpacked cores;
+  the Qt window opens a core's package without unpacking it, so it has
+  none to list. Compiled code is in Pre-Compiled Modules in both.
+- Nothing for jump lists: on Windows each project or game opened goes on
+  the taskbar's Recent list, as Chimera's JumpLists does (not seen working
+  on the test PC, whose Windows has recently opened items switched off).
 
 ## Found in the engine on the way
 
