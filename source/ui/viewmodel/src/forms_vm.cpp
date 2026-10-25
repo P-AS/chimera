@@ -140,6 +140,12 @@ FormsViewModel::FormsViewModel(Dispatcher &dispatcher) : ViewModel("forms", disp
 			if (there) removeForm(h);
 			return there;
 		});
+	command("openFile", "Chimera's forms.openfile: the window's file dialog, waited for; the file picked, \"\" when "
+		"cancelled", {"fileName", "folder", "filter"}, [this](const Args &a, std::string &error) -> Value {
+			std::string name, folder, filter;
+			if (!arg(a, 0, name, error) || !arg(a, 1, folder, error) || !arg(a, 2, filter, error)) return {};
+			return openFile ? openFile(name, folder, nameFilters(filter)) : std::string();
+		});
 	command("destroyAll", "closes every form", {}, [this](const Args &, std::string &) -> Value {
 		while (!forms_.empty()) removeForm(forms_.front().handle);
 		return {};
@@ -406,6 +412,40 @@ int64_t FormsViewModel::Rows::rowCount() const
 const FormsViewModel::Item &FormsViewModel::Rows::at(int64_t row) const
 {
 	return (forms_ ? vm_.forms_ : vm_.controls_)[static_cast<size_t>(row)];
+}
+
+std::vector<std::string> FormsViewModel::nameFilters(const std::string &filter)
+{
+	std::vector<std::string> parts;
+	size_t at = 0;
+	for (size_t bar = filter.find('|'); ; bar = filter.find('|', at))
+	{
+		parts.push_back(filter.substr(at, bar == std::string::npos ? std::string::npos : bar - at));
+		if (bar == std::string::npos) break;
+		at = bar + 1;
+	}
+	std::vector<std::string> out;
+	for (size_t i = 0; i + 1 < parts.size(); i += 2)
+	{
+		/* the words without their own list of kinds, which a file dialog would read instead */
+		std::string words = parts[i];
+		if (const size_t open = words.rfind(" ("); open != std::string::npos && !words.empty() && words.back() == ')') words.erase(open);
+		std::string kinds;
+		size_t k = 0;
+		const std::string &list = parts[i + 1];
+		for (size_t semi = list.find(';'); ; semi = list.find(';', k))
+		{
+			std::string kind = list.substr(k, semi == std::string::npos ? std::string::npos : semi - k);
+			/* "*.*" is every file, as Windows reads it */
+			if (kind == "*.*") kind = "*";
+			if (!kind.empty()) kinds += (kinds.empty() ? "" : " ") + kind;
+			if (semi == std::string::npos) break;
+			k = semi + 1;
+		}
+		out.push_back(words + " (" + (kinds.empty() ? std::string("*") : kinds) + ")");
+	}
+	if (out.empty()) out.push_back("All Files (*)");
+	return out;
 }
 
 std::string FormsViewModel::Rows::columnName(int32_t column) const

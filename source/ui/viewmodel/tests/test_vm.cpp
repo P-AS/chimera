@@ -7748,12 +7748,39 @@ bool luaParity(const char *package, const char *rom)
 	tools.openTools = [] { return std::vector<std::string>{"tastudio", "luaconsole"}; };
 	int resized = 0;
 	tools.resizeWindow = [&resized] { resized++; };
+	std::string askedName = "(none)", askedFolder;
+	std::vector<std::string> askedFilters;
+	forms.openFile = [&](const std::string &name, const std::string &folder, const std::vector<std::string> &filters) {
+		askedName = name;
+		askedFolder = folder;
+		askedFilters = filters;
+		return std::string("picked.lua");
+	};
+	/* forms.openfile: Chimera's .NET filter text as the dialog's filters */
+	CHECK((FormsViewModel::nameFilters("Images (*.bmp;*.png)|*.bmp;*.png|All Files (*.*)|*.*") ==
+		std::vector<std::string>{"Images (*.bmp *.png)", "All Files (*)"}));
+	CHECK((FormsViewModel::nameFilters("Lua scripts|*.lua") == std::vector<std::string>{"Lua scripts (*.lua)"}));
+	CHECK((FormsViewModel::nameFilters("") == std::vector<std::string>{"All Files (*)"}));
 	std::string results, error;
 	auto lua1 = [&](const std::string &code) {
 		results.clear();
 		if (!console.runForAgent(code, results, error)) return "error: " + error;
 		return results;
 	};
+	/* forms.openfile's defaults, as Chimera's: the Lua folder, every file;
+	 * the folder of the file named; and what was picked comes back */
+	CHECK(lua1("forms.openfile()") == "[\"picked.lua\"]");
+	CHECK(askedName.empty() && askedFolder == paths.resolve("Lua") && !askedFolder.empty());
+	CHECK((askedFilters == std::vector<std::string>{"All Files (*)"}));
+	lua1("forms.openfile('/some/where/a.lua', nil, 'Lua|*.lua')");
+	CHECK(askedName == "/some/where/a.lua" && askedFolder == "/some/where");
+	CHECK((askedFilters == std::vector<std::string>{"Lua (*.lua)"}));
+	lua1("forms.openfile('a.lua', '/there')");
+	CHECK(askedName == "a.lua" && askedFolder == "/there");
+	lua1("forms.openfile('a.lua')");
+	CHECK(askedFolder.empty());
+	forms.openFile = nullptr;
+	CHECK(lua1("forms.openfile()") == "[\"\"]");
 	/* bizstring, before any machine */
 	CHECK(lua1("bizstring.hex(10), bizstring.hex(255), bizstring.hex(-1)") == "[\"0A\", \"FF\", \"FFFFFFFFFFFFFFFF\"]");
 	CHECK(lua1("bizstring.binary(5), bizstring.binary(0), bizstring.octal(8), bizstring.octal(7)") == "[\"101\", \"\", \"10\", \"07\"]");

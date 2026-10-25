@@ -1244,6 +1244,14 @@ end
 function forms.clearImageCache() imageEpoch = imageEpoch + 1 end
 function forms.getMouseX(handle) return C.forms.mouseX(handle) end
 function forms.getMouseY(handle) return C.forms.mouseY(handle) end
+-- a file picked in the window's dialog, waited for: "" when cancelled; the
+-- folder the file named is in, else the Lua folder, as Chimera's
+function forms.openfile(fileName, initialDirectory, filter)
+	local folder = initialDirectory
+	if folder == nil and fileName ~= nil then folder = string.match(tostring(fileName), "^(.*)[/\\][^/\\]*$") or "" end
+	if folder == nil then folder = C.paths.resolve("Lua") end
+	return C.forms.openFile(fileName ~= nil and tostring(fileName) or "", tostring(folder), filter ~= nil and tostring(filter) or "All Files (*.*)|*.*")
+end
 
 -- gui.createcanvas: Chimera's LuaCanvas, a window of the script's own holding
 -- one picture box the size asked for, "LuaCanvas" until it is named; its

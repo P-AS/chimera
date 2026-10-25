@@ -5,6 +5,7 @@
  * a handle the script names it by. A click and a closed form go back to the
  * script (the window's signals). */
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,14 @@ class FormsViewModel : public ViewModel
 {
 public:
 	explicit FormsViewModel(Dispatcher &dispatcher);
+
+	/* forms.openfile: the window's file dialog, shown and waited for (modal,
+	 * as Chimera's): the file named at first, the folder it opens in, the
+	 * filters (nameFilters' form); the file picked, "" when cancelled */
+	std::function<std::string(const std::string &fileName, const std::string &folder, const std::vector<std::string> &filters)> openFile;
+	/* a .NET dialog filter ("Images (*.bmp;*.png)|*.bmp;*.png|All Files (*.*)|*.*")
+	 * as a file dialog's name filters ("Images (*.bmp *.png)", "All Files (*)") */
+	static std::vector<std::string> nameFilters(const std::string &filter);
 
 	struct Item
 	{

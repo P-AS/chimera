@@ -23,6 +23,8 @@
 #include <QGuiApplication>
 #include <QIcon>
 #include <QQmlApplicationEngine>
+#include <QEventLoop>
+#include <QQmlComponent>
 #include <QQmlError>
 #include <QQmlContext>
 #include <QQuickStyle>
@@ -1478,6 +1480,27 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
 	if (!showName.isEmpty())
 		if (auto *tool = window->findChild<QQuickWindow *>(showName)) tool->show();
+	/* forms.openfile: Qt's file dialog, shown and waited for, modal as Chimera's */
+	forms.openFile = [&engine, window](const std::string &fileName, const std::string &folder, const std::vector<std::string> &filters) {
+		QQmlComponent component(&engine);
+		component.setData("import QtQuick.Dialogs\nFileDialog { fileMode: FileDialog.OpenFile }", QUrl());
+		QStringList names;
+		for (const std::string &f : filters) names << QString::fromStdString(f);
+		QVariantMap initial{{QStringLiteral("nameFilters"), names}, {QStringLiteral("parentWindow"), QVariant::fromValue<QObject *>(window)}};
+		if (!folder.empty()) initial.insert(QStringLiteral("currentFolder"), QUrl::fromLocalFile(QString::fromStdString(folder)));
+		if (!fileName.empty()) initial.insert(QStringLiteral("selectedFile"), QUrl::fromLocalFile(QString::fromStdString(fileName)));
+		const std::unique_ptr<QObject> dialog(component.createWithInitialProperties(initial));
+		if (!dialog) return std::string();
+		/* until it is answered, either way */
+		QEventLoop wait;
+		QObject::connect(dialog.get(), SIGNAL(accepted()), &wait, SLOT(quit()));
+		QObject::connect(dialog.get(), SIGNAL(rejected()), &wait, SLOT(quit()));
+		QMetaObject::invokeMethod(dialog.get(), "open");
+		wait.exec();
+		/* the dialog's result: 1 accepted */
+		if (dialog->property("result").toInt() != 1) return std::string();
+		return dialog->property("selectedFile").toUrl().toLocalFile().toStdString();
+	};
 	/* what scripts ask of the window (Chimera's client library) */
 	toolWindows.screenshot = [&takeScreenshot](const std::string &path) { takeScreenshot(QString::fromStdString(path)); };
 	toolWindows.screenshotToClipboard = [&rawToClipboard] { rawToClipboard(); };
