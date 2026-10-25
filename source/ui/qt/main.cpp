@@ -103,6 +103,7 @@
 #include "pointer_capture.hpp"
 #include "button_router.hpp"
 #include "jump_list.hpp"
+#include "single_instance.hpp"
 #include "key_names.hpp"
 #include "picture_item.hpp"
 #include "piano_roll_item.hpp"
@@ -322,6 +323,19 @@ int main(int argc, char **argv)
 	QCommandLineOption mcpChangesOpt(QStringLiteral("mcp-allow-changes"), QStringLiteral("with --mcp-server: the agent may make changes, for this run"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, userdataOpt, describeOpt, schemeOpt, showOpt, mcpServerOpt, mcpChangesOpt});
 	args.process(app);
+	/* what the window remembers, in a file of its own (CHIMERA_QT_CONFIG for a test) */
+	const QString configPath = qEnvironmentVariableIsSet("CHIMERA_QT_CONFIG")
+		? qEnvironmentVariable("CHIMERA_QT_CONFIG")
+		: QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + QStringLiteral("/settings.json");
+	/* Chimera's single instance mode (Windows): with a window of this
+	 * program already running, the files named are handed to it and this
+	 * one ends before anything is made */
+	qt::SingleInstance single;
+	{
+		QStringList handing;
+		for (const QString &a : args.positionalArguments()) handing << QFileInfo(a).absoluteFilePath();
+		if (qt::SingleInstance::wanted(configPath.toStdString()) && single.forwardIfRunning(handing)) return 0;
+	}
 	QtDispatcher dispatcher(&app);
 	vm::InputLog inputs;
 	vm::SessionViewModel session(dispatcher, inputs);
@@ -831,12 +845,8 @@ int main(int argc, char **argv)
 		[&cores] { return cores.firmwareFolders(); },
 		[&cores](const std::string &extension) { return cores.coresFor(extension); });
 
-	/* what the window remembers, in a file of its own (CHIMERA_QT_CONFIG for
-	 * a test): folders the environment names are the environment's, and
-	 * not remembered */
-	const QString configPath = qEnvironmentVariableIsSet("CHIMERA_QT_CONFIG")
-		? qEnvironmentVariable("CHIMERA_QT_CONFIG")
-		: QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + QStringLiteral("/settings.json");
+	/* what the window remembers (configPath): folders the environment names
+	 * are the environment's, and not remembered */
 	vm::ConfigStore config(configPath.toStdString());
 	if (!qEnvironmentVariableIsSet("CHIMERA_CORES_DIR")) config.keep(cores, "coresFolder");
 	config.keep(cores, "chosenFirmware");
@@ -1160,7 +1170,7 @@ int main(int argc, char **argv)
 	qt::QmlViewModel cacheManagerQml(cacheManager);
 	vm::CustomizeViewModel customize(dispatcher, session);
 	for (const char *name : {"startPaused", "startFullscreen", "neverAskSave", "luaDuringTurbo",
-			 "showContextMenu", "alternateLayouts", "mergeModifiers"})
+			 "showContextMenu", "alternateLayouts", "mergeModifiers", "singleInstance"})
 		config.keep(customize, name);
 	auto keyNaming = [&customize] { qt::setKeyNaming(customize.alternateLayouts.get(), customize.mergeModifiers.get()); };
 	keyNaming();
@@ -1651,6 +1661,12 @@ int main(int argc, char **argv)
 		else
 			session.run("openGame", {positional[0].toStdString()}, error);
 	}
+	/* the files a later start hands over: the first opened as the window opens a file (asking
+	 * about the open project's changes first), as Chimera's opens the first argument */
+	single.listen([window](const QStringList &handed) {
+		if (handed.isEmpty() || handed.first().isEmpty()) return;
+		QMetaObject::invokeMethod(window, "openHanded", Q_ARG(QVariant, handed.first()));
+	});
 	/* Chimera's jump list: the taskbar's Recent list, and each project or game opened on it */
 	qt::JumpList::showRecent();
 	vm::Connection jumpListWatch = session.opens.changed.connect([&session] {
@@ -1772,6 +1788,8 @@ int main(int argc, char **argv)
 	}
 
 	const int rc = app.exec();
+	/* nothing more handed over once the window's things start going */
+	single.stop();
 	if (rc == 0 && qmlWarnings > 0 && qEnvironmentVariableIsSet("CHIMERA_QT_STRICT_QML"))
 	{
 		std::fprintf(stderr, "%d QML warning(s), and CHIMERA_QT_STRICT_QML is set\n", qmlWarnings);

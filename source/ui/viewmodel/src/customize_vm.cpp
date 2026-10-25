@@ -20,6 +20,8 @@ CustomizeViewModel::CustomizeViewModel(Dispatcher &dispatcher, SessionViewModel 
 		"(Handle alternate keyboard layouts)", alternateLayouts, true);
 	expose("mergeModifiers", "both Shift keys are \"Shift\" rather than \"LeftShift\" and \"RightShift\", likewise Ctrl and Alt "
 		"(Merge L+R modifier keys)", mergeModifiers, true);
+	expose("singleInstance", "a second start of the program hands its files to the window already running and ends, on "
+		"Windows (Single instance mode; read when the program starts)", singleInstance, true);
 	command("modifierKeys", "the names Chimera's rewrite replaces when the modifier keys are merged (true) or separated "
 		"(false), as {\"LeftShift\": \"Shift\"}", {"merging"}, [](const Args &a, std::string &error) -> Value {
 			bool merging = true;

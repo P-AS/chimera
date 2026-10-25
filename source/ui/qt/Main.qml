@@ -211,6 +211,13 @@ ApplicationWindow {
             cheatsDialog.open()
         })
     }
+    // a file a later start of the program handed over (Customize's single
+    // instance mode): a project as Open Project opens one, a game with the
+    // core that takes its kind of file; the open project's changes asked about first
+    function openHanded(path) {
+        if (path.toLowerCase().endsWith(".chimeraproject")) { root.openProject(path); return }
+        root.leaveProject(() => root.session.run("openGame", [path]))
+    }
     // a script's client.exit, as Chimera's: closing as the window closes, with the code asked for
     Connections {
         target: root.toolWindows

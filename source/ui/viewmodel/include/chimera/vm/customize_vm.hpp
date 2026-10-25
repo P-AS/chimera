@@ -17,6 +17,9 @@
  * - alternateLayouts: a key is named by what the keyboard's layout makes it
  *   rather than by its place, on Windows (Chimera's Handle alternate
  *   keyboard layouts); keys are named by place on the others, as Chimera's.
+ * - singleInstance: a second start of the program hands the files it is
+ *   given to the window already running and ends, on Windows (Chimera's
+ *   Single instance mode; read when the program starts).
  * - mergeModifiers: both Shift keys are "Shift", rather than "LeftShift"
  *   and "RightShift", likewise Ctrl and Alt (Chimera's Merge L+R modifier
  *   keys). Changing it can rewrite the keys bound (modifierKeys).
@@ -39,7 +42,7 @@ public:
 	CustomizeViewModel(Dispatcher &dispatcher, SessionViewModel &session);
 
 	Property<bool> startPaused{false}, startFullscreen{false}, neverAskSave{false}, luaDuringTurbo{true}, showContextMenu{true};
-	Property<bool> alternateLayouts{false}, mergeModifiers{true};
+	Property<bool> alternateLayouts{false}, mergeModifiers{true}, singleInstance{false};
 
 	/* Chimera's rewrite of the keys bound when mergeModifiers changes
 	 * (ConfigExtensions.ReplaceKeysInBindings with Input.ModifierKeyPreMap or

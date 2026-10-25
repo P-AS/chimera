@@ -230,6 +230,7 @@ if qt_dep.found()
     'qt/picture_item.cpp',
     'qt/piano_roll_item.cpp',
     'qt/key_names.cpp',
+    'qt/single_instance.cpp',
     'qt/theme_palette.cpp',
     'qt/pointer_capture.cpp',
     'qt/overlay_painter.cpp',
@@ -307,6 +308,14 @@ if qt_dep.found()
     override_options: ['cpp_std=c++20'],
   )
   test('key names', test_key_names, env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
+  # single instance mode's hand-over of the files named, in Chimera's payload
+  test_single_instance = executable(
+    'test-single-instance',
+    ['qt/tests/test_single_instance.cpp', 'qt/single_instance.cpp'],
+    dependencies: [qt_dep, vm_dep],
+    override_options: ['cpp_std=c++20'],
+  )
+  test('single instance', test_single_instance, timeout: 60)
   # the MCP server in the window: the witness's agent, reading and then
   # changing the open project through chimera-mcp; the window quits by itself
   if host_machine.system() != 'windows'
