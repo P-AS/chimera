@@ -134,6 +134,18 @@ code is in `source/ui`; how it is built and run is in
   with its state and screenshots, and in the data folder projects,
   recovery and cache/precompiled (a project's branches in branches).
   Chimera's own window keeps its capitalised names.
+- **Chimera's TAStudio prevails** (owner, 2026-10-25): where the Qt
+  window looks or works differently from Chimera's TAStudio and main
+  window, Chimera's way is taken. Done so far: the side as Chimera's
+  (Playback, Greenzone and Branches above, Markers below, a bar between
+  them; the side keeping its width; both bars remembered and put back by
+  Restore Defaults), its boxes framed, Branches and Markers as Chimera's
+  grids (column titles, grid lines, bold text, its colours), their icon
+  buttons and tooltips (the hotkeys named), a branch dragged by its number
+  into another's place, Edit Marker Frame, Turbo seek (off at first: a seek
+  past the greenzone plays there at the machine's own speed, as Chimera's),
+  and the status line (what was said, a seek's progress, the frames picked,
+  states held and frames copied).
 - **Qt is patched where it faults** (owner, 2026-10-24): fixes to Qt go in
   tools/qt-patches and tools/build-qt-windows.sh applies them as it unpacks
   the source. The first: a Qt thread that ended after its data was let go

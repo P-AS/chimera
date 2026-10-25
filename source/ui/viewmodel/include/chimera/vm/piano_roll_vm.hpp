@@ -136,6 +136,10 @@ public:
 	Property<bool> followPlayback{true};
 	/* TAStudio's window comes along when the main one is moved, as Chimera's does at first */
 	Property<bool> moveWithMainWindow{true};
+	/* where TAStudio's two bars were left, as Chimera's settings keep them: the
+	 * side's width and the Markers box's height (0: where Chimera puts them) */
+	Property<int64_t> mainSplit{0};
+	Property<int64_t> sideSplit{0};
 	/* frames before this one were run with the inputs they have now: the greenzone */
 	Property<int64_t> greenEnd{0};
 	/* the first frame in view, and how many fit: the view says how many */

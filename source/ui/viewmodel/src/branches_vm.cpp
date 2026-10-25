@@ -251,6 +251,21 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 		branchRemoved.emit(static_cast<int64_t>(i));
 		return {};
 	});
+	command("swap", "Chimera's branch dragged by its number onto another: the two change places, the branch loaded "
+		"staying the one loaded", {"from", "to"}, [this](const Args &a, std::string &error) -> Value {
+		size_t from = 0, to = 0;
+		if (!index(a, from, error)) return {};
+		Args second(a.begin() + 1, a.end());
+		if (!index(second, to, error)) return {};
+		if (from == to) return {};
+		std::swap(branches_[from], branches_[to]);
+		const int64_t f = static_cast<int64_t>(from), t = static_cast<int64_t>(to);
+		if (current.get() == f) current.set(t);
+		else if (current.get() == t) current.set(f);
+		selected.set(t);
+		changed();
+		return {};
+	});
 	command("rename", "names a branch again", {"index", "name"}, [this](const Args &a, std::string &error) -> Value {
 		size_t i = 0;
 		std::string name;

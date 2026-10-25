@@ -230,6 +230,14 @@ public:
 	/* after an edit before the current frame, go back to the edit and run
 	 * forward to where the machine was, with the new inputs */
 	Property<bool> autoRestore{true};
+	/* TAStudio's Turbo seek, as Chimera's (off at first): on, a seek goes to
+	 * its frame at once, drawing nothing on the way; off, what the greenzone
+	 * holds is gone to at once and the rest is played at the machine's own
+	 * speed, every frame drawn, stopping on the frame */
+	Property<bool> turboSeek{false};
+	/* a seek that plays: the frame it goes to (-1 when none is) and where it set off */
+	Property<int64_t> seekingTo{-1};
+	Property<int64_t> seekFrom{-1};
 	/* TAStudio's recording mode (Chimera's "Recording mode" box and its
 	 * "Toggle read-only" hotkey). Off, the machine plays the movie as it
 	 * is, and past its end only autohold, autofire and the Auto-hold columns
@@ -754,6 +762,10 @@ private:
 	/* a frame run as the window runs it: drawn unless turbo or Display
 	 * Nothing says not; its lag (1), or not (0), or below 0 when it failed */
 	int32_t advanceOnMachine();
+	/* the frame a seek that plays stops on, -1 for none */
+	int64_t pauseOnFrameM_ = -1;
+	std::atomic<bool> turboSeekM_{false};
+	Connection turboSeekWatch_;
 	/* one frame: `live` takes the keys and pads held and plays the sound
 	 * (a replay does neither); `render` makes the picture. The lag result. */
 	/* runs one frame; grow false: a frame past the movie's end is not

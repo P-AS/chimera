@@ -5,6 +5,7 @@
     <file>MenuDivider.qml</file>
     <file>MenuEntry.qml</file>
     <file>ProjectSettings.qml</file>
+    <file>RollTable.qml</file>
     <file alias="chimera.png">../../gui/Chimera.Client.GUI/images/chimera.png</file>
     <file alias="icons/arrow_green.png">../../gui/Chimera.Client.GUI/images/arrow_green.png</file>
     <file alias="icons/arrow_black_down.png">../../gui/Chimera.Client.GUI/images/arrow_black_down.png</file>

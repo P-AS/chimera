@@ -168,7 +168,7 @@ private:
 	struct Look
 	{
 		QColor plain, text, header, headerText, grid, lit, now, green, lag, marker, picked, pickedText, permanent, greenStated,
-			lagStated, greenGone, lagGone, frameWash, altPlayer, greenFrame, lagFrame, analogEdit;
+			lagStated, greenGone, lagGone, frameWash, altPlayer, greenFrame, lagFrame, analogEdit, columnBorder, hint, emphasis;
 		bool dark = false;
 	};
 	Look themeLook() const;

@@ -18,6 +18,8 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 	expose("frameCount", "how many frames have inputs", frameCount);
 	expose("followPlayback", "keep the current frame in view while the machine runs", followPlayback, true);
 	expose("moveWithMainWindow", "TAStudio's window moves with the main window, keeping its place beside it", moveWithMainWindow, true);
+	expose("mainSplit", "the width of TAStudio's side (its boxes), 0 for Chimera's", mainSplit, true);
+	expose("sideSplit", "the height of TAStudio's Markers box, 0 for Chimera's", sideSplit, true);
 	expose("followScroll", "how following scrolls: near, top, bottom or center", followScroll, true);
 	expose("followAlways", "following scrolls on every frame, not only when the frame is out of view", followAlways, true);
 	expose("wheelRows", "the frames a notch of the mouse wheel scrolls", wheelRows, true);
@@ -565,6 +567,38 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			markers_[f] = Marker{f, text, keep};
 			markersEdited(f);
 			return {};
+		});
+	command("moveMarker", "Chimera's Edit Marker Frame: a marker moved to another frame, its text and state kept; "
+		"not the run's own, and not onto a frame that has one", {"from", "to"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t from = 0, to = 0;
+			if (!arg(a, 0, from, error) || !arg(a, 1, to, error)) return {};
+			const auto it = markers_.find(from);
+			if (from == 0 || it == markers_.end())
+			{
+				error = permanentAt(from) ? "frame " + std::to_string(from) + "'s marker is the run's own: it cannot be moved"
+										  : "no marker on frame " + std::to_string(from);
+				return {};
+			}
+			if (to < 0 || markers_.count(to) != 0 || permanentAt(to))
+			{
+				error = to < 0 ? "no frame before 0" : "frame " + std::to_string(to) + " has a marker already";
+				return {};
+			}
+			Marker m = it->second;
+			m.frame = to;
+			markers_.erase(it);
+			markers_[to] = m;
+			markersEdited(std::min(from, to));
+			if (std::max(from, to) < inputs_.size()) frames_.changed.emit(std::max(from, to), std::max(from, to));
+			return {};
+		});
+	command("zoneOf", "a frame's place in the greenzone, as Chimera's lists colour it: \"green\" (run as it stands), "
+		"\"lag\" (run, and lag) or \"\" (not run yet)", {"frame"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t f = 0;
+			if (!arg(a, 0, f, error)) return {};
+			return f >= 0 && f < greenEnd.get() && f < inputs_.size() ? std::string(inputs_.lagAt(f) ? "lag" : "green") : std::string();
 		});
 	command("removeMarker", "takes the marker off a frame", {"frame"},
 		[this](const Args &a, std::string &error) -> Value {

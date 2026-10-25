@@ -30,6 +30,26 @@ ApplicationWindow {
     // whether Shift is held (the main window dragged alone)
     required property QtObject keyNamer
     property QtObject toolWindows: null
+    // every hotkey's keys, {"action": "keys"}, for the tooltips that name them
+    property var hotkeyKeys: ({})
+    // a hotkey's keys, "" when it has none
+    function bindingName(hotkey) { return tas.hotkeyKeys[hotkey] || "" }
+    // Chimera's GetBindingText: "Hotkey: Shift+Q", or what the mouse does too
+    function bindingText(hotkey, mouse) {
+        const raw = tas.bindingName(hotkey).split(",").map(k => k.trim()).filter(k => k !== "").join(" or ")
+        if (raw === "") return qsTr("Hotkey: %1").arg(mouse || qsTr("unbound"))
+        return mouse ? qsTr("Hotkey: %1 or %2").arg(mouse).arg(raw) : qsTr("Hotkey: %1").arg(raw)
+    }
+    // a marker's roles by its row in the list
+    function markerRoles(row) { return markerList.rolesAt(row) }
+    // a branch's text by its place
+    function branchName(i) {
+        const line = (tas.branches.run("list") || "").split("\n")[i] || ""
+        return line.split("\t").slice(2).join("\t")
+    }
+    // the bars are where they were left once the window has been laid out, and moving them is kept from then
+    property bool sidesPlaced: false
+    onVisibleChanged: if (visible && !sidesPlaced) Qt.callLater(() => tas.sidesPlaced = true)
     // Save Window Position (its size: it opens beside the main window), Stay on Top, Float From Main Window
     WindowOptions { id: windowOptions; window: tas; tool: "tastudio"; vm: tas.toolWindows; mainWindow: tas.mainWindow }
     // "<< Hide": the main window offers it back
@@ -334,7 +354,7 @@ ApplicationWindow {
                 MenuItem {
                     text: qsTr("Restore &Defaults")
                     // TAStudio's own: every column shown again
-                    onTriggered: { tas.pianoRoll.run("showAllColumns"); windowOptions.restore() }
+                    onTriggered: { tas.pianoRoll.run("showAllColumns"); tas.pianoRoll.mainSplit = 0; tas.pianoRoll.sideSplit = 0; windowOptions.restore() }
                 }
             }
         }
@@ -347,15 +367,34 @@ ApplicationWindow {
         }
     }
 
+    // Chimera's status strip: what was last said, a seek's progress, and the frames picked, the
+    // states held and the frames copied
     footer: RowLayout {
+        spacing: 6
+        readonly property bool seeking: tas.session.seekingTo >= 0 && tas.session.seekingTo - tas.session.seekFrom > 1
         Label {
-            Layout.fillWidth: true
             padding: 4
-            text: tas.branches.error !== "" ? tas.branches.error : tas.status
+            text: parent.seeking ? qsTr("Seeking...") : tas.branches.error !== "" ? tas.branches.error : tas.status
             elide: Text.ElideRight
+            Layout.maximumWidth: tas.width / 2
         }
-        // how long the roll took to draw, last time
-        Label { padding: 4; text: qsTr("roll %1 ms").arg(Number(tas.mainRoll ? tas.mainRoll.lastPaintMs : 0).toFixed(2)) }
+        ProgressBar {
+            objectName: "seekProgress"
+            visible: parent.seeking
+            Layout.preferredWidth: 100
+            from: 0; to: 100
+            value: parent.seeking ? Math.max(0, Math.min(100, 100 * (tas.pianoRoll.currentFrame - tas.session.seekFrom) / (tas.session.seekingTo - tas.session.seekFrom))) : 0
+        }
+        Item { Layout.fillWidth: true }
+        Label {
+            objectName: "splicerStatus"
+            padding: 4
+            rightPadding: 8
+            readonly property int picked: tas.pianoRoll.selectFirst >= 0 ? tas.pianoRoll.selectLast - tas.pianoRoll.selectFirst + 1 : 0
+            readonly property int copied: tas.pianoRoll.clipboardFrames
+            text: qsTr("Selected: %1 %2, States: %3").arg(picked).arg(picked === 1 ? qsTr("frame") : qsTr("frames")).arg(tas.session.greenzoneStates)
+                + (copied > 0 ? qsTr(", Clipboard: %1 %2").arg(copied).arg(copied === 1 ? qsTr("frame") : qsTr("frames")) : "")
+        }
     }
     // the status line: what was last said here
     property string status: qsTr("TAStudio engaged")
@@ -535,270 +574,384 @@ ApplicationWindow {
             }
         }
 
-        // the boxes at the side: Playback, Greenzone, Branches and Markers,
-        // as Chimera stacks them
-        ColumnLayout {
-            SplitView.preferredWidth: 270
-            SplitView.minimumWidth: 200
-            spacing: 2
+        // the boxes at the side, as Chimera's: Playback, Greenzone and Branches
+        // above, Markers below, a bar between them to move; the side keeps its
+        // width while the window is made wider or narrower
+        SplitView {
+            id: sidePanel
+            objectName: "sidePanel"
+            orientation: Qt.Vertical
+            SplitView.preferredWidth: tas.pianoRoll.mainSplit > 0 ? tas.pianoRoll.mainSplit : 208
+            SplitView.minimumWidth: 160
+            onWidthChanged: if (tas.visible && tas.sidesPlaced) tas.pianoRoll.mainSplit = Math.round(width)
 
-            GroupBox {
-                title: qsTr("Playback")
-                Layout.fillWidth: true
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 0
-                    RowLayout {
-                        spacing: 2
-                        SmallButton {
-                            text: "<<"; tip: qsTr("Previous marker")
-                            enabled: tas.session.isOpen
-                            onClicked: tas.session.run("seek", [Math.max(0, tas.pianoRoll.run("previousMarker", [tas.pianoRoll.currentFrame]))])
-                        }
-                        SmallButton {
-                            text: "<"; tip: qsTr("A frame back")
-                            enabled: tas.session.isOpen && tas.pianoRoll.currentFrame > 0
-                            autoRepeat: true
-                            onClicked: tas.session.run("seek", [tas.pianoRoll.currentFrame - 1])
-                        }
-                        SmallButton {
-                            text: "> ||"; tip: qsTr("Pause or run")
-                            enabled: tas.session.isOpen
-                            onClicked: tas.session.run(tas.session.running ? "pause" : "play")
-                        }
-                        SmallButton {
-                            text: ">"; tip: qsTr("A frame on")
-                            enabled: tas.session.isOpen
-                            autoRepeat: true
-                            onClicked: tas.session.run("frameAdvance")
-                        }
-                        SmallButton {
-                            text: ">>"; tip: qsTr("Next marker")
-                            enabled: tas.session.isOpen
-                            onClicked: {
-                                const next = tas.pianoRoll.run("nextMarker", [tas.pianoRoll.currentFrame])
-                                if (next >= 0) tas.session.run("seek", [next])
+            ColumnLayout {
+                SplitView.fillHeight: true
+                SplitView.minimumHeight: 280
+                spacing: 0
+
+                GroupFrame {
+                    title: qsTr("Playback")
+                    Layout.fillWidth: true
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 0
+                        RowLayout {
+                            spacing: -1
+                            PlayButton {
+                                text: "<<"
+                                tip: tas.bindingText("Seek To Prev Marker") + "\n" + qsTr("seek to previous marker")
+                                enabled: tas.session.isOpen
+                                onClicked: tas.session.run("seek", [Math.max(0, tas.pianoRoll.run("previousMarker", [tas.pianoRoll.currentFrame]))])
+                            }
+                            PlayButton {
+                                text: "<"
+                                tip: tas.bindingText("Rewind", qsTr("Right Mouse Button + Wheel Up")) + "\n" + qsTr("go back 1 step (size of step is configurable in settings)")
+                                    + "\n" + qsTr("Wheel is always 1 frame per tick.")
+                                enabled: tas.session.isOpen && tas.pianoRoll.currentFrame > 0
+                                autoRepeat: true
+                                autoRepeatDelay: 1000
+                                autoRepeatInterval: 100
+                                onClicked: tas.session.run("seek", [tas.pianoRoll.currentFrame - 1])
+                            }
+                            PlayButton {
+                                text: "> ||"
+                                tip: tas.bindingText("Pause", qsTr("Middle Mouse Button")) + "\n" + qsTr("toggle pause")
+                                enabled: tas.session.isOpen
+                                onClicked: tas.session.run(tas.session.running ? "pause" : "play")
+                            }
+                            PlayButton {
+                                text: ">"
+                                tip: tas.bindingText("Frame Advance", qsTr("Right Mouse Button + Wheel Down")) + "\n" + qsTr("frame advance")
+                                enabled: tas.session.isOpen
+                                autoRepeat: true
+                                autoRepeatDelay: 500
+                                autoRepeatInterval: 50
+                                onClicked: tas.session.run("frameAdvance")
+                            }
+                            PlayButton {
+                                text: ">>"
+                                tip: tas.bindingText("Seek To Next Marker") + "\n" + qsTr("seek to next marker")
+                                enabled: tas.session.isOpen
+                                onClicked: {
+                                    const next = tas.pianoRoll.run("nextMarker", [tas.pianoRoll.currentFrame])
+                                    if (next >= 0) tas.session.run("seek", [next])
+                                }
                             }
                         }
-                    }
-                    CheckBox {
-                        text: qsTr("Follow cursor")
-                        checked: tas.pianoRoll.followPlayback
-                        onToggled: tas.pianoRoll.followPlayback = checked
-                    }
-                    CheckBox {
-                        text: qsTr("Auto-restore last position")
-                        checked: tas.session.autoRestore
-                        onToggled: tas.session.autoRestore = checked
-                    }
-                    CheckBox {
-                        objectName: "recordingMode"
-                        text: qsTr("Recording mode")
-                        checked: tas.session.recordingMode
-                        enabled: tas.session.hasProject
-                        onToggled: tas.session.recordingMode = checked
-                        ToolTip.visible: hovered
-                        ToolTip.text: qsTr("When enabled, you can record inputs while unpaused or when frame advancing.")
+                        RowLayout {
+                            spacing: 8
+                            BoxCheck {
+                                text: qsTr("Follow cursor")
+                                tip: tas.bindingText("Toggle Follow Cursor") + "\n" + qsTr("When enabled, the current emulator frame will be")
+                                    + "\n" + qsTr("made visible every time the current frame changes.")
+                                checked: tas.pianoRoll.followPlayback
+                                onToggled: tas.pianoRoll.followPlayback = checked
+                            }
+                            BoxCheck {
+                                objectName: "turboSeek"
+                                text: qsTr("Turbo seek")
+                                tip: tas.bindingText("Toggle Turbo Seek") + "\n" + qsTr("When enabled, TAStudio will run the emulator as fast as possible during seeks.")
+                                checked: tas.session.turboSeek
+                                onToggled: tas.session.turboSeek = checked
+                            }
+                        }
+                        BoxCheck {
+                            text: qsTr("Auto-restore last position")
+                            tip: tas.bindingText("Toggle Auto-Restore") + "\n" + qsTr("When enabled and you edit a frame before the current emulator frame,")
+                                + "\n" + qsTr("TAStudio will automatically seek back to said emulator frame.")
+                            checked: tas.session.autoRestore
+                            onToggled: tas.session.autoRestore = checked
+                        }
+                        BoxCheck {
+                            objectName: "recordingMode"
+                            text: qsTr("Recording mode")
+                            tip: tas.bindingText("Toggle read-only") + "\n" + qsTr("When enabled, you can record inputs while unpaused or when frame advancing.")
+                            checked: tas.session.recordingMode
+                            enabled: tas.session.hasProject
+                            onToggled: tas.session.recordingMode = checked
+                        }
                     }
                 }
-            }
 
-            // what the greenzone stores: every frame, every N, or nothing
-            GroupBox {
-                title: qsTr("Greenzone")
-                Layout.fillWidth: true
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 0
-                    RadioButton {
-                        text: qsTr("Every frame")
-                        checked: tas.session.greenzonePeriod === 1
-                        onToggled: if (checked) tas.session.greenzonePeriod = 1
-                    }
-                    RowLayout {
+                // what the greenzone stores: every frame, every N, or nothing
+                GroupFrame {
+                    title: qsTr("Greenzone")
+                    Layout.fillWidth: true
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 0
                         RadioButton {
-                            id: everyN
-                            text: qsTr("Every")
-                            checked: tas.session.greenzonePeriod > 1
-                            onToggled: if (checked) tas.session.greenzonePeriod = everyCount.value
+                            padding: 1
+                            text: qsTr("Every frame")
+                            checked: tas.session.greenzonePeriod === 1
+                            onToggled: if (checked) tas.session.greenzonePeriod = 1
                         }
-                        SpinBox {
-                            id: everyCount
-                            from: 2; to: 999; editable: true
-                            Layout.preferredWidth: 100
-                            value: tas.session.greenzoneEvery
-                            onValueModified: {
-                                tas.session.greenzoneEvery = value
-                                if (everyN.checked) tas.session.greenzonePeriod = value
+                        RowLayout {
+                            spacing: 2
+                            RadioButton {
+                                id: everyN
+                                padding: 1
+                                text: qsTr("Every")
+                                checked: tas.session.greenzonePeriod > 1
+                                onToggled: if (checked) tas.session.greenzonePeriod = everyCount.value
                             }
+                            SpinBox {
+                                id: everyCount
+                                from: 2; to: 999; editable: true
+                                Layout.preferredWidth: 70
+                                value: tas.session.greenzoneEvery
+                                onValueModified: {
+                                    tas.session.greenzoneEvery = value
+                                    if (everyN.checked) tas.session.greenzonePeriod = value
+                                }
+                            }
+                            Label { text: qsTr("frames") }
                         }
-                        Label { text: qsTr("frames") }
-                    }
-                    RadioButton {
-                        text: qsTr("Off")
-                        checked: tas.session.greenzonePeriod === 0
-                        onToggled: if (checked) tas.session.greenzonePeriod = 0
+                        RadioButton {
+                            padding: 1
+                            text: qsTr("Off")
+                            checked: tas.session.greenzonePeriod === 0
+                            onToggled: if (checked) tas.session.greenzonePeriod = 0
+                        }
                     }
                 }
-            }
 
-            GroupBox {
-                title: qsTr("Branches")
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 2
-                    readonly property bool picked: tas.branches.selected >= 0 && tas.branches.selected < tas.branches.count
-                    ListView {
-                        id: branchList
-                        objectName: "branchList"
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.minimumHeight: 48
-                        clip: true
-                        model: tas.branches.rows("branches")
-                        ScrollBar.vertical: ScrollBar {}
-                        delegate: ItemDelegate {
-                            id: branchRow
-                            required property int index
-                            required property string name
-                            required property var frame
-                            required property string time
-                            width: branchList.width - 12
-                            padding: 2
-                            highlighted: branchRow.index === tas.branches.selected
-                            contentItem: RowLayout {
-                                Label { text: branchRow.index + 1; Layout.preferredWidth: 24 }
-                                Label { text: branchRow.frame; Layout.preferredWidth: 56 }
-                                Label { text: branchRow.name; Layout.fillWidth: true; elide: Text.ElideRight }
+                GroupFrame {
+                    title: qsTr("Branches")
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 4
+                        readonly property bool picked: tas.branches.selected >= 0 && tas.branches.selected < tas.branches.count
+                        RollTable {
+                            id: branchList
+                            objectName: "branchList"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            Layout.minimumHeight: 40
+                            model: tas.branches.rows("branches")
+                            columns: [{ title: "#", width: 30 }, { title: qsTr("Frame"), width: 64 }, { title: qsTr("UserText"), width: 90 }]
+                            current: tas.branches.selected
+                            rollColor: tas.rollColor
+                            // a branch is put in another's place by its number, as Chimera's
+                            dragFirstColumn: true
+                            cellText: (roles, row, column) => column === 0 ? String(row + 1) : column === 1 ? String(roles.frame) : roles.name
+                            // as Chimera colours its list: the branch loaded, else its frame's greenzone or lag colour
+                            cellColor: (roles, row, column) => {
+                                if (row === tas.branches.current) return tas.rollColor("TasCurrentFrame")
+                                const zone = tas.pianoRoll.greenEnd >= 0 ? tas.pianoRoll.run("zoneOf", [roles.frame]) : ""
+                                return zone === "lag" ? tas.rollColor("TasLagZoneInput") : zone === "green" ? tas.rollColor("TasGreenZoneInput") : ""
                             }
-                            onClicked: tas.branches.selected = branchRow.index
+                            onClicked: (row, column) => tas.branches.selected = row
                             // TAStudio's "load branch by double clicking"
-                            onDoubleClicked: if (tas.branches.loadOnDoubleClick) tas.branches.run("askToLoad", [branchRow.index])
-                            TapHandler {
-                                acceptedButtons: Qt.RightButton
-                                onTapped: { tas.branches.selected = branchRow.index; branchMenu.popup() }
-                            }
+                            onDoubleClicked: (row) => { if (tas.branches.loadOnDoubleClick) tas.branches.run("askToLoad", [row]) }
+                            onRightClicked: (row) => { if (row >= 0) tas.branches.selected = row; branchMenu.popup() }
+                            onDropped: (from, to) => tas.branches.run("swap", [from, to])
                             // the branch's picture while the pointer is over it, as Chimera shows it
-                            onHoveredChanged: {
-                                if (hovered && tas.branches.run("preview", [branchRow.index])) {
-                                    const at = branchRow.mapToItem(tas.contentItem, 0, 0)
+                            property int previewing: -1
+                            onPointed: (row) => {
+                                if (row === previewing) return
+                                previewing = row
+                                if (row >= 0 && tas.branches.run("preview", [row])) {
+                                    const at = branchList.mapToItem(tas.contentItem, 0, 0)
                                     preview.x = Math.max(0, at.x - tas.branches.previewWidth - 8)
                                     preview.y = at.y
                                     preview.open()
-                                } else if (!hovered && tas.branches.previewing === branchRow.index) {
+                                } else {
                                     preview.close()
                                     tas.branches.run("preview", [-1])
                                 }
                             }
                         }
-                        TapHandler {
-                            acceptedButtons: Qt.RightButton
-                            onTapped: branchMenu.popup()
+                        RowLayout {
+                            spacing: 6
+                            IconButton {
+                                icon.source: "qrc:/chimera/icons/add.png"
+                                tip: tas.bindingName("Add Branch") !== "" ? qsTr("Add Branch (%1)").arg(tas.bindingName("Add Branch")) : qsTr("Add Branch")
+                                enabled: tas.branches.createEnabled
+                                onClicked: tas.branches.run("create", [""])
+                            }
+                            IconButton {
+                                icon.source: "qrc:/chimera/icons/AddEdit.png"; tip: qsTr("Add Branch with Text")
+                                enabled: tas.branches.createEnabled
+                                onClicked: branchTextDialog.openFor("add")
+                            }
+                            IconButton {
+                                icon.source: "qrc:/chimera/icons/Debugger.png"; tip: qsTr("Load Branch")
+                                enabled: parent.parent.picked
+                                onClicked: tas.branches.run("askToLoad", [tas.branches.selected])
+                            }
+                            IconButton {
+                                icon.source: "qrc:/chimera/icons/reboot.png"; tip: qsTr("Update Branch")
+                                enabled: parent.parent.picked
+                                onClicked: tas.branches.run("saveSlot", [tas.branches.selected])
+                            }
+                            IconButton {
+                                icon.source: "qrc:/chimera/icons/JumpTo.png"; tip: qsTr("Jump To Branch Frame")
+                                enabled: parent.parent.picked
+                                onClicked: tas.branches.run("jumpTo", [tas.branches.selected])
+                            }
+                            // Chimera's one step of branch undo
+                            IconButton {
+                                icon.source: "qrc:/chimera/icons/undo.png"; tip: tas.branches.undoText
+                                enabled: tas.branches.undoText !== ""
+                                onClicked: tas.branches.run("undo")
+                            }
                         }
-                    }
-                    RowLayout {
-                        spacing: 2
-                        SmallButton { text: qsTr("Add"); enabled: tas.branches.createEnabled; onClicked: tas.branches.run("create", [""]) }
-                        SmallButton { text: qsTr("Load"); enabled: parent.parent.picked; onClicked: tas.branches.run("askToLoad", [tas.branches.selected]) }
-                        SmallButton { text: qsTr("Update"); enabled: parent.parent.picked; onClicked: tas.branches.run("saveSlot", [tas.branches.selected]) }
-                        // Chimera's one step of branch undo
-                        SmallButton { text: qsTr("Undo"); tip: tas.branches.undoText; enabled: tas.branches.undoText !== ""; onClicked: tas.branches.run("undo") }
                     }
                 }
             }
 
-            GroupBox {
+            GroupFrame {
                 title: qsTr("Markers")
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                SplitView.preferredHeight: tas.pianoRoll.sideSplit > 0 ? tas.pianoRoll.sideSplit : 151
+                SplitView.minimumHeight: 90
+                onHeightChanged: if (tas.visible && tas.sidesPlaced) tas.pianoRoll.sideSplit = Math.round(height)
                 ColumnLayout {
                     anchors.fill: parent
-                    spacing: 2
-                    ListView {
+                    spacing: 4
+                    RollTable {
                         id: markerList
                         objectName: "markerList"
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        Layout.minimumHeight: 48
-                        clip: true
-                        currentIndex: -1
+                        Layout.minimumHeight: 30
                         model: tas.pianoRoll.rows("markers")
-                        ScrollBar.vertical: ScrollBar {}
+                        columns: [{ title: qsTr("Frame"), width: 52 }, { title: qsTr("Name"), width: 149 }]
+                        rollColor: tas.rollColor
+                        current: -1
                         property var pickedFrame: -1
                         property string pickedText: ""
                         // the run's own: nothing to rename, move or remove
                         property bool pickedPermanent: false
                         readonly property bool pickedEditable: pickedFrame > 0 && !pickedPermanent
-                        onCountChanged: { currentIndex = -1; pickedFrame = -1; pickedPermanent = false }
-                        delegate: ItemDelegate {
-                            id: markerRow
-                            required property int index
-                            // its text is a role of the model's: "text" is the delegate's own
-                            required property var model
-                            width: markerList.width - 12
-                            padding: 2
-                            highlighted: ListView.isCurrentItem
-                            // as Chimera colours its list: the run's own (start, last input, end), else
-                            // the marker the machine is at or past, else its frame's greenzone or lag
-                            // colour, the frame's column in the roll's frame-column shade
-                            function shade(frameColumn) {
-                                if (markerRow.highlighted) return markerRow.palette.highlight
-                                if (markerRow.model.permanent) return tas.rollColor("TasPermanentMarker") || "transparent"
-                                if (markerRow.model.frame === tas.pianoRoll.currentMarker) return tas.rollColor("TasCurrentFrame") || "transparent"
-                                if (markerRow.model.zone === "") return "transparent"
-                                const lag = markerRow.model.zone === "lag"
-                                return tas.rollColor(frameColumn ? (lag ? "TasLagZone" : "TasGreenZone") : (lag ? "TasLagZoneInput" : "TasGreenZoneInput")) || "transparent"
-                            }
-                            background: Row {
-                                Rectangle { width: markerRow.leftPadding + 58; height: markerRow.height; color: markerRow.shade(true) }
-                                Rectangle { width: markerRow.width - markerRow.leftPadding - 58; height: markerRow.height; color: markerRow.shade(false) }
-                            }
-                            contentItem: RowLayout {
-                                spacing: 4
-                                Label { text: markerRow.model.frame; Layout.preferredWidth: 56 }
-                                Label { text: markerRow.model.text; Layout.fillWidth: true; elide: Text.ElideRight; font.italic: markerRow.model.permanent }
-                            }
-                            function pick() {
-                                markerList.currentIndex = markerRow.index
-                                markerList.pickedFrame = markerRow.model.frame
-                                markerList.pickedText = markerRow.model.text
-                                markerList.pickedPermanent = markerRow.model.permanent
-                            }
-                            onClicked: markerRow.pick()
-                            // Jump To, as a double click in Chimera's list
-                            onDoubleClicked: tas.session.run("seek", [markerRow.model.frame])
-                            TapHandler {
-                                acceptedButtons: Qt.RightButton
-                                onTapped: { markerRow.pick(); markerMenu.popup() }
-                            }
+                        Connections {
+                            target: markerList.model
+                            function onModelReset() { markerList.current = -1; markerList.pickedFrame = -1; markerList.pickedPermanent = false }
                         }
+                        cellText: (roles, row, column) => column === 0 ? String(roles.frame) : roles.text
+                        // as Chimera colours its list: the run's own (start, last input, end), else the marker
+                        // the machine is at or past, else its frame's greenzone or lag colour, the frame's column
+                        // in the roll's frame-column shade
+                        cellColor: (roles, row, column) => {
+                            if (roles.permanent) return tas.rollColor("TasPermanentMarker")
+                            if (roles.frame === tas.pianoRoll.currentMarker) return tas.rollColor("TasCurrentFrame")
+                            if (roles.zone === "") return ""
+                            const lag = roles.zone === "lag"
+                            return tas.rollColor(column === 0 ? (lag ? "TasLagZone" : "TasGreenZone") : (lag ? "TasLagZoneInput" : "TasGreenZoneInput"))
+                        }
+                        function pick(row) {
+                            const roles = tas.markerRoles(row)
+                            markerList.current = row
+                            markerList.pickedFrame = roles.frame
+                            markerList.pickedText = roles.text
+                            markerList.pickedPermanent = roles.permanent
+                        }
+                        onClicked: (row, column) => markerList.pick(row)
+                        // Jump To, as a double click in Chimera's list
+                        onDoubleClicked: (row) => tas.session.run("seek", [tas.markerRoles(row).frame])
+                        onRightClicked: (row) => { if (row >= 0) markerList.pick(row); markerMenu.popup() }
                     }
                     RowLayout {
-                        spacing: 2
-                        SmallButton { text: qsTr("Add"); enabled: tas.session.isOpen; onClicked: markerDialog.openFor(tas.pianoRoll.currentFrame, "") }
-                        SmallButton { text: qsTr("Remove"); enabled: markerList.pickedEditable; onClicked: tas.pianoRoll.run("removeMarker", [markerList.pickedFrame]) }
-                        SmallButton { text: qsTr("Jump To"); enabled: markerList.pickedFrame >= 0; onClicked: tas.session.run("seek", [markerList.pickedFrame]) }
-                        SmallButton { text: qsTr("Edit"); enabled: markerList.pickedEditable; onClicked: markerDialog.openFor(markerList.pickedFrame, markerList.pickedText) }
+                        spacing: 4
+                        IconButton {
+                            icon.source: "qrc:/chimera/icons/add.png"
+                            tip: tas.bindingName("Set Marker") !== "" ? qsTr("Add Marker to Emulated Frame (%1)").arg(tas.bindingName("Set Marker")) : qsTr("Add Marker to Emulated Frame")
+                            enabled: tas.session.isOpen
+                            onClicked: tas.pianoRoll.run("addMarker", [tas.pianoRoll.currentFrame, ""])
+                        }
+                        IconButton {
+                            icon.source: "qrc:/chimera/icons/AddEdit.png"
+                            tip: tas.bindingName("Set Marker") !== "" ? qsTr("Add Marker with Text to Emulated Frame (%1 %1)").arg(tas.bindingName("Set Marker")) : qsTr("Add Marker with Text to Emulated Frame")
+                            enabled: tas.session.isOpen
+                            onClicked: markerDialog.openFor(tas.pianoRoll.currentFrame, "")
+                        }
+                        IconButton {
+                            icon.source: "qrc:/chimera/icons/JumpTo.png"; tip: qsTr("Jump To Marker Frame")
+                            enabled: markerList.pickedFrame >= 0
+                            onClicked: tas.session.run("seek", [markerList.pickedFrame])
+                        }
+                        IconButton {
+                            icon.source: "qrc:/chimera/icons/ScrollTo.png"; tip: qsTr("Scroll View To Marker Frame")
+                            enabled: markerList.pickedFrame >= 0
+                            onClicked: tas.pianoRoll.topFrame = Math.max(0, markerList.pickedFrame - 2)
+                        }
+                        IconButton {
+                            icon.source: "qrc:/chimera/icons/pencil.png"; tip: qsTr("Edit Marker Text")
+                            enabled: markerList.pickedEditable
+                            onClicked: markerDialog.openFor(markerList.pickedFrame, markerList.pickedText)
+                        }
+                        IconButton {
+                            icon.source: "qrc:/chimera/icons/Clock.png"; tip: qsTr("Edit Marker Frame (Alt + Drag)")
+                            enabled: markerList.pickedEditable
+                            onClicked: markerFrameDialog.openFor(markerList.pickedFrame)
+                        }
+                        IconButton {
+                            icon.source: "qrc:/chimera/icons/Delete.png"
+                            tip: tas.bindingName("Delete Marker") !== "" ? qsTr("Remove Marker (%1 on marker's frame)").arg(tas.bindingName("Delete Marker")) : qsTr("Remove Marker")
+                            enabled: markerList.pickedEditable
+                            onClicked: tas.pianoRoll.run("removeMarker", [markerList.pickedFrame])
+                        }
                     }
                 }
             }
         }
     }
 
-    component SmallButton: Button {
+    // the panel's boxes: Chimera's group box, its buttons and its check boxes
+    component GroupFrame: GroupBox {
+        id: frame
+        padding: 6
+        topPadding: frameTitle.implicitHeight + 4
+        label: Label {
+            id: frameTitle
+            x: 6
+            leftPadding: 2
+            rightPadding: 2
+            text: frame.title
+            background: Rectangle { color: frame.palette.window }
+        }
+        background: Rectangle {
+            y: frameTitle.implicitHeight / 2
+            width: frame.width
+            height: frame.height - y
+            color: "transparent"
+            border.color: frame.palette.mid
+            radius: 2
+        }
+    }
+    component PlayButton: Button {
         property string tip: ""
         padding: 2
-        leftPadding: 8
-        rightPadding: 8
-        implicitHeight: 28
-        // as wide as its text, not the style's usual button
-        implicitWidth: Math.max(32, contentItem.implicitWidth + leftPadding + rightPadding)
+        implicitWidth: 38
+        implicitHeight: 23
         ToolTip.text: tip
         ToolTip.visible: hovered && tip !== ""
         ToolTip.delay: 500
     }
+    component IconButton: Button {
+        property string tip: ""
+        padding: 3
+        implicitWidth: 24
+        implicitHeight: 24
+        display: AbstractButton.IconOnly
+        icon.width: 16
+        icon.height: 16
+        icon.color: "transparent"
+        ToolTip.text: tip
+        ToolTip.visible: hovered && tip !== ""
+        ToolTip.delay: 500
+    }
+    component BoxCheck: CheckBox {
+        property string tip: ""
+        padding: 1
+        ToolTip.text: tip
+        ToolTip.visible: hovered && tip !== ""
+        ToolTip.delay: 500
+    }
+
     // the roll's menu on the frames picked, in Chimera's order
     Menu {
         id: rowMenu
@@ -883,7 +1036,7 @@ ApplicationWindow {
         delegate: MenuEntry {}
         id: branchMenu
         readonly property bool picked: tas.branches.selected >= 0 && tas.branches.selected < tas.branches.count
-        Action { text: qsTr("Add"); enabled: tas.branches.createEnabled; onTriggered: tas.branches.run("create", [""]) }
+        Action { text: qsTr("Add"); icon.source: "qrc:/chimera/icons/add.png"; enabled: tas.branches.createEnabled; onTriggered: tas.branches.run("create", [""]) }
         Action { text: qsTr("Add with Text"); icon.source: "qrc:/chimera/icons/AddEdit.png"; enabled: tas.branches.createEnabled; onTriggered: branchTextDialog.openFor("add") }
         Action { text: qsTr("Load"); icon.source: "qrc:/chimera/icons/Debugger.png"; enabled: branchMenu.picked; onTriggered: tas.branches.run("askToLoad", [tas.branches.selected]) }
         Action { text: qsTr("&Update"); icon.source: "qrc:/chimera/icons/updateBranch.png"; enabled: branchMenu.picked; onTriggered: tas.branches.run("saveSlot", [tas.branches.selected]) }
@@ -899,8 +1052,7 @@ ApplicationWindow {
         property string doing: "add"
         function openFor(what) {
             branchTextDialog.doing = what
-            const row = what === "add" ? null : branchList.itemAtIndex(tas.branches.selected)
-            branchTextField.text = row ? row.name : ""
+            branchTextField.text = what === "add" ? "" : tas.branchName(tas.branches.selected)
             branchTextDialog.open()
         }
         title: qsTr("Branch text")
@@ -924,7 +1076,9 @@ ApplicationWindow {
         Action { text: qsTr("Jump To"); icon.source: "qrc:/chimera/icons/JumpTo.png"; onTriggered: tas.session.run("seek", [markerList.pickedFrame]) }
         Action { text: qsTr("Scroll To"); icon.source: "qrc:/chimera/icons/ScrollTo.png"; onTriggered: tas.pianoRoll.topFrame = Math.max(0, markerList.pickedFrame - 2) }
         Action { text: qsTr("Edit Text"); icon.source: "qrc:/chimera/icons/pencil.png"; enabled: markerList.pickedEditable; onTriggered: markerDialog.openFor(markerList.pickedFrame, markerList.pickedText) }
-        Action { text: qsTr("Add"); icon.source: "qrc:/chimera/icons/add.png"; enabled: tas.session.isOpen; onTriggered: markerDialog.openFor(tas.pianoRoll.currentFrame, "") }
+        Action { text: qsTr("Edit Frame (Alt + Drag)"); icon.source: "qrc:/chimera/icons/Clock.png"; enabled: markerList.pickedEditable; onTriggered: markerFrameDialog.openFor(markerList.pickedFrame) }
+        Action { text: qsTr("Add"); icon.source: "qrc:/chimera/icons/add.png"; enabled: tas.session.isOpen; onTriggered: tas.pianoRoll.run("addMarker", [tas.pianoRoll.currentFrame, ""]) }
+        MenuDivider {}
         Action { text: qsTr("Remove"); icon.source: "qrc:/chimera/icons/Delete.png"; enabled: markerList.pickedEditable; onTriggered: tas.pianoRoll.run("removeMarker", [markerList.pickedFrame]) }
     }
     Popup {
@@ -989,6 +1143,27 @@ ApplicationWindow {
         TextField { id: markerText; placeholderText: qsTr("What happens here"); width: 300; focus: true }
         onOpened: markerText.forceActiveFocus()
         onAccepted: tas.pianoRoll.run("addMarker", [markerDialog.frame, markerText.text])
+    }
+    // Chimera's Edit Marker Frame: the marker to another frame, not onto one that has a marker
+    Dialog {
+        id: markerFrameDialog
+        property int frame: 0
+        function openFor(f) { markerFrameDialog.frame = f; markerFrameText.text = String(f); markerFrameDialog.open() }
+        title: qsTr("Marker for frame %1").arg(markerFrameDialog.frame)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        anchors.centerIn: parent
+        modal: true
+        ColumnLayout {
+            Label { text: qsTr("Enter a frame number") }
+            TextField {
+                id: markerFrameText
+                validator: IntValidator { bottom: 0 }
+                Layout.preferredWidth: 200
+                onAccepted: markerFrameDialog.accept()
+            }
+        }
+        onOpened: { markerFrameText.forceActiveFocus(); markerFrameText.selectAll() }
+        onAccepted: if (markerFrameText.text !== "") tas.pianoRoll.run("moveMarker", [markerFrameDialog.frame, parseInt(markerFrameText.text)])
     }
     Dialog {
         id: holdValueDialog

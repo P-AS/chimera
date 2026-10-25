@@ -93,6 +93,8 @@
 using namespace chimera::vm;
 
 static int failures = 0, checks = 0;
+/* Every test's session seeks at once (Turbo seek on), as the checks wait
+ * for the frame; Turbo seek off, which plays to the frame, has a test of its own */
 #define CHECK(c) \
 	do { \
 		checks++; \
@@ -1012,6 +1014,7 @@ void pianoRollWithoutAMachine()
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
 	/* the movie is the machine's: with none open there is none to fill or edit */
@@ -1107,6 +1110,7 @@ bool padCatch()
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	std::string error;
 	const int index = attach(0, 0, 4, 0);
 	void *joy = index >= 0 ? open(index) : nullptr;
@@ -1177,6 +1181,7 @@ bool speedAndSound(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	std::string error;
 	auto step = [&](const char *command) {
 		session.run(command, {}, error);
@@ -1378,6 +1383,7 @@ bool overlay(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
@@ -1460,6 +1466,7 @@ bool pianoRollColumns(const char *package, const char *rom)
 		ManualDispatcher d;
 		InputLog inputs;
 		SessionViewModel session(d, inputs);
+		session.turboSeek.set(true);
 		PianoRollViewModel roll(d, inputs, session);
 		std::string error;
 		session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
@@ -1517,6 +1524,7 @@ bool pianoRollColumns(const char *package, const char *rom)
 		ManualDispatcher d;
 		InputLog inputs;
 		SessionViewModel session(d, inputs);
+		session.turboSeek.set(true);
 		PianoRollViewModel roll(d, inputs, session);
 		std::string error;
 		session.run("openProject", {own.string(), std::string(package)}, error);
@@ -1553,6 +1561,7 @@ bool pianoRollColumns(const char *package, const char *rom)
 		ManualDispatcher d;
 		InputLog inputs;
 		SessionViewModel session(d, inputs);
+		session.turboSeek.set(true);
 		PianoRollViewModel roll(d, inputs, session);
 		std::string error;
 		session.run("openProject", {own.string(), std::string(package)}, error);
@@ -1571,6 +1580,7 @@ bool autoholdAndAutofire(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
 	CHECK(d.until([&] { return session.isOpen.get() && session.buttonNames().size() == 8; }, 60));
@@ -1634,6 +1644,7 @@ bool backupAndHistory(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	std::string error;
 	session.backupFolder.set((dir / "backup").string());
 	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
@@ -1694,6 +1705,7 @@ bool traceAndRegisters(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	TraceLoggerViewModel trace(d, session);
 	DebuggerViewModel debugger(d, session);
 	std::string error;
@@ -1776,6 +1788,7 @@ bool macroTool(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	MacroToolViewModel tool(d, roll, session);
 	std::string error;
@@ -1848,6 +1861,7 @@ bool luaLibraries(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	DebuggerViewModel debugger(d, session);
 	GuiOverlayViewModel guiOverlay(d);
@@ -2092,6 +2106,7 @@ bool greenzoneBudgets(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	std::string error;
 	session.cacheFolder.set((dir / "cache").string());
 	session.greenzoneBudgetMb.set(10);
@@ -2154,6 +2169,7 @@ bool customizeOptions(const char *package, const char *rom)
 		ManualDispatcher d;
 		InputLog inputs;
 		SessionViewModel session(d, inputs);
+		session.turboSeek.set(true);
 		CustomizeViewModel customize(d, session);
 		auto openGame = [&] {
 			const int64_t was = session.opens.get();
@@ -2203,6 +2219,7 @@ bool customizeOptions(const char *package, const char *rom)
 		ManualDispatcher d;
 		InputLog inputs;
 		SessionViewModel session(d, inputs);
+		session.turboSeek.set(true);
 		CustomizeViewModel customize(d, session);
 		customize.startPaused.set(true);
 		session.run("open", {std::string(package), std::string(rom)}, error);
@@ -2231,6 +2248,7 @@ bool crashRecovery(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
 	session.backupFolder.set((dir / "backup").string());
@@ -2405,6 +2423,7 @@ bool tastudioSettings(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	BranchesViewModel branches(d, inputs, session, roll);
 	ProjectDetailsViewModel details(d, session);
@@ -2755,6 +2774,7 @@ bool cacheManager(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	session.cacheFolder.set((dir / "cache").string());
 	std::string error;
 	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
@@ -3172,6 +3192,7 @@ bool helpMenu(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	SettingsViewModel settings(d, session);
 	HelpViewModel help(d, session, settings);
 	std::string error, text;
@@ -3301,6 +3322,7 @@ bool coreMenu(const char *package, const char *rom, const char *slotsPackage, co
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
@@ -3352,6 +3374,7 @@ bool columnsMenu(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
@@ -3436,6 +3459,7 @@ bool projectDetails(const char *package, const char *rom)
 		ManualDispatcher d;
 		InputLog inputs;
 		SessionViewModel session(d, inputs);
+		session.turboSeek.set(true);
 		ProjectDetailsViewModel details(d, session);
 		std::string error;
 		CHECK(!details.run("setComments", {std::string("none")}, error) && error == "no project is open");
@@ -3489,6 +3513,7 @@ bool projectDetails(const char *package, const char *rom)
 		ManualDispatcher d;
 		InputLog inputs;
 		SessionViewModel session(d, inputs);
+		session.turboSeek.set(true);
 		ProjectDetailsViewModel details(d, session);
 		std::string error;
 		session.run("openProject", {project.string(), std::string(package)}, error);
@@ -3510,6 +3535,7 @@ bool machine(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
 
@@ -3704,6 +3730,7 @@ bool ramSearch(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	RamSearchViewModel search(d, session);
 	RamWatchViewModel watches(d, session);
 	search.setRamWatch(&watches);
@@ -3905,6 +3932,7 @@ bool settings(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	SettingsViewModel settings(d, session);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
@@ -4014,6 +4042,7 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	BranchesViewModel branches(d, inputs, session, roll);
 	std::string error;
@@ -4413,6 +4442,7 @@ bool newProject(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
 	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
@@ -4550,6 +4580,7 @@ bool ramWatch(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	RamWatchViewModel watches(d, session);
 	std::string error;
 	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
@@ -4843,6 +4874,7 @@ bool hexEditor(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	HexEditorViewModel hex(d, session);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
@@ -5049,6 +5081,7 @@ bool pianoRollEditing(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
@@ -5483,6 +5516,7 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	ControlsViewModel controls(d, session);
 	std::string error;
@@ -5658,6 +5692,7 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	BranchesViewModel branches(d, inputs, session, roll);
 	ControlsViewModel controls(d, session);
@@ -5973,6 +6008,7 @@ bool greenzoneChoice(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	std::string error;
 	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
@@ -6074,6 +6110,7 @@ bool rerecordCount(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	BranchesViewModel branches(d, inputs, session, roll);
 	std::string error;
@@ -6155,6 +6192,7 @@ bool recordingMode(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
 	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
@@ -6279,6 +6317,7 @@ bool scriptsOnMachine(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	LuaBridge lua;
 	lua.add(session);
 	std::vector<std::string> lines;
@@ -6361,6 +6400,7 @@ bool freezes(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	RamWatchViewModel watches(d, session);
 	RamSearchViewModel search(d, session);
@@ -6468,6 +6508,7 @@ bool compileStep(const char *compilePackage, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	CoresViewModel installed(d);
 	std::string error;
 	installed.set("coresFolder", (dir / "Cores").string(), error);
@@ -6532,6 +6573,7 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	CoresViewModel installed(d);
 	std::string error;
 	installed.set("coresFolder", (dir / "Cores").string(), error);
@@ -6975,6 +7017,7 @@ bool customFirmware(const char *rom, const char *hashedPackage, const char *game
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	CoresViewModel installed(d);
 	std::string error;
 	installed.set("coresFolder", (dir / "Cores").string(), error);
@@ -7124,6 +7167,7 @@ bool movieImport(const char *slotsPackage, const char *rom, const std::string &m
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	CoresViewModel installed(d);
 	std::string error;
 	installed.set("coresFolder", (dir / "Cores").string(), error);
@@ -7229,6 +7273,7 @@ bool openByKind(const char *package, const char *rom, const char *again)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	CoresViewModel installed(d);
 	std::string error;
 	installed.set("coresFolder", cores.string(), error);
@@ -7310,6 +7355,7 @@ bool throttles(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	std::string error;
 	session.run("open", {std::string(package), std::string(rom)}, error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
@@ -7364,6 +7410,7 @@ bool luaTastudio(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	BranchesViewModel branches(d, inputs, session, roll);
 	LuaBridge lua;
@@ -7481,6 +7528,7 @@ bool encodeVideo(const char *package, const char *rom)
 	ManualDispatcher d;
 	InputLog inputs;
 	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
 	EncoderViewModel encoder(d, session, ".");
 	const std::string ffmpeg = encoder.ffmpegPath();
 	if (ffmpeg.empty())
@@ -7975,6 +8023,7 @@ bool squarePixels(const char *declared, const char *square, const char *rom)
 		ManualDispatcher d;
 		InputLog inputs;
 		SessionViewModel session(d, inputs);
+		session.turboSeek.set(true);
 		std::string error;
 		session.run("open", {std::string(package), std::string(rom)}, error);
 		d.until([&] { return session.isOpen.get(); }, 60);
@@ -7991,6 +8040,94 @@ bool squarePixels(const char *declared, const char *square, const char *rom)
 	/* drawn 128x120 in room for 320x120: shown 128:120, not 320:120 */
 	CHECK(squareWidth == 128 && std::abs(squareAspect - 128.0 / 120.0) < 1e-6);
 	CHECK(std::abs(declaredAspect - 256.0 / 240.0) < 1e-6);
+	return failures == before;
+}
+
+/* TAStudio's side as Chimera's (2026-10-25): Turbo seek off, Chimera's first
+ * choice, plays a seek past the greenzone at the machine's own speed and stops
+ * on the frame, while one inside it is at once; on, every seek is at once. A
+ * marker moves to another frame, not onto one that has a marker, and the run's
+ * own do not move; a branch dragged by its number changes places with another,
+ * the branch loaded staying the one loaded; a frame's zone colours the lists */
+bool tastudioPanel(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	const int before = failures;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-panel-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	BranchesViewModel branches(d, inputs, session, roll);
+	std::string error;
+	CHECK(!session.turboSeek.get());
+	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	const fs::path project = dir / "panel.chimeraProject";
+	session.run("saveAsProject", {project.string()}, error);
+	CHECK(d.until([&] { return session.hasProject.get() && session.projectPath.get() == project.string(); }, 20));
+	CHECK(roll.run("fill", {int64_t{150}}, error).has_value());
+	auto seconds = [](std::chrono::steady_clock::time_point since) {
+		return std::chrono::duration<double>(std::chrono::steady_clock::now() - since).count();
+	};
+	/* past the greenzone: played, about a second for sixty frames */
+	auto started = std::chrono::steady_clock::now();
+	CHECK(session.run("seek", {int64_t{60}}, error).has_value());
+	CHECK(d.until([&] { return session.seekingTo.get() == 60 && session.running.get(); }, 5));
+	CHECK(d.until([&] { return session.frame.get() == 60 && !session.running.get() && session.seekingTo.get() == -1; }, 20));
+	const double played = seconds(started);
+	/* inside it: at once, with nothing played */
+	started = std::chrono::steady_clock::now();
+	CHECK(session.run("seek", {int64_t{20}}, error).has_value());
+	CHECK(d.until([&] { return session.frame.get() == 20 && !session.running.get(); }, 20));
+	const double inside = seconds(started);
+	CHECK(session.seekingTo.get() == -1);
+	/* Turbo seek on: past the greenzone at once too */
+	session.turboSeek.set(true);
+	started = std::chrono::steady_clock::now();
+	CHECK(session.run("seek", {int64_t{140}}, error).has_value());
+	CHECK(d.until([&] { return session.frame.get() == 140 && !session.running.get(); }, 20));
+	const double turbo = seconds(started);
+	std::printf("panel: a seek of 60 frames played in %.2f s, one inside the greenzone %.2f s, 80 frames with Turbo seek %.2f s\n",
+		played, inside, turbo);
+	CHECK(played > 0.6 && inside < 0.5 && turbo < 0.5);
+	/* a frame's zone: run (green or lag) or not yet */
+	std::string zone;
+	CHECK(fromValue(roll.run("zoneOf", {int64_t{10}}, error).value_or(Value()), zone) && (zone == "green" || zone == "lag"));
+	CHECK(fromValue(roll.run("zoneOf", {int64_t{149}}, error).value_or(Value()), zone) && zone.empty());
+	/* markers: moved, not onto another, the run's own not at all */
+	RowModel *markers = nullptr;
+	for (const auto &r : roll.rowLists())
+		if (r.name == "markers") markers = r.model;
+	CHECK(markers != nullptr);
+	auto markerAt = [&](int64_t frame) {
+		for (int64_t i = 0; markers != nullptr && i < markers->rowCount(); i++)
+		{
+			int64_t f = -1;
+			if (fromValue(markers->cell(i, 0), f) && f == frame) return true;
+		}
+		return false;
+	};
+	CHECK(roll.run("addMarker", {int64_t{5}, std::string("five")}, error).has_value());
+	CHECK(roll.run("addMarker", {int64_t{9}, std::string("nine")}, error).has_value());
+	CHECK(roll.run("moveMarker", {int64_t{5}, int64_t{7}}, error).has_value() && markerAt(7) && !markerAt(5));
+	CHECK(!roll.run("moveMarker", {int64_t{7}, int64_t{9}}, error) && error == "frame 9 has a marker already" && markerAt(7));
+	CHECK(!roll.run("moveMarker", {int64_t{0}, int64_t{3}}, error) && error == "frame 0's marker is the run's own: it cannot be moved");
+	/* branches: dragged by the number into another's place */
+	CHECK(branches.run("create", {std::string("first")}, error).has_value());
+	CHECK(branches.run("create", {std::string("second")}, error).has_value());
+	CHECK(d.until([&] { return branches.count.get() == 2; }, 10));
+	const int64_t loaded = branches.current.get();
+	CHECK(loaded == 1);
+	CHECK(branches.run("swap", {int64_t{0}, int64_t{1}}, error).has_value());
+	std::string list;
+	CHECK(fromValue(branches.run("list", {}, error).value_or(Value()), list));
+	CHECK(list.find("\tsecond\n") < list.find("\tfirst\n") && branches.current.get() == 0 && branches.selected.get() == 1);
+	CHECK(!branches.run("swap", {int64_t{0}, int64_t{5}}, error));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return failures == before;
 }
 
@@ -8039,6 +8176,7 @@ int main(int argc, char **argv)
 			ranMachine = pianoRollEditing(argv[1], argv[2]) && ranMachine;
 			ranMachine = controlsAndHotkeys(argv[1], argv[2]) && ranMachine;
 			ranMachine = greenzoneChoice(argv[1], argv[2]) && ranMachine;
+			ranMachine = tastudioPanel(argv[1], argv[2]) && ranMachine;
 			ranMachine = speedAndSound(argv[1], argv[2]) && ranMachine;
 			ranMachine = overlay(argv[1], argv[2]) && ranMachine;
 			ranMachine = projectDetails(argv[1], argv[2]) && ranMachine;

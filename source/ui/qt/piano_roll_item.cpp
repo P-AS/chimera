@@ -256,8 +256,14 @@ PianoRollItem::Look PianoRollItem::themeLook() const
 	};
 	themed(plain, "RollBackground");
 	themed(text, "RollText");
-	themed(header, "HeaderBackground");
-	themed(headerText, "HeaderText");
+	/* the column titles as Chimera's InputRoll draws them: on the roll's column
+	 * colour, in the roll's text colour, the border around them its own */
+	themed(header, "RollColumnBackground");
+	themed(headerText, "RollText");
+	QColor columnBorder = dark ? QColor(0x60, 0x60, 0x60) : QColor(Qt::black), hint = tint(text, 0.45), emphasis = tint(pal.color(QPalette::Highlight), 0.5);
+	themed(columnBorder, "RollColumnBorder");
+	themed(hint, "RollHintText");
+	themed(emphasis, "RollEmphasisColumn");
 	themed(grid, "RollGridLines");
 	themed(now, "TasCurrentFrame");
 	themed(green, "TasGreenZoneInput");
@@ -290,7 +296,7 @@ PianoRollItem::Look PianoRollItem::themeLook() const
 	themed(lagFrame, "TasLagZone");
 	themed(analogEdit, "TasAnalogEdit");
 	return Look{plain, text, header, headerText, grid, lit, now, green, lag, marker, picked, pickedText, permanent, greenStated, lagStated,
-		greenGone, lagGone, frameWash, altPlayer, greenFrame, lagFrame, analogEdit, dark};
+		greenGone, lagGone, frameWash, altPlayer, greenFrame, lagFrame, analogEdit, columnBorder, hint, emphasis, dark};
 }
 
 QString PianoRollItem::themeColors() const
@@ -300,7 +306,11 @@ QString PianoRollItem::themeColors() const
 		{"TasGreenZoneInput", k.green}, {"TasGreenZoneInputStated", k.greenStated}, {"TasGreenZoneInputInvalidated", k.greenGone},
 		{"TasLagZone", k.lagFrame}, {"TasLagZoneInput", k.lag}, {"TasLagZoneInputStated", k.lagStated},
 		{"TasLagZoneInputInvalidated", k.lagGone}, {"TasMarker", k.marker}, {"TasPermanentMarker", k.permanent},
-		{"TasAnalogEdit", k.analogEdit}};
+		{"TasAnalogEdit", k.analogEdit},
+		/* the roll's own, which every InputRoll of Chimera's shares (TAStudio's branch and marker lists) */
+		{"RollBackground", k.plain}, {"RollText", k.text}, {"RollColumnBackground", k.header}, {"RollColumnBorder", k.columnBorder},
+		{"RollGridLines", k.grid}, {"RollSelection", k.picked}, {"RollSelectionText", k.pickedText}, {"RollHintText", k.hint},
+		{"RollEmphasisColumn", k.emphasis}};
 	QJsonObject out;
 	for (const auto &[role, color] : roles) out.insert(QLatin1String(role), color.name(color.alpha() < 255 ? QColor::HexArgb : QColor::HexRgb));
 	return QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact));

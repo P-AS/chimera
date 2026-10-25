@@ -865,6 +865,9 @@ int main(int argc, char **argv)
 	vm::HostInputViewModel hostInput(dispatcher, session);
 	qt::QmlViewModel hostInputQml(hostInput);
 	config.keep(session, "autoRestore");
+	config.keep(session, "turboSeek");
+	config.keep(pianoRoll, "mainSplit");
+	config.keep(pianoRoll, "sideSplit");
 	config.keep(session, "throttle");
 	config.keep(session, "vsyncEnabled");
 	config.keep(session, "speedPercent");

@@ -676,6 +676,11 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("greenzoneStates", "machine states the greenzone holds", greenzoneStates);
 	expose("rerecords", "how many times the movie was changed over work already done (saved with the project)", rerecords);
 	expose("autoRestore", "after an edit before the current frame, run on to where the machine was", autoRestore, true);
+	expose("turboSeek", "TAStudio's Turbo seek: a seek goes to its frame at once; off, past what the greenzone holds it "
+		"plays there at the machine's own speed", turboSeek, true);
+	expose("seekingTo", "the frame a seek that plays is going to, -1 when none is", seekingTo);
+	expose("seekFrom", "the frame a seek that plays set off from", seekFrom);
+	turboSeekWatch_ = turboSeek.changed.connect([this] { turboSeekM_.store(turboSeek.get()); });
 	expose("recordingMode", "TAStudio's recording mode: each frame played with the person's input becomes what is held; "
 		"off, the movie is played as it is", recordingMode, true);
 	recordingWatch_ = recordingMode.changed.connect([this] { recordingModeM_ = recordingMode.get(); });
@@ -1316,16 +1321,19 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		submit([this] {
 			if (s_ == nullptr) return;
 			runningM_ = true;
+			/* played on, a seek that plays is over: the machine runs on past it */
+			pauseOnFrameM_ = -1;
 			due_ = fpsSince_ = Clock::now();
 			fpsFrames_ = 0;
-			later([this] { running.set(true); });
+			later([this] { running.set(true); seekingTo.set(-1); });
 		});
 		return {};
 	}, &isOpen);
 	command("pause", "stops the machine after the frame it is on", {}, [this](const Args &, std::string &) -> Value {
 		submit([this] {
 			runningM_ = false;
-			later([this] { running.set(false); fps.set(0.0); });
+			pauseOnFrameM_ = -1;
+			later([this] { running.set(false); fps.set(0.0); seekingTo.set(-1); });
 		});
 		return {};
 	}, &isOpen);
@@ -1441,7 +1449,31 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			}
 			submit([this, target] {
 				runningM_ = false;
-				later([this] { running.set(false); fps.set(0.0); });
+				pauseOnFrameM_ = -1;
+				later([this] { running.set(false); fps.set(0.0); seekingTo.set(-1); });
+				/* Turbo seek off, as Chimera's: what the greenzone holds is gone to
+				 * at once (from its state at or before the frame), and the rest is
+				 * played at the machine's own speed, every frame drawn */
+				if (!turboSeekM_.load() && s_ != nullptr)
+				{
+					const int64_t from = ce_session_frame(s_);
+					const int64_t stored = target > 0 ? ce_session_greenzone_nearest(s_, target - 1) : 0;
+					if (stored < target - 1)
+					{
+						if (target < from || stored > from) seekOnMachine(std::max<int64_t>(stored, 0));
+						const int64_t at = ce_session_frame(s_);
+						if (at == target) return;
+						if (at < target)
+						{
+							pauseOnFrameM_ = target;
+							runningM_ = true;
+							due_ = fpsSince_ = Clock::now();
+							fpsFrames_ = 0;
+							later([this, at, target] { seekFrom.set(at); seekingTo.set(target); running.set(true); });
+							return;
+						}
+					}
+				}
 				seekOnMachine(target);
 			});
 			return {};
@@ -4594,6 +4626,13 @@ int32_t SessionViewModel::advanceOnMachine()
 			later([this] { running.set(false); });
 		}
 		doPauseM_ = !atEnd;
+	}
+	/* a seek that plays (Turbo seek off) stops on its frame */
+	if (pauseOnFrameM_ >= 0 && ce_session_frame(s_) >= pauseOnFrameM_)
+	{
+		pauseOnFrameM_ = -1;
+		runningM_ = false;
+		later([this] { running.set(false); seekingTo.set(-1); });
 	}
 	/* the step reports what it changed; here the frames added and the rate */
 	double measured = -1;
