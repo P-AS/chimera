@@ -115,9 +115,12 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 			namespace fs = std::filesystem;
 			const fs::path folder = fs::path(appDataFolder.get()) / "Sublime Text 2" / "Packages" / "Lua";
 			std::error_code ec;
+			/* Sublime Text makes its Lua package folder only when the package is
+			 * first changed, so a fresh install has none: it is made here, as Chimera's */
+			fs::create_directories(folder, ec);
 			if (!fs::is_directory(folder, ec))
 			{
-				error = "Sublime Text 2's Lua package is not there: " + folder.string();
+				error = "could not make " + folder.string();
 				return {};
 			}
 			const fs::path file = folder / "chimera.lua.sublime-completions";
