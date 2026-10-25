@@ -94,6 +94,27 @@ DisplayFit::Rect DisplayFit::place(int width, int height, double machineAspect, 
 	return r;
 }
 
+void DisplayFit::prescaleSteps(int width, int height, double machineAspect, double areaW, double areaH, bool smooth, int maxSide,
+	int &stepX, int &stepY) const
+{
+	stepX = stepY = 1;
+	if (width <= 0 || height <= 0) return;
+	/* the person's step, taken back while a side would pass the largest */
+	int user = std::clamp(prescale, 1, 16);
+	while (user > 1 && (width * user > maxSide || height * user > maxSide)) user--;
+	stepX = stepY = user;
+	/* growing to fit makes no sense without smoothing, as Chimera says */
+	if (!autoPrescale || !smooth) return;
+	const Rect from = source(width, height), to = place(width, height, machineAspect, areaW, areaH);
+	if (from.w <= 0 || from.h <= 0) return;
+	/* the whole steps that fit where it is drawn, each side its own, at least one */
+	int x = std::max(1, static_cast<int>(to.w / (from.w * user) + 1e-9)), y = std::max(1, static_cast<int>(to.h / (from.h * user) + 1e-9));
+	while (x > 1 && width * user * x > maxSide) x--;
+	while (y > 1 && height * user * y > maxSide) y--;
+	stepX = user * x;
+	stepY = user * y;
+}
+
 DisplayViewModel::DisplayViewModel(Dispatcher &dispatcher) : ViewModel("display", dispatcher)
 {
 	expose("aspectMode", "the picture's shape: 0 its raw pixels, 1 the machine's own, 2 a size (customWidth x "
@@ -109,6 +130,10 @@ DisplayViewModel::DisplayViewModel(Dispatcher &dispatcher) : ViewModel("display"
 	expose("cropRight", "pixels cut off the picture's right edge", cropRight, true);
 	expose("cropBottom", "pixels cut off the picture's bottom edge", cropBottom, true);
 	expose("finalFilter", "the picture drawn sharp (0) or smoothed (1)", finalFilter, true);
+	expose("prescale", "Chimera's User Prescale: the picture grown by this whole step (1 to 16), pixel by pixel, before it "
+		"is drawn", prescale, true);
+	expose("autoPrescale", "Chimera's Auto Prescale: with smoothing, the picture first grown by the largest whole steps "
+		"that fit where it is drawn", autoPrescale, true);
 	for (auto &[name, p] : std::initializer_list<std::pair<const char *, Property<int64_t> *>>{{"padLeft", &padLeft}, {"padTop", &padTop},
 			 {"padRight", &padRight}, {"padBottom", &padBottom}, {"clientLeft", &clientLeft}, {"clientTop", &clientTop},
 			 {"clientRight", &clientRight}, {"clientBottom", &clientBottom}})

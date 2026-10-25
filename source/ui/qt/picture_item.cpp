@@ -64,6 +64,8 @@ void PictureItem::setFit(const QVariantMap &fit)
 	f.clientTop = static_cast<int>(number("clientTop", 0));
 	f.clientRight = static_cast<int>(number("clientRight", 0));
 	f.clientBottom = static_cast<int>(number("clientBottom", 0));
+	f.prescale = static_cast<int>(number("prescale", 1));
+	f.autoPrescale = number("autoPrescale", 0) != 0;
 	fit_ = f;
 	fitNew_ = true;
 	Q_EMIT fitChanged();
@@ -111,7 +113,11 @@ QSGNode *PictureItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
 		node = new QSGSimpleTextureNode;
 		node->setOwnsTexture(true);
 	}
-	if (fresh || node->texture() == nullptr)
+	/* Chimera's prescaling: grown pixel by pixel by whole steps before it
+	 * is drawn (and smoothed only from there) */
+	int stepX = 1, stepY = 1;
+	fit_.prescaleSteps(frame_.width, frame_.height, frame_.aspect, width(), height(), smooth_, kLargestSide, stepX, stepY);
+	if (fresh || node->texture() == nullptr || stepX != stepX_ || stepY != stepY_)
 	{
 		/* the image owns its pixels: the texture may be uploaded after this
 		 * copy of the frame has been overwritten by the next one */
@@ -119,13 +125,16 @@ QSGNode *PictureItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
 		const size_t row = static_cast<size_t>(frame_.width) * sizeof(uint32_t);
 		for (int y = 0; y < frame_.height; y++)
 			std::memcpy(image.scanLine(y), frame_.pixels.data() + static_cast<size_t>(y) * frame_.width, row);
+		if (stepX != 1 || stepY != 1) image = image.scaled(frame_.width * stepX, frame_.height * stepY, Qt::IgnoreAspectRatio, Qt::FastTransformation);
 		node->setTexture(window()->createTextureFromImage(image));
+		stepX_ = stepX;
+		stepY_ = stepY;
 		shown_++;
 	}
 	node->setFiltering(smooth_ ? QSGTexture::Linear : QSGTexture::Nearest);
 
 	const vm::DisplayFit::Rect from = fit_.source(frame_.width, frame_.height);
-	node->setSourceRect(QRectF(from.x, from.y, from.w, from.h));
+	node->setSourceRect(QRectF(from.x * stepX, from.y * stepY, from.w * stepX, from.h * stepY));
 	const vm::DisplayFit::Rect to = fit_.place(frame_.width, frame_.height, frame_.aspect, width(), height());
 	node->setRect(QRectF(to.x, to.y, to.w, to.h));
 	/* told to the window's thread when it moves, for what is drawn over it */

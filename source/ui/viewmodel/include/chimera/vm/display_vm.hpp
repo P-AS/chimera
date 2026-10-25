@@ -32,6 +32,12 @@ struct DisplayFit
 	 * window pixels left free around everything */
 	int padLeft = 0, padTop = 0, padRight = 0, padBottom = 0;
 	int clientLeft = 0, clientTop = 0, clientRight = 0, clientBottom = 0;
+	/* Chimera's User Prescale (1 to 16): the picture grown by this whole
+	 * step, pixel by pixel, before it is drawn; and Auto Prescale, with a
+	 * smoothing filter only: grown by the largest whole steps that still
+	 * fit where it is drawn, so that smoothing blurs only the last step */
+	int prescale = 1;
+	bool autoPrescale = false;
 
 	/* the part of the picture shown, in its pixels (the crop taken off) */
 	struct Rect
@@ -48,6 +54,12 @@ struct DisplayFit
 	 * padding), and where the picture goes, inside its padding */
 	Rect surface(int width, int height, double machineAspect, double areaW, double areaH) const;
 	Rect place(int width, int height, double machineAspect, double areaW, double areaH) const;
+	/* the whole steps the picture is grown by before it is drawn (Chimera's
+	 * PrescaleFilter then AutoPrescaleFilter): neither side past maxSide
+	 * pixels, the steps taken back one at a time as Chimera's are; 1 x 1
+	 * for no growing */
+	void prescaleSteps(int width, int height, double machineAspect, double areaW, double areaH, bool smooth, int maxSide,
+		int &stepX, int &stepY) const;
 };
 
 class DisplayViewModel : public ViewModel
@@ -69,6 +81,9 @@ public:
 	Property<std::string> placement;
 	/* 0 sharp (nearest), 1 smoothed (bilinear) */
 	Property<int64_t> finalFilter{0};
+	/* Chimera's User Prescale (1 to 16) and Auto Prescale (DisplayFit) */
+	Property<int64_t> prescale{1};
+	Property<bool> autoPrescale{false};
 	/* the window's place and size kept for the next start, and what was kept ("x,y,w,h") */
 	Property<bool> saveWindowPosition{false};
 	Property<std::string> windowGeometry;

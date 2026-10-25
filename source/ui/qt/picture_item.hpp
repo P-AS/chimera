@@ -80,6 +80,10 @@ private:
 	std::atomic<qint64> shown_{0};
 	/* the render thread's copy of the newest frame */
 	vm::Picture::Frame frame_;
+	/* the steps the texture was grown by, and the largest side one may have
+	 * (Chimera's is the GPU's largest texture; 8192 is had by any) */
+	int stepX_ = 1, stepY_ = 1;
+	static constexpr int kLargestSide = 8192;
 };
 
 } // namespace chimera::qt

@@ -1237,6 +1237,7 @@ ApplicationWindow {
                     "letterbox": root.display.letterbox ? 1 : 0, "integerScale": root.display.integerScale ? 1 : 0,
                     "cropLeft": root.display.cropLeft, "cropTop": root.display.cropTop,
                     "cropRight": root.display.cropRight, "cropBottom": root.display.cropBottom,
+                    "prescale": root.display.prescale, "autoPrescale": root.display.autoPrescale ? 1 : 0,
                     // a script's extra paddings (client.SetGameExtraPadding, SetClientExtraPadding)
                     "padLeft": root.display.padLeft, "padTop": root.display.padTop, "padRight": root.display.padRight,
                     "padBottom": root.display.padBottom, "clientLeft": root.display.clientLeft, "clientTop": root.display.clientTop,

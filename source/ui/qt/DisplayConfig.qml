@@ -1,11 +1,12 @@
 // Chimera's Display Configuration (Config > Display), laid out as Chimera's
-// DisplayConfig: Scaling & Filtering (the final filter, the aspect ratio,
-// cropping, Defaults), Misc (Display Features, static window titles) and
+// DisplayConfig: Scaling & Filtering (User Prescale and Auto Prescale, the
+// final filter, the aspect ratio, cropping, Defaults), Misc (Display
+// Features, static window titles) and
 // Window (the chrome windowed and full screen, double-click full screen).
 // Its boxes are a copy: OK keeps them, Cancel lets them go. Layout and
 // bindings only, over the display view model and the session's switches.
 //
-// Not here: prescaling and Auto Prescale, Scale OSD text with system scale
+// Not here: Scale OSD text with system scale
 // (Qt scales the whole window with the screen), the snowy null core (the
 // prototype shows Chimera's mark instead), and Windows fullscreen hacks.
 import QtQuick
@@ -25,7 +26,7 @@ ApplicationWindow {
     transientParent: win.mainWindow
 
     // the display view model's settings the window shows, and the session's two
-    readonly property var vmNames: ["finalFilter", "letterbox", "integerScale", "aspectMode", "customWidth", "customHeight", "ratioX",
+    readonly property var vmNames: ["finalFilter", "prescale", "autoPrescale", "letterbox", "integerScale", "aspectMode", "customWidth", "customHeight", "ratioX",
         "ratioY", "cropLeft", "cropTop", "cropRight", "cropBottom", "minimalDisplay", "staticWindowTitles", "titleSuffix", "captionWindowed",
         "menuWindowed", "frameWindowed", "saveWindowPosition", "stayOnTop", "mouseCaptureForcesTop", "menuFullscreen", "statusBarFullscreen",
         "autohideMouseFullscreen", "allowDoubleClickFullscreen"]
@@ -87,6 +88,12 @@ ApplicationWindow {
                     spacing: 8
                     ColumnLayout {
                         Layout.alignment: Qt.AlignTop
+                        // Chimera's prescaling: grown pixel by pixel by whole steps before the final filter
+                        RowLayout {
+                            Label { text: qsTr("User Prescale:") }
+                            Number { setting: "prescale"; from: 1; to: 16 }
+                        }
+                        Box { setting: "autoPrescale"; text: qsTr("Auto Prescale") }
                         GroupBox {
                             title: qsTr("Final Filter")
                             ColumnLayout {
@@ -109,12 +116,13 @@ ApplicationWindow {
                                 Number { setting: "cropBottom"; to: 4000 }
                             }
                         }
-                        // Chimera's Defaults: bilinear, letterboxed, the system's ratio, nothing cropped
+                        // Chimera's Defaults: no user prescale, Auto Prescale, bilinear, letterboxed, the system's ratio, nothing cropped
                         Button {
                             text: qsTr("Defaults")
                             onClicked: {
                                 const now = Object.assign({}, win.picked)
-                                Object.assign(now, { finalFilter: 1, letterbox: true, aspectMode: 1, cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0 })
+                                Object.assign(now, { prescale: 1, autoPrescale: true, finalFilter: 1, letterbox: true, aspectMode: 1,
+                                    cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0 })
                                 win.picked = now
                             }
                         }

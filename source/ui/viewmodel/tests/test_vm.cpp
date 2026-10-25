@@ -786,6 +786,43 @@ void displayFit()
 		return near(r.x, x) && near(r.y, y) && near(r.w, w) && near(r.h, h);
 	};
 	const double four3 = 4.0 / 3.0;
+	/* Chimera's prescaling: the user's whole step, then with smoothing the
+	 * largest whole steps that fit where the picture is drawn */
+	{
+		DisplayFit p;
+		p.aspectMode = 0;
+		int x = 0, y = 0;
+		p.prescaleSteps(256, 224, four3, 800, 700, true, 8192, x, y);
+		CHECK(x == 1 && y == 1);
+		p.prescale = 2;
+		p.prescaleSteps(256, 224, four3, 800, 700, true, 8192, x, y);
+		CHECK(x == 2 && y == 2);
+		/* 800 x 700 holds 256 x 224 three times (768 x 672, letterboxed): 2 then 1 more */
+		p.prescale = 1;
+		p.autoPrescale = true;
+		p.prescaleSteps(256, 224, four3, 800, 700, true, 8192, x, y);
+		CHECK(x == 3 && y == 3);
+		/* not without smoothing */
+		p.prescaleSteps(256, 224, four3, 800, 700, false, 8192, x, y);
+		CHECK(x == 1 && y == 1);
+		/* stretched: each side its own */
+		p.letterbox = false;
+		p.prescaleSteps(256, 224, four3, 1100, 500, true, 8192, x, y);
+		CHECK(x == 4 && y == 2);
+		/* a step that would pass the largest side is taken back */
+		p.letterbox = true;
+		p.autoPrescale = false;
+		p.prescale = 16;
+		p.prescaleSteps(1024, 512, four3, 800, 700, true, 8192, x, y);
+		CHECK(x == 8 && y == 8);
+		/* the crop is not grown into: the part shown is what fits */
+		p.prescale = 1;
+		p.autoPrescale = true;
+		p.cropLeft = 64;
+		p.cropRight = 64;
+		p.prescaleSteps(256, 224, four3, 800, 700, true, 8192, x, y);
+		CHECK(x == 3 && y == 3);
+	}
 	DisplayFit f;
 	double w = 0, h = 0;
 	/* the machine's shape: 160x120 at 1x, kept with bars */
