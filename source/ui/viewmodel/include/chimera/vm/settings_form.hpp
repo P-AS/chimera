@@ -7,6 +7,7 @@
  * machine. Chimera knows no setting by name: a row is whatever the package
  * declared. */
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -77,6 +78,14 @@ public:
 	};
 	std::vector<Changed> changed() const;
 
+	/* a declaration's type: its own, or as Chimera infers one left out (options an
+	 * enum; a default true or false a bool, a whole number an int, or a long or
+	 * a ulong past an int's range, another number a float, else a string) */
+	static std::string typeOf(const json::Json &decl);
+	/* Chimera's "datetime" (issue 358): seconds since 1970 in UTC, shown and typed as
+	 * 2000-01-01 00:00:00 (or without the seconds, or a date alone), years 1 to 9999 */
+	static std::string dateText(int64_t seconds);
+	static std::optional<int64_t> parseDate(const std::string &text);
 	/* the value a declaration has among these values, else its default */
 	static Value valueOf(const json::Json &decl, const json::Json &values);
 	/* Which of a declaration's settings apply, in its order: those the

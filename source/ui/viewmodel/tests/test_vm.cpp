@@ -472,8 +472,8 @@ void luaConsole()
 		const fs::path appdata = fs::temp_directory_path() / ("chimera-test-sublime-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
 		console.appDataFolder.set(appdata.string());
 		std::string error;
-		CHECK(!console.run("registerSublime", {}, error) && error.rfind("Sublime Text 2's Lua package is not there: ", 0) == 0);
-		fs::create_directories(appdata / "Sublime Text 2" / "Packages" / "Lua");
+		/* a fresh install has no Lua package folder: it is made (Chimera 8850b65) */
+		CHECK(!fs::exists(appdata / "Sublime Text 2" / "Packages" / "Lua"));
 		CHECK(console.run("registerSublime", {}, error).has_value());
 		CHECK(readFile(appdata / "Sublime Text 2" / "Packages" / "Lua" / "chimera.lua.sublime-completions") == sublime);
 		fs::remove_all(appdata);
@@ -3901,6 +3901,64 @@ bool ramSearch(const char *package, const char *rom)
 
 /* Which settings apply: a setting naming machines belongs to them alone,
  * the machine being what the package's machineSetting says */
+/* Chimera's setting types of issue 358, as its WaterboxSettingTypesTests have
+ * them: uint, long and ulong hold their C types' ranges exactly, a type left
+ * out is inferred wider past an int's range, and a datetime is typed as Chimera
+ * shows it, in UTC, and kept as its seconds since 1970 */
+void settingTypes()
+{
+	json::Json decl;
+	std::string error;
+	CHECK(json::parse(R"([
+		{"name": "u", "type": "uint", "default": 0},
+		{"name": "l", "type": "long", "default": 0},
+		{"name": "ul", "type": "ulong", "default": 0},
+		{"name": "bounded", "type": "ulong", "default": 1, "min": 1, "max": 18446744073709551614},
+		{"name": "clock", "type": "datetime", "default": 946684800},
+		{"name": "after", "type": "datetime", "default": 946684800, "min": 946684800},
+		{"name": "big", "default": 5000000000},
+		{"name": "huge", "default": 18446744073709551615},
+		{"name": "small", "default": 8}
+	])", decl, error));
+	SettingsForm form;
+	form.declare(decl.items, "");
+	json::Json none;
+	none.kind = json::Json::Kind::Object;
+	form.setValues(none);
+	form.evaluate();
+	auto written = [&](const std::string &name) {
+		const json::Json *v = form.values().find(name);
+		return v != nullptr ? json::write(*v) : std::string("none");
+	};
+	/* each whole-number type holds what its C type holds, exactly */
+	CHECK(form.set("u", int64_t{4294967295}, error) && written("u") == "4294967295");
+	CHECK(!form.set("u", int64_t{-1}, error) && error == "u goes from 0 to 4294967295");
+	CHECK(!form.set("u", std::string("5000000000"), error));
+	CHECK(form.set("l", std::string("-9223372036854775808"), error) && written("l") == "-9223372036854775808");
+	CHECK(form.set("ul", std::string("18446744073709551615"), error) && written("ul") == "18446744073709551615");
+	CHECK(!form.set("ul", int64_t{-5}, error) && !form.set("ul", std::string("12x"), error) && error == "ul is a whole number");
+	/* what the window is given: the digits, every one of them */
+	CHECK(SettingsForm::valueOf(*form.declaration("ul"), form.values()) == Value(std::string("18446744073709551615")));
+	/* declared bounds kept exactly at 64 bits */
+	CHECK(!form.set("bounded", std::string("18446744073709551615"), error) && error == "bounded goes from 1 to 18446744073709551614");
+	CHECK(form.set("bounded", std::string("18446744073709551614"), error) && written("bounded") == "18446744073709551614");
+	/* a default past an int's range is a wider type */
+	CHECK(SettingsForm::typeOf(*form.declaration("big")) == "long" && SettingsForm::typeOf(*form.declaration("huge")) == "ulong");
+	CHECK(SettingsForm::typeOf(*form.declaration("small")) == "int");
+	/* a date and time: shown as Chimera shows it, typed in its three forms, kept as seconds */
+	CHECK(SettingsForm::valueOf(*form.declaration("clock"), form.values()) == Value(std::string("2000-01-01 00:00:00")));
+	CHECK(form.set("clock", std::string("2000-01-01"), error) && written("clock") == "946684800");
+	CHECK(form.set("clock", std::string("2100-01-01 00:00"), error) && written("clock") == "4102444800");
+	CHECK(form.set("clock", std::string("1969-12-31 00:00:00"), error) && written("clock") == "-86400");
+	CHECK(form.set("clock", std::string("2010-06-15 12:30:00"), error) && written("clock") == "1276605000");
+	CHECK(!form.set("clock", std::string("15/06/2010"), error) && error == "clock is a date and time, written as 2000-01-01 00:00:00 (UTC)");
+	CHECK(!form.set("clock", std::string("2001-02-29"), error));
+	CHECK(SettingsForm::dateText(253402300799) == "9999-12-31 23:59:59" && SettingsForm::dateText(-62135596800) == "0001-01-01 00:00:00");
+	CHECK(!form.set("after", std::string("1990-01-01"), error) && error == "after goes from 2000-01-01 00:00:00 to 9999-12-31 23:59:59");
+	/* the values reach the core with every digit */
+	CHECK(json::write(form.recorded()).find("\"ul\": 18446744073709551615") != std::string::npos);
+}
+
 void settingsByMachine()
 {
 	json::Json decl;
@@ -8237,6 +8295,7 @@ int main(int argc, char **argv)
 	configStore();
 	firmware();
 	settingsByMachine();
+	settingTypes();
 	keyPriority();
 	messagesConfig();
 	displayFit();

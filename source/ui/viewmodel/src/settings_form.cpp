@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 
 #include "chimera/engine.h"
 
@@ -37,7 +40,142 @@ std::string joined(const Json *list, const Json *labels)
 	}
 	return out;
 }
+
+/* Chimera's whole-number types hold what their C types hold (issue 358);
+ * 128 bits here, so a ulong's and a long's bounds compare exactly */
+using Whole = __int128;
+constexpr int64_t kFirstSecond = -62135596800LL, kLastSecond = 253402300799LL;
+
+bool wholeRange(const std::string &type, Whole &lo, Whole &hi)
+{
+	if (type == "int") lo = INT32_MIN, hi = INT32_MAX;
+	else if (type == "uint") lo = 0, hi = UINT32_MAX;
+	else if (type == "long") lo = INT64_MIN, hi = INT64_MAX;
+	else if (type == "ulong") lo = 0, hi = static_cast<Whole>(UINT64_MAX);
+	else if (type == "datetime") lo = kFirstSecond, hi = kLastSecond;
+	else return false;
+	return true;
+}
+
+/* a whole number written in decimal, nothing else in it */
+std::optional<Whole> wholeOfText(std::string s)
+{
+	while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
+	while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+	bool negative = false;
+	size_t i = 0;
+	if (i < s.size() && (s[i] == '-' || s[i] == '+')) negative = s[i++] == '-';
+	if (i >= s.size() || s.size() - i > 20) return std::nullopt;
+	Whole n = 0;
+	for (; i < s.size(); i++)
+	{
+		if (s[i] < '0' || s[i] > '9') return std::nullopt;
+		n = n * 10 + (s[i] - '0');
+	}
+	return negative ? -n : n;
+}
+
+std::optional<Whole> wholeOf(const Value &v)
+{
+	if (const int64_t *i = std::get_if<int64_t>(&v)) return *i;
+	if (const double *d = std::get_if<double>(&v))
+		return std::floor(*d) == *d && std::fabs(*d) < 1.8e19 ? std::optional<Whole>(static_cast<Whole>(*d)) : std::nullopt;
+	if (const std::string *s = std::get_if<std::string>(&v)) return wholeOfText(*s);
+	return std::nullopt;
+}
+
+std::string wholeText(Whole n)
+{
+	if (n == 0) return "0";
+	const bool negative = n < 0;
+	std::string out;
+	for (Whole m = negative ? -n : n; m > 0; m /= 10) out.insert(out.begin(), static_cast<char>('0' + static_cast<int>(m % 10)));
+	return negative ? "-" + out : out;
+}
+
+/* the days since 1970-01-01 of a day of the proleptic Gregorian calendar, and back */
+int64_t daysFromCivil(int64_t y, int64_t m, int64_t d)
+{
+	y -= m <= 2;
+	const int64_t era = (y >= 0 ? y : y - 399) / 400;
+	const int64_t yoe = y - era * 400;
+	const int64_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+	const int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+	return era * 146097 + doe - 719468;
+}
+
+void civilFromDays(int64_t z, int64_t &y, int64_t &m, int64_t &d)
+{
+	z += 719468;
+	const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+	const int64_t doe = z - era * 146097;
+	const int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+	const int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+	const int64_t mp = (5 * doy + 2) / 153;
+	d = doy - (153 * mp + 2) / 5 + 1;
+	m = mp + (mp < 10 ? 3 : -9);
+	y = yoe + era * 400 + (m <= 2);
+}
 } // namespace
+
+std::string SettingsForm::typeOf(const Json &decl)
+{
+	if (const Json *t = decl.find("type"); t != nullptr && t->kind == Json::Kind::String && !t->text.empty())
+	{
+		std::string lower = t->text;
+		for (char &c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		return lower;
+	}
+	if (const Json *o = decl.find("options"); o != nullptr && !o->items.empty()) return "enum";
+	const Json *d = decl.find("default");
+	if (d == nullptr) return "string";
+	if (d->kind == Json::Kind::Bool) return "bool";
+	if (d->kind == Json::Kind::Number)
+	{
+		const std::optional<Whole> n = wholeOfText(d->text);
+		if (!n) return "float";
+		if (*n >= INT32_MIN && *n <= INT32_MAX) return "int";
+		return *n >= INT64_MIN && *n <= INT64_MAX ? "long" : "ulong";
+	}
+	return "string";
+}
+
+std::string SettingsForm::dateText(int64_t seconds)
+{
+	const int64_t days = seconds >= 0 ? seconds / 86400 : -((-seconds + 86399) / 86400);
+	const int64_t rest = seconds - days * 86400;
+	int64_t y = 0, m = 0, d = 0;
+	civilFromDays(days, y, m, d);
+	char text[40];
+	std::snprintf(text, sizeof text, "%04lld-%02lld-%02lld %02lld:%02lld:%02lld", static_cast<long long>(y), static_cast<long long>(m),
+		static_cast<long long>(d), static_cast<long long>(rest / 3600), static_cast<long long>(rest / 60 % 60), static_cast<long long>(rest % 60));
+	return text;
+}
+
+std::optional<int64_t> SettingsForm::parseDate(const std::string &text)
+{
+	int y = 0, mo = 0, d = 0, h = 0, mi = 0, s = 0, used = 0;
+	const char *t = text.c_str();
+	while (std::isspace(static_cast<unsigned char>(*t))) t++;
+	/* the shown form, or without the seconds, or a date alone, and nothing after it */
+	const bool whole = std::sscanf(t, "%4d-%2d-%2d %2d:%2d:%2d%n", &y, &mo, &d, &h, &mi, &s, &used) == 6;
+	if (!whole)
+	{
+		s = 0;
+		if (std::sscanf(t, "%4d-%2d-%2d %2d:%2d%n", &y, &mo, &d, &h, &mi, &used) != 5)
+		{
+			h = mi = 0;
+			if (std::sscanf(t, "%4d-%2d-%2d%n", &y, &mo, &d, &used) != 3) return std::nullopt;
+		}
+	}
+	for (const char *rest = t + used; *rest != '\0'; rest++)
+		if (!std::isspace(static_cast<unsigned char>(*rest))) return std::nullopt;
+	static const int monthDays[] = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+	if (y < 1 || y > 9999 || mo < 1 || mo > 12 || d < 1 || d > monthDays[mo - 1] || h > 23 || mi > 59 || s > 59 || h < 0 || mi < 0 || s < 0)
+		return std::nullopt;
+	if (mo == 2 && d == 29 && !(y % 4 == 0 && (y % 100 != 0 || y % 400 == 0))) return std::nullopt;
+	return daysFromCivil(y, mo, d) * 86400 + h * 3600 + mi * 60 + s;
+}
 
 void SettingsForm::declare(std::vector<Json> decl, std::string machineSetting)
 {
@@ -123,7 +261,7 @@ bool SettingsForm::set(const std::string &name, const Value &value, std::string 
 		error = "no setting " + name + " applies here";
 		return false;
 	}
-	const std::string type = d->find("type") != nullptr ? d->find("type")->text : "";
+	const std::string type = typeOf(*d);
 	Json v;
 	if (type == "bool")
 	{
@@ -135,21 +273,44 @@ bool SettingsForm::set(const std::string &name, const Value &value, std::string 
 		}
 		v = Json::boolean_(b);
 	}
-	else if (type == "int")
+	else if (type == "int" || type == "uint" || type == "long" || type == "ulong" || type == "datetime")
 	{
-		int64_t i = 0;
-		if (!fromValue(value, i))
+		/* a whole number in its type's range, or a date and time typed as Chimera shows it */
+		std::optional<Whole> n;
+		if (type == "datetime")
+		{
+			std::string text;
+			if (fromValue(value, text))
+			{
+				if (const std::optional<int64_t> at = parseDate(text)) n = *at;
+			}
+			else
+				n = wholeOf(value);
+			if (!n)
+			{
+				error = name + " is a date and time, written as 2000-01-01 00:00:00 (UTC)";
+				return false;
+			}
+		}
+		else if (!(n = wholeOf(value)))
 		{
 			error = name + " is a whole number";
 			return false;
 		}
-		const Json *mn = d->find("min"), *mx = d->find("max");
-		if ((mn != nullptr && i < mn->number()) || (mx != nullptr && i > mx->number()))
+		Whole lo = 0, hi = 0;
+		wholeRange(type, lo, hi);
+		if (const Json *mn = d->find("min"))
+			if (const std::optional<Whole> m = wholeOfText(mn->text)) lo = std::max(lo, *m);
+		if (const Json *mx = d->find("max"))
+			if (const std::optional<Whole> m = wholeOfText(mx->text)) hi = std::min(hi, *m);
+		if (*n < lo || *n > hi)
 		{
-			error = name + " goes from " + (mn ? mn->text : "?") + " to " + (mx ? mx->text : "?");
+			error = name + " goes from " + (type == "datetime" ? dateText(static_cast<int64_t>(lo)) : wholeText(lo)) + " to " +
+				(type == "datetime" ? dateText(static_cast<int64_t>(hi)) : wholeText(hi));
 			return false;
 		}
-		v = Json::integer(i);
+		v.kind = Json::Kind::Number;
+		v.text = wholeText(*n);
 	}
 	else if (type == "float")
 	{
@@ -289,9 +450,17 @@ Value SettingsForm::valueOf(const Json &decl, const Json &values)
 	case Json::Kind::Bool: return v->boolean;
 	case Json::Kind::Number:
 	{
+		const std::string type = typeOf(decl);
+		if (type == "float") return v->number();
+		/* a date as it is shown, and the 64-bit whole numbers as their digits (a
+		 * window's numbers are doubles, and would lose the last ones) */
+		if (const std::optional<Whole> n = wholeOfText(v->text))
+		{
+			if (type == "datetime" && *n >= kFirstSecond && *n <= kLastSecond) return dateText(static_cast<int64_t>(*n));
+			if (type == "uint" || type == "long" || type == "ulong") return wholeText(*n);
+			if (*n >= INT64_MIN && *n <= INT64_MAX) return static_cast<int64_t>(*n);
+		}
 		const double d = v->number();
-		const Json *t = decl.find("type");
-		if (t != nullptr && t->text == "float") return d;
 		return std::floor(d) == d ? Value(static_cast<int64_t>(d)) : Value(d);
 	}
 	case Json::Kind::String: return v->text;
@@ -443,7 +612,7 @@ Value SettingsForm::Rows::cell(int64_t row, int32_t column) const
 	{
 	case kName: return text("name");
 	case kLabel: return text("display");
-	case kType: return text("type");
+	case kType: return typeOf(d);
 	case kValue: return valueOf(d, form_.values_);
 	case kOptions: return joined(d.find("options"), nullptr);
 	case kOptionLabels: return joined(d.find("options"), d.find("optionLabels"));

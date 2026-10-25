@@ -179,6 +179,13 @@ code is in `source/ui`; how it is built and run is in
   the system: a light box or circle with a dark edge whatever the theme
   (Fusion's own went dark with a dark theme and could not be seen). This is
   a small style of the window's own (source/ui/qt/style) over Fusion.
+- **A setting may be a uint, a long, a ulong or a date and time** (Chimera
+  issue 358): the whole numbers hold their C types' ranges exactly (as
+  digits in the window, whose numbers are doubles), a type left out is
+  inferred wider past an int's range, and a date and time is typed as
+  2000-01-01 00:00:00 in UTC (or without the seconds, or a date alone) and
+  kept as its seconds since 1970. A value out of range is refused, as
+  Chimera's settings grid refuses it.
 - **Qt is patched where it faults** (owner, 2026-10-24): fixes to Qt go in
   tools/qt-patches and tools/build-qt-windows.sh applies them as it unpacks
   the source. The first: a Qt thread that ended after its data was let go

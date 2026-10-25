@@ -83,6 +83,19 @@ ListView {
                 value: row.type === "int" ? row.value : 0
                 onValueModified: list.vm.run("set", [row.name, value])
             }
+            // Chimera's uint, long and ulong as their digits (the window's numbers would lose a
+            // ulong's last ones), and a date and time as it is shown, in UTC (issue 358)
+            TextField {
+                visible: row.type === "uint" || row.type === "long" || row.type === "ulong" || row.type === "datetime"
+                text: row.value === undefined ? "" : String(row.value)
+                placeholderText: row.type === "datetime" ? "2000-01-01 00:00:00" : ""
+                validator: RegularExpressionValidator {
+                    regularExpression: row.type === "datetime" ? /[0-9: -]*/ : row.type === "long" ? /-?[0-9]*/ : /[0-9]*/
+                }
+                onEditingFinished: list.vm.run("set", [row.name, text])
+                Layout.preferredWidth: 260
+            }
+            Label { visible: row.type === "datetime"; text: qsTr("UTC") }
             TextField {
                 visible: row.type === "string" || row.type === "float"
                 text: row.value === undefined ? "" : String(row.value)
