@@ -1386,6 +1386,14 @@ MACHPY
 		else
 			report "E:made-project:gated-slot" FAIL "open rc=$mopenrc, shut rc=$mrc (see work/made-project/gated-*.make.log)"
 		fi
+		# the movie named with --movie, which a project of no game file needs:
+		# the same input as the movie after the game
+		mmake movie-option "$epkg" "$mdir/gridWalker.testrom" --movie "$here/movies/gridWalker.win.txt"
+		if [ "$mrc" -eq 0 ] && [ -n "$(mfield gridWalker.win input)" ] && [ "$(mfield movie-option input)" = "$(mfield gridWalker.win input)" ]; then
+			report "E:made-project:movie-option" PASS "a movie named with --movie is the project's input, as one after the game"
+		else
+			report "E:made-project:movie-option" FAIL "rc=$mrc, or the input differs (see work/made-project/movie-option.make.log)"
+		fi
 	fi
 fi
 

@@ -11151,7 +11151,9 @@ package shows for those files, at the value `--settings` gives or else the
 package's default, which is what the engine runs a game with (a machine's own
 narrower defaults, which New Project offers, are given with `--settings`); a
 `--firmware` file is pinned by its hash; `--clock-start` and `--title` are
-kept; the movie is the project's input. Files that do not fit the package's
+kept; the movie is the project's input (named after the game, or with
+`--movie <movie>` for a core that takes no game file, such as a game core
+whose game is its firmware). Files that do not fit the package's
 slots are refused and no project is written. A game of several files is given
 a file at a time, as a project holds them, not as a `.chimeraMultiFile`
 descriptor.
@@ -11163,6 +11165,12 @@ not given, a firmware pin, a clock start, the slot chosen by the kind of file,
 and the two refusals: 78 passed, 0 failed. With each part of the maker broken
 in turn, its test failed (8 failed). The Windows build made the same project
 from Windows paths.
+
+Added the same day, for the cores whose tests run a movie with no game file:
+`--movie`. Its test makes a project with the movie named that way and
+compares its input with the project made from the movie after the game: 81
+passed, 0 failed; with the option read and dropped, that test failed (80
+passed, 1 failed).
 
 ## Chimera's interface opens a game only in a project (user-decided, 2026-10-26)
 
