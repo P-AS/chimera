@@ -126,6 +126,7 @@ public:
 	 * compileAsked: the page applies (such a package, a game chosen);
 	 * compileReady: the game's code is all there. */
 	Property<bool> compileAsked{false}, compiling{false}, compileReady{false};
+	Property<std::string> compileFolder;
 	Property<std::string> compileStatus, compileRunner, compileRoot;
 	Property<int64_t> compileDone{0}, compileTotal{0};
 	/* how much memory one compile session is counted at, in GB: as many run
@@ -277,6 +278,9 @@ private:
 	SuggestRunner suggestRunner_;
 	bool suggests_ = false;
 	std::string suggestedFor_;
+	/* the question asked last, of suggestions and of imports: an answer
+	 * carrying another is to a question since withdrawn */
+	uint64_t suggestTicket_ = 0, importTicket_ = 0;
 	std::vector<std::string> suggestedKeys_;
 	/* what the game's suggestion declared of the game's own */
 	std::vector<json::Json> gameSettings_;

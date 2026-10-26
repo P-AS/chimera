@@ -42,6 +42,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <clocale>
 #include <cstdio>
 #include <mutex>
 #ifdef _WIN32
@@ -292,9 +293,13 @@ int main(int argc, char **argv)
 	SetUnhandledExceptionFilter(crashNote);
 #endif
 	QGuiApplication app(argc, argv);
-	/* not "Chimera": Qt keeps its caches under the application's name, and
-	 * the prototype must not write into Chimera's own folder */
-	QGuiApplication::setApplicationName(QStringLiteral("chimera-qt-prototype"));
+	/* Qt takes the person's locale for the C library too, and with a decimal
+	 * comma printf("%g") writes "0,5" into files read as "0.5": numbers stay
+	 * the C locale's, as Chimera's runtime keeps them (chimera issue 244) */
+	std::setlocale(LC_NUMERIC, "C");
+	/* Chimera's name: its settings and caches are kept under it (owner,
+	 * 2026-10-26; what the window kept under its old name stays there) */
+	QGuiApplication::setApplicationName(QStringLiteral("Chimera"));
 	/* Fusion, with Chimera's check boxes and radio buttons (style/, built in) */
 	QQuickStyle::setStyle(QStringLiteral("ChimeraStyle"));
 #ifndef _WIN32
@@ -529,10 +534,10 @@ int main(int argc, char **argv)
 			session.status.set(std::string("Background Input ") + (session.acceptBackgroundInput.get() ? "enabled" : "disabled"));
 		};
 		hotkeys.add("General", "Toggle BG Input", "", background);
-		window("General", "Open ROM", "Ctrl+O");
+		window("General", "Open Project", "Ctrl+O");
 		/* the window's: a project with changes is asked about first */
-		window("General", "Close ROM", "Ctrl+W");
-		window("General", "Load Last ROM", "");
+		window("General", "Close Project", "Ctrl+W");
+		window("General", "Load Last Project", "");
 		hotkeys.add("General", "Reboot Core", "Ctrl+R", [&session, run](bool down) {
 			if (down) run(session, "restart");
 		});
@@ -931,6 +936,7 @@ int main(int argc, char **argv)
 	vm::Connection sessionMemoryWatch = precompiled.sessionGigabytes.changed.connect(sessionMemory);
 	precompiled.root.set(session.compileCacheRoot.get());
 	vm::Connection precompiledInUse = session.compileCacheDir.changed.connect([&] { precompiled.inUse.set(session.compileCacheDir.get()); });
+	vm::Connection precompiledCompiling = newProject.compileFolder.changed.connect([&] { precompiled.compiling.set(newProject.compileFolder.get()); });
 	qt::QmlViewModel precompiledQml(precompiled);
 	vm::TraceLoggerViewModel traceLogger(dispatcher, session);
 	qt::QmlViewModel traceLoggerQml(traceLogger);

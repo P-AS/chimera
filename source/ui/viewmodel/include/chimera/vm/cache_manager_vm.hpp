@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -58,8 +59,8 @@ public:
 		/* "Project cache" or "Unsaved work" */
 		std::string kind;
 		uint64_t bytes = 0;
-		/* when anything in it was last written, in the file clock's units */
-		int64_t lastUsed = 0;
+		/* when anything in it was last written, in the file clock's units (the least: never) */
+		int64_t lastUsed = std::numeric_limits<int64_t>::min();
 		/* its project is no longer where it was last seen; in use (the
 		 * project open's, or unsaved work whose window still runs); kept
 		 * from the auto-clean */

@@ -26,6 +26,8 @@ struct Progress
 	MediaMakerViewModel *vm;
 	Dispatcher *dispatcher;
 	std::atomic<bool> *cancel;
+	/* the view model's later(): nothing posted runs once it is gone */
+	std::function<void(std::function<void()>)> post;
 };
 } // namespace
 
@@ -102,13 +104,13 @@ MediaMakerViewModel::MediaMakerViewModel(Dispatcher &dispatcher, RecipeFinder re
 			const std::string from = folder.get(), to = output.get(), recipe = recipeJson_;
 			const int32_t shape = static_cast<int32_t>(format.get());
 			worker_ = std::thread([this, &dispatcher, from, to, recipe, shape] {
-				Progress p{this, &dispatcher, &cancel_};
+				Progress p{this, &dispatcher, &cancel_, [this](std::function<void()> fn) { later(std::move(fn)); }};
 				auto onProgress = [](const char *file, uint64_t done, uint64_t total, uint64_t filesDone, uint64_t filesTotal, void *user) -> int32_t {
 					auto *pr = static_cast<Progress *>(user);
 					const std::string name = file != nullptr ? file : "";
 					const double share = total > 0 ? static_cast<double>(done) / static_cast<double>(total) : 0.0;
 					MediaMakerViewModel *vm = pr->vm;
-					pr->dispatcher->post([vm, name, share, filesDone, filesTotal] {
+					pr->post([vm, name, share, filesDone, filesTotal] {
 						vm->current.set(name + "  (" + std::to_string(filesDone) + " of " + std::to_string(filesTotal) + ")");
 						vm->progress.set(share);
 					});
@@ -121,7 +123,7 @@ MediaMakerViewModel::MediaMakerViewModel(Dispatcher &dispatcher, RecipeFinder re
 				const std::string error = why != nullptr ? why : "";
 				std::error_code ec;
 				const auto size = ok == 1 ? std::filesystem::file_size(to, ec) : 0;
-				dispatcher.post([this, ok, sha, error, to, size] {
+				later([this, ok, sha, error, to, size] {
 					running.set(false);
 					current.set("");
 					sha1.set(sha);

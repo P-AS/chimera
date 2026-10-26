@@ -32,6 +32,21 @@ if grep -rnE --include='*.c' --include='*.cc' --include='*.cpp' --include='*.h' 
 	"$native" "$root/source/engine" "$mb/host" "$mb/gl" "$mb/vk" "$mb/cache"; then
 	found=1
 fi
+# the window (source/ui): its C++ with the native names, and Qt's network
+# classes and modules in its C++, QML and build file. Local pipes and Qt's
+# QLocalSocket are not the network and are not looked for.
+qt='\bQNetwork[A-Za-z]*\b|\bQTcpSocket\b|\bQTcpServer\b|\bQUdpSocket\b|\bQSslSocket\b|\bQWebSocket[A-Za-z]*\b|\bQHostAddress\b|\bXMLHttpRequest\b|import QtNetwork|QtWebEngine'
+if [ -d "$root/source/ui" ]; then
+	if grep -rnE --include='*.c' --include='*.cpp' --include='*.h' --include='*.hpp' "$native" "$root/source/ui"; then
+		found=1
+	fi
+	if grep -rnE --include='*.cpp' --include='*.hpp' --include='*.qml' --include='*.js' "$qt" "$root/source/ui"; then
+		found=1
+	fi
+	if grep -nE "'Network'|'WebSockets'|'WebEngine" "$root/source/ui/meson.build"; then
+		found=1
+	fi
+fi
 # what is BUILT from extern/ for the bundle is named in meson.build; a network
 # library there is the same thing by another road
 if grep -nE 'luasocket|libcurl|ws2_32|wsock32' "$root/meson.build"; then
@@ -42,4 +57,4 @@ if [ "$found" -ne 0 ]; then
 	echo "check-no-network: the lines above name a network API. Chimera has none; see docs/core-manager.md." >&2
 	exit 1
 fi
-echo "check-no-network: clean (source/gui, source/engine, miniBox's host side, meson.build)"
+echo "check-no-network: clean (source/gui, source/ui, source/engine, miniBox's host side, meson.build)"

@@ -1,6 +1,7 @@
 #include "chimera/vm/config_store.hpp"
 #include "chimera/vm/chimera_settings.hpp"
 
+#include <charconv>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -24,7 +25,13 @@ Value fromJson(const Json &j)
 	{
 	case Json::Kind::Bool: return j.boolean;
 	case Json::Kind::Number:
-		if (j.text.find_first_of(".eE") == std::string::npos) return static_cast<int64_t>(std::stoll(j.text));
+		/* a whole number too big for 64 bits is kept as the nearest double; std::stoll threw and ended the program */
+		if (j.text.find_first_of(".eE") == std::string::npos)
+		{
+			int64_t whole = 0;
+			const auto [end, ec] = std::from_chars(j.text.data(), j.text.data() + j.text.size(), whole);
+			if (ec == std::errc() && end == j.text.data() + j.text.size()) return whole;
+		}
 		return j.number();
 	case Json::Kind::String: return j.text;
 	default: return {};

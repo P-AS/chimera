@@ -73,8 +73,6 @@ public:
 	 * "MenuBar", "Freeze", "Highlight", "HighlightFreeze"}: "#RRGGBB" each,
 	 * "{}" for the theme's */
 	Property<std::string> colors{"{}"};
-	/* the open game's file, when a game was opened by itself: "File on Disk" */
-	Property<std::string> gameFile;
 
 private:
 	class Lines : public RowModel
@@ -99,7 +97,6 @@ private:
 	/* the machine's thread */
 	void readOnMachine(ce_session *s);
 	void refreshDomains();
-	bool fileDomain() const;
 	/* bytes of the domain shown, read now (the machine waited for) */
 	bool readNow(int64_t from, int64_t count, std::vector<uint8_t> &out);
 	/* bytes written into the domain shown; false with why */
@@ -123,7 +120,7 @@ private:
 	RamWatchViewModel *ramWatch_ = nullptr;
 	Lines lines_{*this};
 	int hooks_ = 0;
-	Connection opensWatch_, domainWatch_, topWatch_, visibleWatch_, sizeWatch_, pickedWatch_, gameWatch_, endianWatch_, freezesWatch_, pickedFrozenWatch_;
+	Connection opensWatch_, domainWatch_, topWatch_, visibleWatch_, sizeWatch_, pickedWatch_, endianWatch_, freezesWatch_, pickedFrozenWatch_;
 	/* any byte of the place at address frozen, in the domain shown */
 	bool placeFrozen(int64_t address) const;
 	void freezesShown();
@@ -131,7 +128,6 @@ private:
 	std::set<int64_t> secondary_;
 	std::map<int, char> table_;
 	/* "File on Disk": the game file's bytes, edited here */
-	std::vector<uint8_t> file_;
 	/* what the window shows (the view's thread): the bytes from `shownFrom_`,
 	 * which of them changed at the last read, and the domain's size */
 	std::vector<uint8_t> shown_, changedShown_;

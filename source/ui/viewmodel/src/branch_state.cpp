@@ -48,12 +48,15 @@ bool writeNote(const fs::path &path, const Note &note)
 		if (!out) return false;
 		char aspect[32];
 		std::snprintf(aspect, sizeof aspect, "%.17g", note.picture.aspect);
+		/* a picture whose pixels are not all there is written as none: its
+		 * size with no pixels after it was a note no read would take */
+		const size_t n = static_cast<size_t>(note.picture.width) * static_cast<size_t>(note.picture.height);
+		const bool whole = n != 0 && note.picture.pixels.size() == n;
 		out << kFirstLine << "\n"
 			<< "machine " << note.machine << "\n"
 			<< "frame " << note.frame << "\n"
-			<< "picture " << note.picture.width << " " << note.picture.height << " " << aspect << "\n";
-		const size_t n = static_cast<size_t>(note.picture.width) * static_cast<size_t>(note.picture.height);
-		if (n != 0 && note.picture.pixels.size() == n)
+			<< "picture " << (whole ? note.picture.width : 0) << " " << (whole ? note.picture.height : 0) << " " << aspect << "\n";
+		if (whole)
 			out.write(reinterpret_cast<const char *>(note.picture.pixels.data()), static_cast<std::streamsize>(n * sizeof(uint32_t)));
 		if (!out) return false;
 	}

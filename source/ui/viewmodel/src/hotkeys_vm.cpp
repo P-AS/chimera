@@ -75,7 +75,7 @@ const std::vector<std::string> &chimeraOrder()
 {
 	static const std::vector<std::string> order = [] {
 		std::vector<std::string> o = {"Frame Advance", "Rewind", "Pause", "Fast Forward", "Turbo", "Toggle Throttle", "Autofire",
-			"Autohold", "Clear Autohold", "Screenshot", "Full Screen", "Open ROM", "Close ROM", "Load Last ROM", "Display FPS",
+			"Autohold", "Clear Autohold", "Screenshot", "Full Screen", "Open Project", "Close Project", "Load Last Project", "Display FPS",
 			"Frame Counter", "Lag Counter", "Game Time", "Input Display", "Toggle BG Input", "Toggle Menu", "Volume Up",
 			"Volume Down", "Encode Video", "Larger Window", "Smaller Window", "Increase Speed", "Decrease Speed", "Reset Speed",
 			"Reboot Core", "Toggle Sound", "Exit Program", "Screen Raw to Clipboard", "Screen Client to Clipboard",
@@ -340,6 +340,13 @@ void HotkeysViewModel::apply()
 	for (Action &a : actions_)
 	{
 		const Json *mine = all.find(a.name);
+		/* a hotkey renamed: a binding saved under the old name is the new
+		 * one's (owner, 2026-10-26: the ROM hotkeys became the project's),
+		 * as Chimera reads it (HotkeyInfo.ResolveWithDefaults) */
+		static const std::pair<const char *, const char *> renamed[] = {
+			{"Open Project", "Open ROM"}, {"Close Project", "Close ROM"}, {"Load Last Project", "Load Last ROM"}};
+		for (const auto &[now, old] : renamed)
+			if (mine == nullptr && a.name == now) mine = all.find(old);
 		a.keys = mine != nullptr && mine->kind == Json::Kind::String ? mine->text : a.defaults;
 		now.members.emplace_back(a.name, Json::string(a.keys));
 	}

@@ -20,6 +20,8 @@ public:
 	explicit PrecompiledViewModel(Dispatcher &dispatcher);
 
 	Property<std::string> root, inUse, total, status;
+	/* the folder a compile is filling: it stays, as the open machine's does */
+	Property<std::string> compiling;
 	/* Chimera's "Memory per compile session (GB)": how much memory one compile
 	 * session is counted at, 1 to 256, 8 at first (remembered) */
 	Property<int64_t> sessionGigabytes{8};

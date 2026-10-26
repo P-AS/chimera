@@ -103,8 +103,20 @@ function C.onFrame(fn) return registerNamed(fn, "OnFrameEnd").guid end
 console = {}
 -- a value as Chimera's console writes it: a table shallowly, a line a key
 -- (numbers first, then names, then the rest), names in quotes
+-- a value as .NET writes it, which Chimera's console shows: True and False,
+-- 5 for a whole double, 15 significant digits, 1E+21, NaN and Infinity
+local function dotnet(v)
+	if type(v) == "boolean" then return v and "True" or "False" end
+	if math.type(v) == "float" then
+		if v ~= v then return "NaN" end
+		if v == math.huge then return "Infinity" end
+		if v == -math.huge then return "-Infinity" end
+		return (string.format("%.15g", v):gsub("e", "E"))
+	end
+	return tostring(v)
+end
 local function shown(v)
-	if type(v) ~= "table" then return v == nil and "nil" or tostring(v) end
+	if type(v) ~= "table" then return v == nil and "nil" or dotnet(v) end
 	local keys = {}
 	for k in pairs(v) do keys[#keys + 1] = k end
 	local function rank(k) return type(k) == "number" and 0 or type(k) == "string" and 1 or type(k) == "boolean" and 2 or 3 end
@@ -115,7 +127,7 @@ local function shown(v)
 	end)
 	local out = {}
 	for _, k in ipairs(keys) do
-		local function one(x) return type(x) == "string" and ('"' .. x .. '"') or (type(x) == "table" and "table" or tostring(x)) end
+		local function one(x) return type(x) == "string" and ('"' .. x .. '"') or (type(x) == "table" and "table" or dotnet(x)) end
 		out[#out + 1] = one(k) .. ": " .. one(v[k]) .. "\n"
 	end
 	return table.concat(out)
@@ -145,12 +157,13 @@ end
 
 -- bit (Chimera's, over Lua's own operators) ---------------------------------
 bit = {}
-function bit.band(a, b) return a & b end
-function bit.bor(a, b) return a | b end
-function bit.bxor(a, b) return a ~ b end
+-- 32 bits, as Chimera's (uint): a shift counts modulo 32, as .NET's does
+function bit.band(a, b) return a & b & 0xFFFFFFFF end
+function bit.bor(a, b) return (a | b) & 0xFFFFFFFF end
+function bit.bxor(a, b) return (a ~ b) & 0xFFFFFFFF end
 function bit.bnot(a) return ~a & 0xFFFFFFFF end
-function bit.lshift(a, n) return (a << n) & 0xFFFFFFFF end
-function bit.rshift(a, n) return (a & 0xFFFFFFFF) >> n end
+function bit.lshift(a, n) return ((a & 0xFFFFFFFF) << (n & 31)) & 0xFFFFFFFF end
+function bit.rshift(a, n) return (a & 0xFFFFFFFF) >> (n & 31) end
 function bit.arshift(a, n) local v = a & 0xFFFFFFFF if v >= 0x80000000 then v = v - 0x100000000 end return v >> n | (v < 0 and ~(0xFFFFFFFF >> n) or 0) end
 function bit.rol(a, n) a = a & 0xFFFFFFFF n = n % 32 return ((a << n) | (a >> (32 - n))) & 0xFFFFFFFF end
 function bit.ror(a, n) a = a & 0xFFFFFFFF n = n % 32 return ((a >> n) | (a << (32 - n))) & 0xFFFFFFFF end
@@ -191,17 +204,24 @@ end
 
 -- emu ----------------------------------------------------------------------
 emu = {}
+-- a number written as a whole one: a fraction cut off toward zero, as .NET
+-- converts it (3.5 is 3); Lua's & refused it
+local function whole(v)
+	if math.type(v) == "float" then return math.tointeger(v >= 0 and math.floor(v) or math.ceil(v)) or 0 end
+	return v
+end
 -- frameadvance: the script waits here and goes on after the next frame;
 -- yield: it goes on at the window's next turn, a frame run or not, as
 -- Chimera's. The MCP server's run_lua code may not wait (__chimera_no_waits),
 -- as Chimera's refuses it
+-- (an event callback cannot wait either: it was skipped there, and Chimera says so)
 function emu.frameadvance()
-	if __chimera_no_waits then error("emu.frameadvance() is not allowed during any callbacks", 2) end
-	if coroutine.isyieldable() then coroutine.yield("frame") end
+	if __chimera_no_waits or not coroutine.isyieldable() then error("emu.frameadvance() is not allowed during any callbacks", 2) end
+	coroutine.yield("frame")
 end
 function emu.yield()
-	if __chimera_no_waits then error("emu.yield() is not allowed during any callbacks", 2) end
-	if coroutine.isyieldable() then coroutine.yield() end
+	if __chimera_no_waits or not coroutine.isyieldable() then error("emu.yield() is not allowed during any callbacks", 2) end
+	coroutine.yield()
 end
 function emu.framecount() return C.session.frame end
 function emu.lagcount() return C.session.lagCount end
@@ -209,7 +229,11 @@ function emu.islagged() return C.session.lagFrame end
 -- the frame just run was a lag frame or not (true when not said), as its row in TAStudio says
 function emu.setislagged(value) C.session.setIsLagged(value == nil or value and true or false) end
 function emu.setlagcount(count) C.session.setLagCount(wholeNumber(count)) end
-function emu.getsystemid() return C.session.systemName end
+-- the machine's id, as Chimera's (the game's system); "NULL" with none open
+function emu.getsystemid()
+	local id = C.session.systemId
+	return (id == nil or id == "") and "NULL" or id
+end
 function emu.getcorename() return C.session.coreName end
 function emu.getboardname() return "" end
 function emu.getdisplaytype() return "" end
@@ -221,7 +245,8 @@ function emu.getregisters()
 	end
 	return out
 end
-function emu.getregister(name) return emu.getregisters()[name] end
+-- 0 for a register the machine does not have, as Chimera's
+function emu.getregister(name) return emu.getregisters()[name] or 0 end
 function emu.setregister(name, value) C.debugger.setRegisterNamed(name, value) end
 function emu.totalexecutedcycles() C.debugger.refresh() return C.debugger.cycles end
 function emu.limitframerate(on) C.session.unthrottled = not on end
@@ -293,14 +318,14 @@ local function makeMemory(domainOf)
 			local stem = (signed and "s" or "u") .. (size * 8)
 			if size == 1 then
 				m["read_" .. stem] = function(addr, domain) return (string.unpack("<" .. letter .. "1", rd(addr, 1, domain))) end
-				m["write_" .. stem] = function(addr, value, domain) wr(addr, string.pack("<I1", value & 0xFF), domain) end
+				m["write_" .. stem] = function(addr, value, domain) wr(addr, string.pack("<I1", whole(value) & 0xFF), domain) end
 			else
 				for _, order in ipairs({{"_le", "<"}, {"_be", ">"}}) do
 					local fmt = order[2] .. letter .. size
 					local mask = (1 << (size * 8)) - 1
 					m["read_" .. stem .. order[1]] = function(addr, domain) return (string.unpack(fmt, rd(addr, size, domain))) end
 					m["write_" .. stem .. order[1]] = function(addr, value, domain)
-						wr(addr, string.pack(order[2] .. "I" .. size, value & mask), domain)
+						wr(addr, string.pack(order[2] .. "I" .. size, whole(value) & mask), domain)
 					end
 				end
 			end
@@ -654,12 +679,18 @@ end
 joypad.getimmediate = joypad.get
 function joypad.getwithmovie(controller) return joypad.get(controller) end
 -- held for the next frame run, as Chimera's joypad.set
+-- true or 1 holds a button for the next frame, false or 0 lets it go
+-- whoever holds it, as Chimera's (Convert.ToBoolean)
 function joypad.set(buttons, controller)
-	local names = {}
+	local held, released = {}, {}
 	for name, on in pairs(buttons) do
-		if on == true then names[#names + 1] = controller and ("P" .. controller .. " " .. name) or name end
+		local full = controller and ("P" .. controller .. " " .. name) or name
+		if type(on) == "string" then on = on:lower() == "true" end
+		if on == true or (type(on) == "number" and on ~= 0) then held[#held + 1] = full
+		elseif on == false or on == 0 then released[#released + 1] = full end
 	end
-	C.session.scriptHold(table.concat(names, "\n"))
+	C.session.scriptHold(table.concat(held, "\n"))
+	C.session.scriptRelease(table.concat(released, "\n"))
 end
 -- an analog control for the next frame run, as joypad.set is for buttons
 function joypad.setaxis(control, value, controller)
@@ -691,9 +722,30 @@ function movie.setreadonly(on)
 	if C.session.hasProject and C.session.recordingMode ~= (on ~= true) then C.session.toggleRecording() end
 end
 function movie.getfps() return C.session.fps end
-function movie.save(path) if path and path ~= "" then C.session.saveProject(path) else C.session.saveProject() end end
-function movie.play_from_start() if C.session.projectPath ~= "" then C.session.openProject(C.session.projectPath) end end
-function movie.stop() C.session.stopMovie() end
+-- a name given is the project's file with its kind added, never written over, as Chimera's
+function movie.save(path)
+	if not C.session.hasProject then return end
+	if path == nil or path == "" then C.session.saveProject() return end
+	path = path .. ".chimeraProject"
+	local there = io.open(path, "rb")
+	if there then
+		there:close()
+		console.log("File " .. path .. " already exists, will not overwrite")
+		return
+	end
+	C.session.saveProject(path)
+end
+-- the project given, or the open one, from its start; false when there is none
+function movie.play_from_start(path)
+	local p = (path ~= nil and path ~= "") and path or C.session.projectPath
+	if p == nil or p == "" then return false end
+	return client.openproject(p)
+end
+-- saved first unless told not to, as Chimera's movie.stop(saveChanges)
+function movie.stop(saveChanges)
+	if saveChanges ~= false and C.session.hasProject and C.session.projectPath ~= "" then C.session.saveProject() end
+	C.session.stopMovie()
+end
 -- a project of Chimera's starts from the machine switched on, unless its header says otherwise
 function movie.startsfromsavestate()
 	if not C.session.hasProject then return false end
@@ -730,6 +782,8 @@ function movie.getsubtitles()
 	return zeroBased(lines(C.projectDetails.subtitleLines()))
 end
 function movie.getinput(frame, controller)
+	-- nothing past the movie's end, as Chimera's
+	if frame == nil or frame < 0 or frame >= movie.length() then return nil end
 	local pressed, values, out = {}, {}, {}
 	for _, line in ipairs(lines(C.session.movieInput(frame))) do
 		local name, value = string.match(line, "^(.-)=(%-?%d+)$")
@@ -757,7 +811,7 @@ function client.is_rewinding() return C.session.rewinding end
 function client.speedmode(percent) C.session.speedPercent = percent end
 function client.reboot_core() C.session.restart() end
 function client.closerom() C.session.close() end
-function client.openproject(path) C.session.openProject(path) end
+function client.openproject(path) return C.session.openProject(path) == true end
 function client.getversion() return C.help and C.help.commit or "" end
 function client.get_approx_framerate() return C.session.fps end
 function client.SetSoundOn(on) C.session.soundOn = on end
@@ -1025,7 +1079,8 @@ local function jsonOf(v)
 			return "[" .. table.concat(out, ",") .. "]"
 		end
 		local out = {}
-		for k, x in pairs(v) do out[#out + 1] = string.format("%q", tostring(k)) .. ":" .. jsonOf(x) end
+		-- a key written as a string value is (%q wrote Lua escapes, not JSON's)
+		for k, x in pairs(v) do out[#out + 1] = jsonOf(tostring(k)) .. ":" .. jsonOf(x) end
 		return "{" .. table.concat(out, ",") .. "}"
 	elseif type(v) == "number" then
 		return math.type(v) == "integer" and tostring(v) or string.format("%.17g", v)
@@ -1102,7 +1157,7 @@ function gui.drawPixel(x, y, c, surface) add({k = "rect", x = x, y = y, w = 1, h
 -- Chimera's: its font (monospace unless named) and style, which end of the
 -- text is at x and y, and a background drawn as an outline around the letters
 function gui.drawString(x, y, text, fore, back, size, family, style, halign, valign, surface)
-	add({k = "text", x = x, y = y, text = tostring(text), color = colour(fore, foreground), back = colour(back, background), size = size or 12,
+	add({k = "text", x = x, y = y, text = tostring(text), color = colour(fore, foreground), back = colour(back, textBackground ~= "" and textBackground or background), size = size or 12,
 		family = family, style = style, halign = halign, valign = valign, outline = true}, surface)
 end
 gui.drawText = gui.drawString
@@ -1269,15 +1324,21 @@ function forms.addclick(handle, fn)
 	table.insert(clicks[handle], fn)
 end
 function forms.clearclicks(handle) clicks[handle] = nil end
+-- a form closed by its script runs its onClose too, as any close does in Chimera
 function forms.destroy(handle)
+	local onClose = closers[handle]
 	closers[handle] = nil
 	formOwner[handle] = nil
-	return C.forms.destroy(handle)
+	local gone = C.forms.destroy(handle)
+	if onClose then pcall(onClose) end
+	return gone
 end
 function forms.destroyall()
+	local all = closers
 	closers = {}
 	formOwner = {}
 	C.forms.destroyAll()
+	for _, onClose in pairs(all) do pcall(onClose) end
 end
 function forms.gettext(handle) return C.forms.getText(handle) end
 function forms.settext(handle, caption) C.forms.setText(handle, tostring(caption)) end

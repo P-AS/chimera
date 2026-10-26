@@ -11269,3 +11269,65 @@ check and the Windows refused-open check were moved to projects and compile;
 neither was run here. `tests/perf/seekbench.cpp` was moved too, but it did
 not compile before this change (it calls two state-history functions that
 no longer exist), and still does not.
+
+## The window's review before it replaces Chimera's (user-decided, 2026-10-26)
+
+A last review of the Qt window's view models, read beside Chimera's own
+code, before the window takes Chimera's place. The owner asked for every
+finding to be fixed, each with a test seen to fail once; three were the
+owner's to decide:
+
+- **The window is named "Chimera"** (user-decided): its settings and
+  caches are kept under Chimera's name, and its single instance is found
+  by Chimera's own mutex and pipe names. What it kept under its old name
+  stays there; nothing is moved.
+- **Open Project, Close Project, Load Last Project** (user-decided): the
+  hotkeys Chimera called Open ROM, Close ROM and Load Last ROM are named
+  for what they open now, in Chimera and in the window. A binding saved
+  under an old name is read as the new one.
+- **Movie import runs on a project** too (recorded in the section above).
+
+What was wrong, and is fixed:
+
+- A project's open told the window the machine was open, and only in a
+  later step which project it was. Anything done in between met no project,
+  and recording turned on in that moment was turned off by the project's
+  arrival (it starts every project read only). The project is now known in
+  the same step, just before the machine is said to be open. This was seen
+  as tests that failed only while the machine was busy with other work.
+- TAStudio: the last project's undo history and selection stayed after
+  another opened; a run count too long for a number ended the program
+  ("On x99999999999999999999"); a marker set was not a step of the undo
+  history; the row past the movie's end, which Chimera's shows empty, was
+  missing; painting and filling had no limit on how many frames.
+- Branches: taking back a removal left the "current branch" mark on the
+  wrong branch. Macro Tool: zones outlived the project they were made in,
+  and a zone set after a removal could take the name of one still there.
+- Lua, as Chimera's .NET library answers: booleans print as True and
+  False, numbers as .NET writes them; joypad.set takes 1 and 0, and false
+  lets a button go even when a key holds it; emu.getsystemid gives the
+  system's id; a register that is not there reads 0; the bit operations
+  work on 32 bits with shifts modulo 32; client.openproject says false for
+  a file that is no project; movie.getinput gives nothing past the end;
+  emu.frameadvance in an event callback is an error, not a hang.
+- Numbers: the settings file's reader took text such as "1-2" for a
+  number, and wrote and read numbers by the system's locale, so a decimal
+  comma broke them; a whole number too big for 64 bits ended the program;
+  NaN and infinity were written as text no JSON reader takes.
+- Pre-Compiled Modules / Cache Manager: a cache folder with nothing in it
+  counted as the most recently used one. The cause was the file clock,
+  which counts today as a negative number, so "0" for "never" was the
+  future. It now keeps the least time.
+- Windows: the program declares UTF-8 as its code page (chimera.manifest),
+  and the trace logger opens its file by its wide name, so a path with
+  letters outside the system's code page opens. Not yet tried on Windows.
+- The hex editor's File on Disk mode, which could not write what it
+  showed, is gone; the RAM search and watch follow the domain and the
+  machine; the network check covers the window's sources too.
+
+Tests: 2,749 view-model checks and the window's own tests, 39 of 39
+passed. With the fixes undone, the new checks failed (the JSON grammar,
+the hotkey names, the project known at open, the empty last row, marker
+undo, the run count, the history after another project, the zones, the
+Lua lines, the empty cache folder, the branch mark); with the number fixes
+undone the test program ended on the oversized numbers, the bug itself.

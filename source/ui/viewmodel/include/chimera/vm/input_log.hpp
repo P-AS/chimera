@@ -9,6 +9,7 @@
  * movie's, and is kept here. */
 
 #include <cstdint>
+#include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <vector>
@@ -21,6 +22,8 @@ class InputLog
 {
 public:
 	int64_t size() const;
+	/* whether a machine's movie is here (none: nothing to show or edit) */
+	bool bound() const;
 	/* a frame's buttons, one bit each (the first 64); nothing past the end */
 	uint64_t at(int64_t frame) const;
 	/* frames first.. into out (as many as out holds) */
@@ -72,6 +75,8 @@ public:
 
 private:
 	mutable std::shared_mutex m_;
+	/* an edit that reads a frame and writes it back with half kept, one at a time */
+	std::mutex edit_;
 	ce_session *s_ = nullptr;
 	/* what countRerecords last asked, and the movie's own switch over it */
 	bool strokeCounts_ = true, movieCounts_ = true;

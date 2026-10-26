@@ -32,7 +32,11 @@ ApplicationWindow {
     property string said: ""
     property bool asking: false
     property string pickFor: ""
-    onVisibleChanged: if (visible) { win.said = ""; win.asking = false }
+    onVisibleChanged: {
+        // closed while the core is asked: its answer is not taken
+        if (!visible && win.asking) win.vm.run("importCancel")
+        if (visible) { win.said = ""; win.asking = false }
+    }
     Connections {
         target: win.vm
         function onValueChanged(key, value) {

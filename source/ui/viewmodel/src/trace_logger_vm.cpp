@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 
 #include "chimera/vm/watch_values.hpp"
@@ -29,7 +30,12 @@ TraceLoggerViewModel::TraceLoggerViewModel(Dispatcher &dispatcher, SessionViewMo
 		std::string path;
 		if (!arg(a, 0, path, error)) return {};
 		closeFile();
+		/* the path is UTF-8: Windows reads a narrow one in its own code page */
+#ifdef _WIN32
+		out_ = _wfopen(std::filesystem::u8path(path).wstring().c_str(), L"wb");
+#else
 		out_ = std::fopen(path.c_str(), "wb");
+#endif
 		if (out_ == nullptr)
 		{
 			error = "cannot write " + path;

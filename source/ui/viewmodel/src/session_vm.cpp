@@ -228,7 +228,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	command("cancelOpen", "leaves the waiting project unopened", {}, [this](const Args &, std::string &) -> Value {
 		resolvingFiles.set(false);
 		submit([this] {
-			if (pendingOpenM_.project != nullptr && pendingOpenM_.reuse == nullptr) ce_project_free(pendingOpenM_.project);
+			/* nobody's: a reused project was let go by projectM_ when its open began */
+			if (pendingOpenM_.project != nullptr) ce_project_free(pendingOpenM_.project);
 			pendingOpenM_ = PendingOpen{};
 			later([this] {
 				projectFiles_.clear();
@@ -765,11 +766,10 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	});
 	expose("lastSeekMs", "how long the last seek took, in milliseconds", lastSeekMs);
 	expose("lastSeekFrames", "how many frames the last seek ran", lastSeekFrames);
-	expose("projectPath", "the open project's file, \"\" when a game was opened without one or the project is not saved yet", projectPath);
+	expose("projectPath", "the open project's file, \"\" while it is not saved yet", projectPath);
 	expose("hasProject", "a project is open, saved or not yet", hasProject);
 	expose("projectTitle", "the open project's title", projectTitle);
 	expose("gameName", "the game's name: its file's, without the kind", gameName);
-	expose("gamePath", "the game's file when a game was opened by itself, else \"\"", gamePath);
 	expose("backupFolder", "where a project's backups go", backupFolder, true);
 	backupWatch_ = backupFolder.changed.connect([this] { submit([this, f = backupFolder.get()] { backupFolderM_ = f; }); });
 	expose("recoveryFolder", "where a project's unsaved work is kept against a crash, a folder per project; \"\" keeps none",
@@ -1178,6 +1178,27 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			scriptHeld_.store(mask);
 			return {};
 		});
+	command("scriptRelease", "buttons a script lets go for the next frame run, a line each, whoever holds them (Chimera's "
+		"joypad.set with false)", {"buttons"}, [this](const Args &a, std::string &error) -> Value {
+			std::string list;
+			if (!arg(a, 0, list, error)) return {};
+			uint64_t mask = 0;
+			std::istringstream in(list);
+			const std::vector<std::string> &names = onMachineThread() ? buttonNamesM_ : buttonNames_;
+			for (std::string name; std::getline(in, name);)
+			{
+				if (name.empty()) continue;
+				const auto it = std::find(names.begin(), names.end(), name);
+				if (it == names.end() || it - names.begin() >= 64)
+				{
+					error = "no button " + name;
+					return {};
+				}
+				mask |= uint64_t{1} << (it - names.begin());
+			}
+			scriptReleased_.store(mask);
+			return {};
+		});
 	command("scriptAxis", "an analog control's value a script gives: for the next frame run, or held until let go (held; "
 		"a value of nothing lets a held one go)", {"name", "value", "held"}, [this](const Args &a, std::string &error) -> Value {
 			std::string name;
@@ -1230,7 +1251,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			return {};
 		});
 	/* and what a script holds for the next frame (joypad.set and its kin), as bots do every frame */
-	for (const char *name : {"scriptHold", "scriptAxis", "scriptEntry"}) scriptSideCommand(name);
+	for (const char *name : {"scriptHold", "scriptRelease", "scriptAxis", "scriptEntry"}) scriptSideCommand(name);
 	command("stopMovie", "Chimera's Stop Movie under TAStudio: a new project of the same core, files, settings and "
 		"firmware with an empty movie, written nowhere until its first save (the window asks about changes not saved first)",
 		{}, [this](const Args &, std::string &) -> Value {
@@ -1275,9 +1296,19 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			std::string project, package;
 			if (!arg(a, 0, project, error)) return {};
 			if (a.size() > 1 && !arg(a, 1, package, error)) return {};
+			/* false at once for a file that is no project, as Chimera's
+			 * client.openproject says; the open itself goes on after */
+			const char *unreadable = nullptr;
+			ce_project *probe = ce_project_open(project.c_str(), &unreadable);
+			if (probe == nullptr)
+			{
+				status.set("Could not open " + project + ": " + (unreadable != nullptr ? unreadable : "no reason given"));
+				return false;
+			}
+			ce_project_free(probe);
 			status.set("Opening " + project + "...");
 			submit([this, project, package] { openProjectOnMachine(project, package, false); });
-			return {};
+			return true;
 		});
 	command("saveProject", "saves the open project with its inputs, to its own file or to the one given",
 		{"path"}, [this](const Args &a, std::string &error) -> Value {
@@ -1974,7 +2005,6 @@ void SessionViewModel::freeSessionOnMachine()
 	turboSeekToM_ = -1;
 	for (const Hooks &h : hooksM_)
 		if (h.closing) h.closing(s_);
-	later([this] { gamePath.set(""); });
 	inputs_.bind(nullptr);
 	/* a greenzone being written is finished before its session goes */
 	ce_session_history_save_wait(s_);
@@ -2452,7 +2482,12 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 	borrowFramesM_.store(0);
 	submit([this, from, to, frame = std::move(frame), finishing = std::move(finishing), done = std::move(done)] {
 		namespace fs = std::filesystem;
-		auto fail = [&](const std::string &why) { later([done, why] { done(2, why); }); };
+		/* refused before a frame: what the caller made ready for the frames
+		 * (an encoder) is closed as at the end */
+		auto fail = [&](const std::string &why) {
+			if (finishing) finishing();
+			later([done, why] { done(2, why); });
+		};
 		if (s_ == nullptr) return fail("No machine is open.");
 		if (from < 0 || to < from) return fail("The end marker is before the start marker.");
 		if (to >= ce_session_movie_length(s_)) return fail("The movie ends at frame " + std::to_string(ce_session_movie_length(s_) - 1) + ".");
@@ -2489,7 +2524,13 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 			/* the scripts have their turns, as each frame Chimera encodes is a frame it plays */
 			ce_session *const machine = s_;
 			scriptTurnOnMachine(scriptsBeforeM_);
-			if (s_ == nullptr || s_ != machine) break;
+			if (s_ == nullptr || s_ != machine)
+			{
+				/* a script closed the machine or opened another: not an encode that finished */
+				ended = 2;
+				why = "The machine was closed while encoding.";
+				break;
+			}
 			const int32_t lag = stepOnMachine(false, true, false);
 			if (lag < 0 && diedM_)
 			{
@@ -2506,6 +2547,11 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 				break;
 			}
 			borrowFramesM_.fetch_add(1);
+		}
+		if (ended == 0 && s_ == nullptr)
+		{
+			ended = 2;
+			why = "The machine was closed while encoding.";
 		}
 		if (finishing) finishing();
 		/* given back: the frame, its picture, the greenzone, running or not */
@@ -3668,8 +3714,20 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	const uint64_t keptRerecords = keepInputs && s_ != nullptr ? ce_session_rerecords(s_) : 0;
 	freeSessionOnMachine();
 	runningM_ = false;
+	/* nothing is open after a failed open: the machine went before it, and
+	 * the project that was open goes with it, as a close would take it */
 	auto fail = [this](const std::string &why) {
-		later([this, why] { status.set(why); isOpen.set(false); });
+		freeProjectOnMachine();
+		later([this, why] {
+			status.set(why);
+			isOpen.set(false);
+			running.set(false);
+			projectPath.set("");
+			projectTitle.set("");
+			projectId.set("");
+			hasProject.set(false);
+			projectSwitched();
+		});
 	};
 
 	/* reuse: the project already open, changed in memory (its settings) */
@@ -3689,7 +3747,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		std::string copy, upTo;
 		if (recoveredCopyOnMachine(p, path, copy, upTo))
 		{
-			if (pendingOpenM_.project != nullptr && pendingOpenM_.reuse == nullptr) ce_project_free(pendingOpenM_.project);
+			if (pendingOpenM_.project != nullptr) ce_project_free(pendingOpenM_.project);
 			freeProjectOnMachine();
 			pendingOpenM_ = PendingOpen{p, path, packageGiven, keepInputs, reuse, kept, keptRerecords};
 			later([this, copy, upTo] {
@@ -3729,7 +3787,7 @@ void SessionViewModel::findFilesAndBootOnMachine(PendingOpen open)
 	{
 		/* not found beside it, nor where this machine last had them: asked
 		 * for, as Chimera's resolution window asks, the project waiting */
-		if (pendingOpenM_.project != nullptr && pendingOpenM_.project != p && pendingOpenM_.reuse == nullptr) ce_project_free(pendingOpenM_.project);
+		if (pendingOpenM_.project != nullptr && pendingOpenM_.project != p) ce_project_free(pendingOpenM_.project);
 		/* the machine is closed already; the project it ran goes too, unless it is the one waiting */
 		if (open.reuse == nullptr) freeProjectOnMachine();
 		pendingOpenM_ = std::move(open);
@@ -3757,8 +3815,20 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 	ce_project *reuse, const std::string &kept, uint64_t keptRerecords, uint32_t extraFlags)
 {
 	const bool recovered = std::exchange(recoveredM_, false);
+	/* nothing is open after a failed open: the machine went before it, and
+	 * the project that was open goes with it, as a close would take it */
 	auto fail = [this](const std::string &why) {
-		later([this, why] { status.set(why); isOpen.set(false); });
+		freeProjectOnMachine();
+		later([this, why] {
+			status.set(why);
+			isOpen.set(false);
+			running.set(false);
+			projectPath.set("");
+			projectTitle.set("");
+			projectId.set("");
+			hasProject.set(false);
+			projectSwitched();
+		});
 	};
 	const char *error = nullptr;
 	/* a package other than the one the project names opens, and says so */
@@ -3773,7 +3843,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		if (findPackageM_) package = findPackageM_(coreName, pinned, found);
 		if (package.empty())
 		{
-			if (reuse == nullptr) ce_project_free(p);
+			ce_project_free(p); /* a reused one too: projectM_ let it go */
 			fail("No " + coreName + " core is installed: put its .chimeraCore in the cores folder");
 			return;
 		}
@@ -3817,7 +3887,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		std::string why;
 		if (!firmwareOnMachine(package, slotsText, settingsText, pinsText, game, files, fw, why))
 		{
-			if (reuse == nullptr) ce_project_free(p);
+			ce_project_free(p); /* a reused one too: projectM_ let it go */
 			fail(why);
 			return;
 		}
@@ -3965,26 +4035,6 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 	tidyBranchStatesOnMachine();
 	rememberAboutOnMachine(path);
 	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
-	adoptOnMachine(s, package, (title.empty() ? path : title) + note, true);
-	if (columnsLater) later(std::move(columnsLater));
-	{
-		/* the game a project plays: its first file, where it was found */
-		const char *source = ce_project_file_count(p) > 0 ? ce_project_file_source_path(p, 0) : nullptr;
-		const std::string game = source != nullptr && *source != '\0' ? source : path;
-		romFileM_ = source != nullptr ? source : "";
-		std::error_code ec;
-		const std::filesystem::path where = std::filesystem::weakly_canonical(game, ec);
-		carryFreezesOnMachine(package + "\n" + (ec ? game : where.string()));
-	}
-	{
-		const char *first = ce_project_file_count(p) > 0 ? ce_project_file_name(p, 0) : nullptr;
-		std::string stem = first != nullptr ? std::filesystem::path(first).stem().string() : title;
-		later([this, stem] {
-			gameName.set(stem);
-			gamePath.set("");
-		});
-	}
-	startProjectSessionOnMachine(!keepInputs);
 	ProjectAnswers answers;
 	answers.coreName = ce_project_core_name(p) != nullptr ? ce_project_core_name(p) : "";
 	answers.package = package;
@@ -3999,7 +4049,10 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		if (source != nullptr && *source != '\0') answers.files.emplace_back(slot != nullptr ? slot : "", source);
 	}
 	const std::string id = ce_project_id(p) != nullptr ? ce_project_id(p) : "";
-	later([this, path, title, answers, id, recovered] {
+	/* the project is known by the time the machine says it is open: posted
+	 * after it, a person (or a test) acting on "open" met no project, and
+	 * recording turned on then was turned off by the project's arrival */
+	adoptOnMachine(s, package, (title.empty() ? path : title) + note, true, [this, path, title, answers, id] {
 		projectPath.set(path);
 		projectTitle.set(title);
 		projectId.set(id);
@@ -4009,13 +4062,29 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		if (!path.empty()) addRecent(path);
 		recoveredCopy.set("");
 		recoveredUpTo.set("");
-		/* the recovered work is not in the project's file until it is saved */
-		if (recovered)
-		{
+	});
+	/* the recovered work is not in the project's file until it is saved */
+	if (recovered)
+		later([this, path] {
 			markChanged();
 			status.set("The recovered work is open, not saved yet: saving writes it to " + path);
-		}
-	});
+		});
+	if (columnsLater) later(std::move(columnsLater));
+	{
+		/* the game a project plays: its first file, where it was found */
+		const char *source = ce_project_file_count(p) > 0 ? ce_project_file_source_path(p, 0) : nullptr;
+		const std::string game = source != nullptr && *source != '\0' ? source : path;
+		romFileM_ = source != nullptr ? source : "";
+		std::error_code ec;
+		const std::filesystem::path where = std::filesystem::weakly_canonical(game, ec);
+		carryFreezesOnMachine(package + "\n" + (ec ? game : where.string()));
+	}
+	{
+		const char *first = ce_project_file_count(p) > 0 ? ce_project_file_name(p, 0) : nullptr;
+		std::string stem = first != nullptr ? std::filesystem::path(first).stem().string() : title;
+		later([this, stem] { gameName.set(stem); });
+	}
+	startProjectSessionOnMachine(!keepInputs);
 }
 
 void SessionViewModel::checkHistoryOnMachine(const std::string &keepIn)
@@ -4485,7 +4554,8 @@ std::vector<uint8_t> SessionViewModel::readDomain(const std::string &name)
 	return bytes;
 }
 
-void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package, const std::string &label, bool inputsReplaced)
+void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package, const std::string &label, bool inputsReplaced,
+	std::function<void()> withOpen)
 {
 	s_ = s;
 	packageSha1M_.clear();
@@ -4676,7 +4746,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	/* another game, or the same started again: another average, as Chimera's */
 	averageResetM_.store(true);
 	later([this, names, headers, axes, mnemonics, keybinds, coreText, systemText, systemIdText, rate, label, inputsReplaced, frames, controller,
-			   picture, gameCore, timer, saveData, movieImport, package, traces, registers, traceHead, surfaceText] {
+			   picture, gameCore, timer, saveData, movieImport, package, traces, registers, traceHead, surfaceText, withOpen] {
 		surfaces.set(surfaceText);
 		hasTrace.set(traces);
 		hasRegisters.set(registers);
@@ -4716,6 +4786,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		frame.set(0);
 		greenEnd.set(0);
 		running.set(false);
+		if (withOpen) withOpen();
 		isOpen.set(true);
 		/* a lag count a script set was the last machine's */
 		lagOffset_ = 0;
@@ -5033,6 +5104,9 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		}
 		held |= sticky;
 	}
+	/* a script's false lets a button go for the frame, held by a key, a pad or
+	 * autohold or not, as Chimera's override does (joypad.set) */
+	held &= ~scriptReleased_.exchange(0);
 	/* What is held goes into the movie before the frame plays it, as
 	 * Chimera's TAStudio puts it there (MovieSession.HandleFrameBefore,
 	 * TAStudio.UpdateBefore). Recording, the frame becomes what is held, an

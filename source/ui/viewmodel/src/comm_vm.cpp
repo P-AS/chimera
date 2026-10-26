@@ -80,7 +80,13 @@ CommViewModel::~CommViewModel()
 #ifdef _WIN32
 		if (m->handle != nullptr) CloseHandle(m->handle);
 #else
-		if (m->fd >= 0) ::close(m->fd);
+		/* the name goes as a Windows mapping's does once nothing holds it:
+		 * a shared memory object outlives its process until it is unlinked */
+		if (m->fd >= 0)
+		{
+			::close(m->fd);
+			shm_unlink(shmName(name).c_str());
+		}
 #endif
 		delete m;
 	}
@@ -97,6 +103,8 @@ int64_t CommViewModel::write(const std::string &name, const std::string &bytes, 
 	Mapping *&m = open_[name];
 	if (m == nullptr) m = new Mapping;
 #ifdef _WIN32
+	/* nothing to write and nothing made yet: Windows makes no mapping of no size */
+	if (n == 0 && m->handle == nullptr) return 0;
 	/* made, or the one there opened; one too small for this made again, as Chimera does */
 	if (m->handle == nullptr || m->size < n)
 	{

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <clocale>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -100,6 +101,13 @@ static int failures = 0, checks = 0;
 	do { \
 		checks++; \
 		if (!(c)) { std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); failures++; } \
+	} while (0)
+/* a text compared, what it was said when it is not */
+#define CHECK_TEXT(got, want) \
+	do { \
+		checks++; \
+		const std::string got_ = (got), want_ = (want); \
+		if (got_ != want_) { std::fprintf(stderr, "FAIL %s:%d: %s was \"%s\", not \"%s\"\n", __FILE__, __LINE__, #got, got_.c_str(), want_.c_str()); failures++; } \
 	} while (0)
 
 namespace {
@@ -335,7 +343,7 @@ void lua()
 	CHECK(!lua.run("chimera.sample.add('lots')", "t4", error) && error.find("argument 1 cannot be") != std::string::npos);
 	CHECK(!lua.run("return chimera.sample.nothing", "t5", error) && error.find("no property or command nothing") != std::string::npos);
 	CHECK(lua.run("local ok, e = pcall(chimera.sample.add); print(ok, e)", "t6", error));
-	CHECK(lines.back().rfind("false\t", 0) == 0 && lines.back().find("missing") != std::string::npos);
+	CHECK(lines.back().rfind("False\t", 0) == 0 && lines.back().find("missing") != std::string::npos);
 	/* onFrame functions run on every frame; one that fails is said each time and kept, as Chimera's */
 	CHECK(lua.run("n = 0; chimera.onFrame(function() n = n + 1 end); chimera.onFrame(function() error('boom') end)", "t7", error));
 	lua.frameDone();
@@ -427,7 +435,7 @@ void luaConsole()
 	run("execute", {std::string("a = event.onframeend(function() end, 'one') b = event.onframestart(function() end, 'two')")});
 	CHECK(console.functionCount.get() == 2);
 	run("execute", {std::string("event.unregisterbyname('one'), event.unregisterbyname('one'), event.unregisterbyid(b)")});
-	CHECK(lastLine() == "true\tfalse\ttrue" && console.functionCount.get() == 0);
+	CHECK(lastLine() == "True\tFalse\tTrue" && console.functionCount.get() == 0);
 	/* moved, a separator put before the selected row */
 	run("select", {int64_t{0}, std::string("only")});
 	run("moveDown");
@@ -519,7 +527,7 @@ void luaConsole()
 	run("closed");
 	CHECK(list.rowCount() == 0 && console.lines.get() == 0 && !console.running.get() && console.sessionPath.get().empty());
 	run("execute", {std::string("closing")});
-	CHECK(lastLine() == "true");
+	CHECK(lastLine() == "True");
 	/* Restore Defaults: Chimera's settings back */
 	console.disableOnLoad.set(true);
 	console.toggleAllIfNoneSelected.set(false);
@@ -648,6 +656,48 @@ void firmware()
 	CHECK(neededFirmware(fwDecl, setDecl, "{}", none, noPins, index).empty());
 	const auto needs = neededFirmware(fwDecl, setDecl, "{}", on, noPins, index);
 	CHECK(needs.size() == 1 && needs[0].id == "b" && needs[0].path.find("BIOS.BIN") != std::string::npos && needs[0].sha1.size() == 40);
+	fs::remove_all(dir);
+}
+
+/* Numbers as JSON writes them (review, 2026-10-26): its grammar, not only
+ * its characters; a dot whatever the locale; no NaN; a whole number too big
+ * for 64 bits read without ending the program */
+void jsonNumbers()
+{
+	auto parses = [](const std::string &text) {
+		json::Json j;
+		std::string e;
+		return json::parse(text, j, e);
+	};
+	CHECK(parses("[0, -1, 1.5, 2e3, -0.25E-2]"));
+	CHECK(!parses("[-]") && !parses("[1-2]") && !parses("[01]") && !parses("[1.]") && !parses("[.5]") && !parses("[1e]") && !parses("[+1]"));
+	CHECK(json::Json::number(0.1).text == "0.1" && json::Json::number(0.5).number() == 0.5);
+	CHECK(json::Json::number(std::nan("")).kind == json::Json::Kind::Null);
+	CHECK(json::Json::number(HUGE_VAL).kind == json::Json::Kind::Null);
+	/* under a decimal comma, where the system has one */
+	const std::string was = std::setlocale(LC_NUMERIC, nullptr);
+	if (std::setlocale(LC_NUMERIC, "de_DE.UTF-8") != nullptr || std::setlocale(LC_NUMERIC, "de_DE") != nullptr)
+	{
+		json::Json j;
+		std::string e;
+		CHECK(json::Json::number(0.5).text == "0.5");
+		CHECK(json::parse("2.25", j, e) && j.number() == 2.25);
+		std::setlocale(LC_NUMERIC, was.c_str());
+	}
+	else
+		std::printf("SKIP jsonNumbers: no decimal-comma locale here\n");
+	namespace fs = std::filesystem;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-json-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	const std::string file = (dir / "settings.json").string();
+	std::ofstream(file) << R"({"sample.count": 99999999999999999999})";
+	{
+		ManualDispatcher d;
+		ConfigStore store(file);
+		Sample vm(d);
+		store.keep(vm, "count");
+		CHECK(store.problem().empty());
+	}
 	fs::remove_all(dir);
 }
 
@@ -938,6 +988,15 @@ void modifierRewrite()
 	const Value merging = customize.run("modifierKeys", {Value(true)}, error).value_or(Value());
 	hotkeys.run("replaceKeys", {merging}, error);
 	CHECK(error.empty() && hotkeys.saved.get() == "{}" && hotkeys.boundTo("Shift+F1"));
+	/* the ROM hotkeys became the project's (owner, 2026-10-26): a binding
+	 * saved under an old name is the new hotkey's */
+	{
+		HotkeysViewModel renamed(d);
+		renamed.add("General", "Open Project", "Ctrl+O", [](bool) {});
+		renamed.add("General", "Load Last Project", "", [](bool) {});
+		renamed.saved.set(R"({"Open ROM": "Ctrl+P", "Load Last ROM": "F11"})");
+		CHECK(renamed.boundTo("Ctrl+P") && !renamed.boundTo("Ctrl+O") && renamed.boundTo("F11"));
+	}
 	/* every core's controls remembered, with no machine open */
 	ControlsViewModel controls(d, session);
 	controls.saved.set(R"({"Synth":{"P1 A":"LeftShift, Z"},"Other":{"P1 B":"RightCtrl+X"}})");
@@ -2202,6 +2261,18 @@ bool macroTool(const char *package, const char *rom)
 			error.rfind("The selected macro is not compatible with the current emulator core.", 0) == 0);
 	}
 	CHECK(!tool.run("remove", {int64_t{0}}, error) && tool.run("remove", {int64_t{2}}, error).has_value() && tool.zones().size() == 2);
+	/* review, 2026-10-26: a zone set after a removal is not named as one
+	 * still there; the zone picked stays picked when one before it goes */
+	CHECK(tool.run("setZone", {int64_t{0}, int64_t{1}}, error) == Value(int64_t{2}) && tool.zones()[2].name == "Zone 2");
+	CHECK(tool.run("setZone", {int64_t{2}, int64_t{3}}, error) == Value(int64_t{3}) && tool.zones()[3].name == "Zone 3");
+	tool.picked.set(3);
+	CHECK(tool.run("remove", {int64_t{2}}, error).has_value() && tool.picked.get() == 2 && tool.zones()[2].name == "Zone 3");
+	CHECK(tool.run("setZone", {int64_t{0}, int64_t{2}}, error) == Value(int64_t{3}) && tool.zones()[3].name == "Zone 4");
+	/* another project opened: its movie's zones, not these */
+	const int64_t opensBefore = session.opens.get();
+	openGame(session, package, std::string(rom), error);
+	CHECK(d.until([&] { return session.opens.get() > opensBefore && session.isOpen.get(); }, 60));
+	CHECK(tool.zones().size() == 1 && tool.zones()[0].whole);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	fs::remove_all(dir);
@@ -2343,18 +2414,18 @@ console.log("entry", movie.getinput(emu.framecount() - 1)["P1 Right"], movie.get
 while true do emu.frameadvance() end
 )LUA", "libraries")}, error);
 	CHECK(console.running.get() && console.summary.get() == "1 script (1 active, 0 paused)");
-	CHECK(said("start ") == "start 0 true");
+	CHECK(said("start ") == "start 0 True");
 	CHECK(said("u8 ") == "u8 171 -85 171");
 	CHECK(said("sized ") == "sized 4660 13330 -2 4294967294 1192960");
-	CHECK(said("tables ") == "tables 18 52 18 52 true true");
+	CHECK(said("tables ") == "tables 18 52 18 52 True True");
 	CHECK(said("float ") == "float 1.5");
-	CHECK(said("state ") == "state string 171 false no state nothing in memory");
-	CHECK(said("input ") == "input true true true true true 12 34 true false true 34");
-	CHECK(said("game ") == "game 17 Status Steps u32 4 4 1 16909060 true true string false");
-	CHECK(said("forms ") == "forms true abc a 1 90 false 0 67174915");
+	CHECK(said("state ") == "state string 171 False no state nothing in memory");
+	CHECK(said("input ") == "input True True True True True 12 34 True False True 34");
+	CHECK(said("game ") == "game 17 Status Steps u32 4 4 1 16909060 True True string False");
+	CHECK(said("forms ") == "forms True abc a 1 90 False 0 67174915");
 	CHECK(said("sqlbefore ") == "sqlbefore Database not open. Database not open.");
 	CHECK(said("sql ") == "sql Database Created Successfully Database Opened Successfully Command ran successfully 1 run 1.5 nil No rows found near \"nonsense\": syntax error");
-	CHECK(said("comm ").rfind("comm 5 hello 3 3 8 9 PNG bytes false ", 0) == 0 && said("comm ").find("there is no memory-mapped file") != std::string::npos);
+	CHECK(said("comm ").rfind("comm 5 hello 3 3 8 9 PNG bytes False ", 0) == 0 && said("comm ").find("there is no memory-mapped file") != std::string::npos);
 	/* the shared memory made, let go (the script runs again below: that run's too, at the end) */
 	auto unshare = [&] {
 		if (const std::string name = said("sharedname "); name.size() > 11)
@@ -2406,10 +2477,10 @@ while true do emu.frameadvance() end
 		/* the script's functions ran: two clicks, and the form's close */
 		std::string why;
 		CHECK(lua.run("console.log('callbacks', userdata.get('clicked'), userdata.get('closed'))", "check", why));
-		CHECK(said("callbacks ") == "callbacks 2 true");
+		CHECK(said("callbacks ") == "callbacks 2 True");
 	}
 	CHECK(said("game.set: ").find("Nope") != std::string::npos);
-	CHECK(said("userdata ") == "userdata 3 true 2 true nil false true");
+	CHECK(said("userdata ") == "userdata 3 True 2 True nil False True");
 	CHECK(session.readDomain("RAM").at(0x10) == 0xAB);
 	/* the drawings of the frame to come, for the window to draw over the picture */
 	{
@@ -2424,21 +2495,21 @@ while true do emu.frameadvance() end
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
 	console.frameDone();
-	CHECK(said("after ") == "after 1 true true false");
+	CHECK(said("after ") == "after 1 True True False");
 	/* a new frame, nothing drawn on it */
 	CHECK(guiOverlay.shapes.get() == "[]");
-	CHECK(said("regs ") == "regs true 48 16 true");
+	CHECK(said("regs ") == "regs True 48 16 True");
 	CHECK(said("set ") == "set 99");
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 2; }, 20));
 	console.frameDone();
 	CHECK(said("again ") == "again 2");
 	CHECK(said("hash ").rfind("hash BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD "
-							  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855 false", 0) == 0);
+							  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855 False", 0) == 0);
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 3; }, 20));
 	console.frameDone();
-	CHECK(said("entry ") == "entry true false true");
+	CHECK(said("entry ") == "entry True False True");
 	/* stopped (Toggle, on every script when none is selected); Toggle Last Lua Script runs it again, and stops it again */
 	CHECK(console.running.get() && console.run("toggle", {}, error).has_value() && !console.running.get());
 	CHECK(console.run("toggleLast", {}, error) == Value(true) && console.run("toggleLast", {}, error) == Value(false));
@@ -2448,6 +2519,30 @@ while true do emu.frameadvance() end
 	CHECK(d.until([&] { return session.frame.get() == 4; }, 20));
 	console.frameDone();
 	CHECK(said("script stopped: ").find("on purpose") != std::string::npos && !console.running.get());
+	/* the review's fixes (2026-10-26), each as Chimera's library answers: the
+	 * system's id, 0 for a register not there, 32-bit bit operations and a
+	 * shift modulo 32, false for a file that is no project, nothing past the
+	 * movie, a byte table from [0]; a fraction written as its whole part, a
+	 * form's onClose run when its script closes it, no waiting inside an
+	 * event callback, and joypad.set taking 1 for pressed */
+	console.run("openScript", {scriptFile(R"LUA(
+console.log("review", emu.getsystemid(), emu.getregister("NOPE"), bit.bor(-1, 0), bit.lshift(1, 32), client.openproject("/no/such.chimeraProject"), movie.getinput(1000000000) == nil, bizstring.decode({[0] = 65, [1] = 66}))
+mainmemory.write_u8(0x50, 3.5)
+local closed = false
+local f = forms.newform(100, 100, "t", function() closed = true end)
+forms.destroy(f)
+local inCallback
+event.onframeend(function() if inCallback == nil then inCallback = pcall(emu.frameadvance) end end)
+joypad.set({A = 1}, 1)
+emu.frameadvance()
+console.log("review2", mainmemory.read_u8(0x50), closed, inCallback, movie.getinput(emu.framecount() - 1, 1)["A"])
+)LUA", "review")}, error);
+	/* run to its first wait as it opens: no frame has passed yet */
+	CHECK_TEXT(said("review "), "review Synth 0 4294967295 1 False True AB");
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 5; }, 20));
+	console.frameDone();
+	CHECK_TEXT(said("review2 "), "review2 3 True False True");
 	unshare();
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
@@ -3219,6 +3314,8 @@ bool cacheManager(const char *package, const char *rom)
 	/* Chimera's columns: what, the project's id, its file (not found), and what the row means in full */
 	CHECK(text(gone, 14) == "Project" && text(gone, 15) == "00DEADBEEF" && text(gone, 16) == "/no/such/gone.chimeraProject   (not found)" &&
 		  text(unnamed, 16) == "(never recorded)" && text(gone, 17).size() == 16);
+	/* a folder with nothing in it was never used: no date, and older than any */
+	CHECK(text(unnamed, 17).empty());
 	{
 		std::string detail;
 		CHECK(fromValue(caches.run("detailOf", {gone}, error).value_or(Value()), detail) &&
@@ -4596,6 +4693,15 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 		roll.run("toggle", {int64_t{4}, int64_t{0}}, error);
 		was = branches.loads.get();
 		CHECK(branches.run("load", {int64_t{0}}, error).has_value() && loaded(was) && branches.loadQuestion.get().empty());
+		/* a removal taken back: the branch loaded is still the one it was,
+		 * though it moved down and back up (review, 2026-10-26) */
+		was = branches.loads.get();
+		CHECK(branches.run("load", {int64_t{1}}, error).has_value() && loaded(was) && branches.current.get() == 1);
+		branches.run("remove", {int64_t{0}}, error);
+		CHECK(branches.current.get() == 0);
+		CHECK(branches.run("undo", {}, error).has_value() && branches.count.get() == 2 && branches.current.get() == 1);
+		was = branches.loads.get();
+		CHECK(branches.run("load", {int64_t{0}}, error).has_value() && loaded(was) && branches.current.get() == 0);
 		branches.run("remove", {int64_t{1}}, error);
 		CHECK(branches.count.get() == 1 && branches.current.get() == 0);
 		session.run("seek", {end}, error);
@@ -5837,6 +5943,28 @@ bool pianoRollEditing(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.frame.get() == 10; }, 30));
 	CHECK(undoTo(start));
 	session.autoRestore.set(true);
+	/* the review's fixes (2026-10-26): a row past the movie, empty, as
+	 * Chimera's TAStudio has */
+	CHECK(roll.frames().rowCount() == inputs.size() + 1 && roll.frames().cell(inputs.size(), 0) == Value(false));
+	/* a marker set is a step of the history: undone it goes, redone it is back */
+	error.clear();
+	roll.run("addMarker", {int64_t{5}, std::string("here")}, error);
+	CHECK(error.empty());
+	CHECK(roll.run("markerAt", {int64_t{5}}, error) == Value(std::string("here")));
+	roll.run("undo", {}, error);
+	CHECK(roll.run("markerAt", {int64_t{5}}, error) != Value(std::string("here")));
+	roll.run("redo", {}, error);
+	CHECK(roll.run("markerAt", {int64_t{5}}, error) == Value(std::string("here")));
+	/* a run repeated more times than a number holds is refused, not the program's end */
+	roll.run("setPattern", {session.buttonNames()[0], std::string("On x99999999999999999999"), int64_t{0}, false}, error);
+	CHECK(error.find("too many") != std::string::npos);
+	/* another project opened: the last one's steps and selection are not its */
+	roll.run("select", {int64_t{1}, int64_t{2}}, error);
+	CHECK(roll.canUndo.get() && roll.selectFirst.get() == 1);
+	const int64_t opensBefore = session.opens.get();
+	openGame(session, package, std::string(rom), error);
+	CHECK(d.until([&] { return session.opens.get() > opensBefore && session.isOpen.get(); }, 60));
+	CHECK(!roll.canUndo.get() && !roll.canRedo.get() && roll.selectFirst.get() == -1);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;
@@ -6606,8 +6734,22 @@ bool recordingMode(const char *package, const char *rom)
 	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
-	openGame(session, package, (dir / "walker.testrom").string(), error);
-	CHECK(d.until([&] { return session.isOpen.get() && session.buttonNames().size() == 8; }, 60));
+	/* the project is known once the machine says it is open, and recording
+	 * turned on then stays on (review, 2026-10-26: the project's arrival,
+	 * posted after, turned it off again) */
+	bool projectAtOpen = false;
+	{
+		Connection atOpen = session.isOpen.changed.connect([&] {
+			if (!session.isOpen.get()) return;
+			projectAtOpen = session.hasProject.get();
+			session.recordingMode.set(true);
+		});
+		openGame(session, package, (dir / "walker.testrom").string(), error);
+		CHECK(d.until([&] { return session.isOpen.get() && session.buttonNames().size() == 8; }, 60));
+		d.until([] { return false; }, 0.3);
+	}
+	CHECK(projectAtOpen && session.recordingMode.get());
+	session.recordingMode.set(false);
 	const fs::path project = dir / "walker.chimeraProject";
 	CHECK(session.run("saveProject", {project.string()}, error).has_value());
 	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
@@ -6764,7 +6906,7 @@ end)
 	/* every frame, in order */
 	CHECK(lua.run("print(#seen, seen[1], seen[#seen], gaps, system ~= '', bytes >= 0)", "count", error));
 	CHECK(!lines.empty() && lines.back() == std::to_string(to - from) + "\t" + std::to_string(from + 1) + "\t" + std::to_string(to) +
-		"\t0\ttrue\ttrue");
+		"\t0\tTrue\tTrue");
 	/* and each frame's input what the script held for it */
 	int64_t wrong = 0;
 	for (int64_t f = from; f < to; f++)
@@ -8358,7 +8500,7 @@ bool luaTastudio(const char *package, const char *rom)
 	};
 	/* nothing open: TAStudio is not engaged */
 	console.run("openScript", {scriptFile("console.log('alone', tastudio.engaged(), tastudio.islag(0))", "alone")}, error);
-	CHECK(d.until([&] { return !said("alone ").empty(); }, 10) && said("alone ") == "alone false nil");
+	CHECK(d.until([&] { return !said("alone ").empty(); }, 10) && said("alone ") == "alone False nil");
 	console.run("stopAll", {}, error);
 	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
@@ -8399,13 +8541,13 @@ tastudio.onqueryitemicon(function(row, col) if col == "P1 B" and row == 1 then r
 tastudio.clearIconCache()
 )", "tastudio")}, error);
 	CHECK(console.running.get());
-	CHECK(said("engaged ") == "engaged true nil");
-	CHECK(said("edits ") == "edits true false 8");
+	CHECK(said("engaged ") == "engaged True nil");
+	CHECK(said("edits ") == "edits True False 8");
 	CHECK(said("markers ") == "markers here Run start nil 4 4");
-	CHECK(said("branches ") == "branches first try 6 0 true false");
+	CHECK(said("branches ") == "branches first try 6 0 True False");
 	CHECK(said("renamed ") == "renamed renamed");
-	CHECK(said("lag ") == "lag true nil");
-	CHECK(said("misc ") == "misc false true");
+	CHECK(said("lag ") == "lag True nil");
+	CHECK(said("misc ") == "misc False True");
 	/* the roll's drawing asks the script about cells; its own column listed */
 	CHECK(roll.scriptQueries.get() && roll.scriptColumns.get().find("\"name\": \"xp\"") != std::string::npos);
 	CHECK(lua.query("__chimera_query_text", 7, "xp") == "70" && lua.query("__chimera_query_text", 7, "P1 A").empty());
@@ -9197,6 +9339,7 @@ int main(int argc, char **argv)
 	driveMediaText();
 	luaConsole();
 	toolWindows();
+	jsonNumbers();
 	configStore();
 	chimeraSettingsImport();
 	firmware();

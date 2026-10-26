@@ -49,6 +49,7 @@ PrecompiledViewModel::PrecompiledViewModel(Dispatcher &dispatcher) : ViewModel("
 	expose("sessionGigabytes", "how much memory one compile session is counted at, in GB (1 to 256): as many run side by "
 		"side as the computer can give this much each", sessionGigabytes, true);
 	expose("inUse", "the open machine's folder, \"\" for none: it stays", inUse, true);
+	expose("compiling", "the folder a compile is filling, \"\" for none: it stays", compiling, true);
 	expose("total", "all of it together, as it reads", total);
 	expose("status", "what the window last did", status);
 	rows("games", "one row a game's folder: name (the game's file, else its SHA1), sha1, core, version, compiled (when), "
@@ -83,7 +84,7 @@ PrecompiledViewModel::PrecompiledViewModel(Dispatcher &dispatcher) : ViewModel("
 				const Game &g = games_[i];
 				/* only ever a folder inside the root, and not the open machine's */
 				if (fs::path(g.folder).parent_path() != fs::path(root.get())) continue;
-				if (g.open)
+				if (g.open || (!compiling.get().empty() && fs::path(g.folder) == fs::path(compiling.get())))
 				{
 					failed += (failed.empty() ? "" : ", ") + g.name + " (in use)";
 					continue;

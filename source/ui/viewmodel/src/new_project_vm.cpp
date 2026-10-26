@@ -364,6 +364,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	});
 	expose("compileAsked", "Chimera's compile step applies: the package says precompile and a game is chosen", compileAsked);
 	expose("compiling", "compile sessions are running", compiling);
+	expose("compileFolder", "the folder the compile sessions are filling, \"\" while none runs", compileFolder);
 	expose("compileReady", "the game's code is compiled: every module its manifest lists is there", compileReady);
 	expose("compileStatus", "what the compile step says, in Chimera's words", compileStatus);
 	expose("compileDone", "modules compiled, all sessions together", compileDone);
@@ -431,6 +432,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			modules_.clear();
 			moduleRows_.reset.emit();
 			compiling.set(true);
+			compileFolder.set(job->dir);
 			compileReady.set(false);
 			compileDone.set(0);
 			compileTotal.set(0);
@@ -445,6 +447,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 					compileStatus.set("Compiling " + std::to_string(done) + " of " + std::to_string(total) + " modules...");
 				}, [this](const std::string &failure) {
 					compiling.set(false);
+					compileFolder.set("");
 					compileJob_.reset();
 					if (!failure.empty())
 					{
@@ -614,7 +617,11 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				if (on) setMember(settings, name, Json::boolean_(true));
 			status.set("Asking " + core.get() + " about " + baseName(importMovie.get()) + "...");
 			importFailure.set("");
-			auto done = [this](std::string answer, std::string why) {
+			/* an answer to a question since withdrawn (the dialog closed, another
+			 * core chosen, another import asked) is no answer */
+			const uint64_t ticket = ++importTicket_;
+			auto done = [this, ticket](std::string answer, std::string why) {
+				if (ticket != importTicket_) return;
 				if (answer.empty())
 				{
 					status.set("Not imported: " + (why.empty() ? core.get() + " gave no answer" : why));
@@ -652,7 +659,12 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			}
 			return {};
 		});
+	command("importCancel", "the import asked is let go: its answer, when it comes, is not taken", {}, [this](const Args &, std::string &) -> Value {
+		++importTicket_;
+		return {};
+	});
 	command("importForget", "the project will not take the imported movie's inputs", {}, [this](const Args &, std::string &) -> Value {
+		++importTicket_;
 		pendingInput_.clear();
 		imported.set(false);
 		importNotes.set("");
@@ -1045,8 +1057,8 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			for (const auto &[slotId, path] : last.files)
 			{
 				if (!fs::is_regular_file(path, ec)) continue;
-				/* a project made of a game opened by itself may name no slot
-				 * this package declares: its game goes in the first */
+				/* a hand-written project may name no slot this package
+				 * declares: its game goes in the first */
 				const std::string into = slot(slotId) != nullptr || slots_.empty() ? slotId : slots_.front().id;
 				std::string e;
 				run("addFile", {into, path}, e);
@@ -1103,12 +1115,31 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			pins.kind = Json::Kind::Array;
 			for (const Need &n : needs_)
 			{
+				/* only what was given: an optional one left out pinned with no
+				 * hash was a warning at every open, as Chimera pins none */
+				if (n.path.empty() || n.sha1.empty()) continue;
 				Json pin;
 				setMember(pin, "id", Json::string(n.id));
 				setMember(pin, "sha1", Json::string(n.sha1));
 				pins.items.push_back(pin);
 			}
 			const std::string settings = json::write(form_.recorded()), firmware = json::write(pins);
+			/* what the core compiled for this game, by name and hash, as Chimera's
+			 * project records it: an open can then say whether it runs the same code */
+			std::string coreCache;
+			if (compileAsked.get() && !modules_.empty())
+			{
+				Json list;
+				list.kind = Json::Kind::Array;
+				for (const Module &m : modules_)
+				{
+					Json o;
+					setMember(o, "name", Json::string(m.name));
+					setMember(o, "sha1", Json::string(m.sha1));
+					list.items.push_back(o);
+				}
+				coreCache = json::write(list);
+			}
 			const std::string coreName = core.get(), version = version_, sha = packageSha1_, slotsText = slotsText_, package = package_;
 			const std::string input = pendingInput_;
 			/* a file chosen by hand is remembered, so the project finds it
@@ -1130,6 +1161,8 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 					}
 				if (why.empty() && ce_project_set_settings_text(p, settings.c_str(), &err) != 0) why = err != nullptr ? err : "settings";
 				if (why.empty() && firmware != "[]" && ce_project_set_firmware_text(p, firmware.c_str(), &err) != 0) why = err != nullptr ? err : "firmware";
+				if (why.empty() && !coreCache.empty() && ce_project_set_core_cache_text(p, coreCache.c_str(), &err) != 0)
+					why = err != nullptr ? err : "the compiled modules' list";
 				ce_project_set_title(p, name.c_str());
 				ce_project_set_clock_start(p, *clock);
 				/* an imported movie's inputs are the project's */
@@ -1658,6 +1691,9 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	suggestedFor_.clear();
 	suggestedKeys_.clear();
 	suggestion.set("");
+	/* another core: what the last one was asked is no longer this form's */
+	++suggestTicket_;
+	++importTicket_;
 	/* the movie import it declares, if any */
 	import_ = Json();
 	importPicked_.clear();
@@ -1794,9 +1830,11 @@ void NewProjectViewModel::suggestFor(const std::string &game)
 	suggestion.set(game.empty() ? "" : "Looking this game up...");
 	if (game.empty()) return;
 	auto ask = [this, game] {
-		auto done = [this, game](std::string answer, std::string why) {
-			/* an answer for a game no longer chosen is no answer */
-			if (game != suggestedFor_) return;
+		/* an answer for a game no longer chosen, or to a question asked
+		 * before another (of another core, or of this game again), is no answer */
+		const uint64_t ticket = ++suggestTicket_;
+		auto done = [this, game, ticket](std::string answer, std::string why) {
+			if (game != suggestedFor_ || ticket != suggestTicket_) return;
 			applySuggestion(answer, why);
 		};
 		/* what a run would have: every file picked, in its slot (a cue brings
@@ -2069,20 +2107,49 @@ void NewProjectViewModel::applyImport(const std::string &text)
 		{
 			const Json *name = f.find("name"), *slot = f.find("slot");
 			if (name == nullptr) continue;
-			std::string path;
+			std::string path, declared;
 			for (const auto &[option, picked] : importPicked_)
 				for (const std::string &p : picked)
-					if (baseName(p) == name->text) path = p;
+					if (baseName(p) == name->text)
+					{
+						path = p;
+						/* the slot the input it was picked in declares, for an answer that names none (Chimera's) */
+						if (const Json *inputs = import_.find("files"))
+							for (const Json &input : inputs->items)
+								if (const Json *o = input.find("option"); o != nullptr && o->text == option)
+									if (const Json *sl = input.find("slot")) declared = sl->text;
+					}
 			if (path.empty())
 			{
 				notes.push_back(name->text + ": not among the files picked");
 				continue;
 			}
 			std::string e;
-			if (!run("addFile", {slot != nullptr ? slot->text : std::string("rom"), path}, e)) notes.push_back(name->text + ": " + e);
+			const std::string into = slot != nullptr && !slot->text.empty() ? slot->text : !declared.empty() ? declared : std::string("rom");
+			if (!run("addFile", {into, path}, e)) notes.push_back(name->text + ": " + e);
 		}
-	/* the firmware: a file picked for a firmware input is the one the answer names */
-	if (const Json *firmware = answer.find("firmware"))
+	/* the firmware: a file picked for a firmware input is the one the answer
+	 * names, by its hash - or, with one such file and one firmware named, that
+	 * file whatever its hash, as Chimera takes it (a game core's firmware may
+	 * be any release) */
+	std::vector<std::string> firmwareFiles;
+	if (const Json *files = import_.find("files"))
+		for (const Json &input : files->items)
+		{
+			const Json *isFirmware = input.find("firmware"), *opt = input.find("option");
+			if (isFirmware == nullptr || !isFirmware->boolean || opt == nullptr) continue;
+			if (const auto it = importPicked_.find(opt->text); it != importPicked_.end())
+				firmwareFiles.insert(firmwareFiles.end(), it->second.begin(), it->second.end());
+		}
+	if (const Json *firmware = answer.find("firmware"); firmware != nullptr && firmware->items.size() == 1 && firmwareFiles.size() == 1)
+	{
+		if (const Json *id = firmware->items.front().find("id"))
+		{
+			std::string e;
+			run("chooseFirmware", {id->text, firmwareFiles.front()}, e);
+		}
+	}
+	else if (const Json *firmware = answer.find("firmware"))
 		for (const Json &need : firmware->items)
 		{
 			const Json *id = need.find("id"), *sha = need.find("sha1");

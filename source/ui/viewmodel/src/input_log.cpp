@@ -49,14 +49,15 @@ void InputLog::read(int64_t first, std::vector<uint64_t> &out) const
 	}
 }
 
-bool InputLog::set(int64_t frame, uint64_t mask)
+bool InputLog::bound() const
 {
 	std::shared_lock lock(m_);
-	if (s_ == nullptr) return false;
-	std::vector<int32_t> axes(static_cast<size_t>(ce_session_axis_count(s_)));
-	uint64_t was = 0;
-	ce_session_movie_get(s_, frame, &was, axes.empty() ? nullptr : axes.data());
-	return ce_session_movie_set(s_, frame, mask, axes.empty() ? nullptr : axes.data()) == 0;
+	return s_ != nullptr;
+}
+
+bool InputLog::set(int64_t frame, uint64_t mask)
+{
+	return setRow(frame, mask, nullptr);
 }
 
 void InputLog::resize(int64_t frames)
@@ -70,6 +71,9 @@ bool InputLog::setRow(int64_t frame, uint64_t mask, const int32_t *axes)
 	std::shared_lock lock(m_);
 	if (s_ == nullptr) return false;
 	if (axes != nullptr) return ce_session_movie_set(s_, frame, mask, axes) == 0;
+	/* read, then written back with the half kept: one edit at a time, or
+	 * another's between the two would be lost */
+	std::lock_guard edit(edit_);
 	std::vector<int32_t> was(static_cast<size_t>(ce_session_axis_count(s_)));
 	uint64_t old = 0;
 	ce_session_movie_get(s_, frame, &old, was.empty() ? nullptr : was.data());
@@ -136,6 +140,7 @@ bool InputLog::setAxesAt(int64_t frame, const int32_t *values)
 {
 	std::shared_lock lock(m_);
 	if (s_ == nullptr) return false;
+	std::lock_guard edit(edit_);
 	uint64_t mask = 0;
 	ce_session_movie_get(s_, frame, &mask, nullptr);
 	return ce_session_movie_set(s_, frame, mask, values) == 0;

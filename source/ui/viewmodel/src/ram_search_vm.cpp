@@ -574,20 +574,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 	/* what needs a new search to take effect */
 	domainWatch_ = domain.changed.connect([this] {
 		if (searching.get()) rebootNeeded.set(true);
-		/* a large domain is searched fast, as Chimera's */
-		session_.onMachine([this, d = domain.get()](ce_session *s) {
-			int64_t bytes = 0;
-			if (s != nullptr)
-				for (int32_t i = 0; i < ce_session_domain_count(s); i++)
-					if (d == ce_session_domain_name(s, i)) bytes = ce_session_domain_size(s, i);
-			later([this, bytes] {
-				if (bytes >= kMaxDetailedSize && !fast.get())
-				{
-					fast.set(true);
-					status.set("Large domain, switching to fast mode");
-				}
-			});
-		});
+		fastIfLarge();
 	});
 	fastWatch_ = fast.changed.connect([this] {
 		if (searching.get()) rebootNeeded.set(true);
@@ -643,8 +630,8 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 
 	hooks_ = session_.addMachineHooks([this](ce_session *s) { afterFrameOnMachine(s); }, [this](ce_session *) { dropOnMachine(); });
 	/* each machine opened: its domains */
-	opensWatch_ = session_.opens.changed.connect([this] {
 	freezesWatch_ = session_.freezesChanged.connect([this] { freezesShown(); });
+	opensWatch_ = session_.opens.changed.connect([this] {
 		session_.onMachine([this](ce_session *s) {
 			std::string names, first;
 			if (s != nullptr)
@@ -659,7 +646,28 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 				domains.set(names);
 				const std::string d = "," + domain.get() + ",";
 				if (domain.get().empty() || ("," + names + ",").find(d) == std::string::npos) domain.set(first);
+				/* a domain of the same name may be another size on this machine, as Chimera checks at each restart */
+				fastIfLarge();
 			});
+		});
+	});
+}
+
+/* a large domain is searched fast, as Chimera's (RamSearch.cs: at start, at
+ * each new machine, and when the domain changes) */
+void RamSearchViewModel::fastIfLarge()
+{
+	session_.onMachine([this, d = domain.get()](ce_session *s) {
+		int64_t bytes = 0;
+		if (s != nullptr)
+			for (int32_t i = 0; i < ce_session_domain_count(s); i++)
+				if (d == ce_session_domain_name(s, i)) bytes = ce_session_domain_size(s, i);
+		later([this, bytes] {
+			if (bytes >= kMaxDetailedSize && !fast.get())
+			{
+				fast.set(true);
+				status.set("Large domain, switching to fast mode");
+			}
 		});
 	});
 }

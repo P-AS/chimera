@@ -18,6 +18,22 @@
 
 namespace chimera::vm {
 
+namespace {
+/* a project's id as a folder name: one name, never "." or ".." (which would put
+ * a file in the cache folder's parent), never empty */
+bool plainId(const std::string &id)
+{
+	return !id.empty() && id != "." && id != ".." && id.find_first_of("/\\") == std::string::npos;
+}
+/* a folder written one way: "a/b/" and "a/./b" are "a/b" */
+std::filesystem::path plainPath(const std::filesystem::path &p)
+{
+	std::filesystem::path n = p.lexically_normal();
+	if (n.has_relative_path() && n.filename().empty()) n = n.parent_path();
+	return n;
+}
+} // namespace
+
 namespace fs = std::filesystem;
 
 namespace {
@@ -152,6 +168,11 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 		"beside its cache: {\"memoryMb\", \"maxNearStride\"} (0 for every project's)", {"id"}, [this](const Args &a, std::string &error) -> Value {
 			std::string id;
 			if (!arg(a, 0, id, error)) return {};
+			if (!plainId(id))
+			{
+				error = "a project's id";
+				return {};
+			}
 			json::Json b;
 			std::string err;
 			int64_t mb = 0, stride = 0;
@@ -171,7 +192,7 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 			std::string id;
 			int64_t mb = 0, stride = 0;
 			if (!arg(a, 0, id, error) || !arg(a, 1, mb, error) || !arg(a, 2, stride, error)) return {};
-			if (id.empty() || id.find_first_of("/\\") != std::string::npos || (mb != 0 && mb < 64) || stride < 0 || stride > 32)
+			if (!plainId(id) || (mb != 0 && mb < 64) || stride < 0 || stride > 32)
 			{
 				error = "a project's id, a memory budget of 64 MB or more and a closeness of 1 to 32 (0 for every project's)";
 				return {};
@@ -465,7 +486,13 @@ int64_t CacheManagerViewModel::removeAll(const std::vector<size_t> &picked, std:
 		/* only ever a folder inside the cache folder or the recovery folder */
 		const fs::path folder = item.folder;
 		const fs::path root = item.unsavedWork ? fs::path(recoveryFolder.get()) : fs::path(cacheFolder.get());
-		if (root.empty() || folder.parent_path() != root) continue;
+		/* the same folder written another way (a slash at its end) is still it */
+		if (root.empty() || plainPath(folder).parent_path() != plainPath(root))
+		{
+			/* said, not skipped in silence */
+			failed += (failed.empty() ? "" : ", ") + item.title + " (not in the cache folder)";
+			continue;
+		}
 		/* the open project's is being written */
 		if (item.open)
 		{
@@ -542,6 +569,8 @@ void CacheManagerViewModel::survey()
 				if (!ec && t > newest) newest = t;
 			}
 		ec.clear();
+		/* a folder with no files keeps the least time: older than any used (0 is not -
+		 * this clock counts today below it); not given to the clocks, which overflow on it */
 		item.lastUsed = static_cast<int64_t>(newest.time_since_epoch().count());
 		const auto lock = said.find(item.folder);
 		item.locked = lock != said.end() ? lock->second : lockedByDefault(item.kind);
@@ -650,7 +679,7 @@ Value CacheManagerViewModel::Rows::cell(int64_t row, int32_t column) const
 	case 16: return !i.projectPath.empty() ? i.projectPath + (i.orphan ? "   (not found)" : "") : i.unsavedWork ? std::string() : std::string("(never recorded)");
 	case 17:
 	{
-		if (i.lastUsed == 0) return std::string();
+		if (i.lastUsed == fs::file_time_type::min().time_since_epoch().count()) return std::string();
 		const auto sys = std::chrono::file_clock::to_sys(fs::file_time_type(fs::file_time_type::duration(i.lastUsed)));
 		const std::time_t t = std::chrono::system_clock::to_time_t(std::chrono::time_point_cast<std::chrono::system_clock::duration>(sys));
 		std::tm local{};

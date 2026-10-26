@@ -1,5 +1,7 @@
 #include "chimera/vm/json.hpp"
 
+#include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -7,6 +9,32 @@
 namespace chimera::vm::json {
 
 namespace {
+/* -?(0|[1-9][0-9]*)(.[0-9]+)?([eE][+-]?[0-9]+)? */
+bool wellFormedNumber(const std::string &t)
+{
+	size_t i = 0;
+	auto digits = [&] {
+		const size_t from = i;
+		while (i < t.size() && t[i] >= '0' && t[i] <= '9') i++;
+		return i > from;
+	};
+	if (i < t.size() && t[i] == '-') i++;
+	if (i < t.size() && t[i] == '0') i++;
+	else if (!digits()) return false;
+	if (i < t.size() && t[i] == '.')
+	{
+		i++;
+		if (!digits()) return false;
+	}
+	if (i < t.size() && (t[i] == 'e' || t[i] == 'E'))
+	{
+		i++;
+		if (i < t.size() && (t[i] == '+' || t[i] == '-')) i++;
+		if (!digits()) return false;
+	}
+	return i == t.size();
+}
+
 
 class Reader
 {
@@ -171,6 +199,8 @@ private:
 			out.kind = Json::Kind::Number;
 			while (i_ < s_.size() && (s_[i_] == '-' || s_[i_] == '+' || s_[i_] == '.' || s_[i_] == 'e' || s_[i_] == 'E' || (s_[i_] >= '0' && s_[i_] <= '9')))
 				out.text += s_[i_++];
+			/* JSON's grammar, not just its characters: "-" and "1-2" were taken */
+			if (!wellFormedNumber(out.text)) return fail("bad number " + out.text);
 			return true;
 		}
 		return fail("unexpected character");
@@ -193,7 +223,11 @@ const Json *Json::find(std::string_view name) const
 double Json::number() const
 {
 	if (kind == Kind::Bool) return boolean ? 1.0 : 0.0;
-	return kind == Kind::Number ? std::strtod(text.c_str(), nullptr) : 0.0;
+	if (kind != Kind::Number) return 0.0;
+	/* a dot whatever the locale (strtod stopped at the dot under a decimal comma) */
+	double d = 0.0;
+	std::from_chars(text.data(), text.data() + text.size(), d);
+	return d;
 }
 
 Json Json::string(std::string s)
@@ -206,11 +240,15 @@ Json Json::string(std::string s)
 
 Json Json::number(double d)
 {
+	/* JSON has no NaN or infinity: written as null, which reads back as no value */
+	if (!std::isfinite(d)) return Json();
 	Json j;
 	j.kind = Kind::Number;
+	/* the shortest text that reads back as the same double, with a dot
+	 * whatever the locale: snprintf wrote "0,5" under a decimal comma */
 	char buf[40];
-	std::snprintf(buf, sizeof buf, "%.17g", d);
-	j.text = buf;
+	const auto [end, ec] = std::to_chars(buf, buf + sizeof buf, d);
+	j.text.assign(buf, ec == std::errc() ? end : buf);
 	return j;
 }
 

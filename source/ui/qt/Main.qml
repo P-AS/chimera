@@ -262,14 +262,14 @@ ApplicationWindow {
     // window; TAStudio's editing is TAStudio's
     readonly property var hotkeyActions: ({
         "RAM Search": ramSearchAction, "RAM Watch": ramWatchAction, "Hex Editor": hexEditorAction, "Lua Console": luaConsoleAction,
-        "Close ROM": closeAction, "Trace Logger": traceLoggerAction
+        "Open Project": openProjectAction, "Close Project": closeAction, "Trace Logger": traceLoggerAction
     })
     Connections {
         target: root.hotkeyRelay
         function onPressed(action) {
             if (action === "Full Screen") root.visibility = root.visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen
             else if (action === "Exit Program") root.quitProgram()
-            else if (action === "Load Last ROM") {
+            else if (action === "Load Last Project") {
                 const last = root.session.recentProjects.split("\n")[0]
                 if (last !== "") root.openProject(last)
             }
@@ -332,7 +332,7 @@ ApplicationWindow {
                 title: qsTr("&File")
                 // opens on the last project's answers, as Chimera's does
                 Action { text: qsTr("&New Chimera Project..."); icon.source: "qrc:/chimera/menu/NewProject.png"; onTriggered: { root.newProject.run("openOnLastProject"); newProjectWindow.show(); newProjectWindow.raise() } }
-                Action { text: qsTr("&Open Project..."); icon.source: "qrc:/chimera/menu/OpenProject.png"; onTriggered: root.leaveProject(() => projectDialog.open()) }
+                Action { id: openProjectAction; property string hotkey: "Open Project"; text: qsTr("&Open Project..."); icon.source: "qrc:/chimera/menu/OpenProject.png"; onTriggered: root.leaveProject(() => projectDialog.open()) }
                 Menu {
                     delegate: keyedMenuItem
                     id: recentMenu
@@ -355,7 +355,7 @@ ApplicationWindow {
                 Action { text: qsTr("Save Project &Backup"); icon.source: "qrc:/chimera/menu/SaveProjectBackup.png"; enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveBackup") }
                 // the open project's settings, changed: its machine starts again with them (issue 370)
                 Action { text: qsTr("Project Se&ttings..."); icon.source: "qrc:/chimera/menu/Customize.png"; enabled: root.session.hasProject && root.session.isOpen; onTriggered: { projectSettingsWindow.show(); projectSettingsWindow.raise() } }
-                Action { id: closeAction; property string hotkey: "Close ROM"; text: qsTr("&Close Project"); icon.source: "qrc:/chimera/menu/CloseProject.png"; enabled: root.session.closeEnabled; onTriggered: root.leaveProject(() => root.session.run("close")) }
+                Action { id: closeAction; property string hotkey: "Close Project"; text: qsTr("&Close Project"); icon.source: "qrc:/chimera/menu/CloseProject.png"; enabled: root.session.closeEnabled; onTriggered: root.leaveProject(() => root.session.run("close")) }
                 MenuDivider {}
                 Action {
                     property string hotkey: "Encode Video"
@@ -700,7 +700,7 @@ ApplicationWindow {
         }
         ShownSeparator { visible: root.session.isOpen }
         Shown { text: qsTr("Screenshot"); icon.source: "qrc:/chimera/menu/Screenshot.png"; visible: root.session.isOpen; onTriggered: root.hotkeys.run("run", ["Screenshot"]) }
-        Shown { text: qsTr("Close ROM"); icon.source: "qrc:/chimera/menu/CloseProject.png"; visible: root.session.isOpen; onTriggered: closeAction.trigger() }
+        Shown { text: qsTr("Close Project"); icon.source: "qrc:/chimera/menu/CloseProject.png"; visible: root.session.isOpen; onTriggered: closeAction.trigger() }
         ShownSeparator { visible: root.fullScreen || !root.menuBar.visible }
         Shown {
             text: root.menuBar.visible ? qsTr("Hide Menu") : qsTr("Show Menu")
@@ -826,28 +826,30 @@ ApplicationWindow {
         }
         onAccepted: if (seekTo.text !== "") root.session.run("seek", [parseInt(seekTo.text)])
     }
+    // RAM Search's and RAM Watch's View in Hex Editor: a hidden domain (a
+    // game's own variables, say) is not one the Hex Editor shows
+    function viewInHexEditor(domain, address) {
+        if (("," + root.hexEditor.domains + ",").indexOf("," + domain + ",") < 0) {
+            root.note(qsTr("The Hex Editor does not show %1").arg(domain))
+            return
+        }
+        root.hexEditor.domain = domain
+        root.hexEditor.run("goTo", [address])
+        hexEditorWindow.show()
+        hexEditorWindow.raise()
+    }
     RamSearch {
         id: ramSearchWindow; vm: root.ramSearch; folderOf: root.folderOf; visible: false
         clipboard: root.clipboard; customize: root.customize; themeColor: root.osdColor
         toolWindows: root.toolWindows; mainWindow: root
         showRamWatch: () => { ramWatchWindow.show(); ramWatchWindow.raise() }
-        viewInHexEditor: (domain, address) => {
-            root.hexEditor.domain = domain
-            root.hexEditor.run("goTo", [address])
-            hexEditorWindow.show()
-            hexEditorWindow.raise()
-        }
+        viewInHexEditor: root.viewInHexEditor
     }
     RamWatch {
         id: ramWatchWindow; vm: root.ramWatch; folderOf: root.folderOf; visible: false
         clipboard: root.clipboard; customize: root.customize; themeColor: root.osdColor
         toolWindows: root.toolWindows; mainWindow: root; gameProperties: root.gameProperties
-        viewInHexEditor: (domain, address) => {
-            root.hexEditor.domain = domain
-            root.hexEditor.run("goTo", [address])
-            hexEditorWindow.show()
-            hexEditorWindow.raise()
-        }
+        viewInHexEditor: root.viewInHexEditor
     }
     NewProject { id: newProjectWindow; vm: root.newProject; askFirst: root.leaveProject; mainWindow: root; themeColor: root.osdColor; visible: false }
     MovieImport {

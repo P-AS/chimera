@@ -111,9 +111,15 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 				}
 			break;
 		case Undo::Remove:
-			branches_.insert(branches_.begin() + std::min<int64_t>(backupAt_, static_cast<int64_t>(branches_.size())), backup_);
+		{
+			const int64_t at = std::min<int64_t>(backupAt_, static_cast<int64_t>(branches_.size()));
+			branches_.insert(branches_.begin() + at, backup_);
+			/* the branch loaded is the one it was: it moved down with the removal */
+			if (current.get() >= at) current.set(current.get() + 1);
+			previewing.set(-1);
 			status.set("Branch Removal canceled");
 			break;
+		}
 		}
 		undo_ = Undo::None;
 		undoText.set("");
@@ -244,6 +250,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 		branches_.erase(branches_.begin() + static_cast<long>(i));
 		if (current.get() == static_cast<int64_t>(i)) current.set(-1);
 		else if (current.get() > static_cast<int64_t>(i)) current.set(current.get() - 1);
+		previewing.set(-1);
 		/* kept, its state file too, for Undo */
 		keepBackup(Undo::Remove, gone, static_cast<int64_t>(i));
 		if (selected.get() >= static_cast<int64_t>(branches_.size())) selected.set(static_cast<int64_t>(branches_.size()) - 1);
@@ -262,6 +269,8 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 		const int64_t f = static_cast<int64_t>(from), t = static_cast<int64_t>(to);
 		if (current.get() == f) current.set(t);
 		else if (current.get() == t) current.set(f);
+		if (previewing.get() == f) previewing.set(t);
+		else if (previewing.get() == t) previewing.set(f);
 		selected.set(t);
 		changed();
 		return {};
@@ -277,9 +286,12 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 	});
 
 	loadedWatch_ = session_.branchesLoaded.connect([this](const std::vector<SessionViewModel::Branch> &loaded) {
-		/* another project's branches: nothing of this one's to undo */
+		/* another project's branches: nothing of this one's to undo, show or ask */
 		dropBackup();
 		selected.set(-1);
+		previewing.set(-1);
+		askedFor_ = -1;
+		loadQuestion.set("");
 		branches_ = loaded;
 		current.set(-1);
 		for (SessionViewModel::Branch &b : branches_) b.id = ++lastId_;

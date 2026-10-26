@@ -40,7 +40,6 @@ ApplicationWindow {
     readonly property color secondaryColour: Qt.rgba(win.highlightColour.r, win.highlightColour.g, win.highlightColour.b, 0x44 / 255)
 
     readonly property bool anyHighlighted: win.vm.picked >= 0 || win.vm.secondaryCount > 0
-    readonly property bool fileOnDisk: win.vm.domain === "File on Disk"
 
     FontMetrics { id: fm; font.family: "monospace" }
     readonly property real charWidth: fm.advanceWidth("0")
@@ -55,7 +54,7 @@ ApplicationWindow {
 
     FileDialog {
         id: binaryDialog
-        title: win.fileOnDisk ? qsTr("Save as ROM") : qsTr("Save as binary")
+        title: qsTr("Save as binary")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "bin"
         nameFilters: [qsTr("Binary files (*.bin)"), qsTr("All files (*)")]
@@ -116,7 +115,7 @@ ApplicationWindow {
     Action { id: goToAction; text: qsTr("&Go to Address..."); shortcut: "Ctrl+G"; onTriggered: goTo.open() }
     Action {
         id: watchAction; property string keysShown: "Ctrl+W"; text: qsTr("Add to RAM Watch"); icon.source: "qrc:/chimera/icons/Find.png"
-        enabled: win.anyHighlighted && !win.fileOnDisk
+        enabled: win.anyHighlighted
         onTriggered: { if (win.vm.run("addToRamWatch") > 0 && win.showRamWatch) win.showRamWatch() }
     }
     // frozen addresses: written before every frame, for this session only
@@ -124,7 +123,7 @@ ApplicationWindow {
         id: freezeAction; property string keysShown: "Space"
         text: win.vm.pickedFrozen ? qsTr("Un&freeze Address") : qsTr("&Freeze Address")
         icon.source: win.vm.pickedFrozen ? "qrc:/chimera/icons/Unfreeze.png" : "qrc:/chimera/icons/Freeze.png"
-        enabled: win.anyHighlighted && win.vm.writable && !win.fileOnDisk
+        enabled: win.anyHighlighted && win.vm.writable
         onTriggered: win.vm.run("toggleFreeze")
     }
     Action { id: unfreezeAllAction; text: qsTr("Unfreeze All"); icon.source: "qrc:/chimera/icons/Unfreeze.png"; shortcut: "Shift+Del"; enabled: win.vm.anyFrozen; onTriggered: win.vm.run("unfreezeAll") }
@@ -139,8 +138,7 @@ ApplicationWindow {
         Menu {
             title: qsTr("&File")
             delegate: shortcutItem
-            Action { text: qsTr("Save"); icon.source: "qrc:/chimera/icons/SaveAs.png"; shortcut: "Ctrl+S"; enabled: win.fileOnDisk; onTriggered: win.vm.run("save") }
-            Action { text: win.fileOnDisk ? qsTr("Save as ROM...") : qsTr("Save as binary..."); shortcut: "Ctrl+Shift+S"; onTriggered: binaryDialog.open() }
+            Action { text: qsTr("Save as binary..."); shortcut: "Ctrl+Shift+S"; onTriggered: binaryDialog.open() }
             Action { text: qsTr("Save as text..."); onTriggered: textDialog.open() }
             Action { text: qsTr("Import as binary..."); shortcut: "Ctrl+I"; onTriggered: importDialog.open() }
             MenuDivider {}
@@ -502,5 +500,14 @@ ApplicationWindow {
             }
             Button { text: qsTr("OK"); Layout.columnSpan: 2; Layout.alignment: Qt.AlignRight; onClicked: colorsWindow.close() }
         }
+    }
+
+    // a write the machine refused (a domain that cannot be written, an address
+    // past its end) is said; Chimera's editor said nothing and wrote nothing
+    footer: Label {
+        visible: text !== ""
+        text: win.vm.error
+        color: win.themeColor ? win.themeColor("AccentWarning", "#b26a00") : "#b26a00"
+        padding: 4
     }
 }

@@ -303,8 +303,7 @@ public:
 	/* how long the last seek took, in milliseconds, and how many frames it ran */
 	Property<double> lastSeekMs{0.0};
 	Property<int64_t> lastSeekFrames{0};
-	/* the open project's file, "" when a game was opened without one or the
-	 * project has not been saved yet; hasProject says which */
+	/* the open project's file, "" while it has not been saved yet */
 	Property<std::string> projectPath;
 	Property<bool> hasProject{false};
 	/* the open project's id (its cache folder's name), "" for none */
@@ -332,8 +331,6 @@ public:
 	Property<std::string> projectTitle;
 	/* the game's name: its file's, without the kind (a project's first file) */
 	Property<std::string> gameName;
-	/* the game's file when a game was opened by itself, else "" (the Hex Editor's "File on Disk") */
-	Property<std::string> gamePath;
 	/* where a project's backups go (Chimera's "Movie backups" path) */
 	Property<std::string> backupFolder;
 	/* projects opened, newest first, a line each (ten kept) */
@@ -799,8 +796,10 @@ private:
 	 * `keepIn` when one is given */
 	void checkHistoryOnMachine(const std::string &keepIn);
 	void freeProjectOnMachine();
-	/* what every open shares, once the session exists */
-	void adoptOnMachine(ce_session *s, const std::string &package, const std::string &label, bool inputsReplaced);
+	/* what every open shares, once the session exists; `withOpen` runs on
+	 * the window just before it says the machine is open, in the same turn */
+	void adoptOnMachine(ce_session *s, const std::string &package, const std::string &label, bool inputsReplaced,
+		std::function<void()> withOpen = {});
 	void closeOnMachine();
 	/* a frame run as the window runs it: drawn unless turbo or Display
 	 * Nothing says not; its lag (1), or not (0), or below 0 when it failed */
@@ -1112,6 +1111,8 @@ private:
 	std::atomic<uint64_t> held_{0};
 	/* buttons a script holds for the next frame run (Lua's joypad.set), let go after it */
 	std::atomic<uint64_t> scriptHeld_{0};
+	/* what a script let go for the next frame (joypad.set with false) */
+	std::atomic<uint64_t> scriptReleased_{0};
 	/* a script's analog values: for the next frame (joypad.setaxis), and held
 	 * until let go (joypad.setanalog), by the control's place */
 	std::mutex scriptAxesM_;

@@ -188,7 +188,10 @@ private:
 	{
 	public:
 		explicit Frames(PianoRollViewModel &vm) : vm_(vm) {}
-		int64_t rowCount() const override { return vm_.inputs_.size(); }
+		/* one row past the movie, empty, as Chimera's TAStudio has it: where
+		 * the machine sits at the movie's end, where a click goes to that
+		 * frame and a paint starts that makes the movie longer */
+		int64_t rowCount() const override { return vm_.inputs_.bound() ? vm_.inputs_.size() + 1 : 0; }
 		int32_t columnCount() const override { return vm_.buttonCount() + static_cast<int32_t>(vm_.session_.axes().size()); }
 		bool columnIsNumber(int32_t column) const override { return column >= vm_.buttonCount(); }
 		bool columnHidden(int32_t column) const override { return vm_.hidden_.count(columnName(column)) != 0; }
@@ -289,6 +292,7 @@ private:
 	/* the next step's name, set by the command that makes it */
 	std::string naming_;
 	static std::string describe(const Step &step);
+	void keepMarkers(std::map<int64_t, Marker> before, std::string name);
 	/* the undo history, in order: the steps done, then those undone */
 	class HistoryRows : public RowModel
 	{

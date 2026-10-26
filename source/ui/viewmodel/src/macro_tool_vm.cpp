@@ -39,7 +39,12 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 				return {};
 			}
 			Zone z;
-			z.name = "Zone " + std::to_string(zones_.size());
+			/* a name no zone has: removing one would otherwise give two the same */
+			for (size_t n = zones_.size();; n++)
+			{
+				z.name = "Zone " + std::to_string(n);
+				if (std::none_of(zones_.begin(), zones_.end(), [&z](const Zone &o) { return o.name == z.name; })) break;
+			}
 			z.start = start;
 			z.length = end - start + 1;
 			z.saved = false;
@@ -195,14 +200,19 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 			return {};
 		}
 		zones_.erase(zones_.begin() + static_cast<std::ptrdiff_t>(i));
+		/* the zone picked stays picked: it moved up if it came after */
+		if (picked.get() > static_cast<int64_t>(i)) picked.set(picked.get() - 1);
 		picked.set(std::min<int64_t>(picked.get(), static_cast<int64_t>(zones_.size()) - 1));
 		changed();
 		return {};
 	});
 
-	/* the entire movie, always first, as long as the movie is */
+	/* another machine: its zones start again, the entire movie first and as
+	 * long as the movie is - another project's zones are frames of another
+	 * movie (Chimera's Macro Tool clears them as it restarts) */
 	auto restart = [this] {
-		zones_.erase(std::remove_if(zones_.begin(), zones_.end(), [](const Zone &z) { return z.whole; }), zones_.end());
+		zones_.clear();
+		picked.set(0);
 		Zone whole;
 		whole.name = "Entire Movie";
 		whole.whole = true;

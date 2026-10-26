@@ -137,8 +137,9 @@ ApplicationWindow {
                                     text: reg.hex
                                     font.family: "monospace"
                                     font.capitalization: Font.AllUppercase
-                                    maximumLength: Math.max(1, reg.bits / 4)
-                                    Layout.preferredWidth: 16 + Math.max(1, reg.bits / 4) * 10
+                                    // as many digits as the view model shows (a 6-bit register is 2)
+                                    maximumLength: Math.max(1, Math.ceil(reg.bits / 4))
+                                    Layout.preferredWidth: 16 + Math.max(1, Math.ceil(reg.bits / 4)) * 10
                                     onEditingFinished: if (text !== reg.hex && text !== "") win.vm.run("setRegister", [reg.index, "0x" + text])
                                 }
                             }

@@ -1,6 +1,7 @@
 #include "chimera/vm/data_folder_vm.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -76,12 +77,20 @@ std::string targetFor(const std::string &picked)
 
 Choice inspect(const std::string &current, const std::string &target)
 {
-	const std::string from = withSeparator(current), to = withSeparator(target);
+	std::string from = withSeparator(current), to = withSeparator(target);
+#ifdef _WIN32
+	/* D:\Data and d:\data are one folder on Windows */
+	for (std::string *t : {&from, &to})
+		for (char &c : *t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+#endif
 	if (from == to) return Choice::Same;
 	if (to.rfind(from, 0) == 0 || from.rfind(to, 0) == 0) return Choice::Nested;
+	/* asked about, not made: whether it can be written is tried where it
+	 * would be made, in the nearest folder there is, and nothing is left */
 	std::error_code ec;
-	fs::create_directories(target, ec);
-	const fs::path probe = fs::path(target) / ".chimera-write-test";
+	fs::path there = fs::path(target);
+	while (!there.empty() && !fs::exists(there, ec) && there.has_parent_path() && there.parent_path() != there) there = there.parent_path();
+	const fs::path probe = there / ".chimera-write-test";
 	{
 		std::ofstream out(probe, std::ios::binary);
 		if (!out) return Choice::Unwritable;

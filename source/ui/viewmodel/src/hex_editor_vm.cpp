@@ -17,7 +17,6 @@ namespace chimera::vm {
 
 namespace {
 /* the open game's file, as Chimera's hex editor names it */
-constexpr const char *kFileOnDisk = "File on Disk";
 
 int32_t domainIndex(ce_session *s, const std::string &name)
 {
@@ -77,7 +76,6 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 	expose("recentTables", ".tbl files read, newest first, a line each", recentTables, true);
 	expose("colors", "Custom Colors as JSON (Background, Foreground, MenuBar, Freeze, Highlight, HighlightFreeze), \"{}\" for the theme's",
 		colors, true);
-	expose("gameFile", "the open game's file, shown as \"File on Disk\"", gameFile);
 	rows("lines", "the lines shown: address; a value and whether it changed for each place (v0, c0, ...); the text; each "
 		"place's highlight (h0.., 0 none, 1 the address, 2 one beside it); each byte's character (t0..) and highlight (th0..)", lines_);
 
@@ -158,12 +156,13 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			int64_t hit = findBytes(want, forward, from);
 			/* not found: the other way, as Chimera's */
 			if (hit < 0) hit = findBytes(want, false, at < 0 ? domainSize_ - sz - n : at - 1);
-			findString.set(digitsOnly);
 			if (hit < 0)
 			{
 				status.set("Not found");
 				return int64_t{-1};
 			}
+			/* kept for Find Next only when found, as Chimera keeps it */
+			findString.set(digitsOnly);
 			found(hit, want.size());
 			return hit;
 		};
@@ -318,7 +317,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 	command("toggleFreeze", "the values highlighted frozen at what they are now, or, when the address highlighted is, every "
 		"freeze on them gone (Chimera's Freeze Address, Space); false with what the machine refused", {},
 		[this](const Args &, std::string &error) -> Value {
-			if (!writable.get() || picked.get() < 0 || fileDomain()) return {};
+			if (!writable.get() || picked.get() < 0) return {};
 			const bool thaw = placeFrozen(picked.get());
 			for (const int64_t at : highlightedAll())
 			{
@@ -338,7 +337,6 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			return true;
 		});
 	command("unfreezeHighlighted", "the freezes on the values highlighted go (Delete)", {}, [this](const Args &, std::string &) -> Value {
-		if (fileDomain()) return {};
 		for (const int64_t at : highlightedAll()) session_.unfreeze(domain.get(), at);
 		return {};
 	});
@@ -403,15 +401,6 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			status.set("Saved " + file);
 			return {};
 		});
-	command("save", "File on Disk written back to the game's file", {}, [this](const Args &, std::string &error) -> Value {
-		if (!fileDomain() || gameFile.get().empty())
-		{
-			error = "only File on Disk is saved to its file";
-			return {};
-		}
-		const auto got = run("saveBinary", {gameFile.get()}, error);
-		return got.has_value() ? *got : Value{};
-	});
 	command("saveText", "the domain written to a file as text: sixteen bytes a line in hex, a space after each", {"path"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string file;
@@ -428,9 +417,10 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			const char *const nl = "\n";
 #endif
 			std::string text;
-			for (int64_t i = 0; i < domainSize_ / 16; i++)
+			/* the last line as long as what is left, not dropped */
+			for (int64_t i = 0; i * 16 < domainSize_; i++)
 			{
-				for (int j = 0; j < 16; j++) text += upperHex(all[static_cast<size_t>(i * 16 + j)], 2) + " ";
+				for (int64_t j = i * 16; j < std::min<int64_t>(i * 16 + 16, domainSize_); j++) text += upperHex(all[static_cast<size_t>(j)], 2) + " ";
 				text += nl;
 			}
 			text += nl;
@@ -603,12 +593,6 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 	endianWatch_ = bigEndian.changed.connect([this] { lines_.reset.emit(); });
 	pickedWatch_ = picked.changed.connect([this] { titles(); });
 	domainWatch_ = domain.changed.connect([this] {
-		if (fileDomain())
-		{
-			writable.set(!file_.empty());
-			domainSize_ = static_cast<int64_t>(file_.size());
-		}
-		else
 		{
 			const auto w = canWrite_.find(domain.get());
 			writable.set(w != canWrite_.end() && w->second);
@@ -623,18 +607,6 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 		titles();
 		reread();
 	});
-	/* File on Disk: the game's file, read when a game opens by itself */
-	gameWatch_ = session_.gamePath.changed.connect([this] {
-		const std::string path = session_.gamePath.get();
-		file_.clear();
-		if (!path.empty())
-		{
-			std::ifstream in(std::filesystem::u8path(path), std::ios::binary);
-			if (in) file_.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-		}
-		gameFile.set(file_.empty() ? std::string() : path);
-		refreshDomains();
-	});
 	opensWatch_ = session_.opens.changed.connect([this] { refreshDomains(); });
 	freezesWatch_ = session_.freezesChanged.connect([this] { freezesShown(); });
 	pickedFrozenWatch_ = picked.changed.connect([this] { pickedFrozen.set(picked.get() >= 0 && placeFrozen(picked.get())); });
@@ -648,7 +620,6 @@ HexEditorViewModel::~HexEditorViewModel()
 	session_.onMachineWait([](ce_session *) {});
 }
 
-bool HexEditorViewModel::fileDomain() const { return domain.get() == kFileOnDisk; }
 
 int HexEditorViewModel::digits() const
 {
@@ -674,17 +645,8 @@ void HexEditorViewModel::refreshDomains()
 		later([this, names, sizes, canWrite] {
 			sizes_ = sizes;
 			canWrite_ = canWrite;
-			const std::string all = names + (gameFile.get().empty() ? "" : std::string(names.empty() ? "" : ",") + kFileOnDisk);
-			domains.set(all);
-			const std::string first = all.substr(0, all.find(','));
-			const bool known = sizes.count(domain.get()) != 0 || (fileDomain() && !gameFile.get().empty());
-			if (!known) domain.set(first);
-			if (fileDomain())
-			{
-				writable.set(!file_.empty());
-				domainSize_ = static_cast<int64_t>(file_.size());
-			}
-			else
+			domains.set(names);
+			if (sizes.count(domain.get()) == 0) domain.set(names.substr(0, names.find(',')));
 			{
 				const auto w = canWrite.find(domain.get());
 				writable.set(w != canWrite.end() && w->second);
@@ -700,18 +662,6 @@ void HexEditorViewModel::refreshDomains()
 
 void HexEditorViewModel::reread()
 {
-	if (fileDomain())
-	{
-		/* the file is here: shown as it is */
-		const int64_t from = topLine.get() * 16;
-		const int64_t count = std::max<int64_t>(0, std::min(visibleLines.get() * 16, domainSize_ - from));
-		shown_.assign(file_.begin() + std::min<int64_t>(from, static_cast<int64_t>(file_.size())),
-			file_.begin() + std::min<int64_t>(from + count, static_cast<int64_t>(file_.size())));
-		changedShown_.assign(shown_.size(), 0);
-		shownFrom_ = from;
-		lines_.reset.emit();
-		return;
-	}
 	{
 		std::lock_guard<std::mutex> lock(wantM_);
 		wantDomain_ = domain.get();
@@ -753,7 +703,6 @@ void HexEditorViewModel::readOnMachine(ce_session *s)
 	if (!postedM_.exchange(true))
 		later([this] {
 			postedM_ = false;
-			if (fileDomain()) return;
 			{
 				std::lock_guard<std::mutex> lock(outM_);
 				shown_ = out_;
@@ -768,11 +717,6 @@ bool HexEditorViewModel::readNow(int64_t from, int64_t count, std::vector<uint8_
 {
 	out.clear();
 	if (from < 0 || count < 0 || from + count > domainSize_) return false;
-	if (fileDomain())
-	{
-		out.assign(file_.begin() + from, file_.begin() + from + count);
-		return true;
-	}
 	bool ok = false;
 	const std::string name = domain.get();
 	session_.onMachineWait([&](ce_session *s) {
@@ -792,11 +736,11 @@ bool HexEditorViewModel::writeNow(int64_t at, const std::vector<uint8_t> &bytes,
 		error = "the domain has no address " + watch::hex(at, 1);
 		return false;
 	}
-	if (fileDomain())
+	/* every write goes through here: Lua and agents as well as the window */
+	if (!writable.get())
 	{
-		std::copy(bytes.begin(), bytes.end(), file_.begin() + at);
-		reread();
-		return true;
+		error = "the domain " + domain.get() + " cannot be written";
+		return false;
 	}
 	const std::string name = domain.get();
 	std::string why;
@@ -848,7 +792,6 @@ bool HexEditorViewModel::writeValue(int64_t address, uint32_t value, std::string
 
 bool HexEditorViewModel::placeFrozen(int64_t address) const
 {
-	if (fileDomain()) return false;
 	const int sz = static_cast<int>(size.get());
 	for (int k = 0; k < sz; k++)
 		if (session_.frozen(domain.get(), address + k)) return true;
@@ -911,12 +854,9 @@ int64_t HexEditorViewModel::findBytes(const std::vector<uint8_t> &want, bool for
 			std::vector<uint8_t> chunk;
 			if (!readNow(at, len, chunk)) return -1;
 			const auto hit = std::search(chunk.begin(), chunk.end(), want.begin(), want.end());
-			/* Chimera looks only below the domain's size less the pattern's */
-			if (hit != chunk.end())
-			{
-				const int64_t found = at + (hit - chunk.begin());
-				return found < domainSize_ - n ? found : -1;
-			}
+			/* to the domain's very end: Chimera stops one short, and so never
+			 * finds bytes that are the domain's last */
+			if (hit != chunk.end()) return at + (hit - chunk.begin());
 			if (len < n || at + len >= domainSize_) break;
 			at += len - n + 1;
 		}

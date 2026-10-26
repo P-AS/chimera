@@ -10,6 +10,17 @@
 
 namespace chimera::vm {
 
+namespace {
+/* how long a movie may be made by painting or filling it: 2^31 frames, a
+ * script's paint(0, 2^40, ...) otherwise grew it until memory ran out */
+bool withinFillLimit(int64_t last, std::string &error)
+{
+	if (last < (int64_t{1} << 31)) return true;
+	error = "a movie is at most 2147483648 frames";
+	return false;
+}
+} // namespace
+
 PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs, SessionViewModel &session)
 	: ViewModel("pianoRoll", dispatcher), inputs_(inputs), session_(session)
 {
@@ -82,6 +93,12 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				if (x != std::string::npos && x + 1 < run.size() && run.find_first_not_of("0123456789", x + 1) == std::string::npos &&
 					x > 0 && run[x - 1] == ' ')
 				{
+					/* a number std::stoll cannot hold ended the program */
+					if (run.size() - x - 1 > 9)
+					{
+						error = "\"" + run + "\" repeats too many times (at most 999999999)";
+						return {};
+					}
 					times = std::stoll(run.substr(x + 1));
 					run = run.substr(0, run.find_last_not_of(" ", x - 1) + 1);
 				}
@@ -564,8 +581,10 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			/* a marker named again keeps what it kept */
 			const auto there = markers_.find(f);
 			const bool keep = there != markers_.end() ? there->second.keepState : markersKeepStates.get();
+			auto before = markers_;
 			markers_[f] = Marker{f, text, keep};
 			markersEdited(f);
+			keepMarkers(std::move(before), "Set Marker at frame " + std::to_string(f));
 			return {};
 		});
 	command("moveMarker", "Chimera's Edit Marker Frame: a marker moved to another frame, its text and state kept; "
@@ -587,9 +606,11 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			}
 			Marker m = it->second;
 			m.frame = to;
+			auto before = markers_;
 			markers_.erase(it);
 			markers_[to] = m;
 			markersEdited(std::min(from, to));
+			keepMarkers(std::move(before), "Set Marker at frame " + std::to_string(to));
 			if (std::max(from, to) < inputs_.size()) frames_.changed.emit(std::max(from, to), std::max(from, to));
 			return {};
 		});
@@ -611,8 +632,10 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 									   : "no marker on frame " + std::to_string(f);
 				return {};
 			}
+			auto before = markers_;
 			markers_.erase(f);
 			markersEdited(f);
+			keepMarkers(std::move(before), "Remove Marker at frame " + std::to_string(f));
 			return {};
 		});
 	command("addMarkers", "TAStudio's Set Markers: an unnamed marker on every frame from first to last (one there "
@@ -625,6 +648,13 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				error = "frames " + std::to_string(first) + " to " + std::to_string(last) + " are not a range";
 				return {};
 			}
+			/* markers are the movie's, and the row after it: a range past that would never end */
+			if (last > inputs_.size())
+			{
+				error = "frame " + std::to_string(last) + " is past the movie's end";
+				return {};
+			}
+			auto before = markers_;
 			for (int64_t f = first; f <= last; f++)
 			{
 				const auto there = markers_.find(f);
@@ -632,6 +662,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				markers_[f] = Marker{f, "", keep};
 			}
 			markersEdited(first);
+			keepMarkers(std::move(before), "Set Marker at frame " + std::to_string(first));
 			if (last != first && last < inputs_.size()) frames_.changed.emit(first, last);
 			return last - first + 1;
 		});
@@ -640,11 +671,13 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			int64_t first = 0, last = 0;
 			if (!arg(a, 0, first, error) || !arg(a, 1, last, error)) return {};
 			int64_t removed = 0;
+			auto before = markers_;
 			for (auto it = markers_.lower_bound(std::max<int64_t>(first, 1)); it != markers_.end() && it->first <= last; removed++)
 				it = markers_.erase(it);
 			if (removed > 0)
 			{
 				markersEdited(first);
+				keepMarkers(std::move(before), "Remove Marker at frame " + std::to_string(first));
 				if (last != first) frames_.changed.emit(first, std::min<int64_t>(last, std::max<int64_t>(first, inputs_.size() - 1)));
 			}
 			return removed;
@@ -903,6 +936,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			int64_t first = 0, last = 0, b = 0;
 			bool held = false;
 			if (!arg(a, 0, first, error) || !arg(a, 1, last, error) || !arg(a, 2, b, error) || !arg(a, 3, held, error)) return {};
+			if (!withinFillLimit(last, error)) return {};
 			paint(first, last, b, held, false, error);
 			return {};
 		});
@@ -910,11 +944,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t n = 0;
 			if (!arg(a, 0, n, error)) return {};
-			if (n < 0 || n > (int64_t{1} << 31))
-			{
-				error = "between 0 and 2147483648 frames";
-				return {};
-			}
+			if (n < 0 || !withinFillLimit(n - 1, error)) return {};
 			const int64_t before = inputs_.size();
 			if (n > before)
 			{
@@ -974,6 +1004,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t first = 0, last = 0, axis = 0, value = 0;
 			if (!arg(a, 0, first, error) || !arg(a, 1, last, error) || !arg(a, 2, axis, error) || !arg(a, 3, value, error)) return {};
+			if (!withinFillLimit(last, error)) return {};
 			paintAxis(first, last, axis, value, false, error);
 			return {};
 		});
@@ -1155,9 +1186,19 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		listMarkers();
 		frames_.reset.emit();
 	});
-	/* another machine's movie: worked out again from nothing */
+	/* another machine's movie: worked out again from nothing, and the last
+	 * project's steps and selection are not this one's - undone here they
+	 * would write the last movie's frames into this one (Chimera's TAStudio
+	 * is a new window for each project) */
 	runOpensWatch_ = session_.opens.changed.connect([this] {
 		lastInputFrame.set(-1);
+		undo_.clear();
+		redo_.clear();
+		canUndo.set(false);
+		canRedo.set(false);
+		historyChanged();
+		selectFirst.set(-1);
+		selectLast.set(-1);
 		refreshRun(0);
 	});
 	frameWatch_ = session_.frame.changed.connect([this] {
@@ -1424,6 +1465,8 @@ void PianoRollViewModel::undoOrRedo(bool back)
 		last = std::max(last, step.axes.rbegin()->first);
 	}
 	const bool markersMoved = step.markersBefore.has_value();
+	/* a marker's step changes no frame: nothing to run again */
+	const bool onlyMarkers = step.frames.empty() && step.axes.empty() && step.sizeBefore == step.sizeAfter && step.shiftCount == 0;
 	const int64_t shiftAt = step.shiftAt;
 	to.push_back(std::move(step));
 	canUndo.set(!undo_.empty());
@@ -1442,6 +1485,7 @@ void PianoRollViewModel::undoOrRedo(bool back)
 		refreshRun(from);
 		return;
 	}
+	if (onlyMarkers) return;
 	edited(first, last, before);
 }
 
@@ -2597,6 +2641,18 @@ void PianoRollViewModel::replaceAll(const std::vector<Marker> &markers)
 	frames_.reset.emit();
 }
 
+/* a marker set, moved or taken off is a step of the undo history, as in
+ * Chimera's TAStudio (TasMovieMarker's AddMarkerChange) */
+void PianoRollViewModel::keepMarkers(std::map<int64_t, Marker> before, std::string name)
+{
+	Step step;
+	step.sizeBefore = step.sizeAfter = inputs_.size();
+	step.markersBefore = std::move(before);
+	step.markersAfter = markers_;
+	step.name = std::move(name);
+	keep(std::move(step), false);
+}
+
 void PianoRollViewModel::markersEdited(int64_t frame)
 {
 	markerCount.set(static_cast<int64_t>(markers_.size()));
@@ -2701,6 +2757,8 @@ Value PianoRollViewModel::Frames::cell(int64_t row, int32_t column) const
 {
 	const int32_t buttons = vm_.buttonCount();
 	if (column < 0 || column >= columnCount()) return false;
+	/* the row past the movie holds nothing */
+	if (row >= vm_.inputs_.size()) return column >= buttons ? Value() : Value(false);
 	if (row != cachedRow_)
 	{
 		cachedBits_ = vm_.inputs_.at(row);

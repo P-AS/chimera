@@ -372,9 +372,14 @@ int luaChimeraString(lua_State *L)
 	{
 		luaL_checktype(L, 2, LUA_TTABLE);
 		const std::string encoding = luaL_optstring(L, 3, "utf-8");
-		/* the values of table[1], table[2]... up to the first absent one, as Chimera reads a byte table */
+		/* the values of table[1], table[2]... up to the first absent one, as
+		 * Chimera reads a byte table - from table[0] when there is one, as
+		 * memory.readbyterange's tables start there */
 		std::string bytes;
-		for (lua_Integer i = 1;; i++)
+		lua_rawgeti(L, 2, 0);
+		const lua_Integer first = lua_isnil(L, -1) ? 1 : 0;
+		lua_pop(L, 1);
+		for (lua_Integer i = first;; i++)
 		{
 			if (lua_rawgeti(L, 2, i) == LUA_TNIL)
 			{

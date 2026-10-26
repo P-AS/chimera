@@ -808,7 +808,8 @@ void RamWatchViewModel::refreshDomains()
 			domainSizes_ = sizes;
 			domainWritable_ = writable;
 			/* Watches > Default Domain: the first, until one is chosen that this machine has */
-			if (names.find(defaultDomain.get()) == std::string::npos || defaultDomain.get().empty())
+			/* by whole name: "RAM" is not among "VRAM,WRAM" */
+			if (("," + names + ",").find("," + defaultDomain.get() + ",") == std::string::npos || defaultDomain.get().empty())
 				defaultDomain.set(names.substr(0, names.find(',')));
 			for (Watch &w : watches_) sizeFromDomain(w);
 			domains.set(names);
@@ -816,6 +817,15 @@ void RamWatchViewModel::refreshDomains()
 			if (!watches_.empty()) rows_.changed.emit(0, static_cast<int64_t>(watches_.size()) - 1);
 			selectionChanged();
 		});
+		/* another machine: each watch starts again from its first value there,
+		 * as Chimera's RefreshDomains resets the previous values and the
+		 * change counts */
+		for (Watch &w : watches_)
+		{
+			w.readable = false;
+			w.seen = false;
+			w.changes = 0;
+		}
 		readOnMachine(s, true);
 	});
 }

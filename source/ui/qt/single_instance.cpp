@@ -15,9 +15,10 @@ namespace chimera::qt {
 
 #ifdef _WIN32
 namespace {
-/* Chimera's names with the prototype's before them */
-constexpr wchar_t kMutex[] = L"chimera-qt-prototype-mutex-{84125ACB-F570-4458-9748-321F887FE795}";
-constexpr wchar_t kPipe[] = L"\\\\.\\pipe\\chimera-qt-prototype-pipe-{84125ACB-F570-4458-9748-321F887FE795}";
+/* Chimera's names (MainForm.cs), and its hand-over: the arguments as UTF-8
+ * hex joined by "|" (owner, 2026-10-26: the window takes Chimera's names) */
+constexpr wchar_t kMutex[] = L"mutex-{84125ACB-F570-4458-9748-321F887FE795}";
+constexpr wchar_t kPipe[] = L"\\\\.\\pipe\\pipe-{84125ACB-F570-4458-9748-321F887FE795}";
 
 /* an overlapped call waited for: false when the stop came first (the call cancelled) */
 bool waitFor(HANDLE pipe, OVERLAPPED &ov, HANDLE stop)

@@ -94,6 +94,7 @@ public:
 	Property<std::string> hiddenColumns{"Diff"};
 
 private:
+	void fastIfLarge();
 	class Results : public RowModel
 	{
 	public:

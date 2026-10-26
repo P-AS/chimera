@@ -232,7 +232,7 @@ if qt_dep.found()
   # zstd, which a Qt built without zstd (the Windows one) cannot unpack
   qt_rcc = qt6.compile_resources(sources: ['qt/ui.qrc'], extra_args: ['--no-zstd'])
   # Chimera's icon on the program and its windows on Windows
-  qt_icon = host_machine.system() == 'windows' ? import('windows').compile_resources('qt/chimera-qt.rc') : []
+  qt_icon = host_machine.system() == 'windows' ? import('windows').compile_resources('qt/chimera-qt.rc', depend_files: 'qt/chimera.manifest') : []
   qt_sources = [
     'qt/main.cpp',
     'qt/qml_view_model.cpp',
