@@ -411,8 +411,6 @@ static int newProject(const std::vector<std::string> &args)
 	len = 0;
 	const char *slotsMap = ce_project_slots_text(p, &len);
 	const std::string slots = slotsMap != nullptr ? std::string(slotsMap, static_cast<size_t>(len)) : std::string("{}");
-	if (!slotsDecl.empty() && ce_project_validate(p, slotsDecl.data(), slotsDecl.size(), &error) != 0)
-		return refuse(std::string("the files do not fit the package's slots: ") + (error != nullptr ? error : "?"));
 
 	/* the settings: every one exposed for these files, the given value else the
 	 * default - asked again with what was chosen, as a setting may expose another */
@@ -516,6 +514,12 @@ static int newProject(const std::vector<std::string> &args)
 	{
 		cJSON_Delete(recorded);
 		return refuse(std::string("settings: ") + (error != nullptr ? error : "refused"));
+	}
+	/* the files against the package's slots, which the settings may open or close */
+	if (!slotsDecl.empty() && ce_project_validate(p, slotsDecl.data(), slotsDecl.size(), &error) != 0)
+	{
+		cJSON_Delete(recorded);
+		return refuse(std::string("the files do not fit the package's slots: ") + (error != nullptr ? error : "?"));
 	}
 
 	/* the machine, as the engine chooses it: the machine setting's value */

@@ -1373,6 +1373,19 @@ MACHPY
 		else
 			report "E:made-project:machine" FAIL "own: $mown; other: $mother; named: $mnamed (see work/made-project/machine-*.make.log)"
 		fi
+		# a slot the settings open or close: the files are checked against the
+		# slots the recorded settings leave, not against none
+		mgated="$mdir/gated-package"
+		mkdir -p "$mgated" && ( cd "$mgated" && unzip -q -o "$epkg" )
+		printf '{"slots":[{"id":"rom","title":"Game","min":1,"max":1,"formats":["testrom"],"exposedWhen":{"setting":"initFillByte","is":0}}]}\n' > "$mgated/file_slots.json"
+		mmake gated-open "$mgated" "$mdir/gridWalker.testrom"
+		mopenrc=$mrc
+		mmake gated-shut "$mgated" "$mdir/gridWalker.testrom" --settings '{"initFillByte":7}'
+		if [ "$mopenrc" -eq 0 ] && [ "$mrc" -ne 0 ] && [ "$mrc" -lt 128 ] && grep -q "which these files make unavailable" "$mdir/gated-shut.make.log"; then
+			report "E:made-project:gated-slot" PASS "a slot the recorded settings open takes the game; one they close refuses it"
+		else
+			report "E:made-project:gated-slot" FAIL "open rc=$mopenrc, shut rc=$mrc (see work/made-project/gated-*.make.log)"
+		fi
 	fi
 fi
 
