@@ -238,12 +238,14 @@ ApplicationWindow {
             if (part[0] !== "open") continue
             const kind = part[1], path = part.slice(2).join("\t")
             if (kind === "game") root.newProjectFrom(path)
-            else if (kind === "watch") { root.ramWatch.run("open", [path, false]); ramWatchWindow.show(); ramWatchWindow.raise() }
-            else if (kind === "luaSession") { root.luaConsole.run("openSession", [path]); luaConsoleWindow.show(); luaConsoleWindow.raise() }
-            else if (kind === "lua") { root.luaConsole.run("openScript", [path]); luaConsoleWindow.show(); luaConsoleWindow.raise() }
+            else if (kind === "watch") { root.ramWatch.run("open", [path, false]); root.bring(ramWatchWindow) }
+            else if (kind === "luaSession") { root.luaConsole.run("openSession", [path]); root.bring(luaConsoleWindow) }
+            else if (kind === "lua") { root.luaConsole.run("openScript", [path]); root.bring(luaConsoleWindow) }
             else if (kind === "project") root.openProject(path)
         }
     }
+    // a window shown and brought over the others
+    function bring(w) { w.show(); w.raise() }
     // a game file named at the start or handed over: a game runs only in a
     // project (owner, 2026-10-26), so New Project starts from it, as a file
     // dropped on the window does
@@ -314,7 +316,7 @@ ApplicationWindow {
                 root.note(root.display.stayOnTop ? qsTr("Stay on Top enabled") : qsTr("Stay on Top disabled"))
             }
             else if (action === "Play Movie") root.leaveProject(() => projectDialog.open())
-            else if (action === "Record Movie") { root.newProject.run("openOnLastProject"); newProjectWindow.show(); newProjectWindow.raise() }
+            else if (action === "Record Movie") { root.newProject.run("openOnLastProject"); root.bring(newProjectWindow) }
             else if (action === "Stop Movie") { if (root.session.hasProject) root.leaveProject(() => root.session.run("stopMovie")) }
             else if (action === "Play from beginning") {
                 // as TAStudio's: the project as its file has it, from frame 0
@@ -355,7 +357,7 @@ ApplicationWindow {
                 delegate: keyedMenuItem
                 title: qsTr("&File")
                 // opens on the last project's answers, as Chimera's does
-                Action { text: qsTr("&New Chimera Project..."); icon.source: "qrc:/chimera/menu/NewProject.png"; onTriggered: { root.newProject.run("openOnLastProject"); newProjectWindow.show(); newProjectWindow.raise() } }
+                Action { text: qsTr("&New Chimera Project..."); icon.source: "qrc:/chimera/menu/NewProject.png"; onTriggered: { root.newProject.run("openOnLastProject"); root.bring(newProjectWindow) } }
                 Action { id: openProjectAction; property string hotkey: "Open Project"; text: qsTr("&Open Project..."); icon.source: "qrc:/chimera/menu/OpenProject.png"; onTriggered: root.leaveProject(() => projectDialog.open()) }
                 Menu {
                     delegate: keyedMenuItem
@@ -378,7 +380,7 @@ ApplicationWindow {
                 Action { text: qsTr("Save Project &As..."); icon.source: "qrc:/chimera/menu/SaveProjectAs.png"; shortcut: "Ctrl+Shift+S"; enabled: root.session.hasProject; onTriggered: saveAsDialog.open() }
                 Action { text: qsTr("Save Project &Backup"); icon.source: "qrc:/chimera/menu/SaveProjectBackup.png"; enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveBackup") }
                 // the open project's settings, changed: its machine starts again with them (issue 370)
-                Action { text: qsTr("Project Se&ttings..."); icon.source: "qrc:/chimera/menu/Customize.png"; enabled: root.session.hasProject && root.session.isOpen; onTriggered: { projectSettingsWindow.show(); projectSettingsWindow.raise() } }
+                Action { text: qsTr("Project Se&ttings..."); icon.source: "qrc:/chimera/menu/Customize.png"; enabled: root.session.hasProject && root.session.isOpen; onTriggered: { root.bring(projectSettingsWindow) } }
                 Action { id: closeAction; property string hotkey: "Close Project"; text: qsTr("&Close Project"); icon.source: "qrc:/chimera/menu/CloseProject.png"; enabled: root.session.closeEnabled; onTriggered: root.leaveProject(() => root.session.run("close")) }
                 MenuDivider {}
                 Action {
@@ -476,22 +478,22 @@ ApplicationWindow {
                 MenuDivider {}
                 Action { text: qsTr("Display Status Bar"); checkable: true; checked: root.session.showStatusBar; onTriggered: root.session.showStatusBar = checked }
                 Action { text: qsTr("Display Messages"); checkable: true; checked: root.session.showMessages; onTriggered: root.session.showMessages = checked }
-                Action { text: qsTr("Open &Log Window..."); icon.source: "qrc:/chimera/menu/LogWindow.png"; onTriggered: { logWindow.show(); logWindow.raise() } }
+                Action { text: qsTr("Open &Log Window..."); icon.source: "qrc:/chimera/menu/LogWindow.png"; onTriggered: { root.bring(logWindow) } }
             }
             Menu {
                 delegate: keyedMenuItem
                 title: qsTr("&Config")
-                Action { text: qsTr("&Controllers..."); icon.source: "qrc:/chimera/menu/Controllers.png"; onTriggered: { controllerWindow.show(); controllerWindow.raise() } }
-                Action { text: qsTr("&Hotkeys..."); icon.source: "qrc:/chimera/menu/Hotkeys.png"; onTriggered: { hotkeyWindow.show(); hotkeyWindow.raise() } }
-                Action { text: qsTr("Display..."); icon.source: "qrc:/chimera/menu/Display.png"; onTriggered: { displayWindow.show(); displayWindow.raise() } }
-                Action { text: qsTr("&Sound..."); icon.source: "qrc:/chimera/menu/Sound.png"; onTriggered: { soundWindow.show(); soundWindow.raise() } }
-                Action { text: qsTr("Paths..."); icon.source: "qrc:/chimera/menu/Paths.png"; onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
-                Action { text: qsTr("Firmware..."); icon.source: "qrc:/chimera/menu/Firmware.png"; onTriggered: { firmwareWindow.show(); firmwareWindow.raise() } }
-                Action { text: qsTr("Data Directory..."); icon.source: "qrc:/chimera/menu/DataDirectory.png"; onTriggered: { dataFolderWindow.show(); dataFolderWindow.raise() } }
-                Action { text: qsTr("&Messages..."); icon.source: "qrc:/chimera/menu/Messages.png"; onTriggered: { messagesWindow.show(); messagesWindow.raise() } }
-                Action { text: qsTr("&Theme..."); icon.source: "qrc:/chimera/menu/ThemePalette.png"; onTriggered: { themesWindow.show(); themesWindow.raise() } }
+                Action { text: qsTr("&Controllers..."); icon.source: "qrc:/chimera/menu/Controllers.png"; onTriggered: { root.bring(controllerWindow) } }
+                Action { text: qsTr("&Hotkeys..."); icon.source: "qrc:/chimera/menu/Hotkeys.png"; onTriggered: { root.bring(hotkeyWindow) } }
+                Action { text: qsTr("Display..."); icon.source: "qrc:/chimera/menu/Display.png"; onTriggered: { root.bring(displayWindow) } }
+                Action { text: qsTr("&Sound..."); icon.source: "qrc:/chimera/menu/Sound.png"; onTriggered: { root.bring(soundWindow) } }
+                Action { text: qsTr("Paths..."); icon.source: "qrc:/chimera/menu/Paths.png"; onTriggered: { root.bring(pathsWindow) } }
+                Action { text: qsTr("Firmware..."); icon.source: "qrc:/chimera/menu/Firmware.png"; onTriggered: { root.bring(firmwareWindow) } }
+                Action { text: qsTr("Data Directory..."); icon.source: "qrc:/chimera/menu/DataDirectory.png"; onTriggered: { root.bring(dataFolderWindow) } }
+                Action { text: qsTr("&Messages..."); icon.source: "qrc:/chimera/menu/Messages.png"; onTriggered: { root.bring(messagesWindow) } }
+                Action { text: qsTr("&Theme..."); icon.source: "qrc:/chimera/menu/ThemePalette.png"; onTriggered: { root.bring(themesWindow) } }
                 Action { text: qsTr("&Autofire..."); icon.source: "qrc:/chimera/menu/Autofire.png"; onTriggered: autofireDialog.open() }
-                Action { text: qsTr("&Customize..."); icon.source: "qrc:/chimera/menu/Customize.png"; onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
+                Action { text: qsTr("&Customize..."); icon.source: "qrc:/chimera/menu/Customize.png"; onTriggered: { root.bring(customizeWindow) } }
                 MenuDivider {}
                 Menu {
                     delegate: keyedMenuItem
@@ -573,22 +575,22 @@ ApplicationWindow {
             Menu {
                 delegate: keyedMenuItem
                 title: qsTr("&Tools")
-                Action { text: qsTr("&Core Manager..."); icon.source: "qrc:/chimera/menu/CoreManager.png"; onTriggered: { coresWindow.show(); coresWindow.raise() } }
-                Action { text: qsTr("Cac&he Manager..."); icon.source: "qrc:/chimera/menu/CacheManager.png"; onTriggered: { cacheManagerWindow.show(); cacheManagerWindow.raise() } }
-                Action { text: qsTr("Reproducible Media Maker..."); icon.source: "qrc:/chimera/menu/MediaMaker.png"; onTriggered: { mediaMakerWindow.show(); mediaMakerWindow.raise() } }
-                Action { text: qsTr("Pre-Compiled Modules..."); icon.source: "qrc:/chimera/menu/PrecompiledModules.png"; onTriggered: { precompiledWindow.show(); precompiledWindow.raise() } }
+                Action { text: qsTr("&Core Manager..."); icon.source: "qrc:/chimera/menu/CoreManager.png"; onTriggered: { root.bring(coresWindow) } }
+                Action { text: qsTr("Cac&he Manager..."); icon.source: "qrc:/chimera/menu/CacheManager.png"; onTriggered: { root.bring(cacheManagerWindow) } }
+                Action { text: qsTr("Reproducible Media Maker..."); icon.source: "qrc:/chimera/menu/MediaMaker.png"; onTriggered: { root.bring(mediaMakerWindow) } }
+                Action { text: qsTr("Pre-Compiled Modules..."); icon.source: "qrc:/chimera/menu/PrecompiledModules.png"; onTriggered: { root.bring(precompiledWindow) } }
                 // the server's sparkles, with a green dot while it is started: the item is not ticked, as Chimera's
                 Action {
                     text: qsTr("MCP &Server...")
                     icon.source: root.mcp.started ? "qrc:/chimera/menu/McpServerStarted.png" : "qrc:/chimera/menu/McpServer.png"
-                    onTriggered: { mcpServerWindow.show(); mcpServerWindow.raise() }
+                    onTriggered: { root.bring(mcpServerWindow) }
                 }
                 MenuDivider {}
-                Action { id: ramWatchAction; property string hotkey: "RAM Watch"; text: qsTr("RAM &Watch"); icon.source: "qrc:/chimera/menu/RamWatch.png"; onTriggered: { ramWatchWindow.show(); ramWatchWindow.raise() } }
-                Action { id: ramSearchAction; property string hotkey: "RAM Search"; text: qsTr("RAM &Search"); icon.source: "qrc:/chimera/menu/RamSearch.png"; onTriggered: { ramSearchWindow.show(); ramSearchWindow.raise() } }
-                Action { id: luaConsoleAction; property string hotkey: "Lua Console"; text: qsTr("Lua Console"); icon.source: "qrc:/chimera/menu/LuaConsole.png"; onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
-                Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor"); icon.source: "qrc:/chimera/menu/HexEditor.png"; onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
-                Action { text: qsTr("&Macro Tool"); icon.source: "qrc:/chimera/menu/MacroTool.png"; enabled: root.session.isOpen; onTriggered: { macroToolWindow.show(); macroToolWindow.raise() } }
+                Action { id: ramWatchAction; property string hotkey: "RAM Watch"; text: qsTr("RAM &Watch"); icon.source: "qrc:/chimera/menu/RamWatch.png"; onTriggered: { root.bring(ramWatchWindow) } }
+                Action { id: ramSearchAction; property string hotkey: "RAM Search"; text: qsTr("RAM &Search"); icon.source: "qrc:/chimera/menu/RamSearch.png"; onTriggered: { root.bring(ramSearchWindow) } }
+                Action { id: luaConsoleAction; property string hotkey: "Lua Console"; text: qsTr("Lua Console"); icon.source: "qrc:/chimera/menu/LuaConsole.png"; onTriggered: { root.bring(luaConsoleWindow) } }
+                Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor"); icon.source: "qrc:/chimera/menu/HexEditor.png"; onTriggered: { root.bring(hexEditorWindow) } }
+                Action { text: qsTr("&Macro Tool"); icon.source: "qrc:/chimera/menu/MacroTool.png"; enabled: root.session.isOpen; onTriggered: { root.bring(macroToolWindow) } }
                 MenuDivider {}
                 // ticked while the core log is kept; off until asked, every run
                 Action {
@@ -636,13 +638,13 @@ ApplicationWindow {
                 Action {
                     text: qsTr("&Import Movie..."); enabled: root.session.hasMovieImport
                     // Chimera's: the core's import form first, then the wizard on its answers
-                    onTriggered: { root.newProject.run("chooseCore", [root.session.coreName]); movieImportWindow.show(); movieImportWindow.raise() }
+                    onTriggered: { root.newProject.run("chooseCore", [root.session.coreName]); root.bring(movieImportWindow) }
                 }
                 MenuDivider {}
                 // the tools the core offers, by Chimera's names, in its order
-                Action { text: qsTr("&Debugger"); icon.source: "qrc:/chimera/menu/Debugger.png"; enabled: root.session.hasRegisters; onTriggered: { debuggerWindow.show(); debuggerWindow.raise() } }
-                Action { text: qsTr("&Surface Viewer"); enabled: root.session.surfaces !== "[]"; onTriggered: { surfaceViewerWindow.show(); surfaceViewerWindow.raise() } }
-                Action { id: traceLoggerAction; property string hotkey: "Trace Logger"; text: qsTr("&Trace Logger"); enabled: root.session.hasTrace; onTriggered: { traceLoggerWindow.show(); traceLoggerWindow.raise() } }
+                Action { text: qsTr("&Debugger"); icon.source: "qrc:/chimera/menu/Debugger.png"; enabled: root.session.hasRegisters; onTriggered: { root.bring(debuggerWindow) } }
+                Action { text: qsTr("&Surface Viewer"); enabled: root.session.surfaces !== "[]"; onTriggered: { root.bring(surfaceViewerWindow) } }
+                Action { id: traceLoggerAction; property string hotkey: "Trace Logger"; text: qsTr("&Trace Logger"); enabled: root.session.hasTrace; onTriggered: { root.bring(traceLoggerWindow) } }
             }
             Menu {
                 delegate: keyedMenuItem
@@ -652,7 +654,7 @@ ApplicationWindow {
                     text: qsTr("&Copy Version Info"); icon.source: "qrc:/chimera/menu/CopyVersionInfo.png"
                     onTriggered: { root.clipboard.setText(root.help.run("versionReport")); root.note(qsTr("Version info copied")) }
                 }
-                Action { text: qsTr("&Report an Issue..."); icon.source: "qrc:/chimera/menu/ReportIssue.png"; onTriggered: { reportIssueWindow.show(); reportIssueWindow.raise() } }
+                Action { text: qsTr("&Report an Issue..."); icon.source: "qrc:/chimera/menu/ReportIssue.png"; onTriggered: { root.bring(reportIssueWindow) } }
                 Action { text: qsTr("&About..."); icon.source: "qrc:/chimera/menu/About.png"; onTriggered: aboutWindow.show() }
             }
         }
@@ -737,14 +739,14 @@ ApplicationWindow {
         id: pictureConfigMenu
         title: qsTr("Config")
         // Chimera shows it only full screen, where the menu bar is gone
-        Action { text: qsTr("&Controllers..."); icon.source: "qrc:/chimera/menu/Controllers.png"; onTriggered: { controllerWindow.show(); controllerWindow.raise() } }
-        Action { text: qsTr("&Hotkeys..."); icon.source: "qrc:/chimera/menu/Hotkeys.png"; onTriggered: { hotkeyWindow.show(); hotkeyWindow.raise() } }
-        Action { text: qsTr("Display..."); icon.source: "qrc:/chimera/menu/Display.png"; onTriggered: { displayWindow.show(); displayWindow.raise() } }
-        Action { text: qsTr("&Sound..."); icon.source: "qrc:/chimera/menu/Sound.png"; onTriggered: { soundWindow.show(); soundWindow.raise() } }
-        Action { text: qsTr("Paths..."); icon.source: "qrc:/chimera/menu/Paths.png"; onTriggered: { pathsWindow.show(); pathsWindow.raise() } }
-        Action { text: qsTr("&Messages..."); icon.source: "qrc:/chimera/menu/Messages.png"; onTriggered: { messagesWindow.show(); messagesWindow.raise() } }
+        Action { text: qsTr("&Controllers..."); icon.source: "qrc:/chimera/menu/Controllers.png"; onTriggered: { root.bring(controllerWindow) } }
+        Action { text: qsTr("&Hotkeys..."); icon.source: "qrc:/chimera/menu/Hotkeys.png"; onTriggered: { root.bring(hotkeyWindow) } }
+        Action { text: qsTr("Display..."); icon.source: "qrc:/chimera/menu/Display.png"; onTriggered: { root.bring(displayWindow) } }
+        Action { text: qsTr("&Sound..."); icon.source: "qrc:/chimera/menu/Sound.png"; onTriggered: { root.bring(soundWindow) } }
+        Action { text: qsTr("Paths..."); icon.source: "qrc:/chimera/menu/Paths.png"; onTriggered: { root.bring(pathsWindow) } }
+        Action { text: qsTr("&Messages..."); icon.source: "qrc:/chimera/menu/Messages.png"; onTriggered: { root.bring(messagesWindow) } }
         Action { text: qsTr("&Autofire..."); icon.source: "qrc:/chimera/menu/Autofire.png"; onTriggered: autofireDialog.open() }
-        Action { text: qsTr("Customize..."); icon.source: "qrc:/chimera/menu/Customize.png"; onTriggered: { customizeWindow.show(); customizeWindow.raise() } }
+        Action { text: qsTr("Customize..."); icon.source: "qrc:/chimera/menu/Customize.png"; onTriggered: { root.bring(customizeWindow) } }
         MenuDivider {}
         Action { text: qsTr("Save Config"); icon.source: "qrc:/chimera/menu/SaveConfig.png"; onTriggered: root.configFiles.run("save") }
         Action { text: qsTr("Load Config"); icon.source: "qrc:/chimera/menu/LoadConfig.png"; onTriggered: root.configFiles.run("load") }
@@ -866,7 +868,7 @@ ApplicationWindow {
         id: ramSearchWindow; vm: root.ramSearch; folderOf: root.folderOf; visible: false
         clipboard: root.clipboard; customize: root.customize; themeColor: root.osdColor
         toolWindows: root.toolWindows; mainWindow: root
-        showRamWatch: () => { ramWatchWindow.show(); ramWatchWindow.raise() }
+        showRamWatch: () => { root.bring(ramWatchWindow) }
         viewInHexEditor: root.viewInHexEditor
     }
     RamWatch {
@@ -885,7 +887,7 @@ ApplicationWindow {
         // what the core noted, as Chimera says it, before the wizard
         onTaken: {
             if (root.newProject.importSummary !== "") importNotesDialog.open()
-            else { newProjectWindow.show(); newProjectWindow.raise() }
+            else { root.bring(newProjectWindow) }
         }
     }
     MessageDialog {
@@ -893,8 +895,8 @@ ApplicationWindow {
         title: movieImportWindow.title
         text: root.newProject.importSummary
         buttons: MessageDialog.Ok
-        onAccepted: { newProjectWindow.show(); newProjectWindow.raise() }
-        onRejected: { newProjectWindow.show(); newProjectWindow.raise() }
+        onAccepted: { root.bring(newProjectWindow) }
+        onRejected: { root.bring(newProjectWindow) }
     }
     // the project's own window, beside this one: open exactly when a project is
     TAStudio {
@@ -924,7 +926,7 @@ ApplicationWindow {
         id: hexEditorWindow; vm: root.hexEditor; folderOf: root.folderOf; visible: false
         clipboard: root.clipboard; customize: root.customize; themeColor: root.osdColor
         toolWindows: root.toolWindows; mainWindow: root
-        showRamWatch: () => { ramWatchWindow.show(); ramWatchWindow.raise() }
+        showRamWatch: () => { root.bring(ramWatchWindow) }
     }
     Themes { id: themesWindow; vm: root.themes; colors: root.themeColors; mainWindow: root; visible: false }
     // Chimera's Controller Config and Configure Hotkeys, each a window of its own
