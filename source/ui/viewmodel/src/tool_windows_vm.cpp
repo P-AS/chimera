@@ -84,13 +84,6 @@ ToolWindowsViewModel::ToolWindowsViewModel(Dispatcher &dispatcher) : ViewModel("
 		const auto at = windowPosition ? windowPosition() : std::pair<int64_t, int64_t>{0, 0};
 		return std::to_string(at.first) + " " + std::to_string(at.second);
 	});
-	command("openTools", "the tool windows open, by Chimera's names for its tools (luaconsole, tastudio, ramwatch...), a line each",
-		{}, [this](const Args &, std::string &) -> Value {
-			std::string out;
-			if (openTools)
-				for (const std::string &t : openTools()) out += t + "\n";
-			return out;
-		});
 	expose("settings", "each tool window's options and place, by tool: save (Save Window Position), top (Stay on Top), "
 		"float (Float From Main Window), x, y, w, h", settings, true);
 	command("setOption", "a tool window's option set: \"save\" (Save Window Position), \"top\" (Stay on Top) or \"float\" "

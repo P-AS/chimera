@@ -290,6 +290,20 @@ if qt_dep.found()
       'CHIMERA_QT_HASHES=' + meson.current_build_dir() / 'window-test-file-hashes.txt'],
     timeout: 60,
   )
+  # client.getconfig's names and client.gettool's tools, where every view
+  # model is: a name tied to a setting the window lacks reads nil and fails
+  test(
+    'lua config names',
+    chimera_qt,
+    args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
+      '--play', '--lua', files('qt/tests/lua-config-names.lua')],
+    env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software', 'ALSOFT_DRIVERS=null',
+      'CHIMERA_QT_CONFIG=' + meson.current_build_dir() / 'lua-config-test-settings.json',
+      'CHIMERA_QT_CACHE=' + meson.current_build_dir() / 'lua-config-test-cache',
+      'CHIMERA_QT_RECOVERY=' + meson.current_build_dir() / 'lua-config-test-recovery',
+      'CHIMERA_QT_HASHES=' + meson.current_build_dir() / 'lua-config-test-file-hashes.txt'],
+    timeout: 60,
+  )
   # a theme reaches Qt Quick's controls, which take the platform's colours
   # and not the application's unless each window is given the theme
   test_theme = executable(

@@ -858,8 +858,227 @@ function client.ypos() return math.tointeger(tonumber(string.match(C.toolWindows
 function client.openhexeditor() C.toolWindows.show("hex") end
 function client.openramwatch() C.toolWindows.show("ram-watch") end
 function client.openramsearch() C.toolWindows.show("ram-search") end
--- the tool windows open, by Chimera's names for its tools, numbered from 0
-function client.getavailabletools() return zeroBased(lines(C.toolWindows.openTools())) end
+-- Chimera's tools, by the names its getavailabletools gives them: the
+-- window each is, whether the machine open has what it needs (as Chimera
+-- asks the core for the tool's services), and what gettool gives a script
+-- for it: the window's own object in chimera (owner, 2026-10-26: the Qt
+-- window's names, not Chimera's C# ones; the Log Window has none)
+local toolList = {
+	{"tastudio", "tastudio", function() return C.session.isOpen end, "pianoRoll"},
+	{"luaconsole", "lua", nil, "luaConsole"},
+	{"ramwatch", "ram-watch", function() return C.session.isOpen end, "ramWatch"},
+	{"ramsearch", "ram-search", function() return C.session.isOpen end, "ramSearch"},
+	{"hexeditor", "hex", function() return C.session.isOpen end, "hexEditor"},
+	{"tracelogger", "traceLoggerWindow", function() return C.session.hasTrace end, "traceLogger"},
+	{"genericdebugger", "debuggerWindow", function() return C.session.hasRegisters end, "debugger"},
+	{"macroinputtool", "macroToolWindow", function() return C.session.isOpen end, "macroTool"},
+	{"surfaceviewer", "surfaceViewerWindow", function() return C.session.surfaces ~= "[]" end, "surfaceViewer"},
+	{"logwindow", "logWindow", nil, nil},
+}
+local function toolUsable(t) return t[3] == nil or t[3]() end
+-- the tools the machine open can use, open or not (as Chimera's), numbered from 0
+function client.getavailabletools()
+	local out = {}
+	for _, t in ipairs(toolList) do if toolUsable(t) then out[#out + 1] = t[1] end end
+	return zeroBased(out)
+end
+-- a tool by name, any case: its window opened and brought up, and its
+-- object given back; nil for a name that is no tool, or a tool the machine
+-- open cannot use
+function client.gettool(name)
+	local wanted = string.lower(tostring(name))
+	for _, t in ipairs(toolList) do
+		if t[1] == wanted then
+			if not toolUsable(t) then return nil end
+			C.toolWindows.show(t[2])
+			return t[4] and C[t[4]] or {}
+		end
+	end
+	return nil
+end
+-- client.getconfig: Chimera's settings by its names, each read from the
+-- Qt window's as it is when read; they cannot be changed through it
+-- (owner, 2026-10-26). Settings with one value (a switch, a number, a text,
+-- a choice by its name), the places of what is drawn over the picture, and
+-- Movies' greenzone ones; a name the Qt window has no setting for is nil,
+-- and so is McpAllowChanges, as scripts are not given the MCP server's
+local function setting(vm, name)
+	local model = C[vm]
+	if model == nil then return nil end
+	return model[name]
+end
+local function plain(vm, name) return function() return setting(vm, name) end end
+-- a choice by its name in Chimera's list, as the window keeps its number
+local function choice(vm, name, names) return function() return names[setting(vm, name)] end end
+-- "#AARRGGBB" as Chimera's colour number (a signed 32-bit ARGB)
+local function colour(name)
+	return function()
+		local n = tonumber(string.sub(setting("messages", name) or "", 2), 16)
+		if n == nil then return nil end
+		return n >= 0x80000000 and n - 0x100000000 or n
+	end
+end
+local function megabytes(vm, name) return function() local gb = setting(vm, name) return gb and gb * 1024 end end
+local function throttledBy(kind) return function() return setting("session", "throttle") == kind end end
+local function resized(name) return function() return setting("encoder", "resize") and setting("encoder", name) or 0 end end
+local readOnly = function(_, key) error("client.getconfig: " .. tostring(key) .. " can be read here, not changed", 2) end
+-- read when indexed; pairs walks every name the Qt window has
+local function settingsTable(names)
+	return setmetatable({}, {
+		__index = function(_, key) local read = names[key] return read and read() end,
+		__newindex = readOnly,
+		__pairs = function(t)
+			return function(_, key)
+				local name, read = next(names, key)
+				if name == nil then return nil end
+				return name, read()
+			end, t, nil
+		end,
+	})
+end
+-- one of the places in messages' positions, by its name there, as Chimera's {X, Y, Anchor}
+local anchors = {[0] = "TopLeft", "TopRight", "BottomLeft", "BottomRight"}
+local function place(name)
+	return function()
+		local one = string.match(setting("messages", "positions") or "", '"' .. name .. '"%s*:%s*(%b{})')
+		if one == nil then return nil end
+		local function field(k) return math.tointeger(tonumber(string.match(one, '"' .. k .. '"%s*:%s*(%-?%d+)'))) end
+		return settingsTable({
+			X = function() return field("x") end,
+			Y = function() return field("y") end,
+			Anchor = function() return anchors[field("anchor")] end,
+		})
+	end
+end
+local coreKinds = {[0] = "All", "Emulators", "Games"}
+local configNames = {
+	SpeedPercent = plain("session", "speedPercent"),
+	SpeedPercentAlternate = plain("session", "fastForwardPercent"),
+	ClockThrottle = throttledBy("clock"),
+	SoundThrottle = throttledBy("audio"),
+	VSyncThrottle = throttledBy("vsync"),
+	Unthrottled = plain("session", "unthrottled"),
+	UnthrottledDrawOneIn = plain("session", "fastDrawOneIn"),
+	VSync = plain("session", "vsyncEnabled"),
+	TurboSeek = plain("session", "turboSeek"),
+	SkipLagFrame = plain("session", "skipLagFrames"),
+	AcceptBackgroundInput = plain("session", "acceptBackgroundInput"),
+	CaptureMouse = plain("session", "captureMouse"),
+	ScreenshotCaptureOsd = plain("session", "captureOsd"),
+	AutofireOn = plain("session", "autofireOn"),
+	AutofireOff = plain("session", "autofireOff"),
+	AutofireLagFrames = plain("session", "autofireSkipsLag"),
+	DisplayFps = plain("session", "showFps"),
+	DisplayAverageFps = plain("session", "showAverageFps"),
+	DisplayFrameCounter = plain("session", "showFrameCounter"),
+	DisplayLagCounter = plain("session", "showLagCounter"),
+	DisplayInput = plain("session", "showInput"),
+	DisplayRerecordCount = plain("session", "showRerecords"),
+	DisplayGameTime = plain("session", "showGameTime"),
+	DisplayMessages = plain("session", "showMessages"),
+	DispChromeStatusBarWindowed = plain("session", "showStatusBar"),
+	DispSpeedupFeatures = function()
+		if setting("session", "displayNothing") then return 0 end
+		return setting("display", "minimalDisplay") and 1 or 2
+	end,
+	SoundEnabled = plain("session", "soundOn"),
+	SoundEnabledNormal = plain("session", "soundNormalOn"),
+	SoundEnabledRWFF = plain("session", "soundFastOn"),
+	MuteFrameAdvance = plain("session", "muteFrameAdvance"),
+	SoundVolume = plain("session", "volume"),
+	SoundVolumeRWFF = plain("session", "fastVolume"),
+	SoundDevice = plain("session", "soundDevice"),
+	SoundBufferSizeMs = plain("session", "soundBufferMs"),
+	Movies = function()
+		return settingsTable({
+			GreenzoneBudgetMb = plain("session", "greenzoneBudgetMb"),
+			GreenzoneMaxNearStride = plain("session", "greenzoneNearStride"),
+			GreenzonePictureSettleFrames = plain("session", "pictureSettleFrames"),
+		})
+	end,
+	StartPaused = plain("customize", "startPaused"),
+	StartFullscreen = plain("customize", "startFullscreen"),
+	SuppressAskSave = plain("customize", "neverAskSave"),
+	RunLuaDuringTurbo = plain("customize", "luaDuringTurbo"),
+	ShowContextMenu = plain("customize", "showContextMenu"),
+	HandleAlternateKeyboardLayouts = plain("customize", "alternateLayouts"),
+	MergeLAndRModifierKeys = plain("customize", "mergeModifiers"),
+	SingleInstanceMode = plain("customize", "singleInstance"),
+	GCAdapterSupportEnabled = plain("customize", "gameCubeAdapter"),
+	StackOSDMessages = plain("messages", "stackMessages"),
+	OSDMessageDuration = plain("messages", "messageSeconds"),
+	MessagesColor = colour("messagesColor"),
+	AlertMessageColor = colour("alertColor"),
+	LastInputColor = colour("lastInputColor"),
+	MovieInputColor = colour("movieInputColor"),
+	Fps = place("Fps"),
+	FrameCounter = place("Frame Counter"),
+	LagCounter = place("Lag Counter"),
+	InputDisplay = place("Input Display"),
+	RamWatches = place("Watches"),
+	Messages = place("Messages"),
+	ReRecordCounter = place("Rerecords"),
+	Autohold = place("Autohold"),
+	GameTime = place("Game Time"),
+	DispFinalFilter = plain("display", "finalFilter"),
+	DispFixAspectRatio = plain("display", "letterbox"),
+	DispFixScaleInteger = plain("display", "integerScale"),
+	DispManagerAR = choice("display", "aspectMode", {[0] = "None", "System", "CustomSize", "CustomRatio"}),
+	DispCustomUserARWidth = plain("display", "customWidth"),
+	DispCustomUserARHeight = plain("display", "customHeight"),
+	DispCustomUserArx = plain("display", "ratioX"),
+	DispCustomUserAry = plain("display", "ratioY"),
+	DispCropLeft = plain("display", "cropLeft"),
+	DispCropTop = plain("display", "cropTop"),
+	DispCropRight = plain("display", "cropRight"),
+	DispCropBottom = plain("display", "cropBottom"),
+	DispPrescale = plain("display", "prescale"),
+	DispAutoPrescale = plain("display", "autoPrescale"),
+	DispFullscreenHacks = plain("display", "fullscreenHacks"),
+	DispChromeFrameWindowed = plain("display", "frameWindowed"),
+	DispChromeCaptionWindowed = plain("display", "captionWindowed"),
+	DispChromeMenuWindowed = plain("display", "menuWindowed"),
+	DispChromeStatusBarFullscreen = plain("display", "statusBarFullscreen"),
+	DispChromeMenuFullscreen = plain("display", "menuFullscreen"),
+	DispChromeFullscreenAutohideMouse = plain("display", "autohideMouseFullscreen"),
+	DispChromeAllowDoubleClickFullscreen = plain("display", "allowDoubleClickFullscreen"),
+	ScaleOSDWithSystemScale = plain("display", "scaleOsd"),
+	ResizeWithFramebuffer = plain("display", "resizeWithPicture"),
+	SaveWindowPosition = plain("display", "saveWindowPosition"),
+	MainFormStayOnTop = plain("display", "stayOnTop"),
+	MainFormMouseCaptureForcesTopmost = plain("display", "mouseCaptureForcesTop"),
+	UseStaticWindowTitles = plain("display", "staticWindowTitles"),
+	MainFormStaticWindowTitleOverride = plain("display", "titleSuffix"),
+	AviCaptureOsd = plain("encoder", "captureOsd"),
+	AviCaptureLua = plain("encoder", "captureLua"),
+	VideoWriterAudioSync = plain("encoder", "audioSync"),
+	AVWriterPad = plain("encoder", "pad"),
+	AVWriterResizeWidth = resized("width"),
+	AVWriterResizeHeight = resized("height"),
+	FFmpegCustomCommand = plain("encoder", "command"),
+	InputHotkeyOverrideOptions = choice("hotkeys", "keyPriority", {[0] = "BOTH", "INPUT", "HOTKEY"}),
+	NoMixedInputHokeyOverride = plain("hotkeys", "noMixedPriority"),
+	HotkeyConfigAutoTab = plain("hotkeys", "autoTab"),
+	InputConfigAutoTab = plain("controls", "autoTab"),
+	DisplayWatchesOnScreen = plain("ramWatch", "showOnScreen"),
+	RamWatchDefinePrevious = choice("ramWatch", "previousType", {[0] = "Original", "LastSearch", "LastFrame", "LastChange"}),
+	CacheAutoClean = plain("cacheManager", "autoClean"),
+	CacheSizeLimitMb = megabytes("cacheManager", "limitGb"),
+	CacheFreeSpaceFloorMb = megabytes("cacheManager", "floorGb"),
+	CoresFolder = plain("cores", "coresFolder"),
+	CoreManagerShows = choice("cores", "shows", coreKinds),
+	FirmwareShows = choice("firmware", "shows", coreKinds),
+	NewProjectKind = function() return ({emulators = "Emulators", games = "Games"})[setting("newProject", "kind")] end,
+	DataDirectory = plain("dataFolder", "current"),
+	DataDirectoryPending = function() local p = setting("dataFolder", "pending") return p ~= "" and p or nil end,
+	DataDirectoryPendingMove = plain("dataFolder", "pendingMove"),
+	Theme = plain("themes", "current"),
+	DefaultAuthor = plain("projectDetails", "defaultAuthor"),
+	DisplaySubtitles = plain("projectDetails", "showSubtitles"),
+	CompileSessionGigabytes = plain("precompiled", "sessionGigabytes"),
+	SnowyNullCore = choice("idleEye", "snowWhen", {[0] = "Never", "Always", "WeekOfChristmas"}),
+}
+function client.getconfig() return settingsTable(configNames) end
 -- Screenshot (to a file when one is named) and Screenshot To Clipboard, with Capture OSD as it is set
 function client.screenshot(path) C.toolWindows.screenshot(path == nil and "" or tostring(path)) end
 function client.screenshottoclipboard() C.toolWindows.screenshotToClipboard() end

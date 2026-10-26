@@ -7831,14 +7831,16 @@ bool luaParity(const char *package, const char *rom)
 	FormsViewModel forms(d);
 	PathsViewModel paths(d);
 	DebuggerViewModel debugger(d, session);
+	MessagesViewModel messages(d);
 	paths.programFolder.set(dir.string());
 	LuaBridge lua;
 	LuaConsoleViewModel console(d, lua);
-	for (ViewModel *vm : std::initializer_list<ViewModel *>{&session, &roll, &details, &display, &tools, &overlay, &forms, &paths, &debugger, &console}) lua.add(*vm);
+	for (ViewModel *vm : std::initializer_list<ViewModel *>{&session, &roll, &details, &display, &tools, &overlay, &forms, &paths, &debugger,
+			 &console, &messages})
+		lua.add(*vm);
 	std::string shot = "(none)";
 	tools.screenshot = [&shot](const std::string &path) { shot = path; };
 	tools.windowPosition = [] { return std::pair<int64_t, int64_t>{-7, 42}; };
-	tools.openTools = [] { return std::vector<std::string>{"tastudio", "luaconsole"}; };
 	int resized = 0;
 	tools.resizeWindow = [&resized] { resized++; };
 	std::string askedName = "(none)", askedFolder;
@@ -7898,7 +7900,38 @@ bool luaParity(const char *package, const char *rom)
 	/* the client's: the engine's name, the functions, the window */
 	CHECK(lua1("client.get_lua_engine(), client.gettargetscanlineintensity()") == "[\"NLua+Lua\", 0]");
 	CHECK(lua1("string.find(client.getluafunctionslist(), '\\ngetluafunctionslist\\n') ~= nil") == "[true]");
-	CHECK(lua1("client.xpos(), client.ypos(), client.getavailabletools()[0], client.getavailabletools()[1]") == "[-7, 42, \"tastudio\", \"luaconsole\"]");
+	CHECK(lua1("client.xpos(), client.ypos()") == "[-7, 42]");
+	/* the tools the machine open can use, open or not, as Chimera's: with
+	 * nothing open, those that need no machine; gettool opens one and gives
+	 * its object, any case, and nil for a tool that cannot be used now or a
+	 * name that is no tool */
+	CHECK(lua1("client.getavailabletools()[0], client.getavailabletools()[1], client.getavailabletools()[2]") == "[\"luaconsole\", \"logwindow\", null]");
+	CHECK(lua1("client.gettool('RamWatch') == nil, client.gettool('nosuchtool') == nil, client.gettool('LuaConsole') == chimera.luaConsole") == "[true, true, true]");
+	CHECK(tools.showAsked.get() == "lua");
+	CHECK(lua1("type(client.gettool('logwindow'))") == "[\"table\"]" && tools.showAsked.get() == "logWindow");
+	/* client.getconfig: Chimera's names, read from the window's settings as
+	 * they are when read; a choice by its name, a colour as Chimera's number;
+	 * the places over the picture; read-only; nil for what is not here */
+	session.speedPercent.set(100);
+	session.throttle.set("clock");
+	CHECK(lua1("local c = client.getconfig() return c.SpeedPercent, c.ClockThrottle, c.VSyncThrottle, c.DispManagerAR, c.MessagesColor, c.AlertMessageColor") ==
+		"[100, true, false, \"System\", -1, -65536]");
+	CHECK(lua1("cfg = client.getconfig()") == "[]");
+	session.speedPercent.set(150);
+	session.throttle.set("vsync");
+	display.aspectMode.set(3);
+	CHECK(lua1("cfg.SpeedPercent, cfg.ClockThrottle, cfg.VSyncThrottle, cfg.DispManagerAR, cfg.Movies.GreenzoneBudgetMb") == "[150, false, true, \"CustomRatio\", 4096]");
+	messages.positions.set("{\"Fps\": {\"x\": 5, \"y\": 7, \"anchor\": 3}}");
+	CHECK(lua1("cfg.Fps.X, cfg.Fps.Y, cfg.Fps.Anchor") == "[5, 7, \"BottomRight\"]");
+	display.integerScale.set(true);
+	CHECK(lua1("cfg.DispFixScaleInteger, cfg.DispFullscreenHacks, cfg.JmdCompression == nil, cfg.Theme == nil") == "[true, false, true, true]");
+	CHECK(lua1("cfg.SpeedPercent = 5").find("SpeedPercent can be read here, not changed") != std::string::npos && session.speedPercent.get() == 150);
+	CHECK(lua1("local n = 0 for k, v in pairs(cfg) do if k == 'SpeedPercent' and v == 150 then n = n + 1 end end return n") == "[1]");
+	CHECK(lua1("client.createinstance == nil") == "[true]");
+	session.speedPercent.set(100);
+	session.throttle.set("clock");
+	display.aspectMode.set(1);
+	display.integerScale.set(false);
 	CHECK(lua1("client.screenshot('x.png') client.screenshot()") == "[]" && shot.empty());
 	CHECK(lua1("client.bufferwidth(), client.bufferheight()") == "[256, 192]");
 	/* gui's two surfaces, as Chimera's: named last, else use_surface's; cleared one at a time */
@@ -7953,6 +7986,18 @@ bool luaParity(const char *package, const char *rom)
 	{
 		std::string labels;
 		CHECK(fromValue(session.run("controlLabels", {}, error).value_or(Value()), labels) && labels == "P1 A\tJump\n");
+	}
+	/* a machine open: the tools that need one, the debugger's and the trace
+	 * logger's as the core has registers and a trace */
+	{
+		std::string expected = "tastudio luaconsole ramwatch ramsearch hexeditor ";
+		if (session.hasTrace.get()) expected += "tracelogger ";
+		if (session.hasRegisters.get()) expected += "genericdebugger ";
+		expected += "macroinputtool ";
+		if (session.surfaces.get() != "[]") expected += "surfaceviewer ";
+		expected += "logwindow ";
+		CHECK(lua1("local t, out = client.getavailabletools(), '' for i = 0, #t do out = out .. t[i] .. ' ' end return out") == "[\"" + expected + "\"]");
+		CHECK(lua1("client.gettool('TAStudio') == chimera.pianoRoll") == "[true]" && tools.showAsked.get() == "tastudio");
 	}
 	/* the game as Chimera names and hashes it */
 	{

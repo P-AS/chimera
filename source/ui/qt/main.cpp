@@ -1259,6 +1259,9 @@ int main(int argc, char **argv)
 	lua.add(macroTool);
 	lua.add(encoder);
 	lua.add(hostInput);
+	/* the snowy null core's settings, for client.getconfig (the MCP server's
+	 * are not given to scripts: an agent's script would change what it may do) */
+	lua.add(idleEye);
 	/* a game core's properties by name, for Lua's game library */
 	vm::GamePropertiesViewModel gameProperties(dispatcher, session);
 	lua.add(gameProperties);
@@ -1541,17 +1544,6 @@ int main(int argc, char **argv)
 	toolWindows.screenshotToClipboard = [&rawToClipboard] { rawToClipboard(); };
 	toolWindows.resizeWindow = [window] { QMetaObject::invokeMethod(window, "frameBufferResized", Q_ARG(QVariant, QVariant(true))); };
 	toolWindows.windowPosition = [window] { return std::pair<int64_t, int64_t>{window->x(), window->y()}; };
-	toolWindows.openTools = [window] {
-		/* Chimera's tools, by the names its getavailabletools gives them */
-		static const std::pair<const char *, const char *> tools[] = {{"tastudioWindow", "tastudio"}, {"luaConsoleWindow", "luaconsole"},
-			{"ramWatchWindow", "ramwatch"}, {"ramSearchWindow", "ramsearch"}, {"hexEditorWindow", "hexeditor"},
-			{"traceLoggerWindow", "tracelogger"}, {"debuggerWindow", "genericdebugger"}, {"macroToolWindow", "macroinputtool"},
-			{"surfaceViewerWindow", "surfaceviewer"}, {"logWindow", "logwindow"}};
-		std::vector<std::string> open;
-		for (const auto &[object, name] : tools)
-			if (auto *tool = window->findChild<QQuickWindow *>(QString::fromLatin1(object)); tool != nullptr && tool->isVisible()) open.emplace_back(name);
-		return open;
-	};
 	/* the agent's Lua runs where the person sees it: the Lua Console opened, as a person opens it */
 	mcp.showLuaConsole = [window] {
 		if (auto *tool = window->findChild<QQuickWindow *>(QStringLiteral("luaConsoleWindow")); tool != nullptr && !tool->isVisible()) tool->show();
