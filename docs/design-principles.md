@@ -11211,3 +11211,61 @@ game alone now checks that it is refused: 115 passed, 0 failed. With the
 refusal taken out, that check failed. Interface tests: 1215 passed, 0 failed
 (four tests of the per-system core went with it; the pinned shape of the
 movie settings lost the four options).
+
+## chimera-run and the questions before a project take only projects (user-decided, 2026-10-26)
+
+The last step of "A game runs only in a project" (above). Every core's tests
+now make a project with `chimera-run --new-project`, so the rest of the ways
+to run a game without one are gone.
+
+- chimera-run takes a project or nothing. `chimera-run <package> <game>
+  <movie>` is refused with a sentence that says how to make one, and so is a
+  `.chimeraMultiFile` descriptor given as the game (a game of several files
+  is a project of several files). `--settings` belongs to `--new-project`
+  only: a project holds its settings.
+- The engine no longer offers a call that opens a machine from files alone:
+  `ce_session_open` is internal, and `ce_session_open_project` is the one
+  way to a machine. `ce_suggest_settings` and `ce_import_movie` became
+  `ce_project_suggest_settings` and `ce_project_import_movie`.
+- The three questions asked of a core before its project is final are asked
+  of a project made from the choices so far: the suggested settings
+  (`--suggest`), a compile session (`--precompile <i>/<n>`, new in
+  chimera-run) and a movie import (`--import-movie <movie>`, with `--mount`
+  for files that have no slot). A question is not refused for a slot the
+  person has not filled yet; a run still is.
+- Movie import runs on a project too (user-decided, 2026-10-26; the
+  recommendation was to keep the movie and its files, since the core's
+  answer is what says where each file goes). The files whose import input
+  names a slot go in the project, the import options are its settings, and
+  a file the core may take as firmware is mounted beside the movie under its
+  name, as only the answer can say which firmware it is.
+- Chimera's own helper processes (`--suggest-settings`, `--import-movie` and
+  `--precompile`, which the New Project window and the import dialog start)
+  each make that project from what the window wrote down. A compile session
+  is now one of those helpers: it opens the project's machine, compiles its
+  share and ends, with no window and no settings file, so the window no
+  longer saves the chosen firmware into its settings before it starts the
+  sessions, and no longer tells them its settings file. The last ways to a
+  machine without a project went with it: the loader's game-file path, the
+  platform and archive choosers, and `--precompile-slots`.
+- The synthetic core gained a compile session (six modules, a share a
+  session) and a `SuggestSettings` answer that names the game it was given
+  and the fill byte its settings hold, so both are tested without a
+  commercial game.
+
+Tests: the witness's engine level runs on made projects (55 runs moved
+through one helper), and its new tests check that the suggestion and a
+compile session are asked of a project (6 of 6 modules from two sessions),
+that the import is asked of one with a file mounted by name, and that a game
+file alone is refused: 84 passed, 0 failed. With the question's slot
+exemption, the compile request and the refusal's words each broken, those
+four failed. The frontend level checks Chimera's three helper processes
+against the synthetic core: 30 passed, 0 failed; with the project builder
+dropping the settings and the compile session losing its request, that
+check failed for all three. The whole witness: 122 passed, 0 failed.
+Interface tests 1,212, 0 failed; engine unit tests 30, 0 failed; the
+Windows build compiles. The hand-run GPU reopen
+check and the Windows refused-open check were moved to projects and compile;
+neither was run here. `tests/perf/seekbench.cpp` was moved too, but it did
+not compile before this change (it calls two state-history functions that
+no longer exist), and still does not.

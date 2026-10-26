@@ -205,14 +205,15 @@ int main(int argc, char **argv)
 {
 	if (argc < 3)
 	{
-		fprintf(stderr, "usage: reopen <package> <rom> [--settings <json>]"
+		fprintf(stderr, "usage: reopen <package> <project.chimeraProject> [--settings <json>]"
 			" [--firmware <id>=<path>]... [--frames N] [--after M]\n"
+			"  (a game runs only in a project: chimera-run --new-project makes one)\n"
 			"  --frames N   boot this many frames, then save\n"
 			"  --after M    then compare M frames, straight run against reopened\n");
 		return 2;
 	}
-	const char *pkg = argv[1], *rom = argv[2];
-	std::string settings = "{}";
+	const char *pkg = argv[1], *projectPath = argv[2];
+	std::string settings;   /* empty: the project's own */
 	std::string shot;
 	std::string dumpRam;
 	long frames = 120, after = 60;
@@ -266,12 +267,19 @@ int main(int argc, char **argv)
 
 	ce_gl_request(wantGl ? 1 : 0);
 	const char *err = nullptr;
+	/* the project's files are found beside it */
+	ce_project *project = ce_project_open(projectPath, &err);
+	if (project == nullptr) { printf("FAIL  could not open the project: %s\n", err ? err : "?"); return 1; }
+	{
+		const std::string path = projectPath;
+		const size_t cut = path.find_last_of("/\\");
+		ce_project_resolve_dir(project, cut == std::string::npos ? "." : path.substr(0, cut).c_str());
+	}
 	auto open = [&]() {
-		return ce_session_open(pkg, nullptr, 0, rom, settings.c_str(),
+		return ce_session_open_project(pkg, project, settings.empty() ? nullptr : settings.c_str(),
 			ids.empty() ? nullptr : ids.data(),
 			data.empty() ? nullptr : data.data(),
-			lens.empty() ? nullptr : lens.data(), (int32_t)ids.size(),
-			nullptr, nullptr, nullptr, nullptr, 0, &err);
+			lens.empty() ? nullptr : lens.data(), (int32_t)ids.size(), 0u, &err);
 	};
 
 	ce_session *a = open();

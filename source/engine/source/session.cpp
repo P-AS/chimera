@@ -453,8 +453,8 @@ extern "C" void ce_cache_announce(int32_t precompile);
 
 /* Sessions that ask the core one question instead of starting it: open stops
  * before Init, calls the named export (no arguments, a NUL-terminated string
- * back) and keeps the answer. ce_suggest_settings asks SuggestSettings,
- * ce_import_movie asks ImportMovie. nullptr is an ordinary session. One per
+ * back) and keeps the answer. ce_project_suggest_settings asks SuggestSettings,
+ * ce_project_import_movie asks ImportMovie. nullptr is an ordinary session. One per
  * thread: process-wide, a question asked on one thread while another thread
  * opened a session turned that session into a question, with no frame
  * export, and its first frame called a null pointer (engine analysis,
@@ -1867,7 +1867,7 @@ static const uint8_t *domainReadView(const ce_session *s, int32_t index, int64_t
 
 extern "C" {
 
-/* ce_session_open's and ce_session_open_project's refusal, from outside them */
+/* openMachine's and ce_session_open_project's refusal, from outside them */
 static ce_session *openRefused(std::string message, const char **error_out)
 {
 	*g_openError = std::move(message);
@@ -1876,7 +1876,7 @@ static ce_session *openRefused(std::string message, const char **error_out)
 }
 
 /* The second the clock of the next machine opened on this thread starts at:
- * the project's, set by openProjectSession around its ce_session_open, and -1
+ * the project's, set by openProjectSession around its openMachine, and -1
  * (the sandbox's own) for everything else. */
 static thread_local int64_t t_clockStart = -1;
 
@@ -2491,7 +2491,17 @@ static ce_session *openSession(
 	return s;
 }
 
-ce_session *ce_session_open(
+/* Opens a machine from the files given. Not the engine's to offer: every
+ * machine is a project's (user-decided, 2026-10-26), and openProjectSession
+ * is the one caller, which gives a project's files this way.
+ *
+ * A file reaches the guest as BYTES (rom/rom_len, extra_data/extra_lens) for
+ * something made here - a slot map, a name - or as a PATH (rom_path,
+ * extra_paths[i]) for something on disk, which is never read into memory:
+ * the guest's reads go to the file as it makes them. A PS2 disc image is
+ * over four gigabytes, which no .NET byte[] can hold. The guest sees the
+ * same bytes either way. */
+static ce_session *openMachine(
 	const char *package_path,
 	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
 	const char *settings_overrides_json,
@@ -2520,12 +2530,22 @@ ce_session *ce_session_open(
 	}
 }
 
+/* A session that only asks the core a question (askCore) of a project still
+ * being made: its files are not checked against the package's slots, since a
+ * slot the person has not filled yet is no reason to refuse a question. Not
+ * in engine.h: no caller outside asks for it. */
+static constexpr uint32_t kOpenToAsk = 0x80000000u;
+
+/* more_names/more_paths: files mounted after the project's own, by path - a
+ * movie being imported and the files offered with it (ce_project_import_movie) */
 static ce_session *openProjectSession(
 	const char *package_path, ce_project *project,
 	const char *settings_overrides_json,
 	const char *const *firmware_ids, const uint8_t *const *firmware_data,
 	const uint64_t *firmware_lens, int32_t firmware_count,
-	uint32_t flags, const char **error_out)
+	uint32_t flags,
+	const char *const *more_names, const char *const *more_paths, int32_t more_count,
+	const char **error_out)
 {
 	auto fail = [&](std::string message) -> ce_session *
 	{
@@ -2605,7 +2625,7 @@ static ce_session *openProjectSession(
 				running = cJSON_Parse(declared.settingsJson.c_str());
 			}
 			const char *slotError = nullptr;
-			const int32_t refused = decl != nullptr
+			const int32_t refused = decl != nullptr && (flags & kOpenToAsk) == 0
 				? ceProjectValidate(project, decl, declLen, running, &slotError)
 				: 0;
 			cJSON_Delete(running);
@@ -2677,13 +2697,15 @@ static ce_session *openProjectSession(
 		}
 	}
 
+	for (int32_t i = 0; i < more_count; i++) addFile(more_names[i], more_paths[i]);
+
 	/* the project's clock start, for this one session */
 	struct ClockFor
 	{
 		explicit ClockFor(int64_t start) { t_clockStart = start; }
 		~ClockFor() { t_clockStart = -1; }
 	} clock(ce_project_clock_start(project));
-	return ce_session_open(
+	return openMachine(
 		package_path, nullptr, 0, romPath, settings_overrides_json,
 		firmware_ids, firmware_data, firmware_lens, firmware_count,
 		extraNames.data(), extraData.data(), extraLens.data(), extraPaths.data(),
@@ -2700,7 +2722,7 @@ ce_session *ce_session_open_project(
 	try
 	{
 		return openProjectSession(package_path, project, settings_overrides_json,
-			firmware_ids, firmware_data, firmware_lens, firmware_count, flags, error_out);
+			firmware_ids, firmware_data, firmware_lens, firmware_count, flags & ~kOpenToAsk, nullptr, nullptr, 0, error_out);
 	}
 	catch (const std::bad_alloc &)
 	{
@@ -4549,17 +4571,15 @@ extern "C" uint64_t ce_session_cache_fetched(const ce_session *s)
 	return reinterpret_cast<uint64_t (*)()>(s->fnCacheFetched)();
 }
 
-/* Opens a session that asks `exportName` instead of Init (s_answerExport) and
- * hands back its answer: "" when the core has no such export, nullptr with
- * *error_out when the package or files cannot be opened at all. */
+/* Opens a project's machine that asks `exportName` instead of Init
+ * (s_answerExport) and hands back its answer: "" when the core has no such
+ * export, nullptr with *error_out when the package or files cannot be opened
+ * at all. */
 static const char *askCore(const char *exportName,
-	const char *package_path,
-	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
-	const char *settings_overrides_json,
+	const char *package_path, ce_project *project,
+	const char *const *more_names, const char *const *more_paths, int32_t more_count,
 	const char *const *firmware_ids, const uint8_t *const *firmware_data,
 	const uint64_t *firmware_lens, int32_t firmware_count,
-	const char *const *extra_names, const uint8_t *const *extra_data,
-	const uint64_t *extra_lens, const char *const *extra_paths, int32_t extra_count,
 	uint64_t *len_out, const char **error_out)
 {
 	/* never destroyed: a thread_local std::string is freed twice by a mingw
@@ -4567,11 +4587,29 @@ static const char *askCore(const char *exportName,
 	static thread_local chimera::ThreadString answer;
 	answer->clear();
 	if (len_out != nullptr) *len_out = 0;
-	s_answerExport = exportName;
-	ce_session *s = ce_session_open(package_path, rom, rom_len, rom_path, settings_overrides_json,
-		firmware_ids, firmware_data, firmware_lens, firmware_count,
-		extra_names, extra_data, extra_lens, extra_paths, extra_count, error_out);
-	s_answerExport = nullptr;
+	struct Asking
+	{
+		explicit Asking(const char *name) { s_answerExport = name; }
+		~Asking() { s_answerExport = nullptr; }
+	};
+	ce_session *s = nullptr;
+	try
+	{
+		Asking asking(exportName);
+		s = openProjectSession(package_path, project, nullptr,
+			firmware_ids, firmware_data, firmware_lens, firmware_count, kOpenToAsk,
+			more_names, more_paths, more_count, error_out);
+	}
+	catch (const std::bad_alloc &)
+	{
+		openRefused("there was not enough memory to start the machine", error_out);
+		return nullptr;
+	}
+	catch (const std::exception &e)
+	{
+		openRefused(std::string("the machine could not be started: ") + e.what(), error_out);
+		return nullptr;
+	}
 	if (s == nullptr) return nullptr;
 	*answer = s->suggestion;
 	ce_session_free(s);
@@ -4579,34 +4617,31 @@ static const char *askCore(const char *exportName,
 	return answer->c_str();
 }
 
-extern "C" const char *ce_suggest_settings(
-	const char *package_path,
-	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
-	const char *settings_overrides_json,
+extern "C" const char *ce_project_suggest_settings(
+	const char *package_path, ce_project *project,
 	const char *const *firmware_ids, const uint8_t *const *firmware_data,
 	const uint64_t *firmware_lens, int32_t firmware_count,
-	const char *const *extra_names, const uint8_t *const *extra_data,
-	const uint64_t *extra_lens, const char *const *extra_paths, int32_t extra_count,
 	uint64_t *len_out, const char **error_out)
 {
-	return askCore("SuggestSettings", package_path, rom, rom_len, rom_path, settings_overrides_json,
-		firmware_ids, firmware_data, firmware_lens, firmware_count,
-		extra_names, extra_data, extra_lens, extra_paths, extra_count, len_out, error_out);
+	return askCore("SuggestSettings", package_path, project, nullptr, nullptr, 0,
+		firmware_ids, firmware_data, firmware_lens, firmware_count, len_out, error_out);
 }
 
-extern "C" const char *ce_import_movie(
-	const char *package_path,
-	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
-	const char *settings_overrides_json,
+extern "C" const char *ce_project_import_movie(
+	const char *package_path, ce_project *project, const char *movie_path,
+	const char *const *mount_names, const char *const *mount_paths, int32_t mount_count,
 	const char *const *firmware_ids, const uint8_t *const *firmware_data,
 	const uint64_t *firmware_lens, int32_t firmware_count,
-	const char *const *extra_names, const uint8_t *const *extra_data,
-	const uint64_t *extra_lens, const char *const *extra_paths, int32_t extra_count,
 	uint64_t *len_out, const char **error_out)
 {
-	return askCore("ImportMovie", package_path, rom, rom_len, rom_path, settings_overrides_json,
-		firmware_ids, firmware_data, firmware_lens, firmware_count,
-		extra_names, extra_data, extra_lens, extra_paths, extra_count, len_out, error_out);
+	std::vector<const char *> names{ "movie" }, paths{ movie_path };
+	for (int32_t i = 0; i < mount_count; i++)
+	{
+		names.push_back(mount_names[i]);
+		paths.push_back(mount_paths[i]);
+	}
+	return askCore("ImportMovie", package_path, project, names.data(), paths.data(), static_cast<int32_t>(names.size()),
+		firmware_ids, firmware_data, firmware_lens, firmware_count, len_out, error_out);
 }
 
 extern "C" int32_t ce_session_precompile_done(const ce_session *s)

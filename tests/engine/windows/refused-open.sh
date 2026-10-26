@@ -45,7 +45,7 @@ args=""
 if [ -f "$core" ]; then
 	head -c 4096 /dev/urandom > "$work/not-a-rom.nes"
 	cp "$core" "$work/core.chimeraCore"
-	args="core.chimeraCore not-a-rom.nes"
+	args="core.chimeraCore rom not-a-rom.nes"
 fi
 
 # and a core that SUGGESTS settings, whose answer is a sentence: the only
@@ -53,10 +53,10 @@ fi
 # can hurt (the RPCS3 core answers even for a file it cannot identify)
 suggester="$repo_root/build/Cores/rpcs3.chimeraCore"
 if [ -f "$suggester" ]; then
-	[ -n "$args" ] || args="- -"
+	[ -n "$args" ] || args="- - -"
 	head -c 4096 /dev/urandom > "$work/not-a-game.elf"
 	cp "$suggester" "$work/suggester.chimeraCore"
-	args="$args suggester.chimeraCore not-a-game.elf"
+	args="$args suggester.chimeraCore game not-a-game.elf"
 fi
 
 # A fault in host code writes minibox-diag.log beside the process; there must

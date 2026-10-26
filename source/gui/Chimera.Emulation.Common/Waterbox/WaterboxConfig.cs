@@ -75,7 +75,7 @@ namespace Chimera.Emulation.Common.Waterbox
 
 		/// <summary>
 		/// The core can say what it would choose for a game before one boots (it
-		/// exports SuggestSettings; engine.h, ce_suggest_settings): the wizard asks
+		/// exports SuggestSettings; engine.h, ce_project_suggest_settings): the wizard asks
 		/// when it reaches the settings page and applies the answer there.
 		/// </summary>
 		public bool SuggestSettings { get; set; }
@@ -129,7 +129,7 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// the files its ImportMovie export needs and the options it takes. The
 		/// frontend renders the import dialog from this, the way it renders
 		/// settings, and builds the project from the core's answer with its own
-		/// project creation (engine.h, ce_import_movie).
+		/// project creation (engine.h, ce_project_import_movie).
 		/// </summary>
 		public MovieImportDecl? MovieImport { get; set; }
 

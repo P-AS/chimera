@@ -148,6 +148,65 @@ static void cache_work(void) {
 	}
 }
 
+/* A compile session (a New Project window's compile step, engine.h
+ * ce_precompile_request): the synthetic game has six "modules", each eight
+ * bytes made from the game's own bytes and the module's number; a session
+ * stores, one a frame, those whose number modulo its count is its index, and
+ * never runs the game */
+#define SYNTH_MODULES 6
+static int32_t g_preCount, g_preNext;
+static uint32_t g_preDone;
+static uint64_t g_romSum;
+ECL_EXPORT void SetPrecompile(int32_t index, int32_t count, int32_t firmwareToo)
+{
+	(void)firmwareToo;
+	g_preCount = count;
+	g_preNext = index;
+}
+ECL_EXPORT int32_t IsPrecompileDone(void) { return g_preCount > 0 && g_preNext >= SYNTH_MODULES; }
+ECL_EXPORT uint32_t GetPrecompileDone(void) { return g_preDone; }
+ECL_EXPORT uint32_t GetPrecompileTotal(void) { return SYNTH_MODULES; }
+static void precompile_step(void)
+{
+	if (g_preNext >= SYNTH_MODULES) return;
+	char name[32];
+	snprintf(name, sizeof name, "synth/module%d.bin", (int)g_preNext);
+	uint64_t bytes = g_romSum ^ (0x9E3779B97F4A7C15ull * (uint64_t)(g_preNext + 1));
+	struct { uint64_t name, name_len, data, size; } store = { (uintptr_t)name, strlen(name), (uintptr_t)&bytes, sizeof bytes };
+	if (g_cache) g_cache(2 /* CACHE_OP_STORE */, (uintptr_t)&store, 0, 0, 0, 0);
+	g_preDone++;
+	g_preNext += g_preCount;
+}
+
+/* What this core suggests for a project before it is final (engine.h,
+ * ce_project_suggest_settings): called INSTEAD of Init. It says which game
+ * the project gave it, how big, and the fill byte the project's settings
+ * hold, and suggests a fill byte of the game's size modulo 256 - so a test
+ * can see that the question was asked of the project, its files and its
+ * settings. */
+static char g_suggest[512];
+ECL_EXPORT const char *SuggestSettings(void)
+{
+	char name[128] = "";
+	FILE *f = fopen("rom.name", "rb");
+	if (f) {
+		size_t n = fread(name, 1, sizeof name - 1, f);
+		name[n] = 0;
+		fclose(f);
+	}
+	long size = 0;
+	f = name[0] ? fopen(name, "rb") : NULL;
+	if (f) {
+		fseek(f, 0, SEEK_END);
+		size = ftell(f);
+		fclose(f);
+	}
+	snprintf(g_suggest, sizeof g_suggest,
+		"{\"values\": {\"initFillByte\": %ld}, \"note\": \"game %s, %ld bytes, fill %ld\"}",
+		size % 256, name[0] ? name : "none", size, wbx_setting_long("initFillByte", 0));
+	return g_suggest;
+}
+
 static int moving(void); /* the movingProperties setting, read once here */
 ECL_EXPORT int Init(void) {
 	uint32_t len = 0;
@@ -171,6 +230,8 @@ ECL_EXPORT int Init(void) {
 	if (len >= 9 && memcmp(rom + len - 9, "SLOWFIRST", 9) == 0) g_slowFirst = g_slowNext = 1;
 	if (len >= 8 && memcmp(rom + len - 8, "STOPONCE", 8) == 0) g_stopOnce = 1;
 	if (len >= 9 && memcmp(rom + len - 9, "CLOCKTEST", 9) == 0) g_clockTest = 1;
+	g_romSum = 1469598103934665603ull;
+	for (size_t i = 0; i < (size_t)len; i++) g_romSum = (g_romSum ^ rom[i]) * 1099511628211ull;
 	g_synth = synth_create(rom, len);   /* copies the rom internally */
 	free(rom);
 	if (!g_synth) return 0;
@@ -269,6 +330,11 @@ ECL_EXPORT void FrameAdvance(uint64_t pad) {
 	 * first frame it draws afterwards as it would have been at once */
 	g_garbleNow = g_render && g_garbleLeft > 0;
 	if (g_garbleNow) g_garbleLeft--;
+	/* a compile session compiles and never runs the game */
+	if (g_preCount > 0) {
+		precompile_step();
+		return;
+	}
 	g_framesRun++;
 	if (g_spinFrame != 0 && g_framesRun == g_spinFrame)
 		for (;;) g_spun++;
@@ -543,7 +609,7 @@ ECL_EXPORT const char *GetGameProperties(void)
 		"] }";
 }
 
-/* A movie made elsewhere, as this core reads it (engine.h, ce_import_movie):
+/* A movie made elsewhere, as this core reads it (engine.h, ce_project_import_movie):
  * called INSTEAD of Init. The synth's "foreign" movie is its own movie text -
  * one "|UDLRABsS|" line per frame - mounted as "movie", and the game it was
  * made on is named by the importRom option and mounted under that name. The

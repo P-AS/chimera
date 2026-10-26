@@ -33,9 +33,12 @@
  *
  * With a core package and a rom it does not accept, it also drives the real
  * shape of the report: a machine REFUSED AT Init, torn down by the engine,
- * with the process then exiting normally.
+ * with the process then exiting normally. A game runs only in a project
+ * (user-decided, 2026-10-26), so each is opened as a project of that one
+ * file, in the slot named.
  *
- *   refused-open.exe [<core package> <rom that it will refuse>]
+ *   refused-open.exe [<core package> <slot> <rom that it will refuse>
+ *                     [<core that suggests> <slot> <file to ask about>]]
  *
  * Windows only, because the defect is: Linux runs the destructor once, and
  * chimera-run links the engine into an exe, where there is no DLL detach.
@@ -46,66 +49,87 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef void *(*ce_session_open_fn)(
-	const char *package_path, const unsigned char *rom, unsigned long long rom_len,
-	const char *rom_path, const char *settings_overrides_json,
+typedef void *(*ce_project_new_fn)(void);
+typedef int (*ce_project_file_add_fn)(void *project, const char *name, const char *slot,
+	const char *source_path, const char **error_out);
+typedef void (*ce_project_free_fn)(void *project);
+
+typedef void *(*ce_session_open_project_fn)(
+	const char *package_path, void *project, const char *settings_overrides_json,
 	const char *const *firmware_ids, const unsigned char *const *firmware_data,
 	const unsigned long long *firmware_lens, int firmware_count,
-	const char *const *extra_names, const unsigned char *const *extra_data,
-	const unsigned long long *extra_lens, const char *const *extra_paths, int extra_count,
-	const char **error_out);
+	unsigned flags, const char **error_out);
 
-static ce_session_open_fn ce_session_open;
+static ce_project_new_fn ce_project_new;
+static ce_project_file_add_fn ce_project_file_add;
+static ce_project_free_fn ce_project_free;
+static ce_session_open_project_fn ce_session_open_project;
 
-typedef const char *(*ce_suggest_settings_fn)(
-	const char *package_path, const unsigned char *rom, unsigned long long rom_len,
-	const char *rom_path, const char *settings_overrides_json,
+typedef const char *(*ce_project_suggest_settings_fn)(
+	const char *package_path, void *project,
 	const char *const *firmware_ids, const unsigned char *const *firmware_data,
 	const unsigned long long *firmware_lens, int firmware_count,
-	const char *const *extra_names, const unsigned char *const *extra_data,
-	const unsigned long long *extra_lens, const char *const *extra_paths, int extra_count,
 	unsigned long long *len_out, const char **error_out);
 
-static ce_suggest_settings_fn ce_suggest_settings;
-static const char *g_answer;      /* what ce_suggest_settings returned */
+static ce_project_suggest_settings_fn ce_project_suggest_settings;
+static const char *g_answer;      /* what ce_project_suggest_settings returned */
 static char g_answer_text[512];
 
 static const char *g_package;    /* what the worker opens */
+static const char *g_slot;       /* the slot the file goes in */
 static const char *g_rom_path;   /* NULL for the no-such-package case */
 static const char *g_error;      /* what the engine answered, kept past the thread */
 static char g_error_text[512];   /* ...and a copy of the words, for the report */
 static void *g_session;
 
+/* A project of the one file in its slot, or of none (whose open is refused
+ * for the package); freed by the caller. */
+static void *project_of(void)
+{
+	const char *error = NULL;
+	void *project = ce_project_new();
+	if (project != NULL && g_rom_path != NULL)
+	{
+		const char *name = strrchr(g_rom_path, '/') ? strrchr(g_rom_path, '/') + 1 : g_rom_path;
+		if (ce_project_file_add(project, name, g_slot, g_rom_path, &error) != 0)
+			fprintf(stderr, "the project would not take %s: %s\n", g_rom_path, error != NULL ? error : "?");
+	}
+	return project;
+}
+
 static DWORD WINAPI refused_open(LPVOID unused)
 {
 	const char *error = NULL;
+	void *project = project_of();
 	(void)unused;
-	g_session = ce_session_open(g_package, NULL, 0, g_rom_path, NULL,
-	                            NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, &error);
+	g_session = ce_session_open_project(g_package, project, NULL, NULL, NULL, NULL, 0, 0u, &error);
+	ce_project_free(project);
 	g_error = error;
 	if (error != NULL) snprintf(g_error_text, sizeof g_error_text, "%s", error);
 	return 0;
 }
 
 /* The suggestion call keeps its answer in a per-thread string too
- * (ce_suggest_settings): the same rule, the same way to break it. */
+ * (ce_project_suggest_settings): the same rule, the same way to break it. */
 static DWORD WINAPI suggest(LPVOID unused)
 {
 	const char *error = NULL;
 	unsigned long long len = 0;
+	void *project = project_of();
 	(void)unused;
-	g_answer = ce_suggest_settings(g_package, NULL, 0, g_rom_path, NULL,
-	                               NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, 0, &len, &error);
+	g_answer = ce_project_suggest_settings(g_package, project, NULL, NULL, NULL, 0, &len, &error);
+	ce_project_free(project);
 	g_error = error;
 	if (error != NULL) snprintf(g_error_text, sizeof g_error_text, "%s", error);
 	if (g_answer != NULL) snprintf(g_answer_text, sizeof g_answer_text, "%.*s", (int)len, g_answer);
 	return 0;
 }
 
-static int suggest_on_its_own_thread(const char *package, const char *rom_path)
+static int suggest_on_its_own_thread(const char *package, const char *slot, const char *rom_path)
 {
 	HANDLE t;
 	g_package = package;
+	g_slot = slot;
 	g_rom_path = rom_path;
 	g_error = NULL;
 	g_answer = NULL;
@@ -119,10 +143,11 @@ static int suggest_on_its_own_thread(const char *package, const char *rom_path)
 
 /* Runs refused_open on a thread of its own and waits for that thread to END,
  * which is the moment this test is about. */
-static int open_on_its_own_thread(const char *package, const char *rom_path)
+static int open_on_its_own_thread(const char *package, const char *slot, const char *rom_path)
 {
 	HANDLE t;
 	g_package = package;
+	g_slot = slot;
 	g_rom_path = rom_path;
 	g_error = NULL;
 	g_session = NULL;
@@ -148,10 +173,13 @@ int main(int argc, char **argv)
 		        (unsigned long)GetLastError());
 		return 2;
 	}
-	ce_session_open = (ce_session_open_fn)(void *)GetProcAddress(engine, "ce_session_open");
-	if (ce_session_open == NULL)
+	ce_project_new = (ce_project_new_fn)(void *)GetProcAddress(engine, "ce_project_new");
+	ce_project_file_add = (ce_project_file_add_fn)(void *)GetProcAddress(engine, "ce_project_file_add");
+	ce_project_free = (ce_project_free_fn)(void *)GetProcAddress(engine, "ce_project_free");
+	ce_session_open_project = (ce_session_open_project_fn)(void *)GetProcAddress(engine, "ce_session_open_project");
+	if (ce_project_new == NULL || ce_project_file_add == NULL || ce_project_free == NULL || ce_session_open_project == NULL)
 	{
-		fprintf(stderr, "FAIL libchimera.dll exports no ce_session_open\n");
+		fprintf(stderr, "FAIL libchimera.dll exports no ce_session_open_project or its project calls\n");
 		return 2;
 	}
 
@@ -179,7 +207,7 @@ int main(int argc, char **argv)
 	/* 1. A refusal that needs nothing but the engine: a package that is not
 	 *    there. The sentence has to be longer than a std::string keeps inside
 	 *    itself, or there is no heap buffer to free and the check is vacuous. */
-	if (!open_on_its_own_thread("no-such-package.chimeraCore", NULL)) return 2;
+	if (!open_on_its_own_thread("no-such-package.chimeraCore", NULL, NULL)) return 2;
 	if (g_error == NULL || strlen(g_error_text) <= 15)
 	{
 		fprintf(stderr, "FAIL the engine answered %s - this check needs a long refusal sentence\n",
@@ -204,12 +232,12 @@ int main(int argc, char **argv)
 	 *    this did not crash on its own - the heap is too quiet in a program
 	 *    this small - so it is here as the regression it is, not as the
 	 *    detector. */
-	if (argc >= 3 && strcmp(argv[1], "-") != 0)
+	if (argc >= 4 && strcmp(argv[1], "-") != 0)
 	{
-		if (!open_on_its_own_thread(argv[1], argv[2])) return 2;
+		if (!open_on_its_own_thread(argv[1], argv[2], argv[3])) return 2;
 		if (g_session != NULL)
 		{
-			fprintf(stderr, "FAIL %s was expected to refuse %s, and opened it\n", argv[1], argv[2]);
+			fprintf(stderr, "FAIL %s was expected to refuse %s, and opened it\n", argv[1], argv[3]);
 			failures++;
 		}
 		else
@@ -240,31 +268,33 @@ int main(int argc, char **argv)
 	 *    which the script checks (exit status, no fault report). Before the
 	 *    answer was a ThreadString, every such process died at exit with an
 	 *    access violation in the heap. */
-	ce_suggest_settings = (ce_suggest_settings_fn)(void *)GetProcAddress(engine, "ce_suggest_settings");
-	if (ce_suggest_settings == NULL)
+	ce_project_suggest_settings = (ce_project_suggest_settings_fn)(void *)GetProcAddress(engine, "ce_project_suggest_settings");
+	if (ce_project_suggest_settings == NULL)
 	{
-		fprintf(stderr, "FAIL libchimera.dll exports no ce_suggest_settings\n");
+		fprintf(stderr, "FAIL libchimera.dll exports no ce_project_suggest_settings\n");
 		failures++;
 	}
 	else
 	{
-		if (!suggest_on_its_own_thread("no-such-package.chimeraCore", NULL)) return 2;
+		if (!suggest_on_its_own_thread("no-such-package.chimeraCore", NULL, NULL)) return 2;
 		printf("suggest, no package: %s \"%s\"\n", g_answer == NULL ? "refused" : "ANSWERED", g_error_text);
 		if (g_answer != NULL) failures++;
 		/* A core that answers "" proves nothing here - an empty string owns no
 		 * heap buffer, so freeing it twice is harmless (thread_string.hpp).
-		 * The detector is a core that answers in a SENTENCE: argv[3] and
-		 * argv[4], a core with SuggestSettings and a file to ask about. */
-		if (argc >= 5)
+		 * The detector is a core that answers in a SENTENCE: argv[4] to
+		 * argv[6], a core with SuggestSettings, a slot and a file to ask
+		 * about. */
+		if (argc >= 7)
 		{
 			/* ON THE MAIN THREAD, deliberately: the double destroy happens on
 			 * the thread that ends the process (thread_string.hpp), which is
 			 * where Chimera --suggest-settings asks. A worker's copy is
 			 * destroyed once, when it ends, and hides the bug. */
-			g_package = argv[3];
-			g_rom_path = argv[4];
+			g_package = argv[4];
+			g_slot = argv[5];
+			g_rom_path = argv[6];
 			suggest(NULL);
-			printf("suggest, %s: %s %u bytes\n", argv[3], g_answer == NULL ? "REFUSED" : "answered",
+			printf("suggest, %s: %s %u bytes\n", argv[4], g_answer == NULL ? "REFUSED" : "answered",
 			       (unsigned)strlen(g_answer_text));
 			if (g_answer == NULL || strlen(g_answer_text) < 64)
 			{

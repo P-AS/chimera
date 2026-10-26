@@ -51,28 +51,7 @@ namespace Chimera.Client.Common
 			Description = "path of a core package (dir or .zip with chimera-core.json) to load before any rom",
 		};
 
-		private static readonly Option<string?> OptionPrecompile = new("--precompile")
-		{
-			Description = "INDEX/COUNT[/game]; run as precompile session INDEX of COUNT for the rom (fills the compile cache, prints 'Precompiled D/T modules'), then exit; implies --headless",
-		};
-		/// <summary>
-		/// Firmware for THIS run, said outright. A precompile session is a child
-		/// process, and telling it through the config file means the parent has to
-		/// have written the file first - which it cannot always do: the wizard only
-		/// knows the paths a person chose, and a core may call a firmware optional
-		/// that the game in hand cannot boot without. So the sessions are told.
-		/// </summary>
-		/// <summary>
-		/// The project's files beyond the game, for a precompile session: a JSON
-		/// file {"slots": {slot: [name, ...]}, "files": {name: path}} the wizard
-		/// writes. A game that needs its licence, its packages or its disc key to
-		/// boot cannot be compiled without them (chimera#140).
-		/// </summary>
-		private static readonly Option<string?> OptionPrecompileSlots = new("--precompile-slots")
-		{
-			Description = "JSON file: the slot map and file paths a precompile session mounts beside the rom",
-		};
-
+		/// <summary>Firmware for THIS run, said outright, ahead of what the config remembers.</summary>
 		private static readonly Option<string[]> OptionFirmware = new("--firmware")
 		{
 			Description = "<id>=<path>; use this file as the firmware the core declares under <id>, ahead of anything remembered in the config. May be repeated",
@@ -152,9 +131,7 @@ namespace Chimera.Client.Common
 			root.Add(/* --chromeless */ OptionLaunchChromeless);
 			root.Add(/* --config */ OptionConfigFilePath);
 			root.Add(/* --core */ OptionCorePackagePath);
-			root.Add(/* --precompile */ OptionPrecompile);
 			root.Add(/* --firmware */ OptionFirmware);
-			root.Add(/* --precompile-slots */ OptionPrecompileSlots);
 			root.Add(/* --dump-close */ OptionAVDumpQuitWhenDone);
 			root.Add(/* --dump-frames */ OptionAVDumpFrameList);
 			root.Add(/* --dump-length */ OptionAVDumpEndAtFrame);
@@ -258,9 +235,7 @@ namespace Chimera.Client.Common
 				userdataUnparsedPairs: userdataUnparsedPairs,
 				cmdRom: result.GetValue(ArgumentRomFilePath),
 				cmdCorePackage: result.GetValue(OptionCorePackagePath),
-				cmdPrecompile: result.GetValue(OptionPrecompile),
 				cmdFirmware: result.GetValue(OptionFirmware),
-				cmdPrecompileSlots: result.GetValue(OptionPrecompileSlots),
 				mcpServer: result.GetValue(OptionMcpServer),
 				mcpAllowChanges: result.GetValue(OptionMcpAllowChanges)
 			);

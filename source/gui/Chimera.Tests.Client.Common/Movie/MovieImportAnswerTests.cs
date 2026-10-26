@@ -5,7 +5,7 @@ using Chimera.Client.Common;
 namespace Chimera.Tests.Client.Common.Movie
 {
 	/// <summary>
-	/// A core's import answer (engine.h, ce_import_movie), read as the frontend
+	/// A core's import answer (engine.h, ce_project_import_movie), read as the frontend
 	/// builds a project from it: a refusal is its sentence and nothing else, and an
 	/// answer keeps the core's file order, which is the order the files load in.
 	/// </summary>

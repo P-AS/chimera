@@ -153,11 +153,19 @@ namespace Chimera.Client.GUI
 		/// count, which they all report the same. Returns the manifest that was
 		/// written, or null when nothing usable came of it.
 		/// </summary>
+		/// <param name="filesDocument">
+		/// The files picked so far, their slots and the settings chosen so far
+		/// (NewProjectWizard.SuggestionFilesDocument): each session makes a
+		/// project of them, as a game runs only in a project (user-decided,
+		/// 2026-10-26). A licensed package needs its .rap, an update its base
+		/// game, an encrypted disc its key: a session given the game file alone
+		/// is refused at boot and compiles nothing (chimera#140).
+		/// </param>
 		public static CoreCacheManifest Run(
-			string packagePath, string configPath, string romPath, string romSha1, string cacheDir,
+			string packagePath, string filesDocument, string romPath, string romSha1, string cacheDir,
 			string coreName, string coreVersion,
 			Action<Entry> onEntry, Action<uint, uint> onProgress, Func<bool> cancelled,
-			IReadOnlyDictionary<string, string> firmware = null, string slotsFile = null,
+			IReadOnlyDictionary<string, string> firmware = null,
 			int sessionGigabytes = 0)
 		{
 			// the setting (Config.CompileSessionGigabytes); 0 is the engine's default
@@ -166,6 +174,11 @@ namespace Chimera.Client.GUI
 			if (string.IsNullOrEmpty(romPath) || !File.Exists(romPath) || cacheDir is null)
 			{
 				LastFailure = "there is no game file to compile";
+				return null;
+			}
+			if (string.IsNullOrEmpty(filesDocument))
+			{
+				LastFailure = "the files picked could not be written down for the compile sessions";
 				return null;
 			}
 
@@ -225,24 +238,14 @@ namespace Chimera.Client.GUI
 
 				for (var i = 0; i < workers; i++)
 				{
-					var args = new List<string> { "--headless" };
-					if (!string.IsNullOrEmpty(configPath)) args.Add($"--config={configPath}");
-					args.Add($"--core={packagePath}");
-					args.Add($"--precompile={i}/{workers}");
-					// Say the firmware outright. Going through the config means the
-					// parent must have written it there first, and the wizard can hold
-					// a path that never gets written - a core may call a firmware
-					// optional that this GAME cannot boot without. A session refused at
-					// boot compiles nothing.
+					var args = new List<string> { "--precompile", $"{i}/{workers}", packagePath, filesDocument, cacheDir };
+					// The firmware, said outright: a session reads no config, and a
+					// core may call a firmware optional that this GAME cannot boot
+					// without. A session refused at boot compiles nothing.
 					foreach (var (id, path) in firmware ?? new Dictionary<string, string>())
 					{
-						args.Add($"--firmware={id}={path}");
+						args.Add($"{id}={path}");
 					}
-					// and the project's other files: a licensed package, an
-					// update, an encrypted disc boot on the game file alone
-					// nowhere (chimera#140)
-					if (!string.IsNullOrEmpty(slotsFile)) args.Add($"--precompile-slots={slotsFile}");
-					args.Add(romPath);
 					var index = i;
 					var p = SelfProcess.Start(args, line => Line(index, line));
 					if (p is not null) processes.Add(p);
