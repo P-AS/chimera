@@ -282,10 +282,6 @@ private:
 
 } // namespace
 
-/* on Windows the window is a DLL in lib\, started by launcher.c */
-#ifdef CHIMERA_QT_LIBRARY
-extern "C" __declspec(dllexport) int chimera_qt_main(int argc, char **argv)
-#else
 #ifdef _WIN32
 #define EXE_SUFFIX ".exe"
 #else
@@ -307,6 +303,10 @@ static QString runnerProgram()
 	return named.isEmpty() ? besideProgram(QStringLiteral("chimera-run")) : named;
 }
 
+/* on Windows the window is a DLL in lib\, started by launcher.c */
+#ifdef CHIMERA_QT_LIBRARY
+extern "C" __declspec(dllexport) int chimera_qt_main(int argc, char **argv)
+#else
 int main(int argc, char **argv)
 #endif
 {
