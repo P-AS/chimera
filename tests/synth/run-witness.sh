@@ -1383,6 +1383,17 @@ if [ "$level" = "both" ] || [ "$level" = "b" ]; then
 			"--lua=$here/bootstrap-exit.lua" ) > "$work/bootstrap.log" 2>&1
 		[ -f "$config" ] || { echo "config bootstrap failed (see $work/bootstrap.log)" >&2; exit 1; }
 	fi
+	# A game runs only in a project (user-decided, 2026-10-26): each run below
+	# opens one, made with chimera-run --new-project beside a copy of its game.
+	# bproject <name> <package> <game> [chimera-run's options] prints its path.
+	bproject() {
+		bpdir="$work/projects/$1"
+		rm -rf "$bpdir" && mkdir -p "$bpdir" && cp "$3" "$bpdir/"
+		bpgame="$bpdir/$(basename "$3")"
+		bpname="$1"; bppkg="$2"; shift 3
+		"$repo_root/build/meson-linux/chimera-run" --new-project "$bpdir/$bpname.chimeraProject" "$bppkg" "$bpgame" "$@" \
+			> "$bpdir/make.log" 2>&1 && echo "$bpdir/$bpname.chimeraProject"
+	}
 	# Chimera is waterbox-only: the frontend only accepts .wbx cores, so the box
 	# flavor is the ONLY Level-B core. native/sharp are Level-A equivalence
 	# references (proving synth.wbx matches the goldens), never frontend cores.
@@ -1404,9 +1415,10 @@ if [ "$level" = "both" ] || [ "$level" = "b" ]; then
 				} > "$job"
 				rm -f "$work/$tag.ram.bin" "$work/$tag.vram.bin" "$work/$tag.meta.txt"
 				cp "$config" "$work/config.$tag.ini"
+				proj="$(bproject "$tag" "$package" "$rom")"
 				( cd "$repo_root" && CHIMERA_JOB="$job" timeout 300 mono "$emu_exe" --headless \
 					"--config=$work/config.$tag.ini" "--core=$package" \
-					"--lua=$here/synth-replay.lua" "$rom" ) > "$work/$tag.log" 2>&1
+					"--lua=$here/synth-replay.lua" "--project=$proj" ) > "$work/$tag.log" 2>&1
 				if [ ! -f "$work/$tag.meta.txt" ] || ! grep -q "^status=OK" "$work/$tag.meta.txt"; then
 					report "B:$flavor:$name:$mode" FAIL "no OK meta (see work/$tag.log)"
 					continue
@@ -1457,9 +1469,10 @@ json.dump(d, open(p, 'w'))
 			} > "$rjob"
 			rm -f "$work/room-$rkind.ram.bin" "$work/room-$rkind.vram.bin" "$work/room-$rkind.meta.txt"
 			cp "$config" "$work/config.room-$rkind.ini"
+			rproj="$(bproject "room-$rkind" "$rpkg" "$rrom")"
 			( cd "$repo_root" && CHIMERA_JOB="$rjob" timeout 300 /usr/bin/time -f "peak %M" -o "$work/room-$rkind.peak" mono "$emu_exe" --headless \
 				"--config=$work/config.room-$rkind.ini" "--core=$rpkg" \
-				"--lua=$here/synth-replay.lua" "$rrom" ) > "$work/room-$rkind.log" 2>&1
+				"--lua=$here/synth-replay.lua" "--project=$rproj" ) > "$work/room-$rkind.log" 2>&1
 		done
 		rplain="$(sed -n 's/^peak \([0-9]*\)$/\1/p' "$work/room-plain.peak" 2>/dev/null)"
 		rroomy="$(sed -n 's/^peak \([0-9]*\)$/\1/p' "$work/room-roomy.peak" 2>/dev/null)"
@@ -1475,21 +1488,16 @@ json.dump(d, open(p, 'w'))
 	fi
 
 	# --- settings -> guest channel ---
-	# Same package + movie, but with initFillByte set non-zero via the core's SYNC
-	# settings (injected into the config exactly as the UI/movie would). The guest
-	# pre-fills RAM, so the RAM dump MUST diverge from the golden - proving the
-	# built-in adapter delivered the user setting to the guest.
+	# Same package + movie, but with initFillByte set non-zero in the project's
+	# SYNC settings (a game's settings are its project's). The guest pre-fills
+	# RAM, so the RAM dump MUST diverge from the golden - proving the built-in
+	# adapter delivered the project's setting to the guest.
 	if [ "$record" -eq 0 ]; then
 		sname=gridWalker.win
 		srom="$here/roms/${sname%%.*}.testrom"
 		scfg="$work/config.settings.ini"
-		python3 - "$config" "$scfg" <<'PY'
-import json, sys
-cfg = json.load(open(sys.argv[1]))
-# the core's own settings key, spelled exactly as the UI writes it
-cfg.setdefault("CoreSettings", {})["Chimera.Emulation.Common.Waterbox.WaterboxCore"] = {"Values": {"initFillByte": 171}}
-json.dump(cfg, open(sys.argv[2], "w"), indent=2)
-PY
+		cp "$config" "$scfg"
+		sproj="$(bproject settings "$repo_root/build/Cores/synth-box.chimeraCore" "$srom" --settings '{"initFillByte":171}')"
 		sjob="$work/job.settings.txt"
 		{
 			echo "movie=$here/movies/$sname.txt"
@@ -1501,37 +1509,26 @@ PY
 		rm -f "$work/settings.ram.bin" "$work/settings.meta.txt"
 		( cd "$repo_root" && CHIMERA_JOB="$sjob" timeout 300 mono "$emu_exe" --headless \
 			"--config=$scfg" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
-			"--lua=$here/synth-replay.lua" "$srom" ) > "$work/settings.log" 2>&1
+			"--lua=$here/synth-replay.lua" "--project=$sproj" ) > "$work/settings.log" 2>&1
 		if [ ! -f "$work/settings.meta.txt" ] || ! grep -q "^status=OK" "$work/settings.meta.txt"; then
 			report "S:box:initFillByte" FAIL "no OK meta (see work/settings.log)"
 		elif cmp -s "$work/settings.ram.bin" "$golden_dir/$sname.ram.bin"; then
 			report "S:box:initFillByte" FAIL "RAM identical to golden - setting did NOT reach the guest"
 		else
-			report "S:box:initFillByte" PASS "RAM diverged - user setting reached the guest"
+			report "S:box:initFillByte" PASS "RAM diverged - the project's setting reached the guest"
 		fi
 	fi
 
 	# --- a real .chimeraProject through the real movie pipeline ---
-	# Everything above drives input by script; this composes an actual project
-	# file from the win inputs and lets MovieSession play it (the project IS
-	# the movie, docs/project.md). The engine parses the entries, the frontend
-	# latches them, and the dumps must match the same goldens - the movie
-	# pipeline is Level B's reason to exist.
+	# Everything above drives input by script; this makes a project of the win
+	# inputs (chimera-run --new-project) and lets MovieSession play it (the
+	# project IS the movie, docs/project.md). The engine parses the entries, the
+	# frontend latches them, and the dumps must match the same goldens - the
+	# movie pipeline is Level B's reason to exist.
 	if [ "$record" -eq 0 ]; then
 		mname=gridWalker.win
 		mrom="$here/roms/${mname%%.*}.testrom"
-		mbk2="$work/$mname.chimeraProject"
-		python3 - "$here/movies/$mname.txt" "$mbk2" <<'PY'
-import json, sys
-entries = [l.rstrip("\r\n") for l in open(sys.argv[1]) if l.startswith("|")]
-logkey = "#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|"
-json.dump({
-    "title": "gridWalker.win",
-    "core": {"name": "Synth", "version": "", "sha1": ""},
-    "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
-    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
-}, open(sys.argv[2], "w"))
-PY
+		mproj="$(bproject movie "$repo_root/build/Cores/synth-box.chimeraCore" "$mrom" "$here/movies/$mname.txt")"
 		mjob="$work/job.movie.txt"
 		{
 			echo "outram=$work/movie.ram.bin"
@@ -1542,7 +1539,7 @@ PY
 		cp "$config" "$work/config.movie.ini"
 		( cd "$repo_root" && CHIMERA_JOB="$mjob" timeout 300 mono "$emu_exe" --headless \
 			"--config=$work/config.movie.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
-			"--movie=$mbk2" "--lua=$here/synth-movie-dump.lua" "$mrom" ) > "$work/movie.log" 2>&1
+			"--project=$mproj" "--lua=$here/synth-movie-dump.lua" ) > "$work/movie.log" 2>&1
 		if [ ! -f "$work/movie.meta.txt" ] || ! grep -q "^status=OK" "$work/movie.meta.txt"; then
 			report "M:box:$mname" FAIL "no OK meta (see work/movie.log)"
 		elif cmp -s "$work/movie.ram.bin" "$golden_dir/$mname.ram.bin" \
@@ -2206,11 +2203,11 @@ REOPENPY
 		fi
 	fi
 
-	# --- a core is never loaded implicitly ---
-	# Same movie, but NO --core. A package sitting in build/Cores is AVAILABLE, not
-	# loaded: opening a core is something the user does (File > Open Core), and the
-	# commandline says which one with --core. So this run must NOT produce a machine -
-	# if it does, something is loading cores behind the user's back again.
+	# --- a game runs only in a project ---
+	# A game file named alone, with its core given, and no window to start New
+	# Project in: the run must refuse it, say so, and produce no machine
+	# (user-decided, 2026-10-26). If it runs, a game is being opened outside a
+	# project again.
 	if [ "$record" -eq 0 ]; then
 		dname=gridWalker.win
 		djob="$work/job.discovery.txt"
@@ -2224,12 +2221,14 @@ REOPENPY
 		rm -f "$work/discovery.ram.bin" "$work/discovery.meta.txt"
 		cp "$config" "$work/config.discovery.ini"
 		( cd "$repo_root" && CHIMERA_JOB="$djob" timeout 300 mono "$emu_exe" --headless \
-			"--config=$work/config.discovery.ini" "--lua=$here/synth-replay.lua" \
-			"$here/roms/${dname%%.*}.testrom" ) > "$work/discovery.log" 2>&1
+			"--config=$work/config.discovery.ini" "--core=$package" "--lua=$here/synth-replay.lua" \
+			"$here/roms/${dname%%.*}.testrom" ) > "$work/discovery.log" 2>&1; drc=$?
 		if [ -f "$work/discovery.meta.txt" ] && grep -q "^status=OK" "$work/discovery.meta.txt"; then
-			report "D:box:noImplicitCore" FAIL "the rom ran with no core opened and no --core"
+			report "D:box:projectOnly" FAIL "the game ran without a project"
+		elif [ "$drc" -ne 2 ] || ! grep -q "a game opens only in a project" "$work/discovery.log"; then
+			report "D:box:projectOnly" FAIL "rc=$drc, or the refusal was not said (see work/discovery.log)"
 		else
-			report "D:box:noImplicitCore" PASS "a rom does not load without a core (see work/discovery.log)"
+			report "D:box:projectOnly" PASS "a game file alone is refused with a reason, and nothing runs"
 		fi
 
 		# --- keybinds ship with the package ---
@@ -2250,9 +2249,10 @@ REOPENPY
 			echo "mode=simple"
 		} > "$kjob"
 		rm -f "$work/keybinds.meta.txt"
+		kproj="$(bproject keybinds "$package" "$here/roms/${kname%%.*}.testrom")"
 		( cd "$repo_root" && CHIMERA_JOB="$kjob" timeout 300 mono "$emu_exe" --headless \
 			"--config=$kcfg" "--core=$package" "--lua=$here/synth-replay.lua" \
-			"$here/roms/${kname%%.*}.testrom" ) > "$work/keybinds.log" 2>&1
+			"--project=$kproj" ) > "$work/keybinds.log" 2>&1
 		if [ ! -f "$work/keybinds.meta.txt" ] || ! grep -q "^status=OK" "$work/keybinds.meta.txt"; then
 			report "K:box:keybinds" FAIL "run failed (see work/keybinds.log)"
 		elif python3 "$here/check-keybinds.py" "$kcfg" \

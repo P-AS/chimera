@@ -104,9 +104,6 @@ namespace Chimera.Client.Common
 
 		public bool IsRewinding() => _mainForm.IsRewinding;
 
-		public bool OpenRom(string path)
-			=> _mainForm.LoadRom(path, new LoadRomArgs(OpenAdvancedSerializer.ParseWithLegacy(path)));
-
 		public void Pause() => _mainForm.PauseEmulator();
 
 		public void PauseAv() => _mainForm.PauseAvi = true;
