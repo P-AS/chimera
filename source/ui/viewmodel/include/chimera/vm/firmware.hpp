@@ -45,6 +45,9 @@ struct FirmwareNeed
 	std::string id, display;
 	/* the file found, empty when none, and its hash */
 	std::string path, how, sha1;
+	/* false: the package says the core starts without it (an optional
+	 * identity file), so none found is no reason to refuse, as Chimera's */
+	bool required = true;
 };
 
 /* What a machine with this package, these game files and these settings

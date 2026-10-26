@@ -170,6 +170,7 @@ std::vector<FirmwareNeed> neededFirmware(const Json &firmwareDecl, const Json &s
 		if (i == nullptr || i->number() < 0 || i->number() >= firmwareDecl.items.size()) continue;
 		const Json &decl = firmwareDecl.items[static_cast<size_t>(i->number())];
 		FirmwareNeed need{text(decl, "id"), text(decl, "display"), {}, {}};
+		if (const Json *r = decl.find("required"); r != nullptr && r->kind == Json::Kind::Bool) need.required = r->boolean;
 		std::string pinned;
 		for (const Json &p : pins.items)
 			if (text(p, "id") == need.id) pinned = text(p, "sha1");

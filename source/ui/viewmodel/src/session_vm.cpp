@@ -3545,7 +3545,8 @@ bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::
 	{
 		if (n.path.empty())
 		{
-			missing += (missing.empty() ? "" : ", ") + (n.display.empty() ? n.id : n.display + " (" + n.id + ")");
+			/* an optional one not found is not mounted, and the core carries on */
+			if (n.required) missing += (missing.empty() ? "" : ", ") + (n.display.empty() ? n.id : n.display + " (" + n.id + ")");
 			continue;
 		}
 		std::ifstream in(n.path, std::ios::binary);

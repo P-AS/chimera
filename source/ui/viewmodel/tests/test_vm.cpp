@@ -674,6 +674,13 @@ void firmware()
 	CHECK(neededFirmware(fwDecl, setDecl, "{}", none, noPins, index).empty());
 	const auto needs = neededFirmware(fwDecl, setDecl, "{}", on, noPins, index);
 	CHECK(needs.size() == 1 && needs[0].id == "b" && needs[0].path.find("BIOS.BIN") != std::string::npos && needs[0].sha1.size() == 40);
+	CHECK(needs[0].required);
+	/* one the package says the core starts without, not found: listed, and
+	 * not required, so an open does not refuse for it (as Chimera's) */
+	{
+		const auto optional = neededFirmware(decl(R"([{"id":"eeprom","name":"eeprom.bin","size":256,"required":false}])"), setDecl, "{}", none, noPins, index);
+		CHECK(optional.size() == 1 && optional[0].path.empty() && !optional[0].required);
+	}
 	removeTree(dir);
 }
 
