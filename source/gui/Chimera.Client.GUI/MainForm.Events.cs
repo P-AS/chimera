@@ -1013,12 +1013,6 @@ namespace Chimera.Client.GUI
 			this.ShowDialogWithTempMute(form);
 		}
 
-		private void BatchRunnerMenuItem_Click(object sender, EventArgs e)
-		{
-			using var form = new BatchRun(this, Config, CreateCoreComm);
-			this.ShowDialogWithTempMute(form);
-		}
-
 		private void OnlineHelpMenuItem_Click(object sender, EventArgs e)
 		{
 			Util.OpenUrlExternal("https://toolassisted.run");

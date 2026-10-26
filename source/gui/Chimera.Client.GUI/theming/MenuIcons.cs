@@ -157,19 +157,6 @@ namespace Chimera.Client.GUI
 			}
 		});
 
-		/// <summary>The batch runner: a list of runs, played through.</summary>
-		public static Image BatchRunner { get; } = Draw(static g =>
-		{
-			using SolidBrush line = new(Color.FromArgb(0x9A, 0xA4, 0xB0));
-			using SolidBrush go = new(Color.FromArgb(0x5C, 0xB8, 0x6C));
-			for (var i = 0; i < 3; i++)
-			{
-				g.FillRectangle(line, 4, 10 + (i * 14), 34, 7);
-			}
-			Point[] play = [ new(30, 34), new(58, 47), new(30, 60) ];
-			g.FillPolygon(go, play);
-		});
-
 
 		/// <summary>Firmware: a chip.</summary>
 		public static Image Firmware { get; } = Draw(static g =>

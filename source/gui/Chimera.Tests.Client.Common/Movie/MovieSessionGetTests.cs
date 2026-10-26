@@ -13,7 +13,6 @@ namespace Chimera.Tests.Client.Common.Movie
 				new MovieConfig(),
 				Path.GetTempPath(),
 				dialogParent: null,
-				pauseCallback: static () => { },
 				modeChangedCallback: static () => { },
 				changesChangedCallback: static (_, _) => { });
 

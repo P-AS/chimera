@@ -32,7 +32,6 @@ namespace Chimera.Client.GUI
 				if (result is null) return false;
 				if (result is false) CheatList.DisableAll();
 			}
-			var oldDefaultCores = new Dictionary<string, string>(Config.DefaultCores);
 			try
 			{
 				if (newMovie) PrepopulateMovieHeaderValues(movie);
@@ -42,8 +41,7 @@ namespace Chimera.Client.GUI
 						movie,
 						systemId: Emulator.SystemId,
 						loadedRomHash: Game.Hash,
-						Config.PathEntries,
-						Config.DefaultCores);
+						Config.PathEntries);
 				}
 				catch (MoviePlatformMismatchException ex)
 				{
@@ -58,8 +56,6 @@ namespace Chimera.Client.GUI
 					if (!rebootSucceeded) return false;
 				}
 
-				Config.RecentMovies.Add(movie.Filename);
-
 				MovieSession.RunQueuedMovie(newMovie, Emulator);
 				if (newMovie)
 				{
@@ -71,7 +67,6 @@ namespace Chimera.Client.GUI
 			finally
 			{
 				MovieSession.AbortQueuedMovie();
-				Config.DefaultCores = oldDefaultCores;
 			}
 
 			SetMainformMovieInfo();

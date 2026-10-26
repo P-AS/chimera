@@ -63,15 +63,13 @@ namespace Chimera.Tests.Client.Common.Movie
 		}
 
 		public void AbortQueuedMovie() => throw new NotImplementedException();
-		public bool CheckSavestateTimeline(TextReader reader) => throw new NotImplementedException();
 		public IMovieController GenerateMovieController(ControllerDefinition? definition = null, string? logKey = null) => throw new NotImplementedException();
 		public IMovie Get(string path, bool loadMovie = false, EngineProject? project = null) => throw new NotImplementedException();
-		public void HandleFrameAfter(bool ignoreMovieEndAction) => throw new NotImplementedException();
+		public void HandleFrameAfter() => throw new NotImplementedException();
 		public void HandleFrameBefore() => throw new NotImplementedException();
-		public bool HandleLoadState(TextReader reader) => throw new NotImplementedException();
 		public void HandleSaveState(TextWriter writer) => throw new NotImplementedException();
 		public void PopupMessage(string message) => throw new NotImplementedException();
-		public void QueueNewMovie(IMovie movie, string systemId, string loadedRomHash, PathEntryCollection pathEntries, IDictionary<string, string> preferredCores) => throw new NotImplementedException();
+		public void QueueNewMovie(IMovie movie, string systemId, string loadedRomHash, PathEntryCollection pathEntries) => throw new NotImplementedException();
 		public void RunQueuedMovie(bool recordMode, IEmulator emulator) => throw new NotImplementedException();
 		public FileWriteResult StopMovie(bool saveChanges = true)
 		{

@@ -17,7 +17,7 @@ namespace Chimera.Client.Common
 		private static readonly Argument<string?> ArgumentRomFilePath = new("rom")
 		{
 			DefaultValueFactory = _ => null,
-			Description = "path; if specified, the file will be loaded the same way as it would be from `File` > `Open...`; this argument can and should be given LAST despite what it says at the top of --help",
+			Description = "path of a game file: a game runs only in a project, so it starts New Project from the file (as dropping it on the window does), or, with --precompile, is the game a compile session compiles; give it LAST despite what it says at the top of --help",
 		};
 
 		private static readonly Option<string?> OptionAVDumpAudioSync = new("--audiosync")
@@ -101,11 +101,6 @@ namespace Chimera.Client.Common
 			Description = "path of file to use for 'memory-mapped file' IPC (Lua `comm.mmf*`)",
 		};
 
-		private static readonly Option<string?> OptionMovieFilePath = new("--movie")
-		{
-			Description = "path; input movie which should be loaded on launch",
-		};
-
 		private static readonly Option<string?> OptionProjectFilePath = new("--project")
 		{
 			Description = "path; chimera project to open on launch (docs/project.md)",
@@ -172,7 +167,6 @@ namespace Chimera.Client.Common
 			root.Add(/* --mcp-server */ OptionMcpServer);
 			root.Add(/* --mcp-allow-changes */ OptionMcpAllowChanges);
 			root.Add(/* --mmf */ OptionMMFPath);
-			root.Add(/* --movie */ OptionMovieFilePath);
 			root.Add(/* --project */ OptionProjectFilePath);
 			root.Add(/* --userdata */ OptionUserdataUnparsedPairs);
 			root.Add(/* --version */ OptionQueryAppVersion);
@@ -249,7 +243,6 @@ namespace Chimera.Client.Common
 
 			parsed = new(
 				cmdConfigFile: result.GetValue(OptionConfigFilePath),
-				cmdMovie: result.GetValue(OptionMovieFilePath),
 				cmdProject: result.GetValue(OptionProjectFilePath),
 				cmdDumpType: result.GetValue(OptionAVDumpType),
 				currAviWriterFrameList: currAviWriterFrameList,

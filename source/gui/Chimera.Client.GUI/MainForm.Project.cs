@@ -72,7 +72,6 @@ namespace Chimera.Client.GUI
 			// whatever the boot below does, the work as it stands now is kept
 			KeepWorkSafe();
 			var wasRecording = tasMovie.IsRecording();
-			var oldDefaultCores = new Dictionary<string, string>(Config.DefaultCores);
 			_rebootingProject = true;
 			// the tool restart inside the rom load must not start a movie of its own
 			_bootingProject = true;
@@ -84,8 +83,7 @@ namespace Chimera.Client.GUI
 					tasMovie,
 					systemId: tasMovie.SystemID,
 					loadedRomHash: tasMovie.Hash ?? "",
-					Config.PathEntries,
-					Config.DefaultCores);
+					Config.PathEntries);
 				if (!LoadRom(
 					CurrentlyOpenRomArgs.OpenAdvanced.SimplePath,
 					CurrentlyOpenRomArgs with { ForcedSysID = Emulator.SystemId }))
@@ -101,7 +99,6 @@ namespace Chimera.Client.GUI
 				_bootingProject = false;
 				_rebootingProject = false;
 				MovieSession.AbortQueuedMovie();
-				Config.DefaultCores = oldDefaultCores;
 			}
 
 			SetMainformMovieInfo();
@@ -278,6 +275,18 @@ namespace Chimera.Client.GUI
 		{
 			var created = RunNewProjectWizard(startFrom: path);
 			if (created is not null) LoadNewProject(created);
+		}
+
+		/// <summary>
+		/// A file named on the command line, handed over by a later start (single instance
+		/// mode) or picked from the taskbar's jump list: a project opens; anything else is a
+		/// game, and a game runs only in a project (user-decided, 2026-10-26), so New Project
+		/// starts from it, as when it is dropped on the window.
+		/// </summary>
+		private void OpenGivenFile(string path)
+		{
+			if (path.EndsWith(".chimeraProject", StringComparison.OrdinalIgnoreCase)) _ = LoadProject(path);
+			else NewProjectFromFile(path);
 		}
 
 		private void OpenProjectDialog()
@@ -882,7 +891,6 @@ namespace Chimera.Client.GUI
 
 			var isFresh = tasMovie.InputLogLength is 0 || firstBoot;
 
-			var oldDefaultCores = new Dictionary<string, string>(Config.DefaultCores);
 			_bootingProject = true;
 			try
 			{
@@ -893,8 +901,7 @@ namespace Chimera.Client.GUI
 					tasMovie,
 					systemId: tasMovie.SystemID,
 					loadedRomHash: tasMovie.Hash ?? "",
-					Config.PathEntries,
-					Config.DefaultCores);
+					Config.PathEntries);
 
 				progress.Step("booting the machine");
 				if (!LoadRom(path, new LoadRomArgs(new OpenAdvanced_OpenRom(path))))
@@ -909,7 +916,6 @@ namespace Chimera.Client.GUI
 			{
 				_bootingProject = false;
 				MovieSession.AbortQueuedMovie();
-				Config.DefaultCores = oldDefaultCores;
 			}
 
 			if (isFresh)
@@ -947,6 +953,8 @@ namespace Chimera.Client.GUI
 			{
 				Config.RecentProjects.Add(path);
 				local.Save(project);
+				// and the taskbar's Recent list, which starts Chimera on the project
+				if (!OSTailoredCode.IsUnixHost) JumpLists.AddRecentItem(path, Path.GetFileNameWithoutExtension(path));
 			}
 			// a project IS a TAStudio session; from the commandline the window is
 			// not up yet, so the landing waits for it. Headless runs have nobody

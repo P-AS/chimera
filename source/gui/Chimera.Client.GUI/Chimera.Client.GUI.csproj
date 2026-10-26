@@ -276,9 +276,6 @@
 <!-- creates circular dependency
 		<Compile Update="Properties/Resources.cs" DependentUpon="Resources.resx" />
 -->
-		<Compile Update="tools/BatchRun.cs" SubType="Form" />
-		<Compile Update="tools/BatchRun.Designer.cs" DependentUpon="BatchRun.cs" />
-		<EmbeddedResource Update="tools/BatchRun.resx" DependentUpon="BatchRun.cs" />
 		<Compile Update="tools/Debugger/AddBreakpointDialog.cs" SubType="Form" />
 		<Compile Update="tools/Debugger/AddBreakpointDialog.Designer.cs" DependentUpon="AddBreakpointDialog.cs" />
 		<EmbeddedResource Update="tools/Debugger/AddBreakpointDialog.resx" DependentUpon="AddBreakpointDialog.cs" />

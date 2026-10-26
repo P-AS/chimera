@@ -33,13 +33,6 @@ namespace Chimera.Client.Common
 		{
 			errorMessage = "";
 
-			// We are in record mode so replace the movie log with the one from the savestate
-			if (Session.Settings.EnableBackupMovies && MakeBackup && Log.Count != 0)
-			{
-				SaveBackup();
-				MakeBackup = false;
-			}
-
 			using EngineMovieLog engineLog = new();
 			if (!engineLog.Parse(reader.ReadToEnd(), out errorMessage))
 			{
@@ -73,18 +66,11 @@ namespace Chimera.Client.Common
 
 			if (stateFramei.StrictlyBoundedBy(0.RangeTo(Log.Count)))
 			{
-				if (!Session.Settings.VBAStyleMovieLoadState)
-				{
-					Truncate(stateFramei);
-				}
+				Truncate(stateFramei);
 			}
 			else if (stateFramei > Log.Count) // Post movie savestate
 			{
-				if (!Session.Settings.VBAStyleMovieLoadState)
-				{
-					Truncate(Log.Count);
-				}
-
+				Truncate(Log.Count);
 				Mode = MovieMode.Finished;
 			}
 
