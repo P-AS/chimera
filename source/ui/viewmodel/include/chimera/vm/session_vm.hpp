@@ -294,6 +294,15 @@ public:
 	void unfreezeAll();
 	/* the freezes on: Chimera's status bar shows its icon then */
 	Property<int64_t> frozenCount{0};
+	/* the core stopped (Chimera's CoreStoppedForm): the frame it stopped on
+	 * (-1 while it runs), what the sandbox said, the newest state at or
+	 * before it (-1: none), whether frame 0 is still held, and how many
+	 * frozen addresses were switched off; asked until stoppedChoice answers */
+	Property<int64_t> stoppedAt{-1};
+	Property<std::string> stoppedReason;
+	Property<int64_t> stoppedSafePoint{-1};
+	Property<bool> stoppedCanRestart{false};
+	Property<int64_t> stoppedFreezesOff{0};
 	Signal<> freezesChanged;
 	/* which frames the greenzone stores: 1 every frame, N one in N, 0 none
 	 * (TAStudio's Greenzone box; saved with the project, 1 for one saved
@@ -515,6 +524,9 @@ public:
 	using PackageFinder = std::function<std::string(const std::string &coreName, const std::string &sha1, std::string &note)>;
 	using FolderFinder = std::function<std::vector<std::string>()>;
 	void setFinders(PackageFinder packages, FolderFinder firmwareFolders);
+	/* Chimera's --firmware <id>=<path>: files for this run, ahead of what is
+	 * remembered - used by its hash where the project pins one, else as given */
+	void setRunFirmware(std::map<std::string, std::string> byId);
 
 	/* for the window: a key went down or up, by Chimera's key names */
 	void key(const std::string &name, bool down);
@@ -959,6 +971,10 @@ private:
 	int64_t borrowCount_ = 0;
 	PackageFinder findPackageM_;
 	FolderFinder firmwareFoldersM_;
+	std::map<std::string, std::string> runFirmwareM_;
+	/* Close without saving after the core stopped: the work kept against a
+	 * crash stays, to be offered at the next open */
+	bool keepWorkM_ = false;
 	struct Firmware
 	{
 		std::vector<std::string> ids;

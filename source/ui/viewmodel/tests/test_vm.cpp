@@ -595,6 +595,14 @@ void toolWindows()
 	CHECK(tw.settings.get() == "{\"luaConsole\": {\"top\": true, \"save\": false}, \"tastudio\": {\"float\": true}}");
 	CHECK(tw.run("place", {std::string("luaConsole"), int64_t{1}, int64_t{2}, int64_t{3}, int64_t{4}}, error) == Value(false));
 	CHECK(!tw.run("setOption", {std::string("luaConsole"), std::string("wide"), true}, error) && error.find("no option wide") != std::string::npos);
+	/* files dropped, sorted as Chimera's: one of a kind opens, in its order (the game first, the project last);
+	 * several of a kind open none; a state or cheat file is said not to open by dropping */
+	CHECK(tw.run("sortFiles", {std::string("/a/run.chimeraProject\n/a/s.LUA\n/a/game.nes\n/a/w.wch\n/a/x.luases\n")}, error) ==
+		Value(std::string("open\tgame\t/a/game.nes\nopen\twatch\t/a/w.wch\nopen\tluaSession\t/a/x.luases\nopen\tlua\t/a/s.LUA\n"
+						  "open\tproject\t/a/run.chimeraProject\n")));
+	CHECK(tw.run("sortFiles", {std::string("/a/1.lua\n/a/2.lua\n/a/q.chimerastate")}, error) ==
+		Value(std::string("say\tq.chimerastate: Chimera does not open this kind of file by dropping it\n"
+						  "say\t2 files of one kind were dropped; drop them one at a time\n")));
 	/* Restore Defaults: the tool's own options and place gone, the others' kept */
 	tw.run("restoreDefaults", {std::string("luaConsole")}, error);
 	CHECK(tw.settings.get() == "{\"tastudio\": {\"float\": true}}" && tw.option("luaConsole", "save") && !tw.option("luaConsole", "top"));
@@ -7020,6 +7028,20 @@ bool freezes(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.status.get().find("The machine stopped") == 0; }, 20));
 	settle();
 	CHECK(session.frozenCount.get() == 0 && session.freezes().size() == 1 && !session.freezes().front().enabled);
+	/* and asked what now, as Chimera's The core stopped: the frame, why, the
+	 * latest safe point, frame 0, the freeze switched off (review, 2026-10-26) */
+	{
+		CHECK(d.until([&] { return session.stoppedAt.get() >= 0; }, 5));
+		const int64_t at = session.stoppedAt.get(), safe = session.stoppedSafePoint.get();
+		CHECK(at == session.frame.get() && !session.stoppedReason.get().empty() && safe >= 0 && safe <= at &&
+			session.stoppedCanRestart.get() && session.stoppedFreezesOff.get() == 1);
+		/* back to the safe point: the question gone, the machine there and running again */
+		CHECK(session.run("stoppedChoice", {std::string("back")}, error).has_value() && session.stoppedAt.get() == -1);
+		CHECK(d.until([&] { return session.frame.get() == safe; }, 20));
+		session.run("frameAdvance", {}, error);
+		CHECK(d.until([&] { return session.frame.get() == safe + 1; }, 20) && session.stoppedAt.get() == -1);
+		CHECK(!session.run("stoppedChoice", {std::string("sideways")}, error) && error == "no choice sideways");
+	}
 	/* another game: gone */
 	session.run("toggleAllFreezes", {}, error);
 	CHECK(session.frozenCount.get() == 1);
@@ -7894,6 +7916,23 @@ bool customFirmware(const char *rom, const char *hashedPackage, const char *game
 		installed.chosenFirmware.get().find("mylogo.bin") != std::string::npos);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* Chimera's --firmware: a file given for this run, found nowhere else, is
+	 * used where its hash is the one the project pins (review, 2026-10-26) */
+	{
+		const fs::path away = dir / "elsewhere" / "given.bin";
+		fs::create_directories(away.parent_path());
+		fs::rename(mine, away);
+		const int64_t opensBefore = session.opens.get();
+		session.run("openProject", {made.string()}, error);
+		CHECK(d.until([&] { return session.status.get().find("Firmware missing") != std::string::npos; }, 60) && !session.isOpen.get());
+		session.setRunFirmware({{"logo", away.string()}});
+		session.run("openProject", {made.string()}, error);
+		CHECK(d.until([&] { return session.opens.get() > opensBefore && session.isOpen.get(); }, 60));
+		session.setRunFirmware({});
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+		fs::rename(away, mine);
+	}
 	/* a folder scanned finds a file by the hash the package gives, whatever
 	 * it is called */
 	CHECK(wizard.run("chooseCore", {std::string("Synth Hashed")}, error).has_value());

@@ -11331,3 +11331,42 @@ the hotkey names, the project known at open, the empty last row, marker
 undo, the run count, the history after another project, the zones, the
 Lua lines, the empty cache folder, the branch mark); with the number fixes
 undone the test program ended on the oversized numbers, the bug itself.
+
+## The window takes Chimera's command line, drops and stopped core (2026-10-26)
+
+The rest of the review's findings, where the window did less than Chimera:
+
+- **Dropped files open by their kind**, as Chimera's do: a game starts New
+  Project, a watch list opens in RAM Watch, a Lua session or script in the
+  Lua Console, a project opens. Several files of one kind open none, and a
+  state or cheat file does not open by dropping; both are said. Before, any
+  file dropped started New Project, a project file too. The sorting is in
+  the view model (sortFiles), so it is tested without a window.
+- **Chimera's command line**: --project, --core, --config, --firmware,
+  --fullscreen, --chromeless, --luaconsole and --version, beside the
+  window's own (a project and its package named). Three files, or a second
+  file that is not a package, are refused. --config naming Chimera's own
+  settings file is refused: the window would have set it aside as
+  unreadable or written over it. --firmware gives a file for this run, used
+  by its hash where the project pins one, else as given, as Chimera's.
+  --headless, --audiosync and --dump-* are not taken yet.
+- **A second start hands over** the project and the package named after
+  it; the package was dropped before. As in Chimera, the first file opens
+  and the window is not raised.
+- **The core stopped** is asked as Chimera asks it: the frame, what the
+  sandbox said, the frozen addresses switched off, and four ways on - back
+  to the latest safe point, run again from frame 0, save the inputs and
+  close, or close without saving with the work kept against a crash. The
+  window only said it in the status line before.
+- A test of it found that opening another game left the last game's
+  freezes in the window's list (the machine's were cleared, but the count
+  that decides whether to tell the window was taken after clearing). It had
+  passed only because the dead machine had dropped the freeze already.
+- Found to match Chimera already, and left: "(ported)" on every core's
+  tooltip (every Chimera core is a ported one), and the single-instance
+  hand-over opening only the first file.
+
+Tests: 40 of 40 passed, 2,760 view-model checks, and a new command-line
+test (9 checks). Breaking the drop sorting, the run's firmware, the
+--config refusal, the --show message, the stopped state and the freeze
+fix each failed its check.

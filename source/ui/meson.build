@@ -323,6 +323,14 @@ if qt_dep.found()
       repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom'],
     timeout: 300,
   )
+  # Chimera's command line, as the window that replaces it takes it
+  test(
+    'command line',
+    find_program('python3'),
+    args: [files('qt/tests/command-line.py'), chimera_qt, meson.current_build_dir() / 'command-line-test', window_game[0],
+      repo_root / 'build/Cores/synth-box.chimeraCore'],
+    timeout: 300,
+  )
   # a theme reaches Qt Quick's controls, which take the platform's colours
   # and not the application's unless each window is given the theme
   test_theme = executable(

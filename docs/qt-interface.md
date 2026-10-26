@@ -305,9 +305,23 @@ there is no window to change a machine's settings once it runs (they are
 chosen when the project is made). With nothing open the window shows
 Chimera's idle eye: its mark, very faint and colourless, blinking now and
 then, its eye following the pointer across the window (a view model makes
-the picture, only when it would change). A game file dropped on the window
-starts a new project from it, and so does one named on the command line
-or handed over by a second start. Capture OSD puts the counters and messages over
+the picture, only when it would change). Files dropped on the window open
+by their kind, in Chimera's order: a game starts a new project from it, a
+watch list opens in RAM Watch, a Lua session or script in the Lua Console,
+a project opens; several of one kind open none, and a state or cheat file
+does not open by dropping, both said over the picture. A game named on the
+command line or handed over by a second start starts a new project too; a
+project handed over opens with the package named after it. The command
+line is Chimera's: --project and --core (or a project and its package
+named), --config, --firmware <id>=<path>, --fullscreen, --chromeless,
+--lua and --luaconsole, --mmf, --userdata, --mcp-server and
+--mcp-allow-changes, and --version; --config naming Chimera's own settings
+file is refused rather than written over (Load Config From... carries it
+over). Chimera's --headless, --audiosync and --dump-* are not taken yet.
+When the core stops, the window asks what now as Chimera's does (The core
+stopped): back to the latest safe point, run again from frame 0, save the
+inputs and close, or close without saving with the work kept against a
+crash for the next open. Capture OSD puts the counters and messages over
 the picture into screenshots, as Chimera's does. Config > Speed/Skip has
 Chimera's three throttles, one at a time or none: the clock (the
 machine's rate, at the speed asked for), the sound as it is heard (the

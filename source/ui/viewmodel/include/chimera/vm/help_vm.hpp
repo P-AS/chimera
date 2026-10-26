@@ -18,6 +18,8 @@ class HelpViewModel : public ViewModel
 {
 public:
 	HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, SettingsViewModel &settings);
+	/* this build's commit, its first nine characters (what --version prints, as Chimera's) */
+	static std::string thisCommit();
 
 	/* this build, as Chimera names one: "Commit 1a2b3c4d5 (2026-10-26 18:35
 	 * CET)", its commit and when that commit was made, on the European clock

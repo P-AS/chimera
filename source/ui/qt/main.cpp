@@ -286,6 +286,27 @@ private:
 #ifdef CHIMERA_QT_LIBRARY
 extern "C" __declspec(dllexport) int chimera_qt_main(int argc, char **argv)
 #else
+#ifdef _WIN32
+#define EXE_SUFFIX ".exe"
+#else
+#define EXE_SUFFIX ""
+#endif
+/* a program that ships with the window: in the bundle's bin folder, beside
+ * the window, or, in a build, where the build puts it; "" when none is */
+static QString besideProgram(const QString &name)
+{
+	const QString here = QCoreApplication::applicationDirPath(), exe = name + QStringLiteral(EXE_SUFFIX);
+	for (const QString &dir : {here + QStringLiteral("/bin"), here, here + QStringLiteral("/../..")})
+		if (QFileInfo::exists(dir + QStringLiteral("/") + exe)) return QFileInfo(dir + QStringLiteral("/") + exe).absoluteFilePath();
+	return QString();
+}
+/* the headless runner the window asks a core's questions with (CHIMERA_RUN names another) */
+static QString runnerProgram()
+{
+	const QString named = qEnvironmentVariable("CHIMERA_RUN");
+	return named.isEmpty() ? besideProgram(QStringLiteral("chimera-run")) : named;
+}
+
 int main(int argc, char **argv)
 #endif
 {
@@ -316,31 +337,82 @@ int main(int argc, char **argv)
 	QCommandLineOption measureOpt(QStringLiteral("measure"), QStringLiteral("measure for this many seconds, print, quit"), QStringLiteral("seconds"));
 	QCommandLineOption scrollOpt(QStringLiteral("scroll"), QStringLiteral("while measuring, scroll the piano roll all the time"));
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
-	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("run a Lua script over the view models"), QStringLiteral("script"));
+	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("path; Lua script or Console session to load; implies --luaconsole"), QStringLiteral("script"));
+	/* Chimera's own options (its ArgParser), so what starts Chimera starts this window */
+	QCommandLineOption projectOpt(QStringLiteral("project"), QStringLiteral("path; chimera project to open on launch"), QStringLiteral("path"));
+	QCommandLineOption coreOpt(QStringLiteral("core"), QStringLiteral("path of a core package to load the project with, when it is not installed"), QStringLiteral("path"));
+	QCommandLineOption configOpt(QStringLiteral("config"), QStringLiteral("path of config file to use"), QStringLiteral("path"));
+	QCommandLineOption firmwareOpt(QStringLiteral("firmware"), QStringLiteral("<id>=<path>; use this file as the firmware the core declares under <id>, "
+		"ahead of anything remembered (by its hash, where the project pins one). May be repeated"), QStringLiteral("id=path"));
+	QCommandLineOption fullscreenOpt(QStringLiteral("fullscreen"), QStringLiteral("launch in fullscreen"));
+	QCommandLineOption chromelessOpt(QStringLiteral("chromeless"), QStringLiteral("never show the menu, status bar or window frame, not even in windowed mode"));
+	QCommandLineOption luaConsoleOpt(QStringLiteral("luaconsole"), QStringLiteral("open the Lua Console, even if not loading a script"));
+	QCommandLineOption versionOpt(QStringLiteral("version"), QStringLiteral("print version information and immediately exit"));
 	QCommandLineOption userdataOpt(QStringLiteral("userdata"), QStringLiteral("Lua's userdata to start with, as Chimera's: k1:v1;k2:v2 "
 		"(true/false a boolean, a whole number or a number as one, else text)"), QStringLiteral("pairs"));
 	QCommandLineOption mmfOpt(QStringLiteral("mmf"), QStringLiteral("the memory-mapped file Lua's comm.mmfScreenshot writes to, as Chimera's --mmf"),
 		QStringLiteral("name"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, movie-import, ram-search, ram-watch, hex, controls, hotkeys, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, movie-import, ram-search, ram-watch, hex, controls, hotkeys, themes, lua, tastudio, undo-history, project-details, comments, subtitles, tastudio-settings, log, report, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	/* Chimera's --mcp-server and --mcp-allow-changes: the server started for a run nobody clicks in */
 	QCommandLineOption mcpServerOpt(QStringLiteral("mcp-server"), QStringLiteral("start the MCP server (Tools > MCP Server...) at once"));
 	QCommandLineOption mcpChangesOpt(QStringLiteral("mcp-allow-changes"), QStringLiteral("with --mcp-server: the agent may make changes, for this run"));
-	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, userdataOpt, describeOpt, schemeOpt, showOpt, mcpServerOpt, mcpChangesOpt});
+	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, userdataOpt, describeOpt, schemeOpt, showOpt, mcpServerOpt,
+		mcpChangesOpt, projectOpt, coreOpt, configOpt, firmwareOpt, fullscreenOpt, chromelessOpt, luaConsoleOpt, versionOpt});
 	args.process(app);
-	/* a game runs only in a project (owner, 2026-10-26): two files are a project and its package */
-	if (args.positionalArguments().size() >= 2 &&
-		!args.positionalArguments().first().endsWith(QStringLiteral(".chimeraProject"), Qt::CaseInsensitive))
+	if (args.isSet(versionOpt))
 	{
-		std::fprintf(stderr, "chimera-qt: a game opens only in a project: name a .chimeraProject, and its core package "
+		std::printf("Commit %s\n", vm::HelpViewModel::thisCommit().c_str());
+		return 0;
+	}
+	/* what is opened: a project (named alone, or with --project) and its core
+	 * package (named after it, or with --core), or a game, which starts New
+	 * Project from it - a game runs only in a project (owner, 2026-10-26) */
+	const QStringList named = args.positionalArguments();
+	auto isProject = [](const QString &f) { return f.endsWith(QStringLiteral(".chimeraProject"), Qt::CaseInsensitive); };
+	if (named.size() > 2 || (named.size() == 2 && (!isProject(named[0]) || !named[1].endsWith(QStringLiteral(".chimeraCore"), Qt::CaseInsensitive))) ||
+		(args.isSet(projectOpt) && !named.isEmpty() && isProject(named[0])))
+	{
+		std::fprintf(stderr, "chimera-qt: a game opens only in a project: name a .chimeraProject, and its core package (.chimeraCore) "
 							 "when it is not installed\n");
 		return 2;
 	}
-	/* what the window remembers, in a file of its own (CHIMERA_QT_CONFIG for a test) */
-	const QString configPath = qEnvironmentVariableIsSet("CHIMERA_QT_CONFIG")
-		? qEnvironmentVariable("CHIMERA_QT_CONFIG")
+	/* as full paths: a script's code runs in its own folder (Lua's working
+	 * folder is the script's, as Chimera's), and the machine reads these on
+	 * a thread of its own */
+	auto full = [](const QString &f) { return f.isEmpty() ? QString() : QFileInfo(f).absoluteFilePath(); };
+	const QString projectGiven = full(args.isSet(projectOpt) ? args.value(projectOpt) : !named.isEmpty() && isProject(named[0]) ? named[0] : QString());
+	const QString packageGiven = full(args.isSet(coreOpt) ? args.value(coreOpt) : named.size() == 2 ? named[1] : QString());
+	const QString gameGiven = full(!named.isEmpty() && !isProject(named[0]) ? named[0] : QString());
+	const bool anyProject = !projectGiven.isEmpty();
+	/* firmware for this run: <id>=<path>, a pair without an "=" passed over, as Chimera's */
+	std::map<std::string, std::string> runFirmware;
+	for (const QString &pair : args.values(firmwareOpt))
+	{
+		const qsizetype eq = pair.indexOf('=');
+		if (eq <= 0 || eq == pair.size() - 1) continue;
+		runFirmware[pair.left(eq).toStdString()] = QFileInfo(pair.mid(eq + 1)).absoluteFilePath().toStdString();
+	}
+	/* what the window remembers, in a file of its own (--config, as Chimera's;
+	 * CHIMERA_QT_CONFIG for a test) */
+	const QString configPath = args.isSet(configOpt) ? QFileInfo(args.value(configOpt)).absoluteFilePath()
+		: qEnvironmentVariableIsSet("CHIMERA_QT_CONFIG") ? qEnvironmentVariable("CHIMERA_QT_CONFIG")
 		: QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + QStringLiteral("/settings.json");
+	/* Chimera's own settings file is read once, never used as the window's:
+	 * its settings would be set aside as unreadable, or written over */
+	if (args.isSet(configOpt) && QFileInfo::exists(configPath))
+	{
+		QFile given(configPath);
+		vm::json::Json root;
+		std::string why;
+		if (given.open(QIODevice::ReadOnly) && vm::json::parse(given.readAll().toStdString(), root, why) && vm::isChimeraSettings(root))
+		{
+			std::fprintf(stderr, "chimera-qt: %s is Chimera's settings file, which this window does not write; "
+								 "Config > Load Config From... carries its settings over\n", qPrintable(configPath));
+			return 2;
+		}
+	}
 	/* the first start, with no settings of its own: Chimera's, when its
 	 * config.ini is beside the program as Chimera keeps it, carried over once
 	 * (owner, 2026-10-26; CHIMERA_QT_CHIMERA_SETTINGS names one for a test) */
@@ -368,8 +440,11 @@ int main(int argc, char **argv)
 	 * one ends before anything is made */
 	qt::SingleInstance single;
 	{
+		/* the project or game first, its package after it, as the window takes them */
 		QStringList handing;
-		for (const QString &a : args.positionalArguments()) handing << QFileInfo(a).absoluteFilePath();
+		if (anyProject) handing << projectGiven;
+		else if (!gameGiven.isEmpty()) handing << gameGiven;
+		if (!handing.isEmpty() && !packageGiven.isEmpty()) handing << packageGiven;
 		if (vm::ConfigStore::switchIn(configPath.toStdString(), "customize.singleInstance", false) && single.forwardIfRunning(handing))
 			return 0;
 	}
@@ -740,14 +815,7 @@ int main(int argc, char **argv)
 	/* Chimera's compile step: its sessions are the headless runner, and what
 	 * they compile is kept where the machine's compiled code is */
 	{
-#ifdef _WIN32
-		const QString exe = QStringLiteral("chimera-run.exe");
-#else
-		const QString exe = QStringLiteral("chimera-run");
-#endif
-		QString runner = qEnvironmentVariable("CHIMERA_RUN");
-		for (const QString &dir : {QCoreApplication::applicationDirPath() + QStringLiteral("/bin"), QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
-			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
+		const QString runner = runnerProgram();
 		newProject.compileRunner.set(runner.toStdString());
 		newProject.compileRoot.set(session.compileCacheRoot.get());
 	}
@@ -755,14 +823,7 @@ int main(int argc, char **argv)
 	const vm::NewProjectViewModel::SuggestRunner suggestRunner = [&app](const std::string &package, const std::string &game,
 									const std::vector<std::pair<std::string, std::string>> &files, const std::string &slots,
 									const std::string &settings, std::function<void(std::string, std::string)> done) {
-#ifdef _WIN32
-		const QString exe = QStringLiteral("chimera-run.exe");
-#else
-		const QString exe = QStringLiteral("chimera-run");
-#endif
-		QString runner = qEnvironmentVariable("CHIMERA_RUN");
-		for (const QString &dir : {QCoreApplication::applicationDirPath() + QStringLiteral("/bin"), QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
-			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
+		const QString runner = runnerProgram();
 		if (runner.isEmpty())
 		{
 			done({}, "chimera-run is not in the program's bin folder");
@@ -817,14 +878,7 @@ int main(int argc, char **argv)
 	const vm::NewProjectViewModel::ImportRunner importRunner = [&app](const std::string &package, const std::string &movie,
 								   const std::vector<vm::AskFile> &files, const std::string &settings,
 								   std::function<void(std::string, std::string)> done) {
-#ifdef _WIN32
-		const QString exe = QStringLiteral("chimera-run.exe");
-#else
-		const QString exe = QStringLiteral("chimera-run");
-#endif
-		QString runner = qEnvironmentVariable("CHIMERA_RUN");
-		for (const QString &dir : {QCoreApplication::applicationDirPath() + QStringLiteral("/bin"), QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
-			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
+		const QString runner = runnerProgram();
 		if (runner.isEmpty())
 		{
 			done({}, "chimera-run is not in the program's bin folder");
@@ -881,6 +935,7 @@ int main(int argc, char **argv)
 	vm::Connection agentCompileRootWatch = session.compileCacheRoot.changed.connect([&] { agentProject.compileRoot.set(session.compileCacheRoot.get()); });
 	session.setFinders([&cores](const std::string &n, const std::string &h, std::string &note) { return cores.packageFor(n, h, note); },
 		[&cores] { return cores.firmwareFolders(); });
+	session.setRunFirmware(runFirmware);
 
 	/* what the window remembers (configPath): folders the environment names
 	 * are the environment's, and not remembered */
@@ -1132,19 +1187,8 @@ int main(int argc, char **argv)
 	config.keep(mcp, "allowChanges");
 	{
 		/* the program an agent's program starts, in the bundle's bin folder or, in a build, beside chimera-run */
-#ifdef _WIN32
-		const QString exe = QStringLiteral("chimera-mcp.exe");
-#else
-		const QString exe = QStringLiteral("chimera-mcp");
-#endif
-		QString program = QCoreApplication::applicationDirPath() + QStringLiteral("/bin/") + exe;
-		for (const QString &dir : {QCoreApplication::applicationDirPath() + QStringLiteral("/bin"), QCoreApplication::applicationDirPath(),
-				 QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
-			if (QFileInfo::exists(dir + QStringLiteral("/") + exe))
-			{
-				program = QFileInfo(dir + QStringLiteral("/") + exe).absoluteFilePath();
-				break;
-			}
+		QString program = besideProgram(QStringLiteral("chimera-mcp"));
+		if (program.isEmpty()) program = QCoreApplication::applicationDirPath() + QStringLiteral("/bin/chimera-mcp") + QStringLiteral(EXE_SUFFIX);
 		mcp.setupCommand.set(("claude mcp add chimera -- \"" + QDir::toNativeSeparators(program) + "\"").toStdString());
 	}
 	mcp.projectsFolder = [&paths] { return paths.resolve("Movies"); };
@@ -1398,6 +1442,7 @@ int main(int argc, char **argv)
 	QObject::connect(&engine, &QQmlEngine::warnings, [&qmlWarnings](const QList<QQmlError> &list) { qmlWarnings += list.size(); });
 	engine.addImageProvider(QStringLiteral("controller"), controllerPicture);
 	engine.setInitialProperties({
+		{QStringLiteral("chromeless"), args.isSet(chromelessOpt)},
 		{QStringLiteral("session"), QVariant::fromValue<QObject *>(&sessionQml)},
 		{QStringLiteral("pianoRoll"), QVariant::fromValue<QObject *>(&pianoRollQml)},
 		{QStringLiteral("ramSearch"), QVariant::fromValue<QObject *>(&ramSearchQml)},
@@ -1498,7 +1543,7 @@ int main(int argc, char **argv)
 	fullscreenBorder();
 	vm::Connection fullscreenHacksWatch = display.fullscreenHacks.changed.connect(fullscreenBorder);
 #endif
-	if (customize.startFullscreen.get()) window->showFullScreen();
+	if (args.isSet(fullscreenOpt) || customize.startFullscreen.get()) window->showFullScreen();
 	/* each picture shown: the vsync throttle's tick, and the next one asked for while it is on */
 	QObject::connect(window, &QQuickWindow::frameSwapped, window, [&session, window] {
 		session.vsyncTick();
@@ -1509,44 +1554,33 @@ int main(int argc, char **argv)
 	window->installEventFilter(&keys);
 	/* TAStudio passes the keys on too, as Chimera's does: the machine's and the hotkeys */
 	if (auto *tastudio = window->findChild<QQuickWindow *>(QStringLiteral("tastudioWindow"))) tastudio->installEventFilter(&keys);
-	/* --show ram-search or settings: the tool windows by name */
-	const QString showName = args.value(showOpt) == QStringLiteral("ram-search") ? QStringLiteral("ramSearchWindow")
-		: args.value(showOpt) == QStringLiteral("ram-watch") ? QStringLiteral("ramWatchWindow")
-		: args.value(showOpt) == QStringLiteral("new-project") ? QStringLiteral("newProjectWindow")
-		: args.value(showOpt) == QStringLiteral("movie-import") ? QStringLiteral("movieImportWindow")
-		: args.value(showOpt) == QStringLiteral("hex") ? QStringLiteral("hexEditorWindow")
-		: args.value(showOpt) == QStringLiteral("controls") ? QStringLiteral("controllerConfigWindow")
-		: args.value(showOpt) == QStringLiteral("hotkeys") ? QStringLiteral("hotkeyConfigWindow")
-		: args.value(showOpt) == QStringLiteral("hotkeys") ? QStringLiteral("hotkeyConfigWindow")
-		: args.value(showOpt) == QStringLiteral("themes") ? QStringLiteral("themesWindow")
-		: args.value(showOpt) == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")
-		: args.value(showOpt) == QStringLiteral("tastudio") ? QStringLiteral("tastudioWindow")
-		: args.value(showOpt) == QStringLiteral("undo-history") ? QStringLiteral("undoHistoryWindow")
-		: args.value(showOpt) == QStringLiteral("tastudio-settings") ? QStringLiteral("tastudioSettingsWindow")
-		: args.value(showOpt) == QStringLiteral("log") ? QStringLiteral("logWindow")
-		: args.value(showOpt) == QStringLiteral("report") ? QStringLiteral("reportIssueWindow")
-		: args.value(showOpt) == QStringLiteral("media") ? QStringLiteral("mediaMakerWindow")
-		: args.value(showOpt) == QStringLiteral("cache") ? QStringLiteral("cacheManagerWindow")
-		: args.value(showOpt) == QStringLiteral("customize") ? QStringLiteral("customizeWindow")
-		: args.value(showOpt) == QStringLiteral("messages") ? QStringLiteral("messagesWindow")
-		: args.value(showOpt) == QStringLiteral("sound") ? QStringLiteral("soundWindow")
-		: args.value(showOpt) == QStringLiteral("display") ? QStringLiteral("displayWindow")
-		: args.value(showOpt) == QStringLiteral("budgets") ? QStringLiteral("greenzoneBudgetsWindow")
-		: args.value(showOpt) == QStringLiteral("paths") ? QStringLiteral("pathsWindow")
-		: args.value(showOpt) == QStringLiteral("firmware") ? QStringLiteral("firmwareWindow")
-		: args.value(showOpt) == QStringLiteral("data") ? QStringLiteral("dataFolderWindow")
-		: args.value(showOpt) == QStringLiteral("precompiled") ? QStringLiteral("precompiledWindow")
-		: args.value(showOpt) == QStringLiteral("trace") ? QStringLiteral("traceLoggerWindow")
-		: args.value(showOpt) == QStringLiteral("debugger") ? QStringLiteral("debuggerWindow")
-		: args.value(showOpt) == QStringLiteral("surfaces") ? QStringLiteral("surfaceViewerWindow")
-		: args.value(showOpt) == QStringLiteral("macros") ? QStringLiteral("macroToolWindow")
-		: args.value(showOpt) == QStringLiteral("encode") ? QStringLiteral("encodeVideoWindow")
-		: args.value(showOpt) == QStringLiteral("project-details") ? QStringLiteral("headerInfoWindow")
-		: args.value(showOpt) == QStringLiteral("comments") ? QStringLiteral("editCommentsWindow")
-		: args.value(showOpt) == QStringLiteral("subtitles") ? QStringLiteral("editSubtitlesWindow")
-		: args.value(showOpt) == QStringLiteral("cores") ? QStringLiteral("coresWindow") : QString();
-	if (!showName.isEmpty())
-		if (auto *tool = window->findChild<QQuickWindow *>(showName)) tool->show();
+	/* --show ram-search or settings: the tool windows by name; --lua and
+	 * --luaconsole open the Lua Console, as Chimera's */
+	{
+		static const std::pair<const char *, const char *> tools[] = {{"new-project", "newProjectWindow"},
+			{"movie-import", "movieImportWindow"}, {"ram-search", "ramSearchWindow"}, {"ram-watch", "ramWatchWindow"},
+			{"hex", "hexEditorWindow"}, {"controls", "controllerConfigWindow"}, {"hotkeys", "hotkeyConfigWindow"},
+			{"themes", "themesWindow"}, {"lua", "luaConsoleWindow"}, {"tastudio", "tastudioWindow"},
+			{"undo-history", "undoHistoryWindow"}, {"project-details", "headerInfoWindow"}, {"comments", "editCommentsWindow"},
+			{"subtitles", "editSubtitlesWindow"}, {"tastudio-settings", "tastudioSettingsWindow"}, {"log", "logWindow"},
+			{"report", "reportIssueWindow"}, {"media", "mediaMakerWindow"}, {"cache", "cacheManagerWindow"},
+			{"customize", "customizeWindow"}, {"messages", "messagesWindow"}, {"sound", "soundWindow"},
+			{"display", "displayWindow"}, {"budgets", "greenzoneBudgetsWindow"}, {"paths", "pathsWindow"},
+			{"firmware", "firmwareWindow"}, {"data", "dataFolderWindow"}, {"precompiled", "precompiledWindow"},
+			{"trace", "traceLoggerWindow"}, {"debugger", "debuggerWindow"}, {"surfaces", "surfaceViewerWindow"},
+			{"macros", "macroToolWindow"}, {"encode", "encodeVideoWindow"}, {"cores", "coresWindow"}};
+		auto show = [window](const char *objectName) {
+			if (auto *tool = window->findChild<QQuickWindow *>(QString::fromLatin1(objectName))) tool->show();
+		};
+		if (args.isSet(showOpt))
+		{
+			const QString asked = args.value(showOpt);
+			const auto *found = std::find_if(std::begin(tools), std::end(tools), [&asked](const auto &t) { return asked == QLatin1String(t.first); });
+			if (found != std::end(tools)) show(found->second);
+			else std::fprintf(stderr, "chimera-qt: --show %s: no tool window has that name\n", qPrintable(asked));
+		}
+		if (args.isSet(luaOpt) || args.isSet(luaConsoleOpt)) show("luaConsoleWindow");
+	}
 	/* forms.openfile: Qt's file dialog, shown and waited for, modal as Chimera's */
 	forms.openFile = [&engine, window](const std::string &fileName, const std::string &folder, const std::vector<std::string> &filters) {
 		QQmlComponent component(&engine);
@@ -1644,7 +1678,7 @@ int main(int argc, char **argv)
 	bool scriptStarted = false;
 	if (args.isSet(luaOpt))
 	{
-		if (args.positionalArguments().isEmpty())
+		if (!anyProject)
 		{
 			scriptStarted = true;
 			startScript();
@@ -1678,28 +1712,21 @@ int main(int argc, char **argv)
 			fillWatch.disconnect();
 		});
 	}
-	/* as full paths: a script's code runs in its own folder (Lua's working
-	 * folder is the script's, as Chimera's), and the machine reads these on
-	 * a thread of its own */
-	QStringList positional;
-	for (const QString &a : args.positionalArguments()) positional << QFileInfo(a).absoluteFilePath();
-	if (positional.size() >= 2)
-		/* a project and its package */
-		session.run("openProject", {positional[0].toStdString(), positional[1].toStdString()}, error);
-	else if (positional.size() == 1)
-	{
-		/* a project alone: its core is found among the installed ones; a game
-		 * alone starts New Project from it, as a file dropped on the window does */
-		if (positional[0].endsWith(QStringLiteral(".chimeraProject"), Qt::CaseInsensitive))
-			session.run("openProject", {positional[0].toStdString()}, error);
-		else
-			QMetaObject::invokeMethod(window, "newProjectFrom", Q_ARG(QVariant, positional[0]));
-	}
+	/* a project, with its package when one was named (else its core is
+	 * found among the installed ones); a game starts New Project from it, as
+	 * a file dropped on the window does */
+	if (anyProject)
+		session.run("openProject", packageGiven.isEmpty() ? vm::Args{projectGiven.toStdString()}
+			: vm::Args{projectGiven.toStdString(), packageGiven.toStdString()}, error);
+	else if (!gameGiven.isEmpty())
+		QMetaObject::invokeMethod(window, "newProjectFrom", Q_ARG(QVariant, gameGiven));
 	/* the files a later start hands over: the first opened as the window opens a file (asking
 	 * about the open project's changes first), as Chimera's opens the first argument */
 	single.listen([window](const QStringList &handed) {
 		if (handed.isEmpty() || handed.first().isEmpty()) return;
-		QMetaObject::invokeMethod(window, "openHanded", Q_ARG(QVariant, handed.first()));
+		/* a project's package, named after it as on the command line, goes with it */
+		const QString package = handed.size() >= 2 && handed[1].endsWith(QStringLiteral(".chimeraCore"), Qt::CaseInsensitive) ? handed[1] : QString();
+		QMetaObject::invokeMethod(window, "openHanded", Q_ARG(QVariant, handed.first()), Q_ARG(QVariant, package));
 	});
 	/* Chimera's jump list: the taskbar's Recent list, and each project opened on it */
 	qt::JumpList::showRecent();

@@ -84,11 +84,13 @@ ApplicationWindow {
     // Display's window chrome, as Chimera's SynchChrome: windowed, the caption's buttons, the frame and
     // the menu; full screen, the menu; kept over other windows when asked
     flags: Qt.Window
-         | (root.visibility !== Window.FullScreen && root.display.frameWindowed === 0 ? Qt.FramelessWindowHint
+         | (root.visibility !== Window.FullScreen && (root.display.frameWindowed === 0 || root.chromeless) ? Qt.FramelessWindowHint
             : Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowCloseButtonHint
               | (root.display.captionWindowed ? Qt.WindowMinMaxButtonsHint : 0))
          | (root.display.stayOnTop || (root.capturing && root.display.mouseCaptureForcesTop) ? Qt.WindowStaysOnTopHint : 0)
-    function synchChrome() { root.menuBar.visible = root.visibility === Window.FullScreen ? root.display.menuFullscreen : root.display.menuWindowed }
+    // Chimera's --chromeless: no menu, status bar or frame, full screen or not
+    property bool chromeless: false
+    function synchChrome() { root.menuBar.visible = !root.chromeless && (root.visibility === Window.FullScreen ? root.display.menuFullscreen : root.display.menuWindowed) }
     onVisibilityChanged: {
         root.synchChrome()
         // a size that waited for the window to be windowed again
@@ -205,20 +207,42 @@ ApplicationWindow {
     // question when freezes are on (Yes keeps them, No switches them off,
     // Cancel opens nothing), then the project
     property var afterCheats: null
-    function openProject(path) {
+    function openProject(path, packagePath) {
         root.leaveProject(() => {
-            const open = () => root.session.run("openProject", [path])
+            const open = () => root.session.run("openProject", packagePath ? [path, packagePath] : [path])
             if (root.session.frozenCount === 0) { open(); return }
             root.afterCheats = open
             cheatsDialog.open()
         })
     }
     // a file a later start of the program handed over (Customize's single
-    // instance mode): a project as Open Project opens one (the open project's
-    // changes asked about first); a game starts New Project from it
-    function openHanded(path) {
-        if (path.toLowerCase().endsWith(".chimeraproject")) { root.openProject(path); return }
+    // instance mode), as Chimera's OpenGivenFile: a project as Open Project
+    // opens one (the open project's changes asked about first), with the core
+    // package named after it when there is one; a game starts New Project
+    function openHanded(path, packagePath) {
+        if (path.toLowerCase().endsWith(".chimeraproject")) { root.openProject(path, packagePath); return }
         root.newProjectFrom(path)
+    }
+    // files dropped on the window, sorted by kind as Chimera's are (the tool
+    // windows' sortFiles): a game starts New Project from it, a watch list
+    // opens in RAM Watch, a Lua session and a Lua script in the Lua Console, a
+    // project as Open Project opens one; what does not open is said
+    function openFiles(files) {
+        const paths = []
+        // a dropped file is a URL; a handed-over one a path already
+        for (const f of files) paths.push(typeof f === "string" && !f.startsWith("file:") ? f : localFiles.localPath(f))
+        const steps = root.toolWindows.run("sortFiles", [paths.join("\n")]).split("\n")
+        for (const step of steps) {
+            const part = step.split("\t")
+            if (part[0] === "say") { root.note(part[1]); continue }
+            if (part[0] !== "open") continue
+            const kind = part[1], path = part.slice(2).join("\t")
+            if (kind === "game") root.newProjectFrom(path)
+            else if (kind === "watch") { root.ramWatch.run("open", [path, false]); ramWatchWindow.show(); ramWatchWindow.raise() }
+            else if (kind === "luaSession") { root.luaConsole.run("openSession", [path]); luaConsoleWindow.show(); luaConsoleWindow.raise() }
+            else if (kind === "lua") { root.luaConsole.run("openScript", [path]); luaConsoleWindow.show(); luaConsoleWindow.raise() }
+            else if (kind === "project") root.openProject(path)
+        }
     }
     // a game file named at the start or handed over: a game runs only in a
     // project (owner, 2026-10-26), so New Project starts from it, as a file
@@ -555,7 +579,7 @@ ApplicationWindow {
                 Action { text: qsTr("Pre-Compiled Modules..."); icon.source: "qrc:/chimera/menu/PrecompiledModules.png"; onTriggered: { precompiledWindow.show(); precompiledWindow.raise() } }
                 // the server's sparkles, with a green dot while it is started: the item is not ticked, as Chimera's
                 Action {
-                    text: qsTr("MCP Server...")
+                    text: qsTr("MCP &Server...")
                     icon.source: root.mcp.started ? "qrc:/chimera/menu/McpServerStarted.png" : "qrc:/chimera/menu/McpServer.png"
                     onTriggered: { mcpServerWindow.show(); mcpServerWindow.raise() }
                 }
@@ -592,7 +616,7 @@ ApplicationWindow {
                 title: root.session.isGameCore ? qsTr("&Game") : qsTr("E&mulator")
                 Action {
                     property string hotkey: "Game Time"
-                    text: qsTr("Display Game &Time"); enabled: root.session.hasGameTimer
+                    text: qsTr("Display Game Time"); enabled: root.session.hasGameTimer
                     checkable: true; checked: root.session.showGameTime; onTriggered: root.session.showGameTime = checked
                 }
                 Action {
@@ -604,7 +628,7 @@ ApplicationWindow {
                         const list = names.split("\n")
                         saveDataDialog.files = list.length
                         // one file under its own name; more in a zip named for the game
-                        saveDataDialog.selectedFile = "file:///" + (list.length === 1 ? list[0].replace(/^.*\//, "")
+                        saveDataDialog.selectedFile = "file:///" + (list.length === 1 ? list[0].replace(/^.*[\\/]/, "")
                                                                                        : root.session.gameName + " (save data).zip")
                         saveDataDialog.open()
                     }
@@ -887,13 +911,12 @@ ApplicationWindow {
             else tastudioWindow.close()
         }
     }
-    // a file dropped on the window starts a project from it, as in Chimera:
-    // a file on its own is not what runs, a project is
+    // files dropped on the window, each opened by its kind (openFiles)
     DropArea {
         anchors.fill: parent
         onDropped: (drop) => {
             if (!drop.hasUrls) return
-            root.newProjectFrom(drop.urls[0])
+            root.openFiles(drop.urls)
             drop.accept()
         }
     }
@@ -1077,6 +1100,86 @@ ApplicationWindow {
                 text: qsTr("Cancel")
                 onClicked: { askSaveDialog.close(); root.afterAsk = null }
             }
+        }
+    }
+    // the core stopped, as Chimera's CoreStoppedForm: emulation paused, the
+    // work kept, and four ways on; closed without a choice, nothing is done
+    Connections {
+        target: root.session
+        function onStoppedAtChanged() { if (root.session.stoppedAt >= 0) coreStoppedDialog.open(); else coreStoppedDialog.close() }
+    }
+    Dialog {
+        id: coreStoppedDialog
+        objectName: "coreStoppedDialog"
+        title: qsTr("The core stopped")
+        anchors.centerIn: parent
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        onRejected: if (root.session.stoppedAt >= 0) root.session.run("stoppedChoice", [""])
+        function choose(choice) { coreStoppedDialog.close(); root.session.run("stoppedChoice", [choice]) }
+        ColumnLayout {
+            spacing: 8
+            Label { text: qsTr("The core stopped at frame %1, and emulation is paused.").arg(root.session.stoppedAt) }
+            Label { text: root.session.stoppedReason; wrapMode: Text.Wrap; Layout.maximumWidth: 480; font.italic: true }
+            Label {
+                visible: root.session.stoppedFreezesOff > 0
+                wrapMode: Text.Wrap; Layout.maximumWidth: 480
+                text: (root.session.stoppedFreezesOff === 1 ? qsTr("1 frozen address was switched off.")
+                       : qsTr("%1 frozen addresses were switched off.").arg(root.session.stoppedFreezesOff))
+                      + qsTr(" Writing to the wrong address can stop a core, and a frozen address is written on every frame."
+                             + " Freeze them again from RAM Search or RAM Watch if you still want them.")
+            }
+            Label { text: qsTr("Your inputs, branches and markers are safe whichever you choose.") }
+            Button {
+                Layout.fillWidth: true
+                text: root.session.stoppedSafePoint >= 0 ? qsTr("Go back to frame %1, the latest safe point").arg(root.session.stoppedSafePoint)
+                                                         : qsTr("Go back to the latest safe point (the greenzone holds none)")
+                enabled: root.session.stoppedSafePoint >= 0
+                onClicked: coreStoppedDialog.choose("back")
+            }
+            Button {
+                Layout.fillWidth: true
+                text: qsTr("Restart the machine and run again from frame 0")
+                enabled: root.session.stoppedCanRestart
+                onClicked: coreStoppedDialog.choose("restart")
+            }
+            Button {
+                Layout.fillWidth: true
+                text: qsTr("Save the project's inputs without the greenzone, and close Chimera")
+                enabled: root.session.hasProject
+                onClicked: {
+                    coreStoppedDialog.choose("")
+                    // the machine died: the session keeps no state history of it
+                    const quit = () => { root.leaving = true; Qt.quit() }
+                    if (!root.session.unsaved && root.session.projectPath !== "") { quit(); return }
+                    root.afterSave = quit
+                    if (root.session.projectPath === "") saveAsDialog.open()
+                    else root.session.run("saveProject")
+                }
+            }
+            Button {
+                Layout.fillWidth: true
+                text: qsTr("Close Chimera without saving...")
+                onClicked: closeKeepingWorkDialog.open()
+            }
+        }
+    }
+    Dialog {
+        id: closeKeepingWorkDialog
+        objectName: "closeKeepingWorkDialog"
+        title: qsTr("Close without saving")
+        anchors.centerIn: parent
+        modal: true
+        Label {
+            text: qsTr("Close Chimera without saving the project?\n\nNothing is lost: every input, marker and branch is in the recovery journal,"
+                       + " and the next time this project is opened Chimera offers to recover them.")
+            wrapMode: Text.Wrap; width: 480
+        }
+        standardButtons: Dialog.Yes | Dialog.No
+        onAccepted: {
+            coreStoppedDialog.choose("keepWork")
+            root.leaving = true
+            Qt.quit()
         }
     }
     Dialog {
@@ -1612,7 +1715,7 @@ ApplicationWindow {
     footer: Rectangle {
         id: statusBar
         objectName: "statusBar"
-        visible: root.visibility === Window.FullScreen ? root.display.statusBarFullscreen : root.session.showStatusBar
+        visible: !root.chromeless && (root.visibility === Window.FullScreen ? root.display.statusBarFullscreen : root.session.showStatusBar)
         implicitHeight: 22
         color: palette.window
         Rectangle { width: parent.width; height: 1; color: palette.mid }

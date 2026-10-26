@@ -695,6 +695,38 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		return recordingMode.get();
 	}, &hasProject);
 	expose("frozenCount", "how many frozen addresses are on (Chimera's freezes)", frozenCount);
+	expose("stoppedAt", "the frame the core stopped on, -1 while it runs (Chimera's The core stopped)", stoppedAt);
+	expose("stoppedReason", "what the sandbox said when the core stopped", stoppedReason);
+	expose("stoppedSafePoint", "the newest state at or before the frame the core stopped on, -1 for none", stoppedSafePoint);
+	expose("stoppedCanRestart", "the state history still holds frame 0, to run again from", stoppedCanRestart);
+	expose("stoppedFreezesOff", "how many frozen addresses were switched off when the core stopped", stoppedFreezesOff);
+	command("stoppedChoice", "answers The core stopped, as Chimera's: \"back\" goes to the latest safe point, \"restart\" "
+		"runs again from frame 0, \"keepWork\" keeps the work against a crash and lets the project go without "
+		"saving when the program closes (it is offered at the next open); \"\" only closes the question",
+		{"choice"}, [this](const Args &a, std::string &error) -> Value {
+			std::string choice;
+			if (!arg(a, 0, choice, error)) return {};
+			const int64_t to = choice == "back" ? stoppedSafePoint.get() : choice == "restart" ? int64_t{0} : -1;
+			if ((choice == "back" && to < 0) || (choice == "restart" && !stoppedCanRestart.get()))
+			{
+				error = "the state history holds no state to go back to";
+				return {};
+			}
+			if (!choice.empty() && choice != "back" && choice != "restart" && choice != "keepWork")
+			{
+				error = "no choice " + choice;
+				return {};
+			}
+			stoppedAt.set(-1);
+			if (to >= 0) submit([this, to] { seekOnMachine(to, false); });
+			/* waited for: the program closes next, and a job still queued then is not run */
+			if (choice == "keepWork")
+				waitOnMachine([this] {
+					keepRecoveryOnMachine();
+					keepWorkM_ = true;
+				});
+			return {};
+		}, &isOpen);
 	command("freeze", "a domain's 1, 2 or 4 bytes at an address written with this value before every frame, for this "
 		"session only", {"domain", "address", "size", "bigEndian", "value"}, [this](const Args &a, std::string &error) -> Value {
 			Freeze f;
@@ -3440,6 +3472,11 @@ void SessionViewModel::setFinders(PackageFinder packages, FolderFinder firmwareF
 	});
 }
 
+void SessionViewModel::setRunFirmware(std::map<std::string, std::string> byId)
+{
+	submit([this, byId = std::move(byId)] { runFirmwareM_ = byId; });
+}
+
 bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::string &slots, const std::string &settings,
 	const std::string &pins, const std::string &game, const std::vector<std::pair<std::string, std::string>> &files,
 	Firmware &out, std::string &why)
@@ -3477,8 +3514,30 @@ bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::
 	if (decl.items.empty()) return true;
 	if (!json::parse(settings, settingsJson, error) || settingsJson.kind != json::Json::Kind::Object) settingsJson.kind = json::Json::Kind::Object;
 	if (!pins.empty()) json::parse(pins, pinsJson, error);
-	const std::vector<FirmwareFile> index = indexFirmware(firmwareFoldersM_ ? firmwareFoldersM_() : std::vector<std::string>{}, true, 10000);
-	const std::vector<FirmwareNeed> needs = neededFirmware(decl, settingsDecl, slots, settingsJson, pinsJson, index);
+	/* the files this run was given come first, so one the hash finds twice is theirs */
+	std::vector<std::string> places;
+	for (const auto &[id, path] : runFirmwareM_) places.push_back(path);
+	if (firmwareFoldersM_)
+		for (std::string &f : firmwareFoldersM_()) places.push_back(std::move(f));
+	const std::vector<FirmwareFile> index = indexFirmware(places, true, 10000);
+	std::vector<FirmwareNeed> needs = neededFirmware(decl, settingsDecl, slots, settingsJson, pinsJson, index);
+	/* given for an entry the project pins no hash for: taken as it is, as Chimera's */
+	for (FirmwareNeed &n : needs)
+	{
+		const auto given = runFirmwareM_.find(n.id);
+		if (given == runFirmwareM_.end()) continue;
+		bool pinned = false;
+		for (const json::Json &pin : pinsJson.items)
+			if (const json::Json *id = pin.find("id"); id != nullptr && id->text == n.id) pinned = true;
+		if (pinned) continue;
+		for (const FirmwareFile &f : index)
+			if (f.path == given->second)
+			{
+				n.path = f.path;
+				n.sha1 = f.hash();
+				n.how = "given on the command line";
+			}
+	}
 	std::string missing;
 	json::Json recorded;
 	recorded.kind = json::Json::Kind::Array;
@@ -3700,8 +3759,9 @@ void SessionViewModel::removeMachineHooks(int id)
 
 void SessionViewModel::freeProjectOnMachine()
 {
-	/* let go cleanly: what was kept against a crash goes too */
-	dropRecoveryOnMachine(projectM_);
+	/* let go cleanly: what was kept against a crash goes too, unless the
+	 * person closed without saving after the core stopped */
+	if (!keepWorkM_) dropRecoveryOnMachine(projectM_);
 	if (projectM_ != nullptr) ce_project_free(projectM_);
 	projectM_ = nullptr;
 	projectPathM_.clear();
@@ -4786,6 +4846,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		frame.set(0);
 		greenEnd.set(0);
 		running.set(false);
+		stoppedAt.set(-1);
 		if (withOpen) withOpen();
 		isOpen.set(true);
 		/* a lag count a script set was the last machine's */
@@ -4809,6 +4870,7 @@ void SessionViewModel::closeOnMachine()
 	freeProjectOnMachine();
 	runningM_ = false;
 	later([this] {
+		stoppedAt.set(-1);
 		isOpen.set(false);
 		running.set(false);
 		fps.set(0.0);
@@ -5227,7 +5289,8 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		diedM_ = true;
 		/* as Chimera's: a frozen address may be what stopped the core, and it would be written again on
 		 * the first frame after going back; the freezes are switched off, not removed */
-		if (std::any_of(freezesM_.begin(), freezesM_.end(), [](const Freeze &z) { return z.enabled; }))
+		const int64_t freezesOff = std::count_if(freezesM_.begin(), freezesM_.end(), [](const Freeze &z) { return z.enabled; });
+		if (freezesOff > 0)
 		{
 			for (Freeze &z : freezesM_) z.enabled = false;
 			for (int32_t i = 0; i < ce_session_freeze_count(s_); i++) ce_session_freeze_enable(s_, i, 0);
@@ -5239,6 +5302,20 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		const std::string why = death != nullptr && *death != '\0' ? std::string("The machine stopped: ") + death
 																	 : std::string("The movie could not be played: ") + ce_session_last_error(s_);
 		later([this, why] { running.set(false); status.set(why); });
+		/* asked what now, as Chimera's: the frame, the latest safe point, frame 0
+		 * (the same death reported again while it is asked asks nothing more) */
+		if (death != nullptr && *death != '\0')
+		{
+			const int64_t at = frameM_, safe = ce_session_greenzone_nearest(s_, at), restart = ce_session_greenzone_nearest(s_, 0) == 0;
+			later([this, at, safe, restart, freezesOff, reason = std::string(death)] {
+				if (stoppedAt.get() >= 0) return;
+				stoppedReason.set(reason);
+				stoppedSafePoint.set(safe <= at ? safe : -1);
+				stoppedCanRestart.set(restart);
+				stoppedFreezesOff.set(freezesOff);
+				stoppedAt.set(at);
+			});
+		}
 		return lag;
 	}
 	frameM_ = ce_session_frame(s_);
@@ -5707,9 +5784,10 @@ std::vector<SessionViewModel::Freeze> SessionViewModel::syncFreezesOnMachine(con
 
 void SessionViewModel::carryFreezesOnMachine(const std::string &game)
 {
+	/* counted before another game's are let go: the window is told they went */
+	const size_t had = freezesM_.size();
 	if (game != freezeGameM_) freezesM_.clear();
 	freezeGameM_ = game;
-	const size_t had = freezesM_.size();
 	freezesM_ = syncFreezesOnMachine(freezesM_);
 	if (had == 0 && freezesM_.empty()) return;
 	later([this, list = freezesM_] {

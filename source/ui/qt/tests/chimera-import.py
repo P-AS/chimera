@@ -204,12 +204,17 @@ def same_value(a, b):
 # change, so one refused would be left in the file as carried, the window
 # holding another
 def placeless(text):
-    """TAStudio opens beside the main window with the project and keeps only
-    its size: where it was when it closed is written, and not used"""
+    """A tool window's place is written as it closes (TAStudio's where it was
+    is not even used: it opens beside the main window), and the Lua Console
+    --lua opens is open as the program ends: the options are compared, not
+    the places"""
     try:
         value = json.loads(text)
-        for name in ("x", "y"):
-            value.get("tastudio", {}).pop(name, None)
+        for tool in list(value):
+            for name in ("x", "y", "w", "h"):
+                value[tool].pop(name, None)
+            if not value[tool]:
+                del value[tool]
         return json.dumps(value, sort_keys=True)
     except (TypeError, ValueError, AttributeError):
         return text

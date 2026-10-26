@@ -49,6 +49,12 @@ std::string lowered(std::string s)
 }
 } // namespace
 
+std::string HelpViewModel::thisCommit()
+{
+	const std::string stamp = CHIMERA_UI_BUILD;
+	return stamp.substr(0, std::min<size_t>(stamp.find(' '), 9));
+}
+
 HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, SettingsViewModel &settings)
 	: ViewModel("help", dispatcher), session_(session), settings_(settings)
 {

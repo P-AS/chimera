@@ -2,6 +2,11 @@
 
 #include "chimera/vm/json.hpp"
 
+#include <cctype>
+#include <cstring>
+#include <iterator>
+#include <sstream>
+
 namespace chimera::vm {
 
 using json::Json;
@@ -125,6 +130,47 @@ ToolWindowsViewModel::ToolWindowsViewModel(Dispatcher &dispatcher) : ViewModel("
 			const std::string text = json::write(all);
 			if (text != settings.get()) settings.set(text);
 			return true;
+		});
+	command("sortFiles", "files dropped on the window (or handed over by a later start), a line each, sorted as Chimera's are "
+		"(MainForm.FileLoader): what to do, a line each in Chimera's order - \"open\" and the kind (game, watch, luaSession, "
+		"lua, project) and the file, tab apart, or \"say\" and what to tell the person: several of one kind open none, and a "
+		"state or cheat file does not open by dropping", {"files"}, [](const Args &a, std::string &error) -> Value {
+			std::string list;
+			if (!arg(a, 0, list, error)) return {};
+			static const char *const order[] = {"game", "state", "watch", "luaSession", "lua", "cheat", "project"};
+			std::vector<std::vector<std::string>> kinds(std::size(order));
+			std::istringstream in(list);
+			for (std::string path; std::getline(in, path);)
+			{
+				if (path.empty()) continue;
+				std::string lower = path;
+				for (char &c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+				auto ends = [&lower](const char *tail) {
+					const size_t n = std::strlen(tail);
+					return lower.size() >= n && lower.compare(lower.size() - n, n, tail) == 0;
+				};
+				/* anything else is a game, as Chimera takes an unknown file for a rom */
+				const size_t kind = ends(".chimerastate") ? 1 : ends(".wch") ? 2 : ends(".luases") ? 3 : ends(".lua") ? 4
+					: ends(".cht") ? 5 : ends(".chimeraproject") ? 6 : 0;
+				kinds[kind].push_back(path);
+			}
+			std::string out;
+			for (size_t k = 0; k < kinds.size(); k++)
+			{
+				if (kinds[k].empty()) continue;
+				if (kinds[k].size() > 1)
+					out += "say\t" + std::to_string(kinds[k].size()) + " files of one kind were dropped; drop them one at a time\n";
+				else if (k == 1 || k == 5)
+				{
+					const std::string &path = kinds[k][0];
+					const size_t slash = path.find_last_of("/\\");
+					out += "say\t" + (slash == std::string::npos ? path : path.substr(slash + 1)) +
+						": Chimera does not open this kind of file by dropping it\n";
+				}
+				else
+					out += std::string("open\t") + order[k] + "\t" + kinds[k][0] + "\n";
+			}
+			return out;
 		});
 	command("restoreDefaults", "a tool window's options back to Chimera's (Save Window Position on, the others off) and its place forgotten",
 		{"tool"}, [this](const Args &a, std::string &error) -> Value {
