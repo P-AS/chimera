@@ -23,7 +23,9 @@ std::string withSeparator(const fs::path &p)
 {
 	std::string s = fs::absolute(p).lexically_normal().string();
 	while (!s.empty() && (s.back() == '/' || s.back() == '\\')) s.pop_back();
-	return s + "/";
+	/* the separator lexically_normal wrote: "/" after a Windows path was
+	 * never a prefix of the folders inside it */
+	return s + static_cast<char>(fs::path::preferred_separator);
 }
 
 uint64_t sizeOf(const fs::path &p)

@@ -127,6 +127,10 @@ int64_t ConfigStore::loadFrom(const std::string &path, std::string &error)
 	}
 	std::stringstream ss;
 	ss << in.rdbuf();
+	/* closed before anything is applied: each value set saves the settings,
+	 * and on Windows a file still open here (Load Config reads the window's
+	 * own) cannot be replaced */
+	in.close();
 	Json read;
 	std::string why;
 	if (!json::parse(ss.str(), read, why) || read.kind != Json::Kind::Object)

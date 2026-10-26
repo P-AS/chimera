@@ -102,6 +102,16 @@ static int failures = 0, checks = 0;
 		checks++; \
 		if (!(c)) { std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); failures++; } \
 	} while (0)
+/* a test's folder taken away; on Windows a file still open (a machine not
+ * closed, a handle kept) is not removed, and that is a failure, not the end
+ * of the program */
+#define removeTree(folder) \
+	do { \
+		std::error_code removeEc_; \
+		std::filesystem::remove_all(folder, removeEc_); \
+		checks++; \
+		if (removeEc_) { std::fprintf(stderr, "FAIL %s:%d: %s not removed: %s\n", __FILE__, __LINE__, std::filesystem::path(folder).string().c_str(), removeEc_.message().c_str()); failures++; } \
+	} while (0)
 /* a text compared, what it was said when it is not */
 #define CHECK_TEXT(got, want) \
 	do { \
@@ -664,7 +674,7 @@ void firmware()
 	CHECK(neededFirmware(fwDecl, setDecl, "{}", none, noPins, index).empty());
 	const auto needs = neededFirmware(fwDecl, setDecl, "{}", on, noPins, index);
 	CHECK(needs.size() == 1 && needs[0].id == "b" && needs[0].path.find("BIOS.BIN") != std::string::npos && needs[0].sha1.size() == 40);
-	fs::remove_all(dir);
+	removeTree(dir);
 }
 
 /* Numbers as JSON writes them (review, 2026-10-26): its grammar, not only
@@ -706,7 +716,7 @@ void jsonNumbers()
 		store.keep(vm, "count");
 		CHECK(store.problem().empty());
 	}
-	fs::remove_all(dir);
+	removeTree(dir);
 }
 
 /* What the window remembers: a property kept by its name comes back in the
@@ -757,6 +767,7 @@ void configStore()
 		std::ofstream(dir / "bad.json") << "[1, 2]";
 		CHECK(!menu.run("loadFrom", {(dir / "bad.json").string()}, error) && error.rfind((dir / "bad.json").string() + " is not a settings file", 0) == 0);
 		CHECK(!menu.run("loadFrom", {(dir / "none.json").string()}, error) && error == "cannot read " + (dir / "none.json").string());
+		CHECK_TEXT(store.problem(), "");
 		CHECK(menu.run("save", {}, error) == Value(file) && menu.status.get() == "Settings saved in " + file);
 	}
 	std::ofstream(file, std::ios::binary | std::ios::trunc) << "{ not json";
@@ -764,7 +775,7 @@ void configStore()
 		ConfigStore store(file);
 		CHECK(!store.problem().empty() && fs::exists(file + ".unreadable") && !fs::exists(file));
 	}
-	fs::remove_all(dir);
+	removeTree(dir);
 }
 
 /* Chimera's settings file read as the window's (owner, 2026-10-26): each
@@ -838,7 +849,7 @@ void chimeraSettingsImport()
 		CHECK(store.loadFrom((dir / "config.ini").string(), error) == 2);
 		CHECK(display.aspectMode.get() == 3 && messages.messagesColor.get() == "#FF00FF00");
 	}
-	fs::remove_all(dir);
+	removeTree(dir);
 	/* the settings that are more than one value: bindings, paths, recent
 	 * files, firmware, the windows' places, the tools' own */
 	const std::string rich = R"({
@@ -1297,7 +1308,7 @@ void pathsConfig()
 	paths.recentForRoms.set(false);
 	CHECK(fromValue(paths.run("dialogFolder", {std::string("ROM")}, error).value_or(Value()), got) && got == (dir / "program").string());
 	CHECK(paths.run("resetAll", {}, error).has_value() && paths.changed.get() == "{}" && paths.resolve("Movies") == (dir / "program" / "movies").string());
-	fs::remove_all(dir);
+	removeTree(dir);
 }
 
 /* Chimera's Data Directory: a change recorded, carried out at the next
@@ -1372,7 +1383,7 @@ void dataFolder()
 	data.environment.set((dir / "portable").string());
 	CHECK(data.inUse() == (dir / "portable").string() && data.applyPending().empty() && data.pending.get() == (dir / "fresh").string());
 	CHECK(!data.run("request", {(dir / "elsewhere").string(), true}, error) && error.find("CHIMERA_DATA_HOME") != std::string::npos);
-	fs::remove_all(dir);
+	removeTree(dir);
 }
 
 /* Chimera's compile cache: a folder a game, by its SHA1, for a core that
@@ -1424,7 +1435,7 @@ void precompiledModules()
 	CHECK(!code.run("remove", {std::string("0,2")}, error) && error == "could not remove: other.iso (in use)");
 	CHECK(!fs::exists(dir / "BBBB") && fs::exists(dir / "CCCC") && code.games().size() == 2);
 	CHECK(code.total.get().find(" in 2 games") != std::string::npos);
-	fs::remove_all(dir);
+	removeTree(dir);
 }
 
 void pianoRollWithoutAMachine()
@@ -1991,7 +2002,7 @@ bool pianoRollColumns(const char *package, const char *rom)
 		session.run("close", {}, error);
 		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	}
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -2112,7 +2123,7 @@ bool backupAndHistory(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.status.get() == "The state history holds nothing to check yet"; }, 20));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -2195,7 +2206,7 @@ bool traceAndRegisters(const char *package, const char *rom)
 	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -2283,7 +2294,7 @@ bool macroTool(const char *package, const char *rom)
 	CHECK(tool.zones().size() == 1 && tool.zones()[0].whole);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -2347,7 +2358,9 @@ bool luaLibraries(const char *package, const char *rom)
 		}
 		return found;
 	};
-	console.run("openScript", {scriptFile(R"LUA(
+	/* a database in the test's temporary folder: Lua's os.tmpname names one in a Windows drive's root */
+	const std::string sqlDb = (std::filesystem::temp_directory_path() / ("chimera-test-sql-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".db")).generic_string();
+	console.run("openScript", {scriptFile(std::regex_replace(std::string(R"LUA(
 console.log("start", emu.framecount(), emu.getsystemid() ~= "")
 mainmemory.write_u8(0x10, 0xAB)
 console.log("u8", mainmemory.read_u8(0x10), mainmemory.read_s8(0x10), mainmemory.readbyte(0x10))
@@ -2390,7 +2403,7 @@ comm.mmfCopyToMemory(shared .. "-ram", 0x70, 3)
 console.log("comm", comm.mmfWrite(shared, "hello"), comm.mmfRead(shared, 5), comm.mmfWriteBytes(shared .. "-b", {1, 2, 3}), comm.mmfReadBytes(shared .. "-b", 3)[2],
 	mainmemory.read_u8(0x71), comm.mmfScreenshot(), comm.mmfRead(comm.mmfGetFilename(), 9), pcall(comm.mmfRead, shared .. "-none", 4))
 console.log("sharedname", shared)
-local db = os.tmpname()
+local db = __CHIMERA_TEST_DB__
 console.log("sqlbefore", SQL.writecommand("create table t (x integer)"), SQL.readcommand("select 1"))
 local created, opened = SQL.createdatabase(db), SQL.opendatabase(db)
 local made = SQL.writecommand("create table rewards (ID integer primary key, action varchar(20), score real)")
@@ -2420,7 +2433,7 @@ console.log("hash", mainmemory.hash_region(0x50, 3), memory.hash_region(0x50, 0,
 emu.frameadvance()
 console.log("entry", movie.getinput(emu.framecount() - 1)["P1 Right"], movie.getinput(emu.framecount() - 1)["P1 Up"], (select(2, pcall(joypad.setaxis, "Stick", 5))):find("no analog control") ~= nil)
 while true do emu.frameadvance() end
-)LUA", "libraries")}, error);
+)LUA"), std::regex("__CHIMERA_TEST_DB__"), "\"" + sqlDb + "\""), "libraries")}, error);
 	CHECK(console.running.get() && console.summary.get() == "1 script (1 active, 0 paused)");
 	CHECK(said("start ") == "start 0 True");
 	CHECK(said("u8 ") == "u8 171 -85 171");
@@ -2432,7 +2445,7 @@ while true do emu.frameadvance() end
 	CHECK(said("game ") == "game 17 Status Steps u32 4 4 1 16909060 True True string False");
 	CHECK(said("forms ") == "forms True abc a 1 90 False 0 67174915");
 	CHECK(said("sqlbefore ") == "sqlbefore Database not open. Database not open.");
-	CHECK(said("sql ") == "sql Database Created Successfully Database Opened Successfully Command ran successfully 1 run 1.5 nil No rows found near \"nonsense\": syntax error");
+	CHECK_TEXT(said("sql "), "sql Database Created Successfully Database Opened Successfully Command ran successfully 1 run 1.5 nil No rows found near \"nonsense\": syntax error");
 	CHECK(said("comm ").rfind("comm 5 hello 3 3 8 9 PNG bytes False ", 0) == 0 && said("comm ").find("there is no memory-mapped file") != std::string::npos);
 	/* the shared memory made, let go (the script runs again below: that run's too, at the end) */
 	auto unshare = [&] {
@@ -2619,7 +2632,7 @@ bool greenzoneBudgets(const char *package, const char *rom)
 	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -2870,7 +2883,7 @@ bool crashRecovery(const char *package, const char *rom)
 	CHECK(session.recoveredCopy.get().empty() && !fs::exists(kept));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -3221,7 +3234,7 @@ bool tastudioSettings(const char *package, const char *rom)
 	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -3303,8 +3316,10 @@ bool cacheManager(const char *package, const char *rom)
 		const auto old = fs::file_time_type::clock::now() - std::chrono::hours(48);
 		for (const char *name : {"00DEADBEEF", "00UNNAMED"})
 			for (const auto &e : fs::recursive_directory_iterator(dir / "cache" / name)) fs::last_write_time(e.path(), old);
-		fs::last_write_time(dir / "cache" / "00DEADBEEF", old);
-		fs::last_write_time(dir / "cache" / "00UNNAMED", old);
+		/* a folder's own time too, where the system lets it be set (Windows' runtime here does not) */
+		std::error_code timeEc;
+		fs::last_write_time(dir / "cache" / "00DEADBEEF", old, timeEc);
+		fs::last_write_time(dir / "cache" / "00UNNAMED", old, timeEc);
 		caches.run("refresh", {}, error);
 		std::string first;
 		CHECK(fromValue(caches.run("firstPick", {}, error).value_or(Value()), first) && fs::path(first).filename().string() != "00DEADBEEF" &&
@@ -3441,7 +3456,8 @@ bool cacheManager(const char *package, const char *rom)
 		CHECK(limits.overLimit.get() == "That is 0 KB over. Nothing is enforcing it while the auto-clean is off; Clean Now applies it once.");
 		/* One locked: only Two may go, and that is not enough */
 		CHECK(limits.run("toggleLock", {rowOf("One")}, error) == Value(true));
-		CHECK(cellFlag(rowOf("One"), 12) && readFile(cache / "cache-locks.json").find((cache / "C1").string()) != std::string::npos);
+		/* the folder as JSON writes it (a Windows path's backslashes doubled) */
+		CHECK(cellFlag(rowOf("One"), 12) && readFile(cache / "cache-locks.json").find(json::write(json::Json::string((cache / "C1").string()))) != std::string::npos);
 		CHECK(wouldGo() == rowOf("Two"));
 		CHECK(limits.overLimit.get().find("cannot be met without unlocking something") != std::string::npos);
 		/* unlocked again: back to its kind's default, written down nowhere */
@@ -3485,7 +3501,7 @@ bool cacheManager(const char *package, const char *rom)
 		std::string named;
 		CHECK(fromValue(limits.run("titles", {rowOf("Unsaved work")}, error).value_or(Value()), named) && named.rfind("- Unsaved work (", 0) == 0);
 	}
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -3551,7 +3567,7 @@ bool mediaMaker()
 	maker.format.set(0);
 	CHECK(maker.recognised.get().empty());
 	CHECK(!maker.run("setFolder", {}, error));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -3684,7 +3700,7 @@ bool helpMenu(const char *package, const char *rom)
 	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -3739,7 +3755,7 @@ bool coreMenu(const char *package, const char *rom, const char *slotsPackage, co
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60) && session.isGameCore.get());
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -3900,7 +3916,7 @@ bool projectDetails(const char *package, const char *rom)
 		session.run("close", {}, error);
 		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	}
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -4827,6 +4843,9 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	 * and the next time it is found where it was, without asking */
 	{
 		const std::string project = (dir / "p.chimeraProject").string();
+		/* the machine closed first: Windows moves no file one has open */
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 		fs::create_directories(dir / "elsewhere");
 		fs::rename(dir / "gridWalker.testrom", dir / "elsewhere" / "renamed.bin");
 		/* another file: the game with a byte more, which the core still loads */
@@ -4873,7 +4892,7 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 		session.run("close", {}, error);
 		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	}
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -4919,7 +4938,10 @@ bool newProject(const char *package, const char *rom)
 	inputs2.read(0, back);
 	CHECK(session2.projectTitle.get() == "down the corridor" && inputs2.size() == 5 && back == made);
 	CHECK(made[0] != 0); /* Down was held */
-	fs::remove_all(dir);
+	/* closed before its folder goes: Windows removes no file a machine has open */
+	session2.run("close", {}, error);
+	CHECK(d.until([&] { return !session2.isOpen.get(); }, 20));
+	removeTree(dir);
 	return true;
 }
 
@@ -4977,7 +4999,7 @@ void themes()
 	/* a built-in's, with the desktop's colours the window painted */
 	CHECK(fromValue(t.run("writeCopy", {std::string("Light"), std::string(R"({"WindowBackground": "#F0F0F0", "WindowText": "#000000"})")}, error).value_or(Value()), made) &&
 		  made == "Light copy" && t.run("colorsOf", {std::string("Light copy")}, error) == Value(std::string("{\"WindowBackground\": \"#F0F0F0\", \"WindowText\": \"#000000\"}")));
-	fs::remove_all(dir);
+	removeTree(dir);
 }
 
 /* Values written as Chimera's RAM Watch writes them (the whole range was
@@ -5310,7 +5332,7 @@ bool ramWatch(const char *package, const char *rom)
 	session.key("Down", false);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -5928,7 +5950,7 @@ bool pianoRollEditing(const char *package, const char *rom)
 		CHECK(!roll.run("placeMacro", {int64_t{0}, other}, error) &&
 			error == "The selected macro is not compatible with the current core.\nMacro controller: Laser Gun\nMacro controller groups (\"players\" + 1) count: 10");
 		CHECK(masks() == start);
-		fs::remove_all(dir);
+		removeTree(dir);
 	}
 	/* cloned a number of times, as one edit */
 	CHECK(roll.run("cloneFrames", {int64_t{1}, int64_t{2}, int64_t{3}}, error).has_value() && roll.frameCount.get() == 16);
@@ -6639,7 +6661,7 @@ bool greenzoneChoice(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.isOpen.get() && session.greenzonePeriod.get() == 1; }, 60));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -6721,7 +6743,7 @@ bool rerecordCount(const char *package, const char *rom)
 	CHECK(session.rerecords.get() == 5);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -6847,7 +6869,7 @@ bool recordingMode(const char *package, const char *rom)
 	CHECK(d.until([&] { return !session.recordingMode.get(); }, 20));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -7053,7 +7075,7 @@ bool freezes(const char *package, const char *rom)
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	CHECK(session.freezes().empty() && session.frozenCount.get() == 0);
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -7772,7 +7794,7 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	/* nothing to make until everything is there */
 	CHECK(wizard.run("chooseCore", {std::string("Synth")}, error).has_value());
 	CHECK(!wizard.run("create", {(dir / "never.chimeraProject").string()}, error) && error == "not yet: Game: a file is needed");
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -7943,7 +7965,7 @@ bool customFirmware(const char *rom, const char *hashedPackage, const char *game
 	CHECK(wizard.run("scanFolder", {(dir / "scan").string()}, error).has_value());
 	CHECK(wizard.status.get() == "scanned 2 files; 1 requirement resolved" && wizard.ready.get());
 	CHECK(text("firmware", 0, 2) == (dir / "scan" / "deeper" / "renamed.bin").string());
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -8047,7 +8069,7 @@ bool movieImport(const char *slotsPackage, const char *rom, const std::string &m
 	CHECK(!wizard.imported.get());
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
@@ -8095,7 +8117,7 @@ bool openByKind(const char *package, const char *rom, const char *again)
 		CHECK(!session.run(gone, {game}, error) && error == std::string("session has no command ") + gone);
 	}
 	CHECK(!session.isOpen.get());
-	fs::remove_all(dir);
+	removeTree(dir);
 	return true;
 }
 
