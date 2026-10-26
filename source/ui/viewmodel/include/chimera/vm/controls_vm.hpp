@@ -31,6 +31,11 @@ public:
 	Property<std::string> saved{"{}"};
 	Property<std::string> savedAutofire{"{}"};
 	Property<std::string> savedAnalog{"{}"};
+	/* Chimera's bindings, carried over from its settings (chimera_settings.hpp)
+	 * as Chimera keeps them, by controller name: {"AllTrollers",
+	 * "AllTrollersAutoFire", "AllTrollersAnalog"}, and "taken", the cores that
+	 * took theirs: a core takes its controller's the first time it opens */
+	Property<std::string> fromChimera{"{}"};
 	/* Chimera's Auto Tab: a key pressed in a box replaces its keys and the
 	 * next box takes the next key; off, a key pressed is one more for the box */
 	Property<bool> autoTab{true};
@@ -95,6 +100,8 @@ private:
 	void begin();
 	/* the copy given to the machine, and what differs from the package remembered (save) */
 	void keep();
+	/* the core open takes Chimera's bindings for its controller, once */
+	void takeFromChimera();
 	/* the machine's controls: the package's, with this core's changes over them */
 	void apply();
 	void changed();

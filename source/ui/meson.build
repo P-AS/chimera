@@ -310,7 +310,8 @@ if qt_dep.found()
   test(
     'chimera settings import',
     find_program('python3'),
-    args: [files('qt/tests/chimera-import.py'), chimera_qt, meson.current_build_dir() / 'chimera-import-test'],
+    args: [files('qt/tests/chimera-import.py'), chimera_qt, meson.current_build_dir() / 'chimera-import-test',
+      repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom'],
     timeout: 300,
   )
   # a theme reaches Qt Quick's controls, which take the platform's colours

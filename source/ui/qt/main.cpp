@@ -1063,6 +1063,7 @@ int main(int argc, char **argv)
 	config.keep(controls, "saved");
 	config.keep(controls, "savedAutofire");
 	config.keep(controls, "savedAnalog");
+	config.keep(controls, "fromChimera");
 	config.keep(controls, "autoTab");
 	/* the themes: Chimera's built-in two, and the folder beside the program
 	 * (CHIMERA_THEMES_DIR for a test); --color-scheme picks Light or Dark for

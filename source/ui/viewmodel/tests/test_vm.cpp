@@ -694,6 +694,53 @@ void chimeraSettingsImport()
 		CHECK(display.aspectMode.get() == 3 && messages.messagesColor.get() == "#FF00FF00");
 	}
 	fs::remove_all(dir);
+	/* the settings that are more than one value: bindings, paths, recent
+	 * files, firmware, the windows' places, the tools' own */
+	const std::string rich = R"({
+		"HotkeyBindings": {"Pause": "P", "Frame Advance": "F"},
+		"AllTrollers": {"Synth Controller": {"P1 A": "K"}},
+		"AllTrollersAnalog": {"Pad": {"P1 X": {"Value": "X1 LeftThumbX Axis", "Mult": 1.0, "Deadzone": 0.1, "ButtonBindPositive": null}}},
+		"TargetZoomFactors": {"NES": 3},
+		"PathEntries": {"Paths": [{"Type": "Base", "Path": ".", "System": "Global_NULL"}, {"Type": "Movies", "Path": "./Runs", "System": "Global_NULL"},
+			{"Type": "Screenshots", "Path": "./Shots", "System": "NES"}], "UseRecentForRoms": false, "LastRomPath": "/games"},
+		"RecentProjects": {"recentlist": ["/b.chimeraProject", "/a.chimeraProject"], "MAX_RECENT_FILES": 10},
+		"RecentLua": {"recentlist": ["/s.lua"]},
+		"CoreFirmware": {"SDLPoP/PRINCE.DAT": "/fw/PRINCE.DAT", "SDLPoP/KID.DAT": "/fw/KID.DAT"},
+		"MainWindowPosition": "372, 356", "MainWindowSize": "1086, 900",
+		"CommonToolSettings": {"Chimera.Client.GUI.TAStudio": {"_wndx": 10, "_wndy": 20, "Width": 300, "Height": 400,
+			"SaveWindowPosition": true, "TopMost": false, "FloatingWindow": true},
+			"Chimera.Client.GUI.RamWatch": {"_wndx": 1, "_wndy": 2, "Width": 3, "Height": 4, "SaveWindowPosition": false}},
+		"CustomToolSettings": {
+			"Chimera.Client.GUI.TAStudio": {"Settings": {"FollowCursorScrollMethod": "center", "AutosaveInterval": 120000,
+				"PatternPaintMode": 2, "PatternSelection": 1, "TasViewFont": "Arial, 8.25pt, style=Bold", "SidebarWidth": 326,
+				"LoadBranchOnDoubleClick": false, "RewindStepFast": 8}},
+			"Chimera.Client.GUI.LuaConsole": {"Settings": {"ReloadOnScriptFileChange": true}},
+			"Chimera.Client.GUI.HexEditor": {"LastDomain": null, "DataSize": 2, "ColorsCustomised": true,
+				"Colors": {"Background": "30, 30, 30", "Foreground": "224, 224, 224"}}}
+	})";
+	CHECK(importChimeraSettings(rich, got, error));
+	CHECK(text("hotkeys.saved") == "{\"Pause\": \"P\", \"Frame Advance\": \"F\"}" && text("display.windowScales") == "{\"NES\": 3}");
+	CHECK(text("controls.fromChimera").find("\"AllTrollers\": {\"Synth Controller\": {\"P1 A\": \"K\"}}") != std::string::npos &&
+		text("controls.fromChimera").find("\"AllTrollersAnalog\"") != std::string::npos);
+	CHECK(text("paths.base").empty() && text("paths.changed") == "{\"Movies\": \"./Runs\"}" && text("paths.systems") == "[\"NES\"]" &&
+		text("paths.systemChanged") == "{\"NES\": {\"Screenshots\": \"./Shots\"}}");
+	CHECK(text("paths.recentForRoms") == "false" && text("paths.lastRomFolder") == "/games");
+	CHECK(text("session.recentProjects") == "/b.chimeraProject\n/a.chimeraProject" && text("luaConsole.recentScripts") == "/s.lua");
+	CHECK(text("cores.chosenFirmware") == "{\"SDLPoP\": {\"PRINCE.DAT\": \"/fw/PRINCE.DAT\", \"KID.DAT\": \"/fw/KID.DAT\"}}");
+	CHECK(text("display.windowGeometry") == "372,356,1086,900");
+	/* a place is kept only where Save Window Position is on */
+	CHECK(text("toolWindows.settings") == "{\"tastudio\": {\"save\": true, \"top\": false, \"float\": true, \"x\": 10, \"y\": 20, \"w\": 300, "
+		"\"h\": 400}, \"ramWatch\": {\"save\": false}}");
+	CHECK(text("pianoRoll.followScroll") == "center" && text("session.autosaveSeconds") == "120" && text("pianoRoll.patternMode") == "always" &&
+		text("pianoRoll.patternKind") == "autofire" && text("pianoRoll.mainSplit") == "326" && text("branches.loadOnDoubleClick") == "false" &&
+		text("session.rewindStepFast") == "8");
+	CHECK(text("pianoRoll.rollFont") == "{\"family\": \"Arial\", \"pointSize\": 8.25, \"bold\": true, \"italic\": false}");
+	CHECK(text("luaConsole.reloadOnChange") == "true" && text("hexEditor.size") == "2" && text("hexEditor.domain") == "(none)" &&
+		text("hexEditor.colors") == "{\"Background\": \"#1E1E1E\", \"Foreground\": \"#E0E0E0\"}");
+	for (const char *name : {"HotkeyBindings", "AllTrollers", "PathEntries", "RecentProjects", "CoreFirmware", "MainWindowPosition",
+			 "CommonToolSettings", "CustomToolSettings", "TargetZoomFactors"})
+		CHECK(has(got.carried, name));
+	CHECK(got.left.empty());
 }
 
 void bindings()
@@ -5962,6 +6009,58 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 
 /* Controls rebound and remembered per core; hotkeys run, rebound and let
  * go; frame advance and rewind held; branch slots */
+/* Chimera's bindings carried over, kept by Chimera by controller name, are
+ * taken by a core the first time it opens: what differs from the package,
+ * buttons and autofire; once; and not over keys the core has of its own */
+bool controlsFromChimera(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	ControlsViewModel controls(d, session);
+	std::string error;
+	auto open = [&] {
+		session.run("open", {std::string(package), std::string(rom)}, error);
+		return d.until([&] { return session.isOpen.get() && controls.core.get() == "Synth"; }, 60);
+	};
+	auto close = [&] {
+		session.run("close", {}, error);
+		return d.until([&] { return !session.isOpen.get(); }, 20);
+	};
+	CHECK(open());
+	const std::string controller = session.controllerName();
+	const std::vector<std::string> names = session.buttonNames();
+	const auto a = std::find(names.begin(), names.end(), "P1 A") - names.begin();
+	const auto down = std::find(names.begin(), names.end(), "P1 Down") - names.begin();
+	CHECK(!controller.empty() && a < static_cast<long>(names.size()) && down < static_cast<long>(names.size()));
+	if (controller.empty() || a >= static_cast<long>(names.size()) || down >= static_cast<long>(names.size())) return false;
+	const std::string downKeys = session.defaultBindingTexts()[down], aKeys = session.defaultBindingTexts()[a];
+	CHECK(close());
+	auto chimera = [&](const std::string &aKeys) {
+		return "{\"AllTrollers\": {" + json::quote(controller) + ": {\"P1 A\": " + json::quote(aKeys) + ", \"P1 Down\": " + json::quote(downKeys) +
+			"}, \"Other Controller\": {\"P1 A\": \"Q\"}}, \"AllTrollersAutoFire\": {" + json::quote(controller) + ": {\"P1 A\": \"J\"}}}";
+	};
+	controls.fromChimera.set(chimera("K"));
+	CHECK(open());
+	/* the package's own keys for P1 Down are not kept as a change */
+	CHECK(controls.saved.get() == "{\"Synth\": {\"P1 A\": \"K\"}}" && controls.savedAutofire.get() == "{\"Synth\": {\"P1 A\": \"J\"}}");
+	CHECK(session.bindingTexts()[a] == "K" && session.bindingTexts()[down] == downKeys);
+	CHECK(controls.fromChimera.get().find("\"taken\": [\"Synth\"]") != std::string::npos);
+	CHECK(close());
+	/* once: the core's keys put back to the package's stay so */
+	controls.saved.set("{}");
+	controls.savedAutofire.set("{}");
+	CHECK(open() && session.bindingTexts()[a] == aKeys && aKeys != "K" && controls.saved.get() == "{}");
+	CHECK(close());
+	controls.fromChimera.set(chimera("K"));
+	/* a core with keys of its own keeps them */
+	controls.saved.set("{\"Synth\": {\"P1 B\": \"M\"}}");
+	CHECK(open() && controls.saved.get() == "{\"Synth\": {\"P1 B\": \"M\"}}" && session.bindingTexts()[a] != "K");
+	CHECK(controls.savedAutofire.get() == "{\"Synth\": {\"P1 A\": \"J\"}}");
+	CHECK(close());
+	return true;
+}
+
 bool controlsAndHotkeys(const char *package, const char *rom)
 {
 	ManualDispatcher d;
@@ -9122,6 +9221,7 @@ int main(int argc, char **argv)
 			ranMachine = hexEditor(argv[1], argv[2]) && ranMachine;
 			ranMachine = pianoRollEditing(argv[1], argv[2]) && ranMachine;
 			ranMachine = controlsAndHotkeys(argv[1], argv[2]) && ranMachine;
+			ranMachine = controlsFromChimera(argv[1], argv[2]) && ranMachine;
 			ranMachine = greenzoneChoice(argv[1], argv[2]) && ranMachine;
 			ranMachine = tastudioPanel(argv[1], argv[2]) && ranMachine;
 			ranMachine = speedAndSound(argv[1], argv[2]) && ranMachine;

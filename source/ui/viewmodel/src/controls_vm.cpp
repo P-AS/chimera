@@ -124,6 +124,8 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	expose("savedAutofire", "the autofire keys that differ from the package, as saved is", savedAutofire, true);
 	expose("savedAnalog", "the analog controls' bindings that differ from the package, as {\"core\": {\"control\": "
 		"{\"Value\", \"Mult\", \"Deadzone\", \"ButtonBindPositive\", \"ButtonBindNegative\"}}}", savedAnalog, true);
+	expose("fromChimera", "Chimera's bindings carried over, by controller name ({\"AllTrollers\", \"AllTrollersAutoFire\", "
+		"\"AllTrollersAnalog\"}), and \"taken\", the cores that took theirs the first time they opened", fromChimera, true);
 	expose("autoTab", "Auto Tab: a key pressed replaces a box's keys and the next box takes the next; off, it is one more", autoTab, true);
 	expose("core", "the core whose controls are listed", core);
 	expose("title", "the window's title: the controller's name and \"Configuration\"", title);
@@ -354,6 +356,7 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		for (const SessionViewModel::Axis &x : session_.axes()) axisNames.push_back(x.name);
 		axisGroups.set(groupsOf(axisNames));
 		pictureShown.set(session_.controllerPicture().empty() ? 0 : pictureShown.get() + 1);
+		takeFromChimera();
 		apply();
 		/* a copy open goes on with this machine's controls */
 		if (editing.get())
@@ -466,6 +469,73 @@ void ControlsViewModel::keep()
 	editing.set(false);
 	apply();
 	status.set("Saved the controls of " + core.get());
+}
+
+void ControlsViewModel::takeFromChimera()
+{
+	Json from = parsedObject(fromChimera.get());
+	const std::string controller = session_.controllerName();
+	if (from.members.empty() || core.get().empty() || controller.empty()) return;
+	Json taken = from.find("taken") != nullptr ? *from.find("taken") : Json();
+	if (taken.kind != Json::Kind::Array) taken.kind = Json::Kind::Array;
+	for (const Json &t : taken.items)
+		if (t.text == core.get()) return;
+	bool any = false;
+	/* the buttons' and the autofire keys: what differs from the package,
+	 * unless the core has keys of its own already */
+	const std::vector<std::string> &names = session_.buttonNames();
+	auto take = [&](const char *section, Property<std::string> &prop, const std::vector<std::string> &theirs) {
+		const Json *s = from.find(section);
+		const Json *keys = s != nullptr ? s->find(controller) : nullptr;
+		if (keys == nullptr || keys->kind != Json::Kind::Object) return;
+		any = true;
+		Json all = parsedObject(prop.get());
+		if (all.find(core.get()) != nullptr) return;
+		Json mine = parsedObject("{}");
+		for (size_t b = 0; b < names.size(); b++)
+			if (const Json *k = keys->find(names[b]); k != nullptr && k->kind == Json::Kind::String && (b >= theirs.size() || k->text != theirs[b]))
+				setMember(mine, names[b], Json::string(k->text));
+		if (mine.members.empty()) return;
+		setMember(all, core.get(), mine);
+		prop.set(json::write(all));
+	};
+	take("AllTrollers", saved, session_.defaultBindingTexts());
+	take("AllTrollersAutoFire", savedAutofire, session_.defaultAutofireTexts());
+	{
+		const Json *s = from.find("AllTrollersAnalog");
+		const Json *binds = s != nullptr ? s->find(controller) : nullptr;
+		if (binds != nullptr && binds->kind == Json::Kind::Object)
+		{
+			any = true;
+			Json all = parsedObject(savedAnalog.get());
+			if (all.find(core.get()) == nullptr)
+			{
+				Json mine = parsedObject("{}");
+				const std::vector<SessionViewModel::Axis> &axes = session_.axes();
+				const std::vector<AnalogBind> &theirs = session_.defaultAnalogBinds();
+				for (size_t i = 0; i < axes.size(); i++)
+				{
+					const Json *b = binds->find(axes[i].name);
+					AnalogBind bind;
+					if (b == nullptr || b->kind != Json::Kind::Object || !analogBindFrom(json::write(*b), bind)) continue;
+					if (i < theirs.size() && sameBind(bind, theirs[i])) continue;
+					Json written;
+					std::string why;
+					json::parse(analogBindJson(bind), written, why);
+					setMember(mine, axes[i].name, written);
+				}
+				if (!mine.members.empty())
+				{
+					setMember(all, core.get(), mine);
+					savedAnalog.set(json::write(all));
+				}
+			}
+		}
+	}
+	if (!any) return;
+	taken.items.push_back(Json::string(core.get()));
+	setMember(from, "taken", taken);
+	fromChimera.set(json::write(from));
 }
 
 void ControlsViewModel::apply()

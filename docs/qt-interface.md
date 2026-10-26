@@ -233,9 +233,27 @@ code is in `source/ui`; how it is built and run is in
   file again by itself. Config > Load Config From... takes Chimera's file
   too. One list (chimera_settings.cpp) ties 118 of Chimera's settings to
   the window's, and Lua's client.getconfig reads by the same list, so the
-  two cannot drift apart. The MCP server's permission to change the
-  project is left for the person to give again. Bindings, paths, recent
-  files, firmware choices and the tools' own settings come next.
+  two cannot drift apart. The settings that are more than one value come
+  too: the hotkeys; the controllers' keys, autofire keys and analog
+  bindings, which Chimera keeps by controller name and the window by core,
+  so each core takes its controller's the first time it opens, once (keys
+  it already has of its own are kept); the paths, global and each
+  system's; the recent projects, scripts, sessions, watch files, macros,
+  searches and tables; the firmware chosen by hand; the main window's
+  place and each tool window's options and place; View > Window Size's
+  scale per system; and the tools' own settings (TAStudio's, the
+  branches', RAM Watch's, RAM Search's, the Lua Console's, the Hex
+  Editor's). On a real config.ini, 133 of its 177 settings were carried.
+  Not carried: the MCP server's permission to change the project (the
+  person gives it again); options Chimera no longer has (frame skip, run
+  in background and the like); what has no meaning here (sound output
+  method, video writers other than ffmpeg, the core list's own memory,
+  rumble bindings: the engine has no rumble); the columns shown in the
+  tools; and settings the window has nowhere to put yet: the default core
+  per system, the main window maximized, relative mouse sensitivity, core
+  settings kept for games opened without a project, and the movie options
+  (what happens at a movie's end, backup movies, compression, VBA-style
+  loading).
 - **The work stays private** (owner, 2026-10-24): no public branch, CI or
   preview build until the owner says otherwise.
 - **macOS is a target** (owner, 2026-10-24): the code is kept portable to

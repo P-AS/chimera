@@ -179,6 +179,281 @@ void put(Json &settings, const std::string &key, Json value)
 bool isScalar(const Json &v) { return v.kind == Json::Kind::Bool || v.kind == Json::Kind::Number || v.kind == Json::Kind::String; }
 
 int64_t whole(const Json &v) { return static_cast<int64_t>(std::llround(v.number())); }
+
+const Json *objectAt(const Json *in, const char *name)
+{
+	const Json *v = in != nullptr ? in->find(name) : nullptr;
+	return v != nullptr && v->kind == Json::Kind::Object ? v : nullptr;
+}
+
+Json object()
+{
+	Json o;
+	o.kind = Json::Kind::Object;
+	return o;
+}
+
+/* Chimera's recent files ({"recentlist": [...]}, newest first) as the
+ * window's, a line each; false when it is not one */
+bool recentLines(const Json *recent, std::string &out)
+{
+	const Json *list = recent != nullptr ? recent->find("recentlist") : nullptr;
+	if (list == nullptr || list->kind != Json::Kind::Array) return false;
+	out.clear();
+	for (const Json &e : list->items)
+		if (e.kind == Json::Kind::String) out += (out.empty() ? "" : "\n") + e.text;
+	return true;
+}
+
+/* "30, 30, 30" (System.Drawing's) as "#1E1E1E"; "" when it is not one */
+std::string rgb(const Json *v)
+{
+	int r = 0, g = 0, b = 0;
+	if (v == nullptr || v->kind != Json::Kind::String || std::sscanf(v->text.c_str(), "%d , %d , %d", &r, &g, &b) != 3) return {};
+	char hex[8];
+	std::snprintf(hex, sizeof hex, "#%02X%02X%02X", r & 0xFF, g & 0xFF, b & 0xFF);
+	return hex;
+}
+
+/* "Arial, 8.25pt, style=Bold" (System.Drawing's) as the window's
+ * {"family", "pointSize", "bold", "italic"}; "" when it is not one */
+std::string font(const Json *v)
+{
+	if (v == nullptr || v->kind != Json::Kind::String) return {};
+	const std::string &t = v->text;
+	const size_t comma = t.find(',');
+	double size = 0;
+	if (comma == std::string::npos || std::sscanf(t.c_str() + comma + 1, " %lfpt", &size) != 1 || size <= 0) return {};
+	const size_t style = t.find("style=");
+	const std::string styles = style == std::string::npos ? std::string() : t.substr(style);
+	Json f = object();
+	f.members.emplace_back("family", Json::string(t.substr(0, comma)));
+	f.members.emplace_back("pointSize", Json::number(size));
+	f.members.emplace_back("bold", Json::boolean_(styles.find("Bold") != std::string::npos));
+	f.members.emplace_back("italic", Json::boolean_(styles.find("Italic") != std::string::npos));
+	return json::write(f);
+}
+
+/* the settings that are more than one value: bindings, paths, recent files,
+ * firmware chosen, the windows' places and the tools' own settings. Each of
+ * Chimera's names taken goes in `carried` */
+void carryRich(const Json &root, Json &settings, std::set<std::string> &carried)
+{
+	auto copyAs = [&](const char *name, const char *key) {
+		if (const Json *v = objectAt(&root, name))
+		{
+			put(settings, key, Json::string(json::write(*v)));
+			carried.insert(name);
+		}
+	};
+	/* hotkeys by action, as the window's own are kept */
+	copyAs("HotkeyBindings", "hotkeys.saved");
+	/* a machine's buttons, kept by Chimera by its controller's name and by
+	 * the window by its core's: each core takes its controller's the first
+	 * time it opens (ControlsViewModel) */
+	{
+		Json from = object();
+		for (const char *name : {"AllTrollers", "AllTrollersAutoFire", "AllTrollersAnalog"})
+			if (const Json *v = objectAt(&root, name))
+			{
+				from.members.emplace_back(name, *v);
+				carried.insert(name);
+			}
+		if (!from.members.empty()) put(settings, "controls.fromChimera", Json::string(json::write(from)));
+	}
+	/* View > Window Size's scale of each system */
+	copyAs("TargetZoomFactors", "display.windowScales");
+	/* the paths: the global ones, and each system's */
+	if (const Json *entries = objectAt(&root, "PathEntries"))
+	{
+		const Json *paths = entries->find("Paths");
+		if (paths != nullptr && paths->kind == Json::Kind::Array)
+		{
+			Json changed = object(), systems, systemChanged = object();
+			systems.kind = Json::Kind::Array;
+			std::string base;
+			for (const Json &p : paths->items)
+			{
+				const Json *type = p.find("Type"), *path = p.find("Path"), *system = p.find("System");
+				if (type == nullptr || path == nullptr || system == nullptr || type->kind != Json::Kind::String ||
+					path->kind != Json::Kind::String || system->kind != Json::Kind::String)
+					continue;
+				if (system->text == "Global_NULL")
+				{
+					if (type->text == "Base") base = path->text == "." ? std::string() : path->text;
+					else put(changed, type->text, *path);
+					continue;
+				}
+				Json *mine = nullptr;
+				for (auto &[s, v] : systemChanged.members)
+					if (s == system->text) mine = &v;
+				if (mine == nullptr)
+				{
+					systems.items.push_back(*system);
+					systemChanged.members.emplace_back(system->text, object());
+					mine = &systemChanged.members.back().second;
+				}
+				put(*mine, type->text, *path);
+			}
+			put(settings, "paths.base", Json::string(base));
+			put(settings, "paths.changed", Json::string(json::write(changed)));
+			put(settings, "paths.systems", Json::string(json::write(systems)));
+			put(settings, "paths.systemChanged", Json::string(json::write(systemChanged)));
+		}
+		if (const Json *v = entries->find("UseRecentForRoms"); v != nullptr && v->kind == Json::Kind::Bool) put(settings, "paths.recentForRoms", *v);
+		if (const Json *v = entries->find("LastRomPath"); v != nullptr && v->kind == Json::Kind::String) put(settings, "paths.lastRomFolder", *v);
+		carried.insert("PathEntries");
+	}
+	/* the recent files */
+	for (const auto &[name, key] : std::initializer_list<std::pair<const char *, const char *>>{{"RecentProjects", "session.recentProjects"},
+			 {"RecentLua", "luaConsole.recentScripts"}, {"RecentLuaSession", "luaConsole.recentSessions"},
+			 {"RecentWatches", "ramWatch.recentFiles"}, {"RecentMacros", "pianoRoll.recentMacros"}})
+	{
+		std::string text;
+		if (recentLines(root.find(name), text))
+		{
+			put(settings, key, Json::string(text));
+			carried.insert(name);
+		}
+	}
+	/* firmware chosen by hand, "core/id" by Chimera, {"core": {"id"}} by the window */
+	if (const Json *chosen = objectAt(&root, "CoreFirmware"))
+	{
+		Json byCore = object();
+		for (const auto &[name, file] : chosen->members)
+		{
+			const size_t slash = name.find('/');
+			if (slash == std::string::npos || file.kind != Json::Kind::String) continue;
+			Json *mine = nullptr;
+			for (auto &[c, v] : byCore.members)
+				if (c == name.substr(0, slash)) mine = &v;
+			if (mine == nullptr)
+			{
+				byCore.members.emplace_back(name.substr(0, slash), object());
+				mine = &byCore.members.back().second;
+			}
+			put(*mine, name.substr(slash + 1), file);
+		}
+		put(settings, "cores.chosenFirmware", Json::string(json::write(byCore)));
+		carried.insert("CoreFirmware");
+	}
+	/* the main window's place and size */
+	{
+		const Json *at = root.find("MainWindowPosition"), *size = root.find("MainWindowSize");
+		int x = 0, y = 0, w = 0, h = 0;
+		if (at != nullptr && size != nullptr && at->kind == Json::Kind::String && size->kind == Json::Kind::String &&
+			std::sscanf(at->text.c_str(), "%d , %d", &x, &y) == 2 && std::sscanf(size->text.c_str(), "%d , %d", &w, &h) == 2 && w > 0 && h > 0)
+		{
+			put(settings, "display.windowGeometry",
+				Json::string(std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(w) + "," + std::to_string(h)));
+			carried.insert("MainWindowPosition");
+			carried.insert("MainWindowSize");
+		}
+	}
+	/* each tool window's options and place, by Chimera's class name */
+	if (const Json *common = objectAt(&root, "CommonToolSettings"))
+	{
+		static const std::pair<const char *, const char *> tools[] = {{"TAStudio", "tastudio"}, {"RamWatch", "ramWatch"},
+			{"RamSearch", "ramSearch"}, {"HexEditor", "hexEditor"}, {"LuaConsole", "luaConsole"}, {"GenericDebugger", "debugger"},
+			{"LogWindow", "logWindow"}, {"MacroInputTool", "macroInput"}, {"SurfaceViewer", "surfaceViewer"}, {"TraceLogger", "traceLogger"}};
+		Json all = object();
+		for (const auto &[name, s] : common->members)
+		{
+			const std::string cls = name.substr(name.rfind('.') + 1);
+			const char *tool = nullptr;
+			for (const auto &[c, t] : tools)
+				if (cls == c) tool = t;
+			if (tool == nullptr || s.kind != Json::Kind::Object) continue;
+			Json mine = object();
+			auto flag = [&](const char *from, const char *to) {
+				if (const Json *v = s.find(from); v != nullptr && v->kind == Json::Kind::Bool) mine.members.emplace_back(to, *v);
+			};
+			flag("SaveWindowPosition", "save");
+			flag("TopMost", "top");
+			flag("FloatingWindow", "float");
+			const Json *save = s.find("SaveWindowPosition"), *x = s.find("_wndx"), *y = s.find("_wndy"), *w = s.find("Width"),
+				*h = s.find("Height");
+			if (save != nullptr && save->boolean && x != nullptr && y != nullptr && w != nullptr && h != nullptr &&
+				x->kind == Json::Kind::Number && y->kind == Json::Kind::Number && w->kind == Json::Kind::Number &&
+				h->kind == Json::Kind::Number && whole(*w) > 0 && whole(*h) > 0)
+				for (const auto &[k, v] : {std::pair<const char *, const Json *>{"x", x}, {"y", y}, {"w", w}, {"h", h}})
+					mine.members.emplace_back(k, Json::integer(whole(*v)));
+			all.members.emplace_back(tool, std::move(mine));
+		}
+		put(settings, "toolWindows.settings", Json::string(json::write(all)));
+		carried.insert("CommonToolSettings");
+	}
+	/* the tools' own settings */
+	const Json *custom = objectAt(&root, "CustomToolSettings");
+	if (custom == nullptr) return;
+	carried.insert("CustomToolSettings");
+	auto settingsOf = [&](const char *cls) { return objectAt(objectAt(custom, (std::string("Chimera.Client.GUI.") + cls).c_str()), "Settings"); };
+	/* a value of one tool's that is the window's as it is */
+	auto same = [&](const Json *from, const char *name, const char *key, Json::Kind kind) {
+		if (const Json *v = from != nullptr ? from->find(name) : nullptr; v != nullptr && v->kind == kind) put(settings, key, *v);
+	};
+	using K = Json::Kind;
+	if (const Json *tas = settingsOf("TAStudio"))
+	{
+		for (const auto &[name, key] : std::initializer_list<std::pair<const char *, const char *>>{{"FollowCursor", "pianoRoll.followPlayback"},
+				 {"FollowCursorAlwaysScroll", "pianoRoll.followAlways"}, {"ScrollSync", "pianoRoll.scrollSync"},
+				 {"EditInvisibleColumns", "pianoRoll.editHiddenColumns"}, {"DenoteStatesWithBGColor", "pianoRoll.denoteStatesColor"},
+				 {"DenoteStatesWithIcons", "pianoRoll.denoteStatesIcons"}, {"DenoteMarkersWithBGColor", "pianoRoll.denoteMarkersColor"},
+				 {"DenoteMarkersWithIcons", "pianoRoll.denoteMarkersIcons"}, {"CopyIncludesFrameNo", "pianoRoll.copyFrameNumbers"},
+				 {"StatesForMarkers", "pianoRoll.markersKeepStates"}, {"BindMarkersToInput", "pianoRoll.bindMarkers"},
+				 {"MoveWithMainWindow", "pianoRoll.moveWithMainWindow"}, {"AutoPause", "session.pauseAtEnd"},
+				 {"AutoRestoreLastPosition", "session.autoRestore"}, {"AutosaveAsBackupFile", "session.autosaveAsBackup"},
+				 {"BackupPerFileSave", "session.backupOnSave"}, {"LoadBranchOnDoubleClick", "branches.loadOnDoubleClick"},
+				 {"OldControlSchemeForBranches", "branches.oldControlScheme"}})
+			same(tas, name, key, K::Bool);
+		for (const auto &[name, key] : std::initializer_list<std::pair<const char *, const char *>>{{"ScrollSpeed", "pianoRoll.wheelRows"},
+				 {"MaxUndoSteps", "pianoRoll.maxUndoSteps"}, {"RewindStep", "session.rewindStep"}, {"RewindStepFast", "session.rewindStepFast"},
+				 {"BranchScreenshotSide", "branches.previewSide"}})
+			same(tas, name, key, K::Number);
+		same(tas, "FollowCursorScrollMethod", "pianoRoll.followScroll", K::String);
+		if (const Json *v = tas->find("AutosaveInterval"); v != nullptr && v->kind == K::Number)
+			put(settings, "session.autosaveSeconds", Json::integer(std::llround(v->number() / 1000.0)));
+		static const char *const paints[] = {"never", "autofire", "always"}, *const patterns[] = {"hold", "autofire", "custom"};
+		if (const Json *v = tas->find("PatternPaintMode"); v != nullptr && v->kind == K::Number && whole(*v) >= 0 && whole(*v) < 3)
+			put(settings, "pianoRoll.patternMode", Json::string(paints[whole(*v)]));
+		if (const Json *v = tas->find("PatternSelection"); v != nullptr && v->kind == K::Number && whole(*v) >= 0 && whole(*v) < 3)
+			put(settings, "pianoRoll.patternKind", Json::string(patterns[whole(*v)]));
+		if (const std::string f = font(tas->find("TasViewFont")); !f.empty()) put(settings, "pianoRoll.rollFont", Json::string(f));
+		if (const Json *v = tas->find("SidebarWidth"); v != nullptr && v->kind == K::Number && whole(*v) > 0)
+			put(settings, "pianoRoll.mainSplit", Json::integer(whole(*v)));
+	}
+	same(settingsOf("RamWatch"), "DoubleClickToPoke", "ramWatch.doubleClickToPoke", K::Bool);
+	if (const Json *search = settingsOf("RamSearch"))
+	{
+		same(search, "PreviewMode", "ramSearch.previewMode", K::Bool);
+		same(search, "AlwaysExcludeRamWatch", "ramSearch.alwaysExcludeRamWatch", K::Bool);
+		same(search, "AutoSearchTakeLagFramesIntoAccount", "ramSearch.autoSearchAccountForLag", K::Bool);
+		same(search, "UseUndoHistory", "ramSearch.useUndoHistory", K::Bool);
+		if (std::string text; recentLines(search->find("RecentSearches"), text)) put(settings, "ramSearch.recentFiles", Json::string(text));
+	}
+	if (const Json *lua = settingsOf("LuaConsole"))
+	{
+		same(lua, "ReloadOnScriptFileChange", "luaConsole.reloadOnChange", K::Bool);
+		same(lua, "ToggleAllIfNoneSelected", "luaConsole.toggleAllIfNoneSelected", K::Bool);
+		same(lua, "DisableLuaScriptsOnLoad", "luaConsole.disableOnLoad", K::Bool);
+		same(lua, "DuplicateToStdout", "luaConsole.duplicateToStdout", K::Bool);
+	}
+	/* the Hex Editor keeps its settings loose */
+	if (const Json *hex = objectAt(custom, "Chimera.Client.GUI.HexEditor"))
+	{
+		same(hex, "LastDomain", "hexEditor.domain", K::String);
+		same(hex, "BigEndian", "hexEditor.bigEndian", K::Bool);
+		same(hex, "DataSize", "hexEditor.size", K::Number);
+		if (std::string text; recentLines(hex->find("RecentTables"), text)) put(settings, "hexEditor.recentTables", Json::string(text));
+		/* its own colours, when it was given them; else the theme's */
+		const Json *customised = hex->find("ColorsCustomised");
+		Json colors = object();
+		if (const Json *c = objectAt(hex, "Colors"); c != nullptr && customised != nullptr && customised->boolean)
+			for (const char *name : {"Background", "Foreground", "MenuBar", "Freeze", "Highlight", "HighlightFreeze"})
+				if (const std::string hexColour = rgb(c->find(name)); !hexColour.empty()) colors.members.emplace_back(name, Json::string(hexColour));
+		if (customised != nullptr) put(settings, "hexEditor.colors", Json::string(json::write(colors)));
+	}
+}
 } // namespace
 
 bool importChimeraSettings(const std::string &text, ChimeraImport &out, std::string &error)
@@ -296,6 +571,7 @@ bool importChimeraSettings(const std::string &text, ChimeraImport &out, std::str
 		}
 	}
 	if (!places.members.empty()) put(out.settings, "messages.positions", Json::string(json::write(places)));
+	carryRich(root, out.settings, carried);
 	/* what Chimera has that was not carried, by its name; inside Movies by "Movies." and its own */
 	for (const auto &[name, value] : root.members)
 	{
