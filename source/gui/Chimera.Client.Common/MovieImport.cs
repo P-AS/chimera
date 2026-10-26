@@ -11,10 +11,12 @@ using Newtonsoft.Json.Linq;
 namespace Chimera.Client.Common
 {
 	/// <summary>
-	/// What the frontend asks a core's importer (engine.h, ce_import_movie): the
-	/// package, the movie, the files to mount beside it under their own names,
-	/// and the import options as settings. Written to a file for the
-	/// <c>--import-movie</c> child process and read back there.
+	/// What the frontend asks a core's importer (engine.h,
+	/// ce_project_import_movie): the package, the movie, the files offered with
+	/// it, and the import options as settings. Written to a file for the
+	/// <c>--import-movie</c> child process and read back there, where it
+	/// becomes a project: the files with a slot in it, the options as its
+	/// settings, and the files with none mounted beside the movie.
 	/// </summary>
 	public sealed class MovieImportRequest
 	{
@@ -32,6 +34,9 @@ namespace Chimera.Client.Common
 			public string Name { get; set; } = "";
 
 			public string Path { get; set; } = "";
+
+			/// <summary>The slot the import's input puts it in; null for a file the core may take as firmware, mounted by name.</summary>
+			public string? Slot { get; set; }
 		}
 
 		[JsonIgnore]

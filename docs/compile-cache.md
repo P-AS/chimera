@@ -94,10 +94,17 @@ is what makes the game fast enough to work on - and it lists the modules:
 name, SHA1, and whether the object is on disk and still what it was. What is
 already compiled is green when the step opens.
 
-**Compile** runs the sessions: `Chimera --headless --precompile=INDEX/COUNT`,
-this same frontend as child processes, each compiling the modules whose names
-hash to its index. Rows appear as objects land, green, so the wait shows its
-work. The button is offered exactly while there is compiling left to do.
+**Compile** runs the sessions: `Chimera --precompile INDEX/COUNT <package>
+<files> <cache folder> [<firmware id>=<path>]...`, this same program as child
+processes with no window, each compiling the modules whose names hash to its
+index. A game runs only in a project (user-decided, 2026-10-26), so each
+session makes one of `<files>` - the files picked so far, their slots and the
+settings chosen, as the window writes them down - and opens its machine; the
+firmware is given outright, as a session reads no settings file. Rows appear
+as objects land, green, so the wait shows its work. The button is offered
+exactly while there is compiling left to do. From a shell, `chimera-run
+--project <p> <package> --precompile INDEX/COUNT --cache-dir <folder>` runs
+the same session on a project.
 
 How many run at once is bounded by memory as well as by processors, and the
 engine decides it (`ce_compile_sessions`, `source/engine/source/compile_sessions.h`):

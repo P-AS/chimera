@@ -213,8 +213,9 @@ with `chimera-run --new-project <out.chimeraProject> <package> <game>
 [<movie>]` (the game in the slot that takes its kind of file, or `--file
 <slot>=<path>` for each; `--movie <movie>` when there is no game file;
 `--settings`, `--firmware`, `--clock-start`) and runs
-it with `chimera-run --project <out.chimeraProject> <package>`. The form that
-takes a game file directly goes once every core's tests have moved.
+it with `chimera-run --project <out.chimeraProject> <package>`. There is no
+other form: chimera-run refuses a game file given alone. A core's suggested
+settings are asked the same way (`--project ... --suggest`).
 
 Three, and a core is not done with fewer:
 

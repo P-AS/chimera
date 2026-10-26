@@ -56,16 +56,10 @@ namespace Chimera.Emulation.Common
 		public Func<CoreFirmwareDecl, byte[]?>? FirmwareProvider { get; set; }
 
 		/// <summary>
-		/// Extra files mounted into the session before boot, in order, for a game
-		/// opened WITHOUT a project (a precompile session's slot map and files).
-		/// A project's files are not listed here: see <see cref="Project"/>.
-		/// </summary>
-		public IReadOnlyList<CoreFile>? ExtraFiles { get; set; }
-
-		/// <summary>
-		/// The project this machine is opened from, or null. The engine reads it
-		/// and gives the core its files itself (engine.h, ce_session_open_project),
-		/// the same way for every program that opens a project.
+		/// The project this machine is opened from: a game runs only in a project
+		/// (user-decided, 2026-10-26). The engine reads it and gives the core its
+		/// files itself (engine.h, ce_session_open_project), the same way for
+		/// every program that opens a project.
 		/// </summary>
 		public Engine.EngineProject? Project { get; set; }
 	}
@@ -129,18 +123,3 @@ namespace Chimera.Emulation.Common
 	}
 }
 
-namespace Chimera.Emulation.Common
-{
-	/// <summary>
-	/// A core opened as a precompile session (see WaterboxCore.PrecompileRequest):
-	/// it boots, compiles its share of the machine's code into the compile
-	/// cache, and reports when it is done. Never machine state.
-	/// </summary>
-	public interface ICorePrecompile : IEmulatorService
-	{
-		bool PrecompileDone { get; }
-		(uint Done, uint Total) PrecompileProgress { get; }
-		ulong CacheStored { get; }
-		ulong CacheFetched { get; }
-	}
-}

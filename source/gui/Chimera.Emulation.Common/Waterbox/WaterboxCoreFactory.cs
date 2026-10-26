@@ -92,33 +92,25 @@ namespace Chimera.Emulation.Common.Waterbox
 
 		public IEmulator Create(CoreCreationContext ctx)
 		{
-			var rom = ctx.Roms.FirstOrDefault()
-				?? throw new InvalidOperationException($"{CoreName} needs a rom to load");
+			// a game runs only in a project (user-decided, 2026-10-26)
+			var project = ctx.Project
+				?? throw new InvalidOperationException($"{CoreName}: a game opens only in a project");
 			var settings = MachinePinnedSettings(ctx);
 			// one line per boot, greppable: a project open must produce exactly
 			// one of these (the witness gate counts them)
 			Console.WriteLine($"[waterbox] booting {CoreName}");
-			return new WaterboxCore(
-				// a file on disk is mounted from there; only a rom the frontend
-				// made (or pulled out of an archive) arrives as bytes
-				rom.RomPath is { Length: > 0 } path && File.Exists(path) ? null : rom.FileData,
-				rom.RomPath,
-				_cfg,
-				_packageDir,
-				settings,
-				ResolveFirmware(ctx),
-				ctx.ExtraFiles,
-				ctx.Project);
+			return new WaterboxCore(project, _cfg, _packageDir, settings, ResolveFirmware(ctx));
 		}
 
 		/// <summary>
 		/// The settings this boot runs with, with the machine settled.
 		///
-		/// A project pins the machine like any other setting, so it is already here.
-		/// A plain rom is not a project and pins nothing, but the frontend routed it
-		/// to a system by its extension - and that system IS a machine, so it decides.
-		/// Without this a .sms opened with no project would boot the package's first
-		/// machine, which is a Mega Drive, and refuse the cartridge.
+		/// A project pins the machine like any other setting, so it is usually
+		/// already here. A project that does not name it (one written by hand)
+		/// still names its system (its Platform), and that system IS a machine,
+		/// so it decides; without this such a project of a Master System game
+		/// would boot the package's first machine, a Mega Drive, and refuse the
+		/// cartridge.
 		/// </summary>
 		private WaterboxCoreSettings? MachinePinnedSettings(CoreCreationContext ctx)
 		{
@@ -157,30 +149,10 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// </summary>
 		private Dictionary<string, byte[]> ResolveFirmware(CoreCreationContext ctx)
 		{
-			// a project says which file fills which slot; a game opened without
-			// one may still have been given a slot map among its extra files
+			// the project says which file fills which slot
 			var slotsJson = ctx.Project?.SlotsJson ?? "{}";
-			if (ctx.Project is null && ctx.ExtraFiles is not null)
-			{
-				foreach (var extra in ctx.ExtraFiles)
-				{
-					// the slot map is one the frontend made, so it has bytes
-					if (extra.Name is "slots" && extra.Data is not null)
-					{
-						slotsJson = System.Text.Encoding.UTF8.GetString(extra.Data);
-						break;
-					}
-				}
-			}
-			// A rom opened directly - no project, so no slot map - still fills a
-			// slot: it is the game. Without saying so, every firmware condition
-			// written over the slots reads false and the firmware is silently not
-			// asked for, which is how a PS3 disc reached the machine with no system
-			// software and refused itself. A precompile session loads exactly this
-			// way, so this is the path its firmware depends on.
 			var effective = WaterboxCore.EffectiveSettingsFor(
 				_cfg, MachinePinnedSettings(ctx));
-			if (slotsJson is "{}") slotsJson = SlotsFromRom(ctx, effective);
 
 			var applicable = Engine.EngineFirmware.Evaluate(
 				_cfg.RawFirmwareJson, slotsJson, Newtonsoft.Json.JsonConvert.SerializeObject(effective));
@@ -223,25 +195,18 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// (<see cref="WaterboxConfig.GameFirmware"/>): the core is asked, on the
 		/// game and its files, exactly as the wizard asked it when the project was made
 		/// (its SuggestSettings answer's "firmware"). Asked again at every load
-		/// rather than read from the project, so a rom opened with no project is
-		/// completed the same way, and a project cannot carry a list the core no
-		/// longer agrees with. A core that cannot answer needs nothing more as
-		/// far as this goes: it then says what it lacks itself, when it starts.
+		/// rather than read from the project, so a project cannot carry a list
+		/// the core no longer agrees with. A core that cannot answer needs
+		/// nothing more as far as this goes: it then says what it lacks itself,
+		/// when it starts.
 		/// </summary>
 		private List<CoreFirmwareDecl> GameFirmwareFor(CoreCreationContext ctx, Dictionary<string, object> effective, string slotsJson)
 		{
-			if (!_cfg.GameFirmware) return [ ];
-			var path = ctx.Roms is { Count: > 0 } roms ? roms[0]?.RomPath : null;
-			if (string.IsNullOrEmpty(path) || !File.Exists(path)) return [ ];
+			if (!_cfg.GameFirmware || ctx.Project is not { } project) return [ ];
 			try
 			{
-				// with the files the run will have: a disc's track files, a
-				// project's other files and its slot map - a core asked about a
-				// .cue alone cannot read the disc
-				var files = GameFilesForCore.WithCueTracks(
-					path, ctx.Project is { } project ? GameFilesForCore.FromProject(project) : ctx.ExtraFiles);
-				var answer = Engine.EngineSession.Suggest(
-					_packageDir, path!, Newtonsoft.Json.JsonConvert.SerializeObject(effective), files);
+				// the project as the run will have it: its files and its slot map
+				var answer = Engine.EngineSession.Suggest(_packageDir, project);
 				if (string.IsNullOrWhiteSpace(answer)) return [ ];
 				var root = Newtonsoft.Json.Linq.JObject.Parse(answer);
 				var decls = WaterboxConfig.ParseGameFirmware(
@@ -259,46 +224,6 @@ namespace Chimera.Emulation.Common.Waterbox
 			{
 				return [ ];
 			}
-		}
-
-		/// <summary>
-		/// The slot map a directly-opened rom implies: its file in the package's
-		/// first required slot, which is the one the wizard calls the game. Only
-		/// the name is needed - conditions test the slot and its extension.
-		/// Among the slots THIS MACHINE exposes: a package that is several
-		/// machines declares a slot per machine (a Dreamcast's disc, a NAOMI's
-		/// rom set), and the rom belongs in the one its machine has.
-		/// </summary>
-		private string SlotsFromRom(CoreCreationContext ctx, Dictionary<string, object> effective)
-		{
-			var path = ctx.Roms is { Count: > 0 } roms ? roms[0]?.RomPath : null;
-			if (string.IsNullOrEmpty(path)) return "{}";
-			string primary;
-			try
-			{
-				var declJson = File.ReadAllText(Path.Combine(_packageDir, "file_slots.json"));
-				var decl = Newtonsoft.Json.Linq.JObject.Parse(declJson);
-				var slots = decl["slots"] as Newtonsoft.Json.Linq.JArray;
-				if (slots is null || slots.Count is 0) return "{}";
-				var exposed = Engine.EngineSlotsGate.Evaluate(
-					declJson, "{}", Newtonsoft.Json.JsonConvert.SerializeObject(effective));
-				var candidates = slots.Where(sl => exposed.Contains((string?) sl["id"] ?? "")).ToList();
-				if (candidates.Count is 0) candidates = slots.ToList();
-				// the game slot is the first that must be filled; failing that, the first
-				var chosen = candidates.FirstOrDefault(sl => (int?)sl["min"] >= 1) ?? candidates[0];
-				primary = (string?) chosen["id"] ?? "";
-				if (primary.Length is 0) return "{}";
-			}
-			catch (Exception)
-			{
-				// no declaration, or an unreadable one: say nothing rather than guess
-				return "{}";
-			}
-			Newtonsoft.Json.Linq.JObject map = new()
-			{
-				[ primary ] = new Newtonsoft.Json.Linq.JArray(Path.GetFileName(path)),
-			};
-			return map.ToString(Newtonsoft.Json.Formatting.None);
 		}
 	}
 }

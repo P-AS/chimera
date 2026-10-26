@@ -8,8 +8,11 @@
 # check by reading.
 #
 # Usage:
-#   ./run-reopen.sh <core.chimeraCore> <rom> [--settings <json>]
+#   ./run-reopen.sh <core.chimeraCore> <project.chimeraProject> [--settings <json>]
 #                   [--firmware <id>=<path>]... [--frames N] [--save-at K] [--after M]
+#
+# A game runs only in a project: make one with chimera-run --new-project
+# <out.chimeraProject> <core.chimeraCore> <game>. Its files are found beside it.
 #
 # When something fails, three flags say WHICH half:
 #   --in-session   reload into the session that made it: savestates alone

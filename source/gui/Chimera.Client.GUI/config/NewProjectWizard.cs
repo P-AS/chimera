@@ -63,9 +63,6 @@ namespace Chimera.Client.GUI
 		private readonly Label _machineLabel;
 
 		// page 5: what the core must compile for this game before it can run it
-		/// <summary>the config a precompile session must run with, so it sees the same paths</summary>
-		private readonly string? _configPath;
-
 		private ListView _precompileList;
 		private Button _precompileButton;
 		private Label _precompileStatus;
@@ -202,15 +199,6 @@ namespace Chimera.Client.GUI
 		/// </summary>
 		private readonly Func<string, IReadOnlyList<string>> _rememberedFirmwarePaths;
 
-		/// <summary>
-		/// Write the firmware chosen HERE into the config, and save it, before the
-		/// precompile sessions start. They are separate processes: they read the
-		/// config from DISK, and their only firmware source is what it remembers
-		/// (CoreFirmwareStore.ProviderFor). The owner remembers these paths too,
-		/// but only after this wizard returns - which is after the sessions have
-		/// already run and failed to find any.
-		/// </summary>
-		private readonly Action<string, IReadOnlyDictionary<string, string>> _rememberFirmwareNow;
 		private readonly ListView _firmwareList;
 		private readonly Button _firmwareSetButton;
 		private readonly Button _firmwareClearButton;
@@ -287,20 +275,16 @@ namespace Chimera.Client.GUI
 			IReadOnlyList<string>? firmwareSearchDirs = null,
 			PickScanFolder? pickFirmwareFolder = null,
 			Func<string, string, string?>? rememberedFirmwarePath = null,
-			Action<string, IReadOnlyDictionary<string, string>>? rememberFirmwareNow = null,
-			string? configPath = null,
 			Func<string, IReadOnlyList<string>>? rememberedFirmwarePaths = null,
 			CoreKindFilter kind = CoreKindFilter.Emulators,
 			Action<string>? firmwareFoundIn = null)
 		{
 			_firmwareFoundIn = firmwareFoundIn ?? (static _ => { });
 			_rememberedFirmwarePaths = rememberedFirmwarePaths ?? (static _ => [ ]);
-			_configPath = configPath;
 			_pickFirmwareFile = pickFirmwareFile ?? (static _ => null);
 			_firmwareSearchDirs = firmwareSearchDirs ?? [ ];
 			_pickFirmwareFolder = pickFirmwareFolder;
 			_rememberedFirmwarePath = rememberedFirmwarePath ?? (static (_, _) => null);
-			_rememberFirmwareNow = rememberFirmwareNow ?? (static (_, _) => { });
 			// the versions of one core newest first (issue #67): the picker opens on the latest, and so
 			// does everything below that takes "the first package that ..."
 			_cores = CoreVersionDates.NewestFirst(cores.Where(static c => c.Error is null)).ToList();
@@ -1633,31 +1617,23 @@ namespace Chimera.Client.GUI
 			{
 			}
 
-			// The sessions are child processes reading the config off disk, so
-			// whatever firmware was chosen on the firmware page has to BE there
-			// before they start. Without this a core that needs firmware compiles
-			// nothing: the session boots, is refused for want of it, and exits.
-			_rememberFirmwareNow(ChosenCore.Name, ProvidedFirmwarePaths);
-
-			// The sessions boot the game as the project will, so they are handed
-			// every file the project will hold, not the game file alone: a
-			// licensed package needs its .rap, an update its base game, an
-			// encrypted disc its key - without them a session is refused at boot
-			// and compiles nothing (chimera#140).
-			var slotsFile = WriteSlotsForPrecompile();
+			// The sessions boot the game as the project will: each makes a project
+			// of every file picked, in its slot, with the settings chosen
+			// (chimera#140, and a game runs only in a project).
+			var filesDocument = WriteFilesForSuggestion();
 			CoreCacheManifest manifest;
 			try
 			{
 				manifest = PrecompileOrchestrator.Run(
-					ChosenCore.Path, _configPath, romPath, romSha1, dir,
+					ChosenCore.Path, filesDocument, romPath, romSha1, dir,
 					_cfg?.CoreName ?? ChosenCore.Name, _cfg?.Version ?? "",
 					Entry, Progress, cancelled: PumpAndCheckCancel,
-					firmware: ProvidedFirmwarePaths, slotsFile: slotsFile,
+					firmware: ProvidedFirmwarePaths,
 					sessionGigabytes: CompileSessionGigabytes);
 			}
 			finally
 			{
-				if (slotsFile is not null) try { File.Delete(slotsFile); } catch (IOException) { }
+				if (filesDocument is not null) try { File.Delete(filesDocument); } catch (IOException) { }
 			}
 
 			_precompiling = false;
@@ -2577,7 +2553,7 @@ namespace Chimera.Client.GUI
 			_status.Text = "Looking this game up...";
 			_status.Refresh();
 			var game = PrecompileRomPath()!;
-			var (json, why) = SuggestionSourceForTest?.Invoke(game) ?? AskCoreForSuggestion(ChosenCore!.Path, game, WriteFilesForSuggestion());
+			var (json, why) = SuggestionSourceForTest?.Invoke(game) ?? AskCoreForSuggestion(ChosenCore!.Path, WriteFilesForSuggestion());
 			_status.Text = "";
 			if (json is null)
 			{
@@ -2686,18 +2662,22 @@ namespace Chimera.Client.GUI
 		}
 
 		/// <summary>
-		/// Runs <c>Chimera --suggest-settings package game</c> and returns the
-		/// core's JSON, or null and why. The UI keeps painting while it waits.
+		/// Runs <c>Chimera --suggest-settings package files</c> and returns the
+		/// core's JSON, or null and why. The core is asked about a project made
+		/// from the files picked so far and the settings chosen so far (a game
+		/// runs only in a project, user-decided 2026-10-26). The UI keeps
+		/// painting while it waits.
 		/// </summary>
 		/// <param name="filesDocument">
-		/// The file <see cref="WriteFilesForSuggestion"/> wrote, or null to ask
-		/// about the game file alone. It is deleted when the answer is in.
+		/// The file <see cref="WriteFilesForSuggestion"/> wrote, or null when it
+		/// could not be written. It is deleted when the answer is in.
 		/// </param>
-		private static (string? Json, string Why) AskCoreForSuggestion(string packagePath, string gamePath, string? filesDocument = null)
+		private static (string? Json, string Why) AskCoreForSuggestion(string packagePath, string? filesDocument)
 		{
+			if (filesDocument is null) return (null, "the files picked so far could not be written down for the core");
 			try
 			{
-				return AskCoreForSuggestionWith(packagePath, gamePath, filesDocument);
+				return AskCoreForSuggestionWith(packagePath, filesDocument);
 			}
 			finally
 			{
@@ -2710,13 +2690,10 @@ namespace Chimera.Client.GUI
 			}
 		}
 
-		private static (string? Json, string Why) AskCoreForSuggestionWith(string packagePath, string gamePath, string? filesDocument)
+		private static (string? Json, string Why) AskCoreForSuggestionWith(string packagePath, string filesDocument)
 		{
 			var lines = new List<string>();
-			string[] args = filesDocument is null
-				? ["--suggest-settings", packagePath, gamePath]
-				: ["--suggest-settings", packagePath, gamePath, filesDocument];
-			using var p = SelfProcess.Start(args, line =>
+			using var p = SelfProcess.Start([ "--suggest-settings", packagePath, filesDocument ], line =>
 			{
 				lock (lines) lines.Add(line);
 			});
@@ -2757,37 +2734,10 @@ namespace Chimera.Client.GUI
 
 		// ---- firmware: the last word, decided by everything before it ------------
 
-		/// <summary>The slot map exactly as the session will mount it, from the form's current picks.</summary>
-		/// <summary>
-		/// The slot map and where each file lies, written for the precompile
-		/// sessions (--precompile-slots); null when there is nothing beside the
-		/// game to hand over. The names are the ones the project will record.
-		/// </summary>
-		private string? WriteSlotsForPrecompile()
-		{
-			if (_declaration is null) return null;
-			Newtonsoft.Json.Linq.JObject files = new();
-			foreach (var slot in _declaration.Slots)
-			{
-				if (!_slotLists.TryGetValue(slot.Id, out var list)) continue;
-				foreach (var file in list.Items.OfType<PickedFile>()) files[file.Name] = file.Path;
-			}
-			if (files.Count is 0) return null;
-			var doc = new Newtonsoft.Json.Linq.JObject
-			{
-				["slots"] = Newtonsoft.Json.Linq.JObject.Parse(CurrentSlotsJson()),
-				["files"] = files,
-			};
-			var path = Path.Combine(Path.GetTempPath(), $"chimera-precompile-slots-{Guid.NewGuid():N}.json");
-			File.WriteAllText(path, doc.ToString(Newtonsoft.Json.Formatting.None));
-			return path;
-		}
-
 		/// <summary>
 		/// What the core is told of the project to be when it is asked about the
 		/// game (<see cref="AskCoreForSuggestion"/>): the files picked so far and
-		/// the slot each fills, as <see cref="WriteSlotsForPrecompile"/> has
-		/// them, and the settings chosen so far - the machine among them, which
+		/// the slot each fills, and the settings chosen so far - the machine among them, which
 		/// a package of several machines needs before it can read a game at all.
 		/// A core asked about a .cue alone cannot read the disc.
 		/// </summary>
@@ -2811,7 +2761,7 @@ namespace Chimera.Client.GUI
 			};
 		}
 
-		/// <summary>The same, written to a file for the helper process; null when it cannot be written (the core is then asked about the game alone).</summary>
+		/// <summary>The same, written to a file for the helper process; null when it cannot be written.</summary>
 		private string? WriteFilesForSuggestion()
 		{
 			try

@@ -2,9 +2,14 @@
 
 > **2026-08-26**: superseded as a GUI-facing format by the Chimera project
 > (docs/project.md), which folds this manifest in as its file section. The
-> `ce_multifile_*` engine code is the backbone of that section, and
-> headless descriptors remain in use by chimera-run and the gates. The
+> `ce_multifile_*` engine code is the backbone of that section. The
 > frontend TODOs below are cancelled in favour of the project work.
+>
+> **2026-10-26**: a game runs only in a project (user-decided), so nothing
+> loads a descriptor as a game any more: chimera-run lost its game-file form,
+> and with it the descriptor loading described under "Loading". A game of
+> several files is a project of several files, each given to
+> `chimera-run --new-project` with `--file <slot>=<path>`.
 
 A game made of several files - multiple floppies or discs, a cue and its
 bin, previously exported save data - is named by one descriptor file, and
@@ -78,9 +83,9 @@ self-describing: playback needs no descriptor, only files whose names and
 hashes match. A movie that began from restored save data names the exact
 bytes it began from; a movie from power-on simply has no savedata entry.
 
-## Loading
+## Loading (until 2026-10-26)
 
-`chimera-run` (and the frontend) route a `.chimeraMultiFile` rom through
+`chimera-run` (and the frontend) routed a `.chimeraMultiFile` rom through
 `ce_multifile_open`, then mount: the first image as `rom` plus its real
 name as `rom.name`, further images as `rom2..romN`, support files under
 their own names, savedata as `savedata` - all through `ce_session_open`'s

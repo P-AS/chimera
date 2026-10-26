@@ -20,14 +20,6 @@ namespace Chimera.Client.Common
 			public string RomPath { get; set; }
 			public GameInfo Game { get; set; }
 		}
-		private class LoadParameters
-		{
-			public CoreComm Comm { get; set; }
-
-			public GameInfo Game { get; set; }
-
-			public List<IRomAsset> Roms { get; set; } = new List<IRomAsset>();
-		}
 		private readonly Config _config;
 
 		private readonly IDialogParent _dialogParent;
@@ -68,7 +60,6 @@ namespace Chimera.Client.Common
 		// TODO: reconsider the need for exposing these;
 		public IEmulator LoadedEmulator { get; private set; }
 		public GameInfo Game { get; private set; }
-		public RomGame Rom { get; private set; }
 		public string CanonicalFullPath { get; private set; }
 		public bool Deterministic { get; set; }
 
@@ -116,28 +107,6 @@ namespace Chimera.Client.Common
 		public delegate void LoadErrorEventHandler(object sender, RomErrorArgs e);
 		public event LoadErrorEventHandler OnLoadError;
 
-		public Func<ChimeraFile, int?> ChooseArchive { get; set; }
-
-		public Func<RomGame, string> ChoosePlatform { get; set; }
-
-		// in case we get sent back through the picker more than once, use the same choice the second time
-		private int? _previousChoice;
-		private int? HandleArchive(ChimeraFile file)
-		{
-			if (_previousChoice.HasValue)
-			{
-				return _previousChoice;
-			}
-
-			if (ChooseArchive != null)
-			{
-				_previousChoice = ChooseArchive(file);
-				return _previousChoice;
-			}
-
-			return null;
-		}
-
 		// May want to phase out this method in favor of the overload with more parameters
 		private void DoLoadErrorCallback(string message, string systemId, LoadErrorType type = LoadErrorType.Unknown)
 		{
@@ -149,34 +118,6 @@ namespace Chimera.Client.Common
 			OnLoadError?.Invoke(this, new RomErrorArgs(message, systemId, path, det, type));
 		}
 
-		public IOpenAdvanced OpenAdvanced { get; set; }
-
-		private bool HandleArchiveBinding(ChimeraFile file, bool showDialog = true)
-		{
-			// try binding normal rom extensions first
-			if (!file.IsBound)
-			{
-				file.BindSoleItemOf(CoreRegistry.Instance.KnownRomExtensions.ToList());
-			}
-			// if we have an archive and need to bind something, then pop the dialog
-			if (file.IsArchive && !file.IsBound)
-			{
-				var result = showDialog ? HandleArchive(file) : null;
-				if (result.HasValue)
-				{
-					file.BindArchiveMember(result.Value);
-				}
-				else
-				{
-					return false;
-				}
-			}
-
-			CanonicalFullPath = file.CanonicalFullPath;
-
-			return true;
-		}
-
 		/// <summary>
 		/// The resolved project when the caller is opening a .chimeraProject: every
 		/// file already located and hash-checked (or knowingly overridden) by the
@@ -184,94 +125,31 @@ namespace Chimera.Client.Common
 		/// </summary>
 		public Emulation.Common.Engine.EngineProject Project { get; set; }
 
-		public bool LoadRom(string path, CoreComm nextComm, string forcedCoreName = null, int recursiveCount = 0)
+		public bool LoadRom(string path, CoreComm nextComm)
 		{
 			if (path == null) return false;
 
-			if (recursiveCount > 1) // hack to stop recursive calls from endlessly rerunning if we can't load it
+			// a game runs only in a project (user-decided, 2026-10-26): there is
+			// no other way to a machine
+			if (Project is null || !path.EndsWith(".chimeraProject", StringComparison.OrdinalIgnoreCase))
 			{
-				DoLoadErrorCallback("Failed multiple attempts to load ROM.", "");
+				DoLoadErrorCallback($"{Path.GetFileName(path)}: a game opens only in a project.", null);
 				return false;
 			}
-
-			if (Project is not null && path.EndsWith(".chimeraProject", StringComparison.OrdinalIgnoreCase))
-			{
-				try
-				{
-					LoadProjectGame(path, nextComm, out var projectEmulator, out var projectGame);
-					if (projectEmulator is null) return false;
-					CanonicalFullPath = Path.GetFullPath(path);
-					Rom = null;
-					LoadedEmulator = projectEmulator;
-					Game = projectGame;
-					return true;
-				}
-				catch (Exception ex)
-				{
-					DispatchErrorMessage(ex, system: null, path: path);
-					return false;
-				}
-			}
-
-			using ChimeraFile file = new(path, allowArchives: true);
-			// make sure path is absolute
-			path = CanonicalFullPath = file.CanonicalFullPath;
-
-			if (!file.Exists) return false; // if the provided file doesn't even exist, give up!
-
-			IEmulator nextEmulator;
-			RomGame rom = null;
-			GameInfo game = null;
-
 			try
 			{
-				var cancel = false;
-
-				{
-					// do the archive binding we had to skip
-					if (!HandleArchiveBinding(file))
-					{
-						return false;
-					}
-
-					// What a file's bytes mean is the core's business, never the frontend's:
-					// disc images included, the raw file goes to whichever core package
-					// declared the extension, and any format parsing happens in there.
-					LoadOther(
-						nextComm,
-						file,
-						ext: file.Extension,
-						forcedCoreName: forcedCoreName,
-						out nextEmulator,
-						out rom,
-						out game,
-						out cancel);
-				}
-
-				if (nextEmulator == null)
-				{
-					if (!cancel)
-					{
-						DoLoadErrorCallback("No core could load the rom.", null);
-					}
-
-					return false;
-				}
-
-				if (game is null) throw new Exception("RomLoader returned core but no GameInfo"); // shouldn't be null if `nextEmulator` isn't? just in case
+				LoadProjectGame(path, nextComm, out var projectEmulator, out var projectGame);
+				if (projectEmulator is null) return false;
+				CanonicalFullPath = Path.GetFullPath(path);
+				LoadedEmulator = projectEmulator;
+				Game = projectGame;
+				return true;
 			}
 			catch (Exception ex)
 			{
-				var system = game?.System;
-
-				DispatchErrorMessage(ex, system: system, path: path);
+				DispatchErrorMessage(ex, system: null, path: path);
 				return false;
 			}
-
-			Rom = rom;
-			LoadedEmulator = nextEmulator;
-			Game = game;
-			return true;
 		}
 
 		/// <summary>
@@ -349,125 +227,6 @@ namespace Chimera.Client.Common
 			// game's system (scripts, tools, the movie's platform). The core knows
 			// which machine it became, so that is what the record says.
 			if (!string.IsNullOrEmpty(nextEmulator.SystemId)) game.System = nextEmulator.SystemId;
-		}
-
-		/// <summary>
-		/// Files mounted beside a game opened directly, the way a project mounts
-		/// its slots: the slot map as "slots" and every file under its name. Only
-		/// a precompile session sets it (--precompile-slots): the wizard compiles
-		/// before the project exists, and a licensed package, an installed update
-		/// or an encrypted disc does not boot on the game file alone (chimera#140).
-		/// </summary>
-		public static IReadOnlyList<CoreFile> PlainLoadExtraFiles { get; set; }
-
-		private IEmulator MakeCoreFromRegistry(LoadParameters lp, string forcedCoreName = null)
-		{
-			IReadOnlyList<ICoreFactory> factories;
-			if (forcedCoreName != null)
-			{
-				// the chosen build of that core, else the newest installed: several builds may be registered
-				var singleFactory = CoreRegistry.Instance.FactoryFor(forcedCoreName, pinnedSha1: null) is { } built && built.SystemIds.Contains(lp.Game.System) ? built : null;
-				factories = singleFactory != null ? [ singleFactory ] : [ ];
-			}
-			else
-			{
-				var dbForcedCoreName = lp.Game.ForcedCore;
-				factories = CoreRegistry.Instance.GetFactories(lp.Game.System)
-					// one build per core: the chosen one, else the newest installed
-					.Select(static f => f.CoreName).Distinct()
-					.Select(static name => CoreRegistry.Instance.FactoryFor(name, pinnedSha1: null))
-					.Where(f => f is not null && f.SystemIds.Contains(lp.Game.System))
-					.OrderBy(f => f.CoreName.EqualsIgnoreCase(dbForcedCoreName) ? -1 : 0)
-					.ToList();
-				if (factories.Count == 0)
-				{
-					throw new CoreLoadException($"No loaded core can run a {lp.Game.System} game. Open one with File > Open Core...");
-				}
-			}
-			var exceptions = new List<Exception>();
-			foreach (var factory in factories)
-			{
-				try
-				{
-					var ctx = new CoreCreationContext
-					{
-						Comm = lp.Comm,
-						Game = lp.Game,
-						Roms = lp.Roms,
-						DeterministicEmulationRequested = Deterministic,
-						Settings = GetCoreSettings(factory.CoreType, factory.SettingsType),
-						FirmwareProvider = CoreFirmwareStore.ProviderFor(_config, factory.CoreName),
-						ExtraFiles = PlainLoadExtraFiles,
-					};
-					var created = factory.Create(ctx);
-					CoreRegistry.Instance.NoteCreated(created, factory);
-					return created;
-				}
-				catch (Exception e) when (!_config.DontTryOtherCores && e is not InternalCoreException)
-				{
-					exceptions.Add(e);
-				}
-			}
-			throw new AggregateException("No core could load the game", exceptions);
-		}
-
-		private void LoadOther(
-			CoreComm nextComm,
-			ChimeraFile file,
-			string ext,
-			string forcedCoreName,
-			out IEmulator nextEmulator,
-			out RomGame rom,
-			out GameInfo game,
-			out bool cancel)
-		{
-			cancel = false;
-			rom = new RomGame(file);
-
-			if (string.IsNullOrEmpty(rom.GameInfo.System))
-			{
-				if (CoreRegistry.Instance.TryGetSystemForExtension(rom.Extension, out var declaredSysID))
-				{
-					// a loaded core package declared this extension
-					rom.GameInfo.System = declaredSysID;
-				}
-				else if (ChoosePlatform != null)
-				{
-					var result = ChoosePlatform(rom);
-					if (!string.IsNullOrEmpty(result))
-					{
-						rom.GameInfo.System = result;
-					}
-					else
-					{
-						cancel = true;
-					}
-				}
-			}
-
-			game = rom.GameInfo;
-
-			nextEmulator = null;
-			if (game.System == null)
-				return; // The user picked nothing in the Core picker
-
-			var lp = new LoadParameters
-			{
-				Comm = nextComm,
-				Game = game,
-				Roms =
-				{
-					new RomAsset
-					{
-						RomData = rom.RomData,
-						FileData = rom.FileData,
-						Extension = rom.Extension,
-						RomPath = file.CanonicalFullPath,
-						Game = game,
-					},
-				},
-			};
-			nextEmulator = MakeCoreFromRegistry(lp, forcedCoreName);
 		}
 
 		private void DispatchErrorMessage(Exception ex, string system, string path)

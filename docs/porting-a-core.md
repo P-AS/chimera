@@ -442,7 +442,9 @@ Probed once after `Init`; absent exports simply mean the tool is not offered.
 - **`SuggestSettings()`** - what the core would choose for a game before one
   boots, declared with `"suggestSettings": true` in `waterbox.config` so the
   frontend never loads a core that has nothing to say. It is called INSTEAD of
-  `Init`, on exactly the mounts a run would have (`ce_suggest_settings`), and
+  `Init`, on exactly the mounts a run would have, of the project the New
+  Project window has made so far (`ce_project_suggest_settings`;
+  `chimera-run --project <p> <package> --suggest` asks it from a shell), and
   returns a JSON object: `{"values": {setting: value, ...}, "note": "..."}`.
   The new-project wizard asks when it reaches the settings page, puts the
   values into the settings the way a preset is applied, and shows the note
