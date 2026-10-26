@@ -13,64 +13,125 @@ namespace chimera::vm {
 
 using json::Json;
 
-namespace {
-bool isCue(const std::string &path)
+std::vector<AskFile> askFilesOf(const std::string &package, const std::string &game, const Mounts &files, const std::string &slotsJson)
 {
-	if (path.size() < 4) return false;
-	std::string ext = path.substr(path.size() - 4);
-	std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-	return ext == ".cue";
-}
-} // namespace
-
-Mounts withCueTracks(const std::string &game, Mounts files)
-{
-	namespace fs = std::filesystem;
-	std::vector<std::string> cues;
-	if (isCue(game)) cues.push_back(game);
-	for (const auto &[name, path] : files)
-		if (isCue(path) && std::find(cues.begin(), cues.end(), path) == cues.end()) cues.push_back(path);
-	for (const std::string &cue : cues)
+	std::vector<AskFile> out;
+	Json slots;
+	std::string error;
+	if (json::parse(slotsJson, slots, error) && slots.kind == Json::Kind::Object)
+		for (const auto &[slot, names] : slots.members)
+			for (const Json &n : names.items)
+				for (const auto &[name, path] : files)
+					if (name == n.text)
+					{
+						out.push_back({slot, name, path});
+						break;
+					}
+	if (game.empty() || std::any_of(out.begin(), out.end(), [&](const AskFile &f) { return f.path == game; })) return out;
+	/* the game alone: the slot that takes its kind of file, else the first */
+	std::string kind = std::filesystem::path(game).extension().string();
+	if (!kind.empty()) kind.erase(0, 1);
+	std::transform(kind.begin(), kind.end(), kind.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	std::string slot = "rom";
+	if (ce_package *pk = ce_package_open(package.c_str(), nullptr))
 	{
-		std::ifstream in(cue, std::ios::binary);
-		const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 		uint64_t len = 0;
-		const char *refs = ce_cue_references(text.data(), text.size(), &len);
-		Json names;
-		std::string error;
-		if (refs == nullptr || !json::parse(std::string_view(refs, static_cast<size_t>(len)), names, error)) continue;
-		for (const Json &n : names.items)
+		Json decl;
+		if (const uint8_t *d = ce_package_entry(pk, "file_slots.json", &len);
+			d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), decl, error))
+			if (const Json *list = decl.find("slots"); list != nullptr && !list->items.empty())
+			{
+				slot = list->items.front().find("id") != nullptr ? list->items.front().find("id")->text : slot;
+				for (const Json &s : list->items)
+					if (const Json *formats = s.find("formats"))
+						for (const Json &f : formats->items)
+						{
+							std::string format = f.text;
+							std::transform(format.begin(), format.end(), format.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+							if (format == kind && s.find("id") != nullptr) slot = s.find("id")->text;
+						}
+			}
+		ce_package_free(pk);
+	}
+	out.push_back({slot, std::filesystem::path(game).filename().string(), game});
+	return out;
+}
+
+ce_project *askingProject(const std::string &package, const std::vector<AskFile> &files, const std::string &settingsJson, std::string &why)
+{
+	/* the package's core by name, not pinned: the package given is the one asked */
+	std::string coreName, version;
+	const char *error = nullptr;
+	ce_package *pk = ce_package_open(package.c_str(), &error);
+	if (pk == nullptr)
+	{
+		why = error != nullptr ? error : package + ": not a core package";
+		return nullptr;
+	}
+	{
+		uint64_t len = 0;
+		Json cfg;
+		std::string parseError;
+		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+			d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, parseError))
 		{
-			const bool listed = std::any_of(files.begin(), files.end(), [&](const auto &f) { return f.first == n.text; });
-			const fs::path track = fs::path(cue).parent_path() / n.text;
-			std::error_code ec;
-			if (!listed && fs::is_regular_file(track, ec)) files.emplace_back(n.text, track.string());
+			if (const Json *n = cfg.find("coreName")) coreName = n->text;
+			if (const Json *v = cfg.find("version")) version = v->text;
+		}
+		ce_package_free(pk);
+	}
+	ce_project *p = ce_project_new();
+	ce_project_set_core(p, coreName.c_str(), version.c_str(), "");
+	for (const AskFile &f : files)
+	{
+		if (f.slot.empty()) continue;
+		if (ce_project_file_add(p, f.name.c_str(), f.slot.c_str(), f.path.c_str(), &error) != 0)
+		{
+			why = std::string(f.name) + ": " + (error != nullptr ? error : "not taken");
+			ce_project_free(p);
+			return nullptr;
 		}
 	}
-	return files;
+	if (!settingsJson.empty() && settingsJson != "{}" && ce_project_set_settings_text(p, settingsJson.c_str(), &error) != 0)
+	{
+		why = std::string("settings: ") + (error != nullptr ? error : "not taken");
+		ce_project_free(p);
+		return nullptr;
+	}
+	return p;
+}
+
+bool saveAskingProject(const std::string &package, const std::vector<AskFile> &files, const std::string &settingsJson,
+	const std::string &path, std::vector<std::string> &dirs, std::string &why)
+{
+	ce_project *p = askingProject(package, files, settingsJson, why);
+	if (p == nullptr) return false;
+	const char *error = nullptr;
+	const bool saved = ce_project_save(p, path.c_str(), &error) == 0;
+	ce_project_free(p);
+	if (!saved)
+	{
+		why = error != nullptr ? error : "the project could not be written";
+		return false;
+	}
+	for (const AskFile &f : files)
+	{
+		if (f.slot.empty()) continue;
+		const std::string dir = std::filesystem::path(f.path).parent_path().string();
+		if (std::find(dirs.begin(), dirs.end(), dir) == dirs.end()) dirs.push_back(dir);
+	}
+	return true;
 }
 
 std::string askForSuggestion(const std::string &package, const std::string &game, const Mounts &files,
 	const std::string &slotsJson, const std::string &settingsJson, std::string &why)
 {
-	std::vector<const char *> names, paths;
-	std::vector<const uint8_t *> data;
-	std::vector<uint64_t> lens;
-	names.push_back("slots");
-	paths.push_back(nullptr);
-	data.push_back(reinterpret_cast<const uint8_t *>(slotsJson.data()));
-	lens.push_back(slotsJson.size());
-	for (const auto &[name, path] : files)
-	{
-		names.push_back(name.c_str());
-		paths.push_back(path.c_str());
-		data.push_back(nullptr);
-		lens.push_back(0);
-	}
+	ce_project *project = askingProject(package, askFilesOf(package, game, files, slotsJson), settingsJson, why);
+	if (project == nullptr) return {};
 	uint64_t len = 0;
 	const char *error = nullptr;
-	const char *answer = ce_suggest_settings(package.c_str(), nullptr, 0, game.c_str(), settingsJson.c_str(), nullptr, nullptr,
-		nullptr, 0, names.data(), data.data(), lens.data(), paths.data(), static_cast<int32_t>(names.size()), &len, &error);
+	const char *answer = ce_project_suggest_settings(package.c_str(), project, nullptr, nullptr, nullptr, 0, &len, &error);
+	ce_project_free(project);
 	if (answer == nullptr)
 	{
 		why = error != nullptr ? error : "the core could not be asked";

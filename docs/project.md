@@ -433,7 +433,13 @@ settings:
 - `options`: bool settings, sent only when ticked.
 
 The core's `ImportMovie` export answers instead of `Init`
-(`ce_import_movie`): a refusal is one sentence, shown in the dialog with
+(`ce_project_import_movie`), and it is asked of a project, as every other
+question about a game is (user-decided, 2026-10-26): the files picked that
+the import form gives a slot go in it, the options are its settings, and a
+file the core may take as firmware is mounted beside the movie under its
+own name, since only the answer says which firmware it is. The project is
+made in the helper process from the dialog's choices and thrown away
+afterwards. A refusal is one sentence, shown in the dialog with
 everything still picked so a missing file can be added. An answer only
 SUGGESTS: the machine, the settings, the firmware and the files in load
 order, plus notes for the user and the movie as an input log. The New
@@ -681,6 +687,17 @@ opened a project. It does now, with the engine's sentence as the refusal.
   guest kit's waterbox_slots.h - DOSBox-X mounts mixed media (floppies +
   CDs + hard disk + conf, gated: the slots leg, 12/12), PPSSPP boots the
   disc slot, both NES cores read the rom slot.
+- DONE (2026-10-26): `chimera-run --new-project`, which makes a project
+  from the command line, as New Project makes one; a game runs only in a
+  project (user-decided, 2026-10-26; docs/design-principles.md), so this is
+  how the gates make theirs. The game-file form of chimera-run is gone, and
+  so is the engine's call that opened a machine from files alone
+  (`ce_session_open`): every machine is opened by
+  `ce_session_open_project`. The questions asked of a core before a
+  project is final - its suggested settings, a compile session, a movie
+  import - are asked of a project made from the choices so far
+  (`ce_project_suggest_settings`, `ce_project_import_movie`,
+  `chimera-run --project ... --suggest | --import-movie | --precompile`).
 - TODO: the frontend (start screen, creation wizard rendering
   file_slots.json, resolution dialog, TAStudio-as-application, removal
   of the casual paths); PPSSPP memstick-zip import and NES SRAM import

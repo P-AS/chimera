@@ -3465,7 +3465,10 @@ bool helpMenu(const char *package, const char *rom)
 	SettingsViewModel settings(d, session);
 	HelpViewModel help(d, session, settings);
 	std::string error, text;
-	CHECK(help.buildName.get().rfind("Qt prototype, commit ", 0) == 0 && help.buildName.get().size() > 25);
+	/* named as Chimera names a build: its commit and that commit's time on the European clock */
+	CHECK(std::regex_match(help.buildName.get(), std::regex(R"(Commit [0-9a-f]{9} \(\d{4}-\d{2}-\d{2} \d{2}:\d{2} CES?T\))")));
+	CHECK(help.commit.get().size() == 9 && help.buildName.get().find(help.commit.get()) == 7 &&
+		help.commitUrl.get().rfind("https://github.com/ToolAssisted-run/chimera/commit/" + help.commit.get(), 0) == 0);
 	/* nothing open: the build alone, and the report says what was not running */
 	CHECK(fromValue(help.run("versionReport", {}, error).value_or(Value()), text) && text == "**Chimera build:** " + help.buildName.get());
 	CHECK(fromValue(help.run("makeReport", {}, error).value_or(Value()), text));

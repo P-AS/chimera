@@ -1,16 +1,19 @@
 #pragma once
-/* A core's suggestion for a game, before a project exists (ce_suggest_settings,
- * the core's SuggestSettings): the values it would set, and what the game has
- * of its own - settings beyond the package's (an arcade game's dip switches)
- * and, for a package that says "gameFirmware", firmware beyond the package's.
- * The core is asked with what a run would have: the game, the other files
- * picked under their names, the track files of every cue among them, the slot
- * map (mounted as "slots") and the settings chosen so far. */
+/* A core's suggestion for a game, before a project is final
+ * (ce_project_suggest_settings, the core's SuggestSettings): the values it
+ * would set, and what the game has of its own - settings beyond the
+ * package's (an arcade game's dip switches) and, for a package that says
+ * "gameFirmware", firmware beyond the package's. A game runs only in a
+ * project (owner, 2026-10-26), so the core is asked of one: the files picked
+ * so far in their slots (a cue's tracks come with it) and the settings
+ * chosen so far. A compile session and a movie import are asked the same
+ * way. */
 
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "chimera/engine.h"
 #include "chimera/vm/json.hpp"
 
 namespace chimera::vm {
@@ -18,9 +21,28 @@ namespace chimera::vm {
 /* files to mount, as {name, path} */
 using Mounts = std::vector<std::pair<std::string, std::string>>;
 
-/* these files and, for every cue among them and the game, the tracks it names
- * that lie beside it and are not listed already */
-Mounts withCueTracks(const std::string &game, Mounts files);
+/* a file of the project a core is asked about: its slot ("" for a file with
+ * no slot, mounted beside the project by name), its name and where it is */
+struct AskFile
+{
+	std::string slot, name, path;
+};
+
+/* the files of a slot map ({slot: [names]}) at the paths given ({name, path});
+ * a game named on its own and not among them goes in the package's slot that
+ * takes its kind of file (else the first) */
+std::vector<AskFile> askFilesOf(const std::string &package, const std::string &game, const Mounts &files, const std::string &slotsJson);
+
+/* the project a core is asked about: the package's core, the files that have
+ * a slot, and the settings; nullptr and why when it cannot be made. The
+ * caller frees it (ce_project_free). */
+ce_project *askingProject(const std::string &package, const std::vector<AskFile> &files, const std::string &settingsJson, std::string &why);
+
+/* the same, saved where a helper process can open it, the folders its files
+ * are in written to dirs (chimera-run --files); false and why when not */
+bool saveAskingProject(const std::string &package, const std::vector<AskFile> &files, const std::string &settingsJson,
+	const std::string &path, std::vector<std::string> &dirs, std::string &why);
+
 
 /* asks the core in this process, which must have no machine open; the
  * answer, or "" and why */

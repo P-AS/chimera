@@ -505,13 +505,6 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract IntPtr ce_project_slots_text(IntPtr project, ref ulong lenOut);
 
-		[ChimeraImport(CallingConvention.Cdecl)]
-		public abstract IntPtr ce_session_open(
-			string packagePath, byte[]? rom, ulong romLen, string? romPath, string? settingsOverridesJson,
-			IntPtr[]? firmwareIds, IntPtr[]? firmwareData, ulong[]? firmwareLens, int firmwareCount,
-			IntPtr[]? extraNames, IntPtr[]? extraData, ulong[]? extraLens, IntPtr[]? extraPaths, int extraCount,
-			ref IntPtr errorOut);
-
 		// a project's machine: the engine checks the project and gives the core
 		// its files (engine.h; the same call chimera-run makes)
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -672,22 +665,20 @@ namespace Chimera.Emulation.Common.Engine
 		[ChimeraImport(CallingConvention.Cdecl)]
 		public abstract void ce_precompile_request(int index, int count, int firmwareToo);
 
-		// what a core suggests for these files before any machine exists
-		// (engine.h: the arguments are ce_session_open's; nothing is started)
+		// what a core suggests for a project's files (engine.h; nothing is started)
 		[ChimeraImport(CallingConvention.Cdecl)]
-		public abstract IntPtr ce_suggest_settings(
-			string packagePath, byte[]? rom, ulong romLen, string? romPath, string? settingsOverridesJson,
+		public abstract IntPtr ce_project_suggest_settings(
+			string packagePath, IntPtr project,
 			IntPtr[]? firmwareIds, IntPtr[]? firmwareData, ulong[]? firmwareLens, int firmwareCount,
-			IntPtr[]? extraNames, IntPtr[]? extraData, ulong[]? extraLens, IntPtr[]? extraPaths, int extraCount,
 			ref ulong lenOut, ref IntPtr errorOut);
 
 		// what a movie made elsewhere amounts to, as the core reads it (engine.h:
-		// the arguments are ce_session_open's; the movie is mounted as "movie")
+		// the project holds the files offered; the movie is mounted as "movie")
 		[ChimeraImport(CallingConvention.Cdecl)]
-		public abstract IntPtr ce_import_movie(
-			string packagePath, byte[]? rom, ulong romLen, string? romPath, string? settingsOverridesJson,
+		public abstract IntPtr ce_project_import_movie(
+			string packagePath, IntPtr project, string moviePath,
+			IntPtr[]? mountNames, IntPtr[]? mountPaths, int mountCount,
 			IntPtr[]? firmwareIds, IntPtr[]? firmwareData, ulong[]? firmwareLens, int firmwareCount,
-			IntPtr[]? extraNames, IntPtr[]? extraData, ulong[]? extraLens, IntPtr[]? extraPaths, int extraCount,
 			ref ulong lenOut, ref IntPtr errorOut);
 
 		[ChimeraImport(CallingConvention.Cdecl)]
@@ -2215,81 +2206,64 @@ namespace Chimera.Emulation.Common.Engine
 		private const uint AllowCoreMismatch = 1;
 		private const uint AllowFileMismatch = 2;
 
-		/// <exception cref="InvalidOperationException">anything wrong with the package, the rom, or the core's own refusal</exception>
-		/// <remarks>extraFiles: a multi-file game's additional mounts (rom2..N,
-		/// support files, "savedata", "rom.name"), each ORDERED pair mounted
-		/// under its given name before the core boots.</remarks>
+		/// <summary>
+		/// Firmware as the engine takes it, in parallel arrays of unmanaged
+		/// memory that live until the returned list is freed.
+		/// </summary>
+		private static (IntPtr[] Ids, IntPtr[] Blobs, ulong[] Lens, int Count) FirmwareArrays(
+			IReadOnlyDictionary<string, byte[]>? firmware, List<IntPtr> allocated)
+		{
+			var count = firmware?.Count ?? 0;
+			var ids = new IntPtr[Math.Max(count, 1)];
+			var blobs = new IntPtr[Math.Max(count, 1)];
+			var lens = new ulong[Math.Max(count, 1)];
+			var i = 0;
+			foreach (var (id, bytes) in firmware ?? new Dictionary<string, byte[]>())
+			{
+				ids[i] = AllocUtf8(id, allocated);
+				var blob = Marshal.AllocHGlobal(bytes.Length is 0 ? 1 : bytes.Length);
+				allocated.Add(blob);
+				if (bytes.Length is not 0) Marshal.Copy(bytes, 0, blob, bytes.Length);
+				blobs[i] = blob;
+				lens[i] = (ulong)bytes.LongLength;
+				i++;
+			}
+			return (ids, blobs, lens, count);
+		}
+
+		private static IntPtr AllocUtf8(string text, List<IntPtr> allocated)
+		{
+			var bytes = Encoding.UTF8.GetBytes(text + "\0");
+			var ptr = Marshal.AllocHGlobal(bytes.Length);
+			allocated.Add(ptr);
+			Marshal.Copy(bytes, 0, ptr, bytes.Length);
+			return ptr;
+		}
+
+		/// <summary>
+		/// The machine a project describes. Every machine is a project's (a game
+		/// runs only in a project, user-decided 2026-10-26): the engine checks
+		/// the project and decides which files the core sees, by their paths, so
+		/// none is read here.
+		/// </summary>
+		/// <exception cref="InvalidOperationException">anything wrong with the package, the project, or the core's own refusal</exception>
 		/// <param name="wantGpu">
 		/// The project asked for a renderer that draws on the machine's own GPU.
 		/// It is only ever an ASK: a build without the bridge, a driver that will
 		/// not give a context, or a core with no GL renderer all end in the
 		/// software path, and <see cref="GpuDrew"/> is what says which happened.
 		/// </param>
-		/// <param name="rom">the game's bytes, or null when <paramref name="romPath"/> says where it is</param>
-		/// <param name="romPath">
-		/// Where the game lies. Given one, the engine mounts the file and the
-		/// machine reads it from the disk as it goes - nothing is loaded. That is
-		/// the only way a PS2 disc can be opened at all: over four gigabytes, and
-		/// a byte[] tops out below two.
-		/// </param>
-		/// <param name="project">
-		/// The project this machine is opened from, or null for a game opened by
-		/// itself. Given one, <paramref name="rom"/>, <paramref name="romPath"/>
-		/// and <paramref name="extraFiles"/> are not used.
-		/// </param>
 		public static EngineSession Open(
-			string packagePath, byte[]? rom, string? romPath, string? settingsOverridesJson,
+			string packagePath, EngineProject project, string? settingsOverridesJson,
 			IReadOnlyDictionary<string, byte[]>? firmware,
-			IReadOnlyList<CoreFile>? extraFiles = null,
 			bool wantGpu = false,
 			string? cacheDir = null,
-			PrecompileRequest? precompile = null,
-			EngineProject? project = null)
+			PrecompileRequest? precompile = null)
 		{
-			var count = firmware?.Count ?? 0;
-			var ids = new IntPtr[Math.Max(count, 1)];
-			var blobs = new IntPtr[Math.Max(count, 1)];
-			var lens = new ulong[Math.Max(count, 1)];
-			var extraCount = extraFiles?.Count ?? 0;
-			var extraNames = new IntPtr[Math.Max(extraCount, 1)];
-			var extraData = new IntPtr[Math.Max(extraCount, 1)];
-			var extraLens = new ulong[Math.Max(extraCount, 1)];
-			var extraPaths = new IntPtr[Math.Max(extraCount, 1)];
 			var allocated = new List<IntPtr>();
-			IntPtr AllocUtf8(string text)
-			{
-				var bytes = Encoding.UTF8.GetBytes(text + "\0");
-				var ptr = Marshal.AllocHGlobal(bytes.Length);
-				allocated.Add(ptr);
-				Marshal.Copy(bytes, 0, ptr, bytes.Length);
-				return ptr;
-			}
-			IntPtr AllocBlob(byte[] bytes)
-			{
-				var ptr = Marshal.AllocHGlobal(bytes.Length is 0 ? 1 : bytes.Length);
-				allocated.Add(ptr);
-				if (bytes.Length is not 0) Marshal.Copy(bytes, 0, ptr, bytes.Length);
-				return ptr;
-			}
 			try
 			{
-				var i = 0;
-				foreach (var (id, bytes) in firmware ?? new Dictionary<string, byte[]>())
-				{
-					ids[i] = AllocUtf8(id);
-					blobs[i] = AllocBlob(bytes);
-					lens[i] = (ulong)bytes.LongLength;
-					i++;
-				}
-				for (var e = 0; e < extraCount; e++)
-				{
-					var file = extraFiles![e];
-					extraNames[e] = AllocUtf8(file.Name);
-					// a path wins: the bytes were never read, and there are none
-					extraPaths[e] = file.Path is null ? IntPtr.Zero : AllocUtf8(file.Path);
-					extraData[e] = AllocBlob(file.Data ?? [ ]);
-					extraLens[e] = (ulong)(file.Data?.LongLength ?? 0);
-				}
+				var (ids, blobs, lens, count) = FirmwareArrays(firmware, allocated);
 				// a global switch, not a per-session one, so it is set every time
 				ChimeraEngine.Instance.ce_gl_request(wantGpu ? 1 : 0);
 				// the compile cache directory for this core and package (empty:
@@ -2297,21 +2271,14 @@ namespace Chimera.Emulation.Common.Engine
 				ChimeraEngine.Instance.ce_cache_dir(cacheDir ?? "");
 				ChimeraEngine.Instance.ce_precompile_request(precompile?.Index ?? 0, precompile?.Count ?? 0, precompile?.FirmwareToo == true ? 1 : 0);
 				var error = IntPtr.Zero;
-				// A project is opened by the engine's own call for it: the engine
-				// checks the project and decides which files the core sees, so the
-				// rom and the extra files are not this side's to give. Both flags,
-				// because a person has answered by now: the resolution form does not
-				// close on a file that differs unless they accepted it, and a core
-				// build other than the project's was asked about before the boot.
-				var session = project is not null
-					? ChimeraEngine.Instance.ce_session_open_project(
-						packagePath, project.Handle, settingsOverridesJson,
-						ids, blobs, lens, count,
-						AllowCoreMismatch | AllowFileMismatch, ref error)
-					: ChimeraEngine.Instance.ce_session_open(
-						packagePath, rom, (ulong)(rom?.LongLength ?? 0), romPath, settingsOverridesJson,
-						ids, blobs, lens, count,
-						extraNames, extraData, extraLens, extraPaths, extraCount, ref error);
+				// Both flags, because a person has answered by now: the resolution
+				// form does not close on a file that differs unless they accepted
+				// it, and a core build other than the project's was asked about
+				// before the boot.
+				var session = ChimeraEngine.Instance.ce_session_open_project(
+					packagePath, project.Handle, settingsOverridesJson,
+					ids, blobs, lens, count,
+					AllowCoreMismatch | AllowFileMismatch, ref error);
 				if (session == IntPtr.Zero)
 				{
 					throw new InvalidOperationException(ChimeraEngine.PtrToStringUtf8(error) ?? "the engine could not open a session");
@@ -2320,60 +2287,30 @@ namespace Chimera.Emulation.Common.Engine
 			}
 			finally
 			{
+				ChimeraEngine.Instance.ce_precompile_request(0, 0, 0);
 				foreach (var p in allocated) Marshal.FreeHGlobal(p);
 			}
 		}
 
 		/// <summary>
-		/// What the core suggests for this game before any machine exists - the
-		/// core's own JSON (<c>{"values": {...}, "note": "..."}</c>), or "" when
-		/// it suggests nothing. The package is loaded and the game mounted as a
-		/// run would have them; nothing is started. Throws when either cannot be
+		/// What the core suggests for a project's files before the project is
+		/// final - the core's own JSON (<c>{"values": {...}, "note": "..."}</c>),
+		/// or "" when it suggests nothing. The project is opened as a run opens
+		/// it (its files must be resolved, its settings are the ones asked
+		/// about), except that a slot not filled yet is no reason to refuse;
+		/// nothing is started. Throws when the package or the project cannot be
 		/// opened at all.
 		/// </summary>
-		/// <param name="files">
-		/// The game's other files, each mounted under its name before the core
-		/// is asked: a disc's track files, the project's other discs, its slot
-		/// map ("slots"). See <see cref="Waterbox.GameFilesForCore"/>. Without
-		/// them a core sees the one file that names the game.
-		/// </param>
-		public static string Suggest(string packagePath, string romPath, string? settingsJson = null, IReadOnlyList<CoreFile>? files = null)
+		public static string Suggest(string packagePath, EngineProject project, IReadOnlyDictionary<string, byte[]>? firmware = null)
 		{
-			var count = files?.Count ?? 0;
-			var names = new IntPtr[Math.Max(count, 1)];
-			var datas = new IntPtr[Math.Max(count, 1)];
-			var lens = new ulong[Math.Max(count, 1)];
-			var paths = new IntPtr[Math.Max(count, 1)];
 			var allocated = new List<IntPtr>();
-			IntPtr AllocUtf8(string text)
-			{
-				var bytes = Encoding.UTF8.GetBytes(text + "\0");
-				var ptr = Marshal.AllocHGlobal(bytes.Length);
-				allocated.Add(ptr);
-				Marshal.Copy(bytes, 0, ptr, bytes.Length);
-				return ptr;
-			}
 			try
 			{
-				for (var i = 0; i < count; i++)
-				{
-					var file = files![i];
-					names[i] = AllocUtf8(file.Name);
-					// a path wins: the bytes were never read, and there are none
-					paths[i] = file.Path is null ? IntPtr.Zero : AllocUtf8(file.Path);
-					var data = file.Data ?? [ ];
-					datas[i] = Marshal.AllocHGlobal(data.Length is 0 ? 1 : data.Length);
-					allocated.Add(datas[i]);
-					if (data.Length is not 0) Marshal.Copy(data, 0, datas[i], data.Length);
-					lens[i] = (ulong)data.LongLength;
-				}
+				var (ids, blobs, lens, count) = FirmwareArrays(firmware, allocated);
 				var len = 0UL;
 				var error = IntPtr.Zero;
-				var none = new IntPtr[1];
-				var answer = ChimeraEngine.Instance.ce_suggest_settings(
-					packagePath, null, 0, romPath, settingsJson,
-					none, none, new ulong[1], 0,
-					names, datas, lens, paths, count, ref len, ref error);
+				var answer = ChimeraEngine.Instance.ce_project_suggest_settings(
+					packagePath, project.Handle, ids, blobs, lens, count, ref len, ref error);
 				if (answer == IntPtr.Zero)
 				{
 					throw new InvalidOperationException(ChimeraEngine.PtrToStringUtf8(error) ?? "the engine could not open the core");
@@ -2388,46 +2325,35 @@ namespace Chimera.Emulation.Common.Engine
 
 		/// <summary>
 		/// What a movie made elsewhere amounts to, as the core reads it
-		/// (ce_import_movie): the core's own JSON - its refusal
+		/// (ce_project_import_movie): the core's own JSON - its refusal
 		/// (<c>{"error": ...}</c>) or the configuration and input the movie
-		/// dictates - or "" when the core has no importer. The movie is mounted as
-		/// "movie" and every other file under the name given; the import options
-		/// travel in the settings JSON. Nothing is started. Throws when the package
-		/// or a file cannot be opened at all.
+		/// dictates - or "" when the core has no importer. The project holds the
+		/// files offered that have a slot and the import options as its
+		/// settings; the movie is mounted as "movie" and each of
+		/// <paramref name="mounts"/> under the name given (a file the core may
+		/// take as firmware). Nothing is started. Throws when the package or the
+		/// project cannot be opened at all.
 		/// </summary>
-		public static string ImportMovie(string packagePath, string moviePath,
-			IReadOnlyList<(string Name, string Path)> files, string? settingsJson)
+		public static string ImportMovie(string packagePath, EngineProject project, string moviePath,
+			IReadOnlyList<(string Name, string Path)> mounts)
 		{
-			var mounts = new List<(string Name, string Path)> { ("movie", moviePath) };
-			mounts.AddRange(files);
-			var count = mounts.Count;
-			var names = new IntPtr[count];
-			var paths = new IntPtr[count];
-			var datas = new IntPtr[count];
-			var lens = new ulong[count];
 			var allocated = new List<IntPtr>();
-			IntPtr AllocUtf8(string text)
-			{
-				var bytes = Encoding.UTF8.GetBytes(text + "\0");
-				var ptr = Marshal.AllocHGlobal(bytes.Length);
-				allocated.Add(ptr);
-				Marshal.Copy(bytes, 0, ptr, bytes.Length);
-				return ptr;
-			}
 			try
 			{
+				var count = mounts.Count;
+				var names = new IntPtr[Math.Max(count, 1)];
+				var paths = new IntPtr[Math.Max(count, 1)];
 				for (var i = 0; i < count; i++)
 				{
-					names[i] = AllocUtf8(mounts[i].Name);
-					paths[i] = AllocUtf8(mounts[i].Path);
+					names[i] = AllocUtf8(mounts[i].Name, allocated);
+					paths[i] = AllocUtf8(mounts[i].Path, allocated);
 				}
+				var (ids, blobs, lens, fwCount) = FirmwareArrays(null, allocated);
 				var len = 0UL;
 				var error = IntPtr.Zero;
-				var none = new IntPtr[1];
-				var answer = ChimeraEngine.Instance.ce_import_movie(
-					packagePath, null, 0, null, settingsJson,
-					none, none, new ulong[1], 0,
-					names, datas, lens, paths, count, ref len, ref error);
+				var answer = ChimeraEngine.Instance.ce_project_import_movie(
+					packagePath, project.Handle, moviePath, names, paths, count,
+					ids, blobs, lens, fwCount, ref len, ref error);
 				if (answer == IntPtr.Zero)
 				{
 					throw new InvalidOperationException(ChimeraEngine.PtrToStringUtf8(error) ?? "the engine could not open the core");
@@ -2676,6 +2602,9 @@ namespace Chimera.Emulation.Common.Engine
 
 		/// <summary>For a precompile session: whether the core has finished compiling its share.</summary>
 		public bool PrecompileDone => ChimeraEngine.Instance.ce_session_precompile_done(Live) == 1;
+
+		/// <summary>Whether this is a precompile session of a core that has one (else nothing ever finishes).</summary>
+		public bool Precompiling => ChimeraEngine.Instance.ce_session_precompile_done(Live) >= 0;
 
 		/// <summary>For a precompile session: module parts done and in total, for a progress bar.</summary>
 		public (uint Done, uint Total) PrecompileProgress

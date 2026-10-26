@@ -739,8 +739,8 @@ CE_API const char *ce_project_file_source_path(const ce_project *p, int32_t inde
 /* How many bytes the resolved file holds, or 0 while unresolved.
  *
  * There is deliberately no call for the BYTES. A project's files stay where
- * they are and are read when the machine asks for them (ce_session_open's
- * file_paths): a PS2 disc is over four gigabytes, and every copy of one
+ * they are and are read when the machine asks for them (by path, see
+ * ce_session_open_project): a PS2 disc is over four gigabytes, and every copy of one
  * between the disk and the guest is four gigabytes nothing needed. What a
  * project knows about a file is its name, its hash, its size and its path. */
 CE_API uint64_t ce_project_file_size(const ce_project *p, int32_t index);
@@ -841,50 +841,12 @@ CE_API const char *ce_package_last_error(ce_package *p);
 
 typedef struct ce_session ce_session;
 
-/* rom_len 0 with rom NULL is allowed for coreless boots (none exist today).
- * settings_overrides_json may be NULL for pure defaults. firmware arrives as
- * ids and blobs, parallel arrays; extra files (a multi-file game's rom2..N,
- * support files, savedata, and "rom.name" when the name is contract) the
- * same way - each is mounted under its given name before the core boots.
- * NULL with *error_out set (static per-thread, valid until the thread's
- * next failed open) on any failure - an unreadable package, a missing
- * export, a core that refused the rom (its GetLoadError text is the message
- * when it gives one). */
-/* Opens a machine.
- *
- * A file reaches the guest one of two ways, and the choice is per file. Give
- * BYTES (rom/rom_len, extra_data/extra_lens) for something the caller made or
- * already holds - a settings blob, a slot map, a name. Give a PATH (rom_path,
- * extra_paths[i], either may be NULL for "use the bytes") for something that
- * exists on disk, and it is never read into memory at all: the guest's reads
- * go to the file as it makes them.
- *
- * That is not a tuning knob. A PS2 disc image is over four gigabytes and a
- * .NET byte[] cannot hold two, so bytes are not merely wasteful for a disc,
- * they are impossible. The bytes a guest sees are identical either way, a
- * read-only file has nothing a savestate must carry, and the machine cannot
- * tell the difference - so the only rule is that a file must not change while
- * a session has it open. Firmware stays bytes: it is small, and a frontend
- * resolves it from its own store rather than from a path the project knows.
- *
- * The bytes given are read during the call and not kept: the caller may free
- * them as soon as it returns. Two threads may open sessions at once; what
- * ce_precompile_request asks applies to the thread that asked. ce_gl_request
- * and ce_cache_dir are the whole process's (one GPU context per process), so
- * sessions that differ in them are opened one at a time. */
-CE_API ce_session *ce_session_open(
-	const char *package_path,
-	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
-	const char *settings_overrides_json,
-	const char *const *firmware_ids, const uint8_t *const *firmware_data,
-	const uint64_t *firmware_lens, int32_t firmware_count,
-	const char *const *extra_names, const uint8_t *const *extra_data,
-	const uint64_t *extra_lens, const char *const *extra_paths, int32_t extra_count,
-	const char **error_out);
-
-/* Opens the machine a project describes. This is the one place that knows how
- * a project becomes a running machine; chimera-run, the frontend and anything
- * else that opens a project call it, so the rules below are written once.
+/* Opens the machine a project describes. Every machine is a project's: a
+ * game runs only in a project (user-decided, 2026-10-26), and there is no
+ * call that opens one from a game file alone. This is the one place that
+ * knows how a project becomes a running machine; chimera-run, the frontend
+ * and anything else that opens a project call it, so the rules below are
+ * written once.
  *
  * The caller has already resolved the project's files (ce_project_resolve_dir,
  * ce_project_file_resolve): finding them is its business, since only it knows
@@ -908,9 +870,20 @@ CE_API ce_session *ce_session_open(
  *     own settings when that is NULL.
  *
  * The two flags are for a caller with a person in front of it who was shown
- * the difference and chose to go on. Firmware is the caller's to find and is
- * passed as for ce_session_open. The project is only read, and may be freed
- * once this returns. NULL with *error_out set as ce_session_open does. The
+ * the difference and chose to go on. Firmware is the caller's to find and
+ * arrives as bytes, ids and blobs in parallel arrays (it is small, and a
+ * frontend finds it in its own store, not where the project is). Every file
+ * is given to the guest by its path and read as the guest reads it, never
+ * copied into memory: a PS2 disc image is over four gigabytes. The bytes are
+ * read during the call and not kept. Two threads may open sessions at once;
+ * what ce_precompile_request asks applies to the thread that asked.
+ * ce_gl_request and ce_cache_dir are the whole process's (one GPU context
+ * per process), so sessions that differ in them are opened one at a time.
+ *
+ * The project is only read, and may be freed once this returns. NULL with
+ * *error_out set (per thread, valid until the thread's next failed open) on
+ * any failure - an unreadable package, a missing export, a core that refused
+ * its files (its GetLoadError text is the message when it gives one). The
  * project's input is not loaded: that is ce_session_movie_load, as before. */
 #define CE_OPEN_ALLOW_CORE_MISMATCH 1u
 #define CE_OPEN_ALLOW_FILE_MISMATCH 2u
@@ -1069,54 +1042,49 @@ CE_API int32_t ce_session_precompile_done(const ce_session *s);
 CE_API int32_t ce_session_precompile_progress(const ce_session *s, uint32_t *done_out, uint32_t *total_out);
 
 /* ---------------------------------------------------------------------------
- * Suggested settings. Before a project exists, a core may say what it would
- * choose for these files - the RPCS3 core looks the game up in the RPCS3
- * wiki's recommendations it carries. The arguments are ce_session_open's: the
- * package is loaded and the files mounted exactly as a run would have them,
- * then the core's optional SuggestSettings export is called INSTEAD of Init,
- * and the machine is thrown away unstarted.
+ * Suggested settings. Before a project is final, a core may say what it would
+ * choose for its files - the RPCS3 core looks the game up in the RPCS3 wiki's
+ * recommendations it carries. The project is opened as ce_session_open_project
+ * opens it (its files, its settings, the firmware given), then the core's
+ * optional SuggestSettings export is called INSTEAD of Init, and the machine
+ * is thrown away unstarted. A frontend asks this of the project its New
+ * Project window has made so far, saved where it likes.
  *
  * Returns the core's answer, a JSON object - {"values": {setting: value, ...},
  * "note": "where they come from, or that nothing was found", "settings":
  * [the game's own setting declarations, as ce_session_game_settings has
- * them], ...} - valid
- * until the next call on this thread; "" (length 0) when the core has no
- * such export; NULL with *error_out when the package or files cannot be
- * opened at all. The values are suggestions for the settings page, never
- * applied by the engine.
+ * them], ...} - valid until the next call on this thread; "" (length 0) when
+ * the core has no such export; NULL with *error_out when the package or the
+ * project cannot be opened at all. The values are suggestions for the
+ * settings page, never applied by the engine.
  */
-CE_API const char *ce_suggest_settings(
-	const char *package_path,
-	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
-	const char *settings_overrides_json,
+CE_API const char *ce_project_suggest_settings(
+	const char *package_path, ce_project *project,
 	const char *const *firmware_ids, const uint8_t *const *firmware_data,
 	const uint64_t *firmware_lens, int32_t firmware_count,
-	const char *const *extra_names, const uint8_t *const *extra_data,
-	const uint64_t *extra_lens, const char *const *extra_paths, int32_t extra_count,
 	uint64_t *len_out, const char **error_out);
 
 /* What a movie made elsewhere amounts to, as this core reads it - a Doom
- * demo, say. The same session as ce_suggest_settings, asking the core's
- * optional ImportMovie export instead of SuggestSettings: the files are
- * mounted as given (the movie itself under the name "movie"), the settings
- * JSON may carry import options the core declares (movieImport in
- * waterbox.config), and the machine is thrown away unstarted.
+ * demo, say. The same session as ce_project_suggest_settings, asking the
+ * core's optional ImportMovie export instead of SuggestSettings. The project
+ * holds the files the person offered that have a slot, and the import options
+ * the core declares (movieImport in waterbox.config) as its settings; the
+ * movie is mounted as "movie", and each mount_names[i] from mount_paths[i]
+ * beside it - a file the core may take as firmware, whose firmware id only
+ * its answer can say. The machine is thrown away unstarted.
  *
  * Returns the core's JSON answer: {"error": "<a sentence>"} when it refuses,
  * otherwise the configuration the movie dictates - "settings", "firmware"
  * [{id, sha1}], "files" [{name, sha1, slot}] in load order, "notes" - and
  * "input", the movie as Chimera's input log. "" when the core has no such
- * export; NULL with *error_out when the package or files cannot be opened.
- * Nothing is applied: the frontend builds the project from it with its own
- * project creation. */
-CE_API const char *ce_import_movie(
-	const char *package_path,
-	const uint8_t *rom, uint64_t rom_len, const char *rom_path,
-	const char *settings_overrides_json,
+ * export; NULL with *error_out when the package or the project cannot be
+ * opened. Nothing is applied: the frontend builds the project from it with
+ * its own project creation. */
+CE_API const char *ce_project_import_movie(
+	const char *package_path, ce_project *project, const char *movie_path,
+	const char *const *mount_names, const char *const *mount_paths, int32_t mount_count,
 	const char *const *firmware_ids, const uint8_t *const *firmware_data,
 	const uint64_t *firmware_lens, int32_t firmware_count,
-	const char *const *extra_names, const uint8_t *const *extra_data,
-	const uint64_t *extra_lens, const char *const *extra_paths, int32_t extra_count,
 	uint64_t *len_out, const char **error_out);
 CE_API int64_t ce_session_button_count(const ce_session *s);
 CE_API const char *ce_session_button_name(const ce_session *s, int64_t index);

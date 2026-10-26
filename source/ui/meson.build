@@ -1,4 +1,4 @@
-# Chimera's Qt window (issue 142; a private prototype). Two parts:
+# Chimera's window (issue 142). Two parts:
 #   viewmodel/  the state and actions behind each window, in plain C++ with no
 #               Qt, over the engine's C interface. Scripts, the MCP server and
 #               the tests drive these.
@@ -28,10 +28,19 @@ lua_docs = custom_target(
   command: [find_program('python3'), lua_docs_script, repo_root / 'source/gui', '@OUTPUT@'],
   depend_files: lua_docs_script,
 )
+# the build's commit and its time, read again at every build, as Chimera's are
+ui_build_h = vcs_tag(
+  command: ['git', '-C', repo_root, 'log', '-1', '--format=%H %ct'],
+  input: 'viewmodel/src/ui_build.h.in',
+  output: 'ui_build.h',
+  replace_string: '@BUILD@',
+  fallback: 'unknown 0',
+)
 vm_lib = static_library(
   'chimera-vm',
   [
     lua_docs,
+    ui_build_h,
     'viewmodel/src/view_model.cpp',
     'viewmodel/src/mcp_vm.cpp',
     'viewmodel/src/input_log.cpp',

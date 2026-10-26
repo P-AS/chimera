@@ -1,0 +1,5 @@
+/* Generated at every build by meson's vcs_tag (source/ui/meson.build): the
+ * commit the window was built from and when that commit was made, seconds
+ * since 1970 (UTC), as "<hash> <seconds>" - what its About box and its bug
+ * reports name it by, as Chimera names a build by its commit and its date. */
+#define CHIMERA_UI_BUILD "@BUILD@"

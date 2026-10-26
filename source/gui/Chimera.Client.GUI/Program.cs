@@ -183,13 +183,79 @@ namespace Chimera.Client.GUI
 		[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
 		private static bool IsHeadless() => HeadlessMode.Enabled;
 
+		/// <summary>A compile session (--precompile, above): its arguments after the option.</summary>
+		private static int PrecompileSession(string[] args)
+		{
+			var parts = args.Length is 0 ? [ ] : args[0].Split('/');
+			var index = -1;
+			var count = 0;
+			if (args.Length < 4 || parts.Length < 2 || !int.TryParse(parts[0], out index) || !int.TryParse(parts[1], out count)
+				|| index < 0 || count < 1 || index >= count)
+			{
+				Console.Error.WriteLine("usage: --precompile <i>/<n>[/game] <core package> <files and settings, a JSON file> <cache folder> [<firmware id>=<path>]...");
+				return 2;
+			}
+			var (package, filesDocument, cacheDir) = (args[1], args[2], args[3]);
+			// Linux: the kernel stops this process first if memory runs out, not the window (chimera issue 300)
+			Chimera.Emulation.Common.Engine.ChimeraEngine.Instance.ce_compile_session_begins();
+			try
+			{
+				var firmware = new Dictionary<string, byte[]>();
+				foreach (var given in args.Skip(4))
+				{
+					var eq = given.IndexOf('=');
+					if (eq <= 0) throw new InvalidOperationException($"bad firmware {given} (want <id>=<path>)");
+					firmware[given.Substring(0, eq)] = File.ReadAllBytes(given.Substring(eq + 1));
+				}
+				var doc = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(filesDocument));
+				using var project = Chimera.Emulation.Common.Waterbox.GameFilesForCore.ProjectFor(package, doc);
+				// A redirected stdout is block-buffered, and a progress line held
+				// until the process exits is not progress: whoever started this
+				// session is watching for these.
+				Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+				using var session = Chimera.Emulation.Common.Engine.EngineSession.Open(
+					package, project, settingsOverridesJson: null, firmware,
+					cacheDir: cacheDir,
+					precompile: new(index, count, FirmwareToo: !parts.Skip(2).Contains("game")));
+				if (!session.Precompiling)
+				{
+					Console.Error.WriteLine($"{session.CoreName} has no precompile session");
+					return 3;
+				}
+				Console.Error.WriteLine($"precompile session {index} of {count}: cache {cacheDir}");
+				uint lastDone = uint.MaxValue;
+				while (!session.PrecompileDone)
+				{
+					session.FrameAdvance(0, render: false);
+					if (session.Stopped is { } why)
+					{
+						// nobody watches a compile session, and it would pump a dead machine for ever
+						Console.Error.WriteLine($"precompile session {index} of {count}: the core stopped: {why}");
+						return HeadlessMode.EXIT_CODE_CORE_STOPPED;
+					}
+					var (done, total) = session.PrecompileProgress;
+					if (done != lastDone) { Console.WriteLine($"Precompiled {done}/{total} modules"); lastDone = done; }
+				}
+				var (fdone, ftotal) = session.PrecompileProgress;
+				Console.WriteLine($"Precompiled {fdone}/{ftotal} modules");
+				Console.WriteLine($"precompile session {index} of {count}: {session.CacheStored} objects stored, {session.CacheFetched} fetched");
+				return 0;
+			}
+			catch (Exception e) when (e is InvalidOperationException or IOException or Newtonsoft.Json.JsonException)
+			{
+				// what the window would have shown, where the wizard looks for it (PrecompileOrchestrator.RefusalLine)
+				HeadlessMode.FatalDialog("Compile", e.Message);
+				return HeadlessMode.EXIT_CODE_DIALOG;
+			}
+		}
+
 		// NoInlining should keep this code from getting jammed into Main() which would create dependencies on types which havent been setup by the resolver yet... or something like that
 		[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
 		private static int SubMain(string[] args)
 		{
 			// raw scan, not ArgParser: several dialogs below can fire before arguments are parsed
 			if (Array.IndexOf(args, "--headless") >= 0 || Array.IndexOf(args, "--suggest-settings") >= 0 || Array.IndexOf(args, "--import-movie") >= 0
-				|| Array.Exists(args, a => a.StartsWith("--precompile", StringComparison.Ordinal))) HeadlessMode.Enabled = true;
+				|| Array.IndexOf(args, "--precompile") >= 0) HeadlessMode.Enabled = true;
 
 			// An error that can be caught must not be what ends a session (docs/project.md,
 			// "Recovery"). On the UI thread it is survived: the work is snapshotted, emulation
@@ -267,37 +333,32 @@ namespace Chimera.Client.GUI
 				Console.Error.WriteLine($"[crash] no crash notes this session: {crashNotesOff}");
 			}
 
-			// --suggest-settings <package> <game>: what the core would choose for this
-			// game, printed as its JSON, and nothing else - no window, no config. The
-			// new-project wizard asks this in a child process, so a core that falls
-			// over while it looks never takes the wizard with it.
+			// --suggest-settings <package> <files and settings, a JSON file>: what
+			// the core would choose for the project the new-project wizard has
+			// so far, printed as its JSON, and nothing else - no window, no
+			// config. A game runs only in a project (user-decided, 2026-10-26),
+			// so the question is asked of one, made here from the files picked so
+			// far and the settings chosen so far
+			// (NewProjectWizard.SuggestionFilesDocument). The wizard asks this in
+			// a child process, so a core that falls over while it looks never
+			// takes the wizard with it.
 			var suggestAt = Array.IndexOf(args, "--suggest-settings");
 			if (suggestAt >= 0)
 			{
 				if (suggestAt + 2 >= args.Length)
 				{
-					Console.Error.WriteLine("usage: --suggest-settings <core package> <game file> [<files and settings, a JSON file>]");
+					Console.Error.WriteLine("usage: --suggest-settings <core package> <files and settings, a JSON file>");
 					return 2;
 				}
 				try
 				{
-					// the wizard's choices so far, when it wrote them down: the
-					// other files of the project to be, its slot map, its settings
-					// (NewProjectWizard.WriteFilesForSuggestion)
-					string? settingsJson = null;
-					System.Collections.Generic.IReadOnlyList<Chimera.Emulation.Common.CoreFile>? files = null;
-					if (suggestAt + 3 < args.Length && System.IO.File.Exists(args[suggestAt + 3]))
-					{
-						var doc = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(args[suggestAt + 3]));
-						files = Chimera.Emulation.Common.Waterbox.GameFilesForCore.FromSlotsDocument(doc);
-						if (doc["settings"] is Newtonsoft.Json.Linq.JObject settings) settingsJson = settings.ToString(Newtonsoft.Json.Formatting.None);
-					}
-					files = Chimera.Emulation.Common.Waterbox.GameFilesForCore.WithCueTracks(args[suggestAt + 2], files);
-					Console.Out.Write(Chimera.Emulation.Common.Engine.EngineSession.Suggest(args[suggestAt + 1], args[suggestAt + 2], settingsJson, files));
+					var doc = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(args[suggestAt + 2]));
+					using var project = Chimera.Emulation.Common.Waterbox.GameFilesForCore.ProjectFor(args[suggestAt + 1], doc);
+					Console.Out.Write(Chimera.Emulation.Common.Engine.EngineSession.Suggest(args[suggestAt + 1], project));
 					Console.Out.Flush();
 					return 0;
 				}
-				catch (Exception e) when (e is InvalidOperationException or System.IO.IOException or Newtonsoft.Json.JsonException)
+				catch (Exception e) when (e is InvalidOperationException or IOException or Newtonsoft.Json.JsonException)
 				{
 					Console.Error.WriteLine(e.Message);
 					return 1;
@@ -305,12 +366,16 @@ namespace Chimera.Client.GUI
 			}
 
 			// --import-movie <request.json> <answer.json>: what a movie made elsewhere
-			// amounts to, as its core reads it (ce_import_movie). The request names
-			// the package, the movie, the files to mount beside it and the import
-			// options; the core's answer is written to the answer file whole, never
-			// to stdout, where a core's own printing could land in the middle of it.
-			// A child process for the same reason the suggestion is one: a core that
-			// falls over while it reads must not take the frontend with it.
+			// amounts to, as its core reads it (ce_project_import_movie). The request
+			// names the package, the movie, the files offered with it and the import
+			// options. The question is asked of a project, made here: the files
+			// whose input names a slot go in it, the import options are its
+			// settings, and the rest (a file the core may take as firmware) are
+			// mounted beside the movie. The core's answer is written to the answer
+			// file whole, never to stdout, where a core's own printing could land in
+			// the middle of it. A child process for the same reason the suggestion
+			// is one: a core that falls over while it reads must not take the
+			// frontend with it.
 			var importAt = Array.IndexOf(args, "--import-movie");
 			if (importAt >= 0)
 			{
@@ -322,10 +387,13 @@ namespace Chimera.Client.GUI
 				try
 				{
 					var request = Chimera.Client.Common.MovieImportRequest.Read(args[importAt + 1]);
-					var answer = Chimera.Emulation.Common.Engine.EngineSession.ImportMovie(
-						request.Package, request.Movie,
-						request.Files.Select(static f => (f.Name, f.Path)).ToList(),
+					using var project = Chimera.Emulation.Common.Waterbox.GameFilesForCore.ProjectFor(
+						request.Package,
+						request.Files.Where(static f => f.Slot is { Length: not 0 }).Select(static f => (f.Slot!, f.Name, f.Path)),
 						request.SettingsJson);
+					var answer = Chimera.Emulation.Common.Engine.EngineSession.ImportMovie(
+						request.Package, project, request.Movie,
+						request.Files.Where(static f => f.Slot is not { Length: not 0 }).Select(static f => (f.Name, f.Path)).ToList());
 					File.WriteAllText(args[importAt + 2], answer, new System.Text.UTF8Encoding(false));
 					return 0;
 				}
@@ -335,6 +403,17 @@ namespace Chimera.Client.GUI
 					return 1;
 				}
 			}
+
+			// --precompile <i>/<n>[/game] <package> <files and settings, a JSON file>
+			// <cache folder> [<firmware id>=<path>]...: a compile session. The
+			// new-project wizard runs several side by side before the project is
+			// made (PrecompileOrchestrator), each compiling its share of the game's
+			// code into the compile cache: the machine boots and never runs. The
+			// question is asked of a project made here, as the suggestion's is. It
+			// says how far it is a line at a time ("Precompiled 3/21 modules"), and
+			// the engine prints each object it stores ("[cache] stored ...").
+			var precompileAt = Array.IndexOf(args, "--precompile");
+			if (precompileAt >= 0) return PrecompileSession(args.Skip(precompileAt + 1).ToArray());
 
 			TempFileManager.Start();
 

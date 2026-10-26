@@ -200,7 +200,6 @@ namespace Chimera.Client.GUI
 			PrecompiledModulesMenuItem.Image = MenuIcons.PrecompiledModules;
 			McpServerMenuItem.Image = MenuIcons.McpServer;
 			MacroToolMenuItem.Image = MenuIcons.MacroTool;
-			BatchRunnerMenuItem.Image = MenuIcons.BatchRunner;
 			(RamWatchMenuItem.Image, /*RamWatchMenuItem.Text*/_) = ToolManager.IconAndNameCache[typeof(RamWatch)]
 				= (MenuIcons.RamWatch, "RAM Watch");
 			(RamSearchMenuItem.Image, /*RamSearchMenuItem.Text*/_) = ToolManager.IconAndNameCache[typeof(RamSearch)]
@@ -296,7 +295,6 @@ namespace Chimera.Client.GUI
 				Config.Movies,
 				Config.PathEntries.MovieBackupsAbsolutePath(),
 				this,
-				PauseEmulator,
 				SetMainformMovieInfo,
 				(_, _) => UpdateWindowTitle());
 
@@ -433,13 +431,6 @@ namespace Chimera.Client.GUI
 
 			var savedOutputMethod = Config.SoundOutputMethod;
 			if (savedOutputMethod is ESoundOutputMethod.Dummy) Config.SoundOutputMethod = ESoundOutputMethod.OpenAL;
-			// A precompile session plays nothing, so it has no business opening a
-			// device - and the wizard runs eight of them at once. It never saves
-			// its config, so this does not follow the person into their next session.
-			if (_argParser.cmdPrecompile is not null) Config.SoundOutputMethod = ESoundOutputMethod.Dummy;
-			// And when memory runs out, the system stops a session before the
-			// window that started it, which then runs fewer at once (chimera#300).
-			if (_argParser.cmdPrecompile is not null) ChimeraEngine.Instance.ce_compile_session_begins();
 			try
 			{
 				Sound = new Sound(Config, () => Emulator.VsyncRate());
@@ -504,54 +495,12 @@ namespace Chimera.Client.GUI
 			// because the commandline load a few lines below needs the list to exist.
 			// The compile cache (docs: a core's compiled objects, kept between
 			// sessions under the Compile Cache path). A precompile session is this
-			// same frontend as a child process; it installs no hook of its own.
-			// Not a configurable path: it is regenerable per-user data, so it lives
+			// same program as a child process (Program.PrecompileSession), told
+			// the folder it fills. Not a configurable path: it is regenerable per-user data, so it lives
 			// where the core store and the project caches do rather than wherever
 			// somebody's config last said (see CacheStore).
 			CacheStore.AdoptLegacy();
 			WaterboxCore.CoreCacheRoot = CacheStore.PrecompiledCode;
-			if (_argParser.cmdPrecompile is { } precompileSpec)
-			{
-				var parts = precompileSpec.Split('/');
-				var preIndex = -1;
-				var preCount = 0;
-				if (parts.Length >= 2) { int.TryParse(parts[0], out preIndex); int.TryParse(parts[1], out preCount); }
-				if (preIndex < 0 || preCount < 1 || preIndex >= preCount)
-				{
-					Console.Error.WriteLine($"bad --precompile {precompileSpec} (want INDEX/COUNT[/game])");
-					Environment.Exit(2);
-				}
-				WaterboxCore.PrecompileRequest = new(preIndex, preCount, FirmwareToo: !parts.Skip(2).Contains("game"));
-				// the project's other files - licence, packages, disc key - mounted
-				// the way a project mounts them, or a game that needs them to boot
-				// compiles nothing (chimera#140)
-				if (_argParser.cmdPrecompileSlots is { Length: > 0 } slotsFile)
-				{
-					try
-					{
-						var doc = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(slotsFile));
-						var extras = new List<CoreFile>
-						{
-							new("slots", System.Text.Encoding.UTF8.GetBytes(
-								(doc["slots"] ?? new Newtonsoft.Json.Linq.JObject()).ToString(Newtonsoft.Json.Formatting.None))),
-						};
-						if (doc["files"] is Newtonsoft.Json.Linq.JObject files)
-						{
-							foreach (var file in files.Properties())
-							{
-								if (file.Value.Type is Newtonsoft.Json.Linq.JTokenType.String)
-									extras.Add(new(file.Name, file.Value.ToString()));
-							}
-						}
-						RomLoader.PlainLoadExtraFiles = extras;
-					}
-					catch (Exception ex) when (ex is IOException or Newtonsoft.Json.JsonException)
-					{
-						Console.Error.WriteLine($"bad --precompile-slots {slotsFile}: {ex.Message}");
-						Environment.Exit(2);
-					}
-				}
-			}
 			ScanForCorePackages();
 			// the menus built at construction time predate the packages
 
@@ -564,125 +513,34 @@ namespace Chimera.Client.GUI
 				ShowMessageBox(owner: null, $"Failed to load core package {_argParser.cmdCorePackage} specified on commandline");
 			}
 
-			if (_argParser.cmdRom != null)
+			// A file named here is a project (the taskbar's jump list names one so), opened
+			// as with --project below; anything else is a game, and a game runs only in a
+			// project (user-decided, 2026-10-26)
+			var projectGiven = _argParser.cmdProject
+				?? (_argParser.cmdRom is { } named && named.EndsWith(".chimeraProject", StringComparison.OrdinalIgnoreCase) ? named : null);
+			if (_argParser.cmdRom != null && _argParser.cmdRom != projectGiven)
 			{
-				// A rom needs a core, and choosing one is never implicit - not on the
-				// commandline either. --core says which; nothing else does.
-				if (CoreRegistry.Instance.AllFactories.Count is 0)
+				// New Project starts from the game, as when it is dropped on the window;
+				// a run with no window has nobody to make one, and says so
+				if (HeadlessMode.Enabled)
 				{
-					ShowMessageBox(
-						owner: null,
-						$"No core is loaded, so {Path.GetFileName(_argParser.cmdRom)} cannot run."
-							+ "\n\nName one with --core=<package>, or open one with File > Open Core...",
-						"No core loaded");
+					Console.Error.WriteLine($"{Path.GetFileName(_argParser.cmdRom)}: a game opens only in a project; name one with --project=<file>");
+					Environment.Exit(2);
 				}
-				else
-				{
-					// Commandline should always override auto-load
-					var ioa = OpenAdvancedSerializer.ParseWithLegacy(_argParser.cmdRom);
-					_ = LoadRom(ioa.SimplePath, new LoadRomArgs(ioa));
-					if (Game.IsNullInstance())
-					{
-						ShowMessageBox(owner: null, $"Failed to load {_argParser.cmdRom} specified on commandline");
-					}
-					else if (WaterboxCore.PrecompileRequest is { } request)
-					{
-						// a precompile session: pump the core until it has compiled
-						// its share, one progress line per change, then leave
-						if (!Emulator.ServiceProvider.HasService<ICorePrecompile>())
-						{
-							Console.Error.WriteLine($"{Emulator.Attributes().CoreName} has no precompile session");
-							Environment.Exit(3);
-						}
-						var pre = Emulator.AsPrecompile();
-						// A redirected stdout is block-buffered, and a progress line
-						// held until the process exits is not progress: whoever
-						// started this session is watching for these.
-						Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
-						Console.Error.WriteLine($"precompile session {request.Index} of {request.Count}: cache {WaterboxCore.CoreCacheRoot}");
-						uint lastDone = uint.MaxValue;
-						while (!pre.PrecompileDone)
-						{
-							Emulator.FrameAdvance(InputManager.ControllerOutput, false, false);
-							if (Emulator is ICoreStops { CoreStopped: { } stoppedWhy })
-							{
-								// nobody watches a precompile session, and it would pump a dead machine for ever
-								Console.Error.WriteLine($"precompile session {request.Index} of {request.Count}: the core stopped: {stoppedWhy}");
-								Environment.Exit(HeadlessMode.EXIT_CODE_CORE_STOPPED);
-							}
-							var (done, total) = pre.PrecompileProgress;
-							if (done != lastDone) { Console.WriteLine($"Precompiled {done}/{total} modules"); lastDone = done; }
-						}
-						var (fdone, ftotal) = pre.PrecompileProgress;
-						Console.WriteLine($"Precompiled {fdone}/{ftotal} modules");
-						Console.WriteLine($"precompile session {request.Index} of {request.Count}: {pre.CacheStored} objects stored, {pre.CacheFetched} fetched");
-						// leave the way a script does: the run loop closes the window
-						// and the process exits with its code, nothing torn down early
-						_exitRequestPending = true;
-					}
-				}
+				// once the window is up, so the wizard has something to sit over
+				var game = _argParser.cmdRom;
+				Shown += (_, _) => NewProjectFromFile(game);
 			}
 			// no rom autoload: the GUI's entry point is a project (docs/project.md);
 			// the start screen offers New/Open/recents once the window is up
 
-			if (_argParser.cmdProject != null && !LoadProject(_argParser.cmdProject))
+			if (projectGiven != null && !LoadProject(projectGiven))
 			{
-				ShowMessageBox(owner: null, $"Failed to open project {_argParser.cmdProject} specified on commandline");
+				ShowMessageBox(owner: null, $"Failed to open project {projectGiven} specified on commandline");
 			}
 
 			Config.VideoWriterAudioSyncEffective = _argParser.audiosync ?? Config.VideoWriterAudioSync;
 			_autoDumpLength = _argParser._autoDumpLength;
-			if (_argParser.cmdMovie != null)
-			{
-				if (Game.IsNullInstance())
-				{
-					OpenRom();
-				}
-
-				// If user picked a game, then do the commandline logic
-				if (!Game.IsNullInstance())
-				{
-					var movie = MovieSession.Get(_argParser.cmdMovie, true);
-					if (movie != null)
-					{
-						MovieSession.ReadOnly = true;
-
-						// if user is dumping and didn't supply dump length, make it as long as the loaded movie
-						if (_autoDumpLength == 0)
-						{
-							_autoDumpLength = movie.InputLogLength;
-						}
-
-						StartNewMovie(movie, false);
-						Config.RecentMovies.Add(_argParser.cmdMovie);
-
-						}
-					else
-					{
-						ShowMessageBox(owner: null, $"Failed to load movie {_argParser.cmdMovie} specified on commandline");
-					}
-				}
-			}
-			else if (Config.RecentMovies.AutoLoad && !Config.RecentMovies.Empty)
-			{
-				if (Game.IsNullInstance())
-				{
-					OpenRom();
-				}
-
-				// If user picked a game, then do the autoload logic
-				if (!Game.IsNullInstance())
-				{
-					if (File.Exists(Config.RecentMovies.MostRecent))
-					{
-						StartNewMovie(MovieSession.Get(Config.RecentMovies.MostRecent, true), false);
-					}
-					else
-					{
-						Config.RecentMovies.HandleLoadError(this, Config.RecentMovies.MostRecent);
-					}
-				}
-			}
 
 			if (_argParser.startFullscreen || Config.StartFullscreen)
 			{
@@ -783,19 +641,11 @@ namespace Chimera.Client.GUI
 				StopAv();
 			}
 
-			// A precompile session does not rewrite the config. It was started to
-			// fill a cache, it changed nothing anybody asked to keep, and several
-			// of them run at once: eight closing together raced for
-			// config.saving.ini, and whichever lost it died with "the process
-			// cannot access the file", which is not a sentence about compiling a
-			// game (found 2026-09-12, one of eight).
-			//
-			// Only a precompile session, not every headless one. A headless run
-			// that opens a core DOES have something to keep - it adopts the
-			// package's default bindings into the config, which the synthetic
-			// witness reads back (K:box:keybinds), and skipping the write left the
-			// frontend with no bindings at all.
-			if (_argParser.cmdPrecompile is null)
+			// A headless run that opens a core has something to keep too: it
+			// adopts the package's default bindings into the config, which the
+			// synthetic witness reads back (K:box:keybinds). A compile session
+			// never gets here: it is a process of its own with no window and no
+			// config (Program.PrecompileSession).
 			{
 				TryAgainResult configSaveResult = this.DoWithTryAgainBox(() => SaveConfig(), "Failed to save config file.");
 				if (configSaveResult == TryAgainResult.Canceled)
@@ -1226,7 +1076,6 @@ namespace Chimera.Client.GUI
 		private IControlMainform ToolControllingStopMovie => Tools.FirstOrNull<IControlMainform>(tool => tool.WantsToControlStopMovie);
 		private IControlMainform ToolControllingRestartMovie => Tools.FirstOrNull<IControlMainform>(tool => tool.WantsToControlRestartMovie);
 		private IControlMainform ToolControllingReadOnly => Tools.FirstOrNull<IControlMainform>(tool => tool.WantsToControlReadOnly);
-		private IControlMainform ToolBypassingMovieEndAction => Tools.FirstOrNull<IControlMainform>(tool => tool.WantsToBypassMovieEndAction);
 
 		private DisplayManager DisplayManager;
 
@@ -1290,9 +1139,7 @@ namespace Chimera.Client.GUI
 				{
 					return RebootProject(tasMovie);
 				}
-				return LoadRom(
-					CurrentlyOpenRomArgs.OpenAdvanced.SimplePath,
-					CurrentlyOpenRomArgs with { ForcedSysID = Emulator.SystemId });
+				return LoadRom(CurrentlyOpenRomArgs.OpenAdvanced.SimplePath, CurrentlyOpenRomArgs);
 			}
 		}
 
@@ -1692,8 +1539,6 @@ namespace Chimera.Client.GUI
 		private bool _needsFullscreenOnLoad;
 		private bool _framebufferResizedPending;
 
-		private int _lastOpenRomFilter;
-
 		private readonly ParsedCLIFlags _argParser;
 
 		private int _autoDumpLength;
@@ -1922,40 +1767,6 @@ namespace Chimera.Client.GUI
 
 			InputManager.ClientControls = controls;
 			InputManager.ControllerInputCoalescer = new();
-		}
-
-		private void LoadMoviesFromRecent(string path)
-		{
-			bool loaded = false;
-			if (File.Exists(path))
-			{
-				var movie = MovieSession.Get(path, true);
-				if (movie != null)
-				{
-					MovieSession.ReadOnly = true;
-					StartNewMovie(movie, false);
-					loaded = true;
-				}
-			}
-			if (!loaded)
-			{
-				Config.RecentMovies.HandleLoadError(this, path);
-			}
-		}
-
-		private void LoadRomFromRecent(string rom)
-		{
-			var ioa = OpenAdvancedSerializer.ParseWithLegacy(rom);
-
-			// if(ioa is this or that) - for more complex behaviour
-			string romPath = ioa.SimplePath;
-
-			if (!LoadRom(romPath, new LoadRomArgs(ioa), out var failureIsFromAskSave))
-			{
-				if (failureIsFromAskSave) AddOnScreenMessage("ROM loading cancelled due to unsaved changes");
-				else if (File.Exists(romPath)) AddOnScreenMessage("ROM loading failed");
-				else Config.RecentRoms.HandleLoadError(this, romPath, rom);
-			}
 		}
 
 		private void SetPauseStatusBarIcon()
@@ -2223,15 +2034,12 @@ namespace Chimera.Client.GUI
 			{
 				var (manifest, packageSha1, factories) = CoreRegistry.Instance.LoadCorePackage(path);
 				Config.LastCorePackagePath = path;
-				// Opening a core is how you choose one: every system this package claims will open
-				// its roms with it from now on. Startup discovery deliberately does NOT do this - it
-				// only makes packages available, so what is sitting in Cores/ can never silently
-				// reassign what you picked.
+				// Opening a core is how you choose its BUILD, when several are installed - unless
+				// this is a project loading the build it pins, which is not a choice anybody made.
+				// (A system's core is the project's: a game runs only in a project, user-decided
+				// 2026-10-26, so there is no core per system to remember.)
 				foreach (var factory in factories)
 				{
-					foreach (var sysID in factory.SystemIds) CoreChoices.MakeDefault(Config, sysID, factory.CoreName);
-					// and which BUILD of it, when several are installed - unless this is a project
-					// loading the build it pins, which is not a choice anybody made
 					if (chooseBuild && packageSha1 is not null) CoreChoices.MakeDefaultBuild(Config, factory.CoreName, packageSha1);
 				}
 					AddOnScreenMessage(packageSha1 is null
@@ -2250,29 +2058,16 @@ namespace Chimera.Client.GUI
 			}
 		}
 
-		private void OpenRom()
-		{
-			if (CoreRegistry.Instance.AllFactories.Count is 0)
-			{
-				AddOnScreenMessage("There is no core to run this with; start a project first.");
-				return;
-			}
-			var result = this.ShowFileOpenDialog(
-				filter: RomLoader.RomFilter,
-				filterIndex: ref _lastOpenRomFilter,
-				initDir: Config.PathEntries.RomDialogDir(Emulator.SystemId));
-			if (result is null) return;
-			var filePath = new FileInfo(result).FullName;
-			_ = LoadRom(filePath, new LoadRomArgs(new OpenAdvanced_OpenRom(filePath)));
-		}
-
 		private void CoreSettings(object sender, RomLoader.SettingsLoadArgs e)
 		{
 			// a queued movie's settings are the project's flat map wrapped as
-			// {"Values":{...}}; without a movie, the user's config store serves
+			// {"Values":{...}}. A game runs only in a project (user-decided,
+			// 2026-10-26), so nothing keeps settings for a game outside one: a
+			// compile session, the one game run without a project, takes the
+			// package's defaults
 			e.Settings = MovieSession.NewMovieQueued && MovieSettings.Decode(MovieSession.QueuedSettings) is { } queued
 				? queued
-				: Config.GetCoreSettings(e.Core, e.SettingsType);
+				: null;
 		}
 
 		private void HandlePutCoreSettings(PutSettingsDirtyBits dirty)
@@ -2337,7 +2132,6 @@ namespace Chimera.Client.GUI
 				path = _getConfigPath();
 			}
 
-			CommitCoreSettingsToConfig();
 			return ConfigService.Save(path, Config);
 		}
 
@@ -2889,7 +2683,7 @@ namespace Chimera.Client.GUI
 				// an encode reaching the end of the movie is the encode finishing, not
 				// the movie ending on the person - so it bypasses the end action too
 				movieStarted = LoopTrace.Enabled ? Stopwatch.GetTimestamp() : 0;
-				MovieSession.HandleFrameAfter(ToolBypassingMovieEndAction is not null || IsEncodingVideo);
+				MovieSession.HandleFrameAfter();
 				LoopTrace.Add(LoopTrace.Movie, movieStarted);
 
 				if (returnToRecording)
@@ -3296,17 +3090,6 @@ namespace Chimera.Client.GUI
 			}
 		}
 
-		private int? LoadArchiveChooser(ChimeraFile file)
-		{
-			using var ac = new ArchiveChooser(file);
-			if (this.ShowDialogAsChild(ac).IsOk())
-			{
-				return ac.SelectedMemberIndex;
-			}
-
-			return null;
-		}
-
 		private void ShowLoadError(object sender, RomLoader.RomErrorArgs e)
 		{
 			string title = "load error";
@@ -3316,16 +3099,6 @@ namespace Chimera.Client.GUI
 			}
 
 			this.ModalMessageBox(e.Message, title, EMsgBoxIcon.Error);
-		}
-
-		private string ChoosePlatformForRom(RomGame rom)
-		{
-			using var platformChooser = new PlatformChooser()
-			{
-				RomGame = rom,
-			};
-			this.ShowDialogWithTempMute(platformChooser);
-			return platformChooser.PlatformChoice;
 		}
 
 		private LoadRomArgs _currentLoadRomArgs;
@@ -3388,10 +3161,7 @@ namespace Chimera.Client.GUI
 
 				var loader = new RomLoader(Config, this)
 				{
-					ChooseArchive = LoadArchiveChooser,
-					ChoosePlatform = romGame => args.ForcedSysID ?? ChoosePlatformForRom(romGame),
 					Deterministic = deterministic,
-					OpenAdvanced = args.OpenAdvanced,
 				};
 				if (path.EndsWith(".chimeraProject", StringComparison.OrdinalIgnoreCase))
 				{
@@ -3438,10 +3208,7 @@ namespace Chimera.Client.GUI
 
 				DisplayManager.ActivateOpenGLContext(); // required in case the core wants to create a shared OpenGL context
 
-				var result = loader.LoadRom(
-					path: path,
-					nextComm,
-					forcedCoreName: forcedCoreName);
+				var result = loader.LoadRom(path, nextComm);
 
 				// we need to replace the path in the OpenAdvanced with the canonical one the user chose.
 				// It can't be done until loader.LoadRom happens (for CanonicalFullPath)
@@ -3451,7 +3218,6 @@ namespace Chimera.Client.GUI
 				}
 
 				var openAdvancedArgs = $"*{OpenAdvancedSerializer.Serialize(ioa)}";
-				Config.RecentRoms.Add(openAdvancedArgs);
 
 				if (result)
 				{
@@ -3466,14 +3232,9 @@ namespace Chimera.Client.GUI
 					}
 					InputManager.SyncControls(Emulator, MovieSession, Config);
 
-					var romDetails = Emulator.RomDetails();
-					if (string.IsNullOrWhiteSpace(romDetails) && loader.Rom != null)
+					// a project's files are never read here (a disc is gigabytes), so there are no hashes of them to show
+					if (string.IsNullOrWhiteSpace(Emulator.RomDetails()))
 					{
-						_defaultRomDetails = $"{Game.Name}\r\n{SHA1Checksum.ComputePrefixedHex(loader.Rom.RomData)}\r\n{MD5Checksum.ComputePrefixedHex(loader.Rom.RomData)}\r\n";
-					}
-					else if (string.IsNullOrWhiteSpace(romDetails) && loader.Rom == null)
-					{
-						// single disc game
 						_defaultRomDetails = $"{Game.Name}\r\nSHA1:N/A\r\nMD5:N/A\r\n";
 					}
 
@@ -3507,11 +3268,6 @@ namespace Chimera.Client.GUI
 					Tools.UpdateFreezeRelatedTools(null, new(null));
 
 					RomLoaded?.Invoke(this, EventArgs.Empty);
-
-					// Some window messages like paints may be dispatched during this function call and before it returns.
-					// Therefore this needs to be called very late after tools have been restarted
-					// to ensure no stale references like disposed cores are being used, see https://github.com/TASEmulators/BizHawk/issues/4436.
-					if (!OSTailoredCode.IsUnixHost) JumpLists.AddRecentItem(openAdvancedArgs, ioa.DisplayName);
 
 					return true;
 				}
@@ -3662,19 +3418,6 @@ namespace Chimera.Client.GUI
 			}
 		}
 
-		private void CommitCoreSettingsToConfig()
-		{
-			// save settings object
-			var t = Emulator.GetType();
-			var settable = GetSettingsAdapterForLoadedCoreUntyped();
-
-			// don't trample config with loaded-from-movie settings
-			if (settable.HasSettings && MovieSession.Movie.NotActive())
-			{
-				Config.PutCoreSettings(settable.GetSettings(), t);
-			}
-		}
-
 		/// <summary>
 		/// This closes the game but does not set things up for using the client with the new null emulator.
 		/// This method should only be called (outside of <see cref="LoadNullRom()"/>) if the caller is about to load a new game with no user interaction between close and load.
@@ -3682,8 +3425,6 @@ namespace Chimera.Client.GUI
 		/// <returns>True if the game was closed. False if the user cancelled due to unsaved changes.</returns>
 		private bool CloseGame()
 		{
-			CommitCoreSettingsToConfig(); // Must happen before stopping the movie, since it checks for active movie.
-
 			if (!Tools.AskSave())
 			{
 				return false;
@@ -4096,15 +3837,10 @@ namespace Chimera.Client.GUI
 			StartSingleInstanceServer();
 		}
 
+		/// <summary>the files a later start hands over: the first, as a file named on the command line</summary>
 		private void SingleInstanceProcessArgs(string[] args)
 		{
-			//ulp. it's not clear how to handle these.
-			//we only have a legacy case where we can tell the form to load a rom, if it's in a sensible condition for that.
-			//er.. let's assume it's always in a sensible condition
-			//in case this all sounds insanely sketchy to you, remember, the main 99% use case is double clicking roms in explorer
-
-			//BANZAIIIIIIIIIIIIIIIIIIIIIIIIIII
-			_ = LoadRom(args[0]);
+			if (args.Length is not 0) OpenGivenFile(args[0]);
 		}
 
 		private IntPtr _x11Display;

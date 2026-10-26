@@ -74,8 +74,14 @@ namespace Chimera.Client.Common
 
 		public static void ReplaceKeysInBindings(this Config config, IReadOnlyDictionary<string, string> replMap)
 		{
+			// a key after ", " in a list ("Shift, LeftShift") has the space before it
+			string ReplButton(string button)
+			{
+				var name = button.Trim();
+				return replMap.TryGetValue(name, out var repl) ? button.Replace(name, repl) : button;
+			}
 			string ReplMulti(string multiBind)
-				=> multiBind.TransformFields(',', bind => bind.TransformFields('+', button => replMap.TryGetValue(button, out var repl) ? repl : button));
+				=> multiBind.TransformFields(',', bind => bind.TransformFields('+', ReplButton));
 			foreach (var k in config.HotkeyBindings.Keys.ToList()) config.HotkeyBindings[k] = ReplMulti(config.HotkeyBindings[k]);
 			foreach (var bindCollection in new[] { config.AllTrollers, config.AllTrollersAutoFire }) // analog and feedback binds can only be bound to (host) gamepads, not keyboard
 			{

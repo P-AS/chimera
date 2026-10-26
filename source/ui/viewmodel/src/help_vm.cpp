@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -11,6 +12,7 @@
 #include "chimera/engine.h"
 #include "chimera/vm/european_clock.hpp"
 #include "chimera/vm/json.hpp"
+#include "ui_build.h"
 
 /* a copy of the engine's miniz, kept to this library: a report's zip is
  * deflated, as Chimera's is */
@@ -50,16 +52,21 @@ std::string lowered(std::string s)
 HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, SettingsViewModel &settings)
 	: ViewModel("help", dispatcher), session_(session), settings_(settings)
 {
-	/* the build: the engine's commit, as ce_build_info says it */
+	/* the build: its commit and that commit's time, as Chimera's About box
+	 * and its reports name it (Commit 1a2b3c4d5 (2026-10-26 18:35 CET)) */
 	{
-		json::Json info;
-		std::string err;
-		std::string commit = "unknown";
-		if (json::parse(ce_build_info(), info, err))
-			if (const json::Json *c = info.find("commit")) commit = c->text;
-		buildName.set("Qt prototype, commit " + commit);
+		const std::string stamp = CHIMERA_UI_BUILD;
+		const size_t space = stamp.find(' ');
+		const std::string full = stamp.substr(0, space);
+		const int64_t when = space == std::string::npos ? 0 : std::atoll(stamp.c_str() + space + 1);
+		commit.set(full.substr(0, 9));
+		commitUrl.set(homePage.get() + "/commit/" + full);
+		buildName.set("Commit " + commit.get() + (when > 0 ? " (" + europeanTime(when) + ")" : std::string()));
 	}
-	expose("buildName", "this build, as a report names it", buildName);
+	expose("buildName", "this build, as Chimera's About box and a report name it", buildName);
+	expose("commit", "the commit this build was made from, as Lua's client.getversion gives it", commit);
+	expose("commitUrl", "that commit on the web", commitUrl);
+	expose("homePage", "where Chimera's code is", homePage);
 	expose("siteUrl", "Chimera's site", siteUrl);
 	expose("formUrl", "where an issue is filed", formUrl);
 	expose("osName", "the computer's system, as the window's toolkit names it", osName, true);

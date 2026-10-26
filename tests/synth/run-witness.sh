@@ -36,6 +36,30 @@ repo_root="$(cd "$here/../.." && pwd)"
 golden_dir="$here/goldens"
 work="$here/work"
 mkdir -p "$golden_dir" "$work"
+# A game runs only in a project (user-decided, 2026-10-26): crun_game
+# <package> <game> <movie> [chimera-run's options] makes one of the game and
+# the movie with chimera-run --new-project, with any --settings and
+# --firmware given, and runs it with the rest (each run under CRUN_TIMEOUT
+# seconds when it is set).
+crun_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+crun_game() {
+	cg_pkg="$1" cg_game="$2" cg_movie="$3" cg_made=""
+	shift 3
+	cg_n=$#
+	while [ "$cg_n" -gt 0 ]; do
+		case "$1" in
+			--settings) cg_made="$cg_made --settings $(crun_quote "$2")"; shift 2; cg_n=$((cg_n - 2)); continue ;;
+			--settings=*) cg_made="$cg_made --settings $(crun_quote "${1#--settings=}")"; shift; cg_n=$((cg_n - 1)); continue ;;
+			--firmware) cg_made="$cg_made --firmware $(crun_quote "$2")"; set -- "$@" "$1" "$2"; shift 2; cg_n=$((cg_n - 2)); continue ;;
+			--firmware=*) cg_made="$cg_made --firmware $(crun_quote "${1#--firmware=}")"; set -- "$@" "$1"; shift; cg_n=$((cg_n - 1)); continue ;;
+		esac
+		set -- "$@" "$1"; shift; cg_n=$((cg_n - 1))
+	done
+	cg_dir="$(mktemp -d "$work/project.XXXXXX")"
+	eval "timeout \"\${CRUN_TIMEOUT:-0}\" \"\$chimera_run\" --new-project \"\$cg_dir/game.chimeraProject\" \"\$cg_pkg\" \"\$cg_game\" \"\$cg_movie\" $cg_made" \
+		> "$cg_dir/make.log" 2>&1 || { echo "chimera-run: no project made: $(tail -1 "$cg_dir/make.log")" >&2; return 2; }
+	timeout "${CRUN_TIMEOUT:-0}" "$chimera_run" --project "$cg_dir/game.chimeraProject" "$cg_pkg" --files "$(dirname "$cg_game")" "$@"
+}
 failed=0
 ok=0
 known=0
@@ -147,7 +171,7 @@ if [ "$level" = "both" ] || [ "$level" = "e" ]; then
 				[ "$emode" = "rerecord" ] && eextra="--rerecord"
 				etag="$ename.engine.$emode"
 				rm -f "$work/$etag.ram.bin" "$work/$etag.vram.bin" "$work/$etag.meta.txt"
-				"$chimera_run" "$epkg" "$erom" "$movie" $eextra 					--dump "RAM=$work/$etag.ram.bin" --dump "VRAM=$work/$etag.vram.bin" 					--meta "$work/$etag.meta.txt" > "$work/$etag.log" 2>&1
+				crun_game "$epkg" "$erom" "$movie" $eextra 					--dump "RAM=$work/$etag.ram.bin" --dump "VRAM=$work/$etag.vram.bin" 					--meta "$work/$etag.meta.txt" > "$work/$etag.log" 2>&1
 				if [ ! -f "$work/$etag.meta.txt" ] || ! grep -q "^status=OK" "$work/$etag.meta.txt"; then
 					report "E:$ename:$emode" FAIL "no OK meta (see work/$etag.log)"
 				elif cmp -s "$work/$etag.ram.bin" "$golden_dir/$ename.ram.bin" 					&& cmp -s "$work/$etag.vram.bin" "$golden_dir/$ename.vram.bin"; then
@@ -176,7 +200,7 @@ names = ["P1 Up", "P1 Down", "P1 Left", "P1 Right", "P1 A", "P1 B", "P1 Select",
 rows = ["|" + l.strip().strip("|")[::-1] + "|" for l in open(sys.argv[1]) if l.startswith("|")]
 open(sys.argv[2], "w").write("[Input]\nLogKey:#" + "|".join(reversed(names)) + "|\n" + "\n".join(rows) + "\n[/Input]\n")
 KEYED
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$kmovie" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$kmovie" \
 			--dump "RAM=$work/keyed.ram.bin" --dump "VRAM=$work/keyed.vram.bin" > "$work/keyed.log" 2>&1
 		if cmp -s "$work/keyed.ram.bin" "$golden_dir/$kname.ram.bin" && cmp -s "$work/keyed.vram.bin" "$golden_dir/$kname.vram.bin"; then
 			report "E:logkey" PASS "a movie's columns are read by the names its LogKey gives them, in any order"
@@ -190,7 +214,7 @@ KEYED
 			grom="$here/roms/${gname%%.*}.testrom"
 			gtag="$gname.engine.seek"
 			rm -f "$work/$gtag.ram.bin" "$work/$gtag.vram.bin"
-			"$chimera_run" "$epkg" "$grom" "$movie" --seek 10 				--dump "RAM=$work/$gtag.ram.bin" --dump "VRAM=$work/$gtag.vram.bin" 				> "$work/$gtag.log" 2>&1
+			crun_game "$epkg" "$grom" "$movie" --seek 10 				--dump "RAM=$work/$gtag.ram.bin" --dump "VRAM=$work/$gtag.vram.bin" 				> "$work/$gtag.log" 2>&1
 			if cmp -s "$work/$gtag.ram.bin" "$golden_dir/$gname.ram.bin" 				&& cmp -s "$work/$gtag.vram.bin" "$golden_dir/$gname.vram.bin"; then
 				report "E:$gname:seek" PASS "greenzone seek+replay byte-identical"
 			else
@@ -208,7 +232,7 @@ KEYED
 			srom="$here/roms/${sname%%.*}.testrom"
 			stag="$sname.engine.statefile"
 			rm -f "$work/$stag.ram.bin" "$work/$stag.vram.bin" "$work/$stag.state"
-			"$chimera_run" "$epkg" "$srom" "$movie" --state-file-roundtrip 10 --save-state-file "10=$work/$stag.state" 				--meta "$work/$stag.meta.txt" --dump "RAM=$work/$stag.ram.bin" --dump "VRAM=$work/$stag.vram.bin" 				> "$work/$stag.log" 2>&1
+			crun_game "$epkg" "$srom" "$movie" --state-file-roundtrip 10 --save-state-file "10=$work/$stag.state" 				--meta "$work/$stag.meta.txt" --dump "RAM=$work/$stag.ram.bin" --dump "VRAM=$work/$stag.vram.bin" 				> "$work/$stag.log" 2>&1
 			if cmp -s "$work/$stag.ram.bin" "$golden_dir/$sname.ram.bin" 				&& cmp -s "$work/$stag.vram.bin" "$golden_dir/$sname.vram.bin" && [ -s "$work/$stag.state" ]; then
 				report "E:$sname:statefile" PASS "saved to a file and loaded back mid-movie, byte-identical"
 			else
@@ -217,10 +241,10 @@ KEYED
 		done
 		sfirst="$(ls "$here"/movies/*.txt | head -1)"; sname="$(basename "$sfirst" .txt)"; srom="$here/roms/${sname%%.*}.testrom"
 		printf 'this is not a state' > "$work/not-a-state.state"
-		"$chimera_run" "$epkg" "$srom" "$sfirst" --state-file "$work/not-a-state.state" > "$work/statefile-garbage.log" 2>&1; garbage_rc=$?
+		crun_game "$epkg" "$srom" "$sfirst" --state-file "$work/not-a-state.state" > "$work/statefile-garbage.log" 2>&1; garbage_rc=$?
 		head -c 300 "$work/$sname.engine.statefile.state" > "$work/cut-short.state"
-		"$chimera_run" "$epkg" "$srom" "$sfirst" --state-file "$work/cut-short.state" > "$work/statefile-short.log" 2>&1; short_rc=$?
-		"$chimera_run" "$epkg" "$srom" "$sfirst" --state-file "$work/$sname.engine.statefile.state" > "$work/statefile-good.log" 2>&1; good_rc=$?
+		crun_game "$epkg" "$srom" "$sfirst" --state-file "$work/cut-short.state" > "$work/statefile-short.log" 2>&1; short_rc=$?
+		crun_game "$epkg" "$srom" "$sfirst" --state-file "$work/$sname.engine.statefile.state" > "$work/statefile-good.log" 2>&1; good_rc=$?
 		if [ "$garbage_rc" -ne 0 ] && [ "$garbage_rc" -lt 128 ] && grep -q "is not a state file" "$work/statefile-garbage.log" 			&& [ "$short_rc" -ne 0 ] && [ "$short_rc" -lt 128 ] 			&& [ "$good_rc" -eq 0 ] && grep -q "state file tag: frame 10" "$work/statefile-good.log"; then
 			report "E:statefile:refusals" PASS "a whole file loads and hands its tag back; garbage and a cut-short file are refused, no crash"
 		else
@@ -406,7 +430,7 @@ CLOCKPY
 			for qallow in "" changes; do
 				qdir="$work/mcp${qallow:+-$qallow}"
 				rm -rf "$qdir" && mkdir -p "$qdir"
-				"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/$qname.txt" \
+				crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/$qname.txt" \
 					--screenshot "$qlast=$qdir/last.tga" --mcp-serve $qallow > "$qdir/serve.log" 2>&1 &
 				qserve=$!
 				qtries=0
@@ -481,7 +505,7 @@ p = sys.argv[1]
 t = open(p, encoding='utf-8').read()
 open(p, 'wb').write(codecs.BOM_UTF16_LE + t.encode('utf-16-le'))
 " "$badpkg/waterbox.config"; then
-			"$chimera_run" "$badpkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			crun_game "$badpkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 				> "$work/unreadable-package.log" 2>&1 || true
 			if grep -q "waterbox.config is not readable JSON ($badpkg: [0-9]* bytes, starting with \\\\xff\\\\xfe" "$work/unreadable-package.log"; then
 				report "E:package:unreadable" PASS "the refusal names the package, its size and its first bytes"
@@ -496,7 +520,7 @@ open(p, 'wb').write(codecs.BOM_UTF16_LE + t.encode('utf-16-le'))
 		# reason, not as a file it could not load (2026-10-18). The synthetic
 		# core dies in Init on a rom of the four bytes DIE!.
 		printf 'DIE!' > "$work/dies-in-init.testrom"
-		"$chimera_run" "$epkg" "$work/dies-in-init.testrom" "$here/movies/gridWalker.win.txt" > "$work/dies-in-init.log" 2>&1; dirc=$?
+		crun_game "$epkg" "$work/dies-in-init.testrom" "$here/movies/gridWalker.win.txt" > "$work/dies-in-init.log" 2>&1; dirc=$?
 		if [ "$dirc" -ne 0 ] && [ "$dirc" -lt 128 ] && grep -q "the core stopped while starting" "$work/dies-in-init.log" \
 			&& ! grep -q "could not load this file" "$work/dies-in-init.log"; then
 			report "E:core-dies-in:init" PASS "a core that dies in Init is said to have stopped, with the reason: $(grep -o 'the core stopped while starting.*' "$work/dies-in-init.log" | head -1 | cut -c1-80)"
@@ -512,11 +536,11 @@ open(p, 'wb').write(codecs.BOM_UTF16_LE + t.encode('utf-16-le'))
 		fsdir="$work/final-shot"; rm -rf "$fsdir"; mkdir -p "$fsdir"
 		fsmovie="$here/movies/gridWalker.win.txt"; fsrom="$here/roms/gridWalker.testrom"
 		fslast=$(( $(grep -c '^|' "$fsmovie") - 1 ))
-		"$chimera_run" "$epkg" "$fsrom" "$fsmovie" --screenshot "$fslast=$fsdir/drawn.tga" > "$fsdir/drawn.log" 2>&1
-		"$chimera_run" "$epkg" "$fsrom" "$fsmovie" --final-screenshot "$fsdir/plain.tga" > "$fsdir/plain.log" 2>&1; fsa=$?
-		"$chimera_run" "$epkg" "$fsrom" "$fsmovie" --seek 30 --final-screenshot "$fsdir/seek.tga" > "$fsdir/seek.log" 2>&1; fsb=$?
-		"$chimera_run" "$epkg" "$fsrom" "$fsmovie" --frames 10x > "$fsdir/number.log" 2>&1; fsc=$?
-		"$chimera_run" "$epkg" "$fsrom" "$fsmovie" --play 20 > "$fsdir/play.log" 2>&1; fsd=$?
+		crun_game "$epkg" "$fsrom" "$fsmovie" --screenshot "$fslast=$fsdir/drawn.tga" > "$fsdir/drawn.log" 2>&1
+		crun_game "$epkg" "$fsrom" "$fsmovie" --final-screenshot "$fsdir/plain.tga" > "$fsdir/plain.log" 2>&1; fsa=$?
+		crun_game "$epkg" "$fsrom" "$fsmovie" --seek 30 --final-screenshot "$fsdir/seek.tga" > "$fsdir/seek.log" 2>&1; fsb=$?
+		crun_game "$epkg" "$fsrom" "$fsmovie" --frames 10x > "$fsdir/number.log" 2>&1; fsc=$?
+		crun_game "$epkg" "$fsrom" "$fsmovie" --play 20 > "$fsdir/play.log" 2>&1; fsd=$?
 		if [ "$fsa" -eq 0 ] && [ "$fsb" -eq 0 ] && cmp -s "$fsdir/drawn.tga" "$fsdir/plain.tga" && cmp -s "$fsdir/drawn.tga" "$fsdir/seek.tga" \
 			&& [ "$fsc" -ne 0 ] && [ "$fsc" -lt 128 ] && grep -q "wants a whole number, not '10x'" "$fsdir/number.log" \
 			&& [ "$fsd" -ne 0 ] && [ "$fsd" -lt 128 ] && grep -q "first pass of a --seek" "$fsdir/play.log"; then
@@ -538,7 +562,7 @@ d = json.load(open(p))
 d['video']['width'] = -1
 json.dump(d, open(p, 'w'))
 " "$sizepkg/waterbox.config"; then
-			"$chimera_run" "$sizepkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			crun_game "$sizepkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 				> "$work/impossible-package.log" 2>&1; src=$?
 			if [ "$src" -ne 0 ] && [ "$src" -lt 128 ] && grep -q "video.width is -1, which is not between 1 and 16384" "$work/impossible-package.log"; then
 				report "E:package:sizes" PASS "a package declaring a width of -1 is refused with the number and the range"
@@ -562,12 +586,12 @@ json.dump(d, open(p, 'w'))
 		loc="$work/locales"
 		rm -rf "$loc"; mkdir -p "$loc"
 		if command -v localedef > /dev/null 2>&1 && localedef -i de_DE -f UTF-8 "$loc/de_DE.UTF-8" > /dev/null 2>&1; then
-			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 				--settings '{"probe":0.5}' --dump "RAM=$work/locale-c.ram.bin" > "$work/locale-c.log" 2>&1 || true
 			LOCPATH="$loc" LC_ALL=de_DE.UTF-8 CHIMERA_TEST_NEEDS_COMMA_LOCALE=1 \
 				"$repo_root/build/meson-linux/test_plain_numbers" > "$work/locale-unit.log" 2>&1
 			unit_rc=$?
-			LOCPATH="$loc" LC_ALL=de_DE.UTF-8 "$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			LOCPATH="$loc" LC_ALL=de_DE.UTF-8 crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 				--locale-from-environment --settings '{"probe":0.5}' --dump "RAM=$work/locale-de.ram.bin" > "$work/locale-de.log" 2>&1
 			run_rc=$?
 			if [ "$unit_rc" = 0 ] && [ "$run_rc" = 0 ] && grep -q "decimal separator ','" "$work/locale-de.log" \
@@ -586,7 +610,7 @@ json.dump(d, open(p, 'w'))
 		dmovie="$work/dies-at-11.txt"
 		sed '12s/.*/|UDLRABsS|/' "$here/movies/gridWalker.win.txt" > "$dmovie"
 		rm -f "$work/dies.meta.txt"
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$dmovie" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$dmovie" \
 			--meta "$work/dies.meta.txt" > "$work/dies.log" 2>&1
 		drc=$?
 		if [ "$drc" -ge 128 ]; then
@@ -601,7 +625,7 @@ json.dump(d, open(p, 'w'))
 		# and the same death arriving as a FAULT (all but Up: a wild pointer)
 		sed '12s/.*/|.DLRABsS|/' "$here/movies/gridWalker.win.txt" > "$work/crashes-at-11.txt"
 		rm -f "$work/crashes.meta.txt"
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$work/crashes-at-11.txt" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$work/crashes-at-11.txt" \
 			--meta "$work/crashes.meta.txt" > "$work/crashes.log" 2>&1
 		crc=$?
 		if [ "$crc" -ge 128 ]; then
@@ -624,7 +648,7 @@ json.dump(d, open(p, 'w'))
 			sed "12s/.*/$line/" "$here/movies/gridWalker.win.txt" > "$work/dies-in-$where.txt"
 			rm -f "$work/dies-in-$where.meta.txt"
 			# shellcheck disable=SC2086
-			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$work/dies-in-$where.txt" $extra \
+			crun_game "$epkg" "$here/roms/gridWalker.testrom" "$work/dies-in-$where.txt" $extra \
 				--meta "$work/dies-in-$where.meta.txt" > "$work/dies-in-$where.log" 2>&1
 			irc=$?
 			if [ "$irc" -ge 128 ]; then
@@ -648,10 +672,10 @@ json.dump(d, open(p, 'w'))
 		cat "$here/roms/gridWalker.testrom" > "$work/stuck-frame.testrom"
 		printf 'SPINFRAME' >> "$work/stuck-frame.testrom"
 		rm -f "$work/stuck-frame.meta.txt"
-		CHIMERA_FRAME_TIMEOUT_MS=1500 timeout 60 "$chimera_run" "$epkg" "$work/stuck-frame.testrom" "$here/movies/gridWalker.win.txt" \
+		CHIMERA_FRAME_TIMEOUT_MS=1500 CRUN_TIMEOUT=60 crun_game "$epkg" "$work/stuck-frame.testrom" "$here/movies/gridWalker.win.txt" \
 			--meta "$work/stuck-frame.meta.txt" > "$work/stuck-frame.log" 2>&1; sfrc=$?
 		printf 'SPIN' > "$work/stuck-start.testrom"
-		CHIMERA_START_TIMEOUT_MS=1500 timeout 60 "$chimera_run" "$epkg" "$work/stuck-start.testrom" "$here/movies/gridWalker.win.txt" \
+		CHIMERA_START_TIMEOUT_MS=1500 CRUN_TIMEOUT=60 crun_game "$epkg" "$work/stuck-start.testrom" "$here/movies/gridWalker.win.txt" \
 			> "$work/stuck-start.log" 2>&1; ssrc=$?
 		if [ "$sfrc" -eq 124 ] || [ "$ssrc" -eq 124 ]; then
 			report "E:core-stuck" FAIL "a stuck core was not stopped: the run was killed after 60 s (frame rc=$sfrc, start rc=$ssrc)"
@@ -672,7 +696,7 @@ json.dump(d, open(p, 'w'))
 		cat "$here/roms/gridWalker.testrom" > "$work/cache-work.testrom"
 		printf 'CACHEWORK' >> "$work/cache-work.testrom"
 		rm -rf "$work/cache-work.cache" "$work/cache-work.meta.txt"
-		CHIMERA_FRAME_TIMEOUT_MS=100 timeout 60 "$chimera_run" "$epkg" "$work/cache-work.testrom" "$here/movies/gridWalker.win.txt" \
+		CHIMERA_FRAME_TIMEOUT_MS=100 CRUN_TIMEOUT=60 crun_game "$epkg" "$work/cache-work.testrom" "$here/movies/gridWalker.win.txt" \
 			--cache-dir "$work/cache-work.cache" --meta "$work/cache-work.meta.txt" > "$work/cache-work.log" 2>&1; cwrc=$?
 		if [ "$cwrc" -ne 0 ] || ! grep -q "^status=OK$" "$work/cache-work.meta.txt" 2>/dev/null; then
 			report "E:core-working" FAIL "a core working through the compile cache was stopped: rc=$cwrc $(grep '^detail=' "$work/cache-work.meta.txt" 2>/dev/null)"
@@ -689,7 +713,7 @@ json.dump(d, open(p, 'w'))
 		cat "$here/roms/gridWalker.testrom" > "$work/slow-first.testrom"
 		printf 'SLOWFIRST' >> "$work/slow-first.testrom"
 		rm -f "$work/slow-first.meta.txt"
-		CHIMERA_FRAME_TIMEOUT_MS=100 timeout 120 "$chimera_run" "$epkg" "$work/slow-first.testrom" "$here/movies/gridWalker.win.txt" \
+		CHIMERA_FRAME_TIMEOUT_MS=100 CRUN_TIMEOUT=120 crun_game "$epkg" "$work/slow-first.testrom" "$here/movies/gridWalker.win.txt" \
 			--seek 5 --meta "$work/slow-first.meta.txt" > "$work/slow-first.log" 2>&1; slrc=$?
 		slow_frames=$(grep -c "synth: a long first frame" "$work/slow-first.log" 2>/dev/null)
 		if [ "$slrc" -ne 0 ] || ! grep -q "^status=OK$" "$work/slow-first.meta.txt" 2>/dev/null; then
@@ -712,7 +736,7 @@ json.dump(d, open(p, 'w'))
 		cat "$here/roms/gridWalker.testrom" > "$work/stop-once.testrom"
 		printf 'STOPONCE' >> "$work/stop-once.testrom"
 		rm -f "$work/stop-once.meta.txt" "$work/stop-once.ram.bin" "$work/stop-once.vram.bin"
-		CHIMERA_FRAME_TIMEOUT_MS=500 timeout 120 "$chimera_run" "$epkg" "$work/stop-once.testrom" "$here/movies/gridWalker.win.txt" \
+		CHIMERA_FRAME_TIMEOUT_MS=500 CRUN_TIMEOUT=120 crun_game "$epkg" "$work/stop-once.testrom" "$here/movies/gridWalker.win.txt" \
 			--recover --dump "RAM=$work/stop-once.ram.bin" --dump "VRAM=$work/stop-once.vram.bin" \
 			--meta "$work/stop-once.meta.txt" > "$work/stop-once.log" 2>&1; sorc=$?
 		if [ "$sorc" -ne 0 ] || ! grep -q "^status=OK$" "$work/stop-once.meta.txt" 2>/dev/null; then
@@ -734,7 +758,7 @@ json.dump(d, open(p, 'w'))
 		# the frames that were not lag frames - and counting them must not move
 		# the machine.
 		rm -f "$work/polls.meta.txt" "$work/polls.ram.bin" "$work/polls.vram.bin"
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" --count-input-polls \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" --count-input-polls \
 			--dump "RAM=$work/polls.ram.bin" --dump "VRAM=$work/polls.vram.bin" \
 			--meta "$work/polls.meta.txt" > "$work/polls.log" 2>&1
 		polls=$(sed -n 's/^inputPolls=//p' "$work/polls.meta.txt" 2>/dev/null)
@@ -759,9 +783,9 @@ json.dump(d, open(p, 'w'))
 		# goldens.
 		clmovie="$here/movies/gridWalker.win.txt"
 		rm -f "$work/core.log" "$work/core-on.ram.bin" "$work/core-on.vram.bin"
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$dmovie" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$dmovie" \
 			--core-log "$work/core.log" > "$work/core-log-dies.log" 2>&1
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$clmovie" --core-log "$work/core-on.log" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$clmovie" --core-log "$work/core-on.log" \
 			--dump "RAM=$work/core-on.ram.bin" --dump "VRAM=$work/core-on.vram.bin" > "$work/core-log-on.log" 2>&1
 		if ! grep -q '^Chimera core log, started ' "$work/core.log" 2>/dev/null; then
 			report "E:core-log" FAIL "no core log, or no header in it (see work/core-log-dies.log)"
@@ -776,19 +800,31 @@ json.dump(d, open(p, 'w'))
 			report "E:core-log" PASS "asked for, the log names its build and package and keeps the core's words; the machine is the goldens'"
 		fi
 
-		# A MOVIE MADE ELSEWHERE (ce_import_movie, Game > Import ... in the
-		# frontend): the core is asked what the movie amounts to INSTEAD of being
-		# started - the movie mounted as "movie", the files it names beside it,
-		# the import options in the settings - and its answer comes back as JSON
-		# for the frontend's own project creation. The synth reads its own movie
-		# text, so every frame must come back as an input line, the option it
-		# was given as the setting it dictates, and a game that is not at hand
-		# must be refused in a sentence, not crash anything.
+		# A MOVIE MADE ELSEWHERE (ce_project_import_movie, Game > Import ... in
+		# the frontend): the core is asked what the movie amounts to INSTEAD of
+		# being started, and asked of a project - the files offered with the
+		# movie in their slots, the import options as its settings - with the
+		# movie mounted as "movie" and a file with no slot (--mount) beside it.
+		# Its answer comes back as JSON for the frontend's own project creation.
+		# The synth reads its own movie text, so every frame must come back as an
+		# input line, the option it was given as the setting it dictates, a file
+		# mounted by name must be found as one in the project is, and a game
+		# that is not at hand must be refused in a sentence, not crash anything.
+		# The refused one is a project of no game, which only a question may
+		# open (the synth's game slot must be filled to run).
 		imovie="$here/movies/gridWalker.win.txt"
-		ianswer="$("$chimera_run" "$epkg" "$imovie" --import-movie \
-			--mount gridWalker.testrom="$here/roms/gridWalker.testrom" \
-			--settings '{"importRom":"gridWalker.testrom","importFill":7}' 2>"$work/import.err")"
-		irefused="$("$chimera_run" "$epkg" "$imovie" --import-movie --settings '{"importRom":"gone.testrom"}' 2>>"$work/import.err")"
+		idir="$work/import"
+		rm -rf "$idir" && mkdir -p "$idir"
+		"$chimera_run" --new-project "$idir/import.chimeraProject" "$epkg" "$here/roms/gridWalker.testrom" \
+			--settings '{"importRom":"gridWalker.testrom","importFill":7}' > "$idir/import.make.log" 2>&1
+		ianswer="$("$chimera_run" --project "$idir/import.chimeraProject" "$epkg" --files "$here/roms" --import-movie "$imovie" 2>"$work/import.err")"
+		printf '{"title": "import", "core": {"name": "Synth", "version": "", "sha1": ""}, "files": [], "settings": {"importRom": "%s"}}\n' \
+			"elsewhere.testrom" > "$idir/mounted.chimeraProject"
+		imounted="$("$chimera_run" --project "$idir/mounted.chimeraProject" "$epkg" --import-movie "$imovie" \
+			--mount elsewhere.testrom="$here/roms/gridWalker.testrom" 2>>"$work/import.err")"
+		printf '{"title": "import", "core": {"name": "Synth", "version": "", "sha1": ""}, "files": [], "settings": {"importRom": "gone.testrom"}}\n' \
+			> "$idir/refused.chimeraProject"
+		irefused="$("$chimera_run" --project "$idir/refused.chimeraProject" "$epkg" --import-movie "$imovie" 2>>"$work/import.err")"
 		iframes="$(grep -c '^|' "$imovie")"
 		if printf '%s' "$ianswer" | python3 -c "
 import json, sys
@@ -798,10 +834,66 @@ assert a['settings'] == {'initFillByte': 7}, a['settings']
 assert a['files'] == [{'name': 'gridWalker.testrom', 'slot': 'rom'}], a['files']
 assert a['frames'] == $iframes and len(lines) == $iframes, (a['frames'], len(lines))
 assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Input]')
-" 2>"$work/import.check" && printf '%s' "$irefused" | grep -q '"error": "the game gone.testrom is not at hand"'; then
-			report "E:import-movie" PASS "the core's answer comes back whole ($iframes frames, its setting, its file), and a missing game is a sentence"
+" 2>"$work/import.check" && printf '%s' "$imounted" | grep -q '"files": \[{"name": "elsewhere.testrom", "slot": "rom"}\]' \
+			&& printf '%s' "$irefused" | grep -q '"error": "the game gone.testrom is not at hand"'; then
+			report "E:import-movie" PASS "asked of a project, the core's answer comes back whole ($iframes frames, its setting, its file); a file mounted by name is found; a missing game is a sentence"
 		else
 			report "E:import-movie" FAIL "$(tail -1 "$work/import.check" 2>/dev/null) refused=[$irefused] (see work/import.err)"
+		fi
+
+		# THE OTHER QUESTIONS ARE ASKED OF A PROJECT TOO (user-decided,
+		# 2026-10-26). The core's suggested settings (SuggestSettings): the
+		# synth names the game the project gave it, its size and the fill byte
+		# in the project's settings, and suggests the size modulo 256; a
+		# project with no game yet is still asked (its slot is not checked
+		# for a question), and a game file alone is refused.
+		qdir="$work/suggest"
+		rm -rf "$qdir" && mkdir -p "$qdir"
+		qsize="$(wc -c < "$here/roms/gridWalker.testrom" | tr -d ' ')"
+		"$chimera_run" --new-project "$qdir/game.chimeraProject" "$epkg" "$here/roms/gridWalker.testrom" \
+			--settings '{"initFillByte":5}' > "$qdir/game.make.log" 2>&1
+		qanswer="$("$chimera_run" --project "$qdir/game.chimeraProject" "$epkg" --files "$here/roms" --suggest 2>"$qdir/suggest.err")"
+		printf '{"title": "none", "core": {"name": "Synth", "version": "", "sha1": ""}, "files": [], "settings": {"initFillByte": 9}}\n' \
+			> "$qdir/none.chimeraProject"
+		qnone="$("$chimera_run" --project "$qdir/none.chimeraProject" "$epkg" --suggest 2>>"$qdir/suggest.err")"
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" --suggest > "$qdir/alone.log" 2>&1; qalone=$?
+		# (the Qt work's synth answers a fill of 9 and names what it was shown)
+		if printf '%s' "$qanswer" | grep -q '^{"values": {"initFillByte": 9}, "note": "The synthetic core suggests a fill of 9."' \
+			&& printf '%s' "$qnone" | grep -q '^{"values": {"initFillByte": 9}, "note": "The synthetic core suggests a fill of 9."' \
+			&& [ "$qalone" -ne 0 ] && grep -q "a game runs only in a project" "$qdir/alone.log"; then
+			report "E:suggest" PASS "the core's suggestion is asked of a project: its game ($qsize bytes) and its settings reach the core; one with no game yet is asked too; a game file alone is refused"
+		else
+			report "E:suggest" FAIL "answer=[$qanswer] none=[$qnone] alone rc=$qalone (see work/suggest/*)"
+		fi
+
+		# A compile session (--precompile) is a project's too: two sessions,
+		# each its share of the synth's six modules into one compile cache,
+		# never running the game. Each says how far it is and what it stored,
+		# and between them every module is there.
+		pdir="$work/precompile"
+		rm -rf "$pdir" && mkdir -p "$pdir/cache"
+		"$chimera_run" --new-project "$pdir/game.chimeraProject" "$epkg" "$here/roms/gridWalker.testrom" > "$pdir/game.make.log" 2>&1
+		prc=""
+		for pi in 0 1; do
+			"$chimera_run" --project "$pdir/game.chimeraProject" "$epkg" --files "$here/roms" \
+				--precompile "$pi/2" --cache-dir "$pdir/cache" > "$pdir/session$pi.log" 2>&1
+			prc="$prc$?"
+		done
+		pstored="$(cat "$pdir"/session*.log | grep -c '^\[cache\] stored synth/module[0-5].bin [0-9A-Fa-f]\{40\}')"
+		pfiles="$(find "$pdir/cache" -type f -name 'module*.bin' | wc -l | tr -d ' ')"
+		if [ "$prc" = "00" ] && [ "$pstored" = 6 ] && [ "$pfiles" = 6 ] \
+			&& grep -q '^Precompiled 3/6 modules' "$pdir/session0.log" && grep -q '^Precompiled 3/6 modules' "$pdir/session1.log"; then
+			report "E:precompile" PASS "two compile sessions of a project each compile their 3 of 6 modules into the cache, and say so"
+		else
+			report "E:precompile" FAIL "rc=$prc stored=$pstored files=$pfiles (see work/precompile/session*.log)"
+		fi
+
+		# and a game file alone is no run: chimera-run takes a project
+		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" > "$work/game-alone.log" 2>&1; garc=$?
+		if [ "$garc" -ne 0 ] && [ "$garc" -lt 128 ] && grep -q "a game runs only in a project" "$work/game-alone.log"; then
+			report "E:run:projects-only" PASS "a game file and a movie without a project are refused, with how to make one"
+		else
+			report "E:run:projects-only" FAIL "rc=$garc: $(tail -1 "$work/game-alone.log" | cut -c1-120)"
 		fi
 
 		# a bus read in runs is the bus read a byte at a time (chimera#180):
@@ -810,7 +902,7 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 		# each against PeekBus, from an odd start and past the end.
 		busok=1
 		for bus in "Bus" "Bus (peeks)"; do
-			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 				--ram-search-bench "$bus" > "$work/bus.log" 2>&1
 			grep -q "^ram-search-bench $bus: runs == peeks over" "$work/bus.log" || busok=0
 		done
@@ -828,9 +920,9 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 		# reading what the bus peeks; "Bus (peeks)" says nothing, and is
 		# searched whole. Both lines are from the last bus-read run above
 		# and the one before it.
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 			--ram-search-bench "Bus" > "$work/ranges.log" 2>&1
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 			--ram-search-bench "Bus (peeks)" > "$work/ranges-none.log" 2>&1
 		# 0x20001+0xff0 -> 0x20000..0x20ff4 (4084); 0x1000+0x801 -> 0x1000..0x1804 (2052);
 		# 0x2fffa+64 -> 0x2fff8..0x30000 (8): 6144 bytes of 196608
@@ -849,10 +941,10 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 		# three runs of 64 KiB: the file is 24 bytes, its first eight are the
 		# FNV-1a of the first run's bytes as the span dump gives them, both
 		# buses give the same file, and a span past the end is refused.
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 			--dump "Bus=$work/bus.prints" --dump "Bus (peeks)=$work/bus-peeks.prints" \
 			--dump "Bus@0+10000=$work/bus.span" --dump "Bus@1001+7ff=$work/bus.odd" > "$work/busdump.log" 2>&1
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 			--dump "Bus@2fff8+10=$work/bus.past" > "$work/busdump-past.log" 2>&1
 		pastrc=$?
 		if python3 - "$work" <<'PYEOF' > "$work/busdump.check" 2>&1 && [ "$pastrc" -ne 0 ] && grep -q "that span is not inside the bus" "$work/busdump-past.log" && [ ! -e "$work/bus.past" ]
@@ -889,7 +981,7 @@ PYEOF
 		# place, and what it shows is what the core drew. And with a renderer
 		# that is never wrong, keeping pictures changes nothing that is shown.
 		kept() { # garble frames, pictures spec -> the three lines
-			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 				--settings "{\"garbleAfterLoad\":$1}" --greenzone-pictures "$2" --kept-pictures-check 40 2>/dev/null | grep '^kept-pictures'
 		}
 		# The two runs that COUNT pictures pack them inline (CHIMERA_HELPERS=0):
@@ -905,7 +997,7 @@ PYEOF
 		# the frame it then draws as it would have been at once. That frame
 		# still shows the picture it had, and past an edit the wrong one is
 		# still not kept (the count before the replay is the count after).
-		CHIMERA_HELPERS=0 "$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+		CHIMERA_HELPERS=0 crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 			--settings '{"garbleAfterLoad":5}' --greenzone-period 50 --greenzone-pictures 64,8 --kept-pictures-check 40 2>/dev/null \
 			| grep '^kept-pictures' > "$work/kept.far"
 		farKept="$(sed -n 's/.*after an edit before frame 41: \([0-9]*\) kept before the replay, \([0-9]*\) after it.*/\1 \2/p' "$work/kept.far")"
@@ -931,7 +1023,7 @@ PYEOF
 		# none - it must give that answer, and the picture trace must show the
 		# load and the first frame after it.
 		probe() { # garble frames -> the summary line, then the trace's two
-			CHIMERA_PICTURE_TRACE=1 "$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			CHIMERA_PICTURE_TRACE=1 crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 				--settings "{\"garbleAfterLoad\":$1}" --greenzone-period 1 --settle-probe 40,8 2>&1 \
 				| grep -a '^settle-probe: \(the picture is wrong\|every frame\)\|^pictrace: load, on frame 40\|^pictrace: frame 41, #1 after the load: read back'
 		}
@@ -944,10 +1036,10 @@ PYEOF
 		# RPCS3 on the GTX 1060). The movie is not wound back with the machine,
 		# so it is given one that presses nothing: a row recorded, repeated.
 		printf '[Input]\nLogKey:#\n' > "$work/probe.none.txt"
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$work/probe.none.txt" --frames 1 --record "$work/probe.row.txt" > /dev/null 2>&1
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$work/probe.none.txt" --frames 1 --record "$work/probe.row.txt" > /dev/null 2>&1
 		{ grep -v '^|' "$work/probe.row.txt" | grep -v '^\[/'; row="$(grep -m1 '^|' "$work/probe.row.txt")"; i=0; while [ "$i" -lt 60 ]; do printf '%s\n' "$row"; i=$((i + 1)); done; grep '^\[/' "$work/probe.row.txt"; } > "$work/probe.idle.txt"
 		probeState() { # garble frames -> the summary line
-			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$work/probe.idle.txt" \
+			crun_game "$epkg" "$here/roms/gridWalker.testrom" "$work/probe.idle.txt" \
 				--settings "{\"garbleAfterLoad\":$1}" --settle-probe 20,8 --settle-probe-state 2>&1 \
 				| grep -a '^settle-probe: \(the picture is wrong\|every frame\)'
 		}
@@ -963,7 +1055,7 @@ PYEOF
 		# measures a renderer wrong for 5 drawn frames as exactly that.
 		probeRead() { # name, then extra arguments -> pictures read in the run
 			pname="$1"; shift
-			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 				--settings '{"garbleAfterLoad":5}' --greenzone-period 1 --settle-probe 40,8 \
 				--dump "Mailbox=$work/probe.$pname.bin" "$@" > "$work/probe.$pname" 2>&1
 			od -A n -t u4 -j 16 -N 4 "$work/probe.$pname.bin" 2>/dev/null | tr -d ' '
@@ -993,7 +1085,7 @@ PYEOF
 		#   - and a movie recorded with Select held has s in its text and SEL
 		#     nowhere: a header is never written into a movie.
 		printf '|........|\n|......s.|\n|......s.|\n|........|\n' > "$work/headers.in.txt"
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$work/headers.in.txt" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$work/headers.in.txt" \
 			--record "$work/headers.out.txt" --controls "$work/headers.controls" > "$work/headers.log" 2>&1
 		tab="$(printf '\t')"
 		if grep -qx "P1 Select${tab}s${tab}SEL" "$work/headers.controls" 2>/dev/null \
@@ -1024,7 +1116,7 @@ PYEOF
 		#     use, it is never told at all.
 		told() { # name, then chimera-run's arguments -> "told-at frames-run times-told"
 			tname="$1"; shift
-			"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+			crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 				--dump "Mailbox=$work/told.$tname.bin" "$@" > "$work/told.$tname.log" 2>&1
 			od -A n -t u4 -j 4 -N 12 "$work/told.$tname.bin" 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//'
 		}
@@ -1048,7 +1140,7 @@ PYEOF
 		# the page as a search does, and the run dumps it as the memory tools
 		# read: the bytes come out, and the handler never ran. Read through
 		# the core's own pointer, as the tools did, it ran.
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 			--ram-search-bench Watched --dump "Watched=$work/watched.bin" --dump "Mailbox=$work/watched.mail.bin" \
 			> "$work/watched.log" 2>&1
 		watchedRuns="$(od -A n -t u4 -j 20 -N 4 "$work/watched.mail.bin" 2>/dev/null | tr -d ' ')"
@@ -1076,7 +1168,7 @@ PYEOF
 		#   a game's own names are exact (chimera#218): "wanderer" is another
 		#   property than Wanderer, at 0x244 every frame, and "WANDERER",
 		#   which the core does not have, is never there.
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" \
 			--settings '{"movingProperties":1}' --property-set Wanderer=77 \
 			--property-trace Row,Steps,Wanderer,Sometimes,Mirror,Origin,wanderer,WANDERER > "$work/dynamic.out" 2>"$work/dynamic.err"
 		if python3 - "$work/dynamic.out" > "$work/dynamic.check" 2>&1 <<'DYNAMIC'
@@ -1129,8 +1221,8 @@ DYNAMIC
 			hrom="$here/roms/${hname%%.*}.testrom"
 			htag="$hname.engine.history"
 			rm -f "$work/$htag.ram.bin" "$work/$htag.vram.bin" "$work/$htag.hist"
-			"$chimera_run" "$epkg" "$hrom" "$movie" --history-out "$work/$htag.hist" 				> "$work/$htag.save.log" 2>&1
-			"$chimera_run" "$epkg" "$hrom" "$movie" --history-in "$work/$htag.hist" --seek 10 				--dump "RAM=$work/$htag.ram.bin" --dump "VRAM=$work/$htag.vram.bin" 				> "$work/$htag.log" 2>&1
+			crun_game "$epkg" "$hrom" "$movie" --history-out "$work/$htag.hist" 				> "$work/$htag.save.log" 2>&1
+			crun_game "$epkg" "$hrom" "$movie" --history-in "$work/$htag.hist" --seek 10 				--dump "RAM=$work/$htag.ram.bin" --dump "VRAM=$work/$htag.vram.bin" 				> "$work/$htag.log" 2>&1
 			if [ ! -s "$work/$htag.hist" ]; then
 				report "E:$hname:history" FAIL "nothing was written (see work/$htag.save.log)"
 			elif cmp -s "$work/$htag.ram.bin" "$golden_dir/$hname.ram.bin" 				&& cmp -s "$work/$htag.vram.bin" "$golden_dir/$hname.vram.bin"; then
@@ -1165,7 +1257,7 @@ DYNAMIC
 			trom="$here/roms/${tname%%.*}.testrom"
 			ttag="$tname.engine.thinned"
 			rm -f "$work/$ttag.ram.bin" "$work/$ttag.ref.ram.bin" "$work/$ttag.map"
-			CHIMERA_HISTORY_TRACE=1 "$chimera_run" "$epkg" "$trom" "$movie" \
+			CHIMERA_HISTORY_TRACE=1 crun_game "$epkg" "$trom" "$movie" \
 				--greenzone-map "$work/$ttag.whole.map" > "$work/$ttag.whole.log" 2>&1
 			whole="$(grep -a -o '[0-9]* total' "$work/$ttag.whole.log" | tail -1 | awk '{print $1}')"
 			if [ -z "$whole" ]; then
@@ -1173,7 +1265,7 @@ DYNAMIC
 				continue
 			fi
 			thin="--greenzone-bytes $((whole * 4 / 10)) --greenzone-band-goal 1"
-			CHIMERA_HISTORY_TRACE=1 "$chimera_run" "$epkg" "$trom" "$movie" $thin \
+			CHIMERA_HISTORY_TRACE=1 crun_game "$epkg" "$trom" "$movie" $thin \
 				--greenzone-map "$work/$ttag.map" > "$work/$ttag.plan.log" 2>&1
 			target=""
 			for into in $(grep -a -o "merged the landing at [0-9]* into [0-9]*" "$work/$ttag.plan.log" | awk '{print $NF}' | sort -n -u); do
@@ -1183,9 +1275,9 @@ DYNAMIC
 				report "E:$tname:thinned" FAIL "nothing it kept was ever merged into (see work/$ttag.plan.log)"
 				continue
 			fi
-			"$chimera_run" "$epkg" "$trom" "$movie" --frames "$target" \
+			crun_game "$epkg" "$trom" "$movie" --frames "$target" \
 				--dump "RAM=$work/$ttag.ref.ram.bin" > "$work/$ttag.ref.log" 2>&1
-			CHIMERA_HISTORY_TRACE=1 "$chimera_run" "$epkg" "$trom" "$movie" --seek "$target" --stop-at-seek $thin \
+			CHIMERA_HISTORY_TRACE=1 crun_game "$epkg" "$trom" "$movie" --seek "$target" --stop-at-seek $thin \
 				--dump "RAM=$work/$ttag.ram.bin" > "$work/$ttag.log" 2>&1
 			if [ ! -s "$work/$ttag.ref.ram.bin" ]; then
 				report "E:$tname:thinned" FAIL "the reference run wrote nothing (see work/$ttag.ref.log)"
@@ -1207,7 +1299,7 @@ DYNAMIC
 			rrom="$here/roms/${rname%%.*}.testrom"
 			rtag="$rname.engine.record"
 			rm -f "$work/$rtag.ram.bin" "$work/$rtag.vram.bin" "$work/$rtag.txt"
-			"$chimera_run" "$epkg" "$rrom" "$movie" --record "$work/$rtag.txt" \
+			crun_game "$epkg" "$rrom" "$movie" --record "$work/$rtag.txt" \
 				--dump "RAM=$work/$rtag.ram.bin" --dump "VRAM=$work/$rtag.vram.bin" \
 				> "$work/$rtag.log" 2>&1
 			if [ ! -s "$work/$rtag.txt" ]; then
@@ -1217,7 +1309,7 @@ DYNAMIC
 				report "E:$rname:record" FAIL "recording drove a different machine than playback"
 			else
 				rm -f "$work/$rtag.replay.ram.bin" "$work/$rtag.replay.vram.bin"
-				"$chimera_run" "$epkg" "$rrom" "$work/$rtag.txt" \
+				crun_game "$epkg" "$rrom" "$work/$rtag.txt" \
 					--dump "RAM=$work/$rtag.replay.ram.bin" --dump "VRAM=$work/$rtag.replay.vram.bin" \
 					> "$work/$rtag.replay.log" 2>&1
 				if cmp -s "$work/$rtag.replay.ram.bin" "$golden_dir/$rname.ram.bin" \
@@ -1237,9 +1329,9 @@ DYNAMIC
 		kname=gridWalker.win
 		krom="$here/roms/${kname%%.*}.testrom"
 		rm -f "$work/$kname.keyed.txt" "$work/$kname.keyed.ram.bin" "$work/$kname.keyed.vram.bin"
-		"$chimera_run" "$epkg" "$krom" "$here/movies/$kname.txt" --record "$work/$kname.keyed.txt" \
+		crun_game "$epkg" "$krom" "$here/movies/$kname.txt" --record "$work/$kname.keyed.txt" \
 			--record-key "#P1 Up|P1 Down|" > "$work/$kname.keyed.log" 2>&1; krc=$?
-		"$chimera_run" "$epkg" "$krom" "$work/$kname.keyed.txt" \
+		crun_game "$epkg" "$krom" "$work/$kname.keyed.txt" \
 			--dump "RAM=$work/$kname.keyed.ram.bin" --dump "VRAM=$work/$kname.keyed.vram.bin" > "$work/$kname.keyed.replay.log" 2>&1
 		if [ "$krc" -eq 0 ] && grep -q '^LogKey:#P1 Up|P1 Down|#P1 ' "$work/$kname.keyed.txt" \
 			&& cmp -s "$work/$kname.keyed.ram.bin" "$golden_dir/$kname.ram.bin" \
@@ -1250,13 +1342,149 @@ DYNAMIC
 		fi
 
 		# the settings channel, natively: a non-default sync setting must diverge
-		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" 			--settings '{"initFillByte":171}' --dump "RAM=$work/engine.settings.ram.bin" 			> "$work/engine.settings.log" 2>&1
+		crun_game "$epkg" "$here/roms/gridWalker.testrom" "$here/movies/gridWalker.win.txt" 			--settings '{"initFillByte":171}' --dump "RAM=$work/engine.settings.ram.bin" 			> "$work/engine.settings.log" 2>&1
 		if [ ! -f "$work/engine.settings.ram.bin" ]; then
 			report "E:settings" FAIL "run failed (see work/engine.settings.log)"
 		elif cmp -s "$work/engine.settings.ram.bin" "$golden_dir/gridWalker.win.ram.bin"; then
 			report "E:settings" FAIL "RAM identical to golden - setting did NOT reach the guest"
 		else
 			report "E:settings" PASS "RAM diverged - user setting reached the guest"
+		fi
+
+		# A PROJECT MADE FROM THE COMMAND LINE (chimera-run --new-project). A game
+		# runs only in a project (owner, 2026-10-26), and this is how a game file
+		# becomes one without a window. Each movie, made into a project and run
+		# through it, must reach the goldens. A setting given is in the project
+		# and runs as it did given to the game, the rest are at the package's
+		# defaults; a firmware file is pinned by its hash; a clock start is kept;
+		# the game goes in the slot that takes its kind of file; and files that
+		# do not fit the package's slots, or a game of several files given whole,
+		# are refused with a reason and no project written.
+		mdir="$work/made-project"
+		rm -rf "$mdir" && mkdir -p "$mdir"
+		cp "$here/roms/gridWalker.testrom" "$mdir/"
+		mmake() { # name, then --new-project's arguments after the project; the exit code is left in mrc
+			mtag="$1"; shift
+			rm -f "$mdir/$mtag.chimeraProject"
+			"$chimera_run" --new-project "$mdir/$mtag.chimeraProject" "$@" > "$mdir/$mtag.make.log" 2>&1
+			mrc=$?
+		}
+		mplay() { # name, then more of chimera-run's arguments
+			mtag="$1"; shift
+			rm -f "$mdir/$mtag.ram.bin" "$mdir/$mtag.vram.bin"
+			"$chimera_run" --project "$mdir/$mtag.chimeraProject" "$epkg" "$@" \
+				--dump "RAM=$mdir/$mtag.ram.bin" --dump "VRAM=$mdir/$mtag.vram.bin" > "$mdir/$mtag.log" 2>&1
+		}
+		mfield() { python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])).get(sys.argv[2]), sort_keys=True))' "$mdir/$1.chimeraProject" "$2" 2>/dev/null; }
+		for movie in "$here"/movies/*.txt; do
+			mname="$(basename "$movie" .txt)"
+			mmake "$mname" "$epkg" "$mdir/${mname%%.*}.testrom" "$movie"
+			mplay "$mname"
+			if [ "$mrc" -eq 0 ] && cmp -s "$mdir/$mname.ram.bin" "$golden_dir/$mname.ram.bin" \
+				&& cmp -s "$mdir/$mname.vram.bin" "$golden_dir/$mname.vram.bin"; then
+				report "E:made-project:$mname" PASS "made into a project and run through it, RAM+VRAM byte-identical"
+			else
+				report "E:made-project:$mname" FAIL "rc=$mrc, or RAM or VRAM differs (see work/made-project/$mname*.log)"
+			fi
+		done
+		mmake settings "$epkg" "$mdir/gridWalker.testrom" "$here/movies/gridWalker.win.txt" --settings '{"initFillByte":171}'
+		mplay settings
+		if [ "$mrc" -eq 0 ] && [ "$(mfield settings settings)" = '{"initFillByte": 171}' ] \
+			&& [ "$(mfield gridWalker.win settings)" = '{"initFillByte": 0}' ] \
+			&& [ -s "$mdir/settings.ram.bin" ] && cmp -s "$mdir/settings.ram.bin" "$work/engine.settings.ram.bin"; then
+			report "E:made-project:settings" PASS "a setting given is the project's and runs as it did given to the game; one not given is at the package's default"
+		else
+			report "E:made-project:settings" FAIL "rc=$mrc, settings $(mfield settings settings) and $(mfield gridWalker.win settings), or RAM differs from the game run with it (see work/made-project/settings*.log)"
+		fi
+		msha="$(sha1sum "$mdir/gridWalker.testrom" | cut -c1-40 | tr a-f A-F)"
+		mmake firmware "$epkg" "$mdir/gridWalker.testrom" "$here/movies/gridWalker.win.txt" --firmware "bios=$mdir/gridWalker.testrom"
+		mplay firmware --firmware "bios=$mdir/gridWalker.testrom"
+		if [ "$mrc" -eq 0 ] && [ "$(mfield firmware firmware)" = "[{\"id\": \"bios\", \"sha1\": \"$msha\"}]" ] \
+			&& cmp -s "$mdir/firmware.ram.bin" "$golden_dir/gridWalker.win.ram.bin" && ! grep -q "^\[project\]" "$mdir/firmware.log"; then
+			report "E:made-project:firmware" PASS "a firmware file is pinned by its hash, and a run given it says nothing"
+		else
+			report "E:made-project:firmware" FAIL "rc=$mrc, firmware $(mfield firmware firmware) for $msha (see work/made-project/firmware*.log)"
+		fi
+		{ cat "$here/roms/gridWalker.testrom"; printf 'CLOCKTEST'; } > "$mdir/clock.testrom"
+		printf '[Input]\nLogKey:#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|\n|........|\n|........|\n|........|\n[/Input]\n' > "$mdir/three.txt"
+		mmake clock "$epkg" "$mdir/clock.testrom" "$mdir/three.txt" --clock-start 1893553445
+		mplay clock
+		msecond="$(python3 -c 'import struct,sys; print(struct.unpack("<Q", open(sys.argv[1],"rb").read()[4088:4096])[0])' "$mdir/clock.ram.bin" 2>/dev/null)"
+		if [ "$mrc" -eq 0 ] && [ "$msecond" = "1893553445" ]; then
+			report "E:made-project:clock-start" PASS "the clock start given is the project's, and the machine reads it"
+		else
+			report "E:made-project:clock-start" FAIL "rc=$mrc, the machine read ${msecond:-nothing} for 1893553445 (see work/made-project/clock*.log)"
+		fi
+		# the slot: the package's own, by the game's kind of file
+		mslots="$mdir/slots-package"
+		mkdir -p "$mslots" && ( cd "$mslots" && unzip -q -o "$epkg" )
+		printf '{"slots":[{"id":"disk","title":"Disk","min":0,"max":1,"formats":["dsk"]},{"id":"cartridge","title":"Cartridge","min":0,"max":1,"formats":["testrom"]}]}\n' > "$mslots/file_slots.json"
+		mmake slot "$mslots" "$mdir/gridWalker.testrom"
+		mslotrc=$mrc
+		mmake wrong-slot "$mslots" --file "nosuch=$mdir/gridWalker.testrom"
+		mwrongrc=$mrc
+		printf '{}' > "$mdir/game.chimeraMultiFile"
+		mmake whole "$epkg" "$mdir/game.chimeraMultiFile"
+		if [ "$mslotrc" -eq 0 ] && [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"][0]["slot"])' "$mdir/slot.chimeraProject" 2>/dev/null)" = cartridge ] \
+			&& [ "$mwrongrc" -ne 0 ] && [ "$mwrongrc" -lt 128 ] && [ ! -e "$mdir/wrong-slot.chimeraProject" ] && grep -q "do not fit the package's slots" "$mdir/wrong-slot.make.log" \
+			&& [ "$mrc" -ne 0 ] && [ "$mrc" -lt 128 ] && [ ! -e "$mdir/whole.chimeraProject" ] && grep -q "a file at a time" "$mdir/whole.make.log"; then
+			report "E:made-project:slots" PASS "the game goes in the slot that takes its kind; a slot the package lacks and a game given whole are refused, no project written"
+		else
+			report "E:made-project:slots" FAIL "slot rc=$mslotrc, wrong slot rc=$mwrongrc, whole rc=$mrc (see work/made-project/*.make.log)"
+		fi
+		# the machine: a package of two machines, each with its own kind of file,
+		# and the game's kind picks one, as Chimera picked it for a game opened
+		# alone - unless the settings given name it
+		mmach="$mdir/machines-package"
+		mkdir -p "$mmach" && ( cd "$mmach" && unzip -q -o "$epkg" )
+		python3 - "$mmach/waterbox.config" "$mmach/file_slots.json" <<'MACHPY'
+import json, sys
+slots = json.load(open(sys.argv[2]))
+for slot in slots["slots"]:
+    slot["formats"] = slot.get("formats", []) + ["runner"]
+json.dump(slots, open(sys.argv[2], "w"))
+p = sys.argv[1]
+cfg = json.load(open(p))
+cfg["machineSetting"] = "model"
+cfg.setdefault("settings", []).append({"name": "model", "type": "choice", "options": ["walker", "runner"], "default": "walker"})
+cfg["machines"] = [{"id": "Synth", "when": ["walker"], "extensions": {".testrom": "Synth"}},
+                   {"id": "SynthRunner", "when": ["runner"], "extensions": {".runner": "SynthRunner"}}]
+json.dump(cfg, open(p, "w"))
+MACHPY
+		cp "$mdir/gridWalker.testrom" "$mdir/gridWalker.runner"
+		mmake machine-own "$mmach" "$mdir/gridWalker.testrom"
+		mown="$(mfield machine-own settings)|$(mfield machine-own headers)"
+		mmake machine-other "$mmach" "$mdir/gridWalker.runner"
+		mother="$(mfield machine-other settings)|$(mfield machine-other headers)"
+		mmake machine-named "$mmach" "$mdir/gridWalker.runner" --settings '{"model":"walker"}'
+		mnamed="$(mfield machine-named settings)|$(mfield machine-named headers)"
+		if [ "$mown" = '{"initFillByte": 0, "model": "walker"}|{"Platform": "Synth"}' ] \
+			&& [ "$mother" = '{"initFillByte": 0, "model": "runner"}|{"Platform": "SynthRunner"}' ] \
+			&& [ "$mnamed" = '{"initFillByte": 0, "model": "walker"}|{"Platform": "Synth"}' ]; then
+			report "E:made-project:machine" PASS "the game's kind of file picks the machine, and settings that name one are kept"
+		else
+			report "E:made-project:machine" FAIL "own: $mown; other: $mother; named: $mnamed (see work/made-project/machine-*.make.log)"
+		fi
+		# a slot the settings open or close: the files are checked against the
+		# slots the recorded settings leave, not against none
+		mgated="$mdir/gated-package"
+		mkdir -p "$mgated" && ( cd "$mgated" && unzip -q -o "$epkg" )
+		printf '{"slots":[{"id":"rom","title":"Game","min":1,"max":1,"formats":["testrom"],"exposedWhen":{"setting":"initFillByte","is":0}}]}\n' > "$mgated/file_slots.json"
+		mmake gated-open "$mgated" "$mdir/gridWalker.testrom"
+		mopenrc=$mrc
+		mmake gated-shut "$mgated" "$mdir/gridWalker.testrom" --settings '{"initFillByte":7}'
+		if [ "$mopenrc" -eq 0 ] && [ "$mrc" -ne 0 ] && [ "$mrc" -lt 128 ] && grep -q "which these files make unavailable" "$mdir/gated-shut.make.log"; then
+			report "E:made-project:gated-slot" PASS "a slot the recorded settings open takes the game; one they close refuses it"
+		else
+			report "E:made-project:gated-slot" FAIL "open rc=$mopenrc, shut rc=$mrc (see work/made-project/gated-*.make.log)"
+		fi
+		# the movie named with --movie, which a project of no game file needs:
+		# the same input as the movie after the game
+		mmake movie-option "$epkg" "$mdir/gridWalker.testrom" --movie "$here/movies/gridWalker.win.txt"
+		if [ "$mrc" -eq 0 ] && [ -n "$(mfield gridWalker.win input)" ] && [ "$(mfield movie-option input)" = "$(mfield gridWalker.win input)" ]; then
+			report "E:made-project:movie-option" PASS "a movie named with --movie is the project's input, as one after the game"
+		else
+			report "E:made-project:movie-option" FAIL "rc=$mrc, or the input differs (see work/made-project/movie-option.make.log)"
 		fi
 	fi
 fi
@@ -1301,6 +1529,17 @@ if [ "$level" = "both" ] || [ "$level" = "b" ]; then
 			"--lua=$here/bootstrap-exit.lua" ) > "$work/bootstrap.log" 2>&1
 		[ -f "$config" ] || { echo "config bootstrap failed (see $work/bootstrap.log)" >&2; exit 1; }
 	fi
+	# A game runs only in a project (user-decided, 2026-10-26): each run below
+	# opens one, made with chimera-run --new-project beside a copy of its game.
+	# bproject <name> <package> <game> [chimera-run's options] prints its path.
+	bproject() {
+		bpdir="$work/projects/$1"
+		rm -rf "$bpdir" && mkdir -p "$bpdir" && cp "$3" "$bpdir/"
+		bpgame="$bpdir/$(basename "$3")"
+		bpname="$1"; bppkg="$2"; shift 3
+		"$repo_root/build/meson-linux/chimera-run" --new-project "$bpdir/$bpname.chimeraProject" "$bppkg" "$bpgame" "$@" \
+			> "$bpdir/make.log" 2>&1 && echo "$bpdir/$bpname.chimeraProject"
+	}
 	# Chimera is waterbox-only: the frontend only accepts .wbx cores, so the box
 	# flavor is the ONLY Level-B core. native/sharp are Level-A equivalence
 	# references (proving synth.wbx matches the goldens), never frontend cores.
@@ -1322,9 +1561,10 @@ if [ "$level" = "both" ] || [ "$level" = "b" ]; then
 				} > "$job"
 				rm -f "$work/$tag.ram.bin" "$work/$tag.vram.bin" "$work/$tag.meta.txt"
 				cp "$config" "$work/config.$tag.ini"
+				proj="$(bproject "$tag" "$package" "$rom")"
 				( cd "$repo_root" && CHIMERA_JOB="$job" timeout 300 mono "$emu_exe" --headless \
 					"--config=$work/config.$tag.ini" "--core=$package" \
-					"--lua=$here/synth-replay.lua" "$rom" ) > "$work/$tag.log" 2>&1
+					"--lua=$here/synth-replay.lua" "--project=$proj" ) > "$work/$tag.log" 2>&1
 				if [ ! -f "$work/$tag.meta.txt" ] || ! grep -q "^status=OK" "$work/$tag.meta.txt"; then
 					report "B:$flavor:$name:$mode" FAIL "no OK meta (see work/$tag.log)"
 					continue
@@ -1375,9 +1615,10 @@ json.dump(d, open(p, 'w'))
 			} > "$rjob"
 			rm -f "$work/room-$rkind.ram.bin" "$work/room-$rkind.vram.bin" "$work/room-$rkind.meta.txt"
 			cp "$config" "$work/config.room-$rkind.ini"
+			rproj="$(bproject "room-$rkind" "$rpkg" "$rrom")"
 			( cd "$repo_root" && CHIMERA_JOB="$rjob" timeout 300 /usr/bin/time -f "peak %M" -o "$work/room-$rkind.peak" mono "$emu_exe" --headless \
 				"--config=$work/config.room-$rkind.ini" "--core=$rpkg" \
-				"--lua=$here/synth-replay.lua" "$rrom" ) > "$work/room-$rkind.log" 2>&1
+				"--lua=$here/synth-replay.lua" "--project=$rproj" ) > "$work/room-$rkind.log" 2>&1
 		done
 		rplain="$(sed -n 's/^peak \([0-9]*\)$/\1/p' "$work/room-plain.peak" 2>/dev/null)"
 		rroomy="$(sed -n 's/^peak \([0-9]*\)$/\1/p' "$work/room-roomy.peak" 2>/dev/null)"
@@ -1393,21 +1634,16 @@ json.dump(d, open(p, 'w'))
 	fi
 
 	# --- settings -> guest channel ---
-	# Same package + movie, but with initFillByte set non-zero via the core's SYNC
-	# settings (injected into the config exactly as the UI/movie would). The guest
-	# pre-fills RAM, so the RAM dump MUST diverge from the golden - proving the
-	# built-in adapter delivered the user setting to the guest.
+	# Same package + movie, but with initFillByte set non-zero in the project's
+	# SYNC settings (a game's settings are its project's). The guest pre-fills
+	# RAM, so the RAM dump MUST diverge from the golden - proving the built-in
+	# adapter delivered the project's setting to the guest.
 	if [ "$record" -eq 0 ]; then
 		sname=gridWalker.win
 		srom="$here/roms/${sname%%.*}.testrom"
 		scfg="$work/config.settings.ini"
-		python3 - "$config" "$scfg" <<'PY'
-import json, sys
-cfg = json.load(open(sys.argv[1]))
-# the core's own settings key, spelled exactly as the UI writes it
-cfg.setdefault("CoreSettings", {})["Chimera.Emulation.Common.Waterbox.WaterboxCore"] = {"Values": {"initFillByte": 171}}
-json.dump(cfg, open(sys.argv[2], "w"), indent=2)
-PY
+		cp "$config" "$scfg"
+		sproj="$(bproject settings "$repo_root/build/Cores/synth-box.chimeraCore" "$srom" --settings '{"initFillByte":171}')"
 		sjob="$work/job.settings.txt"
 		{
 			echo "movie=$here/movies/$sname.txt"
@@ -1419,37 +1655,26 @@ PY
 		rm -f "$work/settings.ram.bin" "$work/settings.meta.txt"
 		( cd "$repo_root" && CHIMERA_JOB="$sjob" timeout 300 mono "$emu_exe" --headless \
 			"--config=$scfg" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
-			"--lua=$here/synth-replay.lua" "$srom" ) > "$work/settings.log" 2>&1
+			"--lua=$here/synth-replay.lua" "--project=$sproj" ) > "$work/settings.log" 2>&1
 		if [ ! -f "$work/settings.meta.txt" ] || ! grep -q "^status=OK" "$work/settings.meta.txt"; then
 			report "S:box:initFillByte" FAIL "no OK meta (see work/settings.log)"
 		elif cmp -s "$work/settings.ram.bin" "$golden_dir/$sname.ram.bin"; then
 			report "S:box:initFillByte" FAIL "RAM identical to golden - setting did NOT reach the guest"
 		else
-			report "S:box:initFillByte" PASS "RAM diverged - user setting reached the guest"
+			report "S:box:initFillByte" PASS "RAM diverged - the project's setting reached the guest"
 		fi
 	fi
 
 	# --- a real .chimeraProject through the real movie pipeline ---
-	# Everything above drives input by script; this composes an actual project
-	# file from the win inputs and lets MovieSession play it (the project IS
-	# the movie, docs/project.md). The engine parses the entries, the frontend
-	# latches them, and the dumps must match the same goldens - the movie
-	# pipeline is Level B's reason to exist.
+	# Everything above drives input by script; this makes a project of the win
+	# inputs (chimera-run --new-project) and lets MovieSession play it (the
+	# project IS the movie, docs/project.md). The engine parses the entries, the
+	# frontend latches them, and the dumps must match the same goldens - the
+	# movie pipeline is Level B's reason to exist.
 	if [ "$record" -eq 0 ]; then
 		mname=gridWalker.win
 		mrom="$here/roms/${mname%%.*}.testrom"
-		mbk2="$work/$mname.chimeraProject"
-		python3 - "$here/movies/$mname.txt" "$mbk2" <<'PY'
-import json, sys
-entries = [l.rstrip("\r\n") for l in open(sys.argv[1]) if l.startswith("|")]
-logkey = "#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|"
-json.dump({
-    "title": "gridWalker.win",
-    "core": {"name": "Synth", "version": "", "sha1": ""},
-    "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
-    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
-}, open(sys.argv[2], "w"))
-PY
+		mproj="$(bproject movie "$repo_root/build/Cores/synth-box.chimeraCore" "$mrom" "$here/movies/$mname.txt")"
 		mjob="$work/job.movie.txt"
 		{
 			echo "outram=$work/movie.ram.bin"
@@ -1460,7 +1685,7 @@ PY
 		cp "$config" "$work/config.movie.ini"
 		( cd "$repo_root" && CHIMERA_JOB="$mjob" timeout 300 mono "$emu_exe" --headless \
 			"--config=$work/config.movie.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
-			"--movie=$mbk2" "--lua=$here/synth-movie-dump.lua" "$mrom" ) > "$work/movie.log" 2>&1
+			"--project=$mproj" "--lua=$here/synth-movie-dump.lua" ) > "$work/movie.log" 2>&1
 		if [ ! -f "$work/movie.meta.txt" ] || ! grep -q "^status=OK" "$work/movie.meta.txt"; then
 			report "M:box:$mname" FAIL "no OK meta (see work/movie.log)"
 		elif cmp -s "$work/movie.ram.bin" "$golden_dir/$mname.ram.bin" \
@@ -2124,11 +2349,11 @@ REOPENPY
 		fi
 	fi
 
-	# --- a core is never loaded implicitly ---
-	# Same movie, but NO --core. A package sitting in build/Cores is AVAILABLE, not
-	# loaded: opening a core is something the user does (File > Open Core), and the
-	# commandline says which one with --core. So this run must NOT produce a machine -
-	# if it does, something is loading cores behind the user's back again.
+	# --- a game runs only in a project ---
+	# A game file named alone, with its core given, and no window to start New
+	# Project in: the run must refuse it, say so, and produce no machine
+	# (user-decided, 2026-10-26). If it runs, a game is being opened outside a
+	# project again.
 	if [ "$record" -eq 0 ]; then
 		dname=gridWalker.win
 		djob="$work/job.discovery.txt"
@@ -2142,12 +2367,51 @@ REOPENPY
 		rm -f "$work/discovery.ram.bin" "$work/discovery.meta.txt"
 		cp "$config" "$work/config.discovery.ini"
 		( cd "$repo_root" && CHIMERA_JOB="$djob" timeout 300 mono "$emu_exe" --headless \
-			"--config=$work/config.discovery.ini" "--lua=$here/synth-replay.lua" \
-			"$here/roms/${dname%%.*}.testrom" ) > "$work/discovery.log" 2>&1
+			"--config=$work/config.discovery.ini" "--core=$package" "--lua=$here/synth-replay.lua" \
+			"$here/roms/${dname%%.*}.testrom" ) > "$work/discovery.log" 2>&1; drc=$?
 		if [ -f "$work/discovery.meta.txt" ] && grep -q "^status=OK" "$work/discovery.meta.txt"; then
-			report "D:box:noImplicitCore" FAIL "the rom ran with no core opened and no --core"
+			report "D:box:projectOnly" FAIL "the game ran without a project"
+		elif [ "$drc" -ne 2 ] || ! grep -q "a game opens only in a project" "$work/discovery.log"; then
+			report "D:box:projectOnly" FAIL "rc=$drc, or the refusal was not said (see work/discovery.log)"
 		else
-			report "D:box:noImplicitCore" PASS "a rom does not load without a core (see work/discovery.log)"
+			report "D:box:projectOnly" PASS "a game file alone is refused with a reason, and nothing runs"
+		fi
+
+		# --- the helpers ask a project too ---
+		# The new-project window asks its core three things before the project
+		# is made, each in a child process of Chimera's own: what settings it
+		# suggests (--suggest-settings), a share of the game's code compiled
+		# (--precompile), and what a movie made elsewhere amounts to
+		# (--import-movie). Each makes a project of the choices so far and asks
+		# it (user-decided, 2026-10-26): the synth's answers say which game it
+		# was given and what the settings held.
+		hdir="$work/helpers"
+		rm -rf "$hdir" && mkdir -p "$hdir/cache"
+		hrom="$here/roms/gridWalker.testrom"
+		hsize="$(wc -c < "$hrom" | tr -d ' ')"
+		printf '{"slots": {"rom": ["gridWalker.testrom"]}, "files": {"gridWalker.testrom": "%s"}, "settings": {"initFillByte": 5}}\n' "$hrom" > "$hdir/files.json"
+		( cd "$repo_root" && timeout 300 mono "$emu_exe" --suggest-settings "$package" "$hdir/files.json" ) > "$hdir/suggest.out" 2> "$hdir/suggest.err"; hsrc=$?
+		( cd "$repo_root" && timeout 300 mono "$emu_exe" --precompile 0/1 "$package" "$hdir/files.json" "$hdir/cache" ) > "$hdir/precompile.log" 2>&1; hprc=$?
+		printf '{"Package": "%s", "Movie": "%s", "Files": [{"Name": "gridWalker.testrom", "Path": "%s", "Slot": "rom"}], "Settings": {"importRom": "gridWalker.testrom", "importFill": 7}}\n' \
+			"$package" "$here/movies/gridWalker.win.txt" "$hrom" > "$hdir/import.json"
+		( cd "$repo_root" && timeout 300 mono "$emu_exe" --import-movie "$hdir/import.json" "$hdir/import.answer.json" ) > "$hdir/import.log" 2>&1; hirc=$?
+		hframes="$(grep -c '^|' "$here/movies/gridWalker.win.txt")"
+		hwrong=""
+		grep -q '{"values": {"initFillByte": 9}, "note": "The synthetic core suggests a fill of 9."' "$hdir/suggest.out" \
+			|| hwrong="$hwrong suggest(rc $hsrc)"
+		{ [ "$hprc" -eq 0 ] && grep -q '^Precompiled 6/6 modules' "$hdir/precompile.log" \
+			&& [ "$(find "$hdir/cache" -type f -name 'module*.bin' | wc -l | tr -d ' ')" = 6 ]; } || hwrong="$hwrong precompile(rc $hprc)"
+		{ [ "$hirc" -eq 0 ] && python3 -c "
+import json, sys
+a = json.load(open(sys.argv[1]))
+assert a['settings'] == {'initFillByte': 7}, a['settings']
+assert a['files'] == [{'name': 'gridWalker.testrom', 'slot': 'rom'}], a['files']
+assert a['frames'] == int(sys.argv[2]), a['frames']
+" "$hdir/import.answer.json" "$hframes" 2>> "$hdir/import.log"; } || hwrong="$hwrong import(rc $hirc)"
+		if [ -z "$hwrong" ]; then
+			report "D:box:helpers" PASS "suggested settings, a compile session (6 of 6 modules) and a movie import are each asked of a project, and answer for its game and settings"
+		else
+			report "D:box:helpers" FAIL "wrong:$hwrong (see work/helpers/*)"
 		fi
 
 		# --- keybinds ship with the package ---
@@ -2168,9 +2432,10 @@ REOPENPY
 			echo "mode=simple"
 		} > "$kjob"
 		rm -f "$work/keybinds.meta.txt"
+		kproj="$(bproject keybinds "$package" "$here/roms/${kname%%.*}.testrom")"
 		( cd "$repo_root" && CHIMERA_JOB="$kjob" timeout 300 mono "$emu_exe" --headless \
 			"--config=$kcfg" "--core=$package" "--lua=$here/synth-replay.lua" \
-			"$here/roms/${kname%%.*}.testrom" ) > "$work/keybinds.log" 2>&1
+			"--project=$kproj" ) > "$work/keybinds.log" 2>&1
 		if [ ! -f "$work/keybinds.meta.txt" ] || ! grep -q "^status=OK" "$work/keybinds.meta.txt"; then
 			report "K:box:keybinds" FAIL "run failed (see work/keybinds.log)"
 		elif python3 "$here/check-keybinds.py" "$kcfg" \

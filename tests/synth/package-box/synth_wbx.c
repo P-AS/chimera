@@ -151,10 +151,11 @@ static void cache_work(void) {
 	}
 }
 
-/* A compile session (the Qt window's New Project compile step, chimera#142):
- * the synthetic game has six "modules", each eight bytes made from the game's
- * own bytes and the module's number; a session stores, one a frame, those
- * whose number modulo its count is its index, and never runs the game */
+/* A compile session (a New Project window's compile step, engine.h
+ * ce_precompile_request): the synthetic game has six "modules", each eight
+ * bytes made from the game's own bytes and the module's number; a session
+ * stores, one a frame, those whose number modulo its count is its index, and
+ * never runs the game */
 #define SYNTH_MODULES 6
 static int32_t g_preCount, g_preNext;
 static uint32_t g_preDone;
@@ -352,8 +353,7 @@ ECL_EXPORT void FrameAdvance(uint64_t pad) {
 	g_garbleNow = g_render && g_garbleLeft > 0;
 	if (g_garbleNow) g_garbleLeft--;
 	/* a compile session compiles and never runs the game */
-	if (g_preCount > 0)
-	{
+	if (g_preCount > 0) {
 		precompile_step();
 		return;
 	}
@@ -686,7 +686,7 @@ ECL_EXPORT const char *GetGameProperties(void)
 		"] }";
 }
 
-/* A movie made elsewhere, as this core reads it (engine.h, ce_import_movie):
+/* A movie made elsewhere, as this core reads it (engine.h, ce_project_import_movie):
  * called INSTEAD of Init. The synth's "foreign" movie is its own movie text -
  * one "|UDLRABsS|" line per frame - mounted as "movie", and the game it was
  * made on is named by the importRom option and mounted under that name. The
@@ -736,8 +736,8 @@ ECL_EXPORT const char *ImportMovie(void)
 	return g_import;
 }
 
-/* What this core would choose for a game before a project exists
- * (ce_suggest_settings): called INSTEAD of Init, for a package that declares
+/* What this core would choose for a game before a project is final
+ * (ce_project_suggest_settings): called INSTEAD of Init, for a package that declares
  * "suggestSettings". The synth suggests one value, with a note saying where
  * it comes from, so a frontend's suggestion step can be tested. The note
  * also says what it was shown - the disks in the slot map, a cue's track,

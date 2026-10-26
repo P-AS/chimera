@@ -28,7 +28,7 @@ namespace Chimera.Emulation.Common.Waterbox
 		author: "miniBox",
 		portedVersion: "1.0.0",
 		portedUrl: "https://github.com/SergioMartin86/miniBox")]
-	public sealed partial class WaterboxCore : IEmulator, IVideoProvider, ISoundProvider, IStatable, IStateHistory, IInputPollable, IGpuRendered, ICorePrecompile, ICoreStops,
+	public sealed partial class WaterboxCore : IEmulator, IVideoProvider, ISoundProvider, IStatable, IStateHistory, IInputPollable, IGpuRendered, ICoreStops,
 		ICoreIdentity, ISettable<WaterboxCoreSettings>, IDriveLights, IStateFiles, IControllerPicture
 	{
 		/// <summary>
@@ -105,9 +105,6 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// </summary>
 		public static string CoreCacheRoot { get; set; } = "";
 
-		/// <summary>The precompile session the next core opens as (null: a normal run).</summary>
-		public static PrecompileRequest? PrecompileRequest { get; set; }
-
 		/// <summary>
 		/// One directory per GAME, named by the game's own SHA1 (user-decided,
 		/// 2026-09-17). The core and the package version are recorded inside the
@@ -132,9 +129,9 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// by path, size and mtime - the wizard hashed this same file when it was
 		/// picked, so this costs a lookup rather than a read of a disc image.
 		/// </summary>
-		public static string? CoreCacheDirectoryFor(WaterboxConfig cfg, string? romPath)
-			=> cfg.Precompile && romPath is { Length: > 0 } && File.Exists(romPath)
-				&& ChimeraEngine.Sha1OfFile(romPath) is { } hashed
+		public static string? CoreCacheDirectoryFor(WaterboxConfig cfg, string? gamePath)
+			=> cfg.Precompile && gamePath is { Length: > 0 } && File.Exists(gamePath)
+				&& ChimeraEngine.Sha1OfFile(gamePath) is { } hashed
 					? CoreCacheDirectoryFor(CoreCacheRoot, hashed.Sha1)
 					: null;
 
@@ -163,13 +160,13 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// <summary>The engine's handle of this machine, for the engine calls that take one (the MCP server's).</summary>
 		public IntPtr SessionHandle => _session.Handle;
 
-		/// <param name="rom">the game's bytes, or null when <paramref name="romPath"/> is given</param>
-		/// <param name="romPath">
-		/// Where the game lies, for the usual case of a file on disk: the engine
-		/// mounts it and the machine reads it from there, so nothing is loaded.
-		/// A disc image is routinely bigger than a byte[] can be.
+		/// <param name="project">
+		/// The project this machine is (a game runs only in a project,
+		/// user-decided 2026-10-26). The engine mounts its files from where they
+		/// lie, so nothing is loaded here: a disc image is routinely bigger than
+		/// a byte[] can be.
 		/// </param>
-		public WaterboxCore(byte[]? rom, string? romPath, WaterboxConfig cfg, string packageDir, WaterboxCoreSettings? settings = null, IReadOnlyDictionary<string, byte[]>? firmware = null, IReadOnlyList<CoreFile>? extraFiles = null, Engine.EngineProject? project = null)
+		public WaterboxCore(Engine.EngineProject project, WaterboxConfig cfg, string packageDir, WaterboxCoreSettings? settings = null, IReadOnlyDictionary<string, byte[]>? firmware = null)
 		{
 			_cfg = cfg;
 			_settings = settings?.Clone() ?? new WaterboxCoreSettings();
@@ -214,12 +211,12 @@ namespace Chimera.Emulation.Common.Waterbox
 			try
 			{
 				var effective = EffectiveSettings();
+				// the compile cache is named after the game, the project's first game file
+				var gamePath = project.GameFile is >= 0 and var game ? project.FileSourcePath(game) : null;
 				_session = EngineSession.Open(
-					packageDir, rom, romPath, SerializeSettings(effective), firmware, extraFiles,
+					packageDir, project, SerializeSettings(effective), firmware,
 					wantGpu: WantsGpu(effective),
-					cacheDir: CoreCacheDirectoryFor(cfg, romPath),
-					precompile: PrecompileRequest,
-					project: project);
+					cacheDir: CoreCacheDirectoryFor(cfg, gamePath));
 			}
 			catch (InvalidOperationException ex)
 			{
@@ -574,12 +571,6 @@ namespace Chimera.Emulation.Common.Waterbox
 		/// <summary>Declared in waterbox.config (video.greenzoneSurvivesReload), and false unless it says so.</summary>
 		public bool GreenzoneSurvivesReload => _cfg.Video?.GreenzoneSurvivesReload is true;
 
-
-		// ICorePrecompile: only meaningful when the core was opened as a precompile session
-		public bool PrecompileDone => _session.PrecompileDone;
-		public (uint Done, uint Total) PrecompileProgress => _session.PrecompileProgress;
-		public ulong CacheStored => _session.CacheStored;
-		public ulong CacheFetched => _session.CacheFetched;
 
 		public void ResetCounters()
 		{

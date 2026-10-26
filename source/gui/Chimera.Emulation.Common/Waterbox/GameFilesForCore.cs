@@ -1,6 +1,4 @@
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 
 using Chimera.Emulation.Common.Engine;
 
@@ -9,78 +7,80 @@ using Newtonsoft.Json.Linq;
 namespace Chimera.Emulation.Common.Waterbox
 {
 	/// <summary>
-	/// The files a core is shown when it is asked about a game before any
-	/// machine exists (its SuggestSettings answer: suggested settings, the
-	/// game's own settings, the firmware this game needs).
+	/// The project a core is asked about before the real one is made: its
+	/// SuggestSettings answer (suggested settings, the game's own settings, the
+	/// firmware this game needs), the share of a game's code a compile session
+	/// compiles, and what a movie made elsewhere amounts to. A game runs only
+	/// in a project (user-decided, 2026-10-26), so these questions are asked of
+	/// one too: a project of the files picked so far, in their slots, with the
+	/// settings chosen so far.
 	///
 	/// A game is often more than the file that names it: a disc is a .cue and
-	/// the track files it lists, and a project may hold other discs and save
-	/// data. A core asked about the .cue alone cannot read the disc - a Saturn
-	/// core cannot tell which region's BIOS the disc needs. So the question is
-	/// asked with the files a run would have: every file of the project under
-	/// its name, the slot map ("slots"), and the track files of every cue.
+	/// the track files it lists, which the engine adds to a project beside the
+	/// cue. A core asked about the .cue alone could not read the disc - a
+	/// Saturn core cannot tell which region's BIOS the disc needs.
 	/// </summary>
 	public static class GameFilesForCore
 	{
-		/// <summary>A project's files as the engine would mount them: the slot map, and each file that has been found, under its name.</summary>
-		public static List<CoreFile> FromProject(EngineProject project)
+		/// <summary>
+		/// A project of the package's core holding the files given, each in its
+		/// slot, and the settings given. Every file is hashed as it is added,
+		/// as the New Project window's own Create does (the engine keeps the
+		/// hash, so the real project costs no second read). The core is named
+		/// but not pinned by hash: the package given is the one asked.
+		/// </summary>
+		/// <exception cref="System.InvalidOperationException">the package cannot be read, or a file cannot be added</exception>
+		public static EngineProject ProjectFor(string packagePath, IEnumerable<(string Slot, string Name, string Path)> files, string? settingsJson)
 		{
-			var files = new List<CoreFile> { new("slots", System.Text.Encoding.UTF8.GetBytes(project.SlotsJson)) };
-			for (var i = 0; i < project.FileCount; i++)
+			string coreName = "", version = "";
+			using (var package = EnginePackage.Open(packagePath)
+				?? throw new System.InvalidOperationException($"{packagePath}: not a core package"))
 			{
-				var path = project.FileSourcePath(i);
-				if (path is { Length: > 0 } && File.Exists(path)) files.Add(new(project.FileName(i), path));
+				if (package.EntryText(WaterboxCoreFactory.ConfigFileName) is { } configText)
+				{
+					var config = JObject.Parse(configText);
+					coreName = (string?)config["coreName"] ?? "";
+					version = (string?)config["version"] ?? "";
+				}
 			}
-			return files;
+			var project = EngineProject.New();
+			try
+			{
+				project.SetCore(coreName, version, "");
+				foreach (var (slot, name, path) in files) project.FileAdd(name, slot, path);
+				if (settingsJson is { Length: not 0 }) project.SetSettingsJson(settingsJson);
+				return project;
+			}
+			catch
+			{
+				project.Dispose();
+				throw;
+			}
 		}
 
 		/// <summary>
-		/// The same from the document the new-project wizard writes for a helper
-		/// process: <c>{"slots": {slot: [names]}, "files": {name: path}}</c>.
+		/// The same from the document the New Project window writes for a helper
+		/// process: <c>{"slots": {slot: [names]}, "files": {name: path},
+		/// "settings": {...}}</c>.
 		/// </summary>
-		public static List<CoreFile> FromSlotsDocument(JObject doc)
+		public static EngineProject ProjectFor(string packagePath, JObject doc)
 		{
-			var files = new List<CoreFile>
+			var paths = doc["files"] as JObject;
+			var files = new List<(string Slot, string Name, string Path)>();
+			if (doc["slots"] is JObject slots)
 			{
-				new("slots", System.Text.Encoding.UTF8.GetBytes((doc["slots"] ?? new JObject()).ToString(Newtonsoft.Json.Formatting.None))),
-			};
-			if (doc["files"] is JObject listed)
-			{
-				foreach (var file in listed.Properties())
+				foreach (var slot in slots.Properties())
 				{
-					if (file.Value.Type is JTokenType.String) files.Add(new(file.Name, file.Value.ToString()));
+					if (slot.Value is not JArray names) continue;
+					foreach (var name in names)
+					{
+						var file = (string?)name ?? "";
+						if (paths?[file] is JValue { Type: JTokenType.String } path) files.Add((slot.Name, file, (string)path!));
+					}
 				}
 			}
-			return files;
-		}
-
-		/// <summary>
-		/// Adds the track files of every cue among the game and the files given:
-		/// each file a cue names that lies beside it and is not already listed,
-		/// under the name the cue gives it. A project lists them itself (they
-		/// are its support files); a game opened by itself, or a wizard that has
-		/// not made its project yet, does not.
-		/// </summary>
-		public static List<CoreFile> WithCueTracks(string? gamePath, IReadOnlyList<CoreFile>? files)
-		{
-			var all = files?.ToList() ?? [ ];
-			var cues = all.Where(static f => f.Path is not null).Select(static f => f.Path!).ToList();
-			if (gamePath is { Length: > 0 }) cues.Insert(0, gamePath);
-			foreach (var cue in cues.Where(static p => p.EndsWith(".cue", System.StringComparison.OrdinalIgnoreCase)).Distinct().ToList())
-			{
-				byte[] bytes;
-				try { bytes = File.ReadAllBytes(cue); }
-				catch (IOException) { continue; }
-				catch (System.UnauthorizedAccessException) { continue; }
-				var folder = Path.GetDirectoryName(Path.GetFullPath(cue)) ?? "";
-				foreach (var name in EngineCue.References(bytes))
-				{
-					if (all.Any(f => f.Name == name)) continue;
-					var track = Path.Combine(folder, name);
-					if (File.Exists(track)) all.Add(new(name, track));
-				}
-			}
-			return all;
+			var settings = doc["settings"] is JObject chosen ? chosen.ToString(Newtonsoft.Json.Formatting.None) : null;
+			return ProjectFor(packagePath, files, settings);
 		}
 	}
 }

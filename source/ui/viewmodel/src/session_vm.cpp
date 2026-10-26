@@ -3419,7 +3419,7 @@ bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::
 	if (const json::Json *own = cfg.find("gameFirmware"); own != nullptr && own->boolean && !game.empty())
 	{
 		std::string unanswered;
-		const std::string text = askForSuggestion(package, game, withCueTracks(game, files), slots, settings, unanswered);
+		const std::string text = askForSuggestion(package, game, files, slots, settings, unanswered);
 		json::Json answer;
 		if (!text.empty() && json::parse(text, answer, error) && answer.kind == json::Json::Kind::Object)
 		{

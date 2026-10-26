@@ -568,7 +568,7 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 		});
 	command("functionsList", "Help > Lua Functions List, as Chimera's: every function Chimera documents, in its words "
 		"(return type, library, name, parameters, description, example; deprecated or not), each marked unavailable "
-		"when the prototype has no such function, and the prototype's own besides, as [{\"returns\", \"library\", "
+		"when this window has no such function, and its own besides, as [{\"returns\", \"library\", "
 		"\"name\", \"params\", \"description\", \"example\", \"deprecated\", \"unavailable\"}]",
 		{}, [this](const Args &, std::string &) -> Value {
 			return functionsList(lua_.ask("__chimera_functions_list"));
@@ -576,7 +576,7 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 
 	command("functionNames", "every Lua function's name, a line each, as Chimera's client.getluafunctionslist gives them: "
 		"those Chimera documents that are here (and those it documents that raise an error in every core), then the "
-		"prototype's own", {}, [this](const Args &, std::string &) -> Value {
+		"window's own", {}, [this](const Args &, std::string &) -> Value {
 			json::Json docs, ours;
 			std::string why, out;
 			if (!json::parse(std::string_view(kChimeraLuaDocs), docs, why)) docs.kind = json::Json::Kind::Array;

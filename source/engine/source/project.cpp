@@ -58,7 +58,7 @@ struct FileEntry
 	 * a frontend can remember locations in a sidecar of its own. */
 	std::string sourcePath;
 	/* NOT the bytes. A project's files are read where they lie, when the
-	 * machine asks for them (see ce_session_open's file_paths): a PS2 disc is
+	 * machine asks for them (by path, ce_session_open_project): a PS2 disc is
 	 * over four gigabytes and holding one here would be four gigabytes nothing
 	 * needed, on the way to a sandbox that reads it from the disk anyway. What
 	 * a project knows about a file is its name, its hash and where it is. */

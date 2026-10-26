@@ -21,8 +21,9 @@ static double now() { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); ret
 static bool slurp(const char *p, std::vector<uint8_t> &o) { FILE *f = fopen(p, "rb"); if (!f) return false; uint8_t b[65536]; size_t n; while ((n = fread(b, 1, sizeof b, f))) o.insert(o.end(), b, b + n); fclose(f); return true; }
 
 int main(int argc, char **argv) {
-	if (argc < 8) { fprintf(stderr, "usage: seekbench <pkg> <iso> <mcpx> <bios> <hdd> <frames> <budgetMB> [spillDir]\n"); return 2; }
-	const char *pkg = argv[1], *iso = argv[2];
+	if (argc < 8) { fprintf(stderr, "usage: seekbench <pkg> <project.chimeraProject> <mcpx> <bios> <hdd> <frames> <budgetMB> [spillDir]\n"); return 2; }
+	/* a game runs only in a project: the disc is the project's, found beside it */
+	const char *pkg = argv[1], *projectPath = argv[2];
 	std::vector<uint8_t> fw[3]; const char *ids[3] = { "mcpx", "bios", "hdd" };
 	for (int i = 0; i < 3; i++) if (!slurp(argv[3 + i], fw[i])) { fprintf(stderr, "no %s\n", argv[3 + i]); return 2; }
 	const uint8_t *fwd[3] = { fw[0].data(), fw[1].data(), fw[2].data() }; uint64_t fwl[3] = { fw[0].size(), fw[1].size(), fw[2].size() };
@@ -33,7 +34,14 @@ int main(int argc, char **argv) {
 
 	ce_gl_request(0);
 	const char *err = nullptr;
-	ce_session *s = ce_session_open(pkg, nullptr, 0, iso, "{}", ids, fwd, fwl, 3, nullptr, nullptr, nullptr, nullptr, 0, &err);
+	ce_project *project = ce_project_open(projectPath, &err);
+	if (!project) { fprintf(stderr, "project: %s\n", err ? err : "?"); return 1; }
+	{
+		const std::string path = projectPath;
+		const size_t cut = path.find_last_of('/');
+		ce_project_resolve_dir(project, cut == std::string::npos ? "." : path.substr(0, cut).c_str());
+	}
+	ce_session *s = ce_session_open_project(pkg, project, nullptr, ids, fwd, fwl, 3, 0u, &err);
 	if (!s) { fprintf(stderr, "open: %s\n", err ? err : "?"); return 1; }
 	ce_session_movie_record(s, nullptr);
 

@@ -113,8 +113,6 @@ namespace Chimera.Emulation.Common
 			return core != null && core.ServiceProvider.HasService<IInputPollable>();
 		}
 
-		public static ICorePrecompile AsPrecompile(this IEmulator core)
-			=> core.ServiceProvider.GetService<ICorePrecompile>();
 
 		public static IInputPollable AsInputPollable(this IEmulator core)
 		{

@@ -629,7 +629,7 @@ ApplicationWindow {
                     onTriggered: { root.clipboard.setText(root.help.run("versionReport")); root.note(qsTr("Version info copied")) }
                 }
                 Action { text: qsTr("&Report an Issue..."); icon.source: "qrc:/chimera/menu/ReportIssue.png"; onTriggered: { reportIssueWindow.show(); reportIssueWindow.raise() } }
-                Action { text: qsTr("&About..."); icon.source: "qrc:/chimera/menu/About.png"; onTriggered: aboutDialog.open() }
+                Action { text: qsTr("&About..."); icon.source: "qrc:/chimera/menu/About.png"; onTriggered: aboutWindow.show() }
             }
         }
         // at the right of the menus while TAStudio is hidden, as Chimera's
@@ -1547,22 +1547,62 @@ ApplicationWindow {
         id: macroToolWindow; vm: root.macroTool; pianoRoll: root.pianoRoll; folderOf: root.folderOf; visible: false
         customize: root.customize; toolWindows: root.toolWindows; mainWindow: root; themeColor: root.osdColor
     }
-    Dialog {
-        id: aboutDialog
-        objectName: "aboutDialog"
+    // Help > About, as Chimera's About box (issue #193): the logo, the name,
+    // the commit the build was made from (a link to that commit) with the
+    // commit's date and time, where the code is, where the project is, and
+    // OK; one column, every line centred, at Chimera's sizes
+    ApplicationWindow {
+        id: aboutWindow
+        objectName: "aboutWindow"
         title: qsTr("About Chimera")
-        anchors.centerIn: parent
-        modal: true
-        standardButtons: Dialog.Ok
-        ColumnLayout {
-            Label { text: qsTr("Chimera"); font.bold: true; font.pointSize: 14 }
-            Label { text: qsTr("A frontend for tool-assisted speedruns: the Qt window, a prototype.") }
-            Label { text: root.help.buildName }
-            Label {
-                text: "<a href=\"" + root.help.siteUrl + "\">" + root.help.siteUrl + "</a>"
-                onLinkActivated: (link) => Qt.openUrlExternally(link)
-            }
+        width: 320; height: 234
+        minimumWidth: 320; maximumWidth: 320
+        minimumHeight: 234; maximumHeight: 234
+        flags: Qt.Dialog | Qt.MSWindowsFixedSizeDialogHint
+        modality: Qt.ApplicationModal
+        transientParent: root
+        Image {
+            x: (parent.width - width) / 2; y: 14
+            width: 64; height: 64
+            source: "qrc:/chimera/chimera.png"
+            fillMode: Image.PreserveAspectFit
+            smooth: true
         }
+        Label {
+            x: (parent.width - width) / 2; y: 88
+            text: qsTr("Chimera")
+            font.bold: true
+            font.pointSize: 12
+        }
+        // only the commit is the link; its date reads as text beside it
+        Label {
+            x: (parent.width - width) / 2; y: 120
+            textFormat: Text.RichText
+            text: root.help.commit !== ""
+                ? root.help.buildName.replace(root.help.commit, "<a href=\"" + root.help.commitUrl + "\">" + root.help.commit + "</a>")
+                : "<a href=\"" + root.help.homePage + "\">" + root.help.buildName + "</a>"
+            onLinkActivated: (link) => Qt.openUrlExternally(link)
+        }
+        Label {
+            x: (parent.width - width) / 2; y: 144
+            textFormat: Text.RichText
+            text: "<a href=\"" + root.help.homePage + "\">" + root.help.homePage.replace("https://", "") + "</a>"
+            onLinkActivated: (link) => Qt.openUrlExternally(link)
+        }
+        Label {
+            x: (parent.width - width) / 2; y: 166
+            textFormat: Text.RichText
+            text: "<a href=\"" + root.help.siteUrl + "\">toolAssisted.run</a>"
+            onLinkActivated: (link) => Qt.openUrlExternally(link)
+        }
+        Button {
+            x: (parent.width - width) / 2; y: 198
+            width: 75; height: 23
+            text: qsTr("&OK")
+            focus: true
+            onClicked: aboutWindow.close()
+        }
+        Shortcut { sequences: ["Escape", "Return", "Enter"]; onActivated: aboutWindow.close() }
     }
 
     // Chimera's status bar: icons for what the machine is doing, then the core's name; what is said

@@ -19,9 +19,13 @@ class HelpViewModel : public ViewModel
 public:
 	HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, SettingsViewModel &settings);
 
-	/* this build: "Qt prototype, commit 1a2b3c4d5e6f" */
-	Property<std::string> buildName;
-	/* where Chimera's site is, and where an issue is filed */
+	/* this build, as Chimera names one: "Commit 1a2b3c4d5 (2026-10-26 18:35
+	 * CET)", its commit and when that commit was made, on the European clock
+	 * every date is written in (chimera issue 331); the commit alone, as
+	 * Lua's client.getversion gives it; the commit on the web */
+	Property<std::string> buildName, commit, commitUrl;
+	/* where Chimera's code is, and its site */
+	Property<std::string> homePage{"https://github.com/ToolAssisted-run/chimera"};
 	Property<std::string> siteUrl{"https://toolassisted.run"};
 	Property<std::string> formUrl{"https://github.com/ToolAssisted-run/chimera/issues/new/choose"};
 	/* the computer's system, as the window's toolkit names it (the window

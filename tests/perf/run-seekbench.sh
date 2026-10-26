@@ -7,7 +7,11 @@
 # somebody who doubts them.
 #
 # Usage:
-#   ./run-seekbench.sh <core.chimeraCore> <iso> <mcpx> <bios> <hdd> [frames] [budgetMB]
+#   ./run-seekbench.sh <core.chimeraCore> <project.chimeraProject> <mcpx> <bios> <hdd> [frames] [budgetMB]
+#
+# A game runs only in a project: make one of the disc with chimera-run
+# --new-project <out.chimeraProject> <core.chimeraCore> <iso>; the disc is
+# found beside it.
 #
 # CHIMERA_NO_DELTAS=1  keep whole states instead - the same run, the same
 #                      budget, the shape this design replaced

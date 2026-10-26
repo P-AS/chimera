@@ -1,6 +1,7 @@
 #include "chimera/vm/new_project_vm.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -100,7 +101,7 @@ void setMember(Json &obj, const std::string &name, Json v)
  * the game's manifest.json */
 struct NewProjectViewModel::CompileJob
 {
-	std::string runner, dir, romName, romSha1, core, version, slotsFile;
+	std::string runner, dir, romName, romSha1, core, version, projectFile;
 	std::vector<std::string> args;
 	int workers = 1;
 	/* what one session is counted at (the setting, in bytes; 0 the engine's own figure) */
@@ -263,7 +264,7 @@ struct NewProjectViewModel::CompileJob
 			break;
 		}
 		std::error_code ec;
-		fs::remove(slotsFile, ec);
+		fs::remove(projectFile, ec);
 		if (failure.empty())
 		{
 			/* what the sessions compiled is what this game needs, with who compiled it */
@@ -404,24 +405,27 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			job->sessionBytes = static_cast<uint64_t>(std::clamp<int64_t>(compileSessionGigabytes.get(), 1, 256)) << 30;
 			job->workers = std::max(1, ce_compile_sessions(static_cast<int32_t>(std::max(1u, std::thread::hardware_concurrency())),
 				ce_compile_memory_to_spare(), job->sessionBytes));
-			std::vector<std::string> common = {package_, game, "--cache-dir", dir, "--settings", json::write(form_.recorded())};
-			for (const Need &n : needs_)
-				if (!n.path.empty()) common.insert(common.end(), {"--firmware", n.id + "=" + n.path});
-			bool first = true;
+			/* a game runs only in a project (owner, 2026-10-26): the sessions
+			 * open one of every file picked, in its slot, with the settings
+			 * chosen, saved beside the compiled code while they run */
+			std::vector<AskFile> picked;
 			for (const Slot &sl : slots_)
 				if (const auto it = files_.find(sl.id); it != files_.end())
-					for (const Picked &f : it->second)
-					{
-						if (first && f.path == game)
-						{
-							first = false;
-							continue;
-						}
-						common.insert(common.end(), {"--mount", f.name + "=" + f.path});
-					}
-			job->slotsFile = (fs::path(dir) / "slots.json").string();
-			std::ofstream(job->slotsFile, std::ios::binary) << slotMap();
-			common.insert(common.end(), {"--mount", "slots=" + job->slotsFile});
+					for (const Picked &f : it->second) picked.push_back({sl.id, f.name, f.path});
+			/* outside the compiled code's folder, which counts what is in it */
+			job->projectFile = (fs::temp_directory_path() / ("chimera-compile-" + std::string(sha) + "-" +
+				std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".chimeraProject")).string();
+			std::vector<std::string> dirs;
+			std::string why;
+			if (!saveAskingProject(package_, picked, json::write(form_.recorded()), job->projectFile, dirs, why))
+			{
+				error = "the compile sessions' project could not be made: " + why;
+				return {};
+			}
+			std::vector<std::string> common = {"--project", job->projectFile, package_, "--cache-dir", dir};
+			for (const std::string &d : dirs) common.insert(common.end(), {"--files", d});
+			for (const Need &n : needs_)
+				if (!n.path.empty()) common.insert(common.end(), {"--firmware", n.id + "=" + n.path});
 			job->args = common;
 			compileJob_ = job;
 			modules_.clear();
@@ -570,12 +574,17 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			}
 			/* each picked file under its own name, its input's option naming it
 			 * (a multiple input's names joined); options only when ticked */
-			std::vector<std::pair<std::string, std::string>> mounts;
+			std::vector<AskFile> mounts;
 			Json settings;
 			settings.kind = Json::Kind::Object;
 			if (const Json *files = import_.find("files"))
 				for (const Json &f : files->items)
 				{
+					/* the slot its files go in; none for a file the core may take
+					 * as firmware, which only its answer can name */
+					const Json *firmwareFlag = f.find("firmware");
+					const Json *slotOf = f.find("slot");
+					const std::string slot = (firmwareFlag != nullptr && firmwareFlag->boolean) || slotOf == nullptr ? std::string() : slotOf->text;
 					const Json *opt = f.find("option");
 					const std::string option = opt != nullptr ? opt->text : "";
 					const auto it = importPicked_.find(option);
@@ -596,7 +605,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 					for (const std::string &p : it->second)
 					{
 						const std::string name = baseName(p);
-						mounts.emplace_back(name, p);
+						mounts.push_back({slot, name, p});
 						names += (names.empty() ? "" : (sep != nullptr ? sep->text : std::string(";"))) + name;
 					}
 					if (!option.empty()) setMember(settings, option, Json::string(names));
@@ -618,19 +627,27 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				importRunner_(package_, importMovie.get(), mounts, json::write(settings), done);
 			else
 			{
-				std::vector<const char *> names{"movie"}, paths{importMovie.get().c_str()};
-				for (const auto &[n, p] : mounts)
+				/* asked of a project (owner, 2026-10-26): the files with a slot in
+				 * it, the options its settings, the rest beside the movie */
+				std::string why;
+				ce_project *project = askingProject(package_, mounts, json::write(settings), why);
+				if (project == nullptr)
 				{
-					names.push_back(n.c_str());
-					paths.push_back(p.c_str());
+					done({}, why);
+					return {};
 				}
-				std::vector<const uint8_t *> datas(names.size(), nullptr);
-				std::vector<uint64_t> lens(names.size(), 0);
+				std::vector<const char *> names, paths;
+				for (const AskFile &m : mounts)
+					if (m.slot.empty())
+					{
+						names.push_back(m.name.c_str());
+						paths.push_back(m.path.c_str());
+					}
 				uint64_t len = 0;
 				const char *err = nullptr;
-				const std::string settingsText = json::write(settings);
-				const char *answer = ce_import_movie(package_.c_str(), nullptr, 0, nullptr, settingsText.c_str(), nullptr, nullptr, nullptr, 0,
-					names.data(), datas.data(), lens.data(), paths.data(), static_cast<int32_t>(names.size()), &len, &err);
+				const char *answer = ce_project_import_movie(package_.c_str(), project, importMovie.get().c_str(), names.data(), paths.data(),
+					static_cast<int32_t>(names.size()), nullptr, nullptr, nullptr, 0, &len, &err);
+				ce_project_free(project);
 				done(answer != nullptr ? std::string(answer, static_cast<size_t>(len)) : std::string(), err != nullptr ? err : "");
 			}
 			return {};
@@ -1782,13 +1799,12 @@ void NewProjectViewModel::suggestFor(const std::string &game)
 			if (game != suggestedFor_) return;
 			applySuggestion(answer, why);
 		};
-		/* what a run would have: every file picked, under its name, a cue's
-		 * tracks, the slot map and the settings so far */
+		/* what a run would have: every file picked, in its slot (a cue brings
+		 * its tracks into the project), and the settings so far */
 		Mounts files;
 		for (const Slot &sl : slots_)
 			if (auto it = files_.find(sl.id); it != files_.end())
 				for (const Picked &f : it->second) files.emplace_back(f.name, f.path);
-		files = withCueTracks(game, std::move(files));
 		const std::string slots = slotMap(), settings = json::write(form_.recorded());
 		if (suggestRunner_)
 		{

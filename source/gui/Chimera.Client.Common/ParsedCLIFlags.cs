@@ -8,8 +8,6 @@ namespace Chimera.Client.Common
 	{
 		public readonly string? cmdConfigFile;
 
-		public readonly string? cmdMovie;
-
 		public readonly string? cmdProject;
 
 		public readonly string? cmdDumpType;
@@ -47,18 +45,11 @@ namespace Chimera.Client.Common
 
 		public readonly string? cmdCorePackage;
 
-		/// <summary>"INDEX/COUNT[/game]": run as a precompile session (docs: the compile cache), then exit</summary>
-		public readonly string? cmdPrecompile;
-
 		/// <summary>"&lt;id&gt;=&lt;path&gt;" pairs: firmware for this run, ahead of the config</summary>
 		public readonly string[]? cmdFirmware;
 
-		/// <summary>a JSON file naming the project's other files, for a precompile session</summary>
-		public readonly string? cmdPrecompileSlots;
-
 		public ParsedCLIFlags(
 			string? cmdConfigFile,
-			string? cmdMovie,
 			string? cmdProject,
 			string? cmdDumpType,
 			HashSet<int>? currAviWriterFrameList,
@@ -74,16 +65,13 @@ namespace Chimera.Client.Common
 			IReadOnlyList<(string Key, string Value)>? userdataUnparsedPairs,
 			string? cmdRom,
 			string? cmdCorePackage,
-			string? cmdPrecompile,
 			string[]? cmdFirmware = null,
-			string? cmdPrecompileSlots = null,
 			bool mcpServer = false,
 			bool mcpAllowChanges = false)
 		{
 			this.mcpServer = mcpServer;
 			this.mcpAllowChanges = mcpAllowChanges;
 			this.cmdConfigFile = cmdConfigFile;
-			this.cmdMovie = cmdMovie;
 			this.cmdProject = cmdProject;
 			this.cmdDumpType = cmdDumpType;
 			_currAviWriterFrameList = currAviWriterFrameList;
@@ -99,9 +87,7 @@ namespace Chimera.Client.Common
 			UserdataUnparsedPairs = userdataUnparsedPairs;
 			this.cmdRom = cmdRom;
 			this.cmdCorePackage = cmdCorePackage;
-			this.cmdPrecompile = cmdPrecompile;
 			this.cmdFirmware = cmdFirmware;
-			this.cmdPrecompileSlots = cmdPrecompileSlots;
 		}
 	}
 }

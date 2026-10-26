@@ -11116,3 +11116,156 @@ not; the project's files decide what is shown; the game's own settings are
 last; a restart is offered only for a change, the clock's start included)
 and TasMovieProjectFormatTests.ChangedSettingsAreTheNextBootsAndTheNextSaves.
 Each failed with its change taken out.
+
+## A game runs only in a project (user-decided, 2026-10-26)
+
+The owner: "Both GUI and command line should provide a project file, if a
+game needs loading. This unifies the path to execution. Remove all code
+enabling the open rom without project pathway." Asked whether that covers
+chimera-run, the headless runner every core's tests use: "Yes, everywhere.
+Everyone using Chimera needs to be able to create a project file that
+provides the full settings and files required for execution."
+
+Chimera's menus already open only projects, but paths that open a game file
+alone were left over: a game named on the command line or handed over by a
+second start in single instance mode, Lua's client.openrom, a movie opened
+with no game running (which asks for a game file), the Batch Runner (hidden,
+but still there), and chimera-run's `<package> <game> <movie>` form, which 50
+of the 61 cores' tests call. What only those paths used goes with them: the
+default core per system (DefaultCores) and the core settings kept for games
+opened alone (CoreSettings). The owner also decided, setting by setting, to
+remove the movie options that act only on movies without a project (what
+happens at a movie's end, backup movies, VBA-style state loads) and the
+compression level of Chimera's cache file.
+
+The order keeps every published thing working between steps: chimera-run
+first learns to make a project (this section's change), then Chimera's
+interface loses the leftover paths, then each core's tests move to projects
+one repository at a time, and only then does chimera-run's game-file form go.
+
+`chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie>]]`
+makes a project and runs nothing. The core is the package's, pinned by its
+hash; a game goes in the slot that takes its kind of file (`--file
+<slot>=<path>` names the slot, once a file); the settings are every one the
+package shows for those files, at the value `--settings` gives or else the
+package's default, which is what the engine runs a game with (a machine's own
+narrower defaults, which New Project offers, are given with `--settings`); a
+`--firmware` file is pinned by its hash; `--clock-start` and `--title` are
+kept; the movie is the project's input (named after the game, or with
+`--movie <movie>` for a core that takes no game file, such as a game core
+whose game is its firmware). Files that do not fit the package's
+slots are refused and no project is written. A game of several files is given
+a file at a time, as a project holds them, not as a `.chimeraMultiFile`
+descriptor.
+
+Tests: the witness's engine level makes each of its movies into a project and
+runs it, to the same RAM and VRAM as the goldens, and checks a setting given
+(the same RAM as the game run with that setting), the default recorded for one
+not given, a firmware pin, a clock start, the slot chosen by the kind of file,
+and the two refusals: 78 passed, 0 failed. With each part of the maker broken
+in turn, its test failed (8 failed). The Windows build made the same project
+from Windows paths.
+
+Added the same day, for the cores whose tests run a movie with no game file:
+`--movie`. Its test makes a project with the movie named that way and
+compares its input with the project made from the movie after the game: 81
+passed, 0 failed; with the option read and dropped, that test failed (80
+passed, 1 failed).
+
+## Chimera's interface opens a game only in a project (user-decided, 2026-10-26)
+
+The second step of "A game runs only in a project" (above): Chimera's own
+interface loses every way to run a game outside a project.
+
+- A game file named on the command line, handed over by a second start in
+  single instance mode, or dropped on the window starts New Project from it.
+  A project file named the same way opens. With no window (`--headless`) a
+  game file alone is refused with a reason and the process ends with code 2.
+- Gone: the Open ROM dialog (reached only from a movie opened with no game
+  running), `--movie`, the recent games and recent movies lists with the
+  movie auto-load, Lua's `client.openrom` (`client.openproject` stays), and
+  the Batch Runner, whose menu item was never shown.
+- Gone with them, as only games outside a project used them: the core
+  remembered per system (`DefaultCores`; a project names its core, and the
+  loader already takes it from the project) and the core settings kept in
+  Chimera's settings file for such games (`CoreSettings` for the cores; the
+  idle screen's own settings stay).
+- The movie options the owner removed setting by setting: what happens at a
+  movie's end (TAStudio, which every project has open, always skipped it),
+  backup movies and VBA-style state loads (both acted only on a state loaded
+  into a movie without a project, a path with no caller left), and the
+  compression level of the project's cache file, which is now always 2, its
+  old default.
+- The taskbar's jump list (Windows) lists projects, not games.
+
+One game still runs outside a project: a compile session (`--precompile`),
+which Chimera starts in a process of its own to compile a game's code before
+the project is made, and which shows nothing and ends when it is done. It
+moves to a project with the last step, when chimera-run's game-file form goes.
+
+Tests: the witness's frontend runs that opened a game file now open a project
+made with `chimera-run --new-project` (the replays, the picture-room run, the
+settings run, which puts its setting in the project instead of Chimera's
+settings file, the movie run and the keybinds run), and the run that named a
+game alone now checks that it is refused: 115 passed, 0 failed. With the
+refusal taken out, that check failed. Interface tests: 1215 passed, 0 failed
+(four tests of the per-system core went with it; the pinned shape of the
+movie settings lost the four options).
+
+## chimera-run and the questions before a project take only projects (user-decided, 2026-10-26)
+
+The last step of "A game runs only in a project" (above). Every core's tests
+now make a project with `chimera-run --new-project`, so the rest of the ways
+to run a game without one are gone.
+
+- chimera-run takes a project or nothing. `chimera-run <package> <game>
+  <movie>` is refused with a sentence that says how to make one, and so is a
+  `.chimeraMultiFile` descriptor given as the game (a game of several files
+  is a project of several files). `--settings` belongs to `--new-project`
+  only: a project holds its settings.
+- The engine no longer offers a call that opens a machine from files alone:
+  `ce_session_open` is internal, and `ce_session_open_project` is the one
+  way to a machine. `ce_suggest_settings` and `ce_import_movie` became
+  `ce_project_suggest_settings` and `ce_project_import_movie`.
+- The three questions asked of a core before its project is final are asked
+  of a project made from the choices so far: the suggested settings
+  (`--suggest`), a compile session (`--precompile <i>/<n>`, new in
+  chimera-run) and a movie import (`--import-movie <movie>`, with `--mount`
+  for files that have no slot). A question is not refused for a slot the
+  person has not filled yet; a run still is.
+- Movie import runs on a project too (user-decided, 2026-10-26; the
+  recommendation was to keep the movie and its files, since the core's
+  answer is what says where each file goes). The files whose import input
+  names a slot go in the project, the import options are its settings, and
+  a file the core may take as firmware is mounted beside the movie under its
+  name, as only the answer can say which firmware it is.
+- Chimera's own helper processes (`--suggest-settings`, `--import-movie` and
+  `--precompile`, which the New Project window and the import dialog start)
+  each make that project from what the window wrote down. A compile session
+  is now one of those helpers: it opens the project's machine, compiles its
+  share and ends, with no window and no settings file, so the window no
+  longer saves the chosen firmware into its settings before it starts the
+  sessions, and no longer tells them its settings file. The last ways to a
+  machine without a project went with it: the loader's game-file path, the
+  platform and archive choosers, and `--precompile-slots`.
+- The synthetic core gained a compile session (six modules, a share a
+  session) and a `SuggestSettings` answer that names the game it was given
+  and the fill byte its settings hold, so both are tested without a
+  commercial game.
+
+Tests: the witness's engine level runs on made projects (55 runs moved
+through one helper), and its new tests check that the suggestion and a
+compile session are asked of a project (6 of 6 modules from two sessions),
+that the import is asked of one with a file mounted by name, and that a game
+file alone is refused: 84 passed, 0 failed. With the question's slot
+exemption, the compile request and the refusal's words each broken, those
+four failed. The frontend level checks Chimera's three helper processes
+against the synthetic core: 30 passed, 0 failed; with the project builder
+dropping the settings and the compile session losing its request, that
+check failed for all three. The whole witness: 122 passed, 0 failed.
+Interface tests 1,212, 0 failed; engine unit tests 30, 0 failed; the
+Windows build compiles. The hand-run GPU reopen
+check and the Windows refused-open check were moved to projects and compile;
+neither was run here. `tests/perf/seekbench.cpp` was moved too, but it did
+not compile before this change (it calls two state-history functions that
+no longer exist), and still does not.

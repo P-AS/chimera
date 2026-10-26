@@ -45,8 +45,6 @@
 		public bool RestartMovie()
 			=> false;
 
-		public bool WantsToBypassMovieEndAction => false;
-
 		// TODO: We want to prevent movies and probably other things
 	}
 }

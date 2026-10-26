@@ -19,6 +19,7 @@
 #include "chimera/vm/firmware.hpp"
 #include "chimera/vm/json.hpp"
 #include "chimera/vm/session_vm.hpp"
+#include "chimera/vm/suggestion.hpp"
 #include "chimera/vm/settings_form.hpp"
 #include "chimera/vm/view_model.hpp"
 
@@ -96,11 +97,12 @@ public:
 	Property<int64_t> importsTaken{0};
 	/* Asks the core what a movie amounts to, away from the machine running
 	 * (a process holds one machine): package, the movie, the files it reads
-	 * as {name, path}, the import settings; done gets the core's JSON answer
-	 * or why there is none, on the view's thread. Without one the engine is
-	 * asked here, which only works with no machine open. */
+	 * (with the slot each goes in, "" for one mounted by name), the import
+	 * settings - asked of a project of them (owner, 2026-10-26); done gets the
+	 * core's JSON answer or why there is none, on the view's thread. Without
+	 * one the engine is asked here, which only works with no machine open. */
 	using ImportRunner = std::function<void(const std::string &package, const std::string &movie,
-		const std::vector<std::pair<std::string, std::string>> &mounts, const std::string &settings,
+		const std::vector<AskFile> &files, const std::string &settings,
 		std::function<void(std::string answer, std::string error)> done)>;
 	void setImportRunner(ImportRunner runner) { importRunner_ = std::move(runner); }
 

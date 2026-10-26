@@ -301,7 +301,10 @@ namespace Chimera.Client.GUI
 					if (decl.Required) return (null, $"Choose the {decl.Label ?? decl.Option}.");
 					continue;
 				}
-				foreach (var name in names) request.Files.Add(new() { Name = name, Path = _paths[name] });
+				foreach (var name in names)
+				{
+					request.Files.Add(new() { Name = name, Path = _paths[name], Slot = decl.Firmware ? null : decl.Slot });
+				}
 				if (decl.Option is { Length: > 0 } option) request.Settings[option] = string.Join(decl.Separator ?? ";", names);
 			}
 			foreach (var (decl, box) in _options)

@@ -37,7 +37,7 @@
 #include <QPalette>
 #include <QStandardPaths>
 #include <QStyleHints>
-#include <QTemporaryFile>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include <algorithm>
@@ -764,26 +764,39 @@ int main(int argc, char **argv)
 			return;
 		}
 		auto *proc = new QProcess(&app);
-		/* the slot map is mounted as a file: one that lives as long as the process */
-		auto *slotMap = new QTemporaryFile(proc);
-		QStringList args{QString::fromStdString(package), QString::fromStdString(game), QStringLiteral("--suggest"),
-			QStringLiteral("--settings"), QString::fromStdString(settings)};
-		if (slotMap->open())
+		/* a game runs only in a project (owner, 2026-10-26): the core is asked
+		 * of one of the files and settings so far, written where the process
+		 * can open it, for as long as it lives */
+		auto *folder = new QTemporaryDir();
+		QObject::connect(proc, &QObject::destroyed, [folder] { delete folder; });
+		const std::string project = (folder->path() + QStringLiteral("/suggest.chimeraProject")).toStdString();
+		std::vector<std::string> dirs;
+		std::string why;
+		if (!folder->isValid() || !vm::saveAskingProject(package, vm::askFilesOf(package, game, files, slots), settings, project, dirs, why))
 		{
-			slotMap->write(QByteArray::fromStdString(slots));
-			slotMap->flush();
-			args << QStringLiteral("--mount") << QStringLiteral("slots=") + slotMap->fileName();
+			proc->deleteLater();
+			done({}, why.empty() ? std::string("no folder for the question's project") : why);
+			return;
 		}
-		for (const auto &[name, path] : files)
-			args << QStringLiteral("--mount") << QString::fromStdString(name + "=" + path);
+		QStringList args{QStringLiteral("--project"), QString::fromStdString(project), QString::fromStdString(package), QStringLiteral("--suggest")};
+		for (const std::string &d : dirs) args << QStringLiteral("--files") << QString::fromStdString(d);
+		/* two minutes, as Chimera gives a core to answer */
+		QTimer::singleShot(120000, proc, [proc] { proc->setProperty("tooLong", true); proc->kill(); });
 		QObject::connect(proc, &QProcess::finished, proc, [proc, done](int code, QProcess::ExitStatus) {
 			QByteArray answer;
 			for (const QByteArray &l : proc->readAllStandardOutput().split('\n'))
 				if (l.trimmed().startsWith('{')) answer = l.trimmed();
 			const QByteArray err = proc->readAllStandardError().trimmed();
 			proc->deleteLater();
-			if (code == 0 && !answer.isEmpty()) done(answer.toStdString(), {});
+			if (proc->property("tooLong").toBool()) done({}, "the core took too long to answer");
+			else if (code == 0 && !answer.isEmpty()) done(answer.toStdString(), {});
 			else done({}, err.isEmpty() ? std::string("the core gave none") : err.split('\n').last().toStdString());
+		});
+		/* a runner that cannot start never finishes: say so, as the import does */
+		QObject::connect(proc, &QProcess::errorOccurred, proc, [proc, done](QProcess::ProcessError e) {
+			if (e != QProcess::FailedToStart) return;
+			proc->deleteLater();
+			done({}, "chimera-run could not be started");
 		});
 		proc->start(runner, args);
 	};
@@ -797,7 +810,7 @@ int main(int argc, char **argv)
 	 * process), as Chimera does: chimera-run, beside the program or, in the
 	 * build tree, where it is built (CHIMERA_RUN names another) */
 	const vm::NewProjectViewModel::ImportRunner importRunner = [&app](const std::string &package, const std::string &movie,
-								   const std::vector<std::pair<std::string, std::string>> &mounts, const std::string &settings,
+								   const std::vector<vm::AskFile> &files, const std::string &settings,
 								   std::function<void(std::string, std::string)> done) {
 #ifdef _WIN32
 		const QString exe = QStringLiteral("chimera-run.exe");
@@ -812,10 +825,27 @@ int main(int argc, char **argv)
 			done({}, "chimera-run is not in the program's bin folder");
 			return;
 		}
-		QStringList args{QString::fromStdString(package), QString::fromStdString(movie), QStringLiteral("--import-movie"),
-			QStringLiteral("--settings"), QString::fromStdString(settings)};
-		for (const auto &[name, path] : mounts) args << QStringLiteral("--mount") << QString::fromStdString(name + "=" + path);
+		/* asked of a project (owner, 2026-10-26): the files with a slot in it,
+		 * the import options its settings, the rest mounted by name */
+		auto *folder = new QTemporaryDir();
+		const std::string project = (folder->path() + QStringLiteral("/import.chimeraProject")).toStdString();
+		std::vector<std::string> dirs;
+		std::string why;
+		if (!folder->isValid() || !vm::saveAskingProject(package, files, settings, project, dirs, why))
+		{
+			delete folder;
+			done({}, why.empty() ? std::string("no folder for the import's project") : why);
+			return;
+		}
+		QStringList args{QStringLiteral("--project"), QString::fromStdString(project), QString::fromStdString(package),
+			QStringLiteral("--import-movie"), QString::fromStdString(movie)};
+		for (const std::string &d : dirs) args << QStringLiteral("--files") << QString::fromStdString(d);
+		for (const vm::AskFile &f : files)
+			if (f.slot.empty()) args << QStringLiteral("--mount") << QString::fromStdString(f.name + "=" + f.path);
 		auto *proc = new QProcess(&app);
+		QObject::connect(proc, &QObject::destroyed, [folder] { delete folder; });
+		/* two minutes, as Chimera gives a core to answer */
+		QTimer::singleShot(120000, proc, [proc] { proc->setProperty("tooLong", true); proc->kill(); });
 		QObject::connect(proc, &QProcess::finished, proc, [proc, done](int code, QProcess::ExitStatus) {
 			/* the answer is the last line that is a JSON object; a core may print */
 			const QList<QByteArray> lines = proc->readAllStandardOutput().split('\n');
@@ -824,7 +854,8 @@ int main(int argc, char **argv)
 				if (l.trimmed().startsWith('{')) answer = l.trimmed();
 			const QByteArray err = proc->readAllStandardError().trimmed();
 			proc->deleteLater();
-			if (code == 0 && !answer.isEmpty()) done(answer.toStdString(), {});
+			if (proc->property("tooLong").toBool()) done({}, "the core took too long to answer");
+			else if (code == 0 && !answer.isEmpty()) done(answer.toStdString(), {});
 			else done({}, err.isEmpty() ? std::string("chimera-run gave no answer") : err.split('\n').last().toStdString());
 		});
 		QObject::connect(proc, &QProcess::errorOccurred, proc, [proc, done](QProcess::ProcessError e) {

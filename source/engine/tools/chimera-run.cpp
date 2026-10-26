@@ -1,18 +1,33 @@
 /* chimera-run - the engine's headless runner.
  *
- * Loads a core package, a rom, and a movie input log; runs the movie; dumps
- * the machine's memory domains. This is the witness gate's Level B without a
+ * Loads a core package and a project; runs the project's input; dumps the
+ * machine's memory domains. This is the witness gate's Level B without a
  * frontend: no Mono, no WinForms, no display - the same package, the same
  * host, the same inputs, and the dumps must be byte-identical to the goldens
- * the managed frontend produces.
+ * the managed frontend produces. A game runs only in a project
+ * (user-decided, 2026-10-26): --new-project makes one from a game file.
  *
- *   chimera-run <package> <rom> <movie.txt>
+ *   chimera-run --project <p.chimeraProject> <package> [--files <dir>]... [--allow-core-mismatch]
+ *       [--firmware <id>=<path>]...
  *       [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>]
- *       [--settings <json>]
  *       [--dump <domain>=<path>]... [--export-savedata <dir>] [--meta <path>]
  *       [--core-log <path>] [--controls <path>]
- *   chimera-run --project <p.chimeraProject> <package>
- *       [--files <dir>]... [--allow-core-mismatch] [the same run flags]
+ *   chimera-run --project <p.chimeraProject> <package> --suggest
+ *   chimera-run --project <p.chimeraProject> <package> --import-movie <movie> [--mount <name>=<path>]...
+ *   chimera-run --project <p.chimeraProject> <package> --precompile <i>/<n>[/game] --cache-dir <folder>
+ *   chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie.txt>]]
+ *       [--file <slot>=<path>]... [--movie <movie.txt>] [--settings <json>] [--firmware <id>=<path>]...
+ *       [--title <text>] [--clock-start <seconds>]
+ *
+ * --new-project makes a project and runs nothing (newProject, below).
+ *
+ * The three helpers ask the core about a project and run nothing: --suggest
+ * prints the settings the core suggests for its files (SuggestSettings),
+ * --import-movie what a movie made elsewhere amounts to (ImportMovie; the
+ * movie is mounted as "movie" and each --mount beside it), each as the
+ * core's JSON on one line; --precompile is a compile session, which fills
+ * the compile cache with share <i> of <n> of the game's code ("/game": not
+ * the firmware's) and says how far it is ("Precompiled 3/21 modules").
  *
  * --project runs a .chimeraProject (docs/project.md): the input log and the
  * sync settings come from the project, files resolve from the project's own
@@ -133,7 +148,9 @@
 
 #include "chimera/engine.h"
 #include "../source/file_io.hpp"
+#include "../../extern/cjson/cJSON.h"
 
+#include <cctype>
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
@@ -275,6 +292,342 @@ static int64_t wholeNumber(const std::string &text, const std::string &option)
 	return static_cast<int64_t>(value);
 }
 
+/* --new-project: a project made from the command line, as the New Project
+ * window makes one, for whoever runs Chimera without a window - a core's
+ * tests above all. A game runs only in a project (owner, 2026-10-26), so
+ * this is how a game file becomes something chimera-run --project, Chimera
+ * and the Qt window can all run:
+ *
+ *   chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie.txt>]]
+ *       [--file <slot>=<path>]... [--movie <movie.txt>] [--settings <json>] [--firmware <id>=<path>]...
+ *       [--title <text>] [--clock-start <seconds since 1970, UTC>]
+ *
+ * The core is the package's, pinned by its hash. A <game> goes in the slot
+ * that takes its kind of file (else the first; "rom" for a package that
+ * declares no slots); --file names the slot, once for each file. The
+ * settings recorded are every one the package exposes for these files, at
+ * the value --settings gives or else at the package's default: the values
+ * the engine runs a game with. (A machine's own narrower defaults, which
+ * New Project offers, are given with --settings.) For a package of several
+ * machines the game's kind of file picks the machine, as Chimera picked one
+ * for a game opened alone, unless --settings names it. Each --firmware file is
+ * pinned by its hash; a run gives it again (--firmware), as a project never
+ * holds firmware. The movie, when given (after the game, or with --movie for
+ * a project of no game file), is the project's input. The files
+ * are not copied: a run finds them beside the project or in a --files
+ * folder, by name and hash. */
+static int newProject(const std::vector<std::string> &args)
+{
+	std::string out, package, game, movie, settingsText = "{}", title;
+	int64_t clockStart = -1;
+	std::vector<std::pair<std::string, std::string>> files, firmware;
+	for (size_t i = 0; i < args.size(); i++)
+	{
+		const std::string &arg = args[i];
+		/* <name>=<path> */
+		auto pair = [&](std::vector<std::pair<std::string, std::string>> &into) {
+			const std::string spec = i + 1 < args.size() ? args[++i] : std::string();
+			const size_t eq = spec.find('=');
+			if (eq == std::string::npos || eq == 0) return false;
+			into.emplace_back(spec.substr(0, eq), spec.substr(eq + 1));
+			return true;
+		};
+		if (arg == "--file") { if (!pair(files)) return fail("", "--file wants <slot>=<path>"); }
+		else if (arg == "--firmware") { if (!pair(firmware)) return fail("", "--firmware wants <id>=<path>"); }
+		else if (arg == "--settings" && i + 1 < args.size()) settingsText = args[++i];
+		else if (arg == "--title" && i + 1 < args.size()) title = args[++i];
+		else if (arg == "--movie" && i + 1 < args.size()) movie = args[++i];
+		else if (arg == "--clock-start" && i + 1 < args.size()) clockStart = wholeNumber(args[++i], arg);
+		else if (arg.rfind("--", 0) == 0) return fail("", "--new-project does not take " + arg);
+		else if (out.empty()) out = arg;
+		else if (package.empty()) package = arg;
+		else if (game.empty()) game = arg;
+		else if (movie.empty()) movie = arg;
+		else return fail("", "unexpected argument: " + arg);
+	}
+	if (!g_badNumber.empty()) return fail("", g_badNumber);
+	if (out.empty() || package.empty())
+	{
+		std::fprintf(stderr, "usage: chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie.txt>]]\n"
+			"           [--file <slot>=<path>]... [--movie <movie.txt>] [--settings <json>] [--firmware <id>=<path>]... [--title <text>] [--clock-start <seconds>]\n");
+		return 1;
+	}
+	if (game.size() > 17 && game.compare(game.size() - 17, 17, ".chimeraMultiFile") == 0)
+		return fail("", "a game of several files is given a file at a time, each in its slot: --file <slot>=<path>");
+
+	/* what the package says of itself */
+	const char *error = nullptr;
+	ce_package *pk = ce_package_open(package.c_str(), &error);
+	if (pk == nullptr) return fail("", std::string("package: ") + (error != nullptr ? error : "could not be opened"));
+	uint64_t len = 0;
+	const uint8_t *bytes = ce_package_entry(pk, "waterbox.config", &len);
+	cJSON *config = bytes != nullptr ? cJSON_ParseWithLength(reinterpret_cast<const char *>(bytes), static_cast<size_t>(len)) : nullptr;
+	/* what a run says of declarations it cannot read (session.cpp,
+	 * describeUnreadable): where they were read from, how much there was and
+	 * the first bytes, text as text and anything else as \xNN */
+	std::string unreadable = " (" + package + ": " + std::to_string(len) + (len == 1 ? " byte" : " bytes");
+	if (bytes != nullptr && len != 0)
+	{
+		unreadable += ", starting with ";
+		for (uint64_t i = 0; i < len && i < 16; i++)
+		{
+			char c[8];
+			if (bytes[i] >= 0x20 && bytes[i] < 0x7f && bytes[i] != '\\') std::snprintf(c, sizeof c, "%c", bytes[i]);
+			else std::snprintf(c, sizeof c, "\\x%02x", static_cast<unsigned>(bytes[i]));
+			unreadable += c;
+		}
+	}
+	unreadable += ")";
+	bytes = ce_package_entry(pk, "file_slots.json", &len);
+	const std::string slotsDecl = bytes != nullptr ? std::string(reinterpret_cast<const char *>(bytes), static_cast<size_t>(len)) : std::string();
+	const std::string sha1 = ce_package_sha1(pk) != nullptr ? ce_package_sha1(pk) : "";
+	ce_package_free(pk);
+	if (!cJSON_IsObject(config))
+	{
+		cJSON_Delete(config);
+		return fail("", "package: waterbox.config is not readable JSON" + unreadable);
+	}
+	auto text = [](const cJSON *o, const char *key) {
+		const cJSON *v = cJSON_GetObjectItemCaseSensitive(o, key);
+		return std::string(cJSON_IsString(v) ? v->valuestring : "");
+	};
+	auto printed = [](const cJSON *o) {
+		char *s = cJSON_PrintUnformatted(o);
+		std::string r = s != nullptr ? s : "";
+		if (s != nullptr) cJSON_free(s);
+		return r;
+	};
+
+	/* the game file's slot: the one that takes its kind of file, else the first */
+	if (!game.empty())
+	{
+		std::string slot = "rom", kind = std::filesystem::u8path(game).extension().u8string();
+		if (!kind.empty()) kind.erase(0, 1);
+		for (char &c : kind) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		cJSON *decl = slotsDecl.empty() ? nullptr : cJSON_Parse(slotsDecl.c_str());
+		const cJSON *list = cJSON_GetObjectItemCaseSensitive(decl, "slots"), *s = nullptr;
+		bool first = true, found = false;
+		cJSON_ArrayForEach(s, list)
+		{
+			if (first) slot = text(s, "id");
+			first = false;
+			const cJSON *f = nullptr;
+			cJSON_ArrayForEach(f, cJSON_GetObjectItemCaseSensitive(s, "formats"))
+			{
+				std::string k = cJSON_IsString(f) ? f->valuestring : "";
+				for (char &c : k) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+				if (!found && k == kind) { slot = text(s, "id"); found = true; }
+			}
+		}
+		cJSON_Delete(decl);
+		files.insert(files.begin(), {slot, game});
+	}
+
+	ce_project *p = ce_project_new();
+	auto refuse = [&](const std::string &why) {
+		ce_project_free(p);
+		cJSON_Delete(config);
+		return fail("", why);
+	};
+	ce_project_set_core(p, text(config, "coreName").c_str(), text(config, "version").c_str(), sha1.c_str());
+	for (const auto &[slot, path] : files)
+	{
+		const std::string name = std::filesystem::u8path(path).filename().u8string();
+		if (ce_project_file_add(p, name.c_str(), slot.c_str(), path.c_str(), &error) != 0)
+			return refuse(path + ": " + (error != nullptr ? error : "it could not be added"));
+	}
+	len = 0;
+	const char *slotsMap = ce_project_slots_text(p, &len);
+	const std::string slots = slotsMap != nullptr ? std::string(slotsMap, static_cast<size_t>(len)) : std::string("{}");
+
+	/* the settings: every one exposed for these files, the given value else the
+	 * default - asked again with what was chosen, as a setting may expose another */
+	cJSON *given = cJSON_Parse(settingsText.c_str());
+	if (!cJSON_IsObject(given))
+	{
+		cJSON_Delete(given);
+		return refuse("--settings is not a JSON object");
+	}
+	/* the machine the game's kind of file makes it, as Chimera chose one for a
+	 * game opened alone (WaterboxCoreFactory.MachinePinnedSettings): the system
+	 * that kind of file is (the package's own list first, then each machine's),
+	 * and the first machine of that system - unless --settings names one */
+	const std::string machineSetting = text(config, "machineSetting");
+	const cJSON *machines = cJSON_GetObjectItemCaseSensitive(config, "machines");
+	if (!machineSetting.empty() && cJSON_IsArray(machines) && !files.empty() && !cJSON_HasObjectItem(given, machineSetting.c_str()))
+	{
+		auto lower = [](std::string t) {
+			for (char &c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			return t;
+		};
+		const std::string kind = lower(std::filesystem::u8path(files.front().second).extension().u8string());
+		auto systemOf = [&](const cJSON *map) {
+			const cJSON *e = nullptr;
+			cJSON_ArrayForEach(e, map)
+				if (cJSON_IsString(e) && e->string != nullptr && lower(e->string) == kind) return std::string(e->valuestring);
+			return std::string();
+		};
+		std::string system = systemOf(cJSON_GetObjectItemCaseSensitive(config, "extensions"));
+		const cJSON *m = nullptr;
+		cJSON_ArrayForEach(m, machines)
+			if (system.empty()) system = systemOf(cJSON_GetObjectItemCaseSensitive(m, "extensions"));
+		cJSON_ArrayForEach(m, machines)
+		{
+			if (system.empty() || lower(text(m, "id")) != lower(system)) continue;
+			const cJSON *when = cJSON_GetObjectItemCaseSensitive(m, "when");
+			const std::string value = cJSON_IsArray(when) && cJSON_IsString(when->child) ? when->child->valuestring : text(m, "id");
+			cJSON_AddStringToObject(given, machineSetting.c_str(), value.c_str());
+			break;
+		}
+	}
+	const cJSON *decls = cJSON_GetObjectItemCaseSensitive(config, "settings");
+	const std::string declText = cJSON_IsArray(decls) ? printed(decls) : std::string("[]");
+	cJSON *recorded = cJSON_CreateObject();
+	{
+		const cJSON *d = nullptr;
+		cJSON_ArrayForEach(d, decls)
+		{
+			const cJSON *fallback = cJSON_GetObjectItemCaseSensitive(d, "default");
+			const std::string name = text(d, "name");
+			if (!name.empty() && fallback != nullptr && !cJSON_HasObjectItem(recorded, name.c_str()))
+				cJSON_AddItemToObject(recorded, name.c_str(), cJSON_Duplicate(fallback, 1));
+		}
+	}
+	std::string effective;
+	for (int pass = 0; pass < 4; pass++)
+	{
+		cJSON *now = cJSON_Duplicate(recorded, 1);
+		const cJSON *g = nullptr;
+		cJSON_ArrayForEach(g, given)
+		{
+			if (cJSON_HasObjectItem(now, g->string)) cJSON_ReplaceItemInObjectCaseSensitive(now, g->string, cJSON_Duplicate(g, 1));
+			else cJSON_AddItemToObject(now, g->string, cJSON_Duplicate(g, 1));
+		}
+		const std::string current = printed(now);
+		cJSON_Delete(now);
+		if (current == effective) break;
+		effective = current;
+		const char *exposed = ce_settings_evaluate(declText.data(), declText.size(), slots.data(), slots.size(),
+			effective.data(), effective.size(), &len);
+		cJSON *list = exposed != nullptr ? cJSON_ParseWithLength(exposed, static_cast<size_t>(len)) : nullptr;
+		cJSON_Delete(recorded);
+		recorded = cJSON_CreateObject();
+		const cJSON *e = nullptr;
+		cJSON_ArrayForEach(e, list)
+		{
+			const cJSON *index = cJSON_GetObjectItemCaseSensitive(e, "index");
+			const cJSON *d = cJSON_IsNumber(index) ? cJSON_GetArrayItem(decls, index->valueint) : nullptr;
+			const cJSON *fallback = cJSON_GetObjectItemCaseSensitive(d, "default");
+			const std::string name = text(e, "name");
+			if (!name.empty() && fallback != nullptr && !cJSON_HasObjectItem(recorded, name.c_str()))
+				cJSON_AddItemToObject(recorded, name.c_str(), cJSON_Duplicate(fallback, 1));
+		}
+		cJSON_Delete(list);
+	}
+	/* what was given goes in as given, exposed or not: the run is the one asked for */
+	{
+		const cJSON *g = nullptr;
+		cJSON_ArrayForEach(g, given)
+		{
+			if (!cJSON_HasObjectItem(recorded, g->string))
+				std::fprintf(stderr, "chimera-run: the setting %s is not one the package shows for these files; it is kept as given\n", g->string);
+			if (cJSON_HasObjectItem(recorded, g->string)) cJSON_ReplaceItemInObjectCaseSensitive(recorded, g->string, cJSON_Duplicate(g, 1));
+			else cJSON_AddItemToObject(recorded, g->string, cJSON_Duplicate(g, 1));
+		}
+	}
+	cJSON_Delete(given);
+	const std::string settingsOut = printed(recorded);
+	const int settingCount = cJSON_GetArraySize(recorded);
+	if (ce_project_set_settings_text(p, settingsOut.c_str(), &error) != 0)
+	{
+		cJSON_Delete(recorded);
+		return refuse(std::string("settings: ") + (error != nullptr ? error : "refused"));
+	}
+	/* the files against the package's slots, which the settings may open or close */
+	if (!slotsDecl.empty() && ce_project_validate(p, slotsDecl.data(), slotsDecl.size(), &error) != 0)
+	{
+		cJSON_Delete(recorded);
+		return refuse(std::string("the files do not fit the package's slots: ") + (error != nullptr ? error : "?"));
+	}
+
+	/* the machine, as the engine chooses it: the machine setting's value */
+	std::string platform = text(config, "systemId");
+	if (cJSON_IsArray(machines) && machines->child != nullptr)
+	{
+		const cJSON *chosenValue = cJSON_GetObjectItemCaseSensitive(recorded, machineSetting.c_str());
+		const std::string chosen = cJSON_IsString(chosenValue) ? chosenValue->valuestring : "";
+		platform = text(machines->child, "id");
+		const cJSON *m = nullptr;
+		bool found = false;
+		cJSON_ArrayForEach(m, machines)
+		{
+			if (found) break;
+			const cJSON *when = cJSON_GetObjectItemCaseSensitive(m, "when"), *w = nullptr;
+			cJSON_ArrayForEach(w, when)
+				if (cJSON_IsString(w) && chosen == w->valuestring) found = true;
+			if (!cJSON_IsArray(when) && text(m, "id") == chosen) found = true;
+			if (found) platform = text(m, "id");
+		}
+	}
+	cJSON_Delete(recorded);
+	if (!platform.empty()) ce_project_header_set(p, "Platform", platform.c_str());
+
+	/* the firmware, each pinned by its hash */
+	if (!firmware.empty())
+	{
+		cJSON *pins = cJSON_CreateArray();
+		for (const auto &[id, path] : firmware)
+		{
+			char hex[41] = {};
+			uint64_t size = 0;
+			if (ce_sha1_file(path.c_str(), hex, &size) != 1)
+			{
+				cJSON_Delete(pins);
+				return refuse("could not read firmware " + path);
+			}
+			cJSON *pin = cJSON_CreateObject();
+			cJSON_AddStringToObject(pin, "id", id.c_str());
+			cJSON_AddStringToObject(pin, "sha1", hex);
+			cJSON_AddItemToArray(pins, pin);
+		}
+		const std::string pinsText = printed(pins);
+		cJSON_Delete(pins);
+		if (ce_project_set_firmware_text(p, pinsText.c_str(), &error) != 0)
+			return refuse(std::string("firmware: ") + (error != nullptr ? error : "refused"));
+	}
+
+	/* the input, read as a run reads a movie */
+	int64_t frames = 0;
+	if (!movie.empty())
+	{
+		std::vector<uint8_t> movieText;
+		if (!readWholeFile(movie.c_str(), movieText)) return refuse("could not read movie " + movie);
+		ce_movie_log *log = ce_movie_log_new();
+		if (ce_movie_log_parse(log, reinterpret_cast<const char *>(movieText.data()), movieText.size()) != 0)
+		{
+			const std::string why = std::string("movie: ") + ce_movie_log_last_error(log);
+			ce_movie_log_free(log);
+			return refuse(why);
+		}
+		frames = ce_movie_log_count(log);
+		const char *lump = ce_movie_log_serialize(log, 0, &len);
+		ce_project_set_log_text(p, lump, len);
+		ce_movie_log_free(log);
+	}
+	if (clockStart >= 0 && ce_project_set_clock_start(p, clockStart) != 0)
+		return refuse("--clock-start is a time from 1970 to 2200, in seconds");
+	if (title.empty())
+		title = files.empty() ? text(config, "coreName") : std::filesystem::u8path(files.front().second).stem().u8string();
+	ce_project_set_title(p, title.c_str());
+	cJSON_Delete(config);
+	config = nullptr;
+	if (ce_project_save(p, out.c_str(), &error) != 0) return refuse(std::string("could not write ") + out + ": " + (error != nullptr ? error : "?"));
+	ce_project_free(p);
+	std::printf("made %s: %zu file%s, %d setting%s, %zu firmware, %lld frame%s\n", out.c_str(), files.size(), files.size() == 1 ? "" : "s",
+		settingCount, settingCount == 1 ? "" : "s", firmware.size(), static_cast<long long>(frames), frames == 1 ? "" : "s");
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 #if defined(_WIN32)
@@ -288,8 +641,8 @@ int main(int argc, char **argv)
 		argv = utf8Argv.data();
 	}
 #endif
-	const char *packagePath = nullptr, *romPath = nullptr, *moviePath = nullptr;
-	const char *settings = nullptr;
+	if (argc > 1 && std::strcmp(argv[1], "--new-project") == 0) return newProject(std::vector<std::string>(argv + 2, argv + argc));
+	const char *packagePath = nullptr;
 	std::string metaPath;
 	/* --core-log <path>: what the core says, kept in a file (ce_core_log), and
 	 * the "corelog" request mounted so a core with a fuller log keeps it */
@@ -355,15 +708,15 @@ int main(int argc, char **argv)
 	bool wantGpu = false;
 	std::string cacheDir;
 	bool suggest = false;
-	/* --precompile I/N[/game]: a compile session's share, -1 for none */
+	/* --import-movie <movie>: a movie made elsewhere (a Doom demo), mounted as
+	 * "movie", and the core's ImportMovie is asked what it amounts to
+	 * (ce_project_import_movie); --mount name=path adds the files offered with
+	 * it that the project holds no slot for, under the names given */
+	std::string importMoviePath;
+	std::vector<std::pair<std::string, std::string>> mounts;
+	/* --precompile I/N[/game]: a compile session's share, 0 sessions for none */
 	int32_t precompileIndex = -1, precompileCount = 0;
 	bool precompileFirmware = true;
-	/* --import-movie: the positional "rom" is a movie made elsewhere (a Doom
-	 * demo), mounted as "movie", and the core's ImportMovie is asked what it
-	 * amounts to (ce_import_movie); --mount name=path adds the files it needs,
-	 * under the names given */
-	bool importMovie = false;
-	std::vector<std::pair<std::string, std::string>> mounts;
 	/* Frames are drawn only when a screenshot asks for one, which makes this
 	 * runner a measurement of a seek rather than of play. --render-every-frame
 	 * is the other half of that A/B: the same run, drawing. */
@@ -454,8 +807,8 @@ int main(int argc, char **argv)
 		else if (arg == "--count-input-polls") countInputPolls = true;
 		else if (arg == "--record" && i + 1 < argc) recordPath = argv[++i];
 		else if (arg == "--record-key" && i + 1 < argc) recordKey = argv[++i];
-		else if (arg == "--settings" && i + 1 < argc) settings = argv[++i];
 		else if (arg == "--suggest") suggest = true;
+		else if (arg == "--import-movie" && i + 1 < argc) importMoviePath = argv[++i];
 		else if (arg == "--precompile" && i + 1 < argc)
 		{
 			const std::string spec = argv[++i];
@@ -464,7 +817,6 @@ int main(int argc, char **argv)
 				return fail(metaPath, "bad --precompile " + spec + " (want INDEX/COUNT[/game])");
 			precompileFirmware = spec.find("/game") == std::string::npos;
 		}
-		else if (arg == "--import-movie") importMovie = true;
 		else if (arg == "--mount" && i + 1 < argc)
 		{
 			const std::string spec = argv[++i];
@@ -600,10 +952,12 @@ int main(int argc, char **argv)
 			if (eq == std::string::npos) return fail(metaPath, "--dump wants <domain>=<path>");
 			dumps.emplace_back(spec.substr(0, eq), spec.substr(eq + 1));
 		}
+		else if (arg == "--settings")
+			return fail(metaPath, "--settings belongs to --new-project: a project holds its settings");
+		else if (arg.rfind("--", 0) == 0) return fail(metaPath, "unknown option: " + arg);
 		else if (packagePath == nullptr) packagePath = argv[i];
-		else if (projectPath.empty() && romPath == nullptr) romPath = argv[i];
-		else if (projectPath.empty() && moviePath == nullptr) moviePath = argv[i];
-		else return fail(metaPath, "unexpected argument: " + arg);
+		else return fail(metaPath, "unexpected argument: " + arg + " (a game runs only in a project:"
+			" chimera-run --new-project makes one, and --project <p.chimeraProject> runs it)");
 	}
 	if (!g_badNumber.empty()) return fail(metaPath, g_badNumber);
 	/* options that do nothing without another were taken and ignored: say so
@@ -617,52 +971,30 @@ int main(int argc, char **argv)
 	 * and always report a divergence */
 	if (greenzoneCheck && seekFrame >= 0 && rewindTo >= 0 && seekFrame != rewindTo)
 		return fail(metaPath, "--greenzone-check checks one frame: give --seek and --rewind-loop the same frame, or only one of them");
-	bool projectMode = !projectPath.empty();
-	if (projectMode ? packagePath == nullptr : (suggest || importMovie || precompileCount > 0 ? romPath == nullptr : moviePath == nullptr))
+	const bool importMovie = !importMoviePath.empty();
+	if (projectPath.empty() || packagePath == nullptr)
 	{
-		std::fprintf(stderr, "usage: chimera-run <package> <rom> <movie.txt> [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--record-key <LogKey>] [--settings <json>] [--dump <domain>=<path>]... [--firmware <id>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--ram-search-bench <domain>] [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame] [--cache-dir <folder>]\n"
-			"       chimera-run --project <p.chimeraProject> <package> [--files <dir>]... [--allow-core-mismatch] [the same run flags]\n"
-			"       chimera-run <package> <rom> --suggest [--mount <name>=<path>]... [--settings <json>] [--firmware <id>=<path>]...\n"
-			"       chimera-run <package> <rom> --precompile <i>/<n>[/game] --cache-dir <folder> [--mount <name>=<path>]... [--settings <json>] [--firmware <id>=<path>]...\n"
-			"       chimera-run <package> <movie> --import-movie [--mount <name>=<path>]... [--settings <json>]\n");
+		std::fprintf(stderr, "usage: chimera-run --project <p.chimeraProject> <package> [--files <dir>]... [--allow-core-mismatch] [--firmware <id>=<path>]... [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--record-key <LogKey>] [--dump <domain>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--ram-search-bench <domain>] [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame] [--cache-dir <folder>]\n"
+			"       chimera-run --project <p.chimeraProject> <package> --suggest\n"
+			"       chimera-run --project <p.chimeraProject> <package> --import-movie <movie> [--mount <name>=<path>]...\n"
+			"       chimera-run --project <p.chimeraProject> <package> --precompile <i>/<n>[/game] --cache-dir <folder>\n"
+			"       chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie.txt>]] [--file <slot>=<path>]... [--movie <movie.txt>] [--settings <json>] [--firmware <id>=<path>]...\n"
+			"A game runs only in a project: --new-project makes one from a game file, and --project runs it.\n");
 		return 1;
 	}
-	if (projectMode && settings != nullptr)
-	{
-		return fail(metaPath, "--settings and --project do not mix: the project IS the settings");
-	}
-	if (projectMode && (suggest || importMovie))
-	{
-		return fail(metaPath, "--suggest and --import-movie take a game file, not --project");
-	}
+	if ((suggest ? 1 : 0) + (importMovie ? 1 : 0) + (precompileCount > 0 ? 1 : 0) > 1)
+		return fail(metaPath, "--suggest, --import-movie and --precompile are one question each: give one");
+	if (!mounts.empty() && !importMovie)
+		return fail(metaPath, "--mount gives files to --import-movie: give one");
 
-	std::vector<uint8_t> rom, movieText;
-	if (!projectMode && !suggest && !importMovie && precompileCount == 0 && !readWholeFile(moviePath, movieText)) return fail(metaPath, std::string("could not read movie ") + moviePath);
-
-	/* A .chimeraMultiFile rom is a multi-file game: the first image mounts as
-	 * the rom (rom.name carrying its real name), further images as rom2..N,
-	 * support files and savedata under their fixed names - the exact mounts
-	 * the frontend makes. Everything hash-verified; refuse on any mismatch
-	 * (this tool has no user to ask). */
-	ce_multifile *multi = nullptr;
-	ce_project *project = nullptr;
-	std::vector<const char *> extraNames;
-	std::vector<const uint8_t *> extraData;
-	std::vector<uint64_t> extraLens;
-	/* per extra: a path to read it from, or null to use the bytes above */
-	std::vector<const char *> extraPaths;
-	std::string romPathStore;
-	std::vector<std::string> extraNameStore;
-	std::vector<std::string> extraPathStore; /* reserved before use: extraPaths points into it */
-	if (projectMode)
+	/* resolution: the project's own folder first (the convenience), then
+	 * every --files dir; whatever is still missing or mismatched fails when
+	 * the machine is opened - this tool has no user to knowingly override */
+	std::vector<uint8_t> movieText;
+	const char *perr = nullptr;
+	ce_project *project = ce_project_open(projectPath.c_str(), &perr);
+	if (project == nullptr) return fail(metaPath, perr != nullptr ? perr : "bad project");
 	{
-		const char *perr = nullptr;
-		project = ce_project_open(projectPath.c_str(), &perr);
-		if (project == nullptr) return fail(metaPath, perr != nullptr ? perr : "bad project");
-
-		/* resolution: the project's own folder first (the convenience), then
-		 * every --files dir; whatever is still missing or mismatched fails when
-		 * the machine is opened - this tool has no user to knowingly override */
 		size_t cut = projectPath.find_last_of("/\\");
 		std::string projFolder = cut == std::string::npos ? std::string(".") : projectPath.substr(0, cut);
 		ce_project_resolve_dir(project, projFolder.c_str());
@@ -676,91 +1008,10 @@ int main(int argc, char **argv)
 		movieText.assign(reinterpret_cast<const uint8_t *>(lump),
 			reinterpret_cast<const uint8_t *>(lump) + len);
 	}
-	std::string romPathStr = projectMode ? std::string() : romPath;
-	if (romPathStr.size() > 17 &&
-		romPathStr.compare(romPathStr.size() - 17, 17, ".chimeraMultiFile") == 0)
-	{
-		const char *merr = nullptr;
-		multi = ce_multifile_open(romPath, &merr);
-		if (multi == nullptr) return fail(metaPath, merr != nullptr ? merr : "bad descriptor");
-		if (ce_multifile_ok(multi) == 0)
-		{
-			for (int32_t i = 0; i < ce_multifile_count(multi); i++)
-			{
-				if (ce_multifile_status(multi, i) != 0)
-					return fail(metaPath, std::string("multifile: '") + ce_multifile_name(multi, i)
-						+ (ce_multifile_status(multi, i) == 1 ? "' is missing" : "' does not match its recorded hash"));
-			}
-		}
-		/* by path, as a single rom is and as a project's files are: the
-		 * engine reads each from where it lies (see THE PATH below) */
-		const std::string descriptorPath = romPath;
-		const size_t cut = descriptorPath.find_last_of("/\\");
-		const std::string folder = cut == std::string::npos ? std::string() : descriptorPath.substr(0, cut + 1);
-		auto pathOf = [&](int32_t i) -> const char *
-		{
-			extraPathStore.push_back(folder + ce_multifile_name(multi, i));
-			return extraPathStore.back().c_str();
-		};
-		extraPathStore.reserve(static_cast<size_t>(ce_multifile_count(multi)) + 1);
-		int32_t primary = ce_multifile_image_index(multi, 0);
-		romPathStore = pathOf(primary);
-		extraNameStore.push_back("rom.name");
-		extraNameStore.push_back(ce_multifile_name(multi, primary));
-		for (int32_t n = 1; n < ce_multifile_image_count(multi); n++)
-		{
-			extraNameStore.push_back("rom" + std::to_string(n + 1));
-		}
-		// mounts: rom.name first, then rom2..N, then the rest by name
-		size_t store = 0;
-		extraNames.push_back(extraNameStore[store++].c_str());
-		{
-			const std::string &nm = extraNameStore[store++];
-			extraData.push_back(reinterpret_cast<const uint8_t *>(nm.data()));
-			extraLens.push_back(nm.size());
-			extraPaths.push_back(nullptr);
-		}
-		for (int32_t n = 1; n < ce_multifile_image_count(multi); n++)
-		{
-			int32_t idx = ce_multifile_image_index(multi, n);
-			extraNames.push_back(extraNameStore[store++].c_str());
-			extraData.push_back(nullptr);
-			extraLens.push_back(0);
-			extraPaths.push_back(pathOf(idx));
-		}
-		for (int32_t i = 0; i < ce_multifile_count(multi); i++)
-		{
-			const char *role = ce_multifile_role(multi, i);
-			if (std::strcmp(role, "support") == 0)
-			{
-				extraNames.push_back(ce_multifile_name(multi, i));
-				extraData.push_back(nullptr);
-				extraLens.push_back(0);
-				extraPaths.push_back(pathOf(i));
-			}
-			else if (std::strcmp(role, "savedata") == 0)
-			{
-				extraNames.push_back("savedata");
-				extraData.push_back(nullptr);
-				extraLens.push_back(0);
-				extraPaths.push_back(pathOf(i));
-			}
-		}
-	}
-	else if (!projectMode)
-	{
-		/* THE PATH, not the bytes. The engine mounts a rom from where it lies
-		 * when it is told where that is, and reads it lazily from there; hand
-		 * it a byte array instead and the file is copied three times over -
-		 * once here, once into the session, once into the guest's file system -
-		 * before the machine has read a sector of it. A 2 GB DOS hard disk cost
-		 * 8.3 GB that way, which is the frontend's own behaviour nowhere: it
-		 * has always passed the path. */
-		romPathStore = romPath;
-	}
+	const bool asking = suggest || importMovie || precompileCount > 0;
 
 	ce_movie_log *movie = ce_movie_log_new();
-	if (!suggest && !importMovie && ce_movie_log_parse(movie, reinterpret_cast<const char *>(movieText.data()), movieText.size()) != 0)
+	if (!asking && ce_movie_log_parse(movie, reinterpret_cast<const char *>(movieText.data()), movieText.size()) != 0)
 	{
 		return fail(metaPath, std::string("movie: ") + ce_movie_log_last_error(movie));
 	}
@@ -789,79 +1040,49 @@ int main(int argc, char **argv)
 	}
 
 	const char *error = nullptr;
-	/* --import-movie: the movie is mounted as "movie", not as the rom, and the
-	 * --mount files beside it; the core's answer is printed as its JSON */
+	/* --import-movie: the movie is mounted as "movie", and the --mount files
+	 * beside it; the core's answer is printed as its JSON */
 	if (importMovie)
 	{
 		std::vector<const char *> names, paths;
-		std::vector<const uint8_t *> datas;
-		std::vector<uint64_t> lens;
-		names.push_back("movie");
-		paths.push_back(romPath);
 		for (const auto &m : mounts)
 		{
 			names.push_back(m.first.c_str());
 			paths.push_back(m.second.c_str());
 		}
-		datas.assign(names.size(), nullptr);
-		lens.assign(names.size(), 0);
 		uint64_t len = 0;
-		const char *answer = ce_import_movie(
-			packagePath, nullptr, 0, nullptr,
-			settings, fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
-			names.data(), datas.data(), lens.data(), paths.data(),
-			static_cast<int32_t>(names.size()), &len, &error);
+		const char *answer = ce_project_import_movie(packagePath, project, importMoviePath.c_str(),
+			names.data(), paths.data(), static_cast<int32_t>(names.size()),
+			fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()), &len, &error);
 		if (answer == nullptr) return fail(metaPath, error != nullptr ? error : "could not open the core");
 		std::printf("%.*s\n", static_cast<int>(len), answer);
 		return 0;
 	}
-	/* --suggest: what the core would choose for this game, printed as its
-	 * JSON, and nothing is started (ce_suggest_settings). The --mount files
-	 * are the other files picked so far, the slot map among them ("slots"),
-	 * as a frontend's new-project form asks. */
+	/* --suggest: what the core would choose for the project's files, printed
+	 * as its JSON, and nothing is started (ce_project_suggest_settings) */
 	if (suggest)
 	{
-		for (const auto &m : mounts)
-		{
-			extraNames.push_back(m.first.c_str());
-			extraData.push_back(nullptr);
-			extraLens.push_back(0);
-			extraPaths.push_back(m.second.c_str());
-		}
 		uint64_t len = 0;
-		const char *answer = ce_suggest_settings(
-			packagePath, rom.data(), rom.size(), romPathStore.empty() ? nullptr : romPathStore.c_str(),
-			settings, fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
-			extraNames.data(), extraData.data(), extraLens.data(), extraPaths.data(),
-			static_cast<int32_t>(extraNames.size()), &len, &error);
+		const char *answer = ce_project_suggest_settings(packagePath, project,
+			fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()), &len, &error);
 		if (answer == nullptr) return fail(metaPath, error != nullptr ? error : "could not open the core");
 		std::printf("%.*s\n", static_cast<int>(len), answer);
 		return 0;
 	}
-	/* --precompile: a compile session, as Chimera's headless frontend runs one
-	 * for its New Project wizard. The machine boots and never runs; it
-	 * compiles the share of the game's code whose names hash to I of N, and
-	 * the engine says how far it is a line at a time ("Precompiled 3/21
-	 * modules", each time the progress is read) and each object it stores
-	 * ("[cache] stored <name> <sha1>").
-	 * Several side by side, in their own processes, compile the whole game. */
+	/* --precompile: a compile session, as a frontend's New Project window
+	 * runs several side by side before the project is final. The machine
+	 * boots and never runs; it compiles the share of the game's code whose
+	 * names hash to I of N, and the engine says how far it is a line at a time
+	 * ("Precompiled 3/21 modules", each time the progress is read) and each
+	 * object it stores ("[cache] stored <name> <sha1>"). */
 	if (precompileCount > 0)
 	{
-		for (const auto &m : mounts)
-		{
-			extraNames.push_back(m.first.c_str());
-			extraData.push_back(nullptr);
-			extraLens.push_back(0);
-			extraPaths.push_back(m.second.c_str());
-		}
 		/* whoever started this session reads these lines as they come */
 		std::setvbuf(stdout, nullptr, _IOLBF, 0);
 		ce_precompile_request(precompileIndex, precompileCount, precompileFirmware ? 1 : 0);
-		ce_session *pre = ce_session_open(
-			packagePath, rom.data(), rom.size(), romPathStore.empty() ? nullptr : romPathStore.c_str(),
-			settings, fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
-			extraNames.data(), extraData.data(), extraLens.data(), extraPaths.data(),
-			static_cast<int32_t>(extraNames.size()), &error);
+		ce_session *pre = ce_session_open_project(packagePath, project, nullptr,
+			fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
+			allowCoreMismatch ? CE_OPEN_ALLOW_CORE_MISMATCH : 0u, &error);
 		ce_precompile_request(0, 0, 0);
 		if (pre == nullptr) return fail(metaPath, error != nullptr ? error : "session open failed");
 		if (ce_session_precompile_done(pre) < 0)
@@ -871,8 +1092,8 @@ int main(int argc, char **argv)
 			return 3;
 		}
 		std::fprintf(stderr, "precompile session %d of %d: cache %s\n", precompileIndex, precompileCount,
-			ce_cache_dir_get() != nullptr ? ce_cache_dir_get() : "(none)");
-		uint32_t done = 0, total = 0;
+			ce_cache_dir_get()[0] != '\0' ? ce_cache_dir_get() : "(none)");
+		uint32_t done = 0, total = 0, shown = UINT32_MAX;
 		while (ce_session_precompile_done(pre) == 0)
 		{
 			if (ce_session_frame_advance(pre, 0, 0) < 0)
@@ -884,27 +1105,24 @@ int main(int argc, char **argv)
 				return 4;
 			}
 			ce_session_precompile_progress(pre, &done, &total);
+			if (done != shown) { std::printf("Precompiled %u/%u modules\n", done, total); shown = done; }
 		}
 		ce_session_precompile_progress(pre, &done, &total);
+		std::printf("Precompiled %u/%u modules\n", done, total);
 		std::printf("precompile session %d of %d: %llu objects stored, %llu fetched\n", precompileIndex, precompileCount,
 			static_cast<unsigned long long>(ce_session_cache_stored(pre)), static_cast<unsigned long long>(ce_session_cache_fetched(pre)));
 		ce_session_free(pre);
+		ce_project_free(project);
 		return 0;
 	}
 	if (!coreLogPath.empty() && ce_core_log(coreLogPath.c_str()) == 0)
 		return fail(metaPath, std::string("--core-log: ") + ce_core_log_error());
-	/* A project is opened by the engine's one call for it, the same one the
-	 * frontend uses; a rom opened directly is given as it is. */
-	ce_session *session = projectMode
-		? ce_session_open_project(
-			packagePath, project, nullptr,
-			fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
-			allowCoreMismatch ? CE_OPEN_ALLOW_CORE_MISMATCH : 0u, &error)
-		: ce_session_open(
-			packagePath, rom.data(), rom.size(), romPathStore.empty() ? nullptr : romPathStore.c_str(),
-			settings, fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
-			extraNames.data(), extraData.data(), extraLens.data(), extraPaths.data(),
-			static_cast<int32_t>(extraNames.size()), &error);
+	/* the project is opened by the engine's one call for it, the same one the
+	 * frontend uses */
+	ce_session *session = ce_session_open_project(
+		packagePath, project, nullptr,
+		fwIds.data(), fwData.data(), fwLens.data(), static_cast<int32_t>(fwIds.size()),
+		allowCoreMismatch ? CE_OPEN_ALLOW_CORE_MISMATCH : 0u, &error);
 	if (session == nullptr) return fail(metaPath, error != nullptr ? error : "session open failed");
 
 	if (drawEveryFrame) ce_session_draw_every_frame(session, 1);
@@ -2068,7 +2286,6 @@ int main(int argc, char **argv)
 		for (uint64_t i = 0; i < ce_mcp_log_total(); i++) std::fprintf(stderr, "mcp: %s\n", ce_mcp_log_line(i));
 	}
 	ce_session_free(session);
-	if (multi != nullptr) ce_multifile_free(multi);
-	if (project != nullptr) ce_project_free(project);
+	ce_project_free(project);
 	return 0;
 }

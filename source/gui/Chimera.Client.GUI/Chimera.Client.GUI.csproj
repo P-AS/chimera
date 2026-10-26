@@ -42,9 +42,6 @@
 		<None Remove="Properties/Resources.resources" />
 	</ItemGroup>
 	<ItemGroup>
-		<Compile Update="ArchiveChooser.cs" SubType="Form" />
-		<Compile Update="ArchiveChooser.Designer.cs" DependentUpon="ArchiveChooser.cs" />
-		<EmbeddedResource Update="ArchiveChooser.resx" DependentUpon="ArchiveChooser.cs" SubType="Designer" />
 		<Compile Update="AVOut/FFmpegWriterForm.cs" SubType="Form" />
 		<Compile Update="AVOut/FFmpegWriterForm.Designer.cs" DependentUpon="FFmpegWriterForm.cs" />
 		<EmbeddedResource Update="AVOut/FFmpegWriterForm.resx" DependentUpon="FFmpegWriterForm.cs" />
@@ -270,15 +267,9 @@
 		<Compile Update="OpenAdvancedChooser.cs" SubType="Form" />
 		<Compile Update="OpenAdvancedChooser.Designer.cs" DependentUpon="OpenAdvancedChooser.cs" />
 		<EmbeddedResource Update="OpenAdvancedChooser.resx" DependentUpon="OpenAdvancedChooser.cs" />
-		<Compile Update="PlatformChooser.cs" SubType="Form" />
-		<Compile Update="PlatformChooser.Designer.cs" DependentUpon="PlatformChooser.cs" />
-		<EmbeddedResource Update="PlatformChooser.resx" DependentUpon="PlatformChooser.cs" />
 <!-- creates circular dependency
 		<Compile Update="Properties/Resources.cs" DependentUpon="Resources.resx" />
 -->
-		<Compile Update="tools/BatchRun.cs" SubType="Form" />
-		<Compile Update="tools/BatchRun.Designer.cs" DependentUpon="BatchRun.cs" />
-		<EmbeddedResource Update="tools/BatchRun.resx" DependentUpon="BatchRun.cs" />
 		<Compile Update="tools/Debugger/AddBreakpointDialog.cs" SubType="Form" />
 		<Compile Update="tools/Debugger/AddBreakpointDialog.Designer.cs" DependentUpon="AddBreakpointDialog.cs" />
 		<EmbeddedResource Update="tools/Debugger/AddBreakpointDialog.resx" DependentUpon="AddBreakpointDialog.cs" />

@@ -87,9 +87,7 @@ namespace Chimera.Client.Common
 		/// is where the input actually stops.
 		///
 		/// "(Finished)" is asked of the FRAME, not of MovieMode.Finished, which
-		/// is a different question: that mode is set by MovieEndAction when
-		/// PLAYBACK reaches the end, so it never arrives while recording, and
-		/// not at all when the end action is Record or Stop. This is simply "we
+		/// is a different question about the movie's mode. This is simply "we
 		/// are past the last input frame", whatever the mode.
 		///
 		/// A movie that is not a TAS movie has no last-press to ask about, so it
