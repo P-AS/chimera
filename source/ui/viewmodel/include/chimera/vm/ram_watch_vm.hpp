@@ -66,11 +66,6 @@ public:
 	 * each ("" while showOnScreen is off), as Chimera shows them */
 	Property<bool> showOnScreen{true};
 	Property<std::string> onScreenText;
-	/* the window's form for a new watch: its size, the ways a value of that
-	 * size can be shown (a line each) and the one chosen, by place */
-	Property<int64_t> formSize{1};
-	Property<std::string> formDisplays;
-	Property<int64_t> formDisplay{0};
 
 	/* "3 watches", as Chimera counts them (separators not) */
 	Property<std::string> countText{"0 watches"};
@@ -142,7 +137,7 @@ private:
 	std::vector<Watch> watches_;
 	Rows rows_{*this};
 	int hooks_ = 0;
-	Connection opensWatch_, previousTypeWatch_, formSizeWatch_, showWatch_, freezesWatch_;
+	Connection opensWatch_, previousTypeWatch_, showWatch_, freezesWatch_;
 	bool frozen(const Watch &w) const;
 	std::string systemId_;
 	/* each domain's size, as the machine last said (the view's thread) */

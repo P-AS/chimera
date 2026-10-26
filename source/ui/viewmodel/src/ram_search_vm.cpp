@@ -152,7 +152,6 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 		return {};
 	};
 	command("clearChangeCounts", "every candidate's change count back to 0", {}, clearCounts, &searching);
-	command("clearChanges", "the same as clearChangeCounts", {}, clearCounts, &searching);
 	command("clearUndo", "Clear Undo History: nothing can be taken back", {}, [this](const Args &, std::string &) -> Value {
 		onSearch([](ce_ramsearch *rs) {
 			ce_ramsearch_clear_history(rs);

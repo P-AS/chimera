@@ -4032,7 +4032,6 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 			}
 		/* given once the window has this machine's buttons (adoptOnMachine,
 		 * below): a project with none saved hides by them */
-		columnsLoadedM_ = saved;
 		columnsLater = [this, held, hidden, saved] {
 			autoHeldColumnsLoaded.emit(held);
 			if (saved) hiddenColumnsLoaded.emit(hidden);

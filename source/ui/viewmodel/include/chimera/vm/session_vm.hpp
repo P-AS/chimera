@@ -189,8 +189,6 @@ public:
 	 * into a picture; false when there is none */
 	Property<std::string> surfaces{"[]"};
 	bool renderSurface(int32_t index, Picture &into);
-	/* while recording, every frame is drawn, whatever turbo and Display Nothing say */
-	void setRecording(bool on) { recordingM_ = on; }
 	Property<bool> showGameTime{false};
 	Property<std::string> gameTimeText;
 	/* Chimera's Tools > Export Core Log: what the cores write, kept in a
@@ -1065,7 +1063,6 @@ private:
 	std::vector<uint8_t> stated_;
 	std::vector<size_t> columnAtM_;
 	std::string freshColumnsM_;
-	bool columnsLoadedM_ = false;
 	/* the defaults, sent once a machine's controls are known */
 	void loadDefaultColumns();
 	/* what the counters over the picture last worked out, so a frame run

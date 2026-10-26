@@ -1349,7 +1349,6 @@ function forms.setlocation(handle, x, y) C.forms.setLocation(handle, x, y) end
 function forms.setsize(handle, width, height) C.forms.setSize(handle, width, height) end
 function forms.setdropdownitems(handle, items, alphabetize) C.forms.setDropdownItems(handle, itemsText(items), alphabetize ~= false) end
 function forms.createcolor(r, g, b, a) return ((a or 255) & 0xFF) << 24 | (r & 0xFF) << 16 | (g & 0xFF) << 8 | (b & 0xFF) end
-function forms.openfile() error("forms.openfile: not here yet") end
 -- a picture box: drawn on as gui draws over the picture, shown on refresh
 function forms.pictureBox(form, x, y, width, height)
 	local box = C.forms.pictureBox(form, x, y, width, height)

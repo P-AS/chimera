@@ -155,8 +155,6 @@ LuaBridge::LuaBridge() : L_(luaL_newstate())
 
 	lua_newtable(L_);
 	lua_setglobal(L_, "chimera");
-	lua_pushcfunction(L_, &LuaBridge::print);
-	lua_setglobal(L_, "print");
 	lua_pushcfunction(L_, &LuaBridge::write);
 	lua_setglobal(L_, "__chimera_write");
 	lua_pushcfunction(L_, &LuaBridge::enter);
@@ -336,22 +334,6 @@ int LuaBridge::call(lua_State *L)
 		}
 	}
 	return failed ? lua_error(L) : 1;
-}
-
-int LuaBridge::print(lua_State *L)
-{
-	const int n = lua_gettop(L);
-	luaL_Buffer b;
-	luaL_buffinit(L, &b);
-	for (int i = 1; i <= n; i++)
-	{
-		if (i > 1) luaL_addchar(&b, '\t');
-		luaL_tolstring(L, i, nullptr);
-		luaL_addvalue(&b);
-	}
-	luaL_pushresult(&b);
-	bridgeOf(L)->log(lua_tostring(L, -1));
-	return 0;
 }
 
 /* text as it is written, line ends and all (console.write) */

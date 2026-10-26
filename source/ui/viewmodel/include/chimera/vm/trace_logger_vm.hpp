@@ -79,7 +79,6 @@ public:
 	/* the machine's cycles run, when the core counts them */
 	Property<int64_t> cycles{0};
 	Property<bool> hasCycles{false};
-	Property<std::string> status;
 	const std::vector<SessionViewModel::Register> &registers() const { return registers_; }
 
 private:

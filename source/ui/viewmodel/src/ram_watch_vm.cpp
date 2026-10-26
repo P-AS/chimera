@@ -64,9 +64,6 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	expose("status", "what RAM Watch last had to say", status);
 	expose("showOnScreen", "the watches marked for it are shown over the picture", showOnScreen, true);
 	expose("onScreenText", "what is shown over the picture: \"note: value\", a line each", onScreenText);
-	expose("formSize", "the new watch's size: 1, 2 or 4 bytes", formSize, true);
-	expose("formDisplays", "the ways a value of that size can be shown, a line each", formDisplays);
-	expose("formDisplay", "the way chosen, by its place in formDisplays", formDisplay, true);
 	rows("watches", "one row a watch: address, value, previous value, changes, difference, domain, note, size, how it is shown, on screen", rows_);
 
 	command("add", "watches an address: domain, address, size (1, 2 or 4), display (0 unsigned, 1 signed, 2 hex, 3 binary, "
@@ -100,30 +97,6 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			watches_.push_back(w);
 			listChanged(true);
 			return static_cast<int64_t>(watches_.size() - 1);
-		});
-	command("addFromForm", "watches an address (hex) in a domain, at the form's size and display", {"domain", "address", "bigEndian", "note"},
-		[this](const Args &a, std::string &error) -> Value {
-			std::string domain, address, note;
-			bool bigEndian = false;
-			if (!arg(a, 0, domain, error) || !arg(a, 1, address, error)) return {};
-			if (a.size() > 2 && !arg(a, 2, bigEndian, error)) return {};
-			if (a.size() > 3 && !arg(a, 3, note, error)) return {};
-			char *end = nullptr;
-			const long long at = std::strtoll(address.c_str(), &end, 16);
-			if (address.empty() || end == nullptr || *end != '\0' || at < 0)
-			{
-				error = "\"" + address + "\" is not an address in hex";
-				return {};
-			}
-			const std::vector<watch::Display> &ways = watch::displaysFor(static_cast<int>(formSize.get()));
-			if (ways.empty() || formDisplay.get() < 0 || formDisplay.get() >= static_cast<int64_t>(ways.size()))
-			{
-				error = "choose a size and a way to show it";
-				return {};
-			}
-			const auto added = run("add", {domain, int64_t{at}, formSize.get(), static_cast<int64_t>(ways[static_cast<size_t>(formDisplay.get())]),
-				bigEndian, note}, error);
-			return added.has_value() ? *added : Value{};
 		});
 	command("addProperty", "watches a game core's property by its name (\"Score\", \"Row[2]\")", {"name"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -162,23 +135,6 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		listChanged(true);
 		return {};
 	});
-	command("move", "moves a watch to another place in the list", {"index", "to"}, [this](const Args &a, std::string &error) -> Value {
-		size_t i = 0, to = 0;
-		if (!index(a, 0, i, error) || !index(a, 1, to, error)) return {};
-		Watch w = watches_[i];
-		watches_.erase(watches_.begin() + static_cast<long>(i));
-		watches_.insert(watches_.begin() + static_cast<long>(to), w);
-		listChanged(true);
-		return {};
-	});
-	command("setNote", "a watch's note", {"index", "note"}, [this](const Args &a, std::string &error) -> Value {
-		size_t i = 0;
-		std::string note;
-		if (!index(a, 0, i, error) || !arg(a, 1, note, error)) return {};
-		watches_[i].note = note;
-		listChanged(true);
-		return {};
-	});
 	command("setDisplay", "how a watch's value is shown (as add)", {"index", "display"}, [this](const Args &a, std::string &error) -> Value {
 		size_t i = 0;
 		int64_t display = 0;
@@ -204,11 +160,6 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		watches_[i].onScreen = on;
 		listChanged(true);
 		return {};
-	});
-	command("toggleOnScreen", "shows a watch over the picture, or stops", {"index"}, [this](const Args &a, std::string &error) -> Value {
-		size_t i = 0;
-		if (!index(a, 0, i, error)) return {};
-		return run("setOnScreen", {static_cast<int64_t>(i), !watches_[i].onScreen}, error).has_value() ? Value(watches_[i].onScreen) : Value{};
 	});
 	command("clearChangeCounts", "every watch's changes back to 0", {}, [this](const Args &, std::string &) -> Value {
 		for (Watch &w : watches_) w.changes = 0;
@@ -762,17 +713,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		[this](ce_session *) {
 			for (Watch &w : watchesM_) w.readable = false;
 		});
-	auto showWays = [this] {
-		std::string lines;
-		for (const watch::Display d : watch::displaysFor(static_cast<int>(formSize.get())))
-			lines += (lines.empty() ? "" : "\n") + std::string(watch::displayName(d));
-		formDisplays.set(lines);
-		const int64_t n = static_cast<int64_t>(watch::displaysFor(static_cast<int>(formSize.get())).size());
-		if (formDisplay.get() >= n) formDisplay.set(0);
-	};
-	formSizeWatch_ = formSize.changed.connect(showWays);
 	showWatch_ = showOnScreen.changed.connect([this] { refreshOnScreen(); });
-	showWays();
 	opensWatch_ = session_.opens.changed.connect([this] { refreshDomains(); });
 	freezesWatch_ = session_.freezesChanged.connect([this] {
 		anyFrozen.set(session_.frozenCount.get() > 0);

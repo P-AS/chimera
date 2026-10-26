@@ -144,7 +144,7 @@ private:
 	std::atomic<bool> postedM_{false};
 	std::mutex outM_;
 	std::vector<uint8_t> out_, outChanged_;
-	int64_t outFrom_ = 0, outSize_ = 0;
+	int64_t outFrom_ = 0;
 };
 
 } // namespace chimera::vm

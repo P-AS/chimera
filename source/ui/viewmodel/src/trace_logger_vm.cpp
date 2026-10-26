@@ -167,7 +167,6 @@ DebuggerViewModel::DebuggerViewModel(Dispatcher &dispatcher, SessionViewModel &s
 {
 	expose("cycles", "the machine's cycles run, when the core counts them", cycles);
 	expose("hasCycles", "the core counts the cycles it runs", hasCycles);
-	expose("status", "what the debugger last did", status);
 	rows("registers", "the core's registers: name, value, hex (as many digits as the core says), bits", rows_);
 	command("refresh", "the registers read again", {}, [this](const Args &, std::string &) -> Value {
 		refresh();

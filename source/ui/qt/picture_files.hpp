@@ -78,14 +78,10 @@ public:
 		if (folderFor()) return folderFor()();
 		return QCoreApplication::applicationDirPath() + QStringLiteral("/Screenshots");
 	}
-	/* a folder as a dialog's address, and the folder a chosen file is in */
+	/* a folder as a dialog's address; a file's path from its URL */
 	Q_INVOKABLE QUrl folderUrl(const QString &path) const { return path.isEmpty() ? QUrl() : QUrl::fromLocalFile(path); }
 	Q_INVOKABLE bool exists(const QString &path) const { return !path.isEmpty() && QFileInfo::exists(path); }
 	Q_INVOKABLE QString localPath(const QUrl &file) const { return file.isLocalFile() ? file.toLocalFile() : file.toString(); }
-	Q_INVOKABLE QString folderOf(const QUrl &file) const
-	{
-		return QFileInfo(file.isLocalFile() ? file.toLocalFile() : file.toString()).absolutePath();
-	}
 	/* a screenshot's name as Chimera's: the game, then the date and time
 	 * ("walker.2026-10-23 11.35.46"), in the screenshot folder, no ending */
 	static QString screenshotBase(QString game)

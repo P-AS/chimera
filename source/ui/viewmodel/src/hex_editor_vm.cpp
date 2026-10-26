@@ -698,7 +698,6 @@ void HexEditorViewModel::readOnMachine(ce_session *s)
 		out_ = std::move(now);
 		outChanged_ = std::move(changed);
 		outFrom_ = from;
-		outSize_ = ce_session_domain_size(s, i);
 	}
 	if (!postedM_.exchange(true))
 		later([this] {

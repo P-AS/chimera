@@ -150,7 +150,6 @@ private:
 	static int index(lua_State *L);
 	static int newIndex(lua_State *L);
 	static int call(lua_State *L);
-	static int print(lua_State *L);
 	static int write(lua_State *L);
 	static int enter(lua_State *L);
 	static int folder(lua_State *L);
