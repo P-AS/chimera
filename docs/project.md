@@ -681,6 +681,11 @@ opened a project. It does now, with the engine's sentence as the refusal.
   guest kit's waterbox_slots.h - DOSBox-X mounts mixed media (floppies +
   CDs + hard disk + conf, gated: the slots leg, 12/12), PPSSPP boots the
   disc slot, both NES cores read the rom slot.
+- DONE (2026-10-26): `chimera-run --new-project`, which makes a project
+  from the command line, as New Project makes one; a game runs only in a
+  project (user-decided, 2026-10-26; docs/design-principles.md), so this is
+  how the gates make theirs. The game-file form of chimera-run goes once
+  every core's tests have moved to projects.
 - TODO: the frontend (start screen, creation wizard rendering
   file_slots.json, resolution dialog, TAStudio-as-application, removal
   of the casual paths); PPSSPP memstick-zip import and NES SRAM import

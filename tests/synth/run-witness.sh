@@ -1258,6 +1258,88 @@ DYNAMIC
 		else
 			report "E:settings" PASS "RAM diverged - user setting reached the guest"
 		fi
+
+		# A PROJECT MADE FROM THE COMMAND LINE (chimera-run --new-project). A game
+		# runs only in a project (owner, 2026-10-26), and this is how a game file
+		# becomes one without a window. Each movie, made into a project and run
+		# through it, must reach the goldens. A setting given is in the project
+		# and runs as it did given to the game, the rest are at the package's
+		# defaults; a firmware file is pinned by its hash; a clock start is kept;
+		# the game goes in the slot that takes its kind of file; and files that
+		# do not fit the package's slots, or a game of several files given whole,
+		# are refused with a reason and no project written.
+		mdir="$work/made-project"
+		rm -rf "$mdir" && mkdir -p "$mdir"
+		cp "$here/roms/gridWalker.testrom" "$mdir/"
+		mmake() { # name, then --new-project's arguments after the project; the exit code is left in mrc
+			mtag="$1"; shift
+			rm -f "$mdir/$mtag.chimeraProject"
+			"$chimera_run" --new-project "$mdir/$mtag.chimeraProject" "$@" > "$mdir/$mtag.make.log" 2>&1
+			mrc=$?
+		}
+		mplay() { # name, then more of chimera-run's arguments
+			mtag="$1"; shift
+			rm -f "$mdir/$mtag.ram.bin" "$mdir/$mtag.vram.bin"
+			"$chimera_run" --project "$mdir/$mtag.chimeraProject" "$epkg" "$@" \
+				--dump "RAM=$mdir/$mtag.ram.bin" --dump "VRAM=$mdir/$mtag.vram.bin" > "$mdir/$mtag.log" 2>&1
+		}
+		mfield() { python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])).get(sys.argv[2]), sort_keys=True))' "$mdir/$1.chimeraProject" "$2" 2>/dev/null; }
+		for movie in "$here"/movies/*.txt; do
+			mname="$(basename "$movie" .txt)"
+			mmake "$mname" "$epkg" "$mdir/${mname%%.*}.testrom" "$movie"
+			mplay "$mname"
+			if [ "$mrc" -eq 0 ] && cmp -s "$mdir/$mname.ram.bin" "$golden_dir/$mname.ram.bin" \
+				&& cmp -s "$mdir/$mname.vram.bin" "$golden_dir/$mname.vram.bin"; then
+				report "E:made-project:$mname" PASS "made into a project and run through it, RAM+VRAM byte-identical"
+			else
+				report "E:made-project:$mname" FAIL "rc=$mrc, or RAM or VRAM differs (see work/made-project/$mname*.log)"
+			fi
+		done
+		mmake settings "$epkg" "$mdir/gridWalker.testrom" "$here/movies/gridWalker.win.txt" --settings '{"initFillByte":171}'
+		mplay settings
+		if [ "$mrc" -eq 0 ] && [ "$(mfield settings settings)" = '{"initFillByte": 171}' ] \
+			&& [ "$(mfield gridWalker.win settings)" = '{"initFillByte": 0}' ] \
+			&& [ -s "$mdir/settings.ram.bin" ] && cmp -s "$mdir/settings.ram.bin" "$work/engine.settings.ram.bin"; then
+			report "E:made-project:settings" PASS "a setting given is the project's and runs as it did given to the game; one not given is at the package's default"
+		else
+			report "E:made-project:settings" FAIL "rc=$mrc, settings $(mfield settings settings) and $(mfield gridWalker.win settings), or RAM differs from the game run with it (see work/made-project/settings*.log)"
+		fi
+		msha="$(sha1sum "$mdir/gridWalker.testrom" | cut -c1-40 | tr a-f A-F)"
+		mmake firmware "$epkg" "$mdir/gridWalker.testrom" "$here/movies/gridWalker.win.txt" --firmware "bios=$mdir/gridWalker.testrom"
+		mplay firmware --firmware "bios=$mdir/gridWalker.testrom"
+		if [ "$mrc" -eq 0 ] && [ "$(mfield firmware firmware)" = "[{\"id\": \"bios\", \"sha1\": \"$msha\"}]" ] \
+			&& cmp -s "$mdir/firmware.ram.bin" "$golden_dir/gridWalker.win.ram.bin" && ! grep -q "^\[project\]" "$mdir/firmware.log"; then
+			report "E:made-project:firmware" PASS "a firmware file is pinned by its hash, and a run given it says nothing"
+		else
+			report "E:made-project:firmware" FAIL "rc=$mrc, firmware $(mfield firmware firmware) for $msha (see work/made-project/firmware*.log)"
+		fi
+		{ cat "$here/roms/gridWalker.testrom"; printf 'CLOCKTEST'; } > "$mdir/clock.testrom"
+		printf '[Input]\nLogKey:#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|\n|........|\n|........|\n|........|\n[/Input]\n' > "$mdir/three.txt"
+		mmake clock "$epkg" "$mdir/clock.testrom" "$mdir/three.txt" --clock-start 1893553445
+		mplay clock
+		msecond="$(python3 -c 'import struct,sys; print(struct.unpack("<Q", open(sys.argv[1],"rb").read()[4088:4096])[0])' "$mdir/clock.ram.bin" 2>/dev/null)"
+		if [ "$mrc" -eq 0 ] && [ "$msecond" = "1893553445" ]; then
+			report "E:made-project:clock-start" PASS "the clock start given is the project's, and the machine reads it"
+		else
+			report "E:made-project:clock-start" FAIL "rc=$mrc, the machine read ${msecond:-nothing} for 1893553445 (see work/made-project/clock*.log)"
+		fi
+		# the slot: the package's own, by the game's kind of file
+		mslots="$mdir/slots-package"
+		mkdir -p "$mslots" && ( cd "$mslots" && unzip -q -o "$epkg" )
+		printf '{"slots":[{"id":"disk","title":"Disk","min":0,"max":1,"formats":["dsk"]},{"id":"cartridge","title":"Cartridge","min":0,"max":1,"formats":["testrom"]}]}\n' > "$mslots/file_slots.json"
+		mmake slot "$mslots" "$mdir/gridWalker.testrom"
+		mslotrc=$mrc
+		mmake wrong-slot "$mslots" --file "nosuch=$mdir/gridWalker.testrom"
+		mwrongrc=$mrc
+		printf '{}' > "$mdir/game.chimeraMultiFile"
+		mmake whole "$epkg" "$mdir/game.chimeraMultiFile"
+		if [ "$mslotrc" -eq 0 ] && [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"][0]["slot"])' "$mdir/slot.chimeraProject" 2>/dev/null)" = cartridge ] \
+			&& [ "$mwrongrc" -ne 0 ] && [ "$mwrongrc" -lt 128 ] && [ ! -e "$mdir/wrong-slot.chimeraProject" ] && grep -q "do not fit the package's slots" "$mdir/wrong-slot.make.log" \
+			&& [ "$mrc" -ne 0 ] && [ "$mrc" -lt 128 ] && [ ! -e "$mdir/whole.chimeraProject" ] && grep -q "a file at a time" "$mdir/whole.make.log"; then
+			report "E:made-project:slots" PASS "the game goes in the slot that takes its kind; a slot the package lacks and a game given whole are refused, no project written"
+		else
+			report "E:made-project:slots" FAIL "slot rc=$mslotrc, wrong slot rc=$mwrongrc, whole rc=$mrc (see work/made-project/*.make.log)"
+		fi
 	fi
 fi
 

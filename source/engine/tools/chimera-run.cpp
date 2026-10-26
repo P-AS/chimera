@@ -13,6 +13,11 @@
  *       [--core-log <path>] [--controls <path>]
  *   chimera-run --project <p.chimeraProject> <package>
  *       [--files <dir>]... [--allow-core-mismatch] [the same run flags]
+ *   chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie.txt>]]
+ *       [--file <slot>=<path>]... [--settings <json>] [--firmware <id>=<path>]...
+ *       [--title <text>] [--clock-start <seconds>]
+ *
+ * --new-project makes a project and runs nothing (newProject, below).
  *
  * --project runs a .chimeraProject (docs/project.md): the input log and the
  * sync settings come from the project, files resolve from the project's own
@@ -133,7 +138,9 @@
 
 #include "chimera/engine.h"
 #include "../source/file_io.hpp"
+#include "../../extern/cjson/cJSON.h"
 
+#include <cctype>
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
@@ -275,6 +282,286 @@ static int64_t wholeNumber(const std::string &text, const std::string &option)
 	return static_cast<int64_t>(value);
 }
 
+/* --new-project: a project made from the command line, as the New Project
+ * window makes one, for whoever runs Chimera without a window - a core's
+ * tests above all. A game runs only in a project (owner, 2026-10-26), so
+ * this is how a game file becomes something chimera-run --project, Chimera
+ * and the Qt window can all run:
+ *
+ *   chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie.txt>]]
+ *       [--file <slot>=<path>]... [--settings <json>] [--firmware <id>=<path>]...
+ *       [--title <text>] [--clock-start <seconds since 1970, UTC>]
+ *
+ * The core is the package's, pinned by its hash. A <game> goes in the slot
+ * that takes its kind of file (else the first; "rom" for a package that
+ * declares no slots); --file names the slot, once for each file. The
+ * settings recorded are every one the package exposes for these files, at
+ * the value --settings gives or else at the package's default: the values
+ * the engine runs a game with. (A machine's own narrower defaults, which
+ * New Project offers, are given with --settings.) Each --firmware file is
+ * pinned by its hash; a run gives it again (--firmware), as a project never
+ * holds firmware. The movie, when given, is the project's input. The files
+ * are not copied: a run finds them beside the project or in a --files
+ * folder, by name and hash. */
+static int newProject(const std::vector<std::string> &args)
+{
+	std::string out, package, game, movie, settingsText = "{}", title;
+	int64_t clockStart = -1;
+	std::vector<std::pair<std::string, std::string>> files, firmware;
+	for (size_t i = 0; i < args.size(); i++)
+	{
+		const std::string &arg = args[i];
+		/* <name>=<path> */
+		auto pair = [&](std::vector<std::pair<std::string, std::string>> &into) {
+			const std::string spec = i + 1 < args.size() ? args[++i] : std::string();
+			const size_t eq = spec.find('=');
+			if (eq == std::string::npos || eq == 0) return false;
+			into.emplace_back(spec.substr(0, eq), spec.substr(eq + 1));
+			return true;
+		};
+		if (arg == "--file") { if (!pair(files)) return fail("", "--file wants <slot>=<path>"); }
+		else if (arg == "--firmware") { if (!pair(firmware)) return fail("", "--firmware wants <id>=<path>"); }
+		else if (arg == "--settings" && i + 1 < args.size()) settingsText = args[++i];
+		else if (arg == "--title" && i + 1 < args.size()) title = args[++i];
+		else if (arg == "--clock-start" && i + 1 < args.size()) clockStart = wholeNumber(args[++i], arg);
+		else if (arg.rfind("--", 0) == 0) return fail("", "--new-project does not take " + arg);
+		else if (out.empty()) out = arg;
+		else if (package.empty()) package = arg;
+		else if (game.empty()) game = arg;
+		else if (movie.empty()) movie = arg;
+		else return fail("", "unexpected argument: " + arg);
+	}
+	if (!g_badNumber.empty()) return fail("", g_badNumber);
+	if (out.empty() || package.empty())
+	{
+		std::fprintf(stderr, "usage: chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie.txt>]]\n"
+			"           [--file <slot>=<path>]... [--settings <json>] [--firmware <id>=<path>]... [--title <text>] [--clock-start <seconds>]\n");
+		return 1;
+	}
+	if (game.size() > 17 && game.compare(game.size() - 17, 17, ".chimeraMultiFile") == 0)
+		return fail("", "a game of several files is given a file at a time, each in its slot: --file <slot>=<path>");
+
+	/* what the package says of itself */
+	const char *error = nullptr;
+	ce_package *pk = ce_package_open(package.c_str(), &error);
+	if (pk == nullptr) return fail("", std::string("package: ") + (error != nullptr ? error : "could not be opened"));
+	uint64_t len = 0;
+	const uint8_t *bytes = ce_package_entry(pk, "waterbox.config", &len);
+	cJSON *config = bytes != nullptr ? cJSON_ParseWithLength(reinterpret_cast<const char *>(bytes), static_cast<size_t>(len)) : nullptr;
+	bytes = ce_package_entry(pk, "file_slots.json", &len);
+	const std::string slotsDecl = bytes != nullptr ? std::string(reinterpret_cast<const char *>(bytes), static_cast<size_t>(len)) : std::string();
+	const std::string sha1 = ce_package_sha1(pk) != nullptr ? ce_package_sha1(pk) : "";
+	ce_package_free(pk);
+	if (!cJSON_IsObject(config))
+	{
+		cJSON_Delete(config);
+		return fail("", "package: waterbox.config is not readable JSON");
+	}
+	auto text = [](const cJSON *o, const char *key) {
+		const cJSON *v = cJSON_GetObjectItemCaseSensitive(o, key);
+		return std::string(cJSON_IsString(v) ? v->valuestring : "");
+	};
+	auto printed = [](const cJSON *o) {
+		char *s = cJSON_PrintUnformatted(o);
+		std::string r = s != nullptr ? s : "";
+		if (s != nullptr) cJSON_free(s);
+		return r;
+	};
+
+	/* the game file's slot: the one that takes its kind of file, else the first */
+	if (!game.empty())
+	{
+		std::string slot = "rom", kind = std::filesystem::u8path(game).extension().u8string();
+		if (!kind.empty()) kind.erase(0, 1);
+		for (char &c : kind) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		cJSON *decl = slotsDecl.empty() ? nullptr : cJSON_Parse(slotsDecl.c_str());
+		const cJSON *list = cJSON_GetObjectItemCaseSensitive(decl, "slots"), *s = nullptr;
+		bool first = true, found = false;
+		cJSON_ArrayForEach(s, list)
+		{
+			if (first) slot = text(s, "id");
+			first = false;
+			const cJSON *f = nullptr;
+			cJSON_ArrayForEach(f, cJSON_GetObjectItemCaseSensitive(s, "formats"))
+			{
+				std::string k = cJSON_IsString(f) ? f->valuestring : "";
+				for (char &c : k) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+				if (!found && k == kind) { slot = text(s, "id"); found = true; }
+			}
+		}
+		cJSON_Delete(decl);
+		files.insert(files.begin(), {slot, game});
+	}
+
+	ce_project *p = ce_project_new();
+	auto refuse = [&](const std::string &why) {
+		ce_project_free(p);
+		cJSON_Delete(config);
+		return fail("", why);
+	};
+	ce_project_set_core(p, text(config, "coreName").c_str(), text(config, "version").c_str(), sha1.c_str());
+	for (const auto &[slot, path] : files)
+	{
+		const std::string name = std::filesystem::u8path(path).filename().u8string();
+		if (ce_project_file_add(p, name.c_str(), slot.c_str(), path.c_str(), &error) != 0)
+			return refuse(path + ": " + (error != nullptr ? error : "it could not be added"));
+	}
+	len = 0;
+	const char *slotsMap = ce_project_slots_text(p, &len);
+	const std::string slots = slotsMap != nullptr ? std::string(slotsMap, static_cast<size_t>(len)) : std::string("{}");
+	if (!slotsDecl.empty() && ce_project_validate(p, slotsDecl.data(), slotsDecl.size(), &error) != 0)
+		return refuse(std::string("the files do not fit the package's slots: ") + (error != nullptr ? error : "?"));
+
+	/* the settings: every one exposed for these files, the given value else the
+	 * default - asked again with what was chosen, as a setting may expose another */
+	cJSON *given = cJSON_Parse(settingsText.c_str());
+	if (!cJSON_IsObject(given))
+	{
+		cJSON_Delete(given);
+		return refuse("--settings is not a JSON object");
+	}
+	const cJSON *decls = cJSON_GetObjectItemCaseSensitive(config, "settings");
+	const std::string declText = cJSON_IsArray(decls) ? printed(decls) : std::string("[]");
+	cJSON *recorded = cJSON_CreateObject();
+	{
+		const cJSON *d = nullptr;
+		cJSON_ArrayForEach(d, decls)
+		{
+			const cJSON *fallback = cJSON_GetObjectItemCaseSensitive(d, "default");
+			const std::string name = text(d, "name");
+			if (!name.empty() && fallback != nullptr && !cJSON_HasObjectItem(recorded, name.c_str()))
+				cJSON_AddItemToObject(recorded, name.c_str(), cJSON_Duplicate(fallback, 1));
+		}
+	}
+	std::string effective;
+	for (int pass = 0; pass < 4; pass++)
+	{
+		cJSON *now = cJSON_Duplicate(recorded, 1);
+		const cJSON *g = nullptr;
+		cJSON_ArrayForEach(g, given)
+		{
+			if (cJSON_HasObjectItem(now, g->string)) cJSON_ReplaceItemInObjectCaseSensitive(now, g->string, cJSON_Duplicate(g, 1));
+			else cJSON_AddItemToObject(now, g->string, cJSON_Duplicate(g, 1));
+		}
+		const std::string current = printed(now);
+		cJSON_Delete(now);
+		if (current == effective) break;
+		effective = current;
+		const char *exposed = ce_settings_evaluate(declText.data(), declText.size(), slots.data(), slots.size(),
+			effective.data(), effective.size(), &len);
+		cJSON *list = exposed != nullptr ? cJSON_ParseWithLength(exposed, static_cast<size_t>(len)) : nullptr;
+		cJSON_Delete(recorded);
+		recorded = cJSON_CreateObject();
+		const cJSON *e = nullptr;
+		cJSON_ArrayForEach(e, list)
+		{
+			const cJSON *index = cJSON_GetObjectItemCaseSensitive(e, "index");
+			const cJSON *d = cJSON_IsNumber(index) ? cJSON_GetArrayItem(decls, index->valueint) : nullptr;
+			const cJSON *fallback = cJSON_GetObjectItemCaseSensitive(d, "default");
+			const std::string name = text(e, "name");
+			if (!name.empty() && fallback != nullptr && !cJSON_HasObjectItem(recorded, name.c_str()))
+				cJSON_AddItemToObject(recorded, name.c_str(), cJSON_Duplicate(fallback, 1));
+		}
+		cJSON_Delete(list);
+	}
+	/* what was given goes in as given, exposed or not: the run is the one asked for */
+	{
+		const cJSON *g = nullptr;
+		cJSON_ArrayForEach(g, given)
+		{
+			if (!cJSON_HasObjectItem(recorded, g->string))
+				std::fprintf(stderr, "chimera-run: the setting %s is not one the package shows for these files; it is kept as given\n", g->string);
+			if (cJSON_HasObjectItem(recorded, g->string)) cJSON_ReplaceItemInObjectCaseSensitive(recorded, g->string, cJSON_Duplicate(g, 1));
+			else cJSON_AddItemToObject(recorded, g->string, cJSON_Duplicate(g, 1));
+		}
+	}
+	cJSON_Delete(given);
+	const std::string settingsOut = printed(recorded);
+	const int settingCount = cJSON_GetArraySize(recorded);
+	if (ce_project_set_settings_text(p, settingsOut.c_str(), &error) != 0)
+	{
+		cJSON_Delete(recorded);
+		return refuse(std::string("settings: ") + (error != nullptr ? error : "refused"));
+	}
+
+	/* the machine, as the engine chooses it: the machine setting's value */
+	std::string platform = text(config, "systemId");
+	if (const cJSON *machines = cJSON_GetObjectItemCaseSensitive(config, "machines"); cJSON_IsArray(machines) && machines->child != nullptr)
+	{
+		const cJSON *chosenValue = cJSON_GetObjectItemCaseSensitive(recorded, text(config, "machineSetting").c_str());
+		const std::string chosen = cJSON_IsString(chosenValue) ? chosenValue->valuestring : "";
+		platform = text(machines->child, "id");
+		const cJSON *m = nullptr;
+		bool found = false;
+		cJSON_ArrayForEach(m, machines)
+		{
+			if (found) break;
+			const cJSON *when = cJSON_GetObjectItemCaseSensitive(m, "when"), *w = nullptr;
+			cJSON_ArrayForEach(w, when)
+				if (cJSON_IsString(w) && chosen == w->valuestring) found = true;
+			if (!cJSON_IsArray(when) && text(m, "id") == chosen) found = true;
+			if (found) platform = text(m, "id");
+		}
+	}
+	cJSON_Delete(recorded);
+	if (!platform.empty()) ce_project_header_set(p, "Platform", platform.c_str());
+
+	/* the firmware, each pinned by its hash */
+	if (!firmware.empty())
+	{
+		cJSON *pins = cJSON_CreateArray();
+		for (const auto &[id, path] : firmware)
+		{
+			char hex[41] = {};
+			uint64_t size = 0;
+			if (ce_sha1_file(path.c_str(), hex, &size) != 1)
+			{
+				cJSON_Delete(pins);
+				return refuse("could not read firmware " + path);
+			}
+			cJSON *pin = cJSON_CreateObject();
+			cJSON_AddStringToObject(pin, "id", id.c_str());
+			cJSON_AddStringToObject(pin, "sha1", hex);
+			cJSON_AddItemToArray(pins, pin);
+		}
+		const std::string pinsText = printed(pins);
+		cJSON_Delete(pins);
+		if (ce_project_set_firmware_text(p, pinsText.c_str(), &error) != 0)
+			return refuse(std::string("firmware: ") + (error != nullptr ? error : "refused"));
+	}
+
+	/* the input, read as a run reads a movie */
+	int64_t frames = 0;
+	if (!movie.empty())
+	{
+		std::vector<uint8_t> movieText;
+		if (!readWholeFile(movie.c_str(), movieText)) return refuse("could not read movie " + movie);
+		ce_movie_log *log = ce_movie_log_new();
+		if (ce_movie_log_parse(log, reinterpret_cast<const char *>(movieText.data()), movieText.size()) != 0)
+		{
+			const std::string why = std::string("movie: ") + ce_movie_log_last_error(log);
+			ce_movie_log_free(log);
+			return refuse(why);
+		}
+		frames = ce_movie_log_count(log);
+		const char *lump = ce_movie_log_serialize(log, 0, &len);
+		ce_project_set_log_text(p, lump, len);
+		ce_movie_log_free(log);
+	}
+	if (clockStart >= 0 && ce_project_set_clock_start(p, clockStart) != 0)
+		return refuse("--clock-start is a time from 1970 to 2200, in seconds");
+	if (title.empty())
+		title = files.empty() ? text(config, "coreName") : std::filesystem::u8path(files.front().second).stem().u8string();
+	ce_project_set_title(p, title.c_str());
+	cJSON_Delete(config);
+	config = nullptr;
+	if (ce_project_save(p, out.c_str(), &error) != 0) return refuse(std::string("could not write ") + out + ": " + (error != nullptr ? error : "?"));
+	ce_project_free(p);
+	std::printf("made %s: %zu file%s, %d setting%s, %zu firmware, %lld frame%s\n", out.c_str(), files.size(), files.size() == 1 ? "" : "s",
+		settingCount, settingCount == 1 ? "" : "s", firmware.size(), static_cast<long long>(frames), frames == 1 ? "" : "s");
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 #if defined(_WIN32)
@@ -288,6 +575,7 @@ int main(int argc, char **argv)
 		argv = utf8Argv.data();
 	}
 #endif
+	if (argc > 1 && std::strcmp(argv[1], "--new-project") == 0) return newProject(std::vector<std::string>(argv + 2, argv + argc));
 	const char *packagePath = nullptr, *romPath = nullptr, *moviePath = nullptr;
 	const char *settings = nullptr;
 	std::string metaPath;
@@ -611,6 +899,7 @@ int main(int argc, char **argv)
 	{
 		std::fprintf(stderr, "usage: chimera-run <package> <rom> <movie.txt> [--rerecord] [--seek <frame>] [--play <n>] [--edit-from <movie>] [--stop-at-seek] [--bands n,m,ms,fs,anchor] [--record <out.txt>] [--record-key <LogKey>] [--settings <json>] [--dump <domain>=<path>]... [--firmware <id>=<path>]... [--state <path>] [--frames <n>] [--save-state <frame>=<path>]... [--screenshot <frame>=<path>]... [--ram-search-bench <domain>] [--export-savedata <dir>] [--meta <path>] [--gpu] [--draw-every-frame] [--cache-dir <folder>]\n"
 			"       chimera-run --project <p.chimeraProject> <package> [--files <dir>]... [--allow-core-mismatch] [the same run flags]\n"
+			"       chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie.txt>]] [--file <slot>=<path>]... [--settings <json>] [--firmware <id>=<path>]...\n"
 			"       chimera-run <package> <rom> --suggest [--settings <json>] [--firmware <id>=<path>]...\n"
 			"       chimera-run <package> <movie> --import-movie [--mount <name>=<path>]... [--settings <json>]\n");
 		return 1;

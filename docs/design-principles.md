@@ -11116,3 +11116,50 @@ not; the project's files decide what is shown; the game's own settings are
 last; a restart is offered only for a change, the clock's start included)
 and TasMovieProjectFormatTests.ChangedSettingsAreTheNextBootsAndTheNextSaves.
 Each failed with its change taken out.
+
+## A game runs only in a project (user-decided, 2026-10-26)
+
+The owner: "Both GUI and command line should provide a project file, if a
+game needs loading. This unifies the path to execution. Remove all code
+enabling the open rom without project pathway." Asked whether that covers
+chimera-run, the headless runner every core's tests use: "Yes, everywhere.
+Everyone using Chimera needs to be able to create a project file that
+provides the full settings and files required for execution."
+
+Chimera's menus already open only projects, but paths that open a game file
+alone were left over: a game named on the command line or handed over by a
+second start in single instance mode, Lua's client.openrom, a movie opened
+with no game running (which asks for a game file), the Batch Runner (hidden,
+but still there), and chimera-run's `<package> <game> <movie>` form, which 50
+of the 61 cores' tests call. What only those paths used goes with them: the
+default core per system (DefaultCores) and the core settings kept for games
+opened alone (CoreSettings). The owner also decided, setting by setting, to
+remove the movie options that act only on movies without a project (what
+happens at a movie's end, backup movies, VBA-style state loads) and the
+compression level of Chimera's cache file.
+
+The order keeps every published thing working between steps: chimera-run
+first learns to make a project (this section's change), then Chimera's
+interface loses the leftover paths, then each core's tests move to projects
+one repository at a time, and only then does chimera-run's game-file form go.
+
+`chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie>]]`
+makes a project and runs nothing. The core is the package's, pinned by its
+hash; a game goes in the slot that takes its kind of file (`--file
+<slot>=<path>` names the slot, once a file); the settings are every one the
+package shows for those files, at the value `--settings` gives or else the
+package's default, which is what the engine runs a game with (a machine's own
+narrower defaults, which New Project offers, are given with `--settings`); a
+`--firmware` file is pinned by its hash; `--clock-start` and `--title` are
+kept; the movie is the project's input. Files that do not fit the package's
+slots are refused and no project is written. A game of several files is given
+a file at a time, as a project holds them, not as a `.chimeraMultiFile`
+descriptor.
+
+Tests: the witness's engine level makes each of its movies into a project and
+runs it, to the same RAM and VRAM as the goldens, and checks a setting given
+(the same RAM as the game run with that setting), the default recorded for one
+not given, a firmware pin, a clock start, the slot chosen by the kind of file,
+and the two refusals: 78 passed, 0 failed. With each part of the maker broken
+in turn, its test failed (8 failed). The Windows build made the same project
+from Windows paths.
