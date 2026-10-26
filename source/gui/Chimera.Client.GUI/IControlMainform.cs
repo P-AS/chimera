@@ -39,5 +39,7 @@
 		bool WantsToControlRestartMovie { get; }
 
 		bool RestartMovie();
+
+		bool WantsToBypassMovieEndAction { get; }
 	}
 }

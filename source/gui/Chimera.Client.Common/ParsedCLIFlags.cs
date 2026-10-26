@@ -8,6 +8,8 @@ namespace Chimera.Client.Common
 	{
 		public readonly string? cmdConfigFile;
 
+		public readonly string? cmdMovie;
+
 		public readonly string? cmdProject;
 
 		public readonly string? cmdDumpType;
@@ -56,6 +58,7 @@ namespace Chimera.Client.Common
 
 		public ParsedCLIFlags(
 			string? cmdConfigFile,
+			string? cmdMovie,
 			string? cmdProject,
 			string? cmdDumpType,
 			HashSet<int>? currAviWriterFrameList,
@@ -80,6 +83,7 @@ namespace Chimera.Client.Common
 			this.mcpServer = mcpServer;
 			this.mcpAllowChanges = mcpAllowChanges;
 			this.cmdConfigFile = cmdConfigFile;
+			this.cmdMovie = cmdMovie;
 			this.cmdProject = cmdProject;
 			this.cmdDumpType = cmdDumpType;
 			_currAviWriterFrameList = currAviWriterFrameList;

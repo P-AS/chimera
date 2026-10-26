@@ -75,6 +75,7 @@ namespace Chimera.Client.Common
 			=> TargetZoomFactors[sysID] = windowScale;
 
 		public int DispFinalFilter { get; set; } = 0; // None
+		public RecentFiles RecentRoms { get; set; } = new RecentFiles(10);
 
 		/// <summary>the projects the start screen and File menu offer, most recent first</summary>
 		public RecentFiles RecentProjects { get; set; } = new RecentFiles(10);
@@ -395,6 +396,7 @@ namespace Chimera.Client.Common
 		public RecentFiles RecentMacros { get; set; } = new RecentFiles(8);
 
 		// Movie Settings
+		public RecentFiles RecentMovies { get; set; } = new RecentFiles(8);
 		public string DefaultAuthor { get; set; } = "default user";
 		public bool UseDefaultAuthor { get; set; } = true;
 		public bool DisplaySubtitles { get; set; } = true;
@@ -422,6 +424,14 @@ namespace Chimera.Client.Common
 		/// touched since (issue #157), and none whose bindings somebody has.
 		/// </summary>
 		public Dictionary<string, string> AdoptedControlDefaults { get; set; } = new Dictionary<string, string>();
+
+		/// <summary>
+		/// The core a system's roms open with, keyed by system ID - remembered from the last time the
+		/// user chose one (Emulator > Core), and consulted by RomLoader when more than one loaded
+		/// package can run the file. Not a matrix of everything the frontend could do: it holds only
+		/// what someone actually picked, and a system with one core never appears here.
+		/// </summary>
+		public Dictionary<string, string> DefaultCores = new();
 
 		/// <summary>
 		/// The build a core runs with when several builds of it are installed, keyed by core name, valued by

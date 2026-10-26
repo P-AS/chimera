@@ -85,6 +85,9 @@ namespace Chimera.Client.Common
 		/// <param name="forceWindowResize">Override <see cref="Common.Config.ResizeWithFramebuffer"/></param>
 		void FrameBufferResized(bool forceWindowResize = false);
 
+		/// <remarks>referenced from EmuClientApi</remarks>
+		bool LoadRom(string path, LoadRomArgs args);
+
 		/// <remarks>only referenced from BookmarksBranchesBox</remarks>
 		BitmapBuffer MakeScreenshotImage();
 

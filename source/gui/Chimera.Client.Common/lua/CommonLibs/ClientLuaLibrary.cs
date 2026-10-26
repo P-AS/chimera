@@ -170,6 +170,21 @@ namespace Chimera.Client.Common
 		public void OpenRamSearch()
 			=> APIs.Tool.OpenRamSearch();
 
+		[LuaMethodExample("client.openrom( \"C:\\rom.bin\" );")]
+		[LuaMethod("openrom", "Loads a ROM from the given path. Returns true if the ROM was successfully loaded, otherwise false.")]
+		public bool OpenRom(string path)
+		{
+			if (_luaLibsImpl.ProhibitedApis.HasFlag(ApiGroup.BOOTING))
+			{
+				throw new InvalidOperationException("client.openrom() is not allowed during input/memory callbacks");
+			}
+
+			_luaLibsImpl.IsRebootingCore = true;
+			var success = APIs.EmuClient.OpenRom(path);
+			_luaLibsImpl.IsRebootingCore = false;
+			return success;
+		}
+
 		[LuaMethodExample("client.opentasstudio( );")]
 		[LuaMethod("opentasstudio", "opens the TAStudio dialog")]
 		public void OpenTasStudio()
@@ -204,7 +219,7 @@ namespace Chimera.Client.Common
 				throw new InvalidOperationException("client.openproject() is not allowed during input/memory callbacks");
 			}
 
-			// Opening a project boots a machine, and a boot restarts
+			// Same as openrom: opening a project boots a machine, and a boot restarts
 			// the lua console. Saying so first makes it re-inject its dependencies
 			// rather than close the lua state this script is still running on.
 			_luaLibsImpl.IsRebootingCore = true;

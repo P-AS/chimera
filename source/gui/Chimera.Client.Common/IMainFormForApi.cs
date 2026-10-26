@@ -89,6 +89,9 @@ namespace Chimera.Client.Common
 		bool LoadMovie(string filename, string archive = null);
 
 		/// <remarks>only referenced from <see cref="EmuClientApi"/></remarks>
+		bool LoadRom(string path, LoadRomArgs args);
+
+		/// <remarks>only referenced from <see cref="EmuClientApi"/></remarks>
 		void PauseEmulator();
 
 		/// <remarks>only referenced from <see cref="EmuClientApi"/></remarks>

@@ -371,13 +371,19 @@ namespace Chimera.Client.Common
 			}
 			else
 			{
+				_ = _config.DefaultCores.TryGetValue(lp.Game.System, out var preferredCore);
 				var dbForcedCoreName = lp.Game.ForcedCore;
 				factories = CoreRegistry.Instance.GetFactories(lp.Game.System)
 					// one build per core: the chosen one, else the newest installed
 					.Select(static f => f.CoreName).Distinct()
 					.Select(static name => CoreRegistry.Instance.FactoryFor(name, pinnedSha1: null))
 					.Where(f => f is not null && f.SystemIds.Contains(lp.Game.System))
-					.OrderBy(f => f.CoreName.EqualsIgnoreCase(dbForcedCoreName) ? -1 : 0)
+					.OrderBy(f =>
+					{
+						if (f.CoreName == preferredCore) return -2;
+						if (f.CoreName.EqualsIgnoreCase(dbForcedCoreName)) return -1;
+						return 0;
+					})
 					.ToList();
 				if (factories.Count == 0)
 				{

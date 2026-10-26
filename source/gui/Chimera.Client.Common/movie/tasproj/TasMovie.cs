@@ -448,6 +448,15 @@ namespace Chimera.Client.Common
 			var newLog = new List<string>();
 			int? timelineBranchFrame = null;
 
+			// We are in record mode so replace the movie log with the one from the savestate
+			if (Session.Settings.EnableBackupMovies && MakeBackup && Log.Count != 0)
+			{
+				// TODO: This isn't ideal, but making it ideal would mean a big refactor.
+				FileWriteResult saveResult = SaveBackup();
+				if (saveResult.Exception != null) throw saveResult.Exception;
+				MakeBackup = false;
+			}
+
 			int counter = 0;
 			string line;
 			while ((line = reader.ReadLine()) != null)
@@ -504,11 +513,18 @@ namespace Chimera.Client.Common
 
 			if (stateFrameValue > 0 && stateFrameValue < Log.Count)
 			{
-				Truncate(stateFrameValue);
+				if (!Session.Settings.VBAStyleMovieLoadState)
+				{
+					Truncate(stateFrameValue);
+				}
 			}
 			else if (stateFrameValue > Log.Count) // Post movie savestate
 			{
-				Truncate(Log.Count);
+				if (!Session.Settings.VBAStyleMovieLoadState)
+				{
+					Truncate(Log.Count);
+				}
+
 				Mode = MovieMode.Finished;
 			}
 

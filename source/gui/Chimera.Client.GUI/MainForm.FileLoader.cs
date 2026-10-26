@@ -53,13 +53,14 @@ namespace Chimera.Client.GUI
 
 		public bool LoadMovie(string filename, string archive = null)
 		{
-			// a movie plays in a project, as a game does (user-decided, 2026-10-26)
-			if (!Tools.IsLoaded<TAStudio>())
+			if (Emulator.IsNull())
 			{
-				AddOnScreenMessage("A movie opens in a project: open or make one first");
-				return false;
+				OpenRom();
+				if (Emulator.IsNull()) return false;
 			}
-			return Tools.TAStudio.LoadMovieFile(filename);
+			return Tools.IsLoaded<TAStudio>()
+				? Tools.TAStudio.LoadMovieFile(filename)
+				: StartNewMovie(MovieSession.Get(filename, true), false);
 		}
 
 		private bool LoadRom(string filename, string archive = null)

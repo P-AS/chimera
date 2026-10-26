@@ -7,6 +7,12 @@
 		public virtual void StartNewRecording()
 		{
 			Mode = MovieMode.Record;
+			if (MakeBackup && Session.Settings.EnableBackupMovies && Log.Count is not 0)
+			{
+				SaveBackup();
+				MakeBackup = false;
+			}
+
 			Log.Clear();
 		}
 

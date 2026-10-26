@@ -65,9 +65,11 @@ namespace Chimera.Client.Common
 		IMovieController GenerateMovieController(ControllerDefinition definition = null, string logKey = null);
 
 		void HandleFrameBefore();
-		void HandleFrameAfter();
+		void HandleFrameAfter(bool ignoreMovieEndAction);
 		void HandleSaveState(TextWriter writer);
 
+		bool CheckSavestateTimeline(TextReader reader);
+		bool HandleLoadState(TextReader reader);
 
 		/// <summary>
 		/// Queues up a movie for loading
@@ -78,7 +80,8 @@ namespace Chimera.Client.Common
 			IMovie movie,
 			string systemId,
 			string loadedRomHash,
-			PathEntryCollection pathEntries);
+			PathEntryCollection pathEntries,
+			IDictionary<string, string> preferredCores);
 
 		/// <summary>
 		/// Sets the Movie property with the QueuedMovie, clears the queued movie, and starts the new movie

@@ -124,6 +124,7 @@ namespace Chimera.Tests.Client.GUI
 				nameof(MenuIcons.Firmware), nameof(MenuIcons.DataDirectory), nameof(MenuIcons.ThemePalette),
 				nameof(MenuIcons.CoreManager), nameof(MenuIcons.CacheManager), nameof(MenuIcons.MediaMaker),
 				nameof(MenuIcons.PrecompiledModules), nameof(MenuIcons.WindowSize), nameof(MenuIcons.Customize),
+				nameof(MenuIcons.BatchRunner),
 			];
 			var icons = MenuIcons.All().ToDictionary(static x => x.Name, static x => x.Image, StringComparer.Ordinal);
 			List<string> wrong = new();

@@ -10,10 +10,19 @@ using Chimera.Emulation.Common.Engine;
 
 namespace Chimera.Client.Common
 {
+	public enum MovieEndAction
+	{
+		Stop,
+		Pause,
+		Record,
+		Finish,
+	}
+
 	public class MovieSession : IMovieSession
 	{
 		private readonly IDialogParent _dialogParent;
 
+		private readonly Action _pauseCallback;
 		private readonly Action _modeChangedCallback;
 		private readonly EventHandler _changesChangedCallback;
 
@@ -23,12 +32,15 @@ namespace Chimera.Client.Common
 			IMovieConfig settings,
 			string backDirectory,
 			IDialogParent dialogParent,
+			Action pauseCallback,
 			Action modeChangedCallback,
 			EventHandler changesChangedCallback)
 		{
 			Settings = settings;
 			BackupDirectory = backDirectory;
 			_dialogParent = dialogParent;
+			_pauseCallback = pauseCallback
+				?? throw new ArgumentNullException(paramName: nameof(pauseCallback));
 			_modeChangedCallback = modeChangedCallback
 				?? throw new ArgumentNullException(paramName: nameof(modeChangedCallback));
 			_changesChangedCallback = changesChangedCallback;
@@ -107,11 +119,16 @@ namespace Chimera.Client.Common
 			}
 		}
 
-		public void HandleFrameAfter()
+		public void HandleFrameAfter(bool ignoreMovieEndAction)
 		{
 			if (Movie is ITasMovie tasMovie && !SuppressStateCapture)
 			{
 				tasMovie.GreenzoneCurrentFrame();
+			}
+
+			if (!ignoreMovieEndAction && Movie.IsPlaying() && Movie.Emulator.Frame == Movie.FrameCount)
+			{
+				HandlePlaybackEnd();
 			}
 		}
 
@@ -123,12 +140,59 @@ namespace Chimera.Client.Common
 			}
 		}
 
+		public bool CheckSavestateTimeline(TextReader reader)
+		{
+			if (Movie.IsActive() && ReadOnly)
+			{
+				var result = Movie.CheckTimeLines(reader, out var errorMsg);
+				if (!result)
+				{
+					Output(errorMsg);
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		public bool HandleLoadState(TextReader reader)
+		{
+			if (Movie.NotActive())
+			{
+				return true;
+			}
+
+			if (ReadOnly)
+			{
+				Movie.SwitchToPlay();
+				LatchInputToLog();
+			}
+			else
+			{
+				Movie.SwitchToRecord();
+
+				var result = Movie.ExtractInputLog(reader, out var errorMsg);
+				if (!result)
+				{
+					Output(errorMsg);
+					return false;
+				}
+
+				LatchInputToUser();
+			}
+
+			HandleFrameAfter(false);
+
+			return true;
+		}
+
 		/// <exception cref="MoviePlatformMismatchException"><paramref name="movie"/>.<see cref="IBasicMovieInfo.SystemID"/> does not match <paramref name="systemId"/>.<see cref="IEmulator.SystemId"/></exception>
 		public void QueueNewMovie(
 			IMovie movie,
 			string systemId,
 			string loadedRomHash,
-			PathEntryCollection pathEntries)
+			PathEntryCollection pathEntries,
+			IDictionary<string, string> preferredCores)
 		{
 			if (movie.SystemID != systemId)
 			{
@@ -152,10 +216,19 @@ namespace Chimera.Client.Common
 				}
 			}
 
-			// the movie's core is the one its machine opens with (QueuedCoreName)
 			if (string.IsNullOrWhiteSpace(movie.Core))
 			{
-				PopupMessage("No core is named in the movie file: the core loaded for its system is used.");
+				PopupMessage(preferredCores.TryGetValue(systemId, out var coreName)
+					? $"No core specified in the movie file, using the preferred core {coreName} instead."
+					: "No core specified in the movie file, using the default core instead.");
+			}
+			else
+			{
+				var keys = preferredCores.Keys.ToList();
+				foreach (var k in keys)
+				{
+					preferredCores[k] = movie.Core;
+				}
 			}
 
 			_queuedMovie = movie;
@@ -286,6 +359,86 @@ namespace Chimera.Client.Common
 
 			MovieController.SetFrom(input ?? StickySource);
 			MovieOut.Source = MovieController;
+		}
+
+		private void HandlePlaybackEnd()
+		{
+#if false // invariants given by single call-site
+			Debug.Assert(Movie.IsPlaying());
+			Debug.Assert(Movie.Emulator.Frame >= Movie.InputLogLength);
+#endif
+#if false // code below doesn't actually do anything as the cycle count is indiscriminately overwritten (or removed) on save anyway.
+			if (Movie.IsAtEnd() && Movie.Emulator.HasCycleTiming())
+			{
+				const string WINDOW_TITLE_MISMATCH = "Cycle count mismatch";
+				const string WINDOW_TITLE_MISSING = "Cycle count not yet saved";
+				const string PFX_MISSING = "The cycle count (running time) hasn't been saved into this movie yet.\n";
+				const string ERR_MSG_MISSING_READONLY = PFX_MISSING + "The movie was loaded in read-only mode. To add the cycle count, load it in read-write mode and play to the end again.";
+				const string ERR_MSG_MISSING_CONFIRM = PFX_MISSING + "Add it now?";
+				const string PFX_MISMATCH = "The cycle count (running time) saved into this movie ({0}) doesn't match the measured count ({1}) here at the end.\n";
+				const string ERR_FMT_STR_MISMATCH_READONLY = PFX_MISMATCH + "The movie was loaded in read-only mode. To correct the cycle count, load it in read-write mode and play to the end again.";
+				const string ERR_FMT_STR_MISMATCH_CONFIRM = PFX_MISMATCH + "Correct it now?";
+				var coreValue = Movie.Emulator.AsCycleTiming().CycleCount;
+				if (!Movie.HeaderEntries.TryGetValue(HeaderKeys.CycleCount, out var movieValueStr)
+					|| !long.TryParse(movieValueStr, out var movieValue))
+				{
+					if (ReadOnly)
+					{
+						//TODO this would be annoying to encounter; detect the missing field when playback starts instead --yoshi
+						_dialogParent.ModalMessageBox(
+							caption: WINDOW_TITLE_MISSING,
+							text: ERR_MSG_MISSING_READONLY,
+							icon: EMsgBoxIcon.Info);
+					}
+					else if (_dialogParent.ModalMessageBox2(
+						caption: WINDOW_TITLE_MISSING,
+						text: ERR_MSG_MISSING_CONFIRM,
+						icon: EMsgBoxIcon.Question))
+					{
+						Movie.SetCycleValues();
+					}
+				}
+				else if (coreValue != movieValue)
+				{
+					if (ReadOnly)
+					{
+						//TODO this would be annoying to encounter; detect the missing field when playback starts instead --yoshi
+						_dialogParent.ModalMessageBox(
+							caption: WINDOW_TITLE_MISMATCH,
+							text: string.Format(ERR_FMT_STR_MISMATCH_READONLY, movieValue, coreValue),
+							icon: EMsgBoxIcon.Warning);
+					}
+					else if (_dialogParent.ModalMessageBox2(
+						caption: WINDOW_TITLE_MISMATCH,
+						text: string.Format(ERR_FMT_STR_MISMATCH_CONFIRM, movieValue, coreValue),
+						icon: EMsgBoxIcon.Question))
+					{
+						Movie.SetCycleValues();
+					}
+				}
+			}
+#endif
+			switch (Settings.MovieEndAction)
+			{
+				case MovieEndAction.Stop:
+					// Technically this can save the movie, but it'd be weird to be in that situation.
+					// Do we want that?
+					StopMovie();
+					break;
+				case MovieEndAction.Record:
+					Movie.SwitchToRecord();
+					break;
+				case MovieEndAction.Pause:
+					Movie.FinishedMode();
+					_pauseCallback();
+					break;
+				default:
+				case MovieEndAction.Finish:
+					Movie.FinishedMode();
+					break;
+			}
+
+			_modeChangedCallback();
 		}
 	}
 }

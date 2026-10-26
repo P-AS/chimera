@@ -53,6 +53,8 @@ namespace Chimera.Client.Common
 
 		bool IsRewinding();
 
+		bool OpenRom(string path);
+
 		void Pause();
 
 		void PauseAv();

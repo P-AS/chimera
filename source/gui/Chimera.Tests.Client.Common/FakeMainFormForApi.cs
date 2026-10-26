@@ -53,6 +53,7 @@ namespace Chimera.Tests.Client.Common
 		public bool LoadMovie(string filename, string? archive = null) => throw new NotImplementedException();
 		public void LoadNullRom() => throw new NotImplementedException();
 		public bool LoadQuickSave(int slot, bool suppressOSD = false) => throw new NotImplementedException();
+		public bool LoadRom(string path, LoadRomArgs args) => throw new NotImplementedException();
 		public bool LoadState(string path, string userFriendlyStateName, bool suppressOSD = false) => throw new NotImplementedException();
 		public void PauseEmulator() => throw new NotImplementedException();
 		public bool RebootCore() => throw new NotImplementedException();

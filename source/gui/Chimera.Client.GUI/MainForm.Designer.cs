@@ -119,6 +119,7 @@ namespace Chimera.Client.GUI
 			this.LuaConsoleMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.HexEditorMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.MacroToolMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
+			this.BatchRunnerMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.toolStripSeparatorCoreLog = new Chimera.WinForms.Controls.ToolStripSeparatorEx();
 			this.ExportCoreLogMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
 			this.McpServerMenuItem = new Chimera.WinForms.Controls.ToolStripMenuItemEx();
@@ -780,6 +781,7 @@ namespace Chimera.Client.GUI
             this.LuaConsoleMenuItem,
             this.HexEditorMenuItem,
             this.MacroToolMenuItem,
+            this.BatchRunnerMenuItem,
             this.toolStripSeparatorCoreLog,
             this.ExportCoreLogMenuItem});
 			this.ToolsSubMenu.Text = "&Tools";
@@ -814,6 +816,12 @@ namespace Chimera.Client.GUI
 			// 
 			this.MediaMakerMenuItem.Text = "Reproducible Media Maker...";
 			this.MediaMakerMenuItem.Click += new System.EventHandler(this.MediaMakerMenuItem_Click);
+			// 
+			// BatchRunnerMenuItem
+			// 
+			this.BatchRunnerMenuItem.Text = "Batch Runner...";
+			this.BatchRunnerMenuItem.Visible = false;
+			this.BatchRunnerMenuItem.Click += new System.EventHandler(this.BatchRunnerMenuItem_Click);
 			// 
 			// ExportCoreLogMenuItem
 			// 
@@ -1272,6 +1280,7 @@ namespace Chimera.Client.GUI
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx ConfigContextMenuItem;
 		private Chimera.WinForms.Controls.ToolStripSeparatorEx ShowMenuContextMenuSeparator;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx GenericCoreSubMenu;
+		private Chimera.WinForms.Controls.ToolStripMenuItemEx BatchRunnerMenuItem;
 		private Chimera.WinForms.Controls.ToolStripSeparatorEx toolStripSeparatorCoreLog;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx ExportCoreLogMenuItem;
 		private Chimera.WinForms.Controls.ToolStripMenuItemEx McpServerMenuItem;

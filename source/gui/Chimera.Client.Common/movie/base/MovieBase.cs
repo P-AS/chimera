@@ -67,6 +67,8 @@ namespace Chimera.Client.Common
 		public IEmulator Emulator { get; private set; }
 		public IMovieSession Session { get; }
 
+		protected bool MakeBackup { get; set; } = true;
+
 		public abstract string PreferredExtension { get; }
 
 		public event EventHandler ChangesChanged;
@@ -113,6 +115,14 @@ namespace Chimera.Client.Common
 
 		public virtual void RecordFrame(int frame, IController source)
 		{
+			if (Session.Settings.VBAStyleMovieLoadState)
+			{
+				if (Emulator.Frame < Log.Count)
+				{
+					Truncate(Emulator.Frame);
+				}
+			}
+
 			PokeFrame(frame, source);
 		}
 
