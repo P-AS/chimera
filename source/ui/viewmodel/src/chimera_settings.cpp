@@ -114,6 +114,7 @@ const std::vector<ChimeraSetting> &chimeraSettings()
 		{"NoMixedInputHokeyOverride", Kind::Plain, "hotkeys.noMixedPriority", ""},
 		{"HotkeyConfigAutoTab", Kind::Plain, "hotkeys.autoTab", ""},
 		{"InputConfigAutoTab", Kind::Plain, "controls.autoTab", ""},
+		{"RelativeMouseSensitivity", Kind::Plain, "controls.mouseSensitivity", ""},
 		{"DisplayWatchesOnScreen", Kind::Plain, "ramWatch.showOnScreen", ""},
 		{"RamWatchDefinePrevious", Kind::Choice, "ramWatch.previousType", "Original|LastSearch|LastFrame|LastChange"},
 		{"CacheAutoClean", Kind::Plain, "cacheManager.autoClean", ""},

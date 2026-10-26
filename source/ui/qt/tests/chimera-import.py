@@ -53,7 +53,7 @@ chimera = {
     "MainFormStaticWindowTitleOverride": "Imported",
     "AviCaptureOsd": True, "AviCaptureLua": True, "VideoWriterAudioSync": False, "AVWriterPad": True,
     "AVWriterResizeWidth": 640, "AVWriterResizeHeight": 480, "FFmpegCustomCommand": "-c:v libx264 -crf 18",
-    "InputHotkeyOverrideOptions": 2, "NoMixedInputHokeyOverride": True, "HotkeyConfigAutoTab": False, "InputConfigAutoTab": False,
+    "InputHotkeyOverrideOptions": 2, "NoMixedInputHokeyOverride": True, "HotkeyConfigAutoTab": False, "InputConfigAutoTab": False, "RelativeMouseSensitivity": 150,
     "DisplayWatchesOnScreen": False, "RamWatchDefinePrevious": 3,
     "CacheAutoClean": False, "CacheSizeLimitMb": 51200, "CacheFreeSpaceFloorMb": 10240,
     "CoresFolder": os.path.join(work, "cores"), "CoreManagerShows": 2, "FirmwareShows": 1, "NewProjectKind": 2,
@@ -136,7 +136,10 @@ def run():
                CHIMERA_TEST_WAIT_OPEN="1", CHIMERA_TEST_KEYS=",".join(rich),
                CHIMERA_QT_CACHE=os.path.join(work, "cache"), CHIMERA_QT_RECOVERY=os.path.join(work, "recovery"),
                CHIMERA_QT_HASHES=os.path.join(work, "hashes.txt"))
-    done = subprocess.run([qt, package, rom, "--lua", os.path.join(here, "lua-config-dump.lua")], env=env, timeout=120,
+    # a game runs only in a project (owner, 2026-10-26)
+    project = os.path.join(work, "files", "game.chimeraProject")
+    subprocess.run([sys.executable, os.path.join(here, "game-project.py"), package, rom, project], check=True)
+    done = subprocess.run([qt, project, package, "--lua", os.path.join(here, "lua-config-dump.lua")], env=env, timeout=120,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if done.returncode != 0 or not os.path.exists(dump):
         print(done.stdout[-3000:])
@@ -200,9 +203,23 @@ def same_value(a, b):
 # each kept by the window as carried: the window writes its settings as they
 # change, so one refused would be left in the file as carried, the window
 # holding another
+def placeless(text):
+    """TAStudio opens beside the main window with the project and keeps only
+    its size: where it was when it closed is written, and not used"""
+    try:
+        value = json.loads(text)
+        for name in ("x", "y"):
+            value.get("tastudio", {}).pop(name, None)
+        return json.dumps(value, sort_keys=True)
+    except (TypeError, ValueError, AttributeError):
+        return text
+
+
 for key in rich:
     if key not in kept:
         bad.append("%s was not carried over" % key)
+    elif key == "toolWindows.settings" and placeless(got["keys"].get(key)) == placeless(kept[key]):
+        pass
     elif not same_value(got["keys"].get(key), kept[key]):
         bad.append("%s: the window holds %r, the file %r" % (key, got["keys"].get(key), kept[key]))
 keys = got["keys"]

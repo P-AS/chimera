@@ -46,7 +46,6 @@
 #include "chimera/vm/project_details_vm.hpp"
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/help_vm.hpp"
-#include "chimera/vm/batch_run_vm.hpp"
 
 /* the engine's miniz, to read a report's zip back */
 #define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
@@ -157,6 +156,94 @@ std::string scriptFile(const std::string &code, const std::string &name)
 	const std::filesystem::path p = scriptFolder() / (name + ".lua");
 	std::ofstream(p, std::ios::binary) << code;
 	return p.string();
+}
+
+/* A game runs only in a project (owner, 2026-10-26), so a test that plays a
+ * game makes one, as the New Project window would: the package's core, the
+ * game copied beside the project in the slot that takes its kind of file
+ * (else the first), every setting that applies at the package's default.
+ * Written to `project`, or to a folder of its own when none is named. */
+std::filesystem::path gameProject(const std::string &package, const std::string &game, std::filesystem::path project = {},
+	const std::string &title = {})
+{
+	namespace fs = std::filesystem;
+	static int made = 0;
+	if (project.empty())
+		project = scriptFolder() / ("game-" + std::to_string(++made)) / (fs::path(game).stem().string() + ".chimeraProject");
+	fs::create_directories(project.parent_path());
+	const fs::path beside = project.parent_path() / fs::path(game).filename();
+	std::error_code ec;
+	if (!fs::equivalent(beside, game, ec)) fs::copy_file(game, beside, fs::copy_options::overwrite_existing);
+	json::Json cfg, fileSlots;
+	std::string jerr, sha;
+	const char *perr = nullptr;
+	if (ce_package *pk = ce_package_open(package.c_str(), &perr))
+	{
+		uint64_t len = 0;
+		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len))
+			json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, jerr);
+		if (const uint8_t *d = ce_package_entry(pk, "file_slots.json", &len))
+			json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), fileSlots, jerr);
+		sha = ce_package_sha1(pk) != nullptr ? ce_package_sha1(pk) : "";
+		ce_package_free(pk);
+	}
+	std::string ext = fs::path(game).extension().string();
+	if (!ext.empty()) ext.erase(0, 1);
+	for (char &ch : ext) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+	std::string slotId = "rom";
+	if (const json::Json *list = fileSlots.find("slots"); list != nullptr && !list->items.empty())
+	{
+		if (const json::Json *id = list->items[0].find("id")) slotId = id->text;
+		for (const json::Json &slot : list->items)
+		{
+			bool takes = false;
+			if (const json::Json *formats = slot.find("formats"))
+				for (const json::Json &f : formats->items)
+				{
+					std::string e = f.text;
+					for (char &ch : e) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+					takes = takes || e == ext;
+				}
+			if (takes)
+			{
+				if (const json::Json *id = slot.find("id")) slotId = id->text;
+				break;
+			}
+		}
+	}
+	ce_project *p = ce_project_new();
+	const json::Json *coreName = cfg.find("coreName"), *version = cfg.find("version");
+	ce_project_set_core(p, coreName != nullptr ? coreName->text.c_str() : "", version != nullptr ? version->text.c_str() : "", sha.c_str());
+	if (const json::Json *system = cfg.find("systemId")) ce_project_header_set(p, "Platform", system->text.c_str());
+	const char *error = nullptr;
+	ce_project_file_add(p, beside.filename().string().c_str(), slotId.c_str(), beside.string().c_str(), &error);
+	json::Json slotMap, files, recorded, none;
+	slotMap.kind = recorded.kind = none.kind = json::Json::Kind::Object;
+	files.kind = json::Json::Kind::Array;
+	files.items.push_back(json::Json::string(beside.filename().string()));
+	slotMap.members.emplace_back(slotId, files);
+	if (const json::Json *decl = cfg.find("settings"))
+	{
+		const json::Json *machineSetting = cfg.find("machineSetting");
+		for (size_t i : SettingsViewModel::applicable(decl->items, json::write(slotMap), none, machineSetting != nullptr ? machineSetting->text : ""))
+		{
+			const json::Json *name = decl->items[i].find("name"), *v = decl->items[i].find("default");
+			if (name != nullptr && v != nullptr) recorded.members.emplace_back(name->text, *v);
+		}
+	}
+	ce_project_set_settings_text(p, json::write(recorded).c_str(), &error);
+	ce_project_set_title(p, title.empty() ? fs::path(game).stem().string().c_str() : title.c_str());
+	ce_project_save(p, project.string().c_str(), &error);
+	ce_project_free(p);
+	return project;
+}
+/* ...and opened in the session */
+std::filesystem::path openGame(SessionViewModel &session, const std::string &package, const std::string &game, std::string &error,
+	std::filesystem::path project = {}, const std::string &title = {})
+{
+	project = gameProject(package, game, project, title);
+	session.run("openProject", {project.string(), package}, error);
+	return project;
 }
 
 class Sample : public ViewModel
@@ -676,9 +763,9 @@ void chimeraSettingsImport()
 	std::vector<std::string> names;
 	for (const ChimeraSetting &s : chimeraSettings()) names.push_back(s.name);
 	std::sort(names.begin(), names.end());
-	CHECK(std::adjacent_find(names.begin(), names.end()) == names.end() && names.size() == 118);
+	CHECK(std::adjacent_find(names.begin(), names.end()) == names.end() && names.size() == 119);
 	const std::string forLua = chimeraSettingsText();
-	CHECK(std::count(forLua.begin(), forLua.end(), '\n') == 118);
+	CHECK(std::count(forLua.begin(), forLua.end(), '\n') == 119);
 	/* Chimera's file through Load Config From */
 	const fs::path dir = fs::temp_directory_path() / ("chimera-test-import-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
 	fs::create_directories(dir);
@@ -1468,8 +1555,10 @@ bool speedAndSound(const char *package, const char *rom)
 	CHECK(session.unthrottled.get() && session.status.get() == "Unthrottled");
 	session.run("toggleThrottle", {}, error);
 
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	/* frames run in a stretch of time, at a speed (the machine runs at 60 a second) */
 	auto framesIn = [&](double seconds) {
 		const int64_t from = session.frame.get();
@@ -1649,8 +1738,10 @@ bool overlay(const char *package, const char *rom)
 	SessionViewModel session(d, inputs);
 	session.turboSeek.set(true);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	session.showFrameCounter.set(true);
 	session.showInput.set(true);
 	session.showLagCounter.set(true);
@@ -1733,7 +1824,7 @@ bool pianoRollColumns(const char *package, const char *rom)
 		session.turboSeek.set(true);
 		PianoRollViewModel roll(d, inputs, session);
 		std::string error;
-		session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+		openGame(session, package, (dir / "walker.testrom").string(), error);
 		CHECK(d.until([&] { return session.isOpen.get() && roll.frames().columnCount() == 8; }, 60));
 		CHECK(roll.hiddenColumns.get().empty());
 		CHECK(roll.run("hideColumn", {std::string("P1 B")}, error).has_value() && roll.hiddenColumns.get() == "P1 B");
@@ -1745,7 +1836,7 @@ bool pianoRollColumns(const char *package, const char *rom)
 		CHECK(columns != nullptr && columns->rowCount() == 8);
 		if (columns != nullptr) fromValue(columns->cell(5, 2), shown);
 		CHECK(!shown);
-		CHECK(session.run("saveAsProject", {fresh.string()}, error).has_value());
+		CHECK(session.run("saveProject", {fresh.string()}, error).has_value());
 		CHECK(d.until([&] { return session.projectPath.get() == fresh.string(); }, 20));
 		session.run("close", {}, error);
 		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
@@ -1846,7 +1937,7 @@ bool autoholdAndAutofire(const char *package, const char *rom)
 	SessionViewModel session(d, inputs);
 	session.turboSeek.set(true);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get() && session.buttonNames().size() == 8; }, 60));
 	/* the key the package gives P1 A, and Down's */
 	std::string keyA = session.defaultBindingTexts()[4];
@@ -1911,11 +2002,11 @@ bool backupAndHistory(const char *package, const char *rom)
 	session.turboSeek.set(true);
 	std::string error;
 	session.backupFolder.set((dir / "backup").string());
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
-	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	CHECK(!session.run("saveBackup", {}, error));
+	openGame(session, package, (dir / "walker.testrom").string(), error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	const fs::path project = dir / "walker.chimeraProject";
-	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(session.run("saveProject", {project.string()}, error).has_value());
 	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	session.key("Down", true);
 	for (int i = 0; i < 30; i++) session.run("frameAdvance", {}, error);
@@ -1973,7 +2064,7 @@ bool traceAndRegisters(const char *package, const char *rom)
 	TraceLoggerViewModel trace(d, session);
 	DebuggerViewModel debugger(d, session);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get() && session.hasTrace.get() && session.hasRegisters.get(); }, 60));
 	CHECK(session.traceHeader.get() == "Where: opcode a b c immediate\tthe registers");
 	auto advance = [&](int64_t n) {
@@ -2056,8 +2147,10 @@ bool macroTool(const char *package, const char *rom)
 	PianoRollViewModel roll(d, inputs, session);
 	MacroToolViewModel tool(d, roll, session);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	auto advance = [&](int64_t n) {
 		const int64_t to = session.frame.get() + n;
 		for (int64_t i = 0; i < n; i++) session.run("frameAdvance", {}, error);
@@ -2156,8 +2249,10 @@ bool luaLibraries(const char *package, const char *rom)
 	hostInput.mouseY.set(34);
 	hostInput.mouseButtons.set(HostInputViewModel::kLeft | HostInputViewModel::kRight);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	/* System > "Loaded core: name (id)": the machine's id as the core names it */
 	CHECK(session.systemId.get() == "Synth" && session.systemName.get() == "Synthetic Witness");
 	auto said = [&](const std::string &start) {
@@ -2380,13 +2475,13 @@ bool greenzoneBudgets(const char *package, const char *rom)
 	CHECK(session.greenzoneNearStride.get() == 32);
 	session.greenzoneNearStride.set(3);
 	session.compileCacheRoot.set((dir / "code").string());
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	CHECK(!session.run("setProjectBudgets", {int64_t{256}, int64_t{2}}, error));
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get() && session.budgetMbApplied.get() == 512 && session.nearStrideApplied.get() == 3; }, 60));
 	/* a core that compiles nothing keeps no compiled code */
 	CHECK(session.compileCacheDir.get().empty() && (ce_cache_dir_get() == nullptr || *ce_cache_dir_get() == '\0') && !fs::exists(dir / "code"));
-	CHECK(!session.run("setProjectBudgets", {int64_t{256}, int64_t{2}}, error));
 	const fs::path project = dir / "walker.chimeraProject";
-	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(session.run("saveProject", {project.string()}, error).has_value());
 	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	const fs::path budgets = dir / "cache" / session.projectId.get() / "budgets.json";
 	CHECK(!session.run("setProjectBudgets", {int64_t{10}, int64_t{2}}, error));
@@ -2406,15 +2501,18 @@ bool greenzoneBudgets(const char *package, const char *rom)
 	/* the closeness alone: the memory stays every project's */
 	CHECK(session.run("setProjectBudgets", {int64_t{0}, int64_t{8}}, error).has_value());
 	CHECK(reopen() && session.budgetMbApplied.get() == 512 && session.nearStrideApplied.get() == 8);
-	/* Chimera's Stop Movie under TAStudio: the project let go, its game open alone with an empty movie */
+	/* Chimera's Stop Movie under TAStudio: a new project of the same game and
+	 * settings with an empty movie, written nowhere until its first save (a
+	 * game never runs alone: owner, 2026-10-26) */
 	{
 		for (int i = 0; i < 4; i++) session.run("frameAdvance", {}, error);
 		CHECK(d.until([&] { return inputs.size() >= 4; }, 20));
 		const int64_t was = session.opens.get();
 		CHECK(session.run("stopMovie", {}, error).has_value());
-		CHECK(d.until([&] { return session.opens.get() > was && session.isOpen.get() && !session.hasProject.get(); }, 30));
+		CHECK(d.until([&] { return session.opens.get() > was && session.isOpen.get() && session.hasProject.get(); }, 30));
 		CHECK(session.projectPath.get().empty() && inputs.size() == 0 && session.gameName.get() == "walker");
-		CHECK(!session.run("stopMovie", {}, error));
+		CHECK(session.projectTitle.get() == "walker" && session.coreName.get() == "Synth");
+		CHECK(!session.run("saveProject", {}, error) && error.find("has not been saved yet") != std::string::npos);
 	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
@@ -2435,9 +2533,9 @@ bool customizeOptions(const char *package, const char *rom)
 		SessionViewModel session(d, inputs);
 		session.turboSeek.set(true);
 		CustomizeViewModel customize(d, session);
-		auto openGame = [&] {
+		auto openOne = [&] {
 			const int64_t was = session.opens.get();
-			session.run("open", {std::string(package), std::string(rom)}, error);
+			openGame(session, package, std::string(rom), error);
 			return d.until([&] { return session.opens.get() > was && session.isOpen.get(); }, 60);
 		};
 		auto settled = [&](bool running) {
@@ -2445,13 +2543,13 @@ bool customizeOptions(const char *package, const char *rom)
 			return session.running.get() == running;
 		};
 		/* the first runs; paused, the next waits; played, the next runs */
-		CHECK(openGame() && settled(true));
+		CHECK(openOne() && settled(true));
 		session.run("pause", {}, error);
 		CHECK(settled(false));
-		CHECK(openGame() && settled(false));
+		CHECK(openOne() && settled(false));
 		session.run("play", {}, error);
 		CHECK(settled(true));
-		CHECK(openGame() && settled(true));
+		CHECK(openOne() && settled(true));
 		/* nothing pauses it but the person: no menu (the window has no such
 		 * call any more) and not the window going behind another (owner,
 		 * 2026-10-24) */
@@ -2486,7 +2584,7 @@ bool customizeOptions(const char *package, const char *rom)
 		session.turboSeek.set(true);
 		CustomizeViewModel customize(d, session);
 		customize.startPaused.set(true);
-		session.run("open", {std::string(package), std::string(rom)}, error);
+		openGame(session, package, std::string(rom), error);
 		CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 		d.until([] { return false; }, 0.3);
 		CHECK(!session.running.get());
@@ -2517,16 +2615,14 @@ bool crashRecovery(const char *package, const char *rom)
 	std::string error;
 	session.backupFolder.set((dir / "backup").string());
 	session.recoveryFolder.set((dir / "recovery").string());
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
-	/* a game alone keeps nothing: it has no project */
+	session.recordingMode.set(true);
 	session.key("Down", true);
 	for (int i = 0; i < 5; i++) session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 5; }, 20));
-	d.until([] { return false; }, 0.3);
-	CHECK(!fs::exists(dir / "recovery"));
 	const fs::path project = dir / "walker.chimeraProject";
-	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(session.run("saveProject", {project.string()}, error).has_value());
 	CHECK(d.until([&] { return session.projectPath.get() == project.string() && !session.unsaved.get(); }, 20));
 	const fs::path kept = dir / "recovery" / session.projectId.get();
 	CHECK(!session.projectId.get().empty());
@@ -2703,15 +2799,14 @@ bool tastudioSettings(const char *package, const char *rom)
 		session.run("saveProject", {}, error);
 		return d.until([&] { return !session.unsaved.get(); }, 20);
 	};
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
-	/* a game alone has nothing to save */
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
-	d.until([] { return false; }, 0.1);
-	CHECK(!session.unsaved.get());
 	const fs::path project = dir / "walker.chimeraProject";
-	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(session.run("saveProject", {project.string()}, error).has_value());
 	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	CHECK(!session.unsaved.get());
 	/* frames run past the movie's end are a change */
@@ -3041,10 +3136,9 @@ bool cacheManager(const char *package, const char *rom)
 	session.turboSeek.set(true);
 	session.cacheFolder.set((dir / "cache").string());
 	std::string error;
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
-	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	const fs::path project = dir / "walker.chimeraProject";
-	CHECK(session.run("saveAsProject", {project.string(), std::string("Walker")}, error).has_value());
+	openGame(session, package, (dir / "walker.testrom").string(), error, project, "Walker");
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	for (int i = 0; i < 10; i++) session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 10; }, 20));
@@ -3356,95 +3450,6 @@ bool mediaMaker()
 	return true;
 }
 
-/* Chimera's Batch Runner: games run in turn in the headless runner, each
- * with the core that takes its kind of file; what came of each, and dumped */
-bool batchRun(const char *package, const char *rom)
-{
-#ifdef _WIN32
-	(void)package;
-	(void)rom;
-	std::printf("SKIP the Batch Runner: its test starts chimera-run through a POSIX shell\n");
-	return true;
-#else
-	namespace fs = std::filesystem;
-	std::error_code ec;
-	const fs::path runner = fs::canonical("/proc/self/exe", ec).parent_path() / ".." / ".." / "chimera-run";
-	if (!fs::exists(runner, ec))
-	{
-		std::printf("SKIP the Batch Runner: no chimera-run at %s\n", runner.string().c_str());
-		return true;
-	}
-	const fs::path dir = fs::temp_directory_path() / ("chimera-test-batch-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-	fs::create_directories(dir);
-	const fs::path other = dir / "letter.xyz";
-	{
-		std::ofstream(other) << "not a game";
-	}
-	ManualDispatcher d;
-	int started = 0;
-	/* what is done while the first game runs */
-	std::function<void()> whileRunning;
-	/* the runner, waited for: its arguments quoted for the shell */
-	auto run = [&](std::vector<std::string> args, std::function<void(int, std::string, std::string)> done) {
-		started++;
-		if (whileRunning) std::exchange(whileRunning, nullptr)();
-		std::string command = "'" + runner.string() + "'";
-		for (const std::string &a : args) command += " '" + a + "'";
-		const fs::path err = dir / "err.txt";
-		command += " > /dev/null 2> '" + err.string() + "'";
-		const int code = std::system(command.c_str());
-		done(WIFEXITED(code) ? WEXITSTATUS(code) : -1, {}, readFile(err));
-	};
-	BatchRunViewModel batch(d, run, [&](const std::string &ext) {
-		return ext == "testrom" ? std::vector<std::pair<std::string, std::string>>{{"Synth", package}}
-								: std::vector<std::pair<std::string, std::string>>{};
-	});
-	batch.workFolder.set((dir / "work").string());
-	std::string error;
-	CHECK(!batch.run("go", {}, error) && error == "No files!");
-	CHECK(!batch.run("dump", {(dir / "none.txt").string()}, error) && error == "No results to save!");
-	batch.run("addFile", {std::string(rom)}, error);
-	batch.run("addFile", {other.string()}, error);
-	batch.frames.set(30);
-	/* as Chimera's, the list clears during a run and the run goes on with the games it started with */
-	bool cleared = false;
-	whileRunning = [&] {
-		std::string e;
-		batch.run("clear", {}, e);
-		CHECK(e.empty() && batch.fileCount.get() == 0 && batch.total.get() == 2);
-		CHECK(!batch.run("go", {}, e) && e == "Old one still running!");
-		cleared = true;
-	};
-	CHECK(batch.run("go", {}, error).has_value());
-	CHECK(cleared);
-	CHECK(d.until([&] { return !batch.running.get(); }, 60));
-	CHECK(batch.status.get() == "Status: Finished!" && batch.done.get() == 2 && started == 1);
-	const auto &r = batch.results();
-	CHECK(r.size() == 2);
-	if (r.size() != 2) return false;
-	std::printf("batch: %s %s %lld frames %lld lag, %s %s\n", r[0].status.c_str(), r[0].sha1.c_str(), static_cast<long long>(r[0].frames),
-		static_cast<long long>(r[0].lagFrames), r[1].status.c_str(), r[1].detail.c_str());
-	CHECK(r[0].status == "Success" && r[0].core == "Synth" && r[0].frames == 30 && r[0].lagFrames >= 0 && r[0].sha1.size() == 40);
-	CHECK(r[1].status == "ErrorOnLoad" && r[1].detail == "no installed core takes .xyz files" && r[1].frames == 0);
-	/* the runner's files are not left behind */
-	CHECK(fs::is_empty(dir / "work", ec));
-	const fs::path dump = dir / "results.txt";
-	CHECK(batch.run("dump", {dump.string()}, error) == Value(int64_t{2}));
-	const std::string text = readFile(dump);
-	CHECK(text.rfind(std::string(rom) + "\t" + rom + "\tSynth\tSuccess\t30\t", 0) == 0 && text.find("\tErrorOnLoad\t0\t0\t") != std::string::npos);
-	/* 0 frames loads the game and runs none, as Chimera's does */
-	batch.run("addFile", {std::string(rom)}, error);
-	batch.frames.set(0);
-	CHECK(batch.run("go", {}, error).has_value());
-	CHECK(d.until([&] { return !batch.running.get(); }, 60));
-	CHECK(batch.results().size() == 1 && batch.results()[0].status == "Success" && batch.results()[0].frames == 0 && started == 2);
-	batch.frames.set(-1);
-	CHECK(!batch.run("go", {}, error) && error == "frames to run cannot be below 0");
-	fs::remove_all(dir);
-	return true;
-#endif
-}
-
 /* Chimera's Help menu: the build and the core in a bug report's words, a
  * report's first lines filled in from the session, and a zip of it all */
 bool helpMenu(const char *package, const char *rom)
@@ -3474,10 +3479,10 @@ bool helpMenu(const char *package, const char *rom)
 	if (help.reportFiles.get().empty())
 		CHECK(help.status.get() == "No saved project, crash note or log was found. The zip will hold the text.");
 	/* a project open: its core, its game, its settings off their defaults */
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get() && settings.shown.get() > 0; }, 60));
 	const fs::path project = dir / "walker.chimeraProject";
-	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(session.run("saveProject", {project.string()}, error).has_value());
 	/* the path is said a moment before the project is: both, before the report */
 	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	CHECK(fromValue(help.run("versionReport", {}, error).value_or(Value()), text) &&
@@ -3588,7 +3593,7 @@ bool coreMenu(const char *package, const char *rom, const char *slotsPackage, co
 	SessionViewModel session(d, inputs);
 	session.turboSeek.set(true);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	CHECK(session.hasSaveData.get() && session.hasGameTimer.get() && !session.isGameCore.get() && !session.hasMovieImport.get());
 	/* the save files, and written out */
@@ -3617,12 +3622,12 @@ bool coreMenu(const char *package, const char *rom, const char *slotsPackage, co
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	/* a core that imports movies; a game core */
-	session.run("open", {std::string(slotsPackage), std::string(rom)}, error);
+	openGame(session, slotsPackage, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	CHECK(session.hasMovieImport.get() && !session.isGameCore.get());
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	session.run("open", {std::string(gamePackage), std::string(rom)}, error);
+	openGame(session, gamePackage, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60) && session.isGameCore.get());
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
@@ -3641,7 +3646,7 @@ bool columnsMenu(const char *package, const char *rom)
 	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	/* the columns, and then the ones hidden at first, which come a moment after */
 	CHECK(d.until([&] { return session.isOpen.get() && roll.frames().columnCount() == 47 && !roll.hiddenColumns.get().empty(); }, 60));
 	RowModel *groups = nullptr, *columns = nullptr;
@@ -3727,9 +3732,8 @@ bool projectDetails(const char *package, const char *rom)
 		ProjectDetailsViewModel details(d, session);
 		std::string error;
 		CHECK(!details.run("setComments", {std::string("none")}, error) && error == "no project is open");
-		session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+		openGame(session, package, (dir / "walker.testrom").string(), error, project, "the corridor");
 		CHECK(d.until([&] { return session.isOpen.get(); }, 60));
-		CHECK(session.run("saveAsProject", {project.string(), std::string("the corridor")}, error).has_value());
 		CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 		CHECK(details.run("reload", {}, error).has_value() && details.gameName.get() == "the corridor" && details.core.get() == "Synth");
 		CHECK(details.run("setHeader", {std::string("a TASer"), std::string("1.0"), std::string("SYNTH-01"), std::string("Walker"), false}, error).has_value());
@@ -3803,7 +3807,7 @@ bool machine(const char *package, const char *rom)
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
 
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(error.empty());
 	if (!d.until([&] { return session.isOpen.get() || session.status.get().rfind("Could not", 0) == 0; }, 60))
 	{
@@ -3812,6 +3816,8 @@ bool machine(const char *package, const char *rom)
 		return true;
 	}
 	CHECK(session.isOpen.get());
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	CHECK(session.buttonCount.get() == 8);
 	CHECK(roll.rowLists()[0].model->columnCount() == 8);
 	CHECK(roll.rowLists()[0].model->columnName(4) == "P1 A");
@@ -3999,8 +4005,9 @@ bool ramSearch(const char *package, const char *rom)
 	RamWatchViewModel watches(d, session);
 	search.setRamWatch(&watches);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get() && search.domains.get().find("RAM") != std::string::npos; }, 60));
+	session.recordingMode.set(true);
 	search.set("domain", std::string("RAM"), error);
 	search.set("size", int64_t{1}, error);
 	session.run("frameAdvance", {}, error);
@@ -4257,7 +4264,7 @@ bool settings(const char *package, const char *rom)
 	session.turboSeek.set(true);
 	SettingsViewModel settings(d, session);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get() && settings.shown.get() == 1; }, 60));
 	RowModel &rows = *settings.rowLists()[0].model;
 	std::string name, type;
@@ -4308,7 +4315,7 @@ bool settings(const char *package, const char *rom)
 	CHECK(filled(0xAB) >= zeros);
 	/* another game starts from the package's own settings */
 	const int64_t opensThird = session.opens.get();
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.opens.get() > opensThird; }, 60));
 	CHECK(filled(0) == zeros);
 	return true;
@@ -4767,22 +4774,22 @@ bool newProject(const char *package, const char *rom)
 	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
-	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	const fs::path project = dir / "walker.chimeraProject";
+	openGame(session, package, (dir / "walker.testrom").string(), error, project, "down the corridor");
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	session.key("Down", true);
 	for (int i = 0; i < 5; i++) session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 5; }, 20));
 	session.key("Down", false);
 	std::vector<uint64_t> made(5);
 	inputs.read(0, made);
-	const fs::path project = dir / "walker.chimeraProject";
-	CHECK(session.run("saveAsProject", {project.string(), std::string("down the corridor")}, error).has_value());
-	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
+	session.run("saveProject", {}, error);
+	CHECK(d.until([&] { return session.status.get().rfind("Saved", 0) == 0; }, 20));
 	const std::string text = readFile(project);
 	CHECK(text.find("\"Platform\"") != std::string::npos && text.find("initFillByte") != std::string::npos &&
 		text.find("walker.testrom") != std::string::npos && text.find("Synth") != std::string::npos);
-	/* a project open, Save As Project is Save Project As's */
-	CHECK(!session.run("saveAsProject", {project.string()}, error) && error.find("a project is open") != std::string::npos);
 	/* opened again in a new session (one machine at a time: the sandbox
 	 * puts each at the same address) */
 	session.run("close", {}, error);
@@ -4905,8 +4912,10 @@ bool ramWatch(const char *package, const char *rom)
 	session.turboSeek.set(true);
 	RamWatchViewModel watches(d, session);
 	std::string error;
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get() && !watches.domains.get().empty(); }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	const std::string firstDomain = watches.domains.get().substr(0, watches.domains.get().find(','));
 	CHECK(("," + watches.domains.get() + ",").find(",RAM,") != std::string::npos);
 	/* a byte the game changes from one frame to the next */
@@ -5199,8 +5208,10 @@ bool hexEditor(const char *package, const char *rom)
 	session.turboSeek.set(true);
 	HexEditorViewModel hex(d, session);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get() && !hex.domains.get().empty(); }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	hex.set("domain", std::string("RAM"), error);
 	std::vector<uint8_t> ram = session.readDomain("RAM");
 	const int64_t size = static_cast<int64_t>(ram.size());
@@ -5406,8 +5417,10 @@ bool pianoRollEditing(const char *package, const char *rom)
 	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	for (int i = 0; i < 10; i++) session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 10; }, 20));
 	/* frame f holds button f % 8 */
@@ -5640,6 +5653,7 @@ bool pianoRollEditing(const char *package, const char *rom)
 		CHECK(undoTo(start));
 		/* recorded: a hidden button held does not go into the movie */
 		{
+			session.recordingMode.set(true);
 			size_t down = 0;
 			while (down < session.buttonNames().size() && session.buttonNames()[down].find("Down") == std::string::npos) down++;
 			CHECK(down < session.buttonNames().size() && down != 2);
@@ -5842,8 +5856,10 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 	PianoRollViewModel roll(d, inputs, session);
 	ControlsViewModel controls(d, session);
 	std::string error;
-	session.run("open", {std::string(slotsPackage), std::string(rom)}, error);
+	openGame(session, slotsPackage, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	for (int i = 0; i < 7; i++) session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 7; }, 20));
 	RowModel &rows = roll.frames();
@@ -5926,6 +5942,8 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 			const int64_t end = inputs.size();
 			session.run("seek", {end}, error);
 			d.until([&] { return session.frame.get() == end; }, 20);
+			/* an edit by hand ends recording, as Chimera's does */
+			session.recordingMode.set(true);
 			for (const std::string &k : keys) session.key(k, true);
 			session.run("frameAdvance", {}, error);
 			d.until([&] { return session.frame.get() == end + 1; }, 20);
@@ -5975,17 +5993,30 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 		controls.run("setAnalog", {int64_t{0}, std::string("mult"), 1.0}, error);
 		controls.run("setAnalog", {int64_t{0}, std::string("deadzone"), 0.0}, error);
 		controls.run("save", {}, error);
-		/* how far it moved since the last frame, read once: the next frame has moved nothing */
-		{
+		/* how far it moved since the last frame, read once, as Chimera's: 120
+		 * pixels push it all the way at 100% (RelativeMouseSensitivity), and
+		 * no further; the next frame has moved nothing */
+		auto moved = [&](int64_t first, int64_t second) {
 			const int64_t end = inputs.size();
 			session.run("seek", {end}, error);
 			d.until([&] { return session.frame.get() == end; }, 20);
-			session.run("pointerMoved", {int64_t{3000}, int64_t{0}}, error);
-			session.run("pointerMoved", {int64_t{2000}, int64_t{0}}, error);
+			session.recordingMode.set(true);
+			session.run("pointerMoved", {first, int64_t{0}}, error);
+			session.run("pointerMoved", {second, int64_t{0}}, error);
 			session.run("frameAdvance", {}, error);
 			d.until([&] { return session.frame.get() == end + 1; }, 20);
-			CHECK(dial(end) == 50);
-		}
+			return dial(end);
+		};
+		CHECK(moved(36, 24) == 50);
+		CHECK(moved(3000, 2000) == 100);
+		CHECK(moved(-30, 0) == -25);
+		/* the sensitivity: Controller Config's copy, kept by Save */
+		CHECK(controls.run("edit", {}, error).has_value() && controls.mouseSensitivityCopy.get() == 100);
+		controls.mouseSensitivityCopy.set(200);
+		CHECK(controls.mouseSensitivity.get() == 100 && moved(30, 0) == 25);
+		controls.run("save", {}, error);
+		CHECK(controls.mouseSensitivity.get() == 200 && moved(30, 0) == 50);
+		controls.mouseSensitivity.set(100);
 		CHECK(held({}) == 0);
 		controls.run("caught", {int64_t{0}, std::string("WMouse X")}, error);
 		controls.run("setAnalog", {int64_t{0}, std::string("mult"), -2.0}, error);
@@ -6020,7 +6051,7 @@ bool controlsFromChimera(const char *package, const char *rom)
 	ControlsViewModel controls(d, session);
 	std::string error;
 	auto open = [&] {
-		session.run("open", {std::string(package), std::string(rom)}, error);
+		openGame(session, package, std::string(rom), error);
 		return d.until([&] { return session.isOpen.get() && controls.core.get() == "Synth"; }, 60);
 	};
 	auto close = [&] {
@@ -6072,8 +6103,10 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	ControlsViewModel controls(d, session);
 	HotkeysViewModel hotkeys(d);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get() && controls.core.get() == "Synth"; }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	RowModel &buttons = *controls.rowLists()[0].model;
 	CHECK(buttons.columnName(3) == "keys" && buttons.columnName(4) == "packageKeys" && buttons.columnName(5) == "changed");
 	auto text = [&](int64_t row, int32_t column) {
@@ -6127,6 +6160,7 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	/* remembered when the machine starts again */
 	session.run("restart", {}, error);
 	CHECK(d.until([&] { return session.opens.get() == 2; }, 60));
+	session.recordingMode.set(true);
 	CHECK(session.bindingTexts()[static_cast<size_t>(down)] == "K");
 	frame = session.frame.get();
 	/* keys pressed in a box, as Chimera's: with Auto Tab one replaces the keys and the next box takes the next */
@@ -6384,10 +6418,10 @@ bool greenzoneChoice(const char *package, const char *rom)
 	SessionViewModel session(d, inputs);
 	session.turboSeek.set(true);
 	std::string error;
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	const fs::path project = dir / "g.chimeraProject";
-	session.run("saveAsProject", {project.string()}, error);
+	session.run("saveProject", {project.string()}, error);
 	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
@@ -6462,7 +6496,7 @@ bool greenzoneChoice(const char *package, const char *rom)
 	/* a game alone starts on every frame */
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get() && session.greenzonePeriod.get() == 1; }, 60));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
@@ -6488,7 +6522,7 @@ bool rerecordCount(const char *package, const char *rom)
 	PianoRollViewModel roll(d, inputs, session);
 	BranchesViewModel branches(d, inputs, session, roll);
 	std::string error;
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	for (int i = 0; i < 10; i++) session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 10; }, 20));
@@ -6533,7 +6567,7 @@ bool rerecordCount(const char *package, const char *rom)
 	settle();
 	CHECK(session.rerecords.get() == 5);
 	const fs::path project = dir / "walker.chimeraProject";
-	session.run("saveAsProject", {project.string()}, error);
+	session.run("saveProject", {project.string()}, error);
 	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	{
 		const std::string text = readFile(project);
@@ -6569,10 +6603,10 @@ bool recordingMode(const char *package, const char *rom)
 	session.turboSeek.set(true);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get() && session.buttonNames().size() == 8; }, 60));
 	const fs::path project = dir / "walker.chimeraProject";
-	CHECK(session.run("saveAsProject", {project.string()}, error).has_value());
+	CHECK(session.run("saveProject", {project.string()}, error).has_value());
 	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	CHECK(!session.recordingMode.get());
 	const std::vector<std::string> &names = session.buttonNames();
@@ -6700,8 +6734,10 @@ bool scriptsOnMachine(const char *package, const char *rom)
 	lua.toWindow = [&session](const std::function<void()> &job) { return session.onWindowWait(job); };
 	session.setScriptTurns([&lua] { lua.frameStart(); }, [&lua] { lua.frameDone(); });
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	CHECK(lua.run(R"(
 seen, gaps, bytes, system = {}, 0, 0, ""
 event.onframestart(function() joypad.set({["P1 A"] = emu.framecount() % 3 == 0}) end)
@@ -6786,8 +6822,10 @@ bool freezes(const char *package, const char *rom)
 		return d.until([&] { return session.frame.get() == to; }, 20);
 	};
 	auto settle = [&] { d.until([] { return false; }, 0.2); };
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	/* TAStudio's recording mode: what is held becomes the frame */
+	session.recordingMode.set(true);
 	/* a byte the game never writes */
 	const int64_t at = 4000;
 	session.key("Down", true);
@@ -6831,6 +6869,7 @@ bool freezes(const char *package, const char *rom)
 	CHECK(session.frozenCount.get() == 1 && session.status.get() == "Freezes toggled (on)");
 	/* the machine stops: the freeze is switched off, not removed */
 	session.key("Down", false);
+	session.recordingMode.set(true);
 	session.run("scriptHold", {std::string("P1 Up\nP1 Down\nP1 Left\nP1 Right\nP1 A\nP1 B\nP1 Start\nP1 Select")}, error);
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.status.get().find("The machine stopped") == 0; }, 20));
@@ -6839,7 +6878,7 @@ bool freezes(const char *package, const char *rom)
 	/* another game: gone */
 	session.run("toggleAllFreezes", {}, error);
 	CHECK(session.frozenCount.get() == 1);
-	session.run("open", {std::string(package), (dir / "other.testrom").string()}, error);
+	openGame(session, package, (dir / "other.testrom").string(), error);
 	CHECK(d.until([&] { return session.opens.get() == 4 && session.isOpen.get(); }, 60));
 	CHECK(d.until([&] { return session.freezes().empty() && session.frozenCount.get() == 0; }, 20));
 	/* and closing the game lets them go */
@@ -7456,7 +7495,6 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
 	CHECK(!session.run("saveProject", {}, error) && error == "this project has not been saved yet: say where it goes");
-	CHECK(!session.run("saveAsProject", {boardA.string()}, error));
 	CHECK(session.run("saveProject", {boardA.string()}, error).has_value());
 	CHECK(d.until([&] { return session.projectPath.get() == boardA.string(); }, 20));
 	CHECK(std::regex_search(readFile(boardA), std::regex("\"gameLogo\"\\s*:\\s*\"on\"")));
@@ -7829,8 +7867,9 @@ bool movieImport(const char *slotsPackage, const char *rom, const std::string &m
 	return true;
 }
 
-/* Open Game asks only for the game: the installed core that takes its kind of
- * file opens it, and when two do, both are offered */
+/* The cores that take a kind of file (New Project's start from a dropped
+ * file asks it); a game is never opened by itself, only in a project (owner,
+ * 2026-10-26) */
 bool openByKind(const char *package, const char *rom, const char *again)
 {
 	namespace fs = std::filesystem;
@@ -7860,47 +7899,18 @@ bool openByKind(const char *package, const char *rom, const char *again)
 	std::string column;
 	fromValue(installed.rowLists()[0].model->cell(0, 3), column);
 	CHECK(column == ".testrom");
-	session.setFinders([&installed](const std::string &n, const std::string &h, std::string &note) { return installed.packageFor(n, h, note); },
-		[&installed] { return installed.firmwareFolders(); },
-		[&installed](const std::string &ext) { return installed.coresFor(ext); });
-
-	/* a kind of file no core takes says so */
-	error.clear();
-	CHECK(!session.run("openGame", {(dir / "notes.txt").string()}, error));
-	CHECK(error == "no installed core takes .txt files");
-
-	/* one core takes it: it opens */
-	int64_t was = session.opens.get();
-	CHECK(session.run("openGame", {game}, error).has_value());
-	CHECK(d.until([&] { return session.opens.get() > was; }, 60));
-	CHECK(session.isOpen.get() && session.coreName.get() == "Synth" && session.chooseFor.get().empty());
-	session.run("close", {}, error);
-	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-
-	/* two do: both are offered and nothing opens until one is chosen */
+	/* two do: both are listed, the first for New Project's start */
 	fs::copy_file(again, cores / "synth-again.chimeraCore");
 	installed.run("refresh", {}, error);
-	CHECK(installed.coresFor("testrom").size() == 2);
-	was = session.opens.get();
-	session.run("openGame", {game}, error);
-	CHECK(session.chooseFor.get() == game && session.choices.get() == "Synth\nSynth Again");
-	d.until([] { return false; }, 0.2);
-	CHECK(session.opens.get() == was && !session.isOpen.get());
-	CHECK(!session.run("chooseCore", {int64_t{2}}, error));
-	CHECK(session.run("chooseCore", {int64_t{1}}, error).has_value());
-	CHECK(d.until([&] { return session.opens.get() > was; }, 60));
-	CHECK(session.coreName.get() == "Synth Again" && session.chooseFor.get().empty() && session.choices.get().empty());
-
-	/* and turning the offer down opens nothing */
-	was = session.opens.get();
-	session.run("openGame", {game}, error);
-	CHECK(session.chooseFor.get() == game);
-	CHECK(session.run("chooseCore", {int64_t{-1}}, error).has_value());
-	d.until([] { return false; }, 0.2);
-	CHECK(session.chooseFor.get().empty() && session.opens.get() == was && session.coreName.get() == "Synth Again");
-	CHECK(!session.run("chooseCore", {int64_t{0}}, error));
-	session.run("close", {}, error);
-	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	const auto both = installed.coresFor("testrom");
+	CHECK(both.size() == 2 && both[0].first == "Synth" && both[1].first == "Synth Again");
+	/* and the session has nothing that opens a game alone */
+	for (const char *gone : {"open", "openGame", "chooseCore", "saveAsProject"})
+	{
+		error.clear();
+		CHECK(!session.run(gone, {game}, error) && error == std::string("session has no command ") + gone);
+	}
+	CHECK(!session.isOpen.get());
 	fs::remove_all(dir);
 	return true;
 }
@@ -7934,7 +7944,7 @@ bool throttles(const char *package, const char *rom)
 	SessionViewModel session(d, inputs);
 	session.turboSeek.set(true);
 	std::string error;
-	session.run("open", {std::string(package), std::string(rom)}, error);
+	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	CHECK(session.throttle.get() == "clock");
 	session.run("play", {}, error);
@@ -8152,7 +8162,7 @@ bool luaParity(const char *package, const char *rom)
 		CHECK(title == "Mine" && saveTo.size() > 11 && saveTo.substr(saveTo.size() - 11) == "/canvas.png" && saveTo.find("screenshots") != std::string::npos);
 	}
 	/* a game open */
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	session.run("setLag", {int64_t{0}, int64_t{0}}, error);
 	CHECK(lua1("gameinfo.getstatus(), gameinfo.isstatusbad()") == "[\"NotInDatabase\", false]");
@@ -8190,7 +8200,7 @@ bool luaParity(const char *package, const char *rom)
 	/* a few frames, then the game as a project */
 	for (int i = 0; i < 6; i++) session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 6; }, 20));
-	CHECK(session.run("saveAsProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
+	CHECK(session.run("saveProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
 	CHECK(d.until([&] { return session.hasProject.get() && !session.projectPath.get().empty(); }, 20));
 	details.run("reload", {}, error);
 	details.run("setComments", {std::string("first\n\nthird")}, error);
@@ -8276,9 +8286,9 @@ bool turboSeekCancel(const char *package, const char *rom)
 	SessionViewModel session(d, inputs);
 	PianoRollViewModel roll(d, inputs, session);
 	std::string error;
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
-	CHECK(session.run("saveAsProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
+	CHECK(session.run("saveProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
 	CHECK(d.until([&] { return session.hasProject.get(); }, 20));
 	/* a movie long enough to take a while, and nothing kept to go back to but the start */
 	const int64_t length = 400000;
@@ -8330,13 +8340,6 @@ bool luaTastudio(const char *package, const char *rom)
 	fs::copy_file(rom, dir / "walker.testrom");
 	std::string error;
 	session.cacheFolder.set((dir / "cache").string());
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
-	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
-	console.run("openScript", {scriptFile("console.log('alone', tastudio.engaged(), tastudio.islag(0))", "alone")}, error);
-	for (int i = 0; i < 6; i++) session.run("frameAdvance", {}, error);
-	CHECK(d.until([&] { return session.frame.get() == 6; }, 30));
-	CHECK(session.run("saveAsProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
-	CHECK(d.until([&] { return session.hasProject.get() && !session.projectPath.get().empty(); }, 20));
 	auto said = [&](const std::string &start) {
 		std::string found;
 		RowModel *out = console.rowLists()[0].model;
@@ -8350,6 +8353,16 @@ bool luaTastudio(const char *package, const char *rom)
 		}
 		return found;
 	};
+	/* nothing open: TAStudio is not engaged */
+	console.run("openScript", {scriptFile("console.log('alone', tastudio.engaged(), tastudio.islag(0))", "alone")}, error);
+	CHECK(d.until([&] { return !said("alone ").empty(); }, 10) && said("alone ") == "alone false nil");
+	console.run("stopAll", {}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	for (int i = 0; i < 6; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 6; }, 30));
+	CHECK(session.run("saveProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
+	CHECK(d.until([&] { return session.hasProject.get() && !session.projectPath.get().empty(); }, 20));
 	console.run("openScript", {scriptFile(R"(
 console.log("engaged", tastudio.engaged(), tastudio.islag(1000))
 local seen = {}
@@ -8383,7 +8396,6 @@ tastudio.onqueryitemicon(function(row, col) if col == "P1 B" and row == 1 then r
 tastudio.clearIconCache()
 )", "tastudio")}, error);
 	CHECK(console.running.get());
-	CHECK(said("alone ") == "alone false nil");
 	CHECK(said("engaged ") == "engaged true nil");
 	CHECK(said("edits ") == "edits true false 8");
 	CHECK(said("markers ") == "markers here Run start nil 4 4");
@@ -8443,16 +8455,16 @@ bool encodeVideo(const char *package, const char *rom)
 	fs::copy_file(rom, dir / "walker.testrom");
 	std::string error;
 	session.cacheFolder.set((dir / "cache").string());
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
-	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
-	for (int i = 0; i < 30; i++) session.run("frameAdvance", {}, error);
-	CHECK(d.until([&] { return session.frame.get() == 30; }, 30));
 	/* no project: no encode */
 	encoder.fromFrame.set(5);
 	encoder.toFrame.set(14);
 	encoder.output.set((dir / "run.mkv").string());
 	CHECK(!encoder.run("start", {}, error) && error.find("Open a project first") != std::string::npos);
-	CHECK(session.run("saveAsProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
+	openGame(session, package, (dir / "walker.testrom").string(), error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	for (int i = 0; i < 30; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 30; }, 30));
+	CHECK(session.run("saveProject", {(dir / "walker.chimeraProject").string()}, error).has_value());
 	CHECK(d.until([&] { return session.hasProject.get() && !session.projectPath.get().empty(); }, 20));
 	/* the box follows the command: the preset's name, the container's extension */
 	encoder.run("usePreset", {int64_t{5}}, error);
@@ -8974,7 +8986,7 @@ bool squarePixels(const char *declared, const char *square, const char *rom)
 		SessionViewModel session(d, inputs);
 		session.turboSeek.set(true);
 		std::string error;
-		session.run("open", {std::string(package), std::string(rom)}, error);
+		openGame(session, package, std::string(rom), error);
 		d.until([&] { return session.isOpen.get(); }, 60);
 		session.run("frameAdvance", {}, error);
 		Picture::Frame frame;
@@ -9012,10 +9024,10 @@ bool tastudioPanel(const char *package, const char *rom)
 	BranchesViewModel branches(d, inputs, session, roll);
 	std::string error;
 	CHECK(!session.turboSeek.get());
-	session.run("open", {std::string(package), (dir / "walker.testrom").string()}, error);
+	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
 	const fs::path project = dir / "panel.chimeraProject";
-	session.run("saveAsProject", {project.string()}, error);
+	session.run("saveProject", {project.string()}, error);
 	CHECK(d.until([&] { return session.hasProject.get() && session.projectPath.get() == project.string(); }, 20));
 	CHECK(roll.run("fill", {int64_t{150}}, error).has_value());
 	auto seconds = [](std::chrono::steady_clock::time_point since) {
@@ -9242,7 +9254,6 @@ int main(int argc, char **argv)
 			ranMachine = throttles(argv[1], argv[2]) && ranMachine;
 			ranMachine = autoholdAndAutofire(argv[1], argv[2]) && ranMachine;
 			ranMachine = helpMenu(argv[1], argv[2]) && ranMachine;
-			ranMachine = batchRun(argv[1], argv[2]) && ranMachine;
 			ranMachine = mediaMaker() && ranMachine;
 			ranMachine = cacheManager(argv[1], argv[2]) && ranMachine;
 			ranMachine = tastudioSettings(argv[1], argv[2]) && ranMachine;

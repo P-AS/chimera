@@ -757,7 +757,7 @@ function client.is_rewinding() return C.session.rewinding end
 function client.speedmode(percent) C.session.speedPercent = percent end
 function client.reboot_core() C.session.restart() end
 function client.closerom() C.session.close() end
-function client.openrom(path) C.session.openGame(path) end
+function client.openrom(path) error("a game opens only in a project: client.openproject(path) opens one", 2) end
 function client.openproject(path) C.session.openProject(path) end
 function client.getversion() return C.help and C.help.buildName or "Qt prototype" end
 function client.get_approx_framerate() return C.session.fps end

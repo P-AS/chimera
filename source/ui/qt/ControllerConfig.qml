@@ -283,6 +283,23 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+                                // Chimera's RelativeMouseSensitivity, for every control the pointer's movement moves
+                                RowLayout {
+                                    visible: kind.modelData === "analog"
+                                    Layout.topMargin: 4
+                                    spacing: 6
+                                    Label { text: qsTr("Pointer movement (RMouse X/Y) sensitivity:") }
+                                    SpinBox {
+                                        objectName: "mouseSensitivity"
+                                        from: 1
+                                        to: 1000
+                                        stepSize: 10
+                                        editable: true
+                                        value: win.controls.mouseSensitivityCopy
+                                        onValueModified: win.controls.mouseSensitivityCopy = value
+                                    }
+                                    Label { text: qsTr("%") }
+                                }
                             }
                         }
                     }

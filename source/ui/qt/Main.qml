@@ -37,7 +37,6 @@ ApplicationWindow {
     required property QtObject help
     // Tools > MCP Server...: an AI agent working on the open project
     required property QtObject mcp
-    required property QtObject batchRun
     required property QtObject mediaMaker
     required property QtObject cacheManager
     required property QtObject customize
@@ -215,11 +214,19 @@ ApplicationWindow {
         })
     }
     // a file a later start of the program handed over (Customize's single
-    // instance mode): a project as Open Project opens one, a game with the
-    // core that takes its kind of file; the open project's changes asked about first
+    // instance mode): a project as Open Project opens one (the open project's
+    // changes asked about first); a game starts New Project from it
     function openHanded(path) {
         if (path.toLowerCase().endsWith(".chimeraproject")) { root.openProject(path); return }
-        root.leaveProject(() => root.session.run("openGame", [path]))
+        root.newProjectFrom(path)
+    }
+    // a game file named at the start or handed over: a game runs only in a
+    // project (owner, 2026-10-26), so New Project starts from it, as a file
+    // dropped on the window does
+    function newProjectFrom(path) {
+        root.newProject.run("startFrom", [path])
+        newProjectWindow.show()
+        newProjectWindow.raise()
     }
     // a script's client.exit, as Chimera's: closing as the window closes, with the code asked for
     Connections {
@@ -558,7 +565,6 @@ ApplicationWindow {
                 Action { id: luaConsoleAction; property string hotkey: "Lua Console"; text: qsTr("Lua Console"); icon.source: "qrc:/chimera/menu/LuaConsole.png"; onTriggered: { luaConsoleWindow.show(); luaConsoleWindow.raise() } }
                 Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor"); icon.source: "qrc:/chimera/menu/HexEditor.png"; onTriggered: { hexEditorWindow.show(); hexEditorWindow.raise() } }
                 Action { text: qsTr("&Macro Tool"); icon.source: "qrc:/chimera/menu/MacroTool.png"; enabled: root.session.isOpen; onTriggered: { macroToolWindow.show(); macroToolWindow.raise() } }
-                Action { text: qsTr("Batch Runner..."); icon.source: "qrc:/chimera/menu/BatchRunner.png"; onTriggered: { batchRunWindow.show(); batchRunWindow.raise() } }
                 MenuDivider {}
                 // ticked while the core log is kept; off until asked, every run
                 Action {
@@ -885,9 +891,7 @@ ApplicationWindow {
         anchors.fill: parent
         onDropped: (drop) => {
             if (!drop.hasUrls) return
-            root.newProject.run("startFrom", [drop.urls[0]])
-            newProjectWindow.show()
-            newProjectWindow.raise()
+            root.newProjectFrom(drop.urls[0])
             drop.accept()
         }
     }
@@ -1089,39 +1093,6 @@ ApplicationWindow {
             Button { text: qsTr("Cancel"); onClicked: { cheatsDialog.close(); root.afterCheats = null } }
         }
     }
-    // several installed cores take it: the session offers them
-    Dialog {
-        id: chooseCoreDialog
-        objectName: "chooseCoreDialog"
-        title: qsTr("Open it with which core?")
-        anchors.centerIn: parent
-        modal: true
-        visible: root.session.chooseFor !== ""
-        standardButtons: Dialog.Open | Dialog.Cancel
-        ColumnLayout {
-            Label { text: root.session.chooseFor.replace(/^.*[\\/]/, ""); elide: Text.ElideMiddle; Layout.maximumWidth: 420 }
-            ListView {
-                id: coreChoices
-                Layout.fillWidth: true
-                implicitWidth: 320
-                implicitHeight: Math.min(contentHeight, 240)
-                clip: true
-                model: root.session.choices === "" ? [] : root.session.choices.split("\n")
-                delegate: ItemDelegate {
-                    required property string modelData
-                    required property int index
-                    width: coreChoices.width
-                    text: modelData
-                    highlighted: ListView.isCurrentItem
-                    onClicked: coreChoices.currentIndex = index
-                    onDoubleClicked: chooseCoreDialog.accept()
-                }
-            }
-        }
-        onAccepted: root.session.run("chooseCore", [coreChoices.currentIndex])
-        onRejected: root.session.run("chooseCore", [-1])
-    }
-
     Rectangle {
         id: pictureArea
         objectName: "pictureArea"
@@ -1509,7 +1480,6 @@ ApplicationWindow {
         id: logWindow; log: messageLog; clipboard: root.clipboard; visible: false
         customize: root.customize; toolWindows: root.toolWindows; mainWindow: root
     }
-    BatchRun { id: batchRunWindow; vm: root.batchRun; folderOf: root.folderOf; visible: false }
     MediaMaker { id: mediaMakerWindow; vm: root.mediaMaker; mainWindow: root; visible: false }
     CacheManager { id: cacheManagerWindow; vm: root.cacheManager; themeColor: root.osdColor; visible: false; onBudgetsAsked: (projectId, projectLabel) => {
             greenzoneBudgetsWindow.projectId = projectId

@@ -39,6 +39,12 @@ public:
 	/* Chimera's Auto Tab: a key pressed in a box replaces its keys and the
 	 * next box takes the next key; off, a key pressed is one more for the box */
 	Property<bool> autoTab{true};
+	/* Chimera's RelativeMouseSensitivity: how hard the pointer's movement
+	 * (RMouse X and Y) pushes an analog control, in percent, 1 to 1000; at
+	 * 100, 120 pixels in a frame push it all the way, as Chimera's do */
+	Property<int64_t> mouseSensitivity{100};
+	/* the window's copy of it, kept by Save */
+	Property<int64_t> mouseSensitivityCopy{100};
 	/* the core whose controls are listed, and the window's title */
 	Property<std::string> core;
 	Property<std::string> title{"Controller Config"};
@@ -111,7 +117,7 @@ private:
 	std::vector<AnalogBind> analogDraft_;
 	KeyRows normalRows_{*this, Normal}, autofireRows_{*this, Autofire};
 	AnalogRows analogRows_{*this};
-	Connection opensWatch_, savedWatch_, savedAutofireWatch_, savedAnalogWatch_;
+	Connection opensWatch_, savedWatch_, savedAutofireWatch_, savedAnalogWatch_, sensitivityWatch_;
 };
 
 } // namespace chimera::vm

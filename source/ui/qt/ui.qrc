@@ -71,7 +71,6 @@
     <file>TAStudioSettings.qml</file>
     <file>LogWindow.qml</file>
     <file>ReportIssue.qml</file>
-    <file>BatchRun.qml</file>
     <file>MediaMaker.qml</file>
     <file>CacheManager.qml</file>
     <file>Customize.qml</file>
@@ -151,7 +150,6 @@
     <file alias="menu/About.png">../../gui/Chimera.Client.GUI/images/ChimeraSmall.png</file>
     <file alias="menu/CopyVersionInfo.png">../../gui/Chimera.Client.GUI/images/Duplicate.png</file>
     <file alias="menu/ReportIssue.png">../../gui/Chimera.Client.GUI/images/Bug.png</file>
-    <file alias="menu/BatchRunner.png">menu-icons/BatchRunner.png</file>
     <file alias="menu/CacheManager.png">menu-icons/CacheManager.png</file>
     <file alias="menu/CoreManager.png">menu-icons/CoreManager.png</file>
     <file alias="menu/Customize.png">menu-icons/Customize.png</file>

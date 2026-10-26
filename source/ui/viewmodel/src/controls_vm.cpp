@@ -127,6 +127,9 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	expose("fromChimera", "Chimera's bindings carried over, by controller name ({\"AllTrollers\", \"AllTrollersAutoFire\", "
 		"\"AllTrollersAnalog\"}), and \"taken\", the cores that took theirs the first time they opened", fromChimera, true);
 	expose("autoTab", "Auto Tab: a key pressed replaces a box's keys and the next box takes the next; off, it is one more", autoTab, true);
+	expose("mouseSensitivity", "how hard the pointer's movement (RMouse X and Y) pushes an analog control, in percent (1 to "
+		"1000; at 100, 120 pixels in a frame push it all the way), as Chimera's RelativeMouseSensitivity", mouseSensitivity, true);
+	expose("mouseSensitivityCopy", "the window's copy of mouseSensitivity, kept by save", mouseSensitivityCopy, true);
 	expose("core", "the core whose controls are listed", core);
 	expose("title", "the window's title: the controller's name and \"Configuration\"", title);
 	expose("buttonGroups", "the tabs of the buttons, in order (a JSON array: \"Player 1\"..., \"Console\")", buttonGroups);
@@ -348,6 +351,8 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		return {};
 	});
 
+	sensitivityWatch_ = mouseSensitivity.changed.connect([this] { session_.setMouseSensitivity(mouseSensitivity.get()); });
+	session_.setMouseSensitivity(mouseSensitivity.get());
 	opensWatch_ = session_.opens.changed.connect([this] {
 		core.set(session_.coreName.get());
 		title.set(session_.controllerName() + " Configuration");
@@ -421,6 +426,7 @@ void ControlsViewModel::begin()
 	draft_[Normal].resize(session_.buttonNames().size());
 	draft_[Autofire].resize(session_.buttonNames().size());
 	analogDraft_.resize(session_.axes().size());
+	mouseSensitivityCopy.set(mouseSensitivity.get());
 	editing.set(true);
 	changed();
 }
@@ -466,6 +472,7 @@ void ControlsViewModel::keep()
 		else setMember(all, core.get(), mine);
 		savedAnalog.set(json::write(all));
 	}
+	mouseSensitivity.set(std::clamp<int64_t>(mouseSensitivityCopy.get(), 1, 1000));
 	editing.set(false);
 	apply();
 	status.set("Saved the controls of " + core.get());

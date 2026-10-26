@@ -63,7 +63,6 @@
 #include "chimera/vm/config_store.hpp"
 #include "chimera/vm/help_vm.hpp"
 #include "chimera/vm/mcp_vm.hpp"
-#include "chimera/vm/batch_run_vm.hpp"
 #include "chimera/vm/media_maker_vm.hpp"
 #include "chimera/vm/cache_manager_vm.hpp"
 #include "chimera/vm/customize_vm.hpp"
@@ -305,8 +304,8 @@ int main(int argc, char **argv)
 
 	QCommandLineParser args;
 	args.addHelpOption();
-	args.addPositionalArgument(QStringLiteral("package"), QStringLiteral("a core package to open"));
-	args.addPositionalArgument(QStringLiteral("game"), QStringLiteral("the game file to open it with"));
+	args.addPositionalArgument(QStringLiteral("project"), QStringLiteral("a project to open (a game file alone starts New Project from it)"));
+	args.addPositionalArgument(QStringLiteral("package"), QStringLiteral("the core package the project runs on, when it is not installed"));
 	QCommandLineOption fillOpt(QStringLiteral("fill"), QStringLiteral("make the inputs this many frames long"), QStringLiteral("frames"));
 	QCommandLineOption playOpt(QStringLiteral("play"), QStringLiteral("start running once open"));
 	QCommandLineOption measureOpt(QStringLiteral("measure"), QStringLiteral("measure for this many seconds, print, quit"), QStringLiteral("seconds"));
@@ -318,13 +317,21 @@ int main(int argc, char **argv)
 	QCommandLineOption mmfOpt(QStringLiteral("mmf"), QStringLiteral("the memory-mapped file Lua's comm.mmfScreenshot writes to, as Chimera's --mmf"),
 		QStringLiteral("name"));
 	QCommandLineOption schemeOpt(QStringLiteral("color-scheme"), QStringLiteral("light or dark: Chimera's built-in Light or Dark theme for this run (not remembered)"), QStringLiteral("scheme"));
-	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, movie-import, ram-search, ram-watch, hex, controls, hotkeys, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, batch, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
+	QCommandLineOption showOpt(QStringLiteral("show"), QStringLiteral("open a tool window at the start: new-project, movie-import, ram-search, ram-watch, hex, controls, hotkeys, themes, lua, tastudio, undo-history, project-details, tastudio-settings, log, report, media, cache, customize, messages, sound, display, budgets, paths, firmware, data, precompiled, trace, debugger, surfaces, macros, encode, cores"), QStringLiteral("tool"));
 	QCommandLineOption describeOpt(QStringLiteral("describe"), QStringLiteral("print every view model's properties and commands as JSON, and quit"));
 	/* Chimera's --mcp-server and --mcp-allow-changes: the server started for a run nobody clicks in */
 	QCommandLineOption mcpServerOpt(QStringLiteral("mcp-server"), QStringLiteral("start the MCP server (Tools > MCP Server...) at once"));
 	QCommandLineOption mcpChangesOpt(QStringLiteral("mcp-allow-changes"), QStringLiteral("with --mcp-server: the agent may make changes, for this run"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, userdataOpt, describeOpt, schemeOpt, showOpt, mcpServerOpt, mcpChangesOpt});
 	args.process(app);
+	/* a game runs only in a project (owner, 2026-10-26): two files are a project and its package */
+	if (args.positionalArguments().size() >= 2 &&
+		!args.positionalArguments().first().endsWith(QStringLiteral(".chimeraProject"), Qt::CaseInsensitive))
+	{
+		std::fprintf(stderr, "chimera-qt: a game opens only in a project: name a .chimeraProject, and its core package "
+							 "when it is not installed\n");
+		return 2;
+	}
 	/* what the window remembers, in a file of its own (CHIMERA_QT_CONFIG for a test) */
 	const QString configPath = qEnvironmentVariableIsSet("CHIMERA_QT_CONFIG")
 		? qEnvironmentVariable("CHIMERA_QT_CONFIG")
@@ -781,45 +788,11 @@ int main(int argc, char **argv)
 		proc->start(runner, args);
 	};
 	newProject.setSuggestRunner(suggestRunner);
-	/* the headless runner, for what runs a machine in a process of its own:
-	 * chimera-run, beside the program or, in the build tree, where it is
-	 * built (CHIMERA_RUN names another) */
-	auto startRunner = [&app](std::vector<std::string> args, std::function<void(int, std::string, std::string)> done) {
-#ifdef _WIN32
-		const QString exe = QStringLiteral("chimera-run.exe");
-#else
-		const QString exe = QStringLiteral("chimera-run");
-#endif
-		QString runner = qEnvironmentVariable("CHIMERA_RUN");
-		for (const QString &dir : {QCoreApplication::applicationDirPath() + QStringLiteral("/bin"), QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + QStringLiteral("/../..")})
-			if (runner.isEmpty() && QFileInfo::exists(dir + QStringLiteral("/") + exe)) runner = dir + QStringLiteral("/") + exe;
-		if (runner.isEmpty())
-		{
-			done(-1, {}, "chimera-run is not in the program's bin folder");
-			return;
-		}
-		QStringList list;
-		for (const std::string &a : args) list << QString::fromStdString(a);
-		auto *proc = new QProcess(&app);
-		QObject::connect(proc, &QProcess::finished, proc, [proc, done](int code, QProcess::ExitStatus) {
-			const std::string out = proc->readAllStandardOutput().toStdString(), err = proc->readAllStandardError().toStdString();
-			proc->deleteLater();
-			done(code, out, err);
-		});
-		QObject::connect(proc, &QProcess::errorOccurred, proc, [proc, done](QProcess::ProcessError e) {
-			if (e != QProcess::FailedToStart) return;
-			proc->deleteLater();
-			done(-1, {}, "chimera-run could not be started");
-		});
-		proc->start(runner, list);
-	};
-	vm::BatchRunViewModel batchRun(dispatcher, startRunner, [&cores](const std::string &extension) { return cores.coresFor(extension); });
 	vm::MediaMakerViewModel mediaMaker(dispatcher, [&cores] {
 		std::vector<vm::MediaMakerViewModel::Recipe> recipes;
 		for (const auto &r : cores.mediaRecipes()) recipes.push_back({r.core, r.label, r.json});
 		return recipes;
 	});
-	batchRun.workFolder.set(QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)).filePath(QStringLiteral("chimera-batch")).toStdString());
 	/* a movie import asks the core in a process of its own (one machine to a
 	 * process), as Chimera does: chimera-run, beside the program or, in the
 	 * build tree, where it is built (CHIMERA_RUN names another) */
@@ -871,8 +844,7 @@ int main(int argc, char **argv)
 	agentProject.compileRoot.set(newProject.compileRoot.get());
 	vm::Connection agentCompileRootWatch = session.compileCacheRoot.changed.connect([&] { agentProject.compileRoot.set(session.compileCacheRoot.get()); });
 	session.setFinders([&cores](const std::string &n, const std::string &h, std::string &note) { return cores.packageFor(n, h, note); },
-		[&cores] { return cores.firmwareFolders(); },
-		[&cores](const std::string &extension) { return cores.coresFor(extension); });
+		[&cores] { return cores.firmwareFolders(); });
 
 	/* what the window remembers (configPath): folders the environment names
 	 * are the environment's, and not remembered */
@@ -996,7 +968,6 @@ int main(int argc, char **argv)
 	config.keep(session, "captureOsd");
 	config.keep(session, "captureMouse");
 	config.keep(session, "showGameTime");
-	config.keep(batchRun, "frames");
 	config.keep(session, "autofireOn");
 	config.keep(session, "autofireOff");
 	config.keep(session, "autofireSkipsLag");
@@ -1065,6 +1036,7 @@ int main(int argc, char **argv)
 	config.keep(controls, "savedAnalog");
 	config.keep(controls, "fromChimera");
 	config.keep(controls, "autoTab");
+	config.keep(controls, "mouseSensitivity");
 	/* the themes: Chimera's built-in two, and the folder beside the program
 	 * (CHIMERA_THEMES_DIR for a test); --color-scheme picks Light or Dark for
 	 * this run only */
@@ -1173,7 +1145,6 @@ int main(int argc, char **argv)
 	mcpCores();
 	vm::Connection mcpCoresFollow = cores.coresFolder.changed.connect(mcpCores);
 	qt::QmlViewModel mcpQml(mcp);
-	qt::QmlViewModel batchRunQml(batchRun);
 	qt::QmlViewModel mediaMakerQml(mediaMaker);
 	vm::CacheManagerViewModel cacheManager(dispatcher);
 	/* the session's cache folder, the one it lists */
@@ -1265,7 +1236,6 @@ int main(int argc, char **argv)
 	lua.add(projectDetails);
 	lua.add(cores);
 	lua.add(help);
-	lua.add(batchRun);
 	lua.add(mediaMaker);
 	lua.add(cacheManager);
 	lua.add(customize);
@@ -1409,7 +1379,6 @@ int main(int argc, char **argv)
 		{QStringLiteral("buttonRouter"), QVariant::fromValue<QObject *>(&buttonRouter)},
 		{QStringLiteral("help"), QVariant::fromValue<QObject *>(&helpQml)},
 		{QStringLiteral("mcp"), QVariant::fromValue<QObject *>(&mcpQml)},
-		{QStringLiteral("batchRun"), QVariant::fromValue<QObject *>(&batchRunQml)},
 		{QStringLiteral("mediaMaker"), QVariant::fromValue<QObject *>(&mediaMakerQml)},
 		{QStringLiteral("cacheManager"), QVariant::fromValue<QObject *>(&cacheManagerQml)},
 		{QStringLiteral("customize"), QVariant::fromValue<QObject *>(&customizeQml)},
@@ -1519,7 +1488,6 @@ int main(int argc, char **argv)
 		: args.value(showOpt) == QStringLiteral("tastudio-settings") ? QStringLiteral("tastudioSettingsWindow")
 		: args.value(showOpt) == QStringLiteral("log") ? QStringLiteral("logWindow")
 		: args.value(showOpt) == QStringLiteral("report") ? QStringLiteral("reportIssueWindow")
-		: args.value(showOpt) == QStringLiteral("batch") ? QStringLiteral("batchRunWindow")
 		: args.value(showOpt) == QStringLiteral("media") ? QStringLiteral("mediaMakerWindow")
 		: args.value(showOpt) == QStringLiteral("cache") ? QStringLiteral("cacheManagerWindow")
 		: args.value(showOpt) == QStringLiteral("customize") ? QStringLiteral("customizeWindow")
@@ -1646,10 +1614,9 @@ int main(int argc, char **argv)
 		}
 		else
 		{
-			/* a project is open once TAStudio has it (its movie, markers and branches); a game once its machine is */
-			const bool project = args.positionalArguments().first().endsWith(QStringLiteral(".chimeraProject"), Qt::CaseInsensitive);
-			auto ready = [&, project] {
-				if (scriptStarted || !session.isOpen.get() || (project && !session.hasProject.get())) return;
+			/* a project is open once TAStudio has it (its movie, markers and branches) */
+			auto ready = [&] {
+				if (scriptStarted || !session.isOpen.get() || !session.hasProject.get()) return;
 				scriptStarted = true;
 				/* after the restart the machine's opening asked for, so it is not started twice */
 				dispatcher.post(startScript);
@@ -1680,22 +1647,16 @@ int main(int argc, char **argv)
 	QStringList positional;
 	for (const QString &a : args.positionalArguments()) positional << QFileInfo(a).absoluteFilePath();
 	if (positional.size() >= 2)
-	{
-		/* a project and its package, or a package and a game */
-		if (positional[0].endsWith(QStringLiteral(".chimeraProject"), Qt::CaseInsensitive))
-			session.run("openProject", {positional[0].toStdString(), positional[1].toStdString()}, error);
-		else
-			session.run("open", {positional[0].toStdString(), positional[1].toStdString()}, error);
-	}
+		/* a project and its package */
+		session.run("openProject", {positional[0].toStdString(), positional[1].toStdString()}, error);
 	else if (positional.size() == 1)
 	{
 		/* a project alone: its core is found among the installed ones; a game
-		 * alone opens with the core that takes its kind of file, as Chimera's
-		 * does (a jump list's entry is one or the other) */
+		 * alone starts New Project from it, as a file dropped on the window does */
 		if (positional[0].endsWith(QStringLiteral(".chimeraProject"), Qt::CaseInsensitive))
 			session.run("openProject", {positional[0].toStdString()}, error);
 		else
-			session.run("openGame", {positional[0].toStdString()}, error);
+			QMetaObject::invokeMethod(window, "newProjectFrom", Q_ARG(QVariant, positional[0]));
 	}
 	/* the files a later start hands over: the first opened as the window opens a file (asking
 	 * about the open project's changes first), as Chimera's opens the first argument */
@@ -1703,10 +1664,10 @@ int main(int argc, char **argv)
 		if (handed.isEmpty() || handed.first().isEmpty()) return;
 		QMetaObject::invokeMethod(window, "openHanded", Q_ARG(QVariant, handed.first()));
 	});
-	/* Chimera's jump list: the taskbar's Recent list, and each project or game opened on it */
+	/* Chimera's jump list: the taskbar's Recent list, and each project opened on it */
 	qt::JumpList::showRecent();
 	vm::Connection jumpListWatch = session.opens.changed.connect([&session] {
-		const std::string path = session.hasProject.get() ? session.projectPath.get() : session.gamePath.get();
+		const std::string path = session.projectPath.get();
 		if (!path.empty()) qt::JumpList::addRecent(path, std::filesystem::path(path).filename().string());
 	});
 	if (args.isSet(mcpServerOpt))

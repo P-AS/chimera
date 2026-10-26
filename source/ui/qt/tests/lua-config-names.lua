@@ -28,4 +28,6 @@ if not ok then bad[#bad + 1] = tostring(why) end
 table.sort(bad)
 io.stderr:write(string.format("lua config names: %d names, %d tools, %d bad%s\n", names, tools[0] and #tools + 1 or 0, #bad,
 	#bad > 0 and (": " .. table.concat(bad, ", ")) or ""))
+-- the frame played is a change to the project: quitting does not ask about it
+chimera.customize.neverAskSave = true
 chimera.toolWindows.exit((#bad == 0 and names > 0) and 0 or 1)

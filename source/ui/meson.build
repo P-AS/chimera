@@ -88,7 +88,6 @@ vm_lib = static_library(
     'viewmodel/src/config_store.cpp',
     'viewmodel/src/chimera_settings.cpp',
     'viewmodel/src/help_vm.cpp',
-    'viewmodel/src/batch_run_vm.cpp',
     'viewmodel/src/media_maker_vm.cpp',
     'viewmodel/src/cache_manager_vm.cpp',
   ],
@@ -276,33 +275,34 @@ if qt_dep.found()
       install_dir: 'dll',
     )
   endif
+  # the window's tests play a game in a project of its own, as a game runs
+  # only in a project (owner, 2026-10-26)
+  window_game = custom_target(
+    'window-game',
+    output: ['gridWalker.chimeraProject', 'gridWalker.testrom'],
+    command: [find_program('python3'), files('qt/tests/game-project.py'), repo_root / 'build/Cores/synth-box.chimeraCore',
+      repo_root / 'tests/synth/roms/gridWalker.testrom', '@OUTPUT0@'],
+    build_by_default: true,
+  )
   # the whole window loads (every QML file, every view model bound), runs a
   # game for a second and quits cleanly: a QML mistake fails here, not at
   # someone's desk
+  window_run = files('qt/tests/window-run.py')
   test(
     'window loads',
-    chimera_qt,
-    args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-      '--play', '--measure', '1', '--show', 'lua'],
-    env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software', 'ALSOFT_DRIVERS=null', 'CHIMERA_QT_STRICT_QML=1',
-      'CHIMERA_QT_CONFIG=' + meson.current_build_dir() / 'window-test-settings.json',
-      'CHIMERA_QT_CACHE=' + meson.current_build_dir() / 'window-test-cache',
-      'CHIMERA_QT_RECOVERY=' + meson.current_build_dir() / 'window-test-recovery',
-      'CHIMERA_QT_HASHES=' + meson.current_build_dir() / 'window-test-file-hashes.txt'],
+    find_program('python3'),
+    args: [window_run, meson.current_build_dir() / 'window-test', '50', chimera_qt, window_game[0],
+      repo_root / 'build/Cores/synth-box.chimeraCore', '--play', '--measure', '1', '--show', 'lua'],
+    env: ['CHIMERA_QT_STRICT_QML=1'],
     timeout: 60,
   )
   # client.getconfig's names and client.gettool's tools, where every view
   # model is: a name tied to a setting the window lacks reads nil and fails
   test(
     'lua config names',
-    chimera_qt,
-    args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-      '--play', '--lua', files('qt/tests/lua-config-names.lua')],
-    env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software', 'ALSOFT_DRIVERS=null',
-      'CHIMERA_QT_CONFIG=' + meson.current_build_dir() / 'lua-config-test-settings.json',
-      'CHIMERA_QT_CACHE=' + meson.current_build_dir() / 'lua-config-test-cache',
-      'CHIMERA_QT_RECOVERY=' + meson.current_build_dir() / 'lua-config-test-recovery',
-      'CHIMERA_QT_HASHES=' + meson.current_build_dir() / 'lua-config-test-file-hashes.txt'],
+    find_program('python3'),
+    args: [window_run, meson.current_build_dir() / 'lua-config-test', '50', chimera_qt, window_game[0],
+      repo_root / 'build/Cores/synth-box.chimeraCore', '--play', '--lua', files('qt/tests/lua-config-names.lua')],
     timeout: 60,
   )
   # Chimera's settings carried over once, at the first start: every setting

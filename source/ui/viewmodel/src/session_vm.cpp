@@ -854,8 +854,6 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			return {};
 		}, &isOpen);
 	expose("recentProjects", "projects opened, newest first, a line each", recentProjects, true);
-	expose("chooseFor", "a game waiting for its core to be chosen", chooseFor);
-	expose("choices", "the cores the waiting game could be opened with, a line each", choices);
 	picture("screen", "the machine's picture", screen, screenChanged);
 	expose("unsaved", "the open project was changed since it was opened or last saved", unsaved);
 	expose("pauseAtEnd", "pause on the frame the movie runs out (TAStudio's \"automatically pause at end of movie\")",
@@ -1233,86 +1231,45 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		});
 	/* and what a script holds for the next frame (joypad.set and its kin), as bots do every frame */
 	for (const char *name : {"scriptHold", "scriptAxis", "scriptEntry"}) scriptSideCommand(name);
-	command("stopMovie", "Chimera's Stop Movie under TAStudio: the project let go and its game opened alone, a new empty "
-		"movie (the window asks about changes not saved first)", {}, [this](const Args &, std::string &error) -> Value {
-			std::string game, package;
-			onMachineWait([&](ce_session *) {
-				if (projectM_ == nullptr || ce_project_file_count(projectM_) == 0) return;
-				const char *source = ce_project_file_source_path(projectM_, 0);
-				if (source != nullptr) game = source;
-				package = package_;
-			});
-			if (game.empty() || package.empty())
-			{
-				error = "no project's game to open alone";
-				return {};
-			}
-			status.set("Opening " + game + "...");
-			submit([this, package, game] {
-				settingsM_.clear();
-				markersM_.clear();
-				branchesM_.clear();
-				later([this] { markersLoaded.emit({}); branchesLoaded.emit({}); });
-				openOnMachine(package, game, false);
+	command("stopMovie", "Chimera's Stop Movie under TAStudio: a new project of the same core, files, settings and "
+		"firmware with an empty movie, written nowhere until its first save (the window asks about changes not saved first)",
+		{}, [this](const Args &, std::string &) -> Value {
+			status.set("Starting a new movie...");
+			submit([this] {
+				if (projectM_ == nullptr) return;
+				ce_project *p = ce_project_new();
+				ce_project_set_core(p, ce_project_core_name(projectM_), ce_project_core_version(projectM_), ce_project_core_sha1(projectM_));
+				if (const char *platform = ce_project_header_get(projectM_, "Platform"); platform != nullptr && *platform != '\0')
+					ce_project_header_set(p, "Platform", platform);
+				const char *error = nullptr;
+				std::string why;
+				for (int32_t i = 0; i < ce_project_file_count(projectM_) && why.empty(); i++)
+				{
+					/* a cue's own files come back with it */
+					const std::string slot = ce_project_file_slot(projectM_, i);
+					if (slot == "support") continue;
+					const char *source = ce_project_file_source_path(projectM_, i);
+					const char *name = ce_project_file_name(projectM_, i);
+					if (source == nullptr || *source == '\0' || ce_project_file_add(p, name, slot.c_str(), source, &error) != 0)
+						why = std::string(name) + ": " + (error != nullptr ? error : "its file is not where it was read from");
+				}
+				uint64_t len = 0;
+				if (const char *t = ce_project_settings_text(projectM_, &len); why.empty() && t != nullptr && len != 0)
+					ce_project_set_settings_text(p, std::string(t, static_cast<size_t>(len)).c_str(), &error);
+				if (const char *t = ce_project_firmware_text(projectM_, &len); why.empty() && t != nullptr && len != 0)
+					ce_project_set_firmware_text(p, std::string(t, static_cast<size_t>(len)).c_str(), &error);
+				ce_project_set_clock_start(p, ce_project_clock_start(projectM_));
+				ce_project_set_title(p, ce_project_title(projectM_));
+				if (!why.empty())
+				{
+					ce_project_free(p);
+					later([this, why] { status.set("No new movie: " + why); });
+					return;
+				}
+				openMadeProjectOnMachine(p, package_);
 			});
 			return {};
 		}, &hasProject);
-	command("open", "opens a core package with a game file", {"package", "game"},
-		[this](const Args &a, std::string &error) -> Value {
-			std::string package, game;
-			if (!arg(a, 0, package, error) || !arg(a, 1, game, error)) return {};
-			status.set("Opening " + game + "...");
-			/* another game starts from its package's own settings */
-			submit([this, package, game] {
-				settingsM_.clear();
-				markersM_.clear();
-				branchesM_.clear();
-				later([this] { markersLoaded.emit({}); branchesLoaded.emit({}); });
-				openOnMachine(package, game, false);
-			});
-			return {};
-		});
-	command("openGame", "opens a game with the installed core that takes its kind of file; when several do, they are "
-		"offered (chooseFor, choices) and chooseCore picks one", {"game"},
-		[this](const Args &a, std::string &error) -> Value {
-			std::string game;
-			if (!arg(a, 0, game, error)) return {};
-			const size_t dot = game.find_last_of('.');
-			std::string ext = dot == std::string::npos ? "" : game.substr(dot + 1);
-			for (char &ch : ext) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-			offered_ = byExtension_ ? byExtension_(ext) : decltype(offered_){};
-			if (offered_.empty())
-			{
-				error = "no installed core takes ." + ext + " files";
-				return {};
-			}
-			if (offered_.size() == 1)
-			{
-				run("open", {offered_[0].second, game}, error);
-				return offered_[0].first;
-			}
-			std::string names;
-			for (const auto &[name, path] : offered_) names += (names.empty() ? "" : "\n") + name;
-			choices.set(names);
-			chooseFor.set(game);
-			return {};
-		});
-	command("chooseCore", "opens the game waiting for a core with the one at this place in choices; -1 opens nothing", {"index"},
-		[this](const Args &a, std::string &error) -> Value {
-			int64_t i = 0;
-			if (!arg(a, 0, i, error)) return {};
-			if (chooseFor.get().empty() || i < -1 || i >= static_cast<int64_t>(offered_.size()))
-			{
-				error = "no such choice";
-				return {};
-			}
-			const std::string game = chooseFor.get();
-			chooseFor.set("");
-			choices.set("");
-			if (i == -1) return {};
-			run("open", {offered_[static_cast<size_t>(i)].second, game}, error);
-			return offered_[static_cast<size_t>(i)].first;
-		});
 	command("openProject", "opens a Chimera project; its files are looked for beside it, its core among the installed "
 		"ones unless a package is given", {"project", "package"}, [this](const Args &a, std::string &error) -> Value {
 			std::string project, package;
@@ -1343,20 +1300,6 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				const std::string backup = backupPathFor(path.empty() ? projectPath.get() : path);
 				submit([this, backup] { saveProjectOnMachine(backup, true); });
 			}
-			return {};
-		}, &isOpen);
-	command("saveAsProject", "makes the open game a project, saved at the path: its core, file, settings, firmware and "
-		"movie; the game's file is looked for beside the project when it is opened again", {"path", "title"},
-		[this](const Args &a, std::string &error) -> Value {
-			std::string path, title;
-			if (!arg(a, 0, path, error)) return {};
-			if (a.size() > 1 && !arg(a, 1, title, error)) return {};
-			if (hasProject.get())
-			{
-				error = "a project is open: Save Project As keeps it";
-				return {};
-			}
-			submit([this, path, title] { newProjectOnMachine(path, title); });
 			return {};
 		}, &isOpen);
 	command("catchPad", "waits for the next gamepad input pressed, a game open or not, and puts its name in caughtPad",
@@ -1580,10 +1523,9 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	command("restart", "opens the same core and game again at frame 0; the inputs stay", {},
 		[this](const Args &, std::string &) -> Value {
 			submit([this] {
-				/* a project opens again as it is in memory, its movie and
-				 * markers as they are now; a game with the movie it has */
+				/* the project opens again as it is in memory, its movie and
+				 * markers as they are now */
 				if (projectM_ != nullptr) openProjectOnMachine(projectPathM_, package_, true, projectM_);
-				else if (!package_.empty()) openOnMachine(package_, game_, true);
 			});
 			return {};
 		}, &isOpen);
@@ -1703,6 +1645,11 @@ void SessionViewModel::setAnalogBinds(std::vector<AnalogBind> binds)
 		return b.value == "WMouse X" || b.value == "WMouse Y" || b.value == "RMouse X" || b.value == "RMouse Y";
 	}));
 	submit([this, binds] { analogBindsM_ = binds; });
+}
+
+void SessionViewModel::setMouseSensitivity(int64_t percent)
+{
+	mouseSensitivityM_.store(static_cast<int>(std::clamp<int64_t>(percent, 1, 1000)));
 }
 
 std::vector<std::pair<std::string, int>> SessionViewModel::padAxesNow() const
@@ -2020,134 +1967,6 @@ void SessionViewModel::loop()
 	soundM_.reset();
 }
 
-void SessionViewModel::openOnMachine(const std::string &package, const std::string &game, bool keepMovie)
-{
-	const std::string movie = keepMovie && s_ != nullptr ? movieTextOnMachine() : std::string();
-	const uint64_t counted = keepMovie && s_ != nullptr ? ce_session_rerecords(s_) : 0;
-	freeSessionOnMachine();
-	runningM_ = false;
-
-	std::ifstream in(game, std::ios::binary);
-	if (!in)
-	{
-		later([this, game] { status.set("Could not read " + game); isOpen.set(false); });
-		return;
-	}
-	const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-	/* the firmware it needs: the game goes in the package's first slot, for
-	 * the conditions that ask about the files */
-	Firmware fw;
-	{
-		std::string slotId = "rom";
-		const size_t dot = game.find_last_of('.');
-		std::string ext = dot == std::string::npos ? "" : game.substr(dot + 1);
-		for (char &ch : ext) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-		const char *perr = nullptr;
-		if (ce_package *pk = ce_package_open(package.c_str(), &perr))
-		{
-			uint64_t len = 0;
-			json::Json slots;
-			std::string jerr;
-			if (const uint8_t *d = ce_package_entry(pk, "file_slots.json", &len);
-				d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), slots, jerr))
-				if (const json::Json *list = slots.find("slots"); list != nullptr && !list->items.empty())
-				{
-					/* the slot that takes this kind of file, else the first */
-					if (const json::Json *id = list->items[0].find("id")) slotId = id->text;
-					for (const json::Json &slot : list->items)
-					{
-						bool takes = false;
-						if (const json::Json *formats = slot.find("formats"))
-							for (const json::Json &f : formats->items)
-							{
-								std::string e = f.text;
-								for (char &ch : e) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-								takes = takes || e == ext;
-							}
-						if (takes)
-						{
-							if (const json::Json *id = slot.find("id")) slotId = id->text;
-							break;
-						}
-					}
-				}
-			ce_package_free(pk);
-		}
-		gameSlotM_ = slotId;
-		const size_t slash = game.find_last_of("/\\");
-		const std::string base = slash == std::string::npos ? game : game.substr(slash + 1);
-		json::Json slotMap;
-		slotMap.kind = json::Json::Kind::Object;
-		json::Json files;
-		files.kind = json::Json::Kind::Array;
-		files.items.push_back(json::Json::string(base));
-		slotMap.members.emplace_back(slotId, files);
-		std::string why;
-		if (!firmwareOnMachine(package, json::write(slotMap), settingsM_.empty() ? "{}" : settingsM_, "", game, {}, fw, why))
-		{
-			later([this, why] { status.set(why); isOpen.set(false); });
-			return;
-		}
-	}
-	std::vector<const char *> fwIds;
-	std::vector<const uint8_t *> fwData;
-	std::vector<uint64_t> fwLens;
-	for (size_t i = 0; i < fw.ids.size(); i++)
-	{
-		fwIds.push_back(fw.ids[i].c_str());
-		fwData.push_back(fw.data[i].data());
-		fwLens.push_back(fw.data[i].size());
-	}
-	firmwarePinsM_ = fw.pins;
-	const char *error = nullptr;
-	compileCacheOnMachine(package, game, "");
-	requestGpu(package, settingsM_);
-	ce_session *s = ce_session_open(package.c_str(), bytes.data(), bytes.size(), game.c_str(),
-		settingsM_.empty() ? nullptr : settingsM_.c_str(), fwIds.data(), fwData.data(), fwLens.data(),
-		static_cast<int32_t>(fwIds.size()), nullptr, nullptr, nullptr, nullptr, 0, &error);
-	if (s == nullptr)
-	{
-		const std::string why = error != nullptr ? error : "no reason given";
-		later([this, why] { status.set("Could not open: " + why); isOpen.set(false); });
-		return;
-	}
-	freeProjectOnMachine();
-	later([this] {
-		projectPath.set("");
-		projectTitle.set("");
-		projectId.set("");
-		hasProject.set(false);
-		projectSwitched();
-	});
-	/* the movie: the one it had when started again, else an empty one */
-	loadMovieOnMachine(s, movie);
-	/* a game alone starts storing every frame, as a new project does */
-	if (!keepMovie)
-	{
-		periodM_.store(1);
-		later([this] { greenzonePeriod.set(1); });
-	}
-	ce_session_set_rerecords(s, counted);
-	adoptOnMachine(s, package, game, true);
-	romFileM_ = game;
-	{
-		std::error_code ec;
-		const std::filesystem::path where = std::filesystem::weakly_canonical(game, ec);
-		carryFreezesOnMachine(package + "\n" + (ec ? game : where.string()));
-	}
-	{
-		std::string stem = std::filesystem::path(game).stem().string();
-		later([this, stem, game] {
-			gameName.set(stem);
-			gamePath.set(game);
-			/* a game opened by itself: the piano roll's columns as Chimera starts them */
-			loadDefaultColumns();
-		});
-	}
-	package_ = package;
-	game_ = game;
-}
-
 void SessionViewModel::freeSessionOnMachine()
 {
 	if (s_ == nullptr) return;
@@ -2182,7 +2001,7 @@ std::string SessionViewModel::settingsOnMachine() const
 		const char *t = ce_project_settings_text(projectM_, &len);
 		return t != nullptr ? std::string(t, static_cast<size_t>(len)) : std::string("{}");
 	}
-	return settingsM_.empty() ? std::string("{}") : settingsM_;
+	return "{}";
 }
 
 std::string SessionViewModel::slotsOnMachine() const
@@ -2208,7 +2027,7 @@ void SessionViewModel::changeSettings(std::string json, std::function<void(bool,
 			answer(false, std::string("The core refused them: ") + ce_session_last_error(s_));
 			return;
 		}
-		/* kept for the next open either way: the project's, or the game's */
+		/* kept in the project for the next open */
 		if (projectM_ != nullptr)
 		{
 			const char *error = nullptr;
@@ -2218,8 +2037,6 @@ void SessionViewModel::changeSettings(std::string json, std::function<void(bool,
 				return;
 			}
 		}
-		else
-			settingsM_ = json;
 		if (live == 0)
 		{
 			answer(true, "Applied to the running machine");
@@ -2229,7 +2046,6 @@ void SessionViewModel::changeSettings(std::string json, std::function<void(bool,
 		runningM_ = false;
 		later([this] { running.set(false); });
 		if (projectM_ != nullptr) openProjectOnMachine(projectPathM_, package_, true, projectM_);
-		else openOnMachine(package_, game_, true);
 		answer(s_ != nullptr, s_ != nullptr ? "The machine started again with them, at frame 0"
 											: "The machine would not start again with them");
 	});
@@ -2564,12 +2380,7 @@ std::string SessionViewModel::mcpStatusOnMachine() const
 	status.kind = json::Json::Kind::Object;
 	if (s_ == nullptr) return "{}";
 	auto add = [&](const char *name, json::Json v) { status.members.emplace_back(name, std::move(v)); };
-	std::string project = projectM_ != nullptr && ce_project_title(projectM_) != nullptr ? ce_project_title(projectM_) : "";
-	if (project.empty())
-	{
-		const size_t slash = game_.find_last_of("/\\\\");
-		project = slash == std::string::npos ? game_ : game_.substr(slash + 1);
-	}
+	const std::string project = projectM_ != nullptr && ce_project_title(projectM_) != nullptr ? ce_project_title(projectM_) : "";
 	add("project", json::Json::string(project));
 	if (projectM_ != nullptr)
 	{
@@ -2598,7 +2409,9 @@ std::string SessionViewModel::mcpStatusOnMachine() const
 	/* the firmware the machine was started with, as the project pins it */
 	json::Json pins;
 	std::string error;
-	if (firmwarePinsM_.empty() || !json::parse(firmwarePinsM_, pins, error) || pins.kind != json::Json::Kind::Array)
+	uint64_t pinsLen = 0;
+	const char *pinsText = projectM_ != nullptr ? ce_project_firmware_text(projectM_, &pinsLen) : nullptr;
+	if (pinsText == nullptr || !json::parse(std::string_view(pinsText, static_cast<size_t>(pinsLen)), pins, error) || pins.kind != json::Json::Kind::Array)
 	{
 		pins = json::Json();
 		pins.kind = json::Json::Kind::Array;
@@ -3573,9 +3386,8 @@ void SessionViewModel::pinMarkersOnMachine()
 	for (int64_t f : runMarkersM_) ce_session_greenzone_pin(s_, f, 1);
 }
 
-void SessionViewModel::setFinders(PackageFinder packages, FolderFinder firmwareFolders, ExtensionFinder byExtension)
+void SessionViewModel::setFinders(PackageFinder packages, FolderFinder firmwareFolders)
 {
-	byExtension_ = byExtension;
 	submit([this, packages = std::move(packages), firmwareFolders = std::move(firmwareFolders)] {
 		findPackageM_ = packages;
 		firmwareFoldersM_ = firmwareFolders;
@@ -4055,6 +3867,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 	/* the count goes on from the project's, or from where a restart was */
 	ce_session_set_rerecords(s, keepInputs ? keptRerecords : ce_project_rerecords(p));
 	/* the Greenzone box's choice, from TAStudio's part of the project */
+	std::function<void()> columnsLater;
 	if (!keepInputs)
 	{
 		int64_t period = 1;
@@ -4087,10 +3900,14 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 						held.push_back(name->text);
 				}
 			}
-		later([this, held] { autoHeldColumnsLoaded.emit(held); });
+		/* given once the window has this machine's buttons (adoptOnMachine,
+		 * below): a project with none saved hides by them */
 		columnsLoadedM_ = saved;
-		if (saved) later([this, hidden] { hiddenColumnsLoaded.emit(hidden); });
-		else later([this] { loadDefaultColumns(); });
+		columnsLater = [this, held, hidden, saved] {
+			autoHeldColumnsLoaded.emit(held);
+			if (saved) hiddenColumnsLoaded.emit(hidden);
+			else loadDefaultColumns();
+		};
 		/* the rest of TAStudio's part, for the view models that keep it */
 		std::map<std::string, std::string> members;
 		if (const json::Json *o = tastudio.find("o"))
@@ -4145,11 +3962,11 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 	projectPathM_ = path;
 	rememberLocalPathsOnMachine();
 	package_ = package;
-	game_.clear();
 	tidyBranchStatesOnMachine();
 	rememberAboutOnMachine(path);
 	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
 	adoptOnMachine(s, package, (title.empty() ? path : title) + note, true);
+	if (columnsLater) later(std::move(columnsLater));
 	{
 		/* the game a project plays: its first file, where it was found */
 		const char *source = ce_project_file_count(p) > 0 ? ce_project_file_source_path(p, 0) : nullptr;
@@ -4414,90 +4231,6 @@ void SessionViewModel::addRecent(const std::string &path)
 		at = end + 1;
 	}
 	recentProjects.set(list);
-}
-
-void SessionViewModel::newProjectOnMachine(const std::string &path, const std::string &titleGiven)
-{
-	if (s_ == nullptr || game_.empty()) return;
-	auto fail = [this](const std::string &why) { later([this, why] { status.set("Not made: " + why); }); };
-	json::Json cfg, fileSlots;
-	std::string jerr, sha;
-	const char *perr = nullptr;
-	if (ce_package *pk = ce_package_open(package_.c_str(), &perr))
-	{
-		uint64_t len = 0;
-		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len))
-			json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, jerr);
-		if (const uint8_t *d = ce_package_entry(pk, "file_slots.json", &len))
-			json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), fileSlots, jerr);
-		sha = ce_package_sha1(pk) != nullptr ? ce_package_sha1(pk) : "";
-		ce_package_free(pk);
-	}
-	ce_project *p = ce_project_new();
-	const json::Json *coreName = cfg.find("coreName"), *version = cfg.find("version");
-	ce_project_set_core(p, coreName != nullptr ? coreName->text.c_str() : "", version != nullptr ? version->text.c_str() : "", sha.c_str());
-	/* the machine, as the New Project window stamps it */
-	if (const char *system = ce_session_system_id(s_); system != nullptr && *system != '\0') ce_project_header_set(p, "Platform", system);
-	/* the game, in the package's first slot, by its own name */
-	const std::string slotId = gameSlotM_.empty() ? std::string("rom") : gameSlotM_;
-	(void)fileSlots;
-	const size_t slash = game_.find_last_of("/\\");
-	const std::string base = slash == std::string::npos ? game_ : game_.substr(slash + 1);
-	const char *error = nullptr;
-	if (ce_project_file_add(p, base.c_str(), slotId.c_str(), game_.c_str(), &error) != 0)
-	{
-		ce_project_free(p);
-		fail(error != nullptr ? error : "the game's file could not be added");
-		return;
-	}
-	/* every setting that applies, at its value: the project is the settings */
-	{
-		json::Json overrides, recorded;
-		recorded.kind = json::Json::Kind::Object;
-		if (!json::parse(settingsM_.empty() ? "{}" : settingsM_, overrides, jerr)) overrides.kind = json::Json::Kind::Object;
-		const json::Json *decl = cfg.find("settings");
-		json::Json slotMap;
-		slotMap.kind = json::Json::Kind::Object;
-		json::Json files;
-		files.kind = json::Json::Kind::Array;
-		files.items.push_back(json::Json::string(base));
-		slotMap.members.emplace_back(slotId, files);
-		if (decl != nullptr)
-		{
-			const std::vector<json::Json> &items = decl->items;
-			std::string machineSetting;
-			if (const json::Json *m = cfg.find("machineSetting")) machineSetting = m->text;
-			for (size_t i : SettingsViewModel::applicable(items, json::write(slotMap), overrides, machineSetting))
-			{
-				const json::Json *name = items[i].find("name");
-				if (name == nullptr) continue;
-				const json::Json *v = overrides.find(name->text);
-				if (v == nullptr) v = items[i].find("default");
-				if (v != nullptr) recorded.members.emplace_back(name->text, *v);
-			}
-		}
-		ce_project_set_settings_text(p, json::write(recorded).c_str(), &error);
-	}
-	if (!firmwarePinsM_.empty() && firmwarePinsM_ != "[]") ce_project_set_firmware_text(p, firmwarePinsM_.c_str(), &error);
-	const std::string title = !titleGiven.empty() ? titleGiven : base.substr(0, base.find_last_of('.'));
-	ce_project_set_title(p, title.c_str());
-	/* it becomes the open project; saving writes its movie, markers and branches */
-	dropRecoveryOnMachine(projectM_);
-	if (projectM_ != nullptr) ce_project_free(projectM_);
-	projectM_ = p;
-	projectPathM_ = path;
-	game_.clear();
-	startProjectSessionOnMachine(false);
-	saveProjectOnMachine(path);
-	const std::string id = ce_project_id(p) != nullptr ? ce_project_id(p) : "";
-	later([this, path, title, id] {
-		projectPath.set(path);
-		projectTitle.set(title);
-		projectId.set(id);
-		hasProject.set(true);
-		projectSwitched();
-		addRecent(path);
-	});
 }
 
 bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup, bool quiet)
@@ -5310,10 +5043,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	 * frame changed is an edit (the engine drops the states after it). The
 	 * engine plays the movie; the window never hands the machine input of
 	 * its own. */
-	/* a game opened without a project has no TAStudio to be read only: what is held is added
-	 * to its frames, as it always was here */
 	const bool recording = live && projectM_ != nullptr && recordingModeM_.load();
-	const bool adding = live && projectM_ == nullptr;
 	bool changed = false;
 	const uint64_t mask = recordMaskM_.load();
 	const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s_));
@@ -5322,7 +5052,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	const int32_t had = ce_session_movie_get(s_, f, &logged, axisCount ? axesBuf_.data() : nullptr);
 	if (had == 1 && !grow) return 0;
 	loggedAxes_ = axesBuf_;
-	if (live && !recording && !adding) held = sticky;
+	if (live && !recording) held = sticky;
 	auto axisShown = [this](size_t i) { return recordAxesM_.empty() || (i < recordAxesM_.size() && recordAxesM_[i]); };
 	if (recording)
 		for (size_t i = 0; i < axisCount && i < axesM_.size(); i++)
@@ -5330,8 +5060,14 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	/* how far the pointer moved since the last frame played with the person's input: read once
 	 * such a frame, as Chimera's are; a frame replayed leaves it */
 	const int movedX = live ? movedXM_.exchange(0) : 0, movedY = live ? movedYM_.exchange(0) : 0;
+	/* as an axis, as Chimera's: scaled by the sensitivity, 120 pixels all the
+	 * way and no further, the host's -10000..10000 */
+	auto relative = [this](int moved) {
+		const double v = std::clamp(moved * (mouseSensitivityM_.load() / 100.0), -120.0, 120.0) / 120.0;
+		return static_cast<int>(v * 10000);
+	};
 	/* the analog controls' bindings, when recording: a stick off its rest, or a key pushing one */
-	if (recording || adding)
+	if (recording)
 		for (size_t i = 0; i < axisCount && i < analogBindsM_.size() && i < axesM_.size(); i++)
 		{
 			const AnalogBind &bind = analogBindsM_[i];
@@ -5339,8 +5075,8 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 			int host = 0;
 			if (bind.value == "WMouse X") host = pointerXM_.load();
 			else if (bind.value == "WMouse Y") host = pointerYM_.load();
-			else if (bind.value == "RMouse X") host = movedX;
-			else if (bind.value == "RMouse Y") host = movedY;
+			else if (bind.value == "RMouse X") host = relative(movedX);
+			else if (bind.value == "RMouse Y") host = relative(movedY);
 			else if (padsHeardM_.load())
 				for (const auto &[name, v] : padAxes_)
 					if (name == bind.value) host = v;
@@ -5353,7 +5089,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 			if (active) axesBuf_[i] = v;
 		}
 	/* an Auto-hold analog column: its value goes in as a held button does, recording or past the end */
-	if (recording || adding || (live && had == 1))
+	if (recording || (live && had == 1))
 		for (size_t i = 0; i < columnPatternsM_.size(); i++)
 		{
 			const ColumnPattern &cp = columnPatternsM_[i];
@@ -5364,13 +5100,13 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	if (live)
 	{
 		std::lock_guard<std::mutex> lock(scriptAxesM_);
-		if (recording || adding)
+		if (recording)
 			for (const std::map<size_t, int32_t> *values : {&scriptAxesHeld_, &scriptAxesOnce_})
 				for (const auto &[axis, v] : *values)
 					if (axis < axisCount && axisShown(axis)) axesBuf_[axis] = v;
 		scriptAxesOnce_.clear();
 	}
-	const uint64_t buttons = recording || had == 1 ? (logged & ~mask) | (held & mask) : adding ? logged | (held & mask) : logged;
+	const uint64_t buttons = recording || had == 1 ? (logged & ~mask) | (held & mask) : logged;
 	const bool axesChanged = axesBuf_ != loggedAxes_;
 	if (had == 1)
 		ce_session_movie_set(s_, f, buttons, axesChanged ? axesBuf_.data() : nullptr);

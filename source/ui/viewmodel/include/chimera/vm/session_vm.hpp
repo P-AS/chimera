@@ -388,6 +388,8 @@ public:
 	const std::vector<AnalogBind> &defaultAnalogBinds() const { return defaultAnalog_; }
 	const std::vector<AnalogBind> &analogBinds() const { return analogBinds_; }
 	void setAnalogBinds(std::vector<AnalogBind> binds);
+	/* how hard the pointer's movement pushes an analog control, in percent (Chimera's RelativeMouseSensitivity) */
+	void setMouseSensitivity(int64_t percent);
 	/* each pad axis now, by Chimera's names, -10000..10000 (catching an analog binding) */
 	std::vector<std::pair<std::string, int>> padAxesNow() const;
 	const std::vector<std::string> &defaultBindingTexts() const { return defaultBindings_; }
@@ -515,14 +517,7 @@ public:
 	 * found for its core, and every machine gets the firmware it needs. */
 	using PackageFinder = std::function<std::string(const std::string &coreName, const std::string &sha1, std::string &note)>;
 	using FolderFinder = std::function<std::vector<std::string>()>;
-	/* the cores that take a file of this extension: {name, package} */
-	using ExtensionFinder = std::function<std::vector<std::pair<std::string, std::string>>(const std::string &extension)>;
-	void setFinders(PackageFinder packages, FolderFinder firmwareFolders, ExtensionFinder byExtension = {});
-
-	/* a game waiting for its core to be chosen, and the cores it could be
-	 * opened with, a line each ("" when nothing is waiting) */
-	Property<std::string> chooseFor;
-	Property<std::string> choices;
+	void setFinders(PackageFinder packages, FolderFinder firmwareFolders);
 
 	/* for the window: a key went down or up, by Chimera's key names */
 	void key(const std::string &name, bool down);
@@ -697,8 +692,6 @@ private:
 
 	void submit(std::function<void()> job);
 	void loop();
-	/* keepMovie: the machine starts again with the movie it has */
-	void openOnMachine(const std::string &package, const std::string &game, bool keepMovie);
 	std::string movieTextOnMachine() const;
 	/* the movie replaced by this one; where the two part, or -1 */
 	int64_t replaceMovieOnMachine(const std::string &text);
@@ -805,8 +798,6 @@ private:
 	 * again, the two compared; the first that differ said, and written to
 	 * `keepIn` when one is given */
 	void checkHistoryOnMachine(const std::string &keepIn);
-	/* a game's session made a project, as the New Project window makes one */
-	void newProjectOnMachine(const std::string &path, const std::string &title);
 	void freeProjectOnMachine();
 	/* what every open shares, once the session exists */
 	void adoptOnMachine(ce_session *s, const std::string &package, const std::string &label, bool inputsReplaced);
@@ -952,12 +943,6 @@ private:
 	void freeSessionOnMachine();
 	ce_project *projectM_ = nullptr;
 	std::string projectPathM_;
-	/* a game's settings (a project keeps its own) */
-	std::string settingsM_;
-	/* the firmware the open game was given, as a project records it */
-	std::string firmwarePinsM_;
-	/* the slot the open game went in (by its kind of file) */
-	std::string gameSlotM_;
 	std::vector<int32_t> axesBuf_;
 	std::vector<Marker> markersM_;
 	std::vector<int64_t> runMarkersM_;
@@ -974,8 +959,6 @@ private:
 	std::atomic<int64_t> borrowFramesM_{0};
 	int64_t borrowCount_ = 0;
 	PackageFinder findPackageM_;
-	ExtensionFinder byExtension_; /* the view's thread's */
-	std::vector<std::pair<std::string, std::string>> offered_;
 	FolderFinder firmwareFoldersM_;
 	struct Firmware
 	{
@@ -1090,7 +1073,7 @@ private:
 	Clock::duration period_ = std::chrono::microseconds(16667);
 	int64_t fpsFrames_ = 0;
 	Clock::time_point fpsSince_{};
-	std::string package_, game_;
+	std::string package_;
 	/* gamepads are read on this thread, just before each frame */
 	std::unique_ptr<Gamepads> padsM_;
 	/* catching a pad input: when to look next, and what was held already */
@@ -1103,6 +1086,8 @@ private:
 	std::atomic<int> pointerXM_{0}, pointerYM_{0};
 	/* how far the pointer moved since the last frame read it (Chimera's RMouse X and Y) */
 	std::atomic<int> movedXM_{0}, movedYM_{0};
+	/* how hard that movement pushes, in percent (Chimera's RelativeMouseSensitivity) */
+	std::atomic<int> mouseSensitivityM_{100};
 	Clock::time_point catchDue_{};
 	std::vector<std::string> catchHeldM_;
 	void catchPollOnMachine();
