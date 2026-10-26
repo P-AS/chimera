@@ -56,5 +56,28 @@ namespace Chimera.Tests.Client.Common
 
 			Assert.AreEqual(0, clashes.Count, string.Join("; ", clashes));
 		}
+
+		/// <summary>
+		/// "Open ROM", "Close ROM" and "Load Last ROM" became the project's (a
+		/// game runs only in a project, user-decided 2026-10-26). A binding a
+		/// person saved under an old name is kept under the new one, and the old
+		/// names are gone.
+		/// </summary>
+		[TestMethod]
+		public void ARomHotkeySavedUnderItsOldNameIsTheProjectOne()
+		{
+			var saved = new System.Collections.Generic.Dictionary<string, string>
+			{
+				["Open ROM"] = "Ctrl+Shift+P",
+				["Close ROM"] = "",
+				["Load Last ROM"] = "F11",
+			};
+			HotkeyInfo.ResolveWithDefaults(saved);
+			Assert.AreEqual("Ctrl+Shift+P", saved["Open Project"]);
+			Assert.AreEqual("", saved["Close Project"], "an unbound hotkey stays unbound");
+			Assert.AreEqual("F11", saved["Load Last Project"]);
+			Assert.IsFalse(saved.ContainsKey("Open ROM") || saved.ContainsKey("Close ROM") || saved.ContainsKey("Load Last ROM"));
+			Assert.AreEqual("Ctrl+O", HotkeyInfo.AllHotkeys["Open Project"].DefaultBinding);
+		}
 	}
 }

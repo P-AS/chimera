@@ -1111,7 +1111,7 @@ namespace Chimera.Client.GUI
 			// 
 			// CloseRomContextMenuItem
 			// 
-			this.CloseRomContextMenuItem.Text = "Close ROM";
+			this.CloseRomContextMenuItem.Text = "Close Project";
 			this.CloseRomContextMenuItem.Click += new System.EventHandler(this.CloseRomMenuItem_Click);
 			// 
 			// ShowMenuContextMenuItem

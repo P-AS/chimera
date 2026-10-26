@@ -11269,3 +11269,17 @@ check and the Windows refused-open check were moved to projects and compile;
 neither was run here. `tests/perf/seekbench.cpp` was moved too, but it did
 not compile before this change (it calls two state-history functions that
 no longer exist), and still does not.
+
+## The project hotkeys are named for projects (user-decided, 2026-10-26)
+
+A game runs only in a project, so the hotkeys Open ROM, Close ROM and Load
+Last ROM are now Open Project (Ctrl+O), Close Project (Ctrl+W) and Load
+Last Project, with the menu and the picture's right-click menu saying the
+same. The window that is to replace Chimera's takes the same names. A
+binding a person saved under an old name is read as the new one when the
+settings load, and the old name is dropped, so nobody loses a key they
+chose.
+
+Tests: a new hotkey test feeds the three old names and checks that each
+binding (an unbound one too) comes back under its new name; with one
+renaming taken out it failed. Interface tests 1,213, 0 failed.

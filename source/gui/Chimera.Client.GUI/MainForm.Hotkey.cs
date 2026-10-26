@@ -81,9 +81,15 @@ namespace Chimera.Client.GUI
 				case "Full Screen":
 					ToggleFullscreen();
 					break;
-				case "Close ROM":
+				case "Open Project":
+					OpenProjectDialog();
+					break;
+				case "Close Project":
 					// the menu's close: a project's recovery journal, firmware pins and crash note end with it
 					CloseProject();
+					break;
+				case "Load Last Project":
+					if (Config.RecentProjects.MostRecent is { Length: not 0 } last) LoadProject(last);
 					break;
 				case "Display FPS":
 					ToggleFps();

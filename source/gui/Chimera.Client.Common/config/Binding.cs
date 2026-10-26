@@ -37,9 +37,10 @@ namespace Chimera.Client.Common
 			Bind("General", "Clear Autohold");
 			Bind("General", "Screenshot", "F12");
 			Bind("General", "Full Screen", "Alt+Enter");
-			Bind("General", "Open ROM", "Ctrl+O");
-			Bind("General", "Close ROM", "Ctrl+W");
-			Bind("General", "Load Last ROM");
+			// a game runs only in a project (user-decided, 2026-10-26)
+			Bind("General", "Open Project", "Ctrl+O");
+			Bind("General", "Close Project", "Ctrl+W");
+			Bind("General", "Load Last Project");
 			Bind("General", "Display FPS");
 			Bind("General", "Frame Counter");
 			Bind("General", "Lag Counter");
@@ -152,8 +153,25 @@ namespace Chimera.Client.Common
 #endif
 		}
 
+		/// <summary>
+		/// Hotkeys that were renamed, old name to new: a binding saved under the
+		/// old name is the new hotkey's (user-decided, 2026-10-26: "Open ROM",
+		/// "Close ROM" and "Load Last ROM" became the project's, as a game runs
+		/// only in a project).
+		/// </summary>
+		private static readonly IReadOnlyDictionary<string, string> Renamed = new Dictionary<string, string>
+		{
+			["Open ROM"] = "Open Project",
+			["Close ROM"] = "Close Project",
+			["Load Last ROM"] = "Load Last Project",
+		};
+
 		public static void ResolveWithDefaults(IDictionary<string, string> dict)
 		{
+			foreach (var (old, now) in Renamed)
+			{
+				if (dict.TryGetValue(old, out var keys) && !dict.ContainsKey(now)) dict[now] = keys;
+			}
 			foreach (var k in dict.Keys.Where(static k => !AllHotkeys.ContainsKey(k)).ToArray()) dict.Remove(k); // remove extraneous
 			foreach (var (k, v) in AllHotkeys) if (!dict.ContainsKey(k)) dict[k] = v.DefaultBinding; // add missing
 		}

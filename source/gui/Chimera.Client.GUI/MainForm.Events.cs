@@ -27,7 +27,8 @@ namespace Chimera.Client.GUI
 
 		private void FileSubMenu_DropDownOpened(object sender, EventArgs e)
 		{
-			CloseRomMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Close ROM"];
+			OpenProjectMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Open Project"];
+			CloseRomMenuItem.ShortcutKeyDisplayString = Config.HotkeyBindings["Close Project"];
 
 			// There is one thing to close, and it is the project - which is open
 			// exactly when TAStudio is (see CloseProject). Asked of the WINDOW as
