@@ -298,7 +298,9 @@ static int64_t wholeNumber(const std::string &text, const std::string &option)
  * settings recorded are every one the package exposes for these files, at
  * the value --settings gives or else at the package's default: the values
  * the engine runs a game with. (A machine's own narrower defaults, which
- * New Project offers, are given with --settings.) Each --firmware file is
+ * New Project offers, are given with --settings.) For a package of several
+ * machines the game's kind of file picks the machine, as Chimera picked one
+ * for a game opened alone, unless --settings names it. Each --firmware file is
  * pinned by its hash; a run gives it again (--firmware), as a project never
  * holds firmware. The movie, when given, is the project's input. The files
  * are not copied: a run finds them beside the project or in a --files
@@ -420,6 +422,38 @@ static int newProject(const std::vector<std::string> &args)
 		cJSON_Delete(given);
 		return refuse("--settings is not a JSON object");
 	}
+	/* the machine the game's kind of file makes it, as Chimera chose one for a
+	 * game opened alone (WaterboxCoreFactory.MachinePinnedSettings): the system
+	 * that kind of file is (the package's own list first, then each machine's),
+	 * and the first machine of that system - unless --settings names one */
+	const std::string machineSetting = text(config, "machineSetting");
+	const cJSON *machines = cJSON_GetObjectItemCaseSensitive(config, "machines");
+	if (!machineSetting.empty() && cJSON_IsArray(machines) && !files.empty() && !cJSON_HasObjectItem(given, machineSetting.c_str()))
+	{
+		auto lower = [](std::string t) {
+			for (char &c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			return t;
+		};
+		const std::string kind = lower(std::filesystem::u8path(files.front().second).extension().u8string());
+		auto systemOf = [&](const cJSON *map) {
+			const cJSON *e = nullptr;
+			cJSON_ArrayForEach(e, map)
+				if (cJSON_IsString(e) && e->string != nullptr && lower(e->string) == kind) return std::string(e->valuestring);
+			return std::string();
+		};
+		std::string system = systemOf(cJSON_GetObjectItemCaseSensitive(config, "extensions"));
+		const cJSON *m = nullptr;
+		cJSON_ArrayForEach(m, machines)
+			if (system.empty()) system = systemOf(cJSON_GetObjectItemCaseSensitive(m, "extensions"));
+		cJSON_ArrayForEach(m, machines)
+		{
+			if (system.empty() || lower(text(m, "id")) != lower(system)) continue;
+			const cJSON *when = cJSON_GetObjectItemCaseSensitive(m, "when");
+			const std::string value = cJSON_IsArray(when) && cJSON_IsString(when->child) ? when->child->valuestring : text(m, "id");
+			cJSON_AddStringToObject(given, machineSetting.c_str(), value.c_str());
+			break;
+		}
+	}
 	const cJSON *decls = cJSON_GetObjectItemCaseSensitive(config, "settings");
 	const std::string declText = cJSON_IsArray(decls) ? printed(decls) : std::string("[]");
 	cJSON *recorded = cJSON_CreateObject();
@@ -486,9 +520,9 @@ static int newProject(const std::vector<std::string> &args)
 
 	/* the machine, as the engine chooses it: the machine setting's value */
 	std::string platform = text(config, "systemId");
-	if (const cJSON *machines = cJSON_GetObjectItemCaseSensitive(config, "machines"); cJSON_IsArray(machines) && machines->child != nullptr)
+	if (cJSON_IsArray(machines) && machines->child != nullptr)
 	{
-		const cJSON *chosenValue = cJSON_GetObjectItemCaseSensitive(recorded, text(config, "machineSetting").c_str());
+		const cJSON *chosenValue = cJSON_GetObjectItemCaseSensitive(recorded, machineSetting.c_str());
 		const std::string chosen = cJSON_IsString(chosenValue) ? chosenValue->valuestring : "";
 		platform = text(machines->child, "id");
 		const cJSON *m = nullptr;
