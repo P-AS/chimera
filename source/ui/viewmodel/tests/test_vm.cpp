@@ -2435,16 +2435,16 @@ console.log("entry", movie.getinput(emu.framecount() - 1)["P1 Right"], movie.get
 while true do emu.frameadvance() end
 )LUA"), std::regex("__CHIMERA_TEST_DB__"), "\"" + sqlDb + "\""), "libraries")}, error);
 	CHECK(console.running.get() && console.summary.get() == "1 script (1 active, 0 paused)");
-	CHECK(said("start ") == "start 0 True");
-	CHECK(said("u8 ") == "u8 171 -85 171");
-	CHECK(said("sized ") == "sized 4660 13330 -2 4294967294 1192960");
-	CHECK(said("tables ") == "tables 18 52 18 52 True True");
-	CHECK(said("float ") == "float 1.5");
-	CHECK(said("state ") == "state string 171 False no state nothing in memory");
-	CHECK(said("input ") == "input True True True True True 12 34 True False True 34");
-	CHECK(said("game ") == "game 17 Status Steps u32 4 4 1 16909060 True True string False");
-	CHECK(said("forms ") == "forms True abc a 1 90 False 0 67174915");
-	CHECK(said("sqlbefore ") == "sqlbefore Database not open. Database not open.");
+	CHECK_TEXT(said("start "), "start 0 True");
+	CHECK_TEXT(said("u8 "), "u8 171 -85 171");
+	CHECK_TEXT(said("sized "), "sized 4660 13330 -2 4294967294 1192960");
+	CHECK_TEXT(said("tables "), "tables 18 52 18 52 True True");
+	CHECK_TEXT(said("float "), "float 1.5");
+	CHECK_TEXT(said("state "), "state string 171 False no state nothing in memory");
+	CHECK_TEXT(said("input "), "input True True True True True 12 34 True False True 34");
+	CHECK_TEXT(said("game "), "game 17 Status Steps u32 4 4 1 16909060 True True string False");
+	CHECK_TEXT(said("forms "), "forms True abc a 1 90 False 0 67174915");
+	CHECK_TEXT(said("sqlbefore "), "sqlbefore Database not open. Database not open.");
 	CHECK_TEXT(said("sql "), "sql Database Created Successfully Database Opened Successfully Command ran successfully 1 run 1.5 nil No rows found near \"nonsense\": syntax error");
 	CHECK(said("comm ").rfind("comm 5 hello 3 3 8 9 PNG bytes False ", 0) == 0 && said("comm ").find("there is no memory-mapped file") != std::string::npos);
 	/* the shared memory made, let go (the script runs again below: that run's too, at the end) */
@@ -2493,15 +2493,15 @@ while true do emu.frameadvance() end
 						  "__chimera_userdata_pair('big', '9999999999') __chimera_userdata_pair('s', 'walker') "
 						  "console.log('pairs', math.type(userdata.get('n')), userdata.get('n'), userdata.get('f'), type(userdata.get('b')), "
 						  "math.type(userdata.get('big')), userdata.get('s'))", "pairs", why2));
-			CHECK(said("pairs ") == "pairs integer -1234 12.5 boolean float walker");
+			CHECK_TEXT(said("pairs "), "pairs integer -1234 12.5 boolean float walker");
 		}
 		/* the script's functions ran: two clicks, and the form's close */
 		std::string why;
 		CHECK(lua.run("console.log('callbacks', userdata.get('clicked'), userdata.get('closed'))", "check", why));
-		CHECK(said("callbacks ") == "callbacks 2 True");
+		CHECK_TEXT(said("callbacks "), "callbacks 2 True");
 	}
 	CHECK(said("game.set: ").find("Nope") != std::string::npos);
-	CHECK(said("userdata ") == "userdata 3 True 2 True nil False True");
+	CHECK_TEXT(said("userdata "), "userdata 3 True 2 True nil False True");
 	CHECK(session.readDomain("RAM").at(0x10) == 0xAB);
 	/* the drawings of the frame to come, for the window to draw over the picture */
 	{
@@ -2516,21 +2516,21 @@ while true do emu.frameadvance() end
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
 	console.frameDone();
-	CHECK(said("after ") == "after 1 True True False");
+	CHECK_TEXT(said("after "), "after 1 True True False");
 	/* a new frame, nothing drawn on it */
 	CHECK(guiOverlay.shapes.get() == "[]");
-	CHECK(said("regs ") == "regs True 48 16 True");
-	CHECK(said("set ") == "set 99");
+	CHECK_TEXT(said("regs "), "regs True 48 16 True");
+	CHECK_TEXT(said("set "), "set 99");
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 2; }, 20));
 	console.frameDone();
-	CHECK(said("again ") == "again 2");
+	CHECK_TEXT(said("again "), "again 2");
 	CHECK(said("hash ").rfind("hash BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD "
 							  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855 False", 0) == 0);
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 3; }, 20));
 	console.frameDone();
-	CHECK(said("entry ") == "entry True False True");
+	CHECK_TEXT(said("entry "), "entry True False True");
 	/* stopped (Toggle, on every script when none is selected); Toggle Last Lua Script runs it again, and stops it again */
 	CHECK(console.running.get() && console.run("toggle", {}, error).has_value() && !console.running.get());
 	CHECK(console.run("toggleLast", {}, error) == Value(true) && console.run("toggleLast", {}, error) == Value(false));
@@ -8602,13 +8602,13 @@ tastudio.onqueryitemicon(function(row, col) if col == "P1 B" and row == 1 then r
 tastudio.clearIconCache()
 )", "tastudio")}, error);
 	CHECK(console.running.get());
-	CHECK(said("engaged ") == "engaged True nil");
-	CHECK(said("edits ") == "edits True False 8");
-	CHECK(said("markers ") == "markers here Run start nil 4 4");
-	CHECK(said("branches ") == "branches first try 6 0 True False");
-	CHECK(said("renamed ") == "renamed renamed");
-	CHECK(said("lag ") == "lag True nil");
-	CHECK(said("misc ") == "misc False True");
+	CHECK_TEXT(said("engaged "), "engaged True nil");
+	CHECK_TEXT(said("edits "), "edits True False 8");
+	CHECK_TEXT(said("markers "), "markers here Run start nil 4 4");
+	CHECK_TEXT(said("branches "), "branches first try 6 0 True False");
+	CHECK_TEXT(said("renamed "), "renamed renamed");
+	CHECK_TEXT(said("lag "), "lag True nil");
+	CHECK_TEXT(said("misc "), "misc False True");
 	/* the roll's drawing asks the script about cells; its own column listed */
 	CHECK(roll.scriptQueries.get() && roll.scriptColumns.get().find("\"name\": \"xp\"") != std::string::npos);
 	CHECK(lua.query("__chimera_query_text", 7, "xp") == "70" && lua.query("__chimera_query_text", 7, "P1 A").empty());
