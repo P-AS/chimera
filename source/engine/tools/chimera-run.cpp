@@ -289,7 +289,7 @@ static int64_t wholeNumber(const std::string &text, const std::string &option)
  * and the Qt window can all run:
  *
  *   chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie.txt>]]
- *       [--file <slot>=<path>]... [--settings <json>] [--firmware <id>=<path>]...
+ *       [--file <slot>=<path>]... [--movie <movie.txt>] [--settings <json>] [--firmware <id>=<path>]...
  *       [--title <text>] [--clock-start <seconds since 1970, UTC>]
  *
  * The core is the package's, pinned by its hash. A <game> goes in the slot
@@ -302,7 +302,8 @@ static int64_t wholeNumber(const std::string &text, const std::string &option)
  * machines the game's kind of file picks the machine, as Chimera picked one
  * for a game opened alone, unless --settings names it. Each --firmware file is
  * pinned by its hash; a run gives it again (--firmware), as a project never
- * holds firmware. The movie, when given, is the project's input. The files
+ * holds firmware. The movie, when given (after the game, or with --movie for
+ * a project of no game file), is the project's input. The files
  * are not copied: a run finds them beside the project or in a --files
  * folder, by name and hash. */
 static int newProject(const std::vector<std::string> &args)
@@ -325,6 +326,7 @@ static int newProject(const std::vector<std::string> &args)
 		else if (arg == "--firmware") { if (!pair(firmware)) return fail("", "--firmware wants <id>=<path>"); }
 		else if (arg == "--settings" && i + 1 < args.size()) settingsText = args[++i];
 		else if (arg == "--title" && i + 1 < args.size()) title = args[++i];
+		else if (arg == "--movie" && i + 1 < args.size()) movie = args[++i];
 		else if (arg == "--clock-start" && i + 1 < args.size()) clockStart = wholeNumber(args[++i], arg);
 		else if (arg.rfind("--", 0) == 0) return fail("", "--new-project does not take " + arg);
 		else if (out.empty()) out = arg;
@@ -337,7 +339,7 @@ static int newProject(const std::vector<std::string> &args)
 	if (out.empty() || package.empty())
 	{
 		std::fprintf(stderr, "usage: chimera-run --new-project <out.chimeraProject> <package> [<game> [<movie.txt>]]\n"
-			"           [--file <slot>=<path>]... [--settings <json>] [--firmware <id>=<path>]... [--title <text>] [--clock-start <seconds>]\n");
+			"           [--file <slot>=<path>]... [--movie <movie.txt>] [--settings <json>] [--firmware <id>=<path>]... [--title <text>] [--clock-start <seconds>]\n");
 		return 1;
 	}
 	if (game.size() > 17 && game.compare(game.size() - 17, 17, ".chimeraMultiFile") == 0)

@@ -211,7 +211,8 @@ do are:
 A game runs only in a project (user-decided, 2026-10-26). A gate makes one
 with `chimera-run --new-project <out.chimeraProject> <package> <game>
 [<movie>]` (the game in the slot that takes its kind of file, or `--file
-<slot>=<path>` for each; `--settings`, `--firmware`, `--clock-start`) and runs
+<slot>=<path>` for each; `--movie <movie>` when there is no game file;
+`--settings`, `--firmware`, `--clock-start`) and runs
 it with `chimera-run --project <out.chimeraProject> <package>`. The form that
 takes a game file directly goes once every core's tests have moved.
 
