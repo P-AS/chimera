@@ -898,29 +898,17 @@ function client.gettool(name)
 end
 -- client.getconfig: Chimera's settings by its names, each read from the
 -- Qt window's as it is when read; they cannot be changed through it
--- (owner, 2026-10-26). Settings with one value (a switch, a number, a text,
--- a choice by its name), the places of what is drawn over the picture, and
--- Movies' greenzone ones; a name the Qt window has no setting for is nil,
+-- (owner, 2026-10-26). The list is the one Chimera's settings are imported
+-- by (chimera_settings.cpp): settings with one value (a switch, a number, a
+-- text, a choice by its name), the places of what is drawn over the picture,
+-- and Movies' greenzone ones; a name the Qt window has no setting for is nil,
 -- and so is McpAllowChanges, as scripts are not given the MCP server's
-local function setting(vm, name)
-	local model = C[vm]
+local function setting(key)
+	local vm, name = string.match(key, "^(%w+)%.(%w+)$")
+	local model = vm and C[vm]
 	if model == nil then return nil end
 	return model[name]
 end
-local function plain(vm, name) return function() return setting(vm, name) end end
--- a choice by its name in Chimera's list, as the window keeps its number
-local function choice(vm, name, names) return function() return names[setting(vm, name)] end end
--- "#AARRGGBB" as Chimera's colour number (a signed 32-bit ARGB)
-local function colour(name)
-	return function()
-		local n = tonumber(string.sub(setting("messages", name) or "", 2), 16)
-		if n == nil then return nil end
-		return n >= 0x80000000 and n - 0x100000000 or n
-	end
-end
-local function megabytes(vm, name) return function() local gb = setting(vm, name) return gb and gb * 1024 end end
-local function throttledBy(kind) return function() return setting("session", "throttle") == kind end end
-local function resized(name) return function() return setting("encoder", "resize") and setting("encoder", name) or 0 end end
 local readOnly = function(_, key) error("client.getconfig: " .. tostring(key) .. " can be read here, not changed", 2) end
 -- read when indexed; pairs walks every name the Qt window has
 local function settingsTable(names)
@@ -936,148 +924,63 @@ local function settingsTable(names)
 		end,
 	})
 end
--- one of the places in messages' positions, by its name there, as Chimera's {X, Y, Anchor}
 local anchors = {[0] = "TopLeft", "TopRight", "BottomLeft", "BottomRight"}
-local function place(name)
-	return function()
-		local one = string.match(setting("messages", "positions") or "", '"' .. name .. '"%s*:%s*(%b{})')
-		if one == nil then return nil end
-		local function field(k) return math.tointeger(tonumber(string.match(one, '"' .. k .. '"%s*:%s*(%-?%d+)'))) end
-		return settingsTable({
-			X = function() return field("x") end,
-			Y = function() return field("y") end,
-			Anchor = function() return anchors[field("anchor")] end,
-		})
+-- how each kind is read, from the window's setting (key) and the kind's extra
+local readers = {
+	plain = function(key) return function() return setting(key) end end,
+	-- a choice by its name in Chimera's list, as the window keeps its number
+	choice = function(key, extra)
+		local names, i = {}, 0
+		for name in string.gmatch(extra, "[^|]+") do names[i] = name i = i + 1 end
+		return function() return names[setting(key)] end
+	end,
+	corekind = function(key) return function() return ({emulators = "Emulators", games = "Games"})[setting(key)] end end,
+	-- "#AARRGGBB" as Chimera's colour number (a signed 32-bit ARGB)
+	colour = function(key)
+		return function()
+			local n = tonumber(string.sub(setting(key) or "", 2), 16)
+			if n == nil then return nil end
+			return n >= 0x80000000 and n - 0x100000000 or n
+		end
+	end,
+	megabytes = function(key) return function() local gb = setting(key) return gb and gb * 1024 end end,
+	throttle = function(key, extra) return function() return setting(key) == extra end end,
+	resize = function(key, extra) return function() return setting(key) and setting(extra) or 0 end end,
+	displayfeatures = function(key, extra)
+		return function()
+			if setting(key) then return 0 end
+			return setting(extra) and 1 or 2
+		end
+	end,
+	nullwhenempty = function(key) return function() local v = setting(key) return v ~= "" and v or nil end end,
+	-- one of the places in messages' positions, by its name there, as Chimera's {X, Y, Anchor}
+	place = function(key, extra)
+		return function()
+			local one = string.match(setting(key) or "", '"' .. extra .. '"%s*:%s*(%b{})')
+			if one == nil then return nil end
+			local function field(k) return math.tointeger(tonumber(string.match(one, '"' .. k .. '"%s*:%s*(%-?%d+)'))) end
+			return settingsTable({
+				X = function() return field("x") end,
+				Y = function() return field("y") end,
+				Anchor = function() return anchors[field("anchor")] end,
+			})
+		end
+	end,
+}
+local configNames, groups = {}, {}
+for _, line in ipairs(lines(__chimera_config_names())) do
+	local name, kind, key, extra = string.match(line, "^([^\t]*)\t([^\t]*)\t([^\t]*)\t(.*)$")
+	local read = readers[kind](key, extra)
+	-- one inside Movies, as Chimera's Movies.GreenzoneBudgetMb
+	local outer, inner = string.match(name, "^(%w+)%.(%w+)$")
+	if outer then
+		groups[outer] = groups[outer] or {}
+		groups[outer][inner] = read
+	else
+		configNames[name] = read
 	end
 end
-local coreKinds = {[0] = "All", "Emulators", "Games"}
-local configNames = {
-	SpeedPercent = plain("session", "speedPercent"),
-	SpeedPercentAlternate = plain("session", "fastForwardPercent"),
-	ClockThrottle = throttledBy("clock"),
-	SoundThrottle = throttledBy("audio"),
-	VSyncThrottle = throttledBy("vsync"),
-	Unthrottled = plain("session", "unthrottled"),
-	UnthrottledDrawOneIn = plain("session", "fastDrawOneIn"),
-	VSync = plain("session", "vsyncEnabled"),
-	TurboSeek = plain("session", "turboSeek"),
-	SkipLagFrame = plain("session", "skipLagFrames"),
-	AcceptBackgroundInput = plain("session", "acceptBackgroundInput"),
-	CaptureMouse = plain("session", "captureMouse"),
-	ScreenshotCaptureOsd = plain("session", "captureOsd"),
-	AutofireOn = plain("session", "autofireOn"),
-	AutofireOff = plain("session", "autofireOff"),
-	AutofireLagFrames = plain("session", "autofireSkipsLag"),
-	DisplayFps = plain("session", "showFps"),
-	DisplayAverageFps = plain("session", "showAverageFps"),
-	DisplayFrameCounter = plain("session", "showFrameCounter"),
-	DisplayLagCounter = plain("session", "showLagCounter"),
-	DisplayInput = plain("session", "showInput"),
-	DisplayRerecordCount = plain("session", "showRerecords"),
-	DisplayGameTime = plain("session", "showGameTime"),
-	DisplayMessages = plain("session", "showMessages"),
-	DispChromeStatusBarWindowed = plain("session", "showStatusBar"),
-	DispSpeedupFeatures = function()
-		if setting("session", "displayNothing") then return 0 end
-		return setting("display", "minimalDisplay") and 1 or 2
-	end,
-	SoundEnabled = plain("session", "soundOn"),
-	SoundEnabledNormal = plain("session", "soundNormalOn"),
-	SoundEnabledRWFF = plain("session", "soundFastOn"),
-	MuteFrameAdvance = plain("session", "muteFrameAdvance"),
-	SoundVolume = plain("session", "volume"),
-	SoundVolumeRWFF = plain("session", "fastVolume"),
-	SoundDevice = plain("session", "soundDevice"),
-	SoundBufferSizeMs = plain("session", "soundBufferMs"),
-	Movies = function()
-		return settingsTable({
-			GreenzoneBudgetMb = plain("session", "greenzoneBudgetMb"),
-			GreenzoneMaxNearStride = plain("session", "greenzoneNearStride"),
-			GreenzonePictureSettleFrames = plain("session", "pictureSettleFrames"),
-		})
-	end,
-	StartPaused = plain("customize", "startPaused"),
-	StartFullscreen = plain("customize", "startFullscreen"),
-	SuppressAskSave = plain("customize", "neverAskSave"),
-	RunLuaDuringTurbo = plain("customize", "luaDuringTurbo"),
-	ShowContextMenu = plain("customize", "showContextMenu"),
-	HandleAlternateKeyboardLayouts = plain("customize", "alternateLayouts"),
-	MergeLAndRModifierKeys = plain("customize", "mergeModifiers"),
-	SingleInstanceMode = plain("customize", "singleInstance"),
-	GCAdapterSupportEnabled = plain("customize", "gameCubeAdapter"),
-	StackOSDMessages = plain("messages", "stackMessages"),
-	OSDMessageDuration = plain("messages", "messageSeconds"),
-	MessagesColor = colour("messagesColor"),
-	AlertMessageColor = colour("alertColor"),
-	LastInputColor = colour("lastInputColor"),
-	MovieInputColor = colour("movieInputColor"),
-	Fps = place("Fps"),
-	FrameCounter = place("Frame Counter"),
-	LagCounter = place("Lag Counter"),
-	InputDisplay = place("Input Display"),
-	RamWatches = place("Watches"),
-	Messages = place("Messages"),
-	ReRecordCounter = place("Rerecords"),
-	Autohold = place("Autohold"),
-	GameTime = place("Game Time"),
-	DispFinalFilter = plain("display", "finalFilter"),
-	DispFixAspectRatio = plain("display", "letterbox"),
-	DispFixScaleInteger = plain("display", "integerScale"),
-	DispManagerAR = choice("display", "aspectMode", {[0] = "None", "System", "CustomSize", "CustomRatio"}),
-	DispCustomUserARWidth = plain("display", "customWidth"),
-	DispCustomUserARHeight = plain("display", "customHeight"),
-	DispCustomUserArx = plain("display", "ratioX"),
-	DispCustomUserAry = plain("display", "ratioY"),
-	DispCropLeft = plain("display", "cropLeft"),
-	DispCropTop = plain("display", "cropTop"),
-	DispCropRight = plain("display", "cropRight"),
-	DispCropBottom = plain("display", "cropBottom"),
-	DispPrescale = plain("display", "prescale"),
-	DispAutoPrescale = plain("display", "autoPrescale"),
-	DispFullscreenHacks = plain("display", "fullscreenHacks"),
-	DispChromeFrameWindowed = plain("display", "frameWindowed"),
-	DispChromeCaptionWindowed = plain("display", "captionWindowed"),
-	DispChromeMenuWindowed = plain("display", "menuWindowed"),
-	DispChromeStatusBarFullscreen = plain("display", "statusBarFullscreen"),
-	DispChromeMenuFullscreen = plain("display", "menuFullscreen"),
-	DispChromeFullscreenAutohideMouse = plain("display", "autohideMouseFullscreen"),
-	DispChromeAllowDoubleClickFullscreen = plain("display", "allowDoubleClickFullscreen"),
-	ScaleOSDWithSystemScale = plain("display", "scaleOsd"),
-	ResizeWithFramebuffer = plain("display", "resizeWithPicture"),
-	SaveWindowPosition = plain("display", "saveWindowPosition"),
-	MainFormStayOnTop = plain("display", "stayOnTop"),
-	MainFormMouseCaptureForcesTopmost = plain("display", "mouseCaptureForcesTop"),
-	UseStaticWindowTitles = plain("display", "staticWindowTitles"),
-	MainFormStaticWindowTitleOverride = plain("display", "titleSuffix"),
-	AviCaptureOsd = plain("encoder", "captureOsd"),
-	AviCaptureLua = plain("encoder", "captureLua"),
-	VideoWriterAudioSync = plain("encoder", "audioSync"),
-	AVWriterPad = plain("encoder", "pad"),
-	AVWriterResizeWidth = resized("width"),
-	AVWriterResizeHeight = resized("height"),
-	FFmpegCustomCommand = plain("encoder", "command"),
-	InputHotkeyOverrideOptions = choice("hotkeys", "keyPriority", {[0] = "BOTH", "INPUT", "HOTKEY"}),
-	NoMixedInputHokeyOverride = plain("hotkeys", "noMixedPriority"),
-	HotkeyConfigAutoTab = plain("hotkeys", "autoTab"),
-	InputConfigAutoTab = plain("controls", "autoTab"),
-	DisplayWatchesOnScreen = plain("ramWatch", "showOnScreen"),
-	RamWatchDefinePrevious = choice("ramWatch", "previousType", {[0] = "Original", "LastSearch", "LastFrame", "LastChange"}),
-	CacheAutoClean = plain("cacheManager", "autoClean"),
-	CacheSizeLimitMb = megabytes("cacheManager", "limitGb"),
-	CacheFreeSpaceFloorMb = megabytes("cacheManager", "floorGb"),
-	CoresFolder = plain("cores", "coresFolder"),
-	CoreManagerShows = choice("cores", "shows", coreKinds),
-	FirmwareShows = choice("firmware", "shows", coreKinds),
-	NewProjectKind = function() return ({emulators = "Emulators", games = "Games"})[setting("newProject", "kind")] end,
-	DataDirectory = plain("dataFolder", "current"),
-	DataDirectoryPending = function() local p = setting("dataFolder", "pending") return p ~= "" and p or nil end,
-	DataDirectoryPendingMove = plain("dataFolder", "pendingMove"),
-	Theme = plain("themes", "current"),
-	DefaultAuthor = plain("projectDetails", "defaultAuthor"),
-	DisplaySubtitles = plain("projectDetails", "showSubtitles"),
-	CompileSessionGigabytes = plain("precompiled", "sessionGigabytes"),
-	SnowyNullCore = choice("idleEye", "snowWhen", {[0] = "Never", "Always", "WeekOfChristmas"}),
-}
+for outer, names in pairs(groups) do configNames[outer] = function() return settingsTable(names) end end
 function client.getconfig() return settingsTable(configNames) end
 -- Screenshot (to a file when one is named) and Screenshot To Clipboard, with Capture OSD as it is set
 function client.screenshot(path) C.toolWindows.screenshot(path == nil and "" or tostring(path)) end

@@ -1,4 +1,5 @@
 #include "chimera/vm/lua_bridge.hpp"
+#include "chimera/vm/chimera_settings.hpp"
 #include "chimera/vm/json.hpp"
 
 #include <algorithm>
@@ -27,6 +28,15 @@ namespace {
 /* __chimera_sleep(milliseconds, exact): the scripts' thread waits, as
  * Chimera's client.sleep makes its own wait; exact waits the last of it
  * out by the clock, as its exactsleep does */
+/* __chimera_config_names(): Chimera's settings and the window's they are,
+ * for client.getconfig (chimera_settings.hpp) */
+int configNames(lua_State *L)
+{
+	const std::string text = chimeraSettingsText();
+	lua_pushlstring(L, text.data(), text.size());
+	return 1;
+}
+
 /* __chimera_file_stamp(path): a number that changes when the file does (its
  * time and size), 0 when there is none: an image drawn with cache false is
  * read again once it changed */
@@ -160,6 +170,8 @@ LuaBridge::LuaBridge() : L_(luaL_newstate())
 	lua_setglobal(L_, "__chimera_sleep");
 	lua_pushcfunction(L_, &fileStamp);
 	lua_setglobal(L_, "__chimera_file_stamp");
+	lua_pushcfunction(L_, &configNames);
+	lua_setglobal(L_, "__chimera_config_names");
 	lua_pushinteger(L_, 0);
 	lua_setglobal(L_, "__chimera_script");
 	/* Chimera's libraries, a layer of Lua over the view models */

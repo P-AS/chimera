@@ -35,6 +35,7 @@
 #endif
 
 #include "chimera/vm/bindings.hpp"
+#include "chimera/vm/chimera_settings.hpp"
 #include "chimera/vm/config_store.hpp"
 #include "chimera/vm/controls_vm.hpp"
 #include "chimera/vm/hotkeys_vm.hpp"
@@ -617,6 +618,80 @@ void configStore()
 	{
 		ConfigStore store(file);
 		CHECK(!store.problem().empty() && fs::exists(file + ".unreadable") && !fs::exists(file));
+	}
+	fs::remove_all(dir);
+}
+
+/* Chimera's settings file read as the window's (owner, 2026-10-26): each
+ * kind of setting as the window keeps it, what is not carried said, and the
+ * window's own file not taken for Chimera's; Load Config From reads it too */
+void chimeraSettingsImport()
+{
+	namespace fs = std::filesystem;
+	const std::string chimera = R"({
+		"LastWrittenFromDetailed": "a test",
+		"HotkeyBindings": {"Pause": "P"},
+		"SpeedPercent": 137,
+		"ClockThrottle": false, "SoundThrottle": false, "VSyncThrottle": true,
+		"MessagesColor": -16711936,
+		"CacheSizeLimitMb": 51200,
+		"AVWriterResizeWidth": 640, "AVWriterResizeHeight": 480,
+		"DispSpeedupFeatures": 1,
+		"Fps": {"X": 3, "Y": 4, "Anchor": 2},
+		"NewProjectKind": 2,
+		"Movies": {"GreenzoneBudgetMb": 2048, "MovieEndAction": 1},
+		"DataDirectoryPending": null,
+		"DispManagerAR": 3,
+		"DispCustomUserArx": 16.0,
+		"McpAllowChanges": true,
+		"JmdThreads": 3
+	})";
+	ChimeraImport got;
+	std::string error;
+	CHECK(importChimeraSettings(chimera, got, error));
+	auto text = [&](const char *key) {
+		const json::Json *v = got.settings.find(key);
+		return v == nullptr ? std::string("(none)") : v->kind == json::Json::Kind::Bool ? (v->boolean ? "true" : "false") : v->text;
+	};
+	CHECK(text("session.speedPercent") == "137" && text("session.throttle") == "vsync");
+	CHECK(text("messages.messagesColor") == "#FF00FF00" && text("cacheManager.limitGb") == "50");
+	CHECK(text("encoder.resize") == "true" && text("encoder.width") == "640" && text("encoder.height") == "480");
+	CHECK(text("session.displayNothing") == "false" && text("display.minimalDisplay") == "true");
+	CHECK(text("messages.positions") == "{\"Fps\": {\"x\": 3, \"y\": 4, \"anchor\": 2}}");
+	CHECK(text("newProject.kind") == "games" && text("session.greenzoneBudgetMb") == "2048" && text("dataFolder.pending").empty());
+	CHECK(text("display.aspectMode") == "3" && std::stod(text("display.ratioX")) == 16.0);
+	/* the MCP server's permission is the person's to give again */
+	CHECK(text("mcp.allowChanges") == "(none)");
+	auto has = [](const std::vector<std::string> &list, const char *name) { return std::find(list.begin(), list.end(), name) != list.end(); };
+	CHECK(has(got.carried, "Movies.GreenzoneBudgetMb") && has(got.carried, "VSyncThrottle") && has(got.carried, "Fps"));
+	CHECK(has(got.left, "Movies.MovieEndAction") && has(got.left, "JmdThreads") && has(got.left, "McpAllowChanges"));
+	CHECK(got.carried.size() + got.left.size() == 20);
+	/* none of Chimera's three throttles on: nothing keeps the speed */
+	CHECK(importChimeraSettings(R"({"HotkeyBindings": {}, "ClockThrottle": false, "SoundThrottle": false})", got, error) &&
+		text("session.throttle").empty());
+	/* the window's own file, and what is not JSON, are not Chimera's */
+	CHECK(!importChimeraSettings(R"({"session.speedPercent": 5, "HotkeyBindings": {}})", got, error) && error == "not Chimera's settings");
+	CHECK(!importChimeraSettings("[1]", got, error) && !importChimeraSettings("{", got, error));
+	/* every setting named once, and Lua's list a line each */
+	std::vector<std::string> names;
+	for (const ChimeraSetting &s : chimeraSettings()) names.push_back(s.name);
+	std::sort(names.begin(), names.end());
+	CHECK(std::adjacent_find(names.begin(), names.end()) == names.end() && names.size() == 118);
+	const std::string forLua = chimeraSettingsText();
+	CHECK(std::count(forLua.begin(), forLua.end(), '\n') == 118);
+	/* Chimera's file through Load Config From */
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-import-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	std::ofstream(dir / "config.ini") << chimera;
+	{
+		ManualDispatcher d;
+		ConfigStore store((dir / "settings.json").string());
+		DisplayViewModel display(d);
+		MessagesViewModel messages(d);
+		store.keep(display, "aspectMode");
+		store.keep(messages, "messagesColor");
+		CHECK(store.loadFrom((dir / "config.ini").string(), error) == 2);
+		CHECK(display.aspectMode.get() == 3 && messages.messagesColor.get() == "#FF00FF00");
 	}
 	fs::remove_all(dir);
 }
@@ -9009,6 +9084,7 @@ int main(int argc, char **argv)
 	luaConsole();
 	toolWindows();
 	configStore();
+	chimeraSettingsImport();
 	firmware();
 	settingsByMachine();
 	settingTypes();

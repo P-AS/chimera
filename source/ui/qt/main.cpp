@@ -59,6 +59,7 @@
 #include "chimera/engine.h"
 #include "chimera/vm/branches_vm.hpp"
 #include "chimera/vm/project_details_vm.hpp"
+#include "chimera/vm/chimera_settings.hpp"
 #include "chimera/vm/config_store.hpp"
 #include "chimera/vm/help_vm.hpp"
 #include "chimera/vm/mcp_vm.hpp"
@@ -328,6 +329,28 @@ int main(int argc, char **argv)
 	const QString configPath = qEnvironmentVariableIsSet("CHIMERA_QT_CONFIG")
 		? qEnvironmentVariable("CHIMERA_QT_CONFIG")
 		: QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + QStringLiteral("/settings.json");
+	/* the first start, with no settings of its own: Chimera's, when its
+	 * config.ini is beside the program as Chimera keeps it, carried over once
+	 * (owner, 2026-10-26; CHIMERA_QT_CHIMERA_SETTINGS names one for a test) */
+	if (!QFileInfo::exists(configPath))
+	{
+		const QString chimeraPath = qEnvironmentVariableIsSet("CHIMERA_QT_CHIMERA_SETTINGS")
+			? qEnvironmentVariable("CHIMERA_QT_CHIMERA_SETTINGS")
+			: QCoreApplication::applicationDirPath() + QStringLiteral("/config.ini");
+		QFile chimeraFile(chimeraPath);
+		vm::ChimeraImport imported;
+		std::string why;
+		if (chimeraFile.open(QIODevice::ReadOnly) && vm::importChimeraSettings(chimeraFile.readAll().toStdString(), imported, why))
+		{
+			imported.settings.members.emplace_back("importedFrom", vm::json::Json::string(chimeraPath.toStdString()));
+			QDir().mkpath(QFileInfo(configPath).absolutePath());
+			QFile settingsFile(configPath);
+			const std::string text = vm::json::write(imported.settings);
+			if (settingsFile.open(QIODevice::WriteOnly) && settingsFile.write(text.data(), static_cast<qint64>(text.size())) == static_cast<qint64>(text.size()))
+				std::printf("settings: %zu of Chimera's carried over from %s, %zu not\n", imported.carried.size(),
+					chimeraPath.toStdString().c_str(), imported.left.size());
+		}
+	}
 	/* Chimera's single instance mode (Windows): with a window of this
 	 * program already running, the files named are handed to it and this
 	 * one ends before anything is made */

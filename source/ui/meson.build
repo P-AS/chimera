@@ -86,6 +86,7 @@ vm_lib = static_library(
     'viewmodel/src/themes_vm.cpp',
     'viewmodel/src/ram_watch_vm.cpp',
     'viewmodel/src/config_store.cpp',
+    'viewmodel/src/chimera_settings.cpp',
     'viewmodel/src/help_vm.cpp',
     'viewmodel/src/batch_run_vm.cpp',
     'viewmodel/src/media_maker_vm.cpp',
@@ -303,6 +304,14 @@ if qt_dep.found()
       'CHIMERA_QT_RECOVERY=' + meson.current_build_dir() / 'lua-config-test-recovery',
       'CHIMERA_QT_HASHES=' + meson.current_build_dir() / 'lua-config-test-file-hashes.txt'],
     timeout: 60,
+  )
+  # Chimera's settings carried over once, at the first start: every setting
+  # the two share comes back through client.getconfig as Chimera's file had it
+  test(
+    'chimera settings import',
+    find_program('python3'),
+    args: [files('qt/tests/chimera-import.py'), chimera_qt, meson.current_build_dir() / 'chimera-import-test'],
+    timeout: 300,
   )
   # a theme reaches Qt Quick's controls, which take the platform's colours
   # and not the application's unless each window is given the theme
