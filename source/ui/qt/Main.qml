@@ -127,6 +127,12 @@ ApplicationWindow {
         if (!p) return 0
         return p.anchor === 0 || p.anchor === 2 ? p.x * root.osdScale : pictureArea.width - p.x * root.osdScale - w
     }
+    // how wide a thing over the picture may be: the picture's width less its
+    // distance from the side, on both sides (a long message wraps, issue 378)
+    function osdRoom(name, w) {
+        const p = root.osdPositions[name]
+        return Math.max(40, w - 2 * (p ? p.x : 0) * root.osdScale)
+    }
     function osdY(name, h) {
         const p = root.osdPositions[name]
         if (!p) return 0
@@ -140,6 +146,17 @@ ApplicationWindow {
         const out = []
         if (!root.session.isOpen || root.session.displayNothing) return out
         function widthOf(t) { osdMetrics.text = t; return osdMetrics.advanceWidth }
+        // a message longer than the picture is wide, in lines that fit, broken between words
+        function wrap(t, room) {
+            const lines = []
+            let line = ""
+            for (const word of t.split(" ")) {
+                const longer = line === "" ? word : line + " " + word
+                if (line !== "" && widthOf(longer) > room) { lines.push(line); line = word } else line = longer
+            }
+            lines.push(line)
+            return lines
+        }
         function place(name, lines, color) {
             const p = root.osdPositions[name]
             lines = lines.filter(t => t !== "")
@@ -158,7 +175,8 @@ ApplicationWindow {
             for (let i = 0; i < onScreenMessages.count; i++) all.push(onScreenMessages.get(i).message)
             const shown = root.messages.stackMessages ? all : all.slice(-1)
             const p = root.osdPositions["Messages"]
-            place("Messages", p && p.anchor < 2 ? shown.reverse() : shown, root.osdMessageColor)
+            const room = w - 2 * (p ? p.x : 0)
+            place("Messages", (p && p.anchor < 2 ? shown.reverse() : shown).flatMap(m => wrap(m, room)), root.osdMessageColor)
         }
         if (root.session.showFrameCounter)
             place("Frame Counter", [root.session.frameCounterText], root.session.lagFrame ? root.osdAlertColor : root.osdMessageColor)
@@ -1442,6 +1460,9 @@ ApplicationWindow {
                     required property string modelData
                     x: 0
                     y: 0
+                    // a long message wraps at the picture's width (issue 378)
+                    width: Math.min(implicitWidth, root.osdRoom("Messages", pictureArea.width))
+                    wrapMode: Text.Wrap
                     text: modelData
                     color: root.osdMessageColor
                 }
