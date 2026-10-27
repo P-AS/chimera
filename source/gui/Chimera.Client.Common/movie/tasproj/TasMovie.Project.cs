@@ -694,7 +694,9 @@ namespace Chimera.Client.Common
 
 		private void WriteCacheFile(string path)
 		{
-			var createResult = ZipStateSaver.Create(path, Session.Settings.MovieCompressionLevel);
+			// the cache file's zip at level 2, which was its setting's default
+			// and is no setting now (user-decided, 2026-10-26)
+			var createResult = ZipStateSaver.Create(path, 2);
 			if (createResult.IsError) return;
 			var bs = createResult.Value;
 			try
@@ -810,7 +812,6 @@ namespace Chimera.Client.Common
 			{
 				EngineProgress.Report("reading the input log");
 				IsCountingRerecords = false;
-				MakeBackup = false;
 				ExtractInputLog(new StringReader(logText), out _);
 				IsCountingRerecords = true;
 			}

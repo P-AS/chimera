@@ -1,5 +1,6 @@
 -- Level B of the synthetic witness: replay a synth movie through Chimera's
--- frontend input pipeline and dump the final RAM and VRAM (framebuffer) domains.
+-- frontend input pipeline, in a project made of the game alone, and dump the
+-- final RAM and VRAM (framebuffer) domains.
 --
 -- Job description is read from the file named by the CHIMERA_JOB env var:
 --   movie=<path to movie txt ("|UDLRABST|" per frame)>
