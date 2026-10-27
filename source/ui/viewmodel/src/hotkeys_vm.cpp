@@ -141,7 +141,7 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 			if (key == "Escape")
 			{
 				act->draft.clear();
-				rows_.reset.emit();
+				keysChanged();
 				return autoTab.get();
 			}
 			if (key.empty() || key == "Alt+F4" || special(key)) return false;
@@ -152,7 +152,7 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 				now.push_back(key);
 			}
 			act->draft = joined(now);
-			rows_.reset.emit();
+			keysChanged();
 			return autoTab.get();
 		});
 	command("special", "one of the bindings a key cannot give, added to an action's box: Escape, WMouse L, WMouse M, WMouse R, "
@@ -170,7 +170,7 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 			std::vector<std::string> now = pieces(act->draft);
 			if (std::none_of(now.begin(), now.end(), [&](const std::string &k) { return trimmed(k) == name; })) now.push_back(name);
 			act->draft = joined(now);
-			rows_.reset.emit();
+			keysChanged();
 			return autoTab.get();
 		});
 	command("bind", "an action's keys on the copy, replaced (\"F,X1 RightShoulder\"; \"\" for none)", {"action", "keys"},
@@ -180,7 +180,7 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 			if (!action(a, act, error) || !arg(a, 1, keys, error)) return {};
 			begin();
 			act->draft = keys;
-			rows_.reset.emit();
+			keysChanged();
 			return {};
 		});
 	command("defaults", "the copy: Chimera's keys, every tab's (no group) or one tab's (Restore Defaults, Restore Current Tab "
@@ -190,7 +190,7 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 			begin();
 			for (Action &act : actions_)
 				if (group.empty() || act.group == group) act.draft = act.defaults;
-			rows_.reset.emit();
+			keysChanged();
 			return {};
 		});
 	command("clear", "the copy: no keys, every tab's (no group) or one tab's (Clear All, Clear Current Tab)", {"group"},
@@ -200,7 +200,7 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 			begin();
 			for (Action &act : actions_)
 				if (group.empty() || act.group == group) act.draft.clear();
-			rows_.reset.emit();
+			keysChanged();
 			return {};
 		});
 	command("save", "the copy kept: what differs from Chimera's keys remembered", {}, [this](const Args &, std::string &) -> Value {
@@ -235,7 +235,7 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 		});
 	command("cancel", "the copy let go", {}, [this](const Args &, std::string &) -> Value {
 		editing.set(false);
-		rows_.reset.emit();
+		keysChanged();
 		return {};
 	});
 	command("find", "the action a Find names (its name, any case), as {\"action\", \"group\"}; \"\" for none", {"text"},
@@ -304,6 +304,8 @@ void HotkeysViewModel::add(std::string group, std::string name, std::string defa
 		}
 	groups.set(json::write(tabs));
 	apply();
+	/* one action more: the rows are made again */
+	rows_.reset.emit();
 }
 
 bool HotkeysViewModel::action(const Args &a, Action *&out, std::string &error)
@@ -320,7 +322,12 @@ void HotkeysViewModel::begin()
 	if (editing.get()) return;
 	for (Action &a : actions_) a.draft = a.keys;
 	editing.set(true);
-	rows_.reset.emit();
+	keysChanged();
+}
+
+void HotkeysViewModel::keysChanged()
+{
+	if (const int64_t n = rows_.rowCount(); n > 0) rows_.changed.emit(0, n - 1);
 }
 
 HotkeysViewModel::Action *HotkeysViewModel::find(const std::string &name)
@@ -350,7 +357,7 @@ void HotkeysViewModel::apply()
 		now.members.emplace_back(a.name, Json::string(a.keys));
 	}
 	bound.set(json::write(now));
-	rows_.reset.emit();
+	keysChanged();
 }
 
 bool HotkeysViewModel::key(const std::string &name, bool down)

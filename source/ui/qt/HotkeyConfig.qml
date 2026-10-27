@@ -76,31 +76,39 @@ ApplicationWindow {
             leftPadding: 6
             height: Math.max(24, page.availableHeight - 21)
             spacing: 1
+            // built only for the tab shown while the window is open: every
+            // tab building every action's box made opening and closing take
+            // over a second (issue 388)
             Repeater {
                 id: entries
-                model: win.hotkeys.rows("hotkeys")
-                delegate: Row {
+                model: win.visible && page.StackLayout.isCurrentItem ? win.hotkeys.rows("hotkeys") : null
+                // and of its rows only this tab's actions get a box
+                delegate: Loader {
                     id: entry
                     required property int index
                     required property string group
                     required property string action
                     required property string keys
-                    visible: entry.group === page.group
-                    width: visible ? 250 : 0
-                    height: visible ? 23 : 0
-                    function focusBox() { box.focusField() }
-                    Label { text: entry.action; width: 120; topPadding: 4; elide: Text.ElideRight }
-                    BindingBox {
-                        id: box
-                        width: 120
-                        keys: entry.keys
-                        session: win.session
-                        keyNamer: win.keyNamer
-                        themeColor: win.themeColor
-                        combination: true
-                        press: (name) => win.hotkeys.run("press", [entry.action, name])
-                        special: (name) => win.hotkeys.run("special", [entry.action, name])
-                        next: () => page.focusAfter(entry.index)
+                    active: entry.group === page.group
+                    visible: active
+                    function focusBox() { if (entry.item) entry.item.focusBox() }
+                    sourceComponent: Row {
+                        width: 250
+                        height: 23
+                        function focusBox() { box.focusField() }
+                        Label { text: entry.action; width: 120; topPadding: 4; elide: Text.ElideRight }
+                        BindingBox {
+                            id: box
+                            width: 120
+                            keys: entry.keys
+                            session: win.session
+                            keyNamer: win.keyNamer
+                            themeColor: win.themeColor
+                            combination: true
+                            press: (name) => win.hotkeys.run("press", [entry.action, name])
+                            special: (name) => win.hotkeys.run("special", [entry.action, name])
+                            next: () => page.focusAfter(entry.index)
+                        }
                     }
                 }
             }

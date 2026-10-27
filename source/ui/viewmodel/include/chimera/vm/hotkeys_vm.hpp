@@ -83,6 +83,10 @@ private:
 	/* the copy, from the keys as they are, unless it is open */
 	void begin();
 	void apply();
+	/* every row's keys may differ; the actions themselves never change, so
+	 * the rows are changed in place, not rebuilt (a rebuild cost the
+	 * window over a second, issue 388) */
+	void keysChanged();
 
 	std::vector<Action> actions_;
 	/* the actions in Chimera's order, by place in actions_ */

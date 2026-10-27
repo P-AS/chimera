@@ -945,6 +945,24 @@ void modifierRewrite()
 		renamed.saved.set(R"({"Open ROM": "Ctrl+P", "Load Last ROM": "F11"})");
 		CHECK(renamed.boundTo("Ctrl+P") && !renamed.boundTo("Ctrl+O") && renamed.boundTo("F11"));
 	}
+	/* the window's copy opened, a key pressed, the copy let go: the rows
+	 * change in place, not made again, which cost the window over a
+	 * second each time (issue 388); an action added makes them again */
+	{
+		RowModel *rows = nullptr;
+		for (const auto &r : hotkeys.rowLists())
+			if (r.name == "hotkeys") rows = r.model;
+		CHECK(rows != nullptr && rows->rowCount() == 2);
+		int resets = 0, changes = 0;
+		auto resetWatch = rows->reset.connect([&] { resets++; });
+		auto changeWatch = rows->changed.connect([&](int64_t first, int64_t last) { changes += first == 0 && last == 1; });
+		hotkeys.run("edit", {}, error);
+		hotkeys.run("press", {std::string("Pause"), std::string("P")}, error);
+		hotkeys.run("cancel", {}, error);
+		CHECK(error.empty() && resets == 0 && changes == 3);
+		hotkeys.add("General", "Rewind", "Shift+R", [](bool) {});
+		CHECK(resets == 1 && rows->rowCount() == 3);
+	}
 	/* every core's controls remembered, with no machine open */
 	ControlsViewModel controls(d, session);
 	controls.saved.set(R"({"Synth":{"P1 A":"LeftShift, Z"},"Other":{"P1 B":"RightCtrl+X"}})");
