@@ -61,6 +61,7 @@
 #include "chimera/vm/new_project_vm.hpp"
 #include "chimera/vm/piano_roll_vm.hpp"
 #include "chimera/vm/process_stamp.hpp"
+#include "chimera/vm/crash_notes.hpp"
 #include "chimera/vm/customize_vm.hpp"
 #include "chimera/vm/messages_vm.hpp"
 #include "chimera/vm/display_vm.hpp"
@@ -3517,6 +3518,22 @@ bool helpMenu(const char *package, const char *rom)
 	/* nothing to attach: said, as Chimera's window says it */
 	if (help.reportFiles.get().empty())
 		CHECK(help.status.get() == "No saved project, crash note or log was found. The zip will hold the text.");
+	/* the newest crash note goes with a report, its dump beside it; an older one does not */
+	{
+		const fs::path crashes = dir / "Crashes";
+		fs::create_directories(crashes);
+		for (const char *stem : {"2026-10-26 10.00.00 pid1", "2026-10-27 10.00.00 pid2"})
+		{
+			std::ofstream(crashes / (std::string(stem) + ".txt")) << "Chimera crash note\nprocess=1\nkind=access violation\n";
+			std::ofstream(crashes / (std::string(stem) + ".dmp")) << "MDMP";
+		}
+		help.crashFolder.set(crashes.string());
+		CHECK(fromValue(help.run("makeReport", {}, error).value_or(Value()), text));
+		const std::string files = help.reportFiles.get();
+		CHECK(files.find("2026-10-27 10.00.00 pid2.txt") != std::string::npos && files.find("2026-10-27 10.00.00 pid2.dmp") != std::string::npos &&
+			files.find("pid1") == std::string::npos);
+		help.crashFolder.set("");
+	}
 	/* a project open: its core, its game, its settings off their defaults */
 	openGame(session, package, (dir / "walker.testrom").string(), error);
 	CHECK(d.until([&] { return session.isOpen.get() && settings.shown.get() > 0; }, 60));
@@ -8033,6 +8050,84 @@ bool openByKind(const char *package, const char *rom, const char *again)
 
 } // namespace
 
+/* A crash note, as the crash module writes one (docs/project.md, "Crash
+ * notes"): what failed, where and in whose code; the note of the process
+ * that left recovered work, not an earlier one given the same id; only the
+ * newest kept, their dumps with them. Arming is Windows' alone. */
+void crashNotes()
+{
+	namespace fs = std::filesystem;
+	const std::string driverFastFail = "Chimera crash note\n"
+		"time=2026-09-13 13:38:03\n"
+		"process=4242\n"
+		"code=0xc0000409\n"
+		"kind=fast fail (the process ended itself; no handler runs)\n"
+		"fastfail=7 FATAL_APP_EXIT\n"
+		"address=0x7ffb1108eb9d\n"
+		"module=nvoglv64.dll\n"
+		"offset=0x108eb9d\n"
+		"fatal=1\n"
+		"frame=21\n"
+		"\n"
+		"session:\n"
+		"  project=C:\\TAS\\nss102.chimeraProject\n"
+		"  system=Flash\n"
+		"\n"
+		"stack (faulting thread):\n"
+		"  #00 nvoglv64.dll+0x108eb9d\n"
+		"  #01 KERNEL32.DLL+0x1259d  BaseThreadInitThunk+0x1d\n"
+		"\n"
+		"dump=written\n";
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-crash-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	auto write = [&](const std::string &stem, const std::string &text, bool dump) {
+		const fs::path note = dir / (stem + ".txt");
+		std::ofstream(note, std::ios::binary) << text;
+		if (dump) std::ofstream(dir / (stem + ".dmp"), std::ios::binary) << "MDMP";
+		return note.string();
+	};
+	const std::string path = write("2026-09-13 13.38.03 pid4242", driverFastFail, true);
+	crash::Note note;
+	CHECK(crash::parse(driverFastFail, path, note));
+	CHECK(note.processId == 4242 && note.time == "2026-09-13 13:38:03");
+	CHECK(note.summary() == "fast fail in nvoglv64.dll+0x108eb9d (the NVIDIA graphics driver) at frame 21");
+	CHECK(note.session.find("project=C:\\TAS\\nss102.chimeraProject") != std::string::npos);
+	CHECK(note.stack.rfind("#00 nvoglv64.dll+0x108eb9d", 0) == 0);
+	/* a field after the stack is still a field */
+	CHECK(note.field("dump") == "written" && note.dump == (dir / "2026-09-13 13.38.03 pid4242.dmp").string());
+	/* no frame, a module nobody is named for, CR LF, no dump */
+	CHECK(crash::parse("Chimera crash note\r\nprocess=7\r\ncode=0xc0000005\r\nkind=access violation\r\nmodule=chimera.dll\r\noffset=0x10\r\nframe=0\r\n",
+			  "x.txt", note) &&
+		note.summary() == "access violation in chimera.dll+0x10" && note.time.empty() && note.dump.empty());
+	CHECK(!crash::parse("time=2026-09-13 13:38:03\nprocess=1\n", "x.txt", note) && !crash::parse("", "x.txt", note));
+	/* the process's own note, not one an earlier process with the same id left */
+	CHECK(crash::noteFor(4242, "2026-09-13 13:30:00", dir.string()).has_value());
+	CHECK(!crash::noteFor(4242, "2026-09-13 13:40:00", dir.string()).has_value());
+	CHECK(!crash::noteFor(4243, "2026-09-13 13:30:00", dir.string()).has_value());
+	CHECK(!crash::noteFor(4242, "2026-09-13 13:30:00", (dir / "none").string()).has_value());
+	CHECK(!crash::noteFor(4242, "", dir.string()).has_value());
+	/* the newest kept, their dumps with them; what is not a note left alone */
+	for (int day = 10; day <= 14; day++)
+		write("2026-09-" + std::to_string(day) + " 12.00.00 pid" + std::to_string(day), driverFastFail, true);
+	std::ofstream(dir / "readme.md") << "not a note";
+	CHECK(crash::notesIn(dir.string()).size() == 6 && crash::notesIn(dir.string()).front().path == (dir / "2026-09-14 12.00.00 pid14.txt").string());
+	crash::prune(dir.string(), 2);
+	std::vector<std::string> left;
+	for (const auto &e : fs::directory_iterator(dir)) left.push_back(e.path().filename().string());
+	std::sort(left.begin(), left.end());
+	CHECK((left == std::vector<std::string>{"2026-09-13 13.38.03 pid4242.dmp", "2026-09-13 13.38.03 pid4242.txt",
+		"2026-09-14 12.00.00 pid14.dmp", "2026-09-14 12.00.00 pid14.txt", "readme.md"}));
+	CHECK(crash::whoseModule("atio6axx.dll").empty() && crash::whoseModule("amdxx64.dll") == "the AMD graphics driver" &&
+		crash::whoseModule("ig9icd64.dll") == "the Intel graphics driver" && crash::whoseModule("opengl32.dll") == "the graphics system");
+#ifndef _WIN32
+	/* arming is Windows' alone: elsewhere it says why, and the rest does nothing */
+	CHECK(crash::arm(dir.string(), dir.string()) == "crash notes are written by Windows Error Reporting" && !crash::armed());
+	crash::noteFrame(5);
+	crash::describeSession("no project open");
+#endif
+	removeTree(dir);
+}
+
 /* Chimera's clock for a core's date (chimera issue 331) */
 void europeanClock()
 {
@@ -9327,6 +9422,7 @@ int main(int argc, char **argv)
 	watchValues();
 	themes();
 	europeanClock();
+	crashNotes();
 	idleEye();
 	nutMuxer();
 	const bool ranPads = gamepads();

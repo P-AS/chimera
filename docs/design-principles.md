@@ -10488,3 +10488,23 @@ copyright notice to stay with those parts, so LICENSE keeps that line,
 limited to them. The vendored test suite NOTICE also named is gone from the
 tree, and so is its line. CREDITS.md, the README and the bundle's
 LICENSES.md say the same.
+
+## The window leaves crash notes again (user-asked, 2026-10-27)
+
+The window had no crash notes: nothing registered the crash module
+(`chimera_crash.dll`) with Windows Error Reporting, so a graphics driver's
+fast fail ended Chimera and left only the recovered work. It is registered
+again at start, as docs/project.md ("Crash notes") describes, from a module of
+the window's own (`crash_notes.cpp`): the block the module reads (the notes
+folder, the frame each step, the GPU bridge's flight recorder, the project's
+lines when it opens) is kept in the window's memory; the newest 20 notes are
+kept; reopening a project whose work was recovered says what ended that
+session; and Help > Report an Issue attaches the newest note and its dump.
+
+Measured on Windows (the test PC): a headless run of a synthetic project
+loaded a Lua module that fast-fails, as a driver does, after eight seconds of
+recording. Windows ran the module, which wrote the note (the fast fail in that
+module at frame 458, the project's lines, the stack) and a minidump; opening
+the project again offered the recovered work and named the crash. Not tried:
+a real driver's crash, and the flight recorder's lines (the synthetic core
+draws without the GPU).

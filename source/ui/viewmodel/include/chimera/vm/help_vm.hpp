@@ -38,6 +38,8 @@ public:
 	Property<std::string> status;
 	/* where the program is: the sandbox's log is looked for there first */
 	Property<std::string> exeFolder;
+	/* where crash notes are: the newest goes with a report, its dump beside it */
+	Property<std::string> crashFolder;
 
 	/* the core open and its version, as the Cores window words it ("" for none) */
 	std::string coreAndVersion() const;

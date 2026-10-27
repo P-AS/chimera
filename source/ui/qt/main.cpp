@@ -62,6 +62,7 @@
 #include "chimera/vm/branches_vm.hpp"
 #include "chimera/vm/project_details_vm.hpp"
 #include "chimera/vm/config_store.hpp"
+#include "chimera/vm/crash_notes.hpp"
 #include "chimera/vm/help_vm.hpp"
 #include "chimera/vm/mcp_vm.hpp"
 #include "chimera/vm/media_maker_vm.hpp"
@@ -331,6 +332,27 @@ int main(int argc, char **argv)
 	/* Chimera's name: its settings and caches are kept under it (owner,
 	 * 2026-10-26; what the window kept under its old name stays there) */
 	QGuiApplication::setApplicationName(QStringLiteral("Chimera"));
+#ifdef _WIN32
+	/* a crash no handler sees still leaves a note (docs/project.md, "Crash
+	 * notes"): armed before anything else is read, with the data folder's
+	 * place as it is at first, and pointed at the one in use once known */
+	{
+		const QString here = QCoreApplication::applicationDirPath();
+		QString moduleFolder;
+		for (const QString &dir : {here + QStringLiteral("/lib"), here, here + QStringLiteral("/../..")})
+			if (QFileInfo::exists(dir + QStringLiteral("/chimera_crash.dll")))
+			{
+				moduleFolder = QFileInfo(dir).absoluteFilePath();
+				break;
+			}
+		const QString env = qEnvironmentVariable("CHIMERA_DATA_HOME");
+		const QString data = !env.trimmed().isEmpty() ? QFileInfo(env).absoluteFilePath()
+													   : QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+		const std::string why = moduleFolder.isEmpty() ? std::string("chimera_crash.dll is not beside the program")
+			: vm::crash::arm(moduleFolder.toStdString(), (data + QStringLiteral("/Crashes")).toStdString());
+		if (!why.empty()) std::fprintf(stderr, "[crash] crash notes are off: %s\n", why.c_str());
+	}
+#endif
 	/* Fusion, with Chimera's check boxes and radio buttons and scroll bars always seen (style/, built in) */
 	QQuickStyle::setStyle(QStringLiteral("ChimeraStyle"));
 #ifndef _WIN32
@@ -936,6 +958,11 @@ int main(int argc, char **argv)
 	for (const char *name : {"current", "pending", "pendingMove"}) config.keep(dataFolder, name);
 	if (const std::string said = dataFolder.applyPending(); !said.empty()) dataFolder.status.set(said);
 	const std::string dataHome = dataFolder.inUse();
+	/* crash notes go to the data folder in use */
+	session.crashFolder.set(dataHome + "/Crashes");
+	help.crashFolder.set(dataHome + "/Crashes");
+	if (const std::string why = vm::crash::repoint(dataHome + "/Crashes"); !why.empty())
+		std::fprintf(stderr, "[crash] notes stay where they were: %s\n", why.c_str());
 	/* what a project can make again (its branches' states), a folder a
 	 * project (CHIMERA_QT_CACHE for a test) */
 	session.cacheFolder.set(qEnvironmentVariableIsSet("CHIMERA_QT_CACHE") ? qEnvironmentVariable("CHIMERA_QT_CACHE").toStdString()

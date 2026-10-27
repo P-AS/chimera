@@ -332,6 +332,10 @@ public:
 	 * offered), recoveredUpTo says when its last work was, and the open
 	 * waits for the answer (recoverWork) */
 	Property<std::string> recoveryFolder, recoveredCopy, recoveredUpTo;
+	/* where crash notes are (docs/project.md, "Crash notes"), and, beside
+	 * recovered work, what ended the session that left it and its note
+	 * ("" when no note says) */
+	Property<std::string> crashFolder, recoveredCrash, recoveredCrashNote;
 	struct ProjectFile
 	{
 		std::string name, slot, sha1, actualSha1;
@@ -766,14 +770,15 @@ private:
 	/* the files looked for, then the rest of opening (or the project waits for its files) */
 	void findFilesAndBootOnMachine(PendingOpen open);
 	bool recoveredM_ = false;
-	std::string recoveryFolderM_, backupFolderM_;
+	std::string recoveryFolderM_, backupFolderM_, crashFolderM_;
 	std::filesystem::path recoveryDirOf(ce_project *p) const;
 	/* the work kept for a crash, written now (quietly) or let go */
 	void keepRecoveryOnMachine();
 	void dropRecoveryOnMachine(ce_project *p);
 	/* a crash's work for this project, rebuilt as a copy among the backups;
 	 * the copy's path and the time of its last work, or false for none */
-	bool recoveredCopyOnMachine(ce_project *p, const std::string &projectPath, std::string &copy, std::string &upTo);
+	bool recoveredCopyOnMachine(ce_project *p, const std::string &projectPath, std::string &copy, std::string &upTo,
+		std::string &crash, std::string &crashNote);
 	Clock::time_point recoveryDue_{};
 	/* the journal beside the snapshot (work.journal, as Chimera's): the
 	 * engine writes every change to the movie into it as it is made, and the
@@ -786,7 +791,7 @@ private:
 	uintmax_t journalImageBytes_ = 0;
 	std::string journaledMarkers_, journaledOrder_;
 	std::map<std::string, std::string> journaledBranches_;
-	Connection recoveryWatch_, backupWatch_;
+	Connection recoveryWatch_, backupWatch_, crashWatch_;
 	PendingOpen pendingOpenM_;
 	void publishProjectFilesOnMachine();
 	/* where this machine found a project's files, kept in its cache folder

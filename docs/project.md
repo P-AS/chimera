@@ -608,7 +608,8 @@ catches - still leaves `<data>/Crashes/<time> pid<id>.txt` and a minidump
 (`.dmp`) beside it, on Windows.
 
 Nothing in the dying process writes them. At start Chimera registers
-`dll/chimera_crash.dll` with Windows Error Reporting
+`lib\chimera_crash.dll` (in the bundle, beside the window's other libraries)
+with Windows Error Reporting
 (`WerRegisterRuntimeExceptionModule`; the per-user registry list
 `HKCU\Software\Microsoft\Windows\Windows Error Reporting\RuntimeExceptionHelperModules`
 allows it, so no administrator is needed). When the process dies, WER loads that
@@ -635,7 +636,8 @@ deleted install) are removed at start, and only the newest 20 notes are kept.
 Opening a project whose recovery folder outlived its process looks for the note
 that process left (the same process id, written after it started) and says what
 ended it - "a fast fail in nvoglv64.dll+0x108eb9d (the NVIDIA graphics driver)
-at frame 21" - and where the note is.
+at frame 21" - and where the note is. Help > Report an Issue attaches the newest
+note and its dump.
 
 Linux has no equivalent here: the journal still keeps the work, and the kernel's
 core dump settings decide what else is kept.

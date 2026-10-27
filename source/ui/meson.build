@@ -50,6 +50,7 @@ vm_lib = static_library(
     'viewmodel/src/suggestion.cpp',
     'viewmodel/src/european_clock.cpp',
     'viewmodel/src/process_stamp.cpp',
+    'viewmodel/src/crash_notes.cpp',
     'viewmodel/src/customize_vm.cpp',
     'viewmodel/src/messages_vm.cpp',
     'viewmodel/src/display_vm.cpp',

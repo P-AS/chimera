@@ -22,6 +22,7 @@
 #include "chimera/engine.h"
 #include "chimera/vm/firmware.hpp"
 #include "chimera/vm/json.hpp"
+#include "chimera/vm/crash_notes.hpp"
 #include "chimera/vm/process_stamp.hpp"
 #include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/suggestion.hpp"
@@ -814,6 +815,11 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("recoveredCopy", "the copy among the backups a crash's unsaved work was rebuilt into, while the project's open "
 		"waits for recoverWork; \"\" when nothing is offered", recoveredCopy);
 	expose("recoveredUpTo", "when the recovered work was last kept, as the clock here reads (HH:MM:SS)", recoveredUpTo);
+	expose("crashFolder", "where crash notes are written (Windows), <data>/Crashes", crashFolder);
+	crashWatch_ = crashFolder.changed.connect([this] { submit([this, f = crashFolder.get()] { crashFolderM_ = f; }); });
+	expose("recoveredCrash", "beside recovered work, what ended the session that left it, as its crash note says (\"a fast fail "
+		"in nvoglv64.dll+0x108eb9d (the NVIDIA graphics driver) at frame 21\"); \"\" when no note says", recoveredCrash);
+	expose("recoveredCrashNote", "that crash note's file", recoveredCrashNote);
 	command("recoverWork", "answers the offer of a crash's unsaved work: true opens that work, unsaved, and saving writes "
 		"it to the project; false opens the project as it was last saved. The recovered copy stays among the backups "
 		"either way", {"open"}, [this](const Args &a, std::string &error) -> Value {
@@ -3145,7 +3151,8 @@ void SessionViewModel::dropRecoveryOnMachine(ce_project *p)
 	fs::remove_all(dir, ec);
 }
 
-bool SessionViewModel::recoveredCopyOnMachine(ce_project *p, const std::string &projectPath, std::string &copy, std::string &upTo)
+bool SessionViewModel::recoveredCopyOnMachine(ce_project *p, const std::string &projectPath, std::string &copy, std::string &upTo,
+	std::string &crash, std::string &crashNote)
 {
 	namespace fs = std::filesystem;
 	const fs::path dir = recoveryDirOf(p);
@@ -3233,6 +3240,13 @@ bool SessionViewModel::recoveredCopyOnMachine(ce_project *p, const std::string &
 	fs::remove_all(dir, ec);
 	copy = target.string();
 	upTo = localTime(when, "%H:%M:%S");
+	/* what ended that session, when Windows let the crash module say */
+	if (hasRecord && r.processId > 0)
+		if (const auto note = crash::noteFor(r.processId, crash::notBeforeStart(r.processStarted), crashFolderM_))
+		{
+			crash = note->summary();
+			crashNote = note->path;
+		}
 	return true;
 }
 
@@ -3871,6 +3885,7 @@ void SessionViewModel::freeProjectOnMachine()
 	if (projectM_ != nullptr) ce_project_free(projectM_);
 	projectM_ = nullptr;
 	projectPathM_.clear();
+	crash::describeSession("no project open");
 }
 
 void SessionViewModel::openProjectOnMachine(const std::string &path, const std::string &packageGiven, bool keepInputs,
@@ -3911,13 +3926,13 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	 * offered; the open waits for the answer */
 	if (!keepInputs && reuse == nullptr)
 	{
-		std::string copy, upTo;
-		if (recoveredCopyOnMachine(p, path, copy, upTo))
+		std::string copy, upTo, crashSaid, crashNote;
+		if (recoveredCopyOnMachine(p, path, copy, upTo, crashSaid, crashNote))
 		{
 			if (pendingOpenM_.project != nullptr) ce_project_free(pendingOpenM_.project);
 			freeProjectOnMachine();
 			pendingOpenM_ = PendingOpen{p, path, packageGiven, keepInputs, reuse, kept, keptRerecords};
-			later([this, copy, upTo] {
+			later([this, copy, upTo, crashSaid, crashNote] {
 				isOpen.set(false);
 				running.set(false);
 				projectPath.set("");
@@ -3927,6 +3942,8 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 				projectSwitched();
 				resolvingFiles.set(false);
 				recoveredUpTo.set(upTo);
+				recoveredCrash.set(crashSaid);
+				recoveredCrashNote.set(crashNote);
 				recoveredCopy.set(copy);
 				status.set("Chimera did not close normally the last time this project was open: its unsaved work was kept");
 			});
@@ -4286,6 +4303,22 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 			if (gameTimeLogM_.size() <= static_cast<size_t>(at)) gameTimeLogM_.resize(static_cast<size_t>(at) + 1, kNoGameTime);
 			gameTimeLogM_[static_cast<size_t>(at)] = ms;
 		}
+	}
+	/* what a crash note says of the session: the project, the system and the
+	 * movie's header; and where the GPU bridge keeps its last calls */
+	{
+		std::string about = "project=" + path + "\nsystem=" + std::string(ce_session_system_id(s_) != nullptr ? ce_session_system_id(s_) : "");
+		for (int32_t i = 0; i < ce_project_header_count(p); i++)
+		{
+			const char *k = ce_project_header_key_at(p, i), *v = ce_project_header_value_at(p, i);
+			const std::string value = v != nullptr ? v : "";
+			if (k != nullptr && !value.empty() && value.size() < 240 && value.find('\n') == std::string::npos)
+				about += "\n" + std::string(k) + "=" + value;
+		}
+		crash::describeSession(about);
+		uint32_t recorderBytes = 0;
+		const void *recorder = ce_gl_flight_recorder(&recorderBytes);
+		crash::noteGlRecorder(recorder, recorderBytes);
 	}
 	startProjectSessionOnMachine(!keepInputs);
 }
@@ -5467,6 +5500,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	frameM_ = ce_session_frame(s_);
 	greenEndM_ = std::max(greenEndM_, frameM_);
 	lastLagM_ = lag > 0;
+	crash::noteFrame(frameM_);
 	if (gameTimerM_ && frameM_ >= 0)
 	{
 		int64_t gameMs = 0;

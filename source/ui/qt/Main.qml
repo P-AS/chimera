@@ -1623,8 +1623,10 @@ ApplicationWindow {
         Label {
             width: recoveryDialog.availableWidth
             wrapMode: Text.Wrap
-            text: qsTr("Chimera did not close normally the last time this project was open.\n\n"
-                + "The work in progress up to %1 has been kept as:\n%2\n\n"
+            text: qsTr("Chimera did not close normally the last time this project was open.")
+                + (root.session.recoveredCrash === "" ? ""
+                   : qsTr(" It was ended by %1; what Windows recorded is in:\n%2").arg(root.session.recoveredCrash).arg(root.session.recoveredCrashNote))
+                + qsTr("\n\nThe work in progress up to %1 has been kept as:\n%2\n\n"
                 + "Open that work now? It opens unsaved, and saving writes it to this project.\n\n"
                 + "No opens the project as it was last saved; the recovered copy stays where it is.")
                 .arg(root.session.recoveredUpTo).arg(root.session.recoveredCopy)

@@ -1,5 +1,7 @@
 #include "chimera/vm/help_vm.hpp"
 
+#include "chimera/vm/crash_notes.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -80,6 +82,7 @@ HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, 
 	expose("reportFiles", "the files worth attaching to it, a line each", reportFiles);
 	expose("status", "what Help last had to say (the window says here what it copied)", status, true);
 	expose("exeFolder", "where the program is: the sandbox's log is looked for there first", exeFolder, true);
+	expose("crashFolder", "where crash notes are: the newest, and its dump, go with a report", crashFolder, true);
 
 	command("versionReport", "the build and the core open, in the words a bug report asks for them (Chimera's Copy Version Info)",
 		{}, [this](const Args &, std::string &) -> Value {
@@ -155,6 +158,16 @@ HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, 
 				if (!std::filesystem::is_regular_file(log, ec) || list.find(log.string()) != std::string::npos) continue;
 				list += (list.empty() ? "" : "\n") + log.string();
 				break;
+			}
+			/* the newest crash note and its memory dump */
+			if (!crashFolder.get().empty())
+			{
+				const std::vector<crash::Note> notes = crash::notesIn(crashFolder.get());
+				if (!notes.empty())
+				{
+					list += (list.empty() ? "" : "\n") + notes.front().path;
+					if (!notes.front().dump.empty()) list += "\n" + notes.front().dump;
+				}
 			}
 			/* the core's log, while Export Core Log is on */
 			if (const char *core = ce_core_log_path(); core != nullptr && *core != '\0' && std::filesystem::is_regular_file(core, ec))

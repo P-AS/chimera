@@ -87,8 +87,10 @@ void HeadlessRun::dialogOpened(QObject *dialog)
 	if (name == QStringLiteral("recoveryDialog"))
 	{
 		/* nobody to choose: said, and the project opens as it was last saved; the copy stays */
-		std::fprintf(stderr, "[recovery] unsaved work up to %s was rebuilt into %s; opening the project as it was last saved\n",
-			session_.recoveredUpTo.get().c_str(), session_.recoveredCopy.get().c_str());
+		const std::string crash = session_.recoveredCrash.get().empty() ? std::string()
+			: "; that session was ended by " + session_.recoveredCrash.get() + " (" + session_.recoveredCrashNote.get() + ")";
+		std::fprintf(stderr, "[recovery] unsaved work up to %s was rebuilt into %s; opening the project as it was last saved%s\n",
+			session_.recoveredUpTo.get().c_str(), session_.recoveredCopy.get().c_str(), crash.c_str());
 		QMetaObject::invokeMethod(dialog, "reject", Qt::QueuedConnection);
 		return;
 	}
