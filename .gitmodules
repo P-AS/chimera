@@ -15,6 +15,10 @@
 	path = extern/zstd
 	url = https://github.com/facebook/zstd.git
 	ignore = untracked
+[submodule "extern/cimgui"]
+	path = extern/cimgui
+	url = https://github.com/cimgui/cimgui.git
+	ignore = untracked
 [submodule "extern/openal-soft"]
 	path = extern/openal-soft
 	url = https://github.com/kcat/openal-soft.git
