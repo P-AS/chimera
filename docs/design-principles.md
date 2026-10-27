@@ -10603,3 +10603,20 @@ dithers and a ramp:
   preset gives back every pixel with FLAC sound. Each check was seen to fail
   without the change.
 
+## Translations: the machinery only (user-decided, 2026-10-27, issue 376)
+
+Issue 376 asks for the window in other languages. The owner chose to set up
+the machinery only, with no language yet. The window loads, at start, a
+translation built into the program for the first of the system's languages
+that has one, and stays in English otherwise.
+`tools/update-translations.sh` writes a language's file from the window's own
+words (1425 of them). docs/translations.md says how a language is added.
+
+What is left out on purpose: the view models' words, which are C++ without
+Qt; a setting to choose the language; and Qt's translation tools in the
+release's own Qt build. The first language needs those tools added there.
+
+Measured: `test-translations` builds a French test word and loads it for a
+Canadian French system, and nothing for a German one. It was seen to fail
+with the loader turned off.
+

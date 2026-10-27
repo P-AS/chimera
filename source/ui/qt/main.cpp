@@ -98,6 +98,7 @@
 #include "chimera/vm/hotkeys_vm.hpp"
 #include "chimera/vm/themes_vm.hpp"
 #include "theme_palette.hpp"
+#include "translations.hpp"
 #include "chimera/vm/settings_vm.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "clipboard_relay.hpp"
@@ -332,6 +333,9 @@ int main(int argc, char **argv)
 	/* Chimera's name: its settings and caches are kept under it (owner,
 	 * 2026-10-26; what the window kept under its old name stays there) */
 	QGuiApplication::setApplicationName(QStringLiteral("Chimera"));
+	/* the window's words in the person's language, where it has a translation
+	 * built in (docs/translations.md); English otherwise */
+	qt::loadTranslation(app);
 #ifdef _WIN32
 	/* a crash no handler sees still leaves a note (docs/project.md, "Crash
 	 * notes"): armed before anything else is read, with the data folder's

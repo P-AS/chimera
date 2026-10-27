@@ -250,6 +250,7 @@ if qt_dep.found()
     'qt/key_names.cpp',
     'qt/single_instance.cpp',
     'qt/theme_palette.cpp',
+    'qt/translations.cpp',
     'qt/pointer_capture.cpp',
     'qt/overlay_painter.cpp',
     'qt/jump_list.cpp',
@@ -354,6 +355,20 @@ if qt_dep.found()
     cpp_args: ['-DCHIMERA_QT_QML_DIR="' + meson.current_source_dir() / 'qt' + '"'],
   )
   test('theme', test_theme, env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software'], timeout: 60)
+  # a translation built for a language is the one the person's language
+  # loads (docs/translations.md); it needs Qt's lrelease, which the
+  # release's Qt does not build, so it is left out where there is none
+  if qt6.has_tools(required: false)
+    subdir('qt/tests')
+    test_translations = executable(
+      'test-translations',
+      ['qt/tests/test_translations.cpp', 'qt/translations.cpp'],
+      dependencies: [qt_dep],
+      override_options: ['cpp_std=c++20'],
+      cpp_args: ['-DCHIMERA_TEST_QM_DIR="' + meson.current_build_dir() / 'qt/tests' + '"'],
+    )
+    test('translations', test_translations, depends: test_qm, timeout: 30)
+  endif
   # keys are named by their place, as Chimera's, whatever the layout, with
   # the modifier keys merged or each side its own
   test_key_names = executable(
