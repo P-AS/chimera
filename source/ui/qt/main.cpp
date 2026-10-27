@@ -321,7 +321,7 @@ int main(int argc, char **argv)
 	/* Chimera's name: its settings and caches are kept under it (owner,
 	 * 2026-10-26; what the window kept under its old name stays there) */
 	QGuiApplication::setApplicationName(QStringLiteral("Chimera"));
-	/* Fusion, with Chimera's check boxes and radio buttons (style/, built in) */
+	/* Fusion, with Chimera's check boxes and radio buttons and scroll bars always seen (style/, built in) */
 	QQuickStyle::setStyle(QStringLiteral("ChimeraStyle"));
 #ifndef _WIN32
 	/* Chimera's icon on every window; on Windows it is the program's own (chimera-qt.rc), at every size */

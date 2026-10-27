@@ -11400,3 +11400,26 @@ naming the new one wrongly failed it. The Windows program is now marked a
 window program; --version and a refusal still print through a pipe. Not
 tried: a release started from an open cmd window (the check was not run
 here), and the icon with the log on, which no test shows.
+
+## Scroll bars always seen; the clock start is one of the settings (user-decided, 2026-10-27)
+
+- **Scroll bars.** Fusion's scroll bars show only while they are used and
+  fade away after, so a long list of settings in New Project did not say it
+  scrolled. The window's style (source/ui/qt/style) now draws every scroll
+  bar, with its groove, all the time there is more to scroll to, in every
+  window. Scroll views keep their content clear of their bars, which Fusion
+  draws over the content's edge. Text that wraps never scrolls sideways: its
+  width, taken before the vertical bar took its room, had shown a sideways
+  bar for a few pixels. Configure Hotkeys now shows that its grid scrolls
+  sideways, which it always did.
+- **The machine's clock start** was a row of its own under the settings in
+  New Project and Project Settings, seen whatever was scrolled. It is now
+  the last row of the settings list, laid out as the others and scrolled
+  with them. It is the project's, offered for every core, and no core has a
+  row of its own outside the list.
+
+Tested: 40 of 40 tests. A page drawn with the style (30 settings, the clock
+row, wrapped text) and the Theme and Configure Hotkeys windows were
+captured without the pointer over them: the bars are there, and seen in the
+Dark theme. Not seen: AppleWin's own settings, which need its package and a
+game.

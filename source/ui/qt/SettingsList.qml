@@ -41,6 +41,41 @@ ListView {
         }
         Button { text: qsTr("Apply"); enabled: presetBox.currentIndex >= 0; onClicked: list.vm.run("applyPreset", [presetBox.currentValue]) }
     }
+    // when the machine's clock starts: the project's, for every core, so the last of the
+    // settings and scrolled with them like any other (owner, 2026-10-27), where the view
+    // model has one (New Project, Project Settings)
+    footer: ColumnLayout {
+        width: list.width - 16
+        visible: list.vm.clockStart !== undefined
+        height: visible ? implicitHeight : 0
+        spacing: 2
+        RowLayout {
+            Layout.topMargin: list.count > 0 ? list.spacing : 0
+            Label {
+                text: qsTr("The machine's clock starts at")
+                font.bold: true
+                Layout.preferredWidth: 220
+                elide: Text.ElideRight
+            }
+            TextField {
+                objectName: "clockStart"
+                text: list.vm.clockStart === undefined ? "" : list.vm.clockStart
+                placeholderText: "2000-01-01 00:00:00"
+                onTextEdited: list.vm.clockStart = text
+                Layout.preferredWidth: 260
+            }
+            Label { text: qsTr("UTC") }
+        }
+        Label {
+            text: qsTr("Every run of this project starts the machine's clock at this moment, so a movie plays back the same."
+                + " A game that takes its luck from the date and time deals other luck from another start."
+                + " Written as year-month-day hours:minutes:seconds, between 1970 and 2200.")
+            wrapMode: Text.Wrap
+            opacity: 0.75
+            font.pointSize: 9
+            Layout.fillWidth: true
+        }
+    }
     delegate: ColumnLayout {
         id: row
         required property string name

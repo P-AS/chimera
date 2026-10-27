@@ -38,17 +38,6 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
         }
-        // the machine's own, not a core's setting: under the settings, as in New Project
-        RowLayout {
-            Label { text: qsTr("The machine's clock starts at:") }
-            TextField {
-                objectName: "projectClockStart"
-                text: win.vm.clockStart
-                Layout.preferredWidth: 160
-                onTextEdited: win.vm.clockStart = text
-            }
-            Label { text: qsTr("UTC") }
-        }
         RowLayout {
             Label {
                 Layout.fillWidth: true

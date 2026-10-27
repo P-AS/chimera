@@ -415,21 +415,6 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                 }
-                // when the machine's clock starts: the machine's for every core, so under the settings, as Chimera's
-                RowLayout {
-                    Label { text: qsTr("The machine's clock starts at:") }
-                    TextField {
-                        objectName: "clockStart"
-                        text: win.vm.clockStart
-                        Layout.preferredWidth: 160
-                        onTextEdited: win.vm.clockStart = text
-                        ToolTip.visible: hovered
-                        ToolTip.text: qsTr("Every run of this project starts the machine's clock at this moment, so a movie plays back the same.\n"
-                            + "A game that takes its luck from the date and time deals other luck from another start.\n"
-                            + "Written as year-month-day hours:minutes:seconds, between 1970 and 2200.")
-                    }
-                    Label { text: qsTr("UTC") }
-                }
             }
 
             // ---- page 4: the firmware ----

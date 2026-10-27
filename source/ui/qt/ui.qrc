@@ -168,10 +168,12 @@
     <file alias="menu/CoreLog.png">menu-icons/CoreLog.png</file>
     <file alias="menu/CoreLogOn.png">menu-icons/CoreLogOn.png</file>
   </qresource>
-  <!-- Chimera's style: Fusion, with the system's check boxes and radio buttons, as Chimera's -->
+  <!-- Chimera's style: Fusion, with the system's check boxes and radio buttons, as Chimera's, and scroll bars always seen -->
   <qresource prefix="/qt/qml/ChimeraStyle">
     <file alias="qmldir">style/qmldir</file>
     <file alias="CheckBox.qml">style/CheckBox.qml</file>
     <file alias="RadioButton.qml">style/RadioButton.qml</file>
+    <file alias="ScrollBar.qml">style/ScrollBar.qml</file>
+    <file alias="ScrollView.qml">style/ScrollView.qml</file>
   </qresource>
 </RCC>
