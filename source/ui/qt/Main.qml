@@ -215,10 +215,15 @@ ApplicationWindow {
     property var afterAsk: null
     property var afterSave: null
     property bool leaving: false
-    function leaveProject(then) {
+    // asked from a window that is modal over this one (New Project), the
+    // question and the Save As picker are shown over that window, which
+    // takes the clicks while it is open (issue 392)
+    function leaveProject(then, over) {
         // Customize's "never ask to save": the changes are let go
         if (!root.session.unsaved || root.customize.neverAskSave) { then(); return }
         root.afterAsk = then
+        askSaveDialog.parent = over ? over.contentItem : root.contentItem
+        saveAsDialog.parentWindow = over ? over : root
         askSaveDialog.open()
     }
     function quitProgram() { root.leaveProject(() => { root.leaving = true; Qt.quit() }) }
@@ -901,7 +906,22 @@ ApplicationWindow {
         toolWindows: root.toolWindows; mainWindow: root; gameProperties: root.gameProperties
         viewInHexEditor: root.viewInHexEditor
     }
-    NewProject { id: newProjectWindow; vm: root.newProject; askFirst: root.leaveProject; mainWindow: root; themeColor: root.osdColor; visible: false }
+    NewProject { id: newProjectWindow; vm: root.newProject; askFirst: (then) => root.leaveProject(then, newProjectWindow); mainWindow: root; themeColor: root.osdColor; visible: false }
+    // New Project pauses the machine while it is open, as Chimera's did, and
+    // lets it run again when it closes without making a project (issue 392)
+    property bool runAfterNewProject: false
+    Connections {
+        target: newProjectWindow
+        function onVisibleChanged() {
+            if (newProjectWindow.visible) {
+                root.runAfterNewProject = root.session.running
+                if (root.session.running) root.session.run("pause")
+            } else if (root.runAfterNewProject) {
+                root.runAfterNewProject = false
+                if (root.session.isOpen && !newProjectWindow.madeProject) root.session.run("play")
+            }
+        }
+    }
     MovieImport {
         id: movieImportWindow
         vm: root.newProject
@@ -1042,6 +1062,8 @@ ApplicationWindow {
         onAccepted: root.session.run("saveProject", [selectedFile])
         // a question that asked for this save is answered Cancel
         onRejected: root.afterSave = null
+        // over another window only for the one question (leaveProject)
+        onVisibleChanged: if (!visible) parentWindow = root
     }
     FileDialog {
         id: coreLogFileDialog
@@ -1107,6 +1129,8 @@ ApplicationWindow {
         title: qsTr("Closing with Unsaved Changes")
         anchors.centerIn: parent
         modal: true
+        // over another window only for the one question (leaveProject)
+        onClosed: parent = root.contentItem
         Label { text: qsTr("Save Chimera Project?") }
         footer: DialogButtonBox {
             Button {

@@ -36,10 +36,14 @@ ApplicationWindow {
     property string said: ""
     property string slotFor: ""
     property int firmwarePicked: -1
+    // a project was made the last time the window was open (the main window
+    // lets a paused machine run again only when none was)
+    property bool madeProject: false
     readonly property color errorColor: win.themeColor("AccentError", "#c62828")
     readonly property color goodColor: win.themeColor("AccentGood", "#2e7d32")
 
     onVisibleChanged: if (visible) {
+        win.madeProject = false
         // the first core of the kind when none is chosen, as Chimera's opens
         if (win.vm.coreLine < 0 && win.vm.coreLines !== "") win.vm.run("chooseCoreLine", [0])
         win.showPage(0)
@@ -102,7 +106,7 @@ ApplicationWindow {
         if (win.vm.imported) { importSaveDialog.open(); return }
         win.askFirst(() => {
             win.run("create")
-            if (win.vm.error === "") win.close()
+            if (win.vm.error === "") { win.madeProject = true; win.close() }
             else if (win.vm.error.indexOf("clock start") >= 0) win.showPage(2)
         })
     }
@@ -137,7 +141,7 @@ ApplicationWindow {
         selectedFile: win.vm.importMovie === "" ? "" : win.urlOf(win.vm.importMovie.replace(/\.[^.\\/]*$/, "") + ".chimeraProject")
         onAccepted: win.askFirst(() => {
             win.run("create", [selectedFile])
-            if (win.vm.error === "") win.close()
+            if (win.vm.error === "") { win.madeProject = true; win.close() }
         })
     }
 
