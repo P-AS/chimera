@@ -182,7 +182,8 @@ struct EncoderViewModel::Job
 		const uint32_t *px = ce_session_video(s);
 		int32_t sw = ce_session_video_width(s), sh = ce_session_video_height(s);
 		int32_t pairs = 0;
-		const int16_t *samples = ce_session_audio(s, &pairs);
+		/* at 44100 Hz, the rate the stream says, whatever the core mixes at */
+		const int16_t *samples = ce_session_sound(s, &pairs);
 		if (px == nullptr || sw <= 0 || sh <= 0)
 		{
 			why = "The machine drew no picture.";

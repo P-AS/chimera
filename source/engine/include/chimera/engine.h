@@ -1280,6 +1280,17 @@ CE_API int32_t ce_session_video_height(const ce_session *s);
  * doubled), and its sample-pair count. Invalidated by the next advance. */
 CE_API const int16_t *ce_session_audio(const ce_session *s, int32_t *sample_count);
 
+/* The rate that sound is at: the package's audio.rate, or its machine's
+ * audioRate (44100 when it says none). */
+CE_API int32_t ce_session_audio_rate(const ce_session *s);
+
+/* The last frame's sound at 44100 Hz, the rate Chimera plays and encodes at:
+ * ce_session_audio resampled when the core mixes at another rate, and
+ * ce_session_audio itself when it does not. Interleaved stereo s16; *pairs is
+ * how many. Consecutive frames asked for join without a seam; a seek or a
+ * state loaded starts afresh. Invalidated by the next advance. */
+CE_API const int16_t *ce_session_sound(ce_session *s, int32_t *pairs);
+
 /* The guest's whole-machine state. The buffer is the session's, reused and
  * invalidated by the next save. Load returns 0 on success. */
 CE_API const uint8_t *ce_session_save_state(ce_session *s, uint64_t *len_out);

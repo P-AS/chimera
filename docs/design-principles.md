@@ -10620,3 +10620,32 @@ Measured: `test-translations` builds a French test word and loads it for a
 Canadian French system, and nothing for a German one. It was seen to fail
 with the loader turned off.
 
+## A core's sound is converted to 44100 Hz again (2026-10-27, issue 372)
+
+Investigating crackle in MAME's Killer Instinct found that the Qt window had
+lost the sound-rate conversion of 2026-09-04 (issue 37). The old window's
+adapter resampled a core that mixes at another rate to 44100 Hz, the rate
+Chimera plays and encodes at. The Qt port read every core's sound as if it
+were 44100. Fourteen of the installed cores declare another rate: 48000
+(MAME, Dolphin, PCSX2, Xenia and others), 32768 (Gambatte), 32728 (melonDS,
+Azahar) and 15734 (Uzebox). Their sound played a semitone and a half low (for
+48000). The sound output dropped a whole frame's sound each time it ran a
+buffer ahead, which is a click. Their encodes' sound ran 8.8% longer than
+the picture.
+
+The conversion now lives in the engine: `ce_session_sound` gives each
+frame's sound at 44100 Hz, through a windowed-sinc resampler per session
+(`source/engine/source/resampler.cpp`). Consecutive frames join without a
+seam, and a seek or a state loaded starts it afresh. A loud sample is held at
+the edge, never wrapped round. `ce_session_audio` stays the core's own sound,
+so the sound the gates hash is unchanged. The window's sound output and
+Encode Video both use the new call.
+
+Measured: the engine test takes two seconds at 48000 Hz to 88186 samples at
+44100 (the filter holds back 14). A 1000 Hz tone stays at 1000.2 Hz at the
+same level, and 32768 Hz and 15734 Hz go up the same way. In the view-model
+test a copy of the synthetic core that says 48000 Hz hands the speakers
+675.2 sample pairs a frame (735 x 44100 / 48000 = 675.3). Without the
+conversion it handed them all 735. Not tried with MAME and Killer Instinct:
+whether this was the crackle the issue hears is for the reporter to say.
+

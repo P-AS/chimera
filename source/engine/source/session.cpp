@@ -19,6 +19,7 @@
 #include "thread_string.hpp"
 #include "state_history.hpp"
 #include "kept_pictures.hpp"
+#include "resampler.hpp"
 #include "project_check.hpp"
 #include "state_format.hpp"
 #include "game_properties.hpp"
@@ -107,6 +108,8 @@ struct SessionConfig
 	int32_t vsyncNum = 0, vsyncDen = 0;
 	std::string getBgra, getAudio;
 	int32_t samplesPerFrame = 0, channels = 1;
+	/* the rate the core mixes at: the package's audio.rate, or its machine's audioRate */
+	int32_t audioRate = 44100;
 	std::string inputName, inputWasRead;
 	std::vector<std::string> buttons;
 	std::vector<chimera::EntryAxis> axes;
@@ -307,6 +310,8 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	}
 	cfg.samplesPerFrame = intOf(audio, "samplesPerFrame");
 	cfg.channels = intOf(audio, "channels", 1);
+	cfg.audioRate = intOf(audio, "rate", 44100);
+	if (machine != nullptr) cfg.audioRate = intOf(machine, "audioRate", cfg.audioRate);
 	/* The sizes a package declares size buffers, so they are checked first: a
 	 * negative width became a buffer of 2^64 bytes and ended Chimera (engine
 	 * analysis, 2026-10-18). The largest any core declares today is 6144 x
@@ -321,7 +326,8 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 		};
 		if (outside("video.width", cfg.width, 1, 16384) || outside("video.height", cfg.height, 1, 16384)
 			|| outside("the virtual width", cfg.virtualWidth, 1, 16384) || outside("the virtual height", cfg.virtualHeight, 1, 16384)
-			|| outside("audio.samplesPerFrame", cfg.samplesPerFrame, 0, 1 << 20) || outside("audio.channels", cfg.channels, 1, 2))
+			|| outside("audio.samplesPerFrame", cfg.samplesPerFrame, 0, 1 << 20) || outside("audio.channels", cfg.channels, 1, 2)
+			|| outside("the sound's rate", cfg.audioRate, 1000, 384000))
 		{
 			cJSON_Delete(root);
 			return false;
@@ -927,6 +933,13 @@ struct ce_session
 	}
 	std::vector<int16_t> audioBuf;
 	int32_t sampleCount = 0;
+	/* each frame's sound counted; the sound at 44100 Hz (ce_session_sound),
+	 * made from the frame its count says, and whether the frames before it
+	 * were the machine's last (not a seek or a state loaded away) */
+	uint64_t audioSerial = 0, soundSerial = 0;
+	bool soundGap = true;
+	chimera::Resampler resampler;
+	std::vector<int16_t> soundBuf;
 	std::vector<uint8_t> stateBuf;
 	std::string error;
 
@@ -1720,6 +1733,7 @@ int32_t ce_session::advanceCore(const uint8_t *buttons, int32_t render)
 		}
 	}
 	sampleCount = nsamp;
+	audioSerial++;
 	if (guestDied())
 	{
 		ce_gl_release();
@@ -2488,6 +2502,8 @@ static ce_session *openSession(
 	/* the live size the guest gave, or the package's when it gave none */
 	s->videoBuf.assign(static_cast<size_t>(s->vidW) * static_cast<size_t>(s->vidH), 0);
 	s->audioBuf.assign(static_cast<size_t>(s->cfg.samplesPerFrame) * 2, 0);
+	s->resampler.configure(s->cfg.audioRate, 44100);
+	s->soundGap = true;
 	s->btnState.assign(s->cfg.buttons.size(), 0);
 	s->btnSent.assign(s->cfg.buttons.size(), 0); // a fresh guest holds nothing down
 	s->btnEffective.assign(s->cfg.buttons.size(), 0);
@@ -3065,6 +3081,7 @@ int32_t ce_session_frame_advance(ce_session *s, uint64_t buttons, int32_t render
 		}
 	}
 	s->sampleCount = nsamp;
+	s->audioSerial++;
 	if (s->guestDied())   /* in the readback, the audio or the input question */
 	{
 		ce_gl_release();
@@ -3091,10 +3108,31 @@ const int16_t *ce_session_audio(const ce_session *s, int32_t *sample_count)
 	return s->audioBuf.data();
 }
 
+int32_t ce_session_audio_rate(const ce_session *s) { return s->cfg.audioRate; }
+
+const int16_t *ce_session_sound(ce_session *s, int32_t *pairs)
+{
+	if (s->cfg.audioRate == 44100) return ce_session_audio(s, pairs);
+	if (s->soundSerial != s->audioSerial)
+	{
+		/* the frames in between were not asked for (a seek, turbo) or are
+		 * another machine's: the filter starts again, rather than join
+		 * sound that never followed this */
+		if (s->soundGap || s->soundSerial + 1 != s->audioSerial) s->resampler.reset();
+		s->soundGap = false;
+		s->soundBuf.clear();
+		s->resampler.process(s->audioBuf.data(), static_cast<size_t>(s->sampleCount), s->soundBuf);
+		s->soundSerial = s->audioSerial;
+	}
+	if (pairs != nullptr) *pairs = static_cast<int32_t>(s->soundBuf.size() / 2);
+	return s->soundBuf.data();
+}
+
 /* What every load owes the machine afterwards, however the state arrived. */
 static void afterStateLoaded(ce_session *s)
 {
 	s->lostMachine.clear();   /* a whole machine is back */
+	s->soundGap = true;       /* and its sound does not follow the last frame's */
 	/* what the core derived from the memory that was just replaced goes first:
 	 * nothing below may run guest code on a cache of the old machine */
 	if (s->stateLoaded != nullptr) s->stateLoaded();

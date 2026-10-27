@@ -20,6 +20,8 @@ precompile = len(sys.argv) > 8 and sys.argv[8] == "precompile"
 # and a core that declares no virtual size, with room for a wider picture than
 # it draws ("square": its pixels are square, as Ruffle's)
 square = len(sys.argv) > 9 and sys.argv[9] == "square"
+# and the rate the core says it mixes its sound at (audio.rate)
+rate = int(sys.argv[10]) if len(sys.argv) > 10 and sys.argv[10] else 0
 try:
     zin = zipfile.ZipFile(src)
 except OSError:
@@ -45,5 +47,7 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
                 cfg["video"].pop("virtualWidth", None)
                 cfg["video"].pop("virtualHeight", None)
                 cfg["video"]["width"] = 320
+            if rate:
+                cfg["audio"]["rate"] = rate
             data = json.dumps(cfg, indent=2).encode()
         zout.writestr(info, data)

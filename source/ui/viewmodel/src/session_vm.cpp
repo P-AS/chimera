@@ -5524,7 +5524,8 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	if (live && soundM_ && !turboM_.load())
 	{
 		int32_t pairs = 0;
-		const int16_t *samples = ce_session_audio(s_, &pairs);
+		/* at 44100 Hz, the rate the sound output plays at, whatever the core mixes at */
+		const int16_t *samples = ce_session_sound(s_, &pairs);
 		const int64_t v = frameVolume(soundOnM_ && soundNormalOnM_, volumeM_.load(), fastM_, soundFastOnM_, fastVolumeM_.load(),
 			steppingM_ || holdRunning_, muteAdvanceM_);
 		soundM_->play(samples, pairs, static_cast<int32_t>(v));

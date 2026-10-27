@@ -9342,6 +9342,50 @@ bool coreManager(const char *package, const char *slotsPackage, const char *game
 /* a core that declares no virtual size has square pixels: its picture is shown
  * at its own shape, not at the shape of the largest picture it has room for
  * (a Flash game was drawn too wide); one that declares one is shown at that */
+/* A core that mixes its sound at 48000 Hz is heard at 44100 (issue 372):
+ * each frame hands the speakers 44100/48000 of what the core made, so the
+ * sound keeps its pitch and nothing runs ahead to be dropped. The window
+ * had played every sample as if at 44100, a semitone and a half low. */
+bool soundRate(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	if (fs::file_size(package, ec) == 0 || ec)
+	{
+		std::printf("SKIP the sound rate: no package that mixes at 48000 Hz\n");
+		return true;
+	}
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	std::string error;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-rate-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	session.cacheFolder.set((dir / "cache").string());
+	openGame(session, package, (dir / "walker.testrom").string(), error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	if (session.sound.get() == "Sound on")
+	{
+		const int64_t f0 = session.frame.get(), q0 = session.soundQueued.get();
+		session.run("play", {}, error);
+		CHECK(d.until([&] { return session.frame.get() >= f0 + 120; }, 20));
+		session.run("pause", {}, error);
+		CHECK(d.until([&] { return !session.running.get(); }, 5));
+		d.until([] { return false; }, 0.2);
+		const int64_t frames = session.frame.get() - f0, pairs = session.soundQueued.get() - q0;
+		const double each = frames > 0 ? static_cast<double>(pairs) / static_cast<double>(frames) : 0.0;
+		std::printf("a 48000 Hz core: %.1f sample pairs a frame reach the speakers (the core makes 735)\n", each);
+		CHECK(std::fabs(each - 735.0 * 44100.0 / 48000.0) < 4.0);
+	}
+	else
+		std::printf("SKIP the sound rate: %s\n", session.sound.get().c_str());
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir, ec);
+	return true;
+}
+
 bool squarePixels(const char *declared, const char *square, const char *rom)
 {
 	const int before = failures;
@@ -9649,6 +9693,7 @@ int main(int argc, char **argv)
 			if (argc >= 9) ranMachine = createForAgent(argv[1], argv[2], argv[7]) && ranMachine;
 			if (argc >= 13) ranMachine = compileStep(argv[12], argv[2]) && ranMachine;
 			if (argc >= 14) ranMachine = squarePixels(argv[1], argv[13], argv[2]) && ranMachine;
+			if (argc >= 15) ranMachine = soundRate(argv[14], argv[2]) && ranMachine;
 			else std::printf("SKIP the compile step: no compiling package given\n");
 			if (argc >= 9) ranMachine = coreManager(argv[1], argv[6], argv[8]) && ranMachine;
 			else std::printf("SKIP the Firmware window: no package with many releases of one firmware given\n");

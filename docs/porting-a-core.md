@@ -253,7 +253,8 @@ Advice earned the hard way:
   can hold (2026-10-18): width and height 1 to 16384 (the virtual size too),
   `audio.samplesPerFrame` 0 to 1048576, `audio.channels` 1 or 2.
 - **The sound's rate is the chip's.** `audio.rate` is the rate the core mixes
-  at, and Chimera converts it. In a package of several machines, one whose
+  at, and Chimera converts it to the 44100 Hz it plays and encodes at (the
+  engine's `ce_session_sound`; `ce_session_audio` stays the core's own). In a package of several machines, one whose
   chip runs at another rate states its own: `"audioRate": 64000` in its entry
   of `machines` (issue 226). Check it by counting: the samples a run produces
   over its frames must be the rate over the frame rate.

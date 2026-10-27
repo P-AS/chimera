@@ -214,11 +214,20 @@ synth_square = custom_target(
   build_always_stale: true,
   build_by_default: false,
 )
+# a core that says it mixes its sound at 48000 Hz, heard at 44100 (issue 372)
+synth_48k = custom_target(
+  'synth-48k',
+  output: 'synth-48k.chimeraCore',
+  command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth 48k', '@OUTPUT@', '', '', '', '', '', '', '48000'],
+  build_always_stale: true,
+  build_by_default: false,
+)
 test(
   'view models',
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game, synth_bios, synth_compile, synth_square],
+    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game, synth_bios, synth_compile, synth_square, synth_48k],
   # OpenAL's device that plays to nowhere: the sound check runs with no speakers;
   # the ffmpeg the build ships, for the encode
   # and the headless runner, which compile sessions are
