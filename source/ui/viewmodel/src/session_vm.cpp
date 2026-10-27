@@ -108,6 +108,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 {
 	expose("isOpen", "whether a machine is open", isOpen);
 	expose("opens", "how many times a machine has been opened", opens);
+	expose("openFailures", "how many opens failed; the status says why", openFailures);
 	expose("projectId", "the open project's id (its cache folder's name), \"\" for none", projectId);
 	expose("resolvingFiles", "a project is waiting for its files to be found (the projectFiles rows)", resolvingFiles);
 	rows("projectFiles", "the waiting project's files: name, slot, status (0 found, 1 not found, 2 not the recorded bytes), "
@@ -3784,6 +3785,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 		freeProjectOnMachine();
 		later([this, why] {
 			status.set(why);
+			openFailures.set(openFailures.get() + 1);
 			isOpen.set(false);
 			running.set(false);
 			projectPath.set("");
@@ -3885,6 +3887,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		freeProjectOnMachine();
 		later([this, why] {
 			status.set(why);
+			openFailures.set(openFailures.get() + 1);
 			isOpen.set(false);
 			running.set(false);
 			projectPath.set("");

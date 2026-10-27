@@ -336,6 +336,38 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			else changed();
 			return {};
 		});
+	command("effective", "the machine's bindings now, by its controller's name, as Chimera's settings keep them: "
+		"{\"AllTrollers\": {controller: {button: keys}}, \"AllTrollersAutoFire\": ..., \"AllTrollersAnalog\": {controller: "
+		"{control: {\"Value\", \"Mult\", \"Deadzone\", ...}}}} - a core's tests see a package's own keys arrive with it", {},
+		[this](const Args &, std::string &) -> Value {
+			const std::vector<std::string> &names = session_.buttonNames();
+			auto keyed = [&](const std::vector<std::string> &keys) {
+				Json mine = parsedObject("{}");
+				for (size_t b = 0; b < names.size(); b++) setMember(mine, names[b], Json::string(b < keys.size() ? keys[b] : std::string()));
+				return mine;
+			};
+			Json analog = parsedObject("{}");
+			const std::vector<SessionViewModel::Axis> &axes = session_.axes();
+			const std::vector<AnalogBind> &binds = session_.analogBinds();
+			for (size_t i = 0; i < axes.size() && i < binds.size(); i++)
+			{
+				Json bind;
+				std::string why;
+				json::parse(analogBindJson(binds[i]), bind, why);
+				setMember(analog, axes[i].name, bind);
+			}
+			const std::string controller = session_.controllerName();
+			Json all = parsedObject("{}");
+			auto section = [&](const char *name, const Json &mine) {
+				Json byController = parsedObject("{}");
+				setMember(byController, controller, mine);
+				setMember(all, name, byController);
+			};
+			section("AllTrollers", keyed(session_.bindingTexts()));
+			section("AllTrollersAutoFire", keyed(session_.autofireTexts()));
+			section("AllTrollersAnalog", analog);
+			return json::write(all);
+		});
 	command("hasBinding", "whether a key holds one of the machine's buttons now (Chimera's HasBinding: a right click "
 		"bound to a button does not open the window's menu, a double click with the left one does not go full screen)",
 		{"key"}, [this](const Args &a, std::string &error) -> Value {

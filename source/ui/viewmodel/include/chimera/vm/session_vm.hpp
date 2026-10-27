@@ -52,6 +52,8 @@ public:
 	/* how many times a machine has been opened: a view that keeps anything
 	 * of the last one knows to start again */
 	Property<int64_t> opens{0};
+	/* how many opens failed; the status says why (a run nobody watches ends on one) */
+	Property<int64_t> openFailures{0};
 	Property<bool> running{false};
 	/* the frame the machine is about to run (frames 0..frame-1 have run) */
 	Property<int64_t> frame{0};

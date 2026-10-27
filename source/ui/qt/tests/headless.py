@@ -3,7 +3,8 @@
 # watches such as the cores' tests: it runs with no display at all; a
 # script's client.exit leaves without asking, its unsaved changes let go and
 # said; a core that stops ends the run with 65 and says why; a project whose
-# files are not found ends it with 64 and names them; a file picker ends it
+# files are not found ends it with 64 and names them, and one that cannot
+# open says why; a file picker ends it
 # with 64; work a killed run left is said, and the project opens as saved.
 #   headless.py <chimera> <work folder> <package> <game>
 import hashlib
@@ -110,6 +111,18 @@ os.remove(rom)
 r = run(proj, script("missing", "client.exit()\n"))
 check(r is not None and r.returncode == 64 and "caption: Cannot open the project" in r.stderr and os.path.basename(rom) in r.stderr,
       "a project whose files are not found ends the run with 64, naming them", said(r))
+
+# a project whose core is not installed: 64, and why
+proj, _ = project("nocore")
+empty = os.path.join(work, "no-cores")
+os.makedirs(empty)
+try:
+    r = subprocess.run([chimera, "--headless", "--project", proj, "--lua", script("nocore", "client.exit()\n")],
+                       env=dict(env, CHIMERA_CORES_DIR=empty), timeout=120, capture_output=True, text=True)
+except subprocess.TimeoutExpired:
+    r = None
+check(r is not None and r.returncode == 64 and "caption: Cannot open the project" in r.stderr and "core is installed" in r.stderr,
+      "a project that cannot open ends the run with 64, saying why", said(r))
 
 # a script's file picker: nobody to pick, 64
 proj, _ = project("picker")

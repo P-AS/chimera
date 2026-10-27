@@ -44,6 +44,10 @@ HeadlessRun::HeadlessRun(bool enabled, vm::SessionViewModel &session, QObject *p
 		if (!other.empty()) text += (missing.empty() ? std::string() : "; ") + "these are not the files it recorded: " + other;
 		blocked(QStringLiteral("Cannot open the project"), QString::fromStdString(text));
 	});
+	/* a project that cannot open (no core for it, its firmware missing...): why, and the run ends */
+	failedWatch_ = session_.openFailures.changed.connect([this] {
+		blocked(QStringLiteral("Cannot open the project"), QString::fromStdString(session_.status.get()));
+	});
 }
 
 bool HeadlessRun::askedFor(int argc, char **argv)
