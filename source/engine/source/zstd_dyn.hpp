@@ -2,8 +2,8 @@
  *
  * The build already ships libzstd beside libchimera (build/dll on both
  * targets); loading it at runtime from this library's own directory keeps the
- * engine free of per-platform link plumbing, the same way the C# side always
- * P/Invoked it. Absence is a reported error, not a crash.
+ * engine free of per-platform link plumbing. Absence is a reported error, not
+ * a crash.
  */
 
 #ifndef CHIMERA_ZSTD_DYN_HPP

@@ -85,8 +85,8 @@ QColor resolveColor(const QString &value)
 	if (!value.startsWith(QStringLiteral("system:"))) return QColor(value);
 	const QString name = value.mid(7).trimmed().toLower();
 	const QPalette &p = platform();
-	/* the desktop colours Chimera's themes name (WinForms' names) on Qt's;
-	 * Control is white smoke off Windows, as Chimera has always had it */
+	/* the desktop colours Chimera's themes name, on Qt's; Control is white
+	 * smoke off Windows */
 	if (name == QStringLiteral("control") || name == QStringLiteral("menu") || name == QStringLiteral("activeborder"))
 	{
 #ifdef _WIN32

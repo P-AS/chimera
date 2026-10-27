@@ -1,4 +1,4 @@
-/* Chimera's Qt window, a prototype (issue 142): the main window over the
+/* Chimera's window (issue 142): the main window over the
  * session and piano roll view models. Everything a window does here goes
  * through the view models' registries, so a script could do the same.
  *
@@ -61,7 +61,6 @@
 #include "chimera/engine.h"
 #include "chimera/vm/branches_vm.hpp"
 #include "chimera/vm/project_details_vm.hpp"
-#include "chimera/vm/chimera_settings.hpp"
 #include "chimera/vm/config_store.hpp"
 #include "chimera/vm/help_vm.hpp"
 #include "chimera/vm/mcp_vm.hpp"
@@ -226,8 +225,7 @@ private:
 };
 
 #ifdef _WIN32
-/* A crash names the DLL it happened in and where, on stderr: a prototype has
- * no crash report of its own yet. */
+/* A crash names the DLL it happened in and where, on stderr. */
 LONG WINAPI crashNote(EXCEPTION_POINTERS *e)
 {
 	void *at = e->ExceptionRecord->ExceptionAddress;
@@ -350,7 +348,7 @@ int main(int argc, char **argv)
 	QCommandLineOption scrollOpt(QStringLiteral("scroll"), QStringLiteral("while measuring, scroll the piano roll all the time"));
 	QCommandLineOption shotOpt(QStringLiteral("screenshot"), QStringLiteral("when measuring ends, save the window as this picture"), QStringLiteral("path"));
 	QCommandLineOption luaOpt(QStringLiteral("lua"), QStringLiteral("path; Lua script or Console session to load; implies --luaconsole"), QStringLiteral("script"));
-	/* Chimera's own options (its ArgParser), so what starts Chimera starts this window */
+	/* Chimera's own options, so what starts Chimera starts this window */
 	QCommandLineOption projectOpt(QStringLiteral("project"), QStringLiteral("path; chimera project to open on launch"), QStringLiteral("path"));
 	QCommandLineOption coreOpt(QStringLiteral("core"), QStringLiteral("path of a core package to load the project with, when it is not installed"), QStringLiteral("path"));
 	QCommandLineOption configOpt(QStringLiteral("config"), QStringLiteral("path of config file to use"), QStringLiteral("path"));
@@ -416,42 +414,6 @@ int main(int argc, char **argv)
 	const QString configPath = args.isSet(configOpt) ? QFileInfo(args.value(configOpt)).absoluteFilePath()
 		: qEnvironmentVariableIsSet("CHIMERA_QT_CONFIG") ? qEnvironmentVariable("CHIMERA_QT_CONFIG")
 		: QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + QStringLiteral("/settings.json");
-	/* Chimera's own settings file is read once, never used as the window's:
-	 * its settings would be set aside as unreadable, or written over */
-	if (args.isSet(configOpt) && QFileInfo::exists(configPath))
-	{
-		QFile given(configPath);
-		vm::json::Json root;
-		std::string why;
-		if (given.open(QIODevice::ReadOnly) && vm::json::parse(given.readAll().toStdString(), root, why) && vm::isChimeraSettings(root))
-		{
-			std::fprintf(stderr, "chimera: %s is Chimera's settings file, which this window does not write; "
-								 "Config > Load Config From... carries its settings over\n", qPrintable(configPath));
-			return 2;
-		}
-	}
-	/* the first start, with no settings of its own: Chimera's, when its
-	 * config.ini is beside the program as Chimera keeps it, carried over once
-	 * (owner, 2026-10-26; CHIMERA_QT_CHIMERA_SETTINGS names one for a test) */
-	if (!QFileInfo::exists(configPath))
-	{
-		const QString chimeraPath = qEnvironmentVariableIsSet("CHIMERA_QT_CHIMERA_SETTINGS")
-			? qEnvironmentVariable("CHIMERA_QT_CHIMERA_SETTINGS")
-			: QCoreApplication::applicationDirPath() + QStringLiteral("/config.ini");
-		QFile chimeraFile(chimeraPath);
-		vm::ChimeraImport imported;
-		std::string why;
-		if (chimeraFile.open(QIODevice::ReadOnly) && vm::importChimeraSettings(chimeraFile.readAll().toStdString(), imported, why))
-		{
-			imported.settings.members.emplace_back("importedFrom", vm::json::Json::string(chimeraPath.toStdString()));
-			QDir().mkpath(QFileInfo(configPath).absolutePath());
-			QFile settingsFile(configPath);
-			const std::string text = vm::json::write(imported.settings);
-			if (settingsFile.open(QIODevice::WriteOnly) && settingsFile.write(text.data(), static_cast<qint64>(text.size())) == static_cast<qint64>(text.size()))
-				std::printf("settings: %zu of Chimera's carried over from %s, %zu not\n", imported.carried.size(),
-					chimeraPath.toStdString().c_str(), imported.left.size());
-		}
-	}
 	/* Chimera's single instance mode (Windows): with a window of this
 	 * program already running, the files named are handed to it and this
 	 * one ends before anything is made */
@@ -552,7 +514,7 @@ int main(int argc, char **argv)
 			out = QImage(reinterpret_cast<const uchar *>(f.pixels.data()), f.width, f.height, f.width * 4, QImage::Format_RGB32).copy();
 			return true;
 		};
-		/* to a file named, as Chimera's TakeScreenshot(path): its folder made,
+		/* to a file named, as Chimera does: its folder made,
 		 * a JPEG when it is named .jpg, else a PNG */
 		takeScreenshot = [&session, grabShown, saveScreenshot, rawPicture](const QString &path) {
 			std::function<void(const QImage &)> save = saveScreenshot;
@@ -963,8 +925,8 @@ int main(int argc, char **argv)
 	config.keep(cores, "chosenFirmware");
 	config.keep(cores, "shows");
 	config.keep(newProject, "kind");
-	/* Config > Data Directory: where the window keeps things for the person,
-	 * the prototype's own place, never Chimera's; a change asked for last
+	/* Config > Data Directory: where the window keeps things for the person;
+	 * a change asked for last
 	 * time is carried out now, before anything in it is open */
 	vm::DataFolderViewModel dataFolder(dispatcher);
 	dataFolder.standard.set(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation).toStdString());
@@ -1101,7 +1063,7 @@ int main(int argc, char **argv)
 		std::string e;
 		paths.run("setPath", {std::string("Firmware"), cores.firmwareFolder.get()}, e);
 	});
-	/* screenshots go to the system's own folder, as Chimera's ScreenshotAbsolutePathFor; a system opened gets its folders */
+	/* screenshots go to the system's own folder, as Chimera does; a system opened gets its folders */
 	qt::PictureFiles::folderFor() = [&paths, &session] { return QString::fromStdString(paths.resolveFor(session.systemId.get(), "Screenshots")); };
 	vm::Connection systemFolders = session.opens.changed.connect([&paths, &session] { paths.useSystem(session.systemId.get()); });
 	qt::QmlViewModel pathsQml(paths);
@@ -1145,7 +1107,6 @@ int main(int argc, char **argv)
 	config.keep(controls, "saved");
 	config.keep(controls, "savedAutofire");
 	config.keep(controls, "savedAnalog");
-	config.keep(controls, "fromChimera");
 	config.keep(controls, "autoTab");
 	config.keep(controls, "mouseSensitivity");
 	/* the themes: Chimera's built-in two, and the folder beside the program

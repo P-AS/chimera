@@ -358,7 +358,7 @@ int main(int argc, char **argv)
 		assert(std::string(refs, len) == "[]");
 	}
 
-	// A file no byte[] could hold, and no 32-bit length could count.
+	// A file no 32-bit length could count.
 	//
 	// This is the whole reason a project keeps paths rather than bytes: a PS2
 	// disc is over four gigabytes. What is checked is that the size survives

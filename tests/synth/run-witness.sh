@@ -140,8 +140,7 @@ fi
 # The engine's own headless runner (chimera-run): the same package, host and
 # movies with NO frontend at all - no window, no display. Its dumps must match
 # the Level A goldens, in both modes, and the settings channel must reach the
-# guest. This is the migration's session (docs/engine-migration.md) proving
-# it IS the same machine.
+# guest: proof that it IS the same machine.
 if [ "$level" = "both" ] || [ "$level" = "e" ]; then
 	chimera_run="$repo_root/build/meson-linux/chimera-run"
 	epkg="$repo_root/build/Cores/synth-box.chimeraCore"
@@ -727,8 +726,8 @@ json.dump(d, open(p, 'w'))
 		# A FRAME STOPPED PARTWAY, AND THE MACHINE PUT BACK (chimera#330). A
 		# core stopped in the middle of a frame - by the watchdog, here - may
 		# have written anywhere before it stopped: the machine's RAM, its heap.
-		# The frontend then offers to go back to the latest stored frame
-		# (CoreStoppedForm), and chimera-run --recover does the same. A rom
+		# The window then offers to go back to the latest stored frame, and
+		# chimera-run --recover does the same. A rom
 		# ending in STOPONCE scribbles over the machine's RAM and leaves a block
 		# of its heap written in frame 5, and loops there until it is stopped,
 		# once; put back on frame 3 and played on, the machine must end on the
@@ -1498,8 +1497,7 @@ if [ "$level" = "both" ] || [ "$level" = "b" ]; then
 	chimera_exe="$repo_root/build/meson-linux/source/ui/chimera"
 	[ -x "$chimera_exe" ] || { echo "Chimera's window not built: $chimera_exe (meson setup with -Dqt_ui=enabled)" >&2; exit 1; }
 	export ALSOFT_DRIVERS=null CHIMERA_CORES_DIR="$repo_root/build/Cores" CHIMERA_QT_CACHE="$work/qt-cache" \
-		CHIMERA_QT_RECOVERY="$work/qt-recovery" CHIMERA_QT_HASHES="$work/qt-file-hashes.txt" \
-		CHIMERA_QT_CHIMERA_SETTINGS="$work/no-chimera-config.ini"
+		CHIMERA_QT_RECOVERY="$work/qt-recovery" CHIMERA_QT_HASHES="$work/qt-file-hashes.txt"
 	# a project's greenzone is kept in the per-user cache; this keeps it in the witness's
 	export XDG_CACHE_HOME="$work/cache-home" XDG_DATA_HOME="$work/data-home"
 
@@ -2032,8 +2030,7 @@ GZPY
 	# The synth core dies on cue (SPEC.md): all eight buttons abort, all but Up
 	# follow a wild pointer - the second arrives as a SIGSEGV inside a process
 	# whose runtime has signal handlers of its own. Headless Chimera must end the
-	# run the ordinary way with the reason and HeadlessMode.EXIT_CODE_CORE_STOPPED
-	# (65), not die in native code, and leave the recovery journal behind.
+	# run the ordinary way with the reason and exit code 65, not die in native code, and leave the recovery journal behind.
 	if [ "$record" -eq 0 ]; then
 		for cue in "abort:|UDLRABsS|:the core aborted" "wild:|.DLRABsS|:the core crashed: it wrote to address"; do
 			cname="${cue%%:*}"; rest="${cue#*:}"; cline="${rest%%:*}"; cwant="${rest#*:}"

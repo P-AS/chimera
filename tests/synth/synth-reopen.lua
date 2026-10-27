@@ -78,7 +78,7 @@ meta.secondLength = movie.length()
 -- it on its way out), so it lands after the new project has booted. Watching
 -- for that would mean turning the crank a few more frames, and a script's
 -- coroutine is never resumed once it has opened a project - it would hang here
--- rather than report. MainForm._projectSession is what stops that close from
--- landing on the wrong session.
+-- rather than report. The window keeps that close from landing on the wrong
+-- session.
 
 finish("OK", "")

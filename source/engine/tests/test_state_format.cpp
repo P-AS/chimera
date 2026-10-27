@@ -34,7 +34,7 @@ using namespace chimera;
 
 static std::vector<uint8_t> tagBytes()
 {
-	/* what WaterboxCore actually writes: a lag flag and two counters */
+	/* what a frontend's note holds: a lag flag and two counters */
 	return std::vector<uint8_t>{ 1, 0x0d, 0xf0, 0, 0, 0x2a, 0, 0, 0 };
 }
 

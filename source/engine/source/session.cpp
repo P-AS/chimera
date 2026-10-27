@@ -1,8 +1,7 @@
 /* session.cpp - a running waterboxed machine.
  *
- * The transliteration of WaterboxCore.cs's machine half: package + config +
- * rom + settings + firmware in, one frame at a time out. Behavioural notes
- * from the C# are carried over where they matter - especially the ones paid
+ * Package + config + rom + settings + firmware in, one frame at a time out.
+ * Behavioural notes are kept where they matter - especially the ones paid
  * for in blood (no activate/deactivate bracket around save/load state; the
  * frozen post-Init image as the savestate baseline).
  */
@@ -399,7 +398,7 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	if (cJSON_IsObject(lag)) cfg.inputWasRead = strOf(lag, "inputWasRead");
 
 	/* every declared setting at its default, kept for open AND for live
-	 * re-applies - what the C# EffectiveSettings started from */
+	 * re-applies */
 	cJSON *defaults = cJSON_CreateObject();
 	const cJSON *decls = cJSON_GetObjectItemCaseSensitive(root, "settings");
 	if (cJSON_IsArray(decls))
@@ -2554,7 +2553,7 @@ static ce_session *openSession(
  * something made here - a slot map, a name - or as a PATH (rom_path,
  * extra_paths[i]) for something on disk, which is never read into memory:
  * the guest's reads go to the file as it makes them. A PS2 disc image is
- * over four gigabytes, which no .NET byte[] can hold. The guest sees the
+ * over four gigabytes, more than a frontend may be able to hold. The guest sees the
  * same bytes either way. */
 static ce_session *openMachine(
 	const char *package_path,

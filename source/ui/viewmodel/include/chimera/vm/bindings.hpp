@@ -50,7 +50,7 @@ std::string replaceKeyNames(const std::string &keys, const std::map<std::string,
  * with the reason when it is not one */
 bool keyNamesFrom(std::string_view json, std::map<std::string, std::string> &out, std::string &error);
 
-/* An analog control's binding, as Chimera's AnalogBind: a host axis
+/* An analog control's binding, as Chimera does: a host axis
  * ("X1 LeftThumbX Axis", "J1 X Axis") read from -10000 to 10000, a dead
  * zone (a fraction of it), a multiplier (-2 to 2), and two keys that push
  * it to either end instead */

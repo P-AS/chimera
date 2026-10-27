@@ -4,9 +4,7 @@
  * a second one started finds the mutex taken, hands the files it was given
  * to the first through the pipe, and ends. The first opens the first file
  * handed over, as Chimera's opens a game double-clicked in Explorer. The
- * payload is Chimera's: each argument's UTF-8 bytes in hex, joined by '|'.
- * The names are the prototype's own, as its settings are, so that it and
- * Chimera, run side by side, never hand files to each other. Elsewhere,
+ * payload is each argument's UTF-8 bytes in hex, joined by '|'. Elsewhere,
  * nothing. */
 
 #include <QStringList>

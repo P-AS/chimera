@@ -289,9 +289,7 @@ library by name:
 
 A name the core does not have is not an error: `get` and `describe` return
 nil, `set` returns false, and the console says why - the way `memory.*`
-treats a domain it does not know. (An exception thrown back through Lua after
-a script has yielded a frame takes the process down under Mono, even inside a
-`pcall`; found while writing the witness leg.)
+treats a domain it does not know.
 
 ## What a movie row is
 

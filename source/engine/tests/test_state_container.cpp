@@ -1,9 +1,7 @@
 /* test_state_container.cpp - pins the zip-of-lumps container.
  *
- * Round trips through the engine, plus the naming and version quirks the C#
- * loader always had. Cross-implementation compatibility (a file written by
- * System.IO.Compression + streaming zstd) is pinned on the C# side, where
- * the old machinery still exists to fabricate such a file.
+ * Round trips through the engine, plus the naming and version quirks the
+ * format has always had.
  */
 
 #include "chimera/engine.h"
@@ -98,7 +96,7 @@ int main(void)
 		}
 	}
 
-	{ // lookups are by name-before-the-first-dot, exactly as the C# resolved them
+	{ // lookups are by name-before-the-first-dot
 		ce_state_writer *w = ce_state_writer_new(1, "v");
 		auto data = bytes("|..|\n");
 		assert(ce_state_writer_put_lump(w, "Input Log", "txt", 0, data.data(), data.size()) == 0);

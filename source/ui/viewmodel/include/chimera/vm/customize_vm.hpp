@@ -1,5 +1,5 @@
 #pragma once
-/* Chimera's Customize window (Config > Customize), for what the prototype
+/* Chimera's Customize window (Config > Customize), for what the window
  * has: how the machine behaves around the window. Each is remembered.
  *
  * - startPaused: the first machine opened waits paused. After that a
@@ -47,9 +47,7 @@ public:
 	Property<bool> startPaused{false}, startFullscreen{false}, neverAskSave{false}, luaDuringTurbo{true}, showContextMenu{true};
 	Property<bool> alternateLayouts{false}, mergeModifiers{true}, singleInstance{false}, gameCubeAdapter{false};
 
-	/* Chimera's rewrite of the keys bound when mergeModifiers changes
-	 * (ConfigExtensions.ReplaceKeysInBindings with Input.ModifierKeyPreMap or
-	 * ModifierKeyInvPreMap): merging, each side's name becomes the kind's
+	/* Chimera's rewrite of the keys bound when mergeModifiers changes: merging, each side's name becomes the kind's
 	 * ("LeftShift" and "RightShift" "Shift"); separating, the kind's becomes
 	 * the left's. Super's are left out: no key is named so. */
 	static std::map<std::string, std::string> modifierKeys(bool merging);

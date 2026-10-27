@@ -143,7 +143,7 @@ DisplayViewModel::DisplayViewModel(Dispatcher &dispatcher) : ViewModel("display"
 			 {"padRight", &padRight}, {"padBottom", &padBottom}, {"clientLeft", &clientLeft}, {"clientTop", &clientTop},
 			 {"clientRight", &clientRight}, {"clientBottom", &clientBottom}})
 		expose(name, "an extra padding a script set: the game's in its pixels, the client's in the window's", *p);
-	command("setPadding", "Chimera's SetGameExtraPadding (\"game\") or SetClientExtraPadding (\"client\"): the sides' "
+	command("setPadding", "the picture's padding, the game's (\"game\") or the window's (\"client\"): the sides' "
 		"padding, left, top, right and bottom", {"which", "left", "top", "right", "bottom"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string which;

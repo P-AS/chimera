@@ -54,7 +54,7 @@ FormsViewModel::FormsViewModel(Dispatcher &dispatcher) : ViewModel("forms", disp
 {
 	rows("forms", "a script's forms: handle, title (text), width, height, ...", formRows_);
 	rows("controls", "every form's controls: handle, form, kind, text, x, y, width, height, checked, items, selected, ...", controlRows_);
-	/* a form: as WinForms opens one when no size is given */
+	/* a form: at Chimera's own size when none is given */
 	command("newForm", "a form, its size inside its frame and its title; its handle", {"width", "height", "title"},
 		[this](const Args &a, std::string &error) -> Value {
 			Item f;
@@ -65,7 +65,7 @@ FormsViewModel::FormsViewModel(Dispatcher &dispatcher) : ViewModel("forms", disp
 			if (f.text.empty()) f.text = "Lua Dialog";
 			return add(f, error);
 		});
-	/* a control on a form: at its place and size, WinForms' own when none is given */
+	/* a control on a form: at its place and size, Chimera's own when none is given */
 	auto control = [this](const std::string &kind, int64_t form, const std::string &text, int64_t x, int64_t y, int64_t w, int64_t h,
 					   std::string &error) -> Value {
 		Item c;
@@ -235,7 +235,7 @@ FormsViewModel::FormsViewModel(Dispatcher &dispatcher) : ViewModel("forms", disp
 		}
 		return {};
 	});
-	/* WinForms' own property names, those these controls have */
+	/* the property names scripts use, those these controls have */
 	command("getProperty", "a property's value as text: Text, Left, Top, Width, Height, Visible, Enabled, Checked, SelectedItem, "
 		"SelectedIndex", {"handle", "property"}, [this](const Args &a, std::string &error) -> Value {
 			int64_t h = 0;
@@ -292,7 +292,7 @@ FormsViewModel::FormsViewModel(Dispatcher &dispatcher) : ViewModel("forms", disp
 			changed(*item);
 			return {};
 		});
-	command("saveImage", "a picture box's picture saved to a PNG file by the window, as Chimera's LuaCanvas.save_image_to_disk",
+	command("saveImage", "a picture box's picture saved to a PNG file by the window, as a canvas's save_image_to_disk does",
 		{"handle", "path"}, [this](const Args &a, std::string &error) -> Value {
 			int64_t h = 0;
 			std::string path;

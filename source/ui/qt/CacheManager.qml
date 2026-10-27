@@ -1,5 +1,5 @@
 // Chimera's Cache Manager (Tools > Cache Manager...), laid out as its
-// CacheManagerForm: what is cached and whether it is over its limit at the
+// The Cache Manager: what is cached and whether it is over its limit at the
 // top, Select all and the limit (Keep the cache under N GB, and leave the
 // disk at least N GB free) over the list, a row an entry with a box to tick
 // and a padlock (What, Name, System, Core, Game, Project id, Project file,

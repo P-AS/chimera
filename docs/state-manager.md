@@ -5,31 +5,25 @@ states, and what survives closing a project.
 
 Status: phase 1 BUILT (miniBox 0c972de, with its measurements below); the rest
 is design, decided with the user 2026-09-08.
-It replaces the surviving implementations with one, and it is the remaining half of
-step 5 of the engine migration (docs/engine-migration.md), which always said
-TAStudio's state history would move onto the session's.
+It replaced the frontend's own state histories with the engine's.
 
 ## Why this is being redone
 
-There are two answers in the tree to one question - what did this machine look
-like at frame N:
+There were two answers in the tree to one question - what did this machine
+look like at frame N:
 
 - the engine's greenzone (`ce_session_greenzone_*`): budget-bounded, anchored,
-  with seek and invalidate. Witnessed by the gates. Only `chimera-run` uses it.
-- `PagedStateManager` (C#): what TAStudio actually uses, with the older
-  `ZwinderStateManager` still selectable beside it and `ZwinderBuffer`
-  underneath that one as its storage.
+  with seek and invalidate. Witnessed by the gates. Only `chimera-run` used it.
+- the frontend's own state manager: what TAStudio actually used, with an older
+  one still selectable beside it.
 
 There is deliberately no third one for rewind, and it is worth being exact
-about why, because the name suggests otherwise. `MainForm.Rewind` does nothing
-unless a tool claims `WantsToControlRewind`; TAStudio is the only tool that
-does, and in a TAS-only frontend TAStudio is always there. Its `Rewind()` is
-`WheelSeek` - a seek backwards through the greenzone - and its `CaptureRewind`
-is a no-op with a comment saying TAStudio handles this just fine. There is no
-rewind buffer and no rewind setting left in config. Rewind is a gesture over
-the state history, not a mechanism of its own.
+about why, because the name suggests otherwise. Rewind is TAStudio's: a seek
+backwards through the greenzone. There is no rewind buffer and no rewind
+setting. Rewind is a gesture over the state history, not a mechanism of its
+own.
 
-The two that remain are BizHawk-lineage designs, written when a savestate was
+The frontend's two were BizHawk-lineage designs, written when a savestate was
 kilobytes and a big one was a few megabytes. Chimera's cores are whole sandboxed
 machines. Measured on the user's own Prince of Persia run under xemu, a state
 is 75 MB at frame 150, 102 MB at 600 and 210 MB at 1200: it grows as the game
@@ -37,10 +31,9 @@ touches memory, and it is the whole machine every time.
 
 Everything downstream of that number is now wrong:
 
-- **Saving loses the work silently.** The greenzone is serialized through
-  managed `byte[]` buffers - the history into one array, each lump into
-  another, the whole archive into a third - and a .NET array is indexed by
-  `int`, so it stops near 2 GB. A 3711-frame run is about 5.5 GB of states.
+- **Saving loses the work silently.** The greenzone was saved through whole
+  buffers - the history into one, each lump into another, the whole archive
+  into a third - and such a buffer stops near 2 GB. A 3711-frame run is about 5.5 GB of states.
   The write throws, a `catch` swallows it, and the project is saved with no
   states at all and nothing said. Reopening then replays from frame 0, which
   is what the user reported and what started this.
@@ -50,7 +43,7 @@ Everything downstream of that number is now wrong:
   the run, which is why going back one frame does not feel like the inverse of
   going forward one frame.
 - **The right implementation is the unused one.** The engine's greenzone is in
-  the right place - linkable by jaffarPlus, testable without Mono or a display
+  the right place - linkable by jaffarPlus, testable without a window or a display
   - and the application never calls it.
 
 A patch to the 2 GB ceiling would leave three implementations, a rewind that
@@ -70,8 +63,8 @@ Taken by the user, 2026-09-08:
    with the sync client holding files open mid-write. It is in the user's data
    directory: `%LOCALAPPDATA%\Chimera` on Windows, the XDG data
    directory elsewhere, `CHIMERA_DATA_HOME` overriding both.
-2. **One implementation.** `PagedStateManager`, `ZwinderStateManager`, the
-   settings chooser and the type-dispatching converter all go. Settings naming
+2. **One implementation.** The frontend's own state managers, their settings
+   chooser and its converter all go. Settings naming
    a deleted type fall back to defaults, which is safe precisely because the
    cache is regenerable.
 3. **Rewind is not a separate thing**, and already is not one. It stays a
@@ -170,14 +163,14 @@ view over it, asking where states exist and asking to be moved.
 **Storage separated from policy.** The store knows about chunks, anchors,
 deltas, a memory tier and a disk tier, and nothing about TAS. The policy knows
 about anchors per second, pins, and budgets, and nothing about bytes on disk.
-The current `PagedStateManager` reasons well about density and reservation;
+The frontend's old state manager reasoned well about density and reservation;
 that thinking survives, its storage does not.
 
 **The store is the on-disk format.** Not a zip of lumps assembled in memory:
 an append-only chunk file with an index, written as it goes. Saving a project
 flushes and writes the index rather than rewriting gigabytes, so saving at
 frame 3711 costs what changed since the last save. No archive is ever
-materialized whole, in managed memory or otherwise, which is the bug class this
+materialized whole, in memory or otherwise, which is the bug class this
 started with.
 
 **The greenzone sidecar retires.** DONE. `.chimeraGreenZone` beside the project
@@ -875,7 +868,7 @@ mapped pool as baseline snapshots, capped at 32768 pages (`HOT_MOST`).
 Everything above is the engine. A TAStudio seek runs the frontend's main loop
 once per emulated frame, and with `CHIMERA_LOOP_TRACE=1` the loop says where
 each frame's wall time goes, per phase, every 300 frames. A Game Boy seek of
-1200 frames with the piano roll open, headless under Xvfb on the dev box:
+1200 frames with the piano roll open, headless with software drawing on the dev box:
 
 | | advance | tools after | render | messages | other | per frame |
 |---|---|---|---|---|---|---|
@@ -897,11 +890,10 @@ a software GL.
 Two things to know. The frames a seek passes through get the fast update
 whether or not it is a turbo seek, so a Lua script that counts frames during a
 seek wants "Run Lua during turbo", as it already did for a turbo one. And on
-the Xvfb box a TURBO seek measured slower than a plain one - the present and
+the software-drawn box a TURBO seek measured slower than a plain one - the present and
 the message pump cost several milliseconds each with no frame drawn. That is
 the software GL, not the client: the same seek on the Windows box with the real
-GPU (`Chimera.exe --headless` driven through interop, the same project and Lua
-kicker) is 3.5 ms a frame plain and 3.1 turbo against 2.7 for the machine, and
+GPU (the same project and Lua kicker, headless) is 3.5 ms a frame plain and 3.1 turbo against 2.7 for the machine, and
 the trace's two later phases say where the rest goes there - `movie` 0.22 ms is
 the greenzone capture itself, and `messages` 0.35 ms is the piano roll
 repainting at the sixty services a second, which is what the person is
@@ -1166,12 +1158,11 @@ Each phase is separately gated and separately landable.
      needs.
    The frontend's greenzone moved to the per-user cache (`c595db6`), so a
    project's folder holds the project and nothing else. Phase 2 is closed.
-3. **The frontend: one history. DONE.** `PagedStateManager`,
-   `ZwinderStateManager`, `ZwinderBuffer`, `IStateManager`, the settings chooser
-   and the settings page are deleted, and TasMovie drives the engine's history
-   through `IStateHistory`: 867 lines added against 4773 removed.
+3. **The frontend: one history. DONE.** The frontend's own state managers, the
+   settings chooser and the settings page are deleted, and TAStudio drives the
+   engine's history: 867 lines added against 4773 removed.
 
-   What was load-bearing C# is now a remote control. The history holds no copy
+   What was load-bearing in the frontend is now a remote control. The history holds no copy
    of itself up here - not which frames exist, not the lag flags, which ride
    along as the note - because a second copy is a second thing to keep true, and
    it would go wrong quietly on the long runs where nobody could reproduce it.
@@ -1748,7 +1739,7 @@ The question was asked of the greenzone, but the same helper answers two more,
 and the first of them is the largest stall in the application.
 
 **Saving the project writes the whole history, on the thread that runs the
-machine.** `TasMovie.Project.cs` calls `States.Save(...)` inline, and the
+machine.** The project's save called the history's save inline, and the
 default budgets are 4 GB in memory and 10 GB on disk, so a save can stream
 FOURTEEN gigabytes before the window moves again. At the rates measured for
 spilling - 1.4 GB/s to ext4, 176 MB/s to NTFS - that is about ten seconds on a
@@ -1845,7 +1836,7 @@ it, in queue order.
 A save of a 122 MB history measured **51 ms in line against 0.0 ms to return**,
 and the metadata snapshot stays under a millisecond at four thousand frames,
 because it is proportional to the number of links rather than to the bytes. The
-barrier is `WaterboxCore.Dispose`, not the movie's - see the defects below.
+barrier is the session's close, not the movie's - see the defects below.
 
 #### Phase 3: the copy-on-write anchor
 
@@ -2475,7 +2466,7 @@ reason the bar was set where it was.
 2. **The save barrier called into a freed session.** A four-thousand-frame soak
    survived every seek and died on the way out: a movie is disposed when a
    project closes, and by then the emulator it borrowed may be gone. The
-   barrier belongs to the session (`WaterboxCore.Dispose`), which is the thing
+   barrier belongs to the session (its close), which is the thing
    that knows it is alive.
 3. **A barrier taken before deciding not to act.** `compactSpill` drained and
    then decided not to compact, so every spill waited for its own write within

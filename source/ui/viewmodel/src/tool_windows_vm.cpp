@@ -141,8 +141,8 @@ ToolWindowsViewModel::ToolWindowsViewModel(Dispatcher &dispatcher) : ViewModel("
 			if (text != settings.get()) settings.set(text);
 			return true;
 		});
-	command("sortFiles", "files dropped on the window (or handed over by a later start), a line each, sorted as Chimera's are "
-		"(MainForm.FileLoader): what to do, a line each in Chimera's order - \"open\" and the kind (game, watch, luaSession, "
+	command("sortFiles", "files dropped on the window (or handed over by a later start), a line each, sorted as Chimera's are: "
+		"what to do, a line each in Chimera's order - \"open\" and the kind (game, watch, luaSession, "
 		"lua, project) and the file, tab apart, or \"say\" and what to tell the person: several of one kind open none, and a "
 		"state or cheat file does not open by dropping", {"files"}, [](const Args &a, std::string &error) -> Value {
 			std::string list;

@@ -31,8 +31,7 @@ using json::Json;
 namespace fs = std::filesystem;
 
 namespace {
-/* a slot's condition that reads only settings (no slot's files), as
- * Chimera's ReadsOnlySettings has it */
+/* a slot's condition that reads only settings (no slot's files) */
 bool readsOnlySettings(const Json &c)
 {
 	if (c.kind != Json::Kind::Object) return false;
@@ -95,7 +94,7 @@ void setMember(Json &obj, const std::string &name, Json v)
 } // namespace
 
 /* compile sessions of the headless runner, side by side, each a share of the
- * game's code (Chimera's PrecompileOrchestrator): what each stores ("[cache]
+ * game's code: what each stores ("[cache]
  * stored <name> <sha1>", or fetched, already there) is a module the game
  * needs, and their progress lines add up; when all end well, the modules are
  * the game's manifest.json */
@@ -110,7 +109,7 @@ struct NewProjectViewModel::CompileJob
 	 * model waits for it before it goes) */
 	std::atomic<bool> stop{false}, ended{false};
 
-	/* what an exit code says of how a session ended, as Chimera's WhyItDied */
+	/* what an exit code says of how a session ended, as Chimera does */
 	static std::string whyItDied(int code)
 	{
 		switch (code)

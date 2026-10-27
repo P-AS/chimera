@@ -153,8 +153,7 @@ socket, makes a request or resolves a name:
   lost `comm.socketServer*`, `comm.http*` and `comm.ws_*`, with the
   `--socket-ip`, `--socket-port`, `--socket-udp`, `--url-get` and `--url-post`
   flags that configured them;
-* LuaSocket (`socket/core`, `mime/core`) is no longer built or shipped;
-* the frontend no longer references `System.Net.Http`.
+* LuaSocket (`socket/core`, `mime/core`) is no longer built or shipped.
 
 What is left that names an address is a link: the About box and the Help menu
 hand a URL to the system's browser, and that is the browser's request, made by
@@ -205,9 +204,7 @@ one core can be loaded in a session as long as their packages are different
 bytes (issue #63). A project boots the exact build it pins whenever that build
 is in the folder; otherwise - a bare rom, a movie without a pin, a pin nobody
 has - the build that runs is the one last opened with File > Open Core, and
-failing that the newest (`CoreChoices.PickBuild`, `Config.DefaultCoreBuilds`).
-Adapter packages (.NET assemblies rather than miniBox guests) are the exception:
-one build of each per session.
+failing that the newest.
 
 The file's name is only a NAME. A package's identity is the SHA1 of its bytes,
 which is what discovery, the extract cache and the movie header all use; a
@@ -283,10 +280,7 @@ and an unpacked package - a folder, which is how somebody keeps their own build
 left alone.
 
 The columns have to add up to less than the list is wide or the last one is
-reachable only by scrolling sideways. That also means the **UI test harness's
-Xvfb** has to be wider than the window: a screenshot copies the window's
-rectangle off the screen, so a window wider than the screen fails outright with
-*XGetImage returned NULL* rather than producing a bad picture.
+reachable only by scrolling sideways.
 
 ### How a version reads
 
@@ -317,8 +311,8 @@ Chimera's own build line ("Commit 9dbd35bac (2026-10-20 10:58 CEST)"). Release
 titles say it the same way: `tools/publish-core.sh` names a core's nightly
 `Nightly 2026-10-19 (8c11acc3, made 2026-10-18 18:35 CEST)`, with the date
 the build ran first and the commit's time after it, and its notes give the
-line Chimera lists. The rule lives in `Chimera.Common/EuropeanClock.cs` and,
-for the release scripts, `tools/european-time.py`. Both work it out
+line Chimera lists. The rule lives in `source/ui/viewmodel/src/european_clock.cpp`
+and, for the release scripts, `tools/european-time.py`. Both work it out
 themselves rather than ask the computer's time zones, so every machine writes
 the same text.
 
@@ -370,20 +364,18 @@ could break the generic waterbox adapter for every core at once and nothing
 here would notice - it would surface the first time somebody tried one.
 
 The `published-cores` job closes that. `tools/fetch-cores.sh` downloads what
-each core last published into `build/Cores`, and the tests in
-`InstalledCorePackagesTests` run against the real packages:
+each core last published into `build/Cores`, and `test-packages` runs against
+the real packages:
 
-* every package can be read by discovery;
+* every package can be read;
 * every package's guest ABI is one this build runs;
-* every package becomes a working `WaterboxCoreFactory` - which is where a
-  package's machines, settings and controller are validated against each other,
-  and so the real test of whether the frontend still understands what the cores
-  are saying;
-* every package's default keybinds name only buttons its controller declares;
+* every package's machines, settings and controller agree with each other -
+  the real test of whether Chimera still understands what the cores are
+  saying;
+* every package's default keybinds name only buttons its controller declares,
+  and no two of a controller's buttons share a mnemonic, so a controller that
+  grows a button is covered the day it does;
 * every package stamps a version, without which it cannot be cited by a movie.
-
-`MnemonicUniquenessTests` runs against them too, so a controller that grows a
-button is covered the day it does.
 
 No rom, no firmware, no emulation, no core build: this is the CONTRACT, and it
 takes seconds. **Whether the emulation is still right is each core
@@ -392,11 +384,11 @@ movies against it - the same check from the other side, run by the repository
 that has the content to run it.
 
 A core that has published nothing is skipped rather than failing the job. Note
-what that means when NOTHING is fetched, because it bit us: every test returns
-Inconclusive and **the job goes green having checked nothing at all**. For its
+what that means when NOTHING is fetched, because it bit us: every test is
+skipped and **the job goes green having checked nothing at all**. For its
 first day this job reported success on eight skips, and the moment the first
 real packages arrived it failed instantly - reading a package is the engine's
-job now (`ce_package_open`) and the job built only the managed test project, so
+job now (`ce_package_open`) and the job built only the tests, so
 all fifteen came back *got null pointer from dlopen*. The packages were fine;
 the job had never had a working engine and had never needed one to pass.
 

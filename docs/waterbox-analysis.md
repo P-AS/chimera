@@ -1,9 +1,9 @@
 # BizHawk waterbox - architecture analysis (2026-08-11)
 
 Working-level analysis of the waterbox system in the BizHawk checkout at
-~/BizHawk (master, 4a16b5c7ee), made in preparation for Chimera's flavor-(c)
-synthetic core. Sources: waterbox/ (guest toolchain + Rust host),
-src/Chimera.Emulation.Cores/Waterbox/ and src/Chimera.NativeInvoke (C# layer).
+~/BizHawk (master, 4a16b5c7ee), made in preparation for Chimera's waterboxed
+synthetic core. Sources: waterbox/ (guest toolchain + Rust host). Chimera's own
+sandbox, miniBox, grew from it (extern/chimera-common-minibox/docs/MACHINE-SPEC.md).
 
 ## What the waterbox actually is
 
@@ -56,7 +56,7 @@ machine state is capturable and restorable byte-exactly. It has three layers.
   guest address (protection-managed) and at an OS-chosen always-RW MIRROR
   used for all host-side reads/writes that must not trip dirty tracking.
   Multiple hosts sharing a slice are swapped in/out under a per-slice mutex
-  (wbx_activate/deactivate = the C# EnterExit monitor).
+  (wbx_activate/deactivate around every touch of guest memory).
 - Dirty tracking: logically-writable pages are mapped read-only until first
   write; the SIGSEGV handler (Linux) / vectored exception handler (Windows)
   snapshots the pre-write page content, marks dirty, and reprotects RW.
@@ -91,79 +91,3 @@ machine state is capturable and restorable byte-exactly. It has three layers.
   purely for determinism of savestated pointers. Two levels of reentrancy
   (guest->host->guest) via an alt stack pair. On Windows, unwind info is
   registered so SEH can cross the stack switch.
-
-## Layer 3: the C# integration (src/.../Waterbox + NativeInvoke)
-
-- WaterboxHostNative: NativeInvoke declarations of the ~17 wbx_* C-ABI
-  functions (create/destroy/activate/deactivate, get_proc_addr[_raw],
-  get_callin_addr, get_callback_addr(slot), seal, mount/unmount_file,
-  save/load_state, page introspection).
-- WaterboxHost: thin managed wrapper; implements IImportResolver (so
-  ChimeraInvoker.GetInvoker<LibXxx> resolves guest exports like a DLL),
-  IMonitor (Enter/Exit = activate/deactivate; every touch of guest memory
-  is inside using(_exe.EnterExit())), IStatable (streams wbx state),
-  ICallbackAdjuster (slot registration).
-- CallingConventionAdapters.MakeWaterbox: guest is always SysV; on Windows
-  hosts an MsHostSysVGuest adapter generates ABI-translation thunks; on
-  Linux it is passthrough. All host callbacks must be registered as slots
-  up front. Max 6 int/ptr args, no floats/structs by value, anywhere across
-  the boundary.
-- WaterboxCore (base class all waterboxed cores extend) + LibWaterboxCore
-  (the universal guest ABI):
-    ECL_EXPORT void FrameAdvance(MyFrameInfo*);  // extends FrameInfo:
-        // VideoBuffer/SoundBuffer (HOST pointers, guest fills), Cycles,
-        // Width, Height, Samples, Lagged - plus per-core input fields
-    ECL_EXPORT void GetMemoryAreas(MemoryArea[256]); // name/ptr/size/flags,
-        // exactly one PRIMARY; ptrs are guest addresses -> memory domains
-    ECL_EXPORT void SetInputCallback(cb);
-  plus a per-core Init export. Lifecycle: ctor(WaterboxOptions with the five
-  heap sizes) -> ChimeraInvoker over guest exports -> mount rom files -> Init ->
-  GetMemoryAreas -> Seal -> frames. RTC is frontend-side and frame-derived
-  (real time throws under determinism); Nyma cores receive time as a
-  FrameInfo field.
-
-## Assessment for Chimera flavor (c)
-
-1. THE PACKAGE MODEL NEEDS NO FRONTEND CHANGES. Everything waterbox is
-   reachable from inside a core package: the adapter DLL can carry the
-   WaterboxHost/WaterboxCore equivalents, declare libwaterboxhost as a
-   package native, and ship the .wbx as package data. Chimera's loader,
-   contract, and NativeInvoke usage require nothing new. Moreover the
-   reproducibility pillar argues waterbox machinery SHOULD be package-side:
-   the waterbox host version affects emulation determinism, so it belongs
-   inside the (movie + package) reproduction contract, not in the frontend.
-   (BizHawk treats it as frontend infrastructure; Chimera's principles
-   disagree, conveniently in the direction that costs us nothing.)
-2. Deleted machinery inventory: Chimera removed WaterboxAdapter +
-   MsHostSysVGuest from NativeInvoke (charter, fifth addendum). On Linux the
-   guest ABI is native SysV so nothing is missing; Windows waterboxing would
-   need that adapter back - restorable from the transitional fork, or
-   carried inside the package's adapter assembly.
-3. The Rust host needs NIGHTLY Rust (try_trait_v2 etc.); our toolchain is
-   stable 1.97.1. Vendoring it as-is means adopting a nightly toolchain in
-   the package build.
-4. For the SYNTH waterboxed twin specifically, the full stack is massive
-   overkill. Synthcore needs: no threads, no cothreads, no C++, no VFS
-   (rom bytes can be passed through an Init export), no mmap beyond fixed
-   arenas, and arguably no libc at all (a freestanding build with static
-   arenas removes malloc). What defines the flavor per the design doc is
-   "the entire machine state is preserved" - i.e. fixed-address loading +
-   whole-guest-image savestates. A minimal host proving that essence needs:
-   fixed-base static ELF load, W^X dirty-page tracking with sealed baseline,
-   dirty-page savestates, and host<->guest call thunking. That is a small,
-   auditable component (plausibly plain C or stable Rust), and the same
-   guest .wbx discipline (fixed base, sealed/invisible sections) applies.
-5. If/when REAL waterboxed cores (mednafen-class) are wanted, the full
-   BizHawk machinery (musl + libcxx + syscalls + VFS + green threads) is the
-   realistic path - re-implementing that surface is months, not days.
-   Vendor-vs-reimplement can be decided per component then.
-
-Open questions for the re-engineering discussion:
-- Vendor BizHawk's waterboxhost + toolchain vs build a minimal
-  "waterbox-lite" for the synth twin first (and defer the full stack)?
-- Package-side vs frontend-side placement of the waterbox host (analysis
-  above says package-side; confirms zero-frontend-change).
-- Windows support scope for flavor (c) (needs MsHostSysVGuest restoration).
-- Whether the synth waterboxed twin should share the .wbx conventions
-  (fixed base 0x36f00000000, __wbxsysinfo, sealed/invis sections) so a
-  future full host runs it unchanged - recommended: yes.

@@ -40,7 +40,7 @@ public:
 	{
 		bool hotkey = true, control = true;
 	};
-	/* where a key goes, by Chimera's rule (its InputManager): a hotkey
+	/* where a key goes, by Chimera's rule: a hotkey
 	 * gives way to a button only when the key is a button, and a button to
 	 * a hotkey only when the key is a hotkey */
 	static Route route(int64_t priority, bool hotkeyBound, bool controlBound);

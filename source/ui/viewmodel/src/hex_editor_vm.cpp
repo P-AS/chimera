@@ -583,7 +583,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 	visibleWatch_ = visibleLines.changed.connect(moved);
 	sizeWatch_ = size.changed.connect([this] {
 		if (size.get() != 1 && size.get() != 2 && size.get() != 4) size.set(1);
-		/* Chimera's SetDataSize: the highlights beside the first go */
+		/* a new data size: the highlights beside the first go */
 		secondary_.clear();
 		nibbles.set("");
 		titles();

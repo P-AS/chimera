@@ -15,8 +15,8 @@ namespace chimera::qt {
 
 #ifdef _WIN32
 namespace {
-/* Chimera's names (MainForm.cs), and its hand-over: the arguments as UTF-8
- * hex joined by "|" (owner, 2026-10-26: the window takes Chimera's names) */
+/* Chimera's names, and its hand-over: the arguments as UTF-8 hex joined by
+ * "|" (owner, 2026-10-26) */
 constexpr wchar_t kMutex[] = L"mutex-{84125ACB-F570-4458-9748-321F887FE795}";
 constexpr wchar_t kPipe[] = L"\\\\.\\pipe\\pipe-{84125ACB-F570-4458-9748-321F887FE795}";
 

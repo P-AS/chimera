@@ -5,10 +5,10 @@ The synthetic witness console for Chimera (see docs/design-principles.md,
 capacity of printing to screen and emitting audio; ALL game logic, video
 assets, and audio assets belong to the game, provided as a `.testrom` file.
 
-Three implementations (native, pure C#, waterboxed) must produce, for the same
-rom and input movie, bit-identical: (1) the full memory space, (2) every video
-frame, (3) every audio sample. This document is the single source of truth all
-three are written against; nothing outside it may influence emulation.
+Every implementation (a native one and a waterboxed one) must produce, for
+the same rom and input movie, bit-identical: (1) the full memory space, (2)
+every video frame, (3) every audio sample. This document is the single source
+of truth they are written against; nothing outside it may influence emulation.
 
 Everything below is exact-width integer arithmetic; there is no float anywhere.
 All multi-byte values are little-endian, in roms and in serialized state.

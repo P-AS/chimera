@@ -4,7 +4,7 @@
  * native/synthcore.c, compiled unchanged for the guest. This file is only the
  * thin waterbox ABI layer over it. The whole machine state lives in guest
  * memory, so the miniBox host savestates it automatically - there is no
- * explicit serialize/deserialize here, unlike the native and C# adapters.
+ * explicit serialize/deserialize here, unlike the native runner.
  * That is the point of the waterbox flavor: reproducibility by construction.
  *
  * The rom arrives as a mounted file "rom" (read at Init, per the side-effect

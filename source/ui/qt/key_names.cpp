@@ -31,9 +31,8 @@ bool alternateLayouts = false, mergeModifiers = true;
 /* the modifier keys held, by their own names (LeftShift, RightCtrl...) */
 std::set<QString> held;
 
-/* the modifiers Chimera writes before a key, in its order (Input.cs's
- * ModifierKeysBase and ModifierKeysBaseUnmerged; their Super keys are left
- * out, as no key is ever named so: the Windows keys are LeftWin and
+/* the modifiers Chimera writes before a key, in its order (Super keys are
+ * left out, as no key is ever named so: the Windows keys are LeftWin and
  * RightWin, which Chimera does not count as modifiers) */
 const char *const mergedModifiers[] = {"Ctrl", "Alt", "Shift"};
 const char *const unmergedModifiers[] = {"LeftCtrl", "RightCtrl", "LeftAlt", "RightAlt", "LeftShift", "RightShift"};
@@ -82,7 +81,7 @@ const char *byPlace(quint32 scanCode, quint32 virtualKey)
 	if (virtualKey == VK_NUMLOCK) return "NumLock";
 	const uint32_t raw = (scanCode & 0xFF) | ((scanCode & 0xFF00) == 0xE000 ? 0x80 : 0);
 	const char *name = lookup(windowsKeys, raw);
-	/* as Chimera's MapToRealKeyViaScanCode: the key the layout makes it,
+	/* as Chimera does: the key the layout makes it,
 	 * but for the keys it keeps by their place, and the modifier keys (it
 	 * names both Alt keys Windows keys there) */
 	if (alternateLayouts && name != nullptr && kindOf(QLatin1String(name)).isEmpty() &&

@@ -1,4 +1,4 @@
-// Chimera's InputRoll as TAStudio's Branches and Markers boxes use it: the
+// Chimera's input roll as TAStudio's Branches and Markers boxes use it: the
 // column titles on the roll's column colour, a grid over the rows, the text in
 // bold, the whole row picked, and the theme's roll colours throughout.
 // Layout and drawing only: what a cell says and its colour are the window's.
@@ -18,7 +18,7 @@ Rectangle {
     property var cellColor: (roles, row, column) => ""
     // a roll colour by Chimera's role name ("RollGridLines"), "" when there is none
     property var rollColor: (role) => ""
-    // Chimera's InputRoll font in these lists: Arial 8.25 bold
+    // Chimera's input roll font in these lists: Arial 8.25 bold
     property font cellFont: Qt.font({ family: "Arial", pointSize: 8.25, bold: true })
     // a row pressed by its first cell can be dragged onto another (branches are put in order so)
     property bool dragFirstColumn: false
@@ -55,7 +55,7 @@ Rectangle {
         for (let c = columns.length - 1; c >= 0; c--) if (x >= lefts[c]) return c
         return 0
     }
-    // a selected cell as Chimera's InputRoll paints it: a third of the way to the selection colour
+    // a selected cell as Chimera paints it: a third of the way to the selection colour
     function picked(base) { return Qt.tint(base, Qt.rgba(pickColour.r, pickColour.g, pickColour.b, 0.33)) }
 
     color: background

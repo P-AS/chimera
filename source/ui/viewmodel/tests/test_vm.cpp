@@ -38,7 +38,7 @@
 #endif
 
 #include "chimera/vm/bindings.hpp"
-#include "chimera/vm/chimera_settings.hpp"
+#include "chimera/vm/config_names.hpp"
 #include "chimera/vm/config_store.hpp"
 #include "chimera/vm/controls_vm.hpp"
 #include "chimera/vm/hotkeys_vm.hpp"
@@ -546,9 +546,9 @@ void luaConsole()
 	console.reloadOnChange.set(true);
 	run("restoreDefaults");
 	CHECK(!console.disableOnLoad.get() && console.toggleAllIfNoneSelected.get() && !console.reloadOnChange.get());
-	/* Help > Lua Functions List, as Chimera's: its documentation's words, the
-	 * prototype's functions found in it, Chimera's the prototype lacks marked
-	 * unavailable, deprecated ones marked, the prototype's own besides */
+	/* Help > Lua Functions List: its documentation's words, the window's
+	 * functions found in it, those the window lacks marked unavailable,
+	 * deprecated ones marked, undocumented ones besides */
 	{
 		json::Json listed;
 		std::string why;
@@ -560,15 +560,15 @@ void luaConsole()
 		};
 		const json::Json *onframeend = find("event", "onframeend");
 		CHECK(onframeend != nullptr && onframeend->find("returns")->text == "string" &&
-			onframeend->find("params")->text == "(nluafunc luaf, [string name = nil])" &&
+			onframeend->find("params")->text == "(function luaf, [string name = nil])" &&
 			onframeend->find("description")->text.rfind("Calls the given lua function at the end of each frame", 0) == 0 &&
 			!onframeend->find("unavailable")->boolean);
 		const json::Json *range = find("memory", "readbyterange");
-		CHECK(range != nullptr && range->find("deprecated")->boolean && range->find("returns")->text == "nluatable0Indexed");
+		CHECK(range != nullptr && range->find("deprecated")->boolean && range->find("returns")->text == "zero-based table");
 		/* a canvas's functions, which no global table holds, are listed as here */
 		const json::Json *canvas = find("LuaCanvas", "DrawText");
 		CHECK(canvas != nullptr && !canvas->find("unavailable")->boolean);
-		/* one Chimera does not document is the prototype's own */
+		/* one with no documentation is listed too */
 		const std::string mixed = LuaConsoleViewModel::functionsList(R"x([{"library": "extra", "name": "thing", "params": "a, b"}])x");
 		const bool own = mixed.find(R"x("library":"extra","name":"thing","params":"(a, b)")x") != std::string::npos ||
 						 mixed.find(R"x("library": "extra", "name": "thing", "params": "(a, b)")x") != std::string::npos;
@@ -787,125 +787,16 @@ void configStore()
 	removeTree(dir);
 }
 
-/* Chimera's settings file read as the window's (owner, 2026-10-26): each
- * kind of setting as the window keeps it, what is not carried said, and the
- * window's own file not taken for Chimera's; Load Config From reads it too */
-void chimeraSettingsImport()
+/* the names client.getconfig gives the window's settings: each once, and
+ * Lua's list a line each */
+void configNamesList()
 {
-	namespace fs = std::filesystem;
-	const std::string chimera = R"({
-		"LastWrittenFromDetailed": "a test",
-		"HotkeyBindings": {"Pause": "P"},
-		"SpeedPercent": 137,
-		"ClockThrottle": false, "SoundThrottle": false, "VSyncThrottle": true,
-		"MessagesColor": -16711936,
-		"CacheSizeLimitMb": 51200,
-		"AVWriterResizeWidth": 640, "AVWriterResizeHeight": 480,
-		"DispSpeedupFeatures": 1,
-		"Fps": {"X": 3, "Y": 4, "Anchor": 2},
-		"NewProjectKind": 2,
-		"Movies": {"GreenzoneBudgetMb": 2048, "MovieEndAction": 1},
-		"DataDirectoryPending": null,
-		"DispManagerAR": 3,
-		"DispCustomUserArx": 16.0,
-		"McpAllowChanges": true,
-		"JmdThreads": 3
-	})";
-	ChimeraImport got;
-	std::string error;
-	CHECK(importChimeraSettings(chimera, got, error));
-	auto text = [&](const char *key) {
-		const json::Json *v = got.settings.find(key);
-		return v == nullptr ? std::string("(none)") : v->kind == json::Json::Kind::Bool ? (v->boolean ? "true" : "false") : v->text;
-	};
-	CHECK(text("session.speedPercent") == "137" && text("session.throttle") == "vsync");
-	CHECK(text("messages.messagesColor") == "#FF00FF00" && text("cacheManager.limitGb") == "50");
-	CHECK(text("encoder.resize") == "true" && text("encoder.width") == "640" && text("encoder.height") == "480");
-	CHECK(text("session.displayNothing") == "false" && text("display.minimalDisplay") == "true");
-	CHECK(text("messages.positions") == "{\"Fps\": {\"x\": 3, \"y\": 4, \"anchor\": 2}}");
-	CHECK(text("newProject.kind") == "games" && text("session.greenzoneBudgetMb") == "2048" && text("dataFolder.pending").empty());
-	CHECK(text("display.aspectMode") == "3" && std::stod(text("display.ratioX")) == 16.0);
-	/* the MCP server's permission is the person's to give again */
-	CHECK(text("mcp.allowChanges") == "(none)");
-	auto has = [](const std::vector<std::string> &list, const char *name) { return std::find(list.begin(), list.end(), name) != list.end(); };
-	CHECK(has(got.carried, "Movies.GreenzoneBudgetMb") && has(got.carried, "VSyncThrottle") && has(got.carried, "Fps"));
-	CHECK(has(got.left, "Movies.MovieEndAction") && has(got.left, "JmdThreads") && has(got.left, "McpAllowChanges"));
-	CHECK(got.carried.size() + got.left.size() == 20);
-	/* none of Chimera's three throttles on: nothing keeps the speed */
-	CHECK(importChimeraSettings(R"({"HotkeyBindings": {}, "ClockThrottle": false, "SoundThrottle": false})", got, error) &&
-		text("session.throttle").empty());
-	/* the window's own file, and what is not JSON, are not Chimera's */
-	CHECK(!importChimeraSettings(R"({"session.speedPercent": 5, "HotkeyBindings": {}})", got, error) && error == "not Chimera's settings");
-	CHECK(!importChimeraSettings("[1]", got, error) && !importChimeraSettings("{", got, error));
-	/* every setting named once, and Lua's list a line each */
 	std::vector<std::string> names;
-	for (const ChimeraSetting &s : chimeraSettings()) names.push_back(s.name);
+	for (const ConfigName &s : configNames()) names.push_back(s.name);
 	std::sort(names.begin(), names.end());
 	CHECK(std::adjacent_find(names.begin(), names.end()) == names.end() && names.size() == 119);
-	const std::string forLua = chimeraSettingsText();
+	const std::string forLua = configNamesText();
 	CHECK(std::count(forLua.begin(), forLua.end(), '\n') == 119);
-	/* Chimera's file through Load Config From */
-	const fs::path dir = fs::temp_directory_path() / ("chimera-test-import-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-	fs::create_directories(dir);
-	std::ofstream(dir / "config.ini") << chimera;
-	{
-		ManualDispatcher d;
-		ConfigStore store((dir / "settings.json").string());
-		DisplayViewModel display(d);
-		MessagesViewModel messages(d);
-		store.keep(display, "aspectMode");
-		store.keep(messages, "messagesColor");
-		CHECK(store.loadFrom((dir / "config.ini").string(), error) == 2);
-		CHECK(display.aspectMode.get() == 3 && messages.messagesColor.get() == "#FF00FF00");
-	}
-	removeTree(dir);
-	/* the settings that are more than one value: bindings, paths, recent
-	 * files, firmware, the windows' places, the tools' own */
-	const std::string rich = R"({
-		"HotkeyBindings": {"Pause": "P", "Frame Advance": "F"},
-		"AllTrollers": {"Synth Controller": {"P1 A": "K"}},
-		"AllTrollersAnalog": {"Pad": {"P1 X": {"Value": "X1 LeftThumbX Axis", "Mult": 1.0, "Deadzone": 0.1, "ButtonBindPositive": null}}},
-		"TargetZoomFactors": {"NES": 3},
-		"PathEntries": {"Paths": [{"Type": "Base", "Path": ".", "System": "Global_NULL"}, {"Type": "Movies", "Path": "./Runs", "System": "Global_NULL"},
-			{"Type": "Screenshots", "Path": "./Shots", "System": "NES"}], "UseRecentForRoms": false, "LastRomPath": "/games"},
-		"RecentProjects": {"recentlist": ["/b.chimeraProject", "/a.chimeraProject"], "MAX_RECENT_FILES": 10},
-		"RecentLua": {"recentlist": ["/s.lua"]},
-		"CoreFirmware": {"SDLPoP/PRINCE.DAT": "/fw/PRINCE.DAT", "SDLPoP/KID.DAT": "/fw/KID.DAT"},
-		"MainWindowPosition": "372, 356", "MainWindowSize": "1086, 900",
-		"CommonToolSettings": {"Chimera.Client.GUI.TAStudio": {"_wndx": 10, "_wndy": 20, "Width": 300, "Height": 400,
-			"SaveWindowPosition": true, "TopMost": false, "FloatingWindow": true},
-			"Chimera.Client.GUI.RamWatch": {"_wndx": 1, "_wndy": 2, "Width": 3, "Height": 4, "SaveWindowPosition": false}},
-		"CustomToolSettings": {
-			"Chimera.Client.GUI.TAStudio": {"Settings": {"FollowCursorScrollMethod": "center", "AutosaveInterval": 120000,
-				"PatternPaintMode": 2, "PatternSelection": 1, "TasViewFont": "Arial, 8.25pt, style=Bold", "SidebarWidth": 326,
-				"LoadBranchOnDoubleClick": false, "RewindStepFast": 8}},
-			"Chimera.Client.GUI.LuaConsole": {"Settings": {"ReloadOnScriptFileChange": true}},
-			"Chimera.Client.GUI.HexEditor": {"LastDomain": null, "DataSize": 2, "ColorsCustomised": true,
-				"Colors": {"Background": "30, 30, 30", "Foreground": "224, 224, 224"}}}
-	})";
-	CHECK(importChimeraSettings(rich, got, error));
-	CHECK(text("hotkeys.saved") == "{\"Pause\": \"P\", \"Frame Advance\": \"F\"}" && text("display.windowScales") == "{\"NES\": 3}");
-	CHECK(text("controls.fromChimera").find("\"AllTrollers\": {\"Synth Controller\": {\"P1 A\": \"K\"}}") != std::string::npos &&
-		text("controls.fromChimera").find("\"AllTrollersAnalog\"") != std::string::npos);
-	CHECK(text("paths.base").empty() && text("paths.changed") == "{\"Movies\": \"./Runs\"}" && text("paths.systems") == "[\"NES\"]" &&
-		text("paths.systemChanged") == "{\"NES\": {\"Screenshots\": \"./Shots\"}}");
-	CHECK(text("paths.recentForRoms") == "false" && text("paths.lastRomFolder") == "/games");
-	CHECK(text("session.recentProjects") == "/b.chimeraProject\n/a.chimeraProject" && text("luaConsole.recentScripts") == "/s.lua");
-	CHECK(text("cores.chosenFirmware") == "{\"SDLPoP\": {\"PRINCE.DAT\": \"/fw/PRINCE.DAT\", \"KID.DAT\": \"/fw/KID.DAT\"}}");
-	CHECK(text("display.windowGeometry") == "372,356,1086,900");
-	/* a place is kept only where Save Window Position is on */
-	CHECK(text("toolWindows.settings") == "{\"tastudio\": {\"save\": true, \"top\": false, \"float\": true, \"x\": 10, \"y\": 20, \"w\": 300, "
-		"\"h\": 400}, \"ramWatch\": {\"save\": false}}");
-	CHECK(text("pianoRoll.followScroll") == "center" && text("session.autosaveSeconds") == "120" && text("pianoRoll.patternMode") == "always" &&
-		text("pianoRoll.patternKind") == "autofire" && text("pianoRoll.mainSplit") == "326" && text("branches.loadOnDoubleClick") == "false" &&
-		text("session.rewindStepFast") == "8");
-	CHECK(text("pianoRoll.rollFont") == "{\"family\": \"Arial\", \"pointSize\": 8.25, \"bold\": true, \"italic\": false}");
-	CHECK(text("luaConsole.reloadOnChange") == "true" && text("hexEditor.size") == "2" && text("hexEditor.domain") == "(none)" &&
-		text("hexEditor.colors") == "{\"Background\": \"#1E1E1E\", \"Foreground\": \"#E0E0E0\"}");
-	for (const char *name : {"HotkeyBindings", "AllTrollers", "PathEntries", "RecentProjects", "CoreFirmware", "MainWindowPosition",
-			 "CommonToolSettings", "CustomToolSettings", "TargetZoomFactors"})
-		CHECK(has(got.carried, name));
-	CHECK(got.left.empty());
 }
 
 void bindings()
@@ -1965,8 +1856,7 @@ bool pianoRollColumns(const char *package, const char *rom)
 		ce_project *p = ce_project_open(fresh.string().c_str(), &err);
 		CHECK(p != nullptr);
 		if (p == nullptr) return true;
-		const std::string chimeraOwn = "{\"o\": {\"$type\": \"Chimera.Client.GUI.TAStudio+MovieClientSettings, Chimera.Client.GUI\", "
-			"\"HorizontalOrientation\": false, \"Columns\": [[{\"VerticalWidth\": 12, \"HorizontalHeight\": 12, \"Left\": 0, \"Right\": 14, "
+		const std::string chimeraOwn = "{\"o\": {\"$type\": \"an old type name\", \"HorizontalOrientation\": false, \"Columns\": [[{\"VerticalWidth\": 12, \"HorizontalHeight\": 12, \"Left\": 0, \"Right\": 14, "
 			"\"Name\": \"CursorColumn\", \"Text\": \"\", \"Visible\": true, \"Emphasis\": false, \"Rotatable\": false}, "
 			"{\"VerticalWidth\": 15, \"HorizontalHeight\": 10, \"Left\": 69, \"Right\": 87, \"Name\": \"P1 Up\", \"Text\": \"U\", "
 			"\"Visible\": false, \"Emphasis\": true, \"Rotatable\": false}, "
@@ -2011,6 +1901,8 @@ bool pianoRollColumns(const char *package, const char *rom)
 		}
 		const Json *across = o != nullptr ? o->find("HorizontalOrientation") : nullptr;
 		CHECK(across != nullptr && across->kind == Json::Kind::Bool && across->boolean);
+		/* the old type name it carried is not written back */
+		CHECK(o != nullptr && o->find("$type") == nullptr);
 	}
 	{
 		/* opened again: turned, as it was saved */
@@ -2733,7 +2625,7 @@ bool customizeOptions(const char *package, const char *rom)
 	return true;
 }
 
-/* Work a crash left behind, as Chimera's ProjectRecovery keeps it: a
+/* Work a crash left behind, as Chimera keeps it: a
  * snapshot every five seconds while there are unsaved changes and a journal
  * the engine writes every change to the movie into as it is made, the
  * markers and branches beside it, all gone when the project is saved or let
@@ -4318,8 +4210,7 @@ bool ramSearch(const char *package, const char *rom)
 
 /* Which settings apply: a setting naming machines belongs to them alone,
  * the machine being what the package's machineSetting says */
-/* Chimera's setting types of issue 358, as its WaterboxSettingTypesTests have
- * them: uint, long and ulong hold their C types' ranges exactly, a type left
+/* Chimera's setting types of issue 358: uint, long and ulong hold their C types' ranges exactly, a type left
  * out is inferred wider past an int's range, and a datetime is typed as Chimera
  * shows it, in UTC, and kept as its seconds since 1970 */
 void settingTypes()
@@ -5026,7 +4917,7 @@ void themes()
 }
 
 /* Values written as Chimera's RAM Watch writes them (the whole range was
- * compared with .NET's own text; these few keep it so) */
+ * compared once; these few keep it so) */
 void watchValues()
 {
 	using watch::Display;
@@ -6119,7 +6010,7 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 		CHECK(recorded(1) == "-40 ");
 		roll.run("toggleAutoHold", {std::string("P1 Dial")}, error);
 	}
-	/* the dial bound in Controller Config, as Chimera's AnalogBind: a key for
+	/* the dial bound in Controller Config, as Chimera does: a key for
 	 * either end, the sensitivity, the pointer past a dead zone */
 	{
 		auto held = [&](const std::vector<std::string> &keys) {
@@ -6224,58 +6115,6 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 
 /* Controls rebound and remembered per core; hotkeys run, rebound and let
  * go; frame advance and rewind held; branch slots */
-/* Chimera's bindings carried over, kept by Chimera by controller name, are
- * taken by a core the first time it opens: what differs from the package,
- * buttons and autofire; once; and not over keys the core has of its own */
-bool controlsFromChimera(const char *package, const char *rom)
-{
-	ManualDispatcher d;
-	InputLog inputs;
-	SessionViewModel session(d, inputs);
-	ControlsViewModel controls(d, session);
-	std::string error;
-	auto open = [&] {
-		openGame(session, package, std::string(rom), error);
-		return d.until([&] { return session.isOpen.get() && controls.core.get() == "Synth"; }, 60);
-	};
-	auto close = [&] {
-		session.run("close", {}, error);
-		return d.until([&] { return !session.isOpen.get(); }, 20);
-	};
-	CHECK(open());
-	const std::string controller = session.controllerName();
-	const std::vector<std::string> names = session.buttonNames();
-	const auto a = std::find(names.begin(), names.end(), "P1 A") - names.begin();
-	const auto down = std::find(names.begin(), names.end(), "P1 Down") - names.begin();
-	CHECK(!controller.empty() && a < static_cast<long>(names.size()) && down < static_cast<long>(names.size()));
-	if (controller.empty() || a >= static_cast<long>(names.size()) || down >= static_cast<long>(names.size())) return false;
-	const std::string downKeys = session.defaultBindingTexts()[down], aKeys = session.defaultBindingTexts()[a];
-	CHECK(close());
-	auto chimera = [&](const std::string &aKeys) {
-		return "{\"AllTrollers\": {" + json::quote(controller) + ": {\"P1 A\": " + json::quote(aKeys) + ", \"P1 Down\": " + json::quote(downKeys) +
-			"}, \"Other Controller\": {\"P1 A\": \"Q\"}}, \"AllTrollersAutoFire\": {" + json::quote(controller) + ": {\"P1 A\": \"J\"}}}";
-	};
-	controls.fromChimera.set(chimera("K"));
-	CHECK(open());
-	/* the package's own keys for P1 Down are not kept as a change */
-	CHECK(controls.saved.get() == "{\"Synth\": {\"P1 A\": \"K\"}}" && controls.savedAutofire.get() == "{\"Synth\": {\"P1 A\": \"J\"}}");
-	CHECK(session.bindingTexts()[a] == "K" && session.bindingTexts()[down] == downKeys);
-	CHECK(controls.fromChimera.get().find("\"taken\": [\"Synth\"]") != std::string::npos);
-	CHECK(close());
-	/* once: the core's keys put back to the package's stay so */
-	controls.saved.set("{}");
-	controls.savedAutofire.set("{}");
-	CHECK(open() && session.bindingTexts()[a] == aKeys && aKeys != "K" && controls.saved.get() == "{}");
-	CHECK(close());
-	controls.fromChimera.set(chimera("K"));
-	/* a core with keys of its own keeps them */
-	controls.saved.set("{\"Synth\": {\"P1 B\": \"M\"}}");
-	CHECK(open() && controls.saved.get() == "{\"Synth\": {\"P1 B\": \"M\"}}" && session.bindingTexts()[a] != "K");
-	CHECK(controls.savedAutofire.get() == "{\"Synth\": {\"P1 A\": \"J\"}}");
-	CHECK(close());
-	return true;
-}
-
 bool controlsAndHotkeys(const char *package, const char *rom)
 {
 	ManualDispatcher d;
@@ -6609,14 +6448,13 @@ bool greenzoneChoice(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.projectPath.get() == project.string() && session.hasProject.get(); }, 20));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
-	/* a part made here carries the type Chimera's TAStudio reads it as, first */
+	/* a part made here holds the window's settings and no type name */
 	{
 		json::Json p;
 		CHECK(json::parse(readFile(project), p, error));
 		const json::Json *o = p.find("tastudio") != nullptr ? p.find("tastudio")->find("o") : nullptr;
-		CHECK(o != nullptr && !o->members.empty() && o->members.front().first == "$type" &&
-			  o->members.front().second.text == "Chimera.Client.GUI.TAStudio+MovieClientSettings, Chimera.Client.GUI" &&
-			  o->find("GreenzonePeriod") != nullptr && o->find("GreenzonePeriod")->number() == 1);
+		CHECK(o != nullptr && o->find("$type") == nullptr && o->find("GreenzonePeriod") != nullptr &&
+			  o->find("GreenzonePeriod")->number() == 1);
 	}
 	/* TAStudio's part as Chimera writes it, with a choice of 5 and another setting */
 	{
@@ -8195,8 +8033,7 @@ bool openByKind(const char *package, const char *rom, const char *again)
 
 } // namespace
 
-/* Chimera's clock for a core's date (chimera issue 331): the cases of its
- * own test, EuropeanClockTests */
+/* Chimera's clock for a core's date (chimera issue 331) */
 void europeanClock()
 {
 	auto at = [](const char *iso) {
@@ -8269,8 +8106,8 @@ bool throttles(const char *package, const char *rom)
 /* Lua's tastudio library on a project: queued edits applied together,
  * markers by text and the run's own among them, a branch's text and input,
  * the lag log, and what is not here said so */
-/* The Lua functions Chimera has that the prototype lacked: bizstring on
- * .NET's terms (UTF-16 positions, encodings by .NET's names), bit's 64-bit
+/* The Lua functions Chimera has that the window lacked: bizstring
+ * (UTF-16 positions, encodings by their usual names), bit's 64-bit
  * swap, the lag counter and flag set, the movie's header, comments,
  * subtitles, lines and rerecord counting, the game's database status, and
  * the client's window and tool calls */
@@ -8313,7 +8150,7 @@ bool luaParity(const char *package, const char *rom)
 		askedFilters = filters;
 		return std::string("picked.lua");
 	};
-	/* forms.openfile: Chimera's .NET filter text as the dialog's filters */
+	/* forms.openfile: a script's filter text as the dialog's filters */
 	CHECK((FormsViewModel::nameFilters("Images (*.bmp;*.png)|*.bmp;*.png|All Files (*.*)|*.*") ==
 		std::vector<std::string>{"Images (*.bmp *.png)", "All Files (*)"}));
 	CHECK((FormsViewModel::nameFilters("Lua scripts|*.lua") == std::vector<std::string>{"Lua scripts (*.lua)"}));
@@ -8360,7 +8197,7 @@ bool luaParity(const char *package, const char *rom)
 	/* code ending in a bracket (the closing brackets around it once closed early) */
 	CHECK(lua1("({5, 6})[2]") == "[6]");
 	/* the client's: the engine's name, the functions, the window */
-	CHECK(lua1("client.get_lua_engine(), client.gettargetscanlineintensity()") == "[\"NLua+Lua\", 0]");
+	CHECK(lua1("client.get_lua_engine(), client.gettargetscanlineintensity()") == "[\"Lua\", 0]");
 	CHECK(lua1("string.find(client.getluafunctionslist(), '\\ngetluafunctionslist\\n') ~= nil") == "[true]");
 	CHECK(lua1("client.xpos(), client.ypos()") == "[-7, 42]");
 	/* the tools the machine open can use, open or not, as Chimera's: with
@@ -9434,8 +9271,7 @@ bool tastudioPanel(const char *package, const char *rom)
 	return failures == before;
 }
 
-/* what the status bar says beside a drive that swaps, as Chimera's
- * DriveMediaTextTests have it */
+/* what the status bar says beside a drive that swaps */
 void driveMediaText()
 {
 	const std::vector<std::string> two{"Disc 1.iso", "Disc 2.iso"};
@@ -9475,7 +9311,7 @@ int main(int argc, char **argv)
 	toolWindows();
 	jsonNumbers();
 	configStore();
-	chimeraSettingsImport();
+	configNamesList();
 	firmware();
 	settingsByMachine();
 	settingTypes();
@@ -9514,7 +9350,6 @@ int main(int argc, char **argv)
 			ranMachine = hexEditor(argv[1], argv[2]) && ranMachine;
 			ranMachine = pianoRollEditing(argv[1], argv[2]) && ranMachine;
 			ranMachine = controlsAndHotkeys(argv[1], argv[2]) && ranMachine;
-			ranMachine = controlsFromChimera(argv[1], argv[2]) && ranMachine;
 			ranMachine = greenzoneChoice(argv[1], argv[2]) && ranMachine;
 			ranMachine = tastudioPanel(argv[1], argv[2]) && ranMachine;
 			ranMachine = speedAndSound(argv[1], argv[2]) && ranMachine;

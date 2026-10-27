@@ -1,8 +1,7 @@
 # Chimera's window (issue 142)
 
-Chimera's interface, in C++ only: Qt Quick views over view models with no Qt
-in them. It replaced the Windows Forms window, and with it C#, on 2026-10-27
-(docs/qt-interface.md says what was decided and measured on the way).
+Chimera's interface: Qt Quick views over view models with no Qt in them
+(docs/qt-interface.md says what was decided and measured).
 
 ## How it is built
 

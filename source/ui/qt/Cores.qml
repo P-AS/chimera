@@ -1,5 +1,5 @@
 // Chimera's Core Manager (Tools > Core Manager...), laid out as its
-// CoreManagerForm: the folder and how a core arrives at the top, Select all
+// The Core Manager: the folder and how a core arrives at the top, Select all
 // and Show over the list, a row a core with a box to tick (Core, Type,
 // Systems, Version, Size), the versions of the core picked on the right
 // (Remove version, where it is, when it was built, its terms), the line

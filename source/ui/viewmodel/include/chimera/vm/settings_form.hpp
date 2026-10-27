@@ -70,7 +70,7 @@ public:
 	 * what a project records (its settings are exactly the knobs offered) */
 	json::Json recorded() const;
 	/* the settings shown whose value is not their default, as a bug report
-	 * lists them (Chimera's IssueReport.ChangedSettings): label, value,
+	 * lists them: label, value,
 	 * default, each as it reads */
 	struct Changed
 	{

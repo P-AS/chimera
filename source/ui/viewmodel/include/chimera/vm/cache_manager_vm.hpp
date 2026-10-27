@@ -1,5 +1,5 @@
 #pragma once
-/* Chimera's Cache Manager (Tools), for what the prototype keeps: each
+/* Chimera's Cache Manager (Tools), for what the window keeps: each
  * project's cache (its greenzone and branch states, a folder named by the
  * project's id), named as the project calls itself (about.json beside it),
  * how much room it takes, and whether its project is still where it was;

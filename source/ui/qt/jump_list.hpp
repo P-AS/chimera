@@ -1,5 +1,5 @@
 #pragma once
-/* Chimera's jump list (its JumpLists.cs), on Windows: the taskbar's Recent
+/* Chimera's jump list, on Windows: the taskbar's Recent
  * list shown for the program, and each project or game opened put on it as
  * a task that starts the program with that file. Elsewhere, nothing. */
 

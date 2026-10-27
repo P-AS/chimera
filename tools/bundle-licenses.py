@@ -161,7 +161,7 @@ def main():
     lines.append("`licenses/chimera-LICENSE` (the MIT License), whose work it is and what")
     lines.append("those terms do not cover in `licenses/chimera-NOTICE`, and the people behind")
     lines.append("it in `licenses/chimera-CREDITS.md`. The native libraries it links (SDL2, OpenAL")
-    lines.append("Soft, Lua, zstd, SQLite, cimgui and others) remain their authors'")
+    lines.append("Soft, Lua, zstd, SQLite and others) remain their authors'")
     lines.append("under their own licences.")
     lines.append("")
     if qt_licences:

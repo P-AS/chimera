@@ -1,6 +1,6 @@
 {
 	"name": "Light",
-	"description": "The palette Chimera has always had: the desktop's own light colours, with Mono's beige replaced by white smoke as the frontend has always done.",
+	"description": "The palette Chimera has always had: the desktop's own light colours, with white smoke for the controls.",
 	"dark": false,
 	"desktop": true,
 	"colors": {

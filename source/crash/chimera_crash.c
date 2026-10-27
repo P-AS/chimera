@@ -3,8 +3,8 @@
  * (docs/project.md, "Crash notes").
  *
  * A graphics driver that finds its own state corrupt ends the process with
- * __fastfail: no exception handler, no finally, no managed event runs inside a
- * process that does that. What still runs is Windows Error Reporting, in its
+ * __fastfail: no exception handler and no cleanup runs inside a process that
+ * does that. What still runs is Windows Error Reporting, in its
  * own process (WerFault.exe), and WER loads the "runtime exception helper
  * module" a process registered (WerRegisterRuntimeExceptionModule, allowed by
  * a per-user registry value - no administrator) and hands it the dead process.
@@ -40,7 +40,7 @@ typedef struct _WER_RUNTIME_EXCEPTION_INFORMATION {
 	DWORD dwReserved;
 } WER_RUNTIME_EXCEPTION_INFORMATION, *PWER_RUNTIME_EXCEPTION_INFORMATION;
 
-/* The context block, laid out exactly as CrashCapture.cs writes it (version 2 adds
+/* The context block, laid out exactly as the frontend registers it (version 2 adds
  * the GL flight recorder; the module and the frontend ship in one bundle). */
 #define CONTEXT_MAGIC 0x52434843u /* "CHCR" */
 #define CONTEXT_VERSION 2u
@@ -98,7 +98,6 @@ static const char *code_kind(DWORD code)
 	case 0xC0000374: return "heap corruption";
 	case 0xC000001D: return "illegal instruction";
 	case 0xC0000094: return "integer division by zero";
-	case 0xE0434352: return ".NET exception";
 	case 0x80000003: return "breakpoint";
 	default: return "exception";
 	}

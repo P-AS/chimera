@@ -3,8 +3,7 @@
  * where games are looked for, firmware, projects and their backups, video
  * dumps, tools, Lua scripts, themes, watch lists, debug logs, bug reports,
  * macros, temporary files) and, for each system a game has been opened
- * for, its own base, games, savestates and screenshots, as Chimera's
- * PathEntryCollection has them. A path is absolute, or starts with "." for
+ * for, its own base, games, savestates and screenshots. A path is absolute, or starts with "." for
  * its base (a system's own base, which starts from the global one, which
  * starts from the program's folder), or with %exe% (the program's folder),
  * %rom% (where the last game came from) or %recent% (the system's recent
@@ -46,13 +45,13 @@ public:
 	static std::vector<std::pair<std::string, std::string>> systemDefaults(const std::string &system);
 	/* a global folder as it is: its path made absolute; "" for a name that is not one */
 	std::string resolve(const std::string &name) const;
-	/* a system's folder, as Chimera's AbsolutePathForType: the system's own path of that
+	/* a system's folder, as Chimera does: the system's own path of that
 	 * kind, else the system's base, else the global base */
 	std::string resolveFor(const std::string &system, const std::string &name) const;
 	/* a path as it is set (changed or Chimera's) */
 	std::string pathOf(const std::string &name) const;
 	std::string pathOf(const std::string &system, const std::string &name) const;
-	/* Chimera's AbsolutePathFor: a path made absolute, for a system or for none ("") */
+	/* a path made absolute, for a system or for none ("") */
 	std::string absolute(const std::string &path, const std::string &system) const;
 	/* a system gets folders of its own (a game for it was opened) */
 	void useSystem(const std::string &system);

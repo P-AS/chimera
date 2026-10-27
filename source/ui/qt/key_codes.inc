@@ -1,10 +1,9 @@
 /* Chimera's key names by a key's place on the keyboard, as its host input
  * reads them on each system, named as the key at that place on a US
- * keyboard (DistinctKeyNameOverrides.GetName of the DistinctKey). Made from
- * Chimera's C# maps named beside each table, and for Linux the evdev rules'
- * key codes (/usr/share/X11/xkb/keycodes/evdev). Included by key_names.cpp. */
+ * keyboard. For Linux, the evdev rules' key codes
+ * (/usr/share/X11/xkb/keycodes/evdev). Included by key_names.cpp. */
 
-/* Windows: the scan code, 0x80 added for an E0 one (Chimera's RawKeyMouseInput.KeyEnumMap) */
+/* Windows: the scan code, 0x80 added for an E0 one */
 constexpr KeyCode windowsKeys[] = {
 	{0x1, "Escape"},
 	{0x2, "Number1"},
@@ -426,7 +425,7 @@ constexpr KeyCode linuxKeys[] = {
 	{0xCA, "F24"},
 	{0xCB, "RightAlt"},
 };
-/* macOS: the virtual key code (Chimera's QuartzKeyMouseInput.KeyEnumMap) */
+/* macOS: the virtual key code */
 constexpr KeyCode macKeys[] = {
 	{0x0, "A"},
 	{0x1, "S"},

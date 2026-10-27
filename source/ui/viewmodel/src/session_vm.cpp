@@ -767,7 +767,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		unfreezeAll();
 		return {};
 	});
-	command("disableAllFreezes", "every freeze switched off, kept to switch on again (Chimera's CheatList.DisableAll)", {},
+	command("disableAllFreezes", "every freeze switched off, kept to switch on again", {},
 		[this](const Args &, std::string &) -> Value {
 			for (Freeze &f : freezes_) f.enabled = false;
 			syncFreezes();
@@ -2896,8 +2896,8 @@ std::string localTime(int64_t utc, const char *format)
 } // namespace
 
 namespace {
-/* Chimera's records for the markers and branches in the journal
- * (ProjectRecovery.cs): "M [[frame, keepsState, "message"], ...]" every
+/* Chimera's records for the markers and branches in the journal:
+ * "M [[frame, keepsState, "message"], ...]" every
  * marker a person placed, "B {...}" one branch whole, "O [ids]" the
  * branches in order - the list is these */
 json::Json markersJson(const std::vector<Marker> &markers)
@@ -2962,7 +2962,7 @@ int64_t wholeOf(const json::Json &v)
 }
 
 /* the markers and branches a journal's records end on, written into the
- * project, as Chimera's ApplyMarkersAndBranches does: a journal with no
+ * project, as Chimera does: a journal with no
  * marker record, or no order record, leaves the project's own, and a record
  * that does not read ends the reading, as the engine's replay ends at a line
  * it cannot read */
@@ -3907,7 +3907,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	}
 	if (reuse != nullptr) projectM_ = nullptr; /* taken over below, not freed */
 	/* work a crash left behind comes back before anything else, as
-	 * Chimera's OfferRecovery: kept as a copy among the backups, and
+	 * recovery offered: kept as a copy among the backups, and
 	 * offered; the open waits for the answer */
 	if (!keepInputs && reuse == nullptr)
 	{
@@ -4363,7 +4363,7 @@ void SessionViewModel::catchPollOnMachine()
 	catchDue_ = Clock::now() + std::chrono::milliseconds(16);
 	if (!padsM_) return;
 	std::vector<std::string> held;
-	/* an axis: caught once it has moved 20000 in all (Chimera's GetNextAxisEvent), a stick
+	/* an axis: caught once it has moved 20000 in all, a stick
 	 * wiggled, so one resting off its centre is not taken */
 	if (catchingAxisM_)
 	{
@@ -4543,10 +4543,10 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup, 
 			}
 			*o = json::Json();
 			o->kind = json::Json::Kind::Object;
-			/* the type Chimera's TAStudio reads it as, first, as it writes it:
-			 * without it Chimera says the movie's client settings would not load */
-			o->members.emplace_back("$type", json::Json::string("Chimera.Client.GUI.TAStudio+MovieClientSettings, Chimera.Client.GUI"));
 		}
+		/* a type name older projects carry there, which nothing reads */
+		o->members.erase(std::remove_if(o->members.begin(), o->members.end(), [](const auto &m) { return m.first == "$type"; }),
+			o->members.end());
 		bool set = false;
 		for (auto &[k, v] : o->members)
 			if (k == "GreenzonePeriod")
@@ -4649,7 +4649,7 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup, 
 
 void SessionViewModel::passOnMachine(int64_t frames, bool stepping, bool goingBack)
 {
-	/* as Chimera's AverageFpsPassBegins: the engine is told of each pass,
+	/* as Chimera does: the engine is told of each pass,
 	 * and decides what counts; time spent paused never does */
 	if (averageM_ == nullptr) averageM_ = ce_average_fps_create();
 	if (averageM_ == nullptr) return;
@@ -5232,7 +5232,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	movesM_++;
 	const int64_t f = ce_session_frame(s_);
 	/* held: all the person's input this frame; sticky: the part of it autohold, autofire and the
-	 * Auto-hold columns give, Chimera's StickySource, which alone extends the movie when not recording */
+	 * Auto-hold columns give, which alone extends the movie when not recording */
 	uint64_t held = 0, sticky = 0;
 	if (live)
 	{
@@ -5309,9 +5309,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	/* a script's false lets a button go for the frame, held by a key, a pad or
 	 * autohold or not, as Chimera's override does (joypad.set) */
 	held &= ~scriptReleased_.exchange(0);
-	/* What is held goes into the movie before the frame plays it, as
-	 * Chimera's TAStudio puts it there (MovieSession.HandleFrameBefore,
-	 * TAStudio.UpdateBefore). Recording, the frame becomes what is held, an
+	/* What is held goes into the movie before the frame plays it. Recording, the frame becomes what is held, an
 	 * analog control left alone at rest, and a column hidden while hidden
 	 * columns are not edited keeps what it had. Not recording, a frame the
 	 * movie has is played as it is, and past the end the movie grows by the
@@ -5627,7 +5625,7 @@ void SessionViewModel::edited(int64_t first)
 	});
 }
 
-/* Chimera's DriveMediaText: an image's name cut in the middle, keeping its end
+/* a drive's media text: an image's name cut in the middle, keeping its end
  * (the disks of one game differ at the end), the image in a drive and the one
  * its selector is on said once when they are the same */
 static std::string driveFit(std::string name, size_t room)

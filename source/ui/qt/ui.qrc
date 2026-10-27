@@ -112,7 +112,7 @@
     <file alias="status/KeysButtons.png">images/GameController.png</file>
     <file alias="status/KeysHotkeys.png">images/HotKeys.png</file>
     <file alias="status/Reboot.png">images/reboot.png</file>
-    <!-- the menus' icons, by the names Chimera's MenuIcons.cs gives them -->
+    <!-- the menus' icons, by the names Chimera gives them -->
     <file alias="menu/NewProject.png">images/NewFile.png</file>
     <file alias="menu/OpenProject.png">images/OpenFile.png</file>
     <file alias="menu/RecentProjects.png">images/Recent.png</file>

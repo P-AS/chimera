@@ -29,10 +29,10 @@ std::wstring widen(const char *utf8)
 #endif
 
 #if defined(_WIN32)
-/* A file the engine opens is not handed to the programs Chimera starts: .NET
- * starts every child with handle inheritance on (FFmpeg, the precompile and
- * import sessions), and a child holding the input journal open kept it from
- * being replaced. The CRT's own way ('N' in the mode) is not certain in the
+/* A file the engine opens is not handed to the programs Chimera starts: a
+ * child started with handle inheritance on (FFmpeg, the precompile and
+ * import sessions) and holding the input journal open kept it from being
+ * replaced. The CRT's own way ('N' in the mode) is not certain in the
  * system msvcrt this links, so the handle is told directly. */
 FILE *notInherited(FILE *f)
 {

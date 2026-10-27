@@ -1,5 +1,4 @@
 #include "chimera/vm/config_store.hpp"
-#include "chimera/vm/chimera_settings.hpp"
 
 #include <charconv>
 #include <filesystem>
@@ -137,17 +136,6 @@ int64_t ConfigStore::loadFrom(const std::string &path, std::string &error)
 	{
 		error = path + " is not a settings file (" + (why.empty() ? std::string("not an object") : why) + ")";
 		return -1;
-	}
-	/* Chimera's own config.ini, read as the window's settings */
-	if (isChimeraSettings(read))
-	{
-		ChimeraImport imported;
-		if (!importChimeraSettings(ss.str(), imported, why))
-		{
-			error = path + " is not a settings file (" + why + ")";
-			return -1;
-		}
-		read = std::move(imported.settings);
 	}
 	int64_t set = 0;
 	for (const Kept &k : kept_)

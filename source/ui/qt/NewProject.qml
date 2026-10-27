@@ -9,9 +9,6 @@
 // none. A project made from an imported movie asks where it is saved. A
 // dialog of the main window, as Chimera's. Layout and bindings only, over
 // the newProject view model.
-//
-// Not here: Chimera's fifth page, the compile step for a core that
-// recompiles a game's code, as the prototype runs no compile sessions.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs

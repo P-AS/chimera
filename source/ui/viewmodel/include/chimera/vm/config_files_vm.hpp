@@ -1,6 +1,6 @@
 #pragma once
 /* Chimera's Save Config, Save Config As, Load Config and Load Config From
- * (Config menu), over the window's settings file. The prototype writes a
+ * (Config menu), over the window's settings file. The window writes a
  * setting the moment it changes, so Save Config says where it is; Load
  * Config reads that file again; the other two use a file of the person's. */
 

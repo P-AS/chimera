@@ -652,8 +652,8 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 	});
 }
 
-/* a large domain is searched fast, as Chimera's (RamSearch.cs: at start, at
- * each new machine, and when the domain changes) */
+/* a large domain is searched fast (at start, at each new machine, and when
+ * the domain changes) */
 void RamSearchViewModel::fastIfLarge()
 {
 	session_.onMachine([this, d = domain.get()](ce_session *s) {

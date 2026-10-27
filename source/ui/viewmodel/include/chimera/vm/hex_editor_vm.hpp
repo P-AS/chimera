@@ -105,7 +105,7 @@ private:
 	bool writeValue(int64_t address, uint32_t value, std::string &error);
 	/* every address highlighted, the first one first */
 	std::vector<int64_t> highlightedAll() const;
-	/* Chimera's GoToAddress and SetHighlighted: in the domain, and brought into view */
+	/* going to an address and highlighting it: in the domain, and brought into view */
 	void highlight(int64_t address);
 	void titles();
 	int highlightKind(int64_t address) const;

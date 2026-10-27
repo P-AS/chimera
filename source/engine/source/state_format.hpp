@@ -37,7 +37,7 @@
 /* ---- the magics, defined once, written by the writers, hashed by the test ---- */
 
 /* A state kept in a file (ce_session_state_save_file): a TAStudio branch's
- * state, and anything else too big to cross the managed boundary whole. */
+ * state, and anything else too big to hand across in one buffer. */
 #define CE_STATE_FILE_MAGIC "CESTATE2"
 /* The same file before it carried a format number. Read, never written. */
 #define CE_STATE_FILE_MAGIC_V1 "CESTATE1"

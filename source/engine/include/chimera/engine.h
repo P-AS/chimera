@@ -1,8 +1,8 @@
 /* chimera/engine.h - the engine's C ABI.
  *
- * This header is a frozen spec in the same sense as the waterbox boundary: the
- * C# frontend, jaffarPlus, and anything else that links the engine compiles
- * against exactly this. Rules:
+ * This header is a frozen spec in the same sense as the waterbox boundary:
+ * Chimera's window, jaffarPlus, and anything else that links the engine
+ * compiles against exactly this. Rules:
  *
  *   - Additive changes only. Removing or reshaping anything here bumps
  *     CE_ABI_VERSION, and callers check ce_abi_version() at load.
@@ -100,8 +100,8 @@ CE_API void ce_movie_log_free(ce_movie_log *log);
  * savestate). Replaces the log's previous contents. Accepts LF, CRLF and CR
  * line ends. Returns 0 on success, nonzero on error (see _last_error).
  *
- * Quirk, preserved from the C# it replaces: a "Frame N" line whose N does not
- * parse as a 32-bit integer is a hard error; a text with no "Frame" line at
+ * Quirk, kept so that every movie ever written reads the same: a "Frame N"
+ * line whose N does not parse as a 32-bit integer is a hard error; a text with no "Frame" line at
  * all is NOT an error - the state frame is simply absent. A "LogKey:" line
  * takes effect even mid-log, last one wins. */
 CE_API int32_t ce_movie_log_parse(ce_movie_log *log, const char *text, uint64_t len);
@@ -192,9 +192,8 @@ CE_API const char *ce_movie_log_journal_note_at(const ce_movie_log *log, int64_t
 /* ---- movie header ----
  *
  * The Header.txt lump: "Key Value" per line. Parsing keeps the FIRST
- * occurrence of a key (that is what the C# it replaces did); writing keeps
- * insertion order, which stabilises what the old Dictionary-backed writer
- * left unspecified. Values may contain spaces; keys may not.
+ * occurrence of a key; writing keeps insertion order. Values may contain
+ * spaces; keys may not.
  */
 
 typedef struct ce_movie_header ce_movie_header;
@@ -204,7 +203,7 @@ CE_API void ce_movie_header_free(ce_movie_header *header);
 
 /* Replaces contents. Whitespace-only lines and lines with no value are
  * skipped; "Key  Value" parses with the separator run eaten, trailing
- * whitespace kept - the exact net48 Split(' ', 2, RemoveEmptyEntries) rules.
+ * whitespace kept, as every movie's header has always been read.
  * Never fails. */
 CE_API void ce_movie_header_parse(ce_movie_header *header, const char *text, uint64_t len);
 
@@ -277,7 +276,7 @@ CE_API int64_t ce_subtitle_format_line(
  * file I/O stays with the caller - a writer produces the finished archive as
  * one buffer, a reader takes one.
  *
- * Lumps are addressed as the C# always did: by base name, meaning the entry's
+ * Lumps are addressed by base name, meaning the entry's
  * path up to its first '.' ("Input Log.txt" is "Input Log" - and the version
  * lump "ChimeraState 1.0" is "ChimeraState 1"). zstd needs libzstd beside this
  * library; it is loaded on first use and its absence is a put/get error.
@@ -286,8 +285,7 @@ CE_API int64_t ce_subtitle_format_line(
 typedef struct ce_state_writer ce_state_writer;
 
 /* compression_level is the config's 0-9: 0 stores, otherwise deflate for
- * plain lumps and zstd level 2n+1 for zstd lumps - the mapping the C# writer
- * used. emu_version fills the ChimeraVersion lump; both version lumps are written
+ * plain lumps and zstd level 2n+1 for zstd lumps. emu_version fills the ChimeraVersion lump; both version lumps are written
  * here. */
 CE_API ce_state_writer *ce_state_writer_new(int32_t compression_level, const char *emu_version);
 CE_API void ce_state_writer_free(ce_state_writer *w);
@@ -829,9 +827,8 @@ CE_API const char *ce_package_last_error(ce_package *p);
  *
  * A running waterboxed machine: a core package's guest, loaded through the
  * miniBox host (libminiboxhost, found beside this library), configured by its
- * own waterbox.config, fed a rom and settings, and driven a frame at a time.
- * This is the same machine the C# WaterboxCore adapter runs - one machine,
- * one behaviour, with or without a frontend.
+ * own waterbox.config, fed a rom and settings, and driven a frame at a time:
+ * one machine, one behaviour, with or without a frontend.
  *
  * The engine composes the effective settings itself: every declared setting
  * at its config default, overlaid with the caller's overrides JSON (the
@@ -1619,7 +1616,7 @@ CE_API int32_t ce_session_movie_entry_decode(
 CE_API int32_t ce_session_movie_entry_decode_wide(
 	const ce_session *s, const char *entry, uint8_t *states_out, int32_t *axes_out);
 
-/* ---- the movie, edited frame by frame (the Qt window, issue 142, prototype)
+/* ---- the movie, edited frame by frame (the window, issue 142)
  *
  * The session's movie is the one a piano roll edits: a frontend reads and
  * writes a frame's input through these calls and never writes a line itself -
@@ -1940,9 +1937,8 @@ CE_API int32_t ce_session_frozen(const ce_session *s, int32_t domain, int64_t ad
 
 /* The history, kept between sessions. It is written to one file, streamed a
  * segment at a time - nothing about it is ever assembled in memory, which is
- * the whole point: the greenzone this replaces serialized itself through a
- * managed array that stops near 2GB, so a long run's history silently failed
- * to save and took the work with it.
+ * the whole point: a history assembled in one buffer stops near 2GB, so a
+ * long run's history would silently fail to save and take the work with it.
  *
  * machine_id says which machine these states belong to. The caller owns that
  * question, knowing about cores, settings and files as it does; the engine

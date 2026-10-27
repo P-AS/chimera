@@ -1,7 +1,6 @@
-/* movie_entry.cpp - see movie_entry.hpp. Transliterated from what
- * Bk2Controller.SetFromMnemonic / GenerateMnemonic did in C#, byte for byte:
- * a movie written before this moved into the engine must parse and regenerate
- * identically, so the walk is kept literal rather than tidied.
+/* movie_entry.cpp - see movie_entry.hpp. Every movie ever written must parse
+ * and regenerate byte for byte, so the walk is kept literal rather than
+ * tidied.
  */
 
 #include "movie_entry.hpp"
@@ -44,8 +43,7 @@ int32_t playerNumberOf(const std::string &name)
 	int32_t value = 0;
 	while (i < name.size() && name[i] >= '0' && name[i] <= '9')
 	{
-		/* past kMostPlayers it is not a player's number (the frontend's
-		 * ControllerDefinition.PlayerNumber says the same): "P1000000000 A"
+		/* past kMostPlayers it is not a player's number: "P1000000000 A"
 		 * would be a billion groups, and longer would not fit in an int */
 		if (value > kMostPlayers) return 0;
 		value = value * 10 + (name[i] - '0');

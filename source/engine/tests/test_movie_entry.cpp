@@ -189,8 +189,8 @@ int main(void)
 		// mnemonic vocabulary, not from whatever the parsed entry happened to
 		// carry: parse only asks "is this position a dot".
 		// The leading empty group is the console group (no Reset/Power here);
-		// C#'s GenOrderedControls emits empty player groups too, and a movie
-		// written by either side must have the same separators.
+		// empty player groups are written too, and every movie ever written
+		// has the same separators.
 		auto down = statesOf(1ull << 1, l.buttonCount());
 		assert(l.generate(down.data(), nullptr, "UDLRABsS") == "||.D......|");
 	}
@@ -222,11 +222,11 @@ int main(void)
 		assert(maskOf(states) == 1ull);
 		assert(axes[0] == 127 && axes[1] == -128);
 
-		// an explicit + sign parses, as it did in C#
+		// an explicit + sign parses, as it always has
 		assert(l.parse("|  +42,   -7,..|", states, axes));
 		assert(axes[0] == 42 && axes[1] == -7);
-		// the 32-bit range, by sign: 2147483648 is refused as C#'s int.Parse
-		// refuses it, rather than read as -2147483648
+		// the 32-bit range, by sign: 2147483648 is refused rather than read
+		// as -2147483648
 		assert(l.parse("|2147483647,-2147483648,..|", states, axes));
 		assert(axes[0] == 2147483647 && axes[1] == INT32_MIN);
 		assert(!l.parse("|2147483648,    0,..|", states, axes));

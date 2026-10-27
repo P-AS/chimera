@@ -41,8 +41,8 @@ std::string binary(uint32_t value, int bits)
 	return out;
 }
 
-/* n / 2^shift with `decimals` places, the last rounded half away from zero
- * (as .NET rounds a format's digits): exact, since the value is exact */
+/* n / 2^shift with `decimals` places, the last rounded half away from zero:
+ * exact, since the value is exact */
 std::string fixedPoint(int64_t n, int shift, int decimals, bool trim)
 {
 	const bool negative = n < 0;
@@ -69,7 +69,7 @@ std::string fixedPoint(int64_t n, int shift, int decimals, bool trim)
 	return out;
 }
 
-/* A float the way .NET writes one: the shortest digits that read back as
+/* A float the way Chimera writes one: the shortest digits that read back as
  * the same float, written plainly unless its power of ten is 9 or more or
  * below -4, where it takes an exponent of at least two digits. */
 std::string shortestFloat(float f)

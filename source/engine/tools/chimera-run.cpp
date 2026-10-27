@@ -2,9 +2,9 @@
  *
  * Loads a core package and a project; runs the project's input; dumps the
  * machine's memory domains. This is the witness gate's Level B without a
- * frontend: no Mono, no WinForms, no display - the same package, the same
- * host, the same inputs, and the dumps must be byte-identical to the goldens
- * the managed frontend produces. A game runs only in a project
+ * window or a display - the same package, the same host, the same inputs, and
+ * the dumps must be byte-identical to the goldens the window produces. A game
+ * runs only in a project
  * (user-decided, 2026-10-26): --new-project makes one from a game file.
  *
  *   chimera-run --project <p.chimeraProject> <package> [--files <dir>]... [--allow-core-mismatch]
@@ -448,8 +448,8 @@ static int newProject(const std::vector<std::string> &args)
 		cJSON_Delete(given);
 		return refuse("--settings is not a JSON object");
 	}
-	/* the machine the game's kind of file makes it, as Chimera chose one for a
-	 * game opened alone (WaterboxCoreFactory.MachinePinnedSettings): the system
+	/* the machine the game's kind of file makes it, as Chimera chooses one
+	 * for a game: the system
 	 * that kind of file is (the package's own list first, then each machine's),
 	 * and the first machine of that system - unless --settings names one */
 	const std::string machineSetting = text(config, "machineSetting");
@@ -835,8 +835,8 @@ int main(int argc, char **argv)
 		else if (arg == "--cache-dir" && i + 1 < argc) cacheDir = argv[++i];   /* a compile cache, as the frontend keeps one */
 		else if (arg == "--locale-from-environment")
 		{
-			/* What a frontend's runtime does at start (Mono calls
-			 * setlocale(LC_ALL, "")): the process takes the user's locale, and
+			/* What a frontend may do at start (setlocale(LC_ALL, "")):
+			 * the process takes the user's locale, and
 			 * with it the user's decimal separator. This runner stands in for
 			 * the frontend, so a test can put it in the same position
 			 * (issue 244). It says which separator it ended up with, so a test
@@ -1375,7 +1375,7 @@ int main(int argc, char **argv)
 		if (advanced < 0)
 		{
 			/* --recover: back to the newest stored frame before the one the core
-			 * stopped in, as the frontend's CoreStoppedForm offers, and on */
+			 * stopped in, as the window offers, and on */
 			if (recoverStops && recovered == 0)
 			{
 				const int64_t stoppedAt = ce_session_frame(session);

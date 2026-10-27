@@ -1,6 +1,6 @@
 #pragma once
 /* The machine's sound to the speakers, through OpenAL Soft found at run time
- * (Chimera ships it, and the C# interface plays through it): each frame's
+ * (Chimera ships it): each frame's
  * samples are queued as the frame finishes, at 44,100 Hz. The machine keeps
  * its own time by the clock; when the queue runs further ahead than the
  * buffer (Chimera's buffer size, 100 ms at first) a frame's sound is dropped

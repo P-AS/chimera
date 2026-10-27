@@ -118,11 +118,8 @@ reference build.
 
 ## The frontend
 
-One menu item, `Emulator > Export Save Data...`, added by
-`DisplayDefaultCoreMenu` when the running core's service provider still has
-`ICoreSaveData` (the service is implemented unconditionally on WaterboxCore
-and unregistered when the group is absent - the same gating as every other
-core-managed service). On click:
+One menu item, `Emulator > Export Save Data...` (`Game` for a game core),
+there when the running core keeps save data. On click:
 
 - zero files: a plain message, nothing written;
 - one file: a save dialog for that file under its own name;

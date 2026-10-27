@@ -1,5 +1,5 @@
 // Chimera's Data Directory (Config > Data Directory), laid out as Chimera's
-// DataDirectoryForm: what the directory holds, where it is (in bold), how
+// The Data Directory window: what the directory holds, where it is (in bold), how
 // much is in it and free on its drive, the change waiting for the next
 // start, what was last said, and Change..., Use Default, Keep Current, Open
 // Folder and Close. Picking a folder asks Chimera's questions: whether to

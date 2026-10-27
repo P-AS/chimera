@@ -3468,8 +3468,8 @@ bool StateHistory::restore(int64_t frame, std::string &error, int64_t *landedOn)
 /* ---- persistence ----
  *
  * One file, written and read a segment at a time. Nothing here assembles the
- * history in memory: the old greenzone did, through a managed array that stops
- * near 2GB, and a long run's history therefore failed to save and said nothing.
+ * history in memory: one buffer stops near 2GB, and a long run's history
+ * would fail to save and say nothing.
  */
 namespace
 {

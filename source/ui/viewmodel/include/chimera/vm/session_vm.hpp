@@ -247,7 +247,7 @@ public:
 	Property<std::string> drives{"[]"};
 	/* the frame the machine goes back to after edits (Chimera's green arrow), -1 for none */
 	Property<int64_t> restoreFrame{-1};
-	/* what the status bar says of a drive that swaps, by Chimera's DriveMediaText:
+	/* what the status bar says of a drive that swaps, by Chimera's rule:
 	 * shortly ("1/2 Disc 1.iso | selected 2/2 Disc 2.iso"), and in full, led by the
 	 * drive's name, for its tooltip; inserted -1 is an empty drive */
 	static std::string driveMediaShort(const std::vector<std::string> &names, int32_t selected, int32_t inserted);
@@ -296,7 +296,7 @@ public:
 	void unfreezeAll();
 	/* the freezes on: Chimera's status bar shows its icon then */
 	Property<int64_t> frozenCount{0};
-	/* the core stopped (Chimera's CoreStoppedForm): the frame it stopped on
+	/* the core stopped: the frame it stopped on
 	 * (-1 while it runs), what the sandbox said, the newest state at or
 	 * before it (-1: none), whether frame 0 is still held, and how many
 	 * frozen addresses were switched off; asked until stoppedChoice answers */
@@ -322,7 +322,7 @@ public:
 	/* a project waiting for its files to be found: its files are the
 	 * "projectFiles" rows, located one by one or by scanning a folder */
 	Property<bool> resolvingFiles{false};
-	/* Work a crash left behind (Chimera's ProjectRecovery): while a project
+	/* Work a crash left behind: while a project
 	 * has unsaved changes it is kept every five seconds in recoveryFolder,
 	 * a folder per project, and let go when it is saved or closed cleanly.
 	 * A project with no file yet has nowhere to be offered back, and is not
@@ -396,7 +396,7 @@ public:
 	const std::vector<AnalogBind> &defaultAnalogBinds() const { return defaultAnalog_; }
 	const std::vector<AnalogBind> &analogBinds() const { return analogBinds_; }
 	void setAnalogBinds(std::vector<AnalogBind> binds);
-	/* how hard the pointer's movement pushes an analog control, in percent (Chimera's RelativeMouseSensitivity) */
+	/* how hard the pointer's movement pushes an analog control, in percent */
 	void setMouseSensitivity(int64_t percent);
 	/* each pad axis now, by Chimera's names, -10000..10000 (catching an analog binding) */
 	std::vector<std::pair<std::string, int>> padAxesNow() const;
@@ -435,7 +435,7 @@ public:
 	/* the hidden columns now, to save with the project in Chimera's shape */
 	void setHiddenColumns(const std::vector<std::string> &names);
 	/* TAStudio's other settings kept in a project (members of its TAStudio
-	 * part, as Chimera's MovieClientSettings: "BoolPatterns"...): each as
+	 * part, as Chimera does: "BoolPatterns"...): each as
 	 * JSON text, when a project opens; and given back, to be saved with it
 	 * (a member not given is saved as the project had it) */
 	Signal<std::map<std::string, std::string>> tastudioLoaded;
@@ -736,7 +736,7 @@ private:
 	 * outlive the session: written in the background */
 	void keepHistoryOnMachine();
 	/* who the project's cache belongs to, beside it ("about.json", as
-	 * Chimera's ProjectCache writes it: title, the project's path, core,
+	 * Chimera's project cache writes it: title, the project's path, core,
 	 * system, games), so the Cache Manager can name it */
 	void rememberAboutOnMachine(const std::string &projectPath);
 	/* which machine this is, as a state of it needs: core, settings, files */
@@ -790,7 +790,7 @@ private:
 	PendingOpen pendingOpenM_;
 	void publishProjectFilesOnMachine();
 	/* where this machine found a project's files, kept in its cache folder
-	 * (local-paths.json, as Chimera's ProjectLocalPaths keeps them): read
+	 * (local-paths.json, as Chimera keeps them): read
 	 * as hints, each checked by its hash; written once they are found */
 	void applyLocalPathsOnMachine(ce_project *p);
 	void rememberLocalPathsOnMachine();
@@ -1133,7 +1133,7 @@ private:
 	std::atomic<int> pointerXM_{0}, pointerYM_{0};
 	/* how far the pointer moved since the last frame read it (Chimera's RMouse X and Y) */
 	std::atomic<int> movedXM_{0}, movedYM_{0};
-	/* how hard that movement pushes, in percent (Chimera's RelativeMouseSensitivity) */
+	/* how hard that movement pushes, in percent */
 	std::atomic<int> mouseSensitivityM_{100};
 	Clock::time_point catchDue_{};
 	std::vector<std::string> catchHeldM_;

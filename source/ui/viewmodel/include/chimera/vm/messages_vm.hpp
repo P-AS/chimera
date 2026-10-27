@@ -3,7 +3,7 @@
  * over the picture goes, the colours of the text, how long a message
  * stays and whether messages stack. Each place is a corner of the picture
  * (anchor: 0 top left, 1 top right, 2 bottom left, 3 bottom right) and a
- * distance from it in pixels, as Chimera's MessagePosition is; the window
+ * distance from it in pixels, as Chimera is; the window
  * places the text. A colour left at Chimera's default is the theme's, as
  * Chimera's OSDManager decides; one chosen here wins over the theme. All
  * of it is remembered. */

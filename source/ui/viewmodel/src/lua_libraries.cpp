@@ -4,9 +4,9 @@ namespace chimera::vm {
 
 /* Chimera's Lua libraries, as a script written for Chimera calls them, over
  * the view models (chimera.<name>): the names, arguments and answers are
- * Chimera's (its CommonLibs and the window's libraries), the work is the
- * view models'. Tables Chimera numbers from 0 are numbered from 0 here.
- * What the prototype cannot answer yet is said where it is asked. */
+ * Chimera's, the work is the view models'. Tables Chimera numbers from 0
+ * are numbered from 0 here. What the window cannot answer is said where it
+ * is asked. */
 const char *LuaBridge::luaLibraries()
 {
 	return R"LUA(
@@ -104,16 +104,16 @@ function __chimera_registered_call(guid)
 end
 function __chimera_registered_remove(guid) return removeRegistered(function(f) return f.guid == guid end) end
 function __chimera_registered_clear(script) removeRegistered(function(f) return script == nil or f.script == script end) end
--- the prototype's own: fn after every frame
+-- fn after every frame
 function C.onFrame(fn) return registerNamed(fn, "OnFrameEnd").guid end
 
 -- console ------------------------------------------------------------------
 console = {}
 -- a value as Chimera's console writes it: a table shallowly, a line a key
 -- (numbers first, then names, then the rest), names in quotes
--- a value as .NET writes it, which Chimera's console shows: True and False,
--- 5 for a whole double, 15 significant digits, 1E+21, NaN and Infinity
-local function dotnet(v)
+-- a single value as Chimera's console shows it: True and False, 5 for a
+-- whole double, 15 significant digits, 1E+21, NaN and Infinity
+local function plain(v)
 	if type(v) == "boolean" then return v and "True" or "False" end
 	if math.type(v) == "float" then
 		if v ~= v then return "NaN" end
@@ -124,7 +124,7 @@ local function dotnet(v)
 	return tostring(v)
 end
 local function shown(v)
-	if type(v) ~= "table" then return v == nil and "nil" or dotnet(v) end
+	if type(v) ~= "table" then return v == nil and "nil" or plain(v) end
 	local keys = {}
 	for k in pairs(v) do keys[#keys + 1] = k end
 	local function rank(k) return type(k) == "number" and 0 or type(k) == "string" and 1 or type(k) == "boolean" and 2 or 3 end
@@ -135,7 +135,7 @@ local function shown(v)
 	end)
 	local out = {}
 	for _, k in ipairs(keys) do
-		local function one(x) return type(x) == "string" and ('"' .. x .. '"') or (type(x) == "table" and "table" or dotnet(x)) end
+		local function one(x) return type(x) == "string" and ('"' .. x .. '"') or (type(x) == "table" and "table" or plain(x)) end
 		out[#out + 1] = one(k) .. ": " .. one(v[k]) .. "\n"
 	end
 	return table.concat(out)
@@ -165,7 +165,7 @@ end
 
 -- bit (Chimera's, over Lua's own operators) ---------------------------------
 bit = {}
--- 32 bits, as Chimera's (uint): a shift counts modulo 32, as .NET's does
+-- 32 bits, as Chimera's (unsigned): a shift counts modulo 32
 function bit.band(a, b) return a & b & 0xFFFFFFFF end
 function bit.bor(a, b) return (a | b) & 0xFFFFFFFF end
 function bit.bxor(a, b) return (a ~ b) & 0xFFFFFFFF end
@@ -182,8 +182,8 @@ function bit.byteswap_16(a) return ((a & 0xFF) << 8) | ((a >> 8) & 0xFF) end
 function bit.byteswap_32(a) return string.unpack("<I4", string.pack(">I4", a & 0xFFFFFFFF)) end
 function bit.byteswap_64(a) return string.unpack("<i8", string.pack(">i8", math.tointeger(a) or 0)) end
 
--- bizstring: Chimera's string methods, on .NET's terms: positions, lengths
--- and widths in UTF-16 units, encodings by .NET's names (lua_strings.cpp)
+-- bizstring: Chimera's string methods: positions, lengths and widths in
+-- UTF-16 units, encodings by their usual names (lua_strings.cpp)
 bizstring = {}
 local function wholeNumber(n) return math.tointeger(n) or math.floor(tonumber(n) + 0.5) end
 function bizstring.decode(bytes, encoding) return __chimera_string("decode", bytes, encoding or "utf-8") end
@@ -212,8 +212,8 @@ end
 
 -- emu ----------------------------------------------------------------------
 emu = {}
--- a number written as a whole one: a fraction cut off toward zero, as .NET
--- converts it (3.5 is 3); Lua's & refused it
+-- a number written as a whole one: a fraction cut off toward zero (3.5 is
+-- 3); Lua's & refused it
 local function whole(v)
 	if math.type(v) == "float" then return math.tointeger(v >= 0 and math.floor(v) or math.ceil(v)) or 0 end
 	return v
@@ -857,8 +857,8 @@ end
 function client.encodingvideo() return C.session.borrowed() end
 function client.pause_av() C.encoder.pauseAv(true) end
 function client.unpause_av() C.encoder.pauseAv(false) end
--- the name Chimera's Lua gives its engine, kept as it is: scripts tell Chimera's Lua apart by it
-function client.get_lua_engine() return "NLua+Lua" end
+-- the name Chimera gives its Lua: scripts tell Chimera's Lua apart by it
+function client.get_lua_engine() return "Lua" end
 function client.getluafunctionslist() return C.luaConsole.functionNames() end
 -- Chimera's scanline filter is gone: 0, and setting it says so where Chimera says it (its standard output)
 function client.gettargetscanlineintensity() return 0 end
@@ -934,8 +934,8 @@ function client.openramsearch() C.toolWindows.show("ram-search") end
 -- Chimera's tools, by the names its getavailabletools gives them: the
 -- window each is, whether the machine open has what it needs (as Chimera
 -- asks the core for the tool's services), and what gettool gives a script
--- for it: the window's own object in chimera (owner, 2026-10-26: the Qt
--- window's names, not Chimera's C# ones; the Log Window has none)
+-- for it: the window's own object in chimera (owner, 2026-10-26; the Log
+-- Window has none)
 local toolList = {
 	{"tastudio", "tastudio", function() return C.session.isOpen end, "pianoRoll"},
 	{"luaconsole", "lua", nil, "luaConsole"},
@@ -969,12 +969,12 @@ function client.gettool(name)
 	end
 	return nil
 end
--- client.getconfig: Chimera's settings by its names, each read from the
--- Qt window's as it is when read; they cannot be changed through it
--- (owner, 2026-10-26). The list is the one Chimera's settings are imported
--- by (chimera_settings.cpp): settings with one value (a switch, a number, a
--- text, a choice by its name), the places of what is drawn over the picture,
--- and Movies' greenzone ones; a name the Qt window has no setting for is nil,
+-- client.getconfig: the window's settings by the names scripts know them
+-- by, each read as it is when read; they cannot be changed through it
+-- (owner, 2026-10-26). The list is config_names.cpp's: settings with one
+-- value (a switch, a number, a text, a choice by its name), the places of
+-- what is drawn over the picture, and Movies' greenzone ones; a name the
+-- window has no setting for is nil,
 -- and so is McpAllowChanges, as scripts are not given the MCP server's
 local function setting(key)
 	local vm, name = string.match(key, "^(%w+)%.(%w+)$")

@@ -357,7 +357,7 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 
 std::string CacheManagerViewModel::sizeText(uint64_t bytes)
 {
-	/* as Chimera's CacheSurvey.Size: nothing for nothing, gigabytes and megabytes to a tenth, else whole kilobytes */
+	/* a size as Chimera writes one: nothing for nothing, gigabytes and megabytes to a tenth, else whole kilobytes */
 	if (bytes == 0) return {};
 	const double mb = static_cast<double>(bytes) / 1024.0 / 1024.0;
 	char text[32];

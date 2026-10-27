@@ -27,8 +27,7 @@ public:
 	/* Chimera's Save Config As: everything kept, written to another file */
 	bool saveAs(const std::string &path, std::string &error);
 	/* Chimera's Load Config From: what that file says of each property kept,
-	 * set (and so kept here too); its other entries are left. The file may be
-	 * Chimera's own config.ini, read by chimera_settings.hpp. How many were
+	 * set (and so kept here too); its other entries are left. How many were
 	 * set, or -1 with the reason */
 	int64_t loadFrom(const std::string &path, std::string &error);
 	/* "" when all is well, else what went wrong reading or writing */

@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-# Chimera's own command line, taken by the window that replaces it (review,
-# 2026-10-26): --version; a project named with --project and its package with
-# --core, opened and run; what is not a project and its package refused, as
-# is Chimera's own settings file named with --config, left as it was;
-# --chromeless and --luaconsole; and a --show name no window has, said.
+# Chimera's command line (review, 2026-10-26): --version; a project named
+# with --project and its package with --core, opened and run; what is not a
+# project and its package refused; --chromeless and --luaconsole; and a
+# --show name no window has, said.
 #   command-line.py <chimera> <work folder> <project> <package>
-import json
 import os
 import shutil
 import subprocess
@@ -16,8 +14,7 @@ shutil.rmtree(work, ignore_errors=True)
 os.makedirs(work)
 env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", ALSOFT_DRIVERS="null",
            CHIMERA_QT_CONFIG=os.path.join(work, "settings.json"), CHIMERA_QT_CACHE=os.path.join(work, "cache"),
-           CHIMERA_QT_RECOVERY=os.path.join(work, "recovery"), CHIMERA_QT_HASHES=os.path.join(work, "file-hashes.txt"),
-           CHIMERA_QT_CHIMERA_SETTINGS=os.path.join(work, "no-chimera-config.ini"))
+           CHIMERA_QT_RECOVERY=os.path.join(work, "recovery"), CHIMERA_QT_HASHES=os.path.join(work, "file-hashes.txt"))
 env.pop("DISPLAY", None)
 failures = 0
 
@@ -55,15 +52,6 @@ for refused, what in [([project, project, package], "three files"), ([project, o
                       ([os.path.join(work, "game.nes"), package], "a game and a package")]:
     r = run(*refused, "--measure", "1")
     check(r is not None and r.returncode == 2 and "a game opens only in a project" in r.stderr, "refused: " + what, r and r.stderr.strip())
-
-chimera_config = os.path.join(work, "config.ini")
-with open(chimera_config, "w") as f:
-    json.dump({"LastWrittenFromDetailed": "a test", "SpeedPercent": 137}, f)
-before = open(chimera_config).read()
-r = run("--config", chimera_config, "--measure", "1")
-check(r is not None and r.returncode == 2 and "Chimera's settings file" in r.stderr and open(chimera_config).read() == before
-      and not os.path.exists(chimera_config + ".unreadable"), "--config naming Chimera's settings file is refused and left as it was",
-      r and r.stderr.strip())
 
 # the file named is the one read: one that does not read is set aside, as the window's own always is
 own = os.path.join(work, "own.json")

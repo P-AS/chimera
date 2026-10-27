@@ -1,7 +1,7 @@
 #pragma once
 /* The NUT container, written as a stream: the picture as raw BGRA and the
  * sound as 16-bit PCM, interleaved by time - what the encode hands ffmpeg on
- * its standard input. A port of Chimera's NutMuxer. */
+ * its standard input. Chimera's NUT muxer. */
 
 #include <cstdint>
 #include <deque>

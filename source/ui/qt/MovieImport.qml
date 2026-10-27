@@ -1,5 +1,5 @@
-// Chimera's movie import (File > the core's Import menu item), laid out as
-// its MovieImportForm: what it does at the top; the movie with Browse...;
+// Chimera's movie import (File > the core's Import menu item): what it does
+// at the top; the movie with Browse...;
 // each file the import reads (a list with Add..., Remove, Up and Down for
 // one that takes several, else a box with Browse...); the import's options;
 // what keeps it from going, in the error colour; Import and Cancel. Taken,

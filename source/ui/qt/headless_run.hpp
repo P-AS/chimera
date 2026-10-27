@@ -11,7 +11,7 @@ class SessionViewModel;
 
 namespace chimera::qt {
 
-/* Chimera's --headless (its HeadlessMode), for a run nobody watches, such as
+/* Chimera's --headless, for a run nobody watches, such as
  * a core's tests: no window is shown, and what would wait for a person ends
  * the run instead, said on stderr in Chimera's words - a dialog (exit 64),
  * the core stopped (65, the work kept against a crash), a project that

@@ -66,7 +66,7 @@ character after the final press.
 ## Read only, always
 
 An encode reproduces a movie; it does not author one. While one is running the
-movie plays read only and `MovieSession.SuppressStateCapture` is set, so no
+movie plays read only and no
 greenzone state is kept and no lag is written down for the frames that go by.
 A run of a hundred thousand frames costs no memory and leaves the project
 exactly as it was found - looking at something should not change it.

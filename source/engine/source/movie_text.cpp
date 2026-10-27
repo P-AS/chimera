@@ -1,11 +1,9 @@
 /* movie_text.cpp - the movie's text lumps: Header.txt, Comments.txt, and
  * subtitle lines.
  *
- * Replaces the parsing in BasicMovieInfo.cs and the rendering in
- * Bk2Header/Bk2Movie.HeaderApi/SubtitleList, byte for byte - quirks are named
- * where they are reproduced. One deliberate stabilisation: header order on
- * write is insertion order, where the old Dictionary-backed writer left it
- * unspecified.
+ * Parsing and rendering byte for byte as Chimera has always written them -
+ * quirks are named where they are reproduced. Header order on write is
+ * insertion order.
  */
 
 #include "chimera/engine.h"
@@ -35,9 +33,9 @@ bool nextLine(const char *text, uint64_t len, uint64_t &pos, std::string &line)
 	return true;
 }
 
-/* string.IsNullOrWhiteSpace, for the ASCII whitespace movies actually contain.
- * (C# also treats exotic Unicode spaces as blank; a comment line made only of
- * those would now be kept instead of dropped. Nothing writes such lines.) */
+/* A line of nothing but ASCII whitespace, the only kind movies contain. (A
+ * comment line made only of other Unicode spaces is kept, not dropped;
+ * nothing writes such lines.) */
 bool isBlank(const std::string &s)
 {
 	for (char c : s)
@@ -71,7 +69,7 @@ bool parseInt32(const char *s, size_t n, int32_t &out)
 	return true;
 }
 
-/* uint.Parse(s, NumberStyles.HexNumber): whitespace allowed, sign not. */
+/* a hex number: whitespace allowed, sign not. */
 bool parseHex32(const char *s, size_t n, uint32_t &out)
 {
 	size_t i = 0;
@@ -117,8 +115,7 @@ void ce_movie_header_parse(ce_movie_header *header, const char *text, uint64_t l
 	while (nextLine(text, len, pos, line))
 	{
 		if (isBlank(line)) continue;
-		/* net48 Split(' ', 2, RemoveEmptyEntries): leading separator runs are
-		 * eaten, the key is the first space-free token, and the value is the
+		/* leading separator runs are eaten, the key is the first space-free token, and the value is the
 		 * REST of the line from the next non-space character - its own
 		 * trailing spaces kept. A line with no second token has no value and
 		 * is skipped, as it always was. */

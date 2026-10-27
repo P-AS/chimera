@@ -1,5 +1,5 @@
 #include "chimera/vm/lua_bridge.hpp"
-#include "chimera/vm/chimera_settings.hpp"
+#include "chimera/vm/config_names.hpp"
 #include "chimera/vm/json.hpp"
 
 #include <algorithm>
@@ -28,11 +28,11 @@ namespace {
 /* __chimera_sleep(milliseconds, exact): the scripts' thread waits, as
  * Chimera's client.sleep makes its own wait; exact waits the last of it
  * out by the clock, as its exactsleep does */
-/* __chimera_config_names(): Chimera's settings and the window's they are,
- * for client.getconfig (chimera_settings.hpp) */
+/* __chimera_config_names(): the names client.getconfig gives the window's
+ * settings (config_names.hpp) */
 int configNames(lua_State *L)
 {
-	const std::string text = chimeraSettingsText();
+	const std::string text = configNamesText();
 	lua_pushlstring(L, text.data(), text.size());
 	return 1;
 }
@@ -161,7 +161,7 @@ LuaBridge::LuaBridge() : L_(luaL_newstate())
 	lua_setglobal(L_, "__chimera_enter");
 	lua_pushcfunction(L_, &LuaBridge::folder);
 	lua_setglobal(L_, "__chimera_folder");
-	/* bizstring's work, on .NET's terms (lua_strings.cpp) */
+	/* bizstring's work (lua_strings.cpp) */
 	lua_pushcfunction(L_, &luaChimeraString);
 	lua_setglobal(L_, "__chimera_string");
 	lua_pushcfunction(L_, &sleepFor);
@@ -630,7 +630,7 @@ namespace {
 /* the most tables within tables a value is followed into, as Chimera's */
 constexpr int kLuaDepth = 8;
 
-/* the value at `at` as JSON, as Chimera's run_lua says it (McpHostTools.LuaValue) */
+/* the value at `at` as JSON, as Chimera's run_lua says it */
 json::Json luaValue(lua_State *L, int at, int depth)
 {
 	at = lua_absindex(L, at);
@@ -732,7 +732,7 @@ bool LuaBridge::runForAgent(const std::string &code, const std::string &director
 bool LuaBridge::runForAgentHere(const std::string &code, const std::string &directory, std::string &results, std::string &error)
 {
 	/* the code as a Lua long string, whose brackets it does not contain; whether it is
-	 * an expression is asked of Lua's own load, as Chimera's RunText asks */
+	 * an expression is asked of Lua's own load, as Chimera asks */
 	std::string level;
 	while (code.find("]" + level + "]") != std::string::npos) level += '=';
 	/* a line end before the closing brackets: code ending in ']' would close them early */

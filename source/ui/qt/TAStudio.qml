@@ -34,7 +34,7 @@ ApplicationWindow {
     property var hotkeyKeys: ({})
     // a hotkey's keys, "" when it has none
     function bindingName(hotkey) { return tas.hotkeyKeys[hotkey] || "" }
-    // Chimera's GetBindingText: "Hotkey: Shift+Q", or what the mouse does too
+    // a hotkey's binding as text: "Hotkey: Shift+Q", or what the mouse does too
     function bindingText(hotkey, mouse) {
         const raw = tas.bindingName(hotkey).split(",").map(k => k.trim()).filter(k => k !== "").join(" or ")
         if (raw === "") return qsTr("Hotkey: %1").arg(mouse || qsTr("unbound"))
@@ -78,7 +78,7 @@ ApplicationWindow {
     WindowOptions { id: windowOptions; window: tas; tool: "tastudio"; vm: tas.toolWindows; mainWindow: tas.mainWindow }
     // "<< Hide": the main window offers it back
     property bool hiddenByPerson: false
-    // where the last wheel seek with the right button held was going (Chimera's SeekingTo)
+    // where the last wheel seek with the right button held was going
     property int wheelTarget: -1
     title: !tas.session.hasProject ? qsTr("TAStudio")
          : qsTr("TAStudio - %1%2").arg(tas.session.projectTitle).arg(tas.session.unsaved ? "*" : "")

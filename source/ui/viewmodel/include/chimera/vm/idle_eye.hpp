@@ -8,7 +8,7 @@
  * Or snow, as Chimera's "Snowy null core" (Config > Display, Misc): white
  * noise 256 x 192, new snowFramerate times fewer than sixty a second,
  * each pixel's grey a random byte raised to 10^-bias and times the
- * brightness, as Chimera's SnowyNullVideo makes it. Never, always, or
+ * brightness, as Chimera makes it. Never, always, or
  * (Chimera's default) the week of Christmas, its days 354 to 360 of the
  * year. */
 

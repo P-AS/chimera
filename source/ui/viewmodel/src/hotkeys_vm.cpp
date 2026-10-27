@@ -36,7 +36,7 @@ std::string trimmed(std::string t)
 	return t;
 }
 
-/* a box's keys as Chimera's InputWidget keeps them: split at the commas, blank ones left out */
+/* a box's keys as Chimera keeps them: split at the commas, blank ones left out */
 std::vector<std::string> pieces(const std::string &keys)
 {
 	std::vector<std::string> out;
@@ -341,8 +341,7 @@ void HotkeysViewModel::apply()
 	{
 		const Json *mine = all.find(a.name);
 		/* a hotkey renamed: a binding saved under the old name is the new
-		 * one's (owner, 2026-10-26: the ROM hotkeys became the project's),
-		 * as Chimera reads it (HotkeyInfo.ResolveWithDefaults) */
+		 * one's (owner, 2026-10-26: the ROM hotkeys became the project's) */
 		static const std::pair<const char *, const char *> renamed[] = {
 			{"Open Project", "Open ROM"}, {"Close Project", "Close ROM"}, {"Load Last Project", "Load Last ROM"}};
 		for (const auto &[now, old] : renamed)

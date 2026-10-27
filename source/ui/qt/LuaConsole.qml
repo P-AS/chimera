@@ -595,7 +595,7 @@ ApplicationWindow {
     }
 
     // Chimera's Lua Functions: every function Chimera documents, in its words
-    // (Return, Library, Name, Parameters, Description), those the prototype
+    // (Return, Library, Name, Parameters, Description), those the window
     // lacks marked [Not available] and deprecated ones [Deprecated]; a column's
     // name sorts by it (again: the other way), Filter finds a name or a word of
     // the description, Copy (the right button or Ctrl+C) puts the call and its

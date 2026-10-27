@@ -1,94 +1,63 @@
 # Themes
 
-> Since 2026-10-27 Chimera's window is a Qt window (docs/qt-interface.md),
-> and the C# window this document names classes of is gone. The themes, their
-> file format and the Theme window are the same; where this says how a C#
-> control painted itself, the Qt window does the same with its style
-> (source/ui/qt/style) and its palette (theme_palette.cpp).
-
-Chimera's colours are data. A theme is one colour for every role the frontend
-paints with, written in a JSON file. Two are compiled in (Light and Dark),
-sixty more ship in the `Themes` folder, and any number more can be dropped in
-that folder. This file says how to choose one, how to write one and how the
-frontend applies it.
+Chimera's colours are data. A theme is one colour for every role the window
+paints with, written in a JSON file. Two are built in (Light and Dark), sixty
+more ship in the `themes` folder beside the program, and any number more can
+be dropped in that folder. This file says how to choose one, how to write one
+and how the window applies it.
 
 ## Choosing one
 
 Config > Theme opens a window. On the left is every theme on offer: Light and
-Dark first, then the rest by name, each marked Light or Dark. On the right is a
-small drawing of Chimera in the theme picked in the list: the menu bar with a
-menu open, a tool strip, a form with its fields and buttons, the coloured words
-and marks, a list with a chosen row and a row under the pointer, a piano roll
-with every kind of row, and the status bar. Pointing at a part of the drawing
-names the colour it is painted with and its value, as in
-`MenuSelectedBackground #B4D7ED`. Under the drawing are the theme's
-description, its author and where it came from.
+Dark first, then the rest by name. On the right is a small drawing of Chimera
+in the theme picked in the list: menus, fields and buttons, the coloured words
+and marks, a list with a chosen row, a piano roll with every kind of row, and
+the status bar. Pointing at a part of the drawing names the colour it is
+painted with. Under the drawing are the theme's description, its author and
+where it came from.
 
-Picking a theme in the list only changes the drawing. **OK** (or a double
-click) turns it on: every open window repaints, including TAStudio. The choice
-is saved with the rest of the config and read back before the first window
-exists, so a start is never a flash of the wrong colours.
-
-The drawing is drawn, not built out of real controls, and that is on purpose.
-Real controls take their colours from the theme that is on, and half the
-frontend asks for the current theme as it paints, so a second theme in the
-same window would be fought over. Every colour in the drawing comes from the
-theme picked and nothing else (`ThemePreview`).
-
-A config being created now starts on **Dark**. A config that already existed
-and had never chosen a theme was written before there were any, so it keeps
-**Light** - changing somebody's colours under them on an update is a surprise,
-not a feature. Either way the answer is written into the config the first time
-it matters, so the question is asked once.
+Picking a theme in the list only changes the drawing. **OK** turns it on:
+every open window repaints, TAStudio included. The choice is kept with the
+rest of the settings and read back before the first window exists. Settings
+that never chose a theme start on **Dark**. `--color-scheme light` or `dark`
+on the command line picks Light or Dark for one run without changing what is
+kept.
 
 The same window has three buttons:
 
 - **Open Themes Folder** - where a theme file goes: the Themes path in
-  Config > Paths, which is the `Themes` folder beside Chimera.exe unless you
+  Config > Paths, which is the `themes` folder beside the program unless you
   choose another.
 - **Write a Copy to Edit** - writes the theme picked in the list into that
   folder as a complete file, named "<theme> copy" (or "copy 2", and so on: it
   never writes over a file that is already there). This is the easy way to
   start: every role is already there with its value, so a new theme is a
   matter of changing the ones you want and the name at the top.
-- **Reload Themes** - re-reads the folders without restarting.
+- **Reload Themes** - reads the folder again without restarting.
 
 A file that will not load is left out, and the line above the buttons says how
-many and, behind "why?", the reason for each. It is never applied half way: a
-theme with one colour missing is refused whole, so there is no such thing as a
-window that is dark except for one panel.
+many and, behind "why?", the reason for each.
 
 ## Where themes are read from
 
-Two folders, in this order:
-
-1. **The Themes path** in Config > Paths. By default it is `Themes` beside
-   Chimera.exe, like `Cores`, `Lua` and `Tools`, and the release ships sixty
-   themes in it. Changing the path re-reads the themes at once.
-2. **`Themes` in the data directory** (Config > Data Directory says where that
-   is; by default `~/.local/share/chimera` on Linux and `%LOCALAPPDATA%\Chimera`
-   on Windows). This is where themes went before there was a folder beside
-   Chimera.exe. It is still read, so a theme somebody put there is not lost,
-   but nothing is written there any more.
-
-If both folders have a theme of the same name, the one in the Themes path is
-used and the other file is listed among the files that would not load.
+The Themes path in Config > Paths: by default `themes` beside the program,
+where the release ships sixty themes. Every file there whose name ends in
+`.chimeraTheme.json` is read. Changing the path reads the themes again at once.
+A file whose theme has the name of a built-in one, or of a file read before it
+(files are read in the order of their names), is left out.
 
 ## The themes Chimera ships
 
 The sixty themes in the repository's `Themes` folder were made by
 Nelson/Geferulf and are shipped under Chimera's licence (user-decided,
-2026-10-19). The build copies them into `build/Themes` and the release bundle
-into `Themes` beside Chimera.exe (`tools/build-bundle.sh` takes them from the
-repository, so a theme renamed or removed since the last build does not ship).
+2026-10-19). The release bundle carries them in `themes` beside the program
+(`tools/build-bundle.sh` takes them from the repository, so a theme renamed or
+removed since the last build does not ship).
 
-They are taken as their author made them. Most of them have some text below
-the 3:1 contrast that Dark is held to (see "How it is applied"),
-and that was the owner's choice: the test measures the two themes Chimera makes
-itself, and `ShippedThemesTests` holds only that every shipped file loads, says
-who made it, and has a plain ASCII file name ending in `.chimeraTheme.json`.
-Someone who finds a shipped theme hard to read can pick another, or write a
-copy and change the colours.
+They are taken as their author made them. Some have text with little contrast
+against what it is written on, and that was the owner's choice. Someone who
+finds a shipped theme hard to read can pick another, or write a copy and
+change the colours.
 
 What was changed from the files as they were given: each was named after its
 theme in ASCII without spaces, each got `"author": "Nelson/Geferulf"`, line
@@ -99,16 +68,16 @@ changed.
 
 ## The file
 
-A theme is a JSON object. `name` is what the menu shows and what the config
-records, so it has to be unique; `dark` tells the frontend this is a dark theme
-(a few places pick a drawing rather than a colour, and guessing from the
-background gets that wrong for anything in between). `colors` is a flat map of
-role name to colour. There is one more, `desktop`, which only the built-in
-Light theme sets - see the last section.
+A theme is a JSON object. `name` is what the list shows and what the settings
+record, so it has to be unique; `dark` says this is a dark theme (a few places
+pick a drawing rather than a colour). `description` and `author` are shown
+under the drawing. `colors` is a flat map of role name to colour.
 
 A colour is `#RRGGBB`, or `#AARRGGBB` where it is meant to show through what is
 behind it - the frame-number wash and the alternate-player stripe in the piano
-roll are the two that are, and they are laid over the row colour.
+roll are the two that are, and they are laid over the row colour. A colour can
+also be the desktop's own, by name: `system:ControlText`. The built-in Light
+theme is written that way.
 
 ```json
 {
@@ -116,7 +85,6 @@ roll are the two that are, and they are laid over the row colour.
 	"description": "Ethan Schoonover's palette, the dark one",
 	"author": "you",
 	"dark": true,
-	"basedOn": "Dark",
 	"colors": {
 		"WindowBackground": "#002B36",
 		"WindowText": "#839496",
@@ -131,19 +99,17 @@ roll are the two that are, and they are laid over the row colour.
 }
 ```
 
-`basedOn` is the reason that file is nine colours rather than ninety: a theme
-that names another takes every colour it does not give for itself from that
-one. Without `basedOn`, every role has to be present - which is what "Write a
-Copy to Edit" produces, and what a theme meant to stand on its own should be.
-
-Misspell a role and the error names it and guesses what you meant. Leave one
-out without a `basedOn` and the error lists what is missing. Neither loads.
+A file with no name or no `colors` does not load. A role a theme does not give
+is painted in the window's own colour for that place, and a role name the
+window does not know is ignored, so a misspelled role shows as the window's
+colour rather than the theme's. Starting from "Write a Copy to Edit" avoids
+both.
 
 ## The roles
 
-The authoritative list is `ThemeColorRole` in
-`source/gui/Chimera.Client.Common/theming/ThemeColorRole.cs`, where every role
-carries a sentence saying what it paints. They fall into groups:
+The two built-in themes name every role there is
+(`source/ui/qt/themes/light.json` and `dark.json`, 107 roles). They fall into
+groups:
 
 - **Window chrome** - `WindowBackground`, `WindowText`, `DisabledText`,
   `DisabledBackground`, `MutedText`, `Border`, `LinkText`, `ShadedBackground`,
@@ -193,325 +159,23 @@ carries a sentence saying what it paints. They fall into groups:
 
 ## Where a theme does not reach
 
-Some of what a window is made of is drawn by the operating system out of the
-desktop's own colours, and WinForms gives no way to ask for anything else:
-
-- **Scroll bars.** Every scroll bar stays the desktop's. This is the most
-  visible thing about a dark Chimera and there is no fix short of replacing
-  every scrolling control.
-- **The check inside a check box, and the dot inside a radio button.** The
-  caption beside them is themed; the box itself is the OS's. (The tick boxes
-  inside a list ARE themed - that list is drawn here.)
-- **The window's border.** The desktop draws it. The title bar is no longer on
-  this list: see below.
-- **Progress bars.** Deliberately left alone: setting colours on one under
-  visual styles does nothing at all.
-- **A list's group headers.** Left to the toolkit, which on Mono does not draw
-  them at all, with a theme or without one.
-
-And some colours are not the frontend's to set: a Lua script's canvas and any
-window a script builds, a movie's subtitle colours, and the padding colour a
-core declares for its own picture.
-
-## The title bar
-
-The title bar belongs to the desktop compositor, not to WinForms - but on
-Windows the compositor will draw it dark if the window asks, through one call
-to `DwmSetWindowAttribute` with `DWMWA_USE_IMMERSIVE_DARK_MODE`. There is
-nothing to draw and nothing to theme: the window says what it is, and the
-buttons, their hover states and the inactive shade all follow.
-
-`WindowFrame` makes that call and `ThemedForm` makes it on handle creation and
-again on a theme change, so every window is covered by existing. It is
-deliberately not made from `ApplyTheme`, which is the hook a window overrides:
-a window that overrode it and forgot the base call would be left with a light
-frame on a dark window. A theme that follows the desktop asks for nothing,
-since those ARE the desktop's colours.
-
-Off Windows it does nothing: there is no dwmapi, and a Unix window manager
-owns the frame and has its own opinion about it. A missing dll, an attribute
-an older build does not know, and a window whose handle has gone are all
-silent.
-
-## The menus
-
-Every image beside a menu item comes from `MenuIcons`, which is one place so
-that the gaps are visible as gaps. `MenuIconTests` walks it by reflection and
-measures each icon against every theme's menu colour, because an icon has to
-read on a white menu and on a near-black one and nobody will re-check that by
-eye.
-
-Three kinds of item are bare on purpose:
-
-- **Anything that can be ticked.** A ticked menu item draws its tick in the
-  image margin, so an image there fights the tick. Every Display-this toggle,
-  every throttle mode, every window scale.
-- **Labels that are not commands** - "Loaded core: ...", the movie status line.
-- **Exit**, alone after a separator, which no icon says anything useful about.
-
-And one rule with a test behind it, `MenuContractTests`: a menu that fills
-itself in `DropDownOpened` must be seeded with at least one item in the
-designer. A `ToolStripMenuItem` whose `DropDownItems` is empty does not open a
-dropdown at all, so such a menu never opens and its handler never runs. That
-is not a hypothetical - it is how the Theme menu shipped, dead, with every
-test green.
+- **The window's frame and title bar** are the desktop's.
+- **A window a Lua script builds**, and anything a script draws, keep the
+  colours the script gives them.
+- **A movie's subtitle colours** and **the padding colour a core declares**
+  for its own picture are theirs, not the theme's.
 
 ## How it is applied
 
-WinForms has no theming, so it is explicit, and it lives in two files.
+A theme becomes each window's palette (`source/ui/qt/theme_palette.cpp`), and
+the controls take their colours from it: Qt Quick's controls read a window's
+palette, not the program's, so each window is given the theme as its own,
+including one opened later and every open one when the theme changes. The few
+controls Chimera draws itself are in `source/ui/qt/style` (check boxes, radio
+buttons, scroll bars, dialogs). What draws colours of its own, such as the
+piano roll's rows, asks for the theme's colour by role.
 
-`ThemeEngine` walks a control tree and sets each control's colours from what
-kind of control it is, with the surfaces a `BackColor` cannot reach handled by
-name: tool strips through a renderer, `DataGridView` through its cell styles,
-`LinkLabel` through `LinkColor`, and `ListView` and `ListBox` by drawing them.
-A control that paints itself implements `IThemedControl` and is handed the
-theme instead of being guessed at.
-
-A list in Details view is drawn here entirely, because three of the things it
-paints answer to no property at all: the column headers, the highlight behind a
-chosen row, and the strip to the right of the last column. The first two are
-owner-drawn - background, tick box, small image, text with its own font,
-alignment and per-item colour. The third cannot be painted by anybody, since no
-event is raised for it, so the last column is grown to the edge instead and
-given its width back when the window is narrowed or the theme goes back to the
-desktop's. A list with grid lines has them drawn with each cell, in the
-theme's `GridLines` colour, and the toolkit's own lines are off while the theme
-draws the list: the toolkit draws its lines only when the whole list is
-painted, so a row repainted alone, as the one under the pointer is, lost them
-(issue 339).
-
-`ThemedForm` is what every window in the frontend derives from, and it runs
-that walk when the window's handle is created - so a window is themed by
-existing rather than by its author remembering to. `ThemingContractTests` fails
-the build if a `Form` is added that does not. A window that genuinely must keep
-its own colours (a Lua script's) still derives from it and overrides
-`ThemingEnabled`.
-
-Three things follow from that and are worth knowing when adding to the
-frontend:
-
-- **A colour that means something is declared, not assigned.**
-  `control.SetForeRole(ThemeColorRole.AccentError)` instead of
-  `control.ForeColor = Color.Firebrick`. The walk would overwrite the second
-  one, and the first follows a theme change for free.
-- **A control made after the window opened is themed when it arrives** - the
-  walk hooks each container it passes. TAStudio's piano rolls are made when a
-  project opens and would otherwise be the one white thing on a dark window.
-- **A new colour role that carries text belongs in `ThemeContrastTests`,**
-  paired with the background it lands on. A theme is ninety numbers somebody
-  typed, and two of them being the same shade is not something anyone spots by
-  reading the file - it is something they find later, as a row that looks
-  blank. Dark, the built-in theme with colours of its own, is held to 3:1,
-  which is the accessibility floor for anything a person has to pick out
-  (Light is the desktop's colours, and the shipped themes are their author's:
-  see "The themes Chimera ships").
-
-## Looking at it
-
-`./tests/ui/run-ui-tests.sh --shots` renders every window this project can
-build, once per theme, into `tests/ui/shots/`. Those pictures are also
-inspected as they are taken, every run, with or without `--shots`: under a
-theme of its own, no part of a list's header band or of a chosen row may still
-be one of the toolkit's own colours, and a chosen row's text has to have
-contrast against what it is written on. That check exists because the core
-manager once shipped a chosen row that was a beige bar with invisible writing
-on it, in a picture this very code had produced, while every colour read off
-every control was correct.
-
-## What the tests cover, and what they do not
-
-Worth reading before trusting a green run, because this feature has now twice
-been reported broken by its author while every test passed.
-
-`./tests/ui/run-ui-tests.sh` runs on **Linux, on Mono, under Xvfb**. Chimera's
-users run **.NET Framework WinForms on Windows**. Those are two different
-implementations of the toolkit, and the difference is not cosmetic: what an
-assignment to `BackColor` does, whether a control repaints when it is made, and
-whether visual styles override either, are all decided by the toolkit. So:
-
-- **Covered by the suite**: the theme files and their parsing; the roles and
-  their contrast; which colour every control ends up holding; and, under Mono,
-  what a window looks like as pixels - per theme, round-tripped, and for every
-  real window the shot harness can build.
-- **Not covered by the suite**: anything that is Windows'. The title bar, which
-  is a DWM call that does not exist on Linux - `TitleBarContractTests` checks
-  only that every window *asked*, via `WindowFrame.LastAskedFor`. Whether the
-  Windows toolkit honours what the walk sets. Whether a window that is already
-  open actually repaints when a person picks a theme from the menu.
-
-That last one is where the reported bugs lived, so it has a harness of its own:
-`tests/ui/windows/live-theme-switch.sh`. It compiles a small program against
-the frontend assemblies this tree has just built and asks, on real Windows, in
-one process, the three questions Mono cannot be asked:
-
-- does a window that is already open change when the theme does, and does it
-  land exactly where a window born in that theme is;
-- does painting a theme onto a window raise EVENTS inside it - a ListView whose
-  handle is remade raises a tick for every item it puts back;
-- does a real frontend window (Pre-Compiled Modules, the one that crashed) open
-  on a dark theme without throwing.
-
-It is not part of the gate, because the gate runs on Linux; run it by hand from
-WSL after `dotnet build source/gui/Chimera.sln`, and run it whenever the walk
-changes.
-
-It photographs with `PrintWindow`, which renders the window into a bitmap of
-the program's own. That is deliberate and worth keeping: it reads no screen
-pixels, so it cannot capture anything else on the developer's desktop even by
-accident, and it works with the session locked.
-
-### What this suite keeps failing to notice
-
-Five bugs reached the author of this program through a green run of it while
-this branch was being written. They are not five unrelated mistakes; they fall
-into three kinds, and the kinds are worth knowing before adding to any of this.
-
-**1. States of a control the frontend draws itself.** A list the theme has
-taken over is drawn ENTIRELY here. There is no toolkit underneath, so a state
-nobody wrote code for is not drawn in the toolkit's colours - it is not drawn
-at all. It has now happened twice: the CHOSEN row came out a beige bar with
-invisible writing on it, and the check box, the small image and the disabled
-list were each written only once someone went looking. A test that renders a
-control in one state tells you nothing about the others, and "it looked right
-in the screenshot" means the screenshot was of the resting state.
-`ListRowStateTests` now enumerates the states and asserts every one of them -
-and the enumeration, not any single assertion, is the thing to keep current.
-
-**1b. Drawing more than you were asked to draw.** The nastier relative of the
-above, and the one that took two tries to find. Moving the pointer onto a row
-does not ask for the row to be redrawn - it invalidates a PIECE of one, and the
-toolkit then raises `DrawItem` for the row and `DrawSubItem` for only the
-columns it means to repaint. Logged on Windows: one `DrawItem`, then
-`DrawSubItem` for column 0 and no others. `DrawItem` was filling the row's full
-width, so it wiped every column that was not coming back, and pointing at an
-entry in the Core Manager made it vanish. It now paints only the strip past the
-last column, which is the one part no `DrawSubItem` is ever raised for.
-
-The rule that generalises: **in a partial repaint, paint only what you were
-asked for.** An owner-draw handler does not know what else is about to be
-drawn, and the pixels it did not have to touch belong to somebody else. The
-first attempt at this bug guessed at a null `SubItem` instead and fixed
-something real but unrelated; what settled it was logging every `Draw*` call
-the real toolkit made, which is what the Windows harness is for.
-
-**2. Events raised as a side effect of painting.** Theming writes properties,
-and writing a property can make the toolkit remake a control's handle, and
-remaking a handle makes the toolkit replay the control's contents - ticking
-every ticked row on the way past. The window on the other end has no way to
-know those events are not real. This crashed Pre-Compiled Modules on being
-opened. Painting is now done with those events held off (`ThemeEngine.Quietly`)
-and the walk no longer brings a control to life just to read its scroll
-position, but the general rule is the one to remember: **a coat of paint must
-not be able to tell a window that something happened in it.**
-
-**3. Anything that is the Windows toolkit's.** Covered above, and it is the
-reason the harness exists. Worth saying once more because it interacts with the
-other two: the states a control can be in and the events a handle recreation
-raises are both decided by the toolkit, and the toolkit under the tests is not
-the toolkit under the users.
-
-One honest note on the second kind: the crash was diagnosed from the stack
-trace the author sent and fixed at both ends - the walk no longer causes the
-events, and the window no longer answers one by walking a collection that may
-be mid-rebuild, which is what its own comments always said it should do. The
-exact timing was not reproduced in a harness. The Windows harness opens that
-window on a dark theme and would catch a plain regression; it is not proof that
-the original race cannot recur.
-
-### Config > Theme on Windows
-
-`tests/ui/windows/theme-chooser.sh` opens the theme window on .NET Framework
-WinForms with the shipped themes, picks four of them in turn (Aizome,
-Hackerman, Win98, Bubblegum Pop) and reads, off a PrintWindow picture of the
-window, a pixel of fifteen surfaces of the drawing. Each must be the picked
-theme's colour while the window round it stays Dark. Mono asks the same of
-every shipped theme (`TheDrawingIsInThePickedThemesColours`). Drawn at a scale
-that is not a whole number, as on Windows, a pixel next to an edge is a blend
-of the colours either side, so both pick pixels at least two clear of any
-edge.
-
-### A themed combo box repaints whole when it is resized (chimera#230)
-
-A themed combo box is flat, and a flat combo box paints its own button. A
-resize asks a control to repaint only what it uncovered, so a box widened
-with its window kept the button it had drawn at its old right edge beside the
-new one: the New Project window, maximised, showed what looked like a second
-box behind every box. The theme engine hooks a combo box's size when it first
-meets it and has a flat one repaint whole.
-
-`tests/ui/windows/combo-widen.sh` is the check that this is so on Windows: it
-reads the pixels the window holds (not a repaint, which is exactly what does
-not show a stale pixel) for a box widened from 300 to 760 and for one born
-760 wide, and they must be the same picture. Its control, a flat box the
-theme engine never saw, differs in 2505 pixels - the fault, as reported. The
-Mono test (`AThemedComboBoxRepaintsWholeWhenItIsResized`) holds only that the
-repaint is asked for.
-
-## Why Light is not a new palette
-
-Light is the palette Chimera had before there were themes, written down, and it
-has to stay that way: nobody asked for the frontend to look different, only for
-it to be able to. So the roles that were system colours say so - `"WindowText":
-"system:ControlText"` - and resolve to whatever the desktop answers. The one
-exception is `system:Control`, which Mono answers with a beige nobody wants and
-which every window Chimera derives from `FormBase` has replaced with WhiteSmoke
-for years; that substitution is part of what `system:` means here.
-
-`system:` is there for that one job. A theme somebody writes should use hex.
-
-Light also carries `"desktop": true`, and that is the part that actually
-guarantees it changes nothing. Under a theme that says so, the walk assigns
-nothing by control type: it applies the roles the frontend declared by name,
-hands the theme to the controls that paint themselves, and otherwise puts every
-control back the way the toolkit had it. This matters because assigning a
-colour is not free even when it is the same colour - a `Button` handed a
-`BackColor` stops using visual styles, a sunken border redrawn becomes a line,
-a menu given a colour table stops going through the system renderer. Same
-colours, different drawing. `TheDesktopThemeAssignsNothingItWasNotAskedFor`
-holds that, and every screenshot in `tests/ui/shots` was compared pixel by
-pixel against the same window built from the commit before this work: they are
-identical.
-
-"Puts back" is doing real work in that paragraph, and it was missing at first.
-The first time a control is walked - whichever theme that is - everything the
-walk is about to change is recorded: the two colours, the border style, the
-visual-style flag, the flat appearance, a link's three link colours, a property
-grid's six, a data grid's cell styles, a strip's renderer. That record is the
-undo, and the desktop theme is the undo being run. Without it the desktop theme
-was not "leave this alone", it was "leave this DARK": a window wearing Dark had
-nothing to be put back to, and choosing Light changed the title bar and nothing
-else. `ThemeRoundTripTests` compares a window taken Light - Dark - Light
-against one that started Light, in both directions and pixel by pixel, and the
-screenshot check does the same for every real window it photographs.
-
-A consequence worth knowing when adding to the walk: **anything the walk
-writes has to be captured next to the line that writes it.** A property changed
-without being recorded makes the theme one-way again, silently, and only in the
-direction nobody tests by hand.
-
-And a second one, which cost two more rounds to find: **the capture is a pass
-of its own, before the walk paints anything.** A control that was never given a
-colour of its own does not have one - asking it returns its parent's. The walk
-paints a parent before it reaches the children, so a capture taken as each
-control was painted read, for every child, the colour the theme had just put on
-its parent. That was recorded as "what the toolkit gave it" and written back on
-the way out, which nailed the theme on permanently.
-
-It was invisible for as long as the frontend opened on Light, because then the
-value being read was the right one anyway. Making Dark the default is what
-exposed it: every window was now born Dark, captured wearing Dark, and choosing
-Light put the dark colours back. What the user saw was a theme that "only works
-after restarting" - the title bar changed, because that is set from the theme
-directly rather than restored, and nothing else did. `ThemeEngine.Prime` is
-that pass, and `ThemeRoundTripTests` now asks the question the old round trip
-could not: not "does Dark and back come out Light", whose two ends are both
-Light whether the middle worked or not, but "does a window **born** Dark and
-told to be Light look like one born Light".
-
-`LightThemeBaselineTests` holds the other half - that the hex values in
-`light.json` are still the ones the code used - so that a theme which does
-paint (a contributor's light theme, or Dark) paints what Chimera had.
-
-Only the built-in Light theme sets `desktop`. A copy written out by "Write a
-Copy to Edit" deliberately does not: it is about to be given colours of its
-own, and those have to be painted.
+`test-theme` (run by `meson test`) holds that a theme reaches a window's
+buttons and fields, its menus, a window opened later, and a theme chosen while
+they are open, and that a window marked unthemed (a Lua form) keeps the colours
+it set itself.

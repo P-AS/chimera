@@ -1,8 +1,7 @@
 /* package.cpp - the core package container.
  *
- * Replaces the zip/directory reading and identity hashing in
- * CorePackageDiscovery/CorePackageLoader; what a package's entries MEAN is
- * still the caller's business until the session moves in. Package files live
+ * The zip/directory reading and identity hashing; what a package's entries
+ * MEAN is the session's business. Package files live
  * at the archive root - that is what the extraction cache hands to the
  * loader, so anything nested is not a package we can load.
  */

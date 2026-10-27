@@ -4,7 +4,7 @@
  * The descriptor is a manifest, not a container: bare file names resolved in
  * its own folder, each with the SHA1 recorded at creation, in an order that
  * matters (the images' order IS the swap order). The engine owns the whole
- * format - the rules, the hashing, the canonical movie line - so the C# side
+ * format - the rules, the hashing, the canonical movie line - so a frontend
  * keeps only the dialog and the mounts.
  */
 

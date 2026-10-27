@@ -759,7 +759,7 @@ void RamWatchViewModel::refreshDomains()
 			selectionChanged();
 		});
 		/* another machine: each watch starts again from its first value there,
-		 * as Chimera's RefreshDomains resets the previous values and the
+		 * as a refresh of the domains resets the previous values and the
 		 * change counts */
 		for (Watch &w : watches_)
 		{

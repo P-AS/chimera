@@ -15,7 +15,7 @@ namespace chimera::vm {
 class PianoRollViewModel : public ViewModel
 {
 public:
-	/* a line read from its first '|', as Chimera's MovieController reads one
+	/* a line read from its first '|', as Chimera reads one
 	 * (chimera 10b9668): whitespace and the digits 0-9 before it dropped -
 	 * the frame number Copy puts there when asked ("00002 |..U.....|"), an
 	 * indent, a tab; any other line as it is */
@@ -63,8 +63,7 @@ public:
 	 * out moving only the shown ones, as Chimera's multitrack editing */
 	Property<bool> editHiddenColumns{true};
 	/* the edits made now are a script's (Lua's tastudio.applyinputchanges):
-	 * they leave recording mode on, where an edit by hand turns it off, as
-	 * Chimera's StopRecordingOnNextEdit */
+	 * they leave recording mode on, where an edit by hand turns it off */
 	Property<bool> scriptEditing{false};
 	/* TAStudio's paint patterns: when painting a column follows its
 	 * pattern - "never", "autofire" (on the columns given Auto-hold) or
@@ -111,7 +110,7 @@ public:
 	/* A macro as Chimera's .chimeraMacro has it, of frames first to last and
 	 * these columns (none named: all), Overlay and Replace as given; "" with
 	 * the reason when it cannot be. Its lines are the movie's own when it has
-	 * every column, else made as Chimera's LogEntryGenerator makes a zone's */
+	 * every column, else made as Chimera makes a zone's */
 	std::string macroText(int64_t first, int64_t last, const std::vector<std::string> &columns, bool overlay, bool replace,
 		std::string &error) const;
 	/* a macro's lines placed from this frame on (its own Overlay and Replace),
@@ -233,8 +232,7 @@ private:
 		PianoRollViewModel &vm_;
 	};
 
-	/* a column's own pattern, as Chimera's AutoPatternBool and
-	 * AutoPatternAxis: values in turn, back to `loop` after the last; lag
+	/* a column's own pattern: values in turn, back to `loop` after the last; lag
 	 * frames passed over (the value before kept) when skipLag */
 	struct Pattern
 	{
@@ -401,7 +399,7 @@ private:
 	void undoOrRedo(bool back);
 	void edited(int64_t first, int64_t last, int64_t oldCount);
 	void markersEdited(int64_t frame);
-	/* Chimera's RefreshLastNonEmptyInput: after an edit at a frame, the last
+	/* after an edit at a frame, the last
 	 * frame with anything pressed, walking back from the end no further than
 	 * the edit unless the edit could have erased it; then the run's own
 	 * markers moved where the movie says, and the marker list made again */

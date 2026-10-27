@@ -257,7 +257,7 @@ Without a window only:
   and every tool that only needs the machine: memory, registers, properties,
   pictures, RAM search, conditions. This part is the same with and without a
   window.
-- **In the interface (C#):** the dialog, and the tools that must go through
+- **In the window:** the dialog, and the tools that must go through
   TAStudio so the person sees them and can undo them: input edits, seeking,
   branches, markers. They call the same editing functions the piano roll
   itself calls.
@@ -275,9 +275,8 @@ Without a window only:
 The steps from a project to a running machine (check that every file is found
 and matches its hash, check the core against the one the project names, check
 the files against the core's slots, build the list of files the core sees,
-start the machine with the project's settings) are written twice today: in
-`chimera-run.cpp` and in the C# interface (`RomLoader.LoadProjectGame`). The
-server would have been a third.
+start the machine with the project's settings) were written twice: in
+`chimera-run.cpp` and in the window. The server would have been a third.
 
 They are now one engine call, `ce_session_open_project` (engine.h;
 docs/project.md, "One place starts the machine"). `chimera-run` and the

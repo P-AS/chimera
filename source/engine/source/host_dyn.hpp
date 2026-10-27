@@ -4,8 +4,7 @@
  * A waterbox guest is ALWAYS sysv64 - it is a Linux ELF, whatever the host
  * runs on. On Linux that matches us and guest entry points are called
  * directly. On Windows the engine speaks win64, so a guest entry point is
- * wrapped in a stub that routes through the host's departN trampolines -
- * the same mechanism the C# WaterboxAbiShim used.
+ * wrapped in a stub that routes through the host's departN trampolines.
  */
 
 #ifndef CHIMERA_HOST_DYN_HPP

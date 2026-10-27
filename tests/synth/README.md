@@ -1,18 +1,18 @@
 # The synthetic witness
 
 Chimera's own, core-agnostic correctness apparatus (see "The synthetic
-witness" in [design-principles.md](../../docs/design-principles.md)). Three
-core flavors - native, pure C#, waterboxed - will implement the same tiny
-console, and for every test movie ALL of the memory space, video output, and
-audio output must match bit-exactly across the three.
+witness" in [design-principles.md](../../docs/design-principles.md)). Two
+implementations of the same tiny console - a native reference and a
+waterboxed core - must give, for every test movie, the same memory, video
+output and audio output, bit for bit.
 
 Everything here is a conformance-test fixture for the published core contract:
-nothing is part of Chimera.sln, and nothing is quickerNES- or system-specific.
+nothing is quickerNES- or system-specific.
 
 ## Running
 
 ```
-./run-witness.sh              # both levels, both modes (~10 s)
+./run-witness.sh              # both levels, both modes
 ./run-witness.sh --level a    # native only (no Chimera needed, <1 s)
 ./run-witness.sh --record     # (re)record goldens
 ```
@@ -20,40 +20,30 @@ nothing is part of Chimera.sln, and nothing is quickerNES- or system-specific.
 ## Layout
 
 - `SPEC.md` - the Synth machine specification (v1). The single source of
-  truth; all three implementations are written against it alone.
-- `native/synthcore.c` - the native reference implementation (flavor a).
+  truth; both implementations are written against it alone.
+- `native/synthcore.c` - the native reference implementation, and
+  `native/synth-run.c` its Level A runner.
+- `package-box/` - the waterboxed core (`synth_wbx.c`), its runner and its
+  package's declarations; `build-box.sh` builds it and `../build-package.sh`
+  installs `build/Cores/synth-box.chimeraCore`.
 - `asm.py` - assembler: `.sasm` text -> `.testrom`.
 - `roms/` - the test games (game logic, video assets, and audio assets live
   in the roms; the emulator is a bare stateful interpreter).
-- `package/` - the managed adapter + manifest for the native flavor;
-  `build-package.sh` builds natives (Linux .so always, Windows .dll when
-  mingw-w64 is present), assembles the roms, builds the adapter against
-  `build/dll`, and installs `build/Cores/synth-native.chimeraCore`.
+- `goldens/`, `movies/` - the recorded results and the movies that make them.
+- `*.lua`, `*.py` - the scripts and checks the witness's levels run.
 
 ## Status
 
 - [x] Machine spec v1
-- [x] Native core (libsynthcore) + assembler + gridWalker rom
-- [x] Native-flavor package; verified through Chimera on Mono end to end
-      (rom routing via manifest extensions, factory creation, input pipeline,
-      RAM domain, savestates, lag counting)
+- [x] Native core + assembler + gridWalker rom
+- [x] Waterboxed core, verified against the native goldens: bit-identical
+      RAM, video stream and audio stream on every movie
 - [x] Witness driver (`run-witness.sh`): four goal movies (win / lose /
       video output / audio output), Level A native metrics incl. full
       per-frame video+audio stream hashes with a rerecord self-check, Level B
-      through Chimera with RAM+VRAM byte-compare against the same goldens,
-      both modes. ~20 s wall clock - THE Chimera smoke test (supersedes the
-      old quickerNES --quick subset).
-- [x] Level B on Chimera's Qt window, run `--headless` with no display
-      (2026-10-27): the C# window, and with it Mono and Xvfb, are gone.
-- [x] Pure-C# twin (flavor b): SynthMachine.cs, written from SPEC.md alone
-      (no shared code with the native flavor), shipped as synth-sharp.chimeraCore -
-      a manifest with an EMPTY natives list; nothing loaded at runtime. Its
-      Level A tester (synth-run-sharp, under Mono) and its frontend package
-      both verify against the NATIVE-recorded goldens: bit-identical RAM,
-      video stream, and audio stream on every movie, first try - the
-      contract needed no changes for a pure-C# core.
+      through Chimera's window, run `--headless` with no display, with
+      RAM+VRAM byte-compare against the same goldens - THE Chimera smoke test.
 - [ ] Additional test roms (dedicated video-goal and audio-goal roms)
-- [ ] Waterboxed twin (flavor c) - blocked on the waterboxing machinery
 
 ## Provenance
 

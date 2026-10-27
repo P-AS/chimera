@@ -671,7 +671,7 @@ opened a project. It does now, with the engine's sentence as the refusal.
   writes and validates the project (manifest, core pin, settings, input
   log, markers, branches), evolving `ce_multifile_*` and the
   engine-resident input log. chimera-run and every gate consume projects
-  for free; C# only renders UI over it.
+  for free; the window only shows it.
 - **Movie code is absorbed**: the engine's input-log/movie code becomes
   the project's input-log section and the standalone movie format retires
   from the GUI. Headless chimera-run and the gates keep old movie files

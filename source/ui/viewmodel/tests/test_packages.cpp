@@ -1,6 +1,5 @@
 /* The contract between Chimera and the core packages it is given, checked
- * against real packages (what was Chimera's C# InstalledCorePackagesTests and
- * MnemonicUniquenessTests).
+ * against real packages.
  *
  * Chimera ships no cores: each core publishes its own package, so a change to
  * Chimera could break every core at once, and a core could publish a package
@@ -586,7 +585,7 @@ void checkPackages(const std::vector<Package> &all)
 	}
 }
 
-/* ---- the input roll's letters and headers (what was MnemonicUniquenessTests) ---- */
+/* ---- the input roll's letters and headers ---- */
 
 struct Controller
 {

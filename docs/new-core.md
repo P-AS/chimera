@@ -142,8 +142,8 @@ that fails when the step is undone:
 ## 5. What Chimera will not learn
 
 Chimera knows no system, no control and no core by name, reaches for nothing
-over the network, and keeps its logic in the engine with the C# as interface
-only. A core's needs are met by what its package declares - system names,
+over the network, and keeps its logic in the engine with the window as
+interface only. A core's needs are met by what its package declares - system names,
 mnemonics, slots, firmware and its conditions, settings, media recipes,
 optional exports - and porting-a-core.md lists them all.
 

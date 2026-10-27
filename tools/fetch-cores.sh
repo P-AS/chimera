@@ -7,7 +7,7 @@
 # That leaves a hole its own CI has to close - a frontend change could break the
 # generic waterbox adapter for every core at once and nothing here would notice
 # - so CI fetches what the cores actually published and runs the package
-# contract tests against them (InstalledCorePackagesTests).
+# contract tests against them (test-packages).
 #
 # It is also the quickest way for a developer to get a working set of cores into
 # a fresh checkout without opening the frontend.

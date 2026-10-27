@@ -142,7 +142,7 @@ ApplicationWindow {
         }
     }
 
-    // one player's analog controls: Chimera's AnalogBindControl each, one under another
+    // one player's analog controls: a box each, one under another
     component AnalogPanel: ScrollView {
         id: apanel
         required property string group
@@ -283,7 +283,7 @@ ApplicationWindow {
                                         }
                                     }
                                 }
-                                // Chimera's RelativeMouseSensitivity, for every control the pointer's movement moves
+                                // Chimera's relative mouse sensitivity, for every control the pointer's movement moves
                                 RowLayout {
                                     visible: kind.modelData === "analog"
                                     Layout.topMargin: 4

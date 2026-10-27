@@ -1,4 +1,4 @@
-// Chimera's Theme window (Config > Theme), laid out as its ThemeChooserForm:
+// Chimera's Theme window (Config > Theme):
 // the themes on the left (Theme and Look; the built-in two first, then the
 // files by name), a drawing of Chimera in the theme picked on the right
 // (pointing at a part names the colour it is painted with), the theme's

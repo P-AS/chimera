@@ -1,4 +1,4 @@
-/* Chimera's jump list (its JumpLists.cs), on Windows: the taskbar's Recent
+/* Chimera's jump list, on Windows: the taskbar's Recent
  * list shown for the program, and each project or game opened put on it as
  * a task that starts the program with that file. Elsewhere, nothing. */
 
@@ -18,8 +18,7 @@ namespace chimera::qt {
 
 #ifdef _WIN32
 namespace {
-/* one command line argument, quoted so that it comes back whole, as
- * Chimera's QuoteAndEscapeArgument does it */
+/* one command line argument, quoted so that it comes back whole */
 std::wstring quoted(const std::wstring &argument)
 {
 	if (!argument.empty() && argument.find_first_of(L" \"\t\n") == std::wstring::npos) return argument;

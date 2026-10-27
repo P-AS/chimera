@@ -1,6 +1,6 @@
 # Chimera build: mediated by meson, from a Linux host, for BOTH targets.
 #
-#   Linux artifacts (.so + the platform-neutral managed build):
+#   Linux artifacts (.so files and the programs):
 #     meson setup build/meson-linux --prefix "$(pwd)/build" --libdir dll
 #     meson compile -C build/meson-linux
 #     meson install -C build/meson-linux
@@ -30,26 +30,6 @@ cc = meson.get_compiler('c')
 m_dep = cc.find_library('m', required: false)
 dl_dep = cc.find_library('dl', required: false)
 thread_dep = dependency('threads')
-
-# ---------------------------------------------------------------------------
-# libchimerahash: hardware-accelerated hashing (in-repo sources)
-# ---------------------------------------------------------------------------
-chimerahash_src = files(
-  'extern/LibChimeraHash/chimerainterface.c',
-  'extern/LibChimeraHash/common/x86_features.c',
-  'extern/LibChimeraHash/crc32/crc32_braid.c',
-  'extern/LibChimeraHash/crc32/crc32_fold_pclmulqdq.c',
-  'extern/LibChimeraHash/crc32/crc32_fold_vpclmulqdq.c',
-  'extern/LibChimeraHash/sha1/sha1_sha.c',
-)
-shared_library(
-  'chimerahash',
-  chimerahash_src,
-  include_directories: include_directories('extern/LibChimeraHash/common'),
-  gnu_symbol_visibility: 'hidden',
-  install: true,
-  install_dir: 'dll',
-)
 
 # ---------------------------------------------------------------------------
 # chimera_crash: the crash note a Windows fast-fail cannot stop (in-repo source;
@@ -117,31 +97,6 @@ e_sqlite3_lib = shared_library(
   name_prefix: host_windows ? '' : 'lib',
   c_args: sqlite_args,
   dependencies: [m_dep, dl_dep, thread_dep],
-  install: true,
-  install_dir: 'dll',
-)
-
-# ---------------------------------------------------------------------------
-# cimgui: Dear ImGui C bindings, pinned to ImGui.NET's binding version
-# ---------------------------------------------------------------------------
-cimgui_args = ['-DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1']
-if host_windows
-  cimgui_args += '-DIMGUI_IMPL_API=extern "C" __declspec(dllexport)'
-else
-  cimgui_args += '-DIMGUI_IMPL_API=extern "C"'
-endif
-shared_library(
-  'cimgui',
-  files(
-    'extern/cimgui/cimgui.cpp',
-    'extern/cimgui/imgui/imgui.cpp',
-    'extern/cimgui/imgui/imgui_demo.cpp',
-    'extern/cimgui/imgui/imgui_draw.cpp',
-    'extern/cimgui/imgui/imgui_tables.cpp',
-    'extern/cimgui/imgui/imgui_widgets.cpp',
-  ),
-  name_prefix: host_windows ? '' : 'lib',
-  cpp_args: cimgui_args,
   install: true,
   install_dir: 'dll',
 )
@@ -274,10 +229,8 @@ shared_library(
 )
 
 # ---------------------------------------------------------------------------
-# libchimera: the engine. The functional side of the frontend, migrating out
-# of C# component by component (see docs/engine-migration.md). Its C ABI in
-# engine/include/chimera/engine.h is a frozen spec; the frontend NativeInvokes it
-# the same way it does libminiboxhost.
+# libchimera: the engine, everything functional under Chimera's window. Its C
+# ABI in engine/include/chimera/engine.h is a frozen spec.
 # ---------------------------------------------------------------------------
 engine_inc = include_directories('source/engine/include')
 engine_src = files(
@@ -347,8 +300,8 @@ engine_build_args = [
   # cJSON reads and writes numbers with strtod and sprintf, which use the
   # decimal separator of the process's locale. Built this way it asks the
   # locale what that is and translates, so JSON is always written and read
-  # with a dot. A frontend's runtime may put the process in the user's locale
-  # (Mono did, and Qt does); with a decimal comma, "0.5" in a core's declarations did
+  # with a dot. A frontend may put the process in the user's locale (Qt
+  # does); with a decimal comma, "0.5" in a core's declarations did
   # not parse and a fraction was written as "0,5" (issue 244).
   '-DENABLE_LOCALES',
   # the ce_ ABI is exported explicitly (see engine.h); cJSON must not export

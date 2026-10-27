@@ -20,7 +20,7 @@ const char *const kButtons[] = {"A", "B", "X", "Y", "Back", "Guide", "Start", "L
 	"LeftShoulder", "RightShoulder", "DpadUp", "DpadDown", "DpadLeft", "DpadRight", "Misc",
 	"Paddle1", "Paddle2", "Paddle3", "Paddle4"};
 enum { AXIS_LEFTX, AXIS_LEFTY, AXIS_RIGHTX, AXIS_RIGHTY, AXIS_TRIGGERLEFT, AXIS_TRIGGERRIGHT };
-/* the C# interface's thresholds: a stick past 40%, a trigger past about 15% */
+/* a stick counts as pressed past 40%, a trigger past about 15% */
 constexpr int kStick = static_cast<int>(32768 / 2.5), kTrigger = static_cast<int>(32768 / 6.5);
 } // namespace
 

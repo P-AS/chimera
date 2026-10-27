@@ -33,7 +33,7 @@ class PianoRollItem : public QQuickPaintedItem
 	/* which of TAStudio's input rolls this is: its own columns */
 	Q_PROPERTY(int view MEMBER view_ NOTIFY viewChanged)
 	/* how wide its columns are, all told (how tall turned on its side): an
-	 * input roll beside another takes this much, as Chimera's TotalColWidth */
+	 * input roll beside another takes this much, as Chimera does */
 	Q_PROPERTY(int contentExtent READ contentExtent NOTIFY contentExtentChanged)
 	/* the rows a notch of the wheel scrolls */
 	Q_PROPERTY(int wheelRows MEMBER wheelRows_)

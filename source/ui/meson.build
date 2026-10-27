@@ -83,7 +83,7 @@ vm_lib = static_library(
     'viewmodel/src/themes_vm.cpp',
     'viewmodel/src/ram_watch_vm.cpp',
     'viewmodel/src/config_store.cpp',
-    'viewmodel/src/chimera_settings.cpp',
+    'viewmodel/src/config_names.cpp',
     'viewmodel/src/help_vm.cpp',
     'viewmodel/src/media_maker_vm.cpp',
     'viewmodel/src/cache_manager_vm.cpp',
@@ -107,8 +107,7 @@ test_vm = executable(
   override_options: ['cpp_std=c++20'],
   build_by_default: true,
 )
-# the contract between Chimera and the core packages it is given (what was
-# the C# InstalledCorePackagesTests and MnemonicUniquenessTests): its rules on
+# the contract between Chimera and the core packages it is given: its rules on
 # packages made up here, and every package in build/Cores (a core's CI runs it
 # on its own package: CHIMERA_CORES_DIR=<folder> test-packages)
 test_packages = executable(
@@ -323,15 +322,6 @@ if qt_dep.found()
     args: [window_run, meson.current_build_dir() / 'lua-config-test', '50', chimera_qt, window_game[0],
       repo_root / 'build/Cores/synth-box.chimeraCore', '--play', '--lua', files('qt/tests/lua-config-names.lua')],
     timeout: 60,
-  )
-  # Chimera's settings carried over once, at the first start: every setting
-  # the two share comes back through client.getconfig as Chimera's file had it
-  test(
-    'chimera settings import',
-    find_program('python3'),
-    args: [files('qt/tests/chimera-import.py'), chimera_qt, meson.current_build_dir() / 'chimera-import-test',
-      repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom'],
-    timeout: 300,
   )
   # Chimera's command line, as the window that replaces it takes it
   test(

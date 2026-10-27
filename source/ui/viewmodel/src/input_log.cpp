@@ -10,7 +10,7 @@ namespace chimera::vm {
 
 std::string movieLineFromBar(const std::string &line)
 {
-	/* as Chimera's MovieController reads a line: from its first '|', only
+	/* as Chimera reads a line: from its first '|', only
 	 * whitespace and the digits 0-9 before it dropped (an editor's indent or
 	 * tab, a copied frame number); anything else is left to be refused */
 	if (line.empty() || line[0] == '|') return line;

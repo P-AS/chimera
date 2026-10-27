@@ -2,10 +2,9 @@
 """Write a moment the way Chimera shows dates (issue 331, user-decided
 2026-10-20): Central European time as Zurich keeps it, with its zone, as in
 "2026-10-18 18:35 CEST". CET is UTC+1; CEST, UTC+2, runs from 01:00 UTC on
-the last Sunday of March to 01:00 UTC on the last Sunday of October. The same
-rule as source/gui/Chimera.Common/EuropeanClock.cs, worked out here rather
-than read from the system's time zones, so a runner without them writes the
-same text.
+the last Sunday of March to 01:00 UTC on the last Sunday of October. The rule
+is worked out here rather than read from the system's time zones, so a runner
+without them writes the same text.
 
 usage: tools/european-time.py <UTC time: 2026-10-18T16:35:38Z, or Unix seconds>
 """

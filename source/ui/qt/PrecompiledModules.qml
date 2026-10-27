@@ -5,9 +5,6 @@
 // picked means under it, and Remove (with what it frees), Open folder and
 // Close. Removing costs the minutes to compile a game again, never work.
 // Layout and bindings only, over the precompiled view model.
-//
-// Not here: Chimera's "Memory per compile session (GB)", as the prototype
-// does not yet run compile sessions of its own.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs

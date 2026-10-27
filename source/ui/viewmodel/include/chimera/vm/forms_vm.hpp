@@ -22,7 +22,7 @@ public:
 	 * as Chimera's): the file named at first, the folder it opens in, the
 	 * filters (nameFilters' form); the file picked, "" when cancelled */
 	std::function<std::string(const std::string &fileName, const std::string &folder, const std::vector<std::string> &filters)> openFile;
-	/* a .NET dialog filter ("Images (*.bmp;*.png)|*.bmp;*.png|All Files (*.*)|*.*")
+	/* a script's dialog filter ("Images (*.bmp;*.png)|*.bmp;*.png|All Files (*.*)|*.*")
 	 * as a file dialog's name filters ("Images (*.bmp *.png)", "All Files (*)") */
 	static std::vector<std::string> nameFilters(const std::string &filter);
 

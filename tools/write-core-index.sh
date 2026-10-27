@@ -15,9 +15,9 @@
 # miss and no aggregator to break. A core's index cannot go stale with respect
 # to that core's releases.
 #
-# The file is GitHub's own /releases shape, trimmed to the fields the frontend
-# reads (CoreReleases.Parse). Keeping the shape means the frontend needs no
-# second parser and no schema to keep in step with this script.
+# The file is GitHub's own /releases shape, trimmed to the fields that are
+# read. Keeping the shape means a reader needs no second parser and no schema
+# to keep in step with this script.
 #
 # It is REGENERATED from the full release list every time, never appended to, so
 # a run that failed halfway leaves nothing to reconcile: the next publish writes
@@ -63,7 +63,7 @@ echo "== asking $repo what it has published"
 # frontend only ever shows what fits a version selector anyway
 gh api "repos/$repo/releases?per_page=100" --paginate > "$work/raw.json"
 
-# Trim to what CoreReleases.Parse reads. A draft is not published to anyone, and
+# Trim to the fields that are read. A draft is not published to anyone, and
 # an asset that is not a core package is not a version anybody can install.
 jq '[ .[]
       | select(.draft != true)

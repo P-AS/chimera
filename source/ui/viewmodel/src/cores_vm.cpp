@@ -461,7 +461,7 @@ std::string CoresViewModel::licenceSummary(const std::string &packagePath)
 	const bool read = d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), lic, err);
 	ce_package_free(p);
 	if (!read) return {};
-	/* as Chimera's CoreLicence.Summary: commercial use, the terms, the note, the parts by name */
+	/* a core's licence in short: commercial use, the terms, the note, the parts by name */
 	auto text = [&](const char *name) {
 		const json::Json *v = lic.find(name);
 		return v != nullptr && v->kind == json::Json::Kind::String ? v->text : std::string();

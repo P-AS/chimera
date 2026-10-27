@@ -4,7 +4,7 @@
  * did. The server is the engine's; the machine's thread runs the agent's calls
  * between frames (SessionViewModel), and the ones only the window can answer -
  * the movie as TAStudio holds it, its branches and markers, saving, closing,
- * Lua, making a project - come here, as Chimera's McpHostTools answers them.
+ * Lua, making a project - come here.
  * Every change goes through the calls TAStudio itself uses, so it shows in the
  * piano roll and is a step of its undo history. */
 

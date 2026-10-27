@@ -1,6 +1,6 @@
 #pragma once
 /* A running process, told apart from a later one that was given the same
- * number: its id and when it started, as Chimera's ProjectRecovery records
+ * number: its id and when it started, as Chimera records
  * the session that wrote a recovery folder. A folder whose writer is still
  * running is another window's work in progress, not a crash's. */
 

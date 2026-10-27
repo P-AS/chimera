@@ -22,8 +22,8 @@ public:
 	 * `echo` a line at a time, when given and Duplicate to Stdout is on) */
 	LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua, std::function<void(const std::string &)> echo = {});
 	/* Chimera's Lua Functions List made from its documentation and the
-	 * prototype's own list ([{"library", "name", "params"}]), as JSON */
-	static std::string functionsList(const std::string &prototypeList);
+	 * window's own list ([{"library", "name", "params"}]), as JSON */
+	static std::string functionsList(const std::string &windowList);
 	~LuaConsoleViewModel() override;
 
 	/* the session's file, "" until one is opened or saved */
@@ -52,7 +52,7 @@ public:
 	 * says it ("" Sublime not found, "detected", "installed") */
 	Property<std::string> appDataFolder;
 	Property<std::string> sublimeState;
-	/* Chimera's completions for Sublime Text 2 (its ToSublime2CompletionList) */
+	/* Chimera's completions for Sublime Text 2 */
 	static std::string sublimeCompletions();
 	/* the output lines selected (for Copy), first..last; -1 for none */
 	Property<int64_t> outputFirst{-1};

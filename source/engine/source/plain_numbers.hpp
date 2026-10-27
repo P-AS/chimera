@@ -2,7 +2,7 @@
 /* plain_numbers.hpp - a fraction as text, the same on every machine.
  *
  * strtod and printf use the decimal separator of the process's locale, and a
- * frontend's runtime may put the process in the user's (Mono does). Text the
+ * frontend may put the process in the user's. Text the
  * engine shows, stores or accepts for a number must not depend on that: a
  * value typed as 1.5 is 1.5 where the system writes 1,5 too, and a file
  * written on one machine reads on another (issue 244).

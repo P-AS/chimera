@@ -1,9 +1,8 @@
 /* movie_log.cpp - the [Input] lump of a movie.
  *
- * This replaces Bk2Movie.InputLog.cs's parsing and rendering, and reproduces it
- * exactly - including its quirks, which are named where they occur. Byte
- * compatibility with movies written by the C# implementation is the contract;
- * the fixtures in tests/test_movie_log.cpp pin it.
+ * Parsing and rendering byte for byte as every movie Chimera ever wrote has
+ * it - including its quirks, which are named where they occur. That is the
+ * contract; the fixtures in tests/test_movie_log.cpp pin it.
  */
 
 #include "chimera/engine.h"
@@ -37,8 +36,7 @@ struct MovieLog
 	std::string scratch; // backs the pointer returned by serialize
 };
 
-/* One line per call, consuming LF, CRLF or lone CR - the same three
- * terminators C#'s TextReader.ReadLine accepts. A final line without a
+/* One line per call, consuming LF, CRLF or lone CR. A final line without a
  * terminator still counts. */
 bool nextLine(const char *text, uint64_t len, uint64_t &pos, std::string &line)
 {
@@ -526,8 +524,8 @@ static int32_t parseLog(ce_movie_log *log, const char *text, uint64_t len)
 		}
 		else if (startsWith(line, "LogKey:"))
 		{
-			/* quirk: the C# used string.Replace, so EVERY occurrence of the
-			 * marker vanishes from the line, not just the leading one */
+			/* quirk: EVERY occurrence of the marker vanishes from the line,
+			 * not just the leading one */
 			std::string key = line;
 			for (auto at = key.find("LogKey:"); at != std::string::npos; at = key.find("LogKey:", at))
 			{

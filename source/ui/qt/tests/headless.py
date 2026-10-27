@@ -23,8 +23,7 @@ shutil.rmtree(work, ignore_errors=True)
 os.makedirs(work)
 env = dict(os.environ, ALSOFT_DRIVERS="null", CHIMERA_QT_CONFIG=os.path.join(work, "settings.json"),
            CHIMERA_QT_CACHE=os.path.join(work, "cache"), CHIMERA_QT_RECOVERY=os.path.join(work, "recovery"),
-           CHIMERA_QT_HASHES=os.path.join(work, "file-hashes.txt"),
-           CHIMERA_QT_CHIMERA_SETTINGS=os.path.join(work, "no-chimera-config.ini"))
+           CHIMERA_QT_HASHES=os.path.join(work, "file-hashes.txt"))
 # no display, and Qt not told where to draw: --headless must do without
 for name in ("DISPLAY", "WAYLAND_DISPLAY", "QT_QPA_PLATFORM", "QT_QUICK_BACKEND"):
     env.pop(name, None)

@@ -125,14 +125,10 @@ uncatchable - not missed, uncatchable.
 > not always (issue #120). The gate is green and the guarantee it stands for is
 > unestablished for games.
 
-> Every frontend test once ran Chimera's C# window on Mono under Xvfb, while
-> the people who used Chimera ran .NET Framework WinForms on Windows. That
-> toolkit decided what an assignment to `BackColor` did, whether a control
-> repainted, and whether visual styles overrode either - so 889 green tests
-> said nothing at all about whether the theme menu worked, which twice it did
-> not. The window is Qt's now, the same toolkit on both systems, and its
-> tests run it off screen: a test of how something LOOKS still has to be
-> looked at on a real screen.
+> The window's tests run it off screen, with Qt's software drawing. A test of
+> how something LOOKS still has to be looked at on a real screen, on the
+> system people use: hundreds of passing tests once said nothing at all about
+> whether the theme menu worked on Windows, which twice it did not.
 
 > Both of the PPSSPP core's gates hand their program to the core as a rom,
 > mounted as `/name`. A person opens a project, and a project mounts the game
@@ -149,8 +145,7 @@ cannot ship somebody's game, and it cannot run Windows on a Linux runner. That
 is fine, but write down what it does NOT stand in for, in PLAN.md, next to the
 leg. The failure is not using a stand-in; it is forgetting that it is one. Then
 ask what the cheapest real-subject check would be: for the theme menu it was
-one program compiled against the frontend assemblies and run on the developer's
-own Windows box (`tests/ui/windows/live-theme-switch.sh`), which found the bug
+one run of the window on the developer's own Windows box, which found the bug
 in a minute after two rounds of guessing at it.
 
 ## F. A timing or ordering assumption that makes the check vacuous

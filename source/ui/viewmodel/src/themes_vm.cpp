@@ -113,7 +113,7 @@ ThemesViewModel::ThemesViewModel(Dispatcher &dispatcher) : ViewModel("themes", d
 				std::error_code ec;
 				if (std::none_of(themes_.begin(), themes_.end(), [&](const Theme &t) { return t.name == copy; }) && !fs::exists(path, ec)) break;
 			}
-			/* as Chimera's ThemeFile writes one */
+			/* as Chimera writes one */
 			std::string text = "{\n\t\"name\": " + json::quote(copy) + ",\n\t\"description\": " + json::quote(src->description) + ",\n";
 			if (!src->author.empty()) text += "\t\"author\": " + json::quote(src->author) + ",\n";
 			text += std::string("\t\"dark\": ") + (src->dark ? "true" : "false") + ",\n\t\"colors\": {\n";

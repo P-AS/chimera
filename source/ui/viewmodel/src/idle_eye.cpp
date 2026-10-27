@@ -91,7 +91,7 @@ bool IdleEyeViewModel::snowing() const
 	return day >= 354 && day <= 360;
 }
 
-/* Chimera's SnowyNullVideo: a random byte each pixel, raised and brightened, grey */
+/* the snowy picture with no machine: a random byte each pixel, raised and brightened, grey */
 void IdleEyeViewModel::snow()
 {
 	const float power = std::pow(10.0f, static_cast<float>(-std::clamp(snowBias.get(), -2.0, 2.0)));

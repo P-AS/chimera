@@ -7,8 +7,7 @@
  * controllers no core in the tree declares - axes especially, which the synth
  * witness core has none of.
  *
- * The layout rule is BizHawk's ControllerDefinition.GenOrderedControls:
- * controls grouped by player number (0 = console), axes before buttons within
+ * The layout rule is the one every movie has used: controls grouped by player number (0 = console), axes before buttons within
  * a group, both in declaration order.
  */
 #pragma once
@@ -25,7 +24,7 @@ struct EntryAxis
 	int32_t min = 0, max = 0, neutral = 0;
 };
 
-/* ControllerDefinition.PlayerNumber: "^P(\d+) " captures the player, else 0 */
+/* "^P(\d+) " captures the player, else 0 */
 /* the largest number a control's "P<n> " prefix is read as */
 constexpr int32_t kMostPlayers = 255;
 int32_t playerNumberOf(const std::string &name);
@@ -80,8 +79,8 @@ public:
 	/* Whether a column of this layout is the machine's button (or axis) at
 	 * that declared index. */
 	bool hasControl(bool isAxis, int32_t index) const;
-	/* The LogKey that names this layout's columns, in the window's form
-	 * (LogEntryGenerator.GenerateLogKey): '#' before each group, '|' after
+	/* The LogKey that names this layout's columns, in the window's form:
+	 * '#' before each group, '|' after
 	 * each name. Empty when a column has no name the machine knows. */
 	std::string key(const std::vector<std::string> &buttons) const;
 	/* The names a piece of a LogKey holds, as "P1 A, P1 B", for messages. */

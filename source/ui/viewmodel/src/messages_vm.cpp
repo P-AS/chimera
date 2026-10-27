@@ -12,7 +12,7 @@ using json::Json;
 
 const char *const kNames[] = {"Fps", "Frame Counter", "Lag Counter", "Input Display", "Watches", "Messages", "Rerecords",
 	"Autohold", "Game Time"};
-/* Chimera's DefaultMessagePositions */
+/* Chimera's default message positions */
 const int kDefaults[][3] = {{0, 0, 0}, {0, 14, 0}, {0, 42, 0}, {0, 28, 0}, {0, 70, 0}, {0, 0, 2}, {0, 56, 0}, {0, 0, 1},
 	{0, 14, 1}};
 

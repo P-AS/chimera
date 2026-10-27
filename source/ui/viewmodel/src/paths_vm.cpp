@@ -39,7 +39,7 @@ std::string recentFolder()
 	return {};
 }
 
-/* a system's id as a folder name: what Windows refuses in a name taken out, as Chimera's RemoveInvalidFileSystemChars */
+/* a system's id as a folder name: what Windows refuses in a name taken out, as Chimera does */
 std::string folderName(const std::string &id)
 {
 	std::string out;
@@ -63,7 +63,7 @@ json::Json objectOf(const std::string &text)
 
 const std::vector<std::pair<std::string, std::string>> &PathsViewModel::defaults()
 {
-	/* Chimera's global entries (PathEntryCollection.Defaults), in its order; the
+	/* Chimera's global entries, in its order; the
 	 * folders named in lower case (owner, 2026-10-24) */
 	static const std::vector<std::pair<std::string, std::string>> list = {
 		{"Base", "."},
@@ -88,7 +88,7 @@ const std::vector<std::pair<std::string, std::string>> &PathsViewModel::defaults
 
 std::vector<std::pair<std::string, std::string>> PathsViewModel::systemDefaults(const std::string &system)
 {
-	/* Chimera's CommonEntriesFor: made for a system the first time something of it is asked for */
+	/* a system's entries: made for a system the first time something of it is asked for */
 	std::string folder = folderName(system);
 	for (char &c : folder) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 	return {{"Base", "./" + folder}, {"ROM", "."}, {"Savestates", "./state"}, {"Screenshots", "./screenshots"}};
@@ -269,7 +269,7 @@ std::string PathsViewModel::pathOf(const std::string &system, const std::string 
 
 std::string PathsViewModel::globalBase() const
 {
-	/* Chimera's GlobalBaseAbsolutePath: %exe% put in, an absolute base as it is, else under the program's folder */
+	/* the global base made absolute: %exe% put in, an absolute base as it is, else under the program's folder */
 	std::string b = pathOf("Base");
 	if (startsWithToken(b, "%exe%")) b = programFolder.get() + b.substr(5);
 	if (fs::path(b).is_absolute()) return tidy(b);
@@ -278,7 +278,7 @@ std::string PathsViewModel::globalBase() const
 
 std::string PathsViewModel::absolute(const std::string &path, const std::string &forSystem) const
 {
-	/* Chimera's AbsolutePathForInner, step by step */
+	/* a path made absolute, step by step */
 	const std::string system = forSystem == "Global" ? std::string() : forSystem;
 	std::string p = path;
 	if (p.empty()) return globalBase();
@@ -306,7 +306,7 @@ std::string PathsViewModel::resolve(const std::string &name) const
 	const std::string path = pathOf(name);
 	if (name != "Base" && path.empty() && name != "Temp Files") return {};
 	if (name == "Base") return globalBase();
-	/* Chimera's ResolveToolsPath: a relative Watch or Debug Logs folder is under Tools ("Tools" alone being Tools) */
+	/* the tools' path: a relative Watch or Debug Logs folder is under Tools ("Tools" alone being Tools) */
 	if ((name == "Watch (.wch)" || name == "Debug Logs") && !fs::path(path).is_absolute() && (path.empty() || path[0] != '%'))
 	{
 		const std::string tools = pathOf("Tools");
@@ -319,8 +319,8 @@ std::string PathsViewModel::resolveFor(const std::string &system, const std::str
 {
 	if (system.empty() || system == "Global") return resolve(name);
 	/* EntryWithFallback: the system's own kind, else its base, else the global base. The system's
-	 * base is from the global one (Chimera puts the system's base in front of it again, giving
-	 * <base>/NES/NES; the prototype does not) */
+	 * base is from the global one, and is not put in front of it again (which would give
+	 * <base>/NES/NES) */
 	const std::string path = pathOf(system, name);
 	if (path.empty() || name == "Base") return absolute(pathOf(system, "Base"), "");
 	return absolute(path, system);

@@ -5,7 +5,7 @@
  * 01:00 UTC on the last Sunday of October - with the zone after the time,
  * "2026-10-18 18:35 CEST". Worked out here rather than asked of the
  * system's time zones, so every computer writes the same text for one
- * moment, as Chimera's EuropeanClock does. */
+ * moment, as Chimera does. */
 
 #include <cstdint>
 #include <string>

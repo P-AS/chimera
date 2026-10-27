@@ -1238,9 +1238,8 @@ match on both machines.
 The minidumps rule out running short of memory (each machine had gigabytes
 of commit to spare) and an old Vulkan loader (one machine has 1.4.309).
 Standalone Dolphin starts on the same driver. One difference a core cannot
-see is the thread: a core calls in on the thread that runs it, which in
-Chimera is the window's, and .NET makes that a single-threaded COM
-apartment. On Windows the bridge now creates the instance, chooses the
+see is the thread: a core calls in on the thread that runs it, which was
+the window's, a single-threaded COM apartment. On Windows the bridge now creates the instance, chooses the
 device and creates the device on a thread of its own (no COM apartment, an
 8 MB stack). Vulkan allows an object made on one thread to be used on
 another. The thread is made once and kept, so whatever a driver ties to the

@@ -1,10 +1,9 @@
 /* state_container.cpp - the zip-of-lumps shape savestates and movies share.
  *
- * Replaces ZipStateSaver/FrameworkZipWriter/ZipStateLoader's container logic;
- * the C# keeps the file plumbing (temp files, backups, renames) and hands
+ * The caller keeps the file plumbing (temp files, backups, renames) and hands
  * whole buffers across. Compatibility is with the FORMAT: archives written
  * here read in old builds and vice versa; the deflate bytes themselves are
- * miniz's rather than System.IO.Compression's, which the format never pinned.
+ * miniz's, which the format never pinned.
  *
  * Reproduced quirks are marked; the naming rules live in engine.h.
  */
@@ -26,7 +25,7 @@
 
 namespace {
 
-/* the C# writer's level mapping: .NET's NoCompression/Fastest/Optimal */
+/* the config's 0-9 as deflate's: none below 1, fastest below 5, else the default */
 int deflateLevelFor(int32_t compressionLevel)
 {
 	if (compressionLevel == 0) return MZ_NO_COMPRESSION;
@@ -44,7 +43,7 @@ std::string fileNameOf(const char *name, const char *ext)
 	return fileName;
 }
 
-/* the lookup key the C# loader always used: path up to the first '.' */
+/* the lookup key: path up to the first '.' */
 std::string keyOf(const std::string &path)
 {
 	auto dot = path.find('.');
@@ -147,8 +146,8 @@ ce_state_writer *ce_state_writer_new(int32_t compression_level, const char *emu_
 		w->error = "could not start a zip archive";
 		return w;
 	}
-	/* every archive says what it is and what wrote it, uncompressed - the
-	 * trailing newline matches the old StreamWriter.WriteLine */
+	/* every archive says what it is and what wrote it, uncompressed, with a
+	 * trailing newline as it always had */
 	std::string version = std::string(emu_version != nullptr ? emu_version : "") + "\n";
 	ce_state_writer_put_lump(w, "ChimeraState 1", "0", 0, reinterpret_cast<const uint8_t *>("3\n"), 2);
 	ce_state_writer_put_lump(w, "ChimeraVersion", "txt", 0,
@@ -440,7 +439,7 @@ const uint8_t *ce_state_reader_lump(
 
 	/* quirk, preserved: version 1.0.2 marked nothing, and compression was
 	 * inferred - note "Greenzone" never matches the "GreenZone" lump, and
-	 * did not in the C# either */
+	 * never did */
 	if (r->version == 2)
 	{
 		std::string extStr = ext != nullptr ? ext : "";

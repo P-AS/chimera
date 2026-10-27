@@ -171,7 +171,7 @@ To run: `build/meson-linux/source/ui/chimera` (with `CHIMERA_CORES_DIR=build/Cor
 for the cores a checkout holds), then `File > New Chimera Project...` and pick a
 core. `--headless` runs it with no window and no display, for a script or a test.
 
-The witness gate runs with `tests/synth/run-witness.sh`. The engineering log (objectives, procedure, and the sharp edges found along the way) is in [docs/design-principles.md](docs/design-principles.md); the engine migration is chronicled in [docs/engine-migration.md](docs/engine-migration.md). Building a new core, and joining it to this bundle, is [docs/porting-a-core.md](docs/porting-a-core.md).
+The witness gate runs with `tests/synth/run-witness.sh`. The engineering log (objectives, procedure, and the sharp edges found along the way) is in [docs/design-principles.md](docs/design-principles.md). Building a new core, and joining it to this bundle, is [docs/porting-a-core.md](docs/porting-a-core.md).
 
 ## Reporting a problem
 

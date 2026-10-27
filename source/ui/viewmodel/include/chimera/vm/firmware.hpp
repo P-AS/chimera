@@ -37,7 +37,7 @@ const FirmwareFile *findFirmware(const json::Json &decl, const std::string &pinn
 	const std::vector<FirmwareFile> &index, std::string &how);
 /* the different files a declaration's size and name hints point at (one dump
  * in two places is one), for one that pins no hash: two or more, and the
- * person chooses (Chimera's FirmwareLocator.HintCandidates, issue 349) */
+ * person chooses (issue 349) */
 std::vector<const FirmwareFile *> hintCandidates(const json::Json &decl, const std::vector<FirmwareFile> &index);
 
 struct FirmwareNeed

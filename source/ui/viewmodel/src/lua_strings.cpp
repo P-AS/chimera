@@ -1,9 +1,8 @@
-/* Chimera's bizstring library (Lua), done as Chimera's does it: on .NET
- * strings. A Lua string is UTF-8; Chimera's library sees it as UTF-16, so
- * positions, lengths and widths are counted in UTF-16 units, and what is not
- * UTF-8 reads as U+FFFD. encode and decode go through the system's own code
- * page converters (Windows' on Windows, iconv elsewhere), by .NET's names for
- * the encodings. One C function, __chimera_string(operation, ...), and the
+/* Chimera's bizstring library (Lua). A Lua string is UTF-8; the library sees
+ * it as UTF-16, so positions, lengths and widths are counted in UTF-16 units,
+ * and what is not UTF-8 reads as U+FFFD. encode and decode go through the
+ * system's own code page converters (Windows' on Windows, iconv elsewhere),
+ * by the encodings' usual names ("utf-8", "shift_jis", "windows-1252"). One C function, __chimera_string(operation, ...), and the
  * library itself in lua_libraries.cpp. */
 
 #include <algorithm>
@@ -81,7 +80,7 @@ std::string toUtf8(const U16 &s)
 		if (cp >= 0xD800 && cp < 0xDC00 && i + 1 < s.size() && s[i + 1] >= 0xDC00 && s[i + 1] < 0xE000)
 			cp = 0x10000 + ((cp - 0xD800) << 10) + (s[++i] - 0xDC00);
 		else if (cp >= 0xD800 && cp < 0xE000)
-			cp = 0xFFFD; /* half a pair: what .NET writes for it */
+			cp = 0xFFFD; /* half a pair */
 		if (cp < 0x80)
 			out += static_cast<char>(cp);
 		else if (cp < 0x800)
@@ -96,14 +95,14 @@ std::string toUtf8(const U16 &s)
 	return out;
 }
 
-/* .NET's char.IsWhiteSpace */
+/* Unicode's white space, in UTF-16 */
 bool isSpace(char16_t c)
 {
 	return (c >= 0x09 && c <= 0x0D) || c == 0x20 || c == 0x85 || c == 0xA0 || c == 0x1680 || (c >= 0x2000 && c <= 0x200A) ||
 		c == 0x2028 || c == 0x2029 || c == 0x202F || c == 0x205F || c == 0x3000;
 }
 
-/* Case, as .NET's invariant culture changes it, for the letters scripts meet:
+/* Case, the same in every language, for the letters scripts meet:
  * Latin (with its first extensions), Greek, Cyrillic and the full-width
  * Latin of Japanese text */
 char16_t upper(char16_t c)
@@ -147,8 +146,7 @@ std::string lowered(std::string s)
 	return s;
 }
 
-/* UTF-16 and UTF-32 are done here on every system, as .NET writes them: no
- * byte order mark */
+/* UTF-16 and UTF-32 are done here on every system, with no byte order mark */
 bool unicodeForm(const std::string &name, int &bytes, bool &big)
 {
 	const std::string n = lowered(name);
@@ -177,7 +175,7 @@ U16 fromUnicodeForm(const std::string &bytes, int width, bool big)
 		else
 			out.push_back(static_cast<char16_t>(v > 0xFFFF || (v >= 0xD800 && v < 0xE000) ? 0xFFFD : v));
 	}
-	/* a byte left over is one .NET cannot read either */
+	/* a byte left over cannot be read */
 	if (bytes.size() % static_cast<size_t>(width) != 0) out.push_back(0xFFFD);
 	return out;
 }
@@ -199,7 +197,7 @@ std::string toUnicodeForm(const U16 &s, int width, bool big)
 }
 
 #ifdef _WIN32
-/* .NET's name for an encoding, as Windows' code page */
+/* an encoding's name, as Windows' code page */
 UINT codePage(const std::string &name)
 {
 	static const struct
@@ -225,8 +223,8 @@ UINT codePage(const std::string &name)
 	return 0;
 }
 #else
-/* .NET's name for an encoding, as iconv knows it: where .NET's is a Windows
- * code page under another name, that code page */
+/* an encoding's name, as iconv knows it: where the name is a Windows code
+ * page under another name, that code page */
 std::string iconvName(const std::string &name)
 {
 	const std::string n = lowered(name);
@@ -282,7 +280,7 @@ bool decodeBytes(const std::string &bytes, const std::string &encoding, U16 &out
 			out.push_back(static_cast<char16_t>(static_cast<unsigned char>(p[0]) | static_cast<unsigned char>(p[1]) << 8));
 		if (r == static_cast<size_t>(-1) && errno != E2BIG)
 		{
-			/* a byte that cannot be read: U+FFFD for it, as .NET puts, and on */
+			/* a byte that cannot be read: U+FFFD for it, and on */
 			out.push_back(0xFFFD);
 			src++;
 			left--;
@@ -335,7 +333,7 @@ bool encodeText(const U16 &text, const std::string &encoding, std::string &out)
 		out.append(buf, static_cast<size_t>(dst - buf));
 		if (r == static_cast<size_t>(-1) && errno != E2BIG)
 		{
-			/* a character the encoding has not: '?', as .NET puts */
+			/* a character the encoding has not: '?' */
 			out += '?';
 			src += 2;
 			left -= std::min<size_t>(left, 2);

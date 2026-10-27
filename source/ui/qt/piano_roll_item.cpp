@@ -74,7 +74,7 @@ int PianoRollItem::columnW(int column) const
 	const int columns = rows_->rows().columnCount();
 	if (widthsDirty_ || static_cast<int>(widths_.size()) != columns)
 	{
-		/* as Chimera's UpdateColumnWidths: a one-letter title as wide as a W, a
+		/* as Chimera does: a one-letter title as wide as a W, a
 		 * longer one as itself, an analog value as five digits, with three
 		 * pixels each side; a hidden column takes no room */
 		const QFontMetrics fm(font_);
@@ -298,7 +298,7 @@ PianoRollItem::Look PianoRollItem::themeLook() const
 	};
 	themed(plain, "RollBackground");
 	themed(text, "RollText");
-	/* the column titles as Chimera's InputRoll draws them: on the roll's column
+	/* the column titles as Chimera draws them: on the roll's column
 	 * colour, in the roll's text colour, the border around them its own */
 	themed(header, "RollColumnBackground");
 	themed(headerText, "RollText");
@@ -430,7 +430,7 @@ void PianoRollItem::paint(QPainter *p)
 	const int left = static_cast<int>(Qt::AlignVCenter | Qt::AlignLeft);
 	auto title = [&](int c) { return QString::fromStdString(rows.columnShortName(c)); };
 
-	/* the column titles, as Chimera's InputRoll draws them: on the column
+	/* the column titles, as Chimera draws them: on the column
 	 * colour, an Auto-hold column's in the emphasis colour, the one under the
 	 * pointer lit; the frame numbers' headed Frame# */
 	p->fillRect(0, 0, w, hs, header);

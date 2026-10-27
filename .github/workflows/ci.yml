@@ -26,7 +26,7 @@ jobs:
     # Level A is the fast gate: the native C reference records/verifies the
     # goldens, and the waterboxed core.wbx must reproduce them byte-for-byte
     # (including a per-frame whole-machine savestate pass). It needs only gcc,
-    # python3 and meson - no .NET, Mono or X - so it runs on every push.
+    # python3 and meson - no display - so it runs on every push.
     # The full frontend gate (Level B) runs in parallel in witness-full below.
     name: witness level A (core equivalence)
     runs-on: ubuntu-latest
@@ -82,7 +82,7 @@ jobs:
     # (per-frame whole-machine savestate) modes.
     #
     # This builds the entire frontend: every native dependency (SDL2, OpenAL,
-    # zstd, cimgui, lua, sqlite3) and the window on Qt 6.12, so it takes
+    # zstd, lua, sqlite3) and the window on Qt 6.12, so it takes
     # minutes rather than seconds. It still runs per push - the level A job
     # above gives fast feedback meanwhile - and on a daily schedule, which
     # catches environment drift (toolchain/runner image changes) with no commit.

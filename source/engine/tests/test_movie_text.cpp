@@ -1,5 +1,5 @@
 /* test_movie_text.cpp - pins Header.txt, Comments.txt and subtitle lines,
- * byte for byte against what the C# implementation wrote and accepted.
+ * byte for byte against what Chimera has always written and accepted.
  */
 
 #include "chimera/engine.h"
@@ -32,7 +32,7 @@ int main(void)
 		ce_movie_header_free(h);
 	}
 
-	{ // net48 Split quirks: separator runs eaten before the value, kept after
+	{ // separator runs eaten before the value, kept after
 		const char *lump = "Key   spaced  value \n Indented v\nBare\n   \nLast one\n";
 		ce_movie_header *h = ce_movie_header_new();
 		ce_movie_header_parse(h, lump, std::strlen(lump));
@@ -82,7 +82,7 @@ int main(void)
 		assert(m == static_cast<int64_t>(std::strlen("subtitle 100 10 20 120 FFFFFFFF hello world")));
 		assert(std::strcmp(line, "subtitle 100 10 20 120 FFFFFFFF hello world") == 0);
 
-		// empty message: the head's trailing space stays, as C# always wrote it
+		// empty message: the head's trailing space stays, as it was always written
 		int64_t e = ce_subtitle_format_line(&fields, "", line, sizeof line);
 		assert(std::strcmp(line, "subtitle 100 10 20 120 FFFFFFFF ") == 0);
 		assert(e == static_cast<int64_t>(std::strlen(line)));

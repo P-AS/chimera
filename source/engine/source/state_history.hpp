@@ -326,9 +326,9 @@ public:
 	 *
 	 * Streamed, one segment at a time, straight to and from the file: no part of
 	 * this may be assembled in memory first. That is not an optimisation, it is
-	 * the bug this design exists to remove - the greenzone used to serialize
-	 * itself through a managed byte[], which stops near 2GB, and a history of
-	 * any real length silently failed to save and took the work with it.
+	 * the bug this design exists to prevent - a history assembled in one
+	 * buffer stops near 2GB, and a history of any real length would silently
+	 * fail to save and take the work with it.
 	 *
 	 * `machineId` describes the machine the states belong to - the caller's
 	 * business, since it is the caller that knows about cores and settings and

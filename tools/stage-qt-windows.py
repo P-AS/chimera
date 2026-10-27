@@ -39,7 +39,7 @@ shutil.copy2(f"{build}/chimera-mcp.exe", bin)
 if ffmpeg:
     shutil.copy2(ffmpeg, bin)
 for d in ("libchimera.dll", "libminiboxhost.dll", "libzstd.dll", "lua54.dll", "SDL2.dll", "OpenAL32.dll",
-          "libchimerahash.dll", "chimera_crash.dll", "e_sqlite3.dll"):
+          "chimera_crash.dll", "e_sqlite3.dll"):
     shutil.copy2(f"{dlls}/{d}", lib)
 os.makedirs(f"{lib}/platforms")
 shutil.copy2(f"{qt}/plugins/platforms/qwindows.dll", f"{lib}/platforms")

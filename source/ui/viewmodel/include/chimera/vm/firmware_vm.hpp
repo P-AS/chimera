@@ -4,8 +4,8 @@
  * before any project, before any core is open. Nothing is kept here: the
  * rows are made from the packages in the cores folder when asked
  * (refresh), and what the person points at is remembered where it lives
- * (the cores' chosen files, a pinned dump under its own hash as Chimera's
- * CoreFirmwareStore keys it), never copied. As Chimera's FirmwareSurvey:
+ * (the cores' chosen files, a pinned dump under its own hash), never
+ * copied:
  * one group a core (its versions together, the emulators before the game
  * cores), a row a declaration (an id declared for many releases is a row
  * each), each row's state - on hand and right, on hand but a dump the core
@@ -86,7 +86,7 @@ public:
 	const std::vector<Row> &items() const { return rows_; }
 	/* Chimera's line beside a core's name */
 	std::string summaryOf(const Group &g) const;
-	/* the words of a declaration's "requiredWhen" (Chimera's ConditionText) */
+	/* the words of a declaration's "requiredWhen" */
 	static std::string conditionText(const json::Json &when);
 	/* more releases than this of one id show only those on hand until asked */
 	static constexpr size_t kCollapseAbove = 8;

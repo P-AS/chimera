@@ -4,24 +4,20 @@
 #
 # Chimera is WATERBOX-ONLY: the only shipped core package is the waterboxed
 # flavor. A package is just core.wbx (fixed name) + waterbox.config; it is loaded
-# by Chimera's built-in generic WaterboxCore adapter through libminiboxhost,
-# which ships with the frontend in build/dll (see the root meson.build). There is
-# no per-core managed assembly, manifest, or natives list.
+# by Chimera's engine through libminiboxhost, which ships with the frontend in
+# build/dll (see the root meson.build).
 #
 # native/ (synthcore.c + synth-run) is kept ONLY as the offline golden generator
 # for the witness (built by run-witness.sh); it is not a core.
 #
-# Prereq: the frontend has been built (build/dll has libminiboxhost + the contract
-# DLLs including the built-in WaterboxCore).
+# Prereq: Chimera has been built (build/dll has libminiboxhost).
 #
-# Usage: ./build-package.sh [-c Configuration] [-r ChimeraRoot]
+# Usage: ./build-package.sh [-r ChimeraRoot]
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
-configuration=Release
 chimera_root="$here/../.."
-while getopts "c:r:" opt; do
+while getopts "r:" opt; do
 	case "$opt" in
-		c) configuration="$OPTARG" ;;
 		r) chimera_root="$OPTARG" ;;
 		*) exit 2 ;;
 	esac

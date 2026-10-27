@@ -1,4 +1,4 @@
-// A box a binding is made in, as Chimera's InputCompositeWidget: the keys
+// A box a binding is made in, as Chimera does: the keys
 // bound, and an arrow for the bindings a key cannot give (Escape, the
 // pointer's buttons). While it has the focus it takes the next key or
 // gamepad input pressed: a key when it is let go, as Chimera's (so Ctrl

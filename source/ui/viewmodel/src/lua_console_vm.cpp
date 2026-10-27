@@ -88,7 +88,7 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 	expose("reloadOnChange", "Reload When Script File Changes: a running script whose file is written is started again", reloadOnChange, true);
 	expose("duplicateToStdout", "what scripts print goes to the program's standard output too", duplicateToStdout, true);
 	{
-		/* the user's application data, as .NET's ApplicationData folder */
+		/* the user's application data folder */
 		const char *appdata = std::getenv("APPDATA");
 		const char *xdg = std::getenv("XDG_CONFIG_HOME");
 		const char *home = std::getenv("HOME");
@@ -693,12 +693,12 @@ std::string LuaConsoleViewModel::sublimeCompletions()
 	return out + "]}";
 }
 
-std::string LuaConsoleViewModel::functionsList(const std::string &prototypeList)
+std::string LuaConsoleViewModel::functionsList(const std::string &windowList)
 {
 	json::Json docs, ours;
 	std::string why;
 	if (!json::parse(std::string_view(kChimeraLuaDocs), docs, why)) docs.kind = json::Json::Kind::Array;
-	if (!json::parse(prototypeList, ours, why)) ours.kind = json::Json::Kind::Array;
+	if (!json::parse(windowList, ours, why)) ours.kind = json::Json::Kind::Array;
 	auto text = [](const json::Json &o, const char *k) {
 		const json::Json *j = o.find(k);
 		return j != nullptr ? j->text : std::string();
@@ -707,7 +707,7 @@ std::string LuaConsoleViewModel::functionsList(const std::string &prototypeList)
 		const json::Json *j = o.find(k);
 		return j != nullptr && j->boolean;
 	};
-	/* what the prototype's libraries have, by library.name */
+	/* what the window's libraries have, by library.name */
 	std::vector<std::string> have;
 	for (const json::Json &f : ours.items) have.push_back(text(f, "library") + "." + text(f, "name"));
 	std::vector<std::string> documented;
@@ -735,7 +735,7 @@ std::string LuaConsoleViewModel::functionsList(const std::string &prototypeList)
 		entry(text(d, "returns"), text(d, "library"), text(d, "name"), text(d, "params"), text(d, "description"), text(d, "example"),
 			flag(d, "deprecated"), flag(d, "unavailable") || !here);
 	}
-	/* the prototype's own, which Chimera does not document */
+	/* the window's functions with no documentation */
 	for (const json::Json &f : ours.items)
 	{
 		const std::string key = text(f, "library") + "." + text(f, "name");

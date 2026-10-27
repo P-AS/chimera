@@ -113,7 +113,7 @@ out from the paths alone, so a folder on a network share packs on Windows too.
 When names clash and one gets a counter (~2, _2), the counter is never a later
 file's own name.
 
-The window (`tools/MediaMakerForm.cs`) chooses, shows and cancels, and decides
+The window (`source/ui/qt/MediaMaker.qml`) chooses, shows and cancels, and decides
 nothing about the bytes. The bar is repainted from the packing thread at most
 every 50 ms, because a disc is millions of callbacks and a window that paints
 them all is a window that stops the work.

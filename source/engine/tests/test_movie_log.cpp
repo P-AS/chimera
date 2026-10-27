@@ -1,6 +1,6 @@
 /* test_movie_log.cpp - pins the input-log format, byte for byte.
  *
- * The fixtures here are what the C# implementation produced and accepted; the
+ * The fixtures here are what Chimera has always written and accepted; the
  * engine must match them exactly or existing movies stop being readable.
  * Plain asserts, run by `meson test -C build/meson-linux`.
  */

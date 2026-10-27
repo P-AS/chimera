@@ -8,8 +8,8 @@ project(SDL2-Chimera C CXX)
 
 # set(SDL_ATOMIC ON) # Used in HIDAPI (and disabling it just makes it emulate atomics rather than use intrinsics)
 set(SDL_AUDIO OFF)
-set(SDL_VIDEO ON) # Used in mupen64plus + OpenGL/D3D9 display methods
-set(SDL_RENDER ON) # We use the software renderer for GDI+ImGui 2D rendering
+set(SDL_VIDEO ON) # Chimera's window takes only gamepads from SDL; left on as built
+set(SDL_RENDER ON) # the same
 set(SDL_EVENTS ON) # Implied by SDL_VIDEO and SDL_JOYSTICK
 set(SDL_JOYSTICK ON) # Used for our SDL2 input adapter
 set(SDL_HAPTIC OFF)

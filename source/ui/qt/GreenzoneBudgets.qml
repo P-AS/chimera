@@ -1,5 +1,5 @@
 // Chimera's Greenzone budgets (from the Cache Manager), laid out as its
-// GreenzoneBudgetsForm: what a history of states may weigh for every
+// Greenzone budgets: what a history of states may weigh for every
 // project (memory, the stride behind the playhead, the kept pictures after
 // a load) and, when the Cache Manager's row picked is a project's cache, a
 // budget of that project's own, kept beside its cache; OK keeps them,

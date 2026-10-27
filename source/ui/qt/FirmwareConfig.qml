@@ -1,5 +1,5 @@
 // Chimera's Firmware window (Config > Firmware), laid out as Chimera's
-// FirmwareSurveyForm: what the window is for at the top, Show (All,
+// The Firmware window: what the window is for at the top, Show (All,
 // Emulators, Games) above the list, the list grouped by core (the core's
 // name and its line) with a mark and Firmware, Release, Expected SHA1,
 // Found, Where and Status columns, what the line picked says in full under

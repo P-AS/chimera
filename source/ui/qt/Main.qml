@@ -82,7 +82,7 @@ ApplicationWindow {
          // said in the title for as long as it is so, so it is not left on unnoticed
          + (root.mcp.started ? qsTr("MCP server started - ") : "")
          + root.titleSuffix
-    // Display's window chrome, as Chimera's SynchChrome: windowed, the caption's buttons, the frame and
+    // Display's window chrome, as Chimera does: windowed, the caption's buttons, the frame and
     // the menu; full screen, the menu; kept over other windows when asked
     flags: Qt.Window
          | (root.visibility !== Window.FullScreen && (root.display.frameWindowed === 0 || root.chromeless) ? Qt.FramelessWindowHint
@@ -117,7 +117,7 @@ ApplicationWindow {
     readonly property color osdMessageColor: root.messageColor(root.messages.messagesColor, "#FFFFFFFF", "OsdMessage")
     readonly property color osdAlertColor: root.messageColor(root.messages.alertColor, "#FFFF0000", "OsdAlert")
     readonly property color osdMovieInputColor: root.messageColor(root.messages.movieInputColor, "#FF808080", "OsdMovieInput")
-    // where each thing over the picture goes: a corner and a distance from it, as Chimera's MessagePosition
+    // where each thing over the picture goes: a corner and a distance from it, as Chimera does
     readonly property var osdPositions: JSON.parse(root.messages.positions)
     // Config > Display's Scale OSD text with system scale: off, what is over
     // the picture keeps its size at 100% (the screen's pixels), as Chimera's
@@ -217,7 +217,7 @@ ApplicationWindow {
         })
     }
     // a file a later start of the program handed over (Customize's single
-    // instance mode), as Chimera's OpenGivenFile: a project as Open Project
+    // instance mode), as Chimera does: a project as Open Project
     // opens one (the open project's changes asked about first), with the core
     // package named after it when there is one; a game starts New Project
     function openHanded(path, packagePath) {
@@ -674,7 +674,7 @@ ApplicationWindow {
         }
     }
 
-    // Chimera's context menu on the picture (MainFormContextMenu): the project's items while one is
+    // Chimera's context menu on the picture: the project's items while one is
     // open, Config while full screen, the screenshot and closing while a game runs, and the menu
     // bar back while it is hidden. Its Restart, Stop and Save items do here what their hotkeys do.
     readonly property bool fullScreen: root.visibility === Window.FullScreen
@@ -718,7 +718,7 @@ ApplicationWindow {
             visible: root.session.hasProject && root.session.unsaved
             onTriggered: root.session.run("stopMovie")
         }
-        // the prototype has no read-only mode: the project is always edited, so Edit, as Chimera's says then
+        // the window has no read-only mode: the project is always edited, so Edit, as Chimera's says then
         Shown { text: qsTr("Edit Subtitles"); visible: root.session.hasProject; onTriggered: tastudioWindow.showDetails("subtitles") }
         Shown { text: qsTr("Add Subtitle"); visible: root.session.isOpen && root.session.hasProject; onTriggered: subtitleMaker.openOn(root.session.frame) }
         Shown { text: qsTr("Edit Comments"); visible: root.session.hasProject; onTriggered: tastudioWindow.showDetails("comments") }
@@ -1110,7 +1110,7 @@ ApplicationWindow {
             }
         }
     }
-    // the core stopped, as Chimera's CoreStoppedForm: emulation paused, the
+    // the core stopped: emulation paused, the
     // work kept, and four ways on; closed without a choice, nothing is done
     Connections {
         target: root.session
@@ -1514,7 +1514,7 @@ ApplicationWindow {
     // every message the window shows, for the log window; and the ones over the picture now
     ListModel { id: messageLog }
     ListModel { id: onScreenMessages }
-    // View > Window Size, as Chimera's FrameBufferResized: the picture times its system's scale (2 at first,
+    // View > Window Size, as Chimera does: the picture times its system's scale (2 at first,
     // remembered), a smaller one while the window would not fit the screen; the window follows the picture's
     // size unless Static Size is ticked, and a size asked for is taken whatever Static Size says
     property int windowScale: 2
@@ -1570,7 +1570,7 @@ ApplicationWindow {
         function onClientRightChanged() { root.frameBufferResized(false) }
         function onClientBottomChanged() { root.frameBufferResized(false) }
     }
-    // a message over the picture, for the messages' time or as long as asked (Chimera's AddOnScreenMessage duration)
+    // a message over the picture, for the messages' time or as long as asked
     function note(text, seconds) {
         if (text === "") return
         messageLog.append({ "time": Qt.formatTime(new Date(), "hh:mm:ss"), "message": text })

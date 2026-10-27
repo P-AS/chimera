@@ -1,5 +1,5 @@
 // Chimera's Configure On Screen Messages (Config > Messages), laid out as
-// Chimera's MessageConfig: Message Type (a row each, with where it is) and
+// Chimera's Messages window: Message Type (a row each, with where it is) and
 // Message Colors (a swatch to click and its hex) down the left; Position on
 // the right (a small screen to click or drag the mark on, a corner each to
 // count from, x and y); how long messages stay, Stack Messages, Restore

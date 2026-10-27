@@ -1263,7 +1263,7 @@ void PianoRollViewModel::follow()
 {
 	const int64_t now = currentFrame.get(), top = topFrame.get(), shown = visibleFrames.get();
 	if (!followPlayback.get() || shown <= 0) return;
-	/* as TAStudio's InputRoll.ScrollToIndex, counting the frames shown */
+	/* as TAStudio scrolls to a row, counting the frames shown */
 	const bool inView = now >= top && now <= shownFrom(top, shown - 1);
 	const std::string &how = followScroll.get();
 	int64_t to = top;
@@ -1506,7 +1506,7 @@ void PianoRollViewModel::rightDragOnTo(int64_t frame)
 		const int64_t i = ((at - rightFrame_) % n + n) % n;
 		return rightInput_[static_cast<size_t>(i)];
 	};
-	/* as Chimera's FramePaint: not past where the input taken up still fits */
+	/* as Chimera does: not past where the input taken up still fits */
 	frame = std::max<int64_t>(0, std::min(frame, size - n));
 	rightLow_ = std::min(rightLow_, frame);
 	rightHigh_ = std::max(rightHigh_, frame);
@@ -1765,7 +1765,7 @@ bool PianoRollViewModel::laggy(int64_t frame) const
 
 bool PianoRollViewModel::frameHidden(int64_t frame) const
 {
-	/* as Chimera's InputRoll: in a run of lag frames the first N are not
+	/* as Chimera does: in a run of lag frames the first N are not
 	 * shown, the rest of a longer run are */
 	const int64_t n = lagFramesToHide.get();
 	if (n <= 0 || !laggy(frame)) return false;
@@ -1869,7 +1869,7 @@ Value PianoRollViewModel::GroupRows::cell(int64_t row, int32_t column) const
 }
 
 namespace {
-/* a control's player, as Chimera's ControllerDefinition counts them: "P2 A"
+/* a control's player, as Chimera counts them: "P2 A"
  * is 2, past 255 or anything else 0 */
 int playerOf(const std::string &name)
 {
@@ -1932,7 +1932,7 @@ std::string PianoRollViewModel::macroText(int64_t first, int64_t last, const std
 		for (const std::string &line : inputs_.lines(first, last)) text += line + eol;
 		return text;
 	}
-	/* a line a frame of those columns only, as Chimera's LogEntryGenerator
+	/* a line a frame of those columns only, as Chimera does
 	 * writes a zone's: grouped by player, each group's axes (five wide and a
 	 * comma) before its buttons (a mnemonic, '.' let go) */
 	const std::vector<std::string> &buttons = session_.buttonNames();
@@ -2086,7 +2086,7 @@ std::string PianoRollViewModel::movieKeyRaw() const
 
 std::string PianoRollViewModel::movieKey() const
 {
-	/* as Chimera's MovieZone cleans it: no '#', no last '|' */
+	/* as Chimera cleans it: no '#', no last '|' */
 	std::string key = movieKeyRaw();
 	key.erase(std::remove(key.begin(), key.end(), '#'), key.end());
 	if (!key.empty() && key.back() == '|') key.pop_back();
@@ -2355,7 +2355,7 @@ PianoRollViewModel::Row PianoRollViewModel::emptyRow() const
 
 void PianoRollViewModel::putInShown(int64_t at, const std::vector<Row> &rows)
 {
-	/* as Chimera's InsertInput with columns limited: empty frames added at
+	/* as Chimera inserts input in the shown columns only: empty frames added at
 	 * the end, the shown columns moved later by as many, the new frames'
 	 * shown columns written; the hidden ones stay on their frames */
 	const int64_t before = inputs_.size(), n = static_cast<int64_t>(rows.size());
@@ -2384,7 +2384,7 @@ void PianoRollViewModel::putInShown(int64_t at, const std::vector<Row> &rows)
 
 void PianoRollViewModel::takeOutShown(int64_t first, int64_t last)
 {
-	/* as Chimera's RemoveFrames with columns limited: the shown columns
+	/* as Chimera removes frames in the shown columns only: the shown columns
 	 * after the frames move earlier, the last ones left empty; the movie
 	 * keeps its length and the hidden columns their frames */
 	const int64_t size = inputs_.size(), n = last - first + 1;
@@ -2641,8 +2641,7 @@ void PianoRollViewModel::replaceAll(const std::vector<Marker> &markers)
 	frames_.reset.emit();
 }
 
-/* a marker set, moved or taken off is a step of the undo history, as in
- * Chimera's TAStudio (TasMovieMarker's AddMarkerChange) */
+/* a marker set, moved or taken off is a step of the undo history */
 void PianoRollViewModel::keepMarkers(std::map<int64_t, Marker> before, std::string name)
 {
 	Step step;
@@ -2724,7 +2723,7 @@ void PianoRollViewModel::listMarkers()
 
 void PianoRollViewModel::pickCurrentMarker()
 {
-	/* Chimera's PreviousOrCurrent: the last marker at or before the frame */
+	/* the last marker at or before the frame */
 	const int64_t frame = currentFrame.get();
 	const auto after = std::upper_bound(markerList_.begin(), markerList_.end(), frame,
 		[](int64_t f, const ListedMarker &m) { return f < m.frame; });

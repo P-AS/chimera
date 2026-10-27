@@ -2,7 +2,7 @@
  *
  * Whole-file, UTF-8 paths everywhere - on Windows that means
  * converting to wide characters, since the ANSI fopen would mangle non-ASCII
- * paths the C# side (which is UTF-16 native) has no trouble with.
+ * paths.
  */
 
 #ifndef CHIMERA_FILE_IO_HPP

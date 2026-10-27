@@ -1,36 +1,33 @@
 # Chimera - Project Charter
 
-A minimal, core-agnostic TAS frontend derived from BizHawk. Emulation cores are removed
-from the tree and loaded on-the-fly as external, self-contained packages just before ROM load.
+A minimal, core-agnostic TAS frontend derived from BizHawk. Emulation cores are not
+in the tree: each is a package, loaded by the engine into the miniBox sandbox when a
+project opens.
 
 ## Objectives (testable)
 
-1. **Zero core code in the repo.** Chimera builds and runs with no emulation core in the
-   solution. Cores arrive as single-file packages (`.chimeraCore`, a zip: manifest + managed adapter DLL +
-   native DLL(s)), discovered from a `Cores/` directory and loaded at ROM-load time.
-2. **Published core contract.** The core-facing API (essentially `Chimera.Emulation.Common`
-   + `Chimera.NativeInvoke`) becomes a versioned, published contract. A core package must be
-   buildable outside the Chimera repo against that contract alone.
-3. **Determinism witness.** The QuickerNES regression suite (31 test movies, vendored at
-   `tests/suite/` from github.com/TASEmulators/quickerNES) must resync to
-   success at every phase boundary, including after the core is evicted to an external
-   package. Running the full suite green at every step is paramount to conserving
-   correctness. Test ROMs live at `C:\Users\sergiom\Documents\TAS\roms\nes` (file names
-   match the `.test` files' `Rom File` entries; SHA1-verified). In-scope counts after
-   Phase 0 triage: 28 at Level A (native), 26 at Level B (full-stack).
-4. **TAS-only frontend.** Kept: TAStudio, movie record/playback, savestates, rewind, frame
-   advance, virtual pads, RAM Watch/Search, Hex Editor, Cheats, Lua console (core-agnostic
-   APIs only), A/V dumping + screenshots, core-agnostic debug tools (trace logger, CDL,
-   generic disassembler). Everything else - core-specific config dialogs and viewers,
-   movie importers, RetroAchievements, per-system Lua libs, etc. - is removed.
+1. **Zero core code in the repo.** Chimera builds and runs with no emulation core in
+   it. Cores arrive as single-file packages (`.chimeraCore`, a zip: `core.wbx` +
+   `waterbox.config` + data), found in a `cores/` folder.
+2. **Published core contract.** What a package declares, and the guest ABI miniBox
+   runs it on, are a versioned, published contract. A core package is built outside
+   the Chimera repo against that contract alone.
+3. **Determinism witness.** The synthetic witness (tests/synth) proves, at every
+   change, that Chimera delivers inputs to a core faithfully, and each core's own
+   gate proves its emulation against a native reference.
+4. **TAS-only frontend.** Kept: TAStudio, movie record/playback, savestates, rewind,
+   frame advance, virtual pads, RAM Watch/Search, Hex Editor, Cheats, the Lua console
+   (core-agnostic APIs only), A/V dumping and screenshots, core-agnostic debug tools.
+   Everything else - core-specific config dialogs and viewers, per-system Lua
+   libraries - is left out.
 
 ## Pillar: reproducibility belongs to the core, not the frontend
 
 Chimera is NOT the keeper or enforcer of reproducibility - it REQUIRES it from
 cores. A movie's reproduction contract is the pair (movie, core package): if the
 selected core package is exactly the same, the movie must reproduce regardless of
-Chimera's version or the versions of any frontend library (SDL, Lua, zstd, cimgui,
-...). Consequences: frontend native dependencies may be upgraded freely and are
+Chimera's version or the versions of any frontend library (SDL, Lua, zstd,
+Qt, ...). Consequences: frontend native dependencies may be upgraded freely and are
 never pinned for determinism's sake (only for build reproducibility); no frontend
 feature may become something a movie depends on to sync; the witness harness proves
 the frontend *delivers inputs faithfully* to the core, not that the frontend owns
@@ -46,9 +43,8 @@ mismatch - the exact analogue of the rom-hash check.
 
 Elaboration (same day): the pillar bites hardest at the interface points where Chimera
 hands data to cores. Audit of those points and their standing:
-- ROM data: RomGame is format-agnostic - the core receives the file's exact bytes, no
-  header detection/stripping/per-system preprocessing (done in P3.2, and now
-  load-bearing for this pillar, not just cleanliness).
+- ROM data: format-agnostic - the core receives the file's exact bytes, no
+  header detection/stripping/per-system preprocessing.
 - Archive extraction (zip -> rom bytes): bit-exact by the archive format's definition.
 - IPS/BPS patching: a frontend transformation of rom bytes. Tolerable only because
   those formats are deterministic by spec; the implementation must stay spec-exact and
@@ -57,7 +53,7 @@ hands data to cores. Audit of those points and their standing:
   the reproduction contract and must be spec-stable across Chimera versions.
 - Sync settings: opaque JSON round-tripped to the core's types; the frontend must
   never interpret or migrate them.
-- Disc data [RESOLVED 2026-08-25]: Chimera.Emulation.DiscSystem is REMOVED. It parsed
+- Disc data [RESOLVED 2026-08-25]: the frontend's disc layer is REMOVED. It parsed
   CUE/CCD/etc and synthesized sector streams in the frontend, so a frontend version
   change could alter the byte stream a disc core sees - and it silently claimed
   extensions (.iso and friends) that core packages declare, feeding the factory a
@@ -69,409 +65,24 @@ hands data to cores. Audit of those points and their standing:
   multi-file set - never transforming bytes on the emulation path.
 - Firmware: database contents removed; anything a core needs ships inside its package.
 
-## Core flavors and their reproducibility profiles
+## Side-effect freedom
 
-Three "flavors" of emulation core exist from Chimera's perspective (user-stated,
-2026-08-11):
-
-- **(a) Native cores** (e.g. QuickerNES): compiled per platform (Windows .dll /
-  Linux .so) and run natively on the host. Their reproducibility depends on a
-  good implementation of their own serialization/deserialization mechanisms.
-  Windows<->Linux inter-reproducibility is desirable but not guaranteed.
-  (Empirical note: the QuickerNES witness core has so far proven byte-exact
-  across compilers and OSes - the 2026-08-11 Linux gate reproduced the
-  Windows-recorded goldens with a Linux-gcc-built core - but that is an
-  observed property of this core, not a guarantee of the flavor.)
-- **(b) Pure cores** (implemented fully in C#, e.g. NesHawk in upstream
-  BizHawk): must equally guarantee reproducible serialization, but are
-  universally cross-compatible as long as the system runs C# and the C#
-  engines are faithful (very slight chance of desync between engines). They
-  require no runtime loading of precompiled native libraries.
-- **(c) Waterboxed cores** (e.g. GPGX, DOSBox-X and many others in upstream
-  BizHawk): use the waterbox closed system to behave as a universal Linux
-  machine whose entire machine state is preserved. These offer the maximum
-  level of reproducibility, but depend on the waterboxing machinery to work,
-  which requires careful integration and other complications that do not
-  exist in native builds.
-
-Relation to the package contract as it stands: the current contract and the
-reference package are flavor (a) (managed adapter + native library). Flavor (b)
-is already expressible - a package whose manifest declares no natives. Flavor
-(c) would require reintroducing the waterbox host machinery, which was removed
-in Phase 2 (recoverable from the transitional fork's history) - a deliberate
-open question for whenever a waterboxed core is wanted.
-
-**Side-effect freedom (non-waterboxed cores; user-stated, 2026-08-11).** For
-waterboxed cores the sandbox enforces isolation; flavors (a) and (b) must
-uphold it by discipline: a core must contain NO side effects. Like the
-reproducibility pillar, this rule CANNOT be enforced by Chimera - it is the
-core developer's responsibility. Chimera states the requirement in the
-contract documentation and trusts core packages to honor it; there is no
-sandbox, no auditing machinery, and none will be added for it. Concretely: no
-writing to the filesystem; no reading directly from the filesystem (ALL data -
-roms, firmware, databases, assets - must arrive through the BizHawk interface);
-no direct I/O of any kind (with rendering-only channels such as OpenGL as the
-one permissible exception); no syscalls; nothing that causes a change in the
-host system that cannot be captured and reverted by a savestate save/load.
-The test is exactly that: if any observable effect of running the core is not
-round-tripped by save/load state, the core is in violation. (Plain memory
-allocation within the core's own lifetime is fine - it is torn down with the
-core and carries no cross-run state.)
-RESOLVED (same day): the QuickerNES adapter's one violation - the BootGod
-cart DB reading NesCarts.xml from its package directory - was reduced to a
-compiled-in PAL/Dendy hash list (PalHashList.cs, 370 SHA1s of PRG+CHR,
-extracted once from the database with first-entry-wins semantics preserved
-for dual-region dumps). The only behavioral use of the database was
-rejecting PAL carts (the core is NTSC-only); the good-dump/name metadata it
-also produced had no remaining consumers and is gone. The QuickerNES core
-now reads nothing from the filesystem at runtime.
+A core must contain NO side effects: no writing to the filesystem; no reading
+directly from it (ALL data - roms, firmware, databases, assets - arrives through
+Chimera); no direct I/O of any kind (with rendering-only channels such as OpenGL as
+the one permissible exception); nothing that causes a change in the host system
+that cannot be captured and reverted by a savestate save/load. The test is exactly
+that: if any observable effect of running the core is not round-tripped by
+save/load state, the core is in violation. The sandbox enforces it (see below).
 
 ## Agreed decisions
 
-- **Core package interface:** managed .NET adapter DLL implementing `IEmulator` (+ service
-  interfaces) against the published contract, bundled with its native core DLL(s).
-  Not a C ABI, not libretro.
-- **Repo strategy:** trim this BizHawk checkout in place on a branch. Keep git history and
-  upstream diffability. Rename to Chimera once stable.
-- **Reload model:** load-once per process (net48 cannot unload assemblies). Packages load
-  lazily at ROM-load time; swapping a loaded core's version requires app restart.
-- **Witness core:** QuickNes (backed by the TASEmulators/quickerNES submodule) - single
-  native DLL, no waterbox, no discs, no firmware. It stays in-tree until Phase 3.
-
-## Procedure
-
-Each phase ends with: build green -> witness movie syncs -> commit. Never more than one
-phase of unverified change.
-
-- **Phase 0 - Baseline & harness.** Build as-is. Stand up the two-level witness harness
-  (below), generate golden RAM dumps from unmodified BizHawk, and confirm they agree with
-  the native quickerNES tester's ground truth. No product code changes.
-- **Phase 1 - Shrink to one core, statically. [DONE 2026-08-09]** All cores except
-  QuickNes removed (~312k lines deleted); frontend trimmed (per-core dialogs/tools,
-  RetroAchievements, movie importers, per-system Lua libs, Libretro/MAME paths, system
-  menus except NES). Core asset payloads, core submodules, and native core source trees
-  removed (Assets/dll: 90 -> 28 files, all frontend infra + libquicknes). Kept: Waterbox
-  host + waterbox/ native tree (OPEN DECISION pending), quicknes/, SDL2 + rcheevos +
-  chd/chimerahash/zstd/blip_buf natives (still referenced by frontend/DiscSystem), gamedb.
-  Witness at phase close: 26/26 simple AND 26/26 rerecord, byte-identical goldens,
-  after a from-clean rebuild.
-- **Phase 2 - Publish the contract. [DONE 2026-08-09]** `CoreInventory`, `CoreNames`,
-  and the reflection-attribute construction machinery are gone (per user decision, along
-  with waterbox, the 6502 disassembler, and the trace logger - all recoverable from git
-  history). In their place:
- - `ICoreFactory` + `CoreCreationContext` + `IRomAsset` in **Chimera.Emulation.Common**
-   - the published core contract. A core ships a factory: name, system IDs, core type
-    (stable key for persisted settings), settings/sync-settings types, and `Create(ctx)`.
- - `CoreRegistry` (Client.Common) indexes factories by system; RomLoader's
-    `MakeCoreFromRegistry` replaces the old inventory path (same preferred/forced-core
-    and error semantics).
- - `CorePackageLoader` (Client.Common): at startup, `<exe>/Cores/` is scanned for
-    package directories or zips containing `chimera-core.json` (formatVersion 1:
-    name, assembly, factoryTypes[]). Zips extract to `Cores/_cache/<name>` keyed by
-    zip timestamp; the package dir is prepended to PATH for native DLL resolution;
-    an AppDomain.AssemblyResolve hook serves package assemblies so persisted
-    settings / movie sync-settings JSON ("Type, Assembly" names) round-trip.
- - QuickNES is registered through `BuiltInCoreFactories` (transitional; Phase 3
-    replaces it with a real external package and deletes it).
-  Witness at phase close: 26/26 simple AND 26/26 rerecord through the new loader.
-- **Phase 3 - Evict the witness. [DONE 2026-08-09]** The QuickNES adapter now lives in
-  `chimera-cores/quickernes/` - NOT part of Chimera.sln, built by `build-package.ps1`
-  against the contract DLLs from `build/dll` exactly as an out-of-repo package would be,
-  and shipped as `build/Cores/quickernes.chimeraCore` (manifest + Chimera.QuickerNES.dll +
-  libquicknes natives). `Chimera.Emulation.Cores` is deleted from the solution entirely:
-  **Chimera contains zero core code**. Supporting changes: INESPPUViewable and the NES
-  palette helpers moved into Emulation.Common (frontend PPU viewers stay core-agnostic);
-  BootGod NES cart DB init moved into the package factory; virtual pad schemas are
-  discovered from registered factory assemblies; per-core settings dialogs replaced by
-  the generic config dialog (`QuickNesConfig` and its FCEUX-palette import are gone - 
-  revisit if missed); `emu.setrenderplanes` is a no-op pending a contract story; the
-  Debug-only core-poking dev menu was deleted. Witness at phase close: 26/26 simple AND
-  26/26 rerecord with the core loaded from the zip package.
-  Addendum (same day): per user principle - Chimera must contain NOTHING core-specific
- - the Phase 3 compromises were purged too: INESPPUViewable and the NES palette code
-  moved from Emulation.Common into the package; the NES PPU/nametable viewer tools, the
-  NES menu, and the QuickNes icon were deleted from the frontend; NesCarts.xml moved
-  from gamedb into the package zip (BootGod reads from the extracted package dir);
-  NES palette files moved to chimera-cores/quickernes/palettes.
-  Second addendum (deeper cleanse, same day): gamedb is GONE entirely (all per-system
-  hash DBs, the Database class, DB-entry generation service). ROM->system routing is now
-  purely: (1) user extension preference, (2) the extension->system map that core-package
-  manifests declare ("extensions" field), (3) the platform-chooser prompt, which lists
-  only systems provided by loaded packages. RomGame is format-agnostic (no header
-  detection/stripping, no per-system preprocessing; hash = whole file - NOTE: game
-  hashes recorded in old movies will no longer match, warning-only). Also removed: the
-  FirmwareDatabase CONTENTS (mechanism kept, empty; packages could register records
-  later), per-system display-name tables (system ID is the display name), per-system
-  default path tables (path sets generated on demand per system), the frame-rate table
-  (display fallback is a flat 60/50), the GameShark converter and all per-system
-  cheat-code decoders, and the game-DB button in the log window.
-  Phase 3 sharp-edge, confirmed in the wild: persisted configs and movie sync-settings
-  embed `"Type, AssemblyName"` - entries written before eviction name the deleted
-  `Chimera.Emulation.Cores` assembly, and Newtonsoft's `$type` binder then throws
-  (silently swallowed -> defaults, first caught as two sync-settings-dependent witness
-  failures). Fix: the manifest's `supersedesAssemblies` list - the resolver serves the
-  package assembly under its legacy names, keeping old configs AND pre-eviction movies
-  round-tripping.
-  Third addendum (Assets cleanse, same day): deleted from Assets - 8 orphaned native
-  libs (librcheevos.dll/.so [RetroAchievements was removed], freetype.dll, libpng16.dll,
-  zlib.dll [nothing P/Invokes them and no remaining native lib imports them - verified
-  by PE import-table scan], and the MinGW runtime trio libgcc_s_seh-1/libstdc++-6/
-  libwinpthread-1 [only ever needed by MinGW-built cores; every remaining native uses
-  msvcrt or the UCRT]); all per-system example Lua scripts (Doom/GBA/Genesis/N64/NDS/
-  NES/PCE/SNES dirs); the bsnes-gamma shader (SNES color correction). N3DSHasher.cs
-  (3DS-specific) deleted from Emulation.Common. defctrl.json is GONE from the frontend:
-  per-system controller defaults are now package-provided - a package may ship its own
-  defctrl.json (same DefaultControls shape, keyed by controller-definition name);
-  CoreRegistry merges them (first package wins per name) and InputManager.SyncControls
-  adopts package defaults for any controller the user's config has never seen. A
-  user-saved defctrl.json next to the exe (written by the controller dialog's "save
-  defaults") still wins over package defaults. The quickernes package ships the NES
-  Controller bindings. [Superseded 2026-08-13, see "Key bindings arrive with the
-  core": the packages lost their file in the waterbox-only redesign below, and the
-  exe-side defctrl.json - along with the dialog's Save Defaults - is now gone too.] Natives KEPT deliberately: chd_capi (DiscSystem - disc story
-  still an open decision), cimgui/SDL2/OpenAL32/lua54/libzstd/libchimerahash/e_sqlite3
-  (frontend infrastructure). blip_buf was initially kept as contract-offered audio
-  resampling, then REMOVED at user request (wrapper class, natives, C source dir,
-  arm64 prebuilt): nothing in the tree used it, and a core that wants it (e.g. a
-  future Gambatte package) should bundle its own copy.
-  Sharp edge #2, caught by the witness harness itself: the original zip-extraction
-  cache (delete stale dir, extract, write stamp file) raced when 8 Chimera instances
-  launched simultaneously against a cold cache - ZipFile.ExtractToDirectory threw
-  "file already exists", and since extraction ran outside the per-package try/catch it
-  reached the top-level exception dialog, which on the hidden desktop blocks invisibly
-  until timeout. Fix: cache dirs are keyed by zip timestamp (`<name>-<ticks>`), zips
-  extract to a private temp dir followed by an atomic Directory.Move - race losers
-  discard their temp and use the winner's dir; stale caches are cleaned best-effort;
-  per-zip extraction failures are caught and logged instead of killing startup.
-  Fourth addendum (same day, user-directed): Assets/Shaders and the entire .cgp
-  retro-shader feature removed (RetroShaderChain/Preset/Pass, RetroShader, hq2x/
-  scanlines/bicubic/user chains, TargetDisplayFilter + TargetScanlineFilterIntensity +
-  DispUserFilterPath config, the Scaling Filter UI group, the Bicubic final-filter
-  option [legacy setting falls back to bilinear], the Chimeraware.Test shader demo app;
-  client.get/settargetscanlineintensity are warning no-ops now). The built-in
-  hand-coded presentation shaders in Chimeraware.Graphics remain - they ARE the display
-  pipeline. DiscoHawk removed entirely (app project, DiscoHawkLogic, sln entry, docs),
-  taking the stale upstream release packaging with it: Package.sh, the packaging bats,
-  and the whole nix ecosystem (default.nix, Dist/*.nix, docs, CI workflow) - dead
-  since they referenced gamedb/waterbox/defctrl anyway. blip_buf removed (see above).
-  Eighteenth addendum (2026-08-11, user-directed - TOTAL QUICKERNES EVICTION):
-  absolutely nothing from QuickerNES remains in this repository; anything
-  important moved to the quickerNES repo's chimera/ dir. Concretely: the
-  entire witness apparatus - vendored suite (reversing the earlier vendoring
-  decision), Level A+B goldens, replay.lua, bootstrap.lua, both run-level-b
-  drivers, hidden-run.ps1, native/dumper.cpp, tests/README - moved to
-  quickerNES chimera/tests/ (drivers grew --chimera-root/-ChimeraRoot,
-  defaulting to a sibling Chimera or BizHawk checkout); stale QuickNesConfig
-  Compile Update items purged from the Chimera csproj. The quickerNES witness
-  remains the commit gate, run from its new home, until the synthetic witness
-  (see "The synthetic witness" section) replaces it: three synthetic cores
-  (one per flavor of the core taxonomy) sharing exact emulation logic, video,
-  and audio; a stateful-interpreter emulator whose game logic and assets live
-  in .testrom files; tests that win, lose, and reproduce specific video and
-  audio outputs, byte-compared across all three cores - starting with the
-  native flavor. In the same round the native flavor LANDED in full (see the
-  synthetic-witness section status) and run-witness.sh became THE smoke test,
-  retiring the short-lived --quick subset from the quickerNES drivers; the
-  side-effect-freedom rule for non-waterboxed cores was stated (see the
-  core-flavors section; core-dev responsibility, not enforced by Chimera)
-  and QuickerNES's NesCarts.xml read - its one violation - was reduced to a
-  compiled-in PAL hash list in the adapter. Also fixed: `meson compile
-  frontend` no longer blocks ~15 minutes on lingering msbuild node-reuse
-  workers (/nodeReuse:false -p:UseSharedCompilation=false). Gate at this
-  round: 26/26 simple + 26/26 rerecord, run from the quickerNES repo against
-  this tree with the PAL-list package; synthetic witness 12/12.
-  Seventeenth addendum (2026-08-11, user-directed - LINUX GATE + HEADLESS + layout;
-  the sixteenth - an exec-bit fix and charter note - was authored on the Windows box
-  and is pending its push): the witness gate now runs on Linux. tests/run-level-b.sh
-  (+ bootstrap.lua) is a faithful port of run-level-b.ps1 - Chimera under Mono on a
-  private Xvfb display replacing the hidden Windows desktop, same job protocol and
-  the same goldens. First-ever Mono run of this frontend; 26/26 simple + 26/26
-  rerecord byte-identical to the Windows-recorded goldens - the reproducibility
-  pillar demonstrated across an entirely different OS, runtime (Mono vs .NET
-  Framework), and display stack. Sharp edge: the package loader's preload-then-
-  dedupe native contract silently assumed Windows LoadLibrary basename-dedupe
-  semantics; Linux dlopen only dedupes via DT_SONAME, so libquicknes.so must be
-  linked -Wl,-soname,libquicknes.so (fixed in the quickerNES adapter's Makefile,
-  which also tracks the upstream cpu.cpp split and jaffarCommon macro rename;
-  build-package.sh there is the pwsh-free package builder). The failure mode was
-  the invisible-modal-dialog trap again, now closed for good by --headless: a new
-  CLI option for unattended runs - every modal dialog funnels through six choke
-  points in DialogControllerWinFormsExtensions and in --headless mode logs its
-  caption/text to the console and exits with code 64 instead of blocking;
-  warning-only dialogs in Program (config version/corrupt config/display fallback/
-  superuser) log and continue; fatal run-loop exceptions log and exit nonzero
-  (previously they could exit 0 after an invisible dialog). Both witness drivers
-  pass --headless, and both gained --quick/-Quick: a six-test smoke subset (~1 min)
-  for CI and dev loops - explicitly NOT a substitute for the full commit gate.
-  Layout/docs in the same round: CHIMERA.md moved to docs/design-principles.md
-  (references updated); LICENSE separates copyright (BizHawk team = inherited
-  code, Sergio Martin 2026 = Chimera modifications and new work); accidentally
-  committed build output purged (root libchd_capi.so and 490 files under
-  extern/libchd-rs-capi/chd-build/, now gitignored); all prose files converted to
-  pure ASCII after a committed double-encoding accident (em-dashes had become
-  mojibake; ASCII-only prose renders identically under every viewer encoding -
-  keep it that way). HISTORY POLICY CHANGE (user, 2026-08-11): the amend-commit-0
-  model ends here; from now on each gated round lands as a new commit.
-  Fifteenth addendum (2026-08-10, user-directed - MESON, LINUX-HOSTED, DUAL-TARGET):
-  the canonical build is now meson on Linux (WSL locally; Linux runners in CI),
-  producing BOTH OSes' artifacts: managed IL built once via dotnet (run_target
-  'frontend', Linux dir only), natives built per-target - native gcc for .so, and
-  mingw-w64 cross (static gcc runtime, so no libgcc/winpthread dlls) for .dll via
-  extern/meson/mingw-w64.ini + mingw-toolchain.cmake. Root meson.build: direct
-  shared_library targets for chimerahash/lua54/e_sqlite3/cimgui/luasocket (luasocket's
-  two same-named "core" modules live in extern/meson/luasocket-*/ subdirs), nested
-  upstream builds via extern/meson/nested-build.sh for zstd (its own meson), SDL2 +
-  openal (cmake + toolchain file), chd_capi (cargo, --target x86_64-pc-windows-gnu
-  for cross). WSL provisioned: mingw-w64 gcc 13, rustup 1.97.1 + windows-gnu target,
-  and - after packages.microsoft.com's Ubuntu 24.04 feed turned out to serve a
-  source-build SDK (8.0.129) WITHOUT WindowsDesktop targets, confirming the
-  UbuntuMispackagedSDKCheck trap firsthand - Microsoft's own SDK binary (8.0.423)
-  via dotnet-install.sh into ~/.dotnet. The
-  Windows msbuild BuildNativeDeps hook is now Condition Windows_NT - a dev shim.
-  Sharp edges found: mingw builds of libusb need our own config.h (msvc/config.h is
-  guarded; and _TIMESPEC_DEFINED must NOT be defined - it's mingw's own timespec
-  guard); meson passes builddir-relative paths to custom_target commands (absolutize
-  before cd-ing tools like cargo); meson target names collide within a directory
-  (same-named outputs need subdirs); WSL /tmp is volatile (log to /mnt/c); and the
-  nastiest - upstream builds decorate library names per platform convention (mingw
-  meson emits libzstd-1.dll + libzstd.dll.a), and a filename glob happily shipped the
-  import-library ARCHIVE as "libzstd.dll", which passed everything until LoadLibrary
-  returned ERROR_BAD_EXE_FORMAT and the witness went 0/26 - nested-build.sh now
-  matches exact/version-infixed names and excludes .a/.d/.def. Witness after fix:
-  the Windows gate ran against the Linux-cross-built dlls - the frontend stack
-  (SDL2, lua54, zstd, cimgui, chimerahash all mingw-built) byte-exact at 26/26 + 26/26,
-  which is also the deferred-reproducibility pillar demonstrated empirically:
-  an entirely different compiler family under the frontend, identical emulation.
-  Fourteenth addendum (2026-08-10, user-directed): Chimera.sln, Common.props, and
-  Directory.Packages.props moved into source/ (sln project paths relativized;
-  extern/ gained a thin Directory.Packages.props forwarding to source/'s, since NuGet
-  discovers that file by walking up from each project). Root is now four directories
-  (build/ extern/ source/ tests/) and five files (.gitignore .gitmodules LICENSE
-  CHIMERA.md README.md). STATED DIRECTION (user): the entire build system - Windows
-  and Linux targets - should eventually be mediated solely by MESON; the current
-  msbuild-invokes-build-natives.ps1 arrangement is a transitional shim that meson
-  will absorb (meson orchestrating the dotnet build and every native recipe).
-  Thirteenth addendum (2026-08-10, user-directed - NATIVES FROM SOURCE): ExternalProjects
-  moved to extern/ at the repo root, and ALL prebuilt native libraries are gone from the
-  tree. extern/build-natives.ps1, run automatically by the solution build
-  (BuildNativeDeps target, incremental by timestamp), builds every native dependency
-  from source into build/dll: libchimerahash + SDL2 (in-repo recipes; clang-cl - chimerahash's
-  gcc target-attributes need it, and a .def now provides the exports ELF visibility
-  used to), and six NEW pinned submodules under extern/ with new recipes - lua v5.4.8
-  (stock, LUA_BUILD_AS_DLL), zstd v1.5.7 (cmake -> libzstd.dll), cimgui 1.90.6 (pinned
-  to ImGui.NET 1.90.6.1's binding version), openal-soft 1.24.3, ericsink/cb's sqlite3
-  amalgamation with the canonical e_sqlite3 defines (mirrored from cb's generator),
-  luasocket v3.1.0 (socket/mime core.dll against our lua54 import lib), plus chd_capi
-  built via cargo (rust-toolchain.toml pins 1.97.1; user installed rustup for this).
-  Toolchain: VS2022's clang-cl/CMake/Ninja (probed by path, works on GitHub
-  windows-latest runners unchanged). Per the reproducibility pillar, all version pins
-  are for BUILD reproducibility only - never for movie determinism, which belongs to
-  the core package. Assets/ is GONE entirely: ChimeraMono.sh moved into the Chimera
-  project (copied to build/ by the PostBuild target), the LuaCATS API doc stubs were
-  DELETED outright (pure editor documentation, annotation-only with error() guards,
-  never read by the frontend, and partially stale against Chimera's actual API;
-  recoverable from history or regenerable from the [LuaMethod] attributes if ever
-  wanted), and the Assets/** copy glob was removed. Root is now
-  build/ extern/ source/ tests/ + eight files.
-  Twelfth addendum (2026-08-10, user-directed - EXPLICIT CORE LOADING + layout): cores
-  are no longer discovered. The startup Cores/ directory scan is gone; loading a core
-  is an explicit act: File > Open Core... (file prompt for a package dir/zip) or the
-  new --core=<path> CLI option (which the witness driver now passes). Open ROM and
-  Recent ROM stay DISABLED until a core is loaded - deliberately, so core (sync)
-  settings can be configured BEFORE the first rom load (config-before-load principle).
-  The Config > Core Settings menu rebuilds on every package load; zip caches now live
-  under <exe>/CoreCache. Layout changes in the same round: chimera-cores/ deleted
-  (author docs live in this charter + the quickerNES reference package);
-  chimera-tests/ renamed tests/; ExternalProjects/ moved under source/; root purged
-  to the minimum (removed: .github incl. all CI, .vscode, .config, .editorconfig,
-  .global.editorconfig.ini, .stylecop.json + the Common.props StyleCop block,
-  appveyor.yml, SECURITY.md, contributing.md [README gained a Contributing section],
-  global.json, sln.DotSettings, .git-blame-ignore-revs, "Building Other
-  Solutions.txt").
-  Eleventh addendum (2026-08-10, user-directed): Chimera is a STANDALONE repository
-  (github.com/SergioMartin86/Chimera) with a FRESH history - commit 0 is the
-  post-separation state. The BizHawk ancestry (23,722 commits) is deliberately not
-  carried; it remains available in the upstream BizHawk repository and in the
-  transitional SergioMartin86/BizHawk fork, which is also the recovery source for
-  deferred machinery (waterbox, trace logger, disassembler, Gambatte sources for
-  Phase 4). Future upstream ports are cherry-picked/rebased without shared ancestry.
-  Tenth addendum (2026-08-10, user-directed - FULL SEPARATION): the QuickerNES adapter
-  no longer lives in this repo at all. Everything quickerNES-specific
-  (chimera-cores/quickernes/ and the quickernes.yml workflow) moved to the quickerNES
-  repository itself (github.com/SergioMartin86/quickerNES, branch chimera-adapter,
-  `chimera/` dir): managed adapter, native chimerainterface + Makefile (now building from
-  that repo's own sources), manifest, bundled data, prebuilt natives, build-package.ps1
-  (param -ChimeraRoot, default sibling ../BizHawk checkout; installs quickernes.chimeraCore
-  into <ChimeraRoot>/build/Cores), and a native-build CI workflow. The dev loop:
-  build Chimera sln -> run ../quickerNES/chimera/build-package.ps1 -> witness gate.
-  chimera-cores/ here is reduced to the core-author guide README. The vendored witness
-  suite stays in chimera-tests/suite/ (user decision: pinning the gate to what the
-  goldens were recorded against is a feature). Gate ran against the
-  quickerNES-repo-built package: 26/26 simple + 26/26 rerecord.
-  Ninth addendum (same day, user-directed): References/ deleted - no committed managed
-  binaries remain. The source generators are ProjectReferences with
-  OutputItemType=Analyzer; NLua/ISOParser/HawkQuantizer are plain ProjectReferences
-  (built transitively, not sln members); SettingsUtil is built via a
-  ReferenceOutputAssembly=false reference from Chimera and copied into build/dll
-  (ProvideCoreAuthorKit target) so the core-author kit is contract DLLs + settings
-  generator in one directory - the quickernes package's Analyzer path points there.
-  Sharp edge #3: solution builds UNSET Configuration/Platform for ProjectReferences
-  that aren't solution members - everything above silently built as Debug inside a
-  Release build until Common.props set
-  ShouldUnsetParentConfigurationAndPlatform=false. Also, LibCommon.props had a
-  PostBuild copying outputs into References/, which would have silently resurrected
-  the folder; removed. Only native binaries (C/C++ toolchains required) remain
-  committed: Assets/dll frontend infra and the package's libquicknes.
-  Eighth addendum (same day, user-directed): the entire Dist/ folder deleted - release
-  packaging utilities (7za/zip/unzip/upx/fart/vswhere/ILMerge/NuGet binaries), Unix
-  build wrapper scripts (two already broken by the rename), upstream release stamping,
-  the upstream changelog, arm64 prebuilt natives nothing shipped anymore, and the
-  git-hooks commit-message linter together with the InstallGitHooks build target in
-  Chimera.Common.csproj that installed it on every build (code-checking, per user
-  policy). Unix builds are plain `dotnet build Chimera.sln` now.
-  Seventh addendum (same day, user-directed): standard folder nomenclature adopted - 
-  `src/` is now `source/` (git mv, sln paths updated; likewise the package's `src/` ->
-  `source/` and `native-src/` -> `native-source/`) and the build output dir `output/` is
-  now `build/` (MainSlnExecutable.props, package HintPaths/build script, witness driver,
-  .gitignore, launch.json, SDL2/libchd build scripts, docs). This charter's earlier
-  entries were rewritten to the new names wholesale.
-  Sixth addendum (same day, user-directed): ExternalToolProjects deleted entirely
-  (incl. HelloWorld; the external-tools mechanism in the frontend stays), and the
-  `quicknes/` directory is GONE - Chimera no longer carries the quickerNES submodule.
-  Consequences handled: the witness test suite (.test/.sol/.state) is now VENDORED at
-  `chimera-tests/suite/` (snapshot of upstream `tests/`; run-level-b.ps1 reads from
-  there, making the Level B gate fully self-contained modulo ROMs); the native build
-  recipe (chimerainterface.cpp + Makefile) moved into
-  `chimera-cores/quickernes/native-source/` with a `QUICKERNES_ROOT` variable pointing
-  at an external quickerNES clone; quickernes.yml clones upstream instead of using a
-  submodule. The submodule working tree contained untracked files (controller.hpp and
-  a vendored copy of the original blargg quickNES) - backed up to
-  Documents/ClaudeSessions/quickernes-submodule-backup before deletion. Stale
-  submodule.* entries for long-deleted submodules were purged from local .git/config.
-  Fifth addendum (same day, user-directed): ExternalProjects dead weight deleted - 
-  FlatBuffers.GenOutput (no consumers), LibBizAbiAdapter + the WaterboxAdapter/
-  MsHostSysVGuest code in NativeInvoke (waterbox pile), TestromSuiteReportProcessor,
-  Chimera.AnalyzersTests, and Chimera.Analyzer itself (user: no code-checking needed;
-  References/Chimera.Analyzer.dll + Common.props wiring removed). AnalyzersCommon KEPT:
-  despite the name it's shared plumbing imported by the three source generators, which
-  generate runtime-necessary code. ExternalToolProjects trimmed to HelloWorld + shared
-  props/targets (DATParser/DBMan were gamedb tooling; AutoGenConfig/FakeTemporalAA were
-  dev experiments) - the external-tools mechanism itself stays. Stale CI deleted
-  (.gitlab-ci.yml, mame/waterbox/release workflows); ci.yml rewritten minimal
-  (build sln + package); quickernes.yml and quicknes/make now install the native to
-  chimera-cores/quickernes/natives. Still present, deliberately: ExternalProjects/SDL2
-  (81 MB of SDL+libusb submodules, only needed to rebuild SDL2.dll from source),
-  iso-parser + libchd-rs-capi (fall with DiscSystem if the disc decision goes that way),
-  NLua/LibChimeraHash/HawkQuantizer/SrcGens (sources of live References/Assets binaries).
-  Also in this round: ExternalProjects/librcheevos (build project + rcheevos submodule)
-  removed; stale waterbox/llvm-project gitlink dropped from the index; legacy example/dev
-  Lua scripts deleted (ButtonCount, Input_Display, JoypadIntersection, MovieClock,
-  migration_helpers, tasjudy, UnitTests - Lua/ keeps only socket/ and mime/, which are
-  luasocket binary modules wired into package.cpath, and _docs_luacats, the Lua API type
-  stubs); empty leftover directories from earlier phase deletions cleaned from disk.
-- **Phase 4 - Harden & prove generality.** Manifest/versioning, package validation,
-  error UX, core-author docs. Port a second core to prove the contract isn't
-  QuickerNES-shaped.
+- **Core package interface:** a waterboxed guest (`core.wbx`) and its declarations
+  (`waterbox.config`), run by the engine in miniBox. Not libretro.
+- **Repo strategy:** a standalone repository derived from BizHawk, with a fresh
+  history.
+- **Load model:** a project names its core package by SHA1; the engine opens that
+  package when the project opens.
 
 ## THE WATERBOX-ONLY REDESIGN (user-decided, 2026-08-11)
 
@@ -481,9 +92,8 @@ every core reproducible and portable BY FORCE rather than by discipline.
 Decisions, all user-confirmed:
 
 1. **Waterbox-only, no exceptions.** The package format knows only guest
-   images. Flavors (a) native and (b) pure-C# are no longer expressible as
-   packages; the taxonomy above remains as analysis, and the side-effect
-   rule's "cannot be enforced" caveat inverts - the sandbox IS the
+   images. A core built for the host is no longer expressible as a package,
+   and the side-effect rule needs no discipline - the sandbox IS the
    enforcement.
 2. **The waterbox host lives in Chimera**, compiled and shipped with
    Chimera's OS-dependent artifacts (meson dual-target, like every other
@@ -497,7 +107,7 @@ Decisions, all user-confirmed:
    a given spec version are interchangeable by definition. The Synth
    SPEC.md/twins exercise is the working proof that spec-first bit-exact
    interchangeability is achievable.
-3. **One generic adapter, no per-core managed code.** A core package is a
+3. **One generic adapter, no per-core frontend code.** A core package is a
    single platform-neutral zip: manifest + core.wbx + data files
    (controller definitions, settings schemas, system ids, extensions -
    all DATA, interpreted by Chimera's one universal adapter over a
@@ -511,7 +121,7 @@ Decisions, all user-confirmed:
    sides: the runtime (sandbox host - Chimera's meson builds it into the
    frontend's OS-dependent artifacts), the guest toolchain (the core-author
    kit: musl fork, emulibc, libco, libcxx sysroot, linkscript, common.mak),
-   the managed host layer, and the waterbox's own conformance tests -
+   and the waterbox's own conformance tests -
    independently testable without Chimera. Plan of record for the runtime:
    a C/C++ port replacing the imported Rust reference (drops the
    nightly-Rust requirement; validated differentially against it).
@@ -519,27 +129,26 @@ Decisions, all user-confirmed:
 Migration order (each step gated by the synthetic witness, plus the
 quickerNES suite until its core is migrated):
   (i) import + de-nightly the waterbox host runtime; meson dual-target;
-      restore the Windows SysV ABI adapter (MsHostSysVGuest) from the
-      transitional fork;
+      a Windows adapter for the guest's SysV calling convention;
   (ii) define guest ABI v1 + package format v2 (data-driven controller/
       settings declarations); implement the generic adapter;
   (iii) stand up the toolchain repo; build synth.wbx from synthcore.c; the
       waterboxed synth becomes the SHIPPED synth package, while the native
-      and pure-C# implementations remain as external ground-truth testers
-      (Level A golden generators - an even cleaner witness split);
+      implementation remains as the external ground-truth tester (the
+      Level A golden generator - an even cleaner witness split);
   (iv) migrate quickerNES to a .wbx guest; re-gate the full suite;
-  (v) retire the flavor-(a)/(b) loading paths (manifest v1, natives lists,
-      package-assembly resolution) from Chimera.
+  (v) retire the native loading paths (manifest v1, natives lists) from
+      Chimera.
 
 ## The synthetic witness (planned successor to the quickerNES gate)
 
-Plan (user-stated, 2026-08-11), building on the core-flavor taxonomy above:
+Plan (user-stated, 2026-08-11):
 
-1. **Three synthetic cores, one per flavor** - native, pure C#, and waterboxed -
-   with exactly the same emulation logic, video output, and sound output.
+1. **Two synthetic cores** - a native reference and a waterboxed one - with
+   exactly the same emulation logic, video output, and sound output.
 2. **A synthetic game with non-trivial rules** and an input set.
 3. **The test plan**: for a series of input movies, ALL of the memory space, the
-   video output, and the sound output must match across all three cores.
+   video output, and the sound output must match across both cores.
 4. **Each test achieves a different goal**: win the game, lose the game, produce
    a certain video output, produce a certain audio output.
 
@@ -557,21 +166,19 @@ U/D/L/R moves; goal-cell rules; 2-byte core state), extended with video and
 audio output, and with the logic moved out of the emulator into the rom
 program per the interpreter architecture.
 
-Sequencing: the machinery for waterboxing and for C# core integration is not
-yet defined, so work STARTS WITH THE NATIVE CORE ONLY; the pure-C# and
-waterboxed twins follow when their integration stories exist. Until the
+Sequencing: the machinery for waterboxing was not yet defined, so work
+STARTED WITH THE NATIVE CORE ONLY; the waterboxed twin followed. Until the
 synthetic witness is complete enough to be the gate, the quickerNES witness
 (now in the quickerNES repository) remains the commit gate.
 
 Status (2026-08-11): the native flavor is fully implemented and passing -
 SPEC.md v1; libsynthcore (the reference interpreter); the .sasm assembler;
 the gridWalker rom (walls/hazards/goal/step budget, per-move beeps, win/lose
-jingles); the synth-native package (adapter + manifest routing .testrom,
-both OS natives); and run-witness.sh, the two-level driver: Level A replays
+jingles); a native package routing .testrom; and run-witness.sh, the two-level driver: Level A replays
 the four goal movies (win / lose / video output / audio output) natively and
 checks final RAM plus FULL per-frame video and audio stream hashes against
 goldens, with a serialize-every-frame rerecord self-check; Level B replays
-the same movies through Chimera (Mono + Xvfb) and byte-compares the final
+the same movies through Chimera and byte-compares the final
 RAM and VRAM domains against the same goldens, both modes. ~10 seconds wall
 clock, and it is THE Chimera smoke test (user decision, same day): the
 quickerNES --quick smoke subset is retired; quickerNES's suite is the full
@@ -579,41 +186,27 @@ determinism gate only. Audio is Level A-verified only for now (the frontend
 has no scriptable audio tap - an acceptable gap while the frontend audio
 path stays core-agnostic).
 
-Flavor (b) LANDED (same day): SynthMachine.cs is a from-spec pure-C#
-reimplementation sharing no code with the native flavor, shipped as
-synth-sharp.chimeraCore - a package whose manifest declares an empty natives list;
-nothing is loaded at runtime, upholding side-effect freedom trivially. The
-C# core integration story turned out to already exist: the contract and
-package loader handle a natives-free package unchanged. Cross-flavor
-equivalence is proven by the witness: the C# Level A tester and the
-frontend-loaded package both reproduce the NATIVE-recorded goldens
-bit-exactly - RAM, full per-frame video stream, full audio stream, all
-four goal movies, both replay modes (24/24). Goldens are only ever
-recorded from the native reference; other flavors must match, never
-re-record.
-
-Flavor (c) LANDED (2026-08-11): synth.wbx is the SAME synthcore.c
+The waterboxed core LANDED (2026-08-11): synth.wbx is the SAME synthcore.c
 compiled for the miniBox waterbox sandbox (see the miniBox repository at
 extern/chimera-common-minibox - a from-scratch C/C++ port of BizHawk's waterbox host,
 GCC-built guest toolchain, machine spec, all meson) and wrapped in the
 waterbox ABI (tests/synth/package-box/). Its whole machine state lives in
 guest memory, so the waterbox host savestates it AUTOMATICALLY - no
-explicit serialize/deserialize, the defining property of the flavor. The
+explicit serialize/deserialize, the defining property of a waterboxed core. The
 Level A tester runs it through the miniBox host and reproduces the
 native-recorded goldens byte-exactly on all four movies, in both plain
 mode AND whole-machine-rerecord mode (the waterbox host round-tripping the
-entire guest around every frame). run-witness.sh now checks all THREE
-flavors at Level A. The core-flavor taxonomy is thus demonstrated end to
-end: three independent implementations (native C, pure C#, waterboxed C),
-one frozen spec, bit-identical memory + video + audio. This also validates
+entire guest around every frame). run-witness.sh checks both at Level A:
+two implementations (native and waterboxed), one frozen spec, bit-identical
+memory + video + audio. This also validates
 the waterbox-only redesign's foundation - the miniBox host is real,
 GCC-buildable (no clang/nightly-Rust), and reproduces emulation exactly.
 
 Placement note: the synthetic cores are conformance-test fixtures for the
 published contract, not product cores - they live under `tests/` and are built
-by the test harness against `build/dll`, never as members of the solution. The
+by the test harness against `build/dll`, never as part of Chimera. The
 "zero core code in the repo" objective refers to the product: Chimera builds
-and ships with no core in the solution; a test fixture proving the contract
+and ships with no core in it; a test fixture proving the contract
 works is test machinery, same as the witness drivers.
 
 ## Witness harness (two levels, both must pass at every phase boundary)
@@ -697,24 +290,10 @@ Phase 0 discoveries about frame alignment (validated by per-frame RAM comparison
 - Core finding for upstream: pinned fork segfaults in `Core::serializeState` on
   mapper 30 (novaTheSquirrel) - see witness-set exclusions.
 
-## Architecture facts informing the plan
-
-- `CoreInventory` already discovers cores via reflection (`[Core]` + `[CoreConstructor]`
-  attributes) and its constructor already accepts arbitrary assembly type lists - the
-  plugin inversion is small.
-- Only `Chimera.Client.Common` references `Emulation.Cores` at the project level; the real
-  coupling is ~96 frontend files using concrete core types, mostly deletable for Chimera.
-- `GenericCoreConfig` (reflection-based settings UI) already exists; per-core config
-  dialogs are not needed.
-- Chimera targets `net48`: no assembly unload, hence the load-once model.
-- Determinism is sacred: anything touching emulation, input, or timing must preserve
-  frame-exact reproducibility or movies desync.
-
 ## The waterbox guest ABI, as built (2026-08-12)
 
 The contract a core package implements. Everything below is the *whole* surface:
-a package is `core.wbx` + `waterbox.config`, and the one generic adapter in
-`Chimera.Emulation.Common` drives it.
+a package is `core.wbx` + `waterbox.config`, and the engine drives it.
 
 **Required exports.** `Init()` (reads the mounted rom and the mounted
 `settings` JSON, returns 1 on success), `FrameAdvance(uint64 buttons)`, and the
@@ -736,29 +315,26 @@ belongs to. A package that declares axes must export it.
 
 **Optional tooling groups** (surfaces, registers, buses, trace) - the core
 renders and formats its own tooling, so the frontend needs no system knowledge.
-A missing export is reported by the host as address 0, and the adapter simply
-does not register the corresponding service, which greys the tool out. See
-`WaterboxCore.Tooling.cs`.
+A missing export is reported by the host as address 0, and the tool is greyed
+out.
 
 **Settings.** `waterbox.config`'s `settings` block holds package defaults; the
 adapter merges the user's sync settings over them and mounts the result as JSON
 for the guest to read during `Init`. They shape the machine, so changing one
-reboots the core. Note the known wrinkle: sync settings are keyed by adapter
-*type*, so every waterbox core currently shares one config key.
+reboots the core.
 
 ## Core packages arrive by themselves (2026-08-13)
 
 Objective 1 said packages are "discovered from a `Cores/` directory"; until now
 they were not - a package had to be named on the commandline (`--core`) or picked
-from File > Open Core on every launch. `CorePackageDiscovery` closes that: at
-startup, `Cores/` beside the executable (plus anything in
-`Config.CorePackagePaths`) is scanned, and every readable package found is
+from File > Open Core on every launch. Discovery closes that: at startup, the
+cores folder beside the program is scanned, and every readable package found is
 loaded.
 
 **Discovery reads, it does not load.** It opens a zip (or directory), reads
 `waterbox.config` or `chimera-core.json` for a name, systems and extensions,
 and hashes the file - nothing more. That matters because loading is irreversible
-in-process: it pins native modules and, for adapter packages, an assembly. The
+in-process: it pins native modules. The
 frontend has to be able to *describe* a package it will never load - a broken
 one, a duplicate - and it can only do that if describing is cheap and separate.
 
@@ -772,34 +348,6 @@ config list, an enable/disable API, and two extra states whose only job was to
 explain that unticking a loaded core cannot unload it. The way to not load a core
 is to not put it in `Cores/`. The window is a report, not a control panel.
 
-**Ordering trap, found by testing.** The scan must run in the MainForm
-*constructor*, not `MainForm_Load`: the commandline rom load happens in the
-constructor, so a scan in Load is minutes too late in program terms and the user
-gets a platform-picker for a rom the frontend could have opened. The witness has
-a `D:box:autodiscovery` case (a rom load with no `--core`) so this cannot regress
-silently.
-
-## Testing the interface (2026-08-13)
-
-The frontend's windows are now split so that almost everything about them can be
-checked without a person:
-
-- **Logic** lives in `Chimera.Client.Common` and is tested in
-  `Chimera.Tests.Client.Common` - no display, no emulator, no core. The states a
-  window displays belong here, not in the window.
-- **Wiring** is tested in `Chimera.Tests.Client.GUI`, which constructs real
-  forms and drives them (tick a row, press a button) under Xvfb. Forms must be
-  shown for handles to exist, or selection and click handling silently do
-  nothing.
-- **Appearance** cannot be asserted, so it is rendered instead: `UiScreenshots`
-  writes PNGs when `CHIMERA_UI_SHOTS` is set, CI uploads them every run, and a
-  person looks.
-
-`tests/ui/run-ui-tests.sh` runs all of it (`--shots` for the pictures). New tool
-windows should follow the same split: if a question about a window can be
-answered without looking at it, the answer belongs in a class that a test can
-call.
-
 ## Core settings are declared, not coded (2026-08-13)
 
 `waterbox.config`'s `settings` was a bag of defaults with no types and no
@@ -808,11 +356,9 @@ now a list of DECLARATIONS - name, display name, description, type, default,
 options or range, and whether the setting is sync.
 
 **The declaration is the UI.** There is no per-core settings dialog to write, and
-never can be: one adapter serves every package. So `WaterboxSettingsBase`
-implements `ICustomTypeDescriptor` and synthesizes a `PropertyDescriptor` per
-declaration - which is exactly what WinForms' PropertyGrid asks for names, types,
-descriptions, defaults and dropdown values. Every word in that dialog came from
-the core. Adding a setting to a core is a `waterbox.config` edit and nothing else.
+never can be: one adapter serves every package. So the settings form is built
+from the declarations - names, types, descriptions, defaults and dropdown
+values. Every word in that form came from the core. Adding a setting to a core is a `waterbox.config` edit and nothing else.
 
 **Sync vs non-sync is the frontend's question, not the core's.** The guest gets
 one flat settings object and reads the keys it knows. The `sync` flag decides
@@ -920,12 +466,12 @@ a system with one core. `RomLoader` reads it and otherwise takes whichever core
 registered first.
 
 They are DEFAULTS in the strict sense: they fill in for a controller the user's
-config has never seen (`InputManager.SyncControls`), and the controller config's
+config has never seen, and the controller config's
 Defaults button falls back to them. A user's own bindings always win, and the
 first package to claim a controller name keeps it - so installing a second NES
 core cannot rebind the pad someone is already playing with.
 
-**A broken bindings file costs the bindings, not the core.** `PackageKeybinds.Read`
+**A broken bindings file costs the bindings, not the core.** Chimera
 reports and ignores unreadable JSON: an optional convenience file must never stop
 a core from loading.
 
@@ -934,102 +480,7 @@ never heard of the synth controller and requires the package's bindings to be in
 the config it writes out (`K:box:keybinds`), and each core repo's frontend gate
 does the same for its own package.
 
-## Sweeping out what the bundle left behind (2026-08-13)
-
-With the cores outside the frontend, a lot of BizHawk's furniture had nothing
-behind it any more. Removed, on the user's instruction to take out anything no
-longer relevant:
-
-- **Basic Bot**, entirely. It is a brute-force input searcher, and searching is
-  jaffarPlus's job - that integration is the plan, not a second bot in here.
-  Its three `IMainFormForTools` members (`LoadQuickSave`, `Throttle`,
-  `Unthrottle`) went with it, each marked "only referenced from BasicBot", and
-  `MainForm.Throttle`/`Unthrottle` had no other caller either.
-- **Hotkeys for consoles this frontend cannot run**: the SNES, GB and NDS groups
-  (layer toggles, screen rotation) and the RetroAchievements group. None had a
-  handler - they were tabs in the Hotkeys dialog binding keys to nothing. The
-  dialog's hack to hide the RA tab went too.
-- **Config members nothing reads**: the ten RetroAchievements settings,
-  `GbAsSgb`, `LibretroCore`, `SelectedProfile` (and the `ClientProfile` enum),
-  `FirstBoot`, and `N64UseCircularAnalogConstraint` - a knob named for a console
-  that cannot exist here, gating an axis constraint no package can declare.
-  `TargetZoomFactors` lost its seed values for eight systems that are not here;
-  it still remembers what the user sets.
-- **The onboarding silhouette** in the status bar, which offered a setup wizard
-  that no longer exists and answered a click with "All done!".
-- **Dead UI**: an `A7800Hawk` menu item that was never even added to a menu, the
-  `RomStatusPicker` dialog nothing opened, and five image files no code named.
-
-Kept deliberately: the Code-Data Logger tool (it greys itself out for a core
-without the service, and a future guest ABI group could back it), the "None"
-placeholder in External Tools (an empty submenu never opens, so it cannot
-repopulate itself - the same trap Preferred Cores fell into), and
-`PreferredPlatformsForExtensions`, which the platform chooser still uses for
-ambiguous extensions.
-
-### Second pass: tools and per-console corners (2026-08-13)
-
-- **Code-Data Logger**, entirely. It needs `ICodeDataLogger`, and the guest ABI has
-  no group that could back it, so it greyed itself out for every core that can
-  exist here - along with its drag-and-drop `.cdl` handling and its slot in the
-  file-load ordering. If a "which addresses were code" group ever joins the ABI,
-  the tool comes back with it.
-- **Per-console corners in generic tools**: TAStudio's Doom column-hiding and its
-  N64 C-button mnemonic prefixing; the hex editor's Arcade/N3DS exception around
-  the rom domain, and its N64 matrix viewer (menu item, handler and the nested
-  dialog class). Each was a branch on a system ID no package can claim.
-- **Libretro, entirely** (user, same day). It started as the path plumbing -
-  `RetroSaveRamAbsolutePath` / `RetroSystemAbsolutePath` and the two
-  `ICoreFileProvider` members that handed a libretro core its own directories -
-  and then took the rest: the `OpenAdvanced_Libretro` and
-  `OpenAdvanced_LibretroNoGame` load types with their `IOpenAdvancedLibretro`
-  interface, `RomLoader.LoadRom`'s `launchLibretroCore` parameter (whose one
-  caller passed null), the file filter for picking a libretro `.so`/`.dll`, and
-  the `Libretro` system ID. A libretro core is a foreign plugin ABI loaded from a
-  shared library; Chimera's cores are waterbox packages with a sandbox and a
-  reproduction contract, which is the opposite trade, so there was never going to
-  be a road back.
-- The **AVI writer** is now hidden on non-Windows rather than removed: it is
-  Microsoft's AVIFIL32, so on Linux the only thing offering it achieved was a
-  `DllNotFoundException` after the user picked a codec. It still works on Windows,
-  where Chimera also runs.
-
-Checked and kept: the seven other video writers (all registered, all working - the
-per-codec dialogs are theirs, not leftovers), and the Cheats tool, which needs
-only `IMemoryDomains` and therefore works with any core package.
-
-### Third pass: MAME, and the core-motivated exceptions (2026-08-13)
-
-The user's instruction was "remove all mame and all core-motivated
-exceptions-to-the-rule", and the second half is the interesting one: a
-core-agnostic frontend should have no code that exists because of one particular
-core.
-
-- **MAME**: the `OpenAdvanced_MAME` load type, the three `RomStatus` values only
-  it produced (`Imperfect`, `Unimplemented`, `NotWorking`) and the status-bar
-  cases and multi-disk exemption built around them, its icon, and the
-  `IsDiscForXML` hack that made a `.chd` not-a-disc "due to MAME wanting CHDs as
-  hard drives (bad design, I know!)" - the comment was BizHawk's own.
-- **The controller artwork**: a table mapping 26 controller-definition names to
-  pictures of consoles, with an "Uberhack" for the C64 keyboard and a special
-  case for the ZX Spectrum. A package declares buttons, not artwork, so the
-  frontend cannot know what any pad looks like; the picture column is collapsed
-  and the images are gone.
-- **Firmware, the whole subsystem**: the manager, the (already empty) database,
-  the config dialog with its hardcoded table of console names, the missing-
-  firmware retry path, the `Firmware` path entry, the movie header's firmware
-  hash, and `ICoreFileProvider` itself - which after the libretro removal existed
-  only to hand cores their BIOS files. Note this overrides an earlier note in
-  `FirmwareDatabase.cs` saying the mechanism would stay for a future
-  package-registers-firmware story: with no ABI channel for it, nothing could
-  ever resolve, so the config dialog opened an empty window. When packages need
-  BIOS files they will mount them like any other data, and the design will be
-  made then rather than inherited.
-- Smaller: `CGBNotSupportedException` (a Game Boy Color error in a frontend with
-  no Game Boy core), and 37 image resources plus 35 image files left orphaned by
-  this and the previous passes.
-
-### The menus say what they mean (2026-08-13)
+## The menus say what they mean (2026-08-13)
 
 - **Emulation -> System.** The menu holds Pause, Reboot Core, the dump status and
   what is loaded: that is the machine, not "emulation" as an activity.
@@ -1043,14 +494,13 @@ core.
   opening its package. So File > Open Core now DOES choose: every system the
   package claims will open its roms with the cores it brought. Startup discovery
   deliberately does not, so what is sitting in `Cores/` can never silently
-  reassign what you opened. `CoreChoices` is down to `MakeDefault`.
+  reassign what you opened.
 - **Tools lost Debugger, Trace Logger and Surface Viewer**: they are core-provided,
   and the Emulator menu is where the running core's tools belong. Listing them
   twice implied they were the frontend's.
-- **Virtual Pad is gone entirely.** Its schemas come from core factory assemblies
-  (BizHawk shipped one per console); the generic waterbox adapter has none, so the
-  window could only ever be empty. With it went the eight "Analog" hotkeys that
-  nudged values inside it, and `vpads_schemata` from Emulation.Common.
+- **Virtual Pad is gone entirely.** Its layouts were per console (BizHawk shipped
+  one for each); a package declares none, so the window could only ever be
+  empty. With it went the eight "Analog" hotkeys that nudged values inside it.
 
 ## Firmware is declared by the core, not known by the frontend (2026-08-13)
 
@@ -1114,7 +564,7 @@ deliberately bare while a third is designed.
 The first was BizHawk's: a SaveRAM file per rom, an autosave timer, a per-system
 save directory, and `StartsFromSaveRam` putting a copy of the save inside the
 movie. It was replaced on 2026-08-14 by a core-declared persistent-data channel
-(`ICorePersistentData`, guest `GetPersistent*`/`PutPersistent`) plus `.gameBundle`
+(guest `GetPersistent*`/`PutPersistent`) plus `.gameBundle`
 catalogues that named a rom and its attachments, with a movie citing the bundle
 it was recorded against.
 
@@ -1610,7 +1060,7 @@ because this was found by measuring and the next such thing will be too.
 Two sharp edges. The frames a seek passes through get the tools' fast update
 whether or not it is a turbo seek, so a Lua script that counts frames during a
 seek needs "Run Lua during turbo" now as it already did during one. And on the
-Xvfb box this was measured on, a TURBO seek is slower than a plain one - the
+software-drawn box this was measured on, a TURBO seek is slower than a plain one - the
 present and the message pump cost several milliseconds each there with no frame
 drawn, which reads like software GL and a progress bar repainting - and that is
 not understood; it is bounded to the sixty services a second now, and the GPU
@@ -1644,25 +1094,15 @@ result, which is far-band sized. On a Game Boy under an 8MB budget with tight
 bands, each 61-frame stretch went from 9.5MB on disk to 1.9MB, and the file's
 live bytes from 112MB to 46MB.
 
-**The turbo-seek anomaly was Xvfb's.** Measured on the Windows box with the real
-GPU, driving `Chimera.exe --headless` through interop with the same project and
-Lua kicker: a plain Game Boy seek is 3.5 ms a frame and a turbo one 3.1, against
-2.7 for the machine alone. The several milliseconds a present and a message pump
-cost with no frame drawn were the software GL under Xvfb, and are not a Windows
-problem. Two more phases in the loop trace - movie and sound - showed where the
+**The turbo-seek anomaly was the software drawing's.** Measured on the Windows
+box with the real GPU, headless, with the same project and Lua kicker: a plain
+Game Boy seek is 3.5 ms a frame and a turbo one 3.1, against 2.7 for the machine
+alone. The several milliseconds a present and a message pump cost with no frame
+drawn were the software GL, and are not a Windows problem. Two more phases in the loop trace - movie and sound - showed where the
 rest of the client's time goes there: the movie's frame handling is the
 greenzone capture itself (0.22 ms, the history's share of a Game Boy frame), and
 the message pump at sixty services a second is the piano roll repainting, which
 is what the person is watching.
-
-**A DISPLAY that does not answer is asked first.** Both gate scripts start an
-Xvfb only when DISPLAY is unset, and the dev box has DISPLAY set to an ssh
-session's forwarded display with nothing behind it, so every frontend leg failed
-with "Could not open display" - fourteen legs and a hundred and two window
-tests, all saying the same thing. The scripts probe the display with xdpyinfo
-now and bring up their own when it does not answer. The rule stands that a
-caller's working display is used rather than a second one; what changed is that
-"set" is not taken for "working".
 
 **Not taken: the anchor's two bytes a page.** An anchor carries a status byte and
 a dirty byte for every page of the arena - 1.1MB on ares, some 21MB on rpcs3 -
@@ -2005,43 +1445,6 @@ person watching TAStudio judges by the picture, and a picture that depends on
 which frames happened to be drawn is a picture that cannot be trusted to mean
 anything. Costing 0.75 ms a frame, there was no reason to leave it.
 
-## A window's title is asked for, not assigned (user-reported, 2026-09-11)
-
-Reported from use: the Cache Manager's "Greenzone budgets..." button threw
-`InvalidOperationException` the moment it was clicked, from `FormBase`'s own
-`Text` setter, before the dialog had drawn anything.
-
-`FormBase` refuses `Text = ...` on purpose. A title is not a string a window
-owns, it is an answer the window has to be able to give again: the "static
-window titles" setting (Config > Customization, for anyone recording their
-screen) reaches in and asks every open window for its title a second time, and a
-window that assigned its title once during construction has nothing left to ask.
-So the title is a property - `WindowTitle` for the honest one, `WindowTitleStatic`
-for the one safe to show a stranger - and `UpdateWindowTitle` is the only thing
-that writes to `Text`. The setter throws rather than quietly ignoring the write,
-because a window silently keeping the wrong title is the failure the whole
-mechanism exists to prevent.
-
-**This class of mistake is easy to make and invisible until somebody opens the
-window.** It compiles: `Text` is an ordinary inherited property. It reads right:
-the same constructor assigns `Text` to a dozen child controls a few lines below,
-where it is perfectly correct, so the one bare `Text =` looks like all the
-others. And nothing exercises it - a dialog reached from one button in one
-window is not on any path a test or a session walks by accident. This one had
-been in the tree since the budgets dialog was written.
-
-The sweep found 21 `FormBase` subclasses and exactly one offender, so this was
-not a pattern that had spread. The guard against the next one is
-`FormTitleContractTests.EveryWindowGetsItsTitleFromWindowTitle`: it reflects over
-the frontend assembly for every concrete `FormBase` subclass (base classes that
-only exist to be derived from, such as `ToolFormBase`, are excluded by being the
-base of another) and fails naming any that declares neither override. A window
-that declares neither has nowhere to have put its title except `Text`, so the
-check catches the bug without having to construct windows that need an emulator
-and a live session. Its limit is worth knowing: a window that overrides
-correctly and ALSO assigns `Text` somewhere later still gets through, so the
-per-form tests that open a dialog and read its title back stay worth writing.
-
 ## A movie's log has a shape, and only the machine can describe it
 (user-reported, 2026-09-11)
 
@@ -2050,21 +1453,19 @@ select a range and press Delete. A "Failed to draw input roll" box appears, the
 project closes, and the frontend then falls over painting the roll it no longer
 has a movie for. Not core-specific: seen on DOSBox-X, reproduced on PCSX2.
 
-What is thrown, from inside the paint, is
-`ArgumentOutOfRangeException: Length cannot be less than zero` out of
-`MovieController.SetFromMnemonic` - it looked for the comma that ends an axis
-field, found none, and asked for a substring of negative length. The entry it
+What failed, from inside the paint, was the reading of an entry: it looked for
+the comma that ends an axis field, found none, and asked for a substring of
+negative length. The entry it
 was reading had no axis fields at all. That entry was the one Delete had just
-written: Clear is the only editing path that generates an entry from
-`DefaultValueController` rather than from the frame's own state, and
-`DefaultValueController` was built once, lazily, and kept for the movie's life.
+written: Clear is the only editing path that generates an entry from the
+movie's empty entry rather than from the frame's own state, and that empty
+entry was built once, lazily, and kept for the movie's life.
 
 The order that poisons it is the order a project opens in. The file says which
 core to boot and with what, so the file is READ FIRST; until that boot the
-frontend's emulator is the null one, whose controller has no controls and -
-because `InputManager.SyncControls` builds a mnemonics cache for every emulator
-it syncs, the null one included - is perfectly willing to generate entries. The
-read touches `DefaultValueController` (finding where the run's input stops), and
+frontend's emulator is the null one, whose controller has no controls and is
+perfectly willing to generate entries. The read touches the empty entry (finding
+where the run's input stops), and
 that first touch fixed the writer's idea of an entry as "115 controls, none of
 them axes" for the rest of the session, while every reader used the machine's
 own controller, which knows this movie's four mouse axes.
@@ -2078,10 +1479,9 @@ runs off the end.
 
 **The rule: a controller used to generate or parse a movie's entries is not a
 thing to cache across the boot that defines it.** Both caches now remember the
-definition and the log key they were built from and rebuild when either changes
-(`MovieBase.DefaultValueController`, `TasMovie.DisplayValue`), and `TasMovie.Attach`
-- which runs after the session has the machine's controller - works out where
-the input stops a second time, because the pass done during the read could not
+definition and the log key they were built from and rebuild when either changes,
+and attaching the movie to the machine - which happens after the session has
+the machine's controller - works out where the input stops a second time, because the pass done during the read could not
 have been right. What makes this class of bug expensive is that the two halves
 fail asymmetrically: writing a wrongly-shaped entry is silent, and the cost is
 paid later by a reader in the middle of a paint, where there is nothing sensible
@@ -2327,9 +1727,9 @@ leaving it out.
 
 The packing is the engine's (ce_media_make, and the hashing happens on the way
 out through a streaming SHA1) and the window only chooses, shows and cancels.
-That is the thin-C# rule applied to something it would have been very tempting
-to write in C#: every one of the channels above is a correctness question, and
-correctness lives in the engine where the tests are.
+That is the thin-window rule applied to something it would have been very
+tempting to write in the window: every one of the channels above is a
+correctness question, and correctness lives in the engine where the tests are.
 
 Refusing is a feature in all three. An empty folder, a file too big for the
 format, a floppy that will not hold the tree - each is an error with a sentence,
@@ -2761,12 +2161,11 @@ freed block released its mirror - a view of the block's section - with
 VirtualFree, which cannot release a view and failed silently, so every reboot
 leaked a whole arena; it is now unmapped as a view, and the reboot-heavy stress
 survives 156 reboots. TAStudio could not open a movie whose log key names
-controls the machine does not currently have (`MnemonicMap`,
-`KeyNotFoundException` - a project recorded with a second controller and
-reopened without it): `ControllerDefinition.MnemonicFor` answers from the cache
-and falls back to the system's lookup for a name the machine lacks, and every
-reader of the cache goes through it. A project's game record took the package's
-FIRST system (`RomLoader`, `factory.SystemIds[0]`), so an ares NES project said
+controls the machine does not currently have (a project recorded with a second
+controller and reopened without it): a mnemonic is answered from the cache, else
+from the system's lookup for a name the machine lacks, and every reader of the
+cache goes through that. A project's game record took the package's FIRST
+system, so an ares NES project said
 N64 wherever that was read; it now takes the system the created emulator reports.
 And headless mode waited forever on the prompt to locate a project's missing
 file; it now names the missing files and exits 64, like every other dialog a
@@ -2826,7 +2225,7 @@ drops nothing, and lets the epoch go so the next delta is measured from where
 the machine stands. What changes the timeline says so itself, before the frame
 is played:
 
-- every TAStudio edit, recording included, already did (`TasMovie.InvalidateAfter`);
+- every TAStudio edit, recording included, already did;
 - a branch loads through the same call, at the point where the logs diverge;
 - loading a savestate into a project now also counts a log that is merely
   longer or shorter as diverging where the shorter one ends;
@@ -2894,23 +2293,18 @@ loaded first - and its saved states were refused.
 A core package is now registered beside another of the same name whenever the
 two are different bytes, and a project boots the exact build it pins whenever
 that build is installed, loading it next to the others if need be. Which build
-runs otherwise is one rule, `CoreChoices.PickBuild`, used by every place that
+runs otherwise is one rule, used by every place that
 turns a core name into a machine - project boot, the cache's machine identity,
 a bare rom, a movie's forced core, the firmware in use: the pinned build if it
 is there, else the one the user chose, else the most recently installed. The
 user decided the middle term: opening a package with File > Open Core, or
-installing a version in the core manager, is choosing it
-(`Config.DefaultCoreBuilds`); a project loading the build it pins is not, and
+installing a version in the core manager, is choosing it; a project loading the build it pins is not, and
 records nothing. The "not the project's core build" prompt now only appears
 when the pinned build is genuinely not installed.
 
-Two smaller truths came with it. "Which package made this emulator" was
-answered per adapter ASSEMBLY, and every miniBox package shares one, so it
-named whichever package registered last; the registry now remembers the
-factory behind each emulator, and the movie header and firmware record read
-that. And an adapter package - a .NET assembly rather than a miniBox guest -
-still cannot be loaded twice, because a second assembly of the same identity
-would silently be the first one's types; those stay one build per name.
+One smaller truth came with it: "which package made this machine" is
+remembered for each machine, and the movie header and firmware record read
+that.
 
 Proved end to end headless: with a byte-different copy of the synth core loaded
 first (and so chosen), a project pinned to the original booted once, played its
@@ -2925,7 +2319,7 @@ progress - the inputs - never to be lost, even when a crash cannot be survived.
 
 The crash that prompted it could not have been caught. nss102 died inside the
 NVIDIA OpenGL driver with 0xc0000409, a fast-fail: Windows ends the process on
-the spot and runs no handler, managed or native. A design that saves the work
+the spot and runs no handler. A design that saves the work
 "on the way down" saves nothing in exactly the crashes that matter most, and a
 killed process or a power cut is no kinder. So the inputs never wait for a
 crash: they are on disk before anything can go wrong.
@@ -2968,10 +2362,7 @@ work. Headless runs still fail loudly, so a gate cannot pass by swallowing one.
 Not done, on purpose: no native last-chance handler writes anything. Code that
 runs inside a process whose memory may be corrupt is the least trustworthy code
 there is, and there is nothing left for it to save - the inputs are already on
-disk. One trap met on the way: a static field of type `MainForm` on `Program`
-made every start fail, because a field's type is loaded with its class, which
-is before Chimera's assembly resolver is installed; the handlers hold framework
-delegates instead.
+disk.
 
 ## A GPU core's word that its states survive is not taken (2026-09-13)
 
@@ -3024,8 +2415,7 @@ Making it a cache entry uncovered a real hole. The recovery folder lived inside
 the project's cache, and a project's cache entry is the whole folder - so the
 auto-clean, which takes unlocked greenzones oldest first, or anyone removing a
 greenzone by hand, would have deleted unrecovered work with it. Recovery now has
-its own root, `<data>/Recovery/<id>`, and its own kind (`CacheKind.Recovery`,
-"Unsaved work"). The lock book already started every kind but greenzones locked;
+its own root, `<data>/Recovery/<id>`, and its own kind ("Unsaved work"). The lock book already started every kind but greenzones locked;
 unsaved work joins them for the opposite reason from the small caches - it is
 the one entry whose loss is work rather than time. It is in use while any
 session that owns it is running, and a folder where an earlier build left it is
@@ -3037,8 +2427,8 @@ control character, six times over. It compiled and ran; it is now an escape.
 ## A crash no handler sees still says what it was (user-decided, 2026-09-13)
 
 The crash that started the recovery work was a graphics driver's fast fail:
-`__fastfail` ends the process without running one exception handler, one
-finally or one managed event. The work survives that (the journal), but nothing
+`__fastfail` ends the process without running one exception handler or one
+cleanup. The work survives that (the journal), but nothing
 said why it had been needed - the Windows event log named a module and an
 offset, and the minidump `LocalDumps` happens to be set to keep was found by
 chance, outside anything Chimera knows about.
@@ -3205,20 +2595,15 @@ markers:
    the project from disk, and would lose what was not saved.
 3. Save the project's inputs without the greenzone, and close. A history from a
    run whose machine died is not one to trust; the file an earlier save wrote goes
-   too (`TasMovie.SaveWithoutGreenzone`).
+   too.
 4. Close without saving, after asking. The recovery journal is ended without its
    clean-up, so the next open finds the work and offers it back.
 
 A headless run has nobody to ask: it prints the reason, keeps the recovery
-journal, and ends the ordinary way with exit code 65
-(`HeadlessMode.EXIT_CODE_CORE_STOPPED`).
+journal, and ends the ordinary way with exit code 65.
 
-The stop reaches the frontend as a STATE (`ICoreStops.CoreStopped`, set by the
-frame advance that did not run), and MainForm raises `CoreStoppedException` from
-its own frame. Thrown from the emulator's frame advance, just back from the
-engine, the same exception crashed Mono in its unwinder in most runs - and did
-so with the previous host and a stop the engine only pretended, so it was never
-the sandbox - while thrown one frame further up it never did.
+The stop reaches the frontend as a STATE, set by the frame advance that did not
+run, and the window asks its question from there.
 
 The synth core dies on cue for the tests (all eight buttons: an abort; all but
 Up: a wild pointer), and the witness checks both, twice: chimera-run stops with
@@ -3268,32 +2653,6 @@ or it is a different operation. A buffer that is mapped or immutable is never
 pooled, and a target the pool cannot identify turns it off. It took a trace
 (`CHIMERA_GL_POOL_TRACE`) to find the last gap - the texel buffer on
 `GL_TEXTURE_BUFFER` - after two fixes reasoned from the code had each missed it.
-
-## A crash only the CI runner has is tracked, not waited on (user-decided, 2026-09-15)
-
-The two witness legs that make the synth core stop on purpose (`S:frontend:abort`,
-`S:frontend:wild`) pass here every time and crash Mono on the GitHub runner every
-time. The runner's log shows the core stopping correctly; the crash is Mono's own,
-while CoreStoppedException is thrown. Symbolized with Ubuntu's `mono-runtime-dbg`
-(fetched with `apt-get download` and unpacked, no install needed), the frames are
-`mono_amd64_throw_exception` -> `mono_handle_exception_internal` ->
-`unwinder_unwind_frame`, at `mini-exceptions.c:662`: `*lmf = (*lmf)->previous_lmf`,
-with the LMF - Mono's chain of managed-to-native transitions - pointing at
-0xdab80. The chain is already corrupt when the exception walks it.
-
-What it is not: the compiler (natives and guest built with the runner's gcc 13.3
-here - the guest came out byte-identical), the CPU count (pinned to four cores),
-Mono's version or the OS (identical), or a one-off (a rerun failed the same way).
-160 local runs, none crashed. The same unwinder crash was met while the feature
-was being written, with a faked stop and the previous miniBox host, which is
-why the throw moved to MainForm's own frame; on the runner that is not enough.
-
-Releases were not held for it. On the runner, and only there (GITHUB_ACTIONS),
-those two legs report KNOWN when Mono crashes, which does not fail the run;
-anything else wrong with them still fails, and everywhere else a native crash
-still fails. On Windows the frontend runs on .NET Framework and is not affected.
-A Linux user whose core dies can still see the crash this feature was meant to
-replace. Finding the cause is owed.
 
 ## A branch is its input, and a stack's leftovers are not the machine (2026-09-15)
 
@@ -3580,8 +2939,8 @@ and copied that array whole for every search and every undo level. A hundred
 million objects is gigabytes before the first comparison, and nothing about it
 could be tuned: the shape was the problem. So the search moved into the engine
 (`ram_search.cpp`, `ce_ramsearch_*`), which is also where a
-thing that decides rather than shows belongs, and the C# `RamSearchEngine` is now the settings the
-tool edits and a translation of its enums.
+thing that decides rather than shows belongs; the window keeps only the
+settings the tool edits.
 
 The candidate set has two shapes and the switch between them is nobody's
 business but its own. While most of the domain is still a candidate it is
@@ -3652,7 +3011,7 @@ commit alone; the file's modification time was rejected as a fallback because
 it answers "when was this copied here", and showing it would look like an
 answer to the question that was asked.
 
-Ordering is one function (`CoreVersionDates.NewestFirst`): cores stay where they
+Ordering is one rule: cores stay where they
 were, the versions of one core go newest first, undated ones after the dated.
 The wizard sorts its package list with it once, which is what makes "latest is
 the default" true everywhere at no further cost - the picker opens on the first
@@ -3684,9 +3043,9 @@ or everything - and the answer was everything, the same thing the variable has
 always done. And what becomes of the data already there: the user is asked, and
 may move it or start empty and leave it.
 
-So there is one setting, `DataDirectory`, and one resolver. `CoreStore` used to
-work the same location out for itself and remember it; it asks
-`ProjectCache.DataHome` now, every time, because a second resolver is a second
+So there is one setting, `DataDirectory`, and one resolver. The core store used
+to work the same location out for itself and remember it; it asks the resolver
+now, every time, because a second resolver is a second
 place to teach and a remembered answer is one that goes on pointing at the old
 directory. The environment variable still wins: a portable install or a test
 that sets it means it, and the window says so rather than offering a choice it
@@ -3816,14 +3175,14 @@ the state never exists whole anywhere - not in the frontend, and not in the
 engine either, where five 4 GiB branches would otherwise sit in RAM. A file is
 also already persistent: there is no second step at project save in which
 gigabytes are copied into the cache zip (whose lumps had the same 2 GiB problem
-waiting). And the thing the frontend holds shrinks to a NAME, which is what thin
-C# wants it to be.
+waiting). And the thing the frontend holds shrinks to a NAME, which is what a thin
+window wants it to be.
 
 So: `ce_session_state_save_file` / `_load_file` in the engine, with a small
 caller-owned tag riding along (the frontend's frame and lag counters, which are
 not the machine's). The file is written beside its name and moved into place, so
-a failed save leaves what was there. `TasBranch.CoreData` is gone;
-`TasBranch.StateFile` names a file in `Projects/<id>/Branches/`. WHICH file is
+a failed save leaves what was there. A branch holds no state of its own any
+more; it names a file in `Projects/<id>/Branches/`. WHICH file is
 which branch's is recorded in the cache zip where the state itself used to be,
 under the same rules as before - not for a GPU-drawn machine, not after a
 session that did not end cleanly, not when the cache is another machine's - so
@@ -3838,9 +3197,6 @@ used to clone the whole machine on EVERY branch load; when the last state writte
 was over 512 MB that backup now keeps its input alone and the undo replays to it,
 because a second multi-gigabyte write per load, for an undo rarely used, is the
 wrong trade.
-
-`TasBranchCollection.Save/Load`, a second copy of the branch format nothing
-called, was deleted rather than converted.
 
 Proved: the synthetic gate saves to a file and loads straight back mid-movie in
 all four movies and ends byte-identical to the goldens, and refuses a garbage
@@ -3965,16 +3321,15 @@ are replayed rather than typed over. That rule is right, and it is kept.
 
 Past the END of the log there are no rows to protect. A seek out there cannot
 replay anything: every frame has to be AUTHORED as it is reached, which
-TAStudio does itself in `UpdateBefore` - and it was writing them from
-`MovieSession.StickySource`, the autohold/autofire controller alone. So the
-extension threw away everything actually being pressed, by a hand on the pad as
-much as by a script, and because `MovieSession` then reads that same row back
-to feed the core, the machine saw nothing pressed either. Both halves of the
+TAStudio does itself before each frame - and it was writing them from the
+autohold/autofire state alone. So the extension threw away everything actually
+being pressed, by a hand on the pad as much as by a script, and because that
+same row is then read back to feed the core, the machine saw nothing pressed
+either. Both halves of the
 report, one cause.
 
-The extension now takes its input from `MovieSession.MovieIn` - the same
-controller record mode would have written - whenever `WasRecording` says the
-person asked to record and a seek is what took it away. Read-only play past the
+The extension now takes its input from what record mode would have written
+whenever the person asked to record and a seek is what took it away. Read-only play past the
 end is untouched: with nobody recording, the autoholds remain the only way to
 hold a button out there, which is what that mode has always meant. Witnessed by
 three runs of a new Level-B leg (`T:box:luaInput`, `T:box:luaQuiet`): a held
@@ -4034,194 +3389,15 @@ day and the fix was itself the bug.
 Issue #112: the bright white is a strain on the eyes, and the reporter, who
 does not write code, offered to contribute palettes. The decision was: do it
 everywhere rather than on a subset of windows, ship at least Light and Dark,
-and Light must be pixel-for-pixel what Chimera has today.
+and Light must be what Chimera looked like before themes.
 
-The shape follows from the second half of that. If Light has to be today's
-palette, then today's palette has to be written down somewhere, and once it is
-written down there is no reason for it to be the only one. So a theme is one
-colour for every role the frontend paints with - `ThemeColorRole`, about ninety
-of them - and nothing else: a flat JSON object of role name to `#RRGGBB`, read
-from `Themes/` under the data directory, with Light and Dark compiled in as the
-same kind of file. A role that a theme does not answer is an error naming the
-role, not a default: a window that is dark except for one panel is worse to
-look at and much harder to report than one that is not dark at all. `basedOn`
-lets a contributor change five colours instead of ninety, and Config > Theme >
-Write a Copy to Edit hands them a complete file to start from.
-
-Light says `"system:ControlText"` where the code said `SystemColors.ControlText`,
-so it is the desktop's palette rather than a guess at it, and
-`LightThemeBaselineTests` carries the literals copied out of the code they used
-to live in and fails by name if `light.json` moves one.
-
-That was not enough on its own, and finding out why is the useful part. Every
-screenshot the UI tests take was compared pixel by pixel against the same
-window built from the commit before this work, and the first round differed on
-five of them - because assigning a colour is not free even when it is the same
-colour. A Button handed a BackColor stops using visual styles. A sunken 3D
-border redrawn is a line. A menu given a colour table built out of system
-colours stops going through the system renderer. A read-only text box given
-"the read-only background" stops being white, which WinForms never did. Same
-palette, different drawing, and "different" is the one thing Light must not be.
-
-So Light carries `"desktop": true`, and under a theme that says so the walk
-assigns nothing by control type at all: the roles the frontend declared by
-name, the controls that paint themselves, and otherwise the toolkit's own
-drawing untouched - which is also where the Mono beige fix goes back to living,
-in FormBase, exactly where it was. With that, every Light screenshot is
-byte-identical to the one from before the branch, and the property is a
-property of the code rather than of ninety hex values happening to be right.
-
-Applying it is explicit, because WinForms has none of this. One walk sets each
-control's colours from its type; the surfaces a BackColor does not reach are
-handled by name (tool strips through a renderer, DataGridView through its cell
-styles, ListView headers by owner-drawing them, LinkLabel through LinkColor);
-and a control that paints itself takes the theme through `IThemedControl`
-rather than being guessed at. The obligation is carried by the base class -
-every window derives from `ThemedForm`, which runs the walk on handle creation,
-and `ThemingContractTests` fails the build if one is added that does not. That
-is the part that was asked for explicitly: a window added later must be themed
-by existing, not by somebody remembering.
-
-Two rules fell out of doing it. A colour that MEANS something is declared as a
-role (`SetForeRole(ThemeColorRole.AccentError)`) rather than assigned, or the
-walk flattens it back to plain text on the next theme change - and the wizard
-was reading a colour back OUT as state, counting its green rows to say how many
-modules were compiled, which any theme would have broken. And a control made
-after the window opened has to be themed when it arrives: TAStudio's piano
-rolls are built when a project opens, and were the one white thing left on a
-dark window until the walk started hooking the containers it passes.
-
-The defect that came back from review is the one worth keeping: a list's
-chosen row was a beige bar with invisible writing on it, in a screenshot this
-work had itself produced, while every assertion about every control's colours
-passed. A ListView paints its selected row, its column headers and the strip
-past its last column out of the desktop's colours and answers no property
-about any of them - so a test that reads properties cannot see it, and a
-picture nobody looks at is not a witness. The lesson is the same one as the
-gate that went green over an empty game database: a test has to be asked
-whether it would notice.
-
-So the list is drawn here now, in Details view, away from the desktop's
-palette - and the strip past the last column, which no event is raised for and
-nothing can paint over, is removed by growing the last column to the edge. And
-the screenshots are inspected as they are taken, every run: no toolkit colour
-in a header band or behind a chosen row, and a chosen row's text must have
-contrast against what it is written on. Both checks were confirmed against the
-broken drawing before the fix went in, which is the only way to know a test
-bites. On top of that, every role that carries text is paired with the
-background it lands on and held to 3:1 - the accessibility floor - for every
-theme that is not the desktop's, because a contributed theme is ninety numbers
-somebody typed and two of them being the same shade is exactly the failure
-that is invisible on the page and obvious on the screen.
-
-Three follow-ups after Sergio tested the staged build (user-decided,
-2026-09-20). Dark is what a config being created now starts with; a config
-that already existed and had never chosen keeps Light, because changing
-somebody's colours under them on an update is a surprise and the theme is one
-click away either way. Twenty-one menu items had no icon and now have one,
-from one place, with the items that are better bare - anything that can be
-ticked, since the tick lives in the image margin; labels that are not
-commands; Exit - named as decisions rather than omissions. And the title bar,
-written up the round before as unreachable, is reachable: WinForms cannot
-colour it but Windows will, through one DwmSetWindowAttribute call, which
-ThemedForm makes on handle creation and on every theme change. That call
-cannot be exercised anywhere but Windows, so what the tests cover is that
-every window ASKS; whether Windows honours it was checked by hand on the
-Windows side of this box, build 22631, and photographed.
-
-The fourth thing that round taught is the one worth keeping. The Theme menu
-shipped dead - clicking it did nothing at all - while 873 tests were green,
-because a ToolStripMenuItem whose DropDownItems is empty never opens, so the
-handler that fills it never ran. Every one of those tests reached the theme
-engine directly; the only route a USER has to the feature was untested. That
-is the same class as the gate over an empty game database, in a new place: the
-mechanism was covered and the entry point was not. MenuContractTests now reads
-the Designer files and fails on any menu that fills itself when it opens and
-starts with nothing in it, which is the eleven that exist and the twelfth
-somebody writes.
-
-And the fourth report, which is the most instructive of the lot: on the staged
-build, choosing Light while wearing Dark changed the title bar and nothing
-else. The cause was the design decision two paragraphs up. "The desktop theme
-assigns nothing" is right for a window built under it and is exactly wrong for
-a window that is currently dark - there was nothing to put the colours back to,
-because nothing had ever recorded what they were. The title bar changed
-because it is not part of that mechanism at all: it is an unconditional call.
-
-So the first walk over a control now records everything the walk can change -
-colours, border style, visual-style flag, flat appearance, link colours, a
-property grid's six, a data grid's cell styles, a strip's renderer - and the
-desktop theme runs that record backwards. Two things surfaced while fixing it
-that are worth keeping. A ToolStrip handed the renderer it already holds keeps
-the render mode it was put back to, so renderers are made per application now
-rather than shared per theme; and a strip item's colour is the STRIP's until
-somebody sets one, so recording what an item reads back after the strip has
-gone dark records the dark colour - items are reset, not restored.
-
-The test that was green throughout checked that a repaint happened. It now
-checks what the window LOOKS like afterwards, against a window that started in
-that theme, in both directions. That is the third time on this branch that the
-check covered the mechanism and not the state a person actually lands in.
-
-Where a user already had a say, the theme yields to it. TAStudio's palette, the
-hex editor's six colours and the OSD's four follow the theme only while nobody
-has set them; a config from before themes holds the old light values, and those
-are read as "nobody set anything" so an old config follows the theme too.
-
-What no theme reaches, and it is worth being plain about: scroll bars, the tick
-inside a check box, the window's own title bar. Those are drawn by the desktop
-out of the desktop's colours and WinForms offers no way to ask for others. A
-dark Chimera has light scroll bars.
-
-## The sub-folders option belongs to the folder picker (user-decided, 2026-09-20)
-
-Three places in the frontend scan a folder somebody points at: the New Project
-wizard's firmware step, the Firmware Manager, and locating a project's files.
-All three walked sub-folders, which is what a person pointing at a firmware
-folder means and exactly wrong for one pointing at a collection - so the choice
-had to be offerable, and the day before it had appeared as a check box beside
-the wizard's Scan Folder button. One page out of three, with the other two left
-as they were and no reason but which page had been open at the time.
-
-The choice is not the page's. It belongs to the act of choosing a folder, and
-so it now lives in the picker: on Windows, a check button added to the shell's
-own common item dialog through IFileDialogCustomize. Every Scan Folder in the
-frontend gets it, including the two that never had it, and a fourth one written
-next year gets it without anybody remembering to add it.
-
-One delegate carries the answer both ways - the flag goes in as the state to
-open on and comes back as what the person settled on - because a picker that
-only returns a path cannot report a control it does not know about, and a
-picker that returns a pair forces every caller to care. The ref parameter is
-the shape that lets a caller which does not care pass a value it never reads.
-
-Three pickers cannot carry the control: Mono's dialog, the SHBrowseForFolder
-tree, and a Windows whose shell refuses the customisation interface. In all
-three the value comes back exactly as it went in, and that is written down as a
-rule rather than left to fall out of the code, because "unchanged" and "the
-person said no" are the same bits and only the contract tells them apart. So is
-the other case they share with a cancelled dialog: cancel never changes the
-remembered answer.
-
-The wizard's on-page box is hidden where the dialog carries the option, not
-deleted - it is still where that page remembers the answer between scans, and
-it is what a person on Mono actually sets. Exactly one of the two is ever
-visible; two controls for one setting reads as two settings.
-
-What this cost in testing is the point of it. The suite runs on Mono under
-Xvfb and the control is raw COM against a shell that is not there, so every
-Linux test stops at the delegate. Two of them would have been vacuous and are
-not. The check that a page shows a box exactly where the picker cannot carry
-one has two halves, and a test can only ever stand on one platform - so it
-tells FolderBrowserEx what to say about the platform instead of asking the one
-it is standing on, and asks both. And the vtable offsets, where a wrong slot
-calls some other method entirely, are answered by a harness on real Windows
-(tests/ui/windows/folder-picker-checkbox.sh) that finds the control among the
-dialog's child windows, clicks it, and checks what the caller gets back -
-including the cancel case, which is the one a person is most likely to hit and
-the one no Linux test can reach. Both new Linux legs were watched failing
-against a deliberately broken build before being believed. docs/folder-picker.md
-says plainly what the green run does and does not stand for.
+So a theme is one colour for every role the window paints with, about a
+hundred of them, and nothing else: a JSON object of role name to `#RRGGBB`,
+with Light and Dark built in as the same kind of file. Light says
+`"system:ControlText"` and the like, so it is the desktop's own palette rather
+than a guess at it. Config > Theme > Write a Copy to Edit hands a contributor a
+complete file to start from. docs/theming.md says how themes are read, written
+and applied.
 
 ## What a PS3 install actually costs, and which half a wizard step can buy (measured, 2026-09-20)
 
@@ -4440,9 +3616,8 @@ range "should always be the guest's screen resolution"; what they chose, after
 the survey below, was to keep a normalised wire and **fix the unit**.
 
 **The survey changed the problem.** The value was already resolution
-independent: `DisplayManager.UntransformPoint` returns guest pixels,
-`MainForm.cs:904-914` divides by the LIVE `BufferWidth`/`BufferHeight`, and
-`Controller.cs:130-152` expands that into the declared range. The unit was
+independent: the pointer is turned into guest pixels, divided by the LIVE
+picture's width and height, and expanded into the declared range. The unit was
 simply arbitrary - "1/2560ths of the screen" for DOSBox-X - and, worse,
 **the core divided by a different number than the config declared**:
 `dosbox-driver.cpp` used 800 against a declared 2560, so pointing at the middle
@@ -4470,8 +3645,8 @@ spelling for new work; it is not a migration anyone owes.
 **Three consequences worth writing down.**
 
 *The digits problem dissolved.* `65535` is exactly five characters, which is
-what both implementations of the entry format already pad an axis field to
-(`movie_entry.cpp:139-141`, `LogEntryGenerator.cs:57`). Column width, the
+what the entry format already pads an axis field to
+(`movie_entry.cpp:139-141`). Column width, the
 typed-digit limit and the OSD's six-character field all come out unchanged, and
 **the engine needed no change at all** - it never reads `min` or `max`, only
 `neutral`.
@@ -4585,7 +3760,7 @@ decided the other way, and decided where: **in the `.chimeraProject`**.
 
 **It lives in TAStudio's part of the file**, the `tastudio` object that already
 carries the piano roll's columns and lag display (issue #83), as
-`MovieClientSettings.GreenzonePeriod`: 1 every frame, N one in N, 0 off. The
+`GreenzonePeriod`: 1 every frame, N one in N, 0 off. The
 engine keeps that object without reading it, so the project format itself did
 not change and no older build refuses the file. A project saved before this
 has no such field and opens on 1, which is what it always opened on.
@@ -4593,7 +3768,7 @@ has no such field and opens on 1, which is what it always opened on.
 This is not where a greenzone's memory budget lives, and the difference is
 deliberate: a budget is a fact about the machine the work is done on, and is
 kept beside the greenzone in the cache so a project handed to somebody with
-half the memory does not arrive carrying it (ProjectCache.ProjectBudgets). The
+half the memory does not arrive carrying it. The
 choice of how often to store a frame is part of how the run is being worked on,
 and travels with it.
 
@@ -4620,8 +3795,7 @@ is what follows.
 emulator, which is every core before this one, and a kind this build does not
 know is listed with the emulators rather than refused. The Core Manager, the
 Cache Manager, the new-project wizard's picker and the firmware window list
-the emulators first, then a grey divider row, then the game cores - a row
-rather than a ListView group, because Mono ignores groups in Details view. The
+the emulators first, then a grey divider row, then the game cores. The
 Core Manager keeps its "External cores" divide inside each half. The platform
 chooser for an unknown file offers no game core at all: a game core plays its
 own game and nothing else.
@@ -4645,7 +3819,7 @@ table shrinking.
 **The type system is the engine's.** Reading, writing, showing and parsing a
 property decide what bytes a poke or a freeze writes, so they live in
 libchimera (`ce_session_property_*`, source/engine/source/game_properties.cpp)
-under the thin-C# rule, tested by the engine's own test; the frontend lists,
+under the thin-window rule, tested by the engine's own test; the frontend lists,
 shows and forwards, and a solver linking the engine gets the same
 properties. The engine checks the table, not trusts it: a property on a domain
 the core does not have (or one with no memory of its own), past the end of
@@ -4670,10 +3844,7 @@ mode (the X68000's rate export) is live the same way. `chimera-run --rates`
 logs it: the SDLPoP route reads 12/s with 10 then 15 at each room change, and
 274 steps of 12 with the re-read taken out.
 
-**`game.*` says and carries on; it does not throw.** An exception thrown back
-through Lua after a script has yielded a frame took the whole process down
-under Mono, even inside a `pcall` - the first version of the witness leg
-crashed that way twice. An unknown name reads as nil and sets nothing, with
+**`game.*` says and carries on; it does not throw.** An unknown name reads as nil and sets nothing, with
 the reason in the console, as `memory.*` treats a domain it does not know.
 
 The witness leg `T:box:gameProperties` drives the whole path through the synth
@@ -4693,7 +3864,7 @@ its speedrunners count them. Prince of Persia's is TASVideos' GameTimer, the
 one quickerSDLPoP prints as `IGT m:ss.mmm`: the clock loses one tick of 1/12 s
 per tick of play and rolls a minute over after 719, so the time is the ticks
 between the clock the game started with and the clock now, times 1000/12. The
-arithmetic is the game's and lives in the core (thin C#, heavy C++); the
+arithmetic is the game's and lives in the core; the
 engine checks that the name is one whole-number property, reads it, and owns
 the only formatting, `mm:ss.mmm` (user: "for humans to see"), so a solver
 linking the engine writes the same text the screen shows.
@@ -4760,8 +3931,7 @@ other displays' are.
 
 Game cores were set apart in every list by a divider row - a grey line reading
 "Game cores", with "External cores" and "External game cores" beside it in the
-Core Manager - because Mono's ListView ignores groups in Details view, so a row
-was the only divide that drew everywhere. The user found it did not look
+Core Manager. The user found it did not look
 right: a divider row reads as a disabled entry, and has to be kept from being
 ticked, selected, sorted across and counted.
 
@@ -4799,8 +3969,8 @@ warning. Three pieces were missing:
   the dump remembered under the DECLARED hash. So a person who had ever
   pointed at the original booted the project on it, silently. That is a
   different machine, and a movie made on the custom file desyncs.
-  `CoreFirmwareStore.ProjectPins`, set when a project boots and cleared when
-  it closes, makes the pinned file win for that core. What is described and
+  The project's pins, set when a project boots and cleared when it closes,
+  make the pinned file win for that core. What is described and
   recorded is then what is mounted. It was proven both ways, headlessly: a
   Prince of Persia 2 project pinning a modified PRINCE.DAT, with the original
   remembered, got the original's level before the change and its own after.
@@ -4900,7 +4070,7 @@ Four decisions, all the user's:
 What a package declares is in docs/porting-a-core.md: `systemNames`,
 `mnemonics` in each input declaration, `header` on each axis, `media`.
 The engine resolves a control's letter (whole name, then the name without
-its player, then the rule) and the frontend asks it - C# holds no table
+its player, then the rule) and the frontend asks it - the window holds no table
 and no rule of its own; a definition with no session behind it asks the
 engine for the rule's answer.
 
@@ -4978,10 +4148,6 @@ The user's words: reboot core should keep the project. So it does:
 Proved by three witness legs (the roll closed, the roll open, and a core
 that dies after a reboot), each of which fails on the old path, and by a
 unit test of the movie changing machines.
-
-One thing found on the way and NOT fixed: under Mono, a core that dies
-with the piano roll open crashes in Mono's unwinder, reboot or no reboot.
-The death leg runs with the roll closed for that reason.
 
 ## A branch's state follows the greenzone's rule (user-decided, 2026-10-06)
 
@@ -5120,40 +4286,6 @@ three copyright lines, NOTICE the summary of whose work each part is. No
 core package ships that file, so no package changes; and Chimera's pin of
 miniBox is not moved for it.
 
-## The ReflectionCache source generator is gone (user-directed, 2026-10-07)
-
-One of the three source generators inherited from BizHawk wrote, into every
-project, a class called `ReflectionCache_<abbreviated project name>` with
-four things in it: the assembly's types, its version, a list of its embedded
-resources and a way to open one. Pull request #92 (YoshiRulz, a draft titled
-"Drop managed (C#) cruft") removed it and stopped at that one commit; the
-user asked for it to be finished and merged.
-
-What replaced each of the four:
-
-- the types: the assembly is asked (`typeof(X).Assembly.GetTypesWithoutLoadErrors()`),
-  once, where a list of tools, Lua libraries, API implementations or video
-  writers is built;
-- an embedded resource: `Assembly.EmbeddedResourceStream(fullName)`, one
-  extension in Chimera.Common, called with the resource's whole name. (The
-  pull request had a private copy of it in each file that opened one; main
-  had gained a fourth caller, the themes, since it was written.)
-- the list of resources: nothing used it;
-- the version: only the check below used it.
-
-Removed with it: the check at the top of `Program.SubMain` that compared
-the versions of the ten Chimera assemblies and refused to start on a
-mismatch ("Did you attempt to update by overwriting an existing install?").
-It could not fire. No Chimera project sets a version, so every assembly is
-1.0.0.0 in every build, and the check compared equal numbers. BizHawk
-versions its releases; Chimera names a build by its commit. A mixed install
-is still possible and is now not checked for at all, which is what was
-already true.
-
-Also removed: the `MSBuildProjectName` compiler-visible property, which
-only that generator read. Two generators remain, both in use: VersionInfo
-(the commit and its time) and SettingsUtil.
-
 ## Chimera reaches for nothing over the network (user-decided, 2026-10-07)
 
 The user's words: "Chimera should download nothing from the internet (not
@@ -5177,8 +4309,7 @@ the model that replaces it). What went:
 - from Lua: `comm.socketServer*`, `comm.http*`, `comm.ws_*`, and the
   `--socket-ip`, `--socket-port`, `--socket-udp`, `--url-get`, `--url-post`
   flags. `comm.mmf*` stays: a memory-mapped file is on this machine;
-- LuaSocket, from the build and the bundle (the submodule is gone);
-- the frontend's reference to `System.Net.Http`.
+- LuaSocket, from the build and the bundle (the submodule is gone).
 
 What a click on a link does - the About box, Help - is not Chimera reaching
 anywhere: it hands an address to the system's browser.
@@ -5821,7 +4952,7 @@ A fresh install had no folder for projects, so it was not clear where they
 go, and older projects could not be copied in before one had been saved.
 
 Decided: Chimera creates the Movies folder at start if it is missing. It is
-the folder Config > Paths calls "Movies", which is beside Chimera.exe unless
+the folder Config > Paths calls "Movies", which is beside the program unless
 the user changed it. "Open Project" starts in the folder of the project
 opened last, and in the Movies folder when no project has been opened yet.
 "Save As" already started there. No files are moved.
@@ -5956,13 +5087,11 @@ What came in:
   thread that is running a guest, it runs with the host's thread pointer and
   on the alternate stack, not on the guest's.
 
-Why 10 matters here: Mono stops threads for garbage collection with a
-signal. Ubuntu's Mono 6.8 does not signal a thread that is in native code by
-default, which is why Chimera on this machine never showed it. Forced with
-`MONO_THREADS_SUSPEND=preemptive MONO_GC_PARAMS=nursery-size=1m`, the real
-frontend running the PCSX2 core died with a segmentation fault in every run
-on the old miniBox, and runs with the new one, its memory identical to the
-native reference. The contributor met it unforced on another Mono.
+Why 10 matters here: a frontend's runtime may stop threads with a signal,
+and one can land while a thread runs guest code. Forced to, the frontend
+running the PCSX2 core died with a segmentation fault in every run on the
+old miniBox, and runs with the new one, its memory identical to the native
+reference. The contributor met it unforced.
 
 One thing was added to 10 before merging: the wrapper read the thread
 pointer with `rdfsbase` on every signal, on every thread. On a host that
@@ -6023,8 +5152,7 @@ This is the cause of the report in the section above. It came back as issue
 244 with the missing detail: the reporter runs Linux, in a locale that
 writes a decimal comma.
 
-On Linux the frontend runs on Mono, and Mono puts the whole process in the
-user's locale. The engine reads and writes JSON with a small C library that
+On Linux the frontend puts the whole process in the user's locale. The engine reads and writes JSON with a small C library that
 uses the C functions `strtod` and `sprintf`, and those follow the process's
 locale. With a decimal comma, `strtod` stops at the dot of "0.0", so the
 RPCS3 package's declarations, which hold exactly one such number, did not
@@ -6041,7 +5169,7 @@ What changed:
   of a fraction. It now uses conversions that have no locale
   (`plain_numbers.hpp`), so 1.5 is typed and shown as 1.5 everywhere.
 - The headless runner has `--locale-from-environment`, which does what
-  Mono does at start, so a test can put the engine in the same position.
+  the frontend does at start, so a test can put the engine in the same position.
 
 Measured:
 - In the real frontend on Linux under a German locale, built in a scratch
@@ -6151,8 +5279,7 @@ do not want to share. The zip holds:
   note and its memory dump, the sandbox's log, and the core's log while
   Tools > Export Core Log... is on.
 A file that cannot be read is left out and named under the list. A zip
-larger than the 25 MB GitHub takes is said to be too large. The zip is
-written by `IssueReport.WriteZip`. It is still sent nowhere: the person
+larger than the 25 MB GitHub takes is said to be too large. It is still sent nowhere: the person
 attaches it to the report.
 
 What it does not do:
@@ -6169,66 +5296,16 @@ What it does not do:
 - No setting is known by name: the list is every setting whose value
   differs from what the core declares as its default.
 
-The text is made by `IssueReport` (Chimera.Client.Common). It only formats
-what the session already knows, so it is interface code. Its labels are the
-ones in `.github/ISSUE_TEMPLATE/bug_report.md`; when that form changes,
-`IssueReport.Text` changes with it.
+The text only formats what the session already knows, so it is interface
+code. Its labels are the ones in `.github/ISSUE_TEMPLATE/bug_report.md`; when
+that form changes, the text changes with it.
 
 Tested: 9 tests of the text, the settings comparison, the file list and
-the zip (`IssueReportTests`), 3 of the window (`ReportIssueFormTests`) and a
-screenshot in both themes. The settings comparison and the tick boxes were
+the zip, 3 of the window and a screenshot in both themes. The settings comparison and the tick boxes were
 each broken on purpose and their tests failed. Interface tests after a full
 rebuild: 119 / 59 / 552 / 302 with none failed. The same 12 tests pass on
 Windows, run there from a copy of the test build. Not tested: the buttons
 that use the clipboard, the browser and the save dialog, by hand.
-
-## On Linux a button keeps its text whatever font the desktop chose (2026-10-10, issue 246)
-
-Reported on Kubuntu 26.04: TAStudio's playback buttons and the OK button of
-a message box had no text. Other text was fine, and so were the taller
-buttons of the New Project window.
-
-Cause. On Linux the interface runs on Mono. Mono draws a button's text only
-when a whole line of it fits in the button; a line that is too tall is not
-clipped, it is left out. The room a button gives its text is its height
-less 8 pixels, or the height the font reports if that is more. For some
-fonts a line really takes one pixel more than the font reports. Which font
-is used is the desktop's choice, because Mono asks for "Microsoft Sans
-Serif" and the system substitutes its default:
-- DejaVu Sans 8.25pt (Ubuntu): reports 13, takes 14. A standard button, 23
-  pixels high, has 15. The text shows.
-- Noto Sans 8.25pt (Kubuntu): reports 15, takes 16. The same button is
-  blank. A button 26 pixels high shows its text.
-
-Reproduced here by giving Mono Noto Sans through a font configuration file
-of its own: a real message box's OK button (86 by 23) was blank.
-
-What changed. `ButtonTextFit` (interface code, Linux only) makes the font
-of such a button smaller in quarter points until a line fits, at most 3
-points. The button keeps its size and place. Chimera's own windows are done
-as they are created (`ThemedForm`), before the first paint. Windows Chimera
-did not make, a message box above all, are done the first time the
-interface is idle after they open. A button added later, resized or given
-another font is done again. Windows is not touched: it clips a button's
-text and does not leave it out.
-
-What was not chosen:
-- Making the buttons taller. Most windows are laid out by fixed positions,
-  and a taller button can run into its neighbour.
-- Choosing the font for the user. That would fix this desktop and no other,
-  and the measured rule holds for any font.
-
-Tested: 5 new tests (`ButtonTextFitTests`): the rule, the search for a
-size, a blank button getting its text back in both button styles, a button
-added later, and one of Chimera's own windows. With the rule switched off
-all 5 fail. They pass with DejaVu Sans and with Noto Sans as the default
-font. A real Mono message box under Noto Sans: OK button blank before (0
-dark pixels), text shown after (font 7.5pt). Interface tests after a full
-rebuild: 119 / 59 / 550 / 301 with none failed (301 was 296).
-
-Not fixed here: with a wider font some labels are cut off, for example
-"Auto-restore last position" in TAStudio. That is a separate, smaller
-problem of fixed layouts.
 
 ## SRB2 joins the roster, the first core published outside the organisation (user-decided, 2026-10-10)
 
@@ -6289,9 +5366,8 @@ is optional; a machine that says nothing has the package's `audio.rate`.
 The other choice put to the owner was to convert the sound to 48000 inside
 the core, which needs no change here but converts the sound twice.
 
-What changed here: `WaterboxConfig.MachineConfig.AudioRate`,
-`WaterboxConfig.AudioRateFor(machine)`, and the adapter builds its converter
-from that rate. The engine does not use the rate and is unchanged. A new
+What changed here: a machine's rate is read from its declaration, and the
+adapter builds its converter from that rate. The engine does not use the rate and is unchanged. A new
 package test refuses a rate no sound chip has (below 8 kHz or above 192
 kHz), for the package and for each machine.
 
@@ -6558,7 +5634,7 @@ failed, five of them new (the game's firmware joins the firmware page,
 follows the setting it depends on, leaves with the game, is ignored for a
 package that does not declare it; a label is shown beside a control's
 name). Each new test was seen to fail with the code it covers broken. With
-the MAME core, in Chimera's window under Xvfb: a game opened with its device
+the MAME core, in Chimera's window: a game opened with its device
 set taken from the firmware store runs as the headless runner runs it, and
 with no such firmware known the project is not opened and the set is named.
 Nothing of this was tried on Windows.
@@ -6566,7 +5642,7 @@ Nothing of this was tried on Windows.
 ## A project is opened in one place, in the engine (user-decided, 2026-10-12)
 
 The steps from a project to a running machine were written twice: in
-`chimera-run.cpp` and in the window's `RomLoader.LoadProjectGame`. A third
+`chimera-run.cpp` and in the window. A third
 program that opens projects was about to be written (the MCP server,
 docs/mcp-server.md), and the owner's decision was that the logic is brought
 into one piece of C++ that every program uses, now and not later: "avoiding
@@ -6738,8 +5814,8 @@ byte for byte, the movie's input line for line, a picture, and the project's
 markers and branches. With the code broken on purpose (the tick box not
 following the engine, the agent's name left out, branches numbered from 0,
 the machine not handed to the engine) exactly the new tests failed: three
-interface tests and the window check. A picture of the dialog was looked at
-(`tests/ui/run-ui-tests.sh --shots`, `mcp-server.png`). The engine was not
+interface tests and the window check. A picture of the dialog was looked at.
+The engine was not
 rebuilt for this part. Nothing of the window was tried on Windows.
 
 ## An agent may change the movie, when a person allows it (2026-10-12)
@@ -6812,7 +5888,7 @@ over a minute to end, because WSL hands every core dump to a program of its
 own. `test_mcp` now asks for no core dump.
 
 Added the same day: the window was then tried on Windows after all. The
-build was copied to a folder of its own and Chimera.exe started there with
+build was copied to a folder of its own and Chimera started there with
 `--headless --mcp-server --mcp-allow-changes`, a project and the same script,
 and the agent's whole test of changes in the window (`mcp-agent.py`,
 "window-changes") passed through `chimera-mcp.exe`: the edits, the undos, the
@@ -6871,7 +5947,7 @@ What was measured: both bundles were built from the existing build
 (`--skip-natives`) and passed the script's own check. The Linux bundle's
 `chimera-mcp` lists its tools and answers a call with "not started". The
 Windows bundle was copied to a folder of its own with the synthetic core
-added, Chimera.exe started there with no window shown, and the agent's test
+added, Chimera started there with no window shown, and the agent's test
 of changes in the window passed through that bundle's `dll\chimera-mcp.exe`.
 The Windows program needs no library that is not part of Windows. No engine
 or interface code changed, so the other tests were not run again.
@@ -6994,7 +6070,7 @@ running. What was chosen while building it, and why:
   them a second time was the thing to avoid, so the windowless mode takes a
   file for each id, as `chimera-run --firmware` does.
 - **The two holders of a movie answer alike, and one script holds them to
-  it.** TAStudio's side is C# and the windowless side is C++; the answers'
+  it.** TAStudio's side is the window's and the windowless side is the engine's; the answers'
   shapes are written in both. `tests/synth/mcp-agent.py` asks the same
   questions of both and expects the same answers, which is what keeps them
   from drifting.
@@ -7328,7 +6404,7 @@ frame counter ("avg 59.9 fps"), with View > Reset Average FPS beside it.
 **Tested.** The engine's unit test (`test_average_fps.cpp`: 60 then 30
 frames a second average 40; a pause, hand-stepping and going back change
 nothing; a reset starts again), seen to fail with the pause rule taken out.
-A managed test that the interface's calls reach the engine with each flag
+A test that the window's calls reach the engine with each flag
 in its place. And looked at once in the real window on a private display,
 with the synthetic core: "60 fps" over "avg 59.9 fps".
 
@@ -7547,7 +6623,7 @@ engine reads the two facts (`ce_host_cpu_name`, `ce_host_memory_total`, in
 `host_machine.cpp`): the name is the processor's own (the brand string the
 `cpuid` instruction gives), and the memory is what Windows
 (`GlobalMemoryStatusEx`) or Linux (`/proc/meminfo`) says is installed. The
-thread count is .NET's. What is not known is left as a note in the form's
+thread count is the system's. What is not known is left as a note in the form's
 style, as the other lines do. The bug report form on GitHub has the line
 too, so the text is still pasted over the form's first lines.
 
@@ -7577,17 +6653,13 @@ build with upstream's own threads too).
 
 ## An encode keeps its way back in a state file (2026-10-15, issue 282)
 
-Encode Video refused to start on an RPCS3 project with "Arithmetic operation
-resulted in an overflow". Before an encode borrows the emulator it keeps
-where the user was, to give it back at the end; that went through
-`SaveStateBinary` into a `MemoryStream`, and both the engine call's length
-(`checked((int)len)`) and the stream stop at 2 GB. The reporter's state was
+Encode Video refused to start on an RPCS3 project with an overflow. Before an
+encode borrows the emulator it keeps where the user was, to give it back at
+the end; that went through one buffer in memory, which stops at 2 GB. The reporter's state was
 2.1 GB.
 
 The way back is now a state file, written and read by the engine exactly as
-a branch's state is (#84, `IStatable.SaveStateToFile`, which falls back to a
-stream for a core that has no state files): `ITasMovie.NewScratchStatePath`
-gives a path in the project's cache folder, outside `Branches/`, whose
+a branch's state is (#84), at a path in the project's cache folder, outside `Branches/`, whose
 tidying deletes any file no branch names. The file is deleted when the
 emulator is handed back. If it cannot be written, the encode does not start
 and says why.
@@ -8029,7 +7101,7 @@ prefix taken off, and buttons only. It now compares exact names, axes
 included (`KeybindsOnlyNameControlsTheControllerHas`), and fails on the
 package from before the fix (39 names that are no control in its nightly of
 2026-10-15). It judges each core's newest package only
-(`InstalledPackages.Newest`, by the package's versionDate): Chimera keeps a
+(by the package's versionDate): Chimera keeps a
 core's older versions for the projects made with them, and an older version
 cannot be fixed - two dated Dolphin packages from September in a
 developer's build/Cores failed it. The core's own
@@ -8052,7 +7124,7 @@ the picker on the last scanned folder while Paths stays as it is, or
 creating the default folder at start, which would leave the picker
 pointing at an empty folder.
 
-The rule is `PathEntryExtensions.AdoptFirmwareFolder`; the wizard reports
+The wizard reports
 the folder through `firmwareFoundIn` when the folder holds a file one of
 its requirements asks for, chosen already or not. Tests:
 `AScannedFolderBecomesTheFirmwareFolderOnlyWhileThatIsNotThere` (fails with
@@ -8081,7 +7153,7 @@ first only; explain only):
   The settings grid's converter shows the label and maps a label back to
   its value; nothing stores a setting through the converter.
 - **On-hand values first, marked "(found)"**, on the wizard's settings page.
-  `FirmwareChoices.OnHand` asks the engine's firmware decision tree
+  The wizard asks the engine's firmware decision tree
   (`ce_firmware_evaluate`) once per value of every setting a firmware
   condition names, with the other settings and the chosen files as they
   stand. The files every value calls for are set aside; a value whose own
@@ -8146,15 +7218,14 @@ settings; leave it and explain the custom-pattern way):
   range, or not a whole number, is refused with a message and Auto-hold
   stays off; Cancel leaves it off.
 - The answer is kept in the project, with TAStudio's other per-project
-  settings (`MovieClientSettings.AxisHoldValues`), so a project reopened
+  settings (`AxisHoldValues`), so a project reopened
   holds the same value. An axis with no answer, or with one its range no
   longer allows, holds the maximum as before; a project saved before this
   has no answers.
 - With the custom pattern selected, the pattern says what the axis takes,
   so nothing is asked. Autofire on an axis uses the same value as Auto-hold.
 
-This is interface only: the sticky controllers it feeds are the C# input
-layer's.
+This is interface only: the held values it feeds are the window's.
 
 Tests: `TAStudioAutoHoldValueTests` (five): the chosen value is held, a value
 out of range holds the maximum, only a value of the axis is taken from what
@@ -8221,119 +7292,6 @@ Tests: `test_compile_sessions` checks the score in a child process (it
 failed with the write left out), and `ADeadSessionAlwaysSaysHowItDied`
 checks the wording for 64. Engine tests 30/30, interface tests 1,076 passed,
 the witness 89/0; the Windows build compiles.
-
-## Opening a folder or a file does not wait for the program it opens (2026-10-18)
-
-**The fault (pull request #274, by P-AS).** Open Folder, the Lua console's
-New and Edit Script and the other places that hand a path to the desktop
-froze Chimera until the program they opened was closed. They went through
-the shell (`UseShellExecute`), and under Mono that waits for `xdg-open` to
-exit. On a desktop `xdg-open` does not recognise it runs the program in the
-foreground, and a terminal editor such as nvim ran in the terminal Chimera
-was started from.
-
-**What was done.** Two helpers in `Chimera.Common/Util.cs`,
-`OpenFolderExternal` and `OpenFileExternal`, used everywhere a folder or a
-file is opened:
-- Linux and the BSDs: `gio open`, which returns once the program has
-  started and gives a terminal program a window of its own; `xdg-open` where
-  there is no `gio` or `gio` cannot open the path. Started with `setsid` and
-  an empty input, so neither can reach Chimera's terminal.
-- macOS: `open`. Windows: the shell, which does not wait. Folders went to
-  `explorer.exe` with a quoted path in the pull request; at review they go
-  to the shell too, because a drive's root quoted as `"D:\"` ends in `\"`,
-  which reads as an escaped quote.
-- `OpenUrlExternal` stops at the first opener that starts, instead of
-  opening a link once in each of three.
-
-**Measured.** The author, on Linux (niri): with stand-ins for the opener
-and the editor, the old call returned after 8,004 ms (the stand-in's 8
-seconds), the new ones in 4 to 6 ms, and a path with spaces, quotes and a
-`$` arrived intact. At review, the opener script with stand-in `gio` and
-`xdg-open`: `gio` that opens, `gio` that fails (`xdg-open` took the path),
-and the system's own `gio` failing on a missing file (`xdg-open` took it).
-Not tried: Windows and macOS.
-
-## Files and folders are picked with the desktop's own chooser on Linux (2026-10-14)
-
-**Asked for:** on Linux, use the file chooser of the XDG desktop
-portal instead of Mono's file dialog, because it is far more usable and is the
-dialog the rest of the desktop shows.
-
-**Decided.**
-
-- On Linux and the BSDs every file and folder picker asks the portal's
-  `org.freedesktop.portal.FileChooser` first, over the session D-Bus, and
-  shows Mono's dialog only where the portal cannot be asked. Windows and macOS
-  are unchanged.
-- It is spoken to through `libdbus-1` directly (`DBusImports`), not through a
-  package: every Linux desktop has the library, and the frontend gains no
-  dependency. D-Bus is local; `tools/check-no-network.sh` is unchanged and
-  passes.
-- `OpenFilePicker` and `SaveFilePicker` replace `OpenFileDialog` and
-  `SaveFileDialog` in every window, with the same properties, so a window
-  says what it wants once and the platform decides the dialog.
-  `FolderBrowserEx` asks the portal on Unix. The data directory window used
-  `FolderBrowserDialog`, the one picker that went around `FolderBrowserEx`;
-  it uses `FolderBrowserEx` now, which on Windows is the Explorer-style
-  dialog instead of the old tree.
-- The folder picker's "Include sub-folders" box goes into the portal's dialog
-  as a choice, so on Linux with a portal it is in the dialog as on Windows,
-  and the wizard's own box is hidden there.
-
-**Measured**, against a stand-in portal on a private bus (details in
-docs/folder-picker.md): every answer the frontend reads came back as sent,
-including paths with spaces and quotes; with no bus, no portal, or a portal
-too old for folders, the toolkit dialog is used. The interface tests: 326
-run, 2 failed - `PictureIt` and `WizardSettingsStep`, which fail the same way
-without this change.
-
-Tried in the running frontend with KDE's chooser: opening a project, the wizard's
-firmware folder scan (the tick box was in KDE's dialog), the data directory,
-and a save typed without its extension. All four worked.
-
-**Every chooser that could be installed** was tried under niri, each behind a
-second portal on a private bus with a config of its own (table in
-docs/folder-picker.md): KDE, GNOME, GTK, COSMIC, LXQt, shana, termfilechooser,
-xapp (which has none, so the portal used GNOME's), a portal with its chooser
-turned off, and no bus. Two of them changed the code:
-
-- **No parent window in a Wayland session.** GNOME's chooser is Nautilus, and
-  Nautilus crashed on every request that named an `x11:` parent - a plain
-  `gdbus` request naming any X11 window did the same - and the portal answered
-  "failed". First a retry without the parent was tried, which cost a pause on
-  the first picker. Instead, in a Wayland session (`WAYLAND_DISPLAY` set) no
-  parent is sent at all: Chimera's windows belong to XWayland there, and the
-  parent attached no dialog under any chooser tried. The chooser is still
-  modal, because Chimera's windows take no input while it is open. An X11
-  session still sends the parent.
-- **"Failed" is Cancel.** shana answers every Cancel with response 2, "ended
-  some other way", where the portal's own documentation gives 1. With the
-  retry, Cancel reopened the chooser and then showed Mono's dialog. Now 2 is
-  Cancel, unless it comes within 300 ms of the request - sooner than anyone
-  can press Cancel - which only a chooser that never came up does, and then
-  Mono's dialog is shown.
-
-**Chimera's windows are kept from input, not disabled.** On Plasma and GNOME
-on Wayland, a chooser opened from Config > Firmware came up behind Chimera's
-windows and could not be brought in front. KWin's record of its windows
-showed the cause: a Mono window that is modal itself keeps the focus once it
-is disabled, and disabling every window was how the chooser was made modal.
-Now a message filter throws away clicks, keys and closing for Chimera's
-windows while the chooser is open, and they stay enabled. Measured on Plasma
-Wayland: the chooser opens on top and active, and comes back to the front
-after another window takes the focus; tried by hand on Plasma Wayland, GNOME
-and niri.
-
-termfilechooser does not draw the sub-folders box, and the wizard hides its
-own where the portal can pick folders, so there the scan uses the remembered
-answer. That is left for termfilechooser.
-
-Tried by hand under their own desktops as well: Plasma on Wayland and on X11
-(where the parent window is sent), GNOME and COSMIC. All worked.
-
-**Not proved:** LXQt's chooser under LXQt, and Windows, where the dialogs
-should be the ones they were.
 
 ## Vulkan's instance and device are made on a thread of their own, on Windows (2026-10-18)
 
@@ -8570,7 +7528,7 @@ a crash in the core's start-up code or while it is sealed; a call through a
 null or wild function pointer, or to a host callback that was never
 registered; a system call given a pointer to memory the core had freed; on
 Linux, the system refusing a memory protection change; a crash report that
-read memory it could not; a too-small signal stack left by the .NET or Mono
+read memory it could not; a too-small signal stack left by a frontend's
 runtime; and on Windows, memory a core gave up that stayed accessible.
 
 **What was decided.** The owner asked for all of them, as one round with a
@@ -9074,8 +8032,7 @@ them; a page with nothing behind it gets memory in that second view alone and
 reads zero. The engine reads every domain through it
 (`ce_session_domain_read`, the new `ce_session_domain_read_ptr`, game
 properties, the MCP server's search), and the interface reads its pointer
-domains through it too (`MemoryDomainIntPtr.ReadData`, which RAM Search
-uses). Writes still go through the core's own pointer, where the state
+domains through it too (RAM Search's reads). Writes still go through the core's own pointer, where the state
 history sees them, and a core that watches its memory hears of them as it
 should.
 
@@ -9178,79 +8135,11 @@ expected failures, as before) and the state tests pass on Windows; the
 engine's 30 unit tests pass, the witness 99 passed and 0 failed, the
 interface tests 1108 with none failed (23 skipped), the Windows build
 compiles, and the PCSX2 core's test script 44 passed, 0 failed, 6 skipped.
-## The interface's audit: closed engine objects, lost work and a quoting fix (2026-10-18)
-
-**What was found.** A read of the C# interface on 2026-10-18 (the owner's, done
-with another agent) listed what can end the process, lose work or misbehave.
-Each item was checked against the code before it was changed; the ones below
-were real.
-
-**What changed.**
-- A closed core, movie log or RAM search no longer reaches the engine. The
-  engine reads these objects without checking them, so a window asking a
-  closed core something on the way out (a paint, a tool's timer) killed the
-  process. Every engine call in `EngineSession` and `EngineRamSearch` now goes
-  through one checked handle, which throws an ordinary .NET error once the
-  object is closed. The questions the window asks most (frame, frame rate,
-  drives, greenzone, trace, save data) answer as an empty machine instead.
-  `EngineMovieLog` already promised that a freed log answers as an empty one;
-  six of its members did not, and now do.
-- Threads that may not throw: the input thread keeps polling after a failed
-  poll (an unplugged gamepad), and the log window and the New Project
-  window's compile list no longer post to a window that has closed. On .NET
-  Framework an exception on any thread ends the process.
-- Work that was lost: answering No to "save changes?" while closing a project
-  left the project running but deleted its crash-recovery journal and its
-  firmware pins; now nothing is ended unless the close happens. The Close ROM
-  hotkey and a script's `client.closerom` now close the way the menu does.
-  Markers edited after loading a branch were not seen as changes (the branch's
-  markers replaced the list the project listened to); they are now loaded into
-  the same list, and a marker's "keep a state here" choice travels with it.
-  A damaged lag log in the cache (for example the word null) is now an empty
-  one, as a bad cache is meant to be, instead of failing every later lag mark.
-  The second open of a project with no input yet failed on headers the file
-  already had.
-- Smaller fixes: a piano roll taller or wider than 256 rows (a 4K screen) no
-  longer fails on every repaint; pasting input copied with Windows line ends
-  works, and Reselect Clipboard selects the pasted frames; right-dragging a
-  selection with gaps copies the selected frames; branches can be reordered
-  after the current one was deleted; merging two undo steps removes the right
-  one; single instance mode, which is Windows only, is skipped on Linux
-  instead of stopping Chimera from starting; a failed video encode says why
-  and stops its ffmpeg; dropping a file Chimera does not open says so; the
-  firmware window hashes the Firmware folder once, not once per firmware;
-  the Lua canvas frees its drawing objects; a core that fails while it is
-  being set up frees its memory; the crash-recovery record is written to a
-  temporary file and moved into place; some movie numbers are written and
-  read without the computer's regional settings.
-- Starting a helper process under Mono on Linux: Mono splits the argument
-  string with shell rules, not Windows rules, so a game file whose name has
-  an apostrophe (Tony Hawk's) stopped the precompile and movie-import helper
-  from starting at all ("Unfinished quote"). There each argument now goes in
-  single quotes.
-
-**Not changed.** Two items are the owner's: the interface names seven cores in
-`GreenzoneSurvivesReload` (TasMovie.Project.cs), which the rule "no core known
-by name" forbids and which needs a package declaration instead; and
-`MovieActionPaint`, unused, which would lose an axis value if used again.
-Several audit items were not bugs (a dragged branch does land on the row it is
-dropped on) or were left as they are (a frame written past the end of a movie
-is appended, which recording relies on).
-
-**Tested.** Five new tests, each seen to fail with its fix taken out: a freed
-movie log answers as an empty one (without the fix the test process crashes,
-as Chimera did); a marker added after a branch load marks the project changed;
-merging two undo steps keeps the step after them; a damaged lag log loads as
-an empty one; arguments with an apostrophe, a backslash, a dollar sign and an
-empty string reach a child process unchanged under Mono. Engine tests (30),
-witness (96) and the interface tests (119, 62, 591 and 340, none failed)
-pass.
-
 ## A core declares whether its greenzone reloads; no core is named (user-decided, 2026-10-18)
 
 **What was decided.** The interface kept a GPU-drawn project's greenzone and
-branch states across sessions only for seven cores named in its code
-(`GreenzoneSurvivesReload` in TasMovie.Project.cs), which the rule that no core
+branch states across sessions only for seven cores named in its code, which
+the rule that no core
 is known by name forbids. The owner chose a new package declaration over
 trusting `gpuStatesSurviveTheContext` (which Ruffle declared while bricking a
 project) or keeping the list: `video.greenzoneSurvivesReload`, declared by a
@@ -9599,9 +8488,9 @@ as it returns. The calls through the GPU bridges do not count as work yet.
 ## Issues 311, 312, 313 and 314: a clipped choice, overlapping counters, a save name and dead gamepad bindings (2026-10-19)
 
 **What was found and changed.**
-- #311: on Linux the Greenzone box's "Off" choice was below the box: Mono
-  places the buttons for its own font, lower than the designer did, and the
-  box kept its designed height. The box now grows to hold its last choice.
+- #311: on Linux the Greenzone box's "Off" choice was below the box: the
+  system font placed the buttons lower than designed, and the box kept its
+  designed height. The box now grows to hold its last choice.
 - #312: with the speed, the average speed and the frame counter all shown,
   the average was drawn one line under the speed, which is the frame
   counter's line. The average now follows the speed on its own line.
@@ -9618,8 +8507,7 @@ as it returns. The calls through the GPU bridges do not count as work yet.
   not send; the key-name checks had looked only at the keyboard.
 
 **Tested.** Three new tests, each seen to fail first: the Greenzone box at
-fonts from 8.25 to 14 points ("Off" ended at 83 pixels in an 80-pixel box
-on Mono); the speed, its average and the frame counter drawn without
+fonts from 8.25 to 14 points ("Off" ended at 83 pixels in an 80-pixel box); the speed, its average and the frame counter drawn without
 overlap (they overlapped at y=14 before); the contract test, which found
 69 dead names in the published Dolphin, PCSX2 and RPCS3 packages and none
 once their bindings were fixed. Engine tests (30), witness (99) and the
@@ -9933,7 +8821,7 @@ Chimera's menu.
 The first three checks are now one more contract test,
 `KeybindsNameKeysAndMouseInputsChimeraSends`, beside
 `KeybindsNameGamepadInputsChimeraSends`: a key is known by the name Input
-gives it (`DistinctKeyNameOverrides.GetName`), so the test cannot drift from
+gives it, so the test cannot drift from
 what is sent. It also refuses a panel that binds LeftShift without Shift,
 since a default setup sends only Shift. It was a script in four core
 repositories before.
@@ -9956,12 +8844,12 @@ What changed:
 
 - **A `Themes` folder** in the repository holds the sixty files. The build
   copies them into `build/Themes`, and `tools/build-bundle.sh` copies them
-  from the repository into `Themes` beside Chimera.exe in the release; the
+  from the repository into `themes` beside the program in the release; the
   bundle check fails if any is missing. They ship under Chimera's licence,
   with `"author": "Nelson/Geferulf"` in every file and a line in CREDITS.md
   (owner's answers).
 - **Where themes are read from** is a path in Config > Paths, "Themes", which
-  by default is `Themes` beside Chimera.exe, like Cores, Lua and Tools (the
+  by default is `themes` beside the program, like cores, Lua and Tools (the
   owner chose the name). The folder used before, `Themes` in the data
   directory, is still read after it so nobody loses a theme, but nothing is
   written there any more. A name in both folders is the Themes path's; the
@@ -10010,8 +8898,7 @@ Tested:
   bar in its text colour made the drawing test fail for every theme.
 - The dialog photographed under all 62 themes passed the screenshot checks
   (no toolkit beige, a chosen row readable).
-- On Windows, `tests/ui/windows/theme-chooser.sh` (new) opened the dialog on
-  .NET Framework WinForms: all 15 surfaces checked were in the picked theme's
+- On Windows the dialog was opened and all 15 surfaces checked were in the picked theme's
   colours for Aizome, Hackerman, Win98 and Bubblegum Pop, with the window round
   it Dark. It listed 63 themes: the 62 and a "Dark copy" from the owner's old
   data-directory folder, which is the old folder being read as intended.
@@ -10061,13 +8948,12 @@ those keys played back with the presses on other columns.
 A key is now read with the machine's own names first: at each place the
 longest of them that is there whole, followed by "|" or the key's end, is one
 name; otherwise "#" starts a group and a name runs to the next "|". The engine
-(EntryLayout::buildFromKey) and the window (MovieController.ReadLogKey) read
-it the same way. Nothing a key is written as changes.
+(EntryLayout::buildFromKey) and the window read it the same way. Nothing a key is written as changes.
 
 Tested: test_movie_entry's keyNamesMayHoldSeparators (three groups from a key
 with "P1 #", "| @" and "# >", each press on its own control, a machine's own
-key read back as itself) and LogGeneratorTests.LogKeyNamesMayHoldItsSeparators
-(the window's reading) both fail on the old reader and pass. Engine tests
+key read back as itself) and the window's own test of its reading both fail
+on the old reader and pass. Engine tests
 30/30, witness 102 ok and 0 failed, interface tests 119/63/599/348 with none
 failed, the Windows build compiles.
 
@@ -10105,20 +8991,18 @@ core calls these commands yet.
 Issue 323 asked for ready-made encoding commands to pick from. The Encode
 Video window had only its command box: a list of the A/V writer's formats
 had sat there once and was taken out, because the command box answers the
-question better, and the list left behind (`GetCannedPresets`) was called
-by nothing. The owner chose presets that fill the box: a Preset box above
+question better, and the list left behind was called by nothing. The owner chose presets that fill the box: a Preset box above
 the command offers nine commands by name - the default, YouTube at 2160
 lines (landscape or portrait, smooth or sharp scaling) and four lossless
 ones from the issue - and picking one writes its command into the box. The
 box stays the choice: an edit makes the Preset box say "Your own command",
 and typing a preset's command shows that preset. The presets are the
-window's own (`EncodeVideoForm.Presets`); the dead list is gone.
+window's own; the dead list is gone.
 
-Tested: the window tests (EncodeVideoTests, new
-APresetWritesItsCommandAndTheBoxSaysWhichCommandItIs) pick a preset, see
+Tested: the window tests (a new one) pick a preset, see
 its command and extension, edit it into "your own" and type the default
-back; with picks ignored the test fails. All four test projects pass
-(Chimera.Tests.Client.GUI 348 and 1 skipped). Each preset's command encoded
+back; with picks ignored the test fails. All the window's tests pass (348
+and 1 skipped). Each preset's command encoded
 a one-second test picture with Ubuntu's ffmpeg 6.1.1 (the YouTube ones to
 2880x2160 and 2160x1620 from 320x240); whether an encoder (libx265,
 utvideo) is in another ffmpeg is that ffmpeg's.
@@ -10141,7 +9025,7 @@ the 4.6, 4.5 and 4.4 cores (`chimera-core-godot46`, `-godot45`,
 `-godot44`) are the same code with another Godot pinned, each its own
 package and roster row, and a core refuses a game of another version,
 naming the core to use. The 4.4 core also takes games of 4.0 to 4.3. Games
-written in C# and games that need native extensions cannot run in the
+that need native extensions or another scripting runtime cannot run in the
 sandbox.
 
 `chimera-core-openbor` is OpenBOR's SDL port with SDL 2, run on a stack of
@@ -10192,7 +9076,7 @@ its time on the same clock, "Nightly 2026-10-19 (8c11acc3, made 2026-10-18
 Release names already published stay as they are.
 
 The rule (the last Sundays of March and October, at 01:00 UTC) is worked out
-in `EuropeanClock.cs` and `tools/european-time.py` rather than read from the
+in `european_clock.cpp` and `tools/european-time.py` rather than read from the
 computer's time zones, so two computers write the same text for one moment.
 The script agreed with the system's Europe/Zurich zone on 200,000 random
 moments from 2001 to 2031. Times of the user's own actions, such as when
@@ -10277,14 +9161,11 @@ property library, the core's refusal of a start date that is not a date
 and the package's keybinds reach the frontend, and nothing is written in
 Chimera's folder or its default data home. 10 checks passed, each seen to
 fail on a break of its own. The Windows build ran under Wine 10.0 on Linux,
-not on a Windows machine, and three things it needed there are Chimera's
-to know. Microsoft's .NET Framework 4.8 in the prefix: on Wine Mono 9.4.0
-Chimera died inside Mono's runtime as it booted the core in 3 of 6 runs, on
-.NET 4.8 in none of 7. On a machine with more than 255 CPUs (jaffanator2
-has 256) Wine tells Windows programs there are none - the count wraps in a
-byte - and Chimera stopped before its first window, in a
-ConcurrentDictionary given a concurrency level of 0; a preloaded `sysconf`
-that says 8 got past it. And headless under Wine, Chimera's first window
+not on a Windows machine, and two things it needed there are Chimera's to
+know. On a machine with more than 255 CPUs (jaffanator2 has 256) Wine tells
+Windows programs there are none - the count wraps in a byte - and Chimera
+stopped before its first window; a preloaded `sysconf` that says 8 got past
+it. And headless under Wine, Chimera's first window
 does not bring up Wine's desktop, so the OpenGL probe failed ("no driver
 could be loaded") until something had brought the desktop up first.
 
@@ -10352,14 +9233,11 @@ an id that never fires, but the Lua Functions list (Lua Console, Help) still
 described them as working (issue 341). They are kept so that scripts written
 for other emulators load and can guard the call with `pcall`. Now:
 
-- the list shows them as "[Not available]", from a new `LuaUnavailableMethod`
-  mark in the interface, and each description begins by saying why;
+- the list shows them as "[Not available]", from a new mark in the
+  interface, and each description begins by saying why;
 - their examples show the call guarded with `pcall`;
-- the error a script gets from `pcall` says why. NLua (the library that runs
-  Lua scripts, kept in `extern/NLua`) used to give a fixed sentence, "A .NET
-  exception occurred in user-code", with the reason only in an inner
-  exception a script cannot read. Its message is now the reason, and the Lua
-  Console prints the reason once, followed by where it came from;
+- the error a script gets from `pcall` says why, and the Lua Console prints
+  the reason once, followed by where it came from;
 - `event.availableScopes` and `event.can_use_callback_params` say that no
   Chimera core has these events.
 
@@ -10367,12 +9245,12 @@ Copy in the Lua Functions list wrote the function as `//library.name(...)`,
 a C comment that Lua reads as an error; it now writes `--library.name(...)`,
 a Lua comment (issue 343).
 
-Tests: `LuaUnavailableEventsTests` checks that exactly these nine are marked
+Tests: one checks that exactly these nine are marked
 and described as not available, that a script guarding `on_bus_read` with
 `pcall` reads the reason and goes on, and that an unguarded one logs the
-reason once on the first line. `LuaFunctionsCopyTests` checks the copied text.
-Each failed once on purpose: with `on_bus_read` unmarked, with NLua's old
-message, and with `//` put back.
+reason once on the first line; another checks the copied text. Each failed
+once on purpose: with `on_bus_read` unmarked, with the old message, and with
+`//` put back.
 
 
 ## Config > Firmware keeps its place on a rescan (2026-10-21)
@@ -10383,7 +9261,7 @@ again to see whether the file they wanted was found (issue 348). The window
 now notes the row drawn halfway down the list and how far down it is drawn,
 and after the rebuild brings the same row back to the same place (the row at
 the same position when that row is gone). Halfway rather than the top row:
-on Mono a row scrolled under the column headings still answers a hit test
+a row scrolled under the column headings could still answer a hit test
 there, which put the list two rows off. The list can only be scrolled by
 bringing a row into view, so the row put at the top is corrected until the
 noted row is back within a row of its place.
@@ -10391,8 +9269,8 @@ noted row is back within a row of its place.
 Test: `ARescanKeepsTheListWhereItWasScrolled` scrolls 80 rows to row 50,
 rescans, and finds the same row at the same height; with a row removed
 further up, the same row (now one index earlier) is still at that height.
-It passes on Mono and on Windows' .NET Framework 4.8 (the test program run
-there), and failed on Mono with the scroll-back call removed.
+It passes on Linux and on Windows, and failed with the scroll-back call
+removed.
 
 
 ## A themed list draws its own grid lines (2026-10-21)
@@ -10413,8 +9291,8 @@ lines.
 Test: `AHoveredCellKeepsItsGridLines` draws a cell in the hovered state the
 way a hover repaint does, and finds the grid colour on its bottom and right
 edges, the control's own lines off, and back on under Light. With the lines
-not drawn it failed (Dark: the edges were the row colour). On Windows (.NET
-Framework 4.8, a dark list captured with PrintWindow) the lines show on every
+not drawn it failed (Dark: the edges were the row colour). On Windows (a
+dark list captured with PrintWindow) the lines show on every
 row in the grid colour; before the change they were the control's white. The
 hover itself was not driven there: it needs the real pointer, and a repaint
 of single rows asked for by the program kept the old lines too, so the old
@@ -10438,7 +9316,7 @@ Test: `TheGameStepFitsAnyWidthTheWindowHad` builds the step again in a window
 1100 pixels wide, finds every box reaching to within 60 pixels of the edge,
 then narrows the window to its smallest and finds every box, list and button
 inside it. Without the change it failed (the box stopped 650 pixels short).
-Mono lays out the hidden step only when it is shown, so the test builds it
+The hidden step is laid out only when it is shown, so the test builds it
 while it is in view. On Windows the wizard tests hang when run from a copy of
 the test folder (an older wizard test too), so this one was not run there;
 a picture of that run showed the first box across the full width.
@@ -10518,7 +9396,7 @@ tooltips only.
 
 An input declaration (the package's, and each machine's) may name a PNG in
 the package: `"picture": "pictures/pad.png"`. The waterbox core offers its
-file through a new service, `IControllerPicture`, when the file is there and
+file when it is there and
 inside the package (a name that leaves the package is no picture), and the
 window opens the column and shows it, scaled to fit; without one, or with a
 file that is not a picture, the column stays closed. The picture's licence
@@ -10563,7 +9441,7 @@ calls it at each read of its controls. The engine keeps which session is
 running a frame on this thread, and calls the frontend's function
 (`ce_session_set_input_poll_callback`) from inside the frame; the call counts
 as the core's work for the frame watchdog. The waterbox core gives such a
-core input callbacks (`IInputPollable.InputCallbacks`), switched on in the
+core input callbacks, switched on in the
 engine only while a script has one registered; any other core still refuses
 `event.oninputpoll`, now saying it does not report its reads. A Lua function
 called there may read memory, and must not advance, save or load.
@@ -10811,27 +9689,10 @@ list of functions kept by hand beside the libraries would have drifted
 from them; these read the libraries themselves, so a function added
 tomorrow is offered with nothing changed here.
 
-`run_lua` was first run as the Lua Console's input line runs a line: a
-pcall on the main Lua state, in the console's own context. Under Mono that
-crashed Chimera. The context had lost its Lua thread after the first frame
-(ResumeScripts stops it as an ended script), and a line run in it then
-crashed. Given a thread, an error raised from C# (emu.frameadvance
-refused, say) still crashed it. The same errors inside a script's
-coroutine are survived, which the witness exercises, so the agent's Lua
-runs as a script runs: in a coroutine of its own, with the functions that
-wait for a frame refused, and what it returned read back. A third crash
-came then, only with Chimera's bundled Lua library (the witness loads it,
-as a release does; by hand the system's Lua had been loaded, which did not
-crash): the coroutine's code was first compiled through NLua as
-`return <the code>` to learn whether it was an expression, and when that
-failed (any statement, `x = 1`) the next call crashed, every time. Neither
-half alone crashed - the failed compile, or the chunk that followed it -
-and why the two together do was not found. Lua's own `load`, called inside
-the coroutine, now decides whether the text is an expression; it answers a
-failure instead of raising one, and nothing of the agent's is compiled
-through NLua. The person's input line is unchanged. It compiles each line
-through NLua the same way first, so it may crash the same way under Mono on
-a line that is a statement; that was not tried.
+`run_lua` runs the agent's Lua as a script runs: in a coroutine of its own,
+with the functions that wait for a frame refused, and what it returned read
+back. Lua's own `load`, called inside the coroutine, decides whether the
+text is an expression; it answers a failure instead of raising one.
 
 `run_lua` can do anything a script can, so it is refused until changes are
 allowed; `lua_functions` only reads. The code the agent runs is shown in
@@ -10856,8 +9717,7 @@ Scan Folder and not by the window opening on the same folder (issue 359).
 Every search of the Firmware folder now walks its sub-folders as Scan Folder
 does, to the same 10,000 files at most: the index the Firmware window, the
 New Project wizard and a project's opening answer from
-(`FirmwareLocator.BuildIndex`), the lookup by a declared name
-(`CoreFirmwareStore.InFirmwareFolder`), and the window's "in the Firmware
+the lookup by a declared name, and the window's "in the Firmware
 folder" for a file found below it. Test:
 `TheFirmwareFolderIsSearchedWithItsSubFolders` (fails with the walk kept to
 the top). How deep a search goes, as a setting, is one of issue 368's
@@ -10903,13 +9763,11 @@ asks whether to update the current branch first: Yes updates it and loads, No
 loads without updating (Undo Branch Load still brings the changes back),
 Cancel loads nothing. Loading the current branch again does not ask: that is
 how a person goes back to it. A Lua script's or an MCP agent's load does not
-ask either. Whether the movie differs is the movie's question
-(`TasMovie.DiffersFrom`: the input log through the engine's
-`ce_movie_log_divergent_point`, then the person's markers; where the machine
-is does not count). When to ask is `BookmarksBranchesBox.AsksBeforeLoading`.
-Tests: `TasMovieDiffersFromBranchTests` (two fail with the answer always "no
-change") and `BranchLoadAsksTests` (fails when loading the current branch
-again asks too). The question itself, and the update it makes, are not
+ask either. Whether the movie differs is the movie's question (the input log
+through the engine's `ce_movie_log_divergent_point`, then the person's
+markers; where the machine is does not count). Tests: two of the movie's
+answer (they fail with the answer always "no change") and one of when it
+asks (it fails when loading the current branch again asks too). The question itself, and the update it makes, are not
 driven by a test.
 
 ## File hashes are kept between sessions (user-decided, 2026-10-24)
@@ -10944,7 +9802,7 @@ speed. The window now has:
   contains what is typed, in any case; a core with nothing that matches is
   not listed;
 - folding a core's files to one line, "+ PCSX2: 3 files", which names the
-  core because not every toolkit draws the group headings (Mono does not).
+  core because not every toolkit draws the group headings.
   A double click or the + key opens it, the - key folds it, and the
   right-click menu folds or opens one core or all of them. Folding lasts
   while the window is open;
@@ -11053,7 +9911,7 @@ failed with the unthrottled rule taken out.
 TAStudio's Copy writes each frame's line after its frame number when "Include
 frame numbers when copying input" is on ("00002 |..U.....|"), and Paste read
 the digits as buttons held. Every reader of a line now reads it from its first
-'|' (MovieController.SetFromMnemonic): whitespace and the digits 0-9 in front
+'|': whitespace and the digits 0-9 in front
 are dropped, and anything else in front is left for the reader to refuse. So a
 numbered line, one whose number is followed by a tab or by nothing, and an
 indented one paste as the line - and so does such a line given to Lua's
@@ -11114,7 +9972,7 @@ every core to apply settings while it runs, a declaration no core has.
 Tests: ProjectSettingsFormTests (the renderer is shown and the machine is
 not; the project's files decide what is shown; the game's own settings are
 last; a restart is offered only for a change, the clock's start included)
-and TasMovieProjectFormatTests.ChangedSettingsAreTheNextBootsAndTheNextSaves.
+and a test that changed settings are the next boot's and the next save's.
 Each failed with its change taken out.
 
 ## A game runs only in a project (user-decided, 2026-10-26)
@@ -11317,8 +10175,8 @@ What was wrong, and is fixed:
 - Branches: taking back a removal left the "current branch" mark on the
   wrong branch. Macro Tool: zones outlived the project they were made in,
   and a zone set after a removal could take the name of one still there.
-- Lua, as Chimera's .NET library answers: booleans print as True and
-  False, numbers as .NET writes them; joypad.set takes 1 and 0, and false
+- Lua, as Chimera's library answers: booleans print as True and
+  False, numbers as Chimera writes them; joypad.set takes 1 and 0, and false
   lets a button go even when a key holds it; emu.getsystemid gives the
   system's id; a register that is not there reads 0; the bit operations
   work on 32 bits with shifts modulo 32; client.openproject says false for
@@ -11440,9 +10298,8 @@ game.
 
 ## The program is chimera, on Windows and Linux (user-decided, 2026-10-27)
 
-The window's program was chimera-qt (chimera-qt.exe on Windows), its name
-from when it was a prototype beside Chimera. It replaces Chimera, so it is
-now chimera and chimera.exe. What it says on the command line starts with
+The window's program was chimera-qt (chimera-qt.exe on Windows). It is now
+chimera and chimera.exe. What it says on the command line starts with
 "chimera:". The library the Windows program loads from lib\ keeps its
 name, chimera-qt-app.dll: no one starts it, and the launcher names it.
 
@@ -11451,14 +10308,12 @@ the Windows build makes chimera.exe, staged and started (--version).
 
 ## The window takes --headless, for runs nobody watches (user-decided, 2026-10-27)
 
-Before the window replaces Chimera's, the cores' tests have to run on it:
-55 of their workflows start Chimera's C# window with --headless. The owner
-chose to give the window that mode first. It does what Chimera's
-HeadlessMode does:
+The cores' tests run Chimera with no one watching: 55 of their workflows
+start it with --headless. It does this:
 
 - **No window is shown**, and it draws off screen (Qt's offscreen
-  platform, chosen before Qt starts), so it needs no display: no Xvfb on
-  Linux, nothing on the desktop on Windows. The offscreen platform ships in
+  platform, chosen before Qt starts), so it needs no display: no display
+  server on Linux, nothing on the desktop on Windows. The offscreen platform ships in
   the Windows folder for it.
 - **What would wait for a person ends the run**, said on stderr in
   Chimera's words: any dialog (exit 64, its caption and text); a project
@@ -11490,41 +10345,30 @@ offscreen start failed 6; breaking the other five behaviours together
 failed 6. 41 of 41 tests. On Windows, a headless run of a project with a
 script, from WSL, showed no window and ended 0.
 
-## The window replaces Chimera's C# window (user-decided, 2026-10-27)
+## The window is Chimera's, and the cores' tests run on it (user-decided, 2026-10-27)
 
-The owner decided the Qt window becomes Chimera: pushed to main and
-released, dev and nightly at once, and before that the C# window and
-everything that ran it removed, with the cores' tests moved onto the new
-window (it gained --headless for them).
+The owner decided this window is Chimera, published at once as the dev
+build and the nightly, with every core's tests run on it (it gained
+--headless for them).
 
-- **Removed**: `source/gui` (the C# window, its libraries and tests),
-  `tests/ui` (its interface tests), and the C#-only parts of `extern`
-  (NLua, the source generators, the analyzers, the .NET build scripts).
-  What the window still took from there moved into it: 71 images and the
-  two built-in themes (`source/ui/qt/images`, `source/ui/qt/themes`), and
-  the Lua functions' descriptions, read from the C# libraries at each build
-  until now, kept as a file (`lua_docs.inc`) to be edited by hand from now
-  on.
-- **The package contract tests** were C# (InstalledCorePackagesTests,
-  MnemonicUniquenessTests). They are a C++ program now,
-  `test-packages [<folder>]`, with the same checks (18 on packages, and
-  the rules on packages made up here), reading packages through the engine
-  and the window's own readers. Three C# tests were of C# classes alone
-  and went with them; the engine's own tests already pin the naming rule.
+- **What the window keeps of its own:** 71 images and the two built-in
+  themes (`source/ui/qt/images`, `source/ui/qt/themes`), and the Lua
+  functions' descriptions as a file (`lua_docs.inc`), edited by hand.
+- **The package contract tests** are a C++ program, `test-packages
+  [<folder>]` (18 checks on packages, and the rules on packages made up
+  here), reading packages through the engine and the window's own readers.
   On the 44 packages installed here all pass; six broken copies of the
   synthetic package each fail the check meant for them.
 - **A guest ABI check**, which the window lacked: a package built for a
   guest ABI this Chimera does not run is listed with why and not opened,
   in Chimera's words ("Update Chimera." or "Update the core.").
-- **client.invisibleemulation** is not the window's after all: Chimera's
-  C# window never had it (the cores' scripts call it inside pcall), so the
-  window does as Chimera did and draws every frame.
+- **client.invisibleemulation** is not there (the cores' scripts call it
+  inside pcall): the window draws every frame.
 - **The witness's level B** runs the window --headless. Its keybinding check
   reads the bindings the machine has (controls.effective), since the window
-  keeps only the keys a person changed. Its check of the C# window's own
-  helper modes (D:box:helpers) went with them: in the window those helpers
-  are chimera-run's, which level E asks of a project (E:suggest,
-  E:precompile, E:import-movie).
+  keeps only the keys a person changed. The helper modes (suggested
+  settings, precompiling, movie import) are chimera-run's, which level E
+  asks of a project (E:suggest, E:precompile, E:import-movie).
 - **CI** builds the window with `tools/ci-chimera.sh` (Qt 6.12 from Qt's
   archives with aqt, cached); every core's CI does the same.
 - **The release** builds Qt itself for both systems, without its network
@@ -11537,7 +10381,7 @@ window (it gained --headless for them).
   `themes/`, an empty `cores/` with a README.txt, and Qt's LGPL texts with
   where its source is.
 - **What the witness's level B found**, run on the window for the first
-  time, each now as Chimera's C# window had it:
+  time, each now fixed:
   - `client.reboot_core()` reboots at once: the script's next line sees
     frame 0. It used to queue the reboot, and the scripts were started
     again when the machine opened.
@@ -11575,8 +10419,7 @@ window (it gained --headless for them).
     not be stopped by its time limit. SDL is told to leave them alone.
 - **What the cores' own tests found**, run on the window:
   - A saved project carries the game's own timer at the end of the movie
-    again (the headers GameTimeMs, GameTime and GameTimeFrame), as C# wrote
-    them (docs/game-cores.md): only when the machine has played to the end
+    (the headers GameTimeMs, GameTime and GameTimeFrame, docs/game-cores.md): only when the machine has played to the end
     since the last edit before it, or the project said so when it was
     opened, and otherwise none. The window wrote none (the tests of rsdkv3,
     rsdkv4, rsdkv5 and SDLPoP).
@@ -11599,10 +10442,36 @@ window (it gained --headless for them).
     stopped the machine and said so in the status bar, and a run nobody
     watches waited for ever (mamehome's test, on a project made with no
     panel).
-- **One difference kept, by the owner's rule that the engine plays the
-  movie** (2026-10-22): past the end of a project's movie and not
-  recording, a script's `joypad.set` does not reach the core. Chimera's C#
-  window handed it to the core there while the movie took only the
-  autoholds, so what the core played was not what the movie held. A script
-  that drives the machine records (`tastudio.setrecording(true)`), as the
-  witness's replay now does.
+- **By the owner's rule that the engine plays the movie** (2026-10-22):
+  past the end of a project's movie and not recording, a script's
+  `joypad.set` does not reach the core, so what the core plays is always
+  what the movie holds. A script that drives the machine records
+  (`tastudio.setrecording(true)`), as the witness's replay does.
+
+## Chimera describes only itself (user-decided, 2026-10-27)
+
+The owner asked that the code and the documents describe Chimera as it is,
+with nothing left of the program it grew from. What that changed beyond
+words in comments and documents:
+
+- **No settings import.** The window no longer reads an earlier program's
+  settings file, at its first start or through Load Config From (owner's
+  choice over keeping that file's key names); a person sets their settings
+  again. Its test went with it.
+- **Script-visible names.** `client.get_lua_engine()` returns "Lua".
+  `client.getconfig()` calls three settings `StayOnTop`,
+  `MouseCaptureForcesTopmost` and `StaticWindowTitleOverride`. The Lua
+  Functions List gives types in Lua's words (integer, number, boolean,
+  table, function, any, color).
+- **Saved projects.** TAStudio's part of a project no longer carries a type
+  name; one an older project has is dropped when it is saved again.
+- **Two libraries nothing used** are no longer built or shipped: the ImGui
+  bindings (`extern/cimgui`) and a hashing library (`extern/LibChimeraHash`).
+- **Documents** say what the window does: docs/theming.md was rewritten
+  for how themes are read now (one folder, no `basedOn`, a missing colour
+  is the window's own), and two documents about code that is gone were
+  removed.
+
+Tested: meson test, the end-to-end test and the Windows cross-build on the
+change; a test of the saved project's TAStudio part (no type name, an old
+one dropped), and the Lua Functions List's types, updated.

@@ -1,6 +1,6 @@
-/* Level A tester for the waterboxed Synth flavor (c). Runs synth.wbx through the
- * miniBox host over a movie and reports the same metrics as native/synth-run and
- * the C# synth-run-sharp, so all three flavors verify against the SAME goldens.
+/* Level A tester for the waterboxed Synth core. Runs synth.wbx through the
+ * miniBox host over a movie and reports the same metrics as native/synth-run,
+ * so both verify against the SAME goldens.
  *
  * Notably: no serialize/deserialize here - --rerecord uses the waterbox host's
  * whole-machine wbx_save_state/wbx_load_state around each frame, so the entire

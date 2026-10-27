@@ -10,8 +10,8 @@ itself is public domain under either WTFPL or CC0, at your option.
 
 Upstream: https://github.com/Dav1dde/glad
 
-WHY IT IS HERE. Chimera reaches OpenGL from C# for its own display. This copy
-is for the engine's GPU bridge (docs/gpu-bridge.md), which answers a sandboxed
+WHY IT IS HERE. Chimera's window draws through Qt. This copy is for the
+engine's GPU bridge (docs/gpu-bridge.md), which answers a sandboxed
 core's GL calls on a real context and therefore needs the entry points in C.
 On Windows that is not a convenience: opengl32.dll exports OpenGL 1.1 and
 nothing else, so everything a modern renderer calls has to be fetched at
