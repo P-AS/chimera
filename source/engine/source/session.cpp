@@ -101,6 +101,8 @@ struct SessionConfig
 	std::string coreName, systemId, romFile;
 	uint64_t layoutMiB[5] = { 0, 0, 0, 0, 0 };
 	int32_t width = 0, height = 0, virtualWidth = 0, virtualHeight = 0;
+	/* whether the package or its machine gave a virtual size: without one the pixels are square */
+	bool virtualDeclared = false;
 	int32_t vsyncNum = 0, vsyncDen = 0;
 	std::string getBgra, getAudio;
 	int32_t samplesPerFrame = 0, channels = 1;
@@ -265,8 +267,10 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	cfg.height = intOf(video, "height");
 	cfg.virtualWidth = intOf(video, "virtualWidth", cfg.width);
 	cfg.virtualHeight = intOf(video, "virtualHeight", cfg.height);
+	cfg.virtualDeclared = cJSON_GetObjectItemCaseSensitive(video, "virtualWidth") != nullptr;
 	if (machine != nullptr)
 	{
+		if (cJSON_GetObjectItemCaseSensitive(machine, "virtualWidth") != nullptr) cfg.virtualDeclared = true;
 		cfg.virtualWidth = intOf(machine, "virtualWidth", cfg.virtualWidth);
 		cfg.virtualHeight = intOf(machine, "virtualHeight", cfg.virtualHeight);
 	}
@@ -746,6 +750,24 @@ struct ce_session
 	void (*frameAdvance)(uint64_t) = nullptr;
 	/* frameAdvance under the watchdog (GuestWatchdog) */
 	void runFrame(uint64_t pad);
+	/* frozen addresses (ce_session_freeze): written before every frame */
+	struct Freeze
+	{
+		bool enabled = true;
+		int32_t domain = -1;
+		int64_t address = 0;
+		int32_t size = 1;
+		bool bigEndian = false;
+		uint64_t value = 0;
+		int32_t compareKind = 0;
+		uint64_t compare = 0;
+		/* a game property's element instead, set from text */
+		int32_t property = -1;
+		uint32_t element = 0;
+		std::string text;
+	};
+	std::vector<Freeze> freezes;
+	void applyFreezes();
 	std::unique_ptr<struct GuestWatchdog> watchdog;
 	/* the next frame is the first after starting or a state load: it has the
 	 * start's time (GuestWatchdog) */
@@ -970,6 +992,25 @@ struct ce_session
 	bool movieKeyed = false;
 	const chimera::EntryLayout &entries() const { return movieKeyed ? movieLayout : layout; }
 	void coverInKey(const uint8_t *states, const int32_t *axes);
+	/* The movie edited from another thread (ce_session_movie_set): the lock
+	 * every touch of `movie` takes, and the earliest frame edited since the
+	 * machine last moved. */
+	mutable std::mutex movieLock;
+	int64_t editedFrom = -1;
+	/* Rerecords (ce_session_rerecords): the count, whether edits count
+	 * now, and whether one of the edits not yet taken counts (both under
+	 * movieLock: they are decided when the edit is made). */
+	uint64_t rerecords = 0;
+	bool countingRerecords = true;
+	bool countedEdit = false;
+	/* a rerecord, when this drops a stored state: before it is dropped */
+	void rerecordIfDropping(int64_t after);
+	/* the machine's thread's: the earliest edited frame the machine is past */
+	int64_t staleFrom = -1;
+	void takeEdits();
+	bool catchUp(int64_t to, int64_t render);
+	bool movieEntry(int64_t at, std::vector<int32_t> &axes);
+	void nameColumns();
 
 	// ---- the state history (docs/state-manager.md) ----
 	// Anchors and the deltas that walk forward from them, so a stored frame
@@ -1622,6 +1663,7 @@ void ce_session::runFrame(uint64_t pad)
 		}
 	}
 	firstFrame = false;
+	applyFreezes();
 	t_framing = this;
 	frameAdvance(pad);
 	t_framing = nullptr;
@@ -2768,8 +2810,11 @@ const char *ce_session_core_name(const ce_session *s) { return s->cfg.coreName.c
 const char *ce_session_system_id(const ce_session *s) { return s->cfg.systemId.c_str(); }
 int32_t ce_session_width(const ce_session *s) { return s->cfg.width; }
 int32_t ce_session_height(const ce_session *s) { return s->cfg.height; }
-int32_t ce_session_virtual_width(const ce_session *s) { return s->cfg.virtualWidth; }
-int32_t ce_session_virtual_height(const ce_session *s) { return s->cfg.virtualHeight; }
+/* a machine that declares no virtual size has square pixels, so its picture
+ * as it is now is its own shape (a Flash movie's stage), as Chimera's window
+ * has it; the declared buffer is only the largest picture */
+int32_t ce_session_virtual_width(const ce_session *s) { return s->cfg.virtualDeclared || s->vidW <= 0 ? s->cfg.virtualWidth : s->vidW; }
+int32_t ce_session_virtual_height(const ce_session *s) { return s->cfg.virtualDeclared || s->vidH <= 0 ? s->cfg.virtualHeight : s->vidH; }
 
 int32_t ce_session_display_aspect(const ce_session *s, int32_t *x_out, int32_t *y_out)
 {
@@ -4020,6 +4065,8 @@ const uint8_t *ce_session_trace_drain(
 
 int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 {
+	s->takeEdits();
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
 	if (s->movie == nullptr) s->movie = ce_movie_log_new();
 	/* What the history holds past the first entry the two logs disagree on
 	 * describes the old movie. A capture used to find that out on the way
@@ -4058,10 +4105,14 @@ int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 				agree++;
 			}
 		}
+		/* a rerecord when it drops a stored state (movieLock is held here) */
+		if (s->countingRerecords && ce_session_greenzone_nearest(s, INT64_MAX) > agree) s->rerecords++;
 		s->history.invalidateAfter(agree);
 		/* and the pictures kept for frames past it, which were drawn for the
 		 * input the new log replaces (engine analysis, 2026-10-18) */
 		s->pictures.dropAfter(agree);
+		/* a machine past the first changed frame was made by the old movie */
+		if (s->frame > agree) s->staleFrom = s->staleFrom < 0 ? agree : std::min(s->staleFrom, agree);
 	}
 	ce_movie_log_clear(s->movie);
 	int64_t n = ce_movie_log_count(log);
@@ -4075,6 +4126,7 @@ int32_t ce_session_movie_load(ce_session *s, const ce_movie_log *log)
 
 void ce_session_movie_record(ce_session *s, const char *mnemonics)
 {
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
 	if (s->movie == nullptr) s->movie = ce_movie_log_new();
 	/* A recording names its columns, so that it reads the same after the
 	 * package gains a control. A movie with no key is in the machine's own
@@ -4104,10 +4156,252 @@ int32_t ce_session_movie_mode(const ce_session *s) { return s->movieMode; }
 
 int64_t ce_session_movie_length(const ce_session *s)
 {
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
 	return s->movie != nullptr ? ce_movie_log_count(s->movie) : 0;
 }
 
+/* ---- the movie, edited frame by frame (engine.h) ---- */
+
+void ce_session::nameColumns()
+{
+	/* as a recording does: a movie edited names its columns (movieLock held) */
+	if (movieKeyed) return;
+	const std::string key = layout.key(cfg.buttons);
+	if (!key.empty() && movieLayout.buildFromKey(key, cfg.buttons, cfg.axes))
+	{
+		ce_movie_log_set_key(movie, key.c_str());
+		movieKeyed = true;
+	}
+}
+
+int32_t ce_session_movie_get(const ce_session *s, int64_t frame, uint64_t *buttons_out, int32_t *axes_out)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (buttons_out != nullptr) *buttons_out = 0;
+	if (axes_out != nullptr)
+		for (size_t i = 0; i < s->cfg.axes.size(); i++) axes_out[i] = s->cfg.axes[i].neutral;
+	if (s->movie == nullptr || frame < 0 || frame >= ce_movie_log_count(s->movie)) return 1;
+	std::vector<uint8_t> states;
+	std::vector<int32_t> values;
+	if (!s->entries().parse(ce_movie_log_entry(s->movie, frame), states, values)) return -1;
+	if (buttons_out != nullptr)
+		for (size_t i = 0; i < states.size() && i < 64; i++)
+			if (states[i] != 0) *buttons_out |= uint64_t{1} << i;
+	if (axes_out != nullptr)
+		for (size_t i = 0; i < values.size(); i++) axes_out[i] = values[i];
+	return 0;
+}
+
+int32_t ce_session_movie_set(ce_session *s, int64_t frame, uint64_t buttons, const int32_t *axes)
+{
+	if (frame < 0) return -1;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr) s->movie = ce_movie_log_new();
+	if (s->movieMode == 0) s->movieMode = 1;
+	s->nameColumns();
+	std::vector<uint8_t> states(s->cfg.buttons.size(), 0);
+	for (size_t i = 0; i < states.size() && i < 64; i++) states[i] = (buttons >> i) & 1u;
+	s->coverInKey(states.data(), axes);
+	const int64_t count = ce_movie_log_count(s->movie);
+	if (frame > count)
+	{
+		const std::string blank = s->entries().generate(nullptr, nullptr, s->cfg.mnemonics);
+		for (int64_t f = count; f < frame; f++) ce_movie_log_add(s->movie, blank.c_str());
+	}
+	const std::string line = s->entries().generate(states.data(), axes, s->cfg.mnemonics);
+	if (frame >= count) ce_movie_log_add(s->movie, line.c_str());
+	else ce_movie_log_set(s->movie, frame, line.c_str());
+	const int64_t from = std::min(frame, count);
+	s->editedFrom = s->editedFrom < 0 ? from : std::min(s->editedFrom, from);
+	if (s->countingRerecords) s->countedEdit = true;
+	return 0;
+}
+
+void ce_session_movie_insert(ce_session *s, int64_t frame, int64_t count)
+{
+	if (frame < 0 || count <= 0) return;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr) s->movie = ce_movie_log_new();
+	if (s->movieMode == 0) s->movieMode = 1;
+	s->nameColumns();
+	const int64_t had = ce_movie_log_count(s->movie);
+	const std::string blank = s->entries().generate(nullptr, nullptr, s->cfg.mnemonics);
+	/* past the end: the frames up to it first, as _set does */
+	if (frame > had) ce_movie_log_insert_n(s->movie, had, blank.c_str(), frame - had);
+	ce_movie_log_insert_n(s->movie, frame, blank.c_str(), count);
+	const int64_t from = std::min(frame, had);
+	s->editedFrom = s->editedFrom < 0 ? from : std::min(s->editedFrom, from);
+	if (s->countingRerecords) s->countedEdit = true;
+}
+
+void ce_session_movie_remove(ce_session *s, int64_t frame, int64_t count)
+{
+	if (frame < 0 || count <= 0) return;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr || frame >= ce_movie_log_count(s->movie)) return;
+	ce_movie_log_remove_range(s->movie, frame, count);
+	s->editedFrom = s->editedFrom < 0 ? frame : std::min(s->editedFrom, frame);
+	if (s->countingRerecords) s->countedEdit = true;
+}
+
+void ce_session_movie_resize(ce_session *s, int64_t frames)
+{
+	if (frames < 0) frames = 0;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr) s->movie = ce_movie_log_new();
+	if (s->movieMode == 0) s->movieMode = 1;
+	s->nameColumns();
+	const int64_t count = ce_movie_log_count(s->movie);
+	if (frames < count) ce_movie_log_truncate(s->movie, frames);
+	else if (frames > count)
+	{
+		const std::string blank = s->entries().generate(nullptr, nullptr, s->cfg.mnemonics);
+		for (int64_t f = count; f < frames; f++) ce_movie_log_add(s->movie, blank.c_str());
+	}
+	const int64_t from = std::min(frames, count);
+	if (frames != count)
+	{
+		s->editedFrom = s->editedFrom < 0 ? from : std::min(s->editedFrom, from);
+		if (s->countingRerecords) s->countedEdit = true;
+	}
+}
+
+const char *ce_session_movie_text(ce_session *s, uint64_t *len_out)
+{
+	static thread_local std::string text;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr)
+	{
+		text.clear();
+	}
+	else
+	{
+		uint64_t len = 0;
+		const char *t = ce_movie_log_serialize(s->movie, 0, &len);
+		text.assign(t != nullptr ? t : "", static_cast<size_t>(len));
+	}
+	if (len_out != nullptr) *len_out = text.size();
+	return text.c_str();
+}
+
+/* The session's movie journaled (engine.h): the log's own journal, under the
+ * movie's lock, as every change to the log is made under it. */
+int32_t ce_session_movie_journal_open(ce_session *s, const char *path, const char *frontend_image)
+{
+	if (path == nullptr) return 1;
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie == nullptr) s->movie = ce_movie_log_new();
+	return ce_movie_log_journal_open_with(s->movie, path, frontend_image);
+}
+
+void ce_session_movie_journal_note(ce_session *s, const char *record)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie != nullptr) ce_movie_log_journal_note(s->movie, record);
+}
+
+void ce_session_movie_journal_close(ce_session *s, int32_t remove)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	if (s->movie != nullptr) ce_movie_log_journal_close(s->movie, remove);
+}
+
+int32_t ce_session_movie_journaling(const ce_session *s)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	return ce_movie_log_journaling(s->movie);
+}
+
+/* What was edited since the machine last moved: the states past it go, and
+ * a machine already past it is behind its movie (machine's thread). */
+void ce_session::takeEdits()
+{
+	int64_t from;
+	bool counts;
+	{
+		std::lock_guard<std::mutex> movieLocked(movieLock);
+		from = editedFrom;
+		editedFrom = -1;
+		counts = countedEdit;
+		countedEdit = false;
+	}
+	if (from < 0) return;
+	if (counts) rerecordIfDropping(from);
+	history.invalidateAfter(from);
+	pictures.dropAfter(from);
+	if (frame > from) staleFrom = staleFrom < 0 ? from : std::min(staleFrom, from);
+}
+
+/* The entry for frame `at`, parsed into movieButtons and axes (movieLock
+ * taken here): false when there is none or it does not read. */
+bool ce_session::movieEntry(int64_t at, std::vector<int32_t> &axes)
+{
+	std::lock_guard<std::mutex> movieLocked(movieLock);
+	const char *entry = movie != nullptr && at < ce_movie_log_count(movie) ? ce_movie_log_entry(movie, at) : nullptr;
+	if (entry == nullptr || !entries().parse(entry, movieButtons, axes))
+	{
+		error = std::string("unparseable movie entry at frame ") + std::to_string(at);
+		return false;
+	}
+	return true;
+}
+
+/* A machine behind its movie (staleFrom) put back on a stored frame before
+ * the edit and played to `to`. */
+bool ce_session::catchUp(int64_t to, int64_t render)
+{
+	if (staleFrom < 0) return true;
+	const int64_t base = ce_session_greenzone_nearest(this, std::min(staleFrom, to));
+	staleFrom = -1;
+	if (base < 0)
+	{
+		error = "the movie changed before the frame the machine is on, and no stored state is before the change";
+		return false;
+	}
+	if (!greenzoneRestore(base)) return false;
+	while (frame < to)
+	{
+		std::vector<int32_t> movieAxes;
+		if (!movieEntry(frame, movieAxes)) return false;
+		for (size_t i = 0; i < movieAxes.size(); i++)
+		{
+			if (setAxis != nullptr) setAxis(static_cast<int32_t>(i), movieAxes[i]);
+		}
+		greenzoneBeforeAdvance();
+		if (advanceCore(movieButtons.data(), render) < 0) return false;
+		greenzoneCapture();
+	}
+	return true;
+}
+
 int64_t ce_session_frame(const ce_session *s) { return s->frame; }
+
+void ce_session::rerecordIfDropping(int64_t after)
+{
+	if (ce_session_greenzone_nearest(this, INT64_MAX) > after)
+	{
+		std::lock_guard<std::mutex> movieLocked(movieLock);
+		rerecords++;
+	}
+}
+
+uint64_t ce_session_rerecords(const ce_session *s)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	return s->rerecords;
+}
+
+void ce_session_set_rerecords(ce_session *s, uint64_t count)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	s->rerecords = count;
+}
+
+void ce_session_rerecord_counting(ce_session *s, int32_t on)
+{
+	std::lock_guard<std::mutex> movieLocked(s->movieLock);
+	s->countingRerecords = on != 0;
+}
 
 /* for the engine's own bookkeeping (mcp.cpp): not in engine.h */
 extern "C" uint64_t ce_session_serial(const ce_session *s) { return s != nullptr ? s->serial : 0; }
@@ -4172,20 +4466,22 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 		return -1;
 	}
 
+	/* edits made since the machine last moved, honoured first: a machine past
+	 * them catches up with the movie it now has */
+	s->takeEdits();
+	if (!s->catchUp(s->frame, 0)) return -1;
+	/* a movie that ran out and has since grown plays again */
+	if (s->movieMode == 3 && s->frame < ce_session_movie_length(s)) s->movieMode = 1;
+
 	/* the epoch the coming frame's delta is measured against, marked while the
 	 * machine is still where it starts */
 	s->greenzoneBeforeAdvance();
 
 	int32_t lag;
-	if (s->movieMode == 1 && s->frame < ce_movie_log_count(s->movie))
+	if (s->movieMode == 1 && s->frame < ce_session_movie_length(s))
 	{
 		std::vector<int32_t> movieAxes;
-		const char *entry = ce_movie_log_entry(s->movie, s->frame);
-		if (!s->entries().parse(entry, s->movieButtons, movieAxes))
-		{
-			s->error = std::string("unparseable movie entry at frame ") + std::to_string(s->frame);
-			return -1;
-		}
+		if (!s->movieEntry(s->frame, movieAxes)) return -1;
 		for (size_t i = 0; i < movieAxes.size(); i++)
 		{
 			if (s->setAxis != nullptr) s->setAxis(static_cast<int32_t>(i), movieAxes[i]);
@@ -4196,10 +4492,11 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 	else
 	{
 		if (s->movieMode == 1) s->movieMode = 3; // the log ran out: input is the caller's again
-		if (s->movieMode == 2 && s->frame < ce_movie_log_count(s->movie))
+		if (s->movieMode == 2 && s->frame < ce_session_movie_length(s))
 		{
 			/* recording over existing entries IS the rerecord: everything from
 			 * here on described a timeline that no longer happens */
+			std::lock_guard<std::mutex> movieLocked(s->movieLock);
 			ce_movie_log_truncate(s->movie, s->frame);
 		}
 		/* Input that is not the log's changes what follows, so the history says
@@ -4219,6 +4516,7 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 		if (s->guestDied()) return -1;
 		if (s->movieMode == 2)
 		{
+			std::lock_guard<std::mutex> movieLocked(s->movieLock);
 			s->coverInKey(effective, axes);
 			std::string entry = s->entries().generate(effective, axes, s->mnemonics);
 			ce_movie_log_add(s->movie, entry.c_str());
@@ -4227,7 +4525,11 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 		if (lag < 0)
 		{
 			/* it died playing it: the entry describes a frame that never happened */
-			if (s->movieMode == 2) ce_movie_log_truncate(s->movie, s->frame);
+			if (s->movieMode == 2)
+			{
+				std::lock_guard<std::mutex> movieLocked(s->movieLock);
+				ce_movie_log_truncate(s->movie, s->frame);
+			}
 			return -1;
 		}
 	}
@@ -4516,10 +4818,18 @@ int32_t ce_session_seek(ce_session *s, int64_t frame)
 		s->error = "seeking needs a movie";
 		return 1;
 	}
-	if (frame > ce_movie_log_count(s->movie))
+	if (frame > ce_session_movie_length(s))
 	{
 		s->error = "cannot seek past the movie's end";
 		return 1;
+	}
+
+	/* edits since the machine last moved: a machine past them goes back
+	 * before them, even to stay on the frame it is on */
+	s->takeEdits();
+	if (s->staleFrom >= 0)
+	{
+		if (!s->catchUp(std::min(frame, s->frame), 0)) return 1;
 	}
 
 	int64_t base = ce_session_greenzone_nearest(s, frame);
@@ -4537,12 +4847,7 @@ int32_t ce_session_seek(ce_session *s, int64_t frame)
 	while (s->frame < frame)
 	{
 		std::vector<int32_t> movieAxes;
-		const char *entry = ce_movie_log_entry(s->movie, s->frame);
-		if (entry == nullptr || !s->entries().parse(entry, s->movieButtons, movieAxes))
-		{
-			s->error = std::string("unparseable movie entry at frame ") + std::to_string(s->frame);
-			return 1;
-		}
+		if (!s->movieEntry(s->frame, movieAxes)) return 1;
 		for (size_t i = 0; i < movieAxes.size(); i++)
 		{
 			if (s->setAxis != nullptr) s->setAxis(static_cast<int32_t>(i), movieAxes[i]);
@@ -4551,7 +4856,30 @@ int32_t ce_session_seek(ce_session *s, int64_t frame)
 		if (s->advanceCore(s->movieButtons.data(), 0) < 0) return 1;   /* the guest died */
 		s->greenzoneCapture();
 	}
-	if (s->movieMode == 3 && s->frame < ce_movie_log_count(s->movie)) s->movieMode = 1;
+	if (s->movieMode == 3 && s->frame < ce_session_movie_length(s)) s->movieMode = 1;
+	return 0;
+}
+
+int32_t ce_session_movie_at(ce_session *s, int64_t frame)
+{
+	s->error.clear();
+	if (s->movieMode == 0 || s->movie == nullptr)
+	{
+		s->error = "the session has no movie";
+		return 1;
+	}
+	if (frame < 0 || frame > ce_session_movie_length(s))
+	{
+		s->error = "frame " + std::to_string(frame) + " is past the movie's end";
+		return 1;
+	}
+	/* edits drop the states past them; the machine itself is the one loaded */
+	s->takeEdits();
+	s->staleFrom = -1;
+	s->frame = frame;
+	s->machineFrame = frame;
+	s->greenzoneCapture();
+	if (s->movieMode == 3 && s->frame < ce_session_movie_length(s)) s->movieMode = 1;
 	return 0;
 }
 
@@ -4689,4 +5017,144 @@ void ce_session_set_input_poll_callback(ce_session *s, ce_input_poll_fn fn, void
 	if (s == nullptr) return;
 	s->inputPollFn = fn;
 	s->inputPollCtx = ctx;
+}
+
+/* ---- frozen addresses ---- */
+
+static uint64_t freezeRead(const ce_session::Freeze &f, const uint8_t *at)
+{
+	uint64_t v = 0;
+	for (int32_t i = 0; i < f.size; i++) v |= uint64_t{at[f.bigEndian ? f.size - 1 - i : i]} << (8 * i);
+	return v;
+}
+
+void ce_session::applyFreezes()
+{
+	for (const Freeze &f : freezes)
+	{
+		if (!f.enabled) continue;
+		if (f.property >= 0)
+		{
+			std::string ignored;
+			placeProperty(f.property);
+			properties.writeText(f.property, f.element, f.text, ignored);
+			continue;
+		}
+		if (f.domain < 0 || f.domain >= mdCount() || mdPtr == nullptr || f.address < 0 || f.address + f.size > mdSize(f.domain)) continue;
+		const uintptr_t base = mdPtr(f.domain);
+		if (base == 0) continue;
+		if (f.compareKind != 0)
+		{
+			const uint8_t *seen = domainReadView(this, f.domain, f.address, f.size);
+			if (seen == nullptr) continue;
+			const uint64_t now = freezeRead(f, seen);
+			bool write = true;
+			switch (f.compareKind)
+			{
+			case 1: write = f.compare == now; break;
+			case 2: write = f.compare != now; break;
+			case 3: write = f.compare > now; break;
+			case 4: write = f.compare >= now; break;
+			case 5: write = f.compare < now; break;
+			case 6: write = f.compare <= now; break;
+			default: break;
+			}
+			if (!write) continue;
+		}
+		uint8_t *at = reinterpret_cast<uint8_t *>(base) + f.address;
+		for (int32_t i = 0; i < f.size; i++) at[f.bigEndian ? f.size - 1 - i : i] = static_cast<uint8_t>(f.value >> (8 * i));
+	}
+}
+
+int32_t ce_session_freeze(ce_session *s, int32_t domain, int64_t address, int32_t size, int32_t big_endian, uint64_t value,
+	int32_t compare_kind, uint64_t compare)
+{
+	s->error.clear();
+	if (!domainIndexOk(s, domain))
+	{
+		s->error = "no memory domain " + std::to_string(domain);
+		return -1;
+	}
+	const char *name = reinterpret_cast<const char *>(s->mdName(domain));
+	if (s->mdWritable(domain) == 0 || s->mdPtr == nullptr || s->mdPtr(domain) == 0)
+	{
+		s->error = std::string(name != nullptr ? name : "the domain") + " cannot be written";
+		return -1;
+	}
+	if ((size != 1 && size != 2 && size != 4) || address < 0 || address + size > s->mdSize(domain))
+	{
+		s->error = std::string(name != nullptr ? name : "the domain") + " has no " + std::to_string(size) + " bytes at " + std::to_string(address);
+		return -1;
+	}
+	if (compare_kind < 0 || compare_kind > 6)
+	{
+		s->error = "no compare kind " + std::to_string(compare_kind);
+		return -1;
+	}
+	ce_session::Freeze f;
+	f.domain = domain;
+	f.address = address;
+	f.size = size;
+	f.bigEndian = big_endian != 0;
+	f.value = value & ((uint64_t{1} << (8 * size)) - 1);
+	f.compareKind = compare_kind;
+	f.compare = compare;
+	for (size_t i = 0; i < s->freezes.size(); i++)
+		if (s->freezes[i].property < 0 && s->freezes[i].domain == domain && s->freezes[i].address == address)
+		{
+			s->freezes[i] = f;
+			return static_cast<int32_t>(i);
+		}
+	s->freezes.push_back(f);
+	return static_cast<int32_t>(s->freezes.size() - 1);
+}
+
+int32_t ce_session_freeze_property(ce_session *s, int32_t index, uint32_t element, const char *text)
+{
+	s->error.clear();
+	/* the text is checked once, by writing it now */
+	if (ce_session_property_set_text(s, index, element, text) != 0) return -1;
+	ce_session::Freeze f;
+	f.property = index;
+	f.element = element;
+	f.text = text != nullptr ? text : "";
+	for (size_t i = 0; i < s->freezes.size(); i++)
+		if (s->freezes[i].property == index && s->freezes[i].element == element)
+		{
+			s->freezes[i] = f;
+			return static_cast<int32_t>(i);
+		}
+	s->freezes.push_back(f);
+	return static_cast<int32_t>(s->freezes.size() - 1);
+}
+
+int32_t ce_session_freeze_count(const ce_session *s) { return static_cast<int32_t>(s->freezes.size()); }
+
+void ce_session_unfreeze(ce_session *s, int32_t index)
+{
+	if (index >= 0 && static_cast<size_t>(index) < s->freezes.size()) s->freezes.erase(s->freezes.begin() + index);
+}
+
+void ce_session_unfreeze_all(ce_session *s) { s->freezes.clear(); }
+
+void ce_session_freeze_enable(ce_session *s, int32_t index, int32_t on)
+{
+	if (index >= 0 && static_cast<size_t>(index) < s->freezes.size()) s->freezes[static_cast<size_t>(index)].enabled = on != 0;
+}
+
+int32_t ce_session_freeze_enabled(const ce_session *s, int32_t index)
+{
+	if (index < 0 || static_cast<size_t>(index) >= s->freezes.size()) return -1;
+	return s->freezes[static_cast<size_t>(index)].enabled ? 1 : 0;
+}
+
+int32_t ce_session_frozen(const ce_session *s, int32_t domain, int64_t address)
+{
+	for (size_t i = 0; i < s->freezes.size(); i++)
+	{
+		const ce_session::Freeze &f = s->freezes[i];
+		if (f.enabled && f.property < 0 && f.domain == domain && address >= f.address && address < f.address + f.size)
+			return static_cast<int32_t>(i);
+	}
+	return -1;
 }

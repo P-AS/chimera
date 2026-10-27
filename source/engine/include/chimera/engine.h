@@ -656,6 +656,17 @@ CE_API int32_t ce_project_set_tastudio_text(ce_project *p, const char *json, con
 CE_API const char *ce_project_firmware_text(ce_project *p, uint64_t *len_out);
 CE_API int32_t ce_project_set_firmware_text(ce_project *p, const char *json, const char **error_out);
 
+/* Which machine a project makes, as the SHA-1 (40 hex digits) of the core
+ * build that runs it, its settings and firmware (keys in order, so the same
+ * settings written in another order are the same machine) and each file's
+ * slot and hash (its name is not its identity). A state is the memory of one
+ * exact machine; what a frontend keeps beside a project - branch states, the
+ * greenzone - is checked against this before it reaches the sandbox, which
+ * checks only the core binary (issue #63). running_core_sha1 is the package
+ * that will run, which can differ from the one the project pins; NULL or ""
+ * takes the pin. */
+CE_API void ce_project_machine_id(ce_project *p, const char *running_core_sha1, char *out41);
+
 /* The input log lump, exactly what ce_movie_log_parse/_serialize exchange
  * (LogKey line + entries). "" for a project with no frames yet. */
 CE_API const char *ce_project_log_text(const ce_project *p, uint64_t *len_out);
@@ -905,6 +916,9 @@ CE_API const char *ce_session_core_name(const ce_session *s);
 CE_API const char *ce_session_system_id(const ce_session *s);
 CE_API int32_t ce_session_width(const ce_session *s);
 CE_API int32_t ce_session_height(const ce_session *s);
+/* The shape the picture is shown at, as a size: the package's or its machine's
+ * declared virtual size, else the picture's own size as it is now (square
+ * pixels; the declared width and height are only the largest picture). */
 CE_API int32_t ce_session_virtual_width(const ce_session *s);
 CE_API int32_t ce_session_virtual_height(const ce_session *s);
 /* The display aspect the machine reports for what it shows NOW, x:y, from the
@@ -1581,7 +1595,8 @@ CE_API int64_t ce_session_frame(const ce_session *s);
 
 /* The session's own log, for saving through ce_movie_log_serialize.
  * Borrowed and READ-ONLY: mutate the movie through the session, never
- * through this. Invalidated when the session is freed. */
+ * through this. Invalidated when the session is freed, and not to be read
+ * while another thread edits the movie: ce_session_movie_text is. */
 CE_API const ce_movie_log *ce_session_movie_log(const ce_session *s);
 
 /* Decodes one entry against THIS session's controller: buttons_out gets the
@@ -1599,6 +1614,62 @@ CE_API int32_t ce_session_movie_entry_decode(
  * 64 buttons needs, and exact for any width. Same returns as above. */
 CE_API int32_t ce_session_movie_entry_decode_wide(
 	const ce_session *s, const char *entry, uint8_t *states_out, int32_t *axes_out);
+
+/* ---- the movie, edited frame by frame (the Qt window, issue 142, prototype)
+ *
+ * The session's movie is the one a piano roll edits: a frontend reads and
+ * writes a frame's input through these calls and never writes a line itself -
+ * the engine writes it, in the movie's own columns (its LogKey), widening the
+ * key for a control it does not name yet, as recording does (owner,
+ * 2026-10-22: the engine owns the movie).
+ *
+ * These four, ce_session_movie_length and ce_session_movie_text may be called
+ * from any thread while another runs the machine: the movie has a lock of its
+ * own. Every other session call stays on one thread.
+ *
+ * An edit is honoured before the machine moves again: the next
+ * ce_session_movie_advance or ce_session_seek drops the stored states after
+ * the earliest frame edited, and when the machine is already past it, puts the
+ * machine back on a stored frame before the edit and plays the movie up to
+ * where it was - so the machine is always what the movie it has makes it. */
+
+/* A frame's buttons (bit per button in config order, the first 64) and axes
+ * (ce_session_axis_count values; may be NULL). 0 read; 1 past the movie's
+ * end (nothing pressed, axes neutral); -1 the line cannot be read. */
+CE_API int32_t ce_session_movie_get(const ce_session *s, int64_t frame, uint64_t *buttons_out, int32_t *axes_out);
+/* Writes a frame's input (axes may be NULL for neutral). A frame past the end
+ * lengthens the movie with empty frames up to it. A session with no movie
+ * gets one, in play mode, naming its columns as a recording does. 0, or -1
+ * for a frame before 0. */
+CE_API int32_t ce_session_movie_set(ce_session *s, int64_t frame, uint64_t buttons, const int32_t *axes);
+/* Shortens the movie, or lengthens it with empty frames. */
+CE_API void ce_session_movie_resize(ce_session *s, int64_t frames);
+/* `count` empty frames put in at `frame` (the frames from it move later),
+ * and `count` frames taken out from `frame` (the ones after move earlier).
+ * Either is an edit from `frame`, honoured as _set's are. Any thread. */
+CE_API void ce_session_movie_insert(ce_session *s, int64_t frame, int64_t count);
+CE_API void ce_session_movie_remove(ce_session *s, int64_t frame, int64_t count);
+/* The whole movie as ce_movie_log_serialize writes it (the [Input] block), to
+ * save or to keep as a branch; ce_session_movie_load takes it back. Belongs to
+ * the calling thread until its next call of this. */
+CE_API const char *ce_session_movie_text(ce_session *s, uint64_t *len_out);
+
+/* The input journal of the session's own movie (owner, 2026-10-24): what
+ * ce_movie_log_journal_open_with does for a log a frontend holds, done on the
+ * movie the session keeps, so that every change to it - an edit from any
+ * thread, a frame recorded, a movie loaded over it - is on its way to the disk
+ * the moment it is made. _journal_open writes the whole movie and the
+ * frontend's records (`frontend_image`, may be NULL) to `path` and appends
+ * from then on; a session with no movie yet gets an empty one. 0 on success.
+ * _journal_note appends one of the frontend's records; _journal_close stops
+ * appending and, with `remove` nonzero, deletes the journal; _journaling says
+ * whether one is being written. Freeing the session closes the journal and
+ * keeps the file. Any thread: they take the movie's lock. A journal is read
+ * back with ce_movie_log_journal_replay. */
+CE_API int32_t ce_session_movie_journal_open(ce_session *s, const char *path, const char *frontend_image);
+CE_API void ce_session_movie_journal_note(ce_session *s, const char *record);
+CE_API void ce_session_movie_journal_close(ce_session *s, int32_t remove);
+CE_API int32_t ce_session_movie_journaling(const ce_session *s);
 
 /* One frame under the movie. In play mode the input comes from the log
  * (buttons/axes are ignored) until the log runs out, which flips the mode to
@@ -1814,6 +1885,54 @@ CE_API uint64_t ce_session_greenzone_picture_bytes(const ce_session *s);
 /* Restores the nearest stored state at or before frame, then replays the
  * movie to frame. Needs the movie's entries up to frame. 0 on success. */
 CE_API int32_t ce_session_seek(ce_session *s, int64_t frame);
+
+/* The machine was put on `frame` of the session's movie by a state the
+ * caller loaded itself - a branch's, kept in a file (ce_session_state_load_file)
+ * - and the caller vouches that it is the machine the movie makes there. The
+ * session counts from that frame, a machine the movie had left behind is no
+ * longer behind, edits made meanwhile still drop the states after them, and
+ * the frame is stored in the history so that coming back to it is a restore.
+ * 0 done; 1 there is no movie, or the frame is past its end. */
+CE_API int32_t ce_session_movie_at(ce_session *s, int64_t frame);
+
+/* Rerecords: how many times the movie was changed over work already done. An
+ * edit counts one when, honoured, it drops at least one stored state (an edit
+ * past everything stored redoes nothing), and so does a movie loaded over this
+ * one (a branch). Whether an edit counts is decided when it is made: a
+ * frontend turns counting off for the rest of a stroke after its first cell,
+ * so painting across many frames is one rerecord (as Chimera's TAStudio
+ * counts them). _set gives the count a project was saved with. Any thread. */
+CE_API uint64_t ce_session_rerecords(const ce_session *s);
+CE_API void ce_session_set_rerecords(ce_session *s, uint64_t count);
+CE_API void ce_session_rerecord_counting(ce_session *s, int32_t on);
+
+/* Frozen addresses (cheats): values the engine writes into the machine before
+ * every frame it runs - a frame advance, a movie advance, a seek's replay -
+ * for this session only. They are never saved, and never go into a movie, a
+ * project or a state: frozen values are for looking into a game, not for
+ * making a movie (the owner, 2026-10-24). A freeze changes the machine, so
+ * the states kept while one is on are of the machine with it.
+ * _freeze: bytes of a writable memory domain with linear backing - size 1, 2
+ * or 4 at address, value in the byte order asked (big_endian 1 or 0). With
+ * compare_kind other than 0 the value is written only when `compare OP now`
+ * holds, OP by kind: 1 ==, 2 !=, 3 >, 4 >=, 5 <, 6 <= (Chimera's conditional
+ * cheats). A freeze already at that domain and address is replaced. Returns
+ * its index, or -1 (ce_session_last_error says why).
+ * _freeze_property: a game property's element, set from its text by the
+ * engine's rules before every frame; one already on that element is replaced.
+ * _unfreeze: by index (the later ones move down). _freeze_enable: a freeze
+ * switched off stays in the list and writes nothing; _freeze_enabled is 1 on,
+ * 0 off, -1 no such freeze. _frozen: the index of a freeze that is on and
+ * writes `address` of `domain`, else -1. The machine's thread. */
+CE_API int32_t ce_session_freeze(ce_session *s, int32_t domain, int64_t address, int32_t size, int32_t big_endian, uint64_t value,
+	int32_t compare_kind, uint64_t compare);
+CE_API int32_t ce_session_freeze_property(ce_session *s, int32_t index, uint32_t element, const char *text);
+CE_API int32_t ce_session_freeze_count(const ce_session *s);
+CE_API void ce_session_unfreeze(ce_session *s, int32_t index);
+CE_API void ce_session_unfreeze_all(ce_session *s);
+CE_API void ce_session_freeze_enable(ce_session *s, int32_t index, int32_t on);
+CE_API int32_t ce_session_freeze_enabled(const ce_session *s, int32_t index);
+CE_API int32_t ce_session_frozen(const ce_session *s, int32_t domain, int64_t address);
 
 /* The history, kept between sessions. It is written to one file, streamed a
  * segment at a time - nothing about it is ever assembled in memory, which is

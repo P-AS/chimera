@@ -486,6 +486,47 @@ int main(int argc, char **argv)
 		std::remove(ipath.c_str());
 	}
 
+	// ---- which machine a project makes: core build, settings, firmware, files ----
+	{
+		auto idOf = [](ce_project *p, const char *running) {
+			char id[41];
+			ce_project_machine_id(p, running, id);
+			return std::string(id);
+		};
+		auto make = [&](const char *settings, const char *file) {
+			ce_project *p = ce_project_new();
+			ce_project_set_core(p, "dosbox-x", "1", sha1Of("a package").c_str());
+			assert(ce_project_set_settings_text(p, settings, &err) == 0);
+			assert(ce_project_file_add(p, file, "cdrom", (g_dir + "/" + file).c_str(), &err) == 0);
+			return p;
+		};
+		writeFile("same bytes.iso", "second disc bytes");
+		ce_project *a = make("{\"cpuCycles\":3000,\"machinePreset\":\"x\",\"deep\":{\"b\":1,\"a\":2}}", "disc2.iso");
+		const std::string id = idOf(a, nullptr);
+		assert(id.size() == 40);
+		// the same settings in another order, a file of the same bytes by another name
+		ce_project *b = make("{ \"deep\": {\"a\": 2, \"b\": 1}, \"machinePreset\": \"x\", \"cpuCycles\": 3000 }", "same bytes.iso");
+		assert(idOf(b, nullptr) == id);
+		// the pin given as the build that runs is the pin; another build is another machine
+		assert(idOf(a, sha1Of("a package").c_str()) == id && idOf(a, "") == id);
+		assert(idOf(a, sha1Of("another package").c_str()) != id);
+		// another setting, other firmware, another file
+		ce_project *c = make("{\"cpuCycles\":3001,\"machinePreset\":\"x\",\"deep\":{\"b\":1,\"a\":2}}", "disc2.iso");
+		assert(idOf(c, nullptr) != id);
+		assert(ce_project_set_firmware_text(b, ("[{\"id\":\"font\",\"sha1\":\"" + sha1Of("f") + "\"}]").c_str(), &err) == 0);
+		assert(idOf(b, nullptr) != id);
+		ce_project *d = make("{\"cpuCycles\":3000,\"machinePreset\":\"x\",\"deep\":{\"b\":1,\"a\":2}}", "save.hdd");
+		assert(idOf(d, nullptr) != id);
+		// the clock's start (issue 366): the sandbox's own is no change, another is another machine
+		assert(ce_project_set_clock_start(a, CE_CLOCK_START_DEFAULT) == 0 && idOf(a, nullptr) == id);
+		assert(ce_project_set_clock_start(a, 1893553445) == 0 && idOf(a, nullptr) != id);
+		assert(ce_project_set_clock_start(a, -1) == 0 && idOf(a, nullptr) == id);
+		ce_project_free(a);
+		ce_project_free(b);
+		ce_project_free(c);
+		ce_project_free(d);
+	}
+
 	// ---- the clock's start (issue 366): kept, written only when it is not the
 	// sandbox's own, and refused when it is not a time ----
 	{

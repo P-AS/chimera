@@ -1,0 +1,113 @@
+// A box a binding is made in, as Chimera's InputCompositeWidget: the keys
+// bound, and an arrow for the bindings a key cannot give (Escape, the
+// pointer's buttons). While it has the focus it takes the next key or
+// gamepad input pressed: a key when it is let go, as Chimera's (so Ctrl
+// alone, or Ctrl+S, can be bound), Escape at once. Controller Config and
+// Configure Hotkeys use it.
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+RowLayout {
+    id: box
+    required property string keys
+    required property QtObject session
+    required property QtObject keyNamer
+    // a hotkey takes combinations ("Ctrl+S"); a controller's button a key alone
+    property bool combination: false
+    // a key or gamepad input pressed, and a special binding picked: true when the next box takes the next
+    property var press: (name) => false
+    property var special: (name) => false
+    // goes on to the next box, for Auto Tab
+    property var next: null
+    property var themeColor: (role, fallback) => fallback
+    readonly property string tips: qsTr("* Escape clears a key mapping\n* Disable Auto Tab to multiply bind")
+    spacing: 0
+    function focusField() { field.forceActiveFocus() }
+    function take(name) {
+        if (box.press(name) === true && box.next) box.next()
+        // the box keeps the focus: it waits for the next input
+        else if (field.activeFocus) box.session.run("catchPad")
+    }
+    // the last key pressed, bound when a key is let go
+    property string lastPress: ""
+
+    Connections {
+        target: box.session
+        enabled: field.activeFocus
+        function onCaughtPadChanged() { if (box.session.caughtPad !== "") box.take(box.session.caughtPad) }
+    }
+    TextField {
+        id: field
+        objectName: "bindingBox"
+        Layout.fillWidth: true
+        Layout.preferredHeight: 23
+        readOnly: true
+        text: box.keys
+        padding: 2
+        // the start of the keys shown, as a text box shows them
+        onTextChanged: cursorPosition = 0
+        Component.onCompleted: cursorPosition = 0
+        background: Rectangle {
+            color: field.activeFocus ? box.themeColor("InputAwaitingBackground", "#e0ffff") : box.themeColor("InputBackground", palette.base)
+            border.color: field.activeFocus ? palette.highlight : palette.mid
+        }
+        ToolTip.visible: hovered
+        ToolTip.delay: 500
+        ToolTip.text: qsTr("Current Binding: %1").arg(box.keys) + "\n---\n" + box.tips
+        onActiveFocusChanged: {
+            box.lastPress = ""
+            box.session.run(activeFocus ? "catchPad" : "stopCatchPad")
+        }
+        Keys.priority: Keys.BeforeItem
+        Keys.onPressed: (event) => {
+            // Alt+F4 still closes the window; nothing else gets past the box
+            if (event.key === Qt.Key_F4 && (event.modifiers & Qt.AltModifier)) return
+            event.accepted = true
+            if (event.isAutoRepeat) return
+            const name = box.keyNamer.name(event.key, event.modifiers, box.combination)
+            if (name === "") return
+            if (name === "Escape") { box.lastPress = ""; box.take(name); return }
+            box.lastPress = name
+        }
+        Keys.onReleased: (event) => {
+            event.accepted = true
+            if (event.isAutoRepeat || box.lastPress === "") return
+            const name = box.lastPress
+            box.lastPress = ""
+            box.take(name)
+        }
+        TapHandler { onTapped: field.forceActiveFocus() }
+    }
+    ToolButton {
+        focusPolicy: Qt.NoFocus
+        Layout.preferredWidth: 18
+        Layout.preferredHeight: 23
+        icon.source: "qrc:/chimera/icons/arrow_black_down.png"
+        ToolTip.visible: hovered
+        ToolTip.delay: 500
+        ToolTip.text: qsTr("Click here for special tricky bindings")
+        onClicked: specialMenu.popup()
+        Menu {
+            delegate: MenuEntry {}
+            id: specialMenu
+            Repeater {
+                model: [
+                    { name: "Escape", tip: qsTr("Binds the Escape key") },
+                    { name: "WMouse L", tip: qsTr("Binds the left mouse button") },
+                    { name: "WMouse M", tip: qsTr("Binds the middle mouse button") },
+                    { name: "WMouse R", tip: qsTr("Binds the right mouse button") },
+                    { name: "WMouse 1", tip: qsTr("Binds the mouse auxiliary button 1") },
+                    { name: "WMouse 2", tip: qsTr("Binds the mouse auxiliary button 2") }
+                ]
+                delegate: MenuItem {
+                    required property var modelData
+                    text: modelData.name
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.tip
+                    onTriggered: if (box.special(modelData.name) === true && box.next) box.next()
+                }
+            }
+        }
+    }
+}

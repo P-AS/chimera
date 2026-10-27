@@ -25,6 +25,7 @@
 
 #include "../../extern/cjson/cJSON.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
@@ -1453,3 +1454,73 @@ const char *ce_project_slots_text(ce_project *p, uint64_t *len_out)
 }
 
 } // extern "C"
+
+namespace
+{
+/* keys sorted, no whitespace: the same settings in any order are the same machine */
+cJSON *canonicalJson(const cJSON *item)
+{
+	if (cJSON_IsObject(item))
+	{
+		std::vector<const cJSON *> members;
+		for (const cJSON *c = item->child; c != nullptr; c = c->next) members.push_back(c);
+		std::stable_sort(members.begin(), members.end(), [](const cJSON *a, const cJSON *b) {
+			return std::strcmp(a->string != nullptr ? a->string : "", b->string != nullptr ? b->string : "") < 0;
+		});
+		cJSON *out = cJSON_CreateObject();
+		for (const cJSON *m : members) cJSON_AddItemToObject(out, m->string != nullptr ? m->string : "", canonicalJson(m));
+		return out;
+	}
+	if (cJSON_IsArray(item))
+	{
+		cJSON *out = cJSON_CreateArray();
+		for (const cJSON *c = item->child; c != nullptr; c = c->next) cJSON_AddItemToArray(out, canonicalJson(c));
+		return out;
+	}
+	return cJSON_Duplicate(item, 1);
+}
+
+std::string canonicalJsonText(const char *text)
+{
+	cJSON *parsed = cJSON_Parse(text != nullptr ? text : "");
+	if (parsed == nullptr)
+	{
+		std::string t = text != nullptr ? text : "";
+		while (!t.empty() && std::isspace(static_cast<unsigned char>(t.back()))) t.pop_back();
+		size_t lead = 0;
+		while (lead < t.size() && std::isspace(static_cast<unsigned char>(t[lead]))) lead++;
+		return t.substr(lead);
+	}
+	cJSON *sorted = canonicalJson(parsed);
+	char *printed = cJSON_PrintUnformatted(sorted);
+	std::string out = printed != nullptr ? printed : "";
+	cJSON_free(printed);
+	cJSON_Delete(sorted);
+	cJSON_Delete(parsed);
+	return out;
+}
+
+std::string upperHex(const char *s)
+{
+	std::string out = s != nullptr ? s : "";
+	for (char &c : out) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+	return out;
+}
+} // namespace
+
+extern "C" void ce_project_machine_id(ce_project *p, const char *running_core_sha1, char *out41)
+{
+	std::string id = "core=" + upperHex(running_core_sha1 != nullptr && *running_core_sha1 != '\0' ? running_core_sha1 : ce_project_core_sha1(p)) + "\n";
+	id += "settings=" + canonicalJsonText(ce_project_settings_text(p, nullptr)) + "\n";
+	id += "firmware=" + canonicalJsonText(ce_project_firmware_text(p, nullptr)) + "\n";
+	/* another start for the machine's clock is another machine (issue 366); the
+	 * sandbox's own adds nothing, so a cache made before the choice still matches */
+	if (const int64_t clock = ce_project_clock_start(p); clock >= 0 && clock != CE_CLOCK_START_DEFAULT)
+		id += "clock=" + std::to_string(clock) + "\n";
+	for (int32_t i = 0; i < ce_project_file_count(p); i++)
+	{
+		const char *slot = ce_project_file_slot(p, i);
+		id += "file=" + std::string(slot != nullptr ? slot : "") + ":" + upperHex(ce_project_file_sha1(p, i)) + "\n";
+	}
+	ce_sha1_hex(reinterpret_cast<const uint8_t *>(id.data()), id.size(), out41);
+}

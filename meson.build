@@ -112,7 +112,7 @@ sqlite_args = [
 if host_windows
   sqlite_args += '-DSQLITE_API=__declspec(dllexport)'
 endif
-shared_library(
+e_sqlite3_lib = shared_library(
   'e_sqlite3',
   files('extern/sqlite3/sqlite3/sqlite3.c'),
   name_prefix: host_windows ? '' : 'lib',
@@ -450,7 +450,7 @@ engine_dep = declare_dependency(
   include_directories: engine_inc,
   dependencies: [dl_dep] + gl_bridge_deps,  # zstd_dyn loads libzstd from beside the library
 )
-shared_library(
+chimera_shared = shared_library(
   'chimera',
   name_prefix: 'lib',  # libchimera.{so,dll} on both targets (the frontend resolves this name)
   dependencies: [engine_dep],
@@ -480,6 +480,9 @@ executable(
   cpp_args: engine_build_args,
   c_args: engine_build_args,
   dependencies: [engine_dep],
+  # on Windows the compiler's runtime is linked in: the agent's program starts
+  # it from wherever it is, with no folder of Chimera's DLLs on its PATH
+  link_args: host_machine.system() == 'windows' ? ['-static'] : [],
   install: true,
   install_dir: 'dll',
 )
@@ -580,4 +583,9 @@ if not meson.is_cross_build()
       command: [dotnet, 'build', repo_root / 'source/gui/Chimera.sln', '-c', 'Release', '/nodeReuse:false', '-p:UseSharedCompilation=false'],
     )
   endif
+endif
+
+# The Qt window (issue 142, a private prototype): source/ui/meson.build
+if get_option('qt_ui').allowed()
+  subdir('source/ui')
 endif

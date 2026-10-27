@@ -31,6 +31,9 @@ extern const uint8_t *synth_get_framebuffer(synth_t *s);
 extern const int16_t *synth_get_audio(synth_t *s);
 extern uint8_t synth_input_was_read(synth_t *s);
 extern void synth_get_video_bgra(synth_t *s, uint32_t *out);  /* palette-resolved 128x120 BGRA */
+extern int32_t *synth_get_registers(synth_t *s);
+extern uint32_t synth_get_frame_counter(synth_t *s);
+extern void (*synth_on_step)(uint32_t pc, const uint8_t *insn, const int32_t *r);
 
 #define FB_W 128
 #define FB_H 120
@@ -178,37 +181,53 @@ static void precompile_step(void)
 	g_preNext += g_preCount;
 }
 
-/* What this core suggests for a project before it is final (engine.h,
- * ce_project_suggest_settings): called INSTEAD of Init. It says which game
- * the project gave it, how big, and the fill byte the project's settings
- * hold, and suggests a fill byte of the game's size modulo 256 - so a test
- * can see that the question was asked of the project, its files and its
- * settings. */
-static char g_suggest[512];
-ECL_EXPORT const char *SuggestSettings(void)
-{
-	char name[128] = "";
-	FILE *f = fopen("rom.name", "rb");
-	if (f) {
-		size_t n = fread(name, 1, sizeof name - 1, f);
-		name[n] = 0;
-		fclose(f);
-	}
-	long size = 0;
-	f = name[0] ? fopen(name, "rb") : NULL;
-	if (f) {
-		fseek(f, 0, SEEK_END);
-		size = ftell(f);
-		fclose(f);
-	}
-	snprintf(g_suggest, sizeof g_suggest,
-		"{\"values\": {\"initFillByte\": %ld}, \"note\": \"game %s, %ld bytes, fill %ld\"}",
-		size % 256, name[0] ? name : "none", size, wbx_setting_long("initFillByte", 0));
-	return g_suggest;
-}
-
 static int moving(void); /* the movingProperties setting, read once here */
+/* The trace group (a trace logger): a line for each instruction run while
+ * tracing is on - where, its bytes, then the registers after a tab - kept in
+ * a buffer the host drains each frame. Invisible: the buffer and the flag are
+ * in no state, and the engine says again after a load whether to trace. */
+#define TRACE_BYTES (1 << 20)
+ECL_INVISIBLE static char g_trace[TRACE_BYTES];
+ECL_INVISIBLE static int32_t g_traceUsed, g_traceLines, g_traceOverflow, g_traceOn;
+static void traced(uint32_t pc, const uint8_t *insn, const int32_t *r)
+{
+	if (!g_traceOn) return;
+	char line[192];
+	const uint32_t imm = (uint32_t)insn[4] | ((uint32_t)insn[5] << 8) | ((uint32_t)insn[6] << 16) | ((uint32_t)insn[7] << 24);
+	int n = snprintf(line, sizeof line, "%04X: %02X %d %d %d %08X\tR0:%08X R1:%08X R2:%08X R3:%08X R4:%08X R5:%08X R6:%08X R7:%08X",
+		(unsigned)pc, insn[0], insn[1] & 7, insn[2] & 7, insn[3] & 7, (unsigned)imm, (unsigned)r[0], (unsigned)r[1], (unsigned)r[2],
+		(unsigned)r[3], (unsigned)r[4], (unsigned)r[5], (unsigned)r[6], (unsigned)r[7]);
+	if (n < 0 || n >= (int)sizeof line) return;
+	if (g_traceUsed + n + 1 > TRACE_BYTES)
+	{
+		g_traceOverflow = 1;
+		return;
+	}
+	memcpy(g_trace + g_traceUsed, line, (size_t)n + 1);
+	g_traceUsed += n + 1;
+	g_traceLines++;
+}
+ECL_EXPORT void TraceSetEnabled(int32_t on) { g_traceOn = on != 0; }
+ECL_EXPORT int32_t TraceGetLineCount(void) { return g_traceLines; }
+ECL_EXPORT const char *TraceGetBuffer(void) { return g_trace; }
+ECL_EXPORT int32_t TraceGetOverflow(void) { return g_traceOverflow; }
+ECL_EXPORT int32_t TraceGetUsedBytes(void) { return g_traceUsed; }
+ECL_EXPORT void TraceClear(void) { g_traceUsed = g_traceLines = g_traceOverflow = 0; }
+ECL_EXPORT const char *TraceGetHeader(void) { return "Where: opcode a b c immediate\tthe registers"; }
+
 ECL_EXPORT int Init(void) {
+	/* A game's own firmware (SuggestSettings answers it, with the game's own
+	 * setting that calls for it): with that setting on, the game does not
+	 * start unless the file is mounted under its id. */
+	char logo[8];
+	if (wbx_setting_str("gameLogo", logo, (int)sizeof logo) > 0 && strcmp(logo, "on") == 0) {
+		FILE *l = fopen("gamelogo", "rb");
+		if (!l) {
+			fprintf(stderr, "synth: the game logo is not mounted\n");
+			return 0;
+		}
+		fclose(l);
+	}
 	uint32_t len = 0;
 	uint8_t *rom = read_rom(&len);
 	if (!rom) return 0;
@@ -233,6 +252,9 @@ ECL_EXPORT int Init(void) {
 	g_romSum = 1469598103934665603ull;
 	for (size_t i = 0; i < (size_t)len; i++) g_romSum = (g_romSum ^ rom[i]) * 1099511628211ull;
 	g_synth = synth_create(rom, len);   /* copies the rom internally */
+	/* the trace hook is always in place, so a state is the same traced or
+	 * not; whether it writes anything is the invisible flag below */
+	synth_on_step = traced;
 	free(rom);
 	if (!g_synth) return 0;
 	synth_reset(g_synth);
@@ -376,11 +398,65 @@ ECL_EXPORT void SetInputPollCallback(uint64_t fn)
 	synth_on_input = g_inputPoll != 0 ? input_polled : 0;
 }
 
+/* An analog control's value, set before each frame. The synthetic game reads
+ * none, so the values are only kept: the export is here so that a package
+ * made from this one may declare analog controls (the engine refuses axes a
+ * core cannot take). Invisible, and in no state, like the callback above. */
+ECL_INVISIBLE static int32_t g_axes[8];
+ECL_EXPORT void SetAxis(int32_t index, int32_t value)
+{
+	if (index >= 0 && index < 8) g_axes[index] = value;
+}
+
+/* The registers group (the debugger's register box): R0-R7, which a debugger
+ * may set, and the frame counter, which it may only read. */
+static const char *const g_registerNames[9] = {"R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "Frame"};
+ECL_EXPORT int32_t GetRegisterCount(void) { return g_synth ? 9 : 0; }
+ECL_EXPORT const char *GetRegisterName(int32_t i) { return i >= 0 && i < 9 ? g_registerNames[i] : 0; }
+ECL_EXPORT int32_t GetRegisterBits(int32_t i) { (void)i; return 32; }
+ECL_EXPORT int64_t GetRegisterValue(int32_t i)
+{
+	if (!g_synth || i < 0 || i > 8) return 0;
+	return i == 8 ? (int64_t)synth_get_frame_counter(g_synth) : (int64_t)(uint32_t)synth_get_registers(g_synth)[i];
+}
+ECL_EXPORT void SetRegisterValue(int32_t i, int64_t v)
+{
+	if (g_synth && i >= 0 && i < 8) synth_get_registers(g_synth)[i] = (int32_t)v;
+}
+
+/* The surfaces group (the Surface Viewer): RAM drawn as a 64x64 picture, a
+ * byte a pixel in grey, so a frontend's viewer has something to show. Drawn
+ * when asked; the buffer is in no state. */
+ECL_INVISIBLE static uint32_t g_ramPicture[64 * 64];
+ECL_EXPORT int32_t GetSurfaceCount(void) { return g_synth ? 1 : 0; }
+ECL_EXPORT const char *GetSurfaceName(int32_t i) { return i == 0 ? "RAM" : 0; }
+ECL_EXPORT int32_t GetSurfaceWidth(int32_t i) { return i == 0 ? 64 : 0; }
+ECL_EXPORT int32_t GetSurfaceHeight(int32_t i) { return i == 0 ? 64 : 0; }
+ECL_EXPORT uint32_t *RenderSurface(int32_t i)
+{
+	if (i != 0 || !g_synth) return 0;
+	const uint8_t *ram = synth_get_ram(g_synth);
+	for (int p = 0; p < 64 * 64; p++) g_ramPicture[p] = 0xFF000000u | (uint32_t)ram[p] * 0x010101u;
+	return g_ramPicture;
+}
+
 /* Guest-memory pointers the host reads while active (RAM/VRAM/audio domains). */
 ECL_EXPORT uint8_t *GetRam(void)         { return synth_get_ram(g_synth); }
 ECL_EXPORT uint8_t *GetFramebuffer(void) { return (uint8_t *)synth_get_framebuffer(g_synth); }
 ECL_EXPORT int16_t *GetAudio(void)       { return (int16_t *)synth_get_audio(g_synth); }
 ECL_EXPORT int      InputWasRead(void)   { die_if_armed(3, "InputWasRead"); return synth_input_was_read(g_synth); }
+
+/* Save data (docs/save-data.md, the savedata group): two files the window's
+ * Export Save Data writes out - the first 16 bytes of RAM as a card's slot,
+ * and a note - so a frontend can take the whole export path. */
+static const char g_saveNote[] = "gridWalker was here\n";
+ECL_EXPORT int32_t GetSaveDataFileCount(void) { return g_synth ? 2 : 0; }
+ECL_EXPORT const char *GetSaveDataFileName(int32_t i) { return i == 0 ? "card/slot1.sav" : i == 1 ? "notes.txt" : 0; }
+ECL_EXPORT int64_t GetSaveDataFileSize(int32_t i) { return i == 0 ? 16 : i == 1 ? (int64_t)(sizeof g_saveNote - 1) : 0; }
+ECL_EXPORT const uint8_t *GetSaveDataFileBuffer(int32_t i)
+{
+	return i == 0 ? synth_get_ram(g_synth) : i == 1 ? (const uint8_t *)g_saveNote : 0;
+}
 
 /* Turbo (optional guest ABI group): the host says nobody will look at the next
  * frames. The synth machine's picture IS its VRAM domain, which the witness
@@ -579,7 +655,8 @@ ECL_EXPORT const char *GetGameProperties(void)
 		snprintf(g_propsNow + at, sizeof g_propsNow - at, "] }");
 		return g_propsNow;
 	}
-	return "{ \"properties\": ["
+	/* the steps taken stand in for a game's own timer (docs/game-cores.md, "gameTimer") */
+	return "{ \"gameTimer\": \"Steps\", \"properties\": ["
 		"{ \"name\": \"Status\", \"domain\": \"RAM\", \"offset\": 0, \"type\": \"u8\", \"group\": \"Game\","
 		" \"values\": { \"0\": \"Playing\", \"1\": \"Won\", \"2\": \"Lost\" },"
 		" \"description\": \"Every test rom's result byte\" },"
@@ -657,6 +734,73 @@ ECL_EXPORT const char *ImportMovie(void)
 	}
 	snprintf(g_import + o, sizeof g_import - o, "[/Input]\\n\", \"frames\": %ld}", frames);
 	return g_import;
+}
+
+/* What this core would choose for a game before a project is final
+ * (ce_project_suggest_settings): called INSTEAD of Init, for a package that declares
+ * "suggestSettings". The synth suggests one value, with a note saying where
+ * it comes from, so a frontend's suggestion step can be tested. The note
+ * also says what it was shown - the disks in the slot map, a cue's track,
+ * the disk speed chosen so far - since a core is asked with the files and
+ * settings picked so far. And the game has a setting of its own and, with
+ * that setting on, a firmware file of its own; each answer also repeats a
+ * package setting and a package firmware, which a frontend drops. A game
+ * whose file ends in NOFILL gets none of it: nothing suggested, nothing of
+ * its own - so a frontend can be seen taking back another game's. */
+static char g_suggestion[2048];
+ECL_EXPORT const char *SuggestSettings(void)
+{
+	uint32_t romLen = 0;
+	uint8_t *rom = read_rom(&romLen);
+	const int nofill = rom && romLen >= 6 && memcmp(rom + romLen - 6, "NOFILL", 6) == 0;
+	free(rom);
+	if (nofill) return "{\"values\": {}, \"note\": \"The synthetic core suggests nothing for this game.\"}";
+	char slots[512] = "";
+	FILE *f = fopen("slots", "rb");
+	if (f) {
+		size_t n = fread(slots, 1, sizeof slots - 1, f);
+		slots[n] = 0;
+		fclose(f);
+	}
+	char seen[160] = "";
+	const char *disks = strstr(slots, "\"disk\"");
+	if (disks) {
+		int count = 0;
+		for (const char *p = strchr(disks, '['); p && *p && *p != ']'; p++)
+			if (*p == '.') count++;
+		FILE *track = fopen("disk1.bin", "rb");
+		if (track) fclose(track);
+		snprintf(seen, sizeof seen, " It sees %d disk%s%s, at disk speed %ld.", count, count == 1 ? "" : "s",
+			track ? " and the track of disk1.cue" : "", wbx_setting_long("diskSpeed", 1));
+	}
+	/* what reached it, for a test to see: the game the project gave it, its
+	 * size, and the fill byte in the project's settings (a frontend ignores it) */
+	char name[128] = "";
+	f = fopen("rom.name", "rb");
+	if (f) {
+		size_t n = fread(name, 1, sizeof name - 1, f);
+		name[n] = 0;
+		fclose(f);
+	}
+	long size = 0;
+	f = name[0] ? fopen(name, "rb") : NULL;
+	if (f) {
+		fseek(f, 0, SEEK_END);
+		size = ftell(f);
+		fclose(f);
+	}
+	snprintf(g_suggestion, sizeof g_suggestion,
+		"{\"values\": {\"initFillByte\": 9}, \"note\": \"The synthetic core suggests a fill of 9.%s\","
+		" \"settings\": [{\"name\": \"gameLogo\", \"display\": \"Game Logo\", \"type\": \"enum\","
+		" \"options\": [\"off\", \"on\"], \"default\": \"off\", \"sync\": true,"
+		" \"description\": \"This game's own: shows its logo, from a file of its own.\"},"
+		" {\"name\": \"initFillByte\", \"display\": \"Not the package's\", \"type\": \"int\", \"default\": 1}],"
+		" \"firmware\": [{\"id\": \"gamelogo\", \"display\": \"Game logo\", \"name\": \"gamelogo.bin\","
+		" \"requiredWhen\": {\"setting\": \"gameLogo\", \"is\": \"on\"}},"
+		" {\"id\": \"bios\", \"display\": \"Not the package's\", \"name\": \"other.bin\", \"required\": true}],"
+		" \"seen\": \"game %s, %ld bytes, fill %ld\"}",
+		seen, name[0] ? name : "none", size, wbx_setting_long("initFillByte", 0));
+	return g_suggestion;
 }
 
 int main(void) { return 0; }

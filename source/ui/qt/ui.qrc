@@ -1,0 +1,180 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/chimera">
+    <file>Main.qml</file>
+    <file>MenuDivider.qml</file>
+    <file>MenuEntry.qml</file>
+    <file>ProjectSettings.qml</file>
+    <file>RollTable.qml</file>
+    <file>McpServer.qml</file>
+    <file alias="chimera.png">../../gui/Chimera.Client.GUI/images/chimera.png</file>
+    <file alias="icons/arrow_green.png">../../gui/Chimera.Client.GUI/images/arrow_green.png</file>
+    <file alias="icons/arrow_black_down.png">../../gui/Chimera.Client.GUI/images/arrow_black_down.png</file>
+    <file alias="icons/Pause.png">../../gui/Chimera.Client.GUI/images/Pause.png</file>
+    <file alias="icons/Stop.png">../../gui/Chimera.Client.GUI/images/Stop.png</file>
+    <file alias="icons/NewFile.png">../../gui/Chimera.Client.GUI/images/NewFile.png</file>
+    <file alias="icons/OpenFile.png">../../gui/Chimera.Client.GUI/images/OpenFile.png</file>
+    <file alias="icons/Help.png">../../gui/Chimera.Client.GUI/images/Help.png</file>
+    <file alias="icons/checkbox.png">../../gui/Chimera.Client.GUI/images/checkbox.png</file>
+    <file alias="icons/Refresh.png">../../gui/Chimera.Client.GUI/images/Refresh.png</file>
+    <file alias="icons/pencil.png">../../gui/Chimera.Client.GUI/images/pencil.png</file>
+    <file alias="icons/Delete.png">../../gui/Chimera.Client.GUI/images/Delete.png</file>
+    <file alias="icons/Duplicate.png">../../gui/Chimera.Client.GUI/images/Duplicate.png</file>
+    <file alias="icons/clear_console.png">../../gui/Chimera.Client.GUI/images/clear_console.png</file>
+    <file alias="icons/MoveUp.png">../../gui/Chimera.Client.GUI/images/MoveUp.png</file>
+    <file alias="icons/MoveDown.png">../../gui/Chimera.Client.GUI/images/MoveDown.png</file>
+    <file alias="icons/InsertSeparator.png">../../gui/Chimera.Client.GUI/images/InsertSeparator.png</file>
+    <file alias="icons/Erase.png">../../gui/Chimera.Client.GUI/images/Erase.png</file>
+    <file alias="icons/SaveAs.png">../../gui/Chimera.Client.GUI/images/SaveAs.png</file>
+    <file alias="icons/Recent.png">../../gui/Chimera.Client.GUI/images/Recent.png</file>
+    <file alias="icons/Close.png">../../gui/Chimera.Client.GUI/images/Close.png</file>
+    <file alias="icons/Cut.png">../../gui/Chimera.Client.GUI/images/CutHS.png</file>
+    <file alias="icons/addWatch.ico">../../gui/Chimera.Client.GUI/images/addWatch.ico</file>
+    <file alias="icons/poke.png">../../gui/Chimera.Client.GUI/images/poke.png</file>
+    <file alias="icons/Freeze.png">../../gui/Chimera.Client.GUI/images/Freeze.png</file>
+    <file alias="icons/Unfreeze.png">../../gui/Chimera.Client.GUI/images/Unfreeze.png</file>
+    <file alias="icons/MoveTop.png">../../gui/Chimera.Client.GUI/images/MoveTop.png</file>
+    <file alias="icons/MoveBottom.png">../../gui/Chimera.Client.GUI/images/MoveBottom.png</file>
+    <file alias="icons/Split.png">../../gui/Chimera.Client.GUI/images/Split.png</file>
+    <file alias="icons/ExclamationRed.png">../../gui/Chimera.Client.GUI/images/ExclamationRed.png</file>
+    <file alias="icons/placeholder.png">../../gui/Chimera.Client.GUI/images/placeholder_bitmap.png</file>
+    <file alias="icons/Save.png">../../gui/Chimera.Client.GUI/images/Save.png</file>
+    <file alias="icons/search.png">../../gui/Chimera.Client.GUI/images/search.png</file>
+    <file alias="icons/restart.png">../../gui/Chimera.Client.GUI/images/restart.png</file>
+    <file alias="icons/Previous.png">../../gui/Chimera.Client.GUI/images/Previous.png</file>
+    <file alias="icons/Find.png">../../gui/Chimera.Client.GUI/images/FindHS.png</file>
+    <file alias="icons/undo.png">../../gui/Chimera.Client.GUI/images/undo.png</file>
+    <file alias="icons/redo.png">../../gui/Chimera.Client.GUI/images/redo.png</file>
+    <file alias="icons/reboot.png">../../gui/Chimera.Client.GUI/images/reboot.png</file>
+    <file alias="icons/Paste.png">../../gui/Chimera.Client.GUI/images/Paste.png</file>
+    <file>RamSearch.qml</file>
+    <file>RamWatch.qml</file>
+    <file>RamPoke.qml</file>
+    <file>HexEditor.qml</file>
+    <file>HotkeyConfig.qml</file>
+    <file>BindingBox.qml</file>
+    <file>ControllerConfig.qml</file>
+    <file>Themes.qml</file>
+    <file alias="themes/light.json">../../gui/Chimera.Client.Common/Resources/themes/light.json</file>
+    <file alias="themes/dark.json">../../gui/Chimera.Client.Common/Resources/themes/dark.json</file>
+    <file>SettingsList.qml</file>
+    <file>NewProject.qml</file>
+    <file>MovieImport.qml</file>
+    <file>LuaConsole.qml</file>
+    <file>WindowOptions.qml</file>
+    <file>TAStudio.qml</file>
+    <file>EncodeVideo.qml</file>
+    <file>LuaForms.qml</file>
+    <file>Shapes.js</file>
+    <file>ProjectDetails.qml</file>
+    <file>UndoHistory.qml</file>
+    <file>TAStudioSettings.qml</file>
+    <file>LogWindow.qml</file>
+    <file>ReportIssue.qml</file>
+    <file>MediaMaker.qml</file>
+    <file>CacheManager.qml</file>
+    <file>Customize.qml</file>
+    <file>MessagesConfig.qml</file>
+    <file>SoundConfig.qml</file>
+    <file>DisplayConfig.qml</file>
+    <file>GreenzoneBudgets.qml</file>
+    <file>PathsConfig.qml</file>
+    <file>FirmwareConfig.qml</file>
+    <file>DataFolderConfig.qml</file>
+    <file>PrecompiledModules.qml</file>
+    <file>TraceLogger.qml</file>
+    <file>Debugger.qml</file>
+    <file>SurfaceViewer.qml</file>
+    <file>MacroTool.qml</file>
+    <file>ProjectFiles.qml</file>
+    <file>Cores.qml</file>
+    <file alias="icons/AddEdit.png">../../gui/Chimera.Client.GUI/images/AddEdit.png</file>
+    <file alias="icons/Debugger.png">../../gui/Chimera.Client.GUI/images/Debugger.png</file>
+    <file alias="icons/updateBranch.png">../../gui/Chimera.Client.GUI/images/updateBranch.png</file>
+    <file alias="icons/updateWithText.png">../../gui/Chimera.Client.GUI/images/updateWithText.png</file>
+    <file alias="icons/JumpTo.png">../../gui/Chimera.Client.GUI/images/JumpTo.png</file>
+    <file alias="icons/ScrollTo.png">../../gui/Chimera.Client.GUI/images/ScrollTo.png</file>
+    <file alias="icons/Clock.png">../../gui/Chimera.Client.GUI/images/Clock.png</file>
+    <file alias="icons/add.png">../../gui/Chimera.Client.GUI/images/add.png</file>
+    <!-- the main window's status bar, as Chimera's -->
+    <file alias="status/Play.png">../../gui/Chimera.Client.GUI/images/Play.png</file>
+    <file alias="status/Record.png">../../gui/Chimera.Client.GUI/images/RecordHS.png</file>
+    <file alias="status/Pause.png">../../gui/Chimera.Client.GUI/images/Pause.png</file>
+    <file alias="status/Seeking.png">../../gui/Chimera.Client.GUI/images/YellowRight.png</file>
+    <file alias="status/TurboSeeking.png">../../gui/Chimera.Client.GUI/images/Lightning.png</file>
+    <file alias="status/Capture.png">../../gui/Chimera.Client.GUI/images/AVI.png</file>
+    <file alias="status/LightOn.png">../../gui/Chimera.Client.GUI/images/LightOn.png</file>
+    <file alias="status/LightOff.png">../../gui/Chimera.Client.GUI/images/LightOff.png</file>
+    <file alias="status/Frozen.png">../../gui/Chimera.Client.GUI/images/Freeze.png</file>
+    <file alias="status/Sound.png">../../gui/Chimera.Client.GUI/images/AudioHS.png</file>
+    <file alias="status/Muted.png">../../gui/Chimera.Client.GUI/images/AudioMuted.png</file>
+    <file alias="status/KeysBoth.png">../../gui/Chimera.Client.GUI/images/Both.png</file>
+    <file alias="status/KeysButtons.png">../../gui/Chimera.Client.GUI/images/GameController.png</file>
+    <file alias="status/KeysHotkeys.png">../../gui/Chimera.Client.GUI/images/HotKeys.png</file>
+    <file alias="status/Reboot.png">../../gui/Chimera.Client.GUI/images/reboot.png</file>
+    <!-- the menus' icons, by the names Chimera's MenuIcons.cs gives them -->
+    <file alias="menu/NewProject.png">../../gui/Chimera.Client.GUI/images/NewFile.png</file>
+    <file alias="menu/OpenProject.png">../../gui/Chimera.Client.GUI/images/OpenFile.png</file>
+    <file alias="menu/RecentProjects.png">../../gui/Chimera.Client.GUI/images/Recent.png</file>
+    <file alias="menu/SaveProject.png">../../gui/Chimera.Client.GUI/images/Save.png</file>
+    <file alias="menu/SaveProjectAs.png">../../gui/Chimera.Client.GUI/images/SaveAs.png</file>
+    <file alias="menu/SaveProjectBackup.png">../../gui/Chimera.Client.GUI/images/Duplicate.png</file>
+    <file alias="menu/CloseProject.png">../../gui/Chimera.Client.GUI/images/Close.png</file>
+    <file alias="menu/EncodeVideo.png">../../gui/Chimera.Client.GUI/images/AVI.png</file>
+    <file alias="menu/Screenshot.png">../../gui/Chimera.Client.GUI/images/camera.png</file>
+    <file alias="menu/ScreenshotAs.png">../../gui/Chimera.Client.GUI/images/SaveAs.png</file>
+    <file alias="menu/Pause.png">../../gui/Chimera.Client.GUI/images/Pause.png</file>
+    <file alias="menu/RebootCore.png">../../gui/Chimera.Client.GUI/images/reboot.png</file>
+    <file alias="menu/Fullscreen.png">../../gui/Chimera.Client.GUI/images/Fullscreen.png</file>
+    <file alias="menu/LogWindow.png">../../gui/Chimera.Client.GUI/images/textdoc.png</file>
+    <file alias="menu/Controllers.png">../../gui/Chimera.Client.GUI/images/GameController.png</file>
+    <file alias="menu/Hotkeys.png">../../gui/Chimera.Client.GUI/images/HotKeys.png</file>
+    <file alias="menu/Display.png">../../gui/Chimera.Client.GUI/images/tvIcon.png</file>
+    <file alias="menu/Sound.png">../../gui/Chimera.Client.GUI/images/AudioHS.png</file>
+    <file alias="menu/Paths.png">../../gui/Chimera.Client.GUI/images/CopyFolderHS.png</file>
+    <file alias="menu/Messages.png">../../gui/Chimera.Client.GUI/images/MessageConfig.png</file>
+    <file alias="menu/Autofire.png">../../gui/Chimera.Client.GUI/images/Lightning.png</file>
+    <file alias="menu/SaveConfig.png">../../gui/Chimera.Client.GUI/images/Save.png</file>
+    <file alias="menu/SaveConfigAs.png">../../gui/Chimera.Client.GUI/images/SaveAs.png</file>
+    <file alias="menu/LoadConfig.png">../../gui/Chimera.Client.GUI/images/LoadConfig.png</file>
+    <file alias="menu/LoadConfigFrom.png">../../gui/Chimera.Client.GUI/images/OpenFile.png</file>
+    <file alias="menu/KeyPriority.png">../../gui/Chimera.Client.GUI/images/Both.png</file>
+    <file alias="menu/SpeedSkip.png">../../gui/Chimera.Client.GUI/images/Clock.png</file>
+    <file alias="menu/RamSearch.png">../../gui/Chimera.Client.GUI/images/search.png</file>
+    <file alias="menu/LuaConsole.png">../../gui/Chimera.Client.GUI/images/textdoc.png</file>
+    <file alias="menu/TAStudio.png">../../gui/Chimera.Client.GUI/images/TAStudio.png</file>
+    <file alias="menu/HexEditor.png">../../gui/Chimera.Client.GUI/images/poke.png</file>
+    <file alias="menu/Debugger.png">../../gui/Chimera.Client.GUI/images/Bug.png</file>
+    <file alias="menu/MacroTool.png">../../gui/Chimera.Client.GUI/images/RecordHS.png</file>
+    <file alias="menu/OnlineHelp.png">../../gui/Chimera.Client.GUI/images/Help.png</file>
+    <file alias="menu/About.png">../../gui/Chimera.Client.GUI/images/ChimeraSmall.png</file>
+    <file alias="menu/CopyVersionInfo.png">../../gui/Chimera.Client.GUI/images/Duplicate.png</file>
+    <file alias="menu/ReportIssue.png">../../gui/Chimera.Client.GUI/images/Bug.png</file>
+    <file alias="menu/CacheManager.png">menu-icons/CacheManager.png</file>
+    <file alias="menu/CoreManager.png">menu-icons/CoreManager.png</file>
+    <file alias="menu/Customize.png">menu-icons/Customize.png</file>
+    <file alias="menu/DataDirectory.png">menu-icons/DataDirectory.png</file>
+    <file alias="menu/Firmware.png">menu-icons/Firmware.png</file>
+    <file alias="menu/MediaMaker.png">menu-icons/MediaMaker.png</file>
+    <file alias="menu/PrecompiledModules.png">menu-icons/PrecompiledModules.png</file>
+    <file alias="menu/ThemePalette.png">menu-icons/ThemePalette.png</file>
+    <file alias="menu/WindowSize.png">menu-icons/WindowSize.png</file>
+    <file alias="menu/RestartMovie.png">../../gui/Chimera.Client.GUI/images/restart.png</file>
+    <file alias="menu/StopMovie.png">../../gui/Chimera.Client.GUI/images/Stop.png</file>
+    <file alias="menu/SaveMovie.png">../../gui/Chimera.Client.GUI/images/SaveAs.png</file>
+    <file alias="menu/RamWatch.png">menu-icons/Watch.png</file>
+    <file alias="menu/McpServer.png">menu-icons/McpServer.png</file>
+    <file alias="menu/McpServerStarted.png">menu-icons/McpServerStarted.png</file>
+    <file alias="menu/CoreLog.png">menu-icons/CoreLog.png</file>
+    <file alias="menu/CoreLogOn.png">menu-icons/CoreLogOn.png</file>
+  </qresource>
+  <!-- Chimera's style: Fusion, with the system's check boxes and radio buttons, as Chimera's, scroll bars always seen, and dialogs that end a headless run -->
+  <qresource prefix="/qt/qml/ChimeraStyle">
+    <file alias="qmldir">style/qmldir</file>
+    <file alias="CheckBox.qml">style/CheckBox.qml</file>
+    <file alias="Dialog.qml">style/Dialog.qml</file>
+    <file alias="RadioButton.qml">style/RadioButton.qml</file>
+    <file alias="ScrollBar.qml">style/ScrollBar.qml</file>
+    <file alias="ScrollView.qml">style/ScrollView.qml</file>
+  </qresource>
+</RCC>

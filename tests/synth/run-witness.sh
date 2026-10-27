@@ -857,8 +857,10 @@ assert a['input'].startswith('[Input]') and a['input'].rstrip().endswith('[/Inpu
 			> "$qdir/none.chimeraProject"
 		qnone="$("$chimera_run" --project "$qdir/none.chimeraProject" "$epkg" --suggest 2>>"$qdir/suggest.err")"
 		"$chimera_run" "$epkg" "$here/roms/gridWalker.testrom" --suggest > "$qdir/alone.log" 2>&1; qalone=$?
-		if [ "$qanswer" = "{\"values\": {\"initFillByte\": $((qsize % 256))}, \"note\": \"game gridWalker.testrom, $qsize bytes, fill 5\"}" ] \
-			&& [ "$qnone" = '{"values": {"initFillByte": 0}, "note": "game none, 0 bytes, fill 9"}' ] \
+		# (the synth answers a fill of 9, and "seen" says what reached it)
+		if printf '%s' "$qanswer" | grep -q '^{"values": {"initFillByte": 9}, "note": "The synthetic core suggests a fill of 9."' \
+			&& printf '%s' "$qanswer" | grep -qF "\"seen\": \"game gridWalker.testrom, $qsize bytes, fill 5\"" \
+			&& printf '%s' "$qnone" | grep -qF '"seen": "game none, 0 bytes, fill 9"' \
 			&& [ "$qalone" -ne 0 ] && grep -q "a game runs only in a project" "$qdir/alone.log"; then
 			report "E:suggest" PASS "the core's suggestion is asked of a project: its game ($qsize bytes) and its settings reach the core; one with no game yet is asked too; a game file alone is refused"
 		else
@@ -2396,7 +2398,7 @@ REOPENPY
 		( cd "$repo_root" && timeout 300 mono "$emu_exe" --import-movie "$hdir/import.json" "$hdir/import.answer.json" ) > "$hdir/import.log" 2>&1; hirc=$?
 		hframes="$(grep -c '^|' "$here/movies/gridWalker.win.txt")"
 		hwrong=""
-		grep -q "{\"values\": {\"initFillByte\": $((hsize % 256))}, \"note\": \"game gridWalker.testrom, $hsize bytes, fill 5\"}" "$hdir/suggest.out" \
+		grep -q '{"values": {"initFillByte": 9}, "note": "The synthetic core suggests a fill of 9."' "$hdir/suggest.out" \
 			|| hwrong="$hwrong suggest(rc $hsrc)"
 		{ [ "$hprc" -eq 0 ] && grep -q '^Precompiled 6/6 modules' "$hdir/precompile.log" \
 			&& [ "$(find "$hdir/cache" -type f -name 'module*.bin' | wc -l | tr -d ' ')" = 6 ]; } || hwrong="$hwrong precompile(rc $hprc)"

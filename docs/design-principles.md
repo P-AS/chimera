@@ -11283,3 +11283,209 @@ chose.
 Tests: a new hotkey test feeds the three old names and checks that each
 binding (an unbound one too) comes back under its new name; with one
 renaming taken out it failed. Interface tests 1,213, 0 failed.
+
+## The window's review before it replaces Chimera's (user-decided, 2026-10-26)
+
+A last review of the Qt window's view models, read beside Chimera's own
+code, before the window takes Chimera's place. The owner asked for every
+finding to be fixed, each with a test seen to fail once; three were the
+owner's to decide:
+
+- **The window is named "Chimera"** (user-decided): its settings and
+  caches are kept under Chimera's name, and its single instance is found
+  by Chimera's own mutex and pipe names. What it kept under its old name
+  stays there; nothing is moved.
+- **Open Project, Close Project, Load Last Project** (user-decided): the
+  hotkeys Chimera called Open ROM, Close ROM and Load Last ROM are named
+  for what they open now, in Chimera and in the window. A binding saved
+  under an old name is read as the new one.
+- **Movie import runs on a project** too (recorded in the section above).
+
+What was wrong, and is fixed:
+
+- A project's open told the window the machine was open, and only in a
+  later step which project it was. Anything done in between met no project,
+  and recording turned on in that moment was turned off by the project's
+  arrival (it starts every project read only). The project is now known in
+  the same step, just before the machine is said to be open. This was seen
+  as tests that failed only while the machine was busy with other work.
+- TAStudio: the last project's undo history and selection stayed after
+  another opened; a run count too long for a number ended the program
+  ("On x99999999999999999999"); a marker set was not a step of the undo
+  history; the row past the movie's end, which Chimera's shows empty, was
+  missing; painting and filling had no limit on how many frames.
+- Branches: taking back a removal left the "current branch" mark on the
+  wrong branch. Macro Tool: zones outlived the project they were made in,
+  and a zone set after a removal could take the name of one still there.
+- Lua, as Chimera's .NET library answers: booleans print as True and
+  False, numbers as .NET writes them; joypad.set takes 1 and 0, and false
+  lets a button go even when a key holds it; emu.getsystemid gives the
+  system's id; a register that is not there reads 0; the bit operations
+  work on 32 bits with shifts modulo 32; client.openproject says false for
+  a file that is no project; movie.getinput gives nothing past the end;
+  emu.frameadvance in an event callback is an error, not a hang.
+- Numbers: the settings file's reader took text such as "1-2" for a
+  number, and wrote and read numbers by the system's locale, so a decimal
+  comma broke them; a whole number too big for 64 bits ended the program;
+  NaN and infinity were written as text no JSON reader takes.
+- Pre-Compiled Modules / Cache Manager: a cache folder with nothing in it
+  counted as the most recently used one. The cause was the file clock,
+  which counts today as a negative number, so "0" for "never" was the
+  future. It now keeps the least time.
+- Windows: the program declares UTF-8 as its code page (chimera.manifest),
+  and the trace logger opens its file by its wide name, so a path with
+  letters outside the system's code page opens. Not yet tried on Windows.
+- The hex editor's File on Disk mode, which could not write what it
+  showed, is gone; the RAM search and watch follow the domain and the
+  machine; the network check covers the window's sources too.
+
+Tests: 2,749 view-model checks and the window's own tests, 39 of 39
+passed. With the fixes undone, the new checks failed (the JSON grammar,
+the hotkey names, the project known at open, the empty last row, marker
+undo, the run count, the history after another project, the zones, the
+Lua lines, the empty cache folder, the branch mark); with the number fixes
+undone the test program ended on the oversized numbers, the bug itself.
+
+## The window takes Chimera's command line, drops and stopped core (2026-10-26)
+
+The rest of the review's findings, where the window did less than Chimera:
+
+- **Dropped files open by their kind**, as Chimera's do: a game starts New
+  Project, a watch list opens in RAM Watch, a Lua session or script in the
+  Lua Console, a project opens. Several files of one kind open none, and a
+  state or cheat file does not open by dropping; both are said. Before, any
+  file dropped started New Project, a project file too. The sorting is in
+  the view model (sortFiles), so it is tested without a window.
+- **Chimera's command line**: --project, --core, --config, --firmware,
+  --fullscreen, --chromeless, --luaconsole and --version, beside the
+  window's own (a project and its package named). Three files, or a second
+  file that is not a package, are refused. --config naming Chimera's own
+  settings file is refused: the window would have set it aside as
+  unreadable or written over it. --firmware gives a file for this run, used
+  by its hash where the project pins one, else as given, as Chimera's.
+  --headless, --audiosync and --dump-* are not taken yet.
+- **A second start hands over** the project and the package named after
+  it; the package was dropped before. As in Chimera, the first file opens
+  and the window is not raised.
+- **The core stopped** is asked as Chimera asks it: the frame, what the
+  sandbox said, the frozen addresses switched off, and four ways on - back
+  to the latest safe point, run again from frame 0, save the inputs and
+  close, or close without saving with the work kept against a crash. The
+  window only said it in the status line before.
+- A test of it found that opening another game left the last game's
+  freezes in the window's list (the machine's were cleared, but the count
+  that decides whether to tell the window was taken after clearing). It had
+  passed only because the dead machine had dropped the freeze already.
+- Found to match Chimera already, and left: "(ported)" on every core's
+  tooltip (every Chimera core is a ported one), and the single-instance
+  hand-over opening only the first file.
+
+Tests: 40 of 40 passed, 2,760 view-model checks, and a new command-line
+test (9 checks). Breaking the drop sorting, the run's firmware, the
+--config refusal, the --show message, the stopped state and the freeze
+fix each failed its check.
+
+## The release opens no console, ships a cores folder, and Export Core Log is in Help (user-decided, 2026-10-27)
+
+The owner tried the window's Windows release and asked for three changes.
+
+- **No console window in a release.** chimera-qt.exe was a console program,
+  so a black console window opened beside the window. A release is now a
+  window program (meson's win_subsystem, from the build's debug option); a
+  debug build keeps its console. Started from a console, a release still
+  writes there (--version, --help, what it refuses): it joins the console it
+  was started from, as Chimera does, and output sent to a file or a pipe
+  stays where it was sent. The programs it starts (chimera-run, ffmpeg)
+  were already started without a window of their own.
+- **A cores folder.** The folder tools/stage-qt-windows.py makes now has an
+  empty cores/ (the window's default place for core packages) with a
+  README.txt that says what goes in it and where to get it, since Chimera
+  ships no core and downloads none.
+- **Export Core Log moved to Help**, beside Report an Issue, which asks for
+  that log; the divider over it in Tools went with it. It has an icon now, a
+  log page with Chimera's bug, drawn by tools/draw-core-log-icon.py, and the
+  tick that showed the log was kept became a green dot on the icon, as MCP
+  Server's icon shows its server running. A row with a tick has no icon in
+  Chimera's menus. The README, the bug report form and docs/issue-intake.md
+  name the new place.
+
+Tested: 40 of 40 tests on Linux. The window test fails on a missing icon:
+naming the new one wrongly failed it. The Windows program is now marked a
+window program; --version and a refusal still print through a pipe. Not
+tried: a release started from an open cmd window (the check was not run
+here), and the icon with the log on, which no test shows.
+
+## Scroll bars always seen; the clock start is one of the settings (user-decided, 2026-10-27)
+
+- **Scroll bars.** Fusion's scroll bars show only while they are used and
+  fade away after, so a long list of settings in New Project did not say it
+  scrolled. The window's style (source/ui/qt/style) now draws every scroll
+  bar, with its groove, all the time there is more to scroll to, in every
+  window. Scroll views keep their content clear of their bars, which Fusion
+  draws over the content's edge. Text that wraps never scrolls sideways: its
+  width, taken before the vertical bar took its room, had shown a sideways
+  bar for a few pixels. Configure Hotkeys now shows that its grid scrolls
+  sideways, which it always did.
+- **The machine's clock start** was a row of its own under the settings in
+  New Project and Project Settings, seen whatever was scrolled. It is now
+  the last row of the settings list, laid out as the others and scrolled
+  with them. It is the project's, offered for every core, and no core has a
+  row of its own outside the list.
+
+Tested: 40 of 40 tests. A page drawn with the style (30 settings, the clock
+row, wrapped text) and the Theme and Configure Hotkeys windows were
+captured without the pointer over them: the bars are there, and seen in the
+Dark theme. Not seen: AppleWin's own settings, which need its package and a
+game.
+
+## The program is chimera, on Windows and Linux (user-decided, 2026-10-27)
+
+The window's program was chimera-qt (chimera-qt.exe on Windows), its name
+from when it was a prototype beside Chimera. It replaces Chimera, so it is
+now chimera and chimera.exe. What it says on the command line starts with
+"chimera:". The library the Windows program loads from lib\ keeps its
+name, chimera-qt-app.dll: no one starts it, and the launcher names it.
+
+Tested: 40 of 40 tests on Linux, which run the program by its new name;
+the Windows build makes chimera.exe, staged and started (--version).
+
+## The window takes --headless, for runs nobody watches (user-decided, 2026-10-27)
+
+Before the window replaces Chimera's, the cores' tests have to run on it:
+55 of their workflows start Chimera's C# window with --headless. The owner
+chose to give the window that mode first. It does what Chimera's
+HeadlessMode does:
+
+- **No window is shown**, and it draws off screen (Qt's offscreen
+  platform, chosen before Qt starts), so it needs no display: no Xvfb on
+  Linux, nothing on the desktop on Windows. The offscreen platform ships in
+  the Windows folder for it.
+- **What would wait for a person ends the run**, said on stderr in
+  Chimera's words: any dialog (exit 64, its caption and text); a project
+  whose files were not found (64, the files named); a script's file picker
+  (64); New Project from a game (64). The window's style makes every
+  dialog, so one hook in the style (style/Dialog.qml) covers them all.
+- **The core stopped** ends the run with 65, the reason said and the work
+  kept against a crash, as Chimera's.
+- **Work a crash left** is said ("[recovery] ...") and the project opens as
+  it was last saved; the recovered copy stays.
+- It takes nothing handed over by another start, hands nothing over, and
+  puts nothing in the taskbar's recent list.
+
+Two differences from Chimera's found on the way, now as Chimera's in every
+run: a script's client.exit leaves without asking, its unsaved changes let
+go and said ("[tastudio] closing unattended with unsaved changes; the
+project on disk is unchanged"); and client.invisibleemulation runs frames
+undrawn for that run only, where Display Nothing is the person's
+remembered setting.
+
+The compile step RPCS3's test starts with Chimera's --precompile is the
+window's chimera-run already (chimera-run --precompile), so the window has
+no option for it.
+
+Tested: a new test (headless, 7 checks): a project run with no display and
+Qt told nothing, a script's unattended exit, a core stopped (65), files not
+found (64), a file picker (64), and work a killed run left. Breaking the
+offscreen start failed 6; breaking the other five behaviours together
+failed 6. 41 of 41 tests. On Windows, a headless run of a project with a
+script, from WSL, showed no window and ended 0.
