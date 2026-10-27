@@ -35,6 +35,6 @@ labels: bug
 - [ ] the `.chimeraProject` (it names every file by hash, and carries the inputs)
 - [ ] a screenshot
 - [ ] for a crash: the three files Chimera writes - `<date> pid<N>.txt` and `.dmp` from the data directory's `Crashes` folder (Config > Data Directory... opens it), and `minibox-diag.log` from next to `Chimera.exe`
-- [ ] the core's log: **Tools > Export Core Log...**, choose where to save it and let the core reboot, do what shows the problem, then **Tools > Export Core Log...** again to turn it off, and attach the file
+- [ ] the core's log: **Help > Export Core Log...**, choose where to save it and let the core reboot, do what shows the problem, then **Help > Export Core Log...** again to turn it off, and attach the file
 
 - [ ] I tried the newest nightly

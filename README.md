@@ -193,7 +193,7 @@ reports before anybody opens a debugger:
   `minibox-diag.log` next to `Chimera.exe`. Attach all three: the note
   carries the faulting instruction and the machine's last words, and two of
   three crashes in one recent report were fixed off those files alone.
-- **The core's log.** Tools > Export Core Log... keeps everything the core
+- **The core's log.** Help > Export Core Log... keeps everything the core
   says in a file you choose; it is off until asked for, and reboots the core
   so the log starts at boot. Use it again to turn it off, and attach the file.
 

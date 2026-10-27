@@ -11370,3 +11370,33 @@ Tests: 40 of 40 passed, 2,760 view-model checks, and a new command-line
 test (9 checks). Breaking the drop sorting, the run's firmware, the
 --config refusal, the --show message, the stopped state and the freeze
 fix each failed its check.
+
+## The release opens no console, ships a cores folder, and Export Core Log is in Help (user-decided, 2026-10-27)
+
+The owner tried the window's Windows release and asked for three changes.
+
+- **No console window in a release.** chimera-qt.exe was a console program,
+  so a black console window opened beside the window. A release is now a
+  window program (meson's win_subsystem, from the build's debug option); a
+  debug build keeps its console. Started from a console, a release still
+  writes there (--version, --help, what it refuses): it joins the console it
+  was started from, as Chimera does, and output sent to a file or a pipe
+  stays where it was sent. The programs it starts (chimera-run, ffmpeg)
+  were already started without a window of their own.
+- **A cores folder.** The folder tools/stage-qt-windows.py makes now has an
+  empty cores/ (the window's default place for core packages) with a
+  README.txt that says what goes in it and where to get it, since Chimera
+  ships no core and downloads none.
+- **Export Core Log moved to Help**, beside Report an Issue, which asks for
+  that log; the divider over it in Tools went with it. It has an icon now, a
+  log page with Chimera's bug, drawn by tools/draw-core-log-icon.py, and the
+  tick that showed the log was kept became a green dot on the icon, as MCP
+  Server's icon shows its server running. A row with a tick has no icon in
+  Chimera's menus. The README, the bug report form and docs/issue-intake.md
+  name the new place.
+
+Tested: 40 of 40 tests on Linux. The window test fails on a missing icon:
+naming the new one wrongly failed it. The Windows program is now marked a
+window program; --version and a refusal still print through a pipe. Not
+tried: a release started from an open cmd window (the check was not run
+here), and the icon with the log on, which no test shows.

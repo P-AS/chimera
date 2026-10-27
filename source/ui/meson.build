@@ -269,6 +269,9 @@ if qt_dep.found()
     chimera_qt = executable(
       'chimera-qt',
       ['qt/launcher.c', qt_icon],
+      # a release opens no console window beside the window; a debug build
+      # keeps one for what the window writes
+      win_subsystem: get_option('debug') ? 'console' : 'windows',
       install: true,
       install_dir: 'dll',
     )

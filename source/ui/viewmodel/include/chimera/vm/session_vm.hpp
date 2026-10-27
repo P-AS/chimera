@@ -191,7 +191,7 @@ public:
 	bool renderSurface(int32_t index, Picture &into);
 	Property<bool> showGameTime{false};
 	Property<std::string> gameTimeText;
-	/* Chimera's Tools > Export Core Log: what the cores write, kept in a
+	/* Export Core Log (Help > Export Core Log...): what the cores write, kept in a
 	 * file only when asked and never remembered (each run starts with it
 	 * off; the engine keeps it, ce_core_log). The file while it is on, ""
 	 * while it is off */

@@ -8,8 +8,28 @@
 #include <stdio.h>
 #include <wchar.h>
 
+/* A release is a window program, with no console of its own. Started from a
+ * console, it writes there all the same (--version, --help, what it refuses),
+ * as Chimera does; output sent to a file or a pipe stays where it was sent. */
+static void writeToParentConsole(void)
+{
+	if (GetConsoleWindow() != NULL) return;
+	DWORD kinds[3] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
+	BOOL had[3];
+	for (int i = 0; i < 3; i++)
+	{
+		HANDLE h = GetStdHandle(kinds[i]);
+		had[i] = h != NULL && h != INVALID_HANDLE_VALUE && GetFileType(h) != FILE_TYPE_UNKNOWN;
+	}
+	if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;
+	if (!had[0]) freopen("CONIN$", "r", stdin);
+	if (!had[1]) freopen("CONOUT$", "w", stdout);
+	if (!had[2]) freopen("CONOUT$", "w", stderr);
+}
+
 int main(int argc, char **argv)
 {
+	writeToParentConsole();
 	wchar_t dir[MAX_PATH], lib[MAX_PATH], app[MAX_PATH];
 	DWORD n = GetModuleFileNameW(NULL, dir, MAX_PATH);
 	if (n == 0 || n >= MAX_PATH) return 1;

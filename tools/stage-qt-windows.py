@@ -5,7 +5,8 @@ import (from Qt or the compiler), found by reading their import tables, and
 the themes Chimera ships.
 Everything is stripped of debug information, as it would ship.
 
-The folder holds the program (chimera-qt.exe, a launcher) and the themes;
+The folder holds the program (chimera-qt.exe, a launcher), the themes and an
+empty cores/ with a README.txt that says what goes in it;
 every DLL, Qt's plugins and QML are in lib/, and the other programs
 (chimera-run, chimera-mcp, ffmpeg, the tests) in bin/.
 
@@ -45,6 +46,20 @@ shutil.copy2(f"{qt}/plugins/platforms/qwindows.dll", f"{lib}/platforms")
 # the themes Chimera ships, in the place Chimera keeps them: beside the program
 here = os.path.dirname(os.path.abspath(__file__))
 shutil.copytree(os.path.join(here, "..", "Themes"), f"{out}/themes")
+# the folder the window reads core packages from, empty but for what it is for:
+# Chimera ships no core and downloads none (docs/core-manager.md)
+os.makedirs(f"{out}/cores")
+with open(f"{out}/cores/README.txt", "w", newline="\r\n") as f:
+    f.write("""Put Chimera's cores in this folder.
+
+A core is what runs one kind of machine or game in Chimera. Each comes as one
+file whose name ends in .chimeraCore. Chimera ships no core and downloads
+none: get the .chimeraCore file of each core you want from that core's own
+releases page (the tables of cores at https://github.com/ToolAssisted-run/chimera#cores
+link them), and drop the file here as it is, without unpacking it.
+
+Tools > Core Manager... lists the cores Chimera finds here.
+""")
 
 # QML: QtQml, QtCore and the QtQuick modules the window imports. Of the
 # control styles only Fusion (the one used) and Basic (every style's fallback).

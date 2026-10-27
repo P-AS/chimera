@@ -52,7 +52,7 @@ Chimera's own by default (issue 340).
 - Attach: the .chimeraProject (inputs are small; it names every file by hash),
   a screenshot, and for a crash the three files Chimera writes:
   `<date> pid<N>.txt` (crash note), the `.dmp`, and `minibox-diag.log` - all
-  three, every time. And the core's log: Tools > Export Core Log..., which
+  three, every time. And the core's log: Help > Export Core Log..., which
   is off until asked for and reboots the core so the log covers it from boot.
 - Checkbox: "I tried the newest nightly" (required).
 

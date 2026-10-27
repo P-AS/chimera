@@ -165,6 +165,8 @@
     <file alias="menu/RamWatch.png">menu-icons/Watch.png</file>
     <file alias="menu/McpServer.png">menu-icons/McpServer.png</file>
     <file alias="menu/McpServerStarted.png">menu-icons/McpServerStarted.png</file>
+    <file alias="menu/CoreLog.png">menu-icons/CoreLog.png</file>
+    <file alias="menu/CoreLogOn.png">menu-icons/CoreLogOn.png</file>
   </qresource>
   <!-- Chimera's style: Fusion, with the system's check boxes and radio buttons, as Chimera's -->
   <qresource prefix="/qt/qml/ChimeraStyle">

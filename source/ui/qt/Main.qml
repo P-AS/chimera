@@ -591,23 +591,6 @@ ApplicationWindow {
                 Action { id: luaConsoleAction; property string hotkey: "Lua Console"; text: qsTr("Lua Console"); icon.source: "qrc:/chimera/menu/LuaConsole.png"; onTriggered: { root.bring(luaConsoleWindow) } }
                 Action { id: hexEditorAction; property string hotkey: "Hex Editor"; text: qsTr("&Hex Editor"); icon.source: "qrc:/chimera/menu/HexEditor.png"; onTriggered: { root.bring(hexEditorWindow) } }
                 Action { text: qsTr("&Macro Tool"); icon.source: "qrc:/chimera/menu/MacroTool.png"; enabled: root.session.isOpen; onTriggered: { root.bring(macroToolWindow) } }
-                MenuDivider {}
-                // ticked while the core log is kept; off until asked, every run
-                Action {
-                    text: qsTr("Export Core &Log...")
-                    checkable: true
-                    checked: root.session.coreLogPath !== ""
-                    onTriggered: {
-                        checked = Qt.binding(() => root.session.coreLogPath !== "")
-                        if (root.session.coreLogPath !== "") {
-                            coreLogOffDialog.size = root.session.run("coreLogSize")
-                            coreLogOffDialog.open()
-                        } else {
-                            coreLogFileDialog.selectedFile = "file:///" + root.session.run("coreLogName")
-                            coreLogFileDialog.open()
-                        }
-                    }
-                }
             }
             // Chimera's Emulator menu, Game for a game core: only what the core
             // open offers, and gone when it offers nothing
@@ -655,6 +638,21 @@ ApplicationWindow {
                     onTriggered: { root.clipboard.setText(root.help.run("versionReport")); root.note(qsTr("Version info copied")) }
                 }
                 Action { text: qsTr("&Report an Issue..."); icon.source: "qrc:/chimera/menu/ReportIssue.png"; onTriggered: { root.bring(reportIssueWindow) } }
+                // beside the report it goes with (owner, 2026-10-27); off until asked, every run.
+                // A log page with a bug, and the green dot MCP Server's icon has while the log is kept
+                Action {
+                    text: qsTr("Export Core &Log...")
+                    icon.source: root.session.coreLogPath !== "" ? "qrc:/chimera/menu/CoreLogOn.png" : "qrc:/chimera/menu/CoreLog.png"
+                    onTriggered: {
+                        if (root.session.coreLogPath !== "") {
+                            coreLogOffDialog.size = root.session.run("coreLogSize")
+                            coreLogOffDialog.open()
+                        } else {
+                            coreLogFileDialog.selectedFile = "file:///" + root.session.run("coreLogName")
+                            coreLogFileDialog.open()
+                        }
+                    }
+                }
                 Action { text: qsTr("&About..."); icon.source: "qrc:/chimera/menu/About.png"; onTriggered: aboutWindow.show() }
             }
         }
@@ -1037,7 +1035,7 @@ ApplicationWindow {
         modal: true
         standardButtons: Dialog.Yes | Dialog.No
         Label {
-            text: qsTr("The core log is on. Reboot the core now, so the log covers it from the start? Some cores keep their full log only from boot.\n\nThen do what shows the problem, and come back to Tools > Export Core Log... to turn it off.")
+            text: qsTr("The core log is on. Reboot the core now, so the log covers it from the start? Some cores keep their full log only from boot.\n\nThen do what shows the problem, and come back to Help > Export Core Log... to turn it off.")
             wrapMode: Text.WordWrap
             width: 420
         }
@@ -1050,7 +1048,7 @@ ApplicationWindow {
         modal: true
         standardButtons: Dialog.Ok
         Label {
-            text: qsTr("The core log is on. Load the game and do what shows the problem, then come back to Tools > Export Core Log... to turn it off.")
+            text: qsTr("The core log is on. Load the game and do what shows the problem, then come back to Help > Export Core Log... to turn it off.")
             wrapMode: Text.WordWrap
             width: 420
         }
