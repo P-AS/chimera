@@ -7,6 +7,7 @@
  * nothing else ran). */
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <clocale>
@@ -20,6 +21,7 @@
 #include <deque>
 #include <functional>
 #include <map>
+#include <memory>
 #include <utility>
 #include <mutex>
 #include <regex>
@@ -6902,6 +6904,55 @@ void frameColumnColours()
  * OnFrameEnd function sees every frame, one after another, and what it holds
  * in OnFrameStart is that frame's input; its reads of memory and of the
  * window's view models answer on the way */
+/* The scripts' turns replaced while one of them waits on the window, as the
+ * window does when it closes while a script asks it for something: the
+ * replacement waits until that turn is over. It was done from inside the
+ * wait, and the turn running was freed under it (a crash at the window's
+ * exit, 2026-10-27). What the turn finds after its wait is kept outside it,
+ * in these, so a turn freed early reads none of its own */
+static std::atomic<bool> turnArmed{false}, turnEntered{false}, turnAlive{false}, turnFinished{false};
+static std::weak_ptr<int> turnOwnPart;
+
+bool turnsReplacedWhileOneRuns(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	auto part = std::make_shared<int>(1);
+	turnOwnPart = part;
+	session.setScriptTurns({}, [&session, part = std::move(part)] {
+		if (!turnArmed.exchange(false)) return;
+		turnEntered = true;
+		session.onWindowWait([] {});
+		turnAlive = !turnOwnPart.expired();
+		turnFinished = true;
+	});
+	std::string error;
+	openGame(session, package, std::string(rom), error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	turnArmed = true;
+	session.run("play", {}, error);
+	/* the window not answering yet: the turn waits on it */
+	const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+	while (!turnEntered && std::chrono::steady_clock::now() < end) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	CHECK(turnEntered.load());
+	/* another thread replaces the turns, and is not let through while the turn waits */
+	std::atomic<bool> replaced{false};
+	std::thread other([&] {
+		session.setScriptTurns({}, {});
+		replaced = true;
+	});
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+	CHECK(!replaced.load());
+	/* the window answers: the turn ends whole, then the turns are replaced */
+	CHECK(d.until([&] { return replaced.load(); }, 30));
+	other.join();
+	CHECK(turnFinished.load() && turnAlive.load());
+	session.run("pause", {}, error);
+	CHECK(d.until([&] { return !session.running.get(); }, 5));
+	return true;
+}
+
 bool scriptsOnMachine(const char *package, const char *rom)
 {
 	ManualDispatcher d;
@@ -9443,6 +9494,7 @@ int main(int argc, char **argv)
 			ranMachine = recordingMode(argv[1], argv[2]) && ranMachine;
 			ranMachine = freezes(argv[1], argv[2]) && ranMachine;
 			ranMachine = scriptsOnMachine(argv[1], argv[2]) && ranMachine;
+			ranMachine = turnsReplacedWhileOneRuns(argv[1], argv[2]) && ranMachine;
 			ranMachine = ramWatch(argv[1], argv[2]) && ranMachine;
 			ranMachine = hexEditor(argv[1], argv[2]) && ranMachine;
 			ranMachine = pianoRollEditing(argv[1], argv[2]) && ranMachine;

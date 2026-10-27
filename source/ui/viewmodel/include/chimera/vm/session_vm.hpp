@@ -894,11 +894,15 @@ private:
 	std::mutex m_;
 	std::condition_variable cv_;
 	/* the machine's jobs in order; `waited` for one a thread waits on, which
-	 * the machine's thread also does while it waits on the window */
+	 * the machine's thread also does while it waits on the window, unless it
+	 * is `betweenTurns`: one that replaces the scripts' turns waits until the
+	 * script that waits on the window is done (one replaced while it ran was
+	 * freed under it, and the scripts went while the machine was in one) */
 	struct Job
 	{
 		bool waited;
 		std::function<void()> run;
+		bool betweenTurns = false;
 	};
 	std::deque<Job> jobs_;
 	/* behind m_ too: the jobs the machine's thread waits on the window for */
@@ -912,7 +916,7 @@ private:
 	/* the window's jobs, done on its thread (from the dispatcher, or while it waits) */
 	void serveWindowJobs();
 	/* job on the machine's thread, waited for */
-	void waitOnMachine(const std::function<void()> &job);
+	void waitOnMachine(const std::function<void()> &job, bool betweenTurns = false);
 	std::function<void()> scriptsBeforeM_, scriptsAfterM_;
 	std::function<bool()> scriptsWantedM_;
 	std::function<bool(int64_t)> futureTurnM_;

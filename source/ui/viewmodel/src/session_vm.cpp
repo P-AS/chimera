@@ -3577,7 +3577,7 @@ void SessionViewModel::onProjectWait(ProjectJob job)
 	waitOnMachine([&] { job(projectM_); });
 }
 
-void SessionViewModel::waitOnMachine(const std::function<void()> &job)
+void SessionViewModel::waitOnMachine(const std::function<void()> &job, bool betweenTurns)
 {
 	if (onMachineThread())
 	{
@@ -3596,7 +3596,7 @@ void SessionViewModel::waitOnMachine(const std::function<void()> &job)
 			*done = true;
 		}
 		cv_.notify_all();
-	}});
+	}, betweenTurns});
 	cv_.notify_all();
 	for (;;)
 	{
@@ -3641,7 +3641,7 @@ bool SessionViewModel::onWindowWait(const std::function<void()> &job)
 	/* while it waits, the machine's thread does the jobs a thread waits on
 	 * it for: what the window does for the script may ask the machine. Only
 	 * those: the rest (a frame, a seek) wait until the script's turn is over */
-	auto waited = [this] { return std::find_if(jobs_.begin(), jobs_.end(), [](const Job &j) { return j.waited; }); };
+	auto waited = [this] { return std::find_if(jobs_.begin(), jobs_.end(), [](const Job &j) { return j.waited && !j.betweenTurns; }); };
 	for (;;)
 	{
 		cv_.wait(lock, [&] { return *done || waited() != jobs_.end() || quit_; });
@@ -3679,12 +3679,12 @@ void SessionViewModel::setScriptTurns(std::function<void()> before, std::functio
 	waitOnMachine([&] {
 		scriptsBeforeM_ = std::move(before);
 		scriptsAfterM_ = std::move(after);
-	});
+	}, true);
 }
 
 void SessionViewModel::setFutureTurn(std::function<bool(int64_t played)> turn)
 {
-	waitOnMachine([&] { futureTurnM_ = std::move(turn); });
+	waitOnMachine([&] { futureTurnM_ = std::move(turn); }, true);
 }
 
 void SessionViewModel::showFutureOnMachine()
@@ -3735,7 +3735,7 @@ void SessionViewModel::setScriptIdle(std::function<bool()> wanted, std::function
 	waitOnMachine([&] {
 		scriptsWantedM_ = std::move(wanted);
 		scriptsIdleM_ = std::move(idle);
-	});
+	}, true);
 }
 
 void SessionViewModel::scriptTurnOnMachine(const std::function<void()> &turn)
