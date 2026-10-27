@@ -10475,3 +10475,16 @@ words in comments and documents:
 Tested: meson test, the end-to-end test and the Windows cross-build on the
 change; a test of the saved project's TAStudio part (no type name, an old
 one dropped), and the Lua Functions List's types, updated.
+
+## NOTICE says what still comes from BizHawk (user-decided, 2026-10-27)
+
+NOTICE said that the BizHawk team's frontend and its libraries remain in
+Chimera. They do not: the code has been written anew. The owner asked for
+that statement to go. What Chimera does keep from BizHawk's MIT-licensed work
+is named instead - the Lua functions' names and descriptions (`lua_docs.inc`
+holds BizHawk's own words for them), the format of a movie's input, and the
+names of keys and controls - and the MIT License requires the BizHawk team's
+copyright notice to stay with those parts, so LICENSE keeps that line,
+limited to them. The vendored test suite NOTICE also named is gone from the
+tree, and so is its line. CREDITS.md, the README and the bundle's
+LICENSES.md say the same.

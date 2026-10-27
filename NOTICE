@@ -1,14 +1,11 @@
-Chimera is a derivative fork of BizHawk (https://github.com/TASEmulators/BizHawk).
-
-The upstream BizHawk repository combines an MIT-licensed frontend by the
-BizHawk team with many emulation cores under a variety of licenses, and its
-license file therefore describes the whole as a heterogeneous combination. In
-this fork, all emulation cores and their support machinery have been removed:
-what remains is the BizHawk team's original MIT-licensed work - the frontend
-and its supporting libraries - plus Chimera's own modifications and new work,
-which are provided under the same MIT License. Copyright in the code inherited
-from BizHawk belongs to the BizHawk team; copyright in Chimera's modifications
-and in all new work authored for Chimera belongs to Sergio Martin.
+Chimera began as a fork of BizHawk (https://github.com/TASEmulators/BizHawk),
+and its code has since been written anew. What it keeps from the BizHawk
+team's MIT-licensed work is the Lua functions' names and descriptions
+(source/ui/viewmodel/src/lua_docs.inc), the format of a movie's input that it
+reads and writes, and the names it gives keys and controls. Copyright in those
+parts belongs to the BizHawk team; copyright in everything else in this
+repository, apart from the exceptions below, belongs to Sergio Martin. Both
+are provided under the MIT License.
 
 Exceptions, clearly separable from the MIT-licensed sources:
 
@@ -21,9 +18,5 @@ Exceptions, clearly separable from the MIT-licensed sources:
   as external, self-contained packages, each carrying its own license (a core
   package derived from a GPL emulator is a GPL work, for example). Consult
   each package's own license.
-- tests/suite is a vendored regression suite whose provenance and
-  licensing (including TASVideos movies under CC-BY 2.0) are described in
-  tests/suite/README.md.
 
-The terms themselves are in LICENSE: the MIT License, for all of the BizHawk
-team's original work and for Chimera's modifications and new work.
+The terms themselves are in LICENSE: the MIT License.

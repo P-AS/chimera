@@ -13,7 +13,7 @@ The sixty colour themes in [Themes](Themes) were made by **Nelson/Geferulf**, wh
 
 ## BizHawk
 
-Chimera is a derivative fork of [BizHawk](https://github.com/TASEmulators/BizHawk). The frontend architecture, the TAS toolchain, the emulation service interfaces, and years of accumulated correctness are the work of the BizHawk team, and this project would not exist without them.
+Chimera began as a fork of [BizHawk](https://github.com/TASEmulators/BizHawk). Its Lua functions, its movie format and much of how a TAS is made with it come from the BizHawk team's work, and this project would not exist without them.
 
 Every BizHawk contributor is credited through the upstream contributors list: [github.com/TASEmulators/BizHawk/graphs/contributors](https://github.com/TASEmulators/BizHawk/graphs/contributors).
 

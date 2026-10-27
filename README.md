@@ -207,4 +207,4 @@ Pull requests are welcome, from people and from people working with AI assistant
 
 ## Credits and license
 
-**Chimera is a derivative of [BizHawk](https://github.com/TASEmulators/BizHawk).** Chimera is provided under the MIT License, preserving the BizHawk team's copyright; see [LICENSE](LICENSE) for the terms and [NOTICE](NOTICE) for whose work it is and what the terms do not cover: the native libraries built from `extern/`, the vendored test suite, and why core packages carry their own licenses. The people behind Chimera itself are in [CREDITS.md](CREDITS.md).
+**Chimera began as a fork of [BizHawk](https://github.com/TASEmulators/BizHawk).** It is provided under the MIT License, keeping the BizHawk team's copyright on the parts that come from BizHawk; see [LICENSE](LICENSE) for the terms and [NOTICE](NOTICE) for whose work it is and what the terms do not cover: the native libraries built from `extern/`, and why core packages carry their own licenses. The people behind Chimera itself are in [CREDITS.md](CREDITS.md).
