@@ -43,6 +43,10 @@ std::vector<const FirmwareFile *> hintCandidates(const json::Json &decl, const s
 struct FirmwareNeed
 {
 	std::string id, display;
+	/* which entry of the package's "firmware" array this is: entries may
+	 * share an id and differ in when they are needed (one dump per version
+	 * of a program a setting picks) */
+	size_t declIndex = 0;
 	/* the file found, empty when none, and its hash */
 	std::string path, how, sha1;
 	/* false: the package says the core starts without it (an optional

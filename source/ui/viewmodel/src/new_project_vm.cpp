@@ -889,9 +889,8 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			 * file of the person's own instead and the project pins its hash,
 			 * as Chimera's New Project does */
 			std::string declared;
-			for (const Json &f : firmwareDecls().items)
-				if (const Json *i = f.find("id"); i != nullptr && i->text == id)
-					if (const Json *h = f.find("sha1")) declared = h->text;
+			if (const Json decls = firmwareDecls(); need->declIndex < decls.items.size())
+				if (const Json *h = decls.items[need->declIndex].find("sha1")) declared = h->text;
 			const bool custom = !declared.empty() && lower(declared) != lower(sha);
 			const Json *kind = cfg_.find("kind");
 			const bool gameCore = kind != nullptr && lower(kind->text) == "game";
@@ -924,10 +923,9 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			const std::vector<FirmwareFile> found = indexFirmware({folder}, recurse, 10000);
 			firmwareIndex_.insert(firmwareIndex_.end(), found.begin(), found.end());
 			const Json decls = firmwareDecls();
-			auto declOf = [&](const std::string &id) -> const Json * {
-				for (const Json &f : decls.items)
-					if (const Json *i = f.find("id"); i != nullptr && i->text == id) return &f;
-				return nullptr;
+			/* the entry the page asks for, not another with its id (#390) */
+			auto declOf = [&](const Need &n) -> const Json * {
+				return n.declIndex < decls.items.size() ? &decls.items[n.declIndex] : nullptr;
 			};
 			auto named = [&](const Json &d) -> const FirmwareFile * {
 				const Json *n = d.find("name");
@@ -940,7 +938,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			 * person keeps firmware, if the folder set is not there (#293) */
 			bool any = false;
 			for (const Need &n : needs_)
-				if (const Json *d = declOf(n.id))
+				if (const Json *d = declOf(n))
 				{
 					std::string how;
 					any = any || findFirmware(*d, "", found, how) != nullptr || named(*d) != nullptr;
@@ -950,7 +948,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			const std::vector<Need> needs = needs_;
 			for (const Need &n : needs)
 			{
-				const Json *d = declOf(n.id);
+				const Json *d = declOf(n);
 				if (!n.path.empty() || d == nullptr) continue;
 				if (const Json *sha = d->find("sha1"); sha != nullptr && !sha->text.empty())
 				{
@@ -1410,18 +1408,18 @@ void NewProjectViewModel::finishForAgent(const AgentRequest &request, const std:
 			setMember(item, "name", Json::string(n->display));
 			Json accepted;
 			accepted.kind = Json::Kind::Array;
-			for (const Json &d : decls.items)
-				if (const Json *i = d.find("id"); i != nullptr && i->text == n->id)
-				{
-					Json file;
-					const Json *name = d.find("name");
-					const Json *size = d.find("size");
-					const Json *sha = d.find("sha1");
-					setMember(file, "file", Json::string(name != nullptr ? name->text : ""));
-					setMember(file, "size", size != nullptr ? *size : Json());
-					setMember(file, "sha1", Json::string(sha != nullptr ? sha->text : ""));
-					accepted.items.push_back(file);
-				}
+			if (n->declIndex < decls.items.size())
+			{
+				const Json &d = decls.items[n->declIndex];
+				Json file;
+				const Json *name = d.find("name");
+				const Json *size = d.find("size");
+				const Json *sha = d.find("sha1");
+				setMember(file, "file", Json::string(name != nullptr ? name->text : ""));
+				setMember(file, "size", size != nullptr ? *size : Json());
+				setMember(file, "sha1", Json::string(sha != nullptr ? sha->text : ""));
+				accepted.items.push_back(file);
+			}
 			setMember(item, "accepted", accepted);
 			o.missing.items.push_back(item);
 		}
@@ -2313,17 +2311,20 @@ void NewProjectViewModel::evaluate()
 	for (const FirmwareNeed &n : neededFirmware(firmwareDecl, settingsDecl, map, recorded, none, firmwareIndex_))
 	{
 		Need need{n.id, n.display.empty() ? n.id : n.display, n.path, n.how, n.sha1};
+		need.declIndex = n.declIndex;
 		std::string declared;
-		for (const Json &f : firmwareDecl.items)
-			if (const Json *i = f.find("id"); i != nullptr && i->text == n.id)
-			{
-				if (const Json *h = f.find("sha1")) declared = h->text;
-				auto text = [&f](const char *k) { const Json *j = f.find(k); return j != nullptr ? j->text : std::string(); };
-				need.name = text("name");
-				need.label = text("label");
-				need.description = text("description");
-				if (const Json *r = f.find("required")) need.required = r->boolean;
-			}
+		/* the entry the engine chose: entries may share an id, one for each
+		 * version a setting picks, and only this one is wanted */
+		if (n.declIndex < firmwareDecl.items.size())
+		{
+			const Json &f = firmwareDecl.items[n.declIndex];
+			if (const Json *h = f.find("sha1")) declared = h->text;
+			auto text = [&f](const char *k) { const Json *j = f.find(k); return j != nullptr ? j->text : std::string(); };
+			need.name = text("name");
+			need.label = text("label");
+			need.description = text("description");
+			if (const Json *r = f.find("required")) need.required = r->boolean;
+		}
 		need.declSha1 = declared;
 		if (auto it = chosenFirmware_.find(n.id); it != chosenFirmware_.end())
 		{

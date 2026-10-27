@@ -678,6 +678,20 @@ void firmware()
 	const auto needs = neededFirmware(fwDecl, setDecl, "{}", on, noPins, index);
 	CHECK(needs.size() == 1 && needs[0].id == "b" && needs[0].path.find("BIOS.BIN") != std::string::npos && needs[0].sha1.size() == 40);
 	CHECK(needs[0].required);
+	/* entries that share an id, one for each version a setting picks: the
+	 * one the setting's value calls for, its default when nothing is chosen
+	 * (issue 390), never another with the same id */
+	{
+		const json::Json versions = decl(R"([{"id":"player","display":"Player 32","sha1":"AAAA","requiredWhen":{"setting":"build","is":"32"}},
+			{"id":"player","display":"Player 24","sha1":"BBBB","requiredWhen":{"setting":"build","is":"24"}}])");
+		const json::Json buildDecl = decl(R"([{"name":"build","type":"enum","options":["32","24"],"default":"32"}])");
+		json::Json old;
+		json::parse(R"({"build":"24"})", old, how);
+		const auto standard = neededFirmware(versions, buildDecl, "{}", none, noPins, index);
+		const auto older = neededFirmware(versions, buildDecl, "{}", old, noPins, index);
+		CHECK(standard.size() == 1 && standard[0].declIndex == 0 && standard[0].display == "Player 32");
+		CHECK(older.size() == 1 && older[0].declIndex == 1 && older[0].display == "Player 24");
+	}
 	/* one the package says the core starts without, not found: listed, and
 	 * not required, so an open does not refuse for it (as Chimera's) */
 	{
@@ -7488,7 +7502,8 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(wizard.problems.get() == "One of these is needed: Disks\nBoard B BIOS: not found in the firmware folder; choose its file");
 	/* the firmware page: asked, its columns and what is missing in Chimera's words */
 	CHECK(wizard.firmwareAsked.get() && wizard.firmwareMissing.get() == "Board B BIOS");
-	CHECK(text("firmware", 0, 5) == "Board B BIOS" && text("firmware", 0, 8) == "not found");
+	/* the fast disks' own BIOS, of the two entries named bios (issue 390) */
+	CHECK(text("firmware", 0, 5) == "Board B BIOS  (fast disks)" && text("firmware", 0, 6) == "boardbfast.bin" && text("firmware", 0, 8) == "not found");
 	/* a cue whose track is not beside it is said at once; names a slot asks for */
 	std::ofstream(dir / "disk1.cue") << "FILE \"disk1.bin\" BINARY\n  TRACK 01 MODE1/2048\n    INDEX 01 00:00:00\n";
 	CHECK(!wizard.run("addFile", {std::string("disk"), (dir / "disk1.cue").string()}, error) && error == "disk1.cue references disk1.bin, which is not next to it - a cue's files are added together");
@@ -7500,6 +7515,7 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(wizard.run("addFile", {std::string("disk"), (dir / "disk2.img").string()}, error).has_value());
 	CHECK(wizard.run("moveFile", {std::string("disk"), int64_t{1}, int64_t{0}}, error).has_value() && text("slots", 1, 7) == "disk2.img\ndisk1.cue");
 	CHECK(wizard.run("set", {std::string("diskSpeed"), int64_t{3}}, error).has_value());
+	CHECK(rowCount("firmware") == 1 && text("firmware", 0, 5) == "Board B BIOS" && text("firmware", 0, 6) == "boardb.bin");
 	CHECK(!wizard.run("set", {std::string("board"), std::string("a")}, error));
 	/* the core is asked about the game with what is chosen so far: the slot
 	 * map, the other files and a cue's tracks, the settings */
@@ -9027,7 +9043,7 @@ bool firmwareWindow(const char *package, const char *slotsPackage, const char *b
 		{
 			std::string folds;
 			for (int64_t r = 0; r < lines.rowCount(); r++) folds += text(r, 4) + "|";
-			CHECK(folds == "(needs no firmware)|+ Synth Bios: 10 files|+ Synth Slots: 1 file|+ Synth Game: 1 file|");
+			CHECK(folds == "(needs no firmware)|+ Synth Bios: 10 files|+ Synth Slots: 2 files|+ Synth Game: 1 file|");
 		}
 		CHECK(fw.run("expandAll", {}, error).has_value() && lineOf("Board B BIOS", "") >= 0);
 		/* Open Folder: the folder of the file found; none for a line with no file */
@@ -9047,11 +9063,13 @@ bool firmwareWindow(const char *package, const char *slotsPackage, const char *b
 	}
 	fs::remove_all(dir / "Firmware" / "Synth");
 	fw.run("refresh", {}, error);
-	/* a declaration with no hash, needed for one board: what it says in full */
+	/* a declaration with no hash, needed for one board: what it says in
+	 * full; the other entry of its id is a line of its own, by its label */
 	const int64_t boardB = lineOf("Board B BIOS", "");
-	CHECK(boardB >= 0 && text(boardB, 5) == "when board = b" && text(boardB, 6) == "(any)" && text(boardB, 9) == "not found");
+	CHECK(boardB >= 0 && text(boardB, 5) == "when board = b and not diskSpeed = 4" && text(boardB, 6) == "(any)" && text(boardB, 9) == "not found");
+	CHECK(lineOf("Board B BIOS", "fast disks") >= 0);
 	fw.picked.set(boardB);
-	CHECK(fw.detail.get() == "Board B BIOS, 0 bytes\na file called boardb.bin, any bytes · needed when board = b\nnothing yet" &&
+	CHECK(fw.detail.get() == "Board B BIOS, 0 bytes\na file called boardb.bin, any bytes · needed when board = b and not diskSpeed = 4\nnothing yet" &&
 		  fw.canSet.get() && !fw.canClear.get() && fw.pickTitle.get() == "Synth Slots: Board B BIOS");
 	CHECK(!fw.run("setFile", {lineOf("Board B BIOS", ""), (dir / "none.bin").string()}, error) && error == (dir / "none.bin").string() + " is not a file");
 	CHECK(!fw.run("setFile", {int64_t{0}, (dir / "none.bin").string()}, error) && error == "line 0 is not a firmware file");

@@ -57,8 +57,15 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
                  "extensions": {".cue": "SynthB", ".img": "SynthB"},
                  "settingOverrides": {"port": {"options": ["pad", "none"], "default": "none"}}},
             ]
+            # two entries share an id, a setting picking which (issue 390):
+            # the fastest disks want a BIOS of their own
             cfg["firmware"] = [{"id": "bios", "display": "Board B BIOS", "name": "boardb.bin",
-                                "requiredWhen": {"setting": "board", "is": "b"}}]
+                                "requiredWhen": {"all": [{"setting": "board", "is": "b"},
+                                                         {"not": {"setting": "diskSpeed", "is": 4}}]}},
+                               {"id": "bios", "display": "Board B BIOS", "label": "fast disks", "name": "boardbfast.bin",
+                                "sha1": "7CDBA0191F422D615674D790C6E1047F65B17F76",
+                                "requiredWhen": {"all": [{"setting": "board", "is": "b"},
+                                                         {"setting": "diskSpeed", "is": 4}]}}]
             # presets: one for every board (with a value for no setting, and the
             # board, which is not a preset's to move), one for board B alone
             cfg["presets"] = [

@@ -199,6 +199,8 @@ private:
 		 * whether the machine runs without it */
 		std::string name, label, description, declSha1;
 		bool required = true;
+		/* its entry in the package's "firmware" array (FirmwareNeed's) */
+		size_t declIndex = 0;
 	};
 
 	class SlotRows : public RowModel
