@@ -660,6 +660,23 @@ void firmware()
 	/* two different dumps the hints point at: both candidates, for the person to choose (issue 349) */
 	CHECK(hintCandidates(decl(R"({"id":"c","size":16,"nameHints":["7i"]})"), indexFirmware({dir.string()})).size() == 2);
 	CHECK(hintCandidates(decl(R"({"id":"c","size":16,"nameHints":["7i"],"sha1":"00"})"), indexFirmware({dir.string()})).empty());
+	/* a name and a size declared: the file of that name and that size, not
+	 * another machine's of the same name found first (issue 379: the PC-88's
+	 * font.rom taken for the PC-98's FONT.ROM) */
+	{
+		const fs::path fonts = dir.string() + "-fonts";
+		fs::create_directories(fonts / "pc88");
+		fs::create_directories(fonts / "pc98");
+		write(fonts / "pc88" / "font.rom", std::string(2048, 'x'));
+		write(fonts / "pc98" / "font.rom", std::string(4096, 'y'));
+		const auto both = indexFirmware({(fonts / "pc88").string(), (fonts / "pc98").string()});
+		f = findFirmware(decl(R"({"id":"FONT.ROM","name":"FONT.ROM","size":4096,"nameHints":["font"]})"), "", both, how);
+		CHECK(f != nullptr && f->size == 4096 && how == "by its name");
+		/* only the other machine's: not found, for the person to choose */
+		CHECK(findFirmware(decl(R"({"id":"FONT.ROM","name":"FONT.ROM","size":4096})"), "", indexFirmware({(fonts / "pc88").string()}), how) == nullptr);
+		std::error_code ec;
+		fs::remove_all(fonts, ec);
+	}
 	{
 		/* said in the Firmware window as Chimera says it */
 		FirmwareViewModel::Row row;

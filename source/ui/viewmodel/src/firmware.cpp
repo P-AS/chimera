@@ -101,10 +101,12 @@ const FirmwareFile *findFirmware(const Json &decl, const std::string &pinnedSha1
 			}
 		return nullptr;
 	}
+	/* by its name, and its size where the package gives one: a file of the
+	 * same name and another size is another machine's (issue 379) */
 	const std::string name = lower(text(decl, "name"));
 	if (!name.empty())
 		for (const FirmwareFile &f : index)
-			if (lower(f.name) == name)
+			if (lower(f.name) == name && (size == 0 || f.size == size))
 			{
 				how = "by its name";
 				return &f;

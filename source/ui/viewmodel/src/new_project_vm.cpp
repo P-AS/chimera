@@ -934,8 +934,11 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			auto named = [&](const Json &d) -> const FirmwareFile * {
 				const Json *n = d.find("name");
 				if (n == nullptr || n->text.empty()) return nullptr;
+				/* and its size, where the package gives one (issue 379) */
+				const Json *sz = d.find("size");
+				const int64_t size = sz != nullptr ? static_cast<int64_t>(sz->number()) : 0;
 				for (const FirmwareFile &f : found)
-					if (lower(f.name) == lower(n->text)) return &f;
+					if (lower(f.name) == lower(n->text) && (size == 0 || f.size == size)) return &f;
 				return nullptr;
 			};
 			/* a file this page asks for is in that folder: it is where the
