@@ -2,9 +2,9 @@
  * session and piano roll view models. Everything a window does here goes
  * through the view models' registries, so a script could do the same.
  *
- *   chimera-qt [<package> <game> | <project> [<package>]] [--fill <frames>] [--play]
- *              [--measure <seconds>] [--scroll] [--screenshot <path>]
- *              [--lua <script>] [--describe]
+ *   chimera [<project> [<package>] | --project <project> [--core <package>]]
+ *           [--fill <frames>] [--play] [--measure <seconds>] [--scroll]
+ *           [--screenshot <path>] [--lua <script>] [--describe]
  *
  * --measure runs for that long and prints what it measured, then quits:
  * frames the machine ran, pictures drawn, the window's frame intervals and,
@@ -324,7 +324,7 @@ int main(int argc, char **argv)
 	/* Fusion, with Chimera's check boxes and radio buttons and scroll bars always seen (style/, built in) */
 	QQuickStyle::setStyle(QStringLiteral("ChimeraStyle"));
 #ifndef _WIN32
-	/* Chimera's icon on every window; on Windows it is the program's own (chimera-qt.rc), at every size */
+	/* Chimera's icon on every window; on Windows it is the program's own (chimera.rc), at every size */
 	QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/chimera/chimera.png")));
 #endif
 
@@ -374,7 +374,7 @@ int main(int argc, char **argv)
 	if (named.size() > 2 || (named.size() == 2 && (!isProject(named[0]) || !named[1].endsWith(QStringLiteral(".chimeraCore"), Qt::CaseInsensitive))) ||
 		(args.isSet(projectOpt) && !named.isEmpty() && isProject(named[0])))
 	{
-		std::fprintf(stderr, "chimera-qt: a game opens only in a project: name a .chimeraProject, and its core package (.chimeraCore) "
+		std::fprintf(stderr, "chimera: a game opens only in a project: name a .chimeraProject, and its core package (.chimeraCore) "
 							 "when it is not installed\n");
 		return 2;
 	}
@@ -408,7 +408,7 @@ int main(int argc, char **argv)
 		std::string why;
 		if (given.open(QIODevice::ReadOnly) && vm::json::parse(given.readAll().toStdString(), root, why) && vm::isChimeraSettings(root))
 		{
-			std::fprintf(stderr, "chimera-qt: %s is Chimera's settings file, which this window does not write; "
+			std::fprintf(stderr, "chimera: %s is Chimera's settings file, which this window does not write; "
 								 "Config > Load Config From... carries its settings over\n", qPrintable(configPath));
 			return 2;
 		}
@@ -1577,7 +1577,7 @@ int main(int argc, char **argv)
 			const QString asked = args.value(showOpt);
 			const auto *found = std::find_if(std::begin(tools), std::end(tools), [&asked](const auto &t) { return asked == QLatin1String(t.first); });
 			if (found != std::end(tools)) show(found->second);
-			else std::fprintf(stderr, "chimera-qt: --show %s: no tool window has that name\n", qPrintable(asked));
+			else std::fprintf(stderr, "chimera: --show %s: no tool window has that name\n", qPrintable(asked));
 		}
 		if (args.isSet(luaOpt) || args.isSet(luaConsoleOpt)) show("luaConsoleWindow");
 	}

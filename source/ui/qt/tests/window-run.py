@@ -4,7 +4,7 @@ killed before would leave its work there to be offered back at the next
 open, and the window would wait on the question. The window is killed when
 it outlives the time given, so none is left running.
 
-  window-run.py <folder> <seconds> <chimera-qt> [arguments...]
+  window-run.py <folder> <seconds> <chimera> [arguments...]
 """
 import os
 import shutil

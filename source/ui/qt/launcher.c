@@ -62,7 +62,7 @@ int main(int argc, char **argv)
 	{
 		DWORD code = GetLastError();
 		wchar_t text[MAX_PATH + 160];
-		_snwprintf(text, MAX_PATH + 160, L"Chimera could not load %ls (error %lu).\nIs the lib folder beside chimera-qt.exe?", app, code);
+		_snwprintf(text, MAX_PATH + 160, L"Chimera could not load %ls (error %lu).\nIs the lib folder beside chimera.exe?", app, code);
 		text[MAX_PATH + 159] = L'\0';
 		fwprintf(stderr, L"%ls\n", text);
 		MessageBoxW(NULL, text, L"Chimera", MB_ICONERROR);

@@ -4,7 +4,7 @@
 # --core, opened and run; what is not a project and its package refused, as
 # is Chimera's own settings file named with --config, left as it was;
 # --chromeless and --luaconsole; and a --show name no window has, said.
-#   command-line.py <chimera-qt> <work folder> <project> <package>
+#   command-line.py <chimera> <work folder> <project> <package>
 import json
 import os
 import shutil

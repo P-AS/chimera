@@ -11423,3 +11423,14 @@ row, wrapped text) and the Theme and Configure Hotkeys windows were
 captured without the pointer over them: the bars are there, and seen in the
 Dark theme. Not seen: AppleWin's own settings, which need its package and a
 game.
+
+## The program is chimera, on Windows and Linux (user-decided, 2026-10-27)
+
+The window's program was chimera-qt (chimera-qt.exe on Windows), its name
+from when it was a prototype beside Chimera. It replaces Chimera, so it is
+now chimera and chimera.exe. What it says on the command line starts with
+"chimera:". The library the Windows program loads from lib\ keeps its
+name, chimera-qt-app.dll: no one starts it, and the launcher names it.
+
+Tested: 40 of 40 tests on Linux, which run the program by its new name;
+the Windows build makes chimera.exe, staged and started (--version).

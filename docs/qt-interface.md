@@ -120,9 +120,9 @@ code is in `source/ui`; how it is built and run is in
   Chimera's own mingw (posix threading), without the network module, as
   it is now; Qt's prebuilt Windows libraries were set aside.
 - **The Windows folder is kept clean** (owner, 2026-10-24): it holds the
-  program (chimera-qt.exe) and the themes; every DLL, Qt's plugins and QML
+  program (chimera.exe) and the themes; every DLL, Qt's plugins and QML
   go in lib\, and the other programs (chimera-run, ffmpeg, the tests) in
-  bin\. Windows looks for a program's DLLs only beside it, so chimera-qt.exe
+  bin\. Windows looks for a program's DLLs only beside it, so chimera.exe
   is a small launcher (source/ui/qt/launcher.c): it adds lib\ to where
   Windows looks and to PATH (which the programs in bin\ inherit), then
   loads the window from lib\chimera-qt-app.dll. A qt.conf built into that

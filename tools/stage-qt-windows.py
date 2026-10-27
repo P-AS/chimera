@@ -5,7 +5,7 @@ import (from Qt or the compiler), found by reading their import tables, and
 the themes Chimera ships.
 Everything is stripped of debug information, as it would ship.
 
-The folder holds the program (chimera-qt.exe, a launcher), the themes and an
+The folder holds the program (chimera.exe, a launcher), the themes and an
 empty cores/ with a README.txt that says what goes in it;
 every DLL, Qt's plugins and QML are in lib/, and the other programs
 (chimera-run, chimera-mcp, ffmpeg, the tests) in bin/.
@@ -27,7 +27,7 @@ if os.path.exists(out):
 lib, bin = f"{out}/lib", f"{out}/bin"
 os.makedirs(lib)
 os.makedirs(bin)
-shutil.copy2(f"{build}/source/ui/chimera-qt.exe", out)
+shutil.copy2(f"{build}/source/ui/chimera.exe", out)
 shutil.copy2(f"{build}/source/ui/chimera-qt-app.dll", lib)
 shutil.copy2(f"{build}/source/ui/test_vm.exe", bin)
 # a movie import asks the core in a process of its own: chimera-run

@@ -9,7 +9,7 @@
 # The settings that are more than one value are checked too: each is kept by
 # the window as carried over, and the synthetic core, opened, takes
 # Chimera's bindings for its controller.
-#   chimera-import.py <chimera-qt> <work folder> <synth package> <rom>
+#   chimera-import.py <chimera> <work folder> <synth package> <rom>
 import json
 import math
 import os

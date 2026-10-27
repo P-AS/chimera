@@ -48,10 +48,10 @@ export PATH=$HOME/qt/6.12.0/gcc_64/libexec:$PATH
 meson setup build/meson-linux --prefix "$PWD/build" --libdir dll -Dqt_ui=enabled
 meson compile -C build/meson-linux
 meson test -C build/meson-linux 'view models'
-LD_LIBRARY_PATH=$HOME/qt/6.12.0/gcc_64/lib build/meson-linux/source/ui/chimera-qt <package> <game>
+LD_LIBRARY_PATH=$HOME/qt/6.12.0/gcc_64/lib build/meson-linux/source/ui/chimera --project <project> [--core <package>]
 ```
 
-`chimera-qt --help` lists the options for measuring (`--measure`,
+`chimera --help` lists the options for measuring (`--measure`,
 `--scroll`, `--screenshot`), scripts (`--lua`) and the registry
 (`--describe`).
 

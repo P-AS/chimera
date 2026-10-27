@@ -4,7 +4,7 @@
 # server started and tests/synth/synth-mcp.lua running, which plays the movie
 # and says when it is ready; tests/synth/mcp-agent.py then plays an AI agent
 # through chimera-mcp, and the window must quit by itself when it is done.
-#   mcp-window.sh <chimera-qt> <chimera-mcp> <repository> <work folder> [changes]
+#   mcp-window.sh <chimera> <chimera-mcp> <repository> <work folder> [changes]
 # With "changes" the agent may make changes (--mcp-allow-changes): it edits,
 # undoes, seeks, branches, runs Lua and makes a project; without, it reads,
 # and every change is refused.

@@ -232,7 +232,7 @@ if qt_dep.found()
   # zstd, which a Qt built without zstd (the Windows one) cannot unpack
   qt_rcc = qt6.compile_resources(sources: ['qt/ui.qrc'], extra_args: ['--no-zstd'])
   # Chimera's icon on the program and its windows on Windows
-  qt_icon = host_machine.system() == 'windows' ? import('windows').compile_resources('qt/chimera-qt.rc', depend_files: 'qt/chimera.manifest') : []
+  qt_icon = host_machine.system() == 'windows' ? import('windows').compile_resources('qt/chimera.rc', depend_files: 'qt/chimera.manifest') : []
   qt_sources = [
     'qt/main.cpp',
     'qt/qml_view_model.cpp',
@@ -248,7 +248,7 @@ if qt_dep.found()
     qt_rcc,
   ]
   if host_machine.system() == 'windows'
-    # the window is a DLL in lib\ with everything it needs, and chimera-qt.exe
+    # the window is a DLL in lib\ with everything it needs, and chimera.exe
     # a launcher that loads it from there (qt/launcher.c); qt.conf, built in,
     # sends Qt to lib\ for its plugins and QML
     qt_conf = qt6.compile_resources(name: 'windows_conf', sources: ['qt/windows.qrc'], extra_args: ['--no-zstd'])
@@ -267,7 +267,7 @@ if qt_dep.found()
       install_dir: 'dll',
     )
     chimera_qt = executable(
-      'chimera-qt',
+      'chimera',
       ['qt/launcher.c', qt_icon],
       # a release opens no console window beside the window; a debug build
       # keeps one for what the window writes
@@ -277,7 +277,7 @@ if qt_dep.found()
     )
   else
     chimera_qt = executable(
-      'chimera-qt',
+      'chimera',
       qt_sources,
       dependencies: [vm_dep, qt_dep],
       # the view models have a Signal::emit; Qt's "emit" keyword would eat it
