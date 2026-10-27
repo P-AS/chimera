@@ -11573,6 +11573,13 @@ window (it gained --headless for them).
   - SIGTERM and Ctrl+C end the program again: SDL, started for gamepads,
     took them and turned them into a quit event nobody read, so a run could
     not be stopped by its time limit. SDL is told to leave them alone.
+- **What the cores' own tests found**, run on the window:
+  - A saved project carries the game's own timer at the end of the movie
+    again (the headers GameTimeMs, GameTime and GameTimeFrame), as C# wrote
+    them (docs/game-cores.md): only when the machine has played to the end
+    since the last edit before it, or the project said so when it was
+    opened, and otherwise none. The window wrote none (the tests of rsdkv3,
+    rsdkv4, rsdkv5 and SDLPoP).
 - **One difference kept, by the owner's rule that the engine plays the
   movie** (2026-10-22): past the end of a project's movie and not
   recording, a script's `joypad.set` does not reach the core. Chimera's C#

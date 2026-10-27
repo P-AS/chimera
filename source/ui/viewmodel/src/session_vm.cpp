@@ -2742,7 +2742,11 @@ int64_t SessionViewModel::replaceMovieOnMachine(const std::string &text)
 	ce_session_movie_load(s_, next);
 	ce_movie_log_free(now);
 	ce_movie_log_free(next);
-	if (from >= 0) greenEndM_ = std::min(greenEndM_, from);
+	if (from >= 0)
+	{
+		greenEndM_ = std::min(greenEndM_, from);
+		forgetGameTimeAfterOnMachine(from);
+	}
 	return from;
 }
 
@@ -4267,6 +4271,21 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		std::string stem = first != nullptr ? std::filesystem::path(first).stem().string() : title;
 		later([this, stem] { gameName.set(stem); });
 	}
+	/* the game time the project was saved with, as the end of the movie's
+	 * own: an edit before the end forgets it, as it would one the machine
+	 * had just shown */
+	if (!keepInputs && !recovered && gameTimerM_)
+	{
+		const char *atText = ce_project_header_get(p, "GameTimeFrame"), *msText = ce_project_header_get(p, "GameTimeMs");
+		char *atEnd = nullptr, *msEnd = nullptr;
+		const long long at = atText != nullptr && *atText != '\0' ? std::strtoll(atText, &atEnd, 10) : -1;
+		const long long ms = msText != nullptr && *msText != '\0' ? std::strtoll(msText, &msEnd, 10) : 0;
+		if (at >= 0 && atEnd != nullptr && *atEnd == '\0' && msEnd != nullptr && *msEnd == '\0' && at == ce_session_movie_length(s_))
+		{
+			if (gameTimeLogM_.size() <= static_cast<size_t>(at)) gameTimeLogM_.resize(static_cast<size_t>(at) + 1, kNoGameTime);
+			gameTimeLogM_[static_cast<size_t>(at)] = ms;
+		}
+	}
 	startProjectSessionOnMachine(!keepInputs);
 }
 
@@ -4601,6 +4620,7 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup, 
 		const int32_t at = ce_project_branch_count(projectM_) - 1;
 		for (const Marker &m : b.markers) ce_project_branch_marker_add(projectM_, at, m.frame, m.text.c_str(), m.keepState ? 1 : 0);
 	}
+	gameTimeHeadersOnMachine(projectM_, n);
 	const char *error = nullptr;
 	if (ce_project_save(projectM_, path.c_str(), &error) != 0)
 	{
@@ -4749,6 +4769,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	inputs_.clearLags();
 	frameM_ = ce_session_frame(s);
 	greenEndM_ = 0;
+	gameTimeLogM_.clear();
 	/* a history of the machine's states, so a seek replays from the nearest
 	 * one rather than from power-on: as Chimera's, every project's budgets
 	 * unless the project asks for its own; the closeness before enabling,
@@ -5375,6 +5396,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	{
 		ce_session_movie_set(s_, f, buttons, axisCount ? axesBuf_.data() : nullptr);
 		greenEndM_ = std::min(greenEndM_, f);
+		forgetGameTimeAfterOnMachine(f);
 		changed = true;
 	}
 	/* a frame the person's input wrote: a step of the undo history, as Chimera's Record Frame */
@@ -5448,6 +5470,15 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	frameM_ = ce_session_frame(s_);
 	greenEndM_ = std::max(greenEndM_, frameM_);
 	lastLagM_ = lag > 0;
+	if (gameTimerM_ && frameM_ >= 0)
+	{
+		int64_t gameMs = 0;
+		if (ce_session_game_time_ms(s_, &gameMs) == 1)
+		{
+			if (gameTimeLogM_.size() <= static_cast<size_t>(frameM_)) gameTimeLogM_.resize(static_cast<size_t>(frameM_) + 1, kNoGameTime);
+			gameTimeLogM_[static_cast<size_t>(frameM_)] = gameMs;
+		}
+	}
 	for (const Hooks &h : hooksM_)
 		if (h.frame) h.frame(s_);
 	if (inputs_.setLag(f, lag > 0)) changed = true;
@@ -5530,7 +5561,37 @@ void SessionViewModel::dropStatesAfterOnMachine(int64_t frame)
 	if (s_ == nullptr) return;
 	ce_session_greenzone_invalidate(s_, frame);
 	greenEndM_ = std::min(greenEndM_, frame);
+	forgetGameTimeAfterOnMachine(frame);
 	report(-1, -1, -1, -1, -1);
+}
+
+void SessionViewModel::forgetGameTimeAfterOnMachine(int64_t frame)
+{
+	if (frame < 0) frame = 0;
+	if (gameTimeLogM_.size() > static_cast<size_t>(frame) + 1) gameTimeLogM_.resize(static_cast<size_t>(frame) + 1);
+}
+
+void SessionViewModel::gameTimeHeadersOnMachine(ce_project *p, int64_t length)
+{
+	/* the game's timer at the end of the movie, for whoever reads the project
+	 * later: only when the machine has run to the end since the last edit
+	 * before it, or the project said so when it was opened and nothing before
+	 * that has changed; otherwise none, never a stale one */
+	const bool known = length >= 0 && static_cast<size_t>(length) < gameTimeLogM_.size() &&
+		gameTimeLogM_[static_cast<size_t>(length)] != kNoGameTime;
+	if (!known)
+	{
+		ce_project_header_set(p, "GameTimeMs", nullptr);
+		ce_project_header_set(p, "GameTime", nullptr);
+		ce_project_header_set(p, "GameTimeFrame", nullptr);
+		return;
+	}
+	const int64_t gameMs = gameTimeLogM_[static_cast<size_t>(length)];
+	char text[48];
+	ce_game_time_text(gameMs, text, sizeof text);
+	ce_project_header_set(p, "GameTimeMs", std::to_string(gameMs).c_str());
+	ce_project_header_set(p, "GameTime", text);
+	ce_project_header_set(p, "GameTimeFrame", std::to_string(length).c_str());
 }
 
 void SessionViewModel::edited(int64_t first)
@@ -5544,6 +5605,7 @@ void SessionViewModel::edited(int64_t first)
 		if (s_ == nullptr) return;
 		editRunningM_ = sent;
 		greenEndM_ = std::min(greenEndM_, first);
+		forgetGameTimeAfterOnMachine(first);
 		/* moved since the last edit moved it: that edit's frame is forgotten */
 		if (movesM_ != restoredMovesM_ || frameM_ != restoredAtM_) restoreFrameM_ = -1;
 		const int64_t length = ce_session_movie_length(s_);

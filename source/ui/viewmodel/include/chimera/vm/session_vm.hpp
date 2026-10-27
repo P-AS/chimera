@@ -1191,6 +1191,13 @@ private:
 	/* the game's timer, read with each report when shown */
 	std::atomic<bool> showGameTimeM_{false};
 	bool gameTimerM_ = false;
+	/* the game's timer after each frame the machine ran (kNoGameTime where it
+	 * has not been since), forgotten past an edit as the stored states are:
+	 * what the project's GameTime headers are written from */
+	static constexpr int64_t kNoGameTime = INT64_MIN;
+	std::vector<int64_t> gameTimeLogM_;
+	void forgetGameTimeAfterOnMachine(int64_t frame);
+	void gameTimeHeadersOnMachine(ce_project *p, int64_t length);
 	int64_t pendingGameMs_ = -1;
 	int64_t pendingQueued_ = 0, pendingDropped_ = 0;
 	int64_t pendingGreenEnd_ = 0, pendingStates_ = 0, pendingRerecords_ = 0;
