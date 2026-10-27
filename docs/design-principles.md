@@ -11580,6 +11580,25 @@ window (it gained --headless for them).
     since the last edit before it, or the project said so when it was
     opened, and otherwise none. The window wrote none (the tests of rsdkv3,
     rsdkv4, rsdkv5 and SDLPoP).
+  - `chimera.controls.effective()` lists every button with its keys, ""
+    for none, as Chimera's settings did; of autofire only the buttons that
+    have keys. It had left out a button the package ships with no key
+    (rsdkv5's player 3 and 4 Y and Z, SDLPoP's Restart Game).
+  - The controller is the one of the machine the machine setting chose,
+    as Chimera's was. The window took the first machine with the session's
+    system id, and MAME's Amstrad machines all have one: a GX4000 project
+    had the CPC464's controls. The engine now says which machine it chose
+    (`ce_session_machine_index`).
+  - The keys a package ships are read from the section named for the
+    machine's controller, as Chimera read them, and only when there is
+    none from the section that names most of its buttons. The window
+    always took the second way, so of two machines with the same button
+    names the first won: the GX4000's Pause had the Atari 7800's keys.
+  - A movie the machine cannot play (an entry that does not read) ends a
+    headless run with 65 and why, as a core that stops does. The window
+    stopped the machine and said so in the status bar, and a run nobody
+    watches waited for ever (mamehome's test, on a project made with no
+    panel).
 - **One difference kept, by the owner's rule that the engine plays the
   movie** (2026-10-22): past the end of a project's movie and not
   recording, a script's `joypad.set` does not reach the core. Chimera's C#

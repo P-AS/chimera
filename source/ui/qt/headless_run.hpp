@@ -45,7 +45,7 @@ private:
 
 	bool enabled_;
 	vm::SessionViewModel &session_;
-	vm::Connection filesWatch_, failedWatch_;
+	vm::Connection filesWatch_, failedWatch_, unplayableWatch_;
 	bool ending_ = false;
 	int endedWith_ = -1;
 };

@@ -111,6 +111,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("isOpen", "whether a machine is open", isOpen);
 	expose("opens", "how many times a machine has been opened", opens);
 	expose("openFailures", "how many opens failed; the status says why", openFailures);
+	expose("unplayableMovies", "how many times the movie could not be played; the status says why", unplayableMovies);
 	expose("projectId", "the open project's id (its cache folder's name), \"\" for none", projectId);
 	expose("resolvingFiles", "a project is waiting for its files to be found (the projectFiles rows)", resolvingFiles);
 	rows("projectFiles", "the waiting project's files: name, slot, status (0 found, 1 not found, 2 not the recorded bytes), "
@@ -4849,24 +4850,17 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		json::Json cfg;
 		std::string jerr;
 		const bool read = json::parse(config, cfg, jerr);
-		/* the controller is the machine's when the package is more than one (the machine whose
-		 * system this session is), else the package's: its name and the picture of it */
+		/* the controller is the machine's when the package is more than one, else the
+		 * package's: its name and the picture of it */
 		if (read)
 		{
 			const json::Json *input = cfg.find("input");
-			const char *sid = ce_session_system_id(s);
-			const std::string id = sid != nullptr ? sid : "";
-			auto lower = [](std::string t) {
-				for (char &c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-				return t;
-			};
-			if (const json::Json *machines = cfg.find("machines"); machines != nullptr && !id.empty())
-				for (const json::Json &m : machines->items)
-					if (const json::Json *mid = m.find("id"); mid != nullptr && lower(mid->text) == lower(id))
-					{
-						if (const json::Json *own = m.find("input")) input = own;
-						break;
-					}
+			/* the machine the engine chose by the machine setting, as Chimera's
+			 * did: several may share a system id */
+			const int32_t machine = ce_session_machine_index(s);
+			if (const json::Json *machines = cfg.find("machines"); machines != nullptr && machine >= 0 &&
+				static_cast<size_t>(machine) < machines->items.size())
+				if (const json::Json *own = machines->items[static_cast<size_t>(machine)].find("input")) input = own;
 			if (input != nullptr)
 			{
 				if (const json::Json *n = input->find("name"); n != nullptr && !n->text.empty()) controller = n->text;
@@ -4919,14 +4913,14 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 
 	std::string bindError;
 	bindingsM_ = Bindings();
-	if (!keybinds.empty()) bindingsM_.parse(keybinds, names, bindError);
+	if (!keybinds.empty()) bindingsM_.parse(keybinds, names, "AllTrollers", bindError, controller);
 	/* the keys that fire a button while held, and the analog controls' bindings, as the package says */
 	autofireBindingsM_ = Bindings();
-	if (!keybinds.empty()) autofireBindingsM_.parse(keybinds, names, "AllTrollersAutoFire", bindError);
+	if (!keybinds.empty()) autofireBindingsM_.parse(keybinds, names, "AllTrollersAutoFire", bindError, controller);
 	{
 		std::vector<std::string> axisNames;
 		for (const Axis &a : axes) axisNames.push_back(a.name);
-		analogBindsM_ = keybinds.empty() ? std::vector<AnalogBind>(axes.size()) : parseAnalogBinds(keybinds, axisNames, bindError);
+		analogBindsM_ = keybinds.empty() ? std::vector<AnalogBind>(axes.size()) : parseAnalogBinds(keybinds, axisNames, bindError, controller);
 		axesM_ = axes;
 		buttonNamesM_ = names;
 	}
@@ -4971,18 +4965,18 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		mnemonics_ = mnemonics;
 		buttonHeaders_ = headers;
 		std::string why;
-		const bool bound = keybinds.empty() || bindings_.parse(keybinds, buttonNames_, why);
+		const bool bound = keybinds.empty() || bindings_.parse(keybinds, buttonNames_, "AllTrollers", why, controller);
 		defaultBindings_ = bindings_.texts();
 		defaultBindings_.resize(buttonNames_.size());
 		autofireBindings_ = Bindings();
-		if (!keybinds.empty()) autofireBindings_.parse(keybinds, buttonNames_, "AllTrollersAutoFire", why);
+		if (!keybinds.empty()) autofireBindings_.parse(keybinds, buttonNames_, "AllTrollersAutoFire", why, controller);
 		defaultAutofire_ = autofireBindings_.texts();
 		defaultAutofire_.resize(buttonNames_.size());
 		{
 			std::vector<std::string> axisNames;
 			for (const Axis &a : axes_) axisNames.push_back(a.name);
 			std::string analogWhy;
-			analogBinds_ = keybinds.empty() ? std::vector<AnalogBind>(axes_.size()) : parseAnalogBinds(keybinds, axisNames, analogWhy);
+			analogBinds_ = keybinds.empty() ? std::vector<AnalogBind>(axes_.size()) : parseAnalogBinds(keybinds, axisNames, analogWhy, controller);
 			defaultAnalog_ = analogBinds_;
 		}
 		buttonCount.set(static_cast<int64_t>(names.size()));
@@ -5450,7 +5444,12 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		}
 		const std::string why = death != nullptr && *death != '\0' ? std::string("The machine stopped: ") + death
 																	 : std::string("The movie could not be played: ") + ce_session_last_error(s_);
-		later([this, why] { running.set(false); status.set(why); });
+		const bool unplayable = death == nullptr || *death == '\0';
+		later([this, why, unplayable] {
+			running.set(false);
+			status.set(why);
+			if (unplayable) unplayableMovies.set(unplayableMovies.get() + 1);
+		});
 		/* asked what now, as Chimera's: the frame, the latest safe point, frame 0
 		 * (the same death reported again while it is asked asks nothing more) */
 		if (death != nullptr && *death != '\0')

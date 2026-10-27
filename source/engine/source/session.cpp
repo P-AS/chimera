@@ -99,6 +99,8 @@ extern "C" int32_t vectorWrite(uintptr_t userdata, const void *src, uintptr_t si
 struct SessionConfig
 {
 	std::string coreName, systemId, romFile;
+	/* which of the package's machines this is, -1 for a package that is one */
+	int32_t machineIndex = -1;
 	uint64_t layoutMiB[5] = { 0, 0, 0, 0, 0 };
 	int32_t width = 0, height = 0, virtualWidth = 0, virtualHeight = 0;
 	/* whether the package or its machine gave a virtual size: without one the pixels are square */
@@ -230,6 +232,17 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	const cJSON *machine = chooseMachine(root, overrides);
 	cfg.coreName = strOf(root, "coreName", "Waterbox");
 	cfg.systemId = machine != nullptr ? strOf(machine, "id") : strOf(root, "systemId");
+	cfg.machineIndex = -1;
+	if (machine != nullptr)
+	{
+		int32_t i = 0;
+		const cJSON *m = nullptr;
+		cJSON_ArrayForEach(m, cJSON_GetObjectItemCaseSensitive(root, "machines"))
+		{
+			if (m == machine) cfg.machineIndex = i;
+			i++;
+		}
+	}
 	cfg.romFile = strOf(root, "romFile", "rom");
 	cfg.deterministic = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "deterministic"));
 
@@ -2808,6 +2821,7 @@ void ce_session_free(ce_session *s)
 
 const char *ce_session_core_name(const ce_session *s) { return s->cfg.coreName.c_str(); }
 const char *ce_session_system_id(const ce_session *s) { return s->cfg.systemId.c_str(); }
+int32_t ce_session_machine_index(const ce_session *s) { return s->cfg.machineIndex; }
 int32_t ce_session_width(const ce_session *s) { return s->cfg.width; }
 int32_t ce_session_height(const ce_session *s) { return s->cfg.height; }
 /* a machine that declares no virtual size has square pixels, so its picture

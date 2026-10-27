@@ -341,11 +341,15 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		"{control: {\"Value\", \"Mult\", \"Deadzone\", ...}}}} - a core's tests see a package's own keys arrive with it", {},
 		[this](const Args &, std::string &) -> Value {
 			const std::vector<std::string> &names = session_.buttonNames();
-			auto keyed = [&](const std::vector<std::string> &keys) {
+			/* as Chimera's settings keep them: every button with its keys, "" for
+			 * none; of autofire only the buttons that have keys */
+			auto keyed = [&](const std::vector<std::string> &keys, bool all) {
 				Json mine = parsedObject("{}");
-				/* a button with no keys is left out, as Chimera's settings leave it */
 				for (size_t b = 0; b < names.size(); b++)
-					if (b < keys.size() && !keys[b].empty()) setMember(mine, names[b], Json::string(keys[b]));
+				{
+					const std::string k = b < keys.size() ? keys[b] : std::string();
+					if (all || !k.empty()) setMember(mine, names[b], Json::string(k));
+				}
 				return mine;
 			};
 			Json analog = parsedObject("{}");
@@ -365,8 +369,8 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 				setMember(byController, controller, mine);
 				setMember(all, name, byController);
 			};
-			section("AllTrollers", keyed(session_.bindingTexts()));
-			section("AllTrollersAutoFire", keyed(session_.autofireTexts()));
+			section("AllTrollers", keyed(session_.bindingTexts(), true));
+			section("AllTrollersAutoFire", keyed(session_.autofireTexts(), false));
 			section("AllTrollersAnalog", analog);
 			return json::write(all);
 		});

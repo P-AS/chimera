@@ -49,6 +49,13 @@ HeadlessRun::HeadlessRun(bool enabled, vm::SessionViewModel &session, QObject *p
 	failedWatch_ = session_.openFailures.changed.connect([this] {
 		blocked(QStringLiteral("Cannot open the project"), QString::fromStdString(session_.status.get()));
 	});
+	/* a movie that cannot be played stops the machine with nobody to see why: said, and the
+	 * run ends as when the core stops, rather than waiting for ever */
+	unplayableWatch_ = session_.unplayableMovies.changed.connect([this] {
+		if (ending_) return;
+		std::fprintf(stderr, "[headless] %s\n", session_.status.get().c_str());
+		end(kCoreStopped);
+	});
 }
 
 bool HeadlessRun::askedFor(int argc, char **argv)

@@ -933,6 +933,20 @@ void bindings()
 		"AllTrollersAnalog": { "Synth Controller": {
 			"P1 Dial": { "Value": "X1 LeftThumbX Axis", "Mult": -0.5, "Deadzone": 0.2, "ButtonBindPositive": "L", "ButtonBindNegative": null } } }
 	})";
+	/* machines of one package with the same button names: the machine's own
+	 * controller's section, as Chimera's, not the first that names as many */
+	const std::string twoMachines = R"({
+		"AllTrollers": { "Atari 7800 Controls": { "P1 Up": "Up", "Pause": "F3, X1 RightShoulder" },
+		                 "Amstrad GX4000 Controls": { "P1 Up": "Up", "Pause": "F3, X1 Start" } },
+		"AllTrollersAnalog": { "Atari 7800 Controls": { "P1 Dial": { "Value": "X1 LeftThumbX Axis" } },
+		                       "Amstrad GX4000 Controls": { "P1 Dial": { "Value": "X1 RightThumbX Axis" } } }
+	})";
+	Bindings own;
+	CHECK(own.parse(twoMachines, {"P1 Up", "Pause"}, "AllTrollers", error, "Amstrad GX4000 Controls") &&
+		  own.buttonsOf("X1 Start").size() == 1 && own.buttonsOf("X1 RightShoulder").empty());
+	CHECK(parseAnalogBinds(twoMachines, {"P1 Dial"}, error, "Amstrad GX4000 Controls")[0].value == "X1 RightThumbX Axis");
+	/* a controller the file has no section for: the one that names most of its buttons */
+	CHECK(own.parse(twoMachines, {"P1 Up", "Pause"}, "AllTrollers", error, "Another Controller") && own.buttonsOf("X1 RightShoulder").size() == 1);
 	Bindings fire;
 	CHECK(b.parse(groups, {"P1 A"}, error) && b.buttonsOf("X").size() == 1 && b.buttonsOf("Q").empty());
 	CHECK(fire.parse(groups, {"P1 A"}, "AllTrollersAutoFire", error) && fire.buttonsOf("Q").size() == 1 && fire.buttonsOf("X").empty());

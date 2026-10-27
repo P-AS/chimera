@@ -914,6 +914,10 @@ CE_API const char *ce_core_log_error(void);
 /* config-derived facts (borrowed strings live as long as the session) */
 CE_API const char *ce_session_core_name(const ce_session *s);
 CE_API const char *ce_session_system_id(const ce_session *s);
+/* Which entry of the package's "machines" this session is, as its machine
+ * setting chose it (several machines may share a system id: MAME's Amstrad
+ * CPC464 and GX4000), or -1 for a package that is one machine. */
+CE_API int32_t ce_session_machine_index(const ce_session *s);
 CE_API int32_t ce_session_width(const ce_session *s);
 CE_API int32_t ce_session_height(const ce_session *s);
 /* The shape the picture is shown at, as a size: the package's or its machine's

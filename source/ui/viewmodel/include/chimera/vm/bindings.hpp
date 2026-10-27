@@ -20,8 +20,11 @@ public:
 	 * the reason in `error` when the text is not readable JSON. */
 	bool parse(std::string_view json, const std::vector<std::string> &buttonNames, std::string &error);
 	/* the same from a group the file has: "AllTrollers" (the buttons) or
-	 * "AllTrollersAutoFire" (the keys that fire a button while held) */
-	bool parse(std::string_view json, const std::vector<std::string> &buttonNames, const std::string &group, std::string &error);
+	 * "AllTrollersAutoFire" (the keys that fire a button while held); the
+	 * section of the machine's controller when the file has one by that
+	 * name, as Chimera's, else the one that names most of its buttons */
+	bool parse(std::string_view json, const std::vector<std::string> &buttonNames, const std::string &group, std::string &error,
+		const std::string &controller = {});
 
 	/* the buttons a key holds, by index (empty when it holds none) */
 	const std::vector<int> &buttonsOf(const std::string &key) const;
@@ -61,7 +64,8 @@ struct AnalogBind
 
 /* A package's analog bindings ("AllTrollersAnalog" in default_keybinds.json),
  * by the machine's analog controls in order; unbound ones empty */
-std::vector<AnalogBind> parseAnalogBinds(std::string_view json, const std::vector<std::string> &axisNames, std::string &error);
+std::vector<AnalogBind> parseAnalogBinds(std::string_view json, const std::vector<std::string> &axisNames, std::string &error,
+	const std::string &controller = {});
 /* an analog binding as JSON, as Chimera writes one, and back */
 std::string analogBindJson(const AnalogBind &bind);
 bool analogBindFrom(std::string_view json, AnalogBind &out);

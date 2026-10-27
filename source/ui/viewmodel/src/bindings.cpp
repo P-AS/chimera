@@ -46,7 +46,8 @@ bool Bindings::parse(std::string_view json, const std::vector<std::string> &butt
 	return parse(json, buttonNames, "AllTrollers", error);
 }
 
-bool Bindings::parse(std::string_view json, const std::vector<std::string> &buttonNames, const std::string &group, std::string &error)
+bool Bindings::parse(std::string_view json, const std::vector<std::string> &buttonNames, const std::string &group, std::string &error,
+	const std::string &controller)
 {
 	byKey_.clear();
 	texts_.assign(buttonNames.size(), std::string());
@@ -60,14 +61,21 @@ bool Bindings::parse(std::string_view json, const std::vector<std::string> &butt
 
 	/* The file has a section per controller a package declares ("AllTrollers"
 	 * -> "Genesis Controller" -> "P1 Up": "Up, J1 POV0U"). The machine runs
-	 * one of them: take the section that names most of its buttons. */
+	 * one of them: its own by name, as Chimera's (machines of one package
+	 * often share button names: MAME's Atari 7800 and Amstrad GX4000 both
+	 * have Pause), else the section that names most of its buttons. */
 	const Json *best = nullptr;
 	size_t bestCount = 0;
 	for (const auto &[name, sections] : root.members)
 	{
 		/* the group asked for alone: the autofire keys are not the buttons' */
 		if (name != group || sections.kind != Json::Kind::Object) continue;
-		for (const auto &[controller, section] : sections.members)
+		if (const Json *own = controller.empty() ? nullptr : sections.find(controller); own != nullptr && own->kind == Json::Kind::Object)
+		{
+			best = own;
+			break;
+		}
+		for (const auto &[section_name, section] : sections.members)
 		{
 			if (section.kind != Json::Kind::Object) continue;
 			size_t count = 0;
@@ -97,25 +105,30 @@ const std::vector<int> &Bindings::buttonsOf(const std::string &key) const
 	return it == byKey_.end() ? none : it->second;
 }
 
-std::vector<AnalogBind> parseAnalogBinds(std::string_view json, const std::vector<std::string> &axisNames, std::string &error)
+std::vector<AnalogBind> parseAnalogBinds(std::string_view json, const std::vector<std::string> &axisNames, std::string &error,
+	const std::string &controller)
 {
 	std::vector<AnalogBind> out(axisNames.size());
 	Json root;
 	if (!json::parse(json, root, error) || root.kind != Json::Kind::Object) return out;
 	const Json *group = root.find("AllTrollersAnalog");
 	if (group == nullptr || group->kind != Json::Kind::Object) return out;
-	/* the controller's section that names most of the machine's analog controls */
+	/* the machine's controller's section by name, else the one that names
+	 * most of the machine's analog controls */
 	const Json *best = nullptr;
 	size_t bestCount = 0;
-	for (const auto &[controller, section] : group->members)
-	{
-		if (section.kind != Json::Kind::Object) continue;
-		size_t count = 0;
-		for (const auto &[axis, bind] : section.members)
-			for (const std::string &name : axisNames)
-				if (name == axis && bind.kind == Json::Kind::Object) { count++; break; }
-		if (count > bestCount) { best = &section; bestCount = count; }
-	}
+	if (const Json *own = controller.empty() ? nullptr : group->find(controller); own != nullptr && own->kind == Json::Kind::Object)
+		best = own;
+	else
+		for (const auto &[section_name, section] : group->members)
+		{
+			if (section.kind != Json::Kind::Object) continue;
+			size_t count = 0;
+			for (const auto &[axis, bind] : section.members)
+				for (const std::string &name : axisNames)
+					if (name == axis && bind.kind == Json::Kind::Object) { count++; break; }
+			if (count > bestCount) { best = &section; bestCount = count; }
+		}
 	if (best == nullptr) return out;
 	for (const auto &[axis, bind] : best->members)
 		for (size_t i = 0; i < axisNames.size(); i++)

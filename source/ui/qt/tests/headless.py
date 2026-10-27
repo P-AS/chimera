@@ -2,12 +2,14 @@
 # Chimera's --headless, taken by the window that replaces it, for runs nobody
 # watches such as the cores' tests: it runs with no display at all; a
 # script's client.exit leaves without asking, its unsaved changes let go and
-# said; a core that stops ends the run with 65 and says why; a project whose
+# said; a core that stops, or a movie that cannot be played, ends the run
+# with 65 and says why; a project whose
 # files are not found ends it with 64 and names them, and one that cannot
 # open says why; a file picker ends it
 # with 64; work a killed run left is said, and the project opens as saved.
 #   headless.py <chimera> <work folder> <package> <game>
 import hashlib
+import json
 import os
 import shutil
 import signal
@@ -104,6 +106,17 @@ check(r is not None and r.returncode == 0 and "closing unattended with unsaved c
 proj, _ = project("stops", b"STOPONCE")
 r = run(proj, script("stops", "for i = 1, 60 do emu.frameadvance() end\nclient.exit()\n"), extra_env={"CHIMERA_FRAME_TIMEOUT_MS": "500"})
 check(r is not None and r.returncode == 65 and "[headless] The core stopped:" in r.stderr, "a core that stops ends the run with 65, said", said(r))
+
+# a movie with an entry that does not read: the machine stops on it; 65, and why
+proj, _ = project("unplayable")
+with open(proj) as f:
+    doc = json.load(f)
+doc["input"] = "[Input]\nLogKey:#\n|zz|\n|zz|\n"
+with open(proj, "w") as f:
+    json.dump(doc, f)
+r = run(proj, script("unplayable", "emu.frameadvance()\nclient.exit()\n"), seconds=60)
+check(r is not None and r.returncode == 65 and "The movie could not be played: unparseable movie entry at frame 0" in r.stderr,
+      "a movie that cannot be played ends the run with 65, saying why", said(r))
 
 # a project whose game is not found: 64, the file named
 proj, rom = project("missing")
