@@ -43,6 +43,8 @@ for d in ("libchimera.dll", "libminiboxhost.dll", "libzstd.dll", "lua54.dll", "S
     shutil.copy2(f"{dlls}/{d}", lib)
 os.makedirs(f"{lib}/platforms")
 shutil.copy2(f"{qt}/plugins/platforms/qwindows.dll", f"{lib}/platforms")
+# --headless draws off screen, for a run nobody watches (a core's tests)
+shutil.copy2(f"{qt}/plugins/platforms/qoffscreen.dll", f"{lib}/platforms")
 # the image files Qt reads with a plugin: ICO (a menu's icon), and JPEG and GIF as
 # well as ICO for a script's gui.drawImage and TAStudio's cell icons, which read
 # what Chimera's read (PNG and BMP need none)

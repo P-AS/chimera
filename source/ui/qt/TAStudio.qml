@@ -107,6 +107,8 @@ ApplicationWindow {
     }
     function engage() {
         tas.hiddenByPerson = false
+        // a run nobody watches shows no window; the project is TAStudio's all the same
+        if (headlessRun.enabled) return
         if (!tas.visible) {
             windowOptions.placeBack(true)
             tas.placeBesideMain()

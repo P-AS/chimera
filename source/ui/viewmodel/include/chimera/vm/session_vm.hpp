@@ -130,6 +130,8 @@ public:
 	/* Chimera's Display Nothing: the frames are run without being drawn, and
 	 * the speed goes to the window's title (remembered) */
 	Property<bool> displayNothing{false};
+	/* a script's client.invisibleemulation: frames run undrawn as Display Nothing runs them, for this run only */
+	Property<bool> invisible{false};
 	/* Chimera's background input: a gamepad is heard while the window is
 	 * not the one in front (remembered); windowActive says whether it is */
 	Property<bool> acceptBackgroundInput{false};
@@ -1030,10 +1032,10 @@ private:
 	Connection fastSpeedWatch_, fastDrawWatch_;
 	/* frames run fast since the last one drawn (fastDrawOneIn) */
 	int64_t fastUndrawn_ = 0;
-	std::atomic<bool> unthrottledM_{false}, soundOnM_{true}, turboM_{false}, skipLagM_{false}, displayNothingM_{false},
+	std::atomic<bool> unthrottledM_{false}, soundOnM_{true}, turboM_{false}, skipLagM_{false}, displayNothingM_{false}, invisibleM_{false},
 		padsHeardM_{true};
 	bool turboHeld_ = false;
-	Connection skipLagWatch_, displayNothingWatch_, backgroundWatch_, activeWatch_;
+	Connection skipLagWatch_, displayNothingWatch_, invisibleWatch_, backgroundWatch_, activeWatch_;
 	Connection speedWatch_, unthrottledWatch_, soundOnWatch_, volumeWatch_, throttleWatch_;
 	/* 0 clock, 1 audio, 2 vsync, 3 none */
 	std::atomic<int> throttleM_{0};

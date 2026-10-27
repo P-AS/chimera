@@ -68,7 +68,8 @@ ApplicationWindow {
     // the picture alone: TAStudio is a window of its own beside it
     width: 800
     height: 680
-    visible: true
+    // none is shown in a run nobody watches (--headless)
+    visible: !headlessRun.enabled
     // Chimera's title: the speed while nothing is drawn, the game and its system, the project's file
     // (marked when it has changes), then "Chimera" or the words Display's Misc gives; only those
     // last words when titles are kept static
@@ -245,21 +246,28 @@ ApplicationWindow {
         }
     }
     // a window shown and brought over the others
-    function bring(w) { w.show(); w.raise() }
+    function bring(w) { if (headlessRun.enabled) return; w.show(); w.raise() }
     // a game file named at the start or handed over: a game runs only in a
     // project (owner, 2026-10-26), so New Project starts from it, as a file
     // dropped on the window does
     function newProjectFrom(path) {
+        // the wizard waits for a person
+        if (headlessRun.enabled) { headlessRun.blocked(qsTr("New Project"), path); return }
         root.newProject.run("startFrom", [path])
         newProjectWindow.show()
         newProjectWindow.raise()
     }
-    // a script's client.exit, as Chimera's: closing as the window closes, with the code asked for
+    // a script's client.exit, as Chimera's: nobody is asked on the way out. The
+    // script's unsaved changes are let go, the project on disk as it was, and said
     Connections {
         target: root.toolWindows
         function onExitAskedChanged() {
             const code = root.toolWindows.exitAsked
-            if (code >= 0) root.leaveProject(() => { root.leaving = true; Qt.exit(code) })
+            if (code < 0) return
+            if (root.session.unsaved)
+                root.toolWindows.run("tell", ["[tastudio] closing unattended with unsaved changes; the project on disk is unchanged"])
+            root.leaving = true
+            Qt.exit(code)
         }
     }
     onClosing: (close) => {

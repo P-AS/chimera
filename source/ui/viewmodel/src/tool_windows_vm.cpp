@@ -3,6 +3,7 @@
 #include "chimera/vm/json.hpp"
 
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <iterator>
 #include <sstream>
@@ -61,11 +62,20 @@ ToolWindowsViewModel::ToolWindowsViewModel(Dispatcher &dispatcher) : ViewModel("
 			showAsked.set(tool);
 			return {};
 		});
-	command("exit", "asks the program to close, as Chimera's client.exit, with this exit code; a project with changes asks first",
+	command("exit", "asks the program to close, as Chimera's client.exit, with this exit code; nobody is asked, and the "
+		"project's unsaved changes are let go",
 		{"code"}, [this](const Args &a, std::string &error) -> Value {
 			int64_t code = 0;
 			if (!a.empty() && !arg(a, 0, code, error)) return {};
 			exitAsked.set(std::max<int64_t>(0, code));
+			return {};
+		});
+	command("tell", "a line on the program's standard error, for a run nobody watches", {"text"},
+		[](const Args &a, std::string &error) -> Value {
+			std::string text;
+			if (!arg(a, 0, text, error)) return {};
+			std::fprintf(stderr, "%s\n", text.c_str());
+			std::fflush(stderr);
 			return {};
 		});
 	command("screenshot", "the picture saved as Chimera's Screenshot saves it: to this file, or (\"\") named and placed as "

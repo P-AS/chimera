@@ -809,6 +809,8 @@ function client.isturbo() return C.session.turbo end
 function client.isseeking() return C.session.seekingTo >= 0 end
 function client.is_rewinding() return C.session.rewinding end
 function client.speedmode(percent) C.session.speedPercent = percent end
+-- frames run undrawn, for this run (Display Nothing, not remembered)
+function client.invisibleemulation(invisible) C.session.invisible = invisible == true end
 function client.reboot_core() C.session.restart() end
 function client.closerom() C.session.close() end
 function client.openproject(path) return C.session.openProject(path) == true end

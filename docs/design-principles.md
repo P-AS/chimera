@@ -11434,3 +11434,44 @@ name, chimera-qt-app.dll: no one starts it, and the launcher names it.
 
 Tested: 40 of 40 tests on Linux, which run the program by its new name;
 the Windows build makes chimera.exe, staged and started (--version).
+
+## The window takes --headless, for runs nobody watches (user-decided, 2026-10-27)
+
+Before the window replaces Chimera's, the cores' tests have to run on it:
+55 of their workflows start Chimera's C# window with --headless. The owner
+chose to give the window that mode first. It does what Chimera's
+HeadlessMode does:
+
+- **No window is shown**, and it draws off screen (Qt's offscreen
+  platform, chosen before Qt starts), so it needs no display: no Xvfb on
+  Linux, nothing on the desktop on Windows. The offscreen platform ships in
+  the Windows folder for it.
+- **What would wait for a person ends the run**, said on stderr in
+  Chimera's words: any dialog (exit 64, its caption and text); a project
+  whose files were not found (64, the files named); a script's file picker
+  (64); New Project from a game (64). The window's style makes every
+  dialog, so one hook in the style (style/Dialog.qml) covers them all.
+- **The core stopped** ends the run with 65, the reason said and the work
+  kept against a crash, as Chimera's.
+- **Work a crash left** is said ("[recovery] ...") and the project opens as
+  it was last saved; the recovered copy stays.
+- It takes nothing handed over by another start, hands nothing over, and
+  puts nothing in the taskbar's recent list.
+
+Two differences from Chimera's found on the way, now as Chimera's in every
+run: a script's client.exit leaves without asking, its unsaved changes let
+go and said ("[tastudio] closing unattended with unsaved changes; the
+project on disk is unchanged"); and client.invisibleemulation runs frames
+undrawn for that run only, where Display Nothing is the person's
+remembered setting.
+
+The compile step RPCS3's test starts with Chimera's --precompile is the
+window's chimera-run already (chimera-run --precompile), so the window has
+no option for it.
+
+Tested: a new test (headless, 7 checks): a project run with no display and
+Qt told nothing, a script's unattended exit, a core stopped (65), files not
+found (64), a file picker (64), and work a killed run left. Breaking the
+offscreen start failed 6; breaking the other five behaviours together
+failed 6. 41 of 41 tests. On Windows, a headless run of a project with a
+script, from WSL, showed no window and ended 0.

@@ -397,6 +397,9 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("windowActive", "the window is the one in front (the window says)", windowActive, true);
 	skipLagWatch_ = skipLagFrames.changed.connect([this] { skipLagM_ = skipLagFrames.get(); });
 	displayNothingWatch_ = displayNothing.changed.connect([this] { displayNothingM_ = displayNothing.get(); });
+	expose("invisible", "the frames are run without being drawn, as Display Nothing runs them, for this run only and not "
+		"remembered (a script's client.invisibleemulation)", invisible, true);
+	invisibleWatch_ = invisible.changed.connect([this] { invisibleM_ = invisible.get(); });
 	auto heard = [this] { padsHeardM_ = acceptBackgroundInput.get() || windowActive.get(); };
 	backgroundWatch_ = acceptBackgroundInput.changed.connect(heard);
 	activeWatch_ = windowActive.changed.connect(heard);
@@ -5030,7 +5033,7 @@ int32_t SessionViewModel::advanceOnMachine()
 	 * unthrottled draw one frame in fastDrawOneIn (the frame skip's one
 	 * setting left: owner, 2026-10-24)
 	 * it - unless it is being recorded */
-	bool draw = !displayNothingM_.load();
+	bool draw = !displayNothingM_.load() && !invisibleM_.load();
 	if (turboM_.load() || unthrottledM_.load())
 	{
 		draw = draw && ++fastUndrawn_ >= fastDrawM_.load();

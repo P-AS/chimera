@@ -106,6 +106,7 @@
 #include "button_router.hpp"
 #include "jump_list.hpp"
 #include "single_instance.hpp"
+#include "headless_run.hpp"
 #include "key_names.hpp"
 #include "picture_item.hpp"
 #include "piano_roll_item.hpp"
@@ -313,6 +314,9 @@ int main(int argc, char **argv)
 #ifdef _WIN32
 	SetUnhandledExceptionFilter(crashNote);
 #endif
+	/* a run nobody watches is drawn off screen, so it needs no display */
+	const bool headless = qt::HeadlessRun::askedFor(argc, argv);
+	if (headless) qt::HeadlessRun::prepare();
 	QGuiApplication app(argc, argv);
 	/* Qt takes the person's locale for the C library too, and with a decimal
 	 * comma printf("%g") writes "0,5" into files read as "0.5": numbers stay
@@ -348,6 +352,8 @@ int main(int argc, char **argv)
 	QCommandLineOption chromelessOpt(QStringLiteral("chromeless"), QStringLiteral("never show the menu, status bar or window frame, not even in windowed mode"));
 	QCommandLineOption luaConsoleOpt(QStringLiteral("luaconsole"), QStringLiteral("open the Lua Console, even if not loading a script"));
 	QCommandLineOption versionOpt(QStringLiteral("version"), QStringLiteral("print version information and immediately exit"));
+	QCommandLineOption headlessOpt(QStringLiteral("headless"), QStringLiteral("for a run nobody watches: no window is shown, and what would "
+		"wait for a person ends the run, said on stderr (a dialog: exit 64; the core stopped: 65, the work kept), as Chimera's"));
 	QCommandLineOption userdataOpt(QStringLiteral("userdata"), QStringLiteral("Lua's userdata to start with, as Chimera's: k1:v1;k2:v2 "
 		"(true/false a boolean, a whole number or a number as one, else text)"), QStringLiteral("pairs"));
 	QCommandLineOption mmfOpt(QStringLiteral("mmf"), QStringLiteral("the memory-mapped file Lua's comm.mmfScreenshot writes to, as Chimera's --mmf"),
@@ -359,7 +365,7 @@ int main(int argc, char **argv)
 	QCommandLineOption mcpServerOpt(QStringLiteral("mcp-server"), QStringLiteral("start the MCP server (Tools > MCP Server...) at once"));
 	QCommandLineOption mcpChangesOpt(QStringLiteral("mcp-allow-changes"), QStringLiteral("with --mcp-server: the agent may make changes, for this run"));
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, userdataOpt, describeOpt, schemeOpt, showOpt, mcpServerOpt,
-		mcpChangesOpt, projectOpt, coreOpt, configOpt, firmwareOpt, fullscreenOpt, chromelessOpt, luaConsoleOpt, versionOpt});
+		mcpChangesOpt, projectOpt, coreOpt, configOpt, firmwareOpt, fullscreenOpt, chromelessOpt, luaConsoleOpt, versionOpt, headlessOpt});
 	args.process(app);
 	if (args.isSet(versionOpt))
 	{
@@ -445,7 +451,8 @@ int main(int argc, char **argv)
 		if (anyProject) handing << projectGiven;
 		else if (!gameGiven.isEmpty()) handing << gameGiven;
 		if (!handing.isEmpty() && !packageGiven.isEmpty()) handing << packageGiven;
-		if (vm::ConfigStore::switchIn(configPath.toStdString(), "customize.singleInstance", false) && single.forwardIfRunning(handing))
+		/* a run nobody watches is its own, whatever else is running */
+		if (!headless && vm::ConfigStore::switchIn(configPath.toStdString(), "customize.singleInstance", false) && single.forwardIfRunning(handing))
 			return 0;
 	}
 	/* Chimera's GameCube adapter support: off, SDL is told before it starts
@@ -455,6 +462,7 @@ int main(int argc, char **argv)
 	QtDispatcher dispatcher(&app);
 	vm::InputLog inputs;
 	vm::SessionViewModel session(dispatcher, inputs);
+	qt::HeadlessRun headlessRun(headless, session);
 	vm::PianoRollViewModel pianoRoll(dispatcher, inputs, session);
 	vm::RamSearchViewModel ramSearch(dispatcher, session);
 	vm::RamWatchViewModel ramWatch(dispatcher, session);
@@ -1497,6 +1505,8 @@ int main(int argc, char **argv)
 	/* a path as a file URL and back, for every window, as Qt makes them (a
 	 * Windows path written into "file://" by hand came back as "/C:/...") */
 	engine.rootContext()->setContextProperty(QStringLiteral("localFiles"), &pictureFiles);
+	/* --headless, for every window: none is shown, and a dialog that opens ends the run */
+	engine.rootContext()->setContextProperty(QStringLiteral("headlessRun"), &headlessRun);
 	engine.load(QUrl(QStringLiteral("qrc:/chimera/Main.qml")));
 	if (engine.rootObjects().isEmpty()) return 1;
 	auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
@@ -1543,7 +1553,7 @@ int main(int argc, char **argv)
 	fullscreenBorder();
 	vm::Connection fullscreenHacksWatch = display.fullscreenHacks.changed.connect(fullscreenBorder);
 #endif
-	if (args.isSet(fullscreenOpt) || customize.startFullscreen.get()) window->showFullScreen();
+	if (!headless && (args.isSet(fullscreenOpt) || customize.startFullscreen.get())) window->showFullScreen();
 	/* each picture shown: the vsync throttle's tick, and the next one asked for while it is on */
 	QObject::connect(window, &QQuickWindow::frameSwapped, window, [&session, window] {
 		session.vsyncTick();
@@ -1569,7 +1579,8 @@ int main(int argc, char **argv)
 			{"firmware", "firmwareWindow"}, {"data", "dataFolderWindow"}, {"precompiled", "precompiledWindow"},
 			{"trace", "traceLoggerWindow"}, {"debugger", "debuggerWindow"}, {"surfaces", "surfaceViewerWindow"},
 			{"macros", "macroToolWindow"}, {"encode", "encodeVideoWindow"}, {"cores", "coresWindow"}};
-		auto show = [window](const char *objectName) {
+		auto show = [window, headless](const char *objectName) {
+			if (headless) return;
 			if (auto *tool = window->findChild<QQuickWindow *>(QString::fromLatin1(objectName))) tool->show();
 		};
 		if (args.isSet(showOpt))
@@ -1582,7 +1593,13 @@ int main(int argc, char **argv)
 		if (args.isSet(luaOpt) || args.isSet(luaConsoleOpt)) show("luaConsoleWindow");
 	}
 	/* forms.openfile: Qt's file dialog, shown and waited for, modal as Chimera's */
-	forms.openFile = [&engine, window](const std::string &fileName, const std::string &folder, const std::vector<std::string> &filters) {
+	forms.openFile = [&engine, window, &headlessRun](const std::string &fileName, const std::string &folder, const std::vector<std::string> &filters) {
+		/* nobody to choose: the run ends, as on any dialog */
+		if (headlessRun.enabled())
+		{
+			headlessRun.blocked(QStringLiteral("Open"), QString::fromStdString(fileName));
+			return std::string();
+		}
 		QQmlComponent component(&engine);
 		component.setData("import QtQuick.Dialogs\nFileDialog { fileMode: FileDialog.OpenFile }", QUrl());
 		QStringList names;
@@ -1608,13 +1625,14 @@ int main(int argc, char **argv)
 	toolWindows.resizeWindow = [window] { QMetaObject::invokeMethod(window, "frameBufferResized", Q_ARG(QVariant, QVariant(true))); };
 	toolWindows.windowPosition = [window] { return std::pair<int64_t, int64_t>{window->x(), window->y()}; };
 	/* the agent's Lua runs where the person sees it: the Lua Console opened, as a person opens it */
-	mcp.showLuaConsole = [window] {
+	mcp.showLuaConsole = [window, headless] {
+		if (headless) return;
 		if (auto *tool = window->findChild<QQuickWindow *>(QStringLiteral("luaConsoleWindow")); tool != nullptr && !tool->isVisible()) tool->show();
 	};
 	/* a tool window a script asks for (Chimera's client.opentasstudio), by the same names */
-	vm::Connection showAskedWatch = toolWindows.showAsked.changed.connect([&toolWindows, window] {
+	vm::Connection showAskedWatch = toolWindows.showAsked.changed.connect([&toolWindows, window, headless] {
 		const QString asked = QString::fromStdString(toolWindows.showAsked.get());
-		if (asked.isEmpty()) return;
+		if (asked.isEmpty() || headless) return;
 		const QString name = asked == QStringLiteral("tastudio") ? QStringLiteral("tastudioWindow")
 			: asked == QStringLiteral("lua") ? QStringLiteral("luaConsoleWindow")
 			: asked == QStringLiteral("ram-watch") ? QStringLiteral("ramWatchWindow")
@@ -1722,16 +1740,19 @@ int main(int argc, char **argv)
 		QMetaObject::invokeMethod(window, "newProjectFrom", Q_ARG(QVariant, gameGiven));
 	/* the files a later start hands over: the first opened as the window opens a file (asking
 	 * about the open project's changes first), as Chimera's opens the first argument */
-	single.listen([window](const QStringList &handed) {
+	/* a run nobody watches takes nothing handed over */
+	if (!headless) single.listen([window](const QStringList &handed) {
 		if (handed.isEmpty() || handed.first().isEmpty()) return;
 		/* a project's package, named after it as on the command line, goes with it */
 		const QString package = handed.size() >= 2 && handed[1].endsWith(QStringLiteral(".chimeraCore"), Qt::CaseInsensitive) ? handed[1] : QString();
 		QMetaObject::invokeMethod(window, "openHanded", Q_ARG(QVariant, handed.first()), Q_ARG(QVariant, package));
 	});
-	/* Chimera's jump list: the taskbar's Recent list, and each project opened on it */
-	qt::JumpList::showRecent();
-	vm::Connection jumpListWatch = session.opens.changed.connect([&session] {
+	/* Chimera's jump list: the taskbar's Recent list, and each project opened
+	 * on it - not one a run nobody watches opened */
+	if (!headless) qt::JumpList::showRecent();
+	vm::Connection jumpListWatch = session.opens.changed.connect([&session, headless] {
 		const std::string path = session.projectPath.get();
+		if (headless) return;
 		if (!path.empty()) qt::JumpList::addRecent(path, std::filesystem::path(path).filename().string());
 	});
 	if (args.isSet(mcpServerOpt))

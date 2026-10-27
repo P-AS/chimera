@@ -224,7 +224,7 @@ qt6 = import('qt6')
 qt_dep = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'QuickControls2'], required: get_option('qt_ui'))
 if qt_dep.found()
   qt_moc = qt6.compile_moc(
-    headers: ['qt/qml_view_model.hpp', 'qt/picture_item.hpp', 'qt/piano_roll_item.hpp', 'qt/key_names.hpp', 'qt/theme_palette.hpp', 'qt/clipboard_relay.hpp', 'qt/picture_files.hpp', 'qt/pointer_capture.hpp', 'qt/button_router.hpp'],
+    headers: ['qt/qml_view_model.hpp', 'qt/picture_item.hpp', 'qt/piano_roll_item.hpp', 'qt/key_names.hpp', 'qt/theme_palette.hpp', 'qt/clipboard_relay.hpp', 'qt/picture_files.hpp', 'qt/pointer_capture.hpp', 'qt/button_router.hpp', 'qt/headless_run.hpp'],
     include_directories: [vm_inc, engine_inc],
     dependencies: [qt_dep],
   )
@@ -235,6 +235,7 @@ if qt_dep.found()
   qt_icon = host_machine.system() == 'windows' ? import('windows').compile_resources('qt/chimera.rc', depend_files: 'qt/chimera.manifest') : []
   qt_sources = [
     'qt/main.cpp',
+    'qt/headless_run.cpp',
     'qt/qml_view_model.cpp',
     'qt/picture_item.cpp',
     'qt/piano_roll_item.cpp',
@@ -332,6 +333,15 @@ if qt_dep.found()
     find_program('python3'),
     args: [files('qt/tests/command-line.py'), chimera_qt, meson.current_build_dir() / 'command-line-test', window_game[0],
       repo_root / 'build/Cores/synth-box.chimeraCore'],
+    timeout: 300,
+  )
+  # Chimera's --headless, for runs nobody watches (the cores' tests): no
+  # display, and what would wait for a person ends the run, said
+  test(
+    'headless',
+    find_program('python3'),
+    args: [files('qt/tests/headless.py'), chimera_qt, meson.current_build_dir() / 'headless-test',
+      repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom'],
     timeout: 300,
   )
   # a theme reaches Qt Quick's controls, which take the platform's colours
