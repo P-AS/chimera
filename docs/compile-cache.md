@@ -188,6 +188,17 @@ a manifest that does not vouch for the build now running is not believed, so the
 game compiles again. A rebuild is cheaper than an directory that accumulates
 forever.
 
+Not believing the manifest is not enough: another build's files keep their
+names, so a compile would take them as already done and a session would hand
+them to the core. A game's folder therefore holds one build's code
+(`source/ui/viewmodel/src/compiled_code.cpp`). Before a session gives the folder
+to the core, and before New Project compiles into it, code that another build
+compiled is removed, and so are files that no manifest names a build for. A
+folder a session starts is given a manifest naming the build, with no modules
+(a compile lists them). New Project counts a game as compiled only when its
+manifest names the build now running. The session says when it removed
+another build's code.
+
 Objects are **not** shared between games: each game keeps its own copy of
 everything it needs, firmware libraries included. Measured on the deciding
 machine, the shared firmware set was 12 MB against a game's own 47 MB - so the

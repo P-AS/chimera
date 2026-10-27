@@ -22,6 +22,7 @@
 #include "chimera/engine.h"
 #include "chimera/vm/firmware.hpp"
 #include "chimera/vm/json.hpp"
+#include "chimera/vm/compiled_code.hpp"
 #include "chimera/vm/crash_notes.hpp"
 #include "chimera/vm/process_stamp.hpp"
 #include "chimera/vm/settings_vm.hpp"
@@ -5097,6 +5098,11 @@ void SessionViewModel::compileCacheOnMachine(const std::string &package, const s
 		if (ce_sha1_file(gamePath.c_str(), hash, &size) == 1) sha = hash;
 	}
 	const std::string dir = compileDirFor(compileRootM_, compiles, sha);
+	/* the game's compiled code, if another build of the core compiled it,
+	 * is removed before this one reads it (compiled_code.hpp) */
+	if (const std::optional<compiled::Build> build = dir.empty() ? std::nullopt : compiled::buildOf(package);
+		build && compiled::claim(dir, *build))
+		later([this] { status.set("This game's compiled code was made by another build of the core and was removed; the core compiles it again as the game needs it"); });
 	ce_cache_dir(dir.empty() ? nullptr : dir.c_str());
 	later([this, dir] { compileCacheDir.set(dir); });
 }

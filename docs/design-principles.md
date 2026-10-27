@@ -10547,3 +10547,29 @@ installed"). Both bundles now carry it, and `tools/bundle_qml.py` makes
 staging stop when a module that Chimera's QML or Qt's dialogs import is
 missing. Measured: the check named that module on the bundle as it was, and a
 file dialog loaded with only the new bundle's QML opened and closed.
+
+## Compiled code belongs to the core build that made it (user-decided, 2026-10-27, issues 361, 383, 377)
+
+RPCS3 games that hung or crashed (Sonic Unleashed, Oblivion) started once
+the reporter moved a month-old compiled-code folder away and compiled again.
+The design says a manifest that names another core build is not believed, but
+the window never compared it with the build running. New Project counted the
+game as compiled, and a session handed the old files to the core. Old files
+keep their names, so even a new compile would have taken them as already
+done.
+
+The owner chose that the code belongs to the build that made it. Before a
+session gives a game's folder to the core, and before New Project compiles into
+it, code another build compiled is removed, and so are files no manifest names
+a build for. New Project counts a game as compiled only for the build running.
+Tools > Pre-Compiled Modules still lists each game's code with the build that
+made it and removes it by hand.
+
+Measured: the view-model test compiles a game with the synthetic compiling
+core, marks its manifest as an older build's and adds a stray file. New
+Project then said the code was compiled by the older build and compiled it
+again, and the stray file was gone. A session that opened the project removed
+the older build's files, and also files with no manifest, and kept this
+build's. With the check turned off, the four checks failed. Not tried with
+RPCS3 or with the reporter's games.
+

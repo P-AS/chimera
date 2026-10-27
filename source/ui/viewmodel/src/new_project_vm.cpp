@@ -1,5 +1,7 @@
 #include "chimera/vm/new_project_vm.hpp"
 
+#include "chimera/vm/compiled_code.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -389,8 +391,10 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				error = dir.empty() ? "there is no folder for compiled code" : "there is no runner for compile sessions";
 				return {};
 			}
-			std::error_code ec;
-			fs::create_directories(dir, ec);
+			/* the folder made this build's: code another build compiled is
+			 * removed, or the sessions would take it as already compiled */
+			const compiled::Build build = compiled::buildOf(package_).value_or(compiled::Build{core.get(), version_});
+			compiled::claim(dir, build);
 			char sha[41] = {};
 			ce_sha1_file(game.c_str(), sha, nullptr);
 			/* everything a session boots with: the settings, the firmware, the other files and the slot map */
@@ -399,8 +403,8 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			job->dir = dir;
 			job->romName = fs::path(game).filename().string();
 			job->romSha1 = sha;
-			job->core = core.get();
-			job->version = version_;
+			job->core = build.core;
+			job->version = build.version;
 			/* as many side by side as the machine can give each what the setting counts it at */
 			job->sessionBytes = static_cast<uint64_t>(std::clamp<int64_t>(compileSessionGigabytes.get(), 1, 256)) << 30;
 			job->workers = std::max(1, ce_compile_sessions(static_cast<int32_t>(std::max(1u, std::thread::hardware_concurrency())),
@@ -1517,10 +1521,17 @@ void NewProjectViewModel::refreshCompile()
 	compileSeen_ = game;
 	modules_.clear();
 	bool ready = false;
+	/* code another build of the core compiled is not this one's (compiled_code.hpp) */
+	std::string otherBuild;
 	if (!game.empty())
 	{
 		/* the manifest a compile left, each module looked at */
 		const std::string dir = compileDirOf(game);
+		if (const std::optional<compiled::Build> build = compiled::buildOf(package_); build && !dir.empty() && !compiled::belongsTo(dir, *build))
+		{
+			const std::optional<compiled::Build> owner = compiled::ownerOf(dir);
+			otherBuild = owner ? owner->core + " " + owner->version : std::string("a build of the core that did not say which");
+		}
 		std::ifstream in(fs::path(dir) / "manifest.json", std::ios::binary);
 		const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 		json::Json m;
@@ -1537,11 +1548,17 @@ void NewProjectViewModel::refreshCompile()
 					modules_.push_back(std::move(mod));
 				}
 		ready = !modules_.empty() && std::all_of(modules_.begin(), modules_.end(), [](const Module &mod) { return mod.present; });
+		if (!otherBuild.empty())
+		{
+			modules_.clear();
+			ready = false;
+		}
 	}
 	moduleRows_.reset.emit();
 	compileReady.set(ready);
 	const size_t there = static_cast<size_t>(std::count_if(modules_.begin(), modules_.end(), [](const Module &mod) { return mod.present; }));
 	compileStatus.set(game.empty() ? std::string()
+		: !otherBuild.empty() ? "This game's code was compiled by " + otherBuild + ", not by this build of the core: Compile does it again."
 		: ready ? "All " + std::to_string(modules_.size()) + " modules are compiled."
 		: modules_.empty() ? std::string("This game's code is not compiled yet: Compile does it.")
 						   : std::to_string(there) + " of " + std::to_string(modules_.size()) + " modules are there: Compile does the rest.");

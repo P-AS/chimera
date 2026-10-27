@@ -7271,6 +7271,49 @@ bool compileStep(const char *compilePackage, const char *rom)
 	CHECK(d.until([&] { return session.isOpen.get() && session.projectPath.get() == made.string(); }, 60));
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* code another build of the core compiled is not this build's (issues
+	 * 361 and 383): New Project compiles it again, from nothing, and a
+	 * session removes it before the core can read it */
+	{
+		const std::string thisBuild = readFile(folder / "manifest.json");
+		auto olderBuild = [&] {
+			std::string m = thisBuild;
+			const std::string key = "\"coreVersion\": \"";
+			const size_t at = m.find(key) + key.size();
+			m.replace(at, m.find('"', at) - at, "older");
+			std::ofstream(folder / "manifest.json", std::ios::binary) << m;
+			std::ofstream(folder / "synth" / "stale.bin") << "an older build's code";
+		};
+		olderBuild();
+		CHECK(wizard.run("removeFile", {std::string("rom"), int64_t{0}}, error).has_value());
+		CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value());
+		CHECK(!wizard.compileReady.get() && wizard.compileStatus.get() ==
+			"This game's code was compiled by Synth Compile older, not by this build of the core: Compile does it again.");
+		CHECK(wizard.run("compile", {}, error).has_value());
+		CHECK(d.until([&] { return !wizard.compiling.get(); }, 60) && wizard.compileReady.get());
+		CHECK(!fs::exists(folder / "synth" / "stale.bin") && readFile(folder / "manifest.json").find("\"coreVersion\": \"older\"") == std::string::npos);
+		/* a session: the older build's code goes when the project opens */
+		olderBuild();
+		session.compileCacheRoot.set((dir / "compiled").string());
+		session.run("openProject", {made.string(), (dir / "Cores" / "synth-compile.chimeraCore").string()}, error);
+		CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+		CHECK(!fs::exists(folder / "synth" / "stale.bin") && !fs::exists(folder / "synth" / "module3.bin"));
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+		/* files no manifest names a build for go too; this build's stay */
+		fs::remove(folder / "manifest.json");
+		std::ofstream(folder / "unnamed.bin") << "whose?";
+		session.run("openProject", {made.string(), (dir / "Cores" / "synth-compile.chimeraCore").string()}, error);
+		CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+		CHECK(!fs::exists(folder / "unnamed.bin") && fs::exists(folder / "manifest.json"));
+		std::ofstream(folder / "kept.bin") << "this build's";
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+		session.run("openProject", {made.string(), (dir / "Cores" / "synth-compile.chimeraCore").string()}, error);
+		CHECK(d.until([&] { return session.isOpen.get(); }, 60) && fs::exists(folder / "kept.bin"));
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	}
 #ifndef _WIN32
 	/* Sessions killed for want of memory: half as many, and again, until they
 	 * get through, as Chimera's; one alone killed says so in Chimera's words.
