@@ -6,9 +6,12 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPalette>
+#include <QQmlProperty>
+#include <QQuickItem>
 #include <QQuickWindow>
 #include <QWindow>
 
+#include <functional>
 #include <iterator>
 
 namespace chimera::qt {
@@ -61,7 +64,38 @@ void paintWindow(QQuickWindow *window)
 			}
 }
 
-/* each Qt Quick window, as it is first shown */
+/* Qt's Fusion file and folder dialogs leave the names of the places beside
+ * the list (Home, Desktop...) and their icons without a colour, so black,
+ * on the theme's field colour: unreadable in a dark theme (#389). Each takes
+ * the button text, as Fusion's buttons do. Chimera draws Qt's dialogs in their window's
+ * overlay (dialogs/qmldir), so only that is looked through, whenever
+ * something in a window takes the focus - as a dialog's list does when the
+ * dialog opens. */
+void paintDialogPlaces(QQuickWindow *window)
+{
+	QQuickItem *content = window->contentItem();
+	if (!content) return;
+	std::function<void(QQuickItem *, bool)> walk = [&walk](QQuickItem *item, bool inSideBar) {
+		for (QQuickItem *c : item->childItems())
+		{
+			const bool side = inSideBar || c->inherits("QQuickSideBar");
+			if (side && c->property("folderName").isValid())
+			{
+				QObject *palette = c->property("palette").value<QObject *>();
+				if (auto *label = c->property("contentItem").value<QQuickItem *>(); label && palette)
+				{
+					label->setProperty("color", palette->property("buttonText"));
+					QQmlProperty(c, QStringLiteral("icon.color")).write(palette->property("buttonText"));
+				}
+			}
+			walk(c, side);
+		}
+	};
+	for (QQuickItem *top : content->childItems())
+		if (top->inherits("QQuickOverlay")) walk(top, false);
+}
+
+/* each Qt Quick window, as it is first shown; Qt's dialogs, as they open */
 class WindowPainter : public QObject
 {
 public:
@@ -70,6 +104,8 @@ public:
 	{
 		if (event->type() == QEvent::Show)
 			if (auto *window = qobject_cast<QQuickWindow *>(watched)) paintWindow(window);
+		if (event->type() == QEvent::FocusIn)
+			if (auto *item = qobject_cast<QQuickItem *>(watched); item && item->window()) paintDialogPlaces(item->window());
 		return false;
 	}
 };
@@ -163,6 +199,9 @@ void applyTheme(const QString &colorsJson)
 	/* the menus' dividers (MenuDivider.qml); Fusion draws only a split handle under the pointer in midlight */
 	p.setColor(QPalette::Midlight, c("MenuSeparator", QPalette().color(QPalette::Mid)));
 	p.setColor(QPalette::Shadow, c("GlyphShadow", Qt::black));
+	/* only Qt's own dialogs use it: the folder bar, the places beside the
+	 * list and the tint under a picked line, all fields of a kind (#389) */
+	p.setColor(QPalette::Light, c("InputBackground", window));
 	for (QPalette::ColorRole r : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText})
 		p.setColor(QPalette::Disabled, r, c("DisabledText", text));
 	for (QPalette::ColorRole r : {QPalette::Base, QPalette::Button})

@@ -10508,3 +10508,34 @@ module at frame 458, the project's lines, the stack) and a minidump; opening
 the project again offered the recovered work and named the crash. Not tried:
 a real driver's crash, and the flight recorder's lines (the synthetic core
 draws without the GPU).
+
+## Qt's own dialogs are drawn inside their window (2026-10-27, issue 389)
+
+On Linux, Qt draws the file, folder, colour, font and message dialogs itself.
+Since Qt 6.10 it puts each in a window of its own. A person on WSL found that
+the file dialog's Open and Cancel did nothing, and that parts of it stayed
+white in the dark theme. The owner chose to fix both in Qt's dialog rather
+than write one of Chimera's own.
+
+- Chimera's QML imports `ChimeraDialogs` (`source/ui/qt/dialogs`) in place
+  of `QtQuick.Dialogs`. It is Qt's five dialogs with `popupType: Popup.Item`:
+  each is drawn inside the window that opens it, as Qt drew them up to 6.9.
+  Windows' dialogs are the system's own, and this does not change them.
+- Qt chooses its dialogs' look by the style's name and knew Chimera's only
+  as ChimeraStyle, so it gave them its basic look. In that look a picked line
+  is white text on a near-white tint. The window now tells Qt that the style
+  is Fusion's (`setExtraFileSelectors`), so the dialogs get Fusion's look and
+  a picked line is drawn in the theme's selection colours.
+- The white parts were the palette's "light" colour, which no theme set. A
+  theme now sets it to its field colour. Qt's Fusion dialogs draw the names
+  and icons of the places beside the list (Home, Desktop...) with no colour,
+  so black, which was unreadable on a dark field. They now take the button
+  text whenever something in the window takes the focus, as the dialog's
+  list does when it opens.
+
+Measured: a test program opened the file dialog with the dark theme off
+screen and on WSLg's Wayland and clicked Cancel. In Qt's own window and inside
+the window, the click closed the dialog in both places. A click sent by a
+program does not pass through the compositor, so the reporter's failure was
+not reproduced here. That Open and Cancel now answer on WSL has not been
+seen with a real mouse.

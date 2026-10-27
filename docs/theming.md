@@ -175,7 +175,15 @@ controls Chimera draws itself are in `source/ui/qt/style` (check boxes, radio
 buttons, scroll bars, dialogs). What draws colours of its own, such as the
 piano roll's rows, asks for the theme's colour by role.
 
+The file, folder, colour, font and message dialogs Qt draws itself (on Linux;
+Windows shows its own) are drawn inside the window that opens them
+(`source/ui/qt/dialogs`) and in Fusion's look, the look Chimera's controls
+have. Their folder bar and the places beside the list are drawn in the
+palette's "light" colour, which a theme gives its field colour
+(`InputBackground`), and the places' names and icons take the button text,
+which Qt's Fusion dialogs leave out.
+
 `test-theme` (run by `meson test`) holds that a theme reaches a window's
-buttons and fields, its menus, a window opened later, and a theme chosen while
-they are open, and that a window marked unthemed (a Lua form) keeps the colours
-it set itself.
+buttons and fields, its menus, a window opened later, Qt's file dialog open in
+a window, and a theme chosen while they are open, and that a window marked
+unthemed (a Lua form) keeps the colours it set itself.

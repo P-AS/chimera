@@ -9,7 +9,7 @@
 // model.
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Dialogs
+import ChimeraDialogs
 import QtQuick.Layouts
 
 ApplicationWindow {

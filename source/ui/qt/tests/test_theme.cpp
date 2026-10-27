@@ -14,10 +14,14 @@
 #include <QGuiApplication>
 #include <QQmlComponent>
 #include <QQmlEngine>
+#include <QQmlFileSelector>
+#include <QQuickItem>
 #include <QQuickStyle>
 #include <QQuickWindow>
 
+#include <algorithm>
 #include <cstdio>
+#include <functional>
 #include <memory>
 
 namespace {
@@ -43,11 +47,37 @@ ApplicationWindow {
     readonly property color fieldColour: field.palette.base
     readonly property color menuColour: menu.palette.window
     readonly property color dividerColour: divider.contentItem.color
+    readonly property color lightColour: palette.light
     Column {
         Button { id: button; text: "B" }
         TextField { id: field; text: "F" }
     }
     Menu { id: menu; MenuItem { text: "M" } MenuDivider { id: divider } }
+}
+)";
+
+const char *const kDialogs = R"(
+import QtQuick
+import ChimeraDialogs
+Item {
+    readonly property string inside: [file, folder, message, colour, font].map(d => d.popupType).join(" ")
+    readonly property string enums: [FileDialog.SaveFile, MessageDialog.Ok].join(" ")
+    FileDialog { id: file }
+    FolderDialog { id: folder }
+    MessageDialog { id: message }
+    ColorDialog { id: colour }
+    FontDialog { id: font }
+}
+)";
+
+const char *const kFileDialog = R"(
+import QtQuick
+import QtQuick.Controls
+import ChimeraDialogs
+ApplicationWindow {
+    width: 640; height: 480; visible: true
+    property alias dialog: file
+    FileDialog { id: file }
 }
 )";
 
@@ -93,6 +123,9 @@ int main(int argc, char **argv)
 		   "MenuSeparator": "#5A5A5A"})"));
 
 	QQmlEngine engine;
+	/* Qt's dialogs in Fusion's look, as the window has them (main.cpp) */
+	QQmlFileSelector selector(&engine);
+	selector.setExtraSelectors({QStringLiteral("Fusion")});
 	/* a window opened with the theme chosen: its controls and its menu */
 	auto first = make(engine, kWindow);
 	CHECK(first != nullptr);
@@ -102,6 +135,33 @@ int main(int argc, char **argv)
 	CHECK(colour(first, "menuColour") == window);
 	/* the menu's divider in the theme's colour, not Fusion's near black */
 	CHECK(colour(first, "dividerColour") == QColor(0x5A, 0x5A, 0x5A));
+	/* Qt's own dialogs draw their folder bar and side places in "light":
+	 * a field's colour, not the platform's white (issue 389) */
+	CHECK(colour(first, "lightColour") == field);
+	/* Qt's file dialog, open: the places beside its list in the theme's
+	 * button text (the window text here), not Fusion's black (issue 389) */
+	{
+		auto window = make(engine, kFileDialog);
+		QObject *dialog = window ? window->property("dialog").value<QObject *>() : nullptr;
+		CHECK(dialog != nullptr);
+		if (auto *w = qobject_cast<QQuickWindow *>(window.get())) w->requestActivate();
+		if (dialog) QMetaObject::invokeMethod(dialog, "open");
+		for (int i = 0; i < 20; i++) QCoreApplication::processEvents();
+		QList<QColor> places;
+		std::function<void(QQuickItem *, bool)> walk = [&](QQuickItem *item, bool side) {
+			for (QQuickItem *c : item->childItems())
+			{
+				const bool in = side || c->inherits("QQuickSideBar");
+				if (in && c->property("folderName").isValid())
+					if (auto *label = c->property("contentItem").value<QQuickItem *>()) places.append(label->property("color").value<QColor>());
+				walk(c, in);
+			}
+		};
+		if (auto *w = qobject_cast<QQuickWindow *>(window.get())) walk(w->contentItem(), false);
+		CHECK(!places.isEmpty());
+		CHECK(std::all_of(places.begin(), places.end(), [](const QColor &c) { return c == QColor(0xE0, 0xE0, 0xE0); }));
+		if (dialog) QMetaObject::invokeMethod(dialog, "close");
+	}
 	/* a window opened later, the same */
 	auto second = make(engine, kWindow);
 	CHECK(colour(second, "buttonColour") == button);
@@ -119,6 +179,15 @@ int main(int argc, char **argv)
 	CHECK(colour(first, "dividerColour") != QColor(0xF0, 0xF0, 0xF0));
 	CHECK(colour(first, "dividerColour").alpha() == 255);
 	CHECK(colour(form, "buttonColour") == QColor(0x12, 0x34, 0x56));
+	CHECK(colour(first, "lightColour") == QColor(Qt::white));
+	/* Qt's dialogs as Chimera's QML names them (ChimeraDialogs, built in):
+	 * drawn inside their window, Qt's enums still read through them (#389) */
+	{
+		auto dialogs = make(engine, kDialogs);
+		CHECK(dialogs != nullptr);
+		CHECK(dialogs && dialogs->property("inside").toString() == QStringLiteral("0 0 0 0 0"));
+		CHECK(dialogs && dialogs->property("enums").toString() == QStringLiteral("2 1024"));
+	}
 
 	std::printf("%d checks, %d failed\n", checks, failed);
 	return failed == 0 ? 0 : 1;

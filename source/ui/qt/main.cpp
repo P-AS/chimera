@@ -1448,6 +1448,10 @@ int main(int argc, char **argv)
 	qt::ButtonRouter buttonRouter;
 	pictureFiles.say = [&session](const std::string &text) { session.status.set(text); };
 	QQmlApplicationEngine engine;
+	/* Qt picks the look of the dialogs it draws itself by the style's name,
+	 * and knows Chimera's only as ChimeraStyle: told it is Fusion's, they
+	 * are Fusion's, a picked line in the theme's selection colour (#389) */
+	engine.setExtraFileSelectors({QStringLiteral("Fusion")});
 	/* every QML warning counted: CHIMERA_QT_STRICT_QML makes any of them a
 	 * failure at the end (the window test), since a binding to a name no
 	 * view model has reads as nothing and only warns */

@@ -237,6 +237,7 @@ if qt_dep.found()
   # the resource compiler runs on the build machine; its Qt may pack with
   # zstd, which a Qt built without zstd (the Windows one) cannot unpack
   qt_rcc = qt6.compile_resources(sources: ['qt/ui.qrc'], extra_args: ['--no-zstd'])
+  qt_dialogs_rcc = qt6.compile_resources(name: 'dialogs', sources: ['qt/dialogs.qrc'], extra_args: ['--no-zstd'])
   # Chimera's icon on the program and its windows on Windows
   qt_icon = host_machine.system() == 'windows' ? import('windows').compile_resources('qt/chimera.rc', depend_files: 'qt/chimera.manifest') : []
   qt_sources = [
@@ -253,6 +254,7 @@ if qt_dep.found()
     'qt/jump_list.cpp',
     qt_moc,
     qt_rcc,
+    qt_dialogs_rcc,
   ]
   if host_machine.system() == 'windows'
     # the window is a DLL in lib\ with everything it needs, and chimera.exe
@@ -345,7 +347,7 @@ if qt_dep.found()
   # and not the application's unless each window is given the theme
   test_theme = executable(
     'test-theme',
-    ['qt/tests/test_theme.cpp', 'qt/theme_palette.cpp', qt6.compile_moc(headers: ['qt/theme_palette.hpp'], dependencies: [qt_dep])],
+    ['qt/tests/test_theme.cpp', 'qt/theme_palette.cpp', qt6.compile_moc(headers: ['qt/theme_palette.hpp'], dependencies: [qt_dep]), qt_dialogs_rcc],
     dependencies: [qt_dep],
     override_options: ['cpp_std=c++20'],
     cpp_args: ['-DCHIMERA_QT_QML_DIR="' + meson.current_source_dir() / 'qt' + '"'],

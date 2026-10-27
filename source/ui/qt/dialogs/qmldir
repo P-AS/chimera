@@ -1,0 +1,14 @@
+# Qt's five dialogs as Chimera shows them: drawn inside the window that
+# opens them. Qt 6.10 and later put the dialogs it draws itself (Linux's;
+# Windows' are the system's own) in a window of their own, and on WSL a
+# person found that window's Open and Cancel did nothing (issue 389), as
+# others have found of Qt's child windows there. Chimera's QML imports
+# ChimeraDialogs in place of QtQuick.Dialogs; everything else, the enums
+# among it, comes from QtQuick.Dialogs.
+module ChimeraDialogs
+import QtQuick.Dialogs auto
+FileDialog 6.0 FileDialog.qml
+FolderDialog 6.0 FolderDialog.qml
+MessageDialog 6.0 MessageDialog.qml
+ColorDialog 6.0 ColorDialog.qml
+FontDialog 6.0 FontDialog.qml
