@@ -14,9 +14,11 @@ class NutMuxer
 {
 public:
 	using Sink = std::function<bool(const uint8_t *data, size_t size)>;
-	/* the frame rate as a fraction, the sound's rate and channels; the
-	 * headers are written at once */
-	NutMuxer(int32_t width, int32_t height, int64_t fpsNum, int64_t fpsDen, int32_t sampleRate, int32_t channels, Sink sink);
+	/* the frame rate as a fraction, the sound's rate and channels, and the
+	 * shape of a pixel (sarNum:sarDen, wide to high); the headers are
+	 * written at once */
+	NutMuxer(int32_t width, int32_t height, int64_t fpsNum, int64_t fpsDen, int32_t sampleRate, int32_t channels, Sink sink,
+		int64_t sarNum = 1, int64_t sarDen = 1);
 	/* a frame's pixels, width * height of them */
 	bool writeVideo(const uint32_t *pixels, size_t count);
 	/* interleaved samples, a channel each in turn */

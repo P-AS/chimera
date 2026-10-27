@@ -8775,7 +8775,7 @@ bool encodeVideo(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.hasProject.get() && !session.projectPath.get().empty(); }, 20));
 	/* the box follows the command: the preset's name, the container's extension */
 	encoder.run("usePreset", {int64_t{5}}, error);
-	CHECK(encoder.preset.get() == "Lossless H.264, MKV" && encoder.output.get() == (dir / "run.mkv").string());
+	CHECK(encoder.preset.get() == "H.264 4:4:4 (YUV, nearly lossless), MKV" && encoder.output.get() == (dir / "run.mkv").string());
 	encoder.commandLine.set("-c:v ffv1 -c:a pcm_s16le -f matroska");
 	CHECK(encoder.preset.get() == "Your own command");
 	session.run("seek", {int64_t{20}}, error);
@@ -8891,6 +8891,69 @@ bool encodeVideo(const char *package, const char *rom)
 	CHECK(encoder.phase.get() == "failed" && encoder.status.get().find("ffmpeg") != std::string::npos && session.frame.get() == 20);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* a picture shown in another shape than its pixels' (a PC-98's 640x400
+	 * shown 4:3) is written in that shape, and the YouTube presets make it
+	 * that shape in square pixels; the lossless presets give back every
+	 * pixel (issue 375) */
+	{
+		CHECK((EncoderViewModel::pixelShape(640, 400, 640, 480) == std::pair<int64_t, int64_t>{5, 6}));
+		CHECK((EncoderViewModel::pixelShape(320, 240, 320, 240) == std::pair<int64_t, int64_t>{1, 1}));
+		CHECK((EncoderViewModel::pixelShape(320, 240, 0, 0) == std::pair<int64_t, int64_t>{1, 1}));
+		/* a dithered picture: black and white, red and blue, a ramp */
+		const int32_t w = 640, h = 400;
+		std::vector<uint32_t> picture(static_cast<size_t>(w) * h);
+		for (int32_t y = 0; y < h; y++)
+			for (int32_t x = 0; x < w; x++)
+				picture[static_cast<size_t>(y) * w + x] = 0xFF000000u |
+					(x < 200 ? ((x + y) % 2 ? 0xFFFFFFu : 0) : x < 400 ? ((x + y) % 2 ? 0xFF0000u : 0x0000FFu)
+								: static_cast<uint32_t>((x * 255 / w) << 16 | (y * 255 / h) << 8 | 128));
+		auto encode = [&](const std::string &command, const fs::path &out) {
+			Subprocess ff;
+			std::string why;
+			std::vector<std::string> args = {"-y", "-f", "nut", "-i", "-"};
+			for (const std::string &word : splitCommandLine(command)) args.push_back(word);
+			args.push_back(out.string());
+			if (!ff.start(ffmpeg, args, why)) return false;
+			{
+				NutMuxer mux(w, h, 60, 1, 44100, 2, [&ff](const uint8_t *data, size_t size) { return ff.write(data, size); }, 5, 6);
+				const std::vector<int16_t> quiet(735 * 2, 0);
+				for (int i = 0; i < 3; i++) mux.writeVideo(picture.data(), picture.size()), mux.writeAudio(quiet.data(), quiet.size());
+				mux.finish();
+			}
+			ff.closeInput();
+			return ff.wait(-1) == 0;
+		};
+		/* what ffmpeg says of a file, every line */
+		auto described = [&](const fs::path &file) {
+			Subprocess probe;
+			std::string why, said;
+			probe.onLine = [&said](const std::string &line) { said += line + "\n"; };
+			if (!probe.start(ffmpeg, {"-hide_banner", "-i", file.string()}, why)) return std::string();
+			probe.closeInput();
+			probe.wait(-1);
+			return said;
+		};
+		CHECK(encode("-c:v utvideo -f matroska", dir / "shape.mkv") && described(dir / "shape.mkv").find("640x400, SAR 5:6 DAR 4:3") != std::string::npos);
+		const auto &presets = EncoderViewModel::presets();
+		CHECK(encode(presets[2].command, dir / "youtube.mp4") && described(dir / "youtube.mp4").find("2880x2160 [SAR 1:1 DAR 4:3]") != std::string::npos);
+		for (const auto &p : presets)
+		{
+			if (std::string(p.name).rfind("Lossless", 0) != 0) continue;
+			const fs::path out = dir / "lossless.mkv", raw = dir / "lossless.raw";
+			std::error_code gone;
+			fs::remove(raw, gone);
+			Subprocess back;
+			std::string why;
+			const bool written = encode(p.command, out) && back.start(ffmpeg, {"-y", "-i", out.string(), "-vframes", "1", "-f", "rawvideo",
+				"-pix_fmt", "bgra", raw.string()}, why) && (back.closeInput(), back.wait(-1) == 0);
+			const std::string bytes = readFile(raw);
+			bool same = written && bytes.size() == picture.size() * 4;
+			for (size_t i = 0; same && i < picture.size(); i++)
+				same = (reinterpret_cast<const uint32_t *>(bytes.data())[i] | 0xFF000000u) == picture[i];
+			std::printf("%s: %s\n", p.name, same ? "every pixel kept" : "changed");
+			CHECK(same && described(out).find("Audio: flac") != std::string::npos);
+		}
+	}
 	std::error_code ec;
 	fs::remove_all(dir, ec);
 	return true;

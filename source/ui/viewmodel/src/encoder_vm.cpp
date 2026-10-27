@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
+#include <numeric>
 
 #include "chimera/engine.h"
 #include "chimera/vm/nut_muxer.hpp"
@@ -20,19 +21,30 @@ const char *const EncoderViewModel::kDefaultCommand = "-c:v libx264 -c:a aac -pi
 
 const std::vector<EncoderViewModel::Preset> &EncoderViewModel::presets()
 {
-	/* Chimera's (its issue 323): the default, four for YouTube at 2160 lines, four that keep every pixel */
+	/* Chimera's (its issue 323): the default, four for YouTube at 2160 lines, four at full colour */
 	static const std::vector<Preset> list = {
 		{"MP4, H.264 and AAC (the default)", kDefaultCommand},
-		{"YouTube 2160p, landscape, smooth scaling", "-vf scale=-2:2160:flags=lanczos -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
-		{"YouTube 2160p, landscape, sharp pixels", "-vf scale=-2:2160:flags=neighbor -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
-		{"YouTube 2160p, portrait, smooth scaling", "-vf scale=2160:-2:flags=lanczos -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
-		{"YouTube 2160p, portrait, sharp pixels", "-vf scale=2160:-2:flags=neighbor -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
-		{"Lossless H.264, MKV", "-c:v libx264 -qp 0 -c:a aac -f matroska"},
-		{"Lossless H.264 RGB, MKV", "-c:v libx264rgb -qp 0 -pix_fmt rgb24 -c:a aac -f matroska"},
-		{"Lossless H.265, MKV", "-c:v libx265 -x265-params lossless=1 -pix_fmt yuv444p -c:a aac -f matroska"},
-		{"Lossless UT Video, MKV", "-c:v utvideo -pix_fmt gbrp -c:a aac -f matroska"},
+		/* at 2160 lines in the shape the machine shows (dar: a PC-98's
+		 * 640x400 is 4:3), square pixels (issue 375) */
+		{"YouTube 2160p, landscape, smooth scaling", "-vf scale=trunc(2160*dar/2)*2:2160:flags=lanczos,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
+		{"YouTube 2160p, landscape, sharp pixels", "-vf scale=trunc(2160*dar/2)*2:2160:flags=neighbor,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
+		{"YouTube 2160p, portrait, smooth scaling", "-vf scale=2160:trunc(2160/dar/2)*2:flags=lanczos,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
+		{"YouTube 2160p, portrait, sharp pixels", "-vf scale=2160:trunc(2160/dar/2)*2:flags=neighbor,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
+		/* full colour, FLAC sound: the RGB ones keep every pixel and sample;
+		 * the YUV one changes some colours by a level (issue 375) */
+		{"H.264 4:4:4 (YUV, nearly lossless), MKV", "-c:v libx264 -qp 0 -pix_fmt yuv444p -c:a flac -f matroska"},
+		{"Lossless H.264 RGB, MKV", "-c:v libx264rgb -qp 0 -pix_fmt rgb24 -c:a flac -f matroska"},
+		{"Lossless H.265 RGB, MKV", "-c:v libx265 -x265-params lossless=1 -pix_fmt gbrp -c:a flac -f matroska"},
+		{"Lossless UT Video, MKV", "-c:v utvideo -pix_fmt gbrp -c:a flac -f matroska"},
 	};
 	return list;
+}
+
+std::pair<int64_t, int64_t> EncoderViewModel::pixelShape(int32_t sw, int32_t sh, int32_t vw, int32_t vh)
+{
+	if (sw <= 0 || sh <= 0 || vw <= 0 || vh <= 0) return {1, 1};
+	const int64_t num = static_cast<int64_t>(vw) * sh, den = static_cast<int64_t>(vh) * sw, g = std::gcd(num, den);
+	return {num / g, den / g};
 }
 
 std::string EncoderViewModel::extensionOf(const std::string &command)
@@ -86,6 +98,8 @@ struct EncoderViewModel::Job
 	std::unique_ptr<Subprocess> process;
 	std::unique_ptr<NutMuxer> muxer;
 	int32_t w = 0, h = 0;
+	/* a pixel's shape, wide to high */
+	std::pair<int64_t, int64_t> shape{1, 1};
 	int segment = 0;
 	std::vector<std::string> files;
 	/* the stretchers' arithmetic (Chimera's AVSync) */
@@ -108,7 +122,8 @@ struct EncoderViewModel::Job
 		args.push_back(fileName());
 		if (!process->start(ffmpeg, args, why)) return false;
 		Subprocess *p = process.get();
-		muxer = std::make_unique<NutMuxer>(w, h, fpsNum, fpsDen, kRate, 2, [p](const uint8_t *d, size_t n) { return p->write(d, n); });
+		muxer = std::make_unique<NutMuxer>(w, h, fpsNum, fpsDen, kRate, 2, [p](const uint8_t *d, size_t n) { return p->write(d, n); },
+			shape.first, shape.second);
 		files.push_back(fileName());
 		if (!muxer->failed()) return true;
 		why = died();
@@ -212,6 +227,10 @@ struct EncoderViewModel::Job
 			}
 			w = pw;
 			h = ph;
+			/* the shape the machine shows its picture in; a size asked for is
+			 * square pixels */
+			shape = resize && outW > 0 && outH > 0 ? std::make_pair(int64_t{1}, int64_t{1})
+				: pixelShape(sw, sh, ce_session_virtual_width(s), ce_session_virtual_height(s));
 			fpsNum = ce_session_vsync_numerator(s);
 			fpsDen = ce_session_vsync_denominator(s);
 			if (fpsNum <= 0 || fpsDen <= 0) fpsNum = 60, fpsDen = 1;

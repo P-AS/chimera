@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "chimera/vm/session_vm.hpp"
@@ -35,6 +36,9 @@ public:
 	static const std::vector<Preset> &presets();
 	/* the container the command names (-f), as the file's extension; "" for none */
 	static std::string extensionOf(const std::string &command);
+	/* the shape of a pixel of a picture sw x sh that the machine shows at
+	 * vw x vh, as {wide, high} in lowest terms ({1, 1} when it cannot be said) */
+	static std::pair<int64_t, int64_t> pixelShape(int32_t sw, int32_t sh, int32_t vw, int32_t vh);
 	/* how far an encode is, as Chimera's window says it:
 	 * "frame 1,234 / 5,000   60 fps   about 1m 4s remaining" (no time left
 	 * said until a speed is known) */

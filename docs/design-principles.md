@@ -10573,3 +10573,33 @@ the older build's files, and also files with no manifest, and kept this
 build's. With the check turned off, the four checks failed. Not tried with
 RPCS3 or with the reporter's games.
 
+## Encode Video's presets keep the picture's shape and every pixel (2026-10-27, issue 375)
+
+A report found three faults in Encode Video's presets. Each file was 16:10
+where the game is shown 4:3: a PC-98's 640x400 picture was written with
+square pixels. Two "Lossless" presets went through YUV, which changes some
+colours by a level. And the lossless presets wrote AAC sound, which is not
+lossless.
+
+- The stream Chimera hands ffmpeg now carries the shape of a pixel, worked
+  out from the picture's size and the size the machine shows it at. Every
+  file plays in the machine's shape. The YouTube presets scale to that shape
+  with square pixels.
+- The lossless presets write FLAC sound. H.265 is RGB, as H.264 RGB and UT
+  Video are. The H.264 preset that stays in YUV is named for what it is:
+  "H.264 4:4:4 (YUV, nearly lossless)".
+- The default MP4 is unchanged. Its colour is stored at half resolution
+  (4:2:0), so a red and blue dither one pixel apart becomes purple. 4:4:4
+  keeps it but does not play in many players. That choice is the owner's.
+
+Measured with the ffmpeg the bundle ships (4.4.1), on a picture with
+dithers and a ramp:
+- The three RGB presets kept every pixel. H.265 in YUV had kept half the red
+  and blue dither's pixels.
+- The default MP4 lost the red and blue dither (mean error 88 levels).
+  4:4:4 brought it to 1.8, and a lower CRF did not help.
+- The encode test now checks the shape (640x400 written as SAR 5:6, DAR
+  4:3; the YouTube sharp preset 2880x2160 at 4:3) and that each lossless
+  preset gives back every pixel with FLAC sound. Each check was seen to fail
+  without the change.
+

@@ -67,7 +67,8 @@ void packet(std::vector<uint8_t> &out, uint64_t startCode, const std::vector<uin
 }
 } // namespace
 
-NutMuxer::NutMuxer(int32_t width, int32_t height, int64_t fpsNum, int64_t fpsDen, int32_t sampleRate, int32_t channels, Sink sink)
+NutMuxer::NutMuxer(int32_t width, int32_t height, int64_t fpsNum, int64_t fpsDen, int32_t sampleRate, int32_t channels, Sink sink,
+	int64_t sarNum, int64_t sarDen)
 	: sink_(std::move(sink)), fpsNum_(fpsNum), fpsDen_(fpsDen), sampleRate_(sampleRate), channels_(channels)
 {
 	/* the time bases must be relatively prime */
@@ -110,8 +111,10 @@ NutMuxer::NutMuxer(int32_t width, int32_t height, int64_t fpsNum, int64_t fpsDen
 	bytes(video, "", 0);
 	varU(video, static_cast<uint64_t>(width));
 	varU(video, static_cast<uint64_t>(height));
-	varU(video, 1); /* sample width and height */
-	varU(video, 1);
+	/* a pixel's shape: a picture shown wider or narrower than its pixels
+	 * (a PC-98's 640x400 shown 4:3) plays in that shape (issue 375) */
+	varU(video, static_cast<uint64_t>(sarNum > 0 && sarDen > 0 ? sarNum : 1)); /* sample width and height */
+	varU(video, static_cast<uint64_t>(sarNum > 0 && sarDen > 0 ? sarDen : 1));
 	varU(video, 18); /* full range rec709 */
 	packet(out, kStream, video);
 	std::vector<uint8_t> audio;

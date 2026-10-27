@@ -48,11 +48,24 @@ The Preset box above the command offers ready-made commands by name (issue
 323): the default (H.264 and AAC in an MP4), four for YouTube at 2160 lines -
 landscape or portrait, scaled smoothly (lanczos, for pictures drawn as
 photographs) or sharply (nearest neighbour, for pixel art), at a quality
-YouTube keeps - and four that keep every pixel (H.264, H.264 in RGB, H.265
-and UT Video, in Matroska). Picking one writes its command into the command
-box and nothing else; the command box is still what the encode uses, and an
-edit to it makes the Preset box say "Your own command". A command typed that
-is a preset's shows that preset.
+YouTube keeps - and four in full colour in Matroska with FLAC sound: H.264
+in YUV 4:4:4, which changes some colours by a level, and three that keep
+every pixel and every sample (H.264 in RGB, H.265 in RGB and UT Video).
+Picking one writes its command into the command box and nothing else; the
+command box is still what the encode uses, and an edit to it makes the
+Preset box say "Your own command". A command typed that is a preset's shows
+that preset.
+
+Every file is written in the shape the machine shows its picture in, not the
+shape of its pixels: a PC-98's 640x400 picture, shown 4:3, is written as
+640x400 with pixels 5:6 wide to high, so it plays at 4:3 (issue 375). The
+YouTube presets scale to that shape (`dar` in ffmpeg's scale filter) with
+square pixels: that picture comes out 2880x2160. A size asked for in the
+window is written with square pixels.
+
+The default MP4 stores colour at half the width and height of the picture
+(YUV 4:2:0), as most players need, so a dither of two colours one pixel
+apart becomes their average. The lossless presets keep it.
 
 ## Markers, not frame numbers
 
