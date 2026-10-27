@@ -43,6 +43,12 @@ for d in ("libchimera.dll", "libminiboxhost.dll", "libzstd.dll", "lua54.dll", "S
     shutil.copy2(f"{dlls}/{d}", lib)
 os.makedirs(f"{lib}/platforms")
 shutil.copy2(f"{qt}/plugins/platforms/qwindows.dll", f"{lib}/platforms")
+# the image files Qt reads with a plugin: ICO (a menu's icon), and JPEG and GIF as
+# well as ICO for a script's gui.drawImage and TAStudio's cell icons, which read
+# what Chimera's read (PNG and BMP need none)
+os.makedirs(f"{lib}/imageformats")
+for p in ("qico.dll", "qjpeg.dll", "qgif.dll"):
+    shutil.copy2(f"{qt}/plugins/imageformats/{p}", f"{lib}/imageformats")
 # the themes Chimera ships, in the place Chimera keeps them: beside the program
 here = os.path.dirname(os.path.abspath(__file__))
 shutil.copytree(os.path.join(here, "..", "Themes"), f"{out}/themes")
@@ -101,6 +107,6 @@ for r, _, fs in os.walk(out):
 def size(pred):
     return sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(out) for f in fs if pred(os.path.join(r, f)))
 total = size(lambda p: True)
-qtpart = size(lambda p: os.path.basename(p).startswith("Qt6") or f"{os.sep}qml{os.sep}" in p or f"{os.sep}platforms{os.sep}" in p)
+qtpart = size(lambda p: os.path.basename(p).startswith("Qt6") or any(f"{os.sep}{d}{os.sep}" in p for d in ("qml", "platforms", "imageformats")))
 print(f"{out}: {total / 1e6:.1f} MB, of which Qt {qtpart / 1e6:.1f} MB")
 print("DLLs:", " ".join(sorted(f for f in os.listdir(lib) if f.lower().endswith(".dll"))))
