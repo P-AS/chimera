@@ -10539,3 +10539,11 @@ the window, the click closed the dialog in both places. A click sent by a
 program does not pass through the compositor, so the reporter's failure was
 not reproduced here. That Open and Cancel now answer on WSL has not been
 seen with a real mouse.
+
+The Linux bundle had a second fault: it left out `Qt.labs.folderlistmodel`,
+which Qt's file and folder dialogs are drawn with, so in a Linux bundle
+no file dialog opened at all ("module Qt.labs.folderlistmodel is not
+installed"). Both bundles now carry it, and `tools/bundle_qml.py` makes
+staging stop when a module that Chimera's QML or Qt's dialogs import is
+missing. Measured: the check named that module on the bundle as it was, and a
+file dialog loaded with only the new bundle's QML opened and closed.

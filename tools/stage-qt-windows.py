@@ -18,6 +18,8 @@ import shutil
 import subprocess
 import sys
 
+import bundle_qml
+
 build, dlls, qt, out = sys.argv[1:5]
 ffmpeg = sys.argv[5] if len(sys.argv) > 5 else ""
 runtime = ["/usr/lib/gcc/x86_64-w64-mingw32/13-posix", "/usr/x86_64-w64-mingw32/lib"]
@@ -61,8 +63,9 @@ os.makedirs(f"{out}/cores")
 with open(os.path.join(here, "cores-README.txt")) as src, open(f"{out}/cores/README.txt", "w", newline="\r\n") as dst:
     dst.write(src.read())
 
-# QML: QtQml, QtCore and the QtQuick modules the window imports. Of the
-# control styles only Fusion (the one used) and Basic (every style's fallback).
+# QML: QtQml, QtCore and the QtQuick modules the window imports, and the
+# folder list Qt's own file dialogs are drawn with. Of the control styles
+# only Fusion (the one used) and Basic (every style's fallback).
 quick = {"Controls", "Templates", "Layouts", "Dialogs", "Window"}
 styles = {"Fusion", "Basic", "impl"}
 def ignore(dirpath, names):
@@ -72,8 +75,12 @@ def ignore(dirpath, names):
     if rel == "QtQuick/Controls":
         return [n for n in names if os.path.isdir(os.path.join(dirpath, n)) and n not in styles]
     return [n for n in names if n.endswith(".debug")]
-for m in ("QtQml", "QtCore", "QtQuick"):
+for m in ("QtQml", "QtCore", "QtQuick", "Qt/labs/folderlistmodel"):
     shutil.copytree(f"{qt}/qml/{m}", f"{lib}/qml/{m}", ignore=ignore)
+# every module the window and Qt's dialogs import is here (bundle_qml.py)
+gone = bundle_qml.missing(f"{lib}/qml", os.path.join(here, "..", "source", "ui", "qt"))
+if gone:
+    sys.exit("the bundle lacks QML modules the window imports: " + ", ".join(gone))
 
 def imports(path):
     o = subprocess.run(["x86_64-w64-mingw32-objdump", "-p", path], capture_output=True, text=True, check=True).stdout

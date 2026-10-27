@@ -25,6 +25,8 @@ import shutil
 import subprocess
 import sys
 
+import bundle_qml
+
 dlls, qt, out = sys.argv[1:4]
 here = os.path.dirname(os.path.abspath(__file__))
 
@@ -66,8 +68,9 @@ for group, names in wanted.items():
         if os.path.exists(f"{src}/{n}") and n.endswith(".so"):
             shutil.copy2(f"{src}/{n}", f"{plugins}/{group}")
 
-# QML: QtQml, QtCore and the QtQuick modules the window imports. Of the
-# control styles only Fusion (the one used) and Basic (every style's fallback).
+# QML: QtQml, QtCore and the QtQuick modules the window imports, and the
+# folder list Qt's own file dialogs are drawn with. Of the control styles
+# only Fusion (the one used) and Basic (every style's fallback).
 quick = {"Controls", "Templates", "Layouts", "Dialogs", "Window"}
 styles = {"Fusion", "Basic", "impl"}
 def ignore(dirpath, names):
@@ -77,8 +80,12 @@ def ignore(dirpath, names):
     if rel == "QtQuick/Controls":
         return [n for n in names if os.path.isdir(os.path.join(dirpath, n)) and n not in styles]
     return [n for n in names if n.endswith(".debug")]
-for m in ("QtQml", "QtCore", "QtQuick"):
+for m in ("QtQml", "QtCore", "QtQuick", "Qt/labs/folderlistmodel"):
     shutil.copytree(f"{qt}/qml/{m}", f"{out}/qml/{m}", ignore=ignore)
+# every module the window and Qt's dialogs import is here (bundle_qml.py)
+gone = bundle_qml.missing(f"{out}/qml", os.path.join(here, "..", "source", "ui", "qt"))
+if gone:
+    sys.exit("the bundle lacks QML modules the window imports: " + ", ".join(gone))
 
 # the libraries everything here needs, from Qt's, read from their dynamic
 # sections; and of the system's, the few a desktop may lack (X11's cursor,
