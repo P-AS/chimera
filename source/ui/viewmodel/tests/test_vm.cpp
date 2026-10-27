@@ -1704,10 +1704,13 @@ bool speedAndSound(const char *package, const char *rom)
 		d.until([] { return false; }, 1.0);
 		const int64_t fast = session.frame.get() - from;
 		session.holdFastForward(false);
-		const int64_t fastDrawn = static_cast<int64_t>(serial() - drawnBefore);
-		CHECK(fastDrawn >= fast);
 		session.run("pause", {}, error);
 		CHECK(d.until([&] { return !session.running.get(); }, 5));
+		/* counted once the last frame's picture has arrived: read at once, a
+		 * slow machine's count was one short (CI, e47945e) */
+		d.until([] { return false; }, 0.1);
+		const int64_t fastDrawn = static_cast<int64_t>(serial() - drawnBefore);
+		CHECK(fastDrawn >= fast);
 		std::printf("fast forward: %lld frames in a second\n", static_cast<long long>(fast));
 		CHECK(fast >= 180 && fast <= 280);
 	}
