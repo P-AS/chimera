@@ -11,10 +11,9 @@
 #     meson compile -C build/meson-windows
 #     meson install -C build/meson-windows
 #
-# The managed solution (dotnet build) is invoked from the native (Linux) dir only:
-# its IL output is platform-neutral and serves both targets. Native libraries are
-# built per-target. Per the reproducibility pillar, none of this affects movie
-# determinism; that belongs to core packages.
+# Everything is built per target, the window too (with -Dqt_ui, source/ui).
+# Per the reproducibility pillar, none of this affects movie determinism; that
+# belongs to core packages.
 project(
   'chimera',
   ['c', 'cpp'],
@@ -348,8 +347,8 @@ engine_build_args = [
   # cJSON reads and writes numbers with strtod and sprintf, which use the
   # decimal separator of the process's locale. Built this way it asks the
   # locale what that is and translates, so JSON is always written and read
-  # with a dot. On Linux the frontend's runtime (Mono) puts the process in the
-  # user's locale; with a decimal comma, "0.5" in a core's declarations did
+  # with a dot. A frontend's runtime may put the process in the user's locale
+  # (Mono did, and Qt does); with a decimal comma, "0.5" in a core's declarations did
   # not parse and a fraction was written as "0,5" (issue 244).
   '-DENABLE_LOCALES',
   # the ce_ ABI is exported explicitly (see engine.h); cJSON must not export
@@ -569,23 +568,7 @@ if not meson.is_cross_build()
   endforeach
 endif
 
-# ---------------------------------------------------------------------------
-# The managed solution: one platform-neutral build, from the Linux dir only
-# ---------------------------------------------------------------------------
-if not meson.is_cross_build()
-  dotnet = find_program('dotnet', required: false)
-  if dotnet.found()
-    run_target(
-      'frontend',
-      # nodeReuse/shared-compilation off: lingering msbuild worker processes
-      # otherwise hold the output pipe open ~15 minutes after the build ends,
-      # and `meson compile frontend` blocks on them
-      command: [dotnet, 'build', repo_root / 'source/gui/Chimera.sln', '-c', 'Release', '/nodeReuse:false', '-p:UseSharedCompilation=false'],
-    )
-  endif
-endif
-
-# The Qt window (issue 142, a private prototype): source/ui/meson.build
+# Chimera's window (Qt 6.12, issue 142): source/ui/meson.build
 if get_option('qt_ui').allowed()
   subdir('source/ui')
 endif

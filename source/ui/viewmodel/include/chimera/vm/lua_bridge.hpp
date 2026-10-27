@@ -102,6 +102,9 @@ public:
 	 * on, each to its next wait; one that ends with nothing registered, or
 	 * fails, is stopped */
 	void frameDone();
+	/* a read of the controls the core reported, part way through a frame:
+	 * the scripts' event.oninputpoll functions, called there and then */
+	void inputPoll();
 	/* the window's turn when no frame is run (paused, or nothing open): the
 	 * running scripts that wait in emu.yield go on, each to its next wait, as
 	 * Chimera resumes them every pass of its loop; those waiting for a frame

@@ -9,7 +9,7 @@
 # Usage:
 #   ./run-tastudio.sh <project.chimeraProject> [frames]
 #
-# CHIMERA_EXE      the frontend to drive (default build/Chimera.exe)
+# CHIMERA_EXE      the frontend to drive (default build/meson-linux/source/ui/chimera)
 # CHIMERA_SOAK_*   passed through to the script (see its header)
 # CHIMERA_SOAK_WINDOWED  1 to drive the real window instead of --headless
 # CHIMERA_SOAK_TIMEOUT   seconds before the run is called hung (default 3600)
@@ -24,21 +24,14 @@ root="$(cd "$here/../.." && pwd)"
 [ $# -ge 1 ] || { sed -n '2,14p' "$0" >&2; exit 2; }
 project="$1"
 export CHIMERA_SOAK_FRAMES="${2:-${CHIMERA_SOAK_FRAMES:-2000}}"
-exe="${CHIMERA_EXE:-$root/build/Chimera.exe}"
-[ -f "$exe" ] || { echo "no frontend at $exe (set CHIMERA_EXE)" >&2; exit 1; }
-
-# mono on anything that is not Windows; a .exe runs itself there
-runner=()
-case "$(uname -s)" in
-	MINGW*|MSYS*|CYGWIN*) ;;
-	*) runner=(mono) ;;
-esac
+exe="${CHIMERA_EXE:-$root/build/meson-linux/source/ui/chimera}"
+[ -x "$exe" ] || { echo "no frontend at $exe (set CHIMERA_EXE)" >&2; exit 1; }
 
 headless=(--headless)
 [ "${CHIMERA_SOAK_WINDOWED:-}" = "1" ] && headless=()
 
 timeout --foreground -k 10 "${CHIMERA_SOAK_TIMEOUT:-3600}" \
-	"${runner[@]}" "$exe" "${headless[@]}" \
+	"$exe" "${headless[@]}" \
 	"--project=$project" \
 	"--lua=$here/tastudio-play.lua"
 rc=$?

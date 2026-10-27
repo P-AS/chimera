@@ -153,7 +153,7 @@ GamePropertiesViewModel::GamePropertiesViewModel(Dispatcher &dispatcher, Session
 			return done;
 		});
 	command("describe", "what a property is, a \"key\\tvalue\" line each: name, domain, offset (where it is now), type, size, count, "
-		"first, stride, endian, encoding, bit, bits, group, writable, description, label; \"\" for a name the core does not have",
+		"first, stride, endian, encoding, bit, bits, group, writable, description, label (the value as shown); \"\" for a name the core does not have",
 		{"name"}, [this](const Args &a, std::string &error) -> Value {
 			std::string name, out;
 			if (!arg(a, 0, name, error)) return {};
@@ -175,9 +175,9 @@ GamePropertiesViewModel::GamePropertiesViewModel(Dispatcher &dispatcher, Session
 				out += "\ndomain\t" + textOf(p, "domain") + "\noffset\t" + std::to_string(offset) + "\ntype\t" + textOf(p, "type");
 				for (const char *key : {"size", "count", "first", "stride", "endian", "encoding", "bit", "bits", "group", "writable", "description"})
 					out += "\n" + std::string(key) + "\t" + textOf(p, key);
-				/* the value as the core names it, when it has names for its values */
-				const json::Json *values = p->find("values");
-				if (n >= 0 && values != nullptr && !values->members.empty()) out += "\nlabel\t" + std::string(label);
+				/* the value as it is shown: by the core's name for it when it has names, as Chimera's
+				 * (Properties.Text: a u64 as its digits, bytes in hexadecimal) */
+				if (n >= 0) out += "\nlabel\t" + std::string(label);
 			});
 			return out;
 		});

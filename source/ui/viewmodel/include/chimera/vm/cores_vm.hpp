@@ -60,6 +60,13 @@ public:
 	/* a package's systems, by its own word for each: its machines', else
 	 * its one ("GameCube, Wii, Triforce") */
 	static std::string systemsOf(const json::Json &cfg);
+	/* Why a package cannot run here, "" when it can: the guest ABI its
+	 * waterbox.config says it was built for ("abi", 1 when it says none),
+	 * against the ABIs this Chimera runs, in Chimera's words (GuestAbi), the
+	 * side that is behind named. Bumped when a core.wbx built before cannot
+	 * satisfy the contract. */
+	static constexpr int64_t kGuestAbi = 1, kOldestGuestAbi = 1;
+	static std::string abiRefusal(const json::Json &cfg);
 	/* the same as {id, its word} pairs */
 	static std::vector<std::pair<std::string, std::string>> systemPairs(const json::Json &cfg);
 	/* what a package says of its terms (its licenses/licenses.json), as Chimera's Core Manager says
@@ -76,6 +83,8 @@ private:
 	struct Core
 	{
 		std::string coreName, version, made, path, systems, line;
+		/* why it cannot run here ("" when it can) */
+		std::string refused;
 		long long modified = 0;
 		std::vector<std::string> extensions;
 		bool gameCore = false, dated = false;

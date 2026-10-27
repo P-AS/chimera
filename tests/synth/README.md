@@ -13,7 +13,7 @@ nothing is part of Chimera.sln, and nothing is quickerNES- or system-specific.
 
 ```
 ./run-witness.sh              # both levels, both modes (~10 s)
-./run-witness.sh --level a    # native only (no Chimera/Xvfb needed, <1 s)
+./run-witness.sh --level a    # native only (no Chimera needed, <1 s)
 ./run-witness.sh --record     # (re)record goldens
 ```
 
@@ -43,6 +43,8 @@ nothing is part of Chimera.sln, and nothing is quickerNES- or system-specific.
       through Chimera with RAM+VRAM byte-compare against the same goldens,
       both modes. ~20 s wall clock - THE Chimera smoke test (supersedes the
       old quickerNES --quick subset).
+- [x] Level B on Chimera's Qt window, run `--headless` with no display
+      (2026-10-27): the C# window, and with it Mono and Xvfb, are gone.
 - [x] Pure-C# twin (flavor b): SynthMachine.cs, written from SPEC.md alone
       (no shared code with the native flavor), shipped as synth-sharp.chimeraCore -
       a manifest with an EMPTY natives list; nothing loaded at runtime. Its

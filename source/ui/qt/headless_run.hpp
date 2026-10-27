@@ -36,6 +36,9 @@ public:
 	Q_INVOKABLE void dialogOpened(QObject *dialog);
 	/* what would wait for a person, said, and the run ended (exit 64) */
 	Q_INVOKABLE void blocked(const QString &caption, const QString &text);
+	/* the code a run nobody watches ended with, -1 when it did not end so:
+	 * it is the program's, whatever else asked to close meanwhile */
+	int endedWith() const { return endedWith_; }
 
 private:
 	void end(int code);
@@ -44,6 +47,7 @@ private:
 	vm::SessionViewModel &session_;
 	vm::Connection filesWatch_, failedWatch_;
 	bool ending_ = false;
+	int endedWith_ = -1;
 };
 
 } // namespace chimera::qt

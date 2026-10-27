@@ -881,6 +881,11 @@ void LuaBridge::frameDoneHere()
 	callHook("__chimera_frame_end");
 }
 
+void LuaBridge::inputPoll()
+{
+	onScripts([&] { callHook("__chimera_input_poll_events"); });
+}
+
 bool LuaBridge::yieldTurn()
 {
 	return onScripts([&] { return resumeRunning(false); });

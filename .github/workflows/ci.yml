@@ -75,16 +75,16 @@ jobs:
           path: tests/synth/work/
 
   witness-full:
-    # The full gate, including Level B: Chimera runs headless under Mono + Xvfb,
-    # loads the core.wbx package through Chimera's built-in generic waterbox
-    # adapter, replays the movies, and the RAM/VRAM dumps must be byte-identical
-    # to the Level A goldens - in both simple and rerecord (per-frame
-    # whole-machine savestate) modes.
+    # The full gate, including Level B: Chimera's window runs headless (no
+    # display), loads the core.wbx package through Chimera's built-in generic
+    # waterbox adapter, replays the movies, and the RAM/VRAM dumps must be
+    # byte-identical to the Level A goldens - in both simple and rerecord
+    # (per-frame whole-machine savestate) modes.
     #
     # This builds the entire frontend: every native dependency (SDL2, OpenAL,
-    # zstd, cimgui, lua, sqlite3) plus the .NET solution, so it
-    # takes minutes rather than seconds. It still runs per push - the level A
-    # job above gives fast feedback meanwhile - and on a daily schedule, which
+    # zstd, cimgui, lua, sqlite3) and the window on Qt 6.12, so it takes
+    # minutes rather than seconds. It still runs per push - the level A job
+    # above gives fast feedback meanwhile - and on a daily schedule, which
     # catches environment drift (toolchain/runner image changes) with no commit.
     name: witness levels A+B (frontend)
     runs-on: ubuntu-latest
@@ -96,55 +96,32 @@ jobs:
           # repositories now and this job never opens one (see published-cores)
           submodules: false
 
-      - name: Check out what the frontend is built from
-        run: git submodule update --init --recursive extern
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            meson ninja-build build-essential cmake pkg-config python3 \
-            mono-complete xvfb \
-            libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+      - name: Cache Qt
+        uses: actions/cache@v4
         with:
-          dotnet-version: '8.0'
+          path: ~/qt
+          key: qt-6.12.0-linux-aqt-3.3.0
 
-      - name: Build native dependencies (installs into build/dll)
+      - name: Build Chimera (the engine, chimera-run and the window; installs into build/dll)
+        run: ./tools/ci-chimera.sh "$HOME/qt"
+
+      - name: Build miniBox's guest toolchain and the waterboxed synth core package
         run: |
-          meson setup build/meson-linux --prefix "$PWD/build" --libdir dll
-          meson compile -C build/meson-linux
-          meson install -C build/meson-linux
+          mb=extern/chimera-common-minibox
+          [ -f "$mb/build/meson-linux/build.ninja" ] || meson setup "$mb/build/meson-linux" "$mb"
+          meson compile -C "$mb/build/meson-linux"
+          sh tests/synth/package-box/build-box.sh
+          ./tests/synth/build-package.sh
 
-      - name: Engine unit tests
-        # The 18 `meson test` cases over the engine: sha1, the movie log and its
-        # text form, the state container and its format, packages, multi-file
-        # media, projects, firmware, the GL flight/sync/buffer-pool bridge, the
-        # stride tuner, greenzone shape and RAM search. The step above already
-        # COMPILES every one of them - they are ordinary targets in meson.build -
-        # so until now CI paid for the build and then threw the result away, and
-        # the engine's own tests gated nothing. They take about eight seconds.
+      - name: Unit tests (the engine, the view models, the window)
         run: meson test -C build/meson-linux --print-errorlogs
 
-      - name: Upload engine test logs
+      - name: Upload test logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: engine-meson-logs
+          name: meson-logs
           path: build/meson-linux/meson-logs/
-
-      - name: Build the managed solution
-        run: dotnet build source/gui/Chimera.sln -c Release /nodeReuse:false -p:UseSharedCompilation=false
-
-      - name: Build the waterboxed synth core package
-        run: ./tests/synth/build-package.sh
-
-      - name: Unit tests (logic + windows)
-        # The window tests construct real forms, so they need the same Xvfb the
-        # witness uses; run-ui-tests.sh brings one up when DISPLAY is unset.
-        run: ./tests/ui/run-ui-tests.sh --shots
 
       - name: Witness - Levels A and B
         run: ./tests/synth/run-witness.sh
@@ -155,16 +132,6 @@ jobs:
         with:
           name: witness-full-work
           path: tests/synth/work/
-
-      - name: Upload UI screenshots
-        # Rendered every run, not just on failure: nothing here can tell whether a
-        # window LOOKS right, so the pictures are for a person to glance at.
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ui-screenshots
-          path: tests/ui/shots/
-          if-no-files-found: warn
 
   published-cores:
     # The cores as they are actually published. Chimera ships none and builds
@@ -192,33 +159,14 @@ jobs:
         with:
           submodules: false
 
-      - name: Check out what the engine is built from
-        run: git submodule update --init --recursive extern
-
-      - name: Install build dependencies
-        # mono because the tests are net48 and vstest needs a host for them on
-        # Linux; the rest because reading a package is the ENGINE's job now
-        # (ce_package_open), so this job has to build libchimera like any other.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            meson ninja-build build-essential cmake pkg-config python3 \
-            mono-complete \
-            libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+      - name: Cache Qt
+        uses: actions/cache@v4
         with:
-          dotnet-version: '8.0'
+          path: ~/qt
+          key: qt-6.12.0-linux-aqt-3.3.0
 
-      - name: Build native dependencies (installs into build/dll)
-        run: |
-          meson setup build/meson-linux --prefix "$PWD/build" --libdir dll
-          meson compile -C build/meson-linux
-          meson install -C build/meson-linux
-
-      - name: Build the tests
-        run: dotnet build source/gui/Chimera.Tests.Client.Common/Chimera.Tests.Client.Common.csproj -c Release /nodeReuse:false -p:UseSharedCompilation=false
+      - name: Build Chimera (reading a package is the engine's; the contract test is the window's)
+        run: ./tools/ci-chimera.sh "$HOME/qt"
 
       - name: Fetch every published core package
         env:
@@ -236,7 +184,4 @@ jobs:
           [ "$count" -gt 0 ] || { echo "::error::no core packages were fetched; there is nothing to check" >&2; exit 1; }
 
       - name: The frontend against real packages
-        run: |
-          dotnet test source/gui/Chimera.Tests.Client.Common/Chimera.Tests.Client.Common.csproj \
-            -c Release --no-build --nologo \
-            --filter "FullyQualifiedName~InstalledCorePackagesTests|FullyQualifiedName~MnemonicUniquenessTests"
+        run: build/meson-linux/source/ui/test-packages build/Cores

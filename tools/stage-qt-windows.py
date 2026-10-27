@@ -55,19 +55,11 @@ for p in ("qico.dll", "qjpeg.dll", "qgif.dll"):
 here = os.path.dirname(os.path.abspath(__file__))
 shutil.copytree(os.path.join(here, "..", "Themes"), f"{out}/themes")
 # the folder the window reads core packages from, empty but for what it is for:
-# Chimera ships no core and downloads none (docs/core-manager.md)
+# Chimera ships no core and downloads none (docs/core-manager.md); the words are
+# the Linux folder's too (cores-README.txt), with Windows' line ends
 os.makedirs(f"{out}/cores")
-with open(f"{out}/cores/README.txt", "w", newline="\r\n") as f:
-    f.write("""Put Chimera's cores in this folder.
-
-A core is what runs one kind of machine or game in Chimera. Each comes as one
-file whose name ends in .chimeraCore. Chimera ships no core and downloads
-none: get the .chimeraCore file of each core you want from that core's own
-releases page (the tables of cores at https://github.com/ToolAssisted-run/chimera#cores
-link them), and drop the file here as it is, without unpacking it.
-
-Tools > Core Manager... lists the cores Chimera finds here.
-""")
+with open(os.path.join(here, "cores-README.txt")) as src, open(f"{out}/cores/README.txt", "w", newline="\r\n") as dst:
+    dst.write(src.read())
 
 # QML: QtQml, QtCore and the QtQuick modules the window imports. Of the
 # control styles only Fusion (the one used) and Basic (every style's fallback).

@@ -1,5 +1,11 @@
 # Themes
 
+> Since 2026-10-27 Chimera's window is a Qt window (docs/qt-interface.md),
+> and the C# window this document names classes of is gone. The themes, their
+> file format and the Theme window are the same; where this says how a C#
+> control painted itself, the Qt window does the same with its style
+> (source/ui/qt/style) and its palette (theme_palette.cpp).
+
 Chimera's colours are data. A theme is one colour for every role the frontend
 paints with, written in a JSON file. Two are compiled in (Light and Dark),
 sixty more ship in the `Themes` folder, and any number more can be dropped in

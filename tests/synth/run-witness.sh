@@ -8,7 +8,7 @@
 #   simple and per-frame whole-machine-savestate (rerecord) modes.
 # Level E (engine): chimera-run - the engine's headless session - replays the
 #   same movies with no frontend at all; its dumps must match the goldens too.
-# Level B (frontend): Chimera (Mono + Xvfb on Linux) loads the core.wbx package
+# Level B (frontend): Chimera's window, run headless, loads the core.wbx package
 #   through Chimera's built-in generic waterbox adapter and replays the same
 #   movies; the final RAM and VRAM dumps must be byte-identical to the Level A
 #   goldens. Audio is Level A-verified only (no scriptable audio tap).
@@ -138,7 +138,7 @@ fi
 
 # ---------- Level E ----------
 # The engine's own headless runner (chimera-run): the same package, host and
-# movies with NO frontend at all - no Mono, no display. Its dumps must match
+# movies with NO frontend at all - no window, no display. Its dumps must match
 # the Level A goldens, in both modes, and the settings channel must reach the
 # guest. This is the migration's session (docs/engine-migration.md) proving
 # it IS the same machine.
@@ -1492,44 +1492,20 @@ fi
 
 # ---------- Level B ----------
 if [ "$level" = "both" ] || [ "$level" = "b" ]; then
-	emu_exe="$repo_root/build/Chimera.exe"
+	# Chimera's window, run headless (it needs no display): its settings, cache,
+	# recovery files and hashes are the witness's own, nothing is carried over
+	# from a Chimera installed on this machine, and the cores are build/Cores
+	chimera_exe="$repo_root/build/meson-linux/source/ui/chimera"
+	[ -x "$chimera_exe" ] || { echo "Chimera's window not built: $chimera_exe (meson setup with -Dqt_ui=enabled)" >&2; exit 1; }
+	export ALSOFT_DRIVERS=null CHIMERA_CORES_DIR="$repo_root/build/Cores" CHIMERA_QT_CACHE="$work/qt-cache" \
+		CHIMERA_QT_RECOVERY="$work/qt-recovery" CHIMERA_QT_HASHES="$work/qt-file-hashes.txt" \
+		CHIMERA_QT_CHIMERA_SETTINGS="$work/no-chimera-config.ini"
+	# a project's greenzone is kept in the per-user cache; this keeps it in the witness's
+	export XDG_CACHE_HOME="$work/cache-home" XDG_DATA_HOME="$work/data-home"
 
-	export LD_LIBRARY_PATH="$repo_root/build/dll:$repo_root/build:/usr/lib/x86_64-linux-gnu"
-	export MONO_CRASH_NOFILE=1 MONO_WINFORMS_XIM_STYLE=disabled ALSOFT_DRIVERS=null
-	# The frontend keeps a project's greenzone in the per-user cache now, not
-	# beside the project, so without this the witness would leave its states in
-	# the real one. XDG_DATA_HOME and not CHIMERA_DATA_HOME: the latter moves the
-	# WHOLE data directory, tools and all, and the encode leg then cannot find
-	# ffmpeg. This moves only where per-user data is kept.
-	export XDG_DATA_HOME="$work/data-home"
-	xvfb_pid=""
-	cleanup() { [ -n "$xvfb_pid" ] && kill "$xvfb_pid" 2>/dev/null; }
-	trap cleanup EXIT
-	# A DISPLAY that is set but does not answer - an ssh session's forwarded
-	# display with nothing behind it, which is what the WSL dev box has - would
-	# fail every frontend leg with "Could not open display", fourteen times over.
-	# Ask it first, and bring up an Xvfb if it says nothing.
-	if [ -n "${DISPLAY:-}" ] && command -v xdpyinfo >/dev/null && ! timeout 5 xdpyinfo >/dev/null 2>&1; then
-		echo "DISPLAY=$DISPLAY does not answer; starting an Xvfb instead" >&2
-		unset DISPLAY
-	fi
-	if [ -z "${DISPLAY:-}" ]; then
-		command -v Xvfb >/dev/null || { echo "Xvfb not found (apt install xvfb)" >&2; exit 1; }
-		for n in 90 91 92 93 94; do
-			if [ ! -e "/tmp/.X11-unix/X$n" ]; then
-				Xvfb ":$n" -screen 0 640x480x24 -nolisten tcp & xvfb_pid=$!
-				export DISPLAY=":$n"; break
-			fi
-		done
-		sleep 1
-	fi
-
-	config="$work/config.ini"
-	if [ ! -f "$config" ]; then
-		( cd "$repo_root" && timeout 120 mono "$emu_exe" --headless "--config=$config" \
-			"--lua=$here/bootstrap-exit.lua" ) > "$work/bootstrap.log" 2>&1
-		[ -f "$config" ] || { echo "config bootstrap failed (see $work/bootstrap.log)" >&2; exit 1; }
-	fi
+	# the window's own settings, empty: each run starts from a copy
+	config="$work/settings.json"
+	printf '{}\n' > "$config"
 	# A game runs only in a project (user-decided, 2026-10-26): each run below
 	# opens one, made with chimera-run --new-project beside a copy of its game.
 	# bproject <name> <package> <game> [chimera-run's options] prints its path.
@@ -1561,10 +1537,10 @@ if [ "$level" = "both" ] || [ "$level" = "b" ]; then
 					echo "mode=$mode"
 				} > "$job"
 				rm -f "$work/$tag.ram.bin" "$work/$tag.vram.bin" "$work/$tag.meta.txt"
-				cp "$config" "$work/config.$tag.ini"
+				cp "$config" "$work/settings.$tag.json"
 				proj="$(bproject "$tag" "$package" "$rom")"
-				( cd "$repo_root" && CHIMERA_JOB="$job" timeout 300 mono "$emu_exe" --headless \
-					"--config=$work/config.$tag.ini" "--core=$package" \
+				( cd "$repo_root" && CHIMERA_JOB="$job" timeout 300 "$chimera_exe" --headless \
+					"--config=$work/settings.$tag.json" "--core=$package" \
 					"--lua=$here/synth-replay.lua" "--project=$proj" ) > "$work/$tag.log" 2>&1
 				if [ ! -f "$work/$tag.meta.txt" ] || ! grep -q "^status=OK" "$work/$tag.meta.txt"; then
 					report "B:$flavor:$name:$mode" FAIL "no OK meta (see work/$tag.log)"
@@ -1615,10 +1591,10 @@ json.dump(d, open(p, 'w'))
 				echo "mode=simple"
 			} > "$rjob"
 			rm -f "$work/room-$rkind.ram.bin" "$work/room-$rkind.vram.bin" "$work/room-$rkind.meta.txt"
-			cp "$config" "$work/config.room-$rkind.ini"
+			cp "$config" "$work/settings.room-$rkind.json"
 			rproj="$(bproject "room-$rkind" "$rpkg" "$rrom")"
-			( cd "$repo_root" && CHIMERA_JOB="$rjob" timeout 300 /usr/bin/time -f "peak %M" -o "$work/room-$rkind.peak" mono "$emu_exe" --headless \
-				"--config=$work/config.room-$rkind.ini" "--core=$rpkg" \
+			( cd "$repo_root" && CHIMERA_JOB="$rjob" timeout 300 /usr/bin/time -f "peak %M" -o "$work/room-$rkind.peak" "$chimera_exe" --headless \
+				"--config=$work/settings.room-$rkind.json" "--core=$rpkg" \
 				"--lua=$here/synth-replay.lua" "--project=$rproj" ) > "$work/room-$rkind.log" 2>&1
 		done
 		rplain="$(sed -n 's/^peak \([0-9]*\)$/\1/p' "$work/room-plain.peak" 2>/dev/null)"
@@ -1642,7 +1618,7 @@ json.dump(d, open(p, 'w'))
 	if [ "$record" -eq 0 ]; then
 		sname=gridWalker.win
 		srom="$here/roms/${sname%%.*}.testrom"
-		scfg="$work/config.settings.ini"
+		scfg="$work/settings.settings.json"
 		cp "$config" "$scfg"
 		sproj="$(bproject settings "$repo_root/build/Cores/synth-box.chimeraCore" "$srom" --settings '{"initFillByte":171}')"
 		sjob="$work/job.settings.txt"
@@ -1654,7 +1630,7 @@ json.dump(d, open(p, 'w'))
 			echo "mode=simple"
 		} > "$sjob"
 		rm -f "$work/settings.ram.bin" "$work/settings.meta.txt"
-		( cd "$repo_root" && CHIMERA_JOB="$sjob" timeout 300 mono "$emu_exe" --headless \
+		( cd "$repo_root" && CHIMERA_JOB="$sjob" timeout 300 "$chimera_exe" --headless \
 			"--config=$scfg" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 			"--lua=$here/synth-replay.lua" "--project=$sproj" ) > "$work/settings.log" 2>&1
 		if [ ! -f "$work/settings.meta.txt" ] || ! grep -q "^status=OK" "$work/settings.meta.txt"; then
@@ -1683,9 +1659,9 @@ json.dump(d, open(p, 'w'))
 			echo "meta=$work/movie.meta.txt"
 		} > "$mjob"
 		rm -f "$work/movie.ram.bin" "$work/movie.vram.bin" "$work/movie.meta.txt"
-		cp "$config" "$work/config.movie.ini"
-		( cd "$repo_root" && CHIMERA_JOB="$mjob" timeout 300 mono "$emu_exe" --headless \
-			"--config=$work/config.movie.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+		cp "$config" "$work/settings.movie.json"
+		( cd "$repo_root" && CHIMERA_JOB="$mjob" timeout 300 "$chimera_exe" --headless \
+			"--config=$work/settings.movie.json" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 			"--project=$mproj" "--lua=$here/synth-movie-dump.lua" ) > "$work/movie.log" 2>&1
 		if [ ! -f "$work/movie.meta.txt" ] || ! grep -q "^status=OK" "$work/movie.meta.txt"; then
 			report "M:box:$mname" FAIL "no OK meta (see work/movie.log)"
@@ -1704,8 +1680,8 @@ json.dump(d, open(p, 'w'))
 	# project's OWN sync settings - not a config default. One leg pins
 	# both: a project carrying initFillByte=171 plays the win movie; the
 	# final RAM must DIVERGE from the golden (the setting reached the
-	# guest through the project path) and the log must show exactly one
-	# "[waterbox] booting" line.
+	# guest through the project path) and the log must show the synthetic
+	# core's "synth: started" (its Init) exactly once.
 	if [ "$record" -eq 0 ]; then
 		pname=gridWalker.win
 		prom="$here/roms/${pname%%.*}.testrom"
@@ -1733,11 +1709,11 @@ PY
 			echo "meta=$work/project.meta.txt"
 		} > "$pjob"
 		rm -f "$work/project.ram.bin" "$work/project.vram.bin" "$work/project.meta.txt"
-		cp "$config" "$work/config.project.ini"
-		( cd "$repo_root" && CHIMERA_JOB="$pjob" timeout 300 mono "$emu_exe" --headless \
-			"--config=$work/config.project.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+		cp "$config" "$work/settings.project.json"
+		( cd "$repo_root" && CHIMERA_JOB="$pjob" timeout 300 "$chimera_exe" --headless \
+			"--config=$work/settings.project.json" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 			"--project=$pdir/$pname.chimeraProject" "--lua=$here/synth-movie-dump.lua" ) > "$work/project.log" 2>&1
-		boots="$(grep -c "\[waterbox\] booting" "$work/project.log" || true)"
+		boots="$(grep -c "^synth: started" "$work/project.log" || true)"
 		if [ ! -f "$work/project.meta.txt" ] || ! grep -q "^status=OK" "$work/project.meta.txt"; then
 			report "P:box:$pname" FAIL "no OK meta (see work/project.log)"
 		elif [ "$boots" != "1" ]; then
@@ -1779,7 +1755,7 @@ json.dump({
     "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
 }, open(sys.argv[3], "w"))
 MCPPY
-			cp "$config" "$wdir/config.ini"
+			cp "$config" "$wdir/settings.json"
 			CHIMERA_MCP_NAME="witness$$"; export CHIMERA_MCP_NAME
 			# Twice: started as pressing Start does, where the agent may only look;
 			# then with --mcp-allow-changes, which is the tick box, where it edits
@@ -1795,7 +1771,7 @@ MCPPY
 					echo "ready=$wsub/ready"
 					echo "done=$wsub/done"
 				} > "$wsub/job.txt"
-				( cd "$repo_root" && CHIMERA_JOB="$wsub/job.txt" timeout 300 mono "$emu_exe" --headless --mcp-server ${wallow:+--mcp-allow-changes} \
+				( cd "$repo_root" && CHIMERA_JOB="$wsub/job.txt" timeout 300 "$chimera_exe" --headless --mcp-server ${wallow:+--mcp-allow-changes} \
 					"--config=$wdir/config.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 					"--project=$wsub/$wname.chimeraProject" "--lua=$here/synth-mcp.lua" ) > "$wsub/chimera.log" 2>&1 &
 				wpid=$!
@@ -1845,8 +1821,8 @@ MCPPY
 				echo "outvram=$xdir/vram.bin"
 				echo "meta=$xdir/meta.txt"
 			} > "$xdir/job.txt"
-			cp "$config" "$xdir/config.ini"
-			( cd "$repo_root" && CHIMERA_JOB="$xdir/job.txt" timeout 300 mono "$emu_exe" --headless \
+			cp "$config" "$xdir/settings.json"
+			( cd "$repo_root" && CHIMERA_JOB="$xdir/job.txt" timeout 300 "$chimera_exe" --headless \
 				"--config=$xdir/config.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 				"--project=$xdir/made.chimeraProject" "--lua=$here/synth-movie-dump.lua" ) > "$xdir/chimera.log" 2>&1
 			if [ ! -f "$xdir/meta.txt" ] || ! grep -q "^status=OK" "$xdir/meta.txt"; then
@@ -1914,9 +1890,9 @@ TASPY
 				echo "record=$trecord"
 			} > "$tjob"
 			rm -f "$tdir/$cname.meta.txt" "$tdir/$cname.ram.bin"
-			cp "$config" "$work/config.tastudio-$cname.ini"
-			( cd "$repo_root" && CHIMERA_JOB="$tjob" timeout 300 mono "$emu_exe" --headless \
-				"--config=$work/config.tastudio-$cname.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+			cp "$config" "$work/settings.tastudio-$cname.json"
+			( cd "$repo_root" && CHIMERA_JOB="$tjob" timeout 300 "$chimera_exe" --headless \
+				"--config=$work/settings.tastudio-$cname.json" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 				"--project=$tdir/$tname.chimeraProject" "--lua=$here/synth-tastudio-input.lua" ) > "$tdir/$cname.log" 2>&1
 			if [ ! -f "$tdir/$cname.meta.txt" ] || ! grep -q "^status=OK" "$tdir/$cname.meta.txt"; then
 				report "T:box:$cname" FAIL "$(sed -n 's/^detail=//p' "$tdir/$cname.meta.txt" 2>/dev/null || echo "run failed") (see $tdir/$cname.log)"
@@ -1965,9 +1941,9 @@ TASPY
 		for gpass in first second; do
 			gjob="$work/job.greenzone-$gpass.txt"
 			echo "meta=$gdir/$gpass.meta.txt" > "$gjob"
-			cp "$config" "$work/config.greenzone-$gpass.ini"
-			( cd "$repo_root" && CHIMERA_JOB="$gjob" timeout 300 mono "$emu_exe" --headless \
-				"--config=$work/config.greenzone-$gpass.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+			cp "$config" "$work/settings.greenzone-$gpass.json"
+			( cd "$repo_root" && CHIMERA_JOB="$gjob" timeout 300 "$chimera_exe" --headless \
+				"--config=$work/settings.greenzone-$gpass.json" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 				"--project=$gdir/g.chimeraProject" "--lua=$here/synth-greenzone-choice.lua" ) > "$gdir/$gpass.log" 2>&1
 			if ! grep -q "^status=OK" "$gdir/$gpass.meta.txt" 2>/dev/null; then
 				report "T:box:greenzoneChoice" FAIL "the $gpass run: $(sed -n 's/^detail=//p' "$gdir/$gpass.meta.txt" 2>/dev/null || echo "run failed") (see $gdir/$gpass.log)"
@@ -2014,9 +1990,9 @@ GZPY
 		cp "$tdir/$tname.chimeraProject" "$pdir/p.chimeraProject"
 		pjob="$work/job.properties.txt"
 		echo "meta=$pdir/meta.txt" > "$pjob"
-		cp "$config" "$work/config.properties.ini"
-		( cd "$repo_root" && CHIMERA_JOB="$pjob" timeout 300 mono "$emu_exe" --headless \
-			"--config=$work/config.properties.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+		cp "$config" "$work/settings.properties.json"
+		( cd "$repo_root" && CHIMERA_JOB="$pjob" timeout 300 "$chimera_exe" --headless \
+			"--config=$work/settings.properties.json" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 			"--project=$pdir/p.chimeraProject" "--lua=$here/synth-game-properties.lua" ) > "$pdir/run.log" 2>&1
 		if grep -q "^status=OK" "$pdir/meta.txt" 2>/dev/null; then
 			report "T:box:gameProperties" PASS "every kind of property reads and sets its own bytes by name, and the game plays on what was set"
@@ -2039,9 +2015,9 @@ GZPY
 		cp "$tdir/$tname.chimeraProject" "$idir/p.chimeraProject"
 		ijob="$work/job.input-polls.txt"
 		echo "meta=$idir/meta.txt" > "$ijob"
-		cp "$config" "$work/config.input-polls.ini"
-		( cd "$repo_root" && CHIMERA_JOB="$ijob" timeout 300 mono "$emu_exe" --headless \
-			"--config=$work/config.input-polls.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+		cp "$config" "$work/settings.input-polls.json"
+		( cd "$repo_root" && CHIMERA_JOB="$ijob" timeout 300 "$chimera_exe" --headless \
+			"--config=$work/settings.input-polls.json" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 			"--project=$idir/p.chimeraProject" "--lua=$here/synth-input-polls.lua" ) > "$idir/run.log" 2>&1
 		if grep -q "^status=OK" "$idir/meta.txt" 2>/dev/null && grep -qi "fatal" "$idir/run.log"; then
 			report "T:box:inputPolls" FAIL "Chimera stopped with an error as it closed: $(grep -i -m1 "fatal" "$idir/run.log") (see $idir/run.log)"
@@ -2085,31 +2061,23 @@ PY
 				echo "outvram=$cdir/vram.bin"
 				echo "meta=$cdir/meta.txt"
 			} > "$cjob"
-			cp "$config" "$work/config.stops-$cname.ini"
-			( cd "$repo_root" && CHIMERA_JOB="$cjob" timeout 120 mono "$emu_exe" --headless \
-				"--config=$work/config.stops-$cname.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+			cp "$config" "$work/settings.stops-$cname.json"
+			( cd "$repo_root" && CHIMERA_JOB="$cjob" timeout 120 "$chimera_exe" --headless \
+				"--config=$work/settings.stops-$cname.json" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 				"--project=$cdir/stops.chimeraProject" "--lua=$here/synth-movie-dump.lua" ) > "$cdir/log.txt" 2>&1
 			crc=$?
-			if grep -qE "Native Crash|Got a SIG|SIGSEGV while executing native" "$cdir/log.txt"; then
-				if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-					# On the GitHub runner, and only there, Mono's unwinder crashes on the
-					# stop (docs/design-principles.md, "A crash only the CI runner has").
-					# Tracked, not waited on: everywhere else this is still a failure.
-					report "S:frontend:$cname" KNOWN "CI runner only: Mono's unwinder crashed on the stop (see $cdir/log.txt)"
-				else
-					report "S:frontend:$cname" FAIL "the runtime reported a native crash (see $cdir/log.txt)"
-				fi
+			if grep -qE "Got a SIG|SIGSEGV" "$cdir/log.txt"; then
+				report "S:frontend:$cname" FAIL "the process reported a crash (see $cdir/log.txt)"
 			elif [ "$crc" -ne 65 ]; then
 				report "S:frontend:$cname" FAIL "the process ended with $crc, not 65 (see $cdir/log.txt)"
 			elif ! grep -q "\[headless\] The core stopped: $cwant" "$cdir/log.txt"; then
 				report "S:frontend:$cname" FAIL "the stopped core was not reported (see $cdir/log.txt)"
-			elif ! ls -d "$XDG_DATA_HOME"/*/Recovery/0123456789abcdef0123456789abc0de >/dev/null 2>&1 \
-				&& ! find "$XDG_DATA_HOME" -type d -name 0123456789abcdef0123456789abc0de -path "*Recovery*" | grep -q .; then
+			elif ! find "$CHIMERA_QT_RECOVERY" -type d -name 0123456789abcdef0123456789abc0de 2>/dev/null | grep -q .; then
 				report "S:frontend:$cname" FAIL "the recovery journal was not left behind"
 			else
 				report "S:frontend:$cname" PASS "headless Chimera stops with the reason, lives, and keeps the journal"
 			fi
-			find "$XDG_DATA_HOME" -type d -name 0123456789abcdef0123456789abc0de -path "*Recovery*" -exec rm -rf {} + 2>/dev/null
+			find "$CHIMERA_QT_RECOVERY" -type d -name 0123456789abcdef0123456789abc0de -exec rm -rf {} + 2>/dev/null
 		done
 	fi
 
@@ -2149,9 +2117,9 @@ PY
 				echo "tastudio=$roll"
 				echo "rebootat=30"
 			} > "$rjob"
-			cp "$config" "$work/config.reboot-$roll.ini"
-			( cd "$repo_root" && CHIMERA_JOB="$rjob" timeout 120 mono "$emu_exe" --headless \
-				"--config=$work/config.reboot-$roll.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+			cp "$config" "$work/settings.reboot-$roll.json"
+			( cd "$repo_root" && CHIMERA_JOB="$rjob" timeout 120 "$chimera_exe" --headless \
+				"--config=$work/settings.reboot-$roll.json" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 				"--project=$rdir/reboot.chimeraProject" "--lua=$here/synth-reboot.lua" ) > "$rdir/log.txt" 2>&1
 			rlabel="closed"; [ "$roll" -eq 1 ] && rlabel="open"
 			if ! grep -q '^status=OK' "$rdir/meta.txt" 2>/dev/null; then
@@ -2163,7 +2131,7 @@ PY
 			else
 				report "R:frontend:roll-$rlabel" PASS "the same movie on a rebooted machine, played to the golden"
 			fi
-			find "$XDG_DATA_HOME" -type d -name 0123456789abcdef0123456789ab0196 -path "*Recovery*" -exec rm -rf {} + 2>/dev/null
+			find "$CHIMERA_QT_RECOVERY" -type d -name 0123456789abcdef0123456789ab0196 -exec rm -rf {} + 2>/dev/null
 		done
 
 		# the core dies on cue (all eight buttons, frame 12) after a reboot at
@@ -2194,29 +2162,25 @@ PY
 			echo "tastudio=0"
 			echo "rebootat=5"
 		} > "$djob"
-		cp "$config" "$work/config.reboot-dies.ini"
-		( cd "$repo_root" && CHIMERA_JOB="$djob" timeout 120 mono "$emu_exe" --headless \
-			"--config=$work/config.reboot-dies.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+		cp "$config" "$work/settings.reboot-dies.json"
+		( cd "$repo_root" && CHIMERA_JOB="$djob" timeout 120 "$chimera_exe" --headless \
+			"--config=$work/settings.reboot-dies.json" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 			"--project=$ddir/reboot.chimeraProject" "--lua=$here/synth-reboot.lua" ) > "$ddir/log.txt" 2>&1
 		drc=$?
-		if grep -qE "Native Crash|Got a SIG|SIGSEGV while executing native" "$ddir/log.txt"; then
-			if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-				report "R:frontend:dies-after" KNOWN "CI runner only: Mono's unwinder crashed on the stop (see $ddir/log.txt)"
-			else
-				report "R:frontend:dies-after" FAIL "the runtime reported a native crash (see $ddir/log.txt)"
-			fi
+		if grep -qE "Got a SIG|SIGSEGV" "$ddir/log.txt"; then
+			report "R:frontend:dies-after" FAIL "the process reported a crash (see $ddir/log.txt)"
 		elif ! grep -q "\[synth-reboot\] rebooted" "$ddir/log.txt"; then
 			report "R:frontend:dies-after" FAIL "the core was never rebooted (see $ddir/log.txt)"
 		elif [ "$drc" -ne 65 ]; then
 			report "R:frontend:dies-after" FAIL "the process ended with $drc, not 65 (see $ddir/log.txt)"
 		elif ! grep -q "\[headless\] The core stopped: the core aborted" "$ddir/log.txt"; then
 			report "R:frontend:dies-after" FAIL "the stopped core was not reported (see $ddir/log.txt)"
-		elif ! find "$XDG_DATA_HOME" -type d -name 0123456789abcdef0123456789ab0196 -path "*Recovery*" | grep -q .; then
+		elif ! find "$CHIMERA_QT_RECOVERY" -type d -name 0123456789abcdef0123456789ab0196 2>/dev/null | grep -q .; then
 			report "R:frontend:dies-after" FAIL "the recovery journal was not left behind"
 		else
 			report "R:frontend:dies-after" PASS "a core that dies after a reboot is survived, and the work is kept"
 		fi
-		find "$XDG_DATA_HOME" -type d -name 0123456789abcdef0123456789ab0196 -path "*Recovery*" -exec rm -rf {} + 2>/dev/null
+		find "$CHIMERA_QT_RECOVERY" -type d -name 0123456789abcdef0123456789ab0196 -exec rm -rf {} + 2>/dev/null
 	fi
 
 	# --- a run becomes a video ---
@@ -2258,15 +2222,15 @@ ENCPY
 			echo "command=-c:a pcm_s16le -c:v ffv1 -pix_fmt bgr0 -level 1 -g 1 -f matroska"
 		} > "$ejob"
 		rm -f "$evideo" "$work/encode.meta.txt"
-		cp "$config" "$work/config.encode.ini"
+		cp "$config" "$work/settings.encode.json"
 
 		# ffmpeg is part of a build now, not something a person is asked to fetch
 		# the first time they want a video - so the gate builds it in too.
 		if ! "$repo_root/tools/fetch-ffmpeg.sh" linux "$repo_root/build/dll" > "$work/ffmpeg.log" 2>&1; then
 			report "V:box:encode" FAIL "no ffmpeg to encode with (see work/ffmpeg.log)"
 		else
-			( cd "$repo_root" && CHIMERA_JOB="$ejob" timeout 300 mono "$emu_exe" --headless \
-				"--config=$work/config.encode.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+			( cd "$repo_root" && CHIMERA_JOB="$ejob" timeout 300 "$chimera_exe" --headless \
+				"--config=$work/settings.encode.json" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 				"--project=$edir/$ename.chimeraProject" "--lua=$here/synth-encode.lua" ) > "$work/encode.log" 2>&1
 			# counted with the ffmpeg this build ships rather than a system
 			# ffprobe: the gate must not depend on a tool the machine happens to
@@ -2333,9 +2297,9 @@ REOPENPY
 			echo "meta=$work/reopen.meta.txt"
 		} > "$rjob"
 		rm -f "$work/reopen.meta.txt" "$work/reopen.ram.bin"
-		cp "$config" "$work/config.reopen.ini"
-		( cd "$repo_root" && CHIMERA_JOB="$rjob" timeout 300 mono "$emu_exe" --headless \
-			"--config=$work/config.reopen.ini" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
+		cp "$config" "$work/settings.reopen.json"
+		( cd "$repo_root" && CHIMERA_JOB="$rjob" timeout 300 "$chimera_exe" --headless \
+			"--config=$work/settings.reopen.json" "--core=$repo_root/build/Cores/synth-box.chimeraCore" \
 			"--project=$rdir/first.chimeraProject" "--lua=$here/synth-reopen.lua" ) > "$work/reopen.log" 2>&1
 		got_first="$(sed -n 's/^firstlength=//p' "$work/reopen.meta.txt" 2>/dev/null)"
 		got_second="$(sed -n 's/^secondlength=//p' "$work/reopen.meta.txt" 2>/dev/null)"
@@ -2366,9 +2330,9 @@ REOPENPY
 			echo "mode=simple"
 		} > "$djob"
 		rm -f "$work/discovery.ram.bin" "$work/discovery.meta.txt"
-		cp "$config" "$work/config.discovery.ini"
-		( cd "$repo_root" && CHIMERA_JOB="$djob" timeout 300 mono "$emu_exe" --headless \
-			"--config=$work/config.discovery.ini" "--core=$package" "--lua=$here/synth-replay.lua" \
+		cp "$config" "$work/settings.discovery.json"
+		( cd "$repo_root" && CHIMERA_JOB="$djob" timeout 300 "$chimera_exe" --headless \
+			"--config=$work/settings.discovery.json" "--core=$package" "--lua=$here/synth-replay.lua" \
 			"$here/roms/${dname%%.*}.testrom" ) > "$work/discovery.log" 2>&1; drc=$?
 		if [ -f "$work/discovery.meta.txt" ] && grep -q "^status=OK" "$work/discovery.meta.txt"; then
 			report "D:box:projectOnly" FAIL "the game ran without a project"
@@ -2378,68 +2342,28 @@ REOPENPY
 			report "D:box:projectOnly" PASS "a game file alone is refused with a reason, and nothing runs"
 		fi
 
-		# --- the helpers ask a project too ---
-		# The new-project window asks its core three things before the project
-		# is made, each in a child process of Chimera's own: what settings it
-		# suggests (--suggest-settings), a share of the game's code compiled
-		# (--precompile), and what a movie made elsewhere amounts to
-		# (--import-movie). Each makes a project of the choices so far and asks
-		# it (user-decided, 2026-10-26): the synth's answers say which game it
-		# was given and what the settings held.
-		hdir="$work/helpers"
-		rm -rf "$hdir" && mkdir -p "$hdir/cache"
-		hrom="$here/roms/gridWalker.testrom"
-		hsize="$(wc -c < "$hrom" | tr -d ' ')"
-		printf '{"slots": {"rom": ["gridWalker.testrom"]}, "files": {"gridWalker.testrom": "%s"}, "settings": {"initFillByte": 5}}\n' "$hrom" > "$hdir/files.json"
-		( cd "$repo_root" && timeout 300 mono "$emu_exe" --suggest-settings "$package" "$hdir/files.json" ) > "$hdir/suggest.out" 2> "$hdir/suggest.err"; hsrc=$?
-		( cd "$repo_root" && timeout 300 mono "$emu_exe" --precompile 0/1 "$package" "$hdir/files.json" "$hdir/cache" ) > "$hdir/precompile.log" 2>&1; hprc=$?
-		printf '{"Package": "%s", "Movie": "%s", "Files": [{"Name": "gridWalker.testrom", "Path": "%s", "Slot": "rom"}], "Settings": {"importRom": "gridWalker.testrom", "importFill": 7}}\n' \
-			"$package" "$here/movies/gridWalker.win.txt" "$hrom" > "$hdir/import.json"
-		( cd "$repo_root" && timeout 300 mono "$emu_exe" --import-movie "$hdir/import.json" "$hdir/import.answer.json" ) > "$hdir/import.log" 2>&1; hirc=$?
-		hframes="$(grep -c '^|' "$here/movies/gridWalker.win.txt")"
-		hwrong=""
-		grep -q '{"values": {"initFillByte": 9}, "note": "The synthetic core suggests a fill of 9."' "$hdir/suggest.out" \
-			|| hwrong="$hwrong suggest(rc $hsrc)"
-		{ [ "$hprc" -eq 0 ] && grep -q '^Precompiled 6/6 modules' "$hdir/precompile.log" \
-			&& [ "$(find "$hdir/cache" -type f -name 'module*.bin' | wc -l | tr -d ' ')" = 6 ]; } || hwrong="$hwrong precompile(rc $hprc)"
-		{ [ "$hirc" -eq 0 ] && python3 -c "
-import json, sys
-a = json.load(open(sys.argv[1]))
-assert a['settings'] == {'initFillByte': 7}, a['settings']
-assert a['files'] == [{'name': 'gridWalker.testrom', 'slot': 'rom'}], a['files']
-assert a['frames'] == int(sys.argv[2]), a['frames']
-" "$hdir/import.answer.json" "$hframes" 2>> "$hdir/import.log"; } || hwrong="$hwrong import(rc $hirc)"
-		if [ -z "$hwrong" ]; then
-			report "D:box:helpers" PASS "suggested settings, a compile session (6 of 6 modules) and a movie import are each asked of a project, and answer for its game and settings"
-		else
-			report "D:box:helpers" FAIL "wrong:$hwrong (see work/helpers/*)"
-		fi
+		# (The helpers New Project asks before a project is made - suggested
+		# settings, compile sessions, a movie import - are chimera-run's in
+		# Chimera's window, and level E asks each of them of a project:
+		# E:suggest, E:precompile, E:import-movie.)
 
 		# --- keybinds ship with the package ---
 		# The frontend has no bindings of its own: a controller it has never seen is played however
-		# the package that declared it says (the package's default_keybinds.json). Start from a
-		# config that has never heard of this controller - which is what a fresh install is - and
-		# the config Chimera writes on exit must hold the package's bindings, or the core arrives
-		# unplayable.
+		# the package that declared it says (the package's default_keybinds.json). The window keeps
+		# only the keys a person changed, so with fresh settings the machine's bindings must be the
+		# package's, or the core arrives unplayable. A script reads them (dump-controls.lua).
 		kname=gridWalker.win
-		kcfg="$work/config.keybinds.ini"
-		python3 "$here/forget-controller.py" "$config" "$kcfg" "Synth Controller"
 		kjob="$work/job.keybinds.txt"
-		{
-			echo "movie=$here/movies/$kname.txt"
-			echo "outram=$work/keybinds.ram.bin"
-			echo "outvram=$work/keybinds.vram.bin"
-			echo "meta=$work/keybinds.meta.txt"
-			echo "mode=simple"
-		} > "$kjob"
-		rm -f "$work/keybinds.meta.txt"
+		printf 'out=%s/keybinds.controls.json\nmeta=%s/keybinds.meta.txt\n' "$work" "$work" > "$kjob"
+		rm -f "$work/keybinds.meta.txt" "$work/keybinds.controls.json"
+		cp "$config" "$work/settings.keybinds.json"
 		kproj="$(bproject keybinds "$package" "$here/roms/${kname%%.*}.testrom")"
-		( cd "$repo_root" && CHIMERA_JOB="$kjob" timeout 300 mono "$emu_exe" --headless \
-			"--config=$kcfg" "--core=$package" "--lua=$here/synth-replay.lua" \
+		( cd "$repo_root" && CHIMERA_JOB="$kjob" timeout 300 "$chimera_exe" --headless \
+			"--config=$work/settings.keybinds.json" "--core=$package" "--lua=$here/dump-controls.lua" \
 			"--project=$kproj" ) > "$work/keybinds.log" 2>&1
 		if [ ! -f "$work/keybinds.meta.txt" ] || ! grep -q "^status=OK" "$work/keybinds.meta.txt"; then
 			report "K:box:keybinds" FAIL "run failed (see work/keybinds.log)"
-		elif python3 "$here/check-keybinds.py" "$kcfg" \
+		elif python3 "$here/check-keybinds.py" "$work/keybinds.controls.json" \
 			"$here/package-box/default_keybinds.json" "Synth Controller" > "$work/keybinds.txt" 2>&1; then
 			report "K:box:keybinds" PASS "$(cat "$work/keybinds.txt")"
 		else

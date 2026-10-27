@@ -44,6 +44,7 @@
 #include <atomic>
 #include <clocale>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #ifdef _WIN32
 #include <QtGui/qpa/qplatformwindow_p.h>
@@ -314,6 +315,13 @@ int main(int argc, char **argv)
 #ifdef _WIN32
 	SetUnhandledExceptionFilter(crashNote);
 #endif
+	/* the build, said before Qt starts: it needs no display, and none may be there */
+	for (int i = 1; i < argc; i++)
+		if (std::strcmp(argv[i], "--version") == 0)
+		{
+			std::printf("Commit %s\n", vm::HelpViewModel::thisCommit().c_str());
+			return 0;
+		}
 	/* a run nobody watches is drawn off screen, so it needs no display */
 	const bool headless = qt::HeadlessRun::askedFor(argc, argv);
 	if (headless) qt::HeadlessRun::prepare();
@@ -367,11 +375,6 @@ int main(int argc, char **argv)
 	args.addOptions({fillOpt, playOpt, measureOpt, scrollOpt, shotOpt, luaOpt, mmfOpt, userdataOpt, describeOpt, schemeOpt, showOpt, mcpServerOpt,
 		mcpChangesOpt, projectOpt, coreOpt, configOpt, firmwareOpt, fullscreenOpt, chromelessOpt, luaConsoleOpt, versionOpt, headlessOpt});
 	args.process(app);
-	if (args.isSet(versionOpt))
-	{
-		std::printf("Commit %s\n", vm::HelpViewModel::thisCommit().c_str());
-		return 0;
-	}
 	/* what is opened: a project (named alone, or with --project) and its core
 	 * package (named after it, or with --core), or a game, which starts New
 	 * Project from it - a game runs only in a project (owner, 2026-10-26) */
@@ -392,6 +395,14 @@ int main(int argc, char **argv)
 	const QString packageGiven = full(args.isSet(coreOpt) ? args.value(coreOpt) : named.size() == 2 ? named[1] : QString());
 	const QString gameGiven = full(!named.isEmpty() && !isProject(named[0]) ? named[0] : QString());
 	const bool anyProject = !projectGiven.isEmpty();
+	/* a game alone starts New Project, which waits for a person: a run nobody
+	 * watches refuses it at once, as Chimera's --headless does */
+	if (headless && !anyProject && !gameGiven.isEmpty())
+	{
+		std::fprintf(stderr, "chimera: a game opens only in a project: name a .chimeraProject, and its core package (.chimeraCore) "
+							 "when it is not installed\n");
+		return 2;
+	}
 	/* firmware for this run: <id>=<path>, a pair without an "=" passed over, as Chimera's */
 	std::map<std::string, std::string> runFirmware;
 	for (const QString &pair : args.values(firmwareOpt))
@@ -1407,14 +1418,19 @@ int main(int argc, char **argv)
 					luaConsole.afterFrame();
 				});
 		});
+	/* a script's event.oninputpoll: at each read of the controls a core reports, inside its frame */
+	session.setInputPollTurn([&lua] { lua.inputPoll(); });
 	/* a script's show_future: asked before each frame played ahead */
 	session.setFutureTurn([&lua](int64_t played) { return lua.ask("__chimera_future", {vm::Value(played)}) == "true"; });
 	/* a machine opened or closed: the running scripts start again, as Chimera's
 	 * Lua Console restarts on a core change (once the window has the new one) */
 	auto restartScripts = [&dispatcher, &luaConsole] { dispatcher.post([&luaConsole] { luaConsole.restartScripts(); }); };
-	vm::Connection scriptsOnOpen = session.opens.changed.connect(restartScripts);
+	/* not when a script rebooted the machine itself (client.reboot_core): it goes on, as Chimera's */
+	vm::Connection scriptsOnOpen = session.opens.changed.connect([&session, restartScripts] {
+		if (!session.takeScriptReboot()) restartScripts();
+	});
 	vm::Connection scriptsOnClose = session.isOpen.changed.connect([&session, restartScripts] {
-		if (!session.isOpen.get()) restartScripts();
+		if (!session.isOpen.get() && !session.scriptRebooting()) restartScripts();
 	});
 	/* scripts while turbo is held only when asked (Customize) */
 	session.scriptsDuringTurbo(customize.luaDuringTurbo.get());
@@ -1429,6 +1445,7 @@ int main(int argc, char **argv)
 			session.setScriptTurns({}, {});
 			session.setScriptIdle({}, {});
 			session.setFutureTurn({});
+			session.setInputPollTurn({});
 		}
 	} letGo{session};
 
@@ -1682,7 +1699,7 @@ int main(int argc, char **argv)
 	 * .luases file is a session); after the game or project the command line
 	 * opens is open, as Chimera starts it after --project, or at once when
 	 * nothing is opened (or the opening never finishes) */
-	auto startScript = [&args, &luaOpt, &luaConsole] {
+	auto startScript = [&args, &luaOpt, &luaConsole, &session] {
 		std::string e;
 		const std::string script = QFileInfo(args.value(luaOpt)).absoluteFilePath().toStdString();
 		if (!QFileInfo::exists(args.value(luaOpt)))
@@ -1691,11 +1708,15 @@ int main(int argc, char **argv)
 			luaConsole.run("openSession", {script}, e);
 		else
 			luaConsole.run("openScript", {script}, e);
+		/* its first lines have run: the machine goes on */
+		session.holdFramesForScript(false);
 	};
 	vm::Connection scriptAfterOpen, scriptAfterProject;
 	bool scriptStarted = false;
 	if (args.isSet(luaOpt))
 	{
+		/* no frame before the script starts, as in Chimera, which starts it before the first */
+		if (anyProject) session.holdFramesForScript(true);
 		if (!anyProject)
 		{
 			scriptStarted = true;
@@ -1869,7 +1890,9 @@ int main(int argc, char **argv)
 		});
 	}
 
-	const int rc = app.exec();
+	int rc = app.exec();
+	/* a run nobody watches ends with what ended it, whatever else asked to close meanwhile */
+	if (headlessRun.endedWith() >= 0) rc = headlessRun.endedWith();
 	/* nothing more handed over once the window's things start going */
 	single.stop();
 	if (rc == 0 && qmlWarnings > 0 && qEnvironmentVariableIsSet("CHIMERA_QT_STRICT_QML"))

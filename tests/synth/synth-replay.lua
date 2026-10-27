@@ -64,6 +64,13 @@ end
 
 pcall(function() client.speedmode(6400) end)
 pcall(function() client.invisibleemulation(true) end)
+-- the movie's keys are recorded as they are pressed, and the engine plays the
+-- movie: in Chimera's window only what the movie holds reaches the core, so a
+-- press past its end is played only while recording
+pcall(function() tastudio.setrecording(true) end)
+if not tastudio.getrecording() then
+	finish("ERROR", "TAStudio would not enter recording mode")
+end
 
 -- mnemonic order matches the pad bitmask: U D L R A B Select(S) Start(T)
 local names = { "Up", "Down", "Left", "Right", "A", "B", "Select", "Start" }

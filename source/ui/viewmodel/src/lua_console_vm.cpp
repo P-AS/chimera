@@ -10,8 +10,7 @@
 
 #include "chimera/vm/json.hpp"
 
-/* Chimera's own Lua documentation, read from its C# libraries when the
- * prototype is built (lua_docs_from_csharp.py) */
+/* Chimera's own Lua documentation (lua_docs.inc) */
 #include "lua_docs.inc"
 
 namespace chimera::vm {

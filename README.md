@@ -30,9 +30,9 @@ Chimera is not designed for casual play. For that, use the original emulators di
 
 ## Cores
 
-Chimera does not include cores and does not download them. To use a core, download its `.chimeraCore` package from the core's own project (linked below) or build it yourself, and put it in the `Cores` folder beside Chimera.
+Chimera does not include cores and does not download them. To use a core, download its `.chimeraCore` package from the core's own project (linked below) or build it yourself, and put it in the `cores` folder beside Chimera.
 
-**File > Core Manager** lists the cores in that folder and lets you point Chimera at a different one ([docs/core-manager.md](docs/core-manager.md)).
+**Tools > Core Manager...** lists the cores in that folder and lets you point Chimera at a different one ([docs/core-manager.md](docs/core-manager.md)).
 
 ### Emulation cores
 
@@ -117,7 +117,8 @@ nothing, not a core and not a list of them. To set one up:
 1. Download a build above and unpack it.
 2. Download the `.chimeraCore` package of each core you want from that core's
    releases page (the [Cores](#cores) tables link them), or build it.
-3. Put the packages in the `Cores` folder beside `Chimera.exe`, and start Chimera.
+3. Put the packages in the `cores` folder beside Chimera (`chimera.exe` on
+   Windows, `chimera` on Linux), and start Chimera.
 
 Each core publishes a `dev` build and nightly releases the same way, and its
 nightlies are never deleted - which is what lets a movie name the exact package
@@ -140,19 +141,23 @@ An AI agent (Claude Code, or any program that speaks MCP) can look at the projec
 
 ## Building
 
-The canonical build is Linux-hosted and meson-mediated, and produces the artifacts for both operating systems: the managed frontend is built once (platform-neutral IL, .NET Framework on Windows / Mono on Linux), and every native library is built twice: gcc for Linux, mingw-w64 cross for Windows. Clone with `--recursive`; the repository contains no precompiled binaries, and
+The canonical build is Linux-hosted and meson-mediated, and produces Chimera for both operating systems: the engine, its libraries and the window (Qt 6.12), built with gcc for Linux and cross-built with mingw-w64 for Windows. Clone with `--recursive`; the repository contains no precompiled binaries, and
 no cores - `tools/fetch-cores.sh` puts the published ones in `build/Cores` if
 you want a working set without opening the frontend.
 
 ```
-meson setup build/meson-linux   --prefix "$(pwd)/build" --libdir dll
-meson setup build/meson-windows --prefix "$(pwd)/build" --libdir dll --cross-file extern/meson/mingw-w64.ini
-meson compile -C build/meson-linux && meson install -C build/meson-linux
-meson compile -C build/meson-windows && meson install -C build/meson-windows
-meson compile -C build/meson-linux frontend   # the managed solution (dotnet)
+tools/ci-chimera.sh      # Qt 6.12 for Linux into ~/qt (aqt), then the Linux build
 ```
 
-Linux requirements: meson, ninja, cmake, gcc, mingw-w64, and Microsoft's own .NET SDK binary (`curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0`); distro-built SDKs omit the WindowsDesktop targets the net48/WinForms frontend needs.
+or by hand, with Qt 6.12 for Linux at `$QT`:
+
+```
+PATH="$QT/libexec:$QT/bin:$PATH" PKG_CONFIG_PATH="$QT/lib/pkgconfig" \
+  meson setup build/meson-linux --prefix "$(pwd)/build" --libdir dll -Dqt_ui=enabled
+meson compile -C build/meson-linux && meson install -C build/meson-linux
+```
+
+Linux requirements: meson, ninja, cmake, gcc, and Qt 6.12 (Core, Gui, Qml, Quick, QuickControls2); mingw-w64 for the Windows build. The release builds Qt itself, for both systems, without its network module (`tools/build-qt-linux.sh`, `tools/build-qt-windows.sh`), and `tools/build-bundle.sh` makes the two bundles from it.
 
 The frontend ships no cores, so get at least one before running it - either the
 published packages, or a core repository cloned wherever you like:
@@ -160,12 +165,11 @@ published packages, or a core repository cloned wherever you like:
 ```
 tools/fetch-cores.sh                                # every published core -> build/Cores
 <core checkout>/waterbox/build-package.sh -r $PWD   # or build one yourself
-tools/build-bundle.sh --platform linux --out <dir>  # the distributable (no cores)
 ```
 
-To run: `build\Chimera.exe` on Windows, `build/ChimeraMono.sh` on Linux, then
-`File > New Project...` and pick a core. To play a rom with no project, pass
-`--core=<package> <rom>` on the command line.
+To run: `build/meson-linux/source/ui/chimera` (with `CHIMERA_CORES_DIR=build/Cores`
+for the cores a checkout holds), then `File > New Chimera Project...` and pick a
+core. `--headless` runs it with no window and no display, for a script or a test.
 
 The witness gate runs with `tests/synth/run-witness.sh`. The engineering log (objectives, procedure, and the sharp edges found along the way) is in [docs/design-principles.md](docs/design-principles.md); the engine migration is chronicled in [docs/engine-migration.md](docs/engine-migration.md). Building a new core, and joining it to this bundle, is [docs/porting-a-core.md](docs/porting-a-core.md).
 
@@ -190,7 +194,7 @@ reports before anybody opens a debugger:
   note and a minidump, `<date> pid<N>.txt` and `.dmp`, into the `Crashes`
   folder of the data directory (Config > Data Directory... opens it;
   `%LOCALAPPDATA%\Chimera` by default on Windows), and the sandbox writes
-  `minibox-diag.log` next to `Chimera.exe`. Attach all three: the note
+  `minibox-diag.log` next to Chimera's program. Attach all three: the note
   carries the faulting instruction and the machine's last words, and two of
   three crashes in one recent report were fixed off those files alone.
 - **The core's log.** Help > Export Core Log... keeps everything the core

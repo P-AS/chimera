@@ -1,9 +1,8 @@
-# The Qt window (issue 142, a prototype)
+# Chimera's window (issue 142)
 
-A new interface for Chimera in C++ only, to replace the Windows Forms one
-over time. This folder is a prototype: it opens a game, plays it, and shows
-the inputs in a piano roll, so that the approach can be judged on
-measurements. It is private for now.
+Chimera's interface, in C++ only: Qt Quick views over view models with no Qt
+in them. It replaced the Windows Forms window, and with it C#, on 2026-10-27
+(docs/qt-interface.md says what was decided and measured on the way).
 
 ## How it is built
 
@@ -14,9 +13,9 @@ Three layers, each knowing only the one below it:
   window, in plain C++ with no Qt. A view model names everything it has in
   one registry: its properties (values, with a signal when they change),
   its commands (actions, with a flag saying when they can run), its lists of
-  rows and its pictures. Two so far: `session` (open a core package with a
-  game, play, pause, one frame, restart, keys and gamepads) and `pianoRoll`
-  (one row a frame, one column a button; press, drag, paint, fill).
+  rows and its pictures: `session` (a project opened and played, keys and
+  gamepads), `pianoRoll` (one row a frame, one column a button), and one for
+  each tool window (`ramSearch`, `hexEditor`, `newProject`...).
 - **The window** (`qt/`): Qt Quick. `Main.qml` holds layout and bindings
   only. One generic adapter (`qml_view_model.cpp`) turns any view model into
   QML properties, a `run()` for commands and table models, without knowing

@@ -125,11 +125,14 @@ uncatchable - not missed, uncatchable.
 > not always (issue #120). The gate is green and the guarantee it stands for is
 > unestablished for games.
 
-> Every frontend test runs on Mono under Xvfb. The people who use Chimera run
-> .NET Framework WinForms on Windows. That toolkit decides what an assignment
-> to `BackColor` does, whether a control repaints, and whether visual styles
-> override either - so 889 green tests said nothing at all about whether the
-> theme menu worked, which twice it did not.
+> Every frontend test once ran Chimera's C# window on Mono under Xvfb, while
+> the people who used Chimera ran .NET Framework WinForms on Windows. That
+> toolkit decided what an assignment to `BackColor` did, whether a control
+> repainted, and whether visual styles overrode either - so 889 green tests
+> said nothing at all about whether the theme menu worked, which twice it did
+> not. The window is Qt's now, the same toolkit on both systems, and its
+> tests run it off screen: a test of how something LOOKS still has to be
+> looked at on a real screen.
 
 > Both of the PPSSPP core's gates hand their program to the core as a rom,
 > mounted as `/name`. A person opens a project, and a project mounts the game
@@ -187,8 +190,6 @@ what the leg said. They are all quick.
 
 | leg | what it stands for | when it must be run |
 | --- | --- | --- |
-| `tests/ui/windows/live-theme-switch.sh` | a theme chosen while a window is open, on .NET Framework WinForms rather than Mono | any change to theming or to a control that paints itself |
-| `tests/ui/windows/folder-picker-checkbox.sh` | the real folder picker, which Mono does not have | any change to the folder picker |
 | `tests/engine/windows/refused-open.sh` | the engine as a DLL: a refused open must not free the string it just handed out (chimera#123 - a mingw DLL destroys a `thread_local` twice) | any change to how the engine stores or returns an error, and any new `thread_local` in the engine |
 
 ---

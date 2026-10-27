@@ -1,9 +1,11 @@
-# A Qt interface for Chimera (issue 142)
+# Chimera's window (issue 142)
 
-Private for now (owner, 2026-10-22). This is the prototype of a new
-interface in C++ only, to replace the Windows Forms one and with it C#. The
-code is in `source/ui`; how it is built and run is in
-[source/ui/README.md](../source/ui/README.md).
+Chimera's window: Qt 6.12, QML views over C++ view models. It was made in a
+private clone from 2026-10-22 and replaced the Windows Forms window, and
+with it C#, on 2026-10-27 (owner). The code is in `source/ui`; how it is
+built and run is in [source/ui/README.md](../source/ui/README.md). Where
+this document says "the prototype", it means this window before it took
+Chimera's place.
 
 ## What was decided
 

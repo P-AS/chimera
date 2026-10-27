@@ -17,17 +17,6 @@ vm_miniz = static_library(
   gnu_symbol_visibility: 'hidden',
   pic: true,
 )
-# Chimera's Lua documentation (its Lua Functions List's words), read from the
-# C# libraries in this tree, again whenever one of them changes
-lua_docs_script = files('viewmodel/lua_docs_from_csharp.py')
-lua_docs_sources = run_command(find_program('python3'), lua_docs_script, '--list', repo_root / 'source/gui', check: true).stdout().strip().split('\n')
-lua_docs = custom_target(
-  'lua-docs',
-  input: lua_docs_sources,
-  output: 'lua_docs.inc',
-  command: [find_program('python3'), lua_docs_script, repo_root / 'source/gui', '@OUTPUT@'],
-  depend_files: lua_docs_script,
-)
 # the build's commit and its time, read again at every build, as Chimera's are
 ui_build_h = vcs_tag(
   command: ['git', '-C', repo_root, 'log', '-1', '--format=%H %ct'],
@@ -39,7 +28,6 @@ ui_build_h = vcs_tag(
 vm_lib = static_library(
   'chimera-vm',
   [
-    lua_docs,
     ui_build_h,
     'viewmodel/src/view_model.cpp',
     'viewmodel/src/mcp_vm.cpp',
@@ -119,6 +107,24 @@ test_vm = executable(
   override_options: ['cpp_std=c++20'],
   build_by_default: true,
 )
+# the contract between Chimera and the core packages it is given (what was
+# the C# InstalledCorePackagesTests and MnemonicUniquenessTests): its rules on
+# packages made up here, and every package in build/Cores (a core's CI runs it
+# on its own package: CHIMERA_CORES_DIR=<folder> test-packages)
+test_packages = executable(
+  'test-packages',
+  'viewmodel/tests/test_packages.cpp',
+  dependencies: [vm_dep],
+  cpp_args: ['-UNDEBUG'],
+  override_options: ['cpp_std=c++20'],
+  build_by_default: true,
+)
+test('package rules', test_packages, args: ['--self'])
+test('installed packages', test_packages, args: [repo_root / 'build/Cores'])
+# The packages and the project below are made from build/Cores/synth-box.chimeraCore,
+# which tests/synth/build-package.sh makes after a build: they are made when a
+# test that names them runs, not with every build (a fresh checkout's first
+# build has no synth package yet).
 # a second core that takes the synthetic core's files, for choosing between them
 synth_again = custom_target(
   'synth-again',
@@ -126,7 +132,7 @@ synth_again = custom_target(
   command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
     repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Again', '@OUTPUT@'],
   build_always_stale: true,
-  build_by_default: true,
+  build_by_default: false,
 )
 # a package of two machines with declared slots, for New Project
 synth_slots = custom_target(
@@ -135,7 +141,7 @@ synth_slots = custom_target(
   command: [find_program('python3'), files('viewmodel/tests/slots-package.py'),
     repo_root / 'build/Cores/synth-box.chimeraCore', '@OUTPUT@'],
   build_always_stale: true,
-  build_by_default: true,
+  build_by_default: false,
 )
 # a firmware that declares the hash of its original file, in a core that is
 # not a game and in one that is
@@ -146,7 +152,7 @@ synth_hashed = custom_target(
   command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
     repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Hashed', '@OUTPUT@', '', logo_firmware],
   build_always_stale: true,
-  build_by_default: true,
+  build_by_default: false,
 )
 # a controller with a second player, keyboard keys and a console button
 more_buttons = '["P2 A", "P2 B", "Power", "Key A", "Key B", "Key C", "Key D", "Key E", "Key F", "Key G", "Key H", "Key I", "Key J", "Key K", "Key L", "Key M", "Key N", "Key O", "Key P", "Key Q", "Key R", "Key S", "Key T", "Key U", "Key V", "Key W", "Key X", "Key Y", "Key Z", "Key 0", "Key 1", "Key 2", "Key 3", "Key 4", "Key 5", "Key 6", "Key 7", "Key 8", "Key 9"]'
@@ -156,7 +162,7 @@ synth_keys = custom_target(
   command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
     repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Keys', '@OUTPUT@', '', '', '', more_buttons],
   build_always_stale: true,
-  build_by_default: true,
+  build_by_default: false,
 )
 # a game core that needs no firmware, for the Game menu
 # ten releases of one firmware, each pinned by its hash, for the Firmware window's
@@ -168,7 +174,7 @@ synth_bios = custom_target(
   command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
     repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Bios', '@OUTPUT@', '', bios_releases],
   build_always_stale: true,
-  build_by_default: true,
+  build_by_default: false,
 )
 synth_plain_game = custom_target(
   'synth-plain-game',
@@ -176,7 +182,7 @@ synth_plain_game = custom_target(
   command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
     repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Plain Game', '@OUTPUT@', 'game'],
   build_always_stale: true,
-  build_by_default: true,
+  build_by_default: false,
 )
 synth_game = custom_target(
   'synth-game',
@@ -185,7 +191,7 @@ synth_game = custom_target(
     repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Game', '@OUTPUT@', 'game', logo_firmware,
     '2026-10-18T16:35:00Z'],
   build_always_stale: true,
-  build_by_default: true,
+  build_by_default: false,
 )
 # a core that compiles a game's code before a project is made, as RPCS3's (the
 # synthetic core's compile session: six modules, a share a session)
@@ -195,7 +201,7 @@ synth_compile = custom_target(
   command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
     repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Compile', '@OUTPUT@', '', '', '', '', 'precompile'],
   build_always_stale: true,
-  build_by_default: true,
+  build_by_default: false,
 )
 # a core that declares no virtual size and has room for a wider picture than it
 # draws, as Ruffle's: its picture is shown at its own shape
@@ -205,7 +211,7 @@ synth_square = custom_target(
   command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
     repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Square', '@OUTPUT@', '', '', '', '', '', 'square'],
   build_always_stale: true,
-  build_by_default: true,
+  build_by_default: false,
 )
 test(
   'view models',
@@ -295,7 +301,7 @@ if qt_dep.found()
     output: ['gridWalker.chimeraProject', 'gridWalker.testrom'],
     command: [find_program('python3'), files('qt/tests/game-project.py'), repo_root / 'build/Cores/synth-box.chimeraCore',
       repo_root / 'tests/synth/roms/gridWalker.testrom', '@OUTPUT0@'],
-    build_by_default: true,
+    build_by_default: false,
   )
   # the whole window loads (every QML file, every view model bound), runs a
   # game for a second and quits cleanly: a QML mistake fails here, not at

@@ -223,13 +223,12 @@ Three, and a core is not done with fewer:
   leg, each saying what it compared. Read [gates.md](gates.md) first; every
   new leg is broken on purpose once and seen to fail.
 - **The frontend gate**, `waterbox/tests/run-frontend.sh`: the package
-  through the real frontend, headless - a boot compared with the sandbox
-  reference, a project opened in TAStudio, the keybinds adopted.
+  through the real frontend, Chimera's window run `--headless` (no display) -
+  a boot compared with the sandbox reference, a project opened in TAStudio,
+  the package's keybinds the machine's.
 - **Chimera's contract tests** against the package, which need no content:
 
-      CHIMERA_CORES_DIR=<folder holding the package> dotnet test \
-        source/gui/Chimera.Tests.Client.Common/Chimera.Tests.Client.Common.csproj \
-        -c Release --filter "FullyQualifiedName~InstalledCorePackagesTests|FullyQualifiedName~MnemonicUniquenessTests"
+      <chimera>/build/meson-linux/source/ui/test-packages <folder holding the package>
 
 Content: what a gate runs is named, never "the first file in the folder".
 What may be distributed lives in the repository (`tests/`); what may not lives

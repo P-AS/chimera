@@ -1031,7 +1031,7 @@ core.
 
 ### The menus say what they mean (2026-08-13)
 
-- **Emulation → System.** The menu holds Pause, Reboot Core, the dump status and
+- **Emulation -> System.** The menu holds Pause, Reboot Core, the dump status and
   what is loaded: that is the machine, not "emulation" as an activity.
 - **Soft Reset and Hard Reset are gone**, menu items and hotkeys both. They only
   ever clicked a controller button named "Reset" or "Power" - buttons a package
@@ -11489,3 +11489,94 @@ found (64), a file picker (64), and work a killed run left. Breaking the
 offscreen start failed 6; breaking the other five behaviours together
 failed 6. 41 of 41 tests. On Windows, a headless run of a project with a
 script, from WSL, showed no window and ended 0.
+
+## The window replaces Chimera's C# window (user-decided, 2026-10-27)
+
+The owner decided the Qt window becomes Chimera: pushed to main and
+released, dev and nightly at once, and before that the C# window and
+everything that ran it removed, with the cores' tests moved onto the new
+window (it gained --headless for them).
+
+- **Removed**: `source/gui` (the C# window, its libraries and tests),
+  `tests/ui` (its interface tests), and the C#-only parts of `extern`
+  (NLua, the source generators, the analyzers, the .NET build scripts).
+  What the window still took from there moved into it: 71 images and the
+  two built-in themes (`source/ui/qt/images`, `source/ui/qt/themes`), and
+  the Lua functions' descriptions, read from the C# libraries at each build
+  until now, kept as a file (`lua_docs.inc`) to be edited by hand from now
+  on.
+- **The package contract tests** were C# (InstalledCorePackagesTests,
+  MnemonicUniquenessTests). They are a C++ program now,
+  `test-packages [<folder>]`, with the same checks (18 on packages, and
+  the rules on packages made up here), reading packages through the engine
+  and the window's own readers. Three C# tests were of C# classes alone
+  and went with them; the engine's own tests already pin the naming rule.
+  On the 44 packages installed here all pass; six broken copies of the
+  synthetic package each fail the check meant for them.
+- **A guest ABI check**, which the window lacked: a package built for a
+  guest ABI this Chimera does not run is listed with why and not opened,
+  in Chimera's words ("Update Chimera." or "Update the core.").
+- **client.invisibleemulation** is not the window's after all: Chimera's
+  C# window never had it (the cores' scripts call it inside pcall), so the
+  window does as Chimera did and draws every frame.
+- **The witness's level B** runs the window --headless. Its keybinding check
+  reads the bindings the machine has (controls.effective), since the window
+  keeps only the keys a person changed. Its check of the C# window's own
+  helper modes (D:box:helpers) went with them: in the window those helpers
+  are chimera-run's, which level E asks of a project (E:suggest,
+  E:precompile, E:import-movie).
+- **CI** builds the window with `tools/ci-chimera.sh` (Qt 6.12 from Qt's
+  archives with aqt, cached); every core's CI does the same.
+- **The release** builds Qt itself for both systems, without its network
+  module, from Qt's source archives pinned by hash
+  (`tools/fetch-qt-source.sh`, `tools/build-qt-linux.sh`,
+  `tools/build-qt-windows.sh`; cached once built). The Windows bundle is
+  `chimera.exe` with `lib\` and `bin\`; the Linux one is laid out as Qt
+  installs itself (`chimera`, `lib/`, `plugins/`, `qml/`, `bin/`), so a
+  relocatable Qt finds its parts with no settings file. Both carry
+  `themes/`, an empty `cores/` with a README.txt, and Qt's LGPL texts with
+  where its source is.
+- **What the witness's level B found**, run on the window for the first
+  time, each now as Chimera's C# window had it:
+  - `client.reboot_core()` reboots at once: the script's next line sees
+    frame 0. It used to queue the reboot, and the scripts were started
+    again when the machine opened.
+  - `client.openproject()` opens at once. Chimera's then never resumed the
+    script that opened it; the window's goes on with the new project, as
+    after a reboot (a person opening a project still starts the scripts
+    again).
+  - `joypad.getwithmovie()` is what the core was handed on the frame just
+    run (the movie's frame, which the engine plays), kept by the machine as
+    it plays it; it was the keys held.
+  - A script's `emu.framecount()`, `movie.length()` and
+    `client.encodingvideo()` read the machine's own state at the moment
+    asked. They read the window's copies, which follow a moment later, and
+    a script that asked just after a reboot, an open or an encode read the
+    old value.
+  - `game.describe().label` is the value as shown, always (a u64 as its
+    digits, bytes in hexadecimal); it was there only for named values.
+  - `event.oninputpoll` calls the function at each read of the controls a
+    core reports (issue 344), and is refused with Chimera's words by any
+    other core; the window refused it for every core.
+  - A script's wait through an encode goes on on the frame the encode gives
+    back, as on the frame a seek lands on.
+  - A headless run given a game file alone ends with 2 and Chimera's
+    words; a headless exit asked before the window's loop has started is
+    no longer lost.
+  - The witness reads the window's recovery folder, and the synthetic
+    core's own "synth: started" for a boot.
+  - A script named on the command line starts before the machine's first
+    frame, as Chimera's: the machine waits for it. It ran three to five
+    frames first.
+  - `memorysavestate.loadcorestate()` no longer pauses the machine (a script
+    loading one each frame waited for ever).
+  - SIGTERM and Ctrl+C end the program again: SDL, started for gamepads,
+    took them and turned them into a quit event nobody read, so a run could
+    not be stopped by its time limit. SDL is told to leave them alone.
+- **One difference kept, by the owner's rule that the engine plays the
+  movie** (2026-10-22): past the end of a project's movie and not
+  recording, a script's `joypad.set` does not reach the core. Chimera's C#
+  window handed it to the core there while the movie took only the
+  autoholds, so what the core played was not what the movie held. A script
+  that drives the machine records (`tastudio.setrecording(true)`), as the
+  witness's replay now does.

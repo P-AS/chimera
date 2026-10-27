@@ -13,16 +13,10 @@
 set -eu
 root="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 
-# managed: the namespaces and types a request, a socket or a lookup is made with
-managed='System\.Net\b|\bHttpClient\b|\bWebClient\b|\bWebRequest\b|\bHttpWebRequest\b|\bHttpListener\b|\bTcpClient\b|\bTcpListener\b|\bUdpClient\b|\bClientWebSocket\b|\bNetworkStream\b|\bIPAddress\b|\bIPEndPoint\b|\bDns\.|\bSmtpClient\b|\bFtpWebRequest\b'
 # native: the headers and calls
 native='sys/socket\.h|netinet/|arpa/inet\.h|netdb\.h|winsock|ws2tcpip|\bWSAStartup\b|\bgetaddrinfo\b|\bgethostbyname\b|curl/curl\.h|\bcurl_easy_'
 
 found=0
-if grep -rnE --include='*.cs' --include='*.csproj' --include='*.props' --include='*.targets' \
-	--exclude-dir=obj --exclude-dir=bin "$managed" "$root/source/gui"; then
-	found=1
-fi
 # and the sandbox's host side, which ships in every bundle too: libminiboxhost
 # is built from source/host, and libchimera compiles the GL, Vulkan and cache
 # bridges. Its guest side is not Chimera's: it is the C library a core is
@@ -57,4 +51,4 @@ if [ "$found" -ne 0 ]; then
 	echo "check-no-network: the lines above name a network API. Chimera has none; see docs/core-manager.md." >&2
 	exit 1
 fi
-echo "check-no-network: clean (source/gui, source/ui, source/engine, miniBox's host side, meson.build)"
+echo "check-no-network: clean (source/ui, source/engine, miniBox's host side, meson.build)"

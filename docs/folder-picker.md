@@ -1,5 +1,10 @@
 # The file and folder pickers, and the option the folder picker carries
 
+> Since 2026-10-27 Chimera's window is a Qt window (docs/qt-interface.md),
+> and the C# pickers this document describes are gone: the Qt window uses Qt's
+> own file and folder dialogs (QtQuick.Dialogs). The option the folder picker
+> carried is described here as Chimera had it.
+
 There is one folder picker in the frontend, `FolderBrowserEx`. On Windows it is
 the Explorer-style common item dialog - an address bar, and a box to type or
 paste a path into (issue #57, `Win32FolderPicker`). A third path,

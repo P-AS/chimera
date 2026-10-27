@@ -71,6 +71,14 @@ end
 function __chimera_frame_start_events() callEvent("OnFrameStart") end
 function __chimera_frame_end_events() callEvent("OnFrameEnd") end
 function __chimera_console_closed() callEvent("OnConsoleClose") end
+-- a read of the controls the core reported, inside its frame: the functions
+-- may read memory, but not wait for a frame
+function __chimera_input_poll_events()
+	local was = __chimera_no_waits
+	__chimera_no_waits = true
+	callEvent("OnInputPoll")
+	__chimera_no_waits = was
+end
 function __chimera_script_stopped(id)
 	local exits = {}
 	for _, f in ipairs(registered) do if f.script == id and f.event == "OnExit" then exits[#exits + 1] = f end end
@@ -223,7 +231,8 @@ function emu.yield()
 	if __chimera_no_waits or not coroutine.isyieldable() then error("emu.yield() is not allowed during any callbacks", 2) end
 	coroutine.yield()
 end
-function emu.framecount() return C.session.frame end
+-- the machine's own count, now: the frame property follows it a moment later
+function emu.framecount() return C.session.frameNow() end
 function emu.lagcount() return C.session.lagCount end
 function emu.islagged() return C.session.lagFrame end
 -- the frame just run was a lag frame or not (true when not said), as its row in TAStudio says
@@ -677,7 +686,14 @@ function joypad.get(controller)
 	return out
 end
 joypad.getimmediate = joypad.get
-function joypad.getwithmovie(controller) return joypad.get(controller) end
+-- what the core was handed on the frame just run, as Chimera's (its
+-- ControllerOutput): the engine plays the movie, so the movie's frame
+function joypad.getwithmovie(controller)
+	local out = {}
+	for name, _ in pairs(byController(allButtons(), controller, false)) do out[name] = false end
+	for name, v in pairs(byController(lines(C.session.playedButtons()), controller, true)) do out[name] = v end
+	return out
+end
 -- held for the next frame run, as Chimera's joypad.set
 -- true or 1 holds a button for the next frame, false or 0 lets it go
 -- whoever holds it, as Chimera's (Convert.ToBoolean)
@@ -711,7 +727,8 @@ function joypad.setfrommnemonicstr(entry) C.session.scriptEntry(tostring(entry))
 movie = {}
 function movie.isloaded() return C.session.hasProject end
 function movie.filename() return C.session.projectPath end
-function movie.length() return C.pianoRoll.frameCount end
+-- the engine's, now: the piano roll's count follows it a moment later
+function movie.length() return C.session.movieLength() end
 function movie.mode()
 	if not C.session.hasProject then return "INACTIVE" end
 	return C.session.recordingMode and "RECORD" or "PLAY"
@@ -809,11 +826,11 @@ function client.isturbo() return C.session.turbo end
 function client.isseeking() return C.session.seekingTo >= 0 end
 function client.is_rewinding() return C.session.rewinding end
 function client.speedmode(percent) C.session.speedPercent = percent end
--- frames run undrawn, for this run (Display Nothing, not remembered)
-function client.invisibleemulation(invisible) C.session.invisible = invisible == true end
-function client.reboot_core() C.session.restart() end
+-- at once, as Chimera's: the next line sees frame 0, and the script goes on
+function client.reboot_core() C.session.rebootForScript() end
 function client.closerom() C.session.close() end
-function client.openproject(path) return C.session.openProject(path) == true end
+-- at once, as Chimera's: the next line sees the project open, and the script goes on with it
+function client.openproject(path) return C.session.openProjectForScript(path) == true end
 function client.getversion() return C.help and C.help.commit or "" end
 function client.get_approx_framerate() return C.session.fps end
 function client.SetSoundOn(on) C.session.soundOn = on end
@@ -836,7 +853,8 @@ function client.encodevideo(path, from, to, command)
 	if ok then return nil end
 	return tostring(err)
 end
-function client.encodingvideo() return C.encoder.phase == "encoding" end
+-- the machine lent to the encode, until it is given back (the session's own word, read at once)
+function client.encodingvideo() return C.session.borrowed() end
 function client.pause_av() C.encoder.pauseAv(true) end
 function client.unpause_av() C.encoder.pauseAv(false) end
 -- the name Chimera's Lua gives its engine, kept as it is: scripts tell Chimera's Lua apart by it
@@ -1565,10 +1583,27 @@ end
 local function coreName() return C.session.coreName ~= "" and C.session.coreName or "This core" end
 local midFrame = "No Chimera core can: a core runs in a sandbox that Chimera calls once a frame, "
 	.. "and the core cannot stop part way through a frame to run a Lua function."
-function event.oninputpoll()
-	error(coreName() .. " does not report its reads of the controls, so it cannot call a Lua function when it reads them. "
-		.. "A core runs in a sandbox that Chimera calls once a frame, and only a core that reports its reads stops part way through a frame to call back. "
-		.. "Remove the registration, or guard it with pcall.", 2)
+-- each read of the controls, for a core that reports its reads (issue 344), as
+-- Chimera's: the core is asked first, and a function is kept only when it will
+-- be called; any other core refuses it, with Chimera's words
+local inputPollsAsked = false
+function event.oninputpoll(fn, name)
+	if not C.session.inputPollsReported() then
+		error(coreName() .. " does not report its reads of the controls, so it cannot call a Lua function when it reads them. "
+			.. "A core runs in a sandbox that Chimera calls once a frame, and only a core that reports its reads stops part way through a frame to call back. "
+			.. "Remove the registration, or guard it with pcall.", 2)
+	end
+	local guid = registerNamed(fn, "OnInputPoll", name).guid
+	inputPollsAsked = true
+	C.session.setInputPolls(true)
+	return guid
+end
+-- the core asked no more once the last such function is gone
+onRemoved[#onRemoved + 1] = function()
+	if not inputPollsAsked then return end
+	for _, f in ipairs(registered) do if f.event == "OnInputPoll" then return end end
+	inputPollsAsked = false
+	C.session.setInputPolls(false)
 end
 local function memoryRefused(execute, anyAddress)
 	return function(fn, address)

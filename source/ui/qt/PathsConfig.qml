@@ -228,7 +228,7 @@ ApplicationWindow {
             Label { text: "%recent%" }
             Label { text: qsTr("Sets the path to the Windows Recent Path") }
             Label { text: "%exe%" }
-            Label { text: qsTr("Sets the path of the executable (Chimera.exe)") }
+            Label { text: qsTr("Sets the path of the executable (chimera.exe)") }
             Label { text: ".\\"; Layout.topMargin: 12 }
             Label { text: qsTr("Sets the path to the base path"); Layout.topMargin: 12 }
             Label { text: "..\\" }

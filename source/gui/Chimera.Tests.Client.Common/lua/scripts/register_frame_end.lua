@@ -1,1 +1,0 @@
-﻿event.onframeend(function() end)

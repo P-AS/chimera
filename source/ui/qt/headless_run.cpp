@@ -8,6 +8,7 @@
 #include <QMetaObject>
 #include <QQuickItem>
 #include <QStringList>
+#include <QThread>
 
 #include "chimera/vm/session_vm.hpp"
 
@@ -101,8 +102,12 @@ void HeadlessRun::blocked(const QString &caption, const QString &text)
 void HeadlessRun::end(int code)
 {
 	ending_ = true;
+	endedWith_ = code;
 	std::fflush(stderr);
-	QCoreApplication::exit(code);
+	/* at once while the window's loop runs; asked before it has started, an
+	 * exit would be lost, so it waits for it */
+	if (QThread::currentThread()->loopLevel() > 0) QCoreApplication::exit(code);
+	else QMetaObject::invokeMethod(QCoreApplication::instance(), [code] { QCoreApplication::exit(code); }, Qt::QueuedConnection);
 }
 
 } // namespace chimera::qt

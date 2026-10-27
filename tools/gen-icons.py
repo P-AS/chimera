@@ -5,18 +5,11 @@ ice flowers, the question block).
 
     python3 tools/gen-icons.py [--preview <file.png>]
 
-What it writes, into source/gui/Chimera.Client.GUI/images:
+What it writes, into source/ui/qt/images:
 
-  TAStudio.png / TAStudio.ico   the Chimera eye in TAStudio's own colours
-  Freeze.png   / Freeze.ico     a snowflake (freeze an address; also cheats)
-  Unfreeze.png                  the same flake, thawed
-  RetroQuestion.png             a plain question mark (unrecognised rom)
-  commandWindow.ico             a console window (the log window's icon; the
-                                art it replaces carried BizHawk's hawk)
-  HomeBrew.png                  a beaker (the homebrew rom status). The art it
-                                replaces was a cauldron from the CC-BY
-                                FatCow Farm-Fresh set - licensed, not game
-                                art, but this way the icon is ours
+  TAStudio.png    the Chimera eye in TAStudio's own colours
+  Freeze.png      a snowflake (freeze an address; also cheats)
+  Unfreeze.png    the same flake, thawed
 
 The eye is drawn from the same 8x8 cell grid as images/chimera.png, so the
 mark stays the mark and only the palette changes. Everything else is drawn
@@ -30,7 +23,7 @@ import sys
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-IMAGES = os.path.join(HERE, "..", "source", "gui", "Chimera.Client.GUI", "images")
+IMAGES = os.path.join(HERE, "..", "source", "ui", "qt", "images")
 
 # the brand palette, read off images/chimera.png
 TEAL = (45, 179, 166)
@@ -122,145 +115,6 @@ def draw_flake(size, thawed=False):
     return img.resize((size, size), Image.LANCZOS)
 
 
-def draw_question(size):
-    """A plain question mark, in the amber the status bar used before."""
-    S = 256
-    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    body = (246, 168, 33, 255)
-    edge = (120, 74, 6, 255)
-
-    def glyph(dx, dy, fill, w):
-        # one stroke: the hook sweeps over the top and comes down into the
-        # stem, then the dot below it
-        d.arc([70 + dx, 30 + dy, 190 + dx, 150 + dy], start=160, end=10, fill=fill, width=w)
-        d.line([185 + dx, 108 + dy, 132 + dx, 168 + dy], fill=fill, width=w)
-        d.line([132 + dx, 160 + dy, 132 + dx, 182 + dy], fill=fill, width=w)
-        r = 20
-        d.ellipse([132 - r + dx, 212 - r + dy, 132 + r + dx, 212 + r + dy], fill=fill)
-
-    # a dark edge first, then the body over it: legible on light and dark alike
-    for ox, oy in ((-7, 0), (7, 0), (0, -7), (0, 7), (-5, -5), (5, 5), (-5, 5), (5, -5)):
-        glyph(ox, oy, edge, 42)
-    glyph(0, 0, body, 30)
-    return img.resize((size, size), Image.LANCZOS)
-
-
-def draw_console(size):
-    """A console window with a prompt: what the log window actually shows."""
-    S = 256
-    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-
-    frame = SLATE + (255,)
-    face = (24, 28, 34, 255)
-    bar = (52, 60, 74, 255)
-    text = TEAL + (255,)
-    caret = AMBER + (255,)
-
-    box = [18, 40, S - 18, S - 40]
-    d.rounded_rectangle(box, radius=18, fill=face, outline=frame, width=10)
-    # title bar
-    d.rounded_rectangle([box[0] + 5, box[1] + 5, box[2] - 5, box[1] + 46],
-                        radius=14, fill=bar)
-    d.rectangle([box[0] + 5, box[1] + 32, box[2] - 5, box[1] + 46], fill=bar)
-    for i, cx in enumerate((box[0] + 28, box[0] + 54, box[0] + 80)):
-        d.ellipse([cx - 7, box[1] + 18, cx + 7, box[1] + 32],
-                  fill=(AMBER if i == 0 else (TEAL if i == 1 else PURPLE)) + (255,))
-
-    # the prompt: a chevron, a line of output, and a caret
-    y = box[1] + 84
-    d.line([box[0] + 30, y, box[0] + 58, y + 22], fill=text, width=12)
-    d.line([box[0] + 58, y + 22, box[0] + 30, y + 44], fill=text, width=12)
-    d.rectangle([box[0] + 74, y + 8, box[2] - 34, y + 30], fill=text)
-    d.rectangle([box[0] + 30, y + 74, box[0] + 150, y + 94], fill=(120, 132, 148, 255))
-    d.rectangle([box[0] + 30, y + 118, box[0] + 62, y + 140], fill=caret)
-
-    return img.resize((size, size), Image.LANCZOS)
-
-
-def draw_beaker(size):
-    """A flask with something brewing in it: a rom somebody made themselves.
-
-    Kept to a silhouette - at 16px a glass outline turns to mush, so the
-    shape carries it and the contents supply the colour.
-    """
-    S = 256
-    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-
-    glass = (222, 230, 240, 255)
-    edge = (58, 68, 84, 255)
-    brew = TEAL + (255,)
-    bubble = AMBER + (255,)
-
-    neck_l, neck_r, neck_top, shoulder = 96, 160, 44, 116
-    base_l, base_r, base_y = 34, 222, 214
-    flask = [(neck_l, neck_top), (neck_r, neck_top), (neck_r, shoulder),
-             (base_r, base_y), (base_l, base_y), (neck_l, shoulder)]
-
-    d.polygon(flask, fill=glass, outline=edge)
-    for i in range(len(flask)):
-        d.line([flask[i], flask[(i + 1) % len(flask)]], fill=edge, width=14)
-    # the lip, so the neck does not read as a stem
-    d.line([(neck_l - 16, neck_top + 4), (neck_r + 16, neck_top + 4)], fill=edge, width=16)
-
-    # the brew: a level line, then everything below it
-    level = 150
-    d.polygon([(neck_l + 6 + (level - shoulder) * 0.0, level),
-               (neck_r - 6, level),
-               (base_r - 12, base_y - 10), (base_l + 12, base_y - 10)], fill=brew)
-    span = (base_r - base_l) * (level - shoulder) / (base_y - shoulder) / 2
-    d.polygon([(128 - span - 20, level), (128 + span + 20, level),
-               (base_r - 12, base_y - 10), (base_l + 12, base_y - 10)], fill=brew)
-
-    # one bubble inside it - a second one outside the glass just reads as a
-    # stray pixel once this is 16 across
-    d.ellipse([114, 112, 146, 144], fill=bubble)
-
-    return img.resize((size, size), Image.LANCZOS)
-
-
-def save_ico(img, path, sizes=(16, 32, 48, 64)):
-    """Writes an .ico whose entries are classic DIBs.
-
-    Not Image.save(format="ICO"): Pillow writes PNG-compressed entries, and
-    Mono's System.Drawing.Icon - which is what runs the Linux build - only
-    understands the BMP kind. It does not fail politely either; it reads the
-    PNG header as a DIB header and dies on a nonsense length, taking the
-    whole app down at startup before any window exists.
-    """
-    import struct
-
-    images = []
-    for s in sizes:
-        im = img.resize((s, s), Image.LANCZOS).convert("RGBA")
-        px = im.load()
-        xor = bytearray()
-        for y in range(s - 1, -1, -1):  # DIBs are bottom-up
-            for x in range(s):
-                r, g, b, a = px[x, y]
-                xor += bytes((b, g, r, a))
-        # the AND mask is unused for 32-bit entries but the format wants it,
-        # one bit per pixel, each row padded to four bytes
-        row = ((s + 31) // 32) * 4
-        and_mask = bytes(row * s)
-        header = struct.pack("<IiiHHIIiiII", 40, s, s * 2, 1, 32, 0,
-                             len(xor) + len(and_mask), 0, 0, 0, 0)
-        images.append((s, header + bytes(xor) + and_mask))
-
-    offset = 6 + 16 * len(images)
-    out = bytearray(struct.pack("<HHH", 0, 1, len(images)))
-    for s, blob in images:
-        out += struct.pack("<BBBBHHII", s if s < 256 else 0, s if s < 256 else 0,
-                           0, 0, 1, 32, len(blob), offset)
-        offset += len(blob)
-    for _, blob in images:
-        out += blob
-    with open(path, "wb") as f:
-        f.write(bytes(out))
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", help="also write a scaled-up sheet here")
@@ -272,32 +126,17 @@ def main():
 
     tas = draw_eye(16, source="ChimeraSmall.png")
     tas.save(os.path.join(out, "TAStudio.png"))
-    save_ico(draw_eye(64), os.path.join(out, "TAStudio.ico"), sizes=(16, 32, 48, 64))
 
     freeze = draw_flake(16)
     freeze.save(os.path.join(out, "Freeze.png"))
-    save_ico(draw_flake(64), os.path.join(out, "Freeze.ico"))
 
     unfreeze = draw_flake(16, thawed=True)
     unfreeze.save(os.path.join(out, "Unfreeze.png"))
 
-    question = draw_question(16)
-    question.save(os.path.join(out, "RetroQuestion.png"))
-
-    homebrew = draw_beaker(16)
-    homebrew.save(os.path.join(out, "HomeBrew.png"))
-
-    console = draw_console(32)
-    save_ico(draw_console(64), os.path.join(out, "commandWindow.ico"),
-             sizes=(16, 24, 32, 48, 64))
-
-    print("wrote TAStudio.png/.ico, Freeze.png/.ico, Unfreeze.png,"
-          " RetroQuestion.png, commandWindow.ico, HomeBrew.png")
+    print("wrote TAStudio.png, Freeze.png, Unfreeze.png")
 
     if args.preview:
-        tiles = [("TAStudio", tas), ("Freeze", freeze), ("Unfreeze", unfreeze),
-                 ("RetroQuestion", question), ("commandWindow", console),
-                 ("HomeBrew", homebrew)]
+        tiles = [("TAStudio", tas), ("Freeze", freeze), ("Unfreeze", unfreeze)]
         tw = 96
         sheet = Image.new("RGBA", (len(tiles) * tw, tw + 30), (32, 32, 32, 255))
         d = ImageDraw.Draw(sheet)

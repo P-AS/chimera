@@ -2,11 +2,11 @@
 """Writes the licence of a Chimera bundle, from what its parts declare.
 
 A bundle is the frontend, and the frontend alone: Chimera ships no cores and
-downloads none; each comes from its own project and is put in the Cores folder
+downloads none; each comes from its own project and is put in the cores folder
 by whoever wants it (docs/core-manager.md). So this states the frontend's terms
 and says plainly where the rest come from.
 
-It still reads Cores/ - a bundle assembled with packages in it, which a
+It still reads cores/ - a bundle assembled with packages in it, which a
 developer or a downstream packager may do, must state their terms too. A core
 package is somebody else's emulator: several of them (Genesis Plus GX, Snes9x,
 the FreeDO-descended parts of Opera) forbid commercial redistribution, and
@@ -23,12 +23,17 @@ licence text into licenses/<package>/, and writes LICENSES.md with:
   * every component, its licence, and the exact commit it was built from;
   * for GPL parts, a link to the corresponding source of that exact commit.
 
-Usage: bundle-licenses.py <bundle dir> [--chimera-root <dir>]
+Usage: bundle-licenses.py <bundle dir> [--chimera-root <dir>] [--qt-source <dir>]
+
+--qt-source names Qt's source archives (tools/fetch-qt-source.sh): the window
+is built on Qt, under the GNU LGPL version 3, and its licence texts are copied
+from qtbase's archive into licenses/qt/.
 """
 
 import json
 import os
 import sys
+import tarfile
 import zipfile
 
 
@@ -57,8 +62,14 @@ def main():
     chimera_root = None
     if "--chimera-root" in sys.argv:
         chimera_root = sys.argv[sys.argv.index("--chimera-root") + 1]
+    qt_source = None
+    if "--qt-source" in sys.argv:
+        qt_source = sys.argv[sys.argv.index("--qt-source") + 1]
 
-    cores_dir = os.path.join(bundle, "Cores")
+    # the window's bundle has cores/; Chimera's earlier ones had Cores/
+    cores_dir = os.path.join(bundle, "cores")
+    if not os.path.isdir(cores_dir):
+        cores_dir = os.path.join(bundle, "Cores")
     out_dir = os.path.join(bundle, "licenses")
     os.makedirs(out_dir, exist_ok=True)
 
@@ -94,6 +105,22 @@ def main():
                 with open(os.path.join(out_dir, f"chimera-{filename}"), "wb") as f:
                     f.write(data)
 
+    # Qt's terms, as its source states them: the LGPL 3 (which is the GPL 3 with
+    # extra permissions, so both texts), from qtbase's own LICENSES folder
+    qt_licences = []
+    if qt_source:
+        qt_dir = os.path.join(out_dir, "qt")
+        os.makedirs(qt_dir, exist_ok=True)
+        with tarfile.open(os.path.join(qt_source, "qtbase.tar.xz")) as t:
+            for member in t.getmembers():
+                name = os.path.basename(member.name)
+                if "/LICENSES/" in member.name and name in ("LGPL-3.0-only.txt", "GPL-3.0-only.txt", "GPL-2.0-only.txt"):
+                    with open(os.path.join(qt_dir, name), "wb") as f:
+                        f.write(t.extractfile(member).read())
+                    qt_licences.append(name)
+        if "LGPL-3.0-only.txt" not in qt_licences:
+            sys.exit("qtbase's archive holds no LGPL-3.0-only.txt: Qt's terms cannot be stated")
+
     non_commercial = [pkg for pkg, index in packages if index.get("commercialUse") == "prohibited"]
 
     lines = []
@@ -113,7 +140,7 @@ def main():
             index = dict(packages)[pkg]
             lines.append(f"- **{pkg}** - {index.get('effectiveTerms', '')}")
         lines.append("")
-        lines.append("Removing those packages from `Cores/` removes the restriction they impose;")
+        lines.append("Removing those packages from `cores/` removes the restriction they impose;")
         lines.append("what is left is stated per package below.")
     elif packages:
         lines.append("Every part of this bundle permits redistribution; see each component's")
@@ -123,10 +150,10 @@ def main():
         lines.append("frontend and its own dependencies, stated below.")
         lines.append("")
         lines.append("**Adding a core changes this.** Cores are separate projects; Chimera")
-        lines.append("downloads none, and each one put in `Cores/` brings its own terms")
+        lines.append("downloads none, and each one put in `cores/` brings its own terms")
         lines.append("with it - several (Genesis Plus GX, Opera, Snes9x) forbid commercial")
         lines.append("use, and that binds whatever they are installed into. Every package")
-        lines.append("carries its own `licenses/`, and File > Core Manager shows a core's terms.")
+        lines.append("carries its own `licenses/`, and Tools > Core Manager... shows a core's terms.")
     lines.append("")
     lines.append("## The frontend")
     lines.append("")
@@ -137,19 +164,32 @@ def main():
     lines.append("Soft, Lua, zstd, SQLite, cimgui and others) remain their authors'")
     lines.append("under their own licences.")
     lines.append("")
+    if qt_licences:
+        lines.append("## Qt")
+        lines.append("")
+        lines.append("Chimera's window is built on Qt 6.12.0 (qtbase, qtshadertools, qtdeclarative")
+        lines.append("and qtsvg), used under the GNU Lesser General Public License version 3, whose")
+        lines.append("texts are in `licenses/qt/`. Qt is here as its own shared libraries, plugins and")
+        lines.append("QML modules, which may be replaced by others built from the same source. That")
+        lines.append("source is Qt's release at https://download.qt.io/official_releases/qt/6.12/6.12.0/submodules/,")
+        lines.append("built without Qt's network module and with Chimera's changes in its repository's")
+        lines.append("`tools/qt-patches/`, by `tools/build-qt-linux.sh` and `tools/build-qt-windows.sh`.")
+        lines.append("")
     # A shipped GPL program has to be named and pointed at its source, and it is
     # not one of the cores, so it gets said here rather than nowhere.
-    ffmpeg_licence = os.path.join(bundle, "dll", "ffmpeg-LICENSE.txt")
+    ffmpeg_licence = os.path.join(bundle, "bin", "ffmpeg-LICENSE.txt")
+    if not os.path.exists(ffmpeg_licence):
+        ffmpeg_licence = os.path.join(bundle, "dll", "ffmpeg-LICENSE.txt")
     if os.path.exists(ffmpeg_licence):
         with open(ffmpeg_licence) as f:
             version = f.readline().strip()
         lines.append("## ffmpeg")
         lines.append("")
-        lines.append(f"Encoding video runs `{version}`, shipped in `dll/` beside Chimera rather")
+        lines.append(f"Encoding video runs `{version}`, shipped in `bin/` beside Chimera rather")
         lines.append("than downloaded the first time somebody wants a video. It is a separate")
         lines.append("GPL program: Chimera starts it and writes frames down a pipe, and does not")
         lines.append("link any part of it. The release it came from, the exact source commit it")
-        lines.append("was built from and its own licence are in `dll/ffmpeg-LICENSE.txt`.")
+        lines.append("was built from and its own licence are in `bin/ffmpeg-LICENSE.txt`.")
         lines.append("")
 
     lines.append("## The cores")

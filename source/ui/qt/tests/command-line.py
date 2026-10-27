@@ -39,6 +39,13 @@ def check(ok, what, got=None):
 r = run("--version")
 check(r is not None and r.returncode == 0 and r.stdout.startswith("Commit ") and len(r.stdout.strip()) == len("Commit ") + 9,
       "--version prints the commit, as Chimera's", r and r.stdout.strip())
+# and needs no display: a release is checked with none
+bare = {k: v for k, v in env.items() if k not in ("QT_QPA_PLATFORM", "QT_QUICK_BACKEND", "DISPLAY", "WAYLAND_DISPLAY")}
+try:
+    r = subprocess.run([qt, "--version"], env=bare, timeout=60, capture_output=True, text=True)
+except subprocess.TimeoutExpired:
+    r = None
+check(r is not None and r.returncode == 0 and r.stdout.startswith("Commit "), "--version needs no display", r and (r.stdout + r.stderr)[-200:])
 
 r = run("--project", project, "--core", package, "--play", "--measure", "1")
 check(r is not None and r.returncode == 0 and "status: Opened gridWalker" in r.stdout,

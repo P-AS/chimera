@@ -114,6 +114,10 @@ Gamepads::Gamepads() : api_(std::make_unique<Api>())
 	}
 	/* the window is never SDL's, so SDL must not wait for its focus */
 	a.SetHint("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1");
+	/* nor take Ctrl+C and the request to end (SIGINT, SIGTERM): SDL would turn
+	 * them into a quit event nobody reads, and the program could not be ended
+	 * by them - a run nobody watches outlived its time limit */
+	a.SetHint("SDL_NO_SIGNAL_HANDLERS", "1");
 	if (a.Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0)
 	{
 		problem_ = std::string("SDL2 would not start its gamepads: ") + a.GetError();

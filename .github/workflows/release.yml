@@ -6,7 +6,7 @@ name: Release
 #
 # The bundle is the FRONTEND. It carries no cores and downloads none: those
 # are other repositories that publish themselves, and a user puts the packages
-# they want in the Cores folder (docs/core-manager.md). Each core's own releases are its
+# they want in the cores folder (docs/core-manager.md). Each core's own releases are its
 # archive; the `cores` release here is the OLD one, kept because movies recorded
 # before the split cite packages in it, and it no longer grows.
 #
@@ -57,7 +57,8 @@ jobs:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     name: bundle (windows + linux)
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    # the first run builds Qt for both platforms (then cached): hours, not minutes
+    timeout-minutes: 360
     steps:
       - name: What is being released
         id: what
@@ -120,27 +121,68 @@ jobs:
 
       - name: Install build dependencies
         if: steps.moved.outputs.skip != 'true'
+        # the window's Qt is built here, for both platforms: X11's development
+        # files for its Linux build, and the mingw compiler Chimera's Windows
+        # build uses; patchelf to tell the Linux bundle's programs where their
+        # libraries are
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            meson ninja-build build-essential cmake pkg-config python3 \
+            meson ninja-build build-essential cmake pkg-config python3 python3-venv patchelf \
             mingw-w64 \
-            libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev
+            libgl1-mesa-dev libegl-dev libx11-dev libxext-dev libasound2-dev \
+            libfontconfig1-dev libfreetype-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb1-dev libxcb-cursor-dev libxcb-glx0-dev libxcb-icccm4-dev libxcb-image0-dev \
+            libxcb-keysyms1-dev libxcb-randr0-dev libxcb-render-util0-dev libxcb-shape0-dev \
+            libxcb-shm0-dev libxcb-sync-dev libxcb-util-dev libxcb-xfixes0-dev libxcb-xinerama0-dev \
+            libxcb-xkb-dev libxcb-render0-dev
 
-      - name: Set up .NET
+      - name: Cache Qt
         if: steps.moved.outputs.skip != 'true'
-        uses: actions/setup-dotnet@v4
+        id: qt-cache
+        uses: actions/cache@v4
         with:
-          dotnet-version: '8.0'
+          # the Linux Qt with its tools (aqt) for the Windows build's moc and
+          # rcc; the two Qts that ship, built here without the network module
+          path: |
+            ~/qt/6.12.0/gcc_64
+            ~/qt/aqt-venv
+            ~/qt-ship/linux
+            ~/qt-ship/mingw_64_posix
+          key: qt-ship-6.12.0-${{ hashFiles('tools/build-qt-linux.sh', 'tools/build-qt-windows.sh', 'tools/qt-patches/*', 'tools/fetch-qt-source.sh') }}
+
+      - name: Qt's source
+        if: steps.moved.outputs.skip != 'true'
+        # its licence texts go in the bundle every time; the build below only when the cache had none
+        run: ./tools/fetch-qt-source.sh "$HOME/qt-src"
+
+      - name: Build Qt for both platforms (once; then cached)
+        if: steps.moved.outputs.skip != 'true' && steps.qt-cache.outputs.cache-hit != 'true'
+        run: |
+          if [ ! -d "$HOME/qt/6.12.0/gcc_64" ]; then
+            python3 -m venv "$HOME/qt/aqt-venv"
+            "$HOME/qt/aqt-venv/bin/pip" install --quiet aqtinstall==3.3.0
+            "$HOME/qt/aqt-venv/bin/aqt" install-qt linux desktop 6.12.0 linux_gcc_64 -m qtshadertools -O "$HOME/qt"
+          fi
+          ./tools/build-qt-linux.sh "$HOME/qt-src" "$HOME/qt-ship/linux"
+          ./tools/build-qt-windows.sh "$HOME/qt/6.12.0/gcc_64" "$HOME/qt-src" "$HOME/qt-ship/mingw_64_posix"
 
       - name: Build the Linux bundle
         if: steps.moved.outputs.skip != 'true'
-        run: ./tools/build-bundle.sh --platform linux --out build/bundle-linux
+        run: ./tools/build-bundle.sh --platform linux --out build/bundle-linux --qt "$HOME/qt-ship/linux" --qt-source "$HOME/qt-src"
 
       - name: Build the Windows bundle
         if: steps.moved.outputs.skip != 'true'
-        # only the natives differ between the two: the managed assemblies are IL
-        run: ./tools/build-bundle.sh --platform windows --out build/bundle-windows
+        run: |
+          ./tools/build-bundle.sh --platform windows --out build/bundle-windows --qt "$HOME/qt-ship/mingw_64_posix" \
+            --host-qt "$HOME/qt/6.12.0/gcc_64" --qt-source "$HOME/qt-src"
+
+      - name: The Linux bundle starts (headless, with no display)
+        if: steps.moved.outputs.skip != 'true'
+        run: |
+          out="$(env -u DISPLAY build/bundle-linux/chimera --version)"
+          echo "$out"
+          echo "$out" | grep -q "^Commit ${{ steps.what.outputs.short }}"
 
       - name: Pack
         id: pack
@@ -190,9 +232,9 @@ jobs:
             echo "| Windows x64 | \`chimera-win-x64-$short.zip\` |"
             echo "| Linux x64 | \`chimera-linux-x64-$short.tar.gz\` |"
             echo
-            echo "Both carry the frontend and its natives. They carry **no cores**, and"
+            echo "Both carry Chimera and the libraries it needs. They carry **no cores**, and"
             echo "Chimera downloads none: get a core's \`.chimeraCore\` package from the"
-            echo "project that builds it and put it in the \`Cores\` folder beside Chimera."
+            echo "project that builds it and put it in the \`cores\` folder beside Chimera."
             echo "\`BUILD.txt\` names the exact commit this was built from and"
             echo "\`LICENSES.md\` states its terms."
             echo

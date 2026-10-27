@@ -343,7 +343,9 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			const std::vector<std::string> &names = session_.buttonNames();
 			auto keyed = [&](const std::vector<std::string> &keys) {
 				Json mine = parsedObject("{}");
-				for (size_t b = 0; b < names.size(); b++) setMember(mine, names[b], Json::string(b < keys.size() ? keys[b] : std::string()));
+				/* a button with no keys is left out, as Chimera's settings leave it */
+				for (size_t b = 0; b < names.size(); b++)
+					if (b < keys.size() && !keys[b].empty()) setMember(mine, names[b], Json::string(keys[b]));
 				return mine;
 			};
 			Json analog = parsedObject("{}");

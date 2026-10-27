@@ -144,3 +144,9 @@ long-lived dual paths.
 
 The GUI is untouched throughout; at the end it is a WinForms shell over `ce_` calls,
 and porting it (or not) is a separate, optional decision.
+
+## 2026-10-27: the C# window goes too
+
+The C# window this migration left in place is replaced by a Qt window over
+C++ view models (docs/qt-interface.md, issue 142): Chimera has no C# and no
+Mono now. The engine is unchanged by it.

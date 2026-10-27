@@ -132,8 +132,6 @@ public:
 	/* Chimera's Display Nothing: the frames are run without being drawn, and
 	 * the speed goes to the window's title (remembered) */
 	Property<bool> displayNothing{false};
-	/* a script's client.invisibleemulation: frames run undrawn as Display Nothing runs them, for this run only */
-	Property<bool> invisible{false};
 	/* Chimera's background input: a gamepad is heard while the window is
 	 * not the one in front (remembered); windowActive says whether it is */
 	Property<bool> acceptBackgroundInput{false};
@@ -615,7 +613,24 @@ public:
 	 * most at the most); the last one's picture is shown and the machine is
 	 * put back as it was. On the machine's thread. */
 	void setFutureTurn(std::function<bool(int64_t played)> turn);
+	/* the scripts' functions called at each read of the controls a core
+	 * reports, part way through a frame (event.oninputpoll, issue 344): on
+	 * the machine's thread, inside the frame */
+	void setInputPollTurn(std::function<void()> turn);
 	void scriptsDuringTurbo(bool on) { scriptsDuringTurboM_.store(on); }
+	/* the machine was opened by a script (client.reboot_core, or
+	 * client.openproject): the scripts go on, rather than start again as
+	 * they do when a person opens one (asked once when it opens: the answer
+	 * is taken) */
+	bool takeScriptReboot() { return scriptRebootM_.exchange(false); }
+	/* no frame runs while held: a script named on the command line starts
+	 * before the machine's first frame, as Chimera's does */
+	void holdFramesForScript(bool hold)
+	{
+		holdForScriptM_.store(hold);
+		cv_.notify_all();
+	}
+	bool scriptRebooting() const { return scriptRebootM_.load(); }
 	/* What made the project last opened, kept after it closes, for New
 	 * Project to open on as Chimera's does (closing a project is most often
 	 * the step before changing one setting and going again): its core and
@@ -924,6 +939,11 @@ private:
 	std::function<void()> scriptsBeforeM_, scriptsAfterM_;
 	std::function<bool()> scriptsWantedM_;
 	std::function<bool(int64_t)> futureTurnM_;
+	/* event.oninputpoll's: asked of the core while a script has one (it costs the core a call each read) */
+	std::function<void()> inputPollTurnM_;
+	std::atomic<bool> inputPollsWantedM_{false};
+	static void inputPollCalled(void *ctx);
+	void applyInputPollsOnMachine();
 	/* a turbo seek going in pieces: where to (-1 none), and the next piece's size in frames */
 	static constexpr int64_t kTurboPieceFrames = 60;
 	int64_t turboSeekToM_ = -1, turboPiece_ = kTurboPieceFrames;
@@ -941,6 +961,11 @@ private:
 	std::function<void()> scriptsIdleM_;
 	Clock::time_point idleDue_{};
 	std::atomic<bool> scriptsDuringTurboM_{true};
+	std::atomic<bool> scriptRebootM_{false}, holdForScriptM_{false};
+	/* the buttons the core was handed on the frame just run */
+	std::atomic<uint64_t> playedM_{0};
+	/* lent to an encode, from the asking until it is given back */
+	std::atomic<bool> borrowedM_{false};
 	bool scriptsNowOnMachine() const { return !turboM_.load() || scriptsDuringTurboM_.load(); }
 	/* a turn of the scripts' runs now (one is not started inside another:
 	 * a script's own call can move the machine) */
@@ -1034,10 +1059,10 @@ private:
 	Connection fastSpeedWatch_, fastDrawWatch_;
 	/* frames run fast since the last one drawn (fastDrawOneIn) */
 	int64_t fastUndrawn_ = 0;
-	std::atomic<bool> unthrottledM_{false}, soundOnM_{true}, turboM_{false}, skipLagM_{false}, displayNothingM_{false}, invisibleM_{false},
+	std::atomic<bool> unthrottledM_{false}, soundOnM_{true}, turboM_{false}, skipLagM_{false}, displayNothingM_{false},
 		padsHeardM_{true};
 	bool turboHeld_ = false;
-	Connection skipLagWatch_, displayNothingWatch_, invisibleWatch_, backgroundWatch_, activeWatch_;
+	Connection skipLagWatch_, displayNothingWatch_, backgroundWatch_, activeWatch_;
 	Connection speedWatch_, unthrottledWatch_, soundOnWatch_, volumeWatch_, throttleWatch_;
 	/* 0 clock, 1 audio, 2 vsync, 3 none */
 	std::atomic<int> throttleM_{0};

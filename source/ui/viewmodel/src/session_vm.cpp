@@ -1,4 +1,6 @@
 #include "chimera/vm/session_vm.hpp"
+
+#include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/sha256.hpp"
 
 #include "chimera/vm/branch_state.hpp"
@@ -398,9 +400,6 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	expose("windowActive", "the window is the one in front (the window says)", windowActive, true);
 	skipLagWatch_ = skipLagFrames.changed.connect([this] { skipLagM_ = skipLagFrames.get(); });
 	displayNothingWatch_ = displayNothing.changed.connect([this] { displayNothingM_ = displayNothing.get(); });
-	expose("invisible", "the frames are run without being drawn, as Display Nothing runs them, for this run only and not "
-		"remembered (a script's client.invisibleemulation)", invisible, true);
-	invisibleWatch_ = invisible.changed.connect([this] { invisibleM_ = invisible.get(); });
 	auto heard = [this] { padsHeardM_ = acceptBackgroundInput.get() || windowActive.get(); };
 	backgroundWatch_ = acceptBackgroundInput.changed.connect(heard);
 	activeWatch_ = windowActive.changed.connect(heard);
@@ -1185,6 +1184,28 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		for (const std::string &b : buttonNames_) out += b + "\n";
 		return out;
 	});
+	command("frameNow", "the frame the machine is on now, as its thread has it (a script's emu.framecount: the frame "
+		"property follows it a moment later)", {}, [this](const Args &, std::string &) -> Value {
+			int64_t f = 0;
+			onMachineWait([&](ce_session *s) { f = s != nullptr ? frameM_ : 0; });
+			return f;
+		});
+	command("movieLength", "the open project's movie, in frames, as the engine has it now (a script's movie.length)", {},
+		[this](const Args &, std::string &) -> Value {
+			int64_t n = 0;
+			onMachineWait([&](ce_session *s) { n = s != nullptr ? ce_session_movie_length(s) : 0; });
+			return n;
+		});
+	command("borrowed", "the machine is lent to an encode now, until it is given back (Chimera's client.encodingvideo)", {},
+		[this](const Args &, std::string &) -> Value { return borrowedM_.load(); });
+	command("playedButtons", "the buttons the core was handed on the frame just run (the movie's frame, which the engine plays), "
+		"a line each: Chimera's joypad.getwithmovie", {}, [this](const Args &, std::string &) -> Value {
+		const uint64_t mask = playedM_.load();
+		std::string out;
+		for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
+			if (mask >> b & 1) out += buttonNames_[b] + "\n";
+		return out;
+	});
 	command("heldButtons", "the buttons held now (by keys, gamepads and autohold), a line each", {}, [this](const Args &, std::string &) -> Value {
 		const uint64_t mask = held_.load() | autoholdMask_.load() | scriptHeld_.load();
 		std::string out;
@@ -1345,6 +1366,28 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			status.set("Opening " + project + "...");
 			submit([this, project, package] { openProjectOnMachine(project, package, false); });
 			return true;
+		});
+	command("openProjectForScript", "opens a Chimera project for a script, as Chimera's client.openproject: at once (the "
+		"script's next line sees it open), and the scripts go on with it; false for one that does not open", {"project"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string project;
+			if (!arg(a, 0, project, error)) return {};
+			const char *unreadable = nullptr;
+			ce_project *probe = ce_project_open(project.c_str(), &unreadable);
+			if (probe == nullptr)
+			{
+				status.set("Could not open " + project + ": " + (unreadable != nullptr ? unreadable : "no reason given"));
+				return false;
+			}
+			ce_project_free(probe);
+			bool opened = false;
+			waitOnMachine([&] {
+				scriptRebootM_ = true;
+				openProjectOnMachine(project, "", false);
+				opened = s_ != nullptr && projectM_ != nullptr;
+				if (!opened) scriptRebootM_ = false;
+			});
+			return opened;
 		});
 	command("saveProject", "saves the open project with its inputs, to its own file or to the one given",
 		{"path"}, [this](const Args &a, std::string &error) -> Value {
@@ -1541,7 +1584,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				error = "no state " + id + " in memory";
 				return;
 			}
-			runningM_ = false;
+			/* the machine runs on, or stays paused, as it was: as Chimera's, whose scripts load
+			 * one each frame and wait for the next (it was paused here, and such a script waited for ever) */
 			if (ce_session_load_state(s, it->second.bytes.data(), it->second.bytes.size()) != 0)
 			{
 				error = std::string("the core would not load it: ") + ce_session_last_error(s);
@@ -1593,6 +1637,33 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				/* the project opens again as it is in memory, its movie and
 				 * markers as they are now */
 				if (projectM_ != nullptr) openProjectOnMachine(projectPathM_, package_, true, projectM_);
+			});
+			return {};
+		}, &isOpen);
+	command("inputPollsReported", "the core open reports each read of its controls, so a script's event.oninputpoll is called "
+		"part way through a frame (issue 344)", {}, [this](const Args &, std::string &) -> Value {
+			bool reported = false;
+			onMachineWait([&](ce_session *s) { reported = s != nullptr && ce_session_input_polls_reported(s) != 0; });
+			return reported;
+		});
+	command("setInputPolls", "the core asked to call the scripts' event.oninputpoll functions at its reads (true) or not", {"on"},
+		[this](const Args &a, std::string &error) -> Value {
+			bool on = false;
+			if (!arg(a, 0, on, error)) return {};
+			inputPollsWantedM_ = on;
+			/* not waited for: a script stopped as Chimera closes takes its function off a core already gone */
+			submit([this] { applyInputPollsOnMachine(); });
+			return {};
+		});
+	command("rebootForScript", "opens the same core and game again at frame 0 for a script, as Chimera's client.reboot_core: "
+		"at once (the script's next line sees frame 0), and the scripts go on rather than start again", {},
+		[this](const Args &, std::string &) -> Value {
+			waitOnMachine([this] {
+				if (projectM_ == nullptr) return;
+				scriptRebootM_ = true;
+				openProjectOnMachine(projectPathM_, package_, true, projectM_);
+				/* one that did not open opens nothing the scripts could go on with */
+				if (s_ == nullptr) scriptRebootM_ = false;
 			});
 			return {};
 		}, &isOpen);
@@ -1913,7 +1984,7 @@ void SessionViewModel::loop()
 					waitUntil(due_);
 					continue;
 				}
-				if (runningM_ && s_ != nullptr)
+				if (runningM_ && s_ != nullptr && !holdForScriptM_.load())
 				{
 					/* the vsync throttle: a frame each picture the window has shown since the last */
 					if (throttleM_.load() == 2 && !unthrottledM_ && !turboM_ && !fastM_ && !mcpFastM_)
@@ -2514,6 +2585,8 @@ void SessionViewModel::setMarkers(std::vector<Marker> markers)
 void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame, std::function<void()> finishing,
 	std::function<void(int, std::string)> done)
 {
+	/* lent from now until it is given back: a script asking at once sees it (client.encodingvideo) */
+	borrowedM_.store(true);
 	borrowStopM_.store(false);
 	borrowFramesM_.store(0);
 	submit([this, from, to, frame = std::move(frame), finishing = std::move(finishing), done = std::move(done)] {
@@ -2522,6 +2595,7 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 		 * (an encoder) is closed as at the end */
 		auto fail = [&](const std::string &why) {
 			if (finishing) finishing();
+			borrowedM_.store(false);
 			later([done, why] { done(2, why); });
 		};
 		if (s_ == nullptr) return fail("No machine is open.");
@@ -2612,7 +2686,12 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 		}
 		fs::remove(restore, ec);
 		report(-1, -1, -1, -1, -1);
+		borrowedM_.store(false);
 		later([done, ended, why] { done(ended, why); });
+		/* the scripts' turn on the frame given back, as on the frame a seek lands
+		 * on: a script waiting out the encode goes on there, as Chimera's does
+		 * (after the encode is said to be over, so it sees that) */
+		if (s_ != nullptr) scriptTurnOnMachine(scriptsAfterM_);
 	});
 }
 
@@ -3686,6 +3765,23 @@ void SessionViewModel::setScriptTurns(std::function<void()> before, std::functio
 	}, true);
 }
 
+void SessionViewModel::setInputPollTurn(std::function<void()> turn)
+{
+	waitOnMachine([&] { inputPollTurnM_ = std::move(turn); }, true);
+}
+
+void SessionViewModel::inputPollCalled(void *ctx)
+{
+	auto *self = static_cast<SessionViewModel *>(ctx);
+	if (self->inputPollTurnM_ && self->scriptsNowOnMachine()) self->inputPollTurnM_();
+}
+
+void SessionViewModel::applyInputPollsOnMachine()
+{
+	if (s_ == nullptr || ce_session_input_polls_reported(s_) == 0) return;
+	ce_session_set_input_poll_callback(s_, inputPollsWantedM_.load() ? &SessionViewModel::inputPollCalled : nullptr, this);
+}
+
 void SessionViewModel::setFutureTurn(std::function<bool(int64_t played)> turn)
 {
 	waitOnMachine([&] { futureTurnM_ = std::move(turn); }, true);
@@ -3911,10 +4007,31 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		if (package.empty())
 		{
 			ce_project_free(p); /* a reused one too: projectM_ let it go */
-			fail("No " + coreName + " core is installed: put its .chimeraCore in the cores folder");
+			fail(found.empty() ? "No " + coreName + " core is installed: put its .chimeraCore in the cores folder"
+				: "The " + coreName + " core here cannot run: " + found);
 			return;
 		}
 		if (!found.empty()) note = "; " + found;
+	}
+	/* a package built for a guest ABI this Chimera does not run is not run, a given one too */
+	{
+		const char *perr = nullptr;
+		if (ce_package *pk = ce_package_open(package.c_str(), &perr))
+		{
+			uint64_t len = 0;
+			const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+			json::Json cfg;
+			std::string jerr;
+			const std::string refused = d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, jerr)
+				? CoresViewModel::abiRefusal(cfg) : std::string();
+			ce_package_free(pk);
+			if (!refused.empty())
+			{
+				ce_project_free(p);
+				fail("Cannot run " + package + ": " + refused);
+				return;
+			}
+		}
 	}
 	if (!pinned.empty())
 	{
@@ -4624,6 +4741,8 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	std::function<void()> withOpen)
 {
 	s_ = s;
+	/* a script's input-poll functions go on with the machine opened again */
+	applyInputPollsOnMachine();
 	packageSha1M_.clear();
 	diedM_ = false;
 	inputs_.bind(s);
@@ -5036,7 +5155,7 @@ int32_t SessionViewModel::advanceOnMachine()
 	 * unthrottled draw one frame in fastDrawOneIn (the frame skip's one
 	 * setting left: owner, 2026-10-24)
 	 * it - unless it is being recorded */
-	bool draw = !displayNothingM_.load() && !invisibleM_.load();
+	bool draw = !displayNothingM_.load();
 	if (turboM_.load() || unthrottledM_.load())
 	{
 		draw = draw && ++fastUndrawn_ >= fastDrawM_.load();
@@ -5265,6 +5384,8 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 		recordedM_.push_back({f, ce_session_movie_length(s_), had == 1, runningM_, logged, buttons, loggedAxes_, axesBuf_});
 	}
 
+	/* what the core is handed this frame: the movie's frame, which the engine plays (joypad.getwithmovie) */
+	playedM_.store(buttons);
 	const int32_t lag = ce_session_movie_advance(s_, 0, nullptr, render ? 1 : 0);
 	/* autofire's patterns move on a frame, a lag frame not counted unless asked */
 	if (live && lag >= 0 && (lag == 0 || !fireSkipsLagM_.load()))

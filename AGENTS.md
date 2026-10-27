@@ -1,10 +1,10 @@
 # AGENTS.md - Chimera
 
 Chimera is a frontend for tool-assisted speedruns: an engine in C++
-(`libchimera`), an interface in C# over it, and the miniBox sandbox every
-emulator core runs in. It ships no cores. Each core is its own repository,
-`ToolAssisted-run/chimera-core-<id>`, publishing one file,
-`<id>.chimeraCore`, that a user puts in the `Cores` folder.
+(`libchimera`), a window over it (Qt 6.12: QML views over C++ view models),
+and the miniBox sandbox every emulator core runs in. It ships no cores. Each
+core is its own repository, `ToolAssisted-run/chimera-core-<id>`, publishing
+one file, `<id>.chimeraCore`, that a user puts in the `cores` folder.
 
 This file is the operating guide for an agent working here. The reasoning
 behind every rule in it is in [docs/design-principles.md](docs/design-principles.md),
@@ -41,11 +41,14 @@ nothing under `source/`.
 - `source/engine/` - the engine: sessions, movies, the state history
   (greenzone), projects, RAM search. `tools/chimera-run.cpp` is the headless
   runner every measurement uses.
-- `source/gui/` - the C# solution (`Chimera.sln`): interface only.
+- `source/ui/` - the window: `viewmodel/` (C++ with no Qt: every property and
+  command, which Lua, the MCP server and the tests drive too) and `qt/` (the
+  QML views and the few Qt items that draw). Interface only.
 - `extern/chimera-common-minibox/` - miniBox, a submodule: the sandbox host,
   the guest toolchain (`source/guest`), the GPU bridge (`source/gl`).
 - `tests/synth/` - a synthetic core and the witness gate that drives the
-  whole product with it; `tests/ui/` - the interface tests; `tests/engine/`.
+  whole product with it; `tests/engine/`. The window's tests are meson tests
+  (`source/ui/meson.build`).
 - `tools/` - bundles, publishing (`publish-core.sh`, `write-core-index.sh`),
   `fetch-cores.sh`.
 - `official-cores.json` - the roster CI goes by. The frontend does not read it.
@@ -59,12 +62,21 @@ Linux hosts both builds. Requirements are in the README ("Building").
 
 ```sh
 git submodule update --init --recursive
-meson setup build/meson-linux   --prefix "$PWD/build" --libdir dll
-meson setup build/meson-windows --prefix "$PWD/build" --libdir dll --cross-file extern/meson/mingw-w64.ini
-meson compile -C build/meson-linux && meson install -C build/meson-linux
-meson compile -C build/meson-windows && meson install -C build/meson-windows
-dotnet build source/gui/Chimera.sln -c Release
+tools/ci-chimera.sh                 # Qt 6.12 (aqt, into ~/qt), then the Linux build into build/dll
 ```
+
+or by hand, with Qt 6.12 for Linux at `$QT`:
+
+```sh
+PATH="$QT/libexec:$QT/bin:$PATH" PKG_CONFIG_PATH="$QT/lib/pkgconfig" \
+  meson setup build/meson-linux --prefix "$PWD/build" --libdir dll -Dqt_ui=enabled
+meson compile -C build/meson-linux && meson install -C build/meson-linux
+```
+
+The window is `build/meson-linux/source/ui/chimera`; `--headless` runs it with
+no display. The Windows build needs Qt for Windows built with Chimera's
+mingw (`tools/build-qt-windows.sh`); `tools/build-bundle.sh` makes both
+bundles as a release does.
 
 A core repository also needs miniBox's host library and guest toolchain:
 
@@ -80,22 +92,19 @@ Run them before every commit that touches what they cover, and say in the
 commit what ran. Chain on the real exit code - a pipe's is its last command's.
 
 ```sh
-meson test -C build/meson-linux                  # the engine's unit tests
+env -u DISPLAY meson test -C build/meson-linux   # the engine's, the view models' and the window's tests
 env -u DISPLAY sh tests/synth/run-witness.sh     # the witness: the product, end to end
-env -u DISPLAY bash tests/ui/run-ui-tests.sh     # the interface tests
 ```
 
-- `meson install -C build/meson-linux` first: the managed tests and the
-  witness load `build/dll/libchimera.so`, which only the install refreshes.
-- `run-ui-tests.sh` does not build. After a C# change run `dotnet build ...
-  --no-incremental` first, and distrust a test count that did not move.
+- `meson install -C build/meson-linux` first: the witness loads
+  `build/dll/libchimera.so`, which only the install refreshes.
 - After editing the synthetic core (`tests/synth/package-box/`), run
   `tests/synth/package-box/build-box.sh` and then `tests/synth/build-package.sh`,
   or the witness runs the old package.
 - A change to the engine or to miniBox must also compile for Windows
   (`meson compile -C build/meson-windows`).
 - The contract tests run against any package:
-  `CHIMERA_CORES_DIR=<folder> dotnet test source/gui/Chimera.Tests.Client.Common/Chimera.Tests.Client.Common.csproj -c Release --filter "FullyQualifiedName~InstalledCorePackagesTests|FullyQualifiedName~MnemonicUniquenessTests"`.
+  `build/meson-linux/source/ui/test-packages <folder>`.
 - A new test is broken on purpose once and seen to fail ([docs/gates.md](docs/gates.md)).
 
 ## Rules of the repository
@@ -104,7 +113,8 @@ env -u DISPLAY bash tests/ui/run-ui-tests.sh     # the interface tests
   by name in the engine or the interface; a core says what it needs in its
   package. A core that seems to need a special case needs a declaration every
   core could use - a design change, put to the owner.
-- **Load-bearing logic lives in the engine.** The C# is interface.
+- **Load-bearing logic lives in the engine.** The window is interface: its
+  view models hold no Qt, and QML holds layout and bindings only.
 - **No network code.** Nothing downloads, nothing phones anywhere;
   `tools/check-no-network.sh` holds it.
 - **Decisions go in the design log** in the same commit as the code: a dated

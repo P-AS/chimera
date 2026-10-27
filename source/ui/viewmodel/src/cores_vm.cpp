@@ -260,6 +260,7 @@ void CoresViewModel::scan()
 				}
 				c.systems = systemsOf(cfg);
 				c.systemList = systemPairs(cfg);
+				c.refused = abiRefusal(cfg);
 				c.path = path;
 				c.size = static_cast<int64_t>(fs::file_size(entry.path(), ec));
 				if (ec) c.size = 0;
@@ -325,6 +326,8 @@ void CoresViewModel::scan()
 			}
 		}
 		c.line = c.coreName + (dated.empty() ? "" : "  " + dated) + build + "  -  " + c.systems;
+		/* listed all the same, with why: a good core for another Chimera */
+		if (!c.refused.empty()) c.line += "  -  " + c.refused;
 	}
 	const int64_t n = static_cast<int64_t>(found.size());
 	/* Chimera's Core Manager: a row a core (its versions together, newest first), the emulators before the games, each by name */
@@ -353,12 +356,26 @@ void CoresViewModel::scan()
 std::string CoresViewModel::packageFor(const std::string &coreName, const std::string &pinnedSha1, std::string &note) const
 {
 	std::vector<Core> builds;
+	std::string refused;
 	{
 		std::lock_guard<std::mutex> lock(m_);
 		for (const Core &c : cores_)
-			if (c.coreName == coreName) builds.push_back(c);
+		{
+			if (c.coreName != coreName) continue;
+			/* one this Chimera cannot run is passed over; when it is all there is, why */
+			if (!c.refused.empty())
+			{
+				if (refused.empty()) refused = c.refused;
+				continue;
+			}
+			builds.push_back(c);
+		}
 	}
-	if (builds.empty()) return {};
+	if (builds.empty())
+	{
+		if (!refused.empty()) note = refused;
+		return {};
+	}
 	/* the pinned one, when it is here: only then is its hash worth computing */
 	if (!pinnedSha1.empty())
 		for (const Core &c : builds)
@@ -376,6 +393,18 @@ std::string CoresViewModel::packageFor(const std::string &coreName, const std::s
 	return builds.front().path;
 }
 
+std::string CoresViewModel::abiRefusal(const json::Json &cfg)
+{
+	const json::Json *declared = cfg.find("abi");
+	const int64_t abi = declared != nullptr && declared->kind == json::Json::Kind::Number ? static_cast<int64_t>(declared->number()) : 1;
+	if (abi > kGuestAbi)
+		return "built for guest ABI " + std::to_string(abi) + "; this Chimera understands up to " + std::to_string(kGuestAbi) + ". Update Chimera.";
+	if (abi < kOldestGuestAbi)
+		return "built for guest ABI " + std::to_string(abi) + "; this Chimera no longer runs anything below " + std::to_string(kOldestGuestAbi)
+			+ ". Update the core.";
+	return {};
+}
+
 std::vector<std::pair<std::string, std::string>> CoresViewModel::coresFor(const std::string &extension) const
 {
 	std::vector<std::pair<std::string, std::string>> out;
@@ -384,6 +413,7 @@ std::vector<std::pair<std::string, std::string>> CoresViewModel::coresFor(const 
 	for (const Core &c : cores_)
 	{
 		if (!out.empty() && out.back().first == c.coreName) continue;
+		if (!c.refused.empty()) continue;
 		if (std::find(c.extensions.begin(), c.extensions.end(), extension) != c.extensions.end())
 			out.emplace_back(c.coreName, c.path);
 	}

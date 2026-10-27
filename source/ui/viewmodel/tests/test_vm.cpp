@@ -8816,8 +8816,9 @@ bool encodeVideo(const char *package, const char *rom)
 		CHECK(marked);
 		std::vector<std::string> said;
 		lua.onLog = [&](const std::string &l) { said.push_back(l); };
-		/* the wind to the first marker lands (a seek's landing is a frame's end), then ten frames */
-		CHECK(lua.run("print(ended)", "ended", error) && !said.empty() && said.back() == "11");
+		/* the wind to the first marker lands (a seek's landing is a frame's end), then ten frames,
+		 * then the frame given back lands too */
+		CHECK(lua.run("print(ended)", "ended", error) && !said.empty() && said.back() == "12");
 		/* Capture OSD: the counters and messages too */
 		encoder.captureOsd.set(true);
 		encoder.output.set((dir / "osd.raw").string());
