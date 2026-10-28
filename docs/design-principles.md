@@ -10590,7 +10590,9 @@ lossless.
   "H.264 4:4:4 (YUV, nearly lossless)".
 - The default MP4 is unchanged. Its colour is stored at half resolution
   (4:2:0), so a red and blue dither one pixel apart becomes purple. 4:4:4
-  keeps it but does not play in many players. That choice is the owner's.
+  keeps it but does not play in many players. The owner kept the default
+  as it is (user-decided, 2026-10-28): it plays everywhere, and whoever
+  needs a dither kept picks the 4:4:4 or a lossless preset.
 
 Measured with the ffmpeg the bundle ships (4.4.1), on a picture with
 dithers and a ramp:

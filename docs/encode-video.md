@@ -65,7 +65,8 @@ window is written with square pixels.
 
 The default MP4 stores colour at half the width and height of the picture
 (YUV 4:2:0), as most players need, so a dither of two colours one pixel
-apart becomes their average. The lossless presets keep it.
+apart becomes their average. The 4:4:4 and lossless presets keep it; the
+default stays 4:2:0 because it plays everywhere (owner, 2026-10-28).
 
 ## Markers, not frame numbers
 
