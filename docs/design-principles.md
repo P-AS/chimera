@@ -10917,7 +10917,16 @@ descriptions. Decided here, within the owner's rules:
   SyndicatFX alone has 438 firmware descriptions that differ only by a file
   name: one key with `%1` is one text for a translator, not 438. A key with
   plural forms takes its count first; an argument that is a key is its
-  text, for an emulator's reason inside the core's sentence.
+  text, for an emulator's reason inside the core's sentence, and such a
+  reason's own arguments are separated by 0x1E (a zip reader's "a damaged
+  entry 'x'" inside "the save data is not a zip: ..."). A report the core
+  composes from many sentences (MAME's account of a game's files) is
+  several texts after 0x1D bytes, shown a line each, rather than one key for
+  every combination.
+- An emulator's own words stay its own, and so do those of a core's
+  stand-ins for what a sandbox lacks (no network, no disc drive, one
+  graphics context): they answer the emulator in its terms, and it reports
+  them as its reasons, inside the core's sentence or alone.
 - The engine keeps a session's package tables after the package is closed
   (`PackageTexts`), and resolves at the moment it is asked, so a language
   changed while a game runs changes the game's settings and properties too.

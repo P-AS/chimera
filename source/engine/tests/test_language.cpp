@@ -109,6 +109,11 @@ int main()
 		assert(texts.text("load.files\x1f" "1") == "1 file is missing" && texts.text("load.files\x1f" "3") == "3 files are missing");
 		assert(texts.text("Not a key") == "Not a key");   /* words a core wrote in are shown as they are */
 		assert(texts.text("load.missing\x1f" "slot.help\x1fthe zip") == "The disk. is not in the zip");   /* a key inside */
+		/* a key inside with its own arguments, and the same reason on its own */
+		assert(texts.text("load.missing\x1f" "fw.data\x1e" "COL01.DAT\x1fthe zip") == "COL01.DAT of the game, which you supply. is not in the zip");
+		assert(texts.text("fw.data\x1e" "COL01.DAT") == "COL01.DAT of the game, which you supply.");
+		/* several texts, a line each */
+		assert(texts.text("slot.help\x1d" "load.missing\x1f" "a\x1f" "b\x1d") == "The disk.\na is not in b");
 		/* in a document, only the strings that are keys change: a member's
 		 * name stays, and so does a number no double holds */
 		assert(texts.texts(R"({"note": "slot.help", "values": {"x": "fw.data\u001fCOL\u00e901.DAT", "big": 18446744073709551615},

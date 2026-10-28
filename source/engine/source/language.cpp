@@ -504,10 +504,32 @@ std::string PackageTexts::textLocked(const std::string &message) const
 		englishRead_ = true;
 		readOne("en", english_);
 	}
+	/* several texts, each after a 0x1D, are each a line of their own */
+	if (message.find('\x1d') != std::string::npos)
+	{
+		std::string out;
+		for (size_t at = 0;;)
+		{
+			const size_t cut = message.find('\x1d', at);
+			const std::string one = message.substr(at, cut == std::string::npos ? std::string::npos : cut - at);
+			if (!one.empty()) out += (out.empty() ? "" : "\n") + textLocked(one);
+			if (cut == std::string::npos) break;
+			at = cut + 1;
+		}
+		return out;
+	}
+	/* a reason meant to sit inside another sentence separates its own
+	 * arguments with 0x1E; shown on its own it is a text like any other */
+	const bool inner = message.find('\x1f') == std::string::npos && message.find('\x1e') != std::string::npos;
+	return resolveLocked(message, inner ? '\x1e' : '\x1f', code);
+}
+
+std::string PackageTexts::resolveLocked(const std::string &message, char separator, const std::string &code) const
+{
 	std::vector<std::string> parts;
 	for (size_t at = 0;;)
 	{
-		const size_t cut = message.find('\x1f', at);
+		const size_t cut = message.find(separator, at);
 		parts.push_back(message.substr(at, cut == std::string::npos ? std::string::npos : cut - at));
 		if (cut == std::string::npos) break;
 		at = cut + 1;
@@ -522,13 +544,10 @@ std::string PackageTexts::textLocked(const std::string &message) const
 		language = "en";
 	}
 	if (entry == nullptr) return message;
-	/* an argument that is a key itself (an emulator's own reason, put inside
-	 * the core's sentence) is its text */
-	for (std::string &part : parts)
-	{
-		if (const Table::Entry *inner = table_.find(part.c_str())) part = patternFor(*inner, code, -1);
-		else if (const Table::Entry *english = english_.find(part.c_str())) part = patternFor(*english, "en", -1);
-	}
+	/* an argument that is a key itself, with its own arguments after 0x1E
+	 * (an emulator's reason put inside the core's sentence), is its text */
+	if (separator == '\x1f')
+		for (std::string &part : parts) part = resolveLocked(part, '\x1e', code);
 	int64_t count = -1;
 	if (!entry->forms.empty() && !parts.empty())
 	{

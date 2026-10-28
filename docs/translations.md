@@ -85,14 +85,21 @@ it is best a string of its own, `#define TEXT_ARG "\x1f"`, written
 `"error.not_loaded" TEXT_ARG "%s"`, since a hex escape takes every hex digit
 after it. A key with plural forms takes its count as the first argument
 (`%n`, which is `%1` too). An argument that is itself a key is its text, so
-an emulator's own reason can sit inside the core's sentence.
+an emulator's own reason can sit inside the core's sentence; such a reason
+separates its own arguments with a 0x1E byte (`TEXT_INNER "\x1e"` in C), and
+reads the same when it is shown on its own. A report of several sentences is
+several texts, each after a 0x1D byte, and is shown a line each.
 
 A package with no table for the language in use shows its English; a string
 that is no key of either is shown as it is. These stay as they are, being
 names rather than writing: control names, option values, memory domain,
 bus, register, surface and drive names, a property's name, group and value
 names (scripts use them), and data the core reads from its emulator or a
-database, such as an arcade game's dip switches or a patch's name.
+database, such as an arcade game's dip switches or a patch's name. So do
+the reasons an emulator gives in its own words, which a core passes on as
+an argument: among them those of the core's stand-ins for what a sandbox
+lacks (a network, a disc drive, a second graphics context), which answer
+the emulator in its terms and which it reports as its own.
 
 ## How the language is chosen
 

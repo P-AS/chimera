@@ -91,11 +91,14 @@ bool readTableFile(const std::string &code, Table &out, std::string &error);
  * languages/<code>.json inside the package. A key's arguments follow it,
  * each after a 0x1F byte: "firmware.data_file\x1f" "COL01.DAT" is the text
  * of firmware.data_file with %1 replaced by COL01.DAT, and a key with plural
- * forms takes its count as the first argument (%n, and %1 too), and an
- * argument that is a key is its text (an emulator's reason inside the
- * core's sentence). PackageTexts
- * keeps the tables, so a text is put into the language in use after the
- * package is closed, and again when that language changes. */
+ * forms takes its count as the first argument (%n, and %1 too). An
+ * argument that is a key is its text, and its own arguments follow it each
+ * after a 0x1E byte: a reason put inside the core's sentence ("the save data
+ * is not a zip: <why>"); such a reason shown on its own reads the same.
+ * Several texts, each after a 0x1D byte, are shown a line each (a report of
+ * several sentences). PackageTexts keeps the tables, so a text is put into
+ * the language in use after the package is closed, and again when that
+ * language changes. */
 class PackageTexts
 {
 public:
@@ -119,6 +122,7 @@ private:
 	mutable Table table_, english_;
 	mutable bool englishRead_ = false;
 	std::string textLocked(const std::string &message) const;
+	std::string resolveLocked(const std::string &message, char separator, const std::string &code) const;
 };
 
 } // namespace chimera::lang
