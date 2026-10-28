@@ -943,6 +943,7 @@ int main(int argc, char **argv)
 	session.setFinders([&cores](const std::string &n, const std::string &h, std::string &note) { return cores.packageFor(n, h, note); },
 		[&cores] { return cores.firmwareFolders(); });
 	session.setRunFirmware(runFirmware);
+	session.setFirmwareKeeper([&cores](const std::string &core, const std::string &id, const std::string &path) { cores.rememberFirmware(core, id, path); });
 
 	/* what the window remembers (configPath): folders the environment names
 	 * are the environment's, and not remembered */

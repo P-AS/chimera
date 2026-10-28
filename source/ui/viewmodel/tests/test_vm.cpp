@@ -8034,15 +8034,64 @@ bool customFirmware(const char *rom, const char *hashedPackage, const char *game
 		installed.chosenFirmware.get().find("mylogo.bin") != std::string::npos);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	/* firmware not found at an open is asked for in Locate Project Files,
+	 * as the project's files are (issue 397): a file of another hash is
+	 * refused, the right one is taken and remembered for the core; a folder
+	 * scanned finds it too */
+	session.setFirmwareKeeper([&installed](const std::string &core, const std::string &id, const std::string &path) {
+		installed.rememberFirmware(core, id, path);
+	});
+	const fs::path away = dir / "elsewhere" / "given.bin";
+	fs::create_directories(away.parent_path());
+	fs::rename(mine, away);
+	installed.rememberFirmware("Synth Game", "logo", "");
+	{
+		RowModel *files = nullptr;
+		for (const auto &r : session.rowLists())
+			if (r.name == "projectFiles") files = r.model;
+		CHECK(files != nullptr);
+		if (files == nullptr) return false;
+		auto cell = [&](int64_t row, int32_t column) {
+			std::string t;
+			fromValue(files->cell(row, column), t);
+			return t;
+		};
+		const int64_t opensBefore = session.opens.get();
+		session.run("openProject", {made.string()}, error);
+		CHECK(d.until([&] { return session.resolvingFiles.get() && files->rowCount() == 2; }, 60) && !session.isOpen.get());
+		CHECK(session.status.get() == "The firmware this project needs was not found: locate it, or scan a folder");
+		CHECK(cell(0, 3) == "found, hash matches");
+		CHECK(cell(1, 1) == "firmware" && cell(1, 3) == "not found" && lower(cell(1, 4)) == lower(mySha));
+		CHECK(!session.run("openWithFiles", {}, error) && error == "a file is still not found");
+		CHECK(!session.run("locateProjectFile", {int64_t{1}, theirs.string()}, error) &&
+			lower(error) == lower("logo.bin is not the firmware the project needs: its hash is " + original + ", the project needs " + mySha));
+		CHECK(session.run("locateProjectFile", {int64_t{1}, away.string()}, error).has_value() && error.empty());
+		CHECK(d.until([&] { return cell(1, 3) == "found, hash matches"; }, 20));
+		CHECK(installed.chosenFirmwareFor("Synth Game", "logo") == away.string());
+		CHECK(session.run("openWithFiles", {}, error).has_value());
+		CHECK(d.until([&] { return session.opens.get() > opensBefore && session.isOpen.get(); }, 60));
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+		/* remembered: the next open asks nothing */
+		const int64_t opensThen = session.opens.get();
+		session.run("openProject", {made.string()}, error);
+		CHECK(d.until([&] { return session.opens.get() > opensThen && session.isOpen.get(); }, 60) && !session.resolvingFiles.get());
+		session.run("close", {}, error);
+		CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+		/* forgotten, and found by a folder scanned */
+		installed.rememberFirmware("Synth Game", "logo", "");
+		session.run("openProject", {made.string()}, error);
+		CHECK(d.until([&] { return session.resolvingFiles.get() && files->rowCount() == 2; }, 60));
+		CHECK(session.run("scanForProjectFiles", {(dir / "elsewhere").string(), true}, error) == Value(int64_t{1}));
+		CHECK(d.until([&] { return cell(1, 3) == "found, hash matches"; }, 20));
+		CHECK(session.run("cancelOpen", {}, error).has_value());
+		CHECK(d.until([&] { return !session.resolvingFiles.get() && session.status.get() == "The project was not opened"; }, 20));
+		installed.rememberFirmware("Synth Game", "logo", "");
+	}
 	/* Chimera's --firmware: a file given for this run, found nowhere else, is
 	 * used where its hash is the one the project pins (review, 2026-10-26) */
 	{
-		const fs::path away = dir / "elsewhere" / "given.bin";
-		fs::create_directories(away.parent_path());
-		fs::rename(mine, away);
 		const int64_t opensBefore = session.opens.get();
-		session.run("openProject", {made.string()}, error);
-		CHECK(d.until([&] { return session.status.get().find("Firmware missing") != std::string::npos; }, 60) && !session.isOpen.get());
 		session.setRunFirmware({{"logo", away.string()}});
 		session.run("openProject", {made.string()}, error);
 		CHECK(d.until([&] { return session.opens.get() > opensBefore && session.isOpen.get(); }, 60));

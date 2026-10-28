@@ -1,6 +1,8 @@
 // Chimera's Locate Project Files (its project resolution form), laid out
 // as it is: shown while a project's files were not found beside it nor
-// where this machine last had them. The files listed under File, Slot and
+// where this machine last had them, or the firmware it needs was not found
+// (issue 397: listed after the files, "firmware" in their Slot column, and
+// remembered for the core once located). The files listed under File, Slot and
 // Status (a missing one in the warning colour, one that is not the
 // recorded bytes in the error colour), what the one picked is under them,
 // and Locate... (or a double-click), Scan Folder... (Include sub-folders),
@@ -51,14 +53,14 @@ ApplicationWindow {
     Shortcut { sequence: "Escape"; enabled: win.active; onActivated: win.session.run("cancelOpen") }
     MessageDialog {
         id: unreadable
-        title: qsTr("Cannot read that file")
+        title: qsTr("Cannot use that file")
         buttons: MessageDialog.Ok
     }
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 8
-        Label { text: qsTr("The project names these files. Locate any that were not found beside it:") }
+        Label { text: qsTr("The project needs these files. Locate any that were not found:") }
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true

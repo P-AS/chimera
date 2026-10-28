@@ -126,7 +126,15 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			std::string why;
 			onMachineWait([&](ce_session *) {
 				ce_project *p = pendingOpenM_.project;
-				if (p == nullptr || index < 0 || index >= ce_project_file_count(p))
+				const int64_t fileCount = p != nullptr ? ce_project_file_count(p) : 0;
+				/* the firmware, listed after the files (issue 397) */
+				if (p != nullptr && index >= fileCount && index - fileCount < static_cast<int64_t>(missingFirmwareM_.size()))
+				{
+					why = locateFirmwareOnMachine(missingFirmwareM_[static_cast<size_t>(index - fileCount)], path);
+					publishProjectFilesOnMachine();
+					return;
+				}
+				if (p == nullptr || index < 0 || index >= fileCount)
 				{
 					why = "no such file";
 					return;
@@ -144,7 +152,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			return {};
 		}, &resolvingFiles);
 	command("scanForProjectFiles", "looks through a folder (and its subfolders when asked) for the waiting project's files: "
-		"by their hashes, any name, then by their names; says how many it found", {"folder", "subfolders"},
+		"by their hashes, any name, then by their names; and for its missing firmware, as the firmware folder is looked "
+		"through; says how many it found", {"folder", "subfolders"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string folder;
 			bool recurse = true;
@@ -159,7 +168,21 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				for (int32_t i = 0; i < ce_project_file_count(p); i++)
 					if (ce_project_file_status(p, i) != 0) wanted.push_back(i);
 				std::error_code ec;
-				if (wanted.empty() || !fs::is_directory(folder, ec)) return;
+				if (!fs::is_directory(folder, ec)) return;
+				/* the firmware, as the firmware folder is looked through: by the
+				 * hash it must have, else by the name and size the package gives */
+				if (std::any_of(missingFirmwareM_.begin(), missingFirmwareM_.end(), [](const MissingFirmware &m) { return m.path.empty(); }))
+				{
+					const std::vector<FirmwareFile> there = indexFirmware({folder}, recurse, 10000);
+					for (MissingFirmware &m : missingFirmwareM_)
+					{
+						std::string how;
+						if (!m.path.empty()) continue;
+						if (const FirmwareFile *f = findFirmware(m.decl, m.pinned, there, how); f != nullptr && locateFirmwareOnMachine(m, f->path).empty()) found++;
+					}
+					publishProjectFilesOnMachine();
+				}
+				if (wanted.empty()) return;
 				/* the files there, the smallest first (as Chimera's scan), ten thousand at most */
 				std::vector<std::pair<uint64_t, std::string>> candidates;
 				auto add = [&](const fs::directory_entry &e) {
@@ -234,6 +257,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	command("cancelOpen", "leaves the waiting project unopened", {}, [this](const Args &, std::string &) -> Value {
 		resolvingFiles.set(false);
 		submit([this] {
+			missingFirmwareM_.clear();
+			locatedFirmwareM_.clear();
 			/* nobody's: a reused project was let go by projectM_ when its open began */
 			if (pendingOpenM_.project != nullptr) ce_project_free(pendingOpenM_.project);
 			pendingOpenM_ = PendingOpen{};
@@ -3345,10 +3370,46 @@ void SessionViewModel::publishProjectFilesOnMachine()
 		f.status = ce_project_file_status(p, i);
 		files.push_back(std::move(f));
 	}
+	for (const MissingFirmware &m : missingFirmwareM_)
+	{
+		ProjectFile f;
+		f.name = m.display.empty() ? m.id : m.display + " (" + m.id + ")";
+		f.slot = "firmware";
+		f.sha1 = !m.pinned.empty() ? m.pinned : m.gameCore ? std::string() : m.declared;
+		f.actualSha1 = m.sha1;
+		f.status = m.path.empty() ? 1 : 0;
+		f.firmware = true;
+		files.push_back(std::move(f));
+	}
 	later([this, files] {
 		projectFiles_ = files;
 		projectFileRows_.reset.emit();
 	});
+}
+
+std::string SessionViewModel::locateFirmwareOnMachine(MissingFirmware &m, const std::string &path)
+{
+	char sha[41] = {};
+	uint64_t length = 0;
+	if (ce_sha1_file(path.c_str(), sha, &length) != 1) return "Cannot read that file: " + path;
+	/* the hash the project pins, else the package's; a game core takes a
+	 * file of the person's own where the project pins none, as New Project does */
+	const std::string wanted = !m.pinned.empty() ? m.pinned : m.gameCore ? std::string() : m.declared;
+	auto upper = [](std::string t) {
+		for (char &c : t) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+		return t;
+	};
+	if (!wanted.empty() && upper(wanted) != upper(sha))
+		return std::filesystem::path(path).filename().string() + " is not the firmware the project needs: its hash is " + upper(sha) +
+			", the project needs " + upper(wanted);
+	m.path = path;
+	m.sha1 = upper(sha);
+	locatedFirmwareM_[m.id] = path;
+	/* found again at the next open, as New Project remembers what was chosen */
+	later([this, core = m.core, id = m.id, path] {
+		if (keepFirmware_) keepFirmware_(core, id, path);
+	});
+	return {};
 }
 
 std::string SessionViewModel::ProjectFileRows::columnName(int32_t column) const
@@ -3367,8 +3428,11 @@ Value SessionViewModel::ProjectFileRows::cell(int64_t row, int32_t column) const
 	case 1: return f.slot;
 	case 2: return static_cast<int64_t>(f.status);
 	/* Chimera's words for each */
-	case 3: return f.status == 0 ? std::string("found, hash matches") : f.status == 2 ? std::string("HASH MISMATCH (not the recorded bytes)")
-																					 : std::string("not found");
+	case 3:
+		/* a firmware no hash is asked of is taken as chosen */
+		if (f.firmware && f.status == 0 && f.sha1.empty()) return std::string("chosen");
+		return f.status == 0 ? std::string("found, hash matches") : f.status == 2 ? std::string("HASH MISMATCH (not the recorded bytes)")
+																			   : std::string("not found");
 	case 4: return f.sha1;
 	case 5: return f.actualSha1;
 	default: return {};
@@ -3597,7 +3661,7 @@ void SessionViewModel::setRunFirmware(std::map<std::string, std::string> byId)
 
 bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::string &slots, const std::string &settings,
 	const std::string &pins, const std::string &game, const std::vector<std::pair<std::string, std::string>> &files,
-	Firmware &out, std::string &why)
+	Firmware &out, std::string &why, std::vector<MissingFirmware> *missingOut)
 {
 	json::Json cfg, settingsJson, pinsJson;
 	std::string error;
@@ -3656,6 +3720,18 @@ bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::
 				n.how = "given on the command line";
 			}
 	}
+	/* located while the project waited for it (issue 397), its hash checked then */
+	for (FirmwareNeed &n : needs)
+	{
+		const auto located = locatedFirmwareM_.find(n.id);
+		if (!n.path.empty() || located == locatedFirmwareM_.end()) continue;
+		char sha[41] = {};
+		uint64_t length = 0;
+		if (ce_sha1_file(located->second.c_str(), sha, &length) != 1) continue;
+		n.path = located->second;
+		n.sha1 = sha;
+		n.how = "located";
+	}
 	std::string missing;
 	json::Json recorded;
 	recorded.kind = json::Json::Kind::Array;
@@ -3664,7 +3740,26 @@ bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::
 		if (n.path.empty())
 		{
 			/* an optional one not found is not mounted, and the core carries on */
-			if (n.required) missing += (missing.empty() ? "" : ", ") + (n.display.empty() ? n.id : n.display + " (" + n.id + ")");
+			if (!n.required) continue;
+			missing += (missing.empty() ? "" : ", ") + (n.display.empty() ? n.id : n.display + " (" + n.id + ")");
+			if (missingOut != nullptr)
+			{
+				MissingFirmware m;
+				if (const json::Json *name = cfg.find("coreName")) m.core = name->text;
+				m.id = n.id;
+				m.display = n.display;
+				if (n.declIndex < decl.items.size())
+				{
+					m.decl = decl.items[n.declIndex];
+					if (const json::Json *h = m.decl.find("sha1")) m.declared = h->text;
+				}
+				for (const json::Json &pin : pinsJson.items)
+					if (const json::Json *id = pin.find("id"); id != nullptr && id->text == n.id)
+						if (const json::Json *h = pin.find("sha1")) m.pinned = h->text;
+				const json::Json *kind = cfg.find("kind");
+				m.gameCore = kind != nullptr && kind->text == "game";
+				missingOut->push_back(std::move(m));
+			}
 			continue;
 		}
 		std::ifstream in(n.path, std::ios::binary);
@@ -3983,32 +4078,40 @@ void SessionViewModel::findFilesAndBootOnMachine(PendingOpen open)
 	}
 	/* then where this machine last found them, each checked by its hash */
 	applyLocalPathsOnMachine(p);
+	/* another open: what was located for one before is not this one's */
+	missingFirmwareM_.clear();
+	locatedFirmwareM_.clear();
 	if (ce_project_files_ok(p) == 0)
 	{
 		/* not found beside it, nor where this machine last had them: asked
 		 * for, as Chimera's resolution window asks, the project waiting */
-		if (pendingOpenM_.project != nullptr && pendingOpenM_.project != p) ce_project_free(pendingOpenM_.project);
-		/* the machine is closed already; the project it ran goes too, unless it is the one waiting */
-		if (open.reuse == nullptr) freeProjectOnMachine();
-		pendingOpenM_ = std::move(open);
-		publishProjectFilesOnMachine();
-		later([this] {
-			isOpen.set(false);
-			running.set(false);
-			projectPath.set("");
-			projectTitle.set("");
-			projectId.set("");
-			hasProject.set(false);
-			projectSwitched();
-			recoveredCopy.set("");
-			recoveredUpTo.set("");
-			resolvingFiles.set(true);
-			status.set("Some of the project's files were not found beside it: locate them, or scan a folder");
-		});
+		waitForFilesOnMachine(std::move(open), "Some of the project's files were not found beside it: locate them, or scan a folder");
 		return;
 	}
 	recoveredM_ = open.recovered;
 	bootProjectOnMachine(p, path, open.package, open.keepInputs, open.reuse, open.kept, open.keptRerecords, 0);
+}
+
+void SessionViewModel::waitForFilesOnMachine(PendingOpen open, const std::string &said)
+{
+	if (pendingOpenM_.project != nullptr && pendingOpenM_.project != open.project) ce_project_free(pendingOpenM_.project);
+	/* the machine is closed already; the project it ran goes too, unless it is the one waiting */
+	if (open.reuse == nullptr) freeProjectOnMachine();
+	pendingOpenM_ = std::move(open);
+	publishProjectFilesOnMachine();
+	later([this, said] {
+		isOpen.set(false);
+		running.set(false);
+		projectPath.set("");
+		projectTitle.set("");
+		projectId.set("");
+		hasProject.set(false);
+		projectSwitched();
+		recoveredCopy.set("");
+		recoveredUpTo.set("");
+		resolvingFiles.set(true);
+		status.set(said);
+	});
 }
 
 void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &path, const std::string &packageGiven, bool keepInputs,
@@ -4107,7 +4210,19 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 			files.emplace_back(name, source);
 		}
 		std::string why;
-		if (!firmwareOnMachine(package, slotsText, settingsText, pinsText, game, files, fw, why))
+		std::vector<MissingFirmware> missing;
+		const bool found = firmwareOnMachine(package, slotsText, settingsText, pinsText, game, files, fw, why, &missing);
+		locatedFirmwareM_.clear();
+		if (!found && !missing.empty())
+		{
+			/* asked for, as the project's own files are (issue 397), the project waiting */
+			missingFirmwareM_ = std::move(missing);
+			waitForFilesOnMachine(PendingOpen{p, path, packageGiven, keepInputs, reuse, kept, keptRerecords, recovered},
+				"The firmware this project needs was not found: locate it, or scan a folder");
+			return;
+		}
+		missingFirmwareM_.clear();
+		if (!found)
 		{
 			ce_project_free(p); /* a reused one too: projectM_ let it go */
 			fail(why);

@@ -34,15 +34,21 @@ HeadlessRun::HeadlessRun(bool enabled, vm::SessionViewModel &session, QObject *p
 	/* Locate Project Files would wait for a person: the files are named and the run ends, as Chimera's */
 	filesWatch_ = session_.resolvingFiles.changed.connect([this] {
 		if (!session_.resolvingFiles.get() || ending_) return;
-		std::string missing, other;
+		std::string missing, other, firmware;
 		for (const vm::SessionViewModel::ProjectFile &f : session_.projectFiles())
 		{
-			std::string &list = f.status == 1 ? missing : other;
+			std::string &list = f.firmware ? firmware : f.status == 1 ? missing : other;
 			if (f.status == 0) continue;
 			list += (list.empty() ? "" : ", ") + f.name;
 		}
-		std::string text = "these files were not found beside it or where this machine last had them: " + missing;
-		if (!other.empty()) text += (missing.empty() ? std::string() : "; ") + "these are not the files it recorded: " + other;
+		std::string text;
+		auto add = [&text](const std::string &what, const std::string &names) {
+			if (!names.empty()) text += (text.empty() ? "" : "; ") + what + names;
+		};
+		add("these files were not found beside it or where this machine last had them: ", missing);
+		add("these are not the files it recorded: ", other);
+		/* issue 397: firmware is asked for as the files are */
+		add("this firmware was not found (put it in the firmware folder, or give it with --firmware): ", firmware);
 		blocked(QStringLiteral("Cannot open the project"), QString::fromStdString(text));
 	});
 	/* a project that cannot open (no core for it, its firmware missing...): why, and the run ends */

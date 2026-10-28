@@ -10682,3 +10682,34 @@ the strict QML check on two test packages, one with two players and the
 keyboard keys and one with an analog control, and pictured; not tried by
 hand with a mouse.
 
+## Missing firmware is asked for when a project opens (2026-10-28, issue 397)
+
+A project whose firmware was not in the firmware folder, nor where this
+machine last had it, did not open: the window said "Firmware missing (put
+it in the firmware folder)" and stopped. The owner asked for the files to
+be asked for instead, as New Project asks for them.
+
+- The project now waits in Locate Project Files, the window that already
+  asks for a project's own files when they are not found. The firmware is
+  listed after the files, named as the package names it, with "firmware"
+  in the Slot column. Locate... and Scan Folder... work on it as on a file;
+  Open stays off until every required firmware is found. Optional firmware
+  is not asked for: the core starts without it, as before.
+- A located file must have the hash the project pins, else the hash the
+  package declares; a game core takes a file of the person's own when the
+  project pins none, as New Project allows. Another file is refused, with
+  both hashes said. A folder scanned is looked through as the firmware
+  folder is (by hash, else by the package's name and size).
+- The file is remembered for the core, in the same list New Project keeps,
+  so the next open of that project, or another one needing it, finds it.
+- When both files and firmware are missing, the files are asked for first
+  and the firmware after, since which firmware is needed is worked out
+  once the files are known.
+
+Tested with the view model test on a game core's project whose firmware
+was moved: the project waits with the firmware listed, a file of another
+hash is refused with both hashes, the right one is taken, remembered, and
+the project opens; the next open asks nothing; a folder scanned finds it;
+Cancel leaves the project closed. The test was seen to fail with the old
+behaviour (the open refused). Not tried by hand in the window.
+

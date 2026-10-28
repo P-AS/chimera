@@ -21,6 +21,7 @@
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/sound.hpp"
 #include "chimera/vm/input_log.hpp"
+#include "chimera/vm/json.hpp"
 #include "chimera/vm/view_model.hpp"
 
 struct ce_session;
@@ -341,6 +342,9 @@ public:
 		std::string name, slot, sha1, actualSha1;
 		/* 0 found and matching, 1 not found, 2 found but not the recorded bytes */
 		int32_t status = 1;
+		/* firmware the project needs, listed after its files (issue 397):
+		 * its name, "firmware" as its slot, the hash it must have, if any */
+		bool firmware = false;
 	};
 	const std::vector<ProjectFile> &projectFiles() const { return projectFiles_; }
 	Property<std::string> projectTitle;
@@ -533,6 +537,10 @@ public:
 	/* Chimera's --firmware <id>=<path>: files for this run, ahead of what is
 	 * remembered - used by its hash where the project pins one, else as given */
 	void setRunFirmware(std::map<std::string, std::string> byId);
+	/* a firmware file located for a waiting project, remembered for its core
+	 * as New Project remembers one (the cores view model's); on the window's thread */
+	using FirmwareKeeper = std::function<void(const std::string &core, const std::string &id, const std::string &path)>;
+	void setFirmwareKeeper(FirmwareKeeper keep) { keepFirmware_ = std::move(keep); }
 
 	/* for the window: a key went down or up, by Chimera's key names */
 	void key(const std::string &name, bool down);
@@ -769,6 +777,8 @@ private:
 	};
 	/* the files looked for, then the rest of opening (or the project waits for its files) */
 	void findFilesAndBootOnMachine(PendingOpen open);
+	/* the project waits for files to be located (Locate Project Files), saying why */
+	void waitForFilesOnMachine(PendingOpen open, const std::string &said);
 	bool recoveredM_ = false;
 	std::string recoveryFolderM_, backupFolderM_, crashFolderM_;
 	std::filesystem::path recoveryDirOf(ce_project *p) const;
@@ -1019,14 +1029,32 @@ private:
 		std::vector<std::vector<uint8_t>> data;
 		std::string pins; /* {"id","sha1"} of what was found, as a project records it */
 	};
-	/* the firmware a machine needs, read; false with why when some is missing */
+	/* firmware a project needs that was not found when it opened: what it
+	 * must be (the project's pin, else the package's hash; a game core takes
+	 * a file of the person's own where the project pins none), and the file
+	 * located for it (issue 397) */
+	struct MissingFirmware
+	{
+		std::string core, id, display, pinned, declared;
+		json::Json decl;
+		bool gameCore = false;
+		std::string path, sha1;
+	};
 	/* the firmware a machine needs, found: the package's and, for a package
 	 * whose games have their own ("gameFirmware"), what the core says this
 	 * game needs - asked again at every open, with the game (`game`, a path)
-	 * and its other files ({name, path}), as Chimera asks */
+	 * and its other files ({name, path}), as Chimera asks. False with why
+	 * when some is missing, and what is missing in `missing` */
 	bool firmwareOnMachine(const std::string &package, const std::string &slots, const std::string &settings,
 		const std::string &pins, const std::string &game, const std::vector<std::pair<std::string, std::string>> &files,
-		Firmware &out, std::string &why);
+		Firmware &out, std::string &why, std::vector<MissingFirmware> *missing = nullptr);
+	/* the waiting project's missing firmware, and the files located for it
+	 * by id (used as given at the next try, let go when the open ends) */
+	std::vector<MissingFirmware> missingFirmwareM_;
+	std::map<std::string, std::string> locatedFirmwareM_;
+	/* a file for a missing firmware: "" when it is taken, else why not */
+	std::string locateFirmwareOnMachine(MissingFirmware &m, const std::string &path);
+	FirmwareKeeper keepFirmware_;
 	std::vector<Branch> branchesM_;
 	std::string cacheFolderM_;
 	Connection cacheFolderWatch_;
