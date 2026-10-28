@@ -139,15 +139,16 @@ int main(int argc, char **argv)
 		// a 64-bit setting comes back with every digit (issue 358)
 		assert(std::string(ce_project_settings_text(p, &len)).find("\"seed\":18446744073709551615") != std::string::npos);
 		assert(std::string(ce_project_firmware_text(p, &len)).find("\"font\"") != std::string::npos);
+		/* the input comes back as the text block a movie is, the same key and entries */
 		const char *logText = ce_project_log_text(p, &len);
-		assert(std::string(logText, len) == "LogKey:#P1 Up|\n|..|\n|U.|\n");
+		assert(std::string(logText, len) == "[Input]\nLogKey:#P1 Up|\n|..|\n|U.|\n[/Input]\n");
 		assert(ce_project_marker_count(p) == 3 && ce_project_marker_frame(p, 2) == 500);
 		assert(ce_project_branch_count(p) == 1);
 		assert(std::strcmp(ce_project_branch_name(p, 0), "risky route") == 0);
 		assert(ce_project_branch_frame(p, 0) == 400);
 		assert(std::strcmp(ce_project_branch_time(p, 0), "2026-08-26 21:00:00") == 0);
 		const char *branchLog = ce_project_branch_log_text(p, 0, &len);
-		assert(std::string(branchLog, len) == "|..|\n");
+		assert(std::string(branchLog, len) == "[Input]\n|..|\n[/Input]\n");
 		assert(ce_project_branch_marker_count(p, 0) == 2);
 		assert(ce_project_branch_marker_frame(p, 0, 0) == 350);
 		assert(std::strcmp(ce_project_branch_marker_text(p, 0, 0), "the setup") == 0);
@@ -568,6 +569,63 @@ int main(int argc, char **argv)
 			assert(err != nullptr && std::strstr(err, "clockStart") != nullptr);
 		}
 		std::remove(cpath.c_str());
+	}
+
+	{ // The input as the file holds it (owner, 2026-10-28): "inputs", its key's
+	  // groups of columns and one entry a line, not the movie's text block as a
+	  // string; the old string still opens; the key comes back byte for byte
+	  // even where a name holds the key's own separators
+		auto text = [](const std::string &path) {
+			std::string out;
+			if (FILE *f = std::fopen(path.c_str(), "rb"))
+			{
+				char buf[4096];
+				size_t n;
+				while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
+				std::fclose(f);
+			}
+			return out;
+		};
+		const std::string ipath = g_dir + "/inputs.chimeraProject";
+		ce_project *p = ce_project_new();
+		const char *lump = "[Input]\nLogKey:#Reset|Power|#P1 Up|P1 \"#|\n|..|.U|\n|.P|..|\n[/Input]\n";
+		ce_project_set_log_text(p, lump, std::strlen(lump));
+		const char *exotic = "[Input]\nLogKey:#| @|# >|#P1 A|P1 #|\n|.@|.|\n[/Input]\n";
+		ce_project_branch_add(p, "odd names", 1, "", exotic, std::strlen(exotic));
+		assert(ce_project_save(p, ipath.c_str(), &err) == 0);
+		ce_project_free(p);
+		const std::string saved = text(ipath);
+		assert(saved.find("\"input\"") == std::string::npos && saved.find("[Input]") == std::string::npos);
+		assert(saved.find("\"columns\":\t[\n\t\t\t[\"Reset\", \"Power\"],\n\t\t\t[\"P1 Up\", \"P1 \\\"#\"]\n\t\t]") != std::string::npos);
+		assert(saved.find("\"entries\":\t[\n\t\t\t\"|..|.U|\",\n\t\t\t\"|.P|..|\"\n\t\t]") != std::string::npos);
+		p = ce_project_open(ipath.c_str(), &err);
+		assert(p != nullptr);
+		uint64_t len = 0;
+		const char *got = ce_project_log_text(p, &len);
+		assert(std::string(got, len) == lump);
+		got = ce_project_branch_log_text(p, 0, &len);
+		assert(std::string(got, len) == exotic);
+		ce_project_free(p);
+		// the text block as builds before wrote it
+		writeFile("old-input.chimeraProject", "{\"input\": \"[Input]\\nLogKey:#P1 Up|\\n|U|\\n[/Input]\\n\", "
+			"\"branches\": [{\"name\": \"b\", \"frame\": 0, \"input\": \"|.|\\n\"}]}");
+		p = ce_project_open((g_dir + "/old-input.chimeraProject").c_str(), &err);
+		assert(p != nullptr);
+		const char *old = ce_project_log_text(p, &len);
+		assert(std::string(old, len) == "[Input]\nLogKey:#P1 Up|\n|U|\n[/Input]\n");
+		old = ce_project_branch_log_text(p, 0, &len);
+		assert(std::string(old, len) == "|.|\n");
+		ce_project_free(p);
+		// what is not an input is refused, and says where
+		for (const char *bad : { "{\"inputs\": [], \"input\": \"\"}", "{\"inputs\": {\"entries\": [\"LogKey:#A|\"]}}",
+			"{\"inputs\": {\"columns\": [\"A\"]}}", "{\"inputs\": {\"keys\": []}}",
+			"{\"inputs\": {\"columns\": [], \"key\": \"#\"}}" })
+		{
+			writeFile("bad-input.chimeraProject", bad);
+			err = nullptr;
+			assert(ce_project_open((g_dir + "/bad-input.chimeraProject").c_str(), &err) == nullptr);
+			assert(err != nullptr && std::strstr(err, "input") != nullptr);
+		}
 	}
 
 	std::printf("project: all assertions passed\n");

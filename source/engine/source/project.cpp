@@ -279,6 +279,189 @@ ce_project *ce_project_new(void)
 
 void ce_project_free(ce_project *p) { delete p; }
 
+/* A movie's input as the project file holds it (owner, 2026-10-28): not the
+ * movie's text block ("[Input]", "LogKey:...", the entries, "[/Input]") as one
+ * string, but
+ *
+ *   "inputs": { "columns": [ ["Reset", "Power"], ["P1 Up", "P1 Down", ...] ],
+ *               "entries": [ "|..|........|", ... ] }
+ *
+ * "columns" is the key's groups in order, each a list of its columns' names -
+ * the groups an entry's '|' part - and "entries" one string a frame. In
+ * memory the project keeps the text block, which every reader of a movie
+ * takes; it is turned into this and back only here.
+ *
+ * The key is split where a '#' begins a name (a group starts) and at each
+ * '|' (a name ends), and joining the groups back gives the key byte for
+ * byte whatever the names hold: a machine's "P1 #" or "| @" is read from the
+ * key with the machine's own names, as before (EntryLayout::buildFromKey),
+ * and only looks split here. A key that does not come back the same is kept
+ * whole, as "key". A movie with no key has no "columns". */
+static bool splitKey(const std::string &key, std::vector<std::vector<std::string>> &groups)
+{
+	groups.clear();
+	size_t at = 0;
+	while (at < key.size())
+	{
+		if (key[at] != '#') return false;
+		groups.emplace_back();
+		at++;
+		while (at < key.size() && key[at] != '#')
+		{
+			const size_t bar = key.find('|', at);
+			if (bar == std::string::npos) return false;
+			groups.back().push_back(key.substr(at, bar - at));
+			at = bar + 1;
+		}
+	}
+	return true;
+}
+
+static std::string joinKey(const std::vector<std::vector<std::string>> &groups)
+{
+	std::string key;
+	for (const auto &g : groups)
+	{
+		key += '#';
+		for (const std::string &name : g) key += name + "|";
+	}
+	return key;
+}
+
+/* a string as JSON writes it, quoted and escaped */
+static std::string jsonString(const std::string &text)
+{
+	cJSON *s = cJSON_CreateString(text.c_str());
+	char *printed = cJSON_PrintUnformatted(s);
+	std::string out = printed != nullptr ? printed : "\"\"";
+	cJSON_free(printed);
+	cJSON_Delete(s);
+	return out;
+}
+
+/* a list one item a line, at the depth cJSON_Print indents the key it is the
+ * value of (a frame's entry a line reads, and diffs, as one) */
+static cJSON *listOnLines(const std::vector<std::string> &items, int depth)
+{
+	if (items.empty()) return cJSON_CreateArray();
+	std::string text = "[\n";
+	for (size_t i = 0; i < items.size(); i++)
+		text += std::string(static_cast<size_t>(depth) + 1, '\t') + items[i] + (i + 1 < items.size() ? ",\n" : "\n");
+	text += std::string(static_cast<size_t>(depth), '\t') + "]";
+	return cJSON_CreateRaw(text.c_str());
+}
+
+/* the text block as "inputs", or null for none (a project with no input yet) */
+static cJSON *inputsOf(const std::string &lump, int depth)
+{
+	if (lump.empty()) return nullptr;
+	ce_movie_log *log = ce_movie_log_new();
+	ce_movie_log_parse(log, lump.data(), lump.size());
+	cJSON *out = cJSON_CreateObject();
+	if (const char *key = ce_movie_log_key(log))
+	{
+		std::vector<std::vector<std::string>> groups;
+		if (splitKey(key, groups) && joinKey(groups) == key)
+		{
+			std::vector<std::string> lines;
+			for (const auto &g : groups)
+			{
+				std::string line = "[";
+				for (size_t i = 0; i < g.size(); i++) line += (i ? ", " : "") + jsonString(g[i]);
+				lines.push_back(line + "]");
+			}
+			cJSON_AddItemToObject(out, "columns", listOnLines(lines, depth + 1));
+		}
+		else cJSON_AddStringToObject(out, "key", key);
+	}
+	std::vector<std::string> entries;
+	for (int64_t i = 0; i < ce_movie_log_count(log); i++) entries.push_back(jsonString(ce_movie_log_entry(log, i)));
+	cJSON_AddItemToObject(out, "entries", listOnLines(entries, depth + 1));
+	ce_movie_log_free(log);
+	return out;
+}
+
+/* "inputs" back to the text block; false with why for one that is not one */
+static bool lumpOf(const cJSON *inputs, std::string &lump, std::string &why)
+{
+	if (!cJSON_IsObject(inputs))
+	{
+		why = "is not an object";
+		return false;
+	}
+	if (const char *k = unknownKey(inputs, { "columns", "key", "entries" }))
+	{
+		why = std::string("has an unknown key \"") + k + "\"";
+		return false;
+	}
+	const cJSON *columns = cJSON_GetObjectItemCaseSensitive(inputs, "columns");
+	const cJSON *key = cJSON_GetObjectItemCaseSensitive(inputs, "key");
+	const cJSON *entries = cJSON_GetObjectItemCaseSensitive(inputs, "entries");
+	if (columns != nullptr && key != nullptr)
+	{
+		why = "has both \"columns\" and \"key\"";
+		return false;
+	}
+	lump = "[Input]\n";
+	if (columns != nullptr)
+	{
+		std::vector<std::vector<std::string>> groups;
+		if (!cJSON_IsArray(columns))
+		{
+			why = "\"columns\" is not a list of groups";
+			return false;
+		}
+		for (const cJSON *g = columns->child; g != nullptr; g = g->next)
+		{
+			if (!cJSON_IsArray(g))
+			{
+				why = "\"columns\" holds a group that is not a list of names";
+				return false;
+			}
+			groups.emplace_back();
+			for (const cJSON *n = g->child; n != nullptr; n = n->next)
+			{
+				if (!cJSON_IsString(n))
+				{
+					why = "\"columns\" holds a name that is not a string";
+					return false;
+				}
+				groups.back().push_back(n->valuestring);
+			}
+		}
+		lump += "LogKey:" + joinKey(groups) + "\n";
+	}
+	else if (key != nullptr)
+	{
+		if (!cJSON_IsString(key))
+		{
+			why = "\"key\" is not a string";
+			return false;
+		}
+		lump += std::string("LogKey:") + key->valuestring + "\n";
+	}
+	if (entries != nullptr)
+	{
+		if (!cJSON_IsArray(entries))
+		{
+			why = "\"entries\" is not a list";
+			return false;
+		}
+		for (const cJSON *e = entries->child; e != nullptr; e = e->next)
+		{
+			/* a line that is not an entry would be dropped when the movie is read */
+			if (!cJSON_IsString(e) || e->valuestring[0] != '|' || std::strchr(e->valuestring, '\n') != nullptr)
+			{
+				why = "\"entries\" holds one that is not a frame's input (\"|...|\")";
+				return false;
+			}
+			lump += std::string(e->valuestring) + "\n";
+		}
+	}
+	lump += "[/Input]\n";
+	return true;
+}
+
 static ce_project *openProject(const char *path, const char **error_out)
 {
 	if (error_out != nullptr) *error_out = nullptr;
@@ -312,7 +495,7 @@ static ce_project *openProject(const char *path, const char **error_out)
 	/* the format is strict: a key this build does not know is an error, not
 	 * something to drop silently on the next save */
 	static const char *known[] = { "id", "title", "description", "core", "rerecords", "clockStart",
-		"files", "settings", "firmware", "coreCache", "input", "markers", "branches", "subtitles",
+		"files", "settings", "firmware", "coreCache", "input", "inputs", "markers", "branches", "subtitles",
 		"headers", "tastudio" };
 	for (cJSON *item = root->child; item != nullptr; item = item->next)
 	{
@@ -440,10 +623,18 @@ static ce_project *openProject(const char *path, const char **error_out)
 		if (!cJSON_IsObject(j)) return rejectP("\"tastudio\" is not an object");
 		p->tastudio = cJSON_Duplicate(j, 1);
 	}
+	/* "inputs", as this build writes it; "input", the text block, as builds
+	 * before 2026-10-28 wrote it */
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "input")) != nullptr)
 	{
+		if (cJSON_GetObjectItemCaseSensitive(root, "inputs") != nullptr) return rejectP("the project has both \"input\" and \"inputs\"");
 		if (!cJSON_IsString(j)) return rejectP("\"input\" is not a string");
 		p->log = j->valuestring;
+	}
+	if ((j = cJSON_GetObjectItemCaseSensitive(root, "inputs")) != nullptr)
+	{
+		std::string why;
+		if (!lumpOf(j, p->log, why)) return rejectP("\"inputs\" " + why);
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "markers")) != nullptr)
 	{
@@ -487,20 +678,23 @@ static ce_project *openProject(const char *path, const char **error_out)
 		if (!cJSON_IsArray(j)) return rejectP("\"branches\" is not an array");
 		for (cJSON *item = j->child; item != nullptr; item = item->next)
 		{
-			if (const char *k = unknownKey(item, { "name", "frame", "input", "time", "markers" })) return rejectP(std::string("unknown key \"") + k + "\" in a branch");
+			if (const char *k = unknownKey(item, { "name", "frame", "input", "inputs", "time", "markers" })) return rejectP(std::string("unknown key \"") + k + "\" in a branch");
 			cJSON *name = cJSON_GetObjectItemCaseSensitive(item, "name");
 			cJSON *frame = cJSON_GetObjectItemCaseSensitive(item, "frame");
 			cJSON *input = cJSON_GetObjectItemCaseSensitive(item, "input");
+			cJSON *inputs = cJSON_GetObjectItemCaseSensitive(item, "inputs");
 			cJSON *time = cJSON_GetObjectItemCaseSensitive(item, "time");
 			cJSON *markers = cJSON_GetObjectItemCaseSensitive(item, "markers");
-			if (!cJSON_IsString(name) || !cJSON_IsNumber(frame) || !cJSON_IsString(input))
+			if (!cJSON_IsString(name) || !cJSON_IsNumber(frame) || (input == nullptr) == (inputs == nullptr) ||
+				(input != nullptr && !cJSON_IsString(input)))
 			{
-				return rejectP("every branch needs string \"name\", number \"frame\" and string \"input\"");
+				return rejectP("every branch needs string \"name\", number \"frame\" and its \"inputs\"");
 			}
 			Branch b;
 			b.name = name->valuestring;
 			b.frame = static_cast<int64_t>(frame->valuedouble);
-			b.log = input->valuestring;
+			if (input != nullptr) b.log = input->valuestring;
+			else if (std::string why; !lumpOf(inputs, b.log, why)) return rejectP("a branch's \"inputs\" " + why);
 			if (time != nullptr)
 			{
 				if (!cJSON_IsString(time)) return rejectP("a branch's \"time\" is not a string");
@@ -626,7 +820,7 @@ int32_t ce_project_save(ce_project *p, const char *path, const char **error_out)
 	/* only when there is one: a project that never met TAStudio stays exactly
 	 * what an older build can open */
 	if (p->tastudio != nullptr) cJSON_AddItemToObject(root, "tastudio", cJSON_Duplicate(p->tastudio, 1));
-	cJSON_AddStringToObject(root, "input", p->log.c_str());
+	if (cJSON *inputs = inputsOf(p->log, 1)) cJSON_AddItemToObject(root, "inputs", inputs);
 	cJSON *markers = cJSON_AddArrayToObject(root, "markers");
 	for (const Marker &m : p->markers)
 	{
@@ -643,7 +837,14 @@ int32_t ce_project_save(ce_project *p, const char *path, const char **error_out)
 		cJSON_AddStringToObject(item, "name", b.name.c_str());
 		cJSON_AddNumberToObject(item, "frame", static_cast<double>(b.frame));
 		if (!b.time.empty()) cJSON_AddStringToObject(item, "time", b.time.c_str());
-		cJSON_AddStringToObject(item, "input", b.log.c_str());
+		/* a branch always has its input, if only an empty one */
+		cJSON *inputs = inputsOf(b.log, 3);
+		if (inputs == nullptr)
+		{
+			inputs = cJSON_CreateObject();
+			cJSON_AddItemToObject(inputs, "entries", cJSON_CreateArray());
+		}
+		cJSON_AddItemToObject(item, "inputs", inputs);
 		if (!b.markers.empty())
 		{
 			cJSON *bm = cJSON_AddArrayToObject(item, "markers");

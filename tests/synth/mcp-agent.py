@@ -704,7 +704,8 @@ if local:
     # when the agent sets it, and every line gets its column. It used to be
     # left out of the line while the agent was told it was set.
     short = json.load(open(saved))
-    short["input"] = "[Input]\nLogKey:#P1 Up|P1 Down|\n|.D|\n|..|\n|.D|\n[/Input]\n"
+    short.pop("input", None)
+    short["inputs"] = {"columns": [["P1 Up", "P1 Down"]], "entries": ["|.D|", "|..|", "|.D|"]}
     short["branches"] = []
     short["markers"] = []
     short_path = os.path.join(work, "short.chimeraProject")

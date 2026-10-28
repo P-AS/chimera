@@ -10784,3 +10784,35 @@ no Japanese font. A long German label in TAStudio's side panel is cut off.
 The Linux release build's lrelease was not run here (no shipping Qt on
 this machine); the next Release run is its proof.
 
+## A project's input is its columns and its entries (user-decided, 2026-10-28)
+
+The project file held its input as the movie's text block in one string:
+"[Input]\nLogKey:#Reset|Power|#P1 Up|...\n|..|.U......|\n...[/Input]\n". The
+owner found that sloppy and asked for the columns and the entries to be
+entries of their own.
+
+- `inputs` is an object: `columns`, a list of the movie's groups (the
+  console's first, then each player's), each a list of its columns' names;
+  and `entries`, one string a frame. A branch has its own `inputs`. Each
+  list is written one item a line, so a file reads, and diffs, a frame a
+  line.
+- `columns` is a list of groups rather than one flat list because an
+  entry's `|` groups are part of what it means: a flat list would lose
+  where each group starts.
+- Inside, the engine still keeps the text block every reader of a movie
+  takes; the file is turned into it and back only where the project is
+  read and written, so nothing else changed. Joining the groups back gives
+  the key byte for byte, whatever the names hold; a name with its own `#`
+  or `|` only looks split in the file. A key that cannot be split is kept
+  as `key`.
+- The old `input` string still opens and is written as `inputs` at the
+  next save; a file with both, or with an entry that is not a frame's
+  input, is refused and says why. A build from before cannot open a project
+  saved by this one.
+
+Tested: the engine's project test saves a project and a branch, checks the
+file holds `inputs` written a group and an entry a line, opens it to the
+same text block (for a key with "P1 \"#" in it and one with "| @" and
+"# >"), opens a file in the old form, and refuses five broken ones. It was
+seen to fail with the input left out of the file.
+

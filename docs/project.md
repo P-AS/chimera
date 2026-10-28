@@ -71,7 +71,19 @@ themselves, which are named by their SHA1:
 - **The TAS work itself**: input log, markers, branches. The project IS
   the movie; publishing a finished TAS means handing over the project
   file, and anyone holding files matching the SHA1s can reproduce
-  everything.
+  everything. The input is the `inputs` object (owner, 2026-10-28):
+  `columns`, the movie's groups of columns in order (the console's first,
+  then each player's), each a list of the columns' names; and `entries`,
+  one string a frame, `|..|........|`, in the same groups. A branch has
+  its own `inputs`. A file written before 2026-10-28 has `input` instead,
+  the movie's text block (`[Input]`, a `LogKey:` line, the entries,
+  `[/Input]`) as one string; it still opens, and the next save writes
+  `inputs`. A build from before cannot open a project saved after.
+  The groups and names are split from the movie's key, and joined back to
+  it byte for byte: a control whose name holds a `#` or `|` of its own
+  (a keypad's "P1 #", a keyboard's "| @") is still read whole by the
+  machine, but looks split in `columns`. A key that cannot be split that
+  way is kept as `key`, one string.
 - **TAStudio's layout** (user-decided, 2026-09-15, issue #83): which
   piano-roll columns are shown, their order and widths, the orientation
   and how lag frames are shown - the `tastudio` object, written by the
