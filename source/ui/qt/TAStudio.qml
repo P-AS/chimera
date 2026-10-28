@@ -1,6 +1,6 @@
 // Chimera's TAStudio: the project's own window, opened beside the main one
 // when a project opens and closed with it. Its menus (Edit, Metadata,
-// Settings, Columns, Window, << Hide), the piano roll, and the boxes at its
+// Settings, Window, << Hide), the piano roll, and the boxes at its
 // side (Playback, Greenzone, Branches, Markers), as Chimera lays them out.
 // Layout and bindings only, over the session, pianoRoll, branches and
 // projectDetails view models.
@@ -30,6 +30,8 @@ ApplicationWindow {
     // whether Shift is held (the main window dragged alone)
     required property QtObject keyNamer
     property QtObject toolWindows: null
+    // Config > Controllers, where the columns shown are chosen (issue 391)
+    property var showControllers: () => {}
     // every hotkey's keys, {"action": "keys"}, for the tooltips that name them
     property var hotkeyKeys: ({})
     // a hotkey's keys, "" when it has none
@@ -272,87 +274,8 @@ ApplicationWindow {
                 delegate: MenuEntry {}
                 title: qsTr("&Settings")
                 Action { text: qsTr("Open settings..."); onTriggered: { tastudioSettingsWindow.show(); tastudioSettingsWindow.raise() } }
-            }
-            // the columns shown: the console's first, then a menu a player's
-            // and the keyboard keys', then a toggle for each group, as Chimera's
-            Menu {
-                delegate: MenuEntry {}
-                id: columnsMenu
-                title: qsTr("&Columns")
-                enabled: tas.session.isOpen
-                // which input roll the menu is for, when there are several, as Chimera's says it
-                MenuItem {
-                    text: qsTr("Current roll: #%1").arg(tas.pianoRoll.activeRoll + 1)
-                    enabled: false
-                    visible: tas.pianoRoll.rollCount > 1
-                    height: visible ? implicitHeight : 0
-                }
-                Instantiator {
-                    model: tas.pianoRoll.rows("columns")
-                    delegate: MenuItem {
-                        required property string name
-                        required property string label
-                        required property bool shown
-                        required property string group
-                        text: qsTr("%1 (%2)").arg(label).arg(name)
-                        visible: group === ""
-                        height: visible ? implicitHeight : 0
-                        checkable: true
-                        checked: shown
-                        onTriggered: tas.pianoRoll.run(shown ? "hideColumn" : "showColumn", [name])
-                    }
-                    onObjectAdded: (index, object) => columnsMenu.insertItem(index, object)
-                    onObjectRemoved: (index, object) => columnsMenu.removeItem(object)
-                }
-                Instantiator {
-                    model: tas.pianoRoll.rows("columnGroups")
-                    delegate: Menu {
-                        id: groupMenu
-                        required property string name
-                        title: name
-                        Instantiator {
-                            model: tas.pianoRoll.rows("columns")
-                            delegate: MenuItem {
-                                required property string name
-                                required property string label
-                                required property bool shown
-                                required property string group
-                                text: qsTr("%1 (%2)").arg(label).arg(name)
-                                visible: group === groupMenu.name
-                                height: visible ? implicitHeight : 0
-                                checkable: true
-                                checked: shown
-                                onTriggered: tas.pianoRoll.run(shown ? "hideColumn" : "showColumn", [name])
-                            }
-                            onObjectAdded: (index, object) => groupMenu.insertItem(index, object)
-                            onObjectRemoved: (index, object) => groupMenu.removeItem(object)
-                        }
-                    }
-                    // each before the separator, in the groups' order
-                    onObjectAdded: (index, object) => {
-                        let at = 0
-                        while (at < columnsMenu.count && columnsMenu.itemAt(at) !== columnsSeparator) at++
-                        columnsMenu.insertMenu(at, object)
-                    }
-                    onObjectRemoved: (index, object) => columnsMenu.removeMenu(object)
-                }
-                MenuDivider { id: columnsSeparator }
-                Instantiator {
-                    model: tas.pianoRoll.rows("columnGroups")
-                    delegate: MenuItem {
-                        required property string toggle
-                        required property bool shown
-                        required property bool firstOfToggle
-                        text: qsTr("Show %1").arg(toggle)
-                        visible: firstOfToggle
-                        height: visible ? implicitHeight : 0
-                        checkable: true
-                        checked: shown
-                        onTriggered: tas.pianoRoll.run("showGroup", [toggle, !shown])
-                    }
-                    onObjectAdded: (index, object) => columnsMenu.addItem(object)
-                    onObjectRemoved: (index, object) => columnsMenu.removeItem(object)
-                }
+                // the Columns menu was here: the columns are chosen beside each control in Config > Controllers (issue 391)
+                Action { text: qsTr("&Columns (Config > Controllers)..."); enabled: tas.session.isOpen; onTriggered: tas.showControllers() }
             }
             Menu {
                 delegate: MenuEntry {}
@@ -452,26 +375,8 @@ ApplicationWindow {
                     }
                 }
                 MenuItem { text: qsTr("Hide column"); onTriggered: tas.pianoRoll.run("hideColumn", [columnMenu.name]) }
-                // Chimera's Show columns: the Columns menu's own list, for the input roll used
-                Menu {
-                    delegate: MenuEntry {}
-                    id: showColumnsMenu
-                    title: qsTr("Show columns")
-                    Instantiator {
-                        model: tas.pianoRoll.rows("columns")
-                        delegate: MenuItem {
-                            required property string name
-                            required property string label
-                            required property bool shown
-                            text: qsTr("%1 (%2)").arg(label).arg(name)
-                            checkable: true
-                            checked: shown
-                            onTriggered: tas.pianoRoll.run(shown ? "hideColumn" : "showColumn", [name])
-                        }
-                        onObjectAdded: (index, object) => showColumnsMenu.insertItem(index, object)
-                        onObjectRemoved: (index, object) => showColumnsMenu.removeItem(object)
-                    }
-                }
+                // Chimera's Show columns: Config > Controllers, a box beside each control (issue 391)
+                MenuItem { text: qsTr("Show columns..."); onTriggered: tas.showControllers() }
                 MenuItem { text: qsTr("New input roll"); onTriggered: tas.pianoRoll.run("newRoll") }
                 MenuItem {
                     text: qsTr("Delete input roll")

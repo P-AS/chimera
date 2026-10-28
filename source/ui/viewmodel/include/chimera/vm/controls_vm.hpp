@@ -6,9 +6,13 @@
  * key for either end). The package says what they are at first. The window
  * works on a copy (edit): Save gives the copy to the machine and remembers
  * what differs from the package, for that core; Cancel lets it go. Key names
- * are Chimera's ("Z", "Up", "J1 POV0U", "X1 A", "X1 LeftThumbX Axis"). */
+ * are Chimera's ("Z", "Up", "J1 POV0U", "X1 A", "X1 LeftThumbX Axis").
+ * Which controls TAStudio shows as columns is chosen here too, in the same
+ * copy (issue 391: TAStudio's Columns menu was too long to use with many
+ * buttons). */
 
 #include <array>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -19,10 +23,13 @@
 
 namespace chimera::vm {
 
+class PianoRollViewModel;
+
 class ControlsViewModel : public ViewModel
 {
 public:
-	ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &session);
+	/* `roll`: TAStudio's piano roll, whose columns the window chooses (none: no column boxes) */
+	ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &session, PianoRollViewModel *roll = nullptr);
 
 	/* what differs from the package, every core's: the buttons' keys and the
 	 * autofire keys as {"core": {"button": "keys"}}, the analog controls as
@@ -49,6 +56,9 @@ public:
 	Property<std::string> axisGroups{"[]"};
 	/* the window's copy is open: changes wait for Save */
 	Property<bool> editing{false};
+	/* the TAStudio input roll the column boxes are for, from 1, when
+	 * TAStudio has several (0: it has one), as of the copy's opening */
+	Property<int64_t> columnsRoll{0};
 	/* the picture of the controller, counted up each time another is shown (0: none) */
 	Property<int64_t> pictureShown{0};
 	Property<std::string> status;
@@ -72,7 +82,7 @@ private:
 	public:
 		KeyRows(ControlsViewModel &vm, Table table) : vm_(vm), table_(table) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.session_.buttonNames().size()); }
-		int32_t columnCount() const override { return 6; }
+		int32_t columnCount() const override { return 7; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -85,7 +95,7 @@ private:
 	public:
 		explicit AnalogRows(ControlsViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.session_.axes().size()); }
-		int32_t columnCount() const override { return 9; }
+		int32_t columnCount() const override { return 10; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 
@@ -104,13 +114,18 @@ private:
 	/* the machine's controls: the package's, with this core's changes over them */
 	void apply();
 	void changed();
+	/* a control is a TAStudio column, of the copy while it is open */
+	bool columnShown(const std::string &name) const;
 
 	SessionViewModel &session_;
+	PianoRollViewModel *roll_;
+	/* the copy's hidden TAStudio columns, by control name */
+	std::set<std::string> hiddenDraft_;
 	std::array<std::vector<std::string>, 2> draft_;
 	std::vector<AnalogBind> analogDraft_;
 	KeyRows normalRows_{*this, Normal}, autofireRows_{*this, Autofire};
 	AnalogRows analogRows_{*this};
-	Connection opensWatch_, savedWatch_, savedAutofireWatch_, savedAnalogWatch_, sensitivityWatch_;
+	Connection opensWatch_, columnsWatch_, savedWatch_, savedAutofireWatch_, savedAnalogWatch_, sensitivityWatch_;
 };
 
 } // namespace chimera::vm

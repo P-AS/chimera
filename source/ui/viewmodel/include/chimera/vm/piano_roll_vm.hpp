@@ -49,6 +49,11 @@ public:
 	 * to), and whether they scroll together */
 	Property<int64_t> rollCount{1}, activeRoll{0};
 	Property<bool> scrollSync{true};
+	/* the used roll's hidden columns, and all of them replaced at once, as
+	 * Config > Controllers' TAStudio column boxes do (issue 391); a change
+	 * marks the project changed */
+	const std::set<std::string> &hiddenColumnSet() const { return hidden_; }
+	void setHiddenColumns(const std::set<std::string> &names);
 	/* how following the current frame scrolls, as TAStudio's "scroll to
 	 * cursor method" does: "near" just enough to bring it in, "top",
 	 * "bottom" or "center" putting it there when it is out of view (or

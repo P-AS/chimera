@@ -10651,3 +10651,34 @@ test a copy of the synthetic core that says 48000 Hz hands the speakers
 conversion it handed them all 735. Not tried with MAME and Killer Instinct:
 whether this was the crackle the issue hears is for the reporter to say.
 
+## TAStudio's columns are chosen in Config > Controllers (user-decided, 2026-10-28, issue 391)
+
+A report found TAStudio's Columns menu hard to use on systems with many
+buttons: a long menu, a submenu a player and the keyboard keys thirty a
+submenu, one tick at a time, each tick closing the menu. It asked for the
+menu to go and for the choice to be made in Config > Controllers, where
+every control already has a row. The owner agreed.
+
+- Config > Controllers has a box at the left of each button (Normal
+  Controls) and each analog control (Analog Controls): ticked, the control
+  is a column in TAStudio. Under each tab, "Show all" and "Hide all" do the
+  tab's at once. The boxes are part of the window's copy, like the
+  bindings: Save keeps them and Cancel lets them go. Saving a change marks
+  the project changed, as hiding a column did.
+- With several input rolls, the boxes are for the roll in use, and the
+  window says which ("Columns in TAStudio's input roll #2").
+- TAStudio's Columns menu is gone. Settings > Columns opens Config >
+  Controllers over TAStudio, and so does Show columns in a column's menu.
+  Hide column stays in that menu.
+- The piano roll view model keeps its own commands for columns
+  (showColumn, hideColumn, showGroup); only the menu that used them went.
+
+Tested with the view model test: a box changed in the copy leaves TAStudio
+as it was until Save, Cancel restores the boxes, a tab's Show all reaches
+every column of that player, a column hidden in TAStudio shows unticked,
+and the window names the roll when there are two. The test was seen to
+fail with Save not handing the columns over. Both windows were opened with
+the strict QML check on two test packages, one with two players and the
+keyboard keys and one with an analog control, and pictured; not tried by
+hand with a mouse.
+

@@ -3817,6 +3817,47 @@ bool columnsMenu(const char *package, const char *rom)
 		CHECK(hiddenIn(0, "P2 B") && !hiddenIn(0, "P1 A") && !hiddenIn(0, "Key A") && flag(columns, columnRow("P1 A"), 2));
 		CHECK(roll.run("deleteRoll", {}, error).has_value() && roll.rollCount.get() == 1);
 	}
+	/* Config > Controllers chooses TAStudio's columns (issue 391): a box a control, in the window's copy
+	 * until Save; a tab's at once; Cancel lets them go */
+	{
+		ControlsViewModel controls(d, session, &roll);
+		RowModel *buttons = nullptr;
+		for (const auto &r : controls.rowLists())
+			if (r.name == "buttons") buttons = r.model;
+		CHECK(buttons != nullptr && buttons->columnName(6) == "column");
+		if (buttons == nullptr) return false;
+		auto buttonRow = [&](const std::string &name) {
+			for (int64_t i = 0; i < buttons->rowCount(); i++)
+				if (text(buttons, i, 0) == name) return i;
+			return int64_t{-1};
+		};
+		CHECK(!flag(buttons, buttonRow("P2 B"), 6) && flag(buttons, buttonRow("P1 A"), 6));
+		CHECK(controls.run("edit", {}, error).has_value() && controls.columnsRoll.get() == 0);
+		CHECK(controls.run("showColumn", {std::string("P1 A"), false}, error).has_value());
+		CHECK(controls.run("showColumns", {std::string("buttons"), std::string("Player 2"), true}, error).has_value());
+		/* the copy changed, TAStudio not yet */
+		CHECK(!flag(buttons, buttonRow("P1 A"), 6) && flag(buttons, buttonRow("P2 B"), 6) && flag(buttons, buttonRow("P2 A"), 6));
+		CHECK(flag(columns, columnRow("P1 A"), 2) && !flag(columns, columnRow("P2 B"), 2));
+		CHECK(controls.run("cancel", {}, error).has_value());
+		CHECK(flag(buttons, buttonRow("P1 A"), 6) && !flag(buttons, buttonRow("P2 B"), 6));
+		/* again, and saved */
+		controls.run("edit", {}, error);
+		controls.run("showColumn", {std::string("P1 A"), false}, error);
+		controls.run("showColumns", {std::string("buttons"), std::string("Player 2"), true}, error);
+		CHECK(controls.run("save", {}, error).has_value() && error.empty());
+		CHECK(!flag(columns, columnRow("P1 A"), 2) && flag(columns, columnRow("P2 B"), 2) && flag(columns, columnRow("P2 A"), 2));
+		CHECK(!flag(buttons, buttonRow("P1 A"), 6) && flag(buttons, buttonRow("P2 B"), 6));
+		/* hidden in TAStudio, shown here */
+		CHECK(roll.run("hideColumn", {std::string("P2 B")}, error).has_value() && !flag(buttons, buttonRow("P2 B"), 6));
+		CHECK(!controls.run("showColumn", {std::string("P9 Z"), true}, error) && error == "no control P9 Z");
+		CHECK(!controls.run("showColumns", {std::string("keys"), std::string(), true}, error) &&
+			error == "no kind keys: buttons or analog");
+		/* with several input rolls, the window says which it chooses for */
+		roll.run("newRoll", {}, error);
+		CHECK(controls.run("edit", {}, error).has_value() && controls.columnsRoll.get() == 2);
+		controls.run("cancel", {}, error);
+		roll.run("deleteRoll", {}, error);
+	}
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;

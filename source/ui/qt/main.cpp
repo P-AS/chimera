@@ -470,7 +470,7 @@ int main(int argc, char **argv)
 	hexEditor.setRamWatch(&ramWatch);
 	vm::BranchesViewModel branches(dispatcher, inputs, session, pianoRoll);
 	vm::ProjectDetailsViewModel projectDetails(dispatcher, session);
-	vm::ControlsViewModel controls(dispatcher, session);
+	vm::ControlsViewModel controls(dispatcher, session, &pianoRoll);
 	vm::ThemesViewModel themes(dispatcher);
 	vm::Connection themesWatch;
 	/* Chimera's hotkeys, with its keys and in its order, for what this window

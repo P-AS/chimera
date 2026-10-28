@@ -2547,6 +2547,14 @@ void PianoRollViewModel::framesRecorded(const std::vector<SessionViewModel::Reco
 	recordingStep_ = false;
 }
 
+void PianoRollViewModel::setHiddenColumns(const std::set<std::string> &names)
+{
+	if (names == hidden_) return;
+	hidden_ = names;
+	hiddenChanged();
+	session_.markChanged();
+}
+
 void PianoRollViewModel::hiddenChanged()
 {
 	std::string text;

@@ -5,8 +5,10 @@
 // and Cancel. The window works on a copy: Save keeps it; Cancel, or closing
 // the window, lets it go. A box takes the next key or gamepad input pressed
 // while it has the focus; its arrow gives the bindings a key cannot
-// (Escape, the pointer's buttons). Layout and bindings only, over the
-// controls view model.
+// (Escape, the pointer's buttons). The box at a control's left shows it as
+// a column in TAStudio, and the row under the controls shows or hides a
+// tab's at once (issue 391: this took the place of TAStudio's Columns menu).
+// Layout and bindings only, over the controls view model.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -18,6 +20,8 @@ ApplicationWindow {
     required property QtObject keyNamer
     required property QtObject session
     property Window mainWindow: null
+    // the window that opened it, when not the main one (TAStudio's Columns), for it to sit over
+    property Window over: null
     property var themeColor: (role, fallback) => fallback
     title: win.controls.title
     width: 932
@@ -25,7 +29,7 @@ ApplicationWindow {
     minimumWidth: 932
     minimumHeight: 572
     modality: Qt.ApplicationModal
-    transientParent: win.mainWindow
+    transientParent: win.over !== null ? win.over : win.mainWindow
 
     readonly property var buttonGroups: JSON.parse(win.controls.buttonGroups)
     readonly property var axisGroups: JSON.parse(win.controls.axisGroups)
@@ -39,6 +43,7 @@ ApplicationWindow {
         } else {
             win.stopCatching()
             if (win.controls.editing) win.controls.run("cancel")
+            win.over = null
         }
     }
     function stopCatching() {
@@ -116,10 +121,24 @@ ApplicationWindow {
                     required property string shown
                     required property string group
                     required property string keys
+                    required property string button
+                    required property bool column
                     visible: panel.shownHere(entry.group)
                     spacing: 5
                     function focusField() { entryBox.focusField() }
                     Component.onCompleted: if (visible) panel.labelWidth = Math.max(panel.labelWidth, entry.shown.length * 9)
+                    // a column in TAStudio (the buttons' tab only: autofire is the same buttons)
+                    CheckBox {
+                        visible: panel.table === "normal"
+                        padding: 0
+                        topPadding: 2
+                        checked: entry.column
+                        focusPolicy: Qt.NoFocus
+                        onClicked: win.controls.run("showColumn", [entry.button, checked])
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: qsTr("A column in TAStudio")
+                    }
                     BindingBox {
                         id: entryBox
                         width: 170
@@ -163,6 +182,7 @@ ApplicationWindow {
                     required property double deadzone
                     required property string positive
                     required property string negative
+                    required property bool column
                     visible: apanel.everyGroup || bind.group === apanel.group
                     columns: 5
                     columnSpacing: 6
@@ -175,7 +195,21 @@ ApplicationWindow {
                         onTextChanged: cursorPosition = 0
                         Component.onCompleted: cursorPosition = 0
                     }
-                    Label { text: bind.axis; Layout.preferredWidth: 92 }
+                    // the box: a column in TAStudio
+                    RowLayout {
+                        spacing: 2
+                        Layout.preferredWidth: 112
+                        CheckBox {
+                            padding: 0
+                            checked: bind.column
+                            focusPolicy: Qt.NoFocus
+                            onClicked: win.controls.run("showColumn", [bind.axis, checked])
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 500
+                            ToolTip.text: qsTr("A column in TAStudio")
+                        }
+                        Label { text: bind.axis; elide: Text.ElideRight; Layout.fillWidth: true }
+                    }
                     Button {
                         text: win.axisCatch === bind.index ? qsTr("Cancel!") : qsTr("Bind!")
                         Layout.preferredWidth: 75
@@ -282,6 +316,22 @@ ApplicationWindow {
                                             Component { id: analogPage; AnalogPanel { group: page.modelData; everyGroup: kind.groups.length <= 1 } }
                                         }
                                     }
+                                }
+                                // TAStudio's columns: a tab's shown or hidden at once (the boxes do one)
+                                RowLayout {
+                                    visible: kind.modelData !== "autofire"
+                                    Layout.topMargin: 4
+                                    spacing: 6
+                                    function showAll(shown) {
+                                        win.controls.run("showColumns", [kind.modelData === "analog" ? "analog" : "buttons",
+                                            kind.groups.length > 1 ? kind.groups[groupTabs.currentIndex] : "", shown])
+                                    }
+                                    Label {
+                                        text: win.controls.columnsRoll > 0 ? qsTr("Columns in TAStudio's input roll #%1:").arg(win.controls.columnsRoll)
+                                                                           : qsTr("Columns in TAStudio:")
+                                    }
+                                    Button { objectName: "showAllColumns"; text: qsTr("Show all"); onClicked: parent.showAll(true) }
+                                    Button { objectName: "hideAllColumns"; text: qsTr("Hide all"); onClicked: parent.showAll(false) }
                                 }
                                 // Chimera's relative mouse sensitivity, for every control the pointer's movement moves
                                 RowLayout {

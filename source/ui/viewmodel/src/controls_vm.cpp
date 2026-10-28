@@ -1,5 +1,7 @@
 #include "chimera/vm/controls_vm.hpp"
 
+#include "chimera/vm/piano_roll_vm.hpp"
+
 #include <map>
 
 #include <algorithm>
@@ -117,8 +119,8 @@ std::string ControlsViewModel::groupOf(const std::string &name)
 	return std::regex_search(name, m, player) ? "Player " + m[1].str() : "Console";
 }
 
-ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &session)
-	: ViewModel("controls", dispatcher), session_(session)
+ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &session, PianoRollViewModel *roll)
+	: ViewModel("controls", dispatcher), session_(session), roll_(roll)
 {
 	expose("saved", "the buttons' keys that differ from the package, every core's, as {\"core\": {\"button\": \"keys\"}}", saved, true);
 	expose("savedAutofire", "the autofire keys that differ from the package, as saved is", savedAutofire, true);
@@ -133,12 +135,14 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	expose("buttonGroups", "the tabs of the buttons, in order (a JSON array: \"Player 1\"..., \"Console\")", buttonGroups);
 	expose("axisGroups", "the tabs of the analog controls, in order", axisGroups);
 	expose("editing", "the window's copy is open: changes wait for save", editing);
+	expose("columnsRoll", "the TAStudio input roll the column boxes are for, from 1, when TAStudio has several (0: it has one)", columnsRoll);
 	expose("pictureShown", "the picture of the controller the package ships, counted up each time another is shown (0: none)", pictureShown);
 	expose("status", "what Controls last had to say", status);
-	rows("buttons", "one row a button: name, shown, group, keys (the copy's while editing), the package's keys, changed", normalRows_);
+	rows("buttons", "one row a button: name, shown, group, keys (the copy's while editing), the package's keys, changed, "
+		"and column (TAStudio shows it as a column; the copy's while editing)", normalRows_);
 	rows("autofire", "one row a button, its autofire keys: as the buttons", autofireRows_);
 	rows("analog", "one row an analog control: name, group, value (the axis), mult, deadzone, positive, negative "
-		"(the keys pushing it to either end), changed", analogRows_);
+		"(the keys pushing it to either end), changed, header, and column (as the buttons')", analogRows_);
 
 	command("edit", "opens the window's copy of the controls, from what the machine has now", {}, [this](const Args &, std::string &) -> Value {
 		begin();
@@ -265,6 +269,50 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		changed();
 		return {};
 	});
+	command("showColumn", "a control shown as a TAStudio column or not, in the copy (kept by save)", {"name", "shown"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string name;
+			bool shown = true;
+			if (!arg(a, 0, name, error) || !arg(a, 1, shown, error)) return {};
+			const std::vector<std::string> &buttons = session_.buttonNames();
+			const std::vector<SessionViewModel::Axis> &axes = session_.axes();
+			if (std::find(buttons.begin(), buttons.end(), name) == buttons.end() &&
+				std::none_of(axes.begin(), axes.end(), [&](const SessionViewModel::Axis &x) { return x.name == name; }))
+			{
+				error = "no control " + name;
+				return {};
+			}
+			begin();
+			if (shown) hiddenDraft_.erase(name);
+			else hiddenDraft_.insert(name);
+			changed();
+			return {};
+		});
+	command("showColumns", "every control of a tab (\"Player 1\", \"Console\"; \"\" for all) shown as a TAStudio column "
+		"or not, in the copy (kept by save): its buttons (kind \"buttons\") or its analog controls (\"analog\")",
+		{"kind", "group", "shown"}, [this](const Args &a, std::string &error) -> Value {
+			std::string kind, group;
+			bool shown = true;
+			if (!arg(a, 0, kind, error) || !arg(a, 1, group, error) || !arg(a, 2, shown, error)) return {};
+			std::vector<std::string> names;
+			if (kind == "buttons") names = session_.buttonNames();
+			else if (kind == "analog")
+				for (const SessionViewModel::Axis &x : session_.axes()) names.push_back(x.name);
+			else
+			{
+				error = "no kind " + kind + ": buttons or analog";
+				return {};
+			}
+			begin();
+			for (const std::string &n : names)
+			{
+				if (!group.empty() && groupOf(n) != group) continue;
+				if (shown) hiddenDraft_.erase(n);
+				else hiddenDraft_.insert(n);
+			}
+			changed();
+			return {};
+		});
 	command("loadDefaults", "the copy: the package's controls (kept only by save)", {}, [this](const Args &, std::string &) -> Value {
 		begin();
 		draft_[Normal] = session_.defaultBindingTexts();
@@ -389,6 +437,8 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 
 	sensitivityWatch_ = mouseSensitivity.changed.connect([this] { session_.setMouseSensitivity(mouseSensitivity.get()); });
 	session_.setMouseSensitivity(mouseSensitivity.get());
+	/* TAStudio's columns changed there show here */
+	if (roll_ != nullptr) columnsWatch_ = roll_->hiddenColumns.changed.connect([this] { if (!editing.get()) changed(); });
 	opensWatch_ = session_.opens.changed.connect([this] {
 		core.set(session_.coreName.get());
 		title.set(session_.controllerName() + " Configuration");
@@ -462,6 +512,11 @@ void ControlsViewModel::begin()
 	draft_[Autofire].resize(session_.buttonNames().size());
 	analogDraft_.resize(session_.axes().size());
 	mouseSensitivityCopy.set(mouseSensitivity.get());
+	if (roll_ != nullptr)
+	{
+		hiddenDraft_ = roll_->hiddenColumnSet();
+		columnsRoll.set(roll_->rollCount.get() > 1 ? roll_->activeRoll.get() + 1 : 0);
+	}
 	editing.set(true);
 	changed();
 }
@@ -508,6 +563,7 @@ void ControlsViewModel::keep()
 		savedAnalog.set(json::write(all));
 	}
 	mouseSensitivity.set(std::clamp<int64_t>(mouseSensitivityCopy.get(), 1, 1000));
+	if (roll_ != nullptr) roll_->setHiddenColumns(hiddenDraft_);
 	editing.set(false);
 	apply();
 	status.set("Saved the controls of " + core.get());
@@ -537,6 +593,12 @@ void ControlsViewModel::apply()
 	changed();
 }
 
+bool ControlsViewModel::columnShown(const std::string &name) const
+{
+	if (roll_ == nullptr) return true;
+	return (editing.get() ? hiddenDraft_ : roll_->hiddenColumnSet()).count(name) == 0;
+}
+
 void ControlsViewModel::changed()
 {
 	normalRows_.reset.emit();
@@ -546,8 +608,8 @@ void ControlsViewModel::changed()
 
 std::string ControlsViewModel::KeyRows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"button", "shown", "group", "keys", "packageKeys", "changed"};
-	return column >= 0 && column < 6 ? names[column] : "";
+	static const char *const names[] = {"button", "shown", "group", "keys", "packageKeys", "changed", "column"};
+	return column >= 0 && column < 7 ? names[column] : "";
 }
 
 Value ControlsViewModel::KeyRows::cell(int64_t row, int32_t column) const
@@ -574,14 +636,15 @@ Value ControlsViewModel::KeyRows::cell(int64_t row, int32_t column) const
 	case 3: return keys;
 	case 4: return package;
 	case 5: return keys != package;
+	case 6: return vm_.columnShown(name);
 	default: return {};
 	}
 }
 
 std::string ControlsViewModel::AnalogRows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"axis", "group", "value", "mult", "deadzone", "positive", "negative", "changed", "header"};
-	return column >= 0 && column < 9 ? names[column] : "";
+	static const char *const names[] = {"axis", "group", "value", "mult", "deadzone", "positive", "negative", "changed", "header", "column"};
+	return column >= 0 && column < 10 ? names[column] : "";
 }
 
 Value ControlsViewModel::AnalogRows::cell(int64_t row, int32_t column) const
@@ -603,6 +666,7 @@ Value ControlsViewModel::AnalogRows::cell(int64_t row, int32_t column) const
 	case 6: return b.negative;
 	case 7: return !sameBind(b, p);
 	case 8: return axis.header;
+	case 9: return vm_.columnShown(axis.name);
 	default: return {};
 	}
 }
