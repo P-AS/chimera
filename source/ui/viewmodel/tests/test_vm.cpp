@@ -8639,7 +8639,9 @@ bool luaParity(const char *package, const char *rom)
 	{
 		char hex[41] = {};
 		ce_sha1_file((dir / "walker.testrom").string().c_str(), hex, nullptr);
-		CHECK(lua1("gameinfo.getromname(), gameinfo.getromhash(), gameinfo.indatabase()") == "[\"walker\", \"" + std::string(hex, 40) + "\", false]");
+		const std::string named = lua1("gameinfo.getromname(), gameinfo.getromhash(), gameinfo.indatabase()");
+		CHECK(named == "[\"walker\", \"" + std::string(hex, 40) + "\", false]");
+		if (named != "[\"walker\", \"" + std::string(hex, 40) + "\", false]") std::fprintf(stderr, "gameinfo said %s\n", named.c_str());
 	}
 	const std::string size = lua1("client.bufferwidth(), client.bufferheight()");
 	CHECK(size != "[256, 192]" && size.rfind("[", 0) == 0 && size.find("error") == std::string::npos);
