@@ -10831,3 +10831,20 @@ for old names (owner: "I don't want any legacy supporting mechanisms in
 chimera"); such a project is made again with the Godot 4.7 core, or its
 core name edited by hand.
 
+## Loading a branch asks nothing; the message warns (user-decided, 2026-10-28, issue 395)
+
+The question of 2026-10-24 ("Update the current branch?" before loading
+another branch over changes the current one does not hold) came up on almost
+every load, since branches differ from the movie most of the time. Two
+people asked for it to go (issues 360 and 395). The owner chose to remove it
+and warn instead: the load goes ahead, and when the movie held inputs or
+markers of the person's that the branch left does not, the message after the
+load says so - "branch 2 did not hold the changes made since it was loaded or
+updated (Undo Branch Load brings them back)". A script's or an agent's load
+says nothing of it, and loading the current branch again warns of nothing.
+
+Tested: the view model test loads the current branch again, an unchanged
+movie, a changed input and a marker of the person's, and a script's load,
+and checks what the message says each time; it was seen to fail with the
+warning left out.
+

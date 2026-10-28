@@ -184,6 +184,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			if (!index(a, i, error)) return {};
 			if (oldControlScheme.get())
 			{
+				loadWarning_.clear();
 				std::string e;
 				session_.run("seek", {branches_[i].frame}, e);
 				return {};
@@ -198,7 +199,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			keepLoadBackup();
 			session_.loadBranch(b, [this, name = b.name, i](bool fromState, const std::string &why) {
 				status.set("Loaded " + name + (fromState ? " from its state" : ", replayed to") +
-					(why.empty() ? "" : " (its state could not be loaded: " + why + ")"));
+					(why.empty() ? "" : " (its state could not be loaded: " + why + ")") + std::exchange(loadWarning_, std::string()));
 				loadedFromState.set(fromState);
 				loads.set(loads.get() + 1);
 				branchLoaded.emit(static_cast<int64_t>(i));
@@ -207,41 +208,20 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			return {};
 		}, &session_.isOpen);
 	expose("current", "the current branch: the one last loaded, made or updated (-1 none)", current);
-	expose("loadQuestion", "Chimera's question before loading another branch over changes the current one does not hold; "
-		"\"\" when none is asked", loadQuestion);
-	command("askToLoad", "a person loads a branch: when the current branch is another and the movie holds inputs or "
-		"markers it does not, Chimera's question is asked first (loadQuestion, answered by answerLoad) and \"asked\" "
-		"said; else the branch is loaded and \"loaded\" said. A script's load does not ask", {"index"},
+	command("loadWithWarning", "a person loads a branch (a button, a menu, a double click, a hotkey): as load, and when "
+		"the current branch is another and the movie holds inputs or markers it does not, the message after the load "
+		"says so; Undo Branch Load brings them back (owner, 2026-10-28, issue 395). A script loads with load", {"index"},
 		[this](const Args &a, std::string &error) -> Value {
 			size_t i = 0;
 			if (!index(a, i, error)) return {};
 			const int64_t was = current.get();
-			if (was < 0 || was >= static_cast<int64_t>(branches_.size()) || was == static_cast<int64_t>(i) ||
-				!differsFrom(static_cast<size_t>(was)))
-			{
-				run("load", {static_cast<int64_t>(i)}, error);
-				return std::string("loaded");
-			}
-			askedFor_ = static_cast<int64_t>(i);
-			const std::string c = std::to_string(was + 1), t = std::to_string(i + 1);
-			loadQuestion.set("Branch " + c + " does not hold the inputs or markers changed since it was loaded or updated.\n\n"
-				"Update branch " + c + " with them before loading branch " + t + "?\n\n"
-				"Yes: update it, then load.\n"
-				"No: load without updating it (Undo Branch Load brings the changes back).\n"
-				"Cancel: load nothing.");
-			return std::string("asked");
-		}, &session_.isOpen);
-	command("answerLoad", "answers loadQuestion: \"yes\" updates the current branch, then loads; \"no\" loads without "
-		"updating it; \"cancel\" loads nothing", {"answer"}, [this](const Args &a, std::string &error) -> Value {
-			std::string answer;
-			if (!arg(a, 0, answer, error)) return {};
-			const int64_t target = std::exchange(askedFor_, -1);
-			loadQuestion.set("");
-			if (target < 0 || target >= static_cast<int64_t>(branches_.size()) || answer == "cancel") return {};
-			if (answer == "yes" && current.get() >= 0 && current.get() < static_cast<int64_t>(branches_.size())) keepRun(current.get(), "");
-			run("load", {target}, error);
+			if (was >= 0 && was < static_cast<int64_t>(branches_.size()) && was != static_cast<int64_t>(i) &&
+				differsFrom(static_cast<size_t>(was)))
+				loadWarning_ = "; branch " + std::to_string(was + 1) +
+					" did not hold the changes made since it was loaded or updated (Undo Branch Load brings them back)";
+			run("load", {static_cast<int64_t>(i)}, error);
 			return {};
-		});
+		}, &session_.isOpen);
 	command("remove", "forgets a branch", {"index"}, [this](const Args &a, std::string &error) -> Value {
 		size_t i = 0;
 		if (!index(a, i, error)) return {};
@@ -290,8 +270,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 		dropBackup();
 		selected.set(-1);
 		previewing.set(-1);
-		askedFor_ = -1;
-		loadQuestion.set("");
+		loadWarning_.clear();
 		branches_ = loaded;
 		current.set(-1);
 		for (SessionViewModel::Branch &b : branches_) b.id = ++lastId_;

@@ -684,7 +684,7 @@ ApplicationWindow {
                             }
                             onClicked: (row, column) => tas.branches.selected = row
                             // TAStudio's "load branch by double clicking"
-                            onDoubleClicked: (row) => { if (tas.branches.loadOnDoubleClick) tas.branches.run("askToLoad", [row]) }
+                            onDoubleClicked: (row) => { if (tas.branches.loadOnDoubleClick) tas.branches.run("loadWithWarning", [row]) }
                             onRightClicked: (row) => { if (row >= 0) tas.branches.selected = row; branchMenu.popup() }
                             onDropped: (from, to) => tas.branches.run("swap", [from, to])
                             // the branch's picture while the pointer is over it, as Chimera shows it
@@ -719,7 +719,7 @@ ApplicationWindow {
                             IconButton {
                                 icon.source: "qrc:/chimera/icons/Debugger.png"; tip: qsTr("Load Branch")
                                 enabled: parent.parent.picked
-                                onClicked: tas.branches.run("askToLoad", [tas.branches.selected])
+                                onClicked: tas.branches.run("loadWithWarning", [tas.branches.selected])
                             }
                             IconButton {
                                 icon.source: "qrc:/chimera/icons/reboot.png"; tip: qsTr("Update Branch")
@@ -966,25 +966,6 @@ ApplicationWindow {
         Label { text: qsTr("Are you sure you want to add more than 50 markers?") }
         onAccepted: tas.setMarkers()
     }
-    // Chimera's question before another branch is loaded over changes the current one does not hold (issue 360)
-    Dialog {
-        id: updateBranchDialog
-        objectName: "updateBranchDialog"
-        title: qsTr("Update the current branch?")
-        anchors.centerIn: parent
-        modal: true
-        visible: tas.branches.loadQuestion !== ""
-        closePolicy: Popup.CloseOnEscape
-        Label { text: tas.branches.loadQuestion }
-        footer: DialogButtonBox {
-            id: updateBranchButtons
-            standardButtons: DialogButtonBox.Yes | DialogButtonBox.No | DialogButtonBox.Cancel
-            onClicked: button => tas.branches.run("answerLoad", [button === updateBranchButtons.standardButton(DialogButtonBox.Yes) ? "yes"
-                : button === updateBranchButtons.standardButton(DialogButtonBox.No) ? "no" : "cancel"])
-        }
-        // Escape: nothing loaded
-        onClosed: if (tas.branches.loadQuestion !== "") tas.branches.run("answerLoad", ["cancel"])
-    }
     // Chimera's branch menu, on the branch picked
     Menu {
         delegate: MenuEntry {}
@@ -992,7 +973,7 @@ ApplicationWindow {
         readonly property bool picked: tas.branches.selected >= 0 && tas.branches.selected < tas.branches.count
         Action { text: qsTr("Add"); icon.source: "qrc:/chimera/icons/add.png"; enabled: tas.branches.createEnabled; onTriggered: tas.branches.run("create", [""]) }
         Action { text: qsTr("Add with Text"); icon.source: "qrc:/chimera/icons/AddEdit.png"; enabled: tas.branches.createEnabled; onTriggered: branchTextDialog.openFor("add") }
-        Action { text: qsTr("Load"); icon.source: "qrc:/chimera/icons/Debugger.png"; enabled: branchMenu.picked; onTriggered: tas.branches.run("askToLoad", [tas.branches.selected]) }
+        Action { text: qsTr("Load"); icon.source: "qrc:/chimera/icons/Debugger.png"; enabled: branchMenu.picked; onTriggered: tas.branches.run("loadWithWarning", [tas.branches.selected]) }
         Action { text: qsTr("&Update"); icon.source: "qrc:/chimera/icons/updateBranch.png"; enabled: branchMenu.picked; onTriggered: tas.branches.run("saveSlot", [tas.branches.selected]) }
         Action { text: qsTr("Update with Text"); icon.source: "qrc:/chimera/icons/updateWithText.png"; enabled: branchMenu.picked; onTriggered: branchTextDialog.openFor("update") }
         Action { text: qsTr("Edit Text"); icon.source: "qrc:/chimera/icons/pencil.png"; enabled: branchMenu.picked; onTriggered: branchTextDialog.openFor("rename") }

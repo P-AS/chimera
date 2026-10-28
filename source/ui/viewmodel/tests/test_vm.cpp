@@ -4714,44 +4714,34 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	CHECK(d.until([&] { return session.frame.get() == end; }, 30));
 	CHECK(!branches.run("load", {int64_t{3}}, error) && error == "no branch 3");
 	/* a person loading another branch over changes the current one does not
-	 * hold is asked to update it first (owner, 2026-10-24, issue 360) */
+	 * hold: it is loaded, and the message after it says so (owner,
+	 * 2026-10-28, issue 395: no question) */
 	{
 		auto loaded = [&](int64_t was) { return d.until([&] { return branches.loads.get() > was; }, 30); };
+		const std::string warning = "did not hold the changes made since it was loaded or updated (Undo Branch Load brings them back)";
+		auto said = [&](const std::string &what) { return branches.status.get().find(what) != std::string::npos; };
 		CHECK(branches.run("create", {std::string("second")}, error).has_value());
 		CHECK(d.until([&] { return branches.made.get() == 3; }, 30) && branches.current.get() == 1);
-		/* the current branch again: no question */
+		/* the current branch again, then nothing changed since: nothing said */
 		int64_t was = branches.loads.get();
-		CHECK(branches.run("askToLoad", {int64_t{1}}, error) == Value(std::string("loaded")) && loaded(was));
-		/* nothing changed since: no question either */
+		CHECK(branches.run("loadWithWarning", {int64_t{1}}, error).has_value() && loaded(was) && !said(warning));
 		was = branches.loads.get();
-		CHECK(branches.run("askToLoad", {int64_t{0}}, error) == Value(std::string("loaded")) && loaded(was) && branches.current.get() == 0);
-		CHECK(branches.run("askToLoad", {int64_t{1}}, error) == Value(std::string("loaded")));
-		CHECK(d.until([&] { return branches.loads.get() == was + 2; }, 30));
-		/* an input changed: asked, and Cancel loads nothing */
-		const std::string line = std::get<std::string>(branches.run("inputLine", {int64_t{1}, int64_t{3}}, error).value_or(Value(std::string())));
+		CHECK(branches.run("loadWithWarning", {int64_t{0}}, error).has_value() && loaded(was) && branches.current.get() == 0 && !said(warning));
+		was = branches.loads.get();
+		CHECK(branches.run("loadWithWarning", {int64_t{1}}, error).has_value() && loaded(was) && branches.current.get() == 1);
+		/* an input changed: loaded all the same, branch 2 left as it was, and said */
 		roll.run("toggle", {int64_t{3}, int64_t{0}}, error);
 		was = branches.loads.get();
-		CHECK(branches.run("askToLoad", {int64_t{0}}, error) == Value(std::string("asked")));
-		CHECK(branches.loadQuestion.get().rfind("Branch 2 does not hold the inputs or markers changed since it was loaded or updated.\n\n"
-			"Update branch 2 with them before loading branch 1?", 0) == 0);
-		CHECK(branches.run("answerLoad", {std::string("cancel")}, error).has_value() && branches.loadQuestion.get().empty());
-		d.until([] { return false; }, 0.2);
-		CHECK(branches.loads.get() == was && branches.current.get() == 1);
-		/* Yes: branch 2 takes the change, then branch 1 is loaded */
-		CHECK(branches.run("askToLoad", {int64_t{0}}, error) == Value(std::string("asked")));
-		CHECK(branches.run("answerLoad", {std::string("yes")}, error).has_value() && loaded(was) && branches.current.get() == 0);
-		CHECK(d.until([&] { return branches.made.get() == 4; }, 30));
-		CHECK(std::get<std::string>(branches.run("inputLine", {int64_t{1}, int64_t{3}}, error).value_or(Value(std::string()))) != line);
-		/* a marker of the person's counts too; No loads without updating */
+		CHECK(branches.run("loadWithWarning", {int64_t{0}}, error).has_value() && loaded(was) && branches.current.get() == 0);
+		CHECK(said("; branch 2 " + warning) && branches.made.get() == 3);
+		/* a marker of the person's counts too */
 		roll.run("addMarker", {int64_t{7}, std::string("only here")}, error);
 		was = branches.loads.get();
-		CHECK(branches.run("askToLoad", {int64_t{1}}, error) == Value(std::string("asked")));
-		CHECK(branches.run("answerLoad", {std::string("no")}, error).has_value() && loaded(was) && branches.current.get() == 1);
-		CHECK(branches.made.get() == 4);
-		/* a script's load never asks */
+		CHECK(branches.run("loadWithWarning", {int64_t{1}}, error).has_value() && loaded(was) && said("; branch 1 " + warning));
+		/* a script's load says nothing of it */
 		roll.run("toggle", {int64_t{4}, int64_t{0}}, error);
 		was = branches.loads.get();
-		CHECK(branches.run("load", {int64_t{0}}, error).has_value() && loaded(was) && branches.loadQuestion.get().empty());
+		CHECK(branches.run("load", {int64_t{0}}, error).has_value() && loaded(was) && !said(warning));
 		/* a removal taken back: the branch loaded is still the one it was,
 		 * though it moved down and back up (review, 2026-10-26) */
 		was = branches.loads.get();

@@ -47,10 +47,6 @@ public:
 	Signal<> previewChanged;
 	/* the current branch: the one last loaded, made or updated (-1 none) */
 	Property<int64_t> current{-1};
-	/* Chimera's question before a person loads another branch over what the
-	 * current one does not hold (owner, 2026-10-24, issue 360): "" when none
-	 * is asked; answered with answerLoad */
-	Property<std::string> loadQuestion;
 	/* whether the movie holds what the branch does not: an input, or a
 	 * marker of the person's (where the machine is does not count, nor the
 	 * run's own markers, which follow the input) */
@@ -59,8 +55,9 @@ public:
 	Signal<int64_t> branchLoaded, branchSaved, branchRemoved;
 
 private:
-	/* the branch loadQuestion is about loading */
-	int64_t askedFor_ = -1;
+	/* what the message after a person's load adds: that the branch left did
+	 * not hold the changes made since (loadWithWarning) */
+	std::string loadWarning_;
 	Connection previewSideWatch_;
 	class Rows : public RowModel
 	{

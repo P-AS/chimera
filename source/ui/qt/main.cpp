@@ -727,7 +727,7 @@ int main(int argc, char **argv)
 				if (down) run(branches, "saveSlot", {int64_t{slot - 1}});
 			});
 			hotkeys.add("TAStudio", "Load Branch " + n, key, [&branches, run, slot](bool down) {
-				if (down) run(branches, "askToLoad", {int64_t{slot - 1}});
+				if (down) run(branches, "loadWithWarning", {int64_t{slot - 1}});
 			});
 		}
 		hotkeys.add("TAStudio", "Show Cursor", "", [&pianoRoll](bool down) {
