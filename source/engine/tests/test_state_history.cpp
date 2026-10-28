@@ -275,6 +275,17 @@ std::filesystem::path spillFileIn(const std::string &dir)
 	return {};
 }
 
+/* Every history here keeps the near band's stride at one frame. The history
+ * widens that stride when captures take milliseconds (stride_tuner.h, tested
+ * in test_stride_tuner.cpp), and on a busy machine a capture of this tiny
+ * machine can take that long when its thread is made to wait: the stride then
+ * moved in one pass of a comparison and not in the other, and the comparison
+ * failed. What these tests check is which frames are kept. */
+struct History : chimera::StateHistory
+{
+	History() { fixNearStride(1); }
+};
+
 /* Frame n writes three cells, which cells depending on n - so a delta is a
  * PART of the machine and the order they are applied in matters. */
 void advance(int64_t frame)
@@ -292,7 +303,7 @@ int main(void)
 	std::string error;
 
 	{ // an empty history round trips, and an absent one is a cold cache
-		chimera::StateHistory h;
+		History h;
 		assert(h.saveTo(kPath, "machine", error));
 		assert(h.loadFrom(kPath, "machine", error));
 		assert(h.count() == 0);
@@ -304,7 +315,7 @@ int main(void)
 
 	{ // strides above one: every landing is offered, nothing between them is
 		write(historyFile("ChimeraHistory3", "machine", 8, { 10, 12, 16 }));
-		chimera::StateHistory h;
+		History h;
 		assert(h.loadFrom(kPath, "machine", error));
 		assert(h.count() == 4);                        /* the anchor and three links */
 
@@ -321,14 +332,14 @@ int main(void)
 
 	{ // a history of another machine is dropped rather than refused
 		write(historyFile("ChimeraHistory3", "one machine", 0, { 1, 2 }));
-		chimera::StateHistory h;
+		History h;
 		assert(h.loadFrom(kPath, "another machine", error));
 		assert(h.count() == 0);
 	}
 
 	{ // one written in an older format this build still reads is kept (2026-10-18)
 		write(historyFile("ChimeraHistory3", "machine#f1", 0, { 1, 2 }));
-		chimera::StateHistory h;
+		History h;
 		assert(h.loadFrom(kPath, "machine#f2", error, { "machine#f1" }));
 		assert(h.count() == 3);
 		assert(h.loadFrom(kPath, "machine#f2", error));   /* and without the list, dropped */
@@ -339,7 +350,7 @@ int main(void)
 		for (const char *older : { "ChimeraHistory1", "ChimeraHistory2" })
 		{
 			write(historyFile(older, "machine", 0, { 1, 2 }));
-			chimera::StateHistory h;
+			History h;
 			assert(h.loadFrom(kPath, "machine", error));
 			assert(h.count() == 0);
 		}
@@ -347,7 +358,7 @@ int main(void)
 
 	{ // something that is not a history at all is worth saying out loud
 		write(historyFile("NotAHistory!!!!", "machine", 0, { 1, 2 }));
-		chimera::StateHistory h;
+		History h;
 		error.clear();
 		assert(!h.loadFrom(kPath, "machine", error));
 		assert(!error.empty());
@@ -357,7 +368,7 @@ int main(void)
 	{ // links that stand still or go backwards would offer frames they cannot
 	  // walk to, so the file is damaged rather than merely odd
 		write(historyFile("ChimeraHistory3", "machine", 0, { 4, 4 }));
-		chimera::StateHistory h;
+		History h;
 		assert(!h.loadFrom(kPath, "machine", error));
 		assert(h.count() == 0);
 
@@ -374,7 +385,7 @@ int main(void)
 		auto bytes = historyFile("ChimeraHistory3", "machine", 0, { 1, 2, 3 });
 		bytes.resize(bytes.size() - 5);
 		write(bytes);
-		chimera::StateHistory h;
+		History h;
 		assert(!h.loadFrom(kPath, "machine", error));
 		assert(h.count() == 0);
 	}
@@ -384,7 +395,7 @@ int main(void)
 	  // greenzone used to sit at 3 GB while long rewinds replayed 1200 frames.
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 64ull << 20);
 		h.bands(2, 6, 3, 12, 1000);   /* the old narrow bands: they must do nothing now */
 		h.capture(0);
@@ -407,7 +418,7 @@ int main(void)
 
 		/* what those frames weigh kept whole, so the budget below really bites */
 		g_machine = Machine{};
-		chimera::StateHistory probe;
+		History probe;
 		probe.configure(&api, nullptr, 64ull << 20);
 		probe.bands(0, 0, 0, 0, 1000);
 		probe.capture(0);
@@ -415,7 +426,7 @@ int main(void)
 		const uint64_t whole = probe.bytes();
 
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		const uint64_t budget = whole / 3;
 		h.configure(&api, nullptr, budget);
 		h.bands(0, 0, 0, 0, 1000);   /* one stretch: every link may be merged */
@@ -463,7 +474,7 @@ int main(void)
 	  // still holds a frame to replay from (user-decided, 2026-09-15).
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 64);   /* less than the anchor alone */
 		h.bands(0, 0, 0, 0, 1000);
 		h.bandGoal(1);                    /* bands of 4, 12, 28, 60, 124, 252 frames */
@@ -510,7 +521,7 @@ int main(void)
 		const chimera::HostApi api = fakeHost();
 		const int64_t kFrames = 240;
 		g_machine = Machine{};
-		chimera::StateHistory probe;
+		History probe;
 		probe.configure(&api, nullptr, 64ull << 20);
 		probe.bands(0, 0, 0, 0, 1000);
 		probe.capture(0);
@@ -538,7 +549,7 @@ int main(void)
 			}
 		};
 
-		chimera::StateHistory h;
+		History h;
 		std::vector<std::array<uint8_t, Machine::kCells>> truth;
 		run(h, true, truth);
 		for (int64_t f : wanted)
@@ -549,7 +560,7 @@ int main(void)
 		}
 
 		/* and unpinned, the budget has them: the pin was doing the work, not luck */
-		chimera::StateHistory loose;
+		History loose;
 		std::vector<std::array<uint8_t, Machine::kCells>> looseTruth;
 		run(loose, false, looseTruth);
 		int64_t survived = 0;
@@ -563,7 +574,7 @@ int main(void)
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
 
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 64ull << 20);
 		h.bands(2, 6, 3, 12, 1000);
 		h.capture(0);
@@ -579,7 +590,7 @@ int main(void)
 		}
 		assert(h.saveTo(kPath, "fake", error));
 
-		chimera::StateHistory back;
+		History back;
 		back.configure(&api, nullptr, 64ull << 20);
 		assert(back.loadFrom(kPath, "fake", error));
 		assert(back.count() == h.count());
@@ -598,7 +609,7 @@ int main(void)
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
 
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 512);
 		h.bands(2, 6, 3, 12, 8);
 		/* a directory that is not there: fopen fails exactly as it does on a
@@ -635,7 +646,7 @@ int main(void)
 		g_machine = Machine{};
 		std::filesystem::create_directories("work-history-capped");
 
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 512);
 		h.bands(2, 6, 3, 12, 8);
 		h.spillTo("work-history-capped");
@@ -683,7 +694,7 @@ int main(void)
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
 
-		chimera::StateHistory h;
+		History h;
 		/* high enough that four halvings still clear the floor */
 		h.configure(&api, nullptr, 1024ull * 1024 * 1024);
 		h.bands(2, 6, 3, 12, 8);
@@ -724,7 +735,7 @@ int main(void)
 
 		std::filesystem::remove_all("work-history-disk");
 		std::filesystem::create_directories("work-history-disk");
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 512);
 		h.bands(2, 6, 3, 12, 8);
 		h.spillTo("work-history-disk");
@@ -755,7 +766,7 @@ int main(void)
 		assert(h.nearest(1) < h.nearest(400));
 
 		/* and no limit means no limit - the behaviour a year of runs had */
-		chimera::StateHistory u;
+		History u;
 		u.configure(&api, nullptr, 512);
 		u.bands(2, 6, 3, 12, 8);
 		std::filesystem::remove_all("work-history-nolimit");
@@ -779,7 +790,7 @@ int main(void)
 		g_machine = Machine{};
 
 		std::filesystem::create_directories("work-history-spill");
-		chimera::StateHistory h;
+		History h;
 		/* small enough that it must spill within a few segments, and anchors
 		 * often enough that there are segments to spill */
 		h.configure(&api, nullptr, 512);
@@ -829,7 +840,7 @@ int main(void)
 		/* a saved history carries the spilled stretches through, and what comes
 		 * back produces the same frames */
 		assert(h.saveTo(kPath, "fake", error));
-		chimera::StateHistory back;
+		History back;
 		back.configure(&api, nullptr, 64ull << 20);
 		assert(back.loadFrom(kPath, "fake", error));
 		for (int64_t f = 0; f <= kFrames; f++)
@@ -872,7 +883,7 @@ int main(void)
 				truth.push_back(at);
 			}
 		};
-		chimera::StateHistory settled, dense;
+		History settled, dense;
 		std::vector<std::array<uint8_t, Machine::kCells>> truthS, truthD;
 		run("work-history-settle", 12, settled, truthS);
 		run("work-history-settle-control", 1, dense, truthD);
@@ -911,7 +922,7 @@ int main(void)
 		 * as it is: settling decodes the anchor whole, outside the budget. With
 		 * a budget smaller than one anchor, settling changes nothing - the run
 		 * offers what the same run that keeps everything offers. */
-		chimera::StateHistory tight, tightDense;
+		History tight, tightDense;
 		std::vector<std::array<uint8_t, Machine::kCells>> truthT, truthTD;
 		run("work-history-settle-tight", 12, tight, truthT, Machine::kCells / 2);
 		run("work-history-settle-tight-control", 1, tightDense, truthTD, Machine::kCells / 2);
@@ -931,7 +942,7 @@ int main(void)
 		g_machine = Machine{};
 		std::filesystem::remove_all("work-history-edit");
 		std::filesystem::create_directories("work-history-edit");
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 512);
 		h.bands(2, 6, 3, 12, 8);
 		h.spillTo("work-history-edit");
@@ -973,7 +984,7 @@ int main(void)
 		h.invalidateAfter(cut);
 		assert(h.nearest(INT64_MAX) == cut);
 		assert(h.saveTo(kPath, "fake", error));
-		chimera::StateHistory back;
+		History back;
 		back.configure(&api, nullptr, 64ull << 20);
 		assert(back.loadFrom(kPath, "fake", error));
 		assert(back.nearest(INT64_MAX) == cut);
@@ -987,7 +998,7 @@ int main(void)
 	  // that never existed for the session to record a movie against.
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 64ull << 20);
 		h.bands(4, 8, 1, 1, 1000);   /* one long stretch, every landing kept */
 		h.capture(0);
@@ -1019,7 +1030,7 @@ int main(void)
 	  // being left a mix of two (owner's decision, 2026-10-18).
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 64ull << 20);
 		h.bands(4, 8, 1, 1, 10);   /* a stretch every ten frames */
 		h.capture(0);
@@ -1053,7 +1064,7 @@ int main(void)
 	  // capture stores nothing - a dead machine is not a frame (2026-10-18).
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 64ull << 20);
 		bool dies = false;
 		h.beforeState([&dies] { return !dies; });
@@ -1079,7 +1090,7 @@ int main(void)
 		g_machine = Machine{};
 		std::filesystem::remove_all("work-history-zero");
 		std::filesystem::create_directories("work-history-zero");
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 256);            /* tiny: it must spill at once */
 		h.bands(2, 6, 3, 12, 6);
 		h.spillTo("work-history-zero");
@@ -1124,7 +1135,7 @@ int main(void)
 			std::ofstream other("work-history-stale/keep-me.bin");
 			other << "not a spill file";
 		}
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 512);
 		h.bands(2, 6, 3, 12, 8);
 		h.spillTo("work-history-stale");
@@ -1150,7 +1161,7 @@ int main(void)
 		g_machine = Machine{};
 		std::filesystem::remove_all("work-history-again");
 		std::filesystem::create_directories("work-history-again");
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 512);
 		h.bands(2, 6, 3, 12, 8);
 		h.spillTo("work-history-again");
@@ -1216,7 +1227,7 @@ int main(void)
 			std::filesystem::remove_all("work-history-fuzz-b");
 			std::filesystem::create_directories("work-history-fuzz");
 			std::filesystem::create_directories("work-history-fuzz-b");
-			chimera::StateHistory h;
+			History h;
 			const uint64_t budget = 200 + rnd() % 1500;
 			const int64_t near = 1 + rnd() % 4, mid = 2 + rnd() % 8, midStride = 1 + rnd() % 3,
 				farStride = 1 + rnd() % 16, spacing = seed % 2 ? -(2 + static_cast<int64_t>(rnd() % 60)) : 2 + static_cast<int64_t>(rnd() % 10);
@@ -1305,7 +1316,7 @@ int main(void)
 				{ // saved and loaded back: what comes back must be right
 					story += " save";
 					assert(h.saveTo(kPath, "fake", error));
-					chimera::StateHistory back;
+					History back;
 					back.configure(&api, nullptr, budget);
 					back.bands(near, mid, midStride, farStride, spacing);
 					if (rnd() % 2) back.spillTo("work-history-fuzz-b");
@@ -1416,7 +1427,7 @@ int main(void)
 				auto rnd = [&]() { rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17; return static_cast<uint32_t>(rng >> 11); };
 				g_machine = Machine{};
 
-				chimera::StateHistory h;
+				History h;
 				const uint64_t budget = 200 + (rnd() % 500);
 				const int64_t near = 1 + rnd() % 4, mid = 2 + rnd() % 8, midStride = 1 + rnd() % 3,
 					farStride = 1 + rnd() % 16, spacing = seed % 2 ? -(2 + static_cast<int64_t>(rnd() % 60)) : 2 + static_cast<int64_t>(rnd() % 10);
@@ -1555,7 +1566,7 @@ int main(void)
 		g_machine = Machine{};
 		std::filesystem::remove_all("work-history-reserve");
 		std::filesystem::create_directories("work-history-reserve");
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 512);      /* smaller than the run: it must spill */
 		h.bands(2, 4, 1, 2, 6);
 		h.spillTo("work-history-reserve");
@@ -1600,7 +1611,7 @@ int main(void)
 		std::filesystem::remove_all("work-history-save");
 		std::filesystem::create_directories("work-history-save");
 
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 700);      /* small enough that stretches go to disk */
 		h.bands(2, 6, 1, 3, 5);
 		h.spillTo("work-history-save");
@@ -1640,7 +1651,7 @@ int main(void)
 		assert(inLine == queued);
 
 		/* and what comes back out of it is the run, frame for frame */
-		chimera::StateHistory back;
+		History back;
 		back.configure(&api, nullptr, 1u << 20);
 		assert(back.loadFrom("work-history-save/queued.bin", "fake", error));
 		int checked = 0;
@@ -1664,7 +1675,7 @@ int main(void)
 			h.capture(f);
 		}
 		assert(h.saveWait(error));
-		chimera::StateHistory during;
+		History during;
 		during.configure(&api, nullptr, 1u << 20);
 		assert(during.loadFrom("work-history-save/during.bin", "fake", error));
 		assert(during.nearest(INT64_MAX) <= 90);
@@ -1697,7 +1708,7 @@ int main(void)
 			std::memcpy(truth[0].data(), g_machine.cell, Machine::kCells);
 			std::filesystem::remove_all("work-history-inflight");
 			std::filesystem::create_directories("work-history-inflight");
-			chimera::StateHistory h;
+			History h;
 			h.helpers(true);
 			h.configure(&api, nullptr, 700);
 			h.bands(2, 6, 1, 3, 5);
@@ -1723,7 +1734,7 @@ int main(void)
 					break;
 				}
 				/* and what it wrote is the run, frame for frame */
-				chimera::StateHistory back;
+				History back;
 				back.configure(&api, nullptr, 1u << 20);
 				if (!back.loadFrom("work-history-inflight/h.bin", "fake", why)) { wrong++; break; }
 				for (int64_t k = 0; k <= f; k++)
@@ -1760,7 +1771,7 @@ int main(void)
 		g_machine = Machine{};
 		std::filesystem::remove_all("work-history-saving");
 		std::filesystem::create_directories("work-history-saving");
-		chimera::StateHistory h;
+		History h;
 		h.helpers(true);
 		h.configure(&api, nullptr, 700);
 		h.bands(2, 6, 1, 3, 5);
@@ -1833,7 +1844,7 @@ int main(void)
 			const char *dir = threaded ? "work-history-replay-t" : "work-history-replay-s";
 			std::filesystem::remove_all(dir);
 			std::filesystem::create_directories(dir);
-			chimera::StateHistory h;
+			History h;
 			h.helpers(threaded);
 			h.configure(&api, nullptr, 900);   /* small enough that the far end spills */
 			h.bands(4, 8, 2, 4, 6);
@@ -1925,7 +1936,7 @@ int main(void)
 		for (int64_t period : { int64_t(1), int64_t(7) })
 		{
 			g_machine = Machine{};
-			chimera::StateHistory h;
+			History h;
 			h.helpers(false);
 			h.configure(&api, nullptr, 4u << 20);
 			h.capturePeriod(period);
@@ -2014,7 +2025,7 @@ int main(void)
 	  // even stored whole they would not belong.
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 1u << 20);
 		h.bands(1000, 1000, 1, 1, 0);
 		std::vector<std::array<uint8_t, Machine::kCells>> truth(1);
@@ -2072,7 +2083,7 @@ int main(void)
 	  // N under the new one.
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 1u << 20);
 		h.bands(1000, 1000, 1, 1, 0);
 		h.capture(0);
@@ -2149,7 +2160,7 @@ int main(void)
 				for (int64_t i = 1; i <= f; i++) stepCells(m.data(), i, false);
 				return m;
 			};
-			chimera::StateHistory h;
+			History h;
 			h.configure(&api, nullptr, cfg.budget);
 			h.bands(8, 40, 4, 16, 50);
 			if (cfg.spill) h.spillTo(dir.c_str());
@@ -2279,7 +2290,7 @@ int main(void)
 	  // that proves the new one is a history rather than just a smaller file.
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 1u << 20);
 		h.bands(2, 6, 1, 3, 8);
 		std::vector<std::array<uint8_t, Machine::kCells>> truth(1);
@@ -2304,7 +2315,7 @@ int main(void)
 			const bool rawAsked = getenv("CHIMERA_HISTORY_RAW") != nullptr && getenv("CHIMERA_HISTORY_RAW")[0] == '1';
 			assert(m == (rawAsked ? "ChimeraHistory3" : "ChimeraHistory5"));
 		}
-		chimera::StateHistory back;
+		History back;
 		back.configure(&api, nullptr, 1u << 20);
 		assert(back.loadFrom("work-history-v4.bin", "fake", error));
 		int checked = 0;
@@ -2329,7 +2340,7 @@ int main(void)
 			std::ofstream out("work-history-v4-cut.bin", std::ios::binary);
 			out.write(all.data(), static_cast<std::streamsize>(all.size()));
 		}
-		chimera::StateHistory cut;
+		History cut;
 		cut.configure(&api, nullptr, 1u << 20);
 		assert(!cut.loadFrom("work-history-v4-cut.bin", "fake", error));
 		assert(cut.count() == 0);
@@ -2348,7 +2359,7 @@ int main(void)
 			assert(!z->isError(n));
 			v4.insert(v4.end(), frame.begin(), frame.begin() + static_cast<std::ptrdiff_t>(n));
 			write(v4);
-			chimera::StateHistory old;
+			History old;
 			old.configure(&api, nullptr, 1u << 20);
 			assert(old.loadFrom(kPath, "machine", error));
 			assert(old.count() == 4);
@@ -2390,15 +2401,15 @@ int main(void)
 		};
 		std::vector<std::array<uint8_t, Machine::kCells>> truth;
 
-		chimera::StateHistory fixed;
+		History fixed;
 		run(1000, fixed, truth);
 		assert(fixed.anchors() == 1);
 
-		chimera::StateHistory capped;
+		History capped;
 		run(50, capped, truth);
 		assert(capped.anchors() == 4);   /* 0, 51, 102, 153 */
 
-		chimera::StateHistory weighed;
+		History weighed;
 		run(-1000, weighed, truth);
 		/* 200 frames at a stretch of 31 (the floor, then the frame that closes it) */
 		assert(weighed.anchors() >= 6 && weighed.anchors() <= 7);
@@ -2410,17 +2421,17 @@ int main(void)
 		}
 
 		/* a ceiling below the floor is still the ceiling */
-		chimera::StateHistory tight;
+		History tight;
 		run(-10, tight, truth);
 		assert(tight.anchors() >= 18 && tight.anchors() <= 19);
 
 		/* a light machine under the real walk floor keeps its whole ceiling */
-		chimera::StateHistory light;
+		History light;
 		run(-1000, light, truth, 64ull << 20);
 		assert(light.anchors() == 1);
 
 		/* and the default is weighed */
-		chimera::StateHistory byDefault;
+		History byDefault;
 		g_machine = Machine{};
 		byDefault.configure(&api, nullptr, 1u << 20);
 		byDefault.anchorWalkFloor(1);
@@ -2456,7 +2467,7 @@ int main(void)
 		{
 			const bool threaded = pass == 0;
 			g_machine = Machine{};
-			chimera::StateHistory h;
+			History h;
 			h.configure(&api, nullptr, 4u << 20);
 			h.helpers(threaded);
 			h.anchorWalkFloor(1);
@@ -2490,7 +2501,7 @@ int main(void)
 			/* the budget forces merges inside stretches that are already packed:
 			 * what remains still answers exactly */
 			assert(h.saveTo(kPath, "fake", error));
-			chimera::StateHistory back;
+			History back;
 			back.configure(&api, nullptr, 4u << 20);
 			back.helpers(threaded);
 			assert(back.loadFrom(kPath, "fake", error));
@@ -2516,7 +2527,7 @@ int main(void)
 		const chimera::HostApi api = fakeHost();
 		g_pad = 4096;
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		/* the newest stretch is raw: ten frames of 4 KB. The budget holds that
 		 * and a handful of packed stretches, so the rest thins */
 		h.configure(&api, nullptr, 64u << 10);
@@ -2555,7 +2566,7 @@ int main(void)
 	  // sandbox meanwhile, so it surveys no pages (user request, 2026-09-23).
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 64u << 20);
 		std::vector<std::array<uint8_t, Machine::kCells>> truth(1);
 		std::memcpy(truth[0].data(), g_machine.cell, Machine::kCells);
@@ -2616,7 +2627,7 @@ int main(void)
 	  // other stored frame was an anchor (engine analysis, 2026-10-18).
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 64u << 20);
 		h.capturePeriod(600);
 		h.capture(0);
@@ -2636,7 +2647,7 @@ int main(void)
 	  // the current frame whatever N is (user request, 2026-09-23).
 		const chimera::HostApi api = fakeHost();
 		g_machine = Machine{};
-		chimera::StateHistory h;
+		History h;
 		h.configure(&api, nullptr, 64u << 20);
 		std::vector<std::array<uint8_t, Machine::kCells>> truth(1);
 		std::memcpy(truth[0].data(), g_machine.cell, Machine::kCells);
