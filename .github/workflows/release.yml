@@ -191,7 +191,10 @@ jobs:
           short="${{ steps.what.outputs.short }}"
           mkdir -p build/release
           ( cd build/bundle-windows && zip -qr "../release/chimera-win-x64-$short.zip" . )
-          ( cd build/bundle-linux && tar czf "../release/chimera-linux-x64-$short.tar.gz" . )
+          # every file under one folder named for the archive, as a tarball is
+          # expected to unpack (issue 394); the Windows zip stays flat, as
+          # Windows' Extract All already makes the folder
+          tar -C build --transform "s,^bundle-linux,chimera-linux-x64-$short," -czf "build/release/chimera-linux-x64-$short.tar.gz" bundle-linux
           cp build/bundle-windows/LICENSES.md build/release/LICENSES.md
           cp build/bundle-windows/BUILD.txt build/release/BUILD.txt
           ls -la build/release
