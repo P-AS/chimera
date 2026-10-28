@@ -169,7 +169,7 @@ jobs:
 
       - name: Build the Linux bundle
         if: steps.moved.outputs.skip != 'true'
-        run: ./tools/build-bundle.sh --platform linux --out build/bundle-linux --qt "$HOME/qt-ship/linux" --qt-source "$HOME/qt-src"
+        run: ./tools/build-bundle.sh --platform linux --out build/bundle-linux --qt "$HOME/qt-ship/linux" --qt-source "$HOME/qt-src" --host-qt "$HOME/qt/6.12.0/gcc_64"
 
       - name: Build the Windows bundle
         if: steps.moved.outputs.skip != 'true'

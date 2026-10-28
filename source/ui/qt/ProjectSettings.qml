@@ -43,7 +43,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 elide: Text.ElideRight
                 text: win.vm.restartNote
-                color: win.vm.restartNote.startsWith(qsTr("The clock")) ? win.themeColor("AccentError", "#b00020") : palette.windowText
+                color: win.vm.restartNote.startsWith("The clock") ? win.themeColor("AccentError", "#b00020") : palette.windowText
             }
             Button {
                 text: qsTr("Restart with these")

@@ -539,6 +539,26 @@ ApplicationWindow {
                 Action { text: qsTr("&Theme..."); icon.source: "qrc:/chimera/menu/ThemePalette.png"; onTriggered: { root.bring(themesWindow) } }
                 Action { text: qsTr("&Autofire..."); icon.source: "qrc:/chimera/menu/Autofire.png"; onTriggered: autofireDialog.open() }
                 Action { text: qsTr("&Customize..."); icon.source: "qrc:/chimera/menu/Customize.png"; onTriggered: { root.bring(customizeWindow) } }
+                // the window's words in another language, at once (issue 376); its English name beside a
+                // translated one, so a person who picked a language they cannot read finds the way back
+                Menu {
+                    delegate: keyedMenuItem
+                    id: languageMenu
+                    title: qsTr("&Language") === "&Language" ? qsTr("&Language") : qsTr("&Language") + " (Language)"
+                    Instantiator {
+                        model: root.customize.languages.split("\n")
+                        delegate: MenuItem {
+                            required property string modelData
+                            readonly property string code: modelData.split("\t")[0]
+                            text: modelData.split("\t")[1]
+                            checkable: true
+                            checked: root.customize.language === code
+                            onTriggered: root.customize.language = code
+                        }
+                        onObjectAdded: (index, object) => languageMenu.insertItem(index, object)
+                        onObjectRemoved: (index, object) => languageMenu.removeItem(object)
+                    }
+                }
                 MenuDivider {}
                 Menu {
                     delegate: keyedMenuItem

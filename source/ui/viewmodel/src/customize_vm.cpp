@@ -24,6 +24,9 @@ CustomizeViewModel::CustomizeViewModel(Dispatcher &dispatcher, SessionViewModel 
 		"Windows (Single instance mode; read when the program starts)", singleInstance, true);
 	expose("gameCubeAdapter", "Wii U and Switch GameCube adapters are read, through SDL's USB reading (Enable Wii U/Switch "
 		"GameCube Adapter Support; read when the program starts)", gameCubeAdapter, true);
+	expose("language", "the language the window's words are in (\"en\" English, \"fr\", \"pt_BR\"), one of languages; "
+		"at the first open the first of the system's languages the window has", language, true);
+	expose("languages", "the languages the window has, a line each: its code, a tab, its name in itself", languages);
 	command("modifierKeys", "the names Chimera's rewrite replaces when the modifier keys are merged (true) or separated "
 		"(false), as {\"LeftShift\": \"Shift\"}", {"merging"}, [](const Args &a, std::string &error) -> Value {
 			bool merging = true;

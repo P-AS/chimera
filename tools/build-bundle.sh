@@ -19,8 +19,10 @@
 #                tools/build-qt-windows.sh)
 #   --qt-source  Qt's source archives (tools/fetch-qt-source.sh): the
 #                licence texts Qt ships under go in the bundle from them
-#   --host-qt    Windows only: a Linux Qt of the same version, whose tools
-#                (moc, rcc) run during the build
+#   --host-qt    a Linux Qt of the same version with Qt's tools: for Windows
+#                its moc and rcc run during the build; for both, its lrelease
+#                compiles the window's translations (the Qt built to ship has
+#                no translation tools)
 set -eu
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -38,8 +40,7 @@ done
 [ -n "$platform" ] && [ -n "$out" ] && [ -n "$qt" ] && [ -n "$qt_source" ] \
 	|| { echo "usage: build-bundle.sh --platform windows|linux --out <dir> --qt <qt> --qt-source <folder> [--host-qt <qt>]" >&2; exit 2; }
 case "$platform" in
-	linux) ;;
-	windows) [ -n "$host_qt" ] || { echo "--host-qt is needed for a Windows build" >&2; exit 2; } ;;
+	linux|windows) [ -n "$host_qt" ] || { echo "--host-qt is needed: its lrelease compiles the translations" >&2; exit 2; } ;;
 	*) echo "platform must be windows or linux" >&2; exit 2 ;;
 esac
 
@@ -55,7 +56,8 @@ if [ "$platform" = linux ]; then
 	# a build of its own, against the Qt that ships (the everyday build uses another)
 	native_dir="$root/build/meson-linux-release"
 	prefix="$root/build/release-linux"
-	export PATH="$qt/libexec:$qt/bin:$PATH" PKG_CONFIG_PATH="$qt/lib/pkgconfig"
+	# the shipping Qt's tools first; the host Qt's lrelease after them, as it has none
+	export PATH="$qt/libexec:$qt/bin:$PATH:$host_qt/bin" PKG_CONFIG_PATH="$qt/lib/pkgconfig"
 	say "the engine and the window (linux)"
 	[ -f "$native_dir/build.ninja" ] || meson setup "$native_dir" --prefix "$prefix" --libdir dll -Dqt_ui=enabled
 	meson compile -C "$native_dir"

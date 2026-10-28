@@ -26,6 +26,11 @@
  * - mergeModifiers: both Shift keys are "Shift", rather than "LeftShift"
  *   and "RightShift", likewise Ctrl and Alt (Chimera's Merge L+R modifier
  *   keys). Changing it can rewrite the keys bound (modifierKeys).
+ * - language: the language the window's words are in (Config > Language;
+ *   "en" English), chosen from `languages`, the window's translations as
+ *   "code<TAB>name" lines, English first. At the first open the window sets
+ *   it to the first of the system's languages it has (owner, 2026-10-28,
+ *   issue 376).
  * The frame advance skipping lag frames and background input are the
  * session's (skipLagFrames, acceptBackgroundInput). */
 
@@ -46,6 +51,7 @@ public:
 
 	Property<bool> startPaused{false}, startFullscreen{false}, neverAskSave{false}, luaDuringTurbo{true}, showContextMenu{true};
 	Property<bool> alternateLayouts{false}, mergeModifiers{true}, singleInstance{false}, gameCubeAdapter{false};
+	Property<std::string> language, languages{"en\tEnglish"};
 
 	/* Chimera's rewrite of the keys bound when mergeModifiers changes: merging, each side's name becomes the kind's
 	 * ("LeftShift" and "RightShift" "Shift"); separating, the kind's becomes

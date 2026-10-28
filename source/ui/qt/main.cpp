@@ -333,9 +333,6 @@ int main(int argc, char **argv)
 	/* Chimera's name: its settings and caches are kept under it (owner,
 	 * 2026-10-26; what the window kept under its old name stays there) */
 	QGuiApplication::setApplicationName(QStringLiteral("Chimera"));
-	/* the window's words in the person's language, where it has a translation
-	 * built in (docs/translations.md); English otherwise */
-	qt::loadTranslation(app);
 #ifdef _WIN32
 	/* a crash no handler sees still leaves a note (docs/project.md, "Crash
 	 * notes"): armed before anything else is read, with the data folder's
@@ -1266,8 +1263,19 @@ int main(int argc, char **argv)
 	qt::QmlViewModel cacheManagerQml(cacheManager);
 	vm::CustomizeViewModel customize(dispatcher, session);
 	for (const char *name : {"startPaused", "startFullscreen", "neverAskSave", "luaDuringTurbo",
-			 "showContextMenu", "alternateLayouts", "mergeModifiers", "singleInstance", "gameCubeAdapter"})
+			 "showContextMenu", "alternateLayouts", "mergeModifiers", "singleInstance", "gameCubeAdapter", "language"})
 		config.keep(customize, name);
+	/* the window's words in the language chosen in Config > Language; at the
+	 * first open, the first of the system's languages it has a translation
+	 * for, else English (docs/translations.md, owner 2026-10-28) */
+	{
+		QString offered = QStringLiteral("en\t") + qt::languageName(QStringLiteral("en"));
+		for (const QString &l : qt::languagesIn()) offered += QLatin1Char('\n') + l + QLatin1Char('\t') + qt::languageName(l);
+		customize.languages.set(offered.toStdString());
+		const QString start = qt::startLanguage(QString::fromStdString(customize.language.get()));
+		qt::useLanguage(app, start);
+		customize.language.set(start.toStdString());
+	}
 	auto keyNaming = [&customize] { qt::setKeyNaming(customize.alternateLayouts.get(), customize.mergeModifiers.get()); };
 	keyNaming();
 	vm::Connection alternateLayoutsWatch = customize.alternateLayouts.changed.connect(keyNaming);
@@ -1521,6 +1529,10 @@ int main(int argc, char **argv)
 	engine.rootContext()->setContextProperty(QStringLiteral("localFiles"), &pictureFiles);
 	/* --headless, for every window: none is shown, and a dialog that opens ends the run */
 	engine.rootContext()->setContextProperty(QStringLiteral("headlessRun"), &headlessRun);
+	/* another language chosen in Config > Language: the window's words change at once */
+	vm::Connection languageWatch = customize.language.changed.connect([&app, &engine, &customize] {
+		if (qt::useLanguage(app, QString::fromStdString(customize.language.get()))) engine.retranslate();
+	});
 	engine.load(QUrl(QStringLiteral("qrc:/chimera/Main.qml")));
 	if (engine.rootObjects().isEmpty()) return 1;
 	auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());

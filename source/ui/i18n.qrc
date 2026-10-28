@@ -1,0 +1,14 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <!-- the languages the window ships in (docs/translations.md): each compiled
+       by Qt's lrelease from translations/chimera_<language>.ts -->
+  <qresource prefix="/i18n">
+    <file alias="chimera_de.qm">translations/chimera_de.qm</file>
+    <file alias="chimera_es.qm">translations/chimera_es.qm</file>
+    <file alias="chimera_fr.qm">translations/chimera_fr.qm</file>
+    <file alias="chimera_it.qm">translations/chimera_it.qm</file>
+    <file alias="chimera_ja.qm">translations/chimera_ja.qm</file>
+    <file alias="chimera_pt.qm">translations/chimera_pt.qm</file>
+    <file alias="chimera_zh_CN.qm">translations/chimera_zh_CN.qm</file>
+  </qresource>
+</RCC>

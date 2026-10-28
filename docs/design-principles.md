@@ -10747,3 +10747,40 @@ columns and the Controllers tabs follow the declaration. Each was seen to
 fail with its part broken. The roll's look was not checked on a scaled
 screen.
 
+## Seven languages, and a language setting (user-decided, 2026-10-28, issue 376)
+
+The owner chose to ship languages now rather than wait for translators:
+German, Spanish, French, Italian, Portuguese (written as in Brazil, used
+for any Portuguese system), Simplified Chinese and Japanese, written in one
+go and to be corrected by people who speak them. Each covers all 1163
+different texts of the window.
+
+- Config > Language chooses one, and the window's words change at once
+  (Qt's engine retranslates every qsTr). The choice is remembered. At the
+  first open, with nothing remembered, the window takes the first of the
+  system's languages it has, else English, and remembers that: the owner
+  asked for a setting whose first value is the system's language.
+- The Language menu shows its English name beside a translated one, so a
+  language picked by mistake can be undone by someone who cannot read it.
+- Each translation was checked by a script before it went in: the same
+  %1/%2, one shortcut letter where the English has one (in brackets after
+  the word for Chinese and Japanese), the spaces and line breaks at either
+  end kept, nothing missing. Qt's lrelease compiles each with every text
+  finished.
+- The release build takes lrelease from aqt's Qt (which the Windows build
+  already uses for moc and rcc) for both platforms; the Qt that ships is
+  still built without Qt's tools. The translations' resource is compiled
+  without zstd, as the window's others are, for the Windows Qt.
+- One QML line compared a view model's English text with a translated word
+  (Project Settings' clock note); it compares with the English now.
+
+Tested: test-translations (the seven built in, a Spanish and a Japanese
+word, the first open's choice for French, Chinese, Brazilian, Taiwanese and
+Korean systems, a remembered choice, English back), seen to fail with the
+language list broken. The window was opened with no settings on a German
+and a Japanese system: it chose and remembered each, and TAStudio was
+pictured in German. The Japanese picture showed boxes, as this machine has
+no Japanese font. A long German label in TAStudio's side panel is cut off.
+The Linux release build's lrelease was not run here (no shipping Qt on
+this machine); the next Release run is its proof.
+
