@@ -1868,10 +1868,7 @@ Value PianoRollViewModel::GroupRows::cell(int64_t row, int32_t column) const
 	}
 }
 
-namespace {
-/* a control's player, as Chimera counts them: "P2 A"
- * is 2, past 255 or anything else 0 */
-int playerOf(const std::string &name)
+int PianoRollViewModel::playerOf(const std::string &name)
 {
 	if (name.size() < 3 || name[0] != 'P' || !std::isdigit(static_cast<unsigned char>(name[1]))) return 0;
 	size_t i = 1;
@@ -1879,7 +1876,31 @@ int playerOf(const std::string &name)
 	while (i < name.size() && std::isdigit(static_cast<unsigned char>(name[i])) && n <= 255) n = n * 10 + (name[i++] - '0');
 	return i < name.size() && name[i] == ' ' && n <= 255 ? static_cast<int>(n) : 0;
 }
-} // namespace
+
+std::vector<bool> PianoRollViewModel::playerEdges(const std::vector<int32_t> &players, const std::vector<bool> &shown)
+{
+	std::vector<bool> edges(players.size() + 1, false);
+	int32_t previous = -1;
+	for (size_t c = 0; c < players.size(); c++)
+	{
+		if (c < shown.size() && !shown[c]) continue;
+		if (players[c] != previous) edges[c] = true;
+		previous = players[c];
+	}
+	if (previous != -1) edges[players.size()] = true;
+	return edges;
+}
+
+int32_t PianoRollViewModel::Frames::columnPlayer(int32_t column) const
+{
+	const auto &players = vm_.session_.buttonPlayers();
+	const auto &names = vm_.session_.buttonNames();
+	if (column >= 0 && column < static_cast<int32_t>(names.size()))
+		return static_cast<size_t>(column) < players.size() ? players[static_cast<size_t>(column)] : 0;
+	const auto &axes = vm_.session_.axes();
+	const size_t axis = static_cast<size_t>(column - static_cast<int32_t>(names.size()));
+	return column >= 0 && axis < axes.size() ? axes[axis].player : 0;
+}
 
 std::string PianoRollViewModel::macroText(int64_t first, int64_t last, const std::vector<std::string> &columns, bool overlay, bool replace,
 	std::string &error) const

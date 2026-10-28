@@ -391,6 +391,22 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 			}
 		}
 	}
+	/* whose each control is: the package's lists, one a player, the rest the
+	 * console's; a list past the most players a movie can name is not taken */
+	const cJSON *players = cJSON_GetObjectItemCaseSensitive(input, "players");
+	if (cJSON_IsArray(players))
+	{
+		cfg.names.playersDeclared = true;
+		int32_t player = 0;
+		cJSON_ArrayForEach(item, players)
+		{
+			if (++player > chimera::kMostPlayers) break;
+			const cJSON *control = nullptr;
+			if (cJSON_IsArray(item))
+				cJSON_ArrayForEach(control, item)
+					if (cJSON_IsString(control)) cfg.names.players[control->valuestring] = player;
+		}
+	}
 	/* what to call the system in front of a person: the package's word for
 	 * this id, or the id */
 	cfg.systemName = cfg.systemId;
@@ -2509,7 +2525,8 @@ static ce_session *openSession(
 	s->btnEffective.assign(s->cfg.buttons.size(), 0);
 	s->probeOptionalGroups();
 	s->buildControlActivity();
-	s->layout.build(s->cfg.buttons, s->cfg.axes, &s->buttonActive, &s->axisActive);
+	s->layout.build(s->cfg.buttons, s->cfg.axes, &s->buttonActive, &s->axisActive,
+		[s](const std::string &name) { return s->cfg.names.playerOf(name); });
 
 	/* a game core's properties: a table read once and checked against the
 	 * domains, whose pointers hold for the session's lifetime - and against the
@@ -2986,6 +3003,11 @@ const char *ce_session_axis_header_of(const ce_session *s, const char *name)
 	static thread_local chimera::ThreadString held;   /* never destroyed: see thread_string.hpp */
 	*held = name != nullptr ? s->cfg.names.axisHeaderOf(name) : std::string();
 	return held->c_str();
+}
+
+int32_t ce_session_player_of(const ce_session *s, const char *name)
+{
+	return name != nullptr ? s->cfg.names.playerOf(name) : 0;
 }
 
 const char *ce_session_system_name(const ce_session *s)

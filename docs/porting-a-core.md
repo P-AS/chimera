@@ -289,6 +289,17 @@ Advice earned the hard way:
     none of this.
   - `"header": "LX"` on each axis - its column's header, five characters at
     most.
+  - `"players": [ ["P1 Up", "P1 A"], ["P2 Up", "P2 A"] ]` in each input
+    declaration - whose each control is: the first list is player 1's
+    controls, the next player 2's, and any control in no list is the
+    console's (owner, 2026-10-28). It decides the `|` groups of a movie
+    entry (the console's first, then each player's), the thick lines
+    between players in TAStudio's piano roll, and the tabs of Config >
+    Controllers. Axes are named here as buttons are. A package that
+    declares none keeps the old rule: the `P<n> ` in front of a name, else
+    the console. Declaring it differently from the names changes the groups
+    new movies are written with; a movie made before is still read by the
+    columns its own header names.
   - `"picture": "pictures/pad.png"` in an input declaration (the package's,
     and each machine's) - a PNG of the controller inside the package, shown
     beside the bindings in Config > Controls (issue 338). Draw it yourself or

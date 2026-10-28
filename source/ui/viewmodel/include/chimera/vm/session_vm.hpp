@@ -379,8 +379,15 @@ public:
 	{
 		std::string name, header;
 		int64_t min = -32768, max = 32767, neutral = 0;
+		/* its player, 0 the console's, as the core declares */
+		int32_t player = 0;
 	};
 	const std::vector<Axis> &axes() const { return axes_; }
+	/* each button's player (0 the console's), as the core declares it
+	 * (ce_session_player_of), in the buttons' order */
+	const std::vector<int32_t> &buttonPlayers() const { return buttonPlayers_; }
+	/* a control's player by its name, 0 for the console's or one the machine lacks */
+	int32_t playerOf(const std::string &name) const;
 	/* the controller's name as the package declares it (Chimera's
 	 * ControllerDefinition name; "Waterbox Controller" when it says none) */
 	const std::string &controllerName() const { return controllerName_; }
@@ -896,6 +903,7 @@ private:
 
 	InputLog &inputs_;
 	std::vector<std::string> buttonNames_;
+	std::vector<int32_t> buttonPlayers_;
 	std::vector<Axis> axes_;
 	std::string controllerName_, controllerPicture_, packagePath_;
 	std::vector<ProjectFile> projectFiles_;

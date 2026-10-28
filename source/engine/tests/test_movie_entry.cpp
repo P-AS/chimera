@@ -17,6 +17,7 @@
  */
 
 #include "../source/movie_entry.hpp"
+#include "../source/control_names.hpp"
 
 #include <cassert>
 #include <cstdint>
@@ -151,10 +152,35 @@ static void keyNamesMayHoldSeparators()
 	assert(states[0] == 0 && states[1] == 1);
 }
 
+/* The core says whose each control is (owner, 2026-10-28): a package's
+ * "players" decide an entry's groups, whatever the names say; one that
+ * declares none has the "P<n> " rule, as every movie was written. */
+static void declaredPlayersMakeTheGroups()
+{
+	const std::vector<std::string> buttons = { "Reset", "Up", "Fire", "Up 2", "Fire 2" };
+	chimera::ControlNames names;
+	names.playersDeclared = true;
+	names.players = { { "Up", 1 }, { "Fire", 1 }, { "Up 2", 2 }, { "Fire 2", 2 } };
+	assert(names.playerOf("Up 2") == 2 && names.playerOf("Reset") == 0 && names.playerOf("P3 A") == 0);
+	EntryLayout l;
+	l.build(buttons, {}, nullptr, nullptr, [&](const std::string &n) { return names.playerOf(n); });
+	assert(l.groups() == 3);
+	assert(l.key(buttons) == "#Reset|#Up|Fire|#Up 2|Fire 2|");
+	auto fire2 = statesOf(1ull << 4, buttons.size());
+	assert(l.generate(fire2.data(), nullptr, "RUFUF") == "|.|..|.F|");
+	/* nothing declared: the names' rule, so these are all the console's */
+	chimera::ControlNames plain;
+	assert(plain.playerOf("Up 2") == 0 && plain.playerOf("P2 Up") == 2);
+	EntryLayout ruled;
+	ruled.build(buttons, {}, nullptr, nullptr, [&](const std::string &n) { return plain.playerOf(n); });
+	assert(ruled.groups() == 1 && ruled.key(buttons) == "#Reset|Up|Fire|Up 2|Fire 2|");
+}
+
 int main(void)
 {
 	keyedLayoutsGoByName();
 	keyNamesMayHoldSeparators();
+	declaredPlayersMakeTheGroups();
 	{ // player number: "^P(\d+) " and nothing else
 		assert(chimera::playerNumberOf("P1 Up") == 1);
 		assert(chimera::playerNumberOf("P12 Up") == 12);

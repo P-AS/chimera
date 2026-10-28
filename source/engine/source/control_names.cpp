@@ -79,6 +79,13 @@ std::string genericAxisHeader(const std::string &name)
 	return out.empty() ? name : out;
 }
 
+int32_t ControlNames::playerOf(const std::string &control) const
+{
+	if (!playersDeclared) return playerNumberOf(control);
+	const auto it = players.find(control);
+	return it != players.end() ? it->second : 0;
+}
+
 char ControlNames::mnemonicOf(const std::string &button) const
 {
 	auto it = mnemonics.find(button);

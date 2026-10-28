@@ -66,8 +66,9 @@ public:
 	/* the picture's bytes (a PNG), for the view to draw */
 	const std::string &picture() const { return session_.controllerPicture(); }
 
-	/* Chimera's tab for a control: "Player N" for "PN ...", else "Console" */
-	static std::string groupOf(const std::string &name);
+	/* Chimera's tab for a control: "Player N" for player N's, as the core
+	 * declares it (ce_session_player_of), else "Console" */
+	std::string groupOf(const std::string &name) const;
 
 private:
 	enum Table
@@ -114,6 +115,8 @@ private:
 	/* the machine's controls: the package's, with this core's changes over them */
 	void apply();
 	void changed();
+	/* the tabs of these controls, in the order their first control comes (a JSON array) */
+	std::string groupsOf(const std::vector<std::string> &names) const;
 	/* a control is a TAStudio column, of the copy while it is open */
 	bool columnShown(const std::string &name) const;
 

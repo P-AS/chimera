@@ -38,6 +38,9 @@ public:
 	}
 	/* a column marked out (the piano roll's Auto-hold ones) */
 	virtual bool columnEmphasized(int32_t) const { return false; }
+	/* whose a column is: its player's number, 0 the console's (the piano
+	 * roll's: as the core declares, ce_session_player_of) */
+	virtual int32_t columnPlayer(int32_t) const { return 0; }
 	/* the row shown after this one (the piano roll hides some lag frames);
 	 * from -1, the first */
 	virtual int64_t nextShown(int64_t row) const { return row + 1; }

@@ -33,6 +33,16 @@ public:
 	}
 	/* one of the run's own markers is on the frame */
 	static constexpr uint32_t kPermanent = 32;
+	/* a control's player, as Chimera counts them: "P2 A" is 2, anything
+	 * else (the console's, past 255) 0 */
+	static int playerOf(const std::string &name);
+	/* where the roll draws a thick line between columns: for each of the
+	 * columns' left edges and, last, the right edge of the last one, whether
+	 * a player's group of columns starts or ends there - the first column
+	 * shown, each column shown whose player (each column's, as the core
+	 * declares; 0 the console's) is not the one shown before it, and the
+	 * end. Hidden columns are passed over. */
+	static std::vector<bool> playerEdges(const std::vector<int32_t> &players, const std::vector<bool> &shown);
 
 	PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs, SessionViewModel &session);
 
@@ -201,6 +211,7 @@ private:
 		bool columnHidden(int32_t column) const override { return vm_.hidden_.count(columnName(column)) != 0; }
 		bool columnHiddenIn(int64_t view, int32_t column) const override;
 		bool columnEmphasized(int32_t column) const override { return vm_.autoHeld_.count(columnName(column)) != 0; }
+		int32_t columnPlayer(int32_t column) const override;
 		int64_t nextShown(int64_t row) const override;
 		std::string columnName(int32_t column) const override;
 		/* the button's letter in a movie's input log */

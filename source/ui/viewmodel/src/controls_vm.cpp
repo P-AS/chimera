@@ -95,28 +95,28 @@ bool sameBind(const AnalogBind &a, const AnalogBind &b)
 		a.positive == b.positive && a.negative == b.negative;
 }
 
+} // namespace
+
+std::string ControlsViewModel::groupOf(const std::string &name) const
+{
+	const int32_t player = session_.playerOf(name);
+	return player > 0 ? "Player " + std::to_string(player) : "Console";
+}
+
 /* the tabs, in the order their first control comes */
-std::string groupsOf(const std::vector<std::string> &names)
+std::string ControlsViewModel::groupsOf(const std::vector<std::string> &names) const
 {
 	Json list;
 	list.kind = Json::Kind::Array;
 	std::vector<std::string> seen;
 	for (const std::string &n : names)
 	{
-		const std::string g = ControlsViewModel::groupOf(n);
+		const std::string g = groupOf(n);
 		if (std::find(seen.begin(), seen.end(), g) != seen.end()) continue;
 		seen.push_back(g);
 		list.items.push_back(Json::string(g));
 	}
 	return json::write(list);
-}
-} // namespace
-
-std::string ControlsViewModel::groupOf(const std::string &name)
-{
-	static const std::regex player("^P(\\d+)\\s");
-	std::smatch m;
-	return std::regex_search(name, m, player) ? "Player " + m[1].str() : "Console";
 }
 
 ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &session, PianoRollViewModel *roll)
@@ -632,7 +632,7 @@ Value ControlsViewModel::KeyRows::cell(int64_t row, int32_t column) const
 		std::replace(shown.begin(), shown.end(), '_', ' ');
 		return trimmed(shown);
 	}
-	case 2: return groupOf(name);
+	case 2: return vm_.groupOf(name);
 	case 3: return keys;
 	case 4: return package;
 	case 5: return keys != package;
@@ -658,7 +658,7 @@ Value ControlsViewModel::AnalogRows::cell(int64_t row, int32_t column) const
 	switch (column)
 	{
 	case 0: return axis.name;
-	case 1: return groupOf(axis.name);
+	case 1: return vm_.groupOf(axis.name);
 	case 2: return b.value;
 	case 3: return b.mult;
 	case 4: return b.deadzone;

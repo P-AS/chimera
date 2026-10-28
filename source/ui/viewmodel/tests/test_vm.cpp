@@ -3826,6 +3826,18 @@ bool columnsMenu(const char *package, const char *rom)
 			if (r.name == "buttons") buttons = r.model;
 		CHECK(buttons != nullptr && buttons->columnName(6) == "column");
 		if (buttons == nullptr) return false;
+		/* the package declares its players, Power player 2's whatever its name says: the
+		 * session, the roll's columns and the Controllers window's tabs go by it */
+		CHECK(session.playerOf("Power") == 2 && session.playerOf("P1 Up") == 1 && session.playerOf("P2 B") == 2 &&
+			session.playerOf("Key A") == 0);
+		{
+			const RowModel &frames = roll.frames();
+			int32_t power = -1;
+			for (int32_t c = 0; c < frames.columnCount(); c++)
+				if (frames.columnName(c) == "Power") power = c;
+			CHECK(power >= 0 && frames.columnPlayer(power) == 2 && frames.columnPlayer(0) == 1);
+		}
+		CHECK(controls.groupOf("Power") == "Player 2" && controls.groupOf("Key A") == "Console");
 		auto buttonRow = [&](const std::string &name) {
 			for (int64_t i = 0; i < buttons->rowCount(); i++)
 				if (text(buttons, i, 0) == name) return i;
@@ -6257,8 +6269,7 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	if (down < 0 || a < 0) return false;
 	/* Chimera's tabs and title: one player, so one tab */
 	CHECK(text(down, 2) == "Player 1" && controls.buttonGroups.get() == "[\"Player 1\"]");
-	CHECK(ControlsViewModel::groupOf("P2 Start") == "Player 2" && ControlsViewModel::groupOf("Power") == "Console" &&
-		  ControlsViewModel::groupOf("P1Up") == "Console");
+	CHECK(controls.groupOf("P1 Start") == "Player 1" && controls.groupOf("Power") == "Console");
 	CHECK(controls.title.get() == session.controllerName() + " Configuration");
 	const std::string packageKeys = text(down, 4);
 	CHECK(text(down, 3) == packageKeys && packageKeys.find("Down") != std::string::npos);
@@ -6873,6 +6884,30 @@ bool recordingMode(const char *package, const char *rom)
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	removeTree(dir);
 	return true;
+}
+
+/* the roll's thick lines between players' columns (reported 2026-10-28:
+ * they fell at fixed places): a player's group starts at its first column
+ * shown and ends after its last; the console's columns are a group too;
+ * hidden columns are passed over. Each column's player is the core's to say
+ * (ce_session_player_of); here they are given. */
+void playerEdges()
+{
+	using P = PianoRollViewModel;
+	/* QuickerNES's pad: ABsSUDLR, one player */
+	std::vector<bool> edges = P::playerEdges({1, 1, 1, 1, 1, 1, 1, 1}, {});
+	CHECK(edges == std::vector<bool>({true, false, false, false, false, false, false, false, true}));
+	/* Reset, Power, P1 A, P1 B, P2 A, P2 B, then an axis of player 1's */
+	const std::vector<int32_t> two{0, 0, 1, 1, 2, 2, 1};
+	edges = P::playerEdges(two, {});
+	CHECK(edges == std::vector<bool>({true, false, true, false, true, false, true, true}));
+	/* Power and P1 B hidden */
+	edges = P::playerEdges(two, {true, false, true, false, true, true, true});
+	CHECK(edges == std::vector<bool>({true, false, true, false, true, false, true, true}));
+	/* P1 A and P1 B hidden: the console meets player 2 */
+	edges = P::playerEdges(two, {true, true, false, false, true, true, true});
+	CHECK(edges == std::vector<bool>({true, false, false, false, true, false, true, true}));
+	CHECK(P::playerEdges({}, {}) == std::vector<bool>({false}));
 }
 
 /* Frozen addresses, as Chimera's freezes and as the owner decided
@@ -9728,6 +9763,7 @@ int main(int argc, char **argv)
 	bindings();
 	lua();
 	frameColumnColours();
+	playerEdges();
 	driveMediaText();
 	luaConsole();
 	toolWindows();

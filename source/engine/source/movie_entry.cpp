@@ -53,8 +53,10 @@ int32_t playerNumberOf(const std::string &name)
 }
 
 void EntryLayout::build(const std::vector<std::string> &buttons, const std::vector<EntryAxis> &axes,
-	const std::vector<uint8_t> *activeButtons, const std::vector<uint8_t> *activeAxes)
+	const std::vector<uint8_t> *activeButtons, const std::vector<uint8_t> *activeAxes,
+	const std::function<int32_t(const std::string &)> &playerOf)
 {
+	auto player = [&](const std::string &name) { return playerOf ? playerOf(name) : playerNumberOf(name); };
 	auto buttonLive = [&](size_t i) {
 		return activeButtons == nullptr || i >= activeButtons->size() || (*activeButtons)[i] != 0;
 	};
@@ -72,9 +74,9 @@ void EntryLayout::build(const std::vector<std::string> &buttons, const std::vect
 	 * it would be a group a person could put nothing in. */
 	int32_t maxPlayer = 0;
 	for (size_t i = 0; i < axes.size(); i++)
-		if (axisLive(i)) maxPlayer = std::max(maxPlayer, playerNumberOf(axes[i].name));
+		if (axisLive(i)) maxPlayer = std::max(maxPlayer, player(axes[i].name));
 	for (size_t i = 0; i < buttons.size(); i++)
-		if (buttonLive(i)) maxPlayer = std::max(maxPlayer, playerNumberOf(buttons[i]));
+		if (buttonLive(i)) maxPlayer = std::max(maxPlayer, player(buttons[i]));
 	groups_ = maxPlayer + 1;
 	for (int32_t g = 0; g < groups_; g++)
 	{
@@ -82,13 +84,13 @@ void EntryLayout::build(const std::vector<std::string> &buttons, const std::vect
 		for (int32_t i = 0; i < static_cast<int32_t>(axes.size()); i++)
 		{
 			if (axisLive(static_cast<size_t>(i))
-				&& playerNumberOf(axes[static_cast<size_t>(i)].name) == g)
+				&& player(axes[static_cast<size_t>(i)].name) == g)
 				items_.push_back({ true, i });
 		}
 		for (int32_t i = 0; i < static_cast<int32_t>(buttons.size()); i++)
 		{
 			if (buttonLive(static_cast<size_t>(i))
-				&& playerNumberOf(buttons[static_cast<size_t>(i)]) == g)
+				&& player(buttons[static_cast<size_t>(i)]) == g)
 				items_.push_back({ false, i });
 		}
 	}

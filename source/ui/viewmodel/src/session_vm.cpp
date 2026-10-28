@@ -4956,11 +4956,13 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	pinMarkersOnMachine();
 
 	std::vector<std::string> names;
+	std::vector<int32_t> players;
 	const int64_t count = ce_session_button_count(s);
 	for (int64_t i = 0; i < count; i++)
 	{
 		const char *n = ce_session_button_name(s, i);
 		names.emplace_back(n != nullptr ? n : "");
+		players.push_back(ce_session_player_of(s, names.back().c_str()));
 	}
 	const char *mn = ce_session_button_mnemonics(s);
 	const std::string mnemonics = mn != nullptr ? mn : "";
@@ -5066,6 +5068,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 			const char *h = ce_session_axis_header_of(s, a.name.c_str());
 			a.header = h != nullptr ? h : a.name;
 			a.neutral = ce_session_axis_neutral(s, i);
+			a.player = ce_session_player_of(s, a.name.c_str());
 			if (const json::Json *d = declared(a.name))
 			{
 				if (const json::Json *v = d->find("min")) a.min = static_cast<int64_t>(v->number());
@@ -5109,7 +5112,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	const int64_t frames = inputs_.size();
 	/* another game, or the same started again: another average, as Chimera's */
 	averageResetM_.store(true);
-	later([this, names, headers, axes, mnemonics, keybinds, coreText, systemText, systemIdText, rate, label, inputsReplaced, frames, controller,
+	later([this, names, players, headers, axes, mnemonics, keybinds, coreText, systemText, systemIdText, rate, label, inputsReplaced, frames, controller,
 			   picture, gameCore, timer, saveData, movieImport, package, traces, registers, traceHead, surfaceText, withOpen] {
 		surfaces.set(surfaceText);
 		hasTrace.set(traces);
@@ -5125,6 +5128,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		gameTimeText.set("");
 		averageFpsText.set("");
 		buttonNames_ = names;
+		buttonPlayers_ = players;
 		axes_ = axes;
 		mnemonics_ = mnemonics;
 		buttonHeaders_ = headers;
@@ -5165,6 +5169,15 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		if (inputsReplaced) inputsReset.emit();
 		(void)frames;
 	});
+}
+
+int32_t SessionViewModel::playerOf(const std::string &name) const
+{
+	for (size_t i = 0; i < buttonNames_.size(); i++)
+		if (buttonNames_[i] == name) return i < buttonPlayers_.size() ? buttonPlayers_[i] : 0;
+	for (const Axis &a : axes_)
+		if (a.name == name) return a.player;
+	return 0;
 }
 
 void SessionViewModel::closeOnMachine()

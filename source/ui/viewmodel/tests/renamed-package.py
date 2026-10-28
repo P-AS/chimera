@@ -22,6 +22,9 @@ precompile = len(sys.argv) > 8 and sys.argv[8] == "precompile"
 square = len(sys.argv) > 9 and sys.argv[9] == "square"
 # and the rate the core says it mixes its sound at (audio.rate)
 rate = int(sys.argv[10]) if len(sys.argv) > 10 and sys.argv[10] else 0
+# and players the package declares (input.players), as JSON: each control's
+# player by the "P<n> " in its name, then these over it ({"Power": 2})
+players_over = json.loads(sys.argv[11]) if len(sys.argv) > 11 and sys.argv[11] else None
 try:
     zin = zipfile.ZipFile(src)
 except OSError:
@@ -49,5 +52,14 @@ with zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
                 cfg["video"]["width"] = 320
             if rate:
                 cfg["audio"]["rate"] = rate
+            if players_over is not None:
+                controls = cfg["input"]["buttons"] + [a["name"] for a in cfg["input"].get("axes", [])]
+                def player(n):
+                    if n in players_over:
+                        return players_over[n]
+                    head = n.split(" ", 1)[0]
+                    return int(head[1:]) if " " in n and head[:1] == "P" and head[1:].isdigit() else 0
+                most = max([player(n) for n in controls] + [0])
+                cfg["input"]["players"] = [[n for n in controls if player(n) == p] for p in range(1, most + 1)]
             data = json.dumps(cfg, indent=2).encode()
         zout.writestr(info, data)

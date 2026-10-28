@@ -450,12 +450,34 @@ void PianoRollItem::paint(QPainter *p)
 	p->setPen(headerText);
 	for (int e = 0; e < extraCount; e++)
 		label(QRect(columnX(columns + e) + 4, 0, extras_[static_cast<size_t>(e)].width - 4, hs), left, extras_[static_cast<size_t>(e)].text, false);
-	p->setPen(k.columnBorder);
+	/* one screen pixel wide at any display scale: a pen one unit wide drew
+	 * some lines one pixel and some two on a scaled screen */
+	QPen border(k.columnBorder, 0);
+	border.setCosmetic(true);
+	p->setPen(border);
 	p->drawLine(0, 0, w, 0);
 	p->drawLine(0, hs, w, hs);
 	p->drawLine(cx0, 0, cx0, hs);
 	for (int c = 0; c <= columns + extraCount; c++)
 		if (c == columns + extraCount || c >= columns || columnW(c) > 0) p->drawLine(columnX(c), 0, columnX(c), hs);
+	/* a thick line where a player's columns start and end, the players as
+	 * the core declares them (the console's a group too) */
+	std::vector<bool> playerEdge;
+	{
+		std::vector<int32_t> players;
+		std::vector<bool> shownColumns;
+		for (int c = 0; c < columns; c++)
+		{
+			players.push_back(rows.columnPlayer(c));
+			shownColumns.push_back(columnW(c) > 0);
+		}
+		playerEdge = chimera::vm::PianoRollViewModel::playerEdges(players, shownColumns);
+	}
+	auto thickLines = [&](int top, int bottom, const QColor &color) {
+		for (int c = 0; c <= columns; c++)
+			if (playerEdge[static_cast<size_t>(c)]) p->fillRect(QRectF(columnX(c) - 1.0, top, 2.0, bottom - top), color);
+	};
+	thickLines(0, hs, k.columnBorder);
 
 	/* what the script says of a cell, when it says anything */
 	auto ask = [&](int kind, qint64 row, const QString &column) { return queries_ && query_ ? query_(kind, row, column) : QString(); };
@@ -519,8 +541,7 @@ void PianoRollItem::paint(QPainter *p)
 		{
 			const int cw = columnW(c);
 			if (cw == 0) continue;
-			const std::string name = rows.columnName(c);
-			if (name.size() > 2 && name[0] == 'P' && std::isdigit(static_cast<unsigned char>(name[1])) && (std::atoi(name.c_str() + 1) % 2) == 0)
+			if (const int32_t player = rows.columnPlayer(c); player > 0 && player % 2 == 0)
 				p->fillRect(columnX(c), y, cw, rowHeight_, altPlayer);
 		}
 		/* the frame number's own colour: a marker's (when markers are told by colour), else Set Colors' Frame#
@@ -620,13 +641,17 @@ void PianoRollItem::paint(QPainter *p)
 		}
 	}
 
-	/* the grid: a line at every column's left and the last's right, and between the rows */
-	p->setPen(grid);
+	/* the grid: a line at every column's left and the last's right, and between the rows, each one
+	 * screen pixel wide; a thick one where a player's columns start and end */
+	QPen gridPen(grid, 0);
+	gridPen.setCosmetic(true);
+	p->setPen(gridPen);
 	const int bottom = std::min(h, hs + rowHeight_ * shown);
 	p->drawLine(cx0, hs + 1, cx0, bottom);
 	for (int c = 0; c <= columns + extraCount; c++)
 		if (c >= columns || columnW(c) > 0) p->drawLine(columnX(c), hs + 1, columnX(c), bottom);
 	for (int i = 1; i < shown; i++) p->drawLine(0, hs + rowHeight_ * i, w, hs + rowHeight_ * i);
+	thickLines(hs + 1, bottom, k.columnBorder);
 
 	lastPaintMs_ = timer.nsecsElapsed() / 1.0e6;
 	Q_EMIT painted();

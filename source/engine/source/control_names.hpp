@@ -30,12 +30,24 @@
  * not have. The rule is the only naming this engine does, and it knows no
  * machine: the first character of the last word.
  *
+ * Which player a control is the player's - and so which '|' group of a movie
+ * entry it is written in, and where the roll draws a thick line - is the
+ * core's to say too (owner, 2026-10-28):
+ *
+ *     "players": [ [ "P1 Up", "P1 Cross" ], [ "P2 Up", "P2 Cross" ] ]
+ *
+ * the first list player 1's controls, the next player 2's, and every control
+ * in none of them the console's. A package that declares no "players" has the
+ * rule every movie was written with: the "P<n> " in front of a name, else the
+ * console.
+ *
  * None of it is what a movie means. An entry is read by position, and any
  * character but '.' is a pressed button, so a letter can change and every
  * movie made before still plays.
  */
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <string>
 
@@ -68,11 +80,16 @@ struct ControlNames
 	std::map<std::string, char> mnemonics;          /* by whole or bare name */
 	std::map<std::string, std::string> axisHeaders; /* by whole name */
 	std::map<std::string, std::string> buttonHeaders; /* by whole or bare name */
+	/* the package's "players", by whole name; declared or not */
+	std::map<std::string, int32_t> players;
+	bool playersDeclared = false;
 
 	char mnemonicOf(const std::string &button) const;
 	/* the declared header, or the mnemonic as one character */
 	std::string buttonHeaderOf(const std::string &button) const;
 	std::string axisHeaderOf(const std::string &axis) const;
+	/* the declared player (0 the console's), or the "P<n> " rule */
+	int32_t playerOf(const std::string &control) const;
 };
 
 } // namespace chimera

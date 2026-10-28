@@ -1123,6 +1123,14 @@ CE_API int32_t ce_control_mnemonic(const char *name);
 CE_API const char *ce_control_button_header(const char *name);
 CE_API const char *ce_control_axis_header(const char *name);
 
+/* Whose a control is: its player (1, 2...) or the console's (0), as the
+ * package declares it ("players" in its input declaration: a list of each
+ * player's controls), or for a package that declares none, the "P<n> " in
+ * front of its name. A movie entry's '|' groups are these, the console's
+ * first, and the roll's thick lines part them. ANY name, as
+ * ce_session_mnemonic_of takes. */
+CE_API int32_t ce_session_player_of(const ce_session *s, const char *name);
+
 /* What to call the session's system in front of a person: the package's own
  * word for it ("systemNames", by system id), or the id where it has none. */
 CE_API const char *ce_session_system_name(const ce_session *s);

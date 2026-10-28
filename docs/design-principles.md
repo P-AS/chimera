@@ -10713,3 +10713,37 @@ the project opens; the next open asks nothing; a folder scanned finds it;
 Cancel leaves the project closed. The test was seen to fail with the old
 behaviour (the open refused). Not tried by hand in the window.
 
+## The core says which player each control belongs to (user-decided, 2026-10-28)
+
+A report found the piano roll's vertical lines thicker at places that had
+nothing to do with players. The roll drew no player lines at all: every
+column line was one unit wide, and on a screen scaled to 150% a one-unit
+line falls on one or two screen pixels depending on where it lands, so
+some looked thick. The owner asked for real thick lines between players,
+and for the core, not Chimera, to say which controls are whose: "at the
+end of the day, it's each core who decides what inputs belong to each
+player or are console inputs."
+
+- A package may declare `players` in its input declaration: a list of each
+  player's controls; anything not listed is the console's. A package that
+  declares none keeps the rule every movie was written with (the "P<n> "
+  in front of a name). `ce_session_player_of` answers for any control.
+- The same answer makes a movie entry's `|` groups, the roll's thick lines
+  and the Controllers window's tabs, so they cannot disagree. The roll
+  draws a thick line at the first input column, wherever one column's
+  player differs from the one shown before it (hidden columns passed
+  over), and after the last. The shading of every second player's columns
+  follows it too.
+- Every grid line is one screen pixel at any scale; the thick ones are two
+  units wide.
+- No core declares `players` yet, so nothing changes for any of them until
+  one does; each core's next release can add it.
+
+Tested: the engine test builds an entry layout from a declaration that
+disagrees with the names (its groups and key follow the declaration; with
+none, the rule); the view model tests check the edge rule and, with a test
+package that gives "Power" to player 2, that the session, the roll's
+columns and the Controllers tabs follow the declaration. Each was seen to
+fail with its part broken. The roll's look was not checked on a scaled
+screen.
+

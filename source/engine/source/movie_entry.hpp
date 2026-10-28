@@ -8,11 +8,14 @@
  * witness core has none of.
  *
  * The layout rule is the one every movie has used: controls grouped by player number (0 = console), axes before buttons within
- * a group, both in declaration order.
+ * a group, both in declaration order. A control's player is what its package
+ * declares ("players", control_names.hpp), else the "P<n> " in front of its
+ * name.
  */
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -45,9 +48,12 @@ public:
 	 * downstream still reads and writes at the declared position - only the
 	 * text gets shorter. Null means "all of them", which is what a core that
 	 * does not answer the question gets. */
+	/* playerOf: a control's player by its name (0 the console's); none is
+	 * the "P<n> " rule (playerNumberOf) */
 	void build(const std::vector<std::string> &buttons, const std::vector<EntryAxis> &axes,
 		const std::vector<uint8_t> *activeButtons = nullptr,
-		const std::vector<uint8_t> *activeAxes = nullptr);
+		const std::vector<uint8_t> *activeAxes = nullptr,
+		const std::function<int32_t(const std::string &)> &playerOf = nullptr);
 
 	/* The columns a movie's LogKey names ("#Reset|Power|#P1 Up|P1 Down|..."),
 	 * matched to the machine's controls by NAME, as the window's

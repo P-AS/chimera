@@ -161,7 +161,9 @@ synth_keys = custom_target(
   'synth-keys',
   output: 'synth-keys.chimeraCore',
   command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
-    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Keys', '@OUTPUT@', '', '', '', more_buttons],
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Keys', '@OUTPUT@', '', '', '', more_buttons, '', '', '',
+    # its players declared, Power given to player 2: the core says whose a control is, not its name
+    '{"Power": 2}'],
   build_always_stale: true,
   build_by_default: false,
 )
