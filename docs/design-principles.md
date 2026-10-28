@@ -10817,3 +10817,17 @@ file holds `inputs` written a group and an entry a line, opens it to the
 same text block (for a key with "P1 \"#" in it and one with "| @" and
 "# >"), refuses a file in the old form and five broken ones. It was seen to
 fail with the input left out of the file.
+
+## The Godot 4.7 core is named for its version (user-decided, 2026-10-28)
+
+The owner renamed the core "Godot" to "Godot 4.7", its repository from
+chimera-core-godot to chimera-core-godot47 and its package to
+godot47.chimeraCore, so that its name says its version as its siblings' do
+(Godot 4.6, 4.5, 4.4). The roster and the README follow.
+
+A project names its core by name, so a project made with "Godot" finds no
+core called that once the old package is gone. Chimera keeps no mechanism
+for old names (owner: "I don't want any legacy supporting mechanisms in
+chimera"); such a project is made again with the Godot 4.7 core, or its
+core name edited by hand.
+

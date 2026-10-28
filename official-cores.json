@@ -418,12 +418,12 @@
       "tested": ""
     },
     {
-      "id": "godot",
-      "name": "Godot",
+      "id": "godot47",
+      "name": "Godot 4.7",
       "systems": [
         { "id": "Godot", "name": "Godot 4" }
       ],
-      "repo": "ToolAssisted-run/chimera-core-godot",
+      "repo": "ToolAssisted-run/chimera-core-godot47",
       "tested": ""
     },
     {
