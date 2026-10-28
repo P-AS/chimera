@@ -23,7 +23,7 @@ ApplicationWindow {
     // Chimera shortens a long name to 40 characters
     readonly property string projectLabel: win.projectLabelAsked.length <= 40 ? win.projectLabelAsked : win.projectLabelAsked.substring(0, 37) + "..."
     readonly property bool hasProject: win.projectId !== ""
-    title: win.hasProject && win.projectLabel !== "" ? qsTr("Greenzone budgets: %1").arg(win.projectLabel) : qsTr("Greenzone budgets")
+    title: win.hasProject && win.projectLabel !== "" ? qsTrId("greenzone_budgets.greenzone_budgets").arg(win.projectLabel) : qsTrId("greenzone_budgets.greenzone_budgets_2")
     width: 470
     height: win.hasProject ? 470 : 300
     modality: Qt.ApplicationModal
@@ -56,45 +56,45 @@ ApplicationWindow {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 12
-        Note { text: qsTr("A greenzone is kept in memory. Past this it is thinned; nothing is written to disk until the project is saved.") }
-        Label { text: qsTr("Every project, unless it says otherwise"); font.bold: true; Layout.topMargin: 4 }
+        Note { text: qsTrId("greenzone_budgets.a_greenzone_is_kept_in_memory") }
+        Label { text: qsTrId("greenzone_budgets.every_project_unless_it_says_otherwise"); font.bold: true; Layout.topMargin: 4 }
         GridLayout {
             columns: 3
-            Name { text: qsTr("Keep in memory") }
+            Name { text: qsTrId("greenzone_budgets.keep_in_memory") }
             SpinBox { id: memory; from: 64; to: 1048576; stepSize: 256; editable: true; Layout.preferredWidth: 110 }
-            Label { text: qsTr("MB") }
-            Name { text: qsTr("Behind the playhead, 1 frame in") }
+            Label { text: qsTrId("greenzone_budgets.mb") }
+            Name { text: qsTrId("greenzone_budgets.behind_the_playhead_1_frame_in") }
             SpinBox { id: stride; from: 1; to: 32; editable: true; Layout.preferredWidth: 110 }
             Item { width: 1 }
-            Note { text: qsTr("1 keeps every frame and plays slowest. Higher plays faster on a heavy core.") }
-            Name { text: qsTr("After a load, show kept pictures for") }
+            Note { text: qsTrId("greenzone_budgets.1_keeps_every_frame_and_plays") }
+            Name { text: qsTrId("greenzone_budgets.after_a_load_show_kept_pictures") }
             SpinBox { id: settle; from: 0; to: 10; editable: true; Layout.preferredWidth: 110 }
-            Label { text: qsTr("frames") }
-            Note { text: qsTr("On a GPU core the picture can be wrong right after a load. For this many frames a frame seen before shows the picture it had. 0 always shows what the core draws.") }
+            Label { text: qsTrId("greenzone_budgets.frames") }
+            Note { text: qsTrId("greenzone_budgets.on_a_gpu_core_the_picture") }
         }
-        Label { text: qsTr("This project"); font.bold: true; visible: win.hasProject; Layout.topMargin: 10 }
+        Label { text: qsTrId("greenzone_budgets.this_project"); font.bold: true; visible: win.hasProject; Layout.topMargin: 10 }
         CheckBox {
             id: own
             visible: win.hasProject
-            text: qsTr("A different budget for %1").arg(win.projectLabel)
+            text: qsTrId("greenzone_budgets.a_different_budget_for").arg(win.projectLabel)
             padding: 2
         }
         GridLayout {
             columns: 3
             visible: win.hasProject
-            Name { text: qsTr("Keep in memory") }
+            Name { text: qsTrId("greenzone_budgets.keep_in_memory") }
             SpinBox { id: ownMemory; enabled: own.checked; from: 64; to: 1048576; stepSize: 256; editable: true; Layout.preferredWidth: 110 }
-            Label { text: qsTr("MB") }
-            Name { text: qsTr("Behind the playhead, 1 frame in") }
+            Label { text: qsTrId("greenzone_budgets.mb") }
+            Name { text: qsTrId("greenzone_budgets.behind_the_playhead_1_frame_in") }
             SpinBox { id: ownStride; enabled: own.checked; from: 1; to: 32; editable: true; Layout.preferredWidth: 110 }
             Item { width: 1 }
-            Note { text: qsTr("Takes effect when the project is next opened: a history already holding states is not thrown away to obey a number that has just changed.") }
+            Note { text: qsTrId("greenzone_budgets.takes_effect_when_the_project_is") }
         }
         Item { Layout.fillHeight: true }
         RowLayout {
             Label { text: win.session.error; color: win.themeColor("AccentError", "#b00020"); Layout.fillWidth: true; elide: Text.ElideRight }
-            Button { text: qsTr("OK"); Layout.preferredWidth: 90; onClicked: { win.keep(); win.close() } }
-            Button { text: qsTr("Cancel"); Layout.preferredWidth: 90; onClicked: win.close() }
+            Button { text: qsTrId("common.ok"); Layout.preferredWidth: 90; onClicked: { win.keep(); win.close() } }
+            Button { text: qsTrId("common.cancel"); Layout.preferredWidth: 90; onClicked: win.close() }
         }
     }
 }

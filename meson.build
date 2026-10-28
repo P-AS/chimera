@@ -271,6 +271,7 @@ engine_src = files(
   'source/engine/source/local_pipe.cpp',
   'source/engine/source/mcp.cpp',
   'source/engine/source/mcp_local.cpp',
+  'source/engine/source/language.cpp',
   'extern/miniz/miniz.c',  # vendored (MIT): the zip half of the state container
   'extern/cjson/cJSON.c',  # vendored (MIT): bundle JSON
 )
@@ -286,6 +287,8 @@ engine_commit_h = vcs_tag(
   fallback: 'unknown',
 )
 engine_src += [engine_commit_h]
+# Chimera's language tables, one file per language beside the engine
+subdir('languages')
 engine_build_args = [
   '-I' + repo_root / 'extern/chimera-common-minibox/source/cache',
   '-include', meson.current_build_dir() / 'ce_build_commit.h',
@@ -505,7 +508,7 @@ if not meson.is_cross_build()
     build_by_default: false,
   )
 
-  foreach engine_test : ['sha1', 'movie_log', 'movie_text', 'movie_entry', 'control_names', 'state_container', 'state_format', 'package', 'multifile', 'project', 'firmware', 'state_history', 'media', 'gl_flight', 'gl_sync', 'gl_buffer_pool', 'stride_tuner', 'plain_numbers', 'greenzone_shape', 'ram_search', 'kept_pictures', 'game_properties', 'mcp', 'average_fps', 'compile_sessions', 'host_machine', 'utf8_paths', 'work_thread', 'guest_calls', 'gl_session', 'resampler']
+  foreach engine_test : ['sha1', 'movie_log', 'movie_text', 'movie_entry', 'control_names', 'state_container', 'state_format', 'package', 'multifile', 'project', 'firmware', 'state_history', 'media', 'gl_flight', 'gl_sync', 'gl_buffer_pool', 'stride_tuner', 'plain_numbers', 'greenzone_shape', 'ram_search', 'kept_pictures', 'game_properties', 'mcp', 'average_fps', 'compile_sessions', 'host_machine', 'utf8_paths', 'work_thread', 'guest_calls', 'gl_session', 'resampler', 'language']
     test(
       'engine_' + engine_test,
       executable(

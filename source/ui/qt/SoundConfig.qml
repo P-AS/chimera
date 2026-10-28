@@ -14,7 +14,7 @@ ApplicationWindow {
     objectName: "soundWindow"
     required property QtObject session
     property Window mainWindow: null
-    title: qsTr("Sound Configuration")
+    title: qsTrId("sound_config.sound_configuration")
     width: 500
     height: 320
     modality: Qt.ApplicationModal
@@ -45,7 +45,7 @@ ApplicationWindow {
         property bool autoOn: false
         spacing: 2
         CheckBox {
-            text: qsTr("Ena.")
+            text: qsTrId("sound_config.ena")
             checked: win.picked[vol.onSetting] === true
             onToggled: win.pick(vol.onSetting, checked)
             padding: 0
@@ -77,13 +77,13 @@ ApplicationWindow {
         anchors.margins: 12
         spacing: 9
         GroupBox {
-            title: qsTr("Volume")
+            title: qsTrId("sound_config.volume")
             Layout.fillHeight: true
             enabled: win.picked.soundOn === true
             RowLayout {
-                Volume { label: qsTr("Normal"); onSetting: "soundNormalOn"; volumeSetting: "volume"; autoOn: true }
+                Volume { label: qsTrId("sound_config.normal"); onSetting: "soundNormalOn"; volumeSetting: "volume"; autoOn: true }
                 // RW & FF only while Normal is on
-                Volume { label: qsTr("RW & FF"); onSetting: "soundFastOn"; volumeSetting: "fastVolume"; enabled: win.picked.soundNormalOn === true }
+                Volume { label: qsTrId("sound_config.rw_ff"); onSetting: "soundFastOn"; volumeSetting: "fastVolume"; enabled: win.picked.soundNormalOn === true }
             }
         }
         ColumnLayout {
@@ -94,14 +94,14 @@ ApplicationWindow {
                     Layout.alignment: Qt.AlignTop
                     spacing: 0
                     CheckBox {
-                        text: qsTr("Sound Master Enable")
+                        text: qsTrId("sound_config.sound_master_enable")
                         checked: win.picked.soundOn === true
                         onToggled: win.pick("soundOn", checked)
                         padding: 2
                     }
-                    Label { text: qsTr("Controls whether cores\neven generate audio."); leftPadding: 22 }
+                    Label { text: qsTrId("sound_config.controls_whether_cores_even_generate_aud"); leftPadding: 22 }
                     CheckBox {
-                        text: qsTr("Mute Frame Advance")
+                        text: qsTrId("sound_config.mute_frame_advance")
                         checked: win.picked.muteFrameAdvance === true
                         onToggled: win.pick("muteFrameAdvance", checked)
                         padding: 2
@@ -110,18 +110,18 @@ ApplicationWindow {
                 }
                 Item { Layout.fillWidth: true }
                 GroupBox {
-                    title: qsTr("Output Method")
+                    title: qsTrId("sound_config.output_method")
                     Layout.alignment: Qt.AlignTop
-                    RadioButton { text: qsTr("OpenAL"); checked: true; padding: 2 }
+                    RadioButton { text: qsTrId("sound_config.openal"); checked: true; padding: 2 }
                 }
             }
-            Label { text: qsTr("Sound Device:") }
+            Label { text: qsTrId("sound_config.sound_device") }
             ListView {
                 id: deviceList
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
-                model: [qsTr("<default>")].concat(win.devices)
+                model: [qsTrId("sound_config.default")].concat(win.devices)
                 ScrollBar.vertical: ScrollBar {}
                 delegate: ItemDelegate {
                     required property int index
@@ -135,19 +135,19 @@ ApplicationWindow {
                 Rectangle { anchors.fill: parent; color: "transparent"; border.color: palette.mid; z: -1 }
             }
             RowLayout {
-                Label { text: qsTr("Buffer Size:") }
+                Label { text: qsTrId("sound_config.buffer_size") }
                 SpinBox {
                     from: 30; to: 250; editable: true
                     value: win.picked.soundBufferMs || 100
                     onValueModified: win.pick("soundBufferMs", value)
                     Layout.preferredWidth: 90
                 }
-                Label { text: qsTr("milliseconds") }
+                Label { text: qsTrId("sound_config.milliseconds") }
             }
             RowLayout {
                 Label { text: win.session.sound; Layout.fillWidth: true; elide: Text.ElideRight; opacity: 0.8 }
-                Button { text: qsTr("&OK"); onClicked: { win.keep(); win.close() } }
-                Button { text: qsTr("&Cancel"); onClicked: win.close() }
+                Button { text: qsTrId("common.ok_mnemonic"); onClicked: { win.keep(); win.close() } }
+                Button { text: qsTrId("common.cancel_mnemonic"); onClicked: win.close() }
             }
         }
     }

@@ -2234,6 +2234,29 @@ CE_API int32_t ce_compile_session_begins(void);
 CE_API const char *ce_host_cpu_name(void);
 CE_API uint64_t ce_host_memory_total(void);
 
+/* ---- Chimera's languages (docs/translations.md) -----------------------------
+ * Every text Chimera shows is a key in a language table, one file per
+ * language, English among them (owner, 2026-10-28), in the languages folder
+ * beside the engine.
+ * _count, _code, _name, _english_name: the languages there, English first,
+ *   then by code: "de", its name in German ("Deutsch") and in English
+ *   ("German"). Read once; never invalidated.
+ * _use: Chimera's texts in that language from now on, for every thread; 0
+ *   when there is no table for it (the one in use stays).
+ * _in_use: its code; per-thread, until the next call on that thread.
+ * ce_text: a key's text in the language in use, with %1 to %9 replaced by
+ *   args (at most 9) and, for a key with plural forms, the form for count
+ *   chosen and its %n replaced by count (count below zero: the "other" form).
+ *   A key no table has comes back as the key. Per-thread, until the next
+ *   ce_text on that thread. */
+CE_API int32_t ce_language_count(void);
+CE_API const char *ce_language_code(int32_t index);
+CE_API const char *ce_language_name(int32_t index);
+CE_API const char *ce_language_english_name(int32_t index);
+CE_API int32_t ce_language_use(const char *code);
+CE_API const char *ce_language_in_use(void);
+CE_API const char *ce_text(const char *key, int64_t count, const char *const *args, int32_t arg_count);
+
 #ifdef __cplusplus
 }
 #endif

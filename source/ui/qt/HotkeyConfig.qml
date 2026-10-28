@@ -17,7 +17,7 @@ ApplicationWindow {
     required property QtObject session
     property Window mainWindow: null
     property var themeColor: (role, fallback) => fallback
-    title: qsTr("Configure Hotkeys")
+    title: qsTrId("hotkey_config.configure_hotkeys")
     width: 783
     height: 463
     modality: Qt.ApplicationModal
@@ -118,7 +118,7 @@ ApplicationWindow {
                 width: 240
                 wrapMode: Text.WordWrap
                 topPadding: 4
-                text: qsTr("Save States hotkeys operate with branches when TAStudio is engaged.")
+                text: qsTrId("hotkey_config.save_states_hotkeys_operate_with_branche")
             }
         }
     }
@@ -131,7 +131,7 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             Item { Layout.fillWidth: true }
-            Label { text: qsTr("Find:") }
+            Label { text: qsTrId("hotkey_config.find") }
             TextField {
                 id: search
                 objectName: "hotkeySearch"
@@ -193,30 +193,30 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             spacing: 6
-            Label { text: qsTr("Tips:") }
-            Label { text: qsTr("* Escape clears a key mapping") }
-            Label { text: qsTr("* Disable Auto Tab to multiply bind") }
+            Label { text: qsTrId("hotkey_config.tips") }
+            Label { text: qsTrId("hotkey_config.escape_clears_a_key_mapping") }
+            Label { text: qsTrId("hotkey_config.disable_auto_tab_to_multiply_bind") }
             Item { Layout.fillWidth: true }
             CheckBox {
-                text: qsTr("Auto Tab")
+                text: qsTrId("hotkey_config.auto_tab")
                 checked: win.hotkeys.autoTab
                 onToggled: win.hotkeys.autoTab = checked
             }
             Button {
-                text: qsTr("Misc...")
+                text: qsTrId("hotkey_config.misc")
                 Layout.preferredWidth: 60
                 onClicked: miscMenu.popup()
                 Menu {
                     delegate: MenuEntry {}
                     id: miscMenu
-                    MenuItem { text: qsTr("Restore Defaults"); onTriggered: win.hotkeys.run("defaults") }
-                    MenuItem { text: qsTr("Restore Current Tab Defaults"); onTriggered: win.hotkeys.run("defaults", [win.groups[tabs.currentIndex]]) }
-                    MenuItem { text: qsTr("Clear All"); onTriggered: win.hotkeys.run("clear") }
-                    MenuItem { text: qsTr("Clear Current Tab"); onTriggered: win.hotkeys.run("clear", [win.groups[tabs.currentIndex]]) }
+                    MenuItem { text: qsTrId("common.restore_defaults"); onTriggered: win.hotkeys.run("defaults") }
+                    MenuItem { text: qsTrId("hotkey_config.restore_current_tab_defaults"); onTriggered: win.hotkeys.run("defaults", [win.groups[tabs.currentIndex]]) }
+                    MenuItem { text: qsTrId("hotkey_config.clear_all"); onTriggered: win.hotkeys.run("clear") }
+                    MenuItem { text: qsTrId("hotkey_config.clear_current_tab"); onTriggered: win.hotkeys.run("clear", [win.groups[tabs.currentIndex]]) }
                 }
             }
-            Button { text: qsTr("&Save"); Layout.preferredWidth: 60; onClicked: { win.hotkeys.run("save"); win.close() } }
-            Button { text: qsTr("&Cancel"); Layout.preferredWidth: 60; onClicked: win.close() }
+            Button { text: qsTrId("common.save"); Layout.preferredWidth: 60; onClicked: { win.hotkeys.run("save"); win.close() } }
+            Button { text: qsTrId("common.cancel_mnemonic"); Layout.preferredWidth: 60; onClicked: win.close() }
         }
     }
 }

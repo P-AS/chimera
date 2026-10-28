@@ -19,7 +19,7 @@ ListView {
         width: list.width - 16
         visible: list.presetsHere && presetBox.count > 0
         height: visible ? implicitHeight + 8 : 0
-        Label { text: qsTr("Preset:") }
+        Label { text: qsTrId("common.preset") }
         ComboBox {
             id: presetBox
             model: list.vm.rows("presets")
@@ -39,7 +39,7 @@ ListView {
             }
             Component.onCompleted: keep()
         }
-        Button { text: qsTr("Apply"); enabled: presetBox.currentIndex >= 0; onClicked: list.vm.run("applyPreset", [presetBox.currentValue]) }
+        Button { text: qsTrId("common.apply"); enabled: presetBox.currentIndex >= 0; onClicked: list.vm.run("applyPreset", [presetBox.currentValue]) }
     }
     // when the machine's clock starts: the project's, for every core, so the last of the
     // settings and scrolled with them like any other (owner, 2026-10-27), where the view
@@ -52,7 +52,7 @@ ListView {
         RowLayout {
             Layout.topMargin: list.count > 0 ? list.spacing : 0
             Label {
-                text: qsTr("The machine's clock starts at")
+                text: qsTrId("settings_list.the_machine_s_clock_starts_at")
                 font.bold: true
                 Layout.preferredWidth: 220
                 elide: Text.ElideRight
@@ -64,12 +64,10 @@ ListView {
                 onTextEdited: list.vm.clockStart = text
                 Layout.preferredWidth: 260
             }
-            Label { text: qsTr("UTC") }
+            Label { text: qsTrId("settings_list.utc") }
         }
         Label {
-            text: qsTr("Every run of this project starts the machine's clock at this moment, so a movie plays back the same."
-                + " A game that takes its luck from the date and time deals other luck from another start."
-                + " Written as year-month-day hours:minutes:seconds, between 1970 and 2200.")
+            text: qsTrId("settings_list.every_run_of_this_project_starts")
             wrapMode: Text.Wrap
             opacity: 0.75
             font.pointSize: 9
@@ -130,7 +128,7 @@ ListView {
                 onEditingFinished: list.vm.run("set", [row.name, text])
                 Layout.preferredWidth: 260
             }
-            Label { visible: row.type === "datetime"; text: qsTr("UTC") }
+            Label { visible: row.type === "datetime"; text: qsTrId("settings_list.utc") }
             TextField {
                 visible: row.type === "string" || row.type === "float"
                 text: row.value === undefined ? "" : String(row.value)

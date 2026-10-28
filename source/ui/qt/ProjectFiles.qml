@@ -20,7 +20,7 @@ ApplicationWindow {
     required property QtObject session
     property Window mainWindow: null
     property var themeColor: (role, fallback) => fallback
-    title: qsTr("Locate Project Files")
+    title: qsTrId("project_files.locate_project_files")
     width: 600
     height: 360
     minimumWidth: 480
@@ -53,14 +53,14 @@ ApplicationWindow {
     Shortcut { sequence: "Escape"; enabled: win.active; onActivated: win.session.run("cancelOpen") }
     MessageDialog {
         id: unreadable
-        title: qsTr("Cannot use that file")
+        title: qsTrId("project_files.cannot_use_that_file")
         buttons: MessageDialog.Ok
     }
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 8
-        Label { text: qsTr("The project needs these files. Locate any that were not found:") }
+        Label { text: qsTrId("project_files.the_project_needs_these_files_locate") }
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -72,7 +72,7 @@ ApplicationWindow {
                 spacing: 0
                 Row {
                     Repeater {
-                        model: [qsTr("File"), qsTr("Slot"), qsTr("Status")]
+                        model: [qsTrId("project_files.file"), qsTrId("project_files.slot"), qsTrId("common.status")]
                         delegate: Label {
                             required property int index
                             required property string modelData
@@ -132,29 +132,29 @@ ApplicationWindow {
                 if (win.scanSaid !== "") return win.scanSaid
                 const row = win.picked >= 0 ? files.itemAtIndex(win.picked) : null
                 if (!row) return ""
-                if (row.status === 2) return qsTr("recorded %1, provided %2").arg(row.sha1).arg(row.actualSha1)
-                if (row.status === 0) return qsTr("SHA1 %1").arg(row.sha1)
-                return qsTr("double-click, or press Locate, to point at this file")
+                if (row.status === 2) return qsTrId("project_files.recorded_provided").arg(row.sha1).arg(row.actualSha1)
+                if (row.status === 0) return qsTrId("project_files.sha1").arg(row.sha1)
+                return qsTrId("project_files.double_click_or_press_locate_to")
             }
         }
         RowLayout {
-            Button { text: qsTr("Locate..."); enabled: win.picked >= 0; onClicked: locateDialog.open() }
-            Button { text: qsTr("Scan Folder..."); onClicked: scanDialog.open() }
-            CheckBox { id: subfolders; text: qsTr("Include sub-folders"); checked: true; padding: 2 }
+            Button { text: qsTrId("project_files.locate_3"); enabled: win.picked >= 0; onClicked: locateDialog.open() }
+            Button { text: qsTrId("common.scan_folder"); onClicked: scanDialog.open() }
+            CheckBox { id: subfolders; text: qsTrId("project_files.include_sub_folders"); checked: true; padding: 2 }
             Item { Layout.fillWidth: true }
             // a missing file cannot be passed over; one that is not the recorded bytes can, knowingly
             Button {
-                text: win.anyMismatch ? qsTr("Open Anyway") : qsTr("Open")
+                text: win.anyMismatch ? qsTrId("project_files.open_anyway") : qsTrId("project_files.open")
                 Layout.preferredWidth: 90
                 enabled: !win.anyMissing
                 onClicked: win.open()
             }
-            Button { text: qsTr("Cancel"); Layout.preferredWidth: 90; onClicked: win.session.run("cancelOpen") }
+            Button { text: qsTrId("common.cancel"); Layout.preferredWidth: 90; onClicked: win.session.run("cancelOpen") }
         }
     }
     FileDialog {
         id: locateDialog
-        title: win.picked >= 0 && files.itemAtIndex(win.picked) ? qsTr("Locate %1").arg(files.itemAtIndex(win.picked).name) : qsTr("Locate")
+        title: win.picked >= 0 && files.itemAtIndex(win.picked) ? qsTrId("project_files.locate").arg(files.itemAtIndex(win.picked).name) : qsTrId("project_files.locate_2")
         onAccepted: {
             win.session.run("locateProjectFile", [win.picked, selectedFile])
             // what the engine could not read, in Chimera's message box
@@ -166,11 +166,11 @@ ApplicationWindow {
     }
     FolderDialog {
         id: scanDialog
-        title: qsTr("Scan a folder for the project's files")
+        title: qsTrId("project_files.scan_a_folder_for_the_project")
         onAccepted: {
             const resolved = win.session.run("scanForProjectFiles", [selectedFolder, subfolders.checked])
             // in Chimera's words
-            win.scanSaid = !resolved ? qsTr("the scan found nothing new") : resolved === 1 ? qsTr("the scan resolved 1 file") : qsTr("the scan resolved %1 files").arg(resolved)
+            win.scanSaid = !resolved ? qsTrId("project_files.the_scan_found_nothing_new") : resolved === 1 ? qsTrId("project_files.the_scan_resolved_1_file") : qsTrId("project_files.the_scan_resolved_files").arg(resolved)
         }
     }
 }

@@ -22,7 +22,7 @@ ApplicationWindow {
     property var askFirst: (then) => then()
     property Window mainWindow: null
     property var themeColor: (role, fallback) => fallback
-    title: qsTr("New Chimera Project")
+    title: qsTrId("new_project.new_chimera_project")
     width: 620
     height: 480
     minimumWidth: 520
@@ -81,7 +81,7 @@ ApplicationWindow {
     }
     function advance() {
         if (win.page === 0) {
-            if (win.vm.core === "") { win.said = qsTr("pick a core (none in the cores folder?)"); return }
+            if (win.vm.core === "") { win.said = qsTrId("new_project.pick_a_core_none_in_the"); return }
             if (win.applies(1)) { win.showPage(1); return }
         }
         if (win.page <= 1) {
@@ -90,11 +90,11 @@ ApplicationWindow {
             return
         }
         if (win.page === 3 && win.vm.firmwareMissing !== "") {
-            win.said = qsTr("%1 is required and not provided").arg(win.vm.firmwareMissing)
+            win.said = qsTrId("new_project.is_required_and_not_provided").arg(win.vm.firmwareMissing)
             return
         }
         if (win.page === 4 && !win.vm.compileReady) {
-            win.said = qsTr("Compile this game's code first.")
+            win.said = qsTrId("new_project.compile_this_game_s_code_first")
             return
         }
         const next = win.nextFrom(win.page)
@@ -116,7 +116,7 @@ ApplicationWindow {
 
     FileDialog {
         id: fileDialog
-        title: qsTr("Choose a file")
+        title: qsTrId("new_project.choose_a_file")
         fileMode: FileDialog.OpenFiles
         onAccepted: { for (const f of selectedFiles) win.run("addFile", [win.slotFor, f]) }
     }
@@ -127,15 +127,15 @@ ApplicationWindow {
     }
     FolderDialog {
         id: scanDialog
-        title: qsTr("Scan a folder for firmware")
+        title: qsTrId("new_project.scan_a_folder_for_firmware")
         onAccepted: win.run("scanFolder", [selectedFolder, scanSubfolders.checked])
     }
     FileDialog {
         id: importSaveDialog
-        title: qsTr("Save the imported project")
+        title: qsTrId("new_project.save_the_imported_project")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "chimeraProject"
-        nameFilters: [qsTr("TAS Project Files (*.chimeraProject)")]
+        nameFilters: [qsTrId("new_project.tas_project_files_chimeraproject")]
         // beside the movie, named after it
         currentFolder: win.urlOf(win.vm.importMovie.replace(/[\\/][^\\/]*$/, ""))
         selectedFile: win.vm.importMovie === "" ? "" : win.urlOf(win.vm.importMovie.replace(/\.[^.\\/]*$/, "") + ".chimeraProject")
@@ -162,18 +162,18 @@ ApplicationWindow {
             // ---- page 1: the machine ----
             ColumnLayout {
                 spacing: 8
-                Heading { text: qsTr("Please select the core: an emulator, or a game.") }
+                Heading { text: qsTrId("new_project.please_select_the_core_an_emulator") }
                 GridLayout {
                     columns: 2
                     columnSpacing: 8
                     rowSpacing: 8
                     Layout.fillWidth: true
-                    Caption { text: qsTr("Kind:"); Layout.row: 0; Layout.column: 0 }
+                    Caption { text: qsTrId("new_project.kind"); Layout.row: 0; Layout.column: 0 }
                     ComboBox {
                         Layout.row: 0
                         Layout.column: 1
                         Layout.preferredWidth: 160
-                        model: [qsTr("Emulators"), qsTr("Games")]
+                        model: [qsTrId("common.emulators"), qsTrId("common.games")]
                         currentIndex: win.vm.kind === "games" ? 1 : 0
                         onActivated: (i) => {
                             win.run("chooseKind", [i === 1 ? "games" : "emulators"])
@@ -181,7 +181,7 @@ ApplicationWindow {
                             if (win.vm.coreLines !== "") win.run("chooseCoreLine", [0])
                         }
                     }
-                    Caption { text: qsTr("Core:"); Layout.row: 1; Layout.column: 0 }
+                    Caption { text: qsTrId("new_project.core"); Layout.row: 1; Layout.column: 0 }
                     ComboBox {
                         objectName: "coreBox"
                         Layout.row: 1
@@ -191,7 +191,7 @@ ApplicationWindow {
                         currentIndex: win.vm.coreLine
                         onActivated: (i) => win.run("chooseCoreLine", [i])
                     }
-                    Caption { text: qsTr("System:"); Layout.row: 2; Layout.column: 0 }
+                    Caption { text: qsTrId("new_project.system"); Layout.row: 2; Layout.column: 0 }
                     // a package that is one machine still says which, in a box that is not a choice
                     ComboBox {
                         Layout.row: 2
@@ -202,7 +202,7 @@ ApplicationWindow {
                         enabled: count > 1
                         onActivated: (i) => win.run("chooseMachine", [i])
                     }
-                    Caption { text: qsTr("Renderer:"); Layout.row: 3; Layout.column: 0 }
+                    Caption { text: qsTrId("new_project.renderer"); Layout.row: 3; Layout.column: 0 }
                     // one renderer is not a choice
                     ComboBox {
                         Layout.row: 3
@@ -230,7 +230,7 @@ ApplicationWindow {
                     readonly property string url: "https://github.com/ToolAssisted-run/chimera/issues"
                     Layout.fillWidth: true
                     textFormat: Text.StyledText
-                    text: qsTr("Please submit any issues and feature requests here: %1").arg("<a href=\"" + url + "\">" + url + "</a>")
+                    text: qsTrId("new_project.please_submit_any_issues_and_feature").arg("<a href=\"" + url + "\">" + url + "</a>")
                     linkColor: palette.link
                     color: palette.placeholderText
                     elide: Text.ElideRight
@@ -241,7 +241,7 @@ ApplicationWindow {
 
             // ---- page 2: the files ----
             ColumnLayout {
-                Heading { text: qsTr("Please provide the game ROMs and other persistent data.") }
+                Heading { text: qsTrId("new_project.please_provide_the_game_roms_and") }
                 ScrollView {
                     id: slotsView
                     Layout.fillWidth: true
@@ -272,17 +272,17 @@ ApplicationWindow {
                                 enabled: slot.exposed
                                 Layout.fillWidth: true
                                 Layout.rightMargin: 12
-                                title: slot.slotTitle + "  (" + slot.cardinality + ")" + (slot.exposed ? "" : qsTr(" - unavailable with the current files"))
+                                title: slot.slotTitle + "  (" + slot.cardinality + ")" + (slot.exposed ? "" : qsTrId("new_project.unavailable_with_the_current_files"))
                                 ToolTip.visible: slotHover.hovered && ToolTip.text !== ""
                                 ToolTip.delay: 600
-                                ToolTip.text: slot.help !== "" ? slot.help : qsTr("the core did not explain this slot")
+                                ToolTip.text: slot.help !== "" ? slot.help : qsTrId("new_project.the_core_did_not_explain_this")
                                 HoverHandler { id: slotHover }
                                 ColumnLayout {
                                     anchors.fill: parent
                                     spacing: 4
                                     Label {
                                         visible: slot.formats !== ""
-                                        text: qsTr("Formats: %1").arg(slot.formats)
+                                        text: qsTrId("new_project.formats").arg(slot.formats)
                                         wrapMode: Text.WordWrap
                                         Layout.fillWidth: true
                                     }
@@ -335,7 +335,7 @@ ApplicationWindow {
                                                 Layout.preferredWidth: 32
                                                 enabled: slot.picked > 0
                                                 ToolTip.visible: hovered
-                                                ToolTip.text: qsTr("Move up: earlier in the swap order. The first file is the one in the drive at boot.")
+                                                ToolTip.text: qsTrId("new_project.move_up_earlier_in_the_swap")
                                                 onClicked: { win.run("moveFile", [slot.id, slot.picked, slot.picked - 1]); slot.picked-- }
                                             }
                                             Button {
@@ -343,24 +343,24 @@ ApplicationWindow {
                                                 Layout.preferredWidth: 32
                                                 enabled: slot.picked >= 0 && slot.picked < fileList.count - 1
                                                 ToolTip.visible: hovered
-                                                ToolTip.text: qsTr("Move down: later in the swap order.")
+                                                ToolTip.text: qsTrId("new_project.move_down_later_in_the_swap")
                                                 onClicked: { win.run("moveFile", [slot.id, slot.picked, slot.picked + 1]); slot.picked++ }
                                             }
                                         }
                                         ColumnLayout {
                                             Layout.alignment: Qt.AlignTop
                                             Button {
-                                                text: qsTr("Add...")
+                                                text: qsTrId("new_project.add")
                                                 Layout.preferredWidth: 84
                                                 onClicked: {
                                                     win.slotFor = slot.id
-                                                    fileDialog.nameFilters = slot.filter === "*" ? [qsTr("All files (*)")]
-                                                        : [slot.slotTitle + " (" + slot.filter + ")", qsTr("All files (*)")]
+                                                    fileDialog.nameFilters = slot.filter === "*" ? [qsTrId("common.all_files")]
+                                                        : [slot.slotTitle + " (" + slot.filter + ")", qsTrId("common.all_files")]
                                                     fileDialog.open()
                                                 }
                                             }
                                             Button {
-                                                text: qsTr("Remove")
+                                                text: qsTrId("common.remove")
                                                 Layout.preferredWidth: 84
                                                 enabled: slot.picked >= 0
                                                 onClicked: { win.run("removeFile", [slot.id, slot.picked]); slot.picked = -1 }
@@ -376,12 +376,12 @@ ApplicationWindow {
 
             // ---- page 3: the settings ----
             ColumnLayout {
-                Heading { text: qsTr("Please specify the emulation configuration settings.") }
+                Heading { text: qsTrId("new_project.please_specify_the_emulation_configurati") }
                 // a machine somebody has got working, then adjusted: absent when there are none
                 RowLayout {
                     Layout.fillWidth: true
                     visible: presetBox.count > 0
-                    Label { text: qsTr("Preset:") }
+                    Label { text: qsTrId("common.preset") }
                     ComboBox {
                         id: presetBox
                         Layout.fillWidth: true
@@ -401,7 +401,7 @@ ApplicationWindow {
                         }
                         Component.onCompleted: keep()
                     }
-                    Button { text: qsTr("Apply"); Layout.preferredWidth: 72; enabled: presetBox.currentIndex >= 0; onClicked: win.run("applyPreset", [presetBox.currentValue]) }
+                    Button { text: qsTrId("common.apply"); Layout.preferredWidth: 72; enabled: presetBox.currentIndex >= 0; onClicked: win.run("applyPreset", [presetBox.currentValue]) }
                 }
                 // what the core suggests for the game, selectable so its source can be copied
                 ScrollView {
@@ -420,7 +420,7 @@ ApplicationWindow {
 
             // ---- page 4: the firmware ----
             ColumnLayout {
-                Heading { text: qsTr("Please indicate where to find the required firmware files.") }
+                Heading { text: qsTrId("new_project.please_indicate_where_to_find_the") }
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -433,7 +433,7 @@ ApplicationWindow {
                         spacing: 0
                         Row {
                             Repeater {
-                                model: [qsTr("Firmware"), qsTr("Expected file"), qsTr("SHA1"), qsTr("Status")]
+                                model: [qsTrId("new_project.firmware"), qsTrId("new_project.expected_file"), qsTrId("new_project.sha1"), qsTrId("common.status")]
                                 delegate: Label {
                                     required property int index
                                     required property string modelData
@@ -490,7 +490,7 @@ ApplicationWindow {
                             }
                             Label {
                                 visible: firmwareList.count === 0
-                                text: qsTr("(these decisions need no firmware)")
+                                text: qsTrId("new_project.these_decisions_need_no_firmware")
                                 leftPadding: 4
                             }
                         }
@@ -499,38 +499,34 @@ ApplicationWindow {
                 RowLayout {
                     Button {
                         id: selectFirmware
-                        text: qsTr("Select File...")
+                        text: qsTrId("new_project.select_file")
                         enabled: win.firmwarePicked >= 0
                         onClicked: {
                             const it = firmwareList.itemAtIndex(win.firmwarePicked)
                             if (!it) return
                             firmwareDialog.need = it.id
-                            firmwareDialog.title = qsTr("Locate %1").arg(it.name)
+                            firmwareDialog.title = qsTrId("new_project.locate").arg(it.name)
                             firmwareDialog.open()
                         }
                     }
                     Button {
-                        text: qsTr("Clear")
+                        text: qsTrId("common.clear")
                         enabled: win.firmwarePicked >= 0 && firmwareList.itemAtIndex(win.firmwarePicked) !== null && firmwareList.itemAtIndex(win.firmwarePicked).file !== ""
                         onClicked: win.run("clearFirmware", [firmwareList.itemAtIndex(win.firmwarePicked).id])
                     }
-                    Button { text: qsTr("Scan Folder..."); onClicked: scanDialog.open() }
-                    CheckBox { id: scanSubfolders; text: qsTr("Include sub-folders"); checked: true }
+                    Button { text: qsTrId("common.scan_folder"); onClicked: scanDialog.open() }
+                    CheckBox { id: scanSubfolders; text: qsTrId("new_project.include_sub_folders"); checked: true }
                     Item { Layout.fillWidth: true }
                 }
             }
 
             // ---- page 5: the code the core compiles for this game (Chimera's, for RPCS3) ----
             ColumnLayout {
-                Heading { text: qsTr("This game's code must be recompiled before it can be played.") }
+                Heading { text: qsTrId("new_project.this_game_s_code_must_be") }
                 Label {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    text: qsTr("This core translates the console's code into your machine's before running it. "
-                        + "Doing it once now, in parallel, is what makes the game fast enough to work on; "
-                        + "otherwise every session pays for it again. It can take several minutes. The result "
-                        + "depends only on the game and this core, so it is the same on every machine and is "
-                        + "not part of the run.")
+                    text: qsTrId("new_project.this_core_translates_the_console_s")
                 }
                 Rectangle {
                     Layout.fillWidth: true
@@ -547,7 +543,7 @@ ApplicationWindow {
                         ScrollBar.vertical: ScrollBar {}
                         header: Row {
                             Repeater {
-                                model: [qsTr("Compiled Module"), qsTr("SHA1"), qsTr("State")]
+                                model: [qsTrId("new_project.compiled_module"), qsTrId("new_project.sha1"), qsTrId("new_project.state")]
                                 delegate: Label {
                                     required property int index
                                     required property string modelData
@@ -564,7 +560,7 @@ ApplicationWindow {
                             required property bool present
                             Label { text: parent.name; width: 300; elide: Text.ElideMiddle; leftPadding: 4 }
                             Label { text: parent.sha1.substring(0, 16); width: 180; font.family: "monospace"; leftPadding: 4 }
-                            Label { text: parent.present ? qsTr("ready") : qsTr("missing"); width: 72; leftPadding: 4 }
+                            Label { text: parent.present ? qsTrId("new_project.ready") : qsTrId("new_project.missing"); width: 72; leftPadding: 4 }
                         }
                     }
                 }
@@ -578,7 +574,7 @@ ApplicationWindow {
                 }
                 RowLayout {
                     Button {
-                        text: win.vm.compiling ? qsTr("Stop") : qsTr("Compile")
+                        text: win.vm.compiling ? qsTrId("common.stop") : qsTrId("new_project.compile")
                         enabled: win.vm.compiling || !win.vm.compileReady
                         onClicked: win.run(win.vm.compiling ? "stopCompile" : "compile")
                     }
@@ -596,17 +592,17 @@ ApplicationWindow {
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
-            Button { text: qsTr("< Back"); Layout.preferredWidth: 84; enabled: win.page > 0; onClicked: win.back() }
+            Button { text: qsTrId("new_project.back"); Layout.preferredWidth: 84; enabled: win.page > 0; onClicked: win.back() }
             Button {
                 id: nextButton
                 objectName: "nextButton"
-                text: win.lastPage ? qsTr("Create") : qsTr("Next >")
+                text: win.lastPage ? qsTrId("new_project.create") : qsTrId("new_project.next")
                 Layout.preferredWidth: 84
                 // the last page's Create waits for the firmware it requires
                 enabled: !win.lastPage || win.page !== 3 || win.vm.firmwareMissing === ""
                 onClicked: win.advance()
             }
-            Button { text: qsTr("Cancel"); Layout.preferredWidth: 84; onClicked: win.close() }
+            Button { text: qsTrId("common.cancel"); Layout.preferredWidth: 84; onClicked: win.close() }
         }
     }
 }

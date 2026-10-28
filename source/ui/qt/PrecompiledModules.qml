@@ -15,7 +15,7 @@ ApplicationWindow {
     objectName: "precompiledWindow"
     required property QtObject vm
     property var themeColor: (role, fallback) => fallback
-    title: qsTr("Pre-Compiled Modules")
+    title: qsTrId("precompiled_modules.pre_compiled_modules")
     width: 900
     height: 460
     minimumWidth: 620
@@ -35,10 +35,10 @@ ApplicationWindow {
 
     MessageDialog {
         id: removeAsk
-        title: qsTr("Pre-Compiled Modules")
+        title: qsTrId("precompiled_modules.pre_compiled_modules")
         property string places: ""
         property string what: ""
-        text: qsTr("Remove %1?\n\n%2 will be freed. Each game is compiled again the next time a project needs it.").arg(removeAsk.what).arg(win.tickedSize)
+        text: qsTrId("precompiled_modules.remove_will_be_freed_each_game").arg(removeAsk.what).arg(win.tickedSize)
         buttons: MessageDialog.Yes | MessageDialog.No
         onButtonClicked: (button) => { if (button === MessageDialog.Yes) { win.vm.run("remove", [removeAsk.places]); win.ticked = {} } }
     }
@@ -59,7 +59,7 @@ ApplicationWindow {
                 spacing: 0
                 Row {
                     Repeater {
-                        model: [qsTr("Game"), qsTr("Compiled by"), qsTr("When"), qsTr("Modules"), qsTr("Size")]
+                        model: [qsTrId("precompiled_modules.game"), qsTrId("precompiled_modules.compiled_by"), qsTrId("precompiled_modules.when"), qsTrId("precompiled_modules.modules"), qsTrId("common.size")]
                         delegate: Label {
                             required property int index
                             required property string modelData
@@ -121,24 +121,24 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             Button {
-                text: win.tickedSize === "" ? qsTr("&Remove") : qsTr("&Remove (%1)").arg(win.tickedSize)
+                text: win.tickedSize === "" ? qsTrId("common.remove_mnemonic") : qsTrId("precompiled_modules.remove").arg(win.tickedSize)
                 Layout.preferredWidth: 150
                 enabled: Object.keys(win.ticked).length > 0
                 onClicked: {
                     const places = win.tickedPlaces()
                     const n = places.split(",").filter(s => s !== "").length
                     removeAsk.places = places
-                    removeAsk.what = n === 1 ? (list.itemAtIndex(parseInt(places)) ? list.itemAtIndex(parseInt(places)).name : "") : qsTr("%1 games' compiled code").arg(n)
+                    removeAsk.what = n === 1 ? (list.itemAtIndex(parseInt(places)) ? list.itemAtIndex(parseInt(places)).name : "") : qsTrId("precompiled_modules.games_compiled_code").arg(n)
                     removeAsk.open()
                 }
             }
             Button {
-                text: qsTr("&Open folder"); Layout.preferredWidth: 150
+                text: qsTrId("precompiled_modules.open_folder"); Layout.preferredWidth: 150
                 enabled: win.picked !== ""
                 onClicked: Qt.openUrlExternally(localFiles.folderUrl(win.picked))
             }
             // Chimera's: how much memory one compile session is counted at
-            Label { text: qsTr("&Memory per compile session (GB):"); Layout.leftMargin: 12 }
+            Label { text: qsTrId("precompiled_modules.memory_per_compile_session_gb"); Layout.leftMargin: 12 }
             SpinBox {
                 from: 1; to: 256
                 value: win.vm.sessionGigabytes
@@ -146,10 +146,10 @@ ApplicationWindow {
                 Layout.preferredWidth: 90
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: qsTr("How much memory one compile session is counted at. Chimera runs as many sessions side by side as the computer can give this much each: a smaller figure runs more at once, a larger one fewer. 8 is what one RPCS3 session was measured to need.")
+                ToolTip.text: qsTrId("precompiled_modules.how_much_memory_one_compile_session")
             }
             Label { text: win.vm.error !== "" ? win.vm.error : win.vm.status; color: win.vm.error !== "" ? win.themeColor("AccentError", "#b00020") : palette.text; Layout.fillWidth: true; elide: Text.ElideRight }
-            Button { text: qsTr("&Close"); Layout.preferredWidth: 150; onClicked: win.close() }
+            Button { text: qsTrId("common.close_mnemonic"); Layout.preferredWidth: 150; onClicked: win.close() }
         }
     }
 }

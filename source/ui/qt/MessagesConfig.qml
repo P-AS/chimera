@@ -18,7 +18,7 @@ ApplicationWindow {
     property Window mainWindow: null
     // the theme's colour for a role (Main hands it its lookup)
     property var themeColor: (role, fallback) => fallback
-    title: qsTr("Configure On Screen Messages")
+    title: qsTrId("messages_config.configure_on_screen_messages")
     width: 560
     height: 470
     modality: Qt.ApplicationModal
@@ -68,7 +68,7 @@ ApplicationWindow {
                 Layout.preferredWidth: 190
                 Layout.fillHeight: true
                 GroupBox {
-                    title: qsTr("Message Type")
+                    title: qsTrId("messages_config.message_type")
                     Layout.fillWidth: true
                     ColumnLayout {
                         anchors.fill: parent
@@ -91,13 +91,13 @@ ApplicationWindow {
                     }
                 }
                 GroupBox {
-                    title: qsTr("Message Colors")
+                    title: qsTrId("messages_config.message_colors")
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     ColumnLayout {
                         spacing: 2
                         Repeater {
-                            model: [qsTr("Main Messages"), qsTr("Alert Messages"), qsTr("Previous Frame Input"), qsTr("Movie Input")]
+                            model: [qsTrId("messages_config.main_messages"), qsTrId("messages_config.alert_messages"), qsTrId("messages_config.previous_frame_input"), qsTrId("messages_config.movie_input")]
                             delegate: ColumnLayout {
                                 required property int index
                                 required property string modelData
@@ -130,7 +130,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 GroupBox {
-                    title: qsTr("Position")
+                    title: qsTrId("messages_config.position")
                     Layout.alignment: Qt.AlignTop
                     // the corners at the screen's corners, the screen between them, x and y under it
                     GridLayout {
@@ -197,16 +197,16 @@ ApplicationWindow {
                 }
                 Item { Layout.fillHeight: true }
                 RowLayout {
-                    Label { text: qsTr("Messages fade after") }
+                    Label { text: qsTrId("messages_config.messages_fade_after") }
                     SpinBox { from: 1; to: 10; editable: true; value: win.vm.messageSeconds; onValueModified: win.vm.messageSeconds = value; Layout.preferredWidth: 80 }
-                    Label { text: qsTr("seconds") }
+                    Label { text: qsTrId("messages_config.seconds") }
                 }
-                CheckBox { text: qsTr("Stack Messages"); checked: win.vm.stackMessages; onToggled: win.vm.stackMessages = checked; padding: 2 }
+                CheckBox { text: qsTrId("messages_config.stack_messages"); checked: win.vm.stackMessages; onToggled: win.vm.stackMessages = checked; padding: 2 }
                 RowLayout {
-                    Button { text: qsTr("Restore Defaults"); onClicked: win.vm.run("resetDefaults") }
+                    Button { text: qsTrId("common.restore_defaults"); onClicked: win.vm.run("resetDefaults") }
                     Item { Layout.fillWidth: true }
-                    Button { text: qsTr("&OK"); onClicked: { win.keeping = true; win.close() } }
-                    Button { text: qsTr("&Cancel"); onClicked: win.close() }
+                    Button { text: qsTrId("common.ok_mnemonic"); onClicked: { win.keeping = true; win.close() } }
+                    Button { text: qsTrId("common.cancel_mnemonic"); onClicked: win.close() }
                 }
                 Label { text: win.vm.error; color: win.themeColor("AccentError", "#b00020"); visible: text !== ""; elide: Text.ElideRight; Layout.fillWidth: true }
             }

@@ -19,7 +19,7 @@ ApplicationWindow {
     objectName: "cacheManagerWindow"
     required property QtObject vm
     property var themeColor: (role, fallback) => fallback
-    title: qsTr("Cache Manager")
+    title: qsTrId("cache_manager.cache_manager")
     width: 1460
     height: 500
     minimumWidth: 900
@@ -49,10 +49,10 @@ ApplicationWindow {
 
     MessageDialog {
         id: removeAsk
-        title: qsTr("Remove cached data")
+        title: qsTrId("cache_manager.remove_cached_data")
         property string places: ""
         property var cost: null
-        text: removeAsk.cost ? qsTr("Remove %1 cached item(s), freeing %2?\n\n%3").arg(removeAsk.cost.count).arg(removeAsk.cost.size).arg(removeAsk.cost.costs) : ""
+        text: removeAsk.cost ? qsTrId("cache_manager.remove_cached_item_s_freeing").arg(removeAsk.cost.count).arg(removeAsk.cost.size).arg(removeAsk.cost.costs) : ""
         buttons: MessageDialog.Ok | MessageDialog.Cancel
         onAccepted: {
             if (removeAsk.places === "clean") win.vm.run("cleanNow")
@@ -89,19 +89,19 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             CheckBox {
-                text: !win.tickedCost ? qsTr("Select all") : qsTr("Select all (%1 ticked, %2)").arg(win.tickedCost.count).arg(win.tickedCost.size)
+                text: !win.tickedCost ? qsTrId("cache_manager.select_all") : qsTrId("cache_manager.select_all_ticked").arg(win.tickedCost.count).arg(win.tickedCost.size)
                 checked: false
                 onClicked: win.setTicks(checked ? JSON.parse(win.vm.run("folders", ["free"]) || "[]") : [])
                 padding: 2
             }
             Item { Layout.fillWidth: true }
             // the limit, kept at once; nothing is removed while it is typed
-            CheckBox { text: qsTr("Keep the cache under"); checked: win.vm.autoClean; onToggled: win.vm.autoClean = checked; padding: 2 }
+            CheckBox { text: qsTrId("cache_manager.keep_the_cache_under"); checked: win.vm.autoClean; onToggled: win.vm.autoClean = checked; padding: 2 }
             SpinBox { from: 1; to: 100000; stepSize: 5; editable: true; value: win.vm.limitGb; onValueModified: win.vm.limitGb = value; Layout.preferredWidth: 100 }
-            Label { text: qsTr("GB") }
-            Label { text: qsTr("and leave the disk at least"); Layout.leftMargin: 12 }
+            Label { text: qsTrId("cache_manager.gb") }
+            Label { text: qsTrId("cache_manager.and_leave_the_disk_at_least"); Layout.leftMargin: 12 }
             SpinBox { from: 0; to: 100000; stepSize: 5; editable: true; value: win.vm.floorGb; onValueModified: win.vm.floorGb = value; Layout.preferredWidth: 90 }
-            Label { text: qsTr("GB free") }
+            Label { text: qsTrId("cache_manager.gb_free") }
         }
         Rectangle {
             Layout.fillWidth: true
@@ -122,8 +122,8 @@ ApplicationWindow {
                     // the headings: a click sorts by the column, again the other way
                     Row {
                         Repeater {
-                            model: ["", qsTr("What"), qsTr("Name"), qsTr("System"), qsTr("Core"), qsTr("Game"), qsTr("Project id"), qsTr("Project file"),
-                                    qsTr("Cache location"), qsTr("Size"), qsTr("Last modified")]
+                            model: ["", qsTrId("cache_manager.what"), qsTrId("common.name"), qsTrId("cache_manager.system"), qsTrId("common.core"), qsTrId("cache_manager.game"), qsTrId("cache_manager.project_id"), qsTrId("cache_manager.project_file"),
+                                    qsTrId("cache_manager.cache_location"), qsTrId("common.size"), qsTrId("cache_manager.last_modified")]
                             delegate: Label {
                                 required property int index
                                 required property string modelData
@@ -214,27 +214,27 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             Button {
-                text: qsTr("Remove Ticked"); Layout.preferredWidth: 160
+                text: qsTrId("cache_manager.remove_ticked"); Layout.preferredWidth: 160
                 enabled: win.tickedPlaces !== ""
                 onClicked: { removeAsk.places = win.tickedPlaces; removeAsk.cost = win.tickedCost; removeAsk.open() }
             }
             Button {
-                text: qsTr("Lock / Unlock"); Layout.preferredWidth: 160
+                text: qsTrId("cache_manager.lock_unlock"); Layout.preferredWidth: 160
                 enabled: win.tickedPlaces !== ""
                 onClicked: win.vm.run("toggleLock", [win.tickedPlaces])
             }
             Button {
-                text: qsTr("Select all orphans"); Layout.preferredWidth: 160
+                text: qsTrId("cache_manager.select_all_orphans"); Layout.preferredWidth: 160
                 enabled: (JSON.parse(win.vm.run("folders", ["orphans"]) || "[]")).length > 0
                 onClicked: {
                     const orphans = JSON.parse(win.vm.run("folders", ["orphans"]) || "[]")
                     win.setTicks(orphans)
-                    win.vm.status = orphans.length === 0 ? qsTr("No cache belongs to a project that has gone.")
-                        : qsTr("Ticked %1 orphaned item(s), %2.").arg(orphans.length).arg(win.tickedCost ? win.tickedCost.size : "")
+                    win.vm.status = orphans.length === 0 ? qsTrId("cache_manager.no_cache_belongs_to_a_project")
+                        : qsTrId("cache_manager.ticked_orphaned_item_s").arg(orphans.length).arg(win.tickedCost ? win.tickedCost.size : "")
                 }
             }
             Button {
-                text: qsTr("Greenzone budgets..."); Layout.preferredWidth: 160
+                text: qsTrId("cache_manager.greenzone_budgets"); Layout.preferredWidth: 160
                 // a project row offers that project's own budgets as well as the defaults; with none picked, the defaults alone
                 onClicked: {
                     const place = win.picked === "" ? "" : (win.vm.run("placesOf", [JSON.stringify([win.picked])]) || "")
@@ -243,12 +243,12 @@ ApplicationWindow {
                 }
             }
             Button {
-                text: qsTr("Open Folder"); Layout.preferredWidth: 160
+                text: qsTrId("common.open_folder"); Layout.preferredWidth: 160
                 enabled: win.picked !== ""
-                onClicked: win.vm.status = Qt.openUrlExternally(localFiles.folderUrl(win.picked)) ? qsTr("Opened %1").arg(win.picked) : qsTr("Could not open %1").arg(win.picked)
+                onClicked: win.vm.status = Qt.openUrlExternally(localFiles.folderUrl(win.picked)) ? qsTrId("cache_manager.opened").arg(win.picked) : qsTrId("cache_manager.could_not_open").arg(win.picked)
             }
             Button {
-                text: qsTr("Clean Now"); Layout.preferredWidth: 160; Layout.leftMargin: 8
+                text: qsTrId("cache_manager.clean_now"); Layout.preferredWidth: 160; Layout.leftMargin: 8
                 enabled: win.vm.overLimit !== ""
                 onClicked: {
                     const going = win.vm.run("wouldGo")
@@ -259,7 +259,7 @@ ApplicationWindow {
                 }
             }
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("Close"); Layout.preferredWidth: 90; onClicked: win.close() }
+            Button { text: qsTrId("common.close"); Layout.preferredWidth: 90; onClicked: win.close() }
         }
     }
 }

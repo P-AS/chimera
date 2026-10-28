@@ -1,34 +1,55 @@
 #include "translations.hpp"
 
+#include "chimera/engine.h"
+
 #include <QCoreApplication>
-#include <QDir>
-#include <QFileInfo>
 #include <QTranslator>
 
 namespace chimera::qt {
 
 namespace {
-/* the translation installed now, none for English */
-QTranslator *installed = nullptr;
+
+/* qsTrId's answers, from the engine's table of the language in use */
+class EngineTranslator : public QTranslator
+{
+public:
+	using QTranslator::QTranslator;
+	bool isEmpty() const override { return false; }
+	QString translate(const char *, const char *key, const char *, int n) const override
+	{
+		return QString::fromUtf8(ce_text(key, n, nullptr, 0));
+	}
+};
+
+EngineTranslator *installed = nullptr;
+
+int indexOf(const QString &language)
+{
+	const QByteArray code = language.toUtf8();
+	for (int32_t i = 0; i < ce_language_count(); i++)
+	{
+		if (code == ce_language_code(i)) return i;
+	}
+	return -1;
+}
+
 } // namespace
 
-QStringList languagesIn(const QString &folder)
+QStringList languages()
 {
 	QStringList out;
-	const QStringList files = QDir(folder).entryList({QStringLiteral("chimera_*.qm")}, QDir::Files, QDir::Name);
-	for (const QString &f : files) out << QFileInfo(f).completeBaseName().mid(int(sizeof("chimera_") - 1));
+	for (int32_t i = 0; i < ce_language_count(); i++) out << QString::fromUtf8(ce_language_code(i));
 	return out;
 }
 
-QString startLanguage(const QString &chosen, const QString &folder, const QLocale &locale)
+QString startLanguage(const QString &chosen, const QLocale &locale)
 {
-	const QStringList there = languagesIn(folder);
-	if (chosen == QLatin1String("en") || (!chosen.isEmpty() && there.contains(chosen))) return chosen;
+	const QStringList there = languages();
+	if (there.contains(chosen)) return chosen;
 	/* "fr-CA" is tried as fr_CA, then as fr */
 	for (QString name : locale.uiLanguages())
 	{
 		name.replace(QLatin1Char('-'), QLatin1Char('_'));
-		if (name.startsWith(QLatin1String("en"))) return QStringLiteral("en");
 		if (there.contains(name)) return name;
 		const QString general = name.section(QLatin1Char('_'), 0, 0);
 		if (there.contains(general)) return general;
@@ -36,40 +57,27 @@ QString startLanguage(const QString &chosen, const QString &folder, const QLocal
 	return QStringLiteral("en");
 }
 
-bool useLanguage(QCoreApplication &app, const QString &language, const QString &folder)
+bool useLanguage(QCoreApplication &app, const QString &language)
 {
-	auto *next = new QTranslator(&app);
-	if (language != QLatin1String("en") && !next->load(QStringLiteral("chimera_") + language, folder))
+	if (ce_language_use(language.toUtf8().constData()) == 0) return false;
+	if (installed == nullptr)
 	{
-		delete next;
-		return false;
+		installed = new EngineTranslator(&app);
+		QCoreApplication::installTranslator(installed);
 	}
-	if (installed != nullptr)
-	{
-		QCoreApplication::removeTranslator(installed);
-		delete installed;
-		installed = nullptr;
-	}
-	if (language == QLatin1String("en"))
-	{
-		delete next;
-		return true;
-	}
-	QCoreApplication::installTranslator(next);
-	installed = next;
 	return true;
 }
 
 QString languageName(const QString &language)
 {
-	if (language == QLatin1String("en")) return QStringLiteral("English");
-	const QLocale locale(language);
-	QString name = locale.nativeLanguageName();
-	if (name.isEmpty()) return language;
-	name = name.left(1).toUpper() + name.mid(1);
-	/* a language written for one country says which ("zh_CN": Simplified Chinese, China's) */
-	if (language.contains(QLatin1Char('_'))) name += QStringLiteral(" (") + locale.nativeTerritoryName() + QLatin1Char(')');
-	return name;
+	const int i = indexOf(language);
+	return i < 0 ? language : QString::fromUtf8(ce_language_name(i));
+}
+
+QString languageEnglishName(const QString &language)
+{
+	const int i = indexOf(language);
+	return i < 0 ? language : QString::fromUtf8(ce_language_english_name(i));
 }
 
 } // namespace chimera::qt

@@ -1269,9 +1269,9 @@ int main(int argc, char **argv)
 	 * first open, the first of the system's languages it has a translation
 	 * for, else English (docs/translations.md, owner 2026-10-28) */
 	{
-		QString offered = QStringLiteral("en\t") + qt::languageName(QStringLiteral("en"));
-		for (const QString &l : qt::languagesIn()) offered += QLatin1Char('\n') + l + QLatin1Char('\t') + qt::languageName(l);
-		customize.languages.set(offered.toStdString());
+		QStringList offered;
+		for (const QString &l : qt::languages()) offered << l + QLatin1Char('\t') + qt::languageName(l);
+		customize.languages.set(offered.join(QLatin1Char('\n')).toStdString());
 		const QString start = qt::startLanguage(QString::fromStdString(customize.language.get()));
 		qt::useLanguage(app, start);
 		customize.language.set(start.toStdString());

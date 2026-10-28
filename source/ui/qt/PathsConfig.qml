@@ -18,7 +18,7 @@ ApplicationWindow {
     property Window mainWindow: null
     // the theme's colour for a role (Main hands it its lookup)
     property var themeColor: (role, fallback) => fallback
-    title: qsTr("Path Configuration")
+    title: qsTrId("paths_config.path_configuration")
     width: 784
     height: 540
     modality: Qt.ApplicationModal
@@ -128,7 +128,7 @@ ApplicationWindow {
                             folderDialog.system = row.system
                             folderDialog.name = row.name
                             folderDialog.forSystem = forSystem
-                            folderDialog.title = qsTr("Set the directory for %1").arg(row.name)
+                            folderDialog.title = qsTrId("paths_config.set_the_directory_for").arg(row.name)
                             folderDialog.currentFolder = localFiles.folderUrl(win.vm.run("absolute", [box.text, forSystem]))
                             folderDialog.open()
                         }
@@ -146,7 +146,7 @@ ApplicationWindow {
         spacing: 4
         RowLayout {
             Layout.fillWidth: true
-            CheckBox { text: qsTr("Always use recent path for ROMs"); checked: win.recent; onToggled: win.recent = checked; padding: 2 }
+            CheckBox { text: qsTrId("paths_config.always_use_recent_path_for_roms"); checked: win.recent; onToggled: win.recent = checked; padding: 2 }
             Item { Layout.fillWidth: true }
             ToolButton {
                 icon.source: "qrc:/chimera/icons/Help.png"
@@ -154,13 +154,13 @@ ApplicationWindow {
                 Layout.preferredHeight: 23
                 onClicked: specialCommands.show()
             }
-            Label { text: qsTr("Special Commands") }
+            Label { text: qsTrId("paths_config.special_commands") }
         }
         TabBar {
             id: tabs
             Layout.fillWidth: true
-            TabButton { text: qsTr("Global"); width: implicitWidth }
-            TabButton { text: qsTr("by System"); width: implicitWidth }
+            TabButton { text: qsTrId("paths_config.global"); width: implicitWidth }
+            TabButton { text: qsTrId("paths_config.by_system"); width: implicitWidth }
         }
         Frame {
             Layout.fillWidth: true
@@ -173,7 +173,7 @@ ApplicationWindow {
                 ColumnLayout {
                     RowLayout {
                         Layout.margins: 4
-                        Label { text: qsTr("System:") }
+                        Label { text: qsTrId("paths_config.system") }
                         ComboBox { id: systemBox; model: win.systemNames; Layout.preferredWidth: 200 }
                     }
                     PathRows {
@@ -186,9 +186,9 @@ ApplicationWindow {
         }
         RowLayout {
             Layout.fillWidth: true
-            Button { text: qsTr("&Save"); onClicked: win.save() }
+            Button { text: qsTrId("common.save"); onClicked: win.save() }
             Button {
-                text: qsTr("&Defaults")
+                text: qsTrId("paths_config.defaults")
                 onClicked: {
                     const now = Object.assign({}, win.edits)
                     for (const n of Object.keys(win.chimeraGlobals)) now[win.keyOf("Global", n)] = win.chimeraGlobals[n]
@@ -196,8 +196,8 @@ ApplicationWindow {
                 }
             }
             Label { text: win.vm.error; color: win.themeColor("AccentError", "#b00020"); elide: Text.ElideRight; Layout.fillWidth: true }
-            Button { text: qsTr("&OK"); onClicked: { win.save(); win.close() } }
-            Button { text: qsTr("&Cancel"); onClicked: win.close() }
+            Button { text: qsTrId("common.ok_mnemonic"); onClicked: { win.save(); win.close() } }
+            Button { text: qsTrId("common.cancel_mnemonic"); onClicked: win.close() }
         }
     }
     FolderDialog {
@@ -214,7 +214,7 @@ ApplicationWindow {
     // Chimera's Special Commands window: what the special words in a path mean
     Window {
         id: specialCommands
-        title: qsTr("Special Commands")
+        title: qsTrId("paths_config.special_commands")
         width: 466
         height: 190
         transientParent: win
@@ -226,21 +226,21 @@ ApplicationWindow {
             columnSpacing: 20
             rowSpacing: 4
             Label { text: "%recent%" }
-            Label { text: qsTr("Sets the path to the Windows Recent Path") }
+            Label { text: qsTrId("paths_config.sets_the_path_to_the_windows") }
             Label { text: "%exe%" }
-            Label { text: qsTr("Sets the path of the executable (chimera.exe)") }
+            Label { text: qsTrId("paths_config.sets_the_path_of_the_executable") }
             Label { text: ".\\"; Layout.topMargin: 12 }
-            Label { text: qsTr("Sets the path to the base path"); Layout.topMargin: 12 }
+            Label { text: qsTrId("paths_config.sets_the_path_to_the_base"); Layout.topMargin: 12 }
             Label { text: "..\\" }
-            Label { text: qsTr("Sets the path to the folder above the base path") }
+            Label { text: qsTrId("paths_config.sets_the_path_to_the_folder") }
             Label {
                 Layout.columnSpan: 2
                 Layout.leftMargin: 80
-                text: qsTr("- Setting the global base path to one of these will set it to the path of the .exe\n- Setting a platform base will set it to the global base\n- Setting a platform folder will set it to the platform base\n- Setting a tools folder will set it to the global base")
+                text: qsTrId("paths_config.setting_the_global_base_path_to")
             }
             Item { Layout.fillHeight: true; Layout.columnSpan: 2 }
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("&OK"); onClicked: specialCommands.close(); Layout.alignment: Qt.AlignRight }
+            Button { text: qsTrId("common.ok_mnemonic"); onClicked: specialCommands.close(); Layout.alignment: Qt.AlignRight }
         }
     }
 }

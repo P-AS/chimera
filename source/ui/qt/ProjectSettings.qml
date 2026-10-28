@@ -14,7 +14,7 @@ ApplicationWindow {
     required property QtObject vm
     property var themeColor: (role, fallback) => fallback
     property Window mainWindow: null
-    title: qsTr("Project Settings")
+    title: qsTrId("project_settings.project_settings")
     width: 600
     height: 520
     modality: Qt.ApplicationModal
@@ -29,9 +29,7 @@ ApplicationWindow {
         Label {
             Layout.fillWidth: true
             wrapMode: Text.Wrap
-            text: qsTr("A change restarts the machine at frame 0 with the new settings. The greenzone is cleared;"
-                + " the inputs are kept and play again, but they may not do what they did before."
-                + " The machine itself goes with the project's files and is not changed here.")
+            text: qsTrId("project_settings.a_change_restarts_the_machine_at")
         }
         SettingsList {
             vm: win.vm
@@ -46,24 +44,23 @@ ApplicationWindow {
                 color: win.vm.restartNote.startsWith("The clock") ? win.themeColor("AccentError", "#b00020") : palette.windowText
             }
             Button {
-                text: qsTr("Restart with these")
+                text: qsTrId("project_settings.restart_with_these")
                 enabled: win.vm.canRestart
                 onClicked: restartQuestion.open()
             }
-            Button { text: qsTr("Cancel"); onClicked: win.close() }
+            Button { text: qsTrId("common.cancel"); onClicked: win.close() }
         }
     }
     Dialog {
         id: restartQuestion
-        title: qsTr("Project Settings")
+        title: qsTrId("project_settings.project_settings")
         anchors.centerIn: parent
         modal: true
         standardButtons: Dialog.Yes | Dialog.No
         Label {
             width: 420
             wrapMode: Text.Wrap
-            text: qsTr("Restart the machine with the new settings?\n\nThe greenzone is cleared and the project goes back to frame 0."
-                + " The inputs are kept and play again, but with other settings they may not do what they did before.")
+            text: qsTrId("project_settings.restart_the_machine_with_the_new")
         }
         onAccepted: { win.vm.run("restartWith"); win.close() }
     }

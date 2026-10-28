@@ -1,70 +1,94 @@
 # Translations
 
-Chimera's window can be shown in other languages (issue 376). This document
-says what is translated, how the language is chosen, and how a language is
-added or corrected.
+Chimera can be shown in other languages. This document says how its texts
+are kept, how the language is chosen, and how a language is added or
+corrected.
 
-The window ships in English, German (`de`), Spanish (`es`), French (`fr`),
-Italian (`it`), Japanese (`ja`), Portuguese (`pt`, written as in Brazil) and
-Simplified Chinese (`zh_CN`). The translations were written in one go
-(owner, 2026-10-28) and are meant to be corrected by people who speak the
-language: a correction is an edit of one line in its `.ts` file.
+## The rules
 
-## What is translated
+The owner set these on 2026-10-28:
 
-The window's own words: every menu, label, button and message the window's
-QML writes with `qsTr`. When this was written, `tools/update-translations.sh`
-found 1428 of them (1163 different ones) in 39 windows.
+1. Every text Chimera shows a person is a named key (for example
+   `common.file`) whose words are in a language table. English is one of
+   the tables.
+2. No text is written into the code itself.
+3. Every language Chimera has gives every key.
+4. The same holds for the cores, their settings included: each core
+   package carries tables of its own, one per language.
 
-Not translated: what the view models say (status lines, errors, the run's
-own marker names and the like, written in C++ without Qt), what a core's
-package declares (its settings, their descriptions, its controls), the Lua
-functions list, and the documents.
+What counts is what a person reads: the window, its messages and errors,
+and what a core declares. These are not translated: the logs written for
+developers (the core log, standard error), names in file formats, the
+descriptions of Lua functions, of MCP tools and of view-model properties
+(they describe English function names), chimera-run's own output (a tool
+for tests), control names such as `P1 Up` (identifiers that movies, key
+bindings and scripts use), and names that are data rather than writing:
+game titles, MAME's machine names, the community's patch and cheat names.
+
+## The tables
+
+`languages/<code>.json`, one file per language, `en.json` among them:
+
+```json
+{
+	"name": "Deutsch",
+	"english": "German",
+	"texts": {
+		"common.file": "&Datei",
+		"display_config.framerate_hz": "Bildrate: %1 Hz",
+		"main.frozen_addresses": { "one": "%n Adresse", "other": "%n Adressen" }
+	}
+}
+```
+
+- `name` is the language's name in itself; `english` its name in English.
+- A key is lowercase words joined by `_`, after the window or the subject
+  they belong to and a dot. `common.` holds texts many windows share.
+- `%1` to `%9` are filled in by the program. A text that depends on a
+  number has one form per plural category of its language (`one`, `few`,
+  `many`, `other`, as the CLDR names them), and `%n` is that number.
+- `&` before a letter marks a menu's shortcut letter; `&&` is an `&`.
+
+The build copies the tables beside the engine (`languages/` in the build
+folder, `lib/languages/` in a bundle), and the engine reads them when the
+program runs. The window asks for a key with `qsTrId("key")`, which the
+engine answers from the table in use; the engine and the view models ask
+through `ce_text`. A key that a table lacks shows as the key itself, so a
+missing one is seen.
 
 ## How the language is chosen
 
-Config > Language lists English and every translation built into the
-program, each in its own language. The window's words change at once.
+Config > Language lists every table there is, each language named in
+itself. The window's texts change at once.
 
 The choice is remembered (`customize.language` in the window's settings).
 At the first open, when nothing is remembered yet, the window takes the
-first of the system's languages that it has a translation for - a more
-precise name first, then the general one, so a Canadian French system
-takes `fr` and a Brazilian one `pt` - and English when there is none. That
-choice is then remembered too, so a later change of the system's language
-does not change Chimera's (owner, 2026-10-28). A remembered language whose
-translation is gone is chosen again the same way.
+first of the system's languages it has a table for - a more precise name
+first, then the general one, so a Canadian French system takes `fr` and a
+Brazilian one `pt` - and English when there is none. That choice is then
+remembered too, so a later change of the system's language does not change
+Chimera's (owner, 2026-10-28). A remembered language whose table is gone is
+chosen again the same way.
 
-When the Language menu is in another language, its English name is shown
-beside it ("Sprache (Language)"), so a person who picked a language they
-cannot read can find the way back.
+In every language but English the Language menu's own name carries
+"(Language)" beside it, so a person who picked a language they cannot read
+can find the way back.
 
-## Adding a language
+## Adding or correcting a language
 
-1. `tools/update-translations.sh <language>` (for example `ko`, `pt_PT`)
-   writes `source/ui/translations/chimera_<language>.ts` with every word of
-   the window. Run it again after the window changes: words already
-   translated are kept, and new ones are marked unfinished.
-2. Translate the file in Qt Linguist (`linguist
-   source/ui/translations/chimera_<language>.ts`) or any editor of `.ts`
-   files. Keep each `%1`, `%2`, the `&` before a menu's shortcut letter (in
-   Chinese and Japanese the letter goes in brackets after the word, as
-   "(&F)"), and the spaces and line breaks at either end of a text.
-3. List its compiled form in `source/ui/i18n.qrc`:
-   `<file alias="chimera_<language>.qm">translations/chimera_<language>.qm</file>`.
-   The build compiles it with Qt's `lrelease` and builds it into the
-   program, and Config > Language lists it.
+A correction is an edit of one text in that language's file.
 
-The build needs Qt's `lrelease`. The Qt the release ships is built without
-Qt's tools, so the release build takes `lrelease` from the Qt it builds the
-Windows window with (aqt's, `--host-qt` of `tools/build-bundle.sh`), for both
-platforms.
+A language is added as `languages/<code>.json` with every key `en.json`
+has, and its code in `languages/meson.build`. The engine needs the
+language's plural rule (`pluralForms` and `pluralForm` in
+`source/engine/source/language.cpp`).
 
 ## The test
 
-`test-translations` checks the built-in languages (the list, a word in
-Spanish and one in Japanese), how the first open picks one from the system's
-languages (French for a Canadian French system, `zh_CN` for China, English
-for Taiwan and Korea), that a remembered choice wins over the system's, and
-that English puts the words back as written. It also builds a French test
-word of its own (`source/ui/qt/tests/chimera_fr.ts`).
+`engine_language` checks every table against English: the same keys and
+no others, the same `%1`..`%9`, the plural forms the language takes, a
+menu's shortcut letter kept, and the spaces and line breaks at either end
+kept. It also checks the plural rules, the filling of `%1`..`%9`, a
+language used and another in its place, and the C calls. `translations`
+checks the window's side: the language it starts in for a given system, a
+remembered choice, and what `qsTrId` answers.

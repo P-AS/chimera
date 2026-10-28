@@ -250,10 +250,6 @@ if qt_dep.found()
   # zstd, which a Qt built without zstd (the Windows one) cannot unpack
   qt_rcc = qt6.compile_resources(sources: ['qt/ui.qrc'], extra_args: ['--no-zstd'])
   qt_dialogs_rcc = qt6.compile_resources(name: 'dialogs', sources: ['qt/dialogs.qrc'], extra_args: ['--no-zstd'])
-  # the languages the window ships in (docs/translations.md): i18n.qrc lists
-  # each, compiled by Qt's lrelease from translations/chimera_<language>.ts
-  # and built into the program under :/i18n
-  qt_i18n_rcc = qt6.compile_translations(qresource: 'i18n.qrc', build_by_default: true, rcc_extra_arguments: ['--no-zstd'])
   # Chimera's icon on the program and its windows on Windows
   qt_icon = host_machine.system() == 'windows' ? import('windows').compile_resources('qt/chimera.rc', depend_files: 'qt/chimera.manifest') : []
   qt_sources = [
@@ -272,7 +268,6 @@ if qt_dep.found()
     qt_moc,
     qt_rcc,
     qt_dialogs_rcc,
-    qt_i18n_rcc,
   ]
   if host_machine.system() == 'windows'
     # the window is a DLL in lib\ with everything it needs, and chimera.exe
@@ -371,20 +366,17 @@ if qt_dep.found()
     cpp_args: ['-DCHIMERA_QT_QML_DIR="' + meson.current_source_dir() / 'qt' + '"'],
   )
   test('theme', test_theme, env: ['QT_QPA_PLATFORM=offscreen', 'QT_QUICK_BACKEND=software'], timeout: 60)
-  # a translation built for a language is the one the person's language
-  # loads (docs/translations.md); it needs Qt's lrelease, which the
-  # release's Qt does not build, so it is left out where there is none
-  if qt6.has_tools(required: false)
-    subdir('qt/tests')
-    test_translations = executable(
-      'test-translations',
-      ['qt/tests/test_translations.cpp', 'qt/translations.cpp', qt_i18n_rcc],
-      dependencies: [qt_dep],
-      override_options: ['cpp_std=c++20'],
-      cpp_args: ['-DCHIMERA_TEST_QM_DIR="' + meson.current_build_dir() / 'qt/tests' + '"'],
-    )
-    test('translations', test_translations, depends: test_qm, timeout: 30)
-  endif
+  # the window's texts come from the engine's language tables, in the
+  # language the person's system or choice gives (docs/translations.md)
+  test_translations = executable(
+    'test-translations',
+    ['qt/tests/test_translations.cpp', 'qt/translations.cpp'],
+    include_directories: [engine_inc],
+    link_with: [chimera_shared],
+    dependencies: [qt_dep],
+    override_options: ['cpp_std=c++20'],
+  )
+  test('translations', test_translations, timeout: 30)
   # keys are named by their place, as Chimera's, whatever the layout, with
   # the modifier keys merged or each side its own
   test_key_names = executable(

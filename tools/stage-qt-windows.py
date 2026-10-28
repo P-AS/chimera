@@ -7,7 +7,8 @@ Everything is stripped of debug information, as it would ship.
 
 The folder holds the program (chimera.exe, a launcher), the themes and an
 empty cores/ with a README.txt that says what goes in it;
-every DLL, Qt's plugins and QML are in lib/, and the other programs
+every DLL, Qt's plugins and QML are in lib/ (Chimera's language tables in
+lib/languages), and the other programs
 (chimera-run, chimera-mcp, ffmpeg, the tests) in bin/.
 
     tools/stage-qt-windows.py <meson build dir> <installed dll dir> <windows qt> <out> [ffmpeg.exe]
@@ -43,6 +44,8 @@ if ffmpeg:
 for d in ("libchimera.dll", "libminiboxhost.dll", "libzstd.dll", "lua54.dll", "SDL2.dll", "OpenAL32.dll",
           "chimera_crash.dll", "e_sqlite3.dll"):
     shutil.copy2(f"{dlls}/{d}", lib)
+# Chimera's language tables, one file per language, beside the engine that reads them
+shutil.copytree(f"{build}/languages", f"{lib}/languages")
 os.makedirs(f"{lib}/platforms")
 shutil.copy2(f"{qt}/plugins/platforms/qwindows.dll", f"{lib}/platforms")
 # --headless draws off screen, for a run nobody watches (a core's tests)

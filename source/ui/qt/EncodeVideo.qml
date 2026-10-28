@@ -21,7 +21,7 @@ ApplicationWindow {
     required property QtObject files
     // the theme's colour for a role (Main hands it its lookup)
     property var themeColor: (role, fallback) => fallback
-    title: qsTr("Encode Video")
+    title: qsTrId("encode_video.encode_video")
     width: 600
     height: 440
     minimumWidth: 600
@@ -44,8 +44,8 @@ ApplicationWindow {
     // the window opens on the whole run, a file named for the project in the A/V folder
     onVisibleChanged: {
         if (!visible) return
-        fromBox.currentIndex = Math.max(0, fromBox.find(qsTr("Run start")))
-        toBox.currentIndex = Math.max(0, toBox.find(qsTr("Run end")))
+        fromBox.currentIndex = Math.max(0, fromBox.find(qsTrId("encode_video.run_start")))
+        toBox.currentIndex = Math.max(0, toBox.find(qsTrId("encode_video.run_end")))
         // a file named for the project (else the game), until one is chosen
         const named = win.vm.output.replace(/^.*[\\/]/, "").replace(/\.[^.]*$/, "")
         if (named === "") {
@@ -84,10 +84,10 @@ ApplicationWindow {
             columns: 3
             Layout.fillWidth: true
             enabled: !win.running
-            Label { text: qsTr("Output file:") }
+            Label { text: qsTrId("encode_video.output_file") }
             TextField { text: win.vm.output; Layout.fillWidth: true; onEditingFinished: win.vm.output = text }
-            Button { text: qsTr("Browse..."); onClicked: saveDialog.open() }
-            Label { text: qsTr("Preset:") }
+            Button { text: qsTrId("common.browse"); onClicked: saveDialog.open() }
+            Label { text: qsTrId("common.preset") }
             ComboBox {
                 id: presetBox
                 Layout.fillWidth: true
@@ -99,7 +99,7 @@ ApplicationWindow {
                 displayText: win.vm.preset
                 onActivated: (index) => win.vm.run("usePreset", [index])
             }
-            Label { text: qsTr("FFmpeg Command:") }
+            Label { text: qsTrId("encode_video.ffmpeg_command") }
             TextField {
                 Layout.fillWidth: true
                 Layout.columnSpan: 2
@@ -109,7 +109,7 @@ ApplicationWindow {
         }
         RowLayout {
             enabled: !win.running
-            Label { text: qsTr("From marker:") }
+            Label { text: qsTrId("encode_video.from_marker") }
             ComboBox {
                 id: fromBox
                 Layout.fillWidth: true
@@ -120,7 +120,7 @@ ApplicationWindow {
                 delegate: ItemDelegate { required property var model; width: fromBox.width; text: model.frame + "  " + model.text }
                 onCurrentValueChanged: win.vm.fromFrame = currentValue === undefined ? 0 : currentValue
             }
-            Label { text: qsTr("To marker:") }
+            Label { text: qsTrId("encode_video.to_marker") }
             ComboBox {
                 id: toBox
                 Layout.fillWidth: true
@@ -134,24 +134,24 @@ ApplicationWindow {
         }
         Label {
             readonly property int frames: win.vm.toFrame - win.vm.fromFrame + 1
-            text: frames > 0 ? qsTr("frames %1 to %2 (%3 frames)").arg(win.vm.fromFrame).arg(win.vm.toFrame).arg(win.grouped(frames))
-                             : qsTr("the end marker is before the start marker")
+            text: frames > 0 ? qsTrId("encode_video.frames_to_frames").arg(win.vm.fromFrame).arg(win.vm.toFrame).arg(win.grouped(frames))
+                             : qsTrId("encode_video.the_end_marker_is_before_the")
             color: frames > 0 ? palette.placeholderText : win.themeColor("AccentError", "#b00020")
         }
         RowLayout {
             enabled: !win.running
-            CheckBox { text: qsTr("Resize to"); checked: win.vm.resize; onToggled: win.vm.resize = checked }
+            CheckBox { text: qsTrId("encode_video.resize_to"); checked: win.vm.resize; onToggled: win.vm.resize = checked }
             SpinBox { from: 1; to: 8192; editable: true; value: win.vm.width; enabled: win.vm.resize; onValueModified: win.vm.width = value; Layout.preferredWidth: 100 }
             Label { text: "x" }
             SpinBox { from: 1; to: 8192; editable: true; value: win.vm.height; enabled: win.vm.resize; onValueModified: win.vm.height = value; Layout.preferredWidth: 100 }
-            Button { text: qsTr("Current size"); enabled: win.vm.resize; onClicked: win.useCurrentSize() }
-            Label { text: win.picture && win.picture.pictureWidth > 0 ? qsTr("now %1x%2").arg(win.picture.pictureWidth).arg(win.picture.pictureHeight) : "" }
-            CheckBox { text: qsTr("Pad"); checked: win.vm.pad; enabled: win.vm.resize; onToggled: win.vm.pad = checked }
+            Button { text: qsTrId("encode_video.current_size"); enabled: win.vm.resize; onClicked: win.useCurrentSize() }
+            Label { text: win.picture && win.picture.pictureWidth > 0 ? qsTrId("encode_video.now_x").arg(win.picture.pictureWidth).arg(win.picture.pictureHeight) : "" }
+            CheckBox { text: qsTrId("encode_video.pad"); checked: win.vm.pad; enabled: win.vm.resize; onToggled: win.vm.pad = checked }
         }
         RowLayout {
-            CheckBox { text: qsTr("Sync to audio"); enabled: !win.running; checked: win.vm.audioSync; onToggled: win.vm.audioSync = checked }
-            CheckBox { text: qsTr("Capture OSD"); enabled: !win.running; checked: win.vm.captureOsd; onToggled: win.vm.captureOsd = checked }
-            CheckBox { text: qsTr("Capture Lua"); enabled: !win.running; checked: win.vm.captureLua; onToggled: win.vm.captureLua = checked }
+            CheckBox { text: qsTrId("encode_video.sync_to_audio"); enabled: !win.running; checked: win.vm.audioSync; onToggled: win.vm.audioSync = checked }
+            CheckBox { text: qsTrId("encode_video.capture_osd"); enabled: !win.running; checked: win.vm.captureOsd; onToggled: win.vm.captureOsd = checked }
+            CheckBox { text: qsTrId("encode_video.capture_lua"); enabled: !win.running; checked: win.vm.captureLua; onToggled: win.vm.captureLua = checked }
         }
 
         ProgressBar {
@@ -171,7 +171,7 @@ ApplicationWindow {
         }
         // the speakers are quiet while a video is written: these say sound is going in
         RowLayout {
-            Label { text: qsTr("Audio:") }
+            Label { text: qsTrId("encode_video.audio") }
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 2
@@ -182,44 +182,44 @@ ApplicationWindow {
         Item { Layout.fillHeight: true }
         RowLayout {
             Button {
-                text: qsTr("Open Video")
+                text: qsTrId("encode_video.open_video")
                 // what the last encode wrote, done or stopped; nothing while another is being written
                 enabled: !win.running && win.vm.written !== "" && (win.vm.phase === "done" || win.vm.phase === "stopped")
                 onClicked: {
-                    if (!win.files.exists(win.vm.written)) win.said = qsTr("%1 is no longer there.").arg(win.fileName(win.vm.written))
+                    if (!win.files.exists(win.vm.written)) win.said = qsTrId("encode_video.is_no_longer_there").arg(win.fileName(win.vm.written))
                     else Qt.openUrlExternally(win.files.folderUrl(win.vm.written))
                 }
             }
             Button {
-                text: qsTr("Open Folder")
+                text: qsTrId("common.open_folder")
                 enabled: win.outputFolder !== "" && win.files.exists(win.outputFolder)
                 onClicked: {
-                    if (!win.files.exists(win.outputFolder)) win.said = qsTr("The output file's folder does not exist.")
+                    if (!win.files.exists(win.outputFolder)) win.said = qsTrId("encode_video.the_output_file_s_folder_does")
                     else Qt.openUrlExternally(win.files.folderUrl(win.outputFolder))
                 }
             }
-            Button { text: qsTr("Restore Defaults"); enabled: !win.running; onClicked: win.vm.run("restoreDefaults") }
+            Button { text: qsTrId("common.restore_defaults"); enabled: !win.running; onClicked: win.vm.run("restoreDefaults") }
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("Start Encode"); enabled: !win.running && win.vm.toFrame >= win.vm.fromFrame; onClicked: win.start() }
-            Button { text: qsTr("Stop"); enabled: win.running; onClicked: win.vm.run("stop") }
-            Button { text: qsTr("Close"); onClicked: win.close() }
+            Button { text: qsTrId("encode_video.start_encode"); enabled: !win.running && win.vm.toFrame >= win.vm.fromFrame; onClicked: win.start() }
+            Button { text: qsTrId("common.stop"); enabled: win.running; onClicked: win.vm.run("stop") }
+            Button { text: qsTrId("common.close"); onClicked: win.close() }
         }
     }
 
     FileDialog {
         id: saveDialog
-        title: qsTr("Write the video to")
+        title: qsTrId("encode_video.write_the_video_to")
         fileMode: FileDialog.SaveFile
         // where the file is now, and its name, as Chimera's opens
         currentFolder: win.outputFolder !== "" ? win.files.folderUrl(win.outputFolder) : ""
         selectedFile: win.vm.output !== "" ? win.files.folderUrl(win.vm.output) : ""
-        nameFilters: [qsTr("MP4 Files (*.mp4)"), qsTr("AVI Files (*.avi)"), qsTr("Matroska Files (*.mkv)"), qsTr("All Files (*)")]
+        nameFilters: [qsTrId("encode_video.mp4_files_mp4"), qsTrId("encode_video.avi_files_avi"), qsTrId("encode_video.matroska_files_mkv"), qsTrId("encode_video.all_files")]
         onAccepted: win.vm.output = win.files.localPath(selectedFile)
     }
     // a video already at that name is not replaced without asking, as Chimera's
     Dialog {
         id: replaceDialog
-        title: qsTr("Replace the video?")
+        title: qsTrId("encode_video.replace_the_video")
         width: 420
         anchors.centerIn: parent
         modal: true
@@ -227,9 +227,9 @@ ApplicationWindow {
         Label {
             width: parent.width
             wrapMode: Text.Wrap
-            text: qsTr("%1 already exists. Replace it with this encode?").arg(win.vm.output.replace(/^.*[\\/]/, ""))
+            text: qsTrId("encode_video.already_exists_replace_it_with_this").arg(win.vm.output.replace(/^.*[\\/]/, ""))
         }
         onAccepted: win.begin()
-        onRejected: win.said = qsTr("%1 was kept; pick another name to encode.").arg(win.fileName(win.vm.output))
+        onRejected: win.said = qsTrId("encode_video.was_kept_pick_another_name_to").arg(win.fileName(win.vm.output))
     }
 }

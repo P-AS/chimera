@@ -20,7 +20,7 @@ ApplicationWindow {
     property var folderOf: null
     property bool gameRunning: false
     property Window mainWindow: null
-    title: qsTr("Report an Issue")
+    title: qsTrId("report_issue.report_an_issue")
     width: 680
     height: 560
     minimumWidth: 520
@@ -29,7 +29,7 @@ ApplicationWindow {
     transientParent: win.mainWindow
     flags: Qt.Dialog | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint
 
-    readonly property string pictureRow: qsTr("A picture of the game as it is now (game.png)")
+    readonly property string pictureRow: qsTrId("report_issue.a_picture_of_the_game_as")
     // the game as it was when the window opened, "" for none
     property string picturePath: ""
     // the rows not ticked, by their text
@@ -54,20 +54,20 @@ ApplicationWindow {
         anchors.fill: parent
         anchors.margins: 10
         spacing: 4
-        Label { text: qsTr("1. Open the report form. It asks you to sign in to GitHub."); Layout.fillWidth: true; elide: Text.ElideRight }
+        Label { text: qsTrId("report_issue.1_open_the_report_form_it"); Layout.fillWidth: true; elide: Text.ElideRight }
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
             TextField { text: win.vm.formUrl; readOnly: true; activeFocusOnTab: false; Layout.fillWidth: true }
-            Button { text: qsTr("Open in Browser"); Layout.preferredWidth: 120; onClicked: Qt.openUrlExternally(win.vm.formUrl) }
+            Button { text: qsTrId("report_issue.open_in_browser"); Layout.preferredWidth: 120; onClicked: Qt.openUrlExternally(win.vm.formUrl) }
             Button {
-                text: qsTr("Copy Link")
+                text: qsTrId("report_issue.copy_link")
                 Layout.preferredWidth: 120
-                onClicked: { win.clipboard.setText(win.vm.formUrl); win.vm.status = qsTr("The link is on the clipboard.") }
+                onClicked: { win.clipboard.setText(win.vm.formUrl); win.vm.status = qsTrId("report_issue.the_link_is_on_the_clipboard") }
             }
         }
         Label {
-            text: qsTr("2. Choose \"Bug report\" there and paste this over the first lines of the form.")
+            text: qsTrId("report_issue.2_choose_bug_report_there_and")
             Layout.fillWidth: true
             Layout.topMargin: 10
             elide: Text.ElideRight
@@ -78,13 +78,13 @@ ApplicationWindow {
             TextArea { objectName: "reportText"; text: win.vm.reportText; readOnly: true; activeFocusOnTab: false; wrapMode: TextEdit.Wrap }
         }
         Button {
-            text: qsTr("Copy Text")
+            text: qsTrId("report_issue.copy_text")
             Layout.preferredWidth: 120
             Layout.topMargin: 2
-            onClicked: { win.clipboard.setText(win.vm.reportText); win.vm.status = qsTr("The text is on the clipboard.") }
+            onClicked: { win.clipboard.setText(win.vm.reportText); win.vm.status = qsTrId("report_issue.the_text_is_on_the_clipboard") }
         }
         Label {
-            text: qsTr("3. Tick what belongs to the problem. Save it as one zip and attach that, or attach the files one by one.")
+            text: qsTrId("report_issue.3_tick_what_belongs_to_the")
             Layout.fillWidth: true
             Layout.topMargin: 4
             elide: Text.ElideRight
@@ -116,18 +116,18 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.topMargin: 6
             spacing: 10
-            Button { text: qsTr("Save as Zip..."); Layout.preferredWidth: 120; onClicked: { zipDialog.selectedFile = zipDialog.currentFolder + "/" + win.zipName(); zipDialog.open() } }
+            Button { text: qsTrId("report_issue.save_as_zip"); Layout.preferredWidth: 120; onClicked: { zipDialog.selectedFile = zipDialog.currentFolder + "/" + win.zipName(); zipDialog.open() } }
             Label { objectName: "reportStatus"; text: win.vm.status; Layout.fillWidth: true; elide: Text.ElideRight }
-            Button { text: qsTr("Close"); Layout.preferredWidth: 90; onClicked: win.close() }
+            Button { text: qsTrId("common.close"); Layout.preferredWidth: 90; onClicked: win.close() }
         }
     }
     FileDialog {
         id: zipDialog
-        title: qsTr("Save the report's files as one zip")
+        title: qsTrId("report_issue.save_the_report_s_files_as")
         currentFolder: win.folderOf ? win.folderOf("Bug reports") : ""
         fileMode: FileDialog.SaveFile
         defaultSuffix: "zip"
-        nameFilters: [qsTr("Zip archive (*.zip)")]
+        nameFilters: [qsTrId("report_issue.zip_archive_zip")]
         onAccepted: win.saveZip(selectedFile)
     }
 }

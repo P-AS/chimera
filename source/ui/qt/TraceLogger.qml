@@ -20,7 +20,7 @@ ApplicationWindow {
     property Window mainWindow: null
     // the theme's colour for a role (Main hands it its lookup)
     property var themeColor: (role, fallback) => fallback
-    title: qsTr("Trace Logger")
+    title: qsTrId("trace_logger.trace_logger")
     width: 620
     height: 520
     onVisibleChanged: {
@@ -32,45 +32,45 @@ ApplicationWindow {
 
     FileDialog {
         id: fileDialog
-        title: qsTr("Log the trace to")
+        title: qsTrId("trace_logger.log_the_trace_to")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "log"
         currentFolder: win.folderOf ? win.folderOf("Debug Logs") : ""
         selectedFile: win.folderOf ? win.folderOf("Debug Logs") + "/" + (win.session.gameName || "trace") + ".log" : ""
-        nameFilters: [qsTr("Log Files (*.log)")]
+        nameFilters: [qsTrId("trace_logger.log_files_log")]
         onAccepted: win.vm.run("logToFile", [selectedFile])
     }
     FileDialog {
         id: saveDialog
-        title: qsTr("Save Visible Lines")
+        title: qsTrId("trace_logger.save_visible_lines")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "log"
         currentFolder: win.folderOf ? win.folderOf("Debug Logs") : ""
         selectedFile: win.folderOf ? win.folderOf("Debug Logs") + "/" + (win.session.gameName || "trace") + ".log" : ""
-        nameFilters: [qsTr("Log Files (*.log)")]
+        nameFilters: [qsTrId("trace_logger.log_files_log")]
         onAccepted: win.vm.run("saveVisible", [selectedFile])
     }
 
     menuBar: MenuBar {
         Menu {
             delegate: MenuEntry {}
-            title: qsTr("&File")
-            MenuItem { text: qsTr("&Save Visible Lines..."); onTriggered: saveDialog.open() }
+            title: qsTrId("common.file")
+            MenuItem { text: qsTrId("trace_logger.save_visible_lines_dialog"); onTriggered: saveDialog.open() }
             MenuDivider {}
-            MenuItem { text: qsTr("&Close"); onTriggered: win.close() }
+            MenuItem { text: qsTrId("common.close_mnemonic"); onTriggered: win.close() }
         }
         // Chimera adds a Settings menu for the window's items to a tool that has none
         Menu {
             delegate: MenuEntry {}
-            title: qsTr("&Settings")
-            MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
+            title: qsTrId("common.settings")
+            MenuItem { text: qsTrId("common.save_window_position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
-                text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
+                text: qsTrId("common.stay_on_top"); checkable: true; checked: windowOptions.onTop
                 visible: windowOptions.canStayOnTop; height: visible ? implicitHeight : 0
                 onTriggered: windowOptions.set("top", checked)
             }
-            MenuItem { text: qsTr("&Float From Main Window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
-            MenuItem { text: qsTr("Restore &Defaults"); onTriggered: { win.vm.capacity = 10000; windowOptions.restore() } }
+            MenuItem { text: qsTrId("common.float_from_main_window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
+            MenuItem { text: qsTrId("common.restore_defaults_mnemonic"); onTriggered: { win.vm.capacity = 10000; windowOptions.restore() } }
         }
     }
 
@@ -79,7 +79,7 @@ ApplicationWindow {
             spacing: 2
             ToolButton {
                 objectName: "traceLogging"
-                text: win.vm.logging ? qsTr("Stop Logging") : qsTr("Start Logging")
+                text: win.vm.logging ? qsTrId("trace_logger.stop_logging") : qsTrId("trace_logger.start_logging")
                 checkable: true
                 checked: win.vm.logging
                 enabled: win.session.hasTrace
@@ -87,22 +87,22 @@ ApplicationWindow {
             }
             // down while the lines go to a file; pressed again, the file is closed
             ToolButton {
-                text: qsTr("Log to File...")
+                text: qsTrId("trace_logger.log_to_file")
                 checkable: true
                 checked: win.vm.file !== ""
                 onClicked: { if (win.vm.file !== "") win.vm.run("stopFile"); else { checked = false; fileDialog.open() } }
             }
-            ToolButton { text: qsTr("Clear"); onClicked: win.vm.run("clear") }
-            Label { text: qsTr("Keep:") }
+            ToolButton { text: qsTrId("common.clear"); onClicked: win.vm.run("clear") }
+            Label { text: qsTrId("trace_logger.keep") }
             SpinBox { from: 100; to: 1000000; stepSize: 1000; editable: true; value: win.vm.capacity; onValueModified: win.vm.capacity = value; Layout.preferredWidth: 110 }
-            Label { text: qsTr("lines") }
+            Label { text: qsTrId("trace_logger.lines") }
         }
     }
 
     footer: Label {
         objectName: "traceStatus"
         text: win.vm.error !== "" ? win.vm.error
-            : !win.session.hasTrace ? (win.session.isOpen ? qsTr("This core does not trace its CPU.") : qsTr("No core is running."))
+            : !win.session.hasTrace ? (win.session.isOpen ? qsTrId("trace_logger.this_core_does_not_trace_its") : qsTrId("trace_logger.no_core_is_running"))
             : win.vm.status
         color: win.vm.error !== "" ? win.themeColor("AccentError", "#b00020") : palette.text
         padding: 4
@@ -114,8 +114,8 @@ ApplicationWindow {
         spacing: 0
         Row {
             Layout.fillWidth: true
-            Label { text: qsTr("Disassembly"); width: 340; padding: 3; font.bold: true }
-            Label { text: qsTr("Registers"); padding: 3; font.bold: true }
+            Label { text: qsTrId("trace_logger.disassembly"); width: 340; padding: 3; font.bold: true }
+            Label { text: qsTrId("trace_logger.registers"); padding: 3; font.bold: true }
         }
         ListView {
             id: list

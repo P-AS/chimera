@@ -22,7 +22,7 @@ ApplicationWindow {
     property Window mainWindow: null
     property QtObject gameProperties: null
     property var viewInHexEditor: null
-    title: qsTr("RAM Watch")
+    title: qsTrId("ram_watch.ram_watch")
     width: 560
     height: 480
 
@@ -39,8 +39,8 @@ ApplicationWindow {
     }
     MessageDialog {
         id: askSave
-        title: qsTr("Closing with Unsaved Changes")
-        text: qsTr("Save watch file?")
+        title: qsTrId("common.closing_with_unsaved_changes")
+        text: qsTrId("ram_watch.save_watch_file")
         buttons: MessageDialog.Yes | MessageDialog.No | MessageDialog.Cancel
         onButtonClicked: (button) => {
             const then = win.afterAsk
@@ -63,20 +63,20 @@ ApplicationWindow {
 
     FileDialog {
         id: openDialog
-        title: qsTr("Open a watch list")
+        title: qsTrId("ram_watch.open_a_watch_list")
         property bool append: false
         currentFolder: win.folderOf ? win.folderOf("Watch (.wch)") : ""
-        nameFilters: [qsTr("Watch Files (*.wch)"), qsTr("All files (*)")]
+        nameFilters: [qsTrId("ram_watch.watch_files_wch"), qsTrId("common.all_files")]
         onAccepted: win.vm.run("open", [selectedFile, openDialog.append])
     }
     FileDialog {
         id: saveDialog
-        title: qsTr("Save the watch list as")
+        title: qsTrId("ram_watch.save_the_watch_list_as")
         property var afterSave: null
         fileMode: FileDialog.SaveFile
         defaultSuffix: "wch"
         currentFolder: win.folderOf ? win.folderOf("Watch (.wch)") : ""
-        nameFilters: [qsTr("Watch Files (*.wch)")]
+        nameFilters: [qsTrId("ram_watch.watch_files_wch")]
         onAccepted: {
             win.vm.run("save", [selectedFile])
             const then = saveDialog.afterSave
@@ -92,8 +92,8 @@ ApplicationWindow {
     function tell(title, text) { notice.title = title; notice.text = text; notice.open() }
     MessageDialog {
         id: purgeAsk
-        title: qsTr("Purge duplicates?")
-        text: qsTr("This will go through each watch starting from the top,\nremoving it if its (domain & addr & size) has been seen before.\nNeither the endianness nor display type are considered.\nOverlapping watches also aren't considered.")
+        title: qsTrId("ram_watch.purge_duplicates")
+        text: qsTrId("ram_watch.this_will_go_through_each_watch")
         buttons: MessageDialog.Ok | MessageDialog.Cancel
         onButtonClicked: (button) => { if (button === MessageDialog.Ok) win.vm.run("purgeDuplicates") }
     }
@@ -109,7 +109,7 @@ ApplicationWindow {
             return
         }
         if (info.property) {
-            win.tell(qsTr("Game property"), qsTr("A game property's watch reads the property itself, by its name, so there is nothing of it to edit. Poke sets its value; Add Game Properties adds another."))
+            win.tell(qsTrId("ram_watch.game_property"), qsTrId("ram_watch.a_game_property_s_watch_reads"))
             return
         }
         editor.start(duplicate ? "duplicate" : "edit", info)
@@ -117,7 +117,7 @@ ApplicationWindow {
     function pokeWatch() {
         if (!win.anyWatch) return
         const info = JSON.parse(win.vm.run("pokeInfo"))
-        if (info.mixed) { win.tell(qsTr("Unsupported Options"), qsTr("RAM Poke does not support mixed types")); return }
+        if (info.mixed) { win.tell(qsTrId("ram_watch.unsupported_options"), qsTrId("ram_watch.ram_poke_does_not_support_mixed")); return }
         poke.start(info)
     }
     // On Double-Clicking a Watch, and Enter
@@ -144,43 +144,43 @@ ApplicationWindow {
         }
     }
 
-    Action { id: newListAction; text: qsTr("&New List"); icon.source: "qrc:/chimera/icons/NewFile.png"; shortcut: "Ctrl+N"; onTriggered: win.leaveList(() => win.vm.run("newList")) }
-    Action { id: openAction; text: qsTr("&Open..."); icon.source: "qrc:/chimera/icons/OpenFile.png"; shortcut: "Ctrl+O"; onTriggered: win.leaveList(() => { openDialog.append = false; openDialog.open() }) }
+    Action { id: newListAction; text: qsTrId("ram_watch.new_list"); icon.source: "qrc:/chimera/icons/NewFile.png"; shortcut: "Ctrl+N"; onTriggered: win.leaveList(() => win.vm.run("newList")) }
+    Action { id: openAction; text: qsTrId("ram_watch.open_dialog"); icon.source: "qrc:/chimera/icons/OpenFile.png"; shortcut: "Ctrl+O"; onTriggered: win.leaveList(() => { openDialog.append = false; openDialog.open() }) }
     Action {
-        id: saveAction; text: qsTr("&Save"); icon.source: "qrc:/chimera/icons/SaveAs.png"; shortcut: "Ctrl+S"
+        id: saveAction; text: qsTrId("common.save"); icon.source: "qrc:/chimera/icons/SaveAs.png"; shortcut: "Ctrl+S"
         onTriggered: win.vm.path === "" ? saveDialog.open() : win.vm.run("save")
     }
-    Action { id: newWatchAction; text: qsTr("&New Watch"); icon.source: "qrc:/chimera/icons/addWatch.ico"; shortcut: "Ctrl+W"; onTriggered: editor.start("new", JSON.parse(win.vm.run("editInfo", ["new"]))) }
-    Action { id: editAction; text: qsTr("&Edit Watch"); icon.source: "qrc:/chimera/icons/Cut.png"; shortcut: "Ctrl+E"; enabled: win.anyRow; onTriggered: win.editWatch(false) }
-    Action { id: removeAction; text: qsTr("&Remove Watch"); icon.source: "qrc:/chimera/icons/Delete.png"; shortcut: "Ctrl+R"; enabled: win.anyRow; onTriggered: win.vm.run("removeSelected") }
-    Action { id: duplicateAction; text: qsTr("&Duplicate Watch"); icon.source: "qrc:/chimera/icons/Duplicate.png"; shortcut: "Ctrl+D"; enabled: win.anyWatch; onTriggered: win.editWatch(true) }
-    Action { id: splitAction; text: qsTr("Sp&lit Watch"); icon.source: "qrc:/chimera/icons/Split.png"; shortcut: "Ctrl+L"; enabled: win.vm.canSplit; onTriggered: win.vm.run("splitSelected") }
-    Action { id: pokeAction; text: qsTr("Poke Address"); icon.source: "qrc:/chimera/icons/poke.png"; shortcut: "Ctrl+P"; enabled: win.vm.canPoke; onTriggered: win.pokeWatch() }
+    Action { id: newWatchAction; text: qsTrId("ram_watch.new_watch_mnemonic"); icon.source: "qrc:/chimera/icons/addWatch.ico"; shortcut: "Ctrl+W"; onTriggered: editor.start("new", JSON.parse(win.vm.run("editInfo", ["new"]))) }
+    Action { id: editAction; text: qsTrId("ram_watch.edit_watch_mnemonic"); icon.source: "qrc:/chimera/icons/Cut.png"; shortcut: "Ctrl+E"; enabled: win.anyRow; onTriggered: win.editWatch(false) }
+    Action { id: removeAction; text: qsTrId("ram_watch.remove_watch"); icon.source: "qrc:/chimera/icons/Delete.png"; shortcut: "Ctrl+R"; enabled: win.anyRow; onTriggered: win.vm.run("removeSelected") }
+    Action { id: duplicateAction; text: qsTrId("ram_watch.duplicate_watch_mnemonic"); icon.source: "qrc:/chimera/icons/Duplicate.png"; shortcut: "Ctrl+D"; enabled: win.anyWatch; onTriggered: win.editWatch(true) }
+    Action { id: splitAction; text: qsTrId("ram_watch.split_watch_mnemonic"); icon.source: "qrc:/chimera/icons/Split.png"; shortcut: "Ctrl+L"; enabled: win.vm.canSplit; onTriggered: win.vm.run("splitSelected") }
+    Action { id: pokeAction; text: qsTrId("ram_watch.poke_address"); icon.source: "qrc:/chimera/icons/poke.png"; shortcut: "Ctrl+P"; enabled: win.vm.canPoke; onTriggered: win.pokeWatch() }
     // frozen addresses: written before every frame, for this session only
-    Action { id: freezeAction; text: qsTr("Freeze Address"); icon.source: "qrc:/chimera/icons/Freeze.png"; shortcut: "Ctrl+F"; enabled: win.vm.canPoke || win.vm.selectionFrozen; onTriggered: win.vm.run("toggleFreeze") }
-    Action { id: separatorAction; text: qsTr("Insert Separator"); icon.source: "qrc:/chimera/icons/InsertSeparator.png"; shortcut: "Ctrl+I"; onTriggered: win.vm.run("insertSeparator") }
-    Action { id: clearCountsAction; text: qsTr("&Clear Change Counts"); shortcut: "Alt+C"; onTriggered: win.vm.run("clearChangeCounts") }
-    Action { id: upAction; text: qsTr("Move &Up"); icon.source: "qrc:/chimera/icons/MoveUp.png"; shortcut: "Ctrl+Up"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["up"]) }
-    Action { id: downAction; text: qsTr("Move &Down"); icon.source: "qrc:/chimera/icons/MoveDown.png"; shortcut: "Ctrl+Down"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["down"]) }
-    Action { id: topAction; text: qsTr("Move &Top"); icon.source: "qrc:/chimera/icons/MoveTop.png"; shortcut: "Ctrl+Shift+Up"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["top"]) }
-    Action { id: bottomAction; text: qsTr("Move &Bottom"); icon.source: "qrc:/chimera/icons/MoveBottom.png"; shortcut: "Ctrl+Shift+Down"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["bottom"]) }
-    Action { id: selectAllAction; text: qsTr("Select &All"); shortcut: "Ctrl+A"; onTriggered: win.vm.run("selectAll") }
+    Action { id: freezeAction; text: qsTrId("ram_watch.freeze_address"); icon.source: "qrc:/chimera/icons/Freeze.png"; shortcut: "Ctrl+F"; enabled: win.vm.canPoke || win.vm.selectionFrozen; onTriggered: win.vm.run("toggleFreeze") }
+    Action { id: separatorAction; text: qsTrId("ram_watch.insert_separator"); icon.source: "qrc:/chimera/icons/InsertSeparator.png"; shortcut: "Ctrl+I"; onTriggered: win.vm.run("insertSeparator") }
+    Action { id: clearCountsAction; text: qsTrId("ram_watch.clear_change_counts_mnemonic"); shortcut: "Alt+C"; onTriggered: win.vm.run("clearChangeCounts") }
+    Action { id: upAction; text: qsTrId("ram_watch.move_up_mnemonic"); icon.source: "qrc:/chimera/icons/MoveUp.png"; shortcut: "Ctrl+Up"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["up"]) }
+    Action { id: downAction; text: qsTrId("ram_watch.move_down_mnemonic"); icon.source: "qrc:/chimera/icons/MoveDown.png"; shortcut: "Ctrl+Down"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["down"]) }
+    Action { id: topAction; text: qsTrId("ram_watch.move_top"); icon.source: "qrc:/chimera/icons/MoveTop.png"; shortcut: "Ctrl+Shift+Up"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["top"]) }
+    Action { id: bottomAction; text: qsTrId("ram_watch.move_bottom"); icon.source: "qrc:/chimera/icons/MoveBottom.png"; shortcut: "Ctrl+Shift+Down"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["bottom"]) }
+    Action { id: selectAllAction; text: qsTrId("common.select_all"); shortcut: "Ctrl+A"; onTriggered: win.vm.run("selectAll") }
 
     menuBar: MenuBar {
         Menu {
-            title: qsTr("&Files")
+            title: qsTrId("ram_watch.files")
             delegate: shortcutItem
             MenuItem { action: newListAction }
             MenuItem { action: openAction }
             MenuItem { action: saveAction; enabled: win.vm.changed }
-            Action { text: qsTr("Save &As..."); shortcut: "Ctrl+Shift+S"; onTriggered: saveDialog.open() }
-            Action { text: qsTr("A&ppend File..."); onTriggered: { openDialog.append = true; openDialog.open() } }
+            Action { text: qsTrId("ram_watch.save_as"); shortcut: "Ctrl+Shift+S"; onTriggered: saveDialog.open() }
+            Action { text: qsTrId("ram_watch.append_file"); onTriggered: { openDialog.append = true; openDialog.open() } }
             Menu {
                 delegate: MenuEntry {}
                 id: recentMenu
-                title: qsTr("Recent")
+                title: qsTrId("common.recent")
                 icon.source: "qrc:/chimera/icons/Recent.png"
-                MenuItem { text: qsTr("None"); enabled: false; visible: win.vm.recentFiles === ""; height: visible ? implicitHeight : 0 }
+                MenuItem { text: qsTrId("common.none"); enabled: false; visible: win.vm.recentFiles === ""; height: visible ? implicitHeight : 0 }
                 Instantiator {
                     model: win.vm.recentFiles === "" ? [] : win.vm.recentFiles.split("\n")
                     delegate: MenuItem {
@@ -193,15 +193,15 @@ ApplicationWindow {
                 }
             }
             MenuDivider {}
-            Action { property string keysShown: "Alt+F4"; text: qsTr("&Close"); onTriggered: win.close() }
+            Action { property string keysShown: "Alt+F4"; text: qsTrId("common.close_mnemonic"); onTriggered: win.close() }
         }
         Menu {
-            title: qsTr("&Watches")
+            title: qsTrId("ram_watch.watches")
             delegate: shortcutItem
             Menu {
                 delegate: MenuEntry {}
                 id: domainMenu
-                title: qsTr("Default Domain")
+                title: qsTrId("ram_watch.default_domain")
                 Instantiator {
                     model: win.vm.domains === "" ? [] : win.vm.domains.split(",")
                     delegate: MenuItem {
@@ -219,7 +219,7 @@ ApplicationWindow {
             MenuItem { action: newWatchAction }
             // only a game core has properties to offer
             MenuItem {
-                text: qsTr("Add Game &Properties...")
+                text: qsTrId("ram_watch.add_game_properties_dialog")
                 visible: propertyPicker.names.length > 0; height: visible ? implicitHeight : 0
                 onTriggered: propertyPicker.open()
             }
@@ -231,7 +231,7 @@ ApplicationWindow {
             MenuItem { action: freezeAction }
             MenuItem { action: separatorAction }
             MenuItem { action: clearCountsAction }
-            MenuItem { text: qsTr("Purge Duplicate Watches"); onTriggered: purgeAsk.open() }
+            MenuItem { text: qsTrId("ram_watch.purge_duplicate_watches"); onTriggered: purgeAsk.open() }
             MenuDivider {}
             MenuItem { action: upAction }
             MenuItem { action: downAction }
@@ -241,31 +241,31 @@ ApplicationWindow {
         }
         Menu {
             delegate: MenuEntry {}
-            title: qsTr("&Settings")
+            title: qsTrId("common.settings")
             Menu {
                 delegate: MenuEntry {}
-                title: qsTr("Define Previous Value")
-                MenuItem { text: qsTr("Previous Frame"); checkable: true; checked: win.vm.previousType === 2; onTriggered: win.vm.previousType = 2 }
-                MenuItem { text: qsTr("Last Change"); checkable: true; checked: win.vm.previousType === 3; onTriggered: win.vm.previousType = 3 }
-                MenuItem { text: qsTr("&Original"); checkable: true; checked: win.vm.previousType === 0; onTriggered: win.vm.previousType = 0 }
+                title: qsTrId("ram_watch.define_previous_value")
+                MenuItem { text: qsTrId("ram_watch.previous_frame"); checkable: true; checked: win.vm.previousType === 2; onTriggered: win.vm.previousType = 2 }
+                MenuItem { text: qsTrId("ram_watch.last_change"); checkable: true; checked: win.vm.previousType === 3; onTriggered: win.vm.previousType = 3 }
+                MenuItem { text: qsTrId("ram_watch.original"); checkable: true; checked: win.vm.previousType === 0; onTriggered: win.vm.previousType = 0 }
             }
-            MenuItem { text: qsTr("Display Watches On Screen"); checkable: true; checked: win.vm.showOnScreen; onTriggered: win.vm.showOnScreen = checked }
+            MenuItem { text: qsTrId("ram_watch.display_watches_on_screen"); checkable: true; checked: win.vm.showOnScreen; onTriggered: win.vm.showOnScreen = checked }
             Menu {
                 delegate: MenuEntry {}
-                title: qsTr("On Double-Clicking a Watch")
-                MenuItem { text: qsTr("Edit Watch"); checkable: true; checked: !win.vm.doubleClickToPoke; onTriggered: win.vm.doubleClickToPoke = false }
-                MenuItem { text: qsTr("Poke Address"); checkable: true; checked: win.vm.doubleClickToPoke; onTriggered: win.vm.doubleClickToPoke = true }
+                title: qsTrId("ram_watch.on_double_clicking_a_watch")
+                MenuItem { text: qsTrId("ram_watch.edit_watch"); checkable: true; checked: !win.vm.doubleClickToPoke; onTriggered: win.vm.doubleClickToPoke = false }
+                MenuItem { text: qsTrId("ram_watch.poke_address"); checkable: true; checked: win.vm.doubleClickToPoke; onTriggered: win.vm.doubleClickToPoke = true }
             }
             MenuDivider {}
-            MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
+            MenuItem { text: qsTrId("common.save_window_position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
-                text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
+                text: qsTrId("common.stay_on_top"); checkable: true; checked: windowOptions.onTop
                 visible: windowOptions.canStayOnTop; height: visible ? implicitHeight : 0
                 onTriggered: windowOptions.set("top", checked)
             }
-            MenuItem { text: qsTr("&Float From Main Window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
+            MenuItem { text: qsTrId("common.float_from_main_window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
             MenuItem {
-                text: qsTr("Restore &Defaults")
+                text: qsTrId("common.restore_defaults_mnemonic")
                 // RAM Watch's own: its columns as at first, watches shown on screen, a double click pokes
                 onTriggered: {
                     win.vm.hiddenColumns = "Prev,Diff,Type"
@@ -278,7 +278,7 @@ ApplicationWindow {
         Menu {
             delegate: MenuEntry {}
             id: columnsMenu
-            title: qsTr("Columns")
+            title: qsTrId("ram_watch.columns")
             Instantiator {
                 model: win.columns
                 delegate: MenuItem {
@@ -325,26 +325,26 @@ ApplicationWindow {
                 ToolTip.text: tip
                 ToolTip.delay: 500
             }
-            Tool { action: newListAction; tip: qsTr("New") }
-            Tool { action: openAction; tip: qsTr("Open") }
-            Tool { action: saveAction; tip: qsTr("Save") }
+            Tool { action: newListAction; tip: qsTrId("ram_watch.new") }
+            Tool { action: openAction; tip: qsTrId("ram_watch.open") }
+            Tool { action: saveAction; tip: qsTrId("ram_watch.save") }
             ToolSeparator {}
-            Tool { action: newWatchAction; tip: qsTr("New Watch") }
-            Tool { action: editAction; tip: qsTr("Edit Watch") }
-            Tool { action: removeAction; tip: qsTr("Cut") }
+            Tool { action: newWatchAction; tip: qsTrId("ram_watch.new_watch") }
+            Tool { action: editAction; tip: qsTrId("ram_watch.edit_watch") }
+            Tool { action: removeAction; tip: qsTrId("common.cut") }
             // Chimera's own "C" button
             ToolButton {
-                text: qsTr("C"); onClicked: win.vm.run("clearChangeCounts")
-                ToolTip.visible: hovered; ToolTip.text: qsTr("Clear Change Counts"); ToolTip.delay: 500
+                text: qsTrId("ram_watch.c"); onClicked: win.vm.run("clearChangeCounts")
+                ToolTip.visible: hovered; ToolTip.text: qsTrId("ram_watch.clear_change_counts"); ToolTip.delay: 500
             }
-            Tool { action: duplicateAction; tip: qsTr("Duplicate Watch") }
-            Tool { action: splitAction; tip: qsTr("Split Watch") }
+            Tool { action: duplicateAction; tip: qsTrId("ram_watch.duplicate_watch") }
+            Tool { action: splitAction; tip: qsTrId("ram_watch.split_watch") }
             Tool { action: pokeAction }
             Tool { action: freezeAction }
-            Tool { action: separatorAction; tip: qsTr("Separator") }
+            Tool { action: separatorAction; tip: qsTrId("ram_watch.separator") }
             ToolSeparator {}
-            Tool { action: upAction; tip: qsTr("Move Up") }
-            Tool { action: downAction; tip: qsTr("Move Down") }
+            Tool { action: upAction; tip: qsTrId("ram_watch.move_up") }
+            Tool { action: downAction; tip: qsTrId("ram_watch.move_down") }
         }
     }
 
@@ -356,7 +356,7 @@ ApplicationWindow {
             icon.source: "qrc:/chimera/icons/ExclamationRed.png"
             display: AbstractButton.IconOnly
             ToolTip.visible: hovered
-            ToolTip.text: qsTr("Warning! Out of Range Addresses in list, click to remove them")
+            ToolTip.text: qsTrId("ram_watch.warning_out_of_range_addresses_in")
             onClicked: win.vm.run("removeInvalid")
         }
         Label {
@@ -372,27 +372,27 @@ ApplicationWindow {
         id: listMenu
         delegate: shortcutItem
         MenuItem { action: newWatchAction; visible: !win.anyRow; height: visible ? implicitHeight : 0 }
-        Action { property string keysShown: "Ctrl+E"; text: qsTr("&Edit"); icon.source: "qrc:/chimera/icons/Cut.png"; enabled: win.anyRow; onTriggered: win.editWatch(false) }
-        Action { property string keysShown: "Ctrl+R"; text: qsTr("&Remove"); icon.source: "qrc:/chimera/icons/Delete.png"; enabled: win.anyRow; onTriggered: win.vm.run("removeSelected") }
-        Action { property string keysShown: "Ctrl+D"; text: qsTr("&Duplicate"); icon.source: "qrc:/chimera/icons/Duplicate.png"; enabled: win.anyWatch; onTriggered: win.editWatch(true) }
-        Action { property string keysShown: "Ctrl+L"; text: qsTr("Sp&lit"); icon.source: "qrc:/chimera/icons/Split.png"; enabled: win.vm.canSplit; onTriggered: win.vm.run("splitSelected") }
-        Action { property string keysShown: "Ctrl+P"; text: qsTr("&Poke"); icon.source: "qrc:/chimera/icons/poke.png"; enabled: win.vm.canPoke; onTriggered: win.pokeWatch() }
+        Action { property string keysShown: "Ctrl+E"; text: qsTrId("common.edit"); icon.source: "qrc:/chimera/icons/Cut.png"; enabled: win.anyRow; onTriggered: win.editWatch(false) }
+        Action { property string keysShown: "Ctrl+R"; text: qsTrId("common.remove_mnemonic"); icon.source: "qrc:/chimera/icons/Delete.png"; enabled: win.anyRow; onTriggered: win.vm.run("removeSelected") }
+        Action { property string keysShown: "Ctrl+D"; text: qsTrId("ram_watch.duplicate"); icon.source: "qrc:/chimera/icons/Duplicate.png"; enabled: win.anyWatch; onTriggered: win.editWatch(true) }
+        Action { property string keysShown: "Ctrl+L"; text: qsTrId("ram_watch.split"); icon.source: "qrc:/chimera/icons/Split.png"; enabled: win.vm.canSplit; onTriggered: win.vm.run("splitSelected") }
+        Action { property string keysShown: "Ctrl+P"; text: qsTrId("ram_watch.poke"); icon.source: "qrc:/chimera/icons/poke.png"; enabled: win.vm.canPoke; onTriggered: win.pokeWatch() }
         MenuItem {
             action: Action {
                 property string keysShown: "Ctrl+F"
-                text: win.vm.selectionFrozen ? qsTr("&Unfreeze Address") : qsTr("&Freeze Address")
+                text: win.vm.selectionFrozen ? qsTrId("ram_watch.unfreeze_address") : qsTrId("common.freeze_address")
                 icon.source: win.vm.selectionFrozen ? "qrc:/chimera/icons/Unfreeze.png" : "qrc:/chimera/icons/Freeze.png"
                 onTriggered: win.vm.run("toggleFreeze")
             }
             visible: win.vm.canPoke || win.vm.selectionFrozen; height: visible ? implicitHeight : 0
         }
         MenuItem {
-            text: qsTr("Unfreeze &All"); icon.source: "qrc:/chimera/icons/Unfreeze.png"
+            text: qsTrId("ram_watch.unfreeze_all"); icon.source: "qrc:/chimera/icons/Unfreeze.png"
             visible: win.vm.anyFrozen; height: visible ? implicitHeight : 0
             onTriggered: win.vm.run("unfreezeAll")
         }
         MenuItem {
-            text: qsTr("View in Hex Editor")
+            text: qsTrId("ram_watch.view_in_hex_editor")
             visible: win.vm.selectedWatches === 1 && win.viewInHexEditor !== null; height: visible ? implicitHeight : 0
             onTriggered: {
                 const info = JSON.parse(win.vm.run("editInfo", ["edit"]))
@@ -400,9 +400,9 @@ ApplicationWindow {
             }
         }
         MenuDivider {}
-        Action { property string keysShown: "Ctrl+I"; text: qsTr("&Insert Separator"); icon.source: "qrc:/chimera/icons/InsertSeparator.png"; onTriggered: win.vm.run("insertSeparator") }
-        Action { property string keysShown: "Ctrl+Up"; text: qsTr("Move &Up"); icon.source: "qrc:/chimera/icons/MoveUp.png"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["up"]) }
-        Action { property string keysShown: "Ctrl+Down"; text: qsTr("Move &Down"); icon.source: "qrc:/chimera/icons/MoveDown.png"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["down"]) }
+        Action { property string keysShown: "Ctrl+I"; text: qsTrId("ram_watch.insert_separator_mnemonic"); icon.source: "qrc:/chimera/icons/InsertSeparator.png"; onTriggered: win.vm.run("insertSeparator") }
+        Action { property string keysShown: "Ctrl+Up"; text: qsTrId("ram_watch.move_up_mnemonic"); icon.source: "qrc:/chimera/icons/MoveUp.png"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["up"]) }
+        Action { property string keysShown: "Ctrl+Down"; text: qsTrId("ram_watch.move_down_mnemonic"); icon.source: "qrc:/chimera/icons/MoveDown.png"; enabled: win.anyRow; onTriggered: win.vm.run("moveSelected", ["down"]) }
         MenuItem { action: topAction }
         MenuItem { action: bottomAction }
     }
@@ -532,8 +532,8 @@ ApplicationWindow {
         property string mode: "new"
         property var info: ({})
         property var displays: []
-        title: editor.mode === "new" ? qsTr("New Watch") : editor.mode === "duplicate" ? qsTr("Duplicate Watch")
-             : editor.info.many ? qsTr("Edit Watches") : qsTr("Edit Watch")
+        title: editor.mode === "new" ? qsTrId("ram_watch.new_watch") : editor.mode === "duplicate" ? qsTrId("ram_watch.duplicate_watch")
+             : editor.info.many ? qsTrId("ram_watch.edit_watches") : qsTrId("ram_watch.edit_watch")
         width: 300
         height: 260
         modality: Qt.ApplicationModal
@@ -570,32 +570,32 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.margins: 10
             columns: 2
-            Label { text: qsTr("Mem Domain:"); Layout.alignment: Qt.AlignRight }
+            Label { text: qsTrId("ram_watch.mem_domain"); Layout.alignment: Qt.AlignRight }
             ComboBox { id: domainBox; Layout.fillWidth: true; enabled: editor.mode === "new" }
-            Label { text: qsTr("Address:"); Layout.alignment: Qt.AlignRight }
+            Label { text: qsTrId("ram_watch.address"); Layout.alignment: Qt.AlignRight }
             RowLayout {
                 Label { text: "0x" }
                 TextField { id: addressBox; Layout.fillWidth: true; font.family: "monospace"; enabled: !editor.info.many }
             }
-            Label { text: qsTr("Size:"); Layout.alignment: Qt.AlignRight }
+            Label { text: qsTrId("ram_watch.size"); Layout.alignment: Qt.AlignRight }
             ComboBox {
                 id: sizeBox
                 Layout.fillWidth: true
-                model: [qsTr("1 Byte"), qsTr("2 Byte"), qsTr("4 Byte")]
+                model: [qsTrId("common.1_byte"), qsTrId("common.2_byte"), qsTrId("common.4_byte")]
                 onActivated: editor.fillDisplays(editor.displays.length > 0 ? editor.displays[displayBox.currentIndex].display : 0)
             }
             Item { width: 1 }
-            CheckBox { id: bigEndianBox; text: qsTr("Big Endian"); tristate: editor.info.many === true }
-            Label { text: qsTr("Display Type:"); Layout.alignment: Qt.AlignRight }
+            CheckBox { id: bigEndianBox; text: qsTrId("ram_watch.big_endian"); tristate: editor.info.many === true }
+            Label { text: qsTrId("ram_watch.display_type"); Layout.alignment: Qt.AlignRight }
             ComboBox { id: displayBox; Layout.fillWidth: true; enabled: !(editor.info.sizesDiffer === true) }
-            Label { text: qsTr("Notes:"); Layout.alignment: Qt.AlignRight }
+            Label { text: qsTrId("ram_watch.notes"); Layout.alignment: Qt.AlignRight }
             TextField { id: notesBox; Layout.fillWidth: true; enabled: !editor.info.many; maximumLength: 256; onAccepted: editor.accept() }
             Label { Layout.columnSpan: 2; text: win.vm.error; color: win.themeColor("AccentError", "#b00020"); visible: text !== ""; wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 Layout.columnSpan: 2
                 Layout.alignment: Qt.AlignRight
-                Button { text: qsTr("OK"); highlighted: true; onClicked: editor.accept() }
-                Button { text: qsTr("Cancel"); onClicked: editor.close() }
+                Button { text: qsTrId("common.ok"); highlighted: true; onClicked: editor.accept() }
+                Button { text: qsTrId("common.cancel"); onClicked: editor.close() }
             }
         }
     }
@@ -606,7 +606,7 @@ ApplicationWindow {
     // Edit Separator: the text of the separators picked
     ApplicationWindow {
         id: separatorPrompt
-        title: qsTr("Edit Separator")
+        title: qsTrId("ram_watch.edit_separator")
         width: 300
         height: 120
         modality: Qt.ApplicationModal
@@ -614,12 +614,12 @@ ApplicationWindow {
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: 10
-            Label { text: qsTr("Separator Text:") }
+            Label { text: qsTrId("ram_watch.separator_text") }
             TextField { id: separatorText; Layout.fillWidth: true; onAccepted: okSeparator.clicked() }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                Button { id: okSeparator; text: qsTr("OK"); onClicked: { win.vm.run("editSeparators", [separatorText.text]); separatorPrompt.close() } }
-                Button { text: qsTr("Cancel"); onClicked: separatorPrompt.close() }
+                Button { id: okSeparator; text: qsTrId("common.ok"); onClicked: { win.vm.run("editSeparators", [separatorText.text]); separatorPrompt.close() } }
+                Button { text: qsTrId("common.cancel"); onClicked: separatorPrompt.close() }
             }
         }
     }
@@ -627,7 +627,7 @@ ApplicationWindow {
     // Add Game Properties: a game core's properties, each ticked to be watched
     ApplicationWindow {
         id: propertyPicker
-        title: qsTr("Add Game Properties")
+        title: qsTrId("ram_watch.add_game_properties")
         width: 320
         height: 400
         modality: Qt.ApplicationModal
@@ -658,13 +658,13 @@ ApplicationWindow {
             RowLayout {
                 Layout.alignment: Qt.AlignRight
                 Button {
-                    text: qsTr("OK")
+                    text: qsTrId("common.ok")
                     onClicked: {
                         for (const n of propertyPicker.names) if (propertyPicker.ticked[n]) win.vm.run("addProperty", [n])
                         propertyPicker.close()
                     }
                 }
-                Button { text: qsTr("Cancel"); onClicked: propertyPicker.close() }
+                Button { text: qsTrId("common.cancel"); onClicked: propertyPicker.close() }
             }
         }
     }

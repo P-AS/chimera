@@ -17,7 +17,7 @@ ApplicationWindow {
     required property QtObject vm
     property var folderOf: null
     property var themeColor: (role, fallback) => fallback
-    title: qsTr("Firmware")
+    title: qsTrId("firmware_config.firmware")
     width: 860
     height: 440
     minimumWidth: 640
@@ -67,7 +67,7 @@ ApplicationWindow {
     }
     FolderDialog {
         id: folderDialog
-        title: qsTr("Scan a folder for firmware files")
+        title: qsTrId("firmware_config.scan_a_folder_for_firmware_files")
         currentFolder: win.folderOf ? win.folderOf("Firmware") : ""
         onAccepted: win.keepingPlace("scanFolder", [localFiles.localPath(selectedFolder), true])
     }
@@ -82,13 +82,13 @@ ApplicationWindow {
         anchors.margins: 8
         spacing: 4
         Label {
-            text: qsTr("Files your installed cores expect you to provide. A green row was found in the Firmware folder or where you last chose it; a project that needs it opens without asking.")
+            text: qsTrId("firmware_config.files_your_installed_cores_expect_you")
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
         }
         RowLayout {
             // Chimera's Find box (issue 368): the lines whose core, firmware, release, file asked for or file found holds it
-            Label { text: qsTr("Find:") }
+            Label { text: qsTrId("firmware_config.find") }
             TextField {
                 objectName: "firmwareFind"
                 text: win.vm.find
@@ -96,10 +96,10 @@ ApplicationWindow {
                 onTextEdited: win.vm.find = text
             }
             Item { Layout.fillWidth: true }
-            Label { text: qsTr("Show:") }
-            RadioButton { text: qsTr("All"); checked: win.vm.shows === 0; onClicked: win.vm.shows = 0; padding: 2 }
-            RadioButton { text: qsTr("Emulators"); checked: win.vm.shows === 1; onClicked: win.vm.shows = 1; padding: 2 }
-            RadioButton { text: qsTr("Games"); checked: win.vm.shows === 2; onClicked: win.vm.shows = 2; padding: 2 }
+            Label { text: qsTrId("firmware_config.show") }
+            RadioButton { text: qsTrId("firmware_config.all"); checked: win.vm.shows === 0; onClicked: win.vm.shows = 0; padding: 2 }
+            RadioButton { text: qsTrId("common.emulators"); checked: win.vm.shows === 1; onClicked: win.vm.shows = 1; padding: 2 }
+            RadioButton { text: qsTrId("common.games"); checked: win.vm.shows === 2; onClicked: win.vm.shows = 2; padding: 2 }
         }
         Rectangle {
             Layout.fillWidth: true
@@ -113,7 +113,7 @@ ApplicationWindow {
                 // the column headings
                 Row {
                     Repeater {
-                        model: ["", qsTr("Firmware"), qsTr("Release"), qsTr("Expected SHA1"), qsTr("Found"), qsTr("Where"), qsTr("Status")]
+                        model: ["", qsTrId("firmware_config.firmware"), qsTrId("firmware_config.release"), qsTrId("firmware_config.expected_sha1"), qsTrId("firmware_config.found"), qsTrId("firmware_config.where"), qsTrId("common.status")]
                         delegate: Label {
                             required property int index
                             required property string modelData
@@ -213,31 +213,31 @@ ApplicationWindow {
             wrapMode: Text.NoWrap
         }
         RowLayout {
-            Button { text: qsTr("Set File..."); enabled: win.vm.canSet; onClicked: win.browse() }
-            Button { text: qsTr("Clear"); enabled: win.vm.canClear; onClicked: win.keepingPlace("clearFile", [win.vm.picked]) }
-            Button { text: qsTr("Scan Folder..."); onClicked: folderDialog.open() }
-            Button { text: qsTr("Rescan"); onClicked: win.keepingPlace("refresh") }
+            Button { text: qsTrId("firmware_config.set_file"); enabled: win.vm.canSet; onClicked: win.browse() }
+            Button { text: qsTrId("common.clear"); enabled: win.vm.canClear; onClicked: win.keepingPlace("clearFile", [win.vm.picked]) }
+            Button { text: qsTrId("common.scan_folder"); onClicked: folderDialog.open() }
+            Button { text: qsTrId("firmware_config.rescan"); onClicked: win.keepingPlace("refresh") }
             // the file found for the line picked, in its folder
             Button {
-                text: qsTr("Open Folder")
+                text: qsTrId("common.open_folder")
                 enabled: win.vm.canSet
                 onClicked: {
                     const folder = win.vm.run("folderOf", [win.vm.picked]) || ""
                     if (folder !== "") Qt.openUrlExternally(localFiles.folderUrl(folder))
                 }
             }
-            CheckBox { text: qsTr("Show every release"); checked: win.vm.showAll; onToggled: win.vm.showAll = checked }
+            CheckBox { text: qsTrId("firmware_config.show_every_release"); checked: win.vm.showAll; onToggled: win.vm.showAll = checked }
             Label { text: win.vm.status; elide: Text.ElideRight; Layout.fillWidth: true; opacity: 0.8 }
-            Button { text: qsTr("Close"); onClicked: win.close() }
+            Button { text: qsTrId("common.close"); onClicked: win.close() }
         }
     }
     // a core's files folded or opened, one core or all, as Chimera's right-click menu
     Menu {
         delegate: MenuEntry {}
         id: foldMenu
-        Action { text: qsTr("Collapse"); onTriggered: win.vm.run("collapse", [win.vm.picked]) }
-        Action { text: qsTr("Expand"); onTriggered: win.vm.run("expand", [win.vm.picked]) }
-        Action { text: qsTr("Collapse All"); onTriggered: win.vm.run("collapseAll") }
-        Action { text: qsTr("Expand All"); onTriggered: win.vm.run("expandAll") }
+        Action { text: qsTrId("firmware_config.collapse"); onTriggered: win.vm.run("collapse", [win.vm.picked]) }
+        Action { text: qsTrId("firmware_config.expand"); onTriggered: win.vm.run("expand", [win.vm.picked]) }
+        Action { text: qsTrId("firmware_config.collapse_all"); onTriggered: win.vm.run("collapseAll") }
+        Action { text: qsTrId("firmware_config.expand_all"); onTriggered: win.vm.run("expandAll") }
     }
 }

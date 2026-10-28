@@ -19,7 +19,7 @@ ApplicationWindow {
     property var themeColor: (role, fallback) => fallback
     // the import was taken: the wizard is next
     signal taken()
-    title: win.vm.importMenu === "" ? qsTr("Import Movie") : win.vm.importMenu.replace(/[.\s]+$/, "").replace("&", "")
+    title: win.vm.importMenu === "" ? qsTrId("movie_import.import_movie") : win.vm.importMenu.replace(/[.\s]+$/, "").replace("&", "")
     width: 600
     height: Math.max(260, content.implicitHeight + 24)
     minimumWidth: 600
@@ -65,7 +65,7 @@ ApplicationWindow {
     FileDialog {
         id: movieDialog
         title: win.vm.importMovieLabel
-        nameFilters: [win.vm.importMovieLabel + " (" + win.vm.importMovieFilter + ")", qsTr("All files (*)")]
+        nameFilters: [win.vm.importMovieLabel + " (" + win.vm.importMovieFilter + ")", qsTrId("common.all_files")]
         onAccepted: { win.said = ""; win.vm.run("importSetMovie", [selectedFile]) }
     }
     FileDialog {
@@ -82,15 +82,15 @@ ApplicationWindow {
         anchors.margins: 12
         spacing: 8
         Label {
-            text: qsTr("The core reads these files and suggests the project they make: its machine, settings, firmware, files and inputs. You then check it in the New Project wizard and choose where it is saved.")
+            text: qsTrId("movie_import.the_core_reads_these_files_and")
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
         }
         RowLayout {
             Layout.fillWidth: true
-            RowName { text: (win.vm.importMovieLabel !== "" ? win.vm.importMovieLabel : qsTr("Movie")) + ":" }
+            RowName { text: (win.vm.importMovieLabel !== "" ? win.vm.importMovieLabel : qsTrId("movie_import.movie")) + ":" }
             TextField { text: win.vm.importMovie; readOnly: true; activeFocusOnTab: false; Layout.fillWidth: true }
-            Side { text: qsTr("Browse..."); onClicked: movieDialog.open() }
+            Side { text: qsTrId("common.browse"); onClicked: movieDialog.open() }
         }
         Repeater {
             model: win.vm.rows("importFiles")
@@ -147,29 +147,29 @@ ApplicationWindow {
                 ColumnLayout {
                     Layout.alignment: Qt.AlignTop
                     Side {
-                        text: input.multiple ? qsTr("Add...") : qsTr("Browse...")
+                        text: input.multiple ? qsTrId("movie_import.add") : qsTrId("common.browse")
                         onClicked: {
                             win.pickFor = input.option
                             fileDialog.title = input.label
                             fileDialog.fileMode = input.multiple ? FileDialog.OpenFiles : FileDialog.OpenFile
-                            fileDialog.nameFilters = input.filter === "" || input.filter === "*" ? [qsTr("All files (*)")]
-                                : [input.label + " (" + input.filter + ")", qsTr("All files (*)")]
+                            fileDialog.nameFilters = input.filter === "" || input.filter === "*" ? [qsTrId("common.all_files")]
+                                : [input.label + " (" + input.filter + ")", qsTrId("common.all_files")]
                             fileDialog.open()
                         }
                     }
                     Side {
                         visible: input.multiple
-                        text: qsTr("Remove")
+                        text: qsTrId("common.remove")
                         onClicked: { if (input.picked >= 0) { win.vm.run("importRemoveFile", [input.option, input.picked]); input.picked = -1 } }
                     }
                     Side {
                         visible: input.multiple
-                        text: qsTr("Up")
+                        text: qsTrId("movie_import.up")
                         onClicked: { if (input.picked > 0) { win.vm.run("importMoveFile", [input.option, input.picked, input.picked - 1]); input.picked-- } }
                     }
                     Side {
                         visible: input.multiple
-                        text: qsTr("Down")
+                        text: qsTrId("movie_import.down")
                         onClicked: {
                             if (input.picked >= 0 && input.picked < input.names.length - 1) {
                                 win.vm.run("importMoveFile", [input.option, input.picked, input.picked + 1])
@@ -205,8 +205,8 @@ ApplicationWindow {
         }
         RowLayout {
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("Import"); Layout.preferredWidth: 80; enabled: !win.asking; onClicked: win.importNow() }
-            Button { text: qsTr("Cancel"); Layout.preferredWidth: 76; onClicked: win.close() }
+            Button { text: qsTrId("movie_import.import"); Layout.preferredWidth: 80; enabled: !win.asking; onClicked: win.importNow() }
+            Button { text: qsTrId("common.cancel"); Layout.preferredWidth: 76; onClicked: win.close() }
         }
     }
 }

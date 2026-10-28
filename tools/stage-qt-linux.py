@@ -2,8 +2,8 @@
 """Puts Chimera's Linux build in one folder that runs on its own, as
 tools/stage-qt-windows.py does for Windows: the window, Chimera's libraries,
 the Qt libraries, plugins and QML modules the window uses, and the few
-libraries those need that a desktop may not have; the other programs in bin/;
-the themes Chimera ships; and an empty cores/ with a README.txt that says
+libraries those need that a desktop may not have; Chimera's language tables
+(lib/languages); the other programs in bin/; the themes Chimera ships; and an empty cores/ with a README.txt that says
 what goes in it.
 
 The folder is laid out as Qt installs itself, so a relocatable Qt finds its
@@ -49,6 +49,8 @@ for f in ("ffmpeg", "ffmpeg-LICENSE.txt"):
 for f in sorted(os.listdir(dlls)):
     if ".so" in f:
         shutil.copy2(f"{dlls}/{f}", lib)
+# Chimera's language tables, one file per language, beside the engine that reads them
+shutil.copytree(f"{dlls}/languages", f"{lib}/languages")
 
 # Qt's plugins the window uses: drawing on X11 and off screen (--headless),
 # the GL integrations X11 draws with, a key composed of two (dead keys), and

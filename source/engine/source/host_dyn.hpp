@@ -148,6 +148,11 @@ uintptr_t bridgeGuestCall(uintptr_t guestEntry, int argCount);
  * load. `deepBind`: on Linux, the library's own symbols before the process's. */
 void *openLibraryBesideUs(const char *name, bool deepBind, std::string &why);
 
+/* The folder libchimera itself was loaded from (the bundle's dll folder; a
+ * test's own folder, where the engine is linked into it), UTF-8, ending in
+ * a slash; "" when the system will not say. */
+std::string folderOfUs();
+
 /* Whether a library that would not load is worth trying again now: at most
  * once every two seconds, so a library that is simply not there costs a
  * search per two seconds and not one per call. `last` is the caller's. */

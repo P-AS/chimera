@@ -137,7 +137,7 @@ ApplicationWindow {
                         onClicked: win.controls.run("showColumn", [entry.button, checked])
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
-                        ToolTip.text: qsTr("A column in TAStudio")
+                        ToolTip.text: qsTrId("controller_config.a_column_in_tastudio")
                     }
                     BindingBox {
                         id: entryBox
@@ -206,12 +206,12 @@ ApplicationWindow {
                             onClicked: win.controls.run("showColumn", [bind.axis, checked])
                             ToolTip.visible: hovered
                             ToolTip.delay: 500
-                            ToolTip.text: qsTr("A column in TAStudio")
+                            ToolTip.text: qsTrId("controller_config.a_column_in_tastudio")
                         }
                         Label { text: bind.axis; elide: Text.ElideRight; Layout.fillWidth: true }
                     }
                     Button {
-                        text: win.axisCatch === bind.index ? qsTr("Cancel!") : qsTr("Bind!")
+                        text: win.axisCatch === bind.index ? qsTrId("controller_config.cancel") : qsTrId("controller_config.bind")
                         Layout.preferredWidth: 75
                         onClicked: {
                             if (win.axisCatch === bind.index) { win.stopCatching(); return }
@@ -219,8 +219,8 @@ ApplicationWindow {
                             win.session.run("catchAxis")
                         }
                     }
-                    Button { text: qsTr("Unbind!"); Layout.preferredWidth: 75; onClicked: win.controls.run("unbind", [bind.index]) }
-                    Button { text: qsTr("Flip Axis"); Layout.preferredWidth: 75; onClicked: win.controls.run("flip", [bind.index]) }
+                    Button { text: qsTrId("controller_config.unbind"); Layout.preferredWidth: 75; onClicked: win.controls.run("unbind", [bind.index]) }
+                    Button { text: qsTrId("controller_config.flip_axis"); Layout.preferredWidth: 75; onClicked: win.controls.run("flip", [bind.index]) }
                     // the key pushing it up, and the sensitivity
                     BindingBox {
                         keys: bind.positive; session: win.session; keyNamer: win.keyNamer; themeColor: win.themeColor
@@ -229,7 +229,7 @@ ApplicationWindow {
                         Layout.preferredWidth: 100
                     }
                     Label { text: bind.axis + "+"; Layout.preferredWidth: 92 }
-                    Label { text: qsTr("Sensitivity: %1%").arg(Math.round(bind.mult * 100)); Layout.preferredWidth: 110 }
+                    Label { text: qsTrId("controller_config.sensitivity").arg(Math.round(bind.mult * 100)); Layout.preferredWidth: 110 }
                     Slider {
                         Layout.columnSpan: 2
                         Layout.preferredWidth: 160
@@ -245,7 +245,7 @@ ApplicationWindow {
                         Layout.preferredWidth: 100
                     }
                     Label { text: bind.axis + "-"; Layout.preferredWidth: 92 }
-                    Label { text: qsTr("Deadzone: %1%").arg(Math.round(bind.deadzone * 100)); Layout.preferredWidth: 110 }
+                    Label { text: qsTrId("controller_config.deadzone").arg(Math.round(bind.deadzone * 100)); Layout.preferredWidth: 110 }
                     Slider {
                         Layout.columnSpan: 2
                         Layout.preferredWidth: 160
@@ -273,10 +273,10 @@ ApplicationWindow {
                 TabBar {
                     id: kinds
                     Layout.fillWidth: true
-                    TabButton { text: qsTr("Normal Controls"); width: implicitWidth }
-                    TabButton { text: qsTr("Autofire Controls"); width: implicitWidth }
+                    TabButton { text: qsTrId("controller_config.normal_controls"); width: implicitWidth }
+                    TabButton { text: qsTrId("controller_config.autofire_controls"); width: implicitWidth }
                     // Chimera leaves the tab out for a controller with no analog controls
-                    TabButton { text: qsTr("Analog Controls"); width: visible ? implicitWidth : 0; visible: win.axisGroups.length > 0 }
+                    TabButton { text: qsTrId("controller_config.analog_controls"); width: visible ? implicitWidth : 0; visible: win.axisGroups.length > 0 }
                 }
                 StackLayout {
                     currentIndex: kinds.currentIndex
@@ -327,18 +327,18 @@ ApplicationWindow {
                                             kind.groups.length > 1 ? kind.groups[groupTabs.currentIndex] : "", shown])
                                     }
                                     Label {
-                                        text: win.controls.columnsRoll > 0 ? qsTr("Columns in TAStudio's input roll #%1:").arg(win.controls.columnsRoll)
-                                                                           : qsTr("Columns in TAStudio:")
+                                        text: win.controls.columnsRoll > 0 ? qsTrId("controller_config.columns_in_tastudio_s_input_roll").arg(win.controls.columnsRoll)
+                                                                           : qsTrId("controller_config.columns_in_tastudio")
                                     }
-                                    Button { objectName: "showAllColumns"; text: qsTr("Show all"); onClicked: parent.showAll(true) }
-                                    Button { objectName: "hideAllColumns"; text: qsTr("Hide all"); onClicked: parent.showAll(false) }
+                                    Button { objectName: "showAllColumns"; text: qsTrId("controller_config.show_all"); onClicked: parent.showAll(true) }
+                                    Button { objectName: "hideAllColumns"; text: qsTrId("controller_config.hide_all"); onClicked: parent.showAll(false) }
                                 }
                                 // Chimera's relative mouse sensitivity, for every control the pointer's movement moves
                                 RowLayout {
                                     visible: kind.modelData === "analog"
                                     Layout.topMargin: 4
                                     spacing: 6
-                                    Label { text: qsTr("Pointer movement (RMouse X/Y) sensitivity:") }
+                                    Label { text: qsTrId("controller_config.pointer_movement_rmouse_x_y_sensitivity") }
                                     SpinBox {
                                         objectName: "mouseSensitivity"
                                         from: 1
@@ -348,7 +348,7 @@ ApplicationWindow {
                                         value: win.controls.mouseSensitivityCopy
                                         onValueModified: win.controls.mouseSensitivityCopy = value
                                     }
-                                    Label { text: qsTr("%") }
+                                    Label { text: qsTrId("controller_config.text") }
                                 }
                             }
                         }
@@ -370,28 +370,28 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             spacing: 6
-            Label { text: qsTr("Tips:") }
-            Label { text: qsTr("* Escape clears a key mapping") }
-            Label { text: qsTr("* Disable Auto Tab to multiply bind") }
+            Label { text: qsTrId("controller_config.tips") }
+            Label { text: qsTrId("controller_config.escape_clears_a_key_mapping") }
+            Label { text: qsTrId("controller_config.disable_auto_tab_to_multiply_bind") }
             Item { Layout.fillWidth: true }
             CheckBox {
-                text: qsTr("Auto Tab")
+                text: qsTrId("controller_config.auto_tab")
                 checked: win.controls.autoTab
                 onToggled: win.controls.autoTab = checked
             }
             Button {
-                text: qsTr("Misc...")
+                text: qsTrId("controller_config.misc")
                 Layout.preferredWidth: 75
                 onClicked: miscMenu.popup()
                 Menu {
                     delegate: MenuEntry {}
                     id: miscMenu
-                    MenuItem { text: qsTr("Load Defaults"); onTriggered: win.controls.run("loadDefaults") }
-                    MenuItem { text: qsTr("Clear"); onTriggered: win.controls.run("clear") }
+                    MenuItem { text: qsTrId("controller_config.load_defaults"); onTriggered: win.controls.run("loadDefaults") }
+                    MenuItem { text: qsTrId("common.clear"); onTriggered: win.controls.run("clear") }
                 }
             }
-            Button { text: qsTr("&Save"); Layout.preferredWidth: 75; onClicked: win.save() }
-            Button { text: qsTr("&Cancel"); Layout.preferredWidth: 75; onClicked: win.close() }
+            Button { text: qsTrId("common.save"); Layout.preferredWidth: 75; onClicked: win.save() }
+            Button { text: qsTrId("common.cancel_mnemonic"); Layout.preferredWidth: 75; onClicked: win.close() }
         }
     }
 }

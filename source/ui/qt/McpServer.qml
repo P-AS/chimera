@@ -15,7 +15,7 @@ ApplicationWindow {
     required property QtObject vm
     property QtObject clipboard: null
     property Window mainWindow: null
-    title: qsTr("MCP Server")
+    title: qsTrId("mcp_server.mcp_server")
     width: 620
     height: 480
     transientParent: win.mainWindow
@@ -30,19 +30,19 @@ ApplicationWindow {
         Label {
             Layout.fillWidth: true
             wrapMode: Text.Wrap
-            text: qsTr("An AI agent can look at the project you have open, and change it if you allow that, while this server is started.")
+            text: qsTrId("mcp_server.an_ai_agent_can_look_at")
         }
         RowLayout {
             Label { objectName: "mcpState"; text: win.vm.stateText; elide: Text.ElideRight; Layout.fillWidth: true }
             Button {
                 objectName: "mcpStartStop"
-                text: win.vm.started ? qsTr("Stop") : qsTr("Start")
+                text: win.vm.started ? qsTrId("common.stop") : qsTrId("mcp_server.start")
                 Layout.preferredWidth: 110
                 onClicked: win.vm.run("toggle")
             }
         }
         CheckBox {
-            text: qsTr("Allow the agent to make changes (edit input, move the playback position, write memory)")
+            text: qsTrId("mcp_server.allow_the_agent_to_make_changes")
             checked: win.vm.allowedNow
             // the person's choice is remembered for every later start (user-decided, 2026-10-22, issue 355)
             onToggled: win.vm.allowChanges = checked
@@ -52,25 +52,25 @@ ApplicationWindow {
             Layout.leftMargin: 18
             wrapMode: Text.Wrap
             opacity: 0.8
-            text: qsTr("Remembered, and applied every time the server is started. While it is off the agent can only look.")
+            text: qsTrId("mcp_server.remembered_and_applied_every_time_the")
         }
         Label {
             Layout.fillWidth: true
             Layout.topMargin: 6
             wrapMode: Text.Wrap
-            text: qsTr("To set up an agent, once: give it this command. This one is for Claude Code; other programs run the same file as an MCP server.")
+            text: qsTrId("mcp_server.to_set_up_an_agent_once")
         }
         RowLayout {
             TextField { text: win.vm.setupCommand; readOnly: true; Layout.fillWidth: true; selectByMouse: true }
             Button {
-                text: qsTr("Copy")
+                text: qsTrId("common.copy")
                 Layout.preferredWidth: 110
                 onClicked: {
-                    if (win.clipboard) { win.clipboard.setText(win.vm.setupCommand); win.vm.note = qsTr("The command is on the clipboard.") }
+                    if (win.clipboard) { win.clipboard.setText(win.vm.setupCommand); win.vm.note = qsTrId("mcp_server.the_command_is_on_the_clipboard") }
                 }
             }
         }
-        Label { Layout.topMargin: 6; text: qsTr("What happened, one line a call:") }
+        Label { Layout.topMargin: 6; text: qsTrId("mcp_server.what_happened_one_line_a_call") }
         ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -85,16 +85,16 @@ ApplicationWindow {
             }
         }
         RowLayout {
-            Button { text: qsTr("Save Log..."); onClicked: saveLogDialog.open() }
-            Label { text: win.vm.note !== "" ? win.vm.note : qsTr("Closing this window does not stop the server."); elide: Text.ElideRight; Layout.fillWidth: true }
-            Button { text: qsTr("Close"); Layout.preferredWidth: 110; onClicked: win.close() }
+            Button { text: qsTrId("mcp_server.save_log"); onClicked: saveLogDialog.open() }
+            Label { text: win.vm.note !== "" ? win.vm.note : qsTrId("mcp_server.closing_this_window_does_not_stop"); elide: Text.ElideRight; Layout.fillWidth: true }
+            Button { text: qsTrId("common.close"); Layout.preferredWidth: 110; onClicked: win.close() }
         }
     }
     FileDialog {
         id: saveLogDialog
-        title: qsTr("Save the MCP server's log")
+        title: qsTrId("mcp_server.save_the_mcp_server_s_log")
         fileMode: FileDialog.SaveFile
-        nameFilters: [qsTr("Text file (*.txt)")]
+        nameFilters: [qsTrId("mcp_server.text_file_txt")]
         defaultSuffix: "txt"
         selectedFile: "file:///chimera-mcp-log-" + Qt.formatDateTime(new Date(), "yyyy-MM-dd-HHmm") + ".txt"
         onAccepted: win.vm.run("saveLog", [localFiles.localPath(selectedFile)])

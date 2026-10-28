@@ -207,6 +207,34 @@ void *openLibraryBesideUs(const char *name, bool deepBind, std::string &why)
 #endif
 }
 
+std::string folderOfUs()
+{
+#if defined(_WIN32)
+	HMODULE self = nullptr;
+	wchar_t path[MAX_PATH];
+	if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			reinterpret_cast<LPCWSTR>(&folderOfUs), &self)
+		|| GetModuleFileNameW(self, path, MAX_PATH) == 0)
+	{
+		return {};
+	}
+	std::wstring dir(path);
+	const auto slash = dir.find_last_of(L"\\/");
+	if (slash == std::wstring::npos) return {};
+	dir.resize(slash + 1);
+	const int n = WideCharToMultiByte(CP_UTF8, 0, dir.data(), static_cast<int>(dir.size()), nullptr, 0, nullptr, nullptr);
+	std::string out(static_cast<size_t>(n > 0 ? n : 0), '\0');
+	if (n > 0) WideCharToMultiByte(CP_UTF8, 0, dir.data(), static_cast<int>(dir.size()), out.data(), n, nullptr, nullptr);
+	return out;
+#else
+	Dl_info info;
+	if (dladdr(reinterpret_cast<void *>(&folderOfUs), &info) == 0 || info.dli_fname == nullptr) return {};
+	std::string dir(info.dli_fname);
+	const auto slash = dir.find_last_of('/');
+	return slash == std::string::npos ? std::string("./") : dir.substr(0, slash + 1);
+#endif
+}
+
 bool retryLibraryLoad(int64_t &lastMs)
 {
 	const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(

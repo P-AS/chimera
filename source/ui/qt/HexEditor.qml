@@ -54,32 +54,32 @@ ApplicationWindow {
 
     FileDialog {
         id: binaryDialog
-        title: qsTr("Save as binary")
+        title: qsTrId("hex_editor.save_as_binary")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "bin"
-        nameFilters: [qsTr("Binary files (*.bin)"), qsTr("All files (*)")]
+        nameFilters: [qsTrId("hex_editor.binary_files_bin"), qsTrId("common.all_files")]
         onAccepted: win.vm.run("saveBinary", [selectedFile])
     }
     FileDialog {
         id: textDialog
-        title: qsTr("Save as text")
+        title: qsTrId("hex_editor.save_as_text")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "txt"
-        nameFilters: [qsTr("Text files (*.txt)"), qsTr("All files (*)")]
+        nameFilters: [qsTrId("hex_editor.text_files_txt"), qsTrId("common.all_files")]
         onAccepted: win.vm.run("saveText", [selectedFile])
     }
     FileDialog {
         id: importDialog
-        title: qsTr("Import as binary")
+        title: qsTrId("hex_editor.import_as_binary")
         currentFolder: win.folderOf ? win.folderOf("Tools") : ""
-        nameFilters: [qsTr("Binary files (*.bin *.dat)"), qsTr("All files (*)")]
-        onAccepted: { const r = win.vm.run("importBinary", [selectedFile]); if (r === undefined && win.vm.error !== "") win.tell(qsTr("Hex Editor"), win.vm.error) }
+        nameFilters: [qsTrId("hex_editor.binary_files_bin_dat"), qsTrId("common.all_files")]
+        onAccepted: { const r = win.vm.run("importBinary", [selectedFile]); if (r === undefined && win.vm.error !== "") win.tell(qsTrId("hex_editor.hex_editor"), win.vm.error) }
     }
     FileDialog {
         id: tableDialog
-        title: qsTr("Load .tbl file")
+        title: qsTrId("hex_editor.load_tbl_file")
         currentFolder: win.folderOf ? win.folderOf("Tools") : ""
-        nameFilters: [qsTr("Text Table files (*.tbl)"), qsTr("All files (*)")]
+        nameFilters: [qsTrId("hex_editor.text_table_files_tbl"), qsTrId("common.all_files")]
         onAccepted: win.vm.run("loadTable", [selectedFile])
     }
 
@@ -102,33 +102,33 @@ ApplicationWindow {
         }
     }
 
-    Action { id: copyAction; text: qsTr("&Copy"); icon.source: "qrc:/chimera/icons/Duplicate.png"; shortcut: "Ctrl+C"; enabled: win.anyHighlighted; onTriggered: if (win.clipboard) win.clipboard.setText(win.vm.run("copyText")) }
-    Action { id: exportAction; text: qsTr("&Export"); shortcut: "Ctrl+E"; enabled: win.anyHighlighted; onTriggered: if (win.clipboard) win.clipboard.setText(win.vm.run("exportText")) }
+    Action { id: copyAction; text: qsTrId("hex_editor.copy"); icon.source: "qrc:/chimera/icons/Duplicate.png"; shortcut: "Ctrl+C"; enabled: win.anyHighlighted; onTriggered: if (win.clipboard) win.clipboard.setText(win.vm.run("copyText")) }
+    Action { id: exportAction; text: qsTrId("hex_editor.export"); shortcut: "Ctrl+E"; enabled: win.anyHighlighted; onTriggered: if (win.clipboard) win.clipboard.setText(win.vm.run("exportText")) }
     Action {
-        id: pasteAction; text: qsTr("&Paste"); icon.source: "qrc:/chimera/icons/Paste.png"; shortcut: "Ctrl+V"
+        id: pasteAction; text: qsTrId("hex_editor.paste"); icon.source: "qrc:/chimera/icons/Paste.png"; shortcut: "Ctrl+V"
         enabled: win.vm.writable && win.anyHighlighted
         onTriggered: if (win.clipboard) win.vm.run("paste", [win.clipboard.text()])
     }
-    Action { id: findAction; text: qsTr("&Find..."); shortcut: "Ctrl+F"; onTriggered: find.start() }
-    Action { id: findNextAction; text: qsTr("Find Next"); shortcut: "F3"; enabled: win.vm.findString !== ""; onTriggered: win.vm.run("findNext") }
-    Action { id: findPrevAction; text: qsTr("Find Prev"); shortcut: "F2"; enabled: win.vm.findString !== ""; onTriggered: win.vm.run("findPrev") }
-    Action { id: goToAction; text: qsTr("&Go to Address..."); shortcut: "Ctrl+G"; onTriggered: goTo.open() }
+    Action { id: findAction; text: qsTrId("hex_editor.find_dialog"); shortcut: "Ctrl+F"; onTriggered: find.start() }
+    Action { id: findNextAction; text: qsTrId("hex_editor.find_next"); shortcut: "F3"; enabled: win.vm.findString !== ""; onTriggered: win.vm.run("findNext") }
+    Action { id: findPrevAction; text: qsTrId("hex_editor.find_prev"); shortcut: "F2"; enabled: win.vm.findString !== ""; onTriggered: win.vm.run("findPrev") }
+    Action { id: goToAction; text: qsTrId("hex_editor.go_to_address_dialog"); shortcut: "Ctrl+G"; onTriggered: goTo.open() }
     Action {
-        id: watchAction; property string keysShown: "Ctrl+W"; text: qsTr("Add to RAM Watch"); icon.source: "qrc:/chimera/icons/Find.png"
+        id: watchAction; property string keysShown: "Ctrl+W"; text: qsTrId("hex_editor.add_to_ram_watch"); icon.source: "qrc:/chimera/icons/Find.png"
         enabled: win.anyHighlighted
         onTriggered: { if (win.vm.run("addToRamWatch") > 0 && win.showRamWatch) win.showRamWatch() }
     }
     // frozen addresses: written before every frame, for this session only
     Action {
         id: freezeAction; property string keysShown: "Space"
-        text: win.vm.pickedFrozen ? qsTr("Un&freeze Address") : qsTr("&Freeze Address")
+        text: win.vm.pickedFrozen ? qsTrId("hex_editor.unfreeze_address") : qsTrId("common.freeze_address")
         icon.source: win.vm.pickedFrozen ? "qrc:/chimera/icons/Unfreeze.png" : "qrc:/chimera/icons/Freeze.png"
         enabled: win.anyHighlighted && win.vm.writable
         onTriggered: win.vm.run("toggleFreeze")
     }
-    Action { id: unfreezeAllAction; text: qsTr("Unfreeze All"); icon.source: "qrc:/chimera/icons/Unfreeze.png"; shortcut: "Shift+Del"; enabled: win.vm.anyFrozen; onTriggered: win.vm.run("unfreezeAll") }
+    Action { id: unfreezeAllAction; text: qsTrId("hex_editor.unfreeze_all"); icon.source: "qrc:/chimera/icons/Unfreeze.png"; shortcut: "Shift+Del"; enabled: win.vm.anyFrozen; onTriggered: win.vm.run("unfreezeAll") }
     Action {
-        id: pokeAction; text: qsTr("&Poke Address"); icon.source: "qrc:/chimera/icons/poke.png"; shortcut: "Ctrl+P"
+        id: pokeAction; text: qsTrId("hex_editor.poke_address"); icon.source: "qrc:/chimera/icons/poke.png"; shortcut: "Ctrl+P"
         enabled: win.vm.writable && win.anyHighlighted
         onTriggered: poke.start(JSON.parse(win.vm.run("pokeInfo")))
     }
@@ -136,19 +136,19 @@ ApplicationWindow {
     menuBar: MenuBar {
         background: Rectangle { color: win.menuBarColour }
         Menu {
-            title: qsTr("&File")
+            title: qsTrId("common.file")
             delegate: shortcutItem
-            Action { text: qsTr("Save as binary..."); shortcut: "Ctrl+Shift+S"; onTriggered: binaryDialog.open() }
-            Action { text: qsTr("Save as text..."); onTriggered: textDialog.open() }
-            Action { text: qsTr("Import as binary..."); shortcut: "Ctrl+I"; onTriggered: importDialog.open() }
+            Action { text: qsTrId("hex_editor.save_as_binary_dialog"); shortcut: "Ctrl+Shift+S"; onTriggered: binaryDialog.open() }
+            Action { text: qsTrId("hex_editor.save_as_text_dialog"); onTriggered: textDialog.open() }
+            Action { text: qsTrId("hex_editor.import_as_binary_dialog"); shortcut: "Ctrl+I"; onTriggered: importDialog.open() }
             MenuDivider {}
-            Action { text: qsTr("&Load .tbl file"); onTriggered: tableDialog.open() }
-            Action { text: qsTr("Close .tbl file"); enabled: win.vm.tableFile !== ""; onTriggered: win.vm.run("closeTable") }
+            Action { text: qsTrId("hex_editor.load_tbl_file_mnemonic"); onTriggered: tableDialog.open() }
+            Action { text: qsTrId("hex_editor.close_tbl_file"); enabled: win.vm.tableFile !== ""; onTriggered: win.vm.run("closeTable") }
             Menu {
                 delegate: MenuEntry {}
                 id: recentMenu
-                title: qsTr("Recent")
-                MenuItem { text: qsTr("None"); enabled: false; visible: win.vm.recentTables === ""; height: visible ? implicitHeight : 0 }
+                title: qsTrId("common.recent")
+                MenuItem { text: qsTrId("common.none"); enabled: false; visible: win.vm.recentTables === ""; height: visible ? implicitHeight : 0 }
                 Instantiator {
                     model: win.vm.recentTables === "" ? [] : win.vm.recentTables.split("\n")
                     delegate: MenuItem {
@@ -161,10 +161,10 @@ ApplicationWindow {
                 }
             }
             MenuDivider {}
-            Action { property string keysShown: "Alt+F4"; text: qsTr("&Close"); onTriggered: win.close() }
+            Action { property string keysShown: "Alt+F4"; text: qsTrId("common.close_mnemonic"); onTriggered: win.close() }
         }
         Menu {
-            title: qsTr("&Edit")
+            title: qsTrId("common.edit")
             delegate: shortcutItem
             MenuItem { action: copyAction }
             MenuItem { action: exportAction }
@@ -175,12 +175,12 @@ ApplicationWindow {
             MenuItem { action: findPrevAction }
         }
         Menu {
-            title: qsTr("&Options")
+            title: qsTrId("hex_editor.options")
             delegate: shortcutItem
             Menu {
                 delegate: MenuEntry {}
                 id: domainMenu
-                title: qsTr("&Memory Domains")
+                title: qsTrId("hex_editor.memory_domains")
                 Instantiator {
                     model: win.vm.domains === "" ? [] : win.vm.domains.split(",")
                     delegate: MenuItem {
@@ -196,12 +196,12 @@ ApplicationWindow {
             }
             Menu {
                 delegate: MenuEntry {}
-                title: qsTr("Data Size")
-                MenuItem { text: qsTr("1 Byte"); checkable: true; checked: win.vm.size === 1; onTriggered: win.vm.size = 1 }
-                MenuItem { text: qsTr("2 Byte"); checkable: true; checked: win.vm.size === 2; onTriggered: win.vm.size = 2 }
-                MenuItem { text: qsTr("4 Byte"); checkable: true; checked: win.vm.size === 4; onTriggered: win.vm.size = 4 }
+                title: qsTrId("hex_editor.data_size")
+                MenuItem { text: qsTrId("common.1_byte"); checkable: true; checked: win.vm.size === 1; onTriggered: win.vm.size = 1 }
+                MenuItem { text: qsTrId("common.2_byte"); checkable: true; checked: win.vm.size === 2; onTriggered: win.vm.size = 2 }
+                MenuItem { text: qsTrId("common.4_byte"); checkable: true; checked: win.vm.size === 4; onTriggered: win.vm.size = 4 }
             }
-            MenuItem { text: qsTr("Big Endian"); checkable: true; checked: win.vm.bigEndian; onTriggered: win.vm.bigEndian = checked }
+            MenuItem { text: qsTrId("hex_editor.big_endian"); checkable: true; checked: win.vm.bigEndian; onTriggered: win.vm.bigEndian = checked }
             MenuDivider {}
             MenuItem { action: goToAction }
             MenuItem { action: watchAction }
@@ -211,23 +211,23 @@ ApplicationWindow {
         }
         Menu {
             delegate: MenuEntry {}
-            title: qsTr("&Settings")
+            title: qsTrId("common.settings")
             Menu {
                 delegate: MenuEntry {}
-                title: qsTr("Custom Colors")
-                MenuItem { text: qsTr("Set Colors"); onTriggered: { colorsWindow.show(); colorsWindow.raise() } }
+                title: qsTrId("hex_editor.custom_colors")
+                MenuItem { text: qsTrId("hex_editor.set_colors"); onTriggered: { colorsWindow.show(); colorsWindow.raise() } }
                 MenuDivider {}
-                MenuItem { text: qsTr("Reset to Default"); onTriggered: win.vm.run("resetColors") }
+                MenuItem { text: qsTrId("hex_editor.reset_to_default"); onTriggered: win.vm.run("resetColors") }
             }
             MenuDivider {}
-            MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
+            MenuItem { text: qsTrId("common.save_window_position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
-                text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
+                text: qsTrId("common.stay_on_top"); checkable: true; checked: windowOptions.onTop
                 visible: windowOptions.canStayOnTop; height: visible ? implicitHeight : 0
                 onTriggered: windowOptions.set("top", checked)
             }
-            MenuItem { text: qsTr("&Float From Main Window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
-            MenuItem { text: qsTr("Restore &Defaults"); onTriggered: { win.vm.run("resetColors"); win.vm.size = 1; windowOptions.restore() } }
+            MenuItem { text: qsTrId("common.float_from_main_window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
+            MenuItem { text: qsTrId("common.restore_defaults_mnemonic"); onTriggered: { win.vm.run("resetColors"); win.vm.size = 1; windowOptions.restore() } }
         }
     }
 
@@ -240,13 +240,13 @@ ApplicationWindow {
         MenuItem { action: pasteAction; visible: win.vm.writable; height: visible ? implicitHeight : 0 }
         MenuItem { action: freezeAction; visible: win.anyHighlighted && win.vm.writable; height: visible ? implicitHeight : 0 }
         MenuItem { action: unfreezeAllAction; visible: win.vm.anyFrozen; height: visible ? implicitHeight : 0 }
-        Action { property string keysShown: "Ctrl+W"; text: qsTr("&Add to RAM Watch"); icon.source: "qrc:/chimera/icons/Find.png"; enabled: watchAction.enabled; onTriggered: watchAction.trigger() }
-        Action { property string keysShown: "Ctrl+P"; text: qsTr("&Poke Address"); icon.source: "qrc:/chimera/icons/poke.png"; enabled: pokeAction.enabled; onTriggered: pokeAction.trigger() }
+        Action { property string keysShown: "Ctrl+W"; text: qsTrId("hex_editor.add_to_ram_watch_mnemonic"); icon.source: "qrc:/chimera/icons/Find.png"; enabled: watchAction.enabled; onTriggered: watchAction.trigger() }
+        Action { property string keysShown: "Ctrl+P"; text: qsTrId("hex_editor.poke_address"); icon.source: "qrc:/chimera/icons/poke.png"; enabled: pokeAction.enabled; onTriggered: pokeAction.trigger() }
         MenuDivider {}
-        Action { property string keysShown: "+"; text: qsTr("&Increment"); enabled: win.anyHighlighted && win.vm.writable; onTriggered: win.vm.run("increment") }
-        Action { property string keysShown: "-"; text: qsTr("&Decrement"); enabled: win.anyHighlighted && win.vm.writable; onTriggered: win.vm.run("decrement") }
+        Action { property string keysShown: "+"; text: qsTrId("hex_editor.increment"); enabled: win.anyHighlighted && win.vm.writable; onTriggered: win.vm.run("increment") }
+        Action { property string keysShown: "-"; text: qsTrId("hex_editor.decrement"); enabled: win.anyHighlighted && win.vm.writable; onTriggered: win.vm.run("decrement") }
         MenuDivider {}
-        Action { property string keysShown: "Ctrl+G"; text: qsTr("&Go to Address..."); onTriggered: goTo.open() }
+        Action { property string keysShown: "Ctrl+G"; text: qsTrId("hex_editor.go_to_address_dialog"); onTriggered: goTo.open() }
     }
 
     GroupBox {
@@ -400,7 +400,7 @@ ApplicationWindow {
     // Go to Address: a hexadecimal value
     ApplicationWindow {
         id: goTo
-        title: qsTr("Go to Address")
+        title: qsTrId("hex_editor.go_to_address")
         width: 280
         height: 120
         modality: Qt.ApplicationModal
@@ -412,12 +412,12 @@ ApplicationWindow {
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: 10
-            Label { text: qsTr("Enter a hexadecimal value") }
+            Label { text: qsTrId("hex_editor.enter_a_hexadecimal_value") }
             TextField { id: goToText; Layout.fillWidth: true; font.family: "monospace"; onAccepted: goTo.accept() }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                Button { text: qsTr("OK"); onClicked: goTo.accept() }
-                Button { text: qsTr("Cancel"); onClicked: goTo.close() }
+                Button { text: qsTrId("common.ok"); onClicked: goTo.accept() }
+                Button { text: qsTrId("common.cancel"); onClicked: goTo.close() }
             }
         }
     }
@@ -426,7 +426,7 @@ ApplicationWindow {
     ApplicationWindow {
         id: find
         objectName: "hexFindWindow"
-        title: qsTr("Find")
+        title: qsTrId("hex_editor.find")
         width: 260
         height: 130
         function start() {
@@ -450,12 +450,12 @@ ApplicationWindow {
                 Keys.onEscapePressed: find.close()
             }
             RowLayout {
-                RadioButton { id: hexRadio; text: qsTr("Hex"); checked: !win.vm.findText; onToggled: if (checked) win.vm.findText = false }
-                RadioButton { id: textRadio; text: qsTr("Text"); checked: win.vm.findText; onToggled: if (checked) win.vm.findText = true }
+                RadioButton { id: hexRadio; text: qsTrId("hex_editor.hex"); checked: !win.vm.findText; onToggled: if (checked) win.vm.findText = false }
+                RadioButton { id: textRadio; text: qsTrId("hex_editor.text"); checked: win.vm.findText; onToggled: if (checked) win.vm.findText = true }
             }
             RowLayout {
-                Button { text: qsTr("Find Prev"); onClicked: find.prev() }
-                Button { text: qsTr("Find Next"); highlighted: true; onClicked: find.next() }
+                Button { text: qsTrId("hex_editor.find_prev"); onClicked: find.prev() }
+                Button { text: qsTrId("hex_editor.find_next"); highlighted: true; onClicked: find.next() }
             }
         }
     }
@@ -463,7 +463,7 @@ ApplicationWindow {
     // Colors: Chimera's six, each picked from a colour dialog
     ApplicationWindow {
         id: colorsWindow
-        title: qsTr("Colors")
+        title: qsTrId("hex_editor.colors")
         width: 280
         height: 260
         modality: Qt.ApplicationModal
@@ -477,12 +477,12 @@ ApplicationWindow {
             anchors.margins: 10
             columns: 2
             Repeater {
-                model: [{role: "Background", label: qsTr("Background Color"), shown: win.backColour},
-                        {role: "MenuBar", label: qsTr("Menubar Color"), shown: win.menuBarColour},
-                        {role: "Foreground", label: qsTr("Font Color"), shown: win.textColour},
-                        {role: "Highlight", label: qsTr("Highlight Color"), shown: win.highlightColour},
-                        {role: "Freeze", label: qsTr("Freeze Color"), shown: win.colour("Freeze", "HexFreeze", "#ADD8E6")},
-                        {role: "HighlightFreeze", label: qsTr("Freeze Highlight Color"), shown: win.colour("HighlightFreeze", "HexHighlightFreeze", "#EE82EE")}]
+                model: [{role: "Background", label: qsTrId("hex_editor.background_color"), shown: win.backColour},
+                        {role: "MenuBar", label: qsTrId("hex_editor.menubar_color"), shown: win.menuBarColour},
+                        {role: "Foreground", label: qsTrId("hex_editor.font_color"), shown: win.textColour},
+                        {role: "Highlight", label: qsTrId("hex_editor.highlight_color"), shown: win.highlightColour},
+                        {role: "Freeze", label: qsTrId("hex_editor.freeze_color"), shown: win.colour("Freeze", "HexFreeze", "#ADD8E6")},
+                        {role: "HighlightFreeze", label: qsTrId("hex_editor.freeze_highlight_color"), shown: win.colour("HighlightFreeze", "HexHighlightFreeze", "#EE82EE")}]
                 delegate: RowLayout {
                     required property var modelData
                     Layout.columnSpan: 2
@@ -498,7 +498,7 @@ ApplicationWindow {
                     Label { text: modelData.label }
                 }
             }
-            Button { text: qsTr("OK"); Layout.columnSpan: 2; Layout.alignment: Qt.AlignRight; onClicked: colorsWindow.close() }
+            Button { text: qsTrId("common.ok"); Layout.columnSpan: 2; Layout.alignment: Qt.AlignRight; onClicked: colorsWindow.close() }
         }
     }
 

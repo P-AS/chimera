@@ -16,7 +16,7 @@ ApplicationWindow {
     required property QtObject vm
     // TAStudio's colour for a role: its own, else the theme's
     property var rollColor: (role) => ""
-    title: qsTr("Undo History")
+    title: qsTrId("undo_history.undo_history")
     width: 460
     height: 300
     minimumWidth: 460
@@ -53,9 +53,9 @@ ApplicationWindow {
     Menu {
         delegate: MenuEntry {}
         id: stepMenu
-        MenuItem { text: qsTr("Undo To Selection"); enabled: win.picked >= 0; onTriggered: win.vm.run("undoTo", [win.picked]) }
-        MenuItem { text: qsTr("Redo To Selection"); enabled: win.picked >= 0; onTriggered: win.vm.run("redoTo", [win.picked]) }
-        MenuItem { text: qsTr("Clear History To Selection"); enabled: win.picked >= 0; onTriggered: win.vm.run("clearHistoryTo", [win.picked]) }
+        MenuItem { text: qsTrId("undo_history.undo_to_selection"); enabled: win.picked >= 0; onTriggered: win.vm.run("undoTo", [win.picked]) }
+        MenuItem { text: qsTrId("undo_history.redo_to_selection"); enabled: win.picked >= 0; onTriggered: win.vm.run("redoTo", [win.picked]) }
+        MenuItem { text: qsTrId("undo_history.clear_history_to_selection"); enabled: win.picked >= 0; onTriggered: win.vm.run("clearHistoryTo", [win.picked]) }
     }
 
     ColumnLayout {
@@ -73,7 +73,7 @@ ApplicationWindow {
                 spacing: 0
                 Row {
                     Repeater {
-                        model: [qsTr("ID"), qsTr("Undo Step")]
+                        model: [qsTrId("undo_history.id"), qsTrId("undo_history.undo_step")]
                         delegate: Label {
                             required property int index
                             required property string modelData
@@ -121,11 +121,11 @@ ApplicationWindow {
             }
         }
         RowLayout {
-            Button { text: qsTr("Undo"); Layout.preferredWidth: 60; onClicked: win.vm.run("undo") }
-            Button { text: qsTr("Redo"); Layout.preferredWidth: 60; onClicked: win.vm.run("redo") }
-            CheckBox { id: autoScroll; text: qsTr("Auto Scroll"); checked: true; padding: 2 }
+            Button { text: qsTrId("undo_history.undo"); Layout.preferredWidth: 60; onClicked: win.vm.run("undo") }
+            Button { text: qsTrId("undo_history.redo"); Layout.preferredWidth: 60; onClicked: win.vm.run("redo") }
+            CheckBox { id: autoScroll; text: qsTrId("undo_history.auto_scroll"); checked: true; padding: 2 }
             Item { Layout.fillWidth: true }
-            Label { text: qsTr("Max:") }
+            Label { text: qsTrId("undo_history.max") }
             SpinBox {
                 from: 1
                 to: 2147483647
@@ -134,7 +134,7 @@ ApplicationWindow {
                 value: win.vm.maxUndoSteps
                 onValueModified: win.vm.maxUndoSteps = value
             }
-            Button { text: qsTr("Clear"); Layout.preferredWidth: 60; onClicked: { win.vm.run("clearHistory"); win.picked = -1 } }
+            Button { text: qsTrId("common.clear"); Layout.preferredWidth: 60; onClicked: { win.vm.run("clearHistory"); win.picked = -1 } }
         }
     }
 }

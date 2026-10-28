@@ -21,7 +21,7 @@ RowLayout {
     // goes on to the next box, for Auto Tab
     property var next: null
     property var themeColor: (role, fallback) => fallback
-    readonly property string tips: qsTr("* Escape clears a key mapping\n* Disable Auto Tab to multiply bind")
+    readonly property string tips: qsTrId("binding_box.escape_clears_a_key_mapping_disable")
     spacing: 0
     function focusField() { field.forceActiveFocus() }
     function take(name) {
@@ -54,7 +54,7 @@ RowLayout {
         }
         ToolTip.visible: hovered
         ToolTip.delay: 500
-        ToolTip.text: qsTr("Current Binding: %1").arg(box.keys) + "\n---\n" + box.tips
+        ToolTip.text: qsTrId("binding_box.current_binding").arg(box.keys) + "\n---\n" + box.tips
         onActiveFocusChanged: {
             box.lastPress = ""
             box.session.run(activeFocus ? "catchPad" : "stopCatchPad")
@@ -86,19 +86,19 @@ RowLayout {
         icon.source: "qrc:/chimera/icons/arrow_black_down.png"
         ToolTip.visible: hovered
         ToolTip.delay: 500
-        ToolTip.text: qsTr("Click here for special tricky bindings")
+        ToolTip.text: qsTrId("binding_box.click_here_for_special_tricky_bindings")
         onClicked: specialMenu.popup()
         Menu {
             delegate: MenuEntry {}
             id: specialMenu
             Repeater {
                 model: [
-                    { name: "Escape", tip: qsTr("Binds the Escape key") },
-                    { name: "WMouse L", tip: qsTr("Binds the left mouse button") },
-                    { name: "WMouse M", tip: qsTr("Binds the middle mouse button") },
-                    { name: "WMouse R", tip: qsTr("Binds the right mouse button") },
-                    { name: "WMouse 1", tip: qsTr("Binds the mouse auxiliary button 1") },
-                    { name: "WMouse 2", tip: qsTr("Binds the mouse auxiliary button 2") }
+                    { name: "Escape", tip: qsTrId("binding_box.binds_the_escape_key") },
+                    { name: "WMouse L", tip: qsTrId("binding_box.binds_the_left_mouse_button") },
+                    { name: "WMouse M", tip: qsTrId("binding_box.binds_the_middle_mouse_button") },
+                    { name: "WMouse R", tip: qsTrId("binding_box.binds_the_right_mouse_button") },
+                    { name: "WMouse 1", tip: qsTrId("binding_box.binds_the_mouse_auxiliary_button_1") },
+                    { name: "WMouse 2", tip: qsTrId("binding_box.binds_the_mouse_auxiliary_button_2") }
                 ]
                 delegate: MenuItem {
                     required property var modelData

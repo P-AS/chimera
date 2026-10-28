@@ -15,7 +15,7 @@ ApplicationWindow {
     property QtObject customize: null
     property QtObject toolWindows: null
     property Window mainWindow: null
-    title: qsTr("Log Window")
+    title: qsTrId("log_window.log_window")
     width: 640
     height: 400
 
@@ -45,15 +45,15 @@ ApplicationWindow {
     menuBar: MenuBar {
         Menu {
             delegate: MenuEntry {}
-            title: qsTr("&Settings")
-            MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
+            title: qsTrId("common.settings")
+            MenuItem { text: qsTrId("common.save_window_position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
-                text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
+                text: qsTrId("common.stay_on_top"); checkable: true; checked: windowOptions.onTop
                 visible: windowOptions.canStayOnTop; height: visible ? implicitHeight : 0
                 onTriggered: windowOptions.set("top", checked)
             }
-            MenuItem { text: qsTr("&Float From Main Window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
-            MenuItem { text: qsTr("Restore &Defaults"); onTriggered: windowOptions.restore() }
+            MenuItem { text: qsTrId("common.float_from_main_window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
+            MenuItem { text: qsTrId("common.restore_defaults_mnemonic"); onTriggered: windowOptions.restore() }
         }
     }
 
@@ -100,10 +100,10 @@ ApplicationWindow {
             }
         }
         RowLayout {
-            Button { text: qsTr("&Clear"); onClicked: { win.log.clear(); win.picked = {}; win.anchor = -1 } }
-            Button { text: qsTr("Copy Sel."); enabled: win.pickedCount > 0; onClicked: win.copyPicked() }
+            Button { text: qsTrId("log_window.clear"); onClicked: { win.log.clear(); win.picked = {}; win.anchor = -1 } }
+            Button { text: qsTrId("log_window.copy_sel"); enabled: win.pickedCount > 0; onClicked: win.copyPicked() }
             Button {
-                text: qsTr("Copy All"); enabled: win.log.count > 0
+                text: qsTrId("log_window.copy_all"); enabled: win.log.count > 0
                 onClicked: {
                     let text = ""
                     for (let i = 0; i < win.log.count; i++) text += win.lineText(i) + "\n"
@@ -111,7 +111,7 @@ ApplicationWindow {
                 }
             }
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("Close"); onClicked: win.close() }
+            Button { text: qsTrId("common.close"); onClicked: win.close() }
         }
     }
 }

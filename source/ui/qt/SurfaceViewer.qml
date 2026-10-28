@@ -19,7 +19,7 @@ ApplicationWindow {
     property QtObject customize: null
     property QtObject toolWindows: null
     property Window mainWindow: null
-    title: qsTr("Surface Viewer")
+    title: qsTrId("surface_viewer.surface_viewer")
     width: 560
     height: 480
     onVisibleChanged: {
@@ -38,47 +38,47 @@ ApplicationWindow {
     }
     FileDialog {
         id: pngDialog
-        title: qsTr("Save as PNG")
+        title: qsTrId("surface_viewer.save_as_png")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "png"
-        nameFilters: [qsTr("PNG files (*.png)")]
+        nameFilters: [qsTrId("surface_viewer.png_files_png")]
         onAccepted: { const path = win.localPath(selectedFile); win.grabbed((r) => r.saveToFile(path)) }
     }
 
     menuBar: MenuBar {
         Menu {
             delegate: MenuEntry {}
-            title: qsTr("&File")
-            MenuItem { text: qsTr("&Copy to Clipboard"); enabled: win.shown !== null; onTriggered: win.grabbed((r) => { if (win.clipboard) win.clipboard.setImage(r.image) }) }
-            MenuItem { text: qsTr("&Save as PNG..."); enabled: win.shown !== null; onTriggered: pngDialog.open() }
+            title: qsTrId("common.file")
+            MenuItem { text: qsTrId("surface_viewer.copy_to_clipboard"); enabled: win.shown !== null; onTriggered: win.grabbed((r) => { if (win.clipboard) win.clipboard.setImage(r.image) }) }
+            MenuItem { text: qsTrId("surface_viewer.save_as_png_dialog"); enabled: win.shown !== null; onTriggered: pngDialog.open() }
             MenuDivider {}
-            MenuItem { text: qsTr("&Close"); onTriggered: win.close() }
+            MenuItem { text: qsTrId("common.close_mnemonic"); onTriggered: win.close() }
         }
         // Chimera adds a Settings menu for the window's items to a tool that has none
         Menu {
             delegate: MenuEntry {}
-            title: qsTr("&Settings")
-            MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
+            title: qsTrId("common.settings")
+            MenuItem { text: qsTrId("common.save_window_position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
-                text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
+                text: qsTrId("common.stay_on_top"); checkable: true; checked: windowOptions.onTop
                 visible: windowOptions.canStayOnTop; height: visible ? implicitHeight : 0
                 onTriggered: windowOptions.set("top", checked)
             }
-            MenuItem { text: qsTr("&Float From Main Window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
-            MenuItem { text: qsTr("Restore &Defaults"); onTriggered: { win.vm.zoom = 1; windowOptions.restore() } }
+            MenuItem { text: qsTrId("common.float_from_main_window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
+            MenuItem { text: qsTrId("common.restore_defaults_mnemonic"); onTriggered: { win.vm.zoom = 1; windowOptions.restore() } }
         }
     }
 
     header: ToolBar {
         RowLayout {
-            Label { text: qsTr("Surface:") }
+            Label { text: qsTrId("surface_viewer.surface") }
             ComboBox {
                 model: win.list.map(s => s.name)
                 currentIndex: win.vm.picked
                 onActivated: (i) => win.vm.picked = i
                 Layout.preferredWidth: 200
             }
-            Label { text: qsTr("Zoom:") }
+            Label { text: qsTrId("surface_viewer.zoom") }
             ComboBox {
                 model: ["1x", "2x", "3x", "4x"]
                 currentIndex: Math.max(0, win.vm.zoom - 1)

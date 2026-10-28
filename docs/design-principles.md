@@ -10848,3 +10848,48 @@ movie, a changed input and a marker of the person's, and a script's load,
 and checks what the message says each time; it was seen to fail with the
 warning left out.
 
+
+## Every text is a key in a language table, one file per language (user-decided, 2026-10-28)
+
+The owner set four rules: Chimera and every core keep all their texts as
+keys resolved from a language table; no text is written into the code;
+every language Chimera has gives every key; and the same holds for the
+cores' settings. The tables are separate files, one per language
+("one json per language"), for Chimera and for each core alike. Their
+answers to the questions this raised:
+
+- Keys are names (`common.file`), and English is one more table, so the
+  window's 1,246 texts that Qt keyed by their English words moved to names.
+- What counts is what a person reads: the window, its messages and errors,
+  what a core declares and the errors it gives. Developer logs, file-format
+  names and tests do not; nor the descriptions of Lua functions, MCP tools
+  and view-model properties (they describe English names), nor
+  chimera-run's own output, nor control names (identifiers that movies,
+  bindings and scripts use), nor names that are data (game titles, MAME's
+  machines, the community's patch and cheat names).
+- Each core package carries its own tables; Chimera has its own.
+- More languages: as many as can be written with confidence. Twenty-six
+  are planned; Arabic, Hebrew and Persian wait until the window can mirror
+  its layout.
+
+How: `languages/<code>.json` holds a language's name in itself and in
+English and its texts; a text that depends on a number has one form per
+CLDR plural category. The build copies the tables beside the engine
+(`lib/languages/` in a bundle), and the engine reads them at run time.
+The window asks with `qsTrId("key")`, answered by a Qt translator that reads
+the engine's table in use, so Qt still redraws every text the moment the
+language changes; the engine and the view models ask through `ce_text`. Qt's
+own translation files (`.ts`, `lrelease`) are gone, and with them the
+release build's need for Qt's translation tools.
+
+This first step moved the window's texts (all seven translations kept, each
+text matched by its English words) and the reading of the tables. The view
+models' and the engine's texts, the cores and the new languages follow.
+
+Tested: `engine_language` checks every table against English (keys,
+`%1`..`%9`, plural forms, shortcut letters, spaces at the ends), and was seen
+to fail with a German text removed and another's `%1` dropped; it also
+checks the plural rules of all 26 languages. `translations` checks the
+language a German, French, Chinese, Brazilian, British and Swahili system
+starts in and what `qsTrId` answers. The window opened on a German system
+with no settings showed its menus in German.

@@ -20,7 +20,7 @@ ApplicationWindow {
     property QtObject customize: null
     property QtObject toolWindows: null
     property Window mainWindow: null
-    title: qsTr("Macro Input")
+    title: qsTrId("macro_tool.macro_input")
     width: 420
     height: 460
 
@@ -47,8 +47,8 @@ ApplicationWindow {
     }
     MessageDialog {
         id: unsavedDialog
-        title: qsTr("Save?")
-        text: qsTr("You have unsaved macro(s). Do you wish to save them?")
+        title: qsTrId("macro_tool.save")
+        text: qsTrId("macro_tool.you_have_unsaved_macro_s_do")
         buttons: MessageDialog.Yes | MessageDialog.No | MessageDialog.Cancel
         onButtonClicked: (button) => {
             if (button === MessageDialog.Cancel) return
@@ -63,12 +63,12 @@ ApplicationWindow {
 
     FileDialog {
         id: saveDialog
-        title: qsTr("Save Selected As")
+        title: qsTrId("macro_tool.save_selected_as")
         property int zone: -1
         fileMode: FileDialog.SaveFile
         defaultSuffix: "chimeraMacro"
         currentFolder: win.folderOf ? win.folderOf("Macros") : ""
-        nameFilters: [qsTr("Movie Macros (*.chimeraMacro)")]
+        nameFilters: [qsTrId("macro_tool.movie_macros_chimeramacro")]
         onAccepted: {
             win.vm.run("saveAs", [saveDialog.zone, selectedFile])
             if (win.toSave.length > 0 || win.vm.unsavedCount === 0) win.saveNext()
@@ -76,30 +76,30 @@ ApplicationWindow {
     }
     FileDialog {
         id: loadDialog
-        title: qsTr("Load Macro")
+        title: qsTrId("macro_tool.load_macro")
         currentFolder: win.folderOf ? win.folderOf("Macros") : ""
-        nameFilters: [qsTr("Movie Macros (*.chimeraMacro)"), qsTr("All files (*)")]
+        nameFilters: [qsTrId("macro_tool.movie_macros_chimeramacro"), qsTrId("common.all_files")]
         onAccepted: win.vm.run("load", [selectedFile])
     }
 
     menuBar: MenuBar {
         Menu {
             delegate: MenuEntry {}
-            title: qsTr("&File")
+            title: qsTrId("common.file")
             MenuItem {
-                text: qsTr("Save Selected As...")
+                text: qsTrId("macro_tool.save_selected_as_dialog")
                 onTriggered: {
-                    if (win.pickedRow === null) { notice.text = qsTr("Please select a zone first."); notice.open(); return }
+                    if (win.pickedRow === null) { notice.text = qsTrId("macro_tool.please_select_a_zone_first"); notice.open(); return }
                     saveDialog.zone = win.vm.picked
                     saveDialog.open()
                 }
             }
-            MenuItem { text: qsTr("Load Macro..."); onTriggered: loadDialog.open() }
+            MenuItem { text: qsTrId("macro_tool.load_macro_dialog"); onTriggered: loadDialog.open() }
             Menu {
                 delegate: MenuEntry {}
                 id: recentMenu
-                title: qsTr("Recent")
-                MenuItem { text: qsTr("None"); enabled: false; visible: win.pianoRoll.recentMacros === ""; height: visible ? implicitHeight : 0 }
+                title: qsTrId("common.recent")
+                MenuItem { text: qsTrId("common.none"); enabled: false; visible: win.pianoRoll.recentMacros === ""; height: visible ? implicitHeight : 0 }
                 Instantiator {
                     model: win.pianoRoll.recentMacros === "" ? [] : win.pianoRoll.recentMacros.split("\n")
                     delegate: MenuItem {
@@ -112,20 +112,20 @@ ApplicationWindow {
                 }
             }
             MenuDivider {}
-            MenuItem { text: qsTr("&Close"); onTriggered: win.close() }
+            MenuItem { text: qsTrId("common.close_mnemonic"); onTriggered: win.close() }
         }
         // Chimera adds a Settings menu for the window's items to a tool that has none
         Menu {
             delegate: MenuEntry {}
-            title: qsTr("&Settings")
-            MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
+            title: qsTrId("common.settings")
+            MenuItem { text: qsTrId("common.save_window_position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
-                text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
+                text: qsTrId("common.stay_on_top"); checkable: true; checked: windowOptions.onTop
                 visible: windowOptions.canStayOnTop; height: visible ? implicitHeight : 0
                 onTriggered: windowOptions.set("top", checked)
             }
-            MenuItem { text: qsTr("&Float From Main Window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
-            MenuItem { text: qsTr("Restore &Defaults"); onTriggered: windowOptions.restore() }
+            MenuItem { text: qsTrId("common.float_from_main_window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
+            MenuItem { text: qsTrId("common.restore_defaults_mnemonic"); onTriggered: windowOptions.restore() }
         }
     }
 
@@ -140,7 +140,7 @@ ApplicationWindow {
         anchors.fill: parent
         anchors.margins: 7
         spacing: 6
-        Label { text: qsTr("macro start      macro end") }
+        Label { text: qsTrId("macro_tool.macro_start_macro_end") }
         RowLayout {
             SpinBox {
                 id: zoneStart; from: 0; to: Math.max(0, win.pianoRoll.frameCount - 1); editable: true
@@ -152,7 +152,7 @@ ApplicationWindow {
                 value: win.pianoRoll.selectLast >= 0 ? win.pianoRoll.selectLast : 0
                 Layout.preferredWidth: 100
             }
-            Button { text: qsTr("Set Macro"); onClicked: win.vm.run("setZone", [zoneStart.value, zoneEnd.value]) }
+            Button { text: qsTrId("macro_tool.set_macro"); onClicked: win.vm.run("setZone", [zoneStart.value, zoneEnd.value]) }
         }
         ListView {
             id: zones
@@ -176,7 +176,7 @@ ApplicationWindow {
                 padding: 2
                 highlighted: ListView.isCurrentItem
                 // the entire movie's zone, as Chimera says, does not change
-                text: qsTr("%1 - length: %2").arg(z.name).arg(z.length) + (z.index === 0 ? qsTr(" [Zones don't change!]") : "")
+                text: qsTrId("macro_tool.length").arg(z.name).arg(z.length) + (z.index === 0 ? qsTrId("macro_tool.zones_don_t_change") : "")
                 onClicked: win.vm.picked = z.index
                 Component.onCompleted: if (z.index === win.vm.picked) win.pickedRow = z
                 ListView.onIsCurrentItemChanged: if (ListView.isCurrentItem) win.pickedRow = z
@@ -185,18 +185,18 @@ ApplicationWindow {
         GridLayout {
             columns: 4
             enabled: win.pickedRow !== null
-            Label { text: qsTr("Macro Name:") }
+            Label { text: qsTrId("macro_tool.macro_name") }
             TextField {
                 Layout.preferredWidth: 110
                 text: win.pickedRow ? win.pickedRow.name : ""
                 onTextEdited: if (win.pickedRow) win.vm.run("rename", [win.vm.picked, text])
             }
-            Label { text: qsTr("Frame:") }
+            Label { text: qsTrId("macro_tool.frame") }
             SpinBox { id: placeAt; from: 0; to: Math.max(0, win.pianoRoll.frameCount); editable: true; Layout.preferredWidth: 90 }
-            Button { text: qsTr("Place Zone"); onClicked: win.vm.run("place", [win.vm.picked, placeAt.value]) }
-            CheckBox { text: qsTr("Replace"); checked: win.pickedRow ? win.pickedRow.replace : true; onToggled: win.vm.run("setReplace", [win.vm.picked, checked]) }
-            CheckBox { text: qsTr("Overlay"); checked: win.pickedRow ? win.pickedRow.overlay : false; onToggled: win.vm.run("setOverlay", [win.vm.picked, checked]) }
-            Button { text: qsTr("Current"); onClicked: placeAt.value = win.pianoRoll.currentFrame }
+            Button { text: qsTrId("macro_tool.place_zone"); onClicked: win.vm.run("place", [win.vm.picked, placeAt.value]) }
+            CheckBox { text: qsTrId("macro_tool.replace"); checked: win.pickedRow ? win.pickedRow.replace : true; onToggled: win.vm.run("setReplace", [win.vm.picked, checked]) }
+            CheckBox { text: qsTrId("macro_tool.overlay"); checked: win.pickedRow ? win.pickedRow.overlay : false; onToggled: win.vm.run("setOverlay", [win.vm.picked, checked]) }
+            Button { text: qsTrId("macro_tool.current"); onClicked: placeAt.value = win.pianoRoll.currentFrame }
         }
         Item { Layout.fillHeight: true }
         // the movie's controls, each ticked when the picked zone carries it: as Chimera places them, the last

@@ -18,7 +18,7 @@ ApplicationWindow {
     required property QtObject vm
     required property QtObject colors
     property Window mainWindow: null
-    title: qsTr("Theme")
+    title: qsTrId("themes.theme")
     width: 900
     height: 566
     minimumWidth: 720
@@ -64,7 +64,7 @@ ApplicationWindow {
 
     MessageDialog {
         id: failuresDialog
-        title: qsTr("These theme files were not loaded")
+        title: qsTrId("themes.these_theme_files_were_not_loaded")
         text: win.vm.failures
         buttons: MessageDialog.Ok
     }
@@ -88,8 +88,8 @@ ApplicationWindow {
                     anchors.margins: 1
                     spacing: 0
                     Row {
-                        Label { text: qsTr("Theme"); width: 160; leftPadding: 4; topPadding: 2; bottomPadding: 2; background: Rectangle { color: palette.button; border.color: palette.mid } }
-                        Label { text: qsTr("Look"); width: 98; leftPadding: 4; topPadding: 2; bottomPadding: 2; background: Rectangle { color: palette.button; border.color: palette.mid } }
+                        Label { text: qsTrId("themes.theme"); width: 160; leftPadding: 4; topPadding: 2; bottomPadding: 2; background: Rectangle { color: palette.button; border.color: palette.mid } }
+                        Label { text: qsTrId("themes.look"); width: 98; leftPadding: 4; topPadding: 2; bottomPadding: 2; background: Rectangle { color: palette.button; border.color: palette.mid } }
                     }
                     ListView {
                         id: list
@@ -112,7 +112,7 @@ ApplicationWindow {
                             Row {
                                 anchors.verticalCenter: parent.verticalCenter
                                 Label { text: theme.name; width: 160; leftPadding: 4; elide: Text.ElideRight; color: theme.index === win.picked ? palette.highlightedText : palette.text }
-                                Label { text: theme.dark ? qsTr("Dark") : qsTr("Light"); leftPadding: 4; color: theme.index === win.picked ? palette.highlightedText : palette.text }
+                                Label { text: theme.dark ? qsTrId("themes.dark") : qsTrId("themes.light"); leftPadding: 4; color: theme.index === win.picked ? palette.highlightedText : palette.text }
                             }
                             ToolTip.visible: themeHover.hovered && theme.full !== ""
                             ToolTip.delay: 500
@@ -317,7 +317,7 @@ ApplicationWindow {
                     ToolTip.text: preview.pointedAt
                 }
                 Label {
-                    text: win.pickedName === "" ? "" : win.pickedName + (win.pickedName.toLowerCase() === win.inUse.toLowerCase() ? qsTr(" (in use)") : "")
+                    text: win.pickedName === "" ? "" : win.pickedName + (win.pickedName.toLowerCase() === win.inUse.toLowerCase() ? qsTrId("themes.in_use") : "")
                     font.bold: true
                     elide: Text.ElideRight
                     Layout.fillWidth: true
@@ -331,8 +331,8 @@ ApplicationWindow {
                     Layout.preferredHeight: 30
                 }
                 Label {
-                    text: !win.pickedRow ? "" : (win.pickedRow.author !== "" ? qsTr("by %1 - ").arg(win.pickedRow.author) : "")
-                        + (win.pickedRow.builtIn ? qsTr("built into Chimera") : qsTr("file %1").arg(win.pickedRow.origin))
+                    text: !win.pickedRow ? "" : (win.pickedRow.author !== "" ? qsTrId("themes.by").arg(win.pickedRow.author) : "")
+                        + (win.pickedRow.builtIn ? qsTrId("themes.built_into_chimera") : qsTrId("themes.file").arg(win.pickedRow.origin))
                     opacity: 0.7
                     elide: Text.ElideRight
                     Layout.fillWidth: true
@@ -352,11 +352,11 @@ ApplicationWindow {
         }
         RowLayout {
             Button {
-                text: qsTr("Open Themes Folder"); Layout.preferredWidth: 140
+                text: qsTrId("themes.open_themes_folder"); Layout.preferredWidth: 140
                 onClicked: Qt.openUrlExternally(localFiles.folderUrl(win.vm.folder))
             }
             Button {
-                text: qsTr("Write a Copy to Edit"); Layout.preferredWidth: 150
+                text: qsTrId("themes.write_a_copy_to_edit"); Layout.preferredWidth: 150
                 onClicked: {
                     const source = win.pickedName !== "" ? win.pickedName : win.inUse
                     const made = win.vm.run("writeCopy", [source, win.painted(source)])
@@ -364,7 +364,7 @@ ApplicationWindow {
                 }
             }
             Button {
-                text: qsTr("Reload Themes"); Layout.preferredWidth: 120
+                text: qsTrId("themes.reload_themes"); Layout.preferredWidth: 120
                 onClicked: {
                     const keep = win.pickedName
                     win.vm.run("refresh")
@@ -372,8 +372,8 @@ ApplicationWindow {
                 }
             }
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("OK"); Layout.preferredWidth: 90; onClicked: win.accept() }
-            Button { text: qsTr("Cancel"); Layout.preferredWidth: 90; onClicked: win.close() }
+            Button { text: qsTrId("common.ok"); Layout.preferredWidth: 90; onClicked: win.accept() }
+            Button { text: qsTrId("common.cancel"); Layout.preferredWidth: 90; onClicked: win.close() }
         }
     }
 }

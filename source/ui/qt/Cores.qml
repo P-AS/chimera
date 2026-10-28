@@ -16,7 +16,7 @@ ApplicationWindow {
     id: win
     objectName: "coresWindow"
     required property QtObject vm
-    title: qsTr("Core Manager")
+    title: qsTrId("cores.core_manager")
     width: 1100
     height: 500
     minimumWidth: 900
@@ -41,28 +41,28 @@ ApplicationWindow {
 
     FolderDialog {
         id: folderDialog
-        title: qsTr("The cores folder")
+        title: qsTrId("cores.the_cores_folder")
         currentFolder: localFiles.folderUrl(win.vm.coresFolder)
         onAccepted: {
             win.vm.coresFolder = localFiles.localPath(selectedFolder)
-            win.vm.managerStatus = qsTr("The cores folder is now %1: %2 core(s). A core already loaded stays loaded until Chimera is restarted.").arg(win.vm.coresFolder).arg(list.count)
+            win.vm.managerStatus = qsTrId("cores.the_cores_folder_is_now_core").arg(win.vm.coresFolder).arg(list.count)
             win.picked = ""
             Qt.callLater(win.pickFirst)
         }
     }
     MessageDialog {
         id: removeCores
-        title: qsTr("Remove cores")
+        title: qsTrId("cores.remove_cores")
         property int versions: 0
-        text: qsTr("Delete %1 package file(s) of %2 core(s) from the cores folder?\n\nA movie recorded on one of these exact builds needs it to replay, and Chimera cannot fetch it again.").arg(removeCores.versions).arg(win.tickedCount)
+        text: qsTrId("cores.delete_package_file_s_of_core").arg(removeCores.versions).arg(win.tickedCount)
         buttons: MessageDialog.Ok | MessageDialog.Cancel
         onAccepted: { win.vm.run("removeCores", [JSON.stringify(Object.keys(win.ticked))]); win.ticked = {}; win.picked = ""; Qt.callLater(win.pickFirst) }
     }
     MessageDialog {
         id: removeVersion
-        title: qsTr("Remove core")
+        title: qsTrId("cores.remove_core")
         property string path: ""
-        text: qsTr("Delete %1?\n\nA movie recorded on this exact build needs it to replay, and Chimera cannot fetch it again.").arg(removeVersion.path.replace(/^.*[\\/]/, ""))
+        text: qsTrId("cores.delete_a_movie_recorded_on_this").arg(removeVersion.path.replace(/^.*[\\/]/, ""))
         buttons: MessageDialog.Ok | MessageDialog.Cancel
         onAccepted: win.vm.run("removeVersion", [removeVersion.path])
     }
@@ -75,7 +75,7 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             CheckBox {
-                text: win.tickedCount > 0 ? qsTr("Select all (%1 ticked)").arg(win.tickedCount) : qsTr("Select all")
+                text: win.tickedCount > 0 ? qsTrId("cores.select_all_ticked").arg(win.tickedCount) : qsTrId("cores.select_all")
                 checked: list.count > 0 && win.tickedCount === list.count
                 onClicked: {
                     const now = {}
@@ -85,10 +85,10 @@ ApplicationWindow {
                 padding: 2
             }
             Item { Layout.fillWidth: true }
-            Label { text: qsTr("Show:") }
-            RadioButton { text: qsTr("All"); checked: win.vm.shows === 0; padding: 2; onClicked: { win.vm.shows = 0; win.ticked = {} } }
-            RadioButton { text: qsTr("Emulators"); checked: win.vm.shows === 1; padding: 2; onClicked: { win.vm.shows = 1; win.ticked = {} } }
-            RadioButton { text: qsTr("Games"); checked: win.vm.shows === 2; padding: 2; onClicked: { win.vm.shows = 2; win.ticked = {} } }
+            Label { text: qsTrId("cores.show") }
+            RadioButton { text: qsTrId("cores.all"); checked: win.vm.shows === 0; padding: 2; onClicked: { win.vm.shows = 0; win.ticked = {} } }
+            RadioButton { text: qsTrId("common.emulators"); checked: win.vm.shows === 1; padding: 2; onClicked: { win.vm.shows = 1; win.ticked = {} } }
+            RadioButton { text: qsTrId("common.games"); checked: win.vm.shows === 2; padding: 2; onClicked: { win.vm.shows = 2; win.ticked = {} } }
             Item { Layout.preferredWidth: 328 }
         }
         RowLayout {
@@ -106,7 +106,7 @@ ApplicationWindow {
                     spacing: 0
                     Row {
                         Repeater {
-                            model: [qsTr("Core"), qsTr("Type"), qsTr("Systems"), qsTr("Version"), qsTr("Size")]
+                            model: [qsTrId("common.core"), qsTrId("cores.type"), qsTrId("cores.systems"), qsTrId("cores.version"), qsTrId("common.size")]
                             delegate: Label {
                                 required property int index
                                 required property string modelData
@@ -165,7 +165,7 @@ ApplicationWindow {
                 Layout.preferredWidth: 320
                 Layout.maximumWidth: 320
                 Layout.fillHeight: true
-                Label { text: qsTr("Version") }
+                Label { text: qsTrId("cores.version") }
                 ComboBox {
                     id: versionBox
                     Layout.fillWidth: true
@@ -173,7 +173,7 @@ ApplicationWindow {
                     onModelChanged: currentIndex = 0
                 }
                 Button {
-                    text: qsTr("Remove version")
+                    text: qsTrId("cores.remove_version")
                     enabled: versionBox.currentIndex >= 0 && versionBox.currentIndex < win.versions.length
                     Layout.preferredWidth: 155
                     onClicked: { removeVersion.path = win.versions[versionBox.currentIndex].path; removeVersion.open() }
@@ -195,13 +195,13 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             Button {
-                text: qsTr("Open cores folder"); Layout.preferredWidth: 140
-                onClicked: if (!Qt.openUrlExternally(localFiles.folderUrl(win.vm.coresFolder))) win.vm.managerStatus = qsTr("%1 could not be opened").arg(win.vm.coresFolder)
+                text: qsTrId("cores.open_cores_folder"); Layout.preferredWidth: 140
+                onClicked: if (!Qt.openUrlExternally(localFiles.folderUrl(win.vm.coresFolder))) win.vm.managerStatus = qsTrId("cores.could_not_be_opened").arg(win.vm.coresFolder)
             }
-            Button { text: qsTr("Change folder..."); Layout.preferredWidth: 140; onClicked: folderDialog.open() }
-            Button { text: qsTr("Refresh List"); Layout.preferredWidth: 140; onClicked: win.vm.run("refreshList") }
+            Button { text: qsTrId("cores.change_folder"); Layout.preferredWidth: 140; onClicked: folderDialog.open() }
+            Button { text: qsTrId("cores.refresh_list"); Layout.preferredWidth: 140; onClicked: win.vm.run("refreshList") }
             Button {
-                text: qsTr("Remove"); Layout.preferredWidth: 140
+                text: qsTrId("common.remove"); Layout.preferredWidth: 140
                 enabled: win.tickedCount > 0
                 onClicked: {
                     let n = 0
@@ -210,9 +210,9 @@ ApplicationWindow {
                     removeCores.open()
                 }
             }
-            Button { text: qsTr("Show Systems..."); Layout.preferredWidth: 140; onClicked: { systemsWindow.all = JSON.parse(win.vm.run("supportedSystems") || "[]"); systemsWindow.show() } }
+            Button { text: qsTrId("cores.show_systems"); Layout.preferredWidth: 140; onClicked: { systemsWindow.all = JSON.parse(win.vm.run("supportedSystems") || "[]"); systemsWindow.show() } }
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("Close"); Layout.preferredWidth: 90; onClicked: win.close() }
+            Button { text: qsTrId("common.close"); Layout.preferredWidth: 90; onClicked: win.close() }
         }
     }
 
@@ -220,7 +220,7 @@ ApplicationWindow {
     Window {
         id: systemsWindow
         objectName: "supportedSystemsWindow"
-        title: qsTr("Supported Systems")
+        title: qsTrId("cores.supported_systems")
         width: 720
         height: 520
         minimumWidth: 480
@@ -238,11 +238,11 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.margins: 10
             RowLayout {
-                Label { text: qsTr("Filter:") }
+                Label { text: qsTrId("cores.filter") }
                 TextField { id: filterBox; Layout.fillWidth: true }
                 Label {
-                    text: systemsWindow.shown.length === systemsWindow.all.length ? qsTr("%1 systems").arg(systemsWindow.all.length)
-                        : qsTr("%1 of %2").arg(systemsWindow.shown.length).arg(systemsWindow.all.length)
+                    text: systemsWindow.shown.length === systemsWindow.all.length ? qsTrId("cores.systems_2").arg(systemsWindow.all.length)
+                        : qsTrId("cores.of").arg(systemsWindow.shown.length).arg(systemsWindow.all.length)
                     Layout.preferredWidth: 100
                     horizontalAlignment: Text.AlignRight
                 }
@@ -258,7 +258,7 @@ ApplicationWindow {
                     spacing: 0
                     Row {
                         Repeater {
-                            model: [[qsTr("System"), 260], [qsTr("Id"), 110], [qsTr("Cores"), 300]]
+                            model: [[qsTrId("cores.system"), 260], [qsTrId("cores.id"), 110], [qsTrId("cores.cores"), 300]]
                             delegate: Label {
                                 required property var modelData
                                 text: modelData[0]; width: modelData[1]
@@ -285,7 +285,7 @@ ApplicationWindow {
             }
             RowLayout {
                 Item { Layout.fillWidth: true }
-                Button { text: qsTr("Close"); Layout.preferredWidth: 90; onClicked: systemsWindow.close() }
+                Button { text: qsTrId("common.close"); Layout.preferredWidth: 90; onClicked: systemsWindow.close() }
             }
         }
     }

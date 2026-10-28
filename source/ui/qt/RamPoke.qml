@@ -13,14 +13,14 @@ ApplicationWindow {
     property QtObject vm: null
     property var tell: null
     property var info: ({})
-    title: qsTr("RAM Poke - %1").arg(poke.info.domain || "")
+    title: qsTrId("ram_poke.ram_poke").arg(poke.info.domain || "")
     width: 300
     height: 250
     modality: Qt.ApplicationModal
-    property string said: qsTr("Enter an address to poke:")
+    property string said: qsTrId("ram_poke.enter_an_address_to_poke")
     function start(info) {
         poke.info = info
-        poke.said = qsTr("Enter an address to poke:")
+        poke.said = qsTrId("ram_poke.enter_an_address_to_poke")
         valueBox.text = info.value
         poke.show()
         poke.raise()
@@ -30,25 +30,25 @@ ApplicationWindow {
     function accept() {
         const ok = poke.vm.run("pokeSelected", [valueBox.text])
         if (ok === true) { poke.close(); return }
-        if (poke.info.property) { if (poke.tell) poke.tell(qsTr("Not set"), poke.vm.error); return }
-        poke.said = qsTr("An error occurred when writing Value.")
+        if (poke.info.property) { if (poke.tell) poke.tell(qsTrId("ram_poke.not_set"), poke.vm.error); return }
+        poke.said = qsTrId("ram_poke.an_error_occurred_when_writing_value")
     }
     GridLayout {
         anchors.fill: parent
         anchors.margins: 10
         columns: 2
         Label { Layout.columnSpan: 2; text: poke.said }
-        Label { text: poke.info.property ? qsTr("Property:") : qsTr("Address: 0x"); Layout.alignment: Qt.AlignRight }
+        Label { text: poke.info.property ? qsTrId("ram_poke.property") : qsTrId("ram_poke.address_0x"); Layout.alignment: Qt.AlignRight }
         Label { text: (poke.info.property ? poke.info.name : poke.info.addresses) || ""; font.family: "monospace"; elide: Text.ElideRight; Layout.fillWidth: true }
-        Label { text: qsTr("Domain:"); Layout.alignment: Qt.AlignRight }
+        Label { text: qsTrId("ram_poke.domain"); Layout.alignment: Qt.AlignRight }
         Label { text: poke.info.domain || "" }
-        Label { text: qsTr("Size:"); Layout.alignment: Qt.AlignRight; visible: !poke.info.property }
+        Label { text: qsTrId("ram_poke.size"); Layout.alignment: Qt.AlignRight; visible: !poke.info.property }
         Label { text: poke.info.size || ""; visible: !poke.info.property }
-        Label { text: qsTr("Display Type:"); Layout.alignment: Qt.AlignRight; visible: !poke.info.property }
+        Label { text: qsTrId("ram_poke.display_type"); Layout.alignment: Qt.AlignRight; visible: !poke.info.property }
         Label { text: poke.info.display || ""; visible: !poke.info.property }
-        Label { text: qsTr("Endian:"); Layout.alignment: Qt.AlignRight; visible: !poke.info.property }
+        Label { text: qsTrId("ram_poke.endian"); Layout.alignment: Qt.AlignRight; visible: !poke.info.property }
         Label { text: poke.info.endian || ""; visible: !poke.info.property }
-        Label { text: qsTr("Value:"); Layout.alignment: Qt.AlignRight }
+        Label { text: qsTrId("ram_poke.value"); Layout.alignment: Qt.AlignRight }
         RowLayout {
             Label { text: "0x"; visible: poke.info.hex === true }
             TextField { id: valueBox; Layout.fillWidth: true; font.family: "monospace"; onAccepted: poke.accept() }
@@ -56,8 +56,8 @@ ApplicationWindow {
         RowLayout {
             Layout.columnSpan: 2
             Layout.alignment: Qt.AlignRight
-            Button { text: qsTr("&Poke"); highlighted: true; onClicked: poke.accept() }
-            Button { text: qsTr("&Close"); onClicked: poke.close() }
+            Button { text: qsTrId("ram_poke.poke"); highlighted: true; onClicked: poke.accept() }
+            Button { text: qsTrId("common.close_mnemonic"); onClicked: poke.close() }
         }
     }
 }

@@ -22,7 +22,7 @@ ApplicationWindow {
     required property QtObject hotkeys
     required property QtObject controls
     property Window mainWindow: null
-    title: qsTr("Customization Options")
+    title: qsTrId("customize.customization_options")
     // Chimera's is 418 wide for its 8-point font; wide enough here for the longest line
     width: 520
     height: 520
@@ -71,9 +71,9 @@ ApplicationWindow {
     }
     MessageDialog {
         id: rewriteAsk
-        title: qsTr("Rewrite keybinds now?")
-        text: qsTr("Would you like to replace %1,\nand the same for the other modifier keys,\nin existing keybinds for hotkeys and all systems' gamepads?")
-            .arg(win.picked.mergeModifiers ? qsTr("LShift and RShift with Shift") : qsTr("Shift with LShift"))
+        title: qsTrId("customize.rewrite_keybinds_now")
+        text: qsTrId("customize.would_you_like_to_replace_and")
+            .arg(win.picked.mergeModifiers ? qsTrId("customize.lshift_and_rshift_with_shift") : qsTrId("customize.shift_with_lshift"))
         buttons: MessageDialog.Yes | MessageDialog.No | MessageDialog.Cancel
         onButtonClicked: (button, role) => {
             if (button === MessageDialog.Cancel) return
@@ -103,8 +103,8 @@ ApplicationWindow {
         TabBar {
             id: tabs
             Layout.fillWidth: true
-            TabButton { text: qsTr("General"); width: implicitWidth }
-            TabButton { text: qsTr("Advanced"); width: implicitWidth }
+            TabButton { text: qsTrId("customize.general"); width: implicitWidth }
+            TabButton { text: qsTrId("customize.advanced"); width: implicitWidth }
         }
         Frame {
             Layout.fillWidth: true
@@ -114,54 +114,54 @@ ApplicationWindow {
                 currentIndex: tabs.currentIndex
                 ColumnLayout {
                     spacing: 2
-                    Box { setting: "showContextMenu"; text: qsTr("Enable Context Menu") }
-                    Box { setting: "neverAskSave"; text: qsTr("When Chimera is closing, skip \"unsaved changes\" prompts and discard all.") }
+                    Box { setting: "showContextMenu"; text: qsTrId("customize.enable_context_menu") }
+                    Box { setting: "neverAskSave"; text: qsTrId("customize.when_chimera_is_closing_skip_unsaved") }
                     RowLayout {
                         spacing: 16
-                        Box { setting: "acceptBackgroundInput"; text: qsTr("Accept background input") }
+                        Box { setting: "acceptBackgroundInput"; text: qsTrId("customize.accept_background_input") }
                         // the keyboard is only ever heard by the window in front here: background input is the controllers'
                         CheckBox {
-                            text: qsTr("From controller only")
+                            text: qsTrId("customize.from_controller_only")
                             checked: true
                             enabled: false
                             padding: 2
                             ToolTip.visible: hovered
-                            ToolTip.text: qsTr("The keyboard is only ever heard by the window in front.")
+                            ToolTip.text: qsTrId("customize.the_keyboard_is_only_ever_heard")
                         }
                     }
-                    Note { text: qsTr("\"Eavesdrops\" on keyboard and gamepad input while other programs are focused.") }
+                    Note { text: qsTrId("customize.eavesdrops_on_keyboard_and_gamepad_input") }
                     // Windows only, as Chimera's: read when the program starts
-                    Box { setting: "singleInstance"; text: qsTr("Single instance mode"); enabled: Qt.platform.os === "windows"; Layout.topMargin: 8 }
-                    Box { setting: "alternateLayouts"; text: qsTr("Handle alternate keyboard layouts (e.g. Dvorak) [experimental]"); Layout.topMargin: 8 }
-                    Box { setting: "mergeModifiers"; text: qsTr("Merge L+R modifier keys e.g. Shift instead of LShift and RShift") }
+                    Box { setting: "singleInstance"; text: qsTrId("customize.single_instance_mode"); enabled: Qt.platform.os === "windows"; Layout.topMargin: 8 }
+                    Box { setting: "alternateLayouts"; text: qsTrId("customize.handle_alternate_keyboard_layouts_e_g"); Layout.topMargin: 8 }
+                    Box { setting: "mergeModifiers"; text: qsTrId("customize.merge_l_r_modifier_keys_e") }
                     // read when the program starts: SDL is told before it starts
-                    Box { setting: "gameCubeAdapter"; text: qsTr("Enable Wii U/Switch GameCube Adapter Support") }
+                    Box { setting: "gameCubeAdapter"; text: qsTrId("customize.enable_wii_u_switch_gamecube_adapter") }
                     GroupBox {
-                        title: qsTr("Startup Options")
+                        title: qsTrId("customize.startup_options")
                         Layout.fillWidth: true
                         Layout.topMargin: 8
                         ColumnLayout {
                             spacing: 2
-                            Box { setting: "startPaused"; text: qsTr("Start paused") }
-                            Box { setting: "startFullscreen"; text: qsTr("Start in Fullscreen") }
+                            Box { setting: "startPaused"; text: qsTrId("customize.start_paused") }
+                            Box { setting: "startFullscreen"; text: qsTrId("customize.start_in_fullscreen") }
                         }
                     }
                     Item { Layout.fillHeight: true }
                 }
                 ColumnLayout {
                     spacing: 2
-                    Box { setting: "skipLagFrames"; text: qsTr("Frame advance button skips non-input frames") }
-                    Note { text: qsTr("When enabled, the frame advance button will skip over\nframes in which no input was polled (lag frames)") }
-                    Box { setting: "luaDuringTurbo"; text: qsTr("Run lua scripts when turboing"); Layout.topMargin: 8 }
-                    Box { setting: "noMixedPriority"; text: qsTr("Key Priority Toggle - Remove Mixed Key Priority Options"); Layout.topMargin: 8 }
+                    Box { setting: "skipLagFrames"; text: qsTrId("customize.frame_advance_button_skips_non_input") }
+                    Note { text: qsTrId("customize.when_enabled_the_frame_advance_button") }
+                    Box { setting: "luaDuringTurbo"; text: qsTrId("customize.run_lua_scripts_when_turboing"); Layout.topMargin: 8 }
+                    Box { setting: "noMixedPriority"; text: qsTrId("customize.key_priority_toggle_remove_mixed_key"); Layout.topMargin: 8 }
                     Item { Layout.fillHeight: true }
                 }
             }
         }
         RowLayout {
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("&OK"); onClicked: win.ok() }
-            Button { text: qsTr("&Cancel"); onClicked: win.close() }
+            Button { text: qsTrId("common.ok_mnemonic"); onClicked: win.ok() }
+            Button { text: qsTrId("common.cancel_mnemonic"); onClicked: win.close() }
         }
     }
 }

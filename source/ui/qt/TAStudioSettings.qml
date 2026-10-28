@@ -21,7 +21,7 @@ ApplicationWindow {
     // the roll's colours as the theme has them: {"TasCurrentFrame": "#rrggbb", ...}
     property var themeColorsOf: () => "{}"
     property Window ownerWindow: null
-    title: qsTr("TAStudio Settings")
+    title: qsTrId("tastudio_settings.tastudio_settings")
     width: 440
     height: 540
     minimumWidth: 440
@@ -138,8 +138,8 @@ ApplicationWindow {
 
     MessageDialog {
         id: bindWarning
-        title: qsTr("Warning")
-        text: qsTr("You have enabled 'bind markers to input' and disabled 'allow editing hidden columns'. This combination is not recommended, and may result in your markers being moved in unexpected ways. Continue?")
+        title: qsTrId("tastudio_settings.warning")
+        text: qsTrId("tastudio_settings.you_have_enabled_bind_markers_to")
         buttons: MessageDialog.Ok | MessageDialog.Cancel
         onAccepted: win.write()
     }
@@ -170,11 +170,11 @@ ApplicationWindow {
         TabBar {
             id: tabs
             Layout.fillWidth: true
-            TabButton { text: qsTr("Appearance") }
-            TabButton { text: qsTr("Autosave") }
-            TabButton { text: qsTr("Paint Patterns") }
-            TabButton { text: qsTr("Input Roll") }
-            TabButton { text: qsTr("Misc") }
+            TabButton { text: qsTrId("tastudio_settings.appearance") }
+            TabButton { text: qsTrId("tastudio_settings.autosave") }
+            TabButton { text: qsTrId("tastudio_settings.paint_patterns") }
+            TabButton { text: qsTrId("tastudio_settings.input_roll") }
+            TabButton { text: qsTrId("tastudio_settings.misc") }
         }
         StackLayout {
             currentIndex: tabs.currentIndex
@@ -185,20 +185,20 @@ ApplicationWindow {
             ColumnLayout {
                 spacing: 4
                 RowLayout {
-                    Button { text: qsTr("Set Font"); Layout.preferredWidth: 90; onClicked: fontDialog.open() }
-                    Button { text: qsTr("Set Colors"); Layout.preferredWidth: 90; onClicked: colorsWindow.openWith(win.rollColors) }
+                    Button { text: qsTrId("tastudio_settings.set_font"); Layout.preferredWidth: 90; onClicked: fontDialog.open() }
+                    Button { text: qsTrId("tastudio_settings.set_colors"); Layout.preferredWidth: 90; onClicked: colorsWindow.openWith(win.rollColors) }
                 }
-                Check { text: qsTr("Denote states with icons"); checked: win.statesIcons; onToggled: win.statesIcons = checked }
-                Check { text: qsTr("Denote states with background color"); checked: win.statesColor; onToggled: win.statesColor = checked }
-                Check { text: qsTr("Denote markers with icons"); checked: win.markersIcons; onToggled: win.markersIcons = checked }
-                Check { text: qsTr("Denote markers with color on frame column"); checked: win.markersColor; onToggled: win.markersColor = checked }
-                Label { text: qsTr("Movie settings"); font.bold: true; font.pointSize: Qt.application.font.pointSize * 1.2; Layout.topMargin: 6 }
-                Check { text: qsTr("Rotate input roll"); checked: win.rotate; onToggled: win.rotate = checked }
+                Check { text: qsTrId("tastudio_settings.denote_states_with_icons"); checked: win.statesIcons; onToggled: win.statesIcons = checked }
+                Check { text: qsTrId("tastudio_settings.denote_states_with_background_color"); checked: win.statesColor; onToggled: win.statesColor = checked }
+                Check { text: qsTrId("tastudio_settings.denote_markers_with_icons"); checked: win.markersIcons; onToggled: win.markersIcons = checked }
+                Check { text: qsTrId("tastudio_settings.denote_markers_with_color_on_frame"); checked: win.markersColor; onToggled: win.markersColor = checked }
+                Label { text: qsTrId("tastudio_settings.movie_settings"); font.bold: true; font.pointSize: Qt.application.font.pointSize * 1.2; Layout.topMargin: 6 }
+                Check { text: qsTrId("tastudio_settings.rotate_input_roll"); checked: win.rotate; onToggled: win.rotate = checked }
                 RowLayout {
-                    Label { text: qsTr("Lag frames to hide:") }
+                    Label { text: qsTrId("tastudio_settings.lag_frames_to_hide") }
                     Number { from: 0; to: 10; value: win.lagToHide; onValueModified: win.lagToHide = value }
                 }
-                Check { text: qsTr("Hide \"was lag\" frames"); checked: win.hideWasLag; onToggled: win.hideWasLag = checked }
+                Check { text: qsTrId("tastudio_settings.hide_was_lag_frames"); checked: win.hideWasLag; onToggled: win.hideWasLag = checked }
                 Item { Layout.fillHeight: true }
             }
 
@@ -206,13 +206,13 @@ ApplicationWindow {
             ColumnLayout {
                 spacing: 4
                 RowLayout {
-                    Label { text: qsTr("Autosave frequency:") }
+                    Label { text: qsTrId("tastudio_settings.autosave_frequency") }
                     Number { from: 0; to: 10000000; value: win.autosaveSeconds; onValueModified: win.autosaveSeconds = value; Layout.preferredWidth: 120 }
-                    Label { text: qsTr("seconds") }
+                    Label { text: qsTrId("tastudio_settings.seconds") }
                 }
-                Label { text: qsTr("Set to 0 to disable autosave") }
-                Check { text: qsTr("Save as .backup (no greenzone)"); checked: win.autosaveAsBackup; onToggled: win.autosaveAsBackup = checked; Layout.topMargin: 30 }
-                Check { text: qsTr("When manually saving, also save .backup"); checked: win.backupOnSave; onToggled: win.backupOnSave = checked }
+                Label { text: qsTrId("tastudio_settings.set_to_0_to_disable_autosave") }
+                Check { text: qsTrId("tastudio_settings.save_as_backup_no_greenzone"); checked: win.autosaveAsBackup; onToggled: win.autosaveAsBackup = checked; Layout.topMargin: 30 }
+                Check { text: qsTrId("tastudio_settings.when_manually_saving_also_save_backup"); checked: win.backupOnSave; onToggled: win.backupOnSave = checked }
                 Item { Layout.fillHeight: true }
             }
 
@@ -221,12 +221,12 @@ ApplicationWindow {
                 spacing: 6
                 RowLayout {
                     GroupBox {
-                        title: qsTr("Use pattern for painting")
+                        title: qsTrId("tastudio_settings.use_pattern_for_painting")
                         Layout.alignment: Qt.AlignTop
                         ColumnLayout {
                             spacing: 0
                             Repeater {
-                                model: [["always", qsTr("Always")], ["autofire", qsTr("Auto-Fire columns only")], ["never", qsTr("Never")]]
+                                model: [["always", qsTrId("tastudio_settings.always")], ["autofire", qsTrId("tastudio_settings.auto_fire_columns_only")], ["never", qsTrId("tastudio_settings.never")]]
                                 RadioButton {
                                     required property var modelData
                                     padding: 2
@@ -238,12 +238,12 @@ ApplicationWindow {
                         }
                     }
                     GroupBox {
-                        title: qsTr("Choose pattern")
+                        title: qsTrId("tastudio_settings.choose_pattern")
                         Layout.alignment: Qt.AlignTop
                         ColumnLayout {
                             spacing: 0
                             Repeater {
-                                model: [["hold", qsTr("Hold")], ["autofire", qsTr("Auto-Fire")], ["custom", qsTr("Custom")]]
+                                model: [["hold", qsTrId("tastudio_settings.hold")], ["autofire", qsTrId("tastudio_settings.auto_fire")], ["custom", qsTrId("tastudio_settings.custom")]]
                                 RadioButton {
                                     required property var modelData
                                     padding: 2
@@ -252,7 +252,7 @@ ApplicationWindow {
                                     onToggled: if (checked) win.patternKind = modelData[0]
                                     ToolTip.visible: hovered
                                     ToolTip.delay: 600
-                                    ToolTip.text: qsTr("You can set a column as auto hold/fire by right-clicking on the column header.")
+                                    ToolTip.text: qsTrId("tastudio_settings.you_can_set_a_column_as")
                                 }
                             }
                         }
@@ -260,7 +260,7 @@ ApplicationWindow {
                 }
                 GroupBox {
                     id: patternEditor
-                    title: qsTr("Set custom patterns (per movie)")
+                    title: qsTrId("tastudio_settings.set_custom_patterns_per_movie")
                     Layout.preferredWidth: 270
                     // the control picked, its runs, and the line picked (the last is "Loop to")
                     property string control: ""
@@ -309,10 +309,10 @@ ApplicationWindow {
                                     const out = []
                                     let at = 0
                                     for (const r of p.runs) {
-                                        out.push(at + ": " + (p.button ? (r.v ? qsTr("On") : qsTr("Off")) : String(r.v)) + "\t(x" + r.n + ")")
+                                        out.push(at + ": " + (p.button ? (r.v ? qsTrId("tastudio_settings.on") : qsTrId("tastudio_settings.off")) : String(r.v)) + "\t(x" + r.n + ")")
                                         at += r.n
                                     }
-                                    out.push(qsTr("Loop to: %1").arg(p.loop))
+                                    out.push(qsTrId("tastudio_settings.loop_to").arg(p.loop))
                                     return out
                                 }
                                 delegate: Rectangle {
@@ -332,7 +332,7 @@ ApplicationWindow {
                             }
                         }
                         RowLayout {
-                            Label { text: qsTr("Value:") }
+                            Label { text: qsTrId("tastudio_settings.value") }
                             // a button's run is on or off; an analog control's is a value in its range
                             CheckBox {
                                 visible: patternEditor.pattern !== undefined && patternEditor.pattern.button
@@ -352,7 +352,7 @@ ApplicationWindow {
                                 onValueModified: { const v = value; patternEditor.edit(p => p.runs[patternEditor.line].v = v) }
                             }
                             Item { Layout.fillWidth: true }
-                            Label { text: qsTr("Count:") }
+                            Label { text: qsTrId("tastudio_settings.count") }
                             // a run's count (never 0), or on the last line the frame it loops to
                             SpinBox {
                                 editable: true
@@ -369,21 +369,21 @@ ApplicationWindow {
                         }
                         RowLayout {
                             Button {
-                                text: qsTr("Insert")
+                                text: qsTrId("tastudio_settings.insert")
                                 Layout.preferredWidth: 70
                                 enabled: patternEditor.pattern !== undefined
                                 onClicked: patternEditor.edit(p => p.runs.splice(Math.min(patternEditor.line, p.runs.length), 0, { v: p.button ? false : p.neutral, n: 1 }))
                             }
                             Item { Layout.fillWidth: true }
                             Button {
-                                text: qsTr("Delete")
+                                text: qsTrId("tastudio_settings.delete")
                                 Layout.preferredWidth: 70
                                 enabled: patternEditor.pattern !== undefined && !patternEditor.onLoop && patternEditor.pattern.runs.length > 1
                                 onClicked: patternEditor.edit(p => p.runs.splice(patternEditor.line, 1))
                             }
                         }
                         Check {
-                            text: qsTr("Account for lag frames")
+                            text: qsTrId("tastudio_settings.account_for_lag_frames")
                             enabled: patternEditor.pattern !== undefined
                             checked: patternEditor.pattern !== undefined && patternEditor.pattern.skipLag
                             onToggled: { const on = checked; patternEditor.edit(p => p.skipLag = on) }
@@ -396,14 +396,14 @@ ApplicationWindow {
             // ---- Input Roll ----
             ColumnLayout {
                 spacing: 4
-                Check { text: qsTr("When following cursor, scroll at every frame"); checked: win.followAlways; onToggled: win.followAlways = checked }
+                Check { text: qsTrId("tastudio_settings.when_following_cursor_scroll_at_every"); checked: win.followAlways; onToggled: win.followAlways = checked }
                 GroupBox {
-                    title: qsTr("Scroll to cursor method")
+                    title: qsTrId("tastudio_settings.scroll_to_cursor_method")
                     ColumnLayout {
                         spacing: 0
                         Repeater {
-                            model: [["near", qsTr("scroll to view")], ["top", qsTr("scroll to top")],
-                                    ["bottom", qsTr("scroll to bottom")], ["center", qsTr("scroll to center")]]
+                            model: [["near", qsTrId("tastudio_settings.scroll_to_view")], ["top", qsTrId("tastudio_settings.scroll_to_top")],
+                                    ["bottom", qsTrId("tastudio_settings.scroll_to_bottom")], ["center", qsTrId("tastudio_settings.scroll_to_center")]]
                             RadioButton {
                                 required property var modelData
                                 padding: 2
@@ -415,13 +415,13 @@ ApplicationWindow {
                     }
                 }
                 RowLayout {
-                    Label { text: qsTr("Wheel scroll speed:") }
+                    Label { text: qsTrId("tastudio_settings.wheel_scroll_speed") }
                     Number { from: 0; to: 100; value: win.wheelRows; onValueModified: win.wheelRows = value }
-                    Label { text: qsTr("frames per tick") }
+                    Label { text: qsTrId("tastudio_settings.frames_per_tick") }
                 }
-                Check { text: qsTr("Sync scroll across all input rolls"); checked: win.scrollSync; onToggled: win.scrollSync = checked; Layout.topMargin: 6 }
+                Check { text: qsTrId("tastudio_settings.sync_scroll_across_all_input_rolls"); checked: win.scrollSync; onToggled: win.scrollSync = checked; Layout.topMargin: 6 }
                 Check {
-                    text: qsTr("Allow editing hidden columns (with clear, record, paste, etc.)")
+                    text: qsTrId("tastudio_settings.allow_editing_hidden_columns_with_clear")
                     checked: win.editHidden
                     onToggled: win.editHidden = checked
                 }
@@ -433,21 +433,21 @@ ApplicationWindow {
                 spacing: 4
                 GridLayout {
                     columns: 2
-                    Label { text: qsTr("Rewind step:"); Layout.preferredWidth: 110 }
+                    Label { text: qsTrId("tastudio_settings.rewind_step"); Layout.preferredWidth: 110 }
                     Number { from: 1; to: 100; value: win.rewindStep; onValueModified: win.rewindStep = value }
-                    Label { text: qsTr("Fast rewind step:") }
+                    Label { text: qsTrId("tastudio_settings.fast_rewind_step") }
                     Number { from: 1; to: 100; value: win.rewindStepFast; onValueModified: win.rewindStepFast = value }
-                    Label { text: qsTr("Max Undo Count:") }
+                    Label { text: qsTrId("tastudio_settings.max_undo_count") }
                     Number { from: 1; to: 10000; value: win.maxUndo; onValueModified: win.maxUndo = value }
                 }
-                Check { text: qsTr("Bind markers to input"); checked: win.bindMarkers; onToggled: win.bindMarkers = checked }
-                Check { text: qsTr("Include frame numbers when copying input."); checked: win.copyFrameNumbers; onToggled: win.copyFrameNumbers = checked }
-                Check { text: qsTr("Automatically pause at end of movie."); checked: win.pauseAtEnd; onToggled: win.pauseAtEnd = checked }
-                Check { text: qsTr("Load branch by double clicking"); checked: win.branchDoubleClick; onToggled: win.branchDoubleClick = checked }
-                Check { text: qsTr("Old control scheme for branches"); checked: win.oldBranches; onToggled: win.oldBranches = checked }
-                Check { text: qsTr("Markers keep states by default"); checked: win.markersKeepStates; onToggled: win.markersKeepStates = checked }
+                Check { text: qsTrId("tastudio_settings.bind_markers_to_input"); checked: win.bindMarkers; onToggled: win.bindMarkers = checked }
+                Check { text: qsTrId("tastudio_settings.include_frame_numbers_when_copying_input"); checked: win.copyFrameNumbers; onToggled: win.copyFrameNumbers = checked }
+                Check { text: qsTrId("tastudio_settings.automatically_pause_at_end_of_movie"); checked: win.pauseAtEnd; onToggled: win.pauseAtEnd = checked }
+                Check { text: qsTrId("tastudio_settings.load_branch_by_double_clicking"); checked: win.branchDoubleClick; onToggled: win.branchDoubleClick = checked }
+                Check { text: qsTrId("tastudio_settings.old_control_scheme_for_branches"); checked: win.oldBranches; onToggled: win.oldBranches = checked }
+                Check { text: qsTrId("tastudio_settings.markers_keep_states_by_default"); checked: win.markersKeepStates; onToggled: win.markersKeepStates = checked }
                 RowLayout {
-                    Label { text: qsTr("Branch screenshot size (pixels):") }
+                    Label { text: qsTrId("tastudio_settings.branch_screenshot_size_pixels") }
                     Number {
                         from: 64
                         to: 4096
@@ -456,7 +456,7 @@ ApplicationWindow {
                         onValueModified: win.branchPreviewSide = value
                         ToolTip.visible: hovered
                         ToolTip.delay: 600
-                        ToolTip.text: qsTr("The longest side of the picture shown when the mouse is over a branch's number.\nA larger screenshot is shrunk to this size; a smaller one is shown as it is.")
+                        ToolTip.text: qsTrId("tastudio_settings.the_longest_side_of_the_picture")
                     }
                 }
                 Item { Layout.fillHeight: true }
@@ -464,14 +464,14 @@ ApplicationWindow {
         }
         RowLayout {
             Item { Layout.fillWidth: true }
-            Button { text: qsTr("Apply"); Layout.preferredWidth: 80; onClicked: win.apply() }
-            Button { text: qsTr("Cancel"); Layout.preferredWidth: 80; onClicked: win.close() }
+            Button { text: qsTrId("common.apply"); Layout.preferredWidth: 80; onClicked: win.apply() }
+            Button { text: qsTrId("common.cancel"); Layout.preferredWidth: 80; onClicked: win.close() }
         }
     }
 
     FontDialog {
         id: fontDialog
-        title: qsTr("The piano roll's font")
+        title: qsTrId("tastudio_settings.the_piano_roll_s_font")
         onAccepted: win.rollFont = JSON.stringify({ family: selectedFont.family, pointSize: selectedFont.pointSize,
                                                     bold: selectedFont.bold, italic: selectedFont.italic })
     }
@@ -480,7 +480,7 @@ ApplicationWindow {
     ApplicationWindow {
         id: colorsWindow
         objectName: "tastudioColorsWindow"
-        title: qsTr("Edit TAStudio Colors")
+        title: qsTrId("tastudio_settings.edit_tastudio_colors")
         width: 300
         height: 400
         modality: Qt.ApplicationModal
@@ -500,12 +500,12 @@ ApplicationWindow {
             anchors.margins: 8
             spacing: 2
             Repeater {
-                model: [["TasCurrentFrame", qsTr("Emulated Frame Cursor")], ["TasGreenZone", qsTr("Frame# Column")],
-                        ["TasGreenZoneInput", qsTr("Input Log")], ["TasGreenZoneInputStated", qsTr("Savestate")],
-                        ["TasGreenZoneInputInvalidated", qsTr("Invalidated")], ["TasLagZone", qsTr("Frame# Column (Lag)")],
-                        ["TasLagZoneInput", qsTr("Input Log (Lag)")], ["TasLagZoneInputStated", qsTr("Savestate (Lag)")],
-                        ["TasLagZoneInputInvalidated", qsTr("Invalidated (Lag)")], ["TasMarker", qsTr("Marker")],
-                        ["TasPermanentMarker", qsTr("Marker (run start / last input / end)")], ["TasAnalogEdit", qsTr("Analog Edit Mode")]]
+                model: [["TasCurrentFrame", qsTrId("tastudio_settings.emulated_frame_cursor")], ["TasGreenZone", qsTrId("tastudio_settings.frame_column")],
+                        ["TasGreenZoneInput", qsTrId("tastudio_settings.input_log")], ["TasGreenZoneInputStated", qsTrId("tastudio_settings.savestate")],
+                        ["TasGreenZoneInputInvalidated", qsTrId("tastudio_settings.invalidated")], ["TasLagZone", qsTrId("tastudio_settings.frame_column_lag")],
+                        ["TasLagZoneInput", qsTrId("tastudio_settings.input_log_lag")], ["TasLagZoneInputStated", qsTrId("tastudio_settings.savestate_lag")],
+                        ["TasLagZoneInputInvalidated", qsTrId("tastudio_settings.invalidated_lag")], ["TasMarker", qsTrId("tastudio_settings.marker")],
+                        ["TasPermanentMarker", qsTrId("tastudio_settings.marker_run_start_last_input_end")], ["TasAnalogEdit", qsTrId("tastudio_settings.analog_edit_mode")]]
                 RowLayout {
                     required property var modelData
                     spacing: 6
@@ -527,9 +527,9 @@ ApplicationWindow {
             Item { Layout.fillHeight: true }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                Button { text: qsTr("Defaults"); Layout.preferredWidth: 75; onClicked: colorsWindow.own = {} }
-                Button { text: qsTr("Cancel"); Layout.preferredWidth: 75; onClicked: colorsWindow.close() }
-                Button { text: qsTr("OK"); Layout.preferredWidth: 75; onClicked: { win.rollColors = JSON.stringify(colorsWindow.own); colorsWindow.close() } }
+                Button { text: qsTrId("tastudio_settings.defaults"); Layout.preferredWidth: 75; onClicked: colorsWindow.own = {} }
+                Button { text: qsTrId("common.cancel"); Layout.preferredWidth: 75; onClicked: colorsWindow.close() }
+                Button { text: qsTrId("common.ok"); Layout.preferredWidth: 75; onClicked: { win.rollColors = JSON.stringify(colorsWindow.own); colorsWindow.close() } }
             }
         }
         ColorDialog {

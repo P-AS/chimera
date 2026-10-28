@@ -21,7 +21,7 @@ ApplicationWindow {
     property QtObject customize: null
     property QtObject toolWindows: null
     property Window mainWindow: null
-    title: qsTr("Lua Console")
+    title: qsTrId("lua_console.lua_console")
     width: 760
     height: 460
 
@@ -51,8 +51,8 @@ ApplicationWindow {
     }
     MessageDialog {
         id: askSave
-        title: qsTr("Closing with Unsaved Changes")
-        text: qsTr("Save Lua Console session?")
+        title: qsTrId("common.closing_with_unsaved_changes")
+        text: qsTrId("lua_console.save_lua_console_session")
         buttons: MessageDialog.Yes | MessageDialog.No | MessageDialog.Cancel
         onButtonClicked: (button) => {
             const then = win.afterAsk
@@ -75,19 +75,19 @@ ApplicationWindow {
 
     FileDialog {
         id: openScriptDialog
-        title: qsTr("Open Script")
+        title: qsTrId("lua_console.open_script")
         fileMode: FileDialog.OpenFiles
         currentFolder: win.folderOf ? win.folderOf("Lua") : ""
-        nameFilters: [qsTr("Lua Scripts (*.lua *.txt)"), qsTr("All files (*)")]
+        nameFilters: [qsTrId("lua_console.lua_scripts_lua_txt"), qsTrId("common.all_files")]
         onAccepted: { for (const f of selectedFiles) win.vm.run("openScript", [f]) }
     }
     FileDialog {
         id: newScriptDialog
-        title: qsTr("New Script")
+        title: qsTrId("lua_console.new_script")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "lua"
         currentFolder: win.folderOf ? win.folderOf("Lua") : ""
-        nameFilters: [qsTr("Lua Scripts (*.lua)")]
+        nameFilters: [qsTrId("lua_console.lua_scripts_lua")]
         onAccepted: {
             const made = win.vm.run("newScript", [selectedFile])
             if (made) win.editFiles(made)
@@ -95,10 +95,10 @@ ApplicationWindow {
     }
     FileDialog {
         id: duplicateDialog
-        title: qsTr("Duplicate Script")
+        title: qsTrId("lua_console.duplicate_script")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "lua"
-        nameFilters: [qsTr("Lua Scripts (*.lua)")]
+        nameFilters: [qsTrId("lua_console.lua_scripts_lua")]
         onAccepted: {
             win.vm.run("duplicate", [selectedFile])
             win.editFiles(win.localPath(selectedFile))
@@ -106,18 +106,18 @@ ApplicationWindow {
     }
     FileDialog {
         id: openSessionDialog
-        title: qsTr("Open Session")
+        title: qsTrId("lua_console.open_session")
         currentFolder: win.folderOf ? win.folderOf("Lua") : ""
-        nameFilters: [qsTr("Lua Session Files (*.luases)"), qsTr("All files (*)")]
+        nameFilters: [qsTrId("lua_console.lua_session_files_luases"), qsTrId("common.all_files")]
         onAccepted: win.vm.run("openSession", [selectedFile])
     }
     FileDialog {
         id: saveSessionDialog
-        title: qsTr("Save Session As")
+        title: qsTrId("lua_console.save_session_as")
         fileMode: FileDialog.SaveFile
         defaultSuffix: "luases"
         currentFolder: win.folderOf ? win.folderOf("Lua") : ""
-        nameFilters: [qsTr("Lua Session Files (*.luases)")]
+        nameFilters: [qsTrId("lua_console.lua_session_files_luases")]
         onAccepted: win.vm.run("saveSessionAs", [selectedFile])
     }
 
@@ -143,47 +143,47 @@ ApplicationWindow {
     // the actions, shared by the menus, the toolbar and the list's menu
     readonly property bool anyFile: win.vm.selectedScripts > 0
     readonly property bool anyRow: win.vm.selectedCount > 0
-    Action { id: newScriptAction; text: qsTr("New Script"); icon.source: "qrc:/chimera/icons/NewFile.png"; shortcut: "Ctrl+N"; onTriggered: newScriptDialog.open() }
-    Action { id: openScriptAction; text: qsTr("&Open Script..."); icon.source: "qrc:/chimera/icons/OpenFile.png"; shortcut: "Ctrl+O"; onTriggered: openScriptDialog.open() }
-    Action { id: refreshAction; text: qsTr("Re&fresh"); icon.source: "qrc:/chimera/icons/Refresh.png"; shortcut: "F5"; onTriggered: win.vm.run("refresh") }
-    Action { id: toggleAction; text: qsTr("&Toggle"); icon.source: "qrc:/chimera/icons/checkbox.png"; shortcut: "Ctrl+T"; onTriggered: win.vm.run("toggle") }
-    Action { id: pauseAction; text: qsTr("Pause or Resume"); icon.source: "qrc:/chimera/icons/Pause.png"; enabled: win.anyFile; onTriggered: win.vm.run("pause") }
-    Action { id: editAction; text: qsTr("&Edit Script"); icon.source: "qrc:/chimera/icons/pencil.png"; shortcut: "Ctrl+E"; enabled: win.anyFile; onTriggered: win.editFiles(win.vm.run("editPaths")) }
-    Action { id: removeAction; text: qsTr("&Remove Script"); icon.source: "qrc:/chimera/icons/Delete.png"; shortcut: "Delete"; enabled: win.anyRow; onTriggered: win.vm.run("remove") }
-    Action { id: duplicateAction; text: qsTr("&Duplicate Script"); icon.source: "qrc:/chimera/icons/Duplicate.png"; enabled: win.anyRow; onTriggered: win.duplicateScript() }
-    Action { id: clearAction; text: qsTr("&Clear Output"); icon.source: "qrc:/chimera/icons/clear_console.png"; onTriggered: win.vm.run("clear") }
-    Action { id: separatorAction; text: qsTr("Insert Separator"); icon.source: "qrc:/chimera/icons/InsertSeparator.png"; shortcut: "Ctrl+I"; onTriggered: win.vm.run("insertSeparator") }
-    Action { id: upAction; text: qsTr("Move &Up"); icon.source: "qrc:/chimera/icons/MoveUp.png"; shortcut: "Ctrl+U"; enabled: win.anyRow; onTriggered: win.vm.run("moveUp") }
-    Action { id: downAction; text: qsTr("Move &Down"); icon.source: "qrc:/chimera/icons/MoveDown.png"; shortcut: "Ctrl+D"; enabled: win.anyRow; onTriggered: win.vm.run("moveDown") }
-    Action { id: selectAllAction; property string keysShown: "Ctrl+A"; text: qsTr("Select &All"); enabled: scriptList.count > 0; onTriggered: win.vm.run("selectAll") }
-    Action { id: stopAllAction; text: qsTr("Stop All Scripts"); icon.source: "qrc:/chimera/icons/Stop.png"; enabled: win.vm.anyEnabled; onTriggered: win.vm.run("stopAll") }
-    Action { id: functionsAction; text: qsTr("&Registered Functions..."); shortcut: "F12"; onTriggered: { functionsWindow.show(); functionsWindow.raise() } }
-    Action { id: eraseAction; text: qsTr("Erase Stale/Stuck Lua Drawing Layers"); icon.source: "qrc:/chimera/icons/Erase.png"; onTriggered: win.vm.run("eraseDrawings") }
-    Action { id: clearFunctionsAction; text: qsTr("Clear Registered Functions"); icon.source: "qrc:/chimera/icons/Delete.png"; enabled: win.vm.functionCount > 0; onTriggered: win.vm.run("removeAllFunctions") }
+    Action { id: newScriptAction; text: qsTrId("lua_console.new_script"); icon.source: "qrc:/chimera/icons/NewFile.png"; shortcut: "Ctrl+N"; onTriggered: newScriptDialog.open() }
+    Action { id: openScriptAction; text: qsTrId("lua_console.open_script_dialog"); icon.source: "qrc:/chimera/icons/OpenFile.png"; shortcut: "Ctrl+O"; onTriggered: openScriptDialog.open() }
+    Action { id: refreshAction; text: qsTrId("lua_console.refresh_mnemonic"); icon.source: "qrc:/chimera/icons/Refresh.png"; shortcut: "F5"; onTriggered: win.vm.run("refresh") }
+    Action { id: toggleAction; text: qsTrId("lua_console.toggle"); icon.source: "qrc:/chimera/icons/checkbox.png"; shortcut: "Ctrl+T"; onTriggered: win.vm.run("toggle") }
+    Action { id: pauseAction; text: qsTrId("lua_console.pause_or_resume"); icon.source: "qrc:/chimera/icons/Pause.png"; enabled: win.anyFile; onTriggered: win.vm.run("pause") }
+    Action { id: editAction; text: qsTrId("lua_console.edit_script_mnemonic"); icon.source: "qrc:/chimera/icons/pencil.png"; shortcut: "Ctrl+E"; enabled: win.anyFile; onTriggered: win.editFiles(win.vm.run("editPaths")) }
+    Action { id: removeAction; text: qsTrId("lua_console.remove_script_mnemonic"); icon.source: "qrc:/chimera/icons/Delete.png"; shortcut: "Delete"; enabled: win.anyRow; onTriggered: win.vm.run("remove") }
+    Action { id: duplicateAction; text: qsTrId("lua_console.duplicate_script_mnemonic"); icon.source: "qrc:/chimera/icons/Duplicate.png"; enabled: win.anyRow; onTriggered: win.duplicateScript() }
+    Action { id: clearAction; text: qsTrId("lua_console.clear_output_mnemonic"); icon.source: "qrc:/chimera/icons/clear_console.png"; onTriggered: win.vm.run("clear") }
+    Action { id: separatorAction; text: qsTrId("lua_console.insert_separator"); icon.source: "qrc:/chimera/icons/InsertSeparator.png"; shortcut: "Ctrl+I"; onTriggered: win.vm.run("insertSeparator") }
+    Action { id: upAction; text: qsTrId("lua_console.move_up_mnemonic"); icon.source: "qrc:/chimera/icons/MoveUp.png"; shortcut: "Ctrl+U"; enabled: win.anyRow; onTriggered: win.vm.run("moveUp") }
+    Action { id: downAction; text: qsTrId("lua_console.move_down_mnemonic"); icon.source: "qrc:/chimera/icons/MoveDown.png"; shortcut: "Ctrl+D"; enabled: win.anyRow; onTriggered: win.vm.run("moveDown") }
+    Action { id: selectAllAction; property string keysShown: "Ctrl+A"; text: qsTrId("common.select_all"); enabled: scriptList.count > 0; onTriggered: win.vm.run("selectAll") }
+    Action { id: stopAllAction; text: qsTrId("lua_console.stop_all_scripts"); icon.source: "qrc:/chimera/icons/Stop.png"; enabled: win.vm.anyEnabled; onTriggered: win.vm.run("stopAll") }
+    Action { id: functionsAction; text: qsTrId("lua_console.registered_functions_dialog"); shortcut: "F12"; onTriggered: { functionsWindow.show(); functionsWindow.raise() } }
+    Action { id: eraseAction; text: qsTrId("lua_console.erase_stale_stuck_lua_drawing_layers"); icon.source: "qrc:/chimera/icons/Erase.png"; onTriggered: win.vm.run("eraseDrawings") }
+    Action { id: clearFunctionsAction; text: qsTrId("lua_console.clear_registered_functions"); icon.source: "qrc:/chimera/icons/Delete.png"; enabled: win.vm.functionCount > 0; onTriggered: win.vm.run("removeAllFunctions") }
 
     menuBar: MenuBar {
         Menu {
-            title: qsTr("&File")
+            title: qsTrId("common.file")
             delegate: shortcutItem
             Action {
-                text: qsTr("&New Session"); shortcut: "Ctrl+Shift+N"; icon.source: "qrc:/chimera/icons/NewFile.png"
+                text: qsTrId("lua_console.new_session"); shortcut: "Ctrl+Shift+N"; icon.source: "qrc:/chimera/icons/NewFile.png"
                 onTriggered: win.leaveSession(() => win.vm.run("newSession"))
             }
             Action {
-                text: qsTr("&Open Session..."); shortcut: "Ctrl+Shift+O"; icon.source: "qrc:/chimera/icons/OpenFile.png"
+                text: qsTrId("lua_console.open_session_dialog"); shortcut: "Ctrl+Shift+O"; icon.source: "qrc:/chimera/icons/OpenFile.png"
                 onTriggered: win.leaveSession(() => openSessionDialog.open())
             }
             Action {
-                text: qsTr("&Save Session"); shortcut: "Ctrl+S"; icon.source: "qrc:/chimera/icons/SaveAs.png"
+                text: qsTrId("lua_console.save_session"); shortcut: "Ctrl+S"; icon.source: "qrc:/chimera/icons/SaveAs.png"
                 enabled: win.vm.changes
                 onTriggered: win.vm.sessionPath === "" ? saveSessionDialog.open() : win.vm.run("saveSession")
             }
-            Action { text: qsTr("Save Session &As..."); shortcut: "Ctrl+Shift+S"; onTriggered: saveSessionDialog.open() }
+            Action { text: qsTrId("lua_console.save_session_as_dialog"); shortcut: "Ctrl+Shift+S"; onTriggered: saveSessionDialog.open() }
             MenuDivider {}
             Menu {
                 delegate: MenuEntry {}
                 id: recentSessionsMenu
-                title: qsTr("Recent Sessions")
+                title: qsTrId("lua_console.recent_sessions")
                 enabled: win.vm.recentSessions !== ""
                 Instantiator {
                     model: win.vm.recentSessions === "" ? [] : win.vm.recentSessions.split("\n")
@@ -199,7 +199,7 @@ ApplicationWindow {
             Menu {
                 delegate: MenuEntry {}
                 id: recentScriptsMenu
-                title: qsTr("Recent Scripts")
+                title: qsTrId("lua_console.recent_scripts")
                 icon.source: "qrc:/chimera/icons/Recent.png"
                 enabled: win.vm.recentScripts !== ""
                 Instantiator {
@@ -214,10 +214,10 @@ ApplicationWindow {
                 }
             }
             MenuDivider {}
-            Action { property string keysShown: "Alt+F4"; text: qsTr("&Close"); onTriggered: win.close() }
+            Action { property string keysShown: "Alt+F4"; text: qsTrId("common.close_mnemonic"); onTriggered: win.close() }
         }
         Menu {
-            title: qsTr("&Script")
+            title: qsTrId("lua_console.script_mnemonic")
             delegate: shortcutItem
             MenuItem { action: newScriptAction }
             MenuItem { action: openScriptAction }
@@ -239,20 +239,20 @@ ApplicationWindow {
         }
         Menu {
             delegate: MenuEntry {}
-            title: qsTr("&Settings")
-            MenuItem { text: qsTr("Disable Scripts on Load"); checkable: true; checked: win.vm.disableOnLoad; onTriggered: win.vm.disableOnLoad = checked }
-            MenuItem { text: qsTr("Toggle All if None Selected"); checkable: true; checked: win.vm.toggleAllIfNoneSelected; onTriggered: win.vm.toggleAllIfNoneSelected = checked }
-            MenuItem { text: qsTr("Reload When Script File Changes"); checkable: true; checked: win.vm.reloadOnChange; onTriggered: win.vm.reloadOnChange = checked }
-            MenuItem { text: qsTr("Duplicate to Stdout"); checkable: true; checked: win.vm.duplicateToStdout; onTriggered: win.vm.duplicateToStdout = checked }
+            title: qsTrId("common.settings")
+            MenuItem { text: qsTrId("lua_console.disable_scripts_on_load"); checkable: true; checked: win.vm.disableOnLoad; onTriggered: win.vm.disableOnLoad = checked }
+            MenuItem { text: qsTrId("lua_console.toggle_all_if_none_selected"); checkable: true; checked: win.vm.toggleAllIfNoneSelected; onTriggered: win.vm.toggleAllIfNoneSelected = checked }
+            MenuItem { text: qsTrId("lua_console.reload_when_script_file_changes"); checkable: true; checked: win.vm.reloadOnChange; onTriggered: win.vm.reloadOnChange = checked }
+            MenuItem { text: qsTrId("lua_console.duplicate_to_stdout"); checkable: true; checked: win.vm.duplicateToStdout; onTriggered: win.vm.duplicateToStdout = checked }
             MenuDivider {}
             // Chimera's: Sublime Text 2's Lua completions written for it; said as found ("detected") or written ("installed")
             Menu {
                 delegate: MenuEntry {}
-                title: qsTr("Register To Text Editors")
+                title: qsTrId("lua_console.register_to_text_editors")
                 onAboutToShow: win.vm.run("textEditors")
                 MenuItem {
-                    text: win.vm.sublimeState === "installed" ? qsTr("Sublime Text 2 (installed)")
-                        : win.vm.sublimeState === "detected" ? qsTr("Sublime Text 2 (detected)") : qsTr("&Sublime Text 2")
+                    text: win.vm.sublimeState === "installed" ? qsTrId("lua_console.sublime_text_2_installed")
+                        : win.vm.sublimeState === "detected" ? qsTrId("lua_console.sublime_text_2_detected") : qsTrId("lua_console.sublime_text_2")
                     font.italic: win.vm.sublimeState === "detected"
                     checkable: true
                     checked: win.vm.sublimeState === "installed"
@@ -263,19 +263,19 @@ ApplicationWindow {
                 }
             }
             MenuDivider {}
-            MenuItem { text: qsTr("Save Window &Position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
+            MenuItem { text: qsTrId("common.save_window_position"); checkable: true; checked: windowOptions.savePosition; onTriggered: windowOptions.set("save", checked) }
             MenuItem {
-                text: qsTr("Stay on &Top"); checkable: true; checked: windowOptions.onTop
+                text: qsTrId("common.stay_on_top"); checkable: true; checked: windowOptions.onTop
                 visible: windowOptions.canStayOnTop; height: visible ? implicitHeight : 0
                 onTriggered: windowOptions.set("top", checked)
             }
-            MenuItem { text: qsTr("&Float From Main Window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
-            MenuItem { text: qsTr("Restore &Defaults"); onTriggered: { win.vm.run("restoreDefaults"); windowOptions.restore() } }
+            MenuItem { text: qsTrId("common.float_from_main_window"); checkable: true; checked: windowOptions.floating; onTriggered: windowOptions.set("float", checked) }
+            MenuItem { text: qsTrId("common.restore_defaults_mnemonic"); onTriggered: { win.vm.run("restoreDefaults"); windowOptions.restore() } }
         }
         Menu {
-            title: qsTr("&Help")
+            title: qsTrId("lua_console.help")
             delegate: shortcutItem
-            Action { text: qsTr("&Lua Functions List"); shortcut: "F1"; onTriggered: { functionsListWindow.show(); functionsListWindow.raise() } }
+            Action { text: qsTrId("lua_console.lua_functions_list"); shortcut: "F1"; onTriggered: { functionsListWindow.show(); functionsListWindow.raise() } }
         }
     }
 
@@ -289,20 +289,20 @@ ApplicationWindow {
                 ToolTip.text: tip
                 ToolTip.delay: 500
             }
-            Tool { action: newScriptAction; tip: qsTr("New Lua Script") }
-            Tool { action: openScriptAction; tip: qsTr("Open Script") }
-            Tool { action: toggleAction; tip: qsTr("Toggle Script") }
-            Tool { action: refreshAction; tip: qsTr("Refresh") }
+            Tool { action: newScriptAction; tip: qsTrId("lua_console.new_lua_script") }
+            Tool { action: openScriptAction; tip: qsTrId("lua_console.open_script") }
+            Tool { action: toggleAction; tip: qsTrId("lua_console.toggle_script") }
+            Tool { action: refreshAction; tip: qsTrId("lua_console.refresh") }
             Tool { action: pauseAction }
-            Tool { action: editAction; tip: qsTr("Edit Script") }
-            Tool { action: removeAction; tip: qsTr("Remove Script") }
-            Tool { action: duplicateAction; tip: qsTr("Duplicate Script") }
+            Tool { action: editAction; tip: qsTrId("lua_console.edit_script") }
+            Tool { action: removeAction; tip: qsTrId("lua_console.remove_script") }
+            Tool { action: duplicateAction; tip: qsTrId("lua_console.duplicate_script") }
             ToolSeparator {}
-            Tool { action: upAction; tip: qsTr("Move Up") }
-            Tool { action: downAction; tip: qsTr("Move Down") }
+            Tool { action: upAction; tip: qsTrId("lua_console.move_up") }
+            Tool { action: downAction; tip: qsTrId("lua_console.move_down") }
             Tool { action: separatorAction }
             ToolSeparator {}
-            Tool { action: clearAction; tip: qsTr("Clear Output") }
+            Tool { action: clearAction; tip: qsTrId("lua_console.clear_output") }
             Tool { action: eraseAction }
         }
     }
@@ -318,11 +318,11 @@ ApplicationWindow {
     Menu {
         delegate: MenuEntry {}
         id: scriptMenu
-        MenuItem { text: qsTr("&Toggle"); icon.source: "qrc:/chimera/icons/Refresh.png"; enabled: win.anyFile; onTriggered: win.vm.run("toggle") }
-        MenuItem { text: qsTr("Pause or Resume"); icon.source: "qrc:/chimera/icons/Pause.png"; enabled: win.anyFile; onTriggered: win.vm.run("pause") }
-        MenuItem { text: qsTr("&Edit"); icon.source: "qrc:/chimera/icons/Cut.png"; enabled: win.anyFile; onTriggered: win.editFiles(win.vm.run("editPaths")) }
-        MenuItem { text: qsTr("&Remove"); icon.source: "qrc:/chimera/icons/Close.png"; enabled: win.anyRow; onTriggered: win.vm.run("remove") }
-        MenuItem { text: qsTr("Insert Seperator"); icon.source: "qrc:/chimera/icons/InsertSeparator.png"; onTriggered: win.vm.run("insertSeparator") }
+        MenuItem { text: qsTrId("lua_console.toggle"); icon.source: "qrc:/chimera/icons/Refresh.png"; enabled: win.anyFile; onTriggered: win.vm.run("toggle") }
+        MenuItem { text: qsTrId("lua_console.pause_or_resume"); icon.source: "qrc:/chimera/icons/Pause.png"; enabled: win.anyFile; onTriggered: win.vm.run("pause") }
+        MenuItem { text: qsTrId("common.edit"); icon.source: "qrc:/chimera/icons/Cut.png"; enabled: win.anyFile; onTriggered: win.editFiles(win.vm.run("editPaths")) }
+        MenuItem { text: qsTrId("common.remove_mnemonic"); icon.source: "qrc:/chimera/icons/Close.png"; enabled: win.anyRow; onTriggered: win.vm.run("remove") }
+        MenuItem { text: qsTrId("lua_console.insert_seperator"); icon.source: "qrc:/chimera/icons/InsertSeparator.png"; onTriggered: win.vm.run("insertSeparator") }
         MenuDivider { visible: win.vm.anyEnabled; height: visible ? implicitHeight : 0 }
         MenuItem { action: stopAllAction; visible: win.vm.anyEnabled; height: visible ? implicitHeight : 0 }
         MenuItem { action: clearFunctionsAction }
@@ -332,13 +332,13 @@ ApplicationWindow {
         delegate: MenuEntry {}
         id: outputMenu
         MenuItem {
-            text: qsTr("Copy"); enabled: win.vm.outputFirst >= 0
+            text: qsTrId("common.copy"); enabled: win.vm.outputFirst >= 0
             onTriggered: if (win.clipboard) win.clipboard.setText(win.vm.run("copyOutput"))
         }
-        MenuItem { text: qsTr("Select &All"); enabled: win.vm.lines > 0; onTriggered: win.vm.run("selectAllOutput") }
-        MenuItem { text: qsTr("&Clear"); enabled: win.vm.lines > 0; onTriggered: win.vm.run("clear") }
+        MenuItem { text: qsTrId("common.select_all"); enabled: win.vm.lines > 0; onTriggered: win.vm.run("selectAllOutput") }
+        MenuItem { text: qsTrId("lua_console.clear"); enabled: win.vm.lines > 0; onTriggered: win.vm.run("clear") }
         MenuDivider {}
-        MenuItem { text: qsTr("&Registered Functions"); enabled: win.vm.functionCount > 0; onTriggered: functionsAction.trigger() }
+        MenuItem { text: qsTrId("lua_console.registered_functions"); enabled: win.vm.functionCount > 0; onTriggered: functionsAction.trigger() }
         MenuItem { action: clearFunctionsAction }
     }
 
@@ -360,7 +360,7 @@ ApplicationWindow {
                 spacing: 0
                 Layout.fillWidth: true
                 Repeater {
-                    model: [{key: "Path", text: " ", width: 24}, {key: "Script", text: qsTr("Script"), width: 92}, {key: "Path", text: qsTr("Path"), width: -1}]
+                    model: [{key: "Path", text: " ", width: 24}, {key: "Script", text: qsTrId("lua_console.script"), width: 92}, {key: "Path", text: qsTrId("lua_console.path"), width: -1}]
                     delegate: Button {
                         required property var modelData
                         text: modelData.text
@@ -448,7 +448,7 @@ ApplicationWindow {
         }
 
         GroupBox {
-            title: qsTr("Output")
+            title: qsTrId("lua_console.output")
             SplitView.fillWidth: true
             ColumnLayout {
                 anchors.fill: parent
@@ -523,7 +523,7 @@ ApplicationWindow {
     ApplicationWindow {
         id: functionsWindow
         objectName: "registeredFunctionsWindow"
-        title: qsTr("Active Registered Functions")
+        title: qsTrId("lua_console.active_registered_functions")
         width: 560
         height: 300
         property int current: -1
@@ -534,9 +534,9 @@ ApplicationWindow {
             anchors.margins: 8
             RowLayout {
                 spacing: 0
-                Label { text: qsTr("Event"); Layout.preferredWidth: 150; font.bold: true }
-                Label { text: qsTr("Name"); Layout.preferredWidth: 130; font.bold: true }
-                Label { text: qsTr("Guid"); Layout.fillWidth: true; font.bold: true }
+                Label { text: qsTrId("lua_console.event"); Layout.preferredWidth: 150; font.bold: true }
+                Label { text: qsTrId("common.name"); Layout.preferredWidth: 130; font.bold: true }
+                Label { text: qsTrId("lua_console.guid"); Layout.fillWidth: true; font.bold: true }
             }
             ListView {
                 id: functionList
@@ -577,19 +577,19 @@ ApplicationWindow {
             RowLayout {
                 Button {
                     id: callButton
-                    text: qsTr("&Call")
+                    text: qsTrId("lua_console.call")
                     enabled: functionsWindow.current >= 0
                     onClicked: win.vm.run("callFunction", [functionsWindow.currentGuid])
                 }
                 Button {
                     id: removeButton
-                    text: qsTr("&Remove")
+                    text: qsTrId("common.remove_mnemonic")
                     enabled: functionsWindow.current >= 0
                     onClicked: win.vm.run("removeFunction", [functionsWindow.currentGuid])
                 }
-                Button { text: qsTr("Remove &All"); enabled: win.vm.functionCount > 0; onClicked: win.vm.run("removeAllFunctions") }
+                Button { text: qsTrId("lua_console.remove_all"); enabled: win.vm.functionCount > 0; onClicked: win.vm.run("removeAllFunctions") }
                 Item { Layout.fillWidth: true }
-                Button { text: qsTr("&OK"); onClicked: functionsWindow.close() }
+                Button { text: qsTrId("common.ok_mnemonic"); onClicked: functionsWindow.close() }
             }
         }
     }
@@ -603,7 +603,7 @@ ApplicationWindow {
     ApplicationWindow {
         id: functionsListWindow
         objectName: "luaFunctionsListWindow"
-        title: qsTr("Lua Functions")
+        title: qsTrId("lua_console.lua_functions")
         width: 760
         height: 360
         minimumWidth: 200
@@ -646,7 +646,7 @@ ApplicationWindow {
         Menu {
             delegate: MenuEntry {}
             id: copyMenu
-            MenuItem { text: qsTr("&Copy"); onTriggered: functionsListWindow.copyPicked() }
+            MenuItem { text: qsTrId("lua_console.copy"); onTriggered: functionsListWindow.copyPicked() }
         }
         ColumnLayout {
             anchors.fill: parent
@@ -662,7 +662,7 @@ ApplicationWindow {
                     spacing: 0
                     Row {
                         Repeater {
-                            model: [qsTr("Return"), qsTr("Library"), qsTr("Name"), qsTr("Parameters"), qsTr("Description")]
+                            model: [qsTrId("lua_console.return"), qsTrId("lua_console.library"), qsTrId("common.name"), qsTrId("lua_console.parameters"), qsTrId("lua_console.description")]
                             delegate: Label {
                                 required property int index
                                 required property string modelData
@@ -701,7 +701,7 @@ ApplicationWindow {
                                 Label { text: doc.modelData.returns; width: functionsListWindow.widths[0]; leftPadding: 4; elide: Text.ElideRight; color: doc.ink }
                                 Label { text: doc.modelData.library; width: functionsListWindow.widths[1]; leftPadding: 4; elide: Text.ElideRight; color: doc.ink }
                                 Label {
-                                    text: (doc.modelData.unavailable ? qsTr("[Not available] ") : "") + (doc.modelData.deprecated ? qsTr("[Deprecated] ") : "") + doc.modelData.name
+                                    text: (doc.modelData.unavailable ? qsTrId("lua_console.not_available") : "") + (doc.modelData.deprecated ? qsTrId("lua_console.deprecated") : "") + doc.modelData.name
                                     width: functionsListWindow.widths[2]; leftPadding: 4; elide: Text.ElideRight; color: doc.ink
                                 }
                                 Label { text: doc.modelData.params; width: functionsListWindow.widths[3]; leftPadding: 4; elide: Text.ElideRight; color: doc.ink }
@@ -720,9 +720,9 @@ ApplicationWindow {
             }
             RowLayout {
                 TextField { id: filter; Layout.preferredWidth: 180; onTextChanged: functionsListWindow.picked = -1 }
-                Label { text: qsTr("Filter") }
+                Label { text: qsTrId("lua_console.filter") }
                 Item { Layout.fillWidth: true }
-                Button { text: qsTr("&OK"); Layout.preferredWidth: 80; onClicked: functionsListWindow.close() }
+                Button { text: qsTrId("common.ok_mnemonic"); Layout.preferredWidth: 80; onClicked: functionsListWindow.close() }
             }
         }
     }

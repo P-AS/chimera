@@ -16,7 +16,7 @@ ApplicationWindow {
     objectName: "mediaMakerWindow"
     required property QtObject vm
     property Window mainWindow: null
-    title: qsTr("Reproducible Media Maker")
+    title: qsTrId("media_maker.reproducible_media_maker")
     width: 600
     height: 380
     minimumWidth: 600
@@ -40,7 +40,7 @@ ApplicationWindow {
         anchors.margins: 12
         spacing: 6
         Label {
-            text: qsTr("A folder becomes one file, and the same folder becomes the same file on any machine - the dates, the permissions and the order it was read in are left out on purpose. That is what lets a project name it by hash.")
+            text: qsTrId("media_maker.a_folder_becomes_one_file_and")
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
             Layout.preferredHeight: 50
@@ -51,10 +51,10 @@ ApplicationWindow {
             columnSpacing: 0
             rowSpacing: 6
             Layout.fillWidth: true
-            Caption { text: qsTr("Folder"); Layout.row: 0; Layout.column: 0 }
+            Caption { text: qsTrId("media_maker.folder"); Layout.row: 0; Layout.column: 0 }
             TextField { text: win.vm.folder; readOnly: true; Layout.row: 0; Layout.column: 1; Layout.fillWidth: true }
-            Button { text: qsTr("Browse..."); Layout.row: 0; Layout.column: 2; Layout.leftMargin: 8; Layout.preferredWidth: 96; onClicked: folderDialog.open() }
-            Caption { text: qsTr("Format"); Layout.row: 1; Layout.column: 0 }
+            Button { text: qsTrId("common.browse"); Layout.row: 0; Layout.column: 2; Layout.leftMargin: 8; Layout.preferredWidth: 96; onClicked: folderDialog.open() }
+            Caption { text: qsTrId("media_maker.format"); Layout.row: 1; Layout.column: 0 }
             ComboBox {
                 Layout.row: 1
                 Layout.column: 1
@@ -82,9 +82,9 @@ ApplicationWindow {
                 Layout.preferredHeight: 36
                 verticalAlignment: Text.AlignTop
             }
-            Caption { text: qsTr("Save as"); Layout.row: 4; Layout.column: 0 }
+            Caption { text: qsTrId("media_maker.save_as"); Layout.row: 4; Layout.column: 0 }
             TextField { text: win.vm.output; onEditingFinished: win.vm.output = text; Layout.row: 4; Layout.column: 1; Layout.fillWidth: true }
-            Button { text: qsTr("Save as..."); Layout.row: 4; Layout.column: 2; Layout.leftMargin: 8; Layout.preferredWidth: 96; onClicked: outputDialog.open() }
+            Button { text: qsTrId("media_maker.save_as_dialog"); Layout.row: 4; Layout.column: 2; Layout.leftMargin: 8; Layout.preferredWidth: 96; onClicked: outputDialog.open() }
         }
         ProgressBar { Layout.fillWidth: true; Layout.topMargin: 6; from: 0; to: 1; value: win.vm.progress }
         Label { text: win.vm.current; elide: Text.ElideRight; Layout.fillWidth: true; Layout.preferredHeight: 18 }
@@ -100,26 +100,26 @@ ApplicationWindow {
         RowLayout {
             Item { Layout.fillWidth: true }
             Button {
-                text: win.vm.running ? qsTr("Cancel") : qsTr("Make")
+                text: win.vm.running ? qsTrId("common.cancel") : qsTrId("media_maker.make")
                 Layout.preferredWidth: 96
                 enabled: win.vm.running || (win.vm.folder !== "" && win.vm.output !== "")
                 onClicked: win.vm.run(win.vm.running ? "cancel" : "make")
             }
-            Button { text: qsTr("Close"); Layout.preferredWidth: 96; onClicked: win.close() }
+            Button { text: qsTrId("common.close"); Layout.preferredWidth: 96; onClicked: win.close() }
         }
     }
     FolderDialog {
         id: folderDialog
-        title: qsTr("The folder to pack")
+        title: qsTrId("media_maker.the_folder_to_pack")
         onAccepted: win.vm.run("setFolder", [selectedFolder])
     }
     FileDialog {
         id: outputDialog
-        title: qsTr("Write the image to")
+        title: qsTrId("media_maker.write_the_image_to")
         fileMode: FileDialog.SaveFile
         selectedFile: win.urlOf(win.vm.output)
         defaultSuffix: win.extensions[win.vm.format].substring(1)
-        nameFilters: [win.vm.run("shapes").split("\n")[win.vm.format] + " (*" + win.extensions[win.vm.format] + ")", qsTr("All Files (*)")]
+        nameFilters: [win.vm.run("shapes").split("\n")[win.vm.format] + " (*" + win.extensions[win.vm.format] + ")", qsTrId("media_maker.all_files")]
         onAccepted: win.vm.run("setOutput", [selectedFile])
     }
 }
